@@ -58,7 +58,9 @@ def build_generation_module(
     """
 
     providers: dict[GenerationKind, GenerationProvider] = {
-        KIND_VIDEO: PartnerAppVideoProvider(video, transport=video_transport),
+        KIND_VIDEO: PartnerAppVideoProvider(
+            video, object_store=object_store, transport=video_transport
+        ),
         KIND_IMAGE: NanoBananaImageProvider(
             image, object_store=object_store, transport=image_transport
         ),
