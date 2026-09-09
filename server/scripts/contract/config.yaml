@@ -1,0 +1,78 @@
+# 合同导出（scripts/dump_openapi.py）用的占位配置：各可选段全开，路由才齐；真实配置不进仓库。
+app:
+  name: iclip-agent
+
+db:
+  schema: iclip
+
+security:
+  session_cookie_name: iclip_session
+  session_lifetime_seconds: 604800
+  cookie_secure: false
+  cors_allow_origins: []
+
+sso:
+  # SSO_BASE_URL 为空时不挂载 /auth/sso/*。
+  app_name: iclip
+
+media_generation:
+  # VIDEO_SUBMIT_URL 为空时关闭生成路由与后台队列；启用后须提供生成接口与对象存储凭证。
+  video:
+    model: vendor-a-seedance-2-5 # 默认模型，显式指定 vendor-a 名称以固定供应商
+    allowed_models:
+      - vendor-a-seedance-2-0
+      - vendor-a-seedance-2-5
+      - wan3.0-video
+  image:
+    env: prod # 网关按调用方标识与这一项一起判这次调用合不合法
+    default: nano_banana_pro # 请求省略 model 时用哪家
+    # 键名即落库的 provider 名；route 拼在 IMAGE_API_BASE 后面。
+    # concurrency 是这家同时最多挂几个提交，一家一条队列，互不占用。
+    models:
+      nano_banana_pro:
+        route: nano-banana-pro
+        concurrency: 40
+      seedream_v5_pro:
+        route: seedrance5.0pro # 上游路由拼写沿用它公开契约里的 seedrance
+        concurrency: 40
+  poll_interval_seconds: 5 # 状态查询间隔，固定轮询
+  job_timeout_seconds: 3600 # 提交后等待终态的上限
+
+shot_video:
+  # VIDEO_UNDERSTANDING_URL 为空时不注册 shot_video；启用后须同时启用媒体生成。
+  understanding_model: doubao-seed-2-0-lite-260428 # 供应方模型名
+  understanding_thinking: medium # minimal / low / medium / high；省略时使用供应方默认值
+  # 采样帧率范围 0.2–5；提高帧率有助于识别快速剪辑点，同时增加视频 token 消耗。
+  understanding_fps: 5
+  # 出图先使用 dev 渠道，耗尽 dev_attempts 后转 pro；成功后停止重试。
+  poll_interval_seconds: 5 # 结果轮询间隔
+  dev_attempts: 2
+  pro_attempts: 1
+  backoff_seconds: 5 # 初次重试间隔，后续乘以 backoff_factor
+  backoff_factor: 3
+  job_timeout_seconds: 1800 # 单次出图工具调用的总时限
+
+models:
+  # 合同导出用的占位模型：只为让装配通过，不代表任何真实端点。
+  placeholder:
+    provider: openai
+    api_key_env: MODEL_API_KEY
+    base_url: https://placeholder.invalid/v1
+
+conversations:
+  title_model: placeholder
+  compaction:
+    # 压缩阈值为 context_window × max_fraction；未配置窗口时禁用压缩。
+    max_fraction: 0.85 # 历史估算占窗口的触发比例
+    keep_messages: 20 # 摘要之后保留的原始消息条数
+
+agent_runs:
+  # lease_seconds 必须大于 heartbeat_seconds。
+  heartbeat_seconds: 10 # 运行期间的心跳间隔
+  lease_seconds: 30 # 心跳失联判定时限；超时后由清扫续跑或判失败
+  sweep_seconds: 15 # 中断清扫与队列唤醒间隔
+  max_attempts: 2 # 单条消息的最大认领次数；1 表示中断后不续跑
+  max_snapshots_per_run: 3 # 每个 run 保留的全量历史快照数
+
+ops:
+  log_level: INFO
