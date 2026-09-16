@@ -633,21 +633,11 @@ export const workspaceHandlers = [
     }),
   ),
 
-  // 允许表照服务端配置；edit 为空表示这个模型不做视频编辑。
+  // 视频模型只有 id，允许表照服务端配置；哪个能编辑由前端按名字认。
   http.get('*/api/generations/video-models', () =>
     HttpResponse.json({
       default: 'vendor-a-seedance-2-5',
-      items: [
-        { model: 'vendor-a-seedance-2-0', edit: null },
-        {
-          model: 'vendor-a-seedance-2-5',
-          edit: { promptPrefix: null, providerOptions: { omni_reference_task_type: 'edit' } },
-        },
-        {
-          model: 'wan3.0-video',
-          edit: { promptPrefix: '编辑视频，', providerOptions: null },
-        },
-      ],
+      items: ['vendor-a-seedance-2-0', 'vendor-a-seedance-2-5', 'wan3.0-video'],
     }),
   ),
 
