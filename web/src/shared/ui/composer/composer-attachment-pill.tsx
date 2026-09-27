@@ -1,6 +1,6 @@
 /** 参考 Kimi attachment-pill：NodeView 管理外层与选中态，React portal 渲染共用媒体内容；删除由原子节点退格操作处理。 */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MediaLightbox } from '@/shared/ui/media-lightbox'
 import {
@@ -29,7 +29,12 @@ const uploadStateOf = (entry: ComposerAttachment): MediaUploadState => {
 export function ComposerAttachmentPill({ entry, hostEl, kind, name }: ComposerAttachmentPillProps) {
   const [viewing, setViewing] = useState(false)
   const tip = useHoverPreview()
-  const { onEnter, onLeave } = tip
+  const { close, onEnter, onLeave } = tip
+  const previewable = kind !== 'file' && entry?.previewUrl !== undefined
+  const view = useCallback(() => {
+    close()
+    setViewing(true)
+  }, [close])
 
   useEffect(() => {
     hostEl.classList.toggle('attachment-error', entry?.status === 'error')
@@ -45,6 +50,13 @@ export function ComposerAttachmentPill({ entry, hostEl, kind, name }: ComposerAt
       hostEl.removeEventListener('mouseleave', onLeave)
     }
   }, [hostEl, onEnter, onLeave])
+
+  // 点 pill 本身与卡上「放大」同一入口。
+  useEffect(() => {
+    if (!previewable) return undefined
+    hostEl.addEventListener('click', view)
+    return () => hostEl.removeEventListener('click', view)
+  }, [hostEl, previewable, view])
 
   const media: MediaDescriptor = {
     kind,
@@ -63,10 +75,7 @@ export function ComposerAttachmentPill({ entry, hostEl, kind, name }: ComposerAt
           media={media}
           onEnter={onEnter}
           onLeave={onLeave}
-          onOpenFullscreen={() => {
-            tip.close()
-            setViewing(true)
-          }}
+          onEnlarge={view}
         />
       ) : null}
       {viewing && media.previewUrl !== undefined

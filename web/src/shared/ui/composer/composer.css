@@ -61,7 +61,7 @@
 }
 .attachment-pill.attachment-image,
 .attachment-pill.attachment-video {
-  cursor: default;
+  cursor: zoom-in;
 }
 .attachment-pill .media-chip-icon {
   color: var(--color-on-surface-variant);

@@ -7,7 +7,7 @@ import { Button, IconButton } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaFallback } from '@/shared/ui/media-fallback'
-import { MediaLightbox } from '@/shared/ui/media-lightbox'
+import { type LightboxMedia, MediaLightbox } from '@/shared/ui/media-lightbox'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 import { AnnotationCanvas } from './annotation-canvas'
@@ -77,7 +77,7 @@ export function FrameImageEditor({
     id: string
     requestId: number
   } | null>(null)
-  const [preview, setPreview] = useState<EditReference | null>(null)
+  const [preview, setPreview] = useState<LightboxMedia | null>(null)
   // 记地址而不是布尔：换一条结果就该重新试着加载那张图。
   const [brokenResult, setBrokenResult] = useState<string | null>(null)
   const [wantedModel, setWantedModel] = useState<string>()
@@ -140,8 +140,17 @@ export function FrameImageEditor({
     // 翻看缩略图条时正好看见了当前帧那一格。
     acknowledgedRef.current = currentUrl
   }
-  // 标注图没有独立地址，预览时看的是底图本身（见下面的 MediaLightbox）。
-  const previewReference = (reference: EditReference | null) => setPreview(reference)
+  // 标注图没有独立地址，预览时看的是底图本身。
+  const previewReference = (reference: EditReference | null) =>
+    setPreview(
+      reference === null
+        ? null
+        : {
+            kind: 'image',
+            name: reference.label,
+            url: reference.kind === 'annotated' ? baseUrl : reference.url,
+          },
+    )
   const submit = async () => {
     if (busy || activeRef.current) return
     if (problem !== null) {
@@ -299,11 +308,20 @@ export function FrameImageEditor({
                 </p>
               ) : (
                 <div className="image-edit-photo">
-                  <img
-                    alt="图片编辑结果"
-                    src={selected.url}
-                    onError={() => setBrokenResult(selected.url)}
-                  />
+                  <button
+                    aria-label="预览图片编辑结果"
+                    className="size-full cursor-zoom-in rounded-[inherit] ui-focus ui-focus-inline"
+                    onClick={() =>
+                      setPreview({ kind: 'image', name: '图片编辑结果', url: selected.url })
+                    }
+                    type="button"
+                  >
+                    <img
+                      alt="图片编辑结果"
+                      src={selected.url}
+                      onError={() => setBrokenResult(selected.url)}
+                    />
+                  </button>
                 </div>
               )
             ) : (
@@ -455,16 +473,7 @@ export function FrameImageEditor({
             </div>
           </div>
         </div>
-        {preview !== null ? (
-          <MediaLightbox
-            media={{
-              kind: 'image',
-              name: preview.label,
-              url: preview.kind === 'annotated' ? baseUrl : preview.url,
-            }}
-            onClose={() => setPreview(null)}
-          />
-        ) : null}
+        <MediaLightbox media={preview} onClose={() => setPreview(null)} />
       </DialogSurface>
     </DialogRoot>
   )

@@ -1,4 +1,4 @@
-/** JSON 排成可折叠的树；图片地址显示成缩略图，点开走灯箱。解析不了就明说并退回原文。 */
+/** JSON 排成可折叠的树；图片地址显示成缩略图，图片与视频点开走灯箱。解析不了就明说并退回原文。 */
 
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
@@ -143,7 +143,19 @@ function JsonLeaf({
         </span>
       )
     }
-    if (VIDEO_URL.test(value) || ANY_URL.test(value)) {
+    if (VIDEO_URL.test(value)) {
+      return (
+        <button
+          className="flex min-w-0 cursor-zoom-in items-center gap-1 truncate text-left text-chat-link-text ui-focus hover:underline"
+          onClick={() => onPreview({ kind: 'video', name: tailOf(value), url: value })}
+          type="button"
+        >
+          <Icon decorative name="video" size="xs" />
+          <span className="truncate">{tailOf(value)}</span>
+        </button>
+      )
+    }
+    if (ANY_URL.test(value)) {
       return (
         <a
           className="flex min-w-0 items-center gap-1 truncate text-chat-link-text hover:underline"
@@ -151,8 +163,7 @@ function JsonLeaf({
           rel="noreferrer noopener"
           target="_blank"
         >
-          {VIDEO_URL.test(value) ? <Icon decorative name="video" size="xs" /> : null}
-          <span className="truncate">{VIDEO_URL.test(value) ? tailOf(value) : value}</span>
+          <span className="truncate">{value}</span>
         </a>
       )
     }

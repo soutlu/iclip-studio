@@ -15,7 +15,7 @@ export type MediaDescriptor = {
   readonly name: string
   /** 字节数缺失时省略大小。 */
   readonly size?: number | undefined
-  /** 缺少预览地址时禁用预览与全屏。 */
+  /** 缺少预览地址时禁用预览与放大。 */
   readonly previewUrl?: string | undefined
   readonly upload?: MediaUploadState | undefined
 }

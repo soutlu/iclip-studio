@@ -38,7 +38,7 @@ type MediaPreviewCardProps = {
   media: MediaDescriptor
   onEnter: () => void
   onLeave: () => void
-  onOpenFullscreen: () => void
+  onEnlarge: () => void
 }
 
 export function MediaPreviewCard({
@@ -46,7 +46,7 @@ export function MediaPreviewCard({
   media,
   onEnter,
   onLeave,
-  onOpenFullscreen,
+  onEnlarge,
 }: MediaPreviewCardProps) {
   // 隐藏状态下测量后定位；挂载与媒体加载回调负责重新测量。
   const [placement, setPlacement] = useState<TipPlacement | null>(null)
@@ -107,7 +107,7 @@ export function MediaPreviewCard({
   const name = mediaDisplayName(media)
   const isMedia = media.kind !== 'file'
   const { previewUrl, upload } = media
-  const canOpenFullscreen = isMedia && previewUrl !== undefined
+  const canEnlarge = isMedia && previewUrl !== undefined
   const details = [
     intrinsic === null ? null : formatDimensions(intrinsic.width, intrinsic.height),
     intrinsic?.duration === undefined ? null : formatDuration(intrinsic.duration),
@@ -116,7 +116,7 @@ export function MediaPreviewCard({
     .filter((part) => part !== null)
     .join(' · ')
   const showUploadState = upload !== undefined && upload.status !== 'ready'
-  const hasSecondRow = showUploadState || details !== '' || canOpenFullscreen
+  const hasSecondRow = showUploadState || details !== '' || canEnlarge
   const meta = (
     <div className="flex min-w-0 flex-col gap-0.5">
       <div className="flex min-w-0 items-center gap-1">
@@ -175,14 +175,10 @@ export function MediaPreviewCard({
           ) : (
             <span className="media-tip-ink min-w-0 flex-1 truncate tabular-nums">{details}</span>
           )}
-          {canOpenFullscreen ? (
-            <button
-              className="media-tip-open ml-auto flex-none"
-              onClick={onOpenFullscreen}
-              type="button"
-            >
+          {canEnlarge ? (
+            <button className="media-tip-open ml-auto flex-none" onClick={onEnlarge} type="button">
               <Icon decorative name="zoom" size="sm" />
-              全屏查看
+              放大
             </button>
           ) : null}
         </div>
