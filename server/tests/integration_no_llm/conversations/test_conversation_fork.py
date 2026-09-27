@@ -407,6 +407,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             announce_title=_untouched,
             activities_of=_untouched,
             busy_conversation_ids=_untouched,
+            latest_master_urls=_untouched,
             fork_transcript=start,
             copy_workspace=copy_no_workspace,
         )
@@ -586,5 +587,41 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
         async with make_client(media_app) as other:
             await login_as(other, pg_url, username="maya")
             assert await listed_ids(other, copy) == set()
+    finally:
+        await engine.dispose()
+
+
+async def test_audit_list_carries_only_each_conversations_own_latest_master(
+    media_app: FastAPI, pg_url: str
+) -> None:
+    """全部对话列表的每一段带自己名下最新一条成片的地址：源对话有，只继承了它的副本为空。"""
+
+    engine = create_async_engine(pg_url)
+    repo = SqlGenerationRepository(engine)
+    try:
+        async with make_client(media_app) as client:
+            owner = uuid.UUID(await login_as(client, pg_url, username="logan"))
+            source = await open_conversation(client)
+            await seed_turns(pg_url, source, ["第一句"])
+            take = await complete(
+                repo,
+                await repo.create(
+                    make_job(
+                        video_request(), owner_user_id=owner, conversation_id=uuid.UUID(source)
+                    )
+                ),
+                "take",
+            )
+            forked = await fork(client, source)
+            assert forked.status_code == 201, forked.text
+            copy = forked.json()["conversation"]["id"]
+
+        async with make_client(media_app) as governor:
+            await login_as(governor, pg_url, username="gov", role="root")
+            listed = await governor.get(f"{URL}/audit")
+            assert listed.status_code == 200, listed.text
+            latest = {item["id"]: item["latestMasterUrl"] for item in listed.json()["items"]}
+
+        assert latest == {source: take.output_url, copy: None}
     finally:
         await engine.dispose()

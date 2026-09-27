@@ -39,15 +39,42 @@
   overflow: hidden;
 }
 
-/* 媒体灯箱：中性遮罩，媒体限制在视口内。 */
+/* 全部对话的行分隔线：两端内缩到行的圆角以内；悬停行上下两条隐去，只留整行底色。
+   断点与行的内边距一一对应：840 以下行向两侧外扩，线就贴满列表宽。 */
 
-.chat-lightbox {
-  background: color-mix(in srgb, var(--color-scrim) 60%, transparent);
+.audit-rows > li {
+  position: relative;
 }
-.chat-lightbox-media {
-  background: var(--color-thumb-fallback);
-  border-radius: var(--radius-md);
-  max-height: 80vh;
-  max-width: min(960px, 90vw);
-  object-fit: contain;
+
+.audit-rows > li + li::before {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  left: 12px;
+  height: 1px;
+  background: var(--color-hairline);
+  content: '';
+  opacity: 0.6;
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+@media (max-width: 1279px) {
+  .audit-rows > li + li::before {
+    right: 8px;
+    left: 8px;
+  }
+}
+
+@media (max-width: 839px) {
+  .audit-rows > li + li::before {
+    right: 0;
+    left: 0;
+  }
+}
+
+@media (hover: hover) {
+  .audit-rows > li:has(> a:hover)::before,
+  .audit-rows > li:has(> a:hover) + li::before {
+    opacity: 0;
+  }
 }

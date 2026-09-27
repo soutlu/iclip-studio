@@ -342,7 +342,7 @@ describe('Composer', () => {
     expect(within(tip).queryByText('已上传')).not.toBeInTheDocument()
   })
 
-  it('视频 pill 传完后，卡上的「全屏查看」进灯箱', async () => {
+  it('视频 pill 传完后，卡上的「放大」进灯箱', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Composer attachmentsEnabled onSubmit={vi.fn()} />)
 
@@ -351,9 +351,26 @@ describe('Composer', () => {
 
     fireEvent.mouseEnter(pillHost('样片.mp4'))
     const tip = await screen.findByRole('tooltip')
-    await user.click(within(tip).getByRole('button', { name: '全屏查看' }))
+    await user.click(within(tip).getByRole('button', { name: '放大' }))
 
     const dialog = screen.getByRole('dialog', { name: '样片.mp4' })
     expect(dialog.querySelector('video')).not.toBeNull()
+  })
+
+  it('点图片 pill 本身进灯箱，Esc 关掉后焦点回到输入框', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={vi.fn()} />)
+
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+
+    // jsdom 没有 elementFromPoint，走不通 PM 的 mousedown；先聚焦输入框，再只发 click。
+    editor().focus()
+    fireEvent.click(pillHost('截图.png'))
+    expect(await screen.findByRole('dialog', { name: '截图.png' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '截图.png' })).not.toBeInTheDocument()
+    await waitFor(() => expect(editor()).toHaveFocus())
   })
 })

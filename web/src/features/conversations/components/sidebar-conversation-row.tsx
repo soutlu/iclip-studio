@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
-import { formatRelativeTime } from '@/shared/lib/relative-time'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
@@ -13,24 +12,29 @@ import { StatusBadge } from '@/shared/ui/status-badge'
 import { toast } from '@/shared/ui/toast'
 import { conversationStatus, needsAttention } from '../conversation-status'
 import {
-  useDeleteConversation,
   useRenameConversation,
   useSetConversationCompletion,
   type Conversation,
 } from '../conversations.api'
 import { useSeenRun } from '../conversations.unread'
 
+// 侧栏各行共用：8px 容器内左右 10px，图标与文字左缘落在同一条线上。
 // 状态层作用于整行及尾部按钮；内部标题按钮只负责焦点环。
 export const SIDEBAR_ROW_CLASS =
-  'group flex ui-state cursor-pointer items-center gap-2 rounded-sm px-3 py-1.5 text-body text-on-surface'
+  'group flex h-8 ui-state cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-body text-on-surface'
 
-export const SIDEBAR_ROW_TITLE_CLASS = 'flex min-w-0 flex-1 items-center gap-2 rounded-xs ui-focus'
+export const SIDEBAR_ROW_TITLE_CLASS =
+  'flex min-w-0 flex-1 items-center gap-2.5 rounded-xs ui-focus'
 
-// 时间与操作按钮共用尾部槽位，hover、键盘聚焦或菜单展开时切换。
-const ROW_TRAILING_HIDDEN =
+/** 行内 ⋯ 菜单打开时保持悬停底色；选中行保留自己的底色，不加这一层。 */
+export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'
+
+// 行尾信息与操作按钮共用尾部槽位，hover、键盘聚焦或菜单展开时切换。
+export const SIDEBAR_ROW_TRAILING_HIDDEN =
   'group-hover:hidden group-focus-within:hidden group-has-data-[state=open]:hidden'
+// 负右距让 24px 按钮里的图标右缘落在行内容右缘。
 export const SIDEBAR_ROW_TRAILING_SHOWN =
-  'hidden group-hover:flex group-focus-within:flex group-has-data-[state=open]:flex'
+  'hidden -mr-1.25 group-hover:flex group-focus-within:flex group-has-data-[state=open]:flex'
 
 /** 仅对本浏览器已查看过且 lastRunId 变化的完成对话显示未读；当前打开的对话不显示。 */
 const useUnread = (conversation: Conversation, active: boolean): boolean => {
@@ -41,6 +45,8 @@ const useUnread = (conversation: Conversation, active: boolean): boolean => {
 type SidebarConversationRowProps = {
   conversation: Conversation
   dragging: boolean
+  /** 请调用方打开删除确认；删除本身由确认弹窗执行。 */
+  onDelete: () => void
   onOpenMembership: () => void
 }
 
@@ -48,6 +54,7 @@ type SidebarConversationRowProps = {
 export function SidebarConversationRow({
   conversation,
   dragging,
+  onDelete,
   onOpenMembership,
 }: SidebarConversationRowProps) {
   const canWrite = hasPermission(useUser().data, PERMISSION.agentRun)
@@ -60,7 +67,6 @@ export function SidebarConversationRow({
   const active = openedId === conversation.id
   const [editing, setEditing] = useState(false)
   const rename = useRenameConversation()
-  const remove = useDeleteConversation()
   const completion = useSetConversationCompletion()
   const completed = conversation.completedAt !== null
   const unread = useUnread(conversation, active)
@@ -84,8 +90,9 @@ export function SidebarConversationRow({
     <div
       className={cn(
         SIDEBAR_ROW_CLASS,
-        dragging && 'opacity-50',
-        active && 'bg-state-active font-medium',
+        // 拖动中的行压在侧栏吸顶标题（layer-local-1）之上。
+        dragging && 'layer-local-2 opacity-50',
+        active ? 'bg-state-active font-medium' : SIDEBAR_ROW_MENU_OPEN,
       )}
       ref={setNodeRef}
       style={
@@ -136,21 +143,13 @@ export function SidebarConversationRow({
       {showUnread && (
         <span aria-label="未读" className="size-1.5 shrink-0 rounded-full bg-primary" role="img" />
       )}
-      {!editing && (
-        <span
-          aria-hidden
-          className={cn('shrink-0 text-caption text-on-surface-faint', ROW_TRAILING_HIDDEN)}
-        >
-          {formatRelativeTime(conversation.createdAt)}
-        </span>
-      )}
       {!editing && canWrite && (
         <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
           <MenuRoot>
             <MenuTrigger asChild>
               <IconButton label={`${conversation.title} 的更多操作`} name="more" size="xs" />
             </MenuTrigger>
-            <MenuSurface align="start">
+            <MenuSurface align="end">
               <MenuItem icon="edit" onSelect={() => setEditing(true)}>
                 重命名
               </MenuItem>
@@ -169,15 +168,7 @@ export function SidebarConversationRow({
                 {completed ? '取消完成' : '标记完成'}
               </MenuItem>
               <MenuSeparator />
-              <MenuItem
-                destructive
-                icon="delete"
-                onSelect={() =>
-                  remove.mutate(conversation.id, {
-                    onError: (error) => toast.error(errorMessageOf(error, '删除失败')),
-                  })
-                }
-              >
+              <MenuItem destructive icon="delete" onSelect={onDelete}>
                 删除
               </MenuItem>
             </MenuSurface>

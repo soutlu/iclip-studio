@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { Input } from '@/shared/ui/field'
-import { ListEmpty, ListError, LoadMoreFooter } from '@/shared/ui/list-state'
+import { ListEmpty, ListError, NextPageFooter } from '@/shared/ui/list-state'
 import {
   isDefaultScope,
   useLibraryAuthorSource,
@@ -57,13 +57,18 @@ export function LibraryRoute({
   const prevId = index > 0 ? (loaded[index - 1]?.id ?? null) : null
   const nextId = index >= 0 ? (loaded[index + 1]?.id ?? null) : null
 
-  // 翻到已读的最后一条时接着读下一页，「下一条」不会停在页尾；翻页失败就停下，由页脚重试。
+  // 自动翻页的两个入口（详情翻到末尾、页脚进入一屏内）可能前后脚触发；不取消在途请求，第二次直接复用它。
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = videos
+  const loadNextPage = useCallback(
+    () => void fetchNextPage({ cancelRefetch: false }),
+    [fetchNextPage],
+  )
+
+  // 翻到已读的最后一条时接着读下一页，「下一条」不会停在页尾；翻页失败就停下，由页脚重试。
   const atLoadedEnd = index >= 0 && index === loaded.length - 1
   useEffect(() => {
-    if (atLoadedEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError)
-      void fetchNextPage()
-  }, [atLoadedEnd, fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage])
+    if (atLoadedEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) loadNextPage()
+  }, [atLoadedEnd, hasNextPage, isFetchNextPageError, isFetchingNextPage, loadNextPage])
 
   // 关掉详情后焦点回到那张卡；卡已被虚拟列表回收就交给弹窗的默认去处。
   const focusCard = (id: string): boolean => {
@@ -130,10 +135,9 @@ export function LibraryRoute({
                 onRetry={() => void videos.fetchNextPage()}
               />
             ) : (
-              <LoadMoreFooter
-                isFetching={videos.isFetchingNextPage}
-                label="加载更多"
-                onMore={() => void videos.fetchNextPage()}
+              <NextPageFooter
+                getScrollElement={getScrollElement}
+                query={videos}
                 shown={loaded.length}
                 total={total}
               />

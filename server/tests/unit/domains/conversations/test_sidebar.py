@@ -150,6 +150,7 @@ def build(
         announce_title=_untouched,
         activities_of=activities,
         busy_conversation_ids=busy,
+        latest_master_urls=_untouched,
         fork_transcript=cast("ForkTranscript", object()),
         copy_workspace=_untouched,
     )

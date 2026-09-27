@@ -221,6 +221,27 @@ describe('图片编辑器', () => {
     expect(within(editor).getByRole('button', { name: '应用到当前帧' })).toBeEnabled()
   })
 
+  it('点选中的结果图放大看；Esc 只关预览，编辑器留着，焦点回到结果图', async () => {
+    const completed = job({ status: 'completed', outputUrl: RESULT })
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
+    await renderWithProviders(<EditorPage initialKey={completed.id} />)
+
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    const result = await within(editor).findByRole('button', { name: '预览图片编辑结果' })
+    await userEvent.click(result)
+
+    const lightbox = await screen.findByRole('dialog', { name: '图片编辑结果' })
+    expect(within(lightbox).getByRole('img', { name: '图片编辑结果' })).toHaveAttribute(
+      'src',
+      RESULT,
+    )
+
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '图片编辑结果' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: /^编辑图片/ })).toBeInTheDocument()
+    await waitFor(() => expect(result).toHaveFocus())
+  })
+
   it.each(['pending', 'submitted'] as const)('任务处于 %s 时仍能提交新的编辑', async (status) => {
     const existing = job({ status })
     const submitted = job({ createdAt: '2026-09-07T12:01:00Z' })

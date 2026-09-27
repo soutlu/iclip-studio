@@ -50,7 +50,7 @@ describe('ConversationVideos', () => {
     expect(screen.queryByText('暂无视频产物')).not.toBeInTheDocument()
   })
 
-  it('默认播放最新成功版本，切换与放大暂停旧播放器，关闭预览后归还焦点', async () => {
+  it('默认播放最新成功版本，切换暂停旧播放器；放大接着进度进灯箱，关闭时写回进度并归还焦点', async () => {
     const pause = vi.mocked(HTMLMediaElement.prototype.pause)
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [job(1), job(2)] })))
     await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
@@ -64,25 +64,35 @@ describe('ConversationVideos', () => {
     await userEvent.click(screen.getByRole('button', { name: '镜头组 1 V1' }))
     expect(pause).toHaveBeenCalledOnce()
     expect(initial).not.toBeInTheDocument()
-    const selected = screen.getByLabelText('镜头组 1视频')
+    const selected = screen.getByLabelText<HTMLVideoElement>('镜头组 1视频')
     expect(selected).toHaveAttribute('src', job(1).outputUrl)
     expect(screen.getByRole('button', { name: '镜头组 1 V1' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
 
-    vi.spyOn(selected as HTMLVideoElement, 'paused', 'get').mockReturnValue(false)
-    const enlarge = screen.getByRole('button', { name: '放大镜头组 1' })
+    selected.currentTime = 4
+    const enlarge = within(screen.getByRole('region', { name: '镜头组 1' })).getByRole('button', {
+      name: '放大',
+    })
     await userEvent.click(enlarge)
-    expect(pause).toHaveBeenCalledTimes(2)
+    expect(pause.mock.instances).toContain(selected)
     const dialog = await screen.findByRole('dialog', { name: '镜头组 1' })
-    expect(within(dialog).getByLabelText('镜头组 1')).toHaveAttribute('src', job(1).outputUrl)
+    const enlarged = within(dialog).getByLabelText<HTMLVideoElement>('镜头组 1', {
+      selector: 'video',
+    })
+    expect(enlarged).toHaveAttribute('src', job(1).outputUrl)
+    fireEvent.loadedMetadata(enlarged)
+    expect(enlarged.currentTime).toBe(4)
+
+    enlarged.currentTime = 6
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(selected.currentTime).toBe(6)
     await waitFor(() => expect(enlarge).toHaveFocus())
   })
 
-  it('播放另一个镜头组时暂停当前正在播放的视频', async () => {
+  it('播放或放大一个镜头组时暂停正在播放的其他视频', async () => {
     const pause = vi.mocked(HTMLMediaElement.prototype.pause)
     server.use(
       http.get('*/api/generations', () =>
@@ -91,12 +101,22 @@ describe('ConversationVideos', () => {
     )
     await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
     const first = await screen.findByLabelText('镜头组 1视频')
+    const second = screen.getByLabelText('镜头组 2视频')
     vi.spyOn(first as HTMLVideoElement, 'paused', 'get').mockReturnValue(false)
 
-    fireEvent.play(screen.getByLabelText('镜头组 2视频'))
+    fireEvent.play(second)
 
     expect(pause).toHaveBeenCalledOnce()
     expect(pause.mock.instances[0]).toBe(first)
+
+    vi.spyOn(second as HTMLVideoElement, 'paused', 'get').mockReturnValue(false)
+    await userEvent.click(
+      within(screen.getByRole('region', { name: '镜头组 1' })).getByRole('button', {
+        name: '放大',
+      }),
+    )
+    expect(await screen.findByRole('dialog', { name: '镜头组 1' })).toBeVisible()
+    expect(pause.mock.instances).toContain(second)
   })
 
   it('媒体加载失败有重试入口，重试重新加载原地址，切版不保留上一版的错误', async () => {

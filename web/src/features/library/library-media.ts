@@ -122,6 +122,14 @@ export type LibraryVersion = LibraryVersionOut & { label: string }
 export const versionsOf = (group: LibraryShotGroup): LibraryVersion[] =>
   group.versions.map((version, order) => ({ ...version, label: `第 ${order + 1} 版` }))
 
-/** 组卡上的名字：有镜号是「镜头组 N」，没有就是「无镜号」。 */
-export const groupLabelOf = (group: LibraryShotGroup): string =>
-  group.shotIndex === null ? '无镜号' : `镜头组 ${group.shotIndex}`
+/** 镜头组分段上的名字，与接口的组一一对应、顺序不变（接口已按镜号排好）：有镜号就是镜号；
+ * 没镜号的叫「无镜号」，不止一个时依次叫「无镜号 1」「无镜号 2」。 */
+export const groupNamesOf = (groups: readonly LibraryShotGroup[]): string[] => {
+  const unnumbered = groups.filter((group) => group.shotIndex === null).length
+  let seen = 0
+  return groups.map((group) => {
+    if (group.shotIndex !== null) return String(group.shotIndex)
+    seen += 1
+    return unnumbered > 1 ? `无镜号 ${seen}` : '无镜号'
+  })
+}

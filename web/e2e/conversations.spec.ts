@@ -13,12 +13,9 @@ test('治理者从侧栏进「全部对话」，看到别人在跑的对话，�
   await expect(running).toContainText('进行中')
   await expect(running).toContainText('小王')
   await expect(
-    page.getByRole('main', { name: '全部对话' }).getByRole('img', { name: /的需求素材$/ }),
+    page.getByRole('main', { name: '全部对话' }).getByRole('img', { name: /的封面$/ }),
   ).toHaveCount(11)
-  await expect(running.getByRole('img', { name: /的需求素材$/ })).toHaveJSProperty(
-    'naturalWidth',
-    512,
-  )
+  await expect(running.getByRole('img', { name: /的封面$/ })).toHaveJSProperty('naturalWidth', 512)
   await expect(page.getByRole('status', { name: '对话总数' })).toContainText('进行中')
 
   // 筛出小王，进出一段对话后仍该停在这一屏：页面上的返回按钮和浏览器后退都算。

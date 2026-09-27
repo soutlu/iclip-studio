@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { JsonTree } from './json-tree'
@@ -19,13 +19,12 @@ describe('JsonTree', () => {
     expect(screen.getByText('1x1')).toBeVisible()
   })
 
-  it('图片地址显示成缩略图，视频与别的地址是外链', () => {
+  it('图片地址显示成缩略图，别的地址是外链', () => {
     render(
       <JsonTree
         text={JSON.stringify({
           poster: 'https://cdn.example/out/S2-1.jpg?x=1',
           site: 'https://example.com/about',
-          video: 'https://cdn.example/uploads/clip.mp4',
         })}
       />,
     )
@@ -34,11 +33,20 @@ describe('JsonTree', () => {
       'src',
       'https://cdn.example/out/S2-1.jpg?x=1',
     )
-    expect(screen.getByRole('link', { name: /clip\.mp4/ })).toHaveAttribute(
-      'href',
-      'https://cdn.example/uploads/clip.mp4',
-    )
     expect(screen.getByRole('link', { name: 'https://example.com/about' })).toBeVisible()
+  })
+
+  it('视频地址不开新页，点开进灯箱；Esc 关掉后焦点回到那一项', async () => {
+    render(<JsonTree text={JSON.stringify({ video: 'https://cdn.example/uploads/clip.mp4' })} />)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    const leaf = screen.getByRole('button', { name: 'clip.mp4' })
+
+    await userEvent.click(leaf)
+    expect(await screen.findByRole('dialog', { name: 'clip.mp4' })).toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'clip.mp4' })).not.toBeInTheDocument()
+    await waitFor(() => expect(leaf).toHaveFocus())
   })
 
   it('data 地址的图也认', () => {

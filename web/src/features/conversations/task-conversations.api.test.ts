@@ -1,6 +1,7 @@
 import { waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
+import { mockAuditRow } from '@/testing/mocks/conversations'
 import { addMockConversation } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import type { Conversation } from './conversations.api'
@@ -31,8 +32,8 @@ describe('fetchTaskConversations', () => {
   })
 
   it('治理者按需求单过滤未删除对话，逐页取完并保持每页原有顺序', async () => {
-    const first = addMockConversation('第一页')
-    const second = addMockConversation('第二页')
+    const first = mockAuditRow(addMockConversation('第一页'))
+    const second = mockAuditRow(addMockConversation('第二页'))
     const requests: URLSearchParams[] = []
     const nextCursor = 'next/page+2='
     server.use(
@@ -75,7 +76,7 @@ describe('fetchTaskConversations', () => {
   })
 
   it('治理者后续分页失败时抛出错误，不把第一页当成完整结果', async () => {
-    const first = addMockConversation('第一页')
+    const first = mockAuditRow(addMockConversation('第一页'))
     server.use(
       http.get('*/api/conversations/audit', ({ request }) => {
         if (new URL(request.url).searchParams.has('cursor')) {

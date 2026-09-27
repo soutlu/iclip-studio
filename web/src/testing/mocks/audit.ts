@@ -1,4 +1,4 @@
-/** 审计报表的 mock：从内存对话推出一套自洽的明细，再按合同 §12 的口径汇总成 summary 与异常。
+/** 审计报表的 mock：从内存对话推出一套自洽的对话明细与异常；总览另见 audit-overview.ts。
 
 单测与 dev:mock 共用；数字按对话下标确定地生成，同一组对话每次都算出同样的结果。
 
@@ -12,6 +12,7 @@ import type {
   zMetricsOut,
   zSpreadOut,
 } from '@/shared/api/generated/zod.gen'
+import { overviewHandler } from './audit-overview'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import { mockConversations, type MockConversation } from './conversations'
 import { pageBy, type SortKey } from './paging'
@@ -43,10 +44,15 @@ const spread = (values: number[]): Spread | null => {
   }
   return {
     avg: sorted.reduce((sum, value) => sum + value, 0) / sorted.length,
+    count: sorted.length,
     median: at(0.5),
     p90: at(0.9),
   }
 }
+
+/** 一组全等的样本：mock 里每段对话只有一个周期、同一批视频耗时相同。 */
+const flat = (seconds: number, count: number): Spread | null =>
+  count === 0 ? null : { avg: seconds, count, median: seconds, p90: seconds }
 
 const usageOf = (
   input: number,
@@ -92,27 +98,35 @@ const reportOf = (conversation: MockConversation, index: number): Report => {
   const completed = shotCount + Math.max(0, attempts - shotCount - 1)
   const effectiveShots = shots.filter((shot) => shot.effective).length
   const usage = usageOf(9000 + index * 1200, 6000 + index * 800, 900, 2200 + index * 150, 6 + index)
+  const runs = 1 + (index % 3)
   const metrics: Metrics = {
+    activeCycleSeconds: flat(cycleSeconds * 0.6, 1),
+    activeUsers: 1,
+    agentRunSeconds: flat(180, runs),
     attempts,
     attemptsPerShot: attempts / shotCount,
     completedVideos: completed,
-    cycleSeconds: { avg: cycleSeconds, median: cycleSeconds, p90: cycleSeconds },
+    cycleSeconds: flat(cycleSeconds, 1),
     deliveredConversations: 1,
     deliveredOrphanConversations: conversation.taskId === null ? 1 : 0,
     deliveredShots: shotCount,
     deliveredTasks: conversation.taskId === null ? 0 : 1,
     deliveries: 1,
+    discardedLengthSeconds: 0,
     effectiveRate: effectiveShots / shotCount,
     effectiveShots,
+    // 出片的片长现在都是空，mock 与线上一致，不计片长。
+    lengthSeconds: 0,
+    lengthVideos: 0,
     oneTakeRate: shots.filter((shot) => shot.oneTake).length / shotCount,
     oneTakeShots: shots.filter((shot) => shot.oneTake).length,
     producers: 1,
-    runs: 1 + (index % 3),
+    runs,
     shots: shotCount,
     tokensPerDelivery: usage.totalTokens,
-    upstreamSeconds: { avg: 540, median: 540, p90: 600 },
+    upstreamSeconds: flat(540, completed),
     usage,
-    videoSeconds: { avg: 600, median: 600, p90: 660 },
+    videoSeconds: flat(600, completed),
   }
   return {
     conversationId: conversation.id,
@@ -126,48 +140,6 @@ const reportOf = (conversation: MockConversation, index: number): Report => {
     title: conversation.title,
     usage: [{ modelName: 'claude-sonnet-5', usage }],
     userName: usernameOf(conversation.ownerUserId),
-  }
-}
-
-const aggregate = (reports: Report[]): Metrics => {
-  const sum = (pick: (m: Metrics) => number) =>
-    reports.reduce((total, r) => total + pick(r.metrics), 0)
-  const shots = sum((m) => m.shots)
-  const attempts = sum((m) => m.attempts)
-  const oneTakeShots = sum((m) => m.oneTakeShots)
-  const deliveredShots = sum((m) => m.deliveredShots)
-  const effectiveShots = sum((m) => m.effectiveShots)
-  const usage = usageOf(
-    sum((m) => m.usage.inputTokens),
-    sum((m) => m.usage.cacheReadTokens),
-    sum((m) => m.usage.cacheWriteTokens),
-    sum((m) => m.usage.outputTokens),
-    sum((m) => m.usage.requests),
-  )
-  const deliveredTasks = new Set(reports.flatMap((r) => (r.taskId === null ? [] : [r.taskId]))).size
-  const orphans = reports.filter((r) => r.taskId === null).length
-  const deliveries = deliveredTasks + orphans
-  return {
-    attempts,
-    attemptsPerShot: shots === 0 ? null : attempts / shots,
-    completedVideos: sum((m) => m.completedVideos),
-    cycleSeconds: spread(reports.map((r) => r.metrics.cycleSeconds?.median ?? 0)),
-    deliveredConversations: reports.length,
-    deliveredOrphanConversations: orphans,
-    deliveredShots,
-    deliveredTasks,
-    deliveries,
-    effectiveRate: deliveredShots === 0 ? null : effectiveShots / deliveredShots,
-    effectiveShots,
-    oneTakeRate: shots === 0 ? null : oneTakeShots / shots,
-    oneTakeShots,
-    producers: new Set(reports.map((r) => r.userName)).size,
-    runs: sum((m) => m.runs),
-    shots,
-    tokensPerDelivery: deliveries === 0 ? null : usage.totalTokens / deliveries,
-    upstreamSeconds: reports.length === 0 ? null : { avg: 540, median: 540, p90: 600 },
-    usage,
-    videoSeconds: reports.length === 0 ? null : { avg: 600, median: 600, p90: 660 },
   }
 }
 
@@ -189,44 +161,6 @@ const reportsFor = (query: URLSearchParams): Report[] =>
     .map((conversation, index) => reportOf(conversation, index))
     .filter((report) => inScope(report, query))
     .sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt))
-
-const periodStart = (iso: string, bucket: string, timeZone: string): string => {
-  const at = new Date(iso)
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone,
-    year: 'numeric',
-  })
-    .formatToParts(at)
-    .filter((part) => part.type !== 'literal')
-  const y = Number(parts.find((p) => p.type === 'year')?.value)
-  const m = Number(parts.find((p) => p.type === 'month')?.value)
-  const d = Number(parts.find((p) => p.type === 'day')?.value)
-  const local = new Date(Date.UTC(y, m - 1, bucket === 'month' ? 1 : d))
-  if (bucket === 'week') local.setUTCDate(local.getUTCDate() - ((local.getUTCDay() + 6) % 7))
-  return local.toISOString()
-}
-
-/** 有界时间窗内每一期都列出来，和后端补空期的口径一致；不限时间没有起点，只留有数据的期。 */
-const periodAxis = (query: URLSearchParams, bucket: string, timeZone: string): string[] => {
-  const since = query.get('since')
-  if (since === null) return []
-  const until = query.get('until')
-  const end = periodStart(
-    new Date(new Date(until ?? Date.now()).getTime() - 1).toISOString(),
-    bucket,
-    timeZone,
-  )
-  const axis: string[] = []
-  for (let at = new Date(periodStart(since, bucket, timeZone)); at.toISOString() <= end;) {
-    axis.push(at.toISOString())
-    at = new Date(at)
-    if (bucket === 'month') at.setUTCMonth(at.getUTCMonth() + 1)
-    else at.setUTCDate(at.getUTCDate() + (bucket === 'week' ? 7 : 1))
-  }
-  return axis
-}
 
 const anomaliesFor = (reports: Report[]): Anomaly[] => {
   const p90 = spread(reports.map((r) => r.metrics.cycleSeconds?.median ?? 0))?.p90 ?? 0
@@ -295,73 +229,12 @@ const anomaliesFor = (reports: Report[]): Anomaly[] => {
   return found.sort((a, b) => b.at.localeCompare(a.at))
 }
 
-/** 出片次数分布：所有镜按次数分档，次数少的在前，不封顶。 */
-const distributionOf = (reports: Report[]) => {
-  const shotsAt = new Map<number, number>()
-  for (const report of reports) {
-    for (const shot of report.shots) {
-      shotsAt.set(shot.attempts, (shotsAt.get(shot.attempts) ?? 0) + 1)
-    }
-  }
-  return [...shotsAt.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([attempts, shots]) => ({ attempts, shots }))
-}
-
 /** 两张明细表都按各自的时刻倒序翻页，翻页规则同合同 §6 审计列表。 */
 const page = <T>(items: readonly T[], query: URLSearchParams, keyOf: (item: T) => SortKey) =>
   pageBy(items, keyOf, query.get('cursor'), Number(query.get('limit') ?? 20))
 
 export const auditHandlers = [
-  http.get('*/api/audit/summary', ({ request }) => {
-    const query = new URL(request.url).searchParams
-    const reports = reportsFor(query)
-    const bucket = query.get('bucket')
-    const timeZone = query.get('timezone') ?? 'UTC'
-    const byUser = new Map<string, Report[]>()
-    const byTask = new Map<string, Report[]>()
-    const byPeriod = new Map<string, Report[]>()
-    for (const report of reports) {
-      byUser.set(report.userName ?? '?', [...(byUser.get(report.userName ?? '?') ?? []), report])
-      if (report.taskId !== null) {
-        byTask.set(report.taskId, [...(byTask.get(report.taskId) ?? []), report])
-      }
-      if (bucket !== null) {
-        const start = periodStart(report.deliveredAt, bucket, timeZone)
-        byPeriod.set(start, [...(byPeriod.get(start) ?? []), report])
-      }
-    }
-    if (bucket !== null) {
-      for (const start of periodAxis(query, bucket, timeZone)) {
-        if (!byPeriod.has(start)) byPeriod.set(start, [])
-      }
-    }
-    const countByKind = new Map<string, number>()
-    for (const anomaly of anomaliesFor(reports)) {
-      countByKind.set(anomaly.kind, (countByKind.get(anomaly.kind) ?? 0) + 1)
-    }
-    return HttpResponse.json({
-      anomalyCounts: [...countByKind.entries()]
-        .sort(([kindA, countA], [kindB, countB]) => countB - countA || kindA.localeCompare(kindB))
-        .map(([kind, count]) => ({ count, kind })),
-      attemptDistribution: distributionOf(reports),
-      overall: aggregate(reports),
-      series:
-        bucket === null
-          ? null
-          : [...byPeriod.entries()]
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([start, group]) => ({ metrics: aggregate(group), periodStart: start })),
-      tasks: [...byTask.entries()].map(([taskId, group]) => ({
-        metrics: aggregate(group),
-        taskId,
-        title: `需求单 ${taskId.slice(0, 4)}`,
-      })),
-      users: [...byUser.entries()]
-        .map(([userName, group]) => ({ metrics: aggregate(group), userName }))
-        .sort((a, b) => b.metrics.deliveries - a.metrics.deliveries),
-    })
-  }),
+  overviewHandler,
 
   http.get('*/api/audit/conversations', ({ request }) => {
     const query = new URL(request.url).searchParams

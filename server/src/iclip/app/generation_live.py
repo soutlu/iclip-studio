@@ -180,6 +180,11 @@ class AnnouncingGenerationRepository:
     ) -> Mapping[uuid.UUID, InFlightPhase]:
         return await self._inner.in_flight_by_conversation(conversation_ids, kind=kind)
 
+    async def latest_master_by_conversation(
+        self, conversation_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, str]:
+        return await self._inner.latest_master_by_conversation(conversation_ids)
+
     def _announce(self, job: GenerationJob) -> GenerationJob:
         self._live.announce_generation_changed(
             job.owner_user_id,

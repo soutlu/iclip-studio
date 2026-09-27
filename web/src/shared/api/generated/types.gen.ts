@@ -821,6 +821,74 @@ export type ConversationTaskIn = {
 }
 
 /**
+ * ConversationsAuditItemOut
+ *
+ * 审计列表里的一段对话。
+ *
+ * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
+ * 没有成片为 null。
+ */
+export type ConversationsAuditItemOut = {
+  activity: ConversationActivityOut
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Collectionid
+   */
+  collectionId: string | null
+  /**
+   * Completedat
+   */
+  completedAt: string | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Deletedat
+   */
+  deletedAt: string | null
+  /**
+   * Forkturn
+   */
+  forkTurn: number | null
+  /**
+   * Forkedfrom
+   */
+  forkedFrom: string | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Lastrunid
+   */
+  lastRunId: string | null
+  /**
+   * Latestmasterurl
+   */
+  latestMasterUrl: string | null
+  /**
+   * Owneruserid
+   */
+  ownerUserId: string
+  /**
+   * Taskid
+   */
+  taskId: string | null
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
  * ConversationsAuditOut
  *
  * 审计列表。``nextCursor`` 为空表示没有更多了。
@@ -832,7 +900,7 @@ export type ConversationsAuditOut = {
   /**
    * Items
    */
-  items: Array<ConversationOut>
+  items: Array<ConversationsAuditItemOut>
   /**
    * Nextcursor
    */
@@ -1444,6 +1512,12 @@ export type MetricFiltersIn = {
  * 一格指标。全体、人、需求单、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。
  */
 export type MetricsOut = {
+  activeCycleSeconds: SpreadOut | null
+  /**
+   * Activeusers
+   */
+  activeUsers: number
+  agentRunSeconds: SpreadOut | null
   /**
    * Attempts
    */
@@ -1480,6 +1554,10 @@ export type MetricsOut = {
    */
   readonly deliveries: number
   /**
+   * Discardedlengthseconds
+   */
+  discardedLengthSeconds: number
+  /**
    * Effectiverate
    *
    * 有效率：有效镜占出片镜的比例。
@@ -1489,6 +1567,14 @@ export type MetricsOut = {
    * Effectiveshots
    */
   effectiveShots: number
+  /**
+   * Lengthseconds
+   */
+  lengthSeconds: number
+  /**
+   * Lengthvideos
+   */
+  lengthVideos: number
   /**
    * Onetakerate
    *
@@ -1529,6 +1615,51 @@ export type ModelUsageOut = {
    */
   modelName: string
   usage: UsageOut
+}
+
+/**
+ * MovingAverageOut
+ *
+ * 一条均线在某一期的值与它实际覆盖的时间窗；窗往前补过时 ``since`` 比名义起点早。
+ */
+export type MovingAverageOut = {
+  /**
+   * Since
+   */
+  since: string
+  /**
+   * Until
+   */
+  until: string
+  /**
+   * Value
+   */
+  value: number | null
+}
+
+/**
+ * MovingAveragesOut
+ *
+ * 一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。
+ *
+ * 件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
+ * 其余在整个窗里重算比率或平均。补窗规则见合同 §12。
+ */
+export type MovingAveragesOut = {
+  activeCycleSeconds: MovingAverageOut
+  attemptsPerShot: MovingAverageOut
+  cacheReadTokensPerDelivery: MovingAverageOut
+  cacheWriteTokensPerDelivery: MovingAverageOut
+  deliveries: MovingAverageOut | null
+  effectiveRate: MovingAverageOut
+  inputTokensPerDelivery: MovingAverageOut
+  lengthSeconds: MovingAverageOut | null
+  oneTakeRate: MovingAverageOut
+  outputTokensPerDelivery: MovingAverageOut
+  producers: MovingAverageOut | null
+  tokensPerDelivery: MovingAverageOut
+  totalTokens: MovingAverageOut | null
+  upstreamSeconds: MovingAverageOut
 }
 
 /**
@@ -1609,6 +1740,76 @@ export type OpsCatchup = {
    * Latest Seq
    */
   latest_seq: number
+}
+
+/**
+ * OverviewOut
+ */
+export type OverviewOut = {
+  /**
+   * Attemptdistribution
+   */
+  attemptDistribution: Array<AttemptBucketOut>
+  current: OverviewPeriodOut
+  previous: OverviewPeriodOut
+  /**
+   * Series
+   */
+  series: Array<TrendPointOut>
+  /**
+   * Topshots
+   */
+  topShots: Array<TopShotOut>
+  window: OverviewWindowOut
+}
+
+/**
+ * OverviewPeriodOut
+ *
+ * 一期的整段指标，分位数按整段现算，不由各期拼。
+ */
+export type OverviewPeriodOut = {
+  /**
+   * Activedays
+   */
+  activeDays: number
+  metrics: MetricsOut
+}
+
+/**
+ * OverviewWindowOut
+ *
+ * 本期与上一期的起止。上一期是两端各往前挪本期跨的日历日数，粒度由跨度定；见合同 §12。
+ */
+export type OverviewWindowOut = {
+  /**
+   * Bucket
+   */
+  bucket: 'hour' | 'day' | 'week'
+  /**
+   * Generatedat
+   */
+  generatedAt: string
+  /**
+   * Previoussince
+   */
+  previousSince: string
+  /**
+   * Previousuntil
+   */
+  previousUntil: string
+  /**
+   * Since
+   */
+  since: string
+  /**
+   * Timezone
+   */
+  timezone: string
+  /**
+   * Until
+   */
+  until: string
 }
 
 /**
@@ -1899,6 +2100,10 @@ export type SpreadOut = {
    * Avg
    */
   avg: number
+  /**
+   * Count
+   */
+  count: number
   /**
    * Median
    */
@@ -2587,6 +2792,34 @@ export type ToolFrame = {
 }
 
 /**
+ * TopShotOut
+ *
+ * 时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。
+ */
+export type TopShotOut = {
+  /**
+   * Attempts
+   */
+  attempts: number
+  /**
+   * Conversationid
+   */
+  conversationId: string
+  /**
+   * Shot
+   */
+  shot: number
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Username
+   */
+  userName: string | null
+}
+
+/**
  * TrackingEventIn
  *
  * 一条事件。主语按事件名规定：``video.downloaded`` 必带 ``jobId``、不带 ``conversationId``。
@@ -2859,6 +3092,25 @@ export type TranscriptTurn = {
    */
   turnId: string
   usage?: TurnUsage | null
+}
+
+/**
+ * TrendPointOut
+ *
+ * 趋势的一期。按周时首期从所在周的周一算起，指标仍只统计时间窗内。
+ */
+export type TrendPointOut = {
+  /**
+   * Inactive
+   */
+  inactive: boolean
+  ma30: MovingAveragesOut | null
+  ma7: MovingAveragesOut | null
+  metrics: MetricsOut
+  /**
+   * Periodstart
+   */
+  periodStart: string
 }
 
 /**
@@ -3856,6 +4108,46 @@ export type ConversationsAuditConversationsGetResponses = {
 
 export type ConversationsAuditConversationsGetResponse =
   ConversationsAuditConversationsGetResponses[keyof ConversationsAuditConversationsGetResponses]
+
+export type OverviewAuditOverviewGetData = {
+  body?: never
+  path?: never
+  query: {
+    /**
+     * Since
+     */
+    since: string
+    /**
+     * Until
+     */
+    until?: string | null
+    /**
+     * Timezone
+     */
+    timezone?: string
+  }
+  url: '/audit/overview'
+}
+
+export type OverviewAuditOverviewGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type OverviewAuditOverviewGetError =
+  OverviewAuditOverviewGetErrors[keyof OverviewAuditOverviewGetErrors]
+
+export type OverviewAuditOverviewGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: OverviewOut
+}
+
+export type OverviewAuditOverviewGetResponse =
+  OverviewAuditOverviewGetResponses[keyof OverviewAuditOverviewGetResponses]
 
 export type SummaryAuditSummaryGetData = {
   body?: never

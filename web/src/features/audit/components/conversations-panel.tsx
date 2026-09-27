@@ -6,7 +6,7 @@ import { errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
 import { formatDateTime } from '@/shared/lib/date-time'
 import { cn } from '@/shared/lib/utils'
-import { ListEmpty, ListError, ListPending, LoadMoreFooter } from '@/shared/ui/list-state'
+import { ListEmpty, ListError, ListPending, NextPageFooter } from '@/shared/ui/list-state'
 import { Tag } from '@/shared/ui/tag'
 import { useAuditConversationReports, type AuditScope, type ConversationReport } from '../audit.api'
 import { formatCount, formatDuration, formatRate, formatTimes, formatTokens } from '../format'
@@ -16,9 +16,16 @@ type ConversationsPanelProps = {
   scope: AuditScope
   nameOf: (userName: string) => string | undefined
   taskTitleOf: (taskId: string) => string | undefined
+  /** 页面的滚动容器，滚到接近底部时读下一页。 */
+  getScrollElement: () => HTMLElement | null
 }
 
-export function ConversationsPanel({ scope, nameOf, taskTitleOf }: ConversationsPanelProps) {
+export function ConversationsPanel({
+  scope,
+  nameOf,
+  taskTitleOf,
+  getScrollElement,
+}: ConversationsPanelProps) {
   const query = useAuditConversationReports(scope)
   const rows = query.data?.pages.flatMap((page) => page.items) ?? []
 
@@ -61,11 +68,7 @@ export function ConversationsPanel({ scope, nameOf, taskTitleOf }: Conversations
         ))}
       </ul>
       {query.hasNextPage ? (
-        <LoadMoreFooter
-          isFetching={query.isFetchingNextPage}
-          label="显示更多对话"
-          onMore={() => void query.fetchNextPage()}
-        />
+        <NextPageFooter getScrollElement={getScrollElement} query={query} />
       ) : null}
     </section>
   )

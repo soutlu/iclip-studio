@@ -8,6 +8,10 @@ export const router = createRouter({
   defaultPreload: 'intent',
   routeTree,
   scrollRestoration: true,
+  // 换路径时路由会把上一页同一位置元素的滚动值搬到新页，而各页的滚动容器都是同一位置的 <main>；
+  // 列入回顶的元素不搬，新页没有记录就回到 0，后退时仍按该页自己的记录复原。
+  // 一个文档只有一个 main，这一个选择器覆盖所有页面，不用各页自己挂 data-scroll-restoration-id。
+  scrollToTopSelectors: ['main'],
 })
 
 // 滚动复位只在换页面时做：只改查询参数的原地导航也复位的话，会把这次渲染里的程序滚动撤回导航前的位置。

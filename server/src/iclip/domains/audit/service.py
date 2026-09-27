@@ -1,11 +1,11 @@
-"""审计报表用例：把查询参数整理成筛选范围，负责游标与参数校验。治理者权限由路由声明。"""
+"""审计报表用例：把查询参数整理成筛选范围，负责游标与参数校验，拼装总览。治理者权限由路由声明。"""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Final, get_args
+from typing import Final, get_args, overload
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from iclip.common.errors import ValidationFailed
@@ -18,13 +18,30 @@ from iclip.domains.audit.models import (
     Scope,
     Thresholds,
 )
+from iclip.domains.audit.overview import OverviewWindow, build_cells, head_cell, plan_window, trend
 from iclip.domains.audit.repository import AuditReports
-from iclip.domains.audit.schemas import AnomaliesOut, AuditConversationsOut, SummaryOut
+from iclip.domains.audit.schemas import (
+    AnomaliesOut,
+    AuditConversationsOut,
+    OverviewOut,
+    OverviewPeriodOut,
+    OverviewWindowOut,
+    SummaryOut,
+    TrendPointOut,
+)
 from iclip.platform.paging import BAD_CURSOR, check_limit, decode_cursor, encode_cursor
 
 _ANOMALY_KINDS: Final[frozenset[str]] = frozenset(get_args(AnomalyKind))
 
+TOP_SHOT_COUNT: Final = 3
 
+
+@overload
+def _as_utc(moment: datetime) -> datetime: ...
+@overload
+def _as_utc(moment: None) -> None: ...
+@overload
+def _as_utc(moment: datetime | None) -> datetime | None: ...
 def _as_utc(moment: datetime | None) -> datetime | None:
     """无时区输入按 UTC 解释，避免与 timestamptz 比较时驱动报错。"""
 
@@ -78,6 +95,72 @@ def _anomaly_after(cursor: str | None) -> AnomalyCursor | None:
 class AuditService:
     def __init__(self, reports: AuditReports) -> None:
         self._reports = reports
+
+    async def overview(
+        self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
+    ) -> OverviewOut:
+        """审计总览：本期与上一期整段各查一次，趋势按粒度分期；时间窗与均线规则见 overview.py。"""
+
+        now = datetime.now(UTC)
+        window = plan_window(
+            since=_as_utc(since),
+            until=_as_utc(until),
+            zone=ZoneInfo(_check_timezone(timezone)),
+            now=now,
+        )
+        current = Scope(since=window.since, until=window.until)
+        previous = Scope(since=window.previous_since, until=window.previous_until)
+        return OverviewOut(
+            window=OverviewWindowOut(
+                since=window.since,
+                until=window.until,
+                previous_since=window.previous_since,
+                previous_until=window.previous_until,
+                bucket=window.bucket,
+                timezone=timezone,
+                generated_at=now,
+            ),
+            current=await self._period(current, timezone),
+            previous=await self._period(previous, timezone),
+            series=await self._series(window, timezone),
+            attempt_distribution=list(await self._reports.attempt_distribution(current)),
+            top_shots=list(await self._reports.top_shots(current, limit=TOP_SHOT_COUNT)),
+        )
+
+    async def _period(self, scope: Scope, timezone: str) -> OverviewPeriodOut:
+        return OverviewPeriodOut(
+            metrics=await self._reports.overall(scope),
+            active_days=await self._reports.active_days(scope, timezone=timezone),
+        )
+
+    async def _series(self, window: OverviewWindow, timezone: str) -> list[TrendPointOut]:
+        """按周直接切本期；按小时 / 按天先铺回看下限起的基础格，均线从格里补窗。"""
+
+        current = Scope(since=window.since, until=window.until)
+        if window.bucket == "week":
+            rows = await self._reports.by_period(current, bucket="week", timezone=timezone)
+            return [
+                TrendPointOut(
+                    period_start=row.period_start,
+                    inactive=False,
+                    metrics=row.metrics,
+                    ma7=None,
+                    ma30=None,
+                )
+                for row in rows
+            ]
+        grid = Scope(since=window.lookback, until=window.until)
+        rows = await self._reports.by_period(grid, bucket=window.grid, timezone=timezone)
+        units = await self._reports.delivery_units(grid, bucket=window.grid, timezone=timezone)
+        cells = build_cells(rows, units, until=window.until)
+        head = head_cell(cells, window.since)
+        # since 不在格边界上时，首期只算 since 之后的，与按周的首期同一规则；均线仍用整格。
+        head_metrics = (
+            await self._reports.overall(Scope(since=window.since, until=head.end))
+            if head.start < window.since
+            else None
+        )
+        return trend(cells, window, head_metrics=head_metrics)
 
     async def summary(
         self,

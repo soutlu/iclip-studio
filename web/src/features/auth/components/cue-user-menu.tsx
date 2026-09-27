@@ -1,7 +1,8 @@
 import { useCallback } from 'react'
 import { useLogout, userDisplayName, useUser } from '@/shared/auth'
+import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 
 type CueUserMenuAlign = 'bottom-end' | 'bottom-start' | 'top-end' | 'top-start'
 
@@ -20,9 +21,14 @@ const ALIGN_PLACEMENT: Record<
   'top-start': { align: 'start', side: 'top' },
 }
 
-const USER_AVATAR_BUTTON_CLASS =
-  'inline-flex h-8 w-8 min-w-8 items-center justify-center overflow-hidden rounded-full text-body-sm font-semibold ui-focus select-none transition-all ui-motion-s active:scale-95'
+// 侧栏底部整行触发器：与侧栏各行同一套左右内边距，头像、名字与展开标记排成一行。
+const USER_ROW_BUTTON_CLASS =
+  'flex h-11 w-full ui-state cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-body text-on-surface ui-focus select-none'
 
+const USER_AVATAR_CLASS =
+  'grid size-7 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
+
+/** 侧栏底部的账户入口：点整行打开账户菜单，菜单里是个人信息、设置（未上线）与退出登录。 */
 export function CueUserMenu({ align = 'bottom-end', className = '' }: CueUserMenuProps) {
   const { data: user } = useUser()
   const logoutMutation = useLogout()
@@ -51,31 +57,35 @@ export function CueUserMenu({ align = 'bottom-end', className = '' }: CueUserMen
           type="button"
           aria-label="用户菜单"
           title={userLabel}
-          className={cn(
-            USER_AVATAR_BUTTON_CLASS,
-            avatarUrl
-              ? 'border border-border bg-top-layer'
-              : avatarInitial
-                ? 'bg-primary text-on-primary hover:brightness-110'
-                : 'border border-border bg-header-btn-bg text-on-background hover:border-border-hover hover:bg-hover',
-            className,
-          )}
-          data-cue-user-avatar="true"
+          className={cn(USER_ROW_BUTTON_CLASS, className)}
         >
-          {avatarUrl ? (
-            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-          ) : avatarInitial ? (
-            <span aria-hidden="true">{avatarInitial}</span>
-          ) : (
-            <CueUserAvatarIcon />
-          )}
+          <span
+            aria-hidden="true"
+            className={cn(
+              USER_AVATAR_CLASS,
+              avatarUrl ? 'border border-border bg-top-layer' : 'bg-surface-container-high',
+              'text-on-surface',
+            )}
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : avatarInitial ? (
+              avatarInitial
+            ) : (
+              <CueUserAvatarIcon />
+            )}
+          </span>
+          <span aria-hidden="true" className="min-w-0 flex-1 truncate text-left font-medium">
+            {userLabel}
+          </span>
+          <Icon className="shrink-0 text-on-surface-faint" decorative name="dropdown" size="md" />
         </button>
       </MenuTrigger>
 
       <MenuSurface
         align={ALIGN_PLACEMENT[align].align}
         side={ALIGN_PLACEMENT[align].side}
-        // 个人信息与退出项之间不留菜单项间距，保持分隔线贴着退出项。
+        // 个人信息与菜单项之间不留菜单项间距，保持分隔线贴着下面的菜单项。
         className="w-[280px] gap-0 overflow-hidden"
       >
         <div className="border-b border-border px-3 py-2.5">
@@ -118,6 +128,13 @@ export function CueUserMenu({ align = 'bottom-end', className = '' }: CueUserMen
             </dl>
           ) : null}
         </div>
+        <MenuItem disabled icon="settings">
+          <span className="flex items-center justify-between gap-2">
+            设置
+            <span className="text-caption text-on-surface-faint">即将上线</span>
+          </span>
+        </MenuItem>
+        <MenuSeparator />
         <MenuItem
           icon="logout"
           disabled={isLoggingOut}

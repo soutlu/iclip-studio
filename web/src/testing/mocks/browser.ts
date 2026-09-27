@@ -1,4 +1,7 @@
 import { setupWorker } from 'msw/browser'
+import sampleWideUrl from '../fixtures/sample-video-wide.webm?no-inline'
+import sampleVideoUrl from '../fixtures/sample-video.webm?no-inline'
+import { mockLatestMasterUrls } from './conversations'
 import {
   addMockCollection,
   addMockConversation,
@@ -114,6 +117,11 @@ wangDone.activity = {
   videoGeneration: 'none',
 }
 wangDone.lastRunId = 'run-wang-1'
+
+// 「全部对话」里这几段有自己的成片，其余没有、成片地址为 null。
+mockLatestMasterUrls.set(replica.id, sampleVideoUrl)
+mockLatestMasterUrls.set(governorDone.id, sampleWideUrl)
+mockLatestMasterUrls.set(wangDone.id, sampleVideoUrl)
 
 seedDemoTasks([
   ...seeded,

@@ -210,7 +210,7 @@ function RecordVideo({ url }: { url: string }) {
     <>
       <button
         aria-label="播放视频"
-        className="relative grid aspect-[2/1] w-full cursor-pointer place-items-center overflow-hidden rounded-sm bg-surface-container ui-focus"
+        className="relative grid aspect-[2/1] w-full cursor-zoom-in place-items-center overflow-hidden rounded-sm bg-surface-container ui-focus"
         onClick={() => setViewing(true)}
         type="button"
       >

@@ -1,4 +1,4 @@
-/** 预览台：「原片」与当前版本两个 tab、播放控件、比例角标。
+/** 预览台：「原片」与当前版本两个 tab、播放控件、比例角标，可在应用内放大。
  *
  * 多段预览靠两个 `<video>` 轮换：一个在放、另一个预载下一段，到点切过去不用等加载。
  * 中间版本不落文件，拼好的整条只在这里连着放。 */
@@ -13,11 +13,12 @@ import {
   type CSSProperties,
   type Ref,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
+import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
-import { toast } from '@/shared/ui/toast'
 import { locateClock, totalDuration, type LaidOutSegment } from './edit-chain'
 import { timeLabel } from './time-label'
 import type { TimeRange } from './time-range'
@@ -85,6 +86,36 @@ export function EditorPreview({
   const [failed, setFailed] = useState(false)
   // 画面宽高比：角标文案与播放胶囊避让黑边都用它，元数据到达前按竖版算。
   const [aspect, setAspect] = useState(9 / 16)
+  const [enlarged, setEnlarged] = useState(false)
+  const closeEnlargedRef = useRef<HTMLButtonElement>(null)
+  // 舞台渲染进这个只建一次的节点，放大与还原只是把节点挪到另一个槽：两个 <video> 不重挂，播放、静音与预载都不断。
+  const [stageHost] = useState(() => {
+    const host = document.createElement('div')
+    host.className = 'video-editor-stage-host'
+    return host
+  })
+  const inlineSlotRef = useRef<HTMLDivElement | null>(null)
+  const placeInline = useCallback(
+    (slot: HTMLDivElement) => {
+      inlineSlotRef.current = slot
+      slot.appendChild(stageHost)
+      return () => {
+        inlineSlotRef.current = null
+        stageHost.remove()
+      }
+    },
+    [stageHost],
+  )
+  // 挪进挪出都在同一次提交里完成，媒体元素不会因短暂离开文档而被暂停。
+  const placeEnlarged = useCallback(
+    (slot: HTMLDivElement) => {
+      slot.appendChild(stageHost)
+      return () => {
+        inlineSlotRef.current?.appendChild(stageHost)
+      }
+    },
+    [stageHost],
+  )
   const onOriginal = showOriginal && original !== undefined
   const segments = onOriginal ? original : current
   const duration = segments === undefined ? 0 : totalDuration(segments)
@@ -234,10 +265,10 @@ export function EditorPreview({
     seek(clock, clock === playbackEnd ? 'end' : undefined)
   }
 
-  return (
+  const stage = (
     <div
       aria-label="视频预览"
-      className="video-editor-preview"
+      className={cn('video-editor-preview', enlarged && 'is-enlarged')}
       ref={stageRef}
       style={{ '--preview-ratio': aspect } as CSSProperties}
     >
@@ -362,17 +393,64 @@ export function EditorPreview({
           onClick={() => setMuted(!muted)}
           size="sm"
         />
-        <IconButton
-          label="全屏预览"
-          name="maximize-panel"
-          onClick={() => {
-            void stageRef.current
-              ?.requestFullscreen()
-              .catch(() => toast.error('浏览器无法开启全屏'))
-          }}
-          size="sm"
-        />
+        {enlarged ? null : (
+          <IconButton
+            data-enlarge
+            label="放大"
+            name="zoom"
+            onClick={() => setEnlarged(true)}
+            size="sm"
+          />
+        )}
       </div>
     </div>
+  )
+
+  // 三个子节点的顺序固定：portal 换了位置或容器，舞台就会重挂。
+  return (
+    <>
+      <div className="video-editor-preview-slot" ref={placeInline} />
+      {createPortal(stage, stageHost)}
+      <DialogRoot open={enlarged} onOpenChange={setEnlarged}>
+        {/* 只在放大时渲染：关掉立即卸载、舞台立即放回，不等退场动画。 */}
+        {enlarged ? (
+          <DialogSurface
+            aria-describedby={undefined}
+            bare
+            className="video-editor-enlarge"
+            onCloseAutoFocus={(event) => {
+              // 放大按钮在打开时被收起，Radix 记下的是 body，焦点自己还给它。
+              event.preventDefault()
+              stageRef.current?.querySelector<HTMLElement>('[data-enlarge]')?.focus()
+            }}
+            // 舞台在 React 树里属于编辑器，Radix 会把点舞台当成点了外面；遮罩盖满视口，真正的外面点不到。
+            onInteractOutside={(event) => event.preventDefault()}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault()
+              closeEnlargedRef.current?.focus()
+            }}
+            overlayClassName="video-editor-enlarge-scrim"
+          >
+            <DialogTitle className="sr-only">放大预览</DialogTitle>
+            <button
+              aria-label="关闭预览"
+              className="absolute inset-0 cursor-zoom-out"
+              onClick={() => setEnlarged(false)}
+              type="button"
+            />
+            <div className="relative" ref={placeEnlarged} />
+            <button
+              aria-label="关闭"
+              className="absolute top-4 right-6 grid size-(--control-height-md) cursor-pointer place-items-center rounded-full text-on-scrim ui-focus ui-motion-s hover:opacity-70"
+              onClick={() => setEnlarged(false)}
+              ref={closeEnlargedRef}
+              type="button"
+            >
+              <Icon decorative name="close" size="lg" />
+            </button>
+          </DialogSurface>
+        ) : null}
+      </DialogRoot>
+    </>
   )
 }

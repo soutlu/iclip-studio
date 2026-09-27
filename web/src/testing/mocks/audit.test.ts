@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { zOverviewOut } from '@/shared/api/generated/zod.gen'
 import { addMockConversation } from './conversations'
 
 type AuditRow = { conversationId: string; deliveredAt: string; deletedAt: string | null }
@@ -25,5 +26,48 @@ describe('审计报表 mock', () => {
       deletedAt: expect.any(String),
       deliveredAt: before?.deliveredAt,
     })
+  })
+})
+
+describe('审计总览 mock', () => {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const daysAgo = (days: number) =>
+    new Date(today.getFullYear(), today.getMonth(), today.getDate() - days)
+
+  const overviewOf = async (since: Date, until: Date = now) => {
+    const query = new URLSearchParams({
+      since: since.toISOString(),
+      timezone: 'Asia/Singapore',
+      until: until.toISOString(),
+    })
+    const response = await fetch(`/api/audit/overview?${query}`)
+    return zOverviewOut.parse(await response.json())
+  }
+
+  it('粒度跟着跨度走：两天内按小时，120 天内按天，更长按周', async () => {
+    const hour = await overviewOf(today)
+    expect(hour.window.bucket).toBe('hour')
+    expect(hour.series[0]?.ma7?.deliveries).toBeNull()
+    expect(hour.series[0]?.ma7?.attemptsPerShot).not.toBeNull()
+
+    const day = await overviewOf(daysAgo(29))
+    expect(day.window.bucket).toBe('day')
+    // 每 29 天里有连续 3 天没人发起运行，30 天的窗一定碰得到。
+    expect(day.series.some((point) => point.inactive)).toBe(true)
+
+    const week = await overviewOf(daysAgo(180))
+    expect(week.window.bucket).toBe('week')
+    expect(week.series.every((point) => point.ma7 === null && point.ma30 === null)).toBe(true)
+  })
+
+  it('片长只从本月 1 日起有数据', async () => {
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+    const lastMonth = await overviewOf(
+      new Date(today.getFullYear(), today.getMonth() - 1, 1),
+      monthStart,
+    )
+    expect(lastMonth.current.metrics.lengthVideos).toBe(0)
+    expect(lastMonth.current.metrics.completedVideos).toBeGreaterThan(0)
   })
 })

@@ -26,13 +26,16 @@ export {
   useSidebarTopology,
 } from './conversations.api'
 export { ConversationsRoute } from './components/conversations-route'
+export { ConversationDeleteDialog } from './components/conversation-delete-dialog'
 export { ConversationMembershipDialog } from './components/conversation-membership-dialog'
 export { ConversationRoute } from './components/conversation-route'
 export { ConversationSearchDialog } from './components/conversation-search-dialog'
 export {
   SidebarConversationRow,
   SIDEBAR_ROW_CLASS,
+  SIDEBAR_ROW_MENU_OPEN,
   SIDEBAR_ROW_TITLE_CLASS,
+  SIDEBAR_ROW_TRAILING_HIDDEN,
   SIDEBAR_ROW_TRAILING_SHOWN,
 } from './components/sidebar-conversation-row'
 export { SubAgentPanel } from './components/sub-agent-panel'

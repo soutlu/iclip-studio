@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -97,5 +97,86 @@ describe('VideoEditor', () => {
       await screen.findByText('读不到编辑结果的时长，无法合成；关掉编辑器重开可再试一次'),
     ).toBeVisible()
     expect(screen.getByRole('button', { name: '合成成片' })).toBeDisabled()
+  })
+})
+
+describe('放大预览', () => {
+  const renderPlayable = async () => {
+    restoreMedia = stubMediaDurations({ [ROOT_URL]: 8 })
+    await renderEditor()
+    await waitFor(() => expect(screen.getByRole('button', { name: '播放' })).toBeEnabled())
+    const stage = screen.getByLabelText('视频预览')
+    return { stage, videos: [...stage.querySelectorAll('video')] }
+  }
+  const expectSameVideos = (stage: HTMLElement, videos: readonly HTMLVideoElement[]) => {
+    const now = stage.querySelectorAll('video')
+    expect(now).toHaveLength(2)
+    videos.forEach((video, slot) => {
+      expect(now[slot]).toBe(video)
+      expect(video.isConnected).toBe(true)
+    })
+  }
+
+  it('舞台连同两个 <video> 原样搬进应用内遮罩再搬回，状态不丢，也不调浏览器全屏', async () => {
+    const requestFullscreen = vi.fn()
+    Object.defineProperty(Element.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen,
+    })
+    try {
+      const user = userEvent.setup()
+      const { stage, videos } = await renderPlayable()
+      const source = videos[0]?.getAttribute('src')
+      expect(source).toBe(ROOT_URL)
+      await user.click(screen.getByRole('button', { name: '开启声音' }))
+
+      await user.click(screen.getByRole('button', { name: '放大' }))
+      const overlay = screen.getByRole('dialog', { name: '放大预览' })
+      expect(screen.getByLabelText('视频预览')).toBe(stage)
+      expect(overlay).toContainElement(stage)
+      expectSameVideos(stage, videos)
+      expect(within(overlay).queryByRole('button', { name: '放大' })).toBeNull()
+      // 遮罩里操作舞台不会被当成点了外面而关掉。
+      await user.click(within(overlay).getByRole('button', { name: '静音' }))
+      expect(within(overlay).getByRole('button', { name: '开启声音' })).toBeVisible()
+      await user.click(within(overlay).getByRole('button', { name: '开启声音' }))
+
+      await user.click(within(overlay).getByRole('button', { name: '关闭' }))
+      expect(screen.queryByRole('dialog', { name: '放大预览' })).toBeNull()
+      expect(screen.getByRole('dialog', { name: /编辑视频/ })).toContainElement(stage)
+      expectSameVideos(stage, videos)
+      expect(videos[0]?.getAttribute('src')).toBe(source)
+      expect(screen.getByRole('button', { name: '静音' })).toBeVisible()
+
+      await user.click(screen.getByRole('button', { name: '放大' }))
+      await user.click(screen.getByRole('button', { name: '关闭预览' }))
+      expect(screen.queryByRole('dialog', { name: '放大预览' })).toBeNull()
+      expectSameVideos(stage, videos)
+      expect(requestFullscreen).not.toHaveBeenCalled()
+    } finally {
+      Reflect.deleteProperty(Element.prototype, 'requestFullscreen')
+    }
+  })
+
+  it('遮罩里键盘照常操作播放控件，Escape 只关放大层，焦点回到放大按钮', async () => {
+    const user = userEvent.setup()
+    await renderPlayable()
+
+    await user.click(screen.getByRole('button', { name: '放大' }))
+    const overlay = screen.getByRole('dialog', { name: '放大预览' })
+    expect(within(overlay).getByRole('button', { name: '关闭' })).toHaveFocus()
+    // 从 × 往后 Tab 会绕回遮罩开头、再进舞台，不跑出放大层。
+    const unmute = within(overlay).getByRole('button', { name: '开启声音' })
+    for (let step = 0; step < 8 && document.activeElement !== unmute; step += 1) {
+      await user.tab()
+      expect(overlay).toContainElement(document.activeElement as HTMLElement)
+    }
+    await user.keyboard('{Enter}')
+    expect(within(overlay).getByRole('button', { name: '静音' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: '放大预览' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: /编辑视频/ })).toBeVisible()
+    await waitFor(() => expect(screen.getByRole('button', { name: '放大' })).toHaveFocus())
   })
 })

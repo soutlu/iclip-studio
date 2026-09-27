@@ -45,7 +45,14 @@ from iclip.domains.generation.models import (
     InFlightPhase,
     Inheritance,
 )
-from iclip.domains.generation.schemas import KIND_IMAGE, request_from_payload, request_to_payload
+from iclip.domains.generation.schemas import (
+    KIND_IMAGE,
+    KIND_VIDEO,
+    OPERATION_COMPOSE,
+    OPERATION_GENERATE,
+    request_from_payload,
+    request_to_payload,
+)
 from iclip.platform.db.ownership import owner_conditions
 
 DB_SCHEMA: Final = "iclip"
@@ -188,6 +195,17 @@ generation_jobs_table = Table(
 )
 
 _JOBS = generation_jobs_table.c
+
+_MASTER: Final[ColumnElement[bool]] = and_(
+    _JOBS.kind == KIND_VIDEO,
+    _JOBS.status == STATUS_COMPLETED,
+    _JOBS.output_url.is_not(None),
+    or_(
+        _JOBS.operation == OPERATION_COMPOSE,
+        and_(_JOBS.operation == OPERATION_GENERATE, _JOBS.source_job_id.is_(None)),
+    ),
+)
+"""成片：已完成、有地址的出片（没有来源的视频 generate）或合成；编辑段不是。"""
 
 
 class SqlGenerationRepository:
@@ -369,6 +387,21 @@ class SqlGenerationRepository:
             conversation_id: "running" if is_running else "queued"
             for conversation_id, is_running in rows
         }
+
+    async def latest_master_by_conversation(
+        self, conversation_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, str]:
+        if not conversation_ids:
+            return {}
+        stmt = (
+            select(_JOBS.conversation_id, _JOBS.output_url)
+            .distinct(_JOBS.conversation_id)
+            .where(_JOBS.conversation_id.in_(list(conversation_ids)), _MASTER)
+            .order_by(_JOBS.conversation_id, _JOBS.finished_at.desc(), _JOBS.id.desc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return {conversation_id: url for conversation_id, url in rows}
 
     async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
         return await self._update(job_id, status=STATUS_SUBMITTING)

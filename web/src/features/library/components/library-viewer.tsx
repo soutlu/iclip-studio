@@ -1,4 +1,4 @@
-/** 资料库详情：左边播这张卡某个镜头组的某个版本、下面排这一组的全部版本，右边是脚本与参数；上一条 / 下一条在已读的列表里走。 */
+/** 资料库详情：左边播这张卡某个镜头组的某个版本、下面一行切组与版本，右边是脚本与参数；上一条 / 下一条在已读的列表里走。 */
 
 import { useNavigate } from '@tanstack/react-router'
 import { useRef, useState, type KeyboardEvent } from 'react'
@@ -14,9 +14,10 @@ import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { Tag } from '@/shared/ui/tag'
 import { toast } from '@/shared/ui/toast'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { VideoDownload } from '@/shared/ui/video-download'
+import { VIDEO_PLAYER_SELECTOR, VideoPlayer } from '@/shared/ui/video-player'
 import { useLibraryVideo, type LibraryVideo, type LibraryVideoDetail } from '../library.api'
-import { snapshotWidthFor } from '../library-layout'
 import {
   aspectOf,
   cardTitleOf,
@@ -26,6 +27,7 @@ import {
 } from '../library-media'
 import { AuthorAvatar } from './author-avatar'
 import { LibraryParamsPanel, LibraryScriptPanel } from './library-script'
+import { LibraryVersionBar, LibraryVersionBarSkeleton } from './library-version-bar'
 
 /** 点镜头跳过去时往后让一点，免得停在上一镜的最后一帧。 */
 const SEEK_NUDGE_S = 0.05
@@ -63,14 +65,14 @@ export function LibraryViewer({
   const video = detail.data?.video ?? listed
 
   // 左右方向键翻上一条 / 下一条。嵌套的浮层（菜单、参考图大图）经 portal 冒泡上来，
-  // 与视频进度条、页签一样自己用方向键，不抢。
+  // 与播放器、页签一样自己用方向键，不抢。
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     const target = event.target
     if (
       !(target instanceof Element) ||
       target.closest('[role="dialog"]') !== event.currentTarget ||
-      target.closest('video, [role="tablist"]') !== null
+      target.closest(`${VIDEO_PLAYER_SELECTOR}, [role="tablist"]`) !== null
     )
       return
     const id = event.key === 'ArrowLeft' ? prevId : nextId
@@ -215,11 +217,13 @@ function ViewerBody({
   const pendingStartRef = useRef(startAt)
   // 只记选中的那一版，所在的镜头组由它推出来；没选过就是卡面那一版。
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 片子读到元数据后量出的真实比例；请求里的画幅可能认不出（如 adaptive）或与成片不符。
+  const [measured, setMeasured] = useState<{ jobId: string; ratio: number } | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [preview, setPreview] = useState<LightboxMedia | null>(null)
   const { copied, copy } = useCopyFeedback()
 
-  // 详情回来之前只有卡面那一版，版本条与其他镜头组等它回来再出。
+  // 详情回来之前只有卡面那一版，切组与版本的那一行等它回来再出。
   const groups = detail?.groups ?? [
     { shotIndex: null, versions: [{ ...video.face, take: video.take }] },
   ]
@@ -232,6 +236,7 @@ function ViewerBody({
   if (version === undefined) return null
 
   const { w, h } = aspectOf(version.take.aspectRatio)
+  const ratio = measured?.jobId === version.jobId ? measured.ratio : w / h
   const title = cardTitleOf(video)
   const author = version.userName
   const seconds = durationSecondsOf(version.durationMs, version.take)
@@ -247,78 +252,66 @@ function ViewerBody({
     player.currentTime = at + SEEK_NUDGE_S
     void player.play().catch(() => undefined)
   }
+  const poster = videoSnapshotUrl(version.outputUrl, 720)
 
   return (
     <>
-      <section
-        aria-label="播放"
-        className="library-viewer-stage relative flex min-w-0 flex-1 flex-col max-md:flex-none"
-      >
+      <section aria-label="播放" className="relative flex min-w-0 flex-1 flex-col max-md:flex-none">
         <IconButton
-          className="library-viewer-glass layer-local-1 absolute top-4 right-4 size-10 rounded-full"
+          className="layer-local-1 absolute top-4 right-4 size-10 rounded-full bg-surface-container-low text-on-surface"
           label="关闭"
           name="close"
           onClick={onClose}
         />
         <div className="relative min-h-0 flex-1 max-md:h-[56vh] max-md:flex-none">
-          <div className="absolute inset-3 md:inset-6">
-            {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成视频没有字幕轨可挂 */}
-            <video
-              aria-label={title}
+          {/* 视频盒与画面同比例、在这块区域里等比放到最大：圆角落在画面上，两侧不留底色块。 */}
+          <div className="[container-type:size] absolute inset-3 grid place-items-center md:inset-6">
+            <VideoPlayer
               autoPlay
-              className="size-full object-contain"
-              controls
+              className="bg-surface-container-low"
               key={version.jobId}
+              label={title}
               loop
+              // 放大接着当前进度在灯箱里播，关掉后把灯箱播到的位置写回来。
+              onExpand={(at) =>
+                setPreview({
+                  kind: 'video',
+                  name: title,
+                  poster,
+                  startAt: at,
+                  url: version.outputUrl,
+                })
+              }
               onLoadedMetadata={(event) => {
+                const { videoWidth, videoHeight } = event.currentTarget
+                if (videoWidth > 0 && videoHeight > 0)
+                  setMeasured({ jobId: version.jobId, ratio: videoWidth / videoHeight })
                 const at = pendingStartRef.current
                 pendingStartRef.current = null
                 if (at !== null) event.currentTarget.currentTime = at + SEEK_NUDGE_S
               }}
               onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-              playsInline
-              poster={videoSnapshotUrl(version.outputUrl, 720)}
+              poster={poster}
               ref={playerRef}
               src={version.outputUrl}
+              style={{ aspectRatio: ratio, width: `min(100cqw, ${100 * ratio}cqh)` }}
             />
           </div>
         </div>
-        {detail === undefined || versions.length < 2 ? null : (
-          <div
-            aria-label="这个镜头组的版本"
-            className="flex shrink-0 items-center gap-2 overflow-x-auto px-5 pb-4.5 max-md:px-3 max-md:pb-3"
-            role="group"
-          >
-            <span className="library-viewer-faint mr-1 shrink-0 text-caption">
-              这个镜头组的版本
-            </span>
-            {versions.map((item) => (
-              <button
-                aria-pressed={item.jobId === version.jobId}
-                className="library-viewer-version flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-sm py-1 pr-3 pl-1 text-left ui-focus"
-                key={item.jobId}
-                onClick={() => setSelectedId(item.jobId)}
-                type="button"
-              >
-                <img
-                  alt=""
-                  className="h-9 rounded-xs bg-thumb-fallback object-contain"
-                  src={videoSnapshotUrl(
-                    item.outputUrl,
-                    snapshotWidthFor((36 * w) / h, window.devicePixelRatio || 1),
-                  )}
-                  style={{ aspectRatio: `${w} / ${h}` }}
-                />
-                <span className="text-caption">
-                  <b className="block font-medium">{item.label}</b>
-                  <span className="library-viewer-faint block">
-                    {formatRelativeTime(item.finishedAt)}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+        {detail !== undefined ? (
+          <LibraryVersionBar
+            group={group}
+            groups={detail.groups}
+            onSelect={setSelectedId}
+            version={version}
+            versions={versions}
+          />
+        ) : detailError === null ? (
+          <LibraryVersionBarSkeleton
+            groupCount={video.groupCount}
+            versionCount={video.versionCount}
+          />
+        ) : null}
       </section>
 
       <section
@@ -378,9 +371,6 @@ function ViewerBody({
           >
             <LibraryScriptPanel
               currentTime={currentTime}
-              groups={detail?.groups.filter((item) => item !== group)}
-              // 组不是卡：在这张卡里切到那一组最新的一版，不换详情。
-              onOpenGroup={(item) => setSelectedId(item.versions.at(-1)?.jobId ?? null)}
               onPreviewImage={setPreview}
               onSeek={seek}
               take={version.take}
@@ -399,13 +389,15 @@ function ViewerBody({
         </TabsRoot>
 
         <footer className="flex shrink-0 items-center gap-2 border-t border-hairline bg-surface-container-lowest px-6 pt-3.5 pb-4.5 max-md:sticky max-md:bottom-0 max-md:px-4 max-md:pb-[calc(12px+env(safe-area-inset-bottom))]">
+          <MakeSameButton />
           <Button
-            className="flex-1 rounded-full"
+            aria-label={copied ? '已复制' : '复制提示词'}
+            className="shrink-0 rounded-full border-[0.5px] border-hairline px-3.5 text-body-sm max-sm:w-(--control-height-lg) max-sm:px-0"
             leadingIcon={copied ? 'check' : 'copy'}
             onClick={() => void copy(version.take.prompt)}
-            variant="inverted"
+            variant="ghost"
           >
-            {copied ? '已复制' : '复制提示词'}
+            <span className="max-sm:hidden">{copied ? '已复制' : '复制提示词'}</span>
           </Button>
           {/* 版本是一条出片或合成，id 与地址取自同一条记录。 */}
           <VideoDownload
@@ -421,8 +413,41 @@ function ViewerBody({
         </footer>
       </section>
 
-      <MediaLightbox media={preview} onClose={() => setPreview(null)} />
+      <MediaLightbox
+        media={preview}
+        onClose={(at) => {
+          setPreview(null)
+          if (at !== undefined && playerRef.current !== null) playerRef.current.currentTime = at
+        }}
+      />
     </>
+  )
+}
+
+/** 「做同款」还没接线：外观是禁用的主按钮，但留在 tab 序列里，悬停、聚焦、点按都亮出「即将开放」，点了不做别的。 */
+function MakeSameButton() {
+  const [hint, setHint] = useState(false)
+  return (
+    <TooltipRoot onOpenChange={setHint} open={hint}>
+      <TooltipTrigger
+        asChild
+        // 触屏没有悬停，点按也要亮出提示；拦下默认处理，Radix 才不会在点击时把它关掉。
+        onClick={(event) => {
+          event.preventDefault()
+          setHint(true)
+        }}
+      >
+        <Button
+          aria-disabled="true"
+          className="flex-1 rounded-full aria-disabled:bg-disabled-container aria-disabled:active:scale-100"
+          leadingIcon="edit-image"
+          variant="inverted"
+        >
+          做同款
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">即将开放</TooltipContent>
+    </TooltipRoot>
   )
 }
 

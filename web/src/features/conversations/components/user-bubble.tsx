@@ -116,7 +116,7 @@ function MediaChip({ onOpen, part }: { part: MediaPart; onOpen: (media: Lightbox
       {/* 外壳占满行高并居中芯片，避免字体基线影响对齐。 */}
       <button
         aria-label={name}
-        className="mx-0.5 inline-flex h-[1lh] cursor-pointer items-center align-top text-chat-muted-text ui-focus ui-motion-s hover:text-chat-message-text"
+        className="mx-0.5 inline-flex h-[1lh] cursor-zoom-in items-center align-top text-chat-muted-text ui-focus ui-motion-s hover:text-chat-message-text"
         onClick={open}
         onMouseEnter={tip.onEnter}
         onMouseLeave={tip.onLeave}
@@ -138,7 +138,7 @@ function MediaChip({ onOpen, part }: { part: MediaPart; onOpen: (media: Lightbox
           media={media}
           onEnter={tip.onEnter}
           onLeave={tip.onLeave}
-          onOpenFullscreen={open}
+          onEnlarge={open}
         />
       ) : null}
     </>

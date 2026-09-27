@@ -1,7 +1,5 @@
 /** 把接口里的秒、token、比率翻成给人读的字；页面上不出现原始秒数与字段名。 */
 
-import type { Bucket } from './audit.api'
-
 export const EMPTY = '—'
 
 export const formatCount = (value: number): string => value.toLocaleString('zh-CN')
@@ -26,43 +24,4 @@ export const formatDuration = (seconds: number | null): string => {
   if (seconds < 3600) return `${Math.round(seconds / 60)} 分`
   if (seconds < 86_400) return `${(seconds / 3600).toFixed(1)} 小时`
   return `${(seconds / 86_400).toFixed(1)} 天`
-}
-
-export type DeltaTone = 'better' | 'worse' | 'flat'
-
-export type DeltaDirection = 'up' | 'down' | 'flat'
-
-export interface Delta {
-  /** 相对上一期的变化，如 +12%；上一期为零或缺数据时没有。 */
-  text: string
-  tone: DeltaTone
-  /** 数值涨跌，与 text 同样按取整后的百分比判断，取整成 0% 即 flat。 */
-  direction: DeltaDirection
-}
-
-/** 与上一期比。lowerIsBetter 的指标（每镜次数、周期）降了才算好。 */
-export const compareWithPrevious = (
-  current: number | null,
-  previous: number | null | undefined,
-  { lowerIsBetter = false } = {},
-): Delta | null => {
-  if (current === null || previous === null || previous === undefined || previous === 0) {
-    return null
-  }
-  const ratio = (current - previous) / previous
-  const percent = Math.round(ratio * 100)
-  const text = `${percent > 0 ? '+' : ''}${percent}%`
-  if (percent === 0) return { text, tone: 'flat', direction: 'flat' }
-  const improved = lowerIsBetter ? ratio < 0 : ratio > 0
-  return { text, tone: improved ? 'better' : 'worse', direction: percent > 0 ? 'up' : 'down' }
-}
-
-/** 时段刻度：按天 9/12，按周 9/8 起，按月 2026/9。 */
-export const formatPeriodLabel = (iso: string, bucket: Bucket): string => {
-  const at = new Date(iso)
-  if (Number.isNaN(at.getTime())) return ''
-  const month = at.getMonth() + 1
-  if (bucket === 'month') return `${at.getFullYear()}/${month}`
-  const day = `${month}/${at.getDate()}`
-  return bucket === 'week' ? `${day} 起` : day
 }

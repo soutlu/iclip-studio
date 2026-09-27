@@ -172,12 +172,13 @@ describe('AppSidebar', () => {
     expect(router.state.location.pathname).toBe('/library')
   })
 
-  it('只有带 users:manage 的账号看得到「全部对话」「审计」入口，分别去 /conversations 与 /audit', async () => {
+  it('只有带 users:manage 的账号看得到「治理」组的「全部对话」「审计」入口，分别去 /conversations 与 /audit', async () => {
     loginAs(mockAuthUser)
     const user = userEvent.setup()
     const plain = await renderSidebar()
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
     await screen.findByRole('button', { name: '用户菜单' })
+    expect(screen.queryByRole('group', { name: '治理' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '全部对话' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '审计' })).not.toBeInTheDocument()
     plain.unmount()
@@ -186,6 +187,9 @@ describe('AppSidebar', () => {
     const { router } = await renderSidebar()
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
     await screen.findByRole('button', { name: '用户菜单' })
+    const govern = screen.getByRole('group', { name: '治理' })
+    expect(within(govern).getByRole('button', { name: '全部对话' })).toBeVisible()
+    expect(within(govern).getByRole('button', { name: '审计' })).toBeVisible()
     await user.click(await screen.findByRole('button', { name: '全部对话' }))
     expect(router.state.location.pathname).toBe('/conversations')
 
@@ -204,14 +208,16 @@ describe('AppSidebar 对话区', () => {
     return user
   }
 
-  it('拓扑分成「任务」与「合集」两区，合集展开后露出里面的对话', async () => {
+  it('拓扑分成「合集」与「任务」两区，合集在上，展开后露出里面的对话', async () => {
     const collection = addMockCollection('夏季亚麻系列')
     addMockConversation('没归类的那段')
     addMockConversation('合集里的那段').collectionId = collection.id
     const user = await openSidebar()
 
-    expect(await screen.findByRole('button', { name: '任务 (1)' })).toBeVisible()
-    expect(screen.getByRole('button', { name: '合集 (1)' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: '任务' })).toBeVisible()
+    expect(
+      screen.getAllByRole('button', { name: /^(合集|任务)$/ }).map((one) => one.textContent),
+    ).toEqual(['合集', '任务'])
     expect(screen.getByText('没归类的那段')).toBeVisible()
     expect(screen.queryByText('合集里的那段')).not.toBeInTheDocument()
 
@@ -222,7 +228,7 @@ describe('AppSidebar 对话区', () => {
 
   it('新建合集后出现在合集区', async () => {
     const user = await openSidebar()
-    await screen.findByRole('button', { name: '合集 (0)' })
+    await screen.findByText('还没有合集')
 
     await user.click(screen.getByRole('button', { name: '新建合集' }))
     await user.type(await screen.findByLabelText('合集名称'), '春季童鞋')
@@ -254,8 +260,8 @@ describe('AppSidebar 对话区', () => {
     )
 
     await waitFor(() => expect(mockCollections).toHaveLength(0))
-    expect(await screen.findByRole('button', { name: '任务 (1)' })).toBeVisible()
-    expect(screen.getByText('里面的对话')).toBeVisible()
+    // 合集没了，里面的对话回到任务区，不用展开任何合集就看得到。
+    expect(await screen.findByRole('link', { name: '里面的对话' })).toBeVisible()
   })
 
   it('归属弹窗也能把跑完的对话记到需求单下', async () => {

@@ -1,4 +1,4 @@
-"""审计报表 HTTP 端点。三个只读口都要 ``users:manage``，形状见合同 §12。"""
+"""审计报表 HTTP 端点。只读口都要 ``users:manage``，形状见合同 §12。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,12 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from iclip.domains.audit.models import DEFAULT_THRESHOLDS, AnomalyKind, Bucket, Thresholds
-from iclip.domains.audit.schemas import AnomaliesOut, AuditConversationsOut, SummaryOut
+from iclip.domains.audit.schemas import (
+    AnomaliesOut,
+    AuditConversationsOut,
+    OverviewOut,
+    SummaryOut,
+)
 from iclip.domains.audit.service import AuditService
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, require_permission
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
@@ -20,6 +25,21 @@ TaskIdQuery = Annotated[uuid.UUID | None, Query(alias="taskId")]
 
 def create_audit_router(service: AuditService) -> APIRouter:
     router = APIRouter(prefix="/audit", tags=["audit"])
+
+    @router.get("/overview", response_model=OverviewOut)
+    async def overview(
+        _: Annotated[Principal, require_permission(MANAGE_PERMISSION)],
+        since: datetime,
+        until: datetime | None = None,
+        timezone: Annotated[str, Query(max_length=64)] = "UTC",
+    ) -> OverviewOut:
+        """审计总览：本期与上一期的整段指标、按粒度分期的趋势与 7 / 30 日均线、出片次数分布。
+
+        ``until`` 不给或晚于此刻都按此刻算；时间窗最长 366 天。粒度、上一期、非活跃日与均线的
+        补窗规则见合同 §12。
+        """
+
+        return await service.overview(since=since, until=until, timezone=timezone)
 
     @router.get("/summary", response_model=SummaryOut)
     async def summary(

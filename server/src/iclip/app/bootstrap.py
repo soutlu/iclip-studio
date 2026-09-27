@@ -457,6 +457,13 @@ def build_app(
 
         return frozenset(uuid.UUID(one) for one in await job_queue.busy_conversation_ids(owner))
 
+    async def latest_master_urls(conversation_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str]:
+        """生成域的成片接到对话审计列表上；媒体生成没开时与在途出片一样按没有算。"""
+
+        if generation is None:
+            return {}
+        return await generation.service.latest_master_by_conversation(conversation_ids)
+
     capability_table = build_capability_table(
         workspace_store=announcing_workspace_store,
         material_ledger=material_ledger,
@@ -509,6 +516,7 @@ def build_app(
         announce_title=live_connections.announce_title,
         activities_of=activities_of,
         busy_conversation_ids=busy_conversation_ids,
+        latest_master_urls=latest_master_urls,
         fork_transcript=ForkTranscriptAdapter(queue=job_queue, history=transcript_history),
         copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
     )

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Protocol
 
 from iclip.domains.audit.models import (
     AnomalyCursor,
     AnomalyKind,
-    Bucket,
     ConversationCursor,
+    PeriodBucket,
     Scope,
     Thresholds,
 )
@@ -21,6 +22,7 @@ from iclip.domains.audit.schemas import (
     MetricsOut,
     PeriodMetricsOut,
     TaskMetricsOut,
+    TopShotOut,
     UserMetricsOut,
 )
 
@@ -39,9 +41,26 @@ class AuditReports(Protocol):
         ...
 
     async def by_period(
-        self, scope: Scope, *, bucket: Bucket, timezone: str
+        self, scope: Scope, *, bucket: PeriodBucket, timezone: str
     ) -> Sequence[PeriodMetricsOut]:
-        """按 ``timezone`` 的日 / 周 / 月切时段，每段一行，早的排前面。"""
+        """按 ``timezone`` 的小时 / 日 / 周 / 月切时段，每段一行，早的排前面。"""
+        ...
+
+    async def active_days(self, scope: Scope, *, timezone: str) -> int:
+        """时间窗里有人发起运行的 ``timezone`` 本地日数；只看窗内的运行，部分覆盖的日也算。"""
+        ...
+
+    async def delivery_units(
+        self, scope: Scope, *, bucket: PeriodBucket, timezone: str
+    ) -> Mapping[datetime, frozenset[str]]:
+        """每个时段里有成片的件：需求单 id，没挂需求单的是 ``c:`` 加对话 id；锚点同成片件数。
+
+        只列有成片的时段。跨时段求件数时对集合取并，与 ``MetricsOut.deliveries`` 同一口径。
+        """
+        ...
+
+    async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
+        """出片次数最多的镜，多的在前、同数最近出过片的在前；时间窗作用在该镜首次出片时刻上。"""
         ...
 
     async def attempt_distribution(self, scope: Scope) -> Sequence[AttemptBucketOut]:

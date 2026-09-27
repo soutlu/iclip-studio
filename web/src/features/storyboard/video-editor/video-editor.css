@@ -45,6 +45,16 @@
   min-height: clamp(460px, calc(100dvh - 440px), 620px);
   flex-shrink: 0;
 }
+/* 内嵌槽占住预览的位置与尺寸，舞台放大离开时编辑器布局不塌 */
+.video-editor-preview-slot {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+}
+/* 舞台所在的节点在内嵌槽与放大层之间搬动，自己不参与布局 */
+.video-editor-stage-host {
+  display: contents;
+}
 .video-editor-preview {
   position: relative;
   overflow: hidden;
@@ -143,6 +153,30 @@
 }
 .video-editor-preview-message {
   z-index: var(--z-local-1);
+}
+/* 放大预览：与灯箱同款的应用内遮罩，盖满视口、舞台居中 */
+.video-editor-enlarge-scrim {
+  /* 编辑器弹窗同在 popup 层，遮罩要盖过它；DOM 顺序让放大层仍在遮罩之上 */
+  z-index: var(--z-popup);
+  background: color-mix(in srgb, var(--color-scrim) 60%, transparent);
+}
+.video-editor-enlarge {
+  inset: 0;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  translate: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+/* 按画面比例放大，不留黑边；尺寸上限与灯箱一致 */
+.video-editor-preview.is-enlarged {
+  width: min(960px, 90vw, calc(80vh * var(--preview-ratio)));
+  height: auto;
+  min-height: 0;
+  aspect-ratio: var(--preview-ratio);
+  border-radius: var(--radius-md);
 }
 .video-editor-inspector {
   display: flex;
@@ -312,7 +346,7 @@
     grid-template-columns: 1fr;
     gap: 24px;
   }
-  .video-editor-preview {
+  .video-editor-preview-slot {
     height: min(58dvh, 560px);
     min-height: 300px;
   }

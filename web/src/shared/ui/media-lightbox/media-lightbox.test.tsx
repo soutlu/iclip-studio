@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -62,15 +62,27 @@ describe('MediaLightbox', () => {
     expect(onDialogOpenChange).not.toHaveBeenCalled()
   })
 
-  it('视频用带控件的播放器并自动播放', () => {
+  it('视频用共享播放器自动播放：从给定秒数起播，焦点落在播放器上，关掉时带回播到的秒数', async () => {
+    const onClose = vi.fn()
     render(
       <MediaLightbox
-        media={{ kind: 'video', name: '生成的视频', url: 'https://example.com/a.mp4' }}
-        onClose={() => {}}
+        media={{ kind: 'video', name: '生成的视频', startAt: 2, url: 'https://example.com/a.mp4' }}
+        onClose={onClose}
       />,
     )
-    const video = screen.getByLabelText('生成的视频', { selector: 'video' })
+    const video = screen.getByLabelText<HTMLVideoElement>('生成的视频', { selector: 'video' })
     expect(video).toHaveAttribute('src', 'https://example.com/a.mp4')
-    expect(video).toHaveAttribute('controls')
+    expect(video).toHaveAttribute('autoplay')
+    expect(video.controls).toBe(false)
+    // 焦点给播放器，空格等快捷键直接可用；灯箱里不再有放大
+    expect(screen.getByRole('group', { name: '播放器：生成的视频' })).toHaveFocus()
+    expect(screen.queryByRole('button', { name: '放大' })).not.toBeInTheDocument()
+
+    fireEvent.loadedMetadata(video)
+    expect(video.currentTime).toBe(2)
+    video.currentTime = 7
+    await userEvent.keyboard('{Escape}')
+
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(7)
   })
 })
