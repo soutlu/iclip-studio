@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
+import { Icon } from '@/shared/icons'
 import { Input } from '@/shared/ui/field'
-import { ListEmpty, ListError, LoadMoreFooter } from '@/shared/ui/list-state'
+import { ListEmpty, ListError } from '@/shared/ui/list-state'
 import {
   isDefaultScope,
   useLibraryAuthorSource,
@@ -57,13 +58,18 @@ export function LibraryRoute({
   const prevId = index > 0 ? (loaded[index - 1]?.id ?? null) : null
   const nextId = index >= 0 ? (loaded[index + 1]?.id ?? null) : null
 
-  // 翻到已读的最后一条时接着读下一页，「下一条」不会停在页尾；翻页失败就停下，由页脚重试。
+  // 自动翻页的两个入口（详情翻到末尾、页脚进入一屏内）可能前后脚触发；不取消在途请求，第二次直接复用它。
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = videos
+  const loadNextPage = useCallback(
+    () => void fetchNextPage({ cancelRefetch: false }),
+    [fetchNextPage],
+  )
+
+  // 翻到已读的最后一条时接着读下一页，「下一条」不会停在页尾；翻页失败就停下，由页脚重试。
   const atLoadedEnd = index >= 0 && index === loaded.length - 1
   useEffect(() => {
-    if (atLoadedEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError)
-      void fetchNextPage()
-  }, [atLoadedEnd, fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage])
+    if (atLoadedEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) loadNextPage()
+  }, [atLoadedEnd, hasNextPage, isFetchNextPageError, isFetchingNextPage, loadNextPage])
 
   // 关掉详情后焦点回到那张卡；卡已被虚拟列表回收就交给弹窗的默认去处。
   const focusCard = (id: string): boolean => {
@@ -130,10 +136,12 @@ export function LibraryRoute({
                 onRetry={() => void videos.fetchNextPage()}
               />
             ) : (
-              <LoadMoreFooter
+              <NextPageFooter
+                getScrollElement={getScrollElement}
                 isFetching={videos.isFetchingNextPage}
-                label="加载更多"
-                onMore={() => void videos.fetchNextPage()}
+                loadedAt={videos.dataUpdatedAt}
+                onApproach={loadNextPage}
+                paused={videos.isFetching || videos.isError}
                 shown={loaded.length}
                 total={total}
               />
@@ -160,6 +168,67 @@ export function LibraryRoute({
         />
       )}
     </main>
+  )
+}
+
+type NextPageFooterProps = {
+  /** 页面的滚动容器；页脚进入它可视区下方一屏以内就算接近底部。 */
+  getScrollElement: () => HTMLElement | null
+  isFetching: boolean
+  /** 最近一次读到数据的时刻；每变一次都按当下位置重新判断。 */
+  loadedAt: number
+  /** 暂停期间不观察，恢复时按当下位置重新判断。 */
+  paused: boolean
+  onApproach: () => void
+  shown: number
+  total: number | undefined
+}
+
+/** 翻页页脚：左边写已显示几条，右边是读下一页的状态；滚到接近底部时请调用方读下一页。 */
+function NextPageFooter({
+  getScrollElement,
+  isFetching,
+  loadedAt,
+  paused,
+  onApproach,
+  shown,
+  total,
+}: NextPageFooterProps) {
+  const footerRef = useRef<HTMLElement>(null)
+  const approach = useEffectEvent(onApproach)
+
+  // 相交状态不变就不回调，所以每读到一次数据、每次暂停结束都重建观察器，让它按当下布局再报一次；
+  // 只跟暂停不够，一页回来得快时「读取中」那次渲染会被合并掉。
+  useEffect(() => {
+    const footer = footerRef.current
+    if (paused || footer === null) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) approach()
+      },
+      // 根得是滚动容器本身，下边距才会按它的一屏往外扩；用视口当根，页脚会先被容器裁掉。
+      { root: getScrollElement(), rootMargin: '0px 0px 100% 0px' },
+    )
+    observer.observe(footer)
+    return () => observer.disconnect()
+  }, [getScrollElement, loadedAt, paused])
+
+  return (
+    <footer
+      className="flex items-center justify-between gap-4 px-3 py-4 text-body text-on-surface-variant"
+      ref={footerRef}
+    >
+      <span>{total === undefined ? `已显示 ${shown}` : `已显示 ${shown} / ${total}`}</span>
+      {/* 读屏只播报已在页面上的 live region 的变化，所以它常驻、只换内容。 */}
+      <p className="flex h-(--control-height-md) items-center gap-2" role="status">
+        {isFetching ? (
+          <>
+            <Icon className="animate-spin" decorative name="loading" size="sm" />
+            正在读取…
+          </>
+        ) : null}
+      </p>
+    </footer>
   )
 }
 

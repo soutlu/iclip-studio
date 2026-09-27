@@ -1,7 +1,7 @@
 /** 瀑布流：TanStack Virtual 的多列（lanes）虚拟列表，只渲染视口附近的卡片；列数随容器宽度变。 */
 
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useLayoutEffect, useState } from 'react'
 import type { LibraryVideo } from '../library.api'
 import { cardHeightFor, columnCountFor, columnGapFor } from '../library-layout'
 import { LibraryCard } from './library-card'
@@ -21,8 +21,7 @@ type LibraryGridProps = {
 }
 
 export function LibraryGrid({ videos, getScrollElement, onAuthor, onOpen }: LibraryGridProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const { width, offsetTop } = useContainerBox(containerRef, getScrollElement)
+  const [{ width, offsetTop }, containerRef] = useContainerBox(getScrollElement)
   const lanes = columnCountFor(width)
   const gap = columnGapFor(width)
   const columnWidth = width > 0 ? (width - gap * (lanes - 1)) / lanes : 0
@@ -77,33 +76,33 @@ export function LibraryGrid({ videos, getScrollElement, onAuthor, onOpen }: Libr
   )
 }
 
-/** 容器宽度与它在滚动容器里的纵向偏移；宽度变了（筛选条换行、侧栏收起）两者一起重量。 */
-function useContainerBox(
-  containerRef: RefObject<HTMLDivElement | null>,
-  getScrollElement: () => HTMLElement | null,
-): { width: number; offsetTop: number } {
+/** 容器宽度与它在滚动容器里的纵向偏移，连同要挂到容器上的 ref；宽度变了（筛选条换行、侧栏收起）两者一起重量。 */
+function useContainerBox(getScrollElement: () => HTMLElement | null) {
   const [box, setBox] = useState({ offsetTop: 0, width: 0 })
 
-  useLayoutEffect(() => {
-    const container = containerRef.current
-    if (container === null) return
-    const measure = () => {
-      const scroller = getScrollElement()
-      const top = container.getBoundingClientRect().top
-      const offsetTop =
-        scroller === null ? 0 : top - scroller.getBoundingClientRect().top + scroller.scrollTop
-      const width = container.clientWidth
-      setBox((old) =>
-        old.width === width && old.offsetTop === offsetTop ? old : { offsetTop, width },
-      )
-    }
-    // ResizeObserver 开始观察时就回调一次，在首帧绘制前量到初值。
-    const observer = new ResizeObserver(measure)
-    observer.observe(container)
-    return () => observer.disconnect()
-  }, [containerRef, getScrollElement])
+  const containerRef = useCallback(
+    (container: HTMLDivElement | null) => {
+      if (container === null) return
+      const measure = () => {
+        const scroller = getScrollElement()
+        const top = container.getBoundingClientRect().top
+        const offsetTop =
+          scroller === null ? 0 : top - scroller.getBoundingClientRect().top + scroller.scrollTop
+        const width = container.clientWidth
+        setBox((old) =>
+          old.width === width && old.offsetTop === offsetTop ? old : { offsetTop, width },
+        )
+      }
+      // 挂上时同步量一次：ResizeObserver 首次回调引起的重渲染赶不上首帧，按宽 0 排出的高度会让页脚误判到底。
+      measure()
+      const observer = new ResizeObserver(measure)
+      observer.observe(container)
+      return () => observer.disconnect()
+    },
+    [getScrollElement],
+  )
 
-  return box
+  return [box, containerRef] as const
 }
 
 /** 几种常见画幅轮着占位，和真卡同一个节奏。 */

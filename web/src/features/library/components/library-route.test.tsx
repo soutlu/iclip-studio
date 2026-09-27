@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockLibraryVideos } from '@/testing/mocks/library'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -142,31 +142,6 @@ describe('LibraryRoute', () => {
     expect(within(card).getByRole('button', { name: '已复制完整提示词' })).toBeVisible()
   })
 
-  it('pages with a cursor and says when nothing matches', async () => {
-    const [first, second] = mockLibraryVideos()
-    server.use(
-      http.get('*/api/library/videos', ({ request }) => {
-        const url = new URL(request.url)
-        if (url.searchParams.get('q') === '没有的词')
-          return HttpResponse.json({ items: [], nextCursor: null, total: 0 })
-        return url.searchParams.get('cursor') === null
-          ? HttpResponse.json({ items: [first], nextCursor: 'next', total: 2 })
-          : HttpResponse.json({ items: [second], nextCursor: null, total: null })
-      }),
-    )
-    const user = userEvent.setup()
-    await renderWithProviders(<Harness />)
-
-    await screen.findAllByRole('article')
-    expect(screen.getByText('已显示 1 / 2')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: '加载更多' }))
-    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2))
-    expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument()
-
-    await user.type(screen.getByRole('textbox', { name: '搜索脚本' }), '没有的词')
-    expect(await screen.findByText(/没有找到匹配的片子/)).toBeVisible()
-  })
-
   it('shows a retryable error when the list fails', async () => {
     server.use(
       http.get('*/api/library/videos', () =>
@@ -177,6 +152,196 @@ describe('LibraryRoute', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('数据库不可用')
     expect(screen.getByRole('button', { name: '重新加载' })).toBeVisible()
+  })
+})
+
+/** 页脚此刻是否在滚动容器底部一屏以内，由用例设定。 */
+let footerInRange = false
+const liveObservers = new Set<FakeIntersectionObserver>()
+
+/** jsdom 没有 IntersectionObserver；和真的一样，开始观察时报一次当前状态，之后范围变了再报。 */
+class FakeIntersectionObserver {
+  readonly #callback: IntersectionObserverCallback
+  #target: Element | null = null
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.#callback = callback
+  }
+
+  observe(target: Element) {
+    this.#target = target
+    liveObservers.add(this)
+    queueMicrotask(() => this.report())
+  }
+
+  disconnect() {
+    liveObservers.delete(this)
+  }
+
+  report() {
+    if (this.#target === null || !liveObservers.has(this)) return
+    const entry = { isIntersecting: footerInRange, target: this.#target }
+    this.#callback([entry as IntersectionObserverEntry], this as unknown as IntersectionObserver)
+  }
+}
+
+/** 把页脚滚进或滚出底部一屏的范围。 */
+const scrollFooter = async (inRange: boolean) => {
+  footerInRange = inRange
+  await act(async () => {
+    for (const observer of liveObservers) observer.report()
+  })
+}
+
+/** 等一会儿，给本不该发出的请求留出发出的时间。 */
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+/** 三页、每页一张卡；`override` 给某一页换响应（挂住或报错），返回 undefined 就照常给。关键词「没有的词」什么都搜不到。 */
+const serveThreePages = (
+  override?: (cursor: string) => Promise<Response | undefined> | Response | undefined,
+) => {
+  const [first, second, third] = mockLibraryVideos()
+  server.use(
+    http.get('*/api/library/videos', async ({ request }) => {
+      const url = new URL(request.url)
+      if (url.searchParams.get('q') === '没有的词')
+        return HttpResponse.json({ items: [], nextCursor: null, total: 0 })
+      const cursor = url.searchParams.get('cursor')
+      if (cursor === null) return HttpResponse.json({ items: [first], nextCursor: 'p2', total: 3 })
+      const replaced = await override?.(cursor)
+      if (replaced !== undefined) return replaced
+      return cursor === 'p2'
+        ? HttpResponse.json({ items: [second], nextCursor: 'p3', total: null })
+        : HttpResponse.json({ items: [third], nextCursor: null, total: null })
+    }),
+  )
+}
+
+const cursorsOf = (queries: URLSearchParams[]) => queries.map((query) => query.get('cursor'))
+
+describe('library paging', () => {
+  beforeEach(() => {
+    stubScrollViewport()
+    footerInRange = false
+    liveObservers.clear()
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps reading while the footer stays near the bottom, stops at the last page and says when nothing matches', async () => {
+    const queries = recordListQueries()
+    serveThreePages()
+    footerInRange = true
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3))
+    expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3'])
+    // 读完了页脚就收起，不再有读取状态
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    await settle()
+    expect(queries).toHaveLength(3)
+
+    await user.type(screen.getByRole('textbox', { name: '搜索脚本' }), '没有的词')
+    expect(await screen.findByText(/没有找到匹配的片子/)).toBeVisible()
+  })
+
+  it('waits for the footer to near the bottom, and starts over from the first page after a filter change', async () => {
+    const queries = recordListQueries()
+    serveThreePages()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+
+    await screen.findAllByRole('article')
+    const footer = screen.getByText('已显示 1 / 3').closest('footer')
+    // 不用再点：页脚里没有按钮
+    expect(footer).not.toBeNull()
+    expect(within(footer as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
+    await settle()
+    expect(cursorsOf(queries)).toEqual([null])
+
+    await scrollFooter(true)
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3))
+    expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3'])
+
+    await user.click(screen.getByRole('radio', { name: '横版' }))
+    await waitFor(() => expect(queries).toHaveLength(6))
+    expect(queries.slice(3).map((query) => query.get('orientation'))).toEqual([
+      'landscape',
+      'landscape',
+      'landscape',
+    ])
+    expect(cursorsOf(queries.slice(3))).toEqual([null, 'p2', 'p3'])
+  })
+
+  it('shows the loading state and asks only once while the next page is on its way', async () => {
+    const queries = recordListQueries()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    serveThreePages(async (cursor) => {
+      if (cursor === 'p2') await held
+      return undefined
+    })
+    footerInRange = true
+    await renderWithProviders(<Harness />)
+
+    await waitFor(() => expect(cursorsOf(queries)).toEqual([null, 'p2']))
+    expect(screen.getByRole('status')).not.toBeEmptyDOMElement()
+    await scrollFooter(false)
+    await scrollFooter(true)
+    await settle()
+    expect(cursorsOf(queries)).toEqual([null, 'p2'])
+
+    release()
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3))
+    expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3'])
+  })
+
+  it('stops after a failed page and resumes once it is retried', async () => {
+    const queries = recordListQueries()
+    let failing = true
+    serveThreePages((cursor) =>
+      cursor === 'p2' && failing
+        ? HttpResponse.json({ detail: '数据库不可用' }, { status: 500 })
+        : undefined,
+    )
+    footerInRange = true
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('数据库不可用')
+    expect(screen.getAllByRole('article')).toHaveLength(1)
+    await scrollFooter(true)
+    await settle()
+    expect(cursorsOf(queries)).toEqual([null, 'p2'])
+
+    failing = false
+    await user.click(screen.getByRole('button', { name: '重新加载' }))
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3))
+    expect(cursorsOf(queries)).toEqual([null, 'p2', 'p2', 'p3'])
+  })
+
+  it('shares one request when the viewer reaches the loaded end while the footer is near', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    const queries = recordListQueries()
+    serveThreePages()
+    footerInRange = true
+    const [first] = mockLibraryVideos()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness initialVideo={first?.id ?? null} />)
+
+    await screen.findByRole('dialog', { name: '跑鞋手持展示' })
+    await waitFor(() => expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3']))
+    await settle()
+    expect(queries).toHaveLength(3)
+    // 第二页的卡接在已读末尾之后
+    await user.keyboard('{ArrowRight}')
+    expect(await screen.findByRole('dialog', { name: SKATE })).toBeVisible()
   })
 })
 
