@@ -65,6 +65,27 @@ test('共用文件按路径打开：全局参考图原位展开，只有编辑�
   expect(generations).toEqual([])
 })
 
+test('手机上一帧、下一帧切到胶片条外的参考图时完整露出', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const panel = await openReplica(page, true)
+  const references = panel.getByRole('navigation', { name: '本组镜头', exact: true })
+  await references.getByRole('button', { name: '预览第 1 帧', exact: true }).click()
+  const expectRevealed = async (index: number) => {
+    // 帧上可能挂着图片任务角标，可访问名后面会多出状态说明。
+    const reference = references.getByRole('button', { name: new RegExp(`^预览第 ${index} 帧`) })
+    await expect(reference).toHaveAttribute('aria-pressed', 'true')
+    await expect(reference).toBeInViewport({ ratio: 1 })
+  }
+  for (const index of [2, 3, 4, 5, 6]) {
+    await panel.getByRole('button', { name: '下一帧', exact: true }).click()
+    await expectRevealed(index)
+  }
+  for (const index of [5, 4, 3, 2, 1]) {
+    await panel.getByRole('button', { name: '上一帧', exact: true }).click()
+    await expectRevealed(index)
+  }
+})
+
 for (const viewport of [
   { name: 'desktop', width: 1600, height: 1000, mobile: false },
   { name: 'mobile', width: 390, height: 844, mobile: true },

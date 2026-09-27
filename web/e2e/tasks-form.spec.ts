@@ -21,7 +21,12 @@ const openCreate = async (page: Page) => {
     await page.getByRole('button', { name: '折叠侧边栏' }).click()
   }
   await page.getByRole('button', { name: '新建需求单' }).click()
-  return page.getByRole('dialog', { name: '新建需求单' })
+  const dialog = page.getByRole('dialog', { name: '新建需求单' })
+  // 手机端弹窗从底部滑入；等入场动画结束再量布局，否则前后两次取到的位置之间弹窗还在移动。
+  await dialog.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  )
+  return dialog
 }
 
 const boundsOf = async (locator: Locator) => {

@@ -127,7 +127,13 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       next.shot !== undefined && next.shot !== position
         ? { content: undefined, frame: undefined, video: undefined }
         : {}
-    void navigate({ replace: true, search: { ...search, ...cleared, ...next }, to: '.' })
+    // 阅读器状态只原地改查询参数；关掉路由的滚动复位，免得它把胶片条等容器滚回导航前的位置。
+    void navigate({
+      replace: true,
+      resetScroll: false,
+      search: { ...search, ...cleared, ...next },
+      to: '.',
+    })
   }
 
   const closeSheet = () => {
