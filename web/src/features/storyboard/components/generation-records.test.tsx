@@ -373,7 +373,7 @@ describe('GenerationRecords', () => {
       const video = within(dialog).getByLabelText('生成的视频')
       expect(video.tagName).toBe('VIDEO')
       expect(video).toHaveAttribute('src', url)
-      expect(video).toHaveAttribute('controls')
+      expect(within(dialog).getByRole('slider', { name: '播放进度' })).toBeInTheDocument()
       expect(video).toHaveAttribute('autoplay')
       expect(screen.getAllByLabelText('生成的视频', { selector: 'video' })).toHaveLength(1)
 

@@ -1,0 +1,12 @@
+/* 媒体灯箱：中性遮罩，图片与视频画面限制在视口内。 */
+
+.media-lightbox {
+  background: color-mix(in srgb, var(--color-scrim) 60%, transparent);
+}
+.media-lightbox-media {
+  background: var(--color-thumb-fallback);
+  border-radius: var(--radius-md);
+  max-height: 80vh;
+  max-width: min(960px, 90vw);
+  object-fit: contain;
+}

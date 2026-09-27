@@ -16,6 +16,7 @@ import { Tag } from '@/shared/ui/tag'
 import { toast } from '@/shared/ui/toast'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { VideoDownload } from '@/shared/ui/video-download'
+import { VIDEO_PLAYER_SELECTOR, VideoPlayer } from '@/shared/ui/video-player'
 import { useLibraryVideo, type LibraryVideo, type LibraryVideoDetail } from '../library.api'
 import {
   aspectOf,
@@ -64,14 +65,14 @@ export function LibraryViewer({
   const video = detail.data?.video ?? listed
 
   // 左右方向键翻上一条 / 下一条。嵌套的浮层（菜单、参考图大图）经 portal 冒泡上来，
-  // 与视频进度条、页签一样自己用方向键，不抢。
+  // 与播放器、页签一样自己用方向键，不抢。
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     const target = event.target
     if (
       !(target instanceof Element) ||
       target.closest('[role="dialog"]') !== event.currentTarget ||
-      target.closest('video, [role="tablist"]') !== null
+      target.closest(`${VIDEO_PLAYER_SELECTOR}, [role="tablist"]`) !== null
     )
       return
     const id = event.key === 'ArrowLeft' ? prevId : nextId
@@ -251,6 +252,7 @@ function ViewerBody({
     player.currentTime = at + SEEK_NUDGE_S
     void player.play().catch(() => undefined)
   }
+  const poster = videoSnapshotUrl(version.outputUrl, 720)
 
   return (
     <>
@@ -264,14 +266,22 @@ function ViewerBody({
         <div className="relative min-h-0 flex-1 max-md:h-[56vh] max-md:flex-none">
           {/* 视频盒与画面同比例、在这块区域里等比放到最大：圆角落在画面上，两侧不留底色块。 */}
           <div className="[container-type:size] absolute inset-3 grid place-items-center md:inset-6">
-            {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成视频没有字幕轨可挂 */}
-            <video
-              aria-label={title}
+            <VideoPlayer
               autoPlay
-              className="rounded-md bg-surface-container-low object-contain"
-              controls
+              className="bg-surface-container-low"
               key={version.jobId}
+              label={title}
               loop
+              // 放大接着当前进度在灯箱里播，关掉后把灯箱播到的位置写回来。
+              onExpand={(at) =>
+                setPreview({
+                  kind: 'video',
+                  name: title,
+                  poster,
+                  startAt: at,
+                  url: version.outputUrl,
+                })
+              }
               onLoadedMetadata={(event) => {
                 const { videoWidth, videoHeight } = event.currentTarget
                 if (videoWidth > 0 && videoHeight > 0)
@@ -281,8 +291,7 @@ function ViewerBody({
                 if (at !== null) event.currentTarget.currentTime = at + SEEK_NUDGE_S
               }}
               onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-              playsInline
-              poster={videoSnapshotUrl(version.outputUrl, 720)}
+              poster={poster}
               ref={playerRef}
               src={version.outputUrl}
               style={{ aspectRatio: ratio, width: `min(100cqw, ${100 * ratio}cqh)` }}
@@ -404,7 +413,13 @@ function ViewerBody({
         </footer>
       </section>
 
-      <MediaLightbox media={preview} onClose={() => setPreview(null)} />
+      <MediaLightbox
+        media={preview}
+        onClose={(at) => {
+          setPreview(null)
+          if (at !== undefined && playerRef.current !== null) playerRef.current.currentTime = at
+        }}
+      />
     </>
   )
 }

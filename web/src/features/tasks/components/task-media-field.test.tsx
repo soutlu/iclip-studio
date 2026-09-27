@@ -135,7 +135,7 @@ describe('TaskMediaField', () => {
     expect(screen.getByRole('dialog', { name: '参考视频 1' })).toBeVisible()
     const player = screen.getByLabelText('参考视频 1', { selector: 'video' })
     expect(player).toHaveAttribute('src', videoUrl)
-    expect(player).toHaveAttribute('controls')
+    expect(screen.getByRole('slider', { name: '播放进度' })).toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog', { name: '参考视频 1' })).not.toBeInTheDocument()
 

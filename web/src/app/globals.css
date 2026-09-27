@@ -349,6 +349,8 @@
 @import './utility-classes.css';
 @import '../shared/ui/composer/composer.css';
 @import '../shared/ui/media-preview/media-preview.css';
+@import '../shared/ui/media-lightbox/media-lightbox.css';
+@import '../shared/ui/video-player/video-player.css';
 @import '../shared/ui/field/field.css';
 @import '../shared/ui/markdown/markdown.css';
 @import '../shared/ui/status-badge/status-badge.css';

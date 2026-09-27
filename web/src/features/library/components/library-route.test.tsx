@@ -362,6 +362,44 @@ describe('library viewer', () => {
     expect(screen.getByRole('button', { name: '查看详情：童鞋海边亲子' })).toHaveFocus()
   })
 
+  it('leaves the arrow keys to the player while focus is inside it', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+
+    const viewer = await openCard(user, SKATE)
+    const player = playerIn(viewer, SKATE)
+    Object.defineProperty(player, 'duration', { configurable: true, value: 6 })
+    fireEvent.loadedMetadata(player)
+    act(() => within(viewer).getByRole('button', { name: '播放' }).focus())
+    await user.keyboard('{ArrowRight}')
+
+    expect(player.currentTime).toBe(5)
+    expect(screen.getByRole('dialog', { name: SKATE })).toBe(viewer)
+  })
+
+  it('expands the player into a lightbox on top and writes its position back on close', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+
+    const viewer = await openCard(user, SKATE)
+    const player = playerIn(viewer, SKATE)
+    player.currentTime = 1.5
+    await user.click(within(viewer).getByRole('button', { name: '放大' }))
+    const lightbox = screen.getByRole('dialog', { name: SKATE })
+    expect(lightbox).not.toBe(viewer)
+    const enlarged = within(lightbox).getByLabelText<HTMLVideoElement>(SKATE, {
+      selector: 'video',
+    })
+    fireEvent.loadedMetadata(enlarged)
+    expect(enlarged.currentTime).toBe(1.5)
+
+    enlarged.currentTime = 4
+    await user.keyboard('{Escape}')
+    expect(lightbox).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: SKATE })).toBe(viewer)
+    expect(player.currentTime).toBe(4)
+  })
+
   it('leaves the arrow keys to a reference image opened on top', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)

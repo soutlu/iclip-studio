@@ -66,6 +66,7 @@ function RelatedConversations({
           {canAudit ? '暂无关联对话' : '你还没有关联到这张需求单的对话'}
         </p>
       )}
+      {/* 各对话的内嵌播放器与放大后的灯箱（经 portal 仍在这棵树里）同一时刻只放一个。 */}
       <div
         className="divide-y divide-border/60"
         onPlayCapture={(event) => {
@@ -79,7 +80,6 @@ function RelatedConversations({
             key={conversation.id}
             conversation={conversation}
             canReadVideos={canReadVideos}
-            onBeforePreview={() => playingVideoRef.current?.pause()}
           />
         ))}
       </div>
@@ -90,11 +90,9 @@ function RelatedConversations({
 function RelatedConversation({
   conversation,
   canReadVideos,
-  onBeforePreview,
 }: {
   conversation: Conversation
   canReadVideos: boolean
-  onBeforePreview: () => void
 }) {
   const status = conversationStatus(conversation.activity)
   const videoStatus = conversation.activity.videoGeneration
@@ -121,7 +119,7 @@ function RelatedConversation({
         </Link>
       </div>
       {canReadVideos ? (
-        <ConversationVideos conversationId={conversation.id} onBeforePreview={onBeforePreview} />
+        <ConversationVideos conversationId={conversation.id} />
       ) : (
         <p className="text-body-sm text-on-surface-variant">当前账号没有查看视频的权限</p>
       )}
