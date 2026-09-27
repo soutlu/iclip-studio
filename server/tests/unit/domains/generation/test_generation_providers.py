@@ -8,7 +8,6 @@ import uuid
 import httpx
 import pytest
 
-from iclip.domains.generation.clip import FfmpegClipProvider
 from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
     GatewayImageProvider,
@@ -17,6 +16,7 @@ from iclip.domains.generation.image_upstream import (
 )
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
+from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import GenerationProvider, ProviderError
 from iclip.domains.generation.schemas import ClipStage
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
@@ -26,7 +26,7 @@ from tests.helpers.generation import (
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
     MemoryObjectStore,
-    clip_request,
+    compose_request,
     image_request,
     make_job,
     video_request,
@@ -78,10 +78,17 @@ def seedream_ok(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, content=b"JPGDATA", headers={"content-type": "image/jpeg"})
 
 
+async def no_reference(job: GenerationJob) -> str:
+    """出片不该要参考片段；被调到就说明把出片当成了编辑段。"""
+
+    raise AssertionError(f"出片 {job.id} 不该切参考片段")
+
+
 def video_provider(handler: object) -> HttpVideoProvider:
     assert callable(handler)
     return HttpVideoProvider(
         VIDEO_SETTINGS,
+        prepare_reference=no_reference,
         transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
     )
 
@@ -260,7 +267,6 @@ async def test_video_poll_preserves_upstream_error_message() -> None:
     assert progress.outcome == "failed"
     assert progress.error_code == "PROVIDER_ERROR"
     assert progress.error_message == upstream_error["upstream_message"]
-    assert progress.raw["error"] == upstream_error
 
 
 async def test_video_poll_rejects_unknown_status() -> None:
@@ -416,24 +422,9 @@ async def test_image_sends_the_channel_from_the_request(channel: str) -> None:
             )
         return httpx.Response(200, content=b"PNG", headers={"content-type": "image/png"})
 
-    submission = await nano_provider(handler).submit(make_job(image_request(channel=channel)))
+    await nano_provider(handler).submit(make_job(image_request(channel=channel)))
 
     assert sent["channel"] == channel
-    assert submission.raw["channel"] == channel, "落库的快照要记下实际走的渠道"
-
-
-async def test_video_model_comes_from_the_request_when_given() -> None:
-    sent: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        sent.update(httpx.Response(200, content=request.content).json())
-        return httpx.Response(200, json={"task_id": "t-1"})
-
-    submission = await video_provider(handler).submit(
-        make_job(video_request(model="vendor-b-seedance-3-0"))
-    )
-    assert sent["model"] == "vendor-b-seedance-3-0"
-    assert submission.raw == {"response": {"task_id": "t-1"}}, "模型在请求快照里，回执只存上游响应"
 
 
 async def test_image_edit_sends_the_urls_in_the_order_the_caller_gave() -> None:
@@ -498,7 +489,6 @@ async def test_seedream_sends_a_pixel_size_and_no_channel() -> None:
     }, "键集变了就是上游合同变了"
     assert (sent[0]["task_source"], sent[0]["env"]) == ("iclip_agent", "test")
     assert sent[0]["size"] == "1584*2816"
-    assert submission.raw["size"] == "1584*2816", "落库的快照要记下实际发的尺寸"
     assert submission.provider_task_id == str(job.id), "上游不回任务 id，用 data_id 对账"
 
     key = MEDIA_PATHS.generated_image(job_id=job.id, ext="jpg")
@@ -600,10 +590,10 @@ async def _report_stage(_job_id: uuid.UUID, _stage: ClipStage) -> bool:
         (nano_provider(upstream_down), make_job(video_request())),
         (
             seedream_provider(upstream_down, store=MemoryObjectStore()),
-            make_job(clip_request()),
+            make_job(compose_request()),
         ),
         (
-            FfmpegClipProvider(object_store=MemoryObjectStore(), report_stage=_report_stage),
+            FfmpegComposeProvider(object_store=MemoryObjectStore(), report_stage=_report_stage),
             make_job(video_request()),
         ),
     ],

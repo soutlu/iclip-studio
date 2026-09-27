@@ -20,19 +20,12 @@ from iclip.domains.conversations.repository import AuditFilter
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
 from iclip.harness.step_store_pg import PgStepStore
 from tests.helpers.app import make_client
-from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 
 URL = "/conversations"
 SEARCH = f"{URL}/search"
 AGENT_ID = "storyboard"
-
-
-async def login_as_editor(client: httpx.AsyncClient, pg_url: str, *, username: str = "logan") -> str:
-    email = f"{username}@example.com"
-    user_id = await register_and_login(client, username=username, email=email)
-    await set_roles_in_db(pg_url, email, ["editor"])
-    return user_id
 
 
 async def create(client: httpx.AsyncClient, **body: object) -> httpx.Response:
@@ -211,12 +204,6 @@ async def test_missing_attribution_is_still_reported_as_such(
         corrected = await create(client, id=minted)
         assert corrected.status_code == 201, corrected.text
         assert corrected.json()["conversation"]["id"] == minted
-
-
-async def test_title_can_be_given_at_creation(client: httpx.AsyncClient, pg_url: str) -> None:
-    await login_as_editor(client, pg_url)
-    opened = await create(client, title="第三幕")
-    assert opened.json()["conversation"]["title"] == "第三幕"
 
 
 async def test_list_is_newest_first(client: httpx.AsyncClient, pg_url: str) -> None:
@@ -712,6 +699,7 @@ async def test_title_given_at_creation_counts_as_the_users(
 ) -> None:
 
     await login_as_editor(client, pg_url)
-    conversation_id = (await create(client, title="第三幕")).json()["conversation"]["id"]
+    opened = (await create(client, title="第三幕")).json()["conversation"]
 
-    assert await _title_row(pg_url, conversation_id) == ("第三幕", "custom")
+    assert opened["title"] == "第三幕"
+    assert await _title_row(pg_url, opened["id"]) == ("第三幕", "custom")

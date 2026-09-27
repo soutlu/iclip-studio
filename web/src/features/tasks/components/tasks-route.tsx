@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useCallback, useId, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Button } from '@/shared/ui/button'
@@ -41,7 +41,11 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
   const mine = filter(loadedMine)
   const all = filter(loadedAll)
   const searching = keyword.trim().length > 0
-  const visibleMine = searching || myTasksExpanded ? mine : mine.slice(0, 3)
+  // 收起时只放网格的一行；列数未知（网格尚未排版）时不收起。
+  const [myColumns, myGridRef] = useGridColumnCount()
+  const collapsible = !searching && myColumns > 0 && mine.length > myColumns
+  const collapsed = collapsible && !myTasksExpanded
+  const visibleMine = collapsed ? mine.slice(0, myColumns) : mine
 
   const canWrite = hasPermission(user, PERMISSION.tasksWrite)
   // 重命名与详情弹窗改标题同一条规则。
@@ -51,14 +55,15 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {/* 页头预留侧栏展开按钮的覆盖空间。 */}
-      <div className="flex w-full flex-col gap-15 px-6 pt-14 pb-10">
+      <div className="flex w-full flex-col gap-8 px-6 pt-12 pb-10">
         <header className="flex items-center justify-between gap-6">
-          <div className="flex flex-col gap-9">
+          <div className="flex min-w-0 flex-1 flex-col gap-5">
             <div>
               <h1 className="text-headline font-semibold text-on-surface">需求单</h1>
               <p className="mt-3 text-body text-on-surface-variant">多人协同，打造超级团队</p>
             </div>
-            <div>
+            {/* 搜索同时筛两个分区，放在页头；放不下时整条换到按钮下一行。 */}
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 disabled={!canWrite}
                 leadingIcon="add"
@@ -68,29 +73,27 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
               >
                 新建需求单
               </Button>
-            </div>
-          </div>
-          <TaskHero className="h-62 w-auto shrink-0 max-md:hidden" />
-        </header>
-
-        <div className="flex flex-col gap-10">
-          <section aria-label="我的需求单" className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <h2 className="shrink-0 text-title-lg font-semibold text-on-surface">我的需求单</h2>
-              <div className="min-w-0 flex-1 sm:max-w-56">
+              <div className="min-w-0 grow basis-40 sm:max-w-60">
                 <Input
                   aria-label="搜索需求单"
                   leadingIcon="search"
                   onChange={(e) => setKeyword(e.target.value)}
                   placeholder="搜索需求单"
                   value={keyword}
-                  wrapperClassName="h-(--text-title-lg--line-height) rounded-sm border-border"
+                  wrapperClassName="h-(--control-height-md) rounded-sm border-border"
                 />
               </div>
             </div>
+          </div>
+          <TaskHero className="h-40 w-auto shrink-0 max-md:hidden" />
+        </header>
+
+        <div className="flex flex-col gap-8">
+          <section aria-label="我的需求单" className="flex flex-col gap-4">
+            <h2 className="text-title-lg font-semibold text-on-surface">我的需求单</h2>
             {/* 翻页失败时 isError 也为真，已读取的卡片照常显示，错误只落在页脚。 */}
             {myTasks.isPending ? (
-              <TaskCardSkeletons count={3} label="正在读取我的需求单" />
+              <TaskCardSkeletons count={2} label="正在读取我的需求单" />
             ) : myTasks.isError && !myTasks.isFetchNextPageError ? (
               <ListError
                 message={errorMessageOf(myTasks.error, '读取我的需求单失败')}
@@ -99,7 +102,7 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
             ) : mine.length === 0 ? (
               <ListEmpty>{searching ? '没有匹配的需求单' : '还没有认领的需求单'}</ListEmpty>
             ) : (
-              <div className="grid-task-cards" id={myTasksId}>
+              <div className="grid-task-cards" id={myTasksId} ref={myGridRef}>
                 {visibleMine.map((task) => (
                   <TaskCard
                     key={task.id}
@@ -110,8 +113,8 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
                 ))}
               </div>
             )}
-            {!searching && mine.length > 3 && (
-              <div className="flex justify-center pt-2">
+            {collapsible && (
+              <div className="flex pt-2">
                 <Button
                   aria-controls={myTasksId}
                   aria-expanded={myTasksExpanded}
@@ -125,9 +128,9 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
                 </Button>
               </div>
             )}
-            {/* 折叠着只看前三张，翻页入口等展开或搜索时再出现，不和「展开更多」挤在一起。
+            {/* 收起时只看一行，翻页入口等已读取的卡片全部可见时再出现，不和「展开更多」挤在一起。
                 重试翻页期间 isFetchNextPageError 仍为真，这时换回页脚显示「正在读取…」。 */}
-            {(searching || myTasksExpanded) && myTasks.hasNextPage ? (
+            {!collapsed && myTasks.hasNextPage ? (
               myTasks.isFetchNextPageError && !myTasks.isFetchingNextPage ? (
                 <ListError
                   message={errorMessageOf(myTasks.error, '读取我的需求单失败')}
@@ -201,4 +204,24 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
       />
     </main>
   )
+}
+
+/** 挂上网格后读出它实际排出的列数，随网格尺寸变化更新；读不到已排版的列轨道时为 0。
+ *  列数由 CSS 决定，这里不复刻卡宽、间距与断点。 */
+function useGridColumnCount() {
+  const [columns, setColumns] = useState(0)
+  const gridRef = useCallback((grid: HTMLElement | null) => {
+    if (!grid) return
+    const measure = () => {
+      // 排过版的网格逐条报出轨道像素宽；未排版时退回声明值（或 none），按未知处理。
+      const tracks = getComputedStyle(grid).gridTemplateColumns.split(' ')
+      setColumns(tracks.every((track) => /^\d+(?:\.\d+)?px$/.test(track)) ? tracks.length : 0)
+    }
+    // 挂载时在提交阶段同步量一次，首帧就按一行绘制；ResizeObserver 的回调赶不上首帧。
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(grid)
+    return () => observer.disconnect()
+  }, [])
+  return [columns, gridRef] as const
 }

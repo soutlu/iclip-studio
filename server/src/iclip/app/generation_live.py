@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from iclip.domains.agents.transcript_api import LiveConnections
 from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,
+    GenerationOperation,
     GenerationStatus,
     InFlightPhase,
     Inheritance,
@@ -20,10 +21,11 @@ from iclip.domains.generation.repository import GenerationRepository
 class AnnouncingGenerationRepository:
     """包在 ``GenerationRepository`` 外面：每次业务状态跳转写成功，就向属主广播一帧。
 
-    受理落 ``pending`` 也算一跳，agent 发起的出图才会在页面上冒出来。``record_progress`` 只更新
-    provider 原始状态、不改业务状态，不发帧，否则每次轮询上游都会喊一声——clip 的阶段词也走它，
-    所以最多晚一轮轮询才被看到；``mark_failed`` 与 ``mark_completed`` 带状态守卫没命中时返回
-    None，也不发帧。"""
+    受理落 ``pending`` 也算一跳，agent 发起的出图才会在页面上冒出来；创建即完成的切图与上传落库
+    也算一跳，重复确认的上传没插进去就不发。``record_progress`` 只更新
+    provider 原始状态、不改业务状态，不发帧，否则每次轮询上游都会喊一声——本地加工的阶段词也走
+    它，所以最多晚一轮轮询才被看到；``record_reference_cut`` 只改编辑段的区间，同样不发帧；
+    ``mark_failed`` 与 ``mark_completed`` 带状态守卫没命中时返回 None，也不发帧。"""
 
     def __init__(self, inner: GenerationRepository, live: LiveConnections) -> None:
         self._inner = inner
@@ -31,6 +33,29 @@ class AnnouncingGenerationRepository:
 
     async def create(self, job: GenerationJob) -> GenerationJob:
         return self._announce(await self._inner.create(job))
+
+    async def create_settled(self, jobs: Sequence[GenerationJob]) -> tuple[GenerationJob, ...]:
+        return tuple(self._announce(job) for job in await self._inner.create_settled(jobs))
+
+    async def find_image_by_output(
+        self,
+        output_url: str,
+        *,
+        owner: uuid.UUID | None,
+        conversation_id: uuid.UUID | None,
+        inherited: Inheritance = (),
+        operation: GenerationOperation | None = None,
+    ) -> GenerationJob | None:
+        return await self._inner.find_image_by_output(
+            output_url,
+            owner=owner,
+            conversation_id=conversation_id,
+            inherited=inherited,
+            operation=operation,
+        )
+
+    async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
+        return await self._inner.output_urls(ids)
 
     async def get(
         self, job_id: uuid.UUID, *, owner: uuid.UUID | None, inherited: Inheritance = ()
@@ -44,9 +69,12 @@ class AnnouncingGenerationRepository:
         limit: int,
         conversation_id: uuid.UUID | None = None,
         kind: GenerationKind | None = None,
+        operation: GenerationOperation | None = None,
         metadata: Mapping[str, Any] | None = None,
         task_id: uuid.UUID | None = None,
+        shot_index: int | None = None,
         root_job_id: uuid.UUID | None = None,
+        source_job_id: uuid.UUID | None = None,
         before: uuid.UUID | None = None,
         inherited: Inheritance = (),
     ) -> tuple[GenerationJob, ...]:
@@ -55,9 +83,12 @@ class AnnouncingGenerationRepository:
             limit=limit,
             conversation_id=conversation_id,
             kind=kind,
+            operation=operation,
             metadata=metadata,
             task_id=task_id,
+            shot_index=shot_index,
             root_job_id=root_job_id,
+            source_job_id=source_job_id,
             before=before,
             inherited=inherited,
         )
@@ -71,14 +102,10 @@ class AnnouncingGenerationRepository:
         *,
         provider_task_id: str,
         provider_status: str,
-        provider_snapshot: dict[str, Any],
     ) -> GenerationJob:
         return self._announce(
             await self._inner.mark_submitted(
-                job_id,
-                provider_task_id=provider_task_id,
-                provider_status=provider_status,
-                provider_snapshot=provider_snapshot,
+                job_id, provider_task_id=provider_task_id, provider_status=provider_status
             )
         )
 
@@ -88,18 +115,18 @@ class AnnouncingGenerationRepository:
         *,
         output_url: str,
         provider_status: str,
-        provider_snapshot: dict[str, Any],
         provider_task_id: str | None = None,
         watermark_output_url: str | None = None,
+        duration_ms: int | None = None,
         only_if_status: GenerationStatus | None = None,
     ) -> GenerationJob | None:
         job = await self._inner.mark_completed(
             job_id,
             output_url=output_url,
             provider_status=provider_status,
-            provider_snapshot=provider_snapshot,
             provider_task_id=provider_task_id,
             watermark_output_url=watermark_output_url,
+            duration_ms=duration_ms,
             only_if_status=only_if_status,
         )
         return None if job is None else self._announce(job)
@@ -111,7 +138,6 @@ class AnnouncingGenerationRepository:
         error_code: str,
         error_message: str,
         provider_status: str | None = None,
-        provider_snapshot: dict[str, Any] | None = None,
         only_if_status: GenerationStatus | None = None,
     ) -> GenerationJob | None:
         job = await self._inner.mark_failed(
@@ -119,7 +145,6 @@ class AnnouncingGenerationRepository:
             error_code=error_code,
             error_message=error_message,
             provider_status=provider_status,
-            provider_snapshot=provider_snapshot,
             only_if_status=only_if_status,
         )
         return None if job is None else self._announce(job)
@@ -129,13 +154,24 @@ class AnnouncingGenerationRepository:
         job_id: uuid.UUID,
         *,
         provider_status: str,
-        provider_snapshot: dict[str, Any] | None = None,
         only_if_status: GenerationStatus | None = None,
     ) -> GenerationJob | None:
         return await self._inner.record_progress(
+            job_id, provider_status=provider_status, only_if_status=only_if_status
+        )
+
+    async def record_reference_cut(
+        self,
+        job_id: uuid.UUID,
+        *,
+        range_start_ms: int,
+        range_end_ms: int,
+        only_if_status: GenerationStatus,
+    ) -> GenerationJob | None:
+        return await self._inner.record_reference_cut(
             job_id,
-            provider_status=provider_status,
-            provider_snapshot=provider_snapshot,
+            range_start_ms=range_start_ms,
+            range_end_ms=range_end_ms,
             only_if_status=only_if_status,
         )
 
@@ -150,7 +186,9 @@ class AnnouncingGenerationRepository:
             job.conversation_id,
             job_id=job.id,
             kind=job.kind,
+            operation=job.operation,
             status=job.status,
+            shot_index=job.shot_index,
             metadata=job.metadata,
         )
         return job

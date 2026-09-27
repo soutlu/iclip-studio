@@ -5,8 +5,8 @@ ProviderError 用于写入任务错误信息；retryable 仅供允许重试的�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn, VideoGenerationIn
@@ -24,12 +24,12 @@ class ProviderError(Exception):
 
 
 def request_of[R](job: GenerationJob, expected: type[R], *, provider: str) -> R:
-    """取出这家能处理的那类请求。kind 对不上说明任务排错了队，抛 ``PROVIDER_KIND_MISMATCH``。"""
+    """取出这家能处理的那类请求。对不上说明任务排错了队，抛 ``PROVIDER_KIND_MISMATCH``。"""
 
     request = job.request
     if not isinstance(request, expected):
         raise ProviderError(
-            f"{provider} 收到了 {job.kind} 请求",
+            f"{provider} 收到了 {job.kind} / {job.operation} 请求",
             code="PROVIDER_KIND_MISMATCH",
             retryable=False,
         )
@@ -70,9 +70,10 @@ class ProviderSubmission:
 
     provider_task_id: str
     provider_status: str
-    raw: dict[str, Any] = field(default_factory=dict[str, Any])
     output_url: str | None = None
     """同步接口一次调用就出结果，直接带回来；异步接口这里是 ``None``。"""
+    duration_ms: int | None = None
+    """产物量出来的时长（毫秒）；只有本地加工知道，完成时落进记录的时长列。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +82,6 @@ class ProviderProgress:
 
     outcome: ProviderOutcome
     provider_status: str
-    raw: dict[str, Any] = field(default_factory=dict[str, Any])
     output_url: str | None = None
     """``outcome == "succeeded"`` 时必有。"""
     watermark_output_url: str | None = None

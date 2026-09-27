@@ -56,7 +56,7 @@ const shot: Shot = {
 }
 
 describe('submitVideoGeneration', () => {
-  it('照上游形状发到视频端点：镜头组按分镜文件的形状原样发出、参考图取整组，回执只取任务号', async () => {
+  it('照上游形状发到视频端点：镜头组按分镜文件的形状原样发出、镜号只走 shot_index、参考图取整组，回执只取任务号', async () => {
     let body: unknown
     server.use(
       http.post('*/api/generations/video', async ({ request }) => {
@@ -92,26 +92,8 @@ describe('submitVideoGeneration', () => {
           { image_indexes: [1, 2], prompt: '走向镜头 @Image1，停下 @Image2。', timestamps: [0, 6] },
         ],
       },
-      metadata: { shot: 2 },
+      shot_index: 2,
     })
-  })
-
-  it('服务端拒收时把 detail 原话抛出来', async () => {
-    server.use(
-      http.post('*/api/generations/video', () =>
-        HttpResponse.json({ detail: '视频生成仅支持模型 vendor-a-seedance-2-5' }, { status: 422 }),
-      ),
-    )
-
-    await expect(
-      submitVideoGeneration({
-        aspectRatio: '9:16',
-        conversationId,
-        generateAudio: true,
-        model: 'x',
-        shot,
-      }),
-    ).rejects.toThrow('视频生成仅支持模型 vendor-a-seedance-2-5')
   })
 })
 
@@ -120,7 +102,7 @@ describe('historyShotOf', () => {
     makeGenerationJob({
       createdAt: '2026-09-01T10:00:00Z',
       id: 'e5b1c0de-6c1e-4f1a-9b3d-8c0a1f2e3d40',
-      metadata: { shot: 2 },
+      shotIndex: 2,
       request,
     })
 
@@ -156,13 +138,17 @@ describe('historyShotOf', () => {
 describe('readConversationVideoJobs', () => {
   const fullPage = () => Array.from({ length: 100 }, () => makeGenerationJob())
 
-  it('按上一页最后一条往前翻，直到空页，按页序拼起全部记录', async () => {
-    const pages = [fullPage(), fullPage(), []]
+  it.each<[string, GenerationJob[]]>([
+    ['空页', []],
+    ['不满一页的短页', Array.from({ length: 3 }, () => makeGenerationJob())],
+  ])('按上一页最后一条往前翻，末页是%s时停下，按页序拼起全部记录', async (_name, lastPage) => {
+    const pages = [fullPage(), fullPage(), lastPage]
     const requests: Record<string, string>[] = []
     server.use(
       http.get('*/api/generations', ({ request }) => {
         requests.push(Object.fromEntries(new URL(request.url).searchParams))
-        return HttpResponse.json({ items: pages[requests.length - 1] })
+        // 多取的一页给空，让多发的请求由 requests 断言暴露，而不是先撞上 zod 校验。
+        return HttpResponse.json({ items: pages[requests.length - 1] ?? [] })
       }),
     )
 

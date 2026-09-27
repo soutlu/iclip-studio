@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { FakeSocket } from '@/testing/ws'
+import { FakeSocket, SERVER_HELLO } from '@/testing/ws'
 import { TranscriptConnection, type SessionUpdate, type TranscriptOps } from './connection'
 
 const SNAPSHOT = {
@@ -29,11 +29,6 @@ function ops(seq: number, conversationId = 'c1', list: TranscriptOps = []) {
   }
 }
 
-const HELLO = {
-  type: 'server_hello',
-  payload: { ws_connection_id: 'w1', protocol_version: 2, heartbeat_ms: 10_000 },
-}
-
 /** 塞进坏帧里的正文，告警里不该出现。 */
 const BODY = '帧正文不进日志'
 
@@ -53,7 +48,7 @@ const MALFORMED = [
   }),
   malformed('event.generation.changed', {
     session_id: 'c9',
-    payload: { id: 'job-9', kind: BODY, status: 'submitted' },
+    payload: { id: 'job-9', kind: BODY, operation: 'generate', status: 'submitted' },
   }),
   malformed('event.fs.changed', {
     session_id: 'c1',
@@ -93,7 +88,7 @@ describe('TranscriptConnection', () => {
         },
       })
     }
-    socket.deliver(HELLO)
+    socket.deliver(SERVER_HELLO)
     return connection
   }
 
@@ -162,7 +157,7 @@ describe('TranscriptConnection', () => {
     before.onclose?.()
     vi.advanceTimersByTime(2_000)
     // 测试工厂复用原 socket，重订帧仍发送到同一对象。
-    socket.deliver(HELLO)
+    socket.deliver(SERVER_HELLO)
 
     const resubscribed = before
       .frames()
@@ -200,7 +195,7 @@ describe('TranscriptConnection', () => {
 
     socket.onclose?.()
     vi.advanceTimersByTime(2_000)
-    socket.deliver(HELLO)
+    socket.deliver(SERVER_HELLO)
 
     expect(
       socket
@@ -280,7 +275,7 @@ describe('TranscriptConnection', () => {
     })
     connection.connect()
     connection.subscribe('c1', { onReset: () => undefined, onOps: () => true })
-    sockets[0]?.deliver(HELLO)
+    sockets[0]?.deliver(SERVER_HELLO)
     sockets[0]?.deliver(ops(7))
     expect(connection.watermarkOf('c1', 'main')).toBe(7)
 
@@ -290,7 +285,7 @@ describe('TranscriptConnection', () => {
     expect(sockets).toHaveLength(2)
     expect(sockets[0]?.onclose).toBeNull()
 
-    sockets[1]?.deliver(HELLO)
+    sockets[1]?.deliver(SERVER_HELLO)
     const sent = sockets[1]?.frames() ?? []
     expect(sent[0]?.type).toBe('subscribe_v2')
     expect(sent[0]?.payload?.['transcript_since']).toEqual({ main: 7 })
@@ -322,6 +317,7 @@ describe('TranscriptConnection', () => {
       payload: {
         id: 'job-1',
         kind: 'image',
+        operation: 'generate',
         status: 'submitted',
         metadata: { shot: 2, frame: 3 },
       },
@@ -329,7 +325,18 @@ describe('TranscriptConnection', () => {
     // 任务没有来源对话时信封上没有 session_id，空的归属字段服务端整个省略。
     socket.deliver({
       type: 'event.generation.changed',
-      payload: { id: 'job-2', kind: 'video', status: 'failed' },
+      payload: { id: 'job-2', kind: 'video', operation: 'compose', status: 'failed' },
+    })
+    socket.deliver({
+      type: 'event.generation.changed',
+      session_id: 'c9',
+      payload: {
+        id: 'job-3',
+        kind: 'video',
+        operation: 'generate',
+        status: 'pending',
+        shot_index: 2,
+      },
     })
 
     expect(seen).toEqual([
@@ -363,6 +370,14 @@ describe('TranscriptConnection', () => {
         kind: 'generation',
         metadata: null,
         status: 'failed',
+      },
+      {
+        conversationId: 'c9',
+        jobId: 'job-3',
+        jobKind: 'video',
+        kind: 'generation',
+        metadata: null,
+        status: 'pending',
       },
     ])
   })
@@ -597,7 +612,7 @@ describe('TranscriptConnection', () => {
 
     before.onclose?.()
     vi.advanceTimersByTime(2_000)
-    socket.deliver(HELLO)
+    socket.deliver(SERVER_HELLO)
 
     const watches = before.frames().filter((frame) => frame.type === 'watch_fs_add')
     expect(watches).toHaveLength(2)

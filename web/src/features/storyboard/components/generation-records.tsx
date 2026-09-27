@@ -7,21 +7,20 @@ import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button, IconButton } from '@/shared/ui/button'
 import { MediaLightbox } from '@/shared/ui/media-lightbox'
 import { StatusBadge } from '@/shared/ui/status-badge'
-import { isShotVideo } from '../generation-metadata'
 import type { Shot } from '../shot-document'
-import { phaseOfStatus } from '../shots'
+import { isShotVideo, phaseOfStatus } from '../shots'
 import { historyShotOf, type GenerationJob } from '../storyboard.api'
 import { VideoDownload } from '@/shared/ui/video-download'
 
 /** request 是不透明 JSON，只从里面读两个字串来展示：prompt 与 model。 */
 const promptOf = (job: GenerationJob): string | undefined => {
-  const prompt = job.request['prompt']
+  const prompt = job.request?.['prompt']
   return typeof prompt === 'string' ? prompt : undefined
 }
 
 /** 历史请求用的模型名；缺失或空白视为没记。 */
 const modelOf = (job: GenerationJob): string | undefined => {
-  const model = job.request['model']
+  const model = job.request?.['model']
   const trimmed = typeof model === 'string' ? model.trim() : ''
   return trimmed === '' ? undefined : trimmed
 }

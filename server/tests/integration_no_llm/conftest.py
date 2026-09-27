@@ -50,12 +50,7 @@ def pg_url() -> Generator[str]:
     try:
         from testcontainers.community.postgres import PostgresContainer
     except ImportError:
-        try:
-            from testcontainers.postgres import (
-                PostgresContainer,
-            )  # 兼容 testcontainers 的旧导入路径。
-        except ImportError:
-            pytest.skip("无 TEST_DATABASE_URL 且未安装 testcontainers")
+        pytest.skip("无 TEST_DATABASE_URL 且未安装 testcontainers")
     try:
         container = PostgresContainer("postgres:16", driver="asyncpg")
         container.start()
@@ -99,7 +94,7 @@ async def _reset(url: str) -> None:
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    """清空测试表后给出引擎；runner 与 transcript 场景测试直接用它装配。"""
+    """清空测试表后给出引擎，供直接装配仓储、报表与运行时的测试使用。"""
 
     await _reset(migrated_pg)
     engine = create_async_engine(migrated_pg)
@@ -141,11 +136,19 @@ async def app(
 
 
 @pytest.fixture
+def cors_allow_origins() -> tuple[str, ...]:
+    """测试可覆写：WS app 的跨域白名单（默认空，只认同源）。"""
+
+    return ()
+
+
+@pytest.fixture
 def ws_agent_app(
     base_env: None,
     migrated_pg: str,
     agent_declarations: tuple[ResolvedAgent, ...],
     models: dict[str, TestModel],
+    cors_allow_origins: tuple[str, ...],
 ) -> Generator[FastAPI]:
     """在 TestClient 事件循环中装配带 agent 的 WS app。
 
@@ -155,24 +158,11 @@ def ws_agent_app(
     asyncio.run(_reset(migrated_pg))
     engine = create_async_engine(migrated_pg, poolclass=NullPool)
     yield build_app(
-        make_runtime_config(),
+        make_runtime_config(cors_allow_origins=cors_allow_origins),
         agents=agent_declarations,
         engine=engine,
         models=models,
     )
-    asyncio.run(engine.dispose())
-
-
-@pytest.fixture
-def ws_app(base_env: None, migrated_pg: str) -> Generator[FastAPI]:
-    """在 TestClient 事件循环中装配 WS app。
-
-    使用 NullPool 避免 asyncpg 连接跨事件循环复用。
-    """
-
-    asyncio.run(_reset(migrated_pg))
-    engine = create_async_engine(migrated_pg, poolclass=NullPool)
-    yield build_app(make_runtime_config(), engine=engine)
     asyncio.run(engine.dispose())
 
 

@@ -1,4 +1,4 @@
-"""直接调用任务协程，验证生成状态推进、提交幂等边界、队列选择和失联任务恢复。"""
+"""直接调用任务协程，验证生成状态推进、提交幂等边界和队列选择；失联任务恢复在 PG 集成测试里。"""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
     GenerationJob,
+    GenerationStatus,
 )
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -33,6 +34,7 @@ from tests.helpers.generation import (
     InMemoryGenerationRepository,
     ScriptedProvider,
     build_queue,
+    compose_request,
     image_request,
     make_job,
     video_request,
@@ -52,7 +54,6 @@ async def test_async_submit_moves_job_to_waiting_for_result() -> None:
     stored = repo.jobs[job.id]
     assert stored.status == STATUS_SUBMITTED
     assert stored.provider_task_id == "t-1"
-    assert stored.submitted_at is not None
 
     polls = [row for row in connector.jobs.values() if row["task_name"] == "generation.poll"]
     assert len(polls) == 1, "提交完必须排一次轮询，否则永远没人问结果"
@@ -77,8 +78,30 @@ async def test_sync_submit_completes_in_one_step() -> None:
     stored = repo.jobs[job.id]
     assert stored.status == STATUS_COMPLETED
     assert stored.output_url == "https://cdn.test/out.png"
+    assert stored.provider_task_id == str(job.id)
     assert image.poll_calls == [], "同步接口不该被轮询"
     assert connector.jobs == {}, "已经终态了，别再排一次轮询"
+
+
+async def test_a_sync_result_lands_its_measured_duration_on_the_record() -> None:
+    """本地加工一次出结果，量出来的时长随完成落进记录。"""
+
+    job = make_job(compose_request())
+    repo = InMemoryGenerationRepository([job])
+    local = ScriptedProvider(
+        submission=ProviderSubmission(
+            provider_task_id=str(job.id),
+            provider_status="completed",
+            output_url="https://cdn.test/master.mp4",
+            duration_ms=7040,
+        )
+    )
+
+    queue, _ = build_queue(repo, video=local)
+    await queue.run_submit(str(job.id))
+
+    stored = repo.jobs[job.id]
+    assert (stored.status, stored.duration_ms) == (STATUS_COMPLETED, 7040)
 
 
 async def test_marks_submitting_before_calling_provider() -> None:
@@ -263,15 +286,31 @@ async def test_job_stuck_running_forever_eventually_times_out() -> None:
 async def test_stranded_cleanup_never_overwrites_a_real_result() -> None:
     """失联恢复可能与原 worker 返回结果并发；清理更新不得覆盖已成功结果。"""
 
-    job = make_job(image_request(), status=STATUS_SUBMITTING)
-    repo = InMemoryGenerationRepository([job])
+    class CompletedDuringCleanup(InMemoryGenerationRepository):
+        """收尾写入落下之前，原 worker 带着结果先写完了这一行。"""
 
-    await repo.mark_completed(
-        job.id,
-        output_url="https://cdn.test/out.png",
-        provider_status="succeeded",
-        provider_snapshot={},
-    )
+        async def mark_failed(
+            self,
+            job_id: uuid.UUID,
+            *,
+            error_code: str,
+            error_message: str,
+            provider_status: str | None = None,
+            only_if_status: GenerationStatus | None = None,
+        ) -> GenerationJob | None:
+            await self.mark_completed(
+                job_id, output_url="https://cdn.test/out.png", provider_status="succeeded"
+            )
+            return await super().mark_failed(
+                job_id,
+                error_code=error_code,
+                error_message=error_message,
+                provider_status=provider_status,
+                only_if_status=only_if_status,
+            )
+
+    job = make_job(image_request(), status=STATUS_SUBMITTING)
+    repo = CompletedDuringCleanup([job])
 
     queue, _ = build_queue(repo)
     await queue.run_submit(str(job.id))
@@ -280,54 +319,6 @@ async def test_stranded_cleanup_never_overwrites_a_real_result() -> None:
     assert stored.status == STATUS_COMPLETED
     assert stored.output_url == "https://cdn.test/out.png"
     assert stored.error_code is None
-
-
-async def test_sync_submit_records_the_reconciliation_id_and_timing() -> None:
-    """同步接口仅一次状态跳转，对账 id 与提交时间须在此阶段记录。"""
-
-    job = make_job(image_request())
-    repo = InMemoryGenerationRepository([job])
-    image = ScriptedProvider(
-        submission=ProviderSubmission(
-            provider_task_id=str(job.id),
-            provider_status="succeeded",
-            output_url="https://cdn.test/out.png",
-        )
-    )
-
-    queue, _ = build_queue(repo, image=image)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert stored.status == STATUS_COMPLETED
-    assert stored.provider_task_id == str(job.id)
-    assert stored.submitted_at is not None
-    assert stored.finished_at is not None
-
-
-async def test_async_submit_keeps_the_original_submitted_at() -> None:
-
-    job = make_job(video_request())
-    repo = InMemoryGenerationRepository([job])
-    video = ScriptedProvider(
-        submission=ProviderSubmission(provider_task_id="t-1", provider_status="queued")
-    )
-    queue, _ = build_queue(repo, video=video)
-    await queue.run_submit(str(job.id))
-    submitted_at = repo.jobs[job.id].submitted_at
-    assert submitted_at is not None
-
-    video_done = ScriptedProvider(
-        progress=ProviderProgress(
-            outcome="succeeded",
-            provider_status="succeeded",
-            output_url="https://cdn.test/v.mp4",
-        )
-    )
-    queue, _ = build_queue(repo, video=video_done)
-    await queue.run_poll(str(job.id))
-
-    assert repo.jobs[job.id].submitted_at == submitted_at
 
 
 async def test_submit_fails_loudly_when_the_provider_is_not_assembled() -> None:
@@ -392,47 +383,6 @@ async def test_each_provider_goes_to_its_own_queue() -> None:
 
     routed = {row["queue_name"] for row in connector.jobs.values()}
     assert routed == {submit_queue(FAKE_VIDEO_PROVIDER), submit_queue(FAKE_IMAGE_PROVIDER)}
-
-
-async def test_stalled_job_of_a_dead_worker_is_picked_back_up() -> None:
-    """procrastinate 维护心跳但不自动恢复失联 worker 的任务，需显式重排。"""
-
-    job = make_job(video_request())
-    repo = InMemoryGenerationRepository([job])
-    queue, connector = build_queue(repo)
-    await queue.enqueue_submit(job)
-
-    # 模拟任务已认领且 worker 心跳过期。
-    worker_id = await queue.app.job_manager.register_worker()
-    queued = await queue.app.job_manager.fetch_job(
-        queues=[submit_queue(FAKE_VIDEO_PROVIDER)], worker_id=worker_id
-    )
-    assert queued is not None and queued.id is not None
-    assert connector.jobs[queued.id]["status"] == "doing"
-    connector.workers[worker_id] = datetime.now(UTC) - timedelta(
-        seconds=QUEUE_SETTINGS.stalled_worker_timeout_seconds + 60
-    )
-
-    assert await queue.heal_stalled() == 1
-    assert connector.jobs[queued.id]["status"] == "todo", "捡回去重排，等着守卫来收尾"
-
-
-async def test_healer_leaves_a_live_workers_job_alone() -> None:
-    """存活由 worker 心跳决定，不能因长耗时生成而重排其任务。"""
-
-    job = make_job(image_request())
-    repo = InMemoryGenerationRepository([job])
-    queue, connector = build_queue(repo)
-    await queue.enqueue_submit(job)
-
-    worker_id = await queue.app.job_manager.register_worker()
-    queued = await queue.app.job_manager.fetch_job(
-        queues=[submit_queue(FAKE_IMAGE_PROVIDER)], worker_id=worker_id
-    )
-    assert queued is not None and queued.id is not None
-
-    assert await queue.heal_stalled() == 0
-    assert connector.jobs[queued.id]["status"] == "doing"
 
 
 _ANY_JOB = QueuedJob(

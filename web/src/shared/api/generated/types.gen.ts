@@ -383,64 +383,6 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
- * ClipIn
- *
- * 一次本地视频加工：按顺序裁出各段拼成一条，产物是本系统桶里的公开地址。
- *
- * ``reference`` 是编辑时切给模型看的参考片段，只能在一条完整视频上裁一段，不重编码
- * （起点因此落在最近的关键帧上，产物可能比区间略长）；``master`` 是拼出来的成片，各段
- * 参数互不相同，一律重编码对齐。两者存在不同前缀下，成片不进过期规则。
- */
-export type ClipIn = {
-  /**
-   * Conversationid
-   */
-  conversationId?: string | null
-  /**
-   * Metadata
-   */
-  metadata?: {
-    [key: string]: unknown
-  } | null
-  /**
-   * Purpose
-   */
-  purpose: 'reference' | 'master'
-  /**
-   * Rootjobid
-   */
-  rootJobId?: string | null
-  /**
-   * Segments
-   */
-  segments: Array<ClipSegmentIn>
-  /**
-   * Taskid
-   */
-  taskId?: string | null
-}
-
-/**
- * ClipSegmentIn
- *
- * 从一条视频里取 ``[start, end)`` 这一段，单位秒。
- */
-export type ClipSegmentIn = {
-  /**
-   * End
-   */
-  end: number
-  /**
-   * Start
-   */
-  start: number
-  /**
-   * Url
-   */
-  url: string
-}
-
-/**
  * CollectionEnvelope
  */
 export type CollectionEnvelope = {
@@ -978,17 +920,17 @@ export type ErrorModel = {
 /**
  * FaceOut
  *
- * 卡面放哪一条：这一镜最新的成片，没有成片就是最新一次出片。
+ * 一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
  */
 export type FaceOut = {
-  /**
-   * Createdat
-   */
-  createdAt: string
   /**
    * Durationms
    */
   durationMs: number | null
+  /**
+   * Finishedat
+   */
+  finishedAt: string
   /**
    * Jobid
    */
@@ -996,11 +938,15 @@ export type FaceOut = {
   /**
    * Kind
    */
-  kind: 'take' | 'master'
+  kind: 'take' | 'composite'
   /**
    * Outputurl
    */
   outputUrl: string
+  /**
+   * Username
+   */
+  userName: string | null
   /**
    * Watermarkoutputurl
    */
@@ -1075,9 +1021,8 @@ export type GenerationEnvelope = {
  *
  * 一次生成对外的样子。
  *
- * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、原始
- * 快照、租约与各段时间戳都是排队与排障的内部机制，快照里还带着 provider 的签名
- * URL；来源对话不写回去——查的时候本来就是按它查的。
+ * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、上游任务号
+ * 与状态词、提交时刻都是排队与排障的内部机制；来源对话不写回去——查的时候本来就是按它查的。
  */
 export type GenerationOut = {
   /**
@@ -1097,13 +1042,17 @@ export type GenerationOut = {
    */
   errorMessage: string | null
   /**
+   * Finishedat
+   */
+  finishedAt?: string | null
+  /**
    * Id
    */
   id: string
   /**
    * Kind
    */
-  kind: 'video' | 'image' | 'clip'
+  kind: 'video' | 'image'
   /**
    * Metadata
    */
@@ -1111,19 +1060,43 @@ export type GenerationOut = {
     [key: string]: unknown
   } | null
   /**
+   * Operation
+   */
+  operation: 'generate' | 'compose' | 'cut' | 'upload'
+  /**
    * Outputurl
    */
   outputUrl: string | null
+  /**
+   * Rangeendms
+   */
+  rangeEndMs?: number | null
+  /**
+   * Rangestartms
+   */
+  rangeStartMs?: number | null
   /**
    * Request
    */
   request: {
     [key: string]: unknown
-  }
+  } | null
   /**
    * Rootjobid
    */
   rootJobId: string | null
+  /**
+   * Shotindex
+   */
+  shotIndex?: number | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId?: string | null
+  /**
+   * Sourceurl
+   */
+  sourceUrl?: string | null
   /**
    * Status
    */
@@ -1212,9 +1185,9 @@ export type ImageGenerationIn = {
    */
   resolution?: '1k' | '2k' | '4k'
   /**
-   * Rootjobid
+   * Sourceurl
    */
-  rootJobId?: string | null
+  sourceUrl?: string | null
   /**
    * Taskid
    */
@@ -1353,20 +1326,17 @@ export type LibraryAuthorsOut = {
  */
 export type LibraryVideoDetailOut = {
   /**
-   * Siblings
+   * Groups
    */
-  siblings: Array<LibraryVideoOut>
-  /**
-   * Takes
-   */
-  takes: Array<TakeOut>
+  groups: Array<ShotGroupOut>
   video: LibraryVideoOut
 }
 
 /**
  * LibraryVideoOut
  *
- * 资料库的一张卡：一镜，即（对话，镜号）下的全部成功出片；没有镜号的出片一条一张。
+ * 资料库的一张卡：一段对话的分镜，装着这段对话读得到的全部成片（自己的加继承来的）；
+ * 不挂对话的出片一条一张卡，同原作的合成跟着它。
  */
 export type LibraryVideoOut = {
   /**
@@ -1374,23 +1344,23 @@ export type LibraryVideoOut = {
    */
   agentId: string | null
   /**
+   * Canopenconversation
+   */
+  canOpenConversation: boolean
+  /**
    * Conversationid
    */
   conversationId: string | null
   face: FaceOut
   /**
+   * Groupcount
+   */
+  groupCount: number
+  /**
    * Id
    */
   id: string
-  /**
-   * Shotindex
-   */
-  shotIndex: number | null
   take: TakeOut
-  /**
-   * Takecount
-   */
-  takeCount: number
   /**
    * Taskid
    */
@@ -1399,6 +1369,14 @@ export type LibraryVideoOut = {
    * Title
    */
   title: string | null
+  /**
+   * Username
+   */
+  userName: string | null
+  /**
+   * Versioncount
+   */
+  versionCount: number
 }
 
 /**
@@ -1417,30 +1395,6 @@ export type LibraryVideosOut = {
    * Total
    */
   total: number | null
-}
-
-/**
- * MasterOut
- *
- * 挂在一次出片名下的成片（视频编辑确认合成的那条）。
- */
-export type MasterOut = {
-  /**
-   * Createdat
-   */
-  createdAt: string
-  /**
-   * Durationms
-   */
-  durationMs: number | null
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Outputurl
-   */
-  outputUrl: string
 }
 
 /**
@@ -1843,6 +1797,22 @@ export type ScriptOut = {
 }
 
 /**
+ * ShotGroupOut
+ *
+ * 卡里的一个镜头组：有镜号的按镜号成组；没有镜号的是一条出片连同同原作的合成。
+ */
+export type ShotGroupOut = {
+  /**
+   * Shotindex
+   */
+  shotIndex: number | null
+  /**
+   * Versions
+   */
+  versions: Array<VersionOut>
+}
+
+/**
  * ShotOut
  */
 export type ShotOut = {
@@ -2089,17 +2059,13 @@ export type SummaryOut = {
 /**
  * TakeOut
  *
- * 一次成功出片。参数与脚本照出片那一刻的请求。
+ * 一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
  */
 export type TakeOut = {
   /**
    * Aspectratio
    */
   aspectRatio: string | null
-  /**
-   * Createdat
-   */
-  createdAt: string
   /**
    * Generateaudio
    */
@@ -2109,17 +2075,9 @@ export type TakeOut = {
    */
   id: string
   /**
-   * Masters
-   */
-  masters: Array<MasterOut>
-  /**
    * Model
    */
   model: string | null
-  /**
-   * Outputurl
-   */
-  outputUrl: string
   /**
    * Prompt
    */
@@ -2137,14 +2095,6 @@ export type TakeOut = {
    * Seconds
    */
   seconds: number | null
-  /**
-   * Username
-   */
-  userName: string | null
-  /**
-   * Watermarkoutputurl
-   */
-  watermarkOutputUrl: string | null
 }
 
 /**
@@ -3005,6 +2955,18 @@ export type TurnUsage = {
 }
 
 /**
+ * UploadConfirmIn
+ *
+ * 确认上传时可选的请求体：替谁确认。
+ */
+export type UploadConfirmIn = {
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
  * UploadConfirmedOut
  *
  * 确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。
@@ -3079,7 +3041,7 @@ export type UploadSignIn = {
  * 一次直传的许可：先拿到名字，再去传。
  *
  * ``uploadId`` 在字节落地之前就发下来，因为传这个副作用发生之前，双方必须先就「它
- * 叫什么」达成一致。它只用来确认这一次上传，不是任何东西的身份。
+ * 叫什么」达成一致。确认时用它指这一次上传，确认后它就是那条上传记录的 id。
  */
 export type UploadTicketOut = {
   upload: UploadInstruction
@@ -3310,6 +3272,73 @@ export type UsersPageOut = {
 }
 
 /**
+ * VersionOut
+ *
+ * 详情里的一版：版本头加它对应的出片。
+ */
+export type VersionOut = {
+  /**
+   * Durationms
+   */
+  durationMs: number | null
+  /**
+   * Finishedat
+   */
+  finishedAt: string
+  /**
+   * Jobid
+   */
+  jobId: string
+  /**
+   * Kind
+   */
+  kind: 'take' | 'composite'
+  /**
+   * Outputurl
+   */
+  outputUrl: string
+  take: TakeOut
+  /**
+   * Username
+   */
+  userName: string | null
+  /**
+   * Watermarkoutputurl
+   */
+  watermarkOutputUrl: string | null
+}
+
+/**
+ * VideoComposeIn
+ *
+ * 一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。
+ */
+export type VideoComposeIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
  * VideoContent
  */
 export type VideoContent = {
@@ -3318,6 +3347,70 @@ export type VideoContent = {
    * Type
    */
   type?: 'video'
+}
+
+/**
+ * VideoEditIn
+ *
+ * 一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。
+ *
+ * 与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切
+ * 一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
+ * ``VideoGenerationIn``，来源、原作与区间落列。
+ */
+export type VideoEditIn = {
+  /**
+   * Conversation Id
+   */
+  conversation_id?: string | null
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Model
+   */
+  model: string
+  /**
+   * Prompt
+   */
+  prompt: string
+  /**
+   * Provider Options
+   */
+  provider_options?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Range End Ms
+   */
+  range_end_ms: number
+  /**
+   * Range Start Ms
+   */
+  range_start_ms: number
+  /**
+   * Reference Image Urls
+   */
+  reference_image_urls?: Array<string>
+  /**
+   * Seconds
+   */
+  seconds?: number | null
+  /**
+   * Source Job Id
+   */
+  source_job_id: string
+  /**
+   * Task Id
+   */
+  task_id?: string | null
+  /**
+   * User Name
+   */
+  user_name?: string | null
 }
 
 /**
@@ -3378,10 +3471,6 @@ export type VideoGenerationIn = {
    * Resolution
    */
   resolution?: string | null
-  /**
-   * Root Job Id
-   */
-  root_job_id?: string | null
   /**
    * Seconds
    */
@@ -5075,19 +5164,35 @@ export type ListGenerationsGenerationsGetData = {
      */
     taskId?: string | null
     /**
+     * Shotindex
+     *
+     * 只列这个镜头组编号的视频记录
+     */
+    shotIndex?: number | null
+    /**
      * Kind
      */
-    kind?: 'video' | 'image' | 'clip' | null
+    kind?: 'video' | 'image' | null
+    /**
+     * Operation
+     */
+    operation?: 'generate' | 'compose' | 'cut' | 'upload' | null
     /**
      * Rootjobid
      *
-     * 只列这条出片名下的衍生记录（视频编辑链）
+     * 只列以这条出片为原作的记录（整条编辑链）
      */
     rootJobId?: string | null
     /**
+     * Sourcejobid
+     *
+     * 只列直接基于这一条的记录
+     */
+    sourceJobId?: string | null
+    /**
      * Metadata
      *
-     * JSON 对象；只列坐标包含这些键值的记录，服务端只认其中的 shot
+     * JSON 对象；只列 metadata 包含这些键值的记录，服务端不解释其中的键
      */
     metadata?: string | null
     /**
@@ -5117,33 +5222,6 @@ export type ListGenerationsGenerationsGetResponses = {
 
 export type ListGenerationsGenerationsGetResponse =
   ListGenerationsGenerationsGetResponses[keyof ListGenerationsGenerationsGetResponses]
-
-export type SubmitClipGenerationsClipsPostData = {
-  body: ClipIn
-  path?: never
-  query?: never
-  url: '/generations/clips'
-}
-
-export type SubmitClipGenerationsClipsPostErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type SubmitClipGenerationsClipsPostError =
-  SubmitClipGenerationsClipsPostErrors[keyof SubmitClipGenerationsClipsPostErrors]
-
-export type SubmitClipGenerationsClipsPostResponses = {
-  /**
-   * Successful Response
-   */
-  202: GenerationEnvelope
-}
-
-export type SubmitClipGenerationsClipsPostResponse =
-  SubmitClipGenerationsClipsPostResponses[keyof SubmitClipGenerationsClipsPostResponses]
 
 export type SubmitImageGenerationsImagePostData = {
   body: ImageGenerationIn
@@ -5215,6 +5293,60 @@ export type SubmitVideoGenerationsVideoPostResponses = {
 
 export type SubmitVideoGenerationsVideoPostResponse =
   SubmitVideoGenerationsVideoPostResponses[keyof SubmitVideoGenerationsVideoPostResponses]
+
+export type SubmitVideoCompositeGenerationsVideoCompositesPostData = {
+  body: VideoComposeIn
+  path?: never
+  query?: never
+  url: '/generations/video-composites'
+}
+
+export type SubmitVideoCompositeGenerationsVideoCompositesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitVideoCompositeGenerationsVideoCompositesPostError =
+  SubmitVideoCompositeGenerationsVideoCompositesPostErrors[keyof SubmitVideoCompositeGenerationsVideoCompositesPostErrors]
+
+export type SubmitVideoCompositeGenerationsVideoCompositesPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitVideoCompositeGenerationsVideoCompositesPostResponse =
+  SubmitVideoCompositeGenerationsVideoCompositesPostResponses[keyof SubmitVideoCompositeGenerationsVideoCompositesPostResponses]
+
+export type SubmitVideoEditGenerationsVideoEditsPostData = {
+  body: VideoEditIn
+  path?: never
+  query?: never
+  url: '/generations/video-edits'
+}
+
+export type SubmitVideoEditGenerationsVideoEditsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitVideoEditGenerationsVideoEditsPostError =
+  SubmitVideoEditGenerationsVideoEditsPostErrors[keyof SubmitVideoEditGenerationsVideoEditsPostErrors]
+
+export type SubmitVideoEditGenerationsVideoEditsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitVideoEditGenerationsVideoEditsPostResponse =
+  SubmitVideoEditGenerationsVideoEditsPostResponses[keyof SubmitVideoEditGenerationsVideoEditsPostResponses]
 
 export type ListVideoModelsGenerationsVideoModelsGetData = {
   body?: never
@@ -5768,7 +5900,10 @@ export type SignUploadUploadsSignPostResponse =
   SignUploadUploadsSignPostResponses[keyof SignUploadUploadsSignPostResponses]
 
 export type ConfirmUploadUploadsUploadIdConfirmPostData = {
-  body?: never
+  /**
+   * Body
+   */
+  body?: UploadConfirmIn | null
   path: {
     /**
      * Upload Id

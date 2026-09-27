@@ -1,4 +1,5 @@
-"""媒体生成模块装配。图片按配置里声明的那几家逐个装，视频固定一家，本地裁剪拼接一家。"""
+"""媒体生成模块装配。图片按配置里声明的那几家逐个装，视频固定一家（编辑段交上游前由它先切参考
+片段），本地合成一家。"""
 
 from __future__ import annotations
 
@@ -11,15 +12,19 @@ import httpx
 import procrastinate
 
 from iclip.domains.generation.api import create_generations_router
-from iclip.domains.generation.clip import FfmpegClipProvider, ReportClipStage
 from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
     GatewayImageProvider,
     GatewayImageSettings,
 )
-from iclip.domains.generation.models import STATUS_SUBMITTING
+from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
+from iclip.domains.generation.processing import (
+    FfmpegComposeProvider,
+    ReferenceCutter,
+    ReportStage,
+)
+from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec, ProviderError
 from iclip.domains.generation.queue import (
     GenerationQueue,
     GenerationQueueSettings,
@@ -35,6 +40,7 @@ from iclip.domains.generation.service import (
 )
 from iclip.domains.generation.video import (
     HttpVideoProvider,
+    PrepareReference,
     VideoProviderSettings,
 )
 from iclip.domains.identity.public import ActAs
@@ -85,7 +91,7 @@ def build_generation_module(
 ) -> GenerationModule:
     """装配 Provider 与队列；transport 支持测试替身，queue_connector 由组合根选择数据库驱动。
 
-    对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；裁剪拼接的
+    对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；参考片段与合成的
     产物本来就是我们自己造的。视频上游给的是它自己发布好的稳定地址，不转存。"""
 
     if not image_models:
@@ -96,10 +102,12 @@ def build_generation_module(
             f"默认图片模型 {image_default_model} 不在声明的那几家里（{'、'.join(declared)}）"
         )
     settings = queue_settings or GenerationQueueSettings()
-    video_provider = HttpVideoProvider(video, transport=video_transport)
-    clip_provider = FfmpegClipProvider(
-        object_store=object_store, report_stage=_clip_stage_reporter(repo)
+    report_stage = _clip_stage_reporter(repo)
+    cutter = ReferenceCutter(object_store=object_store, report_stage=report_stage)
+    video_provider = HttpVideoProvider(
+        video, prepare_reference=_reference_preparer(repo, cutter), transport=video_transport
     )
+    compose_provider = FfmpegComposeProvider(object_store=object_store, report_stage=report_stage)
     image_providers = [
         _image_provider(model, env=image_env, object_store=object_store, transport=image_transport)
         for model in image_models
@@ -107,9 +115,10 @@ def build_generation_module(
     queue = GenerationQueue(
         repo,
         lanes=(
+            # 编辑段切参考片段不重编码、只花 IO，与出片共用视频这条 lane。
             ProviderLane(video_provider, settings.video_submit_concurrency),
-            # 裁剪拼接是 CPU 活，和只等网络的提交分开排，免得它把别人的槽位占满。
-            ProviderLane(clip_provider, settings.clip_concurrency),
+            # 合成要整条重编码，是 CPU 活，和只等网络的提交分开排，免得它把别人的槽位占满。
+            ProviderLane(compose_provider, settings.compose_concurrency),
             *(
                 ProviderLane(provider, model.concurrency)
                 for provider, model in zip(image_providers, image_models, strict=True)
@@ -122,7 +131,7 @@ def build_generation_module(
         repo,
         queue,
         video_provider_name=video_provider.name,
-        clip_provider_name=clip_provider.name,
+        compose_provider_name=compose_provider.name,
         video_default_model=video_default_model,
         video_allowed_models=video_allowed_models,
         image_models={name: IMAGE_MODEL_SPECS[name] for name in declared},
@@ -149,11 +158,10 @@ IMAGE_MODEL_SPECS: Final[Mapping[str, ImageModelSpec]] = {
 """各家图片模型的能力声明。"""
 
 
-def _clip_stage_reporter(repo: GenerationRepository) -> ReportClipStage:
+def _clip_stage_reporter(repo: GenerationRepository) -> ReportStage:
     """把 provider 报的阶段落到 provider_status 上，provider 自己不碰数据库。
 
-    只在提交中更新，返回这条是不是还在提交中。不带快照：快照整份覆盖写，捎带上会把完成时
-    那次写打掉。"""
+    只在提交中更新，返回这条是不是还在提交中。"""
 
     async def report(job_id: uuid.UUID, stage: ClipStage) -> bool:
         updated = await repo.record_progress(
@@ -162,6 +170,43 @@ def _clip_stage_reporter(repo: GenerationRepository) -> ReportClipStage:
         return updated is not None
 
     return report
+
+
+def _reference_preparer(repo: GenerationRepository, cutter: ReferenceCutter) -> PrepareReference:
+    """编辑段交上游前的一步：从基底上切参考片段，把实际切点记回这一行，交回片段地址。
+
+    记切点带状态守卫：这一行已不在提交中（别的执行已给它下了结论），就不能再去调付费上游。"""
+
+    async def prepare(job: GenerationJob) -> str:
+        source_id, start_ms, end_ms = job.source_job_id, job.range_start_ms, job.range_end_ms
+        if source_id is None or start_ms is None or end_ms is None:
+            # 组合约束保证编辑段三者齐全；走到这里是把别的行当成编辑段交了过来。
+            raise RuntimeError(f"生成记录 {job.id} 不是编辑段，不该切参考片段")
+        base = await repo.get(source_id, owner=None)
+        if base.output_url is None:
+            raise ProviderError(
+                f"编辑段的基底 {base.id} 没有产物地址",
+                code="MEDIA_SOURCE_UNREACHABLE",
+                retryable=False,
+            )
+        cut = await cutter.cut(
+            job_id=job.id, source_url=base.output_url, start_ms=start_ms, end_ms=end_ms
+        )
+        recorded = await repo.record_reference_cut(
+            job.id,
+            range_start_ms=cut.start_ms,
+            range_end_ms=cut.end_ms,
+            only_if_status=STATUS_SUBMITTING,
+        )
+        if recorded is None:
+            raise ProviderError(
+                "参考片段切好时这次编辑已有结论，不再交给上游",
+                code="EDIT_ALREADY_SETTLED",
+                retryable=False,
+            )
+        return cut.url
+
+    return prepare
 
 
 def _image_provider(

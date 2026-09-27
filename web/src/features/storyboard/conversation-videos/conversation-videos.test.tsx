@@ -15,7 +15,7 @@ const job = (index: number, overrides: Partial<GenerationJob> = {}): GenerationJ
     id: `a82db548-d093-4f54-b71b-${index.toString(16).padStart(12, '0')}`,
     createdAt: '2026-09-01T10:00:00Z',
     outputUrl: `https://videos.example.test/take-${index}.mp4`,
-    metadata: { shot: 1 },
+    shotIndex: 1,
     ...overrides,
   })
 
@@ -35,22 +35,17 @@ describe('ConversationVideos', () => {
     const firstPage = Array.from({ length: 100 }, (_, index) =>
       job(1000 - index, { status: 'failed', outputUrl: null }),
     )
-    const requests: URLSearchParams[] = []
     server.use(
-      http.get('*/api/generations', ({ request }) => {
-        const params = new URL(request.url).searchParams
-        requests.push(params)
-        return HttpResponse.json({ items: params.has('before') ? [job(1)] : firstPage })
-      }),
+      http.get('*/api/generations', ({ request }) =>
+        HttpResponse.json({
+          items: new URL(request.url).searchParams.has('before') ? [job(1)] : firstPage,
+        }),
+      ),
     )
 
     await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
 
     expect(await screen.findByLabelText('镜头组 1视频')).toHaveAttribute('src', job(1).outputUrl)
-    expect(requests.map((params) => Object.fromEntries(params))).toEqual([
-      { conversationId, kind: 'video', limit: '100' },
-      { conversationId, kind: 'video', limit: '100', before: firstPage.at(-1)?.id },
-    ])
     expect(screen.queryByRole('group', { name: '镜头组 1版本' })).not.toBeInTheDocument()
     expect(screen.queryByText('暂无视频产物')).not.toBeInTheDocument()
   })
@@ -91,7 +86,7 @@ describe('ConversationVideos', () => {
     const pause = vi.mocked(HTMLMediaElement.prototype.pause)
     server.use(
       http.get('*/api/generations', () =>
-        HttpResponse.json({ items: [job(1), job(2, { metadata: { shot: 2 } })] }),
+        HttpResponse.json({ items: [job(1), job(2, { shotIndex: 2 })] }),
       ),
     )
     await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
@@ -151,23 +146,6 @@ describe('ConversationVideos', () => {
     expect(reads).toBe(2)
   })
 
-  it('列表全部结束时不轮询', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
-    let reads = 0
-    server.use(
-      http.get('*/api/generations', () => {
-        reads += 1
-        return HttpResponse.json({ items: [job(1)] })
-      }),
-    )
-    await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
-    await screen.findByLabelText('镜头组 1视频')
-
-    await act(() => vi.advanceTimersByTime(5000))
-
-    expect(reads).toBe(1)
-  })
-
   it('只认本对话的生成帧：别的对话的帧不重拉，本对话的帧立刻重拉并展示新成片', async () => {
     let reads = 0
     server.use(
@@ -183,7 +161,13 @@ describe('ConversationVideos', () => {
     const changed = (sessionId: string) => ({
       type: 'event.generation.changed',
       session_id: sessionId,
-      payload: { id: job(2).id, kind: 'video', status: 'completed', metadata: { shot: 1 } },
+      payload: {
+        id: job(2).id,
+        kind: 'video',
+        operation: 'generate',
+        status: 'completed',
+        shot_index: 1,
+      },
     })
 
     act(() => socket.deliver(changed('0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d')))

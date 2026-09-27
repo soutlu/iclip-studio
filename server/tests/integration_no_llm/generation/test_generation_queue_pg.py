@@ -260,11 +260,14 @@ async def test_a_hard_killed_worker_is_found_by_heartbeat(
 
     assert await queue.heal_stalled() == 0
 
+    # 心跳只比失联阈值多过去一点：阈值误接成更长的时限就捡不回来。
     async with engine.begin() as conn:
         await conn.execute(
-            text("UPDATE procrastinate_workers SET last_heartbeat = NOW() - INTERVAL '1 hour'")
+            text(
+                "UPDATE procrastinate_workers"
+                " SET last_heartbeat = NOW() - make_interval(secs => :seconds)"
+            ),
+            {"seconds": SETTINGS.stalled_worker_timeout_seconds + 15},
         )
     assert await queue.heal_stalled() == 1
-    assert await _submit_task_statuses(engine) == ["todo"], "捡回去重排，等着守卫来收尾"
-
     assert await _submit_task_statuses(engine) == ["todo"], "捡回去重排，等着守卫来收尾"

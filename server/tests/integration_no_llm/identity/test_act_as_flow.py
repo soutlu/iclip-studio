@@ -95,13 +95,21 @@ async def test_key_without_act_as_keeps_records_under_the_key_owner(
         assert (await root.get("/users")).json()["total"] == 1
 
 
+@pytest.mark.parametrize("registered", [False, True], ids=["placeholder", "registered"])
 async def test_act_as_key_can_prompt_the_conversation_it_opened_for_someone(
-    app: FastAPI, migrated_pg: str
+    app: FastAPI, migrated_pg: str, registered: bool
 ) -> None:
-    """上午出事的那条路：替人开的对话属主已换成他，同一把钥匙接着替他发消息必须还进得去。"""
+    """上午出事的那条路：替人开的对话属主已换成他，同一把钥匙接着替他发消息必须还进得去。
+    他已注册过就记在他的账号上，没有就记在占位账号上；两种都只有他一个账号。"""
 
     async with make_client(app) as root:
         _, token = await issue_key(root, migrated_pg, ACT_AS_GRANTS)
+        person_id: str | None = None
+        if registered:
+            async with make_client(app) as person:
+                person_id = await register_and_login(
+                    person, username="Sara.Hong", email="sara.hong@example.com"
+                )
         async with machine(app, token) as gateway:
             opened = await gateway.post(
                 "/conversations", json={"agentId": "storyboard", "userName": "Sara.Hong"}
@@ -119,8 +127,13 @@ async def test_act_as_key_can_prompt_the_conversation_it_opened_for_someone(
             await settled(gateway, conversation_id)
 
         owner = await job_owner(migrated_pg, conversation_id)
-        users = (await root.get("/users")).json()["items"]
-        assert owner == next(user["id"] for user in users if user["username"] == "Sara.Hong")
+        listing = (await root.get("/users")).json()
+        assert owner == next(
+            user["id"] for user in listing["items"] if user["username"] == "Sara.Hong"
+        )
+        if person_id is not None:
+            assert owner == person_id
+        assert listing["total"] == 2, "钥匙属主加 Sara.Hong 一个账号，不多建占位"
 
 
 async def job_owner(pg_url: str, conversation_id: str) -> str:

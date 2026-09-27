@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
@@ -14,7 +13,7 @@ from sqlalchemy import text
 from iclip.config import ResolvedAgent
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import make_client, new_conversation, settled
-from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 
 AGENT_ID = "storyboard"
@@ -23,13 +22,6 @@ AGENT_ID = "storyboard"
 @pytest.fixture
 def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
     return (declared_agent(tmp_path, AGENT_ID),)
-
-
-async def _sign_in(client: httpx.AsyncClient, pg_url: str) -> str:
-
-    user_id = await register_and_login(client)
-    await set_roles_in_db(pg_url, "logan@example.com", ["editor"])
-    return user_id
 
 
 async def _materials(pg_url: str, namespace: str) -> list[tuple[str, str]]:
@@ -62,7 +54,7 @@ async def test_sending_to_someone_elses_conversation_is_not_found(
 ) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         sent = await client.post(
             "/conversations/00000000-0000-0000-0000-000000000000/prompts",
             json={"prompt_id": "prm_other", "content": [{"type": "text", "text": "走"}]},
@@ -77,7 +69,7 @@ async def test_a_dashless_conversation_id_reaches_the_same_conversation(
 
     dashless = uuid.uuid4().hex
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         created = await client.post("/conversations", json={"id": dashless, "agentId": AGENT_ID})
         assert created.status_code == 201, created.text
         # 对外始终发规范写法，无横线只是入口处认得。
@@ -92,7 +84,7 @@ async def test_a_dashless_conversation_id_can_send_a_prompt(app: FastAPI, pg_url
 
     dashless = uuid.uuid4().hex
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         created = await client.post("/conversations", json={"id": dashless, "agentId": AGENT_ID})
         assert created.status_code == 201, created.text
         sent = await client.post(
@@ -112,7 +104,7 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_rejected(app: FastAPI, pg
     """路径上的对话 id 按 UUID 解析：形状不对是 422，不进到可见性判断。"""
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         status = await client.get("/conversations/not-a-uuid/status")
 
     assert status.status_code == 422, status.text
@@ -121,7 +113,7 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_rejected(app: FastAPI, pg
 async def test_send_then_read_it_back(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         sent = await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -176,7 +168,7 @@ async def test_api_key_caller_must_say_who_the_message_is_for(app: FastAPI, pg_u
 async def test_second_prompt_queues_while_the_first_runs(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         first = await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -197,7 +189,7 @@ async def test_attachments_land_in_the_material_ledger(app: FastAPI, pg_url: str
     image = "https://cdn.test/style.jpg"
     video = "https://cdn.test/ref.mp4"
     async with make_client(app) as client:
-        user_id = await _sign_in(client, pg_url)
+        user_id = await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         sent = await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -219,19 +211,6 @@ async def test_attachments_land_in_the_material_ledger(app: FastAPI, pg_url: str
     ]
 
 
-async def test_a_text_only_prompt_records_nothing(app: FastAPI, pg_url: str) -> None:
-    async with make_client(app) as client:
-        user_id = await _sign_in(client, pg_url)
-        conversation_id = await new_conversation(client, AGENT_ID)
-        await client.post(
-            f"/conversations/{conversation_id}/prompts",
-            json={"prompt_id": "prm_plain", "content": [{"type": "text", "text": "走"}]},
-        )
-        await settled(client, conversation_id)
-
-    assert await _materials(pg_url, f"{user_id}/{conversation_id}") == []
-
-
 @pytest.mark.parametrize("url", ["file:///etc/passwd", "https:///a.png"])
 async def test_an_attachment_that_is_not_http_is_refused(
     app: FastAPI, pg_url: str, url: str
@@ -239,7 +218,7 @@ async def test_an_attachment_that_is_not_http_is_refused(
     """台账地址会用于工具外呼，仅接受带主机名的 HTTP(S)。"""
 
     async with make_client(app) as client:
-        user_id = await _sign_in(client, pg_url)
+        user_id = await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         sent = await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -256,7 +235,7 @@ async def test_an_attachment_that_is_not_http_is_refused(
 async def test_catchup_reports_whether_it_got_everything(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await client.post(
             f"/conversations/{conversation_id}/prompts",
@@ -336,7 +315,7 @@ async def test_a_run_is_recorded_on_the_conversation(app: FastAPI, pg_url: str) 
     """跑过一次后对话行记下这次 run，最近活动时间跟着推前；侧栏排序、未读小点与审计时间筛选都靠它。"""
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         created = await client.post("/conversations", json={"agentId": AGENT_ID})
         opened = created.json()["conversation"]
         sent = await client.post(

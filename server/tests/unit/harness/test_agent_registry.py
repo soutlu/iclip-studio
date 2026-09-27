@@ -1,7 +1,8 @@
-"""装配契约：id 即 name、子代理显式声明、空提示词不注入、错误在流之前抛。"""
+"""装配契约：id 即 name、子代理显式声明且限额生效、空提示词不注入、错误在流之前抛。"""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -11,7 +12,13 @@ from typing import Any
 import pytest
 from pydantic_ai import ModelRetry, RunContext, UnexpectedModelBehavior
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.models.openai import OpenAIChatModelSettings
 from pydantic_ai.models.test import TestModel
@@ -213,44 +220,6 @@ async def drive(registry: AgentRegistry, agent_id: str, *, deps: object = None) 
         return [event async for event in events]
 
 
-async def test_subagents_expose_delegate_tool(tmp_path: Path) -> None:
-    parent = make_spec(tmp_path, "producer")
-    child = make_spec(tmp_path, "shot-writer", spec="model: test\n")
-    registry = build_agent_registry(
-        (
-            AgentDefinition(
-                agent_id="producer",
-                spec=parent,
-                model=MODEL_NAME,
-                subagents=(
-                    SubAgentDefinition(
-                        name="shot-writer",
-                        spec=child,
-                        model=MODEL_NAME,
-                        timeout_seconds=180,
-                        max_calls=3,
-                    ),
-                ),
-            ),
-        ),
-        step_store=store(),
-        models=models(),
-        subagent_mirror=mirror(),
-        usage_ledger=discarding_usage_ledger(),
-    )
-
-    seen: list[str] = []
-
-    async def note_tools(_messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        seen.extend(tool.name for tool in info.function_tools)
-        yield "好"
-
-    with registry.agents["producer"].override(model=FunctionModel(stream_function=note_tools)):
-        await drive(registry, "producer")
-
-    assert DELEGATE_TOOL in seen
-
-
 async def test_the_usage_ledger_is_attached_to_the_agent_and_its_subagents(tmp_path: Path) -> None:
     """顶层与子代理各自的模型响应都进同一本台账，模型名取各自配置的模型。"""
 
@@ -432,6 +401,136 @@ async def test_subagent_only_gets_the_capabilities_declared_for_it(tmp_path: Pat
     assert "parent_only_tool" in seen["parent"] and "delegate_task" in seen["parent"]
     assert "child_only_tool" not in seen["parent"]
     assert seen["child"] == ("child_only_tool",)
+
+
+CHILD_OUTPUT = "三个镜头写好了"
+
+
+def _delegate_to_writer() -> DeltaToolCalls:
+    return {
+        0: DeltaToolCall(
+            name=DELEGATE_TOOL,
+            json_args='{"agent_name": "shot-writer", "task": "写三个镜头"}',
+        )
+    }
+
+
+def _delegate_returns(messages: list[ModelMessage]) -> list[Any]:
+    """主 agent 至今收到的委派工具结果；重试提示不算。"""
+
+    return [
+        part.content
+        for message in messages
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == DELEGATE_TOOL
+    ]
+
+
+def _producer_with_writer(
+    tmp_path: Path,
+    step_store: InMemoryStepStore,
+    *,
+    parent: FunctionModel,
+    child: FunctionModel,
+    max_calls: int | None = None,
+    timeout_seconds: float | None = None,
+) -> AgentRegistry:
+    """producer 下挂一个 shot-writer，限额按参数声明。"""
+
+    return build_agent_registry(
+        (
+            AgentDefinition(
+                agent_id="producer",
+                spec=make_spec(tmp_path, "producer"),
+                model="parent-model",
+                subagents=(
+                    SubAgentDefinition(
+                        name="shot-writer",
+                        spec=make_spec(tmp_path, "shot-writer"),
+                        model="child-model",
+                        max_calls=max_calls,
+                        timeout_seconds=timeout_seconds,
+                    ),
+                ),
+            ),
+        ),
+        step_store=step_store,
+        models={"parent-model": parent, "child-model": child},
+        subagent_mirror=mirror(),
+        usage_ledger=discarding_usage_ledger(),
+    )
+
+
+async def test_a_delegation_past_max_calls_does_not_run_the_subagent(tmp_path: Path) -> None:
+    """max_calls 用完后再委派，子代理不再跑，主 agent 收到的是一条普通工具结果而不是子代理产出。"""
+
+    seen: list[Any] = []
+
+    async def parent_delegates_twice(
+        messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        returned = _delegate_returns(messages)
+        if len(returned) < 2:
+            yield _delegate_to_writer()
+        else:
+            seen.extend(returned)
+            yield "done"
+
+    async def child_answers(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+        yield CHILD_OUTPUT
+
+    step_store = store()
+    registry = _producer_with_writer(
+        tmp_path,
+        step_store,
+        parent=FunctionModel(stream_function=parent_delegates_twice),
+        child=FunctionModel(stream_function=child_answers),
+        max_calls=1,
+    )
+
+    await drive(registry, "producer")
+
+    child_runs = [run for run in await step_store.list_runs() if run.parent_run_id is not None]
+    assert len(child_runs) == 1
+    first, second = seen
+    assert first == CHILD_OUTPUT
+    assert second != CHILD_OUTPUT
+
+
+async def test_a_subagent_past_its_timeout_is_cut_off(tmp_path: Path) -> None:
+    """子代理超过 timeout_seconds 就被撤下，主 agent 收到一条普通工具结果接着往下走。"""
+
+    seen: list[Any] = []
+
+    async def parent_delegates_once(
+        messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        returned = _delegate_returns(messages)
+        if not returned:
+            yield _delegate_to_writer()
+        else:
+            seen.extend(returned)
+            yield "done"
+
+    async def child_never_answers(
+        _messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str]:
+        await asyncio.Event().wait()
+        yield CHILD_OUTPUT
+
+    registry = _producer_with_writer(
+        tmp_path,
+        store(),
+        parent=FunctionModel(stream_function=parent_delegates_once),
+        child=FunctionModel(stream_function=child_never_answers),
+        timeout_seconds=0.05,
+    )
+
+    # 子代理永不返回：限时没生效时由这里报错，而不是把用例挂住。
+    async with asyncio.timeout(10):
+        await drive(registry, "producer")
+
+    assert len(seen) == 1
 
 
 async def test_run_deps_reach_the_tool(tmp_path: Path) -> None:

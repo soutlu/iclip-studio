@@ -24,13 +24,13 @@ TEST_MODEL_NAME = "test-model"
 """集成层 ``models`` 夹具注册的替身模型名；agent 声明默认引用它。"""
 
 
-def make_runtime_config() -> RuntimeConfig:
-    """测试运行配置；地址与凭证由 base_env 提供。"""
+def make_runtime_config(*, cors_allow_origins: tuple[str, ...] = ()) -> RuntimeConfig:
+    """测试运行配置；地址与凭证由 base_env 提供，``cors_allow_origins`` 是跨域白名单。"""
 
     return RuntimeConfig(
         app=AppSection(name="iclip-test"),
         db=DbSection(schema="iclip"),
-        security=SecuritySection(),
+        security=SecuritySection(cors_allow_origins=cors_allow_origins),
         sso=SsoSection(app_name="iclip"),
         ops=OpsSection(log_level="WARNING"),
     )

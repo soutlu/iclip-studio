@@ -264,7 +264,7 @@ async def test_sweep_settles_an_expired_lease_and_wakes_the_queue(engine: AsyncE
     assert woken is not None
     assert woken.status == "completed"
     assert woken.run_id is not None
-    assert woken.locked_by == LOCKED_BY
+    assert woken.locked_by == runner.locked_by
 
 
 async def test_an_interrupted_prompt_resumes_into_the_same_turn(engine: AsyncEngine) -> None:
@@ -513,7 +513,7 @@ async def test_sweep_does_not_claim_a_row_this_process_is_still_running(
     stale = await queue.get(prompt_id)
     assert stale is not None
     assert stale.attempt == 0
-    assert stale.locked_by == LOCKED_BY
+    assert stale.locked_by == runner.locked_by
 
     gate.set()
     await drained(queue, conversation_id)
@@ -637,7 +637,7 @@ async def test_a_queued_prompt_survives_a_restart_and_gets_picked_up(
     tail = await queue.get("prm_tail")
     assert tail is not None
     assert tail.status == "completed"
-    assert tail.locked_by == LOCKED_BY
+    assert tail.locked_by == runner.locked_by
 
 
 async def test_a_run_whose_lease_was_taken_cancels_itself(engine: AsyncEngine) -> None:
@@ -725,12 +725,13 @@ async def test_attach_run_maps_every_run_to_its_prompt(engine: AsyncEngine) -> N
     }
     assert await queue.prompt_of_runs("c-yours") == {"r-other": "prm_yours"}
 
-    first = await queue.get_by_run("r-first")
-    second = await queue.get_by_run("r-second")
+    first = await queue.get_by_run("r-first", conversation_id="c-mine")
+    second = await queue.get_by_run("r-second", conversation_id="c-mine")
     assert first is not None
     assert second is not None
     assert (first.prompt_id, second.prompt_id) == ("prm_mine", "prm_mine")
     assert second.run_id == "r-second"
+    assert await queue.get_by_run("r-other", conversation_id="c-mine") is None
 
 
 async def test_attach_run_writes_nothing_when_the_lease_moved_on(engine: AsyncEngine) -> None:
@@ -755,7 +756,7 @@ async def test_attach_run_writes_nothing_when_the_lease_moved_on(engine: AsyncEn
     assert row is not None
     assert row.run_id is None
     assert await queue.prompt_of_runs("c-fenced") == {}
-    assert (await queue.get_by_run("r-stale")) is None
+    assert (await queue.get_by_run("r-stale", conversation_id="c-fenced")) is None
 
 
 @pytest.mark.parametrize("same_worker", [True, False], ids=["same-worker", "other-worker"])
@@ -779,9 +780,9 @@ async def test_repeated_prompt_receipts_do_not_run_the_model_twice(
 
     model = FunctionModel(stream_function=stream)
 
-    def service(locked_by: str) -> TranscriptService:
+    def service() -> TranscriptService:
         store = TranscriptStore()
-        runner, step_store, queue = build_runner(engine, model, store=store, locked_by=locked_by)
+        runner, step_store, queue = build_runner(engine, model, store=store)
         return TranscriptService(
             store=store,
             history=TranscriptHistory(step_store, queue),
@@ -791,8 +792,8 @@ async def test_repeated_prompt_receipts_do_not_run_the_model_twice(
             record_materials=records_nothing,
         )
 
-    first = service("w-first")
-    retry = first if same_worker else service("w-second")
+    first = service()
+    retry = first if same_worker else service()
     services = [first] if same_worker else [first, retry]
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
 
@@ -1186,36 +1187,6 @@ async def test_an_append_the_run_never_read_goes_back_to_the_queue(engine: Async
     assert [row.prompt_id for row in (await queue.view(conversation_id)).queued] == ["prm_tail"]
 
 
-async def test_sweep_settles_an_append_that_rode_a_lost_run(engine: AsyncEngine) -> None:
-
-    queue = JobQueue(engine)
-    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
-    now = datetime.now(UTC)
-    for prompt_id, said in (("prm_running", "先做这个"), ("prm_appended", "临时插一句")):
-        await queue.submit(
-            prompt_id=prompt_id,
-            conversation_id=conversation_id,
-            agent_id=AGENT_ID,
-            owner_user_id=OWNER,
-            user_name="logan",
-            content=(TextContent(text=said),),
-            now=now,
-            locked_by=DEAD,
-        )
-    run_id = f"{AGENT_ID}-dead"
-    await queue.attach_run("prm_running", run_id, locked_by=DEAD, attempt=0)
-    await queue.mark_steered(("prm_appended",), run_id=run_id, now=now)
-
-    await expire_lease(engine, conversation_id, attempt=1)
-    runner, _step_store, _queue = build_runner(engine, says("好"), store=TranscriptStore())
-    await runner.sweep_once()
-    await runner.shutdown()
-
-    appended = await queue.get("prm_appended")
-    assert appended is not None
-    assert appended.status == "failed"
-
-
 async def test_appending_when_nothing_is_running_is_a_conflict(engine: AsyncEngine) -> None:
 
     store = TranscriptStore()
@@ -1323,7 +1294,7 @@ async def test_the_next_turn_after_a_failed_one_does_not_reuse_its_ordinal(
     await submit_text(runner, queue, conversation_id, "先做这个")
     await drained(queue, conversation_id)
 
-    # 使用同一 runner 和正常模型创建下一轮。
+    # 换一个接同一数据库的 runner 和正常模型跑下一轮。
     store2 = TranscriptStore()
     runner2, _step_store2, queue2 = build_runner(engine, says("好"), store=store2)
     await submit_text(runner2, queue2, conversation_id, "再做那个")

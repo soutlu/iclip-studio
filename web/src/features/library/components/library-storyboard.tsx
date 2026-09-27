@@ -1,4 +1,4 @@
-/** 故事板：卡片右上角的「N 镜 · 时长」角标。能悬停的设备悬停或点它出浮层，触屏点它出底部面板；每镜一帧，保持原比例排成一条。 */
+/** 故事板：卡片右上角的「N 镜 · 时长」角标。能悬停的设备悬停或点它出浮层，不能悬停的设备点它出底部面板；每镜一帧，保持原比例排成一条。 */
 
 import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent } from 'react'
 import { Icon } from '@/shared/icons'
@@ -56,12 +56,14 @@ export function StoryboardBadge({
     setSheetOpen(false)
     onPickFrame(at)
   }
+  // 与点击同以 canHover 为准，不能悬停的设备只出底部面板；能悬停的设备上触摸也不算悬停。
+  const hovering = (event: React.PointerEvent) => event.pointerType !== 'touch' && canHover()
   const hoverProps = {
     onPointerEnter: (event: React.PointerEvent) => {
-      if (event.pointerType !== 'touch') hover.onEnter()
+      if (hovering(event)) hover.onEnter()
     },
     onPointerLeave: (event: React.PointerEvent) => {
-      if (event.pointerType !== 'touch') hover.onLeave()
+      if (hovering(event)) hover.onLeave()
     },
   }
   const label = `故事板：${cuts === null ? `${frames.length} 段` : `${cuts} 镜`}${seconds === null ? '' : `，${formatClock(seconds)}`}`
@@ -80,7 +82,7 @@ export function StoryboardBadge({
             aria-label={label}
             className="library-card-badge library-storyboard-badge absolute top-2 right-2 cursor-pointer ui-focus"
             onClick={(event) => {
-              // 触屏没有悬停，点角标出底部面板；拦下默认的开关，浮层不出。
+              // 不能悬停就点角标出底部面板；拦下默认的开关，浮层不出。
               if (canHover()) return
               event.preventDefault()
               setSheetOpen(true)

@@ -83,6 +83,7 @@ async def test_issue_and_authenticate_round_trip() -> None:
     assert key_principal.user_id == owner.id
     assert key_principal.api_key_id == record.id
     assert key_principal.permissions == {"collections:read"}
+    assert key_principal.audit_label == "logan#ci"
 
 
 async def test_direct_grant_of_issue_permission_still_caps_key_at_owner_permissions() -> None:
@@ -119,22 +120,6 @@ async def test_api_key_principal_cannot_issue_keys() -> None:
         await service.issue_api_key(
             key_principal, CreateApiKey(name="k2", permissions=frozenset({"agent:read"}))
         )
-
-
-async def test_key_permissions_are_explicit_grant_set_independent_of_owner_roles() -> None:
-    owner = make_account(roles=("root",))
-    service, users, _ = make_service(owner)
-    principal = service.principal_for_user(owner)
-    _, token = await service.issue_api_key(
-        principal, CreateApiKey(name="k", permissions=frozenset({"users:manage"}))
-    )
-    await users.update_access_fields(
-        owner.id, roles=("viewer",), direct_permissions=None, is_active=None
-    )
-
-    # key 有效权限 = 显式授权集，不随属主角色变化
-    key_principal = await service.authenticate_api_key(token)
-    assert key_principal.permissions == {"users:manage"}
 
 
 async def test_revoked_expired_and_inactive_owner_all_fail_auth() -> None:

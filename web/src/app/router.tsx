@@ -10,6 +10,15 @@ export const router = createRouter({
   scrollRestoration: true,
 })
 
+// 滚动复位只在换页面时做：只改查询参数的原地导航也复位的话，会把这次渲染里的程序滚动撤回导航前的位置。
+// PUSH / REPLACE 都经 commitLocation；前进后退不经这里，照常复原。
+const commitLocation = router.commitLocation
+router.commitLocation = (next) =>
+  commitLocation({
+    ...next,
+    resetScroll: next.resetScroll ?? next.pathname !== router.state.resolvedLocation?.pathname,
+  })
+
 let sessionRecoveryPromise: null | Promise<void> = null
 
 /**

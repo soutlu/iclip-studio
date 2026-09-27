@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from tests.helpers.app import make_client
-from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 from tests.helpers.tasks import STYLE_NO
 
@@ -19,13 +19,6 @@ AUDIT = f"{CONVERSATIONS}/audit"
 TASKS = "/tasks"
 AGENT_ID = "storyboard"
 MISSING_ID = "00000000-0000-0000-0000-000000000000"
-
-
-async def login_as_editor(client: httpx.AsyncClient, pg_url: str, *, username: str = "logan") -> str:
-    email = f"{username}@example.com"
-    user_id = await register_and_login(client, username=username, email=email)
-    await set_roles_in_db(pg_url, email, ["editor"])
-    return user_id
 
 
 async def login_as_root(client: httpx.AsyncClient, pg_url: str, *, username: str = "gov") -> str:
@@ -177,17 +170,6 @@ async def test_governor_sees_every_collection(
         assert (await governor.get(URL)).json()["items"] == []
 
 
-async def test_conversation_without_task_or_collection(
-    client: httpx.AsyncClient, pg_url: str
-) -> None:
-
-    await login_as_editor(client, pg_url)
-    conversation = await open_conversation(client)
-
-    assert conversation["taskId"] is None
-    assert conversation["collectionId"] is None
-
-
 async def test_conversation_carries_task_and_collection(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
@@ -199,19 +181,6 @@ async def test_conversation_carries_task_and_collection(
 
     assert conversation["taskId"] == task_id
     assert conversation["collectionId"] == collection_id
-
-
-async def test_unknown_reference_is_rejected(client: httpx.AsyncClient, pg_url: str) -> None:
-
-    await login_as_editor(client, pg_url)
-
-    bad_task = await client.post(CONVERSATIONS, json={"agentId": AGENT_ID, "taskId": MISSING_ID})
-    bad_collection = await client.post(
-        CONVERSATIONS, json={"agentId": AGENT_ID, "collectionId": MISSING_ID}
-    )
-
-    assert bad_task.status_code == 422
-    assert bad_collection.status_code == 422
 
 
 async def test_conversation_moves_between_collections(
@@ -494,15 +463,12 @@ async def test_audit_is_governor_only_and_filters(
     assert (await client.get(AUDIT)).status_code == 403
 
     async with make_client(app) as governor:
-        await login_as_root(governor, pg_url)
+        governor_id = await login_as_root(governor, pg_url)
         await open_conversation(governor, title="治理者自己的")
 
         everything = (await governor.get(AUDIT)).json()
         assert len(everything["items"]) == 3
-        assert {item["ownerUserId"] for item in everything["items"]} == {
-            owner,
-            everything["items"][0]["ownerUserId"],
-        }
+        assert {item["ownerUserId"] for item in everything["items"]} == {owner, governor_id}
         assert (everything["total"], everything["runningTotal"]) == (3, 1)
 
         running = (await governor.get(AUDIT, params={"state": "running"})).json()

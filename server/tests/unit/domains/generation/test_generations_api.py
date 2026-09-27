@@ -20,15 +20,17 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
     GenerationJob,
+    GenerationKind,
     GenerationStatus,
 )
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.provider import ImageModelSpec
-from iclip.domains.generation.schemas import MAX_METADATA_CHARS, request_to_payload
+from iclip.domains.generation.schemas import MAX_METADATA_CHARS, VideoComposeRequest
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
+from iclip.domains.identity.rbac import ACT_AS_PERMISSION
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     SHOT_IMAGE_URLS,
@@ -36,9 +38,13 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     build_queue,
-    clip_request,
     image_request,
+    make_composite,
+    make_cut,
+    make_edit,
     make_job,
+    make_upload,
+    stored_request,
     video_request,
     video_shot,
 )
@@ -54,6 +60,16 @@ VIDEO_BODY = {
 }
 
 IMAGE_BODY = {"prompt": "一只猫的正面特写", "aspectRatio": "1:1"}
+
+EDIT_BODY = {
+    "model": "vendor-a-seedance-2-5",
+    "prompt": "把凉鞋换成编织款",
+    "range_start_ms": 1000,
+    "range_end_ms": 4000,
+    "seconds": -1,
+    "reference_image_urls": ["https://cdn.test/sandal.png"],
+}
+"""编辑段请求体，缺 ``source_job_id`` 与归属，用例按需补。"""
 
 IMAGE_MODELS = {"nano_banana_pro": NANO_BANANA_PRO.spec, "seedream_v5_pro": SEEDREAM_V5_PRO.spec}
 
@@ -76,6 +92,7 @@ def api_key(*permissions: str) -> Principal:
         audit_label="logan#ci",
         api_key_id=uuid.uuid4(),
         username="logan",
+        key_name="ci",
     )
 
 
@@ -112,7 +129,7 @@ def build_test_app(
         repo,
         queue,
         video_provider_name="video_api",
-        clip_provider_name="ffmpeg",
+        compose_provider_name="ffmpeg",
         video_default_model="vendor-a-seedance-2-5",
         video_allowed_models=VIDEO_MODELS,
         image_models=image_models if image_models is not None else IMAGE_MODELS,
@@ -133,12 +150,13 @@ def only_job(repo: InMemoryGenerationRepository) -> GenerationJob:
     return job
 
 
-def test_openapi_publishes_generation_kind_and_status_as_enums() -> None:
+def test_openapi_publishes_generation_kind_operation_and_status_as_enums() -> None:
     """前端从合同派生类型与状态词，合同里只剩字符串就只能手写平行词表。"""
 
     app = build_test_app(InMemoryGenerationRepository(), granted=None)
     fields = app.openapi()["components"]["schemas"]["GenerationOut"]["properties"]
-    assert fields["kind"]["enum"] == ["video", "image", "clip"]
+    assert fields["kind"]["enum"] == ["video", "image"]
+    assert fields["operation"]["enum"] == ["generate", "compose", "cut", "upload"]
     assert fields["status"]["enum"] == ["pending", "submitting", "submitted", "completed", "failed"]
 
 
@@ -158,7 +176,7 @@ async def test_video_submit_accepts_and_persists_pending_without_calling_provide
     stored = only_job(repo)
     assert response.json() == {"task_id": str(stored.id)}, "回执照上游：只有任务号"
     assert (stored.status, stored.kind, stored.provider) == (STATUS_PENDING, "video", "video_api")
-    payload = stored.request.model_dump()
+    payload = stored_request(stored).model_dump()
     assert payload["model"] == model
     assert payload["user_name"] == "tester", "浏览器会话没给名字，服务端填登录用户名"
 
@@ -203,7 +221,7 @@ async def test_video_submit_passes_model_specific_fields_through_untouched() -> 
         response = await http.post("/generations/video", json=body)
 
     assert response.status_code == 202, response.text
-    stored = only_job(repo).request.model_dump()
+    stored = stored_request(only_job(repo)).model_dump()
     assert stored["provider_options"] == {"output_format": "mov"}
     assert (stored["seconds"], stored["resolution"], stored["generate_audio"]) == (
         -1,
@@ -219,10 +237,11 @@ async def test_video_submit_passes_model_specific_fields_through_untouched() -> 
         {"session_id": "s-1"},
         {"kind": "video"},
         {"owner_user_id": str(uuid.uuid4())},
+        {"root_job_id": str(uuid.uuid4())},
     ],
 )
 async def test_video_submit_rejects_fields_we_do_not_take(extra: dict[str, object]) -> None:
-    """上游会丢弃或兼容的字段，我们直接拒：不静默忽略，也不让身份字段从请求体进来。"""
+    """上游会丢弃或兼容的字段，我们直接拒：不静默忽略，也不让身份字段与服务端定的原作从请求体进来。"""
 
     app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:submit"))
     async with client(app) as http:
@@ -279,7 +298,7 @@ async def test_video_submit_assembles_the_prompt_from_a_shot_and_stores_both() -
         response = await http.post("/generations/video", json=SHOT_BODY)
 
     assert response.status_code == 202, response.text
-    stored = only_job(repo).request.model_dump()
+    stored = stored_request(only_job(repo)).model_dump()
     assert stored["prompt"] == SHOT_PROMPT
     assert stored["shot"] == {
         "global_settings": "人物保持一致。",
@@ -316,13 +335,6 @@ async def test_video_submit_rejects_a_body_whose_text_does_not_hold_together(
     assert repo.jobs == {}
 
 
-async def test_the_old_shared_submit_route_is_gone() -> None:
-    app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:submit"))
-    async with client(app) as http:
-        response = await http.post("/generations", json=VIDEO_BODY)
-    assert response.status_code == 405, "GET /generations 还在，所以是方法不允许而不是 404"
-
-
 async def test_historical_video_models_are_read_without_rewriting() -> None:
     job = replace(make_job(video_request(model="vendor-b-seedance-2-0")), provider="partner_app")
     repo = InMemoryGenerationRepository([job])
@@ -351,7 +363,7 @@ async def test_api_key_caller_must_name_its_user_and_is_taken_at_its_word() -> N
     assert named.status_code == 202, named.text
     stored = only_job(repo)
     assert stored.api_key_id == caller.api_key_id
-    assert stored.request.model_dump()["user_name"] == "designer-zhang", "不拿 key 属主顶替"
+    assert stored_request(stored).model_dump()["user_name"] == "designer-zhang", "不拿 key 属主顶替"
 
 
 async def test_browser_caller_may_only_name_itself() -> None:
@@ -446,7 +458,13 @@ async def test_metadata_filter_is_containment_and_bad_filters_are_422() -> None:
 
 
 @pytest.mark.parametrize(
-    ("path", "body"), [("/generations/video", VIDEO_BODY), ("/generations/image", IMAGE_BODY)]
+    ("path", "body"),
+    [
+        ("/generations/video", VIDEO_BODY),
+        ("/generations/image", IMAGE_BODY),
+        ("/generations/video-edits", {**EDIT_BODY, "source_job_id": str(uuid.uuid4())}),
+        ("/generations/video-composites", {"sourceJobId": str(uuid.uuid4())}),
+    ],
 )
 async def test_submit_requires_the_submit_permission(path: str, body: dict[str, object]) -> None:
     repo = InMemoryGenerationRepository()
@@ -518,6 +536,59 @@ async def test_origin_lands_on_columns_not_in_the_stored_request() -> None:
     )
 
 
+async def test_the_shot_number_is_shot_index_alone_and_metadata_stays_the_callers() -> None:
+    """镜号只认 ``shot_index``：落记录的列、回显在 ``shotIndex``；metadata 原样存取，里面的 shot 不当镜号。"""
+
+    repo = InMemoryGenerationRepository()
+    caller = principal("generation:submit", "generation:read")
+    async with client(build_test_app(repo, granted=caller)) as http:
+        numbered = await http.post(
+            "/generations/video", json={**VIDEO_BODY, "shot_index": 3, "metadata": {"frame": 1}}
+        )
+        tagged = await http.post("/generations/video", json={**VIDEO_BODY, "metadata": {"shot": 9}})
+        records = [
+            (await http.get(f"/generations/{response.json()['task_id']}")).json()["generation"]
+            for response in (numbered, tagged)
+        ]
+
+    assert [(record["shotIndex"], record["metadata"]) for record in records] == [
+        (3, {"frame": 1}),
+        (None, {"shot": 9}),
+    ]
+    assert "shot_index" not in records[0]["request"], "镜号不进发给上游的请求"
+    assert {job.shot_index for job in repo.jobs.values()} == {3, None}
+
+
+async def test_list_filters_by_shot_index_and_stacks_with_metadata() -> None:
+    """按镜号筛与按坐标筛叠加收窄；坐标里写的 shot 不算镜号；镜号从 1 起。"""
+
+    owner_id = uuid.uuid4()
+
+    def take(shot_index: int | None, metadata: dict[str, object] | None) -> GenerationJob:
+        return make_job(
+            video_request(), owner_user_id=owner_id, shot_index=shot_index, metadata=metadata
+        )
+
+    first_frame, second_frame = take(3, {"frame": 1}), take(3, {"frame": 2})
+    repo = InMemoryGenerationRepository(
+        [first_frame, second_frame, take(4, {"frame": 1}), take(None, {"shot": 3})]
+    )
+    app = build_test_app(repo, granted=principal("generation:read", user_id=owner_id))
+    async with client(app) as http:
+        by_shot = await http.get("/generations", params={"shotIndex": 3})
+        stacked = await http.get(
+            "/generations", params={"shotIndex": 3, "metadata": json.dumps({"frame": 1})}
+        )
+        zero = await http.get("/generations", params={"shotIndex": 0})
+
+    assert {item["id"] for item in by_shot.json()["items"]} == {
+        str(first_frame.id),
+        str(second_frame.id),
+    }
+    assert [item["id"] for item in stacked.json()["items"]] == [str(first_frame.id)]
+    assert zero.status_code == 422
+
+
 async def test_list_can_be_filtered_by_conversation_and_by_task() -> None:
 
     owner_id = uuid.uuid4()
@@ -541,22 +612,33 @@ async def test_list_can_be_filtered_by_conversation_and_by_task() -> None:
     assert len(everything.json()["items"]) == 3, "别人的那条筛不出来，也列不出来"
 
 
-async def test_list_can_be_filtered_by_root_job() -> None:
-    """一条出片名下的衍生记录就是它的编辑链，按原作号一次筛出。"""
+async def test_list_can_be_filtered_by_root_source_and_operation() -> None:
+    """以一条出片为原作的就是它的编辑链；按直接来源找基于某一行的；按操作把合成单拎出来。"""
 
     owner_id = uuid.uuid4()
     root = make_job(video_request(), owner_user_id=owner_id, status=STATUS_COMPLETED)
     other_root = make_job(video_request(), owner_user_id=owner_id, status=STATUS_COMPLETED)
-    on_chain = make_job(clip_request(root_job_id=root.id), owner_user_id=owner_id)
-    elsewhere = make_job(clip_request(root_job_id=other_root.id), owner_user_id=owner_id)
-    repo = InMemoryGenerationRepository([root, other_root, on_chain, elsewhere])
+    edit = make_edit(root, owner_user_id=owner_id, status=STATUS_COMPLETED)
+    composite = make_composite(edit, owner_user_id=owner_id)
+    elsewhere = make_edit(other_root, owner_user_id=owner_id)
+    repo = InMemoryGenerationRepository([root, other_root, edit, composite, elsewhere])
 
     owner = principal("generation:read", user_id=owner_id)
     async with client(build_test_app(repo, granted=owner)) as http:
-        response = await http.get(f"/generations?rootJobId={root.id}")
+        by_root = await http.get("/generations", params={"rootJobId": str(root.id)})
+        by_source = await http.get("/generations", params={"sourceJobId": str(edit.id)})
+        composites = await http.get("/generations", params={"operation": "compose"})
+        bad = await http.get("/generations", params={"operation": "clip"})
 
-    (item,) = response.json()["items"]
-    assert (item["id"], item["rootJobId"]) == (str(on_chain.id), str(root.id))
+    assert {item["id"] for item in by_root.json()["items"]} == {str(edit.id), str(composite.id)}
+    (item,) = by_source.json()["items"]
+    assert (item["id"], item["sourceJobId"], item["rootJobId"]) == (
+        str(composite.id),
+        str(edit.id),
+        str(root.id),
+    )
+    assert [item["id"] for item in composites.json()["items"]] == [str(composite.id)]
+    assert bad.status_code == 422
 
 
 def fork_of_someone_elses_take(
@@ -604,10 +686,10 @@ async def test_listing_a_fork_adds_what_it_inherited_only_for_those_who_can_read
 
 
 @pytest.mark.parametrize("readable", [True, False], ids=["读得到副本", "读不到副本"])
-async def test_an_inherited_root_counts_only_for_those_who_can_read_the_fork(
+async def test_an_inherited_base_counts_only_for_those_who_can_read_the_fork(
     readable: bool,
 ) -> None:
-    """拿着读不到的副本 id，挂不上源对话里别人的出片，也探不出它在不在。"""
+    """在副本里剪源对话里别人的出片：读得到副本才算继承；读不到就剪不了，也探不出它在不在。"""
 
     forker = uuid.uuid4()
     repo, fork, inherited, _, lineage = fork_of_someone_elses_take(forker, readable=readable)
@@ -616,11 +698,18 @@ async def test_an_inherited_root_counts_only_for_those_who_can_read_the_fork(
     )
     async with client(app) as http:
         response = await http.post(
-            "/generations/clips",
-            json={**CLIP_BODY, "conversationId": str(fork), "rootJobId": str(inherited.id)},
+            "/generations/video-edits",
+            json={**EDIT_BODY, "conversation_id": str(fork), "source_job_id": str(inherited.id)},
         )
 
     assert response.status_code == (202 if readable else 422), response.text
+    if readable:
+        edit = repo.jobs[uuid.UUID(response.json()["generation"]["id"])]
+        assert (edit.conversation_id, edit.owner_user_id, edit.root_job_id) == (
+            fork,
+            forker,
+            inherited.id,
+        ), "剪出来的记在副本名下，原作指源对话那条"
 
 
 async def test_list_rejects_out_of_range_limit() -> None:
@@ -630,8 +719,8 @@ async def test_list_rejects_out_of_range_limit() -> None:
         assert (await http.get("/generations?limit=1000")).status_code == 422
 
 
-async def test_response_hides_provider_snapshot_and_queue_mechanics() -> None:
-    """响应排除包含签名 URL 的供应商快照及内部队列字段。"""
+async def test_response_hides_provider_and_upstream_task_mechanics() -> None:
+    """provider 名称、上游任务号与状态词、提交时刻是排队与排障的内部机制，不进响应。"""
 
     job = make_job(video_request())
     repo = InMemoryGenerationRepository([job])
@@ -639,37 +728,76 @@ async def test_response_hides_provider_snapshot_and_queue_mechanics() -> None:
     async with client(build_test_app(repo, granted=owner)) as http:
         body = (await http.get(f"/generations/{job.id}")).json()["generation"]
 
-    hidden = {"providerSnapshot", "providerTaskId", "provider", "leaseOwner", "attempts"}
+    hidden = {"provider", "providerTaskId", "providerStatus", "submittedAt"}
     assert hidden.isdisjoint(body)
-    assert {"taskId", "watermarkOutputUrl"} <= set(body)
-    assert body["durationMs"] is None, "只有本系统自己加工的视频知道产物多长"
-
-
-async def test_clip_reports_the_probed_duration_from_its_snapshot() -> None:
-    """参考片段按关键帧下刀，产物比区间长；实际时长由服务端量好交出来。"""
-
-    job = make_job(
-        clip_request(),
-        provider="ffmpeg",
-        status="completed",
-        provider_snapshot={"purpose": "reference", "durationMs": 4213},
+    assert {"taskId", "watermarkOutputUrl"} <= set(body), (
+        "值为空的字段照样出现，上面的不相交才有意义"
     )
+
+
+async def read_back(job: GenerationJob) -> dict[str, object]:
+    """属主读回这一条的对外形状。"""
+
     repo = InMemoryGenerationRepository([job])
     owner = principal("generation:read", user_id=job.owner_user_id)
     async with client(build_test_app(repo, granted=owner)) as http:
-        body = (await http.get(f"/generations/{job.id}")).json()["generation"]
-
-    assert body["durationMs"] == 4213
-    assert "providerSnapshot" not in body, "只挑这一个键出来，快照本身仍不外露"
+        return (await http.get(f"/generations/{job.id}")).json()["generation"]
 
 
-async def test_in_flight_clip_reports_the_stage_it_is_on() -> None:
-    job = make_job(clip_request(), provider="ffmpeg", status=STATUS_SUBMITTING)
-    job = replace(job, provider_status="uploading")
-    repo = InMemoryGenerationRepository([job])
-    owner = principal("generation:read", user_id=job.owner_user_id)
-    async with client(build_test_app(repo, granted=owner)) as http:
-        body = (await http.get(f"/generations/{job.id}")).json()["generation"]
+def a_composite(**fields: object) -> GenerationJob:
+    """一条合成：挂在一次编辑段上，编辑段又挂在一次出片上。"""
+
+    return make_composite(make_edit(make_job(video_request())), **fields)
+
+
+async def test_the_duration_comes_from_its_column() -> None:
+    """合成是本系统自己拼的，量过的时长记在列上交出来；别的记录没有。"""
+
+    composite = a_composite(status=STATUS_COMPLETED, duration_ms=7040)
+    take = make_job(video_request())
+    unmeasured = a_composite(status=STATUS_COMPLETED)
+
+    assert (await read_back(composite))["durationMs"] == 7040
+    assert (await read_back(take))["durationMs"] is None
+    assert (await read_back(unmeasured))["durationMs"] is None
+
+
+async def test_a_record_reads_back_with_its_operation_source_range_and_finish() -> None:
+    finished_at = datetime.now(UTC)
+    take = make_job(video_request(), status=STATUS_COMPLETED)
+    edit = make_edit(
+        take,
+        status=STATUS_COMPLETED,
+        range_start_ms=800,
+        range_end_ms=4000,
+        finished_at=finished_at,
+    )
+
+    body = await read_back(edit)
+
+    assert (body["kind"], body["operation"], body["sourceJobId"], body["rootJobId"]) == (
+        "video",
+        "generate",
+        str(take.id),
+        str(take.id),
+    )
+    assert (body["rangeStartMs"], body["rangeEndMs"]) == (800, 4000)
+    assert datetime.fromisoformat(str(body["finishedAt"])) == finished_at
+    plain = await read_back(make_job(video_request()))
+    assert (plain["sourceJobId"], plain["rangeStartMs"], plain["finishedAt"]) == (None, None, None)
+
+
+@pytest.mark.parametrize("role", ["合成", "编辑段"])
+async def test_in_flight_local_processing_reports_the_stage_it_is_on(role: str) -> None:
+    """合成在拼、编辑段在交上游前切片时，阶段词都照实给。"""
+
+    job = (
+        a_composite(status=STATUS_SUBMITTING)
+        if role == "合成"
+        else make_edit(make_job(video_request()), status=STATUS_SUBMITTING)
+    )
+
+    body = await read_back(replace(job, provider_status="uploading"))
 
     assert body["clipStage"] == "uploading"
 
@@ -680,31 +808,15 @@ async def test_in_flight_clip_reports_the_stage_it_is_on() -> None:
         (STATUS_PENDING, None, "还在排队，阶段由 status 表达"),
         (STATUS_FAILED, "uploading", "收尾不写 provider_status，列里会留着最后上报的那个词"),
         (STATUS_SUBMITTING, "whatever", "没见过的词不外露"),
+        (STATUS_SUBMITTED, "queued", "交给上游之后是上游的状态词"),
     ],
 )
 async def test_clip_stage_is_empty_unless_it_is_a_known_in_flight_stage(
     status: GenerationStatus, provider_status: str | None, why: str
 ) -> None:
-    job = make_job(clip_request(), provider="ffmpeg", status=status)
-    job = replace(job, provider_status=provider_status)
-    repo = InMemoryGenerationRepository([job])
-    owner = principal("generation:read", user_id=job.owner_user_id)
-    async with client(build_test_app(repo, granted=owner)) as http:
-        body = (await http.get(f"/generations/{job.id}")).json()["generation"]
+    body = await read_back(replace(a_composite(status=status), provider_status=provider_status))
 
     assert body["clipStage"] is None, why
-
-
-async def test_clip_without_a_probed_duration_reports_nothing() -> None:
-    """在途的、以及这个键出现之前留下的记录：给空，不猜。"""
-
-    job = make_job(clip_request(), provider="ffmpeg", provider_snapshot={"purpose": "reference"})
-    repo = InMemoryGenerationRepository([job])
-    owner = principal("generation:read", user_id=job.owner_user_id)
-    async with client(build_test_app(repo, granted=owner)) as http:
-        body = (await http.get(f"/generations/{job.id}")).json()["generation"]
-
-    assert body["durationMs"] is None
 
 
 async def test_failing_to_enqueue_fails_the_row_instead_of_leaving_it_pending() -> None:
@@ -778,13 +890,24 @@ async def test_video_task_carries_both_urls_when_done_and_the_error_when_failed(
     }
 
 
-async def test_video_task_endpoint_does_not_answer_for_image_records() -> None:
-    job = make_job(image_request())
-    repo = InMemoryGenerationRepository([job])
+@pytest.mark.parametrize("role", ["图片", "合成", "视频上传"])
+async def test_video_task_endpoint_answers_only_for_upstream_video_records(role: str) -> None:
+    """上游任务查询的形状只套得上出片与编辑段；图片、合成（没有水印版）、视频上传与不存在同样是 404。"""
+
+    job = (
+        make_job(image_request())
+        if role == "图片"
+        else make_upload(kind="video")
+        if role == "视频上传"
+        else a_composite(status=STATUS_COMPLETED, output_url="https://cdn.test/master.mp4")
+    )
+    edit = make_edit(make_job(video_request()), owner_user_id=job.owner_user_id)
+    repo = InMemoryGenerationRepository([job, edit])
     owner = principal("generation:read", user_id=job.owner_user_id)
     async with client(build_test_app(repo, granted=owner)) as http:
         assert (await http.get(f"/generations/video/{job.id}")).status_code == 404
         assert (await http.get(f"/generations/{job.id}")).status_code == 200
+        assert (await http.get(f"/generations/video/{edit.id}")).status_code == 200
 
 
 async def test_video_models_endpoint_lists_the_configured_models() -> None:
@@ -879,263 +1002,721 @@ async def test_image_models_endpoint_needs_read_permission() -> None:
         assert (await http.get("/generations/image-models")).status_code == 403
 
 
-# --- 本地视频加工 ------------------------------------------------------------
+# --- 视频编辑：编辑段与合成 ---------------------------------------------------
 
-CLIP_BODY = {
-    "purpose": "reference",
-    "segments": [{"url": "https://example.com/base.mp4", "start": 4, "end": 8}],
-}
-
-MASTER_BODY = {
-    "purpose": "master",
-    "segments": [
-        {"url": "https://example.com/base.mp4", "start": 0, "end": 4},
-        {"url": "https://example.com/edited.mp4", "start": 0, "end": 4.3},
-        {"url": "https://example.com/base.mp4", "start": 8, "end": 15},
-    ],
-}
+BASE_URL = "https://example.com/base.mp4"
+EDITED_URL = "https://example.com/edited.mp4"
 
 
-def seed_root(
+def seed_take(
     repo: InMemoryGenerationRepository,
     *,
     owner: uuid.UUID,
     conversation: uuid.UUID | None = None,
+    shot_index: int | None = None,
 ) -> GenerationJob:
-    """先放一条已出片的独立记录进去当原作：衍生记录只能挂在它上面。"""
+    """先放一条已完成的出片进去当基底。"""
 
-    root = make_job(
+    take = make_job(
         video_request(),
         status=STATUS_COMPLETED,
         owner_user_id=owner,
         conversation_id=conversation,
-        output_url="https://example.com/root.mp4",
+        shot_index=shot_index,
+        output_url=BASE_URL,
+        watermark_output_url="https://example.com/base-wm.mp4",
+        finished_at=datetime.now(UTC) - timedelta(minutes=10),
     )
-    repo.jobs[root.id] = root
-    return root
+    repo.jobs[take.id] = take
+    return take
 
 
-def only_derivative(repo: InMemoryGenerationRepository) -> GenerationJob:
-    """仓储里除原作之外刚受理的那一条。"""
+def seed_edit(
+    repo: InMemoryGenerationRepository,
+    base: GenerationJob,
+    *,
+    status: GenerationStatus = STATUS_COMPLETED,
+    range_start_ms: int = 1000,
+) -> GenerationJob:
+    """在 ``base`` 上放一条编辑段，与基底同属主、同对话。"""
 
-    (job,) = [job for job in repo.jobs.values() if job.root_job_id is not None]
+    edit = make_edit(
+        base,
+        status=status,
+        owner_user_id=base.owner_user_id,
+        conversation_id=base.conversation_id,
+        range_start_ms=range_start_ms,
+        range_end_ms=4000,
+        output_url=EDITED_URL if status == STATUS_COMPLETED else None,
+        finished_at=datetime.now(UTC) - timedelta(minutes=5)
+        if status == STATUS_COMPLETED
+        else None,
+    )
+    repo.jobs[edit.id] = edit
+    return edit
+
+
+def only_new(repo: InMemoryGenerationRepository, seeded: set[uuid.UUID]) -> GenerationJob:
+    """仓储里种子之外刚受理的那一条。"""
+
+    (job,) = [job for job in repo.jobs.values() if job.id not in seeded]
     return job
 
 
-@pytest.mark.parametrize(
-    ("body", "purpose"),
-    [(CLIP_BODY, "reference"), (MASTER_BODY, "master")],
-    ids=["参考片段", "成片"],
-)
-async def test_clip_submit_accepts_and_persists_pending_without_calling_ffmpeg(
-    body: Mapping[str, object], purpose: str
-) -> None:
+async def test_an_edit_on_a_take_is_accepted_as_a_video_generate_with_source_and_range() -> None:
+    """编辑段走视频上游：来源与原作都是那条出片，区间先按请求记；落库的请求没有参考视频。"""
+
     repo = InMemoryGenerationRepository()
-    owner = uuid.uuid4()
-    root = seed_root(repo, owner=owner)
-    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
-    async with client(app) as http:
-        response = await http.post("/generations/clips", json={**body, "rootJobId": str(root.id)})
-
-    assert response.status_code == 202, response.text
-    stored = only_derivative(repo)
-    assert (stored.status, stored.kind, stored.provider) == (STATUS_PENDING, "clip", "ffmpeg")
-    assert stored.root_job_id == root.id
-    payload = stored.request.model_dump()
-    assert payload["purpose"] == purpose
-    assert len(payload["segments"]) == len(body["segments"])  # type: ignore[arg-type]
-    generation = response.json()["generation"]
-    assert generation["outputUrl"] is None, "受理时还没加工"
-    assert generation["rootJobId"] == str(root.id)
-
-
-async def test_clip_submit_keeps_origin_fields_out_of_the_request_payload() -> None:
-    repo = InMemoryGenerationRepository()
-    owner, conversation = uuid.uuid4(), uuid.uuid4()
-    root = seed_root(repo, owner=owner, conversation=conversation)
+    owner, conversation, task = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    take = seed_take(repo, owner=owner, conversation=conversation)
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
         response = await http.post(
-            "/generations/clips",
+            "/generations/video-edits",
             json={
-                **CLIP_BODY,
-                "conversationId": str(conversation),
-                "rootJobId": str(root.id),
-                "metadata": {"editId": "e1", "editStart": 4},
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "conversation_id": str(conversation),
+                "task_id": str(task),
+                "metadata": {"frame": 1},
             },
         )
 
     assert response.status_code == 202, response.text
-    stored = only_derivative(repo)
-    assert stored.conversation_id == conversation
-    assert stored.root_job_id == root.id
-    assert stored.metadata == {"editId": "e1", "editStart": 4}
-    persisted = request_to_payload(stored.request)
-    assert not {"metadata", "conversationId", "rootJobId"} & persisted.keys(), (
-        "坐标、归属与原作号落自己的列，不进 request JSON"
+    stored = only_new(repo, {take.id})
+    assert (stored.kind, stored.operation, stored.provider, stored.status) == (
+        "video",
+        "generate",
+        "video_api",
+        STATUS_PENDING,
     )
+    assert (stored.source_job_id, stored.root_job_id) == (take.id, take.id)
+    assert (stored.range_start_ms, stored.range_end_ms) == (1000, 4000)
+    assert (stored.conversation_id, stored.task_id, stored.metadata) == (
+        conversation,
+        task,
+        {"frame": 1},
+    )
+    request = stored_request(stored).model_dump()
+    assert request["reference_video_urls"] == [], "片段由服务端提交上游前再切"
+    assert (request["user_name"], request["seconds"], request["reference_image_urls"]) == (
+        "tester",
+        -1,
+        ["https://cdn.test/sandal.png"],
+    )
+    generation = response.json()["generation"]
+    assert (generation["id"], generation["sourceJobId"], generation["rangeStartMs"]) == (
+        str(stored.id),
+        str(take.id),
+        1000,
+    )
+    assert app.state.cleared_completions.calls == [(conversation, owner)], "又开工了，收尾标记抹掉"
 
 
-async def test_clip_submit_requires_a_root_job() -> None:
-    """本地加工的产物一律是衍生记录，不带原作号的请求在形状上就拒掉。"""
-
+async def test_an_edit_on_a_composite_keeps_the_original_take_as_its_root() -> None:
     repo = InMemoryGenerationRepository()
-    app = build_test_app(repo, granted=principal("generation:submit"))
-    async with client(app) as http:
-        response = await http.post("/generations/clips", json=CLIP_BODY)
-
-    assert response.status_code == 422, response.text
-    assert repo.jobs == {}
-
-
-@pytest.mark.parametrize("flaw", ["不存在", "别人的", "别的对话", "本身是衍生记录"])
-async def test_root_job_must_be_a_visible_independent_record_in_the_same_conversation(
-    flaw: str,
-) -> None:
-    """三种不满足给同一句 422，不区分不存在与不可见；链因此只有一层。"""
-
-    repo = InMemoryGenerationRepository()
-    owner, conversation = uuid.uuid4(), uuid.uuid4()
-    if flaw == "不存在":
-        root_id = uuid.uuid4()
-    elif flaw == "别人的":
-        root_id = seed_root(repo, owner=uuid.uuid4(), conversation=conversation).id
-    elif flaw == "别的对话":
-        root_id = seed_root(repo, owner=owner, conversation=uuid.uuid4()).id
-    else:
-        root = seed_root(repo, owner=owner, conversation=conversation)
-        derivative = make_job(
-            clip_request(root_job_id=root.id),
-            status=STATUS_COMPLETED,
-            owner_user_id=owner,
-            conversation_id=conversation,
-        )
-        repo.jobs[derivative.id] = derivative
-        root_id = derivative.id
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    composite = make_composite(
+        seed_edit(repo, take), status=STATUS_COMPLETED, owner_user_id=owner, output_url=BASE_URL
+    )
+    repo.jobs[composite.id] = composite
     seeded = set(repo.jobs)
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
         response = await http.post(
-            "/generations/clips",
-            json={**CLIP_BODY, "conversationId": str(conversation), "rootJobId": str(root_id)},
+            "/generations/video-edits", json={**EDIT_BODY, "source_job_id": str(composite.id)}
+        )
+
+    assert response.status_code == 202, response.text
+    stored = only_new(repo, seeded)
+    assert (stored.source_job_id, stored.root_job_id) == (composite.id, take.id)
+
+
+async def test_edits_and_composites_take_the_shot_index_of_their_original() -> None:
+    """编辑段与合成的镜号不由调用方给，抄基底的；在合成上再剪，仍是原作那一镜。"""
+
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner, shot_index=4)
+    edit = seed_edit(repo, take)
+    composite = make_composite(
+        edit, status=STATUS_COMPLETED, owner_user_id=owner, output_url=BASE_URL
+    )
+    repo.jobs[composite.id] = composite
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        on_take = await http.post(
+            "/generations/video-edits", json={**EDIT_BODY, "source_job_id": str(take.id)}
+        )
+        on_composite = await http.post(
+            "/generations/video-edits", json={**EDIT_BODY, "source_job_id": str(composite.id)}
+        )
+        composed = await http.post(
+            "/generations/video-composites", json={"sourceJobId": str(edit.id)}
+        )
+        named = await http.post(
+            "/generations/video-edits",
+            json={**EDIT_BODY, "source_job_id": str(take.id), "shot_index": 1},
+        )
+
+    assert [
+        response.json()["generation"]["shotIndex"] for response in (on_take, on_composite, composed)
+    ] == [4, 4, 4]
+    assert named.status_code == 422, "编辑段不收镜号"
+
+
+@pytest.mark.parametrize("flaw", ["不存在", "别人的", "别的对话", "分叉之后才完成"])
+@pytest.mark.parametrize("path", ["/generations/video-edits", "/generations/video-composites"])
+async def test_a_source_outside_the_conversation_is_one_and_the_same_422(
+    flaw: str, path: str
+) -> None:
+    """不存在、看不见、不在这段对话、继承边界之外，一律同一句，不暴露存在性；不落库。"""
+
+    repo = InMemoryGenerationRepository()
+    owner, conversation, parent = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    forked_at = datetime.now(UTC)
+    lineage = FixedLineage({conversation: ((parent, forked_at),)})
+    if flaw == "不存在":
+        source_id = uuid.uuid4()
+    else:
+        take = seed_take(
+            repo,
+            owner=uuid.uuid4() if flaw == "别人的" else owner,
+            conversation={"别人的": conversation, "别的对话": uuid.uuid4()}.get(flaw, parent),
+        )
+        source = take if path.endswith("video-edits") else seed_edit(repo, take)
+        if flaw == "分叉之后才完成":
+            # 同一个人在祖先对话里的，按属主读得到，但完成在分叉之后，不归这段对话。
+            source = replace(source, finished_at=forked_at + timedelta(minutes=1))
+            repo.jobs[source.id] = source
+        source_id = source.id
+    seeded = set(repo.jobs)
+    body = (
+        {**EDIT_BODY, "source_job_id": str(source_id), "conversation_id": str(conversation)}
+        if path.endswith("video-edits")
+        else {"sourceJobId": str(source_id), "conversationId": str(conversation)}
+    )
+    app = build_test_app(
+        repo, granted=principal("generation:submit", user_id=owner), lineage=lineage
+    )
+    async with client(app) as http:
+        response = await http.post(path, json=body)
+
+    assert response.status_code == 422, response.text
+    assert set(repo.jobs) == seeded, "拒绝发生在落库之前"
+    detail = response.json()["detail"]
+    async with client(app) as http:
+        missing = await http.post(
+            path,
+            json={
+                **body,
+                ("source_job_id" if path.endswith("video-edits") else "sourceJobId"): str(
+                    uuid.uuid4()
+                ),
+            },
+        )
+    assert missing.json()["detail"] == detail, "与不存在的那句一字不差"
+
+
+@pytest.mark.parametrize("role", ["还在跑的出片", "编辑段", "图片", "视频上传"])
+async def test_an_edit_needs_a_finished_take_as_its_base(role: str) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    if role == "还在跑的出片":
+        base = replace(take, status=STATUS_SUBMITTED, output_url=None)
+    elif role == "编辑段":
+        base = seed_edit(repo, take)
+    elif role == "视频上传":
+        base = make_upload(kind="video", owner_user_id=owner)
+    else:
+        base = make_job(image_request(), status=STATUS_COMPLETED, owner_user_id=owner)
+    repo.jobs[base.id] = base
+    seeded = set(repo.jobs)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits", json={**EDIT_BODY, "source_job_id": str(base.id)}
         )
 
     assert response.status_code == 422, response.text
-    assert "独立记录" in response.json()["detail"]
-    assert set(repo.jobs) == seeded, "拒绝发生在落库之前"
-
-
-async def test_video_submit_marks_an_edit_result_with_its_root_job() -> None:
-    repo = InMemoryGenerationRepository()
-    owner, conversation = uuid.uuid4(), uuid.uuid4()
-    root = seed_root(repo, owner=owner, conversation=conversation)
-    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
-    async with client(app) as http:
-        response = await http.post(
-            "/generations/video",
-            json={**VIDEO_BODY, "conversation_id": str(conversation), "root_job_id": str(root.id)},
-        )
-
-    assert response.status_code == 202, response.text
-    stored = only_derivative(repo)
-    assert (stored.kind, stored.root_job_id) == ("video", root.id)
-    assert "root_job_id" not in request_to_payload(stored.request)
-
-
-async def test_submit_clears_the_conversation_completion_flag() -> None:
-    """在一段对话里又出片就是又开工了，属主标的收尾标记不该留着。"""
-
-    repo = InMemoryGenerationRepository()
-    owner, conversation = uuid.uuid4(), uuid.uuid4()
-    root = seed_root(repo, owner=owner, conversation=conversation)
-    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
-    async with client(app) as http:
-        response = await http.post(
-            "/generations/clips",
-            json={**CLIP_BODY, "conversationId": str(conversation), "rootJobId": str(root.id)},
-        )
-
-    assert response.status_code == 202, response.text
-    assert app.state.cleared_completions.calls == [(conversation, owner)]
-
-
-async def test_submit_without_a_conversation_does_not_call_back() -> None:
-    repo = InMemoryGenerationRepository()
-    owner = uuid.uuid4()
-    root = seed_root(repo, owner=owner)
-    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
-    async with client(app) as http:
-        response = await http.post(
-            "/generations/clips", json={**CLIP_BODY, "rootJobId": str(root.id)}
-        )
-
-    assert response.status_code == 202, response.text
-    assert app.state.cleared_completions.calls == []
+    assert "成片" in response.json()["detail"]
+    assert set(repo.jobs) == seeded
 
 
 @pytest.mark.parametrize(
-    "segments",
+    "flaw",
     [
-        pytest.param([], id="一段都没有"),
-        pytest.param(
-            [{"url": "https://example.com/a.mp4", "start": 4, "end": 4}], id="结束不晚于开始"
-        ),
-        pytest.param([{"url": "file:///etc/passwd", "start": 0, "end": 1}], id="不是 http 地址"),
-        pytest.param([{"url": "https:///a.mp4", "start": 0, "end": 1}], id="地址没有主机名"),
-        pytest.param(
-            [{"url": "https://example.com/" + "a" * 2000, "start": 0, "end": 1}], id="地址过长"
-        ),
-        pytest.param(
-            [
-                {"url": "https://example.com/a.mp4", "start": 0, "end": 1},
-                {"url": "https://example.com/b.mp4", "start": 0, "end": 1},
-            ],
-            id="参考片段裁了不止一段",
-        ),
+        {"range_start_ms": -1},
+        {"range_end_ms": 1000},
+        {"model": "vendor-c-seedance-2-5"},
     ],
+    ids=["起点为负", "终点不晚于起点", "模型不在允许表"],
 )
-async def test_clip_submit_rejects_unusable_segments_before_persisting(
-    segments: list[dict[str, object]],
-) -> None:
+async def test_an_edit_with_a_bad_range_or_model_is_rejected(flaw: dict[str, object]) -> None:
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
-    root = seed_root(repo, owner=owner)
-    # 错误路径若仍尝试入队，坏队列会让这条用例失败。
+    take = seed_take(repo, owner=owner)
     app = build_test_app(
         repo, granted=principal("generation:submit", user_id=owner), broken_queue=True
     )
     async with client(app) as http:
         response = await http.post(
-            "/generations/clips",
-            json={"purpose": "reference", "segments": segments, "rootJobId": str(root.id)},
+            "/generations/video-edits",
+            json={**EDIT_BODY, "source_job_id": str(take.id), **flaw},
         )
 
     assert response.status_code == 422, response.text
-    assert list(repo.jobs) == [root.id], "只有原作，没有新记录"
+    assert list(repo.jobs) == [take.id]
 
 
-async def test_clip_submit_requires_the_submit_permission() -> None:
-    app = build_test_app(InMemoryGenerationRepository(), granted=principal("generation:read"))
+@pytest.mark.parametrize(
+    ("range_start_ms", "expected"),
+    [
+        (
+            1000,
+            [
+                {"url": BASE_URL, "start": 0, "end": 1},
+                {"url": EDITED_URL, "start": 0, "end": None},
+                {"url": BASE_URL, "start": 4, "end": None},
+            ],
+        ),
+        (
+            0,
+            [
+                {"url": EDITED_URL, "start": 0, "end": None},
+                {"url": BASE_URL, "start": 4, "end": None},
+            ],
+        ),
+    ],
+    ids=["三段", "从头改起没有前段"],
+)
+async def test_a_composite_splices_the_edit_back_into_its_base(
+    range_start_ms: int, expected: list[dict[str, object]]
+) -> None:
+    """段按编辑段上记的实际区间算；本地执行，原作随编辑段，来源是编辑段。"""
+
+    repo = InMemoryGenerationRepository()
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    take = seed_take(repo, owner=owner, conversation=conversation)
+    edit = seed_edit(repo, take, range_start_ms=range_start_ms)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
-        assert (await http.post("/generations/clips", json=CLIP_BODY)).status_code == 403
+        response = await http.post(
+            "/generations/video-composites",
+            json={"sourceJobId": str(edit.id), "conversationId": str(conversation)},
+        )
+
+    assert response.status_code == 202, response.text
+    stored = only_new(repo, {take.id, edit.id})
+    assert (stored.kind, stored.operation, stored.provider) == ("video", "compose", "ffmpeg")
+    assert (stored.source_job_id, stored.root_job_id) == (edit.id, take.id)
+    assert (stored.range_start_ms, stored.range_end_ms) == (None, None)
+    assert isinstance(stored.request, VideoComposeRequest)
+    assert stored.request.model_dump()["segments"] == expected
+    assert stored.request.user_name == "tester"
+    assert response.json()["generation"]["request"]["userName"] == "tester"
 
 
-async def test_clip_jobs_are_listed_under_their_own_kind() -> None:
+@pytest.mark.parametrize("role", ["出片", "合成", "还在跑的编辑段"])
+async def test_a_composite_needs_a_finished_edit_as_its_source(role: str) -> None:
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
-    repo.jobs = {
-        job.id: job
-        for job in (
-            make_job(clip_request(), provider="ffmpeg", owner_user_id=owner),
-            make_job(video_request(), provider="video_api", owner_user_id=owner),
+    take = seed_take(repo, owner=owner)
+    if role == "出片":
+        source = take
+    elif role == "合成":
+        source = make_composite(seed_edit(repo, take), status=STATUS_COMPLETED, owner_user_id=owner)
+        repo.jobs[source.id] = source
+    else:
+        source = seed_edit(repo, take, status=STATUS_SUBMITTED)
+    seeded = set(repo.jobs)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-composites", json={"sourceJobId": str(source.id)}
         )
-    }
+
+    assert response.status_code == 422, response.text
+    assert "编辑段" in response.json()["detail"]
+    assert set(repo.jobs) == seeded
+
+
+@pytest.mark.parametrize("path", ["/generations/video-edits", "/generations/video-composites"])
+async def test_edits_and_composites_settle_the_author_like_a_take(path: str) -> None:
+    """钥匙不报名字就拒；持 users:act_as 的钥匙报了名字，属主换成那个人；浏览器只能报自己。"""
+
+    def body_for(source: GenerationJob, user_name: str | None) -> dict[str, object]:
+        if path.endswith("video-edits"):
+            body: dict[str, object] = {**EDIT_BODY, "source_job_id": str(source.id)}
+            return body if user_name is None else {**body, "user_name": user_name}
+        body = {"sourceJobId": str(source.id)}
+        return body if user_name is None else {**body, "userName": user_name}
+
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    source = take if path.endswith("video-edits") else seed_edit(repo, take)
+    seeded = set(repo.jobs)
+    key = api_key("generation:submit", ACT_AS_PERMISSION)
+    async with client(build_test_app(repo, granted=key)) as http:
+        nameless = await http.post(path, json=body_for(source, None))
+        acting = await http.post(path, json=body_for(source, "Sara.Hong"))
+    async with client(
+        build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    ) as http:
+        someone_else = await http.post(path, json=body_for(source, "bob"))
+
+    assert nameless.status_code == 422
+    assert acting.status_code == 202, acting.text
+    stored = only_new(repo, seeded)
+    assert stored.owner_user_id not in (key.user_id, owner), "属主换成报上来的那个人"
+    assert stored.api_key_id == key.api_key_id
+    assert stored_request(stored).model_dump()["user_name"] == "Sara.Hong"
+    assert someone_else.status_code == 422
+
+
+async def test_submit_without_a_conversation_does_not_call_back() -> None:
+    repo = InMemoryGenerationRepository()
+    app = build_test_app(repo, granted=principal("generation:submit"))
+    async with client(app) as http:
+        response = await http.post("/generations/video", json=VIDEO_BODY)
+
+    assert response.status_code == 202, response.text
+    assert app.state.cleared_completions.calls == []
+
+
+async def test_listing_videos_by_kind_includes_composites_and_leaves_images_out() -> None:
+    """合成出来的是视频，按种类列视频时在里面；同一属主的图片不在。"""
+
+    owner = uuid.uuid4()
+    take = make_job(video_request(), owner_user_id=owner, status=STATUS_COMPLETED)
+    composite = make_composite(make_edit(take, owner_user_id=owner), owner_user_id=owner)
+    image = make_job(image_request(), owner_user_id=owner, status=STATUS_COMPLETED)
+    repo = InMemoryGenerationRepository([take, composite, image])
     app = build_test_app(repo, granted=principal("generation:read", user_id=owner))
     async with client(app) as http:
-        clips = await http.get("/generations?kind=clip")
-        videos = await http.get("/generations?kind=video")
+        videos = await http.get("/generations", params={"kind": "video"})
 
-    assert [item["kind"] for item in clips.json()["items"]] == ["clip"]
-    assert [item["kind"] for item in videos.json()["items"]] == ["video"], (
-        "裁剪拼接的产物不混进出片记录"
+    assert {(item["id"], item["operation"]) for item in videos.json()["items"]} == {
+        (str(take.id), "generate"),
+        (str(composite.id), "compose"),
+    }
+
+
+# --- 帧图编辑的底图与来源地址 ------------------------------------------------------
+
+
+class BaseWorld:
+    """帧图编辑找底图的场景：我在这段对话（从别人的源对话分叉来）里的图、编辑、上传，别人的上传，
+    源对话里分叉前完成的图，别的对话里的图，以及一条视频。地址都按名字起。"""
+
+    def __init__(self) -> None:
+        self.me, self.someone = uuid.uuid4(), uuid.uuid4()
+        self.conversation, self.source, self.elsewhere = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        self.forked_at = datetime.now(UTC) - timedelta(minutes=30)
+        done = self.forked_at - timedelta(minutes=10)
+        self.mine = self._image("mine", owner=self.me, conversation=self.conversation)
+        self.my_edit = self._image(
+            "my-edit", owner=self.me, conversation=self.conversation, source=self.mine.id
+        )
+        self.ancestor = self._image(
+            "ancestor", owner=self.someone, conversation=self.source, finished_at=done
+        )
+        self.foreign = self._image("foreign", owner=self.me, conversation=self.elsewhere)
+        self.my_upload = make_upload(owner_user_id=self.me, output_url=url_of("my-upload"))
+        self.their_upload = make_upload(owner_user_id=self.someone, output_url=url_of("theirs"))
+        self.take = make_job(
+            video_request(),
+            status=STATUS_COMPLETED,
+            owner_user_id=self.me,
+            conversation_id=self.conversation,
+            output_url=url_of("take", ext="mp4"),
+            finished_at=done,
+        )
+        self.repo = InMemoryGenerationRepository(
+            [
+                self.mine,
+                self.my_edit,
+                self.ancestor,
+                self.foreign,
+                self.my_upload,
+                self.their_upload,
+                self.take,
+            ]
+        )
+
+    def lineage(self, *, readable: bool = True) -> FixedLineage:
+        return FixedLineage(
+            {self.conversation: ((self.source, self.forked_at),)}, readable=readable
+        )
+
+    def _image(
+        self,
+        name: str,
+        *,
+        owner: uuid.UUID,
+        conversation: uuid.UUID,
+        source: uuid.UUID | None = None,
+        finished_at: datetime | None = None,
+    ) -> GenerationJob:
+        at = finished_at or datetime.now(UTC) - timedelta(minutes=5)
+        return make_job(
+            image_request(),
+            status=STATUS_COMPLETED,
+            owner_user_id=owner,
+            conversation_id=conversation,
+            source_job_id=source,
+            output_url=url_of(name),
+            created_at=at - timedelta(minutes=1),
+            finished_at=at,
+        )
+
+
+def url_of(name: str, *, ext: str = "png") -> str:
+    return f"https://cdn.test/{name}.{ext}"
+
+
+@pytest.mark.parametrize(
+    ("base", "caller", "readable", "expected"),
+    [
+        ("mine", "me", True, "mine"),
+        ("my-edit", "me", True, "my_edit"),
+        ("ancestor", "me", True, "ancestor"),
+        ("ancestor", "me", False, None),
+        ("my-upload", "me", True, "my_upload"),
+        ("theirs", "me", True, None),
+        ("theirs", "manager", True, "their_upload"),
+        ("theirs", "act_as", True, "their_upload"),
+        ("foreign", "me", True, None),
+        ("take", "me", True, None),
+    ],
+    ids=[
+        "本对话的出图",
+        "编辑的编辑",
+        "继承来的（读得到副本）",
+        "继承来的（读不到副本）",
+        "自己的上传",
+        "别人的上传",
+        "治理者看别人的上传",
+        "替人办事的钥匙看别人的上传",
+        "别的对话的图",
+        "视频的产物地址",
+    ],
+)
+async def test_a_frame_edit_records_exactly_one_source_for_its_base(
+    base: str, caller: str, readable: bool, expected: str | None
+) -> None:
+    """底图对上本对话或它继承来的图、或主体可见的上传就记那一行，对不上就记外部地址，不报错。
+    底图地址不进 request；回来的 sourceUrl 就是请求给的那个地址。"""
+
+    world = BaseWorld()
+    url = url_of(base, ext="mp4" if base == "take" else "png")
+    granted = {
+        "me": principal("generation:submit", "generation:read", user_id=world.me),
+        "manager": principal(
+            "generation:submit", "generation:read", "users:manage", user_id=world.me
+        ),
+        "act_as": api_key("generation:submit", "generation:read", ACT_AS_PERMISSION),
+    }[caller]
+    seeded = set(world.repo.jobs)
+    app = build_test_app(world.repo, granted=granted, lineage=world.lineage(readable=readable))
+    body = {**IMAGE_BODY, "conversationId": str(world.conversation), "sourceUrl": url}
+    if caller == "act_as":
+        body["userName"] = "Sara.Hong"
+    async with client(app) as http:
+        response = await http.post("/generations/image", json=body)
+
+    assert response.status_code == 202, response.text
+    job = only_new(world.repo, seeded)
+    source = None if expected is None else getattr(world, expected).id
+    assert (job.source_job_id, job.source_url) == (
+        (source, None) if source is not None else (None, url)
     )
+    generation = response.json()["generation"]
+    assert generation["sourceUrl"] == url
+    assert generation["sourceJobId"] == (None if source is None else str(source))
+    assert "sourceUrl" not in generation["request"], "底图地址不进发给上游的请求"
+
+
+async def test_a_plain_image_has_no_source() -> None:
+    world = BaseWorld()
+    seeded = set(world.repo.jobs)
+    app = build_test_app(
+        world.repo,
+        granted=principal("generation:submit", user_id=world.me),
+        lineage=world.lineage(),
+    )
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/image", json={**IMAGE_BODY, "conversationId": str(world.conversation)}
+        )
+
+    job = only_new(world.repo, seeded)
+    assert (job.source_job_id, job.source_url) == (None, None)
+    assert response.json()["generation"]["sourceUrl"] is None
+
+
+async def test_the_conversations_own_image_wins_over_an_upload_at_the_same_address() -> None:
+    world = BaseWorld()
+    world.repo.jobs[world.my_upload.id] = replace(world.my_upload, output_url=world.mine.output_url)
+    seeded = set(world.repo.jobs)
+    app = build_test_app(
+        world.repo,
+        granted=principal("generation:submit", user_id=world.me),
+        lineage=world.lineage(),
+    )
+    async with client(app) as http:
+        await http.post(
+            "/generations/image",
+            json={
+                **IMAGE_BODY,
+                "conversationId": str(world.conversation),
+                "sourceUrl": world.mine.output_url,
+            },
+        )
+
+    assert only_new(world.repo, seeded).source_job_id == world.mine.id
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    ["ftp://cdn.test/a.png", "", "https://:80/a.png", "https://cdn.test/" + "a" * 2000],
+    ids=["不是 http(s)", "空串", "没有主机", "超长"],
+)
+async def test_a_malformed_base_address_is_rejected_before_anything_is_stored(
+    source_url: str,
+) -> None:
+    repo = InMemoryGenerationRepository()
+    app = build_test_app(repo, granted=principal("generation:submit"))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/image", json={**IMAGE_BODY, "sourceUrl": source_url}
+        )
+
+    assert response.status_code == 422, response.text
+    assert repo.jobs == {}
+
+
+async def test_a_base_address_written_into_metadata_is_the_callers_label_not_a_source() -> None:
+    """服务端不读 metadata：只在里面写 sourceUrl 的请求没有来源，metadata 原样回显。"""
+
+    world = BaseWorld()
+    seeded = set(world.repo.jobs)
+    tag = {"shot": 1, "frame": 2, "sourceUrl": world.mine.output_url}
+    app = build_test_app(
+        world.repo,
+        granted=principal("generation:submit", user_id=world.me),
+        lineage=world.lineage(),
+    )
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/image",
+            json={**IMAGE_BODY, "conversationId": str(world.conversation), "metadata": tag},
+        )
+
+    job = only_new(world.repo, seeded)
+    assert (job.source_job_id, job.source_url, job.metadata) == (None, None, tag)
+    generation = response.json()["generation"]
+    assert (generation["sourceUrl"], generation["metadata"]) == (None, tag)
+
+
+async def test_every_sourced_record_reads_back_with_its_sources_address() -> None:
+    """编辑段回基底地址，合成回编辑段地址，切图回宫格地址，帧图编辑回底图地址；列表与单条读一致。"""
+
+    owner = uuid.uuid4()
+    conversation = uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    take = seed_take(repo, owner=owner, conversation=conversation)
+    edit = seed_edit(repo, take)
+    composite = make_composite(edit, owner_user_id=owner, conversation_id=conversation)
+    grid = make_job(
+        image_request(),
+        status=STATUS_COMPLETED,
+        owner_user_id=owner,
+        conversation_id=conversation,
+        output_url=url_of("grid"),
+    )
+    cell = make_cut(grid)
+    frame_edit = make_job(
+        image_request(),
+        owner_user_id=owner,
+        conversation_id=conversation,
+        source_url=url_of("old-cell"),
+    )
+    for job in (composite, grid, cell, frame_edit):
+        repo.jobs[job.id] = job
+    app = build_test_app(repo, granted=principal("generation:read", user_id=owner))
+    async with client(app) as http:
+        listed = await http.get("/generations", params={"conversationId": str(conversation)})
+        single = {
+            job.id: (await http.get(f"/generations/{job.id}")).json()["generation"]["sourceUrl"]
+            for job in (take, edit, composite, grid, cell, frame_edit)
+        }
+
+    expected = {
+        take.id: None,
+        edit.id: BASE_URL,
+        composite.id: EDITED_URL,
+        grid.id: None,
+        cell.id: url_of("grid"),
+        frame_edit.id: url_of("old-cell"),
+    }
+    assert {uuid.UUID(item["id"]): item["sourceUrl"] for item in listed.json()["items"]} == expected
+    assert single == expected
+
+
+async def test_an_inherited_edit_carries_its_bases_address_even_when_the_base_is_unreadable() -> (
+    None
+):
+    """副本继承来的帧图编辑，底图是祖先属主的上传：按 id 单条读那条上传是 404，列表里照样给地址。"""
+
+    world = BaseWorld()
+    done = world.forked_at - timedelta(minutes=5)
+    theirs = replace(world.their_upload, finished_at=done)
+    inherited_edit = make_job(
+        image_request(),
+        status=STATUS_COMPLETED,
+        owner_user_id=world.someone,
+        conversation_id=world.source,
+        source_job_id=theirs.id,
+        output_url=url_of("inherited-edit"),
+        finished_at=done,
+    )
+    world.repo.jobs[theirs.id] = theirs
+    world.repo.jobs[inherited_edit.id] = inherited_edit
+    app = build_test_app(
+        world.repo, granted=principal("generation:read", user_id=world.me), lineage=world.lineage()
+    )
+    async with client(app) as http:
+        listed = await http.get(
+            "/generations", params={"conversationId": str(world.conversation), "kind": "image"}
+        )
+        base = await http.get(f"/generations/{theirs.id}")
+
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert by_id[str(inherited_edit.id)]["sourceUrl"] == theirs.output_url
+    assert base.status_code == 404
+
+
+@pytest.mark.parametrize("kind", ["image", "video"])
+async def test_settled_records_read_back_without_a_request(kind: GenerationKind) -> None:
+    """上传与切图创建即完成、没有请求：读回 request 为 null，不是空对象。"""
+
+    owner = uuid.uuid4()
+    grid = make_job(image_request(), status=STATUS_COMPLETED, owner_user_id=owner)
+    upload = make_upload(kind=kind, owner_user_id=owner)
+    cell = make_cut(grid)
+    repo = InMemoryGenerationRepository([grid, upload, cell])
+    app = build_test_app(repo, granted=principal("generation:read", user_id=owner))
+    async with client(app) as http:
+        bodies = [
+            (await http.get(f"/generations/{job.id}")).json()["generation"]
+            for job in (upload, cell)
+        ]
+
+    assert [(body["operation"], body["request"]) for body in bodies] == [
+        ("upload", None),
+        ("cut", None),
+    ]

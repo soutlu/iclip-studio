@@ -1,4 +1,5 @@
-"""媒体生成用例。受理请求时校验、保存 pending 记录并排队，Provider 调用由后台执行。"""
+"""媒体生成用例。受理请求时校验、保存 pending 记录并排队，Provider 调用由后台执行；创建即完成的
+上传与切图记录另由 ``SettledRecords`` 直接落库。"""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import structlog
 
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.generation.models import (
+    STATUS_COMPLETED,
     STATUS_PENDING,
     GenerationJob,
     InFlightPhase,
@@ -21,11 +23,20 @@ from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
+    KIND_IMAGE,
     KIND_VIDEO,
-    ClipIn,
+    OPERATION_COMPOSE,
+    OPERATION_CUT,
+    OPERATION_GENERATE,
+    OPERATION_UPLOAD,
+    ComposeSegment,
     GenerationKind,
+    GenerationOperation,
     GenerationRequest,
     ImageGenerationIn,
+    VideoComposeIn,
+    VideoComposeRequest,
+    VideoEditIn,
     VideoGenerationIn,
 )
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
@@ -58,7 +69,7 @@ class GenerationService:
         queue: GenerationQueue,
         *,
         video_provider_name: str,
-        clip_provider_name: str,
+        compose_provider_name: str,
         video_default_model: str,
         video_allowed_models: tuple[str, ...],
         image_models: Mapping[str, ImageModelSpec],
@@ -73,7 +84,7 @@ class GenerationService:
         self._repo = repo
         self._queue = queue
         self._video_provider_name = video_provider_name
-        self._clip_provider_name = clip_provider_name
+        self._compose_provider_name = compose_provider_name
         self._video_default_model = video_default_model
         self._video_allowed_models = video_allowed_models
         self._image_models = image_models
@@ -95,86 +106,212 @@ class GenerationService:
     async def submit_video(self, principal: Principal, request: VideoGenerationIn) -> GenerationJob:
         """受理一次视频生成。模型必须在允许表里；其余字段原样转发给上游，由它按模型判。"""
 
-        if request.model not in self._video_allowed_models:
-            raise ValidationFailed(f"视频生成仅支持模型 {'、'.join(self._video_allowed_models)}")
+        self._require_video_model(request.model)
         _require_user_name(request.user_name)
-        await self._check_root(principal, request)
-        return await self._accept(principal, request, provider=self._video_provider_name)
+        return await self._accept(
+            principal,
+            request,
+            provider=self._video_provider_name,
+            conversation_id=request.conversation_id,
+            task_id=request.task_id,
+            metadata=request.metadata,
+            shot_index=request.shot_index,
+        )
 
-    async def submit_clip(self, principal: Principal, request: ClipIn) -> GenerationJob:
-        """受理一次本地视频加工。不经外部服务、不计费，门槛只有原作号要给且对得上。"""
+    async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
+        """受理一次编辑段：在一条成片上改一段，走视频上游。
 
-        if request.root_job_id is None:
-            raise ValidationFailed("rootJobId 必填：本地加工的产物一律是某条出片的衍生记录")
-        await self._check_root(principal, request)
-        return await self._accept(principal, request, provider=self._clip_provider_name)
+        基底必须是这段对话看得到的一条已完成成片；原作与镜号随基底，基底是出片就是它自己。区间
+        先按请求记，提交上游前服务端切参考片段时改记实际切点。落库的请求不带参考视频，片段地址
+        只进发给上游的那一次请求。"""
 
-    async def _check_root(self, principal: Principal, request: GenerationRequest) -> None:
-        """原作号必须指向这段对话自己的或它继承的一条独立记录，链才只有一层。
+        self._require_video_model(request.model)
+        _require_user_name(request.user_name)
+        base = await self._check_source(principal, request.source_job_id, request.conversation_id)
+        if not _is_completed_master(base):
+            raise ValidationFailed("基底必须是一条已完成的成片")
+        forwarded = VideoGenerationIn(
+            model=request.model,
+            prompt=request.prompt,
+            user_name=request.user_name,
+            reference_image_urls=request.reference_image_urls,
+            seconds=request.seconds,
+            provider_options=request.provider_options,
+        )
+        return await self._accept(
+            principal,
+            forwarded,
+            provider=self._video_provider_name,
+            conversation_id=request.conversation_id,
+            task_id=request.task_id,
+            metadata=request.metadata,
+            shot_index=base.shot_index,
+            root_job_id=base.root_job_id or base.id,
+            source_job_id=base.id,
+            range_start_ms=request.range_start_ms,
+            range_end_ms=request.range_end_ms,
+        )
+
+    async def submit_video_compose(
+        self, principal: Principal, request: VideoComposeIn
+    ) -> GenerationJob:
+        """受理一次合成：把编辑段夹回它的基底，拼成一条新成片，原作与镜号随编辑段。
+
+        段按编辑段上记的实际区间算：基底从头到起点（起点为 0 时没有这段）、编辑段产物整条、
+        基底从终点到结尾。后两段取到结尾，执行方按下载下来的素材补齐。不经外部服务。"""
+
+        _require_user_name(request.user_name)
+        edit = await self._check_source(principal, request.source_job_id, request.conversation_id)
+        if not _is_finished_edit(edit) or edit.output_url is None or edit.source_job_id is None:
+            raise ValidationFailed("来源必须是一条已完成的编辑段")
+        # 组合约束保证编辑段的区间齐全；到这儿为空说明持久化状态坏了。
+        if edit.range_start_ms is None or edit.range_end_ms is None:
+            raise RuntimeError(f"编辑段 {edit.id} 没有区间")
+        base = await self._repo.get(edit.source_job_id, owner=None)
+        if base.output_url is None:
+            raise ValidationFailed("编辑段的基底没有产物地址，合成不了")
+        segments = [
+            *(
+                [ComposeSegment(url=base.output_url, start=0, end=edit.range_start_ms / 1000)]
+                if edit.range_start_ms > 0
+                else []
+            ),
+            ComposeSegment(url=edit.output_url, start=0),
+            ComposeSegment(url=base.output_url, start=edit.range_end_ms / 1000),
+        ]
+        return await self._accept(
+            principal,
+            VideoComposeRequest(segments=segments, user_name=request.user_name),
+            provider=self._compose_provider_name,
+            conversation_id=request.conversation_id,
+            task_id=request.task_id,
+            metadata=request.metadata,
+            shot_index=edit.shot_index,
+            root_job_id=edit.root_job_id,
+            source_job_id=edit.id,
+        )
+
+    async def _check_source(
+        self, principal: Principal, source_id: uuid.UUID, conversation_id: uuid.UUID | None
+    ) -> GenerationJob:
+        """来源必须是这段对话自己的或它继承的一条记录，返回那条记录。
 
         先按主体可见范围读：生成记录的 ``conversation_id`` 只是标签、不按对话验属主，直接按
-        id 查会让人把衍生记录挂到别人的出片上；继承的那部分只在主体读得到这段对话时才算。
-        按属主读得到的也可能是祖先对话里分叉之后才完成的，那不归这段对话，要再判一次。
-        三种不满足给同一句，不区分不存在与不可见。"""
+        id 查会让人在别人的片上接着剪；继承的那部分只在主体读得到这段对话时才算。按属主读得到
+        的也可能是祖先对话里分叉之后才完成的，那不归这段对话，要再判一次。不存在、不可见、
+        不在范围内给同一句，不区分存在性；角色与状态对不对由调用方判。"""
 
-        if request.root_job_id is None:
-            return
-        inheritance = await self._inheritance(principal, request.conversation_id)
+        inheritance = await self._inheritance(principal, conversation_id)
         try:
-            root = await self._repo.get(
-                request.root_job_id,
-                owner=visible_owner_incl_act_as(principal),
-                inherited=inheritance,
+            source = await self._repo.get(
+                source_id, owner=visible_owner_incl_act_as(principal), inherited=inheritance
             )
         except NotFound:
-            root = None
-        if (
-            root is None
-            or root.root_job_id is not None
-            or (
-                root.conversation_id != request.conversation_id
-                and not inherited_through(root, inheritance)
-            )
+            source = None
+        if source is None or (
+            source.conversation_id != conversation_id and not inherited_through(source, inheritance)
         ):
-            raise ValidationFailed("原作号不是这段对话自己的或继承来的一条独立记录")
+            raise ValidationFailed("来源不是这段对话自己的或继承来的一条记录")
+        return source
+
+    def _require_video_model(self, model: str) -> None:
+        if model not in self._video_allowed_models:
+            raise ValidationFailed(f"视频生成仅支持模型 {'、'.join(self._video_allowed_models)}")
 
     async def submit_image(self, principal: Principal, request: ImageGenerationIn) -> GenerationJob:
-        """受理一次图片生成。选定哪家、哪个渠道在这里定死，队列等待期间的配置变化不影响它。"""
+        """受理一次图片生成。选定哪家、哪个渠道在这里定死，队列等待期间的配置变化不影响它。
+
+        帧图编辑带着底图地址 ``source_url``，来源在这里定下（见 ``_resolve_base``）。"""
 
         _require_user_name(request.user_name)
-        await self._check_root(principal, request)
         settled, model = self._settle_image_model(request)
-        return await self._accept(principal, settled, provider=model)
+        base_id, external = await self._resolve_base(
+            principal, request.source_url, request.conversation_id
+        )
+        return await self._accept(
+            principal,
+            settled,
+            provider=model,
+            conversation_id=request.conversation_id,
+            task_id=request.task_id,
+            metadata=request.metadata,
+            # 图片的镜与帧只有分镜页自己用来找格子，是调用方的 metadata，不落镜号列。
+            shot_index=None,
+            source_job_id=base_id,
+            source_url=external,
+        )
+
+    async def _resolve_base(
+        self, principal: Principal, url: str | None, conversation_id: uuid.UUID | None
+    ) -> tuple[uuid.UUID | None, str | None]:
+        """帧图编辑的底图是库里哪一行：先找这段对话自己的与它继承来的图片，再找主体可见的上传。
+
+        找到返回 ``(那一行的 id, None)``；找不到就是外部底图 ``(None, 地址)``，不报错。没给地址两者
+        都空。上传不属于任何对话，不受对话范围限制，只按主体可见范围认。"""
+
+        if url is None:
+            return None, None
+        owner = visible_owner_incl_act_as(principal)
+        found = await self._repo.find_image_by_output(
+            url,
+            owner=owner,
+            conversation_id=conversation_id,
+            inherited=await self._inheritance(principal, conversation_id),
+        )
+        if found is None:
+            found = await self._repo.find_image_by_output(
+                url, owner=owner, conversation_id=None, operation=OPERATION_UPLOAD
+            )
+        return (None, url) if found is None else (found.id, None)
 
     async def _accept(
-        self, principal: Principal, request: GenerationRequest, *, provider: str
+        self,
+        principal: Principal,
+        request: GenerationRequest,
+        *,
+        provider: str,
+        conversation_id: uuid.UUID | None,
+        task_id: uuid.UUID | None,
+        metadata: dict[str, Any] | None,
+        shot_index: int | None,
+        root_job_id: uuid.UUID | None = None,
+        source_job_id: uuid.UUID | None = None,
+        source_url: str | None = None,
+        range_start_ms: int | None = None,
+        range_end_ms: int | None = None,
     ) -> GenerationJob:
         """保存 pending 记录并排队。入库与排队分属不同事务，排队失败时标记失败并抛出错误。
 
-        两步之间进程中断会留下未排队的 pending 记录，需要人工确认后重新发起。"""
+        kind 与 operation 随落库请求的类型定；归属、镜号、来源与区间由各入口显式给，不从请求上抄。
+        镜号没有默认值：漏传就会静默落成一条没有镜号的记录。帧图编辑的两种来源恰好一个，由
+        ``_resolve_base`` 保证。两步之间进程中断会留下未排队的 pending 记录，需要人工确认后重新发起。"""
 
         now = datetime.now(UTC)
         job = GenerationJob(
             id=uuid.uuid4(),
             owner_user_id=principal.user_id,
             api_key_id=principal.api_key_id,
-            conversation_id=request.conversation_id,
-            metadata=request.metadata,
-            task_id=request.task_id,
-            root_job_id=request.root_job_id,
+            conversation_id=conversation_id,
+            metadata=metadata,
+            task_id=task_id,
+            shot_index=shot_index,
+            root_job_id=root_job_id,
+            source_job_id=source_job_id,
+            source_url=source_url,
+            range_start_ms=range_start_ms,
+            range_end_ms=range_end_ms,
             kind=request.kind,
+            operation=request.operation,
             provider=provider,
             request=request,
             status=STATUS_PENDING,
             provider_task_id=None,
             provider_status=None,
-            provider_snapshot=None,
             output_url=None,
             error_code=None,
             error_message=None,
             # 仓储使用数据库 now() 覆盖时间占位值。
             created_at=now,
-            updated_at=now,
             submitted_at=None,
             finished_at=None,
         )
@@ -253,11 +390,31 @@ class GenerationService:
 
         return await self._repo.get(job_id, owner=visible_owner_incl_act_as(principal))
 
+    async def source_addresses(self, jobs: Sequence[GenerationJob]) -> Mapping[uuid.UUID, str]:
+        """每条记录来源的地址，按记录 id 给：库内来源取那一条的产物地址，外部底图就是记下的地址；
+        没有来源的不在结果里。
+
+        来源那一条不再按主体判可见：记录本身可见，它记着的来源地址就照给（继承来的帧图编辑，底图
+        可能是祖先属主的上传，按 id 单条读不到）。"""
+
+        outputs = await self._repo.output_urls(
+            {job.source_job_id for job in jobs if job.source_job_id is not None}
+        )
+        addresses: dict[uuid.UUID, str] = {}
+        for job in jobs:
+            if job.source_url is not None:
+                addresses[job.id] = job.source_url
+            elif job.source_job_id is not None and job.source_job_id in outputs:
+                addresses[job.id] = outputs[job.source_job_id]
+        return addresses
+
     async def get_video(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
-        """视频任务查询只认视频记录：拿图片的 id 来查与不存在同样是 404。"""
+        """视频任务查询只认调上游的视频记录（出片与编辑段）：图片、合成与视频上传的 id 与不存在同样是 404。
+
+        合成不经上游、没有水印版地址，套不进上游任务查询的形状。"""
 
         job = await self.get(principal, job_id)
-        if job.kind != KIND_VIDEO:
+        if job.kind != KIND_VIDEO or job.operation != OPERATION_GENERATE:
             raise NotFound(f"没有这个视频任务: {job_id}")
         return job
 
@@ -275,9 +432,12 @@ class GenerationService:
         limit: int = 20,
         conversation_id: uuid.UUID | None = None,
         kind: GenerationKind | None = None,
+        operation: GenerationOperation | None = None,
         metadata: Mapping[str, Any] | None = None,
         task_id: uuid.UUID | None = None,
+        shot_index: int | None = None,
         root_job_id: uuid.UUID | None = None,
+        source_job_id: uuid.UUID | None = None,
         before: uuid.UUID | None = None,
     ) -> tuple[GenerationJob, ...]:
         """按时间倒序返回可见记录；归属筛选只收窄，不扩大属主可见范围。
@@ -290,12 +450,40 @@ class GenerationService:
             limit=limit,
             conversation_id=conversation_id,
             kind=kind,
+            operation=operation,
             metadata=metadata,
             task_id=task_id,
+            shot_index=shot_index,
             root_job_id=root_job_id,
+            source_job_id=source_job_id,
             before=before,
             inherited=await self._inheritance(principal, conversation_id),
         )
+
+
+def _is_completed_master(job: GenerationJob) -> bool:
+    """成片：一条已完成、有地址的视频，是出片（没有来源的 generate）或合成。"""
+
+    return (
+        job.kind == KIND_VIDEO
+        and job.status == STATUS_COMPLETED
+        and job.output_url is not None
+        and (
+            job.operation == OPERATION_COMPOSE
+            or (job.operation == OPERATION_GENERATE and job.source_job_id is None)
+        )
+    )
+
+
+def _is_finished_edit(job: GenerationJob) -> bool:
+    """已完成的编辑段：有来源的视频 generate。"""
+
+    return (
+        job.kind == KIND_VIDEO
+        and job.operation == OPERATION_GENERATE
+        and job.source_job_id is not None
+        and job.status == STATUS_COMPLETED
+    )
 
 
 def _require_user_name(user_name: str | None) -> None:
@@ -305,4 +493,105 @@ def _require_user_name(user_name: str | None) -> None:
         raise ValidationFailed("user_name 必填")
 
 
-__all__ = ["ConversationLineage", "GenerationService"]
+class SettledRecords:
+    """创建即完成的两种记录：上传与切图。只要仓储，不经队列，媒体生成没开也能落上传行。"""
+
+    def __init__(self, repo: GenerationRepository) -> None:
+        self._repo = repo
+
+    async def record_upload(
+        self, principal: Principal, *, upload_id: uuid.UUID, kind: GenerationKind, url: str
+    ) -> None:
+        """记一条上传：行 id 就是 ``upload_id``，属主与钥匙取 ``principal``，不挂对话，没有来源与请求。
+
+        按 ``upload_id`` 幂等：已经记过就不动它，第二次确认换了主体属主也照旧；同一个 id 却不是
+        上传，说明 id 撞了，抛 ``RuntimeError``。"""
+
+        created = await self._repo.create_settled(
+            [
+                _settled_job(
+                    principal, job_id=upload_id, kind=kind, operation=OPERATION_UPLOAD, url=url
+                )
+            ]
+        )
+        if created:
+            return
+        existing = await self._repo.get(upload_id, owner=None)
+        if existing.operation != OPERATION_UPLOAD:
+            raise RuntimeError(
+                f"上传 {upload_id} 撞上了一条 {existing.kind} / {existing.operation} 记录"
+            )
+
+    async def record_cuts(
+        self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
+    ) -> tuple[GenerationJob, ...]:
+        """从这张宫格切出、已转存的几格各记一条切图，与 ``urls`` 同序、一个事务落：来源是宫格，
+        对话与需求单抄宫格，属主与钥匙取 ``principal``（与宫格同一个运行主体）。
+
+        宫格必须是主体读得到的、已完成、有产物的图片生成。工具刚等到它完成，对不上是装配或状态
+        坏了，抛 ``RuntimeError``，不当成模型能改的输入。"""
+
+        grid = await self._repo.get(grid_job_id, owner=visible_owner_incl_act_as(principal))
+        if not (
+            grid.kind == KIND_IMAGE
+            and grid.operation == OPERATION_GENERATE
+            and grid.status == STATUS_COMPLETED
+            and grid.output_url is not None
+        ):
+            raise RuntimeError(f"生成记录 {grid_job_id} 不是一张已完成的宫格，不能从它切图")
+        return await self._repo.create_settled(
+            [
+                _settled_job(
+                    principal,
+                    job_id=uuid.uuid4(),
+                    kind=KIND_IMAGE,
+                    operation=OPERATION_CUT,
+                    url=url,
+                    conversation_id=grid.conversation_id,
+                    task_id=grid.task_id,
+                    source_job_id=grid.id,
+                )
+                for url in urls
+            ]
+        )
+
+
+def _settled_job(
+    principal: Principal,
+    *,
+    job_id: uuid.UUID,
+    kind: GenerationKind,
+    operation: GenerationOperation,
+    url: str,
+    conversation_id: uuid.UUID | None = None,
+    task_id: uuid.UUID | None = None,
+    source_job_id: uuid.UUID | None = None,
+) -> GenerationJob:
+    """一条创建即完成的记录。它们不进队列，``provider`` 只是标签，就写操作名；时刻由仓储改成
+    数据库时钟。"""
+
+    now = datetime.now(UTC)
+    return GenerationJob(
+        id=job_id,
+        owner_user_id=principal.user_id,
+        api_key_id=principal.api_key_id,
+        conversation_id=conversation_id,
+        task_id=task_id,
+        source_job_id=source_job_id,
+        kind=kind,
+        operation=operation,
+        provider=operation,
+        request=None,
+        status=STATUS_COMPLETED,
+        provider_task_id=None,
+        provider_status=None,
+        output_url=url,
+        error_code=None,
+        error_message=None,
+        created_at=now,
+        submitted_at=None,
+        finished_at=now,
+    )
+
+
+__all__ = ["ConversationLineage", "GenerationService", "SettledRecords"]

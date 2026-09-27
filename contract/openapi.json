@@ -760,111 +760,6 @@
         "title": "Body_auth_cookie_login_auth_login_post",
         "type": "object"
       },
-      "ClipIn": {
-        "additionalProperties": false,
-        "description": "一次本地视频加工：按顺序裁出各段拼成一条，产物是本系统桶里的公开地址。\n\n``reference`` 是编辑时切给模型看的参考片段，只能在一条完整视频上裁一段，不重编码\n（起点因此落在最近的关键帧上，产物可能比区间略长）；``master`` 是拼出来的成片，各段\n参数互不相同，一律重编码对齐。两者存在不同前缀下，成片不进过期规则。",
-        "properties": {
-          "conversationId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Conversationid"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
-          },
-          "purpose": {
-            "enum": [
-              "reference",
-              "master"
-            ],
-            "title": "Purpose",
-            "type": "string"
-          },
-          "rootJobId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rootjobid"
-          },
-          "segments": {
-            "items": {
-              "$ref": "#/components/schemas/ClipSegmentIn"
-            },
-            "maxItems": 50,
-            "minItems": 1,
-            "title": "Segments",
-            "type": "array"
-          },
-          "taskId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Taskid"
-          }
-        },
-        "required": [
-          "purpose",
-          "segments"
-        ],
-        "title": "ClipIn",
-        "type": "object"
-      },
-      "ClipSegmentIn": {
-        "additionalProperties": false,
-        "description": "从一条视频里取 ``[start, end)`` 这一段，单位秒。",
-        "properties": {
-          "end": {
-            "title": "End",
-            "type": "number"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "number"
-          },
-          "url": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url",
-          "start",
-          "end"
-        ],
-        "title": "ClipSegmentIn",
-        "type": "object"
-      },
       "CollectionEnvelope": {
         "additionalProperties": false,
         "properties": {
@@ -1808,13 +1703,8 @@
       },
       "FaceOut": {
         "additionalProperties": false,
-        "description": "卡面放哪一条：这一镜最新的成片，没有成片就是最新一次出片。",
+        "description": "一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。",
         "properties": {
-          "createdAt": {
-            "format": "date-time",
-            "title": "Createdat",
-            "type": "string"
-          },
           "durationMs": {
             "anyOf": [
               {
@@ -1826,6 +1716,11 @@
             ],
             "title": "Durationms"
           },
+          "finishedAt": {
+            "format": "date-time",
+            "title": "Finishedat",
+            "type": "string"
+          },
           "jobId": {
             "format": "uuid",
             "title": "Jobid",
@@ -1834,7 +1729,7 @@
           "kind": {
             "enum": [
               "take",
-              "master"
+              "composite"
             ],
             "title": "Kind",
             "type": "string"
@@ -1842,6 +1737,17 @@
           "outputUrl": {
             "title": "Outputurl",
             "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           },
           "watermarkOutputUrl": {
             "anyOf": [
@@ -1861,7 +1767,8 @@
           "outputUrl",
           "watermarkOutputUrl",
           "durationMs",
-          "createdAt"
+          "finishedAt",
+          "userName"
         ],
         "title": "FaceOut",
         "type": "object"
@@ -1963,7 +1870,7 @@
       },
       "GenerationOut": {
         "additionalProperties": false,
-        "description": "一次生成对外的样子。\n\n只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、原始\n快照、租约与各段时间戳都是排队与排障的内部机制，快照里还带着 provider 的签名\nURL；来源对话不写回去——查的时候本来就是按它查的。",
+        "description": "一次生成对外的样子。\n\n只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、上游任务号\n与状态词、提交时刻都是排队与排障的内部机制；来源对话不写回去——查的时候本来就是按它查的。",
         "properties": {
           "clipStage": {
             "anyOf": [
@@ -2008,6 +1915,18 @@
             ],
             "title": "Errormessage"
           },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -2016,8 +1935,7 @@
           "kind": {
             "enum": [
               "video",
-              "image",
-              "clip"
+              "image"
             ],
             "title": "Kind",
             "type": "string"
@@ -2034,6 +1952,16 @@
             ],
             "title": "Metadata"
           },
+          "operation": {
+            "enum": [
+              "generate",
+              "compose",
+              "cut",
+              "upload"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
           "outputUrl": {
             "anyOf": [
               {
@@ -2045,10 +1973,39 @@
             ],
             "title": "Outputurl"
           },
+          "rangeEndMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rangeendms"
+          },
+          "rangeStartMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rangestartms"
+          },
           "request": {
-            "additionalProperties": true,
-            "title": "Request",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request"
           },
           "rootJobId": {
             "anyOf": [
@@ -2061,6 +2018,40 @@
               }
             ],
             "title": "Rootjobid"
+          },
+          "shotIndex": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shotindex"
+          },
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceurl"
           },
           "status": {
             "enum": [
@@ -2100,6 +2091,7 @@
         "required": [
           "id",
           "kind",
+          "operation",
           "status",
           "request",
           "metadata",
@@ -2262,17 +2254,18 @@
             "title": "Resolution",
             "type": "string"
           },
-          "rootJobId": {
+          "sourceUrl": {
             "anyOf": [
               {
-                "format": "uuid",
+                "maxLength": 2000,
+                "minLength": 1,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Rootjobid"
+            "title": "Sourceurl"
           },
           "taskId": {
             "anyOf": [
@@ -2520,18 +2513,11 @@
       "LibraryVideoDetailOut": {
         "additionalProperties": false,
         "properties": {
-          "siblings": {
+          "groups": {
             "items": {
-              "$ref": "#/components/schemas/LibraryVideoOut"
+              "$ref": "#/components/schemas/ShotGroupOut"
             },
-            "title": "Siblings",
-            "type": "array"
-          },
-          "takes": {
-            "items": {
-              "$ref": "#/components/schemas/TakeOut"
-            },
-            "title": "Takes",
+            "title": "Groups",
             "type": "array"
           },
           "video": {
@@ -2540,15 +2526,14 @@
         },
         "required": [
           "video",
-          "takes",
-          "siblings"
+          "groups"
         ],
         "title": "LibraryVideoDetailOut",
         "type": "object"
       },
       "LibraryVideoOut": {
         "additionalProperties": false,
-        "description": "资料库的一张卡：一镜，即（对话，镜号）下的全部成功出片；没有镜号的出片一条一张。",
+        "description": "资料库的一张卡：一段对话的分镜，装着这段对话读得到的全部成片（自己的加继承来的）；\n不挂对话的出片一条一张卡，同原作的合成跟着它。",
         "properties": {
           "agentId": {
             "anyOf": [
@@ -2560,6 +2545,10 @@
               }
             ],
             "title": "Agentid"
+          },
+          "canOpenConversation": {
+            "title": "Canopenconversation",
+            "type": "boolean"
           },
           "conversationId": {
             "anyOf": [
@@ -2576,28 +2565,17 @@
           "face": {
             "$ref": "#/components/schemas/FaceOut"
           },
+          "groupCount": {
+            "title": "Groupcount",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
-          "shotIndex": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shotindex"
-          },
           "take": {
             "$ref": "#/components/schemas/TakeOut"
-          },
-          "takeCount": {
-            "title": "Takecount",
-            "type": "integer"
           },
           "taskId": {
             "anyOf": [
@@ -2621,16 +2599,33 @@
               }
             ],
             "title": "Title"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "versionCount": {
+            "title": "Versioncount",
+            "type": "integer"
           }
         },
         "required": [
           "id",
-          "shotIndex",
           "conversationId",
+          "canOpenConversation",
           "title",
           "agentId",
           "taskId",
-          "takeCount",
+          "userName",
+          "groupCount",
+          "versionCount",
           "face",
           "take"
         ],
@@ -2676,45 +2671,6 @@
           "total"
         ],
         "title": "LibraryVideosOut",
-        "type": "object"
-      },
-      "MasterOut": {
-        "additionalProperties": false,
-        "description": "挂在一次出片名下的成片（视频编辑确认合成的那条）。",
-        "properties": {
-          "createdAt": {
-            "format": "date-time",
-            "title": "Createdat",
-            "type": "string"
-          },
-          "durationMs": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Durationms"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "outputUrl": {
-            "title": "Outputurl",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "outputUrl",
-          "durationMs",
-          "createdAt"
-        ],
-        "title": "MasterOut",
         "type": "object"
       },
       "MetaMergeOp": {
@@ -3514,6 +3470,36 @@
         "title": "ScriptOut",
         "type": "object"
       },
+      "ShotGroupOut": {
+        "additionalProperties": false,
+        "description": "卡里的一个镜头组：有镜号的按镜号成组；没有镜号的是一条出片连同同原作的合成。",
+        "properties": {
+          "shotIndex": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shotindex"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/VersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "shotIndex",
+          "versions"
+        ],
+        "title": "ShotGroupOut",
+        "type": "object"
+      },
       "ShotOut": {
         "additionalProperties": false,
         "properties": {
@@ -3921,7 +3907,7 @@
       },
       "TakeOut": {
         "additionalProperties": false,
-        "description": "一次成功出片。参数与脚本照出片那一刻的请求。",
+        "description": "一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。",
         "properties": {
           "aspectRatio": {
             "anyOf": [
@@ -3933,11 +3919,6 @@
               }
             ],
             "title": "Aspectratio"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "title": "Createdat",
-            "type": "string"
           },
           "generateAudio": {
             "anyOf": [
@@ -3955,13 +3936,6 @@
             "title": "Id",
             "type": "string"
           },
-          "masters": {
-            "items": {
-              "$ref": "#/components/schemas/MasterOut"
-            },
-            "title": "Masters",
-            "type": "array"
-          },
           "model": {
             "anyOf": [
               {
@@ -3972,10 +3946,6 @@
               }
             ],
             "title": "Model"
-          },
-          "outputUrl": {
-            "title": "Outputurl",
-            "type": "string"
           },
           "prompt": {
             "title": "Prompt",
@@ -4019,45 +3989,18 @@
               }
             ],
             "title": "Seconds"
-          },
-          "userName": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
-          },
-          "watermarkOutputUrl": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Watermarkoutputurl"
           }
         },
         "required": [
           "id",
-          "createdAt",
-          "userName",
           "model",
           "aspectRatio",
           "seconds",
           "resolution",
           "generateAudio",
-          "outputUrl",
-          "watermarkOutputUrl",
           "prompt",
           "script",
-          "referenceImageUrls",
-          "masters"
+          "referenceImageUrls"
         ],
         "title": "TakeOut",
         "type": "object"
@@ -5859,6 +5802,27 @@
         "title": "TurnUsage",
         "type": "object"
       },
+      "UploadConfirmIn": {
+        "additionalProperties": false,
+        "description": "确认上传时可选的请求体：替谁确认。",
+        "properties": {
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "title": "UploadConfirmIn",
+        "type": "object"
+      },
       "UploadConfirmedOut": {
         "additionalProperties": false,
         "description": "确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。",
@@ -5962,7 +5926,7 @@
       },
       "UploadTicketOut": {
         "additionalProperties": false,
-        "description": "一次直传的许可：先拿到名字，再去传。\n\n``uploadId`` 在字节落地之前就发下来，因为传这个副作用发生之前，双方必须先就「它\n叫什么」达成一致。它只用来确认这一次上传，不是任何东西的身份。",
+        "description": "一次直传的许可：先拿到名字，再去传。\n\n``uploadId`` 在字节落地之前就发下来，因为传这个副作用发生之前，双方必须先就「它\n叫什么」达成一致。确认时用它指这一次上传，确认后它就是那条上传记录的 id。",
         "properties": {
           "upload": {
             "$ref": "#/components/schemas/UploadInstruction"
@@ -6380,6 +6344,147 @@
         "title": "UsersPageOut",
         "type": "object"
       },
+      "VersionOut": {
+        "additionalProperties": false,
+        "description": "详情里的一版：版本头加它对应的出片。",
+        "properties": {
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "title": "Finishedat",
+            "type": "string"
+          },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "take",
+              "composite"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "outputUrl": {
+            "title": "Outputurl",
+            "type": "string"
+          },
+          "take": {
+            "$ref": "#/components/schemas/TakeOut"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "watermarkOutputUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watermarkoutputurl"
+          }
+        },
+        "required": [
+          "kind",
+          "jobId",
+          "outputUrl",
+          "watermarkOutputUrl",
+          "durationMs",
+          "finishedAt",
+          "userName",
+          "take"
+        ],
+        "title": "VersionOut",
+        "type": "object"
+      },
+      "VideoComposeIn": {
+        "additionalProperties": false,
+        "description": "一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "sourceJobId"
+        ],
+        "title": "VideoComposeIn",
+        "type": "object"
+      },
       "VideoContent": {
         "additionalProperties": false,
         "properties": {
@@ -6397,6 +6502,129 @@
           "source"
         ],
         "title": "VideoContent",
+        "type": "object"
+      },
+      "VideoEditIn": {
+        "additionalProperties": false,
+        "description": "一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。\n\n与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切\n一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoGenerationIn``，来源、原作与区间落列。",
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "provider_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Options"
+          },
+          "range_end_ms": {
+            "title": "Range End Ms",
+            "type": "integer"
+          },
+          "range_start_ms": {
+            "minimum": 0.0,
+            "title": "Range Start Ms",
+            "type": "integer"
+          },
+          "reference_image_urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Reference Image Urls",
+            "type": "array"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "minimum": -1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "source_job_id": {
+            "format": "uuid",
+            "title": "Source Job Id",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          }
+        },
+        "required": [
+          "source_job_id",
+          "range_start_ms",
+          "range_end_ms",
+          "model",
+          "prompt"
+        ],
+        "title": "VideoEditIn",
         "type": "object"
       },
       "VideoGenerationIn": {
@@ -6521,18 +6749,6 @@
               }
             ],
             "title": "Resolution"
-          },
-          "root_job_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Root Job Id"
           },
           "seconds": {
             "anyOf": [
@@ -9890,7 +10106,7 @@
     },
     "/generations": {
       "get": {
-        "description": "给了 ``conversationId`` / ``taskId`` / ``rootJobId`` 就只列那段对话、那张需求单、那条出片\n名下的记录。按对话列时含这段对话经分叉继承的记录（调用方读得到这段对话才算），其余\n可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组、按帧查）。",
+        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。",
         "operationId": "list_generations_generations_get",
         "parameters": [
           {
@@ -9940,6 +10156,25 @@
             }
           },
           {
+            "description": "只列这个镜头组编号的视频记录",
+            "in": "query",
+            "name": "shotIndex",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "只列这个镜头组编号的视频记录",
+              "title": "Shotindex"
+            }
+          },
+          {
             "in": "query",
             "name": "kind",
             "required": false,
@@ -9948,8 +10183,7 @@
                 {
                   "enum": [
                     "video",
-                    "image",
-                    "clip"
+                    "image"
                   ],
                   "type": "string"
                 },
@@ -9961,7 +10195,29 @@
             }
           },
           {
-            "description": "只列这条出片名下的衍生记录（视频编辑链）",
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "generate",
+                    "compose",
+                    "cut",
+                    "upload"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Operation"
+            }
+          },
+          {
+            "description": "只列以这条出片为原作的记录（整条编辑链）",
             "in": "query",
             "name": "rootJobId",
             "required": false,
@@ -9975,12 +10231,31 @@
                   "type": "null"
                 }
               ],
-              "description": "只列这条出片名下的衍生记录（视频编辑链）",
+              "description": "只列以这条出片为原作的记录（整条编辑链）",
               "title": "Rootjobid"
             }
           },
           {
-            "description": "JSON 对象；只列坐标包含这些键值的记录，服务端只认其中的 shot",
+            "description": "只列直接基于这一条的记录",
+            "in": "query",
+            "name": "sourceJobId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "只列直接基于这一条的记录",
+              "title": "Sourcejobid"
+            }
+          },
+          {
+            "description": "JSON 对象；只列 metadata 包含这些键值的记录，服务端不解释其中的键",
             "in": "query",
             "name": "metadata",
             "required": false,
@@ -9993,7 +10268,7 @@
                   "type": "null"
                 }
               ],
-              "description": "JSON 对象；只列坐标包含这些键值的记录，服务端只认其中的 shot",
+              "description": "JSON 对象；只列 metadata 包含这些键值的记录，服务端不解释其中的键",
               "title": "Metadata"
             }
           },
@@ -10052,60 +10327,9 @@
         "summary": "List Generations"
       }
     },
-    "/generations/clips": {
-      "post": {
-        "description": "提交一次本地视频加工：按 ``segments`` 的顺序裁出各段拼成一条，产物存进本系统的桶。\n\n``purpose=reference`` 是编辑时切给模型看的参考片段，只能在一条完整视频上裁一段、\n不重编码；``purpose=master`` 是拼出来的成片，一律重编码对齐参数。不经外部服务，\n不计费，也没有 ``userName``。``rootJobId`` 必填：产物是最初那条出片的衍生记录。",
-        "operationId": "submit_clip_generations_clips_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ClipIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenerationEnvelope"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "generation:submit"
-            ]
-          },
-          {
-            "BearerToken": [
-              "generation:submit"
-            ]
-          }
-        ],
-        "summary": "Submit Clip"
-      }
-    },
     "/generations/image": {
       "post": {
-        "description": "提交一次图片生成。``userName`` 的规则与视频相同。",
+        "description": "提交一次图片生成。``userName`` 的规则与视频相同。\n\n帧图编辑带 ``sourceUrl``（底图地址）：先在本对话及它继承的图片里找，再找调用方可见的上传，\n找到记 ``sourceJobId``，找不到记外部地址；回来的 ``sourceUrl`` 都是这个地址。它不进\n``request``、不发上游。",
         "operationId": "submit_image_generations_image_post",
         "requestBody": {
           "content": {
@@ -10187,7 +10411,7 @@
     },
     "/generations/video": {
       "post": {
-        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / metadata /\nroot_job_id。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``user_name``：API key 调用方必填、照收；浏览器会话可\n省略，填登录用户名。``root_job_id`` 只有视频编辑的结果才填：最初那条出片的 id，必须是\n同一段对话里的独立记录。",
+        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。",
         "operationId": "submit_video_generations_video_post",
         "requestBody": {
           "content": {
@@ -10236,6 +10460,108 @@
         "summary": "Submit Video"
       }
     },
+    "/generations/video-composites": {
+      "post": {
+        "description": "把一条编辑段夹回它的基底，拼成一条新成片，原作与镜号随编辑段。不经外部服务。\n\n``sourceJobId`` 必须是这段对话自己的或继承来的一条已完成编辑段。``userName`` 的规则同出片。",
+        "operationId": "submit_video_composite_generations_video_composites_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoComposeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Video Composite"
+      }
+    },
+    "/generations/video-edits": {
+      "post": {
+        "description": "在一条成片上改一段：``source_job_id`` 是基底，``range_start_ms`` / ``range_end_ms`` 是区间。\n\n服务端提交上游前按区间从基底上切参考片段交给模型，记录上的区间随之改记实际切点。基底\n必须是这段对话自己的或继承来的一条已完成成片。``user_name`` 的规则同出片。",
+        "operationId": "submit_video_edit_generations_video_edits_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoEditIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Video Edit"
+      }
+    },
     "/generations/video-models": {
       "get": {
         "description": "接入了哪几个视频模型与默认那个，来自运行配置。\n\n哪个模型能做视频编辑、怎么触发，由调用方按模型名自己认；服务端不替它拼任何东西。",
@@ -10269,7 +10595,7 @@
     },
     "/generations/video/{task_id}": {
       "get": {
-        "description": "视频任务快照，照上游任务查询的形状。只认视频记录，可见性与 ``GET /generations/{id}`` 相同。",
+        "description": "视频任务快照，照上游任务查询的形状。只认调上游的视频记录（出片与编辑段），可见性与\n``GET /generations/{id}`` 相同。",
         "operationId": "get_video_task_generations_video__task_id__get",
         "parameters": [
           {
@@ -10322,6 +10648,7 @@
     },
     "/generations/{job_id}": {
       "get": {
+        "description": "一条可见的生成记录。上传记录的 id 就是确认上传时的 ``uploadId``。",
         "operationId": "get_generation_generations__job_id__get",
         "parameters": [
           {
@@ -10447,7 +10774,7 @@
     },
     "/library/authors": {
       "get": {
-        "description": "名下有卡的人与各自的卡数，多的排前面；给按人筛选用。",
+        "description": "卡的作者与各自的卡数，多的排前面；给按人筛选用。",
         "operationId": "authors_library_authors_get",
         "responses": {
           "200": {
@@ -10481,7 +10808,7 @@
     },
     "/library/videos": {
       "get": {
-        "description": "全站的成功出片，一镜一张卡，卡面时刻晚的排前面。\n\n时间窗 ``[since, until)`` 作用在卡面时刻上；``q`` 按字面包含匹配卡面那次出片的正文与\n对话标题。``total`` 只在第一页给。来源对话只交给对话属主与治理者。",
+        "description": "全站的成片，一段对话一张卡，卡面成片完成得晚的排前面。\n\n``userName`` 筛卡的作者（对话属主）；时间窗 ``[since, until)`` 作用在卡面成片的完成时刻上；\n``q`` 按字面包含匹配卡面成片对应那条出片的正文与对话标题。``total`` 只在第一页给。\n来源对话人人拿得到，``canOpenConversation`` 说这位读者打不打得开。",
         "operationId": "videos_library_videos_get",
         "parameters": [
           {
@@ -10643,7 +10970,7 @@
     },
     "/library/videos/{video_id}": {
       "get": {
-        "description": "这次出片所在那一镜：卡片本身、全部成功出片与名下成片、同一段对话的其他镜。\n\n``video_id`` 可以是这一镜里任何一次出片的 id；不在资料库里的是 ``404``。",
+        "description": "一张卡：卡片本身与按镜头组分好的全部版本，含继承来的。\n\n``video_id`` 是卡 id（对话 id，不挂对话的卡是出片 id），别的 id 一律 ``404``；\n对话删了照常返回。",
         "operationId": "video_library_videos__video_id__get",
         "parameters": [
           {
@@ -11314,7 +11641,7 @@
     },
     "/uploads/{upload_id}/confirm": {
       "post": {
-        "description": "按桶里的对象核对类型与大小，只交回地址。没有请求体，可重复调。",
+        "description": "按桶里的对象核对类型与大小，通过后记一条上传记录（id 就是 ``uploadId``），交回地址。\n\n请求体可选，只有 ``userName``：给了按替人办事换主体（浏览器只能写自己），不给就记在当前\n主体名下。可重复调：每次都按桶重新核对，返回同一条记录，第二次的 ``userName`` 不改属主。",
         "operationId": "confirm_upload_uploads__upload_id__confirm_post",
         "parameters": [
           {
@@ -11328,6 +11655,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/UploadConfirmIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

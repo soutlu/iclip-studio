@@ -103,8 +103,9 @@ class TranscriptService:
     ) -> Prompt:
         """仅在会话空闲时重新生成末轮，可替换输入内容。
 
-        轮 id 使用 t{N}；格式错误抛 ValidationFailed，忙碌或非末轮抛 Conflict。
-        未提供 prompt_id 时生成新 id，避免复用已占用的记录。
+        轮 id 使用 t{N}；格式错误抛 ValidationFailed，忙碌或非末轮抛 Conflict，
+        末轮是分叉带过来的轮（消息行在源对话名下）抛 NotFound。未提供 prompt_id 时生成新 id，
+        避免复用已占用的记录。
         """
 
         match = re.fullmatch(r"t([1-9]\d*)", turn_id)
@@ -123,10 +124,10 @@ class TranscriptService:
         rewind = await self.history.plan_rewind(conversation_id, ordinal=int(match.group(1)))
         if rewind is None:
             raise Conflict("只能重新生成最后一轮")
-        # 先通过末轮首次 run 查找消息，再提交截断，避免查找失败后已修改历史。
-        row = await self.queue.get_by_run(rewind.run_ids[0])
+        # 先通过末轮首次 run 在本对话里查找消息，再提交截断，避免查找失败后已修改历史。
+        row = await self.queue.get_by_run(rewind.run_ids[0], conversation_id=conversation_id)
         if row is None:
-            raise NotFound(f"找不到这一轮对应的消息：{turn_id}")
+            raise NotFound("分叉带过来的历史不能重新生成或编辑，只能接着往下聊。")
         await rewind.commit()
         # 先删除旧轮实体，避免客户端更新头部时保留新回复中已不存在的步骤和块。
         self.store.append(conversation_id, MAIN_AGENT_ID, (ItemsRemoveOp(ids=(turn_id,)),))

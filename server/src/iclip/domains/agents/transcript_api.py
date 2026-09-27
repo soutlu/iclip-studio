@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconn
 from pydantic import TypeAdapter, ValidationError
 
 from iclip.common.errors import DomainError
-from iclip.common.generation_vocab import GenerationKind, GenerationStatus
+from iclip.common.generation_vocab import GenerationKind, GenerationOperation, GenerationStatus
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
     ActAs,
@@ -286,7 +286,9 @@ class LiveConnections:
         *,
         job_id: uuid.UUID,
         kind: GenerationKind,
+        operation: GenerationOperation,
         status: GenerationStatus,
+        shot_index: int | None,
         metadata: Mapping[str, Any] | None,
     ) -> None:
         """向属主与治理者的连接广播生成任务状态跳转；只收基础字段与 common 的词表，不依赖生成域类型。"""
@@ -298,7 +300,9 @@ class LiveConnections:
                 payload=GenerationChangedPayload(
                     id=str(job_id),
                     kind=kind,
+                    operation=operation,
                     status=status,
+                    shot_index=shot_index,
                     metadata=None if metadata is None else dict(metadata),
                 ),
             ),

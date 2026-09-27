@@ -9,11 +9,22 @@ from typing import Any
 from iclip.app.generation_live import AnnouncingGenerationRepository
 from iclip.domains.agents.transcript_api import LiveConnections
 from iclip.domains.generation.models import STATUS_SUBMITTED, STATUS_SUBMITTING
-from tests.helpers.generation import InMemoryGenerationRepository, image_request, make_job
+from tests.helpers.generation import (
+    InMemoryGenerationRepository,
+    image_request,
+    make_composite,
+    make_cut,
+    make_edit,
+    make_job,
+    make_upload,
+)
 
-Announced = tuple[uuid.UUID, uuid.UUID | None, uuid.UUID, str, str, Mapping[str, Any] | None]
+Announced = tuple[
+    uuid.UUID, uuid.UUID | None, uuid.UUID, str, str, str, int | None, Mapping[str, Any] | None
+]
+"""(属主, 对话, 任务, kind, operation, status, 镜号, metadata)。"""
 
-SHOT = {"path": "video_shot.json", "shot": 2}
+TAG = {"frame": 1}
 FRAME = {"path": "video_shot.json", "shot": 1, "frame": 3}
 
 
@@ -31,41 +42,65 @@ class _RecordingConnections(LiveConnections):
         *,
         job_id: uuid.UUID,
         kind: str,
+        operation: str,
         status: str,
+        shot_index: int | None,
         metadata: Mapping[str, Any] | None,
     ) -> None:
-        self.announced.append((owner, conversation_id, job_id, kind, status, metadata))
+        self.announced.append(
+            (owner, conversation_id, job_id, kind, operation, status, shot_index, metadata)
+        )
 
 
 async def test_every_status_transition_of_a_video_job_is_announced_to_its_owner() -> None:
     live = _RecordingConnections()
     repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
     owner, conversation_id = uuid.uuid4(), uuid.uuid4()
-    job = make_job(owner_user_id=owner, conversation_id=conversation_id, metadata=SHOT)
+    job = make_job(owner_user_id=owner, conversation_id=conversation_id, shot_index=2, metadata=TAG)
 
     await repo.create(job)
     await repo.mark_submitting(job.id)
-    await repo.mark_submitted(
-        job.id, provider_task_id="t-1", provider_status="queued", provider_snapshot={}
-    )
-    await repo.record_progress(job.id, provider_status="running", provider_snapshot={})
+    await repo.mark_submitted(job.id, provider_task_id="t-1", provider_status="queued")
+    await repo.record_progress(job.id, provider_status="running")
     await repo.mark_completed(
         job.id,
         output_url="https://cdn.test/take.mp4",
         provider_status="succeeded",
-        provider_snapshot={},
         watermark_output_url="https://cdn.test/take-wm.mp4",
     )
 
-    assert [(status, metadata) for *_, status, metadata in live.announced] == [
-        ("pending", SHOT),
-        ("submitting", SHOT),
-        ("submitted", SHOT),
-        ("completed", SHOT),
+    assert [one[5:] for one in live.announced] == [
+        ("pending", 2, TAG),
+        ("submitting", 2, TAG),
+        ("submitted", 2, TAG),
+        ("completed", 2, TAG),
     ], "record_progress 只更新 provider 原始状态，不算一跳"
-    assert {(one[0], one[1], one[2], one[3]) for one in live.announced} == {
-        (owner, conversation_id, job.id, "video")
+    assert {(one[0], one[1], one[2], one[3], one[4]) for one in live.announced} == {
+        (owner, conversation_id, job.id, "video", "generate")
     }
+
+
+async def test_a_composite_announces_its_operation_and_a_reference_cut_is_not_a_step() -> None:
+    """合成与出片同是 video，帧上靠 operation 分、镜号是原作那一镜的；编辑段记切点不改业务状态，
+    不算一跳。"""
+
+    live = _RecordingConnections()
+    repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
+    edit = make_edit(make_job(shot_index=3))
+    composite = make_composite(edit)
+
+    await repo.create(edit)
+    await repo.mark_submitting(edit.id)
+    await repo.record_reference_cut(
+        edit.id, range_start_ms=0, range_end_ms=4000, only_if_status=STATUS_SUBMITTING
+    )
+    await repo.create(composite)
+
+    assert [(one[2], one[4], one[5], one[6]) for one in live.announced] == [
+        (edit.id, "generate", "pending", 3),
+        (edit.id, "generate", "submitting", 3),
+        (composite.id, "compose", "pending", 3),
+    ]
 
 
 async def test_an_image_job_carries_its_metadata_and_a_failure_is_announced_once() -> None:
@@ -86,10 +121,10 @@ async def test_an_image_job_carries_its_metadata_and_a_failure_is_announced_once
 
     assert missed is None
     assert failed is not None and failed.status == "failed"
-    assert [(status, metadata) for *_, status, metadata in live.announced] == [
-        ("submitted", FRAME),
-        ("failed", FRAME),
-    ], "状态守卫没命中的那次不发帧"
+    assert [one[5:] for one in live.announced] == [
+        ("submitted", None, FRAME),
+        ("failed", None, FRAME),
+    ], "状态守卫没命中的那次不发帧；图片的坐标原样带出，不算镜号"
 
 
 async def test_a_job_without_a_conversation_still_announces_to_its_owner() -> None:
@@ -99,4 +134,24 @@ async def test_a_job_without_a_conversation_still_announces_to_its_owner() -> No
 
     await repo.create(job)
 
-    assert live.announced == [(job.owner_user_id, None, job.id, "video", "pending", None)]
+    assert live.announced == [
+        (job.owner_user_id, None, job.id, "video", "generate", "pending", None, None)
+    ]
+
+
+async def test_settled_rows_are_announced_once_when_they_land() -> None:
+    """切图与上传落库即完成，落下的那一刻算一跳；重复确认的上传没插进去就不再发。"""
+
+    live = _RecordingConnections()
+    repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
+    grid = make_job(image_request(), conversation_id=uuid.uuid4())
+    cell = make_cut(grid)
+    upload = make_upload(owner_user_id=grid.owner_user_id)
+
+    await repo.create_settled([cell, upload])
+    await repo.create_settled([upload])
+
+    assert [(one[1], one[2], one[4], one[5]) for one in live.announced] == [
+        (grid.conversation_id, cell.id, "cut", "completed"),
+        (None, upload.id, "upload", "completed"),
+    ]

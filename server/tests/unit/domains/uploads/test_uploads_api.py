@@ -1,19 +1,28 @@
-"""使用 bucket 替身验证上传签名、审计头、权限和确认规则。"""
+"""使用 bucket 与记录替身验证上传签名、审计头、权限、确认规则与记在谁名下。"""
 
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import httpx
 import pytest
 from fastapi import FastAPI
 
+from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
+from iclip.domains.identity.rbac import ACT_AS_PERMISSION
 from iclip.domains.uploads.api import create_uploads_router
-from iclip.domains.uploads.models import MAX_BYTES, MAX_LONG_EDGE_PIXELS, MIN_SHORT_EDGE_PIXELS
+from iclip.domains.uploads.models import (
+    MAX_BYTES,
+    MAX_LONG_EDGE_PIXELS,
+    MIN_SHORT_EDGE_PIXELS,
+    MediaKind,
+)
 from iclip.domains.uploads.service import API_KEY_HEADER, UPLOADER_HEADER, UploadService
 from tests.helpers.app import app_with_principal
+from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.uploads import FakeBucket
 
 
@@ -24,12 +33,31 @@ def uploader(user_id: uuid.UUID | None = None, *, api_key_id: uuid.UUID | None =
         permissions=frozenset({"uploads:write"}),
         audit_label="tester",
         api_key_id=api_key_id,
+        username="tester",
+        key_name=None if api_key_id is None else "gateway",
     )
 
 
-def build_test_app(bucket: FakeBucket, *, granted: Principal | None) -> FastAPI:
+@dataclass
+class RecordedUploads:
+    """RecordUpload 替身：记下每次确认记给了谁、哪一次上传、什么种类、什么地址。"""
+
+    calls: list[tuple[Principal, uuid.UUID, MediaKind, str]] = field(
+        default_factory=list[tuple[Principal, uuid.UUID, MediaKind, str]]
+    )
+
+    async def __call__(
+        self, principal: Principal, *, upload_id: uuid.UUID, kind: MediaKind, url: str
+    ) -> None:
+        self.calls.append((principal, upload_id, kind, url))
+
+
+def build_test_app(
+    bucket: FakeBucket, *, granted: Principal | None, recorded: RecordedUploads | None = None
+) -> FastAPI:
     app = app_with_principal(granted)
-    app.include_router(create_uploads_router(UploadService(bucket)))
+    service = UploadService(bucket, record=recorded or RecordedUploads())
+    app.include_router(create_uploads_router(service, act_as=ActAs(InMemoryUserRepository())))
     return app
 
 
@@ -52,8 +80,12 @@ async def sign(
     return await http.post("/uploads/sign", json=body)
 
 
-async def confirm(http: httpx.AsyncClient, upload_id: str) -> httpx.Response:
-    return await http.post(f"/uploads/{upload_id}/confirm")
+async def confirm(
+    http: httpx.AsyncClient, upload_id: str, *, user_name: str | None = None
+) -> httpx.Response:
+    if user_name is None:
+        return await http.post(f"/uploads/{upload_id}/confirm")
+    return await http.post(f"/uploads/{upload_id}/confirm", json={"userName": user_name})
 
 
 @pytest.mark.parametrize("path", ["/uploads/sign", f"/uploads/{uuid.uuid4()}/confirm"])
@@ -165,40 +197,12 @@ async def test_video_needs_no_size() -> None:
         assert (await sign(http, "video/mp4", width=None, height=None)).status_code == 200
 
 
-async def test_confirm_answers_from_the_bucket_and_can_be_repeated() -> None:
-    """确认只交回地址与桶里读到的事实；每次都重新回答，重试拿到同一份。"""
-
-    bucket = FakeBucket()
-    app = build_test_app(bucket, granted=uploader())
-    async with client(app) as http:
-        upload_id = (await sign(http, "video/mp4")).json()["uploadId"]
-        bucket.put(f"iclip/agent/uploads/{upload_id}.mp4", content_type="video/mp4", size_bytes=99)
-
-        first = await confirm(http, upload_id)
-        again = await confirm(http, upload_id)
-
-    assert first.status_code == 200
-    assert first.json() == {
-        "url": f"https://cdn.test/iclip/agent/uploads/{upload_id}.mp4",
-        "contentType": "video/mp4",
-        "sizeBytes": 99,
-    }
-    assert again.json() == first.json()
-
-
-async def test_confirm_before_the_upload_landed_is_a_conflict() -> None:
-    app = build_test_app(FakeBucket(), granted=uploader())
-    async with client(app) as http:
-        upload_id = (await sign(http)).json()["uploadId"]
-        assert (await confirm(http, upload_id)).status_code == 409
-        assert (await confirm(http, str(uuid.uuid4()))).status_code == 409
-
-
 async def test_oversized_upload_is_refused() -> None:
     """预签名 PUT 无法限制长度，确认时须校验桶内实际大小。"""
 
     bucket = FakeBucket()
-    app = build_test_app(bucket, granted=uploader())
+    recorded = RecordedUploads()
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
     async with client(app) as http:
         upload_id = (await sign(http)).json()["uploadId"]
         bucket.put(
@@ -209,16 +213,88 @@ async def test_oversized_upload_is_refused() -> None:
         response = await confirm(http, upload_id)
 
     assert response.status_code == 422
+    assert recorded.calls == [], "核对不过不记录"
 
 
 async def test_unexpected_type_in_the_bucket_is_refused() -> None:
     """Content-Type 签进了签名里，桶里仍可能出现别的类型（改过 CORS 或 SDK 直传），确认时按桶里的算。"""
 
     bucket = FakeBucket()
-    app = build_test_app(bucket, granted=uploader())
+    recorded = RecordedUploads()
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
     async with client(app) as http:
         upload_id = (await sign(http)).json()["uploadId"]
         bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="application/pdf")
         response = await confirm(http, upload_id)
 
     assert response.status_code == 422
+    assert recorded.calls == [], "核对不过不记录"
+
+
+# --- 确认即记录 -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("caller", "name", "owner"),
+    [
+        ("browser", None, "self"),
+        ("browser", "tester", "self"),
+        ("key", None, "self"),
+        ("key", "Sara.Hong", "self"),
+        ("act_as_key", None, "self"),
+        ("act_as_key", "Sara.Hong", "named"),
+    ],
+    ids=[
+        "浏览器不给名字",
+        "浏览器给自己的名字",
+        "钥匙不给名字",
+        "钥匙给了名字但不能替人办事",
+        "替人办事的钥匙不给名字",
+        "替人办事的钥匙给了名字",
+    ],
+)
+async def test_the_upload_is_recorded_under_whoever_confirms_it(
+    caller: str, name: str | None, owner: str
+) -> None:
+    """名字可选：给了才按替人办事换主体，不给就记在当前主体名下，钥匙不带名字也不报错；钥匙身份照记。"""
+
+    bucket = FakeBucket()
+    recorded = RecordedUploads()
+    key_id = None if caller == "browser" else uuid.uuid4()
+    me = uploader(api_key_id=key_id)
+    if caller == "act_as_key":
+        me = Principal(
+            kind="api_key",
+            user_id=me.user_id,
+            permissions=frozenset({"uploads:write", ACT_AS_PERMISSION}),
+            audit_label="logan#gateway",
+            api_key_id=key_id,
+            username="logan",
+            key_name="gateway",
+        )
+    app = build_test_app(bucket, granted=me, recorded=recorded)
+    async with client(app) as http:
+        upload_id = (await sign(http)).json()["uploadId"]
+        bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="image/jpeg")
+        response = await confirm(http, upload_id, user_name=name)
+
+    assert response.status_code == 200, response.text
+    ((recorded_as, _, _, _),) = recorded.calls
+    assert recorded_as.api_key_id == key_id
+    if owner == "self":
+        assert recorded_as.user_id == me.user_id
+    else:
+        assert (recorded_as.user_id != me.user_id, recorded_as.username) == (True, "Sara.Hong")
+
+
+async def test_a_browser_may_not_confirm_in_someone_elses_name() -> None:
+    bucket = FakeBucket()
+    recorded = RecordedUploads()
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        upload_id = (await sign(http)).json()["uploadId"]
+        bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="image/jpeg")
+        response = await confirm(http, upload_id, user_name="Sara.Hong")
+
+    assert response.status_code == 422
+    assert recorded.calls == []

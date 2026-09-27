@@ -6,6 +6,7 @@ import { server } from '@/testing/mocks/server'
 import { ApiError } from '@/shared/api/client'
 import { zTaskInputsOutput } from '@/shared/api/generated/zod.gen'
 import { loginAs, mockAuthUser, mockTasks, type MockUser } from '@/testing/mocks/handlers'
+import { mockCreatedAt } from '@/testing/mocks/paging'
 import { renderWithProviders } from '@/testing/render'
 import type { TaskCreationAgents, TaskCreationDraft } from '../task-creation'
 import { TasksRoute } from './tasks-route'
@@ -52,17 +53,35 @@ const chooseAgent = async (user: ReturnType<typeof userEvent.setup>, dialog: HTM
   await user.click(await screen.findByRole('menuitem', { name: '分镜 Agent' }))
 }
 
-describe('TasksRoute', () => {
-  afterEach(() => vi.unstubAllGlobals())
-  it.each([0, 3])('仅有 %i 张我的需求单时全部展示且无需展开', async (count) => {
-    const tasks = Array.from({ length: count }, (_, index) =>
+/** jsdom 不排版：让网格的计算样式报出浏览器按容器宽度排出的 count 条列轨道。 */
+const layOutGridColumns = (count: number) => {
+  const getComputedStyle = window.getComputedStyle.bind(window)
+  vi.stubGlobal('getComputedStyle', (element: Element, pseudo?: string | null) =>
+    Object.defineProperty(getComputedStyle(element, pseudo), 'gridTemplateColumns', {
+      value: Array.from({ length: count }, () => '196px').join(' '),
+    }),
+  )
+}
+
+/** 按编号先后建立，列表倒序时「已认领的需求 1」排在最后。 */
+const pushClaimedTasks = (count: number) =>
+  mockTasks.push(
+    ...Array.from({ length: count }, (_, index) =>
       makeTask({
         assigneeUserIds: [mockAuthUser.id],
+        createdAt: mockCreatedAt(),
         status: 'confirmed',
         title: `已认领的需求 ${index + 1}`,
       }),
-    )
-    mockTasks.push(...tasks, makeTask({ title: '其他需求' }))
+    ),
+    makeTask({ title: '其他需求' }),
+  )
+
+describe('TasksRoute', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it.each([0, 4])('我的需求单 %i 张、不超过一行 4 张时全部展示且无需展开', async (count) => {
+    layOutGridColumns(4)
+    pushClaimedTasks(count)
     await renderLoggedIn()
     await screen.findByText('其他需求')
 
@@ -72,6 +91,26 @@ describe('TasksRoute', () => {
     )
     expect(mine.queryByRole('button', { name: '展开更多' })).not.toBeInTheDocument()
     expect(mine.queryByRole('button', { name: '收起' })).not.toBeInTheDocument()
+  })
+
+  it('我的需求单超过一行时收起只放一行，其余卡片不在页面上，展开后全部可见', async () => {
+    layOutGridColumns(4)
+    pushClaimedTasks(5)
+    const user = userEvent.setup()
+    await renderLoggedIn()
+
+    const mine = within(screen.getByRole('region', { name: '我的需求单' }))
+    const expand = await mine.findByRole('button', { name: '展开更多' })
+    expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(mine.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(4)
+    expect(mine.queryByRole('button', { name: '查看需求：已认领的需求 1' })).not.toBeInTheDocument()
+
+    await user.click(expand)
+    expect(mine.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(5)
+    expect(mine.getByRole('button', { name: '查看需求：已认领的需求 1' })).toBeVisible()
+    await user.click(mine.getByRole('button', { name: '收起' }))
+    expect(mine.getAllByRole('button', { name: /^查看需求：/ })).toHaveLength(4)
+    expect(mine.getByRole('button', { name: '展开更多' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('渲染两个分区与卡片', async () => {

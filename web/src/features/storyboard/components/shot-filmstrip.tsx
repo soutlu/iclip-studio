@@ -42,10 +42,14 @@ export function ShotFilmstrip({
     }
     revealFrame()
     // 展开动画期间 scrollWidth 仍在变，结束后再校准，避免窄屏末帧被裁切。
-    strip.addEventListener('transitionend', revealFrame)
+    // 只认镜头卡的宽度过渡：缩略图按钮换色（如切主题）的过渡结束也会冒泡上来。
+    const revealAfterExpand = (event: TransitionEvent) => {
+      if (event.propertyName === 'width') revealFrame()
+    }
+    strip.addEventListener('transitionend', revealAfterExpand)
     window.addEventListener('resize', revealFrame)
     return () => {
-      strip.removeEventListener('transitionend', revealFrame)
+      strip.removeEventListener('transitionend', revealAfterExpand)
       window.removeEventListener('resize', revealFrame)
     }
   }, [activeContent, frameNumber])

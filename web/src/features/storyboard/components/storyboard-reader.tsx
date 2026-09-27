@@ -18,9 +18,8 @@ import {
 } from '@/shared/workbench'
 import { validateShot } from '../shot-document'
 import { frameBadges, latestFrameJobs } from '../frame-status'
-import { isShotVideo, readStoryboardMetadata } from '../generation-metadata'
 import { useFrameImageJobs } from '../image-edit/image-edit.api'
-import { isRunningStatus, SHOTS_PATH } from '../shots'
+import { isRunningStatus, isShotVideo, SHOTS_PATH } from '../shots'
 import { useShotGenerations } from '../storyboard.api'
 import { useGenerationGate } from '../use-generation-gate'
 import { supportsAspectRatio } from '../video-model-support'
@@ -149,10 +148,6 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     scrollTargetRef.current = position
     const top = (position - 1) * element.clientHeight
     element.scrollTo({ behavior: 'instant', top })
-    const frame = requestAnimationFrame(() => {
-      if (element.scrollTop !== top) element.scrollTo({ behavior: 'instant', top })
-    })
-    return () => cancelAnimationFrame(frame)
   }, [position, shots.length])
 
   if (file.isPending && document === null) return <ReaderNotice text="正在读取分镜…" />
@@ -163,9 +158,9 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     return <ReaderNotice text="文件格式不对，读不出镜头组" />
   }
 
-  // 本对话全部出片记录，按镜头组挑格子的事交给各消费方——它们都自己读坐标。
+  // 本对话全部视频记录，按镜头组挑出片的事交给各消费方。
   const jobs = generations.data ?? []
-  // 编辑结果不带分镜坐标，抽屉里不单列；数一下折进原片那张卡。
+  // 编辑段不在抽屉里单列；数一下折进原片那张卡。
   const editCounts = editCountsByRoot(jobs)
   const videoEditRoot =
     search.video === undefined ? undefined : jobs.find((job) => job.id === search.video)
@@ -438,9 +433,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
           loading={generations.isPending}
           onClose={() => go({ video: undefined })}
           root={videoEditRoot}
-          shotIndex={
-            videoEditRoot === undefined ? undefined : readStoryboardMetadata(videoEditRoot)?.shot
-          }
+          shotIndex={videoEditRoot?.shotIndex ?? undefined}
         />
       )}
       {imageEdit === null ? null : (

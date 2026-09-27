@@ -87,8 +87,8 @@ class GenerationQueueSettings:
     video_submit_concurrency: int = 100
     """视频只有一家，它那条提交队列的并发不进配置。图片按家配，见 ProviderLane。"""
 
-    clip_concurrency: int = 2
-    """本地裁剪拼接那条队列的并发。别的队列都在等网络，这一条在占 CPU，所以取个小数。"""
+    compose_concurrency: int = 2
+    """本地合成那条队列的并发。别的队列都在等网络，这一条在占 CPU，所以取个小数。"""
 
     poll_concurrency: int = 100
 
@@ -224,8 +224,8 @@ class GenerationQueue:
                     job.id,
                     output_url=submission.output_url,
                     provider_status=submission.provider_status,
-                    provider_snapshot=submission.raw,
                     provider_task_id=submission.provider_task_id,
+                    duration_ms=submission.duration_ms,
                     only_if_status=STATUS_SUBMITTING,
                 ),
             )
@@ -235,7 +235,6 @@ class GenerationQueue:
             job.id,
             provider_task_id=submission.provider_task_id,
             provider_status=submission.provider_status,
-            provider_snapshot=submission.raw,
         )
         await self._poll.configure(
             task_kwargs={"job_id": str(job.id)},
@@ -292,7 +291,6 @@ class GenerationQueue:
                     output_url=progress.output_url,
                     watermark_output_url=progress.watermark_output_url,
                     provider_status=progress.provider_status,
-                    provider_snapshot=progress.raw,
                     only_if_status=STATUS_SUBMITTED,
                 ),
             )
@@ -305,17 +303,13 @@ class GenerationQueue:
                     error_code=progress.error_code or "PROVIDER_FAILED",
                     error_message=progress.error_message or "provider 报告生成失败",
                     provider_status=progress.provider_status,
-                    provider_snapshot=progress.raw,
                     only_if_status=STATUS_SUBMITTED,
                 ),
             )
             return
 
         await self._repo.record_progress(
-            job.id,
-            provider_status=progress.provider_status,
-            provider_snapshot=progress.raw,
-            only_if_status=STATUS_SUBMITTED,
+            job.id, provider_status=progress.provider_status, only_if_status=STATUS_SUBMITTED
         )
         raise StillRunning(f"{job.id} 还在跑（{progress.provider_status}）")
 

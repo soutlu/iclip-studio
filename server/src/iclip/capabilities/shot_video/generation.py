@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Final, NoReturn
@@ -113,18 +114,25 @@ class FrameGenerator:
         raise AssertionError("重试策略至少要有一个渠道")
 
     async def cut(
-        self, job: ImageJob, *, object_keys: Sequence[str], aspect: str | None, failure_message: str
+        self,
+        principal: Principal,
+        job: ImageJob,
+        *,
+        object_keys: Sequence[str],
+        aspect: str | None,
+        failure_message: str,
     ) -> CellCut:
-        """下载整图、裁剪并转存，逐格地址与 ``object_keys`` 同序。
+        """下载整图、裁剪并转存，逐格地址与 ``object_keys`` 同序；转存成功的每一格各记一条切图。
 
         整图恒为 GRID_CELLS 格，``object_keys`` 只给实际请求的那几格，多出来的是补位格，
-        不转存。失败时向模型报告简短错误，诊断信息留日志。"""
+        不转存也不记。切格、下载、转存失败时向模型报告简短错误，诊断信息留日志；记录落不下是
+        数据库的事，原样抛出，不让模型重出一张付费宫格。"""
 
         grid_url = job.output_url
         if not grid_url:
             job_failure(job, message=failure_message, reason="生成记录未携带结果 URL")
         try:
-            cells = await self._slice_grid(grid_url, aspect=aspect)
+            cells = await self._slice_grid(grid_url, aspect=aspect, job_id=job.job_id)
         except (MediaError, GridError, AspectError) as exc:
             job_failure(job, message=failure_message, reason=str(exc))
         if len(cells) != GRID_CELLS:
@@ -136,6 +144,7 @@ class FrameGenerator:
             )
         except ObjectWriteFailed as exc:
             job_failure(job, message=failure_message, reason=str(exc))
+        await self._generations.record_cuts(principal, job.job_id, urls)
         return CellCut(grid_url=grid_url, urls=tuple(urls))
 
     async def _run_one(
@@ -176,14 +185,24 @@ class FrameGenerator:
             urls.append(result)
         return urls
 
-    async def _slice_grid(self, grid_url: str, *, aspect: str | None) -> list[bytes]:
-        """检测网格并裁剪，指定 aspect 时居中收缩；检测不到分隔带的轴由 grid 按等分退回。"""
+    async def _slice_grid(
+        self, grid_url: str, *, aspect: str | None, job_id: uuid.UUID
+    ) -> list[bytes]:
+        """检测网格并裁剪，指定 aspect 时居中收缩；检测不到分隔带的轴由 grid 按等分退回，并记告警。"""
 
         async with fetched(
             self._client, grid_url, max_bytes=MAX_IMAGE_BYTES, suffix=".img"
         ) as source:
             gray, full_width = await decode_gray(source)
             layout = grid_cell_boxes(gray, rows=GRID_ROWS, cols=GRID_COLS)
+            if not layout.detected:
+                _logger.warning(
+                    "网格分隔带检测不全，按等分裁切",
+                    job_id=str(job_id),
+                    cells=len(layout.boxes),
+                    detected_x=layout.detected_x,
+                    detected_y=layout.detected_y,
+                )
             boxes = [
                 scale_box(box, from_width=gray.width, to_width=full_width) for box in layout.boxes
             ]

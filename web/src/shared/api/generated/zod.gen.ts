@@ -171,35 +171,6 @@ export const zBodyAuthCookieLoginAuthLoginPost = z.object({
 })
 
 /**
- * ClipSegmentIn
- *
- * 从一条视频里取 ``[start, end)`` 这一段，单位秒。
- */
-export const zClipSegmentIn = z.object({
-  end: z.number(),
-  start: z.number().gte(0),
-  url: z.string().min(1).max(2000),
-})
-
-/**
- * ClipIn
- *
- * 一次本地视频加工：按顺序裁出各段拼成一条，产物是本系统桶里的公开地址。
- *
- * ``reference`` 是编辑时切给模型看的参考片段，只能在一条完整视频上裁一段，不重编码
- * （起点因此落在最近的关键帧上，产物可能比区间略长）；``master`` 是拼出来的成片，各段
- * 参数互不相同，一律重编码对齐。两者存在不同前缀下，成片不进过期规则。
- */
-export const zClipIn = z.object({
-  conversationId: z.uuid().nullish(),
-  metadata: z.record(z.string(), z.unknown()).nullish(),
-  purpose: z.enum(['reference', 'master']),
-  rootJobId: z.uuid().nullish(),
-  segments: z.array(zClipSegmentIn).min(1).max(50),
-  taskId: z.uuid().nullish(),
-})
-
-/**
  * CollectionIn
  *
  * 新建或改名。名字必填——没名字的口袋没法认。
@@ -471,14 +442,15 @@ export const zErrorModel = z.object({
 /**
  * FaceOut
  *
- * 卡面放哪一条：这一镜最新的成片，没有成片就是最新一次出片。
+ * 一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
  */
 export const zFaceOut = z.object({
-  createdAt: z.iso.datetime(),
   durationMs: z.int().nullable(),
+  finishedAt: z.iso.datetime(),
   jobId: z.uuid(),
-  kind: z.enum(['take', 'master']),
+  kind: z.enum(['take', 'composite']),
   outputUrl: z.string(),
+  userName: z.string().nullable(),
   watermarkOutputUrl: z.string().nullable(),
 })
 
@@ -509,21 +481,27 @@ export const zAppendOp = z.object({
  *
  * 一次生成对外的样子。
  *
- * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、原始
- * 快照、租约与各段时间戳都是排队与排障的内部机制，快照里还带着 provider 的签名
- * URL；来源对话不写回去——查的时候本来就是按它查的。
+ * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、上游任务号
+ * 与状态词、提交时刻都是排队与排障的内部机制；来源对话不写回去——查的时候本来就是按它查的。
  */
 export const zGenerationOut = z.object({
   clipStage: z.enum(['fetching', 'processing', 'uploading']).nullable(),
   createdAt: z.iso.datetime(),
   durationMs: z.int().nullable(),
   errorMessage: z.string().nullable(),
+  finishedAt: z.iso.datetime().nullish(),
   id: z.uuid(),
-  kind: z.enum(['video', 'image', 'clip']),
+  kind: z.enum(['video', 'image']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload']),
   outputUrl: z.string().nullable(),
-  request: z.record(z.string(), z.unknown()),
+  rangeEndMs: z.int().nullish(),
+  rangeStartMs: z.int().nullish(),
+  request: z.record(z.string(), z.unknown()).nullable(),
   rootJobId: z.uuid().nullable(),
+  shotIndex: z.int().nullish(),
+  sourceJobId: z.uuid().nullish(),
+  sourceUrl: z.string().nullish(),
   status: z.enum(['pending', 'submitting', 'submitted', 'completed', 'failed']),
   taskId: z.uuid().nullable(),
   watermarkOutputUrl: z.string().nullable(),
@@ -574,7 +552,7 @@ export const zImageGenerationIn = z.object({
   prompt: z.string().min(1).max(4000),
   referenceImageUrls: z.array(z.string()).max(10).optional().default([]),
   resolution: z.enum(['1k', '2k', '4k']).optional().default('1k'),
-  rootJobId: z.uuid().nullish(),
+  sourceUrl: z.string().min(1).max(2000).nullish(),
   taskId: z.uuid().nullish(),
   userName: z.string().min(1).max(200).nullish(),
 })
@@ -643,18 +621,6 @@ export const zLibraryAuthorOut = z.object({
  */
 export const zLibraryAuthorsOut = z.object({
   items: z.array(zLibraryAuthorOut),
-})
-
-/**
- * MasterOut
- *
- * 挂在一次出片名下的成片（视频编辑确认合成的那条）。
- */
-export const zMasterOut = z.object({
-  createdAt: z.iso.datetime(),
-  durationMs: z.int().nullable(),
-  id: z.uuid(),
-  outputUrl: z.string(),
 })
 
 /**
@@ -859,49 +825,38 @@ export const zStyleMatchOut = z.object({
 /**
  * TakeOut
  *
- * 一次成功出片。参数与脚本照出片那一刻的请求。
+ * 一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
  */
 export const zTakeOut = z.object({
   aspectRatio: z.string().nullable(),
-  createdAt: z.iso.datetime(),
   generateAudio: z.boolean().nullable(),
   id: z.uuid(),
-  masters: z.array(zMasterOut),
   model: z.string().nullable(),
-  outputUrl: z.string(),
   prompt: z.string(),
   referenceImageUrls: z.array(z.string()),
   resolution: z.string().nullable(),
   script: zScriptOut.nullable(),
   seconds: z.int().nullable(),
-  userName: z.string().nullable(),
-  watermarkOutputUrl: z.string().nullable(),
 })
 
 /**
  * LibraryVideoOut
  *
- * 资料库的一张卡：一镜，即（对话，镜号）下的全部成功出片；没有镜号的出片一条一张。
+ * 资料库的一张卡：一段对话的分镜，装着这段对话读得到的全部成片（自己的加继承来的）；
+ * 不挂对话的出片一条一张卡，同原作的合成跟着它。
  */
 export const zLibraryVideoOut = z.object({
   agentId: z.string().nullable(),
+  canOpenConversation: z.boolean(),
   conversationId: z.uuid().nullable(),
   face: zFaceOut,
+  groupCount: z.int(),
   id: z.uuid(),
-  shotIndex: z.int().nullable(),
   take: zTakeOut,
-  takeCount: z.int(),
   taskId: z.uuid().nullable(),
   title: z.string().nullable(),
-})
-
-/**
- * LibraryVideoDetailOut
- */
-export const zLibraryVideoDetailOut = z.object({
-  siblings: z.array(zLibraryVideoOut),
-  takes: z.array(zTakeOut),
-  video: zLibraryVideoOut,
+  userName: z.string().nullable(),
+  versionCount: z.int(),
 })
 
 /**
@@ -1197,6 +1152,15 @@ export const zTurnUsage = z.object({
 })
 
 /**
+ * UploadConfirmIn
+ *
+ * 确认上传时可选的请求体：替谁确认。
+ */
+export const zUploadConfirmIn = z.object({
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
  * UploadConfirmedOut
  *
  * 确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。
@@ -1239,7 +1203,7 @@ export const zUploadSignIn = z.object({
  * 一次直传的许可：先拿到名字，再去传。
  *
  * ``uploadId`` 在字节落地之前就发下来，因为传这个副作用发生之前，双方必须先就「它
- * 叫什么」达成一致。它只用来确认这一次上传，不是任何东西的身份。
+ * 叫什么」达成一致。确认时用它指这一次上传，确认后它就是那条上传记录的 id。
  */
 export const zUploadTicketOut = z.object({
   upload: zUploadInstruction,
@@ -1428,6 +1392,53 @@ export const zUsersPageOut = z.object({
   page: z.int(),
   pageSize: z.int(),
   total: z.int(),
+})
+
+/**
+ * VersionOut
+ *
+ * 详情里的一版：版本头加它对应的出片。
+ */
+export const zVersionOut = z.object({
+  durationMs: z.int().nullable(),
+  finishedAt: z.iso.datetime(),
+  jobId: z.uuid(),
+  kind: z.enum(['take', 'composite']),
+  outputUrl: z.string(),
+  take: zTakeOut,
+  userName: z.string().nullable(),
+  watermarkOutputUrl: z.string().nullable(),
+})
+
+/**
+ * ShotGroupOut
+ *
+ * 卡里的一个镜头组：有镜号的按镜号成组；没有镜号的是一条出片连同同原作的合成。
+ */
+export const zShotGroupOut = z.object({
+  shotIndex: z.int().nullable(),
+  versions: z.array(zVersionOut),
+})
+
+/**
+ * LibraryVideoDetailOut
+ */
+export const zLibraryVideoDetailOut = z.object({
+  groups: z.array(zShotGroupOut),
+  video: zLibraryVideoOut,
+})
+
+/**
+ * VideoComposeIn
+ *
+ * 一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。
+ */
+export const zVideoComposeIn = z.object({
+  conversationId: z.uuid().nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  sourceJobId: z.uuid(),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
 })
 
 /**
@@ -1669,6 +1680,30 @@ export const zOpsCatchup = z.object({
 })
 
 /**
+ * VideoEditIn
+ *
+ * 一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。
+ *
+ * 与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切
+ * 一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
+ * ``VideoGenerationIn``，来源、原作与区间落列。
+ */
+export const zVideoEditIn = z.object({
+  conversation_id: z.uuid().nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  model: z.string().min(1).max(200),
+  prompt: z.string().min(1).max(4000),
+  provider_options: z.record(z.string(), z.unknown()).nullish(),
+  range_end_ms: z.int(),
+  range_start_ms: z.int().gte(0),
+  reference_image_urls: z.array(z.string()).max(30).optional().default([]),
+  seconds: z.int().gte(-1).nullish(),
+  source_job_id: z.uuid(),
+  task_id: z.uuid().nullish(),
+  user_name: z.string().min(1).max(200).nullish(),
+})
+
+/**
  * VideoModelsOut
  *
  * 接入了哪几个视频模型。只有模型 id，下拉直接显示它。
@@ -1748,7 +1783,6 @@ export const zVideoGenerationIn = z.object({
   reference_image_urls: z.array(z.string()).max(30).optional().default([]),
   reference_video_urls: z.array(z.string()).max(30).optional().default([]),
   resolution: z.string().min(1).max(50).nullish(),
-  root_job_id: z.uuid().nullish(),
   seconds: z.int().gte(-1).nullish(),
   shot: zVideoShotIn.nullish(),
   shot_index: z.int().gte(1).nullish(),
@@ -2261,8 +2295,11 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   limit: z.int().gte(1).lte(100).optional().default(20),
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
-  kind: z.enum(['video', 'image', 'clip']).nullish(),
+  shotIndex: z.int().gte(1).nullish(),
+  kind: z.enum(['video', 'image']).nullish(),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload']).nullish(),
   rootJobId: z.uuid().nullish(),
+  sourceJobId: z.uuid().nullish(),
   metadata: z.string().nullish(),
   before: z.uuid().nullish(),
 })
@@ -2271,13 +2308,6 @@ export const zListGenerationsGenerationsGetQuery = z.object({
  * Successful Response
  */
 export const zListGenerationsGenerationsGetResponse = zGenerationsPageOut
-
-export const zSubmitClipGenerationsClipsPostBody = zClipIn
-
-/**
- * Successful Response
- */
-export const zSubmitClipGenerationsClipsPostResponse = zGenerationEnvelope
 
 export const zSubmitImageGenerationsImagePostBody = zImageGenerationIn
 
@@ -2297,6 +2327,20 @@ export const zSubmitVideoGenerationsVideoPostBody = zVideoGenerationIn
  * Successful Response
  */
 export const zSubmitVideoGenerationsVideoPostResponse = zVideoSubmitOut
+
+export const zSubmitVideoCompositeGenerationsVideoCompositesPostBody = zVideoComposeIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitVideoCompositeGenerationsVideoCompositesPostResponse = zGenerationEnvelope
+
+export const zSubmitVideoEditGenerationsVideoEditsPostBody = zVideoEditIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitVideoEditGenerationsVideoEditsPostResponse = zGenerationEnvelope
 
 /**
  * Successful Response
@@ -2453,6 +2497,11 @@ export const zSignUploadUploadsSignPostBody = zUploadSignIn
  * Successful Response
  */
 export const zSignUploadUploadsSignPostResponse = zUploadTicketOut
+
+/**
+ * Body
+ */
+export const zConfirmUploadUploadsUploadIdConfirmPostBody = zUploadConfirmIn.nullable()
 
 export const zConfirmUploadUploadsUploadIdConfirmPostPath = z.object({
   upload_id: z.uuid(),
