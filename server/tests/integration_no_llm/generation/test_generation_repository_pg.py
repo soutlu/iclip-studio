@@ -849,6 +849,7 @@ async def test_inherited_records_keep_their_facts_and_obey_the_other_filters(
     source = await open_conversation(conversations, author)
     root = await finished(repo, author, source.id, "root", metadata={"shot": 1})
     await finished(repo, author, source.id, "other-shot", metadata={"shot": 2})
+    frame = await finished(repo, author, source.id, "frame", image_request(), metadata={"shot": 1})
     edited = await finished(
         repo,
         author,
@@ -893,6 +894,7 @@ async def test_inherited_records_keep_their_facts_and_obey_the_other_filters(
     assert await listed(source_job_id=edited.id) == {master.id, own_master.id}
     assert await listed(operation="compose") == {master.id, own_master.id}
     assert await listed(kind="video", metadata={"shot": 1}) == {root.id}
+    assert await listed(kind="image") == {frame.id}
     inherited_root = await repo.get(root.id, owner=forker, inherited=inheritance)
     assert (inherited_root.conversation_id, inherited_root.owner_user_id) == (source.id, author)
 

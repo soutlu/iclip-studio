@@ -1,8 +1,9 @@
-"""对话挂上需求单就是认领：待认领推到进行中，草稿不动，摘掉不清认领。"""
+"""对话挂上需求单就是认领：待认领推到进行中，草稿与已撤回的不动，摘掉不清认领。"""
 
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from tests.helpers.auth import login_as_editor
 from tests.helpers.tasks import URL, create
@@ -49,15 +50,23 @@ async def test_attaching_later_claims_too_and_detaching_keeps_the_claim(
     assert after["assigneeUserIds"] == [user_id]
 
 
-async def test_a_draft_is_attachable_but_not_claimed(
-    client: httpx.AsyncClient, pg_url: str
+_TO_STATUS = {"draft": (), "withdrawn": ("publish", "withdraw")}
+"""建出草稿后，推到这个状态要依次调用的动作。"""
+
+
+@pytest.mark.parametrize("status", list(_TO_STATUS))
+async def test_a_draft_or_withdrawn_task_is_attachable_but_not_claimed(
+    client: httpx.AsyncClient, pg_url: str, status: str
 ) -> None:
     await login_as_editor(client, pg_url)
-    draft = (await create(client)).json()["task"]
+    task = (await create(client)).json()["task"]
+    for action in _TO_STATUS[status]:
+        moved = await client.post(f"{URL}/{task['id']}/{action}")
+        assert moved.status_code == 200, moved.text
 
-    opened = await client.post(CONVERSATIONS, json={"agentId": "storyboard", "taskId": draft["id"]})
+    opened = await client.post(CONVERSATIONS, json={"agentId": "storyboard", "taskId": task["id"]})
     assert opened.status_code == 201, opened.text
 
-    after = await read_task(client, draft["id"])
-    assert after["status"] == "draft"
+    after = await read_task(client, task["id"])
+    assert after["status"] == status
     assert after["assigneeUserIds"] == []

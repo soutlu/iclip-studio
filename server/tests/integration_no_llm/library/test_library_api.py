@@ -8,14 +8,29 @@ import uuid
 import httpx
 from sqlalchemy import text
 
+from iclip.common.shot_prompt import format_shot_prompt
 from iclip.domains.generation.models import STATUS_COMPLETED
-from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_GENERATE
+from iclip.domains.generation.schemas import (
+    KIND_VIDEO,
+    OPERATION_GENERATE,
+    VideoGenerationIn,
+    VideoShotIn,
+    request_to_payload,
+)
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 
 VIDEOS = "/library/videos"
 AUTHORS = "/library/authors"
 PASSWORD = "password-123"
+
+SHOT = VideoShotIn.model_validate(
+    {
+        "global_settings": "海边木栈道，午后逆光。",
+        "timeline": [{"timestamps": [0, 3], "prompt": "模特走向镜头。", "image_indexes": []}],
+    }
+)
+"""种进去的出片带的结构化镜头组。"""
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> uuid.UUID:
@@ -33,7 +48,7 @@ async def login_again(client: httpx.AsyncClient, username: str) -> None:
 async def plant_video(
     pg_url: str, *, owner: uuid.UUID, user_name: str
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """一段对话下一条成了的镜 1 出片；返回（对话 id，出片 id）。"""
+    """一段对话下一条成了的镜 1 出片，请求带 ``SHOT``；返回（对话 id，出片 id）。"""
 
     conversation_id, video_id = uuid.uuid4(), uuid.uuid4()
     async with connected(pg_url) as conn:
@@ -60,7 +75,7 @@ async def plant_video(
                 "kind": KIND_VIDEO,
                 "operation": OPERATION_GENERATE,
                 "request": json.dumps(
-                    {"model": "m", "prompt": "模特走向镜头。", "user_name": user_name}
+                    request_to_payload(VideoGenerationIn(model="m", shot=SHOT, user_name=user_name))
                 ),
                 "status": STATUS_COMPLETED,
             },
@@ -125,13 +140,17 @@ async def test_everyone_gets_the_conversation_only_readers_can_open_it(
         (group["shotIndex"], [(v["kind"], v["jobId"], v["userName"]) for v in group["versions"]])
         for group in detail["groups"]
     ] == [(1, [("take", str(video_id), "nora")])]
+    assert video["take"]["script"] == {
+        "globalSettings": "海边木栈道，午后逆光。",
+        "timeline": [{"start": 0, "end": 3, "prompt": "模特走向镜头。", "imageIndexes": []}],
+    }
 
     colleague = as_colleague.json()["video"]
     assert colleague["conversationId"] == str(conversation_id)
     assert colleague["canOpenConversation"] is False
     assert colleague["title"] == "凉鞋合集"
-    assert colleague["take"]["prompt"] == "模特走向镜头。"
-    assert colleague["take"] == video["take"]
+    assert colleague["take"]["prompt"] == format_shot_prompt(SHOT)
+    assert colleague["take"] == video["take"], "同事与属主拿到同一份参数与脚本"
     assert [(item["id"], item["canOpenConversation"]) for item in listed["items"]] == [
         (str(conversation_id), False)
     ]

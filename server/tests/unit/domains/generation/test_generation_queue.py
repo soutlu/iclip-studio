@@ -1,4 +1,4 @@
-"""直接调用任务协程，验证生成状态推进、提交幂等边界、队列选择和失联任务恢复。"""
+"""直接调用任务协程，验证生成状态推进、提交幂等边界和队列选择；失联任务恢复在 PG 集成测试里。"""
 
 from __future__ import annotations
 
@@ -383,29 +383,6 @@ async def test_each_provider_goes_to_its_own_queue() -> None:
 
     routed = {row["queue_name"] for row in connector.jobs.values()}
     assert routed == {submit_queue(FAKE_VIDEO_PROVIDER), submit_queue(FAKE_IMAGE_PROVIDER)}
-
-
-async def test_stalled_job_of_a_dead_worker_is_picked_back_up() -> None:
-    """procrastinate 维护心跳但不自动恢复失联 worker 的任务，需显式重排。"""
-
-    job = make_job(video_request())
-    repo = InMemoryGenerationRepository([job])
-    queue, connector = build_queue(repo)
-    await queue.enqueue_submit(job)
-
-    # 模拟任务已认领且 worker 心跳过期。
-    worker_id = await queue.app.job_manager.register_worker()
-    queued = await queue.app.job_manager.fetch_job(
-        queues=[submit_queue(FAKE_VIDEO_PROVIDER)], worker_id=worker_id
-    )
-    assert queued is not None and queued.id is not None
-    assert connector.jobs[queued.id]["status"] == "doing"
-    connector.workers[worker_id] = datetime.now(UTC) - timedelta(
-        seconds=QUEUE_SETTINGS.stalled_worker_timeout_seconds + 60
-    )
-
-    assert await queue.heal_stalled() == 1
-    assert connector.jobs[queued.id]["status"] == "todo", "捡回去重排，等着守卫来收尾"
 
 
 _ANY_JOB = QueuedJob(
