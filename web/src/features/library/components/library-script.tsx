@@ -1,18 +1,16 @@
-/** 详情右栏的两页：脚本（全局设定、逐镜正文、参考图、同一次创作的其他镜头组）与参数（出片请求的参数和来源）。 */
+/** 详情右栏的两页：脚本（全局设定、逐镜正文、参考图）与参数（出片请求的参数和来源）。 */
 
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { formatDateTime } from '@/shared/lib/date-time'
-import { imageThumbnailUrl, videoSnapshotUrl } from '@/shared/lib/media-url'
+import { imageThumbnailUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
 import type { LightboxMedia } from '@/shared/ui/media-lightbox'
-import type { LibraryShotGroup, LibraryTake, LibraryVideo } from '../library.api'
+import type { LibraryTake, LibraryVideo } from '../library.api'
 import {
-  aspectOf,
   cutIndexAt,
   durationSecondsOf,
   formatSecond,
-  groupLabelOf,
   promptSegmentsOf,
   type LibraryVersion,
 } from '../library-media'
@@ -55,10 +53,6 @@ type LibraryScriptPanelProps = {
   currentTime: number
   onSeek: (seconds: number) => void
   onPreviewImage: (media: LightboxMedia) => void
-  /** 这张卡的其他镜头组；详情还没读回来是 undefined。 */
-  groups: readonly LibraryShotGroup[] | undefined
-  /** 在这张卡里切到那一组，不换卡。 */
-  onOpenGroup: (group: LibraryShotGroup) => void
 }
 
 export function LibraryScriptPanel({
@@ -66,8 +60,6 @@ export function LibraryScriptPanel({
   currentTime,
   onSeek,
   onPreviewImage,
-  groups,
-  onOpenGroup,
 }: LibraryScriptPanelProps) {
   const { script } = take
   const active = script === null ? -1 : cutIndexAt(script, currentTime)
@@ -169,58 +161,7 @@ export function LibraryScriptPanel({
           </div>
         </>
       )}
-
-      {groups === undefined || groups.length === 0 ? null : (
-        <>
-          <SectionHeading note={`${groups.length} 条`} title="同一次创作的其他镜头组" />
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2.5">
-            {groups.map((group) => (
-              // 无镜号的组可以有好几个，组名不唯一；组的首版只在这一组里。
-              <GroupCard group={group} key={group.versions[0]?.jobId} onOpen={onOpenGroup} />
-            ))}
-          </div>
-        </>
-      )}
     </>
-  )
-}
-
-/** 一个镜头组的入口：封面与参数取这一组最新的一版。 */
-function GroupCard({
-  group,
-  onOpen,
-}: {
-  group: LibraryShotGroup
-  onOpen: (group: LibraryShotGroup) => void
-}) {
-  const latest = group.versions.at(-1)
-  if (latest === undefined) return null
-  const { w, h } = aspectOf(latest.take.aspectRatio)
-  const poster = videoSnapshotUrl(latest.outputUrl, 240)
-  const seconds = durationSecondsOf(latest.durationMs, latest.take)
-  return (
-    <button
-      className="cursor-pointer rounded-sm text-left ui-focus"
-      onClick={() => onOpen(group)}
-      type="button"
-    >
-      <span
-        className="relative block overflow-hidden rounded-sm bg-surface-container-low"
-        style={{ aspectRatio: `${w} / ${h}` }}
-      >
-        {poster === undefined ? null : (
-          <img alt="" className="size-full object-contain" loading="lazy" src={poster} />
-        )}
-      </span>
-      <span className="mt-1.5 block text-caption font-medium text-on-surface">
-        {groupLabelOf(group)}
-      </span>
-      <span className="block truncate text-caption text-on-surface-faint">
-        {[seconds === null ? null : `${formatSecond(seconds)} 秒`, latest.take.model]
-          .filter(Boolean)
-          .join(' · ')}
-      </span>
-    </button>
   )
 }
 

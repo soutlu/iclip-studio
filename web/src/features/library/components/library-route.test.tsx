@@ -370,11 +370,13 @@ describe('library viewer', () => {
     const viewer = await openCard(user, SKATE)
     const versions = await within(viewer).findByRole('group', { name: '这个镜头组的版本' })
     expect(within(versions).getAllByRole('button')).toHaveLength(6)
-    expect(within(versions).getByRole('button', { pressed: true })).toHaveTextContent('第 6 版')
+    expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('6')
+    // 只有一个镜头组，不出组分段
+    expect(within(viewer).queryByRole('group', { name: '镜头组' })).not.toBeInTheDocument()
 
     await user.click(within(viewer).getByRole('button', { name: '镜头 3，1.9 秒起' }))
     expect(playerIn(viewer, SKATE).currentTime).toBeCloseTo(1.95)
-    await user.click(within(versions).getByRole('button', { name: /第 1 版/ }))
+    await user.click(within(versions).getByRole('button', { name: '1' }))
     await user.click(within(viewer).getByRole('tab', { name: '参数与来源' }))
     expect(within(viewer).getByText('第 1 版', { selector: 'dd' })).toBeVisible()
   })
@@ -451,25 +453,103 @@ describe('library viewer', () => {
     await waitFor(() => expect(viewer).not.toBeInTheDocument())
   })
 
-  it('switches to another shot group of the same card without leaving it', async () => {
+  it('switches shot groups and their versions from the bar under the video', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
 
     const viewer = await openCard(user, SANDALS)
-    // 卡面在只有一版的镜头组 1 上，没有版本条可切
-    const other = await within(viewer).findByRole('button', { name: /镜头组 2/ })
+    const groups = await within(viewer).findByRole('group', { name: '镜头组' })
+    // 卡面在只有一版的镜头组 1 上，没有版本分段
+    expect(within(groups).getByRole('button', { pressed: true })).toHaveAccessibleName('1')
     expect(
       within(viewer).queryByRole('group', { name: '这个镜头组的版本' }),
     ).not.toBeInTheDocument()
-    await user.click(other)
 
+    // 点组切到那一组最新的一版
+    await user.click(within(groups).getByRole('button', { name: '2' }))
     const versions = await within(viewer).findByRole('group', { name: '这个镜头组的版本' })
     expect(within(versions).getAllByRole('button')).toHaveLength(2)
-    expect(within(versions).getByRole('button', { pressed: true })).toHaveTextContent('第 2 版')
+    expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('2')
     expect(within(viewer).getByText('居家客厅，几何地毯与木柜；自然窗光。')).toBeVisible()
-    // 组不是卡：还是这张卡的详情，其他镜头组换成了镜头组 1
+
+    // 点版本只换版本，组不变
+    await user.click(within(versions).getByRole('button', { name: '1' }))
+    expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('1')
+    expect(within(groups).getByRole('button', { pressed: true })).toHaveAccessibleName('2')
+    await user.click(within(viewer).getByRole('tab', { name: '参数与来源' }))
+    expect(within(viewer).getByText('第 1 版', { selector: 'dd' })).toBeVisible()
+    // 组不是卡：还是这张卡的详情
     expect(screen.getByRole('dialog', { name: SANDALS })).toBe(viewer)
-    expect(within(viewer).getByRole('button', { name: /镜头组 1/ })).toBeVisible()
+
+    await user.click(within(groups).getByRole('button', { name: '1' }))
+    expect(
+      within(viewer).queryByRole('group', { name: '这个镜头组的版本' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('holds the bar row while the detail is on its way, only for cards that will show it', async () => {
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // 挂住详情；放行后不回响应，交给默认的 mock。
+    server.use(
+      http.get('*/api/library/videos/:id', async () => {
+        await held
+      }),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+
+    // 只有一版的卡不会有这一行，也就不占
+    let viewer = await openCard(user, '跑鞋手持展示')
+    expect(within(viewer).queryByRole('status')).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+
+    viewer = await openCard(user, SKATE)
+    expect(within(viewer).getByRole('status')).toBeInTheDocument()
+    expect(
+      within(viewer).queryByRole('group', { name: '这个镜头组的版本' }),
+    ).not.toBeInTheDocument()
+
+    release()
+    expect(
+      await within(viewer).findByRole('group', { name: '这个镜头组的版本' }),
+    ).toBeInTheDocument()
+    expect(within(viewer).queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('shows 做同款 as coming soon on focus and on click without doing anything', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderWithProviders(<Harness />)
+    const viewer = await openCard(user, '跑鞋手持展示')
+    const pathname = router.state.location.pathname
+    await navigator.clipboard.writeText('原来的内容')
+
+    const make = within(viewer).getByRole('button', { name: '做同款' })
+    expect(make).toHaveAttribute('aria-disabled', 'true')
+    act(() => make.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('即将开放')
+    act(() => make.blur())
+    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
+
+    await user.click(make)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('即将开放')
+    expect(screen.getByRole('dialog', { name: '跑鞋手持展示' })).toBe(viewer)
+    expect(router.state.location.pathname).toBe(pathname)
+    await expect(navigator.clipboard.readText()).resolves.toBe('原来的内容')
+  })
+
+  it('copies the prompt of the version on screen', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    const viewer = await openCard(user, '跑鞋手持展示')
+    const listed = mockLibraryVideos().find((video) => video.title === '跑鞋手持展示')
+
+    await user.click(within(viewer).getByRole('button', { name: '复制提示词' }))
+
+    await expect(navigator.clipboard.readText()).resolves.toBe(listed?.take.prompt)
+    expect(within(viewer).getByRole('button', { name: '已复制' })).toBeVisible()
   })
 
   it('opens a shared link outside the loaded list and says when the video is gone', async () => {

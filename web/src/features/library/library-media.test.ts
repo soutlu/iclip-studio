@@ -5,6 +5,7 @@ import {
   cutIndexAt,
   durationSecondsOf,
   formatClock,
+  groupNamesOf,
   keyframesOf,
   openingTextOf,
   promptSegmentsOf,
@@ -158,5 +159,15 @@ describe('versionsOf', () => {
       ['c1', 'composite', '第 2 版'],
       ['t2', 'take', '第 3 版'],
     ])
+  })
+})
+
+describe('groupNamesOf', () => {
+  const groups = (...shots: (number | null)[]) =>
+    shots.map((shotIndex) => ({ shotIndex, versions: [] }))
+
+  it('uses the shot index, and numbers groups without one only when there are several', () => {
+    expect(groupNamesOf(groups(1, 3, null))).toEqual(['1', '3', '无镜号'])
+    expect(groupNamesOf(groups(2, null, null))).toEqual(['2', '无镜号 1', '无镜号 2'])
   })
 })
