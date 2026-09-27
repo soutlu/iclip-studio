@@ -245,6 +245,32 @@ def test_anonymous_upgrade_is_refused(ws_agent_app: FastAPI) -> None:
     assert refused.value.code == 1008
 
 
+def test_a_signed_in_user_without_agent_run_is_refused(
+    ws_agent_app: FastAPI, pg_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """建连要 agent:run；只读身份以 policy violation 拒绝，日志带上 user_id 表明身份已认出。"""
+
+    with (
+        caplog.at_level(logging.INFO, logger="iclip.domains.agents.transcript_api"),
+        TestClient(ws_agent_app) as tc,
+    ):
+        viewer = sign_in_as(tc, pg_url, username="vic", roles=("viewer",))
+
+        with (
+            pytest.raises(WebSocketDisconnect) as refused,
+            tc.websocket_connect("/ws", headers=viewer),
+        ):
+            pass
+
+    assert refused.value.code == 1008
+    assert any(
+        record.name == "iclip.domains.agents.transcript_api"
+        and isinstance(record.msg, dict)
+        and record.msg.get("user_id")
+        for record in caplog.records
+    )
+
+
 def test_api_key_upgrades_with_bearer_alone(ws_agent_app: FastAPI, pg_url: str) -> None:
     """机器端不带 cookie 与 Origin，凭带 agent:run 的钥匙握手。"""
 

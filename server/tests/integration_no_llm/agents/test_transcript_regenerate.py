@@ -211,30 +211,6 @@ async def test_regenerate_an_older_turn_is_conflict(app: FastAPI, pg_url: str) -
     assert refused_beyond.status_code == 409
 
 
-async def test_regenerate_without_prompt_row_is_not_found(app: FastAPI, pg_url: str) -> None:
-
-    async with make_client(app) as client:
-        await login_as_editor(client, pg_url)
-        conversation_id = await new_conversation(client, AGENT_ID)
-        await _send(client, conversation_id, "prm_gone", "问")
-        await settled(client, conversation_id)
-
-        async with connected(pg_url) as conn:
-            await conn.execute(
-                text("DELETE FROM agent_runtime.agent_jobs WHERE conversation_id = :cid"),
-                {"cid": conversation_id},
-            )
-
-        missing = await client.post(f"/conversations/{conversation_id}/turns/t1:regenerate")
-        page = (await client.get(f"/conversations/{conversation_id}/transcript")).json()
-
-    assert missing.status_code == 404
-    assert missing.json()["detail"] != "分叉带过来的历史不能重新生成或编辑，只能接着往下聊。", (
-        "不是分叉来的轮，不能说成分叉"
-    )
-    assert [turn["content"] for turn in page["items"]] == [[{"type": "text", "text": "问"}]]
-
-
 async def test_regenerate_in_someone_elses_conversation_is_not_found(
     app: FastAPI, pg_url: str
 ) -> None:

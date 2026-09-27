@@ -1294,7 +1294,7 @@ async def test_the_next_turn_after_a_failed_one_does_not_reuse_its_ordinal(
     await submit_text(runner, queue, conversation_id, "先做这个")
     await drained(queue, conversation_id)
 
-    # 使用同一 runner 和正常模型创建下一轮。
+    # 换一个接同一数据库的 runner 和正常模型跑下一轮。
     store2 = TranscriptStore()
     runner2, _step_store2, queue2 = build_runner(engine, says("好"), store=store2)
     await submit_text(runner2, queue2, conversation_id, "再做那个")

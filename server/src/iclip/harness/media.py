@@ -28,8 +28,7 @@ IMAGE_CONTEXT_MAX_EDGE: Final = 1024
 
 # 属性值经 _escape_attr 转义后不含引号与尖括号；地址不含空白。
 _URL_ATTR = r'[^"<>\s]+'
-# 可选的 name 属性只出现在早期落库的快照里，解析时照常接受。
-_OPEN = rf'<(image|video|audio|file) url="({_URL_ATTR})"(?: name="([^"<>]*)")?>'
+_OPEN = rf'<(image|video|audio|file) url="({_URL_ATTR})">'
 _TAG_RE: Final = re.compile(rf"{_OPEN}</\1>")
 """视频、音频与文件使用的空标签。"""
 
@@ -83,7 +82,6 @@ class MediaTag:
 
     kind: MediaKind
     url: str
-    name: str | None = None
     wraps: bool = False
     """是否为包含后续像素与闭标签的开标签。"""
 
@@ -97,11 +95,10 @@ def parse_media_tag(text: str) -> MediaTag | None:
         match = _OPEN_RE.fullmatch(text)
     if match is None:
         return None
-    kind, url, name = match.group(1), match.group(2), match.group(3)
+    kind, url = match.group(1), match.group(2)
     return MediaTag(
         kind=kind,  # pyright: ignore[reportArgumentType]
         url=_unescape_attr(url),
-        name=_unescape_attr(name) if name else None,
         wraps=wraps,
     )
 

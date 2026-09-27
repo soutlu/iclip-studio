@@ -42,6 +42,7 @@ from iclip.platform.transcript.ops import (
     TextFrame,
     ToolFrame,
     TranscriptTurn,
+    VideoContent,
 )
 
 RUN = "axRdrOK"
@@ -482,14 +483,21 @@ def test_duration_is_only_reported_for_ended_turns() -> None:
     assert running[0].duration_ms is None
 
 
-def test_attached_image_survives_the_round_trip() -> None:
-    """用户图片经过消息持久化后，须从 tag 恢复为原图 part，图文保持原序。"""
+def test_attachments_survive_the_round_trip() -> None:
+    """用户附件经过消息持久化后，须从 tag 恢复为原附件 part，图文保持原序。
+
+    三种编码都要还原：OSS 图片是开标签、像素、闭标签三项；非 OSS 图片与视频是单个完整标签。
+    """
 
     # 使用可缩放地址以生成完整的开标签、图片和闭标签三项，覆盖独立闭标签的解析。
     url = "https://bkt.oss-ap-southeast-1.aliyuncs.com/u/shot.png"
     content = (
         TextContent(text="参考这张图："),
         ImageContent(source=AttachmentSource(kind="url", url=url)),
+        TextContent(text="和这张："),
+        ImageContent(source=AttachmentSource(kind="url", url="https://cdn.test/u/style.jpg")),
+        TextContent(text="照这个视频"),
+        VideoContent(source=AttachmentSource(kind="url", url="https://cdn.test/u/ref.mp4")),
         TextContent(text="做个 30 秒的"),
     )
     turns = turns_from_messages([_ask(model_prompt(content)), _reply(TextPart(content="好"))])
