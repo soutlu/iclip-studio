@@ -1,4 +1,4 @@
-/* 卡片不随宽屏拉伸；窄屏允许缩至容器宽度。 */
+/* 卡片不随宽屏拉伸；窄屏允许缩至容器宽度。紧凑屏两列铺满，列宽随容器。 */
 .grid-task-cards {
   display: grid;
   gap: 24px 16px;
@@ -6,9 +6,16 @@
   align-items: start;
 }
 
-/* 封面与盖在它上面的参考条覆盖层同用这个高度，参考条按底边对齐，不另算偏移。 */
+@media (max-width: 599px) {
+  .grid-task-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 封面、骨架封面与盖在封面上的参考条覆盖层同用这个比例，三者盒宽都等于卡宽，
+   高度随卡宽等比；参考条按底边对齐，不另算偏移。 */
 .task-card-media {
-  height: 180px;
+  aspect-ratio: 196 / 180;
 }
 
 .task-card-reference-image {

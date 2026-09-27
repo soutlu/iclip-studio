@@ -138,17 +138,32 @@ const boundsOf = async (locator: Locator) => {
   return bounds
 }
 
+/** 与首张卡同一排的张数，即网格当前一行放得下的卡片数。 */
+const firstRowCount = async (cards: Locator) => {
+  const tops = await Promise.all((await cards.all()).map(async (card) => (await boundsOf(card)).y))
+  return tops.filter((top) => Math.abs(top - (tops[0] ?? top)) < 1).length
+}
+
 test('认领画廊可展开、搜索全部已加载需求，并保留详情与重命名入口', async ({ page }) => {
   await page.setViewportSize({ width: 1335, height: 1197 })
   await openGallery(page)
   const mine = page.getByRole('region', { name: '我的需求单' })
   const all = page.getByRole('region', { name: '全部需求单' })
-  await expect(cardsIn(mine)).toHaveCount(3)
+  // 收起时放满一行：1335 宽主区排 4 列，与「全部需求单」首排张数一致。
+  await expect(cardsIn(mine)).toHaveCount(4)
   await expect(cardsIn(all)).toHaveCount(9)
+  expect(await firstRowCount(cardsIn(all))).toBe(4)
   await expect(mine.getByRole('button', { name: `查看需求：${MY_TITLES[4]}` })).toHaveCount(0)
 
   const expand = mine.getByRole('button', { name: '展开更多', exact: true })
   await expect(expand).toHaveAttribute('aria-expanded', 'false')
+  // 一行的张数随主区宽度变化。
+  await page.setViewportSize({ width: 1600, height: 1197 })
+  await expect(cardsIn(mine)).toHaveCount(6)
+  expect(await firstRowCount(cardsIn(all))).toBe(6)
+  await page.setViewportSize({ width: 1335, height: 1197 })
+  await expect(cardsIn(mine)).toHaveCount(4)
+
   await expand.click()
   await expect(cardsIn(mine)).toHaveCount(6)
   const collapse = mine.getByRole('button', { name: '收起', exact: true })
@@ -160,11 +175,14 @@ test('认领画廊可展开、搜索全部已加载需求，并保留详情与�
     path: `${SHOT_DIR}/desktop-expanded.png`,
   })
   await collapse.click()
-  await expect(cardsIn(mine)).toHaveCount(3)
+  await expect(cardsIn(mine)).toHaveCount(4)
   await expect(expand).toHaveAttribute('aria-expanded', 'false')
 
-  // 关键字只在原需求单 title 中；匹配范围不能被首页的三张预览截断。
+  // 搜索在页头「新建需求单」之后，同时筛两个分区；匹配范围不能被收起的一行截断。
   const search = page.getByRole('textbox', { name: '搜索需求单' })
+  await page.getByRole('button', { name: '新建需求单', exact: true }).focus()
+  await page.keyboard.press('Tab')
+  await expect(search).toBeFocused()
   await search.fill('画廊验收')
   await expect(cardsIn(mine)).toHaveCount(6)
   await expect(cardsIn(all)).toHaveCount(6)
@@ -183,7 +201,7 @@ test('认领画廊可展开、搜索全部已加载需求，并保留详情与�
   await detail.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(detail).toBeHidden()
   await search.clear()
-  await expect(cardsIn(mine)).toHaveCount(3)
+  await expect(cardsIn(mine)).toHaveCount(4)
   await expect(expand).toHaveAttribute('aria-expanded', 'false')
 
   await mine.getByRole('button', { name: '更多操作', exact: true }).first().click()
@@ -238,8 +256,8 @@ test('参考缩略图覆盖在主图内，保持原图比例，左右滚动与�
 })
 
 for (const viewport of [
-  { name: 'desktop', width: 1335, height: 1197 },
-  { name: 'mobile', width: 390, height: 844 },
+  { name: 'desktop', width: 1335, height: 1197, columns: 4 },
+  { name: 'mobile', width: 390, height: 844, columns: 2 },
 ]) {
   test(`画廊视觉验收：${viewport.name} 浅深主题与长标题`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
@@ -247,28 +265,44 @@ for (const viewport of [
     const mine = page.getByRole('region', { name: '我的需求单' })
     const all = page.getByRole('region', { name: '全部需求单' })
     const cards = cardsIn(mine)
-    await expect(cards).toHaveCount(3)
+    await expect(cards).toHaveCount(viewport.columns)
     await expect(cardsIn(all)).toHaveCount(9)
+    expect(await firstRowCount(cardsIn(all))).toBe(viewport.columns)
     await expect(page.getByRole('heading', { name: '需求单', exact: true })).toBeVisible()
     await expect(page.getByText('多人协同，打造超级团队', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: '新建需求单', exact: true })).toBeVisible()
+    await expect(page.getByRole('textbox', { name: '搜索需求单' })).toBeVisible()
     await expect(cards.first()).toHaveAccessibleName(`查看需求：${MY_TITLES[0]}`)
-    const first = await boundsOf(cards.nth(0))
-    const second = await boundsOf(cards.nth(1))
-    const third = await boundsOf(cards.nth(2))
+    const row = await Promise.all((await cards.all()).map(boundsOf))
+    const [first, second] = row
+    if (!first || !second) throw new Error('我的需求单首排不足两张')
+    // 同排等宽、从左到右依次排开。
+    for (const [index, card] of row.entries()) {
+      expect(Math.abs(card.y - first.y)).toBeLessThan(1)
+      expect(Math.abs(card.width - first.width)).toBeLessThan(1)
+      const previous = row[index - 1]
+      if (previous) expect(previous.x + previous.width).toBeLessThan(card.x)
+    }
+    // 封面宽等于卡宽，按 196:180 随卡宽等比。
     const cover = await boundsOf(cards.first().getByRole('img').first())
     expect(Math.abs(cover.width - first.width)).toBeLessThan(1)
     expect(cover.height).toBeLessThan(first.height)
+    expect(Math.abs(cover.width / cover.height - 196 / 180)).toBeLessThan(0.02)
+    // 参考条覆盖层随封面等比，仍贴着封面底边。
+    const withReferences = mine.getByRole('button', { name: `查看需求：${MY_TITLES[1]}` })
+    const referenceCover = await boundsOf(withReferences.getByRole('img').first())
+    const strip = await boundsOf(withReferences.locator('..').getByLabel('商品与参考图'))
+    const coverBottom = referenceCover.y + referenceCover.height
+    expect(strip.y).toBeGreaterThan(referenceCover.y)
+    expect(coverBottom - (strip.y + strip.height)).toBeGreaterThan(0)
+    expect(coverBottom - (strip.y + strip.height)).toBeLessThan(12)
     await expect(cards.first().getByLabel('发布平台：抖音')).toBeVisible()
     await expect(cards.first().getByLabel('视频类型：产品展示')).toBeVisible()
     await expect(cards.first().getByLabel('内容类型：短视频')).toBeVisible()
     await expect(cards.first().getByText(/^创建于 /)).toBeVisible()
 
     if (viewport.name === 'desktop') {
-      expect(Math.abs(first.y - second.y)).toBeLessThan(1)
-      expect(Math.abs(first.y - third.y)).toBeLessThan(1)
-      expect(first.x + first.width).toBeLessThan(second.x)
-      expect(second.x + second.width).toBeLessThan(third.x)
+      expect(first.width).toBeCloseTo(196, 0)
       await expect(all.getByRole('heading', { name: '全部需求单' })).toBeInViewport()
       for (const card of (await cardsIn(all).all()).slice(0, 3)) {
         const image = card.getByRole('img').first()
@@ -280,12 +314,21 @@ for (const viewport of [
         await expect(image).toHaveCSS('opacity', '1')
       }
     } else {
-      expect(Math.abs(first.x - second.x)).toBeLessThan(1)
-      expect(Math.abs(first.x - third.x)).toBeLessThan(1)
-      expect(second.y).toBeGreaterThanOrEqual(first.y + first.height)
-      expect(third.y).toBeGreaterThanOrEqual(second.y + second.height)
+      // 两列铺满主区：第三张换到下一排、与第一张左对齐。
+      const allFirst = await boundsOf(cardsIn(all).nth(0))
+      const allThird = await boundsOf(cardsIn(all).nth(2))
+      expect(Math.abs(allThird.x - allFirst.x)).toBeLessThan(1)
+      expect(allThird.y).toBeGreaterThanOrEqual(allFirst.y + allFirst.height)
+      // 左右留白相等（主区宽不含滚动条）。
+      const content = await page
+        .getByRole('main')
+        .evaluate((main) => ({ left: main.getBoundingClientRect().left, width: main.clientWidth }))
+      expect(first.x - content.left).toBeCloseTo(
+        content.left + content.width - (second.x + second.width),
+        0,
+      )
       expect(first.x).toBeGreaterThanOrEqual(0)
-      expect(first.x + first.width).toBeLessThanOrEqual(viewport.width)
+      expect(second.x + second.width).toBeLessThanOrEqual(viewport.width)
       expect(
         await page.getByRole('main').evaluate((main) => main.scrollWidth <= main.clientWidth),
       ).toBe(true)
@@ -312,7 +355,9 @@ for (const viewport of [
         path: `${SHOT_DIR}/${viewport.name}-${colorScheme}.png`,
       })
       if (viewport.name === 'mobile') {
-        await all.getByRole('heading', { name: '全部需求单' }).scrollIntoViewIfNeeded()
+        // 双列下「全部需求单」标题已在首屏；滚到接近顶端（让出侧栏展开钮）才拍得到它的多排卡片。
+        const sectionTop = await all.evaluate((section) => section.getBoundingClientRect().top)
+        await page.getByRole('main').evaluate((main, top) => main.scrollBy(0, top - 48), sectionTop)
         await expect(cardsIn(all).first().getByRole('img').first()).toBeInViewport()
         await page.screenshot({
           animations: 'disabled',

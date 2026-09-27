@@ -74,8 +74,8 @@ export function TaskCardReferences({
 
   if (!images.length) return null
   return (
-    // 覆盖层与封面同高同底边，参考条贴着封面下沿；覆盖层不吃指针事件，点空白仍是打开详情。
-    <div className="task-card-media pointer-events-none absolute inset-x-2 top-0 flex items-end pb-1.5">
+    // 覆盖层与封面同宽同比例，因此同高同底边，参考条贴着封面下沿；覆盖层不吃指针事件，点空白仍是打开详情。
+    <div className="task-card-media pointer-events-none absolute inset-x-0 top-0 flex items-end px-2 pb-1.5">
       <div className="pointer-events-auto flex w-full min-w-0 items-center gap-1">
         {edges.previous && (
           <IconButton
