@@ -1,4 +1,5 @@
 import { dateRangeLabel } from '@/shared/lib/date-range'
+import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { DateRangeFilter, FilterBarRoot, PickerFilter, useFilterBar } from '@/shared/ui/filter-bar'
 import type { PickerSource } from '@/shared/ui/search-picker'
@@ -31,10 +32,16 @@ const DELETED_LABELS = {
   all: '不限',
 } satisfies Record<AuditFilters['deleted'], string>
 
-const CHIP_CLASS =
-  'h-9 border-transparent bg-surface-container-low px-4 text-body data-[state=on]:bg-primary data-[state=on]:text-on-primary'
+// 两组都画成文字分段控件：浅底轨道里选中项浮起一块中性底，与日期弹层里的时间范围同一写法。
+const SEGMENT_GROUP_CLASS = 'flex-nowrap gap-0.5 rounded-full bg-surface-container-low p-0.75'
 
-const TRIGGER_CLASS = 'h-11 rounded-md border border-border px-4'
+const SEGMENT_CLASS =
+  'h-7.5 border-0 bg-transparent text-body font-normal text-on-surface-muted hover:text-on-surface data-[state=on]:bg-top-layer data-[state=on]:font-medium data-[state=on]:text-on-surface data-[state=on]:shadow-[var(--shadow-1)]'
+
+const TRIGGER_CLASS = 'h-9 gap-1.5 rounded-full border border-chip-border bg-chip-bg px-3'
+
+/** 已应用的条件除了主色文字再加粗一档。 */
+const triggerClass = (selected: boolean) => cn(TRIGGER_CLASS, selected && 'font-medium')
 
 /** 这一页筛的是对话建立时间，与报表页按各指标事件时刻分期的「时间」不是一回事，未选时写明这一点。 */
 const createdRangeLabel = (filters: AuditFilters): string =>
@@ -43,7 +50,7 @@ const createdRangeLabel = (filters: AuditFilters): string =>
 /** 一体筛选条只协调弹层与已应用条件；搜索词、临时日期保留在各选择器内。 */
 export function AuditFiltersBar(props: AuditFiltersBarProps) {
   return (
-    <FilterBarRoot className="gap-x-3 gap-y-4">
+    <FilterBarRoot className="gap-2">
       <ConversationFilters {...props} />
     </FilterBarRoot>
   )
@@ -59,46 +66,47 @@ function ConversationFilters({ filters, onChange, users, tasks, totals }: AuditF
 
   return (
     <>
-      <div className="flex w-full min-w-0 flex-wrap items-center gap-3">
-        <PickerFilter
-          className={TRIGGER_CLASS}
-          fallbackLabel="已选用户"
-          icon="user"
-          id="user"
-          noun="用户"
-          onChange={(ownerUserId) => apply({ ownerUserId })}
-          source={users}
-          value={filters.ownerUserId}
-          width="w-60"
-          withAvatars
-        />
+      <PickerFilter
+        className={triggerClass(filters.ownerUserId !== null)}
+        fallbackLabel="已选用户"
+        icon="user"
+        id="user"
+        noun="用户"
+        onChange={(ownerUserId) => apply({ ownerUserId })}
+        source={users}
+        value={filters.ownerUserId}
+        width="w-60"
+        withAvatars
+      />
 
-        <PickerFilter
-          className={TRIGGER_CLASS}
-          disabledTitle="当前账号没有查看需求单权限"
-          fallbackLabel="已选需求单"
-          icon="task"
-          id="task"
-          noun="需求单"
-          onChange={(taskId) => apply({ taskId })}
-          source={tasks}
-          value={filters.taskId}
-          width="w-72"
-        />
+      <PickerFilter
+        className={triggerClass(filters.taskId !== null)}
+        disabledTitle="当前账号没有查看需求单权限"
+        fallbackLabel="已选需求单"
+        icon="task"
+        id="task"
+        noun="需求单"
+        onChange={(taskId) => apply({ taskId })}
+        source={tasks}
+        value={filters.taskId}
+        width="w-72"
+      />
 
-        <DateRangeFilter
-          align="end"
-          className={TRIGGER_CLASS}
-          label={createdRangeLabel(filters)}
-          onChange={apply}
-          popupLabel="选择建立时间范围"
-          value={filters}
-        />
-      </div>
+      <DateRangeFilter
+        align="end"
+        className={triggerClass(filters.range !== 'all')}
+        label={createdRangeLabel(filters)}
+        onChange={apply}
+        popupLabel="选择建立时间范围"
+        value={filters}
+      />
 
+      <span aria-hidden className="mx-1.5 hidden h-4.5 w-px bg-hairline md:block" />
+
+      {/* 窄屏上状态一组独占一行、四档均分，删除一组和总数挤在下一行。 */}
       <ChipGroup
         aria-label="对话状态"
-        className="gap-1"
+        className={cn(SEGMENT_GROUP_CLASS, 'w-full md:w-auto')}
         onValueChange={(value) => {
           const state = conversationListStateSchema.safeParse(value)
           if (state.success) apply({ state: state.data })
@@ -107,7 +115,11 @@ function ConversationFilters({ filters, onChange, users, tasks, totals }: AuditF
         value={filters.state}
       >
         {Object.entries(STATUS_LABELS).map(([value, label]) => (
-          <FilterChip className={CHIP_CLASS} key={value} value={value}>
+          <FilterChip
+            className={cn(SEGMENT_CLASS, 'flex-1 justify-center px-2 md:flex-none md:px-3.5')}
+            key={value}
+            value={value}
+          >
             {label}
           </FilterChip>
         ))}
@@ -115,7 +127,7 @@ function ConversationFilters({ filters, onChange, users, tasks, totals }: AuditF
 
       <ChipGroup
         aria-label="删除状态"
-        className="gap-1"
+        className={cn(SEGMENT_GROUP_CLASS, 'md:ml-1')}
         onValueChange={(value) => {
           const deleted = auditDeletedSchema.safeParse(value)
           if (deleted.success) apply({ deleted: deleted.data })
@@ -124,7 +136,7 @@ function ConversationFilters({ filters, onChange, users, tasks, totals }: AuditF
         value={filters.deleted}
       >
         {Object.entries(DELETED_LABELS).map(([value, label]) => (
-          <FilterChip className={CHIP_CLASS} key={value} value={value}>
+          <FilterChip className={cn(SEGMENT_CLASS, 'px-3 md:px-3.5')} key={value} value={value}>
             {label}
           </FilterChip>
         ))}
@@ -133,7 +145,7 @@ function ConversationFilters({ filters, onChange, users, tasks, totals }: AuditF
       {totals === undefined ? null : (
         <p
           aria-label="对话总数"
-          className="ml-auto flex shrink-0 items-center gap-1.5 px-2 py-1 text-body whitespace-nowrap text-on-surface-variant"
+          className="ml-auto flex shrink-0 items-center gap-1.5 text-label whitespace-nowrap text-on-surface-muted tabular-nums"
           role="status"
         >
           <span aria-hidden className="size-1.5 rounded-full bg-primary" />

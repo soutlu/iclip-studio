@@ -43,16 +43,14 @@ afterEach(() => {
 })
 
 describe('全部对话的需求单预览', () => {
-  it('列表中的需求单直接展示创作要求与商品图，只有参考图的没有缩略图，关联到的需求单去重后一批读取', async () => {
+  it('列表中的需求单展示标题与商品图，只有参考图的没有封面，关联到的需求单去重后一批读取', async () => {
     loginAs(mockGovernor)
     const recent = addMockTask('夏季上新')
-    recent.inputs.creative_requirement = '用自然光展示亚麻衬衫的质感'
     recent.inputs.products = recent.inputs.products.map((product) => ({
       ...product,
       image_oss_urls: ['https://example.com/shirt.jpg'],
     }))
     const historical = addMockTask('冬季上新')
-    historical.inputs.creative_requirement = '呈现羊毛外套的通勤搭配'
     historical.inputs.reference_image_oss_urls.outfit = ['https://example.com/outfit.jpg']
     addMockConversation('衬衫尝试').taskId = recent.id
     addMockConversation('外套尝试一').taskId = historical.id
@@ -70,17 +68,16 @@ describe('全部对话的需求单预览', () => {
     await renderAt('/conversations')
 
     const recentRow = await screen.findByRole('link', { name: /衬衫尝试/ })
-    expect(await within(recentRow).findByText(recent.inputs.creative_requirement)).toBeVisible()
-    expect(within(recentRow).getByRole('img')).toHaveAttribute(
+    expect(await within(recentRow).findByRole('img', { name: '衬衫尝试的封面' })).toHaveAttribute(
       'src',
       'https://example.com/shirt.jpg',
     )
-    // 缩略图只认商品图：这张需求单只有参考图，列表行就不放图。
+    expect(within(recentRow).getByText(recent.title)).toBeVisible()
+    // 封面只认商品图：这张需求单只有参考图，也没有成片，列表行就不放图。两张需求单同一批读回，上面那张有图时这里也到了。
     for (const title of ['外套尝试一', '外套尝试二']) {
       const row = await screen.findByRole('link', { name: new RegExp(title) })
-      expect(await within(row).findByText(historical.inputs.creative_requirement)).toBeVisible()
+      expect(within(row).getByText(historical.title)).toBeVisible()
       expect(within(row).queryByRole('img')).toBeNull()
-      expect(within(row).getByText('暂无图片')).toBeVisible()
     }
     expect(batchRequests).toEqual([[historical.id, recent.id].sort()])
   })
@@ -88,7 +85,10 @@ describe('全部对话的需求单预览', () => {
   it('需求单读取失败时把失败与未关联分开说，重试成功后预览补上', async () => {
     loginAs(mockGovernor)
     const task = addMockTask('历史需求')
-    task.inputs.creative_requirement = '用街拍风格表现皮鞋的日常穿搭'
+    task.inputs.products = task.inputs.products.map((product) => ({
+      ...product,
+      image_oss_urls: ['https://example.com/shoes.jpg'],
+    }))
     addMockConversation('历史尝试').taskId = task.id
     addMockConversation('自由创作')
     server.use(
@@ -100,10 +100,10 @@ describe('全部对话的需求单预览', () => {
     const failedRow = await screen.findByRole('link', { name: /历史尝试/ })
     // 查询默认重试一次再报错，等它过了那一秒。
     expect(
-      (await within(failedRow).findAllByText('需求单信息暂不可用', {}, { timeout: 3000 })).length,
-    ).toBeGreaterThan(0)
+      await within(failedRow).findByText('需求单信息暂不可用', {}, { timeout: 3000 }),
+    ).toBeVisible()
     const unlinkedRow = await screen.findByRole('link', { name: /自由创作/ })
-    expect(within(unlinkedRow).getByText('未关联需求单')).toBeVisible()
+    expect(unlinkedRow).toHaveTextContent('未关联需求单')
 
     server.use(
       http.get('*/api/tasks', () =>
@@ -113,7 +113,9 @@ describe('全部对话的需求单预览', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '重新读取需求单' }))
 
-    expect(await within(failedRow).findByText(task.inputs.creative_requirement)).toBeVisible()
+    // 商品图只有预览里才有，封面出来说明预览补上了。
+    expect(await within(failedRow).findByRole('img', { name: '历史尝试的封面' })).toBeVisible()
+    expect(within(failedRow).getByText(task.title)).toBeVisible()
     expect(screen.queryByRole('button', { name: '重新读取需求单' })).toBeNull()
   })
 

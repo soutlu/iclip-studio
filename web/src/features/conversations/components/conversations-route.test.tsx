@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { TaskPreview, TaskPreviewState } from '@/shared/lib/task-preview'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
+import { mockLatestMasterUrls } from '@/testing/mocks/conversations'
 import {
   addMockConversation,
   addMockTask,
@@ -50,15 +52,17 @@ const workChanged = (
 function StatefulConversationsRoute({
   tasks,
   previews = new Map(),
+  previewState = 'ready',
 }: {
   tasks: readonly { id: string; label: string }[]
-  previews?: ReadonlyMap<string, { title: string; requirement: string; imageUrl: string | null }>
+  previews?: ReadonlyMap<string, TaskPreview>
+  previewState?: TaskPreviewState
 }) {
   const [filters, setFilters] = useState<AuditFilters>(DEFAULT_AUDIT_FILTERS)
   return (
     <ConversationsRoute
       taskPreviews={previews}
-      taskPreviewState="ready"
+      taskPreviewState={previewState}
       filters={filters}
       onFiltersChange={setFilters}
       tasks={{ error: undefined, isPending: false, onRetry: undefined, options: tasks }}
@@ -149,7 +153,85 @@ describe('ConversationsRoute', () => {
     expectTotals(1, 3)
   })
 
-  it('空要求与图片失败分别展示空态，保留对话入口', async () => {
+  it('首屏读取时给出读取状态，列表到了就换成对话行', async () => {
+    addMockConversation('我的片')
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // 处理器不返回响应就落到默认的审计列表处理器，放行前请求一直挂着。
+    server.use(
+      http.get(
+        '*/api/conversations/audit',
+        async () => {
+          await gate
+        },
+        { once: true },
+      ),
+    )
+    await render()
+
+    expect(await screen.findByText('正在读取全部对话')).toHaveAttribute('role', 'status')
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+
+    release()
+    expect(await rowOf('我的片')).toBeVisible()
+    expect(screen.queryByText('正在读取全部对话')).not.toBeInTheDocument()
+  })
+
+  it('封面先取需求单商品图，没有再取最新成片首帧，都没有就不放图', async () => {
+    const productImage = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/products/shirt.jpg'
+    const master = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/cut.mp4'
+    const withImage = addMockTask('带商品图的需求')
+    const withoutImage = addMockTask('没有商品图的需求')
+    const both = addMockConversation('商品图与成片都有')
+    both.taskId = withImage.id
+    mockLatestMasterUrls.set(both.id, master)
+    const frameOnly = addMockConversation('需求单没图的成片')
+    frameOnly.taskId = withoutImage.id
+    mockLatestMasterUrls.set(frameOnly.id, master)
+    const localMaster = addMockConversation('成片不在 OSS')
+    mockLatestMasterUrls.set(localMaster.id, 'https://example.com/cut.webm')
+    addMockConversation('什么都没有')
+    await renderWithProviders(
+      <StatefulConversationsRoute
+        tasks={[]}
+        previews={
+          new Map([
+            [withImage.id, { title: withImage.title, requirement: '', imageUrl: productImage }],
+            [withoutImage.id, { title: withoutImage.title, requirement: '', imageUrl: null }],
+          ])
+        }
+      />,
+    )
+
+    expect(
+      within(await rowOf('商品图与成片都有')).getByRole('img', { name: '商品图与成片都有的封面' }),
+    ).toHaveAttribute('src', `${productImage}?x-oss-process=image/resize,s_160/format,webp`)
+    expect(within(await rowOf('需求单没图的成片')).getByRole('img')).toHaveAttribute(
+      'src',
+      `${master}?x-oss-process=video/snapshot,t_0,f_jpg,w_256,h_0,m_fast`,
+    )
+    expect(within(await rowOf('成片不在 OSS')).queryByRole('img')).not.toBeInTheDocument()
+    expect(within(await rowOf('什么都没有')).queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('需求单预览还在读时不先放成片首帧', async () => {
+    const task = addMockTask('还在读的需求')
+    const conversation = addMockConversation('等预览的片')
+    conversation.taskId = task.id
+    mockLatestMasterUrls.set(
+      conversation.id,
+      'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/cut.mp4',
+    )
+    await renderWithProviders(<StatefulConversationsRoute tasks={[]} previewState="loading" />)
+
+    const row = await rowOf('等预览的片')
+    expect(row).toHaveTextContent('正在读取需求单…')
+    expect(within(row).queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('封面读不出来时退成空态，保留对话入口', async () => {
     const { task } = seedThree()
     await renderWithProviders(
       <StatefulConversationsRoute
@@ -165,9 +247,18 @@ describe('ConversationsRoute', () => {
       />,
     )
     const row = await rowOf('小王的秋季片')
-    expect(row).toHaveTextContent('未填写创作要求')
-    fireEvent.error(within(row).getByRole('img', { name: '秋季新品的需求素材' }))
-    expect(row).toHaveTextContent('图片加载失败')
+    fireEvent.error(within(row).getByRole('img', { name: '小王的秋季片的封面' }))
+    expect(within(row).queryByRole('img')).not.toBeInTheDocument()
+    expect(row).toHaveAttribute('href', expect.stringContaining('/c/'))
+  })
+
+  it('没挂需求单的行说明未关联，仍能点进对话', async () => {
+    seedThree()
+    await render()
+
+    const row = await rowOf('我的片')
+    expect(row).toHaveTextContent('未关联需求单')
+    expect(within(row).queryByRole('img')).not.toBeInTheDocument()
     expect(row).toHaveAttribute('href', expect.stringContaining('/c/'))
   })
 
@@ -184,7 +275,7 @@ describe('ConversationsRoute', () => {
     await user.click(screen.getByRole('radio', { name: '已删除' }))
 
     const row = await rowOf('删掉的片')
-    expect(row).toHaveTextContent('已删除 ·')
+    expect(within(row).getByText(/^已删除 ·/)).toHaveAttribute('datetime', gone.deletedAt)
     await waitFor(() =>
       expect(screen.queryByRole('link', { name: /小王的秋季片/ })).not.toBeInTheDocument(),
     )
