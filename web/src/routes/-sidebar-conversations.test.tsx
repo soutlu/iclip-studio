@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, render as renderDom, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
@@ -12,6 +12,7 @@ import {
 import { useLiveConversations } from '@/features/conversations'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { Toaster } from '@/shared/ui/toast'
 import { SidebarConversations } from './-sidebar-conversations'
 
 /** 全局帧订阅在应用里挂在 AppSidebar 顶层；这里照样在对话区外面挂一次，帧才进得了缓存。 */
@@ -128,7 +129,7 @@ describe('SidebarConversations', () => {
     await render()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('当前账号没有查看对话权限')
-    expect(screen.queryByRole('button', { name: '任务 (0)' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重新加载对话' })).toBeEnabled()
   })
 
@@ -205,13 +206,18 @@ describe('SidebarConversations', () => {
     })
     const { user } = await render()
 
-    expect(await screen.findByRole('button', { name: '任务 (3)' })).toBeVisible()
+    expect(await screen.findByRole('link', { name: '收尾了' })).toBeVisible()
+    expect(screen.getAllByRole('link')).toHaveLength(3)
 
     await user.click(screen.getByRole('radio', { name: '未完成' }))
 
-    expect(await screen.findByRole('link', { name: '还在弄' })).toBeVisible()
-    expect(await screen.findByRole('button', { name: '任务 (2)' })).toBeVisible()
-    expect(screen.queryByRole('link', { name: '收尾了' })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: '收尾了' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      '也还在弄',
+      '还在弄',
+    ])
     expect(listed.at(-1)).toContain('state=open')
 
     await user.click(screen.getByRole('radio', { name: '已完成' }))
@@ -236,6 +242,61 @@ describe('SidebarConversations', () => {
     await waitFor(() => expect(screen.queryByLabelText('已完成')).not.toBeInTheDocument())
   })
 
+  it('行菜单删除先弹确认：取消不发删除请求，确认后才删掉那一行', async () => {
+    const conversation = addMockConversation('要删的那段')
+    const deletes: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (request.method === 'DELETE') deletes.push(new URL(request.url).pathname)
+    })
+    const { user } = await render()
+
+    await user.click(await screen.findByRole('button', { name: '要删的那段 的更多操作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '删除' }))
+    const dialog = await screen.findByRole('dialog', { name: '删除这段对话？' })
+    expect(within(dialog).getByText('要删的那段')).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(deletes).toEqual([])
+    expect(screen.getByRole('link', { name: '要删的那段' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '要删的那段 的更多操作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '删除' }))
+    await user.click(
+      within(await screen.findByRole('dialog', { name: '删除这段对话？' })).getByRole('button', {
+        name: '删除',
+      }),
+    )
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: '要删的那段' })).not.toBeInTheDocument()
+    expect(deletes).toEqual([`/api/conversations/${conversation.id}`])
+  })
+
+  it('删除失败时弹窗留着并报错，那一行还在', async () => {
+    addMockConversation('删不掉的那段')
+    server.use(
+      http.delete('*/api/conversations/:conversationId', () =>
+        HttpResponse.json({ detail: '对话服务暂不可用' }, { status: 503 }),
+      ),
+    )
+    // 应用里 Toaster 挂在根上；这里单独挂一个接住失败提示。
+    renderDom(<Toaster />)
+    const { user } = await render()
+
+    await user.click(await screen.findByRole('button', { name: '删不掉的那段 的更多操作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '删除' }))
+    const dialog = await screen.findByRole('dialog', { name: '删除这段对话？' })
+    await user.click(within(dialog).getByRole('button', { name: '删除' }))
+
+    expect(await screen.findByText(/对话服务暂不可用/)).toBeVisible()
+    expect(dialog).toBeVisible()
+
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('link', { name: '删不掉的那段' })).toBeVisible()
+  })
+
   it('标了完成又开跑：角标随开跑帧收掉，不等这一轮跑完', async () => {
     const [conversation] = seedConversations(1)
     const { socket, user } = await render()
@@ -251,17 +312,49 @@ describe('SidebarConversations', () => {
     await waitFor(() => expect(screen.queryByLabelText('已完成')).not.toBeInTheDocument())
   })
 
-  it('任务区：第一页 20 条，点「展开显示」把剩下的接上来', async () => {
+  it('任务区：第一页 20 条，点「展开显示」把剩下的接上来，接着归进同一个时间分组', async () => {
     seedConversations(21)
     const { user } = await render()
 
-    expect(await screen.findByRole('button', { name: '任务 (21)' })).toBeVisible()
-    expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(20)
+    expect(await screen.findAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(20)
 
     await user.click(screen.getByRole('button', { name: '展开显示更多对话' }))
 
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21))
     expect(screen.queryByRole('button', { name: '展开显示更多对话' })).not.toBeInTheDocument()
+    // 种子都在一个月前：后一页不另起一个「更早」标题。
+    expect(screen.getAllByRole('group', { name: '更早' })).toHaveLength(1)
+    expect(
+      within(screen.getByRole('group', { name: '更早' })).getAllByRole('link', {
+        name: /^第\d+段$/,
+      }),
+    ).toHaveLength(21)
+  })
+
+  it('任务区按建立时间插时间分组标题，顺序照服务端，空组不出现', async () => {
+    const now = new Date()
+    // 用本地日历日构造，避开跨零点与夏令时。
+    const daysAgo = (days: number) =>
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() - days, 12).toISOString()
+    addMockConversation('上个月的', daysAgo(40))
+    addMockConversation('三天前的', daysAgo(3))
+    addMockConversation('刚建的', now.toISOString())
+    await render()
+
+    await screen.findByRole('link', { name: '刚建的' })
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      '刚建的',
+      '三天前的',
+      '上个月的',
+    ])
+    const rowsIn = (name: string) =>
+      within(screen.getByRole('group', { name }))
+        .getAllByRole('link')
+        .map((link) => link.textContent)
+    expect(rowsIn('今天')).toEqual(['刚建的'])
+    expect(rowsIn('7 天内')).toEqual(['三天前的'])
+    expect(rowsIn('更早')).toEqual(['上个月的'])
+    expect(screen.queryByRole('group', { name: '昨天' })).not.toBeInTheDocument()
   })
 
   it('合集内：第一页 10 段，展开后接上第 11 段', async () => {
@@ -277,17 +370,29 @@ describe('SidebarConversations', () => {
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(11))
   })
 
-  it('合集列表本身也分段：先 10 个，展开再露一批', async () => {
-    Array.from({ length: 12 }, (_, index) => addMockCollection(`合集${index}`))
+  it('合集默认只露前 3 个，「全部合集」展开全部，「收起合集」再收回 3 个', async () => {
+    Array.from({ length: 5 }, (_, index) => addMockCollection(`合集${index}`))
     const { user } = await render()
 
-    expect(await screen.findByRole('button', { name: '合集 (12)' })).toBeVisible()
-    expect(screen.getAllByRole('button', { name: /^合集\d+ \(0\)$/ })).toHaveLength(10)
+    expect(await screen.findAllByRole('button', { name: /^合集\d+ \(0\)$/ })).toHaveLength(3)
 
-    await user.click(screen.getByRole('button', { name: '展开显示更多合集' }))
+    await user.click(screen.getByRole('button', { name: '全部合集' }))
 
-    expect(screen.getAllByRole('button', { name: /^合集\d+ \(0\)$/ })).toHaveLength(12)
-    expect(screen.queryByRole('button', { name: '展开显示更多合集' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^合集\d+ \(0\)$/ })).toHaveLength(5)
+    expect(screen.queryByRole('button', { name: '全部合集' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '收起合集' }))
+
+    expect(screen.getAllByRole('button', { name: /^合集\d+ \(0\)$/ })).toHaveLength(3)
+    expect(screen.getByRole('button', { name: '全部合集' })).toBeVisible()
+  })
+
+  it('合集不超过 3 个时不出「全部合集」', async () => {
+    Array.from({ length: 3 }, (_, index) => addMockCollection(`合集${index}`))
+    await render()
+
+    expect(await screen.findAllByRole('button', { name: /^合集\d+ \(0\)$/ })).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: '全部合集' })).not.toBeInTheDocument()
   })
 
   it.each(['ungrouped', 'collection'])(
@@ -377,8 +482,9 @@ describe('SidebarConversations', () => {
     await user.click(within(dialog).getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(conversation?.collectionId).toBe(collection.id))
-    expect(await screen.findByRole('button', { name: '任务 (0)' })).toBeVisible()
     expect(await screen.findByRole('button', { name: '夏季亚麻系列 (1)' })).toBeVisible()
+    // 合集收着，那一行离开任务区后侧栏上就看不到了。
+    expect(screen.queryByRole('link', { name: '第0段' })).not.toBeInTheDocument()
     // 刷新只由归属 mutation 做一遍；路由的保存回调再刷一遍会取消在途重拉、多发一次请求。
     expect(topologyReads - readsBeforeSave).toBe(1)
   })

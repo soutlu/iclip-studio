@@ -5,9 +5,9 @@ import { login } from './login'
 // jsdom 缺少布局几何，dnd-kit 碰撞检测在浏览器测试中验证。
 
 /** 分两步移动以越过 dnd-kit 的 5px 激活阈值；源为对话链接，目标为分区或合集按钮。 */
-const dragOnto = async (page: Page, source: string, target: string | RegExp) => {
+const dragOnto = async (page: Page, source: string, target: string) => {
   const from = page.getByRole('link', { name: source, exact: true })
-  const to = page.getByRole('button', { name: target })
+  const to = page.getByRole('button', { name: target, exact: true })
   const start = await from.boundingBox()
   const end = await to.boundingBox()
   if (!start || !end) throw new Error('拖拽的两端要先在页面上')
@@ -24,7 +24,8 @@ test('把对话拖进合集，再拖回任务区', async ({ page }) => {
   await login(page)
 
   await expect(page.getByRole('button', { name: '夏季亚麻系列 (2)' })).toBeVisible()
-  const ungroupedBefore = await page.getByRole('button', { name: /^任务 \(\d+\)$/ }).innerText()
+  const row = page.getByRole('link', { name: '夜景延时素材生成', exact: true })
+  await expect(row).toBeVisible()
 
   await dragOnto(page, '夜景延时素材生成', '夏季亚麻系列 (2)')
 
@@ -32,16 +33,16 @@ test('把对话拖进合集，再拖回任务区', async ({ page }) => {
   await expect(page).toHaveURL('/')
 
   await expect(page.getByRole('button', { name: '夏季亚麻系列 (3)' })).toBeVisible()
-  await expect(page.getByRole('button', { name: /^任务 \(\d+\)$/ })).not.toHaveText(ungroupedBefore)
+  // 合集收着，那一行离开任务区后就不在侧栏上了。
+  await expect(row).toBeHidden()
 
   // 移动后侧栏会重建，重试展开操作以避免点击旧节点。
-  const row = page.getByRole('link', { name: '夜景延时素材生成', exact: true })
   await expect(async () => {
     await page.getByRole('button', { name: '夏季亚麻系列 (3)' }).click()
     await expect(row).toBeVisible({ timeout: 1000 })
   }).toPass({ timeout: 10_000 })
-  await dragOnto(page, '夜景延时素材生成', /^任务 \(\d+\)$/)
+  await dragOnto(page, '夜景延时素材生成', '任务')
 
   await expect(page.getByRole('button', { name: '夏季亚麻系列 (2)' })).toBeVisible()
-  await expect(page.getByRole('button', { name: /^任务 \(\d+\)$/ })).toHaveText(ungroupedBefore)
+  await expect(row).toBeVisible()
 })

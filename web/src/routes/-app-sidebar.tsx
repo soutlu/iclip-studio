@@ -1,17 +1,20 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { CueUserMenu } from '@/features/auth'
-import { ConversationSearchDialog, useLiveConversations } from '@/features/conversations'
-import { canAuditAll, hasPermission, PERMISSION, userDisplayName, useUser } from '@/shared/auth'
+import {
+  ConversationSearchDialog,
+  SIDEBAR_ROW_CLASS,
+  useLiveConversations,
+} from '@/features/conversations'
+import { canAuditAll, hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { useLoginPrompt } from './-login-prompt'
 import { SidebarConversations } from './-sidebar-conversations'
 
-// 侧栏操作行（导航、登录、重试）共用 ui-state 与 ui-focus，尺寸由调用方控制；对话行另见 conversations 的 SIDEBAR_ROW_CLASS。
-const SIDEBAR_ACTION_CLASS =
-  'flex ui-state cursor-pointer items-center gap-3 rounded-sm px-3 py-2.5 ui-focus text-body text-on-surface'
+// 侧栏操作行（导航、登录、重试）与对话行同一套行几何，焦点环落在按钮本身。
+const SIDEBAR_ACTION_CLASS = cn(SIDEBAR_ROW_CLASS, 'w-full ui-focus')
 
 type AppSidebarProps = {
   collapsed: boolean
@@ -31,6 +34,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
   const canReadTasks = hasPermission(user, PERMISSION.tasksRead)
   const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
   const canGovern = canAuditAll(user)
+  const governLabelId = useId()
   // 全局帧订阅挂在侧栏顶层：折叠时对话区不渲染，全部对话页与会话页仍要靠它刷新列表缓存。
   useLiveConversations(canRead)
 
@@ -97,85 +101,96 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
         'max-sm:fixed max-sm:top-0 max-sm:left-0 max-sm:shadow-[var(--shadow-2)] sm:sticky sm:top-0',
       )}
     >
-      <div className="flex items-center gap-3 px-5 pt-5 pb-3">
-        <span
-          aria-hidden
-          className="grid size-(--control-height-md) shrink-0 place-items-center rounded-sm bg-primary font-home-display text-title font-semibold text-on-primary italic"
-        >
-          C
-        </span>
-        <span className="min-w-0 flex-1 truncate font-home-display text-title-lg font-semibold tracking-[-0.02em] text-on-surface italic">
-          Cue
-        </span>
-        <IconButton
-          label="折叠侧边栏"
-          name="panel-left"
-          onClick={() => onCollapsedChange(true)}
-          size="md"
-        />
+      <div className="flex h-13 shrink-0 items-center px-2">
+        <div className="flex min-w-0 flex-1 items-center px-2.5">
+          <span className="min-w-0 flex-1 truncate font-home-display text-title-lg font-semibold tracking-[-0.02em] text-on-surface italic">
+            Cue
+          </span>
+          {/* 负右距让图标右缘与各行尾部内容对齐。 */}
+          <IconButton
+            className="-mr-2.5"
+            label="折叠侧边栏"
+            name="panel-left"
+            onClick={() => onCollapsedChange(true)}
+            size="md"
+          />
+        </div>
       </div>
 
-      <nav aria-label="会话操作" className="flex flex-col gap-1 px-4 pt-2">
-        <SidebarAction
-          icon="chat-new"
-          kbd="⌘⌥N"
-          label="新建任务"
-          disabled={session.isPending || Boolean(user && !canStart)}
-          onClick={startNew}
-          shortcut="Meta+Alt+N Control+Alt+N"
-          title={user && !canStart ? '当前账号没有新建任务权限' : '新建任务（⌘/Ctrl+Alt+N）'}
-        />
-        <SidebarAction
-          icon="search"
-          kbd="⌘K"
-          label="搜索"
-          disabled={session.isPending || Boolean(user && !canRead)}
-          onClick={openSearch}
-          shortcut="Meta+K Control+K"
-          title={user && !canRead ? '当前账号没有查看对话权限' : '搜索对话（⌘/Ctrl+K）'}
-        />
-        <SidebarAction
-          active={pathname === '/tasks'}
-          icon="task"
-          label="需求单"
-          disabled={session.isPending || Boolean(user && !canReadTasks)}
-          onClick={user ? () => navigate({ to: '/tasks' }) : requireLogin}
-          title={user && !canReadTasks ? '当前账号没有查看需求单权限' : undefined}
-        />
+      <nav aria-label="会话操作" className="flex shrink-0 flex-col">
+        <div className="flex flex-col gap-px px-2">
+          <SidebarAction
+            emphasis
+            icon="add"
+            kbd="⌘⌥N"
+            label="新建任务"
+            disabled={session.isPending || Boolean(user && !canStart)}
+            onClick={startNew}
+            shortcut="Meta+Alt+N Control+Alt+N"
+            title={user && !canStart ? '当前账号没有新建任务权限' : '新建任务（⌘/Ctrl+Alt+N）'}
+          />
+          <SidebarAction
+            icon="search"
+            kbd="⌘K"
+            label="搜索"
+            disabled={session.isPending || Boolean(user && !canRead)}
+            onClick={openSearch}
+            shortcut="Meta+K Control+K"
+            title={user && !canRead ? '当前账号没有查看对话权限' : '搜索对话（⌘/Ctrl+K）'}
+          />
+        </div>
+        <div className="mt-2 flex flex-col gap-px px-2">
+          <SidebarAction
+            active={pathname === '/tasks'}
+            icon="task"
+            label="需求单"
+            disabled={session.isPending || Boolean(user && !canReadTasks)}
+            onClick={user ? () => navigate({ to: '/tasks' }) : requireLogin}
+            title={user && !canReadTasks ? '当前账号没有查看需求单权限' : undefined}
+          />
+          <SidebarAction
+            active={pathname === '/library'}
+            icon="library"
+            label="资料库"
+            disabled={session.isPending || Boolean(user && !canReadLibrary)}
+            onClick={user ? () => navigate({ to: '/library' }) : requireLogin}
+            title={user && !canReadLibrary ? '当前账号没有查看出片记录权限' : undefined}
+          />
+        </div>
         {canGovern ? (
-          <>
-            <SidebarAction
-              active={pathname === '/conversations'}
-              icon="preview"
-              label="全部对话"
-              onClick={() => void navigate({ to: '/conversations' })}
-            />
-            <SidebarAction
-              active={pathname === '/audit'}
-              icon="chart"
-              label="审计"
-              onClick={() => void navigate({ to: '/audit' })}
-            />
-          </>
+          <div aria-labelledby={governLabelId} className="mt-3 px-2" role="group">
+            <p
+              className="flex h-7 items-center px-2.5 text-caption font-medium text-on-surface-faint"
+              id={governLabelId}
+            >
+              治理
+            </p>
+            <div className="flex flex-col gap-px">
+              <SidebarAction
+                active={pathname === '/conversations'}
+                icon="preview"
+                label="全部对话"
+                onClick={() => void navigate({ to: '/conversations' })}
+              />
+              <SidebarAction
+                active={pathname === '/audit'}
+                icon="chart"
+                label="审计"
+                onClick={() => void navigate({ to: '/audit' })}
+              />
+            </div>
+          </div>
         ) : null}
-        <SidebarAction
-          active={pathname === '/library'}
-          icon="library"
-          label="资料库"
-          disabled={session.isPending || Boolean(user && !canReadLibrary)}
-          onClick={user ? () => navigate({ to: '/library' }) : requireLogin}
-          title={user && !canReadLibrary ? '当前账号没有查看出片记录权限' : undefined}
-        />
       </nav>
 
       {/* 未登录时保留弹性空间，使账户区保持底部对齐。 */}
       {session.isPending ? (
-        <p className="min-h-0 flex-1 px-3 pt-4 text-body-sm text-on-surface-faint" role="status">
+        <p className="min-h-0 flex-1 px-4.5 pt-4 text-body-sm text-on-surface-faint" role="status">
           正在确认登录状态…
         </p>
       ) : session.isError ? (
-        <div className="min-h-0 flex-1 px-3 pt-4">
-          <p className="text-body-sm text-error" role="alert">
+        <div className="min-h-0 flex-1 px-2 pt-4">
+          <p className="px-2.5 text-body-sm text-error" role="alert">
             读取登录状态失败
           </p>
           <button
@@ -190,27 +205,22 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
       ) : user ? (
         <SidebarConversations />
       ) : (
-        <div className="min-h-0 flex-1 px-3 pt-4">
+        <div className="min-h-0 flex-1 px-4.5 pt-4">
           <p className="text-body-sm text-on-surface-faint">登录后查看对话</p>
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3 border-t-[0.5px] border-border px-5 py-3">
+      <div className="shrink-0 p-2">
         {user ? (
-          <>
-            <CueUserMenu align="top-start" />
-            <span className="min-w-0 flex-1 truncate text-body text-on-surface">
-              {userDisplayName(user)}
-            </span>
-          </>
+          <CueUserMenu align="top-start" />
         ) : (
           <button
             aria-label="登录"
-            className={cn(SIDEBAR_ACTION_CLASS, 'group min-w-0 flex-1 py-1.5')}
+            className={cn(SIDEBAR_ACTION_CLASS, 'h-11')}
             onClick={requireLogin}
             type="button"
           >
-            <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-surface-container-lowest text-on-surface-variant">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-container-high text-on-surface-variant">
               <Icon decorative name="user" size="md" />
             </span>
             <span aria-hidden className="min-w-0 flex-1 truncate text-left">
@@ -218,7 +228,6 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
             </span>
           </button>
         )}
-        <IconButton label="设置" name="settings" size="md" />
       </div>
       {searchDialog}
     </aside>
@@ -228,6 +237,8 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
 type SidebarActionProps = {
   active?: boolean
   disabled?: boolean
+  /** 主操作：图标放进实心圆，文字加粗。 */
+  emphasis?: boolean
   icon: IconName
   kbd?: string
   label: string
@@ -239,6 +250,7 @@ type SidebarActionProps = {
 function SidebarAction({
   active = false,
   disabled = false,
+  emphasis = false,
   icon,
   kbd,
   label,
@@ -253,15 +265,23 @@ function SidebarAction({
       aria-keyshortcuts={shortcut}
       className={cn(
         SIDEBAR_ACTION_CLASS,
-        'group w-full disabled:cursor-not-allowed disabled:opacity-50',
-        active && 'bg-state-active font-medium',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        (active || emphasis) && 'font-medium',
+        active && 'bg-state-active',
       )}
       disabled={disabled}
       onClick={onClick}
       title={title}
       type="button"
     >
-      <Icon decorative name={icon} size="md" />
+      {emphasis ? (
+        // 20px 实心圆用负外距收进 16px 图标位，文字仍与其他行对齐。
+        <span className="-m-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-on-surface text-surface-container-lowest">
+          <Icon decorative name={icon} size="xs" />
+        </span>
+      ) : (
+        <Icon className="shrink-0 text-on-surface-variant" decorative name={icon} size="md" />
+      )}
       <span aria-hidden className="min-w-0 flex-1 truncate text-left">
         {label}
       </span>
@@ -269,7 +289,7 @@ function SidebarAction({
         <kbd
           aria-hidden
           className={cn(
-            'rounded-xs border border-border px-1 py-0.5 text-caption text-on-surface-faint',
+            'rounded-xs border border-border px-1 text-caption text-on-surface-faint',
             'opacity-0 transition-opacity duration-(--dur-s) group-hover:opacity-100',
           )}
         >

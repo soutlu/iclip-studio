@@ -17,7 +17,7 @@ export function MenuSeparator({
   ...props
 }: ComponentPropsWithoutRef<typeof DropdownMenu.Separator>) {
   return (
-    <DropdownMenu.Separator className={cn('my-1 h-px bg-outline-variant', className)} {...props} />
+    <DropdownMenu.Separator className={cn('mx-2 my-1 h-px bg-hairline', className)} {...props} />
   )
 }
 
@@ -57,7 +57,13 @@ export function MenuItem({
       {...props}
     >
       {icon ? (
-        <Icon className="shrink-0 text-on-surface-variant" decorative name={icon} size="sm" />
+        // 危险项的图标沿用文字色，禁用时随 ui-state 一起变淡。
+        <Icon
+          className={cn('shrink-0', !destructive && 'text-on-surface-variant')}
+          decorative
+          name={icon}
+          size="sm"
+        />
       ) : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {shortcut?.length ? (
