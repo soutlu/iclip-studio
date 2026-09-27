@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from iclip.domains.audit.models import (
     AnomalyCursor,
@@ -21,7 +21,7 @@ from iclip.domains.audit.models import (
     Scope,
     Thresholds,
 )
-from iclip.domains.audit.reports_pg import PgAuditReports
+from iclip.domains.audit.reports_pg import PgAuditReports, audit_connection
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
@@ -1047,3 +1047,30 @@ async def test_uploads_and_cuts_do_not_count_toward_any_metric(
         await reports.anomalies(Scope(), Thresholds(), kinds=["missing_shot"], limit=50, after=None)
         == before_missing
     )
+
+
+async def test_audit_connections_turn_off_jit_only_for_their_own_transaction(
+    migrated_pg: str,
+) -> None:
+    """审计读连接在本事务里关掉 JIT；归还后池里同一条物理连接回到默认值。池只留一条连接，归还后
+    下一次拿到的一定是它（后端进程号相同）；默认值钉成 on，不赖测试库的配置。"""
+
+    engine = create_async_engine(
+        migrated_pg,
+        pool_size=1,
+        max_overflow=0,
+        connect_args={"server_settings": {"jit": "on"}},
+    )
+    probe = text("SELECT current_setting('jit') AS jit, pg_backend_pid() AS pid")
+    try:
+        async with engine.connect() as conn:
+            before = (await conn.execute(probe)).one()
+        async with audit_connection(engine) as conn:
+            inside = (await conn.execute(probe)).one()
+        async with engine.connect() as conn:
+            after = (await conn.execute(probe)).one()
+    finally:
+        await engine.dispose()
+
+    assert (before.jit, inside.jit, after.jit) == ("on", "off", "on")
+    assert before.pid == inside.pid == after.pid

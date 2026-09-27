@@ -1,4 +1,4 @@
-"""审计报表的读模型：一格指标、按维度分行的指标、对话明细与异常，直接就是三个端点的响应。
+"""审计报表的读模型：一格指标、按维度分行的指标、总览、对话明细与异常，直接就是各端点的响应。
 
 只读报表没有写路径也没有行为，领域模型与出口形状是同一个东西，不再各存一份互相搬运。
 camelCase 别名；比率在这里由原始计数派生，分母为零时是 ``None``。口径的定义见
@@ -13,7 +13,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
 
-from iclip.domains.audit.models import AnomalyKind
+from iclip.domains.audit.models import AnomalyKind, OverviewBucket
 
 
 class CamelModel(BaseModel):
@@ -28,6 +28,8 @@ class SpreadOut(CamelModel):
     avg: float
     median: float
     p90: float
+    count: int
+    """样本数。"""
 
 
 class UsageOut(CamelModel):
@@ -78,13 +80,25 @@ class MetricsOut(CamelModel):
     """有效镜数：有人下载过的镜；下载的是衍生记录时，按原作号算到原作所在的镜。"""
     runs: int
     """agent 运行次数，按发起人归属。"""
+    active_users: int
+    """发起过运行的人数；按天为 0 即非活跃日。"""
     delivered_conversations: int
     cycle_seconds: SpreadOut | None
-    """对话交付周期：首次运行到最后一条成片。"""
+    """对话交付周期：首次运行到最后一条成片，含中间的空档。"""
+    active_cycle_seconds: SpreadOut | None
+    """单任务时长：同一区间里只算 agent 运行与视频生成的时段，相隔超过 30 分钟的空档不计。"""
+    agent_run_seconds: SpreadOut | None
+    """agent 一轮运行从开始到结束；没结束的轮不计。"""
     video_seconds: SpreadOut | None
     """单个视频受理到完成。"""
     upstream_seconds: SpreadOut | None
     """单个视频提交上游到完成。"""
+    length_videos: int
+    """有片长的成片条数；片长读生成记录的 ``duration_ms``，为空的不计。"""
+    length_seconds: float
+    """成片片长合计。"""
+    discarded_length_seconds: float
+    """其中废片的片长：同一镜成功过多条时，除最后一条以外的。"""
     usage: UsageOut
 
     @computed_field
@@ -130,10 +144,16 @@ EMPTY_METRICS: Final = MetricsOut(
     delivered_shots=0,
     effective_shots=0,
     runs=0,
+    active_users=0,
     delivered_conversations=0,
     cycle_seconds=None,
+    active_cycle_seconds=None,
+    agent_run_seconds=None,
     video_seconds=None,
     upstream_seconds=None,
+    length_videos=0,
+    length_seconds=0.0,
+    discarded_length_seconds=0.0,
     usage=NO_USAGE,
 )
 
@@ -176,6 +196,97 @@ class SummaryOut(CamelModel):
     """出片次数分布，次数少的在前，不封顶；只给全体一档。"""
     anomaly_counts: list[AnomalyCountOut]
     """整个筛选范围里每种异常各几条，按缺省阈值判定，只列出现过的种类，多的在前。"""
+
+
+class OverviewWindowOut(CamelModel):
+    """本期与上一期的起止。上一期是两端各往前挪本期跨的日历日数，粒度由跨度定；见合同 §12。"""
+
+    since: datetime
+    until: datetime
+    """晚于此刻的按此刻算。"""
+    previous_since: datetime
+    previous_until: datetime
+    bucket: OverviewBucket
+    timezone: str
+    generated_at: datetime
+    """数据截至的时刻。"""
+
+
+class OverviewPeriodOut(CamelModel):
+    """一期的整段指标，分位数按整段现算，不由各期拼。"""
+
+    metrics: MetricsOut
+    active_days: int
+    """这一期里的活跃日天数。"""
+
+
+class MovingAverageOut(CamelModel):
+    """一条均线在某一期的值与它实际覆盖的时间窗；窗往前补过时 ``since`` 比名义起点早。"""
+
+    value: float | None
+    """窗里没有样本时为空。"""
+    since: datetime
+    until: datetime
+
+
+class MovingAveragesOut(CamelModel):
+    """一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。
+
+    件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
+    其余在整个窗里重算比率或平均。补窗规则见合同 §12。
+    """
+
+    deliveries: MovingAverageOut | None
+    producers: MovingAverageOut | None
+    total_tokens: MovingAverageOut | None
+    length_seconds: MovingAverageOut | None
+    attempts_per_shot: MovingAverageOut
+    one_take_rate: MovingAverageOut
+    effective_rate: MovingAverageOut
+    active_cycle_seconds: MovingAverageOut
+    """单任务时长的平均。"""
+    upstream_seconds: MovingAverageOut
+    """视频生成时长的平均。"""
+    tokens_per_delivery: MovingAverageOut
+    input_tokens_per_delivery: MovingAverageOut
+    output_tokens_per_delivery: MovingAverageOut
+    cache_write_tokens_per_delivery: MovingAverageOut
+    cache_read_tokens_per_delivery: MovingAverageOut
+
+
+class TrendPointOut(CamelModel):
+    """趋势的一期。按周时首期从所在周的周一算起，指标仍只统计时间窗内。"""
+
+    period_start: datetime
+    inactive: bool
+    """这一天没有人发起运行；只在按天时可能为真。"""
+    metrics: MetricsOut
+    ma7: MovingAveragesOut | None
+    """按周时为空。"""
+    ma30: MovingAveragesOut | None
+    """按周时为空。"""
+
+
+class TopShotOut(CamelModel):
+    """时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。"""
+
+    conversation_id: uuid.UUID
+    title: str
+    user_name: str | None
+    shot: int
+    attempts: int
+
+
+class OverviewOut(CamelModel):
+    window: OverviewWindowOut
+    current: OverviewPeriodOut
+    previous: OverviewPeriodOut
+    series: list[TrendPointOut]
+    """早的在前；时间窗内每一期都在，没数据的期计数为 0。"""
+    attempt_distribution: list[AttemptBucketOut]
+    """本期的出片次数分布，次数少的在前，不封顶。"""
+    top_shots: list[TopShotOut]
+    """本期出片次数最多的 3 个镜，多的在前。"""
 
 
 class ShotOut(CamelModel):
@@ -245,11 +356,18 @@ __all__ = [
     "ConversationAuditOut",
     "MetricsOut",
     "ModelUsageOut",
+    "MovingAverageOut",
+    "MovingAveragesOut",
+    "OverviewOut",
+    "OverviewPeriodOut",
+    "OverviewWindowOut",
     "PeriodMetricsOut",
     "ShotOut",
     "SpreadOut",
     "SummaryOut",
     "TaskMetricsOut",
+    "TopShotOut",
+    "TrendPointOut",
     "UsageOut",
     "UserMetricsOut",
 ]

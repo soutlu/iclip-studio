@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,8 +14,8 @@ from iclip.common.errors import ValidationFailed
 from iclip.domains.audit.models import (
     AnomalyCursor,
     AnomalyKind,
-    Bucket,
     ConversationCursor,
+    PeriodBucket,
     Scope,
     Thresholds,
 )
@@ -29,6 +29,7 @@ from iclip.domains.audit.schemas import (
     PeriodMetricsOut,
     SpreadOut,
     TaskMetricsOut,
+    TopShotOut,
     UsageOut,
     UserMetricsOut,
 )
@@ -101,9 +102,23 @@ class RecordingReports:
         return []
 
     async def by_period(
-        self, scope: Scope, *, bucket: Bucket, timezone: str
+        self, scope: Scope, *, bucket: PeriodBucket, timezone: str
     ) -> Sequence[PeriodMetricsOut]:
         self.calls.append(("by_period", (scope, bucket, timezone)))
+        return []
+
+    async def active_days(self, scope: Scope, *, timezone: str) -> int:
+        self.calls.append(("active_days", (scope, timezone)))
+        return 0
+
+    async def delivery_units(
+        self, scope: Scope, *, bucket: PeriodBucket, timezone: str
+    ) -> Mapping[datetime, frozenset[str]]:
+        self.calls.append(("delivery_units", (scope, bucket, timezone)))
+        return {}
+
+    async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
+        self.calls.append(("top_shots", (scope, limit)))
         return []
 
     async def attempt_distribution(self, scope: Scope) -> Sequence[AttemptBucketOut]:
@@ -250,10 +265,16 @@ def test_metrics_derive_ratios_and_go_blank_on_zero_denominators() -> None:
         delivered_shots=3,
         effective_shots=2,
         runs=5,
+        active_users=2,
         delivered_conversations=2,
-        cycle_seconds=SpreadOut(avg=1, median=1, p90=1),
+        cycle_seconds=SpreadOut(avg=1, median=1, p90=1, count=2),
+        active_cycle_seconds=None,
+        agent_run_seconds=None,
         video_seconds=None,
         upstream_seconds=None,
+        length_videos=0,
+        length_seconds=0.0,
+        discarded_length_seconds=0.0,
         usage=usage,
     )
 

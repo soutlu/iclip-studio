@@ -375,6 +375,30 @@
   --color-chart-3: #e0a800;
   --color-chart-4: #2fc6be;
 
+  /* 图表辅助色：网格线、非活跃日灰底、量大价低不该抢眼的中性分项、30 日均线一类的淡灰参照线。 */
+  --color-chart-grid: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+  --color-chart-inactive: color-mix(in srgb, var(--color-on-surface) 4%, transparent);
+  --color-chart-neutral: var(--n80);
+  --color-chart-ghost: var(--n70);
+
+  /* 图表有序色阶（如出片 1 / 2 / 3 / 4 / 5 次及以上）：单色相由浅到深，深色下反过来越多越亮；段内字色与底色配对。 */
+  --color-chart-ord-1: #6ac495;
+  --color-chart-ord-2: #2fab6c;
+  --color-chart-ord-3: #008c55;
+  --color-chart-ord-4: #006e43;
+  --color-chart-ord-5: #00502f;
+  --color-on-chart-ord-1: var(--n10);
+  --color-on-chart-ord-2: var(--n10);
+  --color-on-chart-ord-3: var(--n100);
+  --color-on-chart-ord-4: var(--n100);
+  --color-on-chart-ord-5: var(--n100);
+
+  /* 数据看板：内容区铺浅灰、卡片纯白不描边，靠一层淡影分层；深色下影子看不见，改用一圈极淡的边。 */
+  --color-dashboard-bg: var(--n96);
+  --color-dashboard-card: var(--n100);
+  --color-dashboard-card-edge: transparent;
+  --shadow-dashboard-card: 0 1px 2px rgba(23, 29, 25, 0.04), 0 8px 24px rgba(23, 29, 25, 0.05);
+
   /* 产物书签身份色：使用 Blend.harmonize 向主色协调。 */
   --color-artifact-brief: #bda669;
   --color-artifact-image-analysis: #638fa7;
@@ -658,6 +682,22 @@
   --storyboard-node-muted: rgba(197, 199, 195, 0.45);
   --storyboard-node-muted-strong: rgba(197, 199, 195, 0.6);
   --storyboard-node-preview-tool-text: rgba(234, 239, 232, 0.75);
+  --color-dashboard-bg: var(--n6);
+  --color-dashboard-card: var(--n10);
+  --color-dashboard-card-edge: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+  --shadow-dashboard-card: none;
+  --color-chart-neutral: var(--n40);
+  --color-chart-ghost: var(--n50);
+  --color-chart-ord-1: #1e5a40;
+  --color-chart-ord-2: #1f7a52;
+  --color-chart-ord-3: var(--p60);
+  --color-chart-ord-4: var(--p70);
+  --color-chart-ord-5: var(--p80);
+  --color-on-chart-ord-1: var(--n95);
+  --color-on-chart-ord-2: var(--n95);
+  --color-on-chart-ord-3: var(--n10);
+  --color-on-chart-ord-4: var(--n10);
+  --color-on-chart-ord-5: var(--n10);
   --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
   --shadow-2:
     0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);

@@ -9,6 +9,12 @@ from typing import Final, Literal
 
 Bucket = Literal["day", "week", "month"]
 
+OverviewBucket = Literal["hour", "day", "week"]
+"""总览趋势的粒度，由服务端按时间窗跨了几个日历日选定。"""
+
+PeriodBucket = Literal["hour", "day", "week", "month"]
+"""时段查询能切的全部粒度；对外参数只放开各自那几种。"""
+
 AnomalyKind = Literal[
     "retry",
     "idle",
@@ -71,6 +77,8 @@ __all__ = [
     "AnomalyKind",
     "Bucket",
     "ConversationCursor",
+    "OverviewBucket",
+    "PeriodBucket",
     "Scope",
     "Thresholds",
 ]

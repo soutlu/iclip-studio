@@ -1,421 +1,259 @@
-/** 总览：结果 → 效率 → 消耗 → 问题，一屏看完；人和需求单两张排行表放在下面下钻。 */
+/** 总览：工具条定时间，首屏五张趋势卡撑满一屏，往下是出片质量、耗时、模型消耗、使用人次各节的图。 */
 
-import type { ComponentProps } from 'react'
+import { useId } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import { Icon } from '@/shared/icons'
-import { Button } from '@/shared/ui/button'
-import { InlineAlert } from '@/shared/ui/inline-alert'
+import { cn } from '@/shared/lib/utils'
 import { ListError } from '@/shared/ui/list-state'
-import { Tag } from '@/shared/ui/tag'
-import { ANOMALY_META, type AnomalyTone } from '../anomaly-kinds'
-import { bucketFor, useAuditSummary, type AuditScope, type Metrics } from '../audit.api'
-import {
-  compareWithPrevious,
-  EMPTY,
-  formatCount,
-  formatDuration,
-  formatPeriodLabel,
-  formatRate,
-  formatTimes,
-  formatTokens,
-} from '../format'
-import { attemptChartModel } from '../attempt-distribution'
-import { ConcentrationChart } from './concentration-chart'
-import { MetricsTable, type MetricsColumn } from './metrics-table'
-import { SpreadTable } from './spread-table'
-import { StatTile } from './stat-tile'
-import { TrendChart } from './trend-chart'
+import { useAuditOverview, type Overview } from '../audit.api'
+import { fmtDayRange } from '../overview-format'
+import { cardHead, chartModel, TOKEN_PARTS, type CardKey } from '../overview-model'
+import type { OverviewRange } from '../overview-range'
+import { Card, InfoTip, LegendItem, Mark } from './overview-bits'
+import { CostSection, ProducersSection, QualitySection, SpeedSection } from './overview-sections'
+import { OverviewToolbar } from './overview-toolbar'
+import { TrendCard } from './trend-card'
 
 type OverviewPanelProps = {
-  scope: AuditScope
+  range: OverviewRange
+  onRangeChange: (next: OverviewRange) => void
   /** 上游归属用户名 → 显示名；名册里没有就原样显示。 */
   nameOf: (userName: string) => string | undefined
-  onOpenAnomalies: () => void
 }
 
-const SHOT_NOTE = '只统计带镜号的出片'
-const USAGE_NOTE = '自用量台账上线起累计'
-const SAMPLE_HINT = '上游段不给样本：没留提交时刻的记录不计入这一行'
-/** 出片次数画到第几档为止，再多的并成「N 次以上」。 */
-const ATTEMPT_CAP = 5
-/** 异常概览标签按轻重配色；异常列表的圆点色是另一张表，在 anomalies-panel。 */
-const TONE_TAG = {
-  bad: 'error',
-  warn: 'running',
-  info: 'soft',
-} as const satisfies Record<AnomalyTone, NonNullable<ComponentProps<typeof Tag>['variant']>>
+type SectionKey = 'quality' | 'speed' | 'cost' | 'output'
 
-const RANK_COLUMNS: readonly MetricsColumn[] = [
+const CARDS: readonly {
+  key: CardKey
+  info: string
+  section: SectionKey
+  wide?: boolean
+}[] = [
   {
     key: 'deliveries',
-    label: '成片件数',
-    hint: '有成片的需求单各一件，没挂需求单的对话各一件',
-    render: (m) => formatCount(m.deliveries),
-    bar: (m) => m.deliveries,
-  },
-  {
-    key: 'runs',
-    label: '运行次数',
-    hint: 'agent 运行次数，只跑过没出片的人也在这里',
-    render: (m) => formatCount(m.runs),
+    info: '有成片的需求单各算一件；没挂需求单、但有成片的对话各算一件。环比按活跃日的日均比。',
+    section: 'output',
   },
   {
     key: 'attempts',
-    label: '每镜次数',
-    hint: '越接近 1 越好',
-    render: (m) => formatTimes(m.attemptsPerShot),
+    info: '一个镜是一段对话里的一个镜号。平均每个镜出了几次，失败和重出都算；只统计带镜号的出片。越接近 1 越好。',
+    section: 'quality',
   },
   {
-    key: 'oneTake',
-    label: '一次通过',
-    render: (m) => formatRate(m.oneTakeRate),
+    key: 'cycle',
+    info: '一段对话从第一次运行到最后一条成片，只算 agent 在干活或视频在生成的时间，取平均。中间空了超过 30 分钟的不计，30 分钟以内的照算。',
+    section: 'speed',
   },
   {
     key: 'effective',
-    label: '有效率',
-    hint: '有人下载过的镜占出片镜的比例',
-    render: (m) => formatRate(m.effectiveRate),
+    info: '有人下载过的镜 ÷ 出过片的镜。下载的是合成时，按原作算到原作所在的镜。',
+    section: 'quality',
+    wide: true,
   },
   {
-    key: 'cycleMedian',
-    label: '周期中位',
-    render: (m) => formatDuration(m.cycleSeconds?.median ?? null),
-  },
-  {
-    key: 'cycleAvg',
-    label: '周期平均',
-    render: (m) => formatDuration(m.cycleSeconds?.avg ?? null),
-  },
-  {
-    key: 'tokens',
-    label: 'token',
-    render: (m) => formatTokens(m.usage.totalTokens),
+    key: 'perDelivery',
+    info: '模型 token 合计 ÷ 成片件数，按输入、输出、缓存写入、缓存读取拆开。标题生成、压缩摘要、视频理解不计。',
+    section: 'cost',
+    wide: true,
   },
 ]
 
-/** 耗时分布表的三行：一段口径，从 metrics 上取一组分布与它的样本数。 */
-const SPREAD_ROWS: readonly {
-  key: string
-  label: string
-  hint: string
-  spread: (metrics: Metrics) => Metrics['cycleSeconds']
-  sample: (metrics: Metrics) => number | null
-}[] = [
-  {
-    key: 'cycle',
-    label: '交付周期',
-    hint: '首次运行到最后一条成片',
-    spread: (m) => m.cycleSeconds,
-    sample: (m) => m.deliveredConversations,
-  },
-  {
-    key: 'video',
-    label: '单条出片',
-    hint: '受理到出结果',
-    spread: (m) => m.videoSeconds,
-    sample: (m) => m.completedVideos,
-  },
-  {
-    key: 'upstream',
-    label: '上游段',
-    hint: '提交上游到出结果',
-    spread: (m) => m.upstreamSeconds,
-    sample: () => null,
-  },
-]
+const CARD_LABEL: Record<CardKey, string> = {
+  deliveries: '成片数',
+  attempts: '每镜头重试次数',
+  cycle: '单任务平均时长',
+  effective: '素材有效率',
+  perDelivery: '每件成片 · token',
+}
 
-export function OverviewPanel({ scope, nameOf, onOpenAnomalies }: OverviewPanelProps) {
-  const { current, previous } = useAuditSummary(scope)
-  const summary = current.data
-  const overall = summary?.overall
-  const before = previous.data?.overall
-  const series = summary?.series ?? []
-  const beforeSeries = previous.data?.series ?? []
-  const bucket = bucketFor(scope)
-  const pending = current.isPending
+const BUCKET_UNIT = { hour: '小时', day: '天', week: '周' } as const
 
-  if (current.isError) {
-    return (
-      <ListError
-        message={errorMessageOf(current.error, '读取审计汇总失败')}
-        onRetry={() => void current.refetch()}
-      />
-    )
+/** 均线窗里不够这么多活跃日、镜、件就往前补；数字与服务端的补窗规则一致，只用在说明里。 */
+const AVERAGE_INFO =
+  '这一天往前推 7 天 / 30 天（含这一天）的平均。件数只平均活跃日；比率与中位数在这段时间里重算。这段时间里不够 3 个活跃日、或不够 30 镜 / 10 件，就再往前补。'
+
+export function OverviewPanel({ range, onRangeChange, nameOf }: OverviewPanelProps) {
+  const overview = useAuditOverview(range)
+  const baseId = useId()
+  const sectionId = (key: SectionKey) => `${baseId}-${key}`
+  const jumpTo = (key: SectionKey) => {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    document
+      .getElementById(sectionId(key))
+      ?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
   }
-
-  // 后端补齐了空期：计数是 0、比率与分布是 null，null 交给迷你趋势断开，不当 0 画。
-  const trendOf = (pick: (metrics: Metrics) => number | null) =>
-    series.length >= 2 ? series.map((period) => pick(period.metrics)) : undefined
-
-  const pointsOf = (pick: (metrics: Metrics) => number | null) =>
-    series.map((period) => ({
-      key: period.periodStart,
-      label: formatPeriodLabel(period.periodStart, bucket),
-      value: pick(period.metrics),
-    }))
-
-  /** 上一期同粒度的一条序列，按下标叠在本期上；没有上一期就不画对照。 */
-  const beforeOf = (pick: (metrics: Metrics) => number | null) =>
-    beforeSeries.length === 0 ? undefined : beforeSeries.map((period) => pick(period.metrics))
-
-  const attempts = attemptChartModel(
-    summary?.attemptDistribution ?? [],
-    previous.data?.attemptDistribution ?? [],
-    ATTEMPT_CAP,
-  )
-
-  // 各种异常有几条由汇总一并给出，与汇总同一份读取状态，不再另拉异常列表的第一页来数。
-  const anomalyCounts = summary?.anomalyCounts ?? []
+  const data = overview.data
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* 上一期只是对照：取不到就说一声，本期照常显示，环比与对照序列留空。 */}
-      {previous.isError ? (
-        <InlineAlert
-          action={{ label: '重试', onClick: () => void previous.refetch() }}
-          message="上一期汇总没读到，暂不显示较上期的变化"
-        />
-      ) : null}
-      <section aria-label="头条指标" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile
-          delta={compareWithPrevious(overall?.deliveries ?? null, before?.deliveries)}
-          label="成片件数"
-          pending={pending}
-          sub={
-            overall === undefined
-              ? undefined
-              : `需求单 ${overall.deliveredTasks} · 无单对话 ${overall.deliveredOrphanConversations}`
-          }
-          trend={trendOf((m) => m.deliveries)}
-          value={overall === undefined ? EMPTY : formatCount(overall.deliveries)}
-        />
-        <StatTile
-          delta={compareWithPrevious(overall?.attemptsPerShot ?? null, before?.attemptsPerShot, {
-            lowerIsBetter: true,
-          })}
-          label="每镜平均出片次数"
-          note={SHOT_NOTE}
-          pending={pending}
-          sub="越接近 1 越好"
-          trend={trendOf((m) => m.attemptsPerShot)}
-          value={formatTimes(overall?.attemptsPerShot ?? null)}
-        />
-        <StatTile
-          delta={compareWithPrevious(overall?.oneTakeRate ?? null, before?.oneTakeRate)}
-          label="一次通过率"
-          note={SHOT_NOTE}
-          pending={pending}
-          sub={
-            overall === undefined
-              ? undefined
-              : `${overall.oneTakeShots} / ${overall.shots} 镜 · 有效率 ${formatRate(overall.effectiveRate)}`
-          }
-          trend={trendOf((m) => m.oneTakeRate)}
-          value={formatRate(overall?.oneTakeRate ?? null)}
-        />
-        <StatTile
-          delta={compareWithPrevious(
-            overall?.cycleSeconds?.median ?? null,
-            before?.cycleSeconds?.median ?? null,
-            { lowerIsBetter: true },
-          )}
-          label="交付周期"
-          pending={pending}
-          sub={
-            overall?.cycleSeconds == null
-              ? '首次运行到最后一条成片'
-              : `最慢一成 ${formatDuration(overall.cycleSeconds.p90)}`
-          }
-          trend={trendOf((m) => m.cycleSeconds?.median ?? null)}
-          value={formatDuration(overall?.cycleSeconds?.median ?? null)}
-        />
-      </section>
-
-      <SpreadTable
-        pending={pending}
-        rows={SPREAD_ROWS.map((row) => ({
-          key: row.key,
-          label: row.label,
-          hint: row.hint,
-          spread: overall === undefined ? null : row.spread(overall),
-          sample: overall === undefined ? null : row.sample(overall),
-        }))}
-        sampleHint={SAMPLE_HINT}
-        title="耗时分布"
+    <div className="flex flex-col gap-4">
+      <OverviewToolbar
+        onChange={onRangeChange}
+        previous={
+          data === undefined
+            ? null
+            : fmtDayRange(new Date(data.window.previousSince), new Date(data.window.previousUntil))
+        }
+        range={range}
       />
-
-      <section aria-label="出片次数分析" className="grid gap-4 lg:grid-cols-2">
-        <TrendChart
-          curve="step"
-          description={attempts.passSummary ?? '出到第 n 次为止已完成的镜占比'}
-          detail={(point) => attempts.notes.get(point.key)}
-          empty="该时段无出片记录"
-          format={(value) => `${Math.round(value * 100)}%`}
-          kind="line"
-          max={1}
-          points={attempts.passPoints}
-          previous={attempts.beforePass}
-          title="出片次数分布"
+      {overview.isError && data === undefined ? (
+        <ListError
+          message={errorMessageOf(overview.error, '读取审计总览失败')}
+          onRetry={() => void overview.refetch()}
         />
-        <ConcentrationChart
-          beforeTopShare={attempts.beforeTopShare}
-          concentration={attempts.concentration}
-          points={attempts.lorenz}
-          rows={attempts.rows}
-          topShare={attempts.topShare}
-          title="出片次数集中度"
-        />
-      </section>
-
-      <section aria-label="趋势" className="grid gap-4 lg:grid-cols-2">
-        <TrendChart
-          description="按时段的成片件数"
-          format={(value) => formatCount(Math.round(value))}
-          kind="bar"
-          points={pointsOf((m) => m.deliveries)}
-          previous={beforeOf((m) => m.deliveries)}
-          title="成片件数"
-        />
-        <TrendChart
-          description="只出了一条就成的镜占比"
-          format={(value) => `${Math.round(value * 100)}%`}
-          kind="line"
-          max={1}
-          points={pointsOf((m) => m.oneTakeRate)}
-          previous={beforeOf((m) => m.oneTakeRate)}
-          title="一次通过率"
-        />
-        <TrendChart
-          baseline={1}
-          description="每镜平均出片次数"
-          format={formatTimes}
-          kind="line"
-          points={pointsOf((m) => m.attemptsPerShot)}
-          previous={beforeOf((m) => m.attemptsPerShot)}
-          title="每镜次数"
-        />
-        <TrendChart
-          description="首次运行到最后一条成片"
-          format={formatDuration}
-          kind="line"
-          points={pointsOf((m) => m.cycleSeconds?.median ?? null)}
-          previous={beforeOf((m) => m.cycleSeconds?.median ?? null)}
-          title="交付周期中位数"
-        />
-      </section>
-
-      <section aria-label="模型消耗" className="flex flex-col gap-4">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <StatTile
-            delta={compareWithPrevious(
-              overall?.usage.totalTokens ?? null,
-              before?.usage.totalTokens ?? null,
-              { lowerIsBetter: true },
-            )}
-            label="模型 token"
-            note={USAGE_NOTE}
-            pending={pending}
-            sub={
-              overall === undefined ? undefined : `${formatCount(overall.usage.requests)} 次请求`
-            }
-            value={overall === undefined ? EMPTY : formatTokens(overall.usage.totalTokens)}
-          />
-          <StatTile
-            label="缓存命中率"
-            meter={overall?.usage.cacheHitRate ?? null}
-            pending={pending}
-            sub={
-              overall === undefined
-                ? '缓存读取占全部输入的比例'
-                : `缓存读取 ${formatTokens(overall.usage.cacheReadTokens)} · 新输入 ${formatTokens(overall.usage.inputTokens)}`
-            }
-            value={formatRate(overall?.usage.cacheHitRate ?? null)}
-          />
-          <StatTile
-            delta={compareWithPrevious(
-              overall?.tokensPerDelivery ?? null,
-              before?.tokensPerDelivery ?? null,
-              { lowerIsBetter: true },
-            )}
-            label="每件成片 token"
-            pending={pending}
-            sub="出一件片烧多少"
-            value={
-              overall?.tokensPerDelivery == null
-                ? EMPTY
-                : formatTokens(Math.round(overall.tokensPerDelivery))
-            }
-          />
-        </div>
-        <TrendChart
-          description="按时段的 token 消耗"
-          format={formatTokens}
-          kind="bar"
-          points={pointsOf((m) => m.usage.totalTokens)}
-          previous={beforeOf((m) => m.usage.totalTokens)}
-          title="模型 token 趋势"
-        />
-      </section>
-
-      <section
-        aria-label="异常概览"
-        className="flex flex-col gap-3 rounded-lg bg-surface-container-lowest p-5 shadow-[var(--shadow-1)]"
-      >
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-title font-medium text-on-surface">异常</h3>
-          <Button onClick={onOpenAnomalies} size="md" trailingIcon="next" variant="ghost">
-            查看全部
-          </Button>
-        </header>
-        {pending ? (
-          <p className="text-body-sm text-on-surface-variant">正在读取…</p>
-        ) : anomalyCounts.length === 0 ? (
-          <p className="flex items-center gap-2 text-body text-on-surface-variant">
-            <Icon className="text-primary" decorative name="success" size="sm" />
-            这个范围里没有异常
-          </p>
-        ) : (
-          <ul aria-label="异常按种类" className="flex flex-wrap gap-2">
-            {anomalyCounts.map(({ kind, count }) => (
-              <li key={kind}>
-                <Tag variant={TONE_TAG[ANOMALY_META[kind].tone]}>
-                  {ANOMALY_META[kind].label}
-                  <span className="tabular-nums">{count}</span>
-                </Tag>
-              </li>
+      ) : data === undefined ? (
+        <OverviewSkeleton />
+      ) : (
+        <div
+          aria-busy={overview.isPlaceholderData}
+          className="flex flex-col gap-3 transition-opacity ui-motion-s aria-busy:opacity-60"
+        >
+          <Legend overview={data} />
+          <section
+            aria-label="业务趋势"
+            className="grid grid-cols-1 gap-4 lg:h-[clamp(540px,calc(100dvh-228px),860px)] lg:grid-cols-6 lg:grid-rows-2"
+          >
+            {CARDS.map((card) => (
+              <OverviewCard
+                card={card}
+                key={card.key}
+                onJump={() => jumpTo(card.section)}
+                overview={data}
+              />
             ))}
-          </ul>
-        )}
-      </section>
+          </section>
+          <QualitySection id={sectionId('quality')} nameOf={nameOf} overview={data} />
+          <SpeedSection id={sectionId('speed')} overview={data} />
+          <CostSection id={sectionId('cost')} overview={data} />
+          <ProducersSection id={sectionId('output')} overview={data} />
+        </div>
+      )}
+    </div>
+  )
+}
 
-      <section aria-label="排行" className="grid gap-4 xl:grid-cols-2">
-        <MetricsTable
-          caption="按人"
-          columns={RANK_COLUMNS}
-          empty="这个范围里没有人出过片，也没人跑过"
-          nameLabel="人"
-          pending={pending}
-          rows={(summary?.users ?? []).map((row) => ({
-            key: row.userName,
-            name: nameOf(row.userName) ?? row.userName,
-            meta: nameOf(row.userName) === undefined ? undefined : row.userName,
-            metrics: row.metrics,
-          }))}
-        />
-        <MetricsTable
-          caption="按需求单"
-          columns={RANK_COLUMNS}
-          empty="这个范围里没有需求单有动静"
-          nameLabel="需求单"
-          pending={pending}
-          rows={(summary?.tasks ?? []).map((row) => ({
-            key: row.taskId,
-            name: row.title || '（无标题）',
-            meta: row.metrics.deliveries > 0 ? '已成片' : '尚无成片',
-            metrics: row.metrics,
-          }))}
-        />
-      </section>
+function OverviewCard({
+  card,
+  overview,
+  onJump,
+}: {
+  card: (typeof CARDS)[number]
+  overview: Overview
+  onJump: () => void
+}) {
+  const previousRange = fmtDayRange(
+    new Date(overview.window.previousSince),
+    new Date(overview.window.previousUntil),
+  )
+  const { bucket } = overview.window
+  // token 卡的分项图例放在标题右侧，不另占一行；按周没有均线，也就没有「当天合计」的点。
+  const legend =
+    card.key === 'perDelivery' ? (
+      <div className="flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1 text-caption text-on-surface-muted">
+        {TOKEN_PARTS.map((part) => (
+          <LegendItem key={part.name} marks={<Mark color={part.color} kind="swatch" />}>
+            {part.name}
+          </LegendItem>
+        ))}
+        {bucket === 'week' ? null : (
+          <LegendItem marks={<Mark color="var(--color-on-surface-variant)" kind="dot" />}>
+            {bucket === 'day' ? '当天合计' : '这小时合计'}
+          </LegendItem>
+        )}
+      </div>
+    ) : undefined
+  return (
+    <TrendCard
+      className={card.wide === true ? 'lg:col-span-3' : 'lg:col-span-2'}
+      deltaTitle={`和 ${previousRange} 比`}
+      head={cardHead(card.key, overview, previousRange)}
+      info={card.info}
+      legend={legend}
+      model={chartModel(overview, card.key)}
+      onJump={onJump}
+      title={CARD_LABEL[card.key]}
+    />
+  )
+}
+
+/** 总览上所有图共用一套读法；只列这一屏上真的出现了的项，口径收进 ⓘ。 */
+function Legend({ overview }: { overview: Overview }) {
+  const { bucket } = overview.window
+  const inactive = bucket === 'day' && overview.series.some((point) => point.inactive)
+  return (
+    <div
+      aria-label="图例"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-on-surface-muted"
+      role="group"
+    >
+      <LegendItem
+        marks={
+          <>
+            <Mark kind="bar" />
+            <Mark kind="dot" />
+          </>
+        }
+      >
+        每{BUCKET_UNIT[bucket]}
+      </LegendItem>
+      {bucket === 'day' ? (
+        <>
+          <LegendItem
+            marks={
+              <>
+                <Mark kind="average" />
+                <Mark kind="line" />
+              </>
+            }
+          >
+            7 日均线
+            <InfoTip text={AVERAGE_INFO} />
+          </LegendItem>
+          <LegendItem marks={<Mark kind="dash" />}>30 日均线</LegendItem>
+        </>
+      ) : null}
+      {bucket === 'hour' ? (
+        <>
+          <LegendItem marks={<Mark kind="line" />}>7 日均线</LegendItem>
+          <LegendItem marks={<Mark kind="dash" />}>
+            30 日均线
+            <InfoTip text={`按小时只给比率类画均线。${AVERAGE_INFO}`} />
+          </LegendItem>
+        </>
+      ) : null}
+      {inactive ? (
+        <LegendItem marks={<Mark kind="inactive" />}>
+          非活跃日
+          <InfoTip text="当天没有人发起过运行。均线和日均只算活跃日。" />
+        </LegendItem>
+      ) : null}
+    </div>
+  )
+}
+
+/** 首次读取时的骨架：五张卡的位置先占住，数据到了不跳。 */
+function OverviewSkeleton() {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="sr-only" role="status">
+        正在读取审计总览
+      </p>
+      <div
+        aria-hidden
+        className="grid grid-cols-1 gap-4 motion-safe:animate-pulse lg:h-[clamp(540px,calc(100dvh-228px),860px)] lg:grid-cols-6 lg:grid-rows-2"
+      >
+        {CARDS.map((card) => (
+          <Card
+            className={cn(
+              'flex min-h-85 flex-col gap-3 px-5 py-4.5 lg:min-h-0',
+              card.wide === true ? 'lg:col-span-3' : 'lg:col-span-2',
+            )}
+            key={card.key}
+          >
+            <span className="h-3.5 w-24 rounded-full bg-state-active" />
+            <span className="h-8 w-20 rounded-full bg-state-active" />
+            <span className="mt-2 flex-1 rounded-md bg-state-active" />
+          </Card>
+        ))}
+      </div>
     </div>
   )
 }

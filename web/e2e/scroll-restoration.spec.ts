@@ -9,7 +9,7 @@ test('换到别的页面从顶部开始，浏览器返回回到离开时的滚�
   await login(page, 'governor')
   await page.getByRole('button', { name: '审计', exact: true }).click()
   const audit = page.getByRole('main', { name: '审计' })
-  await expect(audit.getByRole('region', { name: '异常概览' })).toBeVisible()
+  await expect(audit.getByRole('region', { name: '使用人次' })).toBeVisible()
 
   await audit.hover()
   await page.mouse.wheel(0, 600)
@@ -21,7 +21,7 @@ test('换到别的页面从顶部开始，浏览器返回回到离开时的滚�
   expect(await scrollTopOf(conversations)).toBe(0)
 
   await page.goBack()
-  await expect(audit.getByRole('region', { name: '异常概览' })).toBeVisible()
+  await expect(audit.getByRole('region', { name: '使用人次' })).toBeVisible()
   await expect.poll(() => scrollTopOf(audit)).toBe(600)
 })
 
@@ -36,7 +36,7 @@ test('再进一个列表已在缓存里、一渲染就够长的页面，也从�
 
   await page.getByRole('button', { name: '审计', exact: true }).click()
   const audit = page.getByRole('main', { name: '审计' })
-  await expect(audit.getByRole('region', { name: '异常概览' })).toBeVisible()
+  await expect(audit.getByRole('region', { name: '使用人次' })).toBeVisible()
   await audit.hover()
   await page.mouse.wheel(0, 600)
   await expect.poll(() => scrollTopOf(audit)).toBe(600)
@@ -46,6 +46,6 @@ test('再进一个列表已在缓存里、一渲染就够长的页面，也从�
   expect(await scrollTopOf(conversations)).toBe(0)
 
   await page.goBack()
-  await expect(audit.getByRole('region', { name: '异常概览' })).toBeVisible()
+  await expect(audit.getByRole('region', { name: '使用人次' })).toBeVisible()
   await expect.poll(() => scrollTopOf(audit)).toBe(600)
 })

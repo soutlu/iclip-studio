@@ -5,10 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { routeTree } from '@/routeTree.gen'
 import { queryClient } from '@/shared/api/query-client'
 import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
+import { TooltipProvider } from '@/shared/ui/tooltip'
 import { addMockConversation, addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { FakeSocket } from '@/testing/ws'
 
-/** 使用应用路由树与 queryClient 单例，确保 beforeLoad 和 ensureSessionUser 共用身份缓存；侧栏顶层要订全局帧，连接用假 socket。 */
+/** 使用应用路由树与 queryClient 单例，确保 beforeLoad 和 ensureSessionUser 共用身份缓存；侧栏顶层要订全局帧，连接用假 socket；提示层 Provider 同应用壳一样挂一次。 */
 const renderAt = async (initialPath: string) => {
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -19,7 +20,9 @@ const renderAt = async (initialPath: string) => {
   render(
     <QueryClientProvider client={queryClient}>
       <TranscriptProvider createSocket={() => new FakeSocket() as unknown as WebSocket}>
-        <RouterProvider router={router} />
+        <TooltipProvider>
+          <RouterProvider router={router} />
+        </TooltipProvider>
       </TranscriptProvider>
     </QueryClientProvider>,
   )
@@ -89,6 +92,6 @@ describe('整页要登录的那几页', () => {
 
     expect(router.state.location.pathname).toBe('/audit')
     expect(await screen.findByRole('main', { name: '审计' })).toBeVisible()
-    expect(await screen.findByRole('article', { name: '成片件数' })).toBeVisible()
+    expect(await screen.findByRole('article', { name: '成片数' })).toBeVisible()
   })
 })

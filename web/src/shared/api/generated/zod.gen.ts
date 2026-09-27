@@ -667,6 +667,42 @@ export const zMetricFiltersIn = z.object({
 })
 
 /**
+ * MovingAverageOut
+ *
+ * 一条均线在某一期的值与它实际覆盖的时间窗；窗往前补过时 ``since`` 比名义起点早。
+ */
+export const zMovingAverageOut = z.object({
+  since: z.iso.datetime(),
+  until: z.iso.datetime(),
+  value: z.number().nullable(),
+})
+
+/**
+ * MovingAveragesOut
+ *
+ * 一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。
+ *
+ * 件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；
+ * 其余在整个窗里重算比率或平均。补窗规则见合同 §12。
+ */
+export const zMovingAveragesOut = z.object({
+  activeCycleSeconds: zMovingAverageOut,
+  attemptsPerShot: zMovingAverageOut,
+  cacheReadTokensPerDelivery: zMovingAverageOut,
+  cacheWriteTokensPerDelivery: zMovingAverageOut,
+  deliveries: zMovingAverageOut.nullable(),
+  effectiveRate: zMovingAverageOut,
+  inputTokensPerDelivery: zMovingAverageOut,
+  lengthSeconds: zMovingAverageOut.nullable(),
+  oneTakeRate: zMovingAverageOut,
+  outputTokensPerDelivery: zMovingAverageOut,
+  producers: zMovingAverageOut.nullable(),
+  tokensPerDelivery: zMovingAverageOut,
+  totalTokens: zMovingAverageOut.nullable(),
+  upstreamSeconds: zMovingAverageOut,
+})
+
+/**
  * NoticeFrame
  */
 export const zNoticeFrame = z.object({
@@ -676,6 +712,21 @@ export const zNoticeFrame = z.object({
   level: z.enum(['error', 'warning', 'info']),
   message: z.string(),
   source: z.string().nullish(),
+})
+
+/**
+ * OverviewWindowOut
+ *
+ * 本期与上一期的起止。上一期是两端各往前挪本期跨的日历日数，粒度由跨度定；见合同 §12。
+ */
+export const zOverviewWindowOut = z.object({
+  bucket: z.enum(['hour', 'day', 'week']),
+  generatedAt: z.iso.datetime(),
+  previousSince: z.iso.datetime(),
+  previousUntil: z.iso.datetime(),
+  since: z.iso.datetime(),
+  timezone: z.string(),
+  until: z.iso.datetime(),
 })
 
 export const zPermission = z.enum([
@@ -784,6 +835,7 @@ export const zSidebarOut = z.object({
  */
 export const zSpreadOut = z.object({
   avg: z.number(),
+  count: z.int(),
   median: z.number(),
   p90: z.number(),
 })
@@ -1103,6 +1155,19 @@ export const zToolFrame = z.object({
 })
 
 /**
+ * TopShotOut
+ *
+ * 时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。
+ */
+export const zTopShotOut = z.object({
+  attempts: z.int(),
+  conversationId: z.uuid(),
+  shot: z.int(),
+  title: z.string(),
+  userName: z.string().nullable(),
+})
+
+/**
  * TrackingEventIn
  *
  * 一条事件。主语按事件名规定：``video.downloaded`` 必带 ``jobId``、不带 ``conversationId``。
@@ -1255,6 +1320,9 @@ export const zUsageOut = z.object({
  * 一格指标。全体、人、需求单、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。
  */
 export const zMetricsOut = z.object({
+  activeCycleSeconds: zSpreadOut.nullable(),
+  activeUsers: z.int(),
+  agentRunSeconds: zSpreadOut.nullable(),
   attempts: z.int(),
   attemptsPerShot: z.number().nullable(),
   completedVideos: z.int(),
@@ -1264,8 +1332,11 @@ export const zMetricsOut = z.object({
   deliveredShots: z.int(),
   deliveredTasks: z.int(),
   deliveries: z.int().readonly(),
+  discardedLengthSeconds: z.number(),
   effectiveRate: z.number().nullable(),
   effectiveShots: z.int(),
+  lengthSeconds: z.number(),
+  lengthVideos: z.int(),
   oneTakeRate: z.number().nullable(),
   oneTakeShots: z.int(),
   producers: z.int(),
@@ -1313,6 +1384,16 @@ export const zAuditConversationsOut = z.object({
 })
 
 /**
+ * OverviewPeriodOut
+ *
+ * 一期的整段指标，分位数按整段现算，不由各期拼。
+ */
+export const zOverviewPeriodOut = z.object({
+  activeDays: z.int(),
+  metrics: zMetricsOut,
+})
+
+/**
  * PeriodMetricsOut
  */
 export const zPeriodMetricsOut = z.object({
@@ -1327,6 +1408,31 @@ export const zTaskMetricsOut = z.object({
   metrics: zMetricsOut,
   taskId: z.uuid(),
   title: z.string(),
+})
+
+/**
+ * TrendPointOut
+ *
+ * 趋势的一期。按周时首期从所在周的周一算起，指标仍只统计时间窗内。
+ */
+export const zTrendPointOut = z.object({
+  inactive: z.boolean(),
+  ma30: zMovingAveragesOut.nullable(),
+  ma7: zMovingAveragesOut.nullable(),
+  metrics: zMetricsOut,
+  periodStart: z.iso.datetime(),
+})
+
+/**
+ * OverviewOut
+ */
+export const zOverviewOut = z.object({
+  attemptDistribution: z.array(zAttemptBucketOut),
+  current: zOverviewPeriodOut,
+  previous: zOverviewPeriodOut,
+  series: z.array(zTrendPointOut),
+  topShots: z.array(zTopShotOut),
+  window: zOverviewWindowOut,
 })
 
 /**
@@ -1922,6 +2028,17 @@ export const zConversationsAuditConversationsGetQuery = z.object({
  * Successful Response
  */
 export const zConversationsAuditConversationsGetResponse = zAuditConversationsOut
+
+export const zOverviewAuditOverviewGetQuery = z.object({
+  since: z.iso.datetime(),
+  until: z.iso.datetime().nullish(),
+  timezone: z.string().max(64).optional().default('UTC'),
+})
+
+/**
+ * Successful Response
+ */
+export const zOverviewAuditOverviewGetResponse = zOverviewOut
 
 export const zSummaryAuditSummaryGetQuery = z.object({
   since: z.iso.datetime().nullish(),

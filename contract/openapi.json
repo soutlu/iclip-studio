@@ -2917,6 +2917,30 @@
         "additionalProperties": false,
         "description": "一格指标。全体、人、需求单、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。",
         "properties": {
+          "activeCycleSeconds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpreadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeUsers": {
+            "title": "Activeusers",
+            "type": "integer"
+          },
+          "agentRunSeconds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpreadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attempts": {
             "title": "Attempts",
             "type": "integer"
@@ -2969,6 +2993,10 @@
             "title": "Deliveries",
             "type": "integer"
           },
+          "discardedLengthSeconds": {
+            "title": "Discardedlengthseconds",
+            "type": "number"
+          },
           "effectiveRate": {
             "anyOf": [
               {
@@ -2984,6 +3012,14 @@
           },
           "effectiveShots": {
             "title": "Effectiveshots",
+            "type": "integer"
+          },
+          "lengthSeconds": {
+            "title": "Lengthseconds",
+            "type": "number"
+          },
+          "lengthVideos": {
+            "title": "Lengthvideos",
             "type": "integer"
           },
           "oneTakeRate": {
@@ -3062,10 +3098,16 @@
           "deliveredShots",
           "effectiveShots",
           "runs",
+          "activeUsers",
           "deliveredConversations",
           "cycleSeconds",
+          "activeCycleSeconds",
+          "agentRunSeconds",
           "videoSeconds",
           "upstreamSeconds",
+          "lengthVideos",
+          "lengthSeconds",
+          "discardedLengthSeconds",
           "usage",
           "deliveries",
           "attemptsPerShot",
@@ -3092,6 +3134,134 @@
           "usage"
         ],
         "title": "ModelUsageOut",
+        "type": "object"
+      },
+      "MovingAverageOut": {
+        "additionalProperties": false,
+        "description": "一条均线在某一期的值与它实际覆盖的时间窗；窗往前补过时 ``since`` 比名义起点早。",
+        "properties": {
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "since",
+          "until"
+        ],
+        "title": "MovingAverageOut",
+        "type": "object"
+      },
+      "MovingAveragesOut": {
+        "additionalProperties": false,
+        "description": "一期末尾往前推 7 或 30 天的均线，每个画图的指标一条。\n\n件数类（成片数、使用人次、token 合计、片长）平均的是窗里各活跃日的日值，只在按天时有；\n其余在整个窗里重算比率或平均。补窗规则见合同 §12。",
+        "properties": {
+          "activeCycleSeconds": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "attemptsPerShot": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "cacheReadTokensPerDelivery": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "cacheWriteTokensPerDelivery": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "deliveries": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovingAverageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveRate": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "inputTokensPerDelivery": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "lengthSeconds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovingAverageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oneTakeRate": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "outputTokensPerDelivery": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "producers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovingAverageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tokensPerDelivery": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          },
+          "totalTokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovingAverageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "upstreamSeconds": {
+            "$ref": "#/components/schemas/MovingAverageOut"
+          }
+        },
+        "required": [
+          "deliveries",
+          "producers",
+          "totalTokens",
+          "lengthSeconds",
+          "attemptsPerShot",
+          "oneTakeRate",
+          "effectiveRate",
+          "activeCycleSeconds",
+          "upstreamSeconds",
+          "tokensPerDelivery",
+          "inputTokensPerDelivery",
+          "outputTokensPerDelivery",
+          "cacheWriteTokensPerDelivery",
+          "cacheReadTokensPerDelivery"
+        ],
+        "title": "MovingAveragesOut",
         "type": "object"
       },
       "NoticeFrame": {
@@ -3244,6 +3414,125 @@
           "complete"
         ],
         "title": "OpsCatchup",
+        "type": "object"
+      },
+      "OverviewOut": {
+        "additionalProperties": false,
+        "properties": {
+          "attemptDistribution": {
+            "items": {
+              "$ref": "#/components/schemas/AttemptBucketOut"
+            },
+            "title": "Attemptdistribution",
+            "type": "array"
+          },
+          "current": {
+            "$ref": "#/components/schemas/OverviewPeriodOut"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/OverviewPeriodOut"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/TrendPointOut"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "topShots": {
+            "items": {
+              "$ref": "#/components/schemas/TopShotOut"
+            },
+            "title": "Topshots",
+            "type": "array"
+          },
+          "window": {
+            "$ref": "#/components/schemas/OverviewWindowOut"
+          }
+        },
+        "required": [
+          "window",
+          "current",
+          "previous",
+          "series",
+          "attemptDistribution",
+          "topShots"
+        ],
+        "title": "OverviewOut",
+        "type": "object"
+      },
+      "OverviewPeriodOut": {
+        "additionalProperties": false,
+        "description": "一期的整段指标，分位数按整段现算，不由各期拼。",
+        "properties": {
+          "activeDays": {
+            "title": "Activedays",
+            "type": "integer"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsOut"
+          }
+        },
+        "required": [
+          "metrics",
+          "activeDays"
+        ],
+        "title": "OverviewPeriodOut",
+        "type": "object"
+      },
+      "OverviewWindowOut": {
+        "additionalProperties": false,
+        "description": "本期与上一期的起止。上一期是两端各往前挪本期跨的日历日数，粒度由跨度定；见合同 §12。",
+        "properties": {
+          "bucket": {
+            "enum": [
+              "hour",
+              "day",
+              "week"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+          },
+          "previousSince": {
+            "format": "date-time",
+            "title": "Previoussince",
+            "type": "string"
+          },
+          "previousUntil": {
+            "format": "date-time",
+            "title": "Previousuntil",
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "previousSince",
+          "previousUntil",
+          "bucket",
+          "timezone",
+          "generatedAt"
+        ],
+        "title": "OverviewWindowOut",
         "type": "object"
       },
       "PeriodMetricsOut": {
@@ -3761,6 +4050,10 @@
             "title": "Avg",
             "type": "number"
           },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
           "median": {
             "title": "Median",
             "type": "number"
@@ -3773,7 +4066,8 @@
         "required": [
           "avg",
           "median",
-          "p90"
+          "p90",
+          "count"
         ],
         "title": "SpreadOut",
         "type": "object"
@@ -5083,6 +5377,49 @@
         "title": "ToolFrame",
         "type": "object"
       },
+      "TopShotOut": {
+        "additionalProperties": false,
+        "description": "时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。",
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "shot": {
+            "title": "Shot",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "conversationId",
+          "title",
+          "userName",
+          "shot",
+          "attempts"
+        ],
+        "title": "TopShotOut",
+        "type": "object"
+      },
       "TrackingEventIn": {
         "additionalProperties": false,
         "description": "一条事件。主语按事件名规定：``video.downloaded`` 必带 ``jobId``、不带 ``conversationId``。",
@@ -5723,6 +6060,53 @@
           "content"
         ],
         "title": "TranscriptTurn",
+        "type": "object"
+      },
+      "TrendPointOut": {
+        "additionalProperties": false,
+        "description": "趋势的一期。按周时首期从所在周的周一算起，指标仍只统计时间窗内。",
+        "properties": {
+          "inactive": {
+            "title": "Inactive",
+            "type": "boolean"
+          },
+          "ma30": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovingAveragesOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ma7": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovingAveragesOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsOut"
+          },
+          "periodStart": {
+            "format": "date-time",
+            "title": "Periodstart",
+            "type": "string"
+          }
+        },
+        "required": [
+          "periodStart",
+          "inactive",
+          "metrics",
+          "ma7",
+          "ma30"
+        ],
+        "title": "TrendPointOut",
         "type": "object"
       },
       "TurnHeader": {
@@ -7726,6 +8110,90 @@
           }
         ],
         "summary": "Conversations",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/audit/overview": {
+      "get": {
+        "description": "审计总览：本期与上一期的整段指标、按粒度分期的趋势与 7 / 30 日均线、出片次数分布。\n\n``until`` 不给或晚于此刻都按此刻算；时间窗最长 366 天。粒度、上一期、非活跃日与均线的\n补窗规则见合同 §12。",
+        "operationId": "overview_audit_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Since",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timezone",
+            "required": false,
+            "schema": {
+              "default": "UTC",
+              "maxLength": 64,
+              "title": "Timezone",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Overview",
         "tags": [
           "audit"
         ]

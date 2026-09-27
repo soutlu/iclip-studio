@@ -1,87 +1,40 @@
 import { describe, expect, it } from 'vitest'
 import {
   anomaliesSearchParams,
-  bucketFor,
   conversationsSearchParams,
   DEFAULT_AUDIT_SCOPE,
-  previousSearchParams,
-  previousWindow,
-  summarySearchParams,
+  overviewSearchParams,
   type AuditScope,
 } from './audit.api'
+import type { OverviewRange } from './overview-range'
 
+/** 2026 年 9 月 15 日（周二）本地 20:00。 */
 const NOW = new Date(2026, 8, 15, 20, 0, 0)
-const DAY_MS = 24 * 60 * 60_000
 
 const scopeOf = (patch: Partial<AuditScope>): AuditScope => ({ ...DEFAULT_AUDIT_SCOPE, ...patch })
+const local = (month: number, day: number) => new Date(2026, month - 1, day).toISOString()
 
-describe('时段粒度', () => {
-  it.each([
-    { scope: scopeOf({ range: '7d' }), bucket: 'day' },
-    { scope: scopeOf({ range: '30d' }), bucket: 'day' },
+describe('总览查询串', () => {
+  it.each<{ range: OverviewRange; since: string; until: string }>([
+    { range: { preset: 'today' }, since: local(9, 15), until: NOW.toISOString() },
+    { range: { preset: 'yesterday' }, since: local(9, 14), until: local(9, 15) },
+    // 近 N 天含今天在内的 N 个日历日，从最早那天零点起，到此刻为止。
+    { range: { preset: '7d' }, since: local(9, 9), until: NOW.toISOString() },
+    { range: { preset: '30d' }, since: local(8, 17), until: NOW.toISOString() },
+    { range: { preset: '90d' }, since: local(6, 18), until: NOW.toISOString() },
+    { range: { preset: 'month' }, since: local(9, 1), until: NOW.toISOString() },
+    { range: { preset: 'lastMonth' }, since: local(8, 1), until: local(9, 1) },
+    // 自定义含结束日全天，截在次日零点。
     {
-      scope: scopeOf({ range: 'custom', since: '2026-06-01', until: '2026-09-01' }),
-      bucket: 'week',
+      range: { preset: 'custom', first: '2026-09-01', last: '2026-09-07' },
+      since: local(9, 1),
+      until: local(9, 8),
     },
-    {
-      scope: scopeOf({ range: 'custom', since: '2026-03-01', until: '2026-09-01' }),
-      bucket: 'month',
-    },
-    { scope: scopeOf({ range: 'all' }), bucket: 'month' },
-  ] as const)('$scope.range → $bucket', ({ scope, bucket }) => {
-    expect(bucketFor(scope, NOW)).toBe(bucket)
-  })
-})
-
-describe('汇总查询串', () => {
-  it('带本期窗口、粒度与浏览器时区，人和需求单按需带', () => {
-    const params = summarySearchParams(
-      scopeOf({ range: '7d', taskId: 'task-1', userName: 'Sara.Hong' }),
-      NOW,
-      'Asia/Singapore',
-    )
-
-    expect(params.get('since')).toBe(new Date(NOW.getTime() - 7 * DAY_MS).toISOString())
-    expect(params.get('until')).toBeNull()
-    expect(params.get('bucket')).toBe('day')
+  ])('$range.preset：本地零点切的时间窗', ({ range, since, until }) => {
+    const params = overviewSearchParams(range, NOW, 'Asia/Singapore')
+    expect(params.get('since')).toBe(since)
+    expect(params.get('until')).toBe(until)
     expect(params.get('timezone')).toBe('Asia/Singapore')
-    expect(params.get('userName')).toBe('Sara.Hong')
-    expect(params.get('taskId')).toBe('task-1')
-  })
-
-  it('不限时间就不带窗口', () => {
-    const params = summarySearchParams(scopeOf({ range: 'all' }), NOW, 'UTC')
-    expect(params.has('since')).toBe(false)
-    expect(params.has('until')).toBe(false)
-  })
-})
-
-describe('上一期', () => {
-  it('是同样长度、紧挨着往前的一段，按本期的粒度切时段', () => {
-    const window = previousWindow(scopeOf({ range: '30d' }), NOW)
-    expect(window).toEqual({
-      since: new Date(NOW.getTime() - 60 * DAY_MS),
-      until: new Date(NOW.getTime() - 30 * DAY_MS),
-    })
-    const params = previousSearchParams(scopeOf({ range: '30d' }), NOW, 'Asia/Singapore')
-    expect(params?.get('since')).toBe(new Date(NOW.getTime() - 60 * DAY_MS).toISOString())
-    expect(params?.get('until')).toBe(new Date(NOW.getTime() - 30 * DAY_MS).toISOString())
-    expect(params?.get('bucket')).toBe('day')
-    expect(params?.get('timezone')).toBe('Asia/Singapore')
-  })
-
-  it('自定义区间照区间长度往前推', () => {
-    const window = previousWindow(
-      scopeOf({ range: 'custom', since: '2026-09-08', until: '2026-09-14' }),
-      NOW,
-    )
-    expect(window?.until).toEqual(new Date(2026, 8, 8, 0, 0, 0, 0))
-    expect(window?.since).toEqual(new Date(2026, 8, 1, 0, 0, 0, 1))
-  })
-
-  it('不限时间没有上一期', () => {
-    expect(previousWindow(scopeOf({ range: 'all' }), NOW)).toBeNull()
-    expect(previousSearchParams(scopeOf({ range: 'all' }), NOW)).toBeNull()
   })
 })
 
