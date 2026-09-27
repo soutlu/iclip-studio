@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
@@ -334,13 +334,17 @@ describe('library storyboard', () => {
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
   })
 
-  it('opens as a bottom sheet on touch screens and starts the viewer at the picked cut', async () => {
+  it('opens as a bottom sheet where hovering is impossible, never the popover, and starts the viewer at the picked cut', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     const card = await screen.findByRole('article', { name: SKATE })
 
     await user.click(within(card).getByRole('button', { name: '故事板：4 镜，0:06' }))
     const sheet = await screen.findByRole('dialog', { name: '故事板' })
+    // 等过悬停浮层的起延迟（150ms）：不能悬停时用鼠标点也不该再起浮层
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)))
+    expect(screen.getAllByRole('dialog', { name: '故事板' })).toHaveLength(1)
+    expect(screen.getByRole('dialog', { name: '故事板' })).toBe(sheet)
     expect(within(sheet).getAllByRole('button', { name: /^镜头 \d/ })).toHaveLength(4)
     await user.click(within(sheet).getByRole('button', { name: '镜头 3，1.9 秒起，打开详情' }))
 
