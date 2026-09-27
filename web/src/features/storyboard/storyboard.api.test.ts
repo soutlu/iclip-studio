@@ -138,13 +138,17 @@ describe('historyShotOf', () => {
 describe('readConversationVideoJobs', () => {
   const fullPage = () => Array.from({ length: 100 }, () => makeGenerationJob())
 
-  it('按上一页最后一条往前翻，直到空页，按页序拼起全部记录', async () => {
-    const pages = [fullPage(), fullPage(), []]
+  it.each<[string, GenerationJob[]]>([
+    ['空页', []],
+    ['不满一页的短页', Array.from({ length: 3 }, () => makeGenerationJob())],
+  ])('按上一页最后一条往前翻，末页是%s时停下，按页序拼起全部记录', async (_name, lastPage) => {
+    const pages = [fullPage(), fullPage(), lastPage]
     const requests: Record<string, string>[] = []
     server.use(
       http.get('*/api/generations', ({ request }) => {
         requests.push(Object.fromEntries(new URL(request.url).searchParams))
-        return HttpResponse.json({ items: pages[requests.length - 1] })
+        // 多取的一页给空，让多发的请求由 requests 断言暴露，而不是先撞上 zod 校验。
+        return HttpResponse.json({ items: pages[requests.length - 1] ?? [] })
       }),
     )
 
