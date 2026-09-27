@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openConversation } from './helpers'
+import { openConversation, screenshotBothThemes } from './helpers'
 
 /** mock 受理后 3 秒出结果；编辑段与合成各等一轮。 */
 const STEP_TIMEOUT = 15_000
@@ -33,6 +33,49 @@ const expectPausedAt = async (dialog: Locator, clock: number, mediaTime = clock)
       }),
     )
     .toMatchObject({ paused: true, seeking: false, time: expect.closeTo(mediaTime, 2) })
+}
+
+/** 给舞台里两个 `<video>` 挂上 JS 记号；元素一旦重挂，新实例上就没有它。 */
+const markPlayers = (scope: Locator) =>
+  scope
+    .getByLabel('视频预览', { exact: true })
+    .locator('video')
+    .evaluateAll((videos) => {
+      videos.forEach((video, slot) => Object.assign(video, { probe: slot }))
+    })
+
+/** 两个 `<video>` 的记号、源与是否已读到元数据，按槽位排。 */
+const probePlayers = (scope: Locator) =>
+  scope
+    .getByLabel('视频预览', { exact: true })
+    .locator('video')
+    .evaluateAll((videos) =>
+      videos.map((element) => {
+        const video = element as HTMLVideoElement & { probe?: number }
+        return {
+          probe: video.probe,
+          src: video.getAttribute('src'),
+          loaded: video.readyState >= HTMLMediaElement.HAVE_METADATA,
+        }
+      }),
+    )
+
+/** 正在放的那个 `<video>` 的媒体时间；暂停时给 -1。 */
+const playingTime = (scope: Locator) =>
+  scope.getByLabel('视频播放器', { exact: true }).evaluate((element) => {
+    const video = element as HTMLVideoElement
+    return video.paused ? -1 : video.currentTime
+  })
+
+/** 等放大层的进场动画走完，量到的才是最终尺寸。 */
+const openEnlarged = async (page: Page, dialog: Locator) => {
+  await dialog.getByRole('button', { name: '放大', exact: true }).click()
+  const overlay = page.getByRole('dialog', { name: '放大预览' })
+  await expect(overlay).toBeVisible()
+  await overlay.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  )
+  return overlay
 }
 
 const dragBoundary = async (
@@ -261,6 +304,22 @@ test('从生成记录打开编辑器：切段、生成、预览、合成成为�
   await expect(dialog.getByRole('slider', { name: '选段开始时间' })).toHaveCount(0)
   const previewSource = await dialog.getByLabel('视频播放器', { exact: true }).getAttribute('src')
   expect(previewSource).not.toBeNull()
+  // 放大不重挂播放器：预载着编辑结果那段的另一个 <video> 带着读好的源进遮罩，点遮罩关掉后原样回来。
+  await markPlayers(dialog)
+  await expect
+    .poll(() => probePlayers(dialog))
+    .toEqual([
+      { probe: 0, src: previewSource, loaded: true },
+      { probe: 1, src: expect.stringMatching(/sample-edited/), loaded: true },
+    ])
+  const preloaded = await probePlayers(dialog)
+  const overlay = await openEnlarged(page, dialog)
+  expect(await probePlayers(overlay)).toEqual(preloaded)
+  await overlay.getByRole('button', { name: '关闭预览', exact: true }).click({
+    position: { x: 8, y: 8 },
+  })
+  await expect(overlay).toBeHidden()
+  expect(await probePlayers(dialog)).toEqual(preloaded)
   await dialog.getByRole('button', { name: '播放', exact: true }).click()
   await expect(dialog.getByLabel('视频播放器', { exact: true })).toHaveAttribute(
     'src',
@@ -366,6 +425,15 @@ test('移动布局：对话框内部自己滚，页面不横向溢出', async ({
   await page.screenshot({ path: `${SHOT_DIR}/generation-mobile.png`, animations: 'disabled' })
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+
+  // 手机上放大：宽度到 90vw 的上限为止，比例不变，页面仍不横向溢出。
+  const overlay = await openEnlarged(page, dialog)
+  const stage = await overlay.getByLabel('视频预览', { exact: true }).boundingBox()
+  if (stage === null) throw new Error('放大层尚未布局')
+  expect(stage.width).toBeCloseTo(390 * 0.9, 0)
+  expect(stage.width / stage.height).toBeCloseTo(9 / 16, 2)
+  await page.screenshot({ path: `${SHOT_DIR}/enlarge-mobile.png`, animations: 'disabled' })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
 
 test('横版素材：播放控件贴住画面底边，不落进黑边', async ({ page }) => {
@@ -394,6 +462,66 @@ test('横版素材：播放控件贴住画面底边，不落进黑边', async ({
   if (pill === null) throw new Error('播放控件尚未布局')
   expect(pill.y + pill.height).toBeLessThanOrEqual(picture.bottom)
   expect(pill.y + pill.height).toBeGreaterThan(picture.bottom - 40)
+
+  // 放大后舞台按画面比例取到灯箱的宽度上限，没有黑边，控件仍贴着画面底边。
+  const overlay = await openEnlarged(page, dialog)
+  const stage = await overlay.getByLabel('视频预览', { exact: true }).boundingBox()
+  const enlargedPill = await overlay.getByRole('group', { name: '播放控件' }).boundingBox()
+  if (stage === null || enlargedPill === null) throw new Error('放大层尚未布局')
+  expect(stage.width).toBeCloseTo(960, 0)
+  expect(stage.width / stage.height).toBeCloseTo(16 / 9, 2)
+  expect(enlargedPill.y + enlargedPill.height).toBeLessThanOrEqual(stage.y + stage.height)
+  expect(enlargedPill.y + enlargedPill.height).toBeGreaterThan(stage.y + stage.height - 40)
+  await page.screenshot({ path: `${SHOT_DIR}/enlarge-wide.png`, animations: 'disabled' })
+})
+
+test('放大预览：舞台搬进应用内遮罩，播放不断、不进浏览器全屏，Escape 只关遮罩', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1303, height: 1006 })
+  const dialog = await openEditor(page)
+  await expect(dialog.getByRole('region', { name: '视频编辑时间线' })).toBeVisible({
+    timeout: STEP_TIMEOUT,
+  })
+  // 放宽到整条，播放够长，放大前后都量得到时间在走。
+  await dialog.getByLabel('结束时间（秒）').fill('6')
+  await markPlayers(dialog)
+  await expect.poll(async () => (await probePlayers(dialog))[0]?.loaded).toBe(true)
+  const players = await probePlayers(dialog)
+
+  // 竖版画面按 80vh 的高度上限放大，比例不变。
+  let overlay = await openEnlarged(page, dialog)
+  await expect(overlay.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+  await expect(overlay.getByRole('button', { name: '放大', exact: true })).toHaveCount(0)
+  const stage = await overlay.getByLabel('视频预览', { exact: true }).boundingBox()
+  if (stage === null) throw new Error('放大层尚未布局')
+  expect(stage.height).toBeCloseTo(1006 * 0.8, 0)
+  expect(stage.width / stage.height).toBeCloseTo(9 / 16, 2)
+  await screenshotBothThemes(page, `${SHOT_DIR}/enlarge`)
+  await overlay.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(overlay).toBeHidden()
+  await expect(dialog.getByRole('button', { name: '放大', exact: true })).toBeFocused()
+
+  await dialog.getByRole('button', { name: '播放', exact: true }).click()
+  await expect.poll(() => playingTime(dialog)).toBeGreaterThan(0.2)
+  overlay = await openEnlarged(page, dialog)
+  expect(await probePlayers(overlay)).toEqual(players)
+  const openedAt = await playingTime(overlay)
+  expect(openedAt).toBeGreaterThan(0.2)
+  await expect.poll(() => playingTime(overlay)).toBeGreaterThan(openedAt + 0.3)
+  await expect(overlay.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
+
+  await page.keyboard.press('Escape')
+  await expect(overlay).toBeHidden()
+  await expect(dialog).toBeVisible()
+  await expect(page).toHaveURL(/[?&]video=/)
+  await expect(dialog.getByRole('button', { name: '放大', exact: true })).toBeFocused()
+  expect(await probePlayers(dialog)).toEqual(players)
+  const closedAt = await playingTime(dialog)
+  expect(closedAt).toBeGreaterThan(openedAt)
+  await expect.poll(() => playingTime(dialog)).toBeGreaterThan(closedAt + 0.3)
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
 })
 
 test('只有生成的记录才能进编辑；关掉编辑器回到生成记录，地址里不再带 video', async ({ page }) => {
