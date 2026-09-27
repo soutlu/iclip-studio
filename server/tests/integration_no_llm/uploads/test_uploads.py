@@ -17,7 +17,7 @@ from iclip.app.bootstrap import build_app
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
 from tests.helpers.app import make_client, make_runtime_config
-from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
 from tests.helpers.pg import connected, reset_database
 
@@ -59,12 +59,6 @@ async def uploads_app(
 async def client(uploads_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
     async with make_client(uploads_app) as c:
         yield c
-
-
-async def login_as_editor(client: httpx.AsyncClient, pg_url: str) -> str:
-    user_id = await register_and_login(client)
-    await set_roles_in_db(pg_url, "logan@example.com", ["editor"])
-    return user_id
 
 
 async def sign(client: httpx.AsyncClient, content_type: str) -> httpx.Response:

@@ -16,6 +16,7 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
 from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from iclip.config import ResolvedAgent
 from tests.helpers.agents import declared_agent
@@ -209,8 +210,6 @@ def test_cross_origin_upgrade_is_refused(
 ) -> None:
     """WS 升级不受 CORS 约束且携带 cookie，需独立校验 Origin 并记录拒绝原因。"""
 
-    from starlette.websockets import WebSocketDisconnect
-
     with (
         caplog.at_level(logging.INFO, logger="iclip.domains.agents.transcript_api"),
         TestClient(ws_agent_app) as tc,
@@ -231,6 +230,54 @@ def test_cross_origin_upgrade_is_refused(
         and record.msg.get("origin") == "https://evil.example"
         for record in caplog.records
     )
+
+
+def test_anonymous_upgrade_is_refused(ws_agent_app: FastAPI) -> None:
+    """没有凭证的升级以 policy violation 拒绝。"""
+
+    with (
+        TestClient(ws_agent_app) as tc,
+        pytest.raises(WebSocketDisconnect) as refused,
+        tc.websocket_connect("/ws"),
+    ):
+        pass
+
+    assert refused.value.code == 1008
+
+
+def test_api_key_upgrades_with_bearer_alone(ws_agent_app: FastAPI, pg_url: str) -> None:
+    """机器端不带 cookie 与 Origin，凭带 agent:run 的钥匙握手。"""
+
+    with TestClient(ws_agent_app) as tc:
+        root = sign_in_as(tc, pg_url, username="logan", roles=("root",))
+        issued = tc.post(
+            "/api-keys", json={"name": "ws", "permissions": ["agent:run"]}, headers=root
+        )
+        assert issued.status_code == 201, issued.text
+        token = issued.json()["apiKey"]["token"]
+
+        with tc.websocket_connect("/ws", headers={"Authorization": f"Bearer {token}"}) as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+
+
+def test_same_origin_upgrade_is_accepted(ws_agent_app: FastAPI, pg_url: str) -> None:
+    """浏览器同源页面带 Origin 握手：Origin 的 host 与 Host 头一致即放行。"""
+
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        with tc.websocket_connect("/ws", headers={"origin": "http://testserver"}) as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+
+
+# 只有这条用例要跨域白名单；直接参数化覆写 conftest 的同名夹具，其余用例仍是空元组。
+@pytest.mark.parametrize("cors_allow_origins", [("https://allowed.example",)], ids=["allowlisted"])
+def test_allowlisted_cross_origin_upgrade_is_accepted(ws_agent_app: FastAPI, pg_url: str) -> None:
+    """配置的 cors_allow_origins 同样放行 WS 跨域升级。"""
+
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        with tc.websocket_connect("/ws", headers={"origin": "https://allowed.example"}) as ws:
+            assert ws.receive_json()["type"] == "server_hello"
 
 
 async def _seed_file(pg_url: str, namespace: str, path: str, content: str) -> None:

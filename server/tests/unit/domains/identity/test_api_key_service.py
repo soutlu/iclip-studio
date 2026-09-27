@@ -83,6 +83,7 @@ async def test_issue_and_authenticate_round_trip() -> None:
     assert key_principal.user_id == owner.id
     assert key_principal.api_key_id == record.id
     assert key_principal.permissions == {"collections:read"}
+    assert key_principal.audit_label == "logan#ci"
 
 
 async def test_direct_grant_of_issue_permission_still_caps_key_at_owner_permissions() -> None:

@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from tests.helpers.app import make_client
-from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 from tests.helpers.tasks import STYLE_NO
 
@@ -19,13 +19,6 @@ AUDIT = f"{CONVERSATIONS}/audit"
 TASKS = "/tasks"
 AGENT_ID = "storyboard"
 MISSING_ID = "00000000-0000-0000-0000-000000000000"
-
-
-async def login_as_editor(client: httpx.AsyncClient, pg_url: str, *, username: str = "logan") -> str:
-    email = f"{username}@example.com"
-    user_id = await register_and_login(client, username=username, email=email)
-    await set_roles_in_db(pg_url, email, ["editor"])
-    return user_id
 
 
 async def login_as_root(client: httpx.AsyncClient, pg_url: str, *, username: str = "gov") -> str:

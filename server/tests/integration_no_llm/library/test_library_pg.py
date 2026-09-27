@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.common.shot_prompt import ShotCut, ShotScript, format_shot_prompt
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -29,7 +29,6 @@ from iclip.domains.library.models import Scope, VideoCursor
 from iclip.domains.library.reports_pg import PgLibraryReports
 from iclip.domains.library.schemas import ShotGroupOut
 from tests.helpers.fork_lineage import three_level_fork
-from tests.helpers.pg import reset_database
 
 BASE = datetime(2026, 9, 20, 10, 0, tzinfo=UTC)
 NORA = "Nora.Ho"
@@ -421,17 +420,6 @@ async def _composite(
             "finished_at": at(finished),
         },
     )
-
-
-@pytest.fixture
-async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    created = create_async_engine(migrated_pg)
-    async with created.begin() as conn:
-        await reset_database(conn)
-    try:
-        yield created
-    finally:
-        await created.dispose()
 
 
 @pytest.fixture

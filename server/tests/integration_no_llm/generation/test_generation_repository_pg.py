@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.errors import NotFound
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -45,18 +45,6 @@ from tests.helpers.generation import (
     make_upload,
     video_request,
 )
-from tests.helpers.pg import reset_database
-
-
-@pytest.fixture
-async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    created = create_async_engine(migrated_pg)
-    async with created.begin() as conn:
-        await reset_database(conn)
-    try:
-        yield created
-    finally:
-        await created.dispose()
 
 
 async def insert_job(

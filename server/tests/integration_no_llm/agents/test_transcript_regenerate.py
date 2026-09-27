@@ -16,7 +16,7 @@ from sqlalchemy import text
 from iclip.config import ResolvedAgent
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import TEST_MODEL_NAME, make_client, new_conversation, settled
-from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 
 AGENT_ID = "storyboard"
@@ -51,11 +51,6 @@ def models() -> dict[str, FunctionModel]:
     return {TEST_MODEL_NAME: FunctionModel(stream_function=reply)}
 
 
-async def _sign_in(client: httpx.AsyncClient, pg_url: str) -> None:
-    await register_and_login(client)
-    await set_roles_in_db(pg_url, "logan@example.com", ["editor"])
-
-
 async def _send(
     client: httpx.AsyncClient, conversation_id: str, prompt_id: str, text_: str
 ) -> None:
@@ -81,7 +76,7 @@ async def _run_count(pg_url: str, conversation_id: str) -> int:
 async def test_regenerate_replays_the_last_turn(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_r1", "第一问")
         await settled(client, conversation_id)
@@ -111,7 +106,7 @@ async def test_regenerate_with_new_content_replays_the_edited_message(
 ) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_e1", "第一问")
         await settled(client, conversation_id)
@@ -142,7 +137,7 @@ async def test_regenerating_twice_with_the_same_prompt_id_returns_the_first(
     """幂等请求认领须早于忙碌检查，避免重试被拒或重复截断末轮。"""
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_t1", "第一问")
         await settled(client, conversation_id)
@@ -171,7 +166,7 @@ async def test_regenerating_twice_with_the_same_prompt_id_returns_the_first(
 async def test_regenerate_with_empty_content_is_unprocessable(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_empty", "问")
         await settled(client, conversation_id)
@@ -186,7 +181,7 @@ async def test_regenerate_with_empty_content_is_unprocessable(app: FastAPI, pg_u
 async def test_regenerate_while_busy_is_conflict(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_busy1", "问")
         await _send(client, conversation_id, "prm_busy2", "再问")
@@ -202,7 +197,7 @@ async def test_regenerate_while_busy_is_conflict(app: FastAPI, pg_url: str) -> N
 async def test_regenerate_an_older_turn_is_conflict(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_old", "第一问")
         await settled(client, conversation_id)
@@ -219,7 +214,7 @@ async def test_regenerate_an_older_turn_is_conflict(app: FastAPI, pg_url: str) -
 async def test_regenerate_without_prompt_row_is_not_found(app: FastAPI, pg_url: str) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_gone", "问")
         await settled(client, conversation_id)
@@ -246,7 +241,7 @@ async def test_regenerate_in_someone_elses_conversation_is_not_found(
     """他人会话返回 404，避免泄漏资源存在性。"""
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         mine = await new_conversation(client, AGENT_ID)
         await _send(client, mine, "prm_mine", "问")
         await settled(client, mine)
@@ -264,7 +259,7 @@ async def test_regenerate_with_a_malformed_turn_id_is_unprocessable(
 ) -> None:
 
     async with make_client(app) as client:
-        await _sign_in(client, pg_url)
+        await login_as_editor(client, pg_url)
         conversation_id = await new_conversation(client, AGENT_ID)
         await _send(client, conversation_id, "prm_shape", "问")
         await settled(client, conversation_id)

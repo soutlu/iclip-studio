@@ -20,19 +20,12 @@ from iclip.domains.conversations.repository import AuditFilter
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
 from iclip.harness.step_store_pg import PgStepStore
 from tests.helpers.app import make_client
-from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
 
 URL = "/conversations"
 SEARCH = f"{URL}/search"
 AGENT_ID = "storyboard"
-
-
-async def login_as_editor(client: httpx.AsyncClient, pg_url: str, *, username: str = "logan") -> str:
-    email = f"{username}@example.com"
-    user_id = await register_and_login(client, username=username, email=email)
-    await set_roles_in_db(pg_url, email, ["editor"])
-    return user_id
 
 
 async def create(client: httpx.AsyncClient, **body: object) -> httpx.Response:

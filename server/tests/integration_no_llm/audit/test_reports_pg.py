@@ -7,14 +7,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.audit.models import (
     AnomalyCursor,
@@ -33,7 +32,6 @@ from iclip.domains.generation.schemas import (
     OPERATION_UPLOAD,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
-from tests.helpers.pg import reset_database
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 SARA = "Sara.Hong"
@@ -483,17 +481,6 @@ class Seed:
                     created_at=ago(hours=6),
                     updated_at=ago(hours=6),
                 )
-
-
-@pytest.fixture
-async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    created = create_async_engine(migrated_pg)
-    async with created.begin() as conn:
-        await reset_database(conn)
-    try:
-        yield created
-    finally:
-        await created.dispose()
 
 
 @pytest.fixture
