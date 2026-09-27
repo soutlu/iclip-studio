@@ -127,13 +127,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       next.shot !== undefined && next.shot !== position
         ? { content: undefined, frame: undefined, video: undefined }
         : {}
-    // 阅读器状态只原地改查询参数；关掉路由的滚动复位，免得它把胶片条等容器滚回导航前的位置。
-    void navigate({
-      replace: true,
-      resetScroll: false,
-      search: { ...search, ...cleared, ...next },
-      to: '.',
-    })
+    void navigate({ replace: true, search: { ...search, ...cleared, ...next }, to: '.' })
   }
 
   const closeSheet = () => {
@@ -154,10 +148,6 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     scrollTargetRef.current = position
     const top = (position - 1) * element.clientHeight
     element.scrollTo({ behavior: 'instant', top })
-    const frame = requestAnimationFrame(() => {
-      if (element.scrollTop !== top) element.scrollTo({ behavior: 'instant', top })
-    })
-    return () => cancelAnimationFrame(frame)
   }, [position, shots.length])
 
   if (file.isPending && document === null) return <ReaderNotice text="正在读取分镜…" />
