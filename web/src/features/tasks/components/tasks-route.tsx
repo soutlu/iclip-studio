@@ -1,9 +1,9 @@
-import { useCallback, useId, useState, type ReactNode } from 'react'
+import { useCallback, useId, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
-import { ListEmpty, ListError, LoadMoreFooter } from '@/shared/ui/list-state'
+import { ListEmpty, ListError, LoadMoreFooter, NextPageFooter } from '@/shared/ui/list-state'
 import type { TaskCreationStarter } from '../task-creation'
 import { canEditTaskField } from '../task-permissions'
 import { useTasksPages, type Task } from '../tasks.api'
@@ -21,6 +21,8 @@ type TasksRouteProps = {
 
 export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
   const { data: user } = useUser()
+  const mainRef = useRef<HTMLElement>(null)
+  const getScrollElement = useCallback(() => mainRef.current, [])
   const myTasksId = useId()
   const [keyword, setKeyword] = useState('')
   const [myTasksExpanded, setMyTasksExpanded] = useState(false)
@@ -53,7 +55,7 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
     canEditTaskField(user, task, 'title') ? { onRename: () => setRename({ open: true, task }) } : {}
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto" ref={mainRef}>
       {/* 页头预留侧栏展开按钮的覆盖空间。 */}
       <div className="flex w-full flex-col gap-8 px-6 pt-12 pb-10">
         <header className="flex items-center justify-between gap-6">
@@ -177,10 +179,9 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
                   onRetry={() => void allTasks.fetchNextPage()}
                 />
               ) : (
-                <LoadMoreFooter
-                  isFetching={allTasks.isFetchingNextPage}
-                  label="展开显示更多需求单"
-                  onMore={() => void allTasks.fetchNextPage()}
+                <NextPageFooter
+                  getScrollElement={getScrollElement}
+                  query={allTasks}
                   shown={loadedAll.length}
                   total={allTasks.data?.pages.at(-1)?.total}
                 />

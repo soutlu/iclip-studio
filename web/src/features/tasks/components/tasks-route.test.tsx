@@ -1,7 +1,8 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { server } from '@/testing/mocks/server'
 import { ApiError } from '@/shared/api/client'
 import { zTaskInputsOutput } from '@/shared/api/generated/zod.gen'
@@ -62,6 +63,9 @@ const layOutGridColumns = (count: number) => {
     }),
   )
 }
+
+/** 等一会儿，给本不该发出的请求留出发出的时间。 */
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
 /** 按编号先后建立，列表倒序时「已认领的需求 1」排在最后。 */
 const pushClaimedTasks = (count: number) =>
@@ -181,35 +185,53 @@ describe('TasksRoute', () => {
     expect(all.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('翻页失败保留已读取的卡片，页脚报错并可重试', async () => {
+  it('全部需求单滚到底部一屏以内才读下一页；翻页失败保留已读取的卡片、页脚报错，重试成功后接着读', async () => {
     const first = makeTask({ status: 'published', title: '第一页的需求单' })
     const second = makeTask({ status: 'published', title: '第二页的需求单' })
+    const third = makeTask({ status: 'published', title: '第三页的需求单' })
+    const cursors: (string | null)[] = []
     let nextPageDown = true
     server.use(
       http.get('*/api/tasks', ({ request }) => {
         const params = new URL(request.url).searchParams
         if (params.get('claimedBy') === 'me') return undefined
-        if (params.get('cursor') === null) {
-          return HttpResponse.json({ items: [first], nextCursor: 'page-2', total: 2 })
+        const cursor = params.get('cursor')
+        cursors.push(cursor)
+        if (cursor === null) {
+          return HttpResponse.json({ items: [first], nextCursor: 'page-2', total: 3 })
+        }
+        if (cursor === 'page-3') {
+          return HttpResponse.json({ items: [third], nextCursor: null, total: 3 })
         }
         return nextPageDown
           ? new HttpResponse(null, { status: 500 })
-          : HttpResponse.json({ items: [second], nextCursor: null, total: 2 })
+          : HttpResponse.json({ items: [second], nextCursor: 'page-3', total: 3 })
       }),
     )
+    const viewport = stubIntersectionObserver()
     const user = userEvent.setup()
     await renderLoggedIn()
 
     const all = within(screen.getByRole('region', { name: '全部需求单' }))
-    await user.click(await all.findByRole('button', { name: '展开显示更多需求单' }))
+    expect(await all.findByText('已显示 1 / 3')).toBeVisible()
+    // 不用再点：页脚里没有按钮
+    expect(all.queryByRole('button', { name: '展开显示更多需求单' })).not.toBeInTheDocument()
+    await settle()
+    expect(cursors).toEqual([null])
+
+    await viewport.scroll(true)
     expect(await all.findByRole('alert')).toHaveTextContent('读取需求单列表失败')
     expect(all.getByRole('button', { name: '查看需求：第一页的需求单' })).toBeVisible()
+    await settle()
+    expect(cursors).toEqual([null, 'page-2'])
 
     nextPageDown = false
     await user.click(all.getByRole('button', { name: '重新加载' }))
-    expect(await all.findByRole('button', { name: '查看需求：第二页的需求单' })).toBeVisible()
+    expect(await all.findByRole('button', { name: '查看需求：第三页的需求单' })).toBeVisible()
+    expect(all.getByRole('button', { name: '查看需求：第二页的需求单' })).toBeVisible()
     expect(all.getByRole('button', { name: '查看需求：第一页的需求单' })).toBeVisible()
     expect(all.queryByRole('alert')).not.toBeInTheDocument()
+    expect(cursors).toEqual([null, 'page-2', 'page-2', 'page-3'])
   })
 
   it('两个分区都没有需求单时各自显示空态', async () => {

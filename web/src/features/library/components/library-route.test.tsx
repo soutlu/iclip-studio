@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { mockLibraryVideos } from '@/testing/mocks/library'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -155,44 +156,6 @@ describe('LibraryRoute', () => {
   })
 })
 
-/** 页脚此刻是否在滚动容器底部一屏以内，由用例设定。 */
-let footerInRange = false
-const liveObservers = new Set<FakeIntersectionObserver>()
-
-/** jsdom 没有 IntersectionObserver；和真的一样，开始观察时报一次当前状态，之后范围变了再报。 */
-class FakeIntersectionObserver {
-  readonly #callback: IntersectionObserverCallback
-  #target: Element | null = null
-
-  constructor(callback: IntersectionObserverCallback) {
-    this.#callback = callback
-  }
-
-  observe(target: Element) {
-    this.#target = target
-    liveObservers.add(this)
-    queueMicrotask(() => this.report())
-  }
-
-  disconnect() {
-    liveObservers.delete(this)
-  }
-
-  report() {
-    if (this.#target === null || !liveObservers.has(this)) return
-    const entry = { isIntersecting: footerInRange, target: this.#target }
-    this.#callback([entry as IntersectionObserverEntry], this as unknown as IntersectionObserver)
-  }
-}
-
-/** 把页脚滚进或滚出底部一屏的范围。 */
-const scrollFooter = async (inRange: boolean) => {
-  footerInRange = inRange
-  await act(async () => {
-    for (const observer of liveObservers) observer.report()
-  })
-}
-
 /** 等一会儿，给本不该发出的请求留出发出的时间。 */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
@@ -220,12 +183,7 @@ const serveThreePages = (
 const cursorsOf = (queries: URLSearchParams[]) => queries.map((query) => query.get('cursor'))
 
 describe('library paging', () => {
-  beforeEach(() => {
-    stubScrollViewport()
-    footerInRange = false
-    liveObservers.clear()
-    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
-  })
+  beforeEach(stubScrollViewport)
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -233,7 +191,7 @@ describe('library paging', () => {
   it('keeps reading while the footer stays near the bottom, stops at the last page and says when nothing matches', async () => {
     const queries = recordListQueries()
     serveThreePages()
-    footerInRange = true
+    stubIntersectionObserver({ inRange: true })
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
 
@@ -251,6 +209,7 @@ describe('library paging', () => {
   it('waits for the footer to near the bottom, and starts over from the first page after a filter change', async () => {
     const queries = recordListQueries()
     serveThreePages()
+    const viewport = stubIntersectionObserver()
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
 
@@ -262,7 +221,7 @@ describe('library paging', () => {
     await settle()
     expect(cursorsOf(queries)).toEqual([null])
 
-    await scrollFooter(true)
+    await viewport.scroll(true)
     await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3))
     expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3'])
 
@@ -276,31 +235,6 @@ describe('library paging', () => {
     expect(cursorsOf(queries.slice(3))).toEqual([null, 'p2', 'p3'])
   })
 
-  it('shows the loading state and asks only once while the next page is on its way', async () => {
-    const queries = recordListQueries()
-    let release = () => {}
-    const held = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    serveThreePages(async (cursor) => {
-      if (cursor === 'p2') await held
-      return undefined
-    })
-    footerInRange = true
-    await renderWithProviders(<Harness />)
-
-    await waitFor(() => expect(cursorsOf(queries)).toEqual([null, 'p2']))
-    expect(screen.getByRole('status')).not.toBeEmptyDOMElement()
-    await scrollFooter(false)
-    await scrollFooter(true)
-    await settle()
-    expect(cursorsOf(queries)).toEqual([null, 'p2'])
-
-    release()
-    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3))
-    expect(cursorsOf(queries)).toEqual([null, 'p2', 'p3'])
-  })
-
   it('stops after a failed page and resumes once it is retried', async () => {
     const queries = recordListQueries()
     let failing = true
@@ -309,13 +243,13 @@ describe('library paging', () => {
         ? HttpResponse.json({ detail: '数据库不可用' }, { status: 500 })
         : undefined,
     )
-    footerInRange = true
+    const viewport = stubIntersectionObserver({ inRange: true })
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('数据库不可用')
     expect(screen.getAllByRole('article')).toHaveLength(1)
-    await scrollFooter(true)
+    await viewport.scroll(true)
     await settle()
     expect(cursorsOf(queries)).toEqual([null, 'p2'])
 
@@ -330,7 +264,7 @@ describe('library paging', () => {
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
     const queries = recordListQueries()
     serveThreePages()
-    footerInRange = true
+    stubIntersectionObserver({ inRange: true })
     const [first] = mockLibraryVideos()
     const user = userEvent.setup()
     await renderWithProviders(<Harness initialVideo={first?.id ?? null} />)

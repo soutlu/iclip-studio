@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import { Icon } from '@/shared/icons'
 import { Input } from '@/shared/ui/field'
-import { ListEmpty, ListError } from '@/shared/ui/list-state'
+import { ListEmpty, ListError, NextPageFooter } from '@/shared/ui/list-state'
 import {
   isDefaultScope,
   useLibraryAuthorSource,
@@ -138,10 +137,7 @@ export function LibraryRoute({
             ) : (
               <NextPageFooter
                 getScrollElement={getScrollElement}
-                isFetching={videos.isFetchingNextPage}
-                loadedAt={videos.dataUpdatedAt}
-                onApproach={loadNextPage}
-                paused={videos.isFetching || videos.isError}
+                query={videos}
                 shown={loaded.length}
                 total={total}
               />
@@ -168,67 +164,6 @@ export function LibraryRoute({
         />
       )}
     </main>
-  )
-}
-
-type NextPageFooterProps = {
-  /** 页面的滚动容器；页脚进入它可视区下方一屏以内就算接近底部。 */
-  getScrollElement: () => HTMLElement | null
-  isFetching: boolean
-  /** 最近一次读到数据的时刻；每变一次都按当下位置重新判断。 */
-  loadedAt: number
-  /** 暂停期间不观察，恢复时按当下位置重新判断。 */
-  paused: boolean
-  onApproach: () => void
-  shown: number
-  total: number | undefined
-}
-
-/** 翻页页脚：左边写已显示几条，右边是读下一页的状态；滚到接近底部时请调用方读下一页。 */
-function NextPageFooter({
-  getScrollElement,
-  isFetching,
-  loadedAt,
-  paused,
-  onApproach,
-  shown,
-  total,
-}: NextPageFooterProps) {
-  const footerRef = useRef<HTMLElement>(null)
-  const approach = useEffectEvent(onApproach)
-
-  // 相交状态不变就不回调，所以每读到一次数据、每次暂停结束都重建观察器，让它按当下布局再报一次；
-  // 只跟暂停不够，一页回来得快时「读取中」那次渲染会被合并掉。
-  useEffect(() => {
-    const footer = footerRef.current
-    if (paused || footer === null) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) approach()
-      },
-      // 根得是滚动容器本身，下边距才会按它的一屏往外扩；用视口当根，页脚会先被容器裁掉。
-      { root: getScrollElement(), rootMargin: '0px 0px 100% 0px' },
-    )
-    observer.observe(footer)
-    return () => observer.disconnect()
-  }, [getScrollElement, loadedAt, paused])
-
-  return (
-    <footer
-      className="flex items-center justify-between gap-4 px-3 py-4 text-body text-on-surface-variant"
-      ref={footerRef}
-    >
-      <span>{total === undefined ? `已显示 ${shown}` : `已显示 ${shown} / ${total}`}</span>
-      {/* 读屏只播报已在页面上的 live region 的变化，所以它常驻、只换内容。 */}
-      <p className="flex h-(--control-height-md) items-center gap-2" role="status">
-        {isFetching ? (
-          <>
-            <Icon className="animate-spin" decorative name="loading" size="sm" />
-            正在读取…
-          </>
-        ) : null}
-      </p>
-    </footer>
   )
 }
 

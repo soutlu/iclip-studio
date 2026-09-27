@@ -6,7 +6,7 @@ import { Icon } from '@/shared/icons'
 import { formatDateTime } from '@/shared/lib/date-time'
 import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
-import { ListEmpty, ListError, ListPending, LoadMoreFooter } from '@/shared/ui/list-state'
+import { ListEmpty, ListError, ListPending, NextPageFooter } from '@/shared/ui/list-state'
 import { ANOMALY_KINDS, ANOMALY_META, type AnomalyTone } from '../anomaly-kinds'
 import { useAuditAnomalies, type Anomaly, type AnomalyKind, type AuditScope } from '../audit.api'
 
@@ -17,6 +17,8 @@ type AnomaliesPanelProps = {
   onKindsChange: (kinds: AnomalyKind[]) => void
   nameOf: (userName: string) => string | undefined
   taskTitleOf: (taskId: string) => string | undefined
+  /** 页面的滚动容器，滚到接近底部时读下一页。 */
+  getScrollElement: () => HTMLElement | null
 }
 
 const TONE_DOT: Record<AnomalyTone, string> = {
@@ -33,6 +35,7 @@ export function AnomaliesPanel({
   onKindsChange,
   nameOf,
   taskTitleOf,
+  getScrollElement,
 }: AnomaliesPanelProps) {
   const query = useAuditAnomalies(scope, kinds)
   const rows = query.data?.pages.flatMap((page) => page.items) ?? []
@@ -86,11 +89,7 @@ export function AnomaliesPanel({
             ))}
           </ul>
           {query.hasNextPage ? (
-            <LoadMoreFooter
-              isFetching={query.isFetchingNextPage}
-              label="显示更多异常"
-              onMore={() => void query.fetchNextPage()}
-            />
+            <NextPageFooter getScrollElement={getScrollElement} query={query} />
           ) : null}
         </section>
       )}

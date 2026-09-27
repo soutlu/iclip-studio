@@ -1,6 +1,6 @@
 /** 全平台对话列表：筛选由服务端执行，条件存在地址栏由路由层下发，状态与总数由应用壳的全局订阅刷新。 */
 
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { errorMessageOf } from '@/shared/api/client'
 import { userPickerSourceOf, useUsersDirectory } from '@/shared/auth'
@@ -8,7 +8,7 @@ import { Icon } from '@/shared/icons'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
 import type { TaskPreview, TaskPreviewState } from '@/shared/lib/task-preview'
 import { Button } from '@/shared/ui/button'
-import { ListEmpty, ListError, ListPending, LoadMoreFooter } from '@/shared/ui/list-state'
+import { ListEmpty, ListError, ListPending, NextPageFooter } from '@/shared/ui/list-state'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Tag } from '@/shared/ui/tag'
@@ -41,6 +41,8 @@ export function ConversationsRoute({
   taskPreviewState,
   taskPreviewRetry,
 }: ConversationsRouteProps) {
+  const mainRef = useRef<HTMLElement>(null)
+  const getScrollElement = useCallback(() => mainRef.current, [])
   const directory = useUsersDirectory(true)
   const users = userPickerSourceOf(directory, 'id')
   const query = useAuditConversations(filters, true)
@@ -54,6 +56,7 @@ export function ConversationsRoute({
     <main
       aria-label="全部对话"
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-container-lowest"
+      ref={mainRef}
     >
       {/* 预留应用壳中侧栏展开按钮的空间。 */}
       <div className="mx-auto flex w-full max-w-360 flex-col gap-6 px-4 pt-12 pb-10 sm:gap-8 sm:px-8">
@@ -123,10 +126,9 @@ export function ConversationsRoute({
           )}
 
           {totals !== undefined && query.hasNextPage && rows.length > 0 ? (
-            <LoadMoreFooter
-              isFetching={query.isFetchingNextPage}
-              label="展开显示更多对话"
-              onMore={() => void query.fetchNextPage()}
+            <NextPageFooter
+              getScrollElement={getScrollElement}
+              query={query}
               shown={rows.length}
               total={totals.total}
             />

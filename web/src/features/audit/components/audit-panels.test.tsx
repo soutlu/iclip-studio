@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { addMockConversation, mockAuthUser, mockGovernor } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -20,8 +21,25 @@ const nameOf = (userName: string) =>
 const TASK_ID = '11111111-1111-4111-8111-111111111111'
 const taskTitleOf = (taskId: string) => (taskId === TASK_ID ? '夏季亚麻系列' : undefined)
 const ALL_TIME: AuditScope = { ...DEFAULT_AUDIT_SCOPE, range: 'all' }
+/** 滚动容器在路由的 `<main>` 上；单测不排版，可控的 IntersectionObserver 替身也不看它。 */
+const noScroller = () => null
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60_000).toISOString()
+
+/** 记下某个列表接口每次请求的游标。 */
+const recordCursors = (path: string) => {
+  const cursors: (string | null)[] = []
+  server.events.on('request:start', ({ request }) => {
+    const url = new URL(request.url)
+    if (url.pathname.endsWith(path)) cursors.push(url.searchParams.get('cursor'))
+  })
+  return cursors
+}
+
+/** 等一会儿，给本不该发出的请求留出发出的时间。 */
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+afterEach(() => vi.unstubAllGlobals())
 
 /** 全零的一格指标，给只关心某一段的用例当底座。 */
 const EMPTY_METRICS = {
@@ -312,7 +330,12 @@ describe('ConversationsPanel', () => {
     const { third } = seed()
     const user = userEvent.setup()
     await renderWithProviders(
-      <ConversationsPanel nameOf={nameOf} scope={ALL_TIME} taskTitleOf={taskTitleOf} />,
+      <ConversationsPanel
+        getScrollElement={noScroller}
+        nameOf={nameOf}
+        scope={ALL_TIME}
+        taskTitleOf={taskTitleOf}
+      />,
     )
 
     const list = await screen.findByRole('region', { name: '对话明细' })
@@ -398,7 +421,12 @@ describe('ConversationsPanel', () => {
       ),
     )
     await renderWithProviders(
-      <ConversationsPanel nameOf={nameOf} scope={ALL_TIME} taskTitleOf={taskTitleOf} />,
+      <ConversationsPanel
+        getScrollElement={noScroller}
+        nameOf={nameOf}
+        scope={ALL_TIME}
+        taskTitleOf={taskTitleOf}
+      />,
     )
 
     const list = await screen.findByRole('region', { name: '对话明细' })
@@ -420,10 +448,40 @@ describe('ConversationsPanel', () => {
 
   it('没有对话时说明这个范围里没有成片', async () => {
     await renderWithProviders(
-      <ConversationsPanel nameOf={nameOf} scope={ALL_TIME} taskTitleOf={taskTitleOf} />,
+      <ConversationsPanel
+        getScrollElement={noScroller}
+        nameOf={nameOf}
+        scope={ALL_TIME}
+        taskTitleOf={taskTitleOf}
+      />,
     )
 
     expect(await screen.findByText('这个范围里没有出过片的对话')).toBeVisible()
+  })
+
+  it('一页二十段，页脚滚到底部一屏以内才读下一页，读完页脚收起', async () => {
+    for (let index = 0; index < 25; index += 1) addMockConversation(`第${index}段`, hoursAgo(index))
+    const cursors = recordCursors('/audit/conversations')
+    const viewport = stubIntersectionObserver()
+    await renderWithProviders(
+      <ConversationsPanel
+        getScrollElement={noScroller}
+        nameOf={nameOf}
+        scope={ALL_TIME}
+        taskTitleOf={taskTitleOf}
+      />,
+    )
+
+    const list = await screen.findByRole('region', { name: '对话明细' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(20)
+    await settle()
+    expect(cursors).toEqual([null])
+
+    await viewport.scroll(true)
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(25))
+    expect(cursors).toHaveLength(2)
+    expect(cursors[1]).not.toBeNull()
+    expect(within(list).queryByRole('status')).not.toBeInTheDocument()
   })
 })
 
@@ -432,6 +490,7 @@ function AnomaliesWithKinds() {
   const [kinds, setKinds] = useState<AnomalyKind[]>([])
   return (
     <AnomaliesPanel
+      getScrollElement={noScroller}
       kinds={kinds}
       nameOf={nameOf}
       onKindsChange={setKinds}
@@ -459,5 +518,42 @@ describe('AnomaliesPanel', () => {
       expect(within(filtered).queryByText('没挂需求单')).not.toBeInTheDocument()
       expect(within(filtered).getByText('反复重试')).toBeVisible()
     })
+  })
+
+  it('页脚滚到底部一屏以内才读下一页，读完页脚收起', async () => {
+    const orphan = (hours: number) => ({
+      at: hoursAgo(hours),
+      conversationId: null,
+      generationId: null,
+      kind: 'no_task' as const,
+      shot: null,
+      taskId: null,
+      threshold: null,
+      userName: mockAuthUser.username,
+      value: hours,
+    })
+    server.use(
+      http.get('*/api/audit/anomalies', ({ request }) =>
+        HttpResponse.json(
+          new URL(request.url).searchParams.get('cursor') === null
+            ? { items: [orphan(1), orphan(2)], nextCursor: 'p2' }
+            : { items: [orphan(3)], nextCursor: null },
+        ),
+      ),
+    )
+    const cursors = recordCursors('/audit/anomalies')
+    const viewport = stubIntersectionObserver()
+    await renderWithProviders(<AnomaliesWithKinds />)
+
+    const list = await screen.findByRole('region', { name: '异常列表' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+    await settle()
+    expect(cursors).toEqual([null])
+
+    await viewport.scroll(true)
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(3))
+    expect(cursors).toEqual([null, 'p2'])
+    expect(within(list).getByText(/出了 3 条成片/)).toBeVisible()
+    expect(within(list).queryByRole('status')).not.toBeInTheDocument()
   })
 })

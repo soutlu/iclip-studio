@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   AnomaliesPanel,
   AuditScopeBar,
@@ -35,6 +35,9 @@ function AuditPage() {
   const search = Route.useSearch()
   const { tab = 'overview' } = search
   const navigate = Route.useNavigate()
+  // 两张明细表滚到底自动翻页，要以整页的滚动容器为准。
+  const mainRef = useRef<HTMLElement>(null)
+  const getScrollElement = useCallback(() => mainRef.current, [])
   const taskSource = useTaskPickerSource()
   const directory = useUsersDirectory(true)
   const scope = scopeFromSearch(search)
@@ -58,6 +61,7 @@ function AuditPage() {
     <main
       aria-label="审计"
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-container-lowest"
+      ref={mainRef}
     >
       {/* 预留应用壳中侧栏展开按钮的空间。 */}
       <div className="mx-auto flex w-full max-w-360 flex-col gap-5 px-4 pt-12 pb-10 sm:px-7">
@@ -88,10 +92,10 @@ function AuditPage() {
             />
           </TabsContent>
           <TabsContent className="flex flex-col ui-focus" value="conversations">
-            <ConversationsTab nameOf={nameOf} scope={scope} />
+            <ConversationsTab getScrollElement={getScrollElement} nameOf={nameOf} scope={scope} />
           </TabsContent>
           <TabsContent className="flex flex-col ui-focus" value="anomalies">
-            <AnomaliesTab nameOf={nameOf} scope={scope} />
+            <AnomaliesTab getScrollElement={getScrollElement} nameOf={nameOf} scope={scope} />
           </TabsContent>
         </TabsRoot>
       </div>
@@ -102,6 +106,7 @@ function AuditPage() {
 type TabProps = {
   scope: AuditScope
   nameOf: (userName: string) => string | undefined
+  getScrollElement: () => HTMLElement | null
 }
 
 /**
@@ -121,18 +126,26 @@ const useTaskTitleOf = (
 }
 
 // 标签与面板读同一个查询键，这里只为拿到行上的 taskId，不多发请求。
-function ConversationsTab({ scope, nameOf }: TabProps) {
+function ConversationsTab({ scope, nameOf, getScrollElement }: TabProps) {
   const reports = useAuditConversationReports(scope)
   const taskTitleOf = useTaskTitleOf(reports.data?.pages)
-  return <ConversationsPanel nameOf={nameOf} scope={scope} taskTitleOf={taskTitleOf} />
+  return (
+    <ConversationsPanel
+      getScrollElement={getScrollElement}
+      nameOf={nameOf}
+      scope={scope}
+      taskTitleOf={taskTitleOf}
+    />
+  )
 }
 
-function AnomaliesTab({ scope, nameOf }: TabProps) {
+function AnomaliesTab({ scope, nameOf, getScrollElement }: TabProps) {
   const [kinds, setKinds] = useState<AnomalyKind[]>([])
   const anomalies = useAuditAnomalies(scope, kinds)
   const taskTitleOf = useTaskTitleOf(anomalies.data?.pages)
   return (
     <AnomaliesPanel
+      getScrollElement={getScrollElement}
       kinds={kinds}
       nameOf={nameOf}
       onKindsChange={setKinds}

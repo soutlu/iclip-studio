@@ -1,8 +1,9 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import {
   addMockConversation,
   addMockTask,
@@ -107,6 +108,8 @@ const seedThree = () => {
 }
 
 describe('ConversationsRoute', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
   it('按建立时间倒序列出全平台对话', async () => {
     const { task } = seedThree()
     await render([{ id: task.id, label: task.title }])
@@ -348,20 +351,33 @@ describe('ConversationsRoute', () => {
     await waitFor(() => expectTotals(2, 2), AUDIT_REFRESH_TIMEOUT)
   })
 
-  it('一页五十段，展开加载剩余对话后移除分页入口', async () => {
+  it('一页五十段，页脚滚到底部一屏以内才读剩余对话，读完移除分页页脚', async () => {
     for (let index = 0; index < 55; index += 1) {
       addMockConversation(`第${index}段`, new Date(Date.UTC(2026, 7, 1, 0, index)).toISOString())
     }
-    const { user } = await render()
+    const cursors: (string | null)[] = []
+    server.events.on('request:start', ({ request }) => {
+      const url = new URL(request.url)
+      if (url.pathname.endsWith('/conversations/audit')) {
+        cursors.push(url.searchParams.get('cursor'))
+      }
+    })
+    const viewport = stubIntersectionObserver()
+    await render()
 
     expect(await screen.findByText('已显示 50 / 55')).toBeVisible()
     expect(within(screen.getByRole('list')).getAllByRole('link')).toHaveLength(50)
-    await user.click(screen.getByRole('button', { name: '展开显示更多对话' }))
+    // 不用再点：页脚里没有按钮
+    expect(screen.queryByRole('button', { name: '展开显示更多对话' })).not.toBeInTheDocument()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(cursors).toEqual([null])
 
+    await viewport.scroll(true)
     await waitFor(() =>
       expect(within(screen.getByRole('list')).getAllByRole('link')).toHaveLength(55),
     )
-    expect(screen.queryByRole('button', { name: '展开显示更多对话' })).not.toBeInTheDocument()
+    expect(cursors).toHaveLength(2)
+    expect(cursors[1]).not.toBeNull()
     expect(screen.queryByText(/已显示/)).not.toBeInTheDocument()
     expectTotals(0, 55)
   })
