@@ -475,6 +475,13 @@ class InMemoryGenerationRepository:
 
         raise AssertionError("unit 层不走在途汇总")
 
+    async def latest_master_by_conversation(
+        self, conversation_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, str]:
+        """取最新成片的排序与成片判定只由 Postgres 仓储的集成测试覆盖，替身不复刻。"""
+
+        raise AssertionError("unit 层不走最新成片")
+
     def _replace(self, job_id: uuid.UUID, **values: Any) -> GenerationJob:
         from dataclasses import replace
 

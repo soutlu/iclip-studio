@@ -17,6 +17,7 @@ from iclip.domains.conversations.service import (
     CopyConversationWorkspace,
     ForkTranscript,
     GenerateTitle,
+    LatestMasterUrls,
     ListAgents,
     ListCollections,
     ListDerivedFiles,
@@ -50,6 +51,7 @@ def build_conversations_module(
     announce_title: AnnounceTitle,
     activities_of: ActivitiesOf,
     busy_conversation_ids: BusyConversationIds,
+    latest_master_urls: LatestMasterUrls,
     fork_transcript: ForkTranscript,
     copy_workspace: CopyConversationWorkspace,
 ) -> ConversationsModule:
@@ -67,6 +69,7 @@ def build_conversations_module(
         announce_title=announce_title,
         activities_of=activities_of,
         busy_conversation_ids=busy_conversation_ids,
+        latest_master_urls=latest_master_urls,
         fork_transcript=fork_transcript,
         copy_workspace=copy_workspace,
     )

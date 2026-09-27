@@ -15,6 +15,7 @@ import {
   addMockCollection,
   addMockConversation,
   liveMockConversation,
+  mockAuditRow,
   mockCollections,
   mockConversations,
   resetMockConversations,
@@ -200,14 +201,14 @@ export const handlers = [
     })
   }),
 
-  // 治理者的全平台列表：两个总数不随翻页变，state 用与侧栏同一口径。
+  // 治理者的全平台列表：两个总数不随翻页变，state 用与侧栏同一口径；每行另带最新一条成片的地址。
   http.get('*/api/conversations/audit', ({ request }) => {
     const query = new URL(request.url).searchParams
     const scoped = auditScope(query)
     const rows = scoped.filter((item) => inState(item, query.get('state')))
     const limit = Number(query.get('limit') ?? 20)
     return HttpResponse.json({
-      ...pageByCreated(rows, query.get('cursor'), limit),
+      ...pageByCreated(rows.map(mockAuditRow), query.get('cursor'), limit),
       runningTotal: scoped.filter((item) => item.activity.busy).length,
       total: rows.length,
     })

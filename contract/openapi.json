@@ -1541,13 +1541,162 @@
         "title": "ConversationTaskIn",
         "type": "object"
       },
+      "ConversationsAuditItemOut": {
+        "additionalProperties": false,
+        "description": "审计列表里的一段对话。\n\n``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；\n没有成片为 null。",
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/ConversationActivityOut"
+          },
+          "agentId": {
+            "title": "Agentid",
+            "type": "string"
+          },
+          "collectionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectionid"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletedat"
+          },
+          "forkTurn": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forkturn"
+          },
+          "forkedFrom": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forkedfrom"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lastRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastrunid"
+          },
+          "latestMasterUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestmasterurl"
+          },
+          "ownerUserId": {
+            "format": "uuid",
+            "title": "Owneruserid",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ownerUserId",
+          "agentId",
+          "title",
+          "lastRunId",
+          "taskId",
+          "collectionId",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "completedAt",
+          "forkedFrom",
+          "forkTurn",
+          "activity",
+          "latestMasterUrl"
+        ],
+        "title": "ConversationsAuditItemOut",
+        "type": "object"
+      },
       "ConversationsAuditOut": {
         "additionalProperties": false,
         "description": "审计列表。``nextCursor`` 为空表示没有更多了。\n\n两个数字都是真总数，不随翻页变：``total`` 是当前筛选下一共几段，``runningTotal`` 是同一组\n属主 / 需求单 / 时间筛选下此刻在跑的几段（不受 ``state`` 影响）。",
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/ConversationOut"
+              "$ref": "#/components/schemas/ConversationsAuditItemOut"
             },
             "title": "Items",
             "type": "array"

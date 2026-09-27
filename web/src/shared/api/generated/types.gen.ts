@@ -821,6 +821,74 @@ export type ConversationTaskIn = {
 }
 
 /**
+ * ConversationsAuditItemOut
+ *
+ * 审计列表里的一段对话。
+ *
+ * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
+ * 没有成片为 null。
+ */
+export type ConversationsAuditItemOut = {
+  activity: ConversationActivityOut
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Collectionid
+   */
+  collectionId: string | null
+  /**
+   * Completedat
+   */
+  completedAt: string | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Deletedat
+   */
+  deletedAt: string | null
+  /**
+   * Forkturn
+   */
+  forkTurn: number | null
+  /**
+   * Forkedfrom
+   */
+  forkedFrom: string | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Lastrunid
+   */
+  lastRunId: string | null
+  /**
+   * Latestmasterurl
+   */
+  latestMasterUrl: string | null
+  /**
+   * Owneruserid
+   */
+  ownerUserId: string
+  /**
+   * Taskid
+   */
+  taskId: string | null
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
  * ConversationsAuditOut
  *
  * 审计列表。``nextCursor`` 为空表示没有更多了。
@@ -832,7 +900,7 @@ export type ConversationsAuditOut = {
   /**
    * Items
    */
-  items: Array<ConversationOut>
+  items: Array<ConversationsAuditItemOut>
   /**
    * Nextcursor
    */

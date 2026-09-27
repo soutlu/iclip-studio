@@ -395,6 +395,32 @@ export const zConversationTaskIn = z.object({
 })
 
 /**
+ * ConversationsAuditItemOut
+ *
+ * 审计列表里的一段对话。
+ *
+ * ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
+ * 没有成片为 null。
+ */
+export const zConversationsAuditItemOut = z.object({
+  activity: zConversationActivityOut,
+  agentId: z.string(),
+  collectionId: z.uuid().nullable(),
+  completedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  deletedAt: z.iso.datetime().nullable(),
+  forkTurn: z.int().nullable(),
+  forkedFrom: z.uuid().nullable(),
+  id: z.uuid(),
+  lastRunId: z.string().nullable(),
+  latestMasterUrl: z.string().nullable(),
+  ownerUserId: z.uuid(),
+  taskId: z.uuid().nullable(),
+  title: z.string(),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
  * ConversationsAuditOut
  *
  * 审计列表。``nextCursor`` 为空表示没有更多了。
@@ -403,7 +429,7 @@ export const zConversationTaskIn = z.object({
  * 属主 / 需求单 / 时间筛选下此刻在跑的几段（不受 ``state`` 影响）。
  */
 export const zConversationsAuditOut = z.object({
-  items: z.array(zConversationOut),
+  items: z.array(zConversationsAuditItemOut),
   nextCursor: z.string().nullable(),
   runningTotal: z.int(),
   total: z.int(),

@@ -362,6 +362,110 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
     assert await repo.in_flight_by_conversation([], kind="video") == {}
 
 
+async def test_latest_master_by_conversation_takes_each_conversations_newest_master(
+    engine: AsyncEngine,
+) -> None:
+    """审计列表要的最新成片：按完成时刻取最晚的出片或合成，同一刻取 id 大的；编辑段、失败与在途的
+    出片、没有地址的记录、图片都不算；每段对话只看记在自己名下的。"""
+
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    newest, composed, tied, nothing = (uuid.uuid4() for _ in range(4))
+
+    # 先建后完成：完成时刻最晚的是它，建立时刻却是最早的。
+    started_first = await repo.create(
+        make_job(video_request(), owner_user_id=owner, conversation_id=newest)
+    )
+    take = await finished(repo, owner, newest, "take")
+    started_first = await complete(repo, started_first, "https://example.test/started-first.mp4")
+    # 下面几条都比它晚，但都不是成片。
+    await complete(
+        repo,
+        await repo.create(make_edit(take, owner_user_id=owner, conversation_id=newest)),
+        "https://example.test/edit.mp4",
+    )
+    failed = await repo.create(
+        make_job(video_request(), owner_user_id=owner, conversation_id=newest)
+    )
+    await repo.mark_failed(failed.id, error_code="UPSTREAM_FAILED", error_message="上游拒了")
+    await repo.create(make_job(video_request(), owner_user_id=owner, conversation_id=newest))
+    await finished(repo, owner, newest, "image", image_request())
+    no_address = await finished(repo, owner, newest, "no-address")
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE iclip.generation_jobs SET output_url = NULL WHERE id = :id"),
+            {"id": no_address.id},
+        )
+
+    base = await finished(repo, owner, composed, "base")
+    edit = await complete(
+        repo,
+        await repo.create(make_edit(base, owner_user_id=owner, conversation_id=composed)),
+        "https://example.test/composed-edit.mp4",
+    )
+    composite = await complete(
+        repo,
+        await repo.create(make_composite(edit, owner_user_id=owner, conversation_id=composed)),
+        "https://example.test/composite.mp4",
+    )
+
+    pair = [await finished(repo, owner, tied, name) for name in ("tie-a", "tie-b")]
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE iclip.generation_jobs SET finished_at = :at"
+                " WHERE id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"at": datetime.now(UTC), "ids": [job.id for job in pair]},
+        )
+    tie_winner = max(pair, key=lambda job: job.id)
+
+    await finished(repo, owner, nothing, "nothing-image", image_request())
+    # 没问到的对话里最晚的成片，不串进别的对话。
+    await finished(repo, owner, uuid.uuid4(), "outsider")
+
+    latest = await repo.latest_master_by_conversation(
+        [newest, composed, tied, nothing, uuid.uuid4()]
+    )
+
+    assert latest == {
+        newest: started_first.output_url,
+        composed: composite.output_url,
+        tied: tie_winner.output_url,
+    }
+    assert await repo.latest_master_by_conversation([]) == {}
+
+
+async def test_latest_master_by_conversation_leaves_inherited_masters_out(
+    engine: AsyncEngine,
+) -> None:
+    """分叉副本读得到祖先的成片，最新成片却只看它自己名下的：只在继承来的出片上剪了一段、还没合成的
+    副本没有成片。"""
+
+    chain = await three_level_fork(engine)
+    repo = SqlGenerationRepository(engine)
+    bare = await open_conversation(
+        SqlConversationRepository(engine), chain.forker, forked_from=chain.parent.id
+    )
+    await complete(
+        repo,
+        await repo.create(
+            make_edit(chain.from_parent, owner_user_id=chain.forker, conversation_id=bare.id)
+        ),
+        "https://example.test/bare-edit.mp4",
+    )
+
+    latest = await repo.latest_master_by_conversation(
+        [chain.grand.id, chain.parent.id, chain.child.id, bare.id]
+    )
+
+    assert latest == {
+        chain.grand.id: chain.grand_after_parent.output_url,
+        chain.parent.id: chain.parent_after_child.output_url,
+        chain.child.id: chain.own.output_url,
+    }
+
+
 async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEngine) -> None:
     """编辑段与合成的来源、原作、区间落列读回；列表按 operation、source_job_id 筛，与别的筛选叠加收窄。"""
 

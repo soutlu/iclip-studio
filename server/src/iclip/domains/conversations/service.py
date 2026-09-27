@@ -68,6 +68,9 @@ ActivitiesOf = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, Conv
 BusyConversationIds = Callable[[uuid.UUID | None], Awaitable[frozenset[uuid.UUID]]]
 """此刻在跑（含等审批）的对话 id；给属主就按属主算，给 None 算全平台。"""
 
+LatestMasterUrls = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, str]]]
+"""批量读这些对话各自名下最新一条成片的地址（不含分叉继承来的），由组合根注入；没有成片的 id 不在结果里。"""
+
 GenerateTitle = Callable[[str], Awaitable[str | None]]
 """由组合根注入的标题生成器；返回 None 表示本次不生成标题。"""
 
@@ -218,6 +221,8 @@ class AuditPage:
     next_cursor: str | None
     total: int
     running_total: int
+    latest_master_urls: Mapping[uuid.UUID, str]
+    """这一页里各段对话自己名下最新一条成片的地址；没有成片的不在里面。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +280,7 @@ class ConversationService:
         announce_title: AnnounceTitle,
         activities_of: ActivitiesOf,
         busy_conversation_ids: BusyConversationIds,
+        latest_master_urls: LatestMasterUrls,
         fork_transcript: ForkTranscript,
         copy_workspace: CopyConversationWorkspace,
     ) -> None:
@@ -284,6 +290,7 @@ class ConversationService:
         self._copy_workspace = copy_workspace
         self._activities_of = activities_of
         self._busy_conversation_ids = busy_conversation_ids
+        self._latest_master_urls = latest_master_urls
         self._generate_title = generate_title
         self._announce_title = announce_title
         self._list_collections = list_collections
@@ -567,7 +574,8 @@ class ConversationService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> AuditPage:
-        """治理者按建立时间倒序分页查询全平台对话，附当前筛选下的总数与在跑数。
+        """治理者按建立时间倒序分页查询全平台对话，附当前筛选下的总数与在跑数，以及这一页各段
+        自己名下最新一条成片的地址。
 
         给了 ``owner_user_id`` 时占着的集合按该属主算，不给才算全平台；busy 集只取一次，
         列表与两个计数才对得上。``deleted`` 决定属主删掉的墓碑收不收，这是唯一列得出墓碑的口。
@@ -592,6 +600,7 @@ class ConversationService:
             running_total=await self._repo.count_audit(
                 scope, state=StateFilter(state="running", busy=busy)
             ),
+            latest_master_urls=await self._latest_master_urls([item.id for item in page.items]),
         )
 
     async def rename(
@@ -703,6 +712,7 @@ __all__ = [
     "DeletedFilter",
     "DerivedFile",
     "DerivedFileContent",
+    "LatestMasterUrls",
     "ListAgents",
     "ListCollections",
     "ListDerivedFiles",

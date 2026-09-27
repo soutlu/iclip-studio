@@ -181,6 +181,16 @@ class SidebarOut(CamelModel):
     ungrouped: ConversationPageOut
 
 
+class ConversationsAuditItemOut(ConversationOut):
+    """审计列表里的一段对话。
+
+    ``latestMasterUrl`` 是这段对话自己名下最新完成的一条成片（出片或合成）的地址，不含分叉继承来的；
+    没有成片为 null。
+    """
+
+    latest_master_url: str | None
+
+
 class ConversationsAuditOut(CamelModel):
     """审计列表。``nextCursor`` 为空表示没有更多了。
 
@@ -188,7 +198,7 @@ class ConversationsAuditOut(CamelModel):
     属主 / 需求单 / 时间筛选下此刻在跑的几段（不受 ``state`` 影响）。
     """
 
-    items: list[ConversationOut]
+    items: list[ConversationsAuditItemOut]
     next_cursor: str | None
     total: int
     running_total: int
@@ -255,6 +265,16 @@ def conversation_out(conversation: Conversation, activity: ConversationActivity)
     )
 
 
+def audit_item_out(
+    conversation: Conversation, activity: ConversationActivity, latest_master_url: str | None
+) -> ConversationsAuditItemOut:
+    """在 ``conversation_out`` 之上补这段对话自己最新一条成片的地址，转换为审计列表的条目。"""
+
+    return ConversationsAuditItemOut(
+        **dict(conversation_out(conversation, activity)), latest_master_url=latest_master_url
+    )
+
+
 __all__ = [
     "DEFAULT_TITLE",
     "MAX_AGENT_ID_CHARS",
@@ -274,9 +294,11 @@ __all__ = [
     "ConversationPageOut",
     "ConversationRename",
     "ConversationTaskIn",
+    "ConversationsAuditItemOut",
     "ConversationsAuditOut",
     "ConversationsPageOut",
     "SidebarCollectionOut",
     "SidebarOut",
+    "audit_item_out",
     "conversation_out",
 ]

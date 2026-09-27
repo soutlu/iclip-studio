@@ -104,6 +104,7 @@ export type {
   ConversationsAuditConversationsGetErrors,
   ConversationsAuditConversationsGetResponse,
   ConversationsAuditConversationsGetResponses,
+  ConversationsAuditItemOut,
   ConversationsAuditOut,
   ConversationsPageOut,
   ConversationTaskIn,

@@ -1,5 +1,9 @@
 import type { z } from 'zod'
-import type { zCollectionOut, zConversationOut } from '@/shared/api/generated/zod.gen'
+import type {
+  zCollectionOut,
+  zConversationOut,
+  zConversationsAuditItemOut,
+} from '@/shared/api/generated/zod.gen'
 import { mockAuthUser } from './auth-user'
 import { mockCreatedAt } from './paging'
 
@@ -9,6 +13,17 @@ export type MockConversation = z.output<typeof zConversationOut>
 
 /** 删除只写 deletedAt（合同 §6 墓碑）；墓碑只有审计列表列得出来。 */
 export const mockConversations: MockConversation[] = []
+
+/** 按对话 id 记它自己最新一条成片的地址；只有审计列表带这一项，没记的为 null。 */
+export const mockLatestMasterUrls = new Map<string, string>()
+
+/** 审计列表里的一行：对话本身加上它最新一条成片的地址。 */
+export const mockAuditRow = (
+  conversation: MockConversation,
+): z.output<typeof zConversationsAuditItemOut> => ({
+  ...conversation,
+  latestMasterUrl: mockLatestMasterUrls.get(conversation.id) ?? null,
+})
 
 /** 还活着的那一段；墓碑对改名、换归属、再删、发消息一律按不存在答复。 */
 export const liveMockConversation = (conversationId: string) =>
@@ -50,6 +65,7 @@ export const mockConversationOwner = (conversationId: string): string =>
 
 export const resetMockConversations = () => {
   mockConversations.length = 0
+  mockLatestMasterUrls.clear()
   mockCollections.length = 0
 }
 

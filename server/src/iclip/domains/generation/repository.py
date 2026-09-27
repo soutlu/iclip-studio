@@ -156,5 +156,12 @@ class GenerationRepository(Protocol):
         调用方给的对话本来就是它能看的。"""
         ...
 
+    async def latest_master_by_conversation(
+        self, conversation_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, str]:
+        """这些对话各自名下最新一条成片的地址：按完成时刻取最晚的，同一刻取 id 大的。只看记在这段
+        对话上的，不含分叉继承来的；没有成片的对话不在结果里。不按属主过滤，理由同上。"""
+        ...
+
 
 __all__ = ["GenerationRepository"]

@@ -425,6 +425,13 @@ class GenerationService:
 
         return await self._repo.in_flight_by_conversation(conversation_ids, kind=kind)
 
+    async def latest_master_by_conversation(
+        self, conversation_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, str]:
+        """给对话审计列表用：这些对话各自名下最新一条成片的地址，不含继承来的。可见性同上。"""
+
+        return await self._repo.latest_master_by_conversation(conversation_ids)
+
     async def list_recent(
         self,
         principal: Principal,

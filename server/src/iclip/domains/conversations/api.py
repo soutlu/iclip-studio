@@ -33,6 +33,7 @@ from iclip.domains.conversations.schemas import (
     ConversationTaskIn,
     SidebarCollectionOut,
     SidebarOut,
+    audit_item_out,
     conversation_out,
 )
 from iclip.domains.conversations.service import (
@@ -227,8 +228,12 @@ def create_conversations_router(
             limit=limit,
             cursor=cursor,
         )
+        activities = await service.activities([item.id for item in page.items])
         return ConversationsAuditOut(
-            items=await _outs(page.items),
+            items=[
+                audit_item_out(item, activities[item.id], page.latest_master_urls.get(item.id))
+                for item in page.items
+            ],
             next_cursor=page.next_cursor,
             total=page.total,
             running_total=page.running_total,
