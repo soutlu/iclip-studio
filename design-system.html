@@ -385,6 +385,9 @@
         --layout-app-sidebar-width: 264px;
         --layout-app-sidebar-min-width: 200px;
         --layout-app-sidebar-max-width: 400px;
+        --layout-app-sidebar-collapsed-width: 56px;
+        --layout-app-content-rail-width: 40px;
+        --layout-app-resize-handle-width: 8px;
         --layout-app-right-panel-width: 460px;
         --layout-app-workbench-width: 820px;
         --layout-app-workbench-min-width: 560px;
@@ -801,6 +804,14 @@
                 <div class="motion-row"><code>--z-popup</code><span>菜单 / 弹窗 / toast</span><b>100</b></div>
               </div>
               <p class="type-source-note">使用 <code>layer-*</code>；<code>--z-local-1..3</code> 仅限 isolate 容器内。</p>
+            </div>
+
+            <div class="scale-group">
+              <h3>应用壳布局</h3>
+              <p class="type-source-note">导航、聊天与工作台连续排列，用细分隔线划分区域，不留列间空隙。导航固定在左侧；聊天与工作台可互换位置。</p>
+              <p class="type-source-note">导航展开尺寸取 <code>--layout-app-sidebar-*</code>，收起后保留图标与账户入口；内容区收起后保留 <code>--layout-app-content-rail-width</code> 的展开入口。折叠保留列表、输入与工作台状态。</p>
+              <p class="type-source-note">边界拖动热区取 <code>--layout-app-resize-handle-width</code>，绝对定位覆盖分隔线，不占列宽；悬停或拖动时突出细线。支持方向键调整与双击恢复默认尺寸。</p>
+              <p class="type-source-note">拖动边界连续收窄；低于导航 200px、对话 400px、工作台 560px 后，内部内容保持该宽度，由外层逐渐裁切；到导航 56px、内容栏 40px 才显示图标栏。松手保留当前宽度，反向拖动连续展开。收起一栏时，另一栏保留内容；不提供全屏按钮。空间不足以并排时显示当前内容；低于 <code>--breakpoint-sm</code> 时导航改为抽屉，内容通过工具栏切换。</p>
             </div>
 
             <div class="scale-group">

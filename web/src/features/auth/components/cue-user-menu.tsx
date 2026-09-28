@@ -9,6 +9,7 @@ type CueUserMenuAlign = 'bottom-end' | 'bottom-start' | 'top-end' | 'top-start'
 type CueUserMenuProps = {
   align?: CueUserMenuAlign
   className?: string
+  compact?: boolean
 }
 
 const ALIGN_PLACEMENT: Record<
@@ -29,7 +30,11 @@ const USER_AVATAR_CLASS =
   'grid size-7 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
 
 /** 侧栏底部的账户入口：点整行打开账户菜单，菜单里是个人信息、设置（未上线）与退出登录。 */
-export function CueUserMenu({ align = 'bottom-end', className = '' }: CueUserMenuProps) {
+export function CueUserMenu({
+  align = 'bottom-end',
+  className = '',
+  compact = false,
+}: CueUserMenuProps) {
   const { data: user } = useUser()
   const logoutMutation = useLogout()
   const isLoggingOut = logoutMutation.isPending
@@ -57,7 +62,7 @@ export function CueUserMenu({ align = 'bottom-end', className = '' }: CueUserMen
           type="button"
           aria-label="用户菜单"
           title={userLabel}
-          className={cn(USER_ROW_BUTTON_CLASS, className)}
+          className={cn(USER_ROW_BUTTON_CLASS, compact && 'justify-center px-0', className)}
         >
           <span
             aria-hidden="true"
@@ -75,10 +80,19 @@ export function CueUserMenu({ align = 'bottom-end', className = '' }: CueUserMen
               <CueUserAvatarIcon />
             )}
           </span>
-          <span aria-hidden="true" className="min-w-0 flex-1 truncate text-left font-medium">
-            {userLabel}
-          </span>
-          <Icon className="shrink-0 text-on-surface-faint" decorative name="dropdown" size="md" />
+          {!compact && (
+            <>
+              <span aria-hidden="true" className="min-w-0 flex-1 truncate text-left font-medium">
+                {userLabel}
+              </span>
+              <Icon
+                className="shrink-0 text-on-surface-faint"
+                decorative
+                name="dropdown"
+                size="md"
+              />
+            </>
+          )}
         </button>
       </MenuTrigger>
 

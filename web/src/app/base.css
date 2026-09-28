@@ -578,6 +578,9 @@
   --layout-app-sidebar-width: 264px;
   --layout-app-sidebar-min-width: 200px;
   --layout-app-sidebar-max-width: 400px;
+  --layout-app-sidebar-collapsed-width: 56px;
+  --layout-app-content-rail-width: 40px;
+  --layout-app-resize-handle-width: 8px;
   --layout-app-right-panel-width: 460px;
   --layout-app-workbench-width: 820px;
   --layout-app-workbench-min-width: 560px;

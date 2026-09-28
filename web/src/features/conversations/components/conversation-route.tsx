@@ -10,7 +10,7 @@ import type { PromptContentPart, ToolCallFrame, TranscriptTurn } from '@/shared/
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
-import { Button } from '@/shared/ui/button'
+import { Button, IconButton } from '@/shared/ui/button'
 import { type ComposerPart, composerParts } from '@/shared/ui/composer'
 import { Tag } from '@/shared/ui/tag'
 import { toast } from '@/shared/ui/toast'
@@ -226,25 +226,45 @@ export function ConversationRoute({
   return (
     // 固定视口高度，使滚动限制在消息区，保持输入框和自动跟随定位稳定。
     <main className="flex h-dvh min-h-0 flex-1 flex-col overflow-hidden">
-      {/* 两侧收起时各留一个图标钮的位，钮由侧栏与面板画在角上。 */}
       <header
         className={cn(
-          'flex h-12 shrink-0 items-center border-b-[0.5px] border-chat-hairline px-4',
-          chrome.sidebarCollapsed && 'pl-14',
-          !chrome.panelVisible && 'pr-14',
+          'group/pane-header flex h-13 shrink-0 items-center gap-3 border-b-[0.5px] border-chat-hairline pr-2 pl-4',
+          chrome.sidebarOverlay && 'pr-14 pl-14',
         )}
+        data-pane-drag-handle
       >
-        <h1 className="truncate text-body font-medium text-on-surface">{title}</h1>
+        <h1 className="min-w-0 truncate text-body font-medium text-on-surface">{title}</h1>
         {readOnly ? (
-          <Tag className="ml-3 shrink-0" variant="soft">
+          <Tag className="shrink-0" variant="soft">
             <Icon decorative name="preview" size="xs" />
             {ownerPhrase === undefined ? readOnlyLabel : `${readOnlyLabel} · ${ownerPhrase}`}
           </Tag>
         ) : null}
+        {chrome.chat === undefined ? null : (
+          <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 group-focus-within/pane-header:opacity-100 group-hover/pane-header:opacity-100">
+            {chrome.onSwapPanes === undefined ? null : (
+              <IconButton
+                label="交换对话与工作台"
+                title="交换对话与工作台的位置"
+                name="swap-panes"
+                onClick={chrome.onSwapPanes}
+                size="sm"
+              />
+            )}
+            <IconButton
+              label="折叠对话"
+              title="收起对话，展开工作台"
+              name="panel-left"
+              onClick={chrome.chat.onCollapse}
+              size="sm"
+            />
+          </div>
+        )}
       </header>
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           className="chat-scroller min-h-0 flex-1 overflow-y-auto"
+          data-testid="chat-scroller"
           onScroll={(event) => {
             const scroller = event.currentTarget
             const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
