@@ -22,6 +22,7 @@
 `make up` 调用本机维护、不入库的 `scripts/dev-up.sh`；新检出的仓库使用 README 的启动步骤。
 
 - 后端变更提交前通过 `make check`；前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
+- CI 在 PR 上按变更范围检查，合入分支后不重复执行。实际检出的完整 Git tree 与本仓成功 PR CI 一致时复用其门禁结果；记录过期、查询失败或内容不同时正常检查。分支保护仍要求 `server`、`server-tests`、`web`、`web-e2e` 四项通过。
 - 纯文档变更运行 `make docs-check`，修改 `web/` 下的 Markdown 另查格式；不为措辞新增业务测试。
 - 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
 - 数据库测试只用一次性测试库或临时 schema；`TEST_DATABASE_URL` 不得指向业务库。迁移检查范围见 [测试规范](docs/test-design.md)。

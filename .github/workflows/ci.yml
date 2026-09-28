@@ -8,9 +8,9 @@ name: ci
 permissions:
   contents: read
 
+# 合入前按 PR 变更范围检查；合入后的 push 不重复跑。
+# 发版 PR 等若实际 merge tree 与成功 CI 完全一致，复用该次门禁结果。
 on:
-  push:
-    branches: [main, develop]
   pull_request:
 
 concurrency:
@@ -21,26 +21,56 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       server: ${{ steps.scope.outputs.server }}
       web: ${{ steps.scope.outputs.web }}
+      tree: ${{ steps.tree.outputs.sha }}
+      reused: ${{ steps.reuse.outputs.url }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Docs check
         run: python3 scripts/check-docs.py
+      - name: Test CI result reuse
+        run: node --test .github/scripts/ci-reuse.test.cjs
+      - name: Checked tree
+        id: tree
+        run: echo "sha=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - name: Reuse successful CI for identical content
+        id: reuse
+        uses: actions/github-script@v8
+        env:
+          CHECKED_TREE: ${{ steps.tree.outputs.sha }}
+        with:
+          script: |
+            const { findSuccessfulRun } = require('./.github/scripts/ci-reuse.cjs');
+            try {
+              const url = await findSuccessfulRun(github, context, process.env.CHECKED_TREE);
+              core.setOutput('url', url);
+              core.info(url ? `复用相同文件树的成功 CI：${url}` : '没有相同文件树的成功记录，按变更范围检查');
+            } catch (error) {
+              core.warning(`无法查询 CI 记录，按变更范围检查：${error.message}`);
+            }
       - name: Select application checks
         id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REUSED_URL: ${{ steps.reuse.outputs.url }}
         run: |
           server=true
           web=true
-          # 只缩小 PR 的范围；合入后全跑。纯文档不跑任何一端；公共文件和未知路径两端全跑。
+          # 纯文档不跑任何一端；公共文件和未知路径两端全跑。
           # server/ 下的 Markdown（SKILL.md 等）是运行时读取的，所以先按目录归类再看后缀。
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+          if [ -n "$REUSED_URL" ]; then
+            server=false
+            web=false
+            echo "复用成功 CI：$REUSED_URL"
+          else
             if git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/ci-changed-files"; then
               server=false
               web=false
@@ -241,3 +271,17 @@ jobs:
             test "$REQUIRED" = false
             test "$RESULT" = skipped
           fi
+      # artifact 只记录 tree；后续还会核对整个来源 run 成功，因此其他矩阵失败不能形成有效证明。
+      - name: Record checked tree
+        if: matrix.name == 'server' && needs.changes.outputs.reused == ''
+        env:
+          CHECKED_TREE: ${{ needs.changes.outputs.tree }}
+        run: printf '%s\n' "$CHECKED_TREE" > "$RUNNER_TEMP/ci-checked-tree"
+      - name: Save CI result reference
+        if: matrix.name == 'server' && needs.changes.outputs.reused == ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-pass-v1-${{ needs.changes.outputs.tree }}
+          path: ${{ runner.temp }}/ci-checked-tree
+          retention-days: 90
+          overwrite: true

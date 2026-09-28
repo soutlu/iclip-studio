@@ -10,6 +10,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# 同一版本不并行发布，保留正在执行的任务。
+concurrency:
+  group: release-images-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ${{ vars.ACR_REGISTRY }}
   NAMESPACE: ${{ vars.ACR_NAMESPACE }}
@@ -18,6 +23,9 @@ jobs:
   images:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +39,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3.12.0
+      # registry cache 跨 tag 共享；GHA cache 无法读其他版本 tag 写入的缓存。
+      # 缓存放 GHCR，避免 ACR 对 BuildKit cache manifest 的兼容限制，不需要额外凭证。
+      - name: Log in to build cache registry
+        uses: docker/login-action@v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/login-action@v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -40,10 +56,13 @@ jobs:
         id: tags
         run: |
           image="${REGISTRY}/${NAMESPACE}/${{ matrix.name }}"
+          cache_repo=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          echo "cache=ghcr.io/${cache_repo}/${{ matrix.name }}-buildcache:latest" >> "$GITHUB_OUTPUT"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             echo "tags=${image}:${GITHUB_REF_NAME},${image}:latest" >> "$GITHUB_OUTPUT"
           else
-            echo "tags=${image}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            branch_tag=$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9_.-]/-/g')
+            echo "tags=${image}:${branch_tag}" >> "$GITHUB_OUTPUT"
           fi
       - uses: docker/build-push-action@v6.18.0
         with:
@@ -55,5 +74,5 @@ jobs:
           provenance: false
           sbom: false
           tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          cache-from: type=registry,ref=${{ steps.tags.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.tags.outputs.cache }},mode=max

@@ -61,6 +61,8 @@ pnpm dev
 
 两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。推 `v*` 标签时 [release-images](.github/workflows/release-images.yml) 自动构建并推到 ACR，标签为版本号与 `latest`；手动触发只打分支名标签，用于发版前验证推送。
 
+构建缓存存放在 GHCR 的 `ghcr.io/<owner>/<repo>/iclip-server-buildcache:latest` 与 `iclip-web-buildcache:latest`，用工作流的 `GITHUB_TOKEN` 读写，无需另设凭证。缓存跨版本标签共享，并保留前端中间构建阶段；首次构建或缓存被删除后重新生成。部署仍从 ACR 拉取镜像。
+
 在仓库根目录构建本地镜像。前端构建需包含 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](web/Dockerfile.dockerignore) 限定为前端和合同文件。
 
 ```bash
