@@ -59,9 +59,13 @@ pnpm dev
 
 ## 部署
 
-两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。推 `v*` 标签时 [release-images](.github/workflows/release-images.yml) 自动构建并推到 ACR，标签为版本号与 `latest`；手动触发只打分支名标签，用于发版前验证推送。
+两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。[release-images](.github/workflows/release-images.yml) 在 GitHub Actions 构建完整镜像到 GHCR，再由独立任务按摘要同步到 ACR，部署仍从 ACR 拉取。
 
-构建缓存存放在 GHCR 的 `ghcr.io/<owner>/<repo>/iclip-server-buildcache:latest` 与 `iclip-web-buildcache:latest`，用工作流的 `GITHUB_TOKEN` 读写，无需另设凭证。缓存跨版本标签共享，并保留前端中间构建阶段；首次构建或缓存被删除后重新生成。部署仍从 ACR 拉取镜像。
+推 `v*` 标签时同步 ACR 版本标签；两个镜像都同步成功、且发布提交仍是当前 `main` 时，再更新 ACR 的 `latest`。手动选择分支运行只同步 `branch-<分支名>` 标签（非法字符替换为 `-`），用于发版前验证，不更新 `latest`。
+
+完整产物保存在 `ghcr.io/<owner>/<repo>/iclip-server:run-<run_id>` 与 `iclip-web:run-<run_id>`。ACR 同步失败时，在同一次 Actions 运行中选择 **Re-run failed jobs**，复用这次构建的产物；选择 **Re-run all jobs** 会重新构建。同步仍经过 GitHub runner 到 ACR 的网络，GHCR 用来保留产物、隔离上传故障，不保证跨境上传提速。
+
+构建缓存存放在 GHCR 的 `ghcr.io/<owner>/<repo>/iclip-server-buildcache:latest` 与 `iclip-web-buildcache:latest`。完整产物和缓存均用工作流的 `GITHUB_TOKEN` 读写，无需另设 GHCR 凭证。缓存跨版本标签共享，并保留前端中间构建阶段；首次构建或缓存被删除后重新生成。
 
 在仓库根目录构建本地镜像。前端构建需包含 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](web/Dockerfile.dockerignore) 限定为前端和合同文件。
 

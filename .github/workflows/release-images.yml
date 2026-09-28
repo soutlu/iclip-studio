@@ -1,7 +1,7 @@
 name: release-images
 
-# 推 v* 标签时构建两个镜像并推到阿里云 ACR；手动触发用于在发版前验证登录与推送。
-# 公开仓：绝不在 pull_request 触发，fork 的 PR 不能碰到 ACR 凭证。
+# GitHub 构建并保存到 GHCR，再独立同步到 ACR；同步失败可只重跑失败的 job。
+# 公开仓：绝不在 pull_request 触发，fork 的 PR 不能碰到发布凭证。
 permissions:
   contents: read
 
@@ -10,19 +10,50 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# 同一版本不并行发布，保留正在执行的任务。
 concurrency:
   group: release-images-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 env:
   REGISTRY: ${{ vars.ACR_REGISTRY }}
   NAMESPACE: ${{ vars.ACR_NAMESPACE }}
 
 jobs:
-  images:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 5
+    outputs:
+      repository: ${{ steps.refs.outputs.repository }}
+      tag: ${{ steps.refs.outputs.tag }}
+      release: ${{ steps.refs.outputs.release }}
+      commit: ${{ steps.refs.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Image references
+        id: refs
+        run: |
+          echo "repository=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Release tags must use vX.Y.Z"
+              exit 1
+            fi
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            tag=$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9_.-]/-/g')
+            # 分支标签不能覆盖 latest、版本标签或内部 run-* 标签。
+            echo "tag=branch-$tag" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: build (${{ matrix.service }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -30,49 +61,143 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: iclip-server
+          - service: server
             context: server
             dockerfile: server/Dockerfile
-          - name: iclip-web
+          - service: web
             context: .
             dockerfile: web/Dockerfile
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3.12.0
-      # registry cache 跨 tag 共享；GHA cache 无法读其他版本 tag 写入的缓存。
-      # 缓存放 GHCR，避免 ACR 对 BuildKit cache manifest 的兼容限制，不需要额外凭证。
-      - name: Log in to build cache registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@v3.7.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      - name: Image tags (标签构建打版本号 + latest；手动触发只打分支名)
-        id: tags
-        run: |
-          image="${REGISTRY}/${NAMESPACE}/${{ matrix.name }}"
-          cache_repo=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          echo "cache=ghcr.io/${cache_repo}/${{ matrix.name }}-buildcache:latest" >> "$GITHUB_OUTPUT"
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "tags=${image}:${GITHUB_REF_NAME},${image}:latest" >> "$GITHUB_OUTPUT"
-          else
-            branch_tag=$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9_.-]/-/g')
-            echo "tags=${image}:${branch_tag}" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: docker/build-push-action@v6.18.0
+      - name: Build and save image
+        id: image
+        uses: docker/build-push-action@v6.18.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
-          push: true
-          # 阿里云 ACR 不接受 buildx 默认附带的 OCI 溯源与 SBOM 清单（unknown manifest class）。
+          # 构建时就使用 ACR 支持的 Docker manifest，后续同步保持摘要不变。
+          outputs: type=registry,oci-mediatypes=false
           provenance: false
           sbom: false
-          tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=registry,ref=${{ steps.tags.outputs.cache }}
-          cache-to: type=registry,ref=${{ steps.tags.outputs.cache }},mode=max
+          tags: |
+            ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}:run-${{ github.run_id }}
+            ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+          cache-from: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest
+          cache-to: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest,mode=max
+      - name: Record saved image
+        env:
+          IMAGE: ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: printf 'Saved `%s@%s`\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  sync:
+    name: sync to ACR (${{ matrix.service }})
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [server, web]
+    steps:
+      - name: Install Skopeo
+        run: |
+          echo "REGISTRY_AUTH_FILE=$RUNNER_TEMP/registry-auth.json" >> "$GITHUB_ENV"
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends skopeo
+      - name: Log in to registries
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | skopeo login --username "$GHCR_USER" --password-stdin ghcr.io
+          printf '%s' "$ACR_PASSWORD" | skopeo login --username "$ACR_USERNAME" --password-stdin "$REGISTRY"
+      - name: Copy saved image to ACR
+        # 已完成的层可复用，未完成的大层重跑时要重新上传，预留跨境传输时间。
+        timeout-minutes: 30
+        env:
+          SOURCE_IMAGE: ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}
+          DESTINATION_IMAGE: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          # run_id 在重跑时不变；只重跑同步会读取原构建，全量重跑才重新构建。
+          digest=$(skopeo inspect --format '{{.Digest}}' "docker://${SOURCE_IMAGE}:run-${GITHUB_RUN_ID}")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "Syncing ${SOURCE_IMAGE}@${digest} to ${DESTINATION_IMAGE}:${IMAGE_TAG}"
+          skopeo copy --preserve-digests --retry-times 2 \
+            "docker://${SOURCE_IMAGE}@${digest}" "docker://${DESTINATION_IMAGE}:${IMAGE_TAG}"
+          actual=$(skopeo inspect --format '{{.Digest}}' "docker://${DESTINATION_IMAGE}:${IMAGE_TAG}")
+          test "$actual" = "$digest"
+          printf 'Synced `%s:%s` → `%s`\n' "$DESTINATION_IMAGE" "$IMAGE_TAG" "$digest" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove registry credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/registry-auth.json"
+
+  promote_latest:
+    name: promote latest
+    needs: [prepare, sync]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 不同版本共用这把锁；旧版本重跑仍须通过下面的 main 提交检查。
+    concurrency:
+      group: release-images-latest
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Check current release commit
+        id: current
+        env:
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$RELEASE_COMMIT" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "main 已前进，仅保留已同步的版本标签，不回退 latest。" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Install Skopeo
+        if: steps.current.outputs.publish == 'true'
+        run: |
+          echo "REGISTRY_AUTH_FILE=$RUNNER_TEMP/registry-auth.json" >> "$GITHUB_ENV"
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends skopeo
+      - name: Log in to ACR
+        if: steps.current.outputs.publish == 'true'
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: printf '%s' "$ACR_PASSWORD" | skopeo login --username "$ACR_USERNAME" --password-stdin "$REGISTRY"
+      - name: Promote synced version
+        if: steps.current.outputs.publish == 'true'
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          for service in server web; do
+            image="${REGISTRY}/${NAMESPACE}/iclip-${service}"
+            digest=$(skopeo inspect --format '{{.Digest}}' "docker://${image}:${IMAGE_TAG}")
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            skopeo copy --preserve-digests --retry-times 2 "docker://${image}@${digest}" "docker://${image}:latest"
+            actual=$(skopeo inspect --format '{{.Digest}}' "docker://${image}:latest")
+            test "$actual" = "$digest"
+            printf 'Promoted `%s:latest` → `%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Remove registry credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/registry-auth.json"
