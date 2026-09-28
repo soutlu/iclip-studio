@@ -65,14 +65,59 @@ jobs:
           echo "server=$server" >> "$GITHUB_OUTPUT"
           echo "web=$web" >> "$GITHUB_OUTPUT"
 
-  server:
+  server_checks:
+    name: server-check
     needs: scope
     if: needs.scope.outputs.server == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+      - name: Lint Python
+        run: uv run ruff check .
+      - name: Check Python formatting
+        run: uv run ruff format --check .
+      - name: Check Python types
+        run: uv run pyright
+      - name: Check dependency boundaries
+        run: uv run tach check
+      - name: Run unit tests
+        run: uv run pytest tests/unit -m unit
+
+  server_tests:
+    name: server-tests (${{ matrix.suite }})
+    needs: scope
+    if: needs.scope.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: runtime
+            command: >-
+              uv run pytest tests/integration_no_llm/agents tests/integration_no_llm/generation
+              -m integration_no_llm --durations=10
+          - suite: domains-1
+            command: >-
+              uv run pytest tests/integration_no_llm/identity tests/integration_no_llm/conversations
+              tests/integration_no_llm/collections
+              -m integration_no_llm --durations=10
+          # 其余目录全部进入这一组，新测试不会因分组遗漏。
+          - suite: domains-2
+            command: >-
+              uv run pytest tests/integration_no_llm
+              --ignore=tests/integration_no_llm/agents --ignore=tests/integration_no_llm/generation
+              --ignore=tests/integration_no_llm/identity --ignore=tests/integration_no_llm/conversations
+              --ignore=tests/integration_no_llm/collections
+              -m integration_no_llm --durations=10
     services:
       postgres:
         image: postgres:16
@@ -92,53 +137,79 @@ jobs:
       - uses: ./.github/actions/setup-server
       - name: Install ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
-      - name: Lint Python
-        run: uv run ruff check .
-      - name: Check Python formatting
-        run: uv run ruff format --check .
-      - name: Check Python types
-        run: uv run pyright
-      - name: Check dependency boundaries
-        run: uv run tach check
-      - name: Run unit tests
-        run: uv run pytest tests/unit -m unit
       - name: Run integration tests
-        run: uv run pytest tests/integration_no_llm -m integration_no_llm --durations=10
+        run: ${{ matrix.command }}
       - name: Check OpenAPI contract
+        if: matrix.suite == 'domains-2'
         run: uv run python scripts/dump_openapi.py --check
       - name: Check migrations
+        if: matrix.suite == 'domains-2'
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/iclip_test
         run: uv run alembic upgrade head
 
-  web:
+  web_checks:
+    name: web-check
     needs: scope
     if: needs.scope.outputs.web == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-web
-        with:
-          playwright: 'true'
       - name: Check frontend static rules
         run: pnpm ci:static
-      # build 包含 tsc -b；不再单独执行 typecheck。
       - name: Check types and build production frontend
         run: pnpm build
+
+  web_unit:
+    name: web-unit (${{ matrix.shard }}/4)
+    needs: scope
+    if: needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-web
       - name: Run frontend unit tests
-        run: pnpm test
-      # Playwright 自行构建 mock 版本并启动 preview，生产构建仍在上一步独立验证。
+        run: pnpm test --shard=${{ matrix.shard }}/4
+
+  web_e2e:
+    name: web-e2e (${{ matrix.shard }}/4)
+    needs: scope
+    if: needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-web
+        with:
+          playwright: 'true'
+      # 每片使用独立 mock 服务；只有 E2E 安装浏览器。
       - name: Run end-to-end tests
-        run: pnpm test:e2e --workers=2
+        run: pnpm test:e2e --workers=2 --shard=${{ matrix.shard }}/4
       - name: Upload Playwright traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-e2e
+          name: playwright-e2e-${{ matrix.shard }}
           path: |
             web/test-results
             !web/test-results/.last-run.json
@@ -149,7 +220,7 @@ jobs:
     # GitHub 将 skipped check 视为通过；元信息编辑使用不同名称，不能替代真正的 ci。
     name: ${{ github.event.action == 'edited' && github.event.changes.base == null && 'ci not run (metadata only)' || 'ci' }}
     if: always() && (github.event.action != 'edited' || github.event.changes.base != null)
-    needs: [scope, server, web]
+    needs: [scope, server_checks, server_tests, web_checks, web_unit, web_e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -166,9 +237,12 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           SCOPE_RESULT: ${{ needs.scope.result }}
           SERVER_REQUIRED: ${{ needs.scope.outputs.server }}
-          SERVER_RESULT: ${{ needs.server.result }}
+          SERVER_CHECK_RESULT: ${{ needs.server_checks.result }}
+          SERVER_TEST_RESULT: ${{ needs.server_tests.result }}
           WEB_REQUIRED: ${{ needs.scope.outputs.web }}
-          WEB_RESULT: ${{ needs.web.result }}
+          WEB_CHECK_RESULT: ${{ needs.web_checks.result }}
+          WEB_UNIT_RESULT: ${{ needs.web_unit.result }}
+          WEB_E2E_RESULT: ${{ needs.web_e2e.result }}
         run: |
           {
             printf 'PR head: `%s`\n\n' "$HEAD_SHA"
@@ -181,8 +255,11 @@ jobs:
             fi
             printf '| Job | Required | Result |\n| --- | --- | --- |\n'
             printf '| scope | true | %s |\n' "$SCOPE_RESULT"
-            printf '| server | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_RESULT"
-            printf '| web | %s | %s |\n' "$WEB_REQUIRED" "$WEB_RESULT"
+            printf '| server-check | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_CHECK_RESULT"
+            printf '| server-tests (3 groups) | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_TEST_RESULT"
+            printf '| web-check | %s | %s |\n' "$WEB_REQUIRED" "$WEB_CHECK_RESULT"
+            printf '| web-unit (4 shards) | %s | %s |\n' "$WEB_REQUIRED" "$WEB_UNIT_RESULT"
+            printf '| web-e2e (4 shards) | %s | %s |\n' "$WEB_REQUIRED" "$WEB_E2E_RESULT"
           } >> "$GITHUB_STEP_SUMMARY"
 
           require_result() {
@@ -198,8 +275,11 @@ jobs:
             echo "::error::scope result=$SCOPE_RESULT"
             failed=1
           fi
-          require_result server "$SERVER_REQUIRED" "$SERVER_RESULT" || failed=1
-          require_result web "$WEB_REQUIRED" "$WEB_RESULT" || failed=1
+          require_result server-check "$SERVER_REQUIRED" "$SERVER_CHECK_RESULT" || failed=1
+          require_result server-tests "$SERVER_REQUIRED" "$SERVER_TEST_RESULT" || failed=1
+          require_result web-check "$WEB_REQUIRED" "$WEB_CHECK_RESULT" || failed=1
+          require_result web-unit "$WEB_REQUIRED" "$WEB_UNIT_RESULT" || failed=1
+          require_result web-e2e "$WEB_REQUIRED" "$WEB_E2E_RESULT" || failed=1
           if [ "$failed" -ne 0 ]; then
             echo 'CI result: **failed**' >> "$GITHUB_STEP_SUMMARY"
             exit 1
