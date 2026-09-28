@@ -30,6 +30,8 @@ jobs:
       commit: ${{ steps.refs.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check upload progress logging
+        run: python3 -m unittest discover -s .github/scripts -p 'test_stream_progress.py'
       - name: Validate image references
         id: refs
         run: |
@@ -110,17 +112,19 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
-      - name: Build and push image to ACR
+      - name: Install Skopeo
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends skopeo
+      - name: Build image with cached layers
         id: image
-        # 未完成的大层重跑时要重新上传，给首次推送预留时间。
-        timeout-minutes: 30
+        timeout-minutes: 10
         uses: docker/build-push-action@v6.18.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           # ACR 不接受默认 OCI 溯源与 SBOM 清单，使用 Docker manifest。
-          outputs: type=registry,oci-mediatypes=false
+          # 保留压缩层摘要，上传时只传 ACR 缺少的层。
+          outputs: type=oci,dest=${{ runner.temp }}/image.tar,compression=gzip,oci-mediatypes=false
           provenance: false
           sbom: false
           tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
@@ -129,17 +133,37 @@ jobs:
             org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
           cache-from: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest
           cache-to: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest,mode=max
+      - name: Push missing image layers to ACR
+        id: push
+        timeout-minutes: 25
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
+        run: |
+          export REGISTRY_AUTH_FILE="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+          python3 .github/scripts/stream-progress.py \
+            skopeo copy --preserve-digests --retry-times 2 \
+            --digestfile "$RUNNER_TEMP/pushed-digest" \
+            "oci-archive:$RUNNER_TEMP/image.tar" "docker://$IMAGE_REF"
+          digest=$(cat "$RUNNER_TEMP/pushed-digest")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Verify ACR image digest
         id: verify
-        timeout-minutes: 5
+        timeout-minutes: 3
         shell: bash
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
           EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
+          PUSHED_DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::Build did not return a valid image digest"
             echo "核验失败：构建未返回有效镜像摘要。" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$PUSHED_DIGEST" != "$EXPECTED_DIGEST" ]; then
+            echo "::error::Pushed digest does not match the build result"
+            printf '上传摘要不一致：构建 `%s`，上传 `%s`。\n' "$EXPECTED_DIGEST" "$PUSHED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           if ! actual=$(docker buildx imagetools inspect --format '{{json .Manifest}}' "$IMAGE_REF" \
@@ -160,13 +184,14 @@ jobs:
           RESULT: ${{ job.status }}
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
           BUILD_RESULT: ${{ steps.image.outcome }}
+          PUSH_RESULT: ${{ steps.push.outcome }}
           VERIFY_RESULT: ${{ steps.verify.outcome }}
           EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
           ACTUAL_DIGEST: ${{ steps.verify.outputs.digest }}
         run: |
           {
             printf '镜像：`%s`；结果：**%s**\n\n' "$IMAGE_REF" "$RESULT"
-            printf '构建与推送：%s；远端核验：%s\n\n' "$BUILD_RESULT" "$VERIFY_RESULT"
+            printf '构建：%s；上传：%s；远端核验：%s\n\n' "$BUILD_RESULT" "$PUSH_RESULT" "$VERIFY_RESULT"
             printf '构建摘要：`%s`；ACR 摘要：`%s`\n' "${EXPECTED_DIGEST:-未返回}" "${ACTUAL_DIGEST:-未取得}"
           } >> "$GITHUB_STEP_SUMMARY"
 
