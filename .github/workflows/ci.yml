@@ -1,80 +1,49 @@
 name: ci
-
-# 结构：changes 判定 PR 触及哪一端；每端拆成「静态检查」与「测试」两个 job；checks 把结果映射到
-# 分支保护要求的四个名称（server、server-tests、web、web-e2e），一个名称只对应一个 job，失败能直接定位。
-# 新增一端时：changes 加路径分类与输出、加对应 job、checks 矩阵加一行，再到仓库设置登记保护名称。
-# 已知限制：被跳过的矩阵 job 在界面上显示为字面量名称（如 `server tests (${{ matrix.suite }})`），GitHub 不展开。
+run-name: >-
+  ${{ github.event.action == 'edited' && github.event.changes.base == null && format('PR #{0} metadata only - checks not run', github.event.pull_request.number) || format('PR #{0} checks for {1}', github.event.pull_request.number, github.base_ref) }}
 
 permissions:
   contents: read
 
-# 合入前按 PR 变更范围检查；合入后的 push 不重复跑。
-# 发版 PR 等若实际 merge tree 与成功 CI 完全一致，复用该次门禁结果。
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
+# 修改目标分支会重新检查；标题、正文编辑使用独立组，避免取消正在执行的检查。
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event.action == 'edited' && github.event.changes.base == null && 'metadata' || 'checks' }}
   cancel-in-progress: true
 
 jobs:
-  changes:
+  scope:
+    if: github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
     outputs:
       server: ${{ steps.scope.outputs.server }}
       web: ${{ steps.scope.outputs.web }}
-      tree: ${{ steps.tree.outputs.sha }}
-      reused: ${{ steps.reuse.outputs.url }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Docs check
+      - name: Check documentation
         run: python3 scripts/check-docs.py
-      - name: Test CI result reuse
-        run: node --test .github/scripts/ci-reuse.test.cjs
-      - name: Checked tree
-        id: tree
-        run: echo "sha=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
-      - name: Reuse successful CI for identical content
-        id: reuse
-        uses: actions/github-script@v8
-        env:
-          CHECKED_TREE: ${{ steps.tree.outputs.sha }}
-        with:
-          script: |
-            const { findSuccessfulRun } = require('./.github/scripts/ci-reuse.cjs');
-            try {
-              const url = await findSuccessfulRun(github, context, process.env.CHECKED_TREE);
-              core.setOutput('url', url);
-              core.info(url ? `复用相同文件树的成功 CI：${url}` : '没有相同文件树的成功记录，按变更范围检查');
-            } catch (error) {
-              core.warning(`无法查询 CI 记录，按变更范围检查：${error.message}`);
-            }
       - name: Select application checks
         id: scope
         env:
+          BASE_REF: ${{ github.base_ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          REUSED_URL: ${{ steps.reuse.outputs.url }}
         run: |
           server=true
           web=true
-          # 纯文档不跑任何一端；公共文件和未知路径两端全跑。
-          # server/ 下的 Markdown（SKILL.md 等）是运行时读取的，所以先按目录归类再看后缀。
-          if [ -n "$REUSED_URL" ]; then
-            server=false
-            web=false
-            echo "复用成功 CI：$REUSED_URL"
-          else
+          # 只有 develop PR 按路径缩小范围；main 和其他目标分支都完整检查。
+          if [ "$BASE_REF" = develop ]; then
             if git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/ci-changed-files"; then
               server=false
               web=false
               while IFS= read -r -d '' path; do
+                # server/ 下的 Markdown 是运行时输入，目录规则优先于文档后缀。
                 case "$path" in
                   server/*) scope=server ;;
                   web/*|design-system.html) scope=web ;;
@@ -92,55 +61,19 @@ jobs:
               echo "::warning::无法确定 PR 变更范围，执行两端完整检查"
             fi
           fi
-          echo "server=$server web=$web"
+          echo "base=$BASE_REF server=$server web=$web"
           echo "server=$server" >> "$GITHUB_OUTPUT"
           echo "web=$web" >> "$GITHUB_OUTPUT"
 
-  server_checks:
-    name: server checks
-    needs: changes
-    if: needs.changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: server
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-server
-      - name: Run checks
-        run: |
-          uv run ruff check .
-          uv run ruff format --check .
-          uv run pyright
-          uv run tach check
-          uv run pytest tests/unit -m unit
-
-  server_tests:
-    name: server tests (${{ matrix.suite }})
-    needs: changes
-    if: needs.changes.outputs.server == 'true'
+  server:
+    needs: scope
+    if: needs.scope.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
         working-directory: server
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - suite: runtime
-            command: >-
-              uv run pytest tests/integration_no_llm/agents tests/integration_no_llm/generation
-              -m integration_no_llm --durations=10
-          # 根目录减去 runtime，新增测试自动纳入。
-          - suite: domains
-            command: >-
-              uv run pytest tests/integration_no_llm
-              --ignore=tests/integration_no_llm/agents --ignore=tests/integration_no_llm/generation
-              -m integration_no_llm --durations=10
     services:
-      # 每个分片独占一个实例。数据目录（镜像的 PGDATA）挂内存盘：用例前的 TRUNCATE 不用等落盘。
       postgres:
         image: postgres:16
         env:
@@ -157,131 +90,118 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-server
-      # 两个分片都要：domains 有镜头素材用例，runtime 有视频裁剪拼接用例。
-      # 与生产镜像一样不装 Recommends：显卡驱动、语音模型这些用例用不到，下载占了这一步的大头。
       - name: Install ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
-      - name: Run tests
-        run: ${{ matrix.command }}
-      - name: Contract check
-        if: matrix.suite == 'domains'
+      - name: Lint Python
+        run: uv run ruff check .
+      - name: Check Python formatting
+        run: uv run ruff format --check .
+      - name: Check Python types
+        run: uv run pyright
+      - name: Check dependency boundaries
+        run: uv run tach check
+      - name: Run unit tests
+        run: uv run pytest tests/unit -m unit
+      - name: Run integration tests
+        run: uv run pytest tests/integration_no_llm -m integration_no_llm --durations=10
+      - name: Check OpenAPI contract
         run: uv run python scripts/dump_openapi.py --check
-      - name: Migration check
-        if: matrix.suite == 'domains'
+      - name: Check migrations
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/iclip_test
         run: uv run alembic upgrade head
 
-  web_checks:
-    name: web checks (${{ matrix.task }})
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
+  web:
+    needs: scope
+    if: needs.scope.outputs.web == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: web
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - task: static
-            command: pnpm ci:static && pnpm build
-          # 单测按文件数分片、不看耗时，重文件扎堆时各片不均；分三片让最慢的一片不超过 server tests。
-          - task: tests 1/3
-            command: pnpm test --shard=1/3
-          - task: tests 2/3
-            command: pnpm test --shard=2/3
-          - task: tests 3/3
-            command: pnpm test --shard=3/3
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-web
-      - name: Run checks
-        run: ${{ matrix.command }}
-
-  web_e2e:
-    name: web e2e (${{ matrix.shard }}/3)
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: web
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-web
         with:
           playwright: 'true'
-      # playwright.config.ts 在 CI 下先做 mock 构建再起 preview，见该文件说明。
-      - name: Run e2e
-        run: pnpm test:e2e --shard=${{ matrix.shard }}/3
-      # 失败或重试过的用例留有 trace（retain-on-failure），全绿时目录里只有 .last-run.json，不上传。
+      - name: Check frontend static rules
+        run: pnpm ci:static
+      # build 包含 tsc -b；不再单独执行 typecheck。
+      - name: Check types and build production frontend
+        run: pnpm build
+      - name: Run frontend unit tests
+        run: pnpm test
+      # Playwright 自行构建 mock 版本并启动 preview，生产构建仍在上一步独立验证。
+      - name: Run end-to-end tests
+        run: pnpm test:e2e --workers=2
       - name: Upload Playwright traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-e2e-${{ matrix.shard }}
+          name: playwright-e2e
           path: |
             web/test-results
             !web/test-results/.last-run.json
           if-no-files-found: ignore
           retention-days: 7
 
-  # 分支保护只认这四个名称；被 changes 跳过的一端在这里按「应跳过且已跳过」放行。
-  checks:
-    name: ${{ matrix.name }}
-    if: always()
-    needs: [changes, server_checks, server_tests, web_checks, web_e2e]
+  ci:
+    # GitHub 将 skipped check 视为通过；元信息编辑使用不同名称，不能替代真正的 ci。
+    name: ${{ github.event.action == 'edited' && github.event.changes.base == null && 'ci not run (metadata only)' || 'ci' }}
+    if: always() && (github.event.action != 'edited' || github.event.changes.base != null)
+    needs: [scope, server, web]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: server
-            scope: server
-            job: server_checks
-          - name: server-tests
-            scope: server
-            job: server_tests
-          - name: web
-            scope: web
-            job: web_checks
-          - name: web-e2e
-            scope: web
-            job: web_e2e
     steps:
-      - name: Require selected check
-        env:
-          SCOPE_RESULT: ${{ needs.changes.result }}
-          REQUIRED: ${{ needs.changes.outputs[matrix.scope] }}
-          RESULT: ${{ needs[matrix.job].result }}
+      - name: Reject cancelled workflow
+        if: cancelled()
         run: |
-          echo "changes=$SCOPE_RESULT required=$REQUIRED ${{ matrix.job }}=$RESULT"
-          test "$SCOPE_RESULT" = success
-          if [ "$REQUIRED" = true ]; then
-            test "$RESULT" = success
-          else
-            test "$REQUIRED" = false
-            test "$RESULT" = skipped
-          fi
-      # artifact 只记录 tree；后续还会核对整个来源 run 成功，因此其他矩阵失败不能形成有效证明。
-      - name: Record checked tree
-        if: matrix.name == 'server' && needs.changes.outputs.reused == ''
+          echo '::error::Workflow was cancelled'
+          echo 'CI result: **cancelled**' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Summarize and require selected checks
         env:
-          CHECKED_TREE: ${{ needs.changes.outputs.tree }}
-        run: printf '%s\n' "$CHECKED_TREE" > "$RUNNER_TEMP/ci-checked-tree"
-      - name: Save CI result reference
-        if: matrix.name == 'server' && needs.changes.outputs.reused == ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-pass-v1-${{ needs.changes.outputs.tree }}
-          path: ${{ runner.temp }}/ci-checked-tree
-          retention-days: 90
-          overwrite: true
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          SERVER_REQUIRED: ${{ needs.scope.outputs.server }}
+          SERVER_RESULT: ${{ needs.server.result }}
+          WEB_REQUIRED: ${{ needs.scope.outputs.web }}
+          WEB_RESULT: ${{ needs.web.result }}
+        run: |
+          {
+            printf 'PR head: `%s`\n\n' "$HEAD_SHA"
+            printf 'Checked merge commit: `%s`\n\n' "$MERGE_SHA"
+            printf 'Target branch: `%s`\n\n' "$BASE_REF"
+            if [ "$BASE_REF" = develop ]; then
+              printf '检查模式：按变更范围。`Required=false` 表示本次变更未涉及该端；具体路径判定见 scope 日志。\n\n'
+            else
+              printf '检查模式：完整检查 server 和 web。\n\n'
+            fi
+            printf '| Job | Required | Result |\n| --- | --- | --- |\n'
+            printf '| scope | true | %s |\n' "$SCOPE_RESULT"
+            printf '| server | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_RESULT"
+            printf '| web | %s | %s |\n' "$WEB_REQUIRED" "$WEB_RESULT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          require_result() {
+            local job=$1 required=$2 result=$3
+            case "$required:$result" in
+              true:success|false:skipped) return 0 ;;
+              *) echo "::error::$job required=$required result=$result"; return 1 ;;
+            esac
+          }
+
+          failed=0
+          if [ "$SCOPE_RESULT" != success ]; then
+            echo "::error::scope result=$SCOPE_RESULT"
+            failed=1
+          fi
+          require_result server "$SERVER_REQUIRED" "$SERVER_RESULT" || failed=1
+          require_result web "$WEB_REQUIRED" "$WEB_RESULT" || failed=1
+          if [ "$failed" -ne 0 ]; then
+            echo 'CI result: **failed**' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo 'CI result: **passed**' >> "$GITHUB_STEP_SUMMARY"

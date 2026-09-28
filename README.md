@@ -59,13 +59,13 @@ pnpm dev
 
 ## 部署
 
-两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。[release-images](.github/workflows/release-images.yml) 在 GitHub Actions 构建完整镜像到 GHCR，再由独立任务按摘要同步到 ACR，部署仍从 ACR 拉取。
+两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。[release-images](.github/workflows/release-images.yml) 在 GitHub Actions 构建镜像，直接上传 ACR。部署时从 ACR 拉取。
 
-推 `v*` 标签时同步 ACR 版本标签；两个镜像都同步成功、且发布提交仍是当前 `main` 时，再更新 ACR 的 `latest`。手动选择分支运行只同步 `branch-<分支名>` 标签（非法字符替换为 `-`），用于发版前验证，不更新 `latest`。
+推送 `vX.Y.Z` 版本标签后，自动构建并上传两个镜像。两个镜像都上传并校验成功、且 `main` 没有更新到后续提交时，才更新 `latest`。手动选择分支运行只生成 `branch-<分支名>` 镜像，用于提前试打包，不更新正式版本和 `latest`。
 
-完整产物保存在 `ghcr.io/<owner>/<repo>/iclip-server:run-<run_id>` 与 `iclip-web:run-<run_id>`。ACR 同步失败时，在同一次 Actions 运行中选择 **Re-run failed jobs**，复用这次构建的产物；选择 **Re-run all jobs** 会重新构建。同步仍经过 GitHub runner 到 ACR 的网络，GHCR 用来保留产物、隔离上传故障，不保证跨境上传提速。
+发布失败先看原因：网络或凭证问题修好后，在原运行中点击 **Re-run failed jobs**。如果需要修改源码、Dockerfile 或工作流，修复后重新走 PR，再用新版本号发布；重跑旧任务不会使用新代码。重跑打包任务会重新执行构建和上传，能命中的缓存仍会复用。
 
-构建缓存存放在 GHCR 的 `ghcr.io/<owner>/<repo>/iclip-server-buildcache:latest` 与 `iclip-web-buildcache:latest`。完整产物和缓存均用工作流的 `GITHUB_TOKEN` 读写，无需另设 GHCR 凭证。缓存跨版本标签共享，并保留前端中间构建阶段；首次构建或缓存被删除后重新生成。
+GHCR 只保存构建缓存，让下次打包复用没变的部分。工作流自动读写缓存，无需另外配置 GHCR 凭证。缓存不能保证上传 ACR 更快。
 
 在仓库根目录构建本地镜像。前端构建需包含 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](web/Dockerfile.dockerignore) 限定为前端和合同文件。
 

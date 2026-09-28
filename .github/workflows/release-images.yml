@@ -1,7 +1,7 @@
 name: release-images
 
-# GitHub 构建并保存到 GHCR，再独立同步到 ACR；同步失败可只重跑失败的 job。
-# 公开仓：绝不在 pull_request 触发，fork 的 PR 不能碰到发布凭证。
+# GitHub 直接构建并推送 ACR，GHCR 只保存跨 tag 共享的 BuildKit cache。
+# 正式发布只由版本 tag 触发；手动运行只验证分支，不更新 latest。
 permissions:
   contents: read
 
@@ -30,30 +30,58 @@ jobs:
       commit: ${{ steps.refs.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
-      - name: Image references
+      - name: Validate image references
         id: refs
         run: |
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF_TYPE" in
+            push:tag)
+              if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "::error::Release tags must use vX.Y.Z"
+                echo "准备失败：版本 tag 必须使用 vX.Y.Z。" >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+              tag=$GITHUB_REF_NAME
+              release=true
+              ;;
+            workflow_dispatch:branch)
+              tag=$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9_.-]/-/g')
+              # 分支验证不能覆盖正式版本或 latest。
+              tag="branch-$tag"
+              release=false
+              ;;
+            *)
+              echo "::error::Manual runs must select a branch; releases require a tag push"
+              echo "准备失败：手动运行只能选择分支；正式发布必须推送版本 tag。" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+          esac
+          if [ "${#tag}" -gt 128 ]; then
+            echo "::error::Image tag exceeds 128 characters"
+            echo "准备失败：生成的镜像标签超过 128 个字符。" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           echo "repository=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::Release tags must use vX.Y.Z"
-              exit 1
-            fi
-            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
-            tag=$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9_.-]/-/g')
-            # 分支标签不能覆盖 latest、版本标签或内部 run-* 标签。
-            echo "tag=branch-$tag" >> "$GITHUB_OUTPUT"
-            echo "release=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+      - name: Record preparation result
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+          IMAGE_TAG: ${{ steps.refs.outputs.tag }}
+          COMMIT: ${{ steps.refs.outputs.commit }}
+        run: |
+          {
+            printf '准备结果：**%s**\n\n' "$RESULT"
+            printf 'Git ref：`%s`\n\n' "$GITHUB_REF"
+            printf '镜像标签：`%s`；提交：`%s`\n' "${IMAGE_TAG:-未生成}" "${COMMIT:-未解析}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  build:
-    name: build (${{ matrix.service }})
+  images:
+    name: images (${{ matrix.service }})
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
@@ -70,90 +98,85 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3.12.0
-      - name: Log in to GHCR
+      - name: Log in to GHCR build cache
         uses: docker/login-action@v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and save image
+      - name: Log in to ACR
+        uses: docker/login-action@v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - name: Build and push image to ACR
         id: image
+        # 未完成的大层重跑时要重新上传，给首次推送预留时间。
+        timeout-minutes: 30
         uses: docker/build-push-action@v6.18.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
-          # 构建时就使用 ACR 支持的 Docker manifest，后续同步保持摘要不变。
+          # ACR 不接受默认 OCI 溯源与 SBOM 清单，使用 Docker manifest。
           outputs: type=registry,oci-mediatypes=false
           provenance: false
           sbom: false
-          tags: |
-            ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}:run-${{ github.run_id }}
-            ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
           cache-from: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest
           cache-to: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest,mode=max
-      - name: Record saved image
+      - name: Verify ACR image digest
+        id: verify
+        timeout-minutes: 5
+        shell: bash
         env:
-          IMAGE: ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}
-          DIGEST: ${{ steps.image.outputs.digest }}
-        run: printf 'Saved `%s@%s`\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
-
-  sync:
-    name: sync to ACR (${{ matrix.service }})
-    needs: [prepare, build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    permissions:
-      packages: read
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [server, web]
-    steps:
-      - name: Install Skopeo
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
+          EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
-          echo "REGISTRY_AUTH_FILE=$RUNNER_TEMP/registry-auth.json" >> "$GITHUB_ENV"
-          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends skopeo
-      - name: Log in to registries
-        env:
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-        run: |
-          printf '%s' "$GHCR_TOKEN" | skopeo login --username "$GHCR_USER" --password-stdin ghcr.io
-          printf '%s' "$ACR_PASSWORD" | skopeo login --username "$ACR_USERNAME" --password-stdin "$REGISTRY"
-      - name: Copy saved image to ACR
-        # 已完成的层可复用，未完成的大层重跑时要重新上传，预留跨境传输时间。
-        timeout-minutes: 30
-        env:
-          SOURCE_IMAGE: ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}
-          DESTINATION_IMAGE: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}
-          IMAGE_TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          # run_id 在重跑时不变；只重跑同步会读取原构建，全量重跑才重新构建。
-          digest=$(skopeo inspect --format '{{.Digest}}' "docker://${SOURCE_IMAGE}:run-${GITHUB_RUN_ID}")
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "Syncing ${SOURCE_IMAGE}@${digest} to ${DESTINATION_IMAGE}:${IMAGE_TAG}"
-          skopeo copy --preserve-digests --retry-times 2 \
-            "docker://${SOURCE_IMAGE}@${digest}" "docker://${DESTINATION_IMAGE}:${IMAGE_TAG}"
-          actual=$(skopeo inspect --format '{{.Digest}}' "docker://${DESTINATION_IMAGE}:${IMAGE_TAG}")
-          test "$actual" = "$digest"
-          printf 'Synced `%s:%s` → `%s`\n' "$DESTINATION_IMAGE" "$IMAGE_TAG" "$digest" >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove registry credentials
+          if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Build did not return a valid image digest"
+            echo "核验失败：构建未返回有效镜像摘要。" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if ! actual=$(docker buildx imagetools inspect --format '{{json .Manifest}}' "$IMAGE_REF" \
+            | jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))'); then
+            echo "::error::Unable to read a valid digest from the ACR image manifest"
+            echo "核验失败：无法读取有效的 ACR 镜像摘要。" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "digest=$actual" >> "$GITHUB_OUTPUT"
+          if [ "$actual" != "$EXPECTED_DIGEST" ]; then
+            echo "::error::ACR digest does not match the build result"
+            printf '核验失败：期望 `%s`，ACR 实际 `%s`。\n' "$EXPECTED_DIGEST" "$actual" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Record image result
         if: always()
-        run: rm -f "$RUNNER_TEMP/registry-auth.json"
+        env:
+          RESULT: ${{ job.status }}
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
+          BUILD_RESULT: ${{ steps.image.outcome }}
+          VERIFY_RESULT: ${{ steps.verify.outcome }}
+          EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
+          ACTUAL_DIGEST: ${{ steps.verify.outputs.digest }}
+        run: |
+          {
+            printf '镜像：`%s`；结果：**%s**\n\n' "$IMAGE_REF" "$RESULT"
+            printf '构建与推送：%s；远端核验：%s\n\n' "$BUILD_RESULT" "$VERIFY_RESULT"
+            printf '构建摘要：`%s`；ACR 摘要：`%s`\n' "${EXPECTED_DIGEST:-未返回}" "${ACTUAL_DIGEST:-未取得}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  promote_latest:
+  latest:
     name: promote latest
-    needs: [prepare, sync]
-    if: needs.prepare.outputs.release == 'true'
+    needs: [prepare, images]
+    if: needs.prepare.outputs.release == 'true' && needs.images.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # 不同版本共用这把锁；旧版本重跑仍须通过下面的 main 提交检查。
+    # 先取得跨版本共用的锁，再确认 main，避免旧版本重跑回退 latest。
     concurrency:
       group: release-images-latest
       cancel-in-progress: false
@@ -171,7 +194,7 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "main 已前进，仅保留已同步的版本标签，不回退 latest。" >> "$GITHUB_STEP_SUMMARY"
+            echo "跳过 latest：发布提交已不是当前 main，保留版本标签。" >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Install Skopeo
         if: steps.current.outputs.publish == 'true'
@@ -184,20 +207,35 @@ jobs:
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: printf '%s' "$ACR_PASSWORD" | skopeo login --username "$ACR_USERNAME" --password-stdin "$REGISTRY"
-      - name: Promote synced version
+      - name: Promote verified version
         if: steps.current.outputs.publish == 'true'
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
+          trap 'printf "latest 提升失败：服务 %s，阶段 %s。\n" "$service" "$stage" >> "$GITHUB_STEP_SUMMARY"' ERR
           for service in server web; do
             image="${REGISTRY}/${NAMESPACE}/iclip-${service}"
+            stage=读取版本摘要
             digest=$(skopeo inspect --format '{{.Digest}}' "docker://${image}:${IMAGE_TAG}")
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            stage=提升标签
             skopeo copy --preserve-digests --retry-times 2 "docker://${image}@${digest}" "docker://${image}:latest"
+            stage=核验latest摘要
             actual=$(skopeo inspect --format '{{.Digest}}' "docker://${image}:latest")
             test "$actual" = "$digest"
-            printf 'Promoted `%s:latest` → `%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+            printf '已提升并核验 `%s:latest` → `%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
           done
       - name: Remove registry credentials
         if: always()
         run: rm -f "$RUNNER_TEMP/registry-auth.json"
+      - name: Record latest result
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+          PUBLISH: ${{ steps.current.outputs.publish }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          {
+            printf '\nlatest 结果：**%s**\n\n' "$RESULT"
+            printf '版本：`%s`；允许更新：%s\n' "$IMAGE_TAG" "${PUBLISH:-未确定}"
+          } >> "$GITHUB_STEP_SUMMARY"
