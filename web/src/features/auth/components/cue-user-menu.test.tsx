@@ -7,11 +7,11 @@ import { renderWithProviders } from '@/testing/render'
 import { CueUserMenu } from './cue-user-menu'
 
 /** 已登录用户的头像菜单；后面跟一个页面控件，用来确认焦点不会跑出菜单。 */
-async function renderMenu() {
+async function renderMenu(compact = false) {
   loginAs(mockAuthUser)
   await renderWithProviders(
     <>
-      <CueUserMenu />
+      <CueUserMenu compact={compact} />
       <button type="button">页面后续控件</button>
     </>,
   )
@@ -35,18 +35,21 @@ describe('CueUserMenu', () => {
     expect(screen.getByRole('button', { name: '页面后续控件', hidden: true })).not.toHaveFocus()
   })
 
-  it('键盘打开时焦点落在菜单项上，Escape 关上并回到头像', async () => {
-    const user = userEvent.setup()
-    const trigger = await renderMenu()
+  it.each([false, true])(
+    '键盘打开时焦点落在菜单项上，Escape 回到头像，compact=%s',
+    async (compact) => {
+      const user = userEvent.setup()
+      const trigger = await renderMenu(compact)
 
-    trigger.focus()
-    await user.keyboard('{Enter}')
-    expect(await screen.findByRole('menuitem', { name: '退出登录' })).toHaveFocus()
-    await user.keyboard('{Escape}')
+      trigger.focus()
+      await user.keyboard('{Enter}')
+      expect(await screen.findByRole('menuitem', { name: '退出登录' })).toHaveFocus()
+      await user.keyboard('{Escape}')
 
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    expect(trigger).toHaveFocus()
-  })
+      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+      expect(trigger).toHaveFocus()
+    },
+  )
 
   it('点退出登录发出退出请求，会话清空后头像回到通用轮廓', async () => {
     const user = userEvent.setup()

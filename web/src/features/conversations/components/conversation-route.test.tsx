@@ -8,6 +8,7 @@ import { server } from '@/testing/mocks/server'
 import { mockTranscriptPage } from '@/testing/mocks/transcript'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
+import { ShellChromeContext } from '@/shared/shell'
 import { Toaster } from '@/shared/ui/toast'
 import { ConversationRoute } from './conversation-route'
 
@@ -114,6 +115,23 @@ const queuedPrompt = (promptId: string, text: string) => ({
 })
 
 describe('ConversationRoute', () => {
+  it('栏头将换位与折叠操作交给壳层', async () => {
+    const onCollapse = vi.fn()
+    const onSwapPanes = vi.fn()
+    await renderWithProviders(
+      <ShellChromeContext value={{ chat: { onCollapse }, onSwapPanes, sidebarOverlay: false }}>
+        <ConversationRoute conversationId="c1" />
+      </ShellChromeContext>,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: '交换对话与工作台' }))
+    await userEvent.click(screen.getByRole('button', { name: '折叠对话' }))
+
+    expect(onSwapPanes).toHaveBeenCalledTimes(1)
+    expect(onCollapse).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('第 1 个问题')).toBeInTheDocument()
+  })
+
   it('在输入框底部显示后端给出的上下文占用环', async () => {
     await renderConversation()
 

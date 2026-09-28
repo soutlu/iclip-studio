@@ -1,15 +1,14 @@
-/** 壳根据视口、当前侧栏宽度及聊天和面板最小宽度计算并排条件，宿主只消费结果。 */
+/** 应用壳持有面板布局状态；宿主只发出打开与折叠请求。 */
 
 import { createContext } from 'react'
 
 export interface WorkbenchLayout {
-  sideBySide: boolean
   compact: boolean
-  /** 报告面板是否占据布局空间，供壳控制拖柄。 */
-  onPanelVisible?: (visible: boolean) => void
+  sideBySide: boolean
+  collapsed: boolean
+  onCollapsedChange: (value: boolean) => void
+  /** 区分默认自动打开与显式查看；布局偏好由壳裁定，调用方保持引用稳定。 */
+  onOpen: (reason: 'automatic' | 'explicit') => void
 }
-
-/** 壳之外默认使用非紧凑、可并排布局。 */
-export const DEFAULT_WORKBENCH_LAYOUT: WorkbenchLayout = { compact: false, sideBySide: true }
 
 export const WorkbenchLayoutContext = createContext<WorkbenchLayout | null>(null)

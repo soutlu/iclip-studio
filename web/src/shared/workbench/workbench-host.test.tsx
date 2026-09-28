@@ -1,13 +1,17 @@
-/** 宿主接收壳计算的布局结果；测试直接注入 compact 与 sideBySide。 */
+/** 受控宿主夹具通过恢复入口与隐藏容器模拟应用壳，验证产物交互与布局请求。 */
 
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { useCallback, useState } from 'react'
+import { describe, expect, it, vi } from 'vitest'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { ShellChromeContext } from '@/shared/shell'
 import type { ArtifactEntry, ArtifactRendererProps } from './artifact'
+import { useOpenArtifact } from './artifact-search'
 import { ArtifactRegistry } from './registry'
+import { useWorkbenchSelection } from './use-workbench-selection'
 import { WorkbenchHost } from './workbench-host'
 import type { WorkbenchLayout } from './workbench-layout-context'
 import { WorkbenchLayoutProvider } from './workbench-layout-provider'
@@ -70,18 +74,69 @@ const serveFiles = (paths: string[]) => {
   )
 }
 
-const ROOMY: WorkbenchLayout = { compact: false, sideBySide: true }
+type LayoutSize = Pick<WorkbenchLayout, 'compact' | 'sideBySide'>
+
+const ROOMY: LayoutSize = { compact: false, sideBySide: true }
+
+function ControlledHost({
+  layout,
+  onOpenRequest,
+}: {
+  layout: LayoutSize
+  onOpenRequest?: WorkbenchLayout['onOpen']
+}) {
+  const [collapsed, setCollapsed] = useState(true)
+  const onOpen = useCallback<WorkbenchLayout['onOpen']>(
+    (reason) => {
+      onOpenRequest?.(reason)
+      setCollapsed(false)
+    },
+    [onOpenRequest],
+  )
+  const { requestOpen } = useWorkbenchSelection()
+  const openArtifact = useOpenArtifact()
+  return (
+    <WorkbenchLayoutProvider
+      layout={{
+        ...layout,
+        collapsed,
+        onCollapsedChange: setCollapsed,
+        onOpen,
+      }}
+    >
+      <button
+        onClick={() => {
+          requestOpen()
+          void openArtifact('file:video_shot.json')
+        }}
+        type="button"
+      >
+        从聊天查看分镜
+      </button>
+      {collapsed ? (
+        <button onClick={() => onOpen('explicit')} type="button">
+          打开右侧面板
+        </button>
+      ) : layout.compact ? (
+        <button onClick={() => setCollapsed(true)} type="button">
+          回到聊天
+        </button>
+      ) : null}
+      <div hidden={collapsed}>
+        <WorkbenchHost conversationId={CONVERSATION_ID} />
+      </div>
+    </WorkbenchLayoutProvider>
+  )
+}
 
 const renderHost = (
-  layout: WorkbenchLayout = ROOMY,
+  layout: LayoutSize = ROOMY,
   registry = registryWith(shotsEntry, workspaceEntry),
   initialPath = '/',
 ) =>
   renderWithProviders(
     <WorkbenchRegistryProvider registry={registry}>
-      <WorkbenchLayoutProvider layout={layout}>
-        <WorkbenchHost conversationId={CONVERSATION_ID} />
-      </WorkbenchLayoutProvider>
+      <ControlledHost layout={layout} />
     </WorkbenchRegistryProvider>,
     { initialPath },
   )
@@ -193,11 +248,46 @@ describe('WorkbenchHost 收起态', () => {
     await renderHost({ compact: true, sideBySide: false })
 
     expect(await screen.findByRole('button', { name: '打开右侧面板' })).toBeVisible()
-    expect(screen.queryByText('画着分镜')).not.toBeInTheDocument()
+    expect(await screen.findByText('画着分镜')).not.toBeVisible()
   })
 })
 
 describe('WorkbenchHost 展开态', () => {
+  it('区分产物自动选择与用户显式查看的打开请求', async () => {
+    serveFiles(['video_shot.json'])
+    const onOpenRequest = vi.fn<WorkbenchLayout['onOpen']>()
+    await renderWithProviders(
+      <WorkbenchRegistryProvider registry={registryWith(shotsEntry, workspaceEntry)}>
+        <ControlledHost layout={ROOMY} onOpenRequest={onOpenRequest} />
+      </WorkbenchRegistryProvider>,
+    )
+    await screen.findByText('画着分镜')
+    expect(onOpenRequest).toHaveBeenLastCalledWith('automatic')
+
+    await userEvent.click(screen.getByRole('button', { name: '从聊天查看分镜' }))
+
+    expect(onOpenRequest).toHaveBeenLastCalledWith('explicit')
+  })
+
+  it('换位请求交给应用壳，当前产物仍保留', async () => {
+    serveFiles(['video_shot.json'])
+    const onSwapPanes = vi.fn()
+    await renderWithProviders(
+      <ShellChromeContext value={{ onSwapPanes, sidebarOverlay: false }}>
+        <WorkbenchRegistryProvider registry={registryWith(shotsEntry, workspaceEntry)}>
+          <ControlledHost layout={ROOMY} />
+        </WorkbenchRegistryProvider>
+      </ShellChromeContext>,
+    )
+    const painted = await screen.findByText('画着分镜')
+    await waitFor(() => expect(painted).toBeVisible())
+
+    await userEvent.click(screen.getByRole('button', { name: '交换对话与工作台' }))
+
+    expect(onSwapPanes).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('画着分镜')).toBe(painted)
+  })
+
   it('分镜交付即自动展开，标签栏里分镜与文件并排，分镜是当前', async () => {
     serveFiles(['video_shot.json', 'video/a.md'])
     await renderHost()
@@ -255,42 +345,40 @@ describe('WorkbenchHost 展开态', () => {
     await renderHost({ compact: false, sideBySide: false })
 
     expect(await screen.findByText('画着分镜')).toBeVisible()
-    expect(screen.queryByRole('button', { name: '放大面板' })).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '回到聊天' }))
 
     expect(screen.getByRole('button', { name: '打开右侧面板' })).toBeVisible()
-    expect(screen.queryByText('画着分镜')).not.toBeInTheDocument()
+    expect(await screen.findByText('画着分镜')).not.toBeVisible()
   })
 
-  it('放得下并排时给放大与折叠，放大之后钮换成缩小', async () => {
+  it('用户收起后保留产物渲染器，恢复入口可以再打开', async () => {
     serveFiles(['video_shot.json'])
     await renderHost()
-
-    expect(await screen.findByText('画着分镜')).toBeVisible()
-    expect(screen.getByRole('button', { name: '折叠右侧面板' })).toBeVisible()
-
-    await userEvent.click(screen.getByRole('button', { name: '放大面板' }))
-
-    expect(screen.getByRole('button', { name: '缩小面板' })).toBeVisible()
-    expect(screen.getByText('画着分镜')).toBeVisible()
-  })
-
-  it('面板占着布局位时报给壳，折叠之后报不占', async () => {
-    serveFiles(['video_shot.json'])
-    const seen: boolean[] = []
-    await renderHost({
-      compact: false,
-      onPanelVisible: (visible) => {
-        seen.push(visible)
-      },
-      sideBySide: true,
-    })
-
-    await screen.findByText('画着分镜')
-    expect(seen.at(-1)).toBe(true)
+    const painted = await screen.findByText('画着分镜')
+    await waitFor(() => expect(painted).toBeVisible())
 
     await userEvent.click(screen.getByRole('button', { name: '折叠右侧面板' }))
-    await waitFor(() => expect(seen.at(-1)).toBe(false))
+    expect(painted).not.toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: '打开右侧面板' }))
+
+    expect(screen.getByText('画着分镜')).toBe(painted)
+    expect(painted).toBeVisible()
+  })
+
+  it('紧凑屏显式查看可以打开，收起后查看同一产物也重新打开', async () => {
+    serveFiles(['video_shot.json'])
+    await renderHost({ compact: true, sideBySide: false })
+    const painted = await screen.findByText('画着分镜')
+    expect(painted).not.toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: '从聊天查看分镜' }))
+    await waitFor(() => expect(painted).toBeVisible())
+    await userEvent.click(screen.getByRole('button', { name: '回到聊天' }))
+    expect(painted).not.toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: '从聊天查看分镜' }))
+    await waitFor(() => expect(painted).toBeVisible())
   })
 })

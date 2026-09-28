@@ -177,13 +177,26 @@ export function SidebarConversations() {
           }}
           type="single"
           value={state}
+          variant="segmented"
         >
-          <FilterChip value="all">全部</FilterChip>
-          <FilterChip value="open">
-            未完成
-            {anyBusy && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />}
+          <FilterChip value="all" variant="segmented">
+            全部
           </FilterChip>
-          <FilterChip value="done">已完成</FilterChip>
+          <FilterChip value="open" variant="segmented">
+            <span className="relative">
+              未完成
+              {/* 提示点不参与排版，运行状态变化时文字仍保持居中。 */}
+              {anyBusy && (
+                <span
+                  aria-hidden
+                  className="absolute top-1/2 -right-2 size-1.5 -translate-y-1/2 rounded-full bg-primary"
+                />
+              )}
+            </span>
+          </FilterChip>
+          <FilterChip value="done" variant="segmented">
+            已完成
+          </FilterChip>
         </ChipGroup>
 
         <SidebarSection

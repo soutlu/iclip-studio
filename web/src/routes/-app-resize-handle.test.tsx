@@ -8,27 +8,36 @@ import { AppResizeHandle } from './-app-resize-handle'
 const renderHandle = () => {
   const calls: string[] = []
   const deltas: number[] = []
+  const inputs: string[] = []
   const { unmount } = render(
     <AppResizeHandle
       label="调整侧栏宽度"
       max={400}
       min={200}
       onReset={() => calls.push('reset')}
-      onResize={(delta) => {
+      onResize={(delta, input) => {
         calls.push('resize')
         deltas.push(delta)
+        inputs.push(input)
       }}
       onResizeEnd={() => calls.push('end')}
+      onResizeCancel={() => calls.push('cancel')}
       onResizeStart={() => calls.push('start')}
       value={264}
     />,
   )
-  return { calls, deltas, handle: screen.getByRole('button', { name: '调整侧栏宽度' }), unmount }
+  return {
+    calls,
+    deltas,
+    inputs,
+    handle: screen.getByRole('button', { name: '调整侧栏宽度' }),
+    unmount,
+  }
 }
 
 describe('AppResizeHandle', () => {
   it('按下之后跟着指针走，松开报一次结束', () => {
-    const { calls, deltas, handle } = renderHandle()
+    const { calls, deltas, inputs, handle } = renderHandle()
 
     fireEvent.pointerDown(handle, { button: 0, clientX: 300 })
     fireEvent.pointerMove(window, { clientX: 340 })
@@ -36,7 +45,21 @@ describe('AppResizeHandle', () => {
     fireEvent.pointerUp(window)
 
     expect(deltas).toEqual([40, -40])
+    expect(inputs).toEqual(['pointer', 'pointer'])
     expect(calls).toEqual(['start', 'resize', 'resize', 'end'])
+  })
+
+  it.each(['pointercancel', 'escape', 'blur'])('%s 取消拖动，不提交新宽度', (reason) => {
+    const { calls, deltas, handle } = renderHandle()
+    fireEvent.pointerDown(handle, { button: 0, clientX: 300 })
+    fireEvent.pointerMove(window, { clientX: 340 })
+    if (reason === 'pointercancel') fireEvent.pointerCancel(window)
+    else if (reason === 'blur') fireEvent.blur(window)
+    else fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.pointerMove(window, { clientX: 500 })
+    fireEvent.pointerUp(window)
+    expect(deltas).toEqual([40])
+    expect(calls).toEqual(['start', 'resize', 'cancel'])
   })
 
   it('松开之后指针再动也不跟了', () => {
@@ -67,13 +90,14 @@ describe('AppResizeHandle', () => {
   })
 
   it('左右方向键各调一步，键盘也能改宽', () => {
-    const { calls, deltas, handle } = renderHandle()
+    const { calls, deltas, inputs, handle } = renderHandle()
 
     fireEvent.keyDown(handle, { key: 'ArrowRight' })
     fireEvent.keyDown(handle, { key: 'ArrowLeft' })
     fireEvent.keyDown(handle, { key: 'Enter' })
 
     expect(deltas).toEqual([16, -16])
+    expect(inputs).toEqual(['keyboard', 'keyboard'])
     expect(calls).toEqual(['start', 'resize', 'end', 'start', 'resize', 'end'])
   })
 

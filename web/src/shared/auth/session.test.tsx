@@ -120,7 +120,6 @@ const renderWorkspace = async () => {
   )
   act(() => socket.deliver(SERVER_HELLO))
   const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
   await screen.findByRole('button', { name: '用户菜单' })
   return user
 }

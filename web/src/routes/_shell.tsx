@@ -1,46 +1,56 @@
-import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { createFileRoute, Outlet, useMatches, useNavigate } from '@tanstack/react-router'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { z } from 'zod'
 import { LoginDialog } from '@/features/auth'
-import { cn } from '@/shared/lib/utils'
 import { ShellChromeContext } from '@/shared/shell'
+import { IconButton } from '@/shared/ui/button'
 import { WorkbenchLayoutProvider } from '@/shared/workbench'
+import { AppContentPane } from './-app-content-pane'
 import { AppResizeHandle } from './-app-resize-handle'
 import { AppRightPanel } from './-app-right-panel'
 import {
-  clampWidth,
-  COMPACT_MAX,
+  CHAT_MIN,
   resolveShellLayout,
+  resizeContent,
+  resizeSidebar,
+  selectContentPane,
   SIDEBAR_WIDTH,
   WORKBENCH_WIDTH,
+  type ContentPane,
+  type ShellLayoutState,
 } from './-app-shell-layout'
 import { AppSidebar } from './-app-sidebar'
 import { LoginPromptProvider } from './-login-prompt'
-import { useStoredWidth } from './-use-stored-width'
+import { useShellLayout } from './-use-shell-layout'
 
-// SSO 失败通过 ssoError 查询参数触发登录弹窗。
-const ShellSearchSchema = z.object({
-  ssoError: z.string().optional().catch(undefined),
-})
+const ShellSearchSchema = z.object({ ssoError: z.string().optional().catch(undefined) })
 
 export const Route = createFileRoute('/_shell')({
   component: AppShell,
   validateSearch: ShellSearchSchema,
 })
 
-/** 应用壳统一持有三列宽度，通过 CSS 变量下发，避免侧栏与面板各自持久化。 */
+/** 壳持有布局偏好；视口只派生几何，不回写桌面的排列与宽度。 */
 function AppShell() {
   const navigate = useNavigate()
+  const matches = useMatches()
+  const hasWorkbench =
+    [...matches].reverse().find((match) => match.staticData.rightPanel !== undefined)?.staticData
+      .rightPanel !== undefined
   const { ssoError } = Route.useSearch()
   const [loginOpen, setLoginOpen] = useState(Boolean(ssoError))
-
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => !window.matchMedia(`(min-width: ${COMPACT_MAX}px)`).matches,
-  )
-  const [panelVisible, setPanelVisible] = useState(false)
-  const sidebar = useStoredWidth('sidebar-width', SIDEBAR_WIDTH.default)
-  const workbench = useStoredWidth('workbench-width', WORKBENCH_WIDTH.default)
+  const { state, update, persist } = useShellLayout()
   const [viewport, setViewport] = useState(() => window.innerWidth)
+  const [mobileSidebarCollapsed, setMobileSidebarCollapsed] = useState(true)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   useEffect(() => {
     const sync = () => setViewport(window.innerWidth)
@@ -48,123 +58,227 @@ function AppShell() {
     return () => window.removeEventListener('resize', sync)
   }, [])
 
-  // 用 ref 保存拖动起点和最新宽度，避免结束回调闭包读取拖动前的 state。
-  const dragOriginRef = useRef(0)
-  const dragValueRef = useRef(0)
+  const geometry = resolveShellLayout({ viewport, hasWorkbench, state })
+  const { compact, sideBySide, mode, sidebarWidth, contentWidth, chatWidth, workbenchWidth } =
+    geometry
+  const contentRef = useRef<HTMLDivElement>(null)
+  const focusRequestRef = useRef<{ pane: ContentPane; collapsed: boolean } | null>(null)
+  useLayoutEffect(() => {
+    const request = focusRequestRef.current
+    if (!request) return
+    focusRequestRef.current = null
+    const selector = request.collapsed ? '[data-pane-restore]' : '[data-pane-body]'
+    contentRef.current
+      ?.querySelector<HTMLElement>(`[data-pane="${request.pane}"] ${selector}`)
+      ?.focus({ preventScroll: true })
+  }, [mode])
 
-  const { sidebarWidth, compact, sideBySide, workbenchMax, workbenchWidth } = resolveShellLayout({
-    viewport,
-    sidebarCollapsed,
-    sidebarWidth: sidebar.width,
-    workbenchWidth: workbench.width,
-  })
-
+  const dragRef = useRef<{ state: ShellLayoutState; width: number } | null>(null)
+  const cancelResize = () => {
+    const origin = dragRef.current
+    if (origin) update(() => origin.state, false)
+    dragRef.current = null
+  }
+  const finishResize = () => {
+    persist()
+    dragRef.current = null
+  }
+  const expandPane = useCallback(
+    (pane: ContentPane) => {
+      update((current) => selectContentPane(current, pane, 'split', sideBySide))
+    },
+    [sideBySide, update],
+  )
+  const collapsePane = (pane: ContentPane) => {
+    const body = contentRef.current?.querySelector(`[data-pane="${pane}"]`)
+    if (body?.contains(document.activeElement)) focusRequestRef.current = { pane, collapsed: true }
+    const other = pane === 'chat' ? 'workbench' : 'chat'
+    update((current) => selectContentPane(current, other, other, sideBySide))
+  }
+  const swapPanes = () =>
+    update((current) => ({
+      ...current,
+      firstPane: current.firstPane === 'chat' ? 'workbench' : 'chat',
+    }))
+  const openWorkbench = useCallback(
+    (reason: 'automatic' | 'explicit') => {
+      update((current) => {
+        if (reason === 'automatic') {
+          return current.mode === null
+            ? { ...current, activePane: 'workbench', mode: 'split', contentClip: null }
+            : current
+        }
+        return selectContentPane(
+          current,
+          'workbench',
+          current.mode === 'workbench' ? 'workbench' : 'split',
+          sideBySide,
+        )
+      })
+    },
+    [sideBySide, update],
+  )
+  const layout = {
+    compact,
+    sideBySide,
+    collapsed: mode === 'chat',
+    onCollapsedChange: (collapsed: boolean) =>
+      collapsed ? collapsePane('workbench') : expandPane('workbench'),
+    onOpen: openWorkbench,
+  }
+  const chrome = {
+    sidebarOverlay: compact,
+    ...(hasWorkbench && !compact
+      ? {
+          chat: {
+            onCollapse: () => collapsePane('chat'),
+          },
+          onSwapPanes: swapPanes,
+        }
+      : {}),
+  }
   const handleLoginOpenChange = useCallback(
     (open: boolean) => {
       setLoginOpen(open)
-
-      // 消费后移除错误码，避免刷新重复弹窗。
-      if (!open && ssoError) {
-        void navigate({ replace: true, search: {}, to: '.' })
-      }
+      if (!open && ssoError) void navigate({ replace: true, search: {}, to: '.' })
     },
     [navigate, ssoError],
   )
-
-  const requireLogin = useCallback(() => {
-    setLoginOpen(true)
-  }, [])
-
-  const layout = { compact, onPanelVisible: setPanelVisible, sideBySide }
-  // 页头按这两个状态给收起态的展开钮留位；钮本身由侧栏与面板各自画在角上。
-  const chrome = useMemo(
-    () => ({ panelVisible, sidebarCollapsed }),
-    [panelVisible, sidebarCollapsed],
-  )
-
+  const requireLogin = useCallback(() => setLoginOpen(true), [])
+  const panes: ContentPane[] = ['chat', 'workbench']
   const shellVars = {
     '--layout-app-sidebar-width': `${sidebarWidth}px`,
-    '--layout-app-workbench-width': `${workbenchWidth}px`,
+    '--layout-app-sidebar-body-width': `${!compact && state.sidebarCollapsed ? sidebarWidth : Math.max(SIDEBAR_WIDTH.min, sidebarWidth)}px`,
   } as CSSProperties
 
   return (
     <LoginPromptProvider value={requireLogin}>
       <ShellChromeContext value={chrome}>
-        <div className="flex h-dvh" style={shellVars}>
-          <AppSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
-
-          {/* 紧凑屏侧栏不占布局空间，不显示拖柄。 */}
-          {sidebarCollapsed || compact ? null : (
+        <div className="relative flex h-dvh overflow-hidden" style={shellVars}>
+          <AppSidebar
+            collapsed={compact ? mobileSidebarCollapsed : state.sidebarCollapsed}
+            compact={compact}
+            onCollapsedChange={(collapsed) =>
+              compact
+                ? setMobileSidebarCollapsed(collapsed)
+                : update((current) => ({
+                    ...current,
+                    sidebarCollapsed: collapsed,
+                    sidebarClipWidth: null,
+                  }))
+            }
+          />
+          {!compact && (
             <AppResizeHandle
               label="调整侧栏宽度"
-              max={SIDEBAR_WIDTH.max}
-              min={SIDEBAR_WIDTH.min}
-              onReset={() => {
-                sidebar.setWidth(SIDEBAR_WIDTH.default)
-                sidebar.persist(SIDEBAR_WIDTH.default)
-              }}
-              onResize={(delta) => {
-                dragValueRef.current = clampWidth(
-                  dragOriginRef.current + delta,
-                  SIDEBAR_WIDTH.min,
-                  SIDEBAR_WIDTH.max,
-                )
-                sidebar.setWidth(dragValueRef.current)
-              }}
-              onResizeEnd={() => sidebar.persist(dragValueRef.current)}
-              onResizeStart={() => {
-                dragOriginRef.current = sidebarWidth
-                dragValueRef.current = sidebarWidth
-              }}
+              position={sidebarWidth}
               value={sidebarWidth}
+              min={SIDEBAR_WIDTH.collapsed}
+              max={SIDEBAR_WIDTH.max}
+              onResizeStart={() => {
+                dragRef.current = { state, width: sidebarWidth }
+              }}
+              onResize={(delta, input) => {
+                const origin = dragRef.current
+                if (origin)
+                  update((current) => resizeSidebar(current, origin.width + delta, input), false)
+              }}
+              onResizeEnd={finishResize}
+              onResizeCancel={cancelResize}
+              onReset={() =>
+                update((current) => ({
+                  ...current,
+                  sidebarCollapsed: false,
+                  sidebarWidth: SIDEBAR_WIDTH.default,
+                  sidebarClipWidth: null,
+                }))
+              }
             />
           )}
-
-          {/* 主区为覆盖模式的右面板提供定位上下文。 */}
-          <div className="relative flex min-w-0 flex-1">
-            <div
-              className={cn(
-                'flex min-w-0 flex-1 flex-col',
-                sideBySide && 'min-w-(--layout-app-chat-min-width)',
-              )}
+          <div
+            className="relative flex min-w-0 flex-1"
+            ref={contentRef}
+            style={{ flexDirection: state.firstPane === 'chat' ? 'row' : 'row-reverse' }}
+          >
+            <DndContext
+              sensors={sensors}
+              onDragEnd={({ active, over }) => {
+                if (over && active.id !== over.id) swapPanes()
+              }}
             >
-              <Outlet />
-            </div>
-
-            {sideBySide && panelVisible ? (
+              {panes.map((pane) => (
+                <AppContentPane
+                  key={pane}
+                  pane={pane}
+                  width={pane === 'chat' ? chatWidth : workbenchWidth}
+                  minWidth={sideBySide ? (pane === 'chat' ? CHAT_MIN : WORKBENCH_WIDTH.min) : 0}
+                  alignEnd={pane !== state.firstPane}
+                  collapsed={pane === 'chat' ? mode === 'workbench' : mode === 'chat'}
+                  canReorder={hasWorkbench && !compact}
+                  onReveal={() => update((current) => ({ ...current, contentClip: null }))}
+                  onExpand={() => {
+                    focusRequestRef.current = { pane, collapsed: false }
+                    expandPane(pane)
+                  }}
+                >
+                  {pane === 'chat' ? (
+                    <Outlet />
+                  ) : (
+                    <WorkbenchLayoutProvider layout={layout}>
+                      <AppRightPanel />
+                    </WorkbenchLayoutProvider>
+                  )}
+                </AppContentPane>
+              ))}
+            </DndContext>
+            {hasWorkbench && sideBySide && (
               <AppResizeHandle
                 label="调整面板宽度"
-                max={workbenchMax}
-                min={WORKBENCH_WIDTH.min}
-                onReset={() => {
-                  workbench.setWidth(WORKBENCH_WIDTH.default)
-                  workbench.persist(WORKBENCH_WIDTH.default)
-                }}
-                // 面板左侧拖柄向右移动时宽度减小，位移取反。
-                onResize={(delta) => {
-                  dragValueRef.current = clampWidth(
-                    dragOriginRef.current - delta,
-                    WORKBENCH_WIDTH.min,
-                    workbenchMax,
-                  )
-                  workbench.setWidth(dragValueRef.current)
-                }}
-                onResizeEnd={() => workbench.persist(dragValueRef.current)}
-                onResizeStart={() => {
-                  dragOriginRef.current = workbenchWidth
-                  dragValueRef.current = workbenchWidth
-                }}
+                position={state.firstPane === 'chat' ? chatWidth : workbenchWidth}
                 value={workbenchWidth}
+                min={0}
+                max={contentWidth}
+                onResizeStart={() => {
+                  dragRef.current = { state, width: workbenchWidth }
+                }}
+                onResize={(delta, input) => {
+                  const origin = dragRef.current
+                  if (origin)
+                    update(
+                      (current) =>
+                        resizeContent(
+                          current,
+                          origin.width + (origin.state.firstPane === 'workbench' ? delta : -delta),
+                          contentWidth,
+                          input,
+                        ),
+                      false,
+                    )
+                }}
+                onResizeEnd={finishResize}
+                onResizeCancel={cancelResize}
+                onReset={() =>
+                  update((current) => ({
+                    ...current,
+                    mode: 'split',
+                    contentClip: null,
+                    workbenchWidth: WORKBENCH_WIDTH.default,
+                  }))
+                }
               />
-            ) : null}
-
-            <WorkbenchLayoutProvider layout={layout}>
-              <AppRightPanel />
-            </WorkbenchLayoutProvider>
+            )}
+            {hasWorkbench && compact && (
+              <IconButton
+                className="layer-sidebar absolute top-2 right-2"
+                label={mode === 'chat' ? '打开右侧面板' : '展开对话'}
+                name={mode === 'chat' ? 'grid' : 'message'}
+                onClick={() => expandPane(mode === 'chat' ? 'workbench' : 'chat')}
+                size="md"
+              />
+            )}
           </div>
         </div>
       </ShellChromeContext>
-
       <LoginDialog open={loginOpen} onOpenChange={handleLoginOpenChange} ssoErrorCode={ssoError} />
     </LoginPromptProvider>
   )

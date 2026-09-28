@@ -15,25 +15,30 @@ import { AppSidebar } from './-app-sidebar'
 import { LoginPromptProvider } from './-login-prompt'
 
 /** 测试壳持有折叠状态，与应用壳的状态归属一致。 */
-function SidebarHarness() {
+function SidebarHarness({ compact = false }: { compact?: boolean }) {
   const [collapsed, setCollapsed] = useState(true)
-  return <AppSidebar collapsed={collapsed} onCollapsedChange={setCollapsed} />
+  return <AppSidebar collapsed={collapsed} compact={compact} onCollapsedChange={setCollapsed} />
 }
 
-const renderSidebar = (requireLogin = vi.fn(), initialPath = '/') =>
+const renderSidebar = (requireLogin = vi.fn(), initialPath = '/', compact = false) =>
   renderWithProviders(
     <LoginPromptProvider value={requireLogin}>
-      <SidebarHarness />
+      <SidebarHarness compact={compact} />
     </LoginPromptProvider>,
     { initialPath },
   )
 
 describe('AppSidebar', () => {
-  it('折叠时显示展开按钮，点开后显示侧栏操作', async () => {
+  it('桌面折叠时保留导航图标与账户入口，点开后显示完整侧栏', async () => {
     const user = userEvent.setup()
     await renderSidebar()
 
-    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    expect(screen.getByRole('complementary')).toBeVisible()
+
+    for (const name of ['新建任务', '搜索', '需求单', '资料库', '登录']) {
+      expect(screen.getByRole('button', { name })).toBeVisible()
+    }
+    expect(await screen.findByText('登录后查看对话')).not.toBeVisible()
 
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
 
@@ -44,15 +49,42 @@ describe('AppSidebar', () => {
     expect(screen.getByRole('button', { name: '资料库' })).toBeVisible()
   })
 
-  it('展开后可再次折叠，只保留展开按钮', async () => {
+  it('移动端展开后可再次折叠，只保留悬浮展开按钮', async () => {
     const user = userEvent.setup()
-    await renderSidebar()
+    await renderSidebar(vi.fn(), '/', true)
 
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    expect(screen.getByRole('button', { name: '折叠侧边栏' })).toHaveFocus()
     await user.click(screen.getByRole('button', { name: '折叠侧边栏' }))
+    expect(screen.getByRole('button', { name: '展开侧边栏' })).toHaveFocus()
 
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '展开侧边栏' })).toBeVisible()
+  })
+
+  it.each([false, true])('路由切换仅收起移动抽屉，搜索保留导航，compact=%s', async (compact) => {
+    loginAs(mockAuthUser)
+    const user = userEvent.setup()
+    const { router } = await renderSidebar(vi.fn(), '/', compact)
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+
+    await user.click(screen.getByRole('button', { name: '搜索' }))
+    expect(await screen.findByRole('dialog', { name: '搜索对话' })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: '折叠侧边栏' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '需求单' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/tasks'))
+    expect(
+      screen.getByRole('button', { name: compact ? '展开侧边栏' : '折叠侧边栏' }),
+    ).toBeVisible()
+    if (compact) {
+      expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+      expect(screen.getByRole('complementary')).toBeVisible()
+    }
   })
 
   it('未登录时对话区与账户区退成登录入口，点操作即请求登录', async () => {
@@ -109,7 +141,7 @@ describe('AppSidebar', () => {
 
       await user.keyboard(`{${modifier}>}k{/${modifier}}`)
       const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
-      expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '展开侧边栏', hidden: true })).toBeInTheDocument()
       await user.type(within(dialog).getByRole('textbox', { name: '搜索对话' }), '广告')
       const result = await within(dialog).findByRole('link', { name: conversation.title })
 
@@ -138,27 +170,31 @@ describe('AppSidebar', () => {
     await user.keyboard(`{${modifier}>}{Alt>}n{/Alt}{/${modifier}}`)
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
-    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    expect(screen.getByRole('complementary')).toBeVisible()
+    expect(screen.getByRole('button', { name: '展开侧边栏' })).toBeVisible()
   })
 
-  it('没有对话读写权限时禁用对应入口，快捷键也不打开搜索或离开当前页', async () => {
-    loginAs(mockAuthUser, { permissions: ['tasks:read'] })
-    const user = userEvent.setup()
-    const { router } = await renderSidebar(vi.fn(), '/tasks')
-    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    await screen.findByRole('button', { name: '用户菜单' })
+  it.each([true, false])(
+    '折叠状态为 %s 时按权限禁用入口，快捷键也不打开搜索或离开当前页',
+    async (collapsed) => {
+      loginAs(mockAuthUser, { permissions: ['tasks:read'] })
+      const user = userEvent.setup()
+      const { router } = await renderSidebar(vi.fn(), '/tasks')
+      if (!collapsed) await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+      await screen.findByRole('button', { name: '用户菜单' })
 
-    expect(screen.getByRole('button', { name: '搜索' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '新建任务' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '需求单' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '资料库' })).toBeDisabled()
-    expect(screen.getByText('当前账号没有查看对话权限')).toBeVisible()
-    await user.keyboard('{Control>}k{/Control}')
-    await user.keyboard('{Control>}{Alt>}n{/Alt}{/Control}')
+      expect(screen.getByRole('button', { name: '搜索' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: '新建任务' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: '需求单' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: '资料库' })).toBeDisabled()
+      if (!collapsed) expect(screen.getByText('当前账号没有查看对话权限')).toBeVisible()
+      await user.keyboard('{Control>}k{/Control}')
+      await user.keyboard('{Control>}{Alt>}n{/Alt}{/Control}')
 
-    expect(screen.queryByRole('dialog', { name: '搜索对话' })).not.toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/tasks')
-  })
+      expect(screen.queryByRole('dialog', { name: '搜索对话' })).not.toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/tasks')
+    },
+  )
 
   it('能看出片记录的账号点资料库去 /library', async () => {
     loginAs(mockAuthUser)
@@ -190,6 +226,8 @@ describe('AppSidebar', () => {
     const govern = screen.getByRole('group', { name: '治理' })
     expect(within(govern).getByRole('button', { name: '全部对话' })).toBeVisible()
     expect(within(govern).getByRole('button', { name: '审计' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '折叠侧边栏' }))
+    expect(screen.getByRole('button', { name: '用户菜单' })).toBeVisible()
     await user.click(await screen.findByRole('button', { name: '全部对话' }))
     expect(router.state.location.pathname).toBe('/conversations')
 
@@ -224,6 +262,26 @@ describe('AppSidebar 对话区', () => {
     await user.click(screen.getByRole('button', { name: '夏季亚麻系列 (1)' }))
 
     expect(screen.getByText('合集里的那段')).toBeVisible()
+  })
+
+  it.each([false, true])('收起再展开保留合集展开与对话节点，compact=%s', async (compact) => {
+    loginAs(mockAuthUser)
+    const collection = addMockCollection('保持展开的合集')
+    addMockConversation('保持位置的对话').collectionId = collection.id
+    const user = userEvent.setup()
+    await renderSidebar(vi.fn(), '/', compact)
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await user.click(await screen.findByRole('button', { name: '保持展开的合集 (1)' }))
+    const conversation = screen.getByRole('link', { name: '保持位置的对话' })
+
+    await user.click(screen.getByRole('button', { name: '折叠侧边栏' }))
+    expect(conversation).toBeInTheDocument()
+    expect(conversation).not.toBeVisible()
+    expect(conversation.closest('[inert]')).not.toBeNull()
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+
+    expect(screen.getByRole('link', { name: '保持位置的对话' })).toBe(conversation)
+    expect(conversation).toBeVisible()
   })
 
   it('新建合集后出现在合集区', async () => {
