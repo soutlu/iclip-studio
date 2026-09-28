@@ -7,28 +7,31 @@ RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# 用镜像自带的 Python，不让 uv 再下载一份；字节码预编译换启动速度。
+# 用镜像自带的 Python，不让 uv 再下载一份；字节码预编译换启动速度；不留下载缓存。
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
     PATH=/app/.venv/bin:$PATH
 
 # alembic.ini 与 scripts.admin 按相对路径解析，工作目录必须是 server 根；
 # configs/、agents/ 不进镜像，由部署把两个目录挂到 /app 下。
 WORKDIR /app
 
+# 先建运行用户、以它的身份装依赖和拷源码，文件生来就归它所有。不要在最后 chown -R /app：
+# 那会把整个虚拟环境复制成一个新层，每次改代码都要重新上传这个大层。
+RUN useradd --system --uid 1000 --home /app iclip && chown iclip:iclip /app
+USER iclip
+
 # 先装依赖再拷源码，改代码不重装依赖。
-COPY pyproject.toml uv.lock ./
+COPY --chown=iclip:iclip pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
-COPY alembic.ini ./
-COPY src ./src
-COPY migrations ./migrations
-COPY scripts ./scripts
+COPY --chown=iclip:iclip alembic.ini ./
+COPY --chown=iclip:iclip src ./src
+COPY --chown=iclip:iclip migrations ./migrations
+COPY --chown=iclip:iclip scripts ./scripts
 RUN uv sync --locked --no-dev
-
-RUN useradd --system --uid 1000 --home /app iclip && chown -R iclip:iclip /app
-USER iclip
 
 EXPOSE 7788
 

@@ -59,7 +59,13 @@ pnpm dev
 
 ## 部署
 
-两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。推 `v*` 标签时 [release-images](.github/workflows/release-images.yml) 自动构建并推到 ACR，标签为版本号与 `latest`；手动触发只打分支名标签，用于发版前验证推送。
+两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。[release-images](.github/workflows/release-images.yml) 在 GitHub Actions 构建镜像，直接上传 ACR。部署时从 ACR 拉取。
+
+推送 `vX.Y.Z` 版本标签后，自动构建并上传两个镜像。两个镜像都上传并校验成功、且 `main` 没有更新到后续提交时，才更新 `latest`。手动选择分支运行只生成 `branch-<分支名>` 镜像，用于提前试打包，不更新正式版本和 `latest`。
+
+发布失败先看原因：网络或凭证问题修好后，在原运行中点击 **Re-run failed jobs**。如果需要修改源码、Dockerfile 或工作流，修复后重新走 PR，再用新版本号发布；重跑旧任务不会使用新代码。重跑打包任务会重新执行构建和上传，能命中的缓存仍会复用。
+
+GHCR 只保存构建缓存，让下次打包复用没变的部分。工作流自动读写缓存，无需另外配置 GHCR 凭证。缓存不能保证上传 ACR 更快。
 
 在仓库根目录构建本地镜像。前端构建需包含 `contract/` 中的共享样例，构建上下文由 [web/Dockerfile.dockerignore](web/Dockerfile.dockerignore) 限定为前端和合同文件。
 

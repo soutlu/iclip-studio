@@ -22,6 +22,7 @@
 `make up` 调用本机维护、不入库的 `scripts/dev-up.sh`；新检出的仓库使用 README 的启动步骤。
 
 - 后端变更提交前通过 `make check`；前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
+- CI 只在 PR 上检查：目标为 `develop` 时按改动检查，目标为 `main` 时完整检查前后端；合并后不重复运行。
 - 纯文档变更运行 `make docs-check`，修改 `web/` 下的 Markdown 另查格式；不为措辞新增业务测试。
 - 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
 - 数据库测试只用一次性测试库或临时 schema；`TEST_DATABASE_URL` 不得指向业务库。迁移检查范围见 [测试规范](docs/test-design.md)。
@@ -56,9 +57,8 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
    ```bash
    git push -u origin HEAD
    gh pr create --base develop
-   gh pr merge <n> --auto --squash
    ```
-   `server` 与 `web` 检查通过后自动合并，无需再次确认。日常 PR 误指 `main` 时先用 `gh pr edit <n> --base develop` 修正。
+   等最新提交的 `ci` 检查通过后，由开发者手动执行 `gh pr merge <n> --squash`。Agent 创建 PR 后等待合并指令。日常 PR 误指 `main` 时先用 `gh pr edit <n> --base develop` 修正。
 3. 用 `gh pr view <n> --json state` 确认 `MERGED`，用 `git worktree list` 确认是自己的 worktree，且没有待保留的未提交修改，再回主目录清理：
    ```bash
    git pull --ff-only
@@ -74,14 +74,16 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 |---|---|---|
 | 发版 | `develop → main`，开发者给出版本号后创建 PR | CI 通过并确认后 `gh pr merge <n> --merge` |
 | 热修 | 从 `origin/main` 建独立 worktree，PR 指向 `main` | 检查、确认后 merge commit |
-| 热修回流 | `main → develop` | `gh pr merge <n> --auto --merge` |
+| 热修回流 | `main → develop` | CI 通过后手动执行 `gh pr merge <n> --merge` |
 
-每次合入 `main` 后创建版本 release：
+合入 `main` 后，确认 `main` 上就是本次要发布的代码，再用开发者确定的版本号创建 release：
 
 ```bash
 gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes
 git fetch --tags
 ```
+
+等这个版本的 `release-images` 运行成功后，再按 [README 部署说明](README.md#部署) 更新服务器。创建 Release 不会自动部署。
 
 版本号由开发者确定。X 用于重构或不兼容变更，Y 用于兼容的新功能，Z 用于修复；前段增加时后段归零。`v0.Y.Z` 阶段的大改增加 Y，热修增加 Z。
 
