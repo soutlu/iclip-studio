@@ -22,10 +22,30 @@
 `make up` 调用本机维护、不入库的 `scripts/dev-up.sh`；新检出的仓库使用 README 的启动步骤。
 
 - 后端变更提交前通过 `make check`；前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
-- CI 只在 PR 上检查：目标为 `develop` 时按改动检查，目标为 `main` 时完整检查前后端；合并后不重复运行。
 - 纯文档变更运行 `make docs-check`，修改 `web/` 下的 Markdown 另查格式；不为措辞新增业务测试。
 - 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
 - 数据库测试只用一次性测试库或临时 schema；`TEST_DATABASE_URL` 不得指向业务库。迁移检查范围见 [测试规范](docs/test-design.md)。
+
+### CI
+
+仓库是 GitHub Free 下的私有仓库：
+
+- 托管 runner 每月 2000 分钟，每个 job 单独向上取整计费，拆 job、加分片都会增加消耗。本地检查通过后再推送，CI 只做确认。
+- 不能开启分支保护，GitHub 不拦截未通过检查的合并；执行合并的人按下面的通过标准核对 `ci`。
+
+| 工作流 | 触发 | 内容 |
+|---|---|---|
+| [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档；目标为 `develop` 时按改动路径选择后端、前端检查，前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时两端都查；结果汇总为 `ci` |
+| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` tag；手动选择分支 | 构建并上传镜像，见 [README 部署说明](README.md#部署) |
+
+通过标准：对 PR 当前 head 提交执行下面的命令，输出为 `completed success` 才能合并。
+
+```bash
+sha=$(gh api repos/{owner}/{repo}/pulls/<n> --jq .head.sha)
+gh api "repos/{owner}/{repo}/commits/$sha/check-runs?check_name=ci" --jq '.check_runs[] | .status + " " + .conclusion'
+```
+
+本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。失败时先读失败 job 的日志，e2e 另下载 `playwright-e2e` artifact 中的 trace；与改动无关的偶发失败用 **Re-run failed jobs** 只重跑失败的 job，其余修复后推送新提交。
 
 ## 2. 合同与实现边界
 
@@ -58,7 +78,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
    git push -u origin HEAD
    gh pr create --base develop
    ```
-   等最新提交的 `ci` 检查通过后，由开发者手动执行 `gh pr merge <n> --squash`。Agent 创建 PR 后等待合并指令。日常 PR 误指 `main` 时先用 `gh pr edit <n> --base develop` 修正。
+   `ci` 按[通过标准](#ci)核对通过后，由开发者手动执行 `gh pr merge <n> --squash`。Agent 创建 PR 后等待合并指令。日常 PR 误指 `main` 时先用 `gh pr edit <n> --base develop` 修正，`ci` 会按新目标重跑。
 3. 用 `gh pr view <n> --json state` 确认 `MERGED`，用 `git worktree list` 确认是自己的 worktree，且没有待保留的未提交修改，再回主目录清理：
    ```bash
    git pull --ff-only
@@ -72,9 +92,9 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 | 操作 | 起点与目标 | 合并方式 |
 |---|---|---|
-| 发版 | `develop → main`，开发者给出版本号后创建 PR | CI 通过并确认后 `gh pr merge <n> --merge` |
-| 热修 | 从 `origin/main` 建独立 worktree，PR 指向 `main` | 检查、确认后 merge commit |
-| 热修回流 | `main → develop` | CI 通过后手动执行 `gh pr merge <n> --merge` |
+| 发版 | `develop → main`，开发者给出版本号后创建 PR | `ci` 通过并确认后 `gh pr merge <n> --merge` |
+| 热修 | 从 `origin/main` 建独立 worktree，PR 指向 `main` | `ci` 通过并确认后 `gh pr merge <n> --merge` |
+| 热修回流 | `main → develop` | `ci` 通过后手动执行 `gh pr merge <n> --merge` |
 
 合入 `main` 后，确认 `main` 上就是本次要发布的代码，再用开发者确定的版本号创建 release：
 
@@ -83,7 +103,11 @@ gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes
 git fetch --tags
 ```
 
-等这个版本的 `release-images` 运行成功后，再按 [README 部署说明](README.md#部署) 更新服务器。创建 Release 不会自动部署。
+创建 Release 不会自动部署。下面的命令输出 `completed success` 后，再按 [README 部署说明](README.md#部署) 更新服务器；无输出表示 tag 还没触发运行：
+
+```bash
+gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=push&branch=vX.Y.Z" --jq 'first(.workflow_runs[]) | .status + " " + .conclusion'
+```
 
 版本号由开发者确定。X 用于重构或不兼容变更，Y 用于兼容的新功能，Z 用于修复；前段增加时后段归零。`v0.Y.Z` 阶段的大改增加 Y，热修增加 Z。
 

@@ -33,7 +33,7 @@
 
 ## 3. 验证
 
-- 代码变更执行 `pnpm ci:check`，合入前通过 `pnpm verify`；核心用户旅程变更还要运行相关 Playwright 用例。CI 的 e2e 独立于 `verify` 执行。
+- 代码变更执行 `pnpm ci:check`，合入前通过 `pnpm verify`；核心用户旅程变更还要运行相关 Playwright 用例，全部用例由 CI 运行。
 - 新增页面、变更共享逻辑、跨层合同或用户行为时，按[实现规范的测试归层](docs/frontend-implementation.md#测试)补充或更新覆盖；纯文档或措辞变更检查格式和链接。
 - UI 变更按[设计系统](../design-system.html)核对桌面与移动布局、浅深主题、键盘操作和中文长内容；截图位置见根开发约定。
 - 修改生产反代时，验证路径 rewrite、WebSocket upgrade 与同源 Host / Origin；部署约定见[跨端合同](../contract/conventions.md)。
