@@ -1,44 +1,89 @@
 import { describe, expect, it } from 'vitest'
-import { zOverviewOut } from '@/shared/api/generated/zod.gen'
-import { addMockConversation } from './conversations'
+import {
+  addDays,
+  AUDIT_TIME_ZONE,
+  startOfZonedDay,
+  startOfZonedMonth,
+} from '@/features/audit/audit-time'
+import { zAuditExecutionsOut, zOverviewOut } from '@/shared/api/generated/zod.gen'
+import { addMockConversation, addMockTask, addMockUser } from './handlers'
 
-type AuditRow = { conversationId: string; deliveredAt: string; deletedAt: string | null }
+describe('审计清单 mock', () => {
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
 
-const auditRowIn = async (conversationId: string, since: string, until: string) => {
-  const query = new URLSearchParams({ since, until, limit: '50' })
-  const response = await fetch(`/api/audit/conversations?${query}`)
-  const { items } = (await response.json()) as { items: AuditRow[] }
-  return items.find((item) => item.conversationId === conversationId)
-}
+  const executionsPage = async (params: Record<string, string>) => {
+    const query = new URLSearchParams({ since, limit: '50', ...params })
+    const response = await fetch(`/api/audit/executions?${query}`)
+    return { status: response.status, body: (await response.json()) as unknown }
+  }
 
-describe('审计报表 mock', () => {
-  it('删掉对话不挪它的交付时刻，也不挪出原来的时间窗', async () => {
-    const conversation = addMockConversation('删掉也不挪位', '2026-09-01T08:00:00.000Z')
-    const since = '2026-09-01T00:00:00.000Z'
-    const until = '2026-09-02T00:00:00.000Z'
-    const before = await auditRowIn(conversation.id, since, until)
-    expect(before).toMatchObject({ deletedAt: null })
+  const allExecutions = async (sort: string, order: string) => {
+    const items = []
+    let cursor: string | null = null
+    do {
+      const { body } = await executionsPage({ sort, order, ...(cursor ? { cursor } : {}) })
+      const page = zAuditExecutionsOut.parse(body)
+      items.push(...page.items)
+      cursor = page.nextCursor
+    } while (cursor !== null)
+    return items
+  }
 
-    const removed = await fetch(`/api/conversations/${conversation.id}`, { method: 'DELETE' })
-    expect(removed.status).toBe(204)
+  it('近 30 天里有四种异常、已删除、没成片与多模型用量的对话', async () => {
+    const items = await allExecutions('start', 'desc')
+    const kinds = new Set(items.flatMap((item) => item.anomalies))
+    expect(kinds).toEqual(new Set(['retry', 'stuck', 'spend', 'task_stuck']))
+    expect(items.some((item) => item.deletedAt !== null)).toBe(true)
+    expect(items.some((item) => item.deliveredAt === null)).toBe(true)
+    expect(items.some((item) => item.usage.length > 1)).toBe(true)
+  })
 
-    expect(await auditRowIn(conversation.id, since, until)).toMatchObject({
-      deletedAt: expect.any(String),
-      deliveredAt: before?.deliveredAt,
+  it('对话 mock 里的每段对话各占一行：id、标题、需求单与属主都对得上，属主是名册里的人', async () => {
+    const wang = addMockUser('小王')
+    const task = addMockTask('通勤鞋履 · 产品展示')
+    const conversation = addMockConversation(
+      '小王 · 通勤鞋开箱',
+      new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      wang.id,
+    )
+    conversation.taskId = task.id
+
+    const items = await allExecutions('start', 'desc')
+    expect(items.find((item) => item.conversationId === conversation.id)).toMatchObject({
+      taskId: task.id,
+      taskTitle: '通勤鞋履 · 产品展示',
+      title: '小王 · 通勤鞋开箱',
+      userName: wang.username,
     })
+  })
+
+  it('按接口排序翻完不重不漏，空值排最后；换了排序还带旧游标就报错', async () => {
+    const byStart = await allExecutions('start', 'desc')
+    const byCycle = await allExecutions('cycle', 'asc')
+    expect(new Set(byCycle.map((item) => item.conversationId))).toEqual(
+      new Set(byStart.map((item) => item.conversationId)),
+    )
+    const firstUndelivered = byCycle.findIndex((item) => item.deliveredAt === null)
+    expect(firstUndelivered).toBeGreaterThan(0)
+    expect(byCycle.slice(firstUndelivered).every((item) => item.deliveredAt === null)).toBe(true)
+
+    const { body } = await executionsPage({ sort: 'start', order: 'desc' })
+    const { nextCursor } = zAuditExecutionsOut.parse(body)
+    expect(nextCursor).not.toBeNull()
+    const mismatched = await executionsPage({ sort: 'tokens', cursor: nextCursor ?? '' })
+    expect(mismatched.status).toBe(422)
   })
 })
 
 describe('审计总览 mock', () => {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const daysAgo = (days: number) =>
-    new Date(today.getFullYear(), today.getMonth(), today.getDate() - days)
+  const today = startOfZonedDay(now)
+  const daysAgo = (days: number) => addDays(today, -days)
 
   const overviewOf = async (since: Date, until: Date = now) => {
     const query = new URLSearchParams({
       since: since.toISOString(),
-      timezone: 'Asia/Singapore',
+      timezone: AUDIT_TIME_ZONE,
       until: until.toISOString(),
     })
     const response = await fetch(`/api/audit/overview?${query}`)
@@ -62,11 +107,7 @@ describe('审计总览 mock', () => {
   })
 
   it('片长只从本月 1 日起有数据', async () => {
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
-    const lastMonth = await overviewOf(
-      new Date(today.getFullYear(), today.getMonth() - 1, 1),
-      monthStart,
-    )
+    const lastMonth = await overviewOf(startOfZonedMonth(now, -1), startOfZonedMonth(now))
     expect(lastMonth.current.metrics.lengthVideos).toBe(0)
     expect(lastMonth.current.metrics.completedVideos).toBeGreaterThan(0)
   })

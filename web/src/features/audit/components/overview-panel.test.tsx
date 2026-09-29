@@ -1,13 +1,18 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { emptyAuditMetrics, overviewFixture } from '@/testing/mocks/audit-overview'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import type { Metrics, Overview } from '../audit.api'
 import type { OverviewRange } from '../overview-range'
 import { OverviewPanel } from './overview-panel'
+
+// 浏览器在纽约：日期与日历仍按 UTC+8。
+beforeAll(() => vi.stubEnv('TZ', 'America/New_York'))
+afterAll(() => vi.unstubAllEnvs())
+afterEach(() => vi.useRealTimers())
 
 const renderOverview = async (overview: Overview, range: OverviewRange = { preset: '30d' }) => {
   server.use(http.get('*/api/audit/overview', () => HttpResponse.json(overview)))
@@ -83,15 +88,16 @@ describe('OverviewPanel 环比', () => {
     expect(deltaOf(card(name))).toBeNull()
   })
 
-  it('素材有效率的环比写百分点，没变就是持平', async () => {
-    const shots = { deliveredShots: 30, shots: 30 }
+  it('素材有效率的环比写百分点，没变就是持平；数字悬停写有效镜与镜数', async () => {
+    const shots = { shots: 30 }
     const up = await renderOverview(
       overviewFixture({
-        current: { ...shots, effectiveRate: 0.62 },
+        current: { ...shots, effectiveRate: 0.62, effectiveShots: 18 },
         previous: { ...shots, effectiveRate: 0.55 },
       }),
     )
     expect(deltaOf(card('素材有效率'))).toHaveTextContent('升7 个百分点')
+    expect(within(card('素材有效率')).getByTitle(/^18 \/ 30 /)).toBeInTheDocument()
     up.unmount()
 
     await renderOverview(
@@ -170,6 +176,9 @@ describe('OverviewPanel 工具条', () => {
   })
 
   it('快捷档即点即换，日历预设与自定义区间应用后才换', async () => {
+    // 只假 Date：此刻 UTC+8 已是 9 月 23 日 00:30，纽约还是 22 日。
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-22T16:30:00Z'))
     const user = userEvent.setup()
     const { onRangeChange } = await renderOverview(overviewFixture())
 
@@ -182,22 +191,19 @@ describe('OverviewPanel 工具条', () => {
     await user.click(screen.getByRole('button', { name: '应用' }))
     expect(onRangeChange).toHaveBeenLastCalledWith({ preset: 'lastMonth' })
 
-    // 点起点再点终点：本月 1 日到今天。
-    const today = new Date()
-    const first = new Date(today.getFullYear(), today.getMonth(), 1)
-    const local = (at: Date) =>
-      `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
+    // 日历按 UTC+8 的日期：今天是 23 日，24 日起不可选。点起点再点终点：本月 1 日到今天。
     await user.click(screen.getByRole('button', { name: /^自定义时间范围/ }))
     const dialog = screen.getByRole('dialog', { name: '选择时间范围' })
-    await user.click(within(dialog).getByRole('button', { name: `${first.getMonth() + 1}月1日` }))
-    expect(within(dialog).getByRole('button', { name: '应用' })).toBeDisabled()
-    await user.click(
-      within(dialog).getByRole('button', { name: `${today.getMonth() + 1}月${today.getDate()}日` }),
-    )
-    await user.click(within(dialog).getByRole('button', { name: '应用' }))
+    const button = (name: string) => within(dialog).getByRole('button', { name })
+    expect(button('9月23日')).toHaveAttribute('aria-current', 'date')
+    expect(button('9月24日')).toBeDisabled()
+    await user.click(button('9月1日'))
+    expect(button('应用')).toBeDisabled()
+    await user.click(button('9月23日'))
+    await user.click(button('应用'))
     expect(onRangeChange).toHaveBeenLastCalledWith({
-      first: local(first),
-      last: local(today),
+      first: '2026-09-01',
+      last: '2026-09-23',
       preset: 'custom',
     })
   })

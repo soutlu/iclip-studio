@@ -1,4 +1,4 @@
-/** 总览里反复出现的小件：卡片外壳、标题旁的 ⓘ、环比字、图例记号。 */
+/** 审计页反复出现的小件：卡片外壳、带标题的一节、标题旁的 ⓘ、环比字、图例记号。 */
 
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
@@ -16,6 +16,34 @@ export function Card({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
       )}
       {...props}
     />
+  )
+}
+
+/** 一节：标题带 ⓘ，旁边可跟一句读数；区域的可访问名只取标题字。 */
+export function Section({
+  id,
+  title,
+  info,
+  aside,
+  children,
+}: {
+  id: string
+  title: string
+  info: string
+  aside?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section aria-labelledby={`${id}-title`} className="flex scroll-mt-4 flex-col gap-3" id={id}>
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <h3 className="flex items-center text-title font-semibold text-on-surface">
+          <span id={`${id}-title`}>{title}</span>
+          <InfoTip text={info} />
+        </h3>
+        {aside}
+      </div>
+      {children}
+    </section>
   )
 }
 

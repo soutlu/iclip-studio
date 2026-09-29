@@ -1,4 +1,4 @@
-/** 驱动 cue.svg 的开箱动画：按节点上的首尾姿态插值，不依赖渲染运行时。 */
+/** 驱动 cue.svg 的开箱动画：按节点上的首尾姿态插值，不依赖渲染运行时。素材源文件与重建脚本在仓库根 `design/cue-mascot`。 */
 
 const OPEN_MS = 300
 const CLOSE_MS = 217

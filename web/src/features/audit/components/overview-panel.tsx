@@ -35,7 +35,7 @@ const CARDS: readonly {
   },
   {
     key: 'attempts',
-    info: '一个镜是一段对话里的一个镜号。平均每个镜出了几次，失败和重出都算；只统计带镜号的出片。越接近 1 越好。',
+    info: '一个镜是一段对话里的一个镜号。平均每个镜成功生成了几次，失败的不计费、不算；一次都没成功的镜不算。越接近 1 越好。',
     section: 'quality',
   },
   {
@@ -45,7 +45,7 @@ const CARDS: readonly {
   },
   {
     key: 'effective',
-    info: '有人下载过的镜 ÷ 出过片的镜。下载的是合成时，按原作算到原作所在的镜。',
+    info: '有人下载过的镜 ÷ 镜数。下载的是合成时，按原作算到原作所在的镜。',
     section: 'quality',
     wide: true,
   },
@@ -85,15 +85,14 @@ export function OverviewPanel({ range, onRangeChange, nameOf }: OverviewPanelPro
 
   return (
     <div className="flex flex-col gap-4">
-      <OverviewToolbar
-        onChange={onRangeChange}
-        previous={
-          data === undefined
-            ? null
-            : fmtDayRange(new Date(data.window.previousSince), new Date(data.window.previousUntil))
-        }
-        range={range}
-      />
+      <OverviewToolbar onChange={onRangeChange} range={range}>
+        {data === undefined ? null : (
+          <span className="text-label whitespace-nowrap text-on-surface-muted">
+            环比对比{' '}
+            {fmtDayRange(new Date(data.window.previousSince), new Date(data.window.previousUntil))}
+          </span>
+        )}
+      </OverviewToolbar>
       {overview.isError && data === undefined ? (
         <ListError
           message={errorMessageOf(overview.error, '读取审计总览失败')}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
+from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,6 +13,8 @@ from iclip.domains.audit.overview import (
     Cell,
     OverviewWindow,
     build_cells,
+    fill_periods,
+    period_starts,
     plan_window,
     trend,
 )
@@ -43,7 +46,6 @@ def metrics(
     shots: int = 0,
     attempts: int = 0,
     one_take: int = 0,
-    delivered_shots: int = 0,
     effective: int = 0,
     cycle: SpreadOut | None = None,
     upstream: SpreadOut | None = None,
@@ -60,7 +62,6 @@ def metrics(
             "shots": shots,
             "attempts": attempts,
             "one_take_shots": one_take,
-            "delivered_shots": delivered_shots,
             "effective_shots": effective,
             "active_cycle_seconds": cycle,
             "upstream_seconds": upstream,
@@ -196,6 +197,78 @@ def test_lookback_is_the_earlier_of_previous_start_and_sixty_days_back() -> None
     assert long.lookback == long.previous_since == midnight(date(2026, 5, 24), SINGAPORE)
 
 
+def test_daily_axis_runs_from_the_day_of_since_to_the_day_before_until() -> None:
+    """起点不在零点：首期仍是那天的零点；终点恰在零点，那一天不算一期。"""
+
+    since = datetime(2026, 9, 1, 15, tzinfo=SINGAPORE).astimezone(UTC)
+    window = plan_window(
+        since=since, until=midnight(date(2026, 9, 5), SINGAPORE), zone=SINGAPORE, now=FAR_FUTURE
+    )
+
+    assert window.bucket == "day"
+    assert period_starts(window) == [midnight(date(2026, 9, day), SINGAPORE) for day in range(1, 5)]
+
+
+def test_hourly_axis_starts_at_the_hour_of_since() -> None:
+    since = datetime(2026, 9, 1, 0, 30, tzinfo=SINGAPORE).astimezone(UTC)
+    until = datetime(2026, 9, 1, 3, tzinfo=SINGAPORE).astimezone(UTC)
+
+    window = plan_window(since=since, until=until, zone=SINGAPORE, now=FAR_FUTURE)
+
+    assert window.bucket == "hour"
+    assert period_starts(window) == [
+        datetime(2026, 9, 1, hour, tzinfo=SINGAPORE).astimezone(UTC) for hour in range(3)
+    ]
+
+
+def test_weekly_axis_starts_on_the_local_monday() -> None:
+    since = datetime(2026, 3, 4, 9, tzinfo=SINGAPORE).astimezone(UTC)
+    window = plan_window(
+        since=since, until=since + timedelta(days=130), zone=SINGAPORE, now=FAR_FUTURE
+    )
+
+    starts = period_starts(window)
+
+    assert window.bucket == "week"
+    assert starts[0] == midnight(date(2026, 3, 2), SINGAPORE)
+    assert all(later - earlier == timedelta(days=7) for earlier, later in pairwise(starts))
+    assert starts[-1] <= window.until < starts[-1] + timedelta(days=7)
+
+
+def test_daily_axis_keeps_local_midnight_across_dst() -> None:
+    """纽约 11 月 1 日结束夏令时：那一天有 25 小时，每期仍从本地零点起。"""
+
+    window = plan_window(
+        since=midnight(date(2026, 10, 30), NEW_YORK),
+        until=midnight(date(2026, 11, 3), NEW_YORK),
+        zone=NEW_YORK,
+        now=FAR_FUTURE,
+    )
+
+    starts = period_starts(window)
+
+    assert starts == [midnight(date(2026, 10, 30) + timedelta(days=n), NEW_YORK) for n in range(4)]
+    assert starts[3] - starts[2] == timedelta(hours=25)
+
+
+def test_fill_periods_pads_every_period_with_zero() -> None:
+    starts = period_starts(week_window(SINGAPORE))
+    counts = {starts[1]: 2, starts[4]: 1}
+
+    filled = fill_periods(starts, counts)
+
+    assert [point.period_start for point in filled] == starts
+    assert [point.deliveries for point in filled] == [0, 2, 0, 0, 1, 0, 0]
+    assert [point.deliveries for point in fill_periods(starts, {})] == [0] * 7
+
+
+def test_fill_periods_refuses_counts_before_the_first_period() -> None:
+    starts = period_starts(week_window(SINGAPORE))
+
+    with pytest.raises(ValueError, match="早于"):
+        fill_periods(starts, {starts[0] - timedelta(days=1): 1})
+
+
 def test_count_averages_skip_inactive_days() -> None:
     """件数类只平均活跃日：七天里五天各两件、两天没人用，均线是 2，不是 10 / 7。"""
 
@@ -243,12 +316,9 @@ def test_sample_groups_widen_on_their_own_until_they_have_enough() -> None:
     window = week_window()
     cells = day_cells(
         window,
-        {
-            back: metrics(users=1, shots=2, attempts=4, one_take=1, delivered_shots=2, effective=1)
-            for back in range(7)
-        }
+        {back: metrics(users=1, shots=2, attempts=4, one_take=1, effective=1) for back in range(7)}
         | {
-            10: metrics(shots=20, attempts=20, one_take=20, delivered_shots=10, effective=10),
+            10: metrics(shots=20, attempts=20, one_take=20, effective=10),
             5: metrics(users=1, cycle=spread(100, 6), upstream=spread(50, 30)),
             2: metrics(users=1, cycle=spread(200, 4)),
         },
@@ -262,7 +332,7 @@ def test_sample_groups_widen_on_their_own_until_they_have_enough() -> None:
     assert ma7.attempts_per_shot.since == window.since - timedelta(days=4)
     assert ma7.attempts_per_shot.value == pytest.approx((5 * 4 + 20) / 30)
     assert ma7.one_take_rate.value == pytest.approx((5 + 20) / 30)
-    assert ma7.effective_rate.value == pytest.approx((5 + 10) / (5 * 2 + 10))
+    assert ma7.effective_rate.value == pytest.approx((5 + 10) / 30)
     assert ma7.active_cycle_seconds.since == window.since
     assert ma7.active_cycle_seconds.value == pytest.approx((100 * 6 + 200 * 4) / 10)
     assert ma7.upstream_seconds.since == window.since

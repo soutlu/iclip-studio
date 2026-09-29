@@ -2,7 +2,7 @@
 
 import { useId, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
-import { EMPTY } from '../format'
+import { EMPTY } from '../overview-format'
 import type { CardHead, ChartModel } from '../overview-model'
 import { Card, DeltaText, InfoTip } from './overview-bits'
 import { OverviewChart } from './overview-chart'

@@ -17,7 +17,7 @@ type AppContentPaneProps = {
   children: ReactNode
 }
 
-/** 固定 DOM 顺序保留编辑器与滚动状态；壳以 flex 方向换位，收起只隐藏正文。 */
+/** 固定 DOM 顺序保留编辑器与滚动状态；壳以 flex 方向换位，折叠只隐藏正文。 */
 export function AppContentPane({
   pane,
   width,
@@ -77,7 +77,7 @@ export function AppContentPane({
         <div className="flex h-13 items-center justify-center" data-pane-drag-handle>
           <IconButton
             data-pane-restore
-            label={pane === 'chat' ? '展开对话' : '打开右侧面板'}
+            label={pane === 'chat' ? '展开对话' : '展开工作台'}
             name={pane === 'chat' ? 'message' : 'grid'}
             onClick={onExpand}
             size="sm"

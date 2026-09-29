@@ -1,4 +1,4 @@
-"""审计报表的读模型：一格指标、按维度分行的指标、总览、对话明细与异常，直接就是各端点的响应。
+"""审计报表的读模型：一格指标、按时段分行的指标、总览、按人与任务执行，直接就是各端点的响应。
 
 只读报表没有写路径也没有行为，领域模型与出口形状是同一个东西，不再各存一份互相搬运。
 camelCase 别名；比率在这里由原始计数派生，分母为零时是 ``None``。口径的定义见
@@ -10,10 +10,10 @@ import uuid
 from datetime import datetime
 from typing import Final
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, computed_field
 from pydantic.alias_generators import to_camel
 
-from iclip.domains.audit.models import AnomalyKind, OverviewBucket
+from iclip.domains.audit.models import ExecutionAnomalyKind, OverviewBucket
 
 
 class CamelModel(BaseModel):
@@ -64,18 +64,18 @@ NO_USAGE: Final = UsageOut(
 
 
 class MetricsOut(CamelModel):
-    """一格指标。全体、人、需求单、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。"""
+    """一格指标。全体、人、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。"""
 
     completed_videos: int
     delivered_tasks: int
     delivered_orphan_conversations: int
     producers: int
     shots: int
+    """镜数：至少成功生成过一条的镜；一条都没成的不算镜。"""
     attempts: int
+    """这些镜的成功生成次数合计；失败与还没出结果的不计。"""
     one_take_shots: int
-    """只出了一条且成了的镜数。"""
-    delivered_shots: int
-    """出片镜数：至少出成一条的镜。"""
+    """一次通过的镜数：只用一次成功生成就达标的镜；失败的不算。"""
     effective_shots: int
     """有效镜数：有人下载过的镜；下载的是衍生记录时，按原作号算到原作所在的镜。"""
     runs: int
@@ -89,8 +89,6 @@ class MetricsOut(CamelModel):
     """单任务时长：同一区间里只算 agent 运行与视频生成的时段，相隔超过 30 分钟的空档不计。"""
     agent_run_seconds: SpreadOut | None
     """agent 一轮运行从开始到结束；没结束的轮不计。"""
-    video_seconds: SpreadOut | None
-    """单个视频受理到完成。"""
     upstream_seconds: SpreadOut | None
     """单个视频提交上游到完成。"""
     length_videos: int
@@ -116,16 +114,16 @@ class MetricsOut(CamelModel):
     @computed_field
     @property
     def one_take_rate(self) -> float | None:
-        """一次通过率：只出了一条且成了的镜占全部镜的比例。"""
+        """一次通过率：只用一次成功生成就达标的镜占镜数的比例。"""
 
         return self.one_take_shots / self.shots if self.shots else None
 
     @computed_field
     @property
     def effective_rate(self) -> float | None:
-        """有效率：有效镜占出片镜的比例。"""
+        """有效率：有效镜占镜数的比例。"""
 
-        return self.effective_shots / self.delivered_shots if self.delivered_shots else None
+        return self.effective_shots / self.shots if self.shots else None
 
     @computed_field
     @property
@@ -141,7 +139,6 @@ EMPTY_METRICS: Final = MetricsOut(
     shots=0,
     attempts=0,
     one_take_shots=0,
-    delivered_shots=0,
     effective_shots=0,
     runs=0,
     active_users=0,
@@ -149,7 +146,6 @@ EMPTY_METRICS: Final = MetricsOut(
     cycle_seconds=None,
     active_cycle_seconds=None,
     agent_run_seconds=None,
-    video_seconds=None,
     upstream_seconds=None,
     length_videos=0,
     length_seconds=0.0,
@@ -159,43 +155,15 @@ EMPTY_METRICS: Final = MetricsOut(
 
 
 class AttemptBucketOut(CamelModel):
-    """出片次数正好是 ``attempts`` 次的镜有多少个。次数按镜上全部出片记录数，不看终态。"""
+    """成功生成正好 ``attempts`` 次的镜有多少个。"""
 
     attempts: int
     shots: int
 
 
-class UserMetricsOut(CamelModel):
-    user_name: str
-    metrics: MetricsOut
-
-
-class TaskMetricsOut(CamelModel):
-    task_id: uuid.UUID
-    title: str
-    metrics: MetricsOut
-
-
 class PeriodMetricsOut(CamelModel):
     period_start: datetime
     metrics: MetricsOut
-
-
-class AnomalyCountOut(CamelModel):
-    kind: AnomalyKind
-    count: int
-
-
-class SummaryOut(CamelModel):
-    overall: MetricsOut
-    users: list[UserMetricsOut]
-    tasks: list[TaskMetricsOut]
-    series: list[PeriodMetricsOut] | None
-    """只在给了 ``bucket`` 时有。"""
-    attempt_distribution: list[AttemptBucketOut]
-    """出片次数分布，次数少的在前，不封顶；只给全体一档。"""
-    anomaly_counts: list[AnomalyCountOut]
-    """整个筛选范围里每种异常各几条，按缺省阈值判定，只列出现过的种类，多的在前。"""
 
 
 class OverviewWindowOut(CamelModel):
@@ -268,7 +236,7 @@ class TrendPointOut(CamelModel):
 
 
 class TopShotOut(CamelModel):
-    """时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。"""
+    """时间窗里成功生成次数最多的镜之一；时间窗作用在该镜第一条成功生成的完成时刻上。"""
 
     conversation_id: uuid.UUID
     title: str
@@ -284,19 +252,9 @@ class OverviewOut(CamelModel):
     series: list[TrendPointOut]
     """早的在前；时间窗内每一期都在，没数据的期计数为 0。"""
     attempt_distribution: list[AttemptBucketOut]
-    """本期的出片次数分布，次数少的在前，不封顶。"""
+    """本期的成功生成次数分布，次数少的在前，不封顶。"""
     top_shots: list[TopShotOut]
-    """本期出片次数最多的 3 个镜，多的在前。"""
-
-
-class ShotOut(CamelModel):
-    shot: int
-    attempts: int
-    one_take: bool
-    effective: bool
-    """有人下载过这一镜的出片，或挂在它们名下的衍生记录。"""
-    first_at: datetime
-    last_at: datetime
+    """本期成功生成次数最多的 3 个镜，多的在前。"""
 
 
 class ModelUsageOut(CamelModel):
@@ -304,56 +262,92 @@ class ModelUsageOut(CamelModel):
     usage: UsageOut
 
 
-class ConversationAuditOut(CamelModel):
-    """一段有成片的对话；指标与镜、用量都是这段对话的全量，不按时间窗裁。"""
+class PeriodDeliveriesOut(CamelModel):
+    period_start: datetime
+    deliveries: int
+
+
+class PersonOut(CamelModel):
+    """一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。"""
+
+    user_name: str
+    metrics: MetricsOut
+    trend: list[PeriodDeliveriesOut]
+    """时间窗内每一期的成片数，早的在前，每期都在；粒度见 ``AuditPeopleOut.bucket``。"""
+
+
+class AuditPeopleOut(CamelModel):
+    bucket: OverviewBucket
+    """``trend`` 的粒度，与总览同一规则。"""
+    items: list[PersonOut]
+    """时间窗里出过片或跑过的人，一次全给，成片多的在前。"""
+
+
+class ExecutionShotOut(CamelModel):
+    """这段对话里至少成功生成过一条的镜。"""
+
+    shot: int
+    attempts: int
+    """成功生成次数。"""
+    one_take: bool
+    effective: bool
+    """有人下载过这一镜的出片，或挂在它们名下的衍生记录。"""
+
+
+class ExecutionThresholdsOut(CamelModel):
+    """四种异常的门槛。"""
+
+    retry_at_least: int
+    """单镜成功生成达到这么多次算反复重试。"""
+    stuck_hours: int
+    """提交上游超过这么多小时还没结果算视频悬挂。"""
+    spend_times: int
+    task_conversations: int
+    """需求单在时间窗里挂了至少这么多段执行、且从来没有过成片算卡住。"""
+    spend_tokens: float | None
+    """本期消耗离群的门槛：本期每件成片平均 token × ``spend_times``；本期没有成片时为空。"""
+
+
+class ExecutionOut(CamelModel):
+    """一次任务执行，即一段有运行或出片的对话；指标、镜与用量是这段对话的全量，不按时间窗裁。"""
 
     conversation_id: uuid.UUID
     title: str
-    owner_user_id: uuid.UUID
     user_name: str | None
     task_id: uuid.UUID | None
-    deleted_at: datetime | None
+    task_title: str | None
+    created_at: datetime
     started_at: datetime
-    delivered_at: datetime
+    """首次运行时刻，没有运行就是建立时刻；只用来显示，筛选与排序用 ``created_at``。"""
+    delivered_at: datetime | None
+    """最后一条成片的时刻；还没有成片为空。"""
+    deleted_at: datetime | None
     metrics: MetricsOut
-    shots: list[ShotOut]
+    shots: list[ExecutionShotOut]
     usage: list[ModelUsageOut]
+    """按模型的用量。"""
+    anomalies: list[ExecutionAnomalyKind]
 
 
-class AuditConversationsOut(CamelModel):
-    items: list[ConversationAuditOut]
+class AuditExecutionsOut(CamelModel):
+    items: list[ExecutionOut]
     next_cursor: str | None
-
-
-class AnomalyOut(CamelModel):
-    """一条异常。``ref`` 是「种类:对象」的稳定文本，与 ``at`` 一起构成排序键与游标，不出接口。"""
-
-    kind: AnomalyKind
-    at: datetime
-    ref: str = Field(exclude=True)
-    value: float | None
-    threshold: float | None
-    conversation_id: uuid.UUID | None
-    task_id: uuid.UUID | None
-    user_name: str | None
-    shot: int | None
-    generation_id: uuid.UUID | None
-
-
-class AnomaliesOut(CamelModel):
-    items: list[AnomalyOut]
-    next_cursor: str | None
+    total: int
+    """筛选范围里的任务执行总数。"""
+    flagged: int
+    """其中至少命中一种异常的条数。"""
+    thresholds: ExecutionThresholdsOut
 
 
 __all__ = [
     "EMPTY_METRICS",
     "NO_USAGE",
-    "AnomaliesOut",
-    "AnomalyCountOut",
-    "AnomalyOut",
     "AttemptBucketOut",
-    "AuditConversationsOut",
-    "ConversationAuditOut",
+    "AuditExecutionsOut",
+    "AuditPeopleOut",
+    "ExecutionOut",
+    "ExecutionShotOut",
+    "ExecutionThresholdsOut",
     "MetricsOut",
     "ModelUsageOut",
     "MovingAverageOut",
@@ -361,13 +355,11 @@ __all__ = [
     "OverviewOut",
     "OverviewPeriodOut",
     "OverviewWindowOut",
+    "PeriodDeliveriesOut",
     "PeriodMetricsOut",
-    "ShotOut",
+    "PersonOut",
     "SpreadOut",
-    "SummaryOut",
-    "TaskMetricsOut",
     "TopShotOut",
     "TrendPointOut",
     "UsageOut",
-    "UserMetricsOut",
 ]

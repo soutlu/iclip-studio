@@ -505,7 +505,7 @@ export const handlers = [
 
   ...transcriptHandlers,
 
-  ...auditHandlers,
+  ...auditHandlers((taskId) => mockTasks.find((task) => task.id === taskId)?.title ?? null),
 
   ...libraryHandlers,
 ]

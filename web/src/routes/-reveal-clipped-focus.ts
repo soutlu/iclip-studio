@@ -1,6 +1,6 @@
 import type { FocusEvent } from 'react'
 
-/** 裁切层不会自行滚动；焦点进入被横向遮住的控件时请求恢复宽度，保留当前焦点。 */
+/** 裁切层不会自行滚动；焦点进入被横向裁切的控件时请求恢复宽度，保留当前焦点。 */
 export function revealClippedFocus(event: FocusEvent<HTMLElement>, reveal: () => void) {
   const { currentTarget, target } = event
   // Portal 的焦点也会沿 React 树冒泡，但不属于本裁切区域。

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Cue 全局设计规范：颜色与主题、排版与尺度、交互与可访问性、组件复用原则及 token 定义。"
+      content="Cue 基础 token：颜色与主题、排版与尺度的 token 定义，与运行时逐值对账。"
     />
     <title>Cue Design System</title>
     <!--
@@ -518,10 +518,10 @@
         <div>
           <h1>Design System</h1>
           <p class="lead">
-            全局视觉与交互规范；页面与组件细节由实现决定。
+            基础 token 定义；运行时 CSS 按这里逐值对账。
           </p>
         </div>
-        <div class="token-map" aria-label="规范范围">
+        <div class="token-map" aria-label="token 范围">
           <div class="token-layer">
             <span>01 · Color</span>
             <strong>颜色角色</strong>
@@ -537,41 +537,8 @@
             <strong>尺度基准</strong>
             <code>--radius-md · --dur-s · --z-popup</code>
           </div>
-          <div class="token-layer">
-            <span>04 · Interaction</span>
-            <strong>交互与可访问性</strong>
-            <code>State · Focus · Feedback</code>
-          </div>
-          <div class="token-layer">
-            <span>05 · Principles</span>
-            <strong>全局原则</strong>
-            <code>Consistency · Reuse · Adaptation</code>
-          </div>
         </div>
       </header>
-
-      <section class="section" id="rule" aria-labelledby="rule-title">
-        <header class="section-heading">
-          <div>
-            <span class="eyebrow">Global principles</span>
-            <h2 id="rule-title">全局原则</h2>
-          </div>
-        </header>
-        <div class="rule-line">
-          <div class="rule">
-            <strong>语义与主题</strong>
-            <p>界面适配浅深主题；内容身份色与媒体素材可固定。</p>
-          </div>
-          <div class="rule">
-            <strong>一致与复用</strong>
-            <p>优先复用组件；两个独立业务模块复用的稳定模式再提取，局部样式留在业务模块。</p>
-          </div>
-          <div class="rule">
-            <strong>内容与适配</strong>
-            <p>突出内容层级，减少装饰；布局适配空间，保持阅读顺序和核心操作可达。</p>
-          </div>
-        </div>
-      </section>
 
       <section class="section" id="color" aria-labelledby="color-title">
         <header class="section-heading">
@@ -580,7 +547,7 @@
             <h2 id="color-title">颜色规范</h2>
           </div>
           <p>
-            点击原始色阶复制解析后的 HEX；点击语义单元复制可直接使用的 token。语义角色成套使用，组件不直接引用色阶。
+            点击原始色阶复制解析后的 HEX；点击语义单元复制可直接使用的 token。组件不直接引用色阶。
           </p>
         </header>
 
@@ -642,7 +609,6 @@
             <span class="eyebrow">Typography &amp; scale</span>
             <h2 id="type-title">排版与尺度</h2>
           </div>
-          <p>按信息层级选字阶，其余使用统一刻度。</p>
         </header>
 
         <div class="type-list">
@@ -764,7 +730,6 @@
                 <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-4xl)"></i><span>48px</span><code>--radius-4xl</code></div></div>
                 <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-full)"></i><span>full</span><code>--radius-full</code></div></div>
               </div>
-              <p class="type-source-note">同类控件使用一致圆角。</p>
             </div>
 
             <div class="scale-group">
@@ -777,8 +742,6 @@
                 <div class="motion-row"><code>--ease-decel · 进场</code><span>cubic-bezier(0, 0, 0, 1)</span><b>decel</b></div>
                 <div class="motion-row"><code>--ease-accel · 退场</code><span>cubic-bezier(0.3, 0, 1, 1)</span><b>accel</b></div>
               </div>
-              <p class="type-source-note">动效表达状态与空间变化，遵循系统减少动态效果的偏好。</p>
-              <p class="type-source-note">首页吉祥物 hero（<code>web/src/shared/ui/hero</code>）是内联 SVG，画板 2:1、容器宽 <code>min(640px, 92vw)</code>；悬停展开 300ms、收起 217ms 与缓动曲线烤在素材里，不走 <code>--dur-*</code>，减少动态效果时定格展开态。Cue 字标用 <code>currentColor</code> 取 <code>--color-on-surface</code>，源文件与重建脚本在 <code>design/cue-mascot</code>。</p>
             </div>
             <div class="scale-group">
               <h3>Elevation tokens</h3>
@@ -788,7 +751,6 @@
                 <div class="motion-row"><code>--shadow-2 · 菜单 / 浮层</code><i class="elevation-swatch" style="box-shadow: var(--shadow-2)"></i><b>2</b></div>
                 <div class="motion-row"><code>--shadow-3 · 弹窗 / toast</code><i class="elevation-swatch" style="box-shadow: var(--shadow-3)"></i><b>3</b></div>
               </div>
-              <p class="type-source-note">层次优先用 surface 色差表达。</p>
             </div>
 
             <div class="scale-group">
@@ -807,14 +769,6 @@
             </div>
 
             <div class="scale-group">
-              <h3>应用壳布局</h3>
-              <p class="type-source-note">导航、聊天与工作台连续排列，用细分隔线划分区域，不留列间空隙。导航固定在左侧；聊天与工作台可互换位置。</p>
-              <p class="type-source-note">导航展开尺寸取 <code>--layout-app-sidebar-*</code>，收起后保留图标与账户入口；内容区收起后保留 <code>--layout-app-content-rail-width</code> 的展开入口。折叠保留列表、输入与工作台状态。</p>
-              <p class="type-source-note">边界拖动热区取 <code>--layout-app-resize-handle-width</code>，绝对定位覆盖分隔线，不占列宽；悬停或拖动时突出细线。支持方向键调整与双击恢复默认尺寸。</p>
-              <p class="type-source-note">拖动边界连续收窄；低于导航 200px、对话 400px、工作台 560px 后，内部内容保持该宽度，由外层逐渐裁切；到导航 56px、内容栏 40px 才显示图标栏。松手保留当前宽度，反向拖动连续展开。收起一栏时，另一栏保留内容；不提供全屏按钮。空间不足以并排时显示当前内容；低于 <code>--breakpoint-sm</code> 时导航改为抽屉，内容通过工具栏切换。</p>
-            </div>
-
-            <div class="scale-group">
               <h3>Breakpoints</h3>
               <div class="motion-list">
                 <div class="motion-row"><code>--breakpoint-sm</code><span>紧凑 → 中等</span><b>600px</b></div>
@@ -825,69 +779,9 @@
           </div>
       </section>
 
-      <section class="section" id="component" aria-labelledby="component-title">
-        <header class="section-heading">
-          <div>
-            <span class="eyebrow">Interaction &amp; accessibility</span>
-            <h2 id="component-title">交互与可访问性</h2>
-          </div>
-          <p>键盘、鼠标与触摸均可完成核心任务。</p>
-        </header>
-
-        <div class="component-layout">
-          <section aria-labelledby="state-title">
-            <header class="subsection-heading">
-              <h3 id="state-title">状态语义</h3>
-            </header>
-            <div class="state-definition-table">
-              <div class="state-definition-row">
-                <strong>悬停与按压</strong>
-                <code>hover · pressed</code>
-                <span>反馈一致，不改变布局。</span>
-              </div>
-              <div class="state-definition-row">
-                <strong>键盘焦点</strong>
-                <code>focus-visible</code>
-                <span>支持键盘操作，焦点可见；浮层管理焦点。</span>
-              </div>
-              <div class="state-definition-row">
-                <strong>选中与禁用</strong>
-                <code>selected · disabled</code>
-                <span>视觉状态与可访问语义一致。</span>
-              </div>
-              <div class="state-definition-row">
-                <strong>加载与错误</strong>
-                <code>loading · invalid</code>
-                <span>加载保持尺寸并阻止重复提交；错误用文字说明并关联字段或操作。</span>
-              </div>
-            </div>
-          </section>
-
-          <section aria-labelledby="icon-title">
-            <header class="subsection-heading">
-              <h3 id="icon-title">图标与语义</h3>
-            </header>
-            <div class="icon-rule-table">
-              <div class="icon-rule-row">
-                <strong>一致性</strong>
-                <span>通用图标统一来源与尺寸刻度，按用途命名，颜色继承控件。</span>
-              </div>
-              <div class="icon-rule-row">
-                <strong>可访问名称</strong>
-                <span>语义图标与图标按钮提供可访问名称；装饰图标对辅助技术隐藏。</span>
-              </div>
-              <div class="icon-rule-row">
-                <strong>操作区域</strong>
-                <span>语义化控件提供足够热区，独立于图形尺寸。</span>
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
-
       <footer class="footer">
         <span>Cue Design System</span>
-        <span>全局视觉规范 · token 定义与运行时逐值对账 · pnpm lint:design</span>
+        <span>基础 token · 与运行时逐值对账 · pnpm lint:design</span>
       </footer>
     </main>
 

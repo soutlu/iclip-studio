@@ -1,8 +1,9 @@
 """审计报表的 Postgres 查询：跨 ``iclip.*`` 与 ``agent_runtime.*`` 九张表只读聚合，不建表、不写入。
 
-同一份指标 SQL 服务全体、人、需求单、时段、对话五个维度，差别只在六段 CTE 各自的分组键
-表达式（``_DIMENSIONS``）——各指标的时间锚点不同，键要在各自的 CTE 里算。键表达式是本文件
-的常量，不来自外部输入；外部输入一律走绑定参数。"""
+同一份指标 SQL 服务全体、人、时段、对话四个维度，差别只在六段 CTE 各自的分组键表达式
+（``_DIMENSIONS``）——各指标的时间锚点不同，键要在各自的 CTE 里算。任务执行清单另有一条头查询，
+按排序键与方向各备一份（``_EXECUTIONS_SQL``）。键表达式与方向都是本文件的常量，不来自外部输入；
+外部输入一律走绑定参数。"""
 
 from __future__ import annotations
 
@@ -10,41 +11,39 @@ import uuid
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Final
 
-from sqlalchemy import text
+from sqlalchemy import TextClause, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.domains.audit.models import (
-    AnomalyCursor,
-    AnomalyKind,
-    ConversationCursor,
-    PeriodBucket,
-    Scope,
-    Thresholds,
+from iclip.domains.audit.executions import (
+    RETRY_AT_LEAST,
+    STUCK_HOURS,
+    TASK_CONVERSATIONS,
+    ExecutionCursor,
 )
+from iclip.domains.audit.models import ExecutionSort, OverviewBucket, Scope, SortOrder
+from iclip.domains.audit.repository import ExecutionPage
 from iclip.domains.audit.schemas import (
     EMPTY_METRICS,
-    AnomalyCountOut,
-    AnomalyOut,
     AttemptBucketOut,
-    ConversationAuditOut,
+    ExecutionOut,
+    ExecutionShotOut,
     MetricsOut,
     ModelUsageOut,
     PeriodMetricsOut,
-    ShotOut,
     SpreadOut,
-    TaskMetricsOut,
     TopShotOut,
     UsageOut,
-    UserMetricsOut,
 )
 
 # ---------------------------------------------------------------------------
 # 公共 CTE。videos 是全部口径的基础：只认有镜号（shot_index 列）且挂着对话的出片，
 # 需求单从对话取；视频的人是属主的用户名，request 里的 user_name 只发给上游、报表不读。
+# 失败与还没出结果的出片不计费，镜、次数与成片都只看成功的；它们只进单任务时长的区间、
+# 视频悬挂、任务执行的圈定，以及没跑过的对话按最近一条视频定人。
 # person 给每段对话定一个人：最近一轮运行的 user_name，没有运行就取最近一条视频的属主。
 # 分叉出来的副本一律不进报表（``forked_from`` 非空）：它继承的出片记在源对话名下，源那边
 # 已经数过；副本自己跑的是试验数据。挡在 videos / person / runs / agent_runs 四个根 CTE 上，
@@ -82,7 +81,14 @@ videos AS (
       AND c.forked_from IS NULL
 )"""
 
+# 每段对话最近一条出片的属主先对整个 videos 排一次序取出来再左连：videos 是物化的 CTE，逐行
+# 取最近一条会对它每段对话全扫一遍。最近一轮运行走 agent_jobs 的（对话，建立时刻）索引，逐行无妨。
 _PERSON: Final = """
+latest_video_owner AS (
+    SELECT DISTINCT ON (v.conversation_id) v.conversation_id, v.user_name
+    FROM videos v
+    ORDER BY v.conversation_id, v.created_at DESC, v.id DESC
+),
 person AS (
     SELECT c.id AS conversation_id, c.title, c.owner_user_id, c.task_id,
            c.created_at, c.updated_at, c.deleted_at,
@@ -90,25 +96,26 @@ person AS (
                (SELECT j.user_name FROM agent_runtime.agent_jobs j
                 WHERE j.conversation_id = c.id::text
                 ORDER BY j.created_at DESC LIMIT 1),
-               (SELECT v.user_name FROM videos v
-                WHERE v.conversation_id = c.id
-                ORDER BY v.created_at DESC, v.id DESC LIMIT 1)
+               o.user_name
            ) AS user_name
     FROM iclip.conversations c
+    LEFT JOIN latest_video_owner o ON o.conversation_id = c.id
     WHERE c.forked_from IS NULL
 )"""
 
+# 镜：（对话，镜号）至少成功生成过一条才算，次数只数成功的。时间锚点 first_at 是第一条成功
+# 生成的完成时刻，last_at 是最后一条的；人取按完成时刻排第一的那条成功生成的属主。
 _SHOTS: Final = """
 shots AS (
     SELECT v.conversation_id, v.shot, v.task_id,
            count(*) AS attempts,
-           min(v.created_at) AS first_at,
-           max(v.created_at) AS last_at,
-           count(*) = 1 AND bool_and(v.delivered) AS one_take,
-           bool_or(v.delivered) AS delivered,
+           min(v.finished_at) AS first_at,
+           max(v.finished_at) AS last_at,
+           count(*) = 1 AS one_take,
            bool_or(v.downloaded) AS effective,
-           (array_agg(v.user_name ORDER BY v.created_at, v.id))[1] AS user_name
+           (array_agg(v.user_name ORDER BY v.finished_at, v.id))[1] AS user_name
     FROM videos v
+    WHERE v.delivered
     GROUP BY v.conversation_id, v.shot, v.task_id
 )"""
 
@@ -140,14 +147,18 @@ agent_runs AS (
        AND bool_or(e.kind IN ('run_completed', 'run_failed'))
 )"""
 
-_CYCLES: Final = """
+# 一段对话的起点：首次运行，没有运行就是对话建立时刻。交付周期与任务执行的开始都用它。
+_STARTED_AT: Final = """COALESCE(
+               (SELECT min(j.created_at) FROM agent_runtime.agent_jobs j
+                WHERE j.conversation_id = {conversation}::text),
+               {created}
+           )"""
+
+_CYCLES: Final = f"""
 cycles AS (
     SELECT d.conversation_id, p.user_name, p.task_id, d.delivered_at,
-           COALESCE(
-               (SELECT min(j.created_at) FROM agent_runtime.agent_jobs j
-                WHERE j.conversation_id = d.conversation_id::text),
-               p.created_at
-           ) AS started_at
+           {_STARTED_AT.format(conversation="d.conversation_id", created="p.created_at")}
+               AS started_at
     FROM (
         SELECT v.conversation_id, max(v.finished_at) AS delivered_at
         FROM videos v
@@ -229,7 +240,6 @@ _WINDOW: Final = """
     AND (CAST(:until AS timestamptz) IS NULL OR {anchor} < CAST(:until AS timestamptz))"""
 _FILTERS: Final = """
     AND (CAST(:user_name AS text) IS NULL OR {t}.user_name = CAST(:user_name AS text))
-    AND (CAST(:task_id AS uuid) IS NULL OR {t}.task_id = CAST(:task_id AS uuid))
     AND (CAST(:conversation_ids AS uuid[]) IS NULL
          OR {t}.conversation_id = ANY(CAST(:conversation_ids AS uuid[])))"""
 
@@ -271,7 +281,6 @@ completed AS (
            COALESCE(sum(v.duration_ms), 0) / 1000.0 AS length_seconds,
            COALESCE(sum(v.duration_ms) FILTER (WHERE v.discarded), 0) / 1000.0
                AS discarded_length_seconds,
-           {_spread("extract(epoch FROM v.finished_at - v.created_at)", "video")},
            {_spread("extract(epoch FROM v.finished_at - v.submitted_at)", "upstream")}
     FROM takes v
     WHERE TRUE
@@ -284,7 +293,6 @@ shot_metrics AS (
            count(*) AS shots,
            sum(s.attempts) AS attempts,
            count(*) FILTER (WHERE s.one_take) AS one_take_shots,
-           count(*) FILTER (WHERE s.delivered) AS delivered_shots,
            count(*) FILTER (WHERE s.effective) AS effective_shots
     FROM shots s
     WHERE TRUE
@@ -343,9 +351,8 @@ keys AS (
 SELECT keys.k,
        c.completed_videos, c.delivered_tasks, c.delivered_orphan_conversations, c.producers,
        c.length_videos, c.length_seconds, c.discarded_length_seconds,
-       {_spread_columns("c", "video")},
        {_spread_columns("c", "upstream")},
-       s.shots, s.attempts, s.one_take_shots, s.delivered_shots, s.effective_shots,
+       s.shots, s.attempts, s.one_take_shots, s.effective_shots,
        r.runs, r.active_users,
        {_spread_columns("a", "agent_run")},
        y.delivered_conversations,
@@ -400,7 +407,6 @@ _DIMENSIONS: Final[Mapping[str, _Dimension]] = {
     # 全体用非空常量做键，六段才能按键对上。
     "overall": _Dimension("'all'", "'all'", "'all'", "'all'", "'all'", "'all'"),
     "user": _same("user_name"),
-    "task": _same("task_id"),
     "conversation": _same("conversation_id"),
     "period": _Dimension(
         _BUCKET.format(anchor="v.finished_at"),
@@ -414,9 +420,7 @@ _DIMENSIONS: Final[Mapping[str, _Dimension]] = {
 }
 _METRICS_SQL: Final = {name: text(dimension.sql()) for name, dimension in _DIMENSIONS.items()}
 
-_TASK_TITLES: Final = text("SELECT id, title FROM iclip.tasks WHERE id = ANY(CAST(:ids AS uuid[]))")
-
-# 出片次数分布：每镜一条记录，按次数分档。时间锚点与每镜次数一致，看该镜首次出片时刻。
+# 成功生成次数分布：每镜一条记录，按成功次数分档。锚点同镜，看该镜第一条成功生成的完成时刻。
 # 不封顶，累计通过曲线与集中度都在前端从这份原始分布算，SQL 只负责分档计数。
 _ATTEMPTS: Final = text(f"""
 WITH {_VIDEOS}, {_SHOTS}
@@ -453,7 +457,21 @@ GROUP BY 1
 ORDER BY 1
 """)
 
-# 出片次数最多的镜；标题与人取对话的，已删的对话照列。锚点同每镜次数。
+# 每人每个时段的成片件数，与成片件数同一口径：需求单各一件，没挂需求单的对话各一件。人是视频
+# 的属主，与指标 SQL 的人维度一致；属主没有用户名的不归任何人。
+_USER_DELIVERIES: Final = text(f"""
+WITH {_VIDEOS}
+SELECT v.user_name, {_BUCKET.format(anchor="v.finished_at")} AS k,
+       count(DISTINCT v.task_id)
+           + count(DISTINCT v.conversation_id) FILTER (WHERE v.task_id IS NULL) AS deliveries
+FROM videos v
+WHERE v.delivered AND v.user_name IS NOT NULL
+{_WINDOW.format(anchor="v.finished_at")}
+GROUP BY 1, 2
+""")
+
+# 成功生成次数最多的镜，同数按最后一条成功生成的完成时刻；标题与人取对话的，已删的对话照列。
+# 锚点同镜。
 _TOP_SHOTS: Final = text(f"""
 WITH {_VIDEOS}, {_PERSON}, {_SHOTS}
 SELECT s.conversation_id, s.shot, s.attempts, p.title, p.user_name
@@ -466,24 +484,128 @@ ORDER BY s.attempts DESC, s.last_at DESC, s.conversation_id, s.shot
 LIMIT :limit
 """)
 
-_CONVERSATIONS: Final = text(f"""
-WITH {_VIDEOS}, {_PERSON}, {_CYCLES}
-SELECT y.conversation_id, y.user_name, y.task_id, y.started_at, y.delivered_at,
-       p.title, p.owner_user_id, p.deleted_at
-FROM cycles y
-JOIN person p ON p.conversation_id = y.conversation_id
-WHERE TRUE
-{_WINDOW.format(anchor="y.delivered_at")}
-{_FILTERS.format(t="y")}
-  AND (CAST(:after_at AS timestamptz) IS NULL
-       OR (y.delivered_at, y.conversation_id) < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
-ORDER BY y.delivered_at DESC, y.conversation_id DESC
-LIMIT :limit
-""")
+# ---------------------------------------------------------------------------
+# 任务执行：建立时刻落在时间窗里、有运行或出片的对话（副本已由 person 挡掉，已删的照列）。
+# 排序键与异常都按这段对话的全量算，不按时间窗裁；user_name 只筛行，放在最后一步，需求单卡住
+# 按整个时间窗里的执行判。「从来没有成片」按 videos 判，副本自己的出片本就不计。视频悬挂的
+# 'submitted' 镜像生成域的 STATUS_SUBMITTED（同文件头）。
+# 排序键空值不论升降都排最后；翻页从上一页末行的（键，对话 id）接着取，末行已在空值尾段时
+# 只在尾段里按对话 id 往后取。{key} / {kind} / {direction} / {op} 由 _EXECUTIONS_SQL 从常量填。
+# ---------------------------------------------------------------------------
 
+_EXECUTIONS: Final = f"""
+WITH {_VIDEOS}, {_PERSON}, {_SHOTS}, {_AGENT_RUNS}, {_CYCLES}, {_ACTIVE_CYCLES},
+executions AS (
+    SELECT p.conversation_id, p.title, p.user_name, p.task_id, p.created_at, p.deleted_at,
+           {_STARTED_AT.format(conversation="p.conversation_id", created="p.created_at")}
+               AS started_at
+    FROM person p
+    WHERE p.created_at >= CAST(:since AS timestamptz)
+      AND p.created_at < CAST(:until AS timestamptz)
+      -- 对 videos 用不相关的 IN：整个集合哈希一次；逐行 EXISTS 会对物化的 CTE 每行全扫一遍。
+      AND (EXISTS (SELECT 1 FROM agent_runtime.agent_jobs j
+                   WHERE j.conversation_id = p.conversation_id::text)
+           OR p.conversation_id IN (SELECT v.conversation_id FROM videos v))
+),
+-- 没有成功镜的对话不在这里，每镜重试为空、也不标反复重试。
+shot_totals AS (
+    SELECT s.conversation_id,
+           sum(s.attempts)::float8 / count(*)::float8 AS retries,
+           max(s.attempts) AS most_attempts
+    FROM shots s
+    WHERE s.conversation_id IN (SELECT e.conversation_id FROM executions e)
+    GROUP BY s.conversation_id
+),
+token_totals AS (
+    SELECT c.id AS conversation_id,
+           sum(u.input_tokens + u.cache_read_tokens + u.cache_write_tokens + u.output_tokens)::bigint
+               AS tokens
+    FROM agent_runtime.conversation_usage u
+    JOIN iclip.conversations c ON c.id::text = u.conversation_id
+    WHERE c.id IN (SELECT e.conversation_id FROM executions e)
+    GROUP BY c.id
+),
+stuck_tasks AS (
+    SELECT e.task_id
+    FROM executions e
+    WHERE e.task_id IS NOT NULL
+    GROUP BY e.task_id
+    HAVING count(*) >= CAST(:task_conversations AS int)
+       AND e.task_id NOT IN (
+           SELECT v.task_id FROM videos v WHERE v.delivered AND v.task_id IS NOT NULL)
+),
+judged AS (
+    SELECT e.*, y.delivered_at, y.active_seconds::float8 AS cycle_seconds, t.retries,
+           COALESCE(k.tokens, 0) AS tokens,
+           -- 顺序固定：retry、stuck、spend、task_stuck；门槛为空的比较得 NULL，不标。
+           array_remove(ARRAY[
+               CASE WHEN t.most_attempts >= CAST(:retry_at_least AS int) THEN 'retry' END,
+               CASE WHEN e.conversation_id IN (
+                   SELECT v.conversation_id FROM videos v
+                   WHERE v.status = 'submitted'
+                     AND v.submitted_at < CAST(:stuck_before AS timestamptz)
+               ) THEN 'stuck' END,
+               CASE WHEN COALESCE(k.tokens, 0) > CAST(:spend_tokens AS float8) THEN 'spend' END,
+               CASE WHEN e.task_id IN (SELECT q.task_id FROM stuck_tasks q) THEN 'task_stuck' END
+           ], NULL) AS anomalies
+    FROM executions e
+    LEFT JOIN active_cycles y ON y.conversation_id = e.conversation_id
+    LEFT JOIN shot_totals t ON t.conversation_id = e.conversation_id
+    LEFT JOIN token_totals k ON k.conversation_id = e.conversation_id
+),
+scoped AS (
+    SELECT j.*, {{key}} AS sort_key
+    FROM judged j
+    WHERE CAST(:user_name AS text) IS NULL OR j.user_name = CAST(:user_name AS text)
+),
+totals AS (
+    SELECT count(*) AS total, count(*) FILTER (WHERE cardinality(s.anomalies) > 0) AS flagged
+    FROM scoped s
+)
+-- 条数对整个筛选范围算；页挂在它上面 LEFT JOIN，空页也回一行条数、页列全空。
+SELECT t.total, t.flagged, page.*
+FROM totals t
+LEFT JOIN LATERAL (
+    SELECT s.*, tk.title AS task_title
+    FROM scoped s
+    LEFT JOIN iclip.tasks tk ON tk.id = s.task_id
+    WHERE CAST(:after_id AS uuid) IS NULL
+       OR (CAST(:after_value AS {{kind}}) IS NOT NULL
+           AND (s.sort_key {{op}} CAST(:after_value AS {{kind}})
+                OR (s.sort_key = CAST(:after_value AS {{kind}})
+                    AND s.conversation_id {{op}} CAST(:after_id AS uuid))
+                OR s.sort_key IS NULL))
+       OR (CAST(:after_value AS {{kind}}) IS NULL
+           AND s.sort_key IS NULL
+           AND s.conversation_id {{op}} CAST(:after_id AS uuid))
+    ORDER BY s.sort_key {{direction}} NULLS LAST, s.conversation_id {{direction}}
+    LIMIT :limit
+) page ON TRUE
+ORDER BY page.sort_key {{direction}} NULLS LAST, page.conversation_id {{direction}}
+"""
+
+# 排序键在 judged 上的列与它的 SQL 类型：retries / cycle 是 float8、tokens 是 bigint，游标回带的
+# 取值与列同类型，相等比较才不会差一点而重复或漏行。
+_SORT_KEYS: Final[Mapping[ExecutionSort, tuple[str, str]]] = {
+    "start": ("j.created_at", "timestamptz"),
+    "retries": ("j.retries", "float8"),
+    "cycle": ("j.cycle_seconds", "float8"),
+    "tokens": ("j.tokens", "bigint"),
+}
+_DIRECTIONS: Final[Mapping[SortOrder, tuple[str, str]]] = {
+    "asc": ("ASC", ">"),
+    "desc": ("DESC", "<"),
+}
+_EXECUTIONS_SQL: Final[Mapping[tuple[ExecutionSort, SortOrder], TextClause]] = {
+    (sort, order): text(_EXECUTIONS.format(key=key, kind=kind, direction=direction, op=op))
+    for sort, (key, kind) in _SORT_KEYS.items()
+    for order, (direction, op) in _DIRECTIONS.items()
+}
+
+# 一页对话里成功过的镜，按镜号。
 _SHOTS_OF: Final = text(f"""
 WITH {_VIDEOS}, {_SHOTS}
-SELECT s.conversation_id, s.shot, s.attempts, s.one_take, s.effective, s.first_at, s.last_at
+SELECT s.conversation_id, s.shot, s.attempts, s.one_take, s.effective
 FROM shots s
 WHERE s.conversation_id = ANY(CAST(:ids AS uuid[]))
 ORDER BY s.conversation_id, s.shot
@@ -498,176 +620,6 @@ WHERE c.id = ANY(CAST(:ids AS uuid[]))
 ORDER BY c.id, u.model_name
 """)
 
-# ---------------------------------------------------------------------------
-# 异常。每种一段 CTE，列一致后 UNION ALL，再按（时刻，ref）倒序翻页。
-# slow / spend 的门槛按筛选范围现算 P90 / P95，范围小时门槛会抖。
-# ---------------------------------------------------------------------------
-
-_ANOMALY_COLUMNS: Final = (
-    "kind, at, ref, value, threshold, conversation_id, task_id, user_name, shot, generation_id"
-)
-
-_ANOMALY_CTES: Final = f"""
-WITH {_VIDEOS}, {_PERSON}, {_SHOTS}, {_CYCLES}, {_USAGE},
-windowed_cycles AS (
-    SELECT y.* FROM cycles y
-    WHERE TRUE
-    {_WINDOW.format(anchor="y.delivered_at")}
-    {_FILTERS.format(t="y")}
-),
-cycle_p90 AS (
-    SELECT percentile_cont(0.9) WITHIN GROUP (
-        ORDER BY extract(epoch FROM y.delivered_at - y.started_at)) AS threshold
-    FROM windowed_cycles y
-),
-spend AS (
-    SELECT u.conversation_id, u.user_name, u.task_id,
-           sum(u.input_tokens + u.cache_read_tokens + u.cache_write_tokens + u.output_tokens)
-               AS total_tokens,
-           max(u.last_at) AS last_at
-    FROM usage_rows u
-    WHERE TRUE
-    {_FILTERS.format(t="u")}
-    GROUP BY u.conversation_id, u.user_name, u.task_id
-),
-windowed_spend AS (
-    SELECT z.* FROM spend z
-    WHERE TRUE
-    {_WINDOW.format(anchor="z.last_at")}
-),
-spend_p95 AS (
-    SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY z.total_tokens) AS threshold
-    FROM windowed_spend z
-),
-retry AS (
-    SELECT 'retry' AS kind, s.last_at AS at,
-           'retry:' || s.conversation_id || ':' || s.shot AS ref,
-           s.attempts::float8 AS value, CAST(:retry_over AS int)::float8 AS threshold,
-           s.conversation_id, s.task_id, s.user_name, s.shot, NULL::uuid AS generation_id
-    FROM shots s
-    WHERE s.attempts > CAST(:retry_over AS int)
-    {_WINDOW.format(anchor="s.last_at")}
-    {_FILTERS.format(t="s")}
-),
-idle AS (
-    SELECT 'idle', p.updated_at, 'idle:' || p.conversation_id,
-           extract(epoch FROM now() - p.updated_at) / 3600, CAST(:idle_hours AS int)::float8,
-           p.conversation_id, p.task_id, p.user_name, NULL::int, NULL::uuid
-    FROM person p
-    WHERE p.deleted_at IS NULL
-      AND p.updated_at < now() - CAST(:idle_hours AS int) * interval '1 hour'
-      AND EXISTS (SELECT 1 FROM agent_runtime.agent_jobs j WHERE j.conversation_id = p.conversation_id::text)
-      AND NOT EXISTS (SELECT 1 FROM cycles y WHERE y.conversation_id = p.conversation_id)
-    {_WINDOW.format(anchor="p.updated_at")}
-    {_FILTERS.format(t="p")}
-),
-slow AS (
-    SELECT 'slow', y.delivered_at, 'slow:' || y.conversation_id,
-           extract(epoch FROM y.delivered_at - y.started_at), t.threshold,
-           y.conversation_id, y.task_id, y.user_name, NULL::int, NULL::uuid
-    FROM windowed_cycles y, cycle_p90 t
-    WHERE extract(epoch FROM y.delivered_at - y.started_at) > t.threshold
-),
-stuck AS (
-    SELECT 'stuck', v.submitted_at, 'stuck:' || v.id,
-           extract(epoch FROM now() - v.submitted_at) / 3600, CAST(:stuck_hours AS int)::float8,
-           v.conversation_id, v.task_id, v.user_name, v.shot, v.id
-    FROM videos v
-    WHERE v.status = 'submitted'
-      AND v.submitted_at < now() - CAST(:stuck_hours AS int) * interval '1 hour'
-    {_WINDOW.format(anchor="v.submitted_at")}
-    {_FILTERS.format(t="v")}
-),
-overspend AS (
-    SELECT 'spend', z.last_at, 'spend:' || z.conversation_id,
-           z.total_tokens::float8, t.threshold,
-           z.conversation_id, z.task_id, z.user_name, NULL::int, NULL::uuid
-    FROM windowed_spend z, spend_p95 t
-    WHERE z.total_tokens > t.threshold
-),
-task_stuck AS (
-    SELECT 'task_stuck', max(p.updated_at), 'task_stuck:' || p.task_id,
-           count(*)::float8, CAST(:task_conversations AS int)::float8,
-           NULL::uuid, p.task_id, NULL::text, NULL::int, NULL::uuid
-    FROM person p
-    WHERE p.task_id IS NOT NULL
-      AND (CAST(:task_id AS uuid) IS NULL OR p.task_id = CAST(:task_id AS uuid))
-      AND (CAST(:conversation_ids AS uuid[]) IS NULL)
-      AND NOT EXISTS (
-          SELECT 1 FROM cycles y JOIN person q ON q.conversation_id = y.conversation_id
-          WHERE q.task_id = p.task_id)
-    GROUP BY p.task_id
-    HAVING count(*) >= CAST(:task_conversations AS int)
-       AND (CAST(:user_name AS text) IS NULL OR bool_or(p.user_name = CAST(:user_name AS text)))
-       AND (CAST(:since AS timestamptz) IS NULL OR max(p.updated_at) >= CAST(:since AS timestamptz))
-       AND (CAST(:until AS timestamptz) IS NULL OR max(p.updated_at) < CAST(:until AS timestamptz))
-),
-deleted AS (
-    SELECT 'deleted', p.deleted_at, 'deleted:' || p.conversation_id,
-           (SELECT count(*) FROM videos v
-            WHERE v.conversation_id = p.conversation_id AND v.delivered)::float8,
-           NULL::float8,
-           p.conversation_id, p.task_id, p.user_name, NULL::int, NULL::uuid
-    FROM person p
-    WHERE p.deleted_at IS NOT NULL
-    {_WINDOW.format(anchor="p.deleted_at")}
-    {_FILTERS.format(t="p")}
-),
-no_task AS (
-    SELECT 'no_task', y.delivered_at, 'no_task:' || y.conversation_id,
-           (SELECT count(*) FROM videos v
-            WHERE v.conversation_id = y.conversation_id AND v.delivered)::float8,
-           NULL::float8,
-           y.conversation_id, NULL::uuid, y.user_name, NULL::int, NULL::uuid
-    FROM windowed_cycles y
-    WHERE y.task_id IS NULL
-),
-missing_shot AS (
-    SELECT 'missing_shot', g.created_at, 'missing_shot:' || g.id,
-           NULL::float8, NULL::float8,
-           g.conversation_id, c.task_id, u.username, NULL::int, g.id
-    FROM iclip.generation_jobs g
-    JOIN iclip.users u ON u.id = g.owner_user_id
-    LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
-    WHERE g.kind = 'video' AND g.shot_index IS NULL
-      -- 只有出片才谈漏标；编辑段与合成的镜号抄自原作，不是调用方给的。
-      AND g.operation = 'generate' AND g.source_job_id IS NULL
-      -- 挂在副本下的记录不算异常；没挂对话的孤儿记录照旧要算，所以放过 c 整行为空的。
-      AND c.forked_from IS NULL
-    {_WINDOW.format(anchor="g.created_at")}
-      AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
-      AND (CAST(:task_id AS uuid) IS NULL OR c.task_id = CAST(:task_id AS uuid))
-      AND (CAST(:conversation_ids AS uuid[]) IS NULL
-           OR g.conversation_id = ANY(CAST(:conversation_ids AS uuid[])))
-),
-everything ({_ANOMALY_COLUMNS}) AS (
-    SELECT * FROM retry UNION ALL SELECT * FROM idle UNION ALL SELECT * FROM slow
-    UNION ALL SELECT * FROM stuck UNION ALL SELECT * FROM overspend
-    UNION ALL SELECT * FROM task_stuck UNION ALL SELECT * FROM deleted
-    UNION ALL SELECT * FROM no_task UNION ALL SELECT * FROM missing_shot
-)
-"""
-
-_ANOMALIES: Final = text(f"""
-{_ANOMALY_CTES}
-SELECT {_ANOMALY_COLUMNS}
-FROM everything
-WHERE (CAST(:kinds AS text[]) IS NULL OR kind = ANY(CAST(:kinds AS text[])))
-  AND (CAST(:after_at AS timestamptz) IS NULL
-       OR (at, ref) < (CAST(:after_at AS timestamptz), CAST(:after_ref AS text)))
-ORDER BY at DESC, ref DESC
-LIMIT :limit
-""")
-
-# 同一套判定，只数每种各有几条；种类筛选与翻页不参与。
-_ANOMALY_COUNTS: Final = text(f"""
-{_ANOMALY_CTES}
-SELECT kind, count(*) AS count
-FROM everything
-GROUP BY kind
-ORDER BY count DESC, kind
-""")
-
 
 def _scope_params(
     scope: Scope, *, conversation_ids: Sequence[uuid.UUID] | None = None
@@ -676,7 +628,6 @@ def _scope_params(
         "since": scope.since,
         "until": scope.until,
         "user_name": scope.user_name,
-        "task_id": scope.task_id,
         "conversation_ids": list(conversation_ids) if conversation_ids is not None else None,
     }
 
@@ -725,7 +676,6 @@ def _metrics_of(row: RowMapping) -> MetricsOut:
         shots=_int(row["shots"]),
         attempts=_int(row["attempts"]),
         one_take_shots=_int(row["one_take_shots"]),
-        delivered_shots=_int(row["delivered_shots"]),
         effective_shots=_int(row["effective_shots"]),
         runs=_int(row["runs"]),
         active_users=_int(row["active_users"]),
@@ -733,19 +683,12 @@ def _metrics_of(row: RowMapping) -> MetricsOut:
         cycle_seconds=_spread_of(row, "cycle"),
         active_cycle_seconds=_spread_of(row, "active_cycle"),
         agent_run_seconds=_spread_of(row, "agent_run"),
-        video_seconds=_spread_of(row, "video"),
         upstream_seconds=_spread_of(row, "upstream"),
         length_videos=_int(row["length_videos"]),
         length_seconds=_total(row["length_seconds"]),
         discarded_length_seconds=_total(row["discarded_length_seconds"]),
         usage=_usage_of(row),
     )
-
-
-def _rank(metrics: MetricsOut) -> tuple[int, int, int]:
-    """人与需求单的排序：成片件数多的在前，再看成片视频条数，最后看运行次数。"""
-
-    return (-metrics.deliveries, -metrics.completed_videos, -metrics.runs)
 
 
 @asynccontextmanager
@@ -780,33 +723,12 @@ class PgAuditReports:
         rows = await self._metrics("overall", _scope_params(scope))
         return _metrics_of(rows[0]) if rows else EMPTY_METRICS
 
-    async def by_user(self, scope: Scope) -> Sequence[UserMetricsOut]:
+    async def by_user(self, scope: Scope) -> Mapping[str, MetricsOut]:
         rows = await self._metrics("user", _scope_params(scope))
-        found = [UserMetricsOut(user_name=str(row["k"]), metrics=_metrics_of(row)) for row in rows]
-        return sorted(found, key=lambda item: (_rank(item.metrics), item.user_name))
-
-    async def by_task(self, scope: Scope) -> Sequence[TaskMetricsOut]:
-        async with audit_connection(self._engine) as conn:
-            rows = await self._metrics("task", _scope_params(scope), conn=conn)
-            ids = [row["k"] for row in rows]
-            titles = (
-                {
-                    title_row["id"]: title_row["title"]
-                    for title_row in (await conn.execute(_TASK_TITLES, {"ids": ids})).mappings()
-                }
-                if ids
-                else {}
-            )
-        found = [
-            TaskMetricsOut(
-                task_id=row["k"], title=titles.get(row["k"], ""), metrics=_metrics_of(row)
-            )
-            for row in rows
-        ]
-        return sorted(found, key=lambda item: (_rank(item.metrics), str(item.task_id)))
+        return {str(row["k"]): _metrics_of(row) for row in rows}
 
     async def by_period(
-        self, scope: Scope, *, bucket: PeriodBucket, timezone: str
+        self, scope: Scope, *, bucket: OverviewBucket, timezone: str
     ) -> Sequence[PeriodMetricsOut]:
         params = {**_scope_params(scope), "bucket": bucket, "timezone": timezone}
         rows = await self._metrics("period", params)
@@ -820,12 +742,28 @@ class PgAuditReports:
         return int(days)
 
     async def delivery_units(
-        self, scope: Scope, *, bucket: PeriodBucket, timezone: str
+        self, scope: Scope, *, bucket: OverviewBucket, timezone: str
     ) -> Mapping[datetime, frozenset[str]]:
         params = {**_scope_params(scope), "bucket": bucket, "timezone": timezone}
         async with audit_connection(self._engine) as conn:
             rows = (await conn.execute(_DELIVERY_UNITS, params)).mappings().all()
         return {row["k"]: frozenset(row["units"]) for row in rows}
+
+    async def user_deliveries(
+        self, scope: Scope, *, bucket: OverviewBucket, timezone: str
+    ) -> Mapping[str, Mapping[datetime, int]]:
+        params = {
+            "since": scope.since,
+            "until": scope.until,
+            "bucket": bucket,
+            "timezone": timezone,
+        }
+        async with audit_connection(self._engine) as conn:
+            rows = (await conn.execute(_USER_DELIVERIES, params)).mappings().all()
+        found: dict[str, dict[datetime, int]] = {}
+        for row in rows:
+            found.setdefault(row["user_name"], {})[row["k"]] = int(row["deliveries"])
+        return found
 
     async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
         async with audit_connection(self._engine) as conn:
@@ -851,38 +789,90 @@ class PgAuditReports:
             for row in rows
         ]
 
-    async def conversations(
-        self, scope: Scope, *, limit: int, after: ConversationCursor | None
-    ) -> Sequence[ConversationAuditOut]:
+    async def executions(
+        self,
+        scope: Scope,
+        *,
+        sort: ExecutionSort,
+        order: SortOrder,
+        limit: int,
+        after: ExecutionCursor | None,
+        spend_tokens: float | None,
+        now: datetime,
+    ) -> ExecutionPage:
         params = {
-            **_scope_params(scope),
-            "after_at": after.delivered_at if after else None,
+            "since": scope.since,
+            "until": scope.until,
+            "user_name": scope.user_name,
+            "retry_at_least": RETRY_AT_LEAST,
+            "task_conversations": TASK_CONVERSATIONS,
+            "stuck_before": now - timedelta(hours=STUCK_HOURS),
+            "spend_tokens": spend_tokens,
+            "after_value": after.value if after else None,
             "after_id": after.conversation_id if after else None,
             "limit": limit,
         }
         async with audit_connection(self._engine) as conn:
-            heads = (await conn.execute(_CONVERSATIONS, params)).mappings().all()
-            if not heads:
-                return []
+            rows = (await conn.execute(_EXECUTIONS_SQL[(sort, order)], params)).mappings().all()
+            heads = [row for row in rows if row["conversation_id"] is not None]
             ids = [head["conversation_id"] for head in heads]
-            # 对话行的指标是全量，不带时间窗；用维度键圈定这一页的对话即可。
-            metric_rows = await self._metrics(
-                "conversation", _scope_params(Scope(), conversation_ids=ids), conn=conn
-            )
-            shot_rows = (await conn.execute(_SHOTS_OF, {"ids": ids})).mappings().all()
-            usage_rows = (await conn.execute(_USAGE_OF, {"ids": ids})).mappings().all()
+            metrics, shots, usage = await self._details(conn, ids) if ids else ({}, {}, {})
 
-        metrics = {row["k"]: _metrics_of(row) for row in metric_rows}
-        shots: dict[uuid.UUID, list[ShotOut]] = {}
+        items = [
+            ExecutionOut(
+                conversation_id=head["conversation_id"],
+                title=head["title"],
+                user_name=head["user_name"],
+                task_id=head["task_id"],
+                task_title=head["task_title"],
+                created_at=head["created_at"],
+                started_at=head["started_at"],
+                delivered_at=head["delivered_at"],
+                deleted_at=head["deleted_at"],
+                metrics=metrics.get(head["conversation_id"], EMPTY_METRICS),
+                shots=shots.get(head["conversation_id"], []),
+                usage=usage.get(head["conversation_id"], []),
+                anomalies=list(head["anomalies"]),
+            )
+            for head in heads
+        ]
+        last = (
+            ExecutionCursor(
+                sort=sort,
+                order=order,
+                value=heads[-1]["sort_key"],
+                conversation_id=heads[-1]["conversation_id"],
+            )
+            if heads
+            else None
+        )
+        return ExecutionPage(
+            items=items, total=_int(rows[0]["total"]), flagged=_int(rows[0]["flagged"]), last=last
+        )
+
+    async def _details(
+        self, conn: AsyncConnection, ids: Sequence[uuid.UUID]
+    ) -> tuple[
+        dict[uuid.UUID, MetricsOut],
+        dict[uuid.UUID, list[ExecutionShotOut]],
+        dict[uuid.UUID, list[ModelUsageOut]],
+    ]:
+        """一页对话的全量指标、镜与按模型用量；不带时间窗，用维度键圈定这一页的对话。"""
+
+        metric_rows = await self._metrics(
+            "conversation", _scope_params(Scope(), conversation_ids=ids), conn=conn
+        )
+        shot_rows = (await conn.execute(_SHOTS_OF, {"ids": list(ids)})).mappings().all()
+        usage_rows = (await conn.execute(_USAGE_OF, {"ids": list(ids)})).mappings().all()
+
+        shots: dict[uuid.UUID, list[ExecutionShotOut]] = {}
         for row in shot_rows:
             shots.setdefault(row["conversation_id"], []).append(
-                ShotOut(
+                ExecutionShotOut(
                     shot=int(row["shot"]),
                     attempts=int(row["attempts"]),
                     one_take=bool(row["one_take"]),
                     effective=bool(row["effective"]),
-                    first_at=row["first_at"],
-                    last_at=row["last_at"],
                 )
             )
         usage: dict[uuid.UUID, list[ModelUsageOut]] = {}
@@ -890,74 +880,7 @@ class PgAuditReports:
             usage.setdefault(row["conversation_id"], []).append(
                 ModelUsageOut(model_name=row["model_name"], usage=_usage_of(row))
             )
-        return [
-            ConversationAuditOut(
-                conversation_id=head["conversation_id"],
-                title=head["title"],
-                owner_user_id=head["owner_user_id"],
-                user_name=head["user_name"],
-                task_id=head["task_id"],
-                deleted_at=head["deleted_at"],
-                started_at=head["started_at"],
-                delivered_at=head["delivered_at"],
-                metrics=metrics.get(head["conversation_id"], EMPTY_METRICS),
-                shots=shots.get(head["conversation_id"], []),
-                usage=usage.get(head["conversation_id"], []),
-            )
-            for head in heads
-        ]
-
-    async def anomalies(
-        self,
-        scope: Scope,
-        thresholds: Thresholds,
-        *,
-        kinds: Sequence[AnomalyKind] | None,
-        limit: int,
-        after: AnomalyCursor | None,
-    ) -> Sequence[AnomalyOut]:
-        params = {
-            **_scope_params(scope),
-            **_threshold_params(thresholds),
-            "kinds": list(kinds) if kinds is not None else None,
-            "after_at": after.at if after else None,
-            "after_ref": after.ref if after else None,
-            "limit": limit,
-        }
-        async with audit_connection(self._engine) as conn:
-            rows = (await conn.execute(_ANOMALIES, params)).mappings().all()
-        return [
-            AnomalyOut(
-                kind=row["kind"],
-                at=row["at"],
-                ref=row["ref"],
-                value=_float(row["value"]),
-                threshold=_float(row["threshold"]),
-                conversation_id=row["conversation_id"],
-                task_id=row["task_id"],
-                user_name=row["user_name"],
-                shot=None if row["shot"] is None else int(row["shot"]),
-                generation_id=row["generation_id"],
-            )
-            for row in rows
-        ]
-
-    async def anomaly_counts(
-        self, scope: Scope, thresholds: Thresholds
-    ) -> Sequence[AnomalyCountOut]:
-        params = {**_scope_params(scope), **_threshold_params(thresholds)}
-        async with audit_connection(self._engine) as conn:
-            rows = (await conn.execute(_ANOMALY_COUNTS, params)).mappings().all()
-        return [AnomalyCountOut(kind=row["kind"], count=_int(row["count"])) for row in rows]
-
-
-def _threshold_params(thresholds: Thresholds) -> dict[str, int]:
-    return {
-        "retry_over": thresholds.retry_over,
-        "idle_hours": thresholds.idle_hours,
-        "stuck_hours": thresholds.stuck_hours,
-        "task_conversations": thresholds.task_conversations,
-    }
+        return {row["k"]: _metrics_of(row) for row in metric_rows}, shots, usage
 
 
 __all__ = ["PgAuditReports", "audit_connection"]

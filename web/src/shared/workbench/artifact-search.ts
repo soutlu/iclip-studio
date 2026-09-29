@@ -1,4 +1,4 @@
-/** 右侧面板选中哪件产物记在地址的查询参数上，刷新与分享都保留；读写都经这里。 */
+/** 工作台选中哪件产物记在地址的查询参数上，刷新与分享都保留；读写都经这里。 */
 
 import { useNavigate, useSearch } from '@tanstack/react-router'
 

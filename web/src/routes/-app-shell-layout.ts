@@ -102,7 +102,7 @@ export function resolveShellLayout({
   }
 }
 
-/** 可见边界连续跟随指针；低于内容最小宽时记录裁切宽度，到轨道宽度才折叠。 */
+/** 可见边界连续跟随指针；低于内容最小宽时记录裁切宽度，到图标栏宽度才折叠。 */
 export function resizeSidebar(
   state: ShellLayoutState,
   rawWidth: number,

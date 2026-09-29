@@ -67,7 +67,7 @@ describe('应用壳列宽', () => {
     expect(layout.contentWidth + (layout.compact ? 0 : layout.sidebarWidth)).toBe(viewport)
   })
 
-  it('展开宽度受导航上限和两栏最小宽约束，热区不占布局', () => {
+  it('展开宽度受侧边栏上限和两栏最小宽约束，热区不占布局', () => {
     expect(layoutAt(1600, { sidebarWidth: 500, workbenchWidth: 900 })).toMatchObject({
       sidebarWidth: 400,
       contentWidth: 1200,
@@ -86,7 +86,7 @@ describe('应用壳列宽', () => {
     { viewport: 1224, collapsed: false, sideBySide: true },
     { viewport: 1015, collapsed: true, sideBySide: false },
     { viewport: 1016, collapsed: true, sideBySide: true },
-  ])('视口 $viewport 导航收起 $collapsed 的并排能力为 $sideBySide', (input) => {
+  ])('视口 $viewport 侧边栏折叠 $collapsed 的并排能力为 $sideBySide', (input) => {
     expect(layoutAt(input.viewport, { sidebarCollapsed: input.collapsed }).sideBySide).toBe(
       input.sideBySide,
     )
@@ -129,7 +129,7 @@ describe('应用壳列宽', () => {
     })
   })
 
-  it('紧凑屏导航不占位且隐藏内容栏不留轨道，600px 恢复桌面轨道', () => {
+  it('紧凑屏侧边栏不占位且隐藏的内容栏不留图标栏，600px 恢复桌面图标栏', () => {
     expect(layoutAt(599, { mode: 'workbench', activePane: 'workbench' })).toMatchObject({
       compact: true,
       sidebarWidth: 264,
@@ -150,7 +150,7 @@ describe('应用壳列宽', () => {
 })
 
 describe('连续拖动与内容裁切', () => {
-  it('导航宽度连续经过遮蔽区，到 56px 才折叠，反向拖动连续恢复', () => {
+  it('侧边栏宽度连续经过裁切区，到 56px 才折叠，反向拖动连续恢复', () => {
     let state = { ...SPLIT_LAYOUT, sidebarWidth: 320 }
     for (const width of [200, 199, 152, 128, 57, 56, 57, 128, 152, 199, 200, 320]) {
       state = resizeSidebar(state, width)
@@ -167,7 +167,7 @@ describe('连续拖动与内容裁切', () => {
     expect(resizeSidebar(state, 900)).toMatchObject({ sidebarWidth: 400, sidebarClipWidth: null })
   })
 
-  it('裁切与折叠保留导航的正常宽度，越过阈值恢复常规调宽', () => {
+  it('裁切与折叠保留侧边栏的正常宽度，越过阈值恢复常规调宽', () => {
     const clipped = resizeSidebar({ ...SPLIT_LAYOUT, sidebarWidth: 320 }, 120)
     expect(clipped).toMatchObject({ sidebarWidth: 320, sidebarClipWidth: 120 })
     const collapsed = resizeSidebar(clipped, 56)
@@ -180,7 +180,7 @@ describe('连续拖动与内容裁切', () => {
   })
 
   it.each(['chat', 'workbench'] as const)(
-    '工作台在 $0 排列下逐像素经过阈值和轨道，反向也不跳变',
+    '工作台在 $0 排列下逐像素经过阈值和图标栏，反向也不跳变',
     (firstPane) => {
       let state = { ...SPLIT_LAYOUT, firstPane, workbenchWidth: 700 }
       for (const width of [560, 559, 320, 280, 41, 40, 41, 280, 320, 559, 560, 700]) {
@@ -197,7 +197,7 @@ describe('连续拖动与内容裁切', () => {
   )
 
   it.each(['chat', 'workbench'] as const)(
-    '对话在 $0 排列下逐像素经过阈值和轨道，反向也不跳变',
+    '对话在 $0 排列下逐像素经过阈值和图标栏，反向也不跳变',
     (firstPane) => {
       let state = { ...SPLIT_LAYOUT, firstPane, workbenchWidth: 700 }
       for (const width of [400, 399, 240, 200, 41, 40, 41, 200, 240, 399, 400, 500]) {
@@ -213,7 +213,7 @@ describe('连续拖动与内容裁切', () => {
     },
   )
 
-  it('快速跨过两端时替换裁切对象，正常区与轨道清除裁切，保留有用展开宽度', () => {
+  it('快速跨过两端时替换裁切对象，正常区与图标栏清除裁切，保留有用展开宽度', () => {
     const original = { ...SPLIT_LAYOUT, workbenchWidth: 700 }
     const workbenchClip = resizeContent(original, 150, 1200)
     expect(workbenchClip).toMatchObject({
@@ -279,7 +279,7 @@ describe('连续拖动与内容裁切', () => {
 })
 
 describe('键盘边界调宽', () => {
-  it('导航从轨道一步恢复保存宽度，反方向保持收起', () => {
+  it('侧边栏从图标栏一步恢复保存宽度，反方向保持折叠', () => {
     const state = { ...SPLIT_LAYOUT, sidebarCollapsed: true, sidebarWidth: 320 }
     expect(resizeSidebar(state, 72, 'keyboard')).toMatchObject({
       sidebarCollapsed: false,
@@ -289,7 +289,7 @@ describe('键盘边界调宽', () => {
     expect(resizeSidebar(state, 40, 'keyboard')).toEqual(state)
   })
 
-  it('导航达到内容阈值后继续按键进入裁切，到轨道才收起', () => {
+  it('侧边栏达到内容阈值后继续按键进入裁切，到图标栏才折叠', () => {
     const minimum = { ...SPLIT_LAYOUT, sidebarWidth: 200 }
     const clipped = resizeSidebar(minimum, 184, 'keyboard')
     expect(clipped).toMatchObject({
@@ -340,7 +340,7 @@ describe('键盘边界调宽', () => {
       restore: 1144,
     },
   ] as const)(
-    '$pane 内容阈值后按键继续裁切，到轨道收起，再反向一步恢复',
+    '$pane 内容阈值后按键继续裁切，到图标栏折叠，再反向一步恢复',
     ({ pane, width, next, clip, rail, collapsed, restore }) => {
       const state = { ...SPLIT_LAYOUT, workbenchWidth: width }
       const clipped = resizeContent(state, next, 1200, 'keyboard')

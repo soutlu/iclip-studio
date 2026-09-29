@@ -12,7 +12,7 @@ const openTask = async (page: Page, username: 'tester' | 'governor' = 'tester') 
   await page.getByRole('button', { name: '需求单', exact: true }).click()
   if ((page.viewportSize()?.width ?? 1374) < 600) {
     await expect(page.getByRole('button', { name: '展开侧边栏', exact: true })).toBeVisible()
-    await expect(page.getByRole('complementary', { name: '导航', exact: true })).toBeHidden()
+    await expect(page.getByRole('complementary', { name: '侧边栏', exact: true })).toBeHidden()
   }
   const expand = page.getByRole('button', { name: '展开更多', exact: true })
   if (await expand.isVisible()) await expand.click()

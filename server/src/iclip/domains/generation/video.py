@@ -6,12 +6,15 @@
 
 from __future__ import annotations
 
+import math
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Final
 from urllib.parse import quote
 
 import httpx
+import structlog
 
 from iclip.common.urls import is_http_url
 from iclip.domains.generation.models import GenerationJob
@@ -26,12 +29,16 @@ from iclip.domains.generation.schemas import NOT_FORWARDED_FIELDS, VideoGenerati
 
 PROVIDER_NAME: Final = "video_api"
 
+_logger = structlog.stdlib.get_logger(__name__)
+
 _RUNNING_STATUSES: Final = frozenset({"queued", "pending", "running", "processing"})
 _SUCCEEDED_STATUS: Final = "succeeded"
 _FAILED_STATUSES: Final = frozenset({"failed", "cancelled", "canceled", "error", "timeout"})
 
 _SUBMIT_TIMEOUT_SECONDS: Final = 30.0
 _POLL_TIMEOUT_SECONDS: Final = 20.0
+_MAX_DURATION_MS: Final = 2**31 - 1
+"""时长列是 32 位整数，超出的值存不进去。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +115,7 @@ class HttpVideoProvider:
             params={"user_name": user_name_of(request)},
             timeout=_POLL_TIMEOUT_SECONDS,
         )
-        return _progress_from_body(body)
+        return _progress_from_body(body, job_id=job.id, task_id=task_id)
 
     async def _request(
         self,
@@ -183,7 +190,9 @@ class HttpVideoProvider:
         return body
 
 
-def _progress_from_body(body: dict[str, Any]) -> ProviderProgress:
+def _progress_from_body(
+    body: dict[str, Any], *, job_id: uuid.UUID, task_id: str
+) -> ProviderProgress:
     status_value = body.get("status")
     if not isinstance(status_value, str) or not status_value.strip():
         raise ProviderError(
@@ -194,11 +203,9 @@ def _progress_from_body(body: dict[str, Any]) -> ProviderProgress:
     status = status_value.strip().lower()
 
     if status == _SUCCEEDED_STATUS:
-        result = body.get("result")
-        urls = {
-            key: (result.get(key) if isinstance(result, dict) else None)
-            for key in ("output_url", "watermark_output_url")
-        }
+        raw_result = body.get("result")
+        result: dict[str, Any] = raw_result if isinstance(raw_result, dict) else {}
+        urls = {key: result.get(key) for key in ("output_url", "watermark_output_url")}
         missing = [
             key
             for key, value in urls.items()
@@ -216,6 +223,7 @@ def _progress_from_body(body: dict[str, Any]) -> ProviderProgress:
             provider_status=status,
             output_url=str(urls["output_url"]),
             watermark_output_url=str(urls["watermark_output_url"]),
+            duration_ms=_output_duration_ms(result, job_id=job_id, task_id=task_id),
         )
 
     if status in _FAILED_STATUSES:
@@ -235,6 +243,31 @@ def _progress_from_body(body: dict[str, Any]) -> ProviderProgress:
         code="PROVIDER_STATUS_UNKNOWN",
         retryable=False,
     )
+
+
+def _output_duration_ms(result: dict[str, Any], *, job_id: uuid.UUID, task_id: str) -> int | None:
+    """上游实测的成片时长 ``output_duration_seconds`` 折成毫秒；没给或给坏了都是 ``None``。
+
+    ``result.duration_ms`` 是生成耗时、请求里的 ``seconds`` 是目标时长，都不拿来顶替。"""
+
+    if "output_duration_seconds" not in result:
+        return None
+    seconds = result["output_duration_seconds"]
+    if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+        scaled = seconds * 1000
+        # 整数多大都能取整；浮点先排除 inf / nan，round 碰上它们会抛错。
+        if isinstance(scaled, int) or math.isfinite(scaled):
+            ms = round(scaled)
+            if 0 < ms <= _MAX_DURATION_MS:
+                return ms
+    # 时长只是附带信息，给坏了不该让已经出好的片判失败。
+    _logger.warning(
+        "视频上游给的成片时长不可用",
+        job_id=job_id,
+        task_id=task_id,
+        output_duration_seconds=seconds,
+    )
+    return None
 
 
 def _error_fields(error: Any) -> tuple[str | None, str | None]:

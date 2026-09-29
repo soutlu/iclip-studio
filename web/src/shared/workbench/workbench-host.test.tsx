@@ -111,15 +111,15 @@ function ControlledHost({
         }}
         type="button"
       >
-        从聊天查看分镜
+        从对话查看分镜
       </button>
       {collapsed ? (
         <button onClick={() => onOpen('explicit')} type="button">
-          打开右侧面板
+          展开工作台
         </button>
       ) : layout.compact ? (
         <button onClick={() => setCollapsed(true)} type="button">
-          回到聊天
+          回到对话
         </button>
       ) : null}
       <div hidden={collapsed}>
@@ -200,7 +200,7 @@ describe('WorkbenchHost 收起态', () => {
     serveFiles([])
     await renderHost()
 
-    await userEvent.click(await screen.findByRole('button', { name: '打开右侧面板' }))
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
 
     const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
     const shots = within(chooser).getByRole('button', { name: /分镜/ })
@@ -216,10 +216,10 @@ describe('WorkbenchHost 收起态', () => {
     serveFiles(['video/a.md'])
     const { router } = await renderHost()
 
-    expect(await screen.findByRole('button', { name: '打开右侧面板' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: '展开工作台' })).toBeVisible()
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: '打开右侧面板' }))
+    await userEvent.click(screen.getByRole('button', { name: '展开工作台' }))
     const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
 
@@ -233,10 +233,10 @@ describe('WorkbenchHost 收起态', () => {
   it('派活卡在选择页里一件一行，点它打开子代理那条流', async () => {
     serveFiles([])
     const { socket } = await renderHost(ROOMY, registryWith(shotsEntry, workspaceEntry, agentEntry))
-    await screen.findByRole('button', { name: '打开右侧面板' })
+    await screen.findByRole('button', { name: '展开工作台' })
     socket.deliver(delegationReset('running'))
 
-    await userEvent.click(screen.getByRole('button', { name: '打开右侧面板' }))
+    await userEvent.click(screen.getByRole('button', { name: '展开工作台' }))
     const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
     await userEvent.click(within(chooser).getByRole('button', { name: '委派任务 · 拆解' }))
 
@@ -247,13 +247,13 @@ describe('WorkbenchHost 收起态', () => {
     serveFiles(['video_shot.json'])
     await renderHost({ compact: true, sideBySide: false })
 
-    expect(await screen.findByRole('button', { name: '打开右侧面板' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: '展开工作台' })).toBeVisible()
     expect(await screen.findByText('画着分镜')).not.toBeVisible()
   })
 })
 
 describe('WorkbenchHost 展开态', () => {
-  it('区分产物自动选择与用户显式查看的打开请求', async () => {
+  it('区分产物自动选择与用户显式查看的展开请求', async () => {
     serveFiles(['video_shot.json'])
     const onOpenRequest = vi.fn<WorkbenchLayout['onOpen']>()
     await renderWithProviders(
@@ -264,7 +264,7 @@ describe('WorkbenchHost 展开态', () => {
     await screen.findByText('画着分镜')
     expect(onOpenRequest).toHaveBeenLastCalledWith('automatic')
 
-    await userEvent.click(screen.getByRole('button', { name: '从聊天查看分镜' }))
+    await userEvent.click(screen.getByRole('button', { name: '从对话查看分镜' }))
 
     expect(onOpenRequest).toHaveBeenLastCalledWith('explicit')
   })
@@ -327,7 +327,7 @@ describe('WorkbenchHost 展开态', () => {
   it('订着整个工作区：video_shot.json 一落地，面板自己展开、分镜标签出现', async () => {
     serveFiles(['video/a.md'])
     const { socket } = await renderHost()
-    await screen.findByRole('button', { name: '打开右侧面板' })
+    await screen.findByRole('button', { name: '展开工作台' })
     const asked = socket
       .frames()
       .find((frame) => frame.type === 'watch_fs_add' && frame.payload?.['recursive'] === true)
@@ -340,45 +340,45 @@ describe('WorkbenchHost 展开态', () => {
     expect(screen.getByRole('tab', { name: '分镜', selected: true })).toBeVisible()
   })
 
-  it('放不下并排时是二选一形态：只给「回到聊天」，点了退回菜单钮', async () => {
+  it('放不下并排时是二选一形态：只给「回到对话」，点了退回菜单钮', async () => {
     serveFiles(['video_shot.json'])
     await renderHost({ compact: false, sideBySide: false })
 
     expect(await screen.findByText('画着分镜')).toBeVisible()
 
-    await userEvent.click(screen.getByRole('button', { name: '回到聊天' }))
+    await userEvent.click(screen.getByRole('button', { name: '回到对话' }))
 
-    expect(screen.getByRole('button', { name: '打开右侧面板' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '展开工作台' })).toBeVisible()
     expect(await screen.findByText('画着分镜')).not.toBeVisible()
   })
 
-  it('用户收起后保留产物渲染器，恢复入口可以再打开', async () => {
+  it('用户折叠后保留产物渲染器，恢复入口可以再展开', async () => {
     serveFiles(['video_shot.json'])
     await renderHost()
     const painted = await screen.findByText('画着分镜')
     await waitFor(() => expect(painted).toBeVisible())
 
-    await userEvent.click(screen.getByRole('button', { name: '折叠右侧面板' }))
+    await userEvent.click(screen.getByRole('button', { name: '折叠工作台' }))
     expect(painted).not.toBeVisible()
 
-    await userEvent.click(screen.getByRole('button', { name: '打开右侧面板' }))
+    await userEvent.click(screen.getByRole('button', { name: '展开工作台' }))
 
     expect(screen.getByText('画着分镜')).toBe(painted)
     expect(painted).toBeVisible()
   })
 
-  it('紧凑屏显式查看可以打开，收起后查看同一产物也重新打开', async () => {
+  it('紧凑屏显式查看可以展开，折叠后查看同一产物也重新展开', async () => {
     serveFiles(['video_shot.json'])
     await renderHost({ compact: true, sideBySide: false })
     const painted = await screen.findByText('画着分镜')
     expect(painted).not.toBeVisible()
 
-    await userEvent.click(screen.getByRole('button', { name: '从聊天查看分镜' }))
+    await userEvent.click(screen.getByRole('button', { name: '从对话查看分镜' }))
     await waitFor(() => expect(painted).toBeVisible())
-    await userEvent.click(screen.getByRole('button', { name: '回到聊天' }))
+    await userEvent.click(screen.getByRole('button', { name: '回到对话' }))
     expect(painted).not.toBeVisible()
 
-    await userEvent.click(screen.getByRole('button', { name: '从聊天查看分镜' }))
+    await userEvent.click(screen.getByRole('button', { name: '从对话查看分镜' }))
     await waitFor(() => expect(painted).toBeVisible())
   })
 })

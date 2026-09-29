@@ -1,7 +1,7 @@
 """审计报表的 Postgres 查询：按合同 §12 的口径，用一套手工种下的数据核每一格。
 
 数据用原生 SQL 直插，时间戳自己定（业务仓储都用数据库时钟，控不住时刻）。基准时刻
-``BASE`` 是测试开始的此刻，空转 / 悬挂两种异常靠 ``now()`` 判，样本都往过去放。"""
+``BASE`` 是测试开始的此刻，视频悬挂按此刻判，样本都往过去放。"""
 
 from __future__ import annotations
 
@@ -15,13 +15,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from iclip.domains.audit.models import (
-    AnomalyCursor,
-    ConversationCursor,
-    Scope,
-    Thresholds,
-)
+from iclip.domains.audit.models import Scope
 from iclip.domains.audit.reports_pg import PgAuditReports, audit_connection
+from iclip.domains.audit.schemas import ExecutionOut
+from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
@@ -284,7 +281,7 @@ class Seed:
                 )
 
             # C1：Sara 在需求单下聊了一轮，镜 1 成了又重出一条（也成了），镜 2 失败一次、成两次；
-            # 另有一条没镜号。两镜都不算一次通过。
+            # 另有一条没镜号。失败那次不计，两镜各成功两次，都不算一次通过。
             await conversation(
                 self.c1,
                 owner=self.sara,
@@ -392,7 +389,8 @@ class Seed:
                 last_at=ago(minutes=44),
             )
 
-            # C2：Derek 用钥匙直提，没有运行；镜 1 成了，镜 2 三小时前提交上游至今没结果。
+            # C2：Derek 用钥匙直提，没有运行；镜 1 成了，镜 2 三小时前提交上游至今没结果，还没
+            # 成过，不算镜。
             # 钥匙不带替人办事权限，请求上写的是 Sara，出片仍归属主 Derek。
             await conversation(
                 self.c2,
@@ -495,11 +493,23 @@ def reports(engine: AsyncEngine) -> PgAuditReports:
     return PgAuditReports(engine)
 
 
+@pytest.fixture
+def service(reports: PgAuditReports) -> AuditService:
+    return AuditService(reports)
+
+
+async def executions_by_id(service: AuditService) -> dict[uuid.UUID, ExecutionOut]:
+    """近三天的全部任务执行（种子全在里面），按对话 id 取。"""
+
+    page = await service.executions(since=ago(days=3), limit=100)
+    return {item.conversation_id: item for item in page.items}
+
+
 async def test_overall_counts_every_metric_on_its_own_anchor(
     reports: PgAuditReports, seed: Seed
 ) -> None:
-    """成片件数按「需求单一件、无单对话一件」；镜含失败与悬挂的尝试，成了又重出的不算一次通过；
-    运行含已删对话的；周期缺运行时从对话创建起算。"""
+    """成片件数按「需求单一件、无单对话一件」；镜只算成功过的、次数只数成功的，失败与悬在上游的
+    都不计，成了又重出的不算一次通过；运行含已删对话的；周期缺运行时从对话创建起算。"""
 
     overall = await reports.overall(Scope())
 
@@ -507,20 +517,14 @@ async def test_overall_counts_every_metric_on_its_own_anchor(
     assert (overall.delivered_tasks, overall.delivered_orphan_conversations) == (1, 1)
     assert overall.deliveries == 2
     assert overall.producers == 2
-    assert (overall.shots, overall.attempts, overall.one_take_shots) == (5, 8, 2)
-    assert overall.attempts_per_shot == pytest.approx(8 / 5)
-    assert overall.one_take_rate == pytest.approx(2 / 5)
+    assert (overall.shots, overall.attempts, overall.one_take_shots) == (4, 6, 2)
+    assert overall.attempts_per_shot == 1.5
+    assert overall.one_take_rate == 0.5
     assert overall.runs == 4
     assert overall.delivered_conversations == 3
     assert overall.cycle_seconds is not None
     assert (overall.cycle_seconds.avg, overall.cycle_seconds.median) == (5200, 4800)
     assert overall.cycle_seconds.p90 == pytest.approx(6720)
-    assert overall.video_seconds is not None
-    assert (overall.video_seconds.avg, overall.video_seconds.median, overall.video_seconds.p90) == (
-        1600,
-        600,
-        3600,
-    )
     assert overall.upstream_seconds is not None
     assert overall.upstream_seconds.avg == 1540
     assert (
@@ -541,7 +545,7 @@ async def test_window_applies_to_each_metric_anchor(reports: PgAuditReports, see
 
     assert recent.completed_videos == 4
     assert (recent.delivered_tasks, recent.delivered_orphan_conversations) == (1, 0)
-    assert (recent.shots, recent.attempts, recent.one_take_shots) == (2, 5, 0)
+    assert (recent.shots, recent.attempts, recent.one_take_shots) == (2, 4, 0)
     assert recent.runs == 2
     assert recent.delivered_conversations == 1
     assert recent.cycle_seconds is not None and recent.cycle_seconds.avg == 4800
@@ -560,17 +564,17 @@ async def test_empty_scope_is_all_zeros(reports: PgAuditReports, seed: Seed) -> 
 async def test_attempt_distribution_buckets_shots_by_their_attempt_count(
     reports: PgAuditReports, seed: Seed
 ) -> None:
-    """五个镜分三档：三个一次的、一个两次的、一个三次的。次数含失败与悬挂的尝试，
-    窗口与筛选跟每镜次数同锚点，看该镜首次出片时刻。"""
+    """四个镜分两档：两个一次的、两个两次的。次数只数成功的，失败的不计，悬在上游的那镜还没成过、
+    不算镜；窗口与筛选跟镜同锚点，看该镜第一条成功生成的完成时刻。"""
 
     everything = await reports.attempt_distribution(Scope())
     recent = await reports.attempt_distribution(Scope(since=ago(hours=2)))
     by_derek = await reports.attempt_distribution(Scope(user_name=DEREK))
     nobody = await reports.attempt_distribution(Scope(user_name="Nobody"))
 
-    assert [(row.attempts, row.shots) for row in everything] == [(1, 3), (2, 1), (3, 1)]
-    assert [(row.attempts, row.shots) for row in recent] == [(2, 1), (3, 1)]
-    assert [(row.attempts, row.shots) for row in by_derek] == [(1, 2)]
+    assert [(row.attempts, row.shots) for row in everything] == [(1, 2), (2, 2)]
+    assert [(row.attempts, row.shots) for row in recent] == [(2, 2)]
+    assert [(row.attempts, row.shots) for row in by_derek] == [(1, 1)]
     assert nobody == []
 
 
@@ -582,35 +586,21 @@ async def test_by_user_attributes_videos_by_owner_and_conversations_by_latest_ru
 
     rows = await reports.by_user(Scope())
 
-    assert [row.user_name for row in rows] == [SARA, DEREK, EVA]
-    sara, derek, eva = (row.metrics for row in rows)
+    assert set(rows) == {SARA, DEREK, EVA}
+    sara, derek, eva = rows[SARA], rows[DEREK], rows[EVA]
     assert (sara.completed_videos, sara.deliveries) == (5, 2)
-    assert (sara.shots, sara.attempts, sara.one_take_shots) == (3, 6, 1)
+    assert (sara.shots, sara.attempts, sara.one_take_shots) == (3, 5, 1)
     assert sara.runs == 2
     assert sara.delivered_conversations == 2
     assert sara.usage.requests == 7
     assert (derek.completed_videos, derek.deliveries) == (1, 1)
-    assert (derek.shots, derek.attempts, derek.one_take_shots) == (2, 2, 1)
+    assert (derek.shots, derek.attempts, derek.one_take_shots) == (1, 1, 1)
     assert derek.runs == 1
     assert derek.delivered_conversations == 1
     assert derek.cycle_seconds is not None and derek.cycle_seconds.avg == 7200
     assert derek.usage.requests == 0
     assert (eva.runs, eva.deliveries, eva.shots, eva.usage.requests) == (1, 0, 0, 0)
     assert eva.cycle_seconds is None
-
-
-async def test_by_task_lists_only_tasks_with_activity(reports: PgAuditReports, seed: Seed) -> None:
-    """没挂需求单的对话不在这里；卡住的单没有任何视频、运行或用量，也不出现。"""
-
-    rows = await reports.by_task(Scope())
-
-    assert [(row.task_id, row.title) for row in rows] == [(seed.task, "夏季连衣裙")]
-    task = rows[0].metrics
-    assert (task.completed_videos, task.deliveries, task.producers) == (5, 1, 2)
-    assert (task.shots, task.attempts, task.one_take_shots) == (4, 7, 1)
-    assert task.runs == 2
-    assert task.delivered_conversations == 2
-    assert task.usage.requests == 5
 
 
 async def test_by_period_buckets_in_the_given_timezone(reports: PgAuditReports, seed: Seed) -> None:
@@ -621,7 +611,7 @@ async def test_by_period_buckets_in_the_given_timezone(reports: PgAuditReports, 
     assert rows and all(row.period_start.astimezone(singapore).hour == 0 for row in rows)
     assert [row.period_start for row in rows] == sorted(row.period_start for row in rows)
     assert sum(row.metrics.completed_videos for row in rows) == 6
-    assert sum(row.metrics.shots for row in rows) == 5
+    assert sum(row.metrics.shots for row in rows) == 4
     assert sum(row.metrics.runs for row in rows) == 4
     assert sum(row.metrics.delivered_conversations for row in rows) == 3
     assert sum(row.metrics.usage.requests for row in rows) == 7
@@ -644,7 +634,7 @@ async def test_by_period_fills_every_bucket_of_a_bounded_window(
     assert sum(row.metrics.completed_videos for row in rows) == 6
     assert sum(row.metrics.runs for row in rows) == 4
     quiet = [row.metrics for row in rows if row.metrics.completed_videos == 0]
-    assert all(m.cycle_seconds is None and m.video_seconds is None for m in quiet)
+    assert all(m.cycle_seconds is None and m.upstream_seconds is None for m in quiet)
 
     sparse = await reports.by_period(Scope(), bucket="day", timezone="Asia/Singapore")
 
@@ -658,214 +648,101 @@ async def test_by_period_fills_every_bucket_of_a_bounded_window(
     )
 
 
-async def test_conversations_carry_whole_conversation_detail_and_page_by_cursor(
-    reports: PgAuditReports, seed: Seed
+async def test_executions_carry_whole_conversation_detail(
+    service: AuditService, seed: Seed
 ) -> None:
-    first_page = await reports.conversations(Scope(), limit=2, after=None)
+    """有运行或出片的对话才是执行：卡住的单下那三段既没跑过也没出片，不在里面；已删的照列。
+    每行的指标、镜与按模型用量都是这段对话的全量。"""
 
-    assert [row.conversation_id for row in first_page] == [seed.c1, seed.c2]
-    c1, c2 = first_page
-    assert (c1.user_name, c1.task_id, c1.started_at) == (SARA, seed.task, seed.c1_agent_job_at)
-    assert c1.delivered_at == ago(minutes=40)
+    rows = await executions_by_id(service)
+
+    assert set(rows) == {seed.c1, seed.c2, seed.c3, seed.c4, seed.c5}
+    c1, c2, c3 = rows[seed.c1], rows[seed.c2], rows[seed.c3]
+    assert (c1.user_name, c1.task_id, c1.task_title) == (SARA, seed.task, "夏季连衣裙")
+    assert (c1.created_at, c1.started_at) == (ago(hours=3), seed.c1_agent_job_at)
+    assert (c1.delivered_at, c1.deleted_at) == (ago(minutes=40), None)
     assert (c1.metrics.completed_videos, c1.metrics.runs) == (4, 1)
     assert c1.metrics.cycle_seconds is not None and c1.metrics.cycle_seconds.avg == 4800
+    # 镜 1 成了又重出一条；镜 2 失败一次再成两次，失败的不计。没镜号的那条与编辑段、合成都不是
+    # 出片，镜 2 上的编辑段与合成抄着它的镜号也不进次数。
     assert [(shot.shot, shot.attempts, shot.one_take) for shot in c1.shots] == [
         (1, 2, False),
-        (2, 3, False),
+        (2, 2, False),
     ]
     assert [(item.model_name, item.usage.requests) for item in c1.usage] == [("m-a", 4), ("m-b", 1)]
-    assert (c2.user_name, c2.started_at) == (DEREK, seed.c2_created_at)
-    assert [(shot.shot, shot.attempts, shot.one_take) for shot in c2.shots] == [
-        (1, 1, True),
-        (2, 1, False),
-    ]
-    assert c2.usage == []
-
-    second_page = await reports.conversations(
-        Scope(),
-        limit=2,
-        after=ConversationCursor(delivered_at=c2.delivered_at, conversation_id=c2.conversation_id),
+    # 钥匙直提没有运行：开始就是建立时刻；悬在上游的那镜还没成过，不列。
+    assert (c2.user_name, c2.started_at, c2.task_title) == (
+        DEREK,
+        seed.c2_created_at,
+        "夏季连衣裙",
     )
-
-    assert [row.conversation_id for row in second_page] == [seed.c3]
-    assert second_page[0].task_id is None
-    assert second_page[0].metrics.delivered_orphan_conversations == 1
-
-
-async def test_conversations_window_and_filters(reports: PgAuditReports, seed: Seed) -> None:
-    recent = await reports.conversations(Scope(since=ago(hours=2)), limit=10, after=None)
-    by_derek = await reports.conversations(Scope(user_name=DEREK), limit=10, after=None)
-    in_task = await reports.conversations(Scope(task_id=seed.task), limit=10, after=None)
-
-    assert [row.conversation_id for row in recent] == [seed.c1]
-    assert [row.conversation_id for row in by_derek] == [seed.c2]
-    assert [row.conversation_id for row in in_task] == [seed.c1, seed.c2]
+    assert [(shot.shot, shot.attempts, shot.one_take) for shot in c2.shots] == [(1, 1, True)]
+    assert c2.usage == []
+    assert (c3.task_id, c3.task_title) == (None, None)
+    assert c3.metrics.delivered_orphan_conversations == 1
+    # 跑过没出片：没有成片时刻、没有镜；删掉的照列。
+    c4, c5 = rows[seed.c4], rows[seed.c5]
+    assert (c4.delivered_at, c4.shots, c4.metrics.runs) == (None, [], 1)
+    assert c5.deleted_at == ago(hours=1) and c5.user_name == EVA
 
 
-async def test_effective_shots_are_downloaded_shots_among_the_delivered(
-    reports: PgAuditReports, seed: Seed
+async def test_executions_window_falls_on_creation_and_user_filters_rows(
+    service: AuditService, seed: Seed
 ) -> None:
-    """有效镜是下载过的出片镜，下载成片算它原作所在的镜，同一镜下载几次都只算一镜；没出成的镜
-    （C2 镜 2 悬在上游）不进分母；分母为零的有效率是空。五个维度同一口径。"""
+    """时间窗看对话建立时刻；userName 只筛这段对话归属的人。"""
+
+    recent = await service.executions(since=ago(hours=4), limit=10)
+    by_derek = await service.executions(since=ago(days=3), user_name=DEREK, limit=10)
+
+    assert [row.conversation_id for row in recent.items] == [seed.c5, seed.c1]
+    assert recent.total == 2
+    assert {row.conversation_id for row in by_derek.items} == {seed.c2, seed.c4}
+
+
+async def test_effective_shots_are_downloaded_shots(
+    reports: PgAuditReports, service: AuditService, seed: Seed
+) -> None:
+    """有效镜是下载过的镜，下载成片算它原作所在的镜，同一镜下载几次都只算一镜；还没成过的镜
+    （C2 镜 2 悬在上游）不算镜、不进分母；分母为零的有效率是空。四个维度同一口径。"""
 
     overall = await reports.overall(Scope())
-    assert (overall.shots, overall.delivered_shots, overall.effective_shots) == (5, 4, 2)
+    assert (overall.shots, overall.effective_shots) == (4, 2)
     assert overall.effective_rate == 0.5
 
     recent = await reports.overall(Scope(since=ago(hours=2)))
-    assert (recent.delivered_shots, recent.effective_shots) == (2, 2)
+    assert (recent.shots, recent.effective_shots) == (2, 2)
+    assert recent.effective_rate == 1
 
-    by_user = {row.user_name: row.metrics for row in await reports.by_user(Scope())}
-    assert (by_user[SARA].delivered_shots, by_user[SARA].effective_shots) == (3, 2)
+    by_user = await reports.by_user(Scope())
+    assert (by_user[SARA].shots, by_user[SARA].effective_shots) == (3, 2)
     derek = by_user[DEREK]
-    assert (derek.shots, derek.delivered_shots, derek.effective_shots) == (2, 1, 0)
+    assert (derek.shots, derek.effective_shots) == (1, 0)
     assert derek.effective_rate == 0
-    assert by_user[EVA].delivered_shots == 0 and by_user[EVA].effective_rate is None
-
-    [task] = await reports.by_task(Scope())
-    assert (task.metrics.delivered_shots, task.metrics.effective_shots) == (3, 2)
+    assert by_user[EVA].shots == 0 and by_user[EVA].effective_rate is None
 
     series = await reports.by_period(
         Scope(since=ago(days=3)), bucket="day", timezone="Asia/Singapore"
     )
-    assert sum(row.metrics.delivered_shots for row in series) == 4
+    assert sum(row.metrics.shots for row in series) == 4
     assert sum(row.metrics.effective_shots for row in series) == 2
     quiet = [row.metrics for row in series if row.metrics.shots == 0]
     assert quiet and all(m.effective_shots == 0 and m.effective_rate is None for m in quiet)
 
-    rows = {
-        row.conversation_id: row
-        for row in await reports.conversations(Scope(), limit=10, after=None)
-    }
+    rows = await executions_by_id(service)
     assert [(shot.shot, shot.effective) for shot in rows[seed.c1].shots] == [(1, True), (2, True)]
-    assert [(shot.shot, shot.effective) for shot in rows[seed.c2].shots] == [
-        (1, False),
-        (2, False),
-    ]
+    assert [(shot.shot, shot.effective) for shot in rows[seed.c2].shots] == [(1, False)]
     assert rows[seed.c1].metrics.effective_rate == 1
     assert rows[seed.c2].metrics.effective_rate == 0
 
 
-async def test_anomalies_flag_every_agreed_kind(reports: PgAuditReports, seed: Seed) -> None:
-    """九种异常各出一条；P90 / P95 门槛按范围现算，三段周期里最长的那段、两罐里多的那罐被标出。"""
-
-    found = await reports.anomalies(Scope(), Thresholds(), kinds=None, limit=50, after=None)
-
-    by_kind = {item.kind: item for item in found}
-    assert len(found) == len(by_kind) == 9
-    assert [item.at for item in found] == sorted((item.at for item in found), reverse=True)
-
-    retry = by_kind["retry"]
-    assert (retry.conversation_id, retry.shot, retry.value, retry.threshold) == (seed.c1, 2, 3, 2)
-    assert (retry.user_name, retry.task_id) == (SARA, seed.task)
-
-    idle = by_kind["idle"]
-    assert (idle.conversation_id, idle.user_name) == (seed.c4, DEREK)
-    assert idle.value is not None and idle.value > 47 and idle.threshold == 24
-
-    slow = by_kind["slow"]
-    assert (slow.conversation_id, slow.value) == (seed.c2, 7200)
-    assert slow.threshold == pytest.approx(6720)
-
-    stuck = by_kind["stuck"]
-    assert (stuck.generation_id, stuck.conversation_id, stuck.shot) == (
-        seed.stuck_video,
-        seed.c2,
-        2,
-    )
-    assert stuck.value is not None and stuck.value > 2.9 and stuck.threshold == 1
-
-    spend = by_kind["spend"]
-    assert (spend.conversation_id, spend.value) == (seed.c1, 1950)
-
-    task_stuck = by_kind["task_stuck"]
-    assert (task_stuck.task_id, task_stuck.value, task_stuck.threshold) == (seed.stuck_task, 3, 3)
-
-    assert by_kind["deleted"].conversation_id == seed.c5
-    assert by_kind["deleted"].value == 0
-    assert (by_kind["no_task"].conversation_id, by_kind["no_task"].value) == (seed.c3, 1)
-    missing = by_kind["missing_shot"]
-    assert (missing.generation_id, missing.conversation_id, missing.user_name) == (
-        seed.missing_shot_video,
-        seed.c1,
-        SARA,
-    )
-
-
-async def test_anomalies_filter_by_kind_and_page_by_cursor(
-    reports: PgAuditReports, seed: Seed
-) -> None:
-    only_retry = await reports.anomalies(
-        Scope(), Thresholds(), kinds=["retry"], limit=50, after=None
-    )
-    assert [item.kind for item in only_retry] == ["retry"]
-
-    lenient = await reports.anomalies(
-        Scope(), Thresholds(retry_over=3), kinds=["retry"], limit=50, after=None
-    )
-    assert lenient == []
-
-    first = await reports.anomalies(Scope(), Thresholds(), kinds=None, limit=4, after=None)
-    rest = await reports.anomalies(
-        Scope(),
-        Thresholds(),
-        kinds=None,
-        limit=50,
-        after=AnomalyCursor(at=first[-1].at, ref=first[-1].ref),
-    )
-    assert len(first) == 4 and len(rest) == 5
-    assert {item.ref for item in first}.isdisjoint(item.ref for item in rest)
-
-
-async def test_anomalies_respect_scope_filters(reports: PgAuditReports, seed: Seed) -> None:
-    by_derek = await reports.anomalies(
-        Scope(user_name=DEREK), Thresholds(), kinds=None, limit=50, after=None
-    )
-    in_task = await reports.anomalies(
-        Scope(task_id=seed.task), Thresholds(), kinds=None, limit=50, after=None
-    )
-
-    # P90 / P95 按筛选后的样本算：Derek 只有一段周期，谁都不算慢；需求单里两段周期，
-    # 长的那段超过 P90；用量只有 C1 一罐，超不过自己的 P95。
-    assert {item.kind for item in by_derek} == {"idle", "stuck"}
-    assert {item.kind for item in in_task} == {"retry", "idle", "slow", "stuck", "missing_shot"}
-
-
-async def test_anomaly_counts_share_the_anomaly_judgement(
-    reports: PgAuditReports, seed: Seed
-) -> None:
-    """计数与列表同一套判定：全范围九种各一条，筛到 Derek 只剩空转与悬挂，放宽阈值就少一种；同数按种类名排。"""
-
-    everything = await reports.anomaly_counts(Scope(), Thresholds())
-    by_derek = await reports.anomaly_counts(Scope(user_name=DEREK), Thresholds())
-    lenient = await reports.anomaly_counts(Scope(), Thresholds(retry_over=3))
-
-    assert {(row.kind, row.count) for row in everything} == {
-        (kind, 1)
-        for kind in (
-            "retry",
-            "idle",
-            "slow",
-            "stuck",
-            "spend",
-            "task_stuck",
-            "deleted",
-            "no_task",
-            "missing_shot",
-        )
-    }
-    assert [row.kind for row in everything] == sorted(row.kind for row in everything)
-    assert [(row.kind, row.count) for row in by_derek] == [("idle", 1), ("stuck", 1)]
-    assert "retry" not in {row.kind for row in lenient}
-
-
 async def test_forks_do_not_count_toward_any_metric(
-    reports: PgAuditReports, seed: Seed, engine: AsyncEngine
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
-    """副本继承的出片记在源对话名下、源那边已经数过；副本自己跑的是试验数据，一律不计。
-    下载副本自己出的片也不让任何一镜变有效。"""
+    """副本继承的出片记在源对话名下、源那边已经数过；副本自己跑的是试验数据，一律不计，也不算
+    任务执行。下载副本自己出的片也不让任何一镜变有效。"""
 
     before = await reports.overall(Scope())
+    before_executions = await executions_by_id(service)
     fork_id, fork_video = uuid.uuid4(), uuid.uuid4()
     at = ago(hours=1)
     async with engine.begin() as conn:
@@ -935,16 +812,17 @@ async def test_forks_do_not_count_toward_any_metric(
 
     after = await reports.overall(Scope())
     assert after == before
+    assert await executions_by_id(service) == before_executions
 
 
 async def test_videos_of_an_owner_without_username_count_overall_only(
-    reports: PgAuditReports, seed: Seed, engine: AsyncEngine
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     """属主没有用户名（SSO 显示名撞名时留空）的视频计入总览，但不归任何人：不占分人的行、不计
-    出片人数，漏标异常上的人为空；请求里的标签不拿来顶替。"""
+    出片人数，它所在的任务执行上人为空；请求里的标签不拿来顶替。"""
 
     before = await reports.overall(Scope())
-    before_users = [row.user_name for row in await reports.by_user(Scope())]
+    before_users = set(await reports.by_user(Scope()))
     bare, conversation_id, unmarked = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     at = ago(hours=1)
     async with engine.begin() as conn:
@@ -989,28 +867,25 @@ async def test_videos_of_an_owner_without_username_count_overall_only(
 
     after = await reports.overall(Scope())
     rows = await reports.by_user(Scope())
-    anomalies = await reports.anomalies(
-        Scope(), Thresholds(), kinds=["missing_shot"], limit=50, after=None
-    )
+    executions = await executions_by_id(service)
 
     assert after.completed_videos == before.completed_videos + 1
     assert after.producers == before.producers
-    assert [row.user_name for row in rows] == before_users
-    [missing] = [item for item in anomalies if item.generation_id == unmarked]
-    assert missing.user_name is None
+    assert set(rows) == before_users
+    assert executions[conversation_id].user_name is None
+    # 没镜号的那条不是出片：这段对话只有镜 1 的一次。
+    assert [(shot.shot, shot.attempts) for shot in executions[conversation_id].shots] == [(1, 1)]
 
 
 async def test_uploads_and_cuts_do_not_count_toward_any_metric(
-    reports: PgAuditReports, seed: Seed, engine: AsyncEngine
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     """上传与切图不是出片：一条不挂对话的视频上传、挂在对话上的一张宫格切出的格子，总览、分人与
-    漏标镜号都不变。"""
+    任务执行都不变。"""
 
     before = await reports.overall(Scope())
     before_users = await reports.by_user(Scope())
-    before_missing = await reports.anomalies(
-        Scope(), Thresholds(), kinds=["missing_shot"], limit=50, after=None
-    )
+    before_executions = await executions_by_id(service)
     grid, cell, upload = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     at = ago(hours=1)
     async with engine.begin() as conn:
@@ -1043,10 +918,7 @@ async def test_uploads_and_cuts_do_not_count_toward_any_metric(
 
     assert await reports.overall(Scope()) == before
     assert await reports.by_user(Scope()) == before_users
-    assert (
-        await reports.anomalies(Scope(), Thresholds(), kinds=["missing_shot"], limit=50, after=None)
-        == before_missing
-    )
+    assert await executions_by_id(service) == before_executions
 
 
 async def test_audit_connections_turn_off_jit_only_for_their_own_transaction(

@@ -32,59 +32,6 @@ export const zAgentStatusMeta = z.object({
 })
 
 /**
- * AnomalyCountOut
- */
-export const zAnomalyCountOut = z.object({
-  count: z.int(),
-  kind: z.enum([
-    'retry',
-    'idle',
-    'slow',
-    'stuck',
-    'spend',
-    'task_stuck',
-    'deleted',
-    'no_task',
-    'missing_shot',
-  ]),
-})
-
-/**
- * AnomalyOut
- *
- * 一条异常。``ref`` 是「种类:对象」的稳定文本，与 ``at`` 一起构成排序键与游标，不出接口。
- */
-export const zAnomalyOut = z.object({
-  at: z.iso.datetime(),
-  conversationId: z.uuid().nullable(),
-  generationId: z.uuid().nullable(),
-  kind: z.enum([
-    'retry',
-    'idle',
-    'slow',
-    'stuck',
-    'spend',
-    'task_stuck',
-    'deleted',
-    'no_task',
-    'missing_shot',
-  ]),
-  shot: z.int().nullable(),
-  taskId: z.uuid().nullable(),
-  threshold: z.number().nullable(),
-  userName: z.string().nullable(),
-  value: z.number().nullable(),
-})
-
-/**
- * AnomaliesOut
- */
-export const zAnomaliesOut = z.object({
-  items: z.array(zAnomalyOut),
-  nextCursor: z.string().nullable(),
-})
-
-/**
  * ApiKeyCreatedOut
  */
 export const zApiKeyCreatedOut = z.object({
@@ -148,7 +95,7 @@ export const zAttachmentSource = z.object({
 /**
  * AttemptBucketOut
  *
- * 出片次数正好是 ``attempts`` 次的镜有多少个。次数按镜上全部出片记录数，不看终态。
+ * 成功生成正好 ``attempts`` 次的镜有多少个。
  */
 export const zAttemptBucketOut = z.object({
   attempts: z.int(),
@@ -466,6 +413,31 @@ export const zErrorModel = z.object({
 })
 
 /**
+ * ExecutionShotOut
+ *
+ * 这段对话里至少成功生成过一条的镜。
+ */
+export const zExecutionShotOut = z.object({
+  attempts: z.int(),
+  effective: z.boolean(),
+  oneTake: z.boolean(),
+  shot: z.int(),
+})
+
+/**
+ * ExecutionThresholdsOut
+ *
+ * 四种异常的门槛。
+ */
+export const zExecutionThresholdsOut = z.object({
+  retryAtLeast: z.int(),
+  spendTimes: z.int(),
+  spendTokens: z.number().nullable(),
+  stuckHours: z.int(),
+  taskConversations: z.int(),
+})
+
+/**
  * FaceOut
  *
  * 一版成片的版本头：卡面放的那一版，也是详情里每一版的公共部分。
@@ -729,6 +701,14 @@ export const zOverviewWindowOut = z.object({
   until: z.iso.datetime(),
 })
 
+/**
+ * PeriodDeliveriesOut
+ */
+export const zPeriodDeliveriesOut = z.object({
+  deliveries: z.int(),
+  periodStart: z.iso.datetime(),
+})
+
 export const zPermission = z.enum([
   'collections:read',
   'collections:write',
@@ -785,18 +765,6 @@ export const zScriptCutOut = z.object({
 export const zScriptOut = z.object({
   globalSettings: z.string(),
   timeline: z.array(zScriptCutOut),
-})
-
-/**
- * ShotOut
- */
-export const zShotOut = z.object({
-  attempts: z.int(),
-  effective: z.boolean(),
-  firstAt: z.iso.datetime(),
-  lastAt: z.iso.datetime(),
-  oneTake: z.boolean(),
-  shot: z.int(),
 })
 
 /**
@@ -1157,7 +1125,7 @@ export const zToolFrame = z.object({
 /**
  * TopShotOut
  *
- * 时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。
+ * 时间窗里成功生成次数最多的镜之一；时间窗作用在该镜第一条成功生成的完成时刻上。
  */
 export const zTopShotOut = z.object({
   attempts: z.int(),
@@ -1317,7 +1285,7 @@ export const zUsageOut = z.object({
 /**
  * MetricsOut
  *
- * 一格指标。全体、人、需求单、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。
+ * 一格指标。全体、人、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。
  */
 export const zMetricsOut = z.object({
   activeCycleSeconds: zSpreadOut.nullable(),
@@ -1329,7 +1297,6 @@ export const zMetricsOut = z.object({
   cycleSeconds: zSpreadOut.nullable(),
   deliveredConversations: z.int(),
   deliveredOrphanConversations: z.int(),
-  deliveredShots: z.int(),
   deliveredTasks: z.int(),
   deliveries: z.int().readonly(),
   discardedLengthSeconds: z.number(),
@@ -1345,7 +1312,6 @@ export const zMetricsOut = z.object({
   tokensPerDelivery: z.number().nullable(),
   upstreamSeconds: zSpreadOut.nullable(),
   usage: zUsageOut,
-  videoSeconds: zSpreadOut.nullable(),
 })
 
 /**
@@ -1357,30 +1323,35 @@ export const zModelUsageOut = z.object({
 })
 
 /**
- * ConversationAuditOut
+ * ExecutionOut
  *
- * 一段有成片的对话；指标与镜、用量都是这段对话的全量，不按时间窗裁。
+ * 一次任务执行，即一段有运行或出片的对话；指标、镜与用量是这段对话的全量，不按时间窗裁。
  */
-export const zConversationAuditOut = z.object({
+export const zExecutionOut = z.object({
+  anomalies: z.array(z.enum(['retry', 'stuck', 'spend', 'task_stuck'])),
   conversationId: z.uuid(),
+  createdAt: z.iso.datetime(),
   deletedAt: z.iso.datetime().nullable(),
-  deliveredAt: z.iso.datetime(),
+  deliveredAt: z.iso.datetime().nullable(),
   metrics: zMetricsOut,
-  ownerUserId: z.uuid(),
-  shots: z.array(zShotOut),
+  shots: z.array(zExecutionShotOut),
   startedAt: z.iso.datetime(),
   taskId: z.uuid().nullable(),
+  taskTitle: z.string().nullable(),
   title: z.string(),
   usage: z.array(zModelUsageOut),
   userName: z.string().nullable(),
 })
 
 /**
- * AuditConversationsOut
+ * AuditExecutionsOut
  */
-export const zAuditConversationsOut = z.object({
-  items: z.array(zConversationAuditOut),
+export const zAuditExecutionsOut = z.object({
+  flagged: z.int(),
+  items: z.array(zExecutionOut),
   nextCursor: z.string().nullable(),
+  thresholds: zExecutionThresholdsOut,
+  total: z.int(),
 })
 
 /**
@@ -1394,20 +1365,22 @@ export const zOverviewPeriodOut = z.object({
 })
 
 /**
- * PeriodMetricsOut
+ * PersonOut
+ *
+ * 一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。
  */
-export const zPeriodMetricsOut = z.object({
+export const zPersonOut = z.object({
   metrics: zMetricsOut,
-  periodStart: z.iso.datetime(),
+  trend: z.array(zPeriodDeliveriesOut),
+  userName: z.string(),
 })
 
 /**
- * TaskMetricsOut
+ * AuditPeopleOut
  */
-export const zTaskMetricsOut = z.object({
-  metrics: zMetricsOut,
-  taskId: z.uuid(),
-  title: z.string(),
+export const zAuditPeopleOut = z.object({
+  bucket: z.enum(['hour', 'day', 'week']),
+  items: z.array(zPersonOut),
 })
 
 /**
@@ -1445,26 +1418,6 @@ export const zUserCreate = z.object({
   is_verified: z.boolean().nullish().default(false),
   password: z.string(),
   username: z.string().nullish(),
-})
-
-/**
- * UserMetricsOut
- */
-export const zUserMetricsOut = z.object({
-  metrics: zMetricsOut,
-  userName: z.string(),
-})
-
-/**
- * SummaryOut
- */
-export const zSummaryOut = z.object({
-  anomalyCounts: z.array(zAnomalyCountOut),
-  attemptDistribution: z.array(zAttemptBucketOut),
-  overall: zMetricsOut,
-  series: z.array(zPeriodMetricsOut).nullable(),
-  tasks: z.array(zTaskMetricsOut),
-  users: z.array(zUserMetricsOut),
 })
 
 /**
@@ -1982,30 +1935,12 @@ export const zRevokeKeyApiKeysKeyIdDeletePath = z.object({
  */
 export const zRevokeKeyApiKeysKeyIdDeleteResponse = z.void()
 
-export const zAnomaliesAuditAnomaliesGetQuery = z.object({
-  since: z.iso.datetime().nullish(),
+export const zExecutionsAuditExecutionsGetQuery = z.object({
+  since: z.iso.datetime(),
   until: z.iso.datetime().nullish(),
   userName: z.string().max(150).nullish(),
-  taskId: z.uuid().nullish(),
-  kind: z
-    .array(
-      z.enum([
-        'retry',
-        'idle',
-        'slow',
-        'stuck',
-        'spend',
-        'task_stuck',
-        'deleted',
-        'no_task',
-        'missing_shot',
-      ]),
-    )
-    .nullish(),
-  retryOver: z.int().gte(1).optional().default(2),
-  idleHours: z.int().gte(1).optional().default(24),
-  stuckHours: z.int().gte(1).optional().default(1),
-  taskConversations: z.int().gte(1).optional().default(3),
+  sort: z.enum(['start', 'retries', 'cycle', 'tokens']).optional().default('start'),
+  order: z.enum(['asc', 'desc']).optional().default('desc'),
   limit: z.int().gte(1).lte(100).optional().default(20),
   cursor: z.string().nullish(),
 })
@@ -2013,21 +1948,7 @@ export const zAnomaliesAuditAnomaliesGetQuery = z.object({
 /**
  * Successful Response
  */
-export const zAnomaliesAuditAnomaliesGetResponse = zAnomaliesOut
-
-export const zConversationsAuditConversationsGetQuery = z.object({
-  since: z.iso.datetime().nullish(),
-  until: z.iso.datetime().nullish(),
-  userName: z.string().max(150).nullish(),
-  taskId: z.uuid().nullish(),
-  limit: z.int().gte(1).lte(100).optional().default(20),
-  cursor: z.string().nullish(),
-})
-
-/**
- * Successful Response
- */
-export const zConversationsAuditConversationsGetResponse = zAuditConversationsOut
+export const zExecutionsAuditExecutionsGetResponse = zAuditExecutionsOut
 
 export const zOverviewAuditOverviewGetQuery = z.object({
   since: z.iso.datetime(),
@@ -2040,19 +1961,16 @@ export const zOverviewAuditOverviewGetQuery = z.object({
  */
 export const zOverviewAuditOverviewGetResponse = zOverviewOut
 
-export const zSummaryAuditSummaryGetQuery = z.object({
-  since: z.iso.datetime().nullish(),
+export const zPeopleAuditPeopleGetQuery = z.object({
+  since: z.iso.datetime(),
   until: z.iso.datetime().nullish(),
-  userName: z.string().max(150).nullish(),
-  taskId: z.uuid().nullish(),
-  bucket: z.enum(['day', 'week', 'month']).nullish(),
   timezone: z.string().max(64).optional().default('UTC'),
 })
 
 /**
  * Successful Response
  */
-export const zSummaryAuditSummaryGetResponse = zSummaryOut
+export const zPeopleAuditPeopleGetResponse = zAuditPeopleOut
 
 export const zAuthCookieLoginAuthLoginPostBody = zBodyAuthCookieLoginAuthLoginPost
 

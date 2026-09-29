@@ -170,7 +170,7 @@ function AppShell() {
           />
           {!compact && (
             <AppResizeHandle
-              label="调整侧栏宽度"
+              label="调整侧边栏宽度"
               position={sidebarWidth}
               value={sidebarWidth}
               min={SIDEBAR_WIDTH.collapsed}
@@ -233,7 +233,7 @@ function AppShell() {
             </DndContext>
             {hasWorkbench && sideBySide && (
               <AppResizeHandle
-                label="调整面板宽度"
+                label="调整工作台宽度"
                 position={state.firstPane === 'chat' ? chatWidth : workbenchWidth}
                 value={workbenchWidth}
                 min={0}
@@ -270,7 +270,7 @@ function AppShell() {
             {hasWorkbench && compact && (
               <IconButton
                 className="layer-sidebar absolute top-2 right-2"
-                label={mode === 'chat' ? '打开右侧面板' : '展开对话'}
+                label={mode === 'chat' ? '展开工作台' : '展开对话'}
                 name={mode === 'chat' ? 'grid' : 'message'}
                 onClick={() => expandPane(mode === 'chat' ? 'workbench' : 'chat')}
                 size="md"

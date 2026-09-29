@@ -20,7 +20,7 @@ export const aspectOf = (aspectRatio: string | null): { w: number; h: number } =
   return w > 0 && h > 0 ? { h, w } : FALLBACK_ASPECT
 }
 
-/** 一版的秒数：这一版量出来的时长（只有合成有）优先，其次它对应那次出片请求里的秒数，再次分镜的末尾；都没有是 null。 */
+/** 一版的秒数：这一版的实际时长（出片是上游实测的、合成是本系统量的，可能缺）优先，其次它对应那次出片请求里的秒数，再次分镜的末尾；都没有是 null。 */
 export const durationSecondsOf = (durationMs: number | null, take: LibraryTake): number | null => {
   if (durationMs !== null) return durationMs / 1000
   if (take.seconds !== null && take.seconds > 0) return take.seconds

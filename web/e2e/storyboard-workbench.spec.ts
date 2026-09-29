@@ -395,7 +395,7 @@ test('没有工作区文件的对话仍是折叠空态', async ({ page }) => {
   await openConversation(page, '亚麻衬衫二剪')
   await expect(page).toHaveURL(/\/c\//)
 
-  await expect(page.getByRole('button', { name: '打开右侧面板' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '展开工作台' })).toBeVisible()
   await expect(page.getByRole('tab', { name: '分镜' })).toBeHidden()
 })
 

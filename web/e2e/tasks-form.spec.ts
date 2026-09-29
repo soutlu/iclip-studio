@@ -19,7 +19,7 @@ const openCreate = async (page: Page) => {
   await page.getByRole('button', { name: '需求单', exact: true }).click()
   if ((page.viewportSize()?.width ?? 1363) < 600) {
     await expect(page.getByRole('button', { name: '展开侧边栏', exact: true })).toBeVisible()
-    await expect(page.getByRole('complementary', { name: '导航', exact: true })).toBeHidden()
+    await expect(page.getByRole('complementary', { name: '侧边栏', exact: true })).toBeHidden()
   }
   await page.getByRole('button', { name: '新建需求单' }).click()
   const dialog = page.getByRole('dialog', { name: '新建需求单' })

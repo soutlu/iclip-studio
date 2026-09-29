@@ -45,7 +45,7 @@ def main(argv):
         return 2
     master, slave = pty.openpty()
     try:
-        # 新 PTY 默认大小为 0×0，mpb 会因此丢弃所有进度行。
+        # 新 PTY 默认大小为 0×0，skopeo 用的进度条库 mpb 会因此丢弃所有进度行。
         termios.tcsetwinsize(slave, (24, 120))
         child = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=slave,
                                  stderr=slave, start_new_session=True)

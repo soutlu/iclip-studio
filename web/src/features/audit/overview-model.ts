@@ -3,8 +3,8 @@
 均线的值与覆盖区间一律读接口的 ma7 / ma30，前端不重算；这里只决定呈现。 */
 
 import type { Metrics, MovingAverages, Overview, OverviewBucket } from './audit.api'
-import { EMPTY } from './format'
 import {
+  EMPTY,
   durationParts,
   durationTicks,
   durationTickText,
@@ -54,7 +54,7 @@ type SampleKey = keyof typeof SAMPLES
 /** 两期件数都不到这个数时，成片数不比：0 比 1 就是「降 100%」。 */
 const THIN_DELIVERIES = 5
 
-/** 「出得多」的门槛：单镜出片 3 次及以上，与异常「反复重试」同一个门槛。 */
+/** 「出得多」的门槛：单镜成功生成 3 次及以上，与异常「反复重试」同一个门槛。 */
 export const RETRY_AT_LEAST = 3
 
 // ——— 指标 ———
@@ -371,7 +371,7 @@ export function cardHead(key: CardKey, overview: Overview, previousRange: string
       return {
         aside: null,
         delta,
-        detail: `${fmtCount(current.effectiveShots)} / ${fmtCount(current.deliveredShots)} 个出片镜有人下载过`,
+        detail: `${fmtCount(current.effectiveShots)} / ${fmtCount(current.shots)} 个镜头有人下载过`,
         unit: '%',
         value: rate === null ? EMPTY : String(Math.round(rate * 100)),
       }
@@ -614,7 +614,7 @@ export function chartModel(overview: Overview, key: MetricKey): ChartModel {
   }
 }
 
-// ——— 出片次数 ———
+// ——— 出片次数（只数成功生成） ———
 
 export const ATTEMPT_BINS = [
   { name: '1 次', color: 'var(--color-chart-ord-1)', ink: 'var(--color-on-chart-ord-1)' },
@@ -631,7 +631,7 @@ export type AttemptSummary = {
   shotShares: number[]
   attemptShares: number[]
   totalShots: number
-  /** 出了 RETRY_AT_LEAST 次及以上的镜占镜数与占出片次数的比例；没有这样的镜为空。 */
+  /** 成功生成 RETRY_AT_LEAST 次及以上的镜占镜数与占出片次数的比例；没有这样的镜为空。 */
   heavy: { shotShare: number; attemptShare: number } | null
 }
 

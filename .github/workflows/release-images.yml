@@ -1,7 +1,7 @@
 name: release-images
 
-# GitHub 直接构建并推送 ACR，GHCR 只保存跨 tag 共享的 BuildKit cache。
-# 正式发布只由版本 tag 触发；手动运行只验证分支，不更新 latest。
+# GitHub 构建镜像并直接上传到 ACR；GHCR 只保存跨版本共享的 BuildKit 构建缓存。
+# 正式发布只由版本标签触发；手动运行只验证分支，不更新 latest。
 permissions:
   contents: read
 
@@ -39,7 +39,7 @@ jobs:
             push:tag)
               if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 echo "::error::Release tags must use vX.Y.Z"
-                echo "准备失败：版本 tag 必须使用 vX.Y.Z。" >> "$GITHUB_STEP_SUMMARY"
+                echo "准备失败：版本标签必须符合 vX.Y.Z 格式。" >> "$GITHUB_STEP_SUMMARY"
                 exit 1
               fi
               tag=$GITHUB_REF_NAME
@@ -53,7 +53,7 @@ jobs:
               ;;
             *)
               echo "::error::Manual runs must select a branch; releases require a tag push"
-              echo "准备失败：手动运行只能选择分支；正式发布必须推送版本 tag。" >> "$GITHUB_STEP_SUMMARY"
+              echo "准备失败：手动运行只能选择分支；正式发布必须推送版本标签。" >> "$GITHUB_STEP_SUMMARY"
               exit 1
               ;;
           esac
@@ -163,7 +163,7 @@ jobs:
           fi
           if [ "$PUSHED_DIGEST" != "$EXPECTED_DIGEST" ]; then
             echo "::error::Pushed digest does not match the build result"
-            printf '上传摘要不一致：构建 `%s`，上传 `%s`。\n' "$EXPECTED_DIGEST" "$PUSHED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+            printf '核验失败：上传摘要与构建不一致，构建 `%s`，上传 `%s`。\n' "$EXPECTED_DIGEST" "$PUSHED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           if ! actual=$(docker buildx imagetools inspect --format '{{json .Manifest}}' "$IMAGE_REF" \
@@ -219,7 +219,7 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "跳过 latest：发布提交已不是当前 main，保留版本标签。" >> "$GITHUB_STEP_SUMMARY"
+            echo "跳过 latest：该版本提交不是 main 的最新提交，保留版本标签。" >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Install Skopeo
         if: steps.current.outputs.publish == 'true'
@@ -237,18 +237,18 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          trap 'printf "latest 提升失败：服务 %s，阶段 %s。\n" "$service" "$stage" >> "$GITHUB_STEP_SUMMARY"' ERR
+          trap 'printf "更新 latest 失败：服务 %s，阶段 %s。\n" "$service" "$stage" >> "$GITHUB_STEP_SUMMARY"' ERR
           for service in server web; do
             image="${REGISTRY}/${NAMESPACE}/iclip-${service}"
-            stage=读取版本摘要
+            stage='读取版本摘要'
             digest=$(skopeo inspect --format '{{.Digest}}' "docker://${image}:${IMAGE_TAG}")
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-            stage=提升标签
+            stage='更新 latest'
             skopeo copy --preserve-digests --retry-times 2 "docker://${image}@${digest}" "docker://${image}:latest"
-            stage=核验latest摘要
+            stage='核验 latest 摘要'
             actual=$(skopeo inspect --format '{{.Digest}}' "docker://${image}:latest")
             test "$actual" = "$digest"
-            printf '已提升并核验 `%s:latest` → `%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+            printf '已更新并核验 `%s:latest` → `%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
           done
       - name: Remove registry credentials
         if: always()

@@ -9,7 +9,7 @@ const SHOT_DIR = '../.artifacts/design-qa/video-editor'
 
 /** 第 2 组那条成片是竖版，第 3 组是横版，预览黑框的黑边只在横版上出现。 */
 const openEditor = async (page: Page, mobile = false, group = 2) => {
-  // 编辑器挂在右侧面板里，紧凑屏要先打开面板。
+  // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
   await panel.getByRole('button', { name: `第 ${group} 组` }).click()
   await panel.getByRole('button', { name: '生成记录', exact: true }).click()
