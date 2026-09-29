@@ -203,6 +203,26 @@ async def test_poll_success_and_failure_reach_terminal_states() -> None:
     assert repo.jobs[failed.id].error_code == "NSFW"
 
 
+async def test_a_polled_result_lands_its_reported_duration_on_the_record() -> None:
+    """上游报成功时带回的成片时长随完成落进记录。"""
+
+    job = make_job(video_request(), status=STATUS_SUBMITTED, provider_task_id="t-1")
+    repo = InMemoryGenerationRepository([job])
+    video = ScriptedProvider(
+        progress=ProviderProgress(
+            outcome="succeeded",
+            provider_status="succeeded",
+            output_url="https://cdn.test/v.mp4",
+            duration_ms=10042,
+        )
+    )
+    queue, _ = build_queue(repo, video=video)
+    await queue.run_poll(str(job.id))
+
+    stored = repo.jobs[job.id]
+    assert (stored.status, stored.duration_ms) == (STATUS_COMPLETED, 10042)
+
+
 async def test_running_job_asks_again_at_a_fixed_interval() -> None:
     """固定间隔查询运行中任务，避免退避放大完成通知延迟。"""
 

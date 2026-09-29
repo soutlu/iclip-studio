@@ -291,6 +291,7 @@ class GenerationQueue:
                     output_url=progress.output_url,
                     watermark_output_url=progress.watermark_output_url,
                     provider_status=progress.provider_status,
+                    duration_ms=progress.duration_ms,
                     only_if_status=STATUS_SUBMITTED,
                 ),
             )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Mapping
 
 import httpx
 import pytest
@@ -249,6 +250,41 @@ async def test_video_poll_maps_terminal_and_running_states() -> None:
     rejected = await video_provider(failed).poll(job)
     assert (rejected.outcome, rejected.error_code) == ("failed", "NSFW")
     assert rejected.error_message == "被拦了"
+
+
+def succeeded_with(result: Mapping[str, object]) -> HttpVideoProvider:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "succeeded", "result": dict(result)})
+
+    return video_provider(handler)
+
+
+async def test_video_poll_takes_the_measured_output_duration() -> None:
+    """成片时长取上游实测的秒数折成毫秒；``result.duration_ms`` 是生成耗时，不读。"""
+
+    provider = succeeded_with(
+        SUCCEEDED_RESULT | {"output_duration_seconds": 10.041667, "duration_ms": 45000}
+    )
+    progress = await provider.poll(make_job(provider_task_id="t-1"))
+    assert progress.duration_ms == 10042
+
+
+async def test_video_poll_without_output_duration_leaves_it_empty() -> None:
+    """上游没给时长就空着，不拿生成耗时或请求里的目标秒数顶替。"""
+
+    provider = succeeded_with(SUCCEEDED_RESULT | {"duration_ms": 45000})
+    progress = await provider.poll(make_job(video_request(seconds=10), provider_task_id="t-1"))
+    assert (progress.outcome, progress.duration_ms) == ("succeeded", None)
+
+
+@pytest.mark.parametrize("seconds", [0, -1.5, "10", True, None, 1e306, 10**400])
+async def test_video_poll_with_unusable_output_duration_still_succeeds(seconds: object) -> None:
+    """时长给坏了只是没有时长，片照样算出好了。"""
+
+    provider = succeeded_with(SUCCEEDED_RESULT | {"output_duration_seconds": seconds})
+    progress = await provider.poll(make_job(provider_task_id="t-1"))
+    assert (progress.outcome, progress.duration_ms) == ("succeeded", None)
+    assert progress.output_url == SUCCEEDED_RESULT["output_url"]
 
 
 async def test_video_poll_preserves_upstream_error_message() -> None:

@@ -204,7 +204,7 @@ type MockJob = {
   shotIndex?: number | null
   status: 'completed' | 'failed' | 'pending' | 'submitted'
   watermarkOutputUrl?: string
-  /** 产物实际多长；只有合成有。 */
+  /** 产物实际多长：视频取上游实测的，合成是本系统量的，图片没有。 */
   durationMs?: number
   /** 原作号：编辑段与合成指最初那条出片，出片与图片不填。 */
   rootJobId?: string | null

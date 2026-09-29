@@ -61,7 +61,7 @@ class FaceOut(CamelModel):
     watermark_output_url: str | None
     """合成是本系统拼的，没有水印版，恒为 ``None``。"""
     duration_ms: int | None
-    """量出来的时长，只有合成有。"""
+    """实际时长，毫秒：出片取上游实测的，合成是本系统量的；上游没给为 ``None``。"""
     finished_at: datetime
     """完成时刻。卡面的完成时刻决定列表顺序与时间筛选，组内按它编版本。"""
     user_name: str | None
