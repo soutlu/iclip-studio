@@ -17,7 +17,7 @@ Productor 的后端与 Web 前端。产品定位、业务术语和不变量见 [
 ├── deploy/             # 单机 compose 与环境样例
 ├── docs/               # 领域、架构、测试、工具规范与 ADR
 ├── design/             # 视觉素材源包
-├── design-system.html  # 全局视觉规范与 token
+├── design-system.html  # 基础 token 定义
 ├── scripts/            # 文档核对等仓库脚本
 ├── Makefile            # 根目录命令入口
 └── AGENTS.md           # 开发约定
@@ -59,9 +59,9 @@ pnpm dev
 
 ## 部署
 
-两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。[release-images](.github/workflows/release-images.yml) 在 GitHub Actions 构建镜像，直接上传 ACR。部署时从 ACR 拉取。
+两个镜像：`iclip-server`（[server/Dockerfile](server/Dockerfile)）与 `iclip-web`（[web/Dockerfile](web/Dockerfile)，nginx 托管静态产物并把 `/api` 去前缀反代到后端，配置见 [web/nginx.conf](web/nginx.conf)）。[release-images](.github/workflows/release-images.yml) 在 GitHub Actions 上构建镜像，直接上传到 ACR。部署时从 ACR 拉取。
 
-推送 `vX.Y.Z` 版本标签后，自动构建并上传两个镜像。两个镜像都上传并校验成功、且 `main` 没有更新到后续提交时，才更新 `latest`。手动选择分支运行只生成 `branch-<分支名>` 镜像，用于提前试打包，不更新正式版本和 `latest`。
+推送 `vX.Y.Z` 版本标签后，自动构建并上传两个镜像。两个镜像都上传并核验成功、且该版本提交仍是 `main` 的最新提交时，才更新 `latest`。手动选择分支运行只生成 `branch-<分支名>` 镜像，用于提前试打包，不更新正式版本和 `latest`。
 
 发布失败先看原因：网络或凭证问题修好后，在原运行中点击 **Re-run failed jobs**。如果需要修改源码、Dockerfile 或工作流，修复后重新走 PR，再用新版本号发布；重跑旧任务不会使用新代码。重跑打包任务会重新执行构建和上传，能命中的缓存仍会复用。
 
@@ -109,7 +109,7 @@ curl http://localhost/api/healthz
 | [docs/adr/](docs/adr/) | 已接受的架构决策与取舍；决策变化时新增一篇并标明取代关系 |
 | [contract/openapi.json](contract/openapi.json) | 后端端点变更后由 `make contract` 导出 |
 | [contract/conventions.md](contract/conventions.md) | OpenAPI 无法表达的跨端约定变化时更新 |
-| [design-system.html](design-system.html) | 全局视觉规则与 token 变化时更新 |
+| [design-system.html](design-system.html) | 基础 token 变化时更新 |
 | [web/README.md](web/README.md) | 前端启动方式与目录变化时更新 |
 | [web/docs/frontend-implementation.md](web/docs/frontend-implementation.md) | 前端实现与测试约定变化时更新 |
 | [docs/test-design.md](docs/test-design.md) | 后端测试分层、边界和环境变化时更新 |

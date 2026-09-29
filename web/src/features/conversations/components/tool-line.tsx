@@ -196,7 +196,7 @@ function SearchResultsBody({
   )
 }
 
-/** 派出了子代理的卡：点开的是右侧面板里它那条流。产物参数记在 URL 上，刷新与分享都还在；再点一次也能把折叠的面板重新打开。 */
+/** 派出了子代理的卡：点开的是工作台里它那条流。产物参数记在 URL 上，刷新与分享都还在；再点一次也能把折叠的工作台重新展开。 */
 function DelegatedHead({ children, toolCallId }: { children: ReactNode; toolCallId: string }) {
   const openArtifact = useOpenArtifact()
   const { requestOpen } = useWorkbenchSelection()

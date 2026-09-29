@@ -52,7 +52,7 @@ gh api "repos/{owner}/{repo}/commits/$sha/check-runs?check_name=ci" --jq '.check
 - 领域术语与不变量以 [docs/CONTEXT.md](docs/CONTEXT.md) 为准，两端共用。
 - 对外端点、字段、状态码与端点权限由后端定义，以 [contract/openapi.json](contract/openapi.json) 为准，端点权限只在路由上声明、不在文档里手抄；它表达不了的约定写在 [contract/conventions.md](contract/conventions.md)。
 - 修改端点的顺序：后端实现 → `make contract` → 在 `web/` 执行 `pnpm contract:generate`。前端消费生成类型与 zod，不手写端点 schema。
-- 全局视觉与 token 以 [design-system.html](design-system.html) 为准。token 先改规范，再同步运行时 CSS，通过 `pnpm lint:design`；验收截图放 `.artifacts/design-qa/`。
+- 基础 token 以 [design-system.html](design-system.html) 为准。token 先改规范，再同步运行时 CSS，通过 `pnpm lint:design`；验收截图放 `.artifacts/design-qa/`。
 - 不通过忽略类型错误、关闭 lint 或放宽检查配置消除失败；先修正实现。
 
 日志使用 `structlog.stdlib.get_logger(__name__)`，事件为固定短句，变量用关键字参数；不拼接 f-string 或 `%s`。请求上下文由中间件绑定，业务只增加本层字段。第三方常态噪音在 [app/logging.py](server/src/iclip/app/logging.py) 的 `QUIET_LOGGERS` 调整。
@@ -96,7 +96,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 | 热修 | 从 `origin/main` 建独立 worktree，PR 指向 `main` | `ci` 通过并确认后 `gh pr merge <n> --merge` |
 | 热修回流 | `main → develop` | `ci` 通过后手动执行 `gh pr merge <n> --merge` |
 
-合入 `main` 后，确认 `main` 上就是本次要发布的代码，再用开发者确定的版本号创建 release：
+合入 `main` 后，确认 `main` 上就是本次要发布的代码，再创建 release：
 
 ```bash
 gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes

@@ -11,7 +11,7 @@ const renderHandle = () => {
   const inputs: string[] = []
   const { unmount } = render(
     <AppResizeHandle
-      label="调整侧栏宽度"
+      label="调整侧边栏宽度"
       max={400}
       min={200}
       onReset={() => calls.push('reset')}
@@ -30,7 +30,7 @@ const renderHandle = () => {
     calls,
     deltas,
     inputs,
-    handle: screen.getByRole('button', { name: '调整侧栏宽度' }),
+    handle: screen.getByRole('button', { name: '调整侧边栏宽度' }),
     unmount,
   }
 }

@@ -156,7 +156,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const selected = pickArtifact(registry, artifacts, artifactId)
   const entry = selected === undefined ? undefined : registry.resolve(selected.type)
   const selectedId = selected?.id
-  // 只响应新的产物选择或显式「查看」请求；壳隐藏面板时保留渲染器，不重新自动打开。
+  // 只响应新的产物选择或显式「查看」请求；壳隐藏工作台时保留渲染器，不重新自动展开。
   useEffect(() => {
     const previous = previousOpenRef.current
     previousOpenRef.current = { selectedId, token: openToken }
@@ -181,8 +181,8 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
     >
       {!sideBySide ? (
         <IconButton
-          label="回到聊天"
-          title="回到聊天"
+          label="回到对话"
+          title="回到对话"
           name="back"
           onClick={() => onCollapsedChange(true)}
           size="md"
@@ -199,7 +199,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
             />
           )}
           <IconButton
-            label="折叠右侧面板"
+            label="折叠工作台"
             title="折叠工作台"
             name="panel-right"
             onClick={() => onCollapsedChange(true)}
@@ -213,7 +213,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const Renderer = entry?.component
 
   return (
-    <aside aria-label="右侧面板" className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+    <aside aria-label="工作台" className="flex h-full min-h-0 min-w-0 flex-col bg-background">
       {selected === undefined || Renderer === undefined ? (
         <>
           <div

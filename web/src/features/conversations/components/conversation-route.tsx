@@ -245,7 +245,7 @@ export function ConversationRoute({
             {chrome.onSwapPanes === undefined ? null : (
               <IconButton
                 label="交换对话与工作台"
-                title="交换对话与工作台的位置"
+                title="交换对话与工作台"
                 name="swap-panes"
                 onClick={chrome.onSwapPanes}
                 size="sm"
@@ -253,7 +253,7 @@ export function ConversationRoute({
             )}
             <IconButton
               label="折叠对话"
-              title="收起对话，展开工作台"
+              title="折叠对话"
               name="panel-left"
               onClick={chrome.chat.onCollapse}
               size="sm"

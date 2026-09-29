@@ -3,13 +3,13 @@
 import { expect, type Page } from '@playwright/test'
 import { login } from './login'
 
-/** 登录后从侧栏进一段演示对话，返回右侧面板；紧凑屏的面板默认收着，mobile 时先打开。 */
+/** 登录后从侧边栏进一段演示对话，返回工作台；紧凑屏的工作台默认折叠，mobile 时先展开。 */
 export const openConversation = async (page: Page, title: string, { mobile = false } = {}) => {
   await page.goto('/')
   await login(page)
   await page.getByRole('link', { name: title, exact: true }).click()
-  if (mobile) await page.getByRole('button', { name: '打开右侧面板' }).click()
-  return page.getByRole('complementary', { name: '右侧面板' })
+  if (mobile) await page.getByRole('button', { name: '展开工作台' }).click()
+  return page.getByRole('complementary', { name: '工作台' })
 }
 
 /** 把当前界面按浅色、深色各截一张验收图，存为 `${pathPrefix}-light.png` 与 `${pathPrefix}-dark.png`，截完切回浅色。 */

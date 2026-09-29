@@ -35,7 +35,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
     document.getElementById(toggleId)?.focus()
   }, [collapsed, toggleId])
   const toggleCollapsed = () => {
-    // 移动抽屉开合会切换按钮节点，焦点跟随到可见的导航开关。
+    // 移动端抽屉开合会切换按钮节点，焦点跟随到可见的侧边栏开关。
     restoreToggleFocusRef.current = compact
     onCollapsedChange(!collapsed)
   }
@@ -57,7 +57,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
   const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
   const canGovern = canAuditAll(user)
   const governLabelId = useId()
-  // 全局帧订阅挂在侧栏顶层，全部对话页与会话页共用同一份列表缓存。
+  // 全局帧订阅挂在侧边栏顶层，全部对话页与会话页共用同一份列表缓存。
   useLiveConversations(canRead)
 
   const startNew = useCallback(() => {
@@ -116,7 +116,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
       ) : null}
       <aside
         id={sidebarId}
-        aria-label="导航"
+        aria-label="侧边栏"
         onFocusCapture={(event) => {
           if (!compact && !collapsed) revealClippedFocus(event, () => onCollapsedChange(false))
         }}
@@ -225,7 +225,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
             ) : null}
           </nav>
 
-          {/* 收起只隐藏内容，保留筛选、合集展开和列表滚动位置。 */}
+          {/* 折叠只隐藏内容，保留筛选、合集展开和列表滚动位置。 */}
           <div
             aria-hidden={collapsed ? true : undefined}
             inert={collapsed}

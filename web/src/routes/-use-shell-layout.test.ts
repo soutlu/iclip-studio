@@ -40,7 +40,7 @@ describe('useShellLayout', () => {
   })
 
   it.each(['chat', 'workbench'] as const)(
-    '松手保留 $0 裁切和导航裁切，刷新后读回实际宽度与正常宽度',
+    '松手保留 $0 裁切和侧边栏裁切，刷新后读回实际宽度与正常宽度',
     (pane) => {
       const storage = memoryStorage()
       installStorage(storage)

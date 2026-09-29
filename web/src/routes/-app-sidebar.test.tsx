@@ -29,7 +29,7 @@ const renderSidebar = (requireLogin = vi.fn(), initialPath = '/', compact = fals
   )
 
 describe('AppSidebar', () => {
-  it('桌面折叠时保留导航图标与账户入口，点开后显示完整侧栏', async () => {
+  it('桌面折叠为图标栏时保留操作图标与账户入口，展开后显示完整侧边栏', async () => {
     const user = userEvent.setup()
     await renderSidebar()
 
@@ -62,7 +62,7 @@ describe('AppSidebar', () => {
     expect(screen.getByRole('button', { name: '展开侧边栏' })).toBeVisible()
   })
 
-  it.each([false, true])('路由切换仅收起移动抽屉，搜索保留导航，compact=%s', async (compact) => {
+  it.each([false, true])('路由切换只折叠抽屉，搜索不折叠侧边栏，compact=%s', async (compact) => {
     loginAs(mockAuthUser)
     const user = userEvent.setup()
     const { router } = await renderSidebar(vi.fn(), '/', compact)
@@ -264,7 +264,7 @@ describe('AppSidebar 对话区', () => {
     expect(screen.getByText('合集里的那段')).toBeVisible()
   })
 
-  it.each([false, true])('收起再展开保留合集展开与对话节点，compact=%s', async (compact) => {
+  it.each([false, true])('折叠再展开保留合集展开与对话节点，compact=%s', async (compact) => {
     loginAs(mockAuthUser)
     const collection = addMockCollection('保持展开的合集')
     addMockConversation('保持位置的对话').collectionId = collection.id

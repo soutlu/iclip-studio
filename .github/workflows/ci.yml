@@ -198,7 +198,7 @@ jobs:
         if: cancelled()
         run: |
           echo '::error::Workflow was cancelled'
-          echo 'CI result: **cancelled**' >> "$GITHUB_STEP_SUMMARY"
+          echo 'CI 结果：**cancelled**' >> "$GITHUB_STEP_SUMMARY"
           exit 1
       - name: Summarize and require selected checks
         env:
@@ -215,15 +215,15 @@ jobs:
           WEB_FORMAT_RESULT: ${{ needs.web_format.result }}
         run: |
           {
-            printf 'PR head: `%s`\n\n' "$HEAD_SHA"
-            printf 'Checked merge commit: `%s`\n\n' "$MERGE_SHA"
-            printf 'Target branch: `%s`\n\n' "$BASE_REF"
+            printf 'PR 最新提交：`%s`\n\n' "$HEAD_SHA"
+            printf '检查的合并提交：`%s`\n\n' "$MERGE_SHA"
+            printf '目标分支：`%s`\n\n' "$BASE_REF"
             if [ "$BASE_REF" = develop ]; then
-              printf '检查模式：按变更范围。`Required=false` 表示本次变更不需要该检查；具体路径判定见 scope 日志。\n\n'
+              printf '检查模式：按变更范围。「需执行」为 `false` 表示本次变更不需要该检查；具体路径判定见 scope 日志。\n\n'
             else
               printf '检查模式：完整检查 server 和 web。\n\n'
             fi
-            printf '| Job | Required | Result |\n| --- | --- | --- |\n'
+            printf '| Job | 需执行 | 结果 |\n| --- | --- | --- |\n'
             printf '| scope | true | %s |\n' "$SCOPE_RESULT"
             printf '| server | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_RESULT"
             printf '| web-check | %s | %s |\n' "$WEB_REQUIRED" "$WEB_CHECK_RESULT"
@@ -249,7 +249,7 @@ jobs:
           require_result web-e2e "$WEB_REQUIRED" "$WEB_E2E_RESULT" || failed=1
           require_result web-format "$WEB_FORMAT_REQUIRED" "$WEB_FORMAT_RESULT" || failed=1
           if [ "$failed" -ne 0 ]; then
-            echo 'CI result: **failed**' >> "$GITHUB_STEP_SUMMARY"
+            echo 'CI 结果：**failed**' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo 'CI result: **passed**' >> "$GITHUB_STEP_SUMMARY"
+          echo 'CI 结果：**passed**' >> "$GITHUB_STEP_SUMMARY"
