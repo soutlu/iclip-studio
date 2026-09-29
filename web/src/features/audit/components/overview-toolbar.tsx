@@ -1,6 +1,6 @@
-/** 总览工具条：左边快捷档与常显实际区间的日期按钮（点开是预设加双月日历），右边写环比对比的日期。 */
+/** 审计页工具条：左边快捷档与常显实际区间的日期按钮（点开是预设加双月日历），右边由各页签放自己的东西。 */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ComponentPropsWithRef, type ReactNode } from 'react'
 import {
   DayPicker,
   type ChevronProps,
@@ -16,6 +16,13 @@ import { cn } from '@/shared/lib/utils'
 import { Button, iconButtonVariants } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
+import {
+  fromCalendarDay,
+  startOfZonedDay,
+  startOfZonedMonth,
+  toCalendarDay,
+  zonedParts,
+} from '../audit-time'
 import { monthDay } from '../overview-format'
 import {
   customRange,
@@ -31,14 +38,34 @@ import {
 type OverviewToolbarProps = {
   range: OverviewRange
   onChange: (next: OverviewRange) => void
-  /** 上一期的日期区间；数据还没到时为空。 */
-  previous: string | null
+  /** 右侧：总览写环比对比的日期，清单放按人筛选。 */
+  children?: ReactNode
 }
 
 /** 浮在页面灰底上的控件外壳：卡片色底、卡片描边（浅色下透明）加极淡的影。 */
 const RAISED = 'border border-dashboard-card-edge bg-dashboard-card shadow-[var(--shadow-xs)]'
 
-export function OverviewToolbar({ range, onChange, previous }: OverviewToolbarProps) {
+/** 工具条上带图标的按钮（日期、按人筛选）；选中时加粗。可作弹层的 asChild 触发器。 */
+export function PickButton({
+  selected,
+  className,
+  ...props
+}: ComponentPropsWithRef<'button'> & { selected: boolean }) {
+  return (
+    <button
+      className={cn(
+        'inline-flex h-8.5 ui-state cursor-pointer items-center gap-1.5 rounded-md px-3 text-body whitespace-nowrap text-on-surface-variant ui-focus hover:text-on-surface',
+        RAISED,
+        selected && 'font-semibold text-on-surface',
+        className,
+      )}
+      type="button"
+      {...props}
+    />
+  )
+}
+
+export function OverviewToolbar({ range, onChange, children }: OverviewToolbarProps) {
   const [now] = useState(() => new Date())
   const quick = QUICK_PRESETS.some((item) => item.preset === range.preset)
   return (
@@ -66,11 +93,7 @@ export function OverviewToolbar({ range, onChange, previous }: OverviewToolbarPr
         </ChipGroup>
         <RangePopover now={now} onApply={onChange} range={range} selected={!quick} />
       </div>
-      {previous === null ? null : (
-        <span className="text-label whitespace-nowrap text-on-surface-muted">
-          环比对比 {previous}
-        </span>
-      )}
+      {children}
     </div>
   )
 }
@@ -92,20 +115,15 @@ function RangePopover({
   return (
     <PopupRoot onOpenChange={setOpen} open={open}>
       <PopupTrigger asChild>
-        <button
+        <PickButton
           aria-haspopup="dialog"
           aria-label={`自定义时间范围：${label}`}
-          className={cn(
-            'inline-flex h-8.5 ui-state cursor-pointer items-center gap-1.5 rounded-md px-3 text-body whitespace-nowrap text-on-surface-variant ui-focus hover:text-on-surface',
-            RAISED,
-            selected && 'font-semibold text-on-surface',
-          )}
+          selected={selected}
           title="自定义时间范围"
-          type="button"
         >
           <Icon decorative name="calendar" size="md" />
           {label}
-        </button>
+        </PickButton>
       </PopupTrigger>
       <PopupSurface
         align="start"
@@ -129,9 +147,6 @@ function RangePopover({
   )
 }
 
-const startOfMonth = (at: Date) => new Date(at.getFullYear(), at.getMonth(), 1)
-const addMonths = (at: Date, months: number) =>
-  new Date(at.getFullYear(), at.getMonth() + months, 1)
 const sameDay = (a: Date, b: Date) => a.getTime() === b.getTime()
 const DAY_MS = 86_400_000
 
@@ -149,7 +164,11 @@ function useWide(): boolean {
   return wide
 }
 
-/** 左侧预设与右侧日历联动：点起点再点终点，选预设直接填好两端；应用后才生效。 */
+/**
+ * 左侧预设与右侧日历联动：点起点再点终点，选预设直接填好两端；应用后才生效。
+ * 日历的格子、今天与可选范围都按 UTC+8 的日期；状态里每一天都是那天的 UTC+8 零点，
+ * 只在交给日历与接回日历时经 toCalendarDay / fromCalendarDay 换成它认的本地日期。
+ */
 function RangePicker({
   initial,
   now,
@@ -162,7 +181,7 @@ function RangePicker({
   onCancel: () => void
 }) {
   const wide = useWide()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const today = startOfZonedDay(now)
   const start = overviewDays(initial, now)
   const [first, setFirst] = useState(start.first)
   const [last, setLast] = useState<Date | null>(start.last)
@@ -171,7 +190,7 @@ function RangePicker({
     initial.preset === 'custom' ? null : initial.preset,
   )
   // 最后一天所在的月放在右边。
-  const monthFor = (day: Date) => (wide ? addMonths(startOfMonth(day), -1) : startOfMonth(day))
+  const monthFor = (day: Date) => startOfZonedMonth(day, wide ? -1 : 0)
   const [month, setMonth] = useState(() => monthFor(start.last))
 
   const low = last === null && hover !== null && hover < first ? hover : first
@@ -206,6 +225,11 @@ function RangePicker({
   }
 
   const days = Math.round((high.getTime() - low.getTime()) / DAY_MS) + 1
+  const calendar = {
+    high: toCalendarDay(high),
+    low: toCalendarDay(low),
+    today: toCalendarDay(today),
+  }
 
   return (
     <div className="flex flex-col md:flex-row">
@@ -234,27 +258,27 @@ function RangePicker({
         <DayPicker
           classNames={CALENDAR_CLASS_NAMES}
           components={CALENDAR_COMPONENTS}
-          disabled={{ after: today }}
-          endMonth={startOfMonth(today)}
+          disabled={{ after: calendar.today }}
+          endMonth={toCalendarDay(startOfZonedMonth(today))}
           formatters={CALENDAR_FORMATTERS}
           labels={CALENDAR_LABELS}
           locale={zhCN}
           modifiers={{
-            endpoint: [low, high],
-            inRange: { from: low, to: high },
-            rangeEnd: high,
-            rangeStart: low,
+            endpoint: [calendar.low, calendar.high],
+            inRange: { from: calendar.low, to: calendar.high },
+            rangeEnd: calendar.high,
+            rangeStart: calendar.low,
           }}
           modifiersClassNames={MODIFIER_CLASS_NAMES}
-          month={month}
+          month={toCalendarDay(month)}
           numberOfMonths={wide ? 2 : 1}
-          onDayClick={pickDay}
+          onDayClick={(day) => pickDay(fromCalendarDay(day))}
           onDayMouseEnter={(day) => {
-            if (last === null) setHover(day)
+            if (last === null) setHover(fromCalendarDay(day))
           }}
-          onMonthChange={setMonth}
+          onMonthChange={(next) => setMonth(fromCalendarDay(next))}
           showOutsideDays={false}
-          today={today}
+          today={calendar.today}
           weekStartsOn={1}
         />
         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-4 border-t border-hairline pt-3 text-body text-on-surface-variant">
@@ -310,13 +334,17 @@ const MODIFIER_CLASS_NAMES = {
   rangeStart: 'rounded-l-full',
 }
 
+/** 日历传进来的都是它认的本地日期，先换回 UTC+8 零点再写。 */
 const CALENDAR_FORMATTERS: Partial<Formatters> = {
-  formatCaption: (month) => `${month.getFullYear()}年${month.getMonth() + 1}月`,
-  formatWeekdayName: (weekday) => WEEKDAY_NAMES[weekday.getDay()] ?? '',
+  formatCaption: (month) => {
+    const parts = zonedParts(fromCalendarDay(month))
+    return `${parts.year}年${parts.month}月`
+  },
+  formatWeekdayName: (weekday) => WEEKDAY_NAMES[zonedParts(fromCalendarDay(weekday)).weekday] ?? '',
 }
 
 const CALENDAR_LABELS: Partial<Labels> = {
-  labelDayButton: (date) => monthDay(date),
+  labelDayButton: (date) => monthDay(fromCalendarDay(date)),
   labelNext: () => '下个月',
   labelPrevious: () => '上个月',
 }

@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -14,14 +13,13 @@ from zoneinfo import ZoneInfo
 import pytest
 from pydantic_ai.messages import ModelMessage
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.audit.models import Scope
 from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.schemas import MetricsOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
-from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_GENERATE
 from iclip.harness.agents import (
     AgentDefinition,
     SubAgentDefinition,
@@ -34,6 +32,7 @@ from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.harness.transcript.subagents import SubAgentMirror
 from tests.helpers.agents import spec_path
+from tests.helpers.audit import Plant
 from tests.helpers.runtime import (
     AGENT_ID,
     build_runner,
@@ -61,181 +60,6 @@ def minutes(count: float) -> datetime:
 
 def local(day: date, hour: int = 0, minute: int = 0) -> datetime:
     return datetime.combine(day, time(hour, minute), tzinfo=SINGAPORE).astimezone(UTC)
-
-
-class Plant:
-    """原生 SQL 直插的种子；时间戳都由调用方给。"""
-
-    def __init__(self, conn: AsyncConnection) -> None:
-        self._conn = conn
-        self._names: dict[uuid.UUID, str] = {}
-
-    async def user(self, name: str) -> uuid.UUID:
-        user_id = uuid.uuid4()
-        await self._conn.execute(
-            text(
-                "INSERT INTO iclip.users (id, username, email, hashed_password, is_active,"
-                " is_superuser, is_verified, display_name, avatar_url, roles,"
-                " direct_permissions, city, job_title, departments)"
-                " VALUES (:id, :name, :email, 'x', true, false, true, :name, '',"
-                " '[\"editor\"]'::jsonb, '[]'::jsonb, '', '', '[]'::jsonb)"
-            ),
-            {"id": user_id, "name": name, "email": f"{name}@example.test"},
-        )
-        self._names[user_id] = name
-        return user_id
-
-    async def task(self, creator: uuid.UUID) -> uuid.UUID:
-        task_id = uuid.uuid4()
-        await self._conn.execute(
-            text(
-                "INSERT INTO iclip.tasks (id, title, status, priority, creator_user_id, inputs,"
-                " created_at, updated_at)"
-                " VALUES (:id, :title, 'draft', 0, :creator, '{}'::jsonb, :at, :at)"
-            ),
-            {"id": task_id, "title": f"单 {task_id}", "creator": creator, "at": T0},
-        )
-        return task_id
-
-    async def conversation(
-        self,
-        owner: uuid.UUID,
-        *,
-        at: datetime,
-        task_id: uuid.UUID | None = None,
-        title: str | None = None,
-        deleted_at: datetime | None = None,
-    ) -> uuid.UUID:
-        conversation_id = uuid.uuid4()
-        await self._conn.execute(
-            text(
-                "INSERT INTO iclip.conversations (id, owner_user_id, agent_id, title, task_id,"
-                " created_at, updated_at, deleted_at)"
-                " VALUES (:id, :owner, 'agent', :title, :task_id, :at, :at, :deleted_at)"
-            ),
-            {
-                "id": conversation_id,
-                "owner": owner,
-                "title": title or f"对话 {conversation_id}",
-                "task_id": task_id,
-                "at": at,
-                "deleted_at": deleted_at,
-            },
-        )
-        return conversation_id
-
-    async def prompt(self, conversation_id: uuid.UUID, *, user_name: str, at: datetime) -> str:
-        """一条消息：运行次数与活跃人数都数它，锚点是发起时刻。"""
-
-        prompt_id = f"prm_{uuid.uuid4().hex[:8]}"
-        await self._conn.execute(
-            text(
-                "INSERT INTO agent_runtime.agent_jobs (prompt_id, conversation_id, agent_id,"
-                " owner_user_id, user_name, content, status, created_at, finished_at)"
-                " VALUES (:prompt_id, :conversation_id, 'agent', :owner, :user_name, '',"
-                " 'done', :at, :at)"
-            ),
-            {
-                "prompt_id": prompt_id,
-                "conversation_id": str(conversation_id),
-                "owner": uuid.uuid4(),
-                "user_name": user_name,
-                "at": at,
-            },
-        )
-        return prompt_id
-
-    async def run(
-        self,
-        prompt_id: str,
-        *,
-        started_at: datetime,
-        ended_at: datetime | None,
-        end: str = "run_completed",
-    ) -> None:
-        """这条消息的一次运行：登记 run_id，落开始事件，给了 ``ended_at`` 再落终态事件。"""
-
-        run_id = f"agent-{uuid.uuid4().hex[:8]}"
-        await self._conn.execute(
-            text(
-                "INSERT INTO agent_runtime.agent_job_runs (run_id, prompt_id, started_at)"
-                " VALUES (:run_id, :prompt_id, :at)"
-            ),
-            {"run_id": run_id, "prompt_id": prompt_id, "at": started_at},
-        )
-        for kind, at in (("run_started", started_at), (end, ended_at)):
-            if at is None:
-                continue
-            await self._conn.execute(
-                text(
-                    "INSERT INTO agent_runtime.events (run_id, kind, step_index, timestamp,"
-                    " metadata) VALUES (:run_id, :kind, 0, :at, '{}')"
-                ),
-                {"run_id": run_id, "kind": kind, "at": at},
-            )
-
-    async def turn(
-        self,
-        conversation_id: uuid.UUID,
-        *,
-        user_name: str,
-        started_at: datetime,
-        ended_at: datetime | None,
-    ) -> None:
-        """一条消息跑一轮，发起即开跑。"""
-
-        prompt_id = await self.prompt(conversation_id, user_name=user_name, at=started_at)
-        await self.run(prompt_id, started_at=started_at, ended_at=ended_at)
-
-    async def video(
-        self,
-        conversation_id: uuid.UUID,
-        *,
-        owner: uuid.UUID,
-        shot: int,
-        created_at: datetime,
-        finished_at: datetime | None = None,
-        submitted_at: datetime | None = None,
-        status: str = STATUS_COMPLETED,
-        duration_ms: int | None = None,
-    ) -> None:
-        await self._conn.execute(
-            text(
-                "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                " operation, provider, request, status, shot_index, duration_ms, created_at,"
-                " submitted_at, finished_at)"
-                " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
-                " CAST(:request AS jsonb), :status, :shot, :duration_ms, :created_at,"
-                " :submitted_at, :finished_at)"
-            ),
-            {
-                "id": uuid.uuid4(),
-                "owner": owner,
-                "conversation_id": conversation_id,
-                "kind": KIND_VIDEO,
-                "operation": OPERATION_GENERATE,
-                "request": json.dumps(
-                    {"model": "m", "prompt": "p", "user_name": self._names[owner]}
-                ),
-                "status": status,
-                "shot": shot,
-                "duration_ms": duration_ms,
-                "created_at": created_at,
-                "submitted_at": submitted_at,
-                "finished_at": finished_at,
-            },
-        )
-
-    async def usage(self, conversation_id: uuid.UUID, *, tokens: int, last_at: datetime) -> None:
-        await self._conn.execute(
-            text(
-                "INSERT INTO agent_runtime.conversation_usage (conversation_id, model_name,"
-                " requests, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,"
-                " first_at, last_at)"
-                " VALUES (:conversation_id, 'm-a', 1, :tokens, 0, 0, 0, :at, :at)"
-            ),
-            {"conversation_id": str(conversation_id), "tokens": tokens, "at": last_at},
-        )
 
 
 @pytest.fixture
@@ -349,7 +173,7 @@ async def test_run_seconds_count_top_level_runs_that_reached_an_end(
 
 
 async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
-    engine: AsyncEngine, reports: PgAuditReports
+    engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
     """X 运行完 29 分钟后出片：空档照算，49 分钟。Y 空了 31 分钟：断开，两段各 10 分钟；成片后的
     那轮在交付周期外，不进单任务时长。Z 一轮跑了 60 分钟，期间一条失败出片，结束 20 分钟后再出片：
@@ -389,10 +213,8 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
         prompt_id = await plant.prompt(z, user_name=SARA, at=minutes(95))
         await plant.run(prompt_id, started_at=minutes(95), ended_at=None)
 
-    rows = {
-        row.conversation_id: row.metrics
-        for row in await reports.conversations(Scope(), limit=10, after=None)
-    }
+    page = await service.executions(since=minutes(-10), limit=10)
+    rows = {row.conversation_id: row.metrics for row in page.items}
     active = {key: value.active_cycle_seconds for key, value in rows.items()}
     wall = {key: value.cycle_seconds for key, value in rows.items()}
 
@@ -415,7 +237,6 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
     assert overall.agent_run_seconds is not None
     assert overall.agent_run_seconds.count == 4
     assert overall.agent_run_seconds.avg == (600 + 600 + 600 + 3600) / 4
-    assert overall.video_seconds is not None and overall.video_seconds.count == 3
     # 只有 X 那条成片记了提交时刻：视频生成时长只有它一个样本。
     assert overall.upstream_seconds is not None
     assert (overall.upstream_seconds.count, overall.upstream_seconds.avg) == (1, 540)
@@ -423,7 +244,7 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
 
 
 async def test_length_counts_only_known_durations_and_discards_all_but_the_last_take(
-    engine: AsyncEngine, reports: PgAuditReports
+    engine: AsyncEngine, reports: PgAuditReports, service: AuditService
 ) -> None:
     """片长只读成片的 ``duration_ms``，空的不计；同一镜全时段最后一条以外的是废片——按时间窗、
     按人切开看也是，窗里或某人名下的最后一条不因此变成「最后一条」。"""
@@ -461,10 +282,10 @@ async def test_length_counts_only_known_durations_and_discards_all_but_the_last_
     everything = await reports.overall(Scope())
     later = await reports.overall(Scope(since=minutes(25)))
     earlier = await reports.overall(Scope(until=minutes(25)))
-    by_user = {row.user_name: row.metrics for row in await reports.by_user(Scope())}
+    by_user = await reports.by_user(Scope())
     by_conversation = {
         row.conversation_id: row.metrics
-        for row in await reports.conversations(Scope(), limit=10, after=None)
+        for row in (await service.executions(since=minutes(-1), limit=10)).items
     }
 
     def triple(found: MetricsOut) -> tuple[int, float, float]:
@@ -485,13 +306,14 @@ DAY0 = date(2026, 8, 3)
 
 async def plant_week(engine: AsyncEngine) -> dict[str, uuid.UUID]:
     """新加坡时区 8 月 3 日起的一周：第 2 天没人跑；第 3 天两个人跑。九张需求单与一段没挂单的对话
-    共十件成片，需求单 1 在第 0、1 天各出一次片（算一件）。另有三镜只有失败的尝试，次数最多，
-    其中一段对话已删。上一期只有一轮运行。"""
+    共十件成片，需求单 1 在第 0、1 天各出一次片（算一件）。另有三镜重出过：挂在当天已有成片的
+    需求单下，不添件数；失败的不计次数，其中一段对话已删。还有一镜只失败过，哪里都不出现。
+    上一期只有一轮运行。"""
 
     async with engine.begin() as conn:
         plant = Plant(conn)
         sara, derek, eva = [await plant.user(name) for name in (SARA, DEREK, EVA)]
-        tasks = [await plant.task(sara) for _ in range(9)]
+        tasks = [await plant.task(sara, at=T0) for _ in range(9)]
         deliveries: list[tuple[int, uuid.UUID | None]] = [
             (0, tasks[0]),
             (0, tasks[1]),
@@ -531,23 +353,34 @@ async def plant_week(engine: AsyncEngine) -> dict[str, uuid.UUID]:
         )
 
         retried = await plant.conversation(
-            eva, at=local(DAY0, 8), title="重试最多", deleted_at=local(DAY0 + timedelta(days=5))
+            eva,
+            at=local(DAY0, 8),
+            task_id=tasks[3],
+            title="重试最多",
+            deleted_at=local(DAY0 + timedelta(days=5)),
         )
-        latest = await plant.conversation(derek, at=local(DAY0, 8), title="最近重试")
-        fewer = await plant.conversation(sara, at=local(DAY0, 8), title="试了两次")
-        attempts = [
-            (retried, eva, 1, 3, local(DAY0 + timedelta(days=3), 14)),
-            (latest, derek, 2, 3, local(DAY0 + timedelta(days=4), 14)),
-            (fewer, sara, 1, 2, local(DAY0 + timedelta(days=5), 14)),
+        latest = await plant.conversation(
+            derek, at=local(DAY0, 8), task_id=tasks[5], title="最近重试"
+        )
+        fewer = await plant.conversation(
+            sara, at=local(DAY0, 8), task_id=tasks[7], title="试了两次"
+        )
+        failed_only = await plant.conversation(sara, at=local(DAY0, 8), title="只失败过")
+        # 每镜的出片按先后，``True`` 是成了；次数只数成了的。
+        takes = [
+            (retried, eva, 1, local(DAY0 + timedelta(days=3), 14), (True, True, True)),
+            (latest, derek, 2, local(DAY0 + timedelta(days=4), 14), (False, True, True, True)),
+            (fewer, sara, 1, local(DAY0 + timedelta(days=5), 14), (False,) * 3 + (True,) * 2),
+            (failed_only, sara, 1, local(DAY0 + timedelta(days=6), 14), (False,) * 4),
         ]
-        for conversation_id, owner, shot, count, first_at in attempts:
-            for index in range(count):
+        for conversation_id, owner, shot, first_at, outcomes in takes:
+            for index, ok in enumerate(outcomes):
                 at = first_at + timedelta(minutes=10 * index)
                 await plant.video(
                     conversation_id,
                     owner=owner,
                     shot=shot,
-                    status=STATUS_FAILED,
+                    status=STATUS_COMPLETED if ok else STATUS_FAILED,
                     created_at=at,
                     finished_at=at + timedelta(minutes=1),
                 )
@@ -603,6 +436,56 @@ async def test_daily_overview_marks_inactive_days_and_dedupes_deliveries(
         (2, 1),
         (3, 2),
     ]
+
+
+async def test_a_shot_lands_on_its_first_success_and_belongs_to_its_owner(
+    engine: AsyncEngine, reports: PgAuditReports
+) -> None:
+    """Sara 第 1 天先失败一次；Derek 那条第 1 天深夜受理、第 2 天凌晨完成，是第一条成功；Sara
+    第 2 天再成一次。镜落在第 2 天（第一条成功生成的完成时刻，不是它的受理时刻，也不是第一次
+    出片），归 Derek，次数 2；第 1 天什么都不算。"""
+
+    day1, day2, day3 = (DAY0 + timedelta(days=offset) for offset in range(3))
+    async with engine.begin() as conn:
+        plant = Plant(conn)
+        sara, derek = await plant.user(SARA), await plant.user(DEREK)
+        conversation_id = await plant.conversation(sara, at=local(day1, 8))
+        for owner, status, created_at, finished_at in (
+            (sara, STATUS_FAILED, local(day1, 9), local(day1, 9, 5)),
+            (derek, STATUS_COMPLETED, local(day1, 23, 50), local(day2, 0, 10)),
+            (sara, STATUS_COMPLETED, local(day2, 1), local(day2, 1, 10)),
+        ):
+            await plant.video(
+                conversation_id,
+                owner=owner,
+                shot=1,
+                status=status,
+                created_at=created_at,
+                finished_at=finished_at,
+            )
+
+    first_day = Scope(since=local(day1), until=local(day2))
+    second_day = Scope(since=local(day2), until=local(day3))
+
+    days = await reports.by_period(
+        Scope(since=local(day1), until=local(day3)), bucket="day", timezone="Asia/Singapore"
+    )
+    assert [(row.metrics.shots, row.metrics.attempts) for row in days] == [(0, 0), (1, 2)]
+    assert (await reports.overall(first_day)).shots == 0
+    second = await reports.overall(second_day)
+    assert (second.shots, second.attempts, second.one_take_shots) == (1, 2, 0)
+    assert await reports.attempt_distribution(first_day) == []
+    assert [
+        (row.attempts, row.shots) for row in await reports.attempt_distribution(second_day)
+    ] == [(2, 1)]
+    assert await reports.top_shots(first_day, limit=3) == []
+    assert [
+        (shot.conversation_id, shot.shot, shot.attempts)
+        for shot in await reports.top_shots(second_day, limit=3)
+    ] == [(conversation_id, 1, 2)]
+    people = await reports.by_user(Scope())
+    assert (people[DEREK].shots, people[DEREK].attempts) == (1, 2)
+    assert (people[SARA].shots, people[SARA].attempts) == (0, 0)
 
 
 async def test_hourly_overview_clips_the_first_period_and_counts_active_days_exactly(

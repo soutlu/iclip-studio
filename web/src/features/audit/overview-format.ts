@@ -1,9 +1,10 @@
-/** 总览的数字与日期写法：件数、token、时长、比率、片长，提示框里的具体日期与坐标刻度。
-
-对话明细与异常两个页签还在用 format.ts 的旧写法，随它们下线再合并。 */
+/** 审计页的数字与日期写法：件数、token、时长、比率、片长，提示框里的具体日期与坐标刻度。 */
 
 import type { OverviewBucket } from './audit.api'
-import { EMPTY } from './format'
+import { addDays, zonedParts } from './audit-time'
+
+/** 没有数时的占位。 */
+export const EMPTY = '—'
 
 const WEEKDAYS = '日一二三四五六'
 
@@ -45,24 +46,29 @@ export const lengthParts = (seconds: number | null): [string, string] => {
 
 export const fmtLength = (seconds: number | null): string => joinParts(lengthParts(seconds))
 
-const startOfDay = (at: Date) => new Date(at.getFullYear(), at.getMonth(), at.getDate())
+// 以下日期与时刻都按 UTC+8 写，与浏览器所在时区无关。
 
-export const monthDay = (at: Date): string => `${at.getMonth() + 1}月${at.getDate()}日`
+const pad2 = (value: number) => String(value).padStart(2, '0')
 
-const hourText = (at: Date) => `${String(at.getHours()).padStart(2, '0')}:00`
+export const monthDay = (at: Date): string => {
+  const { month, day } = zonedParts(at)
+  return `${month}月${day}日`
+}
 
 /** 时刻写成「9月27日 14:30」。 */
-export const fmtMoment = (at: Date): string =>
-  `${monthDay(at)} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+export const fmtMoment = (at: Date): string => {
+  const { hour, minute } = zonedParts(at)
+  return `${monthDay(at)} ${pad2(hour)}:${pad2(minute)}`
+}
 
 /** [since, until) 写成日期区间：同一天只写一天，同月省掉第二个月份。 */
 export const fmtDayRange = (since: Date, until: Date): string => {
-  const last = startOfDay(new Date(until.getTime() - 1))
-  if (startOfDay(since).getTime() === last.getTime()) return monthDay(since)
-  if (since.getFullYear() === last.getFullYear() && since.getMonth() === last.getMonth()) {
-    return `${monthDay(since)}–${last.getDate()}日`
-  }
-  return `${monthDay(since)}–${monthDay(last)}`
+  const last = new Date(until.getTime() - 1)
+  const from = zonedParts(since)
+  const to = zonedParts(last)
+  if (from.year !== to.year || from.month !== to.month)
+    return `${monthDay(since)}–${monthDay(last)}`
+  return from.day === to.day ? monthDay(since) : `${monthDay(since)}–${to.day}日`
 }
 
 /** 提示框里这一期的名字：按小时写到整点，按天带星期，按周写实际覆盖的日期区间。 */
@@ -71,20 +77,21 @@ export const periodLabel = (
   bucket: OverviewBucket,
   window: { since: Date; until: Date },
 ): string => {
-  if (bucket === 'hour') return `${monthDay(start)} ${hourText(start)}`
+  if (bucket === 'hour') return `${monthDay(start)} ${pad2(zonedParts(start).hour)}:00`
   if (bucket === 'week') {
     const from = start < window.since ? window.since : start
-    const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7)
+    const next = addDays(start, 7)
     return fmtDayRange(from, next > window.until ? window.until : next)
   }
-  return `${monthDay(start)} 周${WEEKDAYS[start.getDay()] ?? ''}`
+  return `${monthDay(start)} 周${WEEKDAYS[zonedParts(start).weekday] ?? ''}`
 }
 
 /** 横轴刻度：按小时零点与第一格写日期、其余写几时，按天与按周写「9/23」。 */
 export const tickLabel = (start: Date, bucket: OverviewBucket, first: boolean): string => {
-  const date = `${start.getMonth() + 1}/${start.getDate()}`
+  const { month, day, hour } = zonedParts(start)
+  const date = `${month}/${day}`
   if (bucket !== 'hour') return date
-  return start.getHours() === 0 || first ? date : `${start.getHours()}时`
+  return hour === 0 || first ? date : `${hour}时`
 }
 
 /** 横轴每隔几格标一个字：标签间距不小于 56px；按小时取 24 的约数，零点那格总会落上日期。 */

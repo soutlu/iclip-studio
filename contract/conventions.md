@@ -385,16 +385,13 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 12. 审计报表 (Audit)
 
-治理者看产量、成功率、耗时与模型消耗的四个只读端点，口径的定义见 [CONTEXT.md「审计口径」](../docs/CONTEXT.md#术语)。
+治理者看产量、成功率、耗时与模型消耗的三个只读端点：总览、按人、按任务执行。口径的定义见 [CONTEXT.md「审计口径」](../docs/CONTEXT.md#术语)。
 
 - **分叉出来的副本一律不计入**（口径见 [CONTEXT.md「审计口径」](../docs/CONTEXT.md#术语)），分叉见 §6。
-- 时间窗 `since` / `until` 左闭右开，作用在各指标自己的锚点上：成片、视频耗时与片长看完成时刻，每镜次数、一次通过、出片镜与有效镜看该镜首次出片时刻，运行次数与活跃人数看发起时刻，agent 运行时长看开始时刻，交付周期与单任务时长看最后成片时刻，模型用量整段对话按最后记账时刻归期。`since` 不早于 `until` 是 `422`。`summary`、`conversations`、`anomalies` 三个端点另收筛选 `userName`、`taskId`；总览只收时间窗与时区。
-- 每一格指标都是同一个 `metrics` 形状：`deliveries`（成片件数 = `deliveredTasks` + `deliveredOrphanConversations`）、`completedVideos`、`producers`、`shots` / `attempts` / `oneTakeShots`（只出了一条且成了的镜）与派生的 `attemptsPerShot`、`oneTakeRate`、`deliveredShots`（出片镜）/ `effectiveShots`（有效镜）与派生的 `effectiveRate`、`runs`（agent 运行次数，按消息数，归发起人）、`activeUsers`（发起过运行的人数）、`deliveredConversations`、五组秒数分布、`lengthVideos` / `lengthSeconds` / `discardedLengthSeconds`（片长）、`usage`（五个 token 计数、`totalTokens`、`cacheHitRate`）与 `tokensPerDelivery`。分母为零的比率是 `null`。
-- 五组秒数分布各带 `avg`、`median`、`p90` 与样本数 `count`，没有样本为 `null`：`cycleSeconds`（交付周期，墙钟，含空档）；`activeCycleSeconds`（单任务时长：每段有成片的对话一个样本，把这段对话有终态的顶层运行「开始到终态」与每条出片「受理到完成，没完成的只是受理那一刻」裁进交付周期，按开始排序合并，下一段开始距已合并段的结束不超过 30 分钟就并进来、空档照算，超过就断开、空档不计，样本值是各合并段长度之和）；`agentRunSeconds`（一次顶层运行从 `run_started` 到第一条 `run_completed` / `run_failed`，子代理的内部运行不单算，没有终态的不计，审批批完续跑是另一次运行）；`videoSeconds`（单条出片受理到完成）；`upstreamSeconds`（单条出片提交上游到完成）。
+- 时间窗 `since` / `until` 左闭右开，三个端点都必填 `since`，`until` 不给或晚于此刻按此刻算，`since` 不早于 `until` 是 `422`。指标的时间窗作用在各指标自己的锚点上：成片、视频生成时长与片长看完成时刻，镜数、生成次数、一次通过与有效镜看该镜第一条成功生成的完成时刻，运行次数与活跃人数看发起时刻，agent 运行时长看开始时刻，交付周期与单任务时长看最后成片时刻，模型用量整段对话按最后记账时刻归期。任务执行另按对话建立时刻圈定，见下文。
+- 每一格指标都是同一个 `metrics` 形状：`deliveries`（成片件数 = `deliveredTasks` + `deliveredOrphanConversations`）、`completedVideos`、`producers`、`shots`（至少成功生成过一条的镜）/ `attempts`（这些镜的成功生成次数，失败与还没出结果的不计，见 [ADR-0003](../docs/adr/0003-audit-count-successful-generations.md)）/ `oneTakeShots`（一次通过：只用一次成功生成就达标的镜）与派生的 `attemptsPerShot`、`oneTakeRate`、`effectiveShots`（有效镜）与派生的 `effectiveRate`（有效镜 ÷ 镜数）、`runs`（agent 运行次数，按消息数，归发起人）、`activeUsers`（发起过运行的人数）、`deliveredConversations`、四组秒数分布、`lengthVideos` / `lengthSeconds` / `discardedLengthSeconds`（片长）、`usage`（五个 token 计数、`totalTokens`、`cacheHitRate`）与 `tokensPerDelivery`。分母为零的比率是 `null`。
+- 四组秒数分布各带 `avg`、`median`、`p90` 与样本数 `count`，没有样本为 `null`：`cycleSeconds`（交付周期，墙钟，含空档）；`activeCycleSeconds`（单任务时长：每段有成片的对话一个样本，把这段对话有终态的顶层运行「开始到终态」与每条出片（含失败的）「受理到完成，没完成的只是受理那一刻」裁进交付周期，按开始排序合并，下一段开始距已合并段的结束不超过 30 分钟就并进来、空档照算，超过就断开、空档不计，样本值是各合并段长度之和）；`agentRunSeconds`（一次顶层运行从 `run_started` 到第一条 `run_completed` / `run_failed`，子代理的内部运行不单算，没有终态的不计，审批批完续跑是另一次运行）；`upstreamSeconds`（视频生成时长：单条出片提交上游到完成）。
 - 片长读出片记录的产物时长（生成记录的 `duration_ms` 列），为空的不计，不拿请求里的时长顶替。`lengthVideos` 是有片长的成片条数，`lengthSeconds` 是它们的合计，`discardedLengthSeconds` 是其中废片的合计：废片是同一镜（对话 + 镜号）全时段按完成时刻、再按 id 排最后一条以外的成片，按时间窗或按人切开看也照全时段判定，所以各格可加、不随筛选变。
-- `GET /audit/summary` 返回 `overall`（整个筛选范围一格）、`users[]`（每人一行，成片件数多的在前；只跑过没出片的人也占一行）、`tasks[]`（每张有动静的需求单一行，带 `title`；没挂需求单的对话不在这里）。给 `bucket`（`day` / `week` / `month`）时多返回 `series[]`，每期一行带 `periodStart`，按 `timezone`（IANA 名，缺省 `UTC`）切：给了 `since` 时从 `since` 所在期到 `until`（缺省此刻）所在期每期都有一行，没动静的期计数为 0、比率与分布为 `null`；没给 `since` 只列有数据的期。不给 `bucket` 时 `series` 为 `null`。时区名不认识是 `422`。另带 `attemptDistribution[]`：整个筛选范围的出片次数分档计数（`attempts` 次的镜有 `shots` 个），次数少的在前、不封顶、只给全体一档（`users[]` / `tasks[]` / `series[]` 的行上没有）；次数是这个镜名下的全部出片记录数。锚点同每镜次数。还带 `anomalyCounts[]`：整个筛选范围里每种异常各几条（`kind`、`count`），按 `GET /audit/anomalies` 的缺省阈值判定，只列出现过的种类，多的在前、同数按种类名。
-- `GET /audit/conversations` 列有成片的对话，最后成片晚的排前面；时间窗作用在最后成片时刻上，每行的 `metrics`、`shots[]`（镜号、次数、是否一次通过 `oneTake`、是否有效 `effective`、首末时刻）与 `usage[]`（按模型）都是这段对话的全量。`userName` 是这段对话归属的人，`startedAt` 是首次运行（没有运行就是对话创建）。属主删掉的对话照列，`deletedAt` 非空。翻页 `limit` 与 `cursor`，规则同 §6 审计列表。
-- `GET /audit/anomalies` 列异常，按发生时刻倒序，翻页同上。`kind` 可重复给以只看某几种：`retry`（单镜生成次数超过 `retryOver`，缺省 2）、`idle`（有运行、无成片、最近活动距今超过 `idleHours`，缺省 24）、`slow`（交付周期超过筛选范围内的 P90）、`stuck`（视频停在 `submitted` 超过 `stuckHours`，缺省 1）、`spend`（对话总 token 超过筛选范围内的 P95）、`task_stuck`（需求单挂了至少 `taskConversations` 段对话、缺省 3，且没有成片）、`deleted`（属主删掉的对话，`value` 是它的成片数）、`no_task`（有成片却没挂需求单的对话）、`missing_shot`（出片却没有镜号 `shotIndex`，调用方接入退化的信号；编辑段与合成的镜号抄自原作，不算）。每行带 `kind`、`at`、`value`、`threshold` 与按需带的 `conversationId` / `taskId` / `userName` / `shot` / `generationId`。P90 / P95 按当前筛选范围现算，样本少时会抖。
 
 ### 总览
 
@@ -405,7 +402,30 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **活跃日**：本地日历日里有人发起运行就是活跃日，否则是非活跃日。`current` / `previous` 各带整段现算的 `metrics`（件数去重、分位数都按整段算，不由各期拼）与窗内的活跃日天数 `activeDays`，部分覆盖的日只看窗内那一段有没有运行。
 - **趋势** `series[]`：早的在前，每期都在，没数据的期计数为 0。按小时与按天时每期是一个本地整点或本地日；`since` 不在期首时首期的 `periodStart` 仍是期首，指标只算 `since` 之后，按周同理。`inactive` 只在按天时可能为真：这一天没有人发起运行。
 - **均线** `ma7` / `ma30`：按周时为 `null`。每条均线给 `{value, since, until}`，`until` 是这一期的结束（最后一期是 `until`），名义起点是它前一刻所在本地日往前推 6 或 29 天的零点；窗里的活跃日不足 3 天就按本地日往前补，直到够 3 天。件数类（`deliveries`、`producers`、`totalTokens`、`lengthSeconds`）只在按天时给，值是窗里各活跃日日值的平均，非活跃日不拉低，没有活跃日为 `null`；按小时时这四条为 `null`。样本类在此基础上再按期往前补，直到样本够数，各组各补各的、各报各的 `since`：镜 30 个（`attemptsPerShot`、`oneTakeRate`、`effectiveRate` 按窗里的镜重算比率）、单任务 10 个（`activeCycleSeconds` 的平均）、视频 30 条（`upstreamSeconds` 的平均）、成片 10 件（`tokensPerDelivery` 与四个分项是窗里的 token ÷ 窗里去重后的成片件数，同一件跨几天只算一件）。补窗最多回到 `min(上一期起点, since − 60 天)` 所在本地日的零点，到了还不够就停，`since` 如实报到那里；窗里没有样本的 `value` 为 `null`。
-- `attemptDistribution[]` 同 `summary`，窗是本期。`topShots[]` 是本期（按镜首次出片时刻落窗）出片次数最多的 3 个镜，次数多的在前，同数按最近一次出片晚的在前；`title` 与 `userName` 取对话的，已删的对话照列。
+- `attemptDistribution[]` 是本期的成功生成次数分档计数（成功生成 `attempts` 次的镜有 `shots` 个），次数少的在前、不封顶，锚点同镜。`topShots[]` 是本期成功生成次数最多的 3 个镜，次数多的在前，同数按最后一条成功生成完成晚的在前；`title` 与 `userName` 取对话的，已删的对话照列。
+
+### 按人
+
+`GET /audit/people?since&until&timezone` 一次给全时间窗里的每个人：时间窗、跨度上限、粒度与时区规则同总览，`bucket` 回显粒度。
+
+- `items[]` 是时间窗里出过片（`deliveries` 非零）或跑过（`runs` 非零）的人，按成片件数降序、运行次数降序、用户名升序。人按「审计口径」归：视频归属主、运行归发起人；属主没有用户名的视频不归任何人。
+- `metrics` 是这个人在窗内的一格指标，锚点同上。
+- `trend[]` 从 `since` 所在期到最后一期每期一行（`periodStart`、`deliveries`），早的在前，没成片的期为 0。每期的成片件数与 `deliveries` 同一口径、在期内去重；同一件跨几期各算一次，所以各期之和可以大于整段的件数。
+
+### 任务执行
+
+`GET /audit/executions?since&until&userName&sort&order&limit&cursor`：一段有运行或出片的对话是一次任务执行，一段一行。
+
+- **圈定**：对话建立时刻落在时间窗里、不是分叉副本、至少有一轮运行或一条带镜号的出片；属主删掉的照列，`deletedAt` 非空。没有跨度上限。`userName` 只筛这段对话归属的人（最近一轮运行的人，没跑过就是最近一条视频的属主），不改异常判定与门槛。
+- **每行**：`title`、`userName`、`taskId` / `taskTitle`（没挂需求单为 `null`）、`createdAt`、`startedAt`（首次运行，没有运行就是建立时刻）、`deliveredAt`（最后一条成片，没有为 `null`）、`deletedAt`、`metrics`、`shots[]`、`usage[]`（按模型）与 `anomalies[]`。`metrics`、`shots[]`、`usage[]` 都是这段对话的全量，不按时间窗裁。`shots[]` 按镜号升序，只列至少成功生成过一条的镜，每镜带 `attempts`（成功生成次数）、`oneTake` 与 `effective`。
+- **排序** `sort`：`start`（建立时刻，缺省）、`retries`（这段对话的成功生成次数 ÷ 镜数，没有镜为空）、`cycle`（单任务时长，没有成片为空）、`tokens`（这段对话的 token 合计，没有用量是 0）；`order` 为 `asc` / `desc`，缺省 `desc`。同值按对话 id 同方向排；取值为空的不论升降都排在最后。
+- **翻页**：`limit`（1–100，缺省 20）与 `cursor`。`cursor` 原样回传上一页的 `nextCursor`（不透明字符串），只在满页时给，为 `null` 表示没有更多了。游标只对发它的那组 `sort` / `order` 有效：换了排序键或方向、形状不对都是 `422`。
+- **条数**：`total` 是筛选范围（时间窗与 `userName`）里的执行总数，`flagged` 是其中至少命中一种异常的条数；都对整个范围算，不随翻页变。
+- **异常**只有四种，`anomalies[]` 按下列顺序排。门槛是服务端常量、不收参数，`thresholds` 回显 `retryAtLeast`、`stuckHours`、`spendTimes`、`taskConversations` 与 `spendTokens`。
+  - `retry` 反复重试：有一镜成功生成至少 `retryAtLeast`（3）次。
+  - `stuck` 视频悬挂：有一条出片停在已提交上游（`submitted`），提交距此刻超过 `stuckHours`（1）小时。
+  - `spend` 消耗离群：这段对话的 token 合计超过 `spendTokens` = 整个时间窗的每件成片平均 token（即总览本期的 `tokensPerDelivery`，不受 `userName` 影响）× `spendTimes`（3）。窗里没有成片时 `spendTokens` 为 `null`，谁都不标。
+  - `task_stuck` 需求单卡住：挂的需求单在本时间窗里至少有 `taskConversations`（3）段执行（段数不受 `userName` 影响），且这张单从来没有过成片（任何对话、任何时候）；挂这张单的每段执行都标。
 
 ## 13. 资料库 (Library)
 

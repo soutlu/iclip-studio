@@ -67,96 +67,6 @@ export type AgentStatusMeta = {
 }
 
 /**
- * AnomaliesOut
- */
-export type AnomaliesOut = {
-  /**
-   * Items
-   */
-  items: Array<AnomalyOut>
-  /**
-   * Nextcursor
-   */
-  nextCursor: string | null
-}
-
-/**
- * AnomalyCountOut
- */
-export type AnomalyCountOut = {
-  /**
-   * Count
-   */
-  count: number
-  /**
-   * Kind
-   */
-  kind:
-    | 'retry'
-    | 'idle'
-    | 'slow'
-    | 'stuck'
-    | 'spend'
-    | 'task_stuck'
-    | 'deleted'
-    | 'no_task'
-    | 'missing_shot'
-}
-
-/**
- * AnomalyOut
- *
- * 一条异常。``ref`` 是「种类:对象」的稳定文本，与 ``at`` 一起构成排序键与游标，不出接口。
- */
-export type AnomalyOut = {
-  /**
-   * At
-   */
-  at: string
-  /**
-   * Conversationid
-   */
-  conversationId: string | null
-  /**
-   * Generationid
-   */
-  generationId: string | null
-  /**
-   * Kind
-   */
-  kind:
-    | 'retry'
-    | 'idle'
-    | 'slow'
-    | 'stuck'
-    | 'spend'
-    | 'task_stuck'
-    | 'deleted'
-    | 'no_task'
-    | 'missing_shot'
-  /**
-   * Shot
-   */
-  shot: number | null
-  /**
-   * Taskid
-   */
-  taskId: string | null
-  /**
-   * Threshold
-   */
-  threshold: number | null
-  /**
-   * Username
-   */
-  userName: string | null
-  /**
-   * Value
-   */
-  value: number | null
-}
-
-/**
  * ApiKeyCreateIn
  */
 export type ApiKeyCreateIn = {
@@ -325,7 +235,7 @@ export type AttachmentSource = {
 /**
  * AttemptBucketOut
  *
- * 出片次数正好是 ``attempts`` 次的镜有多少个。次数按镜上全部出片记录数，不看终态。
+ * 成功生成正好 ``attempts`` 次的镜有多少个。
  */
 export type AttemptBucketOut = {
   /**
@@ -339,17 +249,40 @@ export type AttemptBucketOut = {
 }
 
 /**
- * AuditConversationsOut
+ * AuditExecutionsOut
  */
-export type AuditConversationsOut = {
+export type AuditExecutionsOut = {
+  /**
+   * Flagged
+   */
+  flagged: number
   /**
    * Items
    */
-  items: Array<ConversationAuditOut>
+  items: Array<ExecutionOut>
   /**
    * Nextcursor
    */
   nextCursor: string | null
+  thresholds: ExecutionThresholdsOut
+  /**
+   * Total
+   */
+  total: number
+}
+
+/**
+ * AuditPeopleOut
+ */
+export type AuditPeopleOut = {
+  /**
+   * Bucket
+   */
+  bucket: 'hour' | 'day' | 'week'
+  /**
+   * Items
+   */
+  items: Array<PersonOut>
 }
 
 /**
@@ -494,55 +427,6 @@ export type ConversationAgentsOut = {
    * Items
    */
   items: Array<ConversationAgentOut>
-}
-
-/**
- * ConversationAuditOut
- *
- * 一段有成片的对话；指标与镜、用量都是这段对话的全量，不按时间窗裁。
- */
-export type ConversationAuditOut = {
-  /**
-   * Conversationid
-   */
-  conversationId: string
-  /**
-   * Deletedat
-   */
-  deletedAt: string | null
-  /**
-   * Deliveredat
-   */
-  deliveredAt: string
-  metrics: MetricsOut
-  /**
-   * Owneruserid
-   */
-  ownerUserId: string
-  /**
-   * Shots
-   */
-  shots: Array<ShotOut>
-  /**
-   * Startedat
-   */
-  startedAt: string
-  /**
-   * Taskid
-   */
-  taskId: string | null
-  /**
-   * Title
-   */
-  title: string
-  /**
-   * Usage
-   */
-  usage: Array<ModelUsageOut>
-  /**
-   * Username
-   */
-  userName: string | null
 }
 
 /**
@@ -983,6 +867,115 @@ export type ErrorModel = {
     | {
         [key: string]: string
       }
+}
+
+/**
+ * ExecutionOut
+ *
+ * 一次任务执行，即一段有运行或出片的对话；指标、镜与用量是这段对话的全量，不按时间窗裁。
+ */
+export type ExecutionOut = {
+  /**
+   * Anomalies
+   */
+  anomalies: Array<'retry' | 'stuck' | 'spend' | 'task_stuck'>
+  /**
+   * Conversationid
+   */
+  conversationId: string
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Deletedat
+   */
+  deletedAt: string | null
+  /**
+   * Deliveredat
+   */
+  deliveredAt: string | null
+  metrics: MetricsOut
+  /**
+   * Shots
+   */
+  shots: Array<ExecutionShotOut>
+  /**
+   * Startedat
+   */
+  startedAt: string
+  /**
+   * Taskid
+   */
+  taskId: string | null
+  /**
+   * Tasktitle
+   */
+  taskTitle: string | null
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Usage
+   */
+  usage: Array<ModelUsageOut>
+  /**
+   * Username
+   */
+  userName: string | null
+}
+
+/**
+ * ExecutionShotOut
+ *
+ * 这段对话里至少成功生成过一条的镜。
+ */
+export type ExecutionShotOut = {
+  /**
+   * Attempts
+   */
+  attempts: number
+  /**
+   * Effective
+   */
+  effective: boolean
+  /**
+   * Onetake
+   */
+  oneTake: boolean
+  /**
+   * Shot
+   */
+  shot: number
+}
+
+/**
+ * ExecutionThresholdsOut
+ *
+ * 四种异常的门槛。
+ */
+export type ExecutionThresholdsOut = {
+  /**
+   * Retryatleast
+   */
+  retryAtLeast: number
+  /**
+   * Spendtimes
+   */
+  spendTimes: number
+  /**
+   * Spendtokens
+   */
+  spendTokens: number | null
+  /**
+   * Stuckhours
+   */
+  stuckHours: number
+  /**
+   * Taskconversations
+   */
+  taskConversations: number
 }
 
 /**
@@ -1509,7 +1502,7 @@ export type MetricFiltersIn = {
 /**
  * MetricsOut
  *
- * 一格指标。全体、人、需求单、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。
+ * 一格指标。全体、人、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。
  */
 export type MetricsOut = {
   activeCycleSeconds: SpreadOut | null
@@ -1540,10 +1533,6 @@ export type MetricsOut = {
    */
   deliveredOrphanConversations: number
   /**
-   * Deliveredshots
-   */
-  deliveredShots: number
-  /**
    * Deliveredtasks
    */
   deliveredTasks: number
@@ -1560,7 +1549,7 @@ export type MetricsOut = {
   /**
    * Effectiverate
    *
-   * 有效率：有效镜占出片镜的比例。
+   * 有效率：有效镜占镜数的比例。
    */
   readonly effectiveRate: number | null
   /**
@@ -1578,7 +1567,7 @@ export type MetricsOut = {
   /**
    * Onetakerate
    *
-   * 一次通过率：只出了一条且成了的镜占全部镜的比例。
+   * 一次通过率：只用一次成功生成就达标的镜占镜数的比例。
    */
   readonly oneTakeRate: number | null
   /**
@@ -1603,7 +1592,6 @@ export type MetricsOut = {
   readonly tokensPerDelivery: number | null
   upstreamSeconds: SpreadOut | null
   usage: UsageOut
-  videoSeconds: SpreadOut | null
 }
 
 /**
@@ -1813,10 +1801,13 @@ export type OverviewWindowOut = {
 }
 
 /**
- * PeriodMetricsOut
+ * PeriodDeliveriesOut
  */
-export type PeriodMetricsOut = {
-  metrics: MetricsOut
+export type PeriodDeliveriesOut = {
+  /**
+   * Deliveries
+   */
+  deliveries: number
   /**
    * Periodstart
    */
@@ -1837,6 +1828,23 @@ export type Permission =
   | 'api_keys:issue'
   | 'agent:read'
   | 'agent:run'
+
+/**
+ * PersonOut
+ *
+ * 一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。
+ */
+export type PersonOut = {
+  metrics: MetricsOut
+  /**
+   * Trend
+   */
+  trend: Array<PeriodDeliveriesOut>
+  /**
+   * Username
+   */
+  userName: string
+}
 
 /**
  * Prompt
@@ -2011,36 +2019,6 @@ export type ShotGroupOut = {
    * Versions
    */
   versions: Array<VersionOut>
-}
-
-/**
- * ShotOut
- */
-export type ShotOut = {
-  /**
-   * Attempts
-   */
-  attempts: number
-  /**
-   * Effective
-   */
-  effective: boolean
-  /**
-   * Firstat
-   */
-  firstAt: string
-  /**
-   * Lastat
-   */
-  lastAt: string
-  /**
-   * Onetake
-   */
-  oneTake: boolean
-  /**
-   * Shot
-   */
-  shot: number
 }
 
 /**
@@ -2235,33 +2213,6 @@ export type StyleMatchOut = {
 }
 
 /**
- * SummaryOut
- */
-export type SummaryOut = {
-  /**
-   * Anomalycounts
-   */
-  anomalyCounts: Array<AnomalyCountOut>
-  /**
-   * Attemptdistribution
-   */
-  attemptDistribution: Array<AttemptBucketOut>
-  overall: MetricsOut
-  /**
-   * Series
-   */
-  series: Array<PeriodMetricsOut> | null
-  /**
-   * Tasks
-   */
-  tasks: Array<TaskMetricsOut>
-  /**
-   * Users
-   */
-  users: Array<UserMetricsOut>
-}
-
-/**
  * TakeOut
  *
  * 一版成片对应的出片：参数与脚本照出片那一刻的请求。合成沿原作取，原作可以在祖先对话里。
@@ -2412,21 +2363,6 @@ export type TaskInputsOutput = {
    */
   reference_video_oss_url: string | null
   video_spec: TaskVideoSpecOutput
-}
-
-/**
- * TaskMetricsOut
- */
-export type TaskMetricsOut = {
-  metrics: MetricsOut
-  /**
-   * Taskid
-   */
-  taskId: string
-  /**
-   * Title
-   */
-  title: string
 }
 
 /**
@@ -2794,7 +2730,7 @@ export type ToolFrame = {
 /**
  * TopShotOut
  *
- * 时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。
+ * 时间窗里成功生成次数最多的镜之一；时间窗作用在该镜第一条成功生成的完成时刻上。
  */
 export type TopShotOut = {
   /**
@@ -3374,17 +3310,6 @@ export type UserCreate = {
  */
 export type UserEnvelope = {
   user: UserOut
-}
-
-/**
- * UserMetricsOut
- */
-export type UserMetricsOut = {
-  metrics: MetricsOut
-  /**
-   * Username
-   */
-  userName: string
 }
 
 /**
@@ -3975,14 +3900,14 @@ export type RevokeKeyApiKeysKeyIdDeleteResponses = {
 export type RevokeKeyApiKeysKeyIdDeleteResponse =
   RevokeKeyApiKeysKeyIdDeleteResponses[keyof RevokeKeyApiKeysKeyIdDeleteResponses]
 
-export type AnomaliesAuditAnomaliesGetData = {
+export type ExecutionsAuditExecutionsGetData = {
   body?: never
   path?: never
-  query?: {
+  query: {
     /**
      * Since
      */
-    since?: string | null
+    since: string
     /**
      * Until
      */
@@ -3992,39 +3917,13 @@ export type AnomaliesAuditAnomaliesGetData = {
      */
     userName?: string | null
     /**
-     * Taskid
+     * Sort
      */
-    taskId?: string | null
+    sort?: 'start' | 'retries' | 'cycle' | 'tokens'
     /**
-     * Kind
+     * Order
      */
-    kind?: Array<
-      | 'retry'
-      | 'idle'
-      | 'slow'
-      | 'stuck'
-      | 'spend'
-      | 'task_stuck'
-      | 'deleted'
-      | 'no_task'
-      | 'missing_shot'
-    > | null
-    /**
-     * Retryover
-     */
-    retryOver?: number
-    /**
-     * Idlehours
-     */
-    idleHours?: number
-    /**
-     * Stuckhours
-     */
-    stuckHours?: number
-    /**
-     * Taskconversations
-     */
-    taskConversations?: number
+    order?: 'asc' | 'desc'
     /**
      * Limit
      */
@@ -4034,80 +3933,28 @@ export type AnomaliesAuditAnomaliesGetData = {
      */
     cursor?: string | null
   }
-  url: '/audit/anomalies'
+  url: '/audit/executions'
 }
 
-export type AnomaliesAuditAnomaliesGetErrors = {
+export type ExecutionsAuditExecutionsGetErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type AnomaliesAuditAnomaliesGetError =
-  AnomaliesAuditAnomaliesGetErrors[keyof AnomaliesAuditAnomaliesGetErrors]
+export type ExecutionsAuditExecutionsGetError =
+  ExecutionsAuditExecutionsGetErrors[keyof ExecutionsAuditExecutionsGetErrors]
 
-export type AnomaliesAuditAnomaliesGetResponses = {
+export type ExecutionsAuditExecutionsGetResponses = {
   /**
    * Successful Response
    */
-  200: AnomaliesOut
+  200: AuditExecutionsOut
 }
 
-export type AnomaliesAuditAnomaliesGetResponse =
-  AnomaliesAuditAnomaliesGetResponses[keyof AnomaliesAuditAnomaliesGetResponses]
-
-export type ConversationsAuditConversationsGetData = {
-  body?: never
-  path?: never
-  query?: {
-    /**
-     * Since
-     */
-    since?: string | null
-    /**
-     * Until
-     */
-    until?: string | null
-    /**
-     * Username
-     */
-    userName?: string | null
-    /**
-     * Taskid
-     */
-    taskId?: string | null
-    /**
-     * Limit
-     */
-    limit?: number
-    /**
-     * Cursor
-     */
-    cursor?: string | null
-  }
-  url: '/audit/conversations'
-}
-
-export type ConversationsAuditConversationsGetErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type ConversationsAuditConversationsGetError =
-  ConversationsAuditConversationsGetErrors[keyof ConversationsAuditConversationsGetErrors]
-
-export type ConversationsAuditConversationsGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: AuditConversationsOut
-}
-
-export type ConversationsAuditConversationsGetResponse =
-  ConversationsAuditConversationsGetResponses[keyof ConversationsAuditConversationsGetResponses]
+export type ExecutionsAuditExecutionsGetResponse =
+  ExecutionsAuditExecutionsGetResponses[keyof ExecutionsAuditExecutionsGetResponses]
 
 export type OverviewAuditOverviewGetData = {
   body?: never
@@ -4149,57 +3996,44 @@ export type OverviewAuditOverviewGetResponses = {
 export type OverviewAuditOverviewGetResponse =
   OverviewAuditOverviewGetResponses[keyof OverviewAuditOverviewGetResponses]
 
-export type SummaryAuditSummaryGetData = {
+export type PeopleAuditPeopleGetData = {
   body?: never
   path?: never
-  query?: {
+  query: {
     /**
      * Since
      */
-    since?: string | null
+    since: string
     /**
      * Until
      */
     until?: string | null
     /**
-     * Username
-     */
-    userName?: string | null
-    /**
-     * Taskid
-     */
-    taskId?: string | null
-    /**
-     * Bucket
-     */
-    bucket?: 'day' | 'week' | 'month' | null
-    /**
      * Timezone
      */
     timezone?: string
   }
-  url: '/audit/summary'
+  url: '/audit/people'
 }
 
-export type SummaryAuditSummaryGetErrors = {
+export type PeopleAuditPeopleGetErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type SummaryAuditSummaryGetError =
-  SummaryAuditSummaryGetErrors[keyof SummaryAuditSummaryGetErrors]
+export type PeopleAuditPeopleGetError = PeopleAuditPeopleGetErrors[keyof PeopleAuditPeopleGetErrors]
 
-export type SummaryAuditSummaryGetResponses = {
+export type PeopleAuditPeopleGetResponses = {
   /**
    * Successful Response
    */
-  200: SummaryOut
+  200: AuditPeopleOut
 }
 
-export type SummaryAuditSummaryGetResponse =
-  SummaryAuditSummaryGetResponses[keyof SummaryAuditSummaryGetResponses]
+export type PeopleAuditPeopleGetResponse =
+  PeopleAuditPeopleGetResponses[keyof PeopleAuditPeopleGetResponses]
 
 export type AuthCookieLoginAuthLoginPostData = {
   body: BodyAuthCookieLoginAuthLoginPost

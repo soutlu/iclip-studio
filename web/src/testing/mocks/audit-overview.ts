@@ -1,6 +1,6 @@
 /** 审计总览的 mock：按小时确定地造一段历史活动，再按请求的时间窗切期、算上一期与 7 / 30 日均线。
 
-单测与 dev:mock 共用。分期按运行环境的本地时区算：前端传的 timezone 就是浏览器（单测里是 Node）的本地时区。
+单测与 dev:mock 共用。分期按 UTC+8 算：前端固定传 UTC+8 的时区，这里自己按固定偏移算一份，与运行环境的时区无关，也不借前端的换算，好当它的独立对照。
 每 29 天里有连续 3 天没人发起运行（非活跃日）；片长只从本月 1 日起有数据，整段在那之前的时间窗是「暂无片长数据」。
 粒度按跨度定：两天以内按小时，120 天以内按天，更长按周。
 
@@ -30,43 +30,47 @@ const HISTORY_DAYS = 200
 /** 均线窗里至少要有几个活跃日，不够就往前补。 */
 const MIN_ACTIVE_DAYS = 3
 
-const PEOPLE = [mockAuthUser.username, mockGovernor.username, 'lin.xia', 'zhou.ye', 'song.ke']
-const PEOPLE_WEIGHT = [30, 12, 26, 18, 14]
+/** 出片的五个人；清单的 mock 也用这组人。 */
+export const PEOPLE = [
+  mockAuthUser.username,
+  mockGovernor.username,
+  'lin.xia',
+  'zhou.ye',
+  'song.ke',
+]
+export const PEOPLE_WEIGHT = [30, 12, 26, 18, 14]
 const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 const HOUR_WEIGHT = [0.5, 1.2, 1.4, 0.5, 0.6, 1.3, 1.4, 1.4, 1.2, 0.8, 0.5, 0.35, 0.25, 0.1]
-const GOODS = ['童鞋', '滑板鞋', '跑鞋', '帆布鞋', '凉鞋', '徒步鞋', '老爹鞋', '雨靴']
-const USES = ['主图视频', '种草短片', '上新视频', '卖点讲解', '开箱', '穿搭']
+export const GOODS = ['童鞋', '滑板鞋', '跑鞋', '帆布鞋', '凉鞋', '徒步鞋', '老爹鞋', '雨靴']
+export const USES = ['主图视频', '种草短片', '上新视频', '卖点讲解', '开箱', '穿搭']
 const CLIP_SECONDS = [5, 8, 10, 12, 15]
 
-// ——— 本地日历 ———
+// ——— UTC+8 日历 ———
 
-const startOfDay = (at: number): number => {
-  const d = new Date(at)
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-}
+const OFFSET_MS = 8 * HOUR_MS
+const DAY_MS = 24 * HOUR_MS
 
-const addDays = (at: number, days: number): number => {
-  const d = new Date(at)
-  d.setDate(d.getDate() + days)
-  return d.getTime()
-}
+/** UTC+8 日期的序号（距 1970-01-01 的天数），用作每天的随机种子。 */
+const dayNumber = (at: number): number => Math.floor((at + OFFSET_MS) / DAY_MS)
+
+const startOfDay = (at: number): number => dayNumber(at) * DAY_MS - OFFSET_MS
+
+/** UTC+8 没有夏令时，一天恒为 24 小时。 */
+const addDays = (at: number, days: number): number => at + days * DAY_MS
 
 const startOfMonth = (at: number): number => {
-  const d = new Date(at)
-  return new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+  const shifted = new Date(at + OFFSET_MS)
+  return Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), 1) - OFFSET_MS
 }
 
-/** 本地日期的序号，跨夏令时也是整数，用作每天的随机种子。 */
-const dayNumber = (dayStart: number): number => {
-  const d = new Date(dayStart)
-  return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000)
-}
+/** UTC+8 的星期，0 为周日。 */
+const weekdayOf = (at: number): number => new Date(at + OFFSET_MS).getUTCDay()
 
 const iso = (at: number) => new Date(at).toISOString()
 
 // ——— 确定性随机 ———
 
-const mulberry32 = (seed: number) => {
+export const mulberry32 = (seed: number) => {
   let a = seed
   return () => {
     a = (a + 0x6d2b79f5) | 0
@@ -76,7 +80,7 @@ const mulberry32 = (seed: number) => {
   }
 }
 
-const pickWeighted = <T>(
+export const pickWeighted = <T>(
   random: () => number,
   items: readonly T[],
   weights: readonly number[],
@@ -104,7 +108,7 @@ const poisson = (random: () => number, lambda: number): number => {
 }
 
 /** 由两个整数确定地拼一个 v4 形状的 UUID。 */
-const uuidOf = (day: number, index: number): string => {
+export const uuidOf = (day: number, index: number): string => {
   const hex = (value: number, width: number) =>
     (value >>> 0).toString(16).padStart(width, '0').slice(-width)
   const mix = mulberry32(day * 131 + index)
@@ -128,7 +132,6 @@ type Cell = {
   shots: number
   attempts: number
   oneTakeShots: number
-  deliveredShots: number
   effectiveShots: number
   input: number
   cacheRead: number
@@ -139,11 +142,10 @@ type Cell = {
   wallCycle: Sum
   agentRun: Sum
   upstream: Sum
-  video: Sum
   lengthVideos: number
   lengthSeconds: number
   discarded: number
-  /** 下标是出片次数，值是镜数。 */
+  /** 下标是成功生成次数，值是镜数。 */
   histogram: number[]
 }
 
@@ -166,7 +168,6 @@ const emptyCell = (): Cell => ({
   shots: 0,
   attempts: 0,
   oneTakeShots: 0,
-  deliveredShots: 0,
   effectiveShots: 0,
   input: 0,
   cacheRead: 0,
@@ -177,7 +178,6 @@ const emptyCell = (): Cell => ({
   wallCycle: { total: 0, count: 0 },
   agentRun: { total: 0, count: 0 },
   upstream: { total: 0, count: 0 },
-  video: { total: 0, count: 0 },
   lengthVideos: 0,
   lengthSeconds: 0,
   discarded: 0,
@@ -199,7 +199,6 @@ const addCell = (into: Cell, from: Cell) => {
   into.shots += from.shots
   into.attempts += from.attempts
   into.oneTakeShots += from.oneTakeShots
-  into.deliveredShots += from.deliveredShots
   into.effectiveShots += from.effectiveShots
   into.input += from.input
   into.cacheRead += from.cacheRead
@@ -210,7 +209,6 @@ const addCell = (into: Cell, from: Cell) => {
   addSum(into.wallCycle, from.wallCycle)
   addSum(into.agentRun, from.agentRun)
   addSum(into.upstream, from.upstream)
-  addSum(into.video, from.video)
   into.lengthVideos += from.lengthVideos
   into.lengthSeconds += from.lengthSeconds
   into.discarded += from.discarded
@@ -266,18 +264,16 @@ const simulateConversation = (
   const shotCount = pickWeighted(random, [1, 2, 3, 4], [0.3, 0.35, 0.22, 0.13])
   let delivered = false
   for (let shot = 1; shot <= shotCount; shot += 1) {
-    const attempts = pickWeighted(random, [1, 2, 3, 4, 5, 6], [0.52, 0.3, 0.1, 0.04, 0.025, 0.015])
+    const tries = pickWeighted(random, [1, 2, 3, 4, 5, 6], [0.52, 0.3, 0.1, 0.04, 0.025, 0.015])
     const seconds = pickWeighted(random, CLIP_SECONDS, [0.3, 0.3, 0.2, 0.1, 0.1])
     let succeeded = 0
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
+    for (let attempt = 0; attempt < tries; attempt += 1) {
       if (random() < 0.08) continue
       succeeded += 1
       const upstream = 190 * Math.exp(0.45 * (random() - 0.5) * 2)
       cell.completedVideos += 1
       cell.upstream.total += upstream
       cell.upstream.count += 1
-      cell.video.total += upstream + 8 + random() * 50
-      cell.video.count += 1
       if (withLength) {
         cell.lengthVideos += 1
         cell.lengthSeconds += seconds
@@ -285,19 +281,18 @@ const simulateConversation = (
     }
     // 一镜成功过多条时，除最后一条以外都算废片。
     if (withLength && succeeded > 1) cell.discarded += (succeeded - 1) * seconds
+    // 失败的不算；一次都没成功的镜不算镜。
+    if (succeeded === 0) continue
+    delivered = true
     cell.shots += 1
-    cell.attempts += attempts
-    cell.histogram[attempts] = (cell.histogram[attempts] ?? 0) + 1
-    if (attempts === 1 && succeeded === 1) cell.oneTakeShots += 1
-    if (succeeded > 0) {
-      delivered = true
-      cell.deliveredShots += 1
-      if (random() < 0.62) cell.effectiveShots += 1
-    }
-    if (attempts >= 3) {
+    cell.attempts += succeeded
+    cell.histogram[succeeded] = (cell.histogram[succeeded] ?? 0) + 1
+    if (succeeded === 1) cell.oneTakeShots += 1
+    if (random() < 0.62) cell.effectiveShots += 1
+    if (succeeded >= 3) {
       heavy.push({
         at: hourStart,
-        attempts,
+        attempts: succeeded,
         conversationId,
         shot,
         title,
@@ -330,12 +325,12 @@ const dayOf = (dayStart: number, now: number): Day => {
   const inactive = number % 29 >= 9 && number % 29 <= 11
   if (!tooOld && !inactive && dayStart <= now) {
     const random = mulberry32(number * 7919)
-    const weekday = new Date(dayStart).getDay()
+    const weekday = weekdayOf(dayStart)
     const rate = weekday === 0 || weekday === 6 ? 1.4 : 4
     const count = poisson(random, rate)
     for (let index = 0; index < count; index += 1) {
       const hour = pickWeighted(random, HOURS, HOUR_WEIGHT)
-      const hourStart = new Date(dayStart).setHours(hour)
+      const hourStart = dayStart + hour * HOUR_MS
       const cell = day.hours.get(hour) ?? emptyCell()
       day.hours.set(hour, cell)
       simulateConversation(
@@ -361,7 +356,7 @@ const collect = (from: number, to: number, now: number): Cell => {
       continue
     }
     for (const [hour, cell] of data.hours) {
-      const at = new Date(day).setHours(hour)
+      const at = day + hour * HOUR_MS
       if (at >= from && at < to) addCell(into, cell)
     }
   }
@@ -404,11 +399,10 @@ const metricsOf = (cell: Cell): Metrics => {
     cycleSeconds: spreadOf(cell.wallCycle, 0.5, 3),
     deliveredConversations: deliveries,
     deliveredOrphanConversations: cell.orphans,
-    deliveredShots: cell.deliveredShots,
     deliveredTasks: cell.deliveredTasks,
     deliveries,
     discardedLengthSeconds: cell.discarded,
-    effectiveRate: ratio(cell.effectiveShots, cell.deliveredShots),
+    effectiveRate: ratio(cell.effectiveShots, cell.shots),
     effectiveShots: cell.effectiveShots,
     lengthSeconds: cell.lengthSeconds,
     lengthVideos: cell.lengthVideos,
@@ -428,7 +422,6 @@ const metricsOf = (cell: Cell): Metrics => {
       requests: cell.requests,
       totalTokens: totalTokensOf(cell),
     },
-    videoSeconds: spreadOf(cell.video, 0.9, 1.5),
   }
 }
 
@@ -509,11 +502,7 @@ const movingAveragesOf = (
     cacheReadTokensPerDelivery: perDelivery((cell) => cell.cacheRead),
     cacheWriteTokensPerDelivery: perDelivery((cell) => cell.cacheWrite),
     deliveries: count(deliveriesOf),
-    effectiveRate: averageOf(
-      ratio(shots.cell.effectiveShots, shots.cell.deliveredShots),
-      shots.from,
-      end,
-    ),
+    effectiveRate: averageOf(ratio(shots.cell.effectiveShots, shots.cell.shots), shots.from, end),
     inputTokensPerDelivery: perDelivery((cell) => cell.input),
     lengthSeconds: count((cell) => cell.lengthSeconds),
     oneTakeRate: averageOf(ratio(shots.cell.oneTakeShots, shots.cell.shots), shots.from, end),
@@ -543,7 +532,7 @@ const periodStarts = (since: number, until: number, bucket: Bucket): number[] =>
     for (let at = since; at < until; at += HOUR_MS) starts.push(at)
     return starts
   }
-  const weekday = (new Date(since).getDay() + 6) % 7
+  const weekday = (weekdayOf(since) + 6) % 7
   let at = bucket === 'week' ? addDays(startOfDay(since), -weekday) : startOfDay(since)
   while (at < until) {
     starts.push(at)
@@ -554,6 +543,18 @@ const periodStarts = (since: number, until: number, bucket: Bucket): number[] =>
 
 const nextPeriod = (start: number, bucket: Bucket) =>
   bucket === 'hour' ? start + HOUR_MS : addDays(start, bucket === 'week' ? 7 : 1)
+
+/** 时间窗的粒度与每一期的起点，与总览同一规则；按人的迷你图也按它分期。 */
+export const mockPeriodsOf = (since: number, until: number) => {
+  const bucket = bucketFor(calendarDays(since, until))
+  return {
+    bucket,
+    periods: periodStarts(since, until, bucket).map((start) => ({
+      end: Math.min(nextPeriod(start, bucket), until),
+      start,
+    })),
+  }
+}
 
 /** 按请求的时间窗算一份总览；now 可注入方便测试。 */
 export const mockOverviewOf = (query: URLSearchParams, now: number = Date.now()): Overview => {
@@ -636,7 +637,6 @@ export const emptyAuditMetrics = (): Metrics => ({
   cycleSeconds: null,
   deliveredConversations: 0,
   deliveredOrphanConversations: 0,
-  deliveredShots: 0,
   deliveredTasks: 0,
   deliveries: 0,
   discardedLengthSeconds: 0,
@@ -660,7 +660,6 @@ export const emptyAuditMetrics = (): Metrics => ({
     requests: 0,
     totalTokens: 0,
   },
-  videoSeconds: null,
 })
 
 type FixturePoint = { metrics?: Partial<Metrics>; inactive?: boolean }
@@ -697,7 +696,10 @@ const fixtureAverages = (end: number, bucket: Bucket): MovingAverages => {
   }
 }
 
-/** 一份形状完整的总览：本期从 2026 年 9 月 1 日本地零点起，按 bucket 排 points 期。 */
+/** fixture 本期的起点：2026 年 9 月 1 日 UTC+8 零点。 */
+export const FIXTURE_SINCE = Date.parse('2026-09-01T00:00:00+08:00')
+
+/** 一份形状完整的总览：本期从 FIXTURE_SINCE 起，按 bucket 排 points 期。 */
 export const overviewFixture = ({
   bucket = 'day',
   current = {},
@@ -706,7 +708,7 @@ export const overviewFixture = ({
   previousActiveDays = 7,
   points = Array.from({ length: 7 }, () => ({})),
 }: FixtureOptions = {}): Overview => {
-  const since = new Date(2026, 8, 1).getTime()
+  const since = FIXTURE_SINCE
   const starts = points.map((_, index) =>
     bucket === 'hour'
       ? since + index * HOUR_MS

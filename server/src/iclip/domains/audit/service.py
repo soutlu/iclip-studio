@@ -1,37 +1,44 @@
-"""审计报表用例：把查询参数整理成筛选范围，负责游标与参数校验，拼装总览。治理者权限由路由声明。"""
+"""审计报表用例：把查询参数整理成筛选范围，负责游标与参数校验，拼装总览、按人与任务执行。
+治理者权限由路由声明。"""
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Final, get_args, overload
+from typing import Final, overload
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from iclip.common.errors import ValidationFailed
-from iclip.domains.audit.models import (
-    DEFAULT_THRESHOLDS,
-    AnomalyCursor,
-    AnomalyKind,
-    Bucket,
-    ConversationCursor,
-    Scope,
-    Thresholds,
+from iclip.domains.audit.executions import (
+    RETRY_AT_LEAST,
+    SPEND_TIMES,
+    STUCK_HOURS,
+    TASK_CONVERSATIONS,
+    decode_execution_cursor,
+    encode_execution_cursor,
+    spend_tokens,
 )
-from iclip.domains.audit.overview import OverviewWindow, build_cells, head_cell, plan_window, trend
+from iclip.domains.audit.models import ExecutionSort, Scope, SortOrder
+from iclip.domains.audit.overview import (
+    OverviewWindow,
+    build_cells,
+    fill_periods,
+    head_cell,
+    period_starts,
+    plan_window,
+    trend,
+)
 from iclip.domains.audit.repository import AuditReports
 from iclip.domains.audit.schemas import (
-    AnomaliesOut,
-    AuditConversationsOut,
+    AuditExecutionsOut,
+    AuditPeopleOut,
+    ExecutionThresholdsOut,
     OverviewOut,
     OverviewPeriodOut,
     OverviewWindowOut,
-    SummaryOut,
+    PersonOut,
     TrendPointOut,
 )
-from iclip.platform.paging import BAD_CURSOR, check_limit, decode_cursor, encode_cursor
-
-_ANOMALY_KINDS: Final[frozenset[str]] = frozenset(get_args(AnomalyKind))
+from iclip.platform.paging import check_limit
 
 TOP_SHOT_COUNT: Final = 3
 
@@ -50,46 +57,12 @@ def _as_utc(moment: datetime | None) -> datetime | None:
     return moment.replace(tzinfo=UTC)
 
 
-def _scope(
-    *,
-    since: datetime | None,
-    until: datetime | None,
-    user_name: str | None,
-    task_id: uuid.UUID | None,
-) -> Scope:
-    since, until = _as_utc(since), _as_utc(until)
-    if since is not None and until is not None and since >= until:
-        raise ValidationFailed("since 必须早于 until")
-    return Scope(since=since, until=until, user_name=user_name, task_id=task_id)
-
-
 def _check_timezone(name: str) -> str:
     try:
         ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ValidationFailed(f"timezone 不是一个可识别的时区名: {name}") from exc
     return name
-
-
-def _conversation_after(cursor: str | None) -> ConversationCursor | None:
-    """把游标还原成对话明细的排序键；``None`` 即从头取。"""
-
-    if cursor is None:
-        return None
-    parsed = decode_cursor(cursor)
-    return ConversationCursor(delivered_at=parsed.at, conversation_id=parsed.uuid_key())
-
-
-def _anomaly_after(cursor: str | None) -> AnomalyCursor | None:
-    """把游标还原成异常的排序键；尾键得是「种类:对象」，种类不认识就不是这个列表发的。"""
-
-    if cursor is None:
-        return None
-    parsed = decode_cursor(cursor)
-    kind, separator, rest = parsed.key.partition(":")
-    if not separator or not rest or kind not in _ANOMALY_KINDS:
-        raise ValidationFailed(BAD_CURSOR)
-    return AnomalyCursor(at=parsed.at, ref=parsed.key)
 
 
 class AuditService:
@@ -162,83 +135,95 @@ class AuditService:
         )
         return trend(cells, window, head_metrics=head_metrics)
 
-    async def summary(
-        self,
-        *,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        user_name: str | None = None,
-        task_id: uuid.UUID | None = None,
-        bucket: Bucket | None = None,
-        timezone: str = "UTC",
-    ) -> SummaryOut:
-        """全体一格、每人一行、每单一行；给了 ``bucket`` 再按 ``timezone`` 的日 / 周 / 月切一条序列。"""
+    async def people(
+        self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
+    ) -> AuditPeopleOut:
+        """时间窗里出过片或跑过的人，成片多的在前、再看运行次数、同数按名字；时间窗与粒度同总览。"""
 
-        scope = _scope(since=since, until=until, user_name=user_name, task_id=task_id)
-        series = None
-        if bucket is not None:
-            series = await self._reports.by_period(
-                scope, bucket=bucket, timezone=_check_timezone(timezone)
-            )
-        return SummaryOut(
-            overall=await self._reports.overall(scope),
-            users=list(await self._reports.by_user(scope)),
-            tasks=list(await self._reports.by_task(scope)),
-            series=None if series is None else list(series),
-            attempt_distribution=list(await self._reports.attempt_distribution(scope)),
-            # 总览只要各种异常有几条；阈值按缺省算，与异常页不带参数时同一口径。
-            anomaly_counts=list(await self._reports.anomaly_counts(scope, DEFAULT_THRESHOLDS)),
+        window = plan_window(
+            since=_as_utc(since),
+            until=_as_utc(until),
+            zone=ZoneInfo(_check_timezone(timezone)),
+            now=datetime.now(UTC),
+        )
+        scope = Scope(since=window.since, until=window.until)
+        metrics = await self._reports.by_user(scope)
+        deliveries = await self._reports.user_deliveries(
+            scope, bucket=window.bucket, timezone=timezone
+        )
+        starts = period_starts(window)
+        active = sorted(
+            (
+                (name, found)
+                for name, found in metrics.items()
+                if found.deliveries > 0 or found.runs > 0
+            ),
+            key=lambda item: (-item[1].deliveries, -item[1].runs, item[0]),
+        )
+        return AuditPeopleOut(
+            bucket=window.bucket,
+            items=[
+                PersonOut(
+                    user_name=name,
+                    metrics=found,
+                    trend=fill_periods(starts, deliveries.get(name, {})),
+                )
+                for name, found in active
+            ],
         )
 
-    async def conversations(
+    async def executions(
         self,
         *,
-        since: datetime | None = None,
+        since: datetime,
         until: datetime | None = None,
         user_name: str | None = None,
-        task_id: uuid.UUID | None = None,
+        sort: ExecutionSort = "start",
+        order: SortOrder = "desc",
         limit: int = 20,
         cursor: str | None = None,
-    ) -> AuditConversationsOut:
-        """有成片的对话，最后成片晚的排前面。满页才给下一页游标。"""
+    ) -> AuditExecutionsOut:
+        """任务执行一页；``until`` 为空或晚于此刻按此刻。消耗离群的基准按整个时间窗算，不看
+        ``user_name``。满页才给下一页游标，游标只对发它的那种排序与方向有效。"""
 
         check_limit(limit)
-        scope = _scope(since=since, until=until, user_name=user_name, task_id=task_id)
-        items = await self._reports.conversations(
-            scope, limit=limit, after=_conversation_after(cursor)
-        )
-        last = items[-1] if len(items) == limit else None
-        next_cursor = (
-            None if last is None else encode_cursor(last.delivered_at, last.conversation_id)
-        )
-        return AuditConversationsOut(items=list(items), next_cursor=next_cursor)
-
-    async def anomalies(
-        self,
-        *,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        user_name: str | None = None,
-        task_id: uuid.UUID | None = None,
-        kinds: Sequence[AnomalyKind] | None = None,
-        thresholds: Thresholds = DEFAULT_THRESHOLDS,
-        limit: int = 20,
-        cursor: str | None = None,
-    ) -> AnomaliesOut:
-        """异常按发生时刻倒序。``kinds`` 为空即全部种类。"""
-
-        check_limit(limit)
-        scope = _scope(since=since, until=until, user_name=user_name, task_id=task_id)
-        items = await self._reports.anomalies(
-            scope,
-            thresholds,
-            kinds=kinds or None,
+        now = datetime.now(UTC)
+        start = _as_utc(since)
+        end = _as_utc(until)
+        if end is None or end > now:
+            end = now
+        if start >= end:
+            raise ValidationFailed("since 必须早于 until")
+        after = None if cursor is None else decode_execution_cursor(cursor, sort=sort, order=order)
+        baseline = await self._reports.overall(Scope(since=start, until=end))
+        threshold = spend_tokens(baseline.tokens_per_delivery)
+        page = await self._reports.executions(
+            Scope(since=start, until=end, user_name=user_name),
+            sort=sort,
+            order=order,
             limit=limit,
-            after=_anomaly_after(cursor),
+            after=after,
+            spend_tokens=threshold,
+            now=now,
         )
-        last = items[-1] if len(items) == limit else None
-        next_cursor = None if last is None else encode_cursor(last.at, last.ref)
-        return AnomaliesOut(items=list(items), next_cursor=next_cursor)
+        next_cursor = (
+            encode_execution_cursor(page.last)
+            if page.last is not None and len(page.items) == limit
+            else None
+        )
+        return AuditExecutionsOut(
+            items=list(page.items),
+            next_cursor=next_cursor,
+            total=page.total,
+            flagged=page.flagged,
+            thresholds=ExecutionThresholdsOut(
+                retry_at_least=RETRY_AT_LEAST,
+                stuck_hours=STUCK_HOURS,
+                spend_times=SPEND_TIMES,
+                task_conversations=TASK_CONVERSATIONS,
+                spend_tokens=threshold,
+            ),
+        )
 
 
 __all__ = ["AuditService"]

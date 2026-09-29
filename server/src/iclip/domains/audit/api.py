@@ -2,25 +2,19 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from iclip.domains.audit.models import DEFAULT_THRESHOLDS, AnomalyKind, Bucket, Thresholds
-from iclip.domains.audit.schemas import (
-    AnomaliesOut,
-    AuditConversationsOut,
-    OverviewOut,
-    SummaryOut,
-)
+from iclip.domains.audit.models import ExecutionSort, SortOrder
+from iclip.domains.audit.schemas import AuditExecutionsOut, AuditPeopleOut, OverviewOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, require_permission
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 UserNameQuery = Annotated[str | None, Query(alias="userName", max_length=150)]
-TaskIdQuery = Annotated[uuid.UUID | None, Query(alias="taskId")]
+TimezoneQuery = Annotated[str, Query(max_length=64)]
 
 
 def create_audit_router(service: AuditService) -> APIRouter:
@@ -31,7 +25,7 @@ def create_audit_router(service: AuditService) -> APIRouter:
         _: Annotated[Principal, require_permission(MANAGE_PERMISSION)],
         since: datetime,
         until: datetime | None = None,
-        timezone: Annotated[str, Query(max_length=64)] = "UTC",
+        timezone: TimezoneQuery = "UTC",
     ) -> OverviewOut:
         """审计总览：本期与上一期的整段指标、按粒度分期的趋势与 7 / 30 日均线、出片次数分布。
 
@@ -41,90 +35,42 @@ def create_audit_router(service: AuditService) -> APIRouter:
 
         return await service.overview(since=since, until=until, timezone=timezone)
 
-    @router.get("/summary", response_model=SummaryOut)
-    async def summary(
+    @router.get("/people", response_model=AuditPeopleOut)
+    async def people(
         _: Annotated[Principal, require_permission(MANAGE_PERMISSION)],
-        since: datetime | None = None,
+        since: datetime,
         until: datetime | None = None,
-        user_name: UserNameQuery = None,
-        task_id: TaskIdQuery = None,
-        bucket: Bucket | None = None,
-        timezone: Annotated[str, Query(max_length=64)] = "UTC",
-    ) -> SummaryOut:
-        """全体一格、每人一行、每单一行；给 ``bucket`` 再多一条按 ``timezone`` 切的时段序列。
+        timezone: TimezoneQuery = "UTC",
+    ) -> AuditPeopleOut:
+        """按人：时间窗里出过片或跑过的每个人一行指标，外加每期成片数；一次全给。
 
-        各指标的定义、时间窗落在哪个时刻上、``attemptDistribution`` 只给全体一档，见合同 §12。
+        时间窗与粒度规则同总览，见合同 §12。
         """
 
-        return await service.summary(
-            since=since,
-            until=until,
-            user_name=user_name,
-            task_id=task_id,
-            bucket=bucket,
-            timezone=timezone,
-        )
+        return await service.people(since=since, until=until, timezone=timezone)
 
-    @router.get("/conversations", response_model=AuditConversationsOut)
-    async def conversations(
+    @router.get("/executions", response_model=AuditExecutionsOut)
+    async def executions(
         _: Annotated[Principal, require_permission(MANAGE_PERMISSION)],
-        since: datetime | None = None,
+        since: datetime,
         until: datetime | None = None,
         user_name: UserNameQuery = None,
-        task_id: TaskIdQuery = None,
+        sort: ExecutionSort = "start",
+        order: SortOrder = "desc",
         limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
         cursor: str | None = None,
-    ) -> AuditConversationsOut:
-        """有成片的对话，最后成片晚的排前面；每行的指标、镜明细与按模型用量都是这段对话的全量。
+    ) -> AuditExecutionsOut:
+        """按任务执行：对话建立时刻落在时间窗里、有运行或出片的对话，一段一行，带四种异常。
 
-        时间窗与翻页规则见合同 §12。
+        排序键取值为空的恒排最后；游标只对发它的那种排序有效。异常判定与门槛见合同 §12。
         """
 
-        return await service.conversations(
+        return await service.executions(
             since=since,
             until=until,
             user_name=user_name,
-            task_id=task_id,
-            limit=limit,
-            cursor=cursor,
-        )
-
-    @router.get("/anomalies", response_model=AnomaliesOut)
-    async def anomalies(
-        _: Annotated[Principal, require_permission(MANAGE_PERMISSION)],
-        since: datetime | None = None,
-        until: datetime | None = None,
-        user_name: UserNameQuery = None,
-        task_id: TaskIdQuery = None,
-        kind: Annotated[list[AnomalyKind] | None, Query()] = None,
-        retry_over: Annotated[int, Query(alias="retryOver", ge=1)] = DEFAULT_THRESHOLDS.retry_over,
-        idle_hours: Annotated[int, Query(alias="idleHours", ge=1)] = DEFAULT_THRESHOLDS.idle_hours,
-        stuck_hours: Annotated[
-            int, Query(alias="stuckHours", ge=1)
-        ] = DEFAULT_THRESHOLDS.stuck_hours,
-        task_conversations: Annotated[
-            int, Query(alias="taskConversations", ge=1)
-        ] = DEFAULT_THRESHOLDS.task_conversations,
-        limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
-        cursor: str | None = None,
-    ) -> AnomaliesOut:
-        """异常按发生时刻倒序。``kind`` 可重复给，不给就全部种类。
-
-        九种异常的判定、阈值参数管哪几种、``slow`` 与 ``spend`` 的门槛按筛选范围现算，见合同 §12。
-        """
-
-        return await service.anomalies(
-            since=since,
-            until=until,
-            user_name=user_name,
-            task_id=task_id,
-            kinds=kind,
-            thresholds=Thresholds(
-                retry_over=retry_over,
-                idle_hours=idle_hours,
-                stuck_hours=stuck_hours,
-                task_conversations=task_conversations,
-            ),
+            sort=sort,
+            order=order,
             limit=limit,
             cursor=cursor,
         )

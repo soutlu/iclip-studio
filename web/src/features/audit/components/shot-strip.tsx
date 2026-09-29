@@ -1,83 +1,56 @@
-/** 一段对话的镜头带：每镜一组点，点数即出片次数，只出一条且成了的镜（一次通过）点上加环；有人下载过的镜（有效镜）末尾带下载标记。 */
+/** 一段对话的镜头带：每镜一组点，点数即成功生成次数；最后一个点绿，达到反复重试门槛的红，一次通过的加环。 */
 
-import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import type { ConversationReport } from '../audit.api'
-import { formatDuration } from '../format'
-
-type ShotStripProps = {
-  shots: ConversationReport['shots']
-  retryOver?: number
-}
+import type { ExecutionShot } from '../audit.api'
 
 const MAX_DOTS = 6
-/**
- * 单镜出片超过几次算重试过多；与后端异常判定 `Thresholds.retry_over` 的默认值同义
- * （server/src/iclip/domains/audit/models.py），判定同为出片次数大于它。
- */
-const DEFAULT_RETRY_OVER = 2
 
-export function ShotStrip({ shots, retryOver = DEFAULT_RETRY_OVER }: ShotStripProps) {
+/** 悬停与读屏：「第 2 镜，成功 3 次」，一次通过时加「，一次通过」。 */
+const shotText = (shot: ExecutionShot) =>
+  `第 ${shot.shot} 镜，成功 ${shot.attempts} 次${shot.oneTake ? '，一次通过' : ''}`
+
+export function ShotStrip({
+  shots,
+  retryAtLeast,
+}: {
+  shots: readonly ExecutionShot[]
+  /** 单镜成功生成达到这么多次算反复重试，最后一个点标红。 */
+  retryAtLeast: number
+}) {
   if (shots.length === 0) {
-    return <p className="text-body-sm text-on-surface-variant">这段对话没有带镜号的出片</p>
+    return <p className="text-label text-on-surface-muted">没有成功生成的镜头</p>
   }
   return (
-    <ul aria-label="镜头出片次数" className="flex flex-wrap gap-x-5 gap-y-2">
+    <ul aria-label="镜头带" className="flex flex-wrap gap-x-5 gap-y-2">
       {shots.map((shot) => {
-        const attempts = Math.min(shot.attempts, MAX_DOTS)
-        const overflow = shot.attempts - attempts
-        const excessive = shot.attempts > retryOver
-        const spent = new Date(shot.lastAt).getTime() - new Date(shot.firstAt).getTime()
+        const count = shot.attempts
+        const over = count >= retryAtLeast
+        const text = shotText(shot)
         return (
           <li
-            aria-label={`第 ${shot.shot} 镜，出了 ${shot.attempts} 次，${shot.oneTake ? '一次通过' : '没有一次通过'}，${shot.effective ? '有人下载过' : '没人下载过'}`}
-            className="flex items-center gap-2"
+            aria-label={text}
+            className="flex items-center gap-1 text-label text-on-surface-muted"
             key={shot.shot}
-            title={
-              shot.attempts > 1
-                ? `从第一次到最后一次隔了 ${formatDuration(spent / 1000)}`
-                : undefined
-            }
+            title={text}
           >
-            <span className="text-body-sm text-on-surface-variant tabular-nums">
-              镜 {shot.shot}
-            </span>
-            <span aria-hidden className="flex items-center gap-1">
-              {Array.from({ length: attempts }, (_, index) => {
-                const isLast = index === attempts - 1 && overflow === 0
-                return (
-                  <span
-                    className={cn(
-                      'size-2 rounded-full',
-                      isLast
-                        ? shot.oneTake || !excessive
-                          ? 'bg-primary'
-                          : 'bg-error'
-                        : 'bg-outline-variant',
-                      isLast && shot.oneTake && 'ring-2 ring-primary-container',
-                    )}
-                    key={index}
-                  />
-                )
-              })}
-              {overflow > 0 ? (
-                <span className="text-caption text-on-surface-variant tabular-nums">
-                  +{overflow}
-                </span>
-              ) : null}
-            </span>
-            <span
-              className={cn(
-                'text-body-sm tabular-nums',
-                excessive ? 'font-medium text-error' : 'text-on-surface-variant',
-              )}
-            >
-              {shot.attempts} 次
-            </span>
-            {shot.effective ? (
-              <span className="inline-flex text-primary" title="有人下载过">
-                <Icon decorative name="download" size="xs" />
-              </span>
+            <span className="mr-1 tabular-nums">镜 {shot.shot}</span>
+            {Array.from({ length: Math.min(count, MAX_DOTS) }, (_, index) => {
+              // 点都是成功的，颜色只说这一镜过没过门槛；超过六次时画出来的最后一个点代表整镜上色。
+              const last = index === Math.min(count, MAX_DOTS) - 1
+              return (
+                <i
+                  aria-hidden
+                  className={cn(
+                    'size-2 shrink-0 rounded-full bg-chart-ghost',
+                    last && (over ? 'bg-error' : 'bg-primary'),
+                    last && shot.oneTake && 'outline-[1.5px] outline-offset-2 outline-primary',
+                  )}
+                  key={index}
+                />
+              )
+            })}
+            {count > MAX_DOTS ? (
+              <span className="ml-0.5 tabular-nums">+{count - MAX_DOTS}</span>
             ) : null}
           </li>
         )

@@ -1,12 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import {
   overviewRangeFromSearch,
   overviewRangeLabel,
+  overviewRangeSearchFields,
   overviewRangeToSearch,
   type OverviewRange,
 } from './overview-range'
 
-const NOW = new Date(2026, 8, 15, 20, 0, 0)
+// 浏览器在纽约：日期仍按 UTC+8 写。
+beforeAll(() => vi.stubEnv('TZ', 'America/New_York'))
+afterAll(() => vi.unstubAllEnvs())
+
+/** UTC+8 已是 9 月 15 日 01:00，纽约还是 14 日 13:00。 */
+const NOW = new Date('2026-09-14T17:00:00Z')
 
 describe('日期按钮', () => {
   it.each<{ range: OverviewRange; label: string }>([
@@ -17,8 +24,18 @@ describe('日期按钮', () => {
       range: { preset: 'custom', first: '2025-12-20', last: '2026-01-05' },
       label: '2025年12月20日 – 2026年1月5日',
     },
-  ])('$range.preset 写成实际区间', ({ range, label }) => {
+  ])('$range.preset 按 UTC+8 写成实际区间', ({ range, label }) => {
     expect(overviewRangeLabel(range, NOW)).toBe(label)
+  })
+})
+
+describe('地址栏里的日期', () => {
+  const search = z.object(overviewRangeSearchFields)
+
+  it('不是真实日期的一端丢掉，退回缺省范围', () => {
+    const parsed = search.parse({ period: 'custom', from: '2026-02-30', to: '2026-03-02' })
+    expect(parsed.from).toBeUndefined()
+    expect(overviewRangeFromSearch(parsed)).toEqual({ preset: '30d' })
   })
 })
 

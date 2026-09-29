@@ -48,10 +48,15 @@ test('不是从全部对话点进来的会话，返回按钮回默认视图', as
   await page.goto('/')
   await login(page, 'governor')
 
+  // 从审计清单的「按任务执行次数」点进小王的一段对话。
   await page.getByRole('button', { name: '审计', exact: true }).click()
-  await page.getByRole('tab', { name: '对话明细' }).click()
-  const row = page.getByRole('listitem').filter({ hasText: '小王' }).first()
-  await row.getByRole('link').first().click()
+  await page.getByRole('tab', { name: '清单' }).click()
+  const executions = page
+    .getByRole('main', { name: '审计' })
+    .getByRole('table', { name: '按任务执行次数' })
+  await expect(executions).toBeVisible()
+  const row = executions.getByRole('row').filter({ hasText: '小王' }).first()
+  await row.getByRole('link').click()
   await expect(page).toHaveURL(/\/c\//)
   await expect(page.getByRole('note', { name: '只读说明' })).toBeVisible()
 

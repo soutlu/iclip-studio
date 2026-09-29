@@ -1,6 +1,7 @@
-"""审计总览的纯规则：时间窗、粒度、上一期、回看下限，以及按基础格补窗的 7 / 30 日均线。
+"""审计总览的纯规则：时间窗、粒度、上一期、回看下限、分期的轴，以及按基础格补窗的 7 / 30 日均线。
 
-对外表述见合同 §12「总览」。这里不连库：服务层按 ``OverviewWindow`` 发查询，把基础格交回来算。"""
+对外表述见合同 §12「总览」。这里不连库：服务层按 ``OverviewWindow`` 发查询，把基础格交回来算。
+按人页签的时间窗、粒度与每期成片数的轴也用这里的规则。"""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from iclip.domains.audit.schemas import (
     MetricsOut,
     MovingAverageOut,
     MovingAveragesOut,
+    PeriodDeliveriesOut,
     PeriodMetricsOut,
     SpreadOut,
     TrendPointOut,
@@ -118,6 +120,56 @@ def plan_window(
     )
 
 
+def period_start(moment: datetime, bucket: OverviewBucket, zone: ZoneInfo) -> datetime:
+    """``moment`` 所在期的期首（UTC），与 SQL 的 ``date_trunc(bucket, moment, zone)`` 同一规则：
+    本地整点、本地零点，或本地周一零点。"""
+
+    if bucket == "hour":
+        local = moment.astimezone(zone)
+        return local.replace(minute=0, second=0, microsecond=0).astimezone(UTC)
+    day = _local_day(moment, zone)
+    if bucket == "week":
+        day -= timedelta(days=day.weekday())
+    return _midnight(day, zone)
+
+
+def period_starts(window: OverviewWindow) -> list[datetime]:
+    """本期每一期的期首，早的在前：从 ``since`` 所在期到 ``until`` 前一刻所在期，一期不缺。
+
+    按天、按周照 ``zone`` 的墙钟挪，跨夏令时也落在本地零点；按小时每期一个钟头。
+    """
+
+    starts: list[datetime] = []
+    current = period_start(window.since, window.bucket, window.zone)
+    while current < window.until:
+        starts.append(current)
+        if window.bucket == "hour":
+            current = period_start(current + timedelta(hours=1), "hour", window.zone)
+        else:
+            current = _shift_days(current, 7 if window.bucket == "week" else 1, window.zone)
+    return starts
+
+
+def fill_periods(
+    starts: Sequence[datetime], counts: Mapping[datetime, int]
+) -> list[PeriodDeliveriesOut]:
+    """把只列了有成片的期的计数铺到轴上，缺的期补 0。
+
+    计数的键是 SQL 按同一粒度截出的期首，按「不晚于它的最后一个期首」落期，不要求与轴逐字相等。
+    """
+
+    totals = [0] * len(starts)
+    for start, count in counts.items():
+        index = bisect_right(starts, start) - 1
+        if index < 0:
+            raise ValueError(f"计数的期首 {start.isoformat()} 早于轴的第一期")
+        totals[index] += count
+    return [
+        PeriodDeliveriesOut(period_start=start, deliveries=total)
+        for start, total in zip(starts, totals, strict=True)
+    ]
+
+
 def build_cells(
     rows: Sequence[PeriodMetricsOut],
     units: Mapping[datetime, frozenset[str]],
@@ -208,7 +260,6 @@ def _moving_averages(
     shots_lo = _widen_to_samples(cells, base, index, SHOT_SAMPLES, lambda m: m.shots)
     shots = [cell.metrics for cell in cells[shots_lo : index + 1]]
     shot_count = sum(m.shots for m in shots)
-    delivered_shots = sum(m.delivered_shots for m in shots)
 
     cycle_lo = _widen_to_samples(
         cells, base, index, CYCLE_SAMPLES, lambda m: _count(m.active_cycle_seconds)
@@ -235,8 +286,7 @@ def _moving_averages(
             shots_lo, sum(m.one_take_shots for m in shots) / shot_count if shot_count else None
         ),
         effective_rate=average(
-            shots_lo,
-            sum(m.effective_shots for m in shots) / delivered_shots if delivered_shots else None,
+            shots_lo, sum(m.effective_shots for m in shots) / shot_count if shot_count else None
         ),
         active_cycle_seconds=average(
             cycle_lo,
@@ -326,7 +376,10 @@ __all__ = [
     "Cell",
     "OverviewWindow",
     "build_cells",
+    "fill_periods",
     "head_cell",
+    "period_start",
+    "period_starts",
     "plan_window",
     "trend",
 ]

@@ -148,184 +148,6 @@
         "title": "AgentStatusMeta",
         "type": "object"
       },
-      "AnomaliesOut": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/AnomalyOut"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "nextCursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nextcursor"
-          }
-        },
-        "required": [
-          "items",
-          "nextCursor"
-        ],
-        "title": "AnomaliesOut",
-        "type": "object"
-      },
-      "AnomalyCountOut": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "kind": {
-            "enum": [
-              "retry",
-              "idle",
-              "slow",
-              "stuck",
-              "spend",
-              "task_stuck",
-              "deleted",
-              "no_task",
-              "missing_shot"
-            ],
-            "title": "Kind",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "count"
-        ],
-        "title": "AnomalyCountOut",
-        "type": "object"
-      },
-      "AnomalyOut": {
-        "additionalProperties": false,
-        "description": "一条异常。``ref`` 是「种类:对象」的稳定文本，与 ``at`` 一起构成排序键与游标，不出接口。",
-        "properties": {
-          "at": {
-            "format": "date-time",
-            "title": "At",
-            "type": "string"
-          },
-          "conversationId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Conversationid"
-          },
-          "generationId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Generationid"
-          },
-          "kind": {
-            "enum": [
-              "retry",
-              "idle",
-              "slow",
-              "stuck",
-              "spend",
-              "task_stuck",
-              "deleted",
-              "no_task",
-              "missing_shot"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "shot": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shot"
-          },
-          "taskId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Taskid"
-          },
-          "threshold": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Threshold"
-          },
-          "userName": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
-          },
-          "value": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value"
-          }
-        },
-        "required": [
-          "kind",
-          "at",
-          "value",
-          "threshold",
-          "conversationId",
-          "taskId",
-          "userName",
-          "shot",
-          "generationId"
-        ],
-        "title": "AnomalyOut",
-        "type": "object"
-      },
       "ApiKeyCreateIn": {
         "additionalProperties": false,
         "properties": {
@@ -654,7 +476,7 @@
       },
       "AttemptBucketOut": {
         "additionalProperties": false,
-        "description": "出片次数正好是 ``attempts`` 次的镜有多少个。次数按镜上全部出片记录数，不看终态。",
+        "description": "成功生成正好 ``attempts`` 次的镜有多少个。",
         "properties": {
           "attempts": {
             "title": "Attempts",
@@ -672,12 +494,16 @@
         "title": "AttemptBucketOut",
         "type": "object"
       },
-      "AuditConversationsOut": {
+      "AuditExecutionsOut": {
         "additionalProperties": false,
         "properties": {
+          "flagged": {
+            "title": "Flagged",
+            "type": "integer"
+          },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/ConversationAuditOut"
+              "$ref": "#/components/schemas/ExecutionOut"
             },
             "title": "Items",
             "type": "array"
@@ -692,13 +518,50 @@
               }
             ],
             "title": "Nextcursor"
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/ExecutionThresholdsOut"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "items",
-          "nextCursor"
+          "nextCursor",
+          "total",
+          "flagged",
+          "thresholds"
         ],
-        "title": "AuditConversationsOut",
+        "title": "AuditExecutionsOut",
+        "type": "object"
+      },
+      "AuditPeopleOut": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "enum": [
+              "hour",
+              "day",
+              "week"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PersonOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bucket",
+          "items"
+        ],
+        "title": "AuditPeopleOut",
         "type": "object"
       },
       "Body_auth_cookie_login_auth_login_post": {
@@ -944,103 +807,6 @@
           "default"
         ],
         "title": "ConversationAgentsOut",
-        "type": "object"
-      },
-      "ConversationAuditOut": {
-        "additionalProperties": false,
-        "description": "一段有成片的对话；指标与镜、用量都是这段对话的全量，不按时间窗裁。",
-        "properties": {
-          "conversationId": {
-            "format": "uuid",
-            "title": "Conversationid",
-            "type": "string"
-          },
-          "deletedAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deletedat"
-          },
-          "deliveredAt": {
-            "format": "date-time",
-            "title": "Deliveredat",
-            "type": "string"
-          },
-          "metrics": {
-            "$ref": "#/components/schemas/MetricsOut"
-          },
-          "ownerUserId": {
-            "format": "uuid",
-            "title": "Owneruserid",
-            "type": "string"
-          },
-          "shots": {
-            "items": {
-              "$ref": "#/components/schemas/ShotOut"
-            },
-            "title": "Shots",
-            "type": "array"
-          },
-          "startedAt": {
-            "format": "date-time",
-            "title": "Startedat",
-            "type": "string"
-          },
-          "taskId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Taskid"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "usage": {
-            "items": {
-              "$ref": "#/components/schemas/ModelUsageOut"
-            },
-            "title": "Usage",
-            "type": "array"
-          },
-          "userName": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
-          }
-        },
-        "required": [
-          "conversationId",
-          "title",
-          "ownerUserId",
-          "userName",
-          "taskId",
-          "deletedAt",
-          "startedAt",
-          "deliveredAt",
-          "metrics",
-          "shots",
-          "usage"
-        ],
-        "title": "ConversationAuditOut",
         "type": "object"
       },
       "ConversationCollectionIn": {
@@ -1848,6 +1614,208 @@
           "detail"
         ],
         "title": "ErrorModel",
+        "type": "object"
+      },
+      "ExecutionOut": {
+        "additionalProperties": false,
+        "description": "一次任务执行，即一段有运行或出片的对话；指标、镜与用量是这段对话的全量，不按时间窗裁。",
+        "properties": {
+          "anomalies": {
+            "items": {
+              "enum": [
+                "retry",
+                "stuck",
+                "spend",
+                "task_stuck"
+              ],
+              "type": "string"
+            },
+            "title": "Anomalies",
+            "type": "array"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletedat"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deliveredat"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsOut"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionShotOut"
+            },
+            "title": "Shots",
+            "type": "array"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "title": "Startedat",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "taskTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasktitle"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "usage": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsageOut"
+            },
+            "title": "Usage",
+            "type": "array"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "conversationId",
+          "title",
+          "userName",
+          "taskId",
+          "taskTitle",
+          "createdAt",
+          "startedAt",
+          "deliveredAt",
+          "deletedAt",
+          "metrics",
+          "shots",
+          "usage",
+          "anomalies"
+        ],
+        "title": "ExecutionOut",
+        "type": "object"
+      },
+      "ExecutionShotOut": {
+        "additionalProperties": false,
+        "description": "这段对话里至少成功生成过一条的镜。",
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "effective": {
+            "title": "Effective",
+            "type": "boolean"
+          },
+          "oneTake": {
+            "title": "Onetake",
+            "type": "boolean"
+          },
+          "shot": {
+            "title": "Shot",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shot",
+          "attempts",
+          "oneTake",
+          "effective"
+        ],
+        "title": "ExecutionShotOut",
+        "type": "object"
+      },
+      "ExecutionThresholdsOut": {
+        "additionalProperties": false,
+        "description": "四种异常的门槛。",
+        "properties": {
+          "retryAtLeast": {
+            "title": "Retryatleast",
+            "type": "integer"
+          },
+          "spendTimes": {
+            "title": "Spendtimes",
+            "type": "integer"
+          },
+          "spendTokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spendtokens"
+          },
+          "stuckHours": {
+            "title": "Stuckhours",
+            "type": "integer"
+          },
+          "taskConversations": {
+            "title": "Taskconversations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "retryAtLeast",
+          "stuckHours",
+          "spendTimes",
+          "taskConversations",
+          "spendTokens"
+        ],
+        "title": "ExecutionThresholdsOut",
         "type": "object"
       },
       "FaceOut": {
@@ -2915,7 +2883,7 @@
       },
       "MetricsOut": {
         "additionalProperties": false,
-        "description": "一格指标。全体、人、需求单、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。",
+        "description": "一格指标。全体、人、时段、对话各层都是这个形状，只是维度键不同；见合同 §12。",
         "properties": {
           "activeCycleSeconds": {
             "anyOf": [
@@ -2979,10 +2947,6 @@
             "title": "Deliveredorphanconversations",
             "type": "integer"
           },
-          "deliveredShots": {
-            "title": "Deliveredshots",
-            "type": "integer"
-          },
           "deliveredTasks": {
             "title": "Deliveredtasks",
             "type": "integer"
@@ -3006,7 +2970,7 @@
                 "type": "null"
               }
             ],
-            "description": "有效率：有效镜占出片镜的比例。",
+            "description": "有效率：有效镜占镜数的比例。",
             "readOnly": true,
             "title": "Effectiverate"
           },
@@ -3031,7 +2995,7 @@
                 "type": "null"
               }
             ],
-            "description": "一次通过率：只出了一条且成了的镜占全部镜的比例。",
+            "description": "一次通过率：只用一次成功生成就达标的镜占镜数的比例。",
             "readOnly": true,
             "title": "Onetakerate"
           },
@@ -3075,16 +3039,6 @@
           },
           "usage": {
             "$ref": "#/components/schemas/UsageOut"
-          },
-          "videoSeconds": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SpreadOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
@@ -3095,7 +3049,6 @@
           "shots",
           "attempts",
           "oneTakeShots",
-          "deliveredShots",
           "effectiveShots",
           "runs",
           "activeUsers",
@@ -3103,7 +3056,6 @@
           "cycleSeconds",
           "activeCycleSeconds",
           "agentRunSeconds",
-          "videoSeconds",
           "upstreamSeconds",
           "lengthVideos",
           "lengthSeconds",
@@ -3535,11 +3487,12 @@
         "title": "OverviewWindowOut",
         "type": "object"
       },
-      "PeriodMetricsOut": {
+      "PeriodDeliveriesOut": {
         "additionalProperties": false,
         "properties": {
-          "metrics": {
-            "$ref": "#/components/schemas/MetricsOut"
+          "deliveries": {
+            "title": "Deliveries",
+            "type": "integer"
           },
           "periodStart": {
             "format": "date-time",
@@ -3549,9 +3502,9 @@
         },
         "required": [
           "periodStart",
-          "metrics"
+          "deliveries"
         ],
-        "title": "PeriodMetricsOut",
+        "title": "PeriodDeliveriesOut",
         "type": "object"
       },
       "Permission": {
@@ -3571,6 +3524,33 @@
           "agent:run"
         ],
         "type": "string"
+      },
+      "PersonOut": {
+        "additionalProperties": false,
+        "description": "一个人在时间窗里的指标；成片数同一需求单只算一件，没挂需求单的有成片对话各算一件。",
+        "properties": {
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsOut"
+          },
+          "trend": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodDeliveriesOut"
+            },
+            "title": "Trend",
+            "type": "array"
+          },
+          "userName": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userName",
+          "metrics",
+          "trend"
+        ],
+        "title": "PersonOut",
+        "type": "object"
       },
       "Prompt": {
         "additionalProperties": false,
@@ -3938,47 +3918,6 @@
         "title": "ShotGroupOut",
         "type": "object"
       },
-      "ShotOut": {
-        "additionalProperties": false,
-        "properties": {
-          "attempts": {
-            "title": "Attempts",
-            "type": "integer"
-          },
-          "effective": {
-            "title": "Effective",
-            "type": "boolean"
-          },
-          "firstAt": {
-            "format": "date-time",
-            "title": "Firstat",
-            "type": "string"
-          },
-          "lastAt": {
-            "format": "date-time",
-            "title": "Lastat",
-            "type": "string"
-          },
-          "oneTake": {
-            "title": "Onetake",
-            "type": "boolean"
-          },
-          "shot": {
-            "title": "Shot",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "shot",
-          "attempts",
-          "oneTake",
-          "effective",
-          "firstAt",
-          "lastAt"
-        ],
-        "title": "ShotOut",
-        "type": "object"
-      },
       "SidebarCollectionOut": {
         "additionalProperties": false,
         "description": "侧栏里的一个合集：元信息、里面一共几段，加第一页对话。\n\n``conversationCount`` 是全部条数，``page`` 只有第一页——往下滑要更多是另一次查询。",
@@ -4286,66 +4225,6 @@
           "matchLevel"
         ],
         "title": "StyleMatchOut",
-        "type": "object"
-      },
-      "SummaryOut": {
-        "additionalProperties": false,
-        "properties": {
-          "anomalyCounts": {
-            "items": {
-              "$ref": "#/components/schemas/AnomalyCountOut"
-            },
-            "title": "Anomalycounts",
-            "type": "array"
-          },
-          "attemptDistribution": {
-            "items": {
-              "$ref": "#/components/schemas/AttemptBucketOut"
-            },
-            "title": "Attemptdistribution",
-            "type": "array"
-          },
-          "overall": {
-            "$ref": "#/components/schemas/MetricsOut"
-          },
-          "series": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PeriodMetricsOut"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Series"
-          },
-          "tasks": {
-            "items": {
-              "$ref": "#/components/schemas/TaskMetricsOut"
-            },
-            "title": "Tasks",
-            "type": "array"
-          },
-          "users": {
-            "items": {
-              "$ref": "#/components/schemas/UserMetricsOut"
-            },
-            "title": "Users",
-            "type": "array"
-          }
-        },
-        "required": [
-          "overall",
-          "users",
-          "tasks",
-          "series",
-          "attemptDistribution",
-          "anomalyCounts"
-        ],
-        "title": "SummaryOut",
         "type": "object"
       },
       "TakeOut": {
@@ -4661,30 +4540,6 @@
           "creative_requirement"
         ],
         "title": "TaskInputs",
-        "type": "object"
-      },
-      "TaskMetricsOut": {
-        "additionalProperties": false,
-        "properties": {
-          "metrics": {
-            "$ref": "#/components/schemas/MetricsOut"
-          },
-          "taskId": {
-            "format": "uuid",
-            "title": "Taskid",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "taskId",
-          "title",
-          "metrics"
-        ],
-        "title": "TaskMetricsOut",
         "type": "object"
       },
       "TaskOut": {
@@ -5379,7 +5234,7 @@
       },
       "TopShotOut": {
         "additionalProperties": false,
-        "description": "时间窗里出片次数最多的镜之一；时间窗作用在该镜首次出片时刻上。",
+        "description": "时间窗里成功生成次数最多的镜之一；时间窗作用在该镜第一条成功生成的完成时刻上。",
         "properties": {
           "attempts": {
             "title": "Attempts",
@@ -6610,24 +6465,6 @@
         "title": "UserEnvelope",
         "type": "object"
       },
-      "UserMetricsOut": {
-        "additionalProperties": false,
-        "properties": {
-          "metrics": {
-            "$ref": "#/components/schemas/MetricsOut"
-          },
-          "userName": {
-            "title": "Username",
-            "type": "string"
-          }
-        },
-        "required": [
-          "userName",
-          "metrics"
-        ],
-        "title": "UserMetricsOut",
-        "type": "object"
-      },
       "UserOut": {
         "additionalProperties": false,
         "properties": {
@@ -7757,26 +7594,19 @@
         "summary": "Revoke Key"
       }
     },
-    "/audit/anomalies": {
+    "/audit/executions": {
       "get": {
-        "description": "异常按发生时刻倒序。``kind`` 可重复给，不给就全部种类。\n\n九种异常的判定、阈值参数管哪几种、``slow`` 与 ``spend`` 的门槛按筛选范围现算，见合同 §12。",
-        "operationId": "anomalies_audit_anomalies_get",
+        "description": "按任务执行：对话建立时刻落在时间窗里、有运行或出片的对话，一段一行，带四种异常。\n\n排序键取值为空的恒排最后；游标只对发它的那种排序有效。异常判定与门槛见合同 §12。",
+        "operationId": "executions_audit_executions_get",
         "parameters": [
           {
             "in": "query",
             "name": "since",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Since"
+              "format": "date-time",
+              "title": "Since",
+              "type": "string"
             }
           },
           {
@@ -7815,93 +7645,32 @@
           },
           {
             "in": "query",
-            "name": "taskId",
+            "name": "sort",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
+              "default": "start",
+              "enum": [
+                "start",
+                "retries",
+                "cycle",
+                "tokens"
               ],
-              "title": "Taskid"
+              "title": "Sort",
+              "type": "string"
             }
           },
           {
             "in": "query",
-            "name": "kind",
+            "name": "order",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "items": {
-                    "enum": [
-                      "retry",
-                      "idle",
-                      "slow",
-                      "stuck",
-                      "spend",
-                      "task_stuck",
-                      "deleted",
-                      "no_task",
-                      "missing_shot"
-                    ],
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                {
-                  "type": "null"
-                }
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
               ],
-              "title": "Kind"
-            }
-          },
-          {
-            "in": "query",
-            "name": "retryOver",
-            "required": false,
-            "schema": {
-              "default": 2,
-              "minimum": 1,
-              "title": "Retryover",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "idleHours",
-            "required": false,
-            "schema": {
-              "default": 24,
-              "minimum": 1,
-              "title": "Idlehours",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "stuckHours",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "minimum": 1,
-              "title": "Stuckhours",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "taskConversations",
-            "required": false,
-            "schema": {
-              "default": 3,
-              "minimum": 1,
-              "title": "Taskconversations",
-              "type": "integer"
+              "title": "Order",
+              "type": "string"
             }
           },
           {
@@ -7938,7 +7707,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnomaliesOut"
+                  "$ref": "#/components/schemas/AuditExecutionsOut"
                 }
               }
             },
@@ -7967,149 +7736,7 @@
             ]
           }
         ],
-        "summary": "Anomalies",
-        "tags": [
-          "audit"
-        ]
-      }
-    },
-    "/audit/conversations": {
-      "get": {
-        "description": "有成片的对话，最后成片晚的排前面；每行的指标、镜明细与按模型用量都是这段对话的全量。\n\n时间窗与翻页规则见合同 §12。",
-        "operationId": "conversations_audit_conversations_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "since",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Since"
-            }
-          },
-          {
-            "in": "query",
-            "name": "until",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Until"
-            }
-          },
-          {
-            "in": "query",
-            "name": "userName",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 150,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Username"
-            }
-          },
-          {
-            "in": "query",
-            "name": "taskId",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Taskid"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuditConversationsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "users:manage"
-            ]
-          },
-          {
-            "BearerToken": [
-              "users:manage"
-            ]
-          }
-        ],
-        "summary": "Conversations",
+        "summary": "Executions",
         "tags": [
           "audit"
         ]
@@ -8199,26 +7826,19 @@
         ]
       }
     },
-    "/audit/summary": {
+    "/audit/people": {
       "get": {
-        "description": "全体一格、每人一行、每单一行；给 ``bucket`` 再多一条按 ``timezone`` 切的时段序列。\n\n各指标的定义、时间窗落在哪个时刻上、``attemptDistribution`` 只给全体一档，见合同 §12。",
-        "operationId": "summary_audit_summary_get",
+        "description": "按人：时间窗里出过片或跑过的每个人一行指标，外加每期成片数；一次全给。\n\n时间窗与粒度规则同总览，见合同 §12。",
+        "operationId": "people_audit_people_get",
         "parameters": [
           {
             "in": "query",
             "name": "since",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Since"
+              "format": "date-time",
+              "title": "Since",
+              "type": "string"
             }
           },
           {
@@ -8240,61 +7860,6 @@
           },
           {
             "in": "query",
-            "name": "userName",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 150,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Username"
-            }
-          },
-          {
-            "in": "query",
-            "name": "taskId",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Taskid"
-            }
-          },
-          {
-            "in": "query",
-            "name": "bucket",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "day",
-                    "week",
-                    "month"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Bucket"
-            }
-          },
-          {
-            "in": "query",
             "name": "timezone",
             "required": false,
             "schema": {
@@ -8310,7 +7875,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SummaryOut"
+                  "$ref": "#/components/schemas/AuditPeopleOut"
                 }
               }
             },
@@ -8339,7 +7904,7 @@
             ]
           }
         ],
-        "summary": "Summary",
+        "summary": "People",
         "tags": [
           "audit"
         ]

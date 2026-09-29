@@ -3,8 +3,8 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 import type { Metrics, Overview } from '../audit.api'
-import { EMPTY } from '../format'
 import {
+  EMPTY,
   fmtCount,
   fmtDayRange,
   fmtDuration,
@@ -22,38 +22,10 @@ import {
   TOKEN_PARTS,
 } from '../overview-model'
 import { AttemptBars } from './attempt-bars'
-import { Card, DeltaText, InfoTip, LegendItem, Mark } from './overview-bits'
+import { Card, DeltaText, InfoTip, LegendItem, Mark, Section } from './overview-bits'
 import { OverviewChart } from './overview-chart'
 
 type SectionProps = { id: string; overview: Overview }
-
-function Section({
-  id,
-  title,
-  info,
-  aside,
-  children,
-}: {
-  id: string
-  title: string
-  info: string
-  aside?: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <section aria-labelledby={`${id}-title`} className="flex scroll-mt-4 flex-col gap-3" id={id}>
-      <div className="mt-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        {/* 区域名只取标题字，不带 ⓘ 里的口径说明。 */}
-        <h3 className="flex items-center text-title font-semibold text-on-surface">
-          <span id={`${id}-title`}>{title}</span>
-          <InfoTip text={info} />
-        </h3>
-        {aside}
-      </div>
-      {children}
-    </section>
-  )
-}
 
 /** 各节里的一张卡；按自身宽度（容器查询）决定分项图例摆一列还是两列。 */
 function Panel({ children }: { children: ReactNode }) {
@@ -85,10 +57,14 @@ export function QualitySection({
   const summary = attemptSummary(overview.attemptDistribution)
   const within = summary.shotShares.slice(0, RETRY_AT_LEAST).reduce((sum, share) => sum + share, 0)
   return (
-    <Section id={id} info="只统计带镜号的出片；一个镜是一段对话里的一个镜号。" title="出片质量">
+    <Section
+      id={id}
+      info="只数成功生成、带镜号的出片，失败的不计费、不算；一个镜是一段对话里的一个镜号，一次都没成功的镜不算。"
+      title="出片质量"
+    >
       <div className="grid gap-3 md:grid-cols-2">
         <Panel>
-          <MiniHead info="失败和重出都算一次。" title="每个镜出了几次" />
+          <MiniHead info="每成功生成一条算一次，失败的不算。" title="每个镜出了几次" />
           <p className="mt-0.5 mb-2.5 text-body text-on-surface-variant">
             {summary.totalShots === 0 ? (
               '这段时间没有新镜'
@@ -111,14 +87,14 @@ export function QualitySection({
         </Panel>
       </div>
       <Panel>
-        <MiniHead info="只出了一条、而且成了的镜占全部镜的比例。" title="一次通过率" />
+        <MiniHead info="只用一次成功生成就达标的镜占镜数的比例。失败的不算。" title="一次通过率" />
         <OverviewChart height={200} label="一次通过率" model={chartModel(overview, 'oneTake')} />
       </Panel>
     </Section>
   )
 }
 
-/** 两条对照的占比条：上一条是各档占镜数，下一条是占出片次数；下面点名出片次数最多的镜。 */
+/** 两条对照的占比条：上一条是各档占镜数，下一条是占出片次数（成功生成次数）；下面点名出片次数最多的镜。 */
 function ReworkShare({
   overview,
   summary,
