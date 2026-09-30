@@ -32,6 +32,7 @@ export { ConversationRoute } from './components/conversation-route'
 export { ConversationSearchDialog } from './components/conversation-search-dialog'
 export {
   SidebarConversationRow,
+  SIDEBAR_ROW_ACTIVE,
   SIDEBAR_ROW_CLASS,
   SIDEBAR_ROW_MENU_OPEN,
   SIDEBAR_ROW_TITLE_CLASS,

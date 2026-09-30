@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { CueUserMenu } from '@/features/auth'
 import {
   ConversationSearchDialog,
+  SIDEBAR_ROW_ACTIVE,
   SIDEBAR_ROW_CLASS,
   useLiveConversations,
 } from '@/features/conversations'
@@ -114,6 +115,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
           size="md"
         />
       ) : null}
+      {/* 侧栏衬在底层：浅灰底、不画分隔线，靠浮起的主区卡片分层。 */}
       <aside
         id={sidebarId}
         aria-label="侧边栏"
@@ -124,36 +126,54 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
         inert={compact && collapsed}
         hidden={compact && collapsed}
         className={cn(
-          'layer-sidebar flex h-dvh w-(--layout-app-sidebar-width) shrink-0 flex-col overflow-clip border-r-[0.5px] border-border bg-background',
+          'layer-sidebar flex h-dvh w-(--layout-app-sidebar-width) shrink-0 flex-col overflow-clip bg-surface-container-low',
           compact ? 'fixed top-0 left-0 shadow-[var(--shadow-2)]' : 'sticky top-0',
           compact && collapsed && 'hidden',
         )}
       >
         <div className="flex h-full w-(--layout-app-sidebar-body-width) shrink-0 flex-col">
-          <div className="flex h-13 shrink-0 items-center px-2">
-            <div
-              className={cn('flex min-w-0 flex-1 items-center', rail ? 'justify-center' : 'px-2.5')}
-            >
-              {!rail && (
+          <div className="flex h-14 shrink-0 items-center px-2">
+            {rail ? (
+              // 图标栏只留品牌标志，它兼作展开开关：悬停或键盘聚焦时换成侧栏图标提示可展开。
+              <button
+                aria-controls={sidebarId}
+                aria-expanded={false}
+                aria-label="展开侧边栏"
+                className="group mx-auto grid size-10 ui-state cursor-pointer place-items-center rounded-md ui-focus"
+                id={toggleId}
+                onClick={toggleCollapsed}
+                title="展开侧边栏"
+                type="button"
+              >
+                <BrandMark className="group-hover:hidden group-focus-visible:hidden" />
+                <Icon
+                  className="hidden text-on-surface-variant group-hover:block group-focus-visible:block"
+                  decorative
+                  name="panel-left"
+                  size="md"
+                />
+              </button>
+            ) : (
+              <div className="flex min-w-0 flex-1 items-center gap-2 pl-1.5">
+                <BrandMark />
                 <span className="min-w-0 flex-1 truncate font-home-display text-title-lg font-semibold tracking-[-0.02em] text-on-surface italic">
                   Cue
                 </span>
-              )}
-              <IconButton
-                className={cn(!rail && '-mr-2.5')}
-                aria-controls={sidebarId}
-                aria-expanded={!collapsed}
-                id={compact && collapsed ? undefined : toggleId}
-                label={collapsed ? '展开侧边栏' : '折叠侧边栏'}
-                name="panel-left"
-                onClick={toggleCollapsed}
-                size="md"
-              />
-            </div>
+                <IconButton
+                  aria-controls={sidebarId}
+                  aria-expanded={!collapsed}
+                  id={compact && collapsed ? undefined : toggleId}
+                  label={collapsed ? '展开侧边栏' : '折叠侧边栏'}
+                  name="panel-left"
+                  onClick={toggleCollapsed}
+                  size="md"
+                />
+              </div>
+            )}
           </div>
 
           <nav aria-label="会话操作" className="flex shrink-0 flex-col">
-            <div className="flex flex-col gap-px px-2">
+            <div className="flex flex-col gap-0.5 px-2">
               <SidebarAction
                 compact={rail}
                 emphasis
@@ -198,14 +218,14 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
               <div aria-labelledby={governLabelId} className="mt-3 px-2" role="group">
                 <p
                   className={cn(
-                    'flex h-7 items-center px-2.5 text-caption font-medium text-on-surface-faint',
+                    'flex h-8 items-center px-2.5 text-label font-semibold text-on-surface-muted',
                     rail && 'sr-only',
                   )}
                   id={governLabelId}
                 >
                   治理
                 </p>
-                <div className="flex flex-col gap-px">
+                <div className="flex flex-col gap-0.5">
                   <SidebarAction
                     compact={rail}
                     active={pathname === '/conversations'}
@@ -263,17 +283,22 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
           </div>
           {rail && <div className="min-h-0 flex-1" />}
 
-          <div className="shrink-0 p-2">
+          <div className="shrink-0 px-2 pb-2">
+            <div aria-hidden className="mx-1.5 mb-2 h-px bg-hairline" />
             {user ? (
               <CueUserMenu align="top-start" compact={rail} />
             ) : (
               <button
                 aria-label="登录"
-                className={cn(SIDEBAR_ACTION_CLASS, 'h-11', rail && 'justify-center px-0')}
+                className={cn(
+                  SIDEBAR_ACTION_CLASS,
+                  'h-12 px-2',
+                  rail && 'mx-auto size-10 justify-center px-0',
+                )}
                 onClick={requireLogin}
                 type="button"
               >
-                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-container-high text-on-surface-variant">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-container-high text-on-surface-variant">
                   <Icon decorative name="user" size="md" />
                 </span>
                 {!rail && (
@@ -295,7 +320,7 @@ type SidebarActionProps = {
   compact?: boolean
   active?: boolean
   disabled?: boolean
-  /** 主操作：图标放进实心圆，文字加粗。 */
+  /** 主操作：深色实心按钮，快捷键常驻右侧；绿色留给「生成」。 */
   emphasis?: boolean
   icon: IconName
   kbd?: string
@@ -325,22 +350,31 @@ function SidebarAction({
       className={cn(
         SIDEBAR_ACTION_CLASS,
         'disabled:cursor-not-allowed disabled:opacity-50',
-        (active || emphasis) && 'font-medium',
-        active && 'bg-state-active',
-        compact && 'justify-center px-0',
+        emphasis
+          ? // 深色底上 ui-state 的禁用字色看不清，禁用只整体压淡。
+            'mb-2 h-10 gap-2 bg-inverse-surface px-3 font-semibold text-inverse-on-surface shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-2)] disabled:text-inverse-on-surface'
+          : 'text-on-surface-variant hover:text-on-surface',
+        active && cn(SIDEBAR_ROW_ACTIVE, 'text-on-surface'),
+        compact && 'mx-auto size-10 justify-center px-0',
       )}
       disabled={disabled}
       onClick={onClick}
       title={title ?? (compact ? label : undefined)}
       type="button"
     >
-      {emphasis ? (
-        <span className="grid size-(--icon-md) shrink-0 place-items-center rounded-full bg-on-surface text-surface-container-lowest">
-          <Icon decorative name={icon} size="xs" />
-        </span>
-      ) : (
-        <Icon className="shrink-0 text-on-surface-variant" decorative name={icon} size="md" />
-      )}
+      <Icon
+        className={cn(
+          'shrink-0',
+          emphasis
+            ? 'text-inverse-on-surface'
+            : active
+              ? 'text-primary'
+              : 'text-on-surface-variant',
+        )}
+        decorative
+        name={icon}
+        size="md"
+      />
       {!compact && (
         <span aria-hidden className="min-w-0 flex-1 truncate text-left">
           {label}
@@ -350,13 +384,30 @@ function SidebarAction({
         <kbd
           aria-hidden
           className={cn(
-            'rounded-xs border border-border px-1 text-caption text-on-surface-faint',
-            'opacity-0 transition-opacity duration-(--dur-s) group-hover:opacity-100',
+            'text-caption font-medium tracking-wide',
+            emphasis
+              ? 'opacity-60'
+              : 'text-on-surface-faint opacity-0 transition-opacity duration-(--dur-s) group-hover:opacity-100',
           )}
         >
           {kbd}
         </kbd>
       )}
     </button>
+  )
+}
+
+/** 品牌标志：深色圆角块里一个衬线斜体「C」，折叠成图标栏时单独出现。 */
+function BrandMark({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'grid size-7.5 shrink-0 place-items-center rounded-sm bg-inverse-surface font-home-display text-title font-bold text-inverse-on-surface italic',
+        className,
+      )}
+    >
+      C
+    </span>
   )
 }

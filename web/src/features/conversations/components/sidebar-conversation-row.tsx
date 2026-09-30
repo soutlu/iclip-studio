@@ -8,9 +8,9 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import { StatusBadge } from '@/shared/ui/status-badge'
+import { conversationStatusLabel, mediaStatusLabel } from '@/shared/ui/status-badge'
 import { toast } from '@/shared/ui/toast'
-import { conversationStatus, needsAttention } from '../conversation-status'
+import { conversationStatus, needsAttention, type ConversationStatus } from '../conversation-status'
 import {
   useRenameConversation,
   useSetConversationCompletion,
@@ -18,23 +18,27 @@ import {
 } from '../conversations.api'
 import { useSeenRun } from '../conversations.unread'
 
-// 侧栏各行共用：8px 容器内左右 10px，图标与文字左缘落在同一条线上。
+// 侧栏各行共用：36px 行高，容器内左右 10px，图标与文字左缘落在同一条线上。
 // 状态层作用于整行及尾部按钮；内部标题按钮只负责焦点环。
 export const SIDEBAR_ROW_CLASS =
-  'group flex h-8 ui-state cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-body text-on-surface'
+  'group flex h-9 ui-state cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-body text-on-surface'
 
 export const SIDEBAR_ROW_TITLE_CLASS =
   'flex min-w-0 flex-1 items-center gap-2.5 rounded-xs ui-focus'
 
+/** 选中行：浅灰侧栏上浮起的一枚胶囊；深色下 top-layer 是抬高一档的中性灰，不是纯白。 */
+export const SIDEBAR_ROW_ACTIVE = 'bg-top-layer font-semibold shadow-[var(--shadow-1)]'
+
 /** 行内 ⋯ 菜单打开时保持悬停底色；选中行保留自己的底色，不加这一层。 */
 export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'
 
-// 行尾信息与操作按钮共用尾部槽位，hover、键盘聚焦或菜单展开时切换。
-export const SIDEBAR_ROW_TRAILING_HIDDEN =
-  'group-hover:hidden group-focus-within:hidden group-has-data-[state=open]:hidden'
-// 负右距让 24px 按钮里的图标右缘落在行内容右缘。
+// 行尾信息与 ⋯ 共用尾部槽位：悬停或菜单展开时 ⋯ 顶替信息。
+// 键盘聚焦只把 ⋯ 加进来、不收掉信息，读屏与看屏的键盘用户都还拿得到行尾状态。
+export const SIDEBAR_ROW_TRAILING_HIDDEN = 'group-hover:hidden group-has-data-[state=open]:hidden'
+// ⋯ 平时只是视觉隐藏、始终留在 Tab 序里：鼠标点开对话后再按 Tab 也走得到它，键盘焦点落进行里时现身。
+// 负右距挂在按钮上（not-sr-only 会清掉槽位自己的 margin），让 24px 按钮里的图标右缘落在行内容右缘。
 export const SIDEBAR_ROW_TRAILING_SHOWN =
-  'hidden -mr-1.25 group-hover:flex group-focus-within:flex group-has-data-[state=open]:flex'
+  'sr-only *:-mr-1.25 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex'
 
 /** 仅对本浏览器已查看过且 lastRunId 变化的完成对话显示未读；当前打开的对话不显示。 */
 const useUnread = (conversation: Conversation, active: boolean): boolean => {
@@ -73,6 +77,15 @@ export function SidebarConversationRow({
   const status = conversationStatus(conversation.activity)
   // 行尾只画还需要人看一眼的状态；跑完没看过的用小点，其余什么都不画。
   const showUnread = unread && status === 'completed'
+  const video = conversation.activity.videoGeneration
+  const hasMenu = !editing && canWrite
+  // 行尾图形悬停时让位给 ⋯，说明挂在整行上，鼠标用户仍看得到是什么状态。
+  const statusLabels = [
+    ...(status !== 'idle' && needsAttention(status) ? [conversationStatusLabel(status)] : []),
+    ...(video === 'none' ? [] : [`视频${mediaStatusLabel(video)}`]),
+    ...(showUnread ? ['未读'] : []),
+    ...(completed ? ['已完成'] : []),
+  ]
 
   const commitRename = (value: string) => {
     setEditing(false)
@@ -92,9 +105,10 @@ export function SidebarConversationRow({
         SIDEBAR_ROW_CLASS,
         // 拖动中的行压在侧栏吸顶标题（layer-local-1）之上。
         dragging && 'layer-local-2 opacity-50',
-        active ? 'bg-state-active font-medium' : SIDEBAR_ROW_MENU_OPEN,
+        active ? SIDEBAR_ROW_ACTIVE : SIDEBAR_ROW_MENU_OPEN,
       )}
       ref={setNodeRef}
+      title={statusLabels.length ? statusLabels.join('、') : undefined}
       style={
         transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
       }
@@ -126,24 +140,34 @@ export function SidebarConversationRow({
           <span className="min-w-0 flex-1 truncate text-left">{conversation.title}</span>
         </Link>
       )}
-      {/* 出片在跑与轮次在跑互不蕴含，两个角标可以同时出现；跑完与失败在分镜页看。 */}
-      <StatusBadge
-        detail="完成后分镜页会更新结果"
-        kind="video"
-        status={
-          conversation.activity.videoGeneration === 'none'
-            ? 'idle'
-            : conversation.activity.videoGeneration
-        }
-      />
-      {needsAttention(status) && <StatusBadge kind="conversation" status={status} />}
-      {completed && (
-        <Icon className="shrink-0 text-primary" label="已完成" name="success" size="sm" />
-      )}
-      {showUnread && (
-        <span aria-label="未读" className="size-1.5 shrink-0 rounded-full bg-primary" role="img" />
-      )}
-      {!editing && canWrite && (
+      {/* 每件事实一个带名字的图形：出片在跑与轮次在跑互不蕴含，可以同时出现。 */}
+      <span
+        className={cn(
+          'flex shrink-0 items-center gap-1.5 empty:hidden',
+          hasMenu && SIDEBAR_ROW_TRAILING_HIDDEN,
+        )}
+      >
+        {needsAttention(status) && <ConversationGlyph status={status} />}
+        {video !== 'none' && (
+          <span
+            aria-label={`视频${mediaStatusLabel(video)}`}
+            className={cn(
+              'size-3.5 shrink-0 rounded-full border-2',
+              video === 'running'
+                ? 'border-primary/20 border-t-primary motion-safe:animate-spin'
+                : 'border-primary/40',
+            )}
+            role="img"
+          />
+        )}
+        {showUnread && (
+          <span aria-label="未读" className="size-2 shrink-0 rounded-full bg-primary" role="img" />
+        )}
+        {completed && (
+          <Icon className="shrink-0 text-on-surface-faint" label="已完成" name="check" size="sm" />
+        )}
+      </span>
+      {hasMenu && (
         <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
           <MenuRoot>
             <MenuTrigger asChild>
@@ -177,4 +201,41 @@ export function SidebarConversationRow({
       )}
     </div>
   )
+}
+
+/** 轮次状态：等人（审批、回答）用橙点，失败用红色感叹号，在跑用转圈；减少动效时转圈停住。其余不画。 */
+function ConversationGlyph({ status }: { status: ConversationStatus }) {
+  switch (status) {
+    case 'approval':
+    case 'question':
+      return (
+        <span
+          aria-label={conversationStatusLabel(status)}
+          className="size-2 shrink-0 rounded-full bg-warning ring-3 ring-warning/20"
+          role="img"
+        />
+      )
+    case 'failed':
+      return (
+        <Icon
+          className="shrink-0 text-error"
+          label={conversationStatusLabel(status)}
+          name="alert"
+          size="sm"
+        />
+      )
+    case 'running':
+      return (
+        <Icon
+          className="shrink-0 text-on-surface-variant motion-safe:animate-spin"
+          label={conversationStatusLabel(status)}
+          name="spinner"
+          size="sm"
+        />
+      )
+    case 'completed':
+    case 'aborted':
+    case 'idle':
+      return null
+  }
 }
