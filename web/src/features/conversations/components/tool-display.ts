@@ -67,7 +67,7 @@ export type ToolCard = {
   label: string
   /** 主语：这一步作用的对象实例。 */
   detail?: string
-  /** 主语是路径或地址时用等宽字。 */
+  /** 主语是路径、地址或检索词时用等宽字。 */
   mono?: boolean
   /** 活动组按操作类型聚合；检索按 grep 归类。 */
   operation?: FileOperation
@@ -90,7 +90,13 @@ export const toolCard = (display: unknown, view?: string): ToolCard => {
         operation: card.operation,
       }
     case 'search':
-      return { detail: clip(card.query), icon: 'search', label: '搜索工作区', operation: 'grep' }
+      return {
+        detail: clip(card.query),
+        icon: 'search',
+        label: '搜索工作区',
+        mono: true,
+        operation: 'grep',
+      }
     case 'url_fetch':
       return { detail: shortUrl(card.url), icon: 'external', label: '读取网页', mono: true }
     case 'skill_call':

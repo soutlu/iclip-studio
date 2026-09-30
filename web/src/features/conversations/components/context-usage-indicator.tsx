@@ -25,7 +25,7 @@ type ContextUsageIndicatorProps = {
 /** 弧长低于这个数在 16px 的环上看不出来，整个环就像在转圈；画的时候垫到这里，数字照实报。 */
 const MIN_ARC = 8
 
-/** 用量过了这两条线，弧的颜色跟着变，不用看数字。 */
+/** 用量过了这两条线，弧从墨色换成警示色，不用看数字；品牌绿只留给「生成」。 */
 const WARN_AT = 80
 const FULL_AT = 95
 
@@ -39,7 +39,7 @@ export function ContextUsageIndicator({ max, used }: ContextUsageIndicatorProps)
       ? 'text-error'
       : percentValue >= WARN_AT
         ? 'text-warning'
-        : 'text-primary'
+        : 'text-on-surface-variant'
 
   return (
     <TooltipRoot>

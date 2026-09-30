@@ -113,11 +113,18 @@ export function ApprovalCard({
                 onClick={() => decide(false)}
                 size="md"
                 type="button"
-                variant="outlined"
+                variant="tonal"
               >
                 拒绝
               </Button>
-              <Button disabled={sending} onClick={() => decide(true)} size="md" type="button">
+              {/* 主操作用墨色：品牌绿只留给「生成」。 */}
+              <Button
+                disabled={sending}
+                onClick={() => decide(true)}
+                size="md"
+                type="button"
+                variant="inverted"
+              >
                 同意
               </Button>
             </div>

@@ -81,7 +81,7 @@ function QueueRow({
       {first && canSteer ? (
         <button
           aria-label="立即发送到当前回合"
-          className="grid size-(--control-height-xs) shrink-0 cursor-pointer place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-xs)] ui-focus transition-[background-color,transform] ui-motion-s hover:bg-primary-hover active:scale-90"
+          className="grid size-(--control-height-xs) shrink-0 cursor-pointer place-items-center rounded-full bg-inverse-surface text-inverse-on-surface shadow-[var(--shadow-xs)] ui-focus transition-[background-color,transform] ui-motion-s active:scale-90"
           onClick={() => onSteer(prompt.promptId)}
           type="button"
         >
@@ -134,7 +134,7 @@ function QueueRow({
           </span>
         ) : null}
         {first ? (
-          <span className="shrink-0 rounded-full bg-primary-container px-1.5 py-0.5 text-caption text-on-primary-container">
+          <span className="shrink-0 rounded-full bg-secondary-container px-1.5 py-0.5 text-caption text-on-secondary-container">
             下一条
           </span>
         ) : null}

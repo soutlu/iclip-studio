@@ -1,8 +1,9 @@
-/** 参考 Kimi activity-run：活动组运行时自动展开，结束后自动收起；含失败工具的组留着展开。 */
+/** 参考 Kimi activity-run：活动组运行时自动展开，结束后自动收起；含失败工具的组留着展开。放在活动卡里，摘要是卡头，每一步一行。 */
 
 import { useEffect, useRef, useState } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { ActivityStep } from './activity-card'
 import { runHistoryMs, summarizeDone, summarizeRunning, type TurnEntry } from './activity-group'
 import { DisclosureBody, DisclosureChevron } from './disclosure'
 import { toolCard } from './tool-display'
@@ -92,7 +93,7 @@ export function ActivityRun({ items, liveFrameId, settled }: ActivityRunProps) {
       <button
         aria-expanded={open}
         aria-label={`${stateLabel}：${summaryText}`}
-        className="flex w-full cursor-pointer items-center gap-1 rounded-xs py-2 text-left text-body-sm text-chat-muted-text ui-focus ui-motion-s hover:text-chat-message-text"
+        className="flex h-9 w-full cursor-pointer items-center gap-2 bg-chat-inline-bg px-3 text-left text-body-sm text-chat-secondary-text ui-focus ui-motion-s hover:text-chat-message-text"
         onClick={() => setOpen(!open)}
         type="button"
       >
@@ -116,17 +117,18 @@ export function ActivityRun({ items, liveFrameId, settled }: ActivityRunProps) {
             </span>
           ))}
         </span>
-        <DisclosureChevron className="shrink-0 text-chat-muted-text" open={open} />
+        <DisclosureChevron className="ml-auto shrink-0 text-chat-muted-text" open={open} />
       </button>
       <DisclosureBody open={open}>
-        <div className="flex flex-col gap-2 pt-1">
+        <div className="flex flex-col divide-y-[0.5px] divide-chat-hairline border-t-[0.5px] border-chat-hairline">
           {items.map((entry) => (
-            <TurnFrame
-              frame={entry.frame}
-              key={entry.frame.frameId}
-              live={entry.frame.frameId === liveFrameId}
-              settled={settled}
-            />
+            <ActivityStep key={entry.frame.frameId}>
+              <TurnFrame
+                frame={entry.frame}
+                live={entry.frame.frameId === liveFrameId}
+                settled={settled}
+              />
+            </ActivityStep>
           ))}
         </div>
       </DisclosureBody>

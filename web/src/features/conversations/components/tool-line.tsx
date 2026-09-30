@@ -51,7 +51,8 @@ export function ToolLine({ frame, settled }: ToolLineProps) {
         <span
           className={cn(
             'max-w-[60%] min-w-0 truncate text-chat-message-text',
-            card.mono && 'font-mono text-body-sm',
+            // 路径与检索词是等宽小标签；用 span 不用 code，code 留给正文里的行内代码。
+            card.mono && 'rounded-xs bg-chat-code-bg px-1.5 py-0.5 font-mono text-body-sm',
           )}
         >
           {card.detail}
@@ -211,7 +212,10 @@ function DelegatedHead({ children, toolCallId }: { children: ReactNode; toolCall
       type="button"
     >
       {children}
-      <Icon className="shrink-0 text-chat-muted-text" decorative name="panel-right" size="sm" />
+      <span className="flex shrink-0 items-center gap-0.5 text-body-sm text-chat-muted-text">
+        查看
+        <Icon decorative name="panel-right" size="sm" />
+      </span>
     </button>
   )
 }

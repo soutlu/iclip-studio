@@ -6,7 +6,7 @@ import {
   type QueryClient,
   type QueryFilters,
 } from '@tanstack/react-query'
-import { useRef } from 'react'
+import { useCallback, useRef, useSyncExternalStore } from 'react'
 import { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
@@ -134,6 +134,49 @@ export const useSidebarTopology = (enabled: boolean, state: ConversationListStat
       }),
     queryKey: conversationsQueryKeys.sidebar(state),
   })
+
+/**
+ * 在侧栏已缓存的拓扑里找这段对话所在的合集：从最新拉到的那份起，先见到它的那份说了算，
+ * 在合集页里就是那个合集，在未归类里就是没有。拓扑每组只带第一页，哪份都没见到也是没有。
+ */
+const sidebarCollectionOf = (
+  topologies: readonly { data: SidebarTopology | undefined; updatedAt: number }[],
+  conversationId: string,
+): SidebarCollection | undefined => {
+  const newestFirst = [...topologies].sort((a, b) => b.updatedAt - a.updatedAt)
+  for (const { data } of newestFirst) {
+    if (data === undefined) continue
+    const collection = data.collections.find((one) =>
+      one.page.items.some((item) => item.id === conversationId),
+    )
+    if (collection !== undefined) return collection
+    if (data.ungrouped.items.some((item) => item.id === conversationId)) return undefined
+  }
+  return undefined
+}
+
+/** 只读侧栏的查询缓存、不发请求；侧栏重拉或换筛选时跟着更新。 */
+export const useCachedConversationCollection = (
+  conversationId: string,
+): SidebarCollection | undefined => {
+  const queryClient = useQueryClient()
+  const subscribe = useCallback(
+    (onChange: () => void) => queryClient.getQueryCache().subscribe(onChange),
+    [queryClient],
+  )
+  // 返回缓存里的那个合集对象本身：缓存不变时引用不变，满足快照稳定的要求。
+  return useSyncExternalStore(subscribe, () =>
+    sidebarCollectionOf(
+      queryClient
+        .getQueriesData<SidebarTopology>({ queryKey: conversationsQueryKeys.sidebar() })
+        .map(([queryKey, data]) => ({
+          data,
+          updatedAt: queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0,
+        })),
+      conversationId,
+    ),
+  )
+}
 
 /** 额外分页仅由用户触发；拓扑失效时丢弃这些页，避免自动逐页重拉。bucket 筛选需与拓扑一致。 */
 export const useMoreConversations = (

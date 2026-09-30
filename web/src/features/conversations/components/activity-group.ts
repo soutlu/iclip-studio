@@ -47,6 +47,40 @@ export const groupTurnEntries = (entries: readonly TurnEntry[]): ActivityNode[] 
   return out
 }
 
+/** 轮内的一个展示块：活动组与相邻的单独工具收进同一张活动卡，其余块各自成块。 */
+export type TurnBlock =
+  | { kind: 'card'; cardId: string; nodes: readonly ActivityNode[] }
+  | { kind: 'entry'; entry: TurnEntry }
+
+/**
+ * 只重排展示，不改变分组：活动组照旧可折叠，带图或派出子代理的工具仍在组外，
+ * 只是和相邻的活动组同卡，折起来时它们那一行照样露着。正文、思考、通知与用户插话把卡隔开。
+ */
+export const groupActivityCards = (nodes: readonly ActivityNode[]): TurnBlock[] => {
+  const out: TurnBlock[] = []
+  let card: ActivityNode[] = []
+
+  const flush = () => {
+    const first = card[0]
+    if (first !== undefined) {
+      const key = first.kind === 'run' ? first.runId : first.entry.frame.frameId
+      out.push({ cardId: `${key}.card`, kind: 'card', nodes: card })
+    }
+    card = []
+  }
+
+  for (const node of nodes) {
+    if (node.kind === 'run' || node.entry.frame.kind === 'tool') {
+      card.push(node)
+    } else {
+      flush()
+      out.push({ entry: node.entry, kind: 'entry' })
+    }
+  }
+  flush()
+  return out
+}
+
 /** 参考 Kimi 时长格式：20s、3m11s、1h2m；不足一秒不显示。 */
 export const formatActivityDuration = (ms: number): string => {
   if (ms < 1000) return ''
