@@ -43,9 +43,16 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
     expect(box.y).toBeGreaterThanOrEqual(groupBox.y)
     expect(box.y + box.height).toBeLessThanOrEqual(barBox.y)
   }
-  // 舞台列宽跟着画面走：画面左贴主体内距、右边到文案列只隔列间距，两侧不留灰边，剩下的宽度都归文案列。
+  // 舞台列宽跟着画面走：画面左贴主体内距、右边到文案列只隔「间距 + 分隔线 + 间距」，两侧不留边，剩下的宽度都归文案列。
   expect(previewBox.x - groupBox.x).toBeLessThanOrEqual(16 + 1)
-  expect(scriptBox.x - (previewBox.x + previewBox.width)).toBeLessThanOrEqual(20 + 1)
+  expect(scriptBox.x - (previewBox.x + previewBox.width)).toBeLessThanOrEqual(24 + 1 + 24 + 1)
+  // 舞台下面不再有操作行：竖版画面撑满舞台高，舞台一直延伸到出片栏，中间不空出成块空白。
+  expect(barBox.y - (previewBox.y + previewBox.height)).toBeLessThanOrEqual(16)
+  // 编辑、替换叠在画面右上：点它们只开自己的入口，不开原图。
+  const editBox = await group.getByRole('button', { name: '编辑图片', exact: true }).boundingBox()
+  if (editBox === null) throw new Error('舞台工具条必须有可见布局')
+  expect(editBox.y).toBeGreaterThanOrEqual(previewBox.y)
+  expect(editBox.x + editBox.width).toBeLessThanOrEqual(previewBox.x + previewBox.width)
 
   // 鼠标：悬停画面露出箭头，点箭头只切帧、不开原图；到头的一侧箭头不出现。
   const next = group.getByRole('button', { name: '下一帧', exact: true })
@@ -194,7 +201,7 @@ for (const width of [1335, 390]) {
     await expect(video).toHaveAttribute('autoplay', '')
     await expect(video).not.toHaveAttribute('loop')
     await expect(takes.locator('video')).toHaveCount(0)
-    // 操作行跟在舞台后面，键盘 Tab 进得去；操作按钮一个都不在画面上。
+    // 操作叠在舞台右上、完整可见，不在播放器里，与播放器底部的控件胶囊互不遮挡。
     for (const name of ['下载视频', '编辑视频', '回填提示词'])
       await expect(group.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 })
     await expect(player.getByRole('button', { name: '下载视频' })).toHaveCount(0)
@@ -222,7 +229,7 @@ test.describe('移动触屏分镜', () => {
     await group.getByRole('button', { name: '镜头 2', exact: true }).tap()
     await group.getByRole('button', { name: '下一帧', exact: true }).tap()
 
-    // 上下排：舞台在上，画面整张露出来；帧的操作在舞台下的操作行，不靠悬停。舞台上没有添加入口。
+    // 上下排：舞台在上，画面整张露出来；帧的操作叠在舞台右上，常显不靠悬停。舞台上没有添加入口。
     await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({
       ratio: 1,
     })

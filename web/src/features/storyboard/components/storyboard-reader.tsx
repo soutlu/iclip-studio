@@ -95,10 +95,13 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     go({ sheet })
   }
 
+  // ↑↓ 键与顶栏的上一组、下一组共用这条换组路径。
+  const goShot = (next: number) => go({ shot: next })
+
   // 浮层开着时不切组：里面的焦点也在工作台里。
   useShotArrowKeys(root, {
     enabled: search.sheet === undefined,
-    onGo: (next) => go({ shot: next }),
+    onGo: goShot,
     position,
     total: shots.length,
   })
@@ -165,6 +168,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
           fullPrompt={formatShotPrompt(shot)}
+          onGoShot={goShot}
           onOpenSheet={openSheet}
           position={position}
           sheet={search.sheet}

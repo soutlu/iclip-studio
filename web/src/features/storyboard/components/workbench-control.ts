@@ -1,8 +1,7 @@
-/** 分镜工作台次级控件的唯一样式配方：顶栏与舞台上的按钮同底同圆角；主色只留给出片按钮。
+/** 分镜工作台次级控件的样式配方：顶栏上的按钮同底同圆角，舞台上的按钮另用深色玻璃（`stageActionClass`）；主色只留给出片按钮。
  * 出片栏自有一套 36px 控件，见 storyboard.css 的出片栏一节。 */
 
 import { cva } from 'class-variance-authority'
-import { cn } from '@/shared/lib/utils'
 
 export const workbenchControl = cva(
   'shrink-0 ui-state rounded-sm bg-surface-container text-body-sm text-on-surface ui-focus disabled:cursor-default disabled:text-disabled-text aria-disabled:cursor-default aria-disabled:text-disabled-text',
@@ -26,7 +25,7 @@ export const workbenchControl = cva(
   },
 )
 
-/** 舞台操作行的带字按钮（StageAction 与操作行里的下载按钮）：文字包在带 `STAGE_ACTION_TEXT` 的 span 里，
- * 操作行窄时由 storyboard.css 收起文字、按钮收成方形。 */
-export const stageActionClass = cn(workbenchControl({ shape: 'label' }), 'storyboard-action')
+/** 叠在深色舞台上的玻璃按钮（StageAction、成片信息与下载按钮）：浅深主题都是深底白字。带字时文字包在带
+ * `STAGE_ACTION_TEXT` 的 span 里，舞台窄时由 storyboard.css 收起文字、按钮收成方形；不带字就是方形图标按钮。 */
+export const stageActionClass = 'storyboard-stage-glass storyboard-stage-tool ui-focus'
 export const STAGE_ACTION_TEXT = 'storyboard-action-text'

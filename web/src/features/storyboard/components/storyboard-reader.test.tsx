@@ -211,6 +211,13 @@ const takeCard = (take: HTMLElement) => within(take).getByRole('button')
 /** 文案列里的一段：全局设定或「镜头 N」。 */
 const segmentOf = (page: HTMLElement, name: string) => within(page).getByRole('group', { name })
 
+/** 舞台左上的当前帧标签：正文编辑器之外写着 `@N` 的文字（编辑器里的 @N 是引用胶囊）。 */
+const stageTags = (page: HTMLElement) =>
+  within(page)
+    .queryAllByText(/^@\d+$/)
+    .filter((element) => element.closest('[role="textbox"]') === null)
+    .map((element) => element.textContent)
+
 /** 某段的正文编辑器。 */
 const editorOf = (page: HTMLElement, name: string) => within(page).getByRole('textbox', { name })
 
@@ -369,6 +376,61 @@ describe('StoryboardReader', () => {
     expect(segmentOf(second, '全局设定')).toHaveAttribute('aria-current', 'true')
     await userEvent.keyboard('{ArrowUp}')
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
+  })
+
+  it('顶栏上一组、下一组与 ↑↓ 同一条路径切组，到头的一侧禁用，焦点交给组号、↑↓ 照样能切', async () => {
+    provide()
+    const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
+    const previous = await screen.findByRole('button', { name: '上一组' })
+    const next = screen.getByRole('button', { name: '下一组' })
+    const all = screen.getByRole('button', { name: /打开全部镜头组/ })
+    expect(previous).toBeDisabled()
+    expect(next).toBeEnabled()
+
+    await userEvent.click(next)
+    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
+    expect(all).toHaveAccessibleName('镜头组 2 / 2，打开全部镜头组')
+    expect(segmentOf(screen.getByRole('region', { name: '镜头组 2' }), '全局设定')).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+    expect(next).toBeDisabled()
+    expect(previous).toBeEnabled()
+    expect(all).toHaveFocus()
+
+    await userEvent.keyboard('{ArrowUp}')
+    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
+    await userEvent.click(next)
+    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
+    await userEvent.click(previous)
+    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
+    expect(previous).toBeDisabled()
+    expect(all).toHaveFocus()
+    expect(screen.queryByRole('complementary', { name: '全部镜头组' })).not.toBeInTheDocument()
+  })
+
+  it('舞台左上只标当前帧 @N，跟着切帧、切段变，段里没图就不标；点舞台上的编辑、替换不开原图', async () => {
+    provide()
+    const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
+    const page = await screen.findByRole('region', { name: '镜头组 1' })
+    expect(stageTags(page)).toEqual(['@2'])
+    await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
+    expect(stageTags(page)).toEqual(['@1'])
+    await act(async () => {
+      await router.navigate({ href: '/?shot=1&content=unreferenced' })
+    })
+    expect(stageTags(page)).toEqual(['@3'])
+
+    await userEvent.click(within(page).getByRole('button', { name: '替换图片' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.click(within(page).getByRole('button', { name: '编辑图片' }))
+    expect(await screen.findByRole('dialog', { name: /^编辑图片/ })).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: '镜头组 1 第 3 帧' })).not.toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await userEvent.click(within(page).getByRole('button', { name: '镜头 3' }))
+    expect(stageTags(page)).toEqual([])
   })
 
   it('焦点在舞台里时 ←/→ 切帧、到头不动，切到头的箭头消失后焦点落回画面；正文与帧计数弹层里的 ←/→ 不切帧', async () => {
@@ -1415,7 +1477,7 @@ describe('StoryboardReader', () => {
     if (mode === '新增') pasteImage(page, '镜头 1 的描述')
     else await userEvent.upload(within(page).getByLabelText('选择替换图片'), imageFile())
     if (mode === '新增') {
-      // 新增失败留在操作行上：错误图标加重试，原因在提示里。
+      // 新增失败留在舞台 @N 下面：错误图标加重试，原因在提示里。
       const retry = await within(page).findByRole('button', { name: '上传失败，点击重试' })
       act(() => retry.focus())
       expect(await screen.findByRole('tooltip')).toHaveTextContent('上传失败（503）')
@@ -1774,7 +1836,7 @@ describe('StoryboardReader', () => {
     })
   })
 
-  describe('选中成片：舞台播放，操作行换成成片的操作', () => {
+  describe('选中成片：舞台播放，舞台工具条换成成片的操作', () => {
     const failedJob = makeGenerationJob({
       id: '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a',
       createdAt: '2026-09-01T10:04:00Z',
@@ -1795,7 +1857,7 @@ describe('StoryboardReader', () => {
     const player = (page: HTMLElement) =>
       within(page).queryByRole('group', { name: '播放器：生成的视频' })
 
-    it('点成片卡：舞台播放这条视频，操作行出现下载、编辑视频、回填；卡上没有别的按钮，文案列撤掉选中', async () => {
+    it('点成片卡：舞台播放这条视频，舞台右上出现下载、编辑视频、回填；卡上没有别的按钮，文案列撤掉选中', async () => {
       provide()
       serveTakes([editableJob])
       await renderReader()
@@ -1877,7 +1939,7 @@ describe('StoryboardReader', () => {
       expect(await screen.findByRole('button', { name: '编辑模型' })).toBeVisible()
     })
 
-    it('在途的成片：舞台是骨架加走表，操作行只有回填；失败的成片：舞台写出完整原因，下载与编辑置灰说原因', async () => {
+    it('在途的成片：舞台是骨架加走表，工具条只有 ⓘ 与回填；失败的成片：舞台写出完整原因，下载与编辑置灰说原因', async () => {
       provide()
       serveTakes([runningJob, failedJob])
       await renderReader()
@@ -2052,25 +2114,41 @@ describe('StoryboardReader', () => {
       expect(files.snapshot().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([2, 1, 4])
     })
 
-    it('带字的下载按钮不再弹出同名提示；文字收起、退成图标时悬停或聚焦说出名字', async () => {
+    it('成片的操作是舞台右上的图标按钮，聚焦就提示名字；ⓘ 的可访问名与提示里都有分辨率 · 时长 · 时间与模型', async () => {
+      const specified = makeGenerationJob({
+        id: 'f1c2d3e4-5a6b-4c7d-8e9f-0a1b2c3d4e5f',
+        createdAt: '2026-09-01T10:04:00Z',
+        durationMs: 6000,
+        outputUrl: 'https://example.com/specified.mp4',
+        request: { model: 'vendor-a-seedance-2-5', prompt: '带规格的一条。', resolution: '720p' },
+        shotIndex: 1,
+      })
       provide()
-      serveTakes([editableJob])
+      serveTakes([specified])
       await renderReader()
       const page = await screen.findByRole('region', { name: '镜头组 1' })
-      await userEvent.click((await cardOf(editableJob)).card)
+      await userEvent.click((await cardOf(specified)).card)
+
       const download = within(page).getByRole('button', { name: '下载视频' })
-      expect(download).toHaveTextContent('下载')
-
-      act(() => download.focus())
-      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 400)))
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-
-      act(() => download.blur())
-      // jsdom 不加载 storyboard.css：照容器查询收起时的样子把文字藏掉。
-      const text = within(download).getByText('下载')
-      text.style.display = 'none'
+      expect(download.textContent).toBe('')
       act(() => download.focus())
       expect(await screen.findByRole('tooltip')).toHaveTextContent('下载视频')
+      act(() => download.blur())
+
+      const info = within(page).getByRole('button', { name: /^成片信息：/ })
+      expect(info).toHaveAccessibleName(/^成片信息：720p · 0:06 · .+，vendor-a-seedance-2-5$/)
+      act(() => info.focus())
+      await waitFor(() => {
+        const tooltip = screen.getByRole('tooltip')
+        expect(tooltip).toHaveTextContent(/720p · 0:06 · /)
+        expect(tooltip).toHaveTextContent('vendor-a-seedance-2-5')
+      })
+
+      // 触屏没有悬停：点按也打开。
+      act(() => info.blur())
+      await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
+      await userEvent.click(info)
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(/720p · 0:06 · /)
     })
   })
 

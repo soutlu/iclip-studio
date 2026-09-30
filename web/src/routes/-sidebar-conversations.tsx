@@ -603,7 +603,7 @@ function CollectionGroup({
         >
           <span
             aria-hidden
-            className="grid size-5.5 shrink-0 place-items-center rounded-sm bg-primary-container-soft text-on-primary-container"
+            className="grid size-5.5 shrink-0 place-items-center rounded-sm bg-surface-container text-on-surface-variant"
           >
             <Icon decorative name="folder" size="xs" />
           </span>

@@ -12,7 +12,7 @@ const openEditor = async (page: Page, mobile = false, group = 2) => {
   // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
   await openStoryboardShot(panel, group)
-  // 点成片卡选中它，编辑视频在舞台下的操作行里。
+  // 点成片卡选中它，编辑视频叠在舞台右上。
   await panel
     .getByRole('region', { name: '本组成片', exact: true })
     .getByRole('button', { name: /的成片$/ })

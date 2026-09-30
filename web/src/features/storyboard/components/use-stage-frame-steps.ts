@@ -44,7 +44,7 @@ export const frameStepOfKey = (event: FrameKey): -1 | 1 | undefined => {
   return event.key === 'ArrowRight' ? 1 : -1
 }
 
-/** 在舞台元素上监听 ←/→：舞台本身不可聚焦，只收它里面获得焦点的控件（画面、箭头、帧计数）冒上来的按键；
+/** 在舞台元素上监听 ←/→：舞台本身不可聚焦，只收它里面获得焦点的控件（画面、箭头、帧计数、工具条按钮）冒上来的按键；
  * 帧计数的弹层传送到了舞台外，打开时按键到不了这里。`onStep` 返回切了才吞掉按键；↑↓ 不碰，照旧冒到工作台根切组。 */
 export const useStageFrameKeys = (stage: HTMLElement | null, onStep: (step: -1 | 1) => boolean) => {
   const handle = useEffectEvent((event: KeyboardEvent) => {

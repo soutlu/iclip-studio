@@ -15,7 +15,8 @@
   min-height: var(--text-body--line-height);
 }
 /* ===== 帧芯片 =====
-   正文里的 @N：圆形缩略图加编号的胶囊，主色浅底；舞台正在看的那一帧（data-highlighted）实色。
+   正文里的 @N：圆形缩略图加编号的胶囊，中性浅底；舞台正在看的那一帧（data-highlighted）墨色实底。
+   选中与当前一律用墨色，主色只留给「生成」与运行状态。
    外层是普通行内元素、不换行，尾部垫一个零宽连字符（U+2060），芯片和紧跟的「，」「。」不会被拆到两行；
    胶囊画在里层的 inline-flex 上，以缩略图为基线，下沉 0.3em 与中文字身居中。聚焦环与 NodeSelection 描边画在胶囊上。 */
 .frame-chip {
@@ -35,8 +36,8 @@
   margin: 0 2px;
   padding: 0 7px 0 2px;
   border-radius: var(--radius-full);
-  background: var(--color-primary-container-soft);
-  color: var(--color-on-primary-container);
+  background: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+  color: var(--color-on-surface);
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -56,11 +57,11 @@
   padding-left: 7px;
 }
 .frame-chip:hover .frame-chip-pill {
-  background: var(--color-primary-container);
+  background: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
 }
 .frame-chip[data-highlighted] .frame-chip-pill {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
 }
 .frame-chip:focus-visible .frame-chip-pill {
   outline: var(--state-focus-ring) solid var(--color-focus-ring);
@@ -70,16 +71,22 @@
   outline: none;
 }
 .frame-chip.ProseMirror-selectednode .frame-chip-pill {
-  outline: 2px solid color-mix(in srgb, var(--color-primary) 60%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--color-on-surface) 60%, transparent);
   outline-offset: 1px;
 }
 /* ===== 分镜工作台布局：断点与列宽只在这一节定义 =====
    结构只有一种：左边舞台、右边文案列。唯一的断点是工作台窄于 640 时上下排；
    断点量的是工作台根（容器查询），它能拖宽、聊天栏能收起，视口宽度说明不了什么。
-   主体、舞台和操作行自己也是容器，查工作台宽度一律按名字 storyboard-workbench 查，免得查到里层。
+   主体与舞台自己也是容器，查工作台宽度一律按名字 storyboard-workbench 查，免得查到里层。
    左右排时舞台列宽 = 舞台高 × 分镜画幅（--storyboard-ar，挂在舞台列上），舞台高由主体高度推出，所以主体是
-   两个方向都量的容器；剩下的宽度都给文案列，文案列至少保留 clamp(320px, 40%, 480px)，不够时舞台列让。 */
+   两个方向都量的容器；剩下的宽度都给文案列，文案列至少保留 clamp(320px, 40%, 480px)，不够时舞台列让。
+   两列之间是一条贯穿主体高度的发丝分隔线，两侧各留 --storyboard-column-gap；上下排时没有分隔线。 */
 .storyboard-workbench {
+  /* 压在画面与深色舞台上的深色玻璃：舞台上的 @N、箭头、帧计数、工具按钮与成片卡角标共用，不随主题换。
+     只模糊不加饱和度、底色够密：压在高饱和的画面上（如彩条测试卡）也读作中性深色，不被染成彩色按钮。 */
+  --storyboard-glass: color-mix(in srgb, var(--color-scrim) 64%, transparent);
+  --storyboard-glass-hover: color-mix(in srgb, var(--color-scrim) 78%, transparent);
+  --storyboard-glass-line: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
   container: storyboard-workbench / inline-size;
   display: flex;
   width: 100%;
@@ -100,31 +107,31 @@
   padding: 8px 16px;
 }
 .storyboard-body {
-  --storyboard-actions-height: 40px;
-  --storyboard-stage-gap: 8px;
+  --storyboard-column-gap: 24px;
   container: storyboard-body / size;
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
-  gap: 20px;
-  padding: 0 16px;
+  padding: 0 16px 8px;
   overflow: hidden;
 }
-/* 舞台列：撑满主体高度，宽度按舞台高 × 画幅；上面是舞台，下面一条固定高的操作行。 */
+.storyboard-divider {
+  width: 1px;
+  flex: none;
+  margin: 0 var(--storyboard-column-gap);
+  background: var(--color-hairline);
+}
+/* 舞台列：只有舞台，撑满主体高度（一直延伸到出片栏），宽度按舞台高 × 画幅。操作都叠在舞台上，下面不再另起一行。 */
 .storyboard-stage-column {
   display: flex;
   min-width: 0;
   min-height: 0;
-  flex: 0 1
-    calc(
-      (100cqh - var(--storyboard-actions-height) - var(--storyboard-stage-gap)) *
-        var(--storyboard-ar)
-    );
+  flex: 0 1 calc(100cqh * var(--storyboard-ar));
   flex-direction: column;
-  gap: var(--storyboard-stage-gap);
 }
-/* 舞台：画面或视频、帧的叠层与拖放提示；中性底色算播放器的一部分。
+/* 舞台：画面或视频、帧的叠层与拖放提示。深色放映底（浅深主题都深）加内缘发丝线，算播放器的一部分，
+   舞台上的文字与控件一律按深底配色（on-scrim、深色玻璃）。
    裁切用 clip 而不是 hidden：模糊铺底外扩出舞台，hidden 会让舞台可被滚动，聚焦箭头时浏览器把画面滚歪。 */
 .storyboard-stage {
   position: relative;
@@ -135,10 +142,13 @@
   place-items: center;
   overflow: clip;
   border-radius: var(--radius-lg);
-  background: var(--color-surface-container-low);
-  container-type: size;
+  background: var(--color-storyboard-stage);
+  box-shadow: inset 0 0 0 1px var(--color-storyboard-stage-line);
+  container: storyboard-stage / size;
 }
-/* 舞台内容的一层包装：换了显示的东西就重挂，淡入由元素上的 animate-in 给。 */
+/* 舞台内容的一层包装：换了显示的东西就重挂，淡入由元素上的 animate-in 给。
+   ::after 是四周的暗角：压在模糊铺底上、画面之下（画面 z 更高），不论铺底多亮舞台都读作深色。
+   画在这一层里而不是舞台上，淡入途中它和画面同在一个层叠上下文，暗角不会盖到画面。 */
 .storyboard-stage-content {
   position: relative;
   display: grid;
@@ -146,9 +156,21 @@
   height: 100%;
   place-items: center;
 }
-/* 画面按画幅 contain：竖屏上下撑满，横屏左右撑满，不裁切。 */
+.storyboard-stage-content::after {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 80% at 50% 50%,
+    transparent 55%,
+    color-mix(in srgb, var(--color-scrim) 45%, transparent)
+  );
+  content: '';
+  pointer-events: none;
+}
+/* 画面按画幅 contain：竖屏上下撑满，横屏左右撑满，不裁切；压在铺底的暗角之上。 */
 .storyboard-hero {
   position: relative;
+  z-index: var(--z-local-1);
   width: min(100cqw, calc(100cqh * var(--storyboard-ar)));
   aspect-ratio: var(--storyboard-ar);
 }
@@ -187,12 +209,10 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
     padding-bottom: 4px;
-    /* 聚焦滚动（点成片卡、Tab 进正文）把目标停在吸顶的舞台列下面，不被它盖住：舞台 45vh + 间距 + 操作行 + 余量。 */
-    scroll-padding-top: calc(
-      45vh + var(--storyboard-stage-gap) + var(--storyboard-actions-height) + 12px
-    );
+    /* 聚焦滚动（点成片卡、Tab 进正文）把目标停在吸顶的舞台下面，不被它盖住：舞台 45vh + 余量。 */
+    scroll-padding-top: calc(45vh + 12px);
   }
-  /* 舞台连同操作行吸顶：往下读文案时画面和操作一直在；垫一层页面底色，滚过去的正文不透出来。 */
+  /* 舞台吸顶：往下读文案时画面和叠在上面的操作一直在；垫一层页面底色，滚过去的正文不透出来。 */
   .storyboard-stage-column {
     position: sticky;
     z-index: var(--z-local-1);
@@ -204,6 +224,9 @@
   .storyboard-stage {
     height: 45vh;
     flex: none;
+  }
+  .storyboard-divider {
+    display: none;
   }
   .storyboard-script {
     min-width: 0;
@@ -220,7 +243,7 @@
    列头不随正文滚：镜头数与总长、「收成摘要」开关，下面是按时长切分的镜头条（每段热区占满条高，细条画在 ::before）
    和两端刻度。正文区最上面是全局设定卡，之后是镜头列表：左侧时间轴的竖线串起各镜的序号节点，节点下写起始时间，
    末尾一个空心结束点。选中的段浮起成卡片（抬高层底色 top-layer：浅色白、深色比页面底亮一档，加发丝线、轻投影，正文主色），其余透明、正文次级色，悬停一层中性叠色；
-   选中镜头的节点实心主色，时间刻度也变主色。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
+   选中镜头的节点、镜头条上那一段与时长胶囊都用墨色实底（inverse-surface），时间刻度变正文色。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
    时间轴几何：节点 22px、顶距 12px，圆心正对标题行（卡片 1px 边 + 8px 内距 + 28px 标题行的一半）；
    竖线从本镜圆心画到下一镜圆心，最后一镜画到结束点圆心，节点与刻度垫页面底色盖住它。 */
 .storyboard-script-head {
@@ -266,7 +289,7 @@
 }
 .storyboard-timeline-segment[aria-current='true']::before {
   height: 10px;
-  background: var(--color-primary);
+  background: var(--color-inverse-surface);
 }
 .storyboard-timeline-ticks {
   display: flex;
@@ -358,7 +381,7 @@
   line-height: var(--text-label--line-height);
 }
 .storyboard-settings[aria-current='true'] .storyboard-settings-label {
-  color: var(--color-primary);
+  color: var(--color-on-surface);
 }
 .storyboard-settings-count {
   color: var(--color-on-surface-faint);
@@ -430,13 +453,13 @@
   white-space: nowrap;
 }
 .storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-node {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent);
-  color: var(--color-on-primary);
+  border-color: var(--color-inverse-surface);
+  background: var(--color-inverse-surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-on-surface) 12%, transparent);
+  color: var(--color-inverse-on-surface);
 }
 .storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-stamp {
-  color: var(--color-primary);
+  color: var(--color-on-surface);
 }
 /* 结束刻度：空心点下写总长，右边「结束」与总长同一基线。 */
 .storyboard-shot-end {
@@ -463,7 +486,7 @@
   line-height: 14px;
 }
 
-/* 时长胶囊：时钟加一位小数的时长；选中镜头换主色容器。 */
+/* 时长胶囊：时钟加一位小数的时长；选中镜头换墨色实底。 */
 .storyboard-duration {
   display: inline-flex;
   height: 20px;
@@ -483,8 +506,8 @@
   color: var(--color-on-surface-muted);
 }
 .storyboard-segment[aria-current='true'] .storyboard-duration {
-  background: var(--color-primary-container);
-  color: var(--color-on-primary-container);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
 }
 .storyboard-segment[aria-current='true'] .storyboard-duration > svg {
   color: currentColor;
@@ -801,13 +824,14 @@
 .storyboard-take:hover .storyboard-take-veil {
   background: var(--media-scrim-photo-strong);
 }
+/* 在途的扫光：卡片上用浅玻璃；舞台上换成 --storyboard-shine 的弱白光，深底上不刺眼。 */
 .storyboard-take-shine {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     160deg,
     transparent 30%,
-    var(--color-chip-bg-glass) 50%,
+    var(--storyboard-shine, var(--color-chip-bg-glass)) 50%,
     transparent 70%
   );
 }
@@ -833,7 +857,7 @@
   gap: 3px;
   padding: 0 5px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-scrim) 48%, transparent);
+  background: var(--storyboard-glass);
   backdrop-filter: blur(12px);
   color: var(--color-on-scrim);
   font-size: var(--text-caption);
@@ -881,13 +905,19 @@
 }
 
 /* ===== 舞台上的内容 =====
-   成片的视频上不压按钮；帧画面上只叠切帧箭头与帧计数（见下一节），@N、任务角标、上传状态和编辑、替换在下面的操作行。 */
+   画面或视频本身；叠在上面的工具条、切帧箭头与帧计数见后面两节。 */
 .storyboard-media {
   display: grid;
   place-items: center;
 }
-/* 在途与失败的成片铺满画幅框：骨架或错误图标加完整原因，原因太长就在框里滚。 */
+.storyboard-stage-empty {
+  color: color-mix(in srgb, var(--color-on-scrim) 60%, transparent);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+/* 在途与失败的成片铺满画幅框：骨架或错误图标加完整原因，原因太长就在框里滚；按深色舞台配色，比舞台底亮一档。 */
 .storyboard-take-stage {
+  --storyboard-shine: color-mix(in srgb, var(--color-on-scrim) 10%, transparent);
   position: absolute;
   inset: 0;
   display: flex;
@@ -898,27 +928,28 @@
   padding: 16px;
   overflow-y: auto;
   border-radius: var(--radius-md);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-variant);
+  background: color-mix(in srgb, var(--color-on-scrim) 8%, transparent);
+  color: color-mix(in srgb, var(--color-on-scrim) 72%, transparent);
   font-size: var(--text-body-sm);
   line-height: var(--text-body-sm--line-height);
   overscroll-behavior: contain;
 }
 .storyboard-take-stage-reason {
   max-width: 32em;
-  color: var(--color-on-surface);
+  color: var(--color-on-scrim);
   overflow-wrap: anywhere;
   text-align: center;
   white-space: pre-wrap;
 }
 
-/* ===== 舞台叠层（只在显示帧时） =====
-   层次从下到上：模糊铺底 → 画面（整张是「打开原图」按钮）→ 左右切帧箭头与底部正中的帧计数 → 拖放提示。
-   箭头与计数是画面按钮的兄弟、叠在它上面，点它们不开原图；它们在舞台的拖放区里，拖到上面照样替换。
+/* ===== 舞台叠层 =====
+   层次从下到上：模糊铺底 → 暗角 → 画面（帧：整张是「打开原图」按钮；成片：共享播放器，自带底部控件胶囊）
+   → 顶部工具条、左右切帧箭头与底部正中的帧计数 → 拖放提示。
+   叠层是画面的兄弟、叠在它上面，点它们不开原图、不碰播放器；它们在舞台的拖放区里，拖到上面照样替换。
    铺底：画面比例与分镜画幅不一致时，空出来的地方露出同一张图的模糊暗版，上下排时舞台两侧也是它；
-   外扩一圈再模糊，边缘不透出底色。
+   外扩一圈再模糊，边缘不透出底色；透明度压低，舞台底色始终占主导。
    箭头：40px 圆形玻璃钮，垂直居中贴左右边；能悬停的设备上悬停或焦点落进舞台时淡入，触屏常显；到头的一侧不渲染。
-   计数：玻璃胶囊，常显。玻璃底由玻璃基色派生，浅深主题各自成立。 */
+   计数：玻璃胶囊，常显。舞台浅深主题都是深底，玻璃一律用深色遮罩派生、白字，不随主题换。 */
 .storyboard-backdrop {
   position: absolute;
   top: -32px;
@@ -927,18 +958,15 @@
   max-width: none;
   height: calc(100% + 64px);
   object-fit: cover;
-  filter: blur(24px) saturate(1.2);
-  opacity: 0.5;
+  filter: blur(32px) saturate(1.1);
+  opacity: 0.24;
   pointer-events: none;
 }
-.dark .storyboard-backdrop {
-  opacity: 0.35;
-}
 .storyboard-stage-glass {
-  background-color: var(--color-chip-bg-glass);
-  backdrop-filter: blur(12px) saturate(1.4);
-  box-shadow: var(--shadow-1);
-  color: var(--color-on-surface);
+  border: 1px solid var(--storyboard-glass-line);
+  background-color: var(--storyboard-glass);
+  backdrop-filter: blur(12px);
+  color: var(--color-on-scrim);
 }
 .storyboard-stage-nav {
   position: absolute;
@@ -963,8 +991,9 @@
   scale: 1;
 }
 .storyboard-stage-nav:hover,
-.storyboard-stage-counter:hover {
-  background-color: var(--color-glass-surface);
+.storyboard-stage-counter:hover,
+.storyboard-stage-tool:not([aria-disabled='true'], :disabled):hover {
+  background-color: var(--storyboard-glass-hover);
 }
 .storyboard-stage-counter {
   position: absolute;
@@ -985,82 +1014,85 @@
   translate: -50% 0;
 }
 
-/* ===== 舞台操作行 =====
-   舞台下方固定一行，高度不随内容变：左边是信息（帧：@N、任务角标、上传状态；成片：分辨率 · 时长 · 时间），
-   右边是带字按钮。按钮放不下字时退成图标（名字进提示）：上下排时一律退；左右排时按操作行自己的宽度，
-   成片那行三个按钮加信息更宽，阈值也更大。收起与否只在这里定，StageAction 读样式结果决定要不要提示。 */
-.storyboard-actions {
+/* ===== 舞台工具条 =====
+   舞台顶部一条叠层，左右各一簇、放不下时左边让：左上是身份与状态（帧：@N，下面挂任务角标与上传状态；成片：不挂信息），
+   右上是深色玻璃按钮（帧：编辑、替换，带字；成片：ⓘ 成片信息、下载、编辑视频、回填，只有图标）。
+   条本身不接指针，点空处等于点画面；按钮常显，触屏与窄屏都点得到。舞台窄于 240 时带字按钮收起文字、退成图标，
+   收起与否只在这里定，StageAction 读样式结果决定要不要提示。 */
+.storyboard-stage-bar {
+  position: absolute;
+  z-index: var(--z-local-2);
+  top: 12px;
+  right: 12px;
+  left: 12px;
   display: flex;
-  height: var(--storyboard-actions-height);
-  min-width: 0;
-  flex: none;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  container: storyboard-actions / inline-size;
+  gap: 8px;
+  pointer-events: none;
 }
-/* 帧的信息在手机上可能同时有任务角标与上传状态：放不下就在左边自己横滑，不挤右边的按钮、不折行；
-   上下各留 4px，横滑裁切时聚焦环不被切掉。 */
-.storyboard-actions-start {
+.storyboard-stage-bar-start {
   display: flex;
   min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  padding-block: 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-}
-.storyboard-actions-end {
-  display: flex;
-  flex: none;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
 }
-.storyboard-tag {
+.storyboard-stage-bar-end {
+  display: flex;
   flex: none;
-  color: var(--color-on-surface);
-  font-size: var(--text-body-sm);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  line-height: var(--text-body-sm--line-height);
+  gap: 6px;
 }
-.storyboard-take-info {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-body-sm);
+.storyboard-stage-bar-start > :not(.storyboard-stage-tag),
+.storyboard-stage-bar-end {
+  pointer-events: auto;
+}
+/* @N：28px 高减去上下 1px 玻璃描边即行高。 */
+.storyboard-stage-tag {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
-  line-height: var(--text-body-sm--line-height);
-  text-overflow: ellipsis;
+  font-weight: 600;
+  line-height: 26px;
   white-space: nowrap;
 }
-.storyboard-action {
+/* 失败原话：角标加截断的原文，一起压在玻璃上。 */
+.storyboard-stage-note {
+  padding: 2px 10px 2px 2px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+.storyboard-stage-tool {
+  display: inline-flex;
+  height: 32px;
+  min-width: 32px;
+  flex: none;
+  align-items: center;
   justify-content: center;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
+  transition: background-color var(--dur-s) var(--ease);
 }
-@container storyboard-actions (width < 440px) {
-  .storyboard-actions[data-kind='take'] .storyboard-action {
-    width: 32px;
-    padding-inline: 0;
-  }
-  .storyboard-actions[data-kind='take'] .storyboard-action-text {
-    display: none;
-  }
+.storyboard-stage-tool:not(:has(> .storyboard-action-text)) {
+  width: 32px;
+  padding: 0;
 }
-@container storyboard-actions (width < 300px) {
-  .storyboard-actions[data-kind='frame'] .storyboard-action {
-    width: 32px;
-    padding-inline: 0;
-  }
-  .storyboard-actions[data-kind='frame'] .storyboard-action-text {
-    display: none;
-  }
+.storyboard-stage-tool:is([aria-disabled='true'], :disabled) {
+  color: color-mix(in srgb, var(--color-on-scrim) 45%, transparent);
+  cursor: default;
 }
-@container storyboard-workbench (width < 640px) {
-  .storyboard-action {
+@container storyboard-stage (width < 240px) {
+  .storyboard-stage-tool {
     width: 32px;
-    padding-inline: 0;
+    padding: 0;
   }
   .storyboard-action-text {
     display: none;
@@ -1073,9 +1105,6 @@
   gap: 6px;
   padding: 0 10px;
   border-radius: var(--radius-full);
-  background: var(--color-surface-container-lowest);
-  box-shadow: var(--shadow-1);
-  color: var(--color-on-surface-variant);
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
   line-height: var(--text-label--line-height);
@@ -1142,7 +1171,8 @@
   .frame-chip-pill,
   .storyboard-take,
   .storyboard-take-veil,
-  .storyboard-stage-nav {
+  .storyboard-stage-nav,
+  .storyboard-stage-tool {
     transition: none;
   }
 }

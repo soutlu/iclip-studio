@@ -1,4 +1,4 @@
-/** 舞台左下的新图上传状态：上传中是进度环加百分比；失败换成错误图标加重试，悬停或聚焦看原因。 */
+/** 舞台左上 @N 下面的新图上传状态：上传中是深色玻璃上的进度环加百分比；失败换成错误色的重试按钮，悬停或聚焦看原因。 */
 
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -18,7 +18,7 @@ export function StageUploadStatus({ onRetry, upload }: StageUploadStatusProps) {
     return (
       <span
         aria-label={`上传中 ${upload.progress}%`}
-        className="storyboard-upload-chip"
+        className="storyboard-stage-glass storyboard-upload-chip"
         role="status"
       >
         <ProgressRing value={upload.progress} />
@@ -31,7 +31,10 @@ export function StageUploadStatus({ onRetry, upload }: StageUploadStatusProps) {
         <TooltipTrigger asChild>
           <button
             aria-label="上传失败，点击重试"
-            className={cn(workbenchControl({ shape: 'label', size: 'sm' }), 'text-error')}
+            className={cn(
+              workbenchControl({ shape: 'label', size: 'sm' }),
+              'rounded-full bg-error-container text-on-error-container',
+            )}
             onClick={onRetry}
             type="button"
           >
@@ -39,7 +42,7 @@ export function StageUploadStatus({ onRetry, upload }: StageUploadStatusProps) {
             <Icon decorative name="refresh" size="xs" />
           </button>
         </TooltipTrigger>
-        <TooltipContent align="start" side="top">
+        <TooltipContent align="start" side="bottom">
           {upload.message}
         </TooltipContent>
       </TooltipRoot>

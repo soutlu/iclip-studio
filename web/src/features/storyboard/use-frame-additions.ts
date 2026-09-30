@@ -1,7 +1,7 @@
 /** 往选中段添加图片的唯一流程：正文 `@` 选图末格「+」打开的选择器（关联已有或上传）、在正文里粘贴与失败重试都走这里。
  *
  * 一次只传一张。上传与失败只属于发起它的那段那帧，不管舞台在显示什么：换段、换帧、换组即作废，迟到的结果不回填；
- * 舞台改放成片不算换目标。成功与失败都 toast，舞台在放成片时操作行上的状态看不到。 */
+ * 舞台改放成片不算换目标。成功与失败都 toast，舞台在放成片时工具条上的状态看不到。 */
 
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
