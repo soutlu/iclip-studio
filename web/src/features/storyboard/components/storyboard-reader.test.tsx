@@ -1,9 +1,9 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster, toast } from '@/shared/ui/toast'
-import { pasteTextIntoComposer } from '@/testing/editor'
+import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
 import { workspaceQueryKeys, type ArtifactRendererProps } from '@/shared/workbench'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -1057,7 +1057,7 @@ describe('StoryboardReader', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     await userEvent.click(within(page).getByRole('button', { name: '添加图片' }))
     await userEvent.upload(screen.getByLabelText('选择要上传的图片'), imageFile())
-    expect(await within(page).findByRole('status')).toHaveTextContent('正在上传新图')
+    expect(await within(page).findByRole('status', { name: /^上传中 \d+%$/ })).toBeVisible()
     const editor = within(page).getByRole('textbox', { name: '镜头 1 的描述' })
     await replaceText(editor, '上传时更新的正文。')
     await screen.findByText('已保存', undefined, { timeout: 3000 })
@@ -1182,7 +1182,7 @@ describe('StoryboardReader', () => {
     expect(files.snapshot()).toEqual(document)
   })
 
-  it('共享提示按本组编号统计，不把相同 URL 的另一编号算进来', async () => {
+  it('帧计数弹层里的共用说明按本组编号统计，不把相同 URL 的另一编号算进来', async () => {
     const shared: ShotsDocument = {
       ...document,
       shots: document.shots.map((shot) =>
@@ -1209,8 +1209,14 @@ describe('StoryboardReader', () => {
     provide(shared)
     await renderReader()
     const page = await screen.findByRole('region', { name: '镜头组 1' })
-    expect(within(page).getByText('@Image2 · 镜头 1、镜头 2 共用')).toBeVisible()
-    expect(within(page).queryByText(/镜头 1、2、3 共用/)).not.toBeInTheDocument()
+    await userEvent.click(within(page).getByRole('button', { name: /查看本组全部图片/ }))
+    const gallery = await screen.findByRole('dialog', { name: '本组全部图片' })
+    expect(within(gallery).getByRole('button', { name: '第 2 帧' })).toHaveAccessibleDescription(
+      '@2 · 镜头 1、镜头 2 共用',
+    )
+    expect(within(gallery).getByRole('button', { name: '第 3 帧' })).toHaveAccessibleDescription(
+      '@3 · 镜头 3',
+    )
   })
 
   it('无图镜头组的舞台留空，仍给添加图片的入口', async () => {
@@ -1219,7 +1225,9 @@ describe('StoryboardReader', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     expect(within(page).queryByRole('img')).not.toBeInTheDocument()
     expect(within(page).queryByRole('button', { name: '打开原图' })).not.toBeInTheDocument()
-    expect(within(page).getByRole('button', { name: '添加图片' })).toBeEnabled()
+    expect(within(page).getByRole('button', { name: '添加图片' })).not.toHaveAttribute(
+      'aria-disabled',
+    )
   })
 
   it('关联已有图片保存失败不会误报为上传成功', async () => {
@@ -1244,7 +1252,12 @@ describe('StoryboardReader', () => {
       await userEvent.click(within(page).getByRole('button', { name: '添加图片' }))
       await userEvent.upload(screen.getByLabelText('选择要上传的图片'), imageFile())
     } else await userEvent.upload(within(page).getByLabelText('选择替换图片'), imageFile())
-    expect(await screen.findByText('上传失败（503）')).toBeVisible()
+    if (mode === '新增') {
+      // 新增失败留在舞台上：错误图标加重试，原因在提示里。
+      const retry = await within(page).findByRole('button', { name: '上传失败，点击重试' })
+      act(() => retry.focus())
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('上传失败（503）')
+    } else expect(await screen.findByText('上传失败（503）')).toBeVisible()
     expect(files.writes).toEqual([])
     expect(files.snapshot()).toEqual(document)
     expect(within(page).getByRole('img', { name: '镜头组 1 第 2 帧' })).toHaveAttribute(
@@ -1302,5 +1315,242 @@ describe('StoryboardReader', () => {
       'src',
       'https://example.com/server.png',
     )
+  })
+
+  describe('帧计数弹层', () => {
+    it('列出本组全部图片：点图切画面并按规则落到段上，每张都能开大图', async () => {
+      provide()
+      const { router } = await renderReader('/?shot=1&content=scene:2')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const openGallery = async () => {
+        await userEvent.click(within(page).getByRole('button', { name: /查看本组全部图片/ }))
+        return screen.findByRole('dialog', { name: '本组全部图片' })
+      }
+      expect(
+        within(page).getByRole('button', { name: '第 1 / 2 帧，查看本组全部图片' }),
+      ).toBeVisible()
+
+      // 没被任何段引用的 @3 也在这里：只换画面，不高亮任何段。
+      let gallery = await openGallery()
+      expect(within(gallery).getAllByRole('button', { name: /^第 \d 帧$/ })).toHaveLength(3)
+      expect(within(gallery).getByRole('button', { name: '第 2 帧' })).toHaveAttribute(
+        'aria-current',
+        'true',
+      )
+      await userEvent.click(within(gallery).getByRole('button', { name: '第 3 帧' }))
+      await waitFor(() =>
+        expect(router.state.location.search).toEqual({
+          shot: 1,
+          content: 'unreferenced',
+          frame: 3,
+        }),
+      )
+      expect(within(page).getByRole('img', { name: '镜头组 1 第 3 帧' })).toBeVisible()
+      for (const segment of within(page).getAllByRole('group', { name: /^(全局设定|镜头 \d)$/ }))
+        expect(segment).toHaveAttribute('aria-current', 'false')
+
+      // 从未引用点回 @1：到第一个引用它的段。
+      gallery = await openGallery()
+      await userEvent.click(within(gallery).getByRole('button', { name: '第 1 帧' }))
+      await waitFor(() =>
+        expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame: 1 }),
+      )
+      expect(segmentOf(page, '镜头 1')).toHaveAttribute('aria-current', 'true')
+
+      // 当前段引用的就留在当前段。
+      await userEvent.click(within(page).getByRole('button', { name: '镜头 2' }))
+      gallery = await openGallery()
+      await userEvent.click(within(gallery).getByRole('button', { name: '第 1 帧' }))
+      await waitFor(() =>
+        expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:2', frame: 1 }),
+      )
+
+      gallery = await openGallery()
+      await userEvent.click(within(gallery).getByRole('button', { name: '查看第 3 帧大图' }))
+      const lightbox = await screen.findByRole('dialog', { name: '镜头组 1 第 3 帧' })
+      expect(within(lightbox).getByRole('img')).toHaveAttribute(
+        'src',
+        'https://example.com/unassigned.png',
+      )
+    })
+
+    it('图片任务有新结果的帧在弹层格子上标出来，计数按钮也亮', async () => {
+      provide()
+      const finished = makeGenerationJob({
+        id: 'd4e5f6a7-8b9c-4d0e-9f1a-2b3c4d5e6f70',
+        createdAt: '2026-09-01T10:05:00Z',
+        kind: 'image',
+        metadata: { frame: 3, shot: 1 },
+        outputUrl: 'https://example.com/edited.png',
+        request: { prompt: '换个颜色', referenceImageUrls: [] },
+        status: 'completed',
+      })
+      server.use(
+        http.get('*/api/generations', ({ request }) =>
+          HttpResponse.json({
+            items: new URL(request.url).searchParams.get('kind') === 'image' ? [finished] : jobs,
+          }),
+        ),
+      )
+      await renderReader()
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const counter = await within(page).findByRole('button', {
+        name: '第 1 / 2 帧，查看本组全部图片，有新结果',
+      })
+      await userEvent.click(counter)
+      const gallery = await screen.findByRole('dialog', { name: '本组全部图片' })
+      expect(within(gallery).getByRole('button', { name: '第 3 帧，有新结果' })).toBeVisible()
+      expect(within(gallery).getByRole('button', { name: '第 1 帧' })).toBeVisible()
+    })
+  })
+
+  describe('往当前段添加图片：拖放、粘贴与重试', () => {
+    const fileTransfer = (files: File[]) => ({
+      files,
+      items: files.map((file) => ({ kind: 'file', type: file.type, webkitGetAsEntry: () => null })),
+      types: ['Files'],
+    })
+    const dropOnStage = (page: HTMLElement) => {
+      const target = within(page).getByRole('group', { name: '当前帧图片' })
+      fireEvent.dragEnter(target, { dataTransfer: fileTransfer([imageFile()]) })
+      fireEvent.drop(target, { dataTransfer: fileTransfer([imageFile()]) })
+    }
+    const countSigns = () => {
+      const counter = { signs: 0 }
+      server.events.on('request:start', ({ request }) => {
+        if (request.method === 'POST' && request.url.includes('/uploads/sign')) counter.signs += 1
+      })
+      return counter
+    }
+
+    it('拖到舞台上显示松开添加，落下后新图加进当前段、不替换当前帧', async () => {
+      const files = provide()
+      await renderReader('/?shot=1&content=scene:1&frame=2')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const target = within(page).getByRole('group', { name: '当前帧图片' })
+      fireEvent.dragEnter(target, { dataTransfer: fileTransfer([imageFile()]) })
+      expect(within(page).getByText('松开添加')).toBeVisible()
+      fireEvent.drop(target, { dataTransfer: fileTransfer([imageFile()]) })
+      expect(within(page).queryByText('松开添加')).not.toBeInTheDocument()
+
+      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(4), {
+        timeout: 3000,
+      })
+      const saved = files.snapshot().shots[0]
+      expect(saved?.image_urls.slice(0, 3)).toEqual(document.shots[0]?.image_urls)
+      expect(saved?.prompt.timeline[0]?.image_indexes).toEqual([2, 1, 4])
+      expect(saved?.prompt.timeline[1]).toEqual(document.shots[0]?.prompt.timeline[1])
+      expect(within(page).getByRole('img', { name: '镜头组 1 第 4 帧' })).toHaveAttribute(
+        'src',
+        saved?.image_urls[3],
+      )
+    })
+
+    it('在正文里粘贴图片，插到光标处；粘贴文字照旧进编辑器', async () => {
+      const files = provide(emptyDocument)
+      await renderReader('/?shot=1&content=scene:1')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const editor = within(page).getByRole('textbox', { name: '镜头 1 的描述' })
+      await replaceText(editor, '粘贴前的正文。')
+      expect(editor).toHaveTextContent('粘贴前的正文。')
+
+      pasteFilesIntoComposer(editor, [imageFile()])
+      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(1), {
+        timeout: 3000,
+      })
+      expect(files.snapshot().shots[0]?.prompt.timeline[0]).toEqual({
+        timestamps: [0, 3],
+        prompt: '粘贴前的正文。@Image1',
+        image_indexes: [1],
+      })
+      expect(within(page).getByRole('img', { name: '镜头组 1 第 1 帧' })).toBeVisible()
+    })
+
+    const fullDocument: ShotsDocument = {
+      ...document,
+      shots: document.shots.map((shot) =>
+        shot.index === 1
+          ? {
+              ...shot,
+              image_urls: Array.from(
+                { length: 30 },
+                (_, index) => shot.image_urls[index] ?? `https://example.com/${index + 1}.png`,
+              ),
+            }
+          : shot,
+      ),
+    }
+
+    it.each([
+      { channel: '拖放', lock: '选中未引用的图', reason: '先选一段文案' },
+      { channel: '粘贴', lock: '选中未引用的图', reason: '先选一段文案' },
+      { channel: '拖放', lock: '达到 30 张', reason: '每组最多使用 30 张参考图' },
+      { channel: '粘贴', lock: '达到 30 张', reason: '每组最多使用 30 张参考图' },
+      { channel: '拖放', lock: '只读', reason: '当前不能编辑分镜' },
+      { channel: '粘贴', lock: '只读', reason: '当前不能编辑分镜' },
+      { channel: '拖放', lock: '正在上传', reason: '正在上传，请稍候' },
+      { channel: '粘贴', lock: '正在上传', reason: '正在上传，请稍候' },
+    ])('$lock 时$channel不添加，toast 说明原因', async ({ channel, lock, reason }) => {
+      const files = provide(lock === '达到 30 张' ? fullDocument : document)
+      const counter = countSigns()
+      await renderReader(
+        lock === '选中未引用的图' ? '/?shot=1&content=unreferenced' : '/?shot=1&content=scene:1',
+        lock === '只读',
+      )
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      if (lock === '正在上传') {
+        delayedUpload()
+        await userEvent.click(within(page).getByRole('button', { name: '添加图片' }))
+        await userEvent.upload(screen.getByLabelText('选择要上传的图片'), imageFile())
+        await within(page).findByRole('status', { name: /^上传中/ })
+      }
+      const before = counter.signs
+      if (channel === '拖放') dropOnStage(page)
+      else pasteFilesIntoComposer(page, [imageFile()])
+
+      expect(await screen.findByText(reason)).toBeVisible()
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
+      expect(counter.signs).toBe(before)
+      expect(files.writes).toEqual([])
+      if (lock !== '达到 30 张' && lock !== '只读')
+        expect(within(page).getByRole('button', { name: '添加图片' })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        )
+    })
+
+    it('上传失败后点重试，用同一个文件再传一次并加进当前段', async () => {
+      const files = provide()
+      // 签名请求带着文件类型：只选过一次 WebP，两次签名都是 WebP，说明重试用的是留下的原文件。
+      const signed: string[] = []
+      server.events.on('request:start', async ({ request }) => {
+        if (request.method === 'POST' && request.url.includes('/uploads/sign'))
+          signed.push(((await request.clone().json()) as { contentType: string }).contentType)
+      })
+      server.use(
+        http.put('*/mock-oss/:uploadId', () => new HttpResponse(null, { status: 503 }), {
+          once: true,
+        }),
+      )
+      await renderReader('/?shot=1&content=scene:1')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      await userEvent.click(within(page).getByRole('button', { name: '添加图片' }))
+      await userEvent.upload(
+        screen.getByLabelText('选择要上传的图片'),
+        new File(['webp bytes'], '新帧.webp', { type: 'image/webp' }),
+      )
+      const retry = await within(page).findByRole('button', { name: '上传失败，点击重试' })
+      expect(files.writes).toEqual([])
+
+      await userEvent.click(retry)
+      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(4), {
+        timeout: 3000,
+      })
+      expect(signed).toEqual(['image/webp', 'image/webp'])
+      expect(files.snapshot().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([2, 1, 4])
+      expect(
+        within(page).queryByRole('button', { name: '上传失败，点击重试' }),
+      ).not.toBeInTheDocument()
+    })
   })
 })

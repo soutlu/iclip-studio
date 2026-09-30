@@ -200,16 +200,14 @@ test('从组号浮层跳组：地址落在那一组，顶栏组号跟着变，�
   await expect(shot2.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
 })
 
-test('替换图标与拖放都可上传本地图片，保持当前帧并可继续编辑', async ({ page }) => {
+test('替换图标换掉当前帧，拖到舞台上的图加成新的一帧，都能继续编辑', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
   await openStoryboardShot(panel, 2)
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
 
-  // 点第二镜里的 @2，地址记下第 2 帧，后面替换与拖放都要留在这一帧。
-  await shot2
-    .getByRole('group', { name: '镜头 2', exact: true })
-    .getByRole('button', { name: '看第 2 帧' })
-    .click()
+  // 点第二镜里的 @2，地址记下第 2 帧，替换要留在这一帧。
+  const secondScene = shot2.getByRole('group', { name: '镜头 2', exact: true })
+  await secondScene.getByRole('button', { name: '看第 2 帧' }).click()
   await expect(page).toHaveURL(/frame=2/)
   const preview = shot2.getByRole('img', { name: '镜头组 2 第 2 帧' })
   const imageArea = shot2.getByRole('group', { name: '当前帧图片' })
@@ -248,23 +246,27 @@ test('替换图标与拖放都可上传本地图片，保持当前帧并可继�
     return transfer
   }, Array.from(png))
   await imageArea.dispatchEvent('dragenter', { dataTransfer })
-  await expect(imageArea.getByText('松开替换当前图片')).toBeVisible()
+  await expect(shot2.getByText('松开添加', { exact: true })).toBeVisible()
   await expect(page.getByTestId('composer-drop-overlay')).toBeHidden()
-  await page.screenshot({ path: '../.artifacts/design-qa/storyboard-replace-drop.png' })
+  await page.screenshot({ path: '../.artifacts/design-qa/storyboard-add-drop.png' })
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.screenshot({
     animations: 'disabled',
-    path: '../.artifacts/design-qa/storyboard-replace-drop-dark.png',
+    path: '../.artifacts/design-qa/storyboard-add-drop-dark.png',
   })
   await page.emulateMedia({ colorScheme: 'light' })
   await imageArea.dispatchEvent('drop', { dataTransfer })
-  await expect(preview).not.toHaveAttribute('src', uploadedUrl ?? '')
-  await expect(preview).toHaveAttribute('src', /\/mock-oss\//)
-  await expect(preview).toHaveJSProperty('naturalWidth', 600)
-  await expect(page).toHaveURL(/frame=2/)
+  // 拖入是新增：画面换到新加的那一帧，引用插进第二镜；替换过的第 2 帧原样留着。
+  await expect(page).not.toHaveURL(/frame=2/)
+  const added = shot2.getByRole('img', { name: /^镜头组 2 第 \d+ 帧$/ })
+  await expect(added).toHaveAttribute('src', /\/mock-oss\//)
+  await expect(added).not.toHaveAttribute('src', uploadedUrl ?? '')
+  await expect(added).toHaveJSProperty('naturalWidth', 600)
   await expect(panel.getByText('已保存')).toBeVisible({ timeout: 5_000 })
   await expect(page.getByText('拖入帧.png', { exact: true })).toBeHidden()
   await dataTransfer.dispose()
+  await secondScene.getByRole('button', { name: '看第 2 帧' }).click()
+  await expect(preview).toHaveAttribute('src', uploadedUrl ?? '')
 
   const editor = shot2.getByRole('textbox', { name: '镜头 2 的描述' })
   await editor.click()

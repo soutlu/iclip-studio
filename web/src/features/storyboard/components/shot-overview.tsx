@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
+import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { formatShotPrompts, shotName, type Shot } from '../shot-document'
-import { aspectRatioStyle } from '../shots'
 import { copyWithToast } from './copy-with-toast'
 
 type ShotOverviewProps = {
@@ -75,7 +75,7 @@ export function ShotOverview({
               >
                 <span
                   className="grid w-full place-items-center bg-surface-container"
-                  style={{ aspectRatio: aspectRatioStyle(aspect_ratio) }}
+                  style={{ aspectRatio: aspectValueOf(aspect_ratio) }}
                 >
                   {url === undefined ? (
                     <span className="text-body-sm text-on-surface-faint">无图</span>

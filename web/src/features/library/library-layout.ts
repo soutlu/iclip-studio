@@ -1,7 +1,7 @@
 /** 瀑布流的几何：列数、卡片预估高度、封面截帧宽度。虚拟列表按这里的预估分列，预估准了布局就不跳。 */
 
+import { aspectOf } from '@/shared/lib/aspect-ratio'
 import type { LibraryVideo } from './library.api'
-import { aspectOf } from './library-media'
 
 /** 容器宽度对应的列数；宽度未知（0）时按最少的两列。 */
 export const columnCountFor = (width: number): number => {

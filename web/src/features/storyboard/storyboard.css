@@ -74,35 +74,6 @@
   position: absolute;
   inset: 0;
 }
-.storyboard-hero-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  border-radius: var(--radius-full);
-  background: var(--color-chip-bg-glass);
-  backdrop-filter: blur(12px);
-}
-.storyboard-hero-prev {
-  left: 12px;
-}
-.storyboard-hero-next {
-  right: 12px;
-}
-.storyboard-upload-status {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-lowest);
-  box-shadow: var(--shadow-1);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-}
 /* 文案列：正文区占满剩下的高度、自己竖向滚；列底留给成片区。 */
 .storyboard-script {
   display: flex;
@@ -131,7 +102,11 @@
     overscroll-behavior-y: contain;
     padding-bottom: 4px;
   }
+  /* 舞台吸顶：往下读文案时画面一直在。 */
   .storyboard-stage {
+    position: sticky;
+    z-index: var(--z-local-1);
+    top: 0;
     width: 100%;
     height: 45vh;
     flex: none;
@@ -251,36 +226,144 @@
   }
 }
 
+/* ===== 舞台上的件 =====
+   画面四角：左上 @N 角标（旁边挂图片任务状态），右上帧工具，左下上传状态，右下帧计数；左右居中是切帧箭头。
+   帧工具与箭头悬停或聚焦时才露出来，触屏常显；角标、计数与上传状态常显。 */
 .storyboard-media {
   display: grid;
   place-items: center;
 }
+/* 任务状态排在 @N 下面一行：窄画面上横着排会和右上的帧工具撞在一起。 */
+.storyboard-frame-marks {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.storyboard-tag {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-chip-bg-glass);
+  backdrop-filter: blur(12px);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
+}
 .storyboard-frame-tools {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  border-radius: var(--radius-xs);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+}
+.storyboard-hero-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.storyboard-hero-prev {
+  left: 12px;
+}
+.storyboard-hero-next {
+  right: 12px;
+}
+.storyboard-frame-tools,
+.storyboard-hero-nav {
   opacity: 0;
   transition: opacity var(--dur-s) var(--ease-decel);
 }
-.storyboard-frame-tools > button {
-  color: inherit;
-  border-radius: var(--radius-xs);
+.storyboard-stage:hover :is(.storyboard-frame-tools, .storyboard-hero-nav),
+.storyboard-stage:focus-within :is(.storyboard-frame-tools, .storyboard-hero-nav) {
+  opacity: 1;
 }
-.storyboard-media:hover .storyboard-frame-tools,
-.storyboard-media:focus-within .storyboard-frame-tools {
+.storyboard-hero-foot {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.storyboard-hero-foot > * {
+  pointer-events: auto;
+}
+.storyboard-upload-chip {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
+}
+/* 有新结果的小点：计数按钮上、弹层格子右上。 */
+.storyboard-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+/* 放置提示：盖住整个舞台，中性描边加拖动态叠层，不用主色。 */
+.storyboard-drop {
+  position: absolute;
+  z-index: var(--z-local-3);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--color-outline);
+  border-radius: inherit;
+  background: var(--color-state-dragged);
+  pointer-events: none;
+}
+.storyboard-drop-hint {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-2);
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--text-body--line-height);
+}
+/* 弹层格子里的放大钮：悬停或聚焦那一格才露出来，触屏常显。 */
+.storyboard-gallery-zoom {
+  opacity: 0;
+}
+.storyboard-gallery-item:hover .storyboard-gallery-zoom,
+.storyboard-gallery-item:focus-within .storyboard-gallery-zoom {
   opacity: 1;
 }
 @media (hover: none) {
   .storyboard-frame-tools,
+  .storyboard-hero-nav,
+  .storyboard-gallery-zoom,
   .storyboard-segment-copy {
     opacity: 1;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .storyboard-frame-tools,
+  .storyboard-hero-nav,
   .storyboard-segment {
     transition: none;
   }

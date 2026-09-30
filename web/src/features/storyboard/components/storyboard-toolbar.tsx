@@ -2,9 +2,11 @@
 
 import type { ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
+import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import type { ReaderSheet } from '../shot-content'
 import { copyWithToast } from './copy-with-toast'
+import { workbenchControl } from './workbench-control'
 
 type StoryboardToolbarProps = {
   /** 当前组在全部组里排第几，从 1 起。 */
@@ -35,7 +37,7 @@ export function StoryboardToolbar({
       <button
         aria-expanded={sheet === 'all'}
         aria-label={`镜头组 ${position} / ${total}，打开全部镜头组`}
-        className="inline-flex h-8 shrink-0 ui-state cursor-pointer items-center gap-1 rounded-sm bg-surface-container pr-2 pl-2.5 text-body text-on-surface tabular-nums ui-focus"
+        className={cn(workbenchControl({ shape: 'label' }), 'pr-2 text-body')}
         onClick={(event) => onOpenSheet('all', event.currentTarget)}
         title="全部镜头组"
         type="button"
@@ -59,7 +61,7 @@ export function StoryboardToolbar({
         {activeCount > 0 ? <span className="ml-1 text-primary">生成中 {activeCount}</span> : null}
       </Button>
       <IconButton
-        className="size-8 shrink-0 rounded-sm bg-surface-container text-on-surface"
+        className={workbenchControl({ shape: 'icon' })}
         label="复制完整提示词"
         name="copy"
         onClick={() => void copyWithToast(fullPrompt, '已复制完整提示词')}

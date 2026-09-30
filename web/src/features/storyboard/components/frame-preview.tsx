@@ -1,24 +1,23 @@
-/** 以帧号和地址为 key 挂载；切换图片即丢弃旧上传，点击与拖放共用替换流程。 */
+/** 舞台上的当前帧：以帧号和地址为 key 挂载，切换图片即丢弃旧上传。替换只走「替换图片」按钮；拖入的图由舞台当作新增。 */
 
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
 import { IconButton } from '@/shared/ui/button'
-import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { toast } from '@/shared/ui/toast'
 import { frameBadgeStatus, frameBadgeText, type FrameBadge } from '../frame-status'
-import { aspectRatioStyle } from '../shots'
+import { workbenchControl } from './workbench-control'
 
 type FramePreviewProps = {
-  aspectRatio: string
   disabled: boolean
-  caption?: string | undefined
+  /** 帧号，画面左上角标成「@N」。 */
+  number: number
   /** 这一帧最新图片任务的状态；没有任务或已经看过就不给。 */
   badge?: FrameBadge | undefined
   name: string
-  url: string | undefined
+  url: string
   onOpen: () => void
   onEdit?: (() => void) | undefined
   /** 点角标看这条新结果；与 `onEdit` 同一个编辑器，只是打开时选中的图不同。 */
@@ -31,11 +30,10 @@ type FramePreviewProps = {
 }
 
 export function FramePreview({
-  aspectRatio,
   badge,
   disabled,
-  caption,
   name,
+  number,
   onOpen,
   onEdit,
   onOpenResult,
@@ -57,18 +55,9 @@ export function FramePreview({
     }
   }, [])
 
-  const replaceFromFiles = async (files: readonly File[]) => {
+  const replace = async (file: File) => {
     const upload = uploadRef.current
     if (disabled || upload.busy) return
-    if (url === undefined) {
-      toast.error('当前镜头还没有可替换的图片')
-      return
-    }
-    const file = files[0]
-    if (files.length !== 1 || file === undefined) {
-      toast.error('每次只能选择一张本地图片')
-      return
-    }
     upload.busy = true
     setUploading(true)
     try {
@@ -89,118 +78,89 @@ export function FramePreview({
     return () => reportUploading(false)
   }, [uploading])
 
-  const { dragOver, dragHandlers } = useFileDropTarget({
-    blocked: disabled || uploading || url === undefined,
-    onDirectory: () => toast.error('请拖入一张图片文件，不支持文件夹'),
-    onFiles: (files) => void replaceFromFiles(files),
-  })
-
+  const toolClass = workbenchControl({ shape: 'icon' })
   return (
-    <div
-      aria-label="当前帧图片"
-      className="storyboard-media relative min-h-0 min-w-0 bg-surface-container"
-      {...dragHandlers}
-      role="group"
-    >
-      {url === undefined ? (
-        <p className="text-body-sm text-on-surface-faint">这个镜头还没有帧</p>
-      ) : (
-        <>
+    <div aria-label="当前帧图片" className="storyboard-media relative min-h-0 min-w-0" role="group">
+      <button
+        aria-label="打开原图"
+        className="absolute inset-0 cursor-zoom-in ui-focus"
+        onClick={onOpen}
+        type="button"
+      >
+        <img alt={name} className="size-full object-contain" draggable={false} src={url} />
+      </button>
+      <div className="storyboard-frame-marks">
+        <span className="storyboard-tag">@{number}</span>
+        {badge === undefined ? null : badge.kind === 'result' && onOpenResult !== undefined ? (
           <button
-            aria-label="打开原图"
-            className="absolute inset-0 cursor-zoom-in ui-focus"
-            onClick={onOpen}
+            className="flex cursor-pointer rounded-full ui-focus disabled:cursor-default"
+            disabled={disabled || uploading}
+            onClick={() => onOpenResult(badge.jobId)}
             type="button"
           >
-            <img
-              alt={name}
-              className="size-full object-contain"
-              draggable={false}
-              src={url}
-              style={{ aspectRatio: aspectRatioStyle(aspectRatio) }}
+            <StatusBadge
+              appearance="label"
+              kind="image"
+              status={frameBadgeStatus(badge)}
+              text="有新结果 · 查看"
             />
           </button>
-          {caption === undefined ? null : (
-            <p className="pointer-events-none absolute right-2 bottom-2 left-2 rounded-xs bg-surface-container-lowest px-2 py-1 text-caption text-on-surface-variant">
-              {caption}
-            </p>
-          )}
-          {badge === undefined ? null : badge.kind === 'result' && onOpenResult !== undefined ? (
-            <button
-              className="absolute top-2 left-2 flex cursor-pointer rounded-full ui-focus disabled:cursor-default"
-              disabled={disabled || uploading}
-              onClick={() => onOpenResult(badge.jobId)}
-              type="button"
-            >
-              <StatusBadge
-                appearance="label"
-                kind="image"
-                status={frameBadgeStatus(badge)}
-                text="有新结果 · 查看"
-              />
-            </button>
-          ) : (
-            <p
-              className="pointer-events-none absolute top-2 left-2 flex items-center gap-1.5"
-              role={badge.kind === 'failed' ? 'alert' : 'status'}
-            >
-              <StatusBadge
-                appearance="label"
-                kind="image"
-                status={frameBadgeStatus(badge)}
-                text={frameBadgeText(badge)}
-              />
-              {badge.kind === 'failed' && badge.message !== null ? (
-                <span className="rounded-full bg-surface-container-lowest px-2 py-1 text-caption text-on-surface">
-                  {badge.message}
-                </span>
-              ) : null}
-            </p>
-          )}
-          <div className="storyboard-frame-tools">
-            {onEdit === undefined ? null : (
-              <IconButton
-                data-frame-edit=""
-                disabled={disabled || uploading}
-                label="编辑图片"
-                title="编辑图片"
-                name="edit-image"
-                size="sm"
-                onClick={onEdit}
-              />
-            )}
-            <IconButton
-              disabled={disabled || uploading}
-              label="替换图片"
-              name="image"
-              onClick={() => inputRef.current?.click()}
-              size="sm"
-              title="替换图片"
+        ) : (
+          <p
+            className="pointer-events-none flex items-center gap-1.5"
+            role={badge.kind === 'failed' ? 'alert' : 'status'}
+          >
+            <StatusBadge
+              appearance="label"
+              kind="image"
+              status={frameBadgeStatus(badge)}
+              text={frameBadgeText(badge)}
             />
-            <input
-              accept={MEDIA_IMAGE_ACCEPT}
-              aria-label="选择替换图片"
-              className="hidden"
-              disabled={disabled || uploading}
-              onChange={(event) => {
-                const files = [...(event.target.files ?? [])]
-                event.target.value = ''
-                if (files.length > 0) void replaceFromFiles(files)
-              }}
-              ref={inputRef}
-              type="file"
-            />
-            {tools}
-          </div>
-        </>
-      )}
-      {dragOver ? (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center border-2 border-primary bg-primary-container-soft">
-          <span className="rounded-xs bg-surface-container-lowest px-3 py-2 text-body-sm text-on-surface">
-            松开替换当前图片
-          </span>
-        </div>
-      ) : null}
+            {badge.kind === 'failed' && badge.message !== null ? (
+              <span className="rounded-full bg-surface-container-lowest px-2 py-1 text-caption text-on-surface">
+                {badge.message}
+              </span>
+            ) : null}
+          </p>
+        )}
+      </div>
+      <div className="storyboard-frame-tools">
+        {onEdit === undefined ? null : (
+          <IconButton
+            className={toolClass}
+            data-frame-edit=""
+            disabled={disabled || uploading}
+            label="编辑图片"
+            name="edit-image"
+            onClick={onEdit}
+            size="sm"
+            title="编辑图片"
+          />
+        )}
+        <IconButton
+          className={toolClass}
+          disabled={disabled || uploading}
+          label="替换图片"
+          name="image"
+          onClick={() => inputRef.current?.click()}
+          size="sm"
+          title="替换图片"
+        />
+        <input
+          accept={MEDIA_IMAGE_ACCEPT}
+          aria-label="选择替换图片"
+          className="hidden"
+          disabled={disabled || uploading}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file !== undefined) void replace(file)
+          }}
+          ref={inputRef}
+          type="file"
+        />
+        {tools}
+      </div>
       {uploading ? (
         <div
           className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-scrim/32 text-body-sm text-on-scrim"

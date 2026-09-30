@@ -1,7 +1,7 @@
 /** 镜头组可选择的内容；内容身份独立于它引用的图片。 */
 import { z } from 'zod'
 import { UserFacingError } from '@/shared/api/client'
-import { MAX_REFERENCE_IMAGES } from './shots'
+import { MAX_REFERENCE_IMAGES, REFERENCE_LIMIT_TEXT } from './shots'
 import {
   extractImageIndexes,
   formatSeconds,
@@ -120,16 +120,34 @@ export const adjacentFrame = (
   return at < 0 ? undefined : content.frameNumbers[at + step]
 }
 
-/** 一帧被不止一段引用时画面上的说明，如「@Image2 · 镜头 1、镜头 2 共用」；只有一段或没有帧时为 undefined。 */
-export const sharedFrameCaption = (
-  contents: readonly ShotContent[],
+/** 当前帧在这段引用的帧里排第几（从 1 起）、这段共几帧；这段没有帧或当前帧不属于这段时为 undefined。 */
+export const framePosition = (
+  content: ShotContent,
   frame: number | undefined,
+): { index: number; count: number } | undefined => {
+  const at = frame === undefined ? -1 : content.frameNumbers.indexOf(frame)
+  return at < 0 ? undefined : { count: content.frameNumbers.length, index: at + 1 }
+}
+
+/** 一帧被哪些段用着，如「镜头 1、镜头 2 共用」「全局设定」；没有段引用时是「未引用」。 */
+export const frameUsage = (contents: readonly ShotContent[], frame: number): string => {
+  const users = scriptSegments(contents).filter((item) => item.frameNumbers.includes(frame))
+  if (users.length === 0) return '未引用'
+  const labels = users.map(contentLabel).join('、')
+  return users.length > 1 ? `${labels} 共用` : labels
+}
+
+/** 在本组全部图片里点了某一帧之后选中哪段：当前段引用它就留在当前段，否则到第一个引用它的段；
+ * 没有段引用时落到「未引用」，只换画面、不高亮任何段。帧不在本组时返回 undefined。 */
+export const contentAfterPickingFrame = (
+  contents: readonly ShotContent[],
+  currentId: string,
+  frame: number,
 ): string | undefined => {
-  if (frame === undefined) return undefined
-  const sharing = contents.filter((item) => item.frameNumbers.includes(frame))
-  return sharing.length > 1
-    ? `@Image${frame} · ${sharing.map(contentLabel).join('、')} 共用`
-    : undefined
+  const current = contents.find((item) => item.id === currentId)
+  if (current?.frameNumbers.includes(frame) === true) return current.id
+  // 「未引用」正好收着没人引用的帧，按顺序找就会在段都不引用时落到它。
+  return contents.find((item) => item.frameNumbers.includes(frame))?.id
 }
 
 export const updateContentPrompt = (shot: Shot, id: string, text: string): Shot => {
@@ -163,7 +181,7 @@ export const appendContentImage = (
   insertion?: PromptInsertion,
 ): Shot => {
   if (shot.image_urls.length >= MAX_REFERENCE_IMAGES)
-    throw new UserFacingError(`每组最多使用 ${MAX_REFERENCE_IMAGES} 张参考图`)
+    throw new UserFacingError(REFERENCE_LIMIT_TEXT)
   if (url.trim() === '') throw new UserFacingError('图片地址不能为空')
   const image_urls = [...shot.image_urls, url]
   return insertContentReference({ ...shot, image_urls }, id, image_urls.length, insertion)

@@ -1,4 +1,4 @@
-/** 分镜共用的文件路径、参考图上限、画幅、生成状态与按镜头组认出片。 */
+/** 分镜共用的文件路径、参考图上限、生成状态与按镜头组认出片。 */
 
 import type { z } from 'zod'
 import type { GenerationOut } from '@/shared/api/generated/types.gen'
@@ -14,7 +14,8 @@ export const SHOTS_PATH = 'video_shot.json'
 /** 每组参考图上限，与后端 MAX_REFERENCE_IMAGES 一致（见 contract/conventions.md）。 */
 export const MAX_REFERENCE_IMAGES = 30
 
-export const aspectRatioStyle = (aspectRatio: string) => aspectRatio.replace(':', ' / ')
+/** 达到上限时给人看的那句，拦上传与追加新图共用。 */
+export const REFERENCE_LIMIT_TEXT = `每组最多使用 ${MAX_REFERENCE_IMAGES} 张参考图`
 
 /** 与状态角标的媒体状态同词，可直接传给它画。 */
 export type GenerationPhase = 'queued' | 'running' | 'completed' | 'failed'

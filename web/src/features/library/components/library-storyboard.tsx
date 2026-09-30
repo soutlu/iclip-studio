@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent } from 'react'
 import { Icon } from '@/shared/icons'
+import { aspectOf } from '@/shared/lib/aspect-ratio'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
 import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
@@ -9,14 +10,7 @@ import { useHoverPreview } from '@/shared/ui/media-preview'
 import { PopupAnchor, PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import type { LibraryVideo } from '../library.api'
 import { snapshotWidthFor } from '../library-layout'
-import {
-  aspectOf,
-  cutCountOf,
-  formatClock,
-  formatSecond,
-  keyframesOf,
-  type Keyframe,
-} from '../library-media'
+import { cutCountOf, formatClock, formatSecond, keyframesOf, type Keyframe } from '../library-media'
 
 const canHover = () => window.matchMedia('(hover: hover)').matches
 

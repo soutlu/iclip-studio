@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   adjacentFrame,
+  contentAfterPickingFrame,
+  framePosition,
+  frameUsage,
   scriptSegments,
   segmentTimeRange,
-  sharedFrameCaption,
   shotContents,
 } from './shot-content'
 import type { Shot } from './shot-document'
@@ -69,10 +71,32 @@ describe('adjacentFrame', () => {
   })
 })
 
-describe('sharedFrameCaption', () => {
-  it('被几段共用时列出它们，只属于一段或没有帧时不说', () => {
-    expect(sharedFrameCaption(contents, 1)).toBe('@Image1 · 全局设定、镜头 1 共用')
-    expect(sharedFrameCaption(contents, 2)).toBeUndefined()
-    expect(sharedFrameCaption(contents, undefined)).toBeUndefined()
+describe('framePosition', () => {
+  it('按这段引用的顺序数第几帧、共几帧；帧不属于这段或这段没有帧时为 undefined', () => {
+    expect(framePosition(byId('scene:1'), 2)).toEqual({ count: 2, index: 1 })
+    expect(framePosition(byId('scene:1'), 1)).toEqual({ count: 2, index: 2 })
+    expect(framePosition(byId('scene:1'), 3)).toBeUndefined()
+    expect(framePosition(byId('scene:2'), undefined)).toBeUndefined()
+  })
+})
+
+describe('frameUsage', () => {
+  it('列出引用这一帧的段，多段时说共用，没有段引用时说未引用', () => {
+    expect(frameUsage(contents, 1)).toBe('全局设定、镜头 1 共用')
+    expect(frameUsage(contents, 2)).toBe('镜头 1')
+    expect(frameUsage(contents, 3)).toBe('未引用')
+  })
+})
+
+describe('contentAfterPickingFrame', () => {
+  it.each([
+    ['当前段引用它就留在当前段', 'scene:1', 1, 'scene:1'],
+    ['当前段不引用它就到第一个引用它的段', 'scene:2', 2, 'scene:1'],
+    ['按段的顺序取第一个', 'scene:2', 1, 'global'],
+    ['没有段引用时落到未引用', 'scene:1', 3, 'unreferenced'],
+    ['从未引用点回被引用的帧，到引用它的段', 'unreferenced', 2, 'scene:1'],
+    ['帧不在本组时不选', 'scene:1', 4, undefined],
+  ])('%s', (_case, currentId, frame, expected) => {
+    expect(contentAfterPickingFrame(contents, currentId, frame)).toBe(expected)
   })
 })

@@ -381,7 +381,11 @@ describe('StoryboardReader 全局设定与参考图', () => {
           }
         })
         expect(await screen.findByRole('textbox', { name: '全局设定' })).toBeVisible()
-        await waitFor(() => expect(screen.getByRole('button', { name: '添加图片' })).toBeEnabled())
+        await waitFor(() =>
+          expect(screen.getByRole('button', { name: '添加图片' })).not.toHaveAttribute(
+            'aria-disabled',
+          ),
+        )
         expect(screen.getByRole('button', { name: '生成第 1 组' })).not.toHaveAttribute(
           'aria-disabled',
         )
@@ -424,8 +428,9 @@ describe('StoryboardReader 全局设定与参考图', () => {
       await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
       await waitFor(() => expect(state.writes).toHaveLength(1))
       expect(state.submissions).toEqual([])
+      // 「+」用 aria-disabled 置灰，好让悬停、聚焦说出原因。
       const addImage = screen.getByRole('button', { name: '添加图片' })
-      expect(addImage).toBeDisabled()
+      expect(addImage).toHaveAttribute('aria-disabled', 'true')
       expect(screen.getByRole('button', { name: '替换图片' })).toBeDisabled()
       await userEvent.click(addImage)
       expect(screen.queryByRole('dialog', { name: '添加图片' })).not.toBeInTheDocument()
@@ -443,7 +448,11 @@ describe('StoryboardReader 全局设定与参考图', () => {
         reference_image_urls: fixture.shots[0]?.image_urls,
       })
       expect(state.writes).toHaveLength(1)
-      await waitFor(() => expect(screen.getByRole('button', { name: '添加图片' })).toBeEnabled())
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '添加图片' })).not.toHaveAttribute(
+          'aria-disabled',
+        ),
+      )
       await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
       expect(await screen.findByRole('dialog', { name: '添加图片' })).toBeVisible()
     } finally {

@@ -16,10 +16,8 @@ import {
   type VideoModelsStatus,
 } from '../video-generation-options'
 import { supportsAspectRatio } from '../video-model-support'
-
-/** 全栏唯一的次级控件配方，与 ChipGroup segmented 同高同底；主色只留给出片按钮。 */
-const CONTROL_CLASS =
-  'h-8 shrink-0 rounded-sm bg-surface-container text-body-sm text-on-surface ui-state ui-focus'
+import { BlockedReason } from './blocked-reason'
+import { workbenchControl } from './workbench-control'
 
 /** 分镜的画幅：写回分镜文件，不是生成选项。 */
 type AspectControl = {
@@ -75,7 +73,7 @@ export function VideoGenerationBar({
         <div className="storyboard-bar-params" data-fade={fade} ref={paramsRef}>
           <Select
             aria-label="视频模型"
-            className={cn(CONTROL_CLASS, 'pr-6 pl-2.5 font-mono')}
+            className={cn(workbenchControl({ shape: 'field' }), 'font-mono')}
             disabled={submitting || models.items.length === 0}
             onChange={(event) => onChange({ ...value, model: event.target.value })}
             title={modelLabel}
@@ -120,7 +118,7 @@ export function VideoGenerationBar({
               <button
                 aria-label="生成音频"
                 aria-pressed={value.generateAudio}
-                className={cn(CONTROL_CLASS, 'inline-grid w-8 cursor-pointer place-items-center')}
+                className={workbenchControl({ shape: 'icon' })}
                 disabled={submitting}
                 onClick={() => onChange({ ...value, generateAudio: !value.generateAudio })}
                 type="button"
@@ -149,7 +147,7 @@ function AspectSelect({ aspect, model }: { aspect: AspectControl; model: string 
   return (
     <Select
       aria-label="画幅"
-      className={cn(CONTROL_CLASS, 'pr-6 pl-2.5')}
+      className={workbenchControl({ shape: 'field' })}
       disabled={aspect.disabled}
       onChange={(event) => aspect.onChange(event.target.value)}
       value={aspect.value}
@@ -200,9 +198,7 @@ function useScrollFade(ref: { current: HTMLElement | null }): ScrollFade {
   return fade
 }
 
-/** 置灰用 aria-disabled 而不是原生 disabled：原因要悬停、聚焦、点按都看得到，原生 disabled 的按钮
- * 收不到指针，也进不了 tab 序列。能出片时不带这个属性；点击靠 onClick 里的守卫拦下。
- * 触屏没有悬停，点按也要亮出原因，做法同资料库的「做同款」。 */
+/** 出片主按钮：被挡住时用 aria-disabled 置灰并说明原因（见 `BlockedReason`）；能出片时不带这个属性。 */
 function GenerateButton({
   blockedReason,
   onGenerate,
@@ -214,33 +210,20 @@ function GenerateButton({
   shotIndex: number
   submitting: boolean
 }) {
-  const [hint, setHint] = useState(false)
-  const blocked = blockedReason !== undefined
-  const unavailable = submitting || blocked
+  const unavailable = submitting || blockedReason !== undefined
   return (
-    <TooltipRoot onOpenChange={(open) => setHint(open && blocked)} open={hint && blocked}>
-      <TooltipTrigger
-        asChild
-        // 拦下默认处理，Radix 才不会在点按时把提示关掉。
-        onClick={(event) => {
-          if (!blocked) return
-          event.preventDefault()
-          setHint(true)
+    <BlockedReason reason={blockedReason}>
+      <Button
+        aria-disabled={unavailable ? true : undefined}
+        className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
+        leadingIcon="video"
+        onClick={() => {
+          if (!unavailable) onGenerate()
         }}
+        size="md"
       >
-        <Button
-          aria-disabled={unavailable ? true : undefined}
-          className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
-          leadingIcon="video"
-          onClick={() => {
-            if (!unavailable) onGenerate()
-          }}
-          size="md"
-        >
-          {submitting ? '提交中…' : `生成第 ${shotIndex} 组`}
-        </Button>
-      </TooltipTrigger>
-      {blocked ? <TooltipContent side="top">{blockedReason}</TooltipContent> : null}
-    </TooltipRoot>
+        {submitting ? '提交中…' : `生成第 ${shotIndex} 组`}
+      </Button>
+    </BlockedReason>
   )
 }
