@@ -88,8 +88,9 @@ export function MenuRadioItem({
       {...props}
     >
       {children}
+      {/* 选中态用墨色：品牌绿只留给出片主按钮与状态色。 */}
       <DropdownMenu.ItemIndicator asChild>
-        <Icon className="text-primary" decorative name="check" size="md" />
+        <Icon className="text-on-surface" decorative name="check" size="md" />
       </DropdownMenu.ItemIndicator>
     </DropdownMenu.RadioItem>
   )
