@@ -152,6 +152,7 @@ export function ReaderPage({
               }
         }
       />
+      <div aria-hidden className="storyboard-divider" />
       <div className="storyboard-script">
         <ShotScript
           // 添加图片的入口只在正文里：`@` 选图末格的「+」与粘贴图片。

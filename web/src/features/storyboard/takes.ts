@@ -71,7 +71,7 @@ export const takesOfShot = (
     })
 }
 
-/** 选中成片时舞台操作行上的一个动作：不出现、可用，或置灰并说明原因。 */
+/** 选中成片时舞台工具条上的一个动作：不出现、可用，或置灰并说明原因。 */
 export type TakeAction =
   { kind: 'hidden' } | { kind: 'enabled' } | { kind: 'blocked'; reason: string }
 
@@ -81,7 +81,7 @@ const HIDDEN: TakeAction = { kind: 'hidden' }
 const ENABLED: TakeAction = { kind: 'enabled' }
 const blocked = (reason: string): TakeAction => ({ kind: 'blocked', reason })
 
-/** 操作行上各动作的状态，规则沿用原生成记录：
+/** 舞台工具条上各动作的状态，规则沿用原生成记录：
  * - 回填只看有没有结构化镜头组，在途、失败也能回填；
  * - 下载、编辑视频只在出了片（成功且有地址）时可用；在途不出现，失败或没给地址置灰；
  * - 只读时没有编辑视频与回填，下载照旧。 */

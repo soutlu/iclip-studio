@@ -348,7 +348,7 @@ test('翻到第 3 组出片：请求取当前组，成片区先出在途卡、�
   await expect(takes.getByRole('button', { name: /的成片$/ })).toHaveCount(2)
 })
 
-test('操作行上的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {
+test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
   const group = panel.getByRole('region', { name: '镜头组 1', exact: true })

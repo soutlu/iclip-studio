@@ -1,6 +1,6 @@
-/** 舞台列：上面是舞台，下面一条固定高的操作行。按选中的是帧还是成片二选一，两种各自一套舞台内容与操作行；
- * 换了显示的东西舞台内容淡入。显示帧时舞台上另叠左右切帧箭头与底部的帧计数（见 `StageFrameNav`），焦点在舞台里时 ←/→ 也切帧；
- * 成片舞台只放视频，不接方向键。
+/** 舞台列：只有舞台，纵向吃满到出片栏。按选中的是帧还是成片二选一，两种各自一套舞台内容与叠层；换了显示的东西舞台内容淡入。
+ * 叠层都在舞台里：顶部工具条（帧：`FrameStageBar`；成片：`TakeStageBar`），显示帧时另有左右切帧箭头与底部的帧计数
+ * （`StageFrameNav`），焦点在舞台里时 ←/→ 也切帧；成片舞台不接方向键。
  * 整块舞台是替换当前帧的拖放区，拖放提示盖在所有东西上面；显示成片时锁定。舞台列宽随分镜画幅，见 storyboard.css。 */
 
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
@@ -9,11 +9,11 @@ import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import type { useFileDropTarget } from '@/shared/ui/file-drop'
 import type { Take, TakeActions } from '../takes'
 import type { FrameUpload } from '../use-frame-additions'
-import { FrameActionRow, type StageFrameInfo } from './frame-action-row'
 import type { FrameGallery } from './frame-counter'
+import { FrameStageBar, type StageFrameInfo } from './frame-stage-bar'
 import { StageFrame, StageFrameNav } from './stage-frame'
 import { StageTake } from './stage-take'
-import { TakeActionRow } from './take-action-row'
+import { TakeStageBar } from './take-stage-bar'
 import { stepFrame, useStageFrameKeys } from './use-stage-frame-steps'
 
 /** 舞台显示分镜帧。 */
@@ -91,10 +91,18 @@ function FrameStage({
   const [stage, setStage] = useState<HTMLDivElement | null>(null)
   useStageFrameKeys(stage, step)
   return (
-    <>
-      <StageShell
-        drop={drop}
-        overlay={
+    <StageShell
+      drop={drop}
+      overlay={
+        <>
+          <FrameStageBar
+            addition={view.addition}
+            disabled={view.disabled}
+            frame={frame}
+            onEditFrame={view.onEditFrame}
+            onReplaceFile={view.onReplaceFile}
+            replacing={view.replacing}
+          />
           <StageFrameNav
             aspectRatio={aspectRatio}
             gallery={view.gallery}
@@ -102,51 +110,45 @@ function FrameStage({
             hasPrevious={view.onPrevious !== undefined}
             onStep={step}
           />
+        </>
+      }
+      stageRef={setStage}
+    >
+      <StageFrame
+        frame={
+          frame === undefined
+            ? undefined
+            : { name: `镜头组 ${shotIndex} 第 ${frame.number} 帧`, url: frame.url }
         }
-        stageRef={setStage}
-      >
-        <StageFrame
-          frame={
-            frame === undefined
-              ? undefined
-              : { name: `镜头组 ${shotIndex} 第 ${frame.number} 帧`, url: frame.url }
-          }
-          onOpen={() => {
-            if (frame !== undefined) view.onOpenFrame(frame)
-          }}
-          openRef={openRef}
-          uploading={view.replacing}
-        />
-      </StageShell>
-      <FrameActionRow
-        addition={view.addition}
-        disabled={view.disabled}
-        frame={frame}
-        onEditFrame={view.onEditFrame}
-        onReplaceFile={view.onReplaceFile}
-        replacing={view.replacing}
+        onOpen={() => {
+          if (frame !== undefined) view.onOpenFrame(frame)
+        }}
+        openRef={openRef}
+        uploading={view.replacing}
       />
-    </>
+    </StageShell>
   )
 }
 
 function TakeStage({ drop, view }: { drop: ShotStageProps['drop']; view: TakeView }) {
   return (
-    <>
-      <StageShell drop={drop}>
-        <StageTake take={view.take} />
-      </StageShell>
-      <TakeActionRow
-        actions={view.actions}
-        onEditVideo={view.onEditVideo}
-        onRefill={view.onRefill}
-        take={view.take}
-      />
-    </>
+    <StageShell
+      drop={drop}
+      overlay={
+        <TakeStageBar
+          actions={view.actions}
+          onEditVideo={view.onEditVideo}
+          onRefill={view.onRefill}
+          take={view.take}
+        />
+      }
+    >
+      <StageTake take={view.take} />
+    </StageShell>
   )
 }
 
-/** 舞台底板：中性底色、内容淡入、拖放提示。`overlay` 叠在内容上面、不跟着淡入，拖放提示再盖在它上面；
+/** 舞台底板：深色放映底、内容淡入、拖放提示。`overlay` 叠在内容上面、不跟着淡入，拖放提示再盖在它上面；
  * 两者都在拖放区里，拖到叠层的按钮上照样算落在舞台上。
  * `stageRef` 交出舞台元素，帧视图在上面挂 ←/→ 切帧。 */
 function StageShell({

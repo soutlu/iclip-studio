@@ -198,6 +198,8 @@
   --color-canvas-label-text: var(--color-canvas-label-text);
   --color-storyboard-canvas: var(--color-storyboard-canvas);
   --color-storyboard-canvas-dot: var(--color-storyboard-canvas-dot);
+  --color-storyboard-stage: var(--color-storyboard-stage);
+  --color-storyboard-stage-line: var(--color-storyboard-stage-line);
   --color-annotation-red: var(--color-annotation-red);
   --color-annotation-orange: var(--color-annotation-orange);
   --color-annotation-blue: var(--color-annotation-blue);

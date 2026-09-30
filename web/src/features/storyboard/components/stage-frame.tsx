@@ -1,8 +1,8 @@
 /** 舞台显示分镜帧。画面按分镜画幅 contain，整张画面是「打开原图」按钮；这帧正在替换时压一层「正在上传」。
  * 画面比例与分镜画幅不一致时，空出来的地方铺同一张图的模糊暗版，上下排时舞台两侧也铺满。
- * 舞台上另叠左右切帧箭头与底部正中的帧计数（`StageFrameNav`）：它们与画面按钮是兄弟、叠在它上面，点箭头不开原图；
- * 焦点在舞台里时 ←/→ 也切帧，与点箭头走同一个 `stepFrame`（见 `use-stage-frame-steps.ts`）。
- * @N、任务角标、上传状态与编辑、替换仍在下面的操作行。位置与显隐见 storyboard.css 的「舞台叠层」一节。 */
+ * 舞台上另叠左右切帧箭头与底部正中的帧计数（`StageFrameNav`），以及顶部工具条（`FrameStageBar`）：它们与画面按钮是兄弟、
+ * 叠在它上面，点它们不开原图；焦点在舞台里时 ←/→ 也切帧，与点箭头走同一个 `stepFrame`（见 `use-stage-frame-steps.ts`）。
+ * 位置与显隐见 storyboard.css 的「舞台叠层」一节。 */
 
 import type { Ref } from 'react'
 import { Icon } from '@/shared/icons'
@@ -28,7 +28,7 @@ export function StageFrame({ frame, onOpen, openRef, uploading }: StageFrameProp
       <div className="storyboard-hero">
         {frame === undefined ? (
           <div className="storyboard-media">
-            <p className="text-body-sm text-on-surface-faint">这段还没有图</p>
+            <p className="storyboard-stage-empty">这段还没有图</p>
           </div>
         ) : (
           <div aria-label="当前帧图片" className="storyboard-media" role="group">
