@@ -27,11 +27,7 @@ from pydantic_ai.messages import (
     UserContent,
 )
 from pydantic_ai.tools import DeferredToolResults, RunContext
-from pydantic_ai_harness.compaction import (
-    ContextUsage,
-    ReportContextUsage,
-    SummarizingCompaction,
-)
+from pydantic_ai_harness.compaction import ReportContextUsage, SummarizingCompaction
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 
 from iclip.common.errors import Conflict, NotFound
@@ -67,7 +63,6 @@ from iclip.platform.transcript.ops import (
     TranscriptTurn,
     TurnHeader,
     TurnUpsertOp,
-    agent_context_status,
 )
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -675,20 +670,6 @@ class ConversationRunner:
                 _seed_ops(resume_from, last_step_interrupted=not awaiting),
             )
 
-        def report_context(usage: ContextUsage) -> None:
-            projector.max_context_tokens = usage.window_tokens
-            self._store.append(
-                row.conversation_id,
-                MAIN_AGENT_ID,
-                (
-                    MetaMergeOp(
-                        meta=TranscriptMeta(
-                            agent=agent_context_status(usage.used_tokens, usage.window_tokens)
-                        )
-                    ),
-                ),
-            )
-
         deps = await self._deps_for(row)
         # 审批和崩溃续跑只提交结果或历史，不追加用户消息。
         user_prompt: list[UserContent] | None = None
@@ -729,7 +710,7 @@ class ConversationRunner:
                             max_tokens=int(context_window * self._compaction_max_fraction),
                             on_compaction=projector.note_compaction,
                         ),
-                        ReportContextUsage(on_usage=report_context, context_window=context_window),
+                        ReportContextUsage(context_window=context_window),
                     ]
                     if context_window is not None
                     else []

@@ -659,7 +659,7 @@ def unanswered_tool_calls(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
     answered = {
         part.tool_call_id
         for message in messages[last + 1 :]
-        for part in getattr(message, "parts", ())
+        for part in message.parts
         if isinstance(part, ToolReturnPart | RetryPromptPart)
     }
     return tuple(item for item in called if item not in answered)
