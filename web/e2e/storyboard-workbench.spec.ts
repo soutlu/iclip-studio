@@ -390,31 +390,6 @@ test('短桌面深色：文案列整组原文可读，看大图后回到原帧�
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport()
 })
 
-test('选中即上下文：输入框上出现芯片，× 掉不再回来，发出去的正文带前缀', async ({ page }) => {
-  const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: /打开全部镜头组/ })).toHaveAccessibleName(
-    /^镜头组 1 \/ 3/,
-  )
-
-  await openStoryboardShot(panel, 2)
-  const chip = page.getByText('镜头组 2 · 全局设定 · @Image1', { exact: true })
-  await expect(chip).toBeVisible()
-
-  await page.getByRole('button', { name: '不再引用 镜头组 2 · 全局设定 · @Image1' }).click()
-  await expect(chip).toBeHidden()
-
-  await openStoryboardShot(panel, 1)
-  await openStoryboardShot(panel, 2)
-  await expect(chip).toBeVisible()
-
-  const composer = page.getByLabel('输入消息')
-  await composer.click()
-  await page.keyboard.type('把这一组的节奏放慢')
-  await page.getByRole('button', { name: '发送' }).click()
-
-  await expect(page.getByText('针对镜头组 2 的全局设定（参考图 @Image1）：').first()).toBeVisible()
-})
-
 test('没有工作区文件的对话仍是折叠空态', async ({ page }) => {
   await openConversation(page, '亚麻衬衫二剪')
   await expect(page).toHaveURL(/\/c\//)

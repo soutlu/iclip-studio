@@ -7,7 +7,6 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { useWindowFileDrop } from '@/shared/ui/file-drop'
-import { Tag } from '@/shared/ui/tag'
 import { ComposerAttachmentPill } from './composer-attachment-pill'
 import { readComposerSegments, readComposerText } from './editor-schema'
 import type { ComposerPillHost } from './use-composer-editor'
@@ -38,8 +37,6 @@ type ComposerProps = {
   onStop?: (() => void) | undefined
   /** 由调用方根据登录态与 uploads:write 决定上传入口是否可用。 */
   attachmentsEnabled?: boolean
-  /** 工作台引用独立于 PM 文档与撤销栈，发送时由调用方转换为正文。 */
-  references?: readonly { id: string; label: string; onRemove: () => void }[]
   ref?: Ref<ComposerHandle>
   className?: string
 }
@@ -54,7 +51,6 @@ export function Composer({
   onSubmit,
   placeholder = '输入消息，开始创作…',
   ref,
-  references = [],
   sending = false,
   trailing,
 }: ComposerProps) {
@@ -146,22 +142,6 @@ export function Composer({
       )}
       ref={rootRef}
     >
-      {references.length > 0 ? (
-        <div aria-label="引用" className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
-          {references.map((reference) => (
-            <Tag key={reference.id}>
-              {reference.label}
-              <IconButton
-                className="-mr-1.5"
-                label={`不再引用 ${reference.label}`}
-                name="close"
-                onClick={reference.onRemove}
-                size="xs"
-              />
-            </Tag>
-          ))}
-        </div>
-      ) : null}
       <div className="relative">
         <div ref={mountEditor} />
         {editor.empty ? (

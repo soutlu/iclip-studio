@@ -10,7 +10,7 @@ import { render } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
 import { TooltipProvider } from '@/shared/ui/tooltip'
-import { WorkbenchSelectionProvider } from '@/shared/workbench'
+import { WorkbenchOpenRequestProvider } from '@/shared/workbench'
 import { FakeSocket, SERVER_HELLO } from './ws'
 
 /** 使用独立 QueryClient、内存路由、订阅连接和工作台 Provider；/c/$conversationId 仅供参数匹配，socket 已完成握手。 */
@@ -34,11 +34,11 @@ export const renderWithProviders = async (ui: ReactNode, { initialPath = '/' } =
   const result = render(
     <QueryClientProvider client={queryClient}>
       <TranscriptProvider createSocket={() => socket as unknown as WebSocket}>
-        <WorkbenchSelectionProvider>
+        <WorkbenchOpenRequestProvider>
           <TooltipProvider>
             <RouterProvider router={router} />
           </TooltipProvider>
-        </WorkbenchSelectionProvider>
+        </WorkbenchOpenRequestProvider>
       </TranscriptProvider>
     </QueryClientProvider>,
   )

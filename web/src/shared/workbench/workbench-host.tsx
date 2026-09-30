@@ -15,7 +15,7 @@ import type { Artifact, ArtifactEntry, WorkbenchFrame } from './artifact'
 import { useArtifactSearch, useOpenArtifact } from './artifact-search'
 import { composeArtifacts, isStanding, pickArtifact, type ArtifactRegistry } from './registry'
 import { useWorkbenchRegistry } from './use-workbench-registry'
-import { useWorkbenchSelection } from './use-workbench-selection'
+import { useWorkbenchOpenRequest } from './use-workbench-open-request'
 import { WorkbenchLayoutContext } from './workbench-layout-context'
 import { useWorkspaceFiles, workspaceQueryKeys } from './workspace.api'
 
@@ -115,7 +115,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const { view } = useTranscript(conversationId)
   const readOnly = useConversationReadOnly(view)
   const frames = useMemo(() => toolFrames(view.items), [view.items])
-  const { openToken } = useWorkbenchSelection()
+  const { openToken } = useWorkbenchOpenRequest()
   const layout = use(WorkbenchLayoutContext)
   if (layout === null) throw new Error('WorkbenchHost 要在 WorkbenchLayoutProvider 里用')
   const { compact, onCollapsedChange, onOpen, sideBySide } = layout

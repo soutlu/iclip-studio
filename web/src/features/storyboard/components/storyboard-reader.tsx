@@ -1,16 +1,11 @@
 /** 结构化分镜工作台的组合根：取数、草稿与路由参数在这里，状态分发给顶栏、分镜页、浮层与出片栏。 */
 
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
-import {
-  useWorkbenchSelection,
-  useWorkspaceFile,
-  type ArtifactRendererProps,
-  type WorkbenchRef,
-} from '@/shared/workbench'
+import { useWorkspaceFile, type ArtifactRendererProps } from '@/shared/workbench'
 import { formatShotPrompt, validateShot, type Shot } from '../shot-document'
 import { frameBadges, latestFrameJobs } from '../frame-status'
 import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
@@ -29,7 +24,7 @@ import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
 import { ReaderImageEdit, type FrameEditSession } from './reader-image-edit'
 import { ReaderOverlay } from './reader-overlay'
 import { ReaderPage } from './reader-page'
-import { contentLabel, resolveShotSelection, shotContents, type ReaderSheet } from '../shot-content'
+import type { ReaderSheet } from '../shot-content'
 import { ShotOverview } from './shot-overview'
 import { StoryboardToolbar } from './storyboard-toolbar'
 import { TakesTray } from './takes-tray'
@@ -76,41 +71,6 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   const position =
     search.shot !== undefined && search.shot >= 1 && search.shot <= shots.length ? search.shot : 1
   const stage = useStageSelection(position)
-
-  const { clear: clearSelection, set: setSelection } = useWorkbenchSelection()
-  const currentShot = shots[position - 1]
-  const selection =
-    currentShot === undefined
-      ? undefined
-      : resolveShotSelection(shotContents(currentShot), {
-          content: search.content,
-          frame: search.frame,
-        })
-  // 下面的副作用只认原始值：内容对象每次渲染都重建，放进依赖会让选区每帧重设。
-  const selectedFrame = selection?.frame
-  const selectedContentId = selection?.content.id
-  const selectedContentLabel = selection === undefined ? undefined : contentLabel(selection.content)
-  useEffect(() => {
-    if (selectedContentId === undefined) clearSelection()
-    else {
-      const label = selectedContentLabel
-      const reference: WorkbenchRef = {
-        id: `${artifact.id}:shot:${position}:${selectedContentId}:${selectedFrame ?? ''}`,
-        label: `镜头组 ${position} · ${label}${selectedFrame === undefined ? '' : ` · @Image${selectedFrame}`}`,
-        prefix: `针对镜头组 ${position} 的${label}${selectedFrame === undefined ? '' : `（参考图 @Image${selectedFrame}）`}：`,
-      }
-      setSelection([reference])
-    }
-  }, [
-    selectedContentId,
-    selectedContentLabel,
-    artifact.id,
-    clearSelection,
-    position,
-    selectedFrame,
-    setSelection,
-  ])
-  useEffect(() => () => clearSelection(), [clearSelection])
 
   const go = (next: ReaderSearch) => {
     const cleared =
