@@ -1,6 +1,7 @@
-/** 分镜工作台底部的出片栏：左边一排生成设置（模型、分辨率、画幅、音频），右边唯一的主色按钮出当前这一组。 */
+/** 分镜工作台底部的出片栏：一排生成设置（模型、分辨率、画幅、音频），加唯一的主色按钮出当前这一组。
+ * 各档宽度下怎么排见 storyboard.css 的出片栏一节。 */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
 import { cn } from '@/shared/lib/utils'
@@ -8,26 +9,34 @@ import { Button } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { Select } from '@/shared/ui/field'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
-import { VIDEO_RESOLUTIONS, type VideoGenerationOptions } from '../video-generation-options'
+import {
+  MODELS_PENDING_TEXT,
+  VIDEO_RESOLUTIONS,
+  type VideoGenerationOptions,
+  type VideoModelsStatus,
+} from '../video-generation-options'
 import { supportsAspectRatio } from '../video-model-support'
 
 /** 全栏唯一的次级控件配方，与 ChipGroup segmented 同高同底；主色只留给出片按钮。 */
 const CONTROL_CLASS =
   'h-8 shrink-0 rounded-sm bg-surface-container text-body-sm text-on-surface ui-state ui-focus'
 
+/** 分镜的画幅：写回分镜文件，不是生成选项。 */
+type AspectControl = {
+  value: string
+  disabled: boolean
+  onChange: (aspectRatio: string) => void
+}
+
 type VideoGenerationBarProps = {
   /** 当前镜头组的镜号，主按钮写的就是它。 */
   shotIndex: number
-  models: readonly string[]
-  /** 模型清单读不到时给用户看的原因；还在读就不传。 */
-  modelsUnavailable?: string | undefined
+  models: { items: readonly string[]; status: VideoModelsStatus }
   value: VideoGenerationOptions
   onChange: (value: VideoGenerationOptions) => void
-  aspectRatio: string
-  aspectRatioDisabled: boolean
-  onAspectRatioChange: (aspectRatio: string) => void
+  aspect: AspectControl
   /** 出片被挡住的原因；有它时主按钮置灰，悬停、聚焦或点按说明原因。 */
-  blockedReason: string | undefined
+  blocker: string | undefined
   /** 挨着出片按钮常显的一句（上次提交失败的原话、画幅不被模型支持），不靠悬停。 */
   notice: string | undefined
   submitting: boolean
@@ -35,26 +44,26 @@ type VideoGenerationBarProps = {
 }
 
 export function VideoGenerationBar({
-  aspectRatio,
-  aspectRatioDisabled,
-  blockedReason,
+  aspect,
+  blocker,
   models,
-  modelsUnavailable,
   notice,
-  onAspectRatioChange,
   onChange,
   onGenerate,
   shotIndex,
   submitting,
   value,
 }: VideoGenerationBarProps) {
-  // 模型只有 id，没有展示名；清单还没读到时先占个位。
-  const modelLabel = value.model ?? modelsUnavailable ?? '读取模型…'
+  // 模型只有 id，没有展示名；清单还没到手时先占个位。
+  const modelLabel =
+    value.model ?? (models.status === 'ready' ? '' : MODELS_PENDING_TEXT[models.status])
+  const paramsRef = useRef<HTMLDivElement | null>(null)
+  const fade = useScrollFade(paramsRef)
 
   return (
     <div
       aria-label="出片工具栏"
-      className="mx-4 mt-1 mb-4 flex shrink-0 flex-col gap-2 rounded-xl border-[0.5px] border-hairline bg-surface-container-lowest py-2.5 pr-2.5 pl-3 shadow-[var(--shadow-2)]"
+      className="storyboard-bar rounded-xl border-[0.5px] border-hairline bg-surface-container-lowest shadow-[var(--shadow-2)]"
       role="group"
     >
       {notice === undefined ? null : (
@@ -62,21 +71,21 @@ export function VideoGenerationBar({
           {notice}
         </p>
       )}
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      <div className="storyboard-bar-row">
+        <div className="storyboard-bar-params" data-fade={fade} ref={paramsRef}>
           <Select
             aria-label="视频模型"
             className={cn(CONTROL_CLASS, 'pr-6 pl-2.5 font-mono')}
-            disabled={submitting || models.length === 0}
+            disabled={submitting || models.items.length === 0}
             onChange={(event) => onChange({ ...value, model: event.target.value })}
             title={modelLabel}
             value={value.model ?? ''}
             variant="inline"
             // 工作台窄时模型 id 截断，完整 id 靠 title 悬停看。
-            wrapperClassName="min-w-0 @max-[640px]:max-w-30"
+            wrapperClassName="storyboard-bar-model"
           >
             {value.model === undefined ? <option value="">{modelLabel}</option> : null}
-            {models.map((model) => (
+            {models.items.map((model) => (
               <option key={model} value={model}>
                 {model}
               </option>
@@ -105,31 +114,7 @@ export function VideoGenerationBar({
               </FilterChip>
             ))}
           </ChipGroup>
-          <Select
-            aria-label="画幅"
-            className={cn(CONTROL_CLASS, 'pr-6 pl-2.5')}
-            disabled={aspectRatioDisabled}
-            onChange={(event) => onAspectRatioChange(event.target.value)}
-            value={aspectRatio}
-            variant="inline"
-            wrapperClassName="shrink-0"
-          >
-            {/* agent 可以写任何 宽:高，不在档位里的也要照原样显示得出来。 */}
-            {ASPECT_RATIOS.some((ratio) => ratio === aspectRatio) ? null : (
-              <option value={aspectRatio}>{aspectRatio}</option>
-            )}
-            {ASPECT_RATIOS.map((ratio) => {
-              const usable = supportsAspectRatio(value.model, ratio)
-              // 选中的那个不加后缀：收起来的下拉只显示它，长文案会把一排控件挤开；
-              // 它正好不被支持时，栏里那句常显的提示已经在说了。
-              const label = usable || ratio === aspectRatio ? ratio : `${ratio}（不支持）`
-              return (
-                <option disabled={!usable} key={ratio} value={ratio}>
-                  {label}
-                </option>
-              )
-            })}
-          </Select>
+          <AspectSelect aspect={aspect} model={value.model} />
           <TooltipRoot>
             <TooltipTrigger asChild>
               <button
@@ -149,7 +134,7 @@ export function VideoGenerationBar({
           </TooltipRoot>
         </div>
         <GenerateButton
-          blockedReason={blockedReason}
+          blockedReason={blocker}
           onGenerate={onGenerate}
           shotIndex={shotIndex}
           submitting={submitting}
@@ -157,6 +142,62 @@ export function VideoGenerationBar({
       </div>
     </div>
   )
+}
+
+/** 画幅下拉；选中模型做不了的档位置灰并标「（不支持）」。 */
+function AspectSelect({ aspect, model }: { aspect: AspectControl; model: string | undefined }) {
+  return (
+    <Select
+      aria-label="画幅"
+      className={cn(CONTROL_CLASS, 'pr-6 pl-2.5')}
+      disabled={aspect.disabled}
+      onChange={(event) => aspect.onChange(event.target.value)}
+      value={aspect.value}
+      variant="inline"
+      wrapperClassName="shrink-0"
+    >
+      {/* agent 可以写任何 宽:高，不在档位里的也要照原样显示得出来。 */}
+      {ASPECT_RATIOS.some((ratio) => ratio === aspect.value) ? null : (
+        <option value={aspect.value}>{aspect.value}</option>
+      )}
+      {ASPECT_RATIOS.map((ratio) => {
+        const usable = supportsAspectRatio(model, ratio)
+        // 选中的那个不加后缀：收起来的下拉只显示它，长文案会把一排控件挤开；
+        // 它正好不被支持时，栏里那句常显的提示已经在说了。
+        const label = usable || ratio === aspect.value ? ratio : `${ratio}（不支持）`
+        return (
+          <option disabled={!usable} key={ratio} value={ratio}>
+            {label}
+          </option>
+        )
+      })}
+    </Select>
+  )
+}
+
+type ScrollFade = 'none' | 'start' | 'end' | 'both'
+
+/** 横向滚动行哪一端还有内容没露出来；样式按它给那一端加渐隐。放得下时为 none。 */
+function useScrollFade(ref: { current: HTMLElement | null }): ScrollFade {
+  const [fade, setFade] = useState<ScrollFade>('none')
+  useEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const measure = () => {
+      const start = element.scrollLeft > 0
+      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1
+      setFade(start && end ? 'both' : start ? 'start' : end ? 'end' : 'none')
+    }
+    // ResizeObserver 开始观察时会先回调一次，初始状态由它量，不在副作用里同步设。
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    element.addEventListener('scroll', measure, { passive: true })
+    return () => {
+      observer.disconnect()
+      element.removeEventListener('scroll', measure)
+    }
+  }, [ref])
+  return fade
 }
 
 /** 置灰用 aria-disabled 而不是原生 disabled：原因要悬停、聚焦、点按都看得到，原生 disabled 的按钮
@@ -189,7 +230,7 @@ function GenerateButton({
       >
         <Button
           aria-disabled={unavailable ? true : undefined}
-          className="shrink-0 rounded-full text-body aria-disabled:active:scale-100"
+          className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
           leadingIcon="video"
           onClick={() => {
             if (!unavailable) onGenerate()

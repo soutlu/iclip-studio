@@ -13,7 +13,11 @@ import {
   DEFAULT_GENERATE_AUDIO,
   DEFAULT_VIDEO_RESOLUTION,
   type VideoGenerationOptions,
+  type VideoModelsStatus,
 } from './video-generation-options'
+
+const modelsStatus = (query: { isError: boolean; data: unknown }): VideoModelsStatus =>
+  query.isError ? 'unavailable' : query.data === undefined ? 'loading' : 'ready'
 
 export const useVideoGeneration = (conversationId: string) => {
   const queryClient = useQueryClient()
@@ -55,7 +59,7 @@ export const useVideoGeneration = (conversationId: string) => {
     /** 这一组上次出片失败的原因；换组就不显示，不用清。 */
     errorOf: (index: number) => (failure?.index === index ? failure.message : undefined),
     models: items,
-    modelsUnavailable: models.isError,
+    modelsStatus: modelsStatus(models),
     options,
     /** 出片路上、提交之前就失败的（例如取不到已保存的镜头组），走同一条提示通道。 */
     reportError: (index: number, message: string) => setFailure({ index, message }),

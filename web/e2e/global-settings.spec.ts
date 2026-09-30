@@ -11,7 +11,7 @@ const openReplica = async (page: Page, mobile = false) => {
 
 const readReplica = (page: Page) => readVideoShots(page, '读取复刻文件失败')
 
-test('共用文件按路径打开：全局参考图原位展开，只有编辑才保存', async ({ page }) => {
+test('共用文件按路径打开：全局参考图逐张可看，只有编辑才保存', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 })
   const writes: string[] = []
   const generations: string[] = []
@@ -28,25 +28,22 @@ test('共用文件按路径打开：全局参考图原位展开，只有编辑�
   if (shot === undefined) throw new Error('缺少复刻镜头组')
   expect(shot.prompt.timeline).toHaveLength(3)
   expect(shot.image_urls).toHaveLength(30)
-  const references = panel.getByRole('navigation', { name: '本组镜头', exact: true })
-  const global = references.getByRole('group', { name: '全局设定', exact: true })
-  await expect(global.getByRole('button')).toHaveCount(30)
+  const global = panel.getByRole('group', { name: '全局设定', exact: true })
+  await expect(global.getByRole('button', { name: /^看第 \d+ 帧$/ })).toHaveCount(30)
   for (const index of [30, 2, 1]) {
-    const reference = references.getByRole('button', {
-      name: `预览第 ${index} 帧`,
-      exact: true,
-    })
+    const reference = global.getByRole('button', { name: `看第 ${index} 帧`, exact: true })
     await reference.focus()
     await page.keyboard.press('Enter')
     await expect(
       panel.getByRole('img', { name: `镜头组 1 第 ${index} 帧`, exact: true }),
     ).toHaveAttribute('src', shot.image_urls[index - 1] ?? '')
-    await expect(panel.getByRole('textbox', { name: '全局设定', exact: true })).toBeVisible()
+    await expect(global).toHaveAttribute('aria-current', 'true')
   }
-  await references.getByRole('button', { name: '镜头 1', exact: true }).click()
-  await expect(global.getByRole('button')).toHaveCount(1)
+  await panel.getByRole('button', { name: '镜头 1', exact: true }).click()
+  await expect(global).toHaveAttribute('aria-current', 'false')
   await expect(panel.getByRole('textbox', { name: '镜头 1 的描述', exact: true })).toBeVisible()
-  await global.getByRole('button').click()
+  await global.getByRole('button', { name: '看第 1 帧', exact: true }).click()
+  await expect(global).toHaveAttribute('aria-current', 'true')
 
   expect(await readReplica(page)).toEqual(initial)
   expect(writes).toEqual([])
@@ -65,17 +62,19 @@ test('共用文件按路径打开：全局参考图原位展开，只有编辑�
   expect(generations).toEqual([])
 })
 
-test('手机上一帧、下一帧切到胶片条外的参考图时完整露出', async ({ page }) => {
+test('手机上一帧、下一帧逐张切全局参考图，舞台上的画面完整露出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const panel = await openReplica(page, true)
-  const references = panel.getByRole('navigation', { name: '本组镜头', exact: true })
-  await references.getByRole('button', { name: '预览第 1 帧', exact: true }).click()
+  await expect(panel.getByRole('group', { name: '全局设定', exact: true })).toHaveAttribute(
+    'aria-current',
+    'true',
+  )
   const expectRevealed = async (index: number) => {
-    // 帧上可能挂着图片任务角标，可访问名后面会多出状态说明。
-    const reference = references.getByRole('button', { name: new RegExp(`^预览第 ${index} 帧`) })
-    await expect(reference).toHaveAttribute('aria-pressed', 'true')
-    await expect(reference).toBeInViewport({ ratio: 1 })
+    await expect(
+      panel.getByRole('img', { name: `镜头组 1 第 ${index} 帧`, exact: true }),
+    ).toBeInViewport({ ratio: 1 })
   }
+  await expectRevealed(1)
   for (const index of [2, 3, 4, 5, 6]) {
     await panel.getByRole('button', { name: '下一帧', exact: true }).click()
     await expectRevealed(index)
@@ -93,14 +92,13 @@ for (const viewport of [
   test(`完全复刻 ${viewport.name} 浅深主题布局`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     const panel = await openReplica(page, viewport.mobile)
-    const references = panel.getByRole('navigation', { name: '本组镜头', exact: true })
+    const global = panel.getByRole('group', { name: '全局设定', exact: true })
     for (const theme of ['light', 'dark'] as const) {
-      await references.getByRole('button', { name: '预览第 1 帧', exact: true }).click()
+      await global.getByRole('button', { name: '看第 1 帧', exact: true }).click()
       await page.emulateMedia({ colorScheme: theme })
       await expect
         .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
         .toBe(theme === 'dark')
-      await expect(references).toBeVisible()
       await expect(panel.getByRole('textbox', { name: '全局设定', exact: true })).toBeVisible()
       await expect
         .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
@@ -108,14 +106,14 @@ for (const viewport of [
       await expect(
         panel.getByRole('img', { name: '镜头组 1 第 1 帧', exact: true }),
       ).toHaveJSProperty('naturalWidth', 360)
-      const lastReference = references.getByRole('button', { name: '预览第 30 帧', exact: true })
+      const lastReference = global.getByRole('button', { name: '看第 30 帧', exact: true })
       await lastReference.focus()
       await page.keyboard.press('Enter')
       await expect(lastReference).toBeInViewport({ ratio: 1 })
-      await expect(references.getByText('全局设定', { exact: true })).toBeInViewport({ ratio: 1 })
-      await expect(panel.getByRole('button', { name: '添加图片', exact: true })).toBeInViewport({
-        ratio: 1,
-      })
+      await expect(
+        panel.getByRole('img', { name: '镜头组 1 第 30 帧', exact: true }),
+      ).toHaveAttribute('src', /./)
+      await expect(panel.getByRole('button', { name: '添加图片', exact: true })).toBeVisible()
       await page.mouse.move(0, 0)
       await page.screenshot({
         animations: 'disabled',

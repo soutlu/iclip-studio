@@ -9,12 +9,20 @@ import { copyWithToast } from './copy-with-toast'
 type ShotOverviewProps = {
   shots: readonly Shot[]
   aspect_ratio: string
+  /** 工作台正在看的那一组的镜号，卡片上标出来。 */
+  currentIndex: number
   onClose: () => void
   onOpenShot: (index: number) => void
 }
 
-/** 「全部镜头组」抽屉：每组一张卡，可多选后一次复制提示词。 */
-export function ShotOverview({ shots, aspect_ratio, onClose, onOpenShot }: ShotOverviewProps) {
+/** 「全部镜头组」抽屉：每组一张卡，标出当前组，可多选后一次复制提示词。 */
+export function ShotOverview({
+  shots,
+  aspect_ratio,
+  currentIndex,
+  onClose,
+  onOpenShot,
+}: ShotOverviewProps) {
   const [selected, setSelected] = useState<readonly number[]>([])
   const chosen = shots.filter((shot) => selected.includes(shot.index))
   const all = chosen.length === shots.length
@@ -52,11 +60,16 @@ export function ShotOverview({ shots, aspect_ratio, onClose, onOpenShot }: ShotO
             ) ?? 1
           const url = shot.image_urls[number - 1]
           const picked = selected.includes(shot.index)
+          const current = shot.index === currentIndex
           return (
             <li className="relative" key={shot.index}>
               <button
+                aria-current={current ? 'true' : undefined}
                 aria-label={`查看镜头组 ${shot.index}`}
-                className="block w-full cursor-pointer overflow-hidden rounded-md border-[0.5px] border-chat-hairline bg-chat-card-bg text-left ui-focus"
+                className={cn(
+                  'block w-full cursor-pointer overflow-hidden rounded-md border-[0.5px] border-chat-hairline bg-chat-card-bg text-left ui-focus',
+                  current && 'outline-2 outline-offset-1 outline-on-surface',
+                )}
                 onClick={() => onOpenShot(shot.index)}
                 type="button"
               >
@@ -76,7 +89,7 @@ export function ShotOverview({ shots, aspect_ratio, onClose, onOpenShot }: ShotO
                 </span>
                 <span className="flex min-w-0 flex-col gap-1 px-3 py-2">
                   <span className="text-label text-on-surface-faint">
-                    第 {shot.index} 组 · {shot.seconds} 秒
+                    第 {shot.index} 组 · {shot.seconds} 秒{current ? ' · 当前' : ''}
                   </span>
                   <span className="truncate text-body-sm text-on-surface">{shotName(shot)}</span>
                 </span>

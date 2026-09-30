@@ -1,5 +1,6 @@
 /** 镜头组草稿的保存状态、冲突弹窗与读取提示；两个阅读器共用一份，文案不各自分叉。 */
 
+import { Icon } from '@/shared/icons'
 import { Button } from '@/shared/ui/button'
 import {
   DialogBody,
@@ -8,6 +9,7 @@ import {
   DialogRoot,
   DialogSurface,
 } from '@/shared/ui/dialog'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import type { SaveState } from '../use-shots-draft'
 
 export function ReaderNotice({ text }: { text: string }) {
@@ -46,12 +48,32 @@ export function SaveStatus({
     )
   if (state.kind === 'conflict')
     return <span className="text-body-sm text-on-surface-faint">有版本冲突待处理</span>
-  if (state.kind === 'saving')
-    return <span className="text-body-sm text-on-surface-faint">保存中…</span>
+  if (state.kind === 'saving') return <SaveIcon label="保存中…" saving />
   if (hasUnsavedChanges) return <span className="text-body-sm text-on-surface-faint">待保存</span>
-  if (state.kind === 'saved')
-    return <span className="text-body-sm text-on-surface-faint">已保存</span>
+  if (state.kind === 'saved') return <SaveIcon label="已保存" />
   return null
+}
+
+/** 保存中与已保存只用图标表达；文字给读屏（role=status）和悬停提示。 */
+function SaveIcon({ label, saving = false }: { label: string; saving?: boolean }) {
+  return (
+    <TooltipRoot>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-grid size-6 shrink-0 place-items-center text-on-surface-faint"
+          role="status"
+        >
+          {saving ? (
+            <Icon className="animate-spin" decorative name="spinner" size="sm" />
+          ) : (
+            <Icon decorative name="check" size="sm" />
+          )}
+          <span className="sr-only">{label}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </TooltipRoot>
+  )
 }
 
 export function ConflictDialog({

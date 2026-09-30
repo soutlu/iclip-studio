@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   canvasPng,
   openConversation,
+  openStoryboardShot,
   readVideoShots,
   screenshotBothThemes,
   type VideoShot,
@@ -34,7 +35,7 @@ const watchGenerationPosts = (page: Page) => {
   return posts
 }
 
-test('分镜可以滚轮翻组、键盘切帧和查看记录，浏览操作不写文件或提交生成', async ({ page }) => {
+test('分镜可以键盘切组、切帧和查看记录，浏览操作不写文件或提交生成', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 700 })
   const writes: string[] = []
   page.on('request', (request) => {
@@ -46,27 +47,23 @@ test('分镜可以滚轮翻组、键盘切帧和查看记录，浏览操作不�
     }
   })
   const panel = await openStoryboard(page)
-  await panel.getByRole('region', { name: '镜头组 1', exact: true }).hover()
-  await page.mouse.wheel(0, 650)
-  await expect(panel.getByRole('button', { name: '第 2 组', exact: true })).toHaveAttribute(
-    'aria-current',
-    'true',
-  )
+  const switcher = panel.getByRole('button', { name: /打开全部镜头组/ })
+  await switcher.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(switcher).toHaveAccessibleName(/^镜头组 2 \/ 3/)
   await expect(page).toHaveURL(/shot=2/)
 
   const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
-  const filmstrip = group.getByRole('navigation', { name: '本组镜头' })
-  await filmstrip.getByRole('button', { name: '镜头 2', exact: true }).focus()
+  const scene = group.getByRole('group', { name: '镜头 2', exact: true })
+  await scene.getByRole('button', { name: '镜头 2', exact: true }).focus()
   await page.keyboard.press('Enter')
-  const lastFrame = filmstrip.getByRole('button', { name: '预览第 3 帧' })
-  await filmstrip.getByRole('button', { name: '预览第 2 帧' }).focus()
-  await page.keyboard.press('Tab')
-  await expect(lastFrame).toBeFocused()
-  await page.keyboard.press('Space')
-  await expect(lastFrame).toHaveAttribute('aria-pressed', 'true')
+  await expect(scene).toHaveAttribute('aria-current', 'true')
+  await expect(group.getByRole('img', { name: '镜头组 2 第 2 帧' })).toBeVisible()
+  await group.getByRole('button', { name: '下一帧', exact: true }).focus()
+  await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/frame=3/)
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
-  await expect(filmstrip).toBeInViewport({ ratio: 1 })
+  await expect(scene).toBeInViewport()
   await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText('低头看一眼包')
   await expect(group.getByRole('button', { name: /^生成第 \d+ 组$/ })).toHaveCount(0)
   await expect(group.getByRole('button', { name: '编辑图片', exact: true })).toHaveCount(1)
@@ -80,58 +77,45 @@ test('分镜可以滚轮翻组、键盘切帧和查看记录，浏览操作不�
 })
 
 for (const width of [1335, 390]) {
-  test(`分镜 ${width}px：原文、参考图和总览可读，关闭后恢复选择与焦点`, async ({ page }) => {
+  test(`分镜 ${width}px：整组原文、帧图与总览可读，关闭后恢复选择与焦点`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
     const panel = await openStoryboard(page, width === 390)
-    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+    await openStoryboardShot(panel, 2)
     const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
-    const filmstrip = group.getByRole('navigation', { name: '本组镜头' })
-    await filmstrip.getByRole('button', { name: '镜头 2', exact: true }).click()
-    const lastFrame = filmstrip.getByRole('button', { name: '预览第 3 帧' })
-    await lastFrame.click()
-    await expect(lastFrame).toBeInViewport({ ratio: 1 })
-    await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({
-      ratio: 1,
-    })
+    await group.getByRole('button', { name: '镜头 2', exact: true }).click()
+    await group.getByRole('button', { name: '下一帧', exact: true }).click()
+    const frame = group.getByRole('img', { name: '镜头组 2 第 3 帧' })
+    await expect(frame).toBeInViewport({ ratio: 1 })
     await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/main-${width}`)
 
-    const trigger = group.getByRole('button', { name: '完整提示词', exact: true })
-    await trigger.focus()
-    await page.keyboard.press('Enter')
-    const sheet = panel.getByRole('complementary', { name: '镜头组完整提示词', exact: true })
-    const original = sheet.getByRole('region', { name: '镜头组原文', exact: true })
-    await expect(original).toBeFocused()
-    const settings = sheet.getByRole('textbox', { name: '全局设定', exact: true })
+    // 整组原文就排在文案列里：全局设定打头，各镜头标出起止秒。
+    const settings = group.getByRole('textbox', { name: '全局设定', exact: true })
     await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
     await expect(settings.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
-    await expect(original).toContainText('[0–4秒｜镜头1]')
-    await expect(original).toContainText('[4–11秒｜镜头2]')
-    await expect(sheet.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
+    await expect(group.getByRole('group', { name: '镜头 1', exact: true })).toContainText('0–4s')
+    await expect(group.getByRole('group', { name: '镜头 2', exact: true })).toContainText('4–11s')
+    await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
       ratio: 1,
     })
-    await expect(sheet.getByRole('button', { name: /^生成第 \d+ 组$/ })).toHaveCount(0)
-    await expect(sheet).toBeInViewport({ ratio: 1 })
-    await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/prompt-${width}`)
 
-    const reference = sheet.getByRole('button', { name: '查看参考图 @Image3', exact: true })
-    await reference.scrollIntoViewIfNeeded()
-    await reference.click()
-    const preview = page.getByRole('dialog', { name: '参考图 @Image3', exact: true })
+    const open = group.getByRole('button', { name: '打开原图', exact: true })
+    await open.focus()
+    await page.keyboard.press('Enter')
+    const preview = page.getByRole('dialog', { name: '镜头组 2 第 3 帧', exact: true })
     await expect(preview).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(preview).toBeHidden()
-    await expect(reference).toBeFocused()
-    await page.keyboard.press('Escape')
-    await expect(sheet).toBeHidden()
-    await expect(trigger).toBeFocused()
-    await expect(lastFrame).toHaveAttribute('aria-pressed', 'true')
+    await expect(open).toBeFocused()
     const search = new URL(page.url()).searchParams
     expect(search.get('shot')).toBe('2')
     expect(search.get('frame')).toBe('3')
     expect(search.has('sheet')).toBe(false)
 
-    await panel.getByRole('button', { name: '全部镜头组', exact: true }).click()
+    await panel.getByRole('button', { name: /打开全部镜头组/ }).click()
     const overview = panel.getByRole('complementary', { name: '全部镜头组', exact: true })
+    await expect(
+      overview.getByRole('button', { name: '查看镜头组 2', exact: true }),
+    ).toHaveAttribute('aria-current', 'true')
     await expect(overview.getByRole('button', { name: /查看镜头组/ })).toHaveCount(3)
     await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/overview-${width}`)
     await overview.getByRole('button', { name: '查看镜头组 3', exact: true }).click()
@@ -144,10 +128,10 @@ for (const width of [1335, 390]) {
 test('agent 更新工作区后重读结构化正文，保留当前组和帧', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 2)
   const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
   await group.getByRole('button', { name: '镜头 2', exact: true }).click()
-  await group.getByRole('button', { name: '预览第 3 帧' }).click()
+  await group.getByRole('button', { name: '下一帧', exact: true }).click()
   await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
     '台词并成一句',
     {
@@ -164,7 +148,7 @@ test('编辑一镜后保存并读回，复制整组保留 raw 图片标记与空
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   const generationPosts = watchGenerationPosts(page)
   const panel = await openStoryboard(page)
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 2)
   const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
   await group.getByRole('button', { name: '镜头 2', exact: true }).click()
   await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
@@ -187,12 +171,10 @@ test('编辑一镜后保存并读回，复制整组保留 raw 图片标记与空
   await expect.poll(async () => (await readDocument(page)).document).toEqual(expected)
   expect((await readDocument(page)).version).toBeGreaterThan(before.version)
   await expect(panel.getByText('已保存', { exact: true })).toBeVisible()
-  await group.getByRole('button', { name: '复制镜头正文', exact: true }).click()
+  await group.getByRole('button', { name: '复制镜头 1', exact: true }).click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(changed)
 
-  await group.getByRole('button', { name: '完整提示词', exact: true }).click()
-  const sheet = panel.getByRole('complementary', { name: '镜头组完整提示词', exact: true })
-  await sheet.getByRole('button', { name: '复制完整提示词', exact: true }).click()
+  await panel.getByRole('button', { name: '复制完整提示词', exact: true }).click()
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(rawGroupPrompt(secondGroup))
@@ -214,7 +196,7 @@ test('总览按文件顺序复制选中的多个镜头组，保留各组 raw 图
   const first = initial.document.shots[0]
   const third = initial.document.shots[2]
   if (first === undefined || third === undefined) throw new Error('需要第一组和第三组')
-  await panel.getByRole('button', { name: '全部镜头组', exact: true }).click()
+  await panel.getByRole('button', { name: /打开全部镜头组/ }).click()
   const overview = panel.getByRole('complementary', { name: '全部镜头组', exact: true })
   await overview.getByRole('button', { name: '选中镜头组 3', exact: true }).click()
   await overview.getByRole('button', { name: '选中镜头组 1', exact: true }).click()
@@ -324,7 +306,7 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
 test('翻到第 3 组出片：请求取当前组，记录先生成中后完成，下载分原片与水印版', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
-  await panel.getByRole('button', { name: '第 3 组', exact: true }).click()
+  await openStoryboardShot(panel, 3)
   const group = panel.getByRole('region', { name: '镜头组 3', exact: true })
   await group.getByRole('button', { name: '镜头 1', exact: true }).click()
   await expect(group.getByRole('textbox', { name: '镜头 1 的描述' })).toContainText('低角度拍鞋面')

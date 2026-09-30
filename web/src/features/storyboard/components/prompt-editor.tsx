@@ -151,12 +151,14 @@ export function PromptEditor({
       onPick: (n) => latestRef.current.onPickFrame?.(n),
     }
     const view: EditorView = new EditorView(host, {
-      attributes: {
+      // 只读时 contenteditable 关掉就不可聚焦了；给个 tabindex，键盘和点击仍能落到这段上。
+      attributes: () => ({
         'aria-label': initialRef.current.ariaLabel,
         'aria-multiline': 'true',
         class: 'prompt-editor-content',
         role: 'textbox',
-      },
+        ...(latestRef.current.readOnly ? { 'aria-readonly': 'true', tabindex: '0' } : {}),
+      }),
       dispatchTransaction(tr) {
         const next = view.state.apply(tr)
         view.updateState(next)

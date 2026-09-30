@@ -138,22 +138,23 @@ describe('StoryboardReader 全局设定与参考图', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
-  it('全局图片原位展开，切图不修改引用，切到无图镜头后收起', async () => {
+  it('全局设定的图在舞台上逐帧切，切图不修改引用，切到无图镜头后舞台留空', async () => {
     const state = provide()
     await renderReader()
-    const nav = await screen.findByRole('navigation', { name: '本组镜头' })
-    const global = within(nav).getByRole('group', { name: '全局设定' })
-    expect(within(global).getAllByRole('button')).toHaveLength(2)
-    await userEvent.click(within(global).getByRole('button', { name: '预览第 2 帧' }))
+    const global = await screen.findByRole('group', { name: '全局设定' })
+    expect(global).toHaveAttribute('aria-current', 'true')
+    expect(within(global).getAllByRole('button', { name: /^看第 \d+ 帧$/ })).toHaveLength(2)
+    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     expect(await screen.findByRole('img', { name: '镜头组 1 第 2 帧' })).toHaveAttribute(
       'src',
       fixture.shots[0]?.image_urls[1],
     )
     expect(screen.getByRole('textbox', { name: '全局设定' })).toBeVisible()
     expect(state.writes).toEqual([])
-    await userEvent.click(within(nav).getByRole('button', { name: '镜头 1' }))
-    expect(within(nav).getByRole('button', { name: '镜头 1' })).toHaveFocus()
-    expect(within(global).getAllByRole('button')).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: '镜头 1' }))
+    expect(screen.getByRole('button', { name: '镜头 1' })).toHaveFocus()
+    expect(global).toHaveAttribute('aria-current', 'false')
+    expect(screen.getByRole('group', { name: '镜头 1' })).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('textbox', { name: '镜头 1 的描述' })).toHaveTextContent(
       '展示者拿起产品。',
     )
@@ -232,7 +233,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
   it('添加图片只追加全局引用，替换保持编号和时间线', async () => {
     const state = provide()
     await renderReader()
-    await screen.findByRole('navigation', { name: '本组镜头' })
+    const global = await screen.findByRole('group', { name: '全局设定' })
     await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
     await userEvent.upload(
       screen.getByLabelText('选择要上传的图片'),
@@ -241,11 +242,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     await waitFor(() => expect(state.stored().shots[0]?.image_urls).toHaveLength(3))
     expect(state.stored().shots[0]?.prompt.global_settings).toContain('@Image3')
     expect(state.stored().shots[0]?.prompt.timeline).toEqual(fixture.shots[0]?.prompt.timeline)
-    await userEvent.click(
-      within(screen.getByRole('navigation', { name: '本组镜头' })).getByRole('button', {
-        name: '预览第 2 帧',
-      }),
-    )
+    await userEvent.click(within(global).getByRole('button', { name: '看第 2 帧' }))
     await userEvent.upload(
       screen.getByLabelText('选择替换图片'),
       new File(['replacement'], 'replacement.png', { type: 'image/png' }),
@@ -278,7 +275,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     expect(state.stored().shots[0]?.prompt.timeline).toEqual(shot.prompt.timeline)
   })
 
-  it('30 张全局参考图原位展开，共用图片不改变所选内容，上限不阻止引用已有图片', async () => {
+  it('30 张全局参考图逐张可看，共用图片不改变所选内容，上限不阻止引用已有图片', async () => {
     const document = structuredClone(fixture)
     const shot = document.shots[0]
     if (shot === undefined) throw new Error('缺少镜头组')
@@ -291,18 +288,18 @@ describe('StoryboardReader 全局设定与参考图', () => {
     }
     const state = provide(document)
     await renderReader()
-    const nav = await screen.findByRole('navigation', { name: '本组镜头' })
-    const global = within(nav).getByRole('group', { name: '全局设定' })
-    expect(within(global).getAllByRole('button')).toHaveLength(30)
-    await userEvent.click(within(global).getByRole('button', { name: '预览第 30 帧' }))
+    const global = await screen.findByRole('group', { name: '全局设定' })
+    expect(within(global).getAllByRole('button', { name: /^看第 \d+ 帧$/ })).toHaveLength(30)
+    await userEvent.click(within(global).getByRole('button', { name: '看第 30 帧' }))
     expect(screen.getByRole('textbox', { name: '全局设定' })).toBeVisible()
     expect(screen.getByRole('img', { name: '镜头组 1 第 30 帧' })).toHaveAttribute(
       'src',
       shot.image_urls[29],
     )
+    expect(global).toHaveAttribute('aria-current', 'true')
     expect(state.writes).toEqual([])
-    await userEvent.click(within(nav).getByRole('button', { name: '镜头 1' }))
-    expect(within(global).getAllByRole('button')).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: '镜头 1' }))
+    expect(global).toHaveAttribute('aria-current', 'false')
     expect(screen.getByRole('textbox', { name: '镜头 1 的描述' })).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
     expect(screen.getByRole('button', { name: '上传图片' })).toBeDisabled()

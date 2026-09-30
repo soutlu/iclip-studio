@@ -1,10 +1,8 @@
-/** 结构化分镜工作台；查询参数保存组与帧位置，草稿局部更新后整份保存。 */
+/** 结构化分镜工作台的组合根：取数、草稿与路由参数在这里，状态分发给顶栏、分镜页、浮层与出片栏。 */
 
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { z } from 'zod'
 import { errorMessageOf } from '@/shared/api/client'
-import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
@@ -14,60 +12,36 @@ import {
   type ArtifactRendererProps,
   type WorkbenchRef,
 } from '@/shared/workbench'
-import { validateShot } from '../shot-document'
+import { formatShotPrompt, validateShot } from '../shot-document'
 import { frameBadges, latestFrameJobs } from '../frame-status'
+import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
 import { useFrameImageJobs } from '../image-edit/image-edit.api'
 import { isRunningStatus, isShotVideo, SHOTS_PATH } from '../shots'
 import { useShotGenerations } from '../storyboard.api'
 import { useGenerationGate } from '../use-generation-gate'
-import { supportsAspectRatio } from '../video-model-support'
-import { useShotsDraft, type SaveState } from '../use-shots-draft'
+import { useShotArrowKeys } from '../use-shot-arrow-keys'
+import { useShotsDraft } from '../use-shots-draft'
 import { useLiveGenerations } from '../use-live-generations'
 import { useVideoGeneration } from '../use-video-generation'
 import { editCountsByRoot } from '../video-editor/edit-chain'
 import { VideoEditor } from '../video-editor/video-editor'
 import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
 import { GenerationRecords } from './generation-records'
-import { PromptReading } from './prompt-reading'
 import { ReaderImageEdit, type FrameEditSession } from './reader-image-edit'
 import { ReaderOverlay } from './reader-overlay'
 import { ReaderPage } from './reader-page'
-import {
-  contentLabel,
-  resolveShotSelection,
-  shotContents,
-  type readerSheetSchema,
-} from '../shot-content'
+import { contentLabel, resolveShotSelection, shotContents, type ReaderSheet } from '../shot-content'
 import { ShotOverview } from './shot-overview'
+import { StoryboardToolbar } from './storyboard-toolbar'
 import { VideoGenerationBar } from './video-generation-bar'
 
 type ReaderSearch = {
   content?: string | undefined
   frame?: number | undefined
-  sheet?: z.infer<typeof readerSheetSchema> | undefined
+  sheet?: ReaderSheet | undefined
   shot?: number | undefined
   /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
   video?: string | undefined
-}
-const pageOfScroll = (element: HTMLElement): number | undefined =>
-  element.clientHeight > 0 ? Math.round(element.scrollTop / element.clientHeight) + 1 : undefined
-
-/** 出片按钮置灰的原因，能出片时为 undefined。出片发的是描述的当前版本，还在存或没存下就先别发，
- * 免得发出去的和文件里的不一样。一次只说一条：要用户动手的排在前，等一下就好的暂态在后。 */
-const generateBlockerOf = (facts: {
-  readOnly: boolean
-  saveState: SaveState['kind']
-  uploading: boolean
-  noModel: boolean
-  modelsUnavailable: boolean
-}): string | undefined => {
-  if (facts.readOnly) return '只读对话，不能出片'
-  if (facts.saveState === 'conflict') return '先处理分镜的版本冲突'
-  if (facts.saveState === 'error') return '分镜没存下，先重试保存'
-  if (facts.saveState === 'saving') return '分镜保存中'
-  if (facts.uploading) return '图片还在上传'
-  if (facts.noModel) return facts.modelsUnavailable ? '视频模型读不到' : '正在读取视频模型'
-  return undefined
 }
 
 export function StoryboardReader(props: ArtifactRendererProps) {
@@ -94,8 +68,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   )
   const navigate = useNavigate()
   const search: ReaderSearch = useSearch({ strict: false })
-  const pagesRef = useRef<HTMLDivElement | null>(null)
-  const scrollTargetRef = useRef<number | null>(null)
+  const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const sheetTriggerRef = useRef<HTMLElement | null>(null)
   const [media, setMedia] = useState<LightboxMedia | null>(null)
   const document = draft.document
@@ -156,15 +129,13 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     go({ sheet })
   }
 
-  useEffect(() => {
-    const element = pagesRef.current
-    if (element === null) return
-    const showing = pageOfScroll(element)
-    if (showing === undefined || showing === position) return
-    scrollTargetRef.current = position
-    const top = (position - 1) * element.clientHeight
-    element.scrollTo({ behavior: 'instant', top })
-  }, [position, shots.length])
+  // 浮层开着时不切组：里面的焦点也在工作台里。
+  useShotArrowKeys(root, {
+    enabled: search.sheet === undefined,
+    onGo: (next) => go({ shot: next }),
+    position,
+    total: shots.length,
+  })
 
   if (file.isPending && document === null) return <ReaderNotice text="正在读取分镜…" />
   if (file.isError && document === null)
@@ -188,20 +159,18 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   // 提交途中按钮自己写着「提交中」，不另说原因。
   const generateBlocker = gate.preparing
     ? undefined
-    : generateBlockerOf({
-        modelsUnavailable: video.modelsUnavailable,
-        noModel: video.options.model === undefined,
+    : generationBlockerOf({
+        modelsStatus: video.modelsStatus,
         readOnly,
         saveState: draft.state.kind,
         uploading: gate.uploading,
       })
-  // 改过之后原因就过期了，等下一次出片再说；存盘状态那一格有自己的提示，不重复说。
-  const submitError = draft.hasUnsavedChanges ? undefined : video.errorOf(shot.index)
-  // 选中的模型做不了这份分镜的画幅：只提醒，不拦——真拒还是由上游拒。
-  const aspectMismatch = supportsAspectRatio(video.options.model, document.aspect_ratio)
-    ? undefined
-    : `${video.options.model} 做不了 ${document.aspect_ratio}`
-  const generateNotice = submitError ?? aspectMismatch
+  const generateNotice = generationNoticeOf({
+    aspectRatio: document.aspect_ratio,
+    model: video.options.model,
+    // 改过之后原因就过期了，等下一次出片再说；存盘状态那一格有自己的提示，不重复说。
+    submitError: draft.hasUnsavedChanges ? undefined : video.errorOf(shot.index),
+  })
   const generate = () =>
     gate.run(async (mounted) => {
       const saved = await draft.saveNow()
@@ -213,141 +182,62 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       }
       await video.submit(current, saved.aspect_ratio)
     })
-  const onScroll = () => {
-    const element = pagesRef.current
-    if (element === null) return
-    const showing = pageOfScroll(element)
-    if (showing === undefined) return
-    if (scrollTargetRef.current !== null) {
-      if (showing !== scrollTargetRef.current) return
-      scrollTargetRef.current = null
-    }
-    if (showing !== position) go({ shot: Math.min(Math.max(showing, 1), shots.length) })
-  }
 
   return (
     <>
-      {/* 容器查询量的是工作台本身：它能拖宽、聊天栏能收起，视口宽度说明不了什么。 */}
-      <div className="@container flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
-        <div
-          aria-label="分镜工具栏"
-          className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 px-4 pt-2 pb-1"
-          role="group"
-        >
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <div className="storyboard-workbench" ref={setRoot}>
+        <StoryboardToolbar
+          activeCount={activeCount}
+          fullPrompt={formatShotPrompt(shot)}
+          onOpenSheet={openSheet}
+          position={position}
+          sheet={search.sheet}
+          status={
             <SaveStatus
               state={draft.state}
               hasUnsavedChanges={draft.hasUnsavedChanges}
               appliedUpload={draft.hasUnsavedUpload}
               onRetry={() => void draft.saveNow()}
             />
-          </div>
-          <Button
-            aria-expanded={search.sheet === 'all'}
-            onClick={(event) => openSheet('all', event.currentTarget)}
-            size="md"
-            variant="ghost"
-          >
-            全部镜头组
-          </Button>
-          <Button
-            aria-expanded={search.sheet === 'records'}
-            aria-label="生成记录"
-            className="shrink-0 border-[0.5px] border-chat-hairline bg-background px-3 text-body text-on-surface"
-            leadingIcon="history"
-            onClick={(event) => openSheet('records', event.currentTarget)}
-            size="md"
-            variant="outlined"
-          >
-            生成记录
-            {activeCount > 0 ? (
-              <span className="ml-1 text-primary">生成中 {activeCount}</span>
-            ) : null}
-          </Button>
-        </div>
+          }
+          total={shots.length}
+        />
         <div className="relative flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-          <div
-            className="flex min-h-0 min-w-0 flex-1 snap-y snap-mandatory flex-col overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
-            inert={search.sheet !== undefined}
-            onScroll={onScroll}
-            ref={pagesRef}
-          >
-            {shots.map((item, offset) => (
-              <ReaderPage
-                editingDisabled={editingDisabled}
-                aspect_ratio={document.aspect_ratio}
-                onUpdateShot={(updater) => draft.updateShot(item.index, updater)}
-                onReplaceFrame={(frame, previousUrl, url) => {
-                  draft.replaceFrame(item.index, frame, previousUrl, url)
-                  draft.recordUpload(item.index, frame, url)
-                }}
-                onUploaded={(frame, url) => draft.recordUpload(item.index, frame, url)}
-                onUploadingChange={gate.onUploadingChange}
-                onEditFrame={(frame, open) => {
-                  setImageEdit({
-                    target: { conversationId, shotIndex: item.index, frameNumber: frame },
-                    ...(open.kind === 'result' ? { initialKey: open.jobId } : {}),
-                    trigger:
-                      window.document.activeElement instanceof HTMLElement
-                        ? window.document.activeElement
-                        : null,
-                  })
-                }}
-                content={offset + 1 === position ? search.content : undefined}
-                frame={offset + 1 === position ? search.frame : undefined}
-                frameBadges={frameBadges(item, latestFrameJob, seenFrameJobs)}
-                key={`${item.index}-${offset + 1 === position ? 'active' : 'inactive'}`}
-                onOpenPrompt={(trigger) => {
-                  sheetTriggerRef.current = trigger
-                  go({ sheet: 'prompt', shot: offset + 1 })
-                }}
-                onSelect={(content, frame) => go({ content, frame, shot: offset + 1 })}
-                onPreview={setMedia}
-                shot={item}
-              />
-            ))}
+          <div className="flex min-h-0 min-w-0 flex-1" inert={search.sheet !== undefined}>
+            <ReaderPage
+              editingDisabled={editingDisabled}
+              aspect_ratio={document.aspect_ratio}
+              onUpdateShot={(updater) => draft.updateShot(shot.index, updater)}
+              onReplaceFrame={(frame, previousUrl, url) => {
+                draft.replaceFrame(shot.index, frame, previousUrl, url)
+                draft.recordUpload(shot.index, frame, url)
+              }}
+              onUploaded={(frame, url) => draft.recordUpload(shot.index, frame, url)}
+              onUploadingChange={gate.onUploadingChange}
+              onEditFrame={(frame, open) => {
+                setImageEdit({
+                  target: { conversationId, shotIndex: shot.index, frameNumber: frame },
+                  ...(open.kind === 'result' ? { initialKey: open.jobId } : {}),
+                  trigger:
+                    window.document.activeElement instanceof HTMLElement
+                      ? window.document.activeElement
+                      : null,
+                })
+              }}
+              content={search.content}
+              frame={search.frame}
+              frameBadges={frameBadges(shot, latestFrameJob, seenFrameJobs)}
+              // 只挂当前组；换组就卸载重挂，进行中的上传属于原来那组，迟到的结果不要了。
+              key={shot.index}
+              onSelect={(content, frame) => go({ content, frame })}
+              onPreview={setMedia}
+              shot={shot}
+            />
           </div>
-          <nav
-            aria-label="镜头组页码"
-            className="flex shrink-0 flex-col items-center justify-center gap-2 px-2"
-            inert={search.sheet !== undefined}
-          >
-            {shots.map((item) => (
-              <button
-                aria-current={item.index === shot.index}
-                aria-label={`第 ${item.index} 组`}
-                className={cn(
-                  'size-1.5 cursor-pointer rounded-full ui-focus ui-motion-s',
-                  item.index === shot.index ? 'bg-on-surface' : 'bg-outline-variant',
-                )}
-                key={item.index}
-                onClick={() => go({ shot: item.index })}
-                onKeyDown={(event) => {
-                  const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
-                  const next = position + step
-                  if (step === 0 || next < 1 || next > shots.length) return
-                  event.preventDefault()
-                  go({ shot: next })
-                }}
-                type="button"
-              />
-            ))}
-          </nav>
-          {search.sheet === 'prompt' ? (
-            <ReaderOverlay label="镜头组完整提示词" onClose={closeSheet}>
-              <PromptReading
-                aspect_ratio={document.aspect_ratio}
-                onClose={closeSheet}
-                onPreview={setMedia}
-                onUpdateShot={(updater) => draft.updateShot(shot.index, updater)}
-                readOnly={editingDisabled}
-                shot={shot}
-              />
-            </ReaderOverlay>
-          ) : null}
           {search.sheet === 'all' ? (
             <ReaderOverlay label="全部镜头组" onClose={closeSheet}>
               <ShotOverview
+                currentIndex={shot.index}
                 shots={shots}
                 aspect_ratio={document.aspect_ratio}
                 onClose={closeSheet}
@@ -402,13 +292,14 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
           ) : null}
         </div>
         <VideoGenerationBar
-          aspectRatio={document.aspect_ratio}
-          aspectRatioDisabled={editingDisabled}
-          blockedReason={generateBlocker}
-          models={video.models}
-          modelsUnavailable={video.modelsUnavailable ? '视频模型读不到' : undefined}
+          aspect={{
+            disabled: editingDisabled,
+            onChange: draft.updateAspectRatio,
+            value: document.aspect_ratio,
+          }}
+          blocker={generateBlocker}
+          models={{ items: video.models, status: video.modelsStatus }}
           notice={generateNotice}
-          onAspectRatioChange={draft.updateAspectRatio}
           onChange={video.setOptions}
           onGenerate={() => void generate()}
           shotIndex={shot.index}

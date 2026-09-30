@@ -4,6 +4,7 @@ import { UserFacingError } from '@/shared/api/client'
 import { MAX_REFERENCE_IMAGES } from './shots'
 import {
   extractImageIndexes,
+  formatSeconds,
   promptTitle,
   updateTimelinePrompt,
   insertReferenceText,
@@ -33,8 +34,10 @@ export const shotContentIdSchema = z
   .string()
   .refine((id) => decodeContentId(id) !== undefined, '内容 id 不合法')
 
-/** 路由查询参数里盖在分镜页上的那一层：全部镜头组、完整提示词或生成记录。 */
-export const readerSheetSchema = z.enum(['all', 'prompt', 'records'])
+/** 路由查询参数里盖在分镜页上的那一层：全部镜头组或生成记录。 */
+export const readerSheetSchema = z.enum(['all', 'records'])
+
+export type ReaderSheet = z.infer<typeof readerSheetSchema>
 
 export type ShotContent = {
   id: string
@@ -94,6 +97,40 @@ export const resolveShotSelection = (
 /** 导航、选区与可访问名里的短名：镜头按序号叫「镜头 N」，全局设定与未引用用标题。 */
 export const contentLabel = (content: ShotContent): string =>
   content.timelineIndex === undefined ? content.title : `镜头 ${content.timelineIndex + 1}`
+
+/** 文案列里排出来的段：全局设定与各镜头。未引用的图没有正文，不成段。 */
+export const scriptSegments = (contents: readonly ShotContent[]): ShotContent[] =>
+  contents.filter((item) => item.kind !== 'unreferenced')
+
+/** 镜头段标题旁的时间胶囊「起–止s」；直接取起止秒，不做减法。全局设定没有时间，返回 undefined。 */
+export const segmentTimeRange = (shot: Shot, content: ShotContent): string | undefined => {
+  if (content.timelineIndex === undefined) return undefined
+  const timestamps = shot.prompt.timeline[content.timelineIndex]?.timestamps
+  if (timestamps === undefined) return undefined
+  return `${formatSeconds(timestamps[0])}–${formatSeconds(timestamps[1])}s`
+}
+
+/** 在这段引用的帧里往前（-1）或往后（1）走一格；到头、或当前帧不属于这段时为 undefined。 */
+export const adjacentFrame = (
+  content: ShotContent,
+  frame: number | undefined,
+  step: -1 | 1,
+): number | undefined => {
+  const at = frame === undefined ? -1 : content.frameNumbers.indexOf(frame)
+  return at < 0 ? undefined : content.frameNumbers[at + step]
+}
+
+/** 一帧被不止一段引用时画面上的说明，如「@Image2 · 镜头 1、镜头 2 共用」；只有一段或没有帧时为 undefined。 */
+export const sharedFrameCaption = (
+  contents: readonly ShotContent[],
+  frame: number | undefined,
+): string | undefined => {
+  if (frame === undefined) return undefined
+  const sharing = contents.filter((item) => item.frameNumbers.includes(frame))
+  return sharing.length > 1
+    ? `@Image${frame} · ${sharing.map(contentLabel).join('、')} 共用`
+    : undefined
+}
 
 export const updateContentPrompt = (shot: Shot, id: string, text: string): Shot => {
   const content = shotContents(shot).find((item) => item.id === id)

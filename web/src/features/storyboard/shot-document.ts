@@ -175,7 +175,8 @@ export const insertReferenceText = (
 const OUTPUT_CONSTRAINT = '不要生成字幕，不要生成背景音乐。'
 
 /** 起止秒保留到毫秒并去掉末尾的零，同服务端 format_seconds：3.5、4、8.25。 */
-const formatSeconds = (value: number): string => Number(value.toFixed(3)).toString()
+/** 秒数给人看：最多三位小数，去掉浮点尾差与多余的零。 */
+export const formatSeconds = (value: number): string => Number(value.toFixed(3)).toString()
 
 /** 「复制完整提示词」显示的正文。拼装规则归服务端（shot_prompt.py），这里照同一规则给人看，出片时发的是结构化镜头组。 */
 export const formatShotPrompt = (shot: Shot): string => {

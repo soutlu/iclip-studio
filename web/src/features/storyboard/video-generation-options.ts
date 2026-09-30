@@ -15,3 +15,12 @@ export type VideoGenerationOptions = {
 export const DEFAULT_GENERATE_AUDIO = true
 
 export const DEFAULT_VIDEO_RESOLUTION: VideoResolution = '720p'
+
+/** 视频模型清单的读取状态。 */
+export type VideoModelsStatus = 'loading' | 'ready' | 'unavailable'
+
+/** 清单没到手时怎么说：模型下拉的占位与出片按钮的置灰原因都用这一句。 */
+export const MODELS_PENDING_TEXT: Record<Exclude<VideoModelsStatus, 'ready'>, string> = {
+  loading: '正在读取视频模型',
+  unavailable: '视频模型读不到',
+}

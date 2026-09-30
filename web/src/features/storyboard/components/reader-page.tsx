@@ -1,28 +1,25 @@
-/** 一组分镜的内容选择、预览与编辑；全局设定和时间线共用图片操作。 */
-import { useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react'
+/** 一组分镜的页面：解析选中的段与帧，组合舞台与文案列，并管添加图片（关联已有或上传）的流程。 */
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
-import { Icon } from '@/shared/icons'
-import { cn } from '@/shared/lib/utils'
-import { IconButton } from '@/shared/ui/button'
 import type { LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
 import type { FrameBadge } from '../frame-status'
 import { type Shot } from '../shot-document'
 import {
-  shotContents,
-  updateContentPrompt,
-  insertContentReference,
+  adjacentFrame,
   appendContentImage,
-  contentLabel,
+  insertContentReference,
   resolveShotSelection,
+  scriptSegments,
+  sharedFrameCaption,
+  shotContents,
 } from '../shot-content'
-import { aspectRatioStyle, MAX_REFERENCE_IMAGES } from '../shots'
-import { copyWithToast } from './copy-with-toast'
+import { MAX_REFERENCE_IMAGES } from '../shots'
 import { FrameAssignmentPicker } from './frame-assignment-picker'
-import { FramePreview } from './frame-preview'
-import { PromptEditor, type PromptEditorHandle } from './prompt-editor'
-import { ShotFilmstrip } from './shot-filmstrip'
+import type { PromptEditorHandle } from './prompt-editor'
+import { ShotScript } from './shot-script'
+import { ShotStage } from './shot-stage'
 
 type ReaderPageProps = {
   shot: Shot
@@ -37,7 +34,6 @@ type ReaderPageProps = {
   onUploaded: (frame: number, url: string) => void
   onUploadingChange: (group: number, uploading: boolean) => void
   onSelect: (content: string, frame?: number) => void
-  onOpenPrompt: (trigger: HTMLElement) => void
   onPreview: (media: LightboxMedia) => void
   /** 打开这一帧的编辑器；`open` 决定进去先看哪张：铅笔进底图，角标进那条新结果。 */
   onEditFrame: (frame: number, open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
@@ -50,7 +46,6 @@ export function ReaderPage({
   frame,
   frameBadges,
   onEditFrame,
-  onOpenPrompt,
   onSelect,
   onPreview,
   onReplaceFrame,
@@ -65,9 +60,13 @@ export function ReaderPage({
     frame,
   })
   const url = frameNumber === undefined ? undefined : shot.image_urls[frameNumber - 1]
-  const currentFrameIndex = content.frameNumbers.indexOf(frameNumber ?? -1)
-  const [width = 0, height = 0] = aspect_ratio.split(':').map(Number)
-  const editorRef = useRef<PromptEditorHandle | null>(null)
+  // 每段一个编辑器；添加图片插在选中那段的光标处。
+  const editorsRef = useRef(new Map<string, PromptEditorHandle>())
+  const editorRef = (id: string) => (handle: PromptEditorHandle | null) => {
+    if (handle === null) editorsRef.current.delete(id)
+    else editorsRef.current.set(id, handle)
+  }
+  const insertionAtCursor = () => editorsRef.current.get(content.id)?.getInsertion()
   const uploadRevisionRef = useRef(0)
   const targetKey = JSON.stringify([shot.index, content.id])
   const [pickerTarget, setPickerTarget] = useState<string | null>(null)
@@ -95,12 +94,6 @@ export function ReaderPage({
     setPickerTarget(null)
     onSelect(id, number)
   }
-  const selectImage = (number: number) => {
-    // 编辑器中的新引用可尚未进入派生列表，下一次渲染会从正文重新计算。
-    if (number >= 1 && number <= shot.image_urls.length) select(content.id, number)
-  }
-  const changePrompt = (text: string) =>
-    onUpdateShot((current) => updateContentPrompt(current, content.id, text))
 
   const updateTarget = (updater: (current: Shot) => Shot): Shot => {
     const updated = onUpdateShot((current) => {
@@ -120,7 +113,7 @@ export function ReaderPage({
   const pickExisting = (number: number, previousUrl: string) => {
     if (editingDisabled) return
     try {
-      const insertion = editorRef.current?.getInsertion()
+      const insertion = insertionAtCursor()
       updateTarget((current) => {
         if (current.image_urls[number - 1] !== previousUrl)
           throw new UserFacingError('这张图片已发生变化，请重新选择')
@@ -139,7 +132,7 @@ export function ReaderPage({
     try {
       const newUrl = await uploadMediaFile(file, 'image')
       if (revision !== uploadRevisionRef.current) return
-      const insertion = editorRef.current?.getInsertion()
+      const insertion = insertionAtCursor()
       const updated = updateTarget((current) =>
         appendContentImage(current, content.id, newUrl, insertion),
       )
@@ -152,152 +145,55 @@ export function ReaderPage({
       if (revision === uploadRevisionRef.current) setUploadTarget(null)
     }
   }
-  const sharing =
-    frameNumber === undefined
-      ? []
-      : contents.filter((item) => item.frameNumbers.includes(frameNumber))
-  const sharedCaption =
-    sharing.length > 1
-      ? `@Image${frameNumber} · ${sharing.map(contentLabel).join('、')} 共用`
-      : undefined
-  const editorLabel =
-    content.timelineIndex === undefined ? content.title : `${contentLabel(content)} 的描述`
+  const previous = adjacentFrame(content, frameNumber, -1)
+  const next = adjacentFrame(content, frameNumber, 1)
+  const stageFrame =
+    url === undefined || frameNumber === undefined
+      ? undefined
+      : {
+          badge: frameBadges.get(frameNumber),
+          caption: sharedFrameCaption(contents, frameNumber),
+          number: frameNumber,
+          url,
+        }
 
   return (
-    <section
-      aria-label={`镜头组 ${shot.index}`}
-      className="storyboard-page flex h-full min-h-0 w-full min-w-0 shrink-0 snap-start flex-col gap-4 p-4"
-    >
-      <div className="storyboard-stage">
-        <IconButton
-          className="storyboard-page-arrow rounded-full border-[0.5px] border-chat-hairline bg-chat-card-bg"
-          disabled={currentFrameIndex <= 0}
-          label="上一帧"
-          name="back"
-          size="md"
-          onClick={() => {
-            const n = content.frameNumbers[currentFrameIndex - 1]
-            if (n !== undefined) selectImage(n)
-          }}
-        />
-        <article
-          className={cn(
-            'storyboard-preview overflow-hidden rounded-xs border-[0.5px] border-chat-hairline bg-chat-card-bg',
-            url === undefined
-              ? 'storyboard-preview-text'
-              : width > height && 'storyboard-preview-wide',
-          )}
-          style={
-            {
-              '--storyboard-frame-aspect': aspectRatioStyle(aspect_ratio),
-              '--storyboard-frame-tall': width > 0 && height > 0 ? height / width : 1,
-            } as CSSProperties
-          }
-        >
-          {url === undefined || frameNumber === undefined ? null : (
-            <FramePreview
-              badge={frameBadges.get(frameNumber)}
-              disabled={editingDisabled}
-              aspectRatio={aspect_ratio}
-              caption={sharedCaption}
-              key={`${content.id}:${frameNumber}:${url}`}
-              name={`镜头组 ${shot.index} 第 ${frameNumber} 帧`}
-              url={url}
-              onEdit={() => onEditFrame(frameNumber, { kind: 'draft' })}
-              onOpenResult={(jobId) => onEditFrame(frameNumber, { kind: 'result', jobId })}
-              onOpen={() =>
-                onPreview({ kind: 'image', name: `镜头组 ${shot.index} 第 ${frameNumber} 帧`, url })
-              }
-              onReplace={(newUrl) => onReplaceFrame(frameNumber, url, newUrl)}
-              onUpload={(file) => uploadMediaFile(file, 'image')}
-              onUploadingChange={setReplacing}
-            />
-          )}
-          <div className="storyboard-description flex min-h-0 min-w-0 flex-col gap-4 p-4">
-            <div className="flex min-w-0 items-center gap-2">
-              <h3 className="flex min-w-0 flex-1 items-center gap-2 text-body font-medium text-on-surface">
-                {content.timelineIndex === undefined ? null : (
-                  <span className="inline-grid size-5.5 shrink-0 place-items-center rounded-xs bg-surface-container-high text-label font-medium text-on-surface">
-                    {content.timelineIndex + 1}
-                  </span>
-                )}
-                <span className="min-w-0 truncate" title={content.title}>
-                  {content.title}
-                </span>
-              </h3>
-              {content.prompt === undefined ? null : (
-                <IconButton
-                  label={content.kind === 'global' ? '复制全局设定' : '复制镜头正文'}
-                  name="copy"
-                  size="sm"
-                  onClick={() => void copyWithToast(content.prompt ?? '', '已复制')}
-                />
-              )}
-            </div>
-            {content.prompt === undefined ? (
-              <p className="text-body text-on-surface-faint">这张图片尚未被全局设定或镜头引用</p>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <PromptEditor
-                  readOnly={editingDisabled}
-                  aria-label={editorLabel}
-                  frames={shot.image_urls}
-                  highlighted={frameNumber}
-                  key={content.id}
-                  onChange={changePrompt}
-                  onPickFrame={selectImage}
-                  ref={editorRef}
-                  value={content.prompt}
-                />
-              </div>
-            )}
-          </div>
-        </article>
-        <IconButton
-          className="storyboard-page-arrow rounded-full border-[0.5px] border-chat-hairline bg-chat-card-bg"
-          disabled={currentFrameIndex < 0 || currentFrameIndex >= content.frameNumbers.length - 1}
-          label="下一帧"
-          name="next"
-          size="md"
-          onClick={() => {
-            const n = content.frameNumbers[currentFrameIndex + 1]
-            if (n !== undefined) selectImage(n)
-          }}
-        />
-      </div>
-      <div className="storyboard-filmstrip flex shrink-0 items-stretch gap-1 border-t-[0.5px] border-chat-hairline pt-3">
-        <ShotFilmstrip
-          activeContent={content.id}
-          badges={frameBadges}
+    <section aria-label={`镜头组 ${shot.index}`} className="storyboard-body">
+      <ShotStage
+        aspectRatio={aspect_ratio}
+        disabled={editingDisabled}
+        frame={stageFrame}
+        // 换段就重挂：进行中的替换上传属于原来那段，结果不要了。
+        key={content.id}
+        onAddImage={
+          content.prompt === undefined || uploading ? undefined : () => setPickerTarget(targetKey)
+        }
+        onEditFrame={onEditFrame}
+        onNext={next === undefined ? undefined : () => select(content.id, next)}
+        onOpenFrame={(item) =>
+          onPreview({
+            kind: 'image',
+            name: `镜头组 ${shot.index} 第 ${item.number} 帧`,
+            url: item.url,
+          })
+        }
+        onPrevious={previous === undefined ? undefined : () => select(content.id, previous)}
+        onReplaceFrame={onReplaceFrame}
+        onReplacingChange={setReplacing}
+        shotIndex={shot.index}
+        uploadingNewImage={uploading}
+      />
+      <div className="storyboard-script">
+        <ShotScript
+          editorRef={editorRef}
           frameNumber={frameNumber}
-          frames={shot.image_urls}
           onSelect={select}
-          contents={contents}
+          onUpdateShot={onUpdateShot}
+          readOnly={editingDisabled}
+          segments={scriptSegments(contents)}
+          selectedId={content.id}
+          shot={shot}
         />
-        <button
-          aria-label="添加图片"
-          title="添加图片"
-          type="button"
-          className="storyboard-add-frame grid shrink-0 cursor-pointer place-items-center rounded-xs border-[0.5px] border-chat-hairline bg-surface-container text-on-surface-faint ui-focus disabled:cursor-default disabled:opacity-50"
-          disabled={editingDisabled || content.prompt === undefined || uploading}
-          onClick={() => setPickerTarget(targetKey)}
-        >
-          <Icon decorative name="add" size="md" />
-        </button>
-        <button
-          aria-label="完整提示词"
-          title="完整提示词"
-          type="button"
-          className="storyboard-open-prompt grid shrink-0 cursor-pointer place-items-center rounded-xs border-[0.5px] border-chat-hairline bg-surface-container text-on-surface-variant ui-focus"
-          onClick={(event) => onOpenPrompt(event.currentTarget)}
-        >
-          <Icon decorative name="collapse" size="md" />
-        </button>
-        {uploading ? (
-          <span className="self-center text-body-sm text-on-surface-faint" role="status">
-            正在上传新图…
-          </span>
-        ) : null}
       </div>
       <FrameAssignmentPicker
         disabled={editingDisabled}

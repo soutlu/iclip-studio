@@ -2,87 +2,59 @@
 
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { canvasPng, openConversation, screenshotBothThemes } from './helpers'
+import { canvasPng, openConversation, openStoryboardShot, screenshotBothThemes } from './helpers'
 
 /** mock 出片用的测试卡源文件；下载回来的字节要和它一致。 */
 const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.webm', import.meta.url)
 
-// 在浏览器验证 scroll-snap 翻组；视口需容纳 264px 侧栏、400px 聊天和 560px 面板。
+// 视口需容纳 264px 侧栏、400px 聊天和 560px 面板。
 test.use({ viewport: { height: 900, width: 1600 } })
 
-test('短桌面中首帧卡片在原位展开，预览与底部导航均完整可见且可键盘切帧', async ({ page }) => {
+test('短桌面中舞台在左、文案列在右，画面完整可见且可键盘切帧', async ({ page }) => {
   await page.setViewportSize({ height: 700, width: 1600 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 2)
   const group = panel.getByRole('region', { name: '镜头组 2' })
-  const navigation = group.getByRole('navigation', { name: '本组镜头' })
-  const secondSceneButton = navigation.getByRole('button', { name: '镜头 2', exact: true })
-  await secondSceneButton.focus()
+  const scene = group.getByRole('group', { name: '镜头 2', exact: true })
+  await scene.getByRole('button', { name: '镜头 2', exact: true }).focus()
   await page.keyboard.press('Enter')
 
   const preview = group.getByRole('img', { name: '镜头组 2 第 2 帧' })
-  const firstScene = navigation.getByRole('group', { name: '镜头 1', exact: true })
-  const expandedScene = navigation.getByRole('group', { name: '镜头 2', exact: true })
-  const firstFrame = expandedScene.getByRole('button', { name: '预览第 2 帧' })
-  const lastFrame = expandedScene.getByRole('button', { name: '预览第 3 帧' })
+  const script = group.getByRole('region', { name: '分镜文案' })
+  const bar = panel.getByRole('group', { name: '出片工具栏' })
   await expect(preview).toBeInViewport({ ratio: 1 })
-  await expect(navigation).toBeInViewport({ ratio: 1 })
-  await expect(firstScene).toBeInViewport({ ratio: 1 })
-  await expect(lastFrame).toBeInViewport({ ratio: 1 })
-  await expect(group.getByRole('button', { name: '完整提示词' })).toBeInViewport({ ratio: 1 })
+  await expect(scene).toHaveAttribute('aria-current', 'true')
+  await expect(scene).toBeInViewport({ ratio: 1 })
+  await expect(bar).toBeInViewport({ ratio: 1 })
 
-  const [
-    groupBox,
-    previewBox,
-    navigationBox,
-    firstSceneBox,
-    expandedBox,
-    firstFrameBox,
-    lastFrameBox,
-  ] = await Promise.all([
+  const [groupBox, previewBox, scriptBox, barBox] = await Promise.all([
     group.boundingBox(),
     preview.boundingBox(),
-    navigation.boundingBox(),
-    firstScene.boundingBox(),
-    expandedScene.boundingBox(),
-    firstFrame.boundingBox(),
-    lastFrame.boundingBox(),
+    script.boundingBox(),
+    bar.boundingBox(),
   ])
-  if (
-    groupBox === null ||
-    previewBox === null ||
-    navigationBox === null ||
-    firstSceneBox === null ||
-    expandedBox === null ||
-    firstFrameBox === null ||
-    lastFrameBox === null
-  ) {
-    throw new Error('分镜预览和底部展开导航必须有可见布局')
+  if (groupBox === null || previewBox === null || scriptBox === null || barBox === null) {
+    throw new Error('舞台、文案列和出片栏必须有可见布局')
   }
+  // 左右排：画面整个在文案列左边，两者都落在本组区域里、出片栏之上。
   expect(previewBox.height).toBeGreaterThan(0)
-  expect(previewBox.y).toBeGreaterThanOrEqual(groupBox.y)
-  expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(navigationBox.y)
-  expect(navigationBox.y + navigationBox.height).toBeLessThanOrEqual(groupBox.y + groupBox.height)
-  expect(firstSceneBox.x + firstSceneBox.width).toBeLessThanOrEqual(expandedBox.x)
-  expect(firstFrameBox.x + firstFrameBox.width).toBeLessThanOrEqual(lastFrameBox.x)
-  expect(firstFrameBox.y).toBe(lastFrameBox.y)
-  expect(lastFrameBox.x + lastFrameBox.width).toBeLessThanOrEqual(expandedBox.x + expandedBox.width)
-  for (const box of [previewBox, navigationBox]) {
+  expect(previewBox.x + previewBox.width).toBeLessThanOrEqual(scriptBox.x)
+  for (const box of [previewBox, scriptBox]) {
     expect(box.x).toBeGreaterThanOrEqual(groupBox.x)
     expect(box.x + box.width).toBeLessThanOrEqual(groupBox.x + groupBox.width)
+    expect(box.y).toBeGreaterThanOrEqual(groupBox.y)
+    expect(box.y + box.height).toBeLessThanOrEqual(barBox.y)
   }
 
-  await firstFrame.focus()
-  await page.keyboard.press('Tab')
-  await expect(lastFrame).toBeFocused()
-  await page.keyboard.press('Space')
-  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
-  await expect(lastFrame).toHaveAttribute('aria-pressed', 'true')
+  const next = group.getByRole('button', { name: '下一帧', exact: true })
+  await next.focus()
+  await page.keyboard.press('Enter')
+  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
+  await expect(next).toBeDisabled()
 
-  await group.getByRole('button', { name: '看第 2 帧' }).focus()
+  await scene.getByRole('button', { name: '看第 2 帧' }).focus()
   await page.keyboard.press('Enter')
   await expect(preview).toBeVisible()
-  await expect(firstFrame).toHaveAttribute('aria-pressed', 'true')
 })
 
 for (const width of [1335, 390]) {
@@ -111,7 +83,7 @@ for (const width of [1335, 390]) {
     await page.setViewportSize({ width, height: 934 })
     await page.emulateMedia({ colorScheme: 'dark' })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
-    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+    await openStoryboardShot(panel, 2)
     const group = panel.getByRole('region', { name: '镜头组 2' })
     await group.getByRole('button', { name: '镜头 2', exact: true }).click()
     await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
@@ -184,19 +156,19 @@ test.describe('移动触屏分镜', () => {
   test('选中的末帧完整显示，替换图标可直接点开文件选择器', async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
-    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+    await openStoryboardShot(panel, 2)
     const group = panel.getByRole('region', { name: '镜头组 2' })
-    const navigation = group.getByRole('navigation', { name: '本组镜头' })
-    await navigation.getByRole('button', { name: '镜头 2', exact: true }).click()
-    const lastFrame = navigation.getByRole('button', { name: '预览第 3 帧' })
-    await lastFrame.click()
+    await group.getByRole('button', { name: '镜头 2', exact: true }).tap()
+    await group.getByRole('button', { name: '下一帧', exact: true }).tap()
 
-    await expect(lastFrame).toHaveAttribute('aria-pressed', 'true')
-    await expect(lastFrame).toBeInViewport({ ratio: 1 })
-    await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
-    await expect(navigation).toBeInViewport({ ratio: 1 })
+    // 上下排：舞台在上，画面整张露出来；触屏没有悬停，帧工具常显。
+    await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({
+      ratio: 1,
+    })
     await expect(group.getByRole('button', { name: '添加图片' })).toBeInViewport({ ratio: 1 })
-    await expect(group.getByRole('button', { name: '完整提示词' })).toBeInViewport({ ratio: 1 })
+    await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
+      ratio: 1,
+    })
 
     const replaceImage = group.getByRole('button', { name: '替换图片' })
     await expect(replaceImage).toBeInViewport({ ratio: 1 })
@@ -207,48 +179,36 @@ test.describe('移动触屏分镜', () => {
   })
 })
 
-// MSW 会话随整页加载清空，无法直接验证带参数刷新；此处验证程序化跳页不被中间滚动事件覆盖。
-test('点页码点跳组：地址落在那一组不回弹，帧号照样点得动', async ({ page }) => {
+// MSW 会话随整页加载清空，无法直接验证带参数刷新；此处验证跳组后地址与组号一致，帧号照样点得动。
+test('从组号浮层跳组：地址落在那一组，顶栏组号跟着变，帧号照样点得动', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: '第 1 组', exact: true })).toHaveAttribute(
-    'aria-current',
-    'true',
-  )
+  const switcher = panel.getByRole('button', { name: /打开全部镜头组/ })
+  await expect(switcher).toHaveAccessibleName(/^镜头组 1 \/ 3/)
 
-  await panel.getByRole('button', { name: '第 3 组', exact: true }).click()
+  await openStoryboardShot(panel, 3)
   await expect(panel.getByRole('region', { name: '镜头组 3' })).toBeInViewport()
   await expect(page).toHaveURL(/shot=3/)
+  await expect(switcher).toHaveAccessibleName(/^镜头组 3 \/ 3/)
 
-  // 防止平滑滚动的中间位置覆盖目标页查询参数。
-  await expect(panel.getByRole('button', { name: '第 3 组', exact: true })).toHaveAttribute(
-    'aria-current',
-    'true',
-  )
-
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 2)
   await expect(panel.getByRole('region', { name: '镜头组 2' })).toBeInViewport()
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
-  await shot2
-    .getByRole('navigation', { name: '本组镜头' })
-    .getByRole('button', { name: '镜头 2', exact: true })
-    .click()
-  await shot2.getByRole('button', { name: '看第 3 帧' }).click()
+  const scene = shot2.getByRole('group', { name: '镜头 2', exact: true })
+  await scene.getByRole('button', { name: '镜头 2', exact: true }).click()
+  await scene.getByRole('button', { name: '看第 3 帧' }).click()
   await expect(page).toHaveURL(/frame=3/)
   await expect(shot2.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
 })
 
 test('替换图标与拖放都可上传本地图片，保持当前帧并可继续编辑', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: '第 1 组', exact: true })).toHaveAttribute(
-    'aria-current',
-    'true',
-  )
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 2)
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
 
+  // 点第二镜里的 @2，地址记下第 2 帧，后面替换与拖放都要留在这一帧。
   await shot2
-    .getByRole('navigation', { name: '本组镜头' })
-    .getByRole('button', { name: '镜头 2', exact: true })
+    .getByRole('group', { name: '镜头 2', exact: true })
+    .getByRole('button', { name: '看第 2 帧' })
     .click()
   await expect(page).toHaveURL(/frame=2/)
   const preview = shot2.getByRole('img', { name: '镜头组 2 第 2 帧' })
@@ -314,53 +274,35 @@ test('替换图标与拖放都可上传本地图片，保持当前帧并可继�
   await expect(panel.getByText('已保存')).toBeVisible({ timeout: 5_000 })
 })
 
-test('完整提示词面板短桌面：原文与参考图可读，收起保留帧与焦点', async ({ page }) => {
+test('短桌面深色：文案列整组原文可读，看大图后回到原帧与焦点', async ({ page }) => {
   await page.setViewportSize({ height: 700, width: 1600 })
   await page.emulateMedia({ colorScheme: 'dark' })
   const panel = await openConversation(page, '夜景延时素材生成')
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 2)
   const group = panel.getByRole('region', { name: '镜头组 2' })
-  await group
-    .getByRole('navigation', { name: '本组镜头' })
-    .getByRole('button', { name: '镜头 2', exact: true })
-    .click()
-  await group.getByRole('button', { name: '预览第 3 帧' }).click()
-  const trigger = group.getByRole('button', { name: '完整提示词', exact: true })
-  await trigger.focus()
-  await page.keyboard.press('Enter')
+  await group.getByRole('button', { name: '镜头 2', exact: true }).click()
+  await group.getByRole('button', { name: '下一帧', exact: true }).click()
 
-  const sheet = panel.getByRole('complementary', { name: '镜头组完整提示词' })
-  const original = sheet.getByRole('region', { name: '镜头组原文' })
-  await expect(sheet).toBeVisible()
-  await expect(original).toBeFocused()
-  const settings = sheet.getByRole('textbox', { name: '全局设定', exact: true })
+  const script = group.getByRole('region', { name: '分镜文案' })
+  const settings = script.getByRole('textbox', { name: '全局设定', exact: true })
   await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
   await expect(settings.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
-  await expect(original).toContainText('剪辑形式：硬切。')
-  await expect(original).toContainText('[0–4秒｜镜头1]')
-  await expect(original).toContainText('[4–11秒｜镜头2]')
-  await expect(sheet.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
+  await expect(settings).toContainText('剪辑形式：硬切。')
+  await expect(script.getByRole('group', { name: '镜头 1', exact: true })).toContainText('0–4s')
+  await expect(script.getByRole('group', { name: '镜头 2', exact: true })).toContainText('4–11s')
+  await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
     ratio: 1,
   })
   await page.screenshot({
     path: '../.artifacts/design-qa/shot-group-prompt/desktop-dark-mock.png',
   })
-  const lastReference = sheet.getByRole('button', { name: '查看参考图 @Image3', exact: true })
-  // 列表要滚才看得全末张图；贴边对齐时 Chrome 把滚动偏移取整，分数高度的图会差不到一像素，按居中对齐滚。
-  await lastReference.evaluate((element) =>
-    element.scrollIntoView({ behavior: 'instant', block: 'center' }),
-  )
-  await expect(lastReference).toBeInViewport({ ratio: 1 })
-  await lastReference.click()
-  const preview = page.getByRole('dialog', { name: '参考图 @Image3', exact: true })
+  const open = group.getByRole('button', { name: '打开原图', exact: true })
+  await open.click()
+  const preview = page.getByRole('dialog', { name: '镜头组 2 第 3 帧', exact: true })
   await expect(preview).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(preview).toBeHidden()
-  await expect(sheet).toBeVisible()
-  await expect(lastReference).toBeFocused()
-  await page.keyboard.press('Escape')
-  await expect(sheet).toBeHidden()
-  await expect(trigger).toBeFocused()
+  await expect(open).toBeFocused()
   const search = new URL(page.url()).searchParams
   expect(search.get('shot')).toBe('2')
   expect(search.get('frame')).toBe('3')
@@ -370,20 +312,19 @@ test('完整提示词面板短桌面：原文与参考图可读，收起保留�
 
 test('选中即上下文：输入框上出现芯片，× 掉不再回来，发出去的正文带前缀', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: '第 1 组', exact: true })).toHaveAttribute(
-    'aria-current',
-    'true',
+  await expect(panel.getByRole('button', { name: /打开全部镜头组/ })).toHaveAccessibleName(
+    /^镜头组 1 \/ 3/,
   )
 
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 2)
   const chip = page.getByText('镜头组 2 · 全局设定 · @Image1', { exact: true })
   await expect(chip).toBeVisible()
 
   await page.getByRole('button', { name: '不再引用 镜头组 2 · 全局设定 · @Image1' }).click()
   await expect(chip).toBeHidden()
 
-  await panel.getByRole('button', { name: '第 1 组', exact: true }).click()
-  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+  await openStoryboardShot(panel, 1)
+  await openStoryboardShot(panel, 2)
   await expect(chip).toBeVisible()
 
   const composer = page.getByLabel('输入消息')
@@ -406,7 +347,7 @@ for (const width of [1335, 390]) {
   test(`记录下载 ${width}px：保存视频字节并保留记录界面`, async ({ page }) => {
     await page.setViewportSize({ width, height: 934 })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
-    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
+    await openStoryboardShot(panel, 2)
     await panel.getByRole('button', { name: '生成记录' }).click()
     const records = panel.getByRole('complementary', { name: '生成记录' })
     const downloadButton = records.getByRole('button', { name: '下载视频' })

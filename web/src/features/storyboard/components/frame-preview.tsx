@@ -1,6 +1,6 @@
 /** 以帧号和地址为 key 挂载；切换图片即丢弃旧上传，点击与拖放共用替换流程。 */
 
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
@@ -26,6 +26,8 @@ type FramePreviewProps = {
   onUpload: (file: File) => Promise<string>
   onReplace: (url: string) => void
   onUploadingChange: (uploading: boolean) => void
+  /** 挂进画面右上工具组末尾的额外按钮（如添加图片）。 */
+  tools?: ReactNode
 }
 
 export function FramePreview({
@@ -40,6 +42,7 @@ export function FramePreview({
   onReplace,
   onUploadingChange,
   onUpload,
+  tools,
   url,
 }: FramePreviewProps) {
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -187,6 +190,7 @@ export function FramePreview({
               ref={inputRef}
               type="file"
             />
+            {tools}
           </div>
         </>
       )}
