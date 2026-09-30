@@ -7,6 +7,8 @@ import { APP_RESIZE_HANDLE_WIDTH, type ResizeInput } from './-app-shell-layout'
 const KEY_STEP = 16
 
 type AppResizeHandleProps = {
+  /** 分隔线常显，或只在悬停、聚焦与拖动时显示（边界两侧已有层次区分时用）。 */
+  divider?: 'always' | 'interactive'
   label: string
   position?: number
   /** 当前宽度用于可访问说明。 */
@@ -22,6 +24,7 @@ type AppResizeHandleProps = {
 }
 
 export function AppResizeHandle({
+  divider = 'always',
   label,
   position = 0,
   max,
@@ -105,7 +108,11 @@ export function AppResizeHandle({
         aria-hidden
         className={cn(
           'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 ui-motion-s',
-          dragging ? 'bg-border-hover' : 'bg-border group-hover:bg-border-hover',
+          dragging
+            ? 'bg-border-hover'
+            : divider === 'always'
+              ? 'bg-border group-hover:bg-border-hover'
+              : 'bg-transparent group-hover:bg-border-hover group-focus-visible:bg-border-hover',
         )}
       />
     </button>

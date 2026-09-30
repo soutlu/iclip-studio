@@ -228,7 +228,7 @@
   /* 基础色 */
   --color-background: var(
     --n100
-  ); /* #FFFFFF 页面底；侧栏、右面板与主区同为页面底色，靠 hairline 分隔 */
+  ); /* #FFFFFF 页面底与桌面浮起主区卡片；应用侧栏用 surface-container-low 衬在下面 */
   --color-on-background: var(--color-on-surface);
   --color-top-layer: var(--n100);
   --color-state-active: color-mix(
@@ -583,6 +583,7 @@
   --layout-app-sidebar-collapsed-width: 56px;
   --layout-app-content-rail-width: 40px;
   --layout-app-resize-handle-width: 8px;
+  --layout-app-content-inset: 8px; /* 桌面主区卡片与视口上、右、下缘的间距 */
   --layout-app-right-panel-width: 460px;
   --layout-app-workbench-width: 820px;
   --layout-app-workbench-min-width: 560px;

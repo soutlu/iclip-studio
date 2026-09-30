@@ -49,6 +49,10 @@ const MEDIA_KIND: Record<'image' | 'video', { icon: IconName; name: string }> = 
 export const mediaStatusLabel = (status: Exclude<MediaBadgeStatus, 'idle'>): string =>
   MEDIA[status].label
 
+/** 同上，对话状态的词。 */
+export const conversationStatusLabel = (status: Exclude<ConversationBadgeStatus, 'idle'>): string =>
+  CONVERSATION[status].label
+
 const MARKER_ICON: Record<Exclude<Marker, 'dot'>, IconName> = {
   check: 'check',
   clock: 'duration',

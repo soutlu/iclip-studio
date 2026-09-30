@@ -224,8 +224,8 @@ export function ConversationRoute({
   }
 
   return (
-    // 固定视口高度，使滚动限制在消息区，保持输入框和自动跟随定位稳定。
-    <main className="flex h-dvh min-h-0 flex-1 flex-col overflow-hidden">
+    // 高度钉在所在栏（桌面是比视口矮的浮起卡片），使滚动限制在消息区，保持输入框和自动跟随定位稳定。
+    <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <header
         className={cn(
           'group/pane-header flex h-13 shrink-0 items-center gap-3 border-b-[0.5px] border-chat-hairline pr-2 pl-4',

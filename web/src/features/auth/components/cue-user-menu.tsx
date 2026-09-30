@@ -22,14 +22,14 @@ const ALIGN_PLACEMENT: Record<
   'top-start': { align: 'start', side: 'top' },
 }
 
-// 侧栏底部整行触发器：与侧栏各行同一套左右内边距，头像、名字与展开标记排成一行。
-const USER_ROW_BUTTON_CLASS =
-  'flex h-11 w-full ui-state cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-body text-on-surface ui-focus select-none'
+// 侧栏底部的账户卡片：头像、名字与用户名、展开标记排成一行，整张卡片是菜单触发器。
+const USER_CARD_BUTTON_CLASS =
+  'flex h-12 w-full ui-state cursor-pointer items-center gap-2.5 rounded-md px-2 text-body text-on-surface ui-focus select-none'
 
 const USER_AVATAR_CLASS =
-  'grid size-7 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
+  'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
 
-/** 侧栏底部的账户入口：点整行打开账户菜单，菜单里是个人信息、设置（未上线）与退出登录。 */
+/** 侧栏底部的账户入口：点整张卡片打开账户菜单，菜单里是个人信息、设置（未上线）与退出登录。 */
 export function CueUserMenu({
   align = 'bottom-end',
   className = '',
@@ -49,6 +49,8 @@ export function CueUserMenu({
   }, [logoutMutation])
 
   const userLabel = userDisplayName(user)
+  // 第二行给用户名；显示名本就退回用户名时不重复。
+  const secondaryLabel = user?.username && user.username !== userLabel ? user.username : ''
   const departments = user?.departments ?? []
   const hasProfileDetails = Boolean(user?.jobTitle || user?.city || departments.length)
   // 头像依次使用 SSO 图片、用户名首字母和通用轮廓。
@@ -62,14 +64,19 @@ export function CueUserMenu({
           type="button"
           aria-label="用户菜单"
           title={userLabel}
-          className={cn(USER_ROW_BUTTON_CLASS, compact && 'justify-center px-0', className)}
+          className={cn(
+            USER_CARD_BUTTON_CLASS,
+            compact && 'mx-auto size-10 justify-center px-0',
+            className,
+          )}
         >
           <span
             aria-hidden="true"
             className={cn(
               USER_AVATAR_CLASS,
-              avatarUrl ? 'border border-border bg-top-layer' : 'bg-surface-container-high',
-              'text-on-surface',
+              avatarUrl
+                ? 'border border-border bg-top-layer text-on-surface'
+                : 'bg-primary-container text-on-primary-container',
             )}
           >
             {avatarUrl ? (
@@ -82,8 +89,13 @@ export function CueUserMenu({
           </span>
           {!compact && (
             <>
-              <span aria-hidden="true" className="min-w-0 flex-1 truncate text-left font-medium">
-                {userLabel}
+              <span aria-hidden="true" className="flex min-w-0 flex-1 flex-col text-left">
+                <span className="truncate font-semibold">{userLabel}</span>
+                {secondaryLabel ? (
+                  <span className="truncate text-label text-on-surface-faint">
+                    {secondaryLabel}
+                  </span>
+                ) : null}
               </span>
               <Icon
                 className="shrink-0 text-on-surface-faint"

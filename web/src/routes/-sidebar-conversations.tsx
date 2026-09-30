@@ -1,7 +1,7 @@
 import { DndContext, PointerSensor, useDroppable, useSensor } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import {
   CollectionDeleteDialog,
   CollectionFormDialog,
@@ -34,8 +34,15 @@ import { Icon, type IconName } from '@/shared/icons'
 import { groupByRecency, RECENCY_LABEL } from '@/shared/lib/recency-group'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
-import { ChipGroup, FilterChip } from '@/shared/ui/chip'
-import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import {
+  MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRoot,
+  MenuSeparator,
+  MenuSurface,
+  MenuTrigger,
+} from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 
 // 合集默认只露前几个，其余收在「全部合集」里；后端最多返回 100 个合集。
@@ -43,6 +50,15 @@ const COLLECTIONS_PREVIEW = 3
 
 // 任务区使用固定落点 ID，合集使用自身 UUID。
 const UNGROUPED = 'ungrouped'
+
+// 筛选只开放这三档；词表覆盖全部档位，筛选按钮总有字可显示。
+const FILTER_OPTIONS = ['all', 'open', 'done'] as const satisfies readonly ConversationListState[]
+const FILTER_LABEL: Record<ConversationListState, string> = {
+  all: '全部',
+  done: '已完成',
+  open: '未完成',
+  running: '进行中',
+}
 
 /** 改对话（重命名、删除、拖动归属）要有 agent:run；用到的组件自己读，不逐层传。 */
 const useCanWrite = () => hasPermission(useUser().data, PERMISSION.agentRun)
@@ -144,7 +160,7 @@ export function SidebarConversations() {
     ? allCollections
     : allCollections.slice(0, COLLECTIONS_PREVIEW)
 
-  // 运行筛选的指示点仅取拓扑首页数据，额外分页由子组件持有。
+  // 筛选按钮上的进行中指示点仅取拓扑首页数据，额外分页由子组件持有。
   const anyBusy =
     (topology.data?.ungrouped.items ?? []).some((one) => one.activity.busy) ||
     allCollections.some((one) => one.page.items.some((row) => row.activity.busy))
@@ -167,38 +183,7 @@ export function SidebarConversations() {
       sensors={[pointer]}
     >
       {/* 吸顶标题用 local 层级压住合集引导线，isolate 把这组层级限定在滚动区内。 */}
-      <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-4 pb-2 ui-state-subtle">
-        <ChipGroup
-          aria-label="对话筛选"
-          // Radix 取消当前选项给空串，不在档位里的值一律忽略，筛选始终有值。
-          onValueChange={(value) => {
-            const parsed = conversationListStateSchema.safeParse(value)
-            if (parsed.success) setState(parsed.data)
-          }}
-          type="single"
-          value={state}
-          variant="segmented"
-        >
-          <FilterChip value="all" variant="segmented">
-            全部
-          </FilterChip>
-          <FilterChip value="open" variant="segmented">
-            <span className="relative">
-              未完成
-              {/* 提示点不参与排版，运行状态变化时文字仍保持居中。 */}
-              {anyBusy && (
-                <span
-                  aria-hidden
-                  className="absolute top-1/2 -right-2 size-1.5 -translate-y-1/2 rounded-full bg-primary"
-                />
-              )}
-            </span>
-          </FilterChip>
-          <FilterChip value="done" variant="segmented">
-            已完成
-          </FilterChip>
-        </ChipGroup>
-
+      <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 pb-2">
         <SidebarSection
           action={
             canManageCollections
@@ -246,7 +231,7 @@ export function SidebarConversations() {
               type="button"
             >
               {/* 空出图标位，文字与合集名对齐。 */}
-              <span aria-hidden className="size-(--icon-md) shrink-0" />
+              <span aria-hidden className="w-5.5 shrink-0" />
               {allCollectionsShown ? '收起合集' : '全部合集'}
             </button>
           )}
@@ -258,6 +243,7 @@ export function SidebarConversations() {
           onOpenMembership={openMembership}
           page={topology.data?.ungrouped ?? { items: [], nextCursor: null }}
           state={state}
+          tools={<ConversationFilter busy={anyBusy} onChange={setState} value={state} />}
         />
       </div>
 
@@ -321,12 +307,14 @@ function UngroupedSection({
   onOpenMembership,
   page,
   state,
+  tools,
 }: {
   dragging: string | null
   onDeleteConversation: (conversation: Conversation) => void
   onOpenMembership: (conversation: Conversation) => void
   page: ConversationPage
   state: ConversationListState
+  tools: ReactNode
 }) {
   const canWrite = useCanWrite()
   const groupId = useId()
@@ -343,7 +331,7 @@ function UngroupedSection({
 
   return (
     <div className={cn('rounded-sm', isOver && 'bg-surface-container-high')} ref={setNodeRef}>
-      <SidebarSection title="任务">
+      <SidebarSection title="任务" tools={tools}>
         {groups.map(({ bucket, items: rows }) => (
           <div
             aria-labelledby={`${groupId}-${bucket}`}
@@ -352,7 +340,7 @@ function UngroupedSection({
             role="group"
           >
             <p
-              className="mt-2 flex h-6 items-center px-2.5 text-caption text-on-surface-faint"
+              className="mt-2 flex h-6 items-center px-2.5 text-caption font-medium text-on-surface-faint"
               id={`${groupId}-${bucket}`}
             >
               {RECENCY_LABEL[bucket]}
@@ -387,44 +375,89 @@ type SidebarSectionProps = {
   action?: { icon: IconName; label: string; onClick: () => void } | undefined
   children: React.ReactNode
   title: string
+  /** 标题行右侧常驻的控件，如任务区的筛选按钮。 */
+  tools?: ReactNode
 }
 
-function SidebarSection({ action, children, title }: SidebarSectionProps) {
+function SidebarSection({ action, children, title, tools }: SidebarSectionProps) {
   const [open, setOpen] = useState(true)
   return (
     <section className="flex flex-col gap-px">
-      {/* group 供折叠箭头与新建钮在悬停、键盘聚焦时浮现。 */}
-      <div className="group layer-local-1 sticky top-0 flex h-7 items-center gap-1 bg-background px-2.5">
+      {/* 吸顶标题底色与侧栏同色，滚过的行不会从标题下透出来。 */}
+      <div className="layer-local-1 sticky top-0 flex h-8 items-center gap-1 bg-surface-container-low pr-1 pl-2.5">
         <button
           aria-expanded={open}
-          className="flex min-w-0 cursor-pointer items-center gap-1 rounded-xs text-caption font-medium text-on-surface-faint ui-focus"
+          className="flex min-w-0 cursor-pointer items-center gap-1 rounded-xs text-label font-semibold text-on-surface-muted ui-focus"
           onClick={() => setOpen((prev) => !prev)}
           type="button"
         >
           <span className="min-w-0 truncate text-left">{title}</span>
           <Icon
-            className={cn(
-              'shrink-0 opacity-0 transition ui-motion-s group-focus-within:opacity-100 group-hover:opacity-100',
-              !open && '-rotate-90',
-            )}
+            className={cn('shrink-0 transition ui-motion-s', !open && '-rotate-90')}
             decorative
             name="expand"
             size="xs"
           />
         </button>
-        {action && (
-          <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'ml-auto shrink-0 items-center')}>
-            <IconButton
-              label={action.label}
-              name={action.icon}
-              onClick={action.onClick}
-              size="xs"
-            />
+        {(action || tools) && (
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            {tools}
+            {action && (
+              <IconButton
+                label={action.label}
+                name={action.icon}
+                onClick={action.onClick}
+                size="xs"
+              />
+            )}
           </div>
         )}
       </div>
       {open && <div className="flex flex-col gap-px">{children}</div>}
     </section>
+  )
+}
+
+/** 任务区筛选：收在标题右侧的「全部 ▾」，菜单里勾出当前档；有对话在跑时带一个绿点。 */
+function ConversationFilter({
+  busy,
+  onChange,
+  value,
+}: {
+  busy: boolean
+  onChange: (value: ConversationListState) => void
+  value: ConversationListState
+}) {
+  return (
+    <MenuRoot>
+      <MenuTrigger asChild>
+        <button
+          aria-label={`对话筛选：${FILTER_LABEL[value]}${busy ? '，有对话在进行中' : ''}`}
+          className="flex h-6 ui-state cursor-pointer items-center gap-1 rounded-sm pr-1.5 pl-2 text-label text-on-surface-muted ui-focus data-[state=open]:bg-state-hover data-[state=open]:text-on-surface"
+          type="button"
+        >
+          <span aria-hidden>{FILTER_LABEL[value]}</span>
+          {busy && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />}
+          <Icon className="shrink-0" decorative name="expand" size="xs" />
+        </button>
+      </MenuTrigger>
+      <MenuSurface align="end" className="min-w-40">
+        <MenuRadioGroup
+          // 不在档位里的值一律忽略，筛选始终有值。
+          onValueChange={(next) => {
+            const parsed = conversationListStateSchema.safeParse(next)
+            if (parsed.success) onChange(parsed.data)
+          }}
+          value={value}
+        >
+          {FILTER_OPTIONS.map((option) => (
+            <MenuRadioItem key={option} value={option}>
+              {FILTER_LABEL[option]}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuSurface>
+    </MenuRoot>
   )
 }
 
@@ -568,7 +601,12 @@ function CollectionGroup({
           onClick={() => setOpen((prev) => !prev)}
           type="button"
         >
-          <Icon className="shrink-0 text-on-surface-variant" decorative name="folder" size="md" />
+          <span
+            aria-hidden
+            className="grid size-5.5 shrink-0 place-items-center rounded-sm bg-primary-container-soft text-on-primary-container"
+          >
+            <Icon decorative name="folder" size="xs" />
+          </span>
           <span aria-hidden className="min-w-0 flex-1 truncate text-left">
             {collection.name}
           </span>
@@ -577,7 +615,7 @@ function CollectionGroup({
         <span
           aria-hidden
           className={cn(
-            'shrink-0 text-caption text-on-surface-faint tabular-nums',
+            'shrink-0 px-1 text-caption text-on-surface-faint tabular-nums',
             canManage && SIDEBAR_ROW_TRAILING_HIDDEN,
           )}
         >
@@ -603,11 +641,11 @@ function CollectionGroup({
         )}
       </div>
       {open && (
-        <div className="relative flex flex-col gap-px pl-6.5">
-          {/* 引导线对齐合集行 folder 图标的中心。 */}
+        <div className="relative flex flex-col gap-px pl-8">
+          {/* 引导线对齐合集行 folder 图标块的中心；缩进让对话标题与合集名左缘对齐。 */}
           <span
             aria-hidden
-            className="absolute inset-y-1 left-4.5 w-px -translate-x-1/2 bg-hairline"
+            className="absolute inset-y-1 left-5.25 w-px -translate-x-1/2 bg-hairline"
           />
           {items.map((conversation) => (
             <SidebarConversationRow

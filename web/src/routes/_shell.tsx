@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { z } from 'zod'
 import { LoginDialog } from '@/features/auth'
+import { cn } from '@/shared/lib/utils'
 import { ShellChromeContext } from '@/shared/shell'
 import { IconButton } from '@/shared/ui/button'
 import { WorkbenchLayoutProvider } from '@/shared/workbench'
@@ -154,7 +155,14 @@ function AppShell() {
   return (
     <LoginPromptProvider value={requireLogin}>
       <ShellChromeContext value={chrome}>
-        <div className="relative flex h-dvh overflow-hidden" style={shellVars}>
+        {/* 桌面：侧栏底色衬在下面，主区是浮起的圆角卡片；紧凑屏侧栏是抽屉，主区铺满。 */}
+        <div
+          className={cn(
+            'relative flex h-dvh overflow-hidden',
+            compact ? 'bg-background' : 'bg-surface-container-low',
+          )}
+          style={shellVars}
+        >
           <AppSidebar
             collapsed={compact ? mobileSidebarCollapsed : state.sidebarCollapsed}
             compact={compact}
@@ -170,6 +178,7 @@ function AppShell() {
           />
           {!compact && (
             <AppResizeHandle
+              divider="interactive"
               label="调整侧边栏宽度"
               position={sidebarWidth}
               value={sidebarWidth}
@@ -196,7 +205,11 @@ function AppShell() {
             />
           )}
           <div
-            className="relative flex min-w-0 flex-1"
+            className={cn(
+              'relative flex min-w-0 flex-1 bg-background',
+              !compact &&
+                'my-(--layout-app-content-inset) mr-(--layout-app-content-inset) overflow-clip rounded-lg shadow-[var(--shadow-1)] ring-[0.5px] ring-hairline',
+            )}
             ref={contentRef}
             style={{ flexDirection: state.firstPane === 'chat' ? 'row' : 'row-reverse' }}
           >

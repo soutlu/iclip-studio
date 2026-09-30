@@ -59,6 +59,12 @@ const render = async (initialPath = '/', permissions = mockAuthUser.permissions)
   return { router, socket, user }
 }
 
+/** 任务区标题右侧的筛选按钮：打开菜单点一档。 */
+const pickFilter = async (user: ReturnType<typeof userEvent.setup>, option: string) => {
+  await user.click(await screen.findByRole('button', { name: /^对话筛选：/ }))
+  await user.click(await screen.findByRole('menuitemradio', { name: option }))
+}
+
 describe('SidebarConversations', () => {
   it('首次请求期间显示加载，失败后显示错误并可重试，不误报空列表', async () => {
     let finishRequest: ((response: Response) => void) | undefined
@@ -209,7 +215,7 @@ describe('SidebarConversations', () => {
     expect(await screen.findByRole('link', { name: '收尾了' })).toBeVisible()
     expect(screen.getAllByRole('link')).toHaveLength(3)
 
-    await user.click(screen.getByRole('radio', { name: '未完成' }))
+    await pickFilter(user, '未完成')
 
     await waitFor(() =>
       expect(screen.queryByRole('link', { name: '收尾了' })).not.toBeInTheDocument(),
@@ -220,11 +226,64 @@ describe('SidebarConversations', () => {
     ])
     expect(listed.at(-1)).toContain('state=open')
 
-    await user.click(screen.getByRole('radio', { name: '已完成' }))
+    await pickFilter(user, '已完成')
 
     expect(await screen.findByRole('link', { name: '收尾了' })).toBeVisible()
     expect(screen.queryByRole('link', { name: '还在弄' })).not.toBeInTheDocument()
     expect(listed.at(-1)).toContain('state=done')
+  })
+
+  it('筛选按钮显示当前档，菜单勾出当前档，换档后按钮与勾跟着换；有对话在跑时按钮带上提示', async () => {
+    const [conversation] = seedConversations(1)
+    const { socket, user } = await render()
+    await screen.findByText('第0段')
+
+    const trigger = screen.getByRole('button', { name: '对话筛选：全部' })
+    await user.click(trigger)
+    const menu = await screen.findByRole('menu')
+    expect(
+      within(menu)
+        .getAllByRole('menuitemradio')
+        .map((item) => item.textContent),
+    ).toEqual(['全部', '未完成', '已完成'])
+    expect(within(menu).getByRole('menuitemradio', { name: '全部' })).toBeChecked()
+    await user.click(within(menu).getByRole('menuitemradio', { name: '已完成' }))
+
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await user.click(await screen.findByRole('button', { name: '对话筛选：已完成' }))
+    expect(await screen.findByRole('menuitemradio', { name: '已完成' })).toBeChecked()
+    expect(screen.getByRole('menuitemradio', { name: '全部' })).not.toBeChecked()
+    await user.keyboard('{Escape}')
+
+    await pickFilter(user, '全部')
+    socket.deliver(workChanged(conversation?.id ?? '', { busy: true }))
+    expect(
+      await screen.findByRole('button', { name: '对话筛选：全部，有对话在进行中' }),
+    ).toBeVisible()
+  })
+
+  it('键盘从对话链接 Tab 到 ⋯ 按钮，行尾状态仍留在原处可读', async () => {
+    const [conversation] = seedConversations(1)
+    if (conversation !== undefined) {
+      conversation.activity = {
+        busy: false,
+        lastTurnReason: 'failed',
+        pendingInteraction: 'none',
+        videoGeneration: 'running',
+      }
+    }
+    const { user } = await render()
+    const link = await screen.findByRole('link', { name: '第0段' })
+
+    link.focus()
+    await user.tab()
+
+    const more = screen.getByRole('button', { name: '第0段 的更多操作' })
+    expect(more).toHaveFocus()
+    expect(screen.getByRole('img', { name: '上次失败' })).toBeVisible()
+    expect(screen.getByRole('img', { name: '视频生成中' })).toBeVisible()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('menuitem', { name: '重命名' })).toHaveFocus()
   })
 
   it('行菜单标记完成：角标出现，再点一次取消', async () => {
@@ -680,7 +739,7 @@ describe('SidebarConversations', () => {
     const conversation = addMockConversation('还在弄')
     const { user } = await render()
 
-    await user.click(await screen.findByRole('radio', { name: '未完成' }))
+    await pickFilter(user, '未完成')
     expect(await screen.findByRole('link', { name: '还在弄' })).toBeVisible()
 
     await user.click(await screen.findByRole('button', { name: '还在弄 的更多操作' }))

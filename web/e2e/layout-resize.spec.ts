@@ -6,6 +6,9 @@ import { login } from './login'
 
 test.use({ viewport: { height: 900, width: 1600 } })
 
+/** 桌面主区是浮起的卡片，右缘离视口留出 --layout-app-content-inset。 */
+const CONTENT_RIGHT = 1600 - 8
+
 test('拖侧栏拖柄改宽，刷新之后还在', async ({ page }) => {
   await page.goto('/')
   await login(page)
@@ -84,7 +87,7 @@ test('工作台拖宽跨刷新保留，窗口变窄与变宽不覆盖偏好宽�
   await widthIs(panel, 740)
 
   await page.setViewportSize({ height: 900, width: 1335 })
-  await widthIs(panel, 671)
+  await widthIs(panel, 663)
   await page.setViewportSize({ height: 900, width: 1100 })
   await expect(page.getByTestId('pane-chat')).toBeVisible()
   await page.setViewportSize({ height: 900, width: 1600 })
@@ -106,7 +109,7 @@ test('列边界无占位缝隙，侧边栏与内容栏折叠后保留图标栏',
   const workbenchBox = await bounds(workbench)
   expect(chatBox.x).toBeCloseTo(sidebarBox.x + sidebarBox.width, 0)
   expect(workbenchBox.x).toBeCloseTo(chatBox.x + chatBox.width, 0)
-  expect(workbenchBox.x + workbenchBox.width).toBeCloseTo(1600, 0)
+  expect(workbenchBox.x + workbenchBox.width).toBeCloseTo(CONTENT_RIGHT, 0)
 
   for (const [name, seam] of [
     ['调整侧边栏宽度', chatBox.x],
@@ -234,7 +237,7 @@ test('最后一栏折叠时另一栏展开，离开对话后不留空白图标�
   const sidebar = await bounds(page.getByRole('complementary', { name: '侧边栏' }))
   const content = await bounds(chat)
   expect(content.x).toBeCloseTo(sidebar.x + sidebar.width, 0)
-  expect(content.x + content.width).toBeCloseTo(1600, 0)
+  expect(content.x + content.width).toBeCloseTo(CONTENT_RIGHT, 0)
 })
 
 test('拖动栏头换位、键盘换回和取消调宽', async ({ page }) => {
