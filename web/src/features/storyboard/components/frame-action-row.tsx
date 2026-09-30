@@ -1,16 +1,14 @@
-/** 舞台显示分镜帧时下方的操作行：左边 @N、上一帧 / 帧计数 / 下一帧、图片任务角标与新图上传状态，右边编辑图片与替换。 */
+/** 舞台显示分镜帧时下方的操作行：左边 @N、图片任务角标与新图上传状态，右边编辑图片与替换。
+ * 切帧箭头与帧计数叠在舞台上，不在这一行（见 `StageFrameNav`）。 */
 
 import { useRef } from 'react'
 import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { cn } from '@/shared/lib/utils'
-import { IconButton } from '@/shared/ui/button'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { frameBadgeStatus, frameBadgeText, type FrameBadge } from '../frame-status'
 import type { FrameUpload } from '../use-frame-additions'
-import { FrameCounter, type FrameGallery } from './frame-counter'
 import { StageAction } from './stage-action'
 import { StageUploadStatus } from './stage-upload-status'
-import { workbenchControl } from './workbench-control'
 
 export type StageFrameInfo = {
   number: number
@@ -20,14 +18,9 @@ export type StageFrameInfo = {
 }
 
 type FrameActionRowProps = {
-  aspectRatio: string
   /** 当前帧；这段没有帧时为 undefined，右边没有按钮。 */
   frame: StageFrameInfo | undefined
   disabled: boolean
-  gallery: FrameGallery
-  /** 上一帧、下一帧；到头的一侧不给，按钮置灰。 */
-  onPrevious: (() => void) | undefined
-  onNext: (() => void) | undefined
   /** 往选中段添加新图（粘贴、选择器上传）的进度与失败重试。 */
   addition: { upload: FrameUpload; onRetry: () => void }
   /** 当前帧正在替换。 */
@@ -39,44 +32,18 @@ type FrameActionRowProps = {
 
 export function FrameActionRow({
   addition,
-  aspectRatio,
   disabled,
   frame,
-  gallery,
   onEditFrame,
-  onNext,
-  onPrevious,
   onReplaceFile,
   replacing,
 }: FrameActionRowProps) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const locked = disabled || replacing
-  const navClass = workbenchControl({ shape: 'icon' })
   return (
     <div className="storyboard-actions" data-kind="frame">
       <div className="storyboard-actions-start">
         {frame === undefined ? null : <span className="storyboard-tag">@{frame.number}</span>}
-        {gallery.urls.length === 0 ? null : (
-          <span className="storyboard-frame-nav">
-            <IconButton
-              className={navClass}
-              disabled={onPrevious === undefined}
-              label="上一帧"
-              name="back"
-              onClick={onPrevious}
-              size="sm"
-            />
-            <FrameCounter aspectRatio={aspectRatio} gallery={gallery} />
-            <IconButton
-              className={navClass}
-              disabled={onNext === undefined}
-              label="下一帧"
-              name="next"
-              onClick={onNext}
-              size="sm"
-            />
-          </span>
-        )}
         {frame?.badge === undefined ? null : (
           <FrameBadgeMark
             badge={frame.badge}

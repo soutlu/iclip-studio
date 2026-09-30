@@ -295,8 +295,10 @@ describe('StoryboardReader', () => {
     await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
     expect(within(page).getByRole('img', { name: '镜头组 1 第 1 帧' })).toBeVisible()
     expect(second).toHaveAttribute('aria-current', 'true')
-    await userEvent.click(within(second).getByRole('button', { name: '看第 2 帧' }))
     await userEvent.click(within(page).getByRole('button', { name: '上一帧' }))
+    expect(within(page).getByRole('img', { name: '镜头组 1 第 2 帧' })).toBeVisible()
+    expect(second).toHaveAttribute('aria-current', 'true')
+    await userEvent.click(within(second).getByRole('button', { name: '看第 2 帧' }))
     expect(second).toHaveAttribute('aria-current', 'true')
     expect(segmentOf(page, '镜头 1')).toHaveAttribute('aria-current', 'false')
   })
@@ -329,15 +331,18 @@ describe('StoryboardReader', () => {
     expect(segmentOf(page, '镜头 1')).toHaveAttribute('aria-current', 'true')
   })
 
-  it('帧箭头沿当前内容引用顺序导航；↑↓ 切组、换组时默认选中全局设定，编辑器里的方向键不切组', async () => {
+  it('帧箭头沿当前内容引用顺序导航、到头的一侧不出现、点了不开原图；↑↓ 切组、换组时默认选中全局设定，编辑器里的方向键不切组', async () => {
     provide()
     const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
     const page = await screen.findByRole('region', { name: '镜头组 1' })
+    expect(within(page).queryByRole('button', { name: '上一帧' })).not.toBeInTheDocument()
     await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
     await waitFor(() =>
       expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame: 1 }),
     )
-    expect(within(page).getByRole('button', { name: '下一帧' })).toBeDisabled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(within(page).queryByRole('button', { name: '下一帧' })).not.toBeInTheDocument()
+    expect(within(page).getByRole('button', { name: '上一帧' })).toBeVisible()
 
     within(page).getByRole('textbox', { name: '镜头 1 的描述' }).focus()
     await userEvent.keyboard('{ArrowDown}')
@@ -353,6 +358,42 @@ describe('StoryboardReader', () => {
     expect(segmentOf(second, '全局设定')).toHaveAttribute('aria-current', 'true')
     await userEvent.keyboard('{ArrowUp}')
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
+  })
+
+  it('焦点在舞台里时 ←/→ 切帧、到头不动，切到头的箭头消失后焦点落回画面；正文与帧计数弹层里的 ←/→ 不切帧', async () => {
+    provide()
+    const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
+    const page = await screen.findByRole('region', { name: '镜头组 1' })
+    const at = (frame: number) =>
+      waitFor(() =>
+        expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame }),
+      )
+    const open = within(page).getByRole('button', { name: '打开原图' })
+    act(() => open.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    await at(1)
+    expect(open).toHaveFocus()
+    await userEvent.keyboard('{ArrowRight}')
+    await at(1)
+    await userEvent.keyboard('{ArrowLeft}')
+    await at(2)
+
+    act(() => within(page).getByRole('button', { name: '下一帧' }).focus())
+    await userEvent.keyboard('{ArrowRight}')
+    await at(1)
+    expect(within(page).queryByRole('button', { name: '下一帧' })).not.toBeInTheDocument()
+    expect(open).toHaveFocus()
+
+    act(() => within(page).getByRole('textbox', { name: '镜头 1 的描述' }).focus())
+    await userEvent.keyboard('{ArrowLeft}')
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 100)))
+    await at(1)
+
+    await userEvent.click(within(page).getByRole('button', { name: /查看本组全部图片/ }))
+    await screen.findByRole('dialog', { name: '本组全部图片' })
+    await userEvent.keyboard('{ArrowLeft}')
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 100)))
+    await at(1)
   })
 
   it('查看原图并关闭后返回原来的帧', async () => {
@@ -1470,6 +1511,22 @@ describe('StoryboardReader', () => {
       )
     })
 
+    it('拖到叠在画面上的切帧箭头上照样亮提示，落下换掉当前帧', async () => {
+      const files = provide()
+      const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const arrow = within(page).getByRole('button', { name: '下一帧' })
+      fireEvent.dragEnter(arrow, { dataTransfer: fileTransfer([imageFile()]) })
+      expect(within(page).getByText('松开替换当前图片')).toBeVisible()
+      fireEvent.drop(arrow, { dataTransfer: fileTransfer([imageFile()]) })
+      await waitFor(
+        () => expect(files.snapshot().shots[0]?.image_urls[1]).toContain('/mock-oss/'),
+        { timeout: 3000 },
+      )
+      expect(files.snapshot().shots[0]?.image_urls).toHaveLength(3)
+      expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame: 2 })
+    })
+
     it('一次拖入多张不替换，提示只能一张', async () => {
       const files = provide()
       const counter = countSigns()
@@ -1816,8 +1873,8 @@ describe('StoryboardReader', () => {
       await waitFor(() =>
         expect(within(back).queryByRole('group', { name: '播放器：生成的视频' })).toBeNull(),
       )
-      // 回到帧：操作行换回帧的那一套。
-      expect(within(back).getByRole('button', { name: '上一帧' })).toBeVisible()
+      // 回到帧：舞台换回帧的那一套（这段不引用图，只剩帧计数）。
+      expect(within(back).getByRole('button', { name: /查看本组全部图片/ })).toBeVisible()
     })
 
     it('显示视频时拖到舞台上不替换、不亮提示；回到帧后照常替换', async () => {
