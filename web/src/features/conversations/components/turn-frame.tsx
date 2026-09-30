@@ -22,7 +22,8 @@ export function TurnFrame({ frame, live, settled }: TurnFrameProps) {
       return frame.role === 'user' ? (
         <UserBubble content={frame.content} />
       ) : (
-        <Markdown text={frame.text} />
+        // 助手正文不加气泡，行距比共用排版松一档，长段中文读着不挤。
+        <Markdown className="leading-[1.75]" text={frame.text} />
       )
     case 'thinking':
       return <ThinkingBlock live={live} text={frame.text} />

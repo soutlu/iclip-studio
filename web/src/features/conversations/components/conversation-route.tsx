@@ -1,4 +1,4 @@
-/** 标题来自 transcript 基线与推送；侧栏拓扑仅包含各列表首页，无法覆盖全部历史对话。 */
+/** 标题来自 transcript 基线与推送；侧栏拓扑仅包含各列表首页，无法覆盖全部历史对话，页头合集标签因此只在拓扑里找得到时显示。 */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
@@ -24,6 +24,7 @@ import {
   regeneratePrompt,
   steerPrompt,
   submitPrompt,
+  useCachedConversationCollection,
   useForkConversation,
 } from '../conversations.api'
 import { ApprovalCard } from './approval-card'
@@ -85,6 +86,8 @@ export function ConversationRoute({
   const { view, refresh } = useTranscript(conversationId)
   const { titleOf } = useSessionTitles()
   const title = titleOf(conversationId) ?? view.title
+  // 页头的合集标签只用侧栏已经拿到的拓扑，不为它单发请求；拓扑里找不到就不显示。
+  const collection = useCachedConversationCollection(conversationId)
   // 只读只发生在治理者复盘别人的或已删的对话时，名册接口也只有治理者能读。
   const readOnly = useConversationReadOnly(view)
   const { data: user } = useUser()
@@ -233,7 +236,13 @@ export function ConversationRoute({
         )}
         data-pane-drag-handle
       >
-        <h1 className="min-w-0 truncate text-body font-medium text-on-surface">{title}</h1>
+        <h1 className="min-w-0 truncate text-body font-semibold text-on-surface">{title}</h1>
+        {collection === undefined ? null : (
+          <Tag className="max-w-40 shrink-0" title={`所属合集：${collection.name}`} variant="soft">
+            <Icon decorative name="folder" size="xs" />
+            <span className="truncate">{collection.name}</span>
+          </Tag>
+        )}
         {readOnly ? (
           <Tag className="shrink-0" variant="soft">
             <Icon decorative name="preview" size="xs" />
@@ -280,8 +289,10 @@ export function ConversationRoute({
         >
           <div
             className={cn(
-              'mx-auto flex min-h-full w-full max-w-(--layout-home-read-max) flex-col gap-6 px-5 pt-3',
-              showEmptyState ? 'pb-4' : 'pb-[81px]',
+              // 轮间 28px：历史轮悬停才露出的终态栏（24px）叠在这段空隙里，见 ConversationTurn。
+              'mx-auto flex min-h-full w-full max-w-(--layout-home-read-max) flex-col gap-7 px-5 pt-4',
+              // 尾部留白与下方渐隐等高：滚到底时最后一行正好停在渐隐之上。
+              showEmptyState ? 'pb-4' : 'pb-8',
             )}
           >
             {view.status === 'loading' ? (
@@ -375,7 +386,7 @@ export function ConversationRoute({
       <div className="relative shrink-0 px-5 pb-4">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 -top-12 h-12 bg-gradient-to-b from-transparent to-background"
+          className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-b from-transparent to-background"
         />
         <div className="mx-auto w-full max-w-(--layout-home-read-max)">
           {approval === undefined ? null : (

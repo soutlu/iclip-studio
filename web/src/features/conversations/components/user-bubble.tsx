@@ -1,4 +1,4 @@
-/** 用户输入与乐观气泡共用渲染，保持文字和媒体顺序；超过十行可折叠。圆角比工具行与卡片大一档，一眼分得出是人说的话。 */
+/** 用户输入与乐观气泡共用渲染，保持文字和媒体顺序；超过十行可折叠。右侧中性灰气泡、右下角收小，圆角比活动卡大一档，一眼分得出是人说的话。 */
 
 import { useState } from 'react'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
@@ -54,30 +54,9 @@ export function UserBubble({ className, content, editDisabled = false, onEdit }:
   )
 
   return (
-    <div
-      className={cn('group/bubble flex max-w-[min(80%,100vw-52px)] flex-col self-end', className)}
-    >
-      <div className="rounded-lg bg-chat-user-bg px-3.5 py-2.5 text-body leading-normal whitespace-pre-wrap text-chat-message-text">
-        <div className="relative flex flex-col">
-          <div ref={ref} className={cn(clampable && !expanded && 'chat-clamp')}>
-            {content.map((part, index) =>
-              // 消息确定后 part 顺序不再变化，可用位置作为 key。
-              part.type === 'text' ? (
-                // eslint-disable-next-line @eslint-react/no-array-index-key
-                <span key={index}>{part.text}</span>
-              ) : (
-                // eslint-disable-next-line @eslint-react/no-array-index-key
-                <MediaChip key={index} onOpen={setViewing} part={part} />
-              ),
-            )}
-          </div>
-          {clampable && !expanded ? (
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2">{toggle}</div>
-          ) : null}
-        </div>
-      </div>
-      {clampable && expanded ? <div className="mt-1 self-center">{toggle}</div> : null}
-      <div className="flex justify-end gap-2 pt-1 opacity-0 transition-opacity ui-motion-s group-hover/bubble:opacity-100 focus-within:opacity-100">
+    // 复制、修改放在气泡左侧同一行，悬停才露出，不在气泡下面另占一行空白。
+    <div className={cn('group/bubble flex items-end justify-end gap-1', className)}>
+      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity ui-motion-s group-hover/bubble:opacity-100 focus-within:opacity-100">
         <CopyButton label="复制消息" text={copyText(content)} />
         {onEdit === undefined ? null : (
           <IconButton
@@ -91,6 +70,28 @@ export function UserBubble({ className, content, editDisabled = false, onEdit }:
             variant="standard"
           />
         )}
+      </div>
+      <div className="flex max-w-[min(80%,100vw-52px)] min-w-0 flex-col">
+        <div className="rounded-xl rounded-br-sm bg-chat-user-bg px-3.5 py-2.5 text-body leading-relaxed whitespace-pre-wrap text-chat-message-text">
+          <div className="relative flex flex-col">
+            <div ref={ref} className={cn(clampable && !expanded && 'chat-clamp')}>
+              {content.map((part, index) =>
+                // 消息确定后 part 顺序不再变化，可用位置作为 key。
+                part.type === 'text' ? (
+                  // eslint-disable-next-line @eslint-react/no-array-index-key
+                  <span key={index}>{part.text}</span>
+                ) : (
+                  // eslint-disable-next-line @eslint-react/no-array-index-key
+                  <MediaChip key={index} onOpen={setViewing} part={part} />
+                ),
+              )}
+            </div>
+            {clampable && !expanded ? (
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2">{toggle}</div>
+            ) : null}
+          </div>
+        </div>
+        {clampable && expanded ? <div className="mt-1 self-center">{toggle}</div> : null}
       </div>
       <MediaLightbox media={viewing} onClose={() => setViewing(null)} />
     </div>
@@ -116,20 +117,26 @@ function MediaChip({ onOpen, part }: { part: MediaPart; onOpen: (media: Lightbox
       {/* 外壳占满行高并居中芯片，避免字体基线影响对齐。 */}
       <button
         aria-label={name}
-        className="mx-0.5 inline-flex h-[1lh] cursor-zoom-in items-center align-top text-chat-muted-text ui-focus ui-motion-s hover:text-chat-message-text"
+        className="mx-0.5 inline-flex h-[1lh] max-w-full cursor-zoom-in items-center rounded-sm align-top text-chat-secondary-text ui-focus ui-motion-s hover:text-chat-message-text"
         onClick={open}
         onMouseEnter={tip.onEnter}
         onMouseLeave={tip.onLeave}
         ref={setAnchorEl}
         type="button"
       >
-        <span className="flex h-4 items-center overflow-hidden rounded-xs border-[0.5px] border-chat-hairline">
-          {thumbnail === undefined ? null : (
-            <img alt="" className="aspect-square h-full object-cover" src={thumbnail} />
+        {/* 缩略图小标签：一格缩略图（取不到就画类型图标）加文件名。 */}
+        <span className="flex h-[22px] min-w-0 items-center gap-1 rounded-sm border-[0.5px] border-chat-hairline bg-chat-card-bg pr-1.5 pl-0.5 text-label">
+          {thumbnail === undefined ? (
+            <Icon
+              className="mx-0.5 shrink-0"
+              decorative
+              name={MEDIA_KIND_ICON[media.kind]}
+              size="xs"
+            />
+          ) : (
+            <img alt="" className="size-[18px] shrink-0 rounded-xs object-cover" src={thumbnail} />
           )}
-          <span className="flex h-full items-center px-[3px]">
-            <Icon decorative name={MEDIA_KIND_ICON[media.kind]} size="xs" />
-          </span>
+          <span className="max-w-32 truncate">{name}</span>
         </span>
       </button>
       {tip.open && anchorEl !== null ? (

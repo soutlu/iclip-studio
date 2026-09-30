@@ -1,8 +1,8 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
-import { addMockConversation } from '@/testing/mocks/conversations'
+import { addMockCollection, addMockConversation } from '@/testing/mocks/conversations'
 import { addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { mockTranscriptPage } from '@/testing/mocks/transcript'
@@ -10,6 +10,7 @@ import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
 import { ShellChromeContext } from '@/shared/shell'
 import { Toaster } from '@/shared/ui/toast'
+import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
 import { ConversationRoute } from './conversation-route'
 
 // jsdom 不支持 Lottie 加载时的 canvas 探测；替换装饰动画以验证会话行为。
@@ -970,6 +971,39 @@ describe('ConversationRoute', () => {
     expect(await screen.findByText('已删除 · 自己的对话')).toBeVisible()
     expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('这是自己已删除的对话')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
+  })
+
+  it('页头的合集标签取自侧栏已拿到的拓扑：最新那份说它在哪个合集就挂哪个，说它没归类就摘掉', async () => {
+    const { queryClient } = await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+    const item = { ...addMockConversation('夜景延时素材生成'), id: 'c1' }
+    const collection = addMockCollection('夏季亚麻系列')
+    const topology = (grouped: boolean): SidebarTopology => ({
+      collections: [
+        {
+          conversationCount: grouped ? 1 : 0,
+          id: collection.id,
+          name: collection.name,
+          page: { items: grouped ? [item] : [], nextCursor: null },
+          updatedAt: collection.updatedAt,
+        },
+      ],
+      ungrouped: { items: grouped ? [] : [item], nextCursor: null },
+      ungroupedCount: grouped ? 0 : 1,
+    })
+    expect(screen.queryByText('夏季亚麻系列')).toBeNull()
+
+    act(() => {
+      queryClient.setQueryData(conversationsQueryKeys.sidebar('all'), topology(true))
+    })
+    expect(screen.getByText('夏季亚麻系列')).toBeVisible()
+
+    act(() => {
+      queryClient.setQueryData(conversationsQueryKeys.sidebar('open'), topology(false), {
+        updatedAt: Date.now() + 1000,
+      })
+    })
+    expect(screen.queryByText('夏季亚麻系列')).toBeNull()
   })
 
   it('标题来自基线，服务端起了新名字就当场换掉', async () => {

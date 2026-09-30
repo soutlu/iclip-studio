@@ -134,7 +134,7 @@ export function Composer({
   return (
     <div
       className={cn(
-        'composer-card relative rounded-3xl border-[0.5px] border-chat-hairline bg-top-layer shadow-[var(--shadow-input)]',
+        'composer-card relative rounded-xl border-[0.5px] border-chat-hairline bg-top-layer shadow-[var(--shadow-input)]',
         'transition-[border-color,box-shadow,background-color] ui-motion-m',
         'focus-within:border-border-hover',
         dragOver && 'bg-primary-container-soft',
@@ -170,14 +170,15 @@ export function Composer({
           {busy && onStop !== undefined ? (
             <button
               aria-label="停止"
+              // 与发送钮同形的中性圆钮：只剩它时是本栏唯一的主操作，与发送并排时让位给墨色发送钮。
               className={cn(
                 'grid size-(--control-height-md) ui-state cursor-pointer place-items-center rounded-full ui-focus',
-                'bg-surface-container-high text-error shadow-[var(--shadow-xs)] hover:bg-error hover:text-on-error active:scale-95',
+                'bg-surface-container-high text-on-surface hover:bg-inverse-surface hover:text-inverse-on-surface active:scale-95',
               )}
               onClick={onStop}
               type="button"
             >
-              <Icon decorative name="stopped" size="md" />
+              <Icon className="fill-current" decorative name="stop" size="sm" />
             </button>
           ) : null}
           {/* 跑着的时候输入框也能发：写了字就把发送钮亮出来，发出去的排队。空着时只留停止。 */}

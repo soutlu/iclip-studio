@@ -44,12 +44,15 @@ const UsageStats = ({ usage }: { usage: TranscriptUsage }) => {
   const cached = usage.cachedTokens ?? 0
   const output = usage.outputTokens ?? 0
   return (
-    <p
-      className="flex items-center gap-1 text-caption text-chat-muted-text tabular-nums"
-      title={`输入 ${exactTokens(input)} · 缓存 ${exactTokens(cached)} · 输出 ${exactTokens(output)}`}
-    >
-      <Icon decorative name="credit" size="xs" />
-      {`输入 ${compactTokens(input)} · 缓存 ${compactTokens(cached)} · 输出 ${compactTokens(output)}`}
+    <p className="flex min-w-0 items-center gap-1 text-caption text-chat-muted-text tabular-nums">
+      <Icon className="shrink-0" decorative name="credit" size="xs" />
+      {/* 窄栏里收成省略号，悬停 title 仍给全量精确值。 */}
+      <span
+        className="truncate"
+        title={`输入 ${exactTokens(input)} · 缓存 ${exactTokens(cached)} · 输出 ${exactTokens(output)}`}
+      >
+        {`输入 ${compactTokens(input)} · 缓存 ${compactTokens(cached)} · 输出 ${compactTokens(output)}`}
+      </span>
     </p>
   )
 }
@@ -61,7 +64,7 @@ const TurnTime = ({ endedAt }: { endedAt: string }) => {
   if (label === '') return null
   return (
     <time
-      className="text-caption text-chat-muted-text tabular-nums"
+      className="shrink-0 text-caption text-chat-muted-text tabular-nums"
       dateTime={endedAt}
       title={fullTime(endedAt)}
     >
@@ -85,9 +88,12 @@ type TurnActionsProps = {
   forkDisabled?: boolean | undefined
   /** 最新一轮常驻；历史轮只在悬停或聚焦时露出。 */
   revealed?: boolean | undefined
+  /** 摆放位置由所在轮决定。 */
+  className?: string | undefined
 }
 
 export function TurnActions({
+  className,
   copyText,
   endedAt,
   forkDisabled = false,
@@ -99,12 +105,14 @@ export function TurnActions({
 }: TurnActionsProps) {
   return (
     <div
+      // 一行放不下时收窄用量文字，不折行：历史轮的这一栏叠在轮间空隙里，折行会压到下一轮。
       className={cn(
-        'flex flex-wrap items-center gap-2 pt-2 transition-opacity ui-motion-s',
+        'flex items-center gap-2 transition-opacity ui-motion-s',
         !revealed && 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+        className,
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <CopyButton text={copyText} />
         {onRegenerate === undefined ? null : (
           <IconButton

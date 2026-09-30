@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TranscriptFrame, TranscriptStep } from '@/shared/transcript/vendor'
 import {
   formatActivityDuration,
+  groupActivityCards,
   groupTurnEntries,
   runHistoryMs,
   summarizeDone,
@@ -98,6 +99,48 @@ describe('groupTurnEntries', () => {
     expect(
       groupTurnEntries([entry(thinking('f1')), entry(thinking('f2'))]).map((node) => node.kind),
     ).toEqual(['entry', 'entry'])
+  })
+})
+
+describe('groupActivityCards', () => {
+  const delegated = (id: string): TranscriptFrame => ({
+    agentRefs: [{ agentId: 'run-child', role: 'child' }],
+    display: { agent_name: 'shot-writer', kind: 'agent_call', prompt: '写三个镜头' },
+    frameId: id,
+    kind: 'tool',
+    name: 'delegate_task',
+    state: 'done',
+    toolCallId: id,
+  })
+
+  it('活动组与紧挨着的单独工具收进同一张卡，派活那一行仍不在活动组里', () => {
+    const blocks = groupActivityCards(
+      groupTurnEntries([
+        entry(tool('f1', 'grep')),
+        entry(tool('f2', 'write')),
+        entry(delegated('f3')),
+      ]),
+    )
+
+    expect(blocks).toHaveLength(1)
+    const card = blocks[0]
+    if (card?.kind !== 'card') throw new Error('应收进一张卡')
+    expect(card.nodes.map((node) => node.kind)).toEqual(['run', 'entry'])
+  })
+
+  it('正文与单独的思考把卡隔开，各自成块', () => {
+    const blocks = groupActivityCards(
+      groupTurnEntries([
+        entry(text('u1', 'user')),
+        entry(tool('f1', 'read')),
+        entry(text('a1')),
+        entry(thinking('f2')),
+        entry(delegated('f3')),
+      ]),
+    )
+
+    expect(blocks.map((block) => block.kind)).toEqual(['entry', 'card', 'entry', 'entry', 'card'])
+    expect(new Set(blocks.flatMap((b) => (b.kind === 'card' ? [b.cardId] : []))).size).toBe(2)
   })
 })
 

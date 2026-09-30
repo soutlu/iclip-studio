@@ -75,7 +75,8 @@ function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamPr
       ) : null}
       {view.status === 'ready' ? (
         <div className="chat-scroller min-h-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-4 px-5 py-4">
+          {/* 这里每一轮都按历史轮画：终态栏悬停才露出、叠在轮下方 28px 里，见 ConversationTurn；轮间与尾部都留出这段。 */}
+          <div className="flex flex-col gap-7 px-5 pt-4 pb-11">
             {turns.map((turn) => (
               <ConversationTurn key={turn.turnId} turn={turn} />
             ))}

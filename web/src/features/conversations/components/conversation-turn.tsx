@@ -1,8 +1,9 @@
-/** 按 turn → step → frame 顺序渲染，连续活动由 activity-group 分组，单块由 turn-frame 渲染。 */
+/** 按 turn → step → frame 顺序渲染，连续活动由 activity-group 分组并收进活动卡，单块由 turn-frame 渲染。 */
 
 import { memo } from 'react'
 import type { TranscriptTurn } from '@/shared/transcript/vendor'
-import { groupTurnEntries } from './activity-group'
+import { ActivityCard, ActivityStep } from './activity-card'
+import { groupActivityCards, groupTurnEntries, type TurnEntry } from './activity-group'
 import { ActivityRun } from './activity-run'
 import { RunFailedNotice, TurnFrame } from './turn-frame'
 import { TurnActions } from './turn-actions'
@@ -51,32 +52,48 @@ export const ConversationTurn = memo(function ConversationTurn({
     .join('\n\n')
   // 轮头部保存开场输入，user frame 保存运行中追加消息；live 块为未结束轮的末步末块。
   const liveFrameId = settled ? undefined : turn.steps.at(-1)?.frames.at(-1)?.frameId
-  const nodes = groupTurnEntries(entries)
+  const blocks = groupActivityCards(groupTurnEntries(entries))
+
+  const frameOf = ({ frame }: TurnEntry) => (
+    <TurnFrame
+      frame={frame}
+      key={frame.frameId}
+      live={frame.frameId === liveFrameId}
+      settled={settled}
+    />
+  )
 
   return (
-    <article className="group flex flex-col gap-3" aria-label={`第 ${turn.ordinal} 轮`}>
+    // relative：历史轮的终态栏叠在本轮下方的空隙里，不占版面（见下）。
+    <article className="group relative flex flex-col gap-3" aria-label={`第 ${turn.ordinal} 轮`}>
       {turn.content.length > 0 ? (
         <UserBubble content={turn.content} editDisabled={editDisabled} onEdit={onEdit} />
       ) : null}
-      {nodes.map((node) =>
-        node.kind === 'run' ? (
-          <ActivityRun
-            items={node.items}
-            key={node.runId}
-            liveFrameId={liveFrameId}
-            settled={settled}
-          />
+      {blocks.map((block) =>
+        block.kind === 'entry' ? (
+          frameOf(block.entry)
         ) : (
-          <TurnFrame
-            frame={node.entry.frame}
-            key={node.entry.frame.frameId}
-            live={node.entry.frame.frameId === liveFrameId}
-            settled={settled}
-          />
+          <ActivityCard key={block.cardId}>
+            {block.nodes.map((node) =>
+              node.kind === 'run' ? (
+                <ActivityRun
+                  items={node.items}
+                  key={node.runId}
+                  liveFrameId={liveFrameId}
+                  settled={settled}
+                />
+              ) : (
+                <ActivityStep key={node.entry.frame.frameId}>{frameOf(node.entry)}</ActivityStep>
+              ),
+            )}
+          </ActivityCard>
         ),
       )}
       {settled && copyText !== '' ? (
         <TurnActions
+          // 最新一轮常驻、占位；历史轮悬停才露出，不占位，叠在与下一轮之间的空隙里，
+          // 所以列轮的容器要给轮间留出不少于这一栏高度（24px）的间距。
+          className={latest ? undefined : 'absolute inset-x-0 top-full pt-0.5'}
           copyText={copyText}
           endedAt={turn.endedAt}
           forkDisabled={forkDisabled}
