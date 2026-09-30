@@ -13,7 +13,7 @@ test.use({ viewport: { height: 900, width: 1600 } })
 test('短桌面中首帧卡片在原位展开，预览与底部导航均完整可见且可键盘切帧', async ({ page }) => {
   await page.setViewportSize({ height: 700, width: 1600 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   const group = panel.getByRole('region', { name: '镜头组 2' })
   const navigation = group.getByRole('navigation', { name: '本组镜头' })
   const secondSceneButton = navigation.getByRole('button', { name: '镜头 2', exact: true })
@@ -111,7 +111,7 @@ for (const width of [1335, 390]) {
     await page.setViewportSize({ width, height: 934 })
     await page.emulateMedia({ colorScheme: 'dark' })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
-    await panel.getByRole('button', { name: '第 2 组' }).click()
+    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
     const group = panel.getByRole('region', { name: '镜头组 2' })
     await group.getByRole('button', { name: '镜头 2', exact: true }).click()
     await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
@@ -184,7 +184,7 @@ test.describe('移动触屏分镜', () => {
   test('选中的末帧完整显示，替换图标可直接点开文件选择器', async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
-    await panel.getByRole('button', { name: '第 2 组' }).click()
+    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
     const group = panel.getByRole('region', { name: '镜头组 2' })
     const navigation = group.getByRole('navigation', { name: '本组镜头' })
     await navigation.getByRole('button', { name: '镜头 2', exact: true }).click()
@@ -210,22 +210,22 @@ test.describe('移动触屏分镜', () => {
 // MSW 会话随整页加载清空，无法直接验证带参数刷新；此处验证程序化跳页不被中间滚动事件覆盖。
 test('点页码点跳组：地址落在那一组不回弹，帧号照样点得动', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: '第 1 组' })).toHaveAttribute(
+  await expect(panel.getByRole('button', { name: '第 1 组', exact: true })).toHaveAttribute(
     'aria-current',
     'true',
   )
 
-  await panel.getByRole('button', { name: '第 3 组' }).click()
+  await panel.getByRole('button', { name: '第 3 组', exact: true }).click()
   await expect(panel.getByRole('region', { name: '镜头组 3' })).toBeInViewport()
   await expect(page).toHaveURL(/shot=3/)
 
   // 防止平滑滚动的中间位置覆盖目标页查询参数。
-  await expect(panel.getByRole('button', { name: '第 3 组' })).toHaveAttribute(
+  await expect(panel.getByRole('button', { name: '第 3 组', exact: true })).toHaveAttribute(
     'aria-current',
     'true',
   )
 
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   await expect(panel.getByRole('region', { name: '镜头组 2' })).toBeInViewport()
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
   await shot2
@@ -239,11 +239,11 @@ test('点页码点跳组：地址落在那一组不回弹，帧号照样点得�
 
 test('替换图标与拖放都可上传本地图片，保持当前帧并可继续编辑', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: '第 1 组' })).toHaveAttribute(
+  await expect(panel.getByRole('button', { name: '第 1 组', exact: true })).toHaveAttribute(
     'aria-current',
     'true',
   )
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
 
   await shot2
@@ -318,7 +318,7 @@ test('完整提示词面板短桌面：原文与参考图可读，收起保留�
   await page.setViewportSize({ height: 700, width: 1600 })
   await page.emulateMedia({ colorScheme: 'dark' })
   const panel = await openConversation(page, '夜景延时素材生成')
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   const group = panel.getByRole('region', { name: '镜头组 2' })
   await group
     .getByRole('navigation', { name: '本组镜头' })
@@ -346,7 +346,10 @@ test('完整提示词面板短桌面：原文与参考图可读，收起保留�
     path: '../.artifacts/design-qa/shot-group-prompt/desktop-dark-mock.png',
   })
   const lastReference = sheet.getByRole('button', { name: '查看参考图 @Image3', exact: true })
-  await lastReference.scrollIntoViewIfNeeded()
+  // 列表要滚才看得全末张图；贴边对齐时 Chrome 把滚动偏移取整，分数高度的图会差不到一像素，按居中对齐滚。
+  await lastReference.evaluate((element) =>
+    element.scrollIntoView({ behavior: 'instant', block: 'center' }),
+  )
   await expect(lastReference).toBeInViewport({ ratio: 1 })
   await lastReference.click()
   const preview = page.getByRole('dialog', { name: '参考图 @Image3', exact: true })
@@ -367,20 +370,20 @@ test('完整提示词面板短桌面：原文与参考图可读，收起保留�
 
 test('选中即上下文：输入框上出现芯片，× 掉不再回来，发出去的正文带前缀', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: '第 1 组' })).toHaveAttribute(
+  await expect(panel.getByRole('button', { name: '第 1 组', exact: true })).toHaveAttribute(
     'aria-current',
     'true',
   )
 
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   const chip = page.getByText('镜头组 2 · 全局设定 · @Image1', { exact: true })
   await expect(chip).toBeVisible()
 
   await page.getByRole('button', { name: '不再引用 镜头组 2 · 全局设定 · @Image1' }).click()
   await expect(chip).toBeHidden()
 
-  await panel.getByRole('button', { name: '第 1 组' }).click()
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 1 组', exact: true }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   await expect(chip).toBeVisible()
 
   const composer = page.getByLabel('输入消息')
@@ -403,7 +406,7 @@ for (const width of [1335, 390]) {
   test(`记录下载 ${width}px：保存视频字节并保留记录界面`, async ({ page }) => {
     await page.setViewportSize({ width, height: 934 })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
-    await panel.getByRole('button', { name: '第 2 组' }).click()
+    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
     await panel.getByRole('button', { name: '生成记录' }).click()
     const records = panel.getByRole('complementary', { name: '生成记录' })
     const downloadButton = records.getByRole('button', { name: '下载视频' })

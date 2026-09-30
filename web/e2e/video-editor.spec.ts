@@ -11,7 +11,7 @@ const SHOT_DIR = '../.artifacts/design-qa/video-editor'
 const openEditor = async (page: Page, mobile = false, group = 2) => {
   // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
-  await panel.getByRole('button', { name: `第 ${group} 组` }).click()
+  await panel.getByRole('button', { name: `第 ${group} 组`, exact: true }).click()
   await panel.getByRole('button', { name: '生成记录', exact: true }).click()
   const records = panel.getByRole('complementary', { name: '生成记录' })
   await records.getByRole('button', { name: /^编辑视频/ }).click()

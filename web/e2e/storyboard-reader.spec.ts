@@ -48,7 +48,7 @@ test('分镜可以滚轮翻组、键盘切帧和查看记录，浏览操作不�
   const panel = await openStoryboard(page)
   await panel.getByRole('region', { name: '镜头组 1', exact: true }).hover()
   await page.mouse.wheel(0, 650)
-  await expect(panel.getByRole('button', { name: '第 2 组' })).toHaveAttribute(
+  await expect(panel.getByRole('button', { name: '第 2 组', exact: true })).toHaveAttribute(
     'aria-current',
     'true',
   )
@@ -68,7 +68,7 @@ test('分镜可以滚轮翻组、键盘切帧和查看记录，浏览操作不�
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
   await expect(filmstrip).toBeInViewport({ ratio: 1 })
   await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText('低头看一眼包')
-  await expect(group.getByRole('button', { name: '生成视频' })).toHaveCount(0)
+  await expect(group.getByRole('button', { name: /^生成第 \d+ 组$/ })).toHaveCount(0)
   await expect(group.getByRole('button', { name: '编辑图片', exact: true })).toHaveCount(1)
 
   await panel.getByRole('button', { name: '生成记录', exact: true }).click()
@@ -83,7 +83,7 @@ for (const width of [1335, 390]) {
   test(`分镜 ${width}px：原文、参考图和总览可读，关闭后恢复选择与焦点`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
     const panel = await openStoryboard(page, width === 390)
-    await panel.getByRole('button', { name: '第 2 组' }).click()
+    await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
     const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
     const filmstrip = group.getByRole('navigation', { name: '本组镜头' })
     await filmstrip.getByRole('button', { name: '镜头 2', exact: true }).click()
@@ -109,7 +109,7 @@ for (const width of [1335, 390]) {
     await expect(sheet.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
       ratio: 1,
     })
-    await expect(sheet.getByRole('button', { name: '生成视频' })).toHaveCount(0)
+    await expect(sheet.getByRole('button', { name: /^生成第 \d+ 组$/ })).toHaveCount(0)
     await expect(sheet).toBeInViewport({ ratio: 1 })
     await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/prompt-${width}`)
 
@@ -144,7 +144,7 @@ for (const width of [1335, 390]) {
 test('agent 更新工作区后重读结构化正文，保留当前组和帧', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
   await group.getByRole('button', { name: '镜头 2', exact: true }).click()
   await group.getByRole('button', { name: '预览第 3 帧' }).click()
@@ -164,7 +164,7 @@ test('编辑一镜后保存并读回，复制整组保留 raw 图片标记与空
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   const generationPosts = watchGenerationPosts(page)
   const panel = await openStoryboard(page)
-  await panel.getByRole('button', { name: '第 2 组' }).click()
+  await panel.getByRole('button', { name: '第 2 组', exact: true }).click()
   const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
   await group.getByRole('button', { name: '镜头 2', exact: true }).click()
   await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
@@ -324,7 +324,7 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
 test('翻到第 3 组出片：请求取当前组，记录先生成中后完成，下载分原片与水印版', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
-  await panel.getByRole('button', { name: '第 3 组' }).click()
+  await panel.getByRole('button', { name: '第 3 组', exact: true }).click()
   const group = panel.getByRole('region', { name: '镜头组 3', exact: true })
   await group.getByRole('button', { name: '镜头 1', exact: true }).click()
   await expect(group.getByRole('textbox', { name: '镜头 1 的描述' })).toContainText('低角度拍鞋面')
@@ -336,7 +336,7 @@ test('翻到第 3 组出片：请求取当前组，记录先生成中后完成�
     (request) =>
       request.method() === 'POST' && new URL(request.url()).pathname === '/api/generations/video',
   )
-  await panel.getByRole('button', { name: '生成视频', exact: true }).click()
+  await panel.getByRole('button', { name: '生成第 3 组', exact: true }).click()
   const request = await posted
   expect(request.postDataJSON()).toMatchObject({ shot_index: 3, shot: third.prompt })
   await expect(panel.getByText('生成中 1', { exact: true })).toBeVisible()

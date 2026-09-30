@@ -169,7 +169,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: '镜头 2' }))
     await replaceText(screen.getByRole('textbox', { name: '镜头 2 的描述' }), '展示者转动产品。')
-    await userEvent.click(screen.getByRole('button', { name: '生成视频' }))
+    await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
     await waitFor(() => expect(state.submissions).toHaveLength(1))
     expect(state.events.at(-1)).toBe('generate')
     expect(state.events.slice(0, -1)).toContain('save')
@@ -190,7 +190,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     await userEvent.click(await screen.findByRole('button', { name: '镜头 1' }))
     await replaceText(await screen.findByRole('textbox', { name: '镜头 1 的描述' }), '新动作。')
     state.changeAspect()
-    await userEvent.click(screen.getByRole('button', { name: '生成视频' }))
+    await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
     await waitFor(() => expect(state.submissions).toHaveLength(1))
     expect(state.stored().aspect_ratio).toBe('16:9')
     expect(state.submissions[0]).toMatchObject({
@@ -208,7 +208,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
       await screen.findByRole('textbox', { name: '镜头 1 的描述' }),
       '未保存的动作。',
     )
-    await userEvent.click(screen.getByRole('button', { name: '生成视频' }))
+    await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
     expect(await screen.findByRole('button', { name: '重试保存' })).toBeInTheDocument()
     expect(state.submissions).toEqual([])
     expect(screen.getByRole('textbox', { name: '镜头 1 的描述' })).toHaveTextContent(
@@ -221,7 +221,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     await userEvent.click(await screen.findByRole('button', { name: '镜头 1' }))
     await replaceText(await screen.findByRole('textbox', { name: '镜头 1 的描述' }), '本地动作。')
     state.changeRemote()
-    await userEvent.click(screen.getByRole('button', { name: '生成视频' }))
+    await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
     const dialog = await screen.findByRole('dialog', { name: '这份分镜有别的改动' })
     expect(state.submissions).toEqual([])
     await userEvent.click(within(dialog).getByRole('button', { name: '留我的' }))
@@ -332,12 +332,15 @@ describe('StoryboardReader 全局设定与参考图', () => {
       screen.getByLabelText('选择要上传的图片'),
       new File(['image'], 'new.png', { type: 'image/png' }),
     )
-    expect(screen.getByRole('button', { name: '生成视频' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '生成第 1 组' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     await replaceText(editor, '新设定，保留自然光。')
     release()
     await waitFor(() => expect(state.stored().shots[0]?.image_urls).toHaveLength(3))
     expect(state.stored().shots[0]?.prompt.global_settings).toBe('新设定，保留自然光。@Image3')
-    await userEvent.click(screen.getByRole('button', { name: '生成视频' }))
+    await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
     await waitFor(() => expect(state.submissions).toHaveLength(1))
     expect(state.submissions[0]).toMatchObject({ shot: state.stored().shots[0]?.prompt })
   })
@@ -365,7 +368,10 @@ describe('StoryboardReader 全局设定与参考图', () => {
           screen.getByLabelText('选择要上传的图片'),
           new File(['late'], 'late.png', { type: 'image/png' }),
         )
-        expect(screen.getByRole('button', { name: '生成视频' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: '生成第 1 组' })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        )
         await act(async () => {
           if (change === '外部路由切换')
             await router.navigate({
@@ -379,7 +385,9 @@ describe('StoryboardReader 全局设定与参考图', () => {
         })
         expect(await screen.findByRole('textbox', { name: '全局设定' })).toBeVisible()
         await waitFor(() => expect(screen.getByRole('button', { name: '添加图片' })).toBeEnabled())
-        expect(screen.getByRole('button', { name: '生成视频' })).toBeEnabled()
+        expect(screen.getByRole('button', { name: '生成第 1 组' })).not.toHaveAttribute(
+          'aria-disabled',
+        )
         await act(async () => {
           upload.release()
           await registered.promise
@@ -388,7 +396,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
         await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
         expect(state.writes).toEqual([])
         expect(state.stored().shots[0]?.image_urls).toEqual(fixture.shots[0]?.image_urls)
-        await userEvent.click(screen.getByRole('button', { name: '生成视频' }))
+        await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
         await waitFor(() => expect(state.submissions).toHaveLength(1))
         expect(state.submissions[0]).toMatchObject({
           shot: state.stored().shots[0]?.prompt,
@@ -416,7 +424,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
         '准备生成的设定 @Image1 与 @Image2。',
       )
       const replacementInput = screen.getByLabelText('选择替换图片')
-      await userEvent.click(screen.getByRole('button', { name: '生成视频' }))
+      await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
       await waitFor(() => expect(state.writes).toHaveLength(1))
       expect(state.submissions).toEqual([])
       const addImage = screen.getByRole('button', { name: '添加图片' })

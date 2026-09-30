@@ -56,7 +56,7 @@ const shot: Shot = {
 }
 
 describe('submitVideoGeneration', () => {
-  it('照上游形状发到视频端点：镜头组按分镜文件的形状原样发出、镜号只走 shot_index、参考图取整组，回执只取任务号', async () => {
+  it('照上游形状发到视频端点：镜头组按分镜文件的形状原样发出、镜号只走 shot_index、参考图取整组、分辨率照选的档，回执只取任务号', async () => {
     let body: unknown
     server.use(
       http.post('*/api/generations/video', async ({ request }) => {
@@ -74,6 +74,7 @@ describe('submitVideoGeneration', () => {
         conversationId,
         generateAudio: false,
         model: 'wan3.0-video',
+        resolution: '1080p',
         shot,
       }),
     ).resolves.toBe('4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c')
@@ -84,7 +85,7 @@ describe('submitVideoGeneration', () => {
       generate_audio: false,
       model: 'wan3.0-video',
       reference_image_urls: shot.image_urls,
-      resolution: '720p',
+      resolution: '1080p',
       seconds: 6,
       shot: {
         global_settings: '人物保持一致。',

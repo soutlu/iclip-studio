@@ -433,11 +433,25 @@ describe('StoryboardReader', () => {
 
   it('只读时生成、正文编辑与历史回填的入口全部收起，不写工作区', async () => {
     const files = provide()
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [editableJob] })))
+    let posts = 0
+    server.use(
+      http.get('*/api/generations', () => HttpResponse.json({ items: [editableJob] })),
+      http.post('*/api/generations/video', () => {
+        posts += 1
+        return HttpResponse.json({ task_id: runningJob.id }, { status: 202 })
+      }),
+    )
     await renderReader('/?shot=1&content=scene:1', true)
     const page = await screen.findByRole('region', { name: '镜头组 1' })
 
-    expect(screen.getByRole('button', { name: '生成视频' })).toBeDisabled()
+    // 置灰的出片按钮仍可聚焦（为了说出原因），点了也不提交。
+    const generate = screen.getByRole('button', { name: '生成第 1 组' })
+    expect(generate).toHaveAttribute('aria-disabled', 'true')
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: '视频模型' })).toHaveValue('vendor-a-seedance-2-5'),
+    )
+    await userEvent.click(generate)
+    expect(posts).toBe(0)
     expect(within(page).getByRole('textbox', { name: '镜头 1 的描述' })).toHaveAttribute(
       'contenteditable',
       'false',
@@ -505,7 +519,7 @@ describe('StoryboardReader', () => {
     const records = await screen.findByRole('complementary', { name: '生成记录' })
     await within(records).findByText('本组生成时使用的历史描述。')
     expect(
-      within(records).queryByRole('button', { name: /生成视频|编辑图片/ }),
+      within(records).queryByRole('button', { name: /^生成第 \d+ 组$|编辑图片/ }),
     ).not.toBeInTheDocument()
     expect(requests.filter((request) => request.method !== 'GET')).toEqual([])
   })
@@ -647,7 +661,7 @@ describe('StoryboardReader', () => {
     expect(files.writes).toEqual([])
   })
 
-  it('生成设置里换模型、关音频后出片：请求体照上游形状取当前组内容，提交后记录里出现生成中', async () => {
+  it('出片栏里换模型、关音频后出片：请求体照上游形状取当前组内容，分辨率默认 720p，提交后记录里出现生成中', async () => {
     provide()
     const user = userEvent.setup()
     const [firstShot] = document.shots
@@ -664,17 +678,13 @@ describe('StoryboardReader', () => {
     )
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    await user.click(
-      await screen.findByRole('button', { name: '生成设置：vendor-a-seedance-2-5，音频开启' }),
-    )
-    const settings = await screen.findByRole('dialog', { name: '生成设置' })
-    await user.click(within(settings).getByRole('radio', { name: 'wan3.0-video' }))
-    await user.click(within(settings).getByRole('switch', { name: '生成音频' }))
-    await user.keyboard('{Escape}')
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: '生成设置' })).not.toBeInTheDocument(),
-    )
-    await user.click(screen.getByRole('button', { name: '生成视频' }))
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const model = within(bar).getByRole<HTMLSelectElement>('combobox', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveValue('vendor-a-seedance-2-5'))
+    await user.selectOptions(model, 'wan3.0-video')
+    const audio = within(bar).getByRole('button', { name: '生成音频', pressed: true })
+    await user.click(audio)
+    await user.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
 
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted).toEqual([
@@ -691,10 +701,41 @@ describe('StoryboardReader', () => {
       },
     ])
     expect(await screen.findByText('生成中 1')).toBeVisible()
-    expect(screen.getByRole('button', { name: '生成设置：wan3.0-video，音频关闭' })).toBeVisible()
+    // 出片后设置不回退，下一次出片沿用。
+    expect(model).toHaveValue('wan3.0-video')
+    expect(audio).toHaveAttribute('aria-pressed', 'false')
     await user.click(screen.getByRole('button', { name: '生成记录' }))
     const records = await screen.findByRole('complementary', { name: '生成记录' })
     expect(await within(records).findByText('生成中')).toBeVisible()
+  })
+
+  it('切到 1080p 后出片带上 1080p，换模型不改分辨率', async () => {
+    provide()
+    const user = userEvent.setup()
+    const posted: { model?: string; resolution?: string }[] = []
+    server.use(
+      http.post('*/api/generations/video', async ({ request }) => {
+        posted.push((await request.json()) as { model?: string; resolution?: string })
+        return HttpResponse.json({ task_id: runningJob.id }, { status: 202 })
+      }),
+    )
+    await renderReader()
+    await screen.findByRole('region', { name: '镜头组 1' })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const resolution = within(bar).getByRole('radiogroup', { name: '分辨率' })
+    const hd = within(resolution).getByRole('radio', { name: '1080p' })
+    expect(within(resolution).getByRole('radio', { name: '720p' })).toBeChecked()
+
+    await user.click(hd)
+    expect(hd).toBeChecked()
+    const model = within(bar).getByRole('combobox', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveValue('vendor-a-seedance-2-5'))
+    await user.selectOptions(model, 'wan3.0-video')
+    expect(hd).toBeChecked()
+
+    await user.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ model: 'wan3.0-video', resolution: '1080p' })
   })
 
   it('改画幅写回分镜、出片带上新画幅；画幅按选中的模型标不支持，但不替用户改也不拦', async () => {
@@ -719,21 +760,20 @@ describe('StoryboardReader', () => {
     await waitFor(() => expect(files.writes).toHaveLength(1))
     expect(files.snapshot().aspect_ratio).toBe('21:9')
 
-    // 换成做不了 21:9 的万相：模型照选不误，画幅那一项标上不支持，出片按钮旁提醒但不禁用。
-    await user.click(await screen.findByRole('button', { name: /^生成设置：vendor-a-seedance-2-5/ }))
-    const settings = await screen.findByRole('dialog', { name: '生成设置' })
-    const wan = within(settings).getByRole('radio', { name: 'wan3.0-video' })
+    // 换成做不了 21:9 的万相：模型照选不误，画幅那一项标上不支持，出片栏里提醒但不禁用。
+    const model = screen.getByRole<HTMLSelectElement>('combobox', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveValue('vendor-a-seedance-2-5'))
+    const wan = within(model).getByRole<HTMLOptionElement>('option', { name: 'wan3.0-video' })
     expect(wan).toBeEnabled()
-    await user.click(wan)
-    await user.keyboard('{Escape}')
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: '生成设置' })).not.toBeInTheDocument(),
-    )
+    await user.selectOptions(model, wan)
     expect(option('21:9')).toBeDisabled()
-    expect(await screen.findByRole('alert', { name: 'wan3.0-video 做不了 21:9' })).toBeVisible()
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    expect(
+      await within(bar).findByRole('alert', { name: 'wan3.0-video 做不了 21:9' }),
+    ).toBeVisible()
 
-    const generate = screen.getByRole('button', { name: '生成视频' })
-    expect(generate).toBeEnabled()
+    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+    expect(generate).not.toHaveAttribute('aria-disabled')
     await user.click(generate)
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({ aspect_ratio: '21:9', model: 'wan3.0-video' })
@@ -753,13 +793,13 @@ describe('StoryboardReader', () => {
     )
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    const generate = screen.getByRole('button', { name: '生成视频' })
-    await waitFor(() => expect(generate).toBeEnabled())
+    const generate = screen.getByRole('button', { name: '生成第 1 组' })
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
     const readsBefore = reads
 
     await userEvent.click(generate)
 
-    // 提示留在工作台顶栏、挨着出片按钮；全局 toast 弹在视口底部会压住聊天输入区。
+    // 提示留在底部出片栏、挨着出片按钮；全局 toast 弹在视口底部会压住聊天输入区。
     // 存盘状态那一格出错时也是 alert，按文案取，别挑到别人的。
     const toolbar = screen.getByRole('group', { name: '出片工具栏' })
     expect(await within(toolbar).findByRole('alert', { name: /视频生成仅支持模型/ })).toBeVisible()
@@ -767,7 +807,7 @@ describe('StoryboardReader', () => {
     const toasts = screen.queryByRole('region', { name: /Notifications/ })
     expect(toasts === null ? null : within(toasts).queryByText(/视频生成仅支持模型/)).toBeNull()
     expect(reads).toBe(readsBefore)
-    await waitFor(() => expect(generate).toBeEnabled())
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
   })
 
   it('视频模型清单读不到时说明原因，不能出片', async () => {
@@ -779,10 +819,16 @@ describe('StoryboardReader', () => {
     )
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    expect(
-      await screen.findByRole('button', { name: '生成设置：视频模型读不到，音频开启' }),
-    ).toBeDisabled()
-    expect(screen.getByRole('button', { name: '生成视频' })).toBeDisabled()
+    const model = screen.getByRole('combobox', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveDisplayValue('视频模型读不到'))
+    expect(model).toBeDisabled()
+    const generate = screen.getByRole('button', { name: '生成第 1 组' })
+    expect(generate).toHaveAttribute('aria-disabled', 'true')
+
+    // 置灰的按钮仍能聚焦，聚焦就说出原因。
+    act(() => generate.focus())
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
+    expect(generate).toHaveAccessibleDescription()
   })
 
   it('刷新文件后保留所选镜头，失效的图片选择使用该镜头当前引用', async () => {

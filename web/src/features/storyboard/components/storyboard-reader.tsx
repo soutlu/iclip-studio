@@ -4,10 +4,8 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { z } from 'zod'
 import { errorMessageOf } from '@/shared/api/client'
-import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
-import { Select } from '@/shared/ui/field'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
 import {
@@ -23,7 +21,7 @@ import { isRunningStatus, isShotVideo, SHOTS_PATH } from '../shots'
 import { useShotGenerations } from '../storyboard.api'
 import { useGenerationGate } from '../use-generation-gate'
 import { supportsAspectRatio } from '../video-model-support'
-import { useShotsDraft } from '../use-shots-draft'
+import { useShotsDraft, type SaveState } from '../use-shots-draft'
 import { useLiveGenerations } from '../use-live-generations'
 import { useVideoGeneration } from '../use-video-generation'
 import { editCountsByRoot } from '../video-editor/edit-chain'
@@ -41,7 +39,7 @@ import {
   type readerSheetSchema,
 } from '../shot-content'
 import { ShotOverview } from './shot-overview'
-import { VideoGenerationButton } from './video-generation-button'
+import { VideoGenerationBar } from './video-generation-bar'
 
 type ReaderSearch = {
   content?: string | undefined
@@ -53,6 +51,24 @@ type ReaderSearch = {
 }
 const pageOfScroll = (element: HTMLElement): number | undefined =>
   element.clientHeight > 0 ? Math.round(element.scrollTop / element.clientHeight) + 1 : undefined
+
+/** 出片按钮置灰的原因，能出片时为 undefined。出片发的是描述的当前版本，还在存或没存下就先别发，
+ * 免得发出去的和文件里的不一样。一次只说一条：要用户动手的排在前，等一下就好的暂态在后。 */
+const generateBlockerOf = (facts: {
+  readOnly: boolean
+  saveState: SaveState['kind']
+  uploading: boolean
+  noModel: boolean
+  modelsUnavailable: boolean
+}): string | undefined => {
+  if (facts.readOnly) return '只读对话，不能出片'
+  if (facts.saveState === 'conflict') return '先处理分镜的版本冲突'
+  if (facts.saveState === 'error') return '分镜没存下，先重试保存'
+  if (facts.saveState === 'saving') return '分镜保存中'
+  if (facts.uploading) return '图片还在上传'
+  if (facts.noModel) return facts.modelsUnavailable ? '视频模型读不到' : '正在读取视频模型'
+  return undefined
+}
 
 export function StoryboardReader(props: ArtifactRendererProps) {
   const path = props.artifact.source.kind === 'file' ? props.artifact.source.path : SHOTS_PATH
@@ -167,17 +183,18 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   const activeCount = jobs.filter(
     (job) => isShotVideo(job, shot.index) && isRunningStatus(job.status),
   ).length
-  // 出片发的是描述的当前版本；还在存或没存下就先别发，免得发出去的和文件里的不一样。
-  // 原因不另写一句：左边的保存状态已经在说。只读时整页的编辑与生成入口一起收起。
+  // 只读时整页的编辑与生成入口一起收起。
   const editingDisabled = readOnly || gate.preparing
-  const generateDisabled =
-    readOnly ||
-    gate.preparing ||
-    gate.uploading ||
-    draft.state.kind === 'conflict' ||
-    video.options.model === undefined ||
-    draft.state.kind === 'saving' ||
-    draft.state.kind === 'error'
+  // 提交途中按钮自己写着「提交中」，不另说原因。
+  const generateBlocker = gate.preparing
+    ? undefined
+    : generateBlockerOf({
+        modelsUnavailable: video.modelsUnavailable,
+        noModel: video.options.model === undefined,
+        readOnly,
+        saveState: draft.state.kind,
+        uploading: gate.uploading,
+      })
   // 改过之后原因就过期了，等下一次出片再说；存盘状态那一格有自己的提示，不重复说。
   const submitError = draft.hasUnsavedChanges ? undefined : video.errorOf(shot.index)
   // 选中的模型做不了这份分镜的画幅：只提醒，不拦——真拒还是由上游拒。
@@ -210,37 +227,14 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
 
   return (
     <>
-      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
+      {/* 容器查询量的是工作台本身：它能拖宽、聊天栏能收起，视口宽度说明不了什么。 */}
+      <div className="@container flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
         <div
-          aria-label="出片工具栏"
+          aria-label="分镜工具栏"
           className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 px-4 pt-2 pb-1"
           role="group"
         >
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <Select
-              aria-label="画幅"
-              disabled={editingDisabled}
-              onChange={(event) => draft.updateAspectRatio(event.target.value)}
-              value={document.aspect_ratio}
-              variant="inline"
-            >
-              {/* agent 可以写任何 宽:高，不在档位里的也要照原样显示得出来。 */}
-              {ASPECT_RATIOS.some((ratio) => ratio === document.aspect_ratio) ? null : (
-                <option value={document.aspect_ratio}>{document.aspect_ratio}</option>
-              )}
-              {ASPECT_RATIOS.map((ratio) => {
-                const usable = supportsAspectRatio(video.options.model, ratio)
-                // 选中的那个不加后缀：收起来的下拉只显示它，长文案会把顶栏挤下去；
-                // 它正好不被支持时，出片按钮旁边那句提示已经在说了。
-                const label =
-                  usable || ratio === document.aspect_ratio ? ratio : `${ratio}（不支持）`
-                return (
-                  <option disabled={!usable} key={ratio} value={ratio}>
-                    {label}
-                  </option>
-                )
-              })}
-            </Select>
             <SaveStatus
               state={draft.state}
               hasUnsavedChanges={draft.hasUnsavedChanges}
@@ -270,24 +264,6 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
               <span className="ml-1 text-primary">生成中 {activeCount}</span>
             ) : null}
           </Button>
-          {generateNotice === undefined ? null : (
-            <span
-              className="min-w-0 shrink truncate text-body-sm text-error"
-              role="alert"
-              title={generateNotice}
-            >
-              {generateNotice}
-            </span>
-          )}
-          <VideoGenerationButton
-            disabled={generateDisabled}
-            models={video.models}
-            onChange={video.setOptions}
-            onGenerate={() => void generate()}
-            submitting={gate.preparing}
-            unavailable={video.modelsUnavailable ? '视频模型读不到' : undefined}
-            value={video.options}
-          />
         </div>
         <div className="relative flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
           <div
@@ -425,6 +401,20 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
             </ReaderOverlay>
           ) : null}
         </div>
+        <VideoGenerationBar
+          aspectRatio={document.aspect_ratio}
+          aspectRatioDisabled={editingDisabled}
+          blockedReason={generateBlocker}
+          models={video.models}
+          modelsUnavailable={video.modelsUnavailable ? '视频模型读不到' : undefined}
+          notice={generateNotice}
+          onAspectRatioChange={draft.updateAspectRatio}
+          onChange={video.setOptions}
+          onGenerate={() => void generate()}
+          shotIndex={shot.index}
+          submitting={gate.preparing}
+          value={video.options}
+        />
       </div>
       <MediaLightbox media={media} onClose={() => setMedia(null)} />
       {search.video === undefined ? null : (
