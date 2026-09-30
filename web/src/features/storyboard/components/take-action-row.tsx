@@ -8,6 +8,7 @@ import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip
 import { VideoDownload } from '@/shared/ui/video-download'
 import type { Take, TakeActions } from '../takes'
 import { StageAction } from './stage-action'
+import { useCollapsedTextHint } from './use-collapsed-text-hint'
 import { STAGE_ACTION_TEXT, stageActionClass } from './workbench-control'
 
 type TakeActionRowProps = {
@@ -21,6 +22,8 @@ export function TakeActionRow({ actions, onEditVideo, onRefill, take }: TakeActi
   const { download, editVideo, refill } = actions
   // 「今天」「昨天」按挂上那一刻算；换一条成片会重挂。
   const [now] = useState(() => new Date())
+  // 下载与 StageAction 同一条提示规则：带字时不重复名字，退成图标才提示。
+  const { bindText: bindDownloadText, tooltip: downloadTooltip } = useCollapsedTextHint()
   const model = take.model ?? '未记录模型'
   const info = [
     take.resolution,
@@ -46,10 +49,13 @@ export function TakeActionRow({ actions, onEditVideo, onRefill, take }: TakeActi
           <VideoDownload
             className={stageActionClass}
             jobId={take.job.id}
+            tooltip={downloadTooltip}
             url={take.outputUrl}
             watermarkUrl={take.job.watermarkOutputUrl}
           >
-            <span className={STAGE_ACTION_TEXT}>下载</span>
+            <span className={STAGE_ACTION_TEXT} ref={bindDownloadText}>
+              下载
+            </span>
           </VideoDownload>
         ) : download.kind === 'blocked' ? (
           <StageAction blocker={download.reason} icon="download" label="下载视频" text="下载" />

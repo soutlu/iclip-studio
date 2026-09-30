@@ -1,6 +1,6 @@
 /** 一组分镜的页面：解析选中的段与帧，组合舞台列、文案列（正文 + 列底的成片区）与添加图片的选择器；
  * 添加图片的流程在 `useFrameAdditions`，替换当前帧的流程在 `useFrameReplacement`。
- * 选中成片时舞台改播它，文案列撤掉选中高亮，点任意一段就回到帧。 */
+ * 选中成片时舞台改播它，文案列撤掉选中高亮，点任意一段就回到帧；进行中的上传不受影响，照旧落进原来那段那帧。 */
 import { useEffect, useEffectEvent, useRef, type ReactNode } from 'react'
 import type { LightboxMedia } from '@/shared/ui/media-lightbox'
 import type { FrameBadge } from '../frame-status'
@@ -31,8 +31,10 @@ type ReaderPageProps = {
   editingDisabled: boolean
   onUpdateShot: (updater: (current: Shot) => Shot) => Shot | undefined
   onReplaceFrame: (frame: number, previousUrl: string, url: string) => void
-  onUploaded: (frame: number, url: string) => void
+  /** 新图已写进 `content` 段：记下这次上传、选区跟到这帧；不改舞台在显示什么，在放成片就接着放。 */
+  onUploaded: (content: string, frame: number, url: string) => void
   onUploadingChange: (group: number, uploading: boolean) => void
+  /** 选段或帧：舞台回到帧。 */
   onSelect: (content: string, frame?: number) => void
   onPreview: (media: LightboxMedia) => void
   /** 打开这一帧的编辑器；`open` 决定进去先看哪张：铅笔进底图，角标进那条新结果。 */
@@ -66,9 +68,9 @@ export function ReaderPage({
     frame,
   })
   const url = frameNumber === undefined ? undefined : shot.image_urls[frameNumber - 1]
-  // 舞台上的帧；选中成片时没有，替换也就锁住。
-  const stageFrame =
-    take !== undefined || url === undefined || frameNumber === undefined
+  // 选中的帧；选中成片时它不上舞台，但上传的目标照旧是它。
+  const selectedFrame =
+    url === undefined || frameNumber === undefined
       ? undefined
       : { badge: frameBadges.get(frameNumber), number: frameNumber, url }
   // 每段一个编辑器；添加图片插在选中那段的光标处。
@@ -77,22 +79,25 @@ export function ReaderPage({
     if (handle === null) editorsRef.current.delete(id)
     else editorsRef.current.set(id, handle)
   }
+  // 选同一段不指定帧时停在当前帧：从成片点回原来那段，进行中或失败待重试的上传还认得这个目标。
+  const select = (id: string, number?: number) =>
+    onSelect(id, number ?? (id === content.id ? frame : undefined))
   const additions = useFrameAdditions({
     content,
     editingDisabled,
+    frame,
     insertionAtCursor: () => editorsRef.current.get(content.id)?.getInsertion(),
     onSelect,
     onUpdateShot,
     onUploaded,
     shot,
-    takeId: take?.take.job.id,
   })
-  const select = additions.select
   const replacement = useFrameReplacement({
     contentId: content.id,
     editingDisabled,
-    frame: stageFrame,
+    frame: selectedFrame,
     onReplace: onReplaceFrame,
+    showingTake: take !== undefined,
   })
   const reportUploading = useEffectEvent((busy: boolean) => onUploadingChange(shot.index, busy))
   useEffect(() => {
@@ -121,7 +126,7 @@ export function ReaderPage({
             : {
                 addition: { onRetry: additions.retry, upload: additions.upload },
                 disabled: editingDisabled,
-                frame: stageFrame,
+                frame: selectedFrame,
                 gallery: {
                   current: frameNumber,
                   fresh,

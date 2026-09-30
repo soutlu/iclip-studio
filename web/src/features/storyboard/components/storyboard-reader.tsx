@@ -117,7 +117,12 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       next.shot !== undefined && next.shot !== position
         ? { content: undefined, frame: undefined, video: undefined }
         : {}
-    void navigate({ replace: true, search: { ...search, ...cleared, ...next }, to: '.' })
+    // 叠在导航那一刻的参数上：上传完成时才调的 `go` 拿的是发起时的闭包，不能用旧参数盖掉期间打开的浮层。
+    void navigate({
+      replace: true,
+      search: (previous: ReaderSearch) => ({ ...previous, ...cleared, ...next }),
+      to: '.',
+    })
   }
 
   const closeSheet = () => {
@@ -223,7 +228,11 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
                 draft.replaceFrame(shot.index, frame, previousUrl, url)
                 draft.recordUpload(shot.index, frame, url)
               }}
-              onUploaded={(frame, url) => draft.recordUpload(shot.index, frame, url)}
+              onUploaded={(content, frame, url) => {
+                draft.recordUpload(shot.index, frame, url)
+                // 只动路由不动舞台选中：显示帧时舞台跟到新图，放着成片就接着放。
+                go({ content, frame })
+              }}
               onUploadingChange={gate.onUploadingChange}
               onEditFrame={(frame, open) => {
                 setImageEdit({

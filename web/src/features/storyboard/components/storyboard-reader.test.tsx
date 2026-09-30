@@ -1838,6 +1838,94 @@ describe('StoryboardReader', () => {
       fireEvent.dragEnter(frame, { dataTransfer: fileTransfer([imageFile()]) })
       expect(within(page).getByText('松开替换当前图片')).toBeVisible()
     })
+
+    it.each(['新增', '替换'])(
+      '%s上传期间选中成片：上传完成照常写进草稿，舞台接着放视频，toast 说明结果',
+      async (mode) => {
+        const files = provide()
+        serveTakes([editableJob])
+        const release = delayedUpload()
+        // 从镜头 1 的第二个引用（第 1 帧）发起，不是这段的首帧。
+        await renderReader('/?shot=1&content=scene:1&frame=1')
+        const page = await screen.findByRole('region', { name: '镜头组 1' })
+        if (mode === '新增') pasteImage(page, '镜头 1 的描述')
+        else await userEvent.upload(within(page).getByLabelText('选择替换图片'), imageFile())
+        await within(page).findByRole('status')
+        await userEvent.click((await cardOf(editableJob)).card)
+        expect(player(page)).toBeVisible()
+
+        await act(async () => {
+          release()
+        })
+
+        await waitFor(() => expect(files.writes).toHaveLength(1), { timeout: 3000 })
+        const saved = files.snapshot().shots[0]
+        if (mode === '新增') {
+          expect(saved?.image_urls).toHaveLength(4)
+          expect(saved?.image_urls[3]).toContain('/mock-oss/')
+          expect(saved?.prompt.timeline[0]?.image_indexes).toEqual([2, 1, 4])
+          expect(await screen.findByText('图片已添加到镜头 1')).toBeVisible()
+        } else {
+          expect(saved?.image_urls).toHaveLength(3)
+          expect(saved?.image_urls[0]).toContain('/mock-oss/')
+          expect(saved?.prompt).toEqual(document.shots[0]?.prompt)
+          expect(await screen.findByText('已替换第 1 帧')).toBeVisible()
+        }
+        expect(player(page)).toBeVisible()
+        expect(within(page).queryByRole('group', { name: '当前帧图片' })).not.toBeInTheDocument()
+      },
+    )
+
+    it('新增上传期间选中成片后上传失败：toast 说明原因，点回原来那段还停在那帧，可以重试', async () => {
+      const files = provide()
+      serveTakes([editableJob])
+      const release = delayedUpload(503)
+      await renderReader('/?shot=1&content=scene:1&frame=1')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      pasteImage(page, '镜头 1 的描述')
+      await within(page).findByRole('status', { name: /^上传中/ })
+      await userEvent.click((await cardOf(editableJob)).card)
+
+      await act(async () => {
+        release()
+      })
+
+      expect(await screen.findByText('上传失败（503）')).toBeVisible()
+      expect(player(page)).toBeVisible()
+      expect(files.writes).toEqual([])
+
+      server.use(http.put('*/mock-oss/:uploadId', () => new HttpResponse(null, { status: 200 })))
+      await userEvent.click(within(page).getByRole('button', { name: '镜头 1' }))
+      expect(player(page)).not.toBeInTheDocument()
+      expect(within(page).getByRole('img', { name: '镜头组 1 第 1 帧' })).toBeVisible()
+      await userEvent.click(within(page).getByRole('button', { name: '上传失败，点击重试' }))
+
+      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(4), {
+        timeout: 3000,
+      })
+      expect(files.snapshot().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([2, 1, 4])
+    })
+
+    it('带字的下载按钮不再弹出同名提示；文字收起、退成图标时悬停或聚焦说出名字', async () => {
+      provide()
+      serveTakes([editableJob])
+      await renderReader()
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      await userEvent.click((await cardOf(editableJob)).card)
+      const download = within(page).getByRole('button', { name: '下载视频' })
+      expect(download).toHaveTextContent('下载')
+
+      act(() => download.focus())
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 400)))
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+      act(() => download.blur())
+      // jsdom 不加载 storyboard.css：照容器查询收起时的样子把文字藏掉。
+      const text = within(download).getByText('下载')
+      text.style.display = 'none'
+      act(() => download.focus())
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('下载视频')
+    })
   })
 
   describe('正文里敲 @ 选图', () => {

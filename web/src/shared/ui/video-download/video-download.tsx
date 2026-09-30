@@ -16,6 +16,8 @@ type VideoDownloadProps = {
   className?: string
   /** 图标后面的可见文字；给了就渲染成带字按钮，样式全由 `className` 定，可访问名称照旧。 */
   children?: ReactNode
+  /** 名字提示的受控开合；缺省悬停、聚焦就开。带字按钮用它在文字露着时不重复提示。 */
+  tooltip?: { open: boolean; onOpenChange: (open: boolean) => void } | undefined
 }
 
 /** 生成视频的下载按钮：只有原片时点了就下；上游也给了水印版时先选哪一份。 */
@@ -23,6 +25,7 @@ export function VideoDownload({
   children,
   className,
   jobId,
+  tooltip,
   url,
   watermarkUrl,
 }: VideoDownloadProps) {
@@ -65,10 +68,15 @@ export function VideoDownload({
         {children}
       </button>
     )
-  if (watermarkUrl === null) return <DownloadTooltip label={label}>{trigger}</DownloadTooltip>
+  if (watermarkUrl === null)
+    return (
+      <DownloadTooltip label={label} tooltip={tooltip}>
+        {trigger}
+      </DownloadTooltip>
+    )
   return (
     <MenuRoot>
-      <DownloadTooltip label={label}>
+      <DownloadTooltip label={label} tooltip={tooltip}>
         <MenuTrigger asChild>{trigger}</MenuTrigger>
       </DownloadTooltip>
       <MenuSurface align="end">
@@ -81,9 +89,13 @@ export function VideoDownload({
   )
 }
 
-function DownloadTooltip({ children, label }: { children: ReactNode; label: string }) {
+function DownloadTooltip({
+  children,
+  label,
+  tooltip,
+}: Pick<VideoDownloadProps, 'tooltip'> & { children: ReactNode; label: string }) {
   return (
-    <TooltipRoot>
+    <TooltipRoot {...tooltip}>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </TooltipRoot>

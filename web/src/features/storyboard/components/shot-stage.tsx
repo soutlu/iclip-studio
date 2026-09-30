@@ -44,7 +44,7 @@ export type TakeView = {
 type ShotStageProps = {
   shotIndex: number
   aspectRatio: string
-  /** 替换当前帧的拖放区；显示成片时由 `useFrameReplacement` 锁定，不亮提示。 */
+  /** 替换当前帧的拖放区；显示成片时由 `useFrameReplacement` 锁定，不亮提示，进行中的替换照旧完成。 */
   drop: ReturnType<typeof useFileDropTarget>
   view: FrameView | TakeView
 }

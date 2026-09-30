@@ -1,7 +1,7 @@
 /** 往选中段添加图片的唯一流程：正文 `@` 选图末格「+」打开的选择器（关联已有或上传）、在正文里粘贴与失败重试都走这里。
  *
- * 一次只传一张。上传与失败都只属于发起它的那段：换段、换帧、换组或选中成片即作废，迟到的结果不回填；
- * 作废后才失败的只 toast，免得失败悄无声息。 */
+ * 一次只传一张。上传与失败只属于发起它的那段那帧，不管舞台在显示什么：换段、换帧、换组即作废，迟到的结果不回填；
+ * 舞台改放成片不算换目标。成功与失败都 toast，舞台在放成片时操作行上的状态看不到。 */
 
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
@@ -10,6 +10,7 @@ import { toast } from '@/shared/ui/toast'
 import { pickerBlockerOf, uploadBlockerOf } from './frame-addition-blocker'
 import {
   appendContentImage,
+  contentLabel,
   insertContentReference,
   shotContents,
   type ShotContent,
@@ -28,29 +29,30 @@ type Options = {
   shot: Shot
   /** 选中的段；新图与引用都落在它的正文里。 */
   content: ShotContent
+  /** 路由里记着的帧（用户选的，不是按正文解析出的）；和段一起定出这次添加的目标，改正文不算换目标。 */
+  frame: number | undefined
   editingDisabled: boolean
   onUpdateShot: (updater: (current: Shot) => Shot) => Shot | undefined
-  /** 新图地址已写进草稿；`frame` 是它的编号。 */
-  onUploaded: (frame: number, url: string) => void
+  /** 新图地址已写进草稿、引用已插进 `content` 段；`frame` 是它的编号。 */
+  onUploaded: (content: string, frame: number, url: string) => void
+  /** 关联已有图片后选中那一帧。 */
   onSelect: (content: string, frame?: number) => void
   /** 选中段编辑器里的光标；引用插在这里，编辑器没聚焦过时为 undefined（追加到末尾）。 */
   insertionAtCursor: () => PromptInsertion | undefined
-  /** 舞台正在看的成片；选中成片也算换了目标，进行中的添加作废。 */
-  takeId: string | undefined
 }
 
 export const useFrameAdditions = ({
   content,
   editingDisabled,
+  frame,
   insertionAtCursor,
   onSelect,
   onUpdateShot,
   onUploaded,
   shot,
-  takeId,
 }: Options) => {
   const revisionRef = useRef(0)
-  const targetKey = JSON.stringify([shot.index, content.id, takeId ?? null])
+  const targetKey = JSON.stringify([shot.index, content.id, frame ?? null])
   const [pickerTarget, setPickerTarget] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   // 状态只认发起它的目标；外部切换目标时立即恢复新目标的可操作状态，不等副作用清理。
@@ -73,13 +75,6 @@ export const useFrameAdditions = ({
       setPickerTarget(null)
     }
   }, [targetKey])
-
-  const select = (id: string, number?: number) => {
-    revisionRef.current += 1
-    setAttempt(null)
-    setPickerTarget(null)
-    onSelect(id, number)
-  }
 
   const updateTarget = (updater: (current: Shot) => Shot): Shot => {
     const updated = onUpdateShot((current) => {
@@ -106,7 +101,8 @@ export const useFrameAdditions = ({
           throw new UserFacingError('这张图片已发生变化，请重新选择')
         return insertContentReference(current, content.id, number, insertion)
       })
-      select(content.id, number)
+      setPickerTarget(null)
+      onSelect(content.id, number)
     } catch (error) {
       toast.error(errorMessageOf(error, '关联图片失败'))
     }
@@ -137,13 +133,15 @@ export const useFrameAdditions = ({
       const updated = updateTarget((current) =>
         appendContentImage(current, content.id, newUrl, insertion),
       )
-      onUploaded(updated.image_urls.length, newUrl)
-      select(content.id, updated.image_urls.length)
+      setAttempt(null)
+      onUploaded(content.id, updated.image_urls.length, newUrl)
+      toast(`图片已添加到${contentLabel(content)}`)
     } catch (error) {
       const message = errorMessageOf(error, '上传失败')
+      // 没作废就留着失败态与原文件，回到这段这帧还能重试。
       if (revision === revisionRef.current)
         setAttempt({ file, kind: 'failed', message, target: targetKey })
-      else toast.error(message)
+      toast.error(message)
     }
   }
 
@@ -186,7 +184,5 @@ export const useFrameAdditions = ({
       if (active?.kind === 'failed') void upload(active.file)
     },
     onPaste,
-    /** 选中别的段或帧：进行中的添加作废。 */
-    select,
   }
 }
