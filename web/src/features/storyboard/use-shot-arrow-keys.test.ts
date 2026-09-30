@@ -42,6 +42,7 @@ describe('shotAfterArrowKey', () => {
     ['正在编辑的正文', '<div contenteditable="true"><span data-target>字</span></div>'],
     ['输入框', '<input data-target />'],
     ['下拉', '<select data-target></select>'],
+    ['菜单按钮', '<button aria-haspopup="menu" data-target>视频模型</button>'],
     ['单选组', '<div role="radiogroup"><button data-target>720p</button></div>'],
     ['弹窗', '<div role="dialog"><button data-target>关联</button></div>'],
   ])('焦点在%s里时方向键归它自己', (_, html) => {

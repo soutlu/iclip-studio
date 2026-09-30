@@ -3,11 +3,9 @@
 
 import { useRef } from 'react'
 import { Icon } from '@/shared/icons'
-import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
-import { cn } from '@/shared/lib/utils'
+import { ASPECT_RATIOS, aspectOf } from '@/shared/lib/aspect-ratio'
 import { Button } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
-import { Select } from '@/shared/ui/field'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
   MODELS_PENDING_TEXT,
@@ -17,8 +15,8 @@ import {
 } from '../video-generation-options'
 import { supportsAspectRatio } from '../video-model-support'
 import { BlockedReason } from './blocked-reason'
+import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useScrollFade } from './use-scroll-fade'
-import { workbenchControl } from './workbench-control'
 
 /** 分镜的画幅：写回分镜文件，不是生成选项。 */
 type AspectControl = {
@@ -76,26 +74,20 @@ export function VideoGenerationBar({
           data-fade={fade}
           ref={paramsRef}
         >
-          <Select
-            aria-label="视频模型"
-            className={cn(workbenchControl({ shape: 'field' }), 'font-mono')}
+          <GenerationPicker
+            // 工作台窄时模型 id 截断，尺寸规则见出片栏一节。
+            className="storyboard-bar-model"
             disabled={submitting || models.items.length === 0}
-            onChange={(event) => onChange({ ...value, model: event.target.value })}
-            title={modelLabel}
+            label="视频模型"
+            leading={<Icon decorative name="video" size="sm" />}
+            onChange={(model) => onChange({ ...value, model })}
+            options={models.items.map((model) => ({ value: model }))}
+            text={modelLabel}
             value={value.model ?? ''}
-            variant="inline"
-            // 工作台窄时模型 id 截断，完整 id 靠 title 悬停看。
-            wrapperClassName="storyboard-bar-model"
-          >
-            {value.model === undefined ? <option value="">{modelLabel}</option> : null}
-            {models.items.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </Select>
+          />
           <ChipGroup
             aria-label="分辨率"
+            className="storyboard-bar-segmented"
             disabled={submitting}
             // Radix 再点一次已选项会给空串，不在档位里的值一律忽略，分辨率始终有值。
             onValueChange={(next) => {
@@ -108,7 +100,7 @@ export function VideoGenerationBar({
           >
             {VIDEO_RESOLUTIONS.map((resolution) => (
               <FilterChip
-                className="px-2.5"
+                className="storyboard-bar-segment"
                 key={resolution}
                 value={resolution}
                 variant="segmented"
@@ -117,13 +109,13 @@ export function VideoGenerationBar({
               </FilterChip>
             ))}
           </ChipGroup>
-          <AspectSelect aspect={aspect} model={value.model} />
+          <AspectPicker aspect={aspect} model={value.model} />
           <TooltipRoot>
             <TooltipTrigger asChild>
               <button
                 aria-label="生成音频"
                 aria-pressed={value.generateAudio}
-                className={workbenchControl({ shape: 'icon' })}
+                className="storyboard-bar-control storyboard-bar-audio ui-state ui-focus"
                 disabled={submitting}
                 onClick={() => onChange({ ...value, generateAudio: !value.generateAudio })}
                 type="button"
@@ -147,34 +139,46 @@ export function VideoGenerationBar({
   )
 }
 
-/** 画幅下拉；选中模型做不了的档位置灰并标「（不支持）」。 */
-function AspectSelect({ aspect, model }: { aspect: AspectControl; model: string | undefined }) {
+/** 画幅选择器；选中模型做不了的档位置灰并标「不支持」，不替用户改。 */
+function AspectPicker({ aspect, model }: { aspect: AspectControl; model: string | undefined }) {
+  const options: GenerationPickerOption[] = ASPECT_RATIOS.map((ratio) => {
+    const usable = supportsAspectRatio(model, ratio)
+    return {
+      disabled: !usable,
+      hint: usable ? undefined : '不支持',
+      leading: <AspectGlyph longSide={14} ratio={ratio} />,
+      value: ratio,
+    }
+  })
+  // agent 可以写任何 宽:高，不在档位里的也要照原样显示得出来，并在菜单里勾着它。
+  if (!ASPECT_RATIOS.some((ratio) => ratio === aspect.value))
+    options.unshift({
+      leading: <AspectGlyph longSide={14} ratio={aspect.value} />,
+      value: aspect.value,
+    })
   return (
-    <Select
-      aria-label="画幅"
-      className={workbenchControl({ shape: 'field' })}
+    <GenerationPicker
       disabled={aspect.disabled}
-      onChange={(event) => aspect.onChange(event.target.value)}
+      label="画幅"
+      leading={<AspectGlyph longSide={13} ratio={aspect.value} />}
+      onChange={aspect.onChange}
+      options={options}
+      text={aspect.value}
       value={aspect.value}
-      variant="inline"
-      wrapperClassName="shrink-0"
-    >
-      {/* agent 可以写任何 宽:高，不在档位里的也要照原样显示得出来。 */}
-      {ASPECT_RATIOS.some((ratio) => ratio === aspect.value) ? null : (
-        <option value={aspect.value}>{aspect.value}</option>
-      )}
-      {ASPECT_RATIOS.map((ratio) => {
-        const usable = supportsAspectRatio(model, ratio)
-        // 选中的那个不加后缀：收起来的下拉只显示它，长文案会把一排控件挤开；
-        // 它正好不被支持时，栏里那句常显的提示已经在说了。
-        const label = usable || ratio === aspect.value ? ratio : `${ratio}（不支持）`
-        return (
-          <option disabled={!usable} key={ratio} value={ratio}>
-            {label}
-          </option>
-        )
-      })}
-    </Select>
+    />
+  )
+}
+
+/** 按画幅描的小方框，长边 `longSide` 像素；认不出的画幅按 9:16 描（见 `aspectOf`）。 */
+function AspectGlyph({ longSide, ratio }: { longSide: number; ratio: string }) {
+  const { h, w } = aspectOf(ratio)
+  const scale = longSide / Math.max(w, h)
+  return (
+    <span
+      aria-hidden
+      className="storyboard-bar-glyph"
+      style={{ height: Math.round(h * scale), width: Math.round(w * scale) }}
+    />
   )
 }
 
