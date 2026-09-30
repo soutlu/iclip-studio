@@ -129,19 +129,25 @@ test('首页 composer 附件视觉验收：内联 pill 与悬停卡', async ({ p
   await page.screenshot({ path: `${SHOT_DIR}/home-composer-attachment-tip.png`, fullPage: true })
 })
 
-test('首页 composer 附件悬停卡：卡宽只由媒体决定', async ({ page }) => {
+test('首页 composer 附件悬停卡：卡宽由媒体决定，只有竖屏放宽封顶高度', async ({ page }) => {
   await page.goto('/')
   await login(page)
   await expect(page.getByRole('heading', { name: 'Cue' })).toBeAttached()
 
   // 文件名的自然宽度大于竖屏图，用来确认文字不撑宽卡片；不超过 32 字，pill 上不截断。
   const imageName = '夜景参考图-外滩灯光延时摄影第三版终稿定稿.png'
+  const squareName = '方形参考图.png'
   const videoName = '竖屏样片.mp4'
   const fileInput = page.locator('input[type="file"]')
   await fileInput.setInputFiles({
     buffer: await canvasPng(page),
     mimeType: 'image/png',
     name: imageName,
+  })
+  await fileInput.setInputFiles({
+    buffer: await canvasPng(page, { height: 600, width: 600 }),
+    mimeType: 'image/png',
+    name: squareName,
   })
   await fileInput.setInputFiles({
     buffer: await readFile(SAMPLE_VIDEO),
@@ -166,9 +172,20 @@ test('首页 composer 附件悬停卡：卡宽只由媒体决定', async ({ page
   await page.mouse.move(0, 0)
   await expect(tip).toBeHidden()
 
+  // 方形与横屏保持 220 高、300 宽的封顶。
+  await page.getByText(squareName).hover()
+  await expect(tip.getByText(/600 × 600 · \d+ KB/)).toBeVisible()
+  const squareBox = await tip.getByRole('img', { name: squareName }).boundingBox()
+  expect(squareBox?.height).toBeCloseTo(220, 0)
+  expect(squareBox?.width).toBeCloseTo(220, 0)
+
+  await page.mouse.move(0, 0)
+  await expect(tip).toBeHidden()
+
   // 180 宽的竖屏视频窄于卡片最小宽度：卡宽落到 200，预览区铺满卡宽，两侧由棋盘格填充。
   await page.getByText(videoName).hover()
-  await expect(tip.getByText(/180 × 320/)).toBeVisible()
+  // 视频第二行只有尺寸与时长，不报文件大小。
+  await expect(tip.getByText(/^180 × 320 · 0:06$/)).toBeVisible()
   const video = tip.getByLabel(videoName)
   const videoBox = await video.boundingBox()
   const previewBox = await video.locator('xpath=..').boundingBox()

@@ -39,18 +39,23 @@ export const screenshotBothThemes = async (page: Page, pathPrefix: string) => {
 }
 
 /**
- * 在页面里用 Canvas 画一张 600×800 的 PNG 当本地上传文件（上传前会校验短边至少 300）。
+ * 在页面里用 Canvas 画一张 PNG 当本地上传文件，默认 600×800（上传前会校验短边至少 300）。
  * fill 是底色；给 label 时在中间画一块深色标签，截图里认得出这是测试图。
  */
 export const canvasPng = async (
   page: Page,
-  { fill = '#000000', label }: { fill?: string; label?: string } = {},
+  {
+    fill = '#000000',
+    height = 800,
+    label,
+    width = 600,
+  }: { fill?: string; height?: number; label?: string; width?: number } = {},
 ) => {
   const base64 = await page.evaluate(
-    ({ fill, label }) => {
+    ({ fill, height, label, width }) => {
       const canvas = document.createElement('canvas')
-      canvas.width = 600
-      canvas.height = 800
+      canvas.width = width
+      canvas.height = height
       const context = canvas.getContext('2d')
       if (context === null) throw new Error('测试图片需要 Canvas 2D')
       context.fillStyle = fill
@@ -64,7 +69,7 @@ export const canvasPng = async (
       }
       return canvas.toDataURL('image/png').split(',')[1] ?? ''
     },
-    { fill, label },
+    { fill, height, label, width },
   )
   return Buffer.from(base64, 'base64')
 }
