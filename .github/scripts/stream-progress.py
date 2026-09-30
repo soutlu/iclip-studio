@@ -16,6 +16,7 @@ ANSI = re.compile(rb"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 PROGRESS = re.compile(r"\bCopying (blob|config) (?:sha256:)?([0-9a-f]{10,64})\b")
 FINISHED = re.compile(r"\b(done|skipped)\b", re.IGNORECASE)
 ERROR = re.compile(r"\b(?:error|fatal|failed)\b", re.IGNORECASE)
+SPEED = re.compile(r"\s*\|\s*[0-9.]+\s*[KMGTPE]?i?B/s$", re.IGNORECASE)
 URL_QUERY = re.compile(r"(https?://[^\s?\"'<>]+)\?[^\s\"'<>]*")
 
 
@@ -25,6 +26,8 @@ def emit(raw, logged, force=False):
         return
     match = PROGRESS.search(line)
     if match and not ERROR.search(line):
+        # Skopeo 此速率来自输入流读取，不代表远端上传吞吐。
+        line = SPEED.sub("", line)
         key, terminal = match.groups(), FINISHED.search(line)
         state = terminal[1].lower() if terminal else "progress"
         previous, last, finished = logged.get(key, (None, float("-inf"), set()))
@@ -43,6 +46,7 @@ def main(argv):
     if not argv:
         print("Usage: stream-progress.py COMMAND [ARG ...]", file=sys.stderr)
         return 2
+    started = time.monotonic()
     master, slave = pty.openpty()
     try:
         # 新 PTY 默认大小为 0×0，skopeo 用的进度条库 mpb 会因此丢弃所有进度行。
@@ -82,13 +86,16 @@ def main(argv):
             for line in lines:
                 emit(line, logged)
         emit(pending, logged, force=True)
-        code = child.wait()
-        return 128 + stopped if stopped else code if code >= 0 else 128 - code
+        child.wait()
     finally:
         kill_group(signal.SIGKILL)
-        child.wait()
+        code = child.wait()
         signal.alarm(0)
         os.close(master)
+        code = 128 + stopped if stopped else code if code >= 0 else 128 - code
+        print(f"Command result: exit_code={code} elapsed_seconds={time.monotonic() - started:.1f}",
+              flush=True)
+    return code
 
 
 if __name__ == "__main__":
