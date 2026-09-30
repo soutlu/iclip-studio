@@ -155,9 +155,14 @@ test('首页 composer 附件悬停卡：卡宽由媒体决定，只有竖屏放�
     name: videoName,
   })
   const tip = page.getByRole('tooltip')
+  // 悬停目标限定在输入框所在的对话栏：悬停卡挂在 body 上，文件名也会出现在卡里。
+  const chip = (name: string) => page.getByTestId('pane-chat').getByText(name, { exact: true })
+  // 上传后附件标签可能正好落在指针下自己弹出悬停卡，先移开指针，从无卡状态开始。
+  await page.mouse.move(0, 0)
+  await expect(tip).toBeHidden()
 
   // 600×800 竖屏图按 320 高封顶，卡宽等于媒体宽加预览边框与卡内边距。
-  await page.getByText(imageName).hover()
+  await chip(imageName).hover()
   await expect(tip.getByText(/600 × 800 · \d+ KB/)).toBeVisible()
   const image = tip.getByRole('img', { name: imageName })
   const imageBox = await image.boundingBox()
@@ -173,7 +178,7 @@ test('首页 composer 附件悬停卡：卡宽由媒体决定，只有竖屏放�
   await expect(tip).toBeHidden()
 
   // 方形与横屏保持 220 高、300 宽的封顶。
-  await page.getByText(squareName).hover()
+  await chip(squareName).hover()
   await expect(tip.getByText(/600 × 600 · \d+ KB/)).toBeVisible()
   const squareBox = await tip.getByRole('img', { name: squareName }).boundingBox()
   expect(squareBox?.height).toBeCloseTo(220, 0)
@@ -183,7 +188,7 @@ test('首页 composer 附件悬停卡：卡宽由媒体决定，只有竖屏放�
   await expect(tip).toBeHidden()
 
   // 180 宽的竖屏视频窄于卡片最小宽度：卡宽落到 200，预览区铺满卡宽，两侧由棋盘格填充。
-  await page.getByText(videoName).hover()
+  await chip(videoName).hover()
   // 视频第二行只有尺寸与时长，不报文件大小。
   await expect(tip.getByText(/^180 × 320 · 0:06$/)).toBeVisible()
   const video = tip.getByLabel(videoName)
