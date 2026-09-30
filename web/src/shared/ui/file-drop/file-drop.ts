@@ -43,17 +43,10 @@ type FileDropTargetOptions = {
   onFiles: (files: File[]) => void
   /** 落下的内容含文件夹：整批不收，提示由调用方给。 */
   onDirectory: () => void
-  /** 锁定时仍有文件落下；要说明为什么不收时由调用方给提示。 */
-  onBlocked?: (() => void) | undefined
 }
 
 /** 局部拖放区：把 `dragHandlers` 展开到容器上；`dragOver` 表示可落下的文件正悬在区域上方。 */
-export const useFileDropTarget = ({
-  blocked,
-  onBlocked,
-  onFiles,
-  onDirectory,
-}: FileDropTargetOptions) => {
+export const useFileDropTarget = ({ blocked, onFiles, onDirectory }: FileDropTargetOptions) => {
   // 计数吸收子元素之间的 enter / leave，避免落点提示闪烁。
   const depthRef = useRef(0)
   const [over, setOver] = useState(false)
@@ -82,10 +75,7 @@ export const useFileDropTarget = ({
       event.preventDefault()
       depthRef.current = 0
       setOver(false)
-      if (blocked) {
-        onBlocked?.()
-        return
-      }
+      if (blocked) return
       if ([...event.dataTransfer.items].some((item) => isDirectory(item))) {
         onDirectory()
         return

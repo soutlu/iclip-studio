@@ -1,11 +1,11 @@
-/** 舞台右下的帧计数「1 / 2」：数的是当前段引用的帧；点开列出本组全部图片（含未被引用的），可切画面、开大图、添加图片。 */
+/** 舞台右下的帧计数「1 / 2」：数的是当前段引用的帧；点开列出本组全部图片（含未被引用的），只用来切画面、开大图。 */
 
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { IconButton } from '@/shared/ui/button'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
-import { FrameAddTile, FrameTile, type FrameAdd } from './frame-tile'
+import { FrameTile } from './frame-tile'
 import { workbenchControl } from './workbench-control'
 
 export type FrameGallery = {
@@ -26,11 +26,9 @@ export type FrameGallery = {
 type FrameCounterProps = {
   aspectRatio: string
   gallery: FrameGallery
-  /** 弹层末尾的「+」，与舞台工具组里那个同一入口。 */
-  add: FrameAdd
 }
 
-export function FrameCounter({ add, aspectRatio, gallery }: FrameCounterProps) {
+export function FrameCounter({ aspectRatio, gallery }: FrameCounterProps) {
   const [open, setOpen] = useState(false)
   const { current, fresh, position, urls } = gallery
   // 舞台上这张自己挂着角标；点只替看不到的那些亮。
@@ -97,15 +95,6 @@ export function FrameCounter({ add, aspectRatio, gallery }: FrameCounterProps) {
               </li>
             )
           })}
-          <li className="p-1 pb-6">
-            <FrameAddTile
-              blocker={add.blocker}
-              onAdd={() => {
-                setOpen(false)
-                add.onAdd()
-              }}
-            />
-          </li>
         </ul>
       </PopupSurface>
     </PopupRoot>

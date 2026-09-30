@@ -1,4 +1,4 @@
-/** 本组图片的格子与末尾的「+」：缩略图按画幅占位、不裁，下面标 @N；帧计数弹层与正文 `@` 选图共用。 */
+/** 本组图片的格子：缩略图按画幅占位、不裁，下面标 @N，帧计数弹层与正文 `@` 选图共用；末尾的「+」只在 `@` 选图里。 */
 
 import type { ButtonHTMLAttributes } from 'react'
 import { Icon } from '@/shared/icons'

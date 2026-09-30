@@ -1,36 +1,28 @@
 /** 成片区：文案列末尾一行横滑的本组出片卡，新的在前。吸附到卡、两端还能滚时渐隐，工作台够宽时带左右箭头；
- * 位置、出血与显隐见 storyboard.css 的「成片区」一节。数据整形在 `takes.ts`，这里只排版和转交操作。 */
+ * 位置、出血与显隐见 storyboard.css 的「成片区」一节。数据整形在 `takes.ts`，这里只排版和转交选中。 */
 
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@/shared/icons'
-import type { LightboxMedia } from '@/shared/ui/media-lightbox'
-import type { Shot } from '../shot-document'
-import type { GenerationJob } from '../storyboard.api'
-import { takeCardSize, takesOfShot, type Take } from '../takes'
+import { takeCardSize, type Take } from '../takes'
 import { TakeCard } from './take-card'
 import { useScrollFade } from './use-scroll-fade'
 import { workbenchControl } from './workbench-control'
 
-type TakeActions = {
-  onPreview: (media: LightboxMedia) => void
-  /** 只读时不给：卡上没有剪刀。 */
-  onEditVideo?: ((job: GenerationJob) => void) | undefined
-  /** 只读时不给：卡上没有回填。 */
-  onRefill?: ((prompt: Shot['prompt']) => void) | undefined
+type TakeSelection = {
+  /** 舞台正在看的那条成片。 */
+  selectedId: string | undefined
+  onSelect: (jobId: string) => void
 }
 
-type TakesTrayProps = TakeActions & {
-  /** 本对话全部视频记录；还在读是 undefined。 */
-  jobs: readonly GenerationJob[] | undefined
+type TakesTrayProps = TakeSelection & {
+  /** 本组成片，见 `takesOfShot`；还在读是 undefined。 */
+  takes: readonly Take[] | undefined
   /** 读取失败的原因；有它就只说原因。 */
   error: string | undefined
-  shotIndex: number
-  /** 分镜画幅，请求里没记画幅的卡按它画。 */
-  aspectRatio: string
 }
 
 /** 读取中与本组还没出过片时整块不占位；读取失败时说原因。 */
-export function TakesTray({ aspectRatio, error, jobs, shotIndex, ...actions }: TakesTrayProps) {
+export function TakesTray({ error, takes, ...selection }: TakesTrayProps) {
   if (error !== undefined)
     return (
       <section aria-label="本组成片" className="storyboard-takes">
@@ -39,14 +31,12 @@ export function TakesTray({ aspectRatio, error, jobs, shotIndex, ...actions }: T
         </p>
       </section>
     )
-  if (jobs === undefined) return null
-  const takes = takesOfShot(jobs, shotIndex, aspectRatio)
-  if (takes.length === 0) return null
-  return <TakesRail takes={takes} {...actions} />
+  if (takes === undefined || takes.length === 0) return null
+  return <TakesRail takes={takes} {...selection} />
 }
 
 /** 有卡时才挂：滚动行一挂上就开始量宽度与两端。 */
-function TakesRail({ onEditVideo, onPreview, onRefill, takes }: TakeActions & { takes: Take[] }) {
+function TakesRail({ onSelect, selectedId, takes }: TakeSelection & { takes: readonly Take[] }) {
   const railRef = useRef<HTMLDivElement | null>(null)
   const { fade, width } = useScrollFade(railRef)
   // 「今天」「昨天」按挂上那一刻算；换组会重挂，跨过零点不重算。
@@ -101,11 +91,8 @@ function TakesRail({ onEditVideo, onPreview, onRefill, takes }: TakeActions & { 
             <TakeCard
               key={take.job.id}
               now={now}
-              onEditVideo={onEditVideo}
-              onPlay={(url, poster) =>
-                onPreview({ kind: 'video', name: '生成的视频', poster, url })
-              }
-              onRefill={onRefill}
+              onSelect={() => onSelect(take.job.id)}
+              selected={take.job.id === selectedId}
               size={takeCardSize(take.aspect, width)}
               take={take}
             />

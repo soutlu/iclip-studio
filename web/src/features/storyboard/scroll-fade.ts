@@ -2,7 +2,7 @@
 
 export type ScrollFade = 'none' | 'start' | 'end' | 'both'
 
-/** 左边滚过了就还能往回滚；右边留 1px 容差，缩放后的小数宽度不会让它在滚到头时仍亮着。
+/** 两端各留 1px 容差：缩放后的小数宽度不会让它在滚到头时仍亮着，只多出 1px 的行被聚焦挪动 1px 也不算滚过。
  * 内容放得下时两端都滚不动，为 none。 */
 export const scrollFadeOf = ({
   clientWidth,
@@ -13,7 +13,7 @@ export const scrollFadeOf = ({
   scrollLeft: number
   scrollWidth: number
 }): ScrollFade => {
-  const start = scrollLeft > 0
+  const start = scrollLeft > 1
   const end = scrollLeft + clientWidth < scrollWidth - 1
   return start && end ? 'both' : start ? 'start' : end ? 'end' : 'none'
 }

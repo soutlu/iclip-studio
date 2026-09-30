@@ -21,9 +21,10 @@
 }
 /* ===== 分镜工作台布局：断点与列宽只在这一节定义 =====
    结构只有一种：左边舞台、右边文案列，与画幅无关。唯一的断点是工作台窄于 640 时上下排；
-   断点量的是工作台根（容器查询），它能拖宽、聊天栏能收起，视口宽度说明不了什么。 */
+   断点量的是工作台根（容器查询），它能拖宽、聊天栏能收起，视口宽度说明不了什么。
+   工作台根带名字：舞台操作行自己也是容器，里面要查工作台宽度时按名字查。 */
 .storyboard-workbench {
-  container-type: inline-size;
+  container: storyboard-workbench / inline-size;
   display: flex;
   width: 100%;
   min-width: 0;
@@ -51,7 +52,16 @@
   padding: 0 16px;
   overflow: hidden;
 }
-/* 舞台：占满文案列以外的宽度、撑满主体高度；中性底色算播放器的一部分。 */
+/* 舞台列：占满文案列以外的宽度、撑满主体高度；上面是舞台，下面一条固定高的操作行。 */
+.storyboard-stage-column {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 舞台：只放画面或视频与拖放提示；中性底色算播放器的一部分。 */
 .storyboard-stage {
   position: relative;
   display: grid;
@@ -63,6 +73,13 @@
   border-radius: var(--radius-lg);
   background: var(--color-surface-container-low);
   container-type: size;
+}
+/* 舞台内容的一层包装：换了显示的东西就重挂，淡入由元素上的 animate-in 给。 */
+.storyboard-stage-content {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
 }
 /* 画面按画幅 contain：竖屏上下撑满，横屏左右撑满，不裁切。 */
 .storyboard-hero {
@@ -101,13 +118,19 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
     padding-bottom: 4px;
+    /* 聚焦滚动（点成片卡、Tab 进正文）把目标停在吸顶的舞台列下面，不被它盖住：舞台 45vh + 间距 + 操作行 + 余量。 */
+    scroll-padding-top: calc(45vh + 8px + 40px + 12px);
   }
-  /* 舞台吸顶：往下读文案时画面一直在。 */
-  .storyboard-stage {
+  /* 舞台连同操作行吸顶：往下读文案时画面和操作一直在；垫一层页面底色，滚过去的正文不透出来。 */
+  .storyboard-stage-column {
     position: sticky;
     z-index: var(--z-local-1);
     top: 0;
     width: 100%;
+    flex: none;
+    background: var(--color-background);
+  }
+  .storyboard-stage {
     height: 45vh;
     flex: none;
   }
@@ -237,7 +260,8 @@
 /* ===== 成片区 =====
    文案列底部一行横滑的出片卡。左右排时左边贴齐文案列起点、右边出血到工作台右边缘（抵掉主体的 16px 内距），
    卡片在工作台边缘被切开，正文区自己滚、成片区钉在列底常驻可见；上下排时两侧都出血，排在正文之后随主体滚动。
-   行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在工作台 ≥ 776 且放不下时出现。 */
+   行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在工作台 ≥ 776 且放不下时出现。
+   整张卡是按钮，选中那张套一圈中性描边；滚动行四周留 4px 给描边，负边距抵掉，卡的起点仍贴齐文案列。 */
 .storyboard-takes {
   --storyboard-fade: 40px;
   min-width: 0;
@@ -265,9 +289,10 @@
   gap: 4px;
 }
 .storyboard-takes-rail {
+  margin: -4px 0 0 -4px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  scroll-padding-inline: 0 16px;
+  scroll-padding-inline: 4px 16px;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
@@ -276,7 +301,7 @@
   width: max-content;
   align-items: flex-end;
   gap: 12px;
-  padding: 0 16px 4px 0;
+  padding: 4px 16px 4px 4px;
 }
 .storyboard-take-item {
   display: flex;
@@ -294,15 +319,26 @@
 }
 .storyboard-take {
   position: relative;
+  display: block;
+  padding: 0;
   overflow: hidden;
+  border: 0;
   border-radius: var(--radius-md);
   background: var(--color-surface-container);
   box-shadow: var(--shadow-1);
   color: var(--color-on-surface-variant);
+  cursor: pointer;
+  transition: box-shadow var(--dur-s) var(--ease);
 }
 .storyboard-take:is([data-state='running'], [data-state='failed']) {
   background: var(--color-surface-container-high);
   box-shadow: none;
+}
+/* 选中：页面底色隔 2px，再一圈 2px 正文色；中性，不用主色。 */
+.storyboard-take[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 2px var(--color-background),
+    0 0 0 4px var(--color-on-surface);
 }
 .storyboard-take-veil {
   position: absolute;
@@ -324,7 +360,7 @@
     transparent 70%
   );
 }
-/* 在途与失败卡的中间一块铺满整张卡，悬停卡上任意处都能看到提示。 */
+/* 在途与失败卡中间的状态：转圈加走表，或错误图标。 */
 .storyboard-take-center {
   position: absolute;
   inset: 0;
@@ -336,21 +372,6 @@
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
   line-height: var(--text-label--line-height);
-}
-.storyboard-take-play {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: var(--radius-full);
-  background: var(--color-chip-bg-glass);
-  backdrop-filter: blur(12px);
-  color: var(--color-on-scrim);
-  cursor: pointer;
-  transform: translate(-50%, -50%);
 }
 /* 压在画面上的角标用深色玻璃，浅色画面上也读得清；在途与失败卡没有画面，换浅底。 */
 .storyboard-take-pill {
@@ -386,21 +407,6 @@
   right: 8px;
   bottom: 8px;
 }
-/* 悬停操作竖排在右上，不和左上的分辨率抢宽度；悬停或聚焦才露出来，触屏常显。 */
-.storyboard-take-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity var(--dur-s) var(--ease-decel);
-}
-.storyboard-take:hover .storyboard-take-actions,
-.storyboard-take:focus-within .storyboard-take-actions {
-  opacity: 1;
-}
 @container (width < 776px) {
   .storyboard-takes-pager {
     display: none;
@@ -415,83 +421,132 @@
     padding: 0 16px;
   }
   .storyboard-takes-rail {
+    margin-left: 0;
     scroll-padding-inline: 16px;
   }
   .storyboard-takes-list {
-    padding: 0 16px 4px;
+    padding: 4px 16px;
   }
 }
 
-/* ===== 舞台上的件 =====
-   画面四角：左上 @N 角标（旁边挂图片任务状态），右上帧工具，左下上传状态，右下帧计数；左右居中是切帧箭头。
-   帧工具与箭头悬停或聚焦时才露出来，触屏常显；角标、计数与上传状态常显。 */
+/* ===== 舞台上的内容 =====
+   画面与视频上不压按钮：帧的 @N、切帧、计数、任务角标、上传状态和编辑、替换都在下面的操作行。 */
 .storyboard-media {
   display: grid;
   place-items: center;
 }
-/* 任务状态排在 @N 下面一行：窄画面上横着排会和右上的帧工具撞在一起。 */
-.storyboard-frame-marks {
+/* 在途与失败的成片铺满画幅框：骨架或错误图标加完整原因，原因太长就在框里滚。 */
+.storyboard-take-stage {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
+  padding: 16px;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+  overscroll-behavior: contain;
+}
+.storyboard-take-stage-reason {
+  max-width: 32em;
+  color: var(--color-on-surface);
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: pre-wrap;
+}
+
+/* ===== 舞台操作行 =====
+   舞台下方固定一行，高度不随内容变：左边是信息（帧：@N、切帧与计数、任务角标、上传状态；成片：分辨率 · 时长 · 时间），
+   右边是带字按钮。按钮放不下字时退成图标（名字进提示）：上下排时一律退；左右排时按操作行自己的宽度，
+   成片那行三个按钮加信息更宽，阈值也更大。收起与否只在这里定，StageAction 读样式结果决定要不要提示。 */
+.storyboard-actions {
+  display: flex;
+  height: 40px;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  container: storyboard-actions / inline-size;
+}
+/* 帧的信息在手机上可能同时有切帧、任务角标与上传状态：放不下就在左边自己横滑，不挤右边的按钮、不折行；
+   上下各留 4px，横滑裁切时聚焦环不被切掉。 */
+.storyboard-actions-start {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding-block: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.storyboard-actions-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
 }
 .storyboard-tag {
-  display: inline-flex;
-  height: 24px;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-chip-bg-glass);
-  backdrop-filter: blur(12px);
+  flex: none;
   color: var(--color-on-surface);
-  font-size: var(--text-label);
-  font-weight: 500;
+  font-size: var(--text-body-sm);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: var(--text-label--line-height);
+  line-height: var(--text-body-sm--line-height);
 }
-.storyboard-frame-tools {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  gap: 6px;
-}
-.storyboard-hero-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.storyboard-hero-prev {
-  left: 12px;
-}
-.storyboard-hero-next {
-  right: 12px;
-}
-.storyboard-frame-tools,
-.storyboard-hero-nav {
-  opacity: 0;
-  transition: opacity var(--dur-s) var(--ease-decel);
-}
-.storyboard-stage:hover :is(.storyboard-frame-tools, .storyboard-hero-nav),
-.storyboard-stage:focus-within :is(.storyboard-frame-tools, .storyboard-hero-nav) {
-  opacity: 1;
-}
-.storyboard-hero-foot {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
-  display: flex;
+.storyboard-frame-nav {
+  display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 6px;
-  pointer-events: none;
+  gap: 2px;
 }
-.storyboard-hero-foot > * {
-  pointer-events: auto;
+.storyboard-take-info {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-body-sm--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.storyboard-action {
+  justify-content: center;
+}
+@container storyboard-actions (width < 440px) {
+  .storyboard-actions[data-kind='take'] .storyboard-action {
+    width: 32px;
+    padding-inline: 0;
+  }
+  .storyboard-actions[data-kind='take'] .storyboard-action-text {
+    display: none;
+  }
+}
+@container storyboard-actions (width < 300px) {
+  .storyboard-actions[data-kind='frame'] .storyboard-action {
+    width: 32px;
+    padding-inline: 0;
+  }
+  .storyboard-actions[data-kind='frame'] .storyboard-action-text {
+    display: none;
+  }
+}
+@container storyboard-workbench (width < 640px) {
+  .storyboard-action {
+    width: 32px;
+    padding-inline: 0;
+  }
+  .storyboard-action-text {
+    display: none;
+  }
 }
 .storyboard-upload-chip {
   display: inline-flex;
@@ -515,7 +570,7 @@
   border-radius: var(--radius-full);
   background: var(--color-primary);
 }
-/* 放置提示：盖住整个舞台，中性描边；底色是元素上的玻璃压白（bg-glass-surface），不用主色、不压暗。 */
+/* 替换当前帧的放置提示：盖住整个舞台，中性描边；底色是元素上的玻璃压白（bg-glass-surface），不用主色、不压暗。 */
 .storyboard-drop {
   position: absolute;
   z-index: var(--z-local-3);
@@ -549,20 +604,15 @@
   opacity: 1;
 }
 @media (hover: none) {
-  .storyboard-frame-tools,
-  .storyboard-hero-nav,
   .storyboard-gallery-zoom,
-  .storyboard-segment-copy,
-  .storyboard-take-actions {
+  .storyboard-segment-copy {
     opacity: 1;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .storyboard-frame-tools,
-  .storyboard-hero-nav,
   .storyboard-segment,
-  .storyboard-take-veil,
-  .storyboard-take-actions {
+  .storyboard-take,
+  .storyboard-take-veil {
     transition: none;
   }
 }

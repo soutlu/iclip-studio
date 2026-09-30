@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from './storyboard.api'
-import { takeCardSize, takesOfShot } from './takes'
+import { takeActionsOf, takeCardSize, takesOfShot } from './takes'
 
 const job = (spec: Partial<GenerationJob> & { id: string }): GenerationJob =>
   makeGenerationJob({ createdAt: '2026-09-01T10:00:00Z', shotIndex: 2, ...spec })
@@ -146,6 +146,65 @@ describe('takesOfShot', () => {
     expect(textOnly?.history).toBeUndefined()
     expect(failed?.error).toBe('上游返回了空结果。')
     expect(structured?.error).toBeUndefined()
+  })
+})
+
+describe('takeActionsOf', () => {
+  const take = (spec: Partial<GenerationJob>) => {
+    const [only] = takesOfShot([job({ id: 'x', ...spec })], 2, '9:16')
+    if (only === undefined) throw new Error('缺成片')
+    return only
+  }
+  const enabled = { kind: 'enabled' }
+  const hidden = { kind: 'hidden' }
+  const blocked = (reason: string) => ({ kind: 'blocked', reason })
+  const refillBlocked = blocked('这条出片没记分镜结构，回填不了')
+
+  it.each([
+    {
+      expected: { download: enabled, editVideo: enabled, refill: enabled },
+      spec: { outputUrl: 'take.mp4', request: { shot: HISTORY_SHOT } },
+      when: '成功且记了镜头组：三样都能用',
+    },
+    {
+      expected: { download: enabled, editVideo: enabled, refill: refillBlocked },
+      spec: { outputUrl: 'take.mp4', request: { prompt: '只有正文。' } },
+      when: '成功但只有正文：回填置灰，下载与编辑照旧',
+    },
+    {
+      expected: { download: hidden, editVideo: hidden, refill: enabled },
+      spec: { request: { shot: HISTORY_SHOT }, status: 'submitted' as const },
+      when: '在途：只有回填',
+    },
+    {
+      expected: {
+        download: blocked('生成失败，没有视频可下载'),
+        editVideo: blocked('生成失败，没有视频可编辑'),
+        refill: enabled,
+      },
+      spec: { request: { shot: HISTORY_SHOT }, status: 'failed' as const },
+      when: '失败：下载与编辑置灰说原因，回填照旧',
+    },
+    {
+      expected: {
+        download: blocked('没有返回视频地址'),
+        editVideo: blocked('没有返回视频地址'),
+        refill: refillBlocked,
+      },
+      spec: { outputUrl: '  ' },
+      when: '成功却没给地址：下载与编辑置灰',
+    },
+  ])('$when', ({ expected, spec }) => {
+    expect(takeActionsOf(take(spec), { readOnly: false })).toEqual(expected)
+  })
+
+  it('只读时没有编辑视频与回填，下载照旧', () => {
+    const completed = take({ outputUrl: 'take.mp4', request: { shot: HISTORY_SHOT } })
+    expect(takeActionsOf(completed, { readOnly: true })).toEqual({
+      download: enabled,
+      editVideo: hidden,
+      refill: hidden,
+    })
   })
 })
 

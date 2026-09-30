@@ -1,6 +1,6 @@
 /** 文案列：整组连续排版，全局设定是开头一段，之后每个镜头一段；点哪段选中哪段，舞台跟着切到它的首帧。 */
 
-import type { Ref } from 'react'
+import type { ClipboardEvent, Ref } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import {
@@ -17,11 +17,14 @@ import { PromptEditor, type PromptEditorHandle } from './prompt-editor'
 type ShotScriptProps = {
   shot: Shot
   aspectRatio: string
-  /** 正文里 `@` 选图末格的「+」，与舞台上的添加图片同一入口。 */
+  /** 正文里 `@` 选图末格的「+」。 */
   add: FrameAdd
+  /** 挂在文案列的捕获阶段，接管粘贴进来的图片；只在这里粘贴才添加图片。 */
+  onPasteCapture: (event: ClipboardEvent<HTMLElement>) => void
   /** 要排出来的段，见 `scriptSegments`。 */
   segments: readonly ShotContent[]
-  selectedId: string
+  /** 选中的段；舞台在看成片时为 undefined，哪段都不标。 */
+  selectedId: string | undefined
   /** 选中段里正在看的帧，正文里对应的 @N 高亮。 */
   frameNumber: number | undefined
   readOnly: boolean
@@ -35,6 +38,7 @@ export function ShotScript({
   aspectRatio,
   editorRef,
   frameNumber,
+  onPasteCapture,
   onSelect,
   onUpdateShot,
   readOnly,
@@ -43,7 +47,12 @@ export function ShotScript({
   shot,
 }: ShotScriptProps) {
   return (
-    <div aria-label="分镜文案" className="storyboard-prose" role="region">
+    <div
+      aria-label="分镜文案"
+      className="storyboard-prose"
+      onPasteCapture={onPasteCapture}
+      role="region"
+    >
       {segments.map((segment) => {
         const selected = segment.id === selectedId
         const label = contentLabel(segment)

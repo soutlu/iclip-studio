@@ -4,9 +4,10 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
-import { pasteTextIntoComposer } from '@/testing/editor'
+import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { openAddImage } from '@/testing/storyboard'
 import type { ShotsDocument } from '../shot-document'
 import { StoryboardReader } from './storyboard-reader'
 
@@ -234,9 +235,9 @@ describe('StoryboardReader 全局设定与参考图', () => {
     const state = provide()
     await renderReader()
     const global = await screen.findByRole('group', { name: '全局设定' })
-    await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
+    const picker = await openAddImage(screen.getByRole('textbox', { name: '全局设定' }))
     await userEvent.upload(
-      screen.getByLabelText('选择要上传的图片'),
+      within(picker).getByLabelText('选择要上传的图片'),
       new File(['new'], 'new.png', { type: 'image/png' }),
     )
     await waitFor(() => expect(state.stored().shots[0]?.image_urls).toHaveLength(3))
@@ -265,9 +266,9 @@ describe('StoryboardReader 全局设定与参考图', () => {
       '自然光，固定机位。',
     )
     expect(screen.queryByRole('button', { name: '打开原图' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
+    const picker = await openAddImage(screen.getByRole('textbox', { name: '全局设定' }))
     await userEvent.upload(
-      screen.getByLabelText('选择要上传的图片'),
+      within(picker).getByLabelText('选择要上传的图片'),
       new File(['image'], 'first.png', { type: 'image/png' }),
     )
     await waitFor(() => expect(state.stored().shots[0]?.image_urls).toHaveLength(1))
@@ -301,11 +302,12 @@ describe('StoryboardReader 全局设定与参考图', () => {
     await userEvent.click(screen.getByRole('button', { name: '镜头 1' }))
     expect(global).toHaveAttribute('aria-current', 'false')
     expect(screen.getByRole('textbox', { name: '镜头 1 的描述' })).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
-    expect(screen.getByRole('button', { name: '上传图片' })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: '关联第 2 张图片' }))
+    // 段首敲的 @ 换成引用，新引用排在最前。
+    const picker = await openAddImage(screen.getByRole('textbox', { name: '镜头 1 的描述' }))
+    expect(within(picker).getByRole('button', { name: '上传图片' })).toBeDisabled()
+    await userEvent.click(within(picker).getByRole('button', { name: '关联第 2 张图片' }))
     await waitFor(() =>
-      expect(state.stored().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([30, 2]),
+      expect(state.stored().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([2, 30]),
     )
     expect(state.stored().shots[0]?.image_urls).toHaveLength(30)
     expect(state.stored().shots[0]?.prompt.global_settings).toBe(shot.prompt.global_settings)
@@ -324,9 +326,9 @@ describe('StoryboardReader 全局设定与参考图', () => {
     )
     await renderReader()
     const editor = await screen.findByRole('textbox', { name: '全局设定' })
-    await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
+    const picker = await openAddImage(editor)
     await userEvent.upload(
-      screen.getByLabelText('选择要上传的图片'),
+      within(picker).getByLabelText('选择要上传的图片'),
       new File(['image'], 'new.png', { type: 'image/png' }),
     )
     expect(screen.getByRole('button', { name: '生成第 1 组' })).toHaveAttribute(
@@ -360,11 +362,11 @@ describe('StoryboardReader 全局设定与参考图', () => {
       try {
         const { router, queryClient } = await renderReader()
         await userEvent.click(await screen.findByRole('button', { name: '镜头 2' }))
-        await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
-        await userEvent.upload(
-          screen.getByLabelText('选择要上传的图片'),
+        // 粘贴上传：上传完成前不改正文，迟到的结果有没有回填看写入就知道。
+        pasteFilesIntoComposer(screen.getByRole('textbox', { name: '镜头 2 的描述' }), [
           new File(['late'], 'late.png', { type: 'image/png' }),
-        )
+        ])
+        expect(await screen.findByRole('status', { name: /^上传中/ })).toBeVisible()
         expect(screen.getByRole('button', { name: '生成第 1 组' })).toHaveAttribute(
           'aria-disabled',
           'true',
@@ -381,10 +383,9 @@ describe('StoryboardReader 全局设定与参考图', () => {
           }
         })
         expect(await screen.findByRole('textbox', { name: '全局设定' })).toBeVisible()
+        // 新目标立刻可操作：上传状态不跟过来。
         await waitFor(() =>
-          expect(screen.getByRole('button', { name: '添加图片' })).not.toHaveAttribute(
-            'aria-disabled',
-          ),
+          expect(screen.queryByRole('status', { name: /^上传中/ })).not.toBeInTheDocument(),
         )
         expect(screen.getByRole('button', { name: '生成第 1 组' })).not.toHaveAttribute(
           'aria-disabled',
@@ -428,12 +429,15 @@ describe('StoryboardReader 全局设定与参考图', () => {
       await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
       await waitFor(() => expect(state.writes).toHaveLength(1))
       expect(state.submissions).toEqual([])
-      // 「+」用 aria-disabled 置灰，好让悬停、聚焦说出原因。
-      const addImage = screen.getByRole('button', { name: '添加图片' })
-      expect(addImage).toHaveAttribute('aria-disabled', 'true')
+      // 两个添加入口都挡住：正文只读、敲 @ 不弹选图；粘贴图片 toast 原因、不上传。
+      const globalEditor = screen.getByRole('textbox', { name: '全局设定' })
+      expect(globalEditor).toHaveAttribute('contenteditable', 'false')
+      act(() => globalEditor.focus())
+      await userEvent.keyboard('@')
+      expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
+      pasteFilesIntoComposer(globalEditor, [new File(['p'], 'paste.png', { type: 'image/png' })])
+      expect(await screen.findByText('当前不能编辑分镜')).toBeVisible()
       expect(screen.getByRole('button', { name: '替换图片' })).toBeDisabled()
-      await userEvent.click(addImage)
-      expect(screen.queryByRole('dialog', { name: '添加图片' })).not.toBeInTheDocument()
       // 模拟原生文件选择器迟到返回；即使 change 到达已禁用的 input，也不能启动上传。
       fireEvent.change(replacementInput, {
         target: { files: [new File(['late'], 'late.png', { type: 'image/png' })] },
@@ -448,13 +452,10 @@ describe('StoryboardReader 全局设定与参考图', () => {
         reference_image_urls: fixture.shots[0]?.image_urls,
       })
       expect(state.writes).toHaveLength(1)
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: '添加图片' })).not.toHaveAttribute(
-          'aria-disabled',
-        ),
-      )
-      await userEvent.click(screen.getByRole('button', { name: '添加图片' }))
-      expect(await screen.findByRole('dialog', { name: '添加图片' })).toBeVisible()
+      await waitFor(() => expect(globalEditor).toHaveAttribute('contenteditable', 'true'))
+      expect(await openAddImage(globalEditor)).toBeVisible()
+      // 敲下的 @ 会存盘：等它落定，别让这次写入漏到下一个用例。
+      await waitFor(() => expect(state.writes).toHaveLength(2), { timeout: 3000 })
     } finally {
       save.release()
       server.events.removeListener('request:start', onRequest)

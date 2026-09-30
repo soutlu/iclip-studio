@@ -1,9 +1,10 @@
-import { act, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { renderWithProviders } from '@/testing/render'
 import type { GenerationJob } from '../storyboard.api'
+import { takesOfShot } from '../takes'
 import { TakesTray } from './takes-tray'
 
 const HISTORY_SHOT = {
@@ -39,18 +40,17 @@ const renderTray = async (
   jobs: GenerationJob[] | undefined,
   overrides: Partial<Parameters<typeof TakesTray>[0]> = {},
 ) => {
-  const props = {
-    aspectRatio: '9:16',
-    error: undefined,
-    jobs,
-    onEditVideo: vi.fn(),
-    onPreview: vi.fn(),
-    onRefill: vi.fn(),
-    shotIndex: 2,
-    ...overrides,
-  }
-  await renderWithProviders(<TakesTray {...props} />)
-  return props
+  const onSelect = vi.fn<(jobId: string) => void>()
+  await renderWithProviders(
+    <TakesTray
+      error={undefined}
+      onSelect={onSelect}
+      selectedId={undefined}
+      takes={jobs === undefined ? undefined : takesOfShot(jobs, 2, '9:16')}
+      {...overrides}
+    />,
+  )
+  return { onSelect }
 }
 
 /** 成片区里按从新到旧排的卡。 */
@@ -62,80 +62,23 @@ afterEach(() => {
 })
 
 describe('TakesTray', () => {
-  it('成功卡悬停后，剪刀把这条出片交去编辑，回填把它的镜头组交回当前组', async () => {
-    const props = await renderTray([completed, failed, running])
-    const card = cards()[2]
-    if (card === undefined) throw new Error('缺成功卡')
-
-    await userEvent.hover(card)
-    await userEvent.click(within(card).getByRole('button', { name: '编辑视频' }))
-    expect(props.onEditVideo).toHaveBeenCalledWith(expect.objectContaining({ id: 'completed' }))
-    await userEvent.click(within(card).getByRole('button', { name: '回填提示词' }))
-    expect(props.onRefill).toHaveBeenCalledWith(HISTORY_SHOT)
-  })
-
-  it('在途卡与失败卡没有剪刀和回填，也不能播：唯一的按钮是置灰的状态位，点了什么都不做', async () => {
-    const props = await renderTray([completed, failed, running])
-    const [runningCard, failedCard] = cards()
-    for (const [card, name] of [
-      [runningCard, /^生成中，已用 [\d:]+$/],
-      [failedCard, '生成失败'],
-    ] as const) {
-      if (card === undefined) throw new Error('缺卡')
-      await userEvent.hover(card)
+  it('整张卡是唯一的按钮：成功、在途、失败都能点，点了交出这条记录；卡上没有别的操作', async () => {
+    const { onSelect } = await renderTray([completed, failed, running])
+    const names = [/生成中$/, /生成失败$/, /的成片$/]
+    for (const [index, card] of cards().entries()) {
       const buttons = within(card).getAllByRole('button')
       expect(buttons).toHaveLength(1)
-      expect(buttons[0]).toHaveAccessibleName(name)
-      expect(buttons[0]).toHaveAttribute('aria-disabled', 'true')
+      expect(buttons[0]).toHaveAccessibleName(names[index])
       await userEvent.click(buttons[0] as HTMLElement)
     }
-    expect(props.onPreview).not.toHaveBeenCalled()
-    expect(props.onEditVideo).not.toHaveBeenCalled()
-    expect(props.onRefill).not.toHaveBeenCalled()
+    expect(onSelect.mock.calls).toEqual([['running'], ['failed'], ['completed']])
   })
 
-  it.each([
-    { name: '生成失败', reason: '上游返回了空结果。', take: failed },
-    { name: /^生成中/, reason: '还在生成，出片后可编辑', take: running },
-  ])('$reason：聚焦卡上的状态位就说出来', async ({ name, reason, take }) => {
-    await renderTray([take])
-    act(() => screen.getByRole('button', { name }).focus())
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(reason)
-  })
-
-  it('只读时没有剪刀与回填，播放照旧', async () => {
-    await renderTray([completed], { onEditVideo: undefined, onRefill: undefined })
-    const card = cards()[0] as HTMLElement
-    expect(within(card).queryByRole('button', { name: '编辑视频' })).not.toBeInTheDocument()
-    expect(within(card).queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
-    expect(within(card).getByRole('button', { name: '播放视频' })).toBeVisible()
-  })
-
-  it('只有正文、没记分镜结构的出片，回填置灰并说原因，点了不回填', async () => {
-    const props = await renderTray([
-      job({ id: 'text-only', outputUrl: 'take.mp4', request: { prompt: '只有正文。' } }),
-    ])
-    const refill = screen.getByRole('button', { name: '回填提示词' })
-    expect(refill).toHaveAttribute('aria-disabled', 'true')
-    await userEvent.click(refill)
-    expect(props.onRefill).not.toHaveBeenCalled()
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('没记分镜结构')
-    // 剪刀不受影响。
-    expect(screen.getByRole('button', { name: '编辑视频' })).toBeEnabled()
-  })
-
-  it('播放把产物地址与封面交给灯箱；模型 id 在播放钮的提示里', async () => {
-    const props = await renderTray([completed])
-    const play = screen.getByRole('button', { name: '播放视频' })
-    act(() => play.focus())
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('vendor-a-seedance-2-5')
-    await userEvent.click(play)
-    expect(props.onPreview).toHaveBeenCalledWith({
-      kind: 'video',
-      name: '生成的视频',
-      poster: expect.stringContaining(`${completed.outputUrl}?x-oss-process=video/snapshot,`),
-      url: completed.outputUrl,
-    })
+  it('选中的那张标 aria-pressed，其余不标', async () => {
+    await renderTray([completed, failed, running], { selectedId: 'failed' })
+    expect(
+      cards().map((card) => within(card).getByRole('button').getAttribute('aria-pressed')),
+    ).toEqual(['false', 'true', 'false'])
   })
 
   it.each([

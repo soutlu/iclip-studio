@@ -5,7 +5,6 @@ import { useFileDropTarget, useWindowFileDrop } from './file-drop'
 
 type HarnessProps = {
   blocked?: boolean
-  onBlocked?: () => void
   onFiles?: (files: File[]) => void
   onDirectory?: () => void
   onFallbackFiles?: (files: File[]) => void
@@ -14,12 +13,11 @@ type HarnessProps = {
 /** 与真实页面同构：一个局部拖放区，外加聊天框那样挂在 window 上的兜底接收者。 */
 function DropPage({
   blocked = false,
-  onBlocked,
   onFiles = () => {},
   onDirectory = () => {},
   onFallbackFiles = () => {},
 }: HarnessProps) {
-  const zone = useFileDropTarget({ blocked, onBlocked, onDirectory, onFiles })
+  const zone = useFileDropTarget({ blocked, onDirectory, onFiles })
   const composerRef = useRef<HTMLDivElement>(null)
   const fallbackOver = useWindowFileDrop({
     enabled: true,
@@ -94,10 +92,9 @@ describe('useFileDropTarget', () => {
     expect(onFiles).not.toHaveBeenCalled()
   })
 
-  it('锁定时仍接管文件，但标成禁止落点、不亮提示、落下只调 onBlocked', () => {
+  it('锁定时仍接管文件，但标成禁止落点、不亮提示、落下不回调', () => {
     const onFiles = vi.fn()
-    const onBlocked = vi.fn()
-    render(<DropPage blocked onBlocked={onBlocked} onFiles={onFiles} />)
+    render(<DropPage blocked onFiles={onFiles} />)
 
     fireEvent.dragEnter(zone(), { dataTransfer: fileDrag() })
     const dataTransfer = fileDrag()
@@ -109,7 +106,6 @@ describe('useFileDropTarget', () => {
     fireEvent(zone(), drop)
     expect(drop.defaultPrevented).toBe(true)
     expect(onFiles).not.toHaveBeenCalled()
-    expect(onBlocked).toHaveBeenCalledTimes(1)
   })
 
   it('页内元素、文字的拖动不碰：不 preventDefault、不亮提示', () => {

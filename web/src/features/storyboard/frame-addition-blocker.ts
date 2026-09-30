@@ -1,4 +1,4 @@
-/** 往选中段添加图片被挡住的原因：「+」的提示、拖放的锁定与粘贴的 toast 都读这里，文案只此一份。 */
+/** 往选中段添加图片被挡住的原因：「+」的提示、选择器的上传按钮与粘贴的 toast 都读这里，文案只此一份。 */
 
 import { MAX_REFERENCE_IMAGES, REFERENCE_LIMIT_TEXT } from './shots'
 
@@ -25,7 +25,7 @@ export const pickerBlockerOf = ({
   return undefined
 }
 
-/** 拖放、粘贴、重试这类直接上传新图被挡住的原因：在打开选择器的基础上多一条张数上限。 */
+/** 粘贴、选择器上传、重试这类直接上传新图被挡住的原因：在打开选择器的基础上多一条张数上限。 */
 export const uploadBlockerOf = (state: AdditionState): string | undefined =>
   pickerBlockerOf(state) ??
   (state.imageCount >= MAX_REFERENCE_IMAGES ? REFERENCE_LIMIT_TEXT : undefined)

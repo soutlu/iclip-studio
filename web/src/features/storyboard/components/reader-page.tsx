@@ -1,5 +1,7 @@
-/** 一组分镜的页面：解析选中的段与帧，组合舞台、文案列（正文 + 列底的成片区）与添加图片的选择器；添加图片的流程在 `useFrameAdditions`。 */
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
+/** 一组分镜的页面：解析选中的段与帧，组合舞台列、文案列（正文 + 列底的成片区）与添加图片的选择器；
+ * 添加图片的流程在 `useFrameAdditions`，替换当前帧的流程在 `useFrameReplacement`。
+ * 选中成片时舞台改播它，文案列撤掉选中高亮，点任意一段就回到帧。 */
+import { useEffect, useEffectEvent, useRef, type ReactNode } from 'react'
 import type { LightboxMedia } from '@/shared/ui/media-lightbox'
 import type { FrameBadge } from '../frame-status'
 import { type Shot } from '../shot-document'
@@ -13,11 +15,11 @@ import {
   shotContents,
 } from '../shot-content'
 import { useFrameAdditions } from '../use-frame-additions'
+import { useFrameReplacement } from '../use-frame-replacement'
 import { FrameAssignmentPicker } from './frame-assignment-picker'
-import type { FrameAdd } from './frame-tile'
 import type { PromptEditorHandle } from './prompt-editor'
 import { ShotScript } from './shot-script'
-import { ShotStage } from './shot-stage'
+import { ShotStage, type TakeView } from './shot-stage'
 
 type ReaderPageProps = {
   shot: Shot
@@ -37,6 +39,8 @@ type ReaderPageProps = {
   onEditFrame: (frame: number, open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
   /** 文案列底部的成片区，由工作台组好放进来。 */
   takes: ReactNode
+  /** 选中的成片与它的操作；没选时舞台显示帧。 */
+  take: Omit<TakeView, 'kind'> | undefined
 }
 
 export function ReaderPage({
@@ -53,6 +57,7 @@ export function ReaderPage({
   onUploaded,
   onUploadingChange,
   shot,
+  take,
   takes,
 }: ReaderPageProps) {
   const contents = shotContents(shot)
@@ -61,6 +66,11 @@ export function ReaderPage({
     frame,
   })
   const url = frameNumber === undefined ? undefined : shot.image_urls[frameNumber - 1]
+  // 舞台上的帧；选中成片时没有，替换也就锁住。
+  const stageFrame =
+    take !== undefined || url === undefined || frameNumber === undefined
+      ? undefined
+      : { badge: frameBadges.get(frameNumber), number: frameNumber, url }
   // 每段一个编辑器；添加图片插在选中那段的光标处。
   const editorsRef = useRef(new Map<string, PromptEditorHandle>())
   const editorRef = (id: string) => (handle: PromptEditorHandle | null) => {
@@ -75,16 +85,20 @@ export function ReaderPage({
     onUpdateShot,
     onUploaded,
     shot,
+    takeId: take?.take.job.id,
   })
   const select = additions.select
-  // 「+」的唯一入口：舞台工具组、帧计数弹层与正文 `@` 选图的末格都用它。
-  const add: FrameAdd = { blocker: additions.pickerBlocker, onAdd: additions.picker.show }
-  const [replacing, setReplacing] = useState(false)
+  const replacement = useFrameReplacement({
+    contentId: content.id,
+    editingDisabled,
+    frame: stageFrame,
+    onReplace: onReplaceFrame,
+  })
   const reportUploading = useEffectEvent((busy: boolean) => onUploadingChange(shot.index, busy))
   useEffect(() => {
-    reportUploading(additions.uploading || replacing)
+    reportUploading(additions.uploading || replacement.uploading)
     return () => reportUploading(false)
-  }, [additions.uploading, replacing])
+  }, [additions.uploading, replacement.uploading])
 
   const preview = (number: number, frameUrl: string) =>
     onPreview({ kind: 'image', name: `镜头组 ${shot.index} 第 ${number} 帧`, url: frameUrl })
@@ -95,63 +109,58 @@ export function ReaderPage({
   )
 
   return (
-    // 可聚焦，点舞台空白处也算焦点在工作台里，粘贴才落得到这里。
-    <section
-      aria-label={`镜头组 ${shot.index}`}
-      className="storyboard-body"
-      onPasteCapture={additions.onPaste}
-      tabIndex={-1}
-    >
+    // 可聚焦，点舞台空白处也算焦点在工作台里，↑↓ 切组才收得到。
+    <section aria-label={`镜头组 ${shot.index}`} className="storyboard-body" tabIndex={-1}>
       <ShotStage
-        addition={{
-          ...add,
-          drop: additions.drop,
-          onRetry: additions.retry,
-          upload: additions.upload,
-        }}
         aspectRatio={aspect_ratio}
-        disabled={editingDisabled}
-        frame={
-          url === undefined || frameNumber === undefined
-            ? undefined
-            : { badge: frameBadges.get(frameNumber), number: frameNumber, url }
-        }
-        gallery={{
-          current: frameNumber,
-          fresh,
-          onPick: (number) => {
-            const target = contentAfterPickingFrame(contents, content.id, number)
-            if (target !== undefined) select(target, number)
-          },
-          onPreview: (number) => {
-            const frameUrl = shot.image_urls[number - 1]
-            if (frameUrl !== undefined) preview(number, frameUrl)
-          },
-          position: framePosition(content, frameNumber),
-          urls: shot.image_urls,
-          usageOf: (number) => frameUsage(contents, number),
-        }}
-        // 换段就重挂：进行中的替换上传属于原来那段，结果不要了。
-        key={content.id}
-        onEditFrame={onEditFrame}
-        onNext={next === undefined ? undefined : () => select(content.id, next)}
-        onOpenFrame={(item) => preview(item.number, item.url)}
-        onPrevious={previous === undefined ? undefined : () => select(content.id, previous)}
-        onReplaceFrame={onReplaceFrame}
-        onReplacingChange={setReplacing}
+        drop={replacement.drop}
         shotIndex={shot.index}
+        view={
+          take !== undefined
+            ? { kind: 'take', ...take }
+            : {
+                addition: { onRetry: additions.retry, upload: additions.upload },
+                disabled: editingDisabled,
+                frame: stageFrame,
+                gallery: {
+                  current: frameNumber,
+                  fresh,
+                  onPick: (number) => {
+                    const target = contentAfterPickingFrame(contents, content.id, number)
+                    if (target !== undefined) select(target, number)
+                  },
+                  onPreview: (number) => {
+                    const frameUrl = shot.image_urls[number - 1]
+                    if (frameUrl !== undefined) preview(number, frameUrl)
+                  },
+                  position: framePosition(content, frameNumber),
+                  urls: shot.image_urls,
+                  usageOf: (number) => frameUsage(contents, number),
+                },
+                kind: 'frame',
+                onEditFrame,
+                onNext: next === undefined ? undefined : () => select(content.id, next),
+                onOpenFrame: (item) => preview(item.number, item.url),
+                onPrevious: previous === undefined ? undefined : () => select(content.id, previous),
+                onReplaceFile: (file) => void replacement.replace(file),
+                replacing: replacement.uploading,
+              }
+        }
       />
       <div className="storyboard-script">
         <ShotScript
-          add={add}
+          // 添加图片的入口只在正文里：`@` 选图末格的「+」与粘贴图片。
+          add={{ blocker: additions.pickerBlocker, onAdd: additions.picker.show }}
           aspectRatio={aspect_ratio}
           editorRef={editorRef}
-          frameNumber={frameNumber}
+          // 选中成片时文案列不标选中：点哪段（包括原来选中的那段）都回到帧。
+          frameNumber={take === undefined ? frameNumber : undefined}
+          onPasteCapture={additions.onPaste}
           onSelect={select}
           onUpdateShot={onUpdateShot}
           readOnly={editingDisabled}
           segments={scriptSegments(contents)}
-          selectedId={content.id}
+          selectedId={take === undefined ? content.id : undefined}
           shot={shot}
         />
         {takes}

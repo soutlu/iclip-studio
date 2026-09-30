@@ -113,7 +113,7 @@ for (const viewport of [
       await expect(
         panel.getByRole('img', { name: '镜头组 1 第 30 帧', exact: true }),
       ).toHaveAttribute('src', /./)
-      await expect(panel.getByRole('button', { name: '添加图片', exact: true })).toBeVisible()
+      await expect(panel.getByRole('button', { name: '替换图片', exact: true })).toBeVisible()
       await page.mouse.move(0, 0)
       await page.screenshot({
         animations: 'disabled',

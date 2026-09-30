@@ -230,7 +230,19 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
     animations: 'disabled',
     path: '../.artifacts/design-qa/storyboard-reader/no-images-desktop.png',
   })
-  await group.getByRole('button', { name: '添加图片', exact: true }).click()
+  // 添加图片的入口在正文里：敲 @，点选图弹层末格的「+」。
+  const openAddImage = async (scene: string) => {
+    const editor = group.getByRole('textbox', { name: `${scene} 的描述`, exact: true })
+    await editor.click()
+    await page.keyboard.press('End')
+    await page.keyboard.type('@')
+    await page
+      .getByRole('listbox', { name: '插入参考图', exact: true })
+      .getByRole('option', { name: '添加图片', exact: true })
+      .click()
+  }
+  await expect(group.getByRole('button', { name: '添加图片', exact: true })).toHaveCount(0)
+  await openAddImage('镜头 1')
   const picker = page.getByRole('dialog', { name: '添加图片', exact: true })
   await picker.getByLabel('选择要上传的图片', { exact: true }).setInputFiles({
     buffer: await canvasPng(page, { fill: '#23503e' }),
@@ -253,7 +265,7 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
   expect(uploadRequests.filter((path) => path.endsWith('/confirm'))).toHaveLength(1)
 
   await group.getByRole('button', { name: '镜头 2', exact: true }).click()
-  await group.getByRole('button', { name: '添加图片', exact: true }).click()
+  await openAddImage('镜头 2')
   await picker.getByRole('button', { name: '关联第 1 张图片', exact: true }).click()
   await expect(picker).toBeHidden()
   await expect
@@ -326,13 +338,13 @@ test('翻到第 3 组出片：请求取当前组，成片区先出在途卡、�
   const takes = group.getByRole('region', { name: '本组成片', exact: true })
   await expect(takes.getByRole('listitem')).toHaveCount(2)
   const newest = takes.getByRole('listitem').first()
-  await expect(newest.getByRole('button', { name: /^生成中/ })).toBeVisible()
-  await expect(newest.getByRole('button', { name: '播放视频' })).toBeVisible({ timeout: 15_000 })
-  await expect(takes.getByRole('button', { name: /^生成中/ })).toHaveCount(0)
-  await expect(takes.getByRole('button', { name: '播放视频' })).toHaveCount(2)
+  await expect(newest.getByRole('button', { name: /生成中$/ })).toBeVisible()
+  await expect(newest.getByRole('button', { name: /的成片$/ })).toBeVisible({ timeout: 15_000 })
+  await expect(takes.getByRole('button', { name: /生成中$/ })).toHaveCount(0)
+  await expect(takes.getByRole('button', { name: /的成片$/ })).toHaveCount(2)
 })
 
-test('帧工具里的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {
+test('操作行上的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
   const group = panel.getByRole('region', { name: '镜头组 1', exact: true })

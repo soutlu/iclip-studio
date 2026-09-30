@@ -69,9 +69,9 @@ for (const width of [1335, 390]) {
     const cards = takes.getByRole('listitem')
     // 第 2 组的种子：在途（最新）、失败、成功（最早）。
     await expect(cards).toHaveCount(3)
-    await expect(cards.nth(0).getByRole('button', { name: /^生成中/ })).toBeVisible()
-    await expect(cards.nth(1).getByRole('button', { name: '生成失败' })).toBeVisible()
-    await expect(cards.nth(2).getByRole('button', { name: '播放视频' })).toBeVisible()
+    await expect(cards.nth(0).getByRole('button', { name: /生成中$/ })).toBeVisible()
+    await expect(cards.nth(1).getByRole('button', { name: /生成失败$/ })).toBeVisible()
+    await expect(cards.nth(2).getByRole('button', { name: /的成片$/ })).toBeVisible()
 
     const [groupBox, takesBox] = await Promise.all([group.boundingBox(), takes.boundingBox()])
     if (groupBox === null || takesBox === null) throw new Error('成片区必须有可见布局')
@@ -129,7 +129,7 @@ for (const width of [1335, 390]) {
 }
 
 for (const width of [1335, 390]) {
-  test(`成片播放 ${width}px：卡上的播放在共用灯箱里放，关掉回到播放钮，成片区和当前分镜不动`, async ({
+  test(`成片播放 ${width}px：点卡片在舞台上用共享播放器播、不开灯箱，点文案回到帧，成片区和当前分镜不动`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 934 })
@@ -146,34 +146,33 @@ for (const width of [1335, 390]) {
     await expect(takes.getByRole('listitem')).toHaveCount(3)
     // 卡上只挂封面，不挂 <video>。
     await expect(takes.locator('video')).toHaveCount(0)
-    const play = takes.getByRole('button', { name: '播放视频' })
-    await expect(play).toHaveCount(1)
-    await play.click()
-    const preview = page.getByRole('dialog', { name: '生成的视频', exact: true })
-    await expect(preview).toBeVisible()
-    await expect(preview).toBeInViewport({ ratio: 1 })
-    await expect(takes.getByRole('dialog')).toHaveCount(0)
-    const video = preview.locator('video')
-    // mock 的出片是一条 WebM 测试卡（见 testing/mocks/workspace.ts），弹层放的就是记录上那条地址；
+    const card = takes.getByRole('button', { name: /的成片$/ })
+    await expect(card).toHaveCount(1)
+    await card.click()
+    const player = group.getByRole('group', { name: '播放器：生成的视频', exact: true })
+    await expect(player).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(card).toBeFocused()
+    await expect(card).toHaveAttribute('aria-pressed', 'true')
+    const video = player.locator('video')
+    // mock 的出片是一条 WebM 测试卡（见 testing/mocks/workspace.ts），舞台放的就是记录上那条地址；
     // dev 下地址没有 hash、带 ?no-inline 查询串，构建产物里有 hash、没查询串。
     await expect(video).toHaveAttribute('src', /\/sample-video(-[^/?]*)?\.webm(\?.*)?$/)
-    // 共享播放器：没有原生控件（也就没有全屏入口），进度条是自己的
+    // 共享播放器：没有原生控件（也就没有全屏入口），进度条是自己的；点卡片即开始播，不循环。
     expect(await video.evaluate((el: HTMLVideoElement) => el.controls)).toBe(false)
-    await expect(preview.getByRole('slider', { name: '播放进度' })).toBeVisible()
+    await expect(player.getByRole('slider', { name: '播放进度' })).toBeVisible()
     await expect(video).toHaveAttribute('autoplay', '')
-    await page.keyboard.press('Escape')
-    await expect(preview).toHaveCount(0)
-    await expect(video).toHaveCount(0)
+    await expect(video).not.toHaveAttribute('loop')
     await expect(takes.locator('video')).toHaveCount(0)
-    await expect(play).toBeFocused()
-    await expect(takes).toBeVisible()
+    // 操作行跟在舞台后面，键盘 Tab 进得去；操作按钮一个都不在画面上。
+    for (const name of ['下载视频', '编辑视频', '回填提示词'])
+      await expect(group.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(player.getByRole('button', { name: '下载视频' })).toHaveCount(0)
 
-    await play.click()
-    await expect(preview).toBeVisible()
-    await preview.getByRole('button', { name: '关闭', exact: true }).click()
-    await expect(preview).toHaveCount(0)
+    // 点文案回到帧：播放器卸载，舞台回到这一段的帧。
+    await group.getByRole('button', { name: '镜头 2', exact: true }).click()
     await expect(video).toHaveCount(0)
-    await expect(play).toBeFocused()
+    await expect(card).toHaveAttribute('aria-pressed', 'false')
     await expect(takes.getByRole('listitem')).toHaveCount(3)
     await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
       '台词并成一句',
@@ -193,11 +192,11 @@ test.describe('移动触屏分镜', () => {
     await group.getByRole('button', { name: '镜头 2', exact: true }).tap()
     await group.getByRole('button', { name: '下一帧', exact: true }).tap()
 
-    // 上下排：舞台在上，画面整张露出来；触屏没有悬停，帧工具常显。
+    // 上下排：舞台在上，画面整张露出来；帧的操作在舞台下的操作行，不靠悬停。舞台上没有添加入口。
     await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({
       ratio: 1,
     })
-    await expect(group.getByRole('button', { name: '添加图片' })).toBeInViewport({ ratio: 1 })
+    await expect(group.getByRole('button', { name: '添加图片' })).toHaveCount(0)
     await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
       ratio: 1,
     })
@@ -232,12 +231,12 @@ test('从组号浮层跳组：地址落在那一组，顶栏组号跟着变，�
   await expect(shot2.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
 })
 
-test('替换图标换掉当前帧，拖到舞台上的图加成新的一帧，都能继续编辑', async ({ page }) => {
+test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可继续编辑', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
   await openStoryboardShot(panel, 2)
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
 
-  // 点第二镜里的 @2，地址记下第 2 帧，替换要留在这一帧。
+  // 点第二镜里的 @2，地址记下第 2 帧，替换与拖放都要留在这一帧。
   const secondScene = shot2.getByRole('group', { name: '镜头 2', exact: true })
   await secondScene.getByRole('button', { name: '看第 2 帧' }).click()
   await expect(page).toHaveURL(/frame=2/)
@@ -278,27 +277,24 @@ test('替换图标换掉当前帧，拖到舞台上的图加成新的一帧，�
     return transfer
   }, Array.from(png))
   await imageArea.dispatchEvent('dragenter', { dataTransfer })
-  await expect(shot2.getByText('松开添加', { exact: true })).toBeVisible()
+  await expect(shot2.getByText('松开替换当前图片', { exact: true })).toBeVisible()
   await expect(page.getByTestId('composer-drop-overlay')).toBeHidden()
-  await page.screenshot({ path: '../.artifacts/design-qa/storyboard-add-drop.png' })
+  await page.screenshot({ path: '../.artifacts/design-qa/storyboard-replace-drop.png' })
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.screenshot({
     animations: 'disabled',
-    path: '../.artifacts/design-qa/storyboard-add-drop-dark.png',
+    path: '../.artifacts/design-qa/storyboard-replace-drop-dark.png',
   })
   await page.emulateMedia({ colorScheme: 'light' })
   await imageArea.dispatchEvent('drop', { dataTransfer })
-  // 拖入是新增：画面换到新加的那一帧，引用插进第二镜；替换过的第 2 帧原样留着。
-  await expect(page).not.toHaveURL(/frame=2/)
-  const added = shot2.getByRole('img', { name: /^镜头组 2 第 \d+ 帧$/ })
-  await expect(added).toHaveAttribute('src', /\/mock-oss\//)
-  await expect(added).not.toHaveAttribute('src', uploadedUrl ?? '')
-  await expect(added).toHaveJSProperty('naturalWidth', 600)
+  // 拖入是替换：还是第 2 帧，画面换成刚拖进来的图，不新增帧。
+  await expect(preview).not.toHaveAttribute('src', uploadedUrl ?? '')
+  await expect(preview).toHaveAttribute('src', /\/mock-oss\//)
+  await expect(preview).toHaveJSProperty('naturalWidth', 600)
+  await expect(page).toHaveURL(/frame=2/)
   await expect(panel.getByText('已保存')).toBeVisible({ timeout: 5_000 })
   await expect(page.getByText('拖入帧.png', { exact: true })).toBeHidden()
   await dataTransfer.dispose()
-  await secondScene.getByRole('button', { name: '看第 2 帧' }).click()
-  await expect(preview).toHaveAttribute('src', uploadedUrl ?? '')
 
   const editor = shot2.getByRole('textbox', { name: '镜头 2 的描述' })
   await editor.click()

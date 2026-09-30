@@ -17,10 +17,12 @@ import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
 import { useFrameImageJobs } from '../image-edit/image-edit.api'
 import { SHOTS_PATH } from '../shots'
 import { useShotGenerations } from '../storyboard.api'
+import { takeActionsOf, takesOfShot } from '../takes'
 import { useGenerationGate } from '../use-generation-gate'
 import { useShotArrowKeys } from '../use-shot-arrow-keys'
 import { useShotsDraft } from '../use-shots-draft'
 import { useLiveGenerations } from '../use-live-generations'
+import { useStageSelection } from '../use-stage-selection'
 import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
 import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
@@ -73,6 +75,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   const shots = document?.shots ?? []
   const position =
     search.shot !== undefined && search.shot >= 1 && search.shot <= shots.length ? search.shot : 1
+  const stage = useStageSelection(position)
 
   const { clear: clearSelection, set: setSelection } = useWorkbenchSelection()
   const currentShot = shots[position - 1]
@@ -175,7 +178,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       }
       await video.submit(current, saved.aspect_ratio)
     })
-  // 成片卡上的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
+  // 选中成片的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
   const refill = (prompt: Shot['prompt']) => {
     const problem = validateShot({ ...shot, prompt })
     if (problem !== undefined) {
@@ -185,6 +188,12 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     draft.updateShot(shot.index, (current) => ({ ...current, prompt }))
     toast('历史提示词已回填到当前镜头组')
   }
+  const takes =
+    generations.data === undefined
+      ? undefined
+      : takesOfShot(generations.data, shot.index, document.aspect_ratio)
+  // 选中的成片不在本组列表里了（换了组、被删）就回到帧。
+  const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
 
   return (
     <>
@@ -231,22 +240,34 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
               frameBadges={frameBadges(shot, latestFrameJob, seenFrameJobs)}
               // 只挂当前组；换组就卸载重挂，进行中的上传属于原来那组，迟到的结果不要了。
               key={shot.index}
-              onSelect={(content, frame) => go({ content, frame })}
+              onSelect={(content, frame) => {
+                stage.selectContent()
+                go({ content, frame })
+              }}
               onPreview={setMedia}
               shot={shot}
+              take={
+                selectedTake === undefined
+                  ? undefined
+                  : {
+                      actions: takeActionsOf(selectedTake, { readOnly }),
+                      onEditVideo: () => go({ video: selectedTake.job.id }),
+                      onRefill: () => {
+                        if (selectedTake.history !== undefined) refill(selectedTake.history)
+                      },
+                      take: selectedTake,
+                    }
+              }
               takes={
                 <TakesTray
-                  aspectRatio={document.aspect_ratio}
                   error={
                     generations.isError
                       ? errorMessageOf(generations.error, '读取视频记录失败')
                       : undefined
                   }
-                  jobs={generations.data}
-                  onEditVideo={readOnly ? undefined : (job) => go({ video: job.id })}
-                  onPreview={setMedia}
-                  onRefill={readOnly ? undefined : refill}
-                  shotIndex={shot.index}
+                  onSelect={stage.selectTake}
+                  selectedId={selectedTake?.job.id}
+                  takes={takes}
                 />
               }
             />

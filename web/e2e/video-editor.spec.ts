@@ -12,14 +12,13 @@ const openEditor = async (page: Page, mobile = false, group = 2) => {
   // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
   await openStoryboardShot(panel, group)
-  // 成片卡上的剪刀悬停才露出来，触屏常显。
-  const take = panel
+  // 点成片卡选中它，编辑视频在舞台下的操作行里。
+  await panel
     .getByRole('region', { name: '本组成片', exact: true })
-    .getByRole('listitem')
-    .filter({ has: page.getByRole('button', { name: '播放视频', exact: true }) })
+    .getByRole('button', { name: /的成片$/ })
     .first()
-  if (!mobile) await take.hover()
-  await take.getByRole('button', { name: '编辑视频', exact: true }).click()
+    .click()
+  await panel.getByRole('button', { name: '编辑视频', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /^编辑视频/ })
   await expect(dialog).toBeVisible()
   await expect(page).toHaveURL(/[?&]video=/)
@@ -536,7 +535,11 @@ test('只有成功的出片才能进编辑；关掉编辑器回到成片区，�
   await expect(page).not.toHaveURL(/[?&]video=/)
   const takes = page.getByRole('region', { name: '本组成片', exact: true })
   await expect(takes).toBeVisible()
-  // 第 2 组只有一条完成的出片，失败与在途的那两条没有入口。
+  // 第 2 组只有一条完成的出片：选中失败的那条，编辑置灰；选中在途的那条，没有编辑入口。
   await expect(takes.getByRole('listitem')).toHaveCount(3)
-  await expect(takes.getByRole('button', { name: '编辑视频', exact: true })).toHaveCount(1)
+  const edit = page.getByRole('button', { name: '编辑视频', exact: true })
+  await takes.getByRole('button', { name: /生成失败$/ }).click()
+  await expect(edit).toHaveAttribute('aria-disabled', 'true')
+  await takes.getByRole('button', { name: /生成中$/ }).click()
+  await expect(edit).toHaveCount(0)
 })

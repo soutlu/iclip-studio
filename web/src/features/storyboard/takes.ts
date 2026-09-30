@@ -71,6 +71,37 @@ export const takesOfShot = (
     })
 }
 
+/** 选中成片时舞台操作行上的一个动作：不出现、可用，或置灰并说明原因。 */
+export type TakeAction =
+  { kind: 'hidden' } | { kind: 'enabled' } | { kind: 'blocked'; reason: string }
+
+export type TakeActions = { download: TakeAction; editVideo: TakeAction; refill: TakeAction }
+
+const HIDDEN: TakeAction = { kind: 'hidden' }
+const ENABLED: TakeAction = { kind: 'enabled' }
+const blocked = (reason: string): TakeAction => ({ kind: 'blocked', reason })
+
+/** 操作行上各动作的状态，规则沿用原生成记录：
+ * - 回填只看有没有结构化镜头组，在途、失败也能回填；
+ * - 下载、编辑视频只在出了片（成功且有地址）时可用；在途不出现，失败或没给地址置灰；
+ * - 只读时没有编辑视频与回填，下载照旧。 */
+export const takeActionsOf = (take: Take, { readOnly }: { readOnly: boolean }): TakeActions => {
+  const video = (verb: string): TakeAction => {
+    if (take.outputUrl !== undefined) return ENABLED
+    if (take.state === 'running') return HIDDEN
+    return blocked(take.state === 'failed' ? `生成失败，没有视频可${verb}` : '没有返回视频地址')
+  }
+  return {
+    download: video('下载'),
+    editVideo: readOnly ? HIDDEN : video('编辑'),
+    refill: readOnly
+      ? HIDDEN
+      : take.history === undefined
+        ? blocked('这条出片没记分镜结构，回填不了')
+        : ENABLED,
+  }
+}
+
 /** 成片区的行高。 */
 export const TAKE_ROW_HEIGHT = 176
 

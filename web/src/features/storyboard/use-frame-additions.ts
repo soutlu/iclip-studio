@@ -1,12 +1,11 @@
-/** 往选中段添加图片的唯一流程：「+」打开的选择器（关联已有或上传）、舞台拖放、粘贴与失败重试都走这里。
+/** 往选中段添加图片的唯一流程：正文 `@` 选图末格「+」打开的选择器（关联已有或上传）、在正文里粘贴与失败重试都走这里。
  *
- * 一次只传一张。上传与失败都只属于发起它的那段：换段、换帧、换组即作废，迟到的结果不回填；
+ * 一次只传一张。上传与失败都只属于发起它的那段：换段、换帧、换组或选中成片即作废，迟到的结果不回填；
  * 作废后才失败的只 toast，免得失败悄无声息。 */
 
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
-import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { toast } from '@/shared/ui/toast'
 import { pickerBlockerOf, uploadBlockerOf } from './frame-addition-blocker'
 import {
@@ -36,6 +35,8 @@ type Options = {
   onSelect: (content: string, frame?: number) => void
   /** 选中段编辑器里的光标；引用插在这里，编辑器没聚焦过时为 undefined（追加到末尾）。 */
   insertionAtCursor: () => PromptInsertion | undefined
+  /** 舞台正在看的成片；选中成片也算换了目标，进行中的添加作废。 */
+  takeId: string | undefined
 }
 
 export const useFrameAdditions = ({
@@ -46,9 +47,10 @@ export const useFrameAdditions = ({
   onUpdateShot,
   onUploaded,
   shot,
+  takeId,
 }: Options) => {
   const revisionRef = useRef(0)
-  const targetKey = JSON.stringify([shot.index, content.id])
+  const targetKey = JSON.stringify([shot.index, content.id, takeId ?? null])
   const [pickerTarget, setPickerTarget] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   // 状态只认发起它的目标；外部切换目标时立即恢复新目标的可操作状态，不等副作用清理。
@@ -145,32 +147,16 @@ export const useFrameAdditions = ({
     }
   }
 
-  const uploadOne = (files: readonly File[]) => {
-    const [file] = files
-    if (files.length !== 1 || file === undefined) {
-      toast.error('每次只能添加一张图片')
-      return
-    }
-    void upload(file)
-  }
-
-  const drop = useFileDropTarget({
-    blocked: uploadBlocker !== undefined,
-    onBlocked: () => {
-      if (uploadBlocker !== undefined) toast.error(uploadBlocker)
-    },
-    onDirectory: () => toast.error('请拖入一张图片文件，不支持文件夹'),
-    onFiles: uploadOne,
-  })
-
-  /** 挂在工作台主体的捕获阶段：剪贴板里有文件才接管，并拦住编辑器自己的粘贴；纯文字照旧交给编辑器。 */
+  /** 挂在文案列的捕获阶段：剪贴板里有文件才接管，并拦住编辑器自己的粘贴；纯文字照旧交给编辑器。 */
   const onPaste = (event: ClipboardEvent<HTMLElement>) => {
     const files = [...event.clipboardData.files]
     if (files.length === 0) return
     event.preventDefault()
     event.stopPropagation()
+    const [file] = files
     if (uploadBlocker !== undefined) toast.error(uploadBlocker)
-    else uploadOne(files)
+    else if (files.length !== 1 || file === undefined) toast.error('每次只能添加一张图片')
+    else void upload(file)
   }
 
   const state: FrameUpload =
@@ -199,7 +185,6 @@ export const useFrameAdditions = ({
     retry: () => {
       if (active?.kind === 'failed') void upload(active.file)
     },
-    drop,
     onPaste,
     /** 选中别的段或帧：进行中的添加作废。 */
     select,
