@@ -79,6 +79,59 @@ describe('VideoDownload', () => {
     },
   )
 
+  it.each(['http', 'network', 'empty'])(
+    '下载遇到 %s 错误时提示失败并允许重试，等待时阻止重复点击',
+    async (failure) => {
+      let requests = 0
+      let release: () => void = () => undefined
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const url = 'https://downloads.example.test/result.webm'
+      server.use(
+        http.get(url, async () => {
+          requests += 1
+          await gate
+          if (failure === 'network') return HttpResponse.error()
+          if (failure === 'http') return new HttpResponse('下载服务不可用', { status: 503 })
+          return new HttpResponse(null, { status: 200 })
+        }),
+        http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
+      )
+      const createObjectURL = vi.fn(() => 'blob:http://localhost/download')
+      // 补齐下载边界，避免 jsdom 缺少 Blob URL API 掩盖状态码校验失效。
+      vi.stubGlobal(
+        'URL',
+        class extends URL {
+          static override createObjectURL = createObjectURL
+          static override revokeObjectURL() {}
+        },
+      )
+      const anchorClick = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => {})
+      await renderWithProviders(
+        <>
+          <Toaster />
+          <VideoDownload jobId={JOB_ID} url={url} watermarkUrl={null} />
+        </>,
+      )
+      await userEvent.click(screen.getByRole('button', { name: '下载视频' }))
+      const busy = screen.getByRole('button', { name: '正在准备下载…' })
+      expect(busy).toBeDisabled()
+      await userEvent.click(busy)
+      await waitFor(() => expect(requests).toBe(1))
+      release()
+      expect(await screen.findByText('视频下载失败，请重试')).toBeVisible()
+      expect(screen.getByRole('button', { name: '下载视频' })).toBeEnabled()
+      expect(createObjectURL).not.toHaveBeenCalled()
+      expect(anchorClick).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: '下载视频' }))
+      await waitFor(() => expect(requests).toBe(2))
+      await waitFor(() => expect(screen.getByRole('button', { name: '下载视频' })).toBeEnabled())
+    },
+  )
+
   it('事件接口失败时下载照常完成，不弹提示，只在控制台留一条警告', async () => {
     const { fetched, saved } = stubSaving()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
