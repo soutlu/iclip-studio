@@ -3,10 +3,14 @@ import {
   adjacentFrame,
   contentAfterPickingFrame,
   framePosition,
+  formatTimeRange,
+  formatTimecode,
   frameUsage,
+  promptLength,
   scriptSegments,
   segmentTimeRange,
   shotContents,
+  timelineDuration,
 } from './shot-content'
 import type { Shot } from './shot-document'
 
@@ -49,10 +53,61 @@ describe('scriptSegments', () => {
 })
 
 describe('segmentTimeRange', () => {
-  it('镜头写起止秒，去掉浮点尾差；全局设定没有时间', () => {
-    expect(segmentTimeRange(shot, byId('scene:1'))).toBe('0–0.3s')
-    expect(segmentTimeRange(shot, byId('scene:2'))).toBe('0.3–6s')
+  it('镜头照文件取起止秒，时长相减后取到 0.1s；全局设定没有时间', () => {
+    expect(segmentTimeRange(shot, byId('scene:1'))).toEqual({
+      start: 0,
+      end: 0.1 + 0.2,
+      duration: 0.3,
+    })
+    expect(segmentTimeRange(shot, byId('scene:2'))).toEqual({
+      start: 0.1 + 0.2,
+      end: 6,
+      duration: 5.7,
+    })
     expect(segmentTimeRange(shot, byId('global'))).toBeUndefined()
+  })
+
+  it('时长不带浮点尾差：3.4 − 1.6 得 1.8', () => {
+    const fractional: Shot = {
+      ...shot,
+      prompt: {
+        ...shot.prompt,
+        timeline: [
+          { timestamps: [0, 1.6], prompt: '开场。', image_indexes: [] },
+          { timestamps: [1.6, 3.4], prompt: '穿鞋。', image_indexes: [] },
+        ],
+      },
+    }
+    const time = segmentTimeRange(fractional, byId('scene:2'))
+    expect(time?.duration).toBe(1.8)
+    expect(time === undefined ? undefined : formatTimeRange(time)).toBe('1.6s – 3.4s')
+    expect(timelineDuration(fractional)).toBe(3.4)
+  })
+})
+
+describe('formatTimecode', () => {
+  it.each([
+    [0, '0.0s'],
+    [1.6, '1.6s'],
+    [3.4 - 1.6, '1.8s'],
+    [0.1 + 0.2, '0.3s'],
+    [15, '15.0s'],
+    [16 + 5.9, '21.9s'],
+  ])('%s 秒写成 %s', (seconds, text) => {
+    expect(formatTimecode(seconds)).toBe(text)
+  })
+})
+
+describe('timelineDuration', () => {
+  it('总长取最后一镜的止秒，不取出片参数 seconds', () => {
+    expect(timelineDuration({ ...shot, seconds: 8 })).toBe(6)
+  })
+})
+
+describe('promptLength', () => {
+  it('空白不计，@ImageN 按显示的 @N 计', () => {
+    expect(promptLength('人物跟住 @Image1。\n场景：停车场。')).toBe(14)
+    expect(promptLength('  \n ')).toBe(0)
   })
 })
 

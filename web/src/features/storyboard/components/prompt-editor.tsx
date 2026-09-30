@@ -17,17 +17,12 @@ import { useFrameMention, type FrameMentionOptions } from './use-frame-mention'
 /** NodeView 经 ref 读取最新数据，避免重建编辑器。 */
 type ChipContext = {
   frameUrl: (n: number) => string | undefined
-  ratio: () => number
   highlighted: () => number | undefined
   onPick: (n: number) => void
 }
 
-// 高度等于正文行高、贴行顶排，不撑高行距；小图高 16、按原图比例，没加载出来前按画幅占位。
-const CHIP_CLASS =
-  'frame-chip mx-0.5 inline-flex h-(--text-body--line-height) cursor-pointer items-center gap-1 rounded-xs bg-surface-container py-0 pr-1.5 pl-0.5 align-top text-label text-on-surface-variant tabular-nums select-none ui-focus ui-motion-s'
-// 舞台正在看的那一帧：中性选中态，深一档的底加一圈描边，不用主色也不压深底。
-const CHIP_ACTIVE_CLASS =
-  'bg-surface-container-highest text-on-surface outline-1 -outline-offset-1 outline-outline'
+// 帧芯片的外观、舞台高亮与聚焦环都在 storyboard.css 的「帧芯片」一节；这里只给结构与状态。
+const CHIP_CLASS = 'frame-chip cursor-pointer select-none'
 
 const isActivationKey = (key: string) => key === 'Enter' || key === ' '
 
@@ -49,12 +44,16 @@ class FrameChipView implements NodeView {
     this.dom.setAttribute('aria-label', `看第 ${this.n} 帧`)
     this.dom.contentEditable = 'false'
     this.dom.tabIndex = 0
+    this.dom.className = CHIP_CLASS
+    // 外层是普通行内元素，胶囊画在里层：外层尾部的零宽连字符让芯片和紧跟的标点不在中间断行。
+    const pill = document.createElement('span')
+    pill.className = 'frame-chip-pill ui-motion-s'
     this.img = document.createElement('img')
     this.img.alt = ''
-    this.img.className = 'block h-4 w-auto rounded-xs'
     const label = document.createElement('span')
     label.textContent = `@${this.n}`
-    this.dom.append(this.img, label)
+    pill.append(this.img, label)
+    this.dom.append(pill)
     this.dom.addEventListener('click', (event) => {
       event.preventDefault()
       this.ctx.onPick(this.n)
@@ -73,8 +72,8 @@ class FrameChipView implements NodeView {
     if (url === undefined) this.img.removeAttribute('src')
     else if (this.img.getAttribute('src') !== url) this.img.src = url
     this.img.hidden = url === undefined
-    this.img.style.aspectRatio = `auto ${this.ctx.ratio()}`
-    this.dom.className = cn(CHIP_CLASS, this.ctx.highlighted() === this.n && CHIP_ACTIVE_CLASS)
+    // 舞台正在看的那一帧实色高亮。
+    this.dom.toggleAttribute('data-highlighted', this.ctx.highlighted() === this.n)
   }
 
   stopEvent(event: Event) {
@@ -133,9 +132,9 @@ export function PromptEditor({
   const ratio = aspectValueOf(aspectRatio)
   const frameMention = useFrameMention(viewRef, mention, frames.length)
   // 编辑器只建一次；变化中的回调与数据经 ref 读最新值
-  const latestRef = useRef({ frames, highlighted, onChange, onPickFrame, ratio, readOnly })
+  const latestRef = useRef({ frames, highlighted, onChange, onPickFrame, readOnly })
   useEffect(() => {
-    latestRef.current = { frames, highlighted, onChange, onPickFrame, ratio, readOnly }
+    latestRef.current = { frames, highlighted, onChange, onPickFrame, readOnly }
   })
   // 记录最近序列化结果，忽略编辑器自身发出的更新，避免重置光标。
   const serializedRef = useRef(value)
@@ -163,7 +162,6 @@ export function PromptEditor({
     const chips = chipsRef.current
     const ctx: ChipContext = {
       frameUrl: (n) => latestRef.current.frames[n - 1],
-      ratio: () => latestRef.current.ratio,
       highlighted: () => latestRef.current.highlighted,
       onPick: (n) => latestRef.current.onPickFrame?.(n),
     }
@@ -223,7 +221,7 @@ export function PromptEditor({
 
   useEffect(() => {
     for (const chip of chipsRef.current) chip.refresh()
-  }, [frames, highlighted, ratio])
+  }, [frames, highlighted])
 
   const closeMention = frameMention.close
   useEffect(() => {
