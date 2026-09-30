@@ -6,7 +6,9 @@ import { canvasPng, openConversation, openStoryboardShot } from './helpers'
 // 视口需容纳 264px 侧栏、400px 聊天和 560px 面板。
 test.use({ viewport: { height: 900, width: 1600 } })
 
-test('短桌面中舞台在左、文案列在右，画面完整可见且可键盘切帧', async ({ page }) => {
+test('短桌面中舞台贴着画面在左、文案列在右，画面完整可见；箭头叠在画面上切帧，到头隐藏、不开原图', async ({
+  page,
+}) => {
   await page.setViewportSize({ height: 700, width: 1600 })
   const panel = await openConversation(page, '夜景延时素材生成')
   await openStoryboardShot(panel, 2)
@@ -41,16 +43,32 @@ test('短桌面中舞台在左、文案列在右，画面完整可见且可键�
     expect(box.y).toBeGreaterThanOrEqual(groupBox.y)
     expect(box.y + box.height).toBeLessThanOrEqual(barBox.y)
   }
+  // 舞台列宽跟着画面走：画面左贴主体内距、右边到文案列只隔列间距，两侧不留灰边，剩下的宽度都归文案列。
+  expect(previewBox.x - groupBox.x).toBeLessThanOrEqual(16 + 1)
+  expect(scriptBox.x - (previewBox.x + previewBox.width)).toBeLessThanOrEqual(20 + 1)
 
+  // 鼠标：悬停画面露出箭头，点箭头只切帧、不开原图；到头的一侧箭头不出现。
   const next = group.getByRole('button', { name: '下一帧', exact: true })
-  await next.focus()
-  await page.keyboard.press('Enter')
+  const previous = group.getByRole('button', { name: '上一帧', exact: true })
+  await expect(previous).toHaveCount(0)
+  await preview.hover()
+  await next.click()
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
-  await expect(next).toBeDisabled()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(next).toHaveCount(0)
+  await expect(previous).toBeVisible()
 
   await scene.getByRole('button', { name: '看第 2 帧' }).focus()
   await page.keyboard.press('Enter')
   await expect(preview).toBeVisible()
+  await expect(previous).toHaveCount(0)
+
+  // 键盘：Enter 切到末帧，这一侧箭头随即消失，焦点落回画面，不掉回页面开头。
+  await next.focus()
+  await page.keyboard.press('Enter')
+  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
+  await expect(next).toHaveCount(0)
+  await expect(group.getByRole('button', { name: '打开原图', exact: true })).toBeFocused()
 })
 
 for (const width of [1335, 390]) {
