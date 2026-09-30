@@ -1,6 +1,6 @@
 /** 参考 Kimi mention-tip；锚点与卡共用悬停时序，hover 桥覆盖二者间隙。 */
 
-import { type SyntheticEvent, useRef, useState } from 'react'
+import { type SyntheticEvent, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -103,6 +103,9 @@ export function MediaPreviewCard({
     }
     measure(tipElRef.current)
   }
+  // 竖屏判定会改变媒体封顶高度；尺寸类名生效后重新定位，避免沿用旧卡高。
+  const remeasure = useEffectEvent(() => measure(tipElRef.current))
+  useLayoutEffect(() => remeasure(), [intrinsic])
 
   const name = mediaDisplayName(media)
   const isMedia = media.kind !== 'file'
@@ -111,14 +114,20 @@ export function MediaPreviewCard({
   const details = [
     intrinsic === null ? null : formatDimensions(intrinsic.width, intrinsic.height),
     intrinsic?.duration === undefined ? null : formatDuration(intrinsic.duration),
-    media.size === undefined ? null : formatAttachmentSize(media.size),
+    // 视频第二行只报尺寸与时长。
+    media.size === undefined || media.kind === 'video' ? null : formatAttachmentSize(media.size),
   ]
     .filter((part) => part !== null)
     .join(' · ')
+  // 只有竖屏放宽封顶高度；读到像素尺寸前按方形与横屏的 220 渲染。
+  const mediaSizeClass = cn(
+    'block max-w-[300px] rounded-sm object-contain',
+    intrinsic !== null && intrinsic.height > intrinsic.width ? 'max-h-[320px]' : 'max-h-[220px]',
+  )
   const showUploadState = upload !== undefined && upload.status !== 'ready'
   const hasSecondRow = showUploadState || details !== '' || canEnlarge
   const meta = (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="media-tip-meta flex min-w-0 flex-col gap-0.5">
       <div className="flex min-w-0 items-center gap-1">
         <Icon
           className="media-tip-ink shrink-0"
@@ -126,7 +135,9 @@ export function MediaPreviewCard({
           name={MEDIA_KIND_ICON[media.kind]}
           size="sm"
         />
-        <span className="min-w-0 truncate font-semibold">{ellipsizeAttachmentName(name)}</span>
+        <span className="min-w-0 truncate font-semibold" title={name}>
+          {ellipsizeAttachmentName(name)}
+        </span>
       </div>
       {hasSecondRow ? (
         <div className="flex min-w-0 items-center gap-2 pl-0.5">
@@ -210,17 +221,12 @@ export function MediaPreviewCard({
                 <span>预览不可用</span>
               </div>
             ) : media.kind === 'image' ? (
-              <img
-                alt={name}
-                className="block max-h-[220px] max-w-[300px] rounded-sm object-contain"
-                onLoad={onImageLoad}
-                src={previewUrl}
-              />
+              <img alt={name} className={mediaSizeClass} onLoad={onImageLoad} src={previewUrl} />
             ) : (
               // 仅展示静音首帧，不提供播放控件。
               <video
                 aria-label={name}
-                className="block max-h-[220px] max-w-[300px] rounded-sm object-contain"
+                className={mediaSizeClass}
                 muted
                 onLoadedMetadata={onVideoMetadata}
                 playsInline

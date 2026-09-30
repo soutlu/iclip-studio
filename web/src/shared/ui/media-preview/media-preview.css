@@ -23,16 +23,22 @@
   overflow-wrap: anywhere;
   transition: opacity var(--dur-s) var(--ease);
 }
+/* 媒体卡宽度只由媒体决定；最小宽度保证「尺寸 · 时长 · 放大」一行放得下。 */
 .media-tip-media-card {
+  min-width: 200px;
   padding: 6px;
 }
-/* 棋盘格显示透明媒体区域，参考 Kimi --p-mention-tip-media-check-bg。 */
+/* 文字区不参与卡宽计算，文件名与错误文案在媒体宽度内截断或换行；纯文件卡没有媒体，仍由文字撑宽。 */
+.media-tip-media-card .media-tip-meta,
+.media-tip-media-card .media-tip-error {
+  contain: inline-size;
+}
+/* 棋盘格显示透明媒体区域，参考 Kimi --p-mention-tip-media-check-bg；预览区铺满卡宽，媒体窄于最小卡宽时由棋盘格填满两侧。 */
 .media-tip-preview {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  align-self: center;
   min-height: 64px;
   border: 1px solid color-mix(in srgb, var(--color-inverse-on-surface) 14%, transparent);
   border-radius: var(--radius-sm);
