@@ -118,7 +118,7 @@ export function MediaPreviewCard({
   const showUploadState = upload !== undefined && upload.status !== 'ready'
   const hasSecondRow = showUploadState || details !== '' || canEnlarge
   const meta = (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="media-tip-meta flex min-w-0 flex-col gap-0.5">
       <div className="flex min-w-0 items-center gap-1">
         <Icon
           className="media-tip-ink shrink-0"
@@ -126,7 +126,9 @@ export function MediaPreviewCard({
           name={MEDIA_KIND_ICON[media.kind]}
           size="sm"
         />
-        <span className="min-w-0 truncate font-semibold">{ellipsizeAttachmentName(name)}</span>
+        <span className="min-w-0 truncate font-semibold" title={name}>
+          {ellipsizeAttachmentName(name)}
+        </span>
       </div>
       {hasSecondRow ? (
         <div className="flex min-w-0 items-center gap-2 pl-0.5">
@@ -212,7 +214,7 @@ export function MediaPreviewCard({
             ) : media.kind === 'image' ? (
               <img
                 alt={name}
-                className="block max-h-[220px] max-w-[300px] rounded-sm object-contain"
+                className="block max-h-[320px] max-w-[300px] rounded-sm object-contain"
                 onLoad={onImageLoad}
                 src={previewUrl}
               />
@@ -220,7 +222,7 @@ export function MediaPreviewCard({
               // 仅展示静音首帧，不提供播放控件。
               <video
                 aria-label={name}
-                className="block max-h-[220px] max-w-[300px] rounded-sm object-contain"
+                className="block max-h-[320px] max-w-[300px] rounded-sm object-contain"
                 muted
                 onLoadedMetadata={onVideoMetadata}
                 playsInline
