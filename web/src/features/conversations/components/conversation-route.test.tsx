@@ -180,10 +180,12 @@ describe('ConversationRoute', () => {
     await screen.findByText(TAIL_TEXT)
 
     let submitted = ''
+    let submittedContent: unknown
     server.use(
       http.post('*/api/conversations/c1/prompts', async ({ request }) => {
         const body = (await request.json()) as { content: { text: string }[]; prompt_id: string }
         submitted = body.prompt_id
+        submittedContent = body.content
         return HttpResponse.json({
           createdAt: '2026-08-31T03:00:00Z',
           promptId: body.prompt_id,
@@ -201,6 +203,7 @@ describe('ConversationRoute', () => {
     expect(screen.getByRole('status')).toHaveTextContent('请求中…')
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
     expect(submitted).not.toBe('')
+    expect(submittedContent).toEqual([{ text: '再拆一段', type: 'text' }])
 
     // running prompt 不撤销乐观气泡，须由匹配的 turn.prompt 接替。
     socket.deliver(opsFrame([runningPrompt(submitted)], 11))

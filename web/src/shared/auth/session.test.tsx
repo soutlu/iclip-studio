@@ -8,7 +8,7 @@ import { workbenchRegistry } from '@/app/workbench-registry'
 import { routeTree } from '@/routeTree.gen'
 import { queryClient } from '@/shared/api/query-client'
 import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
-import { WorkbenchRegistryProvider, WorkbenchSelectionProvider } from '@/shared/workbench'
+import { WorkbenchOpenRequestProvider, WorkbenchRegistryProvider } from '@/shared/workbench'
 import { addMockCollection, addMockConversation, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { FakeSocket, SERVER_HELLO } from '@/testing/ws'
@@ -111,9 +111,9 @@ const renderWorkspace = async () => {
     <QueryClientProvider client={queryClient}>
       <TranscriptProvider createSocket={() => socket as unknown as WebSocket}>
         <WorkbenchRegistryProvider registry={workbenchRegistry}>
-          <WorkbenchSelectionProvider>
+          <WorkbenchOpenRequestProvider>
             <RouterProvider router={router} />
-          </WorkbenchSelectionProvider>
+          </WorkbenchOpenRequestProvider>
         </WorkbenchRegistryProvider>
       </TranscriptProvider>
     </QueryClientProvider>,

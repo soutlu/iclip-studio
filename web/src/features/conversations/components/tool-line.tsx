@@ -8,7 +8,7 @@ import type { ToolCallFrame } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { type LightboxMedia, MediaLightbox } from '@/shared/ui/media-lightbox'
-import { frameArtifactId, useOpenArtifact, useWorkbenchSelection } from '@/shared/workbench'
+import { frameArtifactId, useOpenArtifact, useWorkbenchOpenRequest } from '@/shared/workbench'
 import { DisclosureBody, DisclosureChevron } from './disclosure'
 import {
   toolBodyText,
@@ -199,7 +199,7 @@ function SearchResultsBody({
 /** 派出了子代理的卡：点开的是工作台里它那条流。产物参数记在 URL 上，刷新与分享都还在；再点一次也能把折叠的工作台重新展开。 */
 function DelegatedHead({ children, toolCallId }: { children: ReactNode; toolCallId: string }) {
   const openArtifact = useOpenArtifact()
-  const { requestOpen } = useWorkbenchSelection()
+  const { requestOpen } = useWorkbenchOpenRequest()
   return (
     <button
       aria-label="查看子代理过程"

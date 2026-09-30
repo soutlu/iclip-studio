@@ -11,7 +11,7 @@ import { ShellChromeContext } from '@/shared/shell'
 import type { ArtifactEntry, ArtifactRendererProps } from './artifact'
 import { useOpenArtifact } from './artifact-search'
 import { ArtifactRegistry } from './registry'
-import { useWorkbenchSelection } from './use-workbench-selection'
+import { useWorkbenchOpenRequest } from './use-workbench-open-request'
 import { WorkbenchHost } from './workbench-host'
 import type { WorkbenchLayout } from './workbench-layout-context'
 import { WorkbenchLayoutProvider } from './workbench-layout-provider'
@@ -93,7 +93,7 @@ function ControlledHost({
     },
     [onOpenRequest],
   )
-  const { requestOpen } = useWorkbenchSelection()
+  const { requestOpen } = useWorkbenchOpenRequest()
   const openArtifact = useOpenArtifact()
   return (
     <WorkbenchLayoutProvider
