@@ -3,7 +3,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import { Button } from '@/shared/ui/button'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
 import {
@@ -12,27 +11,26 @@ import {
   type ArtifactRendererProps,
   type WorkbenchRef,
 } from '@/shared/workbench'
-import { formatShotPrompt, validateShot } from '../shot-document'
+import { formatShotPrompt, validateShot, type Shot } from '../shot-document'
 import { frameBadges, latestFrameJobs } from '../frame-status'
 import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
 import { useFrameImageJobs } from '../image-edit/image-edit.api'
-import { isRunningStatus, isShotVideo, SHOTS_PATH } from '../shots'
+import { SHOTS_PATH } from '../shots'
 import { useShotGenerations } from '../storyboard.api'
 import { useGenerationGate } from '../use-generation-gate'
 import { useShotArrowKeys } from '../use-shot-arrow-keys'
 import { useShotsDraft } from '../use-shots-draft'
 import { useLiveGenerations } from '../use-live-generations'
 import { useVideoGeneration } from '../use-video-generation'
-import { editCountsByRoot } from '../video-editor/edit-chain'
 import { VideoEditor } from '../video-editor/video-editor'
 import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
-import { GenerationRecords } from './generation-records'
 import { ReaderImageEdit, type FrameEditSession } from './reader-image-edit'
 import { ReaderOverlay } from './reader-overlay'
 import { ReaderPage } from './reader-page'
 import { contentLabel, resolveShotSelection, shotContents, type ReaderSheet } from '../shot-content'
 import { ShotOverview } from './shot-overview'
 import { StoryboardToolbar } from './storyboard-toolbar'
+import { TakesTray } from './takes-tray'
 import { VideoGenerationBar } from './video-generation-bar'
 
 type ReaderSearch = {
@@ -145,15 +143,10 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     return <ReaderNotice text="文件格式不对，读不出镜头组" />
   }
 
-  // 本对话全部视频记录，按镜头组挑出片的事交给各消费方。
-  const jobs = generations.data ?? []
-  // 编辑段不在抽屉里单列；数一下折进原片那张卡。
-  const editCounts = editCountsByRoot(jobs)
   const videoEditRoot =
-    search.video === undefined ? undefined : jobs.find((job) => job.id === search.video)
-  const activeCount = jobs.filter(
-    (job) => isShotVideo(job, shot.index) && isRunningStatus(job.status),
-  ).length
+    search.video === undefined
+      ? undefined
+      : generations.data?.find((job) => job.id === search.video)
   // 只读时整页的编辑与生成入口一起收起。
   const editingDisabled = readOnly || gate.preparing
   // 提交途中按钮自己写着「提交中」，不另说原因。
@@ -182,12 +175,21 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       }
       await video.submit(current, saved.aspect_ratio)
     })
+  // 成片卡上的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
+  const refill = (prompt: Shot['prompt']) => {
+    const problem = validateShot({ ...shot, prompt })
+    if (problem !== undefined) {
+      toast.error(problem)
+      return
+    }
+    draft.updateShot(shot.index, (current) => ({ ...current, prompt }))
+    toast('历史提示词已回填到当前镜头组')
+  }
 
   return (
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          activeCount={activeCount}
           fullPrompt={formatShotPrompt(shot)}
           onOpenSheet={openSheet}
           position={position}
@@ -232,6 +234,21 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
               onSelect={(content, frame) => go({ content, frame })}
               onPreview={setMedia}
               shot={shot}
+              takes={
+                <TakesTray
+                  aspectRatio={document.aspect_ratio}
+                  error={
+                    generations.isError
+                      ? errorMessageOf(generations.error, '读取视频记录失败')
+                      : undefined
+                  }
+                  jobs={generations.data}
+                  onEditVideo={readOnly ? undefined : (job) => go({ video: job.id })}
+                  onPreview={setMedia}
+                  onRefill={readOnly ? undefined : refill}
+                  shotIndex={shot.index}
+                />
+              }
             />
           </div>
           {search.sheet === 'all' ? (
@@ -243,51 +260,6 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
                 onClose={closeSheet}
                 onOpenShot={(index) => go({ sheet: undefined, shot: index })}
               />
-            </ReaderOverlay>
-          ) : null}
-          {search.sheet === 'records' ? (
-            <ReaderOverlay
-              className="left-auto w-full max-w-100"
-              label="生成记录"
-              onClose={closeSheet}
-            >
-              {generations.isError ? (
-                <>
-                  <Button onClick={closeSheet} size="md" variant="ghost">
-                    关闭生成记录
-                  </Button>
-                  <ReaderNotice text={errorMessageOf(generations.error, '读取视频记录失败')} />
-                </>
-              ) : generations.isPending ? (
-                <>
-                  <Button onClick={closeSheet} size="md" variant="ghost">
-                    关闭生成记录
-                  </Button>
-                  <ReaderNotice text="正在读取生成记录…" />
-                </>
-              ) : (
-                <GenerationRecords
-                  editCounts={editCounts}
-                  jobs={jobs}
-                  onClose={closeSheet}
-                  onEditVideo={readOnly ? undefined : (job) => go({ video: job.id })}
-                  onEditPrompt={
-                    readOnly
-                      ? undefined
-                      : (prompt) => {
-                          const problem = validateShot({ ...shot, prompt })
-                          if (problem !== undefined) {
-                            toast.error(problem)
-                            return
-                          }
-                          draft.updateShot(shot.index, (current) => ({ ...current, prompt }))
-                          closeSheet()
-                          toast('历史提示词已回填到当前镜头组')
-                        }
-                  }
-                  shotIndex={shot.index}
-                />
-              )}
             </ReaderOverlay>
           ) : null}
         </div>

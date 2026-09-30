@@ -25,7 +25,9 @@ type ChipContext = {
 // 高度等于正文行高、贴行顶排，不撑高行距；小图高 16、按原图比例，没加载出来前按画幅占位。
 const CHIP_CLASS =
   'frame-chip mx-0.5 inline-flex h-(--text-body--line-height) cursor-pointer items-center gap-1 rounded-xs bg-surface-container py-0 pr-1.5 pl-0.5 align-top text-label text-on-surface-variant tabular-nums select-none ui-focus ui-motion-s'
-const CHIP_ACTIVE_CLASS = 'bg-on-surface text-surface'
+// 舞台正在看的那一帧：中性选中态，深一档的底加一圈描边，不用主色也不压深底。
+const CHIP_ACTIVE_CLASS =
+  'bg-surface-container-highest text-on-surface outline-1 -outline-offset-1 outline-outline'
 
 const isActivationKey = (key: string) => key === 'Enter' || key === ' '
 

@@ -68,7 +68,7 @@ export function VideoEditor({ conversationId, root, loading, shotIndex, onClose 
           <DialogHeader title="编辑视频" closeLabel="关闭视频编辑" />
           <DialogBody>
             <p className="text-body-sm text-on-surface-muted" role="status">
-              {loading ? '正在读取视频记录…' : '找不到这条视频记录，关掉后从生成记录重新打开。'}
+              {loading ? '正在读取视频记录…' : '找不到这条视频记录，关掉后从成片区重新打开。'}
             </p>
           </DialogBody>
         </DialogSurface>

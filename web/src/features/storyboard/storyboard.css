@@ -211,23 +211,214 @@
   .storyboard-bar-model {
     flex: none;
   }
-  .storyboard-bar-params[data-fade='start'] {
-    mask-image: linear-gradient(to right, transparent, black 24px);
-  }
-  .storyboard-bar-params[data-fade='end'] {
-    mask-image: linear-gradient(to left, transparent, black 24px);
-  }
-  .storyboard-bar-params[data-fade='both'] {
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      black 24px,
-      black calc(100% - 24px),
-      transparent
-    );
-  }
   .storyboard-bar-row > .storyboard-bar-generate {
     width: 100%;
+  }
+}
+
+/* 横向滚动行的两端渐隐：出片栏参数行与成片区共用；data-fade 由 useScrollFade 按还能往哪边滚给出，
+   放得下时是 none、不遮。渐隐宽度各自用 --storyboard-fade 定。 */
+.storyboard-scroll-fade[data-fade='start'] {
+  mask-image: linear-gradient(to right, transparent, black var(--storyboard-fade, 24px));
+}
+.storyboard-scroll-fade[data-fade='end'] {
+  mask-image: linear-gradient(to left, transparent, black var(--storyboard-fade, 24px));
+}
+.storyboard-scroll-fade[data-fade='both'] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--storyboard-fade, 24px),
+    black calc(100% - var(--storyboard-fade, 24px)),
+    transparent
+  );
+}
+
+/* ===== 成片区 =====
+   文案列底部一行横滑的出片卡。左右排时左边贴齐文案列起点、右边出血到工作台右边缘（抵掉主体的 16px 内距），
+   卡片在工作台边缘被切开，正文区自己滚、成片区钉在列底常驻可见；上下排时两侧都出血，排在正文之后随主体滚动。
+   行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在工作台 ≥ 776 且放不下时出现。 */
+.storyboard-takes {
+  --storyboard-fade: 40px;
+  min-width: 0;
+  flex: none;
+  margin-right: -16px;
+}
+.storyboard-takes-head {
+  display: flex;
+  height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-right: 16px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+.storyboard-takes-count {
+  margin-left: 4px;
+  color: var(--color-on-surface-faint);
+  font-variant-numeric: tabular-nums;
+}
+.storyboard-takes-pager {
+  display: flex;
+  gap: 4px;
+}
+.storyboard-takes-rail {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 0 16px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.storyboard-takes-list {
+  display: flex;
+  width: max-content;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0 16px 4px 0;
+}
+.storyboard-take-item {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  scroll-snap-align: start;
+}
+.storyboard-take-time {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+.storyboard-take {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container);
+  box-shadow: var(--shadow-1);
+  color: var(--color-on-surface-variant);
+}
+.storyboard-take:is([data-state='running'], [data-state='failed']) {
+  background: var(--color-surface-container-high);
+  box-shadow: none;
+}
+.storyboard-take-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--media-scrim-cover);
+  pointer-events: none;
+  transition: background var(--dur-s) var(--ease);
+}
+.storyboard-take:hover .storyboard-take-veil {
+  background: var(--media-scrim-photo-strong);
+}
+.storyboard-take-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    160deg,
+    transparent 30%,
+    var(--color-chip-bg-glass) 50%,
+    transparent 70%
+  );
+}
+/* 在途与失败卡的中间一块铺满整张卡，悬停卡上任意处都能看到提示。 */
+.storyboard-take-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
+}
+.storyboard-take-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-chip-bg-glass);
+  backdrop-filter: blur(12px);
+  color: var(--color-on-scrim);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+/* 压在画面上的角标用深色玻璃，浅色画面上也读得清；在途与失败卡没有画面，换浅底。 */
+.storyboard-take-pill {
+  position: absolute;
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 48%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.storyboard-take:is([data-state='running'], [data-state='failed']) .storyboard-take-pill {
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface-variant);
+}
+.storyboard-take-resolution {
+  top: 8px;
+  left: 8px;
+}
+.storyboard-take-edits {
+  bottom: 8px;
+  left: 8px;
+}
+.storyboard-take-duration {
+  right: 8px;
+  bottom: 8px;
+}
+/* 悬停操作竖排在右上，不和左上的分辨率抢宽度；悬停或聚焦才露出来，触屏常显。 */
+.storyboard-take-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-s) var(--ease-decel);
+}
+.storyboard-take:hover .storyboard-take-actions,
+.storyboard-take:focus-within .storyboard-take-actions {
+  opacity: 1;
+}
+@container (width < 776px) {
+  .storyboard-takes-pager {
+    display: none;
+  }
+}
+@container (width < 640px) {
+  /* 上下排：两侧出血，排在正文之后跟着主体一起滚；舞台已吸顶，再钉住成片区正文就没地方了。 */
+  .storyboard-takes {
+    margin: 0 -16px;
+  }
+  .storyboard-takes-head {
+    padding: 0 16px;
+  }
+  .storyboard-takes-rail {
+    scroll-padding-inline: 16px;
+  }
+  .storyboard-takes-list {
+    padding: 0 16px 4px;
   }
 }
 
@@ -361,14 +552,17 @@
   .storyboard-frame-tools,
   .storyboard-hero-nav,
   .storyboard-gallery-zoom,
-  .storyboard-segment-copy {
+  .storyboard-segment-copy,
+  .storyboard-take-actions {
     opacity: 1;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .storyboard-frame-tools,
   .storyboard-hero-nav,
-  .storyboard-segment {
+  .storyboard-segment,
+  .storyboard-take-veil,
+  .storyboard-take-actions {
     transition: none;
   }
 }

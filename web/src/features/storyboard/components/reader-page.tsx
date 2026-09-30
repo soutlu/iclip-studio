@@ -1,5 +1,5 @@
-/** 一组分镜的页面：解析选中的段与帧，组合舞台、文案列与添加图片的选择器；添加图片的流程在 `useFrameAdditions`。 */
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+/** 一组分镜的页面：解析选中的段与帧，组合舞台、文案列（正文 + 列底的成片区）与添加图片的选择器；添加图片的流程在 `useFrameAdditions`。 */
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import type { LightboxMedia } from '@/shared/ui/media-lightbox'
 import type { FrameBadge } from '../frame-status'
 import { type Shot } from '../shot-document'
@@ -35,6 +35,8 @@ type ReaderPageProps = {
   onPreview: (media: LightboxMedia) => void
   /** 打开这一帧的编辑器；`open` 决定进去先看哪张：铅笔进底图，角标进那条新结果。 */
   onEditFrame: (frame: number, open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
+  /** 文案列底部的成片区，由工作台组好放进来。 */
+  takes: ReactNode
 }
 
 export function ReaderPage({
@@ -51,6 +53,7 @@ export function ReaderPage({
   onUploaded,
   onUploadingChange,
   shot,
+  takes,
 }: ReaderPageProps) {
   const contents = shotContents(shot)
   const { content, frame: frameNumber } = resolveShotSelection(contents, {
@@ -151,6 +154,7 @@ export function ReaderPage({
           selectedId={content.id}
           shot={shot}
         />
+        {takes}
       </div>
       <FrameAssignmentPicker
         canUpload={additions.uploadBlocker === undefined}

@@ -273,7 +273,7 @@ export const locateClock = (
   return { index: last, offset: segments[last]?.duration ?? 0 }
 }
 
-/** 每条根被成功编辑过几次，给抽屉那张卡显示：数它名下已完成的编辑段。合成是同一次编辑拼出来的，不另算。 */
+/** 每条根被成功编辑过几次，给成片卡显示：数它名下已完成的编辑段。合成是同一次编辑拼出来的，不另算。 */
 export const editCountsByRoot = (jobs: readonly GenerationJob[]): ReadonlyMap<string, number> => {
   const counts = new Map<string, number>()
   for (const job of jobs) {

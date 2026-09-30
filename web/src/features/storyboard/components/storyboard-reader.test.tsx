@@ -196,6 +196,14 @@ const renderReader = (initialPath = '/?shot=1&content=scene:1', readOnly = false
     },
   )
 
+/** 成片区里的卡，新的在前。 */
+const findTakes = async () =>
+  within(await screen.findByRole('region', { name: '本组成片' })).getAllByRole('listitem')
+
+/** 各张卡的提交时刻，认卡用。 */
+const takeTimes = (takes: HTMLElement[]) =>
+  takes.map((take) => take.querySelector('time')?.getAttribute('datetime'))
+
 /** 文案列里的一段：全局设定或「镜头 N」。 */
 const segmentOf = (page: HTMLElement, name: string) => within(page).getByRole('group', { name })
 
@@ -371,10 +379,11 @@ describe('StoryboardReader', () => {
     )
   })
 
-  it('顶栏组号打开全部组概览，标出当前组并可定位镜头组，记录只显示当前组', async () => {
+  it('顶栏组号打开全部组概览，标出当前组并可定位镜头组，成片区只列当前组', async () => {
     provide()
     const { router } = await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
+    expect(takeTimes(await findTakes())).toEqual([jobs[0]?.createdAt])
     await userEvent.click(screen.getByRole('button', { name: /打开全部镜头组/ }))
     const overview = await screen.findByRole('complementary', { name: '全部镜头组' })
     expect(within(overview).getAllByRole('listitem')).toHaveLength(2)
@@ -387,13 +396,11 @@ describe('StoryboardReader', () => {
     )
     await userEvent.click(within(overview).getByRole('button', { name: '查看镜头组 2' }))
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
-    await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    expect(await within(records).findByText('另一组的历史描述。')).toBeVisible()
-    expect(within(records).queryByText('本组生成时使用的历史描述。')).not.toBeInTheDocument()
+    await screen.findByRole('region', { name: '镜头组 2' })
+    expect(takeTimes(await findTakes())).toEqual([jobs[1]?.createdAt])
   })
 
-  it('接口提交的出片（只有镜号、正文不是结构化 shot）照样列在本组抽屉里', async () => {
+  it('接口提交的出片（只有镜号、正文不是结构化 shot）照样列在本组成片区，播放在灯箱里放、关掉焦点回到播放钮', async () => {
     provide()
     // 网关只发 shot_index 与正文，记录上只有镜号。
     server.use(
@@ -413,11 +420,27 @@ describe('StoryboardReader', () => {
     )
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
+    const [take] = await findTakes()
+    if (take === undefined) throw new Error('成片区缺这条出片')
+    // 只有正文回填不了，照样能播、能编辑。
+    expect(within(take).getByRole('button', { name: '回填提示词' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(within(take).getByRole('button', { name: '编辑视频' })).toBeEnabled()
+    const play = within(take).getByRole('button', { name: '播放视频' })
 
-    await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
+    await userEvent.click(play)
 
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    expect(await within(records).findByText('需求单那边出的片。')).toBeVisible()
+    const dialog = await screen.findByRole('dialog', { name: '生成的视频' })
+    expect(within(dialog).getByLabelText('生成的视频')).toHaveAttribute(
+      'src',
+      'https://example.com/task.mp4',
+    )
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '生成的视频' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('生成的视频', { selector: 'video' })).toBeNull()
+    await waitFor(() => expect(play).toHaveFocus())
   })
 
   describe('视频记录超过一页', () => {
@@ -436,16 +459,13 @@ describe('StoryboardReader', () => {
         }),
       )
 
-    it('抽屉列出更早那页的本组记录', async () => {
+    it('成片区列出更早那页的本组出片', async () => {
       provide()
       serveTwoPages()
       await renderReader()
       await screen.findByRole('region', { name: '镜头组 1' })
 
-      await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
-
-      const records = await screen.findByRole('complementary', { name: '生成记录' })
-      expect(await within(records).findByText(/历史版参考锁定/)).toBeVisible()
+      expect(takeTimes(await findTakes())).toEqual([editableJob.createdAt])
     })
 
     it('带着更早那页的 ?video= 进来，编辑器照样打开', async () => {
@@ -487,21 +507,23 @@ describe('StoryboardReader', () => {
     // 只读的段落照样能聚焦、选中切帧。
     act(() => within(page).getByRole('textbox', { name: '镜头 2 的描述' }).focus())
     await waitFor(() => expect(segmentOf(page, '镜头 2')).toHaveAttribute('aria-current', 'true'))
-    await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    expect(await within(records).findByText(/历史版参考锁定/)).toBeVisible()
-    expect(within(records).queryByRole('button', { name: '编辑生成' })).toBeNull()
+    const [take] = await findTakes()
+    if (take === undefined) throw new Error('成片区缺这条出片')
+    expect(within(take).getByRole('button', { name: '播放视频' })).toBeVisible()
+    expect(within(take).queryByRole('button', { name: '回填提示词' })).toBeNull()
+    expect(within(take).queryByRole('button', { name: '编辑视频' })).toBeNull()
     expect(files.writes).toEqual([])
   })
 
-  it('编辑生成把历史记录里的镜头组回填到当前组并保存', async () => {
+  it('成片卡的回填把那次出片的镜头组写回当前组并保存', async () => {
     const files = provide()
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [editableJob] })))
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    await userEvent.click(within(records).getByRole('button', { name: '编辑生成' }))
+    const [take] = await findTakes()
+    if (take === undefined) throw new Error('成片区缺这条出片')
+    await userEvent.hover(take)
+    await userEvent.click(within(take).getByRole('button', { name: '回填提示词' }))
     expect(await screen.findByText('历史提示词已回填到当前镜头组')).toBeVisible()
 
     await waitFor(() => expect(files.writes).toHaveLength(1))
@@ -525,7 +547,7 @@ describe('StoryboardReader', () => {
     expect(saved.shots[0]?.image_urls).toEqual(document.shots[0]?.image_urls)
   })
 
-  it('浏览与记录查看不会触发写入', async () => {
+  it('浏览与播放成片不会触发写入', async () => {
     provide()
     const requests: { method: string; url: string }[] = []
     server.events.on('request:start', ({ request }) => {
@@ -537,12 +559,11 @@ describe('StoryboardReader', () => {
     await userEvent.click(within(page).getByRole('button', { name: '镜头 2' }))
     await userEvent.click(within(page).getByRole('button', { name: '下一帧' }))
     await userEvent.click(screen.getByRole('button', { name: '复制完整提示词' }))
-    await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    await within(records).findByText('本组生成时使用的历史描述。')
-    expect(
-      within(records).queryByRole('button', { name: /^生成第 \d+ 组$|编辑图片/ }),
-    ).not.toBeInTheDocument()
+    const [take] = await findTakes()
+    if (take === undefined) throw new Error('成片区缺这条出片')
+    await userEvent.click(within(take).getByRole('button', { name: '播放视频' }))
+    await screen.findByRole('dialog', { name: '生成的视频' })
+    await userEvent.keyboard('{Escape}')
     expect(requests.filter((request) => request.method !== 'GET')).toEqual([])
   })
 
@@ -565,9 +586,9 @@ describe('StoryboardReader', () => {
     )
     const { socket } = await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    expect(await within(records).findByText('生成中')).toBeVisible()
+    const tray = await screen.findByRole('region', { name: '本组成片' })
+    expect(within(tray).getByRole('button', { name: /^生成中/ })).toBeVisible()
+    expect(within(tray).queryByRole('button', { name: '播放视频' })).not.toBeInTheDocument()
 
     act(() => {
       socket.deliver({
@@ -583,7 +604,8 @@ describe('StoryboardReader', () => {
       })
     })
 
-    expect(await within(records).findByText('已完成')).toBeVisible()
+    expect(await within(tray).findByRole('button', { name: '播放视频' })).toBeVisible()
+    expect(within(tray).queryByRole('button', { name: /^生成中/ })).not.toBeInTheDocument()
     expect(served).toBe(2)
   })
 
@@ -658,31 +680,7 @@ describe('StoryboardReader', () => {
     )
   })
 
-  it.each([
-    { action: '关闭生成记录', items: jobs, label: '记录列表关闭' },
-    { action: '返回分镜', items: [], label: '空态返回分镜' },
-  ])('$label 后恢复分镜和路由，保留原文且不保存', async ({ action, items }) => {
-    const files = provide()
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items })))
-    const { router } = await renderReader()
-    const page = await screen.findByRole('region', { name: '镜头组 1' })
-    const description = within(page).getByRole('textbox', { name: '镜头 1 的描述' })
-    const originalText = description.textContent
-    await userEvent.click(screen.getByRole('button', { name: '生成记录' }))
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    if (items.length === 0) expect(await within(records).findByText('暂无视频记录')).toBeVisible()
-    else await within(records).findByText('本组生成时使用的历史描述。')
-
-    await userEvent.click(within(records).getByRole('button', { name: action }))
-
-    expect(screen.queryByRole('complementary', { name: '生成记录' })).not.toBeInTheDocument()
-    expect(description).toBeVisible()
-    expect(description.textContent).toBe(originalText)
-    await waitFor(() => expect(router.state.location.search).not.toHaveProperty('sheet'))
-    expect(files.writes).toEqual([])
-  })
-
-  it('出片栏里换模型、关音频后出片：请求体照上游形状取当前组内容，分辨率默认 720p，提交后记录里出现生成中', async () => {
+  it('出片栏里换模型、关音频后出片：请求体照上游形状取当前组内容，分辨率默认 720p，提交后成片区最前面出现在途卡', async () => {
     provide()
     const user = userEvent.setup()
     const [firstShot] = document.shots
@@ -721,13 +719,12 @@ describe('StoryboardReader', () => {
         shot_index: 1,
       },
     ])
-    expect(await screen.findByText('生成中 1')).toBeVisible()
+    await waitFor(async () => expect(takeTimes(await findTakes())).toHaveLength(2))
+    const [newest] = await findTakes()
+    expect(within(newest as HTMLElement).getByRole('button', { name: /^生成中/ })).toBeVisible()
     // 出片后设置不回退，下一次出片沿用。
     expect(model).toHaveValue('wan3.0-video')
     expect(audio).toHaveAttribute('aria-pressed', 'false')
-    await user.click(screen.getByRole('button', { name: '生成记录' }))
-    const records = await screen.findByRole('complementary', { name: '生成记录' })
-    expect(await within(records).findByText('生成中')).toBeVisible()
   })
 
   it('切到 1080p 后出片带上 1080p，换模型不改分辨率', async () => {

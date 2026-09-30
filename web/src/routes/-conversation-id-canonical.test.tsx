@@ -37,22 +37,25 @@ describe('会话页地址里的对话 id', () => {
     loginAs(mockAuthUser)
     const conversation = addMockConversation('秋季片')
 
-    const router = await renderAt(`/c/${conversation.id.replaceAll('-', '')}?sheet=records`)
+    const router = await renderAt(`/c/${conversation.id.replaceAll('-', '')}?sheet=all`)
 
     expect(router.state.location.pathname).toBe(`/c/${conversation.id}`)
-    expect(router.state.location.search).toEqual({ sheet: 'records' })
+    expect(router.state.location.search).toEqual({ sheet: 'all' })
   })
 
-  it('旧链接里已下线的 sheet=prompt 静默丢掉，其余参数照留，页面照常打开', async () => {
-    loginAs(mockAuthUser)
-    const conversation = addMockConversation('旧链接')
+  it.each(['prompt', 'records'])(
+    '旧链接里已下线的 sheet=%s 静默丢掉，其余参数照留，页面照常打开',
+    async (sheet) => {
+      loginAs(mockAuthUser)
+      const conversation = addMockConversation('旧链接')
 
-    const router = await renderAt(`/c/${conversation.id}?shot=2&sheet=prompt`)
+      const router = await renderAt(`/c/${conversation.id}?shot=2&sheet=${sheet}`)
 
-    expect(router.state.location.pathname).toBe(`/c/${conversation.id}`)
-    expect(router.state.location.search).toEqual({ shot: 2 })
-    expect(router.state.matches.at(-1)?.status).toBe('success')
-  })
+      expect(router.state.location.pathname).toBe(`/c/${conversation.id}`)
+      expect(router.state.location.search).toEqual({ shot: 2 })
+      expect(router.state.matches.at(-1)?.status).toBe('success')
+    },
+  )
 
   it('规范写法原地不动', async () => {
     loginAs(mockAuthUser)

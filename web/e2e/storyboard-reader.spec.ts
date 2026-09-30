@@ -35,7 +35,7 @@ const watchGenerationPosts = (page: Page) => {
   return posts
 }
 
-test('分镜可以键盘切组、切帧和查看记录，浏览操作不写文件或提交生成', async ({ page }) => {
+test('分镜可以键盘切组、切帧和查看成片，浏览操作不写文件或提交生成', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 700 })
   const writes: string[] = []
   page.on('request', (request) => {
@@ -68,10 +68,10 @@ test('分镜可以键盘切组、切帧和查看记录，浏览操作不写文�
   await expect(group.getByRole('button', { name: /^生成第 \d+ 组$/ })).toHaveCount(0)
   await expect(group.getByRole('button', { name: '编辑图片', exact: true })).toHaveCount(1)
 
-  await panel.getByRole('button', { name: '生成记录', exact: true }).click()
-  const records = panel.getByRole('complementary', { name: '生成记录', exact: true })
-  await expect(records.getByRole('article')).toHaveCount(3)
-  await records.getByRole('button', { name: '关闭生成记录' }).click()
+  // 第 2 组的成片常驻在文案列底部：在途、失败、成功各一张。
+  const takes = group.getByRole('region', { name: '本组成片', exact: true })
+  await expect(takes.getByRole('listitem')).toHaveCount(3)
+  await expect(takes).toBeInViewport({ ratio: 1 })
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
   expect(writes).toEqual([])
 })
@@ -303,7 +303,7 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
   expect(generationPosts).toEqual([])
 })
 
-test('翻到第 3 组出片：请求取当前组，记录先生成中后完成，下载分原片与水印版', async ({ page }) => {
+test('翻到第 3 组出片：请求取当前组，成片区先出在途卡、出片后变成可播', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
   await openStoryboardShot(panel, 3)
@@ -321,20 +321,15 @@ test('翻到第 3 组出片：请求取当前组，记录先生成中后完成�
   await panel.getByRole('button', { name: '生成第 3 组', exact: true }).click()
   const request = await posted
   expect(request.postDataJSON()).toMatchObject({ shot_index: 3, shot: third.prompt })
-  await expect(panel.getByText('生成中 1', { exact: true })).toBeVisible()
 
-  await panel.getByRole('button', { name: '生成记录', exact: true }).click()
-  const records = panel.getByRole('complementary', { name: '生成记录', exact: true })
-  await expect(records.getByRole('article')).toHaveCount(2)
-  await expect(records.getByText('生成中')).toBeVisible()
-  // mock 三秒后出片，前端每五秒问一次。
-  await expect(records.getByText('生成中')).toBeHidden({ timeout: 15_000 })
-  await expect(records.getByRole('button', { name: '下载视频' })).toHaveCount(2)
-  await records.getByRole('button', { name: '下载视频' }).first().click()
-  await expect(page.getByRole('menuitem', { name: '下载原片' })).toBeVisible()
-  await expect(page.getByRole('menuitem', { name: '下载水印版' })).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('menuitem', { name: '下载原片' })).toBeHidden()
+  // 新的一张排在最前，先是在途卡；mock 三秒后出片，推送帧到了就刷新。
+  const takes = group.getByRole('region', { name: '本组成片', exact: true })
+  await expect(takes.getByRole('listitem')).toHaveCount(2)
+  const newest = takes.getByRole('listitem').first()
+  await expect(newest.getByRole('button', { name: /^生成中/ })).toBeVisible()
+  await expect(newest.getByRole('button', { name: '播放视频' })).toBeVisible({ timeout: 15_000 })
+  await expect(takes.getByRole('button', { name: /^生成中/ })).toHaveCount(0)
+  await expect(takes.getByRole('button', { name: '播放视频' })).toHaveCount(2)
 })
 
 test('帧工具里的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {

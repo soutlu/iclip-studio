@@ -1,7 +1,7 @@
 /** 分镜工作台底部的出片栏：一排生成设置（模型、分辨率、画幅、音频），加唯一的主色按钮出当前这一组。
  * 各档宽度下怎么排见 storyboard.css 的出片栏一节。 */
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import { Icon } from '@/shared/icons'
 import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
 import { cn } from '@/shared/lib/utils'
@@ -17,6 +17,7 @@ import {
 } from '../video-generation-options'
 import { supportsAspectRatio } from '../video-model-support'
 import { BlockedReason } from './blocked-reason'
+import { useScrollFade } from './use-scroll-fade'
 import { workbenchControl } from './workbench-control'
 
 /** 分镜的画幅：写回分镜文件，不是生成选项。 */
@@ -56,7 +57,7 @@ export function VideoGenerationBar({
   const modelLabel =
     value.model ?? (models.status === 'ready' ? '' : MODELS_PENDING_TEXT[models.status])
   const paramsRef = useRef<HTMLDivElement | null>(null)
-  const fade = useScrollFade(paramsRef)
+  const { fade } = useScrollFade(paramsRef)
 
   return (
     <div
@@ -70,7 +71,11 @@ export function VideoGenerationBar({
         </p>
       )}
       <div className="storyboard-bar-row">
-        <div className="storyboard-bar-params" data-fade={fade} ref={paramsRef}>
+        <div
+          className="storyboard-bar-params storyboard-scroll-fade"
+          data-fade={fade}
+          ref={paramsRef}
+        >
           <Select
             aria-label="视频模型"
             className={cn(workbenchControl({ shape: 'field' }), 'font-mono')}
@@ -171,31 +176,6 @@ function AspectSelect({ aspect, model }: { aspect: AspectControl; model: string 
       })}
     </Select>
   )
-}
-
-type ScrollFade = 'none' | 'start' | 'end' | 'both'
-
-/** 横向滚动行哪一端还有内容没露出来；样式按它给那一端加渐隐。放得下时为 none。 */
-function useScrollFade(ref: { current: HTMLElement | null }): ScrollFade {
-  const [fade, setFade] = useState<ScrollFade>('none')
-  useEffect(() => {
-    const element = ref.current
-    if (element === null) return
-    const measure = () => {
-      const start = element.scrollLeft > 0
-      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1
-      setFade(start && end ? 'both' : start ? 'start' : end ? 'end' : 'none')
-    }
-    // ResizeObserver 开始观察时会先回调一次，初始状态由它量，不在副作用里同步设。
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    element.addEventListener('scroll', measure, { passive: true })
-    return () => {
-      observer.disconnect()
-      element.removeEventListener('scroll', measure)
-    }
-  }, [ref])
-  return fade
 }
 
 /** 出片主按钮：被挡住时用 aria-disabled 置灰并说明原因（见 `BlockedReason`）；能出片时不带这个属性。 */

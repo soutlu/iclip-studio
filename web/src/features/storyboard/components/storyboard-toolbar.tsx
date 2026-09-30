@@ -1,9 +1,9 @@
-/** 分镜工作台顶栏：组号（点开全部镜头组）、保存状态、生成记录入口，以及复制整组完整提示词。 */
+/** 分镜工作台顶栏：组号（点开全部镜头组）、保存状态，以及复制整组完整提示词。 */
 
 import type { ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { Button, IconButton } from '@/shared/ui/button'
+import { IconButton } from '@/shared/ui/button'
 import type { ReaderSheet } from '../shot-content'
 import { copyWithToast } from './copy-with-toast'
 import { workbenchControl } from './workbench-control'
@@ -17,14 +17,11 @@ type StoryboardToolbarProps = {
   /** 当前盖在分镜上的那一层，对应入口标成展开。 */
   sheet: ReaderSheet | undefined
   onOpenSheet: (sheet: ReaderSheet, trigger: HTMLElement) => void
-  /** 本组还在跑的出片数，挂在生成记录入口上。 */
-  activeCount: number
   /** 复制按钮拷走的整组完整提示词。 */
   fullPrompt: string
 }
 
 export function StoryboardToolbar({
-  activeCount,
   fullPrompt,
   onOpenSheet,
   position,
@@ -48,18 +45,6 @@ export function StoryboardToolbar({
         <Icon decorative name="expand" size="xs" />
       </button>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{status}</div>
-      <Button
-        aria-expanded={sheet === 'records'}
-        aria-label="生成记录"
-        className="shrink-0 border-[0.5px] border-chat-hairline bg-background px-3 text-body text-on-surface"
-        leadingIcon="history"
-        onClick={(event) => onOpenSheet('records', event.currentTarget)}
-        size="md"
-        variant="outlined"
-      >
-        生成记录
-        {activeCount > 0 ? <span className="ml-1 text-primary">生成中 {activeCount}</span> : null}
-      </Button>
       <IconButton
         className={workbenchControl({ shape: 'icon' })}
         label="复制完整提示词"
