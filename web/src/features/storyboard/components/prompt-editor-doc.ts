@@ -107,3 +107,25 @@ export const promptOffsetAt = (doc: PMNode, position: number): number => {
   })
   return found ?? length
 }
+
+/** `promptOffsetAt` 的反向：正文偏移换成编辑器位置。落在帧标记中间时取标记之前，超出正文时取文档末尾。 */
+export const promptPositionAt = (doc: PMNode, offset: number): number => {
+  let length = 0
+  let found: number | undefined
+  doc.forEach((paragraph, paragraphOffset, index) => {
+    if (found !== undefined) return
+    if (index > 0) length += 1
+    const start = paragraphOffset + 1
+    paragraph.forEach((child, childOffset) => {
+      if (found !== undefined) return
+      const size = inlineText(child).length
+      if (offset < length + size) {
+        found = start + childOffset + (child.isText ? Math.max(0, offset - length) : 0)
+      } else {
+        length += size
+      }
+    })
+    if (found === undefined && offset <= length) found = start + paragraph.content.size
+  })
+  return found ?? doc.content.size - 1
+}

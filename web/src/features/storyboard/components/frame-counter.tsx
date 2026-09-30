@@ -3,10 +3,9 @@
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
-import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
-import { BlockedReason } from './blocked-reason'
+import { FrameAddTile, FrameTile, type FrameAdd } from './frame-tile'
 import { workbenchControl } from './workbench-control'
 
 export type FrameGallery = {
@@ -28,7 +27,7 @@ type FrameCounterProps = {
   aspectRatio: string
   gallery: FrameGallery
   /** 弹层末尾的「+」，与舞台工具组里那个同一入口。 */
-  add: { blocker: string | undefined; onAdd: () => void }
+  add: FrameAdd
 }
 
 export function FrameCounter({ add, aspectRatio, gallery }: FrameCounterProps) {
@@ -69,29 +68,19 @@ export function FrameCounter({ add, aspectRatio, gallery }: FrameCounterProps) {
             const selected = frame === current
             return (
               <li className="storyboard-gallery-item relative" key={frame}>
-                <button
+                <FrameTile
                   aria-current={selected ? 'true' : undefined}
                   aria-label={`第 ${frame} 帧${fresh.has(frame) ? '，有新结果' : ''}`}
-                  className="flex ui-state cursor-pointer flex-col items-center gap-1 rounded-sm p-1 text-label text-on-surface-variant tabular-nums ui-focus aria-[current=true]:bg-state-active aria-[current=true]:font-medium aria-[current=true]:text-on-surface"
+                  frame={frame}
                   onClick={() => {
                     setOpen(false)
                     gallery.onPick(frame)
                   }}
+                  outlined={selected}
+                  ratio={ratio}
                   title={`@${frame} · ${gallery.usageOf(frame)}`}
-                  type="button"
-                >
-                  <img
-                    alt=""
-                    className={cn(
-                      'block h-16 rounded-xs bg-surface-container object-contain',
-                      selected && 'outline-2 outline-offset-1 outline-on-surface',
-                    )}
-                    loading="lazy"
-                    src={url}
-                    style={{ aspectRatio: ratio }}
-                  />
-                  @{frame}
-                </button>
+                  url={url}
+                />
                 {fresh.has(frame) ? (
                   <span aria-hidden className="storyboard-dot absolute top-2 right-2" />
                 ) : null}
@@ -108,23 +97,14 @@ export function FrameCounter({ add, aspectRatio, gallery }: FrameCounterProps) {
               </li>
             )
           })}
-          {/* 底边与缩略图对齐：下面留出「@N」那一行的高度。 */}
           <li className="p-1 pb-6">
-            <BlockedReason reason={add.blocker}>
-              <button
-                aria-disabled={add.blocker === undefined ? undefined : true}
-                aria-label="添加图片"
-                className={cn(workbenchControl({ shape: 'label' }), 'h-16 w-9 justify-center px-0')}
-                onClick={() => {
-                  if (add.blocker !== undefined) return
-                  setOpen(false)
-                  add.onAdd()
-                }}
-                type="button"
-              >
-                <Icon decorative name="add" size="sm" />
-              </button>
-            </BlockedReason>
+            <FrameAddTile
+              blocker={add.blocker}
+              onAdd={() => {
+                setOpen(false)
+                add.onAdd()
+              }}
+            />
           </li>
         </ul>
       </PopupSurface>

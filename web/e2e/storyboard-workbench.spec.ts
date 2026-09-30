@@ -276,6 +276,56 @@ test('替换图标换掉当前帧，拖到舞台上的图加成新的一帧，�
   await expect(panel.getByText('已保存')).toBeVisible({ timeout: 5_000 })
 })
 
+test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键加 Enter 插入引用、光标留在引用后，Esc 只关弹层', async ({
+  page,
+}) => {
+  const panel = await openConversation(page, '夜景延时素材生成')
+  await openStoryboardShot(panel, 2)
+  const shot2 = panel.getByRole('region', { name: '镜头组 2' })
+  const editor = shot2.getByRole('textbox', { name: '镜头 2 的描述' })
+  // 夹具订阅后会整份重写分镜；等它落定再编辑，免得打的字被重置。
+  await expect(editor).toContainText('台词并成一句', { timeout: 20_000 })
+  const chips = editor.getByRole('button', { name: '看第 2 帧' })
+  const before = await chips.count()
+
+  await editor.click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' 与双肩包 @')
+  const menu = page.getByRole('listbox', { name: '插入参考图' })
+  await expect(menu).toBeVisible()
+  await expect(menu.getByRole('option')).toHaveCount(4)
+  const [editorBox, menuBox] = await Promise.all([editor.boundingBox(), menu.boundingBox()])
+  if (editorBox === null || menuBox === null) throw new Error('正文与弹层必须有可见布局')
+  // 光标在正文最后一行：弹层整个落在这一行下面，不遮住正在打的字。
+  expect(menuBox.y).toBeGreaterThanOrEqual(editorBox.y + editorBox.height - 1)
+
+  await page.keyboard.press('ArrowRight')
+  await expect(menu.getByRole('option', { name: '插入第 2 帧' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  // 只有一行时 ↑↓ 不动。
+  await page.keyboard.press('ArrowDown')
+  await expect(menu.getByRole('option', { name: '插入第 2 帧' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await page.keyboard.press('Enter')
+  await expect(menu).toBeHidden()
+  await expect(chips).toHaveCount(before + 1)
+  await page.keyboard.type('接着写')
+  await expect(editor).toContainText('与双肩包 @2接着写')
+  await expect(editor).not.toContainText('包 @@')
+
+  await page.keyboard.type(' @')
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toBeHidden()
+  await expect(editor).toContainText('接着写 @')
+  await expect(chips).toHaveCount(before + 1)
+  await expect(panel.getByText('已保存')).toBeVisible({ timeout: 5_000 })
+})
+
 test('短桌面深色：文案列整组原文可读，看大图后回到原帧与焦点', async ({ page }) => {
   await page.setViewportSize({ height: 700, width: 1600 })
   await page.emulateMedia({ colorScheme: 'dark' })

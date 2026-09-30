@@ -1429,7 +1429,10 @@ describe('StoryboardReader', () => {
       const page = await screen.findByRole('region', { name: '镜头组 1' })
       const target = within(page).getByRole('group', { name: '当前帧图片' })
       fireEvent.dragEnter(target, { dataTransfer: fileTransfer([imageFile()]) })
-      expect(within(page).getByText('松开添加')).toBeVisible()
+      const hint = within(page).getByText('松开添加')
+      expect(hint).toBeVisible()
+      // 定稿要的是玻璃压白，不是拖动态压暗；jsdom 不算样式，只能认 token 工具类。
+      expect(hint.closest('.storyboard-drop')).toHaveClass('bg-glass-surface')
       fireEvent.drop(target, { dataTransfer: fileTransfer([imageFile()]) })
       expect(within(page).queryByText('松开添加')).not.toBeInTheDocument()
 
@@ -1551,6 +1554,110 @@ describe('StoryboardReader', () => {
       expect(
         within(page).queryByRole('button', { name: '上传失败，点击重试' }),
       ).not.toBeInTheDocument()
+    })
+  })
+
+  describe('正文里敲 @ 选图', () => {
+    const secondScene = document.shots[0]?.prompt.timeline[1]?.prompt ?? ''
+    /** 聚焦镜头 2 的正文（光标在段首），先粘一段字把光标挪到正文中间，再敲 @。 */
+    const typeMentionAfter = async (page: HTMLElement, before: string) => {
+      const editor = within(page).getByRole('textbox', { name: '镜头 2 的描述' })
+      act(() => editor.focus())
+      if (before !== '') pasteTextIntoComposer(editor, before)
+      await userEvent.keyboard('@')
+      return screen.findByRole('listbox', { name: '插入参考图' })
+    }
+
+    it('列出本组全部图片与末格「+」；方向键加 Enter 把刚敲的 @ 换成引用，插在光标处，舞台切到那帧，光标留在引用之后', async () => {
+      const files = provide()
+      await renderReader('/?shot=1&content=scene:2')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const menu = await typeMentionAfter(page, '先')
+      expect(
+        within(menu)
+          .getAllByRole('option')
+          .map((option) => option.getAttribute('aria-label')),
+      ).toEqual(['插入第 1 帧', '插入第 2 帧', '插入第 3 帧', '添加图片'])
+      expect(within(menu).getByRole('option', { name: '插入第 1 帧' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+
+      await userEvent.keyboard('{ArrowRight}{ArrowRight}{Enter}')
+      expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
+      expect(within(page).getByRole('img', { name: '镜头组 1 第 3 帧' })).toBeVisible()
+      await userEvent.keyboard('又')
+      await waitFor(
+        () =>
+          expect(files.snapshot().shots[0]?.prompt.timeline[1]).toEqual({
+            timestamps: [3.25, 5],
+            prompt: `先@Image3又${secondScene}`,
+            image_indexes: [3, 2, 1],
+          }),
+        { timeout: 3000 },
+      )
+    })
+
+    it('点格子同样插入', async () => {
+      const files = provide()
+      await renderReader('/?shot=1&content=scene:2')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const menu = await typeMentionAfter(page, '')
+      await userEvent.click(within(menu).getByRole('option', { name: '插入第 1 帧' }))
+      await waitFor(
+        () =>
+          expect(files.snapshot().shots[0]?.prompt.timeline[1]?.prompt).toBe(
+            `@Image1${secondScene}`,
+          ),
+        { timeout: 3000 },
+      )
+    })
+
+    it('Esc 只关弹层：字面 @ 留在正文里，不插引用', async () => {
+      const files = provide()
+      await renderReader('/?shot=1&content=scene:2')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      await typeMentionAfter(page, '先')
+      await userEvent.keyboard('{Escape}')
+      expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
+      await waitFor(
+        () =>
+          expect(files.snapshot().shots[0]?.prompt.timeline[1]).toEqual({
+            timestamps: [3.25, 5],
+            prompt: `先@${secondScene}`,
+            image_indexes: [2, 1],
+          }),
+        { timeout: 3000 },
+      )
+    })
+
+    it('末格「+」打开添加图片，关联的图换掉这个 @', async () => {
+      const files = provide()
+      await renderReader('/?shot=1&content=scene:2')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      await typeMentionAfter(page, '先')
+      await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}{Enter}')
+      const picker = await screen.findByRole('dialog', { name: '添加图片' })
+      await userEvent.click(within(picker).getByRole('button', { name: '关联第 3 张图片' }))
+      await waitFor(
+        () =>
+          expect(files.snapshot().shots[0]?.prompt.timeline[1]?.prompt).toBe(
+            `先@Image3${secondScene}`,
+          ),
+        { timeout: 3000 },
+      )
+    })
+
+    it('只读时敲 @ 不弹出选图，也不写工作区', async () => {
+      const files = provide()
+      await renderReader('/?shot=1&content=scene:2', true)
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const editor = within(page).getByRole('textbox', { name: '镜头 2 的描述' })
+      act(() => editor.focus())
+      await userEvent.keyboard('@')
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
+      expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
+      expect(files.writes).toEqual([])
     })
   })
 })

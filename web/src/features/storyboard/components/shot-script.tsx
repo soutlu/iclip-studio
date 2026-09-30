@@ -11,10 +11,14 @@ import {
 } from '../shot-content'
 import type { Shot } from '../shot-document'
 import { copyWithToast } from './copy-with-toast'
+import type { FrameAdd } from './frame-tile'
 import { PromptEditor, type PromptEditorHandle } from './prompt-editor'
 
 type ShotScriptProps = {
   shot: Shot
+  aspectRatio: string
+  /** 正文里 `@` 选图末格的「+」，与舞台上的添加图片同一入口。 */
+  add: FrameAdd
   /** 要排出来的段，见 `scriptSegments`。 */
   segments: readonly ShotContent[]
   selectedId: string
@@ -27,6 +31,8 @@ type ShotScriptProps = {
 }
 
 export function ShotScript({
+  add,
+  aspectRatio,
   editorRef,
   frameNumber,
   onSelect,
@@ -90,8 +96,11 @@ export function ShotScript({
             )}
             <PromptEditor
               aria-label={segment.kind === 'global' ? segment.title : `${label} 的描述`}
+              aspectRatio={aspectRatio}
               frames={shot.image_urls}
               highlighted={selected ? frameNumber : undefined}
+              // 插进去的那帧上舞台，与其它添加入口一致。
+              mention={{ add, onInserted: (number) => onSelect(segment.id, number) }}
               onChange={(text) =>
                 onUpdateShot((current) => updateContentPrompt(current, segment.id, text))
               }

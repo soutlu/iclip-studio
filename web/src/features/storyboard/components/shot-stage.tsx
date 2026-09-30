@@ -12,6 +12,7 @@ import type { FrameUpload } from '../use-frame-additions'
 import { BlockedReason } from './blocked-reason'
 import { FrameCounter, type FrameGallery } from './frame-counter'
 import { FramePreview } from './frame-preview'
+import type { FrameAdd } from './frame-tile'
 import { StageUploadStatus } from './stage-upload-status'
 import { workbenchControl } from './workbench-control'
 
@@ -23,10 +24,7 @@ export type StageFrame = {
 }
 
 /** 往选中段添加图片的入口与状态，都来自 `useFrameAdditions`。 */
-export type StageAddition = {
-  /** 「+」被挡住的原因；有它时置灰并说明。 */
-  blocker: string | undefined
-  onAdd: () => void
+export type StageAddition = FrameAdd & {
   upload: FrameUpload
   onRetry: () => void
   drop: ReturnType<typeof useFileDropTarget>
@@ -133,17 +131,13 @@ export function ShotStage({
           <StageUploadStatus onRetry={addition.onRetry} upload={addition.upload} />
           {gallery.urls.length === 0 ? null : (
             <span className="ml-auto">
-              <FrameCounter
-                add={{ blocker: addition.blocker, onAdd: addition.onAdd }}
-                aspectRatio={aspectRatio}
-                gallery={gallery}
-              />
+              <FrameCounter add={addition} aspectRatio={aspectRatio} gallery={gallery} />
             </span>
           )}
         </div>
       </div>
       {addition.drop.dragOver ? (
-        <div aria-hidden className="storyboard-drop">
+        <div aria-hidden className="storyboard-drop bg-glass-surface">
           <span className="storyboard-drop-hint">
             <Icon decorative name="image" size="md" />
             松开添加

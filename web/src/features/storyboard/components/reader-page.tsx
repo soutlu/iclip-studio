@@ -14,6 +14,7 @@ import {
 } from '../shot-content'
 import { useFrameAdditions } from '../use-frame-additions'
 import { FrameAssignmentPicker } from './frame-assignment-picker'
+import type { FrameAdd } from './frame-tile'
 import type { PromptEditorHandle } from './prompt-editor'
 import { ShotScript } from './shot-script'
 import { ShotStage } from './shot-stage'
@@ -73,6 +74,8 @@ export function ReaderPage({
     shot,
   })
   const select = additions.select
+  // 「+」的唯一入口：舞台工具组、帧计数弹层与正文 `@` 选图的末格都用它。
+  const add: FrameAdd = { blocker: additions.pickerBlocker, onAdd: additions.picker.show }
   const [replacing, setReplacing] = useState(false)
   const reportUploading = useEffectEvent((busy: boolean) => onUploadingChange(shot.index, busy))
   useEffect(() => {
@@ -98,9 +101,8 @@ export function ReaderPage({
     >
       <ShotStage
         addition={{
-          blocker: additions.pickerBlocker,
+          ...add,
           drop: additions.drop,
-          onAdd: additions.picker.show,
           onRetry: additions.retry,
           upload: additions.upload,
         }}
@@ -138,6 +140,8 @@ export function ReaderPage({
       />
       <div className="storyboard-script">
         <ShotScript
+          add={add}
+          aspectRatio={aspect_ratio}
           editorRef={editorRef}
           frameNumber={frameNumber}
           onSelect={select}

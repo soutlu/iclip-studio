@@ -133,6 +133,11 @@
 .storyboard-segment[aria-current='true'] {
   background: var(--color-state-active);
 }
+/* 正在编辑：光标落在可编辑的正文里时加一圈聚焦描边；只读时不进编辑态。 */
+.storyboard-segment:has(.prompt-editor-content[contenteditable='true']:focus) {
+  outline: 2px solid var(--color-chat-focus-ring);
+  outline-offset: -2px;
+}
 .storyboard-segment-lede {
   padding: 4px 12px 12px;
 }
@@ -319,7 +324,7 @@
   border-radius: var(--radius-full);
   background: var(--color-primary);
 }
-/* 放置提示：盖住整个舞台，中性描边加拖动态叠层，不用主色。 */
+/* 放置提示：盖住整个舞台，中性描边；底色是元素上的玻璃压白（bg-glass-surface），不用主色、不压暗。 */
 .storyboard-drop {
   position: absolute;
   z-index: var(--z-local-3);
@@ -328,7 +333,6 @@
   place-items: center;
   border: 2px dashed var(--color-outline);
   border-radius: inherit;
-  background: var(--color-state-dragged);
   pointer-events: none;
 }
 .storyboard-drop-hint {

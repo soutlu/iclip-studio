@@ -1,4 +1,4 @@
-/** 帧记号使用 inline atom NodeView；只读与编辑共用实例，通过 editable 切换。 */
+/** 帧记号使用 inline atom NodeView；只读与编辑共用实例，通过 editable 切换。可编辑时敲 `@` 弹出本组图片（见 `useFrameMention`）。 */
 
 import { baseKeymap } from 'prosemirror-commands'
 import { history, redo, undo } from 'prosemirror-history'
@@ -7,19 +7,24 @@ import { Slice, type Node as PMNode } from 'prosemirror-model'
 import { EditorState } from 'prosemirror-state'
 import { EditorView, type NodeView } from 'prosemirror-view'
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
+import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { cn } from '@/shared/lib/utils'
 import type { PromptInsertion } from '../shot-document'
+import { FrameMentionMenu } from './frame-mention-menu'
 import { docToPrompt, promptOffsetAt, promptToDoc } from './prompt-editor-doc'
+import { useFrameMention, type FrameMentionOptions } from './use-frame-mention'
 
 /** NodeView 经 ref 读取最新数据，避免重建编辑器。 */
 type ChipContext = {
   frameUrl: (n: number) => string | undefined
+  ratio: () => number
   highlighted: () => number | undefined
   onPick: (n: number) => void
 }
 
+// 高度等于正文行高、贴行顶排，不撑高行距；小图高 16、按原图比例，没加载出来前按画幅占位。
 const CHIP_CLASS =
-  'frame-chip mx-0.5 inline-flex cursor-pointer items-center gap-1 rounded-xs bg-surface-container-high px-1 py-px align-middle text-caption text-on-surface-variant select-none ui-focus ui-motion-s'
+  'frame-chip mx-0.5 inline-flex h-(--text-body--line-height) cursor-pointer items-center gap-1 rounded-xs bg-surface-container py-0 pr-1.5 pl-0.5 align-top text-label text-on-surface-variant tabular-nums select-none ui-focus ui-motion-s'
 const CHIP_ACTIVE_CLASS = 'bg-on-surface text-surface'
 
 const isActivationKey = (key: string) => key === 'Enter' || key === ' '
@@ -44,7 +49,7 @@ class FrameChipView implements NodeView {
     this.dom.tabIndex = 0
     this.img = document.createElement('img')
     this.img.alt = ''
-    this.img.className = 'size-4 rounded-xs object-cover'
+    this.img.className = 'block h-4 w-auto rounded-xs'
     const label = document.createElement('span')
     label.textContent = `@${this.n}`
     this.dom.append(this.img, label)
@@ -66,6 +71,7 @@ class FrameChipView implements NodeView {
     if (url === undefined) this.img.removeAttribute('src')
     else if (this.img.getAttribute('src') !== url) this.img.src = url
     this.img.hidden = url === undefined
+    this.img.style.aspectRatio = `auto ${this.ctx.ratio()}`
     this.dom.className = cn(CHIP_CLASS, this.ctx.highlighted() === this.n && CHIP_ACTIVE_CLASS)
   }
 
@@ -93,19 +99,25 @@ type PromptEditorProps = {
   ref?: Ref<PromptEditorHandle> | undefined
   /** 帧数组下标为编号减一。 */
   frames: readonly string[]
+  /** 分镜画幅；帧缩略图加载前按它占位。 */
+  aspectRatio: string
   highlighted?: number | undefined
   readOnly?: boolean
   onChange?: ((value: string) => void) | undefined
   onPickFrame?: ((n: number) => void) | undefined
+  /** 敲 `@` 选图；不给时 `@` 就是普通字符。 */
+  mention?: FrameMentionOptions | undefined
   'aria-label': string
   className?: string
 }
 
 export function PromptEditor({
   'aria-label': ariaLabel,
+  aspectRatio,
   className,
   frames,
   highlighted,
+  mention,
   value,
   ref,
   onChange,
@@ -116,14 +128,16 @@ export function PromptEditor({
   const viewRef = useRef<EditorView | null>(null)
   const hadSelectionRef = useRef(false)
   const chipsRef = useRef(new Set<FrameChipView>())
+  const ratio = aspectValueOf(aspectRatio)
+  const frameMention = useFrameMention(viewRef, mention, frames.length)
   // 编辑器只建一次；变化中的回调与数据经 ref 读最新值
-  const latestRef = useRef({ frames, highlighted, onChange, onPickFrame, readOnly })
+  const latestRef = useRef({ frames, highlighted, onChange, onPickFrame, ratio, readOnly })
   useEffect(() => {
-    latestRef.current = { frames, highlighted, onChange, onPickFrame, readOnly }
+    latestRef.current = { frames, highlighted, onChange, onPickFrame, ratio, readOnly }
   })
   // 记录最近序列化结果，忽略编辑器自身发出的更新，避免重置光标。
   const serializedRef = useRef(value)
-  const initialRef = useRef({ ariaLabel, value })
+  const initialRef = useRef({ ariaLabel, createMentionPlugin: frameMention.createPlugin, value })
   useImperativeHandle(
     ref,
     () => ({
@@ -147,6 +161,7 @@ export function PromptEditor({
     const chips = chipsRef.current
     const ctx: ChipContext = {
       frameUrl: (n) => latestRef.current.frames[n - 1],
+      ratio: () => latestRef.current.ratio,
       highlighted: () => latestRef.current.highlighted,
       onPick: (n) => latestRef.current.onPickFrame?.(n),
     }
@@ -178,7 +193,9 @@ export function PromptEditor({
       nodeViews: { frame: (node) => new FrameChipView(node, ctx, chips) },
       state: EditorState.create({
         doc: promptToDoc(initialRef.current.value),
+        // 选图排在 keymap 之前：打开时的 Enter 与方向键先归它，不分段、不挪光标。
         plugins: [
+          initialRef.current.createMentionPlugin(),
           history(),
           keymap({ 'Mod-y': redo, 'Mod-z': undo, 'Shift-Mod-z': redo }),
           keymap(baseKeymap),
@@ -204,11 +221,20 @@ export function PromptEditor({
 
   useEffect(() => {
     for (const chip of chipsRef.current) chip.refresh()
-  }, [frames, highlighted])
+  }, [frames, highlighted, ratio])
 
+  const closeMention = frameMention.close
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !readOnly })
-  }, [readOnly])
+    if (readOnly) closeMention()
+  }, [closeMention, readOnly])
 
-  return <div className={cn('prompt-editor', className)} ref={hostRef} />
+  return (
+    <>
+      <div className={cn('prompt-editor', className)} ref={hostRef} />
+      {frameMention.menu === undefined ? null : (
+        <FrameMentionMenu {...frameMention.menu} frames={frames} ratio={ratio} />
+      )}
+    </>
+  )
 }

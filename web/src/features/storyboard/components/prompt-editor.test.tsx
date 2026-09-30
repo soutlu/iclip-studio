@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
 import { PromptEditor, type PromptEditorHandle } from './prompt-editor'
-import { docToPrompt, promptOffsetAt, promptToDoc } from './prompt-editor-doc'
+import { docToPrompt, promptOffsetAt, promptPositionAt, promptToDoc } from './prompt-editor-doc'
 
 const FIXTURES = [
   '她走向镜头 @Image1，脚步放慢。',
@@ -30,6 +30,17 @@ describe('promptToDoc / docToPrompt', () => {
       [1, 4, 5, 6, 8, 10, doc.content.size].map((position) => promptOffsetAt(doc, position)),
     ).toEqual([0, 3, 11, 12, 13, 14, text.length])
   })
+
+  it('正文偏移换回编辑器位置：与 promptOffsetAt 互逆，帧标记中间取标记之前，越界取末尾', () => {
+    const text = '前😀@Image01后\n\n尾@Image2'
+    const doc = promptToDoc(text)
+    const positions = [1, 4, 5, 6, 8, 10, doc.content.size - 1]
+    expect(
+      positions.map((position) => promptPositionAt(doc, promptOffsetAt(doc, position))),
+    ).toEqual(positions)
+    expect(promptPositionAt(doc, 5)).toBe(4)
+    expect(promptPositionAt(doc, text.length + 5)).toBe(doc.content.size - 1)
+  })
 })
 
 describe('PromptEditor', () => {
@@ -41,6 +52,7 @@ describe('PromptEditor', () => {
     await renderWithProviders(
       <PromptEditor
         aria-label="镜头 1 的描述"
+        aspectRatio="9:16"
         frames={frames}
         highlighted={1}
         onPickFrame={(number) => {
@@ -64,6 +76,7 @@ describe('PromptEditor', () => {
     await renderWithProviders(
       <PromptEditor
         aria-label="正文"
+        aspectRatio="9:16"
         frames={frames}
         onChange={(next) => {
           changed = next
@@ -88,6 +101,7 @@ describe('PromptEditor', () => {
     await renderWithProviders(
       <PromptEditor
         aria-label="正文"
+        aspectRatio="9:16"
         frames={frames}
         onChange={(next) => {
           changed = next
@@ -108,6 +122,7 @@ describe('PromptEditor', () => {
     await renderWithProviders(
       <PromptEditor
         aria-label="正文"
+        aspectRatio="9:16"
         frames={frames}
         onPickFrame={(number) => {
           selected = number
