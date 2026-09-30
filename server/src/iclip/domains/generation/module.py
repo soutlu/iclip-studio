@@ -83,6 +83,8 @@ def build_generation_module(
     image_models: Sequence[ImageModelConfig],
     image_default_model: str,
     image_env: str,
+    image_text_to_image_task: str,
+    image_edit_task: str,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     queue_settings: GenerationQueueSettings | None = None,
@@ -109,7 +111,14 @@ def build_generation_module(
     )
     compose_provider = FfmpegComposeProvider(object_store=object_store, report_stage=report_stage)
     image_providers = [
-        _image_provider(model, env=image_env, object_store=object_store, transport=image_transport)
+        _image_provider(
+            model,
+            env=image_env,
+            text_to_image_task=image_text_to_image_task,
+            image_edit_task=image_edit_task,
+            object_store=object_store,
+            transport=image_transport,
+        )
         for model in image_models
     ]
     queue = GenerationQueue(
@@ -213,6 +222,8 @@ def _image_provider(
     config: ImageModelConfig,
     *,
     env: str,
+    text_to_image_task: str,
+    image_edit_task: str,
     object_store: PublicObjectStore,
     transport: httpx.AsyncBaseTransport | None,
 ) -> GenerationProvider:
@@ -225,7 +236,12 @@ def _image_provider(
         )
     return GatewayImageProvider(
         model,
-        GatewayImageSettings(api_base=config.api_base, env=env),
+        GatewayImageSettings(
+            api_base=config.api_base,
+            env=env,
+            text_to_image_task=text_to_image_task,
+            image_edit_task=image_edit_task,
+        ),
         object_store=object_store,
         transport=transport,
     )

@@ -60,7 +60,7 @@ export type EditTrigger = {
 }
 
 /** 哪个模型能做视频编辑、怎么触发。上游没有接口交代这件事，服务端也不管，按模型名认。
- * 按片段匹配：同一个模型在网关上有 `vendor-a-` / `vendor-b-` 两种前缀。 */
+ * 按片段匹配：同一个模型在网关上可能带不同的供应商前缀。 */
 const EDIT_TRIGGERS: readonly { matches: RegExp; trigger: EditTrigger }[] = [
   // Seedance 2.5 靠 provider_options 显式声明编辑子任务，不认正文里的意图词。
   { matches: /seedance-2-5/, trigger: { providerOptions: { omni_reference_task_type: 'edit' } } },

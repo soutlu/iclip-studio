@@ -581,6 +581,8 @@ def config_with_media() -> RuntimeConfig:
                 video=VideoGenerationSection(model="seedance", allowed_models=("seedance",)),
                 image=ImageGenerationSection(
                     env="test",
+                    text_to_image_task="text-to-image",
+                    image_edit_task="image-edit",
                     default="nano_banana_pro",
                     models={
                         "nano_banana_pro": ImageModelSection(route="nano-banana-pro", concurrency=4)

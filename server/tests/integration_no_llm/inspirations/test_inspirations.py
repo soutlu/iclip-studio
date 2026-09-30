@@ -13,10 +13,10 @@ from tests.helpers.pdm import seed_pdm_style
 
 URL = "/inspirations/videos/search"
 STYLE = "DEMO-STYLE-1"
-RUNNING = 70
-BOOTS = 88
-DEMO-BRAND = "3"
-RIVAL_BRAND = "1"
+RUNNING = 901
+BOOTS = 902
+DEMO_BRAND = "B1"
+RIVAL_BRAND = "B2"
 
 
 async def search(client: httpx.AsyncClient, **body: object) -> httpx.Response:
@@ -60,18 +60,18 @@ async def test_falls_back_to_same_brand_and_category(
     """本款没有视频时，优先拿同品牌同类目的替身。"""
 
     await register_and_login(client)
-    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO-BRAND)
+    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_video(
         business_engine,
         video_id="201",
-        style_no="OTHER-DEMO-BRAND",
+        style_no="OTHER-DEMO",
         category_id=RUNNING,
-        brand_code=DEMO-BRAND,
+        brand_code=DEMO_BRAND,
     )
     await seed_video(
         business_engine,
         video_id="202",
-        style_no="OTHER-RIVAL_BRAND",
+        style_no="OTHER-RIVAL",
         category_id=RUNNING,
         brand_code=RIVAL_BRAND,
         orders=999,
@@ -90,11 +90,11 @@ async def test_falls_back_to_same_category(
     """同品牌同类目没有视频时，再退一级到同类目。"""
 
     await register_and_login(client)
-    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO-BRAND)
+    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_video(
         business_engine,
         video_id="301",
-        style_no="OTHER-RIVAL_BRAND",
+        style_no="OTHER-RIVAL",
         category_id=RUNNING,
         brand_code=RIVAL_BRAND,
     )
@@ -109,9 +109,13 @@ async def test_none_when_the_whole_category_has_no_videos(
     client: httpx.AsyncClient, business_engine: AsyncEngine, catalog_engine: AsyncEngine
 ) -> None:
     await register_and_login(client)
-    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO-BRAND)
+    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_video(
-        business_engine, video_id="401", style_no="ELSEWHERE", category_id=BOOTS, brand_code=DEMO-BRAND
+        business_engine,
+        video_id="401",
+        style_no="ELSEWHERE",
+        category_id=BOOTS,
+        brand_code=DEMO_BRAND,
     )
 
     found = (await search(client)).json()
@@ -135,7 +139,7 @@ async def test_style_without_a_category_cannot_fall_back(
 
 @pytest.mark.parametrize(
     ("matched_style", "match_level"),
-    [(STYLE, "exact"), ("OTHER-DEMO-BRAND", "sameBrandCategory")],
+    [(STYLE, "exact"), ("OTHER-DEMO", "sameBrandCategory")],
 )
 async def test_thresholds_do_not_change_match_level(
     client: httpx.AsyncClient,
@@ -147,12 +151,12 @@ async def test_thresholds_do_not_change_match_level(
     """门槛筛空本款或同品牌候选，都不再放宽到指标更高的其他品牌。"""
 
     await register_and_login(client)
-    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO-BRAND)
+    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_video(business_engine, video_id="601", style_no=matched_style, orders=1)
     await seed_video(
         business_engine,
         video_id="602",
-        style_no="OTHER-RIVAL_BRAND",
+        style_no="OTHER-RIVAL",
         category_id=RUNNING,
         brand_code=RIVAL_BRAND,
         orders=500,
@@ -183,29 +187,29 @@ async def test_exact_and_fallback_scopes_share_one_deduplicated_top_n(
     """本款与两级替身范围重叠时，视频去重后共享排序和 limit。"""
 
     await register_and_login(client)
-    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO-BRAND)
+    await seed_pdm_style(catalog_engine, style_no=STYLE, category_id=RUNNING, brand_code=DEMO_BRAND)
     await seed_pdm_style(
-        catalog_engine, style_no="NO-OWN-DEMO-BRAND", category_id=RUNNING, brand_code=DEMO-BRAND
+        catalog_engine, style_no="NO-OWN-DEMO", category_id=RUNNING, brand_code=DEMO_BRAND
     )
     await seed_pdm_style(
-        catalog_engine, style_no="NO-OWN-RIVAL_BRAND", category_id=RUNNING, brand_code=RIVAL_BRAND
+        catalog_engine, style_no="NO-OWN-RIVAL", category_id=RUNNING, brand_code=RIVAL_BRAND
     )
     await seed_video(business_engine, video_id="801", style_no=STYLE, orders=20)
-    await seed_video(business_engine, video_id="802", style_no="OTHER-DEMO-BRAND", orders=30)
-    await seed_video(business_engine, video_id="803", style_no="OTHER-DEMO-BRAND", orders=10)
+    await seed_video(business_engine, video_id="802", style_no="OTHER-DEMO", orders=30)
+    await seed_video(business_engine, video_id="803", style_no="OTHER-DEMO", orders=10)
 
     found = (
         await client.post(
             URL,
-            json={"styleNos": [STYLE, "NO-OWN-DEMO-BRAND", "NO-OWN-RIVAL_BRAND", STYLE], "limit": 2},
+            json={"styleNos": [STYLE, "NO-OWN-DEMO", "NO-OWN-RIVAL", STYLE], "limit": 2},
         )
     ).json()
 
     assert found["videoUrls"] == urls_of(["802", "801"])
     assert found["matches"] == [
         {"styleNo": STYLE, "matchLevel": "exact"},
-        {"styleNo": "NO-OWN-DEMO-BRAND", "matchLevel": "sameBrandCategory"},
-        {"styleNo": "NO-OWN-RIVAL_BRAND", "matchLevel": "sameCategory"},
+        {"styleNo": "NO-OWN-DEMO", "matchLevel": "sameBrandCategory"},
+        {"styleNo": "NO-OWN-RIVAL", "matchLevel": "sameCategory"},
     ]
 
 
@@ -230,14 +234,14 @@ async def test_a_video_shared_by_two_styles_appears_once(
     await register_and_login(client)
     for style_no in (STYLE, "DEMO-STYLE-2"):
         await seed_pdm_style(
-            catalog_engine, style_no=style_no, category_id=RUNNING, brand_code=DEMO-BRAND
+            catalog_engine, style_no=style_no, category_id=RUNNING, brand_code=DEMO_BRAND
         )
     await seed_video(
         business_engine,
         video_id="1001",
-        style_no="OTHER-DEMO-BRAND",
+        style_no="OTHER-DEMO",
         category_id=RUNNING,
-        brand_code=DEMO-BRAND,
+        brand_code=DEMO_BRAND,
     )
 
     found = (await client.post(URL, json={"styleNos": [STYLE, "DEMO-STYLE-2"]})).json()

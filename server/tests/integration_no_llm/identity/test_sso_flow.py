@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import uuid
+
 import httpx
 import pytest
 from fastapi import FastAPI
+from sqlalchemy import text
 
 from tests.helpers.app import make_client
 from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.pg import connected
 
 SSO_OK = {
     "result": "OK",
@@ -134,6 +138,41 @@ class TestBindingToExistingAccount:
         assert user["username"] == "logan"
 
 
+class TestConfiguredOAuthName:
+    """配了 ``SSO_OAUTH_NAME``：回调按这个提供方名认 OAuth 账号表里已有的关联。"""
+
+    @pytest.fixture
+    def sso_oauth_name(self) -> str | None:
+        return "legacy_sso"
+
+    async def test_callback_signs_in_account_linked_under_configured_name(
+        self, sso_app: FastAPI, migrated_pg: str
+    ) -> None:
+        # 老账号的邮箱与这次 SSO 给的不同：只有按提供方名加 unionId 才找得到它，按邮箱会另建一个。
+        async with make_client(sso_app) as client:
+            user_id = await register_and_login(client, username="old", email="old@example.com")
+        async with connected(migrated_pg) as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.oauth_accounts"
+                    " (id, user_id, oauth_name, access_token, account_id, account_email)"
+                    " VALUES (:id, :user_id, :oauth_name, 'old-jwt', :account_id, :email)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "user_id": uuid.UUID(user_id),
+                    "oauth_name": "legacy_sso",
+                    "account_id": "u-42",
+                    "email": "old@example.com",
+                },
+            )
+
+        async with make_client(sso_app) as client:
+            assert (await client.get("/auth/sso/callback", params={"jwt": "j"})).status_code == 204
+            me = (await client.get("/users/me")).json()["user"]
+        assert (me["id"], me["email"]) == (user_id, "old@example.com")
+
+
 class TestDisplayNameAlreadyTaken:
     """两个 SSO 账号同名：后来者用户名留空，登录照常成功。"""
 
@@ -141,7 +180,12 @@ class TestDisplayNameAlreadyTaken:
     def sso_transport(self) -> httpx.MockTransport:
         sessions = iter(
             [
-                {"innerUserId": 42, "unionId": "u-42", "name": "Logan W", "email": "logan@corp.test"},
+                {
+                    "innerUserId": 42,
+                    "unionId": "u-42",
+                    "name": "Logan W",
+                    "email": "logan@corp.test",
+                },
                 {
                     "innerUserId": 43,
                     "unionId": "u-43",

@@ -82,7 +82,11 @@ describe('TakesTray', () => {
   })
 
   it.each([
-    { hasPoster: true, url: 'https://assets.oss-ap-southeast-1.aliyuncs.com/take.mp4', where: 'OSS' },
+    {
+      hasPoster: true,
+      url: 'https://assets.oss-ap-southeast-1.aliyuncs.com/take.mp4',
+      where: 'OSS',
+    },
     { hasPoster: false, url: 'https://example.com/take.mp4', where: '非 OSS' },
   ])(
     '$where 地址：卡上只挂截帧封面、不挂 <video>，截不了帧就不画封面',

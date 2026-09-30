@@ -111,7 +111,7 @@ describe('LibraryRoute', () => {
 
     await user.click(screen.getByRole('radio', { name: '全部' }))
     const sandals = await screen.findByRole('article', { name: SANDALS })
-    await user.click(within(sandals).getByRole('button', { name: /Nora\.He/ }))
+    await user.click(within(sandals).getByRole('button', { name: /Nora\.Ho/ }))
     expect(onScope).toHaveBeenLastCalledWith(expect.objectContaining({ userName: 'Nora.Ho' }))
     await waitFor(() => expect(cardNames()).toEqual([SANDALS]))
   })
@@ -419,7 +419,7 @@ describe('library viewer', () => {
     await renderWithProviders(<Harness onScope={onScope} />)
 
     const viewer = await openCard(user, SANDALS)
-    await user.click(within(viewer).getByRole('button', { name: /^Nora\.He/ }))
+    await user.click(within(viewer).getByRole('button', { name: /^Nora\.Ho/ }))
 
     expect(onScope).toHaveBeenLastCalledWith(expect.objectContaining({ userName: 'Nora.Ho' }))
     await waitFor(() => expect(viewer).not.toBeInTheDocument())

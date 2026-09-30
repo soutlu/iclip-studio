@@ -8,9 +8,11 @@ __pycache__/
 dist/
 build/
 
-# env / secrets
+# env / secrets：任何 env 文件都不进仓库，模板也不放
 .env
 .env.*
+*.env
+env.example
 
 # node
 node_modules/

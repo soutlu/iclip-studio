@@ -1,4 +1,4 @@
-"""爆款视频查询的测试数据：插入视频快照、按 video_id 推出默认地址。"""
+"""爆款视频查询的测试数据：插入爆款视频、按 video_id 推出默认地址。"""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ async def seed_video(
     *,
     video_id: str,
     style_no: str,
-    category_id: int = 70,
-    brand_code: str = "3",
+    category_id: int = 901,
+    brand_code: str = "B1",
     brand_name: str = "DEMO-BRAND",
     category_name: str = "跑鞋",
     oss_url: str | None = None,

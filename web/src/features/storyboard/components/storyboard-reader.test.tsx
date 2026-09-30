@@ -523,7 +523,9 @@ describe('StoryboardReader', () => {
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: '视频模型' })).toHaveValue('vendor-a-seedance-2-5'),
+      expect(screen.getByRole('combobox', { name: '视频模型' })).toHaveValue(
+        'vendor-a-seedance-2-5',
+      ),
     )
     await userEvent.click(generate)
     expect(posts).toBe(0)

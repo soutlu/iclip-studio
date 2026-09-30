@@ -194,7 +194,7 @@ async def test_confirming_again_keeps_the_one_record_and_its_first_owner(
         await set_roles_in_db(pg_url, "logan@example.com", ["root"])
         created = await root.post(
             "/api-keys",
-            json={"name": "partner_app", "permissions": ["uploads:write", "users:act_as"]},
+            json={"name": "partner-app", "permissions": ["uploads:write", "users:act_as"]},
         )
         assert created.status_code == 201, created.text
         issued = created.json()["apiKey"]

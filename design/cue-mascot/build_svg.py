@@ -144,7 +144,7 @@ class Export:
         self.svg = ET.Element("svg", {
             "xmlns": "http://www.w3.org/2000/svg", "viewBox": "0 0 1200 600",
             "width": "1200", "height": "600", "class": "cue-mascot",
-            "role": "img", "aria-label": "Cue 与 demo 鞋盒、鞋履及服装",
+            "role": "img", "aria-label": "Cue 与鞋盒、鞋履及服装",
             "data-expanded": str(expanded).lower(), "color": "#171818",
         })
         self.defs = ET.SubElement(self.svg, "defs")

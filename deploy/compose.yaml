@@ -1,5 +1,8 @@
 # 单机部署：一次性迁移 → 后端 → nginx 前端。Postgres 用服务器现有实例，本项目独占一个数据库。
-# 变量与凭证来自同目录的 .env（模板见 env.example）。
+# 变量与凭证来自同目录的 .env，migrate / server 容器也整份加载它；env 文件不进仓库。
+# 本文件用到的变量：ACR_REGISTRY 镜像仓库地址（如 registry.<region>.aliyuncs.com）、
+# ACR_NAMESPACE 仓库里的命名空间、IMAGE_TAG 镜像版本（缺省 latest，升级时改它再 up -d）、
+# WEB_PORT 对外端口（缺省 80，改了 SSO_REDIRECT_URL 的端口要跟着改）。应用变量见 server/src/iclip/config/models.py。
 # 模型、agent、skill 配置不进镜像也不进仓库：同目录的 configs/、agents/ 只读挂进后端，
 # 改文件保存即热重载。
 

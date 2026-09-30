@@ -33,7 +33,7 @@ HOST=127.0.0.1 PORT=3015 VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:7789 pnpm de
 | `src/testing/`、`e2e/`                | 测试基建、MSW 与浏览器用例                                                                |
 | `vite/`、`scripts/`                   | 构建助手与开发、检查命令                                                                  |
 | `public/`                             | 静态资源                                                                                  |
-| `../design/cue-mascot/`           | 首页吉祥物素材源包与重建方式见[目录说明](../design/cue-mascot/README.md)              |
+| `../design/cue-mascot/`               | 首页吉祥物素材源包与重建方式见[目录说明](../design/cue-mascot/README.md)                  |
 
 ## 分镜工作台
 

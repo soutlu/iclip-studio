@@ -48,7 +48,6 @@ from iclip.domains.identity.service import (
     SelfManagementForbidden,
 )
 from iclip.domains.identity.sso import (
-    OAUTH_NAME,
     SsoSessionInvalid,
     SsoUnavailable,
     SsoVerifier,
@@ -185,6 +184,8 @@ def create_sso_router(
     pms_client: PmsUserClient | None,
     users: UserRepository,
     root_email: str | None,
+    *,
+    oauth_name: str,
 ) -> APIRouter:
     router = APIRouter(prefix="/auth/sso")
     user_manager_ctx = make_user_manager_context(sessions, secret=auth.secret)
@@ -217,7 +218,7 @@ def create_sso_router(
             # 仅新建账号时设置默认角色；同邮箱关联不得重置既有授权。
             is_new_account = False
             try:
-                await manager.get_by_oauth_account(OAUTH_NAME, session.union_id)
+                await manager.get_by_oauth_account(oauth_name, session.union_id)
             except UserNotExists:
                 try:
                     await manager.get_by_email(email)
@@ -228,7 +229,7 @@ def create_sso_router(
             # fastapi-users 的 oauth_callback 泛型 self 绑定过窄（UOAP 不变型），
             # User 实际满足 OAuth 协议（持有 oauth_accounts relationship）。
             user = await manager.oauth_callback(  # pyright: ignore[reportAttributeAccessIssue]
-                OAUTH_NAME,
+                oauth_name,
                 access_token=jwt,
                 account_id=session.union_id,
                 account_email=email,

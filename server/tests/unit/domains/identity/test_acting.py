@@ -35,10 +35,10 @@ def api_key(*permissions: str) -> Principal:
         kind="api_key",
         user_id=uuid.uuid4(),
         permissions=frozenset(permissions),
-        audit_label="logan#partner_app",
+        audit_label="logan#partner-app",
         api_key_id=uuid.uuid4(),
         username="logan",
-        key_name="partner_app",
+        key_name="partner-app",
     )
 
 
@@ -71,7 +71,7 @@ async def test_key_with_the_permission_acts_as_the_named_person() -> None:
     assert is_placeholder_account("Sara.Hong", placeholder.email)
     assert acting.user_id == placeholder.id
     assert acting.username == "Sara.Hong"
-    assert acting.audit_label == "Sara.Hong#partner_app"
+    assert acting.audit_label == "Sara.Hong#partner-app"
     # 权限与钥匙身份都还是钥匙自己的：报一个 root 的名字换不来 root 的权限。
     assert acting.permissions == key.permissions
     assert acting.api_key_id == key.api_key_id
@@ -90,13 +90,13 @@ def log_context() -> Iterator[None]:
 
 
 async def test_switching_marks_the_log_context_with_who_is_acted_as(log_context: None) -> None:
-    structlog.contextvars.bind_contextvars(principal="logan#partner_app")
+    structlog.contextvars.bind_contextvars(principal="logan#partner-app")
 
     await act_as_with(InMemoryUserRepository())(api_key(ACT_AS_PERMISSION), "Sara.Hong")
 
     # 只补一个字段，中间件绑定的钥匙标识原样留着。
     assert structlog.contextvars.get_contextvars() == {
-        "principal": "logan#partner_app",
+        "principal": "logan#partner-app",
         "acting_as": "Sara.Hong",
     }
 

@@ -76,6 +76,8 @@ def build(
         ],
         image_default_model=names[0],
         image_env="test",
+        image_text_to_image_task="text-to-image",
+        image_edit_task="image-edit",
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
         image_transport=transport,

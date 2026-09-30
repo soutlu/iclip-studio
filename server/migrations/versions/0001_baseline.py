@@ -1,4 +1,4 @@
-"""基线：`iclip` 与 `agent_runtime` 两个 schema 的全部表、procrastinate 3.9.0 的调度表，以及爆款视频快照。
+"""基线：`iclip` 与 `agent_runtime` 两个 schema 的全部表，以及 procrastinate 3.9.0 的调度表。
 
 Revision ID: c5d8a2f47e19
 Revises:
@@ -12,10 +12,7 @@ tests/integration_no_llm/bootstrap/test_migrations.py。
 
 from __future__ import annotations
 
-import csv
-import datetime as dt
 from collections.abc import Sequence
-from decimal import Decimal
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -37,17 +34,13 @@ PROCRASTINATE_SQL = _DATA / "procrastinate_3.9.0_schema.sql"
 PROCRASTINATE_STATEMENTS = 42
 """上面那份 SQL 应切出的语句数，执行前先核对，切分错了立即失败。"""
 
-INSPIRATION_SEED = _DATA / "inspiration_videos.csv"
-"""爆款视频快照：2026-09-08 从数仓与 上游系统 离线解析，只收有 OSS 副本且款号能对到 PDM 的行。
-运行时不连外部库；刷新数据的办法是替换 CSV 并追加新迁移，不做增量。"""
-
 
 def upgrade() -> None:
     _create_identity_tables()
     _create_business_tables()
     _create_agent_runtime_tables()
     _install_procrastinate()
-    _load_inspiration_snapshot()
+    _create_inspiration_table()
 
 
 def downgrade() -> None:
@@ -619,11 +612,11 @@ _PROCRASTINATE_DROPS = (
 )
 
 
-# iclip：爆款视频快照
+# iclip：爆款视频
 
 
-def _load_inspiration_snapshot() -> None:
-    table = op.create_table(
+def _create_inspiration_table() -> None:
+    op.create_table(
         "inspiration_videos",
         sa.Column("video_id", sa.Text(), nullable=False),
         # 数仓原样给的编号永不改写，出问题时它是唯一能对回源头的线索。
@@ -653,31 +646,3 @@ def _load_inspiration_snapshot() -> None:
         ["category_id", "brand_code"],
         schema=SCHEMA,
     )
-    op.bulk_insert(table, _seed_rows())
-
-
-def _seed_rows() -> list[dict[str, object]]:
-    """读随仓库分发的快照；缺文件即失败，不静默建空表。"""
-
-    with INSPIRATION_SEED.open(encoding="utf-8", newline="") as handle:
-        return [
-            {
-                "video_id": row["video_id"],
-                "style_raw": row["style_raw"],
-                "style_no": row["style_no"],
-                "category_id": int(row["category_id"]),
-                "category_name": row["category_name"],
-                "brand_code": row["brand_code"],
-                "brand_name": row["brand_name"],
-                "oss_url": row["oss_url"],
-                "posted_date": (
-                    dt.date.fromisoformat(row["posted_date"]) if row["posted_date"] else None
-                ),
-                "impressions": int(row["impressions"]),
-                "views": int(row["views"]),
-                "clicks": int(row["clicks"]),
-                "orders": int(row["orders"]),
-                "revenue": Decimal(row["revenue"]),
-            }
-            for row in csv.DictReader(handle)
-        ]

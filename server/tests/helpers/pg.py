@@ -25,8 +25,9 @@ APP_TABLES = (
     "iclip.task_assignees",
     "iclip.generation_jobs",
     "iclip.tracking_events",
+    "iclip.inspiration_videos",
 )
-"""iclip 里每个用例自己造数据的表。``inspiration_videos`` 装着迁移灌入的快照，只由爆款视频夹具清。"""
+"""iclip 里每个用例自己造数据的表。"""
 
 AGENT_RUNTIME_TABLES = (
     "agent_runtime.runs",
