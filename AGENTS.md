@@ -42,7 +42,7 @@ sha=$(gh api repos/{owner}/{repo}/pulls/<n> --jq .head.sha)
 gh api "repos/{owner}/{repo}/commits/$sha/check-runs?check_name=ci" --jq '.check_runs[] | .status + " " + .conclusion'
 ```
 
-本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。失败时先读失败 job 的日志，e2e 另下载 `playwright-e2e` artifact 中的 trace；与改动无关的偶发失败用 **Re-run failed jobs** 只重跑失败的 job，其余修复后推送新提交。
+选中的静态检查、构建与测试并行执行；集成测试每组使用独立 Postgres，前端单测与 e2e 按分片运行。本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。失败时先读失败 job 的日志，e2e 另下载对应 `playwright-e2e-*` artifact 中的 trace（名称包含分片与运行次数）；与改动无关的偶发失败用 **Re-run failed jobs** 只重跑失败的 job，其余修复后推送新提交。
 
 ## 2. 合同与实现边界
 
