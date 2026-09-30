@@ -243,7 +243,7 @@ function RangePicker({
             aria-pressed={preset === key}
             className={cn(
               'flex h-8.5 ui-state cursor-pointer items-center justify-between gap-2 rounded-sm px-2.5 text-left text-body text-on-surface-variant ui-focus hover:text-on-surface',
-              preset === key && 'font-bold text-on-surface',
+              preset === key && 'font-semibold text-on-surface',
             )}
             key={key}
             onClick={() => pickPreset(key)}

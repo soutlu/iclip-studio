@@ -39,6 +39,17 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
             initialErrorMessage={ssoErrorMessage}
             onSuccess={() => onOpenChange(false)}
           />
+          {/* MiSans 许可第 1 条要求在软件中注明使用了该字体，许可全文随产物发布。 */}
+          <p className="mt-4 text-right text-caption text-on-surface-faint">
+            <a
+              className="rounded-xs ui-focus hover:text-on-surface-variant hover:underline"
+              href="/licenses/MiSans.txt"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              字体：MiSans
+            </a>
+          </p>
         </DialogBody>
       </DialogSurface>
     </DialogRoot>
