@@ -83,7 +83,7 @@ function AuditPage() {
       ref={mainRef}
     >
       {/* 预留应用壳中侧栏展开按钮的空间。 */}
-      <div className="mx-auto flex w-full max-w-360 flex-col gap-5 px-4 pt-12 pb-14 sm:px-8">
+      <div className="mx-auto flex w-full max-w-(--layout-list-page-max) flex-col gap-5 px-4 pt-12 pb-14 sm:px-(--layout-list-page-gutter)">
         <TabsRoot className="flex flex-col gap-4" onValueChange={selectTab} value={tab}>
           <header className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-baseline gap-2.5">

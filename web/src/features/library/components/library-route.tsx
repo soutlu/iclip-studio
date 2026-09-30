@@ -84,7 +84,7 @@ export function LibraryRoute({
       ref={mainRef}
     >
       {/* 页头预留侧栏展开按钮的覆盖空间。 */}
-      <div className="mx-auto flex w-full max-w-400 flex-col px-4 pt-12 pb-10 sm:px-8 sm:pt-14">
+      <div className="flex w-full flex-col px-4 pt-12 pb-10 sm:px-(--layout-list-page-gutter) sm:pt-14">
         <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pb-5">
           <div>
             <h1 className="text-headline font-semibold text-on-surface">资料库</h1>

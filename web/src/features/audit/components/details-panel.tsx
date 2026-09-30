@@ -12,10 +12,11 @@ import {
 import { nextSort } from '../details-model'
 import type { OverviewRange } from '../overview-range'
 import { ExecutionsTable } from './executions-table'
-import { Card, Section } from './overview-bits'
+import { Section } from './overview-bits'
 import { OverviewToolbar } from './overview-toolbar'
 import { PeopleTable } from './people-table'
 import { PersonFilter } from './person-filter'
+import { TableCard } from './table-bits'
 
 type DetailsPanelProps = {
   range: OverviewRange
@@ -75,7 +76,7 @@ export function DetailsPanel({
         />
       </OverviewToolbar>
       <Section id={`${baseId}-people`} info={PEOPLE_INFO} title="按人">
-        <Card className="px-5.5 py-5">
+        <TableCard>
           {people.isError && people.data === undefined ? (
             <ListError
               message={errorMessageOf(people.error, '读取按人统计失败')}
@@ -91,7 +92,7 @@ export function DetailsPanel({
               <PeopleTable bucket={people.data.bucket} nameOf={nameOf} people={shown} />
             </div>
           )}
-        </Card>
+        </TableCard>
       </Section>
       <ExecutionsSection
         getScrollElement={getScrollElement}
@@ -142,7 +143,7 @@ function ExecutionsSection({
       info="一段对话算一次任务执行。"
       title="按任务执行次数"
     >
-      <Card className="px-5.5 py-5">
+      <TableCard>
         {query.isError ? (
           <ListError
             message={errorMessageOf(query.error, '读取任务执行失败')}
@@ -176,7 +177,7 @@ function ExecutionsSection({
             ) : null}
           </div>
         )}
-      </Card>
+      </TableCard>
     </Section>
   )
 }
