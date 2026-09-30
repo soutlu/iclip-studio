@@ -1,7 +1,7 @@
 [project]
 name = "iclip"
 version = "0.1.0"
-description = "iClip Agent 后端：FastAPI 宿主 + PydanticAI 运行内核"
+description = "iclip-studio 后端：FastAPI 宿主 + PydanticAI 运行内核"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115",

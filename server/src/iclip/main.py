@@ -11,7 +11,7 @@ from iclip.app.logging import configure_logging
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="iClip Agent server")
+    parser = argparse.ArgumentParser(description="iclip-studio server")
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument("--agents", default="agents/agents.yaml")
     parser.add_argument("--host", default="localhost")
