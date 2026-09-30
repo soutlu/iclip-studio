@@ -19,287 +19,600 @@
   outline: 2px solid color-mix(in srgb, var(--color-primary) 60%, transparent);
   outline-offset: 1px;
 }
-.storyboard-page {
-  container: storyboard / size;
+/* ===== 分镜工作台布局：断点与列宽只在这一节定义 =====
+   结构只有一种：左边舞台、右边文案列，与画幅无关。唯一的断点是工作台窄于 640 时上下排；
+   断点量的是工作台根（容器查询），它能拖宽、聊天栏能收起，视口宽度说明不了什么。
+   工作台根带名字：舞台操作行自己也是容器，里面要查工作台宽度时按名字查。 */
+.storyboard-workbench {
+  container: storyboard-workbench / inline-size;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
 }
-
-/* 预览有界且居中，胶片条独立保留高度。 */
+.storyboard-toolbar {
+  display: flex;
+  min-width: 0;
+  min-height: 52px;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+.storyboard-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  gap: 20px;
+  padding: 0 16px;
+  overflow: hidden;
+}
+/* 舞台列：占满文案列以外的宽度、撑满主体高度；上面是舞台，下面一条固定高的操作行。 */
+.storyboard-stage-column {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 舞台：只放画面或视频与拖放提示；中性底色算播放器的一部分。 */
 .storyboard-stage {
   position: relative;
-  display: flex;
-  flex: 1;
+  display: grid;
+  min-width: 0;
   min-height: 0;
+  flex: 1;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-container-low);
+  container-type: size;
+}
+/* 舞台内容的一层包装：换了显示的东西就重挂，淡入由元素上的 animate-in 给。 */
+.storyboard-stage-content {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+}
+/* 画面按画幅 contain：竖屏上下撑满，横屏左右撑满，不裁切。 */
+.storyboard-hero {
+  position: relative;
+  width: min(100cqw, calc(100cqh * var(--storyboard-ar)));
+  aspect-ratio: var(--storyboard-ar);
+}
+.storyboard-hero > .storyboard-media {
+  position: absolute;
+  inset: 0;
+}
+/* 文案列：正文区占满剩下的高度、自己竖向滚；列底留给成片区。 */
+.storyboard-script {
+  display: flex;
+  width: clamp(320px, 40%, 480px);
+  min-width: 0;
+  min-height: 0;
+  flex: none;
+  flex-direction: column;
+  gap: 12px;
+}
+.storyboard-prose {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+@container (width < 640px) {
+  /* 上下排：舞台在上限高，文案在下，主体整体竖向滚动。 */
+  .storyboard-body {
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding-bottom: 4px;
+    /* 聚焦滚动（点成片卡、Tab 进正文）把目标停在吸顶的舞台列下面，不被它盖住：舞台 45vh + 间距 + 操作行 + 余量。 */
+    scroll-padding-top: calc(45vh + 8px + 40px + 12px);
+  }
+  /* 舞台连同操作行吸顶：往下读文案时画面和操作一直在；垫一层页面底色，滚过去的正文不透出来。 */
+  .storyboard-stage-column {
+    position: sticky;
+    z-index: var(--z-local-1);
+    top: 0;
+    width: 100%;
+    flex: none;
+    background: var(--color-background);
+  }
+  .storyboard-stage {
+    height: 45vh;
+    flex: none;
+  }
+  .storyboard-script {
+    width: auto;
+  }
+  .storyboard-prose {
+    flex: none;
+    overflow: visible;
+  }
+}
+
+/* 文案段：悬停一层中性叠色，选中用 state-active；全局设定是开头一段，没有标题。 */
+.storyboard-segment {
+  position: relative;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  transition: background-color var(--dur-s) var(--ease);
+}
+.storyboard-segment:hover {
+  background: var(--color-state-hover);
+}
+.storyboard-segment[aria-current='true'] {
+  background: var(--color-state-active);
+}
+/* 正在编辑：光标落在可编辑的正文里时加一圈聚焦描边；只读时不进编辑态。 */
+.storyboard-segment:has(.prompt-editor-content[contenteditable='true']:focus) {
+  outline: 2px solid var(--color-chat-focus-ring);
+  outline-offset: -2px;
+}
+.storyboard-segment-lede {
+  padding: 4px 12px 12px;
+}
+.storyboard-segment-lede[aria-current='true'] {
+  padding-top: 12px;
+}
+.storyboard-segment-lede .prompt-editor-content {
+  color: var(--color-on-surface-variant);
+}
+.storyboard-segment-lede-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+/* 段内复制悬停、聚焦或选中时才露出来。 */
+.storyboard-segment-copy {
+  opacity: 0;
+}
+.storyboard-segment:hover .storyboard-segment-copy,
+.storyboard-segment:focus-within .storyboard-segment-copy,
+.storyboard-segment[aria-current='true'] .storyboard-segment-copy {
+  opacity: 1;
+}
+
+/* ===== 出片栏 =====
+   宽屏一行：参数在左、主按钮在右。工作台窄于 640 时模型 id 截断；窄于 480（手机）分两行：
+   参数一行不换行、放不下就横向滚、两端渐隐，主按钮占满第二行。 */
+.storyboard-bar {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 16px 16px;
+  padding: 10px 10px 10px 12px;
+}
+.storyboard-bar-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+.storyboard-bar-params {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.storyboard-bar-model {
+  min-width: 0;
+}
+@container (width < 640px) {
+  .storyboard-bar-model {
+    max-width: 120px;
+  }
+}
+@container (width < 480px) {
+  .storyboard-bar-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .storyboard-bar-params {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  /* 模型下拉不跟着挤：放不下就让这一行横向滚。 */
+  .storyboard-bar-model {
+    flex: none;
+  }
+  .storyboard-bar-row > .storyboard-bar-generate {
+    width: 100%;
+  }
+}
+
+/* 横向滚动行的两端渐隐：出片栏参数行与成片区共用；data-fade 由 useScrollFade 按还能往哪边滚给出，
+   放得下时是 none、不遮。渐隐宽度各自用 --storyboard-fade 定。 */
+.storyboard-scroll-fade[data-fade='start'] {
+  mask-image: linear-gradient(to right, transparent, black var(--storyboard-fade, 24px));
+}
+.storyboard-scroll-fade[data-fade='end'] {
+  mask-image: linear-gradient(to left, transparent, black var(--storyboard-fade, 24px));
+}
+.storyboard-scroll-fade[data-fade='both'] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--storyboard-fade, 24px),
+    black calc(100% - var(--storyboard-fade, 24px)),
+    transparent
+  );
+}
+
+/* ===== 成片区 =====
+   文案列底部一行横滑的出片卡。左右排时左边贴齐文案列起点、右边出血到工作台右边缘（抵掉主体的 16px 内距），
+   卡片在工作台边缘被切开，正文区自己滚、成片区钉在列底常驻可见；上下排时两侧都出血，排在正文之后随主体滚动。
+   行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在工作台 ≥ 776 且放不下时出现。
+   整张卡是按钮，选中那张套一圈中性描边；滚动行四周留 4px 给描边，负边距抵掉，卡的起点仍贴齐文案列。 */
+.storyboard-takes {
+  --storyboard-fade: 40px;
+  min-width: 0;
+  flex: none;
+  margin-right: -16px;
+}
+.storyboard-takes-head {
+  display: flex;
+  height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-right: 16px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+.storyboard-takes-count {
+  margin-left: 4px;
+  color: var(--color-on-surface-faint);
+  font-variant-numeric: tabular-nums;
+}
+.storyboard-takes-pager {
+  display: flex;
+  gap: 4px;
+}
+.storyboard-takes-rail {
+  margin: -4px 0 0 -4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 4px 16px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.storyboard-takes-list {
+  display: flex;
+  width: max-content;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 4px 16px 4px 4px;
+}
+.storyboard-take-item {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  scroll-snap-align: start;
+}
+.storyboard-take-time {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+.storyboard-take {
+  position: relative;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container);
+  box-shadow: var(--shadow-1);
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  transition: box-shadow var(--dur-s) var(--ease);
+}
+.storyboard-take:is([data-state='running'], [data-state='failed']) {
+  background: var(--color-surface-container-high);
+  box-shadow: none;
+}
+/* 选中：页面底色隔 2px，再一圈 2px 正文色；中性，不用主色。 */
+.storyboard-take[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 2px var(--color-background),
+    0 0 0 4px var(--color-on-surface);
+}
+.storyboard-take-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--media-scrim-cover);
+  pointer-events: none;
+  transition: background var(--dur-s) var(--ease);
+}
+.storyboard-take:hover .storyboard-take-veil {
+  background: var(--media-scrim-photo-strong);
+}
+.storyboard-take-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    160deg,
+    transparent 30%,
+    var(--color-chip-bg-glass) 50%,
+    transparent 70%
+  );
+}
+/* 在途与失败卡中间的状态：转圈加走表，或错误图标。 */
+.storyboard-take-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
 }
-.storyboard-preview {
-  --storyboard-card-width: min(70cqw, 960px);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  width: var(--storyboard-card-width);
-  /* 高度由画幅算出：画面正好填满左半边，卡片不会比画面大出一圈灰边。 */
-  height: min(100%, calc(var(--storyboard-card-width) / 2 * var(--storyboard-frame-tall)));
-}
-/* 横版帧上下堆叠：画面吃满卡片宽度，描述接在下面。 */
-.storyboard-preview-wide {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: fit-content(62%) minmax(0, 1fr);
-  height: min(100%, calc(var(--storyboard-card-width) * var(--storyboard-frame-tall) / 0.6));
-}
-.storyboard-preview-wide .storyboard-media {
-  /* 画幅决定这一行的高度；卡片放不下时由 max-height 收住，画面退回居中留边。 */
-  max-height: 100%;
-  aspect-ratio: var(--storyboard-frame-aspect);
-}
-.storyboard-preview-wide .storyboard-description {
-  border-top: 0.5px solid var(--color-chat-hairline);
-  border-left-width: 0;
-}
-.storyboard-page-arrow {
+/* 压在画面上的角标用深色玻璃，浅色画面上也读得清；在途与失败卡没有画面，换浅底。 */
+.storyboard-take-pill {
   position: absolute;
-  inset-inline-start: 0;
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 48%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  pointer-events: none;
+  white-space: nowrap;
 }
-.storyboard-page-arrow:last-child {
-  inset-inline-start: auto;
-  inset-inline-end: 0;
+.storyboard-take:is([data-state='running'], [data-state='failed']) .storyboard-take-pill {
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface-variant);
 }
+.storyboard-take-resolution {
+  top: 8px;
+  left: 8px;
+}
+.storyboard-take-edits {
+  bottom: 8px;
+  left: 8px;
+}
+.storyboard-take-duration {
+  right: 8px;
+  bottom: 8px;
+}
+@container (width < 776px) {
+  .storyboard-takes-pager {
+    display: none;
+  }
+}
+@container (width < 640px) {
+  /* 上下排：两侧出血，排在正文之后跟着主体一起滚；舞台已吸顶，再钉住成片区正文就没地方了。 */
+  .storyboard-takes {
+    margin: 0 -16px;
+  }
+  .storyboard-takes-head {
+    padding: 0 16px;
+  }
+  .storyboard-takes-rail {
+    margin-left: 0;
+    scroll-padding-inline: 16px;
+  }
+  .storyboard-takes-list {
+    padding: 4px 16px;
+  }
+}
+
+/* ===== 舞台上的内容 =====
+   画面与视频上不压按钮：帧的 @N、切帧、计数、任务角标、上传状态和编辑、替换都在下面的操作行。 */
 .storyboard-media {
   display: grid;
   place-items: center;
 }
-.storyboard-frame-tools {
+/* 在途与失败的成片铺满画幅框：骨架或错误图标加完整原因，原因太长就在框里滚。 */
+.storyboard-take-stage {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  border-radius: var(--radius-xs);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
-  opacity: 0;
-  transition: opacity var(--dur-s) var(--ease-decel);
-}
-.storyboard-frame-tools > button {
-  color: inherit;
-  border-radius: var(--radius-xs);
-}
-.storyboard-media:hover .storyboard-frame-tools,
-.storyboard-media:focus-within .storyboard-frame-tools {
-  opacity: 1;
-}
-.storyboard-strip {
+  inset: 0;
   display: flex;
-  min-width: 0;
-  flex: 1 1 0;
-  align-items: stretch;
-  gap: 4px;
-  overflow-x: auto;
-  padding: 4px 6px 4px 0;
-  scrollbar-width: thin;
-}
-.storyboard-filmstrip {
-  --storyboard-frame-width: clamp(96px, 12cqw, 184px);
-  --storyboard-frame-height: calc(var(--storyboard-frame-width) * 9 / 16);
-}
-.storyboard-scene {
-  position: relative;
-  display: flex;
-  box-sizing: content-box;
-  width: calc(
-    var(--storyboard-frame-width) * var(--storyboard-frame-count, 1) +
-      (var(--storyboard-frame-count, 1) - 1) * 2px
-  );
-  flex: none;
   flex-direction: column;
-  border: 0.5px solid var(--color-chat-hairline);
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container);
-  transition: width var(--dur-m) var(--ease-decel);
-}
-.storyboard-scene-stack {
-  box-shadow: 2px 2px 0 var(--color-surface-container-high);
-}
-.storyboard-scene-frames {
-  position: relative;
-  display: flex;
-  gap: 2px;
-  overflow: hidden;
-  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
-}
-.storyboard-thumbnail {
-  display: block;
-  width: var(--storyboard-frame-width);
-  height: var(--storyboard-frame-height);
-  flex: none;
-}
-.storyboard-thumbnail[aria-pressed='true'] {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -2px;
-}
-.storyboard-frame-label,
-.storyboard-scene-duration {
-  position: absolute;
-  left: 4px;
-  border-radius: var(--radius-xs);
-  padding: 0 4px;
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  pointer-events: none;
-}
-.storyboard-frame-label {
-  bottom: 4px;
-  background: var(--color-surface-container-lowest);
-  color: var(--color-on-surface);
-}
-.storyboard-scene-duration {
-  top: 4px;
-  background: var(--storyboard-node-timeline-badge);
-  color: var(--color-on-scrim);
-}
-.storyboard-scene-caption {
-  display: flex;
-  min-width: 0;
-  height: 28px;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border-radius: 0 0 var(--radius-xs) var(--radius-xs);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-}
-/* 只固定标题本身，长图组的末端仍能同时看到标题和图片数量。 */
-.storyboard-scene-title {
-  position: sticky;
-  left: 6px;
-  flex: 0 1 auto;
-  max-width: calc(100cqw - var(--storyboard-frame-width) - 52px);
-}
-.storyboard-scene-active {
-  background: var(--color-primary);
-}
-.storyboard-scene-active .storyboard-scene-caption {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-.storyboard-scene-number {
-  display: grid;
-  width: 16px;
-  height: 16px;
-  flex: none;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  background: var(--color-state-hover);
-}
-/* 靠右占住胶片条剩下的横向空间；行高随内容增长，窄面板下换行的说明不会溢出。 */
-.storyboard-group-actions {
-  display: flex;
-  min-height: calc(var(--storyboard-frame-height) + 28px);
-  max-width: max(240px, 40%);
-  flex: none;
-  flex-direction: column;
-  align-items: flex-end;
   justify-content: center;
   gap: 8px;
-  margin-top: 4px;
-  margin-left: auto;
-  padding-left: 8px;
+  padding: 16px;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+  overscroll-behavior: contain;
 }
-.storyboard-add-frame,
-.storyboard-open-prompt {
-  height: calc(var(--storyboard-frame-height) + 28px);
-  margin-top: 4px;
+.storyboard-take-stage-reason {
+  max-width: 32em;
+  color: var(--color-on-surface);
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: pre-wrap;
 }
-.storyboard-add-frame {
-  width: var(--storyboard-frame-width);
+
+/* ===== 舞台操作行 =====
+   舞台下方固定一行，高度不随内容变：左边是信息（帧：@N、切帧与计数、任务角标、上传状态；成片：分辨率 · 时长 · 时间），
+   右边是带字按钮。按钮放不下字时退成图标（名字进提示）：上下排时一律退；左右排时按操作行自己的宽度，
+   成片那行三个按钮加信息更宽，阈值也更大。收起与否只在这里定，StageAction 读样式结果决定要不要提示。 */
+.storyboard-actions {
+  display: flex;
+  height: 40px;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  container: storyboard-actions / inline-size;
 }
-.storyboard-open-prompt {
-  width: 36px;
+/* 帧的信息在手机上可能同时有切帧、任务角标与上传状态：放不下就在左边自己横滑，不挤右边的按钮、不折行；
+   上下各留 4px，横滑裁切时聚焦环不被切掉。 */
+.storyboard-actions-start {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding-block: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
 }
-@container storyboard (width < 680px) {
-  .storyboard-preview {
-    --storyboard-card-width: calc(100cqw - 80px);
-  }
-  .storyboard-description {
-    gap: 12px;
-    padding: 12px;
-  }
-  .storyboard-group-actions {
-    max-width: none;
-  }
+.storyboard-actions-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
 }
-@container storyboard (width < 440px) {
-  .storyboard-add-frame,
-  .storyboard-open-prompt {
+.storyboard-tag {
+  flex: none;
+  color: var(--color-on-surface);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-body-sm--line-height);
+}
+.storyboard-frame-nav {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.storyboard-take-info {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-body-sm--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.storyboard-action {
+  justify-content: center;
+}
+@container storyboard-actions (width < 440px) {
+  .storyboard-actions[data-kind='take'] .storyboard-action {
     width: 32px;
+    padding-inline: 0;
   }
-  .storyboard-preview {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    width: calc(100% - 64px);
-    height: 100%;
-    max-height: 600px;
+  .storyboard-actions[data-kind='take'] .storyboard-action-text {
+    display: none;
   }
-  .storyboard-page-arrow {
-    width: 28px;
-    height: 28px;
+}
+@container storyboard-actions (width < 300px) {
+  .storyboard-actions[data-kind='frame'] .storyboard-action {
+    width: 32px;
+    padding-inline: 0;
   }
-  .storyboard-description {
-    gap: 8px;
-    padding: 8px;
+  .storyboard-actions[data-kind='frame'] .storyboard-action-text {
+    display: none;
   }
+}
+@container storyboard-workbench (width < 640px) {
+  .storyboard-action {
+    width: 32px;
+    padding-inline: 0;
+  }
+  .storyboard-action-text {
+    display: none;
+  }
+}
+.storyboard-upload-chip {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
+}
+/* 有新结果的小点：计数按钮上、弹层格子右上。 */
+.storyboard-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+/* 替换当前帧的放置提示：盖住整个舞台，中性描边；底色是元素上的玻璃压白（bg-glass-surface），不用主色、不压暗。 */
+.storyboard-drop {
+  position: absolute;
+  z-index: var(--z-local-3);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--color-outline);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.storyboard-drop-hint {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-2);
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--text-body--line-height);
+}
+/* 弹层格子里的放大钮：悬停或聚焦那一格才露出来，触屏常显。 */
+.storyboard-gallery-zoom {
+  opacity: 0;
+}
+.storyboard-gallery-item:hover .storyboard-gallery-zoom,
+.storyboard-gallery-item:focus-within .storyboard-gallery-zoom {
+  opacity: 1;
 }
 @media (hover: none) {
-  .storyboard-frame-tools {
+  .storyboard-gallery-zoom,
+  .storyboard-segment-copy {
     opacity: 1;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .storyboard-scene,
-  .storyboard-frame-tools {
+  .storyboard-segment,
+  .storyboard-take,
+  .storyboard-take-veil {
     transition: none;
   }
-}
-
-/* 原文和全组参考图各自滚动，底栏始终可见；窄面板按阅读顺序上下排列。 */
-.group-prompt-sheet {
-  container: group-prompt / inline-size;
-}
-.group-prompt-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 28%);
-}
-@container group-prompt (width < 600px) {
-  .group-prompt-body {
-    display: block;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-  .group-prompt-reading,
-  .group-prompt-references {
-    overflow-y: visible;
-    padding: 16px;
-  }
-  .group-prompt-references {
-    border-top: 0.5px solid var(--color-chat-hairline);
-    border-left-width: 0;
-  }
-}
-
-/* 无参考图时正文占满预览，保留工作台原有尺寸与滚动边界。 */
-.storyboard-preview.storyboard-preview-text {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-}
-/* 缩略图右上角的任务角标；左下是 @N，左上是时长。 */
-.storyboard-frame-status {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-lowest);
-  pointer-events: none;
 }

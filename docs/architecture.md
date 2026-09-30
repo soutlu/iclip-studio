@@ -70,7 +70,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 | `agent_runtime` 工作区与对话素材台账 | `platform/file_store/pg.py`、`platform/material_ledger/pg.py` |
 | `agent_runtime` 对话用量台账 | `harness/usage_ledger_pg.py`；`harness/usage_ledger.py` 的 capability 挂在每个 Agent 上，模型每答一次按（对话，模型）累加 token |
 | `public` 生成任务调度表 | procrastinate；DDL 随 Alembic 迁移维护；版本在 pyproject 精确 pin，升级时把它新增的迁移脚本抄成一个新 revision |
-| `iclip` 爆款视频快照 | `domains/inspirations/infra_sql.py`；数据随迁移灌入，运行时只读不刷新 |
+| `iclip` 爆款视频 | `domains/inspirations/infra_sql.py`；数据由部署方自行导入，运行时只读不刷新 |
 | `iclip` 埋点事件 | `domains/tracking/infra_sql.py`；只追加，主语资格按表名读生成记录，审计按表名读下载事件 |
 | PDM 款目录外部库 | `domains/products/catalog_pg.py`，独立连接池设置会话级只读 |
 | 审计报表（跨 `iclip` 与 `agent_runtime` 九张表的只读聚合，含运行事件 `events` 与运行关联 `agent_job_runs`） | `domains/audit/reports_pg.py`；不建表、不写入，列、状态词或运行事件名被改动时由它的集成测试先红；总览与按人的时间窗、粒度、分期与均线补窗是 `domains/audit/overview.py` 里的纯函数，任务执行的异常门槛与翻页游标在 `domains/audit/executions.py` |

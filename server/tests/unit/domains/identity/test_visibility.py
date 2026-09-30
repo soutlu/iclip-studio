@@ -19,7 +19,7 @@ def principal(kind: PrincipalKind, *permissions: str) -> Principal:
         audit_label="logan",
         api_key_id=uuid.uuid4() if kind == "api_key" else None,
         username="logan",
-        key_name="partner_app" if kind == "api_key" else None,
+        key_name="partner-app" if kind == "api_key" else None,
     )
 
 

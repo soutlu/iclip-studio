@@ -1,7 +1,6 @@
 """爆款视频查询的测试装置。
 
-视频快照表由迁移建出并灌入真实快照，用例先清空再插入受控数据；降级要按品类与
-品牌圈选同类款，所以还需要产品资料替身表。"""
+用例先清空业务表再插入受控数据；降级要按品类与品牌圈选同类款，所以还需要产品资料替身表。"""
 
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from iclip.app.bootstrap import build_app
@@ -32,13 +30,12 @@ async def catalog_engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
 
 @pytest.fixture
 async def business_engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    """业务库连接；清掉迁移灌入的真实快照，让用例只面对自己插的数据。"""
+    """清空业务表后的业务库连接，用例只面对自己插的数据。"""
 
     engine = create_async_engine(migrated_pg)
     try:
         async with engine.begin() as conn:
             await reset_database(conn)
-            await conn.execute(text("TRUNCATE TABLE iclip.inspiration_videos"))
         yield engine
     finally:
         await engine.dispose()

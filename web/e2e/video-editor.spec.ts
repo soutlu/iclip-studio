@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openConversation, screenshotBothThemes } from './helpers'
+import { openConversation, openStoryboardShot, screenshotBothThemes } from './helpers'
 
 /** mock 受理后 3 秒出结果；编辑段与合成各等一轮。 */
 const STEP_TIMEOUT = 15_000
@@ -11,10 +11,14 @@ const SHOT_DIR = '../.artifacts/design-qa/video-editor'
 const openEditor = async (page: Page, mobile = false, group = 2) => {
   // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
-  await panel.getByRole('button', { name: `第 ${group} 组` }).click()
-  await panel.getByRole('button', { name: '生成记录', exact: true }).click()
-  const records = panel.getByRole('complementary', { name: '生成记录' })
-  await records.getByRole('button', { name: /^编辑视频/ }).click()
+  await openStoryboardShot(panel, group)
+  // 点成片卡选中它，编辑视频在舞台下的操作行里。
+  await panel
+    .getByRole('region', { name: '本组成片', exact: true })
+    .getByRole('button', { name: /的成片$/ })
+    .first()
+    .click()
+  await panel.getByRole('button', { name: '编辑视频', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /^编辑视频/ })
   await expect(dialog).toBeVisible()
   await expect(page).toHaveURL(/[?&]video=/)
@@ -524,13 +528,18 @@ test('放大预览：舞台搬进应用内遮罩，播放不断、不进浏览�
   expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
 })
 
-test('只有生成的记录才能进编辑；关掉编辑器回到生成记录，地址里不再带 video', async ({ page }) => {
+test('只有成功的出片才能进编辑；关掉编辑器回到成片区，地址里不再带 video', async ({ page }) => {
   const dialog = await openEditor(page)
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page).not.toHaveURL(/[?&]video=/)
-  const records = page.getByRole('complementary', { name: '生成记录' })
-  await expect(records).toBeVisible()
-  // 第 2 组只有一条完成的出片，失败的那条没有入口。
-  await expect(records.getByRole('button', { name: /^编辑视频/ })).toHaveCount(1)
+  const takes = page.getByRole('region', { name: '本组成片', exact: true })
+  await expect(takes).toBeVisible()
+  // 第 2 组只有一条完成的出片：选中失败的那条，编辑置灰；选中在途的那条，没有编辑入口。
+  await expect(takes.getByRole('listitem')).toHaveCount(3)
+  const edit = page.getByRole('button', { name: '编辑视频', exact: true })
+  await takes.getByRole('button', { name: /生成失败$/ }).click()
+  await expect(edit).toHaveAttribute('aria-disabled', 'true')
+  await takes.getByRole('button', { name: /生成中$/ }).click()
+  await expect(edit).toHaveCount(0)
 })

@@ -45,13 +45,20 @@ const renderChatWithWorkbench = async (initialPath = '/?shot=2') => {
   return rendered
 }
 
+/** 从分镜顶栏的组号打开全部镜头组，点进第 n 组。 */
+const openShot = async (index: number) => {
+  await userEvent.click(screen.getByRole('button', { name: /打开全部镜头组/ }))
+  const overview = await screen.findByRole('complementary', { name: '全部镜头组' })
+  await userEvent.click(within(overview).getByRole('button', { name: `查看镜头组 ${index}` }))
+}
+
 describe('ConversationComposer 上的引用芯片', () => {
   it('工作台选中哪一组，输入框上就出现那一条', async () => {
     await renderChatWithWorkbench()
 
     expect(await screen.findByText('镜头组 2 · 全局设定 · @Image1')).toBeVisible()
 
-    await userEvent.click(screen.getByRole('button', { name: '第 3 组' }))
+    await openShot(3)
 
     expect(await screen.findByText('镜头组 3 · 全局设定 · @Image1')).toBeVisible()
     expect(screen.queryByText('镜头组 2 · 全局设定 · @Image1')).not.toBeInTheDocument()
@@ -74,9 +81,9 @@ describe('ConversationComposer 上的引用芯片', () => {
       expect(screen.queryByText('镜头组 2 · 全局设定 · @Image1')).not.toBeInTheDocument(),
     )
 
-    await userEvent.click(screen.getByRole('button', { name: '第 1 组' }))
+    await openShot(1)
     await screen.findByText('镜头组 1 · 全局设定 · @Image1')
-    await userEvent.click(screen.getByRole('button', { name: '第 2 组' }))
+    await openShot(2)
 
     expect(await screen.findByText('镜头组 2 · 全局设定 · @Image1')).toBeVisible()
   })

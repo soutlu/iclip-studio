@@ -1,4 +1,4 @@
-# Cue · demo 手工矢量动画
+# Cue 手工矢量动画
 
 此包是已确认视觉效果的手工矢量版。五件商品以 88 个平滑路径和柔和线性渐变绘制，保留运动鞋、高跟鞋、童鞋、拖鞋及上衣的造型、配色与摆放。鞋盒、场记板、Cue 字标、三个展开色面及动画布局沿用已确认版本。
 
@@ -14,7 +14,7 @@
 
 | 文件 | 用途 | 大小 |
 | --- | --- | ---: |
-| [cue.svg](cue.svg) | 完整画面、渐变及动画首尾姿态数据，所有图形均为矢量 | 63,794 B |
+| [cue.svg](cue.svg) | 完整画面、渐变及动画首尾姿态数据，所有图形均为矢量 | 63,789 B |
 | [cue.js](cue.js) | 轻量 SVG 动画控制器 | 见 MANIFEST.json |
 | [index.html](index.html) | 可直接打开的完整 SVG 接入示例 | 见 MANIFEST.json |
 | [preview-svg.js](preview-svg.js)、[preview.css](preview.css) | 示例的交互和页面样式 | 见 MANIFEST.json |
@@ -61,7 +61,7 @@ mascot.setColor('#f4f1e9');
 | `stop()` | 停在当前姿态 |
 | `destroy()` | 清除动画回调和控制器监听，用于组件卸载 |
 
-`setExpanded` 与 `setProgress` 会停止自动循环。鞋盒上的 demo 印字和商品配色不受 `setColor` 影响。示例的悬停、点击、进度、背景控制见 `preview-svg.js`。
+`setExpanded` 与 `setProgress` 会停止自动循环。鞋盒上的印字和商品配色不受 `setColor` 影响。示例的悬停、点击、进度、背景控制见 `preview-svg.js`。
 
 SVG 使用 `viewBox` 适应容器尺寸。保持容器宽高比 `2:1`，可沿用以下样式：
 

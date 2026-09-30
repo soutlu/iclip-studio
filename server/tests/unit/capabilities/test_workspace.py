@@ -723,7 +723,9 @@ async def test_read_media_file_only_takes_addresses_recorded_for_the_conversatio
     await check_args(tools, ctx, url=OSS_IMAGE)
     # 桶是各用户共用的：同一个桶里没登记的文件也要拒。
     with pytest.raises(ModelRetry, match="不是这段对话里的素材") as failure:
-        await check_args(tools, ctx, url="https://bucket.oss-ap-southeast-1.aliyuncs.com/made-up.jpg")
+        await check_args(
+            tools, ctx, url="https://bucket.oss-ap-southeast-1.aliyuncs.com/made-up.jpg"
+        )
 
     # 不回显未登记地址，避免重试消息将其引入素材上下文。
     assert "made-up" not in str(failure.value)

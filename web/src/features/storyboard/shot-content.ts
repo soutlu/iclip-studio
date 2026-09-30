@@ -1,9 +1,10 @@
 /** 镜头组可选择的内容；内容身份独立于它引用的图片。 */
 import { z } from 'zod'
 import { UserFacingError } from '@/shared/api/client'
-import { MAX_REFERENCE_IMAGES } from './shots'
+import { MAX_REFERENCE_IMAGES, REFERENCE_LIMIT_TEXT } from './shots'
 import {
   extractImageIndexes,
+  formatSeconds,
   promptTitle,
   updateTimelinePrompt,
   insertReferenceText,
@@ -33,8 +34,10 @@ export const shotContentIdSchema = z
   .string()
   .refine((id) => decodeContentId(id) !== undefined, '内容 id 不合法')
 
-/** 路由查询参数里盖在分镜页上的那一层：全部镜头组、完整提示词或生成记录。 */
-export const readerSheetSchema = z.enum(['all', 'prompt', 'records'])
+/** 路由查询参数里盖在分镜页上的那一层：全部镜头组。 */
+export const readerSheetSchema = z.enum(['all'])
+
+export type ReaderSheet = z.infer<typeof readerSheetSchema>
 
 export type ShotContent = {
   id: string
@@ -95,6 +98,58 @@ export const resolveShotSelection = (
 export const contentLabel = (content: ShotContent): string =>
   content.timelineIndex === undefined ? content.title : `镜头 ${content.timelineIndex + 1}`
 
+/** 文案列里排出来的段：全局设定与各镜头。未引用的图没有正文，不成段。 */
+export const scriptSegments = (contents: readonly ShotContent[]): ShotContent[] =>
+  contents.filter((item) => item.kind !== 'unreferenced')
+
+/** 镜头段标题旁的时间胶囊「起–止s」；直接取起止秒，不做减法。全局设定没有时间，返回 undefined。 */
+export const segmentTimeRange = (shot: Shot, content: ShotContent): string | undefined => {
+  if (content.timelineIndex === undefined) return undefined
+  const timestamps = shot.prompt.timeline[content.timelineIndex]?.timestamps
+  if (timestamps === undefined) return undefined
+  return `${formatSeconds(timestamps[0])}–${formatSeconds(timestamps[1])}s`
+}
+
+/** 在这段引用的帧里往前（-1）或往后（1）走一格；到头、或当前帧不属于这段时为 undefined。 */
+export const adjacentFrame = (
+  content: ShotContent,
+  frame: number | undefined,
+  step: -1 | 1,
+): number | undefined => {
+  const at = frame === undefined ? -1 : content.frameNumbers.indexOf(frame)
+  return at < 0 ? undefined : content.frameNumbers[at + step]
+}
+
+/** 当前帧在这段引用的帧里排第几（从 1 起）、这段共几帧；这段没有帧或当前帧不属于这段时为 undefined。 */
+export const framePosition = (
+  content: ShotContent,
+  frame: number | undefined,
+): { index: number; count: number } | undefined => {
+  const at = frame === undefined ? -1 : content.frameNumbers.indexOf(frame)
+  return at < 0 ? undefined : { count: content.frameNumbers.length, index: at + 1 }
+}
+
+/** 一帧被哪些段用着，如「镜头 1、镜头 2 共用」「全局设定」；没有段引用时是「未引用」。 */
+export const frameUsage = (contents: readonly ShotContent[], frame: number): string => {
+  const users = scriptSegments(contents).filter((item) => item.frameNumbers.includes(frame))
+  if (users.length === 0) return '未引用'
+  const labels = users.map(contentLabel).join('、')
+  return users.length > 1 ? `${labels} 共用` : labels
+}
+
+/** 在本组全部图片里点了某一帧之后选中哪段：当前段引用它就留在当前段，否则到第一个引用它的段；
+ * 没有段引用时落到「未引用」，只换画面、不高亮任何段。帧不在本组时返回 undefined。 */
+export const contentAfterPickingFrame = (
+  contents: readonly ShotContent[],
+  currentId: string,
+  frame: number,
+): string | undefined => {
+  const current = contents.find((item) => item.id === currentId)
+  if (current?.frameNumbers.includes(frame) === true) return current.id
+  // 「未引用」正好收着没人引用的帧，按顺序找就会在段都不引用时落到它。
+  return contents.find((item) => item.frameNumbers.includes(frame))?.id
+}
+
 export const updateContentPrompt = (shot: Shot, id: string, text: string): Shot => {
   const content = shotContents(shot).find((item) => item.id === id)
   if (content?.kind === 'global')
@@ -126,7 +181,7 @@ export const appendContentImage = (
   insertion?: PromptInsertion,
 ): Shot => {
   if (shot.image_urls.length >= MAX_REFERENCE_IMAGES)
-    throw new UserFacingError(`每组最多使用 ${MAX_REFERENCE_IMAGES} 张参考图`)
+    throw new UserFacingError(REFERENCE_LIMIT_TEXT)
   if (url.trim() === '') throw new UserFacingError('图片地址不能为空')
   const image_urls = [...shot.image_urls, url]
   return insertContentReference({ ...shot, image_urls }, id, image_urls.length, insertion)

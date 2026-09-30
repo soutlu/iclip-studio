@@ -59,7 +59,7 @@ export function ConversationsRoute({
       ref={mainRef}
     >
       {/* 预留应用壳中侧栏展开按钮的空间。 */}
-      <div className="mx-auto flex w-full max-w-360 flex-col px-4 pt-12 pb-8 md:px-8 md:pb-10">
+      <div className="mx-auto flex w-full max-w-(--layout-list-page-max) flex-col px-4 pt-12 pb-8 sm:px-(--layout-list-page-gutter) md:pb-10">
         <h1 className="mb-4 text-headline font-semibold text-on-surface md:mb-5">全部对话</h1>
         <AuditFiltersBar
           filters={filters}

@@ -33,10 +33,15 @@ export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
   const maxDeliveries = Math.max(1, ...people.map((person) => person.metrics.deliveries))
   return (
     <TableScroll>
-      <table aria-label="按人" className="w-full border-collapse text-body">
+      {/* 宽屏固定列宽：「人」320、迷你图 152（110 的图加两侧内边距），5 个数字列均分余下宽度；
+          窄屏按内容排、横着滚。固定布局只认表头行的宽度。 */}
+      <table
+        aria-label="按人"
+        className="w-full border-separate border-spacing-0 text-body @6xl:table-fixed"
+      >
         <thead>
           <tr>
-            <th className={TH} scope="col">
+            <th className={cn(TH, '@6xl:w-80')} scope="col">
               人
             </th>
             <SortHeader column="deliveries" onSort={onSort} sort={sort}>
@@ -54,7 +59,7 @@ export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
             <SortHeader column="perDelivery" onSort={onSort} sort={sort}>
               每件成片消耗
             </SortHeader>
-            <th className={TH} scope="col">
+            <th className={cn(TH, '@6xl:w-38')} scope="col">
               {TREND_TITLE[bucket]}
             </th>
           </tr>
@@ -65,7 +70,7 @@ export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
             const name = nameOf(person.userName) ?? person.userName
             return (
               <tr className="group/row hover:bg-state-hover" key={person.userName}>
-                <td className={TD}>
+                <td className={cn(TD, '@6xl:overflow-hidden')}>
                   <span className="flex items-center gap-2.5">
                     <span
                       aria-hidden
@@ -97,7 +102,7 @@ export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
                 <td className={TD}>{fmtRate(metrics.oneTakeRate)}</td>
                 <td className={TD}>{fmtDuration(metrics.activeCycleSeconds?.avg ?? null)}</td>
                 <td className={TD}>{fmtTokens(metrics.tokensPerDelivery)}</td>
-                <td className={cn(TD, 'w-30')}>
+                <td className={TD}>
                   <Sparkline
                     height={24}
                     values={person.trend.map((point) => point.deliveries)}

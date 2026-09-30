@@ -13,7 +13,6 @@ from urllib.parse import quote
 
 import httpx
 
-OAUTH_NAME = "sso"
 SSO_EMAIL_PLACEHOLDER_DOMAIN = "sso.iclip.example"
 
 _ISSUE_PATH = "/sso/issue/jwt"
@@ -108,7 +107,6 @@ def sso_placeholder_email(union_id: str) -> str:
 
 
 __all__ = [
-    "OAUTH_NAME",
     "SsoSessionInvalid",
     "SsoUnavailable",
     "SsoUserSession",

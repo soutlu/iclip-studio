@@ -1,5 +1,5 @@
 {
-  "name": "Cue demo hand-authored vector mascot",
+  "name": "Cue hand-authored vector mascot",
   "approvedOn": "2026-09-13",
   "defaultEntry": "index.html",
   "representations": [
@@ -14,7 +14,7 @@
     "open": 300,
     "close": 217
   },
-  "svgBytes": 63794,
+  "svgBytes": 63789,
   "riveBytes": 68648,
   "productSvgBytes": 39132,
   "bitmapAssets": 0,
@@ -23,8 +23,8 @@
   "files": [
     {
       "path": "README.md",
-      "bytes": 7316,
-      "sha256": "1e835e863c787099123b060557512bd234d2ee1261c675d4f7a854c46f01d973"
+      "bytes": 7256,
+      "sha256": "8e84944b322b973974b81e445c0aa4e60a4c6f198faa029473b7723d4a7197a7"
     },
     {
       "path": "animation/animation-interface.json",
@@ -43,28 +43,28 @@
     },
     {
       "path": "animation/compile-report.json",
-      "bytes": 1194,
-      "sha256": "0d435017c7a05a931847306ff7ae6b8ba152a6a20b730bafd4f6a9691395c819"
+      "bytes": 1190,
+      "sha256": "bf2cc2159038adb1f04f119abb48d01e432d6ed166f77787cdfbe253c86bc443"
     },
     {
       "path": "animation/layout.xml",
-      "bytes": 197310,
-      "sha256": "192b317b857312242c39491af7a03230aa5ea2ac6ddcb4154a52a727db9e83dd"
+      "bytes": 197314,
+      "sha256": "e3408e12858ffc96b34815666b8d2ac32f4158f1f6193906dc53a3f476100709"
     },
     {
       "path": "animation/rive.yaml",
-      "bytes": 127,
-      "sha256": "1544669fe3b81b327c1d9ce29e63f8a2c8fde7af08e375c7fe47799cb7b07463"
+      "bytes": 123,
+      "sha256": "c4fbbe2c9e9865f7c6ea10954c4b8abef08608e7879ed90314b7e323e9abbc34"
     },
     {
       "path": "animation/scene.rml",
-      "bytes": 351256,
-      "sha256": "88f5f93858c0412140540c5b82cf6effd955e6bbe1bbb22c7bf7d3f2c06bf207"
+      "bytes": 351260,
+      "sha256": "0f0626fc57d2a88d3410c00e2274a82b730da1ea746304d868df5ca441604966"
     },
     {
       "path": "animation/vector-build.json",
       "bytes": 2544,
-      "sha256": "0e629b97627ae30a70f1aa9d67e537aeee73cbc4a08811a3935673875c546b31"
+      "sha256": "50ecba350f53161848e08ae9a97240d8ffbce53dbd13d514301cded832fbf16c"
     },
     {
       "path": "animation/wordmark-provenance.json",
@@ -98,8 +98,8 @@
     },
     {
       "path": "build_svg.py",
-      "bytes": 10700,
-      "sha256": "fe470abb4b51418c2fc89de4cf9cf914361f2f66d82a04f9eaf4f8c79e532093"
+      "bytes": 10687,
+      "sha256": "15f4d3cd4542c27c1898b4a570ec4e4827f49ef4c81bdc29a7978a6b3c04158c"
     },
     {
       "path": "cue.js",
@@ -108,18 +108,18 @@
     },
     {
       "path": "cue.svg",
-      "bytes": 63794,
-      "sha256": "524aea73e063aee17e872ce34398936c33ef940d421d85f51c01c1af68b7c1a6"
+      "bytes": 63789,
+      "sha256": "f7d60ac056d860c832ab33f5996ff2a31429a8394876f4c8866fdccd062baeb3"
     },
     {
       "path": "index.html",
-      "bytes": 67599,
-      "sha256": "31e9da637930b3309cdca7515f2ba72b2d9185b75d4c672f49a70c5de0dbbcec"
+      "bytes": 67559,
+      "sha256": "2828edb4012f046fa7ebea16b26118439ee72e63fdcb94c5282b09c927984f90"
     },
     {
       "path": "index.template.html",
-      "bytes": 3808,
-      "sha256": "e9dc4d4ffdc4aa0ecc82ce74715b460311a67aa18070da4844aa447329b056d9"
+      "bytes": 3773,
+      "sha256": "92106be624bd03274276c29c452d6620cc89c101726f43d7da1f4092523c7473"
     },
     {
       "path": "licenses/Source-Serif-OFL.md",

@@ -35,9 +35,6 @@ _DOWNLOAD_TIMEOUT_SECONDS: Final = 60.0
 TASK_SOURCE: Final = "iclip_agent"
 """网关按它认调用方，取值须在它的来源白名单里。"""
 
-_TASK_TEXT_TO_IMAGE: Final = "text-to-image"
-_TASK_IMAGE_EDIT: Final = "image-edit"
-
 _MIME_BY_SUFFIX: Final = {
     "png": "image/png",
     "jpg": "image/jpeg",
@@ -80,6 +77,12 @@ class GatewayImageSettings:
     env: str
     """网关要求的调用环境。它按 task_source 与这一项一起判这次调用合不合法。"""
 
+    text_to_image_task: str
+    """文生图的任务路由。"""
+
+    image_edit_task: str
+    """图像编辑的任务路由。"""
+
 
 class GatewayImageProvider:
     """``GenerationProvider`` 的网关图片实现，一家模型一个实例。"""
@@ -117,7 +120,7 @@ class GatewayImageProvider:
         if references:
             payload["input_str_list"] = references
         body = await _post_generation(
-            task_url(self._settings.api_base, editing=bool(references)),
+            task_url(self._settings, editing=bool(references)),
             payload,
             timeout=self._model.timeout_seconds,
             transport=self._transport,
@@ -144,11 +147,11 @@ class GatewayImageProvider:
         )
 
 
-def task_url(api_base: str, *, editing: bool) -> str:
+def task_url(settings: GatewayImageSettings, *, editing: bool) -> str:
     """拼出这次要打的地址。每个模型在网关上都是两条路由：文生图与图像编辑各一条。"""
 
-    task = _TASK_IMAGE_EDIT if editing else _TASK_TEXT_TO_IMAGE
-    return f"{api_base.rstrip('/')}/{task}"
+    task = settings.image_edit_task if editing else settings.text_to_image_task
+    return f"{settings.api_base.rstrip('/')}/{task}"
 
 
 async def _post_generation(

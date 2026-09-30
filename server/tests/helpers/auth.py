@@ -39,7 +39,9 @@ async def set_roles_in_db(pg_url: str, email: str, roles: list[str]) -> None:
         )
 
 
-async def login_as_editor(client: httpx.AsyncClient, pg_url: str, *, username: str = "logan") -> str:
+async def login_as_editor(
+    client: httpx.AsyncClient, pg_url: str, *, username: str = "logan"
+) -> str:
     """以 ``{username}@example.com`` 注册登录并授 editor 角色；返回用户 id。"""
 
     email = f"{username}@example.com"

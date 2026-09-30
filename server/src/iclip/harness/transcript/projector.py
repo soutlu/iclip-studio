@@ -15,6 +15,7 @@ from typing import Any
 from pydantic_ai.exceptions import RunCancelled
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
+    CapabilityEvent,
     DeferredToolRequestsEvent,
     DeferredToolResultsEvent,
     EnqueuedMessagesEvent,
@@ -31,9 +32,9 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.run import AgentRunResultEvent
-from pydantic_ai.tools import DeferredToolRequests
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
 from pydantic_ai.ui import UIEventStream
-from pydantic_ai_harness.compaction import estimate_context_tokens
+from pydantic_ai_harness.compaction import ContextUsageEvent, estimate_context_tokens
 
 from iclip.harness.agents import SubAgentProfile
 from iclip.harness.context_compaction import compaction_only
@@ -311,6 +312,20 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
         if ops:
             yield tuple(ops)
 
+    async def handle_capability_event(self, event: CapabilityEvent) -> AsyncIterator[OpsBatch]:
+        """ReportContextUsage 在每次模型请求前的读数写入 agent meta；其余 capability 事件不投影。"""
+
+        if not isinstance(event, ContextUsageEvent):
+            return
+        self.max_context_tokens = event.window_tokens
+        yield (
+            MetaMergeOp(
+                meta=TranscriptMeta(
+                    agent=agent_context_status(event.used_tokens, event.window_tokens)
+                )
+            ),
+        )
+
     # --- 正文与思考 ---------------------------------------------------------
 
     async def handle_part_start(self, event: PartStartEvent) -> AsyncIterator[OpsBatch]:
@@ -431,7 +446,7 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
         if opened is None:
             return
         if part.tool_call_id in self._pending_tool_calls:
-            # 基类的 _pending_tool_calls（pydantic_ai 2.39 UIEventStream）在分发真实结果前已弹出该调用，
+            # 基类的 _pending_tool_calls（pydantic_ai 2.51 UIEventStream）在分发真实结果前已弹出该调用，
             # 只有异常收尾时补的返回到这里还挂着；升级框架时要复核这一点。
             return
         self._settled_calls.add(part.tool_call_id)
@@ -526,7 +541,7 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
         said = [
             content
             for message in event.messages
-            for part in getattr(message, "parts", ())
+            for part in message.parts
             if isinstance(part, UserPromptPart)
             if (content := _prompt_content(part))
         ]
@@ -756,14 +771,13 @@ def _prompt_content(part: UserPromptPart) -> tuple[PromptContent, ...]:
     return prompt_content(items)
 
 
-def _approvals(results: Any) -> list[tuple[str, bool]]:
-    """从 DeferredToolResults 读取工具调用的审批结果。"""
+def _approvals(results: DeferredToolResults) -> list[tuple[str, bool]]:
+    """从 DeferredToolResults 读取工具调用的审批结果；ToolDenied 为拒绝，ToolApproved 为批准。"""
 
-    settled: list[tuple[str, bool]] = []
-    for tool_call_id, decision in getattr(results, "approvals", {}).items():
-        approved = decision if isinstance(decision, bool) else getattr(decision, "approved", True)
-        settled.append((tool_call_id, bool(approved)))
-    return settled
+    return [
+        (call_id, decision if isinstance(decision, bool) else not isinstance(decision, ToolDenied))
+        for call_id, decision in results.approvals.items()
+    ]
 
 
 __all__ = ["OpsBatch", "TranscriptEventStream", "step_responses"]

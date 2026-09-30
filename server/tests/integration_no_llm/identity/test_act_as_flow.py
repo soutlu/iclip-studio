@@ -25,7 +25,7 @@ async def issue_key(
 
     logan_id = await register_and_login(root)
     await set_roles_in_db(pg_url, "logan@example.com", ["root"])
-    created = await root.post("/api-keys", json={"name": "partner_app", "permissions": permissions})
+    created = await root.post("/api-keys", json={"name": "partner-app", "permissions": permissions})
     assert created.status_code == 201, created.text
     return logan_id, created.json()["apiKey"]["token"]
 
@@ -158,7 +158,9 @@ async def test_browser_session_may_only_name_itself(client: httpx.AsyncClient, p
         "/conversations", json={"agentId": "storyboard", "userName": "Sara.Hong"}
     )
     assert someone_else.status_code == 422
-    myself = await client.post("/conversations", json={"agentId": "storyboard", "userName": "logan"})
+    myself = await client.post(
+        "/conversations", json={"agentId": "storyboard", "userName": "logan"}
+    )
     assert myself.status_code == 201, myself.text
 
 

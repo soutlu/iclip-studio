@@ -1,7 +1,7 @@
-/** 出片的模型选项、提交与失败原因。防重复点击归调用方的出片闸门（useGenerationGate）；202 后由
- * 任务列表轮询进度，同组可继续生成新版本。
+/** 出片的生成选项（模型、分辨率、音频，只记在本次会话）、提交与失败原因。防重复点击归调用方的
+ * 出片闸门（useGenerationGate）；202 后由任务列表轮询进度，同组可继续生成新版本。
  *
- * 出片失败的原因留在这里按镜头组记着，由工作台渲染在出片按钮旁边：全局 toast 弹在视口
+ * 出片失败的原因留在这里按镜头组记着，由工作台渲染在底部出片栏里：全局 toast 弹在视口
  * 底部、压着聊天输入区，离按下的按钮太远。 */
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -9,7 +9,15 @@ import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import type { Shot } from './shot-document'
 import { storyboardQueryKeys, submitVideoGeneration, useVideoModels } from './storyboard.api'
-import { DEFAULT_GENERATE_AUDIO, type VideoGenerationOptions } from './video-generation-options'
+import {
+  DEFAULT_GENERATE_AUDIO,
+  DEFAULT_VIDEO_RESOLUTION,
+  type VideoGenerationOptions,
+  type VideoModelsStatus,
+} from './video-generation-options'
+
+const modelsStatus = (query: { isError: boolean; data: unknown }): VideoModelsStatus =>
+  query.isError ? 'unavailable' : query.data === undefined ? 'loading' : 'ready'
 
 export const useVideoGeneration = (conversationId: string) => {
   const queryClient = useQueryClient()
@@ -19,12 +27,13 @@ export const useVideoGeneration = (conversationId: string) => {
   const [wanted, setWanted] = useState<VideoGenerationOptions>({
     generateAudio: DEFAULT_GENERATE_AUDIO,
     model: undefined,
+    resolution: DEFAULT_VIDEO_RESOLUTION,
   })
   // 选过的模型不在允许表里（配置改了）就退回默认，不用副作用改 state。
   const items = models.data?.items ?? []
   const model =
     wanted.model !== undefined && items.includes(wanted.model) ? wanted.model : models.data?.default
-  const options: VideoGenerationOptions = { generateAudio: wanted.generateAudio, model }
+  const options: VideoGenerationOptions = { ...wanted, model }
 
   const submit = async (shot: Shot, aspectRatio: string) => {
     if (model === undefined) return
@@ -35,6 +44,7 @@ export const useVideoGeneration = (conversationId: string) => {
         conversationId,
         generateAudio: options.generateAudio,
         model,
+        resolution: options.resolution,
         shot,
       })
       void queryClient.invalidateQueries({
@@ -49,7 +59,7 @@ export const useVideoGeneration = (conversationId: string) => {
     /** 这一组上次出片失败的原因；换组就不显示，不用清。 */
     errorOf: (index: number) => (failure?.index === index ? failure.message : undefined),
     models: items,
-    modelsUnavailable: models.isError,
+    modelsStatus: modelsStatus(models),
     options,
     /** 出片路上、提交之前就失败的（例如取不到已保存的镜头组），走同一条提示通道。 */
     reportError: (index: number, message: string) => setFailure({ index, message }),

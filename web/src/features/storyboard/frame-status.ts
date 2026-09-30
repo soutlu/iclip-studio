@@ -13,7 +13,7 @@ export type FrameBadge =
   /** 点它直接打开编辑器看这条结果，所以要带上是哪条任务。 */
   | { kind: 'result'; jobId: string }
 
-/** 角标的文字，胶片条的可访问名与主预览的提示共用一套词；只有「有新结果」是这里独有的说法。 */
+/** 角标的文字，与其他媒体状态共用一套词；只有「有新结果」是这里独有的说法。 */
 export const frameBadgeText = (badge: FrameBadge): string =>
   badge.kind === 'result' ? '有新结果' : mediaStatusLabel(badge.kind)
 

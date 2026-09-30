@@ -265,6 +265,8 @@ def _generation_module(
         ),
         image_default_model=settings.image_default_model,
         image_env=settings.image_env,
+        image_text_to_image_task=settings.image_text_to_image_task,
+        image_edit_task=settings.image_edit_task,
         object_store=object_store,
         queue_connector=(
             queue_connector
@@ -323,6 +325,7 @@ def build_app(
             app_name=settings.sso.app_name,
             redirect_url=settings.sso.redirect_url,
             pms_base_url=settings.sso.pms_base_url,
+            oauth_name=settings.sso.oauth_name,
             root_email=settings.sso.root_email,
         )
         if settings.sso is not None
@@ -342,7 +345,7 @@ def build_app(
     http_client = httpx.AsyncClient(follow_redirects=True)
     catalog_engine = _product_catalog_engine(settings.product_catalog, product_catalog_engine)
     owns_catalog_engine = catalog_engine is not None and product_catalog_engine is None
-    # 爆款视频读自家快照表，无条件提供。降级要按品类与品牌圈选同类款，需要 PDM 款目录；
+    # 爆款视频读本库的爆款视频表，无条件提供。降级要按品类与品牌圈选同类款，需要 PDM 款目录；
     # 缺它时降级整级失效，此处显式告警，不让调用方把「能力没开」误当成「查不到」。
     if catalog_engine is None:
         _logger.warning("未配置产品资料库，爆款视频降级不可用，未命中的款一律返回 none")

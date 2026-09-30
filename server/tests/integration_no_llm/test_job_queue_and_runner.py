@@ -37,6 +37,7 @@ from iclip.harness.transcript.service import TranscriptService
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.platform.transcript.ops import (
     MAIN_AGENT_ID,
+    AgentStatusMeta,
     TextContent,
     TranscriptTurn,
 )
@@ -84,6 +85,31 @@ def _waits_twice(
         yield "第一句" if index == 0 else "第二句"
 
     return FunctionModel(stream_function=stream)
+
+
+def _speaks_then_waits(entered: asyncio.Event, gate: asyncio.Event) -> FunctionModel:
+    """先吐一段让响应流打开，再阻塞，保持运行未收尾。"""
+
+    async def stream(
+        _messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        yield "先说一句"
+        entered.set()
+        await gate.wait()
+        yield "说完了"
+
+    return FunctionModel(stream_function=stream)
+
+
+async def _live_context_status(
+    store: TranscriptStore, conversation_id: str, *, tries: int = 200
+) -> AgentStatusMeta:
+    for _ in range(tries):
+        status = store.subscribe_view(conversation_id, MAIN_AGENT_ID).snapshot.meta.agent
+        if status is not None:
+            return status
+        await asyncio.sleep(0.02)
+    raise AssertionError("运行中没收到上下文读数")
 
 
 def _records(
@@ -218,6 +244,28 @@ async def test_usage_is_filled_in_when_the_run_finishes(engine: AsyncEngine) -> 
         record_materials=records_nothing,
     ).page(conversation_id, runtime_agent_id=AGENT_ID)
     assert restored.meta.agent == live_status
+
+
+async def test_the_context_gauge_updates_before_the_run_finishes(engine: AsyncEngine) -> None:
+    """模型请求前的上下文读数实时推给订阅者，不等运行收尾。"""
+
+    entered, gate = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(
+        engine, _speaks_then_waits(entered, gate), store=store
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    await submit_text(runner, queue, conversation_id, "来")
+    await entered.wait()
+    try:
+        status = await _live_context_status(store, conversation_id)
+    finally:
+        gate.set()
+        await drained(queue, conversation_id)
+        await runner.shutdown()
+
+    assert status.max_context_tokens == MAX_CONTEXT_TOKENS
 
 
 async def test_sweep_settles_an_expired_lease_and_wakes_the_queue(engine: AsyncEngine) -> None:

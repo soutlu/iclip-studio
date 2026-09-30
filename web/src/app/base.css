@@ -499,6 +499,8 @@
 
   /* 左缘 accent 条（box-shadow 形态，不占布局） */
   --shadow-rail-inset: inset 3px 0 0 var(--color-chat-agent-rail);
+  /* 底边细线（box-shadow 形态）：吸顶表头的底线跟着单元格走 */
+  --shadow-hairline-bottom: inset 0 -1px 0 var(--color-hairline);
 
   /* 局部堆叠 z：isolate 容器内兄弟排序专用，不承载全局层语义 */
   --z-local-1: 1;
@@ -586,6 +588,9 @@
   --layout-app-workbench-min-width: 560px;
   --layout-app-chat-min-width: 400px;
   --layout-home-read-max: 760px;
+  /* 资料库、全部对话、审计的左右页边距：随视口线性增长，1440 视口 32px、2560 视口 120px */
+  --layout-list-page-gutter: clamp(32px, calc(7.8571vw - 81.143px), 120px);
+  --layout-list-page-max: 2400px;
   --layout-dialog-header-height: 52px;
   --layout-project-header-height: 72px;
   --layout-project-header-inline-start: 24px;

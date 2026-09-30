@@ -352,33 +352,56 @@ export const seedMockWorkspace = (
       id: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c',
       outputUrl: WIDE_VIDEO_URL,
       prompt: '模特走向镜头，停下微笑，暖光。',
+      // 横版成片：成片卡按请求里的画幅画，不跟分镜。
+      request: {
+        aspect_ratio: '16:9',
+        model: 'wan3.0-video',
+        prompt: '模特走向镜头，停下微笑，暖光。',
+        resolution: '1080p',
+      },
       shotIndex: 3,
       status: 'completed',
       watermarkOutputUrl: WIDE_VIDEO_URL,
     }),
     job({
       createdAt: '2026-09-01T11:10:00Z',
+      durationMs: VIDEO_MS,
       id: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
       outputUrl: VIDEO_URL,
       // 带结构化 shot 的记录可以回填镜头组；纯描述的那两条只能看不能回填。
       prompt: assembleShotPrompt(HISTORY_SHOT),
-      request: { prompt: assembleShotPrompt(HISTORY_SHOT), shot: HISTORY_SHOT },
+      request: {
+        aspect_ratio: '9:16',
+        model: 'vendor-a-seedance-2-5',
+        prompt: assembleShotPrompt(HISTORY_SHOT),
+        resolution: '720p',
+        shot: HISTORY_SHOT,
+      },
       shotIndex: 2,
       status: 'completed',
       watermarkOutputUrl: VIDEO_URL,
     }),
+    // 只记了正文与分辨率：成片卡按分镜画幅画，不显示模型。
     job({
       createdAt: '2026-09-01T11:40:00Z',
       errorMessage: '上游返回了空结果，换个描述再试一次。',
       id: '6c304182-1c30-4e41-9eab-3f4a5b6c7d8e',
       prompt: '第 2 组第二版：加一个低头看包的动作。',
+      request: { prompt: '第 2 组第二版：加一个低头看包的动作。', resolution: '720p' },
       shotIndex: 2,
       status: 'failed',
     }),
+    // 刚提交不久、还在上游跑：静态种子，不会自己跑完；时刻跟着打开的那一刻，在途卡上的已用时长才像真的。
     job({
-      createdAt: '2026-09-01T12:20:00Z',
+      createdAt: new Date(Date.now() - 38_000).toISOString(),
       id: '7d415293-2d41-4f52-afbc-4a5b6c7d8e9f',
       prompt: '第 2 组第三版：脚步放慢，收尾停在微笑上。',
+      request: {
+        aspect_ratio: '9:16',
+        model: 'vendor-a-seedance-2-5',
+        prompt: '第 2 组第三版：脚步放慢，收尾停在微笑上。',
+        resolution: '1080p',
+      },
       shotIndex: 2,
       status: 'submitted',
     }),
@@ -786,6 +809,8 @@ export const workspaceHandlers = [
       shotIndex: body.shot_index ?? null,
       outputUrl: VIDEO_URL,
       watermarkOutputUrl: VIDEO_URL,
+      // 出的就是那条测试卡，实测时长照它。
+      durationMs: VIDEO_MS,
     })
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),

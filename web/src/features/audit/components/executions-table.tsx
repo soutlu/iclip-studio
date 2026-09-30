@@ -27,6 +27,9 @@ type ExecutionsTableProps = {
 
 const COLUMNS = 9
 
+/** 数字与短字段列收成内容宽，余下宽度按 3:2 分给「对话」「需求单」。 */
+const FIT_TD = cn(TD, 'w-px')
+
 export function ExecutionsTable({
   executions,
   thresholds,
@@ -43,7 +46,10 @@ export function ExecutionsTable({
     })
   return (
     <TableScroll>
-      <table aria-label="按任务执行次数" className="w-full border-collapse text-body">
+      <table
+        aria-label="按任务执行次数"
+        className="w-full border-separate border-spacing-0 text-body"
+      >
         <thead>
           <tr>
             <SortHeader column="start" onSort={onSort} sort={sort}>
@@ -126,13 +132,14 @@ function ExecutionRow({ execution, thresholds, open, onToggle, nameOf }: Executi
       <tr
         aria-expanded={open}
         aria-label={`${execution.title}，${open ? '收起' : '展开'}镜头与模型用量`}
-        className="group/row cursor-pointer ui-focus hover:bg-state-hover"
+        // 行贴满卡边，焦点环往里画，不被卡片与滚动容器裁掉。
+        className="group/row cursor-pointer ui-focus [--state-focus-offset:calc(var(--state-focus-ring)*-1)] hover:bg-state-hover"
         onClick={onClick}
         onKeyDown={onKeyDown}
         tabIndex={0}
       >
-        <td className={TD}>{fmtMoment(new Date(execution.startedAt))}</td>
-        <td className={cn(TD, CLIP_TD, 'w-[30%] min-w-40')}>
+        <td className={FIT_TD}>{fmtMoment(new Date(execution.startedAt))}</td>
+        <td className={cn(TD, CLIP_TD, 'w-[60%] min-w-40')}>
           <div className="flex min-w-0 items-center">
             {execution.deletedAt === null ? null : <DeletedMark />}
             <Link
@@ -145,8 +152,8 @@ function ExecutionRow({ execution, thresholds, open, onToggle, nameOf }: Executi
             </Link>
           </div>
         </td>
-        <td className={cn(TD, 'text-left')}>{person}</td>
-        <td className={cn(TD, CLIP_TD, 'w-[20%] min-w-28')}>
+        <td className={cn(FIT_TD, 'text-left')}>{person}</td>
+        <td className={cn(TD, CLIP_TD, 'w-[40%] min-w-28')}>
           <div className="flex min-w-0 items-center">
             {flag('task_stuck')}
             <span className="min-w-0 truncate" title={task}>
@@ -154,22 +161,22 @@ function ExecutionRow({ execution, thresholds, open, onToggle, nameOf }: Executi
             </span>
           </div>
         </td>
-        <td className={TD}>
+        <td className={FIT_TD}>
           {flag('stuck')}
-          {delivered ? '是' : '否'}
+          <DeliveredMark delivered={delivered} />
         </td>
-        <td className={TD}>
+        <td className={FIT_TD}>
           {flag('retry')}
           {metrics.attemptsPerShot === null ? EMPTY : metrics.attemptsPerShot.toFixed(1)}
         </td>
-        <td className={TD}>
+        <td className={FIT_TD}>
           {delivered ? fmtDuration(metrics.activeCycleSeconds?.avg ?? null) : EMPTY}
         </td>
-        <td className={TD}>
+        <td className={FIT_TD}>
           {flag('spend')}
           {fmtTokens(metrics.usage.totalTokens)}
         </td>
-        <td className={cn(TD, 'w-9 pr-0')}>
+        <td className={FIT_TD}>
           <span
             aria-hidden
             className="inline-grid size-7 place-items-center rounded-full align-middle text-on-surface-muted group-hover/row:text-on-surface"
@@ -186,10 +193,7 @@ function ExecutionRow({ execution, thresholds, open, onToggle, nameOf }: Executi
       {open ? (
         <tr className="group/row">
           <td
-            className={cn(
-              TD,
-              'bg-state-active px-4 pt-3 pb-3.5 text-left whitespace-normal first:pl-4',
-            )}
+            className={cn(TD, 'h-auto bg-state-active pt-3 pb-3.5 text-left whitespace-normal')}
             colSpan={COLUMNS}
           >
             <ShotStrip retryAtLeast={thresholds.retryAtLeast} shots={execution.shots} />
@@ -218,6 +222,22 @@ function UsageList({ usage }: { usage: Execution['usage'] }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+/** 成片与否：中性状态点加文字，是为实心点、否为空心点，不用判断色。 */
+function DeliveredMark({ delivered }: { delivered: boolean }) {
+  return (
+    <span className={cn('inline-flex items-center gap-1.5', !delivered && 'text-on-surface-muted')}>
+      <i
+        aria-hidden
+        className={cn(
+          'block size-1.5 rounded-full',
+          delivered ? 'bg-on-surface-variant' : 'border-[1.5px] border-outline-variant',
+        )}
+      />
+      {delivered ? '是' : '否'}
+    </span>
   )
 }
 

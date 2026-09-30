@@ -81,6 +81,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     monkeypatch.delenv("PMS_BASE_URL", raising=False)
     monkeypatch.delenv("SSO_REDIRECT_URL", raising=False)
     monkeypatch.delenv("ROOT_EMAIL", raising=False)
+    monkeypatch.delenv("SSO_OAUTH_NAME", raising=False)
     # 隔离开发机的产品目录库配置。
     monkeypatch.delenv("PRODUCT_CATALOG_DATABASE_URL", raising=False)
     # 隔离开发机的对象存储凭证。
@@ -174,6 +175,13 @@ def root_email() -> str | None:
 
 
 @pytest.fixture
+def sso_oauth_name() -> str | None:
+    """测试可覆写：非空即设置 OAuth 账号表里的提供方名（SSO_OAUTH_NAME）。"""
+
+    return None
+
+
+@pytest.fixture
 async def sso_app(
     monkeypatch: pytest.MonkeyPatch,
     base_env: None,
@@ -181,6 +189,7 @@ async def sso_app(
     sso_transport: httpx.MockTransport,
     pms_transport: httpx.MockTransport | None,
     root_email: str | None,
+    sso_oauth_name: str | None,
 ) -> AsyncGenerator[FastAPI]:
     """SSO 开启的 app；协议外呼经 MockTransport。"""
 
@@ -188,6 +197,8 @@ async def sso_app(
     monkeypatch.setenv("SSO_REDIRECT_URL", "https://app.test/auth/sso/landing")
     if root_email:
         monkeypatch.setenv("ROOT_EMAIL", root_email)
+    if sso_oauth_name:
+        monkeypatch.setenv("SSO_OAUTH_NAME", sso_oauth_name)
     if pms_transport is not None:
         monkeypatch.setenv("PMS_BASE_URL", "https://pms.test")
 

@@ -12,7 +12,7 @@
     </ViewModelInstance>
   </ViewModel>
   <Artboard name="Cue Unboxing" id="0:2" width="1200" height="600" defaultStateMachineId="0:7" viewModelId="0:30" viewModelInstanceId="0:34">
-    <Node name="demo package" id="0:101" x="687" y="313" scaleX="1.03" scaleY="1.03">
+    <Node name="Shoebox package" id="0:101" x="687" y="313" scaleX="1.03" scaleY="1.03">
       <Node name="Hinged lid" id="0:102" x="-90" y="-44">
         <Shape name="Blue band front" id="0:103">
           <PointsPath isClosed="true" isClockwise="true" name="Path">
@@ -125,7 +125,7 @@
           </Fill>
         </Shape>
       </Node>
-      <Node name="Custom demo print" id="0:113" x="65" y="30" scaleX="0.72" scaleY="0.86" rotation="-0.125">
+      <Node name="Custom box print" id="0:113" x="65" y="30" scaleX="0.72" scaleY="0.86" rotation="-0.125">
         <Node name="m letter 1" id="0:114" x="0">
           <Shape name="Rounded m outline" id="0:115">
             <PointsPath isClosed="true" isClockwise="true" name="Glyph outline">

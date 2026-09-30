@@ -3,6 +3,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
+import { aspectOf } from '@/shared/lib/aspect-ratio'
 import { copyText } from '@/shared/lib/clipboard'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
@@ -18,13 +19,7 @@ import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip
 import { VideoDownload } from '@/shared/ui/video-download'
 import { VIDEO_PLAYER_SELECTOR, VideoPlayer } from '@/shared/ui/video-player'
 import { useLibraryVideo, type LibraryVideo, type LibraryVideoDetail } from '../library.api'
-import {
-  aspectOf,
-  cardTitleOf,
-  durationSecondsOf,
-  formatSecond,
-  versionsOf,
-} from '../library-media'
+import { cardTitleOf, durationSecondsOf, formatSecond, versionsOf } from '../library-media'
 import { AuthorAvatar } from './author-avatar'
 import { LibraryParamsPanel, LibraryScriptPanel } from './library-script'
 import { LibraryVersionBar, LibraryVersionBarSkeleton } from './library-version-bar'

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LibraryTake, LibraryVersionOut } from './library.api'
 import {
-  aspectOf,
   cutIndexAt,
   durationSecondsOf,
   formatClock,
@@ -28,19 +27,6 @@ const takeOf = (patch: { seconds?: number | null; timelineEnd?: number }): Libra
           timeline: [{ end: patch.timelineEnd, imageIndexes: [], prompt: '一', start: 0 }],
         },
   seconds: patch.seconds ?? null,
-})
-
-describe('aspectOf', () => {
-  it.each([
-    ['9:16', { h: 16, w: 9 }],
-    ['16:9', { h: 9, w: 16 }],
-    ['2.39:1', { h: 1, w: 2.39 }],
-    ['adaptive', { h: 16, w: 9 }],
-    [null, { h: 16, w: 9 }],
-    ['0:1', { h: 16, w: 9 }],
-  ])('%s', (ratio, expected) => {
-    expect(aspectOf(ratio)).toEqual(expected)
-  })
 })
 
 describe('durationSecondsOf', () => {

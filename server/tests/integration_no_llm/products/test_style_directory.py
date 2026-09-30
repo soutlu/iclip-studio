@@ -28,8 +28,8 @@ async def test_resolves_category_and_brand(engine: AsyncEngine) -> None:
 
     found = await PgStyleDirectory(engine).resolve(["DEMO-STYLE-1"])
 
-    assert found["DEMO-STYLE-1"].category_id == 70
-    assert found["DEMO-STYLE-1"].brand_code == "3"
+    assert found["DEMO-STYLE-1"].category_id == 901
+    assert found["DEMO-STYLE-1"].brand_code == "B1"
 
 
 async def test_unknown_style_is_absent_not_an_error(engine: AsyncEngine) -> None:
@@ -67,10 +67,10 @@ async def test_missing_grouping_is_dropped(engine: AsyncEngine) -> None:
 
 
 async def test_resolves_a_batch_in_one_call(engine: AsyncEngine) -> None:
-    await seed_pdm_style(engine, style_no="A", entity_id=8, category_id=70)
-    await seed_pdm_style(engine, style_no="B", entity_id=9, category_id=88, brand_code="1")
+    await seed_pdm_style(engine, style_no="A", entity_id=8, category_id=901)
+    await seed_pdm_style(engine, style_no="B", entity_id=9, category_id=902, brand_code="B2")
 
     found = await PgStyleDirectory(engine).resolve(["A", "B", "MISSING"])
 
     assert set(found) == {"A", "B"}
-    assert (found["B"].category_id, found["B"].brand_code) == (88, "1")
+    assert (found["B"].category_id, found["B"].brand_code) == (902, "B2")

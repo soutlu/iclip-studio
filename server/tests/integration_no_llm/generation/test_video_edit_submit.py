@@ -110,6 +110,8 @@ async def _run_edit(
         ],
         image_default_model="nano_banana_pro",
         image_env="test",
+        image_text_to_image_task="text-to-image",
+        image_edit_task="image-edit",
         object_store=store,
         queue_connector=InMemoryConnector(),
         video_transport=httpx.MockTransport(upstream),

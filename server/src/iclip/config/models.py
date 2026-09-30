@@ -36,6 +36,9 @@ OptionalEnv = Annotated[str, StringConstraints(strip_whitespace=True)]
 SSO_BASE_URL_ENV: Final = "SSO_BASE_URL"
 """SSO 的总开关：这个地址为空即整项关闭。"""
 
+DEFAULT_SSO_OAUTH_NAME: Final = "sso"
+"""没配 ``SSO_OAUTH_NAME`` 时 OAuth 账号表里记的提供方名。"""
+
 OSS_BUCKET_ENV: Final = "OSS_BUCKET"
 """公开对象存储的总开关：桶名为空即整项关闭（``/uploads/*`` 不挂载）。"""
 
@@ -92,6 +95,8 @@ class SsoEnv(EnvSettings):
     redirect_url: RequiredEnv = Field(validation_alias="SSO_REDIRECT_URL")
     pms_base_url: OptionalEnv = Field("", validation_alias="PMS_BASE_URL")
     root_email: OptionalEnv = Field("", validation_alias="ROOT_EMAIL")
+    oauth_name: OptionalEnv = Field("", validation_alias="SSO_OAUTH_NAME")
+    """登录回调按它查找与关联 OAuth 账号；为空取 ``DEFAULT_SSO_OAUTH_NAME``。"""
 
 
 class ObjectStoreEnv(EnvSettings):
@@ -233,6 +238,10 @@ class ImageGenerationSection(ConfigSection):
 
     env: Literal["prod", "uat", "test"]
     """网关要求的调用环境。它按调用方标识与这一项一起判这次调用合不合法。"""
+    text_to_image_task: str = Field(min_length=1)
+    """文生图的任务路由，拼在每家的地址后面。"""
+    image_edit_task: str = Field(min_length=1)
+    """图像编辑的任务路由，拼在每家的地址后面。"""
     default: str
     """请求省略 ``model`` 时用哪家。"""
     models: dict[str, ImageModelSection] = Field(min_length=1)
@@ -412,6 +421,7 @@ class ResolvedSso:
     redirect_url: str
     pms_base_url: str | None
     root_email: str | None
+    oauth_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -435,6 +445,8 @@ class ResolvedMediaGeneration:
     image_models: tuple[ResolvedImageModel, ...]
     image_default_model: str
     image_env: str
+    image_text_to_image_task: str
+    image_edit_task: str
     poll_interval_seconds: int
     job_timeout_seconds: int
 
@@ -601,6 +613,8 @@ def _resolve_media_generation(
         ),
         image_default_model=section.image.default,
         image_env=section.image.env,
+        image_text_to_image_task=section.image.text_to_image_task,
+        image_edit_task=section.image.image_edit_task,
         poll_interval_seconds=section.poll_interval_seconds,
         job_timeout_seconds=section.job_timeout_seconds,
     )
@@ -659,6 +673,7 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             redirect_url=env.redirect_url,
             pms_base_url=env.pms_base_url or None,
             root_email=env.root_email or None,
+            oauth_name=env.oauth_name or DEFAULT_SSO_OAUTH_NAME,
         )
 
     object_store = _resolve_object_store()

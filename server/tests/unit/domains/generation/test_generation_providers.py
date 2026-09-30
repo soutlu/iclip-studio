@@ -13,7 +13,6 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
     GatewayImageProvider,
     GatewayImageSettings,
-    task_url,
 )
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
@@ -40,14 +39,24 @@ VIDEO_SETTINGS = VideoProviderSettings(
     api_key="secret-key",
 )
 IMAGE_API_BASE = "https://image.test/nano-banana-pro"
-IMAGE_TEXT_TO_IMAGE_URL = task_url(IMAGE_API_BASE, editing=False)
-IMAGE_EDIT_URL = task_url(IMAGE_API_BASE, editing=True)
-IMAGE_SETTINGS = GatewayImageSettings(api_base=IMAGE_API_BASE, env="test")
+IMAGE_TEXT_TO_IMAGE_URL = f"{IMAGE_API_BASE}/text-to-image"
+IMAGE_EDIT_URL = f"{IMAGE_API_BASE}/image-edit"
+IMAGE_SETTINGS = GatewayImageSettings(
+    api_base=IMAGE_API_BASE,
+    env="test",
+    text_to_image_task="text-to-image",
+    image_edit_task="image-edit",
+)
 
 SEEDREAM_API_BASE = "https://image.test/seedrance5.0pro"
-SEEDREAM_TEXT_TO_IMAGE_URL = task_url(SEEDREAM_API_BASE, editing=False)
-SEEDREAM_EDIT_URL = task_url(SEEDREAM_API_BASE, editing=True)
-SEEDREAM_SETTINGS = GatewayImageSettings(api_base=SEEDREAM_API_BASE, env="test")
+SEEDREAM_TEXT_TO_IMAGE_URL = f"{SEEDREAM_API_BASE}/text-to-image"
+SEEDREAM_EDIT_URL = f"{SEEDREAM_API_BASE}/image-edit"
+SEEDREAM_SETTINGS = GatewayImageSettings(
+    api_base=SEEDREAM_API_BASE,
+    env="test",
+    text_to_image_task="text-to-image",
+    image_edit_task="image-edit",
+)
 SEEDREAM_SPEC = SEEDREAM_V5_PRO.spec
 
 

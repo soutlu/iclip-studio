@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@/shared/icons'
+import { aspectOf } from '@/shared/lib/aspect-ratio'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
 import { cn } from '@/shared/lib/utils'
@@ -12,7 +13,7 @@ import { useCopyFeedback } from '@/shared/ui/copy-feedback'
 import { Tag } from '@/shared/ui/tag'
 import type { LibraryVideo } from '../library.api'
 import { snapshotWidthFor } from '../library-layout'
-import { aspectOf, cardTitleOf, durationSecondsOf, openingTextOf } from '../library-media'
+import { cardTitleOf, durationSecondsOf, openingTextOf } from '../library-media'
 import { AuthorAvatar } from './author-avatar'
 import { StoryboardBadge } from './library-storyboard'
 

@@ -8,18 +8,6 @@ import type {
   LibraryVideo,
 } from './library.api'
 
-/** 画面尺寸不在数据里，占位按请求里的画幅；认不出的（如 adaptive）按竖版 9:16 占位。 */
-const FALLBACK_ASPECT = { h: 16, w: 9 } as const
-
-const RATIO = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/
-
-export const aspectOf = (aspectRatio: string | null): { w: number; h: number } => {
-  const match = aspectRatio === null ? null : RATIO.exec(aspectRatio)
-  const w = Number(match?.[1])
-  const h = Number(match?.[2])
-  return w > 0 && h > 0 ? { h, w } : FALLBACK_ASPECT
-}
-
 /** 一版的秒数：这一版的实际时长（出片是上游实测的、合成是本系统量的，可能缺）优先，其次它对应那次出片请求里的秒数，再次分镜的末尾；都没有是 null。 */
 export const durationSecondsOf = (durationMs: number | null, take: LibraryTake): number | null => {
   if (durationMs !== null) return durationMs / 1000

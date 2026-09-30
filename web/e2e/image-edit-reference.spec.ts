@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 
 import { expect, test } from '@playwright/test'
-import { canvasPng, openConversation, screenshotBothThemes } from './helpers'
+import { canvasPng, openConversation, openStoryboardShot, screenshotBothThemes } from './helpers'
 
 for (const prefix of ['', '把']) {
   for (const method of ['鼠标', '回车'] as const) {
@@ -71,10 +71,11 @@ test('普通编辑只填写要求即可提交编辑底图', async ({ page }) => 
 for (const width of [1600, 390]) {
   test(`图片编辑 ${width}px：键盘展开失败详情，并通过参考图菜单调整提交顺序`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 })
-    await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
+    const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
+    await openStoryboardShot(panel, 2)
     const group = page.getByRole('region', { name: '镜头组 2', exact: true })
     await group.getByRole('button', { name: '镜头 2', exact: true }).click()
-    await group.getByRole('button', { name: '预览第 3 帧' }).click()
+    await group.getByRole('button', { name: '下一帧', exact: true }).click()
     await group.getByRole('img', { name: '镜头组 2 第 3 帧' }).hover()
     await group.getByRole('button', { name: '编辑图片', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: /^编辑图片/ })
@@ -147,7 +148,6 @@ for (const width of [1600, 390]) {
     await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
     const group = page.getByRole('region', { name: '镜头组 1', exact: true })
     await group.getByRole('button', { name: '镜头 1', exact: true }).click()
-    const filmstrip = group.getByRole('navigation', { name: '本组镜头', exact: true })
     await group.getByRole('img', { name: '镜头组 1 第 1 帧' }).hover()
     await group.getByRole('button', { name: '编辑图片', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: /^编辑图片/ })
@@ -158,18 +158,12 @@ for (const width of [1600, 390]) {
 
     // 关掉编辑器后帧上仍能看到任务在跑；mock 三秒后出图，前端每五秒问一次。
     await expect(group.getByText('生成中', { exact: true })).toBeVisible()
-    await expect(
-      filmstrip.getByRole('button', { name: '预览第 1 帧（生成中）', exact: true }),
-    ).toBeVisible()
     await screenshotBothThemes(
       page,
       `../.artifacts/design-qa/storyboard-reader/frame-image-running-${width}`,
     )
     const view = group.getByRole('button', { name: '有新结果 · 查看', exact: true })
     await expect(view).toBeVisible({ timeout: 15_000 })
-    await expect(
-      filmstrip.getByRole('button', { name: '预览第 1 帧（有新结果）', exact: true }),
-    ).toBeVisible()
     await screenshotBothThemes(
       page,
       `../.artifacts/design-qa/storyboard-reader/frame-image-result-${width}`,
@@ -184,7 +178,7 @@ for (const width of [1600, 390]) {
     await dialog.getByRole('button', { name: '关闭图片编辑', exact: true }).click()
     await expect(dialog).toBeHidden()
     await expect(view).toBeHidden()
-    await expect(filmstrip.getByRole('button', { name: '预览第 1 帧', exact: true })).toBeVisible()
+    await expect(group.getByText('有新结果', { exact: false })).toBeHidden()
   })
 }
 

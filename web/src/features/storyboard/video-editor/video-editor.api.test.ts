@@ -49,7 +49,12 @@ describe('编辑器用哪个模型', () => {
   it.each([
     ['选过的还在允许表里就用它', 'wan3.0-video', 'vendor-a-seedance-2-5', 'wan3.0-video'],
     ['选过的不在了退回默认', 'gone-model', 'vendor-a-seedance-2-5', 'vendor-a-seedance-2-5'],
-    ['默认模型不支持编辑就取第一个支持的', undefined, 'vendor-a-seedance-2-0', 'vendor-a-seedance-2-5'],
+    [
+      '默认模型不支持编辑就取第一个支持的',
+      undefined,
+      'vendor-a-seedance-2-0',
+      'vendor-a-seedance-2-5',
+    ],
   ])('%s', (_name, wanted, fallback, expected) => {
     expect(pickEditModel(models, wanted, fallback)).toBe(expected)
   })
@@ -73,9 +78,8 @@ describe('模型怎么触发编辑，按名字认', () => {
 
   it('不认识的模型做不了编辑，下拉里不列', () => {
     expect(editTriggerOf('vendor-a-seedance-2-0')).toBeUndefined()
-    expect(editableModels(['vendor-a-seedance-2-0', 'vendor-a-seedance-2-5', 'wan3.0-video'])).toEqual([
-      'vendor-a-seedance-2-5',
-      'wan3.0-video',
-    ])
+    expect(
+      editableModels(['vendor-a-seedance-2-0', 'vendor-a-seedance-2-5', 'wan3.0-video']),
+    ).toEqual(['vendor-a-seedance-2-5', 'wan3.0-video'])
   })
 })

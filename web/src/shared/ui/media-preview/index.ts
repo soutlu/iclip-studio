@@ -1,3 +1,4 @@
+export { formatDuration } from './attachment-format'
 export { MediaChipContent, mediaThumbnailUrl } from './media-chip-content'
 export { MediaPreviewCard } from './media-preview-card'
 export { useHoverPreview } from './use-hover-preview'

@@ -1,4 +1,4 @@
-# Productor — iclip-agent
+# Productor — iclip-studio
 
 Productor 的后端与 Web 前端。产品定位、业务术语和不变量见 [docs/CONTEXT.md](docs/CONTEXT.md)，开发先读 [AGENTS.md](AGENTS.md)。
 
@@ -81,11 +81,10 @@ CREATE ROLE iclip LOGIN PASSWORD '<密码>';
 CREATE DATABASE iclip OWNER iclip;
 ```
 
-服务器上准备一个目录，放入 [deploy/compose.yaml](deploy/compose.yaml) 与 [deploy/env.example](deploy/env.example)，再把 `configs/`、`agents/` 两个目录放到同目录（后端以只读挂载读它们，镜像里没有这两份）：
+服务器上准备一个目录，放入 [deploy/compose.yaml](deploy/compose.yaml)，在同目录创建 `.env`（镜像与端口变量见 compose.yaml 文件头，应用变量见 [配置模型](server/src/iclip/config/models.py)，`DATABASE_URL` 指向上面建的库），再把 `configs/`、`agents/` 两个目录放到同目录（后端以只读挂载读它们，镜像里没有这两份）：
 
 ```bash
-docker login registry.ap-southeast-1.aliyuncs.com
-cp env.example .env   # 按注释填写真实值，DATABASE_URL 指向上面建的库
+docker login <ACR_REGISTRY>   # 镜像仓库地址，与 .env 的 ACR_REGISTRY 相同
 docker compose pull && docker compose up -d
 curl http://localhost/api/healthz
 ```

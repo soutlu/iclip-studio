@@ -243,6 +243,8 @@ media_generation:
     allowed_models: [seedance, seedance-other]
   image:
     env: test
+    text_to_image_task: text-to-image
+    image_edit_task: image-edit
     default: nano_banana_pro
     models:
       nano_banana_pro:
@@ -300,6 +302,10 @@ def test_media_generation_resolves_both_providers_and_store(
     assert [(model.name, model.api_base, model.concurrency) for model in media.image_models] == [
         ("nano_banana_pro", "https://image.test/gateway/nano-banana-pro", 4)
     ], "网关根地址与声明的路由段在这一层拼好"
+    assert (media.image_text_to_image_task, media.image_edit_task) == (
+        "text-to-image",
+        "image-edit",
+    )
     assert (media.poll_interval_seconds, media.job_timeout_seconds) == (5, 3600)
 
 

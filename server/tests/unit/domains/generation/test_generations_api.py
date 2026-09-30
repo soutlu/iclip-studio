@@ -336,7 +336,7 @@ async def test_video_submit_rejects_a_body_whose_text_does_not_hold_together(
 
 
 async def test_historical_video_models_are_read_without_rewriting() -> None:
-    job = replace(make_job(video_request(model="vendor-b-seedance-2-0")), provider="partner_app")
+    job = replace(make_job(video_request(model="vendor-b-seedance-2-0")), provider="partner-app")
     repo = InMemoryGenerationRepository([job])
     owner = principal("generation:read", user_id=job.owner_user_id)
     async with client(build_test_app(repo, granted=owner)) as http:
