@@ -104,6 +104,13 @@ test('列边界无占位缝隙，侧边栏与内容栏折叠后保留图标栏',
   const sidebar = page.getByRole('complementary', { name: '侧边栏' })
   const chat = page.getByTestId('pane-chat')
   const workbench = page.getByTestId('pane-workbench')
+  // 进对话后工作台才自动展开，等右缘落到内容区右缘再量，负载高时不会量到展开途中的宽度。
+  await expect
+    .poll(async () => {
+      const box = await workbench.boundingBox()
+      return box === null ? 0 : box.x + box.width
+    })
+    .toBeCloseTo(CONTENT_RIGHT, 0)
   const sidebarBox = await bounds(sidebar)
   const chatBox = await bounds(chat)
   const workbenchBox = await bounds(workbench)
