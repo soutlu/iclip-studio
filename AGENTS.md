@@ -28,10 +28,7 @@
 
 ### CI
 
-仓库是 GitHub Free 下的私有仓库：
-
-- 托管 runner 每月 2000 分钟，每个 job 单独向上取整计费，拆 job、加分片都会增加消耗。本地检查通过后再推送，CI 只做确认。
-- 不能开启分支保护，GitHub 不拦截未通过检查的合并；执行合并的人按下面的通过标准核对 `ci`。
+本地检查通过后再推送，CI 只做确认。执行合并的人按下面的通过标准核对 `ci`；分支与合并流程见[分支与交付](#3-分支与交付)。
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
@@ -45,7 +42,7 @@ sha=$(gh api repos/{owner}/{repo}/pulls/<n> --jq .head.sha)
 gh api "repos/{owner}/{repo}/commits/$sha/check-runs?check_name=ci" --jq '.check_runs[] | .status + " " + .conclusion'
 ```
 
-本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。失败时先读失败 job 的日志，e2e 另下载 `playwright-e2e` artifact 中的 trace；与改动无关的偶发失败用 **Re-run failed jobs** 只重跑失败的 job，其余修复后推送新提交。
+选中的静态检查、构建与测试并行执行；集成测试每组使用独立 Postgres，前端单测与 e2e 按分片运行。本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。失败时先读失败 job 的日志，e2e 另下载对应 `playwright-e2e-*` artifact 中的 trace（名称包含分片与运行次数）；与改动无关的偶发失败用 **Re-run failed jobs** 只重跑失败的 job，其余修复后推送新提交。
 
 ## 2. 合同与实现边界
 
