@@ -28,7 +28,7 @@
 
 ### CI
 
-本地检查通过后再推送，CI 只做确认。执行合并的人按下面的通过标准核对 `ci`；分支与合并流程见[分支与交付](#3-分支与交付)。
+本地检查通过后再推送，CI 只做确认。`develop` 的规则集要求 `ci` 通过才能合并，但不要求分支先更新到最新：`develop` 前进不会让在途 PR 重跑 CI。手动合并的人按下面的通过标准核对 `ci`；分支与合并流程见[分支与交付](#3-分支与交付)。
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
@@ -75,7 +75,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
    git push -u origin HEAD
    gh pr create --base develop
    ```
-   `ci` 按[通过标准](#ci)核对通过后，由开发者手动执行 `gh pr merge <n> --squash`。Agent 创建 PR 后等待合并指令。日常 PR 误指 `main` 时先用 `gh pr edit <n> --base develop` 修正，`ci` 会按新目标重跑。
+   确认 PR 目标是 `develop` 后执行 `gh pr merge <n> --auto --squash`：`ci` 通过即自动 squash 合入，失败则保持打开，修复后推送新提交。`main` 没有必需检查，误指 `main` 的 PR 开自动合并会直接合入；先用 `gh pr edit <n> --base develop` 修正，`ci` 会按新目标重跑。
 3. 用 `gh pr view <n> --json state` 确认 `MERGED`，用 `git worktree list` 确认是自己的 worktree，且没有待保留的未提交修改，再回主目录清理：
    ```bash
    git pull --ff-only
@@ -91,7 +91,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 |---|---|---|
 | 发版 | `develop → main`，开发者给出版本号后创建 PR | `ci` 通过并确认后 `gh pr merge <n> --merge` |
 | 热修 | 从 `origin/main` 建独立 worktree，PR 指向 `main` | `ci` 通过并确认后 `gh pr merge <n> --merge` |
-| 热修回流 | `main → develop` | `ci` 通过后手动执行 `gh pr merge <n> --merge` |
+| 热修回流 | `main → develop` | `gh pr merge <n> --auto --merge`，`ci` 通过即合入 |
 
 合入 `main` 后，确认 `main` 上就是本次要发布的代码，再创建 release：
 
