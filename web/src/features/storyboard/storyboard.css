@@ -14,8 +14,62 @@
   margin: 0;
   min-height: var(--text-body--line-height);
 }
-/* NodeSelection 的帧芯片与附件 pill 共用选中色。 */
+/* ===== 帧芯片 =====
+   正文里的 @N：圆形缩略图加编号的胶囊，主色浅底；舞台正在看的那一帧（data-highlighted）实色。
+   外层是普通行内元素、不换行，尾部垫一个零宽连字符（U+2060），芯片和紧跟的「，」「。」不会被拆到两行；
+   胶囊画在里层的 inline-flex 上，以缩略图为基线，下沉 0.3em 与中文字身居中。聚焦环与 NodeSelection 描边画在胶囊上。 */
+.frame-chip {
+  white-space: nowrap;
+}
+.frame-chip::after {
+  content: '\2060';
+}
+.frame-chip:focus-visible {
+  outline: none;
+}
+.frame-chip-pill {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px;
+  padding: 0 7px 0 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-container-soft);
+  color: var(--color-on-primary-container);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+  transition-property: background-color, color;
+  vertical-align: -0.3em;
+}
+.frame-chip-pill > img {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+}
+/* 帧图地址缺失时只剩编号，左右留白对称。 */
+.frame-chip-pill:has(> img[hidden]) {
+  padding-left: 7px;
+}
+.frame-chip:hover .frame-chip-pill {
+  background: var(--color-primary-container);
+}
+.frame-chip[data-highlighted] .frame-chip-pill {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.frame-chip:focus-visible .frame-chip-pill {
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: var(--state-focus-offset);
+}
 .frame-chip.ProseMirror-selectednode {
+  outline: none;
+}
+.frame-chip.ProseMirror-selectednode .frame-chip-pill {
   outline: 2px solid color-mix(in srgb, var(--color-primary) 60%, transparent);
   outline-offset: 1px;
 }
@@ -116,8 +170,13 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+}
+.storyboard-script-list {
+  min-height: 0;
+  flex: 1;
+  padding: 12px 0 16px;
   overflow-y: auto;
+  scroll-behavior: smooth;
   scrollbar-width: thin;
 }
 @container storyboard-workbench (width < 640px) {
@@ -150,43 +209,126 @@
     min-width: 0;
     flex: none;
   }
-  .storyboard-prose {
+  .storyboard-prose,
+  .storyboard-script-list {
     flex: none;
     overflow: visible;
   }
 }
 
-/* 文案段：悬停一层中性叠色，选中用 state-active；全局设定是开头一段，没有标题。 */
+/* ===== 文案列 =====
+   列头不随正文滚：镜头数与总长、「收成摘要」开关，下面是按时长切分的镜头条（每段热区占满条高，细条画在 ::before）
+   和两端刻度。正文区最上面是全局设定卡，之后是镜头列表：左侧时间轴的竖线串起各镜的序号节点，节点下写起始时间，
+   末尾一个空心结束点。选中的段浮起成卡片（抬高层底色 top-layer：浅色白、深色比页面底亮一档，加发丝线、轻投影，正文主色），其余透明、正文次级色，悬停一层中性叠色；
+   选中镜头的节点实心主色，时间刻度也变主色。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
+   时间轴几何：节点 22px、顶距 12px，圆心正对标题行（卡片 1px 边 + 8px 内距 + 28px 标题行的一半）；
+   竖线从本镜圆心画到下一镜圆心，最后一镜画到结束点圆心，节点与刻度垫页面底色盖住它。 */
+.storyboard-script-head {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+.storyboard-timeline {
+  display: flex;
+  height: 22px;
+  gap: 3px;
+}
+.storyboard-timeline-segment {
+  position: relative;
+  min-width: 6px;
+  flex: 1 1 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  cursor: pointer;
+}
+.storyboard-timeline-segment::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  content: '';
+  transition-duration: var(--dur-s);
+  transition-property: height, background-color;
+  transition-timing-function: var(--ease);
+  translate: 0 -50%;
+}
+.storyboard-timeline-segment:hover::before {
+  height: 10px;
+  background: var(--color-outline-variant);
+}
+.storyboard-timeline-segment[aria-current='true']::before {
+  height: 10px;
+  background: var(--color-primary);
+}
+.storyboard-timeline-ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+}
+
 .storyboard-segment {
   position: relative;
-  padding: 12px;
+  min-width: 0;
+  flex: 1;
+  padding: 8px 12px 10px;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
-  transition: background-color var(--dur-s) var(--ease);
+  transition-duration: var(--dur-s);
+  transition-property: background-color, border-color, box-shadow;
+  transition-timing-function: var(--ease);
 }
-.storyboard-segment:hover {
+.storyboard-segment:not([aria-current='true']):hover {
   background: var(--color-state-hover);
 }
 .storyboard-segment[aria-current='true'] {
-  background: var(--color-state-active);
+  border-color: var(--color-hairline);
+  background: var(--color-top-layer);
+  box-shadow: var(--shadow-2);
 }
 /* 正在编辑：光标落在可编辑的正文里时加一圈聚焦描边；只读时不进编辑态。 */
 .storyboard-segment:has(.prompt-editor-content[contenteditable='true']:focus) {
   outline: 2px solid var(--color-chat-focus-ring);
   outline-offset: -2px;
 }
-.storyboard-segment-lede {
-  padding: 4px 12px 12px;
+.storyboard-segment-head {
+  display: flex;
+  min-width: 0;
+  min-height: 28px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 2px;
 }
-.storyboard-segment-lede[aria-current='true'] {
-  padding-top: 12px;
-}
-.storyboard-segment-lede .prompt-editor-content {
+/* 正文：按原文换行分段、段间留 6px；行高给胶囊留足，含 @N 的行不被撑开。 */
+.storyboard-segment .prompt-editor-content {
   color: var(--color-on-surface-variant);
+  line-height: 1.75;
 }
-.storyboard-segment-lede-copy {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+.storyboard-segment .prompt-editor-content > p + p {
+  margin-top: 6px;
+}
+.storyboard-segment[aria-current='true'] .prompt-editor-content {
+  color: var(--color-on-surface);
+}
+.storyboard-segment[data-clamped='true'] .prompt-editor-content {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.storyboard-settings[data-clamped='true'] .prompt-editor-content {
+  -webkit-line-clamp: 3;
 }
 /* 段内复制悬停、聚焦或选中时才露出来。 */
 .storyboard-segment-copy {
@@ -196,6 +338,191 @@
 .storyboard-segment:focus-within .storyboard-segment-copy,
 .storyboard-segment[aria-current='true'] .storyboard-segment-copy {
   opacity: 1;
+}
+
+/* 全局设定：浅灰底卡，选中时与镜头一样浮起。 */
+.storyboard-settings {
+  margin-bottom: 12px;
+  background: var(--color-surface-container-low);
+}
+.storyboard-settings:not([aria-current='true']):hover {
+  background: var(--color-surface-container);
+}
+.storyboard-settings-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
+}
+.storyboard-settings[aria-current='true'] .storyboard-settings-label {
+  color: var(--color-primary);
+}
+.storyboard-settings-count {
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+}
+
+.storyboard-shots {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.storyboard-shot {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+.storyboard-shot::before {
+  position: absolute;
+  top: 23px;
+  bottom: -23px;
+  left: 17px;
+  width: 1.5px;
+  background: var(--color-hairline);
+  content: '';
+  translate: -50% 0;
+}
+.storyboard-shot:last-child::before {
+  bottom: -11px;
+}
+.storyboard-rail {
+  position: relative;
+  z-index: var(--z-local-1);
+  display: flex;
+  width: 34px;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 12px;
+}
+.storyboard-rail-node {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1.5px solid var(--color-hairline);
+  border-radius: var(--radius-full);
+  background: var(--color-background);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+  transition-duration: var(--dur-s);
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-timing-function: var(--ease);
+}
+.storyboard-rail-stamp {
+  padding: 1px 0;
+  background: var(--color-background);
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-node {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-on-primary);
+}
+.storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-stamp {
+  color: var(--color-primary);
+}
+/* 结束刻度：空心点下写总长，右边「结束」与总长同一基线。 */
+.storyboard-shot-end {
+  display: flex;
+  align-items: last baseline;
+  gap: 10px;
+  padding-top: 6px;
+}
+.storyboard-shot-end > .storyboard-rail {
+  gap: 3px;
+  padding-top: 0;
+}
+.storyboard-rail-end {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--color-outline-variant);
+  border-radius: var(--radius-full);
+  background: var(--color-background);
+}
+.storyboard-shot-end-label {
+  padding-left: 13px;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-label);
+  line-height: 14px;
+}
+
+/* 时长胶囊：时钟加一位小数的时长；选中镜头换主色容器。 */
+.storyboard-duration {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.storyboard-duration > svg {
+  color: var(--color-on-surface-muted);
+}
+.storyboard-segment[aria-current='true'] .storyboard-duration {
+  background: var(--color-primary-container);
+  color: var(--color-on-primary-container);
+}
+.storyboard-segment[aria-current='true'] .storyboard-duration > svg {
+  color: currentColor;
+}
+/* 引用帧：叠放的小缩略图，描边取所在卡片的底色，看起来像一张压着一张。 */
+.storyboard-frame-stack {
+  display: flex;
+  align-items: center;
+}
+.storyboard-frame-stack > button {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  margin-left: -6px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid var(--color-background);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container);
+  cursor: pointer;
+  transition: translate var(--dur-s) var(--ease);
+}
+.storyboard-frame-stack > button:first-child {
+  margin-left: 0;
+}
+.storyboard-frame-stack > button:hover,
+.storyboard-frame-stack > button:focus-visible {
+  z-index: var(--z-local-1);
+  translate: 0 -2px;
+}
+.storyboard-segment[aria-current='true'] .storyboard-frame-stack > button {
+  border-color: var(--color-top-layer);
+}
+.storyboard-frame-stack img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* ===== 出片栏 =====
@@ -694,7 +1021,14 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .storyboard-script-list {
+    scroll-behavior: auto;
+  }
   .storyboard-segment,
+  .storyboard-timeline-segment::before,
+  .storyboard-rail-node,
+  .storyboard-frame-stack > button,
+  .frame-chip-pill,
   .storyboard-take,
   .storyboard-take-veil,
   .storyboard-stage-nav {

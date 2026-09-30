@@ -88,12 +88,16 @@ for (const width of [1335, 390]) {
     await expect(frame).toBeInViewport({ ratio: 1 })
     await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/main-${width}`)
 
-    // 整组原文就排在文案列里：全局设定打头，各镜头标出起止秒。
+    // 整组原文就排在文案列里：全局设定打头，各镜头标出时长与区间。
     const settings = group.getByRole('textbox', { name: '全局设定', exact: true })
     await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
     await expect(settings.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
-    await expect(group.getByRole('group', { name: '镜头 1', exact: true })).toContainText('0–4s')
-    await expect(group.getByRole('group', { name: '镜头 2', exact: true })).toContainText('4–11s')
+    await expect(group.getByRole('group', { name: '镜头 1', exact: true })).toContainText(
+      '4.0s，0.0s – 4.0s',
+    )
+    await expect(group.getByRole('group', { name: '镜头 2', exact: true })).toContainText(
+      '7.0s，4.0s – 11.0s',
+    )
     await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
       ratio: 1,
     })

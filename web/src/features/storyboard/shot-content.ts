@@ -4,7 +4,6 @@ import { UserFacingError } from '@/shared/api/client'
 import { MAX_REFERENCE_IMAGES, REFERENCE_LIMIT_TEXT } from './shots'
 import {
   extractImageIndexes,
-  formatSeconds,
   promptTitle,
   updateTimelinePrompt,
   insertReferenceText,
@@ -46,7 +45,6 @@ export type ShotContent = {
   frameNumbers: number[]
   prompt?: string
   timelineIndex?: number
-  seconds?: number
 }
 
 export const shotContents = (shot: Shot): [ShotContent, ...ShotContent[]] => {
@@ -65,7 +63,6 @@ export const shotContents = (shot: Shot): [ShotContent, ...ShotContent[]] => {
       title: promptTitle(item.prompt) ?? `镜头 ${index + 1}`,
       prompt: item.prompt,
       timelineIndex: index,
-      seconds: item.timestamps[1] - item.timestamps[0],
       frameNumbers: valid(item.image_indexes),
     })),
   ]
@@ -102,13 +99,35 @@ export const contentLabel = (content: ShotContent): string =>
 export const scriptSegments = (contents: readonly ShotContent[]): ShotContent[] =>
   contents.filter((item) => item.kind !== 'unreferenced')
 
-/** 镜头段标题旁的时间胶囊「起–止s」；直接取起止秒，不做减法。全局设定没有时间，返回 undefined。 */
-export const segmentTimeRange = (shot: Shot, content: ShotContent): string | undefined => {
+/** 界面上的时间点与时长：取到 0.1s、固定一位小数加 s，如 0.0s、1.6s、15.0s。
+ * 发给模型的提示词另用 `formatSeconds`，两套写法互不影响。 */
+export const formatTimecode = (seconds: number): string =>
+  `${(Math.round(seconds * 10) / 10).toFixed(1)}s`
+
+/** 一个镜头在时间线上的起止秒与时长。 */
+export type SegmentTime = { start: number; end: number; duration: number }
+
+/** 镜头段的起止秒与时长：起止照文件取，时长由止减起后取到 0.1s，去掉浮点尾差（3.4 − 1.6 得 1.8，
+ * 不是 1.7999…）。全局设定没有时间，返回 undefined。 */
+export const segmentTimeRange = (shot: Shot, content: ShotContent): SegmentTime | undefined => {
   if (content.timelineIndex === undefined) return undefined
   const timestamps = shot.prompt.timeline[content.timelineIndex]?.timestamps
   if (timestamps === undefined) return undefined
-  return `${formatSeconds(timestamps[0])}–${formatSeconds(timestamps[1])}s`
+  const [start, end] = timestamps
+  return { duration: Math.round((end - start) * 10) / 10, end, start }
 }
+
+/** 完整区间「1.6s – 3.4s」，给时长胶囊的提示与可访问名。 */
+export const formatTimeRange = (time: SegmentTime): string =>
+  `${formatTimecode(time.start)} – ${formatTimecode(time.end)}`
+
+/** 整组时间线的总长：最后一镜的止秒，与镜头条的比例、末尾的结束刻度同一口径；不取出片参数 `seconds`。 */
+export const timelineDuration = (shot: Shot): number =>
+  shot.prompt.timeline.reduce((end, item) => Math.max(end, item.timestamps[1]), 0)
+
+/** 正文按显示算的字数：空白不计，@ImageN 按显示出来的 @N 计。 */
+export const promptLength = (prompt: string): number =>
+  Array.from(prompt.replace(/@Image(\d+)/g, '@$1').replace(/\s/g, '')).length
 
 /** 在这段引用的帧里往前（-1）或往后（1）走一格；到头、或当前帧不属于这段时为 undefined。 */
 export const adjacentFrame = (

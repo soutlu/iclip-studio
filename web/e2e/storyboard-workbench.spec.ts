@@ -398,8 +398,12 @@ test('短桌面深色：文案列整组原文可读，看大图后回到原帧�
   await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
   await expect(settings.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
   await expect(settings).toContainText('剪辑形式：硬切。')
-  await expect(script.getByRole('group', { name: '镜头 1', exact: true })).toContainText('0–4s')
-  await expect(script.getByRole('group', { name: '镜头 2', exact: true })).toContainText('4–11s')
+  await expect(script.getByRole('group', { name: '镜头 1', exact: true })).toContainText(
+    '4.0s，0.0s – 4.0s',
+  )
+  await expect(script.getByRole('group', { name: '镜头 2', exact: true })).toContainText(
+    '7.0s，4.0s – 11.0s',
+  )
   await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
     ratio: 1,
   })
