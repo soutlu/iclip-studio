@@ -219,7 +219,7 @@
 /* ===== 文案列 =====
    列头不随正文滚：镜头数与总长、「收成摘要」开关，下面是按时长切分的镜头条（每段热区占满条高，细条画在 ::before）
    和两端刻度。正文区最上面是全局设定卡，之后是镜头列表：左侧时间轴的竖线串起各镜的序号节点，节点下写起始时间，
-   末尾一个空心结束点。选中的段浮起成卡片（最浅容器底、发丝线、轻投影，正文主色），其余透明、正文次级色，悬停一层中性叠色；
+   末尾一个空心结束点。选中的段浮起成卡片（抬高层底色 top-layer：浅色白、深色比页面底亮一档，加发丝线、轻投影，正文主色），其余透明、正文次级色，悬停一层中性叠色；
    选中镜头的节点实心主色，时间刻度也变主色。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
    时间轴几何：节点 22px、顶距 12px，圆心正对标题行（卡片 1px 边 + 8px 内距 + 28px 标题行的一半）；
    竖线从本镜圆心画到下一镜圆心，最后一镜画到结束点圆心，节点与刻度垫页面底色盖住它。 */
@@ -293,7 +293,7 @@
 }
 .storyboard-segment[aria-current='true'] {
   border-color: var(--color-hairline);
-  background: var(--color-surface-container-lowest);
+  background: var(--color-top-layer);
   box-shadow: var(--shadow-2);
 }
 /* 正在编辑：光标落在可编辑的正文里时加一圈聚焦描边；只读时不进编辑态。 */
@@ -516,7 +516,7 @@
   translate: 0 -2px;
 }
 .storyboard-segment[aria-current='true'] .storyboard-frame-stack > button {
-  border-color: var(--color-surface-container-lowest);
+  border-color: var(--color-top-layer);
 }
 .storyboard-frame-stack img {
   display: block;
