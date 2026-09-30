@@ -68,7 +68,19 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
   await page.keyboard.press('Enter')
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
   await expect(next).toHaveCount(0)
-  await expect(group.getByRole('button', { name: '打开原图', exact: true })).toBeFocused()
+  const open = group.getByRole('button', { name: '打开原图', exact: true })
+  await expect(open).toBeFocused()
+
+  // 焦点在舞台里时 ←/→ 也切帧，到头不动，焦点一直留在舞台里。
+  await page.keyboard.press('ArrowLeft')
+  await expect(preview).toBeInViewport({ ratio: 1 })
+  await expect(page).toHaveURL(/frame=2/)
+  await expect(open).toBeFocused()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page).toHaveURL(/frame=2/)
+  await page.keyboard.press('ArrowRight')
+  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
+  await expect(open).toBeFocused()
 })
 
 for (const width of [1335, 390]) {

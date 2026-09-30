@@ -360,6 +360,42 @@ describe('StoryboardReader', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
   })
 
+  it('焦点在舞台里时 ←/→ 切帧、到头不动，切到头的箭头消失后焦点落回画面；正文与帧计数弹层里的 ←/→ 不切帧', async () => {
+    provide()
+    const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
+    const page = await screen.findByRole('region', { name: '镜头组 1' })
+    const at = (frame: number) =>
+      waitFor(() =>
+        expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame }),
+      )
+    const open = within(page).getByRole('button', { name: '打开原图' })
+    act(() => open.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    await at(1)
+    expect(open).toHaveFocus()
+    await userEvent.keyboard('{ArrowRight}')
+    await at(1)
+    await userEvent.keyboard('{ArrowLeft}')
+    await at(2)
+
+    act(() => within(page).getByRole('button', { name: '下一帧' }).focus())
+    await userEvent.keyboard('{ArrowRight}')
+    await at(1)
+    expect(within(page).queryByRole('button', { name: '下一帧' })).not.toBeInTheDocument()
+    expect(open).toHaveFocus()
+
+    act(() => within(page).getByRole('textbox', { name: '镜头 1 的描述' }).focus())
+    await userEvent.keyboard('{ArrowLeft}')
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 100)))
+    await at(1)
+
+    await userEvent.click(within(page).getByRole('button', { name: /查看本组全部图片/ }))
+    await screen.findByRole('dialog', { name: '本组全部图片' })
+    await userEvent.keyboard('{ArrowLeft}')
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 100)))
+    await at(1)
+  })
+
   it('查看原图并关闭后返回原来的帧', async () => {
     provide()
     await renderReader('/?shot=1&content=scene:1&frame=1')
