@@ -527,14 +527,15 @@
 
 /* ===== 出片栏 =====
    宽屏一行：参数在左、主按钮在右。工作台窄于 640 时模型 id 截断；窄于 480（手机）分两行：
-   参数一行不换行、放不下就横向滚、两端渐隐，主按钮占满第二行。 */
+   参数一行不换行、放不下就横向滚、两端渐隐，主按钮占满第二行。
+   参数控件同高（36px）、同圆角、同一层中性底；主色只留给出片按钮。模型与画幅的菜单向上弹，挂在 portal 里。 */
 .storyboard-bar {
   display: flex;
   flex: none;
   flex-direction: column;
   gap: 8px;
   margin: 4px 16px 16px;
-  padding: 10px 10px 10px 12px;
+  padding: 8px 8px 8px 10px;
 }
 .storyboard-bar-row {
   display: flex;
@@ -548,7 +549,117 @@
   flex: 1;
   flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
+}
+/* 模型、画幅与音频按钮；悬停、按下与禁用由 ui-state 给。 */
+.storyboard-bar-control {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: var(--control-height-md);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface-container);
+  font-size: var(--text-body);
+}
+/* 颜色与指针只管可用态，禁用态的淡色与指针交给 ui-state。 */
+.storyboard-bar-control:enabled {
+  color: var(--color-on-surface);
+  cursor: pointer;
+}
+.storyboard-bar-picker {
   gap: 6px;
+  padding: 0 8px 0 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.storyboard-bar-picker[data-state='open'] {
+  background-color: var(--color-surface-container-highest);
+}
+.storyboard-bar-picker > svg,
+.storyboard-bar-picker > .storyboard-bar-glyph {
+  flex: none;
+}
+.storyboard-bar-picker:enabled > svg,
+.storyboard-bar-picker:enabled > .storyboard-bar-glyph {
+  color: var(--color-on-surface-variant);
+}
+.storyboard-bar-picker-text {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 箭头朝上：菜单在栏上方展开。 */
+.storyboard-bar-picker-chevron {
+  transform: rotate(180deg);
+}
+.storyboard-bar-picker:enabled > .storyboard-bar-picker-chevron {
+  color: var(--color-on-surface-muted);
+}
+.storyboard-bar-audio {
+  width: var(--control-height-md);
+}
+/* 音频关着：图标换成静音并变淡。 */
+.storyboard-bar-audio[aria-pressed='false']:enabled {
+  color: var(--color-on-surface-muted);
+}
+/* 分辨率分段：外框与其余控件同高同底，选中项是浮起的一块中性底。 */
+.storyboard-bar-segmented {
+  height: var(--control-height-md);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface-container);
+}
+.storyboard-bar-segment {
+  padding: 0 12px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+/* 深色下最浅的一层才读得出浮起；共享分段的选中底是最深那层，在这里压过它。 */
+.dark .storyboard-bar-segment[data-state='on'] {
+  background-color: var(--color-surface-container-highest);
+}
+/* 画幅小图形：按比例描的空心框，颜色随所在控件。 */
+.storyboard-bar-glyph {
+  display: inline-block;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius-xs);
+}
+.storyboard-bar-menu {
+  min-width: max(var(--radix-dropdown-menu-trigger-width), 180px);
+  max-width: calc(100vw - 32px);
+  max-height: var(--radix-dropdown-menu-content-available-height);
+  overflow-y: auto;
+}
+.storyboard-bar-option {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.storyboard-bar-option-leading {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 16px;
+  color: var(--color-on-surface-variant);
+}
+.storyboard-bar-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.storyboard-bar-option-hint {
+  margin-left: auto;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
 }
 .storyboard-bar-model {
   min-width: 0;
@@ -570,7 +681,7 @@
     overscroll-behavior-x: contain;
     scrollbar-width: none;
   }
-  /* 模型下拉不跟着挤：放不下就让这一行横向滚。 */
+  /* 模型按钮不跟着挤：放不下就让这一行横向滚。 */
   .storyboard-bar-model {
     flex: none;
   }

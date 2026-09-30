@@ -241,6 +241,16 @@ const openShot = async (index: number) => {
   await userEvent.click(within(overview).getByRole('button', { name: `查看镜头组 ${index}` }))
 }
 
+/** 点开出片栏上的选择器，在弹出的菜单里选中一项。 */
+const pickFromMenu = async (
+  user: ReturnType<typeof userEvent.setup>,
+  trigger: HTMLElement,
+  name: string,
+) => {
+  await user.click(trigger)
+  await user.click(await screen.findByRole('menuitemradio', { name }))
+}
+
 describe('StoryboardReader', () => {
   beforeEach(() => {
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
@@ -565,7 +575,7 @@ describe('StoryboardReader', () => {
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: '视频模型' })).toHaveValue(
+      expect(screen.getByRole('button', { name: '视频模型' })).toHaveTextContent(
         'vendor-a-seedance-2-5',
       ),
     )
@@ -773,9 +783,9 @@ describe('StoryboardReader', () => {
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
     const bar = screen.getByRole('group', { name: '出片工具栏' })
-    const model = within(bar).getByRole<HTMLSelectElement>('combobox', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveValue('vendor-a-seedance-2-5'))
-    await user.selectOptions(model, 'wan3.0-video')
+    const model = within(bar).getByRole('button', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
+    await pickFromMenu(user, model, 'wan3.0-video')
     const audio = within(bar).getByRole('button', { name: '生成音频', pressed: true })
     await user.click(audio)
     await user.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
@@ -804,7 +814,7 @@ describe('StoryboardReader', () => {
       'false',
     )
     // 出片后设置不回退，下一次出片沿用。
-    expect(model).toHaveValue('wan3.0-video')
+    expect(model).toHaveTextContent('wan3.0-video')
     expect(audio).toHaveAttribute('aria-pressed', 'false')
   })
 
@@ -827,9 +837,9 @@ describe('StoryboardReader', () => {
 
     await user.click(hd)
     expect(hd).toBeChecked()
-    const model = within(bar).getByRole('combobox', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveValue('vendor-a-seedance-2-5'))
-    await user.selectOptions(model, 'wan3.0-video')
+    const model = within(bar).getByRole('button', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
+    await pickFromMenu(user, model, 'wan3.0-video')
     expect(hd).toBeChecked()
 
     await user.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
@@ -850,22 +860,34 @@ describe('StoryboardReader', () => {
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
 
-    const aspect = await screen.findByLabelText<HTMLSelectElement>('画幅')
-    const option = (value: string) =>
-      within(aspect).getByRole<HTMLOptionElement>('option', { name: new RegExp(`^${value}`) })
+    const aspect = await screen.findByRole('button', { name: '画幅' })
+    const aspectMenu = async () => {
+      await user.click(aspect)
+      return screen.findByRole('menu', { name: '画幅' })
+    }
+    const option = (menu: HTMLElement, value: string) =>
+      within(menu).getByRole('menuitemradio', { name: new RegExp(`^${value}`) })
     // 默认的 seedance 做得了 21:9，选得动。
-    expect(option('21:9')).not.toBeDisabled()
-    await user.selectOptions(aspect, '21:9')
+    let menu = await aspectMenu()
+    expect(option(menu, '21:9')).not.toHaveAttribute('aria-disabled')
+    await user.click(option(menu, '21:9'))
     await waitFor(() => expect(files.writes).toHaveLength(1))
     expect(files.snapshot().aspect_ratio).toBe('21:9')
+    expect(aspect).toHaveTextContent('21:9')
 
     // 换成做不了 21:9 的万相：模型照选不误，画幅那一项标上不支持，出片栏里提醒但不禁用。
-    const model = screen.getByRole<HTMLSelectElement>('combobox', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveValue('vendor-a-seedance-2-5'))
-    const wan = within(model).getByRole<HTMLOptionElement>('option', { name: 'wan3.0-video' })
-    expect(wan).toBeEnabled()
-    await user.selectOptions(model, wan)
-    expect(option('21:9')).toBeDisabled()
+    const model = screen.getByRole('button', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
+    await user.click(model)
+    const wan = await screen.findByRole('menuitemradio', { name: 'wan3.0-video' })
+    expect(wan).not.toHaveAttribute('aria-disabled')
+    await user.click(wan)
+    menu = await aspectMenu()
+    expect(option(menu, '21:9')).toHaveAttribute('aria-disabled', 'true')
+    expect(option(menu, '21:9')).toHaveAccessibleName(/不支持/)
+    expect(option(menu, '21:9')).toBeChecked()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
     const bar = screen.getByRole('group', { name: '出片工具栏' })
     expect(
       await within(bar).findByRole('alert', { name: 'wan3.0-video 做不了 21:9' }),
@@ -876,6 +898,70 @@ describe('StoryboardReader', () => {
     await user.click(generate)
     await waitFor(() => expect(posted).toHaveLength(1))
     expect(posted[0]).toMatchObject({ aspect_ratio: '21:9', model: 'wan3.0-video' })
+  })
+
+  it('画幅不在档位里时照原样显示并勾着它；选择器能只用键盘操作', async () => {
+    const files = provide({ ...document, aspect_ratio: '2.39:1' })
+    const user = userEvent.setup()
+    await renderReader()
+    await screen.findByRole('region', { name: '镜头组 1' })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const aspect = within(bar).getByRole('button', { name: '画幅' })
+    expect(aspect).toHaveTextContent('2.39:1')
+
+    act(() => aspect.focus())
+    await user.keyboard('{Enter}')
+    const menu = await screen.findByRole('menu', { name: '画幅' })
+    const items = within(menu).getAllByRole('menuitemradio')
+    expect(items[0]).toHaveAccessibleName('2.39:1')
+    expect(items[0]).toBeChecked()
+    // 方向键移到下一档，回车选中并写回分镜；菜单收起后焦点回到按钮上。
+    await user.keyboard('{ArrowDown}{Enter}')
+    await waitFor(() => expect(files.writes).toHaveLength(1))
+    expect(files.snapshot().aspect_ratio).toBe('1:1')
+    expect(aspect).toHaveTextContent('1:1')
+    await waitFor(() => expect(aspect).toHaveFocus())
+
+    // Esc 收起菜单，不改值。
+    const model = within(bar).getByRole('button', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
+    act(() => model.focus())
+    await user.keyboard('{ArrowDown}')
+    expect(await screen.findByRole('menu', { name: '视频模型' })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(model).toHaveTextContent('vendor-a-seedance-2-5')
+    expect(model).toHaveFocus()
+  })
+
+  it('提交出片期间模型与画幅都选不动', async () => {
+    provide()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/generations/video', async () => {
+        await held
+        return HttpResponse.json({ task_id: runningJob.id }, { status: 202 })
+      }),
+    )
+    await renderReader()
+    await screen.findByRole('region', { name: '镜头组 1' })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const model = within(bar).getByRole('button', { name: '视频模型' })
+    const aspect = within(bar).getByRole('button', { name: '画幅' })
+    await waitFor(() => expect(model).toBeEnabled())
+    expect(aspect).toBeEnabled()
+
+    await userEvent.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
+    expect(await within(bar).findByRole('button', { name: '提交中…' })).toBeVisible()
+    expect(model).toBeDisabled()
+    expect(aspect).toBeDisabled()
+
+    release()
+    await waitFor(() => expect(model).toBeEnabled())
+    expect(aspect).toBeEnabled()
   })
 
   it('服务端拒收出片时在出片按钮旁提示原话，不弹全局提示、不刷新记录', async () => {
@@ -918,8 +1004,8 @@ describe('StoryboardReader', () => {
     )
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    const model = screen.getByRole('combobox', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveDisplayValue('视频模型读不到'))
+    const model = screen.getByRole('button', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveTextContent('视频模型读不到'))
     expect(model).toBeDisabled()
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')

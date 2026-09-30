@@ -2,9 +2,9 @@
 
 import { useEffect, useEffectEvent } from 'react'
 
-/** 方向键归它们自己的地方：正在输入、下拉、单选组、菜单与弹窗。 */
+/** 方向键归它们自己的地方：正在输入、下拉、单选组、菜单（含打开它的按钮，↓ 展开）与弹窗。 */
 const OWNS_ARROW_KEYS =
-  'input, select, textarea, [contenteditable="true"], [role="radiogroup"], [role="listbox"], [role="menu"], [role="dialog"]'
+  'input, select, textarea, [contenteditable="true"], [role="radiogroup"], [role="listbox"], [role="menu"], [aria-haspopup="menu"], [role="dialog"]'
 
 type ArrowKey = Pick<
   KeyboardEvent,
