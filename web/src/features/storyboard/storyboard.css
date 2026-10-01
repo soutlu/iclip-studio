@@ -655,8 +655,8 @@
 }
 
 /* ===== 出片栏 =====
-   宽屏一行：参数在左、主按钮在右。工作台窄于 640 时模型 id 截断；窄于 480（手机）分两行：
-   参数一行不换行、放不下就横向滚、两端渐隐，主按钮占满第二行。
+   参数始终一行、不换行：放不下时先截断模型 id（至少留 96px），再不够就横向滚、两端渐隐。
+   宽屏参数在左、主按钮在右；窄于 480（手机）分两行，主按钮占满第二行。
    参数控件一套规格：34px 高、sm 圆角、发丝线描边、卡面白底，字与图标中性；画幅在最左，竖线隔开后是生成设置。
    选中与展开用中性灰，主色只留给出片按钮；画幅不被模型支持时画幅按钮换错误态。模型与画幅的菜单向上弹，挂在 portal 里。
    控件上方的状态行有话才出现：置灰原因用次级字色，错误用错误色。 */
@@ -690,13 +690,18 @@
 .storyboard-bar-status[data-tone='error'] {
   color: var(--color-error);
 }
+/* 横向滚动会连带裁掉竖直方向的溢出：四周各让出 4px（焦点环 2px 加 2px 偏移），焦点环才画得全。 */
 .storyboard-bar-params {
   display: flex;
   min-width: 0;
   flex: 1;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin: -4px;
+  padding: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
 }
 /* 画幅与生成设置之间的竖线。 */
 .storyboard-bar-divider {
@@ -829,8 +834,10 @@
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
 }
+/* 唯一可收缩的参数控件：空间不够时先截断模型 id，再轮到整行横向滚。 */
 .storyboard-bar-model {
-  min-width: 0;
+  min-width: 96px;
+  flex: 0 1 auto;
 }
 @container storyboard-workbench (width < 640px) {
   .storyboard-bar-model {
@@ -843,13 +850,7 @@
     align-items: stretch;
     gap: 8px;
   }
-  .storyboard-bar-params {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-  }
-  /* 模型按钮不跟着挤：放不下就让这一行横向滚。 */
+  /* 手机上模型按钮不跟着挤：放不下就让这一行横向滚。 */
   .storyboard-bar-model {
     flex: none;
   }
