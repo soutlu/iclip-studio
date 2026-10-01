@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/shared/ui/toast'
 import {
+  draftOf,
   editDraftKey,
   isEmptyDraft,
   loadEditDrafts,
@@ -13,7 +14,8 @@ import type { FrameEditDraft, FrameEditTarget } from './image-edit-types'
 export type FrameEditDraftStore = {
   /** 各张底图的草稿；取某一张用 `draftOf`，调用方自己记忆化。 */
   drafts: FrameEditDrafts
-  updateDraft: (baseUrl: string, draft: FrameEditDraft) => void
+  /** 按这张底图当前的草稿算出新的一份；多处（画布、输入卡）各改各的字段，互不覆盖。 */
+  updateDraft: (baseUrl: string, update: (draft: FrameEditDraft) => FrameEditDraft) => void
   /** 这张底图的输入作废：应用之后画在它上面的圈没有意义了。 */
   clearDraft: (baseUrl: string) => void
   /** 本地草稿读坏了；给出提示，用户可以选择重新开始。 */
@@ -45,9 +47,10 @@ export function useFrameEditDrafts(target: FrameEditTarget): FrameEditDraftStore
 
   return {
     drafts,
-    updateDraft: (baseUrl, draft) =>
+    updateDraft: (baseUrl, update) =>
       setDrafts((current) => {
-        if (isEmptyDraft(draft, baseUrl)) {
+        const draft = update(draftOf(current, baseUrl))
+        if (isEmptyDraft(draft)) {
           const { [baseUrl]: _dropped, ...rest } = current
           return rest
         }

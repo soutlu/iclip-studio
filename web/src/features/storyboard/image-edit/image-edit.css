@@ -301,14 +301,6 @@ p.image-edit-photo {
   overscroll-behavior: contain;
 }
 
-.image-edit-inputs {
-  display: flex;
-  min-width: 0;
-  flex: none;
-  flex-direction: column;
-  gap: 24px;
-}
-
 .image-edit-submit-area {
   display: flex;
   min-width: 0;
@@ -319,14 +311,8 @@ p.image-edit-photo {
   overflow-wrap: anywhere;
 }
 
+/* 输入卡工具行里的生成设置：与提交按钮同一行，窄时先压模型名。 */
 .image-edit-settings {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.image-edit-settings-controls {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -348,61 +334,40 @@ p.image-edit-photo {
   font-size: var(--text-body);
 }
 
-.image-edit-instruction-editor {
-  border: 0;
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-container-low);
+/* 修改要求里的标注 chip 与 @ 菜单里的标注项：序号是与画布标注同色的红色实心圆，白字细白圈。
+   chip 外观沿用附件的 .media-chip；选中（画布上选中了这个标注）的墨色环由 composer 的 data-selected 规则画。 */
+.annotation-chip {
+  cursor: pointer;
 }
-
-/* 输入区没有边框，聚焦时内缘画 1px 墨色线代替边框转色，不加外扩焦点环。 */
-.image-edit-instruction-editor:focus-within {
-  outline: 1px solid var(--color-focus-ring);
-  outline-offset: -1px;
-}
-
-.image-edit-instruction-input:focus {
-  /* design-allow -- 整个编辑器共享外层 focus-within 焦点环。 */
-  outline: none;
-}
-
-.image-edit-instruction-input p + p {
-  margin-top: 8px;
-}
-
-/* 修改要求里的引用芯片：与附件芯片同一套中性浮起——顶层白面、半像素发丝圈加一层轻影，表面不着色。
-   标注用一枚琥珀小圆点和参考图（带缩略图）区分；选中的标注换 1px 墨色圈。
-   圈画在 box-shadow 上，outline 留给 ui-focus 的键盘焦点环；失效引用保留错误色，属于状态。 */
-.image-edit-reference-chip {
-  background-color: var(--color-top-layer);
-  box-shadow:
-    0 0 0 0.5px var(--color-hairline),
-    var(--shadow-xs);
-  color: var(--color-on-surface);
-  transition: background-image var(--dur-s) var(--ease);
-}
-.image-edit-reference-chip:hover {
-  background-image: linear-gradient(var(--color-state-hover), var(--color-state-hover));
-}
-.image-edit-reference-chip[data-selected] {
-  box-shadow:
-    0 0 0 1px var(--color-on-surface),
-    var(--shadow-xs);
-}
-.image-edit-reference-chip[aria-disabled='true'] {
-  background-color: var(--color-error-container);
-  box-shadow: 0 0 0 0.5px var(--color-error);
-  color: var(--color-on-error-container);
-}
-.image-edit-reference-chip > img {
-  outline: 0.5px solid var(--color-hairline);
-  outline-offset: -0.5px;
-}
-.image-edit-reference-chip-marker {
-  width: 6px;
-  height: 6px;
+.annotation-chip-number {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
   flex: none;
+  place-items: center;
   border-radius: var(--radius-full);
-  background: var(--color-warning);
+  background: var(--color-error);
+  box-shadow:
+    0 0 0 1.5px var(--color-on-scrim),
+    0 0 0 2px color-mix(in srgb, var(--color-scrim) 16%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* 画布上删掉的标注：chip 留着并标成错误态，提交时拦下。 */
+.annotation-chip-stale {
+  cursor: default;
+  box-shadow:
+    0 0 0 0.5px var(--color-error),
+    var(--shadow-xs);
+  color: var(--color-error);
+}
+.annotation-chip-stale .annotation-chip-number {
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--color-error);
+  color: var(--color-error);
 }
 
 .image-edit-canvas {
@@ -490,6 +455,11 @@ p.image-edit-photo {
 }
 
 @media (max-width: 760px) {
+  /* 窄屏的工具行放不下完整模型名：让模型名再让出一截，齿轮与「生成图片」不重叠。 */
+  .image-edit-model-picker {
+    min-width: 72px;
+  }
+
   .image-edit-dialog {
     inset: 0;
     width: 100%;

@@ -1,4 +1,7 @@
-/** 参考 Kimi mention-tip；锚点与卡共用悬停时序，hover 桥覆盖二者间隙。 */
+/** 参考 Kimi mention-tip；锚点与卡共用悬停时序，hover 桥覆盖二者间隙。
+ *
+ * 卡用 fixed 定位，位置在视口坐标里算；挂载点可以注入：锚点在模态弹窗里时挂进弹窗，弹窗外的指针事件与焦点都被禁用。
+ * 弹窗带 translate 时 fixed 以弹窗为参照，所以落位前减去包含块原点。 */
 
 import { type SyntheticEvent, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -33,6 +36,8 @@ type TipPlacement = {
 
 type MediaPreviewCardProps = {
   anchorEl: HTMLElement
+  /** 挂载点，默认 body。 */
+  container?: HTMLElement | null
   media: MediaDescriptor
   onEnter: () => void
   onLeave: () => void
@@ -41,6 +46,7 @@ type MediaPreviewCardProps = {
 
 export function MediaPreviewCard({
   anchorEl,
+  container = null,
   media,
   onEnter,
   onLeave,
@@ -49,6 +55,7 @@ export function MediaPreviewCard({
   // 隐藏状态下测量后定位；挂载与媒体加载回调负责重新测量。
   const [placement, setPlacement] = useState<TipPlacement | null>(null)
   const tipElRef = useRef<HTMLDivElement | null>(null)
+  const originRef = useRef<{ x: number; y: number } | null>(null)
   const tipRef = (el: HTMLDivElement | null) => {
     tipElRef.current = el
     measure(el)
@@ -64,11 +71,15 @@ export function MediaPreviewCard({
       window.innerWidth - rect.width - TIP_VIEWPORT_MARGIN_PX,
     )
     const side = anchor.top >= rect.height + TIP_GAP_PX + TIP_VIEWPORT_MARGIN_PX ? 'top' : 'bottom'
+    const top = side === 'top' ? anchor.top - rect.height - TIP_GAP_PX : anchor.bottom + TIP_GAP_PX
+    // 包含块原点：首次测量时卡还在 left / top 为 0 的位置，它的视口坐标就是原点；没有带 transform 的祖先时是视口原点。
+    originRef.current ??= { x: rect.left, y: rect.top }
+    const origin = originRef.current
     const next: TipPlacement = {
       caretX: Math.min(Math.max(anchorCenterX - left, 12), rect.width - 12),
-      left,
+      left: left - origin.x,
       side,
-      top: side === 'top' ? anchor.top - rect.height - TIP_GAP_PX : anchor.bottom + TIP_GAP_PX,
+      top: top - origin.y,
     }
     setPlacement((prev) =>
       prev !== null &&
@@ -216,6 +227,6 @@ export function MediaPreviewCard({
         />
       )}
     </div>,
-    document.body,
+    container ?? document.body,
   )
 }

@@ -110,7 +110,8 @@ export async function exportAnnotatedImage(
       geometry.label.height,
       geometry.label.radius,
     )
-    context.fillStyle = labelColor
+    // 序号与标注线同色的红色实心、细白圈，与画布一致；连线仍用深色。
+    context.fillStyle = stroke
     context.fill()
     context.strokeStyle = foreground
     context.lineWidth = 1.5 * unitsPerPixel

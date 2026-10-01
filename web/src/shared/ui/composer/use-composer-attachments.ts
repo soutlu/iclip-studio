@@ -3,9 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
+import type { ComposerNode } from './composer-node'
 
 /** image / video 可提交给 prompt；file 不上传，直接停在 error。 */
 export type ComposerAttachmentKind = 'file' | 'image' | 'video'
+
+/** 收哪些媒体：`media` 图片与视频都收；`image` 只收图片，视频与 file 一样停在 error。 */
+export type ComposerAccept = 'image' | 'media'
 
 export type ComposerAttachment = {
   readonly attId: string
@@ -28,7 +32,14 @@ export type ComposerAttachment = {
 /** 百分比变化且距上次至少 120ms 才更新；100% 不节流。 */
 const PROGRESS_WRITE_MS = 120
 
-const UNSUPPORTED_FILE = '只能添加图片或视频附件'
+const UNSUPPORTED: Record<ComposerAccept, string> = {
+  image: '只能添加图片',
+  media: '只能添加图片或视频附件',
+}
+
+/** 这种媒体收不收。 */
+export const acceptsKind = (accept: ComposerAccept, kind: ComposerAttachmentKind): boolean =>
+  kind === 'image' || (accept === 'media' && kind === 'video')
 
 /** 参考 Kimi Pu()，使用八位 base36 随机附件 ID。 */
 const mintAttachmentId = (): string => Math.random().toString(36).slice(2, 10)
@@ -75,7 +86,7 @@ const revokePreview = (entry: ComposerAttachment) => {
   if (entry.previewUrl?.startsWith('blob:') === true) URL.revokeObjectURL(entry.previewUrl)
 }
 
-export const useComposerAttachments = () => {
+export const useComposerAttachments = (accept: ComposerAccept = 'media') => {
   const [entries, setEntries] = useState<ReadonlyMap<string, ComposerAttachment>>(() => new Map())
   const entriesRef = useRef(entries)
   useEffect(() => {
@@ -102,8 +113,8 @@ export const useComposerAttachments = () => {
   /** 任一步上传失败均进入 error 状态并保留可展示的错误文案。 */
   const upload = async (entry: ComposerAttachment, file: File) => {
     const { kind } = entry
-    if (kind === 'file') {
-      patch(entry.attId, { error: UNSUPPORTED_FILE, status: 'error' })
+    if (kind === 'file' || !acceptsKind(accept, kind)) {
+      patch(entry.attId, { error: UNSUPPORTED[accept], status: 'error' })
       return
     }
     let lastPercent = -1
@@ -210,13 +221,23 @@ export const useComposerAttachments = () => {
 
 export type ComposerAttachments = ReturnType<typeof useComposerAttachments>
 
-export type ComposerPart =
+/** 使用方节点的 part；没有自定义节点（`N` 为 never）时这一支也是 never。
+ *
+ * 取舍：写成普通判别联合 `{kind: 'node'; node: ComposerNode}` 更直白，但首页、对话的序列化（partsContent）
+ * 就得为一个永远不会出现的分支写报错。用条件类型让「不支持自定义节点」由类型系统保证，代价是这一行要靠注释读懂。
+ * `[N] extends [never]` 加方括号是惯用的「是不是 never」判断，不按联合分发：`N` 是几种节点的联合时得到一个 `node: N` 的 part。 */
+type NodePart<N extends ComposerNode> = [N] extends [never]
+  ? never
+  : { readonly kind: 'node'; readonly node: N }
+
+export type ComposerPart<N extends ComposerNode = never> =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'media'; readonly media: ComposerAttachment }
+  | NodePart<N>
 
-/** parts 保留文字与附件顺序，用于提交；text / media 为气泡占位与失败恢复提供平铺视图。 */
-export type ComposerSubmission = {
+/** parts 保留文字、附件与使用方节点的顺序，用于提交；text / media 为气泡占位与失败恢复提供平铺视图。 */
+export type ComposerSubmission<N extends ComposerNode = never> = {
   readonly text: string
   readonly media: readonly ComposerAttachment[]
-  readonly parts: readonly ComposerPart[]
+  readonly parts: readonly ComposerPart<N>[]
 }
