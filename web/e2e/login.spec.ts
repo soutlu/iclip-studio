@@ -25,3 +25,17 @@ test('未登录进首页看到游客态外壳，点登录弹窗登录后就地�
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await expect(page.getByRole('menu')).toBeHidden()
 })
+
+test('点侧栏登录打开弹窗，Esc 关闭后焦点回到登录按钮', async ({ page }) => {
+  await page.goto('/')
+
+  const trigger = page.getByRole('button', { name: '登录', exact: true })
+  await trigger.click()
+  const dialog = page.getByRole('dialog', { name: '登录 Cue' })
+  await expect(dialog.getByLabel('用户名', { exact: true })).toBeFocused()
+
+  await page.keyboard.press('Escape')
+
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toBeFocused()
+})

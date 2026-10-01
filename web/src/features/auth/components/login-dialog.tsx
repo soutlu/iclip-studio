@@ -26,6 +26,7 @@ function entryFocusTarget(
 export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogProps) {
   const usernameRef = useRef<HTMLInputElement>(null)
   const ssoButtonRef = useRef<HTMLButtonElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
   const ssoErrorMessage = ssoErrorCode ? ssoErrorMessageOf(ssoErrorCode) : undefined
   // 只缓存「开 / 关」这类确定答案；探测出错时没有数据，下次打开弹窗会重新探测。
   const ssoProbe = useQuery({
@@ -53,10 +54,23 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
         className="max-w-[420px]"
         // 打开时焦点交给登录入口，而不是标题栏的关闭按钮。
         onOpenAutoFocus={(event) => {
+          // 焦点移入弹窗前记下打开它的元素，关闭时还给它。
+          const opener = document.activeElement
+          openerRef.current =
+            opener instanceof HTMLElement && opener !== document.body ? opener : null
           const target = entryFocusTarget(usernameRef, ssoButtonRef)
           if (target === null) return
           event.preventDefault()
           target.focus()
+        }}
+        // 弹窗由应用壳的状态打开，没有 Dialog.Trigger，Radix 关闭时找不到触发器、焦点落回 body。
+        // 打开者已不在页面（如登录成功后侧栏的登录按钮换成头像）或本无打开者（SSO 回调出错自动打开）时，沿用 Radix 默认处理。
+        onCloseAutoFocus={(event) => {
+          const opener = openerRef.current
+          openerRef.current = null
+          if (opener === null || !opener.isConnected) return
+          event.preventDefault()
+          opener.focus()
         }}
       >
         <DialogHeader closeLabel="关闭登录" title="欢迎登录 Cue" />
