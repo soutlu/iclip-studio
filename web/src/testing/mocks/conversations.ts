@@ -11,6 +11,9 @@ import { mockCreatedAt } from './paging'
 
 export type MockConversation = z.output<typeof zConversationOut>
 
+/** 原型环境不发会话事件帧，行上的事件水位固定在这一个进程标识与 0 上。 */
+const MOCK_EVENT_EPOCH = 'mock-events'
+
 /** 删除只写 deletedAt（合同 §6 墓碑）；墓碑只有审计列表列得出来。 */
 export const mockConversations: MockConversation[] = []
 
@@ -46,10 +49,12 @@ export const addMockConversation = (
     completedAt: null,
     createdAt,
     deletedAt: null,
+    eventEpoch: MOCK_EVENT_EPOCH,
     forkTurn: null,
     forkedFrom: null,
     id: crypto.randomUUID(),
     lastRunId: null,
+    lastSeq: 0,
     ownerUserId,
     taskId: null,
     title,

@@ -17,7 +17,7 @@ from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.from_messages import SteeredPrompt
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
+from iclip.harness.transcript.store import OpBatch, TranscriptStore
 from iclip.harness.transcript.subscription import subscribe_frames
 from iclip.platform.transcript.display import ToolDisplayRegistry
 from iclip.platform.transcript.ops import MAIN_AGENT_ID
@@ -75,6 +75,9 @@ class Normalizer:
         return value
 
     def _field(self, key: str, value: Any) -> Any:
+        if key == "stream_epoch":
+            # 实时流的身份每次建流都换新：两条路的流不是同一条，金样只关心它在不在。
+            return "<epoch>"
         if key == "durationMs":
             # 两条路的时钟不同，耗时对不上；金样要能过前端的 number schema，所以写 0 不写占位串。
             return 0
@@ -148,7 +151,7 @@ async def live_page(
 
     replayed = TranscriptStore()
     for replayed_agent in dict.fromkeys((MAIN_AGENT_ID, agent_id)):
-        for batch in store.subscribe_view(conversation_id, replayed_agent, since=0).batches:
+        for batch in whole_journal(store, conversation_id, replayed_agent):
             replayed.append(conversation_id, replayed_agent, batch.ops)
     history = TranscriptHistory(EmptyConversationSnapshots(), NoPromptRuns(), display)
     return await _service(replayed, history, queue, runner).page(
@@ -175,20 +178,37 @@ async def cold_page(
     )
 
 
+def whole_journal(
+    store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
+) -> tuple[OpBatch, ...]:
+    """这条实时流补发日志里的全部批次：带上流自己的 epoch 从 0 续订。"""
+
+    epoch = store.subscribe_view(conversation_id, agent_id).epoch
+    return store.subscribe_view(conversation_id, agent_id, since=0, epoch=epoch).batches
+
+
 def ws_frames(
     store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
 ) -> list[Any]:
-    """这条流从订阅起会收到的全部帧：一帧 reset，之后每批一帧 ops。"""
+    """这条流从订阅起会收到的全部帧：一帧 reset，之后每批一帧 ops。
 
-    view = store.subscribe_view(conversation_id, agent_id, since=0)
+    只记客户端要解析的部分：帧类型、信封上的 ``stream_epoch`` 与载荷；会话事件序号与时间戳不进金样。
+    """
+
+    view = store.subscribe_view(conversation_id, agent_id)
     frames: list[Any] = [
-        {"type": "transcript.reset", "payload": frame.model_dump(by_alias=True, exclude_none=True)}
+        {
+            "type": "transcript.reset",
+            "stream_epoch": view.epoch,
+            "payload": frame.model_dump(by_alias=True, exclude_none=True),
+        }
         for frame in subscribe_frames(view, agent_id=agent_id, since=None)
     ]
-    for batch in view.batches:
+    for batch in whole_journal(store, conversation_id, agent_id):
         frames.append(
             {
                 "type": "transcript.ops",
+                "stream_epoch": batch.epoch,
                 "payload": {
                     "agent_id": agent_id,
                     "seq": batch.seq,
@@ -245,5 +265,6 @@ __all__ = [
     "frames_of",
     "live_page",
     "normalize",
+    "whole_journal",
     "ws_frames",
 ]

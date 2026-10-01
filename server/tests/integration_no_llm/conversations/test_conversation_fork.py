@@ -30,6 +30,7 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.platform.transcript.session_events import SessionEventClock
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
@@ -410,6 +411,9 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             latest_master_urls=_untouched,
             fork_transcript=start,
             copy_workspace=copy_no_workspace,
+            event_watermark=SessionEventClock().snapshot,
+            announce_row=_untouched,
+            announce_deleted=_untouched,
         )
         principal = Principal(
             kind="user", user_id=uuid.UUID(owner), permissions=frozenset(), audit_label="logan"

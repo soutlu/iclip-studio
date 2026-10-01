@@ -9,7 +9,11 @@ from typing import Annotated, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from iclip.domains.conversations.models import Conversation, ConversationActivity
+from iclip.domains.conversations.models import (
+    Conversation,
+    ConversationActivity,
+    EventWatermark,
+)
 
 MAX_TITLE_CHARS: Final = 200
 MAX_AGENT_ID_CHARS: Final = 128
@@ -139,6 +143,12 @@ class ConversationOut(CamelModel):
     fork_turn: int | None
     """分叉自源对话的第几轮，从 1 数。与 ``forkedFrom`` 同时有值。"""
     activity: ConversationActivityOut
+    last_seq: int
+    """读这一行之前，这段对话已发出的最大会话事件序号（WebSocket 全局帧信封上的 ``seq``）。
+
+    行里的字段至少与序号不大于它的事件一样新；客户端收到序号更大的事件帧时，以帧上的值为准。"""
+    event_epoch: str
+    """``lastSeq`` 所属的服务进程；与帧信封的 ``epoch`` 不同时两者不可比，以这一行为准。"""
 
 
 class ConversationEnvelope(CamelModel):
@@ -239,8 +249,10 @@ class ConversationFileEnvelope(CamelModel):
     file: ConversationFileContentOut
 
 
-def conversation_out(conversation: Conversation, activity: ConversationActivity) -> ConversationOut:
-    """合并对话记录与引擎提供的活动投影，转换为响应模型。"""
+def conversation_out(
+    conversation: Conversation, activity: ConversationActivity, events: EventWatermark
+) -> ConversationOut:
+    """合并对话记录、引擎提供的活动投影与读行之前取的事件水位，转换为响应模型。"""
 
     return ConversationOut(
         id=conversation.id,
@@ -262,16 +274,22 @@ def conversation_out(conversation: Conversation, activity: ConversationActivity)
             last_turn_reason=activity.last_turn_reason,
             video_generation=activity.video_generation,
         ),
+        last_seq=events.seq_of(conversation.id),
+        event_epoch=events.epoch,
     )
 
 
 def audit_item_out(
-    conversation: Conversation, activity: ConversationActivity, latest_master_url: str | None
+    conversation: Conversation,
+    activity: ConversationActivity,
+    latest_master_url: str | None,
+    events: EventWatermark,
 ) -> ConversationsAuditItemOut:
     """在 ``conversation_out`` 之上补这段对话自己最新一条成片的地址，转换为审计列表的条目。"""
 
     return ConversationsAuditItemOut(
-        **dict(conversation_out(conversation, activity)), latest_master_url=latest_master_url
+        **dict(conversation_out(conversation, activity, events)),
+        latest_master_url=latest_master_url,
     )
 
 

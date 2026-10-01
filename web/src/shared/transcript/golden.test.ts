@@ -12,7 +12,7 @@ import {
 import type { TranscriptOpsEvent } from './vendor'
 
 interface Golden {
-  ws?: Array<{ type: string; payload: unknown }>
+  ws?: Array<{ type: string; stream_epoch?: unknown; payload: unknown }>
   rest: unknown
   child_rest?: unknown
 }
@@ -21,6 +21,12 @@ const SAMPLES: Record<string, Golden> = { 'tool-turn': toolTurn, 'delegate-turn'
 
 describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
   const sample = SAMPLES[name] as Golden
+
+  it('实时流 epoch 在页的信封与每帧信封上都有（客户端续订要带它）', () => {
+    // vendored schema 不认这个信封字段，这里直接看原始金样，免得被 schema 剥掉后测不出缺失。
+    expect((sample.rest as { stream_epoch?: unknown }).stream_epoch).toEqual(expect.any(String))
+    for (const frame of sample.ws ?? []) expect(frame.stream_epoch).toEqual(expect.any(String))
+  })
 
   it('REST 一页过 transcript schema', () => {
     const page = transcriptResponseSchema.parse(sample.rest)

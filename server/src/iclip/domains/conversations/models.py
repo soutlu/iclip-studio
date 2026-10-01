@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Protocol
 
 TitleKind = Literal["default", "generated", "custom"]
 """标题来源，取值须与数据库检查约束同步。"""
@@ -56,4 +56,19 @@ IDLE_ACTIVITY = ConversationActivity()
 """无运行记录或活动信息时使用的空闲状态。"""
 
 
-__all__ = ["IDLE_ACTIVITY", "Conversation", "ConversationActivity", "TitleKind"]
+class EventWatermark(Protocol):
+    """某一刻各段对话的会话事件水位，由组合根从广播方取来。
+
+    读库或写库之前取一份：行上的 ``lastSeq`` 按它填，客户端拿帧序号与它比先后（ADR-0004）。"""
+
+    @property
+    def epoch(self) -> str:
+        """序号所属的进程；不同 epoch 的序号不可比。"""
+        ...
+
+    def seq_of(self, conversation_id: uuid.UUID) -> int:
+        """这段对话在取水位那一刻已发出的最大事件序号；没发过是 0。"""
+        ...
+
+
+__all__ = ["IDLE_ACTIVITY", "Conversation", "ConversationActivity", "EventWatermark", "TitleKind"]

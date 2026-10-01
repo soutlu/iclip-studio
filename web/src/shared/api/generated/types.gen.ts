@@ -633,6 +633,10 @@ export type ConversationOut = {
    */
   deletedAt: string | null
   /**
+   * Eventepoch
+   */
+  eventEpoch: string
+  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -648,6 +652,10 @@ export type ConversationOut = {
    * Lastrunid
    */
   lastRunId: string | null
+  /**
+   * Lastseq
+   */
+  lastSeq: number
   /**
    * Owneruserid
    */
@@ -735,6 +743,10 @@ export type ConversationsAuditItemOut = {
    */
   deletedAt: string | null
   /**
+   * Eventepoch
+   */
+  eventEpoch: string
+  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -750,6 +762,10 @@ export type ConversationsAuditItemOut = {
    * Lastrunid
    */
   lastRunId: string | null
+  /**
+   * Lastseq
+   */
+  lastSeq: number
   /**
    * Latestmasterurl
    */
@@ -1709,7 +1725,8 @@ export type OpsBatchOut = {
  *
  * ``GET /transcript/ops`` 的补批响应。
  *
- * ``complete`` 为假表示要的批次已经出了日志窗口，客户端得整页重拉。
+ * ``complete`` 为假表示要的批次已经出了日志窗口，或调用方给的 ``stream_epoch`` 与当前实时流
+ * 对不上，客户端得整页重拉。``stream_epoch`` 是这些批次所属的实时流。
  */
 export type OpsCatchup = {
   /**
@@ -1728,6 +1745,10 @@ export type OpsCatchup = {
    * Latest Seq
    */
   latest_seq: number
+  /**
+   * Stream Epoch
+   */
+  stream_epoch: string
 }
 
 /**
@@ -2844,6 +2865,10 @@ export type TranscriptPage = {
    * Seq
    */
   seq: number
+  /**
+   * Stream Epoch
+   */
+  stream_epoch: string
   /**
    * Tasks
    */
@@ -4651,6 +4676,38 @@ export type DeleteConversationConversationsConversationIdDeleteResponses = {
 export type DeleteConversationConversationsConversationIdDeleteResponse =
   DeleteConversationConversationsConversationIdDeleteResponses[keyof DeleteConversationConversationsConversationIdDeleteResponses]
 
+export type ReadConversationConversationsConversationIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}'
+}
+
+export type ReadConversationConversationsConversationIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadConversationConversationsConversationIdGetError =
+  ReadConversationConversationsConversationIdGetErrors[keyof ReadConversationConversationsConversationIdGetErrors]
+
+export type ReadConversationConversationsConversationIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ConversationEnvelope
+}
+
+export type ReadConversationConversationsConversationIdGetResponse =
+  ReadConversationConversationsConversationIdGetResponses[keyof ReadConversationConversationsConversationIdGetResponses]
+
 export type RenameConversationConversationsConversationIdPatchData = {
   body: ConversationRename
   path: {
@@ -5045,6 +5102,10 @@ export type CatchupConversationsConversationIdTranscriptOpsGetData = {
      * Agent Id
      */
     agent_id?: string
+    /**
+     * Stream Epoch
+     */
+    stream_epoch?: string | null
   }
   url: '/conversations/{conversation_id}/transcript/ops'
 }

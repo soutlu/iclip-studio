@@ -73,6 +73,7 @@ def subscribe(
     conversation_id: str,
     *,
     since: int | None = None,
+    epoch: str | None = None,
     frame_id: str = "s1",
     grade: str = "delta",
 ) -> None:
@@ -82,6 +83,8 @@ def subscribe(
     }
     if since is not None:
         payload["transcript_since"] = {"main": since}
+    if epoch is not None:
+        payload["transcript_epoch"] = {"main": epoch}
     ws.send_json({"type": "subscribe_v2", "id": frame_id, "payload": payload})
 
 

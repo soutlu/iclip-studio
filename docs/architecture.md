@@ -93,7 +93,7 @@ transcript 是运行记录的投影。历史由 `from_messages` 从持久消息�
 
 子代理各自一条 transcript 流，agent_id 即其 run id，一次 `delegate_task` 就是它的第一轮；父工具调用与子运行的关联记在官方 tool_effect 账本，实时与历史都据此重建。子代理任务的终态取自子运行的结束事件；父工具返回缺失时（父运行被停或崩溃）也按同一口径。读子代理流走同一组接口带 `agent_id`，归属由子运行记录的 `parent_run_id` 回溯到会话。
 
-实时投影与连接注册表在每个 worker 的内存中，快照持久化后才移交该轮实时状态。当前没有跨 worker 广播：订阅落到其他 worker 时无法收到该运行的实时事件。多 worker 部署必须把这一限制纳入连接路由设计。
+实时投影与连接注册表在每个 worker 的内存中，快照持久化后才移交该轮实时状态。每条实时流建出时带一个 epoch，续订水位按 epoch 与批次号一起核对。连接注册表同时持有会话事件时钟（[session_events.py](../server/src/iclip/platform/transcript/session_events.py)），全局帧与文件变更帧在写入提交之后从它取号；对话域经组合根注入的端口取水位、广播整行与删除，不依赖 WebSocket 实现（[ADR-0004](adr/0004-align-realtime-protocol-with-kimi.md)）。当前没有跨 worker 广播：订阅落到其他 worker 时无法收到该运行的实时事件。多 worker 部署必须把这一限制纳入连接路由设计。
 
 WebSocket 订阅、活动状态和文件变更帧的对外约定见 [contract/conventions.md](../contract/conventions.md)，本文不维护第二份帧与端点清单。
 
