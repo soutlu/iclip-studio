@@ -330,20 +330,14 @@ p.image-edit-photo {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-/* 两个就地选择器的外观由共享 Select 的 inline 变体给，这里只排它们在这一行里的宽度。 */
-.image-edit-model-option {
-  flex: 1;
-}
-
-.image-edit-resolution-option {
-  flex: 0 0 64px;
-}
-
-.image-edit-settings-controls > button {
-  flex: none;
+/* 模型、分辨率用出片栏的 GenerationPicker，外观见 storyboard.css 的出片栏一节；
+   这一行里只有模型名可收缩，窄时先截断它。 */
+.image-edit-model-picker {
+  min-width: 96px;
+  flex: 0 1 auto;
 }
 
 .image-edit-primary-action {

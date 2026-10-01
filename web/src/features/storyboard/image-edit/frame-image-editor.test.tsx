@@ -126,7 +126,7 @@ describe('图片编辑器', () => {
     )
     await renderWithProviders(<EditorPage />)
 
-    const models = await screen.findByLabelText('图片模型')
+    const models = await screen.findByRole('button', { name: '图片模型' })
     const generate = screen.getByRole('button', { name: '生成图片' })
     expect(screen.queryByRole('menuitemradio', { name: 'pro' })).not.toBeInTheDocument()
     await userEvent.click(await screen.findByRole('button', { name: '更多生成设置' }))
@@ -138,11 +138,17 @@ describe('图片编辑器', () => {
     expect(submissions[0]?.['channel']).toBe('pro')
 
     await waitFor(() => expect(models).toBeEnabled())
-    await userEvent.selectOptions(models, 'seedream_v5_pro')
+    await userEvent.click(models)
+    // 菜单按模型名称列出，提交的是模型 id。
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Seedream 5.0 Pro' }))
+    expect(models).toHaveTextContent('Seedream 5.0 Pro')
 
     expect(screen.queryByRole('button', { name: '更多生成设置' })).not.toBeInTheDocument()
-    const resolutions = within(screen.getByLabelText('图片分辨率')).getAllByRole('option')
+    await userEvent.click(screen.getByRole('button', { name: '图片分辨率' }))
+    const resolutionMenu = await screen.findByRole('menu', { name: '图片分辨率' })
+    const resolutions = within(resolutionMenu).getAllByRole('menuitemradio')
     expect(resolutions.map((option) => option.textContent)).toEqual(['1K', '2K'])
+    await userEvent.keyboard('{Escape}')
 
     await userEvent.click(generate)
     await waitFor(() => expect(submissions).toHaveLength(2))
@@ -150,6 +156,42 @@ describe('图片编辑器', () => {
     expect(submissions[1]?.['channel']).toBeUndefined()
     expect(submissions[1]?.['sourceUrl']).toBe(BASE)
     expect(submissions[1]?.['metadata']).toEqual({ frame: 1, shot: 1 })
+  })
+
+  it('做不了分镜画幅的模型在菜单里置灰并标不支持', async () => {
+    server.use(
+      http.get('*/api/generations/image-models', () =>
+        HttpResponse.json({
+          default: 'nano_banana_pro',
+          items: [
+            {
+              model: 'nano_banana_pro',
+              label: 'Nano Banana Pro',
+              aspectRatios: ['9:16'],
+              resolutions: ['1k', '2k'],
+              channels: [],
+            },
+            {
+              model: 'square_only',
+              label: 'Square Only',
+              aspectRatios: ['1:1'],
+              resolutions: ['1k'],
+              channels: [],
+            },
+          ],
+        }),
+      ),
+    )
+    await renderWithProviders(<EditorPage />)
+
+    const models = await screen.findByRole('button', { name: '图片模型' })
+    await waitFor(() => expect(models).toBeEnabled())
+    await userEvent.click(models)
+    const menu = await screen.findByRole('menu', { name: '图片模型' })
+    expect(within(menu).getByRole('menuitemradio', { name: 'Nano Banana Pro' })).toBeChecked()
+    const unsupported = within(menu).getByRole('menuitemradio', { name: /^Square Only/ })
+    expect(unsupported).toHaveAccessibleName(/不支持/)
+    expect(unsupported).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('提交后新任务占一格并自动选中；草稿暂存与记录刷新都失败也不挡着看在途任务', async () => {

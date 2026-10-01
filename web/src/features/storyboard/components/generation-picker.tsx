@@ -1,5 +1,5 @@
-/** 出片栏上的单选器（模型、画幅共用）：按钮显示当前值，点开在按钮上方弹出单选菜单。
- * 出片栏贴着工作台底边，菜单向上展开，箭头也朝上；菜单挂在 portal 里，不会被参数行的横向滚动裁掉。
+/** 生成参数的单选器：按钮显示当前值，点开在按钮上方弹出单选菜单。出片栏的模型、画幅与图片编辑器的模型、分辨率共用。
+ * 两处都贴着底边，菜单向上展开，箭头也朝上；菜单挂在 portal 里，不会被参数行的横向滚动裁掉。
  * 外观见 storyboard.css 的出片栏一节。 */
 
 import type { ReactNode } from 'react'
@@ -9,8 +9,10 @@ import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } fro
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 
 export type GenerationPickerOption = {
-  /** 选项的值，也是选项上显示的字。 */
+  /** 选项的值；没有 `label` 时也是选项上显示的字。 */
   value: string
+  /** 选项上显示的字，值和显示名不同时给（如图片模型的 id 与名称）。 */
+  label?: string
   /** 选项左侧的小图形，如画幅比例框。 */
   leading?: ReactNode
   disabled?: boolean
@@ -24,8 +26,8 @@ type GenerationPickerProps = {
   value: string
   /** 按钮上显示的字：通常是当前值，清单还没到手时是占位说明。 */
   text: string
-  /** 按钮左侧的图标或图形。 */
-  leading: ReactNode
+  /** 按钮左侧的图标或图形；不给就只有字。 */
+  leading?: ReactNode
   options: readonly GenerationPickerOption[]
   disabled: boolean
   onChange: (value: string) => void
@@ -97,7 +99,7 @@ export function GenerationPicker({
                 {option.leading === undefined ? null : (
                   <span className="storyboard-bar-option-leading">{option.leading}</span>
                 )}
-                <span className="storyboard-bar-option-label">{option.value}</span>
+                <span className="storyboard-bar-option-label">{option.label ?? option.value}</span>
                 {option.hint === undefined ? null : (
                   <small className="storyboard-bar-option-hint">{option.hint}</small>
                 )}
