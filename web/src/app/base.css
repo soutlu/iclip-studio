@@ -113,11 +113,12 @@
 
   /* Semantic roles */
 
-  /* Primary：品牌主色。主按钮、焦点指示、选中底、画布选中 */
+  /* Primary：品牌主色。只给主操作「生成」、链接与品牌标识、成功状态；焦点与选中用墨色 */
   --color-primary: var(--p40); /* #006D42 白字 6.43:1 */
   --color-primary-hover: var(--p50);
   --color-on-primary: var(--p100);
-  --color-primary-container: var(--p90); /* #AEF2C6 选中底（配 P10 字 13.31:1） */
+  /* 成功状态底：状态徽标、成功标签、差异新增行。 */
+  --color-primary-container: var(--p90); /* #AEF2C6 配 P10 字 13.31:1 */
   --color-on-primary-container: var(--p10);
   /* 容器分为小件实色与大面浅底，文字与容器色必须配对。 */
   --color-primary-container-solid: var(--p70); /* #42BA79 小件实色（配 P10 字 6.96:1） */

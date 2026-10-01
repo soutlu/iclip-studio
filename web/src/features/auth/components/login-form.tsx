@@ -10,8 +10,10 @@ type LoginFormProps = {
   ssoEnabled: boolean
   initialErrorMessage?: string | undefined
   onSuccess: () => void
-  /** 用户名输入框；登录弹窗打开时把焦点交给它。 */
+  /** 用户名输入框；账号密码区展开时，登录弹窗打开后把焦点交给它。 */
   usernameRef?: Ref<HTMLInputElement>
+  /** 「使用飞书登录」按钮；账号密码区收起时，登录弹窗把焦点交给它。 */
+  ssoButtonRef?: Ref<HTMLButtonElement>
 }
 
 /** 飞书登录整页跳转；onSuccess 仅用于账号密码登录。初始错误在提交后清除。 */
@@ -20,6 +22,7 @@ export function LoginForm({
   initialErrorMessage,
   onSuccess,
   usernameRef,
+  ssoButtonRef,
 }: LoginFormProps) {
   const loginMutation = useLogin()
   const [username, setUsername] = useState('')
@@ -114,6 +117,7 @@ export function LoginForm({
             onClick={() => {
               void handleFeishuLogin()
             }}
+            ref={ssoButtonRef}
             variant="inverted"
           >
             {ssoSubmitting ? '正在跳转飞书…' : '使用飞书登录'}
