@@ -4,7 +4,7 @@ import { baseKeymap } from 'prosemirror-commands'
 import { history, redo, undo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import type { Node as PMNode } from 'prosemirror-model'
-import { EditorState, Selection } from 'prosemirror-state'
+import { EditorState, NodeSelection, Selection } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { parsePromptContent } from '@/shared/lib/prompt-clipboard'
@@ -43,6 +43,8 @@ type UseComposerEditorOptions = {
   attachments: ComposerAttachments
   attachmentsEnabled: boolean
   canSend: () => boolean
+  /** 选中上传失败的附件按 Enter 时调用，打开它的失败卡片。 */
+  onOpenFailedAttachment: (attId: string) => void
   onSubmit: () => void
   registerPillHost: (host: ComposerPillHost) => void
   unregisterPillHost: (attId: string) => void
@@ -55,6 +57,7 @@ export const useComposerEditor = ({
   attachmentsEnabled,
   canSend,
   dense,
+  onOpenFailedAttachment,
   onSubmit,
   registerPillHost,
   unregisterPillHost,
@@ -67,6 +70,7 @@ export const useComposerEditor = ({
   // 保证 Enter 的发送门控与已渲染的发送按钮状态一致，不留可用却发不出去的空档。
   const attachmentsRef = useRef(attachments)
   const canSendRef = useRef(canSend)
+  const onOpenFailedAttachmentRef = useRef(onOpenFailedAttachment)
   const onSubmitRef = useRef(onSubmit)
   const attachmentsEnabledRef = useRef(attachmentsEnabled)
   const registerPillHostRef = useRef(registerPillHost)
@@ -74,6 +78,7 @@ export const useComposerEditor = ({
   useLayoutEffect(() => {
     attachmentsRef.current = attachments
     canSendRef.current = canSend
+    onOpenFailedAttachmentRef.current = onOpenFailedAttachment
     onSubmitRef.current = onSubmit
     attachmentsEnabledRef.current = attachmentsEnabled
     registerPillHostRef.current = registerPillHost
@@ -184,6 +189,23 @@ export const useComposerEditor = ({
     )
   }
 
+  /** 删掉引用该附件的所有节点，条目随后由 syncReferences 回收；焦点留在编辑器。 */
+  const removeAttachment = (attId: string) => {
+    const view = viewRef.current
+    if (view === null) return
+    const positions: number[] = []
+    view.state.doc.descendants((node, pos) => {
+      if (node.type === nodeType('attachment') && node.attrs['attId'] === attId) positions.push(pos)
+      return true
+    })
+    if (positions.length === 0) return
+    const tr = view.state.tr
+    // 从后往前删，前面的位置不受影响。
+    for (const pos of positions.toReversed()) tr.delete(pos, pos + 1)
+    view.dispatch(tr)
+    view.focus()
+  }
+
   const focusEditor = () => viewRef.current?.focus()
 
   // PM 粘贴处理器经 ref 调用最新 insertFiles，外层拖放复用同一操作。
@@ -219,6 +241,19 @@ export const useComposerEditor = ({
       },
       handleKeyDown(view, event) {
         if (event.key !== 'Enter' || event.isComposing) return false
+        // 失败的附件被选中时，Enter 是失败卡片的键盘入口。
+        const { selection } = view.state
+        if (
+          !event.shiftKey &&
+          selection instanceof NodeSelection &&
+          selection.node.type === nodeType('attachment')
+        ) {
+          const attId = selection.node.attrs['attId'] as string
+          if (attachmentsRef.current.entries.get(attId)?.status === 'error') {
+            onOpenFailedAttachmentRef.current(attId)
+            return true
+          }
+        }
         if (event.shiftKey) {
           view.dispatch(view.state.tr.insertText('\n').scrollIntoView())
           return true
@@ -301,6 +336,7 @@ export const useComposerEditor = ({
     focusEditor,
     insertFiles,
     mountEditor,
+    removeAttachment,
     restoreDoc,
     viewRef,
   }

@@ -15,11 +15,13 @@ import { Composer } from './composer'
 
 const editor = () => screen.getByLabelText('输入消息')
 const sendButton = () => screen.getByRole('button', { name: '发送' })
-const imageFile = (name = '截图.png') => new File(['fake-png-bytes'], name, { type: 'image/png' })
+const imageFile = (name = '截图.png', type = 'image/png') =>
+  new File(['fake-png-bytes'], name, { type })
 const videoFile = (name = '样片.mp4') => new File(['fake-mp4-bytes'], name, { type: 'video/mp4' })
 
+/** 只在正文里找：失败卡片与悬停卡上也有文件名。 */
 const pillHost = (name: string): HTMLElement => {
-  const host = screen.getByText(name).parentElement
+  const host = within(editor()).getByText(name).parentElement
   if (host === null) throw new Error(`没找到 ${name} 的 pill`)
   return host
 }
@@ -145,7 +147,7 @@ describe('Composer', () => {
     expect(submission.media).toEqual([expect.objectContaining({ kind: 'image', url })])
   })
 
-  it('上传失败：pill 留着，发送一直被挡', async () => {
+  it('上传失败：pill 换成警示、发送一直被挡；点 pill 弹出失败卡片给出原因', async () => {
     const onSubmit = vi.fn()
     server.use(
       http.post('*/api/uploads/sign', () =>
@@ -156,14 +158,111 @@ describe('Composer', () => {
 
     pasteFilesIntoComposer(editor(), [imageFile()])
 
-    await waitFor(() => expect(screen.getByText('截图.png')).toBeInTheDocument())
-    await waitFor(() => expect(sendButton()).toBeDisabled())
+    const pill = pillHost('截图.png')
+    expect(await within(pill).findByRole('img', { name: '上传失败' })).toBeInTheDocument()
+    expect(sendButton()).toBeDisabled()
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).not.toHaveBeenCalled()
 
-    fireEvent.mouseEnter(pillHost('截图.png'))
-    const tip = await screen.findByRole('tooltip')
-    expect(within(tip).getByText(/不收 image\/png 这个类型/)).toBeInTheDocument()
+    // 失败的 pill 不再出悬停预览，改为点开卡片。
+    fireEvent.click(pill)
+    const card = await screen.findByRole('dialog', { name: '截图.png上传失败' })
+    expect(within(card).getByText(/不收 image\/png 这个类型/)).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: '移除' })).toBeInTheDocument()
+  })
+
+  it('失败卡片点「重试」：用原文件重新上传，传完发送解锁并带上公网地址', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    // 按本用例独有的 webp 类型认请求：第一次签名失败，重试时交给默认 handler。
+    let webpSigns = 0
+    server.use(
+      http.post('*/api/uploads/sign', async ({ request }) => {
+        const { contentType } = (await request.clone().json()) as { contentType: string }
+        if (contentType !== 'image/webp') return undefined
+        webpSigns += 1
+        return webpSigns === 1
+          ? HttpResponse.json({ detail: '签名服务暂时不可用' }, { status: 503 })
+          : undefined
+      }),
+    )
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} />)
+
+    pasteFilesIntoComposer(editor(), [imageFile('纹理.webp', 'image/webp')])
+    const pill = pillHost('纹理.webp')
+    await within(pill).findByRole('img', { name: '上传失败' })
+
+    fireEvent.click(pill)
+    const card = await screen.findByRole('dialog', { name: '纹理.webp上传失败' })
+    await user.click(within(card).getByRole('button', { name: '重试' }))
+
+    expect(screen.queryByRole('dialog', { name: '纹理.webp上传失败' })).not.toBeInTheDocument()
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+    expect(webpSigns).toBe(2)
+    await user.click(sendButton())
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media: [
+          expect.objectContaining({
+            name: '纹理.webp',
+            url: expect.stringContaining('/mock-oss/'),
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('失败卡片点「移除」：pill 从正文消失，焦点回输入框，剩下的文字可以发送', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post('*/api/uploads/sign', () =>
+        HttpResponse.json({ detail: '签名服务暂时不可用' }, { status: 503 }),
+      ),
+    )
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={vi.fn()} />)
+
+    pasteTextIntoComposer(editor(), '参考这张')
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    const pill = pillHost('截图.png')
+    await within(pill).findByRole('img', { name: '上传失败' })
+    expect(sendButton()).toBeDisabled()
+
+    fireEvent.click(pill)
+    const card = await screen.findByRole('dialog', { name: '截图.png上传失败' })
+    await user.click(within(card).getByRole('button', { name: '移除' }))
+
+    expect(within(editor()).queryByText('截图.png')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '截图.png上传失败' })).not.toBeInTheDocument()
+    expect(editor()).toHaveFocus()
+    expect(editor().textContent).toBe('参考这张')
+    expect(sendButton()).toBeEnabled()
+  })
+
+  it('键盘：方向键选中失败的 pill，Enter 打开卡片并聚焦「重试」，Esc 关掉后焦点回输入框', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    server.use(
+      http.post('*/api/uploads/sign', () =>
+        HttpResponse.json({ detail: '签名服务暂时不可用' }, { status: 503 }),
+      ),
+    )
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} />)
+
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await within(pillHost('截图.png')).findByRole('img', { name: '上传失败' })
+
+    // 粘贴后光标在 pill 之后；PM 按 keyCode 分发，左移一步选中整个原子节点。
+    fireEvent.keyDown(editor(), { key: 'ArrowLeft', keyCode: 37 })
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+
+    const card = await screen.findByRole('dialog', { name: '截图.png上传失败' })
+    await waitFor(() => expect(within(card).getByRole('button', { name: '重试' })).toHaveFocus())
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '截图.png上传失败' })).not.toBeInTheDocument()
+    await waitFor(() => expect(editor()).toHaveFocus())
   })
 
   it('退格删掉 pill 之后发送重新禁用（entry 随文档回收）', async () => {
@@ -310,7 +409,7 @@ describe('Composer', () => {
     expect(screen.queryByText('截图.png')).not.toBeInTheDocument()
   })
 
-  it('上传中不允许提交（Enter 与按钮都挡）', async () => {
+  it('上传中不允许提交（Enter 与按钮都挡），pill 显示上传中', async () => {
     const onSubmit = vi.fn()
     server.use(
       http.post('*/api/uploads/sign', async () => {
@@ -326,6 +425,14 @@ describe('Composer', () => {
 
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).not.toHaveBeenCalled()
+
+    // pill 本身显示上传中：拿不到进度时是不确定的进度条；悬停预览照旧，报「上传中」。
+    const pill = pillHost('截图.png')
+    const progress = within(pill).getByRole('progressbar', { name: '上传中' })
+    expect(progress).not.toHaveAttribute('aria-valuenow')
+    fireEvent.mouseEnter(pill)
+    const tip = await screen.findByRole('tooltip')
+    expect(within(tip).getByText('上传中')).toBeInTheDocument()
   })
 
   it('悬停 pill 出预览卡，传完后卡上报文件大小而不是上传状态', async () => {
