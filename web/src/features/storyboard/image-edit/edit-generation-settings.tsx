@@ -1,9 +1,11 @@
+import { Icon } from '@/shared/icons'
 import { IconButton } from '@/shared/ui/button'
-import { Select } from '@/shared/ui/field'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import { GenerationPicker } from '../components/generation-picker'
 import {
   isChannel,
   isResolution,
+  modelSupportsAspect,
   type ImageChannel,
   type ImageModel,
   type ImageResolution,
@@ -41,45 +43,48 @@ export function EditGenerationSettings({
   return (
     <div className="image-edit-settings">
       <div className="image-edit-settings-controls">
-        <Select
-          aria-label="图片模型"
+        <GenerationPicker
+          className="image-edit-model-picker"
           disabled={disabled || models.length === 0}
-          value={model?.model ?? ''}
-          variant="inline"
-          wrapperClassName="image-edit-model-option"
-          onChange={(event) => onModelChange(event.target.value)}
-        >
-          {models.length === 0 ? <option value="">读取模型中…</option> : null}
-          {models.map((item) => {
-            const usable = item.aspectRatios.includes(aspectRatio)
-            return (
-              <option key={item.model} value={item.model} disabled={!usable}>
-                {usable ? item.label : `${item.label}（不支持 ${aspectRatio}）`}
-              </option>
-            )
+          label="图片模型"
+          leading={<Icon decorative name="image" size="sm" />}
+          onChange={onModelChange}
+          options={models.map((item) => {
+            // 画幅由分镜决定，做不了它的模型置灰标出来，不从清单里藏掉。
+            const usable = modelSupportsAspect(item, aspectRatio)
+            return {
+              disabled: !usable,
+              hint: usable ? undefined : '不支持',
+              label: item.label,
+              value: item.model,
+            }
           })}
-        </Select>
-        <Select
-          aria-label="图片分辨率"
+          text={model?.label ?? '读取模型中…'}
+          value={model?.model ?? ''}
+        />
+        <GenerationPicker
           disabled={disabled || resolution === undefined}
-          value={resolution ?? ''}
-          variant="inline"
-          wrapperClassName="image-edit-resolution-option"
-          onChange={(event) => {
-            const value = event.target.value
+          label="图片分辨率"
+          onChange={(value) => {
             if (isResolution(value)) onResolutionChange(value)
           }}
-        >
-          {model?.resolutions.map((value) => (
-            <option key={value} value={value}>
-              {value.toUpperCase()}
-            </option>
-          ))}
-        </Select>
+          options={(model?.resolutions ?? []).map((value) => ({
+            label: value.toUpperCase(),
+            value,
+          }))}
+          text={resolution?.toUpperCase() ?? ''}
+          value={resolution ?? ''}
+        />
         {channel !== undefined ? (
           <MenuRoot>
             <MenuTrigger asChild>
-              <IconButton disabled={disabled} label="更多生成设置" name="settings" size="md" />
+              <IconButton
+                className="shrink-0"
+                disabled={disabled}
+                label="更多生成设置"
+                name="settings"
+                size="md"
+              />
             </MenuTrigger>
             <MenuSurface align="end" aria-label="生成设置">
               <p className="px-2 py-1 text-caption text-on-surface-muted">生成渠道</p>
