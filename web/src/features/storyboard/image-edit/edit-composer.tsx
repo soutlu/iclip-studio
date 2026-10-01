@@ -92,12 +92,15 @@ type EditComposerProps = {
   onSubmit: (parts: EditDraftPart[]) => Promise<void>
   /** 模型、分辨率与渠道。 */
   settings: ReactNode
+  /** 底图是一张还没替换上去的结果：舞台的主操作是「替换当前帧」，生成退为中性。 */
+  editingResult: boolean
 }
 
 export function EditComposer({
   annotations,
   aspectRatio,
   baseUrl,
+  editingResult,
   frames,
   initialParts,
   onPartsChange,
@@ -209,11 +212,15 @@ export function EditComposer({
           onPartsChange(draftPartsOf(next))
         }}
         onSubmit={(submission) => void submit(submission.parts)}
-        placeholder="描述想怎么改，输入 @ 引用图片或标注"
+        placeholder={
+          editingResult
+            ? '描述想怎么改这张结果，输入 @ 引用图片或标注'
+            : '描述想怎么改，输入 @ 引用图片或标注'
+        }
         ref={composerRef}
         sending={sending}
         submitAction={{
-          emphasis: 'primary',
+          emphasis: editingResult ? 'neutral' : 'primary',
           icon: 'image',
           label: '生成图片',
           pendingLabel: '提交中…',

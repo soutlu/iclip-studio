@@ -424,7 +424,8 @@ export const seedMockWorkspace = (
     // 演示在途的图片编辑：第 2 组第 3 帧已在上游跑。静态种子，不会自己跑完；分镜页据此画帧角标。
     // 只挂在「预览第 N 帧」这种非镜头首帧上：首帧按钮叫「镜头 N」，带角标后名字会变，e2e 按精确名找它。
     job({
-      createdAt: '2026-09-01T12:50:00Z',
+      // 提交时刻跟着当前时间走：编辑器版本条与舞台上的走表从十几秒起，像一条真在跑的任务。
+      createdAt: new Date(Date.now() - 12_000).toISOString(),
       id: 'c296ace8-7296-44a7-84f1-9fa0b1c2d3e4',
       kind: 'image',
       prompt: '背景换成傍晚的暖光。',
