@@ -49,7 +49,11 @@ describe('首页真实数据流程', () => {
     await user.click(screen.getByRole('button', { name: '关联合集：未关联合集' }))
     await user.type(screen.getByRole('combobox', { name: '搜索合集' }), '秋季短片')
     await user.click(screen.getByRole('button', { name: '新建“秋季短片”' }))
-    expect(screen.getByRole('textbox', { name: '合集名称' })).toHaveValue('秋季短片')
+    const nameInput = await screen.findByRole('textbox', { name: '合集名称' })
+    expect(nameInput).toHaveValue('秋季短片')
+    // 打开即可输入：焦点在名称框，不在表头的关闭按钮上；离上限远时不显示字数。
+    await waitFor(() => expect(nameInput).toHaveFocus())
+    expect(screen.queryByText(/\/200$/)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '保存' }))
     await screen.findByRole('button', { name: '关联合集：秋季短片' })
     pasteTextIntoComposer(screen.getByLabelText('输入消息'), '制作秋季宣传片')

@@ -31,7 +31,8 @@ export const useCollections = (enabled: boolean) =>
     queryKey: collectionsQueryKeys.list(),
   })
 
-export const useSaveCollection = (onSaved: (collection: Collection) => void) => {
+/** 新建或改名；onSaved 返回的 Promise 会被等待，mutateAsync 在它完成后才 resolve。 */
+export const useSaveCollection = (onSaved: (collection: Collection) => void | Promise<void>) => {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ collectionId, name }: { collectionId?: string | undefined; name: string }) =>
@@ -46,7 +47,7 @@ export const useSaveCollection = (onSaved: (collection: Collection) => void) => 
       ),
     onSuccess: async (collection) => {
       await queryClient.invalidateQueries({ queryKey: collectionsQueryKeys.all })
-      onSaved(collection)
+      await onSaved(collection)
     },
   })
 }

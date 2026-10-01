@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority'
-import type { ButtonHTMLAttributes } from 'react'
+import type { ComponentPropsWithRef } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 
@@ -26,7 +26,7 @@ export const iconButtonVariants = cva(
 
 const ICON_SIZE = { lg: 'lg', md: 'md', sm: 'md', xs: 'sm' } as const
 
-type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> &
+type IconButtonProps = Omit<ComponentPropsWithRef<'button'>, 'children'> &
   VariantProps<typeof iconButtonVariants> & {
     // 图标按钮无可见文字，label 必须提供可访问名称。
     label: string

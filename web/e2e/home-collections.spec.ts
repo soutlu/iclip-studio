@@ -97,10 +97,12 @@ test('首页搜索并新建合集，首条消息带上关联，回首页后同�
   await page.getByRole('button', { name: `${collectionName} (1)`, exact: true }).hover()
   await page.getByRole('button', { name: `${collectionName} 的操作`, exact: true }).click()
   await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
-  const renameDialog = page.getByRole('dialog', { name: '重命名合集', exact: true })
-  await renameDialog.getByRole('textbox', { name: '合集名称' }).fill(renamedCollection)
-  await renameDialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(renameDialog).toBeHidden()
+  // 侧栏合集在行内原位改名，回车保存。
+  const renameInput = page.getByRole('textbox', { name: `重命名 ${collectionName}`, exact: true })
+  await expect(renameInput).toBeFocused()
+  await renameInput.fill(renamedCollection)
+  await renameInput.press('Enter')
+  await expect(renameInput).toBeHidden()
   await expect(
     page.getByRole('button', { name: `关联合集：${renamedCollection}`, exact: true }),
   ).toBeVisible()

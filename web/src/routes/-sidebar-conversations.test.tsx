@@ -8,6 +8,7 @@ import {
   addMockTask,
   loginAs,
   mockAuthUser,
+  mockCollections,
 } from '@/testing/mocks/handlers'
 import { useLiveConversations } from '@/features/conversations'
 import { server } from '@/testing/mocks/server'
@@ -749,5 +750,194 @@ describe('SidebarConversations', () => {
       expect(screen.queryByRole('link', { name: '还在弄' })).not.toBeInTheDocument(),
     )
     expect(conversation.completedAt).not.toBeNull()
+  })
+})
+
+describe('侧栏原位编辑', () => {
+  type User = ReturnType<typeof userEvent.setup>
+
+  /** 记下改名与新建合集的请求，断言发了什么、有没有发。 */
+  const recordWrites = () => {
+    const writes: { body: unknown; method: string; path: string }[] = []
+    server.events.on('request:start', async ({ request }) => {
+      if (request.method !== 'PATCH' && request.method !== 'POST') return
+      const path = new URL(request.url).pathname
+      if (!/^\/api\/(conversations\/[^/]+|collections(\/[^/]+)?)$/.test(path)) return
+      writes.push({ body: await request.clone().json(), method: request.method, path })
+    })
+    return writes
+  }
+
+  const startRename = async (user: User, title: string) => {
+    await user.click(await screen.findByRole('button', { name: `${title} 的更多操作` }))
+    await user.click(await screen.findByRole('menuitem', { name: '重命名' }))
+    return screen.findByRole('textbox', { name: `重命名 ${title}` })
+  }
+
+  it('对话改名：进入时聚焦并全选原名，输入即替换，回车保存后行回到链接并接回焦点', async () => {
+    const conversation = addMockConversation('春季鞋款分镜')
+    const writes = recordWrites()
+    const { user } = await render()
+
+    const input = await startRename(user, '春季鞋款分镜')
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('春季鞋款分镜')
+    expect([
+      (input as HTMLInputElement).selectionStart,
+      (input as HTMLInputElement).selectionEnd,
+    ]).toEqual([0, '春季鞋款分镜'.length])
+    await user.keyboard('  夏季凉鞋分镜 {Enter}')
+
+    expect(await screen.findByRole('link', { name: '夏季凉鞋分镜' })).toHaveFocus()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(writes).toEqual([
+      {
+        body: { title: '夏季凉鞋分镜' },
+        method: 'PATCH',
+        path: `/api/conversations/${conversation.id}`,
+      },
+    ])
+  })
+
+  it('对话改名：点到别处失焦也保存', async () => {
+    addMockConversation('春季鞋款分镜')
+    const writes = recordWrites()
+    const { user } = await render()
+
+    await startRename(user, '春季鞋款分镜')
+    await user.keyboard('秋季短靴')
+    await user.click(screen.getByRole('heading', { name: '任务' }))
+
+    // 焦点是用户自己移走的，保存完不抢回标题链接。
+    expect(await screen.findByRole('link', { name: '秋季短靴' })).toBeVisible()
+    expect(screen.getByRole('link', { name: '秋季短靴' })).not.toHaveFocus()
+    expect(writes).toHaveLength(1)
+  })
+
+  it('对话改名：点在编辑行里输入框以外的地方，仍在编辑、不保存', async () => {
+    addMockConversation('春季鞋款分镜')
+    const writes = recordWrites()
+    const { user } = await render()
+
+    const input = await startRename(user, '春季鞋款分镜')
+    await user.keyboard('秋季短靴')
+    // 输入框只有一行字高，编辑行的上下留白属于同一块输入面。
+    const surface = input.parentElement
+    if (!surface) throw new Error('编辑行缺少外层输入面')
+    await user.click(surface)
+
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('秋季短靴')
+    expect(writes).toEqual([])
+  })
+
+  it.each([
+    { case: 'Esc 放弃已输入的新名', keys: '秋季短靴{Escape}' },
+    { case: '清空后回车', keys: '{Backspace}{Enter}' },
+    { case: '只输入空白后回车', keys: '   {Enter}' },
+    { case: '名字没变直接回车', keys: '{Enter}' },
+  ])('对话改名：$case，退出编辑、不发请求、原名不变，焦点回到标题链接', async ({ keys }) => {
+    addMockConversation('春季鞋款分镜')
+    const writes = recordWrites()
+    const { user } = await render()
+
+    await startRename(user, '春季鞋款分镜')
+    await user.keyboard(keys)
+
+    expect(await screen.findByRole('link', { name: '春季鞋款分镜' })).toHaveFocus()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(writes).toEqual([])
+  })
+
+  it('对话改名失败：留在编辑态并说明原因，回车重试成功后退出', async () => {
+    addMockConversation('春季鞋款分镜')
+    server.use(
+      http.patch(
+        '*/api/conversations/:conversationId',
+        () => HttpResponse.json({ detail: '对话服务暂不可用' }, { status: 503 }),
+        { once: true },
+      ),
+    )
+    renderDom(<Toaster />)
+    const writes = recordWrites()
+    const { user } = await render()
+
+    await startRename(user, '春季鞋款分镜')
+    await user.keyboard('秋季短靴{Enter}')
+
+    const input = screen.getByRole('textbox', { name: '重命名 春季鞋款分镜' })
+    await waitFor(() => expect(input).toBeInvalid())
+    expect(input).toHaveValue('秋季短靴')
+    expect(input).toHaveFocus()
+    expect(input).toHaveAccessibleDescription(/对话服务暂不可用/)
+    // 行下说明之外，toast 也报出原因。
+    expect(screen.getAllByText(/对话服务暂不可用/).length).toBeGreaterThan(1)
+
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('link', { name: '秋季短靴' })).toBeVisible()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(writes).toHaveLength(2)
+  })
+
+  it('对话改名失败后 Esc 放弃：退出编辑，保留原名', async () => {
+    addMockConversation('春季鞋款分镜')
+    server.use(
+      http.patch('*/api/conversations/:conversationId', () =>
+        HttpResponse.json({ detail: '对话服务暂不可用' }, { status: 503 }),
+      ),
+    )
+    const { user } = await render()
+
+    await startRename(user, '春季鞋款分镜')
+    await user.keyboard('秋季短靴{Enter}')
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: '重命名 春季鞋款分镜' })).toBeInvalid(),
+    )
+    await user.keyboard('{Escape}')
+
+    expect(await screen.findByRole('link', { name: '春季鞋款分镜' })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { case: 'Esc', keys: '秋季{Escape}' },
+    { case: '空名回车', keys: '{Enter}' },
+  ])('新建合集的编辑行：$case 时撤掉这一行，不发请求，焦点回到「+」', async ({ keys }) => {
+    const writes = recordWrites()
+    const { user } = await render()
+    await screen.findByText('还没有合集')
+
+    await user.click(screen.getByRole('button', { name: '新建合集' }))
+    expect(screen.getByRole('textbox', { name: '新合集名称' })).toHaveFocus()
+    await user.keyboard(keys)
+
+    expect(screen.queryByRole('textbox', { name: '新合集名称' })).not.toBeInTheDocument()
+    expect(screen.getByText('还没有合集')).toBeVisible()
+    expect(screen.getByRole('button', { name: '新建合集' })).toHaveFocus()
+    expect(writes).toEqual([])
+  })
+
+  it('新建合集失败：编辑行留着并说明原因，回车重试后建成', async () => {
+    server.use(
+      http.post(
+        '*/api/collections',
+        () => HttpResponse.json({ detail: '合集服务暂不可用' }, { status: 503 }),
+        { once: true },
+      ),
+    )
+    const { user } = await render()
+    await screen.findByText('还没有合集')
+
+    await user.click(screen.getByRole('button', { name: '新建合集' }))
+    await user.keyboard('春季童鞋{Enter}')
+
+    const draft = screen.getByRole('textbox', { name: '新合集名称' })
+    await waitFor(() => expect(draft).toBeInvalid())
+    expect(screen.getByRole('alert')).toHaveTextContent('合集服务暂不可用')
+    expect(mockCollections).toHaveLength(0)
+
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('button', { name: '春季童鞋 (0)' })).toBeVisible()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 })
