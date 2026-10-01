@@ -5,8 +5,6 @@ export const CHAT_MIN = 400
 export const CONTENT_RAIL_WIDTH = 40
 export const COMPACT_MAX = 600
 export const APP_RESIZE_HANDLE_WIDTH = 8
-/** 桌面主区是浮起的卡片，与视口上、右、下缘各留一段间距；左缘贴着侧栏，拖柄仍落在侧栏边界上。 */
-export const CONTENT_INSET = 8
 
 export type ResizeInput = 'pointer' | 'keyboard'
 export type ContentPane = 'chat' | 'workbench'
@@ -70,7 +68,7 @@ export function resolveShellLayout({
     : state.sidebarCollapsed
       ? SIDEBAR_WIDTH.collapsed
       : (state.sidebarClipWidth ?? expandedSidebar)
-  const contentWidth = Math.max(0, viewport - (compact ? 0 : sidebarWidth + CONTENT_INSET))
+  const contentWidth = Math.max(0, viewport - (compact ? 0 : sidebarWidth))
   const fitsSplit = contentWidth >= CHAT_MIN + WORKBENCH_WIDTH.min
   const mode: ContentMode = !hasWorkbench
     ? 'chat'

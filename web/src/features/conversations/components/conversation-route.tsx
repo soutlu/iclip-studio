@@ -235,7 +235,7 @@ export function ConversationRoute({
   }
 
   return (
-    // 高度钉在所在栏（桌面是比视口矮的浮起卡片），使滚动限制在消息区，保持输入框和自动跟随定位稳定。
+    // 高度钉在所在栏，使滚动限制在消息区，保持输入框和自动跟随定位稳定。
     <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <header
         className={cn(
