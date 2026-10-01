@@ -173,10 +173,10 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
               draft.replaceFrame(shot.index, frame, previousUrl, url)
               draft.recordUpload(shot.index, frame, url)
             }}
-            onUploaded={(content, frame, url) => {
+            onUploaded={(content, frame, url, follow) => {
               draft.recordUpload(shot.index, frame, url)
               // 只动路由不动舞台选中：显示帧时舞台跟到新图，放着成片就接着放。
-              go({ content, frame })
+              if (follow) go({ content, frame })
             }}
             onUploadingChange={gate.onUploadingChange}
             onEditFrame={(frame, open) => {

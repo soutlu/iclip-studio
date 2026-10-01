@@ -13,11 +13,16 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { useFileDropTarget, useWindowFileDrop } from '@/shared/ui/file-drop'
-import { ComposerAttachmentPill } from './composer-attachment-pill'
 import type { ComposerNode, ComposerNodeSpec, ErasedNodeSpec } from './composer-node'
+import { ComposerNodeViews } from './composer-node-views'
+import { ComposerNotice } from './composer-notice'
 import { readComposerSegments, readComposerText } from './editor-schema'
 import { selectMention, useMention, type CaretAnchor } from './mention'
-import type { ComposerHost } from './use-composer-editor'
+import {
+  DIRECTORY_NOTICE,
+  useAttachmentAdmission,
+  type ComposerAttachmentLimit,
+} from './use-attachment-admission'
 import { useComposerEditor } from './use-composer-editor'
 import type {
   ComposerAccept,
@@ -25,7 +30,7 @@ import type {
   ComposerPart,
   ComposerSubmission,
 } from './use-composer-attachments'
-import { acceptsKind, useComposerAttachments } from './use-composer-attachments'
+import { useComposerAttachments } from './use-composer-attachments'
 
 /** 组件内部不区分使用方的节点类型；对外的 props 与句柄按 `N` 收窄。 */
 type AnyPart = ComposerPart<ComposerNode>
@@ -57,12 +62,6 @@ export type ComposerMention<Item, N extends ComposerNode = never> = {
   /** 选中后插入的 parts；为 undefined 表示这一项此刻不能选（如超了上限），菜单留着。 */
   readonly partsOf: (item: Item) => readonly ComposerPart<N>[] | undefined
   readonly render: (menu: ComposerMentionMenu<Item>) => ReactNode
-}
-
-/** 附件上限：`remaining` 是还能再收几个，新文件超出的部分不收并在卡内就地提示 `notice(没收的个数)`。 */
-export type ComposerAttachmentLimit = {
-  readonly remaining: () => number
-  readonly notice: (dropped: number) => string
 }
 
 /** 带文字的提交按钮，代替默认的圆形发送钮。 */
@@ -110,8 +109,6 @@ type ComposerProps<N extends ComposerNode, Item> = {
   ref?: Ref<ComposerHandle<N>>
   className?: string
 }
-
-const DIRECTORY_NOTICE = '不能添加文件夹'
 
 /** 按文档顺序把段落拼成 parts，相邻文字合并；取不到条目的附件不进 parts。 */
 const partsOf = (
@@ -172,13 +169,9 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   trailing,
 }: ComposerProps<N, Item>) {
   const attachments = useComposerAttachments(accept)
+  const admission = useAttachmentAdmission(accept, attachmentLimit)
+  const { setNotice } = admission
   const viewRef = useRef<EditorView | null>(null)
-  const [hosts, setHosts] = useState<readonly ComposerHost[]>([])
-  // 失败卡片同一时刻只开一张。键盘打开时焦点进卡片；点开时留在编辑器，
-  // 否则从可编辑区移过去的焦点会被浏览器算作键盘焦点，鼠标操作也亮出焦点环。
-  const [failureCard, setFailureCard] = useState<{ attId: string; takeFocus: boolean } | null>(null)
-  // 新文件被上限或文件夹挡下时的就地提示，下一次添加时重算。
-  const [notice, setNotice] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   // 失败卡片与悬停预览卡挂在根节点上，渲染期要拿到元素本身，ref 只能在事件里读。
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null)
@@ -189,44 +182,6 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   // 存成 state：添加入口由使用方在渲染期拿到 openFilePicker，不能经 ref 读。
   const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null)
   const nodeSpecs: readonly ErasedNodeSpec[] = nodes ?? NO_NODES
-  const specByName = useMemo(() => new Map(nodeSpecs.map((spec) => [spec.name, spec])), [nodeSpecs])
-
-  const registerHost = useCallback((host: ComposerHost) => {
-    setHosts((prev) => [...prev.filter((item) => item.key !== host.key), host])
-  }, [])
-  const unregisterHost = useCallback((key: string) => {
-    setHosts((prev) => prev.filter((item) => item.key !== key))
-  }, [])
-
-  /** 新文件按上限截断，挡下的给出提示；没有上限时照单全收。 */
-  const admitFiles = (files: readonly File[]): File[] => {
-    if (attachmentLimit === undefined) return [...files]
-    const room = Math.max(0, attachmentLimit.remaining())
-    const dropped = Math.max(0, files.length - room)
-    setNotice(dropped > 0 ? attachmentLimit.notice(dropped) : null)
-    return files.slice(0, room)
-  }
-
-  /** 粘贴复制来的消息：不收的媒体直接丢掉（已经是公网地址，不值得留一个失败 chip），其余按上限截断。 */
-  const admitPasted = (parts: readonly AnyPart[]): AnyPart[] => {
-    const accepted = parts.filter(
-      (part) => part.kind !== 'media' || acceptsKind(accept, part.media.kind),
-    )
-    if (attachmentLimit === undefined) return accepted
-    let room = Math.max(0, attachmentLimit.remaining())
-    let dropped = 0
-    const admitted = accepted.filter((part) => {
-      if (part.kind !== 'media') return true
-      if (room > 0) {
-        room -= 1
-        return true
-      }
-      dropped += 1
-      return false
-    })
-    setNotice(dropped > 0 ? attachmentLimit.notice(dropped) : null)
-    return admitted
-  }
 
   /** 只有内容非空且引用附件全部就绪才可发送；编辑器经 ref 获取最新判定闭包。 */
   const canSendNow = () => {
@@ -263,19 +218,16 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   )
 
   const editor = useComposerEditor({
-    admitFiles,
-    admitPasted,
+    admitFiles: admission.admitFiles,
+    admitPasted: admission.admitPasted,
     ariaLabel,
     attachments,
     attachmentsEnabled,
-    canSend: canSendNow,
-    dense,
+    className: dense ? 'composer-editor composer-editor-dense' : 'composer-editor',
+    enter: { canSend: canSendNow, kind: 'submit', onSubmit: submit },
     nodes: nodeSpecs,
-    onOpenFailedAttachment: (attId) => setFailureCard({ attId, takeFocus: true }),
-    onSubmit: submit,
     plugins: () => [mentionCore.createPlugin()],
-    registerHost,
-    unregisterHost,
+    readOnly: false,
     viewRef,
   })
   // 先解构挂载回调，避免 react-hooks/refs 将 editor.mountEditor 误判为 ref 读取。
@@ -301,7 +253,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
         editorRef.current.restoreDoc(submission.parts)
       },
     }),
-    [],
+    [setNotice],
   )
 
   // 文档或附件状态变了才通知使用方；挂载时的空文档与整篇恢复都不算。
@@ -363,15 +315,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
       </div>
       {/* 只有会出提示的形态（有上限或卡片拖放）才挂播报区，播报区要先在才播得出后放进去的字。 */}
       {attachmentLimit !== undefined || dropScope === 'card' ? (
-        // 不挂 status 角色：所在页面（如图片编辑的任务预览）另有自己的 status，免得互相混淆。
-        <div aria-live="polite" data-testid="composer-notice">
-          {notice === null ? null : (
-            <p className="composer-notice">
-              <Icon decorative name="info" size="sm" />
-              {notice}
-            </p>
-          )}
-        </div>
+        <ComposerNotice notice={admission.notice} />
       ) : null}
       <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-2">
         <div className="flex items-center gap-1">
@@ -453,35 +397,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
           type="file"
         />
       ) : null}
-      {hosts.map((host) =>
-        host.type === 'attachment'
-          ? createPortal(
-              <ComposerAttachmentPill
-                entry={attachments.entries.get(host.attId)}
-                failureCardOpen={failureCard?.attId === host.attId}
-                failureCardTakesFocus={failureCard?.takeFocus === true}
-                focusEditor={editor.focusEditor}
-                hostEl={host.el}
-                kind={host.kind}
-                layerContainer={rootEl}
-                name={host.name}
-                onFailureCardOpenChange={(open) =>
-                  setFailureCard(open ? { attId: host.attId, takeFocus: false } : null)
-                }
-                onRemove={() => {
-                  setFailureCard(null)
-                  editor.removeAttachment(host.attId)
-                }}
-                onRetry={() => {
-                  setFailureCard(null)
-                  attachments.retry(host.attId)
-                }}
-              />,
-              host.el,
-              host.key,
-            )
-          : createPortal(specByName.get(host.node.name)?.render(host.node), host.el, host.key),
-      )}
+      <ComposerNodeViews attachments={attachments} editor={editor} layerContainer={rootEl} />
       {mention !== undefined && mentionMenu !== undefined
         ? mention.render({
             active: mentionMenu.active,

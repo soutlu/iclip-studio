@@ -1,10 +1,11 @@
-/** 编辑器处理键盘、粘贴、局部拖放与 NodeView；外层 window 或卡片接收其他区域的文件拖放。文档变化后同步附件引用，确保条目随文档回收。 */
+/** 编辑核心：处理键盘、粘贴、局部拖放与 NodeView，带外壳的 Composer 与不带外壳的分镜正文共用。外层 window、卡片或段落卡接收其他区域的文件拖放。
+ * 文档变化后同步附件引用，确保条目随文档回收。NodeView 只建宿主元素，内容由 `ComposerNodeViews` 经 portal 渲染进去。 */
 
 import { baseKeymap } from 'prosemirror-commands'
 import { history, redo, undo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
-import type { Node as PMNode, Schema } from 'prosemirror-model'
-import { EditorState, NodeSelection, Plugin, Selection } from 'prosemirror-state'
+import type { Node as PMNode, Schema, Slice } from 'prosemirror-model'
+import { EditorState, NodeSelection, Plugin, Selection, type Transaction } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import {
   useCallback,
@@ -59,32 +60,47 @@ export type ComposerHost =
       readonly node: ComposerNode
     }
 
-/** 当前文档；`restored` 表示这次变化来自整篇恢复，不算用户的修改。 */
-export type ComposerDocState = { readonly doc: PMNode; readonly restored: boolean }
+/** 当前文档；`restored` 表示这次变化来自整篇恢复或重置，不算用户的修改。 */
+type ComposerDocState = { readonly doc: PMNode; readonly restored: boolean }
+
+/** Enter 的含义。`submit`：Enter 发送、Shift+Enter 换行，内容不可发送时 Enter 什么也不插；
+ * `paragraph`：Enter 分段，交给 baseKeymap。两种都先认「选中失败附件按 Enter」打开它的失败卡片。 */
+export type ComposerEnter =
+  | { readonly kind: 'submit'; readonly canSend: () => boolean; readonly onSubmit: () => void }
+  | { readonly kind: 'paragraph' }
+
+/** 失败卡片同一时刻只开一张。键盘打开时焦点进卡片；点开时留在编辑器，
+ * 否则从可编辑区移过去的焦点会被浏览器算作键盘焦点，鼠标操作也亮出焦点环。 */
+type FailureCard = { readonly attId: string; readonly takeFocus: boolean }
 
 const RESTORE_META = 'composer-restore'
 
 type UseComposerEditorOptions = {
-  /** 由 composer 持有，`@` 菜单内核也要读它。 */
+  /** 由使用方持有，`@` 菜单内核也要读它。 */
   viewRef: RefObject<EditorView | null>
   attachments: ComposerAttachments
   attachmentsEnabled: boolean
   /** 新文件进编辑器之前过一遍，返回收下的那些（附件上限在这里截断）。 */
   admitFiles: (files: readonly File[]) => File[]
-  /** 粘贴复制来的消息之前过一遍 parts（只收图片、附件上限在这里处理）。 */
-  admitPasted: (parts: readonly AnyPart[]) => AnyPart[]
-  canSend: () => boolean
-  /** 选中上传失败的附件按 Enter 时调用，打开它的失败卡片。 */
-  onOpenFailedAttachment: (attId: string) => void
-  onSubmit: () => void
-  registerHost: (host: ComposerHost) => void
-  unregisterHost: (key: string) => void
-  /** 以下只在挂载时读：两个页面各自使用固定的编辑器形态与节点。 */
-  dense: boolean
+  /** 粘贴从气泡复制来的消息时先过一遍 parts（只收图片、附件上限在这里处理）；
+   * 不给就不认这种消息，粘贴的文字交给 `clipboardTextParser`。 */
+  admitPasted: ((parts: readonly AnyPart[]) => AnyPart[]) | undefined
+  enter: ComposerEnter
+  /** 只读：不可编辑，但仍可聚焦（键盘与点击能落到这段上）。 */
+  readOnly: boolean
+  /** 用户改了文档，在派发事务时同步调用（整篇恢复与重置不算）。受控使用方靠它在下一次按键之前交出新值，
+   * 不能等 effect：effect 里交出的更新排在下一次按键之后，迟到的旧值会把文档重置掉。 */
+  onDocChange?: ((doc: PMNode) => void) | undefined
+  /** 以下只在挂载时读：各使用方的编辑器形态与节点固定。 */
+  className: string
   ariaLabel: string
   nodes: readonly ErasedNodeSpec[]
   /** 排在 Enter 处理之前的插件（`@` 菜单要先接 Enter 与方向键）。 */
   plugins: () => readonly Plugin[]
+  /** 初始文档；须按 `createComposerSchema(nodes)` 建（同一组 spec 得到同一个 schema）。不给是一个空段落。 */
+  initialDoc?: (() => PMNode) | undefined
+  /** 纯文字粘贴怎么落成文档片段；不给用 ProseMirror 默认的按行分段。 */
+  clipboardTextParser?: ((text: string) => Slice) | undefined
 }
 
 let nodeViewSeq = 0
@@ -96,22 +112,32 @@ export const useComposerEditor = ({
   ariaLabel,
   attachments,
   attachmentsEnabled,
-  canSend,
-  dense,
+  className,
+  clipboardTextParser,
+  enter,
+  initialDoc,
   nodes,
-  onOpenFailedAttachment,
-  onSubmit,
+  onDocChange,
   plugins,
-  registerHost,
-  unregisterHost,
+  readOnly,
   viewRef,
 }: UseComposerEditorOptions) => {
   // 节点 spec 是模块级常量，schema 在首次渲染时定下，之后不随 props 变。
   const [schema] = useState<Schema>(() => createComposerSchema(nodes))
   const [docState, setDocState] = useState<ComposerDocState>(() => ({
-    doc: schema.node('doc', null, [schema.node('paragraph')]),
+    doc: initialDoc?.() ?? schema.node('doc', null, [schema.node('paragraph')]),
     restored: false,
   }))
+  const [hosts, setHosts] = useState<readonly ComposerHost[]>([])
+  const [failureCard, setFailureCard] = useState<FailureCard | null>(null)
+  const specByName = useMemo(() => new Map(nodes.map((spec) => [spec.name, spec])), [nodes])
+
+  const registerHost = useCallback((host: ComposerHost) => {
+    setHosts((prev) => [...prev.filter((item) => item.key !== host.key), host])
+  }, [])
+  const unregisterHost = useCallback((key: string) => {
+    setHosts((prev) => prev.filter((item) => item.key !== key))
+  }, [])
 
   // 编辑器只建一次，变化中的回调与状态经 ref 读最新值；在提交阶段同步，
   // 保证 Enter 的发送门控与已渲染的发送按钮状态一致，不留可用却发不出去的空档。
@@ -120,11 +146,9 @@ export const useComposerEditor = ({
     admitPasted,
     attachments,
     attachmentsEnabled,
-    canSend,
-    onOpenFailedAttachment,
-    onSubmit,
-    registerHost,
-    unregisterHost,
+    enter,
+    onDocChange,
+    readOnly,
   })
   useLayoutEffect(() => {
     latestRef.current = {
@@ -132,13 +156,15 @@ export const useComposerEditor = ({
       admitPasted,
       attachments,
       attachmentsEnabled,
-      canSend,
-      onOpenFailedAttachment,
-      onSubmit,
-      registerHost,
-      unregisterHost,
+      enter,
+      onDocChange,
+      readOnly,
     }
   })
+  // 可编辑与只读属性由 view 的函数 props 现读；只读切换后让 view 重算一次。
+  useLayoutEffect(() => {
+    viewRef.current?.setProps({})
+  }, [readOnly, viewRef])
 
   const nodeType = (name: string) => {
     const type = schema.nodes[name]
@@ -245,6 +271,40 @@ export const useComposerEditor = ({
     )
   }
 
+  /** 整篇换成 `doc` 并清空撤销历史，光标回到开头；这次变化标成恢复。不在文档里的附件条目随即回收，
+   * 回收后的上传结果迟到也不会写回（见 `useComposerAttachments` 的 patch）。 */
+  const resetDoc = (doc: PMNode) => {
+    const view = viewRef.current
+    if (view === null) return
+    view.updateState(EditorState.create({ doc, plugins: view.state.plugins }))
+    latestRef.current.attachments.syncReferences(collectAttachmentIds(doc))
+    setFailureCard(null)
+    setDocState({ doc, restored: true })
+  }
+
+  /** 引用该附件的第一个节点在文档里的位置；不在文档里时为 undefined。 */
+  const attachmentPosition = (attId: string): number | undefined => {
+    const view = viewRef.current
+    if (view === null) return undefined
+    let found: number | undefined
+    view.state.doc.descendants((node, pos) => {
+      if (found !== undefined) return false
+      if (node.type === nodeType('attachment') && node.attrs['attId'] === attId) found = pos
+      return true
+    })
+    return found
+  }
+
+  /** 把引用该附件的第一个节点换成 parts（如附件就绪后换成使用方节点），返回换好的事务、不派发：
+   * 使用方先按事务后的文档定下别处的状态，再自己 dispatch。附件已不在文档里时为 undefined。 */
+  const replaceAttachment = (attId: string, parts: readonly AnyPart[]): Transaction | undefined => {
+    const view = viewRef.current
+    const pos = attachmentPosition(attId)
+    if (view === null || pos === undefined) return undefined
+    latestRef.current.attachments.restoreEntries(mediaOf(parts))
+    return view.state.tr.replaceWith(pos, pos + 1, nodesOf(parts))
+  }
+
   /** 删掉引用该附件的所有节点，条目随后由 syncReferences 回收；焦点留在编辑器。 */
   const removeAttachment = (attId: string) => {
     const view = viewRef.current
@@ -273,7 +333,14 @@ export const useComposerEditor = ({
   })
 
   // 以下只在挂载时读。
-  const mountOptionsRef = useRef({ ariaLabel, dense, nodes, plugins })
+  const mountOptionsRef = useRef({
+    ariaLabel,
+    className,
+    clipboardTextParser,
+    doc: docState.doc,
+    nodes,
+    plugins,
+  })
 
   /** React 19 回调 ref 创建编辑器并返回清理函数，使实例生命周期与宿主元素一致。 */
   const mountEditor = useCallback(
@@ -282,7 +349,7 @@ export const useComposerEditor = ({
       const mount = mountOptionsRef.current
       const attachmentType = schema.nodes['attachment']
 
-      /** Enter 发送、Shift+Enter 换行、选中失败附件按 Enter 开失败卡片。写成插件排在 `@` 菜单之后：
+      /** Enter 按模式发送或分段，选中失败附件按 Enter 开失败卡片。写成插件排在 `@` 菜单之后：
        * PM 先跑 EditorView 自己的 props 再跑插件，放在 props 里会抢在菜单前面把 Enter 当发送。 */
       const enterPlugin = new Plugin({
         props: {
@@ -296,16 +363,18 @@ export const useComposerEditor = ({
             ) {
               const attId = selection.node.attrs['attId'] as string
               if (latestRef.current.attachments.entries.get(attId)?.status === 'error') {
-                latestRef.current.onOpenFailedAttachment(attId)
+                setFailureCard({ attId, takeFocus: true })
                 return true
               }
             }
+            const mode = latestRef.current.enter
+            if (mode.kind === 'paragraph') return false
             if (event.shiftKey) {
               view.dispatch(view.state.tr.insertText('\n').scrollIntoView())
               return true
             }
             // 内容不可发送时 Enter 仍不插入换行。
-            if (latestRef.current.canSend()) latestRef.current.onSubmit()
+            if (mode.canSend()) mode.onSubmit()
             return true
           },
         },
@@ -320,15 +389,11 @@ export const useComposerEditor = ({
             span.dataset['composerNode'] = spec.name
             nodeViewSeq += 1
             const key = `node-${nodeViewSeq}`
-            latestRef.current.registerHost({
-              el: span,
-              key,
-              node: composerNodeOf(node),
-              type: 'node',
-            })
+            registerHost({ el: span, key, node: composerNodeOf(node), type: 'node' })
             return {
-              destroy: () => latestRef.current.unregisterHost(key),
+              destroy: () => unregisterHost(key),
               dom: span,
+              ...(spec.stopEvent === undefined ? {} : { stopEvent: spec.stopEvent }),
               // 原子节点的 attrs 不变；变了就重建视图。
               update: (next: PMNode) => next.type === node.type && next.sameMarkup(node),
             }
@@ -337,18 +402,25 @@ export const useComposerEditor = ({
       )
 
       const view = new EditorView(el, {
-        attributes: {
+        // 只读时 contenteditable 关掉就不可聚焦了；给个 tabindex，键盘和点击仍能落到这段上。
+        attributes: () => ({
           'aria-label': mount.ariaLabel,
           'aria-multiline': 'true',
-          class: mount.dense ? 'composer-editor composer-editor-dense' : 'composer-editor',
+          class: mount.className,
           role: 'textbox',
-        },
+          ...(latestRef.current.readOnly ? { 'aria-readonly': 'true', tabindex: '0' } : {}),
+        }),
+        ...(mount.clipboardTextParser === undefined
+          ? {}
+          : { clipboardTextParser: mount.clipboardTextParser }),
         dispatchTransaction(tr) {
           const next = view.state.apply(tr)
           view.updateState(next)
           if (!tr.docChanged) return
           latestRef.current.attachments.syncReferences(collectAttachmentIds(next.doc))
-          setDocState({ doc: next.doc, restored: tr.getMeta(RESTORE_META) === true })
+          const restored = tr.getMeta(RESTORE_META) === true
+          setDocState({ doc: next.doc, restored })
+          if (!restored) latestRef.current.onDocChange?.(next.doc)
         },
         handlePaste(_view, event) {
           if (!latestRef.current.attachmentsEnabled) return false
@@ -358,11 +430,13 @@ export const useComposerEditor = ({
             insertFilesRef.current(files)
             return true
           }
-          // 从气泡复制来的消息原样还原正文与附件；认不出就交还给 PM 当普通文字粘。
+          // 从气泡复制来的消息原样还原正文与附件；不认这种消息或认不出就交还给 PM 当普通文字粘。
+          const { admitPasted: admit } = latestRef.current
+          if (admit === undefined) return false
           const content = parsePromptContent(event.clipboardData?.getData('text/plain') ?? '')
           if (content === null) return false
           event.preventDefault()
-          insertPartsRef.current(latestRef.current.admitPasted(composerParts(content)))
+          insertPartsRef.current(admit(composerParts(content)))
           return true
         },
         handleDrop(view, event) {
@@ -388,24 +462,19 @@ export const useComposerEditor = ({
             span.dataset['attachmentId'] = attId
             span.dataset['attachmentKind'] = kind
             span.dataset['attachmentName'] = name
-            latestRef.current.registerHost({
-              attId,
-              el: span,
-              key: attId,
-              kind,
-              name,
-              type: 'attachment',
-            })
+            registerHost({ attId, el: span, key: attId, kind, name, type: 'attachment' })
             return {
               destroy() {
-                latestRef.current.unregisterHost(attId)
+                unregisterHost(attId)
               },
               dom: span,
               update: (next) => next.attrs['attId'] === attId,
             }
           },
         },
+        editable: () => !latestRef.current.readOnly,
         state: EditorState.create({
+          doc: mount.doc,
           plugins: [
             ...mount.plugins(),
             enterPlugin,
@@ -422,13 +491,14 @@ export const useComposerEditor = ({
         viewRef.current = null
       }
     },
-    [schema, viewRef],
+    [registerHost, schema, unregisterHost, viewRef],
   )
 
   const attIds = useMemo(() => collectAttachmentIds(docState.doc), [docState.doc])
   const empty = useMemo(() => isComposerEmpty(docState.doc), [docState.doc])
 
   return {
+    attachmentPosition,
     attIds,
     clearDoc,
     docState,
@@ -437,7 +507,18 @@ export const useComposerEditor = ({
     insertFiles,
     insertParts,
     mountEditor,
+    /** NodeView 宿主与失败卡片，交给 `ComposerNodeViews` 渲染。 */
+    nodeViews: {
+      failureCard,
+      hosts,
+      setFailureCard,
+      specOf: (name: string) => specByName.get(name),
+    },
     removeAttachment,
+    replaceAttachment,
+    resetDoc,
     restoreDoc,
   }
 }
+
+export type ComposerEditor = ReturnType<typeof useComposerEditor>

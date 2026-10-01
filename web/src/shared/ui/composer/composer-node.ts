@@ -20,6 +20,8 @@ export type ComposerNodeSpec<N extends ComposerNode> = {
   /** 节点内容，渲染进编辑器给的行内宿主。返回单个行内元素：选中节点时 composer 给它画选中环，
    * 它自己带 `data-selected` 时也画同一个环。 */
   render(node: N): ReactNode
+  /** 节点内容自己处理、编辑器不再处理的事件（如自己响应点击与 Enter 的 chip）；不给时事件照常交给编辑器。 */
+  readonly stopEvent?: (event: Event) => boolean
 }
 
 /** 编辑器内部认的 spec：不带类型参数，结构比较，任何 `ComposerNodeSpec<N>` 都能赋给它。 */
@@ -28,4 +30,5 @@ export type ErasedNodeSpec = {
   readonly attrNames: readonly string[]
   leafText(node: ComposerNode): string
   render(node: ComposerNode): ReactNode
+  readonly stopEvent?: (event: Event) => boolean
 }

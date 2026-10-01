@@ -4,13 +4,7 @@
  * 选区展开、`@` 被删、编辑器失焦时关闭；非查询模式下光标离开 `@` 之后（包括再敲字）即关，
  * 查询模式下光标离开 `@` 之后到查询词末尾这一段、或查询词里出现空白 / `@` / 行内节点即关。Esc 只关菜单，文字原样留着。 */
 
-import {
-  Plugin,
-  PluginKey,
-  TextSelection,
-  type EditorState,
-  type Transaction,
-} from 'prosemirror-state'
+import { Plugin, PluginKey, TextSelection, type EditorState } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
 
 /** 一次键入：打的字、编辑器此刻能不能改、是否还在输入法组合中。粘贴与撤销不算键入。 */
@@ -102,14 +96,11 @@ export function closeMention(view: EditorView) {
   if (mentionOf(view.state) !== null) view.dispatch(view.state.tr.setMeta(mentionKey, null))
 }
 
-/** 在使用方自己的事务里一并关掉菜单：替换文档与关菜单是同一步，撤销时不会单独留下一步。 */
-export const closingMention = (tr: Transaction): Transaction => tr.setMeta(mentionKey, null)
-
 /** 选区盖住 `@` 与查询词并关掉菜单：之后按选区插入的入口会把它换掉，取消时文字还在。 */
 export function selectMention(view: EditorView) {
   const match = mentionOf(view.state)
   if (match === null) return
   const end = match.at + 1 + match.query.length
   const selection = TextSelection.create(view.state.doc, match.at, end)
-  view.dispatch(closingMention(view.state.tr.setSelection(selection)))
+  view.dispatch(view.state.tr.setSelection(selection).setMeta(mentionKey, null))
 }
