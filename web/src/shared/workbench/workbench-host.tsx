@@ -111,7 +111,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const artifactId = useArtifactSearch()
   const openArtifact = useOpenArtifact()
   const files = useWorkspaceFiles(conversationId)
-  // 与聊天页共用同一个主流读取器（按会话与 agent 登记），这里再订不会踢掉它的订阅。
+  // 与聊天页共用主会话池里的同一份流（按对话记持有数），这里再用不会踢掉它的订阅。
   const { view } = useTranscript(conversationId)
   const readOnly = useConversationReadOnly(view)
   const frames = useMemo(() => toolFrames(view.items), [view.items])

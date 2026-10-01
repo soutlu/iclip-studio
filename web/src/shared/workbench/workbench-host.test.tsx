@@ -1,5 +1,6 @@
 /** 受控宿主夹具通过恢复入口与隐藏容器模拟应用壳，验证产物交互与布局请求。 */
 
+import { MOCK_STREAM_EPOCH } from '@/testing/mocks/transcript'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -192,6 +193,7 @@ const delegationReset = (state: 'running' | 'done') => ({
     },
   },
   session_id: CONVERSATION_ID,
+  stream_epoch: MOCK_STREAM_EPOCH,
   type: 'transcript.reset',
 })
 

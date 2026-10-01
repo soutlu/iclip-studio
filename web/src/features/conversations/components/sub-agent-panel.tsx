@@ -1,5 +1,6 @@
-/** 子代理那条流的面板：顶部是名字、状态与耗时，正文复用轮渲染。数据按子代理 id 走共用读取器，关面板就退订它那一条。 */
+/** 子代理那条流的面板：顶部是名字、状态与耗时，正文复用轮渲染。数据走子代理读取池（每段对话只订当前在看的那个），关面板就退订它那一条。 */
 
+import { useRef } from 'react'
 import { useTranscript } from '@/shared/transcript/use-transcript'
 import type { TranscriptTurn } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
@@ -7,6 +8,8 @@ import { Button } from '@/shared/ui/button'
 import { Tag } from '@/shared/ui/tag'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { ConversationTurn } from './conversation-turn'
+import { LoadOlder } from './load-older'
+import { useKeepPlaceOnPrepend } from './use-keep-place-on-prepend'
 import { agentCallOf } from './tool-display'
 
 const STATUS = {
@@ -46,8 +49,10 @@ type SubAgentStreamProps = {
 }
 
 function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamProps) {
-  const { refresh, view } = useTranscript(conversationId, agentId)
+  const { loadOlder, refresh, view } = useTranscript(conversationId, agentId)
   const turns = view.items.filter((item): item is TranscriptTurn => item.kind === 'turn')
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const keepPlace = useKeepPlaceOnPrepend(scrollerRef, turns[0]?.turnId, view.loadingOlder)
   const latest = turns.at(-1)
   // 跑着的时候 meta 先于轮头说话；结束后以轮的终态为准。
   const state = view.activity === 'turn' ? 'running' : latest?.state
@@ -74,9 +79,18 @@ function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamPr
         </div>
       ) : null}
       {view.status === 'ready' ? (
-        <div className="chat-scroller min-h-0 flex-1 overflow-y-auto">
+        <div className="chat-scroller min-h-0 flex-1 overflow-y-auto" ref={scrollerRef}>
           {/* 这里每一轮都按历史轮画：终态栏悬停才露出、叠在轮下方 28px 里，见 ConversationTurn；轮间与尾部都留出这段。 */}
           <div className="flex flex-col gap-7 px-5 pt-4 pb-11">
+            <LoadOlder
+              hasMoreOlder={view.hasMoreOlder}
+              loadOlderError={view.loadOlderError}
+              loadingOlder={view.loadingOlder}
+              onLoad={() => {
+                keepPlace()
+                void loadOlder().catch(() => {})
+              }}
+            />
             {turns.map((turn) => (
               <ConversationTurn key={turn.turnId} turn={turn} />
             ))}

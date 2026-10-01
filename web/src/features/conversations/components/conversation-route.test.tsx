@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { addMockCollection, addMockConversation } from '@/testing/mocks/conversations'
 import { addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
-import { mockTranscriptPage } from '@/testing/mocks/transcript'
+import { MOCK_STREAM_EPOCH, mockTranscriptPage } from '@/testing/mocks/transcript'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
 import { ShellChromeContext } from '@/shared/shell'
@@ -50,6 +50,7 @@ function RemountableConversation() {
 const opsFrame = (ops: unknown[], seq: number) => ({
   payload: { agent_id: 'main', ops, seq },
   session_id: 'c1',
+  stream_epoch: MOCK_STREAM_EPOCH,
   type: 'transcript.ops',
 })
 
@@ -168,6 +169,43 @@ describe('ConversationRoute', () => {
     expect(screen.queryByText('read_file')).not.toBeInTheDocument()
   })
 
+  it('还有更早的轮次时顶部给「加载更早」：按最早一轮往前取一页，接在前面；失败了改口让人重试', async () => {
+    const user = userEvent.setup()
+    const longId = '0199aaaa-0000-7000-8000-0000000000aa'
+    const asked: (string | null)[] = []
+    let failOnce = true
+    server.use(
+      http.get(`*/api/conversations/${longId}/transcript`, ({ request }) => {
+        const query = new URL(request.url).searchParams
+        const beforeTurn = query.get('before_turn')
+        asked.push(beforeTurn)
+        if (beforeTurn !== null && failOnce) {
+          failOnce = false
+          return HttpResponse.json({ detail: '服务暂时不可用' }, { status: 503 })
+        }
+        return HttpResponse.json(
+          mockTranscriptPage(longId, { beforeTurn, pageSize: Number(query.get('page_size')) }),
+        )
+      }),
+    )
+    await renderWithProviders(<ConversationRoute conversationId={longId} />)
+
+    expect(await screen.findByText('长对话第 14 轮的回复。')).toBeInTheDocument()
+    expect(screen.getByText('长对话第 5 轮的回复。')).toBeInTheDocument()
+    expect(screen.queryByText('长对话第 4 轮的回复。')).not.toBeInTheDocument()
+    expect(asked).toEqual([null])
+
+    await user.click(screen.getByRole('button', { name: '加载更早的消息' }))
+    await user.click(await screen.findByRole('button', { name: '加载失败，点这里重试' }))
+
+    expect(await screen.findByText('长对话第 1 轮的回复。')).toBeInTheDocument()
+    expect(asked).toEqual([null, 't5', 't5'])
+    const replies = screen.getAllByText(/^长对话第 \d+ 轮的回复。$/).map((node) => node.textContent)
+    expect(replies).toHaveLength(14)
+    expect(replies[0]).toBe('长对话第 1 轮的回复。')
+    expect(screen.queryByRole('button', { name: '加载更早的消息' })).not.toBeInTheDocument()
+  })
+
   it('逐字追加接在同一块上，不另起一段', async () => {
     const { socket } = await renderConversation()
     await screen.findByText(TAIL_TEXT)
@@ -186,6 +224,7 @@ describe('ConversationRoute', () => {
         seq: 11,
       },
       session_id: 'c1',
+      stream_epoch: MOCK_STREAM_EPOCH,
       type: 'transcript.ops',
     })
 

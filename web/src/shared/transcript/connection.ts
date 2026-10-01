@@ -1,4 +1,4 @@
-/** 参考 Kimi 客户端，一条连接按 session_id 分派多段对话；改名、活动与生成任务全局帧经 watchSessions 分发。重连携带各 agent 的已应用水位。 */
+/** 参考 Kimi 客户端，一条连接按 session_id 分派多段对话；改名、活动与生成任务全局帧经 watchSessions 分发。重连按各 agent 的水位与它所属的实时流整表重订。 */
 
 import { z } from 'zod'
 
@@ -6,14 +6,13 @@ import { zGenerationOut } from '@/shared/api/generated/zod.gen'
 
 import { transcriptOpsEventSchema, transcriptResetEventSchema } from './vendor/contract/events'
 import type { TranscriptGrade } from './vendor/granularity/grade'
+import type { AgentTranscriptSnapshot } from './vendor/ops/operation'
 
 export type { TranscriptGrade }
 
 /** 类型从校验 schema 推导，避免重复声明造成可选字段差异。 */
-type ResetEvent = z.infer<typeof transcriptResetEventSchema>
 type OpsEvent = z.infer<typeof transcriptOpsEventSchema>
 
-export type TranscriptSnapshot = ResetEvent['snapshot'] & { hasMoreOlder: boolean }
 export type TranscriptOps = OpsEvent['ops']
 
 /** 主 agent 的 id；子代理的 id 是它的 run id，从工具卡的 agentRefs 拿。 */
@@ -28,11 +27,22 @@ const MAX_RECONNECT_DELAY_MS = 30_000
 /** 加入随机抖动，避免客户端集中重连。 */
 const RECONNECT_JITTER_MS = 250
 
+/** 一条实时流的续订水位：批次号与它所属的流（ADR-0004）；两者都对得上，服务端才接着补批。 */
+export interface StreamWatermark {
+  seq: number
+  epoch: string
+}
+
 export interface TranscriptHandlers {
-  /** snapshot.items 恒为空；历史由 REST 分页提供，reset 只携带全局实体和水位。 */
-  onReset(agentId: string, snapshot: TranscriptSnapshot, seq: number | undefined): void
-  /** seq 用于检测批次缺口；返回 false 表示未应用，不推进水位，允许后续补发。 */
-  onOps(agentId: string, ops: TranscriptOps, seq: number | undefined): boolean | void
+  /** 我们服务端的 reset 不带历史轮；历史由 REST 分页提供，reset 只携带全局实体和水位。 */
+  onReset(
+    agentId: string,
+    snapshot: AgentTranscriptSnapshot,
+    seq: number | undefined,
+    epoch: string,
+  ): void
+  /** seq 与 epoch 用于检测断档；返回 false 表示未应用，连接不推进水位。 */
+  onOps(agentId: string, ops: TranscriptOps, seq: number | undefined, epoch: string): boolean | void
   onNotFound?(): void
 }
 
@@ -139,8 +149,8 @@ interface AgentSubscription {
 interface Subscription {
   /** 一段对话里各 agent 各订各的：主流与子代理流互不覆盖，同一帧 subscribe_v2 整表上行。 */
   agents: Map<string, AgentSubscription>
-  /** 按 agent 保存已应用批次号，重连时用于补发或重置。 */
-  watermarks: Map<string, number>
+  /** 按 agent 保存已应用的水位，订阅与重连时带上，服务端据此补批或回 reset。 */
+  watermarks: Map<string, StreamWatermark>
 }
 
 /** 一帧 subscribe_v2 问的是哪段对话、这帧新加了谁；回执 404 时只退新加的，原本订着的不动。 */
@@ -211,19 +221,25 @@ export class TranscriptConnection {
     this.connect()
   }
 
-  /** 更新订阅时保留水位；提高粒度时服务端先发 reset，补足低粒度未下发的内容。 */
+  /**
+   * 订阅或重订一条流（照 Kimi 的 subscribeTranscript）。调用方先读基线，再带基线的水位订阅，服务端从补发日志
+   * 接着发；不给水位就清掉已有水位，服务端回一帧 reset。提高粒度时服务端同样先发 reset。
+   */
   subscribe(
     conversationId: string,
     handlers: TranscriptHandlers,
     grade: TranscriptGrade = 'delta',
     agentId: string = MAIN_AGENT_ID,
+    watermark?: StreamWatermark,
   ): void {
     const subscription = this.subscriptions.get(conversationId) ?? {
       agents: new Map<string, AgentSubscription>(),
-      watermarks: new Map<string, number>(),
+      watermarks: new Map<string, StreamWatermark>(),
     }
     const added = subscription.agents.has(agentId) ? [] : [agentId]
     subscription.agents.set(agentId, { grade, handlers })
+    if (watermark === undefined) subscription.watermarks.delete(agentId)
+    else subscription.watermarks.set(agentId, watermark)
     this.subscriptions.set(conversationId, subscription)
     if (this.connected) this.sendSubscribe(conversationId, added)
   }
@@ -286,13 +302,8 @@ export class TranscriptConnection {
     }
   }
 
-  watermarkOf(conversationId: string, agentId: string): number | undefined {
+  watermarkOf(conversationId: string, agentId: string): StreamWatermark | undefined {
     return this.subscriptions.get(conversationId)?.watermarks.get(agentId)
-  }
-
-  /** REST 基线和补批也须报告已应用水位，避免重连时重复请求完整基线。 */
-  markApplied(conversationId: string, agentId: string, seq: number): void {
-    this.subscriptions.get(conversationId)?.watermarks.set(agentId, seq)
   }
 
   private receive(raw: unknown): void {
@@ -301,6 +312,7 @@ export class TranscriptConnection {
       id?: unknown
       code?: unknown
       session_id?: unknown
+      stream_epoch?: unknown
       payload?: unknown
     }
     try {
@@ -379,9 +391,15 @@ export class TranscriptConnection {
       case 'transcript.reset':
       case 'transcript.ops': {
         if (typeof frame.session_id !== 'string') return
+        if (typeof frame.stream_epoch !== 'string') {
+          return this.discard(frame.type, ['stream_epoch: 缺失'])
+        }
         const subscription = this.subscriptions.get(frame.session_id)
         if (subscription === undefined) return
-        this.apply(frame.type, subscription, { type: frame.type, ...(frame.payload as object) })
+        this.apply(frame.type, subscription, frame.stream_epoch, {
+          type: frame.type,
+          ...(frame.payload as object),
+        })
         return
       }
       default:
@@ -398,16 +416,18 @@ export class TranscriptConnection {
     console.warn('丢弃不合协议的 WebSocket 帧', { issues, type })
   }
 
-  private apply(type: string, subscription: Subscription, wrapped: object): void {
+  private apply(type: string, subscription: Subscription, epoch: string, wrapped: object): void {
     if (type === 'transcript.reset') {
       const parsed = transcriptResetEventSchema.safeParse(wrapped)
       if (!parsed.success) return this.discard(type, issuesOf(parsed.error))
       const { agent_id, snapshot, has_more_older, seq } = parsed.data
       const agent = subscription.agents.get(agent_id)
       if (agent === undefined) return
-      agent.handlers.onReset(agent_id, { ...snapshot, hasMoreOlder: has_more_older }, seq)
-      // reset 无条件覆盖水位：服务端重启可能从 1 重新编号。
-      if (seq !== undefined) subscription.watermarks.set(agent_id, seq)
+      // 类型断言衔接 vendor 的可选字段与 zod 推导出的 undefined，见 transcript.api.ts。
+      const full = { ...snapshot, hasMoreOlder: has_more_older } as AgentTranscriptSnapshot
+      agent.handlers.onReset(agent_id, full, seq, epoch)
+      // reset 连同 epoch 无条件覆写水位：服务端重启或重建这条流后，批次号从 1 重来。
+      if (seq !== undefined) subscription.watermarks.set(agent_id, { epoch, seq })
       return
     }
     const parsed = transcriptOpsEventSchema.safeParse(wrapped)
@@ -415,9 +435,13 @@ export class TranscriptConnection {
     const { agent_id, ops, seq } = parsed.data
     const agent = subscription.agents.get(agent_id)
     if (agent === undefined) return
-    const accepted = agent.handlers.onOps(agent_id, ops, seq)
-    // 仅已接受的批次推进水位，未应用的批次需保留补发机会。
-    if (accepted !== false && seq !== undefined) subscription.watermarks.set(agent_id, seq)
+    const accepted = agent.handlers.onOps(agent_id, ops, seq, epoch)
+    // 仅已接受的批次推进水位。同一条流里只升不降：Kimi 把重复批次的号也写进水位，会把它写小，
+    // 只会让续订多补发或被迫重读（ADR-0004 第 8 条）。
+    if (accepted === false || seq === undefined) return
+    const current = subscription.watermarks.get(agent_id)
+    if (current?.epoch === epoch && current.seq >= seq) return
+    subscription.watermarks.set(agent_id, { epoch, seq })
   }
 
   private settleAck(frame: { id?: unknown; code?: unknown; payload?: unknown }): void {
@@ -481,10 +505,13 @@ export class TranscriptConnection {
     if (subscription === undefined || subscription.agents.size === 0) return
     const transcript: Record<string, TranscriptGrade> = {}
     const since: Record<string, number> = {}
+    const epochs: Record<string, string> = {}
     for (const [agentId, agent] of subscription.agents) {
       transcript[agentId] = agent.grade
       const watermark = subscription.watermarks.get(agentId)
-      if (watermark !== undefined) since[agentId] = watermark
+      if (watermark === undefined) continue
+      since[agentId] = watermark.seq
+      epochs[agentId] = watermark.epoch
     }
     const id = this.mintId()
     this.pending.set(id, { added, agentIds: [...subscription.agents.keys()], conversationId })
@@ -494,8 +521,10 @@ export class TranscriptConnection {
       payload: {
         session_id: conversationId,
         transcript,
-        // 首次订阅省略 transcript_since，服务端据此发送 reset。
-        ...(Object.keys(since).length === 0 ? {} : { transcript_since: since }),
+        // 没有水位的 agent 不出现在这两张表里，服务端对它回 reset。
+        ...(Object.keys(since).length === 0
+          ? {}
+          : { transcript_epoch: epochs, transcript_since: since }),
       },
     })
   }

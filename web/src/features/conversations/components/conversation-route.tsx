@@ -37,6 +37,8 @@ import {
 import { ApprovalCard } from './approval-card'
 import { ConversationComposer } from './conversation-composer'
 import { ConversationTurn } from './conversation-turn'
+import { LoadOlder } from './load-older'
+import { useKeepPlaceOnPrepend } from './use-keep-place-on-prepend'
 import { PromptQueue } from './prompt-queue'
 import { UserBubble } from './user-bubble'
 import { WorkingIndicator } from './working-indicator'
@@ -90,7 +92,7 @@ export function ConversationRoute({
   onForked,
   sourceLink,
 }: ConversationRouteProps) {
-  const { view, refresh } = useTranscript(conversationId)
+  const { loadOlder, refresh, view } = useTranscript(conversationId)
   const { titleOf } = useSessionTitles()
   const title = titleOf(conversationId) ?? view.title
   // 页头的合集标签只用侧栏已经拿到的拓扑，不为它单发请求；拓扑里找不到就不显示。
@@ -135,6 +137,12 @@ export function ConversationRoute({
   )
 
   const turns = view.items.filter((item) => item.kind === 'turn')
+  const keepPlace = useKeepPlaceOnPrepend(scrollerRef, turns[0]?.turnId, view.loadingOlder)
+  const loadEarlier = () => {
+    keepPlace()
+    // 失败由视图的 loadOlderError 呈现成「重试」，这里不再另报。
+    void loadOlder().catch(() => {})
+  }
   // 每次仅显示一张审批卡；其他待处理交互依次展示。
   const approval = view.pendingInteractions.find(
     (interaction) => interaction.interactionKind === 'approval',
@@ -300,6 +308,14 @@ export function ConversationRoute({
                 <Icon className="animate-spin" decorative name="loading" size="sm" />
                 正在读取对话
               </p>
+            ) : null}
+            {view.status === 'ready' ? (
+              <LoadOlder
+                hasMoreOlder={view.hasMoreOlder}
+                loadOlderError={view.loadOlderError}
+                loadingOlder={view.loadingOlder}
+                onLoad={loadEarlier}
+              />
             ) : null}
             {turns.map((turn) => (
               <ConversationTurn
