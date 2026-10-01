@@ -1,21 +1,20 @@
-/** 分镜工作台顶栏：保存状态，镜头组切换（上一组、下一组，点中间打开全部镜头组），以及复制整组完整提示词。 */
+/** 分镜工作台顶栏：保存状态，镜头组切换（上一组、下一组，点中间展开镜头组列表），以及复制整组完整提示词。 */
 
 import type { ReactNode } from 'react'
 import { IconButton } from '@/shared/ui/button'
-import type { ReaderSheet } from '../shot-content'
+import type { Shot } from '../shot-document'
 import { copyWithToast } from './copy-with-toast'
 import { ShotGroupSwitcher } from './shot-group-switcher'
 import { workbenchControl } from './workbench-control'
 
 type StoryboardToolbarProps = {
+  shots: readonly Shot[]
+  /** 分镜画幅，镜头组列表的缩略图按它的比例。 */
+  aspectRatio: string
   /** 当前组在全部组里排第几，从 1 起。 */
   position: number
-  total: number
   /** 保存状态，由调用方渲染好放进来。 */
   status: ReactNode
-  /** 当前盖在分镜上的那一层，对应入口标成展开。 */
-  sheet: ReaderSheet | undefined
-  onOpenSheet: (sheet: ReaderSheet, trigger: HTMLElement) => void
   /** 切到第几组；与 ↑↓ 键同一条路径。 */
   onGoShot: (shot: number) => void
   /** 复制按钮拷走的整组完整提示词。 */
@@ -23,23 +22,21 @@ type StoryboardToolbarProps = {
 }
 
 export function StoryboardToolbar({
+  aspectRatio,
   fullPrompt,
   onGoShot,
-  onOpenSheet,
   position,
-  sheet,
+  shots,
   status,
-  total,
 }: StoryboardToolbarProps) {
   return (
     <div aria-label="分镜工具栏" className="storyboard-toolbar" role="group">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{status}</div>
       <ShotGroupSwitcher
-        expanded={sheet === 'all'}
+        aspectRatio={aspectRatio}
         onGo={onGoShot}
-        onOpenAll={(trigger) => onOpenSheet('all', trigger)}
         position={position}
-        total={total}
+        shots={shots}
       />
       <IconButton
         className={workbenchControl({ shape: 'icon' })}

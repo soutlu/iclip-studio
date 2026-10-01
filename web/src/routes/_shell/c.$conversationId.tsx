@@ -1,7 +1,7 @@
 import { createFileRoute, Link, redirect, useNavigate, useParams } from '@tanstack/react-router'
 import { z } from 'zod'
 import { ConversationRoute } from '@/features/conversations'
-import { readerSheetSchema, shotContentIdSchema } from '@/features/storyboard'
+import { shotContentIdSchema } from '@/features/storyboard'
 import { ensureSessionUser } from '@/shared/auth'
 import { canonicalUuid } from '@/shared/lib/uuid'
 import { ARTIFACT_SEARCH_KEY, WorkbenchHost } from '@/shared/workbench'
@@ -13,7 +13,8 @@ const ConversationSearchSchema = z.object({
   file: z.string().optional().catch(undefined),
   content: shotContentIdSchema.optional().catch(undefined),
   frame: z.int().positive().optional().catch(undefined),
-  sheet: readerSheetSchema.optional().catch(undefined),
+  /** 旧链接里已下线的 sheet 参数：页面照常打开，并从地址里去掉。 */
+  sheet: z.undefined().optional().catch(undefined),
   shot: z.int().positive().optional().catch(undefined),
   take: z.string().optional().catch(undefined),
   /** 视频编辑器开在哪条出片记录上（编辑链的根）。 */

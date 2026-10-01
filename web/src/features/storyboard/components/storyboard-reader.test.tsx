@@ -241,11 +241,16 @@ const countSigns = () => {
   return counter
 }
 
-/** 从顶栏组号打开全部镜头组，点进第 n 组。 */
+/** 顶栏的组号胶囊，点开是镜头组列表。 */
+const groupPill = () => screen.getByRole('button', { name: /展开镜头组列表/ })
+
+/** 从顶栏组号展开镜头组列表，点第 n 组。 */
 const openShot = async (index: number) => {
-  await userEvent.click(screen.getByRole('button', { name: /打开全部镜头组/ }))
-  const overview = await screen.findByRole('complementary', { name: '全部镜头组' })
-  await userEvent.click(within(overview).getByRole('button', { name: `查看镜头组 ${index}` }))
+  await userEvent.click(groupPill())
+  const list = await screen.findByRole('menu', { name: '镜头组列表' })
+  await userEvent.click(
+    within(list).getByRole('menuitemradio', { name: new RegExp(`^第 ${index} 组`) }),
+  )
 }
 
 /** 点开出片栏上的选择器，在弹出的菜单里选中一项。 */
@@ -366,12 +371,11 @@ describe('StoryboardReader', () => {
     await userEvent.keyboard('{ArrowDown}')
     expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame: 1 })
 
-    screen.getByRole('button', { name: /打开全部镜头组/ }).focus()
+    groupPill().focus()
     await userEvent.keyboard('{ArrowDown}')
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
-    expect(screen.getByRole('button', { name: /打开全部镜头组/ })).toHaveAccessibleName(
-      '镜头组 2 / 2，打开全部镜头组',
-    )
+    expect(groupPill()).toHaveAccessibleName('镜头组 2 / 2，展开镜头组列表')
+    expect(screen.queryByRole('menu', { name: '镜头组列表' })).not.toBeInTheDocument()
     const second = screen.getByRole('region', { name: '镜头组 2' })
     expect(segmentOf(second, '全局设定')).toHaveAttribute('aria-current', 'true')
     await userEvent.keyboard('{ArrowUp}')
@@ -383,13 +387,13 @@ describe('StoryboardReader', () => {
     const { router } = await renderReader('/?shot=1&content=scene:1&frame=2')
     const previous = await screen.findByRole('button', { name: '上一组' })
     const next = screen.getByRole('button', { name: '下一组' })
-    const all = screen.getByRole('button', { name: /打开全部镜头组/ })
+    const all = groupPill()
     expect(previous).toBeDisabled()
     expect(next).toBeEnabled()
 
     await userEvent.click(next)
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
-    expect(all).toHaveAccessibleName('镜头组 2 / 2，打开全部镜头组')
+    expect(all).toHaveAccessibleName('镜头组 2 / 2，展开镜头组列表')
     expect(segmentOf(screen.getByRole('region', { name: '镜头组 2' }), '全局设定')).toHaveAttribute(
       'aria-current',
       'true',
@@ -406,7 +410,7 @@ describe('StoryboardReader', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
     expect(previous).toBeDisabled()
     expect(all).toHaveFocus()
-    expect(screen.queryByRole('complementary', { name: '全部镜头组' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menu', { name: '镜头组列表' })).not.toBeInTheDocument()
   })
 
   it('舞台左上只标当前帧 @N，跟着切帧、切段变，段里没图就不标；点舞台上的编辑、替换不开原图', async () => {
@@ -520,25 +524,56 @@ describe('StoryboardReader', () => {
     )
   })
 
-  it('顶栏组号打开全部组概览，标出当前组并可定位镜头组，成片区只列当前组', async () => {
+  it('顶栏组号展开镜头组列表，标出并聚焦当前组，点一组切过去、列表收起、焦点回到组号，成片区只列当前组', async () => {
     provide()
     const { router } = await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
     expect(takeTimes(await findTakes())).toEqual([jobs[0]?.createdAt])
-    await userEvent.click(screen.getByRole('button', { name: /打开全部镜头组/ }))
-    const overview = await screen.findByRole('complementary', { name: '全部镜头组' })
-    expect(within(overview).getAllByRole('listitem')).toHaveLength(2)
-    expect(within(overview).getByRole('button', { name: '查看镜头组 1' })).toHaveAttribute(
-      'aria-current',
-      'true',
-    )
-    expect(within(overview).getByRole('button', { name: '查看镜头组 2' })).not.toHaveAttribute(
-      'aria-current',
-    )
-    await userEvent.click(within(overview).getByRole('button', { name: '查看镜头组 2' }))
+    await userEvent.click(groupPill())
+    const list = await screen.findByRole('menu', { name: '镜头组列表' })
+    const rows = within(list).getAllByRole('menuitemradio')
+    expect(rows).toHaveLength(2)
+    const [first, second] = rows
+    expect(first).toHaveAccessibleName(/^第 1 组/)
+    expect(first).toBeChecked()
+    expect(second).not.toBeChecked()
+    await waitFor(() => expect(first).toHaveFocus())
+    expect(within(list).queryByRole('button', { name: /复制/ })).not.toBeInTheDocument()
+
+    await userEvent.click(within(list).getByRole('menuitemradio', { name: /^第 2 组/ }))
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
+    expect(list).not.toBeInTheDocument()
+    await waitFor(() => expect(groupPill()).toHaveFocus())
+    expect(groupPill()).toHaveAccessibleName('镜头组 2 / 2，展开镜头组列表')
     await screen.findByRole('region', { name: '镜头组 2' })
     expect(takeTimes(await findTakes())).toEqual([jobs[1]?.createdAt])
+  })
+
+  it('镜头组列表用键盘操作：Enter 展开、方向键在组间移动、Enter 切组；Esc 收起不切组，焦点回到组号', async () => {
+    provide()
+    const { router } = await renderReader('/?shot=2')
+    await screen.findByRole('region', { name: '镜头组 2' })
+    groupPill().focus()
+    await userEvent.keyboard('{Enter}')
+    const list = await screen.findByRole('menu', { name: '镜头组列表' })
+    const current = within(list).getByRole('menuitemradio', { name: /^第 2 组/ })
+    await waitFor(() => expect(current).toHaveFocus())
+    await userEvent.keyboard('{ArrowUp}')
+    expect(within(list).getByRole('menuitemradio', { name: /^第 1 组/ })).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(list).not.toBeInTheDocument()
+    await waitFor(() => expect(groupPill()).toHaveFocus())
+    expect(router.state.location.search).toEqual({ shot: 2 })
+
+    await userEvent.keyboard('{Enter}')
+    const reopened = await screen.findByRole('menu', { name: '镜头组列表' })
+    await waitFor(() =>
+      expect(within(reopened).getByRole('menuitemradio', { name: /^第 2 组/ })).toHaveFocus(),
+    )
+    await userEvent.keyboard('{ArrowUp}{Enter}')
+    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
+    expect(reopened).not.toBeInTheDocument()
+    await waitFor(() => expect(groupPill()).toHaveFocus())
   })
 
   it('接口提交的出片（只有镜号、正文不是结构化 shot）照样列在本组成片区，点卡片在舞台上播、不开灯箱，焦点留在卡上', async () => {

@@ -187,9 +187,6 @@ export const formatShotPrompt = (shot: Shot): string => {
   return `${shot.prompt.global_settings}\n\n${lines.join('\n')}\n${OUTPUT_CONSTRAINT}`
 }
 
-export const formatShotPrompts = (shots: readonly Shot[]): string =>
-  shots.map((shot) => `镜头组 ${shot.index}\n${formatShotPrompt(shot)}`).join('\n\n')
-
 const SENTENCE_END = /[。；！？!?;]/
 
 /** 只读标题从镜头正文取首句，文件中的正文保持原样。 */

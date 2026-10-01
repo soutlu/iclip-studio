@@ -248,9 +248,9 @@ test.describe('移动触屏分镜', () => {
 })
 
 // MSW 会话随整页加载清空，无法直接验证带参数刷新；此处验证跳组后地址与组号一致，帧号照样点得动。
-test('从组号浮层跳组：地址落在那一组，顶栏组号跟着变，帧号照样点得动', async ({ page }) => {
+test('从镜头组列表跳组：地址落在那一组，顶栏组号跟着变，帧号照样点得动', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  const switcher = panel.getByRole('button', { name: /打开全部镜头组/ })
+  const switcher = panel.getByRole('button', { name: /展开镜头组列表/ })
   await expect(switcher).toHaveAccessibleName(/^镜头组 1 \/ 3/)
 
   await openStoryboardShot(panel, 3)
@@ -427,7 +427,6 @@ test('短桌面深色：文案列整组原文可读，看大图后回到原帧�
   const search = new URL(page.url()).searchParams
   expect(search.get('shot')).toBe('2')
   expect(search.get('frame')).toBe('3')
-  expect(search.has('sheet')).toBe(false)
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport()
 })
 

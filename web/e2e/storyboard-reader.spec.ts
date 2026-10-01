@@ -47,7 +47,7 @@ test('分镜可以键盘切组、切帧和查看成片，浏览操作不写文�
     }
   })
   const panel = await openStoryboard(page)
-  const switcher = panel.getByRole('button', { name: /打开全部镜头组/ })
+  const switcher = panel.getByRole('button', { name: /展开镜头组列表/ })
   await switcher.focus()
   await page.keyboard.press('ArrowDown')
   await expect(switcher).toHaveAccessibleName(/^镜头组 2 \/ 3/)
@@ -77,7 +77,9 @@ test('分镜可以键盘切组、切帧和查看成片，浏览操作不写文�
 })
 
 for (const width of [1335, 390]) {
-  test(`分镜 ${width}px：整组原文、帧图与总览可读，关闭后恢复选择与焦点`, async ({ page }) => {
+  test(`分镜 ${width}px：整组原文、帧图与镜头组列表可读，关闭后恢复选择与焦点`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
     const panel = await openStoryboard(page, width === 390)
     await openStoryboardShot(panel, 2)
@@ -87,6 +89,26 @@ for (const width of [1335, 390]) {
     const frame = group.getByRole('img', { name: '镜头组 2 第 3 帧' })
     await expect(frame).toBeInViewport({ ratio: 1 })
     await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/main-${width}`)
+
+    // 镜头组列表挂在 body 上，盖过舞台与文案列，整个列表都在视口里。这一段只用鼠标：
+    // 之前按过键时 Chrome 会让脚本移过去的焦点也显示焦点环，截图就不是鼠标用户看到的样子。
+    const pill = panel.getByRole('button', { name: /展开镜头组列表/ })
+    await pill.click()
+    const list = page.getByRole('menu', { name: '镜头组列表', exact: true })
+    await expect(list.getByRole('menuitemradio')).toHaveCount(3)
+    const current = list.getByRole('menuitemradio', { name: /^第 2 组/ })
+    await expect(current).toHaveAttribute('aria-checked', 'true')
+    await expect(current).toBeFocused()
+    await expect(list).toBeInViewport({ ratio: 1 })
+    const qa = `../.artifacts/design-qa/shot-group-dropdown`
+    await screenshotBothThemes(page, `${qa}/open-${width}`)
+    const third = list.getByRole('menuitemradio', { name: /^第 3 组/ })
+    await third.hover()
+    await page.screenshot({ animations: 'disabled', path: `${qa}/hover-${width}.png` })
+    await page.keyboard.press('Escape')
+    await expect(list).toBeHidden()
+    await expect(pill).toBeFocused()
+    await expect(page).toHaveURL(/shot=2/)
 
     // 整组原文就排在文案列里：全局设定打头，各镜头标出时长与区间。
     const settings = group.getByRole('textbox', { name: '全局设定', exact: true })
@@ -113,17 +135,17 @@ for (const width of [1335, 390]) {
     const search = new URL(page.url()).searchParams
     expect(search.get('shot')).toBe('2')
     expect(search.get('frame')).toBe('3')
-    expect(search.has('sheet')).toBe(false)
 
-    await panel.getByRole('button', { name: /打开全部镜头组/ }).click()
-    const overview = panel.getByRole('complementary', { name: '全部镜头组', exact: true })
-    await expect(
-      overview.getByRole('button', { name: '查看镜头组 2', exact: true }),
-    ).toHaveAttribute('aria-current', 'true')
-    await expect(overview.getByRole('button', { name: /查看镜头组/ })).toHaveCount(3)
-    await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/overview-${width}`)
-    await overview.getByRole('button', { name: '查看镜头组 3', exact: true }).click()
-    await expect(overview).toBeHidden()
+    // 键盘展开：焦点落在当前组，方向键移到下一组，Enter 切过去、列表收起、焦点回到组号。
+    await pill.focus()
+    await page.keyboard.press('Enter')
+    await expect(current).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(third).toBeFocused()
+    await page.screenshot({ animations: 'disabled', path: `${qa}/keyboard-${width}.png` })
+    await page.keyboard.press('Enter')
+    await expect(list).toBeHidden()
+    await expect(pill).toBeFocused()
     await expect(panel.getByRole('region', { name: '镜头组 3', exact: true })).toBeInViewport()
     await expect(page).toHaveURL(/shot=3/)
   })
@@ -182,33 +204,6 @@ test('编辑一镜后保存并读回，复制整组保留 raw 图片标记与空
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(rawGroupPrompt(secondGroup))
-  expect(generationPosts).toEqual([])
-})
-
-test('总览按文件顺序复制选中的多个镜头组，保留各组 raw 图片标记', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 })
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-  const generationPosts = watchGenerationPosts(page)
-  const workspaceWrites: string[] = []
-  page.on('request', (request) => {
-    if (request.method() === 'PUT' && request.url().includes('/workspace/file')) {
-      workspaceWrites.push(request.url())
-    }
-  })
-  const panel = await openStoryboard(page)
-  const initial = await readDocument(page)
-  const first = initial.document.shots[0]
-  const third = initial.document.shots[2]
-  if (first === undefined || third === undefined) throw new Error('需要第一组和第三组')
-  await panel.getByRole('button', { name: /打开全部镜头组/ }).click()
-  const overview = panel.getByRole('complementary', { name: '全部镜头组', exact: true })
-  await overview.getByRole('button', { name: '选中镜头组 3', exact: true }).click()
-  await overview.getByRole('button', { name: '选中镜头组 1', exact: true }).click()
-  await overview.getByRole('button', { name: '复制选中镜头组', exact: true }).click()
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe(`镜头组 1\n${rawGroupPrompt(first)}\n\n镜头组 3\n${rawGroupPrompt(third)}`)
-  expect(workspaceWrites).toEqual([])
   expect(generationPosts).toEqual([])
 })
 
