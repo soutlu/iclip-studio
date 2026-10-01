@@ -851,7 +851,7 @@ describe('StoryboardReader', () => {
         within(editor).getByRole('group', { name: '这一帧的图片' }).querySelector('[aria-pressed]'),
       ).toBeTruthy(),
     )
-    expect(within(editor).getByRole('img', { name: '图片编辑结果' })).toBeVisible()
+    expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeVisible()
     await userEvent.click(within(editor).getByRole('button', { name: '关闭图片编辑' }))
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: /^编辑图片/ })).not.toBeInTheDocument(),

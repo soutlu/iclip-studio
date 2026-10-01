@@ -71,7 +71,7 @@ export type ComposerSubmitAction = {
   /** `sending` 时的文字。 */
   readonly pendingLabel: string
   readonly icon: IconName
-  /** primary 用主色（生成），neutral 用墨色。 */
+  /** primary 用主色（生成）；neutral 退为灰底，让位给页面上别处的主操作。 */
   readonly emphasis: 'primary' | 'neutral'
 }
 
@@ -409,7 +409,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
               loading={sending}
               onClick={submit}
               size="md"
-              variant={submitAction.emphasis === 'primary' ? 'primary' : 'inverted'}
+              variant={submitAction.emphasis === 'primary' ? 'primary' : 'tonal'}
             >
               {sending ? submitAction.pendingLabel : submitAction.label}
             </Button>

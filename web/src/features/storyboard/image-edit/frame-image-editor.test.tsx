@@ -38,7 +38,14 @@ const job = (over: Partial<GenerationJob> = {}): GenerationJob =>
     ...over,
   })
 
-function EditorPage({ initialKey }: { initialKey?: string }) {
+type EditorPageProps = {
+  initialKey?: string
+  onApply?: (previousUrl: string, url: string) => void
+  onClose?: (opened: ReadonlySet<string>) => void
+}
+
+/** 分镜那一侧的替身：替换就把第 1 帧换掉，关窗就卸载编辑器。 */
+function EditorPage({ initialKey, onApply, onClose }: EditorPageProps) {
   const [open, setOpen] = useState(true)
   const [frames, setFrames] = useState([BASE, FRAME_2])
   return (
@@ -49,8 +56,14 @@ function EditorPage({ initialKey }: { initialKey?: string }) {
           frames={frames}
           aspectRatio="9:16"
           initialKey={initialKey}
-          onClose={() => setOpen(false)}
-          onApply={async (_previous, url) => setFrames([url, FRAME_2])}
+          onClose={(opened) => {
+            onClose?.(opened)
+            setOpen(false)
+          }}
+          onApply={async (previous, url) => {
+            onApply?.(previous, url)
+            setFrames([url, FRAME_2])
+          }}
         />
       )}
       <Toaster />
@@ -201,9 +214,12 @@ describe('图片编辑器', () => {
     expect(unsupported).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('提交后新任务占一格并自动选中，输入不清空；草稿暂存与记录刷新都失败也不挡着看在途任务', async () => {
+  it('提交后舞台不动，新任务占一格并走表，输入不清空；草稿暂存与记录刷新都失败也不挡着', async () => {
     const completed = job({ status: 'completed', outputUrl: RESULT })
-    const pending = job()
+    const running = job({
+      status: 'submitted',
+      createdAt: new Date(Date.now() - 12_000).toISOString(),
+    })
     let reads = 0
     server.use(
       http.get('*/api/generations', () => {
@@ -213,7 +229,7 @@ describe('图片编辑器', () => {
           : HttpResponse.json({ detail: '记录刷新失败' }, { status: 503 })
       }),
       http.post('*/api/generations/image', () =>
-        HttpResponse.json({ generation: pending }, { status: 202 }),
+        HttpResponse.json({ generation: running }, { status: 202 }),
       ),
     )
     await renderWithProviders(<EditorPage />)
@@ -229,18 +245,62 @@ describe('图片编辑器', () => {
 
     await userEvent.click(within(editor).getByRole('button', { name: '生成图片' }))
 
-    const queued = await within(strip).findByRole('button', { name: /^排队中 · / })
+    const cell = await within(strip).findByRole('button', { name: /^生成中 · / })
+    // 格子里从提交时刻走表；舞台留在当前帧的画布上，没跟过去。
+    expect(cell).toHaveTextContent(/0:1\d/)
+    expect(cell).toHaveAttribute('aria-pressed', 'false')
+    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(editor).getByRole('img', { name: '当前编辑帧' })).toBeInTheDocument()
     expect(textbox).toHaveTextContent('将衣服改成蓝色，领口不变')
-    expect(queued).toHaveAttribute('aria-pressed', 'true')
-    expect(await within(editor).findByRole('status')).toBeVisible()
+    expect(within(editor).getByText('有 1 个任务在生成或排队，关掉窗口也会继续')).toBeVisible()
     expect(await within(editor).findByText(/记录刷新失败/)).toBeVisible()
-    expect(within(editor).queryByRole('button', { name: '应用到当前帧' })).not.toBeInTheDocument()
   })
 
-  it('从帧上的新结果进来就选中它，应用之后窗口留着且那张成了当前帧', async () => {
+  it('打开期间跑完的结果挂绿点、舞台不自动切换；点开即清，打开前就有的结果不挂', async () => {
+    const older = job({ status: 'completed', outputUrl: RESULT, createdAt: '2026-09-07T11:00:00Z' })
+    const running = job({ status: 'submitted' })
+    const fresh = {
+      ...running,
+      status: 'completed' as const,
+      outputUrl: 'https://example.com/fresh.png',
+    }
+    let landed = false
+    server.use(
+      http.get('*/api/generations', () =>
+        HttpResponse.json({ items: [landed ? fresh : running, older] }),
+      ),
+    )
+    const { queryClient } = await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    await within(strip).findByRole('button', { name: /^生成中 · / })
+
+    landed = true
+    await act(() => queryClient.invalidateQueries())
+
+    const result = await within(strip).findByRole('button', { name: /^结果 · .* · 新结果$/ })
+    expect(within(strip).getAllByRole('button', { name: /新结果/ })).toHaveLength(1)
+    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    await userEvent.click(result)
+    expect(result).toHaveAttribute('aria-pressed', 'true')
+    expect(result).not.toHaveAccessibleName(/新结果/)
+    expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeInTheDocument()
+    await userEvent.click(within(strip).getByRole('button', { name: '当前帧' }))
+    expect(within(strip).queryByRole('button', { name: /新结果/ })).not.toBeInTheDocument()
+  })
+
+  it('从帧上的新结果进来就是对比；替换后出撤销胶囊，撤销以 (applied, previous) 写回', async () => {
     const completed = job({ status: 'completed', outputUrl: RESULT })
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
-    await renderWithProviders(<EditorPage initialKey={completed.id} />)
+    const onApply = vi.fn()
+    await renderWithProviders(<EditorPage initialKey={completed.id} onApply={onApply} />)
 
     const editor = await screen.findByRole('dialog')
     const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
@@ -250,48 +310,77 @@ describe('图片编辑器', () => {
         'true',
       ),
     )
-    expect(within(editor).getByRole('img', { name: '图片编辑结果' })).toHaveAttribute('src', RESULT)
+    expect(within(editor).getByRole('img', { name: '当前帧' })).toHaveAttribute('src', BASE)
+    expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', RESULT)
 
-    const apply = within(editor).getByRole('button', { name: '应用到当前帧' })
-    expect(apply).toBeEnabled()
-    await userEvent.click(apply)
+    await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
 
-    expect(await screen.findByText('已应用到当前帧')).toBeVisible()
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(onApply).toHaveBeenLastCalledWith(BASE, RESULT)
+    expect(await within(editor).findByRole('status')).toHaveTextContent('已替换')
+    // 结果折进当前帧格，舞台回到画布；被换下来的那张留在条里。
+    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(editor).getByRole('img', { name: '当前编辑帧' })).toHaveAttribute('src', RESULT)
+    expect(within(strip).getByRole('button', { name: /^上一版 · / })).toBeInTheDocument()
+    expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
+    // 按下的按钮随画面换掉，焦点接到撤销上，键盘可以直接撤销。
+    const undo = within(editor).getByRole('button', { name: '撤销' })
+    expect(undo).toHaveFocus()
+
+    await userEvent.keyboard('{Enter}')
+
+    expect(onApply).toHaveBeenLastCalledWith(RESULT, BASE)
+    expect(onApply).toHaveBeenCalledTimes(2)
+    expect(within(editor).queryByText('已替换')).not.toBeInTheDocument()
+    // 撤销后结果回到条里，还选着它，舞台回到对比。
     await waitFor(() =>
-      expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      expect(within(strip).getByRole('button', { name: /^结果 · / })).toHaveAttribute(
         'aria-pressed',
         'true',
       ),
     )
-    // 折进当前帧格之后不再是一张「还没应用」的结果。
-    expect(within(editor).queryByRole('button', { name: '应用到当前帧' })).not.toBeInTheDocument()
-    expect(within(strip).queryByRole('button', { name: /^结果 · / })).not.toBeInTheDocument()
-    // 被换下来的那张留在条里，选中它就能换回去。
-    const previous = within(strip).getByRole('button', { name: /^上一版 · / })
-    await userEvent.click(previous)
-    expect(within(editor).getByRole('button', { name: '应用到当前帧' })).toBeEnabled()
+    expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '替换当前帧' })).toHaveFocus()
   })
 
-  it('点选中的结果图放大看；Esc 只关预览，编辑器留着，焦点回到结果图', async () => {
+  it('撤销入口 6 秒后消失', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const completed = job({ status: 'completed', outputUrl: RESULT })
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
+    await renderWithProviders(<EditorPage initialKey={completed.id} />)
+    const editor = await screen.findByRole('dialog')
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    await user.click(await within(editor).findByRole('button', { name: '替换当前帧' }))
+    const undo = await within(editor).findByRole('button', { name: '撤销' })
+
+    act(() => {
+      vi.advanceTimersByTime(5_000)
+    })
+    expect(undo).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(1_000)
+    })
+    expect(within(editor).queryByRole('button', { name: '撤销' })).not.toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('对比滑杆的拖柄用左右键移动，每次 5，到头不再动', async () => {
     const completed = job({ status: 'completed', outputUrl: RESULT })
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
     await renderWithProviders(<EditorPage initialKey={completed.id} />)
 
-    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    const result = await within(editor).findByRole('button', { name: '预览图片编辑结果' })
-    await userEvent.click(result)
-
-    const lightbox = await screen.findByRole('dialog', { name: '图片编辑结果' })
-    expect(within(lightbox).getByRole('img', { name: '图片编辑结果' })).toHaveAttribute(
-      'src',
-      RESULT,
-    )
-
-    await userEvent.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: '图片编辑结果' })).not.toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: /^编辑图片/ })).toBeInTheDocument()
-    await waitFor(() => expect(result).toHaveFocus())
+    const editor = await screen.findByRole('dialog')
+    const slider = await within(editor).findByRole('slider', { name: '对比分割线' })
+    expect(slider).toHaveAttribute('aria-valuenow', '50')
+    act(() => slider.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    expect(slider).toHaveAttribute('aria-valuenow', '55')
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}')
+    expect(slider).toHaveAttribute('aria-valuenow', '45')
+    for (let step = 0; step < 12; step += 1) await userEvent.keyboard('{ArrowRight}')
+    expect(slider).toHaveAttribute('aria-valuenow', '100')
   })
 
   it.each(['pending', 'submitted'] as const)('任务处于 %s 时仍能提交新的编辑', async (status) => {
@@ -313,9 +402,11 @@ describe('图片编辑器', () => {
     const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
     const selected = await within(strip).findByRole('button', { name: /^(排队中|生成中) · / })
     expect(selected).toHaveAttribute('aria-pressed', 'true')
-    expect(within(editor).getByRole('status')).toBeVisible()
+    expect(within(editor).getByRole('status')).toHaveTextContent(
+      status === 'pending' ? '排队中' : '生成中',
+    )
     expect(within(editor).getByRole('img', { name: '本次编辑底图' })).toHaveAttribute('src', BASE)
-    expect(within(editor).queryByRole('button', { name: '应用到当前帧' })).not.toBeInTheDocument()
+    expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
     const generate = within(editor).getByRole('button', { name: '生成图片' })
     await waitFor(() => expect(generate).toBeEnabled())
 
@@ -325,41 +416,39 @@ describe('图片编辑器', () => {
     await waitFor(() =>
       expect(within(strip).getAllByRole('button', { name: /^(排队中|生成中) · / })).toHaveLength(2),
     )
-    expect(selected).toHaveAttribute('aria-pressed', 'false')
+    // 舞台留在原来那条上，新提交的那格不选中。
+    expect(selected).toHaveAttribute('aria-pressed', 'true')
     const next = within(strip)
       .getAllByRole('button', { name: /^排队中 · / })
       .find((button) => button !== selected)
-    expect(next).toHaveAttribute('aria-pressed', 'true')
+    expect(next).toHaveAttribute('aria-pressed', 'false')
   })
 
   it.each(['图像服务拒绝了请求（400）: {"detail":"invalid reference image"}', null])(
-    '失败状态按需展开原始错误，不把详情直接铺在预览区：%s',
+    '失败格在舞台上标「未成功」，原因按需就地展开：%s',
     async (errorMessage) => {
       const failed = job({ status: 'failed', errorMessage })
       server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [failed] })))
       await renderWithProviders(<EditorPage initialKey={failed.id} />)
 
       const editor = await screen.findByRole('dialog')
-      const alert = await within(editor).findByRole('alert')
-      expect(alert).toBeVisible()
+      expect(await within(editor).findByRole('alert')).toHaveTextContent('未成功')
       expect(within(editor).getByRole('img', { name: '本次编辑底图' })).toHaveAttribute('src', BASE)
-      expect(within(editor).queryByRole('button', { name: '应用到当前帧' })).not.toBeInTheDocument()
+      expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
       if (errorMessage === null) {
-        expect(within(editor).queryByText('查看详情')).not.toBeInTheDocument()
-      } else {
-        const error = within(editor).getByText(errorMessage)
-        expect(error).not.toBeVisible()
-        await userEvent.click(within(editor).getByText('查看详情'))
-        expect(error).toBeVisible()
-        await userEvent.click(within(editor).getByText('查看详情'))
-        expect(error).not.toBeVisible()
+        expect(within(editor).queryByRole('button', { name: '查看原因' })).not.toBeInTheDocument()
+        return
       }
-      await userEvent.click(within(editor).getByRole('button', { name: '返回当前帧' }))
-      const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
-      expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      )
+      const reason = within(editor).getByRole('button', { name: '查看原因' })
+      const error = within(editor).getByText(errorMessage)
+      expect(error).not.toBeVisible()
+      await userEvent.click(reason)
+      expect(reason).toHaveAttribute('aria-expanded', 'true')
+      expect(error).toBeVisible()
+      // Esc 先收起原因，编辑器留着。
+      await userEvent.keyboard('{Escape}')
+      expect(error).not.toBeVisible()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
     },
   )
 
@@ -596,7 +685,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage initialKey={completed.id} />)
 
     const editor = await screen.findByRole('dialog')
-    await within(editor).findByRole('img', { name: '图片编辑结果' })
+    await within(editor).findByRole('slider', { name: '对比分割线' })
     expect(screen.queryByRole('menuitem', { name: '恢复这次的输入' })).not.toBeInTheDocument()
     await userEvent.click(within(editor).getByRole('button', { name: '图片历史操作' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: '恢复这次的输入' }))
@@ -646,5 +735,30 @@ describe('图片编辑器', () => {
 
     expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
     expect(within(editor).getByRole('button', { name: '撤销标注' })).toBeDisabled()
+  })
+
+  it('关窗只交回真正点开看过的任务：没点的结果、失败都不算', async () => {
+    const opened = job({ status: 'completed', outputUrl: RESULT })
+    const skipped = job({
+      status: 'completed',
+      outputUrl: 'https://example.com/skipped.png',
+      createdAt: '2026-09-07T11:00:00Z',
+    })
+    const failed = job({ status: 'failed', createdAt: '2026-09-07T10:00:00Z' })
+    server.use(
+      http.get('*/api/generations', () => HttpResponse.json({ items: [opened, skipped, failed] })),
+    )
+    const onClose = vi.fn()
+    await renderWithProviders(<EditorPage onClose={onClose} />)
+    const editor = await screen.findByRole('dialog')
+    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const [first] = await within(strip).findAllByRole('button', { name: /^结果 · / })
+    if (first === undefined) throw new Error('缺少结果格')
+    await userEvent.click(first)
+
+    await userEvent.click(within(editor).getByRole('button', { name: '关闭图片编辑' }))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect([...(onClose.mock.calls[0]?.[0] as ReadonlySet<string>)]).toEqual([opened.id])
   })
 })

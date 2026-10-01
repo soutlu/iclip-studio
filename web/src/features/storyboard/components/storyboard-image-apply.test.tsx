@@ -81,7 +81,7 @@ const renderReader = () =>
     { initialPath: '/?content=scene:1' },
   )
 
-describe('图片编辑结果应用', () => {
+describe('图片编辑结果替换当前帧', () => {
   beforeEach(() => {
     sessionStorage.clear()
     provideJobs()
@@ -91,7 +91,7 @@ describe('图片编辑结果应用', () => {
     vi.restoreAllMocks()
   })
 
-  it('应用 A 保存失败后恢复原图，保留描述并允许直接改选 B 保存', async () => {
+  it('替换成 A 保存失败后恢复原图，保留描述并允许直接改选 B 保存', async () => {
     let persisted = originalDocument()
     let version = 1
     const writes: ShotsDocument[] = []
@@ -127,7 +127,7 @@ describe('图片编辑结果应用', () => {
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
     const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
     await userEvent.click(await resultSlot(strip, 0))
-    await userEvent.click(within(editor).getByRole('button', { name: '应用到当前帧' }))
+    await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
     try {
       await waitFor(() =>
         expect(writes.some((item) => item.shots[0]?.image_urls[0] === CANDIDATE_A)).toBe(true),
@@ -142,12 +142,9 @@ describe('图片编辑结果应用', () => {
       within(page).getByRole('img', { name: '镜头组 1 第 1 帧', hidden: true }),
     ).toHaveAttribute('src', ORIGINAL)
     await userEvent.click(await resultSlot(strip, 1))
-    expect(within(editor).getByRole('img', { name: '图片编辑结果' })).toHaveAttribute(
-      'src',
-      CANDIDATE_B,
-    )
-    await userEvent.click(within(editor).getByRole('button', { name: '应用到当前帧' }))
-    // 应用完窗口留着，B 成了当前帧那一格。
+    expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', CANDIDATE_B)
+    await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
+    // 替换完窗口留着，B 成了当前帧那一格。
     await waitFor(() =>
       expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
         'aria-pressed',
@@ -164,7 +161,7 @@ describe('图片编辑结果应用', () => {
     expect(staleVersions).toEqual([])
   })
 
-  it('编辑器打开后原图被外部修改时，拒绝应用并保留外部图片', async () => {
+  it('编辑器打开后原图被外部修改时，拒绝替换并保留外部图片', async () => {
     let persisted = originalDocument()
     let version = 1
     const writes: unknown[] = []
@@ -192,19 +189,16 @@ describe('图片编辑结果应用', () => {
     await act(() =>
       queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.file(CONVERSATION_ID, PATH) }),
     )
-    await userEvent.click(within(editor).getByRole('button', { name: '应用到当前帧' }))
+    await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
     expect(
       await within(editor).findByText('这张图片已发生变化，请重新选择要替换的图片'),
     ).toBeVisible()
     expect(writes).toHaveLength(0)
     expect(persisted.shots[0]?.image_urls).toEqual([externalUrl])
-    expect(within(editor).getByRole('img', { name: '图片编辑结果' })).toHaveAttribute(
-      'src',
-      CANDIDATE_A,
-    )
+    expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', CANDIDATE_A)
   })
 
-  it('应用只写这一份分镜，成功后窗口留着，结果落到帧上', async () => {
+  it('替换只写这一份分镜，成功后窗口留着、出撤销入口，结果落到帧上', async () => {
     const initial = originalDocument()
     let persisted = initial
     let version = 1
@@ -234,9 +228,9 @@ describe('图片编辑结果应用', () => {
     const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
     await userEvent.click(await resultSlot(strip, 0))
 
-    await userEvent.click(within(editor).getByRole('button', { name: '应用到当前帧' }))
+    await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
 
-    expect(await screen.findByText('已应用到当前帧')).toBeVisible()
+    expect(await within(editor).findByText('已替换')).toBeVisible()
     await waitFor(() =>
       expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
         'aria-pressed',
@@ -254,5 +248,47 @@ describe('图片编辑结果应用', () => {
       within(page).getByRole('img', { name: '镜头组 1 第 1 帧', hidden: true }),
     ).toHaveAttribute('src', CANDIDATE_A)
     expect(screen.queryByText(/图片尚未应用/)).not.toBeInTheDocument()
+  })
+
+  it('替换后点撤销：反方向再写一次，分镜回到原图，舞台回到对比', async () => {
+    let persisted = originalDocument()
+    let version = 1
+    const writes: { expectedVersion: number; urls: readonly string[] | undefined }[] = []
+    server.use(
+      http.get('*/api/conversations/:id/workspace/file', () =>
+        HttpResponse.json({ file: { path: PATH, content: JSON.stringify(persisted), version } }),
+      ),
+      http.put('*/api/conversations/:id/workspace/file', async ({ request }) => {
+        const body = (await request.json()) as { content: string; expectedVersion: number }
+        persisted = JSON.parse(body.content) as ShotsDocument
+        writes.push({ expectedVersion: body.expectedVersion, urls: persisted.shots[0]?.image_urls })
+        version += 1
+        return HttpResponse.json({ file: { path: PATH, content: body.content, version } })
+      }),
+    )
+    await renderReader()
+    const page = await screen.findByRole('region', { name: '镜头组 1' })
+    await userEvent.click(within(page).getByRole('button', { name: '编辑图片' }))
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    await userEvent.click(await resultSlot(strip, 0))
+    await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
+    await within(editor).findByText('已替换')
+
+    await userEvent.click(within(editor).getByRole('button', { name: '撤销' }))
+
+    await waitFor(() => expect(writes).toHaveLength(2))
+    expect(writes).toEqual([
+      { expectedVersion: 1, urls: [CANDIDATE_A] },
+      { expectedVersion: 2, urls: [ORIGINAL] },
+    ])
+    await waitFor(() =>
+      expect(
+        within(page).getByRole('img', { name: '镜头组 1 第 1 帧', hidden: true }),
+      ).toHaveAttribute('src', ORIGINAL),
+    )
+    expect(within(editor).queryByText('已替换')).not.toBeInTheDocument()
+    expect(await resultSlot(strip, 0)).toHaveAttribute('aria-pressed', 'true')
+    expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeInTheDocument()
   })
 })
