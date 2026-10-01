@@ -191,6 +191,12 @@ describe('useLiveConversations', () => {
     release()
 
     await vi.waitFor(() => expect(reads).toEqual([row.id]))
+    // 这次读完、在途记录清掉之后再来一帧，要重新读：去重只在请求在途期间生效。
+    await vi.waitFor(() => expect(poolRow(queryClient, row.id)).toBeDefined())
+    await settle(0)
+    socket.deliver(activityFrame(row.id, { busy: true }))
+    await settle(0)
+    await vi.waitFor(() => expect(reads).toEqual([row.id, row.id]))
   })
 
   it('改名帧只换标题，不动分页也不重拉任何列表', async () => {
