@@ -1,10 +1,6 @@
 /** 乐观气泡由谁接替：先按 id，轮头 triggerPromptId 认发出去的那句，插话块 promptIds 认插队的那句；服务端没给 id 的才退回比内容。 */
 
-import type {
-  PromptContentPart,
-  TranscriptPrompt,
-  TranscriptTurn,
-} from '@/shared/transcript/vendor'
+import type { PromptContentPart, TranscriptPrompt, TranscriptTurn } from './vendor'
 
 export type PendingPrompt = {
   promptId: string

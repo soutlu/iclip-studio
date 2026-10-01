@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { addMockCollection, addMockConversation } from '@/testing/mocks/conversations'
 import { addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
@@ -29,6 +30,22 @@ const TAIL_TEXT = '这是第 2 轮的回复。'
 /** renderWithProviders 完成连接握手，返回 socket 供测试发送后续帧。 */
 const renderConversation = async () =>
   renderWithProviders(<ConversationRoute conversationId="c1" />)
+
+/** 路由按对话 id 换键重挂；这里用开关模拟离开再回来同一段对话。 */
+function RemountableConversation() {
+  const [shown, setShown] = useState(true)
+  return (
+    <>
+      <button onClick={() => setShown(false)} type="button">
+        离开
+      </button>
+      <button onClick={() => setShown(true)} type="button">
+        回来
+      </button>
+      {shown ? <ConversationRoute conversationId="c1" /> : null}
+    </>
+  )
+}
 
 const opsFrame = (ops: unknown[], seq: number) => ({
   payload: { agent_id: 'main', ops, seq },
@@ -375,6 +392,71 @@ describe('ConversationRoute', () => {
     const editor = await screen.findByLabelText('输入消息')
     await waitFor(() => expect(editor).toHaveTextContent('再拆一段'))
     expect(screen.queryAllByText('再拆一段')).toHaveLength(1)
+  })
+
+  it('发出去后离开再回来，气泡和「请求中」还在：本地发送状态按对话保存，不随页面卸载', async () => {
+    const user = userEvent.setup()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/conversations/c1/prompts', async ({ request }) => {
+        const body = (await request.json()) as { prompt_id: string }
+        await gate
+        return HttpResponse.json({
+          createdAt: '2026-08-31T03:00:00Z',
+          promptId: body.prompt_id,
+          status: 'running',
+        })
+      }),
+    )
+    await renderWithProviders(<RemountableConversation />)
+    await screen.findByText(TAIL_TEXT)
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: '离开' }))
+    expect(screen.queryByText('再拆一段')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '回来' }))
+    await screen.findByText(TAIL_TEXT)
+
+    expect(screen.getAllByText('再拆一段')).toHaveLength(1)
+    expect(screen.getByRole('status')).toHaveTextContent('请求中…')
+    release()
+  })
+
+  it('离开期间发送失败：回来时气泡已撤，也不再显示请求中', async () => {
+    const user = userEvent.setup()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/conversations/c1/prompts', async () => {
+        await gate
+        return HttpResponse.json({ detail: '这段对话不是你的' }, { status: 403 })
+      }),
+    )
+    await renderWithProviders(<RemountableConversation />)
+    await screen.findByText(TAIL_TEXT)
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: '离开' }))
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    await user.click(screen.getByRole('button', { name: '回来' }))
+    await screen.findByText(TAIL_TEXT)
+
+    expect(screen.queryByText('再拆一段')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('在跑的时候发送钮换成停止钮，点它停掉在跑的那条', async () => {
