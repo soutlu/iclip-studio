@@ -1,4 +1,4 @@
-/** 出片栏的两条规则：出片按钮为什么置灰，以及挨着按钮常显的那句提示。 */
+/** 出片栏的两条规则：出片按钮为什么置灰，以及要提醒的错误；两者共用出片栏的状态行，置灰原因优先。 */
 
 import type { SaveState } from './use-shots-draft'
 import { MODELS_PENDING_TEXT, type VideoModelsStatus } from './video-generation-options'
@@ -24,7 +24,7 @@ export const generationBlockerOf = (facts: GenerationFacts): string | undefined 
   return undefined
 }
 
-/** 出片栏常显的一句，没有就为 undefined：上次提交失败的原话优先；其次是选中的模型做不了
+/** 出片栏要提醒的错误，没被挡住时写在状态行上，没有就为 undefined：上次提交失败的原话优先；其次是选中的模型做不了
  * 这份分镜的画幅——只提醒不拦，真拒还是由上游拒。 */
 export const generationNoticeOf = (facts: {
   submitError: string | undefined
