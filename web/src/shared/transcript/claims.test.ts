@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { TranscriptPrompt, TranscriptTurn } from '@/shared/transcript/vendor'
+import type { TranscriptPrompt, TranscriptTurn } from './vendor'
 import { claimed } from './claims'
 
 const text = (value: string) => [{ text: value, type: 'text' as const }]

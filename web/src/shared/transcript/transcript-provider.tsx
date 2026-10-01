@@ -1,8 +1,13 @@
 import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { TranscriptConnection } from './connection'
+import { LocalPromptStore } from './local-prompts'
 import { TranscriptReaders } from './readers'
-import { TranscriptConnectionContext, TranscriptReadersContext } from './transcript-context'
+import {
+  LocalPromptsContext,
+  TranscriptConnectionContext,
+  TranscriptReadersContext,
+} from './transcript-context'
 
 /** WebSocket 复用同源 /api 反向代理。 */
 const transcriptUrl = () =>
@@ -23,6 +28,8 @@ export function TranscriptProvider({ children, createSocket }: TranscriptProvide
     [createSocket],
   )
   const readers = useMemo(() => new TranscriptReaders(connection), [connection])
+  // 本地发送状态跟着 Provider 走：同一个 Provider 下切换对话不丢，换一个 Provider（如测试）互不串。
+  const localPrompts = useMemo(() => new LocalPromptStore(), [])
 
   useEffect(() => {
     connection.connect()
@@ -46,7 +53,9 @@ export function TranscriptProvider({ children, createSocket }: TranscriptProvide
 
   return (
     <TranscriptConnectionContext value={connection}>
-      <TranscriptReadersContext value={readers}>{children}</TranscriptReadersContext>
+      <TranscriptReadersContext value={readers}>
+        <LocalPromptsContext value={localPrompts}>{children}</LocalPromptsContext>
+      </TranscriptReadersContext>
     </TranscriptConnectionContext>
   )
 }

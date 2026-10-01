@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { useUser, useUsersDirectory } from '@/shared/auth'
+import {
+  hasLivePrompts as hasLivePromptsIn,
+  inFlightSettled,
+  type LocalTimeline,
+  unclaimed,
+} from '@/shared/transcript/local-prompts'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
+import { useLocalPrompts } from '@/shared/transcript/use-local-prompts'
 import { useSessionTitles } from '@/shared/transcript/use-session-titles'
 import { useTranscript } from '@/shared/transcript/use-transcript'
 import type { PromptContentPart, ToolCallFrame, TranscriptTurn } from '@/shared/transcript/vendor'
@@ -14,7 +21,7 @@ import { Button, IconButton } from '@/shared/ui/button'
 import { type ComposerPart, composerParts } from '@/shared/ui/composer'
 import { Tag } from '@/shared/ui/tag'
 import { toast } from '@/shared/ui/toast'
-import { claimed, sameContent, type PendingPrompt } from '../claims'
+import { sameContent } from '@/shared/transcript/claims'
 import {
   abortPrompt,
   mintPromptId,
@@ -104,8 +111,9 @@ export function ConversationRoute({
       : `${ownerName} 的对话`
   const noteSubject = ownMine ? '自己' : ownerName === undefined ? '别人' : ` ${ownerName} `
   const chrome = useShellChrome()
-  const [pending, setPending] = useState<readonly PendingPrompt[]>([])
-  const [inFlightPromptId, setInFlightPromptId] = useState<string | null>(null)
+  // 乐观气泡与在途那一轮存在对话级的 store 里，离开页面再回来仍在，读取池也据此判断本地是否有未完成的发送。
+  const { state: local, store: localPrompts } = useLocalPrompts(conversationId)
+  const { pending, inFlightPromptId } = local
   const [editingTurn, setEditingTurn] = useState<EditingTurn | null>(null)
 
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -132,27 +140,21 @@ export function ConversationRoute({
     (interaction) => interaction.interactionKind === 'approval',
   )
 
-  const promptById = new Map(view.prompts.map((prompt) => [prompt.promptId, prompt]))
-  const isClaimed = (item: PendingPrompt) => claimed(item, turns, promptById)
-  const bubbles = pending.filter((item) => !isClaimed(item))
   const queued = view.prompts.filter((prompt) => prompt.status === 'queued')
   const running = view.prompts.find((prompt) => prompt.status === 'running')
   // inFlight 表示本地提交状态，turnActive 取 transcript meta；队列不参与 working 判定。
   const latestTurn = turns.at(-1)
   const turnActive = view.activity === 'turn'
-  const submittedPrompt =
-    inFlightPromptId === null
-      ? undefined
-      : view.prompts.find((prompt) => prompt.promptId === inFlightPromptId)
-  const hasLivePrompts = running !== undefined || queued.length > 0
-  const submittedSettled =
-    submittedPrompt !== undefined &&
-    submittedPrompt.status !== 'queued' &&
-    submittedPrompt.status !== 'running'
-  const inFlightSettled =
-    inFlightPromptId !== null && submittedSettled && !turnActive && !hasLivePrompts
-  if (inFlightSettled) setInFlightPromptId(null)
-  const inFlight = inFlightPromptId !== null && !inFlightSettled
+  const timeline: LocalTimeline = { prompts: view.prompts, turnActive, turns }
+  const bubbles = unclaimed(local, timeline)
+  const hasLivePrompts = hasLivePromptsIn(view.prompts)
+  const settled = inFlightSettled(local, timeline)
+  const inFlight = inFlightPromptId !== null && !settled
+
+  // 收尾在渲染时就已算进 inFlight；store 不能在渲染中写，清掉记录放到提交之后。
+  useEffect(() => {
+    if (settled && inFlightPromptId !== null) localPrompts.settle(conversationId, inFlightPromptId)
+  }, [conversationId, inFlightPromptId, localPrompts, settled])
   const working = inFlight || turnActive
   // 重新生成仅允许空闲对话末轮；运行、排队或本地提交中均视为忙，与服务端 409 条件一致。
   const conversationBusy = working || hasLivePrompts
@@ -184,18 +186,16 @@ export function ConversationRoute({
   ) => {
     const promptId = mintPromptId()
     const content = partsContent(parts)
-    const startsFlight = inFlightPromptId === null
-    if (startsFlight) setInFlightPromptId(promptId)
-    setPending((list) => [...list.filter((item) => !isClaimed(item)), { content, promptId }])
+    // 挂气泡也放进 try：任何一步出错都撤回并把错误交给输入框，内容不会丢。
+    let startsFlight = false
     try {
+      startsFlight = localPrompts.begin(conversationId, { content, promptId }, timeline)
       await request(promptId, content)
     } catch (error) {
-      setPending((list) => list.filter((item) => item.promptId !== promptId))
-      if (startsFlight) {
-        setInFlightPromptId((current) => (current === promptId ? null : current))
-      }
+      localPrompts.rollback(conversationId, promptId, startsFlight)
       throw error
     }
+    localPrompts.accepted(conversationId, promptId)
   }
 
   const send = (parts: readonly ComposerPart[]) =>
