@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
 import { mintUuid } from '@/shared/lib/uuid'
+import { conversationRowsOf, type ConversationRowStore } from './conversation-rows'
 import type { ComposerPart } from '@/shared/ui/composer'
 import {
   zApproveConversationsConversationIdInteractionsInteractionIdPostResponse,
@@ -122,16 +123,32 @@ export const searchConversations = async (
     { signal, cache: 'no-store', fallbackErrorMessage: '搜索对话失败' },
   )
 
+/** 拓扑里的行进池合并（合同 §5 水位规则），查询里留下合并后的行与成员、计数。 */
+const mergeTopology = (
+  store: ConversationRowStore,
+  topology: SidebarTopology,
+): SidebarTopology => ({
+  ...topology,
+  collections: topology.collections.map((collection) => ({
+    ...collection,
+    page: { ...collection.page, items: store.mergeRows(collection.page.items) },
+  })),
+  ungrouped: { ...topology.ungrouped, items: store.mergeRows(topology.ungrouped.items) },
+})
+
 /** 分组、计数和首页数据来自同一服务端拓扑，避免不同查询时间点造成不一致。 */
 export const useSidebarTopology = (enabled: boolean, state: ConversationListState) =>
   useQuery({
     enabled,
-    queryFn: ({ signal }) =>
-      apiFetch(`/conversations?state=${state}`, zSidebarOut, {
-        signal,
-        cache: 'no-store',
-        fallbackErrorMessage: '读取对话列表失败',
-      }),
+    queryFn: async ({ client, signal }) =>
+      mergeTopology(
+        conversationRowsOf(client),
+        await apiFetch(`/conversations?state=${state}`, zSidebarOut, {
+          signal,
+          cache: 'no-store',
+          fallbackErrorMessage: '读取对话列表失败',
+        }),
+      ),
     queryKey: conversationsQueryKeys.sidebar(state),
   })
 
@@ -185,18 +202,62 @@ export const useMoreConversations = (
 ) => {
   return useInfiniteQuery({
     queryKey: conversationsQueryKeys.more(collectionId ?? 'ungrouped', cursor ?? '', state),
-    queryFn: ({ pageParam, signal }) =>
-      apiFetch(
+    queryFn: async ({ client, pageParam, signal }) => {
+      const page = await apiFetch(
         `${
           collectionId ? `/conversations/by-collection/${collectionId}` : '/conversations/ungrouped'
         }?cursor=${encodeURIComponent(pageParam)}&state=${state}`,
         zConversationPageOut,
         { signal, cache: 'no-store', fallbackErrorMessage: '加载更多对话失败' },
-      ),
+      )
+      return { ...page, items: conversationRowsOf(client).mergeRows(page.items) }
+    },
     initialPageParam: cursor ?? '',
     getNextPageParam: (last: z.output<typeof zConversationPageOut>) => last.nextCursor,
     enabled: false,
   })
+}
+
+/** 同一段对话的单行请求在途时复用，照 Kimi 按 id 去重。 */
+const rowRequests = new WeakMap<ConversationRowStore, Map<string, Promise<void>>>()
+
+/**
+ * 取一段对话的整行并合进行池（照 Kimi 的单行补读）：轮次状态、出片汇总变化后用它跟上
+ * `lastRunId`、`activity.videoGeneration` 等帧上没有的字段，不必整份重拉侧栏。看不见了（404）按删除处理。
+ */
+export const refreshConversationRow = (
+  queryClient: QueryClient,
+  conversationId: string,
+): Promise<void> => {
+  const store = conversationRowsOf(queryClient)
+  let inFlight = rowRequests.get(store)
+  if (inFlight === undefined) {
+    inFlight = new Map()
+    rowRequests.set(store, inFlight)
+  }
+  const pending = inFlight.get(conversationId)
+  if (pending !== undefined) return pending
+  const requests = inFlight
+  const request = apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
+    cache: 'no-store',
+    fallbackErrorMessage: '读取对话失败',
+  })
+    .then((row) => {
+      store.mergeRows([row])
+    })
+    .catch((error: unknown) => {
+      if (error instanceof ApiError && error.status === 404) {
+        store.applyDeleted(conversationId)
+        return
+      }
+      // 补读失败不影响列表：行留在帧给的状态，下一帧或下一次重拉再对齐。
+      console.warn('补读对话行失败', { conversationId })
+    })
+    .finally(() => {
+      requests.delete(conversationId)
+    })
+  inFlight.set(conversationId, request)
+  return request
 }
 
 /** 创建对话；调用方可提供幂等编号、需求单和合集归属。 */
@@ -406,6 +467,7 @@ export const useSetConversationMembership = (
             method: 'PUT',
           },
         )
+        conversationRowsOf(queryClient).mergeRows([updated])
         onUpdated?.(updated)
       }
       if (taskId !== undefined) {
@@ -418,6 +480,7 @@ export const useSetConversationMembership = (
             method: 'PUT',
           },
         )
+        conversationRowsOf(queryClient).mergeRows([updated])
         onUpdated?.(updated)
       }
     },
@@ -467,7 +530,10 @@ export const useRenameConversation = () => {
         fallbackErrorMessage: '重命名失败',
         method: 'PATCH',
       }),
-    onSuccess: () => refreshConversationLists(queryClient),
+    onSuccess: (renamed) => {
+      conversationRowsOf(queryClient).mergeRows([renamed])
+      return refreshConversationLists(queryClient)
+    },
   })
 }
 
@@ -481,7 +547,10 @@ export const useSetConversationCompletion = () => {
         fallbackErrorMessage: '标记完成失败',
         method: 'PUT',
       }),
-    onSuccess: () => refreshConversationLists(queryClient),
+    onSuccess: (updated) => {
+      conversationRowsOf(queryClient).mergeRows([updated])
+      return refreshConversationLists(queryClient)
+    },
   })
 }
 
@@ -494,6 +563,10 @@ export const useDeleteConversation = () => {
         fallbackErrorMessage: '删除失败',
         method: 'DELETE',
       }),
-    onSuccess: () => refreshConversationLists(queryClient),
+    onSuccess: (_, conversationId) => {
+      // 删除帧也会到，这里先记墓碑，不等帧。
+      conversationRowsOf(queryClient).applyDeleted(conversationId)
+      return refreshConversationLists(queryClient)
+    },
   })
 }

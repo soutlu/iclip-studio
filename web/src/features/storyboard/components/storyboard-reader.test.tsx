@@ -12,6 +12,7 @@ import type { ShotsDocument } from '../shot-document'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
 import { StoryboardReader } from './storyboard-reader'
+import { sessionEnvelope } from '@/testing/ws'
 
 const CONVERSATION_ID = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
 const PATH = 'video_shot.json'
@@ -774,6 +775,7 @@ describe('StoryboardReader', () => {
 
     act(() => {
       socket.deliver({
+        ...sessionEnvelope(CONVERSATION_ID),
         type: 'event.generation.changed',
         session_id: CONVERSATION_ID,
         payload: {
@@ -827,6 +829,7 @@ describe('StoryboardReader', () => {
 
     act(() => {
       socket.deliver({
+        ...sessionEnvelope(CONVERSATION_ID),
         type: 'event.generation.changed',
         session_id: CONVERSATION_ID,
         payload: {

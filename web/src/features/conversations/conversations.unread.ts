@@ -3,6 +3,7 @@
 import { useParams } from '@tanstack/react-router'
 import { useEffect, useSyncExternalStore } from 'react'
 import type { Conversation, SidebarTopology } from './conversations.api'
+import { useConversationRow } from './conversation-rows'
 
 const STORAGE_KEY = 'cue.conversations.seen-run'
 
@@ -67,8 +68,11 @@ const findRow = (topology: SidebarTopology, conversationId: string): Conversatio
 /** 在拓扑层记录当前对话，避免折叠行未渲染时漏记；运行中记录 null，结束后记录 lastRunId。 */
 export const useRecordOpenedConversation = (topology: SidebarTopology | undefined): void => {
   const openedId = useParams({ select: (params) => params.conversationId, strict: false })
+  // 行取池里的当前值：轮次跑完后 lastRunId 由单行补读送到池里，不等拓扑重拉。
   const opened =
-    openedId === undefined || topology === undefined ? undefined : findRow(topology, openedId)
+    useConversationRow(
+      openedId === undefined || topology === undefined ? undefined : findRow(topology, openedId),
+    ) ?? undefined
   const seenRun = opened === undefined ? undefined : opened.activity.busy ? null : opened.lastRunId
   useEffect(() => {
     if (openedId !== undefined && seenRun !== undefined) recordSeenRun(openedId, seenRun)

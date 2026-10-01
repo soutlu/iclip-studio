@@ -18,6 +18,7 @@ import { renderWithProviders } from '@/testing/render'
 import { DEFAULT_AUDIT_FILTERS, type AuditFilters } from '../audit.api'
 import { useLiveConversations } from '../conversations.live'
 import { ConversationsRoute } from './conversations-route'
+import { sessionEnvelope } from '@/testing/ws'
 
 /** 全局帧订阅在应用里挂在侧栏顶层；页面自己不订，这里照壳的样子在外面挂一次。 */
 function LiveFrames() {
@@ -43,6 +44,7 @@ const workChanged = (
   conversationId: string,
   payload: { busy: boolean; last_turn_reason?: 'completed' | 'failed' | 'aborted' },
 ) => ({
+  ...sessionEnvelope(conversationId),
   type: 'event.session.work_changed',
   session_id: conversationId,
   payload: { pending_interaction: 'none', ...payload },

@@ -1,8 +1,8 @@
-/** 参考 Kimi 客户端，一条连接按 session_id 分派多段对话；改名、活动与生成任务全局帧经 watchSessions 分发。重连按各 agent 的水位与它所属的实时流整表重订。 */
+/** 参考 Kimi 客户端，一条连接按 session_id 分派多段对话；会话事件全局帧（改名、活动、行的新建 / 变化 / 删除、生成任务）经 watchSessions 分发。重连按各 agent 的水位与它所属的实时流整表重订。 */
 
 import { z } from 'zod'
 
-import { zGenerationOut } from '@/shared/api/generated/zod.gen'
+import { zConversationOut, zGenerationOut } from '@/shared/api/generated/zod.gen'
 
 import { transcriptOpsEventSchema, transcriptResetEventSchema } from './vendor/contract/events'
 import type { TranscriptGrade } from './vendor/granularity/grade'
@@ -74,6 +74,27 @@ const generationChangedSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
+/**
+ * 全局帧信封（合同 §5「全局帧」）：属主与这段对话的会话事件水位。
+ * 序号只在同一 epoch 里可比；没有来源对话的生成任务帧不带 seq。
+ */
+const sessionEnvelopeSchema = z.object({
+  owner_user_id: z.string(),
+  epoch: z.string(),
+  seq: z.int(),
+})
+const generationEnvelopeSchema = sessionEnvelopeSchema.extend({ seq: z.int().optional() })
+
+// 整行 ConversationOut 不省略空值，照生成的 schema 解析。
+const rowFrameSchema = sessionEnvelopeSchema.extend({
+  session_id: z.string(),
+  payload: zConversationOut,
+})
+const deletedFrameSchema = sessionEnvelopeSchema.extend({
+  session_id: z.string(),
+  payload: z.object({ session_id: z.string() }),
+})
+
 type GenerationChange = z.infer<typeof generationChangedSchema>
 
 // session_id 位于信封；版本与写入者从重新读取的文件获取。
@@ -94,9 +115,19 @@ export type FsChange = z.infer<typeof fsChangedSchema>['changes'][number]
 const issuesOf = (error: z.ZodError): string[] =>
   error.issues.map((issue) => `${issue.path.map(String).join('.')}: ${issue.message}`)
 
+/** 一段对话的行，形状同 REST 的 ConversationOut。 */
+export type SessionRow = z.output<typeof zConversationOut>
+
+/** 全局帧的来历：这段对话的属主，与这一帧的会话事件水位（同一 epoch 里按 seq 比先后）。 */
+export interface SessionEventMark {
+  ownerUserId: string
+  epoch: string
+  seq: number
+}
+
 /** 全局事件不补发；reconnected 是本地通知，调用方据此刷新断线期间可能变化的列表。 */
 export type SessionUpdate =
-  | { kind: 'title'; conversationId: string; title: string }
+  | { kind: 'title'; conversationId: string; title: string; mark: SessionEventMark }
   | {
       kind: 'activity'
       conversationId: string
@@ -104,10 +135,19 @@ export type SessionUpdate =
       pendingInteraction: 'none' | 'approval' | 'question'
       /** 未提供结束原因时为 null。 */
       lastTurnReason: 'completed' | 'failed' | 'aborted' | null
+      mark: SessionEventMark
     }
   | {
+      /** 行新出现了（新建或分叉）或变了；mark.seq 是这一帧的序号，行内 lastSeq 是写入之前的水位。 */
+      kind: 'created' | 'updated'
+      conversationId: string
+      row: SessionRow
+      mark: SessionEventMark
+    }
+  | { kind: 'deleted'; conversationId: string; mark: SessionEventMark }
+  | {
       kind: 'generation'
-      /** 任务没有来源对话时为 null。 */
+      /** 任务没有来源对话时为 null，mark.seq 也随之为 null。 */
       conversationId: string | null
       jobId: string
       /** 生成种类与业务状态，词表同 GenerationOut。 */
@@ -115,8 +155,14 @@ export type SessionUpdate =
       status: GenerationChange['status']
       /** 调用方自带的坐标，原样转发；由消费方自己解释。 */
       metadata: Record<string, unknown> | null
+      mark: Omit<SessionEventMark, 'seq'> & { seq: number | null }
     }
   | { kind: 'reconnected' }
+
+const markOf = (envelope: { owner_user_id: string; epoch: string }) => ({
+  epoch: envelope.epoch,
+  ownerUserId: envelope.owner_user_id,
+})
 
 export interface ConnectionHealth {
   connected: boolean
@@ -341,17 +387,22 @@ export class TranscriptConnection {
         return
       }
       case 'session.meta.updated': {
+        const envelope = sessionEnvelopeSchema.safeParse(frame)
+        if (!envelope.success) return this.discard(frame.type, issuesOf(envelope.error))
         const parsed = titleSchema.safeParse(frame.payload)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
           conversationId: parsed.data.session_id,
           kind: 'title',
+          mark: { ...markOf(envelope.data), seq: envelope.data.seq },
           title: parsed.data.title,
         })
         return
       }
       case 'event.session.work_changed': {
         if (typeof frame.session_id !== 'string') return
+        const envelope = sessionEnvelopeSchema.safeParse(frame)
+        if (!envelope.success) return this.discard(frame.type, issuesOf(envelope.error))
         const parsed = workChangedSchema.safeParse(frame.payload)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
@@ -359,11 +410,36 @@ export class TranscriptConnection {
           conversationId: frame.session_id,
           kind: 'activity',
           lastTurnReason: parsed.data.last_turn_reason ?? null,
+          mark: { ...markOf(envelope.data), seq: envelope.data.seq },
           pendingInteraction: parsed.data.pending_interaction,
         })
         return
       }
+      case 'event.session.created':
+      case 'event.session.updated': {
+        const parsed = rowFrameSchema.safeParse(frame)
+        if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
+        this.announce({
+          conversationId: parsed.data.session_id,
+          kind: frame.type === 'event.session.created' ? 'created' : 'updated',
+          mark: { ...markOf(parsed.data), seq: parsed.data.seq },
+          row: parsed.data.payload,
+        })
+        return
+      }
+      case 'event.session.deleted': {
+        const parsed = deletedFrameSchema.safeParse(frame)
+        if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
+        this.announce({
+          conversationId: parsed.data.session_id,
+          kind: 'deleted',
+          mark: { ...markOf(parsed.data), seq: parsed.data.seq },
+        })
+        return
+      }
       case 'event.generation.changed': {
+        const envelope = generationEnvelopeSchema.safeParse(frame)
+        if (!envelope.success) return this.discard(frame.type, issuesOf(envelope.error))
         const parsed = generationChangedSchema.safeParse(frame.payload)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
@@ -371,6 +447,7 @@ export class TranscriptConnection {
           jobId: parsed.data.id,
           jobKind: parsed.data.kind,
           kind: 'generation',
+          mark: { ...markOf(envelope.data), seq: envelope.data.seq ?? null },
           metadata: parsed.data.metadata ?? null,
           status: parsed.data.status,
         })

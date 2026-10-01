@@ -15,6 +15,8 @@ import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { Toaster } from '@/shared/ui/toast'
 import { SidebarConversations } from './-sidebar-conversations'
+import { mockConversations } from '@/testing/mocks/conversations'
+import { sessionEnvelope } from '@/testing/ws'
 
 /** 全局帧订阅在应用里挂在 AppSidebar 顶层；这里照样在对话区外面挂一次，帧才进得了缓存。 */
 function LiveFrames() {
@@ -33,7 +35,10 @@ const seedConversations = (count: number, collectionId: string | null = null) =>
     return conversation
   })
 
-/** session_id 位于信封；运行帧省略 last_turn_reason。 */
+/**
+ * session_id 位于信封；运行帧省略 last_turn_reason。
+ * 服务端提交之后才发帧，单行补读读到的就是帧说的事实：这里同步改 mock 里那一行（开跑时照 touch_run 抹掉收尾标记）。
+ */
 const workChanged = (
   conversationId: string,
   payload: {
@@ -41,7 +46,29 @@ const workChanged = (
     last_turn_reason?: 'completed' | 'failed' | 'aborted'
     pending_interaction?: 'none' | 'approval' | 'question'
   },
+) => {
+  const row = mockConversations.find((one) => one.id === conversationId)
+  if (row !== undefined) {
+    row.activity = {
+      ...row.activity,
+      busy: payload.busy,
+      lastTurnReason: payload.last_turn_reason ?? row.activity.lastTurnReason,
+      pendingInteraction: payload.pending_interaction ?? 'none',
+    }
+    if (payload.busy) row.completedAt = null
+  }
+  return workFrame(conversationId, payload)
+}
+
+const workFrame = (
+  conversationId: string,
+  payload: {
+    busy: boolean
+    last_turn_reason?: 'completed' | 'failed' | 'aborted'
+    pending_interaction?: 'none' | 'approval' | 'question'
+  },
 ) => ({
+  ...sessionEnvelope(conversationId),
   type: 'event.session.work_changed',
   session_id: conversationId,
   payload: { pending_interaction: 'none', ...payload },
@@ -555,6 +582,7 @@ describe('SidebarConversations', () => {
     await screen.findByText('第0段')
 
     socket.deliver({
+      ...sessionEnvelope(conversation?.id ?? ''),
       type: 'session.meta.updated',
       payload: { session_id: conversation?.id ?? '', title: '夜景延时素材生成' },
     })
@@ -588,6 +616,7 @@ describe('SidebarConversations', () => {
 
     if (conversation !== undefined) conversation.activity.videoGeneration = 'running'
     socket.deliver({
+      ...sessionEnvelope(id),
       type: 'event.generation.changed',
       session_id: id,
       payload: {
@@ -601,6 +630,7 @@ describe('SidebarConversations', () => {
 
     if (conversation !== undefined) conversation.activity.videoGeneration = 'none'
     socket.deliver({
+      ...sessionEnvelope(id),
       type: 'event.generation.changed',
       session_id: id,
       payload: {
@@ -721,6 +751,64 @@ describe('SidebarConversations', () => {
     await user.click(screen.getByRole('button', { name: '夏季亚麻系列 (1)' }))
     expect(await screen.findByText('第0段')).toBeVisible()
     expect(await screen.findByLabelText('未读')).toBeVisible()
+  })
+
+  it('另一个窗口新建的对话当场出现，删掉的当场消失', async () => {
+    seedConversations(1)
+    const { socket } = await render()
+    await screen.findByText('第0段')
+
+    const created = addMockConversation('另一个窗口建的')
+    socket.deliver({
+      ...sessionEnvelope(created.id),
+      type: 'event.session.created',
+      session_id: created.id,
+      payload: { ...created },
+    })
+    expect(await screen.findByRole('link', { name: '另一个窗口建的' })).toBeVisible()
+
+    // 服务端已落墓碑；帧一到行就从视图里消失，不等重拉。
+    created.deletedAt = new Date().toISOString()
+    socket.deliver({
+      ...sessionEnvelope(created.id),
+      type: 'event.session.deleted',
+      session_id: created.id,
+      payload: { session_id: created.id },
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: '另一个窗口建的' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('link', { name: '第0段' })).toBeVisible()
+  })
+
+  it('别人的对话跑完了：自己侧栏不重拉，已展开的「更多」也不收起', async () => {
+    seedConversations(21)
+    const theirs = addMockConversation('别人的', undefined, '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0009')
+    const reads = { topology: 0 }
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname === '/api/conversations') reads.topology += 1
+    })
+    const { socket, user } = await render()
+    await user.click(await screen.findByRole('button', { name: '展开显示更多对话' }))
+    await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21))
+    const before = reads.topology
+
+    socket.deliver(workFrame(theirs.id, { busy: false, last_turn_reason: 'completed' }))
+    socket.deliver({
+      ...sessionEnvelope(theirs.id),
+      type: 'event.generation.changed',
+      session_id: theirs.id,
+      payload: {
+        id: crypto.randomUUID(),
+        kind: 'video',
+        operation: 'generate',
+        status: 'submitted',
+      },
+    })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+    expect(reads.topology).toBe(before)
+    expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21)
   })
 
   it('「展开显示」接上来的那一行收到帧也跟着转圈', async () => {

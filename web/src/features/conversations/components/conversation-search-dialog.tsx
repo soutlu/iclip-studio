@@ -5,6 +5,7 @@ import { errorMessageOf } from '@/shared/api/client'
 import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { Input } from '@/shared/ui/field'
 import { conversationsQueryKeys, searchConversations } from '../conversations.api'
+import { conversationRowsOf, useConversationRows } from '../conversation-rows'
 
 type ConversationSearchDialogProps = {
   onOpenChange: (open: boolean) => void
@@ -55,7 +56,8 @@ function SearchPanel({
 
   const results = useQuery({
     enabled: submitted.length > 0,
-    queryFn: ({ signal }) => searchConversations(submitted, signal),
+    queryFn: async ({ client, signal }) =>
+      conversationRowsOf(client).mergeRows(await searchConversations(submitted, signal)),
     queryKey: conversationsQueryKeys.search(submitted),
   })
 
@@ -90,11 +92,23 @@ function SearchResults({ keyword, onNavigate, query }: SearchResultsProps) {
   if (query.isError) {
     return <Hint>{errorMessageOf(query.error, '搜索对话失败')}</Hint>
   }
-  if (query.data.length === 0) return <Hint>没有匹配的对话</Hint>
+  return <SearchRows onNavigate={onNavigate} rows={query.data} />
+}
+
+/** 结果的成员来自这次搜索，行取池里的当前值：改名、删除在弹窗开着时也跟上。 */
+function SearchRows({
+  onNavigate,
+  rows,
+}: {
+  onNavigate: () => void
+  rows: Awaited<ReturnType<typeof searchConversations>>
+}) {
+  const shown = useConversationRows(rows)
+  if (shown.length === 0) return <Hint>没有匹配的对话</Hint>
 
   return (
     <ul aria-label="搜索结果" className="flex flex-col gap-0.5">
-      {query.data.map((conversation) => (
+      {shown.map((conversation) => (
         <li key={conversation.id}>
           <Link
             className="block ui-state truncate rounded-sm px-2 py-2 text-body text-on-surface ui-focus"

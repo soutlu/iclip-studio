@@ -7,6 +7,7 @@ import { renderWithProviders } from '@/testing/render'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
 import { ConversationVideos } from './conversation-videos'
+import { sessionEnvelope } from '@/testing/ws'
 
 const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
 
@@ -179,6 +180,7 @@ describe('ConversationVideos', () => {
     )
     await screen.findByLabelText('镜头组 1视频')
     const changed = (sessionId: string) => ({
+      ...sessionEnvelope(sessionId),
       type: 'event.generation.changed',
       session_id: sessionId,
       payload: {

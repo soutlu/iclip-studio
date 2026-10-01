@@ -1,4 +1,9 @@
-/** 会话查询缓存是列表事实源；全局帧同时更新拓扑、额外分页、搜索结果与全部对话页里的匹配行。 */
+/**
+ * 全局帧落到对话行池，照 Kimi 的事件 reducer：同一拍到达的帧合批落地，行的变化只改池，
+ * 成员与计数要变时才重拉对应列表，帧上没有的字段按 id 补读单行。
+ *
+ * 帧带属主（合同 §5「全局帧」）：别人的对话只牵动全部对话页，不动自己的侧栏。
+ */
 
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { use, useEffect } from 'react'
@@ -8,9 +13,9 @@ import { TranscriptConnectionContext } from '@/shared/transcript/transcript-cont
 import {
   conversationsQueryKeys,
   refreshConversationLists,
-  type Conversation,
+  refreshConversationRow,
 } from './conversations.api'
-import { findConversationRow, patchConversationRows, type RowPatch } from './conversations.patch'
+import { conversationRowsOf, type ConversationRowStore } from './conversation-rows'
 
 /**
  * 全部对话页的重拉窗口。
@@ -19,6 +24,23 @@ import { findConversationRow, patchConversationRows, type RowPatch } from './con
  * 窗口尾随而不是每帧重置，持续的帧流下也能按时重拉一次。
  */
 const AUDIT_REFRESH_WINDOW_MS = 1000
+
+/** 一批帧落地后要做的事，同类合并，一批只做一次。 */
+interface Effects {
+  /** 自己侧栏的成员或计数变了：丢掉额外分页、重拉拓扑。 */
+  sidebar: boolean
+  /** 只有按状态筛选的侧栏与额外分页可能换成员。 */
+  filtered: boolean
+  audit: boolean
+  rows: Set<string>
+}
+
+const noEffects = (): Effects => ({
+  audit: false,
+  filtered: false,
+  rows: new Set(),
+  sidebar: false,
+})
 
 /** 在侧栏顶层订阅一次全局会话更新；治理者还会收到别人对话的帧。 */
 export const useLiveConversations = (enabled = true): void => {
@@ -29,6 +51,7 @@ export const useLiveConversations = (enabled = true): void => {
 
   useEffect(() => {
     if (!enabled) return
+    const rows = conversationRowsOf(queryClient)
 
     let auditTimer: ReturnType<typeof setTimeout> | undefined
     // 三条路共用一个出口：立刻失效与窗口到期的失效撞在一起会互相取消已发出的重拉。
@@ -40,62 +63,20 @@ export const useLiveConversations = (enabled = true): void => {
       }, AUDIT_REFRESH_WINDOW_MS)
     }
 
+    let queued: SessionUpdate[] = []
+    const flush = () => {
+      const batch = queued
+      queued = []
+      const effects = noEffects()
+      rows.batch(() => {
+        for (const update of batch) reduce(rows, update, userId, effects)
+      })
+      run(queryClient, effects, refreshAuditSoon)
+    }
+
     const stop = connection.watchSessions((update) => {
-      if (update.kind === 'reconnected') {
-        // 全局帧不支持补发；重连后丢弃额外分页并刷新拓扑与全部对话页，恢复一致状态。
-        void refreshConversationLists(queryClient, 'sidebar')
-        refreshAuditSoon()
-        return
-      }
-      if (update.kind === 'generation') {
-        // 别人的对话不在自己的侧栏里，不为它改行也不为它重拉。
-        const conversationId = update.conversationId
-        if (conversationId === null || ownedByOther(queryClient, conversationId, userId)) return
-
-        // 对话里还有出片任务在动就谈不上收尾，与后端受理时抹掉标记同步。
-        queryClient.setQueriesData({ queryKey: conversationsQueryKeys.all }, (data: unknown) =>
-          patchConversationRows(data, conversationId, { completedAt: null }),
-        )
-
-        // 帧上只有单条任务的状态，行上要的是这段对话的视频汇总，算不出来就重拉；图片与切段不上侧栏。
-        if (update.jobKind !== 'video') return
-        // 与收场重拉同一套：丢掉额外分页，只重拉拓扑与全部对话页，不让每个已展开分页各自再请求一次。
-        void refreshConversationLists(queryClient, 'sidebar')
-        refreshAuditSoon()
-        return
-      }
-
-      // 补丁会盖掉行上的旧值，先按缓存里的行判断这一帧值不值得重拉。
-      if (update.kind === 'activity' && needsAuditRefresh(queryClient, update)) refreshAuditSoon()
-
-      const patch: RowPatch =
-        update.kind === 'title'
-          ? { title: update.title }
-          : {
-              activity: {
-                busy: update.busy,
-                lastTurnReason: update.lastTurnReason,
-                pendingInteraction: update.pendingInteraction,
-              },
-            }
-      queryClient.setQueriesData({ queryKey: conversationsQueryKeys.all }, (data: unknown) =>
-        patchConversationRows(data, update.conversationId, patch),
-      )
-
-      if (update.kind !== 'activity') return
-
-      // 别人的对话不在自己的侧栏里，不为它重拉拓扑。
-      if (ownedByOther(queryClient, update.conversationId, userId)) return
-
-      if (!update.busy && update.lastTurnReason === 'completed') {
-        // 运行完成后重拉拓扑以获取 lastRunId，供未读标记比较；额外分页随之清除。
-        void refreshConversationLists(queryClient, 'sidebar')
-        return
-      }
-
-      // 状态变化可能改变筛选归属，仅让服务端重算非 all 列表。
-      queryClient.removeQueries(conversationsQueryKeys.filteredLists('more'))
-      void queryClient.invalidateQueries(conversationsQueryKeys.filteredLists('sidebar'))
+      if (queued.length === 0) queueMicrotask(flush)
+      queued.push(update)
     })
 
     return () => {
@@ -105,41 +86,98 @@ export const useLiveConversations = (enabled = true): void => {
   }, [connection, enabled, queryClient, userId])
 }
 
-/**
- * 全部对话页的筛选归属与两个总数都由服务端重算，值得为这几种帧重拉：
- * 这段对话在 audit 缓存里还不存在（新对话靠重拉出现）、忙闲相对缓存翻转了、或这一帧是收尾。
- * 只有待办变化的帧行上补丁就够了。
- */
-const needsAuditRefresh = (
-  queryClient: QueryClient,
-  update: Extract<SessionUpdate, { kind: 'activity' }>,
-): boolean => {
-  const cached = auditRowOf(queryClient, update.conversationId)
-  if (cached === undefined) return true
-  if (cached.activity.busy !== update.busy) return true
-  return !update.busy && update.lastTurnReason === 'completed'
-}
-
-/** 只在全部对话页的缓存里找；侧栏有、这里没有，正是要靠重拉才出现的那种。 */
-const auditRowOf = (queryClient: QueryClient, conversationId: string): Conversation | undefined => {
-  for (const [, data] of queryClient.getQueriesData({
-    queryKey: conversationsQueryKeys.auditAll,
-  })) {
-    const row = findConversationRow(data, conversationId)
-    if (row !== undefined) return row
-  }
-  return undefined
-}
-
-/** 会话缓存里认得出这段对话、且属主不是当前用户；哪份缓存都没有它时按自己的对话处理。 */
-const ownedByOther = (
-  queryClient: QueryClient,
-  conversationId: string,
+/** 一帧改池，并记下要做的事。 */
+const reduce = (
+  rows: ConversationRowStore,
+  update: SessionUpdate,
   userId: string | null,
-): boolean => {
-  for (const [, data] of queryClient.getQueriesData({ queryKey: conversationsQueryKeys.all })) {
-    const row = findConversationRow(data, conversationId)
-    if (row !== undefined) return row.ownerUserId !== userId
+  effects: Effects,
+): void => {
+  if (update.kind === 'reconnected') {
+    // 全局帧不补发；重连后整份重拉，按水位规则合进池里（ADR-0004 第 7 条）。
+    effects.sidebar = true
+    effects.audit = true
+    return
   }
-  return false
+  const mine = update.mark.ownerUserId === userId
+
+  switch (update.kind) {
+    case 'title':
+      rows.applyTitle(update.conversationId, update.title, update.mark)
+      return
+
+    case 'activity': {
+      const before = rows.get(update.conversationId)
+      // 全部对话页的筛选归属与两个总数由服务端重算：行还不在、忙闲翻转、或这一帧是收尾时才值得重拉。
+      if (
+        before === undefined ||
+        before.activity.busy !== update.busy ||
+        (!update.busy && update.lastTurnReason === 'completed')
+      ) {
+        effects.audit = true
+      }
+      rows.applyActivity(
+        update.conversationId,
+        {
+          busy: update.busy,
+          lastTurnReason: update.lastTurnReason,
+          pendingInteraction: update.pendingInteraction,
+        },
+        update.mark,
+      )
+      if (!mine) return
+      // 照 Kimi：轮次状态变了按 id 补读一行（lastRunId 等帧上没有），不整份重拉侧栏。
+      effects.rows.add(update.conversationId)
+      effects.filtered = true
+      return
+    }
+
+    case 'created':
+      rows.applyRow(update.row, update.mark)
+      effects.audit = true
+      if (mine) effects.sidebar = true
+      return
+
+    case 'updated': {
+      const before = rows.get(update.conversationId)
+      rows.applyRow(update.row, update.mark)
+      const membership =
+        before === undefined ||
+        before.collectionId !== update.row.collectionId ||
+        before.taskId !== update.row.taskId
+      const completion = before?.completedAt !== update.row.completedAt
+      if (membership || completion) effects.audit = true
+      if (!mine) return
+      // 合集换了，拓扑里哪一组有它就变了；只换了收尾标记，变的只是按状态筛选的那几份。
+      if (membership) effects.sidebar = true
+      else if (completion) effects.filtered = true
+      return
+    }
+
+    case 'deleted':
+      rows.applyDeleted(update.conversationId)
+      effects.audit = true
+      if (mine) effects.sidebar = true
+      return
+
+    case 'generation': {
+      const conversationId = update.conversationId
+      // 图片与切段不上行；收尾标记的抹除由服务端的 updated 帧送来。
+      if (conversationId === null || update.jobKind !== 'video') return
+      // 帧上只有单条任务的状态，行上要的是视频汇总：补读这一行。别人的对话只在池里已有这一行时补。
+      if (mine || rows.get(conversationId) !== undefined) effects.rows.add(conversationId)
+      return
+    }
+  }
+}
+
+const run = (queryClient: QueryClient, effects: Effects, refreshAuditSoon: () => void): void => {
+  if (effects.sidebar) void refreshConversationLists(queryClient, 'sidebar')
+  else if (effects.filtered) {
+    queryClient.removeQueries(conversationsQueryKeys.filteredLists('more'))
+    void queryClient.invalidateQueries(conversationsQueryKeys.filteredLists('sidebar'))
+  }
+  if (effects.audit) refreshAuditSoon()
+  for (const conversationId of effects.rows)
+    void refreshConversationRow(queryClient, conversationId)
 }

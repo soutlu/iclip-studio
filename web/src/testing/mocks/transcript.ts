@@ -1,7 +1,7 @@
 /** MSW 同时模拟 REST 历史、WebSocket 批次和消息提交；单测可覆盖端点以固定场景。 */
 
 import { http, HttpResponse, ws } from 'msw'
-import { mockConversationOwner } from './conversations'
+import { mockConversationOwner, mockSessionEnvelope } from './conversations'
 import { SHOTS_MOCK_PATH, touchMockShots, watchMockGenerations } from './workspace'
 
 const HISTORY_TURNS = 2
@@ -582,6 +582,7 @@ export const transcriptHandlers = [
         conversation.lastRunId = crypto.randomUUID()
         client.send(
           JSON.stringify({
+            ...mockSessionEnvelope(conversation.id),
             payload: { busy: false, last_turn_reason: 'completed', pending_interaction: 'none' },
             session_id: conversation.id,
             type: 'event.session.work_changed',
@@ -742,6 +743,7 @@ export const transcriptHandlers = [
     const unwatchGenerations = watchMockGenerations(({ conversationId, ...payload }) => {
       client.send(
         JSON.stringify({
+          ...mockSessionEnvelope(conversationId),
           payload,
           session_id: conversationId,
           type: 'event.generation.changed',
