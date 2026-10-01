@@ -76,7 +76,7 @@ export function CueUserMenu({
               USER_AVATAR_CLASS,
               avatarUrl
                 ? 'border border-border bg-top-layer text-on-surface'
-                : 'bg-primary-container text-on-primary-container',
+                : 'bg-surface-container-high text-on-surface-variant',
             )}
           >
             {avatarUrl ? (

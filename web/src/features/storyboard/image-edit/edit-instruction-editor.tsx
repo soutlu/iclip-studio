@@ -86,15 +86,19 @@ class ReferenceView implements NodeView {
     this.dom.setAttribute('aria-label', label)
     this.dom.setAttribute('aria-disabled', String(item === undefined))
     this.dom.dataset['referenceId'] = this.reference.id
-    this.dom.className = cn(
-      'mx-1 my-0.5 inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-sm border px-2 py-1 align-middle text-body leading-normal ui-focus select-none',
-      isAnnotation
-        ? 'border-warning/40 bg-warning-container text-on-warning-container'
-        : 'border-primary/30 bg-primary-container text-on-primary-container',
-      item === undefined && 'border-error bg-error-container text-on-error-container',
-      isAnnotation && props.selectedAnnotationId === this.reference.id && 'ring-1 ring-warning',
+    this.dom.toggleAttribute(
+      'data-selected',
+      isAnnotation && props.selectedAnnotationId === this.reference.id,
     )
+    this.dom.className =
+      'image-edit-reference-chip mx-1 my-0.5 inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 align-middle text-body leading-normal ui-focus select-none'
     this.dom.replaceChildren()
+    if (isAnnotation && item !== undefined) {
+      const marker = document.createElement('span')
+      marker.className = 'image-edit-reference-chip-marker'
+      marker.setAttribute('aria-hidden', 'true')
+      this.dom.append(marker)
+    }
     if (item?.url !== undefined) {
       const image = document.createElement('img')
       image.src = item.url

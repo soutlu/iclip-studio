@@ -375,6 +375,42 @@ p.image-edit-photo {
   margin-top: 8px;
 }
 
+/* 修改要求里的引用芯片：与附件芯片同一套中性浮起——顶层白面、半像素发丝圈加一层轻影，表面不着色。
+   标注用一枚琥珀小圆点和参考图（带缩略图）区分；选中的标注换 1px 墨色圈。
+   圈画在 box-shadow 上，outline 留给 ui-focus 的键盘焦点环；失效引用保留错误色，属于状态。 */
+.image-edit-reference-chip {
+  background-color: var(--color-top-layer);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-xs);
+  color: var(--color-on-surface);
+  transition: background-image var(--dur-s) var(--ease);
+}
+.image-edit-reference-chip:hover {
+  background-image: linear-gradient(var(--color-state-hover), var(--color-state-hover));
+}
+.image-edit-reference-chip[data-selected] {
+  box-shadow:
+    0 0 0 1px var(--color-on-surface),
+    var(--shadow-xs);
+}
+.image-edit-reference-chip[aria-disabled='true'] {
+  background-color: var(--color-error-container);
+  box-shadow: 0 0 0 0.5px var(--color-error);
+  color: var(--color-on-error-container);
+}
+.image-edit-reference-chip > img {
+  outline: 0.5px solid var(--color-hairline);
+  outline-offset: -0.5px;
+}
+.image-edit-reference-chip-marker {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-warning);
+}
+
 .image-edit-canvas {
   position: relative;
   display: flex;

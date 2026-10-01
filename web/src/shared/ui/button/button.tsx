@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority'
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 
@@ -29,6 +29,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
     children: ReactNode
     leadingIcon?: Parameters<typeof Icon>[0]['name']
     loading?: boolean
+    ref?: Ref<HTMLButtonElement> | undefined
     trailingIcon?: Parameters<typeof Icon>[0]['name']
   }
 
