@@ -12,7 +12,13 @@ from typing import Protocol, cast
 
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai_harness.compaction import estimate_context_tokens
-from pydantic_ai_harness.step_persistence import ContinuableSnapshot, StepEvent, StepStore
+from pydantic_ai_harness.step_persistence import (
+    ContinuableSnapshot,
+    RunRecord,
+    StepEvent,
+    StepStore,
+    ToolEffectRecord,
+)
 
 from iclip.harness.agents import SubAgentProfile
 from iclip.harness.job_status import JobStatus
@@ -43,12 +49,27 @@ from iclip.platform.transcript.ops import (
 class ConversationSnapshots(StepStore, Protocol):
     """历史读取与截断所需的存储协议；截断保存为新快照，保留旧记录。
 
-    在官方 StepStore 之上只多一个按对话取快照的入口，其余（运行记录、事件、工具账本）照用协议本身。
+    在官方 StepStore 之上多一个按对话取快照的入口，和三个批量读：重建一段历史要看每个运行的事件、
+    下属运行与派发账本，逐个运行去查会让查询条数随运行数增长，批量读让它固定。
     """
 
     async def latest_conversation_snapshot(
         self, *, conversation_id: str, include_interrupted: bool = False
     ) -> ContinuableSnapshot | None: ...
+
+    async def list_events_for_runs(self, run_ids: Sequence[str]) -> Mapping[str, list[StepEvent]]:
+        """多个运行的事件，各自按 seq 升序；问到的运行都在结果里，没有事件的是空列表。"""
+        ...
+
+    async def list_child_runs(self, parent_run_ids: Sequence[str]) -> Mapping[str, list[RunRecord]]:
+        """按父运行分组的下属运行，组内按开跑时刻；问到的父运行都在结果里，没有下属的是空列表。"""
+        ...
+
+    async def get_tool_effects(
+        self, keys: Sequence[tuple[str, str]]
+    ) -> Mapping[tuple[str, str], ToolEffectRecord]:
+        """按 ``(run_id, tool_call_id)`` 取工具账本；没有记录的键不在结果里。"""
+        ...
 
 
 class PromptRunsSource(Protocol):
@@ -93,11 +114,12 @@ class TranscriptHistory:
         )
         if snapshot is None:
             return TranscriptHistoryView(turns=(), context_tokens=None)
+        run_ids = run_ids_from_messages(snapshot.messages)
+        events_of = await self.store.list_events_for_runs(run_ids)
         states: dict[str, TurnState] = {}
         errors: dict[str, str | None] = {}
-        run_ids = run_ids_from_messages(snapshot.messages)
         for run_id in run_ids:
-            events = await self.store.list_events(run_id=run_id)
+            events = events_of[run_id]
             states[run_id] = run_state_from_events(events)
             # 取消不是错误：实时侧的 cancelled 轮不带 error，这里也不把 CancelledError 当错误文本。
             errors[run_id] = (
@@ -106,12 +128,7 @@ class TranscriptHistory:
         of_run = await self.prompt_runs.prompt_of_runs(conversation_id)
         status_of_run = await self.prompt_runs.prompt_status_of_runs(conversation_id)
         steered = await self.prompt_runs.steered_prompts(conversation_id)
-        subagent_of_call = await self._subagent_of_call(snapshot.messages)
-        tasks = tasks_from_messages(
-            snapshot.messages,
-            subagent_of_call=subagent_of_call,
-            child_runs=await self._child_runs(run_ids, states),
-        )
+        subagent_of_call, tasks = await self._delegations(snapshot.messages, run_ids, events_of)
         return TranscriptHistoryView(
             turns=turns_from_messages(
                 snapshot.messages,
@@ -133,6 +150,41 @@ class TranscriptHistory:
             tasks=tasks,
             agents=agents_from_tasks(tasks),
         )
+
+    async def read_tasks(self, conversation_id: str) -> tuple[TranscriptTask, ...]:
+        """本对话派出过的子代理任务，与 ``read`` 给的 ``tasks`` 相同；只推导任务，不重建轮次。
+
+        子代理页取名册用：只要快照、派发账本与下属运行，不必为它把主流整段重建一遍。
+        """
+
+        snapshot = await self.store.latest_conversation_snapshot(
+            conversation_id=conversation_id, include_interrupted=True
+        )
+        if snapshot is None:
+            return ()
+        run_ids = run_ids_from_messages(snapshot.messages)
+        _, tasks = await self._delegations(snapshot.messages, run_ids, {})
+        return tasks
+
+    async def _delegations(
+        self,
+        messages: Sequence[ModelMessage],
+        run_ids: Sequence[str],
+        parent_events: Mapping[str, Sequence[StepEvent]],
+    ) -> tuple[dict[str, str], tuple[TranscriptTask, ...]]:
+        """派发调用对上的子运行 id 与本对话的子代理任务，``read`` 与 ``read_tasks`` 共用。
+
+        ``parent_events`` 是调用方已查到的父运行事件；没给的父运行，只有派过下属的才要看终态，
+        在这里与下属运行的事件合成一次查询补上。
+        """
+
+        subagent_of_call = await self._subagent_of_call(messages)
+        tasks = tasks_from_messages(
+            messages,
+            subagent_of_call=subagent_of_call,
+            child_runs=await self._child_runs(run_ids, parent_events),
+        )
+        return subagent_of_call, tasks
 
     async def read_child(self, child_run_id: str) -> TranscriptHistoryView:
         """按子运行 id 重建子代理那条流；一次派发就是它的 t1。
@@ -171,37 +223,50 @@ class TranscriptHistory:
 
         if self.delegate_tool is None:
             return {}
+        calls = [
+            (message.run_id, part.tool_call_id)
+            for message in messages
+            if isinstance(message, ModelResponse) and message.run_id is not None
+            for part in message.parts
+            if isinstance(part, ToolCallPart) and part.tool_name == self.delegate_tool
+        ]
+        effects = await self.store.get_tool_effects(calls)
         found: dict[str, str] = {}
-        for message in messages:
-            if not isinstance(message, ModelResponse) or message.run_id is None:
-                continue
-            for part in message.parts:
-                if not isinstance(part, ToolCallPart) or part.tool_name != self.delegate_tool:
-                    continue
-                effect = await self.store.get_tool_effect(
-                    run_id=message.run_id, tool_call_id=part.tool_call_id
-                )
-                if effect is not None and effect.effect_summary is not None:
-                    found[part.tool_call_id] = effect.effect_summary
+        for key in calls:
+            effect = effects.get(key)
+            if effect is not None and effect.effect_summary is not None:
+                found[key[1]] = effect.effect_summary
         return found
 
     async def _child_runs(
-        self, run_ids: Sequence[str], parent_states: Mapping[str, TurnState]
+        self, run_ids: Sequence[str], parent_events: Mapping[str, Sequence[StepEvent]]
     ) -> tuple[ChildRun, ...]:
         """按运行血缘取本对话每个 run 的下属运行；终态与结束时间来自它们自己的事件。
 
         父运行被停止时子运行收到的是 asyncio 取消，官方不会给它写终态事件；
         这种没有自己终态的子运行随父运行算 cancelled，与实时侧的 killed 对上。
+        下属运行一次查完，它们的事件与 ``parent_events`` 里缺的父运行事件再一次查完。
         """
 
         if self.delegate_tool is None:
             return ()
+        children_of = await self.store.list_child_runs(run_ids)
+        missing = [
+            run_id for run_id in run_ids if children_of[run_id] and run_id not in parent_events
+        ]
+        child_ids = [record.run_id for run_id in run_ids for record in children_of[run_id]]
+        fetched = await self.store.list_events_for_runs([*missing, *child_ids])
         children: list[ChildRun] = []
         for run_id in run_ids:
-            for record in await self.store.list_runs(parent_run_id=run_id):
-                events = await self.store.list_events(run_id=record.run_id)
+            if not children_of[run_id]:
+                continue
+            parent_state = run_state_from_events(
+                parent_events[run_id] if run_id in parent_events else fetched[run_id]
+            )
+            for record in children_of[run_id]:
+                events = fetched[record.run_id]
                 state = run_state_from_events(events)
-                if not _ended(events) and parent_states.get(run_id) == "cancelled":
+                if not _ended(events) and parent_state == "cancelled":
                     state = "cancelled"
                 # 子运行的 metadata 就是装配时写入的档案；按 get 读，缺键得 None。
                 profile = cast("SubAgentProfile", record.metadata)

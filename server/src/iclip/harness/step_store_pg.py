@@ -6,6 +6,7 @@ messages/metadata 使用 JSON 文本，避免 jsonb 拒绝 \\u0000；读取时�
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Final, Literal, cast, get_args
 
@@ -42,6 +43,7 @@ from sqlalchemy import (
     delete,
     select,
     text,
+    tuple_,
     union,
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -294,7 +296,8 @@ class PgStepStore:
         parent_run_id: str | None = None,
         conversation_id: str | None = None,
     ) -> list[RunRecord]:
-        stmt = select(runs_table).order_by(runs_table.c.started_at.asc())
+        # 同刻开跑的按 run_id 定序，与批量读同一次序：下属运行的 id 由框架铸成 UUID7，按它就是创建先后。
+        stmt = select(runs_table).order_by(runs_table.c.started_at.asc(), runs_table.c.run_id.asc())
         if parent_run_id is not None:
             stmt = stmt.where(runs_table.c.parent_run_id == parent_run_id)
         if conversation_id is not None:
@@ -302,6 +305,27 @@ class PgStepStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [self._run_from_row(row) for row in rows]
+
+    async def list_child_runs(self, parent_run_ids: Sequence[str]) -> Mapping[str, list[RunRecord]]:
+        """一次查回多个父运行的下属运行，组内次序同 ``list_runs``（按开跑时刻，同刻按 run_id）。
+
+        每个问到的父运行都在结果里，没有子运行的是空列表。"""
+
+        wanted = list(dict.fromkeys(parent_run_ids))
+        found: dict[str, list[RunRecord]] = {run_id: [] for run_id in wanted}
+        if not wanted:
+            return found
+        stmt = (
+            select(runs_table)
+            .where(runs_table.c.parent_run_id.in_(wanted))
+            .order_by(runs_table.c.started_at.asc(), runs_table.c.run_id.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        for row in rows:
+            record = self._run_from_row(row)
+            found[cast("str", record.parent_run_id)].append(record)
+        return found
 
     @staticmethod
     def _run_from_row(row: object) -> RunRecord:
@@ -350,23 +374,46 @@ class PgStepStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [
-            StepEvent(
-                run_id=row.run_id,
-                kind=_literal(row.kind, _EVENT_KINDS, "event kind"),
-                step_index=row.step_index,
-                timestamp=row.timestamp,
-                conversation_id=row.conversation_id,
-                parent_run_id=row.parent_run_id,
-                agent_name=row.agent_name,
-                tool_call_id=row.tool_call_id,
-                tool_name=row.tool_name,
-                error=row.error,
-                metadata=_str_str_dict(json.loads(row.metadata)),
-                idempotency_key=row.idempotency_key,
-            )
-            for row in rows
-        ]
+        return [self._event_from_row(row) for row in rows]
+
+    async def list_events_for_runs(self, run_ids: Sequence[str]) -> Mapping[str, list[StepEvent]]:
+        """一次查回多个运行的事件，每个运行内按 seq 升序，同 ``list_events``。
+
+        每个问到的运行都在结果里，没有事件的是空列表。"""
+
+        wanted = list(dict.fromkeys(run_ids))
+        found: dict[str, list[StepEvent]] = {run_id: [] for run_id in wanted}
+        if not wanted:
+            return found
+        stmt = (
+            select(events_table)
+            .where(events_table.c.run_id.in_(wanted))
+            .order_by(events_table.c.run_id.asc(), events_table.c.seq.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        for row in rows:
+            event = self._event_from_row(row)
+            found[event.run_id].append(event)
+        return found
+
+    @staticmethod
+    def _event_from_row(row: object) -> StepEvent:
+        r = cast("_EventRow", row)
+        return StepEvent(
+            run_id=r.run_id,
+            kind=_literal(r.kind, _EVENT_KINDS, "event kind"),
+            step_index=r.step_index,
+            timestamp=r.timestamp,
+            conversation_id=r.conversation_id,
+            parent_run_id=r.parent_run_id,
+            agent_name=r.agent_name,
+            tool_call_id=r.tool_call_id,
+            tool_name=r.tool_name,
+            error=r.error,
+            metadata=_str_str_dict(json.loads(r.metadata)),
+            idempotency_key=r.idempotency_key,
+        )
 
     # -- snapshots ------------------------------------------------------------
 
@@ -536,6 +583,22 @@ class PgStepStore:
             return None
         return self._tool_effect_from_row(row)
 
+    async def get_tool_effects(
+        self, keys: Sequence[tuple[str, str]]
+    ) -> Mapping[tuple[str, str], ToolEffectRecord]:
+        """按 ``(run_id, tool_call_id)`` 一次查回多条工具账本；没有记录的键不出现在结果里。"""
+
+        wanted = list(dict.fromkeys(keys))
+        if not wanted:
+            return {}
+        stmt = select(tool_effects_table).where(
+            tuple_(tool_effects_table.c.run_id, tool_effects_table.c.tool_call_id).in_(wanted)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        records = (self._tool_effect_from_row(row) for row in rows)
+        return {(record.run_id, record.tool_call_id): record for record in records}
+
     async def list_unresolved_tool_effects(self, *, run_id: str) -> list[ToolEffectRecord]:
         stmt = select(tool_effects_table).where(
             tool_effects_table.c.run_id == run_id,
@@ -570,6 +633,23 @@ class _RunRow:
     metadata: str
     started_at: datetime
     registration_id: str | None
+
+
+class _EventRow:
+    """事件行的结构声明（仅供类型检查，运行时是 SQLAlchemy Row）。"""
+
+    run_id: str
+    kind: str
+    step_index: int
+    timestamp: datetime
+    conversation_id: str | None
+    parent_run_id: str | None
+    agent_name: str | None
+    tool_call_id: str | None
+    tool_name: str | None
+    error: str | None
+    metadata: str
+    idempotency_key: str | None
 
 
 class _SnapshotRow:
