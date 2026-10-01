@@ -137,7 +137,7 @@ export function Composer({
         'composer-card relative rounded-xl border-[0.5px] border-chat-hairline bg-top-layer shadow-[var(--shadow-input)]',
         'transition-[border-color,box-shadow,background-color] ui-motion-m',
         'focus-within:border-border-hover',
-        dragOver && 'bg-primary-container-soft',
+        dragOver && 'border-on-surface',
         className,
       )}
       ref={rootRef}

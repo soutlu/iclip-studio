@@ -12,7 +12,7 @@
 }
 
 .image-edit-reference-drop-active {
-  background: var(--color-primary-container-soft);
+  background: var(--color-state-active);
 }
 
 .image-edit-reference-list {

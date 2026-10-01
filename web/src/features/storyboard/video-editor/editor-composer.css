@@ -26,7 +26,7 @@
 }
 
 .video-editor-composer-dragging {
-  background: var(--color-primary-container);
+  background: var(--color-state-active);
 }
 
 .video-editor-composer-input {

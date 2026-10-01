@@ -107,7 +107,7 @@
         --state-dragged: 0.16;
         --state-disabled-content: 0.38;
         --state-disabled-container: 0.12;
-        --state-focus-ring: 3px;
+        --state-focus-ring: 2px;
         --state-focus-offset: 2px;
         --color-state-hover: color-mix(in srgb, var(--color-on-surface) calc(var(--state-hover) * 100%), transparent);
         --color-state-focus: color-mix(in srgb, var(--color-on-surface) calc(var(--state-focus) * 100%), transparent);
@@ -115,8 +115,7 @@
         --color-state-dragged: color-mix(in srgb, var(--color-on-surface) calc(var(--state-dragged) * 100%), transparent);
         --color-disabled-text: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-content) * 100%), transparent);
         --color-disabled-container: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-container) * 100%), transparent);
-        --color-focus-ring: var(--color-primary);
-        --color-ring-highlight: color-mix(in srgb, var(--color-primary) 70%, transparent);
+        --color-focus-ring: var(--color-on-surface);
         /* Warning = tertiary 族别名 */
         --color-warning: var(--color-tertiary);
         --color-on-warning: var(--color-on-tertiary);
@@ -181,7 +180,6 @@
         --color-chat-status-success: var(--color-primary);
         --color-chat-status-error: var(--color-error);
         --color-chat-status-running: var(--color-warning);
-        --color-chat-focus-ring: color-mix(in srgb, var(--color-primary) 70%, transparent);
         /* 发丝边框与滚动条：透明度随 on-surface 适配主题 */
         --color-chat-hairline: var(--color-hairline);
         --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
@@ -609,6 +607,10 @@
             <li>
               <strong>品牌绿</strong>
               <code>primary</code> 只给主操作「生成」、链接与品牌标识、成功状态；其余按钮与选中态用墨色或中性灰。
+            </li>
+            <li>
+              <strong>焦点与选中</strong>
+              键盘焦点只在 <code>:focus-visible</code> 时出现，用 2px 墨色描边（<code>--color-focus-ring</code> 即 <code>on-surface</code>，宽度 <code>--state-focus-ring</code>）；输入框聚焦时 1px 边框转墨色，不再外加焦点环；深色媒体面上改用 <code>on-scrim</code>。选中、当前项与拖放目标同样用墨色或中性状态层，不用绿色描边、绿色光环或浅绿铺底。
             </li>
             <li>
               <strong>Secondary 是中性灰</strong>

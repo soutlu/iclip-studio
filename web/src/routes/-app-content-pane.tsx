@@ -51,7 +51,7 @@ export function AppContentPane({
       className={cn(
         'group/content-pane relative h-full min-w-0 shrink-0 overflow-clip',
         isDragging && 'opacity-60',
-        isOver && !isDragging && 'ring-1 ring-primary ring-inset',
+        isOver && !isDragging && 'ring-1 ring-on-surface ring-inset',
       )}
       data-pane={pane}
       data-testid={`pane-${pane}`}

@@ -4,8 +4,9 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 
 // 带图标时外壳承担边框与背景，input 只应用文字样式，避免重复边框。
+// 聚焦时 1px 边框转墨色就是焦点指示；无外壳的字段用 ui-focus-inline 把焦点环收成压在边框上的 1px。
 const FIELD_SURFACE =
-  'ui-state w-full rounded-lg border border-input-border bg-input-bg px-[15px] focus-within:border-primary aria-invalid:border-error'
+  'ui-state w-full rounded-lg border border-input-border bg-input-bg px-[15px] focus-within:border-on-surface aria-invalid:border-error'
 const FIELD_TEXT = 'text-body text-on-surface placeholder:text-on-surface-faint'
 const NESTED_INPUT_CLASS =
   'field-nested-input h-full min-w-0 flex-1 bg-transparent disabled:cursor-not-allowed disabled:text-disabled-text'
@@ -29,7 +30,9 @@ export function Input({
     <input
       className={cn(
         FIELD_TEXT,
-        wrapped ? NESTED_INPUT_CLASS : cn(FIELD_SURFACE, 'h-(--control-height-xl) ui-focus'),
+        wrapped
+          ? NESTED_INPUT_CLASS
+          : cn(FIELD_SURFACE, 'h-(--control-height-xl) ui-focus ui-focus-inline'),
         className,
       )}
       {...props}
@@ -61,7 +64,7 @@ export function Input({
 export function Textarea({ className, rows = 2, ...props }: ComponentPropsWithRef<'textarea'>) {
   return (
     <textarea
-      className={cn(FIELD_SURFACE, FIELD_TEXT, 'py-3 ui-focus', className)}
+      className={cn(FIELD_SURFACE, FIELD_TEXT, 'py-3 ui-focus ui-focus-inline', className)}
       rows={rows}
       {...props}
     />
@@ -72,7 +75,7 @@ export function Textarea({ className, rows = 2, ...props }: ComponentPropsWithRe
 const selectVariants = cva(cn(FIELD_TEXT, 'w-full ui-focus'), {
   variants: {
     variant: {
-      outlined: cn(FIELD_SURFACE, 'h-(--control-height-xl)'),
+      outlined: cn(FIELD_SURFACE, 'h-(--control-height-xl) ui-focus-inline'),
       inline:
         'h-(--control-height-md) cursor-pointer appearance-none rounded-xs border-0 bg-transparent pr-6 text-ellipsis disabled:cursor-default disabled:text-disabled-text [&_option]:bg-surface-container-lowest [&_option]:text-on-surface',
     },

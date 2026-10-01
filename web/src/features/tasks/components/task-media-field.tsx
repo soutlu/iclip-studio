@@ -134,7 +134,7 @@ export function TaskMediaField({
         aria-label={name}
         className={cn(
           'relative flex flex-wrap gap-2 rounded-sm',
-          dragOver && 'outline-2 outline-offset-4 outline-primary',
+          dragOver && 'outline-2 outline-offset-4 outline-on-surface',
         )}
         {...dragHandlers}
         role="group"

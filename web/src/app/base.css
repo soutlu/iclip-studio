@@ -192,7 +192,7 @@
   --state-dragged: 0.16;
   --state-disabled-content: 0.38;
   --state-disabled-container: 0.12;
-  --state-focus-ring: 3px;
+  --state-focus-ring: 2px;
   --state-focus-offset: 2px;
 
   /* State layer 颜色（由上方透明度派生；交互态叠加背景的唯一来源，组件不得散写 hover/pressed 底色） */
@@ -288,7 +288,6 @@
   --color-chat-status-success: var(--color-primary);
   --color-chat-status-error: var(--color-error);
   --color-chat-status-running: var(--color-warning);
-  --color-chat-focus-ring: color-mix(in srgb, var(--color-primary) 70%, transparent);
   --color-chat-hairline: var(--color-hairline);
   --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
   --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.18);
@@ -304,8 +303,8 @@
     var(--color-on-surface) calc(var(--state-disabled-container) * 100%),
     transparent
   );
-  --color-ring-highlight: color-mix(in srgb, var(--color-primary) 70%, transparent);
-  --color-focus-ring: var(--color-primary); /* 键盘焦点全局指示（白底 6.43:1） */
+  /* 键盘焦点全局指示：墨色不用主色，明暗随 on-surface 换向，浅深主题对相邻表面都 ≥9:1；深色媒体面由容器改指 on-scrim。 */
+  --color-focus-ring: var(--color-on-surface);
   --color-thumb-fallback: var(--n80);
   --color-badge-border: var(--color-hairline);
 
