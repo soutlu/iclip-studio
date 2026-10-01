@@ -2,11 +2,13 @@ import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { TranscriptConnection } from './connection'
 import { LocalPromptStore } from './local-prompts'
-import { TranscriptReaders } from './readers'
+import { MainTranscriptPool } from './main-pool'
+import { SubAgentTranscriptPool } from './sub-agent-pool'
 import {
   LocalPromptsContext,
   TranscriptConnectionContext,
-  TranscriptReadersContext,
+  TranscriptPoolsContext,
+  type TranscriptPools,
 } from './transcript-context'
 
 /** WebSocket 复用同源 /api 反向代理。 */
@@ -27,9 +29,16 @@ export function TranscriptProvider({ children, createSocket }: TranscriptProvide
       }),
     [createSocket],
   )
-  const readers = useMemo(() => new TranscriptReaders(connection), [connection])
   // 本地发送状态跟着 Provider 走：同一个 Provider 下切换对话不丢，换一个 Provider（如测试）互不串。
   const localPrompts = useMemo(() => new LocalPromptStore(), [])
+  // 主池按本地发送状态决定能否淘汰、重读前后是否要再读一次（照 Kimi 的 hasPendingLocalWork / getLocalTurnState）。
+  const pools = useMemo<TranscriptPools>(
+    () => ({
+      main: new MainTranscriptPool({ connection, localPrompts }),
+      sub: new SubAgentTranscriptPool(connection),
+    }),
+    [connection, localPrompts],
+  )
 
   useEffect(() => {
     connection.connect()
@@ -47,15 +56,17 @@ export function TranscriptProvider({ children, createSocket }: TranscriptProvide
       document.removeEventListener('visibilitychange', reviveIfStale)
       window.removeEventListener('focus', reviveIfStale)
       window.removeEventListener('online', reviveIfStale)
+      pools.main.close()
+      pools.sub.close()
       connection.close()
     }
-  }, [connection])
+  }, [connection, pools])
 
   return (
     <TranscriptConnectionContext value={connection}>
-      <TranscriptReadersContext value={readers}>
+      <TranscriptPoolsContext value={pools}>
         <LocalPromptsContext value={localPrompts}>{children}</LocalPromptsContext>
-      </TranscriptReadersContext>
+      </TranscriptPoolsContext>
     </TranscriptConnectionContext>
   )
 }
