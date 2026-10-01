@@ -20,7 +20,7 @@ type ComposerAttachmentPillProps = {
   name: string
   /** 首帧尚未登记上传条目时为 undefined。 */
   entry: ComposerAttachment | undefined
-  /** 失败卡片的挂载点，见 AttachmentFailureCard。 */
+  /** 失败卡片与悬停预览卡的挂载点：composer 根节点，见 AttachmentFailureCard。 */
   layerContainer: HTMLElement | null
   /** 失败卡片的开合由 composer 持有，编辑器里选中 pill 按 Enter 也能打开。 */
   failureCardOpen: boolean
@@ -111,6 +111,7 @@ export function ComposerAttachmentPill({
       {tip.open && !viewing && entry !== undefined && !failed ? (
         <MediaPreviewCard
           anchorEl={hostEl}
+          container={layerContainer}
           media={media}
           onEnter={onEnter}
           onLeave={onLeave}

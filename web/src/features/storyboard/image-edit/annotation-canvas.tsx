@@ -548,13 +548,14 @@ function AnnotationMark({
             strokeWidth={2 * unit}
             pointerEvents="none"
           />
+          {/* 序号与标注线同色的红色实心，细白圈；导出给模型的标注图同样画法（annotation-export）。 */}
           <rect
             x={geometry.label.x - geometry.label.width / 2}
             y={geometry.label.y - geometry.label.height / 2}
             width={geometry.label.width}
             height={geometry.label.height}
             rx={geometry.label.radius}
-            fill="var(--color-scrim)"
+            fill="currentColor"
             stroke="var(--color-on-scrim)"
             strokeWidth={1.5 * unit}
           />

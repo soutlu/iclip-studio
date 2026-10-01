@@ -60,9 +60,13 @@
 .attachment-pill.attachment-uploading {
   color: var(--color-on-surface-variant);
 }
-/* 选中与当前一律用墨色描边，主色只留给「生成」与运行状态。 */
-.attachment-pill.ProseMirror-selectednode {
-  outline: 2px solid color-mix(in srgb, var(--color-on-surface) 60%, transparent);
+/* 选中与当前一律用墨色细描边（同行内焦点环的 1px），主色只留给「生成」与运行状态。
+   画在 outline 上，不占 box-shadow：失败 chip 的红圈在 box-shadow 上，两者叠着各自可见。
+   使用方节点的内容自己带 data-selected（如画布上选中的标注）时用同一个环。 */
+.attachment-pill.ProseMirror-selectednode,
+.composer-node.ProseMirror-selectednode > *,
+.composer-node > [data-selected] {
+  outline: 1px solid var(--color-focus-ring);
   outline-offset: 1px;
 }
 .attachment-pill.attachment-error {
@@ -74,6 +78,17 @@
 }
 .attachment-pill.attachment-error .media-chip-icon {
   color: inherit;
+}
+
+.composer-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 16px 0;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
 }
 
 .composer-drop-overlay {
@@ -97,4 +112,17 @@
   font-size: var(--text-title);
   font-weight: 500;
   box-shadow: var(--shadow-2);
+}
+/* 卡片模式：提示只盖住输入卡；所在弹窗带 translate，fixed 会以弹窗为参照，所以用 absolute。 */
+.composer-drop-overlay-card {
+  position: absolute;
+  z-index: var(--z-local-1);
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--color-top-layer) 72%, transparent);
+}
+.composer-drop-overlay-card .composer-drop-card {
+  gap: 10px;
+  padding: 10px 18px;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
 }

@@ -1,9 +1,12 @@
-import { createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster, toast } from '@/shared/ui/toast'
+import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
+import { mockAuthUser } from '@/testing/mocks/auth-user'
+import { loginAs } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { makeGenerationJob } from '@/testing/generation-job'
@@ -18,11 +21,11 @@ const target: FrameEditTarget = {
   frameNumber: 1,
 }
 const BASE = 'https://example.com/original.png'
+const FRAME_2 = 'https://example.com/frame-2.png'
 const RESULT = 'https://example.com/old-result.png'
 const draft: FrameEditDraft = {
   annotations: [],
-  instructions: [{ kind: 'text', text: '将衣服改成蓝色' }],
-  references: [{ id: 'base', kind: 'image', url: BASE, label: '编辑底图' }],
+  parts: [{ kind: 'text', text: '将衣服改成蓝色' }],
 }
 const job = (over: Partial<GenerationJob> = {}): GenerationJob =>
   makeGenerationJob({
@@ -37,7 +40,7 @@ const job = (over: Partial<GenerationJob> = {}): GenerationJob =>
 
 function EditorPage({ initialKey }: { initialKey?: string }) {
   const [open, setOpen] = useState(true)
-  const [frames, setFrames] = useState([BASE])
+  const [frames, setFrames] = useState([BASE, FRAME_2])
   return (
     <>
       {open && (
@@ -47,7 +50,7 @@ function EditorPage({ initialKey }: { initialKey?: string }) {
           aspectRatio="9:16"
           initialKey={initialKey}
           onClose={() => setOpen(false)}
-          onApply={async (_previous, url) => setFrames([url])}
+          onApply={async (_previous, url) => setFrames([url, FRAME_2])}
         />
       )}
       <Toaster />
@@ -93,6 +96,10 @@ function loadCanvas(editor: HTMLElement) {
   })
   return canvas
 }
+
+/** 会话读到之前输入卡不收文件；等它按 uploads:write 挂上文件选择框。 */
+const waitForUploadPermission = (editor: HTMLElement) =>
+  waitFor(() => expect(editor.querySelector('input[type="file"]')).not.toBeNull())
 
 /** 在画布中央点一个点标注。 */
 function drawPoint(canvas: HTMLElement) {
@@ -194,7 +201,7 @@ describe('图片编辑器', () => {
     expect(unsupported).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('提交后新任务占一格并自动选中；草稿暂存与记录刷新都失败也不挡着看在途任务', async () => {
+  it('提交后新任务占一格并自动选中，输入不清空；草稿暂存与记录刷新都失败也不挡着看在途任务', async () => {
     const completed = job({ status: 'completed', outputUrl: RESULT })
     const pending = job()
     let reads = 0
@@ -216,11 +223,14 @@ describe('图片编辑器', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage full', 'QuotaExceededError')
     })
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    pasteTextIntoComposer(textbox, '，领口不变')
+    expect(await screen.findByText('编辑草稿无法暂存，关闭页面前请先提交生成')).toBeVisible()
 
     await userEvent.click(within(editor).getByRole('button', { name: '生成图片' }))
 
-    expect(await screen.findByText('编辑草稿无法暂存，关闭页面前请先提交生成')).toBeVisible()
     const queued = await within(strip).findByRole('button', { name: /^排队中 · / })
+    expect(textbox).toHaveTextContent('将衣服改成蓝色，领口不变')
     expect(queued).toHaveAttribute('aria-pressed', 'true')
     expect(await within(editor).findByRole('status')).toBeVisible()
     expect(await within(editor).findByText(/记录刷新失败/)).toBeVisible()
@@ -353,74 +363,172 @@ describe('图片编辑器', () => {
     },
   )
 
-  it('参考图上传期间换不了底图，传完的图落在发起上传的那张底图的草稿里', async () => {
+  it('上传不锁窗口：传着也能换底图、关窗；没传完的图不进草稿', async () => {
+    loginAs(mockAuthUser)
     const completed = job({ status: 'completed', outputUrl: RESULT })
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
     const release = stallUpload()
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
+    await waitForUploadPermission(editor)
     const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
     const result = await within(strip).findByRole('button', { name: /^结果 · / })
+    const textbox = () => within(editor).getByRole('textbox', { name: '修改要求' })
 
-    await userEvent.upload(within(editor).getByLabelText('上传参考图片'), imageFile())
-    await waitFor(() => expect(result).toBeDisabled())
+    pasteFilesIntoComposer(textbox(), [imageFile()])
+    expect(within(textbox()).getByText('参考.png')).toBeInTheDocument()
+    expect(result).toBeEnabled()
     await userEvent.click(result)
-    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-
-    release()
-    const uploaded = { name: /^引用参考图 2 · 参考\.png$/ }
-    expect(await within(editor).findByRole('button', uploaded)).toBeVisible()
-
-    // 换到结果那一格是另一张底图，它的草稿里没有刚上传的图；换回来又在。
-    await userEvent.click(result)
-    await waitFor(() =>
-      expect(within(editor).queryByRole('button', uploaded)).not.toBeInTheDocument(),
-    )
+    expect(result).toHaveAttribute('aria-pressed', 'true')
+    // 结果那张是另一张底图，输入卡换成它的草稿。
+    expect(within(textbox()).queryByText('参考.png')).not.toBeInTheDocument()
     await userEvent.click(within(strip).getByRole('button', { name: '当前帧' }))
-    expect(within(editor).getByRole('button', uploaded)).toBeVisible()
-  })
+    expect(within(textbox()).queryByText('参考.png')).not.toBeInTheDocument()
+    expect(textbox()).toHaveTextContent('将衣服改成蓝色')
 
-  it('上传没完时关不掉窗口，提示等待完成', async () => {
-    const release = stallUpload()
-    await renderWithProviders(<EditorPage />)
-    const editor = await screen.findByRole('dialog')
-    await userEvent.upload(within(editor).getByLabelText('上传参考图片'), imageFile())
-
+    pasteFilesIntoComposer(textbox(), [imageFile()])
     await userEvent.click(within(editor).getByRole('button', { name: '关闭图片编辑' }))
-
-    expect(await screen.findByText('请等待上传或保存完成')).toBeVisible()
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     release()
-    expect(
-      await within(editor).findByRole('button', { name: /^引用参考图 2 · 参考\.png$/ }),
-    ).toBeVisible()
+    expect(JSON.parse(sessionStorage.getItem(editDraftKey(target)) ?? '{}')).toEqual({
+      [BASE]: draft,
+    })
   })
 
-  it('参考图上传失败给出原因，图片列表不变且可以再试', async () => {
+  it('+ 弹出本组的帧（含 @1），点一下插到光标处；Enter 生成，同一张图只发一次', async () => {
+    const submissions: Record<string, unknown>[] = []
     server.use(
-      http.post('*/api/uploads/sign', () =>
-        HttpResponse.json({ detail: '对象存储暂时不可用' }, { status: 503 }),
-      ),
+      http.post('*/api/generations/image', async ({ request }) => {
+        submissions.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({ generation: job() }, { status: 202 })
+      }),
     )
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    await waitFor(() =>
+      expect(within(editor).getByRole('button', { name: '图片模型' })).toBeEnabled(),
+    )
 
-    await userEvent.upload(within(editor).getByLabelText('上传参考图片'), imageFile())
+    // 没有上传权限：「+」照样能插帧，只是没有「从电脑上传」。
+    const add = within(editor).getByRole('button', { name: '添加参考图' })
+    await userEvent.click(add)
+    const popover = await screen.findByRole('dialog', { name: '添加参考图' })
+    expect(within(popover).queryByRole('button', { name: '从电脑上传' })).not.toBeInTheDocument()
+    await userEvent.click(within(popover).getByRole('button', { name: '插入帧 @2' }))
+    expect(screen.queryByRole('dialog', { name: '添加参考图' })).not.toBeInTheDocument()
+    expect(within(textbox).getByText('帧 @2')).toBeInTheDocument()
+    expect(textbox).toHaveFocus()
 
-    expect(await screen.findByText(/对象存储暂时不可用/)).toBeVisible()
-    const references = within(editor).getByRole('list', { name: '提交图片顺序' })
-    expect(within(references).getAllByRole('img')).toHaveLength(1)
-    expect(within(editor).getByRole('button', { name: '添加参考图片' })).toBeEnabled()
+    await userEvent.click(add)
+    const again = await screen.findByRole('dialog', { name: '添加参考图' })
+    // 已引用的帧带勾，再点仍会插入。
+    await userEvent.click(within(again).getByRole('button', { name: '插入帧 @2（已引用）' }))
+    await userEvent.click(add)
+    await userEvent.click(
+      within(await screen.findByRole('dialog', { name: '添加参考图' })).getByRole('button', {
+        name: '插入帧 @1',
+      }),
+    )
+    expect(within(textbox).getByText('帧 @1 · 编辑底图')).toBeInTheDocument()
+
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+    await waitFor(() => expect(submissions).toHaveLength(1))
+    expect(submissions[0]).toMatchObject({
+      prompt: '将衣服改成蓝色@图片2@图片2@图片1',
+      referenceImageUrls: [BASE, FRAME_2],
+      sourceUrl: BASE,
+    })
   })
 
-  it('拖进参考图片区就地上传，事件带着 defaultPrevented 冒到 window 供聊天遮罩收尾', async () => {
+  it('@ 引用标注：chip 插在光标处，点它选中画布上的标注；画布上删掉后 chip 失效、提交被拦下', async () => {
+    const submissions: unknown[] = []
+    server.use(
+      http.post('*/api/generations/image', () => {
+        submissions.push(true)
+        return HttpResponse.json({ generation: job() }, { status: 202 })
+      }),
+    )
+    sessionStorage.clear()
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
-    const zone = within(editor).getByRole('list', { name: '提交图片顺序' }).parentElement
-    expect(zone).not.toBeNull()
+    const canvas = loadCanvas(editor)
+    drawPoint(canvas)
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+
+    pasteTextIntoComposer(textbox, '把')
+    act(() => textbox.focus())
+    await userEvent.keyboard('@')
+    const menu = await screen.findByRole('listbox', { name: '引用图片或标注' })
+    expect(
+      within(menu)
+        .getAllByRole('group')
+        .map(
+          (group) =>
+            group.getAttribute('aria-labelledby') &&
+            within(group)
+              .getAllByRole('option')
+              .map((option) => option.textContent),
+        ),
+    ).toEqual([['编辑底图'], ['1标注 1'], ['帧 @1', '帧 @2']])
+    await userEvent.keyboard('标注{Enter}')
+    pasteTextIntoComposer(textbox, '去掉')
+    expect(textbox).toHaveTextContent('把1标注 1去掉')
+
+    // 画布上的标注与正文里的 chip 同名，按是否在正文里区分。
+    const mark = within(editor)
+      .getAllByRole('button', { name: '标注 1' })
+      .find((element) => !textbox.contains(element))
+    // 在正文里打字时画布上没有选中的标注；点 chip 把它选上。
+    expect(mark).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(within(textbox).getByRole('button', { name: '标注 1' }))
+    expect(mark).toHaveAttribute('aria-pressed', 'true')
+
+    await userEvent.click(within(editor).getByRole('button', { name: '删除此标注' }))
+    expect(within(textbox).getByText('标注 1 已删除')).toBeInTheDocument()
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+    expect(
+      await within(editor).findByText('修改要求中有已删除的标注，请处理失效引用'),
+    ).toBeVisible()
+    expect(submissions).toHaveLength(0)
+  })
+
+  it('图片到上限：+ 里没引用过的帧置灰，再贴图片不收并在卡内提示', async () => {
+    loginAs(mockAuthUser)
+    const nine = Array.from({ length: 9 }, (_, index) => ({
+      kind: 'image' as const,
+      name: `图${index}.png`,
+      url: `https://example.com/${index}.png`,
+    }))
+    sessionStorage.setItem(
+      editDraftKey(target),
+      JSON.stringify({ [BASE]: { annotations: [], parts: [...draft.parts, ...nine] } }),
+    )
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    await waitForUploadPermission(editor)
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    expect(within(textbox).getByText('图8.png')).toBeInTheDocument()
+
+    await userEvent.click(within(editor).getByRole('button', { name: '添加参考图' }))
+    const popover = await screen.findByRole('dialog', { name: '添加参考图' })
+    expect(within(popover).getByRole('button', { name: '插入帧 @2' })).toBeDisabled()
+    // 帧 @1 就是底图，不另占一张。
+    expect(within(popover).getByRole('button', { name: '插入帧 @1' })).toBeEnabled()
+    expect(within(popover).getByRole('button', { name: '从电脑上传' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+
+    pasteFilesIntoComposer(textbox, [imageFile()])
+    expect(within(textbox).queryByText('参考.png')).not.toBeInTheDocument()
+    expect(within(editor).getByText('最多引用 10 张图片，这次有 1 张没有添加')).toBeVisible()
+  })
+
+  it('拖进输入卡就地上传，事件带着 defaultPrevented 冒到 window 供聊天遮罩收尾', async () => {
+    loginAs(mockAuthUser)
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    await waitForUploadPermission(editor)
+    const zone = within(editor).getByRole('button', { name: '生成图片' })
 
     // 聊天输入框的遮罩挂在 window 上，靠这三个事件冒泡回来才关得掉。
     const seen: { type: string; prevented: boolean }[] = []
@@ -435,11 +543,12 @@ describe('图片编辑器', () => {
       items: [{ kind: 'file', type: file.type, webkitGetAsEntry: () => null }],
       types: ['Files'],
     }
-    fireEvent.dragEnter(zone as HTMLElement, { dataTransfer })
-    fireEvent.dragOver(zone as HTMLElement, { dataTransfer })
-    // 弹窗对文件一律标「禁止落点」，但参考图片区先接管了，它的「复制」不能被弹窗改掉。
+    fireEvent.dragEnter(zone, { dataTransfer })
+    fireEvent.dragOver(zone, { dataTransfer })
+    // 弹窗对文件一律标「禁止落点」，但输入卡先接管了，它的「复制」不能被弹窗改掉。
     expect(dataTransfer.dropEffect).toBe('copy')
-    fireEvent.drop(zone as HTMLElement, { dataTransfer })
+    expect(within(editor).getByTestId('composer-drop-overlay')).toBeInTheDocument()
+    fireEvent.drop(zone, { dataTransfer })
     for (const type of ['dragenter', 'dragover', 'drop']) window.removeEventListener(type, record)
 
     expect(seen).toEqual([
@@ -447,39 +556,30 @@ describe('图片编辑器', () => {
       { type: 'dragover', prevented: true },
       { type: 'drop', prevented: true },
     ])
-    expect(
-      await within(editor).findByRole('button', { name: /^引用参考图 2 · 参考\.png$/ }),
-    ).toBeVisible()
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    expect(within(textbox).getByText('参考.png')).toBeInTheDocument()
   })
 
-  it('上传期间参考图片区标成禁止落点，弹窗其余位置对文件也一律禁止且不放给背后的聊天框', async () => {
-    const release = stallUpload()
+  it('弹窗里输入卡以外的地方对文件一律禁止，也不放给背后的聊天框', async () => {
+    loginAs(mockAuthUser)
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
-    const zone = within(editor).getByRole('list', { name: '提交图片顺序' }).parentElement
-    await userEvent.upload(within(editor).getByLabelText('上传参考图片'), imageFile())
 
-    const dragTo = (target: HTMLElement) => {
-      const dataTransfer = { dropEffect: '', files: [], items: [], types: ['Files'] }
-      fireEvent.dragOver(target, { dataTransfer })
-      const drop = createEvent.drop(target, { dataTransfer })
-      fireEvent(target, drop)
-      return { dropEffect: dataTransfer.dropEffect, dropPrevented: drop.defaultPrevented }
-    }
-    expect(dragTo(zone as HTMLElement)).toEqual({ dropEffect: 'none', dropPrevented: true })
-    expect(dragTo(within(editor).getByRole('textbox', { name: '修改要求' }))).toEqual({
-      dropEffect: 'none',
-      dropPrevented: true,
-    })
-    release()
-    expect(
-      await within(editor).findByRole('button', { name: /^引用参考图 2 · 参考\.png$/ }),
-    ).toBeVisible()
+    const dataTransfer = { dropEffect: '', files: [imageFile()], items: [], types: ['Files'] }
+    const stage = within(editor).getByRole('img', { name: '当前编辑帧' })
+    fireEvent.dragOver(stage, { dataTransfer })
+    const drop = createEvent.drop(stage, { dataTransfer })
+    fireEvent(stage, drop)
+
+    expect(dataTransfer.dropEffect).toBe('none')
+    expect(drop.defaultPrevented).toBe(true)
+    expect(within(editor).queryByTestId('composer-drop-overlay')).not.toBeInTheDocument()
+    expect(screen.queryByText('参考.png')).not.toBeInTheDocument()
   })
 
   it('从历史菜单恢复输入后回到底图，再次提交保留那次的要求和参考图片', async () => {
     const references = [BASE, 'https://example.com/reference.png']
-    const prompt = '保留人物，背景换成傍晚的暖光'
+    const prompt = '保留人物，背景参考@图片2换成傍晚的暖光'
     const completed = job({
       status: 'completed',
       outputUrl: RESULT,
@@ -506,7 +606,8 @@ describe('图片编辑器', () => {
       'aria-pressed',
       'true',
     )
-    expect(within(editor).getByRole('textbox', { name: '修改要求' })).toHaveTextContent(prompt)
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    expect(textbox).toHaveTextContent('保留人物，背景参考reference.png换成傍晚的暖光')
     await userEvent.click(within(editor).getByRole('button', { name: '生成图片' }))
     await waitFor(() => expect(submissions).toHaveLength(1))
     expect(submissions[0]).toMatchObject({
