@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
   canvasPng,
   openConversation,
@@ -363,3 +363,166 @@ test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', as
   await expect(editor).toBeHidden()
   await expect(entry).toBeFocused()
 })
+
+/** 页面里直传对象存储的闸门（上传走 XHR，MSW 的 service worker 先于 Playwright 路由收下它，只能在页面里拦）。 */
+type StorageGate = {
+  __storageHold?: Promise<void>
+  __storageRelease?: () => void
+  __storageFailures?: number
+}
+
+/** hold 让之后的直传停在半路直到 release；failNext 让下一次直传断网失败。须在打开页面之前装上。 */
+const installStorageGate = async (page: Page) => {
+  await page.addInitScript(() => {
+    const gate = window as unknown as StorageGate
+    class GatedRequest extends XMLHttpRequest {
+      private storagePut = false
+
+      override open(method: string, url: string | URL) {
+        this.storagePut = method === 'PUT' && String(url).includes('/mock-oss/')
+        super.open(method, url)
+      }
+
+      override send(body?: Document | XMLHttpRequestBodyInit | null) {
+        if (!this.storagePut) {
+          super.send(body)
+          return
+        }
+        if ((gate.__storageFailures ?? 0) > 0) {
+          gate.__storageFailures = (gate.__storageFailures ?? 0) - 1
+          super.send(body)
+          // 中断即断网：loadend 到时拿不到状态码。
+          this.abort()
+          return
+        }
+        const hold = gate.__storageHold
+        if (hold === undefined) super.send(body)
+        else void hold.then(() => super.send(body))
+      }
+    }
+    window.XMLHttpRequest = GatedRequest
+  })
+  return {
+    hold: () =>
+      page.evaluate(() => {
+        const gate = window as unknown as StorageGate
+        gate.__storageHold = new Promise<void>((resolve) => {
+          gate.__storageRelease = resolve
+        })
+      }),
+    release: () =>
+      page.evaluate(() => {
+        const gate = window as unknown as StorageGate
+        gate.__storageRelease?.()
+        delete gate.__storageHold
+      }),
+    failNext: () =>
+      page.evaluate(() => {
+        ;(window as unknown as StorageGate).__storageFailures = 1
+      }),
+  }
+}
+
+/** 本机图片文件的 DataTransfer：字节由页面里的 Canvas 画出来。 */
+const imageTransfer = (page: Page, png: Buffer, name: string) =>
+  page.evaluateHandle(
+    ([bytes, fileName]) => {
+      const transfer = new DataTransfer()
+      transfer.items.add(new File([new Uint8Array(bytes)], fileName, { type: 'image/png' }))
+      return transfer
+    },
+    [Array.from(png), name] as const,
+  )
+
+/** 把一张图当剪贴板内容粘进正文：走浏览器真实的 paste 事件。 */
+const pasteImage = async (editor: Locator, png: Buffer, name: string) => {
+  const transfer = await imageTransfer(editor.page(), png, name)
+  await editor.evaluate((element, clipboardData) => {
+    element.dispatchEvent(
+      new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData }),
+    )
+  }, transfer)
+  await transfer.dispose()
+}
+
+for (const width of [1335, 390] as const) {
+  test(`正文收图片（${width}）：粘贴落成上传中的 chip，传好换成 @N 写进本组；失败在 chip 上重试；拖到段卡上接到末尾；@ 菜单照常`, async ({
+    page,
+  }) => {
+    const mobile = width === 390
+    await page.setViewportSize({ width, height: mobile ? 844 : 900 })
+    const gate = await installStorageGate(page)
+    const panel = await openConversation(page, '无图分镜草稿', { mobile })
+    const group = panel.getByRole('region', { name: '镜头组 1', exact: true })
+    const qa = `../.artifacts/design-qa/shot-script-composer/${width}`
+    const png = await canvasPng(page, { fill: '#dfe8dd', label: 'Pasted' })
+    const editor = group.getByRole('textbox', { name: '镜头 1 的描述', exact: true })
+    await editor.click()
+    await page.keyboard.press('End')
+
+    // 粘贴：光标处出现上传中的 chip，正文还没变。
+    await gate.hold()
+    await pasteImage(editor, png, '粘贴.png')
+    await expect(editor.getByRole('progressbar', { name: '上传中' })).toBeVisible()
+    await screenshotBothThemes(page, `${qa}-uploading`)
+    await gate.release()
+    // 传好：chip 换成 @1，地址与引用一起写进本组。
+    await expect(editor.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
+    await expect(editor.getByText('粘贴.png')).toHaveCount(0)
+    await expect
+      .poll(async () => (await readDocument(page)).document.shots[0]?.prompt.timeline[0])
+      .toEqual({
+        timestamps: [0, 3.2],
+        prompt: '开场，中景，模特双手托起帆布包，展示正面。@Image1',
+        image_indexes: [1],
+      })
+    await screenshotBothThemes(page, `${qa}-landed`)
+
+    // 失败：chip 标红，点开失败卡片重试，用原文件再传一次。
+    await gate.failNext()
+    await pasteImage(editor, png, '断网.png')
+    await expect(editor.getByRole('img', { name: '上传失败' })).toBeVisible()
+    await editor.getByText('断网.png').click()
+    const card = page.getByRole('dialog', { name: '断网.png上传失败' })
+    await expect(card).toBeVisible()
+    await screenshotBothThemes(page, `${qa}-failed`)
+    await card.getByRole('button', { name: '重试' }).click()
+    await expect(editor.getByRole('button', { name: '看第 2 帧', exact: true })).toBeVisible()
+    await expect
+      .poll(async () => (await readDocument(page)).document.shots[0]?.image_urls.length)
+      .toBe(2)
+
+    // 拖到另一段的标题上：只亮这张段卡，聊天输入框不接；落下接到那段末尾。
+    const second = group.getByRole('group', { name: '镜头 2', exact: true })
+    const heading = second.getByRole('button', { name: '镜头 2', exact: true })
+    await heading.scrollIntoViewIfNeeded()
+    const dropped = await imageTransfer(page, png, '拖入.png')
+    await heading.dispatchEvent('dragenter', { dataTransfer: dropped })
+    await expect(second.getByText('松开添加到镜头 2')).toBeVisible()
+    await expect(page.getByTestId('composer-drop-overlay')).toHaveCount(0)
+    await screenshotBothThemes(page, `${qa}-drop`)
+    await heading.dispatchEvent('drop', { dataTransfer: dropped })
+    await dropped.dispose()
+    await expect(second.getByText('松开添加到镜头 2')).toHaveCount(0)
+    await expect(second.getByRole('button', { name: '看第 3 帧', exact: true })).toBeVisible()
+    await expect
+      .poll(async () => (await readDocument(page)).document.shots[0]?.prompt.timeline[1])
+      .toEqual({
+        timestamps: [3.2, 8],
+        prompt: '硬切，特写，模特转动帆布包，展示侧面与提手。@Image3',
+        image_indexes: [3],
+      })
+
+    // @ 菜单照常：列本组三张图与「+」，Enter 插入第一张。点在段首，别点到 @N 芯片上（芯片自己接点击）。
+    await editor.click({ position: { x: 2, y: 2 } })
+    await page.keyboard.type('@')
+    const menu = page.getByRole('listbox', { name: '插入参考图', exact: true })
+    await expect(menu.getByRole('option')).toHaveCount(4)
+    await screenshotBothThemes(page, `${qa}-mention`)
+    await page.keyboard.press('Enter')
+    await expect(menu).toBeHidden()
+    await expect
+      .poll(async () => (await readDocument(page)).document.shots[0]?.prompt.timeline[0]?.prompt)
+      .toBe('@Image1开场，中景，模特双手托起帆布包，展示正面。@Image1@Image2')
+  })
+}

@@ -8,7 +8,6 @@ import { Icon } from '@/shared/icons'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import type { useFileDropTarget } from '@/shared/ui/file-drop'
 import type { Take, TakeActions } from '../takes'
-import type { FrameUpload } from '../use-frame-additions'
 import type { FrameGallery } from './frame-counter'
 import { FrameStageBar, type StageFrameInfo } from './frame-stage-bar'
 import { StageFrame, StageFrameNav } from './stage-frame'
@@ -26,8 +25,6 @@ export type FrameView = {
   /** 上一帧、下一帧；到头的一侧不给，那一侧的箭头不出现。 */
   onPrevious: (() => void) | undefined
   onNext: (() => void) | undefined
-  /** 往选中段添加新图（粘贴、选择器上传）的进度与失败重试，来自 `useFrameAdditions`。 */
-  addition: { upload: FrameUpload; onRetry: () => void }
   /** 当前帧正在替换，来自 `useFrameReplacement`。 */
   replacing: boolean
   onReplaceFile: (file: File) => void
@@ -96,7 +93,6 @@ function FrameStage({
       overlay={
         <>
           <FrameStageBar
-            addition={view.addition}
             disabled={view.disabled}
             frame={frame}
             onEditFrame={view.onEditFrame}

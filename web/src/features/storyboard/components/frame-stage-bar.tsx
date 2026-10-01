@@ -1,4 +1,4 @@
-/** 舞台显示分镜帧时顶部的工具条：左上 @N，下面挂图片任务角标与新图上传状态；右上编辑图片与替换。
+/** 舞台显示分镜帧时顶部的工具条：左上 @N，下面挂图片任务角标；右上编辑图片与替换。
  * 切帧箭头与帧计数另叠在舞台两侧与底部（见 `StageFrameNav`）。 */
 
 import { useRef } from 'react'
@@ -6,10 +6,8 @@ import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { cn } from '@/shared/lib/utils'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { frameBadgeStatus, frameBadgeText, type FrameBadge } from '../frame-status'
-import type { FrameUpload } from '../use-frame-additions'
 import { StageAction } from './stage-action'
 import { StageBar } from './stage-bar'
-import { StageUploadStatus } from './stage-upload-status'
 
 export type StageFrameInfo = {
   number: number
@@ -22,8 +20,6 @@ type FrameStageBarProps = {
   /** 当前帧；这段没有帧时为 undefined，没有 @N 也没有按钮。 */
   frame: StageFrameInfo | undefined
   disabled: boolean
-  /** 往选中段添加新图（粘贴、选择器上传）的进度与失败重试。 */
-  addition: { upload: FrameUpload; onRetry: () => void }
   /** 当前帧正在替换。 */
   replacing: boolean
   onReplaceFile: (file: File) => void
@@ -32,7 +28,6 @@ type FrameStageBarProps = {
 }
 
 export function FrameStageBar({
-  addition,
   disabled,
   frame,
   onEditFrame,
@@ -64,7 +59,6 @@ export function FrameStageBar({
               onOpenResult={(jobId) => onEditFrame(frame.number, { kind: 'result', jobId })}
             />
           )}
-          <StageUploadStatus onRetry={addition.onRetry} upload={addition.upload} />
         </>
       }
     />

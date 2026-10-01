@@ -8,7 +8,7 @@ import { EditorView } from 'prosemirror-view'
 import { useEffect, useRef, type Ref } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
-import { closingMention } from './mention-plugin'
+import { selectMention } from './mention-plugin'
 import { useMention } from './use-mention'
 
 const schema = new Schema({
@@ -29,8 +29,8 @@ function MentionEditor({ query }: { query: boolean }) {
     onPick: (index, { match, view }) => {
       const word = WORDS.filter((item) => item.startsWith(match.query))[index]
       if (word === undefined) return
-      const end = match.at + 1 + match.query.length
-      view.dispatch(closingMention(view.state.tr.insertText(word, match.at, end)))
+      selectMention(view)
+      view.dispatch(view.state.tr.insertText(word))
     },
     query,
   })

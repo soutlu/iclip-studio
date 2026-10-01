@@ -1,45 +1,12 @@
-/** 每行对应一个段落，帧节点保留原始 @ImageN 字符，选区偏移以原文 UTF-16 为准。 */
+/** 正文与编辑器文档的互转：每行对应一个段落，帧节点保留原始 @ImageN 字符，选区偏移以原文 UTF-16 为准。
+ * 文档用编辑核心的 schema（帧节点见 `frameNodeSpec`）；上传中的附件 chip 不进正文，在正文里占 0 个字符。 */
 
-import { type Node as PMNode, Schema } from 'prosemirror-model'
+import type { Node as PMNode } from 'prosemirror-model'
+import { createComposerSchema } from '@/shared/ui/composer'
+import { FRAME_NODES } from './frame-node'
 
-export const promptSchema = new Schema({
-  nodes: {
-    doc: { content: 'paragraph+' },
-    paragraph: {
-      content: 'inline*',
-      group: 'block',
-      parseDOM: [{ tag: 'p' }],
-      toDOM: () => ['p', 0],
-    },
-    text: { group: 'inline' },
-    frame: {
-      atom: true,
-      attrs: { n: {}, token: {} },
-      group: 'inline',
-      inline: true,
-      leafText: (node) => node.attrs['token'] as string,
-      parseDOM: [
-        {
-          getAttrs: (dom) => {
-            const n = Number(dom.getAttribute('data-n'))
-            return { n, token: dom.getAttribute('data-token') ?? `@Image${n}` }
-          },
-          tag: 'span.frame-chip',
-        },
-      ],
-      selectable: true,
-      toDOM: (node) => [
-        'span',
-        {
-          class: 'frame-chip',
-          'data-n': String(node.attrs['n'] as number),
-          'data-token': node.attrs['token'] as string,
-        },
-        `@${node.attrs['n'] as number}`,
-      ],
-    },
-  },
-})
+// 与编辑器挂载时按同一组节点建的 schema 是同一个实例。
+const promptSchema = createComposerSchema(FRAME_NODES)
 
 const nodeType = (name: 'doc' | 'frame' | 'paragraph') => {
   const type = promptSchema.nodes[name]
@@ -65,8 +32,10 @@ export const promptToDoc = (prompt: string): PMNode =>
     }),
   )
 
-const inlineText = (node: PMNode): string =>
-  node.isText ? (node.text ?? '') : (node.attrs['token'] as string)
+const inlineText = (node: PMNode): string => {
+  if (node.isText) return node.text ?? ''
+  return node.type === nodeType('frame') ? (node.attrs['token'] as string) : ''
+}
 
 export const docToPrompt = (doc: PMNode): string => {
   const lines: string[] = []
@@ -106,26 +75,4 @@ export const promptOffsetAt = (doc: PMNode, position: number): number => {
     if (found === undefined && position <= start + paragraph.content.size) found = length
   })
   return found ?? length
-}
-
-/** `promptOffsetAt` 的反向：正文偏移换成编辑器位置。落在帧标记中间时取标记之前，超出正文时取文档末尾。 */
-export const promptPositionAt = (doc: PMNode, offset: number): number => {
-  let length = 0
-  let found: number | undefined
-  doc.forEach((paragraph, paragraphOffset, index) => {
-    if (found !== undefined) return
-    if (index > 0) length += 1
-    const start = paragraphOffset + 1
-    paragraph.forEach((child, childOffset) => {
-      if (found !== undefined) return
-      const size = inlineText(child).length
-      if (offset < length + size) {
-        found = start + childOffset + (child.isText ? Math.max(0, offset - length) : 0)
-      } else {
-        length += size
-      }
-    })
-    if (found === undefined && offset <= length) found = start + paragraph.content.size
-  })
-  return found ?? doc.content.size - 1
 }

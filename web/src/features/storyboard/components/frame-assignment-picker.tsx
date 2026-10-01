@@ -9,7 +9,7 @@ type FrameAssignmentPickerProps = {
   disabled: boolean
   frames: readonly string[]
   onPickExisting: (number: number, url: string) => void
-  onUpload: (file: File) => Promise<void>
+  onUpload: (file: File) => void
   onClose: () => void
 }
 
@@ -48,7 +48,7 @@ export function FrameAssignmentPicker({
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   event.target.value = ''
-                  if (!disabled && file !== undefined) void onUpload(file)
+                  if (!disabled && file !== undefined) onUpload(file)
                 }}
                 ref={uploadRef}
                 type="file"

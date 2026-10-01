@@ -3,11 +3,10 @@
 import type { ButtonHTMLAttributes } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { BlockedReason } from './blocked-reason'
 import { workbenchControl } from './workbench-control'
 
-/** 往选中段添加图片的入口；`blocker` 有值时「+」置灰并说明原因。 */
-export type FrameAdd = { blocker: string | undefined; onAdd: () => void }
+/** 往这段正文添加图片的入口（关联已有或上传）。正文只读时 `@` 打不开，所以这里不再有挡住的状态。 */
+export type FrameAdd = () => void
 
 type TileButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'type'>
 
@@ -55,32 +54,20 @@ export function FrameTile({
   )
 }
 
-type FrameAddTileProps = Omit<TileButtonProps, 'onClick'> & {
-  blocker: string | undefined
-  /** 没被挡住时点按才调。 */
-  onAdd: () => void
-}
-
 /** 底边与缩略图对齐：外层要在下面留出「@N」那一行的高度（`pb-6`）。 */
-export function FrameAddTile({ blocker, className, onAdd, ...props }: FrameAddTileProps) {
+export function FrameAddTile({ className, ...props }: TileButtonProps) {
   return (
-    <BlockedReason reason={blocker}>
-      <button
-        aria-disabled={blocker === undefined ? undefined : true}
-        aria-label="添加图片"
-        className={cn(
-          workbenchControl({ shape: 'label' }),
-          'h-16 w-9 justify-center px-0 aria-selected:outline-2 aria-selected:outline-offset-1 aria-selected:outline-on-surface',
-          className,
-        )}
-        onClick={() => {
-          if (blocker === undefined) onAdd()
-        }}
-        type="button"
-        {...props}
-      >
-        <Icon decorative name="add" size="sm" />
-      </button>
-    </BlockedReason>
+    <button
+      aria-label="添加图片"
+      className={cn(
+        workbenchControl({ shape: 'label' }),
+        'h-16 w-9 justify-center px-0 aria-selected:outline-2 aria-selected:outline-offset-1 aria-selected:outline-on-surface',
+        className,
+      )}
+      type="button"
+      {...props}
+    >
+      <Icon decorative name="add" size="sm" />
+    </button>
   )
 }

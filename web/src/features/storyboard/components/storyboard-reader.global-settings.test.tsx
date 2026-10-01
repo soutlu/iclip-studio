@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
+import { USER_QUERY_KEY } from '@/shared/auth/session'
+import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { openAddImage } from '@/testing/storyboard'
@@ -101,6 +103,18 @@ const provide = (document = fixture) => {
       }))
       version += 1
     },
+    rewriteLastScene: (prompt: string) => {
+      stored.shots = stored.shots.map((shot) => ({
+        ...shot,
+        prompt: {
+          ...shot.prompt,
+          timeline: shot.prompt.timeline.map((scene, index, all) =>
+            index === all.length - 1 ? { ...scene, prompt } : scene,
+          ),
+        },
+      }))
+      version += 1
+    },
     stored: () => stored,
     failSave: () => {
       saveError = true
@@ -118,14 +132,18 @@ const provide = (document = fixture) => {
     },
   }
 }
-const renderReader = () =>
-  renderWithProviders(
+const renderReader = async () => {
+  const rendered = await renderWithProviders(
     <>
       <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />
       <Toaster />
     </>,
     { initialPath: '/?shot=1' },
   )
+  // 正文收不收图片看上传权限：等登录身份读到再操作。
+  await waitFor(() => expect(rendered.queryClient.getQueryData(USER_QUERY_KEY)).toBeTruthy())
+  return rendered
+}
 const replaceText = async (editor: HTMLElement, text: string) => {
   editor.focus()
   await userEvent.keyboard('{Control>}a{/Control}')
@@ -134,6 +152,8 @@ const replaceText = async (editor: HTMLElement, text: string) => {
 
 describe('StoryboardReader 全局设定与参考图', () => {
   beforeEach(() => {
+    // 往正文里加图要上传权限。
+    loginAs(mockAuthUser)
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
   })
   afterEach(() => {
@@ -312,7 +332,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     expect(state.stored().shots[0]?.image_urls).toHaveLength(30)
     expect(state.stored().shots[0]?.prompt.global_settings).toBe(shot.prompt.global_settings)
   })
-  it('上传期间禁止生成，删除旧引用后新图仍写入当前全局设定', async () => {
+  it('上传期间禁止生成：期间改的正文与传好的新图一起写进全局设定，新图落在 @ 处', async () => {
     const state = provide()
     let release = () => {}
     const pending = new Promise<void>((resolve) => {
@@ -331,20 +351,26 @@ describe('StoryboardReader 全局设定与参考图', () => {
       within(picker).getByLabelText('选择要上传的图片'),
       new File(['image'], 'new.png', { type: 'image/png' }),
     )
+    expect(await within(editor).findByRole('progressbar', { name: '上传中' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '生成第 1 组' })).toHaveAttribute(
       'aria-disabled',
       'true',
     )
-    await replaceText(editor, '新设定，保留自然光。')
-    release()
+    // 光标在 chip 之后：接着写的字排在新图后面。
+    pasteTextIntoComposer(editor, '新设定。')
+    await act(async () => {
+      release()
+    })
     await waitFor(() => expect(state.stored().shots[0]?.image_urls).toHaveLength(3))
-    expect(state.stored().shots[0]?.prompt.global_settings).toBe('新设定，保留自然光。@Image3')
+    expect(state.stored().shots[0]?.prompt.global_settings).toBe(
+      '@Image3新设定。人物参照 @Image1。产品参照 @Image2。',
+    )
     await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
     await waitFor(() => expect(state.submissions).toHaveLength(1))
     expect(state.submissions[0]).toMatchObject({ shot: state.stored().shots[0]?.prompt })
   })
-  it.each(['外部路由切换', '远端移除镜头'])(
-    '上传期间%s 后恢复操作，迟到图片不回填',
+  it.each(['远端移除这一镜', '远端改写这一镜的正文'])(
+    '上传期间%s：chip 跟着丢掉，迟到图片不回填，出片恢复',
     async (change) => {
       const state = provide()
       const upload = deferred()
@@ -360,35 +386,33 @@ describe('StoryboardReader 全局设定与参考图', () => {
       }
       server.events.on('response:mocked', onResponse)
       try {
-        const { router, queryClient } = await renderReader()
+        const { queryClient } = await renderReader()
         await userEvent.click(await screen.findByRole('button', { name: '镜头 2' }))
-        // 粘贴上传：上传完成前不改正文，迟到的结果有没有回填看写入就知道。
         pasteFilesIntoComposer(screen.getByRole('textbox', { name: '镜头 2 的描述' }), [
           new File(['late'], 'late.png', { type: 'image/png' }),
         ])
-        expect(await screen.findByRole('status', { name: /^上传中/ })).toBeVisible()
+        expect(await screen.findByRole('progressbar', { name: '上传中' })).toBeInTheDocument()
         expect(screen.getByRole('button', { name: '生成第 1 组' })).toHaveAttribute(
           'aria-disabled',
           'true',
         )
         await act(async () => {
-          if (change === '外部路由切换')
-            await router.navigate({
-              to: '/',
-              search: (previous) => ({ ...previous, shot: 1, content: 'global' }),
-            })
-          else {
-            state.removeLastScene()
-            await queryClient.invalidateQueries()
-          }
+          if (change === '远端移除这一镜') state.removeLastScene()
+          else state.rewriteLastScene('远端改写的第二镜。')
+          await queryClient.invalidateQueries()
         })
-        expect(await screen.findByRole('textbox', { name: '全局设定' })).toBeVisible()
-        // 新目标立刻可操作：上传状态不跟过来。
+        if (change === '远端改写这一镜的正文')
+          expect(await screen.findByRole('textbox', { name: '镜头 2 的描述' })).toHaveTextContent(
+            '远端改写的第二镜。',
+          )
+        // 正文被换掉，chip 跟着没了：不再显示上传中，出片立刻恢复。
         await waitFor(() =>
-          expect(screen.queryByRole('status', { name: /^上传中/ })).not.toBeInTheDocument(),
+          expect(screen.queryByRole('progressbar', { name: '上传中' })).not.toBeInTheDocument(),
         )
-        expect(screen.getByRole('button', { name: '生成第 1 组' })).not.toHaveAttribute(
-          'aria-disabled',
+        await waitFor(() =>
+          expect(screen.getByRole('button', { name: '生成第 1 组' })).not.toHaveAttribute(
+            'aria-disabled',
+          ),
         )
         await act(async () => {
           upload.release()
@@ -410,6 +434,49 @@ describe('StoryboardReader 全局设定与参考图', () => {
       }
     },
   )
+  it('上传期间外部路由切到全局设定：图仍归发起的那一镜，传好落回那里，选区留在全局设定', async () => {
+    const state = provide()
+    const upload = deferred()
+    server.use(
+      http.put('*/mock-oss/:uploadId', async () => {
+        await upload.promise
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+    try {
+      const { router } = await renderReader()
+      await userEvent.click(await screen.findByRole('button', { name: '镜头 2' }))
+      pasteFilesIntoComposer(screen.getByRole('textbox', { name: '镜头 2 的描述' }), [
+        new File(['late'], 'late.png', { type: 'image/png' }),
+      ])
+      expect(await screen.findByRole('progressbar', { name: '上传中' })).toBeInTheDocument()
+      await act(async () => {
+        await router.navigate({
+          to: '/',
+          search: (previous) => ({ ...previous, shot: 1, content: 'global' }),
+        })
+      })
+      const global = screen.getByRole('group', { name: '全局设定' })
+      expect(global).toHaveAttribute('aria-current', 'true')
+      // chip 还在原来那一镜里，出片照样等它传完。
+      expect(screen.getByRole('button', { name: '生成第 1 组' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+      await act(async () => {
+        upload.release()
+      })
+      await waitFor(() => expect(state.stored().shots[0]?.image_urls).toHaveLength(3))
+      expect(state.stored().shots[0]?.prompt.timeline[1]).toEqual({
+        timestamps: [4, 8],
+        prompt: '@Image3展示者展示产品侧面。',
+        image_indexes: [3],
+      })
+      expect(global).toHaveAttribute('aria-current', 'true')
+    } finally {
+      upload.release()
+    }
+  })
   it('生成等待保存时不能新增或替换图片，保存后提交原参考图并恢复操作', async () => {
     const state = provide()
     const save = deferred()
@@ -429,14 +496,14 @@ describe('StoryboardReader 全局设定与参考图', () => {
       await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
       await waitFor(() => expect(state.writes).toHaveLength(1))
       expect(state.submissions).toEqual([])
-      // 两个添加入口都挡住：正文只读、敲 @ 不弹选图；粘贴图片 toast 原因、不上传。
+      // 添加入口都挡住：正文只读、敲 @ 不弹选图，粘贴图片不收、不上传。
       const globalEditor = screen.getByRole('textbox', { name: '全局设定' })
       expect(globalEditor).toHaveAttribute('contenteditable', 'false')
       act(() => globalEditor.focus())
       await userEvent.keyboard('@')
       expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
       pasteFilesIntoComposer(globalEditor, [new File(['p'], 'paste.png', { type: 'image/png' })])
-      expect(await screen.findByText('当前不能编辑分镜')).toBeVisible()
+      expect(within(globalEditor).queryByText('paste.png')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: '替换图片' })).toBeDisabled()
       // 模拟原生文件选择器迟到返回；即使 change 到达已禁用的 input，也不能启动上传。
       fireEvent.change(replacementInput, {

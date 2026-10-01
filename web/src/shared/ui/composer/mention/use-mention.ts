@@ -25,7 +25,7 @@ export type MentionOptions = {
   /** 方向键怎么走；默认 `linearNavigation`。 */
   readonly navigation?: MentionNavigation | undefined
   /** 选中第 `index` 项（列表里 `role="option"` 的顺序）。文档怎么改、改完关不关菜单由使用方决定，
-   * 关菜单用 `closingMention` 并进自己的事务，或用 `selectMention` 让选区盖住 `@` 留给别的入口替换。 */
+   * 一般先 `selectMention` 让选区盖住 `@`（同时关菜单），再按选区插入，或留给别的入口替换。 */
   readonly onPick: (index: number, target: { view: EditorView; match: MentionMatch }) => void
 }
 

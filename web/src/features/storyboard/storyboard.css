@@ -19,7 +19,7 @@
    舞台正在看的那一帧（data-highlighted）墨色实底。选中与当前一律用墨色，主色只留给「生成」与运行状态。
    外层是普通行内元素、不换行，尾部垫一个零宽连字符（U+2060），芯片和紧跟的「，」「。」不会被拆到两行；
    小件画在里层的 inline-flex 上，以缩略图为基线，下沉 0.3em 与中文字身居中。高 22px，不撑大段落行距。
-   聚焦环与 NodeSelection 描边画在小件上。 */
+   聚焦环与 NodeSelection 描边画在小件上；芯片渲染在编辑核心的节点宿主（.composer-node）里，选中态挂在宿主上。 */
 .frame-chip {
   white-space: nowrap;
 }
@@ -75,10 +75,10 @@
   outline: var(--state-focus-ring) solid var(--color-focus-ring);
   outline-offset: var(--state-focus-offset);
 }
-.frame-chip.ProseMirror-selectednode {
+.composer-node.ProseMirror-selectednode > .frame-chip {
   outline: none;
 }
-.frame-chip.ProseMirror-selectednode .frame-chip-pill {
+.composer-node.ProseMirror-selectednode > .frame-chip .frame-chip-pill {
   outline: 2px solid color-mix(in srgb, var(--color-on-surface) 60%, transparent);
   outline-offset: 1px;
 }
@@ -468,6 +468,10 @@
 }
 .storyboard-settings[data-clamped='true'] .prompt-editor-content {
   -webkit-line-clamp: 3;
+}
+/* 段里的附件上限、文件夹提示贴着正文，不用输入卡的内边距。 */
+.storyboard-segment .composer-notice {
+  padding: 4px 0 0;
 }
 /* 段内复制悬停、聚焦或选中时才露出来。 */
 .storyboard-segment-copy {
@@ -1243,17 +1247,6 @@
   .storyboard-action-text {
     display: none;
   }
-}
-.storyboard-upload-chip {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  font-size: var(--text-label);
-  font-variant-numeric: tabular-nums;
-  line-height: var(--text-label--line-height);
 }
 /* 有新结果的小点：计数胶囊上、弹层格子右上。 */
 .storyboard-dot {

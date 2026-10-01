@@ -1,99 +1,51 @@
-/** 帧记号使用 inline atom NodeView；只读与编辑共用实例，通过 editable 切换。可编辑时敲 `@` 弹出本组图片（见 `useFrameMention`）。 */
+/** 分镜正文编辑器：shared 的编辑核心（不套 Composer 外壳）加帧节点，Enter 分段；只读与编辑共用实例，通过 readOnly 切换。
+ * 受控字符串：帧节点保留原文记号，`@Image01` 这类写法原样往返（见 prompt-editor-doc）。可编辑时敲 `@` 弹出本组图片（见 `useFrameMention`）。
+ *
+ * 粘贴、拖放与选择器上传的图片都落成附件 chip，上传中、失败重试与首页同一套；传好后把地址追加进本组，chip 换成 `@ImageN`。 */
 
-import { baseKeymap } from 'prosemirror-commands'
-import { history, redo, undo } from 'prosemirror-history'
-import { keymap } from 'prosemirror-keymap'
-import { Slice, type Node as PMNode } from 'prosemirror-model'
-import { EditorState } from 'prosemirror-state'
-import { EditorView, type NodeView } from 'prosemirror-view'
-import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
+import { Slice } from 'prosemirror-model'
+import type { EditorView } from 'prosemirror-view'
+import { useEffect, useEffectEvent, useImperativeHandle, useRef, type Ref } from 'react'
+import { errorMessageOf } from '@/shared/api/client'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { cn } from '@/shared/lib/utils'
+import {
+  ComposerNodeViews,
+  ComposerNotice,
+  useAttachmentAdmission,
+  useComposerAttachments,
+  useComposerEditor,
+  type ComposerEditor,
+} from '@/shared/ui/composer'
+import { toast } from '@/shared/ui/toast'
 import type { PromptInsertion } from '../shot-document'
+import { REFERENCE_LIMIT_TEXT } from '../shots'
+import { FrameChipsProvider } from './frame-chip'
 import { FrameMentionMenu } from './frame-mention-menu'
+import { FRAME_NODES, framePart } from './frame-node'
 import { docToPrompt, promptOffsetAt, promptToDoc } from './prompt-editor-doc'
 import { useFrameMention, type FrameMentionOptions } from './use-frame-mention'
 
-/** NodeView 经 ref 读取最新数据，避免重建编辑器。 */
-type ChipContext = {
-  frameUrl: (n: number) => string | undefined
-  highlighted: () => number | undefined
-  onPick: (n: number) => void
+export type PromptEditorHandle = {
+  /** 把选区（`@` 选图的「+」留下的是盖住那个 `@` 的选区）换成第 `n` 帧的引用。 */
+  insertFrame: (n: number) => void
+  /** 收图片：`selection` 换掉选区，`end` 接在正文末尾。 */
+  insertFiles: (files: readonly File[], place: 'selection' | 'end') => void
+  /** 在这段下面就地提示（如拖进来的是文件夹）。 */
+  showNotice: (notice: string) => void
 }
 
-// 帧芯片的外观、舞台高亮与聚焦环都在 storyboard.css 的「帧芯片」一节；这里只给结构与状态。
-const CHIP_CLASS = 'frame-chip cursor-pointer select-none'
+/** 这段里在途的图片：chip 张数（上传中与失败待处理的都算）与是否有正在上传的。 */
+export type PendingImages = { count: number; uploading: boolean }
 
-const isActivationKey = (key: string) => key === 'Enter' || key === ' '
-
-class FrameChipView implements NodeView {
-  readonly dom: HTMLSpanElement
-  private readonly img: HTMLImageElement
-  private readonly n: number
-  private readonly ctx: ChipContext
-  private readonly chips: Set<FrameChipView>
-
-  constructor(node: PMNode, ctx: ChipContext, chips: Set<FrameChipView>) {
-    this.ctx = ctx
-    this.chips = chips
-    this.n = node.attrs['n'] as number
-    this.dom = document.createElement('span')
-    this.dom.dataset['n'] = String(this.n)
-    this.dom.dataset['token'] = node.attrs['token'] as string
-    this.dom.setAttribute('role', 'button')
-    this.dom.setAttribute('aria-label', `看第 ${this.n} 帧`)
-    this.dom.contentEditable = 'false'
-    this.dom.tabIndex = 0
-    this.dom.className = CHIP_CLASS
-    // 外层是普通行内元素，胶囊画在里层：外层尾部的零宽连字符让芯片和紧跟的标点不在中间断行。
-    const pill = document.createElement('span')
-    pill.className = 'frame-chip-pill ui-motion-s'
-    this.img = document.createElement('img')
-    this.img.alt = ''
-    const label = document.createElement('span')
-    label.textContent = `@${this.n}`
-    pill.append(this.img, label)
-    this.dom.append(pill)
-    this.dom.addEventListener('click', (event) => {
-      event.preventDefault()
-      this.ctx.onPick(this.n)
-    })
-    this.dom.addEventListener('keydown', (event) => {
-      if (!isActivationKey(event.key)) return
-      event.preventDefault()
-      this.ctx.onPick(this.n)
-    })
-    chips.add(this)
-    this.refresh()
-  }
-
-  refresh() {
-    const url = this.ctx.frameUrl(this.n)
-    if (url === undefined) this.img.removeAttribute('src')
-    else if (this.img.getAttribute('src') !== url) this.img.src = url
-    this.img.hidden = url === undefined
-    // 舞台正在看的那一帧实色高亮。
-    this.dom.toggleAttribute('data-highlighted', this.ctx.highlighted() === this.n)
-  }
-
-  stopEvent(event: Event) {
-    return (
-      event.type === 'click' ||
-      event.type === 'mousedown' ||
-      (event.type === 'keydown' && event instanceof KeyboardEvent && isActivationKey(event.key))
-    )
-  }
-
-  ignoreMutation() {
-    return true
-  }
-
-  destroy() {
-    this.chips.delete(this)
-  }
+/** 正文里收图片要的：张数上限与传好之后怎么落进本组。 */
+export type PromptImages = {
+  /** 本组还能再放几张（已有的与各段在途的都扣掉）。 */
+  remaining: () => number
+  /** 一张图传好了：在 `insertion` 处插入它的引用并把地址追加进本组，返回它的编号；放不进时抛出原因。 */
+  land: (url: string, insertion: PromptInsertion) => number
+  onPendingChange: (pending: PendingImages) => void
 }
-
-export type PromptEditorHandle = { getInsertion: () => PromptInsertion | undefined }
 
 type PromptEditorProps = {
   value: string
@@ -108,9 +60,13 @@ type PromptEditorProps = {
   onPickFrame?: ((n: number) => void) | undefined
   /** 敲 `@` 选图；不给时 `@` 就是普通字符。 */
   mention?: FrameMentionOptions | undefined
+  /** 粘贴、拖放图片；不给时不收（没有上传权限）。 */
+  images?: PromptImages | undefined
   'aria-label': string
   className?: string
 }
+
+const pastedText = (text: string) => new Slice(promptToDoc(text).content, 1, 1)
 
 export function PromptEditor({
   'aria-label': ariaLabel,
@@ -118,6 +74,7 @@ export function PromptEditor({
   className,
   frames,
   highlighted,
+  images,
   mention,
   value,
   ref,
@@ -125,115 +82,139 @@ export function PromptEditor({
   onPickFrame,
   readOnly = false,
 }: PromptEditorProps) {
-  const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const hadSelectionRef = useRef(false)
-  const chipsRef = useRef(new Set<FrameChipView>())
-  const ratio = aspectValueOf(aspectRatio)
-  const frameMention = useFrameMention(viewRef, mention, frames.length)
-  // 编辑器只建一次；变化中的回调与数据经 ref 读最新值
-  const latestRef = useRef({ frames, highlighted, onChange, onPickFrame, readOnly })
-  useEffect(() => {
-    latestRef.current = { frames, highlighted, onChange, onPickFrame, readOnly }
-  })
-  // 记录最近序列化结果，忽略编辑器自身发出的更新，避免重置光标。
+  // 句柄、选图与落图经 ref 取最新的编辑器操作；编辑器建好之前没有可做的。
+  const editorRef = useRef<ComposerEditor | null>(null)
+  const attachments = useComposerAttachments('image')
+  const admission = useAttachmentAdmission(
+    'image',
+    images === undefined
+      ? undefined
+      : {
+          notice: (dropped) => `${REFERENCE_LIMIT_TEXT}，这次有 ${dropped} 张没有添加`,
+          remaining: images.remaining,
+        },
+  )
+  const frameMention = useFrameMention(viewRef, mention, frames.length, (frame) =>
+    editorRef.current?.insertParts([framePart(frame)]),
+  )
+  // 最近交出去（或从外面收到）的正文：外面带回同一段正文时不重建文档，免得重置光标。
   const serializedRef = useRef(value)
-  const initialRef = useRef({ ariaLabel, createMentionPlugin: frameMention.createPlugin, value })
+  const editor = useComposerEditor({
+    admitFiles: admission.admitFiles,
+    // 复制来的聊天消息不还原成附件，按纯文字粘。
+    admitPasted: undefined,
+    ariaLabel,
+    attachments,
+    attachmentsEnabled: images !== undefined && !readOnly,
+    className: 'prompt-editor-content',
+    clipboardTextParser: pastedText,
+    enter: { kind: 'paragraph' },
+    initialDoc: () => promptToDoc(value),
+    nodes: FRAME_NODES,
+    // 文档变了就交出正文；只有 chip 进出、正文没变时不交。
+    onDocChange: (doc) => {
+      const text = docToPrompt(doc)
+      if (text === serializedRef.current) return
+      serializedRef.current = text
+      onChange?.(text)
+    },
+    plugins: () => [frameMention.createPlugin()],
+    readOnly,
+    viewRef,
+  })
+  // 先解构挂载回调，避免 react-hooks/refs 将 editor.mountEditor 误判为 ref 读取。
+  const { mountEditor } = editor
+  useEffect(() => {
+    editorRef.current = editor
+  })
+  const { setNotice } = admission
+
   useImperativeHandle(
     ref,
     () => ({
-      getInsertion: () => {
+      insertFiles: (files, place) => {
         const view = viewRef.current
-        if (view === null || !hadSelectionRef.current) return undefined
-        const { doc, selection } = view.state
-        return {
-          text: docToPrompt(doc),
-          start: promptOffsetAt(doc, selection.from),
-          end: promptOffsetAt(doc, selection.to),
+        if (view === null) return
+        if (place === 'end') {
+          editorRef.current?.insertFiles(files, view.state.doc.content.size - 1)
+          return
         }
+        if (!view.state.selection.empty) view.dispatch(view.state.tr.deleteSelection())
+        editorRef.current?.insertFiles(files)
       },
+      insertFrame: (n) => editorRef.current?.insertParts([framePart(n)]),
+      showNotice: setNotice,
     }),
-    [],
+    [setNotice],
   )
 
-  useEffect(() => {
-    const host = hostRef.current
-    if (host === null) return undefined
-    const chips = chipsRef.current
-    const ctx: ChipContext = {
-      frameUrl: (n) => latestRef.current.frames[n - 1],
-      highlighted: () => latestRef.current.highlighted,
-      onPick: (n) => latestRef.current.onPickFrame?.(n),
-    }
-    const view: EditorView = new EditorView(host, {
-      // 只读时 contenteditable 关掉就不可聚焦了；给个 tabindex，键盘和点击仍能落到这段上。
-      attributes: () => ({
-        'aria-label': initialRef.current.ariaLabel,
-        'aria-multiline': 'true',
-        class: 'prompt-editor-content',
-        role: 'textbox',
-        ...(latestRef.current.readOnly ? { 'aria-readonly': 'true', tabindex: '0' } : {}),
-      }),
-      dispatchTransaction(tr) {
-        const next = view.state.apply(tr)
-        view.updateState(next)
-        if (!tr.docChanged) return
-        const changed = docToPrompt(next.doc)
-        serializedRef.current = changed
-        latestRef.current.onChange?.(changed)
-      },
-      clipboardTextParser: (text) => new Slice(promptToDoc(text).content, 1, 1),
-      handleDOMEvents: {
-        focus: () => {
-          hadSelectionRef.current = true
-          return false
-        },
-      },
-      editable: () => !latestRef.current.readOnly,
-      nodeViews: { frame: (node) => new FrameChipView(node, ctx, chips) },
-      state: EditorState.create({
-        doc: promptToDoc(initialRef.current.value),
-        // 选图排在 keymap 之前：打开时的 Enter 与方向键先归它，不分段、不挪光标。
-        plugins: [
-          initialRef.current.createMentionPlugin(),
-          history(),
-          keymap({ 'Mod-y': redo, 'Mod-z': undo, 'Shift-Mod-z': redo }),
-          keymap(baseKeymap),
-        ],
-      }),
-    })
-    viewRef.current = view
-    return () => {
-      view.destroy()
-      viewRef.current = null
-    }
-  }, [])
+  // 外面改了这段正文（agent 写回分镜、回填历史提示词）：整篇重置文档与撤销历史。在途的 chip 跟着丢掉，
+  // 条目回收后迟到的上传结果不再回填——图只落进发起时用户看到的那段正文，正文被换掉就作废，与舞台替换帧的规则一致。
+  const resetTo = useEffectEvent((next: string) => {
+    if (next === serializedRef.current) return
+    serializedRef.current = next
+    editorRef.current?.resetDoc(promptToDoc(next))
+  })
+  useEffect(() => resetTo(value), [value])
 
-  // 外部文本变化时替换文档并重置光标。
-  useEffect(() => {
+  // 就绪的 chip 换成帧引用：先在 chip 的位置把引用与地址一起写进本组，拿到编号再换节点。
+  // 换完的正文先记下，外面带回来时就认得是自己交出去的，不会整篇重置把同段其他在途的 chip 冲掉。
+  const landImage = useEffectEvent((attId: string, url: string) => {
     const view = viewRef.current
-    if (view === null) return
-    if (value === serializedRef.current) return
-    serializedRef.current = value
-    hadSelectionRef.current = false
-    view.updateState(EditorState.create({ doc: promptToDoc(value), plugins: view.state.plugins }))
-  }, [value])
-
+    const current = editorRef.current
+    const pos = current?.attachmentPosition(attId)
+    if (view === null || current === null || pos === undefined || images === undefined) return
+    const { doc } = view.state
+    const offset = promptOffsetAt(doc, pos)
+    let n: number
+    try {
+      n = images.land(url, { end: offset, start: offset, text: docToPrompt(doc) })
+    } catch (error) {
+      toast.error(errorMessageOf(error, '添加图片失败'))
+      const removal = current.replaceAttachment(attId, [])
+      if (removal !== undefined) view.dispatch(removal)
+      return
+    }
+    const tr = current.replaceAttachment(attId, [framePart(n)])
+    if (tr === undefined) return
+    serializedRef.current = docToPrompt(tr.doc)
+    view.dispatch(tr)
+  })
+  const { attIds } = editor
   useEffect(() => {
-    for (const chip of chipsRef.current) chip.refresh()
-  }, [frames, highlighted])
+    for (const attId of attIds) {
+      const entry = attachments.entries.get(attId)
+      if (entry?.status === 'ready' && entry.url !== undefined) landImage(attId, entry.url)
+    }
+  }, [attIds, attachments.entries])
+
+  const pendingCount = attIds.length
+  const uploading = attIds.some((attId) => attachments.entries.get(attId)?.status === 'uploading')
+  const reportPending = useEffectEvent((pending: PendingImages) => images?.onPendingChange(pending))
+  useEffect(() => {
+    reportPending({ count: pendingCount, uploading })
+    return () => reportPending({ count: 0, uploading: false })
+  }, [pendingCount, uploading])
 
   const closeMention = frameMention.close
   useEffect(() => {
-    viewRef.current?.setProps({ editable: () => !readOnly })
     if (readOnly) closeMention()
   }, [closeMention, readOnly])
 
   return (
     <>
-      <div className={cn('prompt-editor', className)} ref={hostRef} />
+      <div className={cn('prompt-editor', className)} ref={mountEditor} />
+      <FrameChipsProvider value={{ frames, highlighted, onPick: (n) => onPickFrame?.(n) }}>
+        <ComposerNodeViews attachments={attachments} editor={editor} layerContainer={null} />
+      </FrameChipsProvider>
+      {images === undefined ? null : <ComposerNotice notice={admission.notice} />}
       {frameMention.menu === undefined ? null : (
-        <FrameMentionMenu {...frameMention.menu} frames={frames} ratio={ratio} />
+        <FrameMentionMenu
+          {...frameMention.menu}
+          frames={frames}
+          ratio={aspectValueOf(aspectRatio)}
+        />
       )}
     </>
   )
