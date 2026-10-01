@@ -144,7 +144,7 @@ afterEach(() => {
 })
 
 describe('useLiveConversations', () => {
-  it('自己对话的开跑帧改池里的行、抹掉收尾标记，重拉全部对话页；不补读单行、不动侧栏', async () => {
+  it('自己对话的开跑帧改池里的行、抹掉收尾标记，重拉全部对话页并补读这一行，不动侧栏', async () => {
     const row = conversationRow()
     const reads = countRowReads()
     const { queryClient, socket } = await mount()
@@ -160,55 +160,100 @@ describe('useLiveConversations', () => {
       completedAt: null,
     })
     expect(invalidated(queryClient, AUDIT_KEY)).toBe(true)
-    // 行上随运行变的字段由开跑的 updated 帧送来（ADR-0005），这里不补读，也不整份重拉侧栏、收起已展开的分页。
-    expect(reads).toEqual([])
+    // 照 Kimi 补读单行兜底，不整份重拉侧栏，也不收起已展开的分页。
+    await vi.waitFor(() => expect(reads).toEqual([`/api/conversations/${row.id}`]))
     expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
     expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
   })
 
-  it('同一段对话的单行补读按 id 去重：一批里的几帧、在途时再来的帧都只读一次', async () => {
-    const video = (id: string) => generationFrame(id, 'video')
-    const row = conversationRow()
-    const reads: string[] = []
-    let release = () => {}
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
+  it.each([
+    [
+      '活动帧',
+      (id: string, index: number) =>
+        activityFrame(
+          id,
+          index % 2 === 0 ? { busy: true } : { busy: false, last_turn_reason: 'failed' },
+        ),
+    ],
+    ['视频帧', (id: string) => generationFrame(id, 'video')],
+  ])(
+    '%s触发的单行补读按 id 去重：在途时再来的帧都只读一次，读完再来要重新读',
+    async (_label, frame) => {
+      const row = conversationRow({
+        activity: {
+          busy: false,
+          lastTurnReason: null,
+          pendingInteraction: 'none',
+          videoGeneration: 'none',
+        },
+      })
+      const reads: string[] = []
+      let release = () => {}
+      let gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      server.use(
+        http.get('*/api/conversations/:conversationId', async ({ params }) => {
+          reads.push(String(params['conversationId']))
+          await gate
+          return HttpResponse.json({ conversation: row })
+        }),
+      )
+      const { queryClient, socket } = await mount()
+      seedCaches(queryClient, row)
+
+      socket.deliver(frame(row.id, 0))
+      socket.deliver(frame(row.id, 1))
+      await settle(0)
+      socket.deliver(frame(row.id, 2))
+      await settle(0)
+      expect(reads).toEqual([row.id])
+      release()
+
+      await vi.waitFor(() => expect(poolRow(queryClient, row.id)).toBeDefined())
+      gate = Promise.resolve()
+      await settle(0)
+      // 在途记录清掉之后，再来一次轮状态或出片变化要重新读。
+      socket.deliver(frame(row.id, 3))
+      await settle(0)
+      await vi.waitFor(() => expect(reads).toEqual([row.id, row.id]))
+    },
+  )
+
+  it('轮状态没变的活动帧不补读', async () => {
+    const row = conversationRow({
+      activity: {
+        busy: true,
+        lastTurnReason: null,
+        pendingInteraction: 'none',
+        videoGeneration: 'none',
+      },
     })
-    server.use(
-      http.get('*/api/conversations/:conversationId', async ({ params }) => {
-        reads.push(String(params['conversationId']))
-        await gate
-        return HttpResponse.json({ conversation: row })
-      }),
-    )
-    const { queryClient, socket } = await mount()
-    seedCaches(queryClient, row)
-
-    socket.deliver(video(row.id))
-    socket.deliver(video(row.id))
-    await settle(0)
-    socket.deliver(video(row.id))
-    await settle(0)
-    release()
-
-    await vi.waitFor(() => expect(reads).toEqual([row.id]))
-    // 这次读完、在途记录清掉之后再来一帧，要重新读：去重只在请求在途期间生效。
-    await vi.waitFor(() => expect(poolRow(queryClient, row.id)).toBeDefined())
-    await settle(0)
-    socket.deliver(video(row.id))
-    await settle(0)
-    await vi.waitFor(() => expect(reads).toEqual([row.id, row.id]))
-  })
-
-  it('开跑的 updated 帧带出新的 lastRunId 与空收尾标记，窗口期读出的旧行盖不掉', async () => {
-    const row = conversationRow()
+    const reads = countRowReads()
     const { queryClient, socket } = await mount()
     seedCaches(queryClient, row)
 
     socket.deliver(activityFrame(row.id, { busy: true }))
+    await settle()
+
+    expect(reads).toEqual([])
+  })
+
+  it('开跑的 updated 帧带出新的 lastRunId 与空收尾标记，窗口期读出的旧行盖不掉', async () => {
+    const row = conversationRow()
+    // 单行补读挂住不回：只看 updated 帧自身的水位，不让补读替它把行对齐。
+    server.use(http.get('*/api/conversations/:conversationId', () => new Promise<never>(() => {})))
+    const { queryClient, socket } = await mount()
+    seedCaches(queryClient, row)
+
+    row.activity = { ...row.activity, busy: true }
+    socket.deliver(activityFrame(row.id, { busy: true }))
     // 开跑写入之前读库：带着旧收尾标记，水位已含活动帧。
     const stale = { ...row, lastSeq: row.lastSeq }
-    socket.deliver(rowFrame('updated', { ...row, completedAt: null, lastRunId: 'run-9' }))
+    // 服务端 touch_run 落库，再发 updated。
+    const before = row.lastSeq
+    Object.assign(row, { completedAt: null, lastRunId: 'run-9' })
+    socket.deliver({ ...rowFrame('updated', row), payload: { ...row, lastSeq: before } })
     await settle()
     conversationRowsOf(queryClient).mergeRows([stale])
 

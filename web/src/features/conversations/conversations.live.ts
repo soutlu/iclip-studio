@@ -1,6 +1,6 @@
 /**
  * 全局帧落到对话行池，照 Kimi 的事件 reducer：同一拍到达的帧合批落地，行的变化只改池，
- * 成员与计数要变时才重拉对应列表，帧上没有的字段（出片汇总）按 id 补读单行。
+ * 成员与计数要变时才重拉对应列表；轮状态与出片变化时按 id 补读单行兜底（照 Kimi）。
  *
  * 帧带属主（合同 §5「全局帧」）：别人的对话只牵动全部对话页，不动自己的侧栏。
  */
@@ -126,8 +126,16 @@ const reduce = (
         update.mark,
       )
       if (!mine) return
-      // 不补读单行：Kimi 补读是为了它活动帧上没有的摘要字段；我们开跑记录运行另发 updated 帧（ADR-0005），
-      // 行上随运行变的 lastRunId、收尾标记、updatedAt 都由它送到，活动帧本身带齐轮次活动。
+      // 照 Kimi：轮状态变了（开跑、收场、待审批 / 提问出现或消失）按 id 补读一行兜底，结果仍按 lastSeq 合并。
+      // 随运行变的行字段虽然另有 updated 帧（ADR-0005），补读不依赖服务端每个写入口都发了帧。
+      if (
+        before === undefined ||
+        before.activity.busy !== update.busy ||
+        before.activity.pendingInteraction !== update.pendingInteraction ||
+        (before.activity.lastTurnReason ?? null) !== update.lastTurnReason
+      ) {
+        effects.rows.add(update.conversationId)
+      }
       effects.filtered = true
       return
     }
