@@ -251,7 +251,8 @@
    列头不随正文滚：镜头数与总长、「收成摘要」开关，下面是按时长切分的镜头条（每段热区占满条高，细条画在 ::before）
    和两端刻度。正文区最上面是全局设定卡，之后是镜头列表：左侧时间轴的竖线串起各镜的序号节点，节点下写起始时间，
    末尾一个空心结束点。选中的段浮起成卡片（抬高层底色 top-layer：浅色白、深色比页面底亮一档，加发丝线、轻投影，正文主色），其余透明、正文次级色，悬停一层中性叠色；
-   选中镜头的节点、镜头条上那一段与时长胶囊都用墨色实底（inverse-surface），时间刻度变正文色。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
+   镜头条色段与序号节点按镜头取点缀色（shot-accent.ts，颜色由工具类给，这里只管几何）。选中不换色：色段加高，节点加一圈墨色外环，
+   时长胶囊用墨色实底，时间刻度变正文色。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
    时间轴几何：节点 22px、顶距 12px，圆心正对标题行（卡片 1px 边 + 8px 内距 + 28px 标题行的一半）；
    竖线从本镜圆心画到下一镜圆心，最后一镜画到结束点圆心，节点与刻度垫页面底色盖住它。 */
 .storyboard-script-head {
@@ -284,20 +285,17 @@
   left: 0;
   height: 6px;
   border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
   content: '';
   transition-duration: var(--dur-s);
-  transition-property: height, background-color;
+  transition-property: height;
   transition-timing-function: var(--ease);
   translate: 0 -50%;
 }
 .storyboard-timeline-segment:hover::before {
-  height: 10px;
-  background: var(--color-outline-variant);
+  height: 8px;
 }
 .storyboard-timeline-segment[aria-current='true']::before {
-  height: 10px;
-  background: var(--color-inverse-surface);
+  height: 12px;
 }
 .storyboard-timeline-ticks {
   display: flex;
@@ -438,16 +436,13 @@
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1.5px solid var(--color-hairline);
   border-radius: var(--radius-full);
-  background: var(--color-background);
-  color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: 1;
   transition-duration: var(--dur-s);
-  transition-property: background-color, border-color, color, box-shadow;
+  transition-property: box-shadow;
   transition-timing-function: var(--ease);
 }
 .storyboard-rail-stamp {
@@ -460,11 +455,11 @@
   line-height: 14px;
   white-space: nowrap;
 }
+/* 选中的节点：隔一圈页面底色，再一圈墨色外环；底色仍是这一镜的点缀色。 */
 .storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-node {
-  border-color: var(--color-inverse-surface);
-  background: var(--color-inverse-surface);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-on-surface) 12%, transparent);
-  color: var(--color-inverse-on-surface);
+  box-shadow:
+    0 0 0 2px var(--color-background),
+    0 0 0 3.5px var(--color-on-surface);
 }
 .storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-stamp {
   color: var(--color-on-surface);
@@ -559,7 +554,9 @@
 /* ===== 出片栏 =====
    宽屏一行：参数在左、主按钮在右。工作台窄于 640 时模型 id 截断；窄于 480（手机）分两行：
    参数一行不换行、放不下就横向滚、两端渐隐，主按钮占满第二行。
-   参数控件同高（36px）、同圆角、同一层中性底；主色只留给出片按钮。模型与画幅的菜单向上弹，挂在 portal 里。 */
+   参数控件一套规格：34px 高、sm 圆角、发丝线描边、卡面白底，字与图标中性；画幅在最左，竖线隔开后是生成设置。
+   选中与展开用中性灰，主色只留给出片按钮；画幅不被模型支持时画幅按钮换错误态。模型与画幅的菜单向上弹，挂在 portal 里。
+   控件上方的状态行有话才出现：置灰原因用次级字色，错误用错误色。 */
 .storyboard-bar {
   display: flex;
   flex: none;
@@ -574,6 +571,22 @@
   align-items: center;
   gap: 12px;
 }
+.storyboard-bar-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding-left: 2px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+.storyboard-bar-status > svg {
+  flex: none;
+}
+.storyboard-bar-status[data-tone='error'] {
+  color: var(--color-error);
+}
 .storyboard-bar-params {
   display: flex;
   min-width: 0;
@@ -582,15 +595,23 @@
   align-items: center;
   gap: 8px;
 }
+/* 画幅与生成设置之间的竖线。 */
+.storyboard-bar-divider {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  background: var(--color-hairline);
+}
 /* 模型、画幅与音频按钮；悬停、按下与禁用由 ui-state 给。 */
 .storyboard-bar-control {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  height: var(--control-height-md);
+  height: var(--control-height-sm);
+  border: 1px solid var(--color-hairline);
   border-radius: var(--radius-sm);
-  background-color: var(--color-surface-container);
+  background-color: var(--color-surface-container-lowest);
   font-size: var(--text-body);
 }
 /* 颜色与指针只管可用态，禁用态的淡色与指针交给 ui-state。 */
@@ -605,7 +626,8 @@
   font-variant-numeric: tabular-nums;
 }
 .storyboard-bar-picker[data-state='open'] {
-  background-color: var(--color-surface-container-highest);
+  border-color: transparent;
+  background-color: var(--color-surface-container-high);
 }
 .storyboard-bar-picker > svg,
 .storyboard-bar-picker > .storyboard-bar-glyph {
@@ -629,19 +651,30 @@
 .storyboard-bar-picker:enabled > .storyboard-bar-picker-chevron {
   color: var(--color-on-surface-muted);
 }
+/* 当前值有问题（画幅不被模型支持）：错误容器底、错误色描边，字与图标一起换色。 */
+.storyboard-bar-picker[data-invalid='true']:enabled {
+  border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+  background-color: var(--color-error-container);
+  color: var(--color-on-error-container);
+}
+.storyboard-bar-picker[data-invalid='true']:enabled > svg,
+.storyboard-bar-picker[data-invalid='true']:enabled > .storyboard-bar-picker-chevron {
+  color: inherit;
+}
 .storyboard-bar-audio {
-  width: var(--control-height-md);
+  width: var(--control-height-sm);
 }
 /* 音频关着：图标换成静音并变淡。 */
 .storyboard-bar-audio[aria-pressed='false']:enabled {
   color: var(--color-on-surface-muted);
 }
-/* 分辨率分段：外框与其余控件同高同底，选中项是浮起的一块中性底。 */
+/* 分辨率分段：外框与其余控件同高、同描边、同底，选中项是一块中性灰底，不浮起。 */
 .storyboard-bar-segmented {
-  height: var(--control-height-md);
-  padding: 3px;
+  height: var(--control-height-sm);
+  padding: 2px;
+  border: 1px solid var(--color-hairline);
   border-radius: var(--radius-sm);
-  background-color: var(--color-surface-container);
+  background-color: var(--color-surface-container-lowest);
 }
 .storyboard-bar-segment {
   padding: 0 12px;
@@ -649,9 +682,10 @@
   font-size: var(--text-body);
   font-variant-numeric: tabular-nums;
 }
-/* 深色下最浅的一层才读得出浮起；共享分段的选中底是最深那层，在这里压过它。 */
-.dark .storyboard-bar-segment[data-state='on'] {
-  background-color: var(--color-surface-container-highest);
+/* 共享分段的选中项是浮起的白块，出片栏控件本身就是白底，这里换成灰底、去掉投影。 */
+.storyboard-bar-segment[data-state='on'] {
+  background-color: var(--color-surface-container-high);
+  box-shadow: none;
 }
 /* 画幅小图形：按比例描的空心框，颜色随所在控件。 */
 .storyboard-bar-glyph {

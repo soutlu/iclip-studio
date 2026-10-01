@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 
 export type GenerationPickerOption = {
   /** 选项的值，也是选项上显示的字。 */
@@ -30,11 +31,17 @@ type GenerationPickerProps = {
   onChange: (value: string) => void
   /** 挂在按钮上的类，给各档宽度下的尺寸规则用。 */
   className?: string
+  /** 悬停、聚焦时提示的一句说明；有它就不再用原生 title 显示按钮上的字。 */
+  description?: string
+  /** 当前值有问题（如画幅不被模型支持）：按钮换成错误态，`describedBy` 指向说明问题的那段字。 */
+  invalid?: { describedBy: string | undefined } | undefined
 }
 
 export function GenerationPicker({
   className,
+  description,
   disabled,
+  invalid,
   label,
   leading,
   onChange,
@@ -42,24 +49,34 @@ export function GenerationPicker({
   text,
   value,
 }: GenerationPickerProps) {
+  const trigger = (
+    <MenuTrigger asChild disabled={disabled}>
+      <button
+        aria-label={label}
+        // 只在有值时才写这个键：asChild 合并属性时子元素的键会盖掉提示自己挂的说明。
+        {...(invalid?.describedBy === undefined ? {} : { 'aria-describedby': invalid.describedBy })}
+        className={cn('storyboard-bar-control storyboard-bar-picker ui-state ui-focus', className)}
+        data-invalid={invalid === undefined ? undefined : true}
+        // 按钮窄时文字截断，完整的字靠悬停看；有说明提示时让给它，免得两层提示叠在一起。
+        title={description === undefined ? text : undefined}
+        type="button"
+      >
+        {leading}
+        <span className="storyboard-bar-picker-text">{text}</span>
+        <Icon className="storyboard-bar-picker-chevron" decorative name="expand" size="xs" />
+      </button>
+    </MenuTrigger>
+  )
   return (
     <MenuRoot>
-      <MenuTrigger asChild disabled={disabled}>
-        <button
-          aria-label={label}
-          className={cn(
-            'storyboard-bar-control storyboard-bar-picker ui-state ui-focus',
-            className,
-          )}
-          // 按钮窄时文字截断，完整的字靠悬停看。
-          title={text}
-          type="button"
-        >
-          {leading}
-          <span className="storyboard-bar-picker-text">{text}</span>
-          <Icon className="storyboard-bar-picker-chevron" decorative name="expand" size="xs" />
-        </button>
-      </MenuTrigger>
+      {description === undefined ? (
+        trigger
+      ) : (
+        <TooltipRoot>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent side="top">{description}</TooltipContent>
+        </TooltipRoot>
+      )}
       <MenuSurface
         align="start"
         aria-label={label}

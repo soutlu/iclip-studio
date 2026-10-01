@@ -1,4 +1,4 @@
-/** 文案列：列头写镜头数与总长，带「收成摘要」开关和按时长切分的镜头条；正文区最上面是全局设定卡，
+/** 文案列：列头写镜头数与总长，带「收成摘要」开关和按时长切分的镜头条（色段与序号徽标同取镜头的点缀色）；正文区最上面是全局设定卡，
  * 之后按时间线排各镜头，左侧时间轴在序号节点下标出起始时间，末尾是结束刻度。
  * 默认全文；收成摘要时未选中的镜头只露两行、全局设定三行。点哪段选中哪段，舞台跟着切到它的首帧。
  * 时间一律写一位小数加 s，总长取最后一镜的止秒。版式见 storyboard.css 的「文案列」一节。 */
@@ -12,6 +12,7 @@ import {
   type Ref,
 } from 'react'
 import { Icon } from '@/shared/icons'
+import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
@@ -25,6 +26,7 @@ import {
   type SegmentTime,
   type ShotContent,
 } from '../shot-content'
+import { shotAccentOf, type ShotAccent } from '../shot-accent'
 import type { Shot } from '../shot-document'
 import { copyWithToast } from './copy-with-toast'
 import type { FrameAdd } from './frame-tile'
@@ -49,8 +51,8 @@ type ShotScriptProps = {
   onUpdateShot: (updater: (current: Shot) => Shot) => unknown
 }
 
-/** 镜头段与它的序号（从 1 起）、时间。 */
-type Scene = { segment: ShotContent; number: number; time: SegmentTime }
+/** 镜头段与它的序号（从 1 起）、时间和点缀色。 */
+type Scene = { segment: ShotContent; number: number; time: SegmentTime; accent: ShotAccent }
 
 // 段里自带选中动作的控件（展开全局设定、点缩略图）聚焦时不再走「焦点进段就选中」，免得先选段再选帧跳两次。
 const keepFocusInside = (event: FocusEvent) => event.stopPropagation()
@@ -75,7 +77,14 @@ export function ShotScript({
     const time = segmentTimeRange(shot, segment)
     return time === undefined || segment.timelineIndex === undefined
       ? []
-      : [{ number: segment.timelineIndex + 1, segment, time }]
+      : [
+          {
+            accent: shotAccentOf(segment.timelineIndex),
+            number: segment.timelineIndex + 1,
+            segment,
+            time,
+          },
+        ]
   })
   const settings = segments.find((segment) => segment.kind === 'global')
   const total = formatTimecode(timelineDuration(shot))
@@ -139,7 +148,7 @@ export function ShotScript({
           </Button>
         </div>
         <div aria-label="镜头时间条" className="storyboard-timeline" role="group">
-          {scenes.map(({ segment, time }) => {
+          {scenes.map(({ accent, segment, time }) => {
             const summary = [
               contentLabel(segment),
               formatTimecode(time.duration),
@@ -151,7 +160,7 @@ export function ShotScript({
                   <button
                     aria-current={segment.id === selectedId}
                     aria-label={summary.join('，')}
-                    className="storyboard-timeline-segment ui-focus"
+                    className={cn('storyboard-timeline-segment ui-focus', accent.segment)}
                     onClick={() => jumpTo(segment)}
                     // 按原始起止秒排比例，不用取整后的时长。
                     style={{ flexGrow: time.end - time.start }}
@@ -186,7 +195,7 @@ export function ShotScript({
           </SettingsCard>
         )}
         <ol className="storyboard-shots">
-          {scenes.map(({ number, segment, time }) => {
+          {scenes.map(({ accent, number, segment, time }) => {
             const selected = segment.id === selectedId
             const label = contentLabel(segment)
             return (
@@ -201,7 +210,7 @@ export function ShotScript({
                 }}
               >
                 <span aria-hidden className="storyboard-rail">
-                  <span className="storyboard-rail-node">{number}</span>
+                  <span className={cn('storyboard-rail-node', accent.badge)}>{number}</span>
                   <span className="storyboard-rail-stamp">{formatTimecode(time.start)}</span>
                 </span>
                 <div
