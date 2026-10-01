@@ -56,6 +56,8 @@
   display: contents;
 }
 .video-editor-preview {
+  /* 深色预览面上墨色焦点环看不见，改用 on-scrim。 */
+  --color-focus-ring: var(--color-on-scrim);
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-sm);
@@ -99,9 +101,10 @@
 .video-editor-preview-tab:disabled {
   cursor: default;
 }
+/* 当前版本用反相实底标出，选中态不用主色。 */
 .video-editor-preview-tab.is-active {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  background: var(--color-on-scrim);
+  color: var(--color-scrim);
 }
 .video-editor-ratio {
   position: absolute;
@@ -310,12 +313,9 @@
   font-size: var(--text-body);
   line-height: 1.6;
 }
+/* 输入框不画焦点环，外框边框转墨色即焦点指示（见 editor-composer.css）。 */
 .video-editor .video-editor-composer-input:focus-visible {
   outline: none;
-}
-.video-editor-composer:has(> .video-editor-composer-input:focus-visible) {
-  outline: var(--state-focus-ring) solid var(--color-focus-ring);
-  outline-offset: var(--state-focus-offset);
 }
 @media (min-width: 1000px) and (max-height: 850px) {
   .video-editor-inspector {

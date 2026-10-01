@@ -368,7 +368,7 @@ function SidebarAction({
           emphasis
             ? 'text-inverse-on-surface'
             : active
-              ? 'text-primary'
+              ? 'text-on-surface'
               : 'text-on-surface-variant',
         )}
         decorative

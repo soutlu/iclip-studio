@@ -22,7 +22,7 @@ type TaskSpecPickerProps = {
 }
 
 const CONTROL =
-  'task-form-control flex h-(--control-height-md) w-full min-w-0 items-center gap-1 rounded-sm border border-transparent bg-surface-container-low px-3 text-body text-on-surface focus-within:border-primary focus-within:bg-surface-container-lowest'
+  'task-form-control flex h-(--control-height-md) w-full min-w-0 items-center gap-1 rounded-sm border border-transparent bg-surface-container-low px-3 text-body text-on-surface'
 
 /** 规格字段既可选建议值也可自由填写；已知显示名回写原有合同值。 */
 export function TaskSpecPicker({
@@ -221,7 +221,7 @@ export function TaskSpecPicker({
                 aria-selected={option.value === value}
                 className={cn(
                   'flex min-h-10 w-full ui-state cursor-pointer items-center gap-3 rounded-sm px-3 py-2 text-left text-body ui-focus',
-                  option.value === value && 'bg-state-active text-primary',
+                  option.value === value && 'bg-state-active',
                   activeIndex === index && 'bg-state-focus',
                 )}
                 id={`${listId}-${index}`}
@@ -235,7 +235,7 @@ export function TaskSpecPicker({
               >
                 <span className="min-w-0 flex-1 break-words">{option.label}</span>
                 {option.value === value ? (
-                  <Icon className="shrink-0 text-primary" decorative name="check" size="sm" />
+                  <Icon className="shrink-0" decorative name="check" size="sm" />
                 ) : null}
               </button>
             ))}

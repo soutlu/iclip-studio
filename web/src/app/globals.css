@@ -122,7 +122,6 @@
   --color-disabled-text: var(--color-disabled-text);
   --color-disabled-container: var(--color-disabled-container);
   --color-focus-ring: var(--color-focus-ring);
-  --color-ring-highlight: var(--color-ring-highlight);
   --color-warning: var(--color-warning);
   --color-on-warning: var(--color-on-warning);
   --color-warning-container: var(--color-warning-container);
@@ -183,7 +182,6 @@
   --color-chat-status-success: var(--color-chat-status-success);
   --color-chat-status-error: var(--color-chat-status-error);
   --color-chat-status-running: var(--color-chat-status-running);
-  --color-chat-focus-ring: var(--color-chat-focus-ring);
   --color-chat-hairline: var(--color-chat-hairline);
   --color-chat-scrollbar-thumb: var(--color-chat-scrollbar-thumb);
   --color-canvas-card-bg: var(--color-canvas-card-bg);

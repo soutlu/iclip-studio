@@ -142,6 +142,8 @@
    舞台上的文字与控件一律按深底配色（on-scrim、深色玻璃）。
    裁切用 clip 而不是 hidden：模糊铺底外扩出舞台，hidden 会让舞台可被滚动，聚焦箭头时浏览器把画面滚歪。 */
 .storyboard-stage {
+  /* 墨色焦点环在深底上看不见，舞台内改用 on-scrim。 */
+  --color-focus-ring: var(--color-on-scrim);
   position: relative;
   display: grid;
   min-width: 0;
@@ -325,10 +327,9 @@
   background: var(--color-top-layer);
   box-shadow: var(--shadow-2);
 }
-/* 正在编辑：光标落在可编辑的正文里时加一圈聚焦描边；只读时不进编辑态。 */
+/* 正在编辑：光标落在可编辑的正文里时发丝边加深成中性强边框；卡片已浮起，不再加焦点环。只读时不进编辑态。 */
 .storyboard-segment:has(.prompt-editor-content[contenteditable='true']:focus) {
-  outline: 2px solid var(--color-chat-focus-ring);
-  outline-offset: -2px;
+  border-color: var(--color-outline);
 }
 .storyboard-segment-head {
   display: flex;

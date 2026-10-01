@@ -122,10 +122,6 @@
   white-space: nowrap;
 }
 
-.video-editor-version-option[data-state='checked'] .video-editor-version-copy strong {
-  color: var(--color-primary);
-}
-
 .video-editor-version-copy > span {
   overflow: hidden;
   color: var(--color-on-surface-muted);

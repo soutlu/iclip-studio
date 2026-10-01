@@ -85,10 +85,10 @@
   align-items: center;
   gap: 12px;
   padding: 16px 24px;
-  border: 0.5px dashed var(--color-primary);
+  border: 0.5px dashed var(--color-outline);
   border-radius: var(--radius-lg);
   background: var(--color-top-layer);
-  color: var(--color-primary);
+  color: var(--color-on-surface);
   font-size: var(--text-title);
   font-weight: 500;
   box-shadow: var(--shadow-2);

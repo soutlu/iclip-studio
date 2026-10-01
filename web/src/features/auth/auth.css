@@ -32,8 +32,11 @@
 .cue-auth-secondary-toggle:hover,
 .cue-auth-secondary-toggle:focus-visible {
   color: var(--color-on-background);
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
+}
+
+.cue-auth-secondary-toggle:focus-visible {
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: var(--state-focus-offset);
 }
 
 .cue-auth-secondary-toggle > svg {

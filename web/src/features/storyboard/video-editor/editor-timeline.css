@@ -145,8 +145,8 @@
   cursor: crosshair;
 }
 .video-editor-timeline-ruler:focus-within {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: var(--state-focus-offset);
 }
 .video-editor-timeline-track {
   display: flex;
@@ -369,8 +369,8 @@
   cursor: pointer;
 }
 .video-editor-timeline-ancestor button[aria-current] {
-  border-bottom-color: var(--color-primary);
-  color: var(--color-primary);
+  border-bottom-color: var(--color-on-surface);
+  color: var(--color-on-surface);
 }
 .video-editor-timeline-ancestor > svg {
   color: var(--color-on-surface-muted);
