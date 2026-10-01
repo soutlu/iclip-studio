@@ -166,12 +166,6 @@
         --color-chat-secondary-text: var(--color-on-surface-variant);
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-low);
-        --color-chat-agent-avatar-bg: #e7f5df;
-        --color-chat-agent-avatar-border: rgba(113, 136, 58, 0.28);
-        --color-chat-agent-identity-bg: #f2f7ed;
-        --color-chat-agent-identity-border: rgba(113, 136, 58, 0.24);
-        --color-chat-agent-identity-text: #213219;
-        --color-chat-agent-rail: #009e77;
         --color-chat-inline-bg: color-mix(in srgb, var(--nv70) 10%, transparent);
         --color-chat-inline-border: var(--color-hairline);
         --color-chat-chip-bg: color-mix(in srgb, var(--nv70) 9%, transparent);
@@ -191,25 +185,20 @@
         /* 发丝边框与滚动条：透明度随 on-surface 适配主题 */
         --color-chat-hairline: var(--color-hairline);
         --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
-        --shadow-chat-panel: 0 20px 48px rgba(64, 73, 66, 0.18);
-        --shadow-chat-agent-avatar: 0 8px 18px rgba(64, 73, 66, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.62);
-        --shadow-chat-agent-identity: 0 8px 18px rgba(64, 73, 66, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.62);
-        --shadow-rail-inset: inset 3px 0 0 var(--color-chat-agent-rail);
+        --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.18);
         --shadow-hairline-bottom: inset 0 -1px 0 var(--color-hairline);
         /* 画布与故事板工作台 */
         --color-canvas-card-bg: var(--color-surface-container-lowest);
         --color-canvas-card-text: var(--color-on-surface);
         --color-canvas-card-border: var(--p60);
         --color-canvas-label-text: var(--nv50);
-        --color-storyboard-canvas: #eaefe8;
-        --color-storyboard-canvas-dot: color-mix(in srgb, var(--nv50) 18%, transparent);
         --color-storyboard-stage: #161616;
         --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 6%, transparent);
-        --shadow-storyboard-media: 0 1px 2px rgba(23, 29, 25, 0.07), 0 10px 22px -12px rgba(23, 29, 25, 0.2);
-        --shadow-storyboard-hero: 0 2px 4px rgba(23, 29, 25, 0.08), 0 18px 34px -14px rgba(23, 29, 25, 0.28);
+        --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.07), 0 10px 22px -12px rgba(0, 0, 0, 0.2);
+        --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.08), 0 18px 34px -14px rgba(0, 0, 0, 0.28);
         --shadow-storyboard-sidebar-left: 12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
         --shadow-storyboard-sidebar-right: -12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
-        --storyboard-node-shadow: 0 35px 96px rgba(38, 43, 39, 0.22);
+        --storyboard-node-shadow: 0 35px 96px rgba(0, 0, 0, 0.22);
         --storyboard-node-surface: var(--n99);
         --storyboard-node-selected-surface: var(--n95);
         --storyboard-node-border: var(--storyboard-node-surface);
@@ -219,8 +208,6 @@
         --storyboard-node-script-surface: var(--storyboard-node-surface);
         --storyboard-node-tool-surface: var(--storyboard-node-surface);
         --storyboard-node-panel-divider: #e4eae3;
-        --storyboard-node-accent: #00a667;
-        --storyboard-node-accent-line: var(--storyboard-node-accent);
         --storyboard-node-ink: #0a0f0c;
         --storyboard-node-muted: rgba(42, 50, 44, 0.4);
         --storyboard-node-muted-strong: rgba(42, 50, 44, 0.5);
@@ -229,7 +216,7 @@
         --color-dashboard-bg: var(--n96);
         --color-dashboard-card: var(--n100);
         --color-dashboard-card-edge: transparent;
-        --shadow-dashboard-card: 0 1px 2px rgba(23, 29, 25, 0.04), 0 8px 24px rgba(23, 29, 25, 0.05);
+        --shadow-dashboard-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
         /* 图表辅助色：网格线、非活跃日灰底、量大价低不该抢眼的中性分项、30 日均线一类的淡灰参照线 */
         --color-chart-grid: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
         --color-chart-inactive: color-mix(in srgb, var(--color-on-surface) 4%, transparent);
@@ -246,12 +233,33 @@
         --color-on-chart-ord-3: var(--n100);
         --color-on-chart-ord-4: var(--n100);
         --color-on-chart-ord-5: var(--n100);
+        /* 镜头点缀色：只表达镜头身份（时间轴色段与镜头编号同色），按镜头序号循环取色；编号底 = 点缀色 28% 混入页面底色，编号字 = 点缀色压暗一半 */
+        --color-accent-1: #ee5d3f;
+        --color-accent-2: #f39a2b;
+        --color-accent-3: #d9b02a;
+        --color-accent-4: #3a97dd;
+        --color-accent-5: #a05cc4;
+        --color-accent-6: #e35d8c;
+        --color-accent-7: #2a9fb0;
+        --color-accent-8: #5c6bd6;
+        --color-accent-1-container: color-mix(in srgb, var(--color-accent-1) 28%, var(--color-background));
+        --color-accent-2-container: color-mix(in srgb, var(--color-accent-2) 28%, var(--color-background));
+        --color-accent-3-container: color-mix(in srgb, var(--color-accent-3) 28%, var(--color-background));
+        --color-accent-4-container: color-mix(in srgb, var(--color-accent-4) 28%, var(--color-background));
+        --color-accent-5-container: color-mix(in srgb, var(--color-accent-5) 28%, var(--color-background));
+        --color-accent-6-container: color-mix(in srgb, var(--color-accent-6) 28%, var(--color-background));
+        --color-accent-7-container: color-mix(in srgb, var(--color-accent-7) 28%, var(--color-background));
+        --color-accent-8-container: color-mix(in srgb, var(--color-accent-8) 28%, var(--color-background));
+        --color-on-accent-1-container: color-mix(in srgb, var(--color-accent-1) 50%, var(--n0));
+        --color-on-accent-2-container: color-mix(in srgb, var(--color-accent-2) 50%, var(--n0));
+        --color-on-accent-3-container: color-mix(in srgb, var(--color-accent-3) 50%, var(--n0));
+        --color-on-accent-4-container: color-mix(in srgb, var(--color-accent-4) 50%, var(--n0));
+        --color-on-accent-5-container: color-mix(in srgb, var(--color-accent-5) 50%, var(--n0));
+        --color-on-accent-6-container: color-mix(in srgb, var(--color-accent-6) 50%, var(--n0));
+        --color-on-accent-7-container: color-mix(in srgb, var(--color-accent-7) 50%, var(--n0));
+        --color-on-accent-8-container: color-mix(in srgb, var(--color-accent-8) 50%, var(--n0));
 
         /* ===== ③ 领域别名 · 主题中立（内容身份色、纸面材质、压在媒体上的遮罩；明暗不变） ===== */
-        --color-annotation-red: #e04f3f;
-        --color-annotation-orange: #e9a13b;
-        --color-annotation-blue: #3f9fd0;
-        --color-annotation-green: #46b06f;
         --color-reference-image: #8a8a84;
         --color-reference-video: #5b6bc0;
         --color-reference-audio: var(--color-primary);
@@ -290,8 +298,6 @@
         --color-brief-board-4: #f8f0c4;
         --color-brief-board-5: #ffcd00;
         --color-brief-board-white: var(--n100);
-        --color-sb-table-accent: #4a7c59;
-        --color-sb-table-accent-soft: rgba(74, 124, 89, 0.12);
         --color-sb-table-background: #faf6f0;
         --color-sb-table-surface: #f5f1ea;
         --color-sb-table-prompt-surface: rgba(255, 255, 255, 0.82);
@@ -329,8 +335,6 @@
         --media-scrim-photo-strong: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.24) 28%, rgba(0, 0, 0, 0.82) 100%);
         --media-vignette: radial-gradient(circle at center, rgba(255, 255, 255, 0.18) 0%, rgba(0, 0, 0, 0.02) 36%, rgba(0, 0, 0, 0.26) 100%);
         --media-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(0, 0, 0, 0.16) 100%);
-        --color-ai-gradient-start: #a875ff;
-        --color-ai-gradient-end: #6d8cff;
 
         /* ===== ④ 尺度 ===== */
         /* 字阶（Tailwind @theme 同名；-line 为存量 CSS 别名） */
@@ -361,12 +365,12 @@
         --breakpoint-md: 840px;
         --breakpoint-lg: 1280px;
         /* 海拔（深色见 .dark） */
-        --shadow-1: 0 2px 8px rgba(23, 29, 25, 0.05), 0 1px 3px rgba(23, 29, 25, 0.05);
-        --shadow-2: 0 6px 18px rgba(23, 29, 25, 0.03), 0 3px 9px rgba(23, 29, 25, 0.04), 0 1px 1px rgba(23, 29, 25, 0.04);
-        --shadow-3: 0 20px 56px rgba(23, 29, 25, 0.14), 0 6px 16px rgba(23, 29, 25, 0.08);
-        --shadow-input: 0 5px 16px -4px rgba(23, 29, 25, 0.07); /* 输入卡常驻浮影（照 kimi composer，focus 不抬升） */
-        --shadow-xs: 0 1px 2px rgba(23, 29, 25, 0.04); /* 代码块等嵌套小件 */
-        --shadow-send: 0 7px 16px -13px rgba(23, 29, 25, 0.38), 0 1px 2px rgba(23, 29, 25, 0.07); /* 发送钮浮起 */
+        --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.05);
+        --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.03), 0 3px 9px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.04);
+        --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.14), 0 6px 16px rgba(0, 0, 0, 0.08);
+        --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, 0.07); /* 输入卡常驻浮影（照 kimi composer，focus 不抬升） */
+        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04); /* 代码块等嵌套小件 */
+        --shadow-send: 0 7px 16px -13px rgba(0, 0, 0, 0.38), 0 1px 2px rgba(0, 0, 0, 0.07); /* 发送钮浮起 */
         /* 动效 */
         --dur-s: 150ms; --dur-m: 250ms; --dur-l: 400ms;
         --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -465,20 +469,11 @@
         --color-chat-panel-bg-end: var(--n6);
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-high);
-        --color-chat-agent-avatar-bg: #1b2a20;
-        --color-chat-agent-avatar-border: rgba(113, 136, 58, 0.4);
-        --color-chat-agent-identity-bg: #16211a;
-        --color-chat-agent-identity-border: rgba(113, 136, 58, 0.36);
-        --color-chat-agent-identity-text: #cfe3c5;
-        --color-chat-agent-rail: #33c39a;
         --color-chat-code-block-bg: var(--n12);
         --color-chat-error-border: var(--e60);
         --color-chat-error-text: var(--e80);
         --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.5);
-        --shadow-chat-agent-avatar: 0 8px 18px rgba(0, 0, 0, 0.4);
-        --shadow-chat-agent-identity: 0 8px 18px rgba(0, 0, 0, 0.4);
         --color-canvas-label-text: var(--nv60);
-        --color-storyboard-canvas: #0f1511;
         --color-storyboard-stage: #0a0a0a;
         --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 8%, transparent);
         --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
@@ -509,6 +504,22 @@
         --color-on-chart-ord-3: var(--n10);
         --color-on-chart-ord-4: var(--n10);
         --color-on-chart-ord-5: var(--n10);
+        --color-accent-1: #ff937c;
+        --color-accent-2: #f69c2d;
+        --color-accent-3: #d4ac25;
+        --color-accent-4: #61b7ff;
+        --color-accent-5: #db95ff;
+        --color-accent-6: #ff8eb1;
+        --color-accent-7: #54bfd0;
+        --color-accent-8: #a0abff;
+        --color-on-accent-1-container: color-mix(in srgb, var(--color-accent-1) 60%, var(--n100));
+        --color-on-accent-2-container: color-mix(in srgb, var(--color-accent-2) 60%, var(--n100));
+        --color-on-accent-3-container: color-mix(in srgb, var(--color-accent-3) 60%, var(--n100));
+        --color-on-accent-4-container: color-mix(in srgb, var(--color-accent-4) 60%, var(--n100));
+        --color-on-accent-5-container: color-mix(in srgb, var(--color-accent-5) 60%, var(--n100));
+        --color-on-accent-6-container: color-mix(in srgb, var(--color-accent-6) 60%, var(--n100));
+        --color-on-accent-7-container: color-mix(in srgb, var(--color-accent-7) 60%, var(--n100));
+        --color-on-accent-8-container: color-mix(in srgb, var(--color-accent-8) 60%, var(--n100));
         --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
         --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
         --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.42), 0 6px 16px rgba(0, 0, 0, 0.32);
@@ -609,6 +620,38 @@
           </section>
         </div>
 
+        <div class="color-rules">
+          <div class="column-title">
+            <h3>Usage rules</h3>
+            <span>颜色只用在承载信息的地方</span>
+          </div>
+          <ul class="rule-list">
+            <li>
+              <strong>表面保持中性</strong>
+              页面、侧栏、卡片与控件只用中性灰阶；层次靠海拔（<code>--shadow-*</code>）、发丝线与缩略图区分，不铺浅色调容器底做装饰。
+            </li>
+            <li>
+              <strong>品牌绿</strong>
+              <code>primary</code> 只给主操作「生成」、链接与品牌标识、成功状态；其余按钮与选中态用墨色或中性灰。
+            </li>
+            <li>
+              <strong>Secondary 是中性灰</strong>
+              <code>secondary</code> 刻意不带色相，承担 tonal 按钮、实色标签等不需要色相的强调。
+            </li>
+            <li>
+              <strong>状态色</strong>
+              警告与运行中用 tertiary 琥珀（<code>warning</code> 是其别名），错误与危险操作用 <code>error</code> 红。
+            </li>
+            <li>
+              <strong>镜头点缀色</strong>
+              <code>accent-1…8</code> 只表达镜头身份：同一镜头的时间轴色段与镜头编号同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
+            </li>
+            <li>
+              <strong>点缀色的用法</strong>
+              色段用 <code>accent-N</code> 实色；编号徽标用 <code>accent-N-container</code> 底配 <code>on-accent-N-container</code> 字（底为点缀色 28% 混入页面底色）。
+            </li>
+          </ul>
+        </div>
       </section>
 
       <section class="section" id="type" aria-labelledby="type-title">
