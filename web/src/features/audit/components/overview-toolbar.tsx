@@ -374,7 +374,7 @@ function CalendarDayButton({
       aria-current={modifiers['today'] === true ? 'date' : undefined}
       className={cn(
         'relative mx-auto grid size-8 ui-state cursor-pointer place-items-center rounded-full text-body tabular-nums ui-focus disabled:cursor-default disabled:opacity-35',
-        endpoint ? 'bg-primary font-semibold text-on-primary' : 'text-on-surface',
+        endpoint ? 'bg-inverse-surface font-semibold text-inverse-on-surface' : 'text-on-surface',
         modifiers['today'] === true &&
           'after:absolute after:bottom-0.75 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-current',
       )}

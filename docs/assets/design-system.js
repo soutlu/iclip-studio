@@ -65,16 +65,12 @@ const semanticGroups = [
   {
     id: "primary-extended",
     title: "Primary extensions",
-    description: "主色的悬停与容器分色",
-    columns: ["Hover", "Container solid", "Container soft"],
+    description: "主色的悬停色",
+    columns: ["Hover"],
     families: [
       {
         name: "Primary",
-        items: [
-          ["Primary Hover", "primary-hover", "on-primary"],
-          ["Container Solid", "primary-container-solid", "on-primary-container"],
-          ["Container Soft", "primary-container-soft", "on-primary-container"],
-        ],
+        items: [["Primary Hover", "primary-hover", "on-primary"]],
       },
     ],
   },

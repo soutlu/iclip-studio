@@ -83,7 +83,7 @@
 }
 
 .image-edit-reference-name:hover:not(:disabled) {
-  color: var(--color-primary);
+  color: var(--color-on-surface);
 }
 
 .image-edit-reference-add:disabled,

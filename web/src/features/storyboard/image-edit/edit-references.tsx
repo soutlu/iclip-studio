@@ -298,7 +298,7 @@ export function EditReferences({
                   />
                   <span className="mt-1 block text-caption">帧 @{number}</span>
                   {references.some((item) => item.kind === 'image' && item.url === url) ? (
-                    <span className="absolute top-2 right-2 rounded-full bg-primary p-1 text-on-primary">
+                    <span className="absolute top-2 right-2 rounded-full bg-inverse-surface p-1 text-inverse-on-surface ring-2 ring-surface-container-lowest">
                       <Icon decorative name="check" size="sm" />
                     </span>
                   ) : null}

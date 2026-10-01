@@ -120,11 +120,6 @@
   /* 成功状态底：状态徽标、成功标签、差异新增行。 */
   --color-primary-container: var(--p90); /* #AEF2C6 配 P10 字 13.31:1 */
   --color-on-primary-container: var(--p10);
-  /* 容器分为小件实色与大面浅底，文字与容器色必须配对。 */
-  --color-primary-container-solid: var(--p70); /* #42BA79 小件实色（配 P10 字 6.96:1） */
-  --color-primary-container-soft: var(
-    --p95
-  ); /* #C1FFD5 大面浅底（配 1.5px P70 描边，P10 字 15.12:1） */
 
   /* Secondary：中性强调，无色相。tonal 按钮、实色标签、序号徽标 */
   --color-secondary: var(--s40); /* #5E5E5E 白字 6.48:1 */
@@ -601,8 +596,6 @@
   --color-on-primary: var(--p10);
   --color-primary-container: var(--p30);
   --color-on-primary-container: var(--p90);
-  --color-primary-container-solid: var(--p70);
-  --color-primary-container-soft: var(--p20);
   --color-secondary: var(--s60);
   --color-on-secondary: var(--s10);
   --color-secondary-container: var(--s30);
