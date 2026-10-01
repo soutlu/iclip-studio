@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState, type RefObject } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
@@ -14,10 +14,11 @@ import { toast } from '@/shared/ui/toast'
 import { useSaveCollection, type Collection } from '../collections.api'
 
 const MAX_NAME_CHARS = 200
+// 离上限还剩这么多字时才显示计数，平时不占视线。
+const COUNT_HINT_FROM = MAX_NAME_CHARS - 20
 
 type CollectionFormDialogProps = {
-  /** 提供 collection 时编辑原名，否则新建。 */
-  collection?: { id: string; name: string } | undefined
+  /** 预填的名字，如关联合集搜索框里输入的词。 */
   initialName?: string
   onOpenChange: (open: boolean) => void
   /** 返回服务端合集，供调用方选中它并刷新侧栏拓扑。 */
@@ -25,27 +26,33 @@ type CollectionFormDialogProps = {
   open: boolean
 }
 
+/** 新建合集的弹窗，供没有可原位编辑的列表行的入口使用（如首页关联合集）；侧栏在行内新建。 */
 export function CollectionFormDialog({
-  collection,
   initialName = '',
   onOpenChange,
   onSaved,
   open,
 }: CollectionFormDialogProps) {
-  const title = collection ? '重命名合集' : '新建合集'
+  const inputRef = useRef<HTMLInputElement>(null)
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogSurface aria-label={title}>
+      <DialogSurface
+        aria-label="新建合集"
+        // 打开时焦点交给名称框，而不是表头的关闭按钮。
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          inputRef.current?.focus()
+        }}
+      >
         <DialogHeader
           className="h-(--layout-dialog-header-height) items-center border-b-0 px-6 py-0"
           closeLabel="关闭"
-          title={title}
+          title="新建合集"
         />
         {open ? (
           <CollectionForm
-            key={collection?.id ?? 'create'}
-            collection={collection}
             initialName={initialName}
+            inputRef={inputRef}
             onOpenChange={onOpenChange}
             onSaved={onSaved}
           />
@@ -56,24 +63,23 @@ export function CollectionFormDialog({
 }
 
 function CollectionForm({
-  collection,
   initialName,
+  inputRef,
   onOpenChange,
   onSaved,
-}: Omit<CollectionFormDialogProps, 'open'>) {
-  const [name, setName] = useState(collection?.name ?? initialName ?? '')
+}: Omit<CollectionFormDialogProps, 'open'> & { inputRef: RefObject<HTMLInputElement | null> }) {
+  const [name, setName] = useState(initialName ?? '')
   const saveMutation = useSaveCollection((saved) => {
-    toast.success(collection ? '已重命名' : '合集已新建')
+    toast.success('合集已新建')
     onSaved(saved)
     onOpenChange(false)
   })
 
   const trimmed = name.trim()
-  const unchanged = trimmed === (collection?.name ?? '')
   const submit = () => {
-    if (!trimmed || unchanged || saveMutation.isPending) return
+    if (!trimmed || saveMutation.isPending) return
     saveMutation.mutate(
-      { collectionId: collection?.id, name: trimmed },
+      { name: trimmed },
       {
         onError: (error) => {
           toast.error(errorMessageOf(error, '保存失败，请重试'))
@@ -84,25 +90,21 @@ function CollectionForm({
 
   return (
     <>
-      <DialogBody className="flex flex-col gap-3 px-6 pt-2.5 pb-6">
-        {collection && (
-          <p className="text-body-sm text-on-surface-variant">
-            原名称：<span className="font-medium break-all text-on-surface">{collection.name}</span>
-          </p>
-        )}
-        <div className="flex flex-col gap-1">
-          <Input
-            aria-label="合集名称"
-            className="h-(--control-height-sm) rounded-sm border-border"
-            maxLength={MAX_NAME_CHARS}
-            disabled={saveMutation.isPending}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit()
-            }}
-            placeholder="给这个合集起个名字"
-            value={name}
-          />
+      <DialogBody className="flex flex-col gap-1 px-6 pt-2.5 pb-6">
+        <Input
+          aria-label="合集名称"
+          className="h-(--control-height-sm) rounded-sm border-border"
+          maxLength={MAX_NAME_CHARS}
+          disabled={saveMutation.isPending}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit()
+          }}
+          placeholder="给这个合集起个名字"
+          ref={inputRef}
+          value={name}
+        />
+        {name.length >= COUNT_HINT_FROM && (
           <span
             className={cn(
               'self-end text-caption',
@@ -111,7 +113,7 @@ function CollectionForm({
           >
             {name.length}/{MAX_NAME_CHARS}
           </span>
-        </div>
+        )}
       </DialogBody>
       <DialogFooter>
         <span />
@@ -121,7 +123,7 @@ function CollectionForm({
           </Button>
           <Button
             className="min-w-[74px]"
-            disabled={!trimmed || unchanged}
+            disabled={!trimmed}
             loading={saveMutation.isPending}
             onClick={submit}
           >

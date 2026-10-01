@@ -284,15 +284,19 @@ describe('AppSidebar 对话区', () => {
     expect(conversation).toBeVisible()
   })
 
-  it('新建合集后出现在合集区', async () => {
+  it('「+」在合集区顶部插入一行原位编辑，回车新建后换成合集行', async () => {
     const user = await openSidebar()
     await screen.findByText('还没有合集')
 
     await user.click(screen.getByRole('button', { name: '新建合集' }))
-    await user.type(await screen.findByLabelText('合集名称'), '春季童鞋')
-    await user.click(screen.getByRole('button', { name: '保存' }))
+    const draft = screen.getByRole('textbox', { name: '新合集名称' })
+    expect(draft).toHaveFocus()
+    expect(screen.queryByText('还没有合集')).not.toBeInTheDocument()
+    await user.type(draft, '春季童鞋{Enter}')
 
     expect(await screen.findByRole('button', { name: '春季童鞋 (0)' })).toBeVisible()
+    expect(screen.queryByRole('textbox', { name: '新合集名称' })).not.toBeInTheDocument()
+    expect(mockCollections.map((item) => item.name)).toEqual(['春季童鞋'])
   })
 
   it('合集行菜单可以改名，也可以删掉——删掉不带走里面的对话', async () => {
@@ -303,11 +307,12 @@ describe('AppSidebar 对话区', () => {
 
     await user.click(screen.getByRole('button', { name: '待改名 的操作' }))
     await user.click(await screen.findByRole('menuitem', { name: '重命名' }))
-    const input = await screen.findByLabelText('合集名称')
-    await user.clear(input)
-    await user.type(input, '改好了')
-    await user.click(screen.getByRole('button', { name: '保存' }))
+    // 原位编辑：原名全选，直接输入即替换。
+    const input = await screen.findByRole('textbox', { name: '重命名 待改名' })
+    expect(input).toHaveFocus()
+    await user.keyboard('改好了{Enter}')
     expect(await screen.findByRole('button', { name: '改好了 (1)' })).toBeVisible()
+    expect(screen.queryByRole('textbox', { name: '重命名 待改名' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '改好了 的操作' }))
     await user.click(await screen.findByRole('menuitem', { name: '删除' }))

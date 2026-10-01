@@ -2,11 +2,7 @@ import { DndContext, PointerSensor, useDroppable, useSensor } from '@dnd-kit/cor
 import type { DragEndEvent } from '@dnd-kit/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import {
-  CollectionDeleteDialog,
-  CollectionFormDialog,
-  useCollections,
-} from '@/features/collections'
+import { CollectionDeleteDialog, useCollections, useSaveCollection } from '@/features/collections'
 import {
   ConversationDeleteDialog,
   ConversationMembershipDialog,
@@ -18,6 +14,7 @@ import {
   SIDEBAR_ROW_TITLE_CLASS,
   SIDEBAR_ROW_TRAILING_HIDDEN,
   SIDEBAR_ROW_TRAILING_SHOWN,
+  SidebarRowEditor,
   useMoreConversations,
   useRecordOpenedConversation,
   useSetConversationMembership,
@@ -92,10 +89,8 @@ export function SidebarConversations() {
   const [allCollectionsShown, setAllCollectionsShown] = useState(false)
   const [dragging, setDragging] = useState<string | null>(null)
 
-  const [collectionForm, setCollectionForm] = useState<{
-    collection?: { id: string; name: string }
-    open: boolean
-  }>({ open: false })
+  // 新建合集在合集区顶部插入一行原位编辑行。
+  const [creatingCollection, setCreatingCollection] = useState(false)
   const [collectionDelete, setCollectionDelete] = useState<{
     collection?: { id: string; name: string }
     open: boolean
@@ -117,7 +112,9 @@ export function SidebarConversations() {
   const tasks = useTaskOptions(membership.open && canReadTasks)
 
   // 合集的增删改只刷新合集自己的查询，侧栏拓扑由这里接着刷新。
-  const refreshSidebar = () => void refreshConversationLists(queryClient, 'sidebar')
+  const refreshSidebar = () => refreshConversationLists(queryClient, 'sidebar')
+  // 等侧栏拓扑重拉完才算保存完成，编辑行退出时新名字已在列表里，不闪回旧名。
+  const saveCollection = useSaveCollection(refreshSidebar)
 
   /** 挂上需求单即认领（合同 §8），那张单会从「待认领」变「进行中」，列表与详情跟着刷新；对话列表由归属 mutation 自己刷新。 */
   const refreshClaimedTasks = () => {
@@ -190,12 +187,23 @@ export function SidebarConversations() {
               ? {
                   icon: 'add',
                   label: '新建合集',
-                  onClick: () => setCollectionForm({ open: true }),
+                  onClick: () => setCreatingCollection(true),
                 }
               : undefined
           }
           title="合集"
         >
+          {creatingCollection && (
+            <SidebarRowEditor
+              failureMessage="新建合集失败"
+              initialValue=""
+              label="新合集名称"
+              leading={<CollectionIcon />}
+              onClose={() => setCreatingCollection(false)}
+              onSubmit={(name) => saveCollection.mutateAsync({ name })}
+              placeholder="新合集名称"
+            />
+          )}
           {visibleCollections.map((collection) => (
             <CollectionGroup
               key={collection.id}
@@ -210,16 +218,11 @@ export function SidebarConversations() {
               }
               onDeleteConversation={confirmDelete}
               onOpenMembership={openMembership}
-              onRename={() =>
-                setCollectionForm({
-                  collection: { id: collection.id, name: collection.name },
-                  open: true,
-                })
-              }
+              onRename={(name) => saveCollection.mutateAsync({ collectionId: collection.id, name })}
               state={state}
             />
           ))}
-          {allCollections.length === 0 && <EmptyHint>还没有合集</EmptyHint>}
+          {allCollections.length === 0 && !creatingCollection && <EmptyHint>还没有合集</EmptyHint>}
           {allCollections.length > COLLECTIONS_PREVIEW && (
             <button
               aria-expanded={allCollectionsShown}
@@ -247,15 +250,9 @@ export function SidebarConversations() {
         />
       </div>
 
-      <CollectionFormDialog
-        collection={collectionForm.collection}
-        onOpenChange={(open) => setCollectionForm((prev) => ({ ...prev, open }))}
-        onSaved={refreshSidebar}
-        open={collectionForm.open}
-      />
       <CollectionDeleteDialog
         collection={collectionDelete.collection}
-        onDeleted={refreshSidebar}
+        onDeleted={() => void refreshSidebar()}
         onOpenChange={(open) => setCollectionDelete((prev) => ({ ...prev, open }))}
         open={collectionDelete.open}
       />
@@ -556,7 +553,8 @@ type CollectionGroupProps = {
   onDelete: () => void
   onDeleteConversation: (conversation: Conversation) => void
   onOpenMembership: (conversation: Conversation) => void
-  onRename: () => void
+  /** 提交新名字；列表刷新出新名字后 resolve。 */
+  onRename: (name: string) => Promise<unknown>
   state: ConversationListState
 }
 
@@ -571,6 +569,7 @@ function CollectionGroup({
   state,
 }: CollectionGroupProps) {
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   const canWrite = useCanWrite()
   const { isOver, setNodeRef } = useDroppable({ id: collection.id, disabled: !canWrite })
   const more = useMoreConversations(
@@ -585,56 +584,58 @@ function CollectionGroup({
 
   return (
     <div className="flex flex-col gap-px">
-      <div
-        className={cn(SIDEBAR_ROW_CLASS, SIDEBAR_ROW_MENU_OPEN, isOver && 'bg-state-dragged')}
-        ref={setNodeRef}
-      >
-        <button
-          aria-expanded={open}
-          aria-label={`${collection.name} (${collection.conversationCount})`}
-          className={SIDEBAR_ROW_TITLE_CLASS}
-          onClick={() => setOpen((prev) => !prev)}
-          type="button"
+      {editing ? (
+        <SidebarRowEditor
+          failureMessage="重命名合集失败"
+          initialValue={collection.name}
+          label={`重命名 ${collection.name}`}
+          leading={<CollectionIcon />}
+          onClose={() => setEditing(false)}
+          onSubmit={onRename}
+          trailing={<CollectionCount count={collection.conversationCount} />}
+        />
+      ) : (
+        <div
+          className={cn(SIDEBAR_ROW_CLASS, SIDEBAR_ROW_MENU_OPEN, isOver && 'bg-state-dragged')}
+          ref={setNodeRef}
         >
-          <Icon
-            className="shrink-0 text-on-surface-variant"
-            decorative
-            name="collection"
-            size="md"
+          <button
+            aria-expanded={open}
+            aria-label={`${collection.name} (${collection.conversationCount})`}
+            className={SIDEBAR_ROW_TITLE_CLASS}
+            onClick={() => setOpen((prev) => !prev)}
+            type="button"
+          >
+            <CollectionIcon />
+            <span aria-hidden className="min-w-0 flex-1 truncate text-left">
+              {collection.name}
+            </span>
+          </button>
+          {/* 能管理时计数与 ⋯ 共用尾部槽位；不能管理就一直显示计数。 */}
+          <CollectionCount
+            className={cn(canManage && SIDEBAR_ROW_TRAILING_HIDDEN)}
+            count={collection.conversationCount}
           />
-          <span aria-hidden className="min-w-0 flex-1 truncate text-left">
-            {collection.name}
-          </span>
-        </button>
-        {/* 能管理时计数与 ⋯ 共用尾部槽位；不能管理就一直显示计数。 */}
-        <span
-          aria-hidden
-          className={cn(
-            'shrink-0 text-caption text-on-surface-faint tabular-nums',
-            canManage && SIDEBAR_ROW_TRAILING_HIDDEN,
+          {canManage && (
+            <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
+              <MenuRoot>
+                <MenuTrigger asChild>
+                  <IconButton label={`${collection.name} 的操作`} name="more" size="xs" />
+                </MenuTrigger>
+                <MenuSurface align="end">
+                  <MenuItem icon="edit" onSelect={() => setEditing(true)}>
+                    重命名
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem destructive icon="delete" onSelect={onDelete}>
+                    删除
+                  </MenuItem>
+                </MenuSurface>
+              </MenuRoot>
+            </div>
           )}
-        >
-          {collection.conversationCount}
-        </span>
-        {canManage && (
-          <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
-            <MenuRoot>
-              <MenuTrigger asChild>
-                <IconButton label={`${collection.name} 的操作`} name="more" size="xs" />
-              </MenuTrigger>
-              <MenuSurface align="end">
-                <MenuItem icon="edit" onSelect={onRename}>
-                  重命名
-                </MenuItem>
-                <MenuSeparator />
-                <MenuItem destructive icon="delete" onSelect={onDelete}>
-                  删除
-                </MenuItem>
-              </MenuSurface>
-            </MenuRoot>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
       {open && (
         <div className="relative flex flex-col gap-px pl-6.5">
           {/* 引导线对齐合集行文件夹图标的中心；缩进让对话标题与合集名左缘对齐。 */}
@@ -668,5 +669,23 @@ function CollectionGroup({
         </div>
       )}
     </div>
+  )
+}
+
+function CollectionIcon() {
+  return (
+    <Icon className="shrink-0 text-on-surface-variant" decorative name="collection" size="md" />
+  )
+}
+
+/** 行尾的对话数；可访问名已带在合集按钮上，这里只给看的。 */
+function CollectionCount({ className, count }: { className?: string; count: number }) {
+  return (
+    <span
+      aria-hidden
+      className={cn('shrink-0 text-caption text-on-surface-faint tabular-nums', className)}
+    >
+      {count}
+    </span>
   )
 }

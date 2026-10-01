@@ -78,3 +78,9 @@
     opacity: 0;
   }
 }
+
+/* 侧栏原位编辑：整行浮起的输入面（top-layer 底、描边与阴影）承担焦点指示，内层 input 移除焦点环；
+   匿名层规则才能覆盖全局兜底。 */
+.sidebar-row-input:focus-visible {
+  outline: none;
+}

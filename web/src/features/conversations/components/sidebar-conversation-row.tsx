@@ -17,29 +17,15 @@ import {
   type Conversation,
 } from '../conversations.api'
 import { useSeenRun } from '../conversations.unread'
-
-// 侧栏各行共用：36px 行高，容器内左右 10px。行首图标一律 16px（--icon-md）、与文字隔 10px：
-// 图标、分区标题与无图标的标题共用同一左缘，行尾计数与状态图形右缘落在行内容右缘。
-// 状态层作用于整行及尾部按钮；内部标题按钮只负责焦点环。
-export const SIDEBAR_ROW_CLASS =
-  'group flex h-9 ui-state cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-body text-on-surface'
-
-export const SIDEBAR_ROW_TITLE_CLASS =
-  'flex min-w-0 flex-1 items-center gap-2.5 rounded-xs ui-focus'
-
-/** 选中行：浅灰侧栏上浮起的一枚胶囊；深色下 top-layer 是抬高一档的中性灰，不是纯白。 */
-export const SIDEBAR_ROW_ACTIVE = 'bg-top-layer font-semibold shadow-[var(--shadow-1)]'
-
-/** 行内 ⋯ 菜单打开时保持悬停底色；选中行保留自己的底色，不加这一层。 */
-export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'
-
-// 行尾信息与 ⋯ 共用尾部槽位：悬停或菜单展开时 ⋯ 顶替信息。
-// 键盘聚焦只把 ⋯ 加进来、不收掉信息，读屏与看屏的键盘用户都还拿得到行尾状态。
-export const SIDEBAR_ROW_TRAILING_HIDDEN = 'group-hover:hidden group-has-data-[state=open]:hidden'
-// ⋯ 平时只是视觉隐藏、始终留在 Tab 序里：鼠标点开对话后再按 Tab 也走得到它，键盘焦点落进行里时现身。
-// 负右距挂在按钮上（not-sr-only 会清掉槽位自己的 margin），让 24px 按钮里的图标右缘落在行内容右缘。
-export const SIDEBAR_ROW_TRAILING_SHOWN =
-  'sr-only *:-mr-1.25 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex'
+import {
+  SIDEBAR_ROW_ACTIVE,
+  SIDEBAR_ROW_CLASS,
+  SIDEBAR_ROW_MENU_OPEN,
+  SIDEBAR_ROW_TITLE_CLASS,
+  SIDEBAR_ROW_TRAILING_HIDDEN,
+  SIDEBAR_ROW_TRAILING_SHOWN,
+} from './sidebar-row-classes'
+import { SidebarRowEditor } from './sidebar-row-editor'
 
 /** 仅对本浏览器已查看过且 lastRunId 变化的完成对话显示未读；当前打开的对话不显示。 */
 const useUnread = (conversation: Conversation, active: boolean): boolean => {
@@ -79,7 +65,6 @@ export function SidebarConversationRow({
   // 行尾只画还需要人看一眼的状态；跑完没看过的用小点，其余什么都不画。
   const showUnread = unread && status === 'completed'
   const video = conversation.activity.videoGeneration
-  const hasMenu = !editing && canWrite
   // 行尾图形悬停时让位给 ⋯，说明挂在整行上，鼠标用户仍看得到是什么状态。
   const statusLabels = [
     ...(status !== 'idle' && needsAttention(status) ? [conversationStatusLabel(status)] : []),
@@ -88,19 +73,21 @@ export function SidebarConversationRow({
     ...(completed ? ['已完成'] : []),
   ]
 
-  const commitRename = (value: string) => {
-    setEditing(false)
-    const title = value.trim()
-    if (title && title !== conversation.title) {
-      rename.mutate(
-        { conversationId: conversation.id, title },
-        { onError: (error) => toast.error(errorMessageOf(error, '重命名失败')) },
-      )
-    }
-  }
+  if (editing)
+    return (
+      <SidebarRowEditor
+        // 正打开的那一行保持加粗，进出编辑字形不变。
+        className={cn(active && 'font-semibold')}
+        failureMessage="重命名失败"
+        initialValue={conversation.title}
+        label={`重命名 ${conversation.title}`}
+        onClose={() => setEditing(false)}
+        onSubmit={(title) => rename.mutateAsync({ conversationId: conversation.id, title })}
+      />
+    )
 
   return (
-    // 拖拽绑定整行，避免链接原生拖动吞掉指针事件；编辑标题时禁用拖拽以允许文字选择。
+    // 拖拽绑定整行，避免链接原生拖动吞掉指针事件；改名时整行换成编辑行，不挂拖拽。
     <div
       className={cn(
         SIDEBAR_ROW_CLASS,
@@ -113,47 +100,30 @@ export function SidebarConversationRow({
       style={
         transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
       }
-      {...(editing || !canWrite ? {} : listeners)}
+      {...(canWrite ? listeners : {})}
     >
-      {editing ? (
-        <input
-          aria-label={`重命名 ${conversation.title}`}
-          className="min-w-0 flex-1 rounded-xs bg-surface-container-lowest px-1 text-body text-on-surface ui-focus-inline"
-          defaultValue={conversation.title}
-          onBlur={(event) => commitRename(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur()
-            if (event.key === 'Escape') {
-              event.currentTarget.value = conversation.title
-              event.currentTarget.blur()
-            }
-          }}
-          ref={(element) => element?.focus()}
-        />
-      ) : (
-        <Link
-          aria-current={active ? 'page' : undefined}
-          className={SIDEBAR_ROW_TITLE_CLASS}
-          draggable={false}
-          params={{ conversationId: conversation.id }}
-          to="/c/$conversationId"
+      <Link
+        aria-current={active ? 'page' : undefined}
+        className={SIDEBAR_ROW_TITLE_CLASS}
+        draggable={false}
+        params={{ conversationId: conversation.id }}
+        to="/c/$conversationId"
+      >
+        {/* 标了收尾的对话标题降为辅助色；正打开的那一行保持常规强调。 */}
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-left',
+            completed && !active && 'text-on-surface-faint',
+          )}
         >
-          {/* 标了收尾的对话标题降为辅助色；正打开的那一行保持常规强调。 */}
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-left',
-              completed && !active && 'text-on-surface-faint',
-            )}
-          >
-            {conversation.title}
-          </span>
-        </Link>
-      )}
+          {conversation.title}
+        </span>
+      </Link>
       {/* 每件事实一个带名字的图形：出片在跑与轮次在跑互不蕴含，可以同时出现。 */}
       <span
         className={cn(
           'flex shrink-0 items-center gap-1.5 empty:hidden',
-          hasMenu && SIDEBAR_ROW_TRAILING_HIDDEN,
+          canWrite && SIDEBAR_ROW_TRAILING_HIDDEN,
         )}
       >
         {needsAttention(status) && <ConversationGlyph status={status} />}
@@ -176,7 +146,7 @@ export function SidebarConversationRow({
           <Icon className="shrink-0 text-on-surface-faint" label="已完成" name="check" size="sm" />
         )}
       </span>
-      {hasMenu && (
+      {canWrite && (
         <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
           <MenuRoot>
             <MenuTrigger asChild>
