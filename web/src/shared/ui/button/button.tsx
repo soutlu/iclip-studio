@@ -10,7 +10,7 @@ const buttonVariants = cva(
       variant: {
         primary: 'bg-primary text-on-primary shadow-[var(--shadow-1)]',
         tonal: 'bg-secondary-container text-on-secondary-container',
-        outlined: 'border border-outline bg-transparent text-primary',
+        outlined: 'border border-outline bg-transparent text-on-surface',
         inverted: 'bg-inverse-surface text-inverse-on-surface',
         danger: 'bg-error text-on-error',
         ghost: 'bg-transparent text-on-surface',

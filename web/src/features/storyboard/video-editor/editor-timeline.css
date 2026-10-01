@@ -245,7 +245,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-on-primary-container);
+  color: var(--color-on-secondary);
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
 }
@@ -253,7 +253,7 @@
   position: absolute;
   top: 0;
   height: 60px;
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-on-surface);
   border-radius: var(--radius-xs);
   background: var(--color-state-active);
   pointer-events: none;
@@ -272,7 +272,7 @@
   border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
-  color: var(--color-on-primary);
+  color: var(--color-surface-container-lowest);
   cursor: ew-resize;
   touch-action: none;
 }
@@ -282,7 +282,9 @@
   width: 10px;
   height: 24px;
   border-radius: var(--radius-xs);
-  background: var(--color-primary);
+  background: var(--color-on-surface);
+  /* 手柄压在缩略图上：外圈一道面板底色，深浅画面上都分得清。 */
+  box-shadow: 0 0 0 1px var(--color-surface-container-lowest);
 }
 .video-editor-timeline-handle span {
   position: relative;
@@ -297,7 +299,9 @@
   top: 23px;
   bottom: 13px;
   width: 1px;
-  background: var(--color-primary);
+  background: var(--color-on-surface);
+  /* 播放头穿过缩略图：两侧各衬 1px 面板底色，避免在暗画面上消失。 */
+  box-shadow: 0 0 0 1px var(--color-surface-container-lowest);
   z-index: var(--z-local-2);
   pointer-events: none;
 }
@@ -308,8 +312,8 @@
   transform: translateX(-50%);
   border-radius: var(--radius-xs);
   padding: 3px 6px;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   font-variant-numeric: tabular-nums;
@@ -341,7 +345,7 @@
   width: 16px;
   height: 16px;
   border-radius: var(--radius-xs);
-  background: var(--color-primary-container-solid);
+  background: var(--color-secondary);
 }
 .video-editor-timeline-ancestors {
   display: flex;
@@ -417,7 +421,7 @@
   position: absolute;
   inset: 0;
   border-radius: var(--radius-xs);
-  background: var(--color-primary-container);
+  background: var(--color-secondary);
   pointer-events: none;
   z-index: var(--z-local-1);
 }

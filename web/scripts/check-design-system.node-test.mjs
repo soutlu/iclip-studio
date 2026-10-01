@@ -19,13 +19,13 @@ test('真实规范与运行时逐名逐值一致', () => {
 
 test('浅色色值被改动即报「值不同」', () => {
   const drifted = runtimeCss.replace(
-    '--color-canvas-card-border: var(--p60)',
-    '--color-canvas-card-border: var(--p50)',
+    '--color-canvas-label-text: var(--nv50)',
+    '--color-canvas-label-text: var(--nv40)',
   )
   assert.notEqual(drifted, runtimeCss, '注入漂移失败：目标声明没找到')
   const { problems } = check({ specHtml, runtimeCss: drifted })
   assert.equal(problems.length, 1)
-  assert.match(problems[0], /:root 值不同：--color-canvas-card-border/)
+  assert.match(problems[0], /:root 值不同：--color-canvas-label-text/)
 })
 
 test('深色映射被改动即报 .dark 值不同', () => {
@@ -38,13 +38,13 @@ test('深色映射被改动即报 .dark 值不同', () => {
 
 test('颜色 token 没登记成工具类即报「工具类未登记」', () => {
   const drifted = runtimeCss.replace(
-    '  --color-canvas-card-border: var(--color-canvas-card-border);\n',
+    '  --color-canvas-label-text: var(--color-canvas-label-text);\n',
     '',
   )
   assert.notEqual(drifted, runtimeCss, '注入漂移失败：目标登记行没找到')
   const { problems } = check({ specHtml, runtimeCss: drifted })
   assert.equal(problems.length, 1)
-  assert.match(problems[0], /工具类未登记：--color-canvas-card-border/)
+  assert.match(problems[0], /工具类未登记：--color-canvas-label-text/)
 })
 
 // 经变量传入类名，避免 Prettier 的 Tailwind 插件重排测试输入。

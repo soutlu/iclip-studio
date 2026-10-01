@@ -1,4 +1,4 @@
-import type { ChangeEvent, FormEvent } from 'react'
+import type { ChangeEvent, FormEvent, Ref } from 'react'
 import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { sanitizeCueAuthNextPath, startSsoLogin, useLogin } from '@/shared/auth'
@@ -10,10 +10,17 @@ type LoginFormProps = {
   ssoEnabled: boolean
   initialErrorMessage?: string | undefined
   onSuccess: () => void
+  /** 用户名输入框；登录弹窗打开时把焦点交给它。 */
+  usernameRef?: Ref<HTMLInputElement>
 }
 
 /** 飞书登录整页跳转；onSuccess 仅用于账号密码登录。初始错误在提交后清除。 */
-export function LoginForm({ ssoEnabled, initialErrorMessage, onSuccess }: LoginFormProps) {
+export function LoginForm({
+  ssoEnabled,
+  initialErrorMessage,
+  onSuccess,
+  usernameRef,
+}: LoginFormProps) {
   const loginMutation = useLogin()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -142,6 +149,7 @@ export function LoginForm({ ssoEnabled, initialErrorMessage, onSuccess }: LoginF
           </label>
           <Input
             id="login-username"
+            ref={usernameRef}
             name="username"
             type="text"
             autoComplete="username"
