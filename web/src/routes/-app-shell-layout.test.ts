@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CONTENT_INSET,
   DEFAULT_LAYOUT,
   resizeContent,
   resizeSidebar,
@@ -62,21 +61,19 @@ describe('应用壳列宽', () => {
     { viewport: 1335, state: {} },
     { viewport: 1000, state: { sidebarCollapsed: true } },
     { viewport: 500, state: {} },
-  ])('视口 $viewport 的内容始终填满剩余空间，桌面扣掉主区卡片的外边距', ({ viewport, state }) => {
+  ])('视口 $viewport 的内容始终填满剩余空间', ({ viewport, state }) => {
     const layout = layoutAt(viewport, state)
     expect(layout.chatWidth + layout.workbenchWidth).toBe(layout.contentWidth)
-    expect(layout.contentWidth + (layout.compact ? 0 : layout.sidebarWidth + CONTENT_INSET)).toBe(
-      viewport,
-    )
+    expect(layout.contentWidth + (layout.compact ? 0 : layout.sidebarWidth)).toBe(viewport)
   })
 
   it('展开宽度受侧边栏上限和两栏最小宽约束，热区不占布局', () => {
     expect(layoutAt(1600, { sidebarWidth: 500, workbenchWidth: 900 })).toMatchObject({
       sidebarWidth: 400,
-      contentWidth: 1192,
-      workbenchWidth: 792,
+      contentWidth: 1200,
+      workbenchWidth: 800,
       chatWidth: 400,
-      workbenchMax: 792,
+      workbenchMax: 800,
     })
     expect(layoutAt(1600, { sidebarWidth: 100, workbenchWidth: 300 })).toMatchObject({
       sidebarWidth: 200,
@@ -85,10 +82,10 @@ describe('应用壳列宽', () => {
   })
 
   it.each([
-    { viewport: 1231, collapsed: false, sideBySide: false },
-    { viewport: 1232, collapsed: false, sideBySide: true },
-    { viewport: 1023, collapsed: true, sideBySide: false },
-    { viewport: 1024, collapsed: true, sideBySide: true },
+    { viewport: 1223, collapsed: false, sideBySide: false },
+    { viewport: 1224, collapsed: false, sideBySide: true },
+    { viewport: 1015, collapsed: true, sideBySide: false },
+    { viewport: 1016, collapsed: true, sideBySide: true },
   ])('视口 $viewport 侧边栏折叠 $collapsed 的并排能力为 $sideBySide', (input) => {
     expect(layoutAt(input.viewport, { sidebarCollapsed: input.collapsed }).sideBySide).toBe(
       input.sideBySide,
@@ -114,11 +111,11 @@ describe('应用壳列宽', () => {
       sideBySide: true,
       mode: 'workbench',
       chatWidth: 40,
-      workbenchWidth: 1288,
-      workbenchMax: 928,
+      workbenchWidth: 1296,
+      workbenchMax: 936,
     })
     expect(layoutAt(1600, { mode: 'chat' })).toMatchObject({
-      chatWidth: 1288,
+      chatWidth: 1296,
       workbenchWidth: 40,
     })
   })
@@ -127,7 +124,7 @@ describe('应用壳列宽', () => {
     expect(layoutAt(1600, { mode: 'workbench', firstPane: 'workbench' }, false)).toMatchObject({
       mode: 'chat',
       sideBySide: false,
-      chatWidth: 1328,
+      chatWidth: 1336,
       workbenchWidth: 0,
     })
   })
@@ -145,9 +142,9 @@ describe('应用壳列宽', () => {
     ).toMatchObject({
       compact: false,
       sidebarWidth: 56,
-      contentWidth: 536,
+      contentWidth: 544,
       chatWidth: 40,
-      workbenchWidth: 496,
+      workbenchWidth: 504,
     })
   })
 })
@@ -188,7 +185,7 @@ describe('连续拖动与内容裁切', () => {
       let state = { ...SPLIT_LAYOUT, firstPane, workbenchWidth: 700 }
       for (const width of [560, 559, 320, 280, 41, 40, 41, 280, 320, 559, 560, 700]) {
         state = resizeContent(state, width, 1200)
-        const geometry = resolveShellLayout({ viewport: 1472, hasWorkbench: true, state })
+        const geometry = resolveShellLayout({ viewport: 1464, hasWorkbench: true, state })
         expect(geometry.workbenchWidth).toBe(width)
         expect(geometry.chatWidth).toBe(1200 - width)
         expect(state.mode).toBe(width === 40 ? 'chat' : 'split')
@@ -205,7 +202,7 @@ describe('连续拖动与内容裁切', () => {
       let state = { ...SPLIT_LAYOUT, firstPane, workbenchWidth: 700 }
       for (const width of [400, 399, 240, 200, 41, 40, 41, 200, 240, 399, 400, 500]) {
         state = resizeContent(state, 1200 - width, 1200)
-        const geometry = resolveShellLayout({ viewport: 1472, hasWorkbench: true, state })
+        const geometry = resolveShellLayout({ viewport: 1464, hasWorkbench: true, state })
         expect(geometry.chatWidth).toBe(width)
         expect(geometry.workbenchWidth).toBe(1200 - width)
         expect(state.mode).toBe(width === 40 ? 'workbench' : 'split')
@@ -273,7 +270,7 @@ describe('连续拖动与内容裁切', () => {
       const compact = resolveShellLayout({ viewport: 500, hasWorkbench: true, state })
       expect(wide.sidebarWidth).toBe(120)
       expect(pane === 'chat' ? wide.chatWidth : wide.workbenchWidth).toBe(180)
-      expect(narrow).toMatchObject({ mode: 'workbench', chatWidth: 40, workbenchWidth: 732 })
+      expect(narrow).toMatchObject({ mode: 'workbench', chatWidth: 40, workbenchWidth: 740 })
       expect(compact).toMatchObject({ sidebarWidth: 320, chatWidth: 0, workbenchWidth: 500 })
       expect(resolveShellLayout({ viewport: 1600, hasWorkbench: true, state })).toEqual(wide)
       expect(state).toEqual(original)

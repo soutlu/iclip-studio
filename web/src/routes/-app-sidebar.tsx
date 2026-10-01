@@ -115,7 +115,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
           size="md"
         />
       ) : null}
-      {/* 侧栏衬在底层：浅灰底、不画分隔线，靠浮起的主区卡片分层。 */}
+      {/* 侧栏浅灰底；桌面与主区的分界线由侧栏拖柄画出，紧凑屏是带投影的抽屉。 */}
       <aside
         id={sidebarId}
         aria-label="侧边栏"
