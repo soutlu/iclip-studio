@@ -252,9 +252,9 @@ describe('AppSidebar 对话区', () => {
     addMockConversation('合集里的那段').collectionId = collection.id
     const user = await openSidebar()
 
-    expect(await screen.findByRole('button', { name: '任务' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: '任务' })).toBeVisible()
     expect(
-      screen.getAllByRole('button', { name: /^(合集|任务)$/ }).map((one) => one.textContent),
+      screen.getAllByRole('heading', { name: /^(合集|任务)$/ }).map((one) => one.textContent),
     ).toEqual(['合集', '任务'])
     expect(screen.getByText('没归类的那段')).toBeVisible()
     expect(screen.queryByText('合集里的那段')).not.toBeInTheDocument()
