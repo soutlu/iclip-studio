@@ -1,13 +1,12 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { login } from './login'
 
 // jsdom 缺少布局几何，dnd-kit 碰撞检测在浏览器测试中验证。
 
-/** 分两步移动以越过 dnd-kit 的 5px 激活阈值；源为对话链接，目标为分区或合集按钮。 */
-const dragOnto = async (page: Page, source: string, target: string) => {
+/** 分两步移动以越过 dnd-kit 的 5px 激活阈值；源为对话链接，目标为分区标题或合集按钮。 */
+const dragOnto = async (page: Page, source: string, to: Locator) => {
   const from = page.getByRole('link', { name: source, exact: true })
-  const to = page.getByRole('button', { name: target, exact: true })
   const start = await from.boundingBox()
   const end = await to.boundingBox()
   if (!start || !end) throw new Error('拖拽的两端要先在页面上')
@@ -27,7 +26,11 @@ test('把对话拖进合集，再拖回任务区', async ({ page }) => {
   const row = page.getByRole('link', { name: '夜景延时素材生成', exact: true })
   await expect(row).toBeVisible()
 
-  await dragOnto(page, '夜景延时素材生成', '夏季亚麻系列 (2)')
+  await dragOnto(
+    page,
+    '夜景延时素材生成',
+    page.getByRole('button', { name: '夏季亚麻系列 (2)', exact: true }),
+  )
 
   // 拖拽不得触发对话链接的点击跳转。
   await expect(page).toHaveURL('/')
@@ -41,7 +44,13 @@ test('把对话拖进合集，再拖回任务区', async ({ page }) => {
     await page.getByRole('button', { name: '夏季亚麻系列 (3)' }).click()
     await expect(row).toBeVisible({ timeout: 1000 })
   }).toPass({ timeout: 10_000 })
-  await dragOnto(page, '夜景延时素材生成', '任务')
+  await dragOnto(
+    page,
+    '夜景延时素材生成',
+    page
+      .getByRole('complementary', { name: '侧边栏' })
+      .getByRole('heading', { name: '任务', exact: true }),
+  )
 
   await expect(page.getByRole('button', { name: '夏季亚麻系列 (2)' })).toBeVisible()
   await expect(row).toBeVisible()

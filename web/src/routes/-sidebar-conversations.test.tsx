@@ -135,7 +135,7 @@ describe('SidebarConversations', () => {
     await render()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('当前账号没有查看对话权限')
-    expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '任务' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重新加载对话' })).toBeEnabled()
   })
 

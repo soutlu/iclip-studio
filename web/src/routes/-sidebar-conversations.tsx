@@ -379,27 +379,20 @@ type SidebarSectionProps = {
   tools?: ReactNode
 }
 
+/** 侧栏分区常驻展开，标题只作标签；收起只发生在单个合集上。 */
 function SidebarSection({ action, children, title, tools }: SidebarSectionProps) {
-  const [open, setOpen] = useState(true)
+  const headingId = useId()
   return (
-    <section className="flex flex-col gap-px">
+    <section aria-labelledby={headingId} className="flex flex-col gap-px">
       {/* 吸顶标题底色与侧栏同色，滚过的行不会从标题下透出来。左右内距与行相同：标题字与行首图标同一左缘，
           尾部控件靠负右距让图形右缘落在行内容右缘，与合集计数、任务状态图形同一列。 */}
       <div className="layer-local-1 sticky top-0 flex h-8 items-center gap-1 bg-surface-container-low px-2.5">
-        <button
-          aria-expanded={open}
-          className="flex min-w-0 cursor-pointer items-center gap-1 rounded-xs text-label font-semibold text-on-surface-variant ui-focus"
-          onClick={() => setOpen((prev) => !prev)}
-          type="button"
+        <h2
+          className="min-w-0 truncate text-label font-semibold text-on-surface-variant"
+          id={headingId}
         >
-          <span className="min-w-0 truncate text-left">{title}</span>
-          <Icon
-            className={cn('shrink-0 transition ui-motion-s', !open && '-rotate-90')}
-            decorative
-            name="expand"
-            size="xs"
-          />
-        </button>
+          {title}
+        </h2>
         {(action || tools) && (
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {tools}
@@ -415,7 +408,7 @@ function SidebarSection({ action, children, title, tools }: SidebarSectionProps)
           </div>
         )}
       </div>
-      {open && <div className="flex flex-col gap-px">{children}</div>}
+      <div className="flex flex-col gap-px">{children}</div>
     </section>
   )
 }
