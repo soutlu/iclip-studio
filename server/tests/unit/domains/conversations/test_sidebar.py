@@ -25,6 +25,7 @@ from iclip.domains.conversations.service import (
     ListState,
 )
 from iclip.domains.identity.public import Principal
+from iclip.platform.transcript.session_events import SessionEventClock
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
 OWNER = Principal(
@@ -153,6 +154,9 @@ def build(
         latest_master_urls=_untouched,
         fork_transcript=cast("ForkTranscript", object()),
         copy_workspace=_untouched,
+        event_watermark=SessionEventClock().snapshot,
+        announce_row=_untouched,
+        announce_deleted=_untouched,
     )
 
 

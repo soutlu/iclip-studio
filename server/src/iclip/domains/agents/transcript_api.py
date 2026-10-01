@@ -34,6 +34,7 @@ from iclip.platform.transcript.granularity import (
     needs_reset_on_transition,
 )
 from iclip.platform.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
+from iclip.platform.transcript.session_events import SessionEventClock
 from iclip.platform.transcript.wire import (
     Ack,
     ApprovalRequest,
@@ -54,8 +55,12 @@ from iclip.platform.transcript.wire import (
     RunStatusOut,
     ServerHello,
     ServerHelloPayload,
+    SessionCreated,
+    SessionDeleted,
+    SessionDeletedPayload,
     SessionMetaPayload,
     SessionMetaUpdated,
+    SessionUpdated,
     SessionWorkChanged,
     SessionWorkPayload,
     SteerRequest,
@@ -83,6 +88,16 @@ MAX_EVENT_BUFFER = 2048
 """多对话共享的连接出站缓冲上限；溢出时断开并要求重连补批，避免阻塞运行。"""
 
 _CLIENT_FRAME = TypeAdapter[Any](ClientFrame)
+
+
+class SubscribedFrames(Protocol):
+    """一次订阅要发的帧与它们所属的实时流。"""
+
+    @property
+    def stream_epoch(self) -> str: ...
+
+    @property
+    def frames(self) -> tuple[ResetPayload | OpsPayload, ...]: ...
 
 
 class Transcripts(Protocol):
@@ -138,12 +153,22 @@ class Transcripts(Protocol):
     ) -> TranscriptPage: ...
 
     def catchup(
-        self, conversation_id: str, *, agent_id: str = MAIN_AGENT_ID, since: int
+        self,
+        conversation_id: str,
+        *,
+        agent_id: str = MAIN_AGENT_ID,
+        since: int,
+        epoch: str | None = None,
     ) -> OpsCatchup: ...
 
     def subscribe(
-        self, conversation_id: str, *, agent_id: str = MAIN_AGENT_ID, since: int | None
-    ) -> tuple[ResetPayload | OpsPayload, ...]: ...
+        self,
+        conversation_id: str,
+        *,
+        agent_id: str = MAIN_AGENT_ID,
+        since: int | None,
+        epoch: str | None = None,
+    ) -> SubscribedFrames: ...
 
     def listen(self, conversation_id: str, listener: Any, *, agent_id: str) -> None: ...
 
@@ -232,13 +257,18 @@ def _subscribed_agents(spec: Mapping[str, TranscriptGrade]) -> tuple[str, ...]:
 
 
 class LiveConnections:
-    """当前进程的 WebSocket 连接集合。
+    """当前进程的 WebSocket 连接集合与会话事件时钟。
 
-    标题、活动与生成任务广播不依赖对话订阅，发给属主的连接和治理者的连接，范围由握手主体定。
-    多 worker 各自持有连接集合，未收到广播的客户端需重新读取数据库状态。"""
+    标题、活动、生成任务与会话生命周期广播不依赖对话订阅，发给属主的连接和治理者的连接，范围由
+    握手主体定。每一帧带属主，客户端据此分清自己的对话与别人的对话。
+    多 worker 各自持有连接集合，未收到广播的客户端需重新读取数据库状态。
 
-    def __init__(self) -> None:
+    事件序号由 ``clock`` 发：所有 ``announce_*`` 都在写入提交之后调用，发号与入队之间不 await，
+    所以同一段对话的帧在每条连接上按序号递增送达（ADR-0004）。"""
+
+    def __init__(self, clock: SessionEventClock | None = None) -> None:
         self._connections: set[_Connection] = set()
+        self.clock = clock or SessionEventClock()
 
     def add(self, connection: _Connection) -> None:
         self._connections.add(connection)
@@ -252,7 +282,10 @@ class LiveConnections:
         self._announce(
             owner,
             SessionMetaUpdated(
-                payload=SessionMetaPayload(session_id=str(conversation_id), title=title)
+                seq=self.clock.tick(conversation_id),
+                epoch=self.clock.epoch,
+                owner_user_id=str(owner),
+                payload=SessionMetaPayload(session_id=str(conversation_id), title=title),
             ),
         )
 
@@ -270,7 +303,10 @@ class LiveConnections:
         self._announce(
             owner,
             SessionWorkChanged(
+                seq=self.clock.tick(conversation_id),
+                epoch=self.clock.epoch,
                 session_id=str(conversation_id),
+                owner_user_id=str(owner),
                 payload=SessionWorkPayload(
                     busy=busy,
                     pending_interaction=pending_interaction,
@@ -296,7 +332,10 @@ class LiveConnections:
         self._announce(
             owner,
             GenerationChanged(
+                seq=None if conversation_id is None else self.clock.tick(conversation_id),
+                epoch=self.clock.epoch,
                 session_id=None if conversation_id is None else str(conversation_id),
+                owner_user_id=str(owner),
                 payload=GenerationChangedPayload(
                     id=str(job_id),
                     kind=kind,
@@ -316,11 +355,54 @@ class LiveConnections:
         path: str,
         change: Literal["created", "modified", "deleted"] = "modified",
     ) -> None:
-        """通知属主与治理者的连接，仅发送给通过 watch_fs_add 订阅对应路径的连接。"""
+        """通知属主与治理者的连接，仅发送给通过 watch_fs_add 订阅对应路径的连接。
 
+        这是这段对话的一帧会话事件，不论有没有连接订着都发号，各连接拿到同一个序号。"""
+
+        seq = self.clock.tick(conversation_id)
         for connection in tuple(self._connections):
             if connection.receives(owner):
-                connection.offer_fs_change(str(conversation_id), path, change)
+                connection.offer_fs_change(str(conversation_id), path, change, seq=seq)
+
+    def announce_session_row(
+        self,
+        kind: Literal["created", "updated"],
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        row: Mapping[str, Any],
+        watermark: int,
+    ) -> None:
+        """广播新出现或变化了的整行 ``ConversationOut``（camelCase 字典）。
+
+        ``watermark`` 是调用方在写入之前取的这段对话的事件序号，与行里的 ``lastSeq`` 相同；这类
+        带整行的帧不另发新号：行里的字段读于写入之后，比 ``watermark`` 之前的事件都新，比之后的
+        事件未必新，客户端按字段比较序号合并。"""
+
+        frame_type = SessionCreated if kind == "created" else SessionUpdated
+        self._announce(
+            owner,
+            frame_type(
+                seq=watermark,
+                epoch=self.clock.epoch,
+                session_id=str(conversation_id),
+                owner_user_id=str(owner),
+                payload=dict(row),
+            ),
+        )
+
+    def announce_session_deleted(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> None:
+        """广播属主删掉了一段对话；事件帧，发新序号。"""
+
+        self._announce(
+            owner,
+            SessionDeleted(
+                seq=self.clock.tick(conversation_id),
+                epoch=self.clock.epoch,
+                session_id=str(conversation_id),
+                owner_user_id=str(owner),
+                payload=SessionDeletedPayload(session_id=str(conversation_id)),
+            ),
+        )
 
     def _announce(self, owner: uuid.UUID, frame: Any) -> None:
         # 回调可能移除连接，遍历副本避免迭代集合被修改。
@@ -505,12 +587,18 @@ def create_transcript_router(
         principal: Annotated[Principal, require_permission("agent:run")],
         since_seq: Annotated[int, Query(ge=0)],
         agent_id: AgentId = MAIN_AGENT_ID,
+        stream_epoch: Annotated[str | None, Query(max_length=64)] = None,
     ) -> OpsCatchup:
-        """补上断线期间漏掉的批次。``complete`` 为假就整页重拉。"""
+        """补上断线期间漏掉的批次。``complete`` 为假就整页重拉。
+
+        给机器调用方用，浏览器不走这里。``stream_epoch`` 是手上水位所属的实时流，给了且对不上也是
+        ``complete`` 为假；不给只按序号判，分不出服务重启后重新编号的批次。"""
 
         await _readable(principal, conversation_id)
         await transcripts.verify_agent(conversation_id, agent_id)
-        return transcripts.catchup(conversation_id, agent_id=agent_id, since=since_seq)
+        return transcripts.catchup(
+            conversation_id, agent_id=agent_id, since=since_seq, epoch=stream_epoch
+        )
 
     @outer.websocket("/ws")
     async def subscribe(websocket: WebSocket) -> None:
@@ -559,8 +647,10 @@ class _Connection:
         transcripts: Transcripts,
         conversations: Conversations,
         principal: Principal,
+        clock: SessionEventClock,
     ):
         self._ws = websocket
+        self._clock = clock
         self._transcripts = transcripts
         self._conversations = conversations
         self._principal = principal
@@ -572,7 +662,6 @@ class _Connection:
         # 文件订阅按对话记录路径与递归标记，独立于 Transcript 订阅。
         self._watches: dict[str, dict[str, bool]] = {}
         self._last_inbound = datetime.now(UTC)
-        self._frame_seq = 0
 
     async def serve(self) -> None:
         await self._ws.accept()
@@ -679,15 +768,21 @@ class _Connection:
         return False
 
     def offer_fs_change(
-        self, conversation_id: str, path: str, change: Literal["created", "modified", "deleted"]
+        self,
+        conversation_id: str,
+        path: str,
+        change: Literal["created", "modified", "deleted"],
+        *,
+        seq: int,
     ) -> None:
+        """``seq`` 是广播方为这一帧发的会话事件序号，各连接相同。"""
 
         if not self._watching(conversation_id, path):
             return
-        self._frame_seq += 1
         self.offer(
             FsChanged(
-                seq=self._frame_seq,
+                seq=seq,
+                epoch=self._clock.epoch,
                 session_id=conversation_id,
                 timestamp=datetime.now(UTC).isoformat(),
                 payload=FsChangePayload(changes=(FsChangeEntry(path=path, change=change),)),
@@ -735,6 +830,7 @@ class _Connection:
         previous = self._grades.get(key)
         self._grades[key] = grade
         since = payload.transcript_since.get(agent_id)
+        epoch = payload.transcript_epoch.get(agent_id)
         if previous is not None and needs_reset_on_transition(previous, grade):
             # 提高订阅粒度后缺少此前过滤的操作，必须重置快照，不能沿用旧水位。
             since = None
@@ -747,10 +843,13 @@ class _Connection:
             self._transcripts.listen(conversation_id, listener, agent_id=agent_id)
         # off 保留订阅，仅停止发送此 Agent 的帧。
         if grade != "off":
-            for item in self._transcripts.subscribe(
-                conversation_id, agent_id=agent_id, since=since
-            ):
-                await self._outbound.put(self._wrap(conversation_id, self._graded(item, grade)))
+            subscribed = self._transcripts.subscribe(
+                conversation_id, agent_id=agent_id, since=since, epoch=epoch
+            )
+            for item in subscribed.frames:
+                await self._outbound.put(
+                    self._wrap(conversation_id, self._graded(item, grade), subscribed.stream_epoch)
+                )
 
     def _listening(self, conversation_id: str) -> bool:
         return any(key[0] == conversation_id for key in self._listeners)
@@ -784,6 +883,7 @@ class _Connection:
                     self._wrap(
                         conversation_id,
                         OpsPayload(agent_id=agent_id, ops=ops, seq=batch.seq),
+                        batch.epoch,
                     )
                 )
             except asyncio.QueueFull:
@@ -802,23 +902,28 @@ class _Connection:
         return payload.model_copy(update={"ops": filter_ops_for_grade(grade, payload.ops)})
 
     def _wrap(
-        self, conversation_id: str, payload: ResetPayload | OpsPayload
+        self, conversation_id: str, payload: ResetPayload | OpsPayload, stream_epoch: str
     ) -> TranscriptReset | TranscriptOps:
-        """封装事件。外层 seq 是连接帧序号，payload.seq 才是客户端续传使用的 Transcript 批次号。"""
+        """封装事件。``stream_epoch`` 与 ``payload.seq`` 是客户端续传用的 Transcript 水位；外层
+        ``epoch`` + ``seq`` 是这段对话当前的会话事件序号，Transcript 帧不另发号（照 Kimi 的易失帧）。"""
 
-        self._frame_seq += 1
+        seq = self._clock.current(conversation_id)
         stamped = datetime.now(UTC).isoformat()
         if isinstance(payload, ResetPayload):
             return TranscriptReset(
-                seq=self._frame_seq,
+                seq=seq,
+                epoch=self._clock.epoch,
                 session_id=conversation_id,
                 timestamp=stamped,
+                stream_epoch=stream_epoch,
                 payload=payload,
             )
         return TranscriptOps(
-            seq=self._frame_seq,
+            seq=seq,
+            epoch=self._clock.epoch,
             session_id=conversation_id,
             timestamp=stamped,
+            stream_epoch=stream_epoch,
             payload=payload,
         )
 
@@ -874,7 +979,7 @@ async def _serve(
     principal: Principal,
     live: LiveConnections,
 ) -> None:
-    connection = _Connection(websocket, transcripts, conversations, principal)
+    connection = _Connection(websocket, transcripts, conversations, principal, live.clock)
     live.add(connection)
     try:
         await connection.serve()

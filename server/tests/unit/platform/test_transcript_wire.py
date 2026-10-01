@@ -9,6 +9,8 @@ from iclip.platform.transcript.wire import GenerationChanged, GenerationChangedP
 
 def test_a_generation_frame_omits_empty_origin_fields_on_the_wire() -> None:
     frame = GenerationChanged(
+        epoch="e-1",
+        owner_user_id="u-1",
         session_id=None,
         payload=GenerationChangedPayload(
             id="job-1", kind="video", operation="compose", status="pending"
@@ -19,12 +21,17 @@ def test_a_generation_frame_omits_empty_origin_fields_on_the_wire() -> None:
 
     assert sent == {
         "type": "event.generation.changed",
+        "epoch": "e-1",
+        "owner_user_id": "u-1",
         "payload": {"id": "job-1", "kind": "video", "operation": "compose", "status": "pending"},
     }
 
 
 def test_a_video_frame_carries_its_shot_index_under_the_envelopes_own_name() -> None:
     frame = GenerationChanged(
+        seq=1,
+        epoch="e-1",
+        owner_user_id="u-1",
         session_id="c-1",
         payload=GenerationChangedPayload(
             id="job-3", kind="video", operation="generate", status="submitted", shot_index=2
@@ -45,6 +52,9 @@ def test_a_video_frame_carries_its_shot_index_under_the_envelopes_own_name() -> 
 def test_a_generation_frame_carries_the_callers_metadata_verbatim() -> None:
     coordinate = {"path": "video_shot.json", "shot": 1, "frame": 3}
     frame = GenerationChanged(
+        seq=1,
+        epoch="e-1",
+        owner_user_id="u-1",
         session_id="c-1",
         payload=GenerationChangedPayload(
             id="job-2", kind="image", operation="generate", status="completed", metadata=coordinate

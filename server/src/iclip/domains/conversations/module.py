@@ -10,11 +10,14 @@ from iclip.domains.conversations.api import create_conversations_router
 from iclip.domains.conversations.repository import ConversationRepository
 from iclip.domains.conversations.service import (
     ActivitiesOf,
+    AnnounceConversationDeleted,
+    AnnounceConversationRow,
     AnnounceTitle,
     BusyConversationIds,
     ClaimTask,
     ConversationService,
     CopyConversationWorkspace,
+    EventWatermarkOf,
     ForkTranscript,
     GenerateTitle,
     LatestMasterUrls,
@@ -54,6 +57,9 @@ def build_conversations_module(
     latest_master_urls: LatestMasterUrls,
     fork_transcript: ForkTranscript,
     copy_workspace: CopyConversationWorkspace,
+    event_watermark: EventWatermarkOf,
+    announce_row: AnnounceConversationRow,
+    announce_deleted: AnnounceConversationDeleted,
 ) -> ConversationsModule:
     """外部依赖由组合根注入，协议定义见 service.py。"""
 
@@ -72,6 +78,9 @@ def build_conversations_module(
         latest_master_urls=latest_master_urls,
         fork_transcript=fork_transcript,
         copy_workspace=copy_workspace,
+        event_watermark=event_watermark,
+        announce_row=announce_row,
+        announce_deleted=announce_deleted,
     )
     return ConversationsModule(
         routers=(create_conversations_router(service, agents=list_agents, act_as=act_as),),

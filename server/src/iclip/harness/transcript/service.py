@@ -14,7 +14,7 @@ from iclip.harness.jobs import JobQueue
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.store import Listener, TranscriptStore
-from iclip.harness.transcript.subscription import subscribe_frames
+from iclip.harness.transcript.subscription import SubscribeFrames, subscribe_frames
 from iclip.platform.transcript.ops import (
     MAIN_AGENT_ID,
     ImageContent,
@@ -31,9 +31,7 @@ from iclip.platform.transcript.ops import (
 from iclip.platform.transcript.wire import (
     OpsBatchOut,
     OpsCatchup,
-    OpsPayload,
     PromptQueueOut,
-    ResetPayload,
     RunStatusOut,
     TranscriptPage,
 )
@@ -248,6 +246,7 @@ class TranscriptService:
                 item.interaction_id for item in interactions if item.state == "pending"
             ),
             seq=view.watermark,
+            stream_epoch=view.epoch,
         )
 
     async def _child_page(
@@ -286,28 +285,55 @@ class TranscriptService:
             meta=meta,
             agents=agents_from_tasks(roster),
             seq=view.watermark,
+            stream_epoch=view.epoch,
         )
 
     def catchup(
-        self, conversation_id: str, *, agent_id: str = MAIN_AGENT_ID, since: int
+        self,
+        conversation_id: str,
+        *,
+        agent_id: str = MAIN_AGENT_ID,
+        since: int,
+        epoch: str | None = None,
     ) -> OpsCatchup:
-        """返回 since 后的批次；无法完整补发时 complete=False，客户端重新拉取。"""
+        """返回 since 后的批次；无法完整补发时 complete=False，客户端重新拉取。
 
-        view = self.store.subscribe_view(conversation_id, agent_id, since=since)
+        给了 ``epoch`` 就先核对它是不是当前实时流，对不上同样 complete=False。不给时只按序号判，
+        沿用旧调用方的口径：这种调用方碰上服务重启后重新编号的批次分不出来，合同里写明了。
+        """
+
+        current = self.store.subscribe_view(conversation_id, agent_id)
+        view = self.store.subscribe_view(
+            conversation_id,
+            agent_id,
+            since=since,
+            epoch=current.epoch if epoch is None else epoch,
+        )
         return OpsCatchup(
             agent_id=agent_id,
             batches=tuple(OpsBatchOut(seq=batch.seq, ops=batch.ops) for batch in view.batches),
             latest_seq=view.watermark,
             complete=view.complete,
+            stream_epoch=view.epoch,
         )
 
     # --- 订阅 ---------------------------------------------------------------
 
     def subscribe(
-        self, conversation_id: str, *, agent_id: str = MAIN_AGENT_ID, since: int | None
-    ) -> tuple[ResetPayload | OpsPayload, ...]:
-        view = self.store.subscribe_view(conversation_id, agent_id, since=since)
-        return subscribe_frames(view, agent_id=agent_id, since=since)
+        self,
+        conversation_id: str,
+        *,
+        agent_id: str = MAIN_AGENT_ID,
+        since: int | None,
+        epoch: str | None = None,
+    ) -> SubscribeFrames:
+        """按客户端水位给出订阅帧与它们所属的实时流；``epoch`` 对不上或缺失时只回 reset。"""
+
+        view = self.store.subscribe_view(conversation_id, agent_id, since=since, epoch=epoch)
+        return SubscribeFrames(
+            stream_epoch=view.epoch,
+            frames=subscribe_frames(view, agent_id=agent_id, since=since),
+        )
 
     def listen(self, conversation_id: str, listener: Listener, *, agent_id: str) -> None:
         self.store.listen(conversation_id, agent_id, listener)

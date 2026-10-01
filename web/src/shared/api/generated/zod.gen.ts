@@ -298,10 +298,12 @@ export const zConversationOut = z.object({
   completedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   deletedAt: z.iso.datetime().nullable(),
+  eventEpoch: z.string(),
   forkTurn: z.int().nullable(),
   forkedFrom: z.uuid().nullable(),
   id: z.uuid(),
   lastRunId: z.string().nullable(),
+  lastSeq: z.int(),
   ownerUserId: z.uuid(),
   taskId: z.uuid().nullable(),
   title: z.string(),
@@ -356,10 +358,12 @@ export const zConversationsAuditItemOut = z.object({
   completedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   deletedAt: z.iso.datetime().nullable(),
+  eventEpoch: z.string(),
   forkTurn: z.int().nullable(),
   forkedFrom: z.uuid().nullable(),
   id: z.uuid(),
   lastRunId: z.string().nullable(),
+  lastSeq: z.int(),
   latestMasterUrl: z.string().nullable(),
   ownerUserId: z.uuid(),
   taskId: z.uuid().nullable(),
@@ -1697,6 +1701,7 @@ export const zTranscriptPage = z.object({
   pending_interactions: z.array(z.string()).optional().default([]),
   prompts: z.array(zPrompt).optional().default([]),
   seq: z.int(),
+  stream_epoch: z.string(),
   tasks: z.array(zTranscriptTask).optional().default([]),
   title: z.string().optional().default(''),
   todos: z.array(z.unknown()).optional().default([]),
@@ -1755,13 +1760,15 @@ export const zOpsBatchOut = z.object({
  *
  * ``GET /transcript/ops`` 的补批响应。
  *
- * ``complete`` 为假表示要的批次已经出了日志窗口，客户端得整页重拉。
+ * ``complete`` 为假表示要的批次已经出了日志窗口，或调用方给的 ``stream_epoch`` 与当前实时流
+ * 对不上，客户端得整页重拉。``stream_epoch`` 是这些批次所属的实时流。
  */
 export const zOpsCatchup = z.object({
   agent_id: z.string(),
   batches: z.array(zOpsBatchOut),
   complete: z.boolean(),
   latest_seq: z.int(),
+  stream_epoch: z.string(),
 })
 
 /**
@@ -2131,6 +2138,15 @@ export const zDeleteConversationConversationsConversationIdDeletePath = z.object
  */
 export const zDeleteConversationConversationsConversationIdDeleteResponse = z.void()
 
+export const zReadConversationConversationsConversationIdGetPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadConversationConversationsConversationIdGetResponse = zConversationEnvelope
+
 export const zRenameConversationConversationsConversationIdPatchBody = zConversationRename
 
 export const zRenameConversationConversationsConversationIdPatchPath = z.object({
@@ -2272,6 +2288,7 @@ export const zCatchupConversationsConversationIdTranscriptOpsGetQuery = z.object
     .regex(/^[A-Za-z0-9._-]{1,128}$/)
     .optional()
     .default('main'),
+  stream_epoch: z.string().max(64).nullish(),
 })
 
 /**

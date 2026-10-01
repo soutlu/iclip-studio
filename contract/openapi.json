@@ -1153,6 +1153,10 @@
             ],
             "title": "Deletedat"
           },
+          "eventEpoch": {
+            "title": "Eventepoch",
+            "type": "string"
+          },
           "forkTurn": {
             "anyOf": [
               {
@@ -1191,6 +1195,10 @@
               }
             ],
             "title": "Lastrunid"
+          },
+          "lastSeq": {
+            "title": "Lastseq",
+            "type": "integer"
           },
           "ownerUserId": {
             "format": "uuid",
@@ -1233,7 +1241,9 @@
           "completedAt",
           "forkedFrom",
           "forkTurn",
-          "activity"
+          "activity",
+          "lastSeq",
+          "eventEpoch"
         ],
         "title": "ConversationOut",
         "type": "object"
@@ -1359,6 +1369,10 @@
             ],
             "title": "Deletedat"
           },
+          "eventEpoch": {
+            "title": "Eventepoch",
+            "type": "string"
+          },
           "forkTurn": {
             "anyOf": [
               {
@@ -1397,6 +1411,10 @@
               }
             ],
             "title": "Lastrunid"
+          },
+          "lastSeq": {
+            "title": "Lastseq",
+            "type": "integer"
           },
           "latestMasterUrl": {
             "anyOf": [
@@ -1451,6 +1469,8 @@
           "forkedFrom",
           "forkTurn",
           "activity",
+          "lastSeq",
+          "eventEpoch",
           "latestMasterUrl"
         ],
         "title": "ConversationsAuditItemOut",
@@ -3337,7 +3357,7 @@
       },
       "OpsCatchup": {
         "additionalProperties": false,
-        "description": "``GET /transcript/ops`` 的补批响应。\n\n``complete`` 为假表示要的批次已经出了日志窗口，客户端得整页重拉。",
+        "description": "``GET /transcript/ops`` 的补批响应。\n\n``complete`` 为假表示要的批次已经出了日志窗口，或调用方给的 ``stream_epoch`` 与当前实时流\n对不上，客户端得整页重拉。``stream_epoch`` 是这些批次所属的实时流。",
         "properties": {
           "agent_id": {
             "title": "Agent Id",
@@ -3357,13 +3377,18 @@
           "latest_seq": {
             "title": "Latest Seq",
             "type": "integer"
+          },
+          "stream_epoch": {
+            "title": "Stream Epoch",
+            "type": "string"
           }
         },
         "required": [
           "agent_id",
           "batches",
           "latest_seq",
-          "complete"
+          "complete",
+          "stream_epoch"
         ],
         "title": "OpsCatchup",
         "type": "object"
@@ -5452,6 +5477,10 @@
             "title": "Seq",
             "type": "integer"
           },
+          "stream_epoch": {
+            "title": "Stream Epoch",
+            "type": "string"
+          },
           "tasks": {
             "default": [],
             "items": {
@@ -5476,7 +5505,8 @@
           "agent_id",
           "items",
           "has_more",
-          "seq"
+          "seq",
+          "stream_epoch"
         ],
         "title": "TranscriptPage",
         "type": "object"
@@ -9084,6 +9114,60 @@
           "conversations"
         ]
       },
+      "get": {
+        "description": "读一段对话的整行，给列表在轮次状态变化后单独刷新这一行（照 Kimi 按 id 取会话）。\n\n可见范围同其他读路径：治理者读得到所有人的对话，含属主删掉的墓碑；其余人只见自己活着的，\n看不见与不存在一样是 404。``lastSeq`` 是读这一行之前的事件水位。",
+        "operationId": "read_conversation_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Conversation",
+        "tags": [
+          "conversations"
+        ]
+      },
       "patch": {
         "operationId": "rename_conversation_conversations__conversation_id__patch",
         "parameters": [
@@ -9826,7 +9910,7 @@
     },
     "/conversations/{conversation_id}/transcript/ops": {
       "get": {
-        "description": "补上断线期间漏掉的批次。``complete`` 为假就整页重拉。",
+        "description": "补上断线期间漏掉的批次。``complete`` 为假就整页重拉。\n\n给机器调用方用，浏览器不走这里。``stream_epoch`` 是手上水位所属的实时流，给了且对不上也是\n``complete`` 为假；不给只按序号判，分不出服务重启后重新编号的批次。",
         "operationId": "catchup_conversations__conversation_id__transcript_ops_get",
         "parameters": [
           {
@@ -9858,6 +9942,23 @@
               "pattern": "^[A-Za-z0-9._-]{1,128}$",
               "title": "Agent Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream_epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stream Epoch"
             }
           }
         ],

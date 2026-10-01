@@ -351,6 +351,39 @@ async def test_deleted_conversation_is_a_tombstone_only_governor_reads_see(
         await engine.dispose()
 
 
+async def test_one_conversation_can_be_read_by_id_within_the_usual_visibility(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    """单行读与其他读路径同一口径：属主读自己活着的，治理者连墓碑也读得到，别人与墓碑的属主都是 404。
+
+    行上带读这一行之前的事件水位与它所属的进程。"""
+
+    await login_as_editor(client, pg_url)
+    mine = (await create(client, title="这段")).json()["conversation"]
+
+    read = await client.get(f"{URL}/{mine['id']}")
+    assert read.status_code == 200, read.text
+    row = read.json()["conversation"]
+    assert (row["id"], row["title"]) == (mine["id"], "这段")
+    assert isinstance(row["lastSeq"], int)
+    assert row["eventEpoch"] == mine["eventEpoch"]
+
+    async with make_client(app) as stranger:
+        await login_as_editor(stranger, pg_url, username="mallory")
+        assert (await stranger.get(f"{URL}/{mine['id']}")).status_code == 404
+
+    assert (await client.delete(f"{URL}/{mine['id']}")).status_code == 204
+    assert (await client.get(f"{URL}/{mine['id']}")).status_code == 404
+
+    async with make_client(app) as governor:
+        await register_and_login(governor, username="gov", email="gov@example.com")
+        await set_roles_in_db(pg_url, "gov@example.com", ["root"])
+        tombstone = await governor.get(f"{URL}/{mine['id']}")
+        assert tombstone.status_code == 200, tombstone.text
+        assert tombstone.json()["conversation"]["deletedAt"] is not None
+        assert (await governor.get(f"{URL}/{uuid.uuid4()}")).status_code == 404
+
+
 async def test_unknown_conversation_is_404(client: httpx.AsyncClient, pg_url: str) -> None:
     await login_as_editor(client, pg_url)
     missing = "00000000-0000-0000-0000-000000000000"

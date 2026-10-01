@@ -8,6 +8,9 @@ const HISTORY_TURNS = 2
 
 const HISTORY_SEQ = 10
 
+/** 原型环境的实时流只有一条，epoch 固定。 */
+const MOCK_STREAM_EPOCH = 'mock-stream'
+
 const DEMO_CHUNKS = [
   '好的，我先看一下这段素材：\n\n',
   '- 拆出 3 个镜头\n- 写进 `shots/storyboard.md`\n\n',
@@ -272,6 +275,7 @@ export const mockChildPage = (conversationId: string, childId: string) => ({
   pending_interactions: [],
   prompts: [],
   seq: seqOf.get(streamKey(conversationId, childId)) ?? HISTORY_SEQ,
+  stream_epoch: MOCK_STREAM_EPOCH,
   tasks: [],
   title: '',
   todos: [],
@@ -308,6 +312,7 @@ export const mockTranscriptPage = (conversationId = '') => {
       : [],
     // 页里只有历史那几轮，水位也停在历史处；之后的都从日志补，页与水位才对得上。
     seq: HISTORY_SEQ,
+    stream_epoch: MOCK_STREAM_EPOCH,
     tasks: [],
     title: '夜景延时素材生成',
     todos: [],

@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import structlog
 
@@ -15,6 +15,7 @@ from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     Conversation,
     ConversationActivity,
+    EventWatermark,
 )
 from iclip.domains.conversations.repository import (
     AuditFilter,
@@ -23,7 +24,7 @@ from iclip.domains.conversations.repository import (
     PageCursor,
     StateFilter,
 )
-from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS
+from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, conversation_out
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
     Principal,
@@ -78,6 +79,19 @@ AnnounceTitle = Callable[[uuid.UUID, uuid.UUID, str], None]
 """同步广播标题更新，参数为 (属主, 对话 id, 标题)。
 
 广播不依赖对话订阅，发给属主与治理者的连接；仅写入出站队列，不等待回执。"""
+
+EventWatermarkOf = Callable[[], EventWatermark]
+"""取一份会话事件水位，由组合根接到广播方的事件时钟上。读库、写库之前各取一份（ADR-0004）。"""
+
+AnnounceConversationRow = Callable[
+    [Literal["created", "updated"], uuid.UUID, uuid.UUID, Mapping[str, Any], int], None
+]
+"""同步广播新出现或变化了的整行，参数为 (种类, 属主, 对话 id, camelCase 整行, 写入前的事件序号)。
+
+与标题广播同一投递范围；写入提交之后调用。"""
+
+AnnounceConversationDeleted = Callable[[uuid.UUID, uuid.UUID], None]
+"""同步广播属主删掉了一段对话，参数为 (属主, 对话 id)；写入提交之后调用。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,8 +297,14 @@ class ConversationService:
         latest_master_urls: LatestMasterUrls,
         fork_transcript: ForkTranscript,
         copy_workspace: CopyConversationWorkspace,
+        event_watermark: EventWatermarkOf,
+        announce_row: AnnounceConversationRow,
+        announce_deleted: AnnounceConversationDeleted,
     ) -> None:
         self._repo = repo
+        self._event_watermark = event_watermark
+        self._announce_row = announce_row
+        self._announce_deleted = announce_deleted
         self._claim_task = claim_task
         self._fork_transcript = fork_transcript
         self._copy_workspace = copy_workspace
@@ -298,6 +318,33 @@ class ConversationService:
         self._read_derived_file = read_derived_file
         self._write_derived_file = write_derived_file
         self._document_validators = document_validators
+
+    def watermark(self) -> EventWatermark:
+        """取一份会话事件水位；列表与单行接口在读库之前调，结果填进行上的 ``lastSeq``。"""
+
+        return self._event_watermark()
+
+    async def _broadcast_row(
+        self,
+        kind: Literal["created", "updated"],
+        conversation: Conversation,
+        before: EventWatermark,
+    ) -> None:
+        """把写入之后的整行广播出去。``before`` 必须在写入之前取：行里的字段读于写入事务，
+        包含了序号不大于它的每一个事件，客户端才能拿它与帧序号比先后。活动状态在这之后读，
+        只会更新，不会比 ``before`` 旧。"""
+
+        activity = (await self.activities([conversation.id]))[conversation.id]
+        row = conversation_out(conversation, activity, before).model_dump(
+            mode="json", by_alias=True
+        )
+        self._announce_row(
+            kind,
+            conversation.owner_user_id,
+            conversation.id,
+            row,
+            before.seq_of(conversation.id),
+        )
 
     async def activities(
         self, conversation_ids: Sequence[uuid.UUID]
@@ -383,6 +430,7 @@ class ConversationService:
         新建时挂了需求单，就以属主认领那张单。"""
 
         now = datetime.now(UTC)
+        before = self._event_watermark()
         conversation, created = await self._repo.create_if_absent(
             Conversation(
                 id=conversation_id or uuid.uuid4(),
@@ -400,6 +448,8 @@ class ConversationService:
         )
         if created and task_id is not None:
             await self._claim_task(task_id, principal.user_id)
+        if created:
+            await self._broadcast_row("created", conversation, before)
         return conversation, created
 
     async def fork(
@@ -443,6 +493,7 @@ class ConversationService:
             source_id=source_id, target_id=target_id, turn=turn
         ):
             raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
+        before = self._event_watermark()
         conversation, _ = await self._repo.create_if_absent(
             Conversation(
                 id=target_id,
@@ -460,6 +511,7 @@ class ConversationService:
                 fork_turn=turn,
             )
         )
+        await self._broadcast_row("created", conversation, before)
         return conversation
 
     async def list_for_task(
@@ -606,8 +658,10 @@ class ConversationService:
     async def rename(
         self, principal: Principal, conversation_id: uuid.UUID, *, title: str
     ) -> Conversation:
+        before = self._event_watermark()
         renamed = await self._repo.rename(conversation_id, owner=principal.user_id, title=title)
         self._announce_title(renamed.owner_user_id, conversation_id, renamed.title)
+        await self._broadcast_row("updated", renamed, before)
         return renamed
 
     async def name_after_turn(self, conversation_id: uuid.UUID, user_text: str) -> None:
@@ -628,9 +682,12 @@ class ConversationService:
     ) -> Conversation:
         """设置或清空对话的合集归属。"""
 
-        return await self._repo.set_collection(
+        before = self._event_watermark()
+        conversation = await self._repo.set_collection(
             conversation_id, owner=principal.user_id, collection_id=collection_id
         )
+        await self._broadcast_row("updated", conversation, before)
+        return conversation
 
     async def set_task(
         self, principal: Principal, conversation_id: uuid.UUID, *, task_id: uuid.UUID | None
@@ -638,11 +695,13 @@ class ConversationService:
         """设置或清空需求单归属。尝试顺序按对话创建时间计算，重新关联不会改变创建时间。
         挂上的那张单由属主认领；摘掉不动认领记录。"""
 
+        before = self._event_watermark()
         conversation = await self._repo.set_task(
             conversation_id, owner=principal.user_id, task_id=task_id
         )
         if task_id is not None:
             await self._claim_task(task_id, principal.user_id)
+        await self._broadcast_row("updated", conversation, before)
         return conversation
 
     async def set_completed(
@@ -650,25 +709,35 @@ class ConversationService:
     ) -> Conversation:
         """标记或取消属主的收尾标记。机器不会自己标；属主再动手会自动取消。"""
 
-        return await self._repo.set_completed(
+        before = self._event_watermark()
+        conversation = await self._repo.set_completed(
             conversation_id, owner=principal.user_id, completed=completed
         )
+        await self._broadcast_row("updated", conversation, before)
+        return conversation
 
     async def clear_completed(self, conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
         """属主在这段对话里又干活了（如提交出片），收尾标记不再成立。
 
         供别的域在受理成功后回调：对话不存在、已删或不是这个人的都当没发生，不影响调用方。
-        标记本来就是空时照样写一次：提交出片本身就是活动，`updated_at` 该跟着走。"""
+        标记本来就是空时照样写一次：提交出片本身就是活动，`updated_at` 该跟着走；行变了就广播
+        ``updated``，与属主手动取消同一种帧。"""
 
+        before = self._event_watermark()
         try:
-            await self._repo.set_completed(conversation_id, owner=owner, completed=False)
+            conversation = await self._repo.set_completed(
+                conversation_id, owner=owner, completed=False
+            )
         except NotFound:
             _logger.debug("对话不可见，跳过取消收尾标记", conversation_id=str(conversation_id))
+            return
+        await self._broadcast_row("updated", conversation, before)
 
     async def delete(self, principal: Principal, conversation_id: uuid.UUID) -> None:
         """把对话标记删除。工作区与素材台账留着，治理者复盘时还要看。"""
 
         await self._repo.delete(conversation_id, owner=principal.user_id)
+        self._announce_deleted(principal.user_id, conversation_id)
 
     async def begin_run(
         self, *, owner: uuid.UUID, agent_id: str, conversation_id: str, run_id: str
@@ -689,6 +758,11 @@ class ConversationService:
             return (await self._repo.get(parsed, owner=principal.user_id)).agent_id
         return (await self._readable(principal, parsed)).agent_id
 
+    async def get(self, principal: Principal, conversation_id: uuid.UUID) -> Conversation:
+        """按 id 读一段对话的整行，可见范围同其他读路径：治理者含墓碑，其余人只见自己活着的。"""
+
+        return await self._readable(principal, conversation_id)
+
     async def header_of(self, principal: Principal, conversation_id: str) -> Conversation:
         """读取可见对话的整行，可见范围同 ``agent_of(writing=False)``。会话页首屏用它贴标题、属主与
         删除时刻并取 Agent，一行只读一次；后续改名经 session.meta.updated 推送。"""
@@ -704,6 +778,8 @@ __all__ = [
     "ActivitiesOf",
     "AgentDirectory",
     "AgentEntry",
+    "AnnounceConversationDeleted",
+    "AnnounceConversationRow",
     "AuditPage",
     "BusyConversationIds",
     "ClaimTask",
@@ -712,6 +788,7 @@ __all__ = [
     "DeletedFilter",
     "DerivedFile",
     "DerivedFileContent",
+    "EventWatermarkOf",
     "LatestMasterUrls",
     "ListAgents",
     "ListCollections",

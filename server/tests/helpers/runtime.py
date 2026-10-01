@@ -416,7 +416,8 @@ def replay_journal(
     """把客户端实际收到的批次重放进一个新 store；轮持久化后原 store 的 live_turns 会清空。"""
 
     replayed = TranscriptStore()
-    for batch in store.subscribe_view(conversation_id, agent_id, since=0).batches:
+    epoch = store.subscribe_view(conversation_id, agent_id).epoch
+    for batch in store.subscribe_view(conversation_id, agent_id, since=0, epoch=epoch).batches:
         replayed.append(conversation_id, agent_id, batch.ops)
     return replayed
 
