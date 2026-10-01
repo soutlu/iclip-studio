@@ -954,6 +954,8 @@ describe('StoryboardReader', () => {
     expect(
       await within(bar).findByRole('alert', { name: 'wan3.0-video 做不了 21:9' }),
     ).toBeVisible()
+    // 画幅按钮自己也标着错，说明指向同一行提醒。
+    expect(aspect).toHaveAccessibleDescription('wan3.0-video 做不了 21:9')
 
     const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
     expect(generate).not.toHaveAttribute('aria-disabled')
@@ -1072,10 +1074,39 @@ describe('StoryboardReader', () => {
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')
 
-    // 置灰的按钮仍能聚焦，聚焦就说出原因。
-    act(() => generate.focus())
-    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
-    expect(generate).toHaveAccessibleDescription()
+    // 原因常显在出片栏的状态行上，不用悬停或聚焦；置灰的按钮仍能聚焦，说明关联到这一行。
+    expect(generate).toHaveAccessibleDescription('视频模型读不到')
+    const reason = window.document.getElementById(generate.getAttribute('aria-describedby') ?? '')
+    expect(screen.getByRole('group', { name: '出片工具栏' })).toContainElement(reason)
+    expect(reason).toBeVisible()
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('视频模型清单还在读时不能出片，原因只给读屏、不在出片栏上占一行', async () => {
+    provide()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('*/api/generations/video-models', async () => {
+        await held
+        return HttpResponse.json({
+          default: 'vendor-a-seedance-2-5',
+          items: ['vendor-a-seedance-2-5'],
+        })
+      }),
+    )
+    await renderReader()
+    await screen.findByRole('region', { name: '镜头组 1' })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+    expect(generate).toHaveAttribute('aria-disabled', 'true')
+    expect(generate).toHaveAccessibleDescription('正在读取视频模型')
+
+    release()
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+    expect(generate).not.toHaveAccessibleDescription()
   })
 
   it('刷新文件后保留所选镜头，失效的图片选择使用该镜头当前引用', async () => {

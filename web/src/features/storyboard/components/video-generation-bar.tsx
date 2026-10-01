@@ -1,7 +1,8 @@
-/** 分镜工作台底部的出片栏：一排生成设置（模型、分辨率、画幅、音频），加唯一的主色按钮出当前这一组。
+/** 分镜工作台底部的出片栏：一排控件（最左是写回分镜的画幅，竖线隔开后是模型、分辨率、音频三项生成设置），
+ * 加唯一的主色按钮出当前这一组；控件上方的状态行说明为什么不能出片或哪里有问题（暂态原因不显示，见 `generationStatusOf`）。
  * 各档宽度下怎么排见 storyboard.css 的出片栏一节。 */
 
-import { useRef } from 'react'
+import { useId, useRef } from 'react'
 import { Icon } from '@/shared/icons'
 import { ASPECT_RATIOS, aspectOf } from '@/shared/lib/aspect-ratio'
 import { Button } from '@/shared/ui/button'
@@ -13,8 +14,12 @@ import {
   type VideoGenerationOptions,
   type VideoModelsStatus,
 } from '../video-generation-options'
+import {
+  generationStatusOf,
+  type GenerationBlocker,
+  type GenerationStatusLine,
+} from '../generation-blocker'
 import { supportsAspectRatio } from '../video-model-support'
-import { BlockedReason } from './blocked-reason'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useScrollFade } from './use-scroll-fade'
 
@@ -32,9 +37,9 @@ type VideoGenerationBarProps = {
   value: VideoGenerationOptions
   onChange: (value: VideoGenerationOptions) => void
   aspect: AspectControl
-  /** 出片被挡住的原因；有它时主按钮置灰，悬停、聚焦或点按说明原因。 */
-  blocker: string | undefined
-  /** 挨着出片按钮常显的一句（上次提交失败的原话、画幅不被模型支持），不靠悬停。 */
+  /** 出片被挡住的原因；有它时主按钮置灰并以它为说明，一直挡着的还写在状态行上。 */
+  blocker: GenerationBlocker | undefined
+  /** 出片栏要提醒的错误（上次提交失败的原话、画幅不被模型支持）；没被一直挡着时写在状态行上。 */
   notice: string | undefined
   submitting: boolean
   onGenerate: () => void
@@ -56,6 +61,9 @@ export function VideoGenerationBar({
     value.model ?? (models.status === 'ready' ? '' : MODELS_PENDING_TEXT[models.status])
   const paramsRef = useRef<HTMLDivElement | null>(null)
   const { fade } = useScrollFade(paramsRef)
+  const statusId = useId()
+  const hiddenReasonId = useId()
+  const { hiddenReason, line: status } = generationStatusOf(blocker, notice)
 
   return (
     <div
@@ -63,10 +71,12 @@ export function VideoGenerationBar({
       className="storyboard-bar rounded-xl border-[0.5px] border-hairline bg-surface-container-lowest shadow-[var(--shadow-2)]"
       role="group"
     >
-      {notice === undefined ? null : (
-        <p className="truncate text-body-sm text-error" role="alert" title={notice}>
-          {notice}
-        </p>
+      {status === undefined ? null : <BarStatusLine id={statusId} status={status} />}
+      {/* 暂态原因只给读屏：sr-only 绝对定位，不占出片栏的高度。 */}
+      {hiddenReason === undefined ? null : (
+        <span className="sr-only" id={hiddenReasonId}>
+          {hiddenReason}
+        </span>
       )}
       <div className="storyboard-bar-row">
         <div
@@ -74,6 +84,13 @@ export function VideoGenerationBar({
           data-fade={fade}
           ref={paramsRef}
         >
+          <AspectPicker
+            aspect={aspect}
+            // 状态行此刻写的是错误时，画幅出错就由它说明；写着置灰原因时那句与画幅无关。
+            errorId={status?.tone === 'error' ? statusId : undefined}
+            model={value.model}
+          />
+          <span aria-hidden className="storyboard-bar-divider" />
           <GenerationPicker
             // 工作台窄时模型 id 截断，尺寸规则见出片栏一节。
             className="storyboard-bar-model"
@@ -109,7 +126,6 @@ export function VideoGenerationBar({
               </FilterChip>
             ))}
           </ChipGroup>
-          <AspectPicker aspect={aspect} model={value.model} />
           <TooltipRoot>
             <TooltipTrigger asChild>
               <button
@@ -129,7 +145,14 @@ export function VideoGenerationBar({
           </TooltipRoot>
         </div>
         <GenerateButton
-          blockedReason={blocker}
+          blocked={blocker !== undefined}
+          describedBy={
+            hiddenReason !== undefined
+              ? hiddenReasonId
+              : status === undefined
+                ? undefined
+                : statusId
+          }
           onGenerate={onGenerate}
           shotIndex={shotIndex}
           submitting={submitting}
@@ -139,8 +162,36 @@ export function VideoGenerationBar({
   )
 }
 
-/** 画幅选择器；选中模型做不了的档位置灰并标「不支持」，不替用户改。 */
-function AspectPicker({ aspect, model }: { aspect: AspectControl; model: string | undefined }) {
+/** 控件上方的状态行。错误用 alert 播报；置灰原因不播报，由主按钮的说明关联读出。 */
+function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLine }) {
+  const error = status.tone === 'error'
+  return (
+    <p
+      className="storyboard-bar-status"
+      data-tone={status.tone}
+      id={id}
+      role={error ? 'alert' : undefined}
+      // 窄时截断，完整的字靠悬停看。
+      title={status.text}
+    >
+      <Icon decorative name={error ? 'alert' : 'info'} size="xs" />
+      <span className="truncate">{status.text}</span>
+    </p>
+  )
+}
+
+/** 画幅选择器；选中模型做不了的档位置灰并标「不支持」，不替用户改。当前画幅做不了时按钮本身标成错误态，
+ * `errorId` 指向说明原因的状态行。 */
+function AspectPicker({
+  aspect,
+  errorId,
+  model,
+}: {
+  aspect: AspectControl
+  errorId: string | undefined
+  model: string | undefined
+}) {
+  const unsupported = !supportsAspectRatio(model, aspect.value)
   const options: GenerationPickerOption[] = ASPECT_RATIOS.map((ratio) => {
     const usable = supportsAspectRatio(model, ratio)
     return {
@@ -158,9 +209,17 @@ function AspectPicker({ aspect, model }: { aspect: AspectControl; model: string 
     })
   return (
     <GenerationPicker
+      description="画幅写回分镜，不是生成参数"
       disabled={aspect.disabled}
+      invalid={unsupported ? { describedBy: errorId } : undefined}
       label="画幅"
-      leading={<AspectGlyph longSide={13} ratio={aspect.value} />}
+      leading={
+        unsupported ? (
+          <Icon decorative name="alert" size="sm" />
+        ) : (
+          <AspectGlyph longSide={13} ratio={aspect.value} />
+        )
+      }
       onChange={aspect.onChange}
       options={options}
       text={aspect.value}
@@ -182,32 +241,33 @@ function AspectGlyph({ longSide, ratio }: { longSide: number; ratio: string }) {
   )
 }
 
-/** 出片主按钮：被挡住时用 aria-disabled 置灰并说明原因（见 `BlockedReason`）；能出片时不带这个属性。 */
+/** 出片主按钮：被挡住或提交中时用 aria-disabled 置灰，仍可聚焦，说明关联到状态行；能出片时不带这个属性。 */
 function GenerateButton({
-  blockedReason,
+  blocked,
+  describedBy,
   onGenerate,
   shotIndex,
   submitting,
 }: {
-  blockedReason: string | undefined
+  blocked: boolean
+  describedBy: string | undefined
   onGenerate: () => void
   shotIndex: number
   submitting: boolean
 }) {
-  const unavailable = submitting || blockedReason !== undefined
+  const unavailable = submitting || blocked
   return (
-    <BlockedReason reason={blockedReason}>
-      <Button
-        aria-disabled={unavailable ? true : undefined}
-        className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
-        leadingIcon="video"
-        onClick={() => {
-          if (!unavailable) onGenerate()
-        }}
-        size="md"
-      >
-        {submitting ? '提交中…' : `生成第 ${shotIndex} 组`}
-      </Button>
-    </BlockedReason>
+    <Button
+      aria-describedby={describedBy}
+      aria-disabled={unavailable ? true : undefined}
+      className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
+      leadingIcon="video"
+      onClick={() => {
+        if (!unavailable) onGenerate()
+      }}
+      size="md"
+    >
+      {submitting ? '提交中…' : `生成第 ${shotIndex} 组`}
+    </Button>
   )
 }

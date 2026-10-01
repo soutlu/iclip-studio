@@ -1,5 +1,5 @@
 /** 分镜工作台次级控件的样式配方：顶栏上的按钮同底同圆角，舞台上的按钮另用深色玻璃（`stageActionClass`）；主色只留给出片按钮。
- * 出片栏自有一套 36px 控件，见 storyboard.css 的出片栏一节。 */
+ * 出片栏自有一套 34px 控件，见 storyboard.css 的出片栏一节。 */
 
 import { cva } from 'class-variance-authority'
 
