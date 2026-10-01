@@ -18,7 +18,8 @@ import {
 } from '../conversations.api'
 import { useSeenRun } from '../conversations.unread'
 
-// 侧栏各行共用：36px 行高，容器内左右 10px，图标与文字左缘落在同一条线上。
+// 侧栏各行共用：36px 行高，容器内左右 10px。行首图标一律 16px（--icon-md）、与文字隔 10px：
+// 图标、分区标题与无图标的标题共用同一左缘，行尾计数与状态图形右缘落在行内容右缘。
 // 状态层作用于整行及尾部按钮；内部标题按钮只负责焦点环。
 export const SIDEBAR_ROW_CLASS =
   'group flex h-9 ui-state cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-body text-on-surface'
@@ -137,7 +138,15 @@ export function SidebarConversationRow({
           params={{ conversationId: conversation.id }}
           to="/c/$conversationId"
         >
-          <span className="min-w-0 flex-1 truncate text-left">{conversation.title}</span>
+          {/* 标了收尾的对话标题降为辅助色；正打开的那一行保持常规强调。 */}
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-left',
+              completed && !active && 'text-on-surface-faint',
+            )}
+          >
+            {conversation.title}
+          </span>
         </Link>
       )}
       {/* 每件事实一个带名字的图形：出片在跑与轮次在跑互不蕴含，可以同时出现。 */}

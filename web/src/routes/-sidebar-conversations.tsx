@@ -231,7 +231,7 @@ export function SidebarConversations() {
               type="button"
             >
               {/* 空出图标位，文字与合集名对齐。 */}
-              <span aria-hidden className="w-5.5 shrink-0" />
+              <span aria-hidden className="w-(--icon-md) shrink-0" />
               {allCollectionsShown ? '收起合集' : '全部合集'}
             </button>
           )}
@@ -340,7 +340,7 @@ function UngroupedSection({
             role="group"
           >
             <p
-              className="mt-2 flex h-6 items-center px-2.5 text-caption font-medium text-on-surface-faint"
+              className="mt-2 flex h-6 items-center px-2.5 text-caption text-on-surface-faint"
               id={`${groupId}-${bucket}`}
             >
               {RECENCY_LABEL[bucket]}
@@ -383,11 +383,12 @@ function SidebarSection({ action, children, title, tools }: SidebarSectionProps)
   const [open, setOpen] = useState(true)
   return (
     <section className="flex flex-col gap-px">
-      {/* 吸顶标题底色与侧栏同色，滚过的行不会从标题下透出来。 */}
-      <div className="layer-local-1 sticky top-0 flex h-8 items-center gap-1 bg-surface-container-low pr-1 pl-2.5">
+      {/* 吸顶标题底色与侧栏同色，滚过的行不会从标题下透出来。左右内距与行相同：标题字与行首图标同一左缘，
+          尾部控件靠负右距让图形右缘落在行内容右缘，与合集计数、任务状态图形同一列。 */}
+      <div className="layer-local-1 sticky top-0 flex h-8 items-center gap-1 bg-surface-container-low px-2.5">
         <button
           aria-expanded={open}
-          className="flex min-w-0 cursor-pointer items-center gap-1 rounded-xs text-label font-semibold text-on-surface-muted ui-focus"
+          className="flex min-w-0 cursor-pointer items-center gap-1 rounded-xs text-label font-semibold text-on-surface-variant ui-focus"
           onClick={() => setOpen((prev) => !prev)}
           type="button"
         >
@@ -404,6 +405,7 @@ function SidebarSection({ action, children, title, tools }: SidebarSectionProps)
             {tools}
             {action && (
               <IconButton
+                className="-mr-1.25"
                 label={action.label}
                 name={action.icon}
                 onClick={action.onClick}
@@ -433,7 +435,7 @@ function ConversationFilter({
       <MenuTrigger asChild>
         <button
           aria-label={`对话筛选：${FILTER_LABEL[value]}${busy ? '，有对话在进行中' : ''}`}
-          className="flex h-6 ui-state cursor-pointer items-center gap-1 rounded-sm pr-1.5 pl-2 text-label text-on-surface-muted ui-focus data-[state=open]:bg-state-hover data-[state=open]:text-on-surface"
+          className="-mr-1.5 flex h-6 ui-state cursor-pointer items-center gap-1 rounded-sm pr-1.5 pl-2 text-label text-on-surface-muted ui-focus data-[state=open]:bg-state-hover data-[state=open]:text-on-surface"
           type="button"
         >
           <span aria-hidden>{FILTER_LABEL[value]}</span>
@@ -601,12 +603,12 @@ function CollectionGroup({
           onClick={() => setOpen((prev) => !prev)}
           type="button"
         >
-          <span
-            aria-hidden
-            className="grid size-5.5 shrink-0 place-items-center rounded-sm bg-surface-container text-on-surface-variant"
-          >
-            <Icon decorative name="folder" size="xs" />
-          </span>
+          <Icon
+            className="shrink-0 text-on-surface-variant"
+            decorative
+            name="collection"
+            size="md"
+          />
           <span aria-hidden className="min-w-0 flex-1 truncate text-left">
             {collection.name}
           </span>
@@ -615,7 +617,7 @@ function CollectionGroup({
         <span
           aria-hidden
           className={cn(
-            'shrink-0 px-1 text-caption text-on-surface-faint tabular-nums',
+            'shrink-0 text-caption text-on-surface-faint tabular-nums',
             canManage && SIDEBAR_ROW_TRAILING_HIDDEN,
           )}
         >
@@ -641,11 +643,11 @@ function CollectionGroup({
         )}
       </div>
       {open && (
-        <div className="relative flex flex-col gap-px pl-8">
-          {/* 引导线对齐合集行 folder 图标块的中心；缩进让对话标题与合集名左缘对齐。 */}
+        <div className="relative flex flex-col gap-px pl-6.5">
+          {/* 引导线对齐合集行文件夹图标的中心；缩进让对话标题与合集名左缘对齐。 */}
           <span
             aria-hidden
-            className="absolute inset-y-1 left-5.25 w-px -translate-x-1/2 bg-hairline"
+            className="absolute inset-y-1 left-4.5 w-px -translate-x-1/2 bg-hairline"
           />
           {items.map((conversation) => (
             <SidebarConversationRow

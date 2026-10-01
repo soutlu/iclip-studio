@@ -218,7 +218,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
               <div aria-labelledby={governLabelId} className="mt-3 px-2" role="group">
                 <p
                   className={cn(
-                    'flex h-8 items-center px-2.5 text-label font-semibold text-on-surface-muted',
+                    'flex h-8 items-center px-2.5 text-label font-semibold text-on-surface-variant',
                     rail && 'sr-only',
                   )}
                   id={governLabelId}
@@ -351,8 +351,8 @@ function SidebarAction({
         SIDEBAR_ACTION_CLASS,
         'disabled:cursor-not-allowed disabled:opacity-50',
         emphasis
-          ? // 深色底上 ui-state 的禁用字色看不清，禁用只整体压淡。
-            'mb-2 h-10 gap-2 bg-inverse-surface px-3 font-semibold text-inverse-on-surface shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-2)] disabled:text-inverse-on-surface'
+          ? // 深色底上 ui-state 的禁用字色看不清，禁用只整体压淡。内距与间距沿用行几何，图标与下方导航图标同一列。
+            'mb-2 h-10 bg-inverse-surface font-semibold text-inverse-on-surface shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-2)] disabled:text-inverse-on-surface'
           : 'text-on-surface-variant hover:text-on-surface',
         active && cn(SIDEBAR_ROW_ACTIVE, 'text-on-surface'),
         compact && 'mx-auto size-10 justify-center px-0',

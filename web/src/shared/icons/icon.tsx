@@ -133,6 +133,22 @@ const CreditGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
   </svg>
 )
 
+/** 合集：双层实心文件夹，带页签的后片淡、略低的前片深，同一墨色两档透明度；所有合集共用，不分色。 */
+const CollectionGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
+  <svg fill="none" viewBox="0 0 24 24" {...props}>
+    <path
+      d="M2.5 6.5A2.5 2.5 0 0 1 5 4h3.6c.6 0 1.2.3 1.6.7L11.5 6H19a2.5 2.5 0 0 1 2.5 2.5V9h-19z"
+      fill="currentColor"
+      opacity={0.32}
+    />
+    <path
+      d="M2.5 9.5A1.5 1.5 0 0 1 4 8h16a1.5 1.5 0 0 1 1.5 1.5V17a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3z"
+      fill="currentColor"
+      opacity={0.62}
+    />
+  </svg>
+)
+
 // 图标键按语义用途命名，底层图形集中替换。
 const ICONS = {
   add: Plus,
@@ -159,6 +175,7 @@ const ICONS = {
   check: Check,
   close: X,
   collapse: ChevronUp,
+  collection: CollectionGlyph,
   confirm: Hand,
   copy: CopyGlyph,
   credit: CreditGlyph,

@@ -114,28 +114,26 @@ function MediaChip({ onOpen, part }: { part: MediaPart; onOpen: (media: Lightbox
 
   return (
     <>
-      {/* 外壳占满行高并居中芯片，避免字体基线影响对齐。 */}
+      {/* 外壳占满行高并居中芯片，避免字体基线影响对齐；24px 芯片比行高略高、上下探出，
+          外壳下方多留 4px，附件连排换行时上下两排之间留出缝。 */}
       <button
         aria-label={name}
-        className="mx-0.5 inline-flex h-[1lh] max-w-full cursor-zoom-in items-center rounded-sm align-top text-chat-secondary-text ui-focus ui-motion-s hover:text-chat-message-text"
+        className="mx-0.5 mb-1 inline-flex h-[1lh] max-w-full cursor-zoom-in items-center rounded-sm align-top ui-focus"
         onClick={open}
         onMouseEnter={tip.onEnter}
         onMouseLeave={tip.onLeave}
         ref={setAnchorEl}
         type="button"
       >
-        {/* 缩略图小标签：一格缩略图（取不到就画类型图标）加文件名。 */}
-        <span className="flex h-[22px] min-w-0 items-center gap-1 rounded-sm border-[0.5px] border-chat-hairline bg-chat-card-bg pr-1.5 pl-0.5 text-label">
-          {thumbnail === undefined ? (
-            <Icon
-              className="mx-0.5 shrink-0"
-              decorative
-              name={MEDIA_KIND_ICON[media.kind]}
-              size="xs"
-            />
-          ) : (
-            <img alt="" className="size-[18px] shrink-0 rounded-xs object-cover" src={thumbnail} />
-          )}
+        {/* 与输入框共用 .media-chip 外观：一格缩略图（取不到就画类型图标）加文件名。 */}
+        <span className="media-chip min-w-0">
+          <span className="media-chip-icon">
+            {thumbnail === undefined ? (
+              <Icon decorative name={MEDIA_KIND_ICON[media.kind]} size="sm" />
+            ) : (
+              <img alt="" src={thumbnail} />
+            )}
+          </span>
           <span className="max-w-32 truncate">{name}</span>
         </span>
       </button>
