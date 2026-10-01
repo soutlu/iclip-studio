@@ -76,22 +76,23 @@ def test_a_generation_without_a_conversation_takes_no_event_number() -> None:
     assert frame["owner_user_id"] == str(owner)
 
 
-def test_a_row_frame_reuses_the_watermark_it_was_read_under() -> None:
-    """带整行的帧不发新号：信封序号就是行上的水位，之后的事件帧号更大。"""
+def test_a_row_frame_is_an_event_numbered_after_the_rows_own_watermark() -> None:
+    """照 Kimi 的 ``event.session.updated``：带整行的帧也发新号，比行内 ``lastSeq`` 大。
+
+    写入之前读库的 HTTP 行带的是同一个旧水位 1。它晚于这一帧到达时，客户端按信封序号 2 记了
+    行内事实字段的水位，1 不大于 2 就盖不掉；若帧序号也是 1，两边打平，旧行会盖掉新事实。"""
 
     owner, conversation = uuid.uuid4(), uuid.uuid4()
     live, connection = _live(owner)
     live.clock.tick(conversation)
+    read_before_the_write = live.clock.snapshot().seq_of(conversation)
 
     live.announce_session_row(
-        "updated", owner, conversation, {"id": str(conversation), "lastSeq": 1}, 1
+        "updated", owner, conversation, {"id": str(conversation), "lastSeq": read_before_the_write}
     )
     live.announce_title(owner, conversation, "后来的名字")
 
     row, title = connection.frames
-    assert (row["type"], row["seq"], row["payload"]) == (
-        "event.session.updated",
-        1,
-        {"id": str(conversation), "lastSeq": 1},
-    )
-    assert title["seq"] == 2
+    assert (row["type"], row["payload"]["lastSeq"]) == ("event.session.updated", 1)
+    assert row["seq"] == 2 > read_before_the_write
+    assert title["seq"] == 3

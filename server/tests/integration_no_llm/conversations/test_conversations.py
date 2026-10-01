@@ -103,7 +103,12 @@ async def test_concurrent_client_minted_id_creates_one_conversation(
         first.text,
         second.text,
     )
-    assert first.json()["conversation"] == second.json()["conversation"]
+    # 行上的 lastSeq 是各自读行之前的事件水位：落败的那次可能读在 created 帧发号之后，不算行的内容。
+    rows = [
+        {key: value for key, value in response.json()["conversation"].items() if key != "lastSeq"}
+        for response in (first, second)
+    ]
+    assert rows[0] == rows[1]
     listed = await client.get(SEARCH)
     assert [item["id"] for item in listed.json()["items"]] == [minted]
 

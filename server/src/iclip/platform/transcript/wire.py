@@ -8,8 +8,8 @@
 
 - ``stream_epoch`` + ``payload.seq``：某个 agent 的 Transcript 批次号，续订补批用。
 - ``epoch`` + ``seq``：这段对话的会话事件序号（见 ``session_events``），给列表行与帧排先后。
-  事件帧（标题、活动、生成任务、删除、文件变更）各发一个新号；带整行的帧（created / updated）
-  用读行之前的水位，不发新号；Transcript 帧带当前序号，不发新号。
+  事件帧（标题、活动、生成任务、会话生命周期、文件变更）各发一个新号；created / updated 帧里
+  整行的 ``lastSeq`` 是写入之前的水位，比信封序号小；Transcript 帧带当前序号，不发新号。
 """
 
 from __future__ import annotations
@@ -190,8 +190,10 @@ class GenerationChanged(_Envelope):
 class SessionCreated(_Envelope):
     """新出现了一段对话：新建（含替人办事）或分叉出的副本。照 Kimi 的 ``event.session.created``。
 
-    ``payload`` 是整行 ``ConversationOut``（camelCase），其中 ``lastSeq`` 与信封 ``seq`` 相同，都是
-    读行之前的水位：信封序号不另发新号。投递范围与其余全局帧相同，易失，重连后重拉列表对账。
+    ``payload`` 是整行 ``ConversationOut``（camelCase）。信封 ``seq`` 是提交之后为这一帧发的新号；
+    行内 ``lastSeq`` 是写入之前的水位，比信封序号小。客户端按信封序号记行内事实字段的水位，
+    按 ``lastSeq`` 合并 ``activity``（与 HTTP 行同一口径）。投递范围与其余全局帧相同，易失，重连后
+    重拉列表对账。
     """
 
     type: Literal["event.session.created"] = "event.session.created"
@@ -205,8 +207,8 @@ class SessionCreated(_Envelope):
 class SessionUpdated(_Envelope):
     """一段对话的行变了：改名、换合集、换需求单、标或取消收尾。照 Kimi 的 ``event.session.updated``。
 
-    ``payload`` 是变化后的整行 ``ConversationOut``，序号语义同 ``SessionCreated``：客户端按字段比较，
-    字段上已应用的事件序号大于行水位时保留事件的值。
+    ``payload`` 是变化后的整行 ``ConversationOut``，序号语义同 ``SessionCreated``：写入之前读库的
+    HTTP 行 ``lastSeq`` 小于这一帧的信封序号，晚到也盖不掉这一帧带来的事实字段。
     """
 
     type: Literal["event.session.updated"] = "event.session.updated"

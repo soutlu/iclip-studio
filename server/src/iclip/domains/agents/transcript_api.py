@@ -370,19 +370,20 @@ class LiveConnections:
         owner: uuid.UUID,
         conversation_id: uuid.UUID,
         row: Mapping[str, Any],
-        watermark: int,
     ) -> None:
         """广播新出现或变化了的整行 ``ConversationOut``（camelCase 字典）。
 
-        ``watermark`` 是调用方在写入之前取的这段对话的事件序号，与行里的 ``lastSeq`` 相同；这类
-        带整行的帧不另发新号：行里的字段读于写入之后，比 ``watermark`` 之前的事件都新，比之后的
-        事件未必新，客户端按字段比较序号合并。"""
+        照 Kimi 的 ``event.session.updated``，这是一帧事件：提交之后发新号作信封 ``seq``。行里的
+        ``lastSeq`` 是调用方在写入之前取的水位，比信封序号小。客户端拿信封序号记行内事实字段
+        （标题、归属、收尾标记等）的水位，拿 ``lastSeq`` 按 HTTP 行的口径合并 ``activity``：
+        写入之前读库的旧行晚到也盖不掉这一帧带来的事实，帧里可能稍旧的活动也盖不掉序号更大的
+        ``work_changed``（ADR-0004）。"""
 
         frame_type = SessionCreated if kind == "created" else SessionUpdated
         self._announce(
             owner,
             frame_type(
-                seq=watermark,
+                seq=self.clock.tick(conversation_id),
                 epoch=self.clock.epoch,
                 session_id=str(conversation_id),
                 owner_user_id=str(owner),

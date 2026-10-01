@@ -84,11 +84,11 @@ EventWatermarkOf = Callable[[], EventWatermark]
 """取一份会话事件水位，由组合根接到广播方的事件时钟上。读库、写库之前各取一份（ADR-0004）。"""
 
 AnnounceConversationRow = Callable[
-    [Literal["created", "updated"], uuid.UUID, uuid.UUID, Mapping[str, Any], int], None
+    [Literal["created", "updated"], uuid.UUID, uuid.UUID, Mapping[str, Any]], None
 ]
-"""同步广播新出现或变化了的整行，参数为 (种类, 属主, 对话 id, camelCase 整行, 写入前的事件序号)。
+"""同步广播新出现或变化了的整行，参数为 (种类, 属主, 对话 id, camelCase 整行)。
 
-与标题广播同一投递范围；写入提交之后调用。"""
+整行的 ``lastSeq`` 是写入之前的水位；广播方在提交之后另发新号作帧序号。与标题广播同一投递范围。"""
 
 AnnounceConversationDeleted = Callable[[uuid.UUID, uuid.UUID], None]
 """同步广播属主删掉了一段对话，参数为 (属主, 对话 id)；写入提交之后调用。"""
@@ -330,21 +330,15 @@ class ConversationService:
         conversation: Conversation,
         before: EventWatermark,
     ) -> None:
-        """把写入之后的整行广播出去。``before`` 必须在写入之前取：行里的字段读于写入事务，
-        包含了序号不大于它的每一个事件，客户端才能拿它与帧序号比先后。活动状态在这之后读，
-        只会更新，不会比 ``before`` 旧。"""
+        """把写入之后的整行广播出去。``before`` 必须在写入之前取，填作行内 ``lastSeq``：行里的
+        字段读于写入事务，包含了序号不大于它的每一个事件，客户端按它合并 ``activity``。帧本身由
+        广播方在提交之后发新号，客户端按那个号记行内事实字段的水位。"""
 
         activity = (await self.activities([conversation.id]))[conversation.id]
         row = conversation_out(conversation, activity, before).model_dump(
             mode="json", by_alias=True
         )
-        self._announce_row(
-            kind,
-            conversation.owner_user_id,
-            conversation.id,
-            row,
-            before.seq_of(conversation.id),
-        )
+        self._announce_row(kind, conversation.owner_user_id, conversation.id, row)
 
     async def activities(
         self, conversation_ids: Sequence[uuid.UUID]

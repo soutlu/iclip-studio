@@ -163,10 +163,15 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `event.session.work_changed` 的 `last_turn_reason` 只在 `busy: false` 的那几帧上有：帧一律
   `exclude_none`，没有结局时那一项整个不出现（列表行上是 `null`，见 §6）。
 - **会话事件水位**：`seq` 按对话从 1 连续递增，`epoch` 标出服务进程，进程重启后序号从头编、`epoch` 换新，`epoch` 不同的序号不可比。
-  事件帧（标题、活动、生成任务、删除、文件变更）各发一个新号，文件变更不论有没有连接订着那个路径都占一个号，序号因此可能有空缺；`event.session.created` / `updated` 不发新号，
-  信封 `seq` 等于行上的 `lastSeq`，即写入之前的水位；Transcript 帧带当前序号、不发新号。
-  列表行上的 `lastSeq` 是读这一行之前的水位（§6）：帧在写入提交之后才发号，序号不大于 `lastSeq` 的事件，行里已经有了；
-  大于的，以帧上的值为准。客户端按字段记最后应用的事件序号，行来了只盖过序号不大于 `lastSeq` 的字段。
+  事件帧（标题、活动、生成任务、会话生命周期、文件变更）都在写入提交之后各发一个新号，文件变更不论有没有连接订着那个路径都占一个号，序号因此可能有空缺；
+  Transcript 帧带当前序号、不发新号。`event.session.created` / `updated` 里整行的 `lastSeq` 是写入之前的水位，比信封 `seq` 小。
+  列表行上的 `lastSeq` 是读这一行之前的水位（§6）：序号不大于 `lastSeq` 的事件，行里已经有了；大于的，以帧上的值为准。
+  客户端按字段记最后应用的事件序号，合并规则：
+  - **事件帧**：`work_changed` 以信封 `seq` 记 `activity` 的水位；`session.meta.updated` 以信封 `seq` 记 `title` 的水位。
+  - **`created` / `updated` 帧**：行内事实字段（`activity` 以外的字段，如 `title`、`collectionId`、`taskId`、`completedAt`）以**信封 `seq`** 记水位；
+    `activity` 按行内 `lastSeq`，与 HTTP 行同一口径。
+  - **HTTP 行**：只盖过水位不大于它 `lastSeq` 的字段。写入之前读库的旧行，`lastSeq` 小于随后 `updated` 帧的信封 `seq`，晚到也盖不掉那一帧的事实；
+    帧里可能稍旧的 `activity` 也盖不掉序号更大的 `work_changed`。
 - **都是易失通知**，客户端据此更新列表；断线期间的变化不补发，重连后须重拉列表，按上面的水位规则合并，从 `ConversationOut` 对齐当前事实。
 - `event.generation.changed` 不带结果地址，只说哪条任务跳到了哪个状态；收到就重拉 §11 的列表。`kind`、`operation` 与 `status` 的词汇同 `GenerationOut`，列表接口是事实源，客户端保留轮询兜底。对话行上的 `activity.videoGeneration` 也靠它推动：帧上没有汇总值，收到本对话的视频帧（出片、编辑段、合成都是）就重拉 §6 的列表。
 - 一条跑完接着起下一条会先发 idle 再发 busy。

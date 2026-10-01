@@ -134,7 +134,7 @@ def test_transcript_frames_carry_the_conversations_event_watermark_without_advan
 def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
     ws_agent_app: FastAPI, pg_url: str
 ) -> None:
-    """建、改、标收尾、删各发一帧；带整行的帧序号就是行上的 ``lastSeq``（写之前的水位），事件帧发新号。"""
+    """建、改、标收尾、删各是一帧事件，提交后发新号；带整行的帧，行内 ``lastSeq`` 是写之前的水位。"""
 
     with TestClient(ws_agent_app) as tc:
         sign_in(tc, pg_url)
@@ -148,7 +148,8 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
             assert (created["session_id"], created["owner_user_id"]) == (conversation_id, owner_id)
             assert created["payload"]["id"] == conversation_id
             assert created["payload"]["ownerUserId"] == owner_id
-            assert created["seq"] == created["payload"]["lastSeq"]
+            assert created["payload"]["lastSeq"] == 0
+            assert created["seq"] == 1
             assert created["epoch"] == created["payload"]["eventEpoch"]
 
             _send(tc, conversation_id, "prm_life")
@@ -164,33 +165,60 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
             updated = until(ws, "event.session.updated")
             assert title["owner_user_id"] == owner_id
             assert title["seq"] == idle["seq"] + 1
-            # 行写于取水位之后：序号停在写之前，标题帧发的新号更大，客户端按字段保留新号上的值。
-            assert updated["seq"] == updated["payload"]["lastSeq"] == idle["seq"]
+            assert updated["seq"] == title["seq"] + 1
+            # 行写于取水位之后：行内水位停在写之前，帧自己发的号更大。
+            assert updated["payload"]["lastSeq"] == idle["seq"]
             assert updated["payload"]["title"] == "改过的"
             assert renamed.json()["conversation"]["lastSeq"] == idle["seq"]
 
-            done = tc.put(f"/conversations/{conversation_id}/completion", json={"completed": True})
-            assert done.status_code == 200, done.text
-            marked = until(ws, "event.session.updated")
-            assert marked["payload"]["completedAt"] is not None
-            assert marked["seq"] == title["seq"]
-
             unlinked = tc.put(f"/conversations/{conversation_id}/task", json={"taskId": None})
             assert unlinked.status_code == 200, unlinked.text
-            assert until(ws, "event.session.updated")["payload"]["taskId"] is None
+            detached = until(ws, "event.session.updated")
+            assert detached["payload"]["taskId"] is None
+            assert detached["seq"] == updated["seq"] + 1
 
             moved = tc.put(
                 f"/conversations/{conversation_id}/collection", json={"collectionId": None}
             )
             assert moved.status_code == 200, moved.text
-            assert until(ws, "event.session.updated")["payload"]["collectionId"] is None
+            regrouped = until(ws, "event.session.updated")
+            assert regrouped["payload"]["collectionId"] is None
+            assert regrouped["seq"] == detached["seq"] + 1
 
             assert tc.delete(f"/conversations/{conversation_id}").status_code == 204
             deleted = until(ws, "event.session.deleted")
             assert deleted["session_id"] == conversation_id
             assert deleted["payload"] == {"session_id": conversation_id}
             assert deleted["owner_user_id"] == owner_id
-            assert deleted["seq"] == title["seq"] + 1
+            assert deleted["seq"] == regrouped["seq"] + 1
+
+
+def test_a_row_read_before_a_write_cannot_overwrite_the_updated_frame(
+    ws_agent_app: FastAPI, pg_url: str
+) -> None:
+    """写入之前读库的 HTTP 行晚于 ``updated`` 帧到达时，序号关系保证它盖不掉帧带来的事实字段。
+
+    客户端按帧的信封序号记行内事实字段的水位，HTTP 行只盖过序号不大于它 ``lastSeq`` 的字段。旧行的
+    ``lastSeq`` 严格小于帧序号，所以收尾标记留在帧上的值；两者若相等（帧不另发号），旧行会盖回去。"""
+
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id = open_conversation(tc)
+
+        with tc.websocket_connect("/ws") as ws:
+            assert ws.receive_json()["type"] == "server_hello"
+
+            stale = tc.get(f"/conversations/{conversation_id}").json()["conversation"]
+            assert stale["completedAt"] is None
+
+            done = tc.put(f"/conversations/{conversation_id}/completion", json={"completed": True})
+            assert done.status_code == 200, done.text
+            marked = until(ws, "event.session.updated")
+
+            assert marked["payload"]["completedAt"] is not None
+            assert marked["payload"]["lastSeq"] == stale["lastSeq"]
+            assert stale["lastSeq"] < marked["seq"]
+            assert marked["epoch"] == stale["eventEpoch"]
 
 
 def test_an_idempotent_replay_of_create_announces_nothing(

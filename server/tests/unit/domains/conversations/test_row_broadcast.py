@@ -1,7 +1,8 @@
-"""对话行变化的广播：整行帧的水位必须取在写入之前，事件帧发新号（ADR-0004）。不连库。
+"""对话行变化的广播：整行里的 ``lastSeq`` 必须取在写入之前（ADR-0004）。不连库。
 
-客户端拿帧序号与行上的 ``lastSeq`` 比先后：序号不大于水位的事件，行里已经有了；大于的，以事件为准。
-水位要是取在写入之后，写入与取水位之间发生的事件会被当成「行里已经有了」，而行其实早于它。
+客户端拿事件序号与行上的 ``lastSeq`` 合并 ``activity``：序号不大于水位的事件，行里已经有了；大于的，
+以事件为准。水位要是取在写入之后，写入与取水位之间发生的事件会被当成「行里已经有了」，而行其实早于
+它。帧自己的序号由广播方在提交后另发，见 ``test_live_connections``。
 """
 
 from __future__ import annotations
@@ -79,9 +80,7 @@ class RacingRepo:
 
 @dataclass
 class Announced:
-    rows: list[tuple[str, uuid.UUID, uuid.UUID, Mapping[str, Any], int]] = field(
-        default_factory=list
-    )
+    rows: list[tuple[str, uuid.UUID, uuid.UUID, Mapping[str, Any]]] = field(default_factory=list)
     deleted: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
     titles: list[tuple[uuid.UUID, uuid.UUID, str]] = field(default_factory=list)
 
@@ -91,9 +90,8 @@ class Announced:
         owner: uuid.UUID,
         conversation_id: uuid.UUID,
         row: Mapping[str, Any],
-        watermark: int,
     ) -> None:
-        self.rows.append((kind, owner, conversation_id, row, watermark))
+        self.rows.append((kind, owner, conversation_id, row))
 
     def gone(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> None:
         self.deleted.append((owner, conversation_id))
@@ -141,11 +139,11 @@ async def test_an_updated_row_carries_the_watermark_taken_before_the_write() -> 
 
     await build(repo, clock, announced).set_completed(OWNER, existing.id, completed=True)
 
-    [(kind, owner, conversation_id, row, watermark)] = announced.rows
+    [(kind, owner, conversation_id, row)] = announced.rows
     assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
     # 写入途中那一帧拿到 2：它比这一行新，行上的水位必须停在写入之前的 1。
     assert clock.current(existing.id) == 2
-    assert watermark == row["lastSeq"] == 1
+    assert row["lastSeq"] == 1
     assert row["eventEpoch"] == clock.epoch
     assert row["completedAt"] is not None
 
@@ -159,8 +157,8 @@ async def test_a_rename_announces_the_title_event_and_the_row() -> None:
     await build(repo, clock, announced).rename(OWNER, existing.id, title="新名字")
 
     assert announced.titles == [(OWNER.user_id, existing.id, "新名字")]
-    [(kind, _, _, row, watermark)] = announced.rows
-    assert (kind, row["title"], watermark) == ("updated", "新名字", 0)
+    [(kind, _, _, row)] = announced.rows
+    assert (kind, row["title"], row["lastSeq"]) == ("updated", "新名字", 0)
 
 
 async def test_a_new_conversation_is_announced_but_an_idempotent_replay_is_not() -> None:
@@ -175,7 +173,7 @@ async def test_a_new_conversation_is_announced_but_an_idempotent_replay_is_not()
 
     created, fresh = await service.create(OWNER, agent_id="storyboard")
     assert fresh is True
-    [(kind, owner, conversation_id, row, _)] = announced.rows
+    [(kind, owner, conversation_id, row)] = announced.rows
     assert (kind, owner, conversation_id, row["id"]) == (
         "created",
         OWNER.user_id,
@@ -194,7 +192,7 @@ async def test_clearing_the_completion_mark_from_another_domain_announces_the_ro
 
     await build(repo, clock, announced).clear_completed(existing.id, OWNER.user_id)
 
-    [(kind, _, _, row, _)] = announced.rows
+    [(kind, _, _, row)] = announced.rows
     assert (kind, row["completedAt"]) == ("updated", None)
 
 
