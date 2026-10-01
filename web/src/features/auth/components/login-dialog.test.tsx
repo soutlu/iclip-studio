@@ -12,6 +12,19 @@ const serveSsoProbe = (respond: () => Response) =>
 const ssoOpen = () => HttpResponse.json({ authorization_url: 'https://sso.example.com/authorize' })
 
 describe('LoginDialog', () => {
+  it('打开时焦点在用户名输入框，Esc 关闭弹窗', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    serveSsoProbe(() => new HttpResponse(null, { status: 404 }))
+    await renderWithProviders(<LoginDialog open onOpenChange={onOpenChange} />)
+    const dialog = await screen.findByRole('dialog', { name: '欢迎登录 Cue' })
+
+    await waitFor(() => expect(within(dialog).getByLabelText('用户名')).toHaveFocus())
+
+    await user.keyboard('{Escape}')
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
   it('SSO 开启时显示飞书入口，不出现故障提示', async () => {
     serveSsoProbe(ssoOpen)
     await renderWithProviders(<LoginDialog open onOpenChange={vi.fn()} />)

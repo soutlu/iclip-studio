@@ -10,7 +10,7 @@ export const iconButtonVariants = cva(
       variant: {
         standard: 'bg-transparent text-on-surface-variant',
         tonal: 'bg-secondary-container text-on-secondary-container',
-        selected: 'bg-primary-container text-on-primary-container',
+        selected: 'bg-inverse-surface text-inverse-on-surface',
       },
       size: {
         lg: 'hit-48 size-(--control-height-lg)',

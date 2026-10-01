@@ -311,7 +311,6 @@
   /* 画布卡片 */
   --color-canvas-card-bg: var(--color-surface-container-lowest);
   --color-canvas-card-text: var(--color-on-surface);
-  --color-canvas-card-border: var(--p60);
   --color-canvas-label-text: var(--nv50);
 
   /* 故事板工作台 */

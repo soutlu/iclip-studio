@@ -259,7 +259,7 @@ h1 {
 .tone:focus-visible {
   position: relative;
   z-index: var(--z-local-2);
-  outline: 2px solid var(--pg-focus);
+  outline: 2px solid var(--pg-ink);
   outline-offset: 2px;
 }
 
