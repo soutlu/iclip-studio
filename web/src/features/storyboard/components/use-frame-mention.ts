@@ -1,18 +1,19 @@
-/** PromptEditor 里 `@` 选图的 React 一侧：持有开合与键盘停在的格子，把插件的事件接到弹层上。 */
+/** PromptEditor 里 `@` 选图：在 shared 的 `@` 菜单内核上接分镜的规则——不带查询词、格子按网格走，
+ * 选图片把 `@` 换成引用，选末格「+」走添加入口。 */
 
+import { TextSelection } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import { toast } from '@/shared/ui/toast'
-import { optionAfterArrow, type OptionBox } from '../frame-mention'
+import type { RefObject } from 'react'
 import {
-  closeFrameMention,
-  frameMentionPlugin,
-  insertMentionedFrame,
-  selectMentionTrigger,
-  type MentionKey,
-} from './frame-mention-plugin'
-import type { CaretAnchor } from './frame-mention-menu'
+  closingMention,
+  gridNavigation,
+  selectMention,
+  useMention,
+} from '@/shared/ui/composer/mention'
+import { toast } from '@/shared/ui/toast'
+import { textAfterMention } from '../frame-mention'
 import type { FrameAdd } from './frame-tile'
+import { docToPrompt, promptOffsetAt, promptPositionAt, promptToDoc } from './prompt-editor-doc'
 
 /** 编辑器提供 `@` 选图时要给的：末格「+」走的添加入口，以及插入第几帧之后要做的事（比如舞台切过去）。 */
 export type FrameMentionOptions = {
@@ -20,17 +21,14 @@ export type FrameMentionOptions = {
   onInserted: (frame: number) => void
 }
 
-const boxesOf = (list: HTMLUListElement | null): OptionBox[] =>
-  [...(list?.querySelectorAll('[role="option"]') ?? [])].map((option) => {
-    const { height, left, top, width } = option.getBoundingClientRect()
-    return { height, left, top, width }
-  })
-
-const caretRect = (view: EditorView | null, at: number | null): DOMRect => {
-  const { bottom, left, top } =
-    view === null || at === null ? { bottom: 0, left: 0, top: 0 } : view.coordsAtPos(at + 1)
-  const rect = { bottom, height: bottom - top, left, right: left, top, width: 0, x: left, y: top }
-  return { ...rect, toJSON: () => rect }
+/** 把 `at` 处的 `@` 换成第 `frame` 帧的引用，光标落在引用之后；正文怎么变由 `textAfterMention` 定。 */
+const insertMentionedFrame = (view: EditorView, at: number, frame: number) => {
+  const { doc } = view.state
+  const next = textAfterMention(docToPrompt(doc), promptOffsetAt(doc, at), frame)
+  if (next === undefined) return
+  const tr = view.state.tr.replaceWith(0, doc.content.size, promptToDoc(next.text).content)
+  tr.setSelection(TextSelection.create(tr.doc, promptPositionAt(tr.doc, next.cursor)))
+  view.dispatch(closingMention(tr).scrollIntoView())
 }
 
 export const useFrameMention = (
@@ -38,79 +36,46 @@ export const useFrameMention = (
   options: FrameMentionOptions | undefined,
   frameCount: number,
 ) => {
-  const [at, setAt] = useState<number | null>(null)
-  const [active, setActive] = useState(0)
-  const latestRef = useRef({ active, at, frameCount, options })
-  useEffect(() => {
-    latestRef.current = { active, at, frameCount, options }
-  })
-  const listRef = useRef<HTMLUListElement | null>(null)
-  const anchorRef = useRef<CaretAnchor>({
-    getBoundingClientRect: () => caretRect(viewRef.current, latestRef.current.at),
-    get contextElement() {
-      return viewRef.current?.dom
-    },
-  })
-
-  /** 选第 `index` 格：图片就把 `@` 换成引用；「+」就让选区盖住 `@` 再走添加入口，添加完成时它被换掉。 */
-  const pick = (index: number) => {
-    const view = viewRef.current
-    const { frameCount: count, options: current } = latestRef.current
-    if (view === null || current === undefined) return
-    if (index < count) {
-      insertMentionedFrame(view, index + 1)
-      current.onInserted(index + 1)
-      return
-    }
-    if (current.add.blocker !== undefined) {
-      toast.error(current.add.blocker)
-      return
-    }
-    selectMentionTrigger(view)
-    current.add.onAdd()
-  }
-
-  // 连按的键可能赶在重渲染之前，开合与选中格先同步写进 ref。
-  const moveTo = (index: number) => {
-    latestRef.current.active = index
-    setActive(index)
-  }
-  const onKey = (key: MentionKey) => {
-    const { active: current } = latestRef.current
-    if (key === 'Enter') pick(current)
-    else moveTo(optionAfterArrow(current, key, boxesOf(listRef.current)))
-  }
-  // 编辑器建好时调一次；插件里的回调只读 ref 和 setter，首轮渲染的闭包一直可用。
-  const createPlugin = () =>
-    frameMentionPlugin({
-      enabled: () => latestRef.current.options !== undefined,
-      onChange: (next) => {
-        latestRef.current.at = next
-        setAt(next)
-        moveTo(0)
-      },
-      onKey,
-    })
-
-  const close = useCallback(() => {
-    if (viewRef.current !== null) closeFrameMention(viewRef.current)
-  }, [viewRef])
+  const mention = useMention(
+    viewRef,
+    options === undefined
+      ? undefined
+      : {
+          navigation: gridNavigation,
+          /** 选第 `index` 格：图片就把 `@` 换成引用；「+」就让选区盖住 `@` 再走添加入口，添加完成时它被换掉。 */
+          onPick: (index, { match, view }) => {
+            if (index < frameCount) {
+              insertMentionedFrame(view, match.at, index + 1)
+              options.onInserted(index + 1)
+              return
+            }
+            if (options.add.blocker !== undefined) {
+              toast.error(options.add.blocker)
+              return
+            }
+            selectMention(view)
+            options.add.onAdd()
+          },
+          query: false,
+        },
+  )
+  const { menu } = mention
 
   return {
     /** 建编辑器时调一次，插件放进编辑器的插件列表。 */
-    createPlugin,
-    close,
+    createPlugin: mention.createPlugin,
+    close: mention.close,
     /** 弹层要的数据；没打开或不提供选图时为 undefined。 */
     menu:
-      at === null || options === undefined
+      menu === undefined || options === undefined
         ? undefined
         : {
-            active,
-            add: { blocker: options.add.blocker, onAdd: () => pick(frameCount) },
-            anchor: anchorRef,
-            listRef,
-            onClose: close,
-            onPick: (frame: number) => pick(frame - 1),
+            active: menu.active,
+            add: { blocker: options.add.blocker, onAdd: () => menu.pick(frameCount) },
+            anchor: menu.anchor,
+            listRef: menu.listRef,
+            onClose: menu.onClose,
+            onPick: (frame: number) => menu.pick(frame - 1),
           },
   }
 }
