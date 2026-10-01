@@ -774,7 +774,7 @@ describe('侧栏原位编辑', () => {
     return screen.findByRole('textbox', { name: `重命名 ${title}` })
   }
 
-  it('对话改名：进入时聚焦并全选原名，输入即替换，回车保存后行回到链接', async () => {
+  it('对话改名：进入时聚焦并全选原名，输入即替换，回车保存后行回到链接并接回焦点', async () => {
     const conversation = addMockConversation('春季鞋款分镜')
     const writes = recordWrites()
     const { user } = await render()
@@ -788,7 +788,7 @@ describe('侧栏原位编辑', () => {
     ]).toEqual([0, '春季鞋款分镜'.length])
     await user.keyboard('  夏季凉鞋分镜 {Enter}')
 
-    expect(await screen.findByRole('link', { name: '夏季凉鞋分镜' })).toBeVisible()
+    expect(await screen.findByRole('link', { name: '夏季凉鞋分镜' })).toHaveFocus()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(writes).toEqual([
       {
@@ -808,7 +808,9 @@ describe('侧栏原位编辑', () => {
     await user.keyboard('秋季短靴')
     await user.click(screen.getByRole('heading', { name: '任务' }))
 
+    // 焦点是用户自己移走的，保存完不抢回标题链接。
     expect(await screen.findByRole('link', { name: '秋季短靴' })).toBeVisible()
+    expect(screen.getByRole('link', { name: '秋季短靴' })).not.toHaveFocus()
     expect(writes).toHaveLength(1)
   })
 
@@ -834,7 +836,7 @@ describe('侧栏原位编辑', () => {
     { case: '清空后回车', keys: '{Backspace}{Enter}' },
     { case: '只输入空白后回车', keys: '   {Enter}' },
     { case: '名字没变直接回车', keys: '{Enter}' },
-  ])('对话改名：$case，退出编辑、不发请求、原名不变', async ({ keys }) => {
+  ])('对话改名：$case，退出编辑、不发请求、原名不变，焦点回到标题链接', async ({ keys }) => {
     addMockConversation('春季鞋款分镜')
     const writes = recordWrites()
     const { user } = await render()
@@ -842,7 +844,7 @@ describe('侧栏原位编辑', () => {
     await startRename(user, '春季鞋款分镜')
     await user.keyboard(keys)
 
-    expect(await screen.findByRole('link', { name: '春季鞋款分镜' })).toBeVisible()
+    expect(await screen.findByRole('link', { name: '春季鞋款分镜' })).toHaveFocus()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(writes).toEqual([])
   })
@@ -900,7 +902,7 @@ describe('侧栏原位编辑', () => {
   it.each([
     { case: 'Esc', keys: '秋季{Escape}' },
     { case: '空名回车', keys: '{Enter}' },
-  ])('新建合集的编辑行：$case 时撤掉这一行，不发请求', async ({ keys }) => {
+  ])('新建合集的编辑行：$case 时撤掉这一行，不发请求，焦点回到「+」', async ({ keys }) => {
     const writes = recordWrites()
     const { user } = await render()
     await screen.findByText('还没有合集')
@@ -911,6 +913,7 @@ describe('侧栏原位编辑', () => {
 
     expect(screen.queryByRole('textbox', { name: '新合集名称' })).not.toBeInTheDocument()
     expect(screen.getByText('还没有合集')).toBeVisible()
+    expect(screen.getByRole('button', { name: '新建合集' })).toHaveFocus()
     expect(writes).toEqual([])
   })
 

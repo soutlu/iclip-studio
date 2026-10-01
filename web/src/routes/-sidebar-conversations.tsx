@@ -1,7 +1,7 @@
 import { DndContext, PointerSensor, useDroppable, useSensor } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { CollectionDeleteDialog, useCollections, useSaveCollection } from '@/features/collections'
 import {
   ConversationDeleteDialog,
@@ -16,6 +16,7 @@ import {
   SIDEBAR_ROW_TRAILING_SHOWN,
   SidebarRowEditor,
   useMoreConversations,
+  useSidebarRowEditing,
   useRecordOpenedConversation,
   useSetConversationMembership,
   useSidebarTopology,
@@ -91,6 +92,10 @@ export function SidebarConversations() {
 
   // 新建合集在合集区顶部插入一行原位编辑行。
   const [creatingCollection, setCreatingCollection] = useState(false)
+  const addCollectionRef = useRef<HTMLButtonElement>(null)
+  // 键盘建成的合集：等它的行渲染出来后由那一行接住焦点。侧栏合集按建立时间倒序（合同 §6），新合集总在最前、可见。
+  const createdCollectionRef = useRef<string | null>(null)
+  const [focusCollectionId, setFocusCollectionId] = useState<string | null>(null)
   const [collectionDelete, setCollectionDelete] = useState<{
     collection?: { id: string; name: string }
     open: boolean
@@ -157,6 +162,18 @@ export function SidebarConversations() {
     ? allCollections
     : allCollections.slice(0, COLLECTIONS_PREVIEW)
 
+  const startCreatingCollection = () => {
+    createdCollectionRef.current = null
+    setCreatingCollection(true)
+  }
+  const closeCollectionDraft = ({ refocus }: { refocus: boolean }) => {
+    setCreatingCollection(false)
+    if (!refocus) return
+    const created = createdCollectionRef.current
+    if (created === null) addCollectionRef.current?.focus()
+    else setFocusCollectionId(created)
+  }
+
   // 筛选按钮上的进行中指示点仅取拓扑首页数据，额外分页由子组件持有。
   const anyBusy =
     (topology.data?.ungrouped.items ?? []).some((one) => one.activity.busy) ||
@@ -187,10 +204,11 @@ export function SidebarConversations() {
               ? {
                   icon: 'add',
                   label: '新建合集',
-                  onClick: () => setCreatingCollection(true),
+                  onClick: startCreatingCollection,
                 }
               : undefined
           }
+          actionRef={addCollectionRef}
           title="合集"
         >
           {creatingCollection && (
@@ -199,8 +217,10 @@ export function SidebarConversations() {
               initialValue=""
               label="新合集名称"
               leading={<CollectionIcon />}
-              onClose={() => setCreatingCollection(false)}
-              onSubmit={(name) => saveCollection.mutateAsync({ name })}
+              onClose={closeCollectionDraft}
+              onSubmit={async (name) => {
+                createdCollectionRef.current = (await saveCollection.mutateAsync({ name })).id
+              }}
               placeholder="新合集名称"
             />
           )}
@@ -217,7 +237,9 @@ export function SidebarConversations() {
                 })
               }
               onDeleteConversation={confirmDelete}
+              onFocusHandled={() => setFocusCollectionId(null)}
               onOpenMembership={openMembership}
+              focusRequested={focusCollectionId === collection.id}
               onRename={(name) => saveCollection.mutateAsync({ collectionId: collection.id, name })}
               state={state}
             />
@@ -369,7 +391,15 @@ function UngroupedSection({
 }
 
 type SidebarSectionProps = {
-  action?: { icon: IconName; label: string; onClick: () => void } | undefined
+  action?:
+    | {
+        icon: IconName
+        label: string
+        onClick: () => void
+      }
+    | undefined
+  /** 尾部动作按钮的引用，供编辑结束后把焦点还给它。 */
+  actionRef?: RefObject<HTMLButtonElement | null>
   children: React.ReactNode
   title: string
   /** 标题行右侧常驻的控件，如任务区的筛选按钮。 */
@@ -377,7 +407,7 @@ type SidebarSectionProps = {
 }
 
 /** 侧栏分区常驻展开，标题只作标签；收起只发生在单个合集上。 */
-function SidebarSection({ action, children, title, tools }: SidebarSectionProps) {
+function SidebarSection({ action, actionRef, children, title, tools }: SidebarSectionProps) {
   const headingId = useId()
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-px">
@@ -399,6 +429,7 @@ function SidebarSection({ action, children, title, tools }: SidebarSectionProps)
                 label={action.label}
                 name={action.icon}
                 onClick={action.onClick}
+                ref={actionRef}
                 size="xs"
               />
             )}
@@ -553,6 +584,9 @@ type CollectionGroupProps = {
   onDelete: () => void
   onDeleteConversation: (conversation: Conversation) => void
   onOpenMembership: (conversation: Conversation) => void
+  /** 刚用键盘建成这个合集：挂上后把焦点交给它的行按钮，再调 onFocusHandled 清掉请求。 */
+  focusRequested: boolean
+  onFocusHandled: () => void
   /** 提交新名字；列表刷新出新名字后 resolve。 */
   onRename: (name: string) => Promise<unknown>
   state: ConversationListState
@@ -562,15 +596,23 @@ function CollectionGroup({
   canManage,
   collection,
   dragging,
+  focusRequested,
   onDelete,
   onDeleteConversation,
+  onFocusHandled,
   onOpenMembership,
   onRename,
   state,
 }: CollectionGroupProps) {
   const [open, setOpen] = useState(false)
-  const [editing, setEditing] = useState(false)
+  const { close, editing, returnRef, start } = useSidebarRowEditing<HTMLButtonElement>()
   const canWrite = useCanWrite()
+
+  useEffect(() => {
+    if (!focusRequested) return
+    returnRef.current?.focus()
+    onFocusHandled()
+  }, [focusRequested, onFocusHandled, returnRef])
   const { isOver, setNodeRef } = useDroppable({ id: collection.id, disabled: !canWrite })
   const more = useMoreConversations(
     { collectionId: collection.id, state },
@@ -590,7 +632,7 @@ function CollectionGroup({
           initialValue={collection.name}
           label={`重命名 ${collection.name}`}
           leading={<CollectionIcon />}
-          onClose={() => setEditing(false)}
+          onClose={close}
           onSubmit={onRename}
           trailing={<CollectionCount count={collection.conversationCount} />}
         />
@@ -600,6 +642,7 @@ function CollectionGroup({
           ref={setNodeRef}
         >
           <button
+            ref={returnRef}
             aria-expanded={open}
             aria-label={`${collection.name} (${collection.conversationCount})`}
             className={SIDEBAR_ROW_TITLE_CLASS}
@@ -623,7 +666,7 @@ function CollectionGroup({
                   <IconButton label={`${collection.name} 的操作`} name="more" size="xs" />
                 </MenuTrigger>
                 <MenuSurface align="end">
-                  <MenuItem icon="edit" onSelect={() => setEditing(true)}>
+                  <MenuItem icon="edit" onSelect={start}>
                     重命名
                   </MenuItem>
                   <MenuSeparator />

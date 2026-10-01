@@ -294,7 +294,8 @@ describe('AppSidebar 对话区', () => {
     expect(screen.queryByText('还没有合集')).not.toBeInTheDocument()
     await user.type(draft, '春季童鞋{Enter}')
 
-    expect(await screen.findByRole('button', { name: '春季童鞋 (0)' })).toBeVisible()
+    // 回车建成后焦点交给新合集那一行。
+    expect(await screen.findByRole('button', { name: '春季童鞋 (0)' })).toHaveFocus()
     expect(screen.queryByRole('textbox', { name: '新合集名称' })).not.toBeInTheDocument()
     expect(mockCollections.map((item) => item.name)).toEqual(['春季童鞋'])
   })
@@ -311,7 +312,7 @@ describe('AppSidebar 对话区', () => {
     const input = await screen.findByRole('textbox', { name: '重命名 待改名' })
     expect(input).toHaveFocus()
     await user.keyboard('改好了{Enter}')
-    expect(await screen.findByRole('button', { name: '改好了 (1)' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: '改好了 (1)' })).toHaveFocus()
     expect(screen.queryByRole('textbox', { name: '重命名 待改名' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '改好了 的操作' }))

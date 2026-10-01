@@ -40,5 +40,6 @@ export {
   SIDEBAR_ROW_TRAILING_SHOWN,
 } from './components/sidebar-row-classes'
 export { SidebarRowEditor } from './components/sidebar-row-editor'
+export { useSidebarRowEditing } from './components/use-sidebar-row-editing'
 export { SubAgentPanel } from './components/sub-agent-panel'
 export { agentCallOf } from './components/tool-display'

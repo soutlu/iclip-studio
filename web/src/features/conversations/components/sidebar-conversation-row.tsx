@@ -1,7 +1,6 @@
 import { useDraggable } from '@dnd-kit/core'
 import { useParams } from '@tanstack/react-router'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
@@ -26,6 +25,7 @@ import {
   SIDEBAR_ROW_TRAILING_SHOWN,
 } from './sidebar-row-classes'
 import { SidebarRowEditor } from './sidebar-row-editor'
+import { useSidebarRowEditing } from './use-sidebar-row-editing'
 
 /** 仅对本浏览器已查看过且 lastRunId 变化的完成对话显示未读；当前打开的对话不显示。 */
 const useUnread = (conversation: Conversation, active: boolean): boolean => {
@@ -56,7 +56,7 @@ export function SidebarConversationRow({
   })
   const openedId = useParams({ select: (params) => params.conversationId, strict: false })
   const active = openedId === conversation.id
-  const [editing, setEditing] = useState(false)
+  const { close, editing, returnRef, start } = useSidebarRowEditing<HTMLAnchorElement>()
   const rename = useRenameConversation()
   const completion = useSetConversationCompletion()
   const completed = conversation.completedAt !== null
@@ -81,7 +81,7 @@ export function SidebarConversationRow({
         failureMessage="重命名失败"
         initialValue={conversation.title}
         label={`重命名 ${conversation.title}`}
-        onClose={() => setEditing(false)}
+        onClose={close}
         onSubmit={(title) => rename.mutateAsync({ conversationId: conversation.id, title })}
       />
     )
@@ -103,6 +103,7 @@ export function SidebarConversationRow({
       {...(canWrite ? listeners : {})}
     >
       <Link
+        ref={returnRef}
         aria-current={active ? 'page' : undefined}
         className={SIDEBAR_ROW_TITLE_CLASS}
         draggable={false}
@@ -153,7 +154,7 @@ export function SidebarConversationRow({
               <IconButton label={`${conversation.title} 的更多操作`} name="more" size="xs" />
             </MenuTrigger>
             <MenuSurface align="end">
-              <MenuItem icon="edit" onSelect={() => setEditing(true)}>
+              <MenuItem icon="edit" onSelect={start}>
                 重命名
               </MenuItem>
               <MenuItem icon="folder" onSelect={onOpenMembership}>

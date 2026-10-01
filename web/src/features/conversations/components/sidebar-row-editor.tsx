@@ -25,8 +25,11 @@ type SidebarRowEditorProps = {
    * 调用方应在列表已刷新出新名字后再 resolve，避免退出编辑时闪回旧名。
    */
   onSubmit: (value: string) => Promise<unknown>
-  /** 编辑结束：保存成功、取消，或名字为空、没变。 */
-  onClose: () => void
+  /**
+   * 编辑结束：保存成功、取消，或名字为空、没变。refocus 表示结束时焦点还在输入框里（回车或 Esc），
+   * 调用方应把焦点还给这一行的主控件；失焦结束时焦点已去了别处，不抢回来。
+   */
+  onClose: (options: { refocus: boolean }) => void
 }
 
 /**
@@ -59,7 +62,7 @@ export function SidebarRowEditor({
 
   const close = () => {
     closedRef.current = true
-    onClose()
+    onClose({ refocus: document.activeElement === inputRef.current })
   }
 
   const submit = async (raw: string) => {
