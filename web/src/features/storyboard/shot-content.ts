@@ -33,11 +33,6 @@ export const shotContentIdSchema = z
   .string()
   .refine((id) => decodeContentId(id) !== undefined, '内容 id 不合法')
 
-/** 路由查询参数里盖在分镜页上的那一层：全部镜头组。 */
-export const readerSheetSchema = z.enum(['all'])
-
-export type ReaderSheet = z.infer<typeof readerSheetSchema>
-
 export type ShotContent = {
   id: string
   kind: ShotContentRef['kind']

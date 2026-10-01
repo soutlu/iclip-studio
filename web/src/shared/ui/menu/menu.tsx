@@ -1,5 +1,5 @@
 import { DropdownMenu } from 'radix-ui'
-import type { ComponentPropsWithoutRef } from 'react'
+import type { ComponentProps, ComponentPropsWithoutRef } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { POPUP_SURFACE_CLASS } from '@/shared/ui/popup'
@@ -77,11 +77,12 @@ export function MenuItem({
   )
 }
 
+/** `ref` 透传到菜单项，调用方可在打开后把焦点放到指定项上。 */
 export function MenuRadioItem({
   children,
   className,
   ...props
-}: ComponentPropsWithoutRef<typeof DropdownMenu.RadioItem>) {
+}: ComponentProps<typeof DropdownMenu.RadioItem>) {
   return (
     <DropdownMenu.RadioItem
       className={cn(ITEM_CLASS, 'justify-between text-on-surface', className)}

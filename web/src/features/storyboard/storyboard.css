@@ -96,6 +96,8 @@
   --storyboard-glass-hover: color-mix(in srgb, var(--color-scrim) 78%, transparent);
   --storyboard-glass-line: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
   container: storyboard-workbench / inline-size;
+  /* 舞台、成片区等叠层的局部 z-index 只在工作台里排序，不越过工作台与壳上的兄弟层；镜头组列表等浮层挂在 body 上，不受影响。 */
+  isolation: isolate;
   display: flex;
   width: 100%;
   min-width: 0;
@@ -247,6 +249,113 @@
     flex: none;
     overflow: visible;
   }
+}
+
+/* ===== 顶栏镜头组列表 =====
+   挂在组号胶囊下方、右缘对齐的下拉：抬高层底色、发丝描边与弹窗投影，组多时内部滚动。
+   每行首帧缩略图按分镜画幅、宽 40px；当前组铺选中态底色，右侧墨色对勾；细条按各镜头时长分段，只用中性色。 */
+.shot-group-menu {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: min(60vh, var(--radix-dropdown-menu-content-available-height));
+  gap: 0;
+  padding: 0 0 6px;
+  overflow: hidden;
+  border-color: var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: var(--color-top-layer);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: none;
+}
+.shot-group-menu-header {
+  flex: none;
+  padding: 10px 14px 6px;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+.shot-group-menu-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.shot-group-menu-row {
+  height: auto;
+  flex: none;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+.shot-group-menu-row[data-state='checked'] {
+  background-color: var(--color-state-active);
+}
+.shot-group-menu-row > svg {
+  margin-left: auto;
+  flex: none;
+}
+.shot-group-menu-thumb {
+  display: grid;
+  width: 40px;
+  max-height: 64px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container);
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+.shot-group-menu-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.shot-group-menu-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+.shot-group-menu-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+.shot-group-menu-title strong {
+  color: var(--color-on-surface);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  line-height: var(--text-body-sm--line-height);
+}
+.shot-group-menu-title span {
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+.shot-group-menu-strip {
+  display: flex;
+  height: 4px;
+  gap: 2px;
+}
+.shot-group-menu-strip i {
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+}
+.shot-group-menu-name {
+  overflow: hidden;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== 文案列 =====

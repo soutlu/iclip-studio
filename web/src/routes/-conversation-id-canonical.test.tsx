@@ -37,13 +37,13 @@ describe('会话页地址里的对话 id', () => {
     loginAs(mockAuthUser)
     const conversation = addMockConversation('秋季片')
 
-    const router = await renderAt(`/c/${conversation.id.replaceAll('-', '')}?sheet=all`)
+    const router = await renderAt(`/c/${conversation.id.replaceAll('-', '')}?shot=2`)
 
     expect(router.state.location.pathname).toBe(`/c/${conversation.id}`)
-    expect(router.state.location.search).toEqual({ sheet: 'all' })
+    expect(router.state.location.search).toEqual({ shot: 2 })
   })
 
-  it.each(['prompt', 'records'])(
+  it.each(['all', 'prompt', 'records'])(
     '旧链接里已下线的 sheet=%s 静默丢掉，其余参数照留，页面照常打开',
     async (sheet) => {
       loginAs(mockAuthUser)
