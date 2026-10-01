@@ -907,14 +907,6 @@ h1 {
   --color-background: var(--color-surface);
   --color-on-background: var(--color-on-surface);
   --color-focus-ring: var(--color-primary);
-  --color-accent-1-container: color-mix(in srgb, var(--color-accent-1) 28%, var(--color-background));
-  --color-accent-2-container: color-mix(in srgb, var(--color-accent-2) 28%, var(--color-background));
-  --color-accent-3-container: color-mix(in srgb, var(--color-accent-3) 28%, var(--color-background));
-  --color-accent-4-container: color-mix(in srgb, var(--color-accent-4) 28%, var(--color-background));
-  --color-accent-5-container: color-mix(in srgb, var(--color-accent-5) 28%, var(--color-background));
-  --color-accent-6-container: color-mix(in srgb, var(--color-accent-6) 28%, var(--color-background));
-  --color-accent-7-container: color-mix(in srgb, var(--color-accent-7) 28%, var(--color-background));
-  --color-accent-8-container: color-mix(in srgb, var(--color-accent-8) 28%, var(--color-background));
 }
 .type-styles[data-columns="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .elevation-swatch { display: block; height: 22px; background: var(--pg-sheet); }

@@ -374,8 +374,8 @@
   --color-on-chart-ord-4: var(--n100);
   --color-on-chart-ord-5: var(--n100);
 
-  /* 镜头点缀色：只表达镜头身份，同一镜头的时间轴色段与镜头编号同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
-     色段用 accent-N 实色；编号徽标底 = 点缀色 28% 混入页面底色，字 = 点缀色压暗一半（对徽标底 ≥5.6:1）。 */
+  /* 镜头点缀色：只表达镜头身份，同一镜头的时间轴色段与镜头列表序号旁的短色签同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
+     色段与短色签都用 accent-N 实色；序号用中性字色，不做浅色底块或彩色徽标。 */
   --color-accent-1: #ee5d3f; /* 珊瑚 */
   --color-accent-2: #f39a2b; /* 橙 */
   --color-accent-3: #d9b02a; /* 芥末黄 */
@@ -384,54 +384,6 @@
   --color-accent-6: #e35d8c; /* 粉 */
   --color-accent-7: #2a9fb0; /* 青 */
   --color-accent-8: #5c6bd6; /* 靛蓝 */
-  --color-accent-1-container: color-mix(
-    in srgb,
-    var(--color-accent-1) 28%,
-    var(--color-background)
-  );
-  --color-accent-2-container: color-mix(
-    in srgb,
-    var(--color-accent-2) 28%,
-    var(--color-background)
-  );
-  --color-accent-3-container: color-mix(
-    in srgb,
-    var(--color-accent-3) 28%,
-    var(--color-background)
-  );
-  --color-accent-4-container: color-mix(
-    in srgb,
-    var(--color-accent-4) 28%,
-    var(--color-background)
-  );
-  --color-accent-5-container: color-mix(
-    in srgb,
-    var(--color-accent-5) 28%,
-    var(--color-background)
-  );
-  --color-accent-6-container: color-mix(
-    in srgb,
-    var(--color-accent-6) 28%,
-    var(--color-background)
-  );
-  --color-accent-7-container: color-mix(
-    in srgb,
-    var(--color-accent-7) 28%,
-    var(--color-background)
-  );
-  --color-accent-8-container: color-mix(
-    in srgb,
-    var(--color-accent-8) 28%,
-    var(--color-background)
-  );
-  --color-on-accent-1-container: color-mix(in srgb, var(--color-accent-1) 50%, var(--n0));
-  --color-on-accent-2-container: color-mix(in srgb, var(--color-accent-2) 50%, var(--n0));
-  --color-on-accent-3-container: color-mix(in srgb, var(--color-accent-3) 50%, var(--n0));
-  --color-on-accent-4-container: color-mix(in srgb, var(--color-accent-4) 50%, var(--n0));
-  --color-on-accent-5-container: color-mix(in srgb, var(--color-accent-5) 50%, var(--n0));
-  --color-on-accent-6-container: color-mix(in srgb, var(--color-accent-6) 50%, var(--n0));
-  --color-on-accent-7-container: color-mix(in srgb, var(--color-accent-7) 50%, var(--n0));
-  --color-on-accent-8-container: color-mix(in srgb, var(--color-accent-8) 50%, var(--n0));
 
   /* 数据看板：内容区铺浅灰、卡片纯白不描边，靠一层淡影分层；深色下影子看不见，改用一圈极淡的边。 */
   --color-dashboard-bg: var(--n96);
@@ -728,7 +680,7 @@
   --color-on-chart-ord-3: var(--n10);
   --color-on-chart-ord-4: var(--n10);
   --color-on-chart-ord-5: var(--n10);
-  /* 深色点缀色取同色相 HCT tone 72；编号字向白提亮（对徽标底 ≥6.6:1），徽标底随 background 自动换档。 */
+  /* 深色点缀色取同色相 HCT tone 72，在深色页面底上保持同等辨识度。 */
   --color-accent-1: #ff937c;
   --color-accent-2: #f69c2d;
   --color-accent-3: #d4ac25;
@@ -737,14 +689,6 @@
   --color-accent-6: #ff8eb1;
   --color-accent-7: #54bfd0;
   --color-accent-8: #a0abff;
-  --color-on-accent-1-container: color-mix(in srgb, var(--color-accent-1) 60%, var(--n100));
-  --color-on-accent-2-container: color-mix(in srgb, var(--color-accent-2) 60%, var(--n100));
-  --color-on-accent-3-container: color-mix(in srgb, var(--color-accent-3) 60%, var(--n100));
-  --color-on-accent-4-container: color-mix(in srgb, var(--color-accent-4) 60%, var(--n100));
-  --color-on-accent-5-container: color-mix(in srgb, var(--color-accent-5) 60%, var(--n100));
-  --color-on-accent-6-container: color-mix(in srgb, var(--color-accent-6) 60%, var(--n100));
-  --color-on-accent-7-container: color-mix(in srgb, var(--color-accent-7) 60%, var(--n100));
-  --color-on-accent-8-container: color-mix(in srgb, var(--color-accent-8) 60%, var(--n100));
   --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
   --shadow-2:
     0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);

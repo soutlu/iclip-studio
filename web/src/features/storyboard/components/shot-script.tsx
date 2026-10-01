@@ -1,5 +1,5 @@
-/** 文案列：列头写镜头数与总长，带「收成摘要」开关和按时长切分的镜头条（色段与序号徽标同取镜头的点缀色）；正文区最上面是全局设定卡，
- * 之后按时间线排各镜头，左侧时间轴在序号节点下标出起始时间，末尾是结束刻度。
+/** 文案列：列头写镜头数与总长，带「收成摘要」开关和按时长切分的镜头条（色段与左轨短色签同取镜头的点缀色）；正文区最上面是全局设定卡，
+ * 之后按时间线排各镜头，左轨写序号与起始时间，末尾一行写总长与「结束」。
  * 默认全文；收成摘要时未选中的镜头只露两行、全局设定三行。点哪段选中哪段，舞台跟着切到它的首帧。
  * 时间一律写一位小数加 s，总长取最后一镜的止秒。版式见 storyboard.css 的「文案列」一节。 */
 
@@ -210,7 +210,8 @@ export function ShotScript({
                 }}
               >
                 <span aria-hidden className="storyboard-rail">
-                  <span className={cn('storyboard-rail-node', accent.badge)}>{number}</span>
+                  <span className={cn('storyboard-rail-tick', accent.tick)} />
+                  <span className="storyboard-rail-number">{number}</span>
                   <span className="storyboard-rail-stamp">{formatTimecode(time.start)}</span>
                 </span>
                 <div
@@ -260,7 +261,6 @@ export function ShotScript({
         </ol>
         <div aria-hidden className="storyboard-shot-end">
           <span className="storyboard-rail">
-            <span className="storyboard-rail-end" />
             <span className="storyboard-rail-stamp">{total}</span>
           </span>
           <span className="storyboard-shot-end-label">结束</span>
