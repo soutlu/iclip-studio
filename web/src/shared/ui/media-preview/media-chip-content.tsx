@@ -1,4 +1,4 @@
-/** 输入框与用户气泡共用芯片内容；缩略图不可用时显示媒体类型图标。 */
+/** 输入框芯片的内容；外观见 media-preview.css 的 `.media-chip`。缩略图不可用时显示媒体类型图标。 */
 
 import { Icon } from '@/shared/icons'
 import { imageThumbnailUrl, videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -22,7 +22,7 @@ export function MediaChipContent({ media }: { media: MediaDescriptor }) {
         {thumbnail === undefined ? (
           <Icon decorative name={MEDIA_KIND_ICON[media.kind]} size="sm" />
         ) : (
-          <img alt="" className="size-full rounded-xs object-cover" src={thumbnail} />
+          <img alt="" src={thumbnail} />
         )}
       </span>
       <span className="media-chip-name">{ellipsizeAttachmentName(mediaDisplayName(media))}</span>

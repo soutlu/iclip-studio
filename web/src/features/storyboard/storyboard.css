@@ -15,10 +15,11 @@
   min-height: var(--text-body--line-height);
 }
 /* ===== 帧芯片 =====
-   正文里的 @N：圆形缩略图加编号的胶囊，中性浅底；舞台正在看的那一帧（data-highlighted）墨色实底。
-   选中与当前一律用墨色，主色只留给「生成」与运行状态。
+   正文里的 @N：方角缩略图加编号的小件，和附件芯片同一套中性浮起——顶层白面、半像素发丝圈加一层轻影，表面不着色；
+   舞台正在看的那一帧（data-highlighted）墨色实底。选中与当前一律用墨色，主色只留给「生成」与运行状态。
    外层是普通行内元素、不换行，尾部垫一个零宽连字符（U+2060），芯片和紧跟的「，」「。」不会被拆到两行；
-   胶囊画在里层的 inline-flex 上，以缩略图为基线，下沉 0.3em 与中文字身居中。聚焦环与 NodeSelection 描边画在胶囊上。 */
+   小件画在里层的 inline-flex 上，以缩略图为基线，下沉 0.3em 与中文字身居中。高 22px，不撑大段落行距。
+   聚焦环与 NodeSelection 描边画在小件上。 */
 .frame-chip {
   white-space: nowrap;
 }
@@ -34,33 +35,40 @@
   align-items: center;
   gap: 4px;
   margin: 0 2px;
-  padding: 0 7px 0 2px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+  padding: 0 6px 0 2px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-top-layer);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-xs);
   color: var(--color-on-surface);
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: 1;
-  transition-property: background-color, color;
+  transition-property: background-color, background-image, color;
   vertical-align: -0.3em;
 }
+/* 内描边用 outline 画在图片之上（inset 阴影会被不透明的图盖住）。 */
 .frame-chip-pill > img {
   width: 18px;
   height: 18px;
   flex: none;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-xs);
   object-fit: cover;
+  outline: 0.5px solid var(--color-hairline);
+  outline-offset: -0.5px;
 }
 /* 帧图地址缺失时只剩编号，左右留白对称。 */
 .frame-chip-pill:has(> img[hidden]) {
-  padding-left: 7px;
+  padding-left: 6px;
 }
 .frame-chip:hover .frame-chip-pill {
-  background: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
+  background-image: linear-gradient(var(--color-state-hover), var(--color-state-hover));
 }
 .frame-chip[data-highlighted] .frame-chip-pill {
-  background: var(--color-inverse-surface);
+  background-color: var(--color-inverse-surface);
+  background-image: none;
   color: var(--color-inverse-on-surface);
 }
 .frame-chip:focus-visible .frame-chip-pill {

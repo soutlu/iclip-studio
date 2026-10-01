@@ -45,40 +45,29 @@
 }
 
 .attachment-pill {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-  padding-inline: 2px;
-  white-space: nowrap;
-  vertical-align: baseline;
-  color: var(--color-chat-muted-text);
-  font-weight: 500;
+  /* 外观来自共用的 .media-chip（NodeView 同时挂两个类）；这里只有输入框的行内摆放、指针、选中与失败态。
+     24px 芯片放进 20px 行：顶对齐、上探 2px，中线与字身对齐；下方多留 4px，有芯片的行高 26px，
+     附件连排换行时上下两排之间留 2px 缝。纯文字行行距不变。 */
+  margin: -2px 2px 4px;
+  vertical-align: top;
   cursor: text;
-  transition: color var(--dur-s) var(--ease);
-}
-.attachment-pill:hover {
-  color: var(--color-chat-message-text);
 }
 .attachment-pill.attachment-image,
 .attachment-pill.attachment-video {
   cursor: zoom-in;
 }
-.attachment-pill .media-chip-icon {
-  color: var(--color-on-surface-variant);
-}
-.attachment-pill:hover .media-chip-icon {
-  color: inherit;
-}
+/* 选中与当前一律用墨色描边，主色只留给「生成」与运行状态。 */
 .attachment-pill.ProseMirror-selectednode {
-  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
-  border-radius: var(--radius-xs);
+  outline: 2px solid color-mix(in srgb, var(--color-on-surface) 60%, transparent);
+  outline-offset: 1px;
 }
-.attachment-pill.attachment-error,
-.attachment-pill.attachment-error:hover {
+.attachment-pill.attachment-error {
+  box-shadow:
+    0 0 0 0.5px var(--color-error),
+    var(--shadow-xs);
   color: var(--color-error);
 }
-.attachment-pill.attachment-error .media-chip-icon,
-.attachment-pill.attachment-error:hover .media-chip-icon {
+.attachment-pill.attachment-error .media-chip-icon {
   color: inherit;
 }
 

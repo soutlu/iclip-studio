@@ -1,13 +1,46 @@
 /* 输入框与用户气泡共用媒体芯片和预览卡，参考 Kimi mention-tip。 */
 
+/* 媒体芯片：从所在卡面中性浮起一层——顶层白面、半像素发丝圈加一层轻影，表面不着色，颜色只来自缩略图本身。
+   芯片比正文行高；怎样嵌进行盒（与字身同一中线、连排换行时上下留缝）由各宿主按自己的行高处理。 */
+.media-chip {
+  display: inline-flex;
+  height: var(--control-height-xs);
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 2px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-top-layer);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-xs);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 400;
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+  transition: background-image var(--dur-s) var(--ease);
+}
+.media-chip:hover {
+  background-image: linear-gradient(var(--color-state-hover), var(--color-state-hover));
+}
+/* 缩略图格：20px 方格；取不到缩略图时居中画类型图标。 */
 .media-chip-icon {
   display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: var(--icon-sm);
-  height: var(--icon-sm);
-  align-self: center;
-  flex-shrink: 0;
+  color: var(--color-on-surface-variant);
+}
+/* 内描边用 outline 画在图片之上（inset 阴影会被不透明的图盖住），浅色图也有边。 */
+.media-chip-icon > img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+  outline: 0.5px solid var(--color-hairline);
+  outline-offset: -0.5px;
 }
 /* 覆盖正文继承的 pre-wrap，保证文件名保持单行且省略号生效。 */
 .media-chip-name {
