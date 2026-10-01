@@ -56,12 +56,17 @@
 .attachment-pill.attachment-video {
   cursor: zoom-in;
 }
+/* 上传中文字退到次要色，进度看缩略图上的环。 */
+.attachment-pill.attachment-uploading {
+  color: var(--color-on-surface-variant);
+}
 /* 选中与当前一律用墨色描边，主色只留给「生成」与运行状态。 */
 .attachment-pill.ProseMirror-selectednode {
   outline: 2px solid color-mix(in srgb, var(--color-on-surface) 60%, transparent);
   outline-offset: 1px;
 }
 .attachment-pill.attachment-error {
+  cursor: pointer;
   box-shadow:
     0 0 0 0.5px var(--color-error),
     var(--shadow-xs);

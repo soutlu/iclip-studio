@@ -21,6 +21,8 @@ export type ComposerAttachment = {
   readonly previewUrl: string | undefined
   readonly url: string | undefined
   readonly error: string | undefined
+  /** 本地选取的原文件，供失败后重试；从公网地址恢复的就绪附件没有。 */
+  readonly file: File | undefined
 }
 
 /** 百分比变化且距上次至少 120ms 才更新；100% 不节流。 */
@@ -43,6 +45,7 @@ export const readyAttachment = ({
 }): ComposerAttachment => ({
   attId: mintAttachmentId(),
   error: undefined,
+  file: undefined,
   kind,
   mediaType: `${kind}/*`,
   name,
@@ -145,6 +148,7 @@ export const useComposerAttachments = () => {
     const entry: ComposerAttachment = {
       attId: mintAttachmentId(),
       error: undefined,
+      file,
       kind,
       mediaType: file.type === '' ? `${kind}/*` : file.type,
       name: file.name,
@@ -157,6 +161,14 @@ export const useComposerAttachments = () => {
     setEntries((prev) => new Map(prev).set(entry.attId, entry))
     void upload(entry, file)
     return entry
+  }
+
+  /** 失败条目用原文件重新上传，本地预览沿用；非失败态或没有原文件时不执行。 */
+  const retry = (attId: string) => {
+    const entry = entries.get(attId)
+    if (entry?.status !== 'error' || entry.file === undefined) return
+    patch(attId, { error: undefined, progress: undefined, status: 'uploading' })
+    void upload(entry, entry.file)
   }
 
   /** 每次文档变化后提供当前附件 ID；删除无引用条目并回收其预览。 */
@@ -193,7 +205,7 @@ export const useComposerAttachments = () => {
     })
   }, [])
 
-  return { entries, mintEntry, restoreEntries, syncReferences, takeReady }
+  return { entries, mintEntry, restoreEntries, retry, syncReferences, takeReady }
 }
 
 export type ComposerAttachments = ReturnType<typeof useComposerAttachments>

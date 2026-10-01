@@ -7,6 +7,7 @@
  * - 局部拖放区 {@link useFileDropTarget}：文件的 dragenter / dragover / drop 都 preventDefault，但不 stopPropagation。
  *   preventDefault 让浏览器允许在此落下，同时借 `event.defaultPrevented` 告诉 window 上的兜底接收者「这里已接管」；
  *   保留冒泡是为了让兜底接收者照常计数、收起遮罩。锁定时照样接管，只标成禁止落点。
+ *   区域里更内层的接收者先 preventDefault 了的 drop 算它收下，本区域只收起提示、不回调。
  * - 拒收面 {@link refuseFileDropProps}（弹窗、灯箱）：同样 preventDefault 并保留冒泡，只是不收文件，
  *   免得落在弹窗上的文件被背后的聊天输入框收走；里面的局部拖放区先接管了的不动。
  * - 兜底接收者 {@link useWindowFileDrop}（聊天输入框）：挂在 window 上，只收没被接管的文件；
@@ -72,9 +73,11 @@ export const useFileDropTarget = ({ blocked, onFiles, onDirectory }: FileDropTar
     },
     onDrop: (event: ReactDragEvent<HTMLElement>) => {
       if (!hasDraggedFiles(event)) return
-      event.preventDefault()
       depthRef.current = 0
       setOver(false)
+      // 区域里的接收者（如按落点插入的编辑器）已经收下：只收起提示，不再回调。
+      if (event.defaultPrevented) return
+      event.preventDefault()
       if (blocked) return
       if ([...event.dataTransfer.items].some((item) => isDirectory(item))) {
         onDirectory()

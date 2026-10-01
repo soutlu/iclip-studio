@@ -12,6 +12,7 @@ import {
   formatDuration,
 } from './attachment-format'
 import { MEDIA_KIND_ICON, type MediaDescriptor, mediaDisplayName } from './media-descriptor'
+import { UploadRing } from './upload-ring'
 
 /** 媒体元素加载后读到的像素尺寸；时长只有视频有。 */
 type MediaIntrinsic = { width: number; height: number; duration: number | undefined }
@@ -22,9 +23,6 @@ const TIP_GAP_PX = 6
 const TIP_VIEWPORT_MARGIN_PX = 12
 /** 300px 预览区使用两倍分辨率 poster。 */
 const POSTER_WIDTH_PX = 600
-/** 进度环尺寸参考 Kimi mention-tip-media-ring。 */
-const RING_RADIUS = 6.5
-const RING_LENGTH = 40.84
 
 type TipPlacement = {
   left: number
@@ -124,8 +122,9 @@ export function MediaPreviewCard({
     'block max-w-[300px] rounded-sm object-contain',
     intrinsic !== null && intrinsic.height > intrinsic.width ? 'max-h-[320px]' : 'max-h-[220px]',
   )
-  const showUploadState = upload !== undefined && upload.status !== 'ready'
-  const hasSecondRow = showUploadState || details !== '' || canEnlarge
+  // 失败态由输入框的失败卡片承担，悬停卡只报上传中。
+  const uploading = upload?.status === 'uploading' ? upload : undefined
+  const hasSecondRow = uploading !== undefined || details !== '' || canEnlarge
   const meta = (
     <div className="media-tip-meta flex min-w-0 flex-col gap-0.5">
       <div className="flex min-w-0 items-center gap-1">
@@ -141,50 +140,15 @@ export function MediaPreviewCard({
       </div>
       {hasSecondRow ? (
         <div className="flex min-w-0 items-center gap-2 pl-0.5">
-          {showUploadState ? (
-            <span
-              className={cn(
-                'media-tip-ink flex min-w-0 flex-1 items-center gap-1.5 truncate font-medium',
-                upload.status === 'error' && 'media-tip-danger',
-              )}
-            >
-              {upload.status === 'uploading' ? (
-                <>
-                  {upload.progress === undefined ? (
-                    <Icon className="animate-spin" decorative name="loading" size="xs" />
-                  ) : (
-                    <svg aria-hidden className="size-3 shrink-0" viewBox="0 0 16 16">
-                      <circle
-                        cx="8"
-                        cy="8"
-                        fill="none"
-                        r={RING_RADIUS}
-                        strokeWidth="1.5"
-                        style={{ stroke: 'color-mix(in srgb, currentColor 18%, transparent)' }}
-                      />
-                      <circle
-                        cx="8"
-                        cy="8"
-                        fill="none"
-                        r={RING_RADIUS}
-                        stroke="currentColor"
-                        strokeDasharray={`${(upload.progress * RING_LENGTH).toFixed(1)} ${RING_LENGTH}`}
-                        strokeLinecap="round"
-                        strokeWidth="1.5"
-                        transform="rotate(-90 8 8)"
-                      />
-                    </svg>
-                  )}
-                  {upload.progress === undefined
-                    ? '上传中'
-                    : `上传中 ${Math.round(upload.progress * 100)}%`}
-                </>
-              ) : (
-                '上传失败'
-              )}
-            </span>
-          ) : (
+          {uploading === undefined ? (
             <span className="media-tip-ink min-w-0 flex-1 truncate tabular-nums">{details}</span>
+          ) : (
+            <span className="media-tip-ink flex min-w-0 flex-1 items-center gap-1.5 truncate font-medium">
+              <UploadRing progress={uploading.progress} size="xs" />
+              {uploading.progress === undefined
+                ? '上传中'
+                : `上传中 ${Math.round(uploading.progress * 100)}%`}
+            </span>
           )}
           {canEnlarge ? (
             <button className="media-tip-open ml-auto flex-none" onClick={onEnlarge} type="button">
@@ -241,7 +205,6 @@ export function MediaPreviewCard({
       ) : (
         meta
       )}
-      {upload?.status === 'error' ? <div className="media-tip-error">{upload.message}</div> : null}
       {placement === null ? null : (
         <span
           aria-hidden

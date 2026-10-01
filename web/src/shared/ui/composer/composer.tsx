@@ -56,7 +56,16 @@ export function Composer({
 }: ComposerProps) {
   const attachments = useComposerAttachments()
   const [pillHosts, setPillHosts] = useState<readonly ComposerPillHost[]>([])
+  // 失败卡片同一时刻只开一张。键盘打开时焦点进卡片；点开时留在编辑器，
+  // 否则从可编辑区移过去的焦点会被浏览器算作键盘焦点，鼠标操作也亮出焦点环。
+  const [failureCard, setFailureCard] = useState<{ attId: string; takeFocus: boolean } | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  // 失败卡片挂在根节点上，渲染期要拿到元素本身，ref 只能在事件里读。
+  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null)
+  const mountRoot = useCallback((el: HTMLDivElement | null) => {
+    rootRef.current = el
+    setRootEl(el)
+  }, [])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const registerPillHost = useCallback((host: ComposerPillHost) => {
@@ -99,6 +108,7 @@ export function Composer({
     attachmentsEnabled,
     canSend: canSendNow,
     dense,
+    onOpenFailedAttachment: (attId) => setFailureCard({ attId, takeFocus: true }),
     onSubmit: submit,
     registerPillHost,
     unregisterPillHost,
@@ -140,7 +150,7 @@ export function Composer({
         dragOver && 'border-on-surface',
         className,
       )}
-      ref={rootRef}
+      ref={mountRoot}
     >
       <div className="relative">
         <div ref={mountEditor} />
@@ -224,9 +234,24 @@ export function Composer({
         createPortal(
           <ComposerAttachmentPill
             entry={attachments.entries.get(host.attId)}
+            failureCardOpen={failureCard?.attId === host.attId}
+            failureCardTakesFocus={failureCard?.takeFocus === true}
+            focusEditor={editor.focusEditor}
             hostEl={host.el}
             kind={host.kind}
+            layerContainer={rootEl}
             name={host.name}
+            onFailureCardOpenChange={(open) =>
+              setFailureCard(open ? { attId: host.attId, takeFocus: false } : null)
+            }
+            onRemove={() => {
+              setFailureCard(null)
+              editor.removeAttachment(host.attId)
+            }}
+            onRetry={() => {
+              setFailureCard(null)
+              attachments.retry(host.attId)
+            }}
           />,
           host.el,
           host.attId,
