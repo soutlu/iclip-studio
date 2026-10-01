@@ -1,7 +1,7 @@
 /** MSW 同时模拟 REST 历史、WebSocket 批次和消息提交；单测可覆盖端点以固定场景。 */
 
 import { http, HttpResponse, ws } from 'msw'
-import { mockConversationOwner } from './conversations'
+import { type MockConversation, mockConversationOwner, mockSessionEnvelope } from './conversations'
 import { SHOTS_MOCK_PATH, touchMockShots, watchMockGenerations } from './workspace'
 
 const HISTORY_TURNS = 2
@@ -102,10 +102,10 @@ const timers = new Map<string, ReturnType<typeof setTimeout>[]>()
 /** 待审批会话使用固定未结束轮次，不自动启动演示运行。 */
 const awaitingApproval = new Set<string>()
 
-const justFinished = new Set<{ id: string; lastRunId: string | null }>()
+const justFinished = new Set<MockConversation>()
 
-/** 连接后更新行上的 lastRunId 并发送结束事件，模拟未读运行。 */
-export const markMockJustFinished = (conversation: { id: string; lastRunId: string | null }) => {
+/** 连接后照服务端发开跑的 updated（带新 lastRunId）与结束事件，模拟未读运行。 */
+export const markMockJustFinished = (conversation: MockConversation) => {
   justFinished.add(conversation)
 }
 
@@ -579,9 +579,21 @@ export const transcriptHandlers = [
     // 结束事件广播到所有连接，侧栏据此刷新 lastRunId。
     setTimeout(() => {
       for (const conversation of justFinished) {
+        // 照服务端：开跑记录运行发 updated 带出新的 lastRunId（ADR-0005），收场再发活动帧。
+        const before = conversation.lastSeq
         conversation.lastRunId = crypto.randomUUID()
+        conversation.completedAt = null
         client.send(
           JSON.stringify({
+            ...mockSessionEnvelope(conversation.id),
+            payload: { ...conversation, lastSeq: before },
+            session_id: conversation.id,
+            type: 'event.session.updated',
+          }),
+        )
+        client.send(
+          JSON.stringify({
+            ...mockSessionEnvelope(conversation.id),
             payload: { busy: false, last_turn_reason: 'completed', pending_interaction: 'none' },
             session_id: conversation.id,
             type: 'event.session.work_changed',
@@ -742,6 +754,7 @@ export const transcriptHandlers = [
     const unwatchGenerations = watchMockGenerations(({ conversationId, ...payload }) => {
       client.send(
         JSON.stringify({
+          ...mockSessionEnvelope(conversationId),
           payload,
           session_id: conversationId,
           type: 'event.generation.changed',

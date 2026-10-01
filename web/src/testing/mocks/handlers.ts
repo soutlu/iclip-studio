@@ -334,6 +334,13 @@ export const handlers = [
     return HttpResponse.json({ conversation })
   }),
 
+  // 单行读取：属主读自己活着的（合同 §6）；mock 只有一个登录用户，墓碑与别人的一律 404。
+  http.get('*/api/conversations/:conversationId', ({ params }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    return HttpResponse.json({ conversation })
+  }),
+
   // 删除留下墓碑：行还在，deletedAt 记下时刻，审计的 deleted 筛选列得出它（合同 §6）。
   http.delete('*/api/conversations/:conversationId', ({ params }) => {
     const conversation = liveMockConversation(String(params['conversationId']))

@@ -9,6 +9,7 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { dateRangeBounds, type DateRange } from '@/shared/lib/date-range'
 import { conversationsQueryKeys, type ConversationListState } from './conversations.api'
+import { conversationRowsOf } from './conversation-rows'
 
 /** 删没删：缺省只看活着的，deleted 只看属主删掉的，all 都看。取合同查询参数的枚举。 */
 export const auditDeletedSchema = zAuditConversationsConversationsAuditGetQuery.shape.deleted
@@ -83,7 +84,10 @@ export const useAuditConversations = (filters: AuditFilters, enabled: boolean) =
   useInfiniteQuery({
     enabled,
     gcTime: 30 * 60_000,
-    queryFn: ({ pageParam, signal }) => fetchAuditPage(filters, pageParam, signal),
+    queryFn: async ({ client, pageParam, signal }) => {
+      const page = await fetchAuditPage(filters, pageParam, signal)
+      return { ...page, items: conversationRowsOf(client).mergeRows(page.items) }
+    },
     initialPageParam: null as string | null,
     getNextPageParam: (last: AuditPage) => last.nextCursor,
     queryKey: conversationsQueryKeys.audit(filters),

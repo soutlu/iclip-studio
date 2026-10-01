@@ -46,14 +46,23 @@ const malformed = (type: string, envelope: object) => ({
 })
 
 /** JSON 坏掉的一条，加上各类帧载荷形状不对的各一条；type 是告警里应带的帧类型。 */
+/** 全局帧信封：属主与会话事件水位（合同 §5「全局帧」）。 */
+const ENVELOPE = { epoch: 'e1', owner_user_id: 'u1', seq: 3 }
+const MARK = { epoch: 'e1', ownerUserId: 'u1', seq: 3 }
+
 const MALFORMED = [
   { label: 'JSON', raw: `{"type":"${BODY}`, type: undefined },
-  malformed('session.meta.updated', { payload: { session_id: 'c9', title: { text: BODY } } }),
+  malformed('session.meta.updated', {
+    ...ENVELOPE,
+    payload: { session_id: 'c9', title: { text: BODY } },
+  }),
   malformed('event.session.work_changed', {
+    ...ENVELOPE,
     session_id: 'c9',
     payload: { busy: true, pending_interaction: BODY },
   }),
   malformed('event.generation.changed', {
+    ...ENVELOPE,
     session_id: 'c9',
     payload: { id: 'job-9', kind: BODY, operation: 'generate', status: 'submitted' },
   }),
@@ -292,9 +301,13 @@ describe('TranscriptConnection', () => {
     expect(seen).toEqual([])
 
     socket.deliver(ops(6))
-    socket.deliver({ type: 'session.meta.updated', payload: { session_id: 'c9', title: '新名字' } })
+    socket.deliver({
+      ...ENVELOPE,
+      type: 'session.meta.updated',
+      payload: { session_id: 'c9', title: '新名字' },
+    })
     expect(connection.watermarkOf('c1', 'main')).toEqual(mark(6))
-    expect(seen).toEqual([{ conversationId: 'c9', kind: 'title', title: '新名字' }])
+    expect(seen).toEqual([{ conversationId: 'c9', kind: 'title', mark: MARK, title: '新名字' }])
   })
 
   it('太久没有任何入站帧就算 stale', () => {
@@ -343,21 +356,25 @@ describe('TranscriptConnection', () => {
     connection.watchSessions((update) => seen.push(update))
 
     socket.deliver({
+      ...ENVELOPE,
       type: 'session.meta.updated',
       payload: { session_id: 'c9', title: '夜景延时素材生成' },
     })
     // 运行帧省略结束原因，上层应规范化为 null。
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.session.work_changed',
       session_id: 'c9',
       payload: { busy: true, pending_interaction: 'approval' },
     })
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.session.work_changed',
       session_id: 'c9',
       payload: { busy: false, pending_interaction: 'none', last_turn_reason: 'failed' },
     })
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.generation.changed',
       session_id: 'c9',
       payload: {
@@ -368,12 +385,15 @@ describe('TranscriptConnection', () => {
         metadata: { shot: 2, frame: 3 },
       },
     })
-    // 任务没有来源对话时信封上没有 session_id，空的归属字段服务端整个省略。
+    // 任务没有来源对话时信封上没有 session_id 与 seq，空的归属字段服务端整个省略。
     socket.deliver({
+      epoch: 'e1',
+      owner_user_id: 'u1',
       type: 'event.generation.changed',
       payload: { id: 'job-2', kind: 'video', operation: 'compose', status: 'failed' },
     })
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.generation.changed',
       session_id: 'c9',
       payload: {
@@ -386,12 +406,13 @@ describe('TranscriptConnection', () => {
     })
 
     expect(seen).toEqual([
-      { conversationId: 'c9', kind: 'title', title: '夜景延时素材生成' },
+      { conversationId: 'c9', kind: 'title', mark: MARK, title: '夜景延时素材生成' },
       {
         busy: true,
         conversationId: 'c9',
         kind: 'activity',
         lastTurnReason: null,
+        mark: MARK,
         pendingInteraction: 'approval',
       },
       {
@@ -399,6 +420,7 @@ describe('TranscriptConnection', () => {
         conversationId: 'c9',
         kind: 'activity',
         lastTurnReason: 'failed',
+        mark: MARK,
         pendingInteraction: 'none',
       },
       {
@@ -406,6 +428,7 @@ describe('TranscriptConnection', () => {
         jobId: 'job-1',
         jobKind: 'image',
         kind: 'generation',
+        mark: MARK,
         metadata: { frame: 3, shot: 2 },
         status: 'submitted',
       },
@@ -414,6 +437,7 @@ describe('TranscriptConnection', () => {
         jobId: 'job-2',
         jobKind: 'video',
         kind: 'generation',
+        mark: { ...MARK, seq: null },
         metadata: null,
         status: 'failed',
       },
@@ -422,10 +446,74 @@ describe('TranscriptConnection', () => {
         jobId: 'job-3',
         jobKind: 'video',
         kind: 'generation',
+        mark: MARK,
         metadata: null,
         status: 'pending',
       },
     ])
+  })
+
+  it('行的新建、变化与删除帧：整行照生成的 ConversationOut 解析，空值原样保留', () => {
+    const connection = connect([])
+    const seen: SessionUpdate[] = []
+    connection.watchSessions((update) => seen.push(update))
+    const row = {
+      activity: {
+        busy: false,
+        lastTurnReason: null,
+        pendingInteraction: 'none',
+        videoGeneration: 'none',
+      },
+      agentId: 'storyboard',
+      collectionId: null,
+      completedAt: null,
+      createdAt: '2026-10-01T00:00:00Z',
+      deletedAt: null,
+      eventEpoch: 'e1',
+      forkTurn: null,
+      forkedFrom: null,
+      id: '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001',
+      lastRunId: null,
+      lastSeq: 2,
+      ownerUserId: '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002',
+      taskId: null,
+      title: '新对话',
+      updatedAt: '2026-10-01T00:00:00Z',
+    }
+
+    socket.deliver({ ...ENVELOPE, type: 'event.session.created', session_id: row.id, payload: row })
+    socket.deliver({ ...ENVELOPE, type: 'event.session.updated', session_id: row.id, payload: row })
+    socket.deliver({
+      ...ENVELOPE,
+      type: 'event.session.deleted',
+      session_id: row.id,
+      payload: { session_id: row.id },
+    })
+
+    expect(seen).toEqual([
+      { conversationId: row.id, kind: 'created', mark: MARK, row },
+      { conversationId: row.id, kind: 'updated', mark: MARK, row },
+      { conversationId: row.id, kind: 'deleted', mark: MARK },
+    ])
+  })
+
+  it('全局帧缺了属主或水位就是协议损坏：告警后丢掉', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const connection = connect([])
+    const seen: SessionUpdate[] = []
+    connection.watchSessions((update) => seen.push(update))
+
+    socket.deliver({
+      type: 'event.session.work_changed',
+      session_id: 'c9',
+      payload: { busy: true, pending_interaction: 'none' },
+    })
+
+    expect(seen).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      issues: expect.any(Array),
+      type: 'event.session.work_changed',
+    })
   })
 
   it('退订之后不再收', () => {
@@ -434,7 +522,11 @@ describe('TranscriptConnection', () => {
     const stop = connection.watchSessions((update) => seen.push(update))
 
     stop()
-    socket.deliver({ type: 'session.meta.updated', payload: { session_id: 'c9', title: '新名字' } })
+    socket.deliver({
+      ...ENVELOPE,
+      type: 'session.meta.updated',
+      payload: { session_id: 'c9', title: '新名字' },
+    })
 
     expect(seen).toEqual([])
   })

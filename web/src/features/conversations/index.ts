@@ -11,6 +11,7 @@ export {
   type AuditFilters,
 } from './audit.api'
 export { useLiveConversations } from './conversations.live'
+export { useConversationRows } from './conversation-rows'
 export { useTaskConversations } from './task-conversations.api'
 export { useLiveTaskConversations } from './task-conversations.live'
 export { useRecordOpenedConversation } from './conversations.unread'

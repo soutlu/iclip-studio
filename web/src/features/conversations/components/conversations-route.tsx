@@ -13,6 +13,7 @@ import { ListEmpty, ListError, NextPageFooter } from '@/shared/ui/list-state'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Tag } from '@/shared/ui/tag'
 import { useAuditConversations, type AuditConversation, type AuditFilters } from '../audit.api'
+import { useConversationRows } from '../conversation-rows'
 import { auditCoverUrl } from '../audit-cover'
 import { conversationStatus } from '../conversation-status'
 import { taskCellOf } from '../task-cell'
@@ -46,7 +47,10 @@ export function ConversationsRoute({
   const directory = useUsersDirectory(true)
   const users = userPickerSourceOf(directory, 'id')
   const query = useAuditConversations(filters, true)
-  const rows = query.data?.pages.flatMap((page) => page.items) ?? []
+  // 成员与顺序取这一页的查询，行取池里的当前值；带墓碑的筛选下保留刚删的那行，等重拉换上带 deletedAt 的。
+  const rows = useConversationRows(query.data?.pages.flatMap((page) => page.items) ?? [], {
+    keepDeleted: filters.deleted !== 'live',
+  })
   const latest = query.data?.pages.at(-1)
   const totals =
     latest === undefined ? undefined : { runningTotal: latest.runningTotal, total: latest.total }

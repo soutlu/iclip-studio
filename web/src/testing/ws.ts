@@ -1,5 +1,7 @@
 /** 通过 createSocket 注入假连接，避免 mock 同仓模块。 */
 
+import { mockSessionEnvelope } from './mocks/conversations'
+
 export class FakeSocket {
   readyState = 1
   sent: string[] = []
@@ -27,4 +29,13 @@ export class FakeSocket {
 export const SERVER_HELLO = {
   payload: { heartbeat_ms: 10_000, protocol_version: 2, ws_connection_id: 'w1' },
   type: 'server_hello',
+}
+
+/**
+ * 全局帧信封（合同 §5）：属主与这段对话的会话事件水位，序号与 mock 行上的 lastSeq 同一个时钟。
+ * 属主缺省取 mock 里这段对话的属主；给别人的对话发帧时显式传。
+ */
+export const sessionEnvelope = (conversationId: string, ownerUserId?: string) => {
+  const envelope = mockSessionEnvelope(conversationId)
+  return ownerUserId === undefined ? envelope : { ...envelope, owner_user_id: ownerUserId }
 }

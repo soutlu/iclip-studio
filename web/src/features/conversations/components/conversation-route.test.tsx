@@ -13,6 +13,7 @@ import { ShellChromeContext } from '@/shared/shell'
 import { Toaster } from '@/shared/ui/toast'
 import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
 import { ConversationRoute } from './conversation-route'
+import { sessionEnvelope } from '@/testing/ws'
 
 // jsdom 不支持 Lottie 加载时的 canvas 探测；替换装饰动画以验证会话行为。
 vi.mock('lottie-web/build/player/lottie_light', () => ({
@@ -1134,6 +1135,7 @@ describe('ConversationRoute', () => {
     expect(await screen.findByRole('heading', { name: '夜景延时素材生成' })).toBeVisible()
 
     socket.deliver({
+      ...sessionEnvelope('c1'),
       type: 'session.meta.updated',
       payload: { session_id: 'c1', title: '改过的名字' },
     })

@@ -20,6 +20,7 @@ import {
   useRecordOpenedConversation,
   useSetConversationMembership,
   useSidebarTopology,
+  useConversationRows,
   type Conversation,
   type ConversationListState,
   type ConversationPage,
@@ -174,10 +175,12 @@ export function SidebarConversations() {
     else setFocusCollectionId(created)
   }
 
-  // 筛选按钮上的进行中指示点仅取拓扑首页数据，额外分页由子组件持有。
-  const anyBusy =
-    (topology.data?.ungrouped.items ?? []).some((one) => one.activity.busy) ||
-    allCollections.some((one) => one.page.items.some((row) => row.activity.busy))
+  // 筛选按钮上的进行中指示点仅取拓扑首页数据，额外分页由子组件持有；行取池里的当前值。
+  const firstPageRows = useConversationRows([
+    ...(topology.data?.ungrouped.items ?? []),
+    ...allCollections.flatMap((one) => one.page.items),
+  ])
+  const anyBusy = firstPageRows.some((row) => row.activity.busy)
 
   if (!canRead) return <SidebarFeedback>当前账号没有查看对话权限</SidebarFeedback>
   if (topology.isPending) return <SidebarFeedback>正在加载对话…</SidebarFeedback>
@@ -340,10 +343,9 @@ function UngroupedSection({
   const now = useNowByDay()
   const { isOver, setNodeRef } = useDroppable({ id: UNGROUPED, disabled: !canWrite })
   const more = useMoreConversations({ state }, page.nextCursor)
-  const items = uniqueConversations([
-    ...page.items,
-    ...(more.data?.pages.flatMap((one) => one.items) ?? []),
-  ])
+  const items = useConversationRows(
+    uniqueConversations([...page.items, ...(more.data?.pages.flatMap((one) => one.items) ?? [])]),
+  )
   const hasMore = more.data ? more.hasNextPage : Boolean(page.nextCursor)
   // 服务端按建立时间倒序给，每个时间分组只连成一段，组名可以当 key。
   const groups = groupByRecency(items, (item) => item.createdAt, now)
@@ -618,10 +620,12 @@ function CollectionGroup({
     { collectionId: collection.id, state },
     collection.page.nextCursor,
   )
-  const items = uniqueConversations([
-    ...collection.page.items,
-    ...(more.data?.pages.flatMap((one) => one.items) ?? []),
-  ])
+  const items = useConversationRows(
+    uniqueConversations([
+      ...collection.page.items,
+      ...(more.data?.pages.flatMap((one) => one.items) ?? []),
+    ]),
+  )
   const hasMore = more.data ? more.hasNextPage : Boolean(collection.page.nextCursor)
 
   return (

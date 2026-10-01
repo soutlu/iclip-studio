@@ -4,6 +4,7 @@ import {
   conversationStatus,
   useLiveTaskConversations,
   useTaskConversations,
+  useConversationRows,
   type Conversation,
 } from '@/features/conversations'
 import { ConversationVideos } from '@/features/storyboard'
@@ -43,6 +44,8 @@ function RelatedConversations({
   const query = useTaskConversations(taskId, canAudit)
   useLiveTaskConversations(taskId, canAudit)
   const playingVideoRef = useRef<HTMLVideoElement | null>(null)
+  // 成员来自查询，行取池里的当前值。
+  const rows = useConversationRows(query.data ?? [])
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2 py-3 text-caption text-on-surface-muted">
@@ -75,7 +78,7 @@ function RelatedConversations({
           playingVideoRef.current = event.target
         }}
       >
-        {query.data?.map((conversation) => (
+        {rows.map((conversation) => (
           <RelatedConversation
             key={conversation.id}
             conversation={conversation}

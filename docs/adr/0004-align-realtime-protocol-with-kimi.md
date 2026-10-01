@@ -1,6 +1,7 @@
 # ADR-0004：实时协议与客户端恢复对齐 Kimi，只在确定更优处偏离
 
 - 状态：已接受（2026-10-01）
+- 修订（2026-10-01，[ADR-0005](0005-announce-run-start-as-session-updated.md)）
 - 沿用 Kimi Code 的 Transcript 协议与 `subscribe_v2` 订阅（[合同 §5](../../contract/conventions.md#5-agent-对话-transcript)）；对照的是本机安装的 Kimi Code 桌面 1.0.2（内置后端 2.0.1）。
 - 影响：[合同 §5、§6](../../contract/conventions.md#5-agent-对话-transcript)；[architecture.md](../architecture.md) §5；[openapi.json](../../contract/openapi.json) 的 `ConversationOut`、`TranscriptPage`、`OpsCatchup` 与 `GET /conversations/{id}`；前端 Transcript 读取与对话列表同步。
 

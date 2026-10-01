@@ -183,8 +183,8 @@ class ConversationRepository(Protocol):
 
     async def touch_run(
         self, conversation_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str, run_id: str
-    ) -> None:
-        """更新 last_run_id 与 updated_at、抹掉收尾标记，同时核对属主和 agent_id。
+    ) -> Conversation:
+        """更新 last_run_id 与 updated_at、抹掉收尾标记，同时核对属主和 agent_id，返回更新后的记录。
 
         工作区仅按属主与对话隔离，必须校验 agent_id，防止其他 Agent 使用该工作区。"""
         ...
