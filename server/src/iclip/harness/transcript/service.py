@@ -275,7 +275,7 @@ class TranscriptService:
         if meta.activity is None:
             meta = meta.model_copy(update={"activity": "idle"})
         roster = _tasks(
-            (await self.history.read(conversation_id)).tasks,
+            await self.history.read_tasks(conversation_id),
             self.store.subscribe_view(conversation_id, MAIN_AGENT_ID).snapshot.tasks,
         )
         return TranscriptPage(

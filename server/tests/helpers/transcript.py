@@ -6,12 +6,18 @@ import difflib
 import json
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic_ai_harness.step_persistence import InMemoryStepStore
+from pydantic_ai_harness.step_persistence import (
+    InMemoryStepStore,
+    RunRecord,
+    StepEvent,
+    StepStore,
+    ToolEffectRecord,
+)
 
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.from_messages import SteeredPrompt
@@ -27,7 +33,34 @@ GOLDEN_DIR = Path(__file__).resolve().parents[3] / "contract" / "transcript"
 """金样放在跨端合同目录，前端测试读同一份。"""
 
 
-class EmptyConversationSnapshots(InMemoryStepStore):
+class PerRunBatchReads:
+    """历史重建的三个批量读，用官方协议的逐个读方法拼出来。
+
+    混在官方内存 store 上就是测试替身；混在 ``PgStepStore`` 上就是参照实现：批量 SQL 与它读出的
+    东西必须一模一样。"""
+
+    async def list_events_for_runs(
+        self: StepStore, run_ids: Sequence[str]
+    ) -> Mapping[str, list[StepEvent]]:
+        return {run_id: await self.list_events(run_id=run_id) for run_id in run_ids}
+
+    async def list_child_runs(
+        self: StepStore, parent_run_ids: Sequence[str]
+    ) -> Mapping[str, list[RunRecord]]:
+        return {run_id: await self.list_runs(parent_run_id=run_id) for run_id in parent_run_ids}
+
+    async def get_tool_effects(
+        self: StepStore, keys: Sequence[tuple[str, str]]
+    ) -> Mapping[tuple[str, str], ToolEffectRecord]:
+        found: dict[tuple[str, str], ToolEffectRecord] = {}
+        for run_id, tool_call_id in keys:
+            effect = await self.get_tool_effect(run_id=run_id, tool_call_id=tool_call_id)
+            if effect is not None:
+                found[(run_id, tool_call_id)] = effect
+        return found
+
+
+class EmptyConversationSnapshots(PerRunBatchReads, InMemoryStepStore):
     """实时页用的空历史：官方内存 store 补上按对话取快照的入口，恒无快照。"""
 
     async def latest_conversation_snapshot(
@@ -259,6 +292,7 @@ __all__ = [
     "EmptyConversationSnapshots",
     "NoPromptRuns",
     "Normalizer",
+    "PerRunBatchReads",
     "check_golden",
     "cold_page",
     "comparable",
