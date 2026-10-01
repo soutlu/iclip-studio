@@ -1,9 +1,6 @@
 /**
  * 主会话流的读取池，照 Kimi 的 TFe：先读基线、再带水位订阅；断档时重读基线再重订；常驻最近几段，切回来不用重读。
- *
- * 与 Kimi 的不同只有两处，都是环境所需：
- * - 同一段对话可以被多个界面同时用（对话页与工作台），所以按对话记持有数；有人在用的不淘汰。
- * - 水位带 epoch（ADR-0004），订阅与续订把它一起带上。
+ * 水位带 epoch（ADR-0004 第 2 条），订阅与续订把它一起带上。
  */
 
 import { errorMessageOf } from '@/shared/api/client'
@@ -73,7 +70,10 @@ export class MainTranscriptPool {
   private readonly retries = new Map<string, BaselineRetry>()
   /** 没人在用的对话（Kimi 的 deactivated 集合）。 */
   private readonly inactive = new Set<string>()
-  /** 正在用这段对话的界面数；Kimi 只有一个当前会话，我们的对话页与工作台会同时用。 */
+  /**
+   * 正在用这段对话的界面数。Kimi 的 TFe 只有一个当前会话；我们的对话页与工作台同时用同一条主流，任一方卸载
+   * 都不能让另一方的流被淘汰或退订，所以按对话记数，归零才算没人用，有人在用的不进淘汰候选。
+   */
   private readonly holders = new Map<string, number>()
   /** 基线读不到或对话不可见时给界面的话；读到基线即清掉。 */
   private readonly failures = new Map<string, TranscriptView>()
@@ -334,8 +334,8 @@ export class MainTranscriptPool {
   }
 
   /**
-   * 超出常驻数时淘汰最久没碰的；有人在用、正在重读基线、或本地还有没被接替的发送的不淘汰。
-   * 「正在重读」是我们加的：持有数一归零就可能触发淘汰（如严格模式的挂载、卸载、再挂载），不能丢下在途的那次读取。
+   * 超出常驻数时淘汰最久没碰的；有人在用、或本地还有没被接替的发送的不淘汰（Kimi 的 k）。
+   * 重读在途时被淘汰也照 Kimi：读完发现条目已不是它就不订阅，下次用时重建条目再读一次基线。
    */
   private trim(): void {
     if (this.entries.size <= this.maxResident) return
@@ -343,9 +343,7 @@ export class MainTranscriptPool {
       .sort((left, right) => right.lastTouchedSeq - left.lastTouchedSeq)
       .filter(
         (entry) =>
-          (this.holders.get(entry.conversationId) ?? 0) === 0 &&
-          entry.resumePromise === null &&
-          !this.hasPendingLocalWork(entry),
+          (this.holders.get(entry.conversationId) ?? 0) === 0 && !this.hasPendingLocalWork(entry),
       )
     for (const entry of candidates.slice(this.maxResident)) this.evict(entry)
   }

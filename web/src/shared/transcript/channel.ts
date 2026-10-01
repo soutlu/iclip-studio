@@ -190,6 +190,8 @@ export class TranscriptChannel {
       this.buffered.push({ epoch, ops, seq })
       return false
     }
+    // Kimi 的 hY 没有这一步。它是 ADR-0004 第 2 条 epoch 规则在客户端的直接推论：批次号只在同一条实时流里可比，
+    // 换了流的批次不论号大号小都接不上；不拦下的话，重启后新流的低号批次会被当成重复批次悄悄认下。
     if (this.epoch_ !== undefined && epoch !== this.epoch_) {
       this.onGap?.()
       return false

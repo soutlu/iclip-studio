@@ -330,7 +330,7 @@ describe('MainTranscriptPool', () => {
     await vi.waitFor(() => expect(textOf(pool.view('c1'))).toBe('回复 9后续'))
   })
 
-  it('读基线途中就没人用了、又被更近用过的挤到后面：不淘汰在途的这一份，读完常驻，再用不重读', async () => {
+  it('读基线途中就被淘汰（照 Kimi）：读完不订阅，再用时重建条目、重读一次基线，内容照常', async () => {
     const { fake, pool } = setup({ conversations: ['c1', 'c2', 'c3'], maxResident: 1 })
     for (const id of ['c2', 'c3']) {
       const release = pool.activate(id)
@@ -340,16 +340,23 @@ describe('MainTranscriptPool', () => {
     const release = fake.holdPages()
     pool.activate('c1')()
     await vi.waitFor(() => expect(fake.pageRequests.at(-1)?.conversationId).toBe('c1'))
-    // c3 还常驻，再用它不读基线，但会把 c1 挤成最久没碰的那个。
+    // c3 还常驻，再用它不读基线，但会把在途的 c1 挤成最久没碰的那个而被淘汰。
     pool.activate('c3')()
     release()
     await settle()
+
+    const subscribedC1 = () =>
+      fake.received('subscribe_v2').filter((frame) => frame.payload?.session_id === 'c1')
+    expect(subscribedC1()).toHaveLength(0)
     const asked = fake.pageRequests.length
 
     pool.activate('c1')
+    await ready(pool, 'c1')
     await settle()
-    expect(pool.view('c1').status).toBe('ready')
-    expect(fake.pageRequests).toHaveLength(asked)
+    expect(fake.pageRequests).toHaveLength(asked + 1)
+    expect(textOf(pool.view('c1'))).toContain(TAIL_TEXT)
+    expect(subscribedC1()).toHaveLength(1)
+    expect(subscribedC1()[0]?.payload).toMatchObject({ transcript_since: { main: 0 } })
   })
 
   it('重读在途时到的空 reset 不替换内容，读完之后按退避再读一次', async () => {
