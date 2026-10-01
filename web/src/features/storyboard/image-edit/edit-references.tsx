@@ -305,7 +305,12 @@ export function EditReferences({
                 </button>
               ))}
             </div>
-            <Button className="mt-5 w-full" onClick={() => setPickerOpen(false)} size="md">
+            <Button
+              className="mt-5 w-full"
+              onClick={() => setPickerOpen(false)}
+              size="md"
+              variant="inverted"
+            >
               完成选择
             </Button>
           </DialogBody>

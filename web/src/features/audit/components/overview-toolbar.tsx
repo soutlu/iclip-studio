@@ -1,28 +1,13 @@
 /** 审计页工具条：左边快捷档与常显实际区间的日期按钮（点开是预设加双月日历），右边由各页签放自己的东西。 */
 
-import { useEffect, useRef, useState, type ComponentPropsWithRef, type ReactNode } from 'react'
-import {
-  DayPicker,
-  type ChevronProps,
-  type ClassNames,
-  type DayButtonProps,
-  type DayProps,
-  type Formatters,
-  type Labels,
-} from 'react-day-picker'
-import { zhCN } from 'react-day-picker/locale'
+import { useEffect, useState, type ComponentPropsWithRef, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { Button, iconButtonVariants } from '@/shared/ui/button'
+import { Button } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
+import { RangeCalendar } from '@/shared/ui/date-range-picker'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
-import {
-  fromCalendarDay,
-  startOfZonedDay,
-  startOfZonedMonth,
-  toCalendarDay,
-  zonedParts,
-} from '../audit-time'
+import { fromCalendarDay, startOfZonedDay, startOfZonedMonth, toCalendarDay } from '../audit-time'
 import { monthDay } from '../overview-format'
 import {
   customRange,
@@ -255,21 +240,16 @@ function RangePicker({
         ))}
       </div>
       <div className="px-4 pt-3 pb-3.5">
-        <DayPicker
-          classNames={CALENDAR_CLASS_NAMES}
-          components={CALENDAR_COMPONENTS}
+        <RangeCalendar
           disabled={{ after: calendar.today }}
           endMonth={toCalendarDay(startOfZonedMonth(today))}
-          formatters={CALENDAR_FORMATTERS}
-          labels={CALENDAR_LABELS}
-          locale={zhCN}
+          labelDay={(date) => monthDay(fromCalendarDay(date))}
           modifiers={{
             endpoint: [calendar.low, calendar.high],
             inRange: { from: calendar.low, to: calendar.high },
             rangeEnd: calendar.high,
             rangeStart: calendar.low,
           }}
-          modifiersClassNames={MODIFIER_CLASS_NAMES}
           month={toCalendarDay(month)}
           numberOfMonths={wide ? 2 : 1}
           onDayClick={(day) => pickDay(fromCalendarDay(day))}
@@ -278,8 +258,8 @@ function RangePicker({
           }}
           onMonthChange={(next) => setMonth(fromCalendarDay(next))}
           showOutsideDays={false}
+          size="sm"
           today={calendar.today}
-          weekStartsOn={1}
         />
         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-4 border-t border-hairline pt-3 text-body text-on-surface-variant">
           <span role="status">
@@ -308,85 +288,4 @@ function RangePicker({
       </div>
     </div>
   )
-}
-
-const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'] as const
-
-const DAY_CELL = 'h-8.5 p-0 text-center'
-
-const CALENDAR_CLASS_NAMES: Partial<ClassNames> = {
-  button_next: iconButtonVariants({ size: 'sm' }),
-  button_previous: iconButtonVariants({ size: 'sm' }),
-  caption_label: 'text-body font-medium',
-  day: DAY_CELL,
-  month: 'w-63',
-  month_caption: 'mb-1 flex h-8 items-center justify-center',
-  month_grid: 'w-full table-fixed border-collapse',
-  months: 'relative flex gap-6',
-  nav: 'absolute inset-x-0 top-0 flex items-center justify-between',
-  weekday: 'h-7 text-center text-caption font-normal text-on-surface-muted',
-}
-
-/** 区间底色落在格子上，两端的实心圆在按钮上。 */
-const MODIFIER_CLASS_NAMES = {
-  inRange: 'bg-state-active',
-  rangeEnd: 'rounded-r-full',
-  rangeStart: 'rounded-l-full',
-}
-
-/** 日历传进来的都是它认的本地日期，先换回 UTC+8 零点再写。 */
-const CALENDAR_FORMATTERS: Partial<Formatters> = {
-  formatCaption: (month) => {
-    const parts = zonedParts(fromCalendarDay(month))
-    return `${parts.year}年${parts.month}月`
-  },
-  formatWeekdayName: (weekday) => WEEKDAY_NAMES[zonedParts(fromCalendarDay(weekday)).weekday] ?? '',
-}
-
-const CALENDAR_LABELS: Partial<Labels> = {
-  labelDayButton: (date) => monthDay(fromCalendarDay(date)),
-  labelNext: () => '下个月',
-  labelPrevious: () => '上个月',
-}
-
-/** 月首月末补位的空格子不铺区间底色。 */
-function CalendarDay({ day: _day, modifiers, className, ...props }: DayProps) {
-  const filler = modifiers['hidden'] === true || modifiers['outside'] === true
-  return <td {...props} className={filler ? DAY_CELL : className} />
-}
-
-/** 日期按钮：两端实心主色圆，今天在数字下点一个小圆点，今天之后的日子不可选。 */
-function CalendarDayButton({
-  day: _day,
-  modifiers,
-  className: _className,
-  ...props
-}: DayButtonProps) {
-  const ref = useRef<HTMLButtonElement>(null)
-  const endpoint = modifiers['endpoint'] === true
-  const focused = modifiers['focused'] === true
-  useEffect(() => {
-    if (focused) ref.current?.focus()
-  }, [focused])
-  return (
-    <button
-      {...props}
-      aria-current={modifiers['today'] === true ? 'date' : undefined}
-      className={cn(
-        'relative mx-auto grid size-8 ui-state cursor-pointer place-items-center rounded-full text-body tabular-nums ui-focus disabled:cursor-default disabled:opacity-35',
-        endpoint ? 'bg-inverse-surface font-semibold text-inverse-on-surface' : 'text-on-surface',
-        modifiers['today'] === true &&
-          'after:absolute after:bottom-0.75 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-current',
-      )}
-      ref={ref}
-    />
-  )
-}
-
-const CALENDAR_COMPONENTS = {
-  Chevron: ({ orientation }: ChevronProps) => (
-    <Icon decorative name={orientation === 'left' ? 'back' : 'next'} size="md" />
-  ),
-  Day: CalendarDay,
-  DayButton: CalendarDayButton,
 }
