@@ -144,7 +144,7 @@ afterEach(() => {
 })
 
 describe('useLiveConversations', () => {
-  it('自己对话的开跑帧改池里的行、抹掉收尾标记，重拉全部对话页并补读这一行', async () => {
+  it('自己对话的开跑帧改池里的行、抹掉收尾标记，重拉全部对话页；不补读单行、不动侧栏', async () => {
     const row = conversationRow()
     const reads = countRowReads()
     const { queryClient, socket } = await mount()
@@ -160,13 +160,14 @@ describe('useLiveConversations', () => {
       completedAt: null,
     })
     expect(invalidated(queryClient, AUDIT_KEY)).toBe(true)
-    // 照 Kimi 补读单行，不整份重拉侧栏，也不收起已展开的分页。
-    await vi.waitFor(() => expect(reads).toEqual([`/api/conversations/${row.id}`]))
+    // 行上随运行变的字段由开跑的 updated 帧送来（ADR-0005），这里不补读，也不整份重拉侧栏、收起已展开的分页。
+    expect(reads).toEqual([])
     expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
     expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
   })
 
   it('同一段对话的单行补读按 id 去重：一批里的几帧、在途时再来的帧都只读一次', async () => {
+    const video = (id: string) => generationFrame(id, 'video')
     const row = conversationRow()
     const reads: string[] = []
     let release = () => {}
@@ -183,10 +184,10 @@ describe('useLiveConversations', () => {
     const { queryClient, socket } = await mount()
     seedCaches(queryClient, row)
 
-    socket.deliver(activityFrame(row.id, { busy: true }))
-    socket.deliver(activityFrame(row.id, { busy: true, pending_interaction: 'approval' }))
+    socket.deliver(video(row.id))
+    socket.deliver(video(row.id))
     await settle(0)
-    socket.deliver(activityFrame(row.id, { busy: false, last_turn_reason: 'failed' }))
+    socket.deliver(video(row.id))
     await settle(0)
     release()
 
@@ -194,9 +195,24 @@ describe('useLiveConversations', () => {
     // 这次读完、在途记录清掉之后再来一帧，要重新读：去重只在请求在途期间生效。
     await vi.waitFor(() => expect(poolRow(queryClient, row.id)).toBeDefined())
     await settle(0)
-    socket.deliver(activityFrame(row.id, { busy: true }))
+    socket.deliver(video(row.id))
     await settle(0)
     await vi.waitFor(() => expect(reads).toEqual([row.id, row.id]))
+  })
+
+  it('开跑的 updated 帧带出新的 lastRunId 与空收尾标记，窗口期读出的旧行盖不掉', async () => {
+    const row = conversationRow()
+    const { queryClient, socket } = await mount()
+    seedCaches(queryClient, row)
+
+    socket.deliver(activityFrame(row.id, { busy: true }))
+    // 开跑写入之前读库：带着旧收尾标记，水位已含活动帧。
+    const stale = { ...row, lastSeq: row.lastSeq }
+    socket.deliver(rowFrame('updated', { ...row, completedAt: null, lastRunId: 'run-9' }))
+    await settle()
+    conversationRowsOf(queryClient).mergeRows([stale])
+
+    expect(poolRow(queryClient, row.id)).toMatchObject({ completedAt: null, lastRunId: 'run-9' })
   })
 
   it('改名帧只换标题，不动分页也不重拉任何列表', async () => {

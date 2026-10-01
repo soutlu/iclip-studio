@@ -60,6 +60,21 @@ const workChanged = (
   return workFrame(conversationId, payload)
 }
 
+/** 开跑记录运行：服务端写下新的 lastRunId、抹掉收尾标记，再发一帧 updated 带出整行（ADR-0005）。 */
+const runStarted = (conversationId: string, runId: string) => {
+  const row = mockConversations.find((one) => one.id === conversationId)
+  if (row === undefined) throw new Error('没有这段对话')
+  const before = row.lastSeq
+  row.lastRunId = runId
+  row.completedAt = null
+  return {
+    ...sessionEnvelope(conversationId),
+    type: 'event.session.updated',
+    session_id: conversationId,
+    payload: { ...row, lastSeq: before },
+  }
+}
+
 const workFrame = (
   conversationId: string,
   payload: {
@@ -711,16 +726,9 @@ describe('SidebarConversations', () => {
     expect(screen.queryByLabelText('未读')).not.toBeInTheDocument()
 
     await act(() => router.navigate({ to: '/' }))
-    // 模拟离开后产生新 lastRunId，再通过结束帧触发列表刷新。
-    if (conversation !== undefined) {
-      conversation.lastRunId = 'run-2'
-      conversation.activity = {
-        busy: false,
-        lastTurnReason: 'completed',
-        pendingInteraction: 'none',
-        videoGeneration: 'none',
-      }
-    }
+    // 离开后它又跑了一轮：开跑帧、带新 lastRunId 的 updated 帧，再是收场帧。
+    socket.deliver(workChanged(id, { busy: true }))
+    socket.deliver(runStarted(id, 'run-2'))
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'completed' }))
     expect(await screen.findByLabelText('未读')).toBeVisible()
 
@@ -737,15 +745,8 @@ describe('SidebarConversations', () => {
     expect(screen.queryByText('第0段')).not.toBeInTheDocument()
 
     await act(() => router.navigate({ to: '/' }))
-    if (conversation !== undefined) {
-      conversation.lastRunId = 'run-2'
-      conversation.activity = {
-        busy: false,
-        lastTurnReason: 'completed',
-        pendingInteraction: 'none',
-        videoGeneration: 'none',
-      }
-    }
+    socket.deliver(workChanged(id, { busy: true }))
+    socket.deliver(runStarted(id, 'run-2'))
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'completed' }))
 
     await user.click(screen.getByRole('button', { name: '夏季亚麻系列 (1)' }))

@@ -155,7 +155,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 | `session.meta.updated` | `{session_id, title}` | 标题变了（自动起名或用户改名） |
 | `event.session.work_changed` | `session_id` 在信封上，payload `{busy, pending_interaction, last_turn_reason}` | 对话运行活动发生变化 |
 | `event.session.created` | `session_id` 在信封上，payload 是整行 `ConversationOut` | 新出现一段对话：新建（含替人办事）、分叉出的副本；带同一个 id 重发建对话不发 |
-| `event.session.updated` | 同上 | 行变了：改名、换合集、换需求单、标或取消收尾（含提交出片抹掉收尾标记） |
+| `event.session.updated` | 同上 | 行变了：改名、换合集、换需求单、标或取消收尾（含提交出片抹掉收尾标记）、开跑记录运行（新的 `lastRunId`，同时抹掉收尾标记） |
 | `event.session.deleted` | `session_id` 在信封上，payload `{session_id}` | 属主删掉了这段对话 |
 | `event.generation.changed` | `session_id` 在信封上（任务没有来源对话时省略），payload `{id, kind, operation, status, shot_index, metadata}`；`shot_index` 是视频的镜头组编号（同 `GenerationOut.shotIndex`），`metadata` 是调用方自带的标签原样带出，两者为空时省略 | 生成任务的业务状态每跳一格：`pending` / `submitting` / `submitted` / `completed` / `failed`；切图与上传落库即完成，只发一帧 `completed`，上传不挂对话，帧上没有 `session_id` |
 

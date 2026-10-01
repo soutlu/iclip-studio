@@ -73,6 +73,11 @@ class RacingRepo:
     ) -> Conversation:
         return self._write(completed_at=NOW if completed else None)
 
+    async def touch_run(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str, run_id: str
+    ) -> Conversation:
+        return self._write(last_run_id=run_id, completed_at=None)
+
     async def delete(self, conversation_id: uuid.UUID, *, owner: uuid.UUID) -> None:
         if self.missing:
             raise NotFound("没有这段对话")
@@ -214,3 +219,26 @@ async def test_a_delete_is_announced_after_it_lands() -> None:
     await build(RacingRepo(clock=clock, row=existing), clock, announced).delete(OWNER, existing.id)
 
     assert announced.deleted == [(OWNER.user_id, existing.id)]
+
+
+async def test_starting_a_run_announces_the_new_run_and_the_cleared_mark() -> None:
+    """开跑记录运行发 ``updated``（ADR-0005）：帧带新的 lastRunId、收尾标记为空，行内水位停在写入之前。
+
+    写入途中另有一帧发号（开跑的活动帧），行内 ``lastSeq`` 小于它；广播方随后给这一帧另发的号更大。"""
+
+    clock = SessionEventClock()
+    existing = _row(completed_at=NOW, last_run_id="run-0")
+    clock.tick(existing.id)
+    repo = RacingRepo(clock=clock, row=existing)
+    announced = Announced()
+
+    await build(repo, clock, announced).begin_run(
+        owner=OWNER.user_id, agent_id="storyboard", conversation_id=str(existing.id), run_id="run-1"
+    )
+
+    [(kind, owner, conversation_id, row)] = announced.rows
+    assert (kind, owner, conversation_id) == ("updated", OWNER.user_id, existing.id)
+    assert row["lastRunId"] == "run-1"
+    assert row["completedAt"] is None
+    assert row["lastSeq"] == 1
+    assert clock.current(existing.id) == 2

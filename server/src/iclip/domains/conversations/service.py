@@ -736,11 +736,16 @@ class ConversationService:
     async def begin_run(
         self, *, owner: uuid.UUID, agent_id: str, conversation_id: str, run_id: str
     ) -> None:
-        """解析对话 id、核对属主与 Agent 后记录运行。"""
+        """解析对话 id、核对属主与 Agent 后记录运行，再广播 ``updated``（照 Kimi 会话元数据一变就发）。
 
-        await self._repo.touch_run(
+        这一帧带出新的 ``lastRunId`` 与被抹掉的收尾标记：开跑帧之后、这次写入之前读出的行晚到，
+        盖不掉它（ADR-0004）。"""
+
+        before = self._event_watermark()
+        conversation = await self._repo.touch_run(
             _as_conversation_id(conversation_id), owner=owner, agent_id=agent_id, run_id=run_id
         )
+        await self._broadcast_row("updated", conversation, before)
 
     async def agent_of(self, principal: Principal, conversation_id: str, *, writing: bool) -> str:
         """从可见对话中读取 Agent，拒绝由调用方指定 Agent 绕过对话绑定。

@@ -154,9 +154,14 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
 
             _send(tc, conversation_id, "prm_life")
             busy = until(ws, "event.session.work_changed")
+            # 开跑记录运行也是一次行变化（ADR-0005）：带出新的 lastRunId 与抹掉的收尾标记。
+            began = until(ws, "event.session.updated")
             idle = until(ws, "event.session.work_changed")
             assert busy["owner_user_id"] == owner_id
-            assert created["seq"] < busy["seq"] < idle["seq"]
+            assert created["seq"] < busy["seq"] < began["seq"] < idle["seq"]
+            assert began["payload"]["lastRunId"] is not None
+            assert began["payload"]["completedAt"] is None
+            assert began["payload"]["lastSeq"] < began["seq"]
             settled(tc, conversation_id)
 
             renamed = tc.patch(f"/conversations/{conversation_id}", json={"title": "改过的"})
