@@ -99,19 +99,11 @@ const semanticGroups = [
   {
     id: "accent",
     title: "Shot accents",
-    description: "只表达镜头身份：时间轴色段与镜头编号同色",
+    description: "只表达镜头身份：时间轴色段与序号旁短色签同色",
     families: [
       {
         name: "Segment",
         items: accentIndexes.map((n) => [`Accent ${n}`, `accent-${n}`, "on-scrim"]),
-      },
-      {
-        name: "Number badge",
-        items: accentIndexes.map((n) => [
-          `Badge ${n}`,
-          `accent-${n}-container`,
-          `on-accent-${n}-container`,
-        ]),
       },
     ],
   },

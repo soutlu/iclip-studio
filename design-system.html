@@ -233,7 +233,7 @@
         --color-on-chart-ord-3: var(--n100);
         --color-on-chart-ord-4: var(--n100);
         --color-on-chart-ord-5: var(--n100);
-        /* 镜头点缀色：只表达镜头身份（时间轴色段与镜头编号同色），按镜头序号循环取色；编号底 = 点缀色 28% 混入页面底色，编号字 = 点缀色压暗一半 */
+        /* 镜头点缀色：只表达镜头身份（时间轴色段与镜头列表的短色签同色），按镜头序号循环取色；只画实色的小面积线条，不做浅色底 */
         --color-accent-1: #ee5d3f;
         --color-accent-2: #f39a2b;
         --color-accent-3: #d9b02a;
@@ -242,22 +242,6 @@
         --color-accent-6: #e35d8c;
         --color-accent-7: #2a9fb0;
         --color-accent-8: #5c6bd6;
-        --color-accent-1-container: color-mix(in srgb, var(--color-accent-1) 28%, var(--color-background));
-        --color-accent-2-container: color-mix(in srgb, var(--color-accent-2) 28%, var(--color-background));
-        --color-accent-3-container: color-mix(in srgb, var(--color-accent-3) 28%, var(--color-background));
-        --color-accent-4-container: color-mix(in srgb, var(--color-accent-4) 28%, var(--color-background));
-        --color-accent-5-container: color-mix(in srgb, var(--color-accent-5) 28%, var(--color-background));
-        --color-accent-6-container: color-mix(in srgb, var(--color-accent-6) 28%, var(--color-background));
-        --color-accent-7-container: color-mix(in srgb, var(--color-accent-7) 28%, var(--color-background));
-        --color-accent-8-container: color-mix(in srgb, var(--color-accent-8) 28%, var(--color-background));
-        --color-on-accent-1-container: color-mix(in srgb, var(--color-accent-1) 50%, var(--n0));
-        --color-on-accent-2-container: color-mix(in srgb, var(--color-accent-2) 50%, var(--n0));
-        --color-on-accent-3-container: color-mix(in srgb, var(--color-accent-3) 50%, var(--n0));
-        --color-on-accent-4-container: color-mix(in srgb, var(--color-accent-4) 50%, var(--n0));
-        --color-on-accent-5-container: color-mix(in srgb, var(--color-accent-5) 50%, var(--n0));
-        --color-on-accent-6-container: color-mix(in srgb, var(--color-accent-6) 50%, var(--n0));
-        --color-on-accent-7-container: color-mix(in srgb, var(--color-accent-7) 50%, var(--n0));
-        --color-on-accent-8-container: color-mix(in srgb, var(--color-accent-8) 50%, var(--n0));
 
         /* ===== ③ 领域别名 · 主题中立（内容身份色、纸面材质、压在媒体上的遮罩；明暗不变） ===== */
         --color-reference-image: #8a8a84;
@@ -512,14 +496,6 @@
         --color-accent-6: #ff8eb1;
         --color-accent-7: #54bfd0;
         --color-accent-8: #a0abff;
-        --color-on-accent-1-container: color-mix(in srgb, var(--color-accent-1) 60%, var(--n100));
-        --color-on-accent-2-container: color-mix(in srgb, var(--color-accent-2) 60%, var(--n100));
-        --color-on-accent-3-container: color-mix(in srgb, var(--color-accent-3) 60%, var(--n100));
-        --color-on-accent-4-container: color-mix(in srgb, var(--color-accent-4) 60%, var(--n100));
-        --color-on-accent-5-container: color-mix(in srgb, var(--color-accent-5) 60%, var(--n100));
-        --color-on-accent-6-container: color-mix(in srgb, var(--color-accent-6) 60%, var(--n100));
-        --color-on-accent-7-container: color-mix(in srgb, var(--color-accent-7) 60%, var(--n100));
-        --color-on-accent-8-container: color-mix(in srgb, var(--color-accent-8) 60%, var(--n100));
         --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
         --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
         --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.42), 0 6px 16px rgba(0, 0, 0, 0.32);
@@ -644,11 +620,11 @@
             </li>
             <li>
               <strong>镜头点缀色</strong>
-              <code>accent-1…8</code> 只表达镜头身份：同一镜头的时间轴色段与镜头编号同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
+              <code>accent-1…8</code> 只表达镜头身份：同一镜头的时间轴色段与镜头列表序号旁的短色签同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
             </li>
             <li>
               <strong>点缀色的用法</strong>
-              色段用 <code>accent-N</code> 实色；编号徽标用 <code>accent-N-container</code> 底配 <code>on-accent-N-container</code> 字（底为点缀色 28% 混入页面底色）。
+              色段与短色签都用 <code>accent-N</code> 实色，面积小且固定；序号本身用中性字色。不做浅色底块或彩色徽标，也不画随正文变长的整条色带。
             </li>
           </ul>
         </div>

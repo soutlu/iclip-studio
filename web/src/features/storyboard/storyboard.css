@@ -249,12 +249,12 @@
 
 /* ===== 文案列 =====
    列头不随正文滚：镜头数与总长、「收成摘要」开关，下面是按时长切分的镜头条（每段热区占满条高，细条画在 ::before）
-   和两端刻度。正文区最上面是全局设定卡，之后是镜头列表：左侧时间轴的竖线串起各镜的序号节点，节点下写起始时间，
-   末尾一个空心结束点。选中的段浮起成卡片（抬高层底色 top-layer：浅色白、深色比页面底亮一档，加发丝线、轻投影，正文主色），其余透明、正文次级色，悬停一层中性叠色；
-   镜头条色段与序号节点按镜头取点缀色（shot-accent.ts，颜色由工具类给，这里只管几何）。选中不换色：色段加高，节点加一圈墨色外环，
-   时长胶囊用墨色实底，时间刻度变正文色。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
-   时间轴几何：节点 22px、顶距 12px，圆心正对标题行（卡片 1px 边 + 8px 内距 + 28px 标题行的一半）；
-   竖线从本镜圆心画到下一镜圆心，最后一镜画到结束点圆心，节点与刻度垫页面底色盖住它。 */
+   和两端刻度。正文区最上面是全局设定卡，之后是镜头列表：左轨写墨色序号、下面写起始时间，序号左侧一枚点缀色短色签，
+   中性细线沿色签中线串起各镜，到末尾「总长 · 结束」一行为止。选中的段浮起成卡片（抬高层底色 top-layer：浅色白、深色比页面底亮一档，加发丝线、轻投影，正文主色），其余透明、正文次级色，悬停一层中性叠色；
+   镜头条色段与短色签按镜头取点缀色（shot-accent.ts，颜色由工具类给，这里只管几何）。选中不换色：色段加高，色签加粗加长，
+   序号与时间变正文色，时长胶囊用墨色实底。收成摘要时（data-clamped）镜头只露两行、全局设定三行。
+   左轨几何：序号行高 22px、顶距 12px，行心正对标题行（卡片 1px 边 + 8px 内距 + 28px 标题行的一半）；色签长度固定、
+   不随正文变长，顶距 14px，中线在 x=4px；细线沿中线从本镜色签顶画到下一镜色签顶，最后一镜画进结束行、止于总长那一行的中部。 */
 .storyboard-script-head {
   display: flex;
   flex: none;
@@ -409,62 +409,63 @@
 }
 .storyboard-shot::before {
   position: absolute;
-  top: 23px;
-  bottom: -23px;
-  left: 17px;
+  top: 14px;
+  bottom: -14px;
+  left: 4px;
   width: 1.5px;
   background: var(--color-hairline);
   content: '';
   translate: -50% 0;
 }
-.storyboard-shot:last-child::before {
-  bottom: -11px;
-}
 .storyboard-rail {
   position: relative;
   z-index: var(--z-local-1);
   display: flex;
-  width: 34px;
+  width: 44px;
   flex: none;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding-top: 12px;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 12px 0 0 12px;
 }
-.storyboard-rail-node {
-  display: grid;
-  width: 22px;
+/* 短色签：以中线定位，选中时加粗加长不左右偏移。 */
+.storyboard-rail-tick {
+  position: absolute;
+  top: 14px;
+  left: 4px;
+  width: 4px;
   height: 22px;
-  place-items: center;
   border-radius: var(--radius-full);
-  font-size: var(--text-caption);
+  transition-duration: var(--dur-s);
+  transition-property: width, height;
+  transition-timing-function: var(--ease);
+  translate: -50% 0;
+}
+.storyboard-rail-number {
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-title);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  line-height: 1;
-  transition-duration: var(--dur-s);
-  transition-property: box-shadow;
-  transition-timing-function: var(--ease);
+  line-height: 22px;
 }
 .storyboard-rail-stamp {
   padding: 1px 0;
-  background: var(--color-background);
   color: var(--color-on-surface-faint);
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 14px;
   white-space: nowrap;
 }
-/* 选中的节点：隔一圈页面底色，再一圈墨色外环；底色仍是这一镜的点缀色。 */
-.storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-node {
-  box-shadow:
-    0 0 0 2px var(--color-background),
-    0 0 0 3.5px var(--color-on-surface);
+.storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-tick {
+  width: 5px;
+  height: 34px;
 }
+.storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-number,
 .storyboard-shot:has(> .storyboard-segment[aria-current='true']) .storyboard-rail-stamp {
   color: var(--color-on-surface);
 }
-/* 结束刻度：空心点下写总长，右边「结束」与总长同一基线。 */
+/* 结束行：总长与序号左对齐，右边「结束」与总长同一基线。 */
 .storyboard-shot-end {
   display: flex;
   align-items: last baseline;
@@ -472,18 +473,10 @@
   padding-top: 6px;
 }
 .storyboard-shot-end > .storyboard-rail {
-  gap: 3px;
   padding-top: 0;
 }
-.storyboard-rail-end {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid var(--color-outline-variant);
-  border-radius: var(--radius-full);
-  background: var(--color-background);
-}
 .storyboard-shot-end-label {
-  padding-left: 13px;
+  padding-left: 8px;
   color: var(--color-on-surface-faint);
   font-size: var(--text-label);
   line-height: 14px;
@@ -1208,7 +1201,7 @@
   }
   .storyboard-segment,
   .storyboard-timeline-segment::before,
-  .storyboard-rail-node,
+  .storyboard-rail-tick,
   .storyboard-frame-stack > button,
   .frame-chip-pill,
   .storyboard-take,
