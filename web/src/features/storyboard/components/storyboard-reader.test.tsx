@@ -1082,6 +1082,33 @@ describe('StoryboardReader', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
 
+  it('视频模型清单还在读时不能出片，原因只给读屏、不在出片栏上占一行', async () => {
+    provide()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('*/api/generations/video-models', async () => {
+        await held
+        return HttpResponse.json({
+          default: 'vendor-a-seedance-2-5',
+          items: ['vendor-a-seedance-2-5'],
+        })
+      }),
+    )
+    await renderReader()
+    await screen.findByRole('region', { name: '镜头组 1' })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+    expect(generate).toHaveAttribute('aria-disabled', 'true')
+    expect(generate).toHaveAccessibleDescription('正在读取视频模型')
+
+    release()
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+    expect(generate).not.toHaveAccessibleDescription()
+  })
+
   it('刷新文件后保留所选镜头，失效的图片选择使用该镜头当前引用', async () => {
     provide()
     const { queryClient, router } = await renderReader()

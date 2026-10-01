@@ -1,5 +1,5 @@
 /** 分镜工作台底部的出片栏：一排控件（最左是写回分镜的画幅，竖线隔开后是模型、分辨率、音频三项生成设置），
- * 加唯一的主色按钮出当前这一组；控件上方一行常显的状态，说明为什么不能出片或哪里有问题。
+ * 加唯一的主色按钮出当前这一组；控件上方的状态行说明为什么不能出片或哪里有问题（暂态原因不显示，见 `generationStatusOf`）。
  * 各档宽度下怎么排见 storyboard.css 的出片栏一节。 */
 
 import { useId, useRef } from 'react'
@@ -14,6 +14,11 @@ import {
   type VideoGenerationOptions,
   type VideoModelsStatus,
 } from '../video-generation-options'
+import {
+  generationStatusOf,
+  type GenerationBlocker,
+  type GenerationStatusLine,
+} from '../generation-blocker'
 import { supportsAspectRatio } from '../video-model-support'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useScrollFade } from './use-scroll-fade'
@@ -32,9 +37,9 @@ type VideoGenerationBarProps = {
   value: VideoGenerationOptions
   onChange: (value: VideoGenerationOptions) => void
   aspect: AspectControl
-  /** 出片被挡住的原因；有它时主按钮置灰，状态行写出原因。 */
-  blocker: string | undefined
-  /** 出片栏要提醒的错误（上次提交失败的原话、画幅不被模型支持）；没被挡住时写在状态行上。 */
+  /** 出片被挡住的原因；有它时主按钮置灰并以它为说明，一直挡着的还写在状态行上。 */
+  blocker: GenerationBlocker | undefined
+  /** 出片栏要提醒的错误（上次提交失败的原话、画幅不被模型支持）；没被一直挡着时写在状态行上。 */
   notice: string | undefined
   submitting: boolean
   onGenerate: () => void
@@ -57,7 +62,8 @@ export function VideoGenerationBar({
   const paramsRef = useRef<HTMLDivElement | null>(null)
   const { fade } = useScrollFade(paramsRef)
   const statusId = useId()
-  const status = barStatusOf(blocker, notice)
+  const hiddenReasonId = useId()
+  const { hiddenReason, line: status } = generationStatusOf(blocker, notice)
 
   return (
     <div
@@ -66,6 +72,12 @@ export function VideoGenerationBar({
       role="group"
     >
       {status === undefined ? null : <BarStatusLine id={statusId} status={status} />}
+      {/* 暂态原因只给读屏：sr-only 绝对定位，不占出片栏的高度。 */}
+      {hiddenReason === undefined ? null : (
+        <span className="sr-only" id={hiddenReasonId}>
+          {hiddenReason}
+        </span>
+      )}
       <div className="storyboard-bar-row">
         <div
           className="storyboard-bar-params storyboard-scroll-fade"
@@ -134,7 +146,13 @@ export function VideoGenerationBar({
         </div>
         <GenerateButton
           blocked={blocker !== undefined}
-          describedBy={status === undefined ? undefined : statusId}
+          describedBy={
+            hiddenReason !== undefined
+              ? hiddenReasonId
+              : status === undefined
+                ? undefined
+                : statusId
+          }
           onGenerate={onGenerate}
           shotIndex={shotIndex}
           submitting={submitting}
@@ -144,20 +162,8 @@ export function VideoGenerationBar({
   )
 }
 
-/** 状态行写什么：置灰原因优先（主按钮的说明就指向这一行，写的必须是它），其次是要提醒的错误。 */
-type BarStatus = { tone: 'blocked' | 'error'; text: string }
-
-const barStatusOf = (
-  blocker: string | undefined,
-  notice: string | undefined,
-): BarStatus | undefined => {
-  if (blocker !== undefined) return { text: blocker, tone: 'blocked' }
-  if (notice !== undefined) return { text: notice, tone: 'error' }
-  return undefined
-}
-
-/** 控件上方常显的一行。错误用 alert 播报；置灰原因不播报（自动保存时会反复出现），由主按钮的说明关联读出。 */
-function BarStatusLine({ id, status }: { id: string; status: BarStatus }) {
+/** 控件上方的状态行。错误用 alert 播报；置灰原因不播报，由主按钮的说明关联读出。 */
+function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLine }) {
   const error = status.tone === 'error'
   return (
     <p
