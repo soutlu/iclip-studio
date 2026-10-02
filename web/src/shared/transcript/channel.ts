@@ -53,6 +53,8 @@ export interface ChannelData extends PageHeader {
   prompts: readonly TranscriptPrompt[]
   /** 审批展示与移除均由服务端待处理交互集合驱动。 */
   pendingInteractions: readonly TranscriptInteraction[]
+  /** 全部交互（含已决定的），按 id 查；工具卡凭 approvalId 认出被拒绝的那一步。 */
+  interactions: ReadonlyMap<string, TranscriptInteraction>
   /** 当前最早一轮之前是否还有更早的轮次。 */
   hasMoreOlder: boolean
   /** 正在读更早的一页。 */
@@ -289,6 +291,7 @@ export class TranscriptChannel {
       activity: meta.activity ?? 'unknown',
       contextTokens: meta.agent?.contextTokens,
       hasMoreOlder: this.transcript.hasMoreOlder,
+      interactions: this.transcript.getInteractions(),
       items: this.transcript.getItems(),
       loadOlderError: this.loadOlderError_,
       loadingOlder: this.loadingOlder,

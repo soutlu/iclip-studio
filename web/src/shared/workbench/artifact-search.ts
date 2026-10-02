@@ -5,6 +5,9 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 /** 查询参数名；会话路由的 search schema 用同一个键声明它。 */
 export const ARTIFACT_SEARCH_KEY = 'artifact'
 
+/** 「文件」页正在读的那份文件路径；会话路由的 search schema 用同一个键声明它。 */
+export const WORKSPACE_FILE_SEARCH_KEY = 'file'
+
 type ArtifactSearch = { [ARTIFACT_SEARCH_KEY]?: string }
 
 /** 地址点名的产物 id；没点名是 undefined。 */

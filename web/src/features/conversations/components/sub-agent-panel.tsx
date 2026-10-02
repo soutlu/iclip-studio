@@ -92,7 +92,7 @@ function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamPr
               }}
             />
             {turns.map((turn) => (
-              <ConversationTurn key={turn.turnId} turn={turn} />
+              <ConversationTurn interactions={view.interactions} key={turn.turnId} turn={turn} />
             ))}
           </div>
         </div>

@@ -1,18 +1,29 @@
-/** 参考 Kimi activity-run：活动组运行时自动展开，结束后自动收起；含失败工具的组留着展开。放在活动卡里，摘要是卡头，每一步一行。 */
+/**
+ * 参考 Kimi activity-run：卡头一行摘要加紧跟的小箭头；运行时自动展开，结束后自动收起，用户点过就以用户为准。
+ * 收起时组里失败的那几次调用照样露在卡头下面——只看每次调用自己的状态，不看前后有没有补救。
+ */
 
 import { useEffect, useRef, useState } from 'react'
-import { Icon, type IconName } from '@/shared/icons'
+import type { TranscriptInteraction } from '@/shared/transcript/vendor'
+import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { ActivityStep } from './activity-card'
-import { runHistoryMs, summarizeDone, summarizeRunning, type TurnEntry } from './activity-group'
+import { useWorkspaceFileLink } from '@/shared/workbench'
+import {
+  failedTools,
+  runHistoryMs,
+  summarizeDone,
+  summarizeRunning,
+  type SummaryClause,
+  type TurnEntry,
+} from './activity-group'
 import { DisclosureBody, DisclosureChevron } from './disclosure'
-import { toolCard } from './tool-display'
 import { TurnFrame } from './turn-frame'
 
 type ActivityRunProps = {
   items: readonly TurnEntry[]
   liveFrameId: string | undefined
   settled: boolean
+  interactions: ReadonlyMap<string, TranscriptInteraction>
 }
 
 /** 运行时本地计时并在结束时冻结；历史记录使用步骤起止时间，缺失时不显示。 */
@@ -38,23 +49,15 @@ function useActivityMs(running: boolean, historyMs: number | undefined): number 
   return elapsed ?? historyMs
 }
 
-/** 当前图标优先取 liveFrameId，其次取运行中的工具。 */
-const currentIcon = (items: readonly TurnEntry[], liveFrameId: string | undefined): IconName => {
-  const current =
-    items.find((entry) => entry.frame.frameId === liveFrameId) ??
-    items.find((entry) => entry.frame.kind === 'tool' && entry.frame.state === 'running')
-  if (current === undefined) return 'loading'
-  if (current.frame.kind === 'thinking') return 'thinking'
-  if (current.frame.kind === 'tool') return toolCard(current.frame.display, current.frame.view).icon
-  return 'loading'
-}
-
 const CLAUSE_TONE_CLASS = {
   danger: 'text-chat-status-error',
   faint: 'text-chat-muted-text',
 } as const
 
-export function ActivityRun({ items, liveFrameId, settled }: ActivityRunProps) {
+const toneClass = (clause: SummaryClause) =>
+  clause.tone === undefined ? undefined : CLAUSE_TONE_CLASS[clause.tone]
+
+export function ActivityRun({ interactions, items, liveFrameId, settled }: ActivityRunProps) {
   const running =
     !settled &&
     items.some(
@@ -62,21 +65,22 @@ export function ActivityRun({ items, liveFrameId, settled }: ActivityRunProps) {
         entry.frame.frameId === liveFrameId ||
         (entry.frame.kind === 'tool' && entry.frame.state === 'running'),
     )
-  const failed = items.some((entry) => entry.frame.kind === 'tool' && entry.frame.state === 'error')
+  const failed = failedTools(items, interactions)
 
-  // 用户手动切换后，自动开合不再覆盖其选择。
-  const [open, setOpen] = useState(running || failed)
+  // 用户手动切换后，自动开合不再覆盖其选择，直到下一次运行状态变化。
+  const [open, setOpen] = useState(running)
   const [prevRunning, setPrevRunning] = useState(running)
   if (running !== prevRunning) {
     setPrevRunning(running)
-    setOpen(running || failed)
+    setOpen(running)
   }
 
+  const { nameOf } = useWorkspaceFileLink()
   const elapsedMs = useActivityMs(running, runHistoryMs(items))
   const clauses = running
-    ? summarizeRunning(items, liveFrameId, elapsedMs)
-    : summarizeDone(items, elapsedMs)
-  const stateLabel = running ? '进行中' : failed ? '有失败' : '完成'
+    ? summarizeRunning(items, liveFrameId, elapsedMs, interactions, nameOf)
+    : summarizeDone(items, elapsedMs, interactions)
+  const stateLabel = running ? '进行中' : failed.length > 0 ? '有失败' : '完成'
   // 显式提供 aria-label，避免分色 span 的边界空白被可访问名称计算裁掉。
   const summaryText = clauses.map((clause) => clause.text).join(' · ')
   // 以内容和出现次数组成 key，区分相同的失败子句。
@@ -87,50 +91,60 @@ export function ActivityRun({ items, liveFrameId, settled }: ActivityRunProps) {
     seen.set(base, nth)
     return { clause, key: `${base}:${nth}` }
   })
+  const flowing = keyed.filter(({ clause }) => clause.pinned !== true)
+  const pinned = keyed.filter(({ clause }) => clause.pinned === true)
+
+  const frameOf = (entry: TurnEntry) => (
+    <TurnFrame
+      frame={entry.frame}
+      interactions={interactions}
+      key={entry.frame.frameId}
+      live={entry.frame.frameId === liveFrameId}
+    />
+  )
 
   return (
-    <div>
+    <div className="flex flex-col">
       <button
         aria-expanded={open}
         aria-label={`${stateLabel}：${summaryText}`}
-        className="flex h-9 w-full cursor-pointer items-center gap-2 bg-chat-inline-bg px-3 text-left text-body-sm text-chat-secondary-text ui-focus ui-motion-s hover:text-chat-message-text"
+        className="group/head flex min-h-5 w-full min-w-0 cursor-pointer items-center gap-2 rounded-xs text-left text-body leading-5 text-chat-secondary-text ui-focus ui-motion-s hover:text-chat-message-text"
         onClick={() => setOpen(!open)}
         type="button"
       >
-        <Icon
-          className={cn(
-            'shrink-0',
-            running && 'animate-pulse text-chat-muted-text',
-            !running && (failed ? 'text-chat-status-error' : 'text-chat-status-success'),
-          )}
-          decorative
-          name={running ? currentIcon(items, liveFrameId) : failed ? 'failed' : 'success'}
-          size="sm"
-        />
-        <span aria-hidden className="min-w-0 truncate">
-          {keyed.map(({ clause, key }, index) => (
-            <span
-              className={clause.tone === undefined ? undefined : CLAUSE_TONE_CLASS[clause.tone]}
-              key={key}
-            >
-              {index === 0 ? clause.text : ` · ${clause.text}`}
+        {running ? (
+          <Icon
+            className="shrink-0 animate-spin text-chat-status-running"
+            decorative
+            name="loading"
+            size="sm"
+          />
+        ) : null}
+        {/* 摘要正文窄屏下截断；失败数、拒绝数与时长钉在后面不被截掉（照 mockup 的 .sum 与 .pin）。 */}
+        <span aria-hidden className="flex min-w-0 items-center">
+          <span className="min-w-0 truncate">
+            {flowing.map(({ clause, key }, index) => (
+              <span className={toneClass(clause)} key={key}>
+                {index === 0 ? clause.text : ` · ${clause.text}`}
+              </span>
+            ))}
+          </span>
+          {pinned.map(({ clause, key }) => (
+            <span className={cn('shrink-0 whitespace-pre', toneClass(clause))} key={key}>
+              {flowing.length === 0 ? clause.text : ` · ${clause.text}`}
             </span>
           ))}
         </span>
-        <DisclosureChevron className="ml-auto shrink-0 text-chat-muted-text" open={open} />
+        <DisclosureChevron
+          className="text-chat-muted-text ui-motion-s group-hover/head:text-chat-message-text"
+          open={open}
+        />
       </button>
+      {open || failed.length === 0 ? null : (
+        <div className="flex flex-col gap-2 pt-2.5">{failed.map(frameOf)}</div>
+      )}
       <DisclosureBody open={open}>
-        <div className="flex flex-col divide-y-[0.5px] divide-chat-hairline border-t-[0.5px] border-chat-hairline">
-          {items.map((entry) => (
-            <ActivityStep key={entry.frame.frameId}>
-              <TurnFrame
-                frame={entry.frame}
-                live={entry.frame.frameId === liveFrameId}
-                settled={settled}
-              />
-            </ActivityStep>
-          ))}
-        </div>
+        <div className="flex flex-col gap-2 pt-2.5">{items.map(frameOf)}</div>
       </DisclosureBody>
     </div>
   )

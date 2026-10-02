@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCallFrame } from '@/shared/transcript/vendor'
-import { fileChangeOf, toolBodyText, toolCard, toolChip, toolDiff, toolMedia } from './tool-display'
+import {
+  diffLinesOf,
+  fileChangeOf,
+  fileTextOf,
+  toolBodyText,
+  toolCard,
+  toolMedia,
+  toolOutcome,
+  toolPanel,
+  toolSearchCount,
+} from './tool-display'
 
 const toolFrame = (fields: Partial<ToolCallFrame>): ToolCallFrame => ({
   frameId: 'f1',
@@ -18,16 +28,44 @@ describe('toolCard', () => {
     ['read', '读取文件', 'file'],
     ['write', '写入文件', 'file'],
     ['edit', '编辑文件', 'edit'],
+  ] as const)(
+    '文件操作 %s：标题「%s」，主语只写文件名，另给规范化后的工作区路径',
+    (operation, label, icon) => {
+      expect(toolCard({ kind: 'file_io', operation, path: '/shots//a.md' })).toEqual({
+        detail: 'a.md',
+        file: 'shots/a.md',
+        icon,
+        label,
+        operation,
+      })
+    },
+  )
+
+  it.each([
     ['glob', '浏览目录', 'folder'],
     ['grep', '搜索内容', 'search'],
-  ] as const)('文件操作 %s：标题「%s」，路径等宽做主语', (operation, label, icon) => {
-    expect(toolCard({ kind: 'file_io', operation, path: 'shots/a.md' })).toEqual({
-      detail: 'shots/a.md',
-      icon,
-      label,
-      mono: true,
-      operation,
+  ] as const)(
+    '文件操作 %s 不作用在一份文件上：主语照给，没有可打开的文件',
+    (operation, label, icon) => {
+      expect(toolCard({ kind: 'file_io', operation, path: 'shots/' })).toEqual({
+        detail: 'shots/',
+        icon,
+        label,
+        operation,
+      })
+    },
+  )
+
+  it('路径换不成工作区文件（目录、带 ..）：只写文件名，不给可打开的文件', () => {
+    expect(toolCard({ kind: 'file_io', operation: 'read', path: 'shots/../a.md' })).toEqual({
+      detail: 'a.md',
+      icon: 'file',
+      label: '读取文件',
+      operation: 'read',
     })
+    expect(toolCard({ kind: 'file_io', operation: 'write', path: 'shots/' })).not.toHaveProperty(
+      'file',
+    )
   })
 
   it('检索：标题「搜索工作区」，主语是那个词，聚合时按搜索归类', () => {
@@ -41,7 +79,7 @@ describe('toolCard', () => {
   it('读取网页：只留域名与路径，查询串不上界面', () => {
     expect(
       toolCard({ kind: 'url_fetch', url: 'https://example.com/docs/a?token=secret' }),
-    ).toMatchObject({ detail: 'example.com/docs/a', label: '读取网页', mono: true })
+    ).toMatchObject({ detail: 'example.com/docs/a', label: '读取网页' })
   })
 
   it('查阅规范：主语只写读的是哪一份文档，skill 名不上界面；没点具体哪一份就没有主语', () => {
@@ -107,19 +145,11 @@ describe('fileChangeOf', () => {
   })
 })
 
-describe('toolChip / toolDiff', () => {
-  it('读文件：行数，读不完时说明', () => {
-    const meta = { lines: 142, path: 'a.md', truncated: false }
-    expect(toolChip(toolFrame({ metadata: meta, view: 'file_content' }))).toBe('142 行')
-    expect(
-      toolChip(toolFrame({ metadata: { ...meta, truncated: true }, view: 'file_content' })),
-    ).toBe('142 行 · 未读完')
-  })
-
+describe('toolSearchCount', () => {
   it('检索：命中数，没命中也说', () => {
     const match = { file: 'a.md', line: 3, text: '夜景' }
     expect(
-      toolChip(
+      toolSearchCount(
         toolFrame({
           metadata: { matches: [match, match], query: '夜景', truncated: false },
           view: 'search_results',
@@ -127,7 +157,7 @@ describe('toolChip / toolDiff', () => {
       ),
     ).toBe('2 处命中')
     expect(
-      toolChip(
+      toolSearchCount(
         toolFrame({
           metadata: { matches: [], query: '雨', truncated: false },
           view: 'search_results',
@@ -136,29 +166,131 @@ describe('toolChip / toolDiff', () => {
     ).toBe('无命中')
   })
 
-  it('媒体：工具写好的说明优先，没有就数张数', () => {
+  it('行数、增删数、张数与工具自带角标都不上行尾', () => {
+    const meta = { lines: 142, path: 'a.md', truncated: false }
+    expect(toolSearchCount(toolFrame({ metadata: meta, view: 'file_content' }))).toBeUndefined()
+    expect(toolSearchCount(toolFrame({ metadata: MEDIA, view: 'media_grid' }))).toBeUndefined()
     expect(
-      toolChip(toolFrame({ metadata: { ...MEDIA, note: '4 张 · dev 渠道' }, view: 'media_grid' })),
-    ).toBe('4 张 · dev 渠道')
-    expect(toolChip(toolFrame({ metadata: MEDIA, view: 'media_grid' }))).toBe('1 张')
-  })
-
-  it('没有卡身渲染器的工具：角标原文照给；改文件给增删数，没改动就没有', () => {
-    expect(toolChip(toolFrame({ metadata: { chip: '4.2 KB' } }))).toBe('4.2 KB')
-    expect(toolChip(toolFrame({}))).toBeUndefined()
-    expect(toolDiff(toolFrame({ metadata: { added: 3, removed: 1 } }))).toEqual({
-      added: 3,
-      removed: 1,
-    })
-    expect(toolDiff(toolFrame({ metadata: { added: 0, removed: 0 } }))).toBeUndefined()
-    expect(toolDiff(toolFrame({ metadata: { chip: '4.2 KB' } }))).toBeUndefined()
-  })
-
-  it('形状对不上就没有角标', () => {
-    expect(
-      toolChip(toolFrame({ metadata: { lines: 'many' }, view: 'file_content' })),
+      toolSearchCount(toolFrame({ metadata: { added: 3, chip: '4.2 KB', removed: 1 } })),
     ).toBeUndefined()
-    expect(toolChip(toolFrame({ metadata: { chip: 3 } }))).toBeUndefined()
+  })
+})
+
+describe('toolOutcome', () => {
+  const approval = (state: 'approved' | 'rejected') =>
+    new Map([['appr_1', { interactionId: 'appr_1', interactionKind: 'approval' as const, state }]])
+  const rejected = approval('rejected')
+
+  it('协议给的三态原样用', () => {
+    for (const state of ['running', 'done', 'error'] as const) {
+      expect(toolOutcome(toolFrame({ state }), rejected)).toBe(state)
+    }
+  })
+
+  it('error 且它的审批交互记着 rejected，是被拒绝', () => {
+    expect(toolOutcome(toolFrame({ approvalId: 'appr_1', state: 'error' }), rejected)).toBe(
+      'denied',
+    )
+  })
+
+  it('审批没被拒绝（或查不到）的 error 仍是失败', () => {
+    expect(
+      toolOutcome(toolFrame({ approvalId: 'appr_1', state: 'error' }), approval('approved')),
+    ).toBe('error')
+    expect(toolOutcome(toolFrame({ approvalId: 'appr_1', state: 'error' }), new Map())).toBe(
+      'error',
+    )
+  })
+})
+
+describe('fileTextOf', () => {
+  it('去掉每行的行号与制表符，丢掉写给模型的续读提示', () => {
+    expect(
+      fileTextOf(
+        '     1\t# 分镜\n     2\t\n     3\t\t缩进的行\n[还有 6 行没读，用 offset=4 接着读]',
+      ),
+    ).toBe('# 分镜\n\n\t缩进的行')
+  })
+})
+
+describe('diffLinesOf', () => {
+  it('首尾相同的行是上下文，中间旧的算删、新的算加', () => {
+    expect(diffLinesOf('镜头 2\n景别：近景\n收尾', '镜头 2\n景别：中景\n运镜：横移\n收尾')).toEqual(
+      [
+        { kind: 'context', text: '镜头 2' },
+        { kind: 'removed', text: '景别：近景' },
+        { kind: 'added', text: '景别：中景' },
+        { kind: 'added', text: '运镜：横移' },
+        { kind: 'context', text: '收尾' },
+      ],
+    )
+  })
+
+  it('整段替换：全部旧行删、全部新行加', () => {
+    expect(diffLinesOf('夜景', '黄昏')).toEqual([
+      { kind: 'removed', text: '夜景' },
+      { kind: 'added', text: '黄昏' },
+    ])
+  })
+})
+
+describe('toolPanel', () => {
+  const read = (fields: Partial<ToolCallFrame>) =>
+    toolFrame({
+      display: { kind: 'file_io', operation: 'read', path: 'notes/拍摄需求.md' },
+      metadata: { lines: 2, path: 'notes/拍摄需求.md', truncated: false },
+      output: '     1\t# 需求\n     2\t30 秒竖屏',
+      view: 'file_content',
+      ...fields,
+    })
+
+  it('读文件：去掉行号的文件内容，md 按 Markdown 排', () => {
+    expect(toolPanel(read({}), 'done')).toEqual({
+      kind: 'file',
+      markdown: true,
+      text: '# 需求\n30 秒竖屏',
+    })
+  })
+
+  it('写文件：要写的整份内容；不是 md 就按原文', () => {
+    const frame = toolFrame({
+      display: { content: '{"a":1}', kind: 'file_io', operation: 'write', path: 'a.json' },
+    })
+    expect(toolPanel(frame, 'done')).toEqual({ kind: 'file', markdown: false, text: '{"a":1}' })
+  })
+
+  it('编辑文件：给改动前后的片段', () => {
+    const frame = toolFrame({
+      display: { after: '黄昏', before: '夜景', kind: 'file_io', operation: 'edit', path: 'a.md' },
+    })
+    expect(toolPanel(frame, 'done')).toEqual({ after: '黄昏', before: '夜景', kind: 'diff' })
+  })
+
+  it('失败：错误原文；运行中与被拒绝没有面板', () => {
+    const failed = read({ error: '运行中断，这次调用没有结果', state: 'error' })
+    expect(toolPanel(failed, 'error')).toEqual({
+      kind: 'error',
+      text: '运行中断，这次调用没有结果',
+    })
+    expect(toolPanel(read({ state: 'running' }), 'running')).toBeUndefined()
+    expect(toolPanel(failed, 'denied')).toBeUndefined()
+  })
+
+  it('检索：有命中才有面板', () => {
+    const match = { file: 'a.md', line: 3, text: '夜景' }
+    const search = (matches: (typeof match)[]) =>
+      toolFrame({ metadata: { matches, query: '夜景', truncated: false }, view: 'search_results' })
+    expect(toolPanel(search([match]), 'done')).toEqual({
+      kind: 'matches',
+      matches: [match],
+      truncated: false,
+    })
+    expect(toolPanel(search([]), 'done')).toBeUndefined()
+  })
+
+  it('其余工具：多行结果给原文，一句话的结果没有面板', () => {
+    expect(toolPanel(toolFrame({ output: 'a\nb' }), 'done')).toEqual({ kind: 'text', text: 'a\nb' })
+    expect(toolPanel(toolFrame({ output: '完成' }), 'done')).toBeUndefined()
   })
 })
 

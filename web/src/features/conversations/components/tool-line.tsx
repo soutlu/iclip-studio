@@ -1,176 +1,277 @@
 /**
- * 工具行：所有工具共用一个壳，四个插槽——图标、主区（标题 · 主语 · 箭头）、尾区（角标 · 状态）、卡身。
- * 卡身按 view 选：读文件带行号，检索逐条命中，媒体一排图，其余多行结果原文展开。
+ * 工具行，结构照 Kimi ToolDisclosure / ToolPanel：20px 图标栏 + 动词 + 对象 + 小箭头，行尾只放状态；
+ * 展开是一块 13 行封顶、内部滚动的面板。整行点了展开，文件名是另一个按钮，点了在工作台打开那份文件。
+ * 每次调用只按自己的协议状态画：成功不画图标，失败红 ×，被拒绝灰 × 加「已拒绝」，不看前后调用。
  */
 
 import { useState, type ReactNode } from 'react'
-import type { ToolCallFrame } from '@/shared/transcript/vendor'
+import type { ToolCallFrame, TranscriptInteraction } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { Markdown } from '@/shared/ui/markdown'
 import { type LightboxMedia, MediaLightbox } from '@/shared/ui/media-lightbox'
-import { frameArtifactId, useOpenArtifact, useWorkbenchOpenRequest } from '@/shared/workbench'
-import { DisclosureBody, DisclosureChevron } from './disclosure'
 import {
-  toolBodyText,
+  frameArtifactId,
+  useOpenArtifact,
+  useWorkbenchOpenRequest,
+  useWorkspaceFileLink,
+  workspacePathOf,
+} from '@/shared/workbench'
+import { CopyButton } from './copy-button'
+import { DisclosureBody, DisclosureChevron } from './disclosure'
+import { EditLines } from './edit-lines'
+import {
   toolCard,
-  toolChip,
-  toolDiff,
   toolMedia,
-  toolResult,
+  toolOutcome,
+  toolPanel,
+  toolSearchCount,
   type MediaGridItem,
   type SearchMatch,
+  type ToolOutcome,
+  type ToolPanel,
 } from './tool-display'
 
 type ToolLineProps = {
   frame: ToolCallFrame
-  /** 轮次已结束时遗留的 running 当完成画，避免停止后一直转圈。 */
-  settled: boolean
+  /** 本段对话的全部交互，用 approvalId 认出被拒绝的调用。 */
+  interactions: ReadonlyMap<string, TranscriptInteraction>
 }
 
-const STATUS = {
-  done: { color: 'text-chat-status-success', label: '完成', name: 'success' },
-  error: { color: 'text-chat-status-error', label: '出错', name: 'failed' },
-  running: { color: 'text-chat-status-running', label: '进行中', name: 'loading' },
-} as const
-
-export function ToolLine({ frame, settled }: ToolLineProps) {
+export function ToolLine({ frame, interactions }: ToolLineProps) {
   const card = toolCard(frame.display, frame.view)
-  const state = frame.state === 'running' && settled ? 'done' : frame.state
-  const status = STATUS[state]
-  const [open, setOpen] = useState(false)
-  const [preview, setPreview] = useState<LightboxMedia | null>(null)
-  const media = toolMedia(frame)
-  const body = toolBody(frame)
+  const outcome = toolOutcome(frame, interactions)
   const delegated = (frame.agentRefs?.length ?? 0) > 0
+  const panel = delegated ? undefined : toolPanel(frame, outcome)
+  const media = toolMedia(frame)
+  const [open, setOpen] = useState(false)
+  // 面板第一次展开才挂载，长文件与 Markdown 不在折叠时白排版。
+  const [mounted, setMounted] = useState(false)
+  const [preview, setPreview] = useState<LightboxMedia | null>(null)
+  const link = useWorkspaceFileLink()
+  const { file } = card
+  const name = file === undefined ? card.detail : link.nameOf(file)
+  // 被拒绝的那一步没动过文件，文件名只写字。
+  const openFile = file === undefined || outcome === 'denied' ? undefined : () => link.open(file)
 
-  const head = (
-    <>
-      <Icon className="shrink-0 text-chat-muted-text" decorative name={card.icon} size="sm" />
-      <span className="shrink-0 text-chat-secondary-text">{card.label}</span>
-      {card.detail === undefined ? null : (
-        <span
-          className={cn(
-            'max-w-[60%] min-w-0 truncate text-chat-message-text',
-            // 路径与检索词是等宽小标签；用 span 不用 code，code 留给正文里的行内代码。
-            card.mono && 'rounded-xs bg-chat-code-bg px-1.5 py-0.5 font-mono text-body-sm',
-          )}
-        >
-          {card.detail}
-        </span>
-      )}
-      {body === null ? null : (
-        <DisclosureChevron className="shrink-0 text-chat-muted-text" open={open} />
-      )}
-      <span className="ml-auto flex shrink-0 items-center gap-2">
-        <Tail frame={frame} />
-        <Icon
-          className={cn('shrink-0', status.color, state === 'running' && 'animate-spin')}
-          label={status.label}
-          name={status.name}
-          size="sm"
-        />
-      </span>
-    </>
-  )
+  const subject =
+    name === undefined ? null : openFile === undefined ? (
+      <span className="min-w-0 truncate">{name}</span>
+    ) : (
+      <FileName name={name} onOpen={openFile} />
+    )
+  const tail = <Tail frame={frame} outcome={outcome} />
 
   return (
     <div className="flex flex-col">
       {delegated ? (
-        <DelegatedHead toolCallId={frame.toolCallId}>{head}</DelegatedHead>
-      ) : body === null ? (
-        <div className="flex items-center gap-1.5 py-1.5 text-body">{head}</div>
+        <DelegatedHead
+          icon={card.icon}
+          label={card.label}
+          tail={tail}
+          toolCallId={frame.toolCallId}
+        >
+          {subject}
+        </DelegatedHead>
       ) : (
-        <>
-          <button
-            aria-expanded={open}
-            className="flex w-full cursor-pointer items-center gap-1.5 rounded-xs py-1.5 text-left text-body ui-focus"
-            onClick={() => setOpen(!open)}
-            type="button"
-          >
-            {head}
-          </button>
-          <DisclosureBody open={open}>{body}</DisclosureBody>
-        </>
-      )}
-      {media.length === 0 ? null : <MediaWall items={media} onOpen={setPreview} />}
-      <MediaLightbox media={preview} onClose={() => setPreview(null)} />
-      {frame.error === undefined ? null : (
-        <p className="text-body-sm text-chat-error-text">{frame.error}</p>
-      )}
-    </div>
-  )
-}
-
-/** 卡尾角标：改文件是增删数加一条小色条，其余是一段文字。 */
-function Tail({ frame }: { frame: ToolCallFrame }) {
-  const diff = toolDiff(frame)
-  if (diff !== undefined) {
-    return (
-      <span className="flex items-center gap-1.5 font-mono text-body-sm tabular-nums">
-        {diff.added > 0 ? <span className="text-chat-status-success">+{diff.added}</span> : null}
-        {diff.removed > 0 ? <span className="text-chat-status-error">−{diff.removed}</span> : null}
-        <span aria-hidden className="flex h-[3px] w-9 gap-px overflow-hidden rounded-full">
-          <span className="bg-chat-status-success" style={{ flexGrow: diff.added }} />
-          <span className="bg-chat-status-error" style={{ flexGrow: diff.removed }} />
-        </span>
-      </span>
-    )
-  }
-  const chip = toolChip(frame)
-  return chip === undefined ? null : (
-    <span className="text-body-sm text-chat-muted-text tabular-nums">{chip}</span>
-  )
-}
-
-/** 卡身按 view 选；没有可看的东西就不给展开。 */
-function toolBody(frame: ToolCallFrame): ReactNode | null {
-  const result = toolResult(frame)
-  if (result?.kind === 'file_content' && typeof frame.output === 'string') {
-    return <FileContentBody text={frame.output} />
-  }
-  if (result?.kind === 'search_results' && result.matches.length > 0) {
-    return <SearchResultsBody matches={result.matches} truncated={result.truncated} />
-  }
-  const text = toolBodyText(frame)
-  return text === undefined ? null : (
-    <pre className="mt-1 max-h-64 overflow-auto rounded-sm bg-chat-code-block-bg px-3 py-2 font-mono text-body-sm whitespace-pre-wrap text-chat-secondary-text">
-      {text}
-    </pre>
-  )
-}
-
-const NUMBERED_LINE = /^\s*(\d+)\t(.*)$/
-
-/** 读文件的结果本来就带行号；行号一栏、正文一栏，读不完的那句提示放最后。 */
-function FileContentBody({ text }: { text: string }) {
-  const rows: { no: string; text: string }[] = []
-  const notes: string[] = []
-  for (const line of text.split('\n')) {
-    const match = NUMBERED_LINE.exec(line)
-    if (match) rows.push({ no: match[1] ?? '', text: match[2] ?? '' })
-    else if (line.trim() !== '') notes.push(line)
-  }
-  return (
-    <div className="mt-1 max-h-72 overflow-auto rounded-sm border-[0.5px] border-chat-hairline bg-chat-code-block-bg py-2 font-mono text-body-sm">
-      {rows.map((row) => (
-        <div className="grid grid-cols-[3rem_1fr]" key={row.no}>
-          <span className="pr-3 text-right text-chat-muted-text tabular-nums select-none">
-            {row.no}
+        <div className="group/row relative flex min-h-5 items-center gap-2 text-body leading-5 text-chat-secondary-text">
+          {panel === undefined ? null : (
+            // 整行的展开按钮铺在底下，行内容不接指针事件；文件名按钮浮在它上面，两个目标互不嵌套。
+            <button
+              aria-expanded={open}
+              aria-label={`${open ? '收起' : '展开'}「${card.label}${name === undefined ? '' : ` ${name}`}」的详情`}
+              className="absolute inset-0 cursor-pointer rounded-xs ui-focus"
+              onClick={() => {
+                setMounted(true)
+                setOpen(!open)
+              }}
+              type="button"
+            />
+          )}
+          <RowIcon name={card.icon} />
+          <span className="pointer-events-none flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0">{card.label}</span>
+              {subject}
+              {panel === undefined ? null : (
+                <DisclosureChevron
+                  className="text-chat-muted-text ui-motion-s group-hover/row:text-chat-message-text"
+                  open={open}
+                />
+              )}
+            </span>
+            {tail}
           </span>
-          <span className="pr-3 whitespace-pre text-chat-message-text">{row.text}</span>
         </div>
-      ))}
-      {notes.map((note) => (
-        <p className="px-3 pt-1 text-chat-muted-text" key={note}>
-          {note}
-        </p>
-      ))}
+      )}
+      {panel === undefined ? null : (
+        <DisclosureBody open={open}>
+          <Indented>
+            {mounted ? (
+              <PanelView
+                panel={panel}
+                title={
+                  name === undefined || openFile === undefined ? undefined : (
+                    <FileName className="text-chat-message-text" name={name} onOpen={openFile} />
+                  )
+                }
+              />
+            ) : null}
+          </Indented>
+        </DisclosureBody>
+      )}
+      {media.length === 0 ? null : (
+        <Indented>
+          <MediaWall items={media} onOpen={setPreview} />
+        </Indented>
+      )}
+      <MediaLightbox media={preview} onClose={() => setPreview(null)} />
     </div>
   )
 }
 
-/** 检索结果逐条：文件与行号在前，命中的那一行在后。 */
-function SearchResultsBody({
+/** 20px 图标栏，与展开体的缩进、引导线对齐。 */
+export function RowIcon({ name }: { name: Parameters<typeof Icon>[0]['name'] }) {
+  return (
+    <span className="pointer-events-none grid size-5 shrink-0 place-items-center text-chat-muted-text">
+      <Icon decorative name={name} size="sm" />
+    </span>
+  )
+}
+
+/** 展开体：左缩进到图标栏之后，图标栏中线上一条虚线引导。 */
+export function Indented({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative pt-1.5 pb-1 pl-7">
+      <span
+        aria-hidden
+        className="absolute inset-y-0 left-[9.5px] border-l border-dashed border-chat-hairline"
+      />
+      {children}
+    </div>
+  )
+}
+
+/** 行尾：检索命中数；运行中转圈，失败红 ×，被拒绝灰 × 加字。成功不画。 */
+function Tail({ frame, outcome }: { frame: ToolCallFrame; outcome: ToolOutcome }) {
+  const count = toolSearchCount(frame)
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      {count === undefined ? null : (
+        <span className="text-body-sm text-chat-muted-text tabular-nums">{count}</span>
+      )}
+      {outcome === 'running' ? (
+        <Icon
+          className="animate-spin text-chat-status-running"
+          label="进行中"
+          name="loading"
+          size="sm"
+        />
+      ) : outcome === 'error' ? (
+        <Icon className="text-chat-status-error" label="失败" name="failed" size="sm" />
+      ) : outcome === 'denied' ? (
+        <span className="flex items-center gap-1 text-body-sm text-chat-muted-text">
+          已拒绝
+          <Icon decorative name="failed" size="sm" />
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+/** 文件名按钮：正文字体，悬停变墨色加细下划线，点了在工作台打开。浮在整行展开按钮之上。 */
+function FileName({
+  className,
+  name,
+  onOpen,
+}: {
+  className?: string
+  name: string
+  onOpen: () => void
+}) {
+  return (
+    <button
+      className={cn(
+        'pointer-events-auto relative min-w-0 cursor-pointer truncate rounded-xs decoration-1 underline-offset-3 ui-focus ui-motion-s hover:text-chat-message-text hover:underline',
+        className,
+      )}
+      onClick={onOpen}
+      title="在工作台打开"
+      type="button"
+    >
+      {name}
+    </button>
+  )
+}
+
+/** 面板头：标题（文件名或「错误信息」）加复制；检索没有头。 */
+function PanelView({ panel, title: fileTitle }: { panel: ToolPanel; title: ReactNode }) {
+  const copy = panelCopyText(panel)
+  const title =
+    panel.kind === 'error' ? (
+      <span className="text-chat-secondary-text">错误信息</span>
+    ) : (
+      (fileTitle ?? null)
+    )
+  return (
+    <div className="flex min-w-0 flex-col overflow-clip rounded-sm bg-chat-inline-bg pb-2.5">
+      {title === null && copy === undefined ? (
+        <div className="h-2" />
+      ) : (
+        <div className="flex min-w-0 items-center justify-between gap-2 py-1 pr-1.5 pl-3 text-body">
+          <span className="flex min-w-0">{title}</span>
+          {copy === undefined ? null : <CopyButton text={copy} />}
+        </div>
+      )}
+      <div className="max-h-[13lh] min-w-0 overflow-auto overscroll-contain px-3 text-body leading-[1.571]">
+        <PanelBody panel={panel} />
+      </div>
+    </div>
+  )
+}
+
+const panelCopyText = (panel: ToolPanel): string | undefined => {
+  switch (panel.kind) {
+    case 'diff':
+      return panel.after
+    case 'matches':
+      return undefined
+    case 'error':
+    case 'file':
+    case 'text':
+      return panel.text
+  }
+}
+
+function PanelBody({ panel }: { panel: ToolPanel }) {
+  switch (panel.kind) {
+    case 'file':
+      return panel.markdown ? (
+        <Markdown text={panel.text} />
+      ) : (
+        <p className="break-words whitespace-pre-wrap text-chat-message-text">{panel.text}</p>
+      )
+    case 'diff':
+      return (
+        // 改动行自带左右内边距与整行底色，抵消面板正文的内边距。
+        <div aria-label="改动" className="-mx-3" role="region">
+          <EditLines after={panel.after} before={panel.before} />
+        </div>
+      )
+    case 'matches':
+      return <MatchesBody matches={panel.matches} truncated={panel.truncated} />
+    case 'error':
+    case 'text':
+      return (
+        <p className="text-body-sm leading-[18px] break-words whitespace-pre-wrap text-chat-secondary-text">
+          {panel.text}
+        </p>
+      )
+  }
+}
+
+/** 检索命中：文件名在前，命中的那一行在后；能对上工作区文件的整条可点。 */
+function MatchesBody({
   matches,
   truncated,
 }: {
@@ -178,48 +279,83 @@ function SearchResultsBody({
   truncated: boolean
 }) {
   return (
-    <ul className="mt-1 flex flex-col font-mono text-body-sm">
+    <ul className="flex flex-col">
       {matches.map((match) => (
-        <li
-          className="flex items-baseline gap-2 rounded-xs px-2 py-0.5"
-          key={`${match.file}:${match.line}:${match.text}`}
-        >
-          <span className="shrink-0 text-chat-secondary-text tabular-nums">
-            {match.file}:{match.line}
-          </span>
-          <span className="min-w-0 truncate text-chat-message-text">{match.text}</span>
+        <li key={`${match.file}:${match.line}:${match.text}`}>
+          <MatchRow match={match} />
         </li>
       ))}
-      {truncated ? (
-        <li className="px-2 py-0.5 text-chat-muted-text">命中较多，只列出一部分</li>
-      ) : null}
+      {truncated ? <li className="text-chat-muted-text">命中较多，只列出一部分</li> : null}
     </ul>
   )
 }
 
+function MatchRow({ match }: { match: SearchMatch }) {
+  const link = useWorkspaceFileLink()
+  const path = workspacePathOf(match.file)
+  const content = (
+    <>
+      <span className="max-w-[45%] shrink-0 truncate text-chat-muted-text">
+        {link.nameOf(path ?? match.file)}
+      </span>
+      <span className="min-w-0 truncate text-chat-message-text decoration-1 underline-offset-3 group-hover/match:underline">
+        {match.text}
+      </span>
+    </>
+  )
+  if (path === undefined) return <div className="flex items-baseline gap-2">{content}</div>
+  return (
+    <button
+      className="group/match flex w-full cursor-pointer items-baseline gap-2 rounded-xs text-left ui-focus"
+      onClick={() => link.open(path)}
+      type="button"
+    >
+      {content}
+    </button>
+  )
+}
+
 /** 派出了子代理的卡：点开的是工作台里它那条流。产物参数记在 URL 上，刷新与分享都还在；再点一次也能把折叠的工作台重新展开。 */
-function DelegatedHead({ children, toolCallId }: { children: ReactNode; toolCallId: string }) {
+function DelegatedHead({
+  children,
+  icon,
+  label,
+  tail,
+  toolCallId,
+}: {
+  children: ReactNode
+  icon: Parameters<typeof Icon>[0]['name']
+  label: string
+  tail: ReactNode
+  toolCallId: string
+}) {
   const openArtifact = useOpenArtifact()
   const { requestOpen } = useWorkbenchOpenRequest()
   return (
     <button
       aria-label="查看子代理过程"
-      className="flex w-full cursor-pointer items-center gap-1.5 rounded-xs py-1.5 text-left text-body ui-focus"
+      className="flex min-h-5 w-full cursor-pointer items-center gap-2 rounded-xs text-left text-body leading-5 text-chat-secondary-text ui-focus ui-motion-s hover:text-chat-message-text"
       onClick={() => {
         requestOpen()
         void openArtifact(frameArtifactId(toolCallId))
       }}
       type="button"
     >
+      <RowIcon name={icon} />
+      <span className="shrink-0">{label}</span>
       {children}
-      <span className="flex shrink-0 items-center gap-0.5 text-body-sm text-chat-muted-text">
-        查看
-        <Icon decorative name="panel-right" size="sm" />
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        <span className="flex items-center gap-0.5 text-body-sm text-chat-muted-text">
+          查看
+          <Icon decorative name="panel-right" size="sm" />
+        </span>
+        {tail}
       </span>
     </button>
   )
 }
 
+/** 照 Kimi media-tool：图本身就是正文，点开灯箱看原图。 */
 function MediaWall({
   items,
   onOpen,
@@ -228,20 +364,21 @@ function MediaWall({
   onOpen: (media: LightboxMedia) => void
 }) {
   return (
-    <div className="flex flex-wrap gap-2 pt-1">
+    <div className="flex flex-wrap gap-2">
       {items.map((item) => (
-        <figure
-          className="flex max-w-[320px] min-w-0 flex-col gap-1.5 max-sm:w-[min(44vw,160px)]"
-          key={item.url}
-        >
+        <figure className="flex w-[120px] min-w-0 flex-col gap-1.5" key={item.url}>
           <button
-            className="cursor-zoom-in overflow-hidden rounded-md ui-focus"
+            className="cursor-zoom-in overflow-hidden rounded-sm ui-focus"
             onClick={() => onOpen({ kind: 'image', name: item.caption, url: item.url })}
             type="button"
           >
-            <img alt={item.caption} className="block w-full rounded-md" src={item.url} />
+            <img
+              alt={item.caption}
+              className="block h-[90px] w-[120px] object-cover"
+              src={item.url}
+            />
           </button>
-          <figcaption className="truncate text-body-sm text-chat-muted-text">
+          <figcaption className="truncate text-body-sm text-chat-secondary-text">
             {item.caption}
           </figcaption>
         </figure>

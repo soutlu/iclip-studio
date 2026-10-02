@@ -1,22 +1,23 @@
 /** 单块分派由普通轮次与活动组共用，避免两者循环依赖。 */
 
 import { useEffect, useRef, useState } from 'react'
-import type { TranscriptFrame } from '@/shared/transcript/vendor'
+import type { TranscriptFrame, TranscriptInteraction } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { useCopyFeedback } from '@/shared/ui/copy-feedback'
 import { Markdown } from '@/shared/ui/markdown'
 import { DisclosureBody, DisclosureChevron } from './disclosure'
-import { ToolLine } from './tool-line'
+import { Indented, RowIcon, ToolLine } from './tool-line'
 import { UserBubble } from './user-bubble'
 
 type TurnFrameProps = {
   frame: TranscriptFrame
   /** 未结束轮次的最后一块，用于思考计时与动效。 */
   live: boolean
-  settled: boolean
+  interactions: ReadonlyMap<string, TranscriptInteraction>
 }
 
-export function TurnFrame({ frame, live, settled }: TurnFrameProps) {
+export function TurnFrame({ frame, interactions, live }: TurnFrameProps) {
   switch (frame.kind) {
     case 'text':
       return frame.role === 'user' ? (
@@ -28,7 +29,7 @@ export function TurnFrame({ frame, live, settled }: TurnFrameProps) {
     case 'thinking':
       return <ThinkingBlock live={live} text={frame.text} />
     case 'tool':
-      return <ToolLine frame={frame} settled={settled} />
+      return <ToolLine frame={frame} interactions={interactions} />
     case 'notice':
       return frame.level === 'error' ? (
         <ErrorNotice message={frame.message} />
@@ -38,32 +39,50 @@ export function TurnFrame({ frame, live, settled }: TurnFrameProps) {
   }
 }
 
+/** 一行中性文字，只有图标是红的。 */
 function ErrorNotice({ message }: { message: string }) {
   return (
-    <p className="rounded-sm border border-chat-error-border bg-chat-error-bg px-3 py-2 text-body-sm text-chat-error-text">
-      {message}
+    <p className="flex items-start gap-2 text-body-sm text-chat-secondary-text">
+      <Icon className="mt-0.5 shrink-0 text-chat-status-error" decorative name="failed" size="sm" />
+      <span className="min-w-0 break-words">{message}</span>
     </p>
   )
 }
 
-/** 轮次没跑完：固定一句给使用者，原始异常文本折叠给排错的人。 */
-export function RunFailedNotice({ detail }: { detail: string }) {
-  const [open, setOpen] = useState(false)
+type RunFailedNoticeProps = {
+  /** 这一轮的运行记录原文，「复制错误信息」复制的就是它。 */
+  error: string
+  /** 末轮且空闲时才有；没有就不给「重试」。 */
+  onRetry?: (() => void) | undefined
+  retryDisabled?: boolean | undefined
+}
+
+/** 轮次没跑完：一行，红 × 加一句话，能重试就给重试，错误原文只给复制，不铺在对话里。 */
+export function RunFailedNotice({ error, onRetry, retryDisabled = false }: RunFailedNoticeProps) {
+  const { copied, copy } = useCopyFeedback()
   return (
-    <div className="rounded-sm border border-chat-error-border bg-chat-error-bg px-3 py-2 text-body-sm text-chat-error-text">
-      <div className="flex items-center justify-between gap-2">
-        <p>这一轮没有跑完，发一条消息可以从当前进度继续。</p>
+    <div className="flex min-h-8 flex-wrap items-center gap-2 text-body">
+      <Icon className="shrink-0 text-chat-status-error" decorative name="failed" size="sm" />
+      <span className="text-chat-secondary-text">这一轮没有完成</span>
+      {onRetry === undefined ? null : (
         <button
-          aria-expanded={open}
-          className="flex shrink-0 cursor-pointer items-center gap-0.5 rounded-xs ui-focus"
-          onClick={() => setOpen(!open)}
+          className="inline-flex h-7 ui-state cursor-pointer items-center gap-1 rounded-full px-2.5 text-body-sm font-medium text-chat-message-text ui-focus"
+          disabled={retryDisabled}
+          onClick={onRetry}
           type="button"
         >
-          详情
-          <DisclosureChevron open={open} />
+          <Icon decorative name="refresh" size="xs" />
+          重试
         </button>
-      </div>
-      {open ? <pre className="mt-2 font-mono break-all whitespace-pre-wrap">{detail}</pre> : null}
+      )}
+      <button
+        className="ml-auto inline-flex cursor-pointer items-center gap-1 rounded-xs text-body-sm text-chat-muted-text decoration-1 underline-offset-3 ui-focus ui-motion-s hover:text-chat-secondary-text hover:underline"
+        onClick={() => void copy(error)}
+        type="button"
+      >
+        <Icon decorative name={copied ? 'check' : 'copy'} size="xs" />
+        {copied ? '已复制' : '复制错误信息'}
+      </button>
     </div>
   )
 }
@@ -84,29 +103,33 @@ function useThinkingSeconds(live: boolean): number | null {
   return live ? (seconds ?? 0) : seconds
 }
 
+/** 思考与工具行同一结构；展开是全文，不封顶。 */
 function ThinkingBlock({ live, text }: { live: boolean; text: string }) {
   const [open, setOpen] = useState(false)
   const seconds = useThinkingSeconds(live)
 
   return (
-    <div>
+    <div className="flex flex-col">
       <button
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center gap-1 rounded-xs py-1 text-left text-body-sm text-chat-muted-text ui-focus hover:text-chat-message-text"
+        className="group/row flex min-h-5 w-full cursor-pointer items-center gap-2 rounded-xs text-left text-body leading-5 text-chat-secondary-text ui-focus"
         onClick={() => setOpen(!open)}
         type="button"
       >
-        <Icon className="shrink-0" decorative name="thinking" size="sm" />
-        <span className={cn('font-medium', live && 'animate-pulse')}>
-          {live ? '思考中…' : '思考过程'}
-        </span>
-        {seconds === null ? null : <span>{seconds} 秒</span>}
-        <DisclosureChevron open={open} />
+        <RowIcon name="thinking" />
+        <span className={cn(live && 'animate-pulse')}>{live ? '思考中…' : '思考过程'}</span>
+        {seconds === null ? null : <span className="text-chat-muted-text">{seconds} 秒</span>}
+        <DisclosureChevron
+          className="text-chat-muted-text ui-motion-s group-hover/row:text-chat-message-text"
+          open={open}
+        />
       </button>
       <DisclosureBody open={open}>
-        <p className="pt-1 pb-2 text-body-sm leading-relaxed whitespace-pre-wrap text-chat-secondary-text">
-          {text}
-        </p>
+        <Indented>
+          <p className="text-body-sm leading-5 whitespace-pre-wrap text-chat-secondary-text">
+            {text}
+          </p>
+        </Indented>
       </DisclosureBody>
     </div>
   )

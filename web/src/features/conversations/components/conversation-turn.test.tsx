@@ -1,8 +1,15 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parsePromptContent } from '@/shared/lib/prompt-clipboard'
-import type { PromptContentPart, TranscriptTurn } from '@/shared/transcript/vendor'
+import type {
+  PromptContentPart,
+  ToolCallFrame,
+  TranscriptInteraction,
+  TranscriptTurn,
+} from '@/shared/transcript/vendor'
+import { ArtifactRegistry } from '@/shared/workbench'
+import { renderWithProviders } from '@/testing/render'
 import { ConversationTurn } from './conversation-turn'
 import { UserBubble } from './user-bubble'
 
@@ -193,49 +200,78 @@ const turnWithFrames = (frames: TranscriptTurn['steps'][number]['frames']): Tran
   turnId: 't1',
 })
 
+/** 分镜文件登记成产物，与 app 层的登记一致：文件名换成产物名，点了进分镜面板。 */
+const registry = () => {
+  const value = new ArtifactRegistry()
+  value.register({
+    autoOpen: true,
+    component: () => null,
+    icon: 'grid',
+    label: '分镜',
+    match: { path: 'video_shot.json' },
+    title: () => '分镜',
+    type: 'storyboard',
+  })
+  return value
+}
+
+type RenderTurnOptions = {
+  interactions?: ReadonlyMap<string, TranscriptInteraction>
+  onRegenerate?: () => void
+}
+
+const turnElement = (turn: TranscriptTurn, options: RenderTurnOptions = {}) => (
+  <ConversationTurn
+    interactions={options.interactions ?? new Map()}
+    onRegenerate={options.onRegenerate}
+    turn={turn}
+  />
+)
+
+const renderTurn = (turn: TranscriptTurn, options: RenderTurnOptions = {}) =>
+  renderWithProviders(turnElement(turn, options), {
+    initialPath: '/c/conv-1',
+    registry: registry(),
+  })
+
 describe('ConversationTurn', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('已经有模型块时仍显示轮头部的开场输入', () => {
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          { frameId: 't1.1.f1', kind: 'thinking', text: '先分析素材' },
-          { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '已经完成。' },
-        ])}
-      />,
+  it('已经有模型块时仍显示轮头部的开场输入', async () => {
+    await renderTurn(
+      turnWithFrames([
+        { frameId: 't1.1.f1', kind: 'thinking', text: '先分析素材' },
+        { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '已经完成。' },
+      ]),
     )
 
     expect(screen.getByText('先做开场镜头')).toBeInTheDocument()
     expect(screen.getByText('已经完成。')).toBeInTheDocument()
   })
 
-  it('开场输入与中途插话各自显示一次', () => {
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          {
-            content: [text('再补一个特写')],
-            frameId: 't1.1.f1',
-            kind: 'text',
-            role: 'user',
-            text: '再补一个特写',
-          },
-          { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '收到。' },
-        ])}
-      />,
+  it('开场输入与中途插话各自显示一次', async () => {
+    await renderTurn(
+      turnWithFrames([
+        {
+          content: [text('再补一个特写')],
+          frameId: 't1.1.f1',
+          kind: 'text',
+          role: 'user',
+          text: '再补一个特写',
+        },
+        { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '收到。' },
+      ]),
     )
 
     expect(screen.getAllByText('先做开场镜头')).toHaveLength(1)
     expect(screen.getAllByText('再补一个特写')).toHaveLength(1)
   })
 
-  it('只有一张图的开场输入也显示用户气泡', () => {
-    render(
-      <ConversationTurn
-        turn={{ ...turnWithFrames([]), content: [image('https://example.com/reference.png')] }}
-      />,
-    )
+  it('只有一张图的开场输入也显示用户气泡', async () => {
+    await renderTurn({
+      ...turnWithFrames([]),
+      content: [image('https://example.com/reference.png')],
+    })
 
     expect(screen.getByRole('button', { name: 'reference.png' })).toBeInTheDocument()
   })
@@ -243,22 +279,20 @@ describe('ConversationTurn', () => {
   it('回复结束后复制最后一次用户输入之后的助手原始 markdown', async () => {
     const user = userEvent.setup()
     const writeText = stubClipboard()
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          { frameId: 't1.1.f1', kind: 'text', role: 'assistant', text: '前一段回复' },
-          {
-            content: [text('再补一个结尾')],
-            frameId: 't1.1.f2',
-            kind: 'text',
-            role: 'user',
-            text: '再补一个结尾',
-          },
-          { frameId: 't1.1.f3', kind: 'thinking', text: '调整结构' },
-          { frameId: 't1.1.f4', kind: 'text', role: 'assistant', text: '## 最终回复' },
-          { frameId: 't1.1.f5', kind: 'text', role: 'assistant', text: '补充说明' },
-        ])}
-      />,
+    await renderTurn(
+      turnWithFrames([
+        { frameId: 't1.1.f1', kind: 'text', role: 'assistant', text: '前一段回复' },
+        {
+          content: [text('再补一个结尾')],
+          frameId: 't1.1.f2',
+          kind: 'text',
+          role: 'user',
+          text: '再补一个结尾',
+        },
+        { frameId: 't1.1.f3', kind: 'thinking', text: '调整结构' },
+        { frameId: 't1.1.f4', kind: 'text', role: 'assistant', text: '## 最终回复' },
+        { frameId: 't1.1.f5', kind: 'text', role: 'assistant', text: '补充说明' },
+      ]),
     )
 
     await user.click(screen.getByRole('button', { name: '复制' }))
@@ -266,18 +300,14 @@ describe('ConversationTurn', () => {
     expect(writeText).toHaveBeenCalledWith('## 最终回复\n\n补充说明')
   })
 
-  it('回复仍在输出时不显示复制按钮', () => {
+  it('回复仍在输出时不显示复制按钮', async () => {
     stubClipboard()
-    render(
-      <ConversationTurn
-        turn={{
-          ...turnWithFrames([
-            { frameId: 't1.1.f1', kind: 'text', role: 'assistant', text: '还在输出' },
-          ]),
-          state: 'running',
-        }}
-      />,
-    )
+    await renderTurn({
+      ...turnWithFrames([
+        { frameId: 't1.1.f1', kind: 'text', role: 'assistant', text: '还在输出' },
+      ]),
+      state: 'running',
+    })
 
     expect(screen.queryByRole('button', { name: '复制' })).toBeNull()
   })
@@ -302,9 +332,24 @@ const TWO_ITEMS = {
   ],
 }
 
+const fileTool = (
+  frameId: string,
+  operation: 'read' | 'write' | 'edit',
+  path: string,
+  fields: Partial<ToolCallFrame> = {},
+): ToolCallFrame => ({
+  display: { kind: 'file_io', operation, path },
+  frameId,
+  kind: 'tool',
+  name: `${operation}_file`,
+  state: 'done',
+  toolCallId: frameId,
+  ...fields,
+})
+
 describe('工具结果按 view 选渲染器', () => {
-  it('media_grid 在工具行下面画出每一张图与它的标题', () => {
-    render(<ConversationTurn turn={turnWithFrames([mediaFrame(TWO_ITEMS)])} />)
+  it('media_grid 在工具行下面画出每一张图与它的标题', async () => {
+    await renderTurn(turnWithFrames([mediaFrame(TWO_ITEMS)]))
 
     expect(screen.getAllByRole('figure')).toHaveLength(2)
     expect(screen.getByRole('img', { name: 'S01 · 产品特写' })).toBeInTheDocument()
@@ -313,133 +358,123 @@ describe('工具结果按 view 选渲染器', () => {
 
   it('点一张图开灯箱', async () => {
     const user = userEvent.setup()
-    render(<ConversationTurn turn={turnWithFrames([mediaFrame(TWO_ITEMS)])} />)
+    await renderTurn(turnWithFrames([mediaFrame(TWO_ITEMS)]))
 
     await user.click(screen.getByRole('button', { name: 'S01 · 产品特写' }))
 
     expect(screen.getByRole('dialog', { name: 'S01 · 产品特写' })).toBeInTheDocument()
   })
 
-  it('结果形状对不上就退回朴素行：没有图，一句话的结果也不给展开', () => {
-    render(<ConversationTurn turn={turnWithFrames([mediaFrame({ items: 3 })])} />)
+  it('结果形状对不上就退回朴素行：没有图，一句话的结果也不给展开', async () => {
+    await renderTurn(turnWithFrames([mediaFrame({ items: 3 })]))
 
     expect(screen.queryByRole('figure')).toBeNull()
     expect(screen.getByText('出镜头帧')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /出镜头帧/ })).toBeNull()
   })
 
-  it('媒体墙的角标写工具给的说明', () => {
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([mediaFrame({ ...TWO_ITEMS, note: '2 张 · dev 渠道' })])}
-      />,
-    )
-
-    expect(screen.getByText('2 张 · dev 渠道')).toBeInTheDocument()
-  })
-
-  it('file_content：卡尾写行数，展开是带行号的正文', async () => {
+  it('读文件：行尾不写行数；展开是去掉行号的文件内容，md 排成文档，续读提示不出现', async () => {
     const user = userEvent.setup()
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          {
-            display: { kind: 'file_io', operation: 'read', path: 'shots/storyboard.md' },
-            frameId: 't1.1.f1',
-            kind: 'tool',
-            metadata: { lines: 3, path: 'shots/storyboard.md', truncated: true },
-            name: 'read_file',
-            output:
-              '     1\t# 分镜\n     2\t\n     3\tS01 产品特写\n[还有 6 行没读，接着从第 4 行读]',
-            state: 'done',
-            toolCallId: 'call_1',
-            view: 'file_content',
-          },
-        ])}
-      />,
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'read', 'shots/storyboard.md', {
+          metadata: { lines: 3, path: 'shots/storyboard.md', truncated: true },
+          output:
+            '     1\t# 分镜\n     2\t\n     3\tS01 产品特写\n[还有 6 行没读，接着从第 4 行读]',
+          view: 'file_content',
+        }),
+      ]),
     )
 
-    expect(screen.getByText('3 行 · 未读完')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /读取文件/ }))
+    expect(screen.queryByText(/3 行/)).toBeNull()
+    await user.click(screen.getByRole('button', { name: '展开「读取文件 storyboard.md」的详情' }))
 
+    expect(screen.getByRole('heading', { name: '分镜' })).toBeInTheDocument()
     expect(screen.getByText('S01 产品特写')).toBeInTheDocument()
-    expect(screen.getByText('3')).toBeInTheDocument()
-    expect(screen.getByText(/还有 6 行没读/)).toBeInTheDocument()
+    expect(screen.queryByText(/还有 6 行没读/)).toBeNull()
+    expect(screen.queryByText(/^\s*1\s*$/)).toBeNull()
   })
 
-  it('search_results：卡尾写命中数，展开是逐条命中行', async () => {
+  it('详情面板第一次展开才排版正文', async () => {
     const user = userEvent.setup()
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          {
-            display: { kind: 'search', query: '夜景' },
-            frameId: 't1.1.f1',
-            kind: 'tool',
-            metadata: {
-              matches: [
-                { file: 'shots/s01.md', line: 4, text: '开场是夜景' },
-                { file: 'shots/s02.md', line: 9, text: '结尾也是夜景' },
-              ],
-              query: '夜景',
-              truncated: true,
-            },
-            name: 'search_files',
-            output: 'shots/s01.md:4\t开场是夜景\nshots/s02.md:9\t结尾也是夜景',
-            state: 'done',
-            toolCallId: 'call_1',
-            view: 'search_results',
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'write', 'notes/剪辑说明.md', {
+          display: {
+            content: '节奏前慢后快',
+            kind: 'file_io',
+            operation: 'write',
+            path: 'notes/剪辑说明.md',
           },
-        ])}
-      />,
+        }),
+      ]),
+    )
+
+    expect(screen.queryByText('节奏前慢后快')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '展开「写入文件 剪辑说明.md」的详情' }))
+    expect(screen.getByText('节奏前慢后快')).toBeInTheDocument()
+  })
+
+  it('改文件：行尾没有增删数；展开是改动行，删的在前、加的在后', async () => {
+    const user = userEvent.setup()
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'edit', 'shots/storyboard.md', {
+          display: {
+            after: '镜头 2\n景别：中景',
+            before: '镜头 2\n景别：近景',
+            kind: 'file_io',
+            operation: 'edit',
+            path: 'shots/storyboard.md',
+          },
+          metadata: { added: 1, removed: 1 },
+          output: '已改 shots/storyboard.md（现在 4312 字节）',
+        }),
+      ]),
+    )
+
+    expect(screen.queryByText('+1')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '展开「编辑文件 storyboard.md」的详情' }))
+
+    const diff = screen.getByRole('region', { name: '改动' })
+    expect(diff).toHaveTextContent('镜头 2−删去：景别：近景+新写：景别：中景')
+  })
+
+  it('检索：行尾写命中数，展开是逐条命中（文件名 + 命中的那一行）', async () => {
+    const user = userEvent.setup()
+    await renderTurn(
+      turnWithFrames([
+        {
+          display: { kind: 'search', query: '夜景' },
+          frameId: 't1.1.f1',
+          kind: 'tool',
+          metadata: {
+            matches: [
+              { file: 'shots/s01.md', line: 4, text: '开场是夜景' },
+              { file: 'shots/s02.md', line: 9, text: '结尾也是夜景' },
+            ],
+            query: '夜景',
+            truncated: true,
+          },
+          name: 'search_files',
+          output: 'shots/s01.md:4\t开场是夜景\nshots/s02.md:9\t结尾也是夜景',
+          state: 'done',
+          toolCallId: 'call_1',
+          view: 'search_results',
+        },
+      ]),
     )
 
     expect(screen.getByText('2 处命中')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /搜索工作区/ }))
+    await user.click(screen.getByRole('button', { name: '展开「搜索工作区 夜景」的详情' }))
 
-    expect(screen.getByText('shots/s02.md:9')).toBeInTheDocument()
-    expect(screen.getByText('结尾也是夜景')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /s02\.md\s*结尾也是夜景/ })).toBeInTheDocument()
     expect(screen.getByText('命中较多，只列出一部分')).toBeInTheDocument()
   })
 
-  it('改文件：卡尾是增删数，一句话的结果不给展开', () => {
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          {
-            display: { kind: 'file_io', operation: 'edit', path: 'shots/storyboard.md' },
-            frameId: 't1.1.f1',
-            kind: 'tool',
-            metadata: { added: 3, removed: 1 },
-            name: 'edit_file',
-            output: '已改 shots/storyboard.md（现在 4312 字节）',
-            state: 'done',
-            toolCallId: 'call_1',
-          },
-        ])}
-      />,
-    )
-
-    expect(screen.getByText('+3')).toBeInTheDocument()
-    expect(screen.getByText('−1')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /编辑文件/ })).toBeNull()
-  })
-
-  it('画出图的那次调用不折进活动组：折起来图就跟着不见了', () => {
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          {
-            display: { kind: 'file_io', operation: 'read', path: 'shots/storyboard.md' },
-            frameId: 't1.1.f0',
-            kind: 'tool',
-            name: 'read_file',
-            state: 'done',
-            toolCallId: 'call_0',
-          },
-          mediaFrame(TWO_ITEMS),
-        ])}
-      />,
+  it('画出图的那次调用不折进活动组：折起来图就跟着不见了', async () => {
+    await renderTurn(
+      turnWithFrames([fileTool('t1.1.f0', 'read', 'shots/storyboard.md'), mediaFrame(TWO_ITEMS)]),
     )
 
     expect(screen.getAllByRole('figure')).toHaveLength(2)
@@ -447,60 +482,258 @@ describe('工具结果按 view 选渲染器', () => {
   })
 })
 
-describe('轮次没跑完', () => {
-  const toolFrame = (frameId: string, state: 'done' | 'error') =>
-    ({
-      display: { kind: 'file_io', operation: 'read', path: 'shots/storyboard.md' },
-      frameId,
-      kind: 'tool',
-      name: 'read_file',
-      state,
-      toolCallId: frameId,
-    }) as const
-
-  it('失败的轮次只显示一句固定提示，原始异常折在「详情」里', async () => {
+describe('文件名在工作台打开', () => {
+  it('文件名只写文件名，点了在「文件」页打开那一份；点文件名不展开这一行', async () => {
     const user = userEvent.setup()
-    render(
-      <ConversationTurn
-        turn={{
-          ...turnWithFrames([]),
-          error: 'UnexpectedModelBehavior("Tool \'write_video_shots\' exceeded max retries")',
-          state: 'failed',
-        }}
-      />,
+    const { router } = await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'write', '/notes//剪辑说明.md', {
+          display: {
+            content: '节奏',
+            kind: 'file_io',
+            operation: 'write',
+            path: '/notes//剪辑说明.md',
+          },
+        }),
+      ]),
     )
 
-    expect(screen.getByText('这一轮没有跑完，发一条消息可以从当前进度继续。')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '剪辑说明.md' }))
+
+    expect(router.state.location.search).toMatchObject({
+      artifact: 'workspace',
+      file: 'notes/剪辑说明.md',
+    })
+    expect(
+      screen.getByRole('button', { name: '展开「写入文件 剪辑说明.md」的详情' }),
+    ).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('登记成产物的文件写产物名，点了进它自己的面板', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderTurn(
+      turnWithFrames([fileTool('t1.1.f1', 'edit', 'video_shot.json')]),
+    )
+
+    await user.click(screen.getByRole('button', { name: '分镜' }))
+
+    expect(router.state.location.search).toMatchObject({ artifact: 'file:video_shot.json' })
+  })
+
+  it('路径对不上工作区文件就只写字，不给按钮', async () => {
+    await renderTurn(turnWithFrames([fileTool('t1.1.f1', 'read', 'shots/../a.md')]))
+
+    expect(screen.getByText('a.md')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'a.md' })).toBeNull()
+  })
+})
+
+describe('每次调用按自己的状态画', () => {
+  const rejected = (toolCallId: string): ReadonlyMap<string, TranscriptInteraction> =>
+    new Map([
+      [
+        'appr_1',
+        { interactionId: 'appr_1', interactionKind: 'approval', state: 'rejected', toolCallId },
+      ],
+    ])
+
+  it('审批被拒绝的调用：灰 × 加「已拒绝」，文件名不可点，没有详情，不算失败', async () => {
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'write', 'shots/cover.md', {
+          approvalId: 'appr_1',
+          error: '用户拒绝了这次调用',
+          state: 'error',
+        }),
+      ]),
+      { interactions: rejected('t1.1.f1') },
+    )
+
+    expect(screen.getByText('已拒绝')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '失败' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'cover.md' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /详情/ })).toBeNull()
+  })
+
+  it('同样的调用，审批没有被拒绝就是普通失败：红 ×，展开是错误原文', async () => {
+    const user = userEvent.setup()
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'write', 'shots/cover.md', {
+          approvalId: 'appr_1',
+          error: '运行中断，这次调用没有结果',
+          state: 'error',
+        }),
+      ]),
+    )
+
+    expect(screen.getByRole('img', { name: '失败' })).toBeInTheDocument()
+    expect(screen.queryByText('已拒绝')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '展开「写入文件 cover.md」的详情' }))
+    expect(screen.getByText('错误信息')).toBeInTheDocument()
+    expect(screen.getByText('运行中断，这次调用没有结果')).toBeInTheDocument()
+  })
+
+  it('成功的调用不画状态图标', async () => {
+    await renderTurn(turnWithFrames([fileTool('t1.1.f1', 'read', 'a.md')]))
+
+    expect(screen.queryByRole('img', { name: /失败|完成|进行中/ })).toBeNull()
+  })
+
+  it('轮已结束、调用仍是 running：照协议画运行中，不替它改成完成', async () => {
+    await renderTurn(turnWithFrames([fileTool('t1.1.f1', 'read', 'a.md', { state: 'running' })]))
+
+    expect(screen.getByRole('img', { name: '进行中' })).toBeInTheDocument()
+  })
+})
+
+describe('活动组的开合', () => {
+  const groupFrames = (state: 'running' | 'done') => [
+    { frameId: 't1.1.f1', kind: 'thinking' as const, text: '先读分镜' },
+    fileTool('t1.1.f2', 'read', 'shots/需求.md'),
+    fileTool('t1.1.f3', 'edit', 'shots/storyboard.md', {
+      error: '参数校验失败：shots[2].duration 需要数字',
+      state: 'error',
+    }),
+    fileTool('t1.1.f4', 'edit', 'shots/storyboard.md', { state }),
+  ]
+  const runningTurn: TranscriptTurn = {
+    ...turnWithFrames(groupFrames('running')),
+    state: 'running',
+  }
+  const doneTurn = turnWithFrames(groupFrames('done'))
+
+  it('运行中自动展开，跑完自动收起；收起后失败的那一行仍露在卡头下面，成功的行收进去', async () => {
+    const { rerender } = await renderTurn(runningTurn)
+
+    const header = screen.getByRole('button', { name: /^进行中：/ })
+    expect(header).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getAllByRole('button', { name: '需求.md' })).toHaveLength(1)
+
+    rerender(turnElement(doneTurn))
+
+    expect(screen.getByRole('button', { name: /^有失败：/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('button', { name: '需求.md' })).toBeNull()
+    expect(screen.getAllByRole('img', { name: '失败' })).toHaveLength(1)
+    expect(
+      screen.getByRole('button', { name: '展开「编辑文件 storyboard.md」的详情' }),
+    ).toBeInTheDocument()
+  })
+
+  it('卡头写失败次数；全部成功的组结束后收起，不露任何一行', async () => {
+    await renderTurn(doneTurn)
+    expect(screen.getByRole('button', { name: /（1 失败）/ })).toBeInTheDocument()
+
+    await renderTurn(
+      turnWithFrames([
+        { frameId: 't2.1.f1', kind: 'thinking', text: '先读分镜' },
+        fileTool('t2.1.f2', 'read', 'shots/甲.md'),
+      ]),
+    )
+    expect(screen.getByRole('button', { name: /^完成：/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('button', { name: '甲.md' })).toBeNull()
+  })
+
+  it('用户点开以后就以用户为准', async () => {
+    const user = userEvent.setup()
+    await renderTurn(doneTurn)
+
+    await user.click(screen.getByRole('button', { name: /^有失败：/ }))
+
+    expect(screen.getByRole('button', { name: /^有失败：/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: '需求.md' })).toBeInTheDocument()
+  })
+})
+
+describe('结果入口', () => {
+  it('跑完的轮列出写成、改成的文件，去重按出现顺序；没成功的不列', async () => {
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'write', 'notes/剪辑说明.md'),
+        fileTool('t1.1.f2', 'edit', 'video_shot.json'),
+        fileTool('t1.1.f3', 'edit', 'notes/剪辑说明.md'),
+        fileTool('t1.1.f4', 'write', 'notes/失败.md', { error: 'x', state: 'error' }),
+        { frameId: 't1.1.f5', kind: 'text', role: 'assistant', text: '好了。' },
+      ]),
+    )
+
+    const list = screen.getByRole('list', { name: '这一轮的结果' })
+    const items = within(list).getAllByRole('button')
+    expect(items.map((item) => item.textContent)).toEqual(['剪辑说明.md已编辑', '分镜已编辑'])
+  })
+
+  it('点结果在工作台打开那份文件', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'edit', 'video_shot.json'),
+        { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '好了。' },
+      ]),
+    )
+
+    await user.click(within(screen.getByRole('list', { name: '这一轮的结果' })).getByRole('button'))
+
+    expect(router.state.location.search).toMatchObject({ artifact: 'file:video_shot.json' })
+  })
+
+  it('还在跑的轮不列结果', async () => {
+    await renderTurn({
+      ...turnWithFrames([fileTool('t1.1.f1', 'write', 'notes/a.md')]),
+      state: 'running',
+    })
+
+    expect(screen.queryByRole('list', { name: '这一轮的结果' })).toBeNull()
+  })
+})
+
+describe('轮次没跑完', () => {
+  const failedTurn = (frames: TranscriptTurn['steps'][number]['frames'] = []): TranscriptTurn => ({
+    ...turnWithFrames(frames),
+    error: 'UnexpectedModelBehavior("Tool \'write_video_shots\' exceeded max retries")',
+    state: 'failed',
+  })
+
+  it('一行「这一轮没有完成」，错误原文不铺开，「复制错误信息」复制的就是它', async () => {
+    const user = userEvent.setup()
+    const writeText = stubClipboard()
+    await renderTurn(failedTurn())
+
+    expect(screen.getByText('这一轮没有完成')).toBeInTheDocument()
     expect(screen.queryByText(/UnexpectedModelBehavior/)).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: '详情' }))
+    await user.click(screen.getByRole('button', { name: '复制错误信息' }))
 
-    expect(screen.getByText(/UnexpectedModelBehavior/)).toBeInTheDocument()
+    expect(writeText).toHaveBeenCalledWith(
+      'UnexpectedModelBehavior("Tool \'write_video_shots\' exceeded max retries")',
+    )
   })
 
-  it('含失败工具的活动组结束后仍然展开', () => {
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          { frameId: 't1.1.f1', kind: 'thinking', text: '先读分镜' },
-          toolFrame('t1.1.f2', 'error'),
-        ])}
-      />,
+  it('能重新生成时给「重试」，点了就是重新生成；操作栏不再另给一个', async () => {
+    const user = userEvent.setup()
+    const onRegenerate = vi.fn()
+    await renderTurn(
+      failedTurn([{ frameId: 't1.1.f1', kind: 'text', role: 'assistant', text: '做到一半' }]),
+      { onRegenerate },
     )
 
-    expect(screen.getByRole('button', { name: /^有失败/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: '重试' }))
+
+    expect(onRegenerate).toHaveBeenCalledTimes(1)
   })
 
-  it('全部成功的活动组结束后收起', () => {
-    render(
-      <ConversationTurn
-        turn={turnWithFrames([
-          { frameId: 't1.1.f1', kind: 'thinking', text: '先读分镜' },
-          toolFrame('t1.1.f2', 'done'),
-        ])}
-      />,
-    )
+  it('不能重新生成时没有「重试」', async () => {
+    await renderTurn(failedTurn())
 
-    expect(screen.getByRole('button', { name: /^完成/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 })

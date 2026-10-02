@@ -1,7 +1,12 @@
 /** 参考 Kimi activity-run：连续可折叠块至少两个且包含工具时成组；摘要按首次出现顺序聚合。 */
 
-import type { TranscriptFrame, TranscriptStep } from '@/shared/transcript/vendor'
-import { toolCard, toolMedia } from './tool-display'
+import type {
+  ToolCallFrame,
+  TranscriptFrame,
+  TranscriptInteraction,
+  TranscriptStep,
+} from '@/shared/transcript/vendor'
+import { toolCard, toolMedia, toolOutcome } from './tool-display'
 
 export type TurnEntry = {
   frame: TranscriptFrame
@@ -11,10 +16,11 @@ export type TurnEntry = {
 export type ActivityNode =
   { kind: 'entry'; entry: TurnEntry } | { kind: 'run'; runId: string; items: readonly TurnEntry[] }
 
-/** 摘要的一条子句；tone 缺省是主文字色。 */
+/** 摘要的一条子句；tone 缺省是主文字色。pinned 的子句（失败数、拒绝数、时长）窄屏下不被截掉。 */
 export type SummaryClause = {
   text: string
   tone?: 'danger' | 'faint'
+  pinned?: boolean
 }
 
 /** 正文、通知与错误中断分组；带媒体或派出子代理的工具保持独立，折叠后预览和「查看」入口都还在。 */
@@ -94,7 +100,12 @@ export const formatActivityDuration = (ms: number): string => {
   return restMinutes === 0 ? `${hours}h` : `${hours}h${restMinutes}m`
 }
 
-type ToolFrame = Extract<TranscriptFrame, { kind: 'tool' }>
+type ToolFrame = ToolCallFrame
+type Interactions = ReadonlyMap<string, TranscriptInteraction>
+
+/** 组里失败的那几次调用，按出现顺序；被拒绝的不算失败。只看每次调用自己的状态，不看前后。 */
+export const failedTools = (items: readonly TurnEntry[], interactions: Interactions): TurnEntry[] =>
+  items.filter(({ frame }) => frame.kind === 'tool' && toolOutcome(frame, interactions) === 'error')
 
 /** 文件操作与检索按操作类型聚合，其余工具按标题聚合；认不出的工具归到「操作」。 */
 const bucketKey = (frame: ToolFrame): string => {
@@ -124,12 +135,13 @@ const OPERATION_LABELS = {
   grep: (n: number) => `搜索了 ${n} 次`,
 } as const
 
-/** 运行中的当前项：动词加主语；标题本身就是动宾短语，前面加「正在」即可。 */
-const doingClause = (frame: TranscriptFrame): string => {
+/** 运行中的当前项：动词加主语；标题本身就是动宾短语，前面加「正在」即可。文件主语用界面上的名字。 */
+const doingClause = (frame: TranscriptFrame, nameOf: (path: string) => string): string => {
   if (frame.kind === 'thinking') return '思考中…'
   if (frame.kind !== 'tool') return ''
-  const { detail, label, operation } = toolCard(frame.display, frame.view)
-  const subject = detail === undefined ? '' : ` ${detail}`
+  const { detail, file, label, operation } = toolCard(frame.display, frame.view)
+  const name = file === undefined ? detail : nameOf(file)
+  const subject = name === undefined ? '' : ` ${name}`
   if (operation === undefined) return `正在${label}${subject}`
   return `${DOING_VERB[operation]}${subject}`
 }
@@ -142,20 +154,31 @@ const DOING_VERB = {
   grep: '正在搜索',
 } as const
 
-/** 按首次出现顺序聚合，失败数附在所属类别后。 */
-const aggregate = (tools: readonly ToolFrame[], live: boolean): SummaryClause[] => {
-  const buckets = new Map<string, { count: number; errors: number }>()
+/** 按首次出现顺序聚合，失败数与被拒绝数附在所属类别后；两者都只看每次调用自己的状态。 */
+const aggregate = (
+  tools: readonly ToolFrame[],
+  live: boolean,
+  interactions: Interactions,
+): SummaryClause[] => {
+  const buckets = new Map<string, { count: number; errors: number; denied: number }>()
   for (const frame of tools) {
     const key = bucketKey(frame)
-    const bucket = buckets.get(key) ?? { count: 0, errors: 0 }
+    const bucket = buckets.get(key) ?? { count: 0, denied: 0, errors: 0 }
     bucket.count += 1
-    if (frame.state === 'error') bucket.errors += 1
+    const outcome = toolOutcome(frame, interactions)
+    if (outcome === 'error') bucket.errors += 1
+    if (outcome === 'denied') bucket.denied += 1
     buckets.set(key, bucket)
   }
   const clauses: SummaryClause[] = []
   for (const [key, bucket] of buckets) {
     clauses.push({ text: doneClause(key, bucket.count, live) })
-    if (bucket.errors > 0) clauses.push({ text: `（${bucket.errors} 失败）`, tone: 'danger' })
+    if (bucket.errors > 0) {
+      clauses.push({ pinned: true, text: `（${bucket.errors} 失败）`, tone: 'danger' })
+    }
+    if (bucket.denied > 0) {
+      clauses.push({ pinned: true, text: `（${bucket.denied} 已拒绝）`, tone: 'faint' })
+    }
   }
   return clauses
 }
@@ -164,11 +187,12 @@ const aggregate = (tools: readonly ToolFrame[], live: boolean): SummaryClause[] 
 export const summarizeDone = (
   items: readonly TurnEntry[],
   durationMs: number | undefined,
+  interactions: Interactions,
 ): SummaryClause[] => {
   const tools = items.flatMap((entry) => (entry.frame.kind === 'tool' ? [entry.frame] : []))
-  const clauses = aggregate(tools, false)
+  const clauses = aggregate(tools, false, interactions)
   const duration = durationMs === undefined ? '' : formatActivityDuration(durationMs)
-  if (duration !== '') clauses.push({ text: duration, tone: 'faint' })
+  if (duration !== '') clauses.push({ pinned: true, text: duration, tone: 'faint' })
   return clauses
 }
 
@@ -177,6 +201,8 @@ export const summarizeRunning = (
   items: readonly TurnEntry[],
   liveFrameId: string | undefined,
   elapsedMs: number | undefined,
+  interactions: Interactions,
+  nameOf: (path: string) => string,
 ): SummaryClause[] => {
   const current =
     items.find((entry) => entry.frame.frameId === liveFrameId) ??
@@ -191,12 +217,14 @@ export const summarizeRunning = (
   )
   const clauses: SummaryClause[] = []
   if (current !== undefined) {
-    const text = doingClause(current.frame)
+    const text = doingClause(current.frame, nameOf)
     if (text !== '') clauses.push({ text })
   }
-  clauses.push(...aggregate(done, true).map((clause) => ({ ...clause, tone: 'faint' as const })))
+  clauses.push(
+    ...aggregate(done, true, interactions).map((clause) => ({ ...clause, tone: 'faint' as const })),
+  )
   const elapsed = elapsedMs === undefined ? '' : formatActivityDuration(elapsedMs)
-  if (elapsed !== '') clauses.push({ text: elapsed, tone: 'faint' })
+  if (elapsed !== '') clauses.push({ pinned: true, text: elapsed, tone: 'faint' })
   return clauses
 }
 

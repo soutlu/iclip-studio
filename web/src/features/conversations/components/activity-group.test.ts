@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { TranscriptFrame, TranscriptStep } from '@/shared/transcript/vendor'
+import type {
+  TranscriptFrame,
+  TranscriptInteraction,
+  TranscriptStep,
+} from '@/shared/transcript/vendor'
 import {
+  failedTools,
   formatActivityDuration,
   groupActivityCards,
   groupTurnEntries,
@@ -36,11 +41,18 @@ const thinking = (id: string): TranscriptFrame => ({
   text: '想',
 })
 
+const NO_INTERACTIONS: ReadonlyMap<string, TranscriptInteraction> = new Map()
+
+/** 界面上的名字由工作台登记表给，这里用一个看得出来的替身。 */
+const nameOf = (path: string) => `「${path}」`
+
 const tool = (
   id: string,
   operation: 'read' | 'write' | 'edit' | 'glob' | 'grep' | undefined,
   state: 'running' | 'done' | 'error' = 'done',
+  approvalId?: string,
 ): TranscriptFrame => ({
+  ...(approvalId === undefined ? {} : { approvalId }),
   display:
     operation === undefined
       ? { kind: 'generic', summary: '出镜头帧' }
@@ -156,6 +168,7 @@ describe('summarizeDone', () => {
         entry(tool('f6', undefined)),
       ],
       191_000,
+      NO_INTERACTIONS,
     )
 
     expect(clauses.map((clause) => clause.text)).toEqual([
@@ -170,23 +183,60 @@ describe('summarizeDone', () => {
   })
 })
 
+describe('被拒绝不算失败', () => {
+  const rejected: ReadonlyMap<string, TranscriptInteraction> = new Map([
+    [
+      'appr_1',
+      { interactionId: 'appr_1', interactionKind: 'approval', state: 'rejected', toolCallId: 'f2' },
+    ],
+  ])
+  const items = [
+    entry(tool('f1', 'read')),
+    entry(tool('f2', 'edit', 'error', 'appr_1')),
+    entry(tool('f3', 'edit', 'error')),
+  ]
+
+  it('摘要的失败数只数真正失败的调用，被拒绝的另记一句弱化的「已拒绝」', () => {
+    const clauses = summarizeDone(items, undefined, rejected)
+    expect(clauses.map((clause) => clause.text)).toEqual([
+      '读取了 1 个文件',
+      '编辑了 2 处',
+      '（1 失败）',
+      '（1 已拒绝）',
+    ])
+    expect(clauses[3]?.tone).toBe('faint')
+  })
+
+  it('收起时露出的失败行按各自状态挑，被拒绝的不在里面', () => {
+    expect(failedTools(items, rejected).map((item) => item.frame.frameId)).toEqual(['f3'])
+  })
+})
+
 describe('summarizeRunning', () => {
   it('当前子句当头，已完成的类别弱化带「已」，尾巴挂实时时长', () => {
     const clauses = summarizeRunning(
       [entry(thinking('f1')), entry(tool('f2', 'grep')), entry(tool('f3', 'read', 'running'))],
       'f3',
       20_000,
+      NO_INTERACTIONS,
+      nameOf,
     )
 
     expect(clauses.map((clause) => clause.text)).toEqual([
-      '正在读取 shots/storyboard.md',
+      '正在读取 「shots/storyboard.md」',
       '已搜索了 1 次',
       '20s',
     ])
   })
 
   it('直播块是思考时当前子句是「思考中…」', () => {
-    const clauses = summarizeRunning([entry(thinking('f1')), entry(tool('f2', 'grep'))], 'f1', 0)
+    const clauses = summarizeRunning(
+      [entry(thinking('f1')), entry(tool('f2', 'grep'))],
+      'f1',
+      0,
+      NO_INTERACTIONS,
+      nameOf,
+    )
     expect(clauses[0]?.text).toBe('思考中…')
   })
 })

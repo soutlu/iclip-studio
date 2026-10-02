@@ -320,6 +320,7 @@ export function ConversationRoute({
             {turns.map((turn) => (
               <ConversationTurn
                 editDisabled={conversationBusy}
+                interactions={view.interactions}
                 key={turn.turnId}
                 latest={turn.turnId === latestTurn?.turnId}
                 onEdit={
