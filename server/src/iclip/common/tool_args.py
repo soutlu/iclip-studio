@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+from typing import Final
 
 import structlog
 from pydantic import BeforeValidator, ValidationInfo
 
 _logger = structlog.stdlib.get_logger(__name__)
+
+REPLAY_CONTEXT: Final = {"tool_args_replay": True}
+"""重放已收到的工具入参时传给 ``validate_*`` 的 context（如由入参画工具卡）：照常还原，不再记日志。
+
+日志用来统计模型把结构裹成字符串的次数，一次调用只该记一次。"""
 
 
 def parse_json_text(value: object, info: ValidationInfo) -> object:
@@ -17,7 +23,8 @@ def parse_json_text(value: object, info: ValidationInfo) -> object:
 
     if not isinstance(value, str):
         return value
-    _logger.warning("工具参数以字符串传入，已解析", field=info.field_name)
+    if info.context != REPLAY_CONTEXT:
+        _logger.warning("工具参数以字符串传入，已解析", field=info.field_name)
     return json.loads(value)
 
 

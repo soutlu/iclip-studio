@@ -7,6 +7,7 @@
 import { useState, type ReactNode } from 'react'
 import type { ToolCallFrame, TranscriptInteraction } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
+import { baseName } from '@/shared/lib/file-kind'
 import { cn } from '@/shared/lib/utils'
 import { Markdown } from '@/shared/ui/markdown'
 import { type LightboxMedia, MediaLightbox } from '@/shared/ui/media-lightbox'
@@ -49,8 +50,7 @@ export function ToolLine({ frame, interactions }: ToolLineProps) {
   const [mounted, setMounted] = useState(false)
   const [preview, setPreview] = useState<LightboxMedia | null>(null)
   const link = useWorkspaceFileLink()
-  const { file } = card
-  const name = file === undefined ? card.detail : link.nameOf(file)
+  const { detail: name, file } = card
   // 被拒绝的那一步没动过文件，文件名只写字。
   const openFile = file === undefined || outcome === 'denied' ? undefined : () => link.open(file)
 
@@ -296,7 +296,7 @@ function MatchRow({ match }: { match: SearchMatch }) {
   const content = (
     <>
       <span className="max-w-[45%] shrink-0 truncate text-chat-muted-text">
-        {link.nameOf(path ?? match.file)}
+        {baseName(path ?? match.file)}
       </span>
       <span className="min-w-0 truncate text-chat-message-text decoration-1 underline-offset-3 group-hover/match:underline">
         {match.text}

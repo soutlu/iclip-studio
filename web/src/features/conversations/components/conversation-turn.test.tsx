@@ -200,7 +200,7 @@ const turnWithFrames = (frames: TranscriptTurn['steps'][number]['frames']): Tran
   turnId: 't1',
 })
 
-/** 分镜文件登记成产物，与 app 层的登记一致：文件名换成产物名，点了进分镜面板。 */
+/** 分镜文件登记成产物，与 app 层的登记一致：对话里照写文件名，点了进分镜面板。 */
 const registry = () => {
   const value = new ArtifactRegistry()
   value.register({
@@ -509,13 +509,13 @@ describe('文件名在工作台打开', () => {
     ).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('登记成产物的文件写产物名，点了进它自己的面板', async () => {
+  it('登记成产物的文件照写文件名，点了进它自己的面板', async () => {
     const user = userEvent.setup()
     const { router } = await renderTurn(
       turnWithFrames([fileTool('t1.1.f1', 'edit', 'video_shot.json')]),
     )
 
-    await user.click(screen.getByRole('button', { name: '分镜' }))
+    await user.click(screen.getByRole('button', { name: 'video_shot.json' }))
 
     expect(router.state.location.search).toMatchObject({ artifact: 'file:video_shot.json' })
   })
@@ -668,7 +668,10 @@ describe('结果入口', () => {
 
     const list = screen.getByRole('list', { name: '这一轮的结果' })
     const items = within(list).getAllByRole('button')
-    expect(items.map((item) => item.textContent)).toEqual(['剪辑说明.md已编辑', '分镜已编辑'])
+    expect(items.map((item) => item.textContent)).toEqual([
+      '剪辑说明.md已编辑',
+      'video_shot.json已编辑',
+    ])
   })
 
   it('点结果在工作台打开那份文件', async () => {
