@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+import weakref
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -318,6 +320,19 @@ class ConversationService:
         self._read_derived_file = read_derived_file
         self._write_derived_file = write_derived_file
         self._document_validators = document_validators
+        # 同一段对话的「写库 → 读活动 → 广播」在本进程串行：帧序号在广播时才发，两次写入若在读活动处
+        # 交错，先提交的旧行会拿到更大的序号把新行盖回去。ADR-0004 的「提交后发号」以发号顺序等于提交
+        # 顺序为前提。锁只经 _row_lock 用在 async with 里，没人持有也没人等待时随即回收。
+        self._row_locks: weakref.WeakValueDictionary[uuid.UUID, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
+
+    def _row_lock(self, conversation_id: uuid.UUID) -> asyncio.Lock:
+        lock = self._row_locks.get(conversation_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._row_locks[conversation_id] = lock
+        return lock
 
     def watermark(self) -> EventWatermark:
         """取一份会话事件水位；列表与单行接口在读库之前调，结果填进行上的 ``lastSeq``。"""
@@ -421,29 +436,34 @@ class ConversationService:
         """创建一段对话，返回它与「本次是否新建」；可选归属是否存在由外键约束校验。
 
         ``conversation_id`` 由调用方铸时按它幂等：重发同一个 id 返回已有那一段。
-        新建时挂了需求单，就以属主认领那张单。"""
+        落库的那一段挂着需求单，就以它的属主认领那张单，重发也认领一次。"""
 
         now = datetime.now(UTC)
-        before = self._event_watermark()
-        conversation, created = await self._repo.create_if_absent(
-            Conversation(
-                id=conversation_id or uuid.uuid4(),
-                owner_user_id=principal.user_id,
-                agent_id=agent_id,
-                title=title or DEFAULT_TITLE,
-                title_kind="custom" if title else "default",
-                last_run_id=None,
-                task_id=task_id,
-                collection_id=collection_id,
-                # 仓储使用数据库 now() 覆盖时间占位值。
-                created_at=now,
-                updated_at=now,
+        new_id = conversation_id or uuid.uuid4()
+        # 调用方铸的 id 在答复之前就可能被拿去改这段对话，created 帧与其他整行帧同样要按提交顺序发号。
+        async with self._row_lock(new_id):
+            before = self._event_watermark()
+            conversation, created = await self._repo.create_if_absent(
+                Conversation(
+                    id=new_id,
+                    owner_user_id=principal.user_id,
+                    agent_id=agent_id,
+                    title=title or DEFAULT_TITLE,
+                    title_kind="custom" if title else "default",
+                    last_run_id=None,
+                    task_id=task_id,
+                    collection_id=collection_id,
+                    # 仓储使用数据库 now() 覆盖时间占位值。
+                    created_at=now,
+                    updated_at=now,
+                )
             )
-        )
-        if created and task_id is not None:
-            await self._claim_task(task_id, principal.user_id)
-        if created:
-            await self._broadcast_row("created", conversation, before)
+            if created:
+                await self._broadcast_row("created", conversation, before)
+        # 先广播再认领：对话行一提交就是事实，认领失败不能把 created 帧一起吞掉。重发时首次可能死在
+        # 提交之后、认领之前，所以不看 created，按落库那一行补认领；认领本身幂等。
+        if conversation.task_id is not None:
+            await self._claim_task(conversation.task_id, conversation.owner_user_id)
         return conversation, created
 
     async def fork(
@@ -652,14 +672,17 @@ class ConversationService:
     async def rename(
         self, principal: Principal, conversation_id: uuid.UUID, *, title: str
     ) -> Conversation:
-        before = self._event_watermark()
-        renamed = await self._repo.rename(conversation_id, owner=principal.user_id, title=title)
-        self._announce_title(renamed.owner_user_id, conversation_id, renamed.title)
-        await self._broadcast_row("updated", renamed, before)
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            renamed = await self._repo.rename(conversation_id, owner=principal.user_id, title=title)
+            self._announce_title(renamed.owner_user_id, conversation_id, renamed.title)
+            await self._broadcast_row("updated", renamed, before)
         return renamed
 
     async def name_after_turn(self, conversation_id: uuid.UUID, user_text: str) -> None:
-        """轮次结束后生成 default 标题；本次未生成时保留 default，后续轮次可再次尝试。"""
+        """轮次结束后生成 default 标题；本次未生成时保留 default，后续轮次可再次尝试。
+
+        生成标题要调模型，放在行锁外面，免得这段对话的改名、开跑等写入跟着等。"""
 
         conversation = await self._repo.get(conversation_id, owner=None)
         if conversation.title_kind != "default":
@@ -667,20 +690,22 @@ class ConversationService:
         title = await self._generate_title(user_text)
         if title is None:
             return
-        # SQL 条件更新防止生成期间的用户改名被覆盖。
-        if await self._repo.apply_generated_title(conversation_id, title=title):
-            self._announce_title(conversation.owner_user_id, conversation_id, title)
+        async with self._row_lock(conversation_id):
+            # SQL 条件更新防止生成期间的用户改名被覆盖。
+            if await self._repo.apply_generated_title(conversation_id, title=title):
+                self._announce_title(conversation.owner_user_id, conversation_id, title)
 
     async def set_collection(
         self, principal: Principal, conversation_id: uuid.UUID, *, collection_id: uuid.UUID | None
     ) -> Conversation:
         """设置或清空对话的合集归属。"""
 
-        before = self._event_watermark()
-        conversation = await self._repo.set_collection(
-            conversation_id, owner=principal.user_id, collection_id=collection_id
-        )
-        await self._broadcast_row("updated", conversation, before)
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            conversation = await self._repo.set_collection(
+                conversation_id, owner=principal.user_id, collection_id=collection_id
+            )
+            await self._broadcast_row("updated", conversation, before)
         return conversation
 
     async def set_task(
@@ -689,13 +714,16 @@ class ConversationService:
         """设置或清空需求单归属。尝试顺序按对话创建时间计算，重新关联不会改变创建时间。
         挂上的那张单由属主认领；摘掉不动认领记录。"""
 
-        before = self._event_watermark()
-        conversation = await self._repo.set_task(
-            conversation_id, owner=principal.user_id, task_id=task_id
-        )
-        if task_id is not None:
-            await self._claim_task(task_id, principal.user_id)
-        await self._broadcast_row("updated", conversation, before)
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            conversation = await self._repo.set_task(
+                conversation_id, owner=principal.user_id, task_id=task_id
+            )
+            await self._broadcast_row("updated", conversation, before)
+        # 认领是别的模块的端口，不放在行锁里；行一提交就是事实，先广播，认领失败也不吞掉这一帧。
+        # 重新挂同一张单照样认领一次（认领幂等），失败后重试即可补上。
+        if conversation.task_id is not None:
+            await self._claim_task(conversation.task_id, conversation.owner_user_id)
         return conversation
 
     async def set_completed(
@@ -703,11 +731,12 @@ class ConversationService:
     ) -> Conversation:
         """标记或取消属主的收尾标记。机器不会自己标；属主再动手会自动取消。"""
 
-        before = self._event_watermark()
-        conversation = await self._repo.set_completed(
-            conversation_id, owner=principal.user_id, completed=completed
-        )
-        await self._broadcast_row("updated", conversation, before)
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            conversation = await self._repo.set_completed(
+                conversation_id, owner=principal.user_id, completed=completed
+            )
+            await self._broadcast_row("updated", conversation, before)
         return conversation
 
     async def clear_completed(self, conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
@@ -717,15 +746,16 @@ class ConversationService:
         标记本来就是空时照样写一次：提交出片本身就是活动，`updated_at` 该跟着走；行变了就广播
         ``updated``，与属主手动取消同一种帧。"""
 
-        before = self._event_watermark()
-        try:
-            conversation = await self._repo.set_completed(
-                conversation_id, owner=owner, completed=False
-            )
-        except NotFound:
-            _logger.debug("对话不可见，跳过取消收尾标记", conversation_id=str(conversation_id))
-            return
-        await self._broadcast_row("updated", conversation, before)
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            try:
+                conversation = await self._repo.set_completed(
+                    conversation_id, owner=owner, completed=False
+                )
+            except NotFound:
+                _logger.debug("对话不可见，跳过取消收尾标记", conversation_id=str(conversation_id))
+                return
+            await self._broadcast_row("updated", conversation, before)
 
     async def delete(self, principal: Principal, conversation_id: uuid.UUID) -> None:
         """把对话标记删除。工作区与素材台账留着，治理者复盘时还要看。"""
@@ -741,11 +771,13 @@ class ConversationService:
         这一帧带出新的 ``lastRunId`` 与被抹掉的收尾标记：开跑帧之后、这次写入之前读出的行晚到，
         盖不掉它（ADR-0004）。"""
 
-        before = self._event_watermark()
-        conversation = await self._repo.touch_run(
-            _as_conversation_id(conversation_id), owner=owner, agent_id=agent_id, run_id=run_id
-        )
-        await self._broadcast_row("updated", conversation, before)
+        parsed = _as_conversation_id(conversation_id)
+        async with self._row_lock(parsed):
+            before = self._event_watermark()
+            conversation = await self._repo.touch_run(
+                parsed, owner=owner, agent_id=agent_id, run_id=run_id
+            )
+            await self._broadcast_row("updated", conversation, before)
 
     async def agent_of(self, principal: Principal, conversation_id: str, *, writing: bool) -> str:
         """从可见对话中读取 Agent，拒绝由调用方指定 Agent 绕过对话绑定。
