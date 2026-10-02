@@ -5,6 +5,8 @@
  * - 不带水位、epoch 缺失或对不上、水位超前、要的批次已出日志窗口：只回一帧不带历史轮的 reset；
  * - 否则补发水位之后的批次；之后按档位过滤实时推送，筛空的批次整批不发；
  * - 表里有不属于这段对话的 agent：整帧回 ack code 404；对话不存在：ack 的 not_found 里带上它。
+ * - 给了 access 就按身份核可见性：REST 页按请求时的身份，订阅按连接握手时的身份（合同 §5：权限按握手时快照，
+ *   换人要重连才生效）；看不见与不存在同一个应答，不泄露存在性。不给就谁都看得见。
  * restart() 模拟服务重启：每条流换新 epoch、批次号从头编，已持久化的内容（页里的轮）保留，连接全部断开。
  */
 
@@ -25,6 +27,12 @@ interface Stream {
   store: AgentTranscript
   /** 页顶层的信封字段。 */
   title: string
+}
+
+/** 身份可见性：此刻持凭证的是谁（未登录为 null），以及某个身份看不看得见某段对话。 */
+export interface TranscriptAccess {
+  viewer: () => string | null
+  canView: (viewer: string | null, conversationId: string) => boolean
 }
 
 interface ClientFrame {
@@ -61,10 +69,13 @@ class ServerSocket {
   readonly received: ClientFrame[] = []
   /** 这条连接订了哪些流、各自什么档位。 */
   readonly grades = new Map<string, TranscriptGrade>()
+  /** 握手时的身份，之后不再变。 */
+  readonly viewer: string | null
   private readonly server: FakeTranscriptServer
 
   constructor(server: FakeTranscriptServer) {
     this.server = server
+    this.viewer = server.viewerNow()
     this.push(SERVER_HELLO)
   }
 
@@ -112,9 +123,11 @@ export class FakeTranscriptServer {
 
   /** 不为空时，页请求等它放行才回，用来制造「读取在途」。 */
   private gate: Promise<void> | null = null
+  private readonly access: TranscriptAccess | undefined
 
-  constructor({ window = 2000 }: { window?: number } = {}) {
+  constructor({ window = 2000, access }: { window?: number; access?: TranscriptAccess } = {}) {
     this.window = window
+    this.access = access
   }
 
   /** 之后的页请求先挂起，调返回的函数一起放行。 */
@@ -172,6 +185,15 @@ export class FakeTranscriptServer {
     const socket = new ServerSocket(this)
     this.sockets.push(socket)
     return socket as unknown as WebSocket
+  }
+
+  /** 按建立先后列出每条连接：握手时的身份、是否还开着、收到的客户端帧。 */
+  connections(): { viewer: string | null; open: boolean; received: readonly ClientFrame[] }[] {
+    return this.sockets.map((socket) => ({
+      open: socket.readyState === 1,
+      received: socket.received,
+      viewer: socket.viewer,
+    }))
   }
 
   /** 所有连接收到的客户端帧。 */
@@ -234,7 +256,7 @@ export class FakeTranscriptServer {
         this.pageRequests.push({ agentId, beforeTurn, conversationId })
         if (this.gate !== null) await this.gate
         const stream = this.streams.get(keyOf(conversationId, agentId))
-        if (stream === undefined) {
+        if (stream === undefined || !this.visible(this.viewerNow(), conversationId)) {
           return HttpResponse.json({ detail: '这段对话不存在' }, { status: 404 })
         }
         const pageSize = Number(query.get('page_size') ?? 20)
@@ -265,6 +287,11 @@ export class FakeTranscriptServer {
     ]
   }
 
+  /** @internal 此刻持凭证的身份；连接在握手时取一次。 */
+  viewerNow(): string | null {
+    return this.access?.viewer() ?? null
+  }
+
   /** @internal 连接收到客户端帧。 */
   handle(socket: ServerSocket, frame: ClientFrame): void {
     if (frame.type === 'pong') return
@@ -282,7 +309,9 @@ export class FakeTranscriptServer {
     if (frame.type !== 'subscribe_v2') return
     const conversationId = frame.payload?.session_id ?? ''
     const table = frame.payload?.transcript ?? {}
-    const known = [...this.streams.keys()].some((key) => key.startsWith(`${conversationId}/`))
+    const known =
+      [...this.streams.keys()].some((key) => key.startsWith(`${conversationId}/`)) &&
+      this.visible(socket.viewer, conversationId)
     if (!known) {
       socket.push({ id: frame.id, payload: { not_found: [conversationId] }, type: 'ack' })
       return
@@ -312,6 +341,10 @@ export class FakeTranscriptServer {
       }
     }
     socket.push({ id: frame.id, payload: { accepted: [conversationId] }, type: 'ack' })
+  }
+
+  private visible(viewer: string | null, conversationId: string): boolean {
+    return this.access === undefined || this.access.canView(viewer, conversationId)
   }
 
   /** 能补就给出要补的批次，补不了（该回 reset）给 null。 */
