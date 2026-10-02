@@ -9,7 +9,7 @@ import { Button, IconButton } from '@/shared/ui/button'
 import { Markdown } from '@/shared/ui/markdown'
 import { toast } from '@/shared/ui/toast'
 import { useOpenArtifact, useWorkbenchRegistry, useWorkspaceFile } from '@/shared/workbench'
-import { dirName, fileIconOf } from '../file-kind'
+import { dirName, fileIconOf, splitFileName } from '../file-kind'
 import { parseJson } from '../json-format'
 import { useJsonFold } from '../use-json-fold'
 import { JsonParseFailure, JsonView } from './json-view'
@@ -38,6 +38,7 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
   // 这份文件若本身登记成了别的产物（比如分镜），给一个去那边看的入口；匹配只看路径，版本号只是凑齐类型。
   const own = registry.matchFiles([{ path, version: file.data?.file.version ?? 0 }])[0]
   const dir = dirName(path)
+  const name = splitFileName(baseName(path))
 
   const copy = async () => {
     if (content === undefined) return
@@ -60,9 +61,15 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
             name={fileIconOf(path)}
             size="sm"
           />
-          <span className="min-w-0 truncate">
-            {dir === '' ? null : <span className="font-normal text-on-surface-faint">{dir}/</span>}
-            {baseName(path)}
+          {/* 截中间：目录与文件名开头一起从末尾截，主名末 4 字加扩展名固定不截；全名留在文本里供读屏，悬停看 title。 */}
+          <span className="flex min-w-0 whitespace-nowrap" title={path}>
+            <span className="min-w-[1ch] truncate">
+              {dir === '' ? null : (
+                <span className="font-normal text-on-surface-faint">{dir}/</span>
+              )}
+              {name.head}
+            </span>
+            {name.tail === '' ? null : <span className="shrink-0">{name.tail}</span>}
           </span>
         </h3>
         {own === undefined ? null : (

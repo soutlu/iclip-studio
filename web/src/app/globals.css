@@ -220,6 +220,10 @@
   --color-accent-6: var(--color-accent-6);
   --color-accent-7: var(--color-accent-7);
   --color-accent-8: var(--color-accent-8);
+  --color-code-key: var(--color-code-key);
+  --color-code-string: var(--color-code-string);
+  --color-code-literal: var(--color-code-literal);
+  --color-code-guide: var(--color-code-guide);
   --color-dashboard-bg: var(--color-dashboard-bg);
   --color-dashboard-card: var(--color-dashboard-card);
   --color-dashboard-card-edge: var(--color-dashboard-card-edge);

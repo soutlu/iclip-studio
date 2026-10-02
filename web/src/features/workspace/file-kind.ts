@@ -31,6 +31,20 @@ export const dirName = (path: string): string => {
   return slash === -1 ? '' : path.slice(0, slash)
 }
 
+/** 截中间时固定显示的主名末尾字数（扩展名另算）。 */
+const KEPT_STEM_TAIL = 4
+
+/**
+ * 把文件名拆成「可截的开头」与「固定的结尾」，供页头纯 CSS 截中间：窄宽时开头出省略号，
+ * 结尾（主名末 4 字 + 扩展名）始终可见，如 `vid…shot.json`。
+ * 没有扩展名（含 `.gitignore` 这类点开头的名字）或主名不超过 4 字时不拆，`tail` 为空串，整名按末尾截断。
+ */
+export const splitFileName = (name: string): { head: string; tail: string } => {
+  const cut = name.lastIndexOf('.') - KEPT_STEM_TAIL
+  if (cut <= 0) return { head: name, tail: '' }
+  return { head: name.slice(0, cut), tail: name.slice(cut) }
+}
+
 export type FileGroup<T extends { path: string }> = {
   dir: string
   files: T[]
