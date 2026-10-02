@@ -61,40 +61,36 @@ type ChooserRow = {
   detail?: string
 }
 
-/** 常驻类型一行一个，没有产物的也列出来；工具卡产物一件一行。 */
+const artifactRow = (entry: ArtifactEntry, artifact: Artifact): ChooserRow => {
+  const detail = entry.detail?.(artifact.source)
+  return {
+    artifactId: artifact.id,
+    icon: entry.icon,
+    key: artifact.id,
+    label: artifact.title,
+    ...(detail === undefined ? {} : { detail }),
+  }
+}
+
+/** 常驻类型按登记顺序，每件产物一行，没有产物的也列一行灰的；工具卡产物一件一行。 */
 const chooserRows = (registry: ArtifactRegistry, artifacts: readonly Artifact[]): ChooserRow[] => {
-  const standing = registry.standing().map((entry): ChooserRow => {
-    const artifact = artifacts.find((candidate) => candidate.type === entry.type)
-    if (artifact === undefined) {
-      return {
-        icon: entry.icon,
-        key: entry.type,
-        label: entry.label,
-        ...(entry.empty ? { detail: entry.empty } : {}),
-      }
+  const standing = registry.standing().flatMap((entry): ChooserRow[] => {
+    const own = artifacts.filter((candidate) => candidate.type === entry.type)
+    if (own.length === 0) {
+      return [
+        {
+          icon: entry.icon,
+          key: entry.type,
+          label: entry.label,
+          ...(entry.empty ? { detail: entry.empty } : {}),
+        },
+      ]
     }
-    const detail = entry.detail?.(artifact.source)
-    return {
-      artifactId: artifact.id,
-      icon: entry.icon,
-      key: artifact.id,
-      label: artifact.title,
-      ...(detail === undefined ? {} : { detail }),
-    }
+    return own.map((artifact) => artifactRow(entry, artifact))
   })
   const fromFrames = artifacts.flatMap((artifact): ChooserRow[] => {
     const entry = registry.resolve(artifact.type)
-    if (entry === undefined || isStanding(entry)) return []
-    const detail = entry.detail?.(artifact.source)
-    return [
-      {
-        artifactId: artifact.id,
-        icon: entry.icon,
-        key: artifact.id,
-        label: artifact.title,
-        ...(detail === undefined ? {} : { detail }),
-      },
-    ]
+    return entry === undefined || isStanding(entry) ? [] : [artifactRow(entry, artifact)]
   })
   return [...standing, ...fromFrames]
 }

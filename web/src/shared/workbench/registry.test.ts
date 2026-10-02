@@ -38,6 +38,26 @@ const workspaceEntry: ArtifactEntry = {
   type: 'workspace',
 }
 
+/** 按文件名模式认领一类文件的项，模式由各用例给。 */
+const patternEntry = (pattern: string, type = 'canvas'): ArtifactEntry => ({
+  autoOpen: false,
+  component: Placeholder,
+  empty: '还没有画布',
+  icon: 'grid',
+  label: '画布',
+  match: { pattern },
+  title: (source) => (source.kind === 'file' ? source.path : '画布'),
+  type,
+})
+
+const matchedPaths = (registry: ArtifactRegistry, paths: string[]) =>
+  registry
+    .matchFiles(paths.map((path) => ({ path, version: 1 })))
+    .map(
+      (artifact) =>
+        `${artifact.type}:${artifact.source.kind === 'file' ? artifact.source.path : ''}`,
+    )
+
 const registryWith = (...entries: ArtifactEntry[]) => {
   const registry = new ArtifactRegistry()
   for (const entry of entries) registry.register(entry)
@@ -120,6 +140,65 @@ describe('ArtifactRegistry', () => {
     const registry = registryWith(agentEntry, workspaceEntry, shotsEntry)
 
     expect(registry.standing().map((entry) => entry.type)).toEqual(['workspace', 'storyboard'])
+  })
+
+  it('模式里的 * 只认一段路径，不跨目录', () => {
+    const registry = registryWith(patternEntry('canvas/*.canvas.json'))
+
+    expect(
+      matchedPaths(registry, [
+        'canvas/a.canvas.json',
+        'canvas/sub/b.canvas.json',
+        'a.canvas.json',
+        'canvas/a.canvas.json.bak',
+      ]),
+    ).toEqual(['canvas:canvas/a.canvas.json'])
+  })
+
+  it('模式里的 ** 跨目录，后面跟 / 时也认一层目录都没有的', () => {
+    const registry = registryWith(patternEntry('canvas/**/*.json'))
+
+    expect(matchedPaths(registry, ['canvas/a.json', 'canvas/x/y/b.json', 'other/c.json'])).toEqual([
+      'canvas:canvas/a.json',
+      'canvas:canvas/x/y/b.json',
+    ])
+  })
+
+  it('模式里 * 以外的字符按字面认', () => {
+    const registry = registryWith(patternEntry('notes/(v1).md'))
+
+    expect(matchedPaths(registry, ['notes/(v1).md', 'notes/v1.md', 'notesX(v1)Xmd'])).toEqual([
+      'canvas:notes/(v1).md',
+    ])
+  })
+
+  it('确切路径优先于也认得它的模式，不管谁先登记', () => {
+    const jsonView = patternEntry('**/*.json', 'json-view')
+
+    for (const registry of [
+      registryWith(jsonView, shotsEntry),
+      registryWith(shotsEntry, jsonView),
+    ]) {
+      expect(matchedPaths(registry, ['video_shot.json', 'frames/extraction.json'])).toEqual([
+        'storyboard:video_shot.json',
+        'json-view:frames/extraction.json',
+      ])
+    }
+  })
+
+  it('两个模式都认得同一份文件时，先登记的生效', () => {
+    const registry = registryWith(patternEntry('canvas/*', 'first'), patternEntry('**', 'second'))
+
+    expect(matchedPaths(registry, ['canvas/a.json', 'b.json'])).toEqual([
+      'first:canvas/a.json',
+      'second:b.json',
+    ])
+  })
+
+  it('按模式命中的类型也是常驻类型', () => {
+    const registry = registryWith(agentEntry, patternEntry('canvas/*.json'), workspaceEntry)
+
+    expect(registry.standing().map((entry) => entry.type)).toEqual(['canvas', 'workspace'])
   })
 
   it('没登记过的类型解析不出渲染器', () => {

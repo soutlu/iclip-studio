@@ -54,6 +54,18 @@ const agentEntry: ArtifactEntry = {
   type: 'sub-agent',
 }
 
+/** 按模式认一类文件、不自动打开的常驻类型；标题带路径，同类的几件在菜单里分得开。 */
+const canvasEntry: ArtifactEntry = {
+  autoOpen: false,
+  component: Painted,
+  empty: '还没有画布',
+  icon: 'grid',
+  label: '画布',
+  match: { pattern: 'canvas/*.canvas.json' },
+  title: (source) => `画布 ${source.kind === 'file' ? source.path : ''}`,
+  type: 'canvas',
+}
+
 const registryWith = (...entries: ArtifactEntry[]) => {
   const registry = new ArtifactRegistry()
   for (const entry of entries) registry.register(entry)
@@ -243,6 +255,52 @@ describe('WorkbenchHost 收起态', () => {
     await userEvent.click(within(chooser).getByRole('button', { name: '委派任务 · 拆解' }))
 
     expect(await screen.findByText('画着委派任务 · 拆解')).toBeVisible()
+  })
+
+  it('按模式认领的类型也常驻：还没有那类文件时选择页照样列一行灰的', async () => {
+    serveFiles(['video/a.md'])
+    await renderHost(ROOMY, registryWith(shotsEntry, canvasEntry, workspaceEntry))
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const canvas = within(chooser).getByRole('button', { name: /画布/ })
+    expect(canvas).toHaveAttribute('aria-disabled', 'true')
+    expect(canvas).toHaveTextContent('还没有画布')
+  })
+
+  it('同一常驻类型有几件产物就列几行，按登记顺序排在各自类型下，点哪行开哪件', async () => {
+    serveFiles(['canvas/a.canvas.json', 'video/a.md', 'canvas/b.canvas.json'])
+    const { router } = await renderHost(
+      ROOMY,
+      registryWith(shotsEntry, canvasEntry, workspaceEntry),
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    await waitFor(() =>
+      expect(
+        within(chooser)
+          .getAllByRole('button')
+          .map((row) => row.textContent),
+      ).toEqual([
+        '分镜agent 交付分镜后出现',
+        '画布 canvas/a.canvas.json',
+        '画布 canvas/b.canvas.json',
+        '文件',
+      ]),
+    )
+
+    await userEvent.click(
+      within(chooser).getByRole('button', { name: '画布 canvas/b.canvas.json' }),
+    )
+
+    expect(await screen.findByText('画着画布 canvas/b.canvas.json')).toBeVisible()
+    expect(router.state.location.search).toMatchObject({ artifact: 'file:canvas/b.canvas.json' })
+    expect(
+      screen.getByRole('tab', { name: '画布 canvas/a.canvas.json', selected: false }),
+    ).toBeVisible()
   })
 
   it('紧凑屏保持收起，哪怕分镜已经交付', async () => {

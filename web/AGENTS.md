@@ -43,7 +43,7 @@
 - 接口 schema 使用 `src/shared/api/generated/` 的生成物；额外业务校验叠在生成 schema 上。后端字段缺失时保留其空值语义，不编造业务默认值。
 - 登录与守卫规则见 [实现规范](docs/frontend-implementation.md#登录与守卫)；权限门控使用后端 `user.permissions`，不使用用户名白名单。
 - 不手改生成文件，不抬高 design-guard 基线；修复存量后可以收紧基线。
-- 分镜工作台用于查看和编辑 Agent 交付的分镜、发起媒体生成；产物与渲染器登记以 [artifact.ts](src/shared/workbench/artifact.ts) 为准，文件写回与生成约定见[跨端合同](../contract/conventions.md)。
+- 分镜工作台用于查看和编辑 Agent 交付的分镜、发起媒体生成；产物与渲染器登记以 [artifact.ts](src/shared/workbench/artifact.ts) 为准，认领与重叠规则见 [ADR-0006](../docs/adr/0006-workbench-views-claim-by-specificity.md)，文件写回与生成约定见[跨端合同](../contract/conventions.md)。
 
 依赖边界、导入入口、命名与语法由 [ESLint](eslint.config.js) 管理；死代码范围由 [knip](knip.json) 管理；基础 token 见根 [设计系统](../design-system.html)。
 
