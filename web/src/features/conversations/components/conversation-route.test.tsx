@@ -913,8 +913,9 @@ describe('ConversationRoute', () => {
     const card = await screen.findByRole('region', { name: '等你审批' })
     expect(within(card).getByText('写入文件')).toBeInTheDocument()
     // 审批卡预览要写的内容，来自 display 里的 content。
-    expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent('# 封面')
-    expect(within(card).getByText('shots/cover.md')).toBeInTheDocument()
+    expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent(
+      '两张镜头帧拼版，主图在左。',
+    )
 
     await user.click(within(card).getByRole('button', { name: /同意/ }))
 

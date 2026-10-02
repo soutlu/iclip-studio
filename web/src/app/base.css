@@ -283,7 +283,7 @@
   --color-chat-error-text: var(--e30);
   --color-chat-status-success: var(--color-primary);
   --color-chat-status-error: var(--color-error);
-  --color-chat-status-running: var(--color-warning);
+  --color-chat-status-running: var(--color-primary);
   --color-chat-hairline: var(--color-hairline);
   --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
   --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.18);

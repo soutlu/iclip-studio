@@ -151,21 +151,42 @@ export const markMockAwaitingApproval = (conversationId: string) => {
   })
 }
 
+/** 超过十二行，审批卡预览先收起、可展开全部。 */
+const APPROVAL_DOCUMENT = [
+  '# 封面',
+  '',
+  '两张镜头帧拼版，主图在左。',
+  '',
+  '## 画面',
+  '',
+  '- 左：镜头 1 的亚麻衬衫袖口特写，占画面三分之二',
+  '- 右：镜头 2 的户外全景，压暗两档做衬底',
+  '- 品牌字样放在右下角，不压住衬衫',
+  '',
+  '## 文字',
+  '',
+  '标题「夏季亚麻」用粗体，副标题写「轻、透、松弛」。',
+  '',
+  '## 尺寸',
+  '',
+  '竖版 9:16，导出 1080 × 1920，另存一张 1:1 给商品页。',
+].join('\n')
+
 const approvalFrame = (state: 'running' | 'done' | 'error') => ({
   approvalId: APPROVAL_INTERACTION_ID,
   display: {
-    content: '# 封面\n\n两张镜头帧拼版，主图在左。',
+    content: APPROVAL_DOCUMENT,
     kind: 'file_io',
     operation: 'write',
     path: 'shots/cover.md',
   },
   frameId: `${APPROVAL_STEP_ID}.f4`,
-  input: { path: 'shots/cover.md', text: '# 封面\n\n两张镜头帧拼版，主图在左。' },
+  input: { path: 'shots/cover.md', text: APPROVAL_DOCUMENT },
   kind: 'tool',
   name: 'write_file',
   state,
   toolCallId: APPROVAL_TOOL_CALL_ID,
-  ...(state === 'done' ? { output: '已写入 8 行' } : {}),
+  ...(state === 'done' ? { output: '已写入 17 行' } : {}),
   ...(state === 'error' ? { error: '你拒绝了这一步' } : {}),
 })
 

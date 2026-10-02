@@ -95,11 +95,12 @@ describe('fileChangeOf', () => {
         operation: 'edit',
         path: 'a.md',
       }),
-    ).toEqual({ after: '黄昏', before: '夜景' })
+    ).toEqual({ after: '黄昏', before: '夜景', path: 'a.md' })
     expect(
       fileChangeOf({ content: '# 封面', kind: 'file_io', operation: 'write', path: 'a.md' }),
     ).toEqual({
       content: '# 封面',
+      path: 'a.md',
     })
     expect(fileChangeOf({ kind: 'file_io', operation: 'read', path: 'a.md' })).toBeUndefined()
     expect(fileChangeOf({ kind: 'search', query: '夜景' })).toBeUndefined()
