@@ -39,6 +39,19 @@
   overflow: hidden;
 }
 
+/* 审批卡预览：收起时十二行，末三行渐隐；展开最多二十四行，再长在框内滚动。 */
+
+.chat-preview-clamp {
+  mask-image: linear-gradient(to bottom, black calc(100% - 3lh), transparent);
+  max-height: 12lh;
+  overflow: hidden;
+}
+
+.chat-preview-expanded {
+  max-height: 24lh;
+  overflow-y: auto;
+}
+
 /* 全部对话的行分隔线：两端内缩到行的圆角以内；悬停行上下两条隐去，只留整行底色。
    断点与行的内边距一一对应：840 以下行向两侧外扩，线就贴满列表宽。 */
 

@@ -124,15 +124,17 @@ export const agentCallOf = (
   return { agentName: parsed.data.agent_name, prompt: parsed.data.prompt }
 }
 
-export type FileChange = { before: string; after: string } | { content: string }
+export type FileChange = { path: string } & (
+  { before: string; after: string } | { content: string }
+)
 
 /** 审批卡预览用：编辑给前后文，写入给整份内容；别的 display 没有可预览的东西。 */
 export const fileChangeOf = (display: unknown): FileChange | undefined => {
   const parsed = displaySchema.safeParse(display)
   if (!parsed.success || parsed.data.kind !== 'file_io') return undefined
-  const { before, after, content } = parsed.data
-  if (typeof before === 'string' && typeof after === 'string') return { after, before }
-  if (typeof content === 'string') return { content }
+  const { after, before, content, path } = parsed.data
+  if (typeof before === 'string' && typeof after === 'string') return { after, before, path }
+  if (typeof content === 'string') return { content, path }
   return undefined
 }
 

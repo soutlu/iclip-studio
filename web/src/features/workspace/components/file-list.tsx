@@ -2,7 +2,8 @@
 
 import { Icon } from '@/shared/icons'
 import type { ConversationFileOut } from '@/shared/api/generated'
-import { baseName, fileKindOf, formatBytes, formatWhen, groupByDirectory } from '../file-kind'
+import { baseName, fileKindOf } from '@/shared/lib/file-kind'
+import { formatBytes, formatWhen, groupByDirectory } from '../file-kind'
 import { PanelNotice } from './panel-notice'
 
 type FileListProps = {
