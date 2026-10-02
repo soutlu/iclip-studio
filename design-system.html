@@ -237,6 +237,11 @@
         --color-accent-6: #e35d8c;
         --color-accent-7: #2a9fb0;
         --color-accent-8: #5c6bd6;
+        /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线 */
+        --color-code-key: #2e5aa6;
+        --color-code-string: #8a4a8f;
+        --color-code-literal: #1d6f7d;
+        --color-code-guide: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
 
         /* ===== ③ 领域别名 · 主题中立（内容身份色、纸面材质、压在媒体上的遮罩；明暗不变） ===== */
         --color-reference-image: #8a8a84;
@@ -489,6 +494,9 @@
         --color-accent-6: #ff8eb1;
         --color-accent-7: #54bfd0;
         --color-accent-8: #a0abff;
+        --color-code-key: #8fb3ef;
+        --color-code-string: #d4a2d7;
+        --color-code-literal: #62c3d3;
         --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
         --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
         --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.42), 0 6px 16px rgba(0, 0, 0, 0.32);

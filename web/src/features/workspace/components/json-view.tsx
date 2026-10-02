@@ -1,10 +1,11 @@
 /**
  * JSON 的标准格式化视图：保留引号、括号与 2 空格缩进，左侧留一栏放折叠箭头，不显示行号。
- * 键、值、标点只分墨色与灰阶，不上彩色；长字符串在框内换行、续行对齐缩进。
+ * 键、字符串、数字与 true / false / null 各用一种代码着色，标点保持淡灰；每层缩进画一条极淡的参考线，
+ * 悬停行铺一层淡灰，收起的摘要带一枚项数小胶囊。长字符串在框内换行、续行对齐缩进。
  * 图片地址原文不改，行尾附一张小缩略图，点开走共享灯箱。
  */
 
-import { useState } from 'react'
+import { type CSSProperties, useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
@@ -49,6 +50,23 @@ export function JsonParseFailure({ text }: { text: string }) {
   )
 }
 
+/**
+ * 每层缩进一条 1px 参考线，落在上层括号字符的正中（2ch 一档，偏移 0.5ch）；
+ * 背景只铺在缩进区内，正文与折行续行不受影响。根层没有缩进，不画。
+ */
+const indentStyle = (depth: number): CSSProperties => {
+  const indent = `${depth * 2}ch`
+  if (depth === 0) return { paddingLeft: indent }
+  return {
+    backgroundImage:
+      'repeating-linear-gradient(to right, var(--color-code-guide) 0 1px, transparent 1px 2ch)',
+    backgroundPosition: '0.5ch 0',
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: `${indent} 100%`,
+    paddingLeft: indent,
+  }
+}
+
 const Punct = ({ children }: { children: string }) => (
   <span className="text-on-surface-faint">{children}</span>
 )
@@ -63,7 +81,7 @@ function JsonRow({ line, onPreview, onToggle }: JsonRowProps) {
   const { body } = line
   const foldable = body.type === 'open' || body.type === 'folded' ? body : undefined
   return (
-    <div className="grid grid-cols-[--spacing(5)_minmax(0,1fr)]">
+    <div className="grid grid-cols-[--spacing(5)_minmax(0,1fr)] rounded-xs hover:bg-state-hover">
       <span className="flex justify-center">
         {foldable === undefined ? null : (
           <button
@@ -82,21 +100,20 @@ function JsonRow({ line, onPreview, onToggle }: JsonRowProps) {
           </button>
         )}
       </span>
-      {/* 缩进用左内边距而不是空格：长字符串折行时续行对齐到同一缩进。 */}
-      <span
-        className="min-w-0 wrap-anywhere whitespace-pre-wrap"
-        style={{ paddingLeft: `${line.depth * 2}ch` }}
-      >
+      {/* 缩进用左内边距而不是空格：长字符串折行时续行对齐到同一缩进，参考线也随整行高度连贯。 */}
+      <span className="min-w-0 wrap-anywhere whitespace-pre-wrap" style={indentStyle(line.depth)}>
         {line.key === undefined ? null : (
           <>
-            <span className="text-on-surface">{JSON.stringify(line.key)}</span>
+            <span className="text-code-key">{JSON.stringify(line.key)}</span>
             <Punct>: </Punct>
           </>
         )}
         <LineBody body={body} />
         {line.comma ? <Punct>,</Punct> : null}
         {body.type === 'folded' ? (
-          <span className="ml-1.5 font-sans text-label text-on-surface-faint">{body.count} 项</span>
+          <span className="ml-1.5 inline-flex h-4.5 items-center rounded-full border-[0.5px] border-chat-hairline px-1.75 align-[1px] font-sans text-caption text-on-surface-variant">
+            {body.count} 项
+          </span>
         ) : null}
         {body.type === 'value' && typeof body.value === 'string' && IMAGE_URL.test(body.value) ? (
           <Thumbnail onPreview={onPreview} url={body.value} />
@@ -123,10 +140,9 @@ function LineBody({ body }: { body: JsonLine['body'] }) {
 
 function Primitive({ value }: { value: JsonPrimitive }) {
   if (typeof value === 'string') {
-    return <span className="text-on-surface-variant">{JSON.stringify(value)}</span>
+    return <span className="text-code-string">{JSON.stringify(value)}</span>
   }
-  if (typeof value === 'number') return <span className="text-on-surface">{String(value)}</span>
-  return <span className="text-on-surface italic">{String(value)}</span>
+  return <span className="text-code-literal">{String(value)}</span>
 }
 
 function Thumbnail({ onPreview, url }: { onPreview: (media: LightboxMedia) => void; url: string }) {

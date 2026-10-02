@@ -380,6 +380,13 @@
   --color-accent-7: #2a9fb0; /* 青 */
   --color-accent-8: #5c6bd6; /* 靛蓝 */
 
+  /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。
+     三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线。 */
+  --color-code-key: #2e5aa6;
+  --color-code-string: #8a4a8f;
+  --color-code-literal: #1d6f7d;
+  --color-code-guide: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
+
   /* 数据看板：内容区铺浅灰、卡片纯白不描边，靠一层淡影分层；深色下影子看不见，改用一圈极淡的边。 */
   --color-dashboard-bg: var(--n96);
   --color-dashboard-card: var(--n100);
@@ -682,6 +689,9 @@
   --color-accent-6: #ff8eb1;
   --color-accent-7: #54bfd0;
   --color-accent-8: #a0abff;
+  --color-code-key: #8fb3ef;
+  --color-code-string: #d4a2d7;
+  --color-code-literal: #62c3d3;
   --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
   --shadow-2:
     0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);

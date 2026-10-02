@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileIconOf, formatBytes, formatWhen, groupByDirectory } from './file-kind'
+import { fileIconOf, formatBytes, formatWhen, groupByDirectory, splitFileName } from './file-kind'
 
 describe('groupByDirectory', () => {
   it('根目录在前，其余目录按路径排，同目录内按文件名排', () => {
@@ -19,6 +19,23 @@ describe('groupByDirectory', () => {
       ['video', ['video/a.md', 'video/b.md']],
     ])
   })
+})
+
+describe('splitFileName', () => {
+  it.each([
+    ['video_shot.json', 'video_', 'shot.json'],
+    ['extraction.final.json', 'extraction.f', 'inal.json'],
+    ['abcde.md', 'a', 'bcde.md'],
+  ])('%s 拆成可截的开头与固定的末 4 字加扩展名', (name, head, tail) => {
+    expect(splitFileName(name)).toEqual({ head, tail })
+  })
+
+  it.each(['README', '.gitignore', 'shot.json', 'a.md'])(
+    '%s 没有扩展名或主名不超过 4 字，不拆，整名按末尾截断',
+    (name) => {
+      expect(splitFileName(name)).toEqual({ head: name, tail: '' })
+    },
+  )
 })
 
 describe('格式化', () => {

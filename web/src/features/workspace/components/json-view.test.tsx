@@ -18,15 +18,15 @@ const artifact = {
 } as const
 
 /** 在阅读页直接打开一份内容给定的 JSON 文件。 */
-const openJson = async (content: string) => {
+const openJson = async (content: string, path = PATH) => {
   server.use(
     http.get('*/api/conversations/:conversationId/workspace/file', () =>
-      HttpResponse.json({ file: { content, path: PATH, version: 1 } }),
+      HttpResponse.json({ file: { content, path, version: 1 } }),
     ),
   )
   return renderWithProviders(
     <WorkspaceFilesPanel artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />,
-    { initialPath: `/c/${CONVERSATION_ID}?file=${encodeURIComponent(PATH)}` },
+    { initialPath: `/c/${CONVERSATION_ID}?file=${encodeURIComponent(path)}` },
   )
 }
 
@@ -54,6 +54,22 @@ describe('JSON 格式化视图', () => {
     for (const number of ['1', '2', '3', '8']) {
       expect(screen.queryByText(number)).not.toBeInTheDocument()
     }
+  })
+
+  it('数字与 true / false / null 各自成段，不并进键名或标点', async () => {
+    await openJson('{"n":6,"t":true,"f":false,"z":null}')
+
+    for (const literal of ['6', 'true', 'false', 'null']) {
+      expect(await screen.findByText(literal)).toBeVisible()
+    }
+  })
+
+  it('页头文件名截中间时，可访问名与悬停提示仍是完整路径', async () => {
+    const path = 'frames/video_shot_storyboard_final.json'
+    await openJson('{}', path)
+
+    const heading = await screen.findByRole('heading', { name: path })
+    expect(within(heading).getByTitle(path)).toBeVisible()
   })
 
   it('每个非空对象与数组都能收起成 {…} 加项数，再点展开恢复', async () => {
