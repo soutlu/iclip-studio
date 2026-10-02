@@ -158,6 +158,10 @@
         --color-chat-panel-bg-end: var(--n95);
         --color-chat-panel-border: var(--color-hairline);
         --color-chat-card-bg: var(--color-surface-container-lowest);
+        /* 聊天活动卡：无描边的柔和卡片，浅色白底加轻影，深色抬一档底色加极淡边 */
+        --color-chat-soft-card: var(--n100);
+        --color-chat-soft-card-edge: transparent;
+        --shadow-chat-soft-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
         --color-chat-message-text: var(--color-on-surface);
         --color-chat-secondary-text: var(--color-on-surface-variant);
         --color-chat-muted-text: var(--color-on-surface-faint);
@@ -171,8 +175,6 @@
         --color-chat-code-border: var(--color-hairline);
         --color-chat-link-text: var(--color-primary);
         --color-chat-link-border: color-mix(in srgb, var(--color-primary) 34%, transparent);
-        --color-chat-error-bg: var(--color-error-container);
-        --color-chat-error-border: var(--e80);
         --color-chat-error-text: var(--e30);
         --color-chat-status-success: var(--color-primary);
         --color-chat-status-error: var(--color-error);
@@ -445,7 +447,9 @@
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-high);
         --color-chat-code-block-bg: var(--n12);
-        --color-chat-error-border: var(--e60);
+        --color-chat-soft-card: var(--n10);
+        --color-chat-soft-card-edge: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+        --shadow-chat-soft-card: none;
         --color-chat-error-text: var(--e80);
         --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.5);
         --color-canvas-label-text: var(--nv60);

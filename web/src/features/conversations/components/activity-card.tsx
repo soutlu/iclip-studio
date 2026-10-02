@@ -1,13 +1,13 @@
 /**
  * 活动卡的壳（mockup 方案 B）：无描边的柔和卡片，卡头（活动组摘要）与每一步一行由调用方放进来。
- * 聊天域还没有软卡 token，暂用看板卡同一组：浅色白底加轻影，深色抬一档底色加极淡边。
+ * 底色、边与阴影用聊天域自己的 chat-soft-card 一组 token，与看板卡互不牵连。
  */
 
 import type { ReactNode } from 'react'
 
 export function ActivityCard({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-dashboard-card-edge bg-dashboard-card px-3.5 py-3 shadow-[var(--shadow-dashboard-card)]">
+    <div className="flex flex-col gap-2 rounded-lg border border-chat-soft-card-edge bg-chat-soft-card px-3.5 py-3 shadow-[var(--shadow-chat-soft-card)]">
       {children}
     </div>
   )
