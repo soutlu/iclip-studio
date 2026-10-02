@@ -3,18 +3,17 @@ import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/rea
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { routeTree } from '@/routeTree.gen'
 import { queryClient } from '@/shared/api/query-client'
 import { refreshSessionUser } from '@/shared/auth'
-import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
 import { TooltipProvider } from '@/shared/ui/tooltip'
 import { WorkbenchOpenRequestProvider, WorkbenchRegistryProvider } from '@/shared/workbench'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { FakeTranscriptServer, type SeedStream } from '@/testing/transcript-server'
-import { IdentityScope } from './identity-scope'
+import { IdentityTranscriptProvider } from './identity-transcript'
 import { workbenchRegistry } from './workbench-registry'
 
 type Account = typeof mockAuthUser
@@ -107,17 +106,15 @@ const renderApp = async (fake: FakeTranscriptServer, initialPath: string) => {
   await router.load()
   render(
     <QueryClientProvider client={queryClient}>
-      <IdentityScope>
-        <TranscriptProvider createSocket={fake.createSocket}>
-          <WorkbenchRegistryProvider registry={workbenchRegistry}>
-            <WorkbenchOpenRequestProvider>
-              <TooltipProvider>
-                <RouterProvider router={router} />
-              </TooltipProvider>
-            </WorkbenchOpenRequestProvider>
-          </WorkbenchRegistryProvider>
-        </TranscriptProvider>
-      </IdentityScope>
+      <IdentityTranscriptProvider createSocket={fake.createSocket}>
+        <WorkbenchRegistryProvider registry={workbenchRegistry}>
+          <WorkbenchOpenRequestProvider>
+            <TooltipProvider>
+              <RouterProvider router={router} />
+            </TooltipProvider>
+          </WorkbenchOpenRequestProvider>
+        </WorkbenchRegistryProvider>
+      </IdentityTranscriptProvider>
     </QueryClientProvider>,
   )
   return { router, user: userEvent.setup() }
@@ -154,13 +151,25 @@ const subscribedTo = (received: readonly { type?: string; payload?: { session_id
       : [],
   )
 
-// 单例 queryClient 带着登录缓存，游客草稿暂存在 sessionStorage，每例清掉。
+/** 服务端给某段对话改了名：全局帧发给此刻开着的每条连接。 */
+const announceTitle = (fake: FakeTranscriptServer, conversationId: string, title: string) => {
+  fake.broadcast({
+    epoch: 'event-epoch',
+    owner_user_id: OWNERS[conversationId],
+    payload: { session_id: conversationId, title },
+    seq: 1,
+    type: 'session.meta.updated',
+  })
+}
+
+// 单例 queryClient 带着登录缓存，游客草稿暂存在 sessionStorage，窄屏用例改了视口宽度，每例都还原。
 afterEach(() => {
   queryClient.clear()
   window.sessionStorage.clear()
+  vi.unstubAllGlobals()
 })
 
-describe('换了登录身份时订阅连接与 transcript 状态整份重建', () => {
+describe('换了登录身份时订阅连接与 transcript 状态按身份换代，界面树不动', () => {
   it('甲退出、乙登录：甲读过的对话按乙重新读、显示读不到；乙自己的对话订阅在乙握手的连接上', async () => {
     const accounts = serveAccounts(accountA)
     const { router, user } = await renderApp(accounts.fake, `/c/${CONVERSATION_A}`)
@@ -171,7 +180,6 @@ describe('换了登录身份时订阅连接与 transcript 状态整份重建', (
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
     await user.click(await screen.findByRole('button', { name: '登录' }))
     await loginInDialog(user, accountB)
-    // 登录后留在原页，弹窗靠重建关上也不能把人带去别处。
     expect(router.state.location.pathname).toBe('/')
 
     await act(() =>
@@ -217,25 +225,32 @@ describe('换了登录身份时订阅连接与 transcript 状态整份重建', (
     ])
   })
 
-  it('接口复核发现已换成乙：关掉甲握手的连接，按乙重新握手', async () => {
+  it('接口复核发现已换成乙时人留在甲的对话页：正文与甲那边收到的改名都不再显示，页面原地换成读不到', async () => {
     const accounts = serveAccounts(accountA)
-    await renderApp(accounts.fake, '/')
-    await screen.findByRole('button', { name: '用户菜单' })
-    await flushNetwork()
+    await renderApp(accounts.fake, `/c/${CONVERSATION_A}`)
+    await waitFor(() => expect(screen.getByText('甲的私密内容')).toBeVisible())
+    announceTitle(accounts.fake, CONVERSATION_A, '甲改过的名字')
+    await waitFor(() => expect(screen.getByRole('heading', { name: '甲改过的名字' })).toBeVisible())
+    const main = screen.getByRole('main')
     accounts.switchTo(accountB)
 
     await act(async () => {
       await refreshSessionUser()
     })
-    await flushNetwork()
 
+    await waitFor(() => expect(screen.getByText('这段对话不存在，或者不是你的')).toBeVisible())
+    expect(screen.queryByText('甲的私密内容')).not.toBeInTheDocument()
+    expect(screen.queryByText('甲改过的名字')).not.toBeInTheDocument()
+    // 换的是连接与读取状态，应用壳与页面没有重新挂载。
+    expect(screen.getByRole('main')).toBe(main)
+    await flushNetwork()
     expect(accounts.fake.connections().map(({ open, viewer }) => ({ open, viewer }))).toEqual([
       { open: false, viewer: accountA.id },
       { open: true, viewer: accountB.id },
     ])
   })
 
-  it('游客写好的草稿点发送后登录：整棵重建之后输入框里还是那段话，人留在首页', async () => {
+  it('游客写好的草稿点发送后登录：登录之后输入框里还是那段话，人留在首页', async () => {
     const accounts = serveAccounts(null)
     const { router, user } = await renderApp(accounts.fake, '/')
     const editor = await screen.findByLabelText('输入消息')
@@ -248,6 +263,25 @@ describe('换了登录身份时订阅连接与 transcript 状态整份重建', (
       expect(screen.getByLabelText('输入消息')).toHaveTextContent('春季新款的分镜脚本'),
     )
     expect(router.state.location.pathname).toBe('/')
+    expect(accounts.fake.connections().at(-1)?.viewer).toBe(accountB.id)
+  })
+
+  it('窄屏展开侧栏后在侧栏里登录：登录完侧栏仍然展开，连接换成乙握手的', async () => {
+    vi.stubGlobal('innerWidth', 390)
+    const accounts = serveAccounts(null)
+    const { user } = await renderApp(accounts.fake, '/')
+    await user.click(await screen.findByRole('button', { name: '展开侧边栏' }))
+    const sidebar = screen.getByRole('complementary', { name: '侧边栏' })
+    await user.click(within(sidebar).getByRole('button', { name: '登录' }))
+
+    await loginInDialog(user, accountB)
+
+    await waitFor(() =>
+      expect(within(sidebar).getByRole('button', { name: '用户菜单' })).toBeVisible(),
+    )
+    expect(screen.getByRole('complementary', { name: '侧边栏' })).toBe(sidebar)
+    expect(within(sidebar).getByRole('button', { name: '折叠侧边栏' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '展开侧边栏' })).not.toBeInTheDocument()
     expect(accounts.fake.connections().at(-1)?.viewer).toBe(accountB.id)
   })
 })
