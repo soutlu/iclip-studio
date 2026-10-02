@@ -57,6 +57,7 @@ export type ConversationListState = z.output<typeof conversationListStateSchema>
 const SIDEBAR_KEY = ['conversations', 'sidebar'] as const
 const MORE_KEY = ['conversations', 'more'] as const
 const AUDIT_KEY = ['conversations', 'audit'] as const
+const SEARCH_KEY = ['conversations', 'search'] as const
 
 export const conversationsQueryKeys = {
   all: ['conversations'] as const,
@@ -68,7 +69,9 @@ export const conversationsQueryKeys = {
   moreAll: MORE_KEY,
   more: (bucket: string, cursor: string, state: ConversationListState) =>
     [...MORE_KEY, bucket, cursor, state] as const,
-  search: (keyword: string) => ['conversations', 'search', keyword] as const,
+  search: (keyword: string) => [...SEARCH_KEY, keyword] as const,
+  /** 所有关键词的搜索结果；重连对账时整体失效。 */
+  searchAll: SEARCH_KEY,
   /** 未传 state 时作为所有筛选的缓存键前缀。 */
   sidebar: (state?: ConversationListState): readonly string[] =>
     state === undefined ? SIDEBAR_KEY : [...SIDEBAR_KEY, state],
@@ -218,46 +221,55 @@ export const useMoreConversations = (
   })
 }
 
-/** 同一段对话的单行请求在途时复用，照 Kimi 按 id 去重。 */
-const rowRequests = new WeakMap<ConversationRowStore, Map<string, Promise<void>>>()
+/** 每段对话正在进行的那一次单行补读，按行池分表。 */
+const rowReads = new WeakMap<ConversationRowStore, Map<string, AbortController>>()
+
+const rowReadsOf = (store: ConversationRowStore): Map<string, AbortController> => {
+  let reads = rowReads.get(store)
+  if (reads === undefined) {
+    reads = new Map()
+    rowReads.set(store, reads)
+  }
+  return reads
+}
 
 /**
  * 取一段对话的整行并合进行池（照 Kimi 的单行补读）：轮次状态、出片汇总变化后用它跟上
  * `lastRunId`、`activity.videoGeneration` 等帧上没有的字段，不必整份重拉侧栏。看不见了（404）按删除处理。
+ *
+ * 照 Kimi `hydrateLiveSession` 以最后一次为准：新的一次中止在途那次，读回来只认仍是最新的那次。
+ * 不能复用在途的请求：视频汇总没有帧来源，在途期间又来的变化若只等那次旧读，旧值进池后就再也没有东西纠正它。
+ * 记了墓碑的照样读（不照 Kimi 跳过）：治理者复盘时读得到墓碑行，它的视频汇总也要跟上。
  */
-export const refreshConversationRow = (
+export const refreshConversationRow = async (
   queryClient: QueryClient,
   conversationId: string,
 ): Promise<void> => {
   const store = conversationRowsOf(queryClient)
-  let inFlight = rowRequests.get(store)
-  if (inFlight === undefined) {
-    inFlight = new Map()
-    rowRequests.set(store, inFlight)
+  const reads = rowReadsOf(store)
+  reads.get(conversationId)?.abort()
+  const controller = new AbortController()
+  reads.set(conversationId, controller)
+  const current = () => reads.get(conversationId) === controller
+  try {
+    const row = await apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
+      cache: 'no-store',
+      fallbackErrorMessage: '读取对话失败',
+      signal: controller.signal,
+    })
+    if (current()) store.mergeRows([row])
+  } catch (error) {
+    // 已被后来的一次接替（含被它中止）：这次的结果不作数，也不算失败。
+    if (!current()) return
+    if (error instanceof ApiError && error.status === 404) {
+      store.applyDeleted(conversationId)
+      return
+    }
+    // 补读失败不影响列表：行留在帧给的状态，下一帧或下一次重拉再对齐。
+    console.warn('补读对话行失败', { conversationId })
+  } finally {
+    if (current()) reads.delete(conversationId)
   }
-  const pending = inFlight.get(conversationId)
-  if (pending !== undefined) return pending
-  const requests = inFlight
-  const request = apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
-    cache: 'no-store',
-    fallbackErrorMessage: '读取对话失败',
-  })
-    .then((row) => {
-      store.mergeRows([row])
-    })
-    .catch((error: unknown) => {
-      if (error instanceof ApiError && error.status === 404) {
-        store.applyDeleted(conversationId)
-        return
-      }
-      // 补读失败不影响列表：行留在帧给的状态，下一帧或下一次重拉再对齐。
-      console.warn('补读对话行失败', { conversationId })
-    })
-    .finally(() => {
-      requests.delete(conversationId)
-    })
-  inFlight.set(conversationId, request)
-  return request
 }
 
 /** 创建对话；调用方可提供幂等编号、需求单和合集归属。 */

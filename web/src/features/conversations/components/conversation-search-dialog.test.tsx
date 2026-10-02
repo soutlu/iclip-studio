@@ -1,11 +1,20 @@
-import { screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
+import { addMockConversation, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { SERVER_HELLO } from '@/testing/ws'
 import type { Conversation } from '../conversations.api'
+import { useLiveConversations } from '../conversations.live'
 import { ConversationSearchDialog } from './conversation-search-dialog'
+
+/** 全局帧订阅在应用里挂在侧栏顶层；弹窗自己不订，这里照壳的样子在外面挂一次。 */
+function LiveFrames() {
+  useLiveConversations()
+  return null
+}
 
 const conversation: Conversation = {
   activity: {
@@ -92,4 +101,35 @@ describe('ConversationSearchDialog', () => {
 
     expect(await screen.findByText(/搜索服务不可用/)).toBeVisible()
   })
+
+  it('重连后按原关键词重搜：断线期间改名后命中的对话出现在结果里', async () => {
+    loginAs(mockAuthUser)
+    addMockConversation('亚麻衬衫二剪')
+    const renamed = addMockConversation('秋季外套')
+    const user = userEvent.setup()
+    const { socket } = await renderWithProviders(
+      <>
+        <LiveFrames />
+        <ConversationSearchDialog onOpenChange={vi.fn()} open />
+      </>,
+    )
+    const titles = () =>
+      within(screen.getByRole('list', { name: '搜索结果' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent)
+        .sort()
+
+    await user.type(screen.getByRole('textbox', { name: '搜索对话' }), '亚麻')
+    await screen.findByRole('list', { name: '搜索结果' })
+    expect(titles()).toEqual(['亚麻衬衫二剪'])
+
+    // 断线期间别处把另一段改了名；全局帧不补发，改名帧丢了。
+    socket.onclose?.()
+    renamed.title = '亚麻长裙'
+    // 第一次重连排在 1 秒退避（另加至多 250ms 抖动）之后，握手完成才算重连上。
+    await act(() => new Promise((resolve) => setTimeout(resolve, 1300)))
+    socket.deliver(SERVER_HELLO)
+
+    await waitFor(() => expect(titles()).toEqual(['亚麻衬衫二剪', '亚麻长裙'].sort()))
+  }, 10_000)
 })

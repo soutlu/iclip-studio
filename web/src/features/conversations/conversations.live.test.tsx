@@ -80,9 +80,19 @@ const titleFrame = (conversationId: string, title: string) => ({
   type: 'session.meta.updated',
 })
 
-const generationFrame = (conversationId: string, kind: 'video' | 'image', owner?: string) => ({
+const generationFrame = (
+  conversationId: string,
+  kind: 'video' | 'image',
+  {
+    owner,
+    status = 'submitted',
+  }: {
+    owner?: string
+    status?: 'pending' | 'submitting' | 'submitted' | 'completed' | 'failed'
+  } = {},
+) => ({
   ...sessionEnvelope(conversationId, owner),
-  payload: { id: 'job-1', kind, operation: 'generate', status: 'submitted' },
+  payload: { id: 'job-1', kind, operation: 'generate', status },
   session_id: conversationId,
   type: 'event.generation.changed',
 })
@@ -177,7 +187,7 @@ describe('useLiveConversations', () => {
     ],
     ['视频帧', (id: string) => generationFrame(id, 'video')],
   ])(
-    '%s触发的单行补读按 id 去重：在途时再来的帧都只读一次，读完再来要重新读',
+    '%s触发的单行补读以最后一次为准：同一拍的帧只读一次，在途时再来的帧中止旧读并重读',
     async (_label, frame) => {
       const row = conversationRow({
         activity: {
@@ -188,14 +198,13 @@ describe('useLiveConversations', () => {
         },
       })
       const reads: string[] = []
-      let release = () => {}
-      let gate = new Promise<void>((resolve) => {
-        release = resolve
-      })
+      const aborted: boolean[] = []
+      const gates: (() => void)[] = []
       server.use(
-        http.get('*/api/conversations/:conversationId', async ({ params }) => {
+        http.get('*/api/conversations/:conversationId', async ({ params, request }) => {
           reads.push(String(params['conversationId']))
-          await gate
+          await new Promise<void>((resolve) => gates.push(resolve))
+          aborted.push(request.signal.aborted)
           return HttpResponse.json({ conversation: row })
         }),
       )
@@ -205,20 +214,67 @@ describe('useLiveConversations', () => {
       socket.deliver(frame(row.id, 0))
       socket.deliver(frame(row.id, 1))
       await settle(0)
+      expect(reads).toEqual([row.id])
+
+      // 第一次还没回来又来一帧：那次作废，重新读。
       socket.deliver(frame(row.id, 2))
       await settle(0)
-      expect(reads).toEqual([row.id])
-      release()
+      await vi.waitFor(() => expect(reads).toEqual([row.id, row.id]))
+      for (const release of gates) release()
+      await vi.waitFor(() => expect(aborted).toEqual([true, false]))
 
-      await vi.waitFor(() => expect(poolRow(queryClient, row.id)).toBeDefined())
-      gate = Promise.resolve()
-      await settle(0)
-      // 在途记录清掉之后，再来一次轮状态或出片变化要重新读。
+      // 读完之后再来一次轮状态或出片变化，照样重新读。
       socket.deliver(frame(row.id, 3))
       await settle(0)
-      await vi.waitFor(() => expect(reads).toEqual([row.id, row.id]))
+      await vi.waitFor(() => expect(reads).toHaveLength(3))
     },
   )
+
+  it('在途那次读到的旧值进不了池：后一次读到终态，池里最终是终态', async () => {
+    const row = conversationRow({
+      activity: {
+        busy: false,
+        lastTurnReason: null,
+        pendingInteraction: 'none',
+        videoGeneration: 'queued',
+      },
+    })
+    const gates: (() => void)[] = []
+    let responded = 0
+    server.use(
+      http.get('*/api/conversations/:conversationId', async () => {
+        // 服务端读库那一刻的行；之后 mock 再变也不影响这次响应。
+        const snapshot = { ...row, activity: { ...row.activity } }
+        await new Promise<void>((resolve) => gates.push(resolve))
+        responded += 1
+        return HttpResponse.json({ conversation: snapshot })
+      }),
+    )
+    const { queryClient, socket } = await mount()
+    seedCaches(queryClient, row)
+
+    // 视频交给了上游：这一帧触发的补读读到 running。
+    row.activity = { ...row.activity, videoGeneration: 'running' }
+    socket.deliver(generationFrame(row.id, 'video', { status: 'submitting' }))
+    await settle(0)
+    await vi.waitFor(() => expect(gates).toHaveLength(1))
+    // 上游很快拒了：failed 帧赶在第一次响应之前到达，服务端已经没有在跑的视频。
+    row.activity = { ...row.activity, videoGeneration: 'none' }
+    socket.deliver(generationFrame(row.id, 'video', { status: 'failed' }))
+    await settle(0)
+    await vi.waitFor(() => expect(gates).toHaveLength(2))
+
+    // 后一次先回来，旧的那次晚到。旧的那次已被中止，这里实际验证的是中止；
+    // 「只认最新那次」的身份判断防的是 jsdom 里造不出的竞态，不在这里覆盖。
+    gates[1]?.()
+    await vi.waitFor(() =>
+      expect(poolRow(queryClient, row.id)?.activity.videoGeneration).toBe('none'),
+    )
+    gates[0]?.()
+    await vi.waitFor(() => expect(responded).toBe(2))
+    await settle(0)
+    expect(poolRow(queryClient, row.id)?.activity.videoGeneration).toBe('none')
+  })
 
   it('轮状态没变的活动帧不补读', async () => {
     const row = conversationRow({
@@ -293,6 +349,21 @@ describe('useLiveConversations', () => {
     expect(reads).toEqual([`/api/conversations/${row.id}`])
     expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
     expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
+    // 还没出成片：全部对话页那一行的封面不会变，不为它重拉。
+    expect(invalidated(queryClient, AUDIT_KEY)).toBe(false)
+  })
+
+  it('视频出完了但全部对话页没列着这段对话：不为它重拉全部对话页', async () => {
+    const listed = conversationRow()
+    const unlisted = conversationRow({ title: '没在全部对话页里的片' })
+    const { queryClient, socket } = await mount()
+    seedCaches(queryClient, listed)
+    conversationRowsOf(queryClient).mergeRows([{ ...unlisted }])
+
+    socket.deliver(generationFrame(unlisted.id, 'video', { status: 'completed' }))
+    await settle()
+
+    expect(invalidated(queryClient, AUDIT_KEY)).toBe(false)
   })
 
   it('图片帧不上行：不补读、不重拉', async () => {
@@ -333,7 +404,7 @@ describe('useLiveConversations', () => {
         (id: string) =>
           activityFrame(id, { busy: false, last_turn_reason: 'completed' }, OTHER_OWNER),
       ],
-      ['视频任务跳状态', (id: string) => generationFrame(id, 'video', OTHER_OWNER)],
+      ['视频任务跳状态', (id: string) => generationFrame(id, 'video', { owner: OTHER_OWNER })],
     ])('%s：不重拉自己的侧栏，也不收起已展开的分页', async (_label, frame) => {
       const mine = conversationRow()
       const { queryClient, socket } = await mount()

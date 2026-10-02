@@ -5,11 +5,12 @@
  * 帧带属主（合同 §5「全局帧」）：别人的对话只牵动全部对话页，不动自己的侧栏。
  */
 
-import { useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import { use, useEffect } from 'react'
 import { useUser } from '@/shared/auth'
 import type { SessionUpdate } from '@/shared/transcript/connection'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
+import type { AuditPage } from './audit.api'
 import {
   conversationsQueryKeys,
   refreshConversationLists,
@@ -32,13 +33,19 @@ interface Effects {
   /** 只有按状态筛选的侧栏与额外分页可能换成员。 */
   filtered: boolean
   audit: boolean
+  /** 出了新成片的对话：全部对话页列着它时要重拉，那一行的封面只在那份查询里。 */
+  masters: Set<string>
+  /** 重连后对齐搜索结果的成员。 */
+  search: boolean
   rows: Set<string>
 }
 
 const noEffects = (): Effects => ({
   audit: false,
   filtered: false,
+  masters: new Set(),
   rows: new Set(),
+  search: false,
   sidebar: false,
 })
 
@@ -97,6 +104,7 @@ const reduce = (
     // 全局帧不补发；重连后整份重拉，按水位规则合进池里（ADR-0004 第 7 条）。
     effects.sidebar = true
     effects.audit = true
+    effects.search = true
     return
   }
   const mine = update.mark.ownerUserId === userId
@@ -174,10 +182,21 @@ const reduce = (
       if (conversationId === null || update.jobKind !== 'video') return
       // 帧上只有单条任务的状态，行上要的是视频汇总：补读这一行。别人的对话只在池里已有这一行时补。
       if (mine || rows.get(conversationId) !== undefined) effects.rows.add(conversationId)
+      // 帧上分不出成片还是编辑段，编辑段完成也会多重拉一次，无害。
+      if (update.status === 'completed') effects.masters.add(conversationId)
       return
     }
   }
 }
+
+/** 全部对话页的哪一份缓存列着这段对话；最新成片的地址只在那份查询里，单行补读带不回来。 */
+const listedInAudit = (queryClient: QueryClient, conversationId: string): boolean =>
+  queryClient
+    .getQueriesData<InfiniteData<AuditPage>>({ queryKey: conversationsQueryKeys.auditAll })
+    .some(
+      ([, data]) =>
+        data?.pages.some((page) => page.items.some((item) => item.id === conversationId)) ?? false,
+    )
 
 const run = (queryClient: QueryClient, effects: Effects, refreshAuditSoon: () => void): void => {
   if (effects.sidebar) void refreshConversationLists(queryClient, 'sidebar')
@@ -185,7 +204,14 @@ const run = (queryClient: QueryClient, effects: Effects, refreshAuditSoon: () =>
     queryClient.removeQueries(conversationsQueryKeys.filteredLists('more'))
     void queryClient.invalidateQueries(conversationsQueryKeys.filteredLists('sidebar'))
   }
-  if (effects.audit) refreshAuditSoon()
+  if (effects.search)
+    void queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.searchAll })
+  if (
+    effects.audit ||
+    [...effects.masters].some((conversationId) => listedInAudit(queryClient, conversationId))
+  ) {
+    refreshAuditSoon()
+  }
   for (const conversationId of effects.rows)
     void refreshConversationRow(queryClient, conversationId)
 }
