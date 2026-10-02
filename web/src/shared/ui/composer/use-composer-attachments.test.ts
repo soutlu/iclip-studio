@@ -35,7 +35,7 @@ describe('useComposerAttachments', () => {
     delete (URL as unknown as Record<string, unknown>)['revokeObjectURL']
   })
 
-  it('上传成功：uploading → ready，预览换成上传结果的地址', async () => {
+  it('上传成功：uploading → ready，预览换成上传结果的地址，原文件释放', async () => {
     const { result } = renderHook(() => useComposerAttachments())
 
     const attId = mint(result, imageFile())
@@ -46,16 +46,20 @@ describe('useComposerAttachments', () => {
     expect(entry?.url).toContain('/mock-oss/')
     expect(entry?.progress).toBeUndefined()
     expect(entry?.previewUrl).toBe(entry?.url)
+    // 条目要留到卸载，原文件只为失败重试而留。
+    expect(entry?.file).toBeUndefined()
   })
 
-  it('直传被对象存储拒绝：error 态，文案给出状态码', async () => {
+  it('直传被对象存储拒绝：error 态，文案给出状态码，原文件留着供重试', async () => {
     server.use(http.put('*/mock-oss/:uploadId', () => new HttpResponse(null, { status: 403 })))
     const { result } = renderHook(() => useComposerAttachments())
 
-    const attId = mint(result, imageFile())
+    const file = imageFile()
+    const attId = mint(result, file)
 
     await waitFor(() => expect(result.current.entries.get(attId)?.status).toBe('error'))
     expect(result.current.entries.get(attId)?.error).toContain('403')
+    expect(result.current.entries.get(attId)?.file).toBe(file)
   })
 
   it.each([
@@ -72,12 +76,12 @@ describe('useComposerAttachments', () => {
     expect(requests).toEqual([])
   })
 
-  it('syncReferences 回收文档不再引用的 entry；回来晚的上传结果直接丢弃', async () => {
+  it('purgeExcept 回收列表之外的 entry；回来晚的上传结果直接丢弃', async () => {
     const { result } = renderHook(() => useComposerAttachments())
 
     const kept = mint(result, imageFile('留下.png'))
     const dropped = mint(result, imageFile('删掉.png'))
-    act(() => result.current.syncReferences([kept]))
+    act(() => result.current.purgeExcept([kept]))
 
     expect(result.current.entries.has(dropped)).toBe(false)
     expect(result.current.entries.has(kept)).toBe(true)
@@ -96,7 +100,7 @@ describe('useComposerAttachments', () => {
     const attId = mint(result, imageFile())
     expect(result.current.entries.get(attId)?.previewUrl).toBe('blob:mock-1')
 
-    act(() => result.current.syncReferences([]))
+    act(() => result.current.purgeExcept([]))
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-1')
   })
 
@@ -126,8 +130,9 @@ describe('useComposerAttachments', () => {
     })
 
     await waitFor(() => expect(result.current.entries.get(attId)?.status).toBe('ready'))
-    expect(result.current.entries.get(attId)?.file).toBe(file)
+    // 第二次签名仍是这张 webp：重试用的是同一个文件；传好之后原文件随即释放。
     expect(webpSigns).toBe(2)
+    expect(result.current.entries.get(attId)?.file).toBeUndefined()
   })
 
   it('retry：没有原文件的条目不执行', () => {
@@ -157,7 +162,7 @@ describe('useComposerAttachments', () => {
     const ready = result.current.takeReady([second, first])
     expect(ready.map((entry) => entry.name)).toEqual(['二.png', '一.png'])
 
-    act(() => result.current.syncReferences([]))
+    act(() => result.current.purgeExcept([]))
     expect(result.current.entries.size).toBe(0)
     act(() => result.current.restoreEntries(ready))
     expect(result.current.entries.size).toBe(2)

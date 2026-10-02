@@ -1,7 +1,8 @@
-import { createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
 import { EditorView } from 'prosemirror-view'
+import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   dropFilesIntoWindow,
@@ -11,7 +12,8 @@ import {
 import { serializePromptContent } from '@/shared/lib/prompt-clipboard'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
-import { Composer } from './composer'
+import { Composer, type ComposerHandle } from './composer'
+import type { ComposerSubmission } from './use-composer-attachments'
 
 const editor = () => screen.getByLabelText('输入消息')
 const sendButton = () => screen.getByRole('button', { name: '发送' })
@@ -265,7 +267,7 @@ describe('Composer', () => {
     await waitFor(() => expect(editor()).toHaveFocus())
   })
 
-  it('退格删掉 pill 之后发送重新禁用（entry 随文档回收）', async () => {
+  it('退格删掉 pill 之后正文空了，发送重新禁用', async () => {
     const onSubmit = vi.fn()
     await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} />)
 
@@ -277,6 +279,57 @@ describe('Composer', () => {
 
     await waitFor(() => expect(screen.queryByText('截图.png')).not.toBeInTheDocument())
     expect(sendButton()).toBeDisabled()
+  })
+
+  it('图片传好后撤销再重做：pill 带着条目回来，发送可用，提交带上这张图', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} />)
+
+    editor().focus()
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+
+    await user.keyboard('{Control>}z{/Control}')
+    await waitFor(() => expect(within(editor()).queryByText('截图.png')).not.toBeInTheDocument())
+    expect(sendButton()).toBeDisabled()
+
+    await user.keyboard('{Control>}y{/Control}')
+    expect(await within(editor()).findByText('截图.png')).toBeInTheDocument()
+    // 重做带回来的 pill 不是空壳：状态与地址都在，不必重新上传就能发。
+    expect(sendButton()).toBeEnabled()
+    await user.click(sendButton())
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    const submission = onSubmit.mock.calls[0]?.[0] as { media: { url: string }[] }
+    expect(submission.media).toHaveLength(1)
+    expect(submission.media[0]?.url).toContain('/mock-oss/')
+  })
+
+  it('发送后清空，撤销把正文与 pill 一起带回来，附件仍可再发', async () => {
+    const ref = createRef<ComposerHandle>()
+    const onSubmit = vi.fn<(submission: ComposerSubmission) => void>(() => ref.current?.clear())
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} ref={ref} />)
+
+    editor().focus()
+    pasteTextIntoComposer(editor(), '参考这张')
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+    // 撤销历史按 500ms 分组：贴完立刻发送，清空会和贴进来的内容并成一步撤销。
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 600)))
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(within(editor()).queryByText('截图.png')).not.toBeInTheDocument())
+
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(await within(editor()).findByText('截图.png')).toBeInTheDocument()
+    expect(editor()).toHaveTextContent('参考这张')
+    expect(sendButton()).toBeEnabled()
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(onSubmit.mock.calls[1]?.[0]).toMatchObject({
+      media: [expect.objectContaining({ url: expect.stringContaining('/mock-oss/') })],
+      text: '参考这张',
+    })
   })
 
   it('拖文件进窗口：先出全屏遮罩，松手落成 pill、遮罩消失', async () => {
