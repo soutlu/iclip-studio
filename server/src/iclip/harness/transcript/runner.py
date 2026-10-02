@@ -488,15 +488,19 @@ class ConversationRunner:
         """执行消息并在收尾后启动下一条，包括运行失败的情况。"""
 
         self._store.pin(row.conversation_id)
-        status: JobStatus = "failed"
+        status: JobStatus | None = "failed"
         try:
             status = await self._run_once(row)
         except Exception:
             _logger.exception("这次运行没跑完", prompt_id=row.prompt_id)
         finally:
-            active = self._active.pop(row.conversation_id, None)
+            # 失租那次没登记过控制句柄；此刻同一对话若登记着，那是清扫随后启动的别的运行，不能摘。
+            active = None if status is None else self._active.pop(row.conversation_id, None)
             self._store.unpin(row.conversation_id)
-            if status == "awaiting":
+            if status is None:
+                # 开跑前就失了租：没调模型，插话与终态都归新持有者或清扫处理。
+                pass
+            elif status == "awaiting":
                 # 审批等待不结束轮次或启动下一条；插话保留 steered，由续跑 adopt_steered 接管。
                 # 框架在收尾前已 drain asap 消息，审批等待时没有未消费插话。
                 pass
@@ -579,8 +583,8 @@ class ConversationRunner:
         for child in await self._queue.settle_steered(active.run_id, status=status, now=_now()):
             self._publish(child)
 
-    async def _run_once(self, row: JobRow) -> JobStatus:
-        """执行单次 run 并返回内部状态。
+    async def _run_once(self, row: JobRow) -> JobStatus | None:
+        """执行单次 run 并返回内部状态；开跑前租约就已不在手上时返回 None，调用方不收尾。
 
         首次运行发送用户原文并关闭旧前沿；崩溃续跑直接提交历史，由框架修复或重放未完成调用；
         审批续跑提供覆盖全部前沿调用的决定。两种续跑均不追加用户消息。
@@ -609,11 +613,14 @@ class ConversationRunner:
         attached = await self._queue.attach_run(
             row.prompt_id, run_id, locked_by=self.locked_by, attempt=row.attempt
         )
+        if not attached:
+            # 租约已归别的持有者，或被清扫判了失败：一步都不执行，收尾归新持有者或清扫。
+            # 迁移插话也要在这之后，否则会把插话改挂到一个没有记录的 run 上，新持有者认领不到。
+            _logger.warning("开跑前租约已经不在手上，放弃这次运行", prompt_id=row.prompt_id)
+            return None
         if row.run_id is not None:
             await self._queue.adopt_steered(row.run_id, run_id)
-        # 租约已不在手上的运行会被心跳取消，不在对话上留痕。
-        if attached:
-            await self._run_started(row, run_id)
+        await self._run_started(row, run_id)
 
         active = _Active(
             prompt_id=row.prompt_id,
