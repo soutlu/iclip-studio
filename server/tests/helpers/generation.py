@@ -539,8 +539,11 @@ def build_queue(
     video: ScriptedProvider | None = None,
     image: ScriptedProvider | None = None,
     lanes: tuple[ProviderLane, ...] | None = None,
+    connector: InMemoryConnector | None = None,
 ) -> tuple[GenerationQueue, InMemoryConnector]:
-    """两家替身各占一条 lane，名字与 make_job 落到 provider 列上的值一致。"""
+    """两家替身各占一条 lane，名字与 make_job 落到 provider 列上的值一致。
+
+    ``connector`` 给了就用它（如注入排队故障的子类），不给新建一个。"""
 
     if lanes is None:
         video_double = video or ScriptedProvider()
@@ -548,7 +551,7 @@ def build_queue(
         image_double = image or ScriptedProvider()
         image_double.provider_name = FAKE_IMAGE_PROVIDER
         lanes = (ProviderLane(video_double, 1), ProviderLane(image_double, 1))
-    connector = InMemoryConnector()
+    connector = InMemoryConnector() if connector is None else connector
     queue = GenerationQueue(
         repo,
         lanes=lanes,

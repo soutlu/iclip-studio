@@ -52,6 +52,9 @@ _JPEG: Final = "image/jpeg"
 class GenerationPolicy:
     """按配置的 dev、pro 顺序重试失败生成；已有成功结果时不自动升级渠道。
 
+    重试不分错误码：结果未知、已出图后转存失败也照样另起新任务，接受可能的重复计费
+    （见 CONTEXT 不变量 10）。
+
     各字段的默认值与校验只在 ``shot_video`` 配置段一处，这里全部由组合根显式传入。"""
 
     poll_interval_seconds: float
@@ -92,7 +95,8 @@ class FrameGenerator:
         self._policy = policy
 
     async def generate(self, principal: Principal, request: ImageRequest) -> ImageJob:
-        """按配置渠道顺序重试，返回成功结果或最后一次结果。"""
+        """生成没成功就按配置渠道顺序另起一次，不分错误码；提交前校验失败直接让模型改参数，
+        到了总时限就停。返回成功结果或最后一次结果。"""
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._policy.total_timeout_seconds
