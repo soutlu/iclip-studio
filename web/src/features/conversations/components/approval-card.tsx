@@ -11,6 +11,7 @@ import { isBehindModal } from '@/shared/ui/dialog'
 import { Markdown } from '@/shared/ui/markdown'
 import { toast } from '@/shared/ui/toast'
 import { respondInteraction } from '../conversations.api'
+import { EditLines } from './edit-lines'
 import { fileChangeOf, toolCard, type FileChange } from './tool-display'
 import { useClampable } from './use-clampable'
 
@@ -195,61 +196,4 @@ function ChangePreview({ change }: { change: FileChange }) {
       ) : null}
     </>
   )
-}
-
-type EditLine = { id: string; text: string; tone: 'context' | 'removed' | 'added' }
-
-/** 前后片段去掉相同的首尾行，中间是真正改了的部分：先列删掉的，再列新写的。 */
-const editLinesOf = (before: string, after: string): EditLine[] => {
-  const old = before.split('\n')
-  const next = after.split('\n')
-  let head = 0
-  while (head < old.length && head < next.length && old[head] === next[head]) head += 1
-  let tail = 0
-  while (
-    tail < old.length - head &&
-    tail < next.length - head &&
-    old[old.length - 1 - tail] === next[next.length - 1 - tail]
-  )
-    tail += 1
-  // 同一段里可能有相同的行，key 用「哪一段的第几行」。
-  const tag = (lines: string[], tone: EditLine['tone'], part: string): EditLine[] =>
-    lines.map((text, index) => ({ id: `${part}-${index}`, text, tone }))
-  return [
-    ...tag(old.slice(0, head), 'context', 'head'),
-    ...tag(old.slice(head, old.length - tail), 'removed', 'removed'),
-    ...tag(next.slice(head, next.length - tail), 'added', 'added'),
-    ...tag(old.slice(old.length - tail), 'context', 'tail'),
-  ]
-}
-
-const EDIT_MARKS = { added: '+', context: '', removed: '−' } as const
-
-function EditLines({ after, before }: { after: string; before: string }) {
-  return editLinesOf(before, after).map((line) => (
-    <div
-      className={cn(
-        'flex gap-2 px-3',
-        line.tone === 'removed' && 'text-chat-muted-text',
-        line.tone === 'added' && 'bg-state-active',
-      )}
-      key={line.id}
-    >
-      <span aria-hidden className="w-2.5 shrink-0 text-center text-chat-muted-text">
-        {EDIT_MARKS[line.tone]}
-      </span>
-      {line.tone === 'context' ? null : (
-        <span className="sr-only">{line.tone === 'removed' ? '删去：' : '新写：'}</span>
-      )}
-      <span
-        className={cn(
-          'min-w-0 flex-1 break-words whitespace-pre-wrap',
-          line.tone === 'removed' && 'line-through',
-        )}
-      >
-        {/* 空行留一个空格撑住行高。 */}
-        {line.text === '' ? ' ' : line.text}
-      </span>
-    </div>
-  ))
 }

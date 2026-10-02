@@ -10,7 +10,7 @@ import {
   mockGovernor,
 } from './handlers'
 import { seedDemoTasks } from './demo-tasks'
-import { markMockAwaitingApproval, markMockJustFinished } from './transcript'
+import { markMockAwaitingApproval, markMockJustFinished, markMockToolShowcase } from './transcript'
 import { seedMockReplicaWorkspace, seedMockWorkspace } from './workspace'
 
 // 演示数据仅在浏览器侧初始化，避免影响每例清空存储的单测。
@@ -69,6 +69,11 @@ if (queuedVideo !== undefined) {
 // 独立的无图草稿用于演示先编辑正文、再补充第一张图片。
 const withoutImages = addMockConversation('无图分镜草稿')
 seedMockWorkspace(withoutImages.id, { withoutImages: true })
+
+// 工具过程展示：几轮历史摆出工具行的各种状态（失败、被拒绝、中断、整轮失败），带一份工作区可点开文件。
+const toolShowcase = addMockConversation('工具过程展示')
+seedMockWorkspace(toolShowcase.id, { httpFrames: true })
+markMockToolShowcase(toolShowcase.id)
 
 const replica = addMockConversation('乐福鞋 · 完全复刻')
 seedMockReplicaWorkspace(replica.id)

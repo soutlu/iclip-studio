@@ -16,6 +16,7 @@ const EMPTY_DATA: ChannelData = {
   forkTurn: null,
   forkedFrom: null,
   hasMoreOlder: false,
+  interactions: new Map(),
   items: [],
   loadOlderError: false,
   loadingOlder: false,

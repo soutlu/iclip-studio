@@ -2,6 +2,7 @@
 
 import { http, HttpResponse, ws } from 'msw'
 import { type MockConversation, mockConversationOwner, mockSessionEnvelope } from './conversations'
+import { toolShowcaseInteractions, toolShowcaseTurns } from './tool-showcase'
 import { SHOTS_MOCK_PATH, touchMockShots, watchMockGenerations } from './workspace'
 
 const HISTORY_TURNS = 2
@@ -104,6 +105,13 @@ const awaitingApproval = new Set<string>()
 
 const justFinished = new Set<MockConversation>()
 
+/** 工具过程展示对话：只回看历史，不自动起演示运行。 */
+const toolShowcases = new Set<string>()
+
+export const markMockToolShowcase = (conversationId: string) => {
+  toolShowcases.add(conversationId)
+}
+
 /** 连接后照服务端发开跑的 updated（带新 lastRunId）与结束事件，模拟未读运行。 */
 export const markMockJustFinished = (conversation: MockConversation) => {
   justFinished.add(conversation)
@@ -129,6 +137,7 @@ export const resetMockTranscript = () => {
   queues.clear()
   awaitingApproval.clear()
   justFinished.clear()
+  toolShowcases.clear()
   decisions.clear()
 }
 
@@ -339,8 +348,10 @@ export const mockTranscriptPage = (
   request: { beforeTurn?: string | null; pageSize?: number } = {},
 ) => {
   const awaiting = awaitingApproval.has(conversationId)
-  const history =
-    conversationId === MOCK_LONG_CONVERSATION_ID
+  const showcase = toolShowcases.has(conversationId)
+  const history = showcase
+    ? toolShowcaseTurns()
+    : conversationId === MOCK_LONG_CONVERSATION_ID
       ? Array.from({ length: LONG_HISTORY_TURNS }, (_, index) => longTurn(index + 1))
       : Array.from({ length: HISTORY_TURNS }, (_, index) => historyTurn(index + 1))
   const page = pageOf([...history, ...(awaiting ? [approvalTurn()] : [])], request)
@@ -348,7 +359,7 @@ export const mockTranscriptPage = (
     agent_id: 'main',
     agents: [{ agentId: 'main', type: 'main' }],
     has_more: page.hasMore,
-    interactions: awaiting ? [pendingApproval] : [],
+    interactions: awaiting ? [pendingApproval] : showcase ? toolShowcaseInteractions : [],
     items: page.items,
     meta: {
       activity: awaiting ? 'turn' : 'idle',
@@ -371,7 +382,11 @@ export const mockTranscriptPage = (
     seq: HISTORY_SEQ,
     stream_epoch: MOCK_STREAM_EPOCH,
     tasks: [],
-    title: conversationId === MOCK_LONG_CONVERSATION_ID ? '长对话回看' : '夜景延时素材生成',
+    title: showcase
+      ? '工具过程展示'
+      : conversationId === MOCK_LONG_CONVERSATION_ID
+        ? '长对话回看'
+        : '夜景延时素材生成',
     todos: [],
   }
 }
@@ -761,8 +776,12 @@ export const transcriptHandlers = [
       if (existing !== undefined) return
       joined.set(conversationId, connection)
       connections.add(connection)
-      // 普通订阅自动启动演示运行；待审批会话保持等待，长对话只用来回看。
-      if (!awaitingApproval.has(conversationId) && conversationId !== MOCK_LONG_CONVERSATION_ID) {
+      // 普通订阅自动启动演示运行；待审批会话保持等待，长对话与工具过程展示只用来回看。
+      if (
+        !awaitingApproval.has(conversationId) &&
+        !toolShowcases.has(conversationId) &&
+        conversationId !== MOCK_LONG_CONVERSATION_ID
+      ) {
         playTurn(conversationId, {
           content: [{ text: '把这段素材拆一下', type: 'text' }],
           promptId: 'demo',

@@ -1,16 +1,20 @@
 /** 按 turn → step → frame 顺序渲染，连续活动由 activity-group 分组并收进活动卡，单块由 turn-frame 渲染。 */
 
 import { memo } from 'react'
-import type { TranscriptTurn } from '@/shared/transcript/vendor'
-import { ActivityCard, ActivityStep } from './activity-card'
+import type { TranscriptInteraction, TranscriptTurn } from '@/shared/transcript/vendor'
+import { ActivityCard } from './activity-card'
 import { groupActivityCards, groupTurnEntries, type TurnEntry } from './activity-group'
 import { ActivityRun } from './activity-run'
 import { RunFailedNotice, TurnFrame } from './turn-frame'
 import { TurnActions } from './turn-actions'
+import { TurnResultList } from './turn-result-list'
+import { turnResults } from './turn-results'
 import { UserBubble } from './user-bubble'
 
 type ConversationTurnProps = {
   turn: TranscriptTurn
+  /** 本段对话的全部交互（含已决定的）；工具卡凭它认出被拒绝的那一步。 */
+  interactions: ReadonlyMap<string, TranscriptInteraction>
   /** 最新一轮：终态栏常驻；历史轮悬停才露出。 */
   latest?: boolean | undefined
   /** 仅在末轮且对话空闲时提供重新生成回调。 */
@@ -30,6 +34,7 @@ const isSettled = (turn: TranscriptTurn) => turn.state !== 'running' && turn.sta
 export const ConversationTurn = memo(function ConversationTurn({
   editDisabled,
   forkDisabled,
+  interactions,
   latest = false,
   onEdit,
   onFork,
@@ -53,13 +58,14 @@ export const ConversationTurn = memo(function ConversationTurn({
   // 轮头部保存开场输入，user frame 保存运行中追加消息；live 块为未结束轮的末步末块。
   const liveFrameId = settled ? undefined : turn.steps.at(-1)?.frames.at(-1)?.frameId
   const blocks = groupActivityCards(groupTurnEntries(entries))
+  const results = settled ? turnResults(entries.map(({ frame }) => frame)) : []
 
   const frameOf = ({ frame }: TurnEntry) => (
     <TurnFrame
       frame={frame}
+      interactions={interactions}
       key={frame.frameId}
       live={frame.frameId === liveFrameId}
-      settled={settled}
     />
   )
 
@@ -77,18 +83,20 @@ export const ConversationTurn = memo(function ConversationTurn({
             {block.nodes.map((node) =>
               node.kind === 'run' ? (
                 <ActivityRun
+                  interactions={interactions}
                   items={node.items}
                   key={node.runId}
                   liveFrameId={liveFrameId}
                   settled={settled}
                 />
               ) : (
-                <ActivityStep key={node.entry.frame.frameId}>{frameOf(node.entry)}</ActivityStep>
+                frameOf(node.entry)
               ),
             )}
           </ActivityCard>
         ),
       )}
+      {results.length === 0 ? null : <TurnResultList results={results} />}
       {settled && copyText !== '' ? (
         <TurnActions
           // 最新一轮常驻、占位；历史轮悬停才露出，不占位，叠在与下一轮之间的空隙里，
@@ -98,13 +106,20 @@ export const ConversationTurn = memo(function ConversationTurn({
           endedAt={turn.endedAt}
           forkDisabled={forkDisabled}
           onFork={onFork}
-          onRegenerate={onRegenerate}
+          // 没跑完的轮由下面那行「重试」承担重新生成，操作栏不再重复给一个。
+          onRegenerate={turn.error === undefined ? onRegenerate : undefined}
           regenerateDisabled={regenerateDisabled}
           revealed={latest}
           usage={turn.usage}
         />
       ) : null}
-      {turn.error === undefined ? null : <RunFailedNotice detail={turn.error} />}
+      {turn.error === undefined ? null : (
+        <RunFailedNotice
+          error={turn.error}
+          onRetry={onRegenerate}
+          retryDisabled={regenerateDisabled}
+        />
+      )}
       {turn.state === 'queued' ? (
         <p className="text-body-sm text-chat-muted-text">排队中，等前一条跑完</p>
       ) : null}

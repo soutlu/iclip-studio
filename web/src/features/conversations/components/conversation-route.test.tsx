@@ -166,7 +166,9 @@ describe('ConversationRoute', () => {
     expect(await screen.findByText('第 1 个问题')).toBeInTheDocument()
     expect(screen.getByText(TAIL_TEXT)).toBeInTheDocument()
     expect(screen.getByText('读取文件')).toBeInTheDocument()
-    expect(screen.getByText('shots/storyboard.md')).toBeInTheDocument()
+    // 文件只写文件名，不带目录。
+    expect(screen.getByRole('button', { name: 'storyboard.md' })).toBeInTheDocument()
+    expect(screen.queryByText('shots/storyboard.md')).not.toBeInTheDocument()
     expect(screen.queryByText('read_file')).not.toBeInTheDocument()
   })
 
@@ -691,7 +693,7 @@ describe('ConversationRoute', () => {
     ).toBeInTheDocument()
   })
 
-  it('工具结果是纯文本时可以展开；历史里的读文件卡尾写行数', async () => {
+  it('工具结果是纯文本时可以展开；历史里的读文件行尾不写行数', async () => {
     const user = userEvent.setup()
     const { socket } = await renderConversation()
     await screen.findByText(TAIL_TEXT)
@@ -700,7 +702,7 @@ describe('ConversationRoute', () => {
       'aria-expanded',
       'false',
     )
-    expect(screen.getByText('3 行')).toBeInTheDocument()
+    expect(screen.queryByText('3 行')).toBeNull()
 
     socket.deliver(
       opsFrame(
@@ -877,11 +879,13 @@ describe('ConversationRoute', () => {
       name: /完成：读取了 1 个文件 · 写入了 1 个文件/,
     })
     expect(head).toHaveAttribute('aria-expanded', 'false')
+    // 收起时组里的行对读屏隐藏；点开后读、写两行都出来。
+    const before = screen.queryAllByRole('button', { name: 'storyboard.md' }).length
 
     await user.click(head)
 
     expect(head).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getAllByText('shots/storyboard.md').length).toBeGreaterThan(1)
+    expect(screen.getAllByRole('button', { name: 'storyboard.md' })).toHaveLength(before + 2)
   })
 
   it('历史消息里的附件画成芯片，点开进灯箱', async () => {
