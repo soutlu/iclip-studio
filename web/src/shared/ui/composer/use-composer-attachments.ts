@@ -1,4 +1,7 @@
-/** 文档是附件生命周期的事实源；新增即上传，引用消失时由 syncReferences 回收条目与本地预览。上传协议与校验在 shared/api/media-upload。 */
+/** 附件条目：新增即上传，条目活到编辑器卸载或整篇重置。撤销、重做随时可能把文档里删掉的附件节点带回来，节点回来时
+ * 它的状态、地址与失败原因必须还在，所以文档里删掉附件不回收条目；只有整篇重置（撤销历史一并清空）时由 purgeExcept
+ * 回收文档之外的条目与本地预览。代价是删掉或发送后清空的附件条目留到卸载；就绪后释放原文件，留下的只是元信息与公网地址。
+ * 上传协议与校验在 shared/api/media-upload。 */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
@@ -25,7 +28,7 @@ export type ComposerAttachment = {
   readonly previewUrl: string | undefined
   readonly url: string | undefined
   readonly error: string | undefined
-  /** 本地选取的原文件，供失败后重试；从公网地址恢复的就绪附件没有。 */
+  /** 本地选取的原文件：上传中与失败时持有，供失败后重试；就绪后释放，从公网地址恢复的附件也没有。 */
   readonly file: File | undefined
 }
 
@@ -99,7 +102,7 @@ export const useComposerAttachments = (accept: ComposerAccept = 'media') => {
     [],
   )
 
-  /** 忽略已回收条目的异步回写，避免删除后重新出现。 */
+  /** 忽略已回收条目（整篇重置后）的异步回写，避免回收后重新出现。 */
   const patch = (attId: string, partial: Partial<ComposerAttachment>) => {
     setEntries((prev) => {
       const current = prev.get(attId)
@@ -135,9 +138,10 @@ export const useComposerAttachments = (accept: ComposerAccept = 'media') => {
         if (current === undefined) return prev
         revokePreview(current)
         const next = new Map(prev)
-        // 上传后将预览替换为公网地址，保证本地 URL 回收后仍可查看。
+        // 上传后将预览替换为公网地址，保证本地 URL 回收后仍可查看；原文件只为失败重试而留，就绪即释放。
         next.set(entry.attId, {
           ...current,
+          file: undefined,
           previewUrl: url,
           progress: undefined,
           status: 'ready',
@@ -182,8 +186,9 @@ export const useComposerAttachments = (accept: ComposerAccept = 'media') => {
     void upload(entry, entry.file)
   }
 
-  /** 每次文档变化后提供当前附件 ID；删除无引用条目并回收其预览。 */
-  const syncReferences = useCallback((attIdsInDoc: readonly string[]) => {
+  /** 回收 `attIdsInDoc` 之外的条目与本地预览，之后迟到的上传结果不再写回（见 patch）。只在撤销历史跟着清空时调用
+   * （整篇重置）：平时文档里删掉的附件节点还可能被撤销、重做带回来，条目得留着。 */
+  const purgeExcept = useCallback((attIdsInDoc: readonly string[]) => {
     setEntries((prev) => {
       const live = new Set(attIdsInDoc)
       let changed = false
@@ -216,7 +221,7 @@ export const useComposerAttachments = (accept: ComposerAccept = 'media') => {
     })
   }, [])
 
-  return { entries, mintEntry, restoreEntries, retry, syncReferences, takeReady }
+  return { entries, mintEntry, purgeExcept, restoreEntries, retry, takeReady }
 }
 
 export type ComposerAttachments = ReturnType<typeof useComposerAttachments>

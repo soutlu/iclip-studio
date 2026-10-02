@@ -1,5 +1,5 @@
 /** 编辑核心：处理键盘、粘贴、局部拖放与 NodeView，带外壳的 Composer 与不带外壳的分镜正文共用。外层 window、卡片或段落卡接收其他区域的文件拖放。
- * 文档变化后同步附件引用，确保条目随文档回收。NodeView 只建宿主元素，内容由 `ComposerNodeViews` 经 portal 渲染进去。 */
+ * 附件条目不随文档回收（撤销、重做会把节点带回来），只在整篇重置时回收。NodeView 只建宿主元素，内容由 `ComposerNodeViews` 经 portal 渲染进去。 */
 
 import { baseKeymap } from 'prosemirror-commands'
 import { history, redo, undo } from 'prosemirror-history'
@@ -246,7 +246,7 @@ export const useComposerEditor = ({
     view.focus()
   }
 
-  /** 清空文档后由 syncReferences 回收附件条目。 */
+  /** 清空文档（如发送之后）。这一步可撤销，附件条目随之留到卸载：撤销后内容连同附件一起回来，附件仍可发送。 */
   const clearDoc = () => {
     const view = viewRef.current
     if (view === null) return
@@ -277,7 +277,8 @@ export const useComposerEditor = ({
     const view = viewRef.current
     if (view === null) return
     view.updateState(EditorState.create({ doc, plugins: view.state.plugins }))
-    latestRef.current.attachments.syncReferences(collectAttachmentIds(doc))
+    // 撤销历史随新状态清空，不在新文档里的附件再也回不来，此时才回收它们的条目。
+    latestRef.current.attachments.purgeExcept(collectAttachmentIds(doc))
     setFailureCard(null)
     setDocState({ doc, restored: true })
   }
@@ -296,16 +297,19 @@ export const useComposerEditor = ({
   }
 
   /** 把引用该附件的第一个节点换成 parts（如附件就绪后换成使用方节点），返回换好的事务、不派发：
-   * 使用方先按事务后的文档定下别处的状态，再自己 dispatch。附件已不在文档里时为 undefined。 */
+   * 使用方先按事务后的文档定下别处的状态，再自己 dispatch。附件已不在文档里时为 undefined。
+   *
+   * 这是系统替换，事务不进撤销历史：撤销要回到用户粘贴之前（连同换上的节点一起撤掉），而不是复活一个数据已被
+   * 使用方消费掉的附件节点。 */
   const replaceAttachment = (attId: string, parts: readonly AnyPart[]): Transaction | undefined => {
     const view = viewRef.current
     const pos = attachmentPosition(attId)
     if (view === null || pos === undefined) return undefined
     latestRef.current.attachments.restoreEntries(mediaOf(parts))
-    return view.state.tr.replaceWith(pos, pos + 1, nodesOf(parts))
+    return view.state.tr.replaceWith(pos, pos + 1, nodesOf(parts)).setMeta('addToHistory', false)
   }
 
-  /** 删掉引用该附件的所有节点，条目随后由 syncReferences 回收；焦点留在编辑器。 */
+  /** 删掉引用该附件的所有节点，焦点留在编辑器；条目留着，撤销还能把附件连同状态一起带回来。 */
   const removeAttachment = (attId: string) => {
     const view = viewRef.current
     if (view === null) return
@@ -417,7 +421,6 @@ export const useComposerEditor = ({
           const next = view.state.apply(tr)
           view.updateState(next)
           if (!tr.docChanged) return
-          latestRef.current.attachments.syncReferences(collectAttachmentIds(next.doc))
           const restored = tr.getMeta(RESTORE_META) === true
           setDocState({ doc: next.doc, restored })
           if (!restored) latestRef.current.onDocChange?.(next.doc)

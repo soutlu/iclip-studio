@@ -160,6 +160,7 @@ export function PromptEditor({
 
   // 就绪的 chip 换成帧引用：先在 chip 的位置把引用与地址一起写进本组，拿到编号再换节点。
   // 换完的正文先记下，外面带回来时就认得是自己交出去的，不会整篇重置把同段其他在途的 chip 冲掉。
+  // 换节点（以及放不进时删 chip）不进撤销历史（见 replaceAttachment）：撤销一次回到粘贴之前，图仍留在本组。
   const landImage = useEffectEvent((attId: string, url: string) => {
     const view = viewRef.current
     const current = editorRef.current

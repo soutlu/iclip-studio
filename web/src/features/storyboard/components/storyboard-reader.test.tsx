@@ -1999,6 +1999,83 @@ describe('StoryboardReader', () => {
       expect(second?.prompt).toMatch(/^@Image[45]共用同一帧/)
     })
 
+    it('图传好换成引用后撤销一次回到粘贴前：不留 chip、在途名额还回来；重做回到引用', async () => {
+      const nearlyFull: ShotsDocument = {
+        ...fullDocument,
+        shots: fullDocument.shots.map((shot) =>
+          shot.index === 1 ? { ...shot, image_urls: shot.image_urls.slice(0, 28) } : shot,
+        ),
+      }
+      const before = nearlyFull.shots[0]?.prompt.timeline[0]?.prompt ?? ''
+      const files = provide(nearlyFull)
+      const release = delayedUpload()
+      await renderReader('/?shot=1&content=scene:1')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const editor = editorOf(page, '镜头 1 的描述')
+      const savedPrompt = () => files.snapshot().shots[0]?.prompt.timeline[0]?.prompt
+      pasteImage(page, '镜头 1 的描述')
+      await findChip(page, '镜头 1 的描述')
+      // 撤销历史按 500ms 分组：传得比这慢，落图才和粘贴分在两步里，正是会复活 chip 的那种情形。
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 600)))
+      await act(async () => {
+        release()
+      })
+      await waitFor(() => expect(savedPrompt()).toBe(`@Image29${before}`), { timeout: 3000 })
+
+      editor.focus()
+      await userEvent.keyboard('{Control>}z{/Control}')
+      // 引用撤掉了，原来那个文件名 chip 也不回来。
+      expect(within(editor).queryByText('新帧.png')).not.toBeInTheDocument()
+      await waitFor(() => expect(savedPrompt()).toBe(before), { timeout: 3000 })
+      // 图在落图时已写进本组，撤销只撤正文。
+      expect(files.snapshot().shots[0]?.image_urls).toHaveLength(29)
+
+      await userEvent.keyboard('{Control>}y{/Control}')
+      await waitFor(() => expect(savedPrompt()).toBe(`@Image29${before}`), { timeout: 3000 })
+
+      // 撤销、重做都没留下在途的图：还差 1 张满时再粘贴一张照样收下。
+      pasteImage(page, '镜头 1 的描述', new File(['c'], '丙.png', { type: 'image/png' }))
+      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(30), {
+        timeout: 3000,
+      })
+      expect(within(segmentOf(page, '镜头 1')).queryByText(/每组最多使用 30 张参考图/)).toBeNull()
+    })
+
+    it('上传中撤销掉 chip、传好后再重做：chip 回来照常换成引用，图只追加一次', async () => {
+      const files = provide(emptyDocument)
+      const release = delayedUpload()
+      await renderReader('/?shot=1&content=scene:1')
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const editor = editorOf(page, '镜头 1 的描述')
+      pasteImage(page, '镜头 1 的描述')
+      await findChip(page, '镜头 1 的描述')
+
+      editor.focus()
+      await userEvent.keyboard('{Control>}z{/Control}')
+      expect(within(editor).queryByText('新帧.png')).not.toBeInTheDocument()
+      expect(editor).toHaveTextContent(/^无图镜头一。$/)
+      await act(async () => {
+        release()
+      })
+      // 撤掉的 chip 传好了也不落图：等过自动保存窗口，本组没有多出图片，也没有写入。
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
+      expect(files.writes).toEqual([])
+
+      await userEvent.keyboard('{Control>}y{/Control}')
+      await waitFor(() => expect(files.snapshot().shots[0]?.image_urls).toHaveLength(1), {
+        timeout: 3000,
+      })
+      expect(files.snapshot().shots[0]?.prompt.timeline[0]).toEqual({
+        timestamps: [0, 3],
+        prompt: '@Image1无图镜头一。',
+        image_indexes: [1],
+      })
+      expect(within(editor).queryByText('新帧.png')).not.toBeInTheDocument()
+      // 只落一次：再等一个保存窗口，本组仍是这一张。
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
+      expect(files.snapshot().shots[0]?.image_urls).toHaveLength(1)
+    })
+
     it('文件拖到段卡上：亮出「松开添加到镜头 2」，落在正文以外的地方接到这段末尾', async () => {
       const files = provide()
       await renderReader('/?shot=1&content=scene:1')
