@@ -161,6 +161,8 @@
   --color-chat-panel-bg-end: var(--color-chat-panel-bg-end);
   --color-chat-panel-border: var(--color-chat-panel-border);
   --color-chat-card-bg: var(--color-chat-card-bg);
+  --color-chat-soft-card: var(--color-chat-soft-card);
+  --color-chat-soft-card-edge: var(--color-chat-soft-card-edge);
   --color-chat-message-text: var(--color-chat-message-text);
   --color-chat-secondary-text: var(--color-chat-secondary-text);
   --color-chat-muted-text: var(--color-chat-muted-text);
@@ -174,8 +176,6 @@
   --color-chat-code-border: var(--color-chat-code-border);
   --color-chat-link-text: var(--color-chat-link-text);
   --color-chat-link-border: var(--color-chat-link-border);
-  --color-chat-error-bg: var(--color-chat-error-bg);
-  --color-chat-error-border: var(--color-chat-error-border);
   --color-chat-error-text: var(--color-chat-error-text);
   --color-chat-status-success: var(--color-chat-status-success);
   --color-chat-status-error: var(--color-chat-status-error);
