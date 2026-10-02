@@ -314,7 +314,7 @@ describe('Composer', () => {
     pasteTextIntoComposer(editor(), '参考这张')
     pasteFilesIntoComposer(editor(), [imageFile()])
     await waitFor(() => expect(sendButton()).toBeEnabled())
-    // 撤销历史按 500ms 分组：贴完立刻发送，清空会和贴进来的内容并成一步撤销。
+    // 等过 500ms 的分组间隔：这条验证撤销能把条目带回来；500ms 内发送的情形见下一条。
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 600)))
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).toHaveBeenCalledTimes(1)
@@ -330,6 +330,56 @@ describe('Composer', () => {
       media: [expect.objectContaining({ url: expect.stringContaining('/mock-oss/') })],
       text: '参考这张',
     })
+  })
+
+  it('打完字立刻发送再撤销：清空单独一步，正文连最后几个字与 pill 一起回来；重做回到清空', async () => {
+    const ref = createRef<ComposerHandle>()
+    const onSubmit = vi.fn<(submission: ComposerSubmission) => void>(() => ref.current?.clear())
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} ref={ref} />)
+
+    editor().focus()
+    pasteTextIntoComposer(editor(), '参考这张')
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 600)))
+    // 最后补几个字马上发送：这次编辑与清空落在同一个 500ms 分组窗口里。
+    pasteTextIntoComposer(editor(), '，竖版')
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(within(editor()).queryByText('截图.png')).not.toBeInTheDocument())
+
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(await within(editor()).findByText('截图.png')).toBeInTheDocument()
+    // 补的字接在 pill 后面，分开断言。
+    expect(editor()).toHaveTextContent('参考这张')
+    expect(editor()).toHaveTextContent('，竖版')
+    expect(sendButton()).toBeEnabled()
+
+    await userEvent.keyboard('{Control>}y{/Control}')
+    await waitFor(() => expect(within(editor()).queryByText('截图.png')).not.toBeInTheDocument())
+    expect(editor()).not.toHaveTextContent('参考这张')
+    expect(sendButton()).toBeDisabled()
+  })
+
+  it('发送后紧接着打下一条再撤销：只撤掉新打的，发出去的那条不跟着回来', async () => {
+    const ref = createRef<ComposerHandle>()
+    const onSubmit = vi.fn<(submission: ComposerSubmission) => void>(() => ref.current?.clear())
+    await renderWithProviders(<Composer onSubmit={onSubmit} ref={ref} />)
+
+    editor().focus()
+    pasteTextIntoComposer(editor(), '第一条')
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 600)))
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(editor()).not.toHaveTextContent('第一条'))
+
+    // 清空之后 500ms 内就开始打下一条。
+    pasteTextIntoComposer(editor(), '下一条')
+    await userEvent.keyboard('{Control>}z{/Control}')
+
+    await waitFor(() => expect(editor()).not.toHaveTextContent('下一条'))
+    expect(editor()).not.toHaveTextContent('第一条')
+    expect(sendButton()).toBeDisabled()
   })
 
   it('拖文件进窗口：先出全屏遮罩，松手落成 pill、遮罩消失', async () => {

@@ -2,7 +2,7 @@
  * 附件条目不随文档回收（撤销、重做会把节点带回来），只在整篇重置时回收。NodeView 只建宿主元素，内容由 `ComposerNodeViews` 经 portal 渲染进去。 */
 
 import { baseKeymap } from 'prosemirror-commands'
-import { history, redo, undo } from 'prosemirror-history'
+import { closeHistory, history, redo, undo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
 import type { Node as PMNode, Schema, Slice } from 'prosemirror-model'
 import { EditorState, NodeSelection, Plugin, Selection, type Transaction } from 'prosemirror-state'
@@ -246,13 +246,20 @@ export const useComposerEditor = ({
     view.focus()
   }
 
-  /** 清空文档（如发送之后）。这一步可撤销，附件条目随之留到卸载：撤销后内容连同附件一起回来，附件仍可发送。 */
+  /** 清空文档（如发送之后）。这一步可撤销，附件条目随之留到卸载：撤销后内容连同附件一起回来，附件仍可发送。
+   *
+   * 清空单独成一步撤销：撤销历史把 500ms 内的改动并成一步，不隔开的话，打完字立刻发送再撤销会连最后几个字
+   * 一起撤掉；发送后紧接着打下一条再撤销，又会把发出去的那条一起带回来。所以清空前后各关一次分组。 */
   const clearDoc = () => {
     const view = viewRef.current
     if (view === null) return
     view.dispatch(
-      view.state.tr.replaceWith(0, view.state.doc.content.size, nodeType('paragraph').create()),
+      closeHistory(
+        view.state.tr.replaceWith(0, view.state.doc.content.size, nodeType('paragraph').create()),
+      ),
     )
+    // 空事务只为关上清空这一组，让之后的输入另起一步。
+    view.dispatch(closeHistory(view.state.tr))
   }
 
   /** 按原始 parts 顺序恢复正文、附件与使用方节点；这次变化标成恢复。 */
