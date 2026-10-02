@@ -197,6 +197,37 @@ async def test_an_asynchronous_generation_runs_end_to_end(
     assert (await repo.get(job.id, owner=None)).output_url == "https://cdn.test/v.mp4"
 
 
+async def test_a_submitted_row_missing_its_poll_is_polled_after_the_submit_replays(
+    engine: AsyncEngine, queue_factory: QueueFactory
+) -> None:
+    """进程死在写回执与排轮询之间：重排的提交任务补排轮询把这一行收尾，付费提交不再发生。"""
+
+    from iclip.domains.generation.provider import ProviderProgress
+
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    job = await repo.create(make_job(video_request(), owner_user_id=owner))
+    # 回执已落库、首个轮询没排上，队列里只剩被重排的提交任务。
+    await repo.mark_submitting(job.id)
+    await repo.mark_submitted(job.id, provider_task_id="v-1", provider_status="queued")
+    video = ScriptedProvider(
+        progress=ProviderProgress(
+            outcome="succeeded",
+            provider_status="succeeded",
+            output_url="https://cdn.test/v.mp4",
+        ),
+    )
+    queue = await queue_factory(video=video, image=ScriptedProvider())
+
+    await queue.enqueue_submit(job)
+    queue.start()
+    await wait_for_status(repo, job.id, STATUS_COMPLETED)
+
+    assert video.submit_calls == [], "回执已经在库里，绝不能再提交一次"
+    assert video.poll_calls == [job.id]
+    assert (await repo.get(job.id, owner=None)).output_url == "https://cdn.test/v.mp4"
+
+
 async def test_a_restart_mid_submit_fails_the_row_honestly(
     engine: AsyncEngine, queue_factory: QueueFactory
 ) -> None:

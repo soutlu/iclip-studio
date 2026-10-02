@@ -6,7 +6,10 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from procrastinate.exceptions import ConnectorException
 from procrastinate.jobs import Job as QueuedJob
+from procrastinate.testing import InMemoryConnector, JobRow
+from procrastinate.types import JobToDefer
 
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -58,6 +61,57 @@ async def test_async_submit_moves_job_to_waiting_for_result() -> None:
     polls = [row for row in connector.jobs.values() if row["task_name"] == "generation.poll"]
     assert len(polls) == 1, "提交完必须排一次轮询，否则永远没人问结果"
     assert polls[0]["queue_name"] == QUEUE_POLL
+
+
+class _PollDeferFailsOnce(InMemoryConnector):
+    """第一次排轮询时数据库连接断了；提交任务自己的入队不受影响。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.poll_failures_left = 1
+
+    async def defer_jobs_all(self, jobs: list[JobToDefer]) -> list[JobRow]:
+        if self.poll_failures_left and any(job.task_name == "generation.poll" for job in jobs):
+            self.poll_failures_left -= 1
+            raise ConnectorException("排轮询时数据库连接断了")
+        return await super().defer_jobs_all(jobs)
+
+
+async def test_a_lost_first_poll_is_scheduled_when_the_submit_replays() -> None:
+    """回执落库后排轮询失败：提交任务重试时补排轮询，付费提交仍只有那一次。"""
+
+    job = make_job(video_request())
+    repo = InMemoryGenerationRepository([job])
+    video = ScriptedProvider(
+        submission=ProviderSubmission(provider_task_id="t-1", provider_status="queued"),
+        progress=ProviderProgress(
+            outcome="succeeded",
+            provider_status="succeeded",
+            output_url="https://cdn.test/v.mp4",
+        ),
+    )
+    connector = _PollDeferFailsOnce()
+    queue, _ = build_queue(repo, video=video, connector=connector)
+
+    # 抛给 procrastinate 的重试策略重排这次提交；回执此时已经在库里。
+    with pytest.raises(ConnectorException):
+        await queue.run_submit(str(job.id))
+    assert repo.jobs[job.id].status == STATUS_SUBMITTED
+    assert _polls(connector) == []
+    waited = _retry_seconds(queue, ConnectorException("x"), task="generation.submit")
+    assert waited == QUEUE_SETTINGS.error_retry_seconds, "排不上轮询要让提交任务过一会儿重来"
+
+    await queue.run_submit(str(job.id))
+
+    assert video.submit_calls == [job.id], "补排轮询不能再提交一次"
+    assert len(_polls(connector)) == 1, "已提交的任务必须有人接着问结果，否则永远停在 submitted"
+
+    await queue.run_poll(str(job.id))
+    assert repo.jobs[job.id].status == STATUS_COMPLETED
+
+
+def _polls(connector: InMemoryConnector) -> list[JobRow]:
+    return [row for row in connector.jobs.values() if row["task_name"] == "generation.poll"]
 
 
 async def test_sync_submit_completes_in_one_step() -> None:
@@ -411,10 +465,12 @@ _ANY_JOB = QueuedJob(
 """重试策略只依赖异常类型，使用最小有效 job。"""
 
 
-def _retry_seconds(queue: GenerationQueue, exception: Exception) -> int:
-    """读取指定异常对应的轮询重试间隔。"""
+def _retry_seconds(
+    queue: GenerationQueue, exception: Exception, *, task: str = "generation.poll"
+) -> int:
+    """读取指定异常对应的重试间隔，默认看轮询任务。"""
 
-    strategy = queue.app.tasks["generation.poll"].retry_strategy
+    strategy = queue.app.tasks[task].retry_strategy
     assert strategy is not None
     decision = strategy.get_retry_decision(exception=exception, job=_ANY_JOB)
     assert decision is not None and decision.retry_at is not None
