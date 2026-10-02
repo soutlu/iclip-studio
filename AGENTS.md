@@ -33,6 +33,7 @@
 | 工作流 | 触发 | 内容 |
 |---|---|---|
 | [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档；目标为 `develop` 时按改动路径选择后端、前端检查，前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时两端都查；结果汇总为 `ci` |
+| [cache-warm](.github/workflows/cache-warm.yml) | 推送 `develop`、`main`（含 PR 合入）；手动运行 | 只安装前端（含 Playwright Chromium 与中文字体）与后端依赖、不跑检查，把依赖缓存存到该分支，供指向它的 PR 恢复；PR 自己存的缓存不跨 PR 共用 |
 | [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` tag；手动选择分支 | 构建并上传镜像，见[镜像发布](docs/release.md) |
 
 选中的静态检查、构建与测试并行执行；集成测试每组使用独立 Postgres，前端单测与 e2e 按分片运行。本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。`ci` 结果怎样决定合并见[分支与交付](#3-分支与交付)。

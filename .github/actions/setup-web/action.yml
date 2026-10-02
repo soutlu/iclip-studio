@@ -44,10 +44,38 @@ runs:
       shell: bash
       working-directory: web
       run: pnpm exec playwright install chromium
-    # 不跑 install-deps：它每次 apt-get update 再装一串用不到的外文字体，约 30s。浏览器要的系统库
-    # runner 镜像随 Chrome 已经装齐，缺库时 Playwright 启动会报出库名；镜像没有中文字体，只补这一个。
-    # 这个包多年未变，镜像自带的软件源索引就能装，不必 apt-get update。
-    - name: Install CJK font
+    # 不跑 install-deps：它每次 apt-get update 再装一串用不到的外文字体。浏览器要的系统库 runner 镜像
+    # 随 Chrome 已经装齐，缺库时 Playwright 启动会报出库名；镜像没有中文字体，只补文泉驿正黑。
+    # 不用 apt-get install：它常在 dpkg 开始前停顿 1～2.5 分钟。改为缓存用户级字体目录，未命中时
+    # 用 apt-get download 取包（不需要 sudo，也不等 dpkg 锁）再解包；下载版本与缓存 key 保持一致。
+    - uses: actions/cache@v4
+      if: inputs.playwright == 'true'
+      id: cjk-font
+      with:
+        path: ~/.local/share/fonts/wqy-zenhei
+        key: cjk-font-${{ runner.os }}-fonts-wqy-zenhei-0.9.45-8
+    - name: Download CJK font
+      if: inputs.playwright == 'true' && steps.cjk-font.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -u
+        dir="$HOME/.local/share/fonts/wqy-zenhei"
+        work=$(mktemp -d)
+        cd "$work"
+        apt-get download fonts-wqy-zenhei=0.9.45-8
+        dpkg-deb -x fonts-wqy-zenhei_*.deb root
+        mkdir -p "$dir"
+        find root -type f \( -name '*.ttc' -o -name '*.ttf' \) -exec cp {} "$dir/" \;
+        if [ -z "$(ls -A "$dir")" ]; then
+          echo "::error::fonts-wqy-zenhei 包里没有找到字体文件"
+          exit 1
+        fi
+    - name: Register CJK font
       if: inputs.playwright == 'true'
       shell: bash
-      run: sudo apt-get install -y -qq --no-install-recommends fonts-wqy-zenhei
+      run: |
+        fc-cache -f "$HOME/.local/share/fonts/wqy-zenhei"
+        if [ -z "$(fc-list 'WenQuanYi Zen Hei' family)" ]; then
+          echo "::error::fontconfig 没有识别到文泉驿正黑"
+          exit 1
+        fi
