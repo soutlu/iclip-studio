@@ -101,6 +101,18 @@ const VIDEO_DOC_MD = [
   '| Detail Show | 00:02-00:08 | 律动轻快 | 楼群灯光逐层亮起 |',
 ].join('\n')
 
+const VOICEOVER_TXT = [
+  '开场：周末的早上，不想背太重的包。',
+  '',
+  '它能装下一台 13 寸电脑、一瓶水和一件薄外套，',
+  '提手是植鞣皮，越用颜色越深。',
+  '',
+  '通勤放进地铁座位下面刚好，',
+  '周末去菜市场也不心疼。',
+  '',
+  '收尾：米白帆布托特，今天就带它出门。',
+].join('\n')
+
 export const SHOTS_MOCK_PATH = 'video_shot.json'
 
 const shotsDocument = (frames: MockFrames, updated = false) => ({
@@ -324,6 +336,7 @@ export const seedMockWorkspace = (
       ],
       // 下面几份照真实工作区的文件各给一份，文件页按类别渲染时有东西可看。
       ['storyboard.md', { content: STORYBOARD_MD, updatedAt: EARLIER, version: 2 }],
+      ['口播文案.txt', { content: VOICEOVER_TXT, updatedAt: EARLIER, version: 1 }],
       [
         'video/night-city-timelapse-9a3f2c1d.md',
         { content: VIDEO_DOC_MD, updatedAt: EARLIER, version: 1 },

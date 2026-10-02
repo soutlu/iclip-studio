@@ -299,7 +299,7 @@ export const toolPanel = (frame: ToolCallFrame, outcome: ToolOutcome): ToolPanel
   const parsed = displaySchema.safeParse(frame.display)
   const display = parsed.success ? parsed.data : undefined
   if (display?.kind === 'file_io') {
-    const markdown = fileKindOf(display.path).kind === 'markdown'
+    const markdown = fileKindOf(display.path) === 'markdown'
     if (display.operation === 'read' && toolResult(frame)?.kind === 'file_content') {
       return typeof frame.output === 'string'
         ? { kind: 'file', markdown, text: fileTextOf(frame.output) }

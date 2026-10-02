@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatBytes, formatWhen, groupByDirectory } from './file-kind'
+import { fileIconOf, formatBytes, formatWhen, groupByDirectory } from './file-kind'
 
 describe('groupByDirectory', () => {
   it('根目录在前，其余目录按路径排，同目录内按文件名排', () => {
@@ -33,5 +33,19 @@ describe('格式化', () => {
     expect(formatWhen(new Date(2026, 8, 5, 12, 40).toISOString(), now)).toBe('12:40')
     expect(formatWhen(new Date(2026, 8, 1, 9, 5).toISOString(), now)).toBe('9月1日 09:05')
     expect(formatWhen('not-a-date', now)).toBe('')
+  })
+})
+
+describe('fileIconOf', () => {
+  it.each([
+    ['storyboard.md', 'file'],
+    ['frames/extraction.JSON', 'file-json'],
+    ['口播文案.txt', 'file-plain'],
+    ['frames/a.png', 'file-image'],
+    ['clips/x.mp4', 'file-video'],
+    ['data/table.csv', 'file-other'],
+    ['LICENSE', 'file-other'],
+  ])('%s 用 %s', (path, icon) => {
+    expect(fileIconOf(path)).toBe(icon)
   })
 })
