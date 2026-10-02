@@ -209,6 +209,34 @@ describe('ConversationRoute', () => {
     expect(screen.queryByRole('button', { name: '加载更早的消息' })).not.toBeInTheDocument()
   })
 
+  it('末轮流式追加时，旧轮的正文节点原样不动：选中的文字不会因别处的更新被清掉', async () => {
+    // 照路由的真实用法给分叉回调，这一行不能删：不给 onForked 时每一轮的 onFork 都是 undefined，
+    // 历史轮拿不到任何回调，memo 本来就挡得住，这条用例在没修的代码上也会通过。
+    // 段落节点不变靠两处共同保证：Markdown 的组件映射不随渲染新建、ConversationTurn 的回调引用不变；
+    // 只回退其中一处这条仍会通过，Markdown 那处另由 markdown.test.tsx 的重渲染用例兜住。
+    const { socket } = await renderWithProviders(
+      <ConversationRoute conversationId="c1" onForked={() => undefined} />,
+    )
+    const earlier = await screen.findByText('这是第 1 轮的回复。')
+
+    socket.deliver(
+      opsFrame(
+        [
+          {
+            offset: TAIL_TEXT.length,
+            op: 'append',
+            target: { frameId: 't2.1.f3', stepId: 't2.1', turnId: 't2', type: 'frame' },
+            text: '再补一句。',
+          },
+        ],
+        11,
+      ),
+    )
+    await screen.findByText(`${TAIL_TEXT}再补一句。`)
+
+    expect(screen.getByText('这是第 1 轮的回复。')).toBe(earlier)
+  })
+
   it('逐字追加接在同一块上，不另起一段', async () => {
     const { socket } = await renderConversation()
     await screen.findByText(TAIL_TEXT)

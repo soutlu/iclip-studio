@@ -17,14 +17,14 @@ type ConversationTurnProps = {
   interactions: ReadonlyMap<string, TranscriptInteraction>
   /** 最新一轮：终态栏常驻；历史轮悬停才露出。 */
   latest?: boolean | undefined
-  /** 仅在末轮且对话空闲时提供重新生成回调。 */
-  onRegenerate?: (() => void) | undefined
+  /** 仅在末轮且对话空闲时提供重新生成回调。三个回调都收本轮，调用方据此传稳定引用，memo 才挡得住无关重渲染。 */
+  onRegenerate?: ((turn: TranscriptTurn) => void) | undefined
   regenerateDisabled?: boolean | undefined
   /** 每一轮都能分叉；对话在忙时由调用方置灰。 */
-  onFork?: (() => void) | undefined
+  onFork?: ((turn: TranscriptTurn) => void) | undefined
   forkDisabled?: boolean | undefined
   /** 仅为末轮提供修改开场输入的回调。 */
-  onEdit?: (() => void) | undefined
+  onEdit?: ((turn: TranscriptTurn) => void) | undefined
   editDisabled?: boolean | undefined
 }
 
@@ -59,6 +59,9 @@ export const ConversationTurn = memo(function ConversationTurn({
   const liveFrameId = settled ? undefined : turn.steps.at(-1)?.frames.at(-1)?.frameId
   const blocks = groupActivityCards(groupTurnEntries(entries))
   const results = settled ? turnResults(entries.map(({ frame }) => frame)) : []
+  const edit = onEdit === undefined ? undefined : () => onEdit(turn)
+  const fork = onFork === undefined ? undefined : () => onFork(turn)
+  const regenerate = onRegenerate === undefined ? undefined : () => onRegenerate(turn)
 
   const frameOf = ({ frame }: TurnEntry) => (
     <TurnFrame
@@ -73,7 +76,7 @@ export const ConversationTurn = memo(function ConversationTurn({
     // relative：历史轮的终态栏叠在本轮下方的空隙里，不占版面（见下）。
     <article className="group relative flex flex-col gap-3" aria-label={`第 ${turn.ordinal} 轮`}>
       {turn.content.length > 0 ? (
-        <UserBubble content={turn.content} editDisabled={editDisabled} onEdit={onEdit} />
+        <UserBubble content={turn.content} editDisabled={editDisabled} onEdit={edit} />
       ) : null}
       {blocks.map((block) =>
         block.kind === 'entry' ? (
@@ -105,9 +108,9 @@ export const ConversationTurn = memo(function ConversationTurn({
           copyText={copyText}
           endedAt={turn.endedAt}
           forkDisabled={forkDisabled}
-          onFork={onFork}
+          onFork={fork}
           // 没跑完的轮由下面那行「重试」承担重新生成，操作栏不再重复给一个。
-          onRegenerate={turn.error === undefined ? onRegenerate : undefined}
+          onRegenerate={turn.error === undefined ? regenerate : undefined}
           regenerateDisabled={regenerateDisabled}
           revealed={latest}
           usage={turn.usage}
@@ -116,7 +119,7 @@ export const ConversationTurn = memo(function ConversationTurn({
       {turn.error === undefined ? null : (
         <RunFailedNotice
           error={turn.error}
-          onRetry={onRegenerate}
+          onRetry={regenerate}
           retryDisabled={regenerateDisabled}
         />
       )}

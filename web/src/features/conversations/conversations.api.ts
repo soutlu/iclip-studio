@@ -524,11 +524,16 @@ export const useForkConversation = (onForked: (conversationId: string) => void) 
       onForked(conversation.id)
     },
   })
-  const start = (input: { conversationId: string; turn: number }): Promise<void> => {
-    if (inFlightRef.current) return Promise.resolve()
-    inFlightRef.current = true
-    return mutation.mutateAsync(input).then(() => undefined)
-  }
+  const { mutateAsync } = mutation
+  // 引用保持不变：会话页把它包进交给按轮 memo 的分叉回调，每次渲染换新会让历史轮跟着重渲。
+  const start = useCallback(
+    (input: { conversationId: string; turn: number }): Promise<void> => {
+      if (inFlightRef.current) return Promise.resolve()
+      inFlightRef.current = true
+      return mutateAsync(input).then(() => undefined)
+    },
+    [mutateAsync],
+  )
   return { isPending: mutation.isPending, start }
 }
 

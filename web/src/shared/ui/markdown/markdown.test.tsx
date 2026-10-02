@@ -12,6 +12,19 @@ const stubClipboard = () => {
   return writeText
 }
 
+describe('Markdown 重渲染', () => {
+  it('同样的正文重渲染不重建段落节点：选区与焦点挂在原节点上，换掉就丢了', () => {
+    const { rerender } = render(<Markdown text={'第一段，带 **粗体**。\n\n第二段'} />)
+    const paragraph = screen.getByText('第二段')
+    const bold = screen.getByText('粗体')
+
+    rerender(<Markdown text={'第一段，带 **粗体**。\n\n第二段'} />)
+
+    expect(screen.getByText('第二段')).toBe(paragraph)
+    expect(screen.getByText('粗体')).toBe(bold)
+  })
+})
+
 describe('Markdown 代码块', () => {
   afterEach(() => vi.restoreAllMocks())
 

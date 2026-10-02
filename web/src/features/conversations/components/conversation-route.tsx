@@ -1,6 +1,6 @@
 /** 标题来自 transcript 基线与推送；侧栏拓扑仅包含各列表首页，无法覆盖全部历史对话，页头合集标签因此只在拓扑里找得到时显示。 */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { useUser, useUsersDirectory } from '@/shared/auth'
 import {
@@ -58,6 +58,13 @@ const frameAwaiting = (
       (frame): frame is ToolCallFrame =>
         frame.kind === 'tool' && frame.approvalId === interactionId,
     )
+
+/** 点了就发、失败弹一条提示的操作；放在模块级，包它的回调才能保持引用不变。 */
+const act = (work: Promise<void>) => {
+  void work.catch((error: unknown) => {
+    toast.error(errorMessageOf(error, '操作失败'))
+  })
+}
 
 /** 参考 Kimi Requesting → Working：助手正文、思考非空或存在工具块。 */
 const hasAssistantOutput = (turn: TranscriptTurn | undefined): boolean =>
@@ -215,16 +222,25 @@ export function ConversationRoute({
           setEditingTurn(null)
         })
 
-  const act = (work: Promise<void>) => {
-    void work.catch((error: unknown) => {
-      toast.error(errorMessageOf(error, '操作失败'))
-    })
-  }
-
   const fork = useForkConversation((forked) => {
     toast.success('已分叉，接着在副本里跑')
     onForked?.(forked)
   })
+  // 交给按轮 memo 的回调保持引用不变：末轮流式更新时历史轮不重渲，正文节点与其中的选区都还在。
+  const { start: startFork } = fork
+  const editTurn = useCallback(
+    (turn: TranscriptTurn) =>
+      setEditingTurn({ content: turn.content, ordinal: turn.ordinal, turnId: turn.turnId }),
+    [],
+  )
+  const forkTurn = useCallback(
+    (turn: TranscriptTurn) => act(startFork({ conversationId, turn: turn.ordinal })),
+    [conversationId, startFork],
+  )
+  const regenerateTurn = useCallback(
+    (turn: TranscriptTurn) => act(regeneratePrompt(conversationId, turn.turnId)),
+    [conversationId],
+  )
 
   const scrollToBottom = () => {
     const scroller = scrollerRef.current
@@ -323,27 +339,12 @@ export function ConversationRoute({
                 interactions={view.interactions}
                 key={turn.turnId}
                 latest={turn.turnId === latestTurn?.turnId}
-                onEdit={
-                  !readOnly && turn.turnId === latestTurn?.turnId
-                    ? () =>
-                        setEditingTurn({
-                          content: turn.content,
-                          ordinal: turn.ordinal,
-                          turnId: turn.turnId,
-                        })
-                    : undefined
-                }
+                onEdit={!readOnly && turn.turnId === latestTurn?.turnId ? editTurn : undefined}
                 // 分叉不写源对话，别人的、已删的都分得动，所以不受 readOnly 限制。
                 forkDisabled={conversationBusy || fork.isPending}
-                onFork={
-                  onForked === undefined
-                    ? undefined
-                    : () => act(fork.start({ conversationId, turn: turn.ordinal }))
-                }
+                onFork={onForked === undefined ? undefined : forkTurn}
                 onRegenerate={
-                  !readOnly && turn.turnId === latestTurn?.turnId
-                    ? () => act(regeneratePrompt(conversationId, turn.turnId))
-                    : undefined
+                  !readOnly && turn.turnId === latestTurn?.turnId ? regenerateTurn : undefined
                 }
                 regenerateDisabled={conversationBusy}
                 turn={turn}
