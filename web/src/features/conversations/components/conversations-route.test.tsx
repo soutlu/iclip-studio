@@ -50,6 +50,14 @@ const workChanged = (
   payload: { pending_interaction: 'none', ...payload },
 })
 
+/** 一条视频生成任务出完了。 */
+const videoCompleted = (conversationId: string) => ({
+  ...sessionEnvelope(conversationId),
+  type: 'event.generation.changed',
+  session_id: conversationId,
+  payload: { id: 'job-1', kind: 'video', operation: 'generate', status: 'completed' },
+})
+
 /** 筛选条件在应用里由路由存在查询参数上；这里照样在外面持有一份，只测列表本身的行为。 */
 function StatefulConversationsRoute({
   tasks,
@@ -442,6 +450,30 @@ describe('ConversationsRoute', () => {
     socket.deliver(workChanged(fresh.id, { busy: true }))
     expect(await rowOf('刚开的片', AUDIT_REFRESH_TIMEOUT)).toHaveTextContent('进行中')
     await waitFor(() => expectTotals(2, 2), AUDIT_REFRESH_TIMEOUT)
+  })
+
+  it('列着的对话出了新成片：重拉后封面换成新成片的首帧', async () => {
+    const other = addMockUser('小王')
+    const theirs = addMockConversation('小王的秋季片')
+    theirs.ownerUserId = other.id
+    const { socket } = await render()
+    expect(within(await rowOf('小王的秋季片')).queryByRole('img')).not.toBeInTheDocument()
+
+    // 先改 MSW 里的事实：成片出来了，审计列表那一行带上它的地址。
+    const master = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/new-cut.mp4'
+    mockLatestMasterUrls.set(theirs.id, master)
+    socket.deliver(videoCompleted(theirs.id))
+
+    await waitFor(
+      () =>
+        expect(
+          within(screen.getByRole('link', { name: /小王的秋季片/ })).getByRole('img'),
+        ).toHaveAttribute(
+          'src',
+          `${master}?x-oss-process=video/snapshot,t_0,f_jpg,w_256,h_0,m_fast`,
+        ),
+      AUDIT_REFRESH_TIMEOUT,
+    )
   })
 
   it('一页五十段，页脚滚到底部一屏以内才读剩余对话，读完移除分页页脚', async () => {
