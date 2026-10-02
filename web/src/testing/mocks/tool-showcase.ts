@@ -1,5 +1,5 @@
 /**
- * 工具过程展示对话：几轮历史把工具行的各种状态都摆出来——失败后又成功的编辑、读文件、写文件被拒绝、
+ * 工具过程展示对话：几轮历史把工具行的各种状态都摆出来——交付分镜表、失败后又成功的编辑、读文件、写文件被拒绝、
  * 检索、运行中断与整轮失败。只读历史，不自动起演示运行；文件名对得上 seedMockWorkspace 里的文件。
  */
 
@@ -34,6 +34,43 @@ const SHOT_AFTER = [
   '  "prompt": "阳光穿过亚麻衬衫的袖口，织物的纹理清楚可见"',
   '}',
 ].join('\n')
+
+/** write_video_shots 写进文件的原文，形状与缩进照后端 VideoShotsDocument.file_text()。 */
+const SHOTS_FILE_TEXT = `{
+  "aspect_ratio": "9:16",
+  "shots": [
+    {
+      "index": 1,
+      "prompt": {
+        "global_settings": "人物与门厅保持一致，午后侧光。",
+        "timeline": [
+          {
+            "timestamps": [
+              0.0,
+              2.0
+            ],
+            "prompt": "开场，模特提着帆布包走出门厅 @Image1。",
+            "image_indexes": [
+              1
+            ]
+          },
+          {
+            "timestamps": [
+              2.0,
+              6.0
+            ],
+            "prompt": "她抬头看向前方，镜头缓推。",
+            "image_indexes": []
+          }
+        ]
+      },
+      "seconds": 6,
+      "image_urls": [
+        "https://cdn.example.com/frames/door-1.jpg"
+      ]
+    }
+  ]
+}`
 
 export const TOOL_SHOWCASE_DENIED_INTERACTION = 'appr_showcase'
 const DENIED_CALL = 'call_showcase_notes'
@@ -99,7 +136,19 @@ export const toolShowcaseTurns = (): (Frame & { turnId: string })[] => [
       output: `${numbered(STORYBOARD_LINES)}\n[还有 9 行没读，用 offset=9 接着读]`,
       view: 'file_content',
     }),
-    tool('t1', 'f3', 'edit', 'video_shot.json', {
+    // 分镜表的交付和普通写文件一样画：写入文件 video_shot.json，展开是写进去的原文。
+    tool('t1', 'f3', 'write', 'video_shot.json', {
+      display: {
+        content: SHOTS_FILE_TEXT,
+        kind: 'file_io',
+        operation: 'write',
+        path: 'video_shot.json',
+      },
+      metadata: { chip: '1 组 · 2 镜 · 6 秒' },
+      name: 'write_video_shots',
+      output: '镜头组 prompt 表已交付到 video_shot.json：1 个镜头组，2 个镜头，合计 6 秒。',
+    }),
+    tool('t1', 'f4', 'edit', 'video_shot.json', {
       display: {
         after: SHOT_AFTER.replace('4,', '"4s",'),
         before: SHOT_BEFORE,
@@ -110,7 +159,7 @@ export const toolShowcaseTurns = (): (Frame & { turnId: string })[] => [
       error: '参数校验失败：shots[2].duration 需要数字，收到 "4s"',
       state: 'error',
     }),
-    tool('t1', 'f4', 'edit', 'video_shot.json', {
+    tool('t1', 'f5', 'edit', 'video_shot.json', {
       display: {
         after: SHOT_AFTER,
         before: SHOT_BEFORE,
@@ -122,7 +171,7 @@ export const toolShowcaseTurns = (): (Frame & { turnId: string })[] => [
       output: '已改 video_shot.json',
     }),
     {
-      frameId: 't1.1.f5',
+      frameId: 't1.1.f6',
       kind: 'text',
       role: 'assistant',
       text: '分镜整理好了，6 个镜头合计 30 秒。\n\n- 镜头 2、3 压到 3–4 秒，给第 4 个户外镜头留出 6 秒；\n- 收尾 8 秒，品牌字样在最后 2 秒入画。',

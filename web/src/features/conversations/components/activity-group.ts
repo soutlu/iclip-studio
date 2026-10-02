@@ -135,13 +135,12 @@ const OPERATION_LABELS = {
   grep: (n: number) => `搜索了 ${n} 次`,
 } as const
 
-/** 运行中的当前项：动词加主语；标题本身就是动宾短语，前面加「正在」即可。文件主语用界面上的名字。 */
-const doingClause = (frame: TranscriptFrame, nameOf: (path: string) => string): string => {
+/** 运行中的当前项：动词加主语；标题本身就是动宾短语，前面加「正在」即可。 */
+const doingClause = (frame: TranscriptFrame): string => {
   if (frame.kind === 'thinking') return '思考中…'
   if (frame.kind !== 'tool') return ''
-  const { detail, file, label, operation } = toolCard(frame.display, frame.view)
-  const name = file === undefined ? detail : nameOf(file)
-  const subject = name === undefined ? '' : ` ${name}`
+  const { detail, label, operation } = toolCard(frame.display, frame.view)
+  const subject = detail === undefined ? '' : ` ${detail}`
   if (operation === undefined) return `正在${label}${subject}`
   return `${DOING_VERB[operation]}${subject}`
 }
@@ -202,7 +201,6 @@ export const summarizeRunning = (
   liveFrameId: string | undefined,
   elapsedMs: number | undefined,
   interactions: Interactions,
-  nameOf: (path: string) => string,
 ): SummaryClause[] => {
   const current =
     items.find((entry) => entry.frame.frameId === liveFrameId) ??
@@ -217,7 +215,7 @@ export const summarizeRunning = (
   )
   const clauses: SummaryClause[] = []
   if (current !== undefined) {
-    const text = doingClause(current.frame, nameOf)
+    const text = doingClause(current.frame)
     if (text !== '') clauses.push({ text })
   }
   clauses.push(

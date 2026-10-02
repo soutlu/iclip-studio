@@ -43,9 +43,6 @@ const thinking = (id: string): TranscriptFrame => ({
 
 const NO_INTERACTIONS: ReadonlyMap<string, TranscriptInteraction> = new Map()
 
-/** 界面上的名字由工作台登记表给，这里用一个看得出来的替身。 */
-const nameOf = (path: string) => `「${path}」`
-
 const tool = (
   id: string,
   operation: 'read' | 'write' | 'edit' | 'glob' | 'grep' | undefined,
@@ -219,11 +216,10 @@ describe('summarizeRunning', () => {
       'f3',
       20_000,
       NO_INTERACTIONS,
-      nameOf,
     )
 
     expect(clauses.map((clause) => clause.text)).toEqual([
-      '正在读取 「shots/storyboard.md」',
+      '正在读取 storyboard.md',
       '已搜索了 1 次',
       '20s',
     ])
@@ -235,7 +231,6 @@ describe('summarizeRunning', () => {
       'f1',
       0,
       NO_INTERACTIONS,
-      nameOf,
     )
     expect(clauses[0]?.text).toBe('思考中…')
   })

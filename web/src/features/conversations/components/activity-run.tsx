@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { TranscriptInteraction } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { useWorkspaceFileLink } from '@/shared/workbench'
 import {
   failedTools,
   runHistoryMs,
@@ -75,10 +74,9 @@ export function ActivityRun({ interactions, items, liveFrameId, settled }: Activ
     setOpen(running)
   }
 
-  const { nameOf } = useWorkspaceFileLink()
   const elapsedMs = useActivityMs(running, runHistoryMs(items))
   const clauses = running
-    ? summarizeRunning(items, liveFrameId, elapsedMs, interactions, nameOf)
+    ? summarizeRunning(items, liveFrameId, elapsedMs, interactions)
     : summarizeDone(items, elapsedMs, interactions)
   const stateLabel = running ? '进行中' : failed.length > 0 ? '有失败' : '完成'
   // 显式提供 aria-label，避免分色 span 的边界空白被可访问名称计算裁掉。
