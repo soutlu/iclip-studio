@@ -1,3 +1,30 @@
+import type { IconName } from '@/shared/icons'
+import { extensionOf } from '@/shared/lib/file-kind'
+
+const FILE_ICONS: Partial<Record<string, IconName>> = {
+  md: 'file',
+  markdown: 'file',
+  mdx: 'file',
+  json: 'file-json',
+  jsonc: 'file-json',
+  json5: 'file-json',
+  txt: 'file-plain',
+  avif: 'file-image',
+  gif: 'file-image',
+  jpeg: 'file-image',
+  jpg: 'file-image',
+  png: 'file-image',
+  svg: 'file-image',
+  webp: 'file-image',
+  m4v: 'file-video',
+  mov: 'file-video',
+  mp4: 'file-video',
+  webm: 'file-video',
+}
+
+/** 列表与阅读页头的类型图标只看后缀：同一套线性图形靠形状区分，认不出的后缀给空白文件。 */
+export const fileIconOf = (path: string): IconName => FILE_ICONS[extensionOf(path)] ?? 'file-other'
+
 /** 根目录文件的目录是空串。 */
 export const dirName = (path: string): string => {
   const slash = path.lastIndexOf('/')

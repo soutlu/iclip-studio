@@ -172,7 +172,7 @@ function ChangePreview({ change }: { change: FileChange }) {
           role="region"
         >
           {'content' in change ? (
-            fileKindOf(change.path).kind === 'markdown' ? (
+            fileKindOf(change.path) === 'markdown' ? (
               <Markdown className="px-3" text={change.content} />
             ) : (
               <p className="px-3 break-words whitespace-pre-wrap">{change.content}</p>
