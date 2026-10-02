@@ -8,9 +8,11 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+import structlog
+
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.common.urls import is_http_url
-from iclip.harness.jobs import JobQueue
+from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.store import Listener, TranscriptStore
@@ -36,8 +38,12 @@ from iclip.platform.transcript.wire import (
     TranscriptPage,
 )
 
+_logger = structlog.stdlib.get_logger(__name__)
+
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+
+_BUSY = "这段对话还在忙，等它收完尾再重新生成"
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,13 +71,7 @@ class TranscriptService:
     ) -> Prompt:
         """提交消息，运行或排队状态由持久化队列决定。``user_name`` 已由入口按主体定好。"""
 
-        if not content:
-            raise ValidationFailed("消息是空的")
-        for part in content:
-            if not isinstance(part, ImageContent | VideoContent):
-                continue
-            if part.source.url is None or not is_http_url(part.source.url):
-                raise ValidationFailed("附件地址必须是 http(s) 地址")
+        _check_content(content)
         # 入队前登记附件，确保排队期间也可被工具引用。
         await self.record_materials(owner_user_id, conversation_id, content)
         submission = await self.queue.submit(
@@ -104,11 +104,14 @@ class TranscriptService:
         轮 id 使用 t{N}；格式错误抛 ValidationFailed，忙碌或非末轮抛 Conflict，
         末轮是分叉带过来的轮（消息行在源对话名下）抛 NotFound。未提供 prompt_id 时生成新 id，
         避免复用已占用的记录。
+
+        插入重跑的那条消息就占住了执行位，之后才截断末轮：任何一步失败，原历史都保持原样。
         """
 
         match = re.fullmatch(r"t([1-9]\d*)", turn_id)
         if match is None:
             raise ValidationFailed(f"不是合法的轮 id：{turn_id}")
+        ordinal = int(match.group(1))
         if prompt_id is not None:
             claimed = await self.queue.get(prompt_id)
             if claimed is not None:
@@ -118,25 +121,73 @@ class TranscriptService:
                 return claimed.as_entity()
         view = await self.queue.view(conversation_id)
         if view.active is not None or view.queued:
-            raise Conflict("这段对话还在忙，等它收完尾再重新生成")
-        rewind = await self.history.plan_rewind(conversation_id, ordinal=int(match.group(1)))
+            raise Conflict(_BUSY)
+        rewind = await self.history.plan_rewind(conversation_id, ordinal=ordinal)
         if rewind is None:
             raise Conflict("只能重新生成最后一轮")
         # 先通过末轮首次 run 在本对话里查找消息，再提交截断，避免查找失败后已修改历史。
         row = await self.queue.get_by_run(rewind.run_ids[0], conversation_id=conversation_id)
         if row is None:
             raise NotFound("分叉带过来的历史不能重新生成或编辑，只能接着往下聊。")
-        await rewind.commit()
-        # 先删除旧轮实体，避免客户端更新头部时保留新回复中已不存在的步骤和块。
-        self.store.append(conversation_id, MAIN_AGENT_ID, (ItemsRemoveOp(ids=(turn_id,)),))
-        return await self.submit(
+        replay = row.content if content is None else content
+        # 不写库就能判定的校验先做完，再登记素材（台账幂等）；到这里为止历史一点没动。
+        _check_content(replay)
+        await self.record_materials(row.owner_user_id, conversation_id, replay)
+        submission = await self.queue.submit(
             prompt_id=f"prm_regen_{uuid.uuid4().hex[:16]}" if prompt_id is None else prompt_id,
             conversation_id=conversation_id,
             agent_id=row.agent_id,
             owner_user_id=row.owner_user_id,
             # 重跑的是同一个人的那条消息，归属标签照原样。
             user_name=row.user_name,
-            content=row.content if content is None else content,
+            content=replay,
+            now=datetime.now(UTC),
+            locked_by=self.runner.locked_by,
+        )
+        regenerated = submission.row
+        if not submission.accepted:
+            # 同一个 id 并发重发、另一份已经受理：照发消息的幂等退回那条，不再截一轮。
+            return regenerated.as_entity()
+        if regenerated.status != "running":
+            # 空闲检查之后有人先占了执行位，这条排在了后面：撤掉，不让它在没截断的历史上跑。
+            withdrawn = await self.queue.abort(
+                regenerated.prompt_id, conversation_id=conversation_id, now=datetime.now(UTC)
+            )
+            if withdrawn.status == "running":
+                _logger.warning(
+                    "重新生成的消息排队后被队首启动，按普通消息跑",
+                    prompt_id=regenerated.prompt_id,
+                    conversation_id=conversation_id,
+                )
+            raise Conflict(_BUSY)
+        try:
+            # 持位复核：占位之前算的截断计划可能已过时，期间别的运行可能改了历史。
+            current = await self.history.plan_rewind(conversation_id, ordinal=ordinal)
+            if current is None or current.run_ids != rewind.run_ids:
+                raise Conflict("末轮刚刚变了，刷新之后再重新生成")
+            await current.commit()
+        except BaseException:
+            # 自己抛的 Conflict 也走这里：先放开执行位、原历史不动，再把原因交给调用方。
+            await self._withdraw(regenerated)
+            raise
+        # 先删除旧轮实体，避免客户端更新头部时保留新回复中已不存在的步骤和块。
+        self.store.append(conversation_id, MAIN_AGENT_ID, (ItemsRemoveOp(ids=(turn_id,)),))
+        await self.runner.submit(regenerated)
+        return regenerated.as_entity()
+
+    async def _withdraw(self, row: JobRow) -> None:
+        """撤回占了执行位却没开跑的那条重新生成。
+
+        记 aborted 且没有 run：队列推导会话活动时把「未启动便撤回」的消息排除在外，最近一轮的
+        结局仍是历史里末轮那一次。记成 failed 会让侧栏显示一轮其实没跑过的失败。
+        """
+
+        await self.queue.finish(
+            row.prompt_id,
+            status="aborted",
+            now=datetime.now(UTC),
+            locked_by=self.runner.locked_by,
+            attempt=row.attempt,
         )
 
     async def abort_conversation(self, conversation_id: str) -> None:
@@ -346,6 +397,18 @@ class TranscriptService:
 
     def unpin(self, conversation_id: str) -> None:
         self.store.unpin(conversation_id)
+
+
+def _check_content(content: Sequence[PromptContent]) -> None:
+    """消息至少一段，附件只收 http(s) 地址；发消息与重新生成都在写任何东西之前过这一遍。"""
+
+    if not content:
+        raise ValidationFailed("消息是空的")
+    for part in content:
+        if not isinstance(part, ImageContent | VideoContent):
+            continue
+        if part.source.url is None or not is_http_url(part.source.url):
+            raise ValidationFailed("附件地址必须是 http(s) 地址")
 
 
 def _timeline(

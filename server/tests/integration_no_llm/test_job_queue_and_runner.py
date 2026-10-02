@@ -717,6 +717,97 @@ async def test_a_run_whose_lease_was_taken_cancels_itself(engine: AsyncEngine) -
     assert row.finished_at is None
 
 
+async def test_a_run_that_lost_its_lease_before_starting_does_nothing(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """认领之后、开跑之前租约就被别的进程拿走：一步都不执行，全部交给新持有者。
+
+    不调模型、不写快照、不报开场；不迁插话、不收尾、不启动下一条。
+    """
+
+    model_requests = 0
+
+    async def stream(
+        _messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal model_requests
+        model_requests += 1
+        yield "不该跑到这里"
+
+    started: list[str] = []
+
+    async def note(_row: JobRow, run_id: str) -> None:
+        started.append(run_id)
+
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine, FunctionModel(stream_function=stream), store=store, on_run_started=note
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    for prompt_id, said in (("prm_stale", "先做这个"), ("prm_steer", "顺便改个标题")):
+        await queue.submit(
+            prompt_id=prompt_id,
+            conversation_id=conversation_id,
+            agent_id=AGENT_ID,
+            owner_user_id=OWNER,
+            user_name="logan",
+            content=(TextContent(text=said),),
+            now=now,
+            locked_by=runner.locked_by,
+        )
+    # 上一次运行留下的 run 与挂在它上面的插话：续跑时才会迁插话。
+    await queue.attach_run("prm_stale", "r-old", locked_by=runner.locked_by, attempt=0)
+    await queue.mark_steered(("prm_steer",), run_id="r-old", now=now)
+    stale = await queue.get("prm_stale")
+    assert stale is not None
+    # 别的进程按过期租约认领了它：持有者与 attempt 都变了，runner 手里那份是旧的。
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE agent_runtime.agent_jobs SET locked_by = 'w-other', attempt = 1 "
+                "WHERE prompt_id = 'prm_stale'"
+            )
+        )
+    collected: list[str] = []
+    for name in ("adopt_steered", "settle_steered", "finish", "start_next"):
+        original = getattr(queue, name)
+
+        async def recorded(
+            *args: Any, _name: str = name, _original: Any = original, **kw: Any
+        ) -> Any:
+            collected.append(_name)
+            return await _original(*args, **kw)
+
+        monkeypatch.setattr(queue, name, recorded)
+
+    await runner.submit(stale)
+    await runner.shutdown()
+
+    assert model_requests == 0
+    assert started == []
+    assert collected == []
+    row = await queue.get("prm_stale")
+    assert row is not None
+    assert (row.status, row.locked_by, row.run_id, row.finished_at) == (
+        "running",
+        "w-other",
+        "r-old",
+        None,
+    )
+    steered = await queue.get("prm_steer")
+    assert steered is not None
+    assert (steered.status, steered.run_id) == ("steered", "r-old")
+    assert await queue.prompt_of_runs(conversation_id) == {"r-old": "prm_stale"}
+    assert (
+        await step_store.latest_conversation_snapshot(
+            conversation_id=conversation_id, include_interrupted=True
+        )
+        is None
+    )
+    assert replay(store, conversation_id) == ()
+
+
 async def test_only_the_running_row_carries_a_lease(engine: AsyncEngine) -> None:
 
     queue = JobQueue(engine)
