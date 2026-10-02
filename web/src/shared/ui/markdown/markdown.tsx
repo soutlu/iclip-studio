@@ -1,7 +1,7 @@
 /** 正文可能包含不可信 HTML。按 react-markdown Security 建议，在 rehype-raw 后执行 rehype-sanitize，过滤脚本、事件属性及危险协议。 */
 
 import { createContext, use, useRef, useState, type ComponentProps } from 'react'
-import ReactMarkdown, { type ExtraProps } from 'react-markdown'
+import ReactMarkdown, { type Components, type ExtraProps, type Options } from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
@@ -95,6 +95,56 @@ function MarkdownVideo({ loop, node, poster, src }: ComponentProps<'video'> & Ex
   )
 }
 
+/**
+ * 标签到组件的映射放在模块级：react-markdown 每次渲染都按它取组件类型，渲染里新建的映射会让 React
+ * 认作换了组件、卸掉重挂对应节点，宿主每重渲染一次正文段落就整块重建，选中的文字随之丢失。
+ */
+const COMPONENTS: Components = {
+  a: ({ children, href }) => (
+    <a
+      className="text-chat-link-text no-underline decoration-chat-link-border underline-offset-2 hover:underline"
+      href={href}
+      rel="noreferrer noopener"
+      target="_blank"
+    >
+      <InsideLinkContext value>{children}</InsideLinkContext>
+    </a>
+  ),
+  // 代码块由 pre → CodeBlock 读取语言与文本自行渲染，这里只会渲染到行内代码。
+  code: ({ children }) => <code className={CODE_INLINE}>{children}</code>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  // 正文标题使用 title 字阶；页面标题层级留给宿主。
+  h1: ({ children }) => (
+    <h3 className="border-b-[0.5px] border-chat-hairline pb-1 text-title font-semibold">
+      {children}
+    </h3>
+  ),
+  h2: ({ children }) => <h4 className="text-title font-semibold">{children}</h4>,
+  h3: ({ children }) => <h5 className="text-body font-semibold">{children}</h5>,
+  hr: () => <hr className="border-chat-hairline" />,
+  img: MarkdownImage,
+  // 播放器是块级容器，放不进 <p>：同一行写的 <video> 会落在段落里，这时段落改用 div。
+  p: ({ children, node }) =>
+    node?.children.some((child) => child.type === 'element' && child.tagName === 'video') ? (
+      <div>{children}</div>
+    ) : (
+      <p>{children}</p>
+    ),
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  table: ({ children }) => (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-body-sm">{children}</table>
+    </div>
+  ),
+  td: ({ children }) => <td className={CELL}>{children}</td>,
+  th: ({ children }) => <th className={cn(CELL, 'bg-chat-chip-bg font-semibold')}>{children}</th>,
+  video: MarkdownVideo,
+}
+
+const REMARK_PLUGINS: Options['remarkPlugins'] = [remarkGfm]
+const REHYPE_PLUGINS: Options['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, SANITIZE]]
+
 type MarkdownProps = {
   text: string
   className?: string
@@ -105,54 +155,9 @@ export function Markdown({ className, text }: MarkdownProps) {
   return (
     <div className={cn('md-body text-body leading-relaxed text-chat-message-text', className)}>
       <ReactMarkdown
-        components={{
-          a: ({ children, href }) => (
-            <a
-              className="text-chat-link-text no-underline decoration-chat-link-border underline-offset-2 hover:underline"
-              href={href}
-              rel="noreferrer noopener"
-              target="_blank"
-            >
-              <InsideLinkContext value>{children}</InsideLinkContext>
-            </a>
-          ),
-          // 代码块由 pre → CodeBlock 读取语言与文本自行渲染，这里只会渲染到行内代码。
-          code: ({ children }) => <code className={CODE_INLINE}>{children}</code>,
-          em: ({ children }) => <em className="italic">{children}</em>,
-          // 正文标题使用 title 字阶；页面标题层级留给宿主。
-          h1: ({ children }) => (
-            <h3 className="border-b-[0.5px] border-chat-hairline pb-1 text-title font-semibold">
-              {children}
-            </h3>
-          ),
-          h2: ({ children }) => <h4 className="text-title font-semibold">{children}</h4>,
-          h3: ({ children }) => <h5 className="text-body font-semibold">{children}</h5>,
-          hr: () => <hr className="border-chat-hairline" />,
-          img: MarkdownImage,
-          // 播放器是块级容器，放不进 <p>：同一行写的 <video> 会落在段落里，这时段落改用 div。
-          p: ({ children, node }) =>
-            node?.children.some(
-              (child) => child.type === 'element' && child.tagName === 'video',
-            ) ? (
-              <div>{children}</div>
-            ) : (
-              <p>{children}</p>
-            ),
-          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-          table: ({ children }) => (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-body-sm">{children}</table>
-            </div>
-          ),
-          td: ({ children }) => <td className={CELL}>{children}</td>,
-          th: ({ children }) => (
-            <th className={cn(CELL, 'bg-chat-chip-bg font-semibold')}>{children}</th>
-          ),
-          video: MarkdownVideo,
-        }}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, SANITIZE]]}
-        remarkPlugins={[remarkGfm]}
+        components={COMPONENTS}
+        rehypePlugins={REHYPE_PLUGINS}
+        remarkPlugins={REMARK_PLUGINS}
       >
         {text}
       </ReactMarkdown>
