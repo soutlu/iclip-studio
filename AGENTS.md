@@ -1,6 +1,6 @@
 # AGENTS.md — 开发约定
 
-先读本文与 [docs/CONTEXT.md](docs/CONTEXT.md)。修改后端时查 [docs/architecture.md](docs/architecture.md)，修改前端时再读 [web/AGENTS.md](web/AGENTS.md)。按任务查阅专项文档，入口见 [README.md](README.md#文档地图)。
+先读本文与 [docs/CONTEXT.md](docs/CONTEXT.md)。修改后端时查 [docs/architecture.md](docs/architecture.md)，修改前端时再读 [web/AGENTS.md](web/AGENTS.md)。按任务查阅专项文档，入口见[文档地图](#文档地图)。
 
 ## 1. 命令与验证
 
@@ -33,7 +33,7 @@
 | 工作流 | 触发 | 内容 |
 |---|---|---|
 | [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档；目标为 `develop` 时按改动路径选择后端、前端检查，前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时两端都查；结果汇总为 `ci` |
-| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` tag；手动选择分支 | 构建并上传镜像，见 [README 部署说明](README.md#部署) |
+| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` tag；手动选择分支 | 构建并上传镜像，见[镜像发布](docs/release.md) |
 
 选中的静态检查、构建与测试并行执行；集成测试每组使用独立 Postgres，前端单测与 e2e 按分片运行。本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。`ci` 结果怎样决定合并见[分支与交付](#3-分支与交付)。
 
@@ -116,10 +116,29 @@ gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=pus
 ## 4. 文档维护
 
 - 文档只写现行事实和可执行规则，不写过程、进度或历史解释；决策与取舍写进 ADR。
-- 一处事实只有一个权威来源，其余链接过去；文档归属见 [README.md](README.md#文档地图)。
+- 一处事实只有一个权威来源，其余链接过去；文档归属见[文档地图](#文档地图)。
 - 不复述类型、配置、检查工具已完整表达的细节；保留职责、入口、工具无法判断的约束与操作步骤。
 - 发现文档与实现不一致时，结合合同、CONTEXT 与已接受的 ADR 判断；实现偏差不能自动变成新规范。
 - 更新文档后核对命令、路径、链接，并运行 `make docs-check`。
+
+### 文档地图
+
+| 文档 | 内容与更新时机 |
+|---|---|
+| [README.md](README.md) | 简介、本地启动与服务器部署步骤变化时更新 |
+| [AGENTS.md](AGENTS.md) | 全仓操作与开发规则变化时更新 |
+| [web/AGENTS.md](web/AGENTS.md) | 前端命令、目录职责、边界、验证要求变化时更新 |
+| [docs/CONTEXT.md](docs/CONTEXT.md) | 两端共用的领域术语、不变量和禁止逻辑变化时更新 |
+| [docs/architecture.md](docs/architecture.md) | 后端分层、职责和装配机制变化时更新 |
+| [docs/adr/](docs/adr/) | 已接受的架构决策与取舍；决策变化时新增一篇并标明取代关系 |
+| [docs/release.md](docs/release.md) | 镜像构建、上传流水线与仓库配置变化时更新 |
+| [contract/openapi.json](contract/openapi.json) | 后端端点变更后由 `make contract` 导出 |
+| [contract/conventions.md](contract/conventions.md) | OpenAPI 无法表达的跨端约定变化时更新 |
+| [design-system.html](design-system.html) | 基础 token 变化时更新 |
+| [web/README.md](web/README.md) | 前端启动参数变化时更新 |
+| [web/docs/frontend-implementation.md](web/docs/frontend-implementation.md) | 前端实现与测试约定变化时更新 |
+| [docs/test-design.md](docs/test-design.md) | 后端测试分层、边界和环境变化时更新 |
+| [docs/tool-design.md](docs/tool-design.md) | Agent 工具面向模型的接口与文字规范变化时更新 |
 
 ### ADR
 
