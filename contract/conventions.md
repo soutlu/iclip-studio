@@ -44,7 +44,7 @@
 
 ## 5. Agent 对话 (Transcript)
 
-agent 对话使用 kimi code 的 Transcript 协议，HTTP 端点挂在对话下面，各端点的权限见 [`openapi.json`](openapi.json) 的 `security`（§2）；WebSocket 建连需 `agent:run`。写入限属主，治理者可读取其他用户的对话。
+agent 对话的 Transcript 协议参考 kimi code 的同名协议，按本项目需要取舍字段（例如用户消息是按原样保存的 `content` part 列表），不与 Kimi 客户端兼容。HTTP 端点挂在对话下面，各端点的权限见 [`openapi.json`](openapi.json) 的 `security`（§2）；WebSocket 建连需 `agent:run`。写入限属主，治理者可读取其他用户的对话。
 
 ### 字段名：这一面照协议原样，不套 §3
 
@@ -53,7 +53,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **信封 snake_case**：`agent_id`、`has_more_older`、`has_more`、`latest_seq`、`prompt_id`、
   `since_seq`、`before_turn`、`after_turn`、`page_size`。
 - **里面装的实体与操作 camelCase**：`turnId`、`stepId`、`frameId`、`toolCallId`、`hasMoreOlder`。
-- **协议字段只增不改**：已镜像的字段不改名、不改类型、不删；新字段只能是可选项，服务端模型、前端 vendored schema、实时投影、历史重建与金样在同一个 PR 落齐；前端 schema 会剥掉未声明的字段，金样测试要对新字段做存在性断言。
+- **已发布字段只增不改**：约束的是本仓已发布的字段（机器调用方也在读），不是 Kimi 的原字段；已发布字段不改名、不改类型、不删，新字段只能是可选项，服务端模型、前端 vendored schema、实时投影、历史重建与金样在同一个 PR 落齐；前端 schema 会剥掉未声明的字段，金样测试要对新字段做存在性断言。
 
 ### 发消息
 
