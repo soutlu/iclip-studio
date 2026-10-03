@@ -1,6 +1,36 @@
-# 镜像发布
+# 发版与镜像发布
 
-发版与热修的操作步骤、版本号规则见 [AGENTS.md](../AGENTS.md#3-分支与交付)；服务器上线与升级见 [README](../README.md#部署)。本文只讲镜像怎样构建和上传。
+本文讲发版、热修与热修回流的操作步骤、版本号规则，以及镜像怎样构建和上传。目标为 `main` 的 PR 的确认要求见 [AGENTS.md](../AGENTS.md#发版与热修)，服务器上线与升级见 [README](../README.md#部署)。
+
+## 发版与热修
+
+| 操作 | 起点与目标 | 合并方式 |
+|---|---|---|
+| 发版 | `develop → main`，开发者给出版本号后创建 PR | `ci` 通过并确认后 `gh pr merge <n> --merge` |
+| 热修 | 从 `origin/main` 建独立 worktree，PR 指向 `main` | `ci` 通过并确认后 `gh pr merge <n> --merge` |
+| 热修回流 | `main → develop` | `gh pr merge <n> --auto --merge`，`ci` 通过即合入 |
+
+手动合并前核对 PR 当前 head 提交的 `ci`，输出为 `completed success` 才能合并：
+
+```bash
+sha=$(gh api repos/{owner}/{repo}/pulls/<n> --jq .head.sha)
+gh api "repos/{owner}/{repo}/commits/$sha/check-runs?check_name=ci" --jq '.check_runs[] | .status + " " + .conclusion'
+```
+
+合入 `main` 后，确认 `main` 上就是本次要发布的代码，再创建 release：
+
+```bash
+gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes
+git fetch --tags
+```
+
+创建 Release 不会自动部署。下面的命令输出 `completed success` 后，再按 [README 部署说明](../README.md#部署) 更新服务器；无输出表示 tag 还没触发运行：
+
+```bash
+gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=push&branch=vX.Y.Z" --jq 'first(.workflow_runs[]) | .status + " " + .conclusion'
+```
+
+版本号由开发者确定。X 用于重构或不兼容变更，Y 用于兼容的新功能，Z 用于修复；前段增加时后段归零。`v0.Y.Z` 阶段的大改增加 Y，热修增加 Z。
 
 ## 镜像与流水线
 
