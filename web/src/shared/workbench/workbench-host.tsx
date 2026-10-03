@@ -178,7 +178,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
       {!sideBySide ? (
         <IconButton
           label="回到对话"
-          title="回到对话"
           name="back"
           onClick={() => onCollapsedChange(true)}
           size="md"
@@ -188,7 +187,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
           {chrome.onSwapPanes === undefined ? null : (
             <IconButton
               label="交换对话与工作台"
-              title="交换对话与工作台"
               name="swap-panes"
               onClick={chrome.onSwapPanes}
               size="sm"
@@ -196,7 +194,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
           )}
           <IconButton
             label="折叠工作台"
-            title="折叠工作台"
             name="panel-right"
             onClick={() => onCollapsedChange(true)}
             size="sm"

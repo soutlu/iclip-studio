@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parsePromptContent } from '@/shared/lib/prompt-clipboard'
@@ -9,7 +9,7 @@ import type {
   TranscriptTurn,
 } from '@/shared/transcript/vendor'
 import { ArtifactRegistry } from '@/shared/workbench'
-import { renderWithProviders } from '@/testing/render'
+import { renderWithProviders, renderWithTooltip } from '@/testing/render'
 import { ConversationTurn } from './conversation-turn'
 import { UserBubble } from './user-bubble'
 
@@ -41,14 +41,14 @@ describe('UserBubble', () => {
   afterEach(() => restore?.())
 
   it('短消息不折叠，没有展开胶囊', () => {
-    render(<UserBubble content={[text('就一句')]} />)
+    renderWithTooltip(<UserBubble content={[text('就一句')]} />)
     expect(screen.queryByRole('button', { name: '展开' })).toBeNull()
   })
 
   it('超长消息折叠成渐隐，点「展开」放开全文', async () => {
     restore = stubOverflowing()
     const user = userEvent.setup()
-    render(<UserBubble content={[text('一行长长的素材说明\n'.repeat(20))]} />)
+    renderWithTooltip(<UserBubble content={[text('一行长长的素材说明\n'.repeat(20))]} />)
 
     const toggle = await screen.findByRole('button', { name: '展开' })
     await user.click(toggle)
@@ -60,7 +60,7 @@ describe('UserBubble', () => {
     // 在 user-event 初始化后安装剪贴板替身，避免被其覆盖。
     const user = userEvent.setup()
     const writeText = stubClipboard()
-    render(<UserBubble content={[text('先看这句：'), text('\n还有这句')]} />)
+    renderWithTooltip(<UserBubble content={[text('先看这句：'), text('\n还有这句')]} />)
 
     await user.click(screen.getByRole('button', { name: '复制消息' }))
 
@@ -76,7 +76,7 @@ describe('UserBubble', () => {
       image('https://bkt.oss-ap-southeast-1.aliyuncs.com/u/S6-1.jpg'),
       text('\n说明它写了什么'),
     ]
-    render(<UserBubble content={content} />)
+    renderWithTooltip(<UserBubble content={content} />)
 
     await user.click(screen.getByRole('button', { name: '复制消息' }))
 
@@ -86,7 +86,9 @@ describe('UserBubble', () => {
 
   it('图夹在两句话中间：芯片就画在那两句话中间，头部是这张图的缩略图', () => {
     const url = 'https://bkt.oss-ap-southeast-1.aliyuncs.com/u/S6-1.jpg'
-    render(<UserBubble content={[text('先看这张图：'), image(url), text('\n说明它写了什么')]} />)
+    renderWithTooltip(
+      <UserBubble content={[text('先看这张图：'), image(url), text('\n说明它写了什么')]} />,
+    )
 
     const chip = screen.getByRole('button', { name: 'S6-1.jpg' })
     const before = screen.getByText('先看这张图：')
@@ -99,7 +101,7 @@ describe('UserBubble', () => {
   })
 
   it('视频芯片：OSS 地址给首帧缩略图，其他来源画视频图标', () => {
-    render(
+    renderWithTooltip(
       <UserBubble
         content={[
           video('https://bkt.oss-ap-southeast-1.aliyuncs.com/u/demo.mp4'),
@@ -116,7 +118,7 @@ describe('UserBubble', () => {
 
   it('点图片芯片开灯箱，灯箱里是图', async () => {
     const user = userEvent.setup()
-    render(<UserBubble content={[image('https://example.com/reference.png')]} />)
+    renderWithTooltip(<UserBubble content={[image('https://example.com/reference.png')]} />)
 
     await user.click(screen.getByRole('button', { name: 'reference.png' }))
 
@@ -127,7 +129,7 @@ describe('UserBubble', () => {
 
   it('点视频芯片开灯箱，灯箱里是能播的视频', async () => {
     const user = userEvent.setup()
-    render(<UserBubble content={[video('https://example.com/clip.mp4')]} />)
+    renderWithTooltip(<UserBubble content={[video('https://example.com/clip.mp4')]} />)
 
     await user.click(screen.getByRole('button', { name: 'clip.mp4' }))
 
@@ -149,7 +151,7 @@ describe('UserBubble 媒体芯片的悬停卡', () => {
 
   /** 先越过跨芯片共享的快速重开窗口，再测量当前卡片时序。 */
   const renderChip = () => {
-    render(<UserBubble content={[image('https://example.com/reference.png')]} />)
+    renderWithTooltip(<UserBubble content={[image('https://example.com/reference.png')]} />)
     advance(500)
     return screen.getByRole('button', { name: 'reference.png' })
   }

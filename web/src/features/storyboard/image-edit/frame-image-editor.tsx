@@ -261,9 +261,9 @@ export function FrameImageEditor({
               actions={
                 selected !== undefined && selected.kind !== 'current' && selected.job !== null ? (
                   <MenuRoot>
-                    <MenuTrigger asChild>
+                    {/* disabled 交给菜单触发器：它拦下自己的按下与按键，再转交给按钮置灰。 */}
+                    <MenuTrigger asChild disabled={frameReplace.pending !== null}>
                       <IconButton
-                        disabled={frameReplace.pending !== null}
                         label="图片历史操作"
                         name="more"
                         size="md"

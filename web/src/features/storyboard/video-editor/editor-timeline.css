@@ -52,7 +52,7 @@
   margin-left: 8px;
 }
 
-.video-editor-timeline-tools button:disabled {
+.video-editor-timeline-tools button:is(:disabled, [aria-disabled='true']) {
   opacity: 0.4;
   cursor: default;
 }

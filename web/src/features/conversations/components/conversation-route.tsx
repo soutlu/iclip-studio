@@ -222,7 +222,7 @@ export function ConversationRoute({
         })
 
   const fork = useForkConversation((forked) => {
-    toast.success('已分叉，接着在副本里跑')
+    toast.success('已另开一段对话')
     onForked?.(forked)
   })
   // 交给按轮 memo 的回调保持引用不变：末轮流式更新时历史轮不重渲，正文节点与其中的选区都还在。
@@ -276,7 +276,6 @@ export function ConversationRoute({
             {chrome.onSwapPanes === undefined ? null : (
               <IconButton
                 label="交换对话与工作台"
-                title="交换对话与工作台"
                 name="swap-panes"
                 onClick={chrome.onSwapPanes}
                 size="sm"
@@ -284,7 +283,6 @@ export function ConversationRoute({
             )}
             <IconButton
               label="折叠对话"
-              title="折叠对话"
               name="panel-left"
               onClick={chrome.chat.onCollapse}
               size="sm"

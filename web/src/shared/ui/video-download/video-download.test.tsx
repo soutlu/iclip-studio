@@ -118,17 +118,21 @@ describe('VideoDownload', () => {
       )
       await userEvent.click(screen.getByRole('button', { name: '下载视频' }))
       const busy = screen.getByRole('button', { name: '正在准备下载…' })
-      expect(busy).toBeDisabled()
+      expect(busy).toHaveAttribute('aria-disabled', 'true')
       await userEvent.click(busy)
       await waitFor(() => expect(requests).toBe(1))
       release()
       expect(await screen.findByText('视频下载失败，请重试')).toBeVisible()
-      expect(screen.getByRole('button', { name: '下载视频' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: '下载视频' })).not.toHaveAttribute('aria-disabled')
       expect(createObjectURL).not.toHaveBeenCalled()
       expect(anchorClick).not.toHaveBeenCalled()
       await userEvent.click(screen.getByRole('button', { name: '下载视频' }))
       await waitFor(() => expect(requests).toBe(2))
-      await waitFor(() => expect(screen.getByRole('button', { name: '下载视频' })).toBeEnabled())
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '下载视频' })).not.toHaveAttribute(
+          'aria-disabled',
+        ),
+      )
     },
   )
 
@@ -152,7 +156,9 @@ describe('VideoDownload', () => {
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
     expect(fetched).toEqual([CLEAN])
     await waitFor(() => expect(warn).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.getByRole('button', { name: '下载视频' })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '下载视频' })).not.toHaveAttribute('aria-disabled'),
+    )
     const notifications = screen.getByRole('region', { name: /Notifications/ })
     expect(within(notifications).queryAllByRole('listitem')).toHaveLength(0)
   })

@@ -123,7 +123,7 @@
   backdrop-filter: blur(8px);
 }
 
-.library-viewer-glass:hover:not(:disabled) {
+.library-viewer-glass:hover:not(:disabled, [aria-disabled='true']) {
   background-color: color-mix(in srgb, var(--color-on-scrim) 24%, transparent);
 }
 

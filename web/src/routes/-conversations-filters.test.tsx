@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -15,6 +15,7 @@ import {
   mockGovernor,
 } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
+import { renderWithTooltip } from '@/testing/render'
 import { FakeSocket } from '@/testing/ws'
 import { conversationsReturnSearch } from './-conversations-return'
 
@@ -26,7 +27,7 @@ const renderAt = async (initialPath: string) => {
   })
   await router.load()
 
-  render(
+  renderWithTooltip(
     <QueryClientProvider client={queryClient}>
       <TranscriptProvider createSocket={() => new FakeSocket() as unknown as WebSocket}>
         <RouterProvider router={router} />

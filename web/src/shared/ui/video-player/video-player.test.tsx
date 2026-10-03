@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderWithTooltip } from '@/testing/render'
 import { VideoPlayer } from './video-player'
 
 const SRC = 'https://videos.example.test/take.mp4'
@@ -47,7 +48,7 @@ describe('VideoPlayer', () => {
 
   it('不带原生控件：没有全屏与画中画入口，单击画面切换播放', async () => {
     const user = userEvent.setup()
-    render(<VideoPlayer label="成片" src={SRC} />)
+    renderWithTooltip(<VideoPlayer label="成片" src={SRC} />)
     const video = videoOf()
     expect(video.controls).toBe(false)
     expect(video).toHaveAttribute('disablepictureinpicture')
@@ -64,7 +65,7 @@ describe('VideoPlayer', () => {
   it('双击画面：两下切换相互抵消，暂停后交出当时的秒数', async () => {
     const onExpand = vi.fn()
     const user = userEvent.setup()
-    render(<VideoPlayer label="成片" onExpand={onExpand} src={SRC} />)
+    renderWithTooltip(<VideoPlayer label="成片" onExpand={onExpand} src={SRC} />)
     const video = videoOf()
     loadMetadata(video, 10)
     video.currentTime = 3
@@ -81,7 +82,7 @@ describe('VideoPlayer', () => {
 
   it('触屏快速点两下也放大：Safari 的点按 detail 恒为 1，按时间自己数', () => {
     const onExpand = vi.fn()
-    render(<VideoPlayer label="成片" onExpand={onExpand} src={SRC} />)
+    renderWithTooltip(<VideoPlayer label="成片" onExpand={onExpand} src={SRC} />)
     const video = videoOf()
     const tap = () => {
       fireEvent.pointerDown(video, { pointerType: 'touch' })
@@ -99,7 +100,7 @@ describe('VideoPlayer', () => {
 
   it('宿主没给放大时不出放大按钮，双击只是切换两次', async () => {
     const user = userEvent.setup()
-    render(<VideoPlayer label="成片" src={SRC} />)
+    renderWithTooltip(<VideoPlayer label="成片" src={SRC} />)
 
     await user.dblClick(videoOf())
 
@@ -110,7 +111,7 @@ describe('VideoPlayer', () => {
 
   it('快捷键只在焦点落在播放器里时生效，并拦下浏览器默认行为', async () => {
     const user = userEvent.setup()
-    render(
+    renderWithTooltip(
       <>
         <button type="button">别处</button>
         <VideoPlayer label="成片" src={SRC} />
