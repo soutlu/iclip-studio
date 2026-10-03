@@ -104,7 +104,9 @@ describe('放大预览', () => {
   const renderPlayable = async () => {
     restoreMedia = stubMediaDurations({ [ROOT_URL]: 8 })
     await renderEditor()
-    await waitFor(() => expect(screen.getByRole('button', { name: '播放' })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
+    )
     const stage = screen.getByLabelText('视频预览')
     return { stage, videos: [...stage.querySelectorAll('video')] }
   }

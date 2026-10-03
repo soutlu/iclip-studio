@@ -139,7 +139,7 @@ function NavButton({
 }) {
   return (
     <IconButton
-      className={`library-viewer-glass absolute top-1/2 hidden size-12 -translate-y-1/2 rounded-full disabled:cursor-default disabled:opacity-30 lg:inline-grid ${direction === 'prev' ? 'left-5' : 'right-5'}`}
+      className={`library-viewer-glass absolute top-1/2 hidden size-12 -translate-y-1/2 rounded-full aria-disabled:cursor-default aria-disabled:opacity-30 lg:inline-grid ${direction === 'prev' ? 'left-5' : 'right-5'}`}
       disabled={id === null}
       label={direction === 'prev' ? '上一条' : '下一条'}
       name={direction === 'prev' ? 'back' : 'next'}

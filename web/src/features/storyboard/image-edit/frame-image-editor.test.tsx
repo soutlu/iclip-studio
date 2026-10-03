@@ -717,7 +717,7 @@ describe('图片编辑器', () => {
     await userEvent.click(within(editor).getByRole('button', { name: '撤销标注' }))
     expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
     const redo = within(editor).getByRole('button', { name: '重做标注' })
-    expect(redo).toBeEnabled()
+    expect(redo).not.toHaveAttribute('aria-disabled')
     await userEvent.click(redo)
 
     expect(within(editor).getByRole('button', { name: '标注 1' })).toBeInTheDocument()
@@ -734,7 +734,10 @@ describe('图片编辑器', () => {
     loadCanvas(editor)
 
     expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
-    expect(within(editor).getByRole('button', { name: '撤销标注' })).toBeDisabled()
+    expect(within(editor).getByRole('button', { name: '撤销标注' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 
   it('关窗只交回真正点开看过的任务：没点的结果、失败都不算', async () => {

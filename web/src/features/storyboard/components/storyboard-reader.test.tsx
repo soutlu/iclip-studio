@@ -409,8 +409,8 @@ describe('StoryboardReader', () => {
     const previous = await screen.findByRole('button', { name: '上一组' })
     const next = screen.getByRole('button', { name: '下一组' })
     const all = groupPill()
-    expect(previous).toBeDisabled()
-    expect(next).toBeEnabled()
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).not.toHaveAttribute('aria-disabled')
 
     await userEvent.click(next)
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
@@ -419,8 +419,8 @@ describe('StoryboardReader', () => {
       'aria-current',
       'true',
     )
-    expect(next).toBeDisabled()
-    expect(previous).toBeEnabled()
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(previous).not.toHaveAttribute('aria-disabled')
     expect(all).toHaveFocus()
 
     await userEvent.keyboard('{ArrowUp}')
@@ -429,7 +429,7 @@ describe('StoryboardReader', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 2 }))
     await userEvent.click(previous)
     await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
-    expect(previous).toBeDisabled()
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
     expect(all).toHaveFocus()
     expect(screen.queryByRole('menu', { name: '镜头组列表' })).not.toBeInTheDocument()
   })
@@ -638,7 +638,9 @@ describe('StoryboardReader', () => {
     expect(within(page).getByRole('button', { name: '编辑视频' })).not.toHaveAttribute(
       'aria-disabled',
     )
-    expect(within(page).getByRole('button', { name: '下载视频' })).toBeEnabled()
+    expect(within(page).getByRole('button', { name: '下载视频' })).not.toHaveAttribute(
+      'aria-disabled',
+    )
   })
 
   describe('视频记录超过一页', () => {
@@ -712,7 +714,9 @@ describe('StoryboardReader', () => {
     // 选中成片照样能看、能下载；回填与编辑视频都不出现。
     await userEvent.click(takeCard(take))
     expect(within(page).getByRole('group', { name: '播放器：生成的视频' })).toBeVisible()
-    expect(within(page).getByRole('button', { name: '下载视频' })).toBeEnabled()
+    expect(within(page).getByRole('button', { name: '下载视频' })).not.toHaveAttribute(
+      'aria-disabled',
+    )
     expect(within(page).queryByRole('button', { name: '回填提示词' })).toBeNull()
     expect(within(page).queryByRole('button', { name: '编辑视频' })).toBeNull()
     expect(files.writes).toEqual([])
@@ -2186,7 +2190,9 @@ describe('StoryboardReader', () => {
         editableJob.outputUrl,
       )
       expect(within(page).queryByRole('group', { name: '当前帧图片' })).not.toBeInTheDocument()
-      expect(within(page).getByRole('button', { name: '下载视频' })).toBeEnabled()
+      expect(within(page).getByRole('button', { name: '下载视频' })).not.toHaveAttribute(
+        'aria-disabled',
+      )
       for (const name of ['编辑视频', '回填提示词'])
         expect(within(page).getByRole('button', { name })).not.toHaveAttribute('aria-disabled')
       // 帧的操作跟着收起。
@@ -2425,7 +2431,7 @@ describe('StoryboardReader', () => {
       expect(files.snapshot().shots[0]?.prompt.timeline[0]?.image_indexes).toEqual([4, 2, 1])
     })
 
-    it('成片的操作是舞台右上的图标按钮，聚焦就提示名字；ⓘ 的可访问名与提示里都有分辨率 · 时长 · 时间与模型', async () => {
+    it('成片的操作是舞台右上的图标按钮，按 Tab 移过去就提示名字；ⓘ 的可访问名与提示里都有分辨率 · 时长 · 时间与模型', async () => {
       const specified = makeGenerationJob({
         id: 'f1c2d3e4-5a6b-4c7d-8e9f-0a1b2c3d4e5f',
         createdAt: '2026-09-01T10:04:00Z',
@@ -2442,11 +2448,15 @@ describe('StoryboardReader', () => {
 
       const download = within(page).getByRole('button', { name: '下载视频' })
       expect(download.textContent).toBe('')
-      act(() => download.focus())
-      expect(await screen.findByRole('tooltip')).toHaveTextContent('下载视频')
-      act(() => download.blur())
-
       const info = within(page).getByRole('button', { name: /^成片信息：/ })
+      // 图标按钮在按 Tab 移过去时提示名字：从 ⓘ 往后移一格。
+      act(() => info.focus())
+      await userEvent.tab()
+      expect(download).toHaveFocus()
+      await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('下载视频'))
+      act(() => download.blur())
+      await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
+
       expect(info).toHaveAccessibleName(/^成片信息：720p · 0:06 · .+，vendor-a-seedance-2-5$/)
       act(() => info.focus())
       await waitFor(() => {

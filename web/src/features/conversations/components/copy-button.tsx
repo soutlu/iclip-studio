@@ -11,7 +11,7 @@ export function CopyButton({ label = '复制', text }: { text: string; label?: s
       name={copied ? 'check' : 'copy'}
       onClick={() => void copy(text)}
       size="xs"
-      title={copied ? '已复制' : '复制'}
+      tooltip={copied ? '已复制' : undefined}
       variant="standard"
     />
   )

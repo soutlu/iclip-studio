@@ -710,14 +710,14 @@ describe('ConversationRoute', () => {
       name: '重新生成',
     })
     const edit = latestTurn.getByRole('button', { name: '修改' })
-    expect(regenerate).toBeEnabled()
-    expect(edit).toBeEnabled()
+    expect(regenerate).not.toHaveAttribute('aria-disabled')
+    expect(edit).not.toHaveAttribute('aria-disabled')
 
     socket.deliver(opsFrame([runningPrompt('p-run')], 11))
 
     await waitFor(() => {
-      expect(regenerate).toBeDisabled()
-      expect(edit).toBeDisabled()
+      expect(regenerate).toHaveAttribute('aria-disabled', 'true')
+      expect(edit).toHaveAttribute('aria-disabled', 'true')
     })
   })
 

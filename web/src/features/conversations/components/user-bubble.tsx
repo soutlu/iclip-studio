@@ -66,7 +66,6 @@ export function UserBubble({ className, content, editDisabled = false, onEdit }:
             name="edit"
             onClick={onEdit}
             size="xs"
-            title="修改"
             variant="standard"
           />
         )}

@@ -81,7 +81,6 @@ export function AppContentPane({
             name={pane === 'chat' ? 'message' : 'grid'}
             onClick={onExpand}
             size="sm"
-            title={pane === 'chat' ? '展开对话' : '展开工作台'}
           />
         </div>
       ) : null}

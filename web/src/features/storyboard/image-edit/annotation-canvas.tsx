@@ -298,7 +298,6 @@ export function AnnotationCanvas({
           <IconButton
             key={kind}
             label={label}
-            title={label}
             name={kind}
             variant={tool === kind ? 'selected' : 'standard'}
             aria-pressed={tool === kind}
@@ -312,22 +311,20 @@ export function AnnotationCanvas({
         <span className="image-edit-canvas-toolbar-divider" aria-hidden="true" />
         <IconButton
           label="撤销标注"
-          title="撤销标注"
           name="undo"
           disabled={Boolean(blocked) || history.past.length === 0}
           onClick={undo}
         />
         <IconButton
           label="重做标注"
-          title="重做标注"
           name="redo"
           disabled={Boolean(blocked) || history.future.length === 0}
           onClick={redo}
         />
         <IconButton
           label="清空标注"
-          title="清空全部标注，可撤销"
           name="delete"
+          tooltip="清空全部标注，可撤销"
           disabled={Boolean(blocked) || annotations.length === 0 || gesture !== null}
           onClick={clearAnnotations}
         />

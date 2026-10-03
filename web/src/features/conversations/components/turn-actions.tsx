@@ -1,9 +1,10 @@
-/** 回复的终态栏：复制、重新生成、分叉、时刻，用量收在时刻的悬停提示里。只有最新一轮常驻，历史轮悬停才露出（触屏上常驻），别让每条回复下面都挂一排小图标。 */
+/** 回复的终态栏：复制、重新生成、分叉、时刻，用量收在时刻的提示里（悬停、聚焦或点一下弹出）。只有最新一轮常驻，历史轮悬停才露出（触屏上常驻），别让每条回复下面都挂一排小图标。 */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { TranscriptUsage } from '@/shared/transcript/vendor'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { CopyButton } from './copy-button'
 
 const exactTokens = (tokens: number): string => tokens.toLocaleString('zh-CN')
@@ -36,20 +37,43 @@ const fullTime = (iso: string): string => {
 const usageLine = (usage: TranscriptUsage): string =>
   `输入 ${exactTokens(usage.inputTokens ?? 0)} · 缓存 ${exactTokens(usage.cachedTokens ?? 0)} · 输出 ${exactTokens(usage.outputTokens ?? 0)}`
 
+/** 时刻：悬停、聚焦弹出完整时刻与用量；触屏没有悬停，Radix 提示又不接触摸，所以受控开合、点一下开、再点收起，做法同成片信息按钮。 */
 const TurnTime = ({ endedAt, usage }: { endedAt: string; usage: TranscriptUsage | undefined }) => {
   // 相对日期以组件挂载时刻为参照。
   const [now] = useState(() => new Date())
+  const [open, setOpen] = useState(false)
+  // 按下那一刻提示开没开：Radix 在按下时就先把提示关了，点击要按按下前的状态翻转。键盘合成的点击没有按下，用当前状态。
+  const openAtPressRef = useRef<boolean | null>(null)
   const label = messageTime(endedAt, now)
   if (label === '') return null
   return (
-    <time
-      className="shrink-0 text-caption text-chat-muted-text tabular-nums"
-      dateTime={endedAt}
-      // 完整时刻一行，有用量再接一行精确用量。
-      title={usage === undefined ? fullTime(endedAt) : `${fullTime(endedAt)}\n${usageLine(usage)}`}
-    >
-      {label}
-    </time>
+    <TooltipRoot onOpenChange={setOpen} open={open}>
+      <TooltipTrigger
+        asChild
+        onPointerDown={() => {
+          openAtPressRef.current = open
+        }}
+        // 拦下默认处理，Radix 才不会在点击时把提示关掉。
+        onClick={(event) => {
+          event.preventDefault()
+          const wasOpen = openAtPressRef.current ?? open
+          openAtPressRef.current = null
+          setOpen(!wasOpen)
+        }}
+      >
+        <button
+          className="shrink-0 rounded-xs text-caption text-chat-muted-text tabular-nums ui-focus"
+          type="button"
+        >
+          <time dateTime={endedAt}>{label}</time>
+        </button>
+      </TooltipTrigger>
+      {/* 完整时刻一行，有用量再接一行精确用量。 */}
+      <TooltipContent className="tabular-nums" side="top">
+        <p>{fullTime(endedAt)}</p>
+        {usage === undefined ? null : <p>{usageLine(usage)}</p>}
+      </TooltipContent>
+    </TooltipRoot>
   )
 }
 
@@ -101,7 +125,7 @@ export function TurnActions({
             name="refresh"
             onClick={onRegenerate}
             size="xs"
-            title="重新生成"
+            tooltip={regenerateDisabled ? '等这一条跑完再重新生成' : undefined}
             variant="standard"
           />
         )}
@@ -113,7 +137,7 @@ export function TurnActions({
             name="fork"
             onClick={onFork}
             size="xs"
-            title="从这里另开一段对话"
+            tooltip={forkDisabled ? '等这一条跑完再分叉' : undefined}
             variant="standard"
           />
         )}

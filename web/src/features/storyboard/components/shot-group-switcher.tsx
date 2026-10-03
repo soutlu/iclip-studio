@@ -21,7 +21,7 @@ type ShotGroupSwitcherProps = {
 }
 
 const STEP_CLASS =
-  'size-7 rounded-full text-on-surface-variant disabled:cursor-default disabled:text-disabled-text'
+  'size-7 rounded-full text-on-surface-variant aria-disabled:cursor-default aria-disabled:text-disabled-text'
 
 export function ShotGroupSwitcher({ aspectRatio, onGo, position, shots }: ShotGroupSwitcherProps) {
   const total = shots.length

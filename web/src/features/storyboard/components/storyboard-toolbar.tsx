@@ -44,7 +44,6 @@ export function StoryboardToolbar({
         name="copy"
         onClick={() => void copyWithToast(fullPrompt, '已复制完整提示词')}
         size="sm"
-        title="复制完整提示词"
       />
     </div>
   )

@@ -145,13 +145,19 @@ describe('annotation canvas', () => {
     fireEvent.pointerCancel(canvas)
     expect(screen.queryByRole('button', { name: '标注 2' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '标注 1' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '撤销标注' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '撤销标注' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 
   it('shows image failures and disallows drawing while the editor is busy', async () => {
     await renderWithProviders(<Editor initial={[original]} disabled />)
     const canvas = loadImage()
-    expect(screen.getByRole('button', { name: '矩形标注' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '矩形标注' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     fireEvent.keyDown(screen.getByRole('button', { name: '标注 1' }), { key: 'Enter' })
     fireEvent.keyDown(canvas, { key: 'Delete' })
     expect(screen.getByRole('button', { name: '标注 1' })).toBeInTheDocument()
@@ -226,11 +232,11 @@ describe('annotation canvas', () => {
     await renderWithProviders(<Editor initial={[original, point]} />)
     const canvas = loadImage()
     const clear = screen.getByRole('button', { name: '清空标注' })
-    expect(clear).toBeEnabled()
+    expect(clear).not.toHaveAttribute('aria-disabled')
     await user.click(clear)
     expect(screen.queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '标注 2' })).not.toBeInTheDocument()
-    expect(clear).toBeDisabled()
+    expect(clear).toHaveAttribute('aria-disabled', 'true')
     await user.click(screen.getByRole('button', { name: '撤销标注' }))
     expect(screen.getByRole('button', { name: '标注 1' })).toHaveAttribute(
       'data-annotation-id',

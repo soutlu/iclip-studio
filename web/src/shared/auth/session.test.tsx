@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,6 +11,7 @@ import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
 import { WorkbenchOpenRequestProvider, WorkbenchRegistryProvider } from '@/shared/workbench'
 import { addMockCollection, addMockConversation, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
+import { renderWithTooltip } from '@/testing/render'
 import { FakeSocket, SERVER_HELLO } from '@/testing/ws'
 import { probeSsoLoginEnabled, refreshSessionUser } from './session'
 
@@ -107,7 +108,7 @@ const renderWorkspace = async () => {
     routeTree,
   })
   await router.load()
-  render(
+  renderWithTooltip(
     <QueryClientProvider client={queryClient}>
       <TranscriptProvider createSocket={() => socket as unknown as WebSocket}>
         <WorkbenchRegistryProvider registry={workbenchRegistry}>
