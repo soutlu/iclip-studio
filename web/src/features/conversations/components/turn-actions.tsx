@@ -1,17 +1,10 @@
-/** 回复的终态栏：复制、重新生成、用量、时刻。只有最新一轮常驻，历史轮悬停才露出，别让每条回复下面都挂一排小图标。 */
+/** 回复的终态栏：复制、重新生成、分叉、时刻，用量收在时刻的悬停提示里。只有最新一轮常驻，历史轮悬停才露出（触屏上常驻），别让每条回复下面都挂一排小图标。 */
 
 import { useState } from 'react'
 import type { TranscriptUsage } from '@/shared/transcript/vendor'
-import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { CopyButton } from './copy-button'
-
-/** ≥1000 缩成 x.xxk（两位小数去尾零），不足 1000 显整数。 */
-const compactTokens = (tokens: number): string => {
-  if (tokens < 1000) return String(tokens)
-  return `${(tokens / 1000).toFixed(2).replace(/\.?0+$/, '')}k`
-}
 
 const exactTokens = (tokens: number): string => tokens.toLocaleString('zh-CN')
 
@@ -39,25 +32,11 @@ const fullTime = (iso: string): string => {
   return `${then.getFullYear()}/${pad2(then.getMonth() + 1)}/${pad2(then.getDate())} ${pad2(then.getHours())}:${pad2(then.getMinutes())}:${pad2(then.getSeconds())}`
 }
 
-const UsageStats = ({ usage }: { usage: TranscriptUsage }) => {
-  const input = usage.inputTokens ?? 0
-  const cached = usage.cachedTokens ?? 0
-  const output = usage.outputTokens ?? 0
-  return (
-    <p className="flex min-w-0 items-center gap-1 text-caption text-chat-muted-text tabular-nums">
-      <Icon className="shrink-0" decorative name="credit" size="xs" />
-      {/* 窄栏里收成省略号，悬停 title 仍给全量精确值。 */}
-      <span
-        className="truncate"
-        title={`输入 ${exactTokens(input)} · 缓存 ${exactTokens(cached)} · 输出 ${exactTokens(output)}`}
-      >
-        {`输入 ${compactTokens(input)} · 缓存 ${compactTokens(cached)} · 输出 ${compactTokens(output)}`}
-      </span>
-    </p>
-  )
-}
+/** 悬停里的精确用量，千分位；缺的项按 0 计。 */
+const usageLine = (usage: TranscriptUsage): string =>
+  `输入 ${exactTokens(usage.inputTokens ?? 0)} · 缓存 ${exactTokens(usage.cachedTokens ?? 0)} · 输出 ${exactTokens(usage.outputTokens ?? 0)}`
 
-const TurnTime = ({ endedAt }: { endedAt: string }) => {
+const TurnTime = ({ endedAt, usage }: { endedAt: string; usage: TranscriptUsage | undefined }) => {
   // 相对日期以组件挂载时刻为参照。
   const [now] = useState(() => new Date())
   const label = messageTime(endedAt, now)
@@ -66,7 +45,8 @@ const TurnTime = ({ endedAt }: { endedAt: string }) => {
     <time
       className="shrink-0 text-caption text-chat-muted-text tabular-nums"
       dateTime={endedAt}
-      title={fullTime(endedAt)}
+      // 完整时刻一行，有用量再接一行精确用量。
+      title={usage === undefined ? fullTime(endedAt) : `${fullTime(endedAt)}\n${usageLine(usage)}`}
     >
       {label}
     </time>
@@ -78,7 +58,7 @@ type TurnActionsProps = {
   copyText: string
   /** 缺失或无效的结束时间不显示。 */
   endedAt?: string | undefined
-  /** 缺少 usage 时省略统计。 */
+  /** 只进时刻的悬停提示；缺少 usage 或时刻不显示时都不出用量。 */
   usage?: TranscriptUsage | undefined
   /** 未提供回调时隐藏按钮；调用方负责末轮与空闲状态判断。 */
   onRegenerate?: (() => void) | undefined
@@ -86,7 +66,7 @@ type TurnActionsProps = {
   /** 未提供回调时隐藏按钮。每一轮都能分叉，不限末轮。 */
   onFork?: (() => void) | undefined
   forkDisabled?: boolean | undefined
-  /** 最新一轮常驻；历史轮只在悬停或聚焦时露出。 */
+  /** 最新一轮常驻；历史轮只在悬停或聚焦时露出，触屏上常驻。 */
   revealed?: boolean | undefined
   /** 摆放位置由所在轮决定。 */
   className?: string | undefined
@@ -105,10 +85,9 @@ export function TurnActions({
 }: TurnActionsProps) {
   return (
     <div
-      // 一行放不下时收窄用量文字，不折行：历史轮的这一栏叠在轮间空隙里，折行会压到下一轮。
       className={cn(
         'flex items-center gap-2 transition-opacity ui-motion-s',
-        !revealed && 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+        !revealed && 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 touch:opacity-100',
         className,
       )}
     >
@@ -130,17 +109,16 @@ export function TurnActions({
           <IconButton
             className="text-chat-muted-text"
             disabled={forkDisabled}
-            label="从这里分叉"
+            label="从这里另开一段对话"
             name="fork"
             onClick={onFork}
             size="xs"
-            title="从这里分叉：复制到这一轮为止，接着自己跑"
+            title="从这里另开一段对话"
             variant="standard"
           />
         )}
       </div>
-      {usage === undefined ? null : <UsageStats usage={usage} />}
-      {endedAt === undefined ? null : <TurnTime endedAt={endedAt} />}
+      {endedAt === undefined ? null : <TurnTime endedAt={endedAt} usage={usage} />}
     </div>
   )
 }

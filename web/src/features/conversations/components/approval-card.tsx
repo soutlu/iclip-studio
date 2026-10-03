@@ -58,7 +58,7 @@ export function ApprovalCard({
         toast.error('已经做过决定')
         onRefresh()
       } else if (error instanceof ApiError && error.status === 404) {
-        toast.error('这张卡已经不在等了')
+        toast.error('这一步已经处理过了')
       } else {
         toast.error(errorMessageOf(error, '提交决定失败'))
       }
@@ -112,11 +112,12 @@ export function ApprovalCard({
             {DECISION_LABELS[decision]}
           </p>
         ) : readOnly ? (
-          <p className="text-caption text-chat-muted-text">等属主来决定</p>
+          <p className="text-caption text-chat-muted-text">等对话的主人决定</p>
         ) : (
           <>
-            <p className="text-caption text-chat-muted-text">按 1 同意，按 2 拒绝</p>
-            <div className="flex items-center gap-2">
+            {/* 触屏没有数字键，提示不显示；按钮靠 ml-auto 留在右边。 */}
+            <p className="text-caption text-chat-muted-text touch:hidden">按 1 同意，按 2 拒绝</p>
+            <div className="ml-auto flex items-center gap-2">
               <Button
                 disabled={sending}
                 onClick={() => decide(false)}

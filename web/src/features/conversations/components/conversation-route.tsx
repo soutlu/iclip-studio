@@ -89,7 +89,6 @@ type ConversationRouteProps = {
 /** 保留原内容用于校验末轮身份；重新生成可能复用轮号。 */
 type EditingTurn = {
   turnId: string
-  ordinal: number
   content: readonly PromptContentPart[]
 }
 
@@ -229,8 +228,7 @@ export function ConversationRoute({
   // 交给按轮 memo 的回调保持引用不变：末轮流式更新时历史轮不重渲，正文节点与其中的选区都还在。
   const { start: startFork } = fork
   const editTurn = useCallback(
-    (turn: TranscriptTurn) =>
-      setEditingTurn({ content: turn.content, ordinal: turn.ordinal, turnId: turn.turnId }),
+    (turn: TranscriptTurn) => setEditingTurn({ content: turn.content, turnId: turn.turnId }),
     [],
   )
   const forkTurn = useCallback(
@@ -274,7 +272,7 @@ export function ConversationRoute({
           </Tag>
         ) : null}
         {chrome.chat === undefined ? null : (
-          <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 group-focus-within/pane-header:opacity-100 group-hover/pane-header:opacity-100">
+          <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 group-focus-within/pane-header:opacity-100 group-hover/pane-header:opacity-100 touch:opacity-100">
             {chrome.onSwapPanes === undefined ? null : (
               <IconButton
                 label="交换对话与工作台"
@@ -313,7 +311,7 @@ export function ConversationRoute({
         >
           <div
             className={cn(
-              // 轮间 28px：历史轮悬停才露出的终态栏（24px）叠在这段空隙里，见 ConversationTurn。
+              // 轮间 28px：有悬停的设备上，历史轮悬停才露出的终态栏（24px）叠在这段空隙里，见 ConversationTurn。
               'mx-auto flex min-h-full w-full max-w-(--layout-home-read-max) flex-col gap-7 px-5 pt-4',
               // 尾部留白与下方渐隐等高：滚到底时最后一行正好停在渐隐之上。
               showEmptyState ? 'pb-4' : 'pb-8',
@@ -391,13 +389,15 @@ export function ConversationRoute({
           </div>
         </div>
         {sticking ? null : (
+          // 只有图标的圆钮：窄栏里带字的胶囊会压住正文。
           <button
-            className="absolute bottom-4 left-1/2 flex -translate-x-1/2 animate-in ui-state cursor-pointer items-center gap-1 rounded-full border-[0.5px] border-chat-hairline bg-top-layer px-3 py-1.5 text-body-sm text-chat-secondary-text shadow-[var(--shadow-1)] ui-focus duration-(--dur-s) ease-(--ease-decel) fade-in slide-in-from-bottom-2"
+            aria-label="回到底部"
+            className="absolute bottom-4 left-1/2 grid size-(--control-height-sm) -translate-x-1/2 animate-in ui-state cursor-pointer place-items-center rounded-full border-[0.5px] border-chat-hairline bg-top-layer text-chat-secondary-text shadow-[var(--shadow-1)] ui-focus duration-(--dur-s) ease-(--ease-decel) fade-in slide-in-from-bottom-2"
             onClick={scrollToBottom}
+            title="回到底部"
             type="button"
           >
             <Icon decorative name="to-bottom" size="sm" />
-            回到底部
           </button>
         )}
       </div>
@@ -418,16 +418,18 @@ export function ConversationRoute({
             />
           )}
           {view.forkedFrom === null || sourceLink === undefined ? null : (
+            // 说明最多折两行；图标与右侧链接对齐第一行，链接不收缩。
             <p
               aria-label="分叉来源"
-              className="flex items-center justify-between gap-3 rounded-lg border-[0.5px] border-chat-hairline bg-top-layer px-4 py-3 text-body-sm text-chat-secondary-text"
+              className="flex items-start justify-between gap-3 rounded-lg border-[0.5px] border-chat-hairline bg-top-layer px-4 py-3 text-body-sm text-chat-secondary-text"
               role="note"
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <Icon decorative name="fork" size="sm" />
-                <span className="truncate">
-                  这段是分叉出来的副本，历史截到源对话第 {view.forkTurn}{' '}
-                  轮；工作区与出片记录是分叉那一刻的那一份
+              <span className="flex min-w-0 items-start gap-2">
+                <span className="flex h-[1lh] shrink-0 items-center">
+                  <Icon decorative name="fork" size="sm" />
+                </span>
+                <span className="line-clamp-2">
+                  分叉自源对话第 {view.forkTurn} 轮。工作区与出片记录停在分叉那一刻。
                 </span>
               </span>
               {sourceLink(view.forkedFrom)}
@@ -436,12 +438,14 @@ export function ConversationRoute({
           {readOnly ? (
             <p
               aria-label="只读说明"
-              className="flex items-center justify-between gap-3 rounded-lg border-[0.5px] border-chat-hairline bg-top-layer px-4 py-3 text-body-sm text-chat-secondary-text"
+              className="flex items-start justify-between gap-3 rounded-lg border-[0.5px] border-chat-hairline bg-top-layer px-4 py-3 text-body-sm text-chat-secondary-text"
               role="note"
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <Icon decorative name="preview" size="sm" />
-                <span className="truncate">
+              <span className="flex min-w-0 items-start gap-2">
+                <span className="flex h-[1lh] shrink-0 items-center">
+                  <Icon decorative name="preview" size="sm" />
+                </span>
+                <span className="line-clamp-2">
                   这是{noteSubject}
                   {deleted ? '已删除的对话' : '的对话'}，只能查看
                 </span>
@@ -453,11 +457,7 @@ export function ConversationRoute({
               awaitingApproval={approval !== undefined}
               busy={running !== undefined}
               contextTokens={view.contextTokens}
-              editing={
-                editing === null
-                  ? undefined
-                  : { ordinal: editing.ordinal, parts: composerParts(editing.content) }
-              }
+              editing={editing === null ? undefined : { parts: composerParts(editing.content) }}
               maxContextTokens={view.maxContextTokens}
               onCancelEdit={() => setEditingTurn(null)}
               onSend={send}

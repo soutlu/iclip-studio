@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
@@ -573,11 +573,36 @@ describe('ConversationRoute', () => {
     expect(await screen.findByText('顺便配个音')).toBeInTheDocument()
     expect(screen.getByText('1 个任务等待发送')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '立即发送到当前回合' }))
+    await user.click(screen.getByRole('button', { name: '现在就发' }))
 
     await waitFor(() => {
       expect(steered).toEqual(['p-queued'])
     })
+  })
+
+  it('往上翻离开底部后出现「回到底部」圆钮，点了滚回底部并收起', async () => {
+    const user = userEvent.setup()
+    await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
+
+    // jsdom 不排版：手动给出滚动尺寸，模拟停在离底部很远的位置。
+    const scroller = screen.getByTestId('chat-scroller')
+    const scrollTo = vi.fn()
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 2000 },
+      scrollTo: { configurable: true, value: scrollTo },
+    })
+    scroller.scrollTop = 0
+    fireEvent.scroll(scroller)
+
+    const button = await screen.findByRole('button', { name: '回到底部' })
+    expect(button).toHaveAttribute('title', '回到底部')
+    await user.click(button)
+
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: 'smooth', top: 2000 })
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
   })
 
   it('只有最后一轮带「重新生成」钮', async () => {
@@ -642,7 +667,7 @@ describe('ConversationRoute', () => {
     ).toBeNull()
     await user.click(within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '修改' }))
 
-    expect(screen.getByText('正在修改第 2 轮')).toBeInTheDocument()
+    expect(screen.getByText('正在修改上一条消息')).toBeInTheDocument()
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('第 2 个问题')
 
     pasteTextIntoComposer(screen.getByLabelText('输入消息'), '，再具体些')
@@ -658,7 +683,7 @@ describe('ConversationRoute', () => {
     expect(text).toContain('再具体些')
     expect(sent?.prompt_id).not.toBe('')
     await waitFor(() => {
-      expect(screen.queryByText('正在修改第 2 轮')).toBeNull()
+      expect(screen.queryByText('正在修改上一条消息')).toBeNull()
     })
   })
 
@@ -672,7 +697,7 @@ describe('ConversationRoute', () => {
 
     await user.click(screen.getByRole('button', { name: '取消' }))
 
-    expect(screen.queryByText('正在修改第 2 轮')).toBeNull()
+    expect(screen.queryByText('正在修改上一条消息')).toBeNull()
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
   })
 
@@ -1011,7 +1036,7 @@ describe('ConversationRoute', () => {
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
 
     expect(await screen.findByText('1 个任务等待发送')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '立即发送到当前回合' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
     expect(screen.getByText('等你审批后继续')).toBeInTheDocument()
   })
 
@@ -1037,12 +1062,12 @@ describe('ConversationRoute', () => {
 
     const card = screen.getByRole('region', { name: '等你审批' })
     expect(within(card).queryByRole('button', { name: '同意' })).toBeNull()
-    expect(within(card).getByText('等属主来决定')).toBeVisible()
+    expect(within(card).getByText('等对话的主人决定')).toBeVisible()
     await user.keyboard('1')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
     expect(await screen.findByText('1 个任务等待发送')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '立即发送到当前回合' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
     expect(screen.queryByRole('button', { name: '撤回' })).toBeNull()
     expect(decided).toBe(false)
   })
@@ -1075,7 +1100,7 @@ describe('ConversationRoute', () => {
     await renderWithProviders(<ConversationRoute conversationId="c1" onForked={forked} />)
 
     expect(await screen.findByText('只读 · 小王 的对话')).toBeVisible()
-    const buttons = await screen.findAllByRole('button', { name: '从这里分叉' })
+    const buttons = await screen.findAllByRole('button', { name: '从这里另开一段对话' })
     const button = buttons[buttons.length - 1] as HTMLElement
     // 副本的 id 由服务端铸、没有幂等键；请求回来了但还没跳走的那一瞬再点一下，不能开出两段。
     await user.dblClick(button)
@@ -1097,13 +1122,13 @@ describe('ConversationRoute', () => {
     await renderWithProviders(
       <ConversationRoute
         conversationId="c1"
-        sourceLink={(sourceId) => <a href={`/c/${sourceId}`}>看源对话</a>}
+        sourceLink={(sourceId) => <a href={`/c/${sourceId}`}>查看源对话</a>}
       />,
     )
 
     const note = await screen.findByRole('note', { name: '分叉来源' })
-    expect(note).toHaveTextContent('历史截到源对话第 2 轮')
-    expect(within(note).getByRole('link', { name: '看源对话' })).toHaveAttribute(
+    expect(note).toHaveTextContent('分叉自源对话第 2 轮')
+    expect(within(note).getByRole('link', { name: '查看源对话' })).toHaveAttribute(
       'href',
       `/c/${source}`,
     )

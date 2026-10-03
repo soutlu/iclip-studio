@@ -80,7 +80,7 @@ function QueueRow({
     <div className="flex items-center justify-end gap-2">
       {first && canSteer ? (
         <button
-          aria-label="立即发送到当前回合"
+          aria-label="现在就发"
           className="grid size-(--control-height-xs) shrink-0 cursor-pointer place-items-center rounded-full bg-inverse-surface text-inverse-on-surface shadow-[var(--shadow-xs)] ui-focus transition-[background-color,transform] ui-motion-s active:scale-90"
           onClick={() => onSteer(prompt.promptId)}
           type="button"
@@ -141,7 +141,7 @@ function QueueRow({
         {readOnly ? null : (
           <button
             aria-label="撤回"
-            className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-xs text-chat-muted-text opacity-0 ui-focus transition-[opacity,color,background-color] ui-motion-s group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-danger-bg hover:text-danger-text"
+            className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-xs text-chat-muted-text opacity-0 ui-focus transition-[opacity,color,background-color] ui-motion-s group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-danger-bg hover:text-danger-text touch:opacity-100"
             onClick={() => onDiscard(prompt.promptId)}
             type="button"
           >

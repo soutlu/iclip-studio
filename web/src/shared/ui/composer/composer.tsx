@@ -294,148 +294,152 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   const mentionMenu = mentionCore.menu
 
   return (
-    <div
-      className={cn(
-        'composer-card relative rounded-xl border-[0.5px] border-chat-hairline bg-top-layer shadow-[var(--shadow-input)]',
-        'transition-[border-color,box-shadow,background-color] ui-motion-m',
-        'focus-within:border-border-hover',
-        dragOver && 'border-on-surface',
-        className,
-      )}
-      ref={mountRoot}
-      {...(dropScope === 'card' ? cardDrop.dragHandlers : {})}
-    >
-      <div className="relative">
-        <div ref={mountEditor} />
-        {editor.empty ? (
-          <div aria-hidden className="composer-placeholder-overlay">
-            {placeholder}
+    <>
+      {/* 跑着时写了字才提示，放在卡片上方而不挤进控件行。卡片之前固定占一个子节点位，提示出没不重挂卡片；
+          不传 busy 的使用方这里恒为 null，DOM 与之前一致。 */}
+      {busy && !editor.empty ? (
+        <p className="px-3 pb-1.5 text-caption text-on-surface-faint">发送后排队，这一轮结束再跑</p>
+      ) : null}
+      <div
+        className={cn(
+          'composer-card relative rounded-xl border-[0.5px] border-chat-hairline bg-top-layer shadow-[var(--shadow-input)]',
+          'transition-[border-color,box-shadow,background-color] ui-motion-m',
+          'focus-within:border-border-hover',
+          dragOver && 'border-on-surface',
+          className,
+        )}
+        ref={mountRoot}
+        {...(dropScope === 'card' ? cardDrop.dragHandlers : {})}
+      >
+        <div className="relative">
+          <div ref={mountEditor} />
+          {editor.empty ? (
+            <div aria-hidden className="composer-placeholder-overlay">
+              {placeholder}
+            </div>
+          ) : null}
+        </div>
+        {/* 只有会出提示的形态（有上限或卡片拖放）才挂播报区，播报区要先在才播得出后放进去的字。 */}
+        {attachmentLimit !== undefined || dropScope === 'card' ? (
+          <ComposerNotice notice={admission.notice} />
+        ) : null}
+        <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-2">
+          <div className="flex items-center gap-1">
+            {addControl !== undefined ? (
+              addControl(openFilePicker)
+            ) : attachmentsEnabled ? (
+              <IconButton label="添加附件" name="add" onClick={openFilePicker} size="md" />
+            ) : null}
+            {leading}
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            {trailing}
+            {busy && onStop !== undefined ? (
+              <button
+                aria-label="停止"
+                // 与发送钮同形的中性圆钮：只剩它时是本栏唯一的主操作，与发送并排时让位给墨色发送钮。
+                className={cn(
+                  'grid size-(--control-height-md) ui-state cursor-pointer place-items-center rounded-full ui-focus',
+                  'bg-surface-container-high text-on-surface hover:bg-inverse-surface hover:text-inverse-on-surface active:scale-95',
+                )}
+                onClick={onStop}
+                type="button"
+              >
+                <Icon className="fill-current" decorative name="stop" size="sm" />
+              </button>
+            ) : null}
+            {submitAction !== undefined ? (
+              <Button
+                className="shrink-0 rounded-full"
+                disabled={!canSend}
+                leadingIcon={submitAction.icon}
+                loading={sending}
+                onClick={submit}
+                size="md"
+                variant={submitAction.emphasis === 'primary' ? 'primary' : 'tonal'}
+              >
+                {sending ? submitAction.pendingLabel : submitAction.label}
+              </Button>
+            ) : // 跑着的时候输入框也能发：写了字就把发送钮亮出来，发出去的排队。空着时只留停止。
+            !busy || onStop === undefined || !editor.empty ? (
+              <button
+                aria-label="发送"
+                className={cn(
+                  'grid size-(--control-height-md) ui-state cursor-pointer place-items-center rounded-full ui-focus',
+                  canSend
+                    ? 'bg-inverse-surface text-inverse-on-surface shadow-[var(--shadow-send)] active:scale-95'
+                    : 'bg-surface-container-high',
+                )}
+                disabled={!canSend}
+                onClick={submit}
+                type="button"
+              >
+                <Icon
+                  className={cn(sending && 'animate-spin')}
+                  decorative
+                  name={sending ? 'loading' : 'send-up'}
+                  size="md"
+                />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {attachmentsEnabled ? (
+          <input
+            accept={accept === 'image' ? MEDIA_IMAGE_ACCEPT : undefined}
+            aria-hidden
+            className="hidden"
+            multiple
+            onChange={(event) => {
+              const files = [...(event.target.files ?? [])]
+              event.target.value = '' // 清空文件输入值，允许再次选择同一文件。
+              if (files.length > 0) editorRef.current.insertFiles(files)
+            }}
+            ref={setFileInput}
+            tabIndex={-1}
+            type="file"
+          />
+        ) : null}
+        <ComposerNodeViews attachments={attachments} editor={editor} layerContainer={rootEl} />
+        {mention !== undefined && mentionMenu !== undefined
+          ? mention.render({
+              active: mentionMenu.active,
+              anchor: mentionMenu.anchor,
+              items: mention.items(mentionMenu.match.query),
+              listRef: mentionMenu.listRef,
+              onClose: mentionMenu.onClose,
+              onPick: mentionMenu.pick,
+              query: mentionMenu.match.query,
+            })
+          : null}
+        {dragOver && dropScope === 'card' ? (
+          <div
+            aria-hidden
+            className="composer-drop-overlay composer-drop-overlay-card animate-in duration-(--dur-s) fade-in"
+            data-testid="composer-drop-overlay"
+          >
+            <div className="composer-drop-card">
+              <Icon decorative name="add-file" size="md" />
+              松开鼠标添加附件
+            </div>
           </div>
         ) : null}
+        {dragOver && dropScope === 'page'
+          ? createPortal(
+              <div
+                aria-hidden
+                className="composer-drop-overlay layer-overlay animate-in duration-(--dur-s) fade-in"
+                data-testid="composer-drop-overlay"
+              >
+                <div className="composer-drop-card">
+                  <Icon decorative name="add-file" size="lg" />
+                  松开鼠标添加附件
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
-      {/* 只有会出提示的形态（有上限或卡片拖放）才挂播报区，播报区要先在才播得出后放进去的字。 */}
-      {attachmentLimit !== undefined || dropScope === 'card' ? (
-        <ComposerNotice notice={admission.notice} />
-      ) : null}
-      <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-2">
-        <div className="flex items-center gap-1">
-          {addControl !== undefined ? (
-            addControl(openFilePicker)
-          ) : attachmentsEnabled ? (
-            <IconButton label="添加附件" name="add" onClick={openFilePicker} size="md" />
-          ) : null}
-          {leading}
-        </div>
-        <div className="flex min-w-0 items-center gap-2">
-          {busy && !editor.empty ? (
-            <span className="text-caption text-on-surface-faint">发送后排队，这一轮结束再跑</span>
-          ) : null}
-          {trailing}
-          {busy && onStop !== undefined ? (
-            <button
-              aria-label="停止"
-              // 与发送钮同形的中性圆钮：只剩它时是本栏唯一的主操作，与发送并排时让位给墨色发送钮。
-              className={cn(
-                'grid size-(--control-height-md) ui-state cursor-pointer place-items-center rounded-full ui-focus',
-                'bg-surface-container-high text-on-surface hover:bg-inverse-surface hover:text-inverse-on-surface active:scale-95',
-              )}
-              onClick={onStop}
-              type="button"
-            >
-              <Icon className="fill-current" decorative name="stop" size="sm" />
-            </button>
-          ) : null}
-          {submitAction !== undefined ? (
-            <Button
-              className="shrink-0 rounded-full"
-              disabled={!canSend}
-              leadingIcon={submitAction.icon}
-              loading={sending}
-              onClick={submit}
-              size="md"
-              variant={submitAction.emphasis === 'primary' ? 'primary' : 'tonal'}
-            >
-              {sending ? submitAction.pendingLabel : submitAction.label}
-            </Button>
-          ) : // 跑着的时候输入框也能发：写了字就把发送钮亮出来，发出去的排队。空着时只留停止。
-          !busy || onStop === undefined || !editor.empty ? (
-            <button
-              aria-label="发送"
-              className={cn(
-                'grid size-(--control-height-md) ui-state cursor-pointer place-items-center rounded-full ui-focus',
-                canSend
-                  ? 'bg-inverse-surface text-inverse-on-surface shadow-[var(--shadow-send)] active:scale-95'
-                  : 'bg-surface-container-high',
-              )}
-              disabled={!canSend}
-              onClick={submit}
-              type="button"
-            >
-              <Icon
-                className={cn(sending && 'animate-spin')}
-                decorative
-                name={sending ? 'loading' : 'send-up'}
-                size="md"
-              />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {attachmentsEnabled ? (
-        <input
-          accept={accept === 'image' ? MEDIA_IMAGE_ACCEPT : undefined}
-          aria-hidden
-          className="hidden"
-          multiple
-          onChange={(event) => {
-            const files = [...(event.target.files ?? [])]
-            event.target.value = '' // 清空文件输入值，允许再次选择同一文件。
-            if (files.length > 0) editorRef.current.insertFiles(files)
-          }}
-          ref={setFileInput}
-          tabIndex={-1}
-          type="file"
-        />
-      ) : null}
-      <ComposerNodeViews attachments={attachments} editor={editor} layerContainer={rootEl} />
-      {mention !== undefined && mentionMenu !== undefined
-        ? mention.render({
-            active: mentionMenu.active,
-            anchor: mentionMenu.anchor,
-            items: mention.items(mentionMenu.match.query),
-            listRef: mentionMenu.listRef,
-            onClose: mentionMenu.onClose,
-            onPick: mentionMenu.pick,
-            query: mentionMenu.match.query,
-          })
-        : null}
-      {dragOver && dropScope === 'card' ? (
-        <div
-          aria-hidden
-          className="composer-drop-overlay composer-drop-overlay-card animate-in duration-(--dur-s) fade-in"
-          data-testid="composer-drop-overlay"
-        >
-          <div className="composer-drop-card">
-            <Icon decorative name="add-file" size="md" />
-            松开鼠标添加附件
-          </div>
-        </div>
-      ) : null}
-      {dragOver && dropScope === 'page'
-        ? createPortal(
-            <div
-              aria-hidden
-              className="composer-drop-overlay layer-overlay animate-in duration-(--dur-s) fade-in"
-              data-testid="composer-drop-overlay"
-            >
-              <div className="composer-drop-card">
-                <Icon decorative name="add-file" size="lg" />
-                松开鼠标添加附件
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
-    </div>
+    </>
   )
 }
