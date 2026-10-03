@@ -25,7 +25,7 @@ describe('generationBlockerOf', () => {
 
   // 每一行都叠上排在它后面的原因，说出来的必须是排在最前的那一条；一直挡着的排在暂态前面。
   it.each<[string, Partial<GenerationFacts>, string, boolean]>([
-    ['只读', { ...laterAll, readOnly: true, saveState: 'conflict' }, '只读对话，不能出片', false],
+    ['只读', { ...laterAll, readOnly: true, saveState: 'conflict' }, '只读任务，不能出片', false],
     ['版本冲突', { ...laterAll, saveState: 'conflict' }, '先处理分镜的版本冲突', false],
     ['保存失败', { ...laterAll, saveState: 'error' }, '分镜没存下，先重试保存', false],
     [
@@ -63,13 +63,13 @@ describe('generationNoticeOf', () => {
 })
 
 describe('generationStatusOf', () => {
-  const persistent = { reason: '只读对话，不能出片', transient: false }
+  const persistent = { reason: '只读任务，不能出片', transient: false }
   const saving = { reason: '分镜保存中', transient: true }
 
   it('一直挡着的原因上状态行，压过错误提醒', () => {
     expect(generationStatusOf(persistent, '上游拒收')).toEqual({
       hiddenReason: undefined,
-      line: { text: '只读对话，不能出片', tone: 'blocked' },
+      line: { text: '只读任务，不能出片', tone: 'blocked' },
     })
   })
 

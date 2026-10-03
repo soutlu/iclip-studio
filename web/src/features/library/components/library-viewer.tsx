@@ -481,7 +481,7 @@ function MoreMenu({
             icon="external"
             onSelect={() => void navigate({ params: { conversationId }, to: '/c/$conversationId' })}
           >
-            打开来源对话
+            打开来源任务
           </MenuItem>
         )}
       </MenuSurface>

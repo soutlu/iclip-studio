@@ -7,12 +7,12 @@ import {
   ConversationDeleteDialog,
   ConversationMembershipDialog,
   conversationListStateSchema,
+  DisclosureChevron,
   refreshConversationLists,
   SidebarConversationRow,
   SIDEBAR_ROW_CLASS,
   SIDEBAR_ROW_MENU_OPEN,
   SIDEBAR_ROW_TITLE_CLASS,
-  SIDEBAR_ROW_TRAILING_HIDDEN,
   SIDEBAR_ROW_TRAILING_SHOWN,
   SidebarRowEditor,
   useMoreConversations,
@@ -182,14 +182,14 @@ export function SidebarConversations() {
   ])
   const anyBusy = firstPageRows.some((row) => row.activity.busy)
 
-  if (!canRead) return <SidebarFeedback>当前账号没有查看对话权限</SidebarFeedback>
-  if (topology.isPending) return <SidebarFeedback>正在加载对话…</SidebarFeedback>
+  if (!canRead) return <SidebarFeedback>当前账号没有查看任务权限</SidebarFeedback>
+  if (topology.isPending) return <SidebarFeedback>正在加载任务…</SidebarFeedback>
   if (topology.isError)
     return (
       <SidebarFeedback error loading={topology.isFetching} onRetry={() => void topology.refetch()}>
         {topology.error instanceof ApiError && topology.error.status === 403
-          ? '当前账号没有查看对话权限'
-          : errorMessageOf(topology.error, '读取对话列表失败，请重试')}
+          ? '当前账号没有查看任务权限'
+          : errorMessageOf(topology.error, '读取任务列表失败，请重试')}
       </SidebarFeedback>
     )
 
@@ -381,8 +381,8 @@ function UngroupedSection({
         {hasMore && (
           <ExpandRow
             error={more.error}
-            label="展开显示更多对话"
-            retryLabel="重试加载更多对话"
+            label="更多任务"
+            retryLabel="重新加载更多任务"
             loading={more.isFetching}
             onExpand={() => void more.fetchNextPage()}
           />
@@ -443,7 +443,7 @@ function SidebarSection({ action, actionRef, children, title, tools }: SidebarSe
   )
 }
 
-/** 任务区筛选：收在标题右侧的「全部 ▾」，菜单里勾出当前档；有对话在跑时带一个绿点。 */
+/** 任务区筛选：收在标题右侧的「全部 ▾」，菜单里勾出当前档；有任务在跑时带一个墨色小点，绿色只留给生成。 */
 function ConversationFilter({
   busy,
   onChange,
@@ -457,12 +457,12 @@ function ConversationFilter({
     <MenuRoot>
       <MenuTrigger asChild>
         <button
-          aria-label={`对话筛选：${FILTER_LABEL[value]}${busy ? '，有对话在进行中' : ''}`}
+          aria-label={`任务筛选：${FILTER_LABEL[value]}${busy ? '，有任务在跑' : ''}`}
           className="-mr-1.5 flex h-6 ui-state cursor-pointer items-center gap-1 rounded-sm pr-1.5 pl-2 text-label text-on-surface-muted ui-focus data-[state=open]:bg-state-hover data-[state=open]:text-on-surface"
           type="button"
         >
           <span aria-hidden>{FILTER_LABEL[value]}</span>
-          {busy && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />}
+          {busy && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-on-surface" />}
           <Icon className="shrink-0" decorative name="expand" size="xs" />
         </button>
       </MenuTrigger>
@@ -516,7 +516,7 @@ function SidebarFeedback({
           onClick={onRetry}
           type="button"
         >
-          {loading ? '重试中…' : '重新加载对话'}
+          {loading ? '重试中…' : '重新加载任务'}
         </button>
       )}
     </div>
@@ -525,12 +525,12 @@ function SidebarFeedback({
 
 const emptyConversations = (state: ConversationListState) =>
   state === 'open'
-    ? '没有未完成的对话'
+    ? '没有未完成的任务'
     : state === 'done'
-      ? '没有标记完成的对话'
+      ? '没有标记完成的任务'
       : state === 'running'
-        ? '没有进行中的对话'
-        : '还没有对话'
+        ? '没有进行中的任务'
+        : '还没有任务'
 
 /** 页边界可因活动时间变化重叠，保留首页优先的第一条记录。 */
 const uniqueConversations = (items: readonly Conversation[]): Conversation[] => {
@@ -560,7 +560,7 @@ function ExpandRow({
     <>
       {error != null && (
         <p className="px-2.5 py-1 text-body-sm text-error" role="alert">
-          {errorMessageOf(error, '加载更多对话失败，请重试')}
+          {errorMessageOf(error, '加载更多任务失败，请重试')}
         </p>
       )}
       <button
@@ -573,7 +573,7 @@ function ExpandRow({
         onClick={onExpand}
         type="button"
       >
-        {loading ? '加载中…' : error != null ? '重试加载' : '展开显示'}
+        {loading ? '加载中…' : error != null ? '重新加载' : '更多任务'}
       </button>
     </>
   )
@@ -654,15 +654,16 @@ function CollectionGroup({
             type="button"
           >
             <CollectionIcon />
-            <span aria-hidden className="min-w-0 flex-1 truncate text-left">
-              {collection.name}
+            {/* 名字后紧跟细箭头，收起朝右、展开朝下，看得出这一行能展开；整个按钮仍占满行。 */}
+            <span className="flex min-w-0 flex-1 items-center gap-1">
+              <span aria-hidden className="min-w-0 truncate text-left">
+                {collection.name}
+              </span>
+              <DisclosureChevron className="text-on-surface-faint" open={open} />
             </span>
           </button>
-          {/* 能管理时计数与 ⋯ 共用尾部槽位；不能管理就一直显示计数。 */}
-          <CollectionCount
-            className={cn(canManage && SIDEBAR_ROW_TRAILING_HIDDEN)}
-            count={collection.conversationCount}
-          />
+          {/* 计数常驻，能管理时 ⋯ 排在它右边。 */}
+          <CollectionCount count={collection.conversationCount} />
           {canManage && (
             <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
               <MenuRoot>
@@ -707,8 +708,8 @@ function CollectionGroup({
           {hasMore && (
             <ExpandRow
               error={more.error}
-              label={`展开显示 ${collection.name} 里更多对话`}
-              retryLabel={`重试加载 ${collection.name} 里更多对话`}
+              label={`${collection.name} 里更多任务`}
+              retryLabel={`重新加载 ${collection.name} 里更多任务`}
               loading={more.isFetching}
               onExpand={() => void more.fetchNextPage()}
             />
@@ -726,12 +727,9 @@ function CollectionIcon() {
 }
 
 /** 行尾的对话数；可访问名已带在合集按钮上，这里只给看的。 */
-function CollectionCount({ className, count }: { className?: string; count: number }) {
+function CollectionCount({ count }: { count: number }) {
   return (
-    <span
-      aria-hidden
-      className={cn('shrink-0 text-caption text-on-surface-faint tabular-nums', className)}
-    >
+    <span aria-hidden className="shrink-0 text-caption text-on-surface-faint tabular-nums">
       {count}
     </span>
   )

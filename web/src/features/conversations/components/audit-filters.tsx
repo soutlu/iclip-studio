@@ -105,7 +105,7 @@ function ConversationFilters({ filters, onChange, users, tasks, totals }: AuditF
 
       {/* 窄屏上状态一组独占一行、四档均分，删除一组和总数挤在下一行。 */}
       <ChipGroup
-        aria-label="对话状态"
+        aria-label="任务状态"
         className={cn(SEGMENT_GROUP_CLASS, 'w-full md:w-auto')}
         onValueChange={(value) => {
           const state = conversationListStateSchema.safeParse(value)
@@ -144,14 +144,14 @@ function ConversationFilters({ filters, onChange, users, tasks, totals }: AuditF
 
       {totals === undefined ? null : (
         <p
-          aria-label="对话总数"
+          aria-label="任务总数"
           className="ml-auto flex shrink-0 items-center gap-1.5 text-label whitespace-nowrap text-on-surface-muted tabular-nums"
           role="status"
         >
           <span aria-hidden className="size-1.5 rounded-full bg-primary" />
           {totals.runningTotal} 进行中
           <span aria-hidden>·</span>
-          {totals.total} 段
+          {totals.total} 个
         </p>
       )}
     </>

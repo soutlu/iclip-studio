@@ -67,7 +67,7 @@ describe('fetchTaskConversations', () => {
     )
 
     await expect(fetchTaskConversations(TASK_ID, canAudit, signal())).rejects.toMatchObject({
-      message: '读取关联对话失败：权限不足',
+      message: '读取关联任务失败：权限不足',
       status: 403,
     })
     expect(paths).toEqual([

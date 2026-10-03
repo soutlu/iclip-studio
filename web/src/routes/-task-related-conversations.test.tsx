@@ -40,7 +40,7 @@ const openTask = async (user: ReturnType<typeof userEvent.setup>, title: string)
   return screen.findByRole('dialog', { name: title })
 }
 
-describe('需求单关联对话与视频', () => {
+describe('需求单关联任务与视频', () => {
   it('详情默认展示面板，折叠和展开保留未保存表单，重新打开详情恢复面板', async () => {
     const task = addMockTask('夏季口播视频')
     const conversation = addMockConversation('口播创作尝试')
@@ -49,23 +49,23 @@ describe('需求单关联对话与视频', () => {
     await renderTasks()
 
     const dialog = await openTask(user, task.title)
-    const panel = await within(dialog).findByRole('complementary', { name: '关联对话与视频' })
+    const panel = await within(dialog).findByRole('complementary', { name: '关联任务与视频' })
     expect(await within(panel).findByRole('heading', { name: conversation.title })).toBeVisible()
     await user.type(within(dialog).getByLabelText('创作要求'), '补充尚未保存的口播要求')
 
-    await user.click(within(panel).getByRole('button', { name: '收起关联对话与视频' }))
+    await user.click(within(panel).getByRole('button', { name: '收起关联任务与视频' }))
     expect(within(dialog).queryByRole('complementary')).not.toBeInTheDocument()
     expect(within(dialog).getByLabelText('创作要求')).toHaveValue('补充尚未保存的口播要求')
-    await user.click(within(dialog).getByRole('button', { name: '打开关联对话与视频' }))
+    await user.click(within(dialog).getByRole('button', { name: '打开关联任务与视频' }))
     expect(await within(dialog).findByRole('complementary')).toBeVisible()
     expect(within(dialog).getByLabelText('创作要求')).toHaveValue('补充尚未保存的口播要求')
 
-    await user.click(within(dialog).getByRole('button', { name: '收起关联对话与视频' }))
+    await user.click(within(dialog).getByRole('button', { name: '收起关联任务与视频' }))
     await user.click(within(dialog).getByRole('button', { name: '关闭' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     const reopened = await openTask(user, task.title)
     expect(
-      await within(reopened).findByRole('complementary', { name: '关联对话与视频' }),
+      await within(reopened).findByRole('complementary', { name: '关联任务与视频' }),
     ).toBeVisible()
   })
 
@@ -85,13 +85,13 @@ describe('需求单关联对话与视频', () => {
     expect(within(dialog).getByLabelText('需求单名称')).toBeVisible()
     expect(within(dialog).queryByRole('complementary')).not.toBeInTheDocument()
     expect(
-      within(dialog).queryByRole('button', { name: '打开关联对话与视频' }),
+      within(dialog).queryByRole('button', { name: '打开关联任务与视频' }),
     ).not.toBeInTheDocument()
     expect(requestedPaths).toEqual([])
   })
 
   it.each([
-    ['agent:read', '当前账号没有查看关联对话的权限'],
+    ['agent:read', '当前账号没有查看关联任务的权限'],
     ['generation:read', '当前账号没有查看视频的权限'],
   ])('缺少 %s 时显示权限说明且不请求受限数据', async (permission, message) => {
     const task = addMockTask('权限范围内的需求单')
@@ -139,9 +139,9 @@ describe('需求单关联对话与视频', () => {
 
     const dialog = await openTask(user, task.title)
     const panel = await within(dialog).findByRole('complementary')
-    expect(await within(panel).findByRole('alert')).toHaveTextContent('关联对话加载失败')
-    expect(within(panel).queryByText('你还没有关联到这张需求单的对话')).not.toBeInTheDocument()
-    expect(within(panel).queryByText('暂无关联对话')).not.toBeInTheDocument()
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('关联任务加载失败')
+    expect(within(panel).queryByText('你还没有关联到这张需求单的任务')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('暂无关联任务')).not.toBeInTheDocument()
     failed = false
     await user.click(within(panel).getByRole('button', { name: '重试' }))
     expect(await within(panel).findByRole('heading', { name: conversation.title })).toBeVisible()
@@ -166,15 +166,15 @@ describe('需求单关联对话与视频', () => {
     const panel = await within(dialog).findByRole('complementary')
     expect(await within(panel).findByRole('heading', { name: own.title })).toBeVisible()
     expect(
-      within(panel).getByRole('link', { name: `打开对话：${own.title}（新标签页）` }),
+      within(panel).getByRole('link', { name: `打开任务：${own.title}（新标签页）` }),
     ).toHaveAttribute('href', `/c/${own.id}`)
     expect(within(panel).queryByRole('heading', { name: unrelated.title })).not.toBeInTheDocument()
     if (canAudit) {
       expect(within(panel).getByRole('heading', { name: other.title })).toBeVisible()
-      expect(within(panel).queryByText('仅我的对话')).not.toBeInTheDocument()
+      expect(within(panel).queryByText('仅我的任务')).not.toBeInTheDocument()
     } else {
       expect(within(panel).queryByRole('heading', { name: other.title })).not.toBeInTheDocument()
-      expect(within(panel).getByText('仅我的对话')).toBeVisible()
+      expect(within(panel).getByText('仅我的任务')).toBeVisible()
     }
   })
 })

@@ -113,10 +113,10 @@ export function ConversationRoute({
   // 治理者看自己删掉的对话也是只读；主语是自己就不写成第三人称。
   const ownMine = view.ownerUserId !== null && view.ownerUserId === user?.id
   const ownerPhrase = ownMine
-    ? '自己的对话'
+    ? '自己的任务'
     : ownerName === undefined
       ? undefined
-      : `${ownerName} 的对话`
+      : `${ownerName} 的任务`
   const noteSubject = ownMine ? '自己' : ownerName === undefined ? '别人' : ` ${ownerName} `
   const chrome = useShellChrome()
   // 乐观气泡与在途那一轮存在对话级的 store 里，离开页面再回来仍在，读取池也据此判断本地是否有未完成的发送。

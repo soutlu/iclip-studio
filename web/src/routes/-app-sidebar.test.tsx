@@ -1,5 +1,5 @@
 import { useRouterState } from '@tanstack/react-router'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useCallback, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -66,7 +66,7 @@ describe('AppSidebar', () => {
     for (const name of ['新建任务', '搜索', '需求单', '资料库', '登录']) {
       expect(screen.getByRole('button', { name })).toBeVisible()
     }
-    expect(await screen.findByText('登录后查看对话')).not.toBeVisible()
+    expect(await screen.findByText('登录后查看任务')).not.toBeVisible()
 
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
 
@@ -98,7 +98,7 @@ describe('AppSidebar', () => {
     await screen.findByRole('button', { name: '用户菜单' })
 
     await user.click(screen.getByRole('button', { name: '搜索' }))
-    expect(await screen.findByRole('dialog', { name: '搜索对话' })).toBeVisible()
+    expect(await screen.findByRole('dialog', { name: '搜索任务' })).toBeVisible()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: '折叠侧边栏' })).toBeVisible()
@@ -122,7 +122,7 @@ describe('AppSidebar', () => {
 
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
 
-    expect(screen.getByText('登录后查看对话')).toBeVisible()
+    expect(screen.getByText('登录后查看任务')).toBeVisible()
     expect(screen.queryByRole('button', { name: '用户菜单' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '新建任务' }))
@@ -140,7 +140,7 @@ describe('AppSidebar', () => {
     await screen.findByRole('button', { name: '用户菜单' })
     await user.click(screen.getByRole('button', { name: '搜索' }))
 
-    expect(await screen.findByRole('dialog', { name: '搜索对话' })).toBeVisible()
+    expect(await screen.findByRole('dialog', { name: '搜索任务' })).toBeVisible()
   })
 
   it('已登录时点新建任务回首页', async () => {
@@ -202,9 +202,9 @@ describe('AppSidebar', () => {
       await user.click(screen.getByRole('button', { name: '折叠侧边栏' }))
 
       await user.keyboard(`{${modifier}>}k{/${modifier}}`)
-      const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
+      const dialog = await screen.findByRole('dialog', { name: '搜索任务' })
       expect(screen.getByRole('button', { name: '展开侧边栏', hidden: true })).toBeInTheDocument()
-      await user.type(within(dialog).getByRole('textbox', { name: '搜索对话' }), '广告')
+      await user.type(within(dialog).getByRole('textbox', { name: '搜索任务' }), '广告')
       const result = await within(dialog).findByRole('link', { name: conversation.title })
 
       if (modifier === 'Meta') {
@@ -216,7 +216,7 @@ describe('AppSidebar', () => {
       }
 
       await waitFor(() => expect(router.state.location.pathname).toBe(`/c/${conversation.id}`))
-      expect(screen.queryByRole('dialog', { name: '搜索对话' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: '搜索任务' })).not.toBeInTheDocument()
     },
   )
 
@@ -237,7 +237,7 @@ describe('AppSidebar', () => {
   })
 
   it.each([true, false])(
-    '折叠状态为 %s 时按权限禁用入口，快捷键也不打开搜索或离开当前页',
+    '折叠状态为 %s 时按权限置灰入口：点击与快捷键都不打开搜索或离开当前页，悬停说明原因',
     async (collapsed) => {
       loginAs(mockAuthUser, { permissions: ['tasks:read'] })
       const user = userEvent.setup()
@@ -245,18 +245,68 @@ describe('AppSidebar', () => {
       if (!collapsed) await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
       await screen.findByRole('button', { name: '用户菜单' })
 
-      expect(screen.getByRole('button', { name: '搜索' })).toBeDisabled()
-      expect(screen.getByRole('button', { name: '新建任务' })).toBeDisabled()
-      expect(screen.getByRole('button', { name: '需求单' })).toBeEnabled()
-      expect(screen.getByRole('button', { name: '资料库' })).toBeDisabled()
-      if (!collapsed) expect(screen.getByText('当前账号没有查看对话权限')).toBeVisible()
+      const search = screen.getByRole('button', { name: '搜索' })
+      const library = screen.getByRole('button', { name: '资料库' })
+      expect(search).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('button', { name: '新建任务' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+      expect(screen.getByRole('button', { name: '需求单' })).not.toHaveAttribute('aria-disabled')
+      expect(library).toHaveAttribute('aria-disabled', 'true')
+      if (!collapsed) expect(screen.getByText('当前账号没有查看任务权限')).toBeVisible()
+
+      await user.click(search)
+      await user.click(library)
       await user.keyboard('{Control>}k{/Control}')
       await user.keyboard('{Control>}{Alt>}n{/Alt}{/Control}')
 
-      expect(screen.queryByRole('dialog', { name: '搜索对话' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: '搜索任务' })).not.toBeInTheDocument()
       expect(router.state.location.pathname).toBe('/tasks')
+
+      await user.hover(library)
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('当前账号没有查看出片记录权限')
     },
   )
+
+  it('置灰的入口按 Tab 移上去也说明原因，按 Enter 不触发', async () => {
+    loginAs(mockAuthUser, { permissions: ['tasks:read'] })
+    const user = userEvent.setup()
+    const { router } = await renderSidebar(vi.fn(), '/tasks')
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+
+    const library = screen.getByRole('button', { name: '资料库' })
+    screen.getByRole('button', { name: '需求单' }).focus()
+    await user.tab()
+    expect(library).toHaveFocus()
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('当前账号没有查看出片记录权限')
+    await user.keyboard('{Enter}')
+    expect(router.state.location.pathname).toBe('/tasks')
+  })
+
+  it('图标栏悬停图标在右侧提示名字，带快捷键的跟在后面；展开后可用的行不再弹提示', async () => {
+    loginAs(mockAuthUser)
+    const user = userEvent.setup()
+    await renderSidebar()
+    await screen.findByRole('button', { name: '用户菜单' })
+
+    await user.hover(screen.getByRole('button', { name: '搜索' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('搜索任务')
+    expect(tip).toHaveTextContent('⌘K')
+
+    // jsdom 没有几何，移开时 Radix 的悬停宽限区收不起上一条提示，先按 Esc 关掉。
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
+    await user.hover(screen.getByRole('button', { name: '需求单' }))
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(/^需求单$/))
+
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await user.hover(screen.getByRole('button', { name: '资料库' }))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
 
   it('能看出片记录的账号点资料库去 /library', async () => {
     loginAs(mockAuthUser)
@@ -270,14 +320,14 @@ describe('AppSidebar', () => {
     expect(router.state.location.pathname).toBe('/library')
   })
 
-  it('只有带 users:manage 的账号看得到「治理」组的「全部对话」「审计」入口，分别去 /conversations 与 /audit', async () => {
+  it('只有带 users:manage 的账号看得到「治理」组的「全部任务」「审计」入口，分别去 /conversations 与 /audit', async () => {
     loginAs(mockAuthUser)
     const user = userEvent.setup()
     const plain = await renderSidebar()
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
     await screen.findByRole('button', { name: '用户菜单' })
     expect(screen.queryByRole('group', { name: '治理' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '全部对话' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '全部任务' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '审计' })).not.toBeInTheDocument()
     plain.unmount()
 
@@ -286,11 +336,11 @@ describe('AppSidebar', () => {
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
     await screen.findByRole('button', { name: '用户菜单' })
     const govern = screen.getByRole('group', { name: '治理' })
-    expect(within(govern).getByRole('button', { name: '全部对话' })).toBeVisible()
+    expect(within(govern).getByRole('button', { name: '全部任务' })).toBeVisible()
     expect(within(govern).getByRole('button', { name: '审计' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: '折叠侧边栏' }))
     expect(screen.getByRole('button', { name: '用户菜单' })).toBeVisible()
-    await user.click(await screen.findByRole('button', { name: '全部对话' }))
+    await user.click(await screen.findByRole('button', { name: '全部任务' }))
     expect(router.state.location.pathname).toBe('/conversations')
 
     await user.click(await screen.findByRole('button', { name: '审计' }))
@@ -320,10 +370,18 @@ describe('AppSidebar 对话区', () => {
     ).toEqual(['合集', '任务'])
     expect(screen.getByText('没归类的那段')).toBeVisible()
     expect(screen.queryByText('合集里的那段')).not.toBeInTheDocument()
+    const collectionRow = screen.getByRole('button', { name: '夏季亚麻系列 (1)' })
+    expect(collectionRow).toHaveAttribute('aria-expanded', 'false')
 
-    await user.click(screen.getByRole('button', { name: '夏季亚麻系列 (1)' }))
+    await user.click(collectionRow)
 
+    expect(collectionRow).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('合集里的那段')).toBeVisible()
+
+    await user.click(collectionRow)
+
+    expect(collectionRow).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('合集里的那段')).not.toBeInTheDocument()
   })
 
   it.each([false, true])('折叠再展开保留合集展开与对话节点，compact=%s', async (compact) => {
@@ -397,8 +455,8 @@ describe('AppSidebar 对话区', () => {
     await screen.findByText('跑完才想起要挂单')
 
     await user.click(screen.getByRole('button', { name: '跑完才想起要挂单 的更多操作' }))
-    await user.click(await screen.findByRole('menuitem', { name: '归属' }))
-    const dialog = await screen.findByRole('dialog', { name: '对话归属' })
+    await user.click(await screen.findByRole('menuitem', { name: '移到合集…' }))
+    const dialog = await screen.findByRole('dialog', { name: '任务归属' })
     await user.selectOptions(await within(dialog).findByLabelText('需求单'), task.id)
     await user.click(within(dialog).getByRole('button', { name: '保存' }))
 

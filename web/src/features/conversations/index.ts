@@ -37,9 +37,9 @@ export {
   SIDEBAR_ROW_CLASS,
   SIDEBAR_ROW_MENU_OPEN,
   SIDEBAR_ROW_TITLE_CLASS,
-  SIDEBAR_ROW_TRAILING_HIDDEN,
   SIDEBAR_ROW_TRAILING_SHOWN,
 } from './components/sidebar-row-classes'
+export { DisclosureChevron } from './components/disclosure'
 export { SidebarRowEditor } from './components/sidebar-row-editor'
 export { useSidebarRowEditing } from './components/use-sidebar-row-editing'
 export { SubAgentPanel } from './components/sub-agent-panel'

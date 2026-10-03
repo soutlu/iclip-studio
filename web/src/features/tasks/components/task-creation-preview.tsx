@@ -145,7 +145,7 @@ export function TaskCreationPreview({
         <Button disabled={sending} onClick={onBack} variant="outlined">
           返回修改
         </Button>
-        <span className="text-caption text-on-surface-variant max-sm:hidden">将创建新的对话</span>
+        <span className="text-caption text-on-surface-variant max-sm:hidden">将创建新的任务</span>
         <Button
           disabled={Boolean(blockedReason) || chosenAgent === null}
           loading={sending}

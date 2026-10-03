@@ -5,18 +5,18 @@ test('治理者从侧栏进「全部对话」，看到别人在跑的对话，�
   await page.goto('/')
   await login(page, 'governor')
 
-  await page.getByRole('button', { name: '全部对话' }).click()
+  await page.getByRole('button', { name: '全部任务' }).click()
   await expect(page).toHaveURL('/conversations')
-  await expect(page.getByRole('main', { name: '全部对话' })).toBeVisible()
+  await expect(page.getByRole('main', { name: '全部任务' })).toBeVisible()
 
   const running = page.getByRole('link', { name: /小王 · 秋季新品短片/ })
   await expect(running).toContainText('进行中')
   await expect(running).toContainText('小王')
   await expect(
-    page.getByRole('main', { name: '全部对话' }).getByRole('img', { name: /的封面$/ }),
+    page.getByRole('main', { name: '全部任务' }).getByRole('img', { name: /的封面$/ }),
   ).toHaveCount(11)
   await expect(running.getByRole('img', { name: /的封面$/ })).toHaveJSProperty('naturalWidth', 512)
-  await expect(page.getByRole('status', { name: '对话总数' })).toContainText('进行中')
+  await expect(page.getByRole('status', { name: '任务总数' })).toContainText('进行中')
 
   // 筛出小王，进出一段对话后仍该停在这一屏：页面上的返回按钮和浏览器后退都算。
   await page.getByRole('button', { name: '用户：用户', exact: true }).click()
@@ -29,10 +29,10 @@ test('治理者从侧栏进「全部对话」，看到别人在跑的对话，�
 
   await running.click()
   await expect(page).toHaveURL(/\/c\//)
-  await expect(page.getByText('只读 · 小王 的对话')).toBeVisible()
+  await expect(page.getByText('只读 · 小王 的任务')).toBeVisible()
   await expect(page.getByLabel('输入消息')).toBeHidden()
 
-  await page.getByRole('link', { name: '回到全部对话' }).click()
+  await page.getByRole('link', { name: '回到全部任务' }).click()
   await expect(page).toHaveURL(filteredUrl)
   await expect(page.getByRole('button', { name: '用户：小王', exact: true })).toBeVisible()
 
@@ -60,7 +60,7 @@ test('不是从全部对话点进来的会话，返回按钮回默认视图', as
   await expect(page).toHaveURL(/\/c\//)
   await expect(page.getByRole('note', { name: '只读说明' })).toBeVisible()
 
-  await page.getByRole('link', { name: '回到全部对话' }).click()
+  await page.getByRole('link', { name: '回到全部任务' }).click()
   await expect(page).toHaveURL('/conversations')
 })
 
@@ -70,8 +70,8 @@ test('全部对话的筛选在窄屏和深色主题下可用，关闭后保留�
   await page.clock.setFixedTime(new Date('2026-09-13T20:00:00Z'))
   await page.goto('/')
   await login(page, 'governor')
-  await page.getByRole('button', { name: '全部对话', exact: true }).click()
-  const audit = page.getByRole('main', { name: '全部对话' })
+  await page.getByRole('button', { name: '全部任务', exact: true }).click()
+  const audit = page.getByRole('main', { name: '全部任务' })
   await expect(audit.getByRole('link')).toHaveCount(12)
   await page.screenshot({ path: `${screenshotDir}/desktop-light.png`, animations: 'disabled' })
 

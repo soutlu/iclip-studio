@@ -1055,7 +1055,7 @@ describe('ConversationRoute', () => {
     const user = userEvent.setup()
     const { socket } = await renderConversation()
 
-    expect(await screen.findByText('只读 · 小王 的对话')).toBeVisible()
+    expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
     expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
     expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull()
@@ -1063,7 +1063,7 @@ describe('ConversationRoute', () => {
 
     const card = screen.getByRole('region', { name: '等你审批' })
     expect(within(card).queryByRole('button', { name: '同意' })).toBeNull()
-    expect(within(card).getByText('等对话的主人决定')).toBeVisible()
+    expect(within(card).getByText('等任务的主人决定')).toBeVisible()
     await user.keyboard('1')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
@@ -1100,7 +1100,7 @@ describe('ConversationRoute', () => {
     )
     await renderWithProviders(<ConversationRoute conversationId="c1" onForked={forked} />)
 
-    expect(await screen.findByText('只读 · 小王 的对话')).toBeVisible()
+    expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
     const buttons = await screen.findAllByRole('button', { name: '从这里另开一个任务' })
     const button = buttons[buttons.length - 1] as HTMLElement
     // 副本的 id 由服务端铸、没有幂等键；请求回来了但还没跳走的那一瞬再点一下，不能开出两段。
@@ -1141,7 +1141,7 @@ describe('ConversationRoute', () => {
     serveApprovalPage(other.id, '2026-09-04T00:00:00Z')
     const first = await renderConversation()
 
-    expect(await screen.findByText('已删除 · 小王 的对话')).toBeVisible()
+    expect(await screen.findByText('已删除 · 小王 的任务')).toBeVisible()
     expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王 已删除的任务')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
     first.unmount()
@@ -1149,7 +1149,7 @@ describe('ConversationRoute', () => {
     serveApprovalPage(mockAuthUser.id, '2026-09-04T00:00:00Z')
     await renderConversation()
 
-    expect(await screen.findByText('已删除 · 自己的对话')).toBeVisible()
+    expect(await screen.findByText('已删除 · 自己的任务')).toBeVisible()
     expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('这是自己已删除的任务')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
   })
