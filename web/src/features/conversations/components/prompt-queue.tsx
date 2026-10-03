@@ -33,7 +33,7 @@ export function PromptQueue({ canSteer, onDiscard, onSteer, prompts, readOnly }:
         <section aria-label="排队队列" className="flex w-full flex-col items-end gap-2">
           <p className="flex items-center gap-1 px-1.5 text-body-sm text-chat-muted-text">
             <Icon decorative name="mail" size="xs" />
-            队列 · <strong className="font-medium">{prompts.length} 个任务等待发送</strong>
+            {prompts.length} 条消息等着发
           </p>
           {prompts.map((prompt, index) => (
             <QueueRow

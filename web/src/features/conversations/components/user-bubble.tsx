@@ -17,6 +17,7 @@ import {
   useHoverPreview,
 } from '@/shared/ui/media-preview'
 import { CopyButton } from './copy-button'
+import { TOUCH_HIT_40 } from './touch-hit'
 import { useClampable } from './use-clampable'
 
 type UserBubbleProps = {
@@ -55,12 +56,13 @@ export function UserBubble({ className, content, editDisabled = false, onEdit }:
 
   return (
     // 复制、修改放在气泡左侧同一行，悬停才露出（触屏上常驻），不在气泡下面另占一行空白。
-    <div className={cn('group/bubble flex items-end justify-end gap-1', className)}>
-      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity ui-motion-s group-hover/bubble:opacity-100 focus-within:opacity-100 touch:opacity-100">
-        <CopyButton label="复制消息" text={copyText(content)} />
+    // 触屏上热区扩到 40px：按钮间距拉到 16px、与气泡隔 8px，热区不互相压住，也不盖到气泡上。
+    <div className={cn('group/bubble flex items-end justify-end gap-1 touch:gap-2', className)}>
+      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity ui-motion-s group-hover/bubble:opacity-100 focus-within:opacity-100 touch:gap-4 touch:opacity-100">
+        <CopyButton className={TOUCH_HIT_40} label="复制消息" text={copyText(content)} />
         {onEdit === undefined ? null : (
           <IconButton
-            className="text-chat-muted-text"
+            className={cn('text-chat-muted-text', TOUCH_HIT_40)}
             disabled={editDisabled}
             label="修改"
             name="edit"

@@ -185,12 +185,15 @@ export function ConversationRoute({
     inFlight && !turns.some((turn) => turn.triggerPromptId === inFlightPromptId)
       ? undefined
       : latestTurn
-  const workingLabel =
-    retry === undefined
-      ? hasAssistantOutput(currentTurn)
+  // 卡在审批上时轮次仍算在跑，但该轮到用户了：状态行换成「等你确认」、吉祥物停住，不再像在忙。
+  const awaitingApproval = approval !== undefined
+  const workingLabel = awaitingApproval
+    ? '等你确认'
+    : retry !== undefined
+      ? `没连上，正在重试（第 ${retry.nextAttempt} 次）…`
+      : hasAssistantOutput(currentTurn)
         ? '工作中…'
-        : '请求中…'
-      : `模型请求失败，正在重试（第 ${retry.nextAttempt}/${retry.maxAttempts} 次）…`
+        : '正在想…'
   const showEmptyState = view.status === 'ready' && turns.length === 0 && bubbles.length === 0
 
   /** 发送失败时撤销乐观气泡，输入框负责恢复内容；气泡由带同一 promptId 的轮或插话块接替。 */
@@ -222,7 +225,7 @@ export function ConversationRoute({
         })
 
   const fork = useForkConversation((forked) => {
-    toast.success('已另开一段对话')
+    toast.success('已另开一个任务')
     onForked?.(forked)
   })
   // 交给按轮 memo 的回调保持引用不变：末轮流式更新时历史轮不重渲，正文节点与其中的选区都还在。
@@ -318,7 +321,7 @@ export function ConversationRoute({
             {view.status === 'loading' ? (
               <p className="flex items-center gap-2 py-12 text-body-sm text-on-surface-variant">
                 <Icon className="animate-spin" decorative name="loading" size="sm" />
-                正在读取对话
+                正在读取任务
               </p>
             ) : null}
             {view.status === 'ready' ? (
@@ -351,7 +354,7 @@ export function ConversationRoute({
             ))}
             {working ? (
               <div className="self-start py-1">
-                <WorkingIndicator label={workingLabel} />
+                <WorkingIndicator label={workingLabel} still={awaitingApproval} />
               </div>
             ) : null}
             <PromptQueue
@@ -427,7 +430,7 @@ export function ConversationRoute({
                   <Icon decorative name="fork" size="sm" />
                 </span>
                 <span className="line-clamp-2">
-                  分叉自源对话第 {view.forkTurn} 轮。工作区与出片记录停在分叉那一刻。
+                  分叉自源任务第 {view.forkTurn} 轮。工作区与出片记录停在分叉那一刻。
                 </span>
               </span>
               {sourceLink(view.forkedFrom)}
@@ -445,14 +448,14 @@ export function ConversationRoute({
                 </span>
                 <span className="line-clamp-2">
                   这是{noteSubject}
-                  {deleted ? '已删除的对话' : '的对话'}，只能查看
+                  {deleted ? '已删除的任务' : '的任务'}，只能查看
                 </span>
               </span>
               {backLink}
             </p>
           ) : (
             <ConversationComposer
-              awaitingApproval={approval !== undefined}
+              awaitingApproval={awaitingApproval}
               busy={running !== undefined}
               contextTokens={view.contextTokens}
               editing={editing === null ? undefined : { parts: composerParts(editing.content) }}
