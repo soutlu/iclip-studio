@@ -65,9 +65,9 @@ describe('ConversationSearchDialog', () => {
     const user = userEvent.setup()
     await openDialog()
 
-    expect(screen.getByText('输入关键词搜索你的对话')).toBeVisible()
+    expect(screen.getByText('输入关键词搜索你的任务')).toBeVisible()
 
-    await user.type(screen.getByRole('textbox', { name: '搜索对话' }), '  亚麻  ')
+    await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '  亚麻  ')
 
     const results = await screen.findByRole('list', { name: '搜索结果' })
     expect(keyword).toBe('亚麻')
@@ -83,9 +83,9 @@ describe('ConversationSearchDialog', () => {
     const user = userEvent.setup()
     await openDialog()
 
-    await user.type(screen.getByRole('textbox', { name: '搜索对话' }), '亚麻')
+    await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '亚麻')
 
-    expect(await screen.findByText('没有匹配的对话')).toBeVisible()
+    expect(await screen.findByText('没有匹配的任务')).toBeVisible()
   })
 
   it('接口出错时把后端的错误文案就地显示出来', async () => {
@@ -97,7 +97,7 @@ describe('ConversationSearchDialog', () => {
     const user = userEvent.setup()
     await openDialog()
 
-    await user.type(screen.getByRole('textbox', { name: '搜索对话' }), '亚麻')
+    await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '亚麻')
 
     expect(await screen.findByText(/搜索服务不可用/)).toBeVisible()
   })
@@ -119,7 +119,7 @@ describe('ConversationSearchDialog', () => {
         .map((item) => item.textContent)
         .sort()
 
-    await user.type(screen.getByRole('textbox', { name: '搜索对话' }), '亚麻')
+    await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '亚麻')
     await screen.findByRole('list', { name: '搜索结果' })
     expect(titles()).toEqual(['亚麻衬衫二剪'])
 

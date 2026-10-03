@@ -332,7 +332,7 @@ describe('library viewer', () => {
       `https://iclip.test/library?video=${own?.id}`,
     )
     await user.click(within(viewer).getByRole('button', { name: '更多操作' }))
-    await user.click(await screen.findByRole('menuitem', { name: '打开来源对话' }))
+    await user.click(await screen.findByRole('menuitem', { name: '打开来源任务' }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/c/${own?.conversationId}`))
 
     // 别人的卡同样带着对话 id，但读者打不开那段对话，就不给入口

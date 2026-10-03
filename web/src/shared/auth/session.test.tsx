@@ -157,7 +157,7 @@ describe('已确认身份变化时的业务缓存', () => {
     await logout(user)
     await loginAsB(user)
 
-    expect(await screen.findByText('正在加载对话…')).toBeVisible()
+    expect(await screen.findByText('正在加载任务…')).toBeVisible()
     expect(screen.queryByRole('link', { name: '账号甲的对话' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '账号甲的合集 (0)' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '关联合集：未关联合集' })).toBeVisible()
@@ -177,7 +177,7 @@ describe('已确认身份变化时的业务缓存', () => {
       await refreshSessionUser()
     })
 
-    expect(await screen.findByText('正在加载对话…')).toBeVisible()
+    expect(await screen.findByText('正在加载任务…')).toBeVisible()
     expect(screen.queryByRole('link', { name: '账号甲的对话' })).not.toBeInTheDocument()
     releaseB()
     expect(await screen.findByRole('link', { name: '账号乙的对话' })).toBeVisible()
@@ -208,7 +208,7 @@ describe('已确认身份变化时的业务缓存', () => {
     const accounts = serveAccounts()
     const releaseA = accounts.holdSidebar(accountA)
     const user = await renderWorkspace()
-    await screen.findByText('正在加载对话…')
+    await screen.findByText('正在加载任务…')
     await logout(user)
     await waitFor(() => expect(accounts.sidebarRequests[0]?.signal.aborted).toBe(true))
     await loginAsB(user)

@@ -12,6 +12,7 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
 import { IconButton } from '@/shared/ui/button'
+import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/shared/ui/tooltip'
 import { useLoginPrompt } from './-login-prompt'
 import { revealClippedFocus } from './-reveal-clipped-focus'
 import { SidebarConversations } from './-sidebar-conversations'
@@ -28,6 +29,7 @@ type AppSidebarProps = {
 /** 折叠状态由应用壳持有，供拖柄与聊天、面板并排布局统一计算。 */
 export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: AppSidebarProps) {
   const rail = collapsed && !compact
+  const expandTip = useTabTooltip()
   const sidebarId = useId()
   const toggleId = useId()
   const restoreToggleFocusRef = useRef(false)
@@ -149,24 +151,28 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
           <div className="flex h-14 shrink-0 items-center px-2">
             {rail ? (
               // 图标栏只留品牌标志，它兼作展开开关：悬停或键盘聚焦时换成侧栏图标提示可展开。
-              <button
-                aria-controls={sidebarId}
-                aria-expanded={false}
-                aria-label="展开侧边栏"
-                className="group mx-auto grid size-10 ui-state cursor-pointer place-items-center rounded-md ui-focus"
-                id={toggleId}
-                onClick={toggleCollapsed}
-                title="展开侧边栏"
-                type="button"
-              >
-                <BrandMark className="group-hover:hidden group-focus-visible:hidden" />
-                <Icon
-                  className="hidden text-on-surface-variant group-hover:block group-focus-visible:block"
-                  decorative
-                  name="panel-left"
-                  size="md"
-                />
-              </button>
+              <TooltipRoot {...expandTip.rootProps}>
+                <TooltipTrigger asChild {...expandTip.triggerProps}>
+                  <button
+                    aria-controls={sidebarId}
+                    aria-expanded={false}
+                    aria-label="展开侧边栏"
+                    className="group mx-auto grid size-10 ui-state cursor-pointer place-items-center rounded-md ui-focus"
+                    id={toggleId}
+                    onClick={toggleCollapsed}
+                    type="button"
+                  >
+                    <BrandMark className="group-hover:hidden group-focus-visible:hidden" />
+                    <Icon
+                      className="hidden text-on-surface-variant group-hover:block group-focus-visible:block"
+                      decorative
+                      name="panel-left"
+                      size="md"
+                    />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">展开侧边栏</TooltipContent>
+              </TooltipRoot>
             ) : (
               <div className="flex min-w-0 flex-1 items-center gap-2 pl-1.5">
                 <BrandMark />
@@ -195,19 +201,20 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                 kbd="⌘⌥N"
                 label="新建任务"
                 disabled={session.isPending || Boolean(user && !canStart)}
+                disabledReason={user && !canStart ? '当前账号没有新建任务权限' : undefined}
                 onClick={startNew}
                 shortcut="Meta+Alt+N Control+Alt+N"
-                title={user && !canStart ? '当前账号没有新建任务权限' : '新建任务（⌘/Ctrl+Alt+N）'}
               />
               <SidebarAction
                 compact={rail}
+                hint="搜索任务"
                 icon="search"
                 kbd="⌘K"
                 label="搜索"
                 disabled={session.isPending || Boolean(user && !canRead)}
+                disabledReason={user && !canRead ? '当前账号没有查看任务权限' : undefined}
                 onClick={openSearch}
                 shortcut="Meta+K Control+K"
-                title={user && !canRead ? '当前账号没有查看对话权限' : '搜索对话（⌘/Ctrl+K）'}
               />
               <SidebarAction
                 compact={rail}
@@ -215,8 +222,8 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                 icon="task"
                 label="需求单"
                 disabled={session.isPending || Boolean(user && !canReadTasks)}
+                disabledReason={user && !canReadTasks ? '当前账号没有查看需求单权限' : undefined}
                 onClick={user ? () => navigate({ to: '/tasks' }) : requireLogin}
-                title={user && !canReadTasks ? '当前账号没有查看需求单权限' : undefined}
               />
               <SidebarAction
                 compact={rail}
@@ -224,8 +231,10 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                 icon="library"
                 label="资料库"
                 disabled={session.isPending || Boolean(user && !canReadLibrary)}
+                disabledReason={
+                  user && !canReadLibrary ? '当前账号没有查看出片记录权限' : undefined
+                }
                 onClick={user ? () => navigate({ to: '/library' }) : requireLogin}
-                title={user && !canReadLibrary ? '当前账号没有查看出片记录权限' : undefined}
               />
             </div>
             {canGovern ? (
@@ -244,7 +253,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                     compact={rail}
                     active={pathname === '/conversations'}
                     icon="preview"
-                    label="全部对话"
+                    label="全部任务"
                     onClick={() => void navigate({ to: '/conversations' })}
                   />
                   <SidebarAction
@@ -291,7 +300,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
               <SidebarConversations />
             ) : (
               <div className="min-h-0 flex-1 px-4.5 pt-4">
-                <p className="text-body-sm text-on-surface-faint">登录后查看对话</p>
+                <p className="text-body-sm text-on-surface-faint">登录后查看任务</p>
               </div>
             )}
           </div>
@@ -334,80 +343,110 @@ type SidebarActionProps = {
   compact?: boolean
   active?: boolean
   disabled?: boolean
+  /** 置灰的原因，置灰时悬停或按 Tab 移上去弹出；没有原因（如还在确认登录）就不弹。 */
+  disabledReason?: string | undefined
   /** 主操作：深色实心按钮，快捷键常驻右侧；绿色留给「生成」。 */
   emphasis?: boolean
+  /** 图标栏提示里的名字，缺省同 label；label 太短说不清时才传，如「搜索」提示成「搜索任务」。 */
+  hint?: string
   icon: IconName
   kbd?: string
   label: string
   onClick?: (() => void) | undefined
   shortcut?: string
-  title?: string | undefined
 }
 
+/**
+ * 侧栏导航行。图标栏里提示名字（带快捷键），置灰时提示原因，都走共用 Tooltip、出在右侧；
+ * 展开且可用时名字与快捷键已在行上，不弹提示。
+ * 置灰用 aria-disabled：原生 disabled 收不到指针、进不了 Tab 序，原因就弹不出来；置灰时点击与 Enter / Space 都被拦下。
+ */
 function SidebarAction({
   active = false,
   compact = false,
   disabled = false,
+  disabledReason,
   emphasis = false,
+  hint,
   icon,
   kbd,
   label,
   onClick,
   shortcut,
-  title,
 }: SidebarActionProps) {
+  const { rootProps, triggerProps } = useTabTooltip()
+  const tip = disabled ? disabledReason : compact ? (hint ?? label) : undefined
   return (
-    <button
-      aria-current={active ? 'page' : undefined}
-      aria-label={label}
-      aria-keyshortcuts={shortcut}
-      className={cn(
-        SIDEBAR_ACTION_CLASS,
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        emphasis
-          ? // 深色底上 ui-state 的禁用字色看不清，禁用只整体压淡。内距与间距沿用行几何，图标与下方导航图标同一列。
-            'mb-2 h-10 bg-inverse-surface font-semibold text-inverse-on-surface shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-2)] disabled:text-inverse-on-surface'
-          : 'text-on-surface-variant hover:text-on-surface',
-        active && cn(SIDEBAR_ROW_ACTIVE, 'text-on-surface'),
-        compact && 'mx-auto size-10 justify-center px-0',
-      )}
-      disabled={disabled}
-      onClick={onClick}
-      title={title ?? (compact ? label : undefined)}
-      type="button"
-    >
-      <Icon
-        className={cn(
-          'shrink-0',
-          emphasis
-            ? 'text-inverse-on-surface'
-            : active
-              ? 'text-on-surface'
-              : 'text-on-surface-variant',
-        )}
-        decorative
-        name={icon}
-        size="md"
-      />
-      {!compact && (
-        <span aria-hidden className="min-w-0 flex-1 truncate text-left">
-          {label}
-        </span>
-      )}
-      {kbd && !compact && (
-        <kbd
-          aria-hidden
+    // 提示始终挂着、只在有内容时弹：权限读完置灰与否变化时按钮不重建，焦点不丢。
+    <TooltipRoot {...rootProps} open={rootProps.open && tip !== undefined}>
+      <TooltipTrigger asChild {...triggerProps}>
+        <button
+          aria-current={active ? 'page' : undefined}
+          aria-disabled={disabled ? true : undefined}
+          aria-label={label}
+          aria-keyshortcuts={shortcut}
           className={cn(
-            'text-caption font-medium tracking-wide',
+            SIDEBAR_ACTION_CLASS,
+            'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
             emphasis
-              ? 'opacity-60'
-              : 'text-on-surface-faint opacity-0 transition-opacity duration-(--dur-s) group-hover:opacity-100',
+              ? // 深色底上 ui-state 的禁用字色看不清，禁用只整体压淡。内距与间距沿用行几何，图标与下方导航图标同一列。
+                'mb-2 h-10 bg-inverse-surface font-semibold text-inverse-on-surface shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-2)] aria-disabled:text-inverse-on-surface'
+              : 'text-on-surface-variant hover:not-aria-disabled:text-on-surface',
+            active && cn(SIDEBAR_ROW_ACTIVE, 'text-on-surface'),
+            compact && 'mx-auto size-10 justify-center px-0',
           )}
+          onClick={(event) => {
+            if (disabled) {
+              event.preventDefault()
+              return
+            }
+            onClick?.()
+          }}
+          type="button"
         >
-          {kbd}
-        </kbd>
+          <Icon
+            className={cn(
+              'shrink-0',
+              emphasis
+                ? 'text-inverse-on-surface'
+                : active
+                  ? 'text-on-surface'
+                  : 'text-on-surface-variant',
+            )}
+            decorative
+            name={icon}
+            size="md"
+          />
+          {!compact && (
+            <span aria-hidden className="min-w-0 flex-1 truncate text-left">
+              {label}
+            </span>
+          )}
+          {kbd && !compact && (
+            <kbd
+              aria-hidden
+              className={cn(
+                'text-caption font-medium tracking-wide',
+                emphasis
+                  ? 'opacity-60'
+                  : 'text-on-surface-faint opacity-0 transition-opacity duration-(--dur-s) group-hover:opacity-100',
+              )}
+            >
+              {kbd}
+            </kbd>
+          )}
+        </button>
+      </TooltipTrigger>
+      {tip !== undefined && (
+        <TooltipContent side="right">
+          {tip}
+          {/* 图标栏里行上没有快捷键，跟在名字后面；置灰时只说原因。 */}
+          {kbd && compact && !disabled && (
+            <kbd className="ml-2 font-sans text-inverse-on-surface/60">{kbd}</kbd>
+          )}
+        </TooltipContent>
       )}
-    </button>
+    </TooltipRoot>
   )
 }
 

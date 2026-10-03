@@ -40,7 +40,7 @@ export function CollectionDeleteDialog({
         <DialogBody className="flex flex-col gap-2 px-6 pt-2.5 pb-6">
           <p className="text-body break-all text-on-surface">{collection?.name}</p>
           <p className="text-body-sm text-on-surface-variant">
-            里面的对话不会被删掉，只是不再属于任何合集。
+            里面的任务不会被删掉，只是不再属于任何合集。
           </p>
         </DialogBody>
         <DialogFooter>

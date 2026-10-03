@@ -19,7 +19,7 @@ export const fetchTaskConversations = async (
 ): Promise<Conversation[]> => {
   const options = {
     cache: 'no-store' as const,
-    fallbackErrorMessage: '读取关联对话失败',
+    fallbackErrorMessage: '读取关联任务失败',
     signal,
   }
   if (!canAudit) {

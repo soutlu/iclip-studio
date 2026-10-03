@@ -123,7 +123,7 @@ export const searchConversations = async (
   apiFetch(
     `/conversations/search?q=${encodeURIComponent(keyword)}&limit=${SEARCH_LIMIT}`,
     conversationsPageSchema,
-    { signal, cache: 'no-store', fallbackErrorMessage: '搜索对话失败' },
+    { signal, cache: 'no-store', fallbackErrorMessage: '搜索任务失败' },
   )
 
 /** 拓扑里的行进池合并（合同 §5 水位规则），查询里留下合并后的行与成员、计数。 */
@@ -149,7 +149,7 @@ export const useSidebarTopology = (enabled: boolean, state: ConversationListStat
         await apiFetch(`/conversations?state=${state}`, zSidebarOut, {
           signal,
           cache: 'no-store',
-          fallbackErrorMessage: '读取对话列表失败',
+          fallbackErrorMessage: '读取任务列表失败',
         }),
       ),
     queryKey: conversationsQueryKeys.sidebar(state),
@@ -211,7 +211,7 @@ export const useMoreConversations = (
           collectionId ? `/conversations/by-collection/${collectionId}` : '/conversations/ungrouped'
         }?cursor=${encodeURIComponent(pageParam)}&state=${state}`,
         zConversationPageOut,
-        { signal, cache: 'no-store', fallbackErrorMessage: '加载更多对话失败' },
+        { signal, cache: 'no-store', fallbackErrorMessage: '加载更多任务失败' },
       )
       return { ...page, items: conversationRowsOf(client).mergeRows(page.items) }
     },
@@ -254,7 +254,7 @@ export const refreshConversationRow = async (
   try {
     const row = await apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
       cache: 'no-store',
-      fallbackErrorMessage: '读取对话失败',
+      fallbackErrorMessage: '读取任务失败',
       signal: controller.signal,
     })
     if (current()) store.mergeRows([row])
@@ -278,7 +278,7 @@ export const createConversation = async (
 ): Promise<Conversation> =>
   apiFetch('/conversations', conversationEnvelopeSchema, {
     body,
-    fallbackErrorMessage: '新建对话失败',
+    fallbackErrorMessage: '新建任务失败',
     method: 'POST',
   })
 
@@ -475,7 +475,7 @@ export const useSetConversationMembership = (
           conversationEnvelopeSchema,
           {
             body: { collectionId },
-            fallbackErrorMessage: '移动对话失败',
+            fallbackErrorMessage: '移动任务失败',
             method: 'PUT',
           },
         )

@@ -16,10 +16,9 @@ export const SIDEBAR_ROW_ACTIVE = 'bg-top-layer font-semibold shadow-[var(--shad
 /** 行内 ⋯ 菜单打开时保持悬停底色；选中行保留自己的底色，不加这一层。 */
 export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'
 
-// 行尾信息与 ⋯ 共用尾部槽位：悬停或菜单展开时 ⋯ 顶替信息。
-// 键盘聚焦只把 ⋯ 加进来、不收掉信息，读屏与看屏的键盘用户都还拿得到行尾状态。
-export const SIDEBAR_ROW_TRAILING_HIDDEN = 'group-hover:hidden group-has-data-[state=open]:hidden'
-// ⋯ 平时只是视觉隐藏、始终留在 Tab 序里：鼠标点开对话后再按 Tab 也走得到它，键盘焦点落进行里时现身。
+// 行尾的 ⋯ 排在状态与计数右边，出现时不顶掉它们。桌面上悬停、键盘焦点落进行里或菜单展开时才现身；
+// 触屏没有悬停，⋯ 常驻并压成弱灰，不抢标题。
+// ⋯ 平时只是视觉隐藏、始终留在 Tab 序里：鼠标点开对话后再按 Tab 也走得到它。
 // 负右距挂在按钮上（not-sr-only 会清掉槽位自己的 margin），让 24px 按钮里的图标右缘落在行内容右缘。
 export const SIDEBAR_ROW_TRAILING_SHOWN =
-  'sr-only *:-mr-1.25 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex'
+  'sr-only *:-mr-1.25 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex touch:not-sr-only touch:flex touch:*:text-on-surface-faint'

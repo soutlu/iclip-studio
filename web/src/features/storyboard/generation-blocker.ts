@@ -21,7 +21,7 @@ const blocker = (reason: string, transient = false): GenerationBlocker => ({ rea
 /** 出片按钮置灰的原因，能出片时为 undefined。出片发的是描述的当前版本，还在存或没存下就先别发，
  * 免得发出去的和文件里的不一样。一次只说一条：要用户动手或一直挡着的排在前，等一下就好的暂态在后。 */
 export const generationBlockerOf = (facts: GenerationFacts): GenerationBlocker | undefined => {
-  if (facts.readOnly) return blocker('只读对话，不能出片')
+  if (facts.readOnly) return blocker('只读任务，不能出片')
   if (facts.saveState === 'conflict') return blocker('先处理分镜的版本冲突')
   if (facts.saveState === 'error') return blocker('分镜没存下，先重试保存')
   if (facts.modelsStatus === 'unavailable') return blocker(MODELS_PENDING_TEXT.unavailable)

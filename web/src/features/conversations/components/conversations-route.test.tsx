@@ -99,9 +99,9 @@ const rowOf = (title: string, options?: { timeout: number }) =>
   screen.findByRole('link', { name: new RegExp(title) }, options)
 
 const expectTotals = (running: number, total: number) => {
-  const totals = screen.getByRole('status', { name: '对话总数' })
+  const totals = screen.getByRole('status', { name: '任务总数' })
   expect(totals).toHaveTextContent(`${running} 进行中`)
-  expect(totals).toHaveTextContent(`${total} 段`)
+  expect(totals).toHaveTextContent(`${total} 个`)
 }
 
 /** 三段对话：别人在跑的、自己没跑过的、别人跑完的。 */
@@ -181,12 +181,12 @@ describe('ConversationsRoute', () => {
     )
     await render()
 
-    expect(await screen.findByText('正在读取全部对话')).toHaveAttribute('role', 'status')
+    expect(await screen.findByText('正在读取全部任务')).toHaveAttribute('role', 'status')
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
 
     release()
     expect(await rowOf('我的片')).toBeVisible()
-    expect(screen.queryByText('正在读取全部对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('正在读取全部任务')).not.toBeInTheDocument()
   })
 
   it('封面先取需求单商品图，没有再取最新成片首帧，都没有就不放图', async () => {
@@ -493,7 +493,7 @@ describe('ConversationsRoute', () => {
     expect(await screen.findByText('已显示 50 / 55')).toBeVisible()
     expect(within(screen.getByRole('list')).getAllByRole('link')).toHaveLength(50)
     // 不用再点：页脚里没有按钮
-    expect(screen.queryByRole('button', { name: '展开显示更多对话' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '更多任务' })).not.toBeInTheDocument()
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(cursors).toEqual([null])
 

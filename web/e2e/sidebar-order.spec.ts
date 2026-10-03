@@ -26,8 +26,8 @@ test('侧栏改名后那一行留在原位', async ({ page }) => {
   await expect(rows).toHaveText(before.map((title) => (title === target ? renamed : title)))
 })
 
-// jsdom 不跑样式，行尾「悬停换 ⋯」的显隐只能在浏览器里看；⋯ 平时是视觉隐藏（槽位裁成 1px），按槽位宽度判断是否现身。
-test('行尾状态悬停时让位给 ⋯，从对话链接按 Tab 走得到 ⋯ 且状态仍在', async ({ page }) => {
+// jsdom 不跑样式，行尾 ⋯ 的显隐只能在浏览器里看；⋯ 平时是视觉隐藏（槽位裁成 1px），按槽位宽度判断是否现身。
+test('悬停时 ⋯ 在行尾状态右边现身、状态仍在，从对话链接按 Tab 也走得到 ⋯', async ({ page }) => {
   await page.goto('/')
   await login(page)
 
@@ -43,10 +43,11 @@ test('行尾状态悬停时让位给 ⋯，从对话链接按 Tab 走得到 ⋯ 
 
   await link.hover()
   await expect.poll(moreShown).toBe(true)
-  await expect(status).toBeHidden()
-
-  await page.mouse.move(800, 450)
   await expect(status).toBeVisible()
+
+  // 先让 ⋯ 收回去，下面按 Tab 后现身才算是焦点带出来的。
+  await page.mouse.move(800, 450)
+  await expect.poll(moreShown).toBe(false)
   await link.focus()
   await page.keyboard.press('Tab')
   await expect(more).toBeFocused()

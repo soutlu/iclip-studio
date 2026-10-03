@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('未登录进首页看到游客态外壳，点登录弹窗登录后就地变成已登录', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByText('登录后查看对话')).toBeVisible()
+  await expect(page.getByText('登录后查看任务')).toBeVisible()
   await expect(page.getByRole('button', { name: '用户菜单' })).toBeHidden()
 
   await page.getByRole('button', { name: '登录', exact: true }).click()

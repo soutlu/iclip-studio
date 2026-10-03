@@ -112,7 +112,7 @@ export function ApprovalCard({
             {DECISION_LABELS[decision]}
           </p>
         ) : readOnly ? (
-          <p className="text-caption text-chat-muted-text">等对话的主人决定</p>
+          <p className="text-caption text-chat-muted-text">等任务的主人决定</p>
         ) : (
           <>
             {/* 触屏没有数字键，提示不显示；按钮靠 ml-auto 留在右边。 */}
