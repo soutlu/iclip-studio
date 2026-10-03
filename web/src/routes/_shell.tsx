@@ -50,6 +50,9 @@ function AppShell() {
   const { state, update, persist } = useShellLayout()
   const [viewport, setViewport] = useState(() => window.innerWidth)
   const [mobileSidebarCollapsed, setMobileSidebarCollapsed] = useState(true)
+  const [composerFocusPending, setComposerFocusPending] = useState(false)
+  const requestComposerFocus = useCallback(() => setComposerFocusPending(true), [])
+  const consumeComposerFocus = useCallback(() => setComposerFocusPending(false), [])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   useEffect(() => {
@@ -128,6 +131,11 @@ function AppShell() {
   }
   const chrome = {
     sidebarOverlay: compact,
+    composerFocus: {
+      pending: composerFocusPending,
+      request: requestComposerFocus,
+      consume: consumeComposerFocus,
+    },
     ...(hasWorkbench && !compact
       ? {
           chat: {

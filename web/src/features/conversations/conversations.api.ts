@@ -111,7 +111,7 @@ export const useConversationAgents = (enabled: boolean) =>
       apiFetch('/conversations/agents', zConversationAgentsOut, {
         signal,
         cache: 'no-store',
-        fallbackErrorMessage: '读取 Agent 列表失败',
+        fallbackErrorMessage: '读取创作助手列表失败',
       }),
   })
 

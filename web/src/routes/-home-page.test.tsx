@@ -45,7 +45,7 @@ describe('首页真实数据流程', () => {
       }),
     )
     const { user, router } = await renderHome()
-    await screen.findByRole('button', { name: 'new-agent' })
+    await screen.findByText('new-agent')
     await user.click(screen.getByRole('button', { name: '关联合集：未关联合集' }))
     await user.type(screen.getByRole('combobox', { name: '搜索合集' }), '秋季短片')
     await user.click(screen.getByRole('button', { name: '新建“秋季短片”' }))
@@ -134,6 +134,37 @@ describe('首页真实数据流程', () => {
     expect(sends).toBe(1)
   })
 
+  it.each([
+    {
+      scene: '只有一个可用助手时只显示名字',
+      items: [{ id: 'only', name: '分镜策划' }],
+      picker: false,
+    },
+    {
+      scene: '多个可用助手时仍是下拉',
+      items: [
+        { id: 'only', name: '分镜策划' },
+        { id: 'replica', name: '视频复刻' },
+      ],
+      picker: true,
+    },
+  ])('$scene', async ({ items, picker }) => {
+    loginAs(mockAuthUser)
+    server.use(
+      http.get('*/api/conversations/agents', () => HttpResponse.json({ items, default: 'only' })),
+    )
+    const { user } = await renderHome()
+    expect(await screen.findByText('分镜策划')).toBeVisible()
+    const trigger = screen.queryByRole('button', { name: '分镜策划' })
+    if (!picker) {
+      expect(trigger).not.toBeInTheDocument()
+      return
+    }
+    if (trigger === null) throw new Error('多个助手时应有下拉按钮')
+    await user.click(trigger)
+    expect(await screen.findByRole('menuitem', { name: '视频复刻' })).toBeVisible()
+  })
+
   it('Agent 目录读取失败可重试，空目录不会创建对话', async () => {
     loginAs(mockAuthUser)
     server.use(
@@ -145,9 +176,9 @@ describe('首页真实数据流程', () => {
       http.get('*/api/conversations/agents', () => HttpResponse.json({ items: [], default: null })),
     )
     const { user } = await renderHome()
-    await user.click(await screen.findByRole('button', { name: 'Agent 加载失败' }))
-    await user.click(screen.getByRole('menuitem', { name: '重新加载 Agent' }))
-    await screen.findByRole('button', { name: '暂无可用 Agent' })
+    await user.click(await screen.findByRole('button', { name: '创作助手加载失败' }))
+    await user.click(screen.getByRole('menuitem', { name: '重新加载' }))
+    await screen.findByRole('button', { name: '暂无可用的创作助手' })
     pasteTextIntoComposer(screen.getByLabelText('输入消息'), '暂存内容')
     await user.click(screen.getByRole('button', { name: '发送' }))
     expect(mockConversations).toHaveLength(0)
