@@ -11,6 +11,7 @@ import { HomeRoute } from '@/features/home'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
+import { useShellChrome } from '@/shared/shell'
 import type { ComposerSubmission } from '@/shared/ui/composer'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
@@ -61,8 +62,8 @@ export function HomePage() {
     if (!validAgent || agentId === null || agents.isError) {
       toast.error(
         agents.isError
-          ? errorMessageOf(agents.error, '读取 Agent 列表失败')
-          : '请先选择可用的 Agent',
+          ? errorMessageOf(agents.error, '读取创作助手列表失败')
+          : '请先选择可用的创作助手',
       )
       return false
     }
@@ -75,58 +76,68 @@ export function HomePage() {
     }
   }
   const agentLabel = !user
-    ? '登录后选择 Agent'
+    ? '登录后选择创作助手'
     : !canRun
       ? '无创作权限'
       : agents.isPending
-        ? '正在加载 Agent…'
+        ? '正在加载创作助手…'
         : agents.isError
-          ? 'Agent 加载失败'
+          ? '创作助手加载失败'
           : chosenAgent
             ? chosenAgent.name
             : agentId
-              ? '所选 Agent 已不可用'
-              : '暂无可用 Agent'
+              ? '所选创作助手已不可用'
+              : '暂无可用的创作助手'
+  // 只有一个可用助手且已选中它时，下拉只会列出它自己，改为只显示名字。
+  const onlyAgent =
+    canRun && agents.isSuccess && agents.data.items.length === 1 ? agents.data.items[0] : undefined
+  const composerFocus = useShellChrome().composerFocus
 
   return (
     <>
       <HomeRoute
         agentPicker={
-          <MenuRoot>
-            <MenuTrigger
-              className="inline-flex h-(--control-height-md) max-w-48 ui-state items-center gap-1 rounded-full px-2 text-body font-medium text-on-surface ui-focus disabled:text-disabled-text"
-              disabled={!canRun || agents.isPending || start.isPending}
-            >
-              <span className="truncate">{agentLabel}</span>
-              <Icon
-                className="shrink-0 text-on-surface-variant"
-                decorative
-                name="expand"
-                size="sm"
-              />
-            </MenuTrigger>
-            <MenuSurface align="end">
-              {agents.isError ? (
-                <>
-                  <InlineAlert
-                    className="max-w-64 px-3 py-2"
-                    message={errorMessageOf(agents.error, '读取 Agent 列表失败')}
-                  />
-                  <MenuItem onSelect={() => void agents.refetch()}>重新加载 Agent</MenuItem>
-                </>
-              ) : agents.data?.items.length ? (
-                agents.data.items.map((item) => (
-                  <MenuItem key={item.id} onSelect={() => setChosenAgentId(item.id)}>
-                    {item.name}
-                  </MenuItem>
-                ))
-              ) : (
-                <p className="px-3 py-2 text-body-sm text-on-surface-variant" role="status">
-                  暂无可用 Agent
-                </p>
-              )}
-            </MenuSurface>
-          </MenuRoot>
+          onlyAgent !== undefined && chosenAgent?.id === onlyAgent.id ? (
+            <span className="inline-flex h-(--control-height-md) max-w-48 items-center px-2 text-body font-medium text-on-surface">
+              <span className="truncate">{onlyAgent.name}</span>
+            </span>
+          ) : (
+            <MenuRoot>
+              <MenuTrigger
+                className="inline-flex h-(--control-height-md) max-w-48 ui-state items-center gap-1 rounded-full px-2 text-body font-medium text-on-surface ui-focus disabled:text-disabled-text"
+                disabled={!canRun || agents.isPending || start.isPending}
+              >
+                <span className="truncate">{agentLabel}</span>
+                <Icon
+                  className="shrink-0 text-on-surface-variant"
+                  decorative
+                  name="expand"
+                  size="sm"
+                />
+              </MenuTrigger>
+              <MenuSurface align="end">
+                {agents.isError ? (
+                  <>
+                    <InlineAlert
+                      className="max-w-64 px-3 py-2"
+                      message={errorMessageOf(agents.error, '读取创作助手列表失败')}
+                    />
+                    <MenuItem onSelect={() => void agents.refetch()}>重新加载</MenuItem>
+                  </>
+                ) : agents.data?.items.length ? (
+                  agents.data.items.map((item) => (
+                    <MenuItem key={item.id} onSelect={() => setChosenAgentId(item.id)}>
+                      {item.name}
+                    </MenuItem>
+                  ))
+                ) : (
+                  <p className="px-3 py-2 text-body-sm text-on-surface-variant" role="status">
+                    暂无可用的创作助手
+                  </p>
+                )}
+              </MenuSurface>
+            </MenuRoot>
+          )
         }
         attachmentsEnabled={hasPermission(user, PERMISSION.uploadsWrite)}
         collectionPicker={
@@ -147,6 +158,8 @@ export function HomePage() {
             value={collectionId}
           />
         }
+        focusRequested={composerFocus?.pending}
+        onFocusHandled={composerFocus?.consume}
         onSend={send}
         preserveForLogin={!user}
         sending={start.isPending}

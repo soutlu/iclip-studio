@@ -10,6 +10,7 @@ import {
 import { canAuditAll, hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { useShellChrome } from '@/shared/shell'
 import { IconButton } from '@/shared/ui/button'
 import { useLoginPrompt } from './-login-prompt'
 import { revealClippedFocus } from './-reveal-clipped-focus'
@@ -61,13 +62,26 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
   // 全局帧订阅挂在侧边栏顶层，全部对话页与会话页共用同一份列表缓存。
   useLiveConversations(canRead)
 
+  const requestComposerFocus = useShellChrome().composerFocus?.request
   const startNew = useCallback(() => {
     if (session.isPending) return
     if (!user) return requireLogin()
     if (!canStart) return
     setSearchOpen(false)
+    // 已在首页时路由不变，抽屉不会随路由折叠，这里主动收起，焦点才能落到输入框上。
+    if (compact) onCollapsedChange(true)
+    requestComposerFocus?.()
     void navigate({ to: '/' })
-  }, [canStart, navigate, requireLogin, session.isPending, user])
+  }, [
+    canStart,
+    compact,
+    navigate,
+    onCollapsedChange,
+    requestComposerFocus,
+    requireLogin,
+    session.isPending,
+    user,
+  ])
 
   const openSearch = useCallback(() => {
     if (session.isPending) return

@@ -1,7 +1,9 @@
+import { useRouterState } from '@tanstack/react-router'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { ShellChromeContext } from '@/shared/shell'
 import {
   addMockCollection,
   addMockConversation,
@@ -12,6 +14,7 @@ import {
 } from '@/testing/mocks/handlers'
 import { renderWithProviders } from '@/testing/render'
 import { AppSidebar } from './-app-sidebar'
+import { HomePage } from './-home-page'
 import { LoginPromptProvider } from './-login-prompt'
 
 /** 测试壳持有折叠状态，与应用壳的状态归属一致。 */
@@ -19,6 +22,31 @@ function SidebarHarness({ compact = false }: { compact?: boolean }) {
   const [collapsed, setCollapsed] = useState(true)
   return <AppSidebar collapsed={collapsed} compact={compact} onCollapsedChange={setCollapsed} />
 }
+
+/** 与应用壳一样持有首页输入框的聚焦请求，首页路径下挂上首页。 */
+function ShellHarness({ compact }: { compact: boolean }) {
+  const [collapsed, setCollapsed] = useState(true)
+  const [pending, setPending] = useState(false)
+  const request = useCallback(() => setPending(true), [])
+  const consume = useCallback(() => setPending(false), [])
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  return (
+    <ShellChromeContext
+      value={{ sidebarOverlay: compact, composerFocus: { pending, request, consume } }}
+    >
+      <AppSidebar collapsed={collapsed} compact={compact} onCollapsedChange={setCollapsed} />
+      {pathname === '/' ? <HomePage /> : null}
+    </ShellChromeContext>
+  )
+}
+
+const renderShell = (initialPath: string, compact = false) =>
+  renderWithProviders(
+    <LoginPromptProvider value={vi.fn()}>
+      <ShellHarness compact={compact} />
+    </LoginPromptProvider>,
+    { initialPath },
+  )
 
 const renderSidebar = (requireLogin = vi.fn(), initialPath = '/', compact = false) =>
   renderWithProviders(
@@ -126,6 +154,40 @@ describe('AppSidebar', () => {
     await user.click(screen.getByRole('button', { name: '新建任务' }))
 
     expect(router.state.location.pathname).toBe('/')
+  })
+
+  it.each([false, true])('已在首页时点新建任务，输入框获得焦点，compact=%s', async (compact) => {
+    loginAs(mockAuthUser)
+    const user = userEvent.setup()
+    await renderShell('/', compact)
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+
+    await user.click(screen.getByRole('button', { name: '新建任务' }))
+
+    await waitFor(() => expect(screen.getByLabelText('输入消息')).toHaveFocus())
+    // 紧凑屏的抽屉随之收起，焦点仍留在输入框。
+    if (compact) expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('输入消息')).toHaveFocus()
+  })
+
+  it('在其他页面按 Ctrl+Alt+N，进首页后输入框获得焦点，之后再进首页不再抢焦点', async () => {
+    loginAs(mockAuthUser)
+    const user = userEvent.setup()
+    const { router } = await renderShell('/tasks')
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+    expect(screen.queryByLabelText('输入消息')).not.toBeInTheDocument()
+
+    await user.keyboard('{Control>}{Alt>}n{/Alt}{/Control}')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    await waitFor(() => expect(screen.getByLabelText('输入消息')).toHaveFocus())
+
+    await user.click(screen.getByRole('button', { name: '需求单' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/tasks'))
+    await router.navigate({ to: '/' })
+    expect(await screen.findByLabelText('输入消息')).not.toHaveFocus()
   })
 
   it.each(['Meta', 'Control'])(
