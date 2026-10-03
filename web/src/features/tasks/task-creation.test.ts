@@ -51,7 +51,7 @@ describe('buildTaskCreationDraft', () => {
     expect(draft?.content).toEqual([
       {
         type: 'text',
-        text: `请基于以下创作要求和参考素材，按创作流程要求生成可执行的 Storyboard，用中文回复。\n\n## 创作要求\n- 目标画幅：9:16\n- 目标时长：25 秒\n- 分辨率：1080p\n\n## 需求描述\n${original.inputs.creative_requirement}`,
+        text: `请基于以下创作要求和参考素材开始创作，用中文回复。\n\n## 创作要求\n- 目标画幅：9:16\n- 目标时长：25 秒\n- 分辨率：1080p\n\n## 需求描述\n${original.inputs.creative_requirement}`,
       },
       { type: 'image', source: { kind: 'url', url: 'https://assets.example.com/product-1.png' } },
       { type: 'image', source: { kind: 'url', url: 'https://assets.example.com/product-2.png' } },
@@ -74,7 +74,7 @@ describe('buildTaskCreationDraft', () => {
     expect(draft?.content.filter((part) => part.type === 'text')).toEqual([
       {
         type: 'text',
-        text: '请基于以下创作要求和参考素材，按创作流程要求生成可执行的 Storyboard，用中文回复。',
+        text: '请基于以下创作要求和参考素材开始创作，用中文回复。',
       },
     ])
     expect(draft?.content).toHaveLength(5)

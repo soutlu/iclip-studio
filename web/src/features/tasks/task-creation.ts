@@ -21,7 +21,7 @@ export type TaskCreationStarter = {
   start: (draft: TaskCreationDraft, agentId: string) => Promise<void>
 }
 
-const OPENING = '请基于以下创作要求和参考素材，按创作流程要求生成可执行的 Storyboard，用中文回复。'
+const OPENING = '请基于以下创作要求和参考素材开始创作，用中文回复。'
 
 /** 预览和提交共享同一份消息；原始需求保持逐字不变，固定开场不算有效创作内容。 */
 export function buildTaskCreationDraft(
