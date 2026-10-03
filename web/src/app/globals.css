@@ -7,6 +7,10 @@
 /* 深色变体：主题由 <html> 上的 .dark 决定（见 src/app/theme.ts），dark: 前缀跟着它走。 */
 @custom-variant dark (&:is(.dark *));
 
+/* 触屏变体：hover / group-hover 只在 (hover: hover) 下生效，悬停才露出的控件在触屏上永远看不见；
+   touch: 是它的补集，用来让这些控件在没有悬停的设备上常驻。 */
+@custom-variant touch (@media (hover: none));
+
 /* 唯一圆角标尺：同时驱动 CSS token 和 Tailwind rounded-* utilities。 */
 @theme {
   --radius-none: 0;

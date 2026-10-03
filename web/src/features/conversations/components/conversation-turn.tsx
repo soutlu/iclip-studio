@@ -73,7 +73,7 @@ export const ConversationTurn = memo(function ConversationTurn({
   )
 
   return (
-    // relative：历史轮的终态栏叠在本轮下方的空隙里，不占版面（见下）。
+    // relative：有悬停的设备上，历史轮的终态栏叠在本轮下方的空隙里，不占版面（见下）。
     <article className="group relative flex flex-col gap-3" aria-label={`第 ${turn.ordinal} 轮`}>
       {turn.content.length > 0 ? (
         <UserBubble content={turn.content} editDisabled={editDisabled} onEdit={edit} />
@@ -104,7 +104,10 @@ export const ConversationTurn = memo(function ConversationTurn({
         <TurnActions
           // 最新一轮常驻、占位；历史轮悬停才露出，不占位，叠在与下一轮之间的空隙里，
           // 所以列轮的容器要给轮间留出不少于这一栏高度（24px）的间距。
-          className={latest ? undefined : 'absolute inset-x-0 top-full pt-0.5'}
+          // 触屏上历史轮也常驻，于是回到文档流里占一行，和最新一轮一样，不再叠进空隙。
+          className={
+            latest ? undefined : 'absolute inset-x-0 top-full pt-0.5 touch:static touch:pt-0'
+          }
           copyText={copyText}
           endedAt={turn.endedAt}
           forkDisabled={forkDisabled}

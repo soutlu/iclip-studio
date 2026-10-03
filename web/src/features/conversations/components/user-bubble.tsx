@@ -54,9 +54,9 @@ export function UserBubble({ className, content, editDisabled = false, onEdit }:
   )
 
   return (
-    // 复制、修改放在气泡左侧同一行，悬停才露出，不在气泡下面另占一行空白。
+    // 复制、修改放在气泡左侧同一行，悬停才露出（触屏上常驻），不在气泡下面另占一行空白。
     <div className={cn('group/bubble flex items-end justify-end gap-1', className)}>
-      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity ui-motion-s group-hover/bubble:opacity-100 focus-within:opacity-100">
+      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity ui-motion-s group-hover/bubble:opacity-100 focus-within:opacity-100 touch:opacity-100">
         <CopyButton label="复制消息" text={copyText(content)} />
         {onEdit === undefined ? null : (
           <IconButton

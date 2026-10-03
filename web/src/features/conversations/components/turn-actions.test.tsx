@@ -40,58 +40,41 @@ describe('TurnActions', () => {
     expect(button).toHaveAttribute('title', '已复制')
   })
 
-  it('这轮没有 usage 时统计段整段不渲染', () => {
-    render(<TurnActions copyText="回复" endedAt={new Date().toISOString()} />)
-
-    expect(screen.queryByText(/输出/)).toBeNull()
-    expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument()
-  })
-
   it.each<[TranscriptUsage, string]>([
     [
       { inputTokens: 12340, cachedTokens: 4910, outputTokens: 1214 },
-      '输入 12.34k · 缓存 4.91k · 输出 1.21k',
-    ],
-    [{ inputTokens: 999, cachedTokens: 45, outputTokens: 8 }, '输入 999 · 缓存 45 · 输出 8'],
-    [
-      { inputTokens: 1000, cachedTokens: 2500, outputTokens: 30000 },
-      '输入 1k · 缓存 2.5k · 输出 30k',
-    ],
-    [{ inputTokens: 2048, outputTokens: 64 }, '输入 2.05k · 缓存 0 · 输出 64'],
-  ])('三段统计按 k 缩略渲染：%j → %s', (usage, line) => {
-    render(<TurnActions copyText="回复" usage={usage} />)
-
-    expect(screen.getByText(line)).toBeInTheDocument()
-  })
-
-  it('统计段的悬停 title 给千分位精确值', () => {
-    render(
-      <TurnActions
-        copyText="回复"
-        usage={{ inputTokens: 12340, cachedTokens: 4910, outputTokens: 1214 }}
-      />,
-    )
-
-    expect(screen.getByText('输入 12.34k · 缓存 4.91k · 输出 1.21k')).toHaveAttribute(
-      'title',
       '输入 12,340 · 缓存 4,910 · 输出 1,214',
+    ],
+    [{ inputTokens: 2048, outputTokens: 64 }, '输入 2,048 · 缓存 0 · 输出 64'],
+  ])('用量不常显，并进时刻的悬停提示第二行：%j → %s', (usage, line) => {
+    const ended = new Date()
+    render(<TurnActions copyText="回复" endedAt={ended.toISOString()} usage={usage} />)
+
+    // title 要逐字比对换行，getByTitle 的默认规整会把换行压成空格，所以先按时刻文字取元素。
+    expect(screen.getByText(/^\d{2}:\d{2}$/)).toHaveAttribute(
+      'title',
+      `${fullTitle(ended)}\n${line}`,
     )
+    expect(screen.queryByText(/输入/)).toBeNull()
   })
 
-  it('endedAt 缺失时时刻段不渲染', () => {
+  it('endedAt 缺失时时刻段不渲染，用量也无处显示', () => {
     render(<TurnActions copyText="回复" usage={{ inputTokens: 12340 }} />)
 
     expect(screen.queryByTitle(TIME_TITLE_RE)).toBeNull()
+    expect(screen.queryByTitle(/输入/)).toBeNull()
+    expect(screen.queryByText(/输入/)).toBeNull()
   })
 
-  it('endedAt 解析不出时时刻段不渲染，统计段照常', () => {
+  it('endedAt 解析不出时时刻段不渲染，用量也无处显示', () => {
     render(<TurnActions copyText="回复" endedAt="垃圾" usage={{ inputTokens: 12340 }} />)
 
     expect(screen.queryByTitle(TIME_TITLE_RE)).toBeNull()
-    expect(screen.getByText('输入 12.34k · 缓存 0 · 输出 0')).toBeInTheDocument()
+    expect(screen.queryByTitle(/输入/)).toBeNull()
+    expect(screen.queryByText(/输入/)).toBeNull()
   })
 
-  it('今天完成的时刻只显 HH:mm，title 留精确完整时刻', () => {
+  it('今天完成的时刻只显 HH:mm，没有用量时 title 只有精确完整时刻', () => {
     const ended = new Date()
     render(<TurnActions copyText="回复" endedAt={ended.toISOString()} />)
 
@@ -124,18 +107,18 @@ describe('TurnActions', () => {
   it('没给分叉回调时不出分叉按钮', () => {
     render(<TurnActions copyText="回复" />)
 
-    expect(screen.queryByRole('button', { name: '从这里分叉' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '从这里另开一段对话' })).toBeNull()
   })
 
   it('分叉按钮点一下把这一轮交给回调，忙的时候按不动', () => {
     const onFork = vi.fn()
     const { rerender } = render(<TurnActions copyText="回复" onFork={onFork} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '从这里分叉' }))
+    fireEvent.click(screen.getByRole('button', { name: '从这里另开一段对话' }))
     expect(onFork).toHaveBeenCalledTimes(1)
 
     rerender(<TurnActions copyText="回复" forkDisabled onFork={onFork} />)
-    expect(screen.getByRole('button', { name: '从这里分叉' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '从这里另开一段对话' })).toBeDisabled()
   })
 
   it('跨自然年完成的时刻补年份', () => {

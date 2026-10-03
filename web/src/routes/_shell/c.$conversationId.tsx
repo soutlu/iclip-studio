@@ -65,7 +65,7 @@ function ConversationIndexRoute() {
           params={{ conversationId: sourceId }}
           to="/c/$conversationId"
         >
-          看源对话
+          查看源对话
         </Link>
       )}
     />

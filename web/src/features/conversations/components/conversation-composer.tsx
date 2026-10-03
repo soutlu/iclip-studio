@@ -9,7 +9,6 @@ import { toast } from '@/shared/ui/toast'
 import { ContextUsageIndicator } from './context-usage-indicator'
 
 type ComposerEditing = {
-  ordinal: number
   parts: readonly ComposerPart[]
 }
 
@@ -74,7 +73,7 @@ export function ConversationComposer({
     <>
       {editing === undefined ? null : (
         <div className="mb-2 flex items-center justify-between rounded-sm border-[0.5px] border-chat-hairline bg-top-layer px-3 py-1.5 text-body-sm text-chat-secondary-text">
-          <span>正在修改第 {editing.ordinal} 轮</span>
+          <span>正在修改上一条消息</span>
           <button
             className="cursor-pointer ui-focus ui-motion-s hover:text-chat-message-text"
             onClick={onCancelEdit}
