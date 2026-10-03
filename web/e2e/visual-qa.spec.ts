@@ -17,7 +17,7 @@ test('会话页视觉验收：浅色 / 深色 / 运行中', async ({ page }) => 
   await page.getByRole('button', { name: '停止' }).waitFor()
   await page.getByLabel('输入消息').fill('顺便把配音也排上')
   await page.getByLabel('输入消息').press('Enter')
-  await expect(page.getByText('1 个任务等待发送')).toBeVisible()
+  await expect(page.getByText('1 条消息等着发')).toBeVisible()
   // 等待流式活动组可见再截图，避免捕获批次尚未到达的空态。
   await expect(page.getByRole('button', { name: /进行中：/ })).toBeVisible()
   // 移开指针并等待 hover 过渡结束，保证截图稳定。

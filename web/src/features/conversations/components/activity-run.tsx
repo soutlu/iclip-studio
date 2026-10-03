@@ -1,11 +1,11 @@
 /**
  * 参考 Kimi activity-run：卡头一行摘要加紧跟的小箭头；运行时自动展开，结束后自动收起，用户点过就以用户为准。
  * 收起时组里失败的那几次调用照样露在卡头下面——只看每次调用自己的状态，不看前后有没有补救。
+ * 卡头不画转圈：摘要已说明在忙，正在跑的那一步由工具行右侧的圈指出，同屏只留一个圈。
  */
 
 import { useEffect, useRef, useState } from 'react'
 import type { TranscriptInteraction } from '@/shared/transcript/vendor'
-import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import {
   failedTools,
@@ -110,14 +110,6 @@ export function ActivityRun({ interactions, items, liveFrameId, settled }: Activ
         onClick={() => setOpen(!open)}
         type="button"
       >
-        {running ? (
-          <Icon
-            className="shrink-0 animate-spin text-chat-status-running"
-            decorative
-            name="loading"
-            size="sm"
-          />
-        ) : null}
         {/* 摘要正文窄屏下截断；失败数、拒绝数与时长钉在后面不被截掉（照 mockup 的 .sum 与 .pin）。 */}
         <span aria-hidden className="flex min-w-0 items-center">
           <span className="min-w-0 truncate">

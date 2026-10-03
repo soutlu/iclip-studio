@@ -625,6 +625,15 @@ describe('活动组的开合', () => {
     ).toBeInTheDocument()
   })
 
+  it('运行中只在正在跑的工具行画转圈，卡头不另画；卡头的可访问名照旧标「进行中」', async () => {
+    await renderTurn(runningTurn)
+
+    const header = screen.getByRole('button', { name: /^进行中：/ })
+    // 卡头里的图形对读屏隐藏、没有可访问名，只能数图形：只剩展开箭头一个。
+    expect(header.querySelectorAll('svg')).toHaveLength(1)
+    expect(screen.getAllByRole('img', { name: '进行中' })).toHaveLength(1)
+  })
+
   it('卡头写失败次数；全部成功的组结束后收起，不露任何一行', async () => {
     await renderTurn(doneTurn)
     expect(screen.getByRole('button', { name: /（1 失败）/ })).toBeInTheDocument()

@@ -288,7 +288,7 @@ describe('ConversationRoute', () => {
     await waitFor(() => {
       expect(screen.getAllByText('再拆一段')).toHaveLength(1)
     })
-    expect(screen.getByRole('status')).toHaveTextContent('请求中…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
     expect(submitted).not.toBe('')
     expect(submittedContent).toEqual([{ text: '再拆一段', type: 'text' }])
@@ -296,7 +296,7 @@ describe('ConversationRoute', () => {
     // running prompt 不撤销乐观气泡，须由匹配的 turn.prompt 接替。
     socket.deliver(opsFrame([runningPrompt(submitted)], 11))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('请求中…')
+    expect(await screen.findByRole('status')).toHaveTextContent('正在想…')
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
 
     socket.deliver(
@@ -320,7 +320,7 @@ describe('ConversationRoute', () => {
       ),
     )
 
-    expect(await screen.findByRole('status')).toHaveTextContent('请求中…')
+    expect(await screen.findByRole('status')).toHaveTextContent('正在想…')
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
 
     socket.deliver(
@@ -364,7 +364,7 @@ describe('ConversationRoute', () => {
     )
 
     expect(await screen.findByText('思考过程')).toBeInTheDocument()
-    // 防止 completed turn 提前清除 inFlight，使收尾状态回退为请求中。
+    // 防止 completed turn 提前清除 inFlight，使收尾状态回退为正在想。
     expect(screen.getByRole('status')).toHaveTextContent('工作中…')
 
     socket.deliver(
@@ -428,7 +428,7 @@ describe('ConversationRoute', () => {
 
     // 时间线多了一份同样的字，气泡那份还在，本地也仍算在等自己那一轮。
     await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(2))
-    expect(screen.getByRole('status')).toHaveTextContent('请求中…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
   })
 
   it('点派活卡的「查看」：地址上点名这张卡的产物，右侧宿主据此打开', async () => {
@@ -464,7 +464,7 @@ describe('ConversationRoute', () => {
     expect(screen.queryAllByText('再拆一段')).toHaveLength(1)
   })
 
-  it('发出去后离开再回来，气泡和「请求中」还在：本地发送状态按对话保存，不随页面卸载', async () => {
+  it('发出去后离开再回来，气泡和「正在想」还在：本地发送状态按对话保存，不随页面卸载', async () => {
     const user = userEvent.setup()
     let release = () => {}
     const gate = new Promise<void>((resolve) => {
@@ -494,11 +494,11 @@ describe('ConversationRoute', () => {
     await screen.findByText(TAIL_TEXT)
 
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
-    expect(screen.getByRole('status')).toHaveTextContent('请求中…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
     release()
   })
 
-  it('离开期间发送失败：回来时气泡已撤，也不再显示请求中', async () => {
+  it('离开期间发送失败：回来时气泡已撤，也不再显示正在想', async () => {
     const user = userEvent.setup()
     let release = () => {}
     const gate = new Promise<void>((resolve) => {
@@ -571,7 +571,7 @@ describe('ConversationRoute', () => {
     socket.deliver(opsFrame([runningPrompt('p-run'), queuedPrompt('p-queued', '顺便配个音')], 11))
 
     expect(await screen.findByText('顺便配个音')).toBeInTheDocument()
-    expect(screen.getByText('1 个任务等待发送')).toBeInTheDocument()
+    expect(screen.getByText('1 条消息等着发')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '现在就发' }))
 
@@ -1028,16 +1028,17 @@ describe('ConversationRoute', () => {
     expect(within(card).getByRole('button', { name: /拒绝/ })).toBeInTheDocument()
   })
 
-  it('等审批时不给追加入口，输入框改口说在等谁', async () => {
+  it('等审批时不给追加入口，状态行与输入框都改口说轮到你确认', async () => {
     serveApprovalPage()
     const { socket } = await renderConversation()
     await screen.findByRole('region', { name: '等你审批' })
+    expect(screen.getByRole('status')).toHaveTextContent('等你确认')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
 
-    expect(await screen.findByText('1 个任务等待发送')).toBeInTheDocument()
+    expect(await screen.findByText('1 条消息等着发')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
-    expect(screen.getByText('等你审批后继续')).toBeInTheDocument()
+    expect(screen.getByText('先确认上面这一步')).toBeInTheDocument()
   })
 
   it('治理者看别人的对话是只读：页头标属主，没有输入框、修改与重新生成，审批和队列只展示', async () => {
@@ -1066,7 +1067,7 @@ describe('ConversationRoute', () => {
     await user.keyboard('1')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
-    expect(await screen.findByText('1 个任务等待发送')).toBeInTheDocument()
+    expect(await screen.findByText('1 条消息等着发')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
     expect(screen.queryByRole('button', { name: '撤回' })).toBeNull()
     expect(decided).toBe(false)
@@ -1100,7 +1101,7 @@ describe('ConversationRoute', () => {
     await renderWithProviders(<ConversationRoute conversationId="c1" onForked={forked} />)
 
     expect(await screen.findByText('只读 · 小王 的对话')).toBeVisible()
-    const buttons = await screen.findAllByRole('button', { name: '从这里另开一段对话' })
+    const buttons = await screen.findAllByRole('button', { name: '从这里另开一个任务' })
     const button = buttons[buttons.length - 1] as HTMLElement
     // 副本的 id 由服务端铸、没有幂等键；请求回来了但还没跳走的那一瞬再点一下，不能开出两段。
     await user.dblClick(button)
@@ -1122,13 +1123,13 @@ describe('ConversationRoute', () => {
     await renderWithProviders(
       <ConversationRoute
         conversationId="c1"
-        sourceLink={(sourceId) => <a href={`/c/${sourceId}`}>查看源对话</a>}
+        sourceLink={(sourceId) => <a href={`/c/${sourceId}`}>查看源任务</a>}
       />,
     )
 
     const note = await screen.findByRole('note', { name: '分叉来源' })
-    expect(note).toHaveTextContent('分叉自源对话第 2 轮')
-    expect(within(note).getByRole('link', { name: '查看源对话' })).toHaveAttribute(
+    expect(note).toHaveTextContent('分叉自源任务第 2 轮')
+    expect(within(note).getByRole('link', { name: '查看源任务' })).toHaveAttribute(
       'href',
       `/c/${source}`,
     )
@@ -1141,7 +1142,7 @@ describe('ConversationRoute', () => {
     const first = await renderConversation()
 
     expect(await screen.findByText('已删除 · 小王 的对话')).toBeVisible()
-    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王 已删除的对话')
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王 已删除的任务')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
     first.unmount()
 
@@ -1149,7 +1150,7 @@ describe('ConversationRoute', () => {
     await renderConversation()
 
     expect(await screen.findByText('已删除 · 自己的对话')).toBeVisible()
-    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('这是自己已删除的对话')
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('这是自己已删除的任务')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
   })
 

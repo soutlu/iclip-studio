@@ -52,7 +52,7 @@ describe('TurnActions', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('已复制')
   })
 
-  it.each(['重新生成', '从这里另开一段对话'])('可用时「%s」悬停提示就是它的名字', async (name) => {
+  it.each(['重新生成', '从这里另开一个任务'])('可用时「%s」悬停提示就是它的名字', async (name) => {
     const user = userEvent.setup()
     renderWithTooltip(<TurnActions copyText="回复" onFork={() => {}} onRegenerate={() => {}} />)
 
@@ -62,7 +62,7 @@ describe('TurnActions', () => {
 
   it.each([
     ['重新生成', '等这一条跑完再重新生成'],
-    ['从这里另开一段对话', '等这一条跑完再分叉'],
+    ['从这里另开一个任务', '等这一条跑完再分叉'],
   ])('置灰的「%s」悬停时提示原因：%s', async (name, reason) => {
     const user = userEvent.setup()
     renderWithTooltip(
@@ -102,12 +102,12 @@ describe('TurnActions', () => {
     await user.keyboard('{Enter}')
 
     await user.tab()
-    expect(screen.getByRole('button', { name: '从这里另开一段对话' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: '从这里另开一个任务' })).toHaveFocus()
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('等这一条跑完再分叉'))
     await user.keyboard('{Enter}')
 
     await user.click(screen.getByRole('button', { name: '重新生成' }))
-    await user.click(screen.getByRole('button', { name: '从这里另开一段对话' }))
+    await user.click(screen.getByRole('button', { name: '从这里另开一个任务' }))
     expect(onRegenerate).not.toHaveBeenCalled()
     expect(onFork).not.toHaveBeenCalled()
   })
@@ -115,7 +115,7 @@ describe('TurnActions', () => {
   it('没给分叉回调时不出分叉按钮', () => {
     renderWithTooltip(<TurnActions copyText="回复" />)
 
-    expect(screen.queryByRole('button', { name: '从这里另开一段对话' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '从这里另开一个任务' })).toBeNull()
   })
 
   it('分叉按钮点一下把这一轮交给回调', async () => {
@@ -123,7 +123,7 @@ describe('TurnActions', () => {
     const onFork = vi.fn()
     renderWithTooltip(<TurnActions copyText="回复" onFork={onFork} />)
 
-    await user.click(screen.getByRole('button', { name: '从这里另开一段对话' }))
+    await user.click(screen.getByRole('button', { name: '从这里另开一个任务' }))
     expect(onFork).toHaveBeenCalledTimes(1)
   })
 

@@ -6,6 +6,7 @@ import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { CopyButton } from './copy-button'
+import { TOUCH_HIT_40 } from './touch-hit'
 
 const exactTokens = (tokens: number): string => tokens.toLocaleString('zh-CN')
 
@@ -47,33 +48,39 @@ const TurnTime = ({ endedAt, usage }: { endedAt: string; usage: TranscriptUsage 
   const label = messageTime(endedAt, now)
   if (label === '') return null
   return (
-    <TooltipRoot onOpenChange={setOpen} open={open}>
-      <TooltipTrigger
-        asChild
-        onPointerDown={() => {
-          openAtPressRef.current = open
-        }}
-        // 拦下默认处理，Radix 才不会在点击时把提示关掉。
-        onClick={(event) => {
-          event.preventDefault()
-          const wasOpen = openAtPressRef.current ?? open
-          openAtPressRef.current = null
-          setOpen(!wasOpen)
-        }}
-      >
-        <button
-          className="shrink-0 rounded-xs text-caption text-chat-muted-text tabular-nums ui-focus"
-          type="button"
+    <>
+      {/* 间隔点把时刻和按钮隔开，时刻不再像第四个按钮；随时刻一起隐藏。 */}
+      <span aria-hidden className="mx-0.5 text-caption text-chat-muted-text">
+        ·
+      </span>
+      <TooltipRoot onOpenChange={setOpen} open={open}>
+        <TooltipTrigger
+          asChild
+          onPointerDown={() => {
+            openAtPressRef.current = open
+          }}
+          // 拦下默认处理，Radix 才不会在点击时把提示关掉。
+          onClick={(event) => {
+            event.preventDefault()
+            const wasOpen = openAtPressRef.current ?? open
+            openAtPressRef.current = null
+            setOpen(!wasOpen)
+          }}
         >
-          <time dateTime={endedAt}>{label}</time>
-        </button>
-      </TooltipTrigger>
-      {/* 完整时刻一行，有用量再接一行精确用量。 */}
-      <TooltipContent className="tabular-nums" side="top">
-        <p>{fullTime(endedAt)}</p>
-        {usage === undefined ? null : <p>{usageLine(usage)}</p>}
-      </TooltipContent>
-    </TooltipRoot>
+          <button
+            className="shrink-0 rounded-xs text-caption text-chat-muted-text tabular-nums ui-focus"
+            type="button"
+          >
+            <time dateTime={endedAt}>{label}</time>
+          </button>
+        </TooltipTrigger>
+        {/* 完整时刻一行，有用量再接一行精确用量。 */}
+        <TooltipContent className="tabular-nums" side="top">
+          <p>{fullTime(endedAt)}</p>
+          {usage === undefined ? null : <p>{usageLine(usage)}</p>}
+        </TooltipContent>
+      </TooltipRoot>
+    </>
   )
 }
 
@@ -110,16 +117,17 @@ export function TurnActions({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 transition-opacity ui-motion-s',
+        // 触屏上按钮热区扩到 40px，这一排随之撑到 40px 高、按钮间距拉到 16px，热区挨着而不重叠。
+        'flex items-center gap-2 transition-opacity ui-motion-s touch:min-h-10',
         !revealed && 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 touch:opacity-100',
         className,
       )}
     >
-      <div className="flex shrink-0 items-center gap-2">
-        <CopyButton text={copyText} />
+      <div className="flex shrink-0 items-center gap-2 touch:gap-4">
+        <CopyButton className={TOUCH_HIT_40} text={copyText} />
         {onRegenerate === undefined ? null : (
           <IconButton
-            className="text-chat-muted-text"
+            className={cn('text-chat-muted-text', TOUCH_HIT_40)}
             disabled={regenerateDisabled}
             label="重新生成"
             name="refresh"
@@ -131,9 +139,9 @@ export function TurnActions({
         )}
         {onFork === undefined ? null : (
           <IconButton
-            className="text-chat-muted-text"
+            className={cn('text-chat-muted-text', TOUCH_HIT_40)}
             disabled={forkDisabled}
-            label="从这里另开一段对话"
+            label="从这里另开一个任务"
             name="fork"
             onClick={onFork}
             size="xs"
