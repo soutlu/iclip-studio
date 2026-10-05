@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithTooltip } from '@/testing/render'
@@ -89,6 +89,87 @@ describe('Markdown 媒体', () => {
       'href',
       'https://example.test/b',
     )
+  })
+
+  it('裸写的图片地址显示成缩略图，点开进灯箱', async () => {
+    const user = userEvent.setup()
+    renderWithTooltip(<Markdown text={'主图 https://images.example.test/uploads/a.JPG\n'} />)
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '放大图片' }))
+
+    const dialog = screen.getByRole('dialog', { name: '图片' })
+    expect(within(dialog).getByRole('img', { name: '图片' })).toHaveAttribute(
+      'src',
+      'https://images.example.test/uploads/a.JPG',
+    )
+  })
+
+  it('带查询串的裸图片地址也显示成缩略图', () => {
+    renderWithTooltip(
+      <Markdown text={'<https://images.example.test/a.webp?x-oss-process=resize#top>\n'} />,
+    )
+
+    const thumbnail = within(screen.getByRole('button', { name: '放大图片' })).getByRole(
+      'presentation',
+    )
+    expect(thumbnail).toHaveAttribute(
+      'src',
+      'https://images.example.test/a.webp?x-oss-process=resize#top',
+    )
+  })
+
+  it('写了链接文字的图片链接与非图片的裸地址仍是链接', () => {
+    renderWithTooltip(
+      <Markdown
+        text={'[看图](https://images.example.test/a.jpg) 与 https://example.test/report.pdf\n'}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: '放大图片' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '看图' })).toHaveAttribute(
+      'href',
+      'https://images.example.test/a.jpg',
+    )
+    expect(screen.getByRole('link', { name: 'https://example.test/report.pdf' })).toHaveAttribute(
+      'href',
+      'https://example.test/report.pdf',
+    )
+  })
+
+  it('缩略图读不出来时退回原链接', () => {
+    renderWithTooltip(<Markdown text={'https://images.example.test/missing.png\n'} />)
+
+    fireEvent.error(
+      within(screen.getByRole('button', { name: '放大图片' })).getByRole('presentation'),
+    )
+
+    expect(screen.queryByRole('button', { name: '放大图片' })).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'https://images.example.test/missing.png' }),
+    ).toHaveAttribute('href', 'https://images.example.test/missing.png')
+  })
+
+  it('同一单元格里的两个裸图片地址各显示一张缩略图，中间的文字照常保留', () => {
+    renderWithTooltip(
+      <Markdown
+        text={
+          '| 角色 | 素材地址 |\n| :--- | :--- |\n| 猫 | https://images.example.test/uploads/a.jpg ； 单只侧视另见 https://images.example.test/task-styles/b.png |\n'
+        }
+      />,
+    )
+
+    const [, cell] = screen.getAllByRole('cell')
+    if (cell === undefined) throw new Error('缺少素材地址单元格')
+    const thumbnails = within(cell)
+      .getAllByRole('button', { name: '放大图片' })
+      .map((button) => within(button).getByRole('presentation'))
+    expect(thumbnails.map((image) => image.getAttribute('src'))).toEqual([
+      'https://images.example.test/uploads/a.jpg',
+      'https://images.example.test/task-styles/b.png',
+    ])
+    expect(cell).toHaveTextContent('； 单只侧视另见')
+    expect(within(cell).queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('正文视频换成不带原生控件的共享播放器，放大进灯箱', async () => {

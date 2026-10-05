@@ -365,24 +365,26 @@ function MediaWall({
 }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {items.map((item) => (
-        <figure className="flex w-[120px] min-w-0 flex-col gap-1.5" key={item.url}>
-          <button
-            className="cursor-zoom-in overflow-hidden rounded-sm ui-focus"
-            onClick={() => onOpen({ kind: 'image', name: item.caption, url: item.url })}
-            type="button"
-          >
-            <img
-              alt={item.caption}
-              className="block h-[90px] w-[120px] object-cover"
-              src={item.url}
-            />
-          </button>
-          <figcaption className="truncate text-body-sm text-chat-secondary-text">
-            {item.caption}
-          </figcaption>
-        </figure>
-      ))}
+      {items.map((item) => {
+        // 没有标题的图（如读图）只画图本身，可访问名称退回「图片」。
+        const name = item.caption ?? '图片'
+        return (
+          <figure className="flex w-[120px] min-w-0 flex-col gap-1.5" key={item.url}>
+            <button
+              className="cursor-zoom-in overflow-hidden rounded-sm ui-focus"
+              onClick={() => onOpen({ kind: 'image', name, url: item.url })}
+              type="button"
+            >
+              <img alt={name} className="block h-[90px] w-[120px] object-cover" src={item.url} />
+            </button>
+            {item.caption === undefined ? null : (
+              <figcaption className="truncate text-body-sm text-chat-secondary-text">
+                {item.caption}
+              </figcaption>
+            )}
+          </figure>
+        )
+      })}
     </div>
   )
 }

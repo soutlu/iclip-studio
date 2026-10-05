@@ -146,10 +146,10 @@ def search_results(
 
 
 class MediaGridItem(TypedDict):
-    """媒体网格中的 URL 与标题。"""
+    """媒体网格中的一张图：URL，和可选的图下标题。"""
 
     url: str
-    caption: str
+    caption: NotRequired[str]
 
 
 class MediaGridItems(TypedDict):
@@ -159,12 +159,17 @@ class MediaGridItems(TypedDict):
     note: NotRequired[str]
 
 
-def media_grid(items: Iterable[tuple[str, str]], *, note: str | None = None) -> MediaGridItems:
-    """统一构造媒体网格结果。"""
+def media_grid(
+    items: Iterable[tuple[str, str | None]], *, note: str | None = None
+) -> MediaGridItems:
+    """统一构造媒体网格结果；标题为 None 的图不带 ``caption`` 键。"""
 
-    grid: MediaGridItems = {
-        "items": [MediaGridItem(url=url, caption=caption) for url, caption in items]
-    }
+    grid: MediaGridItems = {"items": []}
+    for url, caption in items:
+        item: MediaGridItem = {"url": url}
+        if caption is not None:
+            item["caption"] = caption
+        grid["items"].append(item)
     if note is not None:
         grid["note"] = note
     return grid

@@ -358,6 +358,25 @@ describe('工具结果按 view 选渲染器', () => {
     expect(screen.getByText('S02 · 场景全景')).toBeInTheDocument()
   })
 
+  it('media_grid 没带标题的图只画图、不写标题，带标题的照常写', async () => {
+    await renderTurn(
+      turnWithFrames([
+        mediaFrame({
+          items: [
+            { url: 'https://example.com/a.png' },
+            { caption: 'S02 · 场景全景', url: 'https://example.com/b.png' },
+          ],
+        }),
+      ]),
+    )
+
+    const figures = screen.getAllByRole('figure')
+    expect(figures).toHaveLength(2)
+    expect(figures[0]).toContainElement(screen.getByRole('img', { name: '图片' }))
+    expect(figures[0]?.querySelector('figcaption')).toBeNull()
+    expect(figures[1]).toHaveTextContent('S02 · 场景全景')
+  })
+
   it('点一张图开灯箱', async () => {
     const user = userEvent.setup()
     await renderTurn(turnWithFrames([mediaFrame(TWO_ITEMS)]))

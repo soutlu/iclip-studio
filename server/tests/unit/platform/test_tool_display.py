@@ -115,4 +115,7 @@ def test_notes_only_carry_what_was_given() -> None:
     assert media_grid([("https://cdn.test/a.png", "S1-1")]) == {
         "items": [{"url": "https://cdn.test/a.png", "caption": "S1-1"}]
     }
+    assert media_grid([("https://cdn.test/a.png", None)]) == {
+        "items": [{"url": "https://cdn.test/a.png"}]
+    }
     assert media_grid([], note="0 张") == {"items": [], "note": "0 张"}
