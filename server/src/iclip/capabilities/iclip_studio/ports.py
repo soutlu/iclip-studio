@@ -9,6 +9,11 @@ from typing import Protocol
 class BreakdownError(RuntimeError):
     """视频拆解没有产出可用的文档。"""
 
+    def __init__(self, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        """再调一次有没有可能成功：对方临时出错或答得不完整是 True，请求被拒或等到超时是 False。"""
+
 
 @dataclass(frozen=True, slots=True)
 class SampledVideo:

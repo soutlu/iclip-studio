@@ -9,7 +9,16 @@ from typing import Any
 
 import httpx
 import pytest
-from pydantic_ai import ModelRetry, ToolFailed
+from pydantic_ai import Agent, ModelRetry, ToolFailed
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    RetryPromptPart,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
@@ -18,6 +27,7 @@ from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
 from iclip.capabilities.iclip_studio.breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.capability import (
+    BREAKDOWN_RETRIES,
     IclipStudio,
     IclipStudioToolset,
     breakdown_doc_path,
@@ -112,9 +122,8 @@ def upstream() -> Upstream:
     return Upstream()
 
 
-@pytest.fixture
-def ctx() -> RunContext[object]:
-    deps = AgentRunDeps(
+def make_deps() -> AgentRunDeps:
+    return AgentRunDeps(
         principal=Principal(
             kind="user",
             user_id=USER,
@@ -125,12 +134,29 @@ def ctx() -> RunContext[object]:
         conversation_id="thread-1",
         user_name="logan",
     )
-    return RunContext[object](deps=deps, model=TestModel(), usage=RunUsage(), messages=[])
 
 
-def toolset(
+def make_ctx(*, retry: int = 0) -> RunContext[object]:
+    """第 ``retry`` 次重试时的运行上下文；预算与工具登记的一致。"""
+
+    return RunContext[object](
+        deps=make_deps(),
+        model=TestModel(),
+        usage=RunUsage(),
+        messages=[],
+        retry=retry,
+        max_retries=BREAKDOWN_RETRIES,
+    )
+
+
+@pytest.fixture
+def ctx() -> RunContext[object]:
+    return make_ctx()
+
+
+def capability_for(
     files: FakeFileStore, shared: FakeShared, upstream: Upstream, sampler: FakeSampler
-) -> IclipStudioToolset[object]:
+) -> IclipStudio[object]:
     model = ArkBreakdownModel(
         httpx.AsyncClient(transport=httpx.MockTransport(upstream)),
         url="https://vision.test/responses",
@@ -141,7 +167,13 @@ def toolset(
         space=FileSpace(store=files, namespace=workspace_namespace),
         breakdown=VideoBreakdown(model=model, sampler=sampler),
         shared=shared,
-    ).get_toolset()
+    )
+
+
+def toolset(
+    files: FakeFileStore, shared: FakeShared, upstream: Upstream, sampler: FakeSampler
+) -> IclipStudioToolset[object]:
+    return capability_for(files, shared, upstream, sampler).get_toolset()
 
 
 def user_content(upstream: Upstream) -> list[dict[str, Any]]:
@@ -255,16 +287,17 @@ async def test_a_video_broken_down_elsewhere_is_reused_without_the_model(
     assert not shared.stored, "取来的不再回存"
 
 
-@pytest.mark.parametrize(
-    "response",
-    [
-        httpx.Response(200, json=responses_body(status="incomplete")),
-        httpx.Response(200, json=responses_body(text="   ")),
-        httpx.Response(500, text="upstream exploded"),
-        httpx.Response(200, text="not json"),
-    ],
-)
-async def test_an_unusable_answer_fails_without_leaving_anything_behind(
+RETRYABLE = [
+    httpx.Response(200, json=responses_body(status="incomplete")),
+    httpx.Response(200, json=responses_body(text="   ")),
+    httpx.Response(500, text="upstream exploded"),
+    httpx.Response(429, text="slow down"),
+    httpx.Response(200, text="not json"),
+]
+
+
+@pytest.mark.parametrize("response", RETRYABLE)
+async def test_an_unusable_answer_asks_for_another_call_and_leaves_nothing_behind(
     files: FakeFileStore,
     shared: FakeShared,
     upstream: Upstream,
@@ -274,24 +307,149 @@ async def test_an_unusable_answer_fails_without_leaving_anything_behind(
     upstream.response = response
     tools = toolset(files, shared, upstream, FakeSampler(seconds=5))
 
-    with pytest.raises(ToolFailed, match="没拆解成功"):
+    with pytest.raises(ModelRetry) as raised:
         await tools.breakdown_video(ctx, VIDEO)
 
+    assert raised.value.message == "拆解失败，再调用一次。", "原始报错只进日志，不给模型"
     assert await files.read(NAMESPACE, PATH) is None
     assert not shared.stored
+
+
+async def test_the_last_allowed_attempt_ends_in_a_final_failure(
+    files: FakeFileStore, shared: FakeShared, upstream: Upstream
+) -> None:
+    upstream.response = httpx.Response(500, text="upstream exploded")
+    tools = toolset(files, shared, upstream, FakeSampler(seconds=5))
+
+    with pytest.raises(ToolFailed) as raised:
+        await tools.breakdown_video(make_ctx(retry=BREAKDOWN_RETRIES), VIDEO)
+
+    assert raised.value.message == "拆解失败，不要重试，告诉用户稍后再试。"
+
+
+async def test_a_rejected_request_is_not_retried(
+    files: FakeFileStore, shared: FakeShared, upstream: Upstream, ctx: RunContext[object]
+) -> None:
+    """4xx 是请求本身被拒，原样再发一次也是白付。"""
+
+    upstream.response = httpx.Response(400, text="payload too large")
+    tools = toolset(files, shared, upstream, FakeSampler(seconds=5))
+
+    with pytest.raises(ToolFailed, match="不要重试，告诉用户稍后再试"):
+        await tools.breakdown_video(ctx, VIDEO)
+
+
+async def test_a_timeout_is_not_retried(
+    files: FakeFileStore, shared: FakeShared, ctx: RunContext[object]
+) -> None:
+    def hang(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    model = ArkBreakdownModel(
+        httpx.AsyncClient(transport=httpx.MockTransport(hang)),
+        url="https://vision.test/responses",
+        api_key="ark",
+        model="seed-vision",
+    )
+    tools = IclipStudio[object](
+        space=FileSpace(store=files, namespace=workspace_namespace),
+        breakdown=VideoBreakdown(model=model, sampler=FakeSampler(seconds=5)),
+        shared=shared,
+    ).get_toolset()
+
+    with pytest.raises(ToolFailed, match="不要重试，告诉用户稍后再试"):
+        await tools.breakdown_video(ctx, VIDEO)
 
 
 async def test_a_video_that_cannot_be_read_fails_before_the_model_is_called(
     files: FakeFileStore, shared: FakeShared, upstream: Upstream, ctx: RunContext[object]
 ) -> None:
     sampler = FakeSampler(seconds=5)
-    sampler.error = MediaError("取不到素材")
+    sampler.error = MediaError("ffprobe 失败（退出码 1）")
     tools = toolset(files, shared, upstream, sampler)
 
-    with pytest.raises(ToolFailed, match="取不到素材"):
+    with pytest.raises(ToolFailed) as raised:
         await tools.breakdown_video(ctx, VIDEO)
 
+    assert raised.value.message == "拆解失败，视频无法打开，不要重试，告诉用户换一条视频。"
     assert not upstream.requests
+
+
+async def run_agent_that_keeps_calling(
+    capability: IclipStudio[object], *, video_url: str = VIDEO
+) -> list[ModelMessage]:
+    """模型每次收到重试提示就原样再调一次，直到拿到工具结果。"""
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        last = messages[-1].parts[-1]
+        if len(messages) == 1 or isinstance(last, RetryPromptPart):
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "breakdown_video",
+                        {"video_url": video_url},
+                        tool_call_id=f"c{len(messages)}",
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart("本轮结束。")])
+
+    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
+        "拆解参考视频。", deps=make_deps()
+    )
+    return result.all_messages()
+
+
+async def test_a_failing_upstream_is_called_four_times_and_the_run_survives(
+    files: FakeFileStore, shared: FakeShared, upstream: Upstream
+) -> None:
+    """首次加三次重试；预算用完后模型拿到的是失败结果，整次运行不被中止。"""
+
+    upstream.response = httpx.Response(500, text="upstream exploded")
+    capability = capability_for(files, shared, upstream, FakeSampler(seconds=5))
+
+    messages = await run_agent_that_keeps_calling(capability)
+
+    assert len(upstream.requests) == 1 + BREAKDOWN_RETRIES
+    retries = [p for m in messages for p in m.parts if isinstance(p, RetryPromptPart)]
+    assert len(retries) == BREAKDOWN_RETRIES
+    (final,) = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
+    assert "不要重试，告诉用户稍后再试" in final.model_response_str()
+
+
+async def test_a_retry_that_succeeds_delivers_the_document(
+    files: FakeFileStore, shared: FakeShared
+) -> None:
+    answers = [
+        httpx.Response(200, json=responses_body(status="incomplete")),
+        httpx.Response(200, json=responses_body()),
+    ]
+    upstream = Upstream()
+    calls = iter(answers)
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        upstream.requests.append(json.loads(request.content))
+        return next(calls)
+
+    model = ArkBreakdownModel(
+        httpx.AsyncClient(transport=httpx.MockTransport(answer)),
+        url="https://vision.test/responses",
+        api_key="ark",
+        model="seed-vision",
+    )
+    capability = IclipStudio[object](
+        space=FileSpace(store=files, namespace=workspace_namespace),
+        breakdown=VideoBreakdown(model=model, sampler=FakeSampler(seconds=5)),
+        shared=shared,
+    )
+
+    messages = await run_agent_that_keeps_calling(capability)
+
+    (final,) = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
+    assert final.model_response_str() == DONE
+    stored = await files.read(NAMESPACE, PATH)
+    assert stored is not None
+    assert stored.content == DOCUMENT
 
 
 async def test_the_address_must_be_http(
@@ -303,8 +461,9 @@ async def test_the_address_must_be_http(
 
     outcome = validator(ctx, video_url="ref.mp4")
     assert inspect.isawaitable(outcome)
-    with pytest.raises(ModelRetry):
+    with pytest.raises(ModelRetry) as raised:
         await outcome
+    assert raised.value.message == "视频地址不对，输入提供的视频的 url。"
 
 
 def test_documents_of_two_videos_with_the_same_name_do_not_collide() -> None:
