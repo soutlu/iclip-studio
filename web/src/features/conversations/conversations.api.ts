@@ -65,10 +65,9 @@ export const conversationsQueryKeys = {
   /** 治理者的全部对话，按筛选条件分键；auditAll 作前缀整体失效。 */
   audit: (filters: object) => [...AUDIT_KEY, filters] as const,
   auditAll: AUDIT_KEY,
-  /** 用户手动展开的额外分页；拓扑刷新时整体丢弃。 */
+  /** 侧栏任务区与各合集从头读起的分页列表；刷新时整体失效，已读的页按新游标原位重拉。 */
   moreAll: MORE_KEY,
-  more: (bucket: string, cursor: string, state: ConversationListState) =>
-    [...MORE_KEY, bucket, cursor, state] as const,
+  more: (bucket: string, state: ConversationListState) => [...MORE_KEY, bucket, state] as const,
   search: (keyword: string) => [...SEARCH_KEY, keyword] as const,
   /** 所有关键词的搜索结果；重连对账时整体失效。 */
   searchAll: SEARCH_KEY,
@@ -76,7 +75,7 @@ export const conversationsQueryKeys = {
   sidebar: (state?: ConversationListState): readonly string[] =>
     state === undefined ? SIDEBAR_KEY : [...SIDEBAR_KEY, state],
   /**
-   * 按 all 以外的状态筛选的侧栏拓扑或额外分页，对话状态一变它们的归属就可能不同。
+   * 按 all 以外的状态筛选的侧栏拓扑或分页列表，对话状态一变它们的归属就可能不同。
    * state 是 sidebar(state) 与 more(…) 的末位，改这两种键的布局要连这里一起改。
    */
   filteredLists: (list: 'more' | 'sidebar'): QueryFilters => ({
@@ -86,20 +85,22 @@ export const conversationsQueryKeys = {
 }
 
 /**
- * 对话列表的刷新配方：先丢掉用户手动展开的额外分页（拓扑一变它们的游标就不作数，留着会逐页重拉），
- * 再失效列表。
+ * 对话列表的刷新配方：失效列表，挂着的查询原位重拉。侧栏的分页列表从头按新游标逐页重拉、页数不变，
+ * 重拉完才换上新数据，已展开的行不会收起。
  *
- * 缺省失效全部会话列表（侧栏拓扑、搜索、需求单下的尝试、全部对话页），给改了对话的写操作用。
- * ``'sidebar'`` 只重拉侧栏拓扑，给全局帧与合集变动用：全部对话页另有节流窗口，不跟着每帧重拉。
+ * 缺省失效全部会话列表（侧栏拓扑与分页列表、搜索、需求单下的尝试、全部对话页），给改了对话的写操作用。
+ * ``'sidebar'`` 只重拉侧栏拓扑与分页列表，给全局帧与合集变动用：全部对话页另有节流窗口，不跟着每帧重拉。
+ * 等这些重拉都完成才 resolve。
  */
-export const refreshConversationLists = (
+export const refreshConversationLists = async (
   queryClient: QueryClient,
   scope: 'all' | 'sidebar' = 'all',
 ): Promise<void> => {
-  queryClient.removeQueries({ queryKey: conversationsQueryKeys.moreAll })
-  return queryClient.invalidateQueries({
-    queryKey: scope === 'all' ? conversationsQueryKeys.all : conversationsQueryKeys.sidebar(),
-  })
+  const queryKeys =
+    scope === 'all'
+      ? [conversationsQueryKeys.all]
+      : [conversationsQueryKeys.sidebar(), conversationsQueryKeys.moreAll]
+  await Promise.all(queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
 }
 
 /** 仅提供当前服务实际装配的顶层 Agent；顺序和默认项由服务端定义。 */
@@ -198,28 +199,38 @@ export const useCachedConversationCollection = (
   )
 }
 
-/** 额外分页仅由用户触发；拓扑失效时丢弃这些页，避免自动逐页重拉。bucket 筛选需与拓扑一致。 */
-export const useMoreConversations = (
+/**
+ * 侧栏一个分区（任务区或某个合集）的分页列表，从头读起，列表的行只取这一份。
+ *
+ * 首页取同一筛选下拓扑里那一页（与从头读的第一页同一口径），挂上时不再重读；往后翻页、失效后从头逐页重拉
+ * 都走分区自己的端点。只在显式失效时重拉（见 {@link refreshConversationLists}），切回窗口、重连不逐页重拉。
+ * `enabled` 为假时不发请求，失效了也等启用再重拉。
+ */
+export const useSidebarPages = (
   { collectionId, state }: { collectionId?: string | undefined; state: ConversationListState },
-  cursor: string | null,
-) => {
-  return useInfiniteQuery({
-    queryKey: conversationsQueryKeys.more(collectionId ?? 'ungrouped', cursor ?? '', state),
+  { enabled = true, firstPage }: { enabled?: boolean; firstPage: ConversationPage },
+) =>
+  useInfiniteQuery({
+    queryKey: conversationsQueryKeys.more(collectionId ?? 'ungrouped', state),
     queryFn: async ({ client, pageParam, signal }) => {
+      const query = new URLSearchParams({ state })
+      // 不带游标就是从头读；空游标服务端解析不了，不能拿空串代替。
+      if (pageParam !== null) query.set('cursor', pageParam)
       const page = await apiFetch(
         `${
           collectionId ? `/conversations/by-collection/${collectionId}` : '/conversations/ungrouped'
-        }?cursor=${encodeURIComponent(pageParam)}&state=${state}`,
+        }?${query.toString()}`,
         zConversationPageOut,
         { signal, cache: 'no-store', fallbackErrorMessage: '加载更多任务失败' },
       )
       return { ...page, items: conversationRowsOf(client).mergeRows(page.items) }
     },
-    initialPageParam: cursor ?? '',
-    getNextPageParam: (last: z.output<typeof zConversationPageOut>) => last.nextCursor,
-    enabled: false,
+    initialPageParam: null as string | null,
+    initialData: () => ({ pageParams: [null], pages: [firstPage] }),
+    getNextPageParam: (last: ConversationPage) => last.nextCursor,
+    enabled,
+    staleTime: Infinity,
   })
-}
 
 /** 每段对话正在进行的那一次单行补读，按行池分表。 */
 const rowReads = new WeakMap<ConversationRowStore, Map<string, AbortController>>()
