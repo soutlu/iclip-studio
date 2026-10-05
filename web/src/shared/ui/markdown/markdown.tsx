@@ -4,6 +4,7 @@ import { createContext, use, useRef, useState, type ComponentProps } from 'react
 import ReactMarkdown, { type Components, type ExtraProps, type Options } from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/shared/lib/utils'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
@@ -142,7 +143,8 @@ const COMPONENTS: Components = {
   video: MarkdownVideo,
 }
 
-const REMARK_PLUGINS: Options['remarkPlugins'] = [remarkGfm]
+// Agent 写的文档常把「**画面**：…」这类字段逐行排列、行间不空行；段落内的单个换行按换行显示，不接成一行。
+const REMARK_PLUGINS: Options['remarkPlugins'] = [remarkGfm, remarkBreaks]
 const REHYPE_PLUGINS: Options['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, SANITIZE]]
 
 type MarkdownProps = {
