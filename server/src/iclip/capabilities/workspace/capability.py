@@ -427,9 +427,7 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
         return f"已删除 {key}"
 
     async def list_files(self, ctx: RunContext[AgentDepsT], prefix: str = "") -> ToolReturn[str]:
-        """列出工作区里的文件。
-
-        接手一段对话先用它看看已经攒了什么，别从零重来。
+        """列出工作区里的文件，每行一个路径和它的字节数。
 
         Args:
             prefix: 只看某个目录下的，如 ``分镜``。留空即全部。
