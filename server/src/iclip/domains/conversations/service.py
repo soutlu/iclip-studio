@@ -679,10 +679,11 @@ class ConversationService:
             await self._broadcast_row("updated", renamed, before)
         return renamed
 
-    async def name_after_turn(self, conversation_id: uuid.UUID, user_text: str) -> None:
-        """轮次结束后生成 default 标题；本次未生成时保留 default，后续轮次可再次尝试。
+    async def name_at_turn_start(self, conversation_id: uuid.UUID, user_text: str) -> None:
+        """一轮开始时按这一轮的用户消息生成 default 标题，与这一轮的运行并行。
 
-        生成标题要调模型，放在行锁外面，免得这段对话的改名、开跑等写入跟着等。"""
+        本次未生成时保留 default，下一轮开始时再试。生成标题要调模型，放在行锁外面，
+        免得这段对话的改名、开跑等写入跟着等。"""
 
         conversation = await self._repo.get(conversation_id, owner=None)
         if conversation.title_kind != "default":
