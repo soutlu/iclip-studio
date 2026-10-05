@@ -8,20 +8,26 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
-from pydantic_ai import ToolFailed
+import structlog
+from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.ports import BreakdownError, SharedBreakdowns
+from iclip.common.urls import is_http_url
 from iclip.harness.files import write_or_retry
-from iclip.harness.materials import require_http
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.media.ffmpeg import MediaError
 from iclip.platform.transcript.display import DisplayFn, GenericDisplay, url_filename
 
 CAPABILITY_ID: Final = "iclip_studio"
+
+BREAKDOWN_RETRIES: Final = 3
+"""拆解遇到可以重试的失败时，让模型再调几次；每次都是一次新的付费拆解。"""
+
+_logger = structlog.stdlib.get_logger(__name__)
 
 _DOC_DIR: Final = "references"
 _STEM_CHARS: Final = 40
@@ -79,19 +85,16 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
             Tool(
                 self.breakdown_video,
                 name="breakdown_video",
+                max_retries=BREAKDOWN_RETRIES,
                 args_validator=self._validate_video_url,
             )
         )
 
     async def breakdown_video(self, ctx: RunContext[AgentDepsT], video_url: str) -> str:
-        """拆解一条视频，把出场元素、逐镜时间线和整片分析写成一份文档，返回文档路径。
-
-        同一条视频只拆一次：文档已经在工作区里时直接返回它的路径，不重新拆解，也不改动已有内容。
-
-        拆解失败时不写文件，返回失败原因；失败后本轮不再对这条视频调用。
+        """拆解输入视频，返回结构化拆解文档路径，文档中详细列出输入视频的出场元素、逐镜时间线和整片分析。
 
         Args:
-            video_url: 视频地址，取消息中视频媒体 tag 的 url 原值。
+            video_url: 输入提供的视频的 url。
         """
 
         files, namespace = self._cap.space.store, self._cap.space.resolve(ctx)
@@ -105,8 +108,16 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         if document is None:
             try:
                 document = await self._cap.breakdown.run(video_url)
-            except (MediaError, BreakdownError) as exc:
-                raise ToolFailed(f"这条视频没拆解成功：{exc}") from exc
+            except MediaError as exc:
+                _logger.warning("视频拆解失败，视频读不了", reason=str(exc))
+                raise ToolFailed("拆解失败，视频无法打开，不要重试，告诉用户换一条视频。") from exc
+            except BreakdownError as exc:
+                # 重试次数由登记处的 max_retries 管；用完后改报终局失败，不让整次运行中止。
+                retry = exc.retryable and not ctx.last_attempt
+                _logger.warning("视频拆解失败，模型没给出可用文档", reason=str(exc), retry=retry)
+                if retry:
+                    raise ModelRetry("拆解失败，再调用一次。") from exc
+                raise ToolFailed("拆解失败，不要重试，告诉用户稍后再试。") from exc
         if fresh:
             # 先存共用的那份：工作区写入被配额等原因退回时，重试能直接取到，不必再付一次拆解。
             await self._cap.shared.put(video_url, document)
@@ -115,7 +126,8 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
         _ = ctx
-        require_http(video_url, what="视频地址")
+        if not is_http_url(video_url):
+            raise ModelRetry("视频地址不对，输入提供的视频的 url。")
 
 
 def _video_name(args: Any) -> str | None:

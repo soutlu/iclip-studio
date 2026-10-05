@@ -69,13 +69,23 @@ class ArkBreakdownModel:
             response.raise_for_status()
             body = response.json()
         except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
             raise BreakdownError(
-                f"视频拆解接口返回 {exc.response.status_code}: {exc.response.text[:300]}"
+                f"视频拆解接口返回 {status}: {exc.response.text[:300]}",
+                # 4xx 是请求本身被拒，原样再发还是被拒；限流与服务端错误过一会儿可能就好。
+                retryable=status == 429 or status >= 500,
+            ) from exc
+        except httpx.TimeoutException as exc:
+            # 已经等满了总超时，也无法确认对方是否执行过，不再接着等。
+            raise BreakdownError(
+                f"视频拆解接口超时（{type(exc).__name__}）", retryable=False
             ) from exc
         except httpx.HTTPError as exc:
-            raise BreakdownError(f"视频拆解接口连不上（{type(exc).__name__}）") from exc
+            raise BreakdownError(
+                f"视频拆解接口连不上（{type(exc).__name__}）", retryable=True
+            ) from exc
         except ValueError as exc:
-            raise BreakdownError("视频拆解接口返回的不是 JSON") from exc
+            raise BreakdownError("视频拆解接口返回的不是 JSON", retryable=True) from exc
         return _document(body)
 
 
@@ -109,11 +119,11 @@ def _document(body: object) -> str:
     """只收 completed 且正文非空的响应；其余都按失败处理，不交付残缺的文档。"""
 
     if not isinstance(body, dict):
-        raise BreakdownError("视频拆解接口返回的顶层不是 object")
+        raise BreakdownError("视频拆解接口返回的顶层不是 object", retryable=True)
     status = body.get("status")
     if status != "completed":
         detail = body.get("incomplete_details") or body.get("error") or ""
-        raise BreakdownError(f"视频拆解没有正常跑完（status={status!r}）：{detail}")
+        raise BreakdownError(f"视频拆解没有正常跑完（status={status!r}）：{detail}", retryable=True)
     chunks: list[str] = []
     output = body.get("output")
     for item in output if isinstance(output, list) else []:
@@ -127,7 +137,7 @@ def _document(body: object) -> str:
                     chunks.append(text)
     document = "".join(chunks).strip()
     if not document:
-        raise BreakdownError("视频拆解接口没给出正文")
+        raise BreakdownError("视频拆解接口没给出正文", retryable=True)
     return document
 
 
