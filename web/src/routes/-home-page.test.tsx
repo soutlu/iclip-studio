@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import {
+  addMockCollection,
   liveMockConversation,
   loginAs,
   mockAuthUser,
@@ -15,11 +16,12 @@ import { renderWithProviders } from '@/testing/render'
 import { HomePage } from './-home-page'
 import { LoginPromptProvider } from './-login-prompt'
 
-const renderHome = async () => {
+const renderHome = async (initialPath = '/') => {
   const rendered = await renderWithProviders(
     <LoginPromptProvider value={() => undefined}>
       <HomePage />
     </LoginPromptProvider>,
+    { initialPath },
   )
   return { ...rendered, user: userEvent.setup() }
 }
@@ -65,6 +67,24 @@ describe('首页真实数据流程', () => {
       agentId: 'new-agent',
       collectionId: mockCollections[0]?.id,
     })
+  })
+
+  it.each([
+    ['自己的合集', true, '关联合集：夏季亚麻系列'],
+    ['不在自己合集里的 id', false, '关联合集：未关联合集'],
+  ])('查询串带来%s：预选或退回无关联，之后从地址栏移除', async (_, known, picker) => {
+    loginAs(mockAuthUser)
+    const collection = addMockCollection('夏季亚麻系列')
+    const requested = known ? collection.id : crypto.randomUUID()
+    const { router, user } = await renderHome(`/?collection=${requested}`)
+
+    expect(await screen.findByRole('button', { name: picker })).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    // 合集已读到、参数已移除，选择照旧，不被打回。
+    await user.click(screen.getByRole('button', { name: picker }))
+    expect(await screen.findByRole('combobox', { name: '搜索合集' })).toBeVisible()
+    expect(screen.getAllByText('夏季亚麻系列').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: picker })).toBeInTheDocument()
   })
 
   it('首条消息回执失败时保留输入；重试复用同一对话与消息编号', async () => {

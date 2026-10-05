@@ -19,6 +19,7 @@ export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'
 // 行尾的 ⋯ 排在状态与计数右边，出现时不顶掉它们。桌面上悬停、键盘焦点落进行里或菜单展开时才现身；
 // 触屏没有悬停，⋯ 常驻并压成弱灰，不抢标题。
 // ⋯ 平时只是视觉隐藏、始终留在 Tab 序里：鼠标点开对话后再按 Tab 也走得到它。
-// 负右距挂在按钮上（not-sr-only 会清掉槽位自己的 margin），让 24px 按钮里的图标右缘落在行内容右缘。
+// 负右距挂在最右的按钮上（not-sr-only 会清掉槽位自己的 margin），让 24px 按钮里的图标右缘落在行内容右缘；
+// 槽位里有两个按钮时（合集行的新建与 ⋯）彼此紧挨。
 export const SIDEBAR_ROW_TRAILING_SHOWN =
-  'sr-only *:-mr-1.25 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex touch:not-sr-only touch:flex touch:*:text-on-surface-faint'
+  'sr-only *:last:-mr-1.25 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex touch:not-sr-only touch:flex touch:*:text-on-surface-faint'

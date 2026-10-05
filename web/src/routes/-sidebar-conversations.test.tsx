@@ -97,14 +97,15 @@ const workFrame = (
 const render = async (initialPath = '/', permissions = mockAuthUser.permissions) => {
   loginAs(mockAuthUser, { permissions })
   const user = userEvent.setup()
+  const onStartInCollection = vi.fn()
   const { router, socket } = await renderWithProviders(
     <>
       <LiveFrames />
-      <SidebarConversations />
+      <SidebarConversations onStartInCollection={onStartInCollection} />
     </>,
     { initialPath },
   )
-  return { router, socket, user }
+  return { onStartInCollection, router, socket, user }
 }
 
 /** 服务端改了一行之后发的 updated 帧，带出整行（ADR-0005）；行内 lastSeq 是写入之前的水位。 */
@@ -136,10 +137,15 @@ const renderWithAllPagesLoaded = async () => {
   return { ...rendered, rows }
 }
 
-/** 任务区标题右侧的筛选按钮：打开菜单点一档。 */
+/** 合集上方的三档筛选：点一档。「运行中」有任务在跑时可访问名带后缀，按前缀找。 */
 const pickFilter = async (user: ReturnType<typeof userEvent.setup>, option: string) => {
-  await user.click(await screen.findByRole('button', { name: /^任务筛选：/ }))
-  await user.click(await screen.findByRole('menuitemradio', { name: option }))
+  const filter = await screen.findByRole('radiogroup', { name: '任务筛选' })
+  await user.click(within(filter).getByRole('radio', { name: new RegExp(`^${option}`) }))
+}
+
+/** 把对话标成此刻在跑：服务端的「运行中」档按它筛。 */
+const markBusy = (conversation: (typeof mockConversations)[number]) => {
+  conversation.activity = { ...conversation.activity, busy: true }
 }
 
 describe('SidebarConversations', () => {
@@ -200,7 +206,27 @@ describe('SidebarConversations', () => {
     expect(
       screen.queryByRole('button', { name: `${collection.name} 的操作` }),
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: `在「${collection.name}」里新建任务` }),
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '新建合集' })).not.toBeInTheDocument()
+  })
+
+  it('能发起任务时合集行上有「在合集里新建任务」，排在 ⋯ 左边；点它把合集交给应用侧栏', async () => {
+    const collection = addMockCollection('夏季亚麻系列')
+    const { onStartInCollection, user } = await render()
+
+    const start = await screen.findByRole('button', { name: '在「夏季亚麻系列」里新建任务' })
+    const more = screen.getByRole('button', { name: '夏季亚麻系列 的操作' })
+    expect(start.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await user.click(start)
+
+    expect(onStartInCollection).toHaveBeenCalledTimes(1)
+    expect(onStartInCollection).toHaveBeenCalledWith(collection.id)
+    // 只有这一个入口，⋯ 菜单里不另放。
+    await user.click(more)
+    expect(await screen.findByRole('menu')).not.toHaveTextContent('新建任务')
   })
 
   it('服务端拒绝读取时显示权限错误，不把拒绝解释为空列表', async () => {
@@ -274,9 +300,9 @@ describe('SidebarConversations', () => {
     expect(within(dialog).getByRole('button', { name: '保存' })).toBeEnabled()
   })
 
-  it('筛选片接线到服务端：未完成与已完成按属主标记分开，两档合起来是全部', async () => {
-    addMockConversation('还在弄', new Date(Date.UTC(2026, 7, 29, 0, 0)).toISOString())
-    addMockConversation('也还在弄', new Date(Date.UTC(2026, 7, 29, 0, 1)).toISOString())
+  it('筛选接线到服务端：运行中只列此刻在跑的，已完成按属主标记', async () => {
+    markBusy(addMockConversation('正在跑', new Date(Date.UTC(2026, 7, 29, 0, 0)).toISOString()))
+    addMockConversation('还在弄', new Date(Date.UTC(2026, 7, 29, 0, 1)).toISOString())
     const finished = addMockConversation(
       '收尾了',
       new Date(Date.UTC(2026, 7, 29, 0, 2)).toISOString(),
@@ -292,49 +318,103 @@ describe('SidebarConversations', () => {
     expect(await screen.findByRole('link', { name: '收尾了' })).toBeVisible()
     expect(screen.getAllByRole('link')).toHaveLength(3)
 
-    await pickFilter(user, '未完成')
+    await pickFilter(user, '运行中')
 
     await waitFor(() =>
       expect(screen.queryByRole('link', { name: '收尾了' })).not.toBeInTheDocument(),
     )
-    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
-      '也还在弄',
-      '还在弄',
-    ])
-    expect(listed.at(-1)).toContain('state=open')
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['正在跑'])
+    expect(listed.at(-1)).toContain('state=running')
 
     await pickFilter(user, '已完成')
 
     expect(await screen.findByRole('link', { name: '收尾了' })).toBeVisible()
+    expect(screen.queryByRole('link', { name: '正在跑' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '还在弄' })).not.toBeInTheDocument()
     expect(listed.at(-1)).toContain('state=done')
   })
 
-  it('筛选按钮显示当前档，菜单勾出当前档，换档后按钮与勾跟着换；有对话在跑时按钮带上提示', async () => {
+  it('筛选三档平铺在合集上方，选中项跟着换、键盘可选；有对话在跑时「运行中」带上提示', async () => {
     const [conversation] = seedConversations(1)
     const { socket, user } = await render()
     await screen.findByText('第0段')
 
-    const trigger = screen.getByRole('button', { name: '任务筛选：全部' })
-    await user.click(trigger)
-    const menu = await screen.findByRole('menu')
+    const filter = screen.getByRole('radiogroup', { name: '任务筛选' })
     expect(
-      within(menu)
-        .getAllByRole('menuitemradio')
+      within(filter)
+        .getAllByRole('radio')
         .map((item) => item.textContent),
-    ).toEqual(['全部', '未完成', '已完成'])
-    expect(within(menu).getByRole('menuitemradio', { name: '全部' })).toBeChecked()
-    await user.click(within(menu).getByRole('menuitemradio', { name: '已完成' }))
+    ).toEqual(['全部', '运行中', '已完成'])
+    // 筛选同时管合集与任务区，排在合集之前；任务标题行里不再有筛选。
+    const collections = screen.getByRole('heading', { name: '合集' })
+    expect(
+      filter.compareDocumentPosition(collections) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^任务筛选/ })).not.toBeInTheDocument()
+    expect(within(filter).getByRole('radio', { name: '全部' })).toBeChecked()
 
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    await user.click(await screen.findByRole('button', { name: '任务筛选：已完成' }))
-    expect(await screen.findByRole('menuitemradio', { name: '已完成' })).toBeChecked()
-    expect(screen.getByRole('menuitemradio', { name: '全部' })).not.toBeChecked()
-    await user.keyboard('{Escape}')
+    // 再点已选中的一档不会清空筛选；方向键在三档间移动，空格选中。
+    await user.click(within(filter).getByRole('radio', { name: '全部' }))
+    expect(within(filter).getByRole('radio', { name: '全部' })).toBeChecked()
+    await user.keyboard('{ArrowRight}')
+    expect(within(filter).getByRole('radio', { name: '运行中' })).toHaveFocus()
+    await user.keyboard(' ')
+    // 换档后列表按新档位重读，筛选不重挂：选中当场切换，焦点留在选中项上，方向键接着可用。
+    const radio = (name: string) => within(filter).getByRole('radio', { name })
+    expect(radio('运行中')).toBeChecked()
+    expect(radio('全部')).not.toBeChecked()
+    expect(radio('运行中')).toHaveFocus()
+    await user.keyboard('{ArrowRight}')
+    expect(radio('已完成')).toHaveFocus()
+    await user.keyboard(' ')
+    expect(radio('已完成')).toBeChecked()
+    expect(radio('运行中')).not.toBeChecked()
+    expect(screen.getByRole('radiogroup', { name: '任务筛选' })).toBe(filter)
 
     await pickFilter(user, '全部')
+    await screen.findByText('第0段')
     socket.deliver(workChanged(conversation?.id ?? '', { busy: true }))
-    expect(await screen.findByRole('button', { name: '任务筛选：全部，有任务在跑' })).toBeVisible()
+    expect(await within(filter).findByRole('radio', { name: '运行中，有任务在跑' })).toBeVisible()
+  })
+
+  it('换档时拓扑还在读：筛选留在原处、选中项当场切换并留住焦点，加载提示出在它下方；读到后列表出现', async () => {
+    const running = addMockConversation('正在跑')
+    markBusy(running)
+    addMockConversation('闲着的')
+    let release: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      // 只扣住「运行中」那一档的拓扑；放行后交给默认处理器照常作答。
+      http.get('*/api/conversations', async ({ request }) => {
+        if (new URL(request.url).searchParams.get('state') !== 'running') return undefined
+        await held
+        return undefined
+      }),
+    )
+    const { user } = await render()
+    expect(await screen.findByRole('link', { name: '闲着的' })).toBeVisible()
+    const filter = screen.getByRole('radiogroup', { name: '任务筛选' })
+
+    await user.click(within(filter).getByRole('radio', { name: '全部' }))
+    await user.keyboard('{ArrowRight} ')
+
+    const runningRadio = within(filter).getByRole('radio', { name: /^运行中/ })
+    expect(screen.getByRole('radiogroup', { name: '任务筛选' })).toBe(filter)
+    expect(runningRadio).toBeChecked()
+    expect(runningRadio).toHaveFocus()
+    const loading = await screen.findByText('正在加载任务…')
+    expect(loading).toHaveAttribute('role', 'status')
+    expect(filter.compareDocumentPosition(loading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('link', { name: '闲着的' })).not.toBeInTheDocument()
+
+    release?.()
+
+    expect(await screen.findByRole('link', { name: '正在跑' })).toBeVisible()
+    expect(screen.queryByText('正在加载任务…')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '闲着的' })).not.toBeInTheDocument()
+    expect(runningRadio).toHaveFocus()
   })
 
   it('键盘从对话链接 Tab 到 ⋯ 按钮，行尾状态仍留在原处可读', async () => {
@@ -492,10 +572,16 @@ describe('SidebarConversations', () => {
     expect(screen.queryByRole('group', { name: '昨天' })).not.toBeInTheDocument()
   })
 
-  it('合集收着不读分页；展开就把多页一并读全，换筛选后仍展开', async () => {
+  it('合集收着不读分页；展开就把多页一并读全，换筛选后仍展开，分页按新档位读', async () => {
     const collection = addMockCollection('夏季亚麻系列')
-    seedConversations(25, collection.id)
+    seedConversations(25, collection.id).forEach(markBusy)
     const pageReads = countReads(`/api/conversations/by-collection/${collection.id}`)
+    const pageStates: (string | null)[] = []
+    server.events.on('request:start', ({ request }) => {
+      const url = new URL(request.url)
+      if (url.pathname === `/api/conversations/by-collection/${collection.id}`)
+        pageStates.push(url.searchParams.get('state'))
+    })
     const { user } = await render()
 
     const toggle = await screen.findByRole('button', { name: '夏季亚麻系列 (25)' })
@@ -507,12 +593,13 @@ describe('SidebarConversations', () => {
     expect(pageReads.count).toBe(2)
     expect(screen.queryByRole('button', { name: /更多任务/ })).not.toBeInTheDocument()
 
-    await pickFilter(user, '未完成')
+    await pickFilter(user, '运行中')
     expect(await screen.findByRole('button', { name: '夏季亚麻系列 (25)' })).toHaveAttribute(
       'aria-expanded',
       'true',
     )
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25))
+    expect(pageStates.at(-1)).toBe('running')
 
     await pickFilter(user, '全部')
     expect(await screen.findByRole('button', { name: '夏季亚麻系列 (25)' })).toHaveAttribute(
@@ -978,20 +1065,21 @@ describe('SidebarConversations', () => {
     expect(await screen.findByLabelText('正在跑')).toBeVisible()
   })
 
-  it('筛「未完成」时把一段标成完成，重拉之后它不在这一档里了', async () => {
-    const conversation = addMockConversation('还在弄')
+  it('筛「已完成」时把一段取消完成，重拉之后它不在这一档里了', async () => {
+    const conversation = addMockConversation('收尾了')
+    conversation.completedAt = new Date().toISOString()
     const { user } = await render()
 
-    await pickFilter(user, '未完成')
-    expect(await screen.findByRole('link', { name: '还在弄' })).toBeVisible()
+    await pickFilter(user, '已完成')
+    expect(await screen.findByRole('link', { name: '收尾了' })).toBeVisible()
 
-    await user.click(await screen.findByRole('button', { name: '还在弄 的更多操作' }))
-    await user.click(await screen.findByRole('menuitem', { name: '标记完成' }))
+    await user.click(await screen.findByRole('button', { name: '收尾了 的更多操作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '取消完成' }))
 
     await waitFor(() =>
-      expect(screen.queryByRole('link', { name: '还在弄' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('link', { name: '收尾了' })).not.toBeInTheDocument(),
     )
-    expect(conversation.completedAt).not.toBeNull()
+    expect(conversation.completedAt).toBeNull()
   })
 
   describe('已接上的分页在列表刷新后不收起', () => {
@@ -1086,21 +1174,29 @@ describe('SidebarConversations', () => {
       )
     }, 10_000)
 
-    it('筛「未完成」时接上来的一段收了尾：重拉之后它离开这一档，其余行都在', async () => {
+    it('筛「运行中」时接上来的一段跑完了：重拉之后它离开这一档，其余行都在', async () => {
       const rows = seedConversations(25)
+      rows.forEach(markBusy)
+      const ungroupedStates: (string | null)[] = []
+      server.events.on('request:start', ({ request }) => {
+        const url = new URL(request.url)
+        if (url.pathname === '/api/conversations/ungrouped')
+          ungroupedStates.push(url.searchParams.get('state'))
+      })
       const viewport = stubIntersectionObserver({ inRange: true })
       const { socket, user } = await render()
-      await pickFilter(user, '未完成')
+      await pickFilter(user, '运行中')
       await waitFor(() =>
         expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25),
       )
+      // 任务区第二页按当前档位读。
+      expect(ungroupedStates.at(-1)).toBe('running')
       // 滚离列表末尾：之后列表只能靠重拉保住第二页，不会再自动接上。
       await viewport.scroll(false)
       const tail = rows[0]
       if (tail === undefined) throw new Error('没有对话')
 
-      tail.completedAt = new Date().toISOString()
-      socket.deliver(rowUpdated(tail))
+      socket.deliver(workChanged(tail.id, { busy: false, last_turn_reason: 'completed' }))
 
       await waitFor(() =>
         expect(screen.queryByRole('link', { name: '第0段' })).not.toBeInTheDocument(),

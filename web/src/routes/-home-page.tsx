@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 import { CollectionFormDialog, CollectionPicker, useCollections } from '@/features/collections'
 import {
   refreshConversationLists,
@@ -40,6 +40,25 @@ export function HomePage() {
     chosenCollection && chosenCollection.ownerUserId === user?.id ? chosenCollection.id : null
   const chooseCollection = (id: string | null) =>
     setChosenCollection({ ownerUserId: user?.id ?? null, id })
+  // 侧栏合集行「在合集里新建任务」把合集带在查询串里：等登录身份就绪后预选一次，再从地址栏移除。
+  // 输入框聚焦由侧栏经应用壳请求，这里不重复。不在自己合集里的 id 由下面的合集校验退回无关联。
+  const requestedCollection = useSearch({
+    select: (search) => search.collection,
+    strict: false,
+  })
+  const [appliedRequest, setAppliedRequest] = useState<string | undefined>(undefined)
+  if (user !== undefined && requestedCollection !== appliedRequest) {
+    setAppliedRequest(requestedCollection)
+    if (requestedCollection !== undefined) chooseCollection(requestedCollection)
+  }
+  useEffect(() => {
+    if (user === undefined || requestedCollection === undefined) return
+    void navigate({
+      replace: true,
+      search: (prev) => ({ ...prev, collection: undefined }),
+      to: '/',
+    })
+  }, [navigate, requestedCollection, user])
   // 已删除的合集回到无关联；读取失败时保留缓存里的当前选择。
   const collectionId = collections.some((item) => item.id === chosenCollectionId)
     ? chosenCollectionId
