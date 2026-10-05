@@ -65,25 +65,33 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
   useLiveConversations(canRead)
 
   const requestComposerFocus = useShellChrome().composerFocus?.request
-  const startNew = useCallback(() => {
-    if (session.isPending) return
-    if (!user) return requireLogin()
-    if (!canStart) return
-    setSearchOpen(false)
-    // 已在首页时路由不变，抽屉不会随路由折叠，这里主动收起，焦点才能落到输入框上。
-    if (compact) onCollapsedChange(true)
-    requestComposerFocus?.()
-    void navigate({ to: '/' })
-  }, [
-    canStart,
-    compact,
-    navigate,
-    onCollapsedChange,
-    requestComposerFocus,
-    requireLogin,
-    session.isPending,
-    user,
-  ])
+  /** 去首页新建任务；从合集行进来时带上合集，首页预选它。 */
+  const startNew = useCallback(
+    (collectionId?: string) => {
+      if (session.isPending) return
+      if (!user) return requireLogin()
+      if (!canStart) return
+      setSearchOpen(false)
+      // 已在首页时路由不变，抽屉不会随路由折叠，这里主动收起，焦点才能落到输入框上。
+      if (compact) onCollapsedChange(true)
+      requestComposerFocus?.()
+      void navigate(
+        collectionId === undefined
+          ? { to: '/' }
+          : { search: { collection: collectionId }, to: '/' },
+      )
+    },
+    [
+      canStart,
+      compact,
+      navigate,
+      onCollapsedChange,
+      requestComposerFocus,
+      requireLogin,
+      session.isPending,
+      user,
+    ],
+  )
 
   const openSearch = useCallback(() => {
     if (session.isPending) return
@@ -297,7 +305,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                 </button>
               </div>
             ) : user ? (
-              <SidebarConversations />
+              <SidebarConversations onStartInCollection={startNew} />
             ) : (
               <div className="min-h-0 flex-1 px-4.5 pt-4">
                 <p className="text-body-sm text-on-surface-faint">登录后查看任务</p>

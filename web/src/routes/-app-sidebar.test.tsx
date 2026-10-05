@@ -171,6 +171,31 @@ describe('AppSidebar', () => {
     expect(screen.getByLabelText('输入消息')).toHaveFocus()
   })
 
+  it.each([
+    ['/tasks', false],
+    ['/', true],
+  ] as const)(
+    '从 %s 点合集行上的「在合集里新建任务」：首页预选这个合集，输入框获得焦点，地址栏不留参数，compact=%s',
+    async (initialPath, compact) => {
+      loginAs(mockAuthUser)
+      addMockCollection('夏季亚麻系列')
+      const user = userEvent.setup()
+      const { router } = await renderShell(initialPath, compact)
+      await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+
+      await user.click(await screen.findByRole('button', { name: '在「夏季亚麻系列」里新建任务' }))
+
+      await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+      expect(
+        await screen.findByRole('button', { name: '关联合集：夏季亚麻系列' }),
+      ).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByLabelText('输入消息')).toHaveFocus())
+      await waitFor(() => expect(router.state.location.search).toEqual({}))
+      // 紧凑屏已在首页时路由不变，抽屉照样收起。
+      if (compact) expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    },
+  )
+
   it('在其他页面按 Ctrl+Alt+N，进首页后输入框获得焦点，之后再进首页不再抢焦点', async () => {
     loginAs(mockAuthUser)
     const user = userEvent.setup()

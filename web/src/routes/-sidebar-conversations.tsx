@@ -8,14 +8,12 @@ import {
   useId,
   useRef,
   useState,
-  type ReactNode,
   type RefObject,
 } from 'react'
 import { CollectionDeleteDialog, useCollections, useSaveCollection } from '@/features/collections'
 import {
   ConversationDeleteDialog,
   ConversationMembershipDialog,
-  conversationListStateSchema,
   DisclosureChevron,
   refreshConversationLists,
   SidebarConversationRow,
@@ -42,15 +40,8 @@ import { Icon, type IconName } from '@/shared/icons'
 import { groupByRecency, RECENCY_LABEL } from '@/shared/lib/recency-group'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
-import {
-  MenuItem,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuRoot,
-  MenuSeparator,
-  MenuSurface,
-  MenuTrigger,
-} from '@/shared/ui/menu'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
+import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 
 // 合集默认只露前几个，其余收在「全部合集」里；后端最多返回 100 个合集。
@@ -59,14 +50,20 @@ const COLLECTIONS_PREVIEW = 3
 // 任务区使用固定落点 ID，合集使用自身 UUID。
 const UNGROUPED = 'ungrouped'
 
-// 筛选只开放这三档；词表覆盖全部档位，筛选按钮总有字可显示。
-const FILTER_OPTIONS = ['all', 'open', 'done'] as const satisfies readonly ConversationListState[]
-const FILTER_LABEL: Record<ConversationListState, string> = {
+// 侧栏筛选只开放这三档，同时作用于合集与任务区。
+const FILTER_OPTIONS = [
+  'all',
+  'running',
+  'done',
+] as const satisfies readonly ConversationListState[]
+type SidebarFilter = (typeof FILTER_OPTIONS)[number]
+const FILTER_LABEL: Record<SidebarFilter, string> = {
   all: '全部',
   done: '已完成',
-  open: '未完成',
-  running: '进行中',
+  running: '运行中',
 }
+const isSidebarFilter = (value: string): value is SidebarFilter =>
+  (FILTER_OPTIONS as readonly string[]).includes(value)
 
 // 展开着的合集记在本浏览器里，换筛选、收起合集列表、刷新页面都不会把它们合上。
 const OPEN_COLLECTIONS_KEY = 'cue.sidebar.open-collections'
@@ -123,8 +120,14 @@ const useNowByDay = (): Date => {
  * 任务区和合集内容使用服务端分页：任务区滚到底接着读，展开的合集读全；合集列表在前端收起。
  * 拖动改归属后由 mutation 刷新拓扑与分页列表。
  * 登录态的加载与失败由应用侧栏处理，它只在登录身份就绪后渲染这里。
+ *
+ * @param onStartInCollection 合集行上「在合集里新建任务」：由应用侧栏接去首页，与「新建任务」同一条路。
  */
-export function SidebarConversations() {
+export function SidebarConversations({
+  onStartInCollection,
+}: {
+  onStartInCollection: (collectionId: string) => void
+}) {
   const queryClient = useQueryClient()
   const user = useUser().data
   const canRead = hasPermission(user, PERMISSION.agentRead)
@@ -132,7 +135,7 @@ export function SidebarConversations() {
   const canManageCollections = hasPermission(user, PERMISSION.collectionsWrite)
   const canReadCollections = hasPermission(user, PERMISSION.collectionsRead)
   const canReadTasks = hasPermission(user, PERMISSION.tasksRead)
-  const [state, setState] = useState<ConversationListState>('all')
+  const [state, setState] = useState<SidebarFilter>('all')
   const topology = useSidebarTopology(canRead, state)
   useRecordOpenedConversation(topology.data)
   const [allCollectionsShown, setAllCollectionsShown] = useState(false)
@@ -225,7 +228,7 @@ export function SidebarConversations() {
     else setFocusCollectionId(created)
   }
 
-  // 筛选按钮上的进行中指示点仅取拓扑首页数据，往后的分页由子组件持有；行取池里的当前值。
+  // 「运行中」上的指示点仅取拓扑首页数据，往后的分页由子组件持有；行取池里的当前值。
   const firstPageRows = useConversationRows([
     ...(topology.data?.ungrouped.items ?? []),
     ...allCollections.flatMap((one) => one.page.items),
@@ -233,15 +236,6 @@ export function SidebarConversations() {
   const anyBusy = firstPageRows.some((row) => row.activity.busy)
 
   if (!canRead) return <SidebarFeedback>当前账号没有查看任务权限</SidebarFeedback>
-  if (topology.isPending) return <SidebarFeedback>正在加载任务…</SidebarFeedback>
-  if (topology.isError)
-    return (
-      <SidebarFeedback error loading={topology.isFetching} onRetry={() => void topology.refetch()}>
-        {topology.error instanceof ApiError && topology.error.status === 403
-          ? '当前账号没有查看任务权限'
-          : errorMessageOf(topology.error, '读取任务列表失败，请重试')}
-      </SidebarFeedback>
-    )
 
   return (
     <DndContext
@@ -254,81 +248,104 @@ export function SidebarConversations() {
         className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 pb-2"
         ref={scrollRef}
       >
-        <SidebarSection
-          action={
-            canManageCollections
-              ? {
-                  icon: 'add',
-                  label: '新建合集',
-                  onClick: startCreatingCollection,
-                }
-              : undefined
-          }
-          actionRef={addCollectionRef}
-          title="合集"
-        >
-          {creatingCollection && (
-            <SidebarRowEditor
-              failureMessage="新建合集失败"
-              initialValue=""
-              label="新合集名称"
-              leading={<CollectionIcon />}
-              onClose={closeCollectionDraft}
-              onSubmit={async (name) => {
-                createdCollectionRef.current = (await saveCollection.mutateAsync({ name })).id
-              }}
-              placeholder="新合集名称"
-            />
-          )}
-          {visibleCollections.map((collection) => (
-            <CollectionGroup
-              key={collection.id}
-              canManage={canManageCollections}
-              collection={collection}
-              dragging={dragging}
-              onDelete={() =>
-                setCollectionDelete({
-                  collection: { id: collection.id, name: collection.name },
-                  open: true,
-                })
+        {/* 筛选始终挂在这一位置：换档时拓扑按新档位读取，加载与失败只替换下方内容，选中项与键盘焦点留在原处。 */}
+        <ConversationFilter busy={anyBusy} onChange={setState} value={state} />
+        {topology.isPending ? (
+          <SidebarFeedback inList>正在加载任务…</SidebarFeedback>
+        ) : topology.isError ? (
+          <SidebarFeedback
+            error
+            inList
+            loading={topology.isFetching}
+            onRetry={() => void topology.refetch()}
+          >
+            {topology.error instanceof ApiError && topology.error.status === 403
+              ? '当前账号没有查看任务权限'
+              : errorMessageOf(topology.error, '读取任务列表失败，请重试')}
+          </SidebarFeedback>
+        ) : (
+          <>
+            <SidebarSection
+              action={
+                canManageCollections
+                  ? {
+                      icon: 'add',
+                      label: '新建合集',
+                      onClick: startCreatingCollection,
+                    }
+                  : undefined
               }
+              actionRef={addCollectionRef}
+              title="合集"
+            >
+              {creatingCollection && (
+                <SidebarRowEditor
+                  failureMessage="新建合集失败"
+                  initialValue=""
+                  label="新合集名称"
+                  leading={<CollectionIcon />}
+                  onClose={closeCollectionDraft}
+                  onSubmit={async (name) => {
+                    createdCollectionRef.current = (await saveCollection.mutateAsync({ name })).id
+                  }}
+                  placeholder="新合集名称"
+                />
+              )}
+              {visibleCollections.map((collection) => (
+                <CollectionGroup
+                  key={collection.id}
+                  canManage={canManageCollections}
+                  collection={collection}
+                  dragging={dragging}
+                  onDelete={() =>
+                    setCollectionDelete({
+                      collection: { id: collection.id, name: collection.name },
+                      open: true,
+                    })
+                  }
+                  onDeleteConversation={confirmDelete}
+                  onFocusHandled={() => setFocusCollectionId(null)}
+                  onOpenMembership={openMembership}
+                  focusRequested={focusCollectionId === collection.id}
+                  onRename={(name) =>
+                    saveCollection.mutateAsync({ collectionId: collection.id, name })
+                  }
+                  onStartConversation={() => onStartInCollection(collection.id)}
+                  onToggle={() => openCollections.toggle(collection.id)}
+                  open={openCollections.open.has(collection.id)}
+                  state={state}
+                />
+              ))}
+              {allCollections.length === 0 && !creatingCollection && (
+                <EmptyHint>还没有合集</EmptyHint>
+              )}
+              {allCollections.length > COLLECTIONS_PREVIEW && (
+                <button
+                  aria-expanded={allCollectionsShown}
+                  className={cn(
+                    SIDEBAR_ROW_CLASS,
+                    'w-full text-body-sm text-on-surface-faint ui-focus',
+                  )}
+                  onClick={() => setAllCollectionsShown((shown) => !shown)}
+                  type="button"
+                >
+                  {/* 空出图标位，文字与合集名对齐。 */}
+                  <span aria-hidden className="w-(--icon-md) shrink-0" />
+                  {allCollectionsShown ? '收起合集' : '全部合集'}
+                </button>
+              )}
+            </SidebarSection>
+
+            <UngroupedSection
+              dragging={dragging}
+              firstPage={topology.data?.ungrouped ?? { items: [], nextCursor: null }}
+              getScrollElement={getScrollElement}
               onDeleteConversation={confirmDelete}
-              onFocusHandled={() => setFocusCollectionId(null)}
               onOpenMembership={openMembership}
-              focusRequested={focusCollectionId === collection.id}
-              onRename={(name) => saveCollection.mutateAsync({ collectionId: collection.id, name })}
-              onToggle={() => openCollections.toggle(collection.id)}
-              open={openCollections.open.has(collection.id)}
               state={state}
             />
-          ))}
-          {allCollections.length === 0 && !creatingCollection && <EmptyHint>还没有合集</EmptyHint>}
-          {allCollections.length > COLLECTIONS_PREVIEW && (
-            <button
-              aria-expanded={allCollectionsShown}
-              className={cn(
-                SIDEBAR_ROW_CLASS,
-                'w-full text-body-sm text-on-surface-faint ui-focus',
-              )}
-              onClick={() => setAllCollectionsShown((shown) => !shown)}
-              type="button"
-            >
-              {/* 空出图标位，文字与合集名对齐。 */}
-              <span aria-hidden className="w-(--icon-md) shrink-0" />
-              {allCollectionsShown ? '收起合集' : '全部合集'}
-            </button>
-          )}
-        </SidebarSection>
-
-        <UngroupedSection
-          dragging={dragging}
-          firstPage={topology.data?.ungrouped ?? { items: [], nextCursor: null }}
-          getScrollElement={getScrollElement}
-          onDeleteConversation={confirmDelete}
-          onOpenMembership={openMembership}
-          state={state}
-          tools={<ConversationFilter busy={anyBusy} onChange={setState} value={state} />}
-        />
+          </>
+        )}
       </div>
 
       <CollectionDeleteDialog
@@ -386,7 +403,6 @@ function UngroupedSection({
   onDeleteConversation,
   onOpenMembership,
   state,
-  tools,
 }: {
   dragging: string | null
   /** 拓扑里任务区的第一页，作分页列表的首页。 */
@@ -395,8 +411,7 @@ function UngroupedSection({
   getScrollElement: () => HTMLElement | null
   onDeleteConversation: (conversation: Conversation) => void
   onOpenMembership: (conversation: Conversation) => void
-  state: ConversationListState
-  tools: ReactNode
+  state: SidebarFilter
 }) {
   const canWrite = useCanWrite()
   const groupId = useId()
@@ -411,7 +426,7 @@ function UngroupedSection({
 
   return (
     <div className={cn('rounded-sm', isOver && 'bg-surface-container-high')} ref={setNodeRef}>
-      <SidebarSection title="任务" tools={tools}>
+      <SidebarSection title="任务">
         {groups.map(({ bucket, items: rows }) => (
           <div
             aria-labelledby={`${groupId}-${bucket}`}
@@ -464,12 +479,10 @@ type SidebarSectionProps = {
   actionRef?: RefObject<HTMLButtonElement | null>
   children: React.ReactNode
   title: string
-  /** 标题行右侧常驻的控件，如任务区的筛选按钮。 */
-  tools?: ReactNode
 }
 
 /** 侧栏分区常驻展开，标题只作标签；收起只发生在单个合集上。 */
-function SidebarSection({ action, actionRef, children, title, tools }: SidebarSectionProps) {
+function SidebarSection({ action, actionRef, children, title }: SidebarSectionProps) {
   const headingId = useId()
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-px">
@@ -482,19 +495,16 @@ function SidebarSection({ action, actionRef, children, title, tools }: SidebarSe
         >
           {title}
         </h2>
-        {(action || tools) && (
-          <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {tools}
-            {action && (
-              <IconButton
-                className="-mr-1.25"
-                label={action.label}
-                name={action.icon}
-                onClick={action.onClick}
-                ref={actionRef}
-                size="xs"
-              />
-            )}
+        {action && (
+          <div className="ml-auto flex shrink-0 items-center">
+            <IconButton
+              className="-mr-1.25"
+              label={action.label}
+              name={action.icon}
+              onClick={action.onClick}
+              ref={actionRef}
+              size="xs"
+            />
           </div>
         )}
       </div>
@@ -503,46 +513,47 @@ function SidebarSection({ action, actionRef, children, title, tools }: SidebarSe
   )
 }
 
-/** 任务区筛选：收在标题右侧的「全部 ▾」，菜单里勾出当前档；有任务在跑时带一个墨色小点，绿色只留给生成。 */
+/**
+ * 侧栏筛选：三档等宽平铺在合集上方，合集与任务区一起按它筛。选中项一层浅墨底、字重提一档，不浮起。
+ * 有任务在跑时「运行中」上带一个墨色小点，绿色只留给生成。
+ */
 function ConversationFilter({
   busy,
   onChange,
   value,
 }: {
   busy: boolean
-  onChange: (value: ConversationListState) => void
-  value: ConversationListState
+  onChange: (value: SidebarFilter) => void
+  value: SidebarFilter
 }) {
   return (
-    <MenuRoot>
-      <MenuTrigger asChild>
-        <button
-          aria-label={`任务筛选：${FILTER_LABEL[value]}${busy ? '，有任务在跑' : ''}`}
-          className="-mr-1.5 flex h-6 ui-state cursor-pointer items-center gap-1 rounded-sm pr-1.5 pl-2 text-label text-on-surface-muted ui-focus data-[state=open]:bg-state-hover data-[state=open]:text-on-surface"
-          type="button"
+    <ChipGroup
+      aria-label="任务筛选"
+      className="h-7 gap-0.5 bg-transparent p-0"
+      // Radix 再点一次已选项会给空串，不在档位里的值一律忽略，筛选始终有值。
+      onValueChange={(next) => {
+        if (isSidebarFilter(next)) onChange(next)
+      }}
+      type="single"
+      value={value}
+      variant="segmented"
+    >
+      {FILTER_OPTIONS.map((option) => (
+        <FilterChip
+          // 共享分段的选中项是浮起的白块，侧栏底上换成选中行同款浅墨底、去掉投影。
+          className="rounded-sm text-on-surface-muted hover:text-on-surface data-[state=on]:bg-state-active data-[state=on]:shadow-none"
+          key={option}
+          value={option}
+          variant="segmented"
+          {...(option === 'running' && busy ? { 'aria-label': '运行中，有任务在跑' } : {})}
         >
-          <span aria-hidden>{FILTER_LABEL[value]}</span>
-          {busy && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-on-surface" />}
-          <Icon className="shrink-0" decorative name="expand" size="xs" />
-        </button>
-      </MenuTrigger>
-      <MenuSurface align="end" className="min-w-40">
-        <MenuRadioGroup
-          // 不在档位里的值一律忽略，筛选始终有值。
-          onValueChange={(next) => {
-            const parsed = conversationListStateSchema.safeParse(next)
-            if (parsed.success) onChange(parsed.data)
-          }}
-          value={value}
-        >
-          {FILTER_OPTIONS.map((option) => (
-            <MenuRadioItem key={option} value={option}>
-              {FILTER_LABEL[option]}
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
-      </MenuSurface>
-    </MenuRoot>
+          {FILTER_LABEL[option]}
+          {option === 'running' && busy && (
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-on-surface" />
+          )}
+        </FilterChip>
+      ))}
+    </ChipGroup>
   )
 }
 
@@ -553,16 +564,19 @@ function EmptyHint({ children }: { children: string }) {
 function SidebarFeedback({
   children,
   error = false,
+  inList = false,
   loading = false,
   onRetry,
 }: {
   children: string
   error?: boolean
+  /** 排在滚动区里筛选下方：内距与上方间距由滚动区给，文字与行首对齐。 */
+  inList?: boolean
   loading?: boolean
   onRetry?: () => void
 }) {
   return (
-    <div className="min-h-0 flex-1 px-2 pt-4">
+    <div className={inList ? undefined : 'min-h-0 flex-1 px-2 pt-4'}>
       <p
         className={cn('px-2.5 text-body-sm', error ? 'text-error' : 'text-on-surface-faint')}
         role={error ? 'alert' : 'status'}
@@ -583,14 +597,8 @@ function SidebarFeedback({
   )
 }
 
-const emptyConversations = (state: ConversationListState) =>
-  state === 'open'
-    ? '没有未完成的任务'
-    : state === 'done'
-      ? '没有标记完成的任务'
-      : state === 'running'
-        ? '没有进行中的任务'
-        : '还没有任务'
+const emptyConversations = (state: SidebarFilter) =>
+  state === 'done' ? '没有标记完成的任务' : state === 'running' ? '没有运行中的任务' : '还没有任务'
 
 /** 页边界可因活动时间变化重叠，保留首页优先的第一条记录。 */
 const uniqueConversations = (items: readonly Conversation[]): Conversation[] => {
@@ -711,10 +719,12 @@ type CollectionGroupProps = {
   onFocusHandled: () => void
   /** 提交新名字；列表刷新出新名字后 resolve。 */
   onRename: (name: string) => Promise<unknown>
+  /** 在这个合集里新建任务：去首页，输入框预选这个合集。 */
+  onStartConversation: () => void
   /** 展开与否由侧栏持有，合集行卸载重挂（换筛选、收起合集列表）后照旧。 */
   open: boolean
   onToggle: () => void
-  state: ConversationListState
+  state: SidebarFilter
 }
 
 /** 合集展开时读全它的对话，收着不发请求。 */
@@ -728,6 +738,7 @@ function CollectionGroup({
   onFocusHandled,
   onOpenMembership,
   onRename,
+  onStartConversation,
   onToggle,
   open,
   state,
@@ -790,24 +801,34 @@ function CollectionGroup({
               <DisclosureChevron className="text-on-surface-faint" open={open} />
             </span>
           </button>
-          {/* 计数常驻，能管理时 ⋯ 排在它右边。 */}
+          {/* 计数常驻；能新建任务时羽毛笔、能管理时 ⋯ 依次排在它右边，与 ⋯ 一起悬停或聚焦才现身。 */}
           <CollectionCount count={collection.conversationCount} />
-          {canManage && (
+          {(canWrite || canManage) && (
             <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
-              <MenuRoot>
-                <MenuTrigger asChild>
-                  <IconButton label={`${collection.name} 的操作`} name="more" size="xs" />
-                </MenuTrigger>
-                <MenuSurface align="end">
-                  <MenuItem icon="edit" onSelect={start}>
-                    重命名
-                  </MenuItem>
-                  <MenuSeparator />
-                  <MenuItem destructive icon="delete" onSelect={onDelete}>
-                    删除
-                  </MenuItem>
-                </MenuSurface>
-              </MenuRoot>
+              {canWrite && (
+                <IconButton
+                  label={`在「${collection.name}」里新建任务`}
+                  name="compose"
+                  onClick={onStartConversation}
+                  size="xs"
+                />
+              )}
+              {canManage && (
+                <MenuRoot>
+                  <MenuTrigger asChild>
+                    <IconButton label={`${collection.name} 的操作`} name="more" size="xs" />
+                  </MenuTrigger>
+                  <MenuSurface align="end">
+                    <MenuItem icon="edit" onSelect={start}>
+                      重命名
+                    </MenuItem>
+                    <MenuSeparator />
+                    <MenuItem destructive icon="delete" onSelect={onDelete}>
+                      删除
+                    </MenuItem>
+                  </MenuSurface>
+                </MenuRoot>
+              )}
             </div>
           )}
         </div>
