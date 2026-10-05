@@ -28,9 +28,9 @@ const AUDIT_REFRESH_WINDOW_MS = 1000
 
 /** 一批帧落地后要做的事，同类合并，一批只做一次。 */
 interface Effects {
-  /** 自己侧栏的成员或计数变了：丢掉额外分页、重拉拓扑。 */
+  /** 自己侧栏的成员或计数变了：重拉拓扑与分页列表。 */
   sidebar: boolean
-  /** 只有按状态筛选的侧栏与额外分页可能换成员。 */
+  /** 只有按状态筛选的侧栏拓扑与分页列表可能换成员。 */
   filtered: boolean
   audit: boolean
   /** 出了新成片的对话：全部对话页列着它时要重拉，那一行的封面只在那份查询里。 */
@@ -136,6 +136,7 @@ const reduce = (
       if (!mine) return
       // 照 Kimi：轮状态变了（开跑、收场、待审批 / 提问出现或消失）按 id 补读一行兜底，结果仍按 lastSeq 合并。
       // 随运行变的行字段虽然另有 updated 帧（ADR-0005），补读不依赖服务端每个写入口都发了帧。
+      // 筛选列表也只在轮状态变了时重算：同样的状态再来一帧，归属不会变。
       if (
         before === undefined ||
         before.activity.busy !== update.busy ||
@@ -143,8 +144,8 @@ const reduce = (
         (before.activity.lastTurnReason ?? null) !== update.lastTurnReason
       ) {
         effects.rows.add(update.conversationId)
+        effects.filtered = true
       }
-      effects.filtered = true
       return
     }
 
@@ -201,7 +202,7 @@ const listedInAudit = (queryClient: QueryClient, conversationId: string): boolea
 const run = (queryClient: QueryClient, effects: Effects, refreshAuditSoon: () => void): void => {
   if (effects.sidebar) void refreshConversationLists(queryClient, 'sidebar')
   else if (effects.filtered) {
-    queryClient.removeQueries(conversationsQueryKeys.filteredLists('more'))
+    void queryClient.invalidateQueries(conversationsQueryKeys.filteredLists('more'))
     void queryClient.invalidateQueries(conversationsQueryKeys.filteredLists('sidebar'))
   }
   if (effects.search)

@@ -22,8 +22,8 @@ export {
   refreshConversationLists,
   useStartConversation,
   useConversationAgents,
-  useMoreConversations,
   useSetConversationMembership,
+  useSidebarPages,
   useSidebarTopology,
 } from './conversations.api'
 export { ConversationsRoute } from './components/conversations-route'

@@ -1,7 +1,16 @@
 import { DndContext, PointerSensor, useDroppable, useSensor } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { CollectionDeleteDialog, useCollections, useSaveCollection } from '@/features/collections'
 import {
   ConversationDeleteDialog,
@@ -15,7 +24,7 @@ import {
   SIDEBAR_ROW_TITLE_CLASS,
   SIDEBAR_ROW_TRAILING_SHOWN,
   SidebarRowEditor,
-  useMoreConversations,
+  useSidebarPages,
   useSidebarRowEditing,
   useRecordOpenedConversation,
   useSetConversationMembership,
@@ -59,6 +68,43 @@ const FILTER_LABEL: Record<ConversationListState, string> = {
   running: '进行中',
 }
 
+// 展开着的合集记在本浏览器里，换筛选、收起合集列表、刷新页面都不会把它们合上。
+const OPEN_COLLECTIONS_KEY = 'cue.sidebar.open-collections'
+
+/** 读展开着的合集；存储不可用或内容不对时当作都收着。 */
+const readOpenCollections = (): ReadonlySet<string> => {
+  try {
+    const stored = window.localStorage.getItem(OPEN_COLLECTIONS_KEY)
+    const parsed: unknown = stored === null ? [] : JSON.parse(stored)
+    return new Set(
+      Array.isArray(parsed) ? parsed.filter((one): one is string => typeof one === 'string') : [],
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+const writeOpenCollections = (open: ReadonlySet<string>): void => {
+  try {
+    window.localStorage.setItem(OPEN_COLLECTIONS_KEY, JSON.stringify([...open]))
+  } catch {
+    // 存储不可用时，展开状态只在这次打开的页面里保留。
+  }
+}
+
+/** 展开着的合集：只由用户点合集行开合。 */
+const useOpenCollections = () => {
+  const [open, setOpen] = useState(readOpenCollections)
+  const toggle = (collectionId: string) => {
+    const next = new Set(open)
+    if (next.has(collectionId)) next.delete(collectionId)
+    else next.add(collectionId)
+    setOpen(next)
+    writeOpenCollections(next)
+  }
+  return { open, toggle }
+}
+
 /** 改对话（重命名、删除、拖动归属）要有 agent:run；用到的组件自己读，不逐层传。 */
 const useCanWrite = () => hasPermission(useUser().data, PERMISSION.agentRun)
 
@@ -74,7 +120,8 @@ const useNowByDay = (): Date => {
 }
 
 /**
- * 任务区和合集内容使用服务端分页，合集列表在前端收起；拖动改归属后由 mutation 刷新拓扑。
+ * 任务区和合集内容使用服务端分页：任务区滚到底接着读，展开的合集读全；合集列表在前端收起。
+ * 拖动改归属后由 mutation 刷新拓扑与分页列表。
  * 登录态的加载与失败由应用侧栏处理，它只在登录身份就绪后渲染这里。
  */
 export function SidebarConversations() {
@@ -89,7 +136,10 @@ export function SidebarConversations() {
   const topology = useSidebarTopology(canRead, state)
   useRecordOpenedConversation(topology.data)
   const [allCollectionsShown, setAllCollectionsShown] = useState(false)
+  const openCollections = useOpenCollections()
   const [dragging, setDragging] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const getScrollElement = useCallback(() => scrollRef.current, [])
 
   // 新建合集在合集区顶部插入一行原位编辑行。
   const [creatingCollection, setCreatingCollection] = useState(false)
@@ -175,7 +225,7 @@ export function SidebarConversations() {
     else setFocusCollectionId(created)
   }
 
-  // 筛选按钮上的进行中指示点仅取拓扑首页数据，额外分页由子组件持有；行取池里的当前值。
+  // 筛选按钮上的进行中指示点仅取拓扑首页数据，往后的分页由子组件持有；行取池里的当前值。
   const firstPageRows = useConversationRows([
     ...(topology.data?.ungrouped.items ?? []),
     ...allCollections.flatMap((one) => one.page.items),
@@ -200,7 +250,10 @@ export function SidebarConversations() {
       sensors={[pointer]}
     >
       {/* 吸顶标题用 local 层级压住合集引导线，isolate 把这组层级限定在滚动区内。 */}
-      <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 pb-2">
+      <div
+        className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 pb-2"
+        ref={scrollRef}
+      >
         <SidebarSection
           action={
             canManageCollections
@@ -244,6 +297,8 @@ export function SidebarConversations() {
               onOpenMembership={openMembership}
               focusRequested={focusCollectionId === collection.id}
               onRename={(name) => saveCollection.mutateAsync({ collectionId: collection.id, name })}
+              onToggle={() => openCollections.toggle(collection.id)}
+              open={openCollections.open.has(collection.id)}
               state={state}
             />
           ))}
@@ -267,9 +322,10 @@ export function SidebarConversations() {
 
         <UngroupedSection
           dragging={dragging}
+          firstPage={topology.data?.ungrouped ?? { items: [], nextCursor: null }}
+          getScrollElement={getScrollElement}
           onDeleteConversation={confirmDelete}
           onOpenMembership={openMembership}
-          page={topology.data?.ungrouped ?? { items: [], nextCursor: null }}
           state={state}
           tools={<ConversationFilter busy={anyBusy} onChange={setState} value={state} />}
         />
@@ -325,16 +381,20 @@ export function SidebarConversations() {
 
 function UngroupedSection({
   dragging,
+  firstPage,
+  getScrollElement,
   onDeleteConversation,
   onOpenMembership,
-  page,
   state,
   tools,
 }: {
   dragging: string | null
+  /** 拓扑里任务区的第一页，作分页列表的首页。 */
+  firstPage: ConversationPage
+  /** 侧栏的滚动容器，列表末尾进入它下方一屏以内就读下一页。 */
+  getScrollElement: () => HTMLElement | null
   onDeleteConversation: (conversation: Conversation) => void
   onOpenMembership: (conversation: Conversation) => void
-  page: ConversationPage
   state: ConversationListState
   tools: ReactNode
 }) {
@@ -342,11 +402,10 @@ function UngroupedSection({
   const groupId = useId()
   const now = useNowByDay()
   const { isOver, setNodeRef } = useDroppable({ id: UNGROUPED, disabled: !canWrite })
-  const more = useMoreConversations({ state }, page.nextCursor)
+  const pages = useSidebarPages({ state }, { firstPage })
   const items = useConversationRows(
-    uniqueConversations([...page.items, ...(more.data?.pages.flatMap((one) => one.items) ?? [])]),
+    uniqueConversations(pages.data.pages.flatMap((one) => one.items)),
   )
-  const hasMore = more.data ? more.hasNextPage : Boolean(page.nextCursor)
   // 服务端按建立时间倒序给，每个时间分组只连成一段，组名可以当 key。
   const groups = groupByRecency(items, (item) => item.createdAt, now)
 
@@ -378,14 +437,15 @@ function UngroupedSection({
           </div>
         ))}
         {items.length === 0 && <EmptyHint>{emptyConversations(state)}</EmptyHint>}
-        {hasMore && (
-          <ExpandRow
-            error={more.error}
-            label="更多任务"
+        {pages.isError ? (
+          <RetryRow
+            error={pages.error}
+            loading={pages.isFetching}
+            onRetry={() => retryPages(pages)}
             retryLabel="重新加载更多任务"
-            loading={more.isFetching}
-            onExpand={() => void more.fetchNextPage()}
           />
+        ) : (
+          pages.hasNextPage && <NextPageRow getScrollElement={getScrollElement} query={pages} />
         )}
       </SidebarSection>
     </div>
@@ -542,38 +602,98 @@ const uniqueConversations = (items: readonly Conversation[]): Conversation[] => 
   })
 }
 
-/** 分页失败保留已加载内容，并在原入口显示原因和重试。 */
-function ExpandRow({
+/** 分页列表的查询状态；直接传 useSidebarPages 的返回值。 */
+type SidebarPagesQuery = {
+  /** 最近一次读到数据的时刻；每变一次都按当下位置重新判断。 */
+  dataUpdatedAt: number
+  isError: boolean
+  isFetching: boolean
+  isFetchingNextPage: boolean
+  isFetchNextPageError: boolean
+  fetchNextPage: (options?: { cancelRefetch?: boolean }) => Promise<unknown>
+  refetch: () => Promise<unknown>
+}
+
+/** 翻下一页失败就重读那一页；从头重拉失败就整份再重拉。 */
+const retryPages = (query: SidebarPagesQuery): void => {
+  void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())
+}
+
+/**
+ * 任务区列表末尾：滚到接近底部就读下一页，读取中写「加载中…」。闲着时只占一线高，不留空白。
+ *
+ * 查询读取中或出错时暂停：在途的原位重拉不被打断，失败后只由重试按钮再读。
+ */
+function NextPageRow({
+  getScrollElement,
+  query,
+}: {
+  getScrollElement: () => HTMLElement | null
+  query: SidebarPagesQuery
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const { dataUpdatedAt, isFetchingNextPage } = query
+  const paused = query.isFetching || query.isError
+  const loadNextPage = useEffectEvent(() => void query.fetchNextPage({ cancelRefetch: false }))
+
+  // 相交状态不变就不回调，所以每读到一次数据、每次暂停结束都重建观察器，让它按当下布局再报一次。
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (paused || sentinel === null) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) loadNextPage()
+      },
+      // 根得是侧栏的滚动容器，下边距才会按它的一屏往外扩。
+      { root: getScrollElement(), rootMargin: '0px 0px 100% 0px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [dataUpdatedAt, getScrollElement, paused])
+
+  return (
+    <div
+      className={
+        isFetchingNextPage
+          ? cn(SIDEBAR_ROW_CLASS, 'w-full justify-start text-body-sm text-on-surface-faint')
+          : 'h-px'
+      }
+      ref={sentinelRef}
+      role="status"
+    >
+      {isFetchingNextPage ? '加载中…' : null}
+    </div>
+  )
+}
+
+/** 分页失败保留已加载内容，在列表末尾显示原因和重试。 */
+function RetryRow({
   error,
-  label,
-  loading = false,
-  onExpand,
+  loading,
+  onRetry,
   retryLabel,
 }: {
-  error?: unknown
-  label: string
-  loading?: boolean
-  onExpand: () => void
+  error: unknown
+  loading: boolean
+  onRetry: () => void
   retryLabel: string
 }) {
   return (
     <>
-      {error != null && (
-        <p className="px-2.5 py-1 text-body-sm text-error" role="alert">
-          {errorMessageOf(error, '加载更多任务失败，请重试')}
-        </p>
-      )}
+      <p className="px-2.5 py-1 text-body-sm text-error" role="alert">
+        {errorMessageOf(error, '加载更多任务失败，请重试')}
+      </p>
       <button
-        aria-label={error != null ? retryLabel : label}
+        aria-label={retryLabel}
         className={cn(
           SIDEBAR_ROW_CLASS,
           'w-full justify-start text-body-sm text-on-surface-faint ui-focus',
         )}
         disabled={loading}
-        onClick={onExpand}
+        onClick={onRetry}
         type="button"
       >
-        {loading ? '加载中…' : error != null ? '重新加载' : '更多任务'}
+        {loading ? '加载中…' : '重新加载'}
       </button>
     </>
   )
@@ -591,9 +711,13 @@ type CollectionGroupProps = {
   onFocusHandled: () => void
   /** 提交新名字；列表刷新出新名字后 resolve。 */
   onRename: (name: string) => Promise<unknown>
+  /** 展开与否由侧栏持有，合集行卸载重挂（换筛选、收起合集列表）后照旧。 */
+  open: boolean
+  onToggle: () => void
   state: ConversationListState
 }
 
+/** 合集展开时读全它的对话，收着不发请求。 */
 function CollectionGroup({
   canManage,
   collection,
@@ -604,9 +728,10 @@ function CollectionGroup({
   onFocusHandled,
   onOpenMembership,
   onRename,
+  onToggle,
+  open,
   state,
 }: CollectionGroupProps) {
-  const [open, setOpen] = useState(false)
   const { close, editing, returnRef, start } = useSidebarRowEditing<HTMLButtonElement>()
   const canWrite = useCanWrite()
 
@@ -616,17 +741,20 @@ function CollectionGroup({
     onFocusHandled()
   }, [focusRequested, onFocusHandled, returnRef])
   const { isOver, setNodeRef } = useDroppable({ id: collection.id, disabled: !canWrite })
-  const more = useMoreConversations(
+  const pages = useSidebarPages(
     { collectionId: collection.id, state },
-    collection.page.nextCursor,
+    { enabled: open, firstPage: collection.page },
   )
   const items = useConversationRows(
-    uniqueConversations([
-      ...collection.page.items,
-      ...(more.data?.pages.flatMap((one) => one.items) ?? []),
-    ]),
+    uniqueConversations(pages.data.pages.flatMap((one) => one.items)),
   )
-  const hasMore = more.data ? more.hasNextPage : Boolean(collection.page.nextCursor)
+  const { fetchNextPage, hasNextPage, isError, isFetching } = pages
+  // 展开着就一页接一页读到底；失败后停下，只由重试按钮再读。
+  useEffect(() => {
+    if (open && hasNextPage && !isFetching && !isError) {
+      void fetchNextPage({ cancelRefetch: false })
+    }
+  }, [fetchNextPage, hasNextPage, isError, isFetching, open])
 
   return (
     <div className="flex flex-col gap-px">
@@ -650,7 +778,7 @@ function CollectionGroup({
             aria-expanded={open}
             aria-label={`${collection.name} (${collection.conversationCount})`}
             className={SIDEBAR_ROW_TITLE_CLASS}
-            onClick={() => setOpen((prev) => !prev)}
+            onClick={onToggle}
             type="button"
           >
             <CollectionIcon />
@@ -705,13 +833,12 @@ function CollectionGroup({
               {state === 'all' ? '这个合集还是空的' : emptyConversations(state)}
             </EmptyHint>
           )}
-          {hasMore && (
-            <ExpandRow
-              error={more.error}
-              label={`${collection.name} 里更多任务`}
+          {isError && (
+            <RetryRow
+              error={pages.error}
+              loading={isFetching}
+              onRetry={() => retryPages(pages)}
               retryLabel={`重新加载 ${collection.name} 里更多任务`}
-              loading={more.isFetching}
-              onExpand={() => void more.fetchNextPage()}
             />
           )}
         </div>

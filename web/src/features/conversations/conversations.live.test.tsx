@@ -26,7 +26,7 @@ function AuditList() {
 
 const AUDIT_KEY = conversationsQueryKeys.audit(DEFAULT_AUDIT_FILTERS)
 const SIDEBAR_KEY = conversationsQueryKeys.sidebar('all')
-const MORE_KEY = conversationsQueryKeys.more('ungrouped', 'cursor-1', 'all')
+const MORE_KEY = conversationsQueryKeys.more('ungrouped', 'all')
 const OTHER_OWNER = '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0009'
 
 /** 去抖窗口一到就重拉；断言前统一推过这个窗口，不关心失效是立刻还是攒一下。 */
@@ -51,7 +51,10 @@ const seedCaches = (queryClient: QueryClient, row: Conversation) => {
     ungrouped: { items: [row], nextCursor: 'cursor-1' },
     ungroupedCount: 2,
   })
-  queryClient.setQueryData(MORE_KEY, { pageParams: ['cursor-1'], pages: [] })
+  queryClient.setQueryData(MORE_KEY, {
+    pageParams: [null],
+    pages: [{ items: [row], nextCursor: 'cursor-1' }],
+  })
 }
 
 const poolRow = (queryClient: QueryClient, id: string) => conversationRowsOf(queryClient).get(id)
@@ -170,10 +173,10 @@ describe('useLiveConversations', () => {
       completedAt: null,
     })
     expect(invalidated(queryClient, AUDIT_KEY)).toBe(true)
-    // 照 Kimi 补读单行兜底，不整份重拉侧栏，也不收起已展开的分页。
+    // 照 Kimi 补读单行兜底，不整份重拉侧栏，也不重拉已展开的分页。
     await vi.waitFor(() => expect(reads).toEqual([`/api/conversations/${row.id}`]))
     expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
-    expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
+    expect(invalidated(queryClient, MORE_KEY)).toBe(false)
   })
 
   it.each([
@@ -328,12 +331,12 @@ describe('useLiveConversations', () => {
       completedAt: row.completedAt,
       title: '改过的名字',
     })
-    expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
+    expect(invalidated(queryClient, MORE_KEY)).toBe(false)
     expect(invalidated(queryClient, AUDIT_KEY)).toBe(false)
     expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
   })
 
-  it('自己对话的视频帧补读这一行拿到出片汇总，不丢额外分页、不重拉拓扑', async () => {
+  it('自己对话的视频帧补读这一行拿到出片汇总，不重拉分页与拓扑', async () => {
     const row = conversationRow()
     const reads = countRowReads()
     const { queryClient, socket } = await mount()
@@ -347,7 +350,7 @@ describe('useLiveConversations', () => {
       expect(poolRow(queryClient, row.id)?.activity.videoGeneration).toBe('running'),
     )
     expect(reads).toEqual([`/api/conversations/${row.id}`])
-    expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
+    expect(invalidated(queryClient, MORE_KEY)).toBe(false)
     expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
     // 还没出成片：全部对话页那一行的封面不会变，不为它重拉。
     expect(invalidated(queryClient, AUDIT_KEY)).toBe(false)
@@ -381,7 +384,7 @@ describe('useLiveConversations', () => {
     expect(invalidated(queryClient, AUDIT_KEY)).toBe(false)
   })
 
-  it('重连后丢掉额外分页并重拉拓扑与全部对话页', async () => {
+  it('重连后原位重拉分页、拓扑与全部对话页，已读的分页留着', async () => {
     const row = conversationRow()
     const { queryClient, socket } = await mount()
     seedCaches(queryClient, row)
@@ -392,7 +395,8 @@ describe('useLiveConversations', () => {
     socket.deliver(SERVER_HELLO)
     await settle()
 
-    expect(queryClient.getQueryData(MORE_KEY)).toBeUndefined()
+    expect(invalidated(queryClient, MORE_KEY)).toBe(true)
+    expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
     expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(true)
     expect(invalidated(queryClient, AUDIT_KEY)).toBe(true)
   })
@@ -405,7 +409,7 @@ describe('useLiveConversations', () => {
           activityFrame(id, { busy: false, last_turn_reason: 'completed' }, OTHER_OWNER),
       ],
       ['视频任务跳状态', (id: string) => generationFrame(id, 'video', { owner: OTHER_OWNER })],
-    ])('%s：不重拉自己的侧栏，也不收起已展开的分页', async (_label, frame) => {
+    ])('%s：不重拉自己的侧栏，也不重拉已展开的分页', async (_label, frame) => {
       const mine = conversationRow()
       const { queryClient, socket } = await mount()
       seedCaches(queryClient, mine)
@@ -415,7 +419,7 @@ describe('useLiveConversations', () => {
       socket.deliver(frame(theirs.id))
       await settle()
 
-      expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
+      expect(invalidated(queryClient, MORE_KEY)).toBe(false)
       expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
     })
 
@@ -431,7 +435,7 @@ describe('useLiveConversations', () => {
       expect(poolRow(queryClient, theirs.id)?.title).toBe(theirs.title)
       expect(invalidated(queryClient, AUDIT_KEY)).toBe(true)
       expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
-      expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
+      expect(invalidated(queryClient, MORE_KEY)).toBe(false)
     })
   })
 
@@ -496,7 +500,7 @@ describe('useLiveConversations', () => {
 
   describe('忙闲变化与筛选列表', () => {
     const OPEN_SIDEBAR_KEY = conversationsQueryKeys.sidebar('open')
-    const OPEN_MORE_KEY = conversationsQueryKeys.more('ungrouped', 'cursor-1', 'open')
+    const OPEN_MORE_KEY = conversationsQueryKeys.more('ungrouped', 'open')
 
     const seedFiltered = (queryClient: QueryClient, row: Conversation) => {
       seedCaches(queryClient, row)
@@ -505,10 +509,13 @@ describe('useLiveConversations', () => {
         ungrouped: { items: [row], nextCursor: null },
         ungroupedCount: 1,
       })
-      queryClient.setQueryData(OPEN_MORE_KEY, [row])
+      queryClient.setQueryData(OPEN_MORE_KEY, {
+        pageParams: [null],
+        pages: [{ items: [row], nextCursor: null }],
+      })
     }
 
-    it('自己的对话只让非 all 的筛选重算：丢掉筛选下的额外分页，重拉筛选下的拓扑', async () => {
+    it('自己的对话只让非 all 的筛选重算：原位重拉筛选下的分页与拓扑', async () => {
       const row = conversationRow()
       const { queryClient, socket } = await mount()
       seedFiltered(queryClient, row)
@@ -517,9 +524,29 @@ describe('useLiveConversations', () => {
       await settle()
 
       expect(invalidated(queryClient, OPEN_SIDEBAR_KEY)).toBe(true)
-      expect(queryClient.getQueryData(OPEN_MORE_KEY)).toBeUndefined()
+      expect(invalidated(queryClient, OPEN_MORE_KEY)).toBe(true)
+      expect(queryClient.getQueryData(OPEN_MORE_KEY)).toBeDefined()
       expect(invalidated(queryClient, SIDEBAR_KEY)).toBe(false)
-      expect(queryClient.getQueryData(MORE_KEY)).toBeDefined()
+      expect(invalidated(queryClient, MORE_KEY)).toBe(false)
+    })
+
+    it('轮状态没变的活动帧不重算筛选列表', async () => {
+      const row = conversationRow({
+        activity: {
+          busy: true,
+          lastTurnReason: null,
+          pendingInteraction: 'none',
+          videoGeneration: 'none',
+        },
+      })
+      const { queryClient, socket } = await mount()
+      seedFiltered(queryClient, row)
+
+      socket.deliver(activityFrame(row.id, { busy: true }))
+      await settle()
+
+      expect(invalidated(queryClient, OPEN_SIDEBAR_KEY)).toBe(false)
+      expect(invalidated(queryClient, OPEN_MORE_KEY)).toBe(false)
     })
 
     it('别人的对话只改池里的行，不动自己的筛选列表', async () => {
@@ -532,7 +559,7 @@ describe('useLiveConversations', () => {
 
       expect(poolRow(queryClient, row.id)?.activity.busy).toBe(true)
       expect(invalidated(queryClient, OPEN_SIDEBAR_KEY)).toBe(false)
-      expect(queryClient.getQueryData(OPEN_MORE_KEY)).toBeDefined()
+      expect(invalidated(queryClient, OPEN_MORE_KEY)).toBe(false)
     })
   })
 

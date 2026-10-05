@@ -1,7 +1,7 @@
-import { act, render as renderDom, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render as renderDom, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   addMockCollection,
   addMockConversation,
@@ -16,7 +16,12 @@ import { renderWithProviders } from '@/testing/render'
 import { Toaster } from '@/shared/ui/toast'
 import { SidebarConversations } from './-sidebar-conversations'
 import { mockConversations } from '@/testing/mocks/conversations'
-import { sessionEnvelope } from '@/testing/ws'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
+import { SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 /** 全局帧订阅在应用里挂在 AppSidebar 顶层；这里照样在对话区外面挂一次，帧才进得了缓存。 */
 function LiveFrames() {
@@ -100,6 +105,35 @@ const render = async (initialPath = '/', permissions = mockAuthUser.permissions)
     { initialPath },
   )
   return { router, socket, user }
+}
+
+/** 服务端改了一行之后发的 updated 帧，带出整行（ADR-0005）；行内 lastSeq 是写入之前的水位。 */
+const rowUpdated = (row: (typeof mockConversations)[number]) => {
+  const before = row.lastSeq
+  return {
+    ...sessionEnvelope(row.id),
+    type: 'event.session.updated',
+    session_id: row.id,
+    payload: { ...row, lastSeq: before },
+  }
+}
+
+/** 记下某个路径的 GET 次数。 */
+const countReads = (pathname: string) => {
+  const reads = { count: 0 }
+  server.events.on('request:start', ({ request }) => {
+    if (request.method === 'GET' && new URL(request.url).pathname === pathname) reads.count += 1
+  })
+  return reads
+}
+
+/** 种 50 段未归类对话（三页：20、20、10），列表末尾常在视野里，挂上后自动读完三页。 */
+const renderWithAllPagesLoaded = async () => {
+  const rows = seedConversations(50)
+  stubIntersectionObserver({ inRange: true })
+  const rendered = await render()
+  await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50))
+  return { ...rendered, rows }
 }
 
 /** 任务区标题右侧的筛选按钮：打开菜单点一档。 */
@@ -412,16 +446,17 @@ describe('SidebarConversations', () => {
     await waitFor(() => expect(screen.queryByLabelText('已完成')).not.toBeInTheDocument())
   })
 
-  it('任务区：第一页 20 条，点「更多任务」把剩下的接上来，接着归进同一个时间分组', async () => {
+  it('任务区：第一页 20 条，滚到列表末尾自动接上剩下的，接着归进同一个时间分组', async () => {
     seedConversations(21)
-    const { user } = await render()
+    const viewport = stubIntersectionObserver()
+    await render()
 
     expect(await screen.findAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(20)
+    expect(screen.queryByRole('button', { name: /更多任务/ })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '更多任务' }))
+    await viewport.scroll(true)
 
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21))
-    expect(screen.queryByRole('button', { name: '更多任务' })).not.toBeInTheDocument()
     // 种子都在一个月前：后一页不另起一个「更早」标题。
     expect(screen.getAllByRole('group', { name: '更早' })).toHaveLength(1)
     expect(
@@ -457,17 +492,104 @@ describe('SidebarConversations', () => {
     expect(screen.queryByRole('group', { name: '昨天' })).not.toBeInTheDocument()
   })
 
-  it('合集内：第一页 10 段，展开后接上第 11 段', async () => {
+  it('合集收着不读分页；展开就把多页一并读全，换筛选后仍展开', async () => {
     const collection = addMockCollection('夏季亚麻系列')
-    seedConversations(11, collection.id)
+    seedConversations(25, collection.id)
+    const pageReads = countReads(`/api/conversations/by-collection/${collection.id}`)
     const { user } = await render()
 
+    const toggle = await screen.findByRole('button', { name: '夏季亚麻系列 (25)' })
+    expect(pageReads.count).toBe(0)
+    await user.click(toggle)
+
+    // 第一页取自拓扑，后面两页各读一次。
+    await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25))
+    expect(pageReads.count).toBe(2)
+    expect(screen.queryByRole('button', { name: /更多任务/ })).not.toBeInTheDocument()
+
+    await pickFilter(user, '未完成')
+    expect(await screen.findByRole('button', { name: '夏季亚麻系列 (25)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25))
+
+    await pickFilter(user, '全部')
+    expect(await screen.findByRole('button', { name: '夏季亚麻系列 (25)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25)
+  })
+
+  it('合集收着时里面新建了一段：再展开就从头重拉已读的页，新的一段在里面', async () => {
+    const collection = addMockCollection('夏季亚麻系列')
+    seedConversations(11, collection.id)
+    const cursors: (string | null)[] = []
+    server.events.on('request:start', ({ request }) => {
+      const url = new URL(request.url)
+      if (url.pathname === `/api/conversations/by-collection/${collection.id}`) {
+        cursors.push(url.searchParams.get('cursor'))
+      }
+    })
+    const { socket, user } = await render()
+
     await user.click(await screen.findByRole('button', { name: '夏季亚麻系列 (11)' }))
-    expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(10)
-
-    await user.click(screen.getByRole('button', { name: '夏季亚麻系列 里更多任务' }))
-
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(11))
+    expect(cursors).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: '夏季亚麻系列 (11)' }))
+
+    const created = addMockConversation('合集里新建的')
+    created.collectionId = collection.id
+    socket.deliver({
+      ...sessionEnvelope(created.id),
+      type: 'event.session.created',
+      session_id: created.id,
+      payload: { ...created },
+    })
+    // 拓扑重拉后计数跟上；合集收着，分页不重拉。
+    const toggle = await screen.findByRole('button', { name: '夏季亚麻系列 (12)' })
+    expect(cursors).toHaveLength(1)
+    await user.click(toggle)
+
+    expect(await screen.findByRole('link', { name: '合集里新建的' })).toBeVisible()
+    expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(11)
+    expect(cursors.slice(1)).toEqual([null, expect.any(String)])
+  })
+
+  it('展开着的合集在收起合集列表、刷新页面之后仍展开', async () => {
+    const entries = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => void entries.set(key, value),
+    })
+    const collections = Array.from({ length: 4 }, (_, index) => addMockCollection(`合集${index}`))
+    // 合集按建立时间倒序，最早建的那个排第四，默认收在「全部合集」里。
+    const oldest = collections[0]
+    if (oldest === undefined) throw new Error('没有合集')
+    seedConversations(1, oldest.id)
+    const { user } = await render()
+
+    await user.click(await screen.findByRole('button', { name: '全部合集' }))
+    await user.click(screen.getByRole('button', { name: '合集0 (1)' }))
+    expect(await screen.findByRole('link', { name: '第0段' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '收起合集' }))
+    await user.click(screen.getByRole('button', { name: '全部合集' }))
+    expect(screen.getByRole('button', { name: '合集0 (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByRole('link', { name: '第0段' })).toBeVisible()
+
+    cleanup()
+    const reloaded = await render()
+    await reloaded.user.click(await screen.findByRole('button', { name: '全部合集' }))
+    expect(screen.getByRole('button', { name: '合集0 (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByRole('link', { name: '第0段' })).toBeVisible()
   })
 
   it('合集默认只露前 3 个，「全部合集」展开全部，「收起合集」再收回 3 个', async () => {
@@ -513,12 +635,12 @@ describe('SidebarConversations', () => {
               : HttpResponse.json({ items: rows.slice(0, 1), nextCursor: null }),
         ),
       )
+      stubIntersectionObserver({ inRange: true })
       const { user } = await render()
       if (collection)
         await user.click(
           await screen.findByRole('button', { name: `${collection.name} (${count})` }),
         )
-      await user.click(await screen.findByRole('button', { name: /^(.+ 里)?更多任务$/ }))
 
       expect(await screen.findByRole('alert')).toHaveTextContent('下一页暂不可用')
       expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(count - 1)
@@ -547,12 +669,12 @@ describe('SidebarConversations', () => {
           () => HttpResponse.json({ items: rows.slice(0, 2).reverse(), nextCursor: null }),
         ),
       )
+      stubIntersectionObserver({ inRange: true })
       const { user } = await render()
       if (collection)
         await user.click(
           await screen.findByRole('button', { name: `${collection.name} (${count})` }),
         )
-      await user.click(await screen.findByRole('button', { name: /^(.+ 里)?更多任务$/ }))
 
       await waitFor(() =>
         expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(count),
@@ -813,15 +935,15 @@ describe('SidebarConversations', () => {
     expect(screen.getByRole('link', { name: '第0段' })).toBeVisible()
   })
 
-  it('别人的对话跑完了：自己侧栏不重拉，已展开的「更多」也不收起', async () => {
+  it('别人的对话跑完了：自己侧栏不重拉，已接上的分页也不收起', async () => {
     seedConversations(21)
     const theirs = addMockConversation('别人的', undefined, '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0009')
     const reads = { topology: 0 }
     server.events.on('request:start', ({ request }) => {
       if (new URL(request.url).pathname === '/api/conversations') reads.topology += 1
     })
-    const { socket, user } = await render()
-    await user.click(await screen.findByRole('button', { name: '更多任务' }))
+    stubIntersectionObserver({ inRange: true })
+    const { socket } = await render()
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21))
     const before = reads.topology
 
@@ -843,14 +965,14 @@ describe('SidebarConversations', () => {
     expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21)
   })
 
-  it('「更多任务」接上来的那一行收到帧也跟着转圈', async () => {
+  it('滚动接上来的那一行收到帧也跟着转圈', async () => {
     const rows = seedConversations(21)
-    const { socket, user } = await render()
+    stubIntersectionObserver({ inRange: true })
+    const { socket } = await render()
 
-    await user.click(await screen.findByRole('button', { name: '更多任务' }))
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21))
 
-    // 最旧对话位于展开加载的额外分页中。
+    // 最旧对话位于滚动接上的第二页。
     socket.deliver(workChanged(rows[0]?.id ?? '', { busy: true }))
 
     expect(await screen.findByLabelText('正在跑')).toBeVisible()
@@ -870,6 +992,121 @@ describe('SidebarConversations', () => {
       expect(screen.queryByRole('link', { name: '还在弄' })).not.toBeInTheDocument(),
     )
     expect(conversation.completedAt).not.toBeNull()
+  })
+
+  describe('已接上的分页在列表刷新后不收起', () => {
+    it('「全部」下只换了收尾标记：不重拉任务区，行原样留着', async () => {
+      const { rows, socket } = await renderWithAllPagesLoaded()
+      const listReads = countReads('/api/conversations/ungrouped')
+      const topologyReads = countReads('/api/conversations')
+      const tail = rows[0]
+      if (tail === undefined) throw new Error('没有对话')
+
+      tail.completedAt = new Date().toISOString()
+      socket.deliver(rowUpdated(tail))
+      expect(await screen.findByLabelText('已完成')).toBeVisible()
+      await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+      expect(listReads.count).toBe(0)
+      expect(topologyReads.count).toBe(0)
+      expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50)
+    })
+
+    it('别处新建了一段：三页原位从头重拉，重拉期间行都在，原第一页末行挪到第二页仍可见', async () => {
+      const { socket } = await renderWithAllPagesLoaded()
+      let release: () => void = () => {}
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const cursors: (string | null)[] = []
+      // 不返回响应就落到默认 handler：先记下、挂住，放行后照常分页。
+      server.use(
+        http.get('*/api/conversations/ungrouped', async ({ request }) => {
+          cursors.push(new URL(request.url).searchParams.get('cursor'))
+          await gate
+        }),
+      )
+
+      const created = addMockConversation('另一个窗口建的')
+      socket.deliver({
+        ...sessionEnvelope(created.id),
+        type: 'event.session.created',
+        session_id: created.id,
+        payload: { ...created },
+      })
+
+      await waitFor(() => expect(cursors).toHaveLength(1))
+      // 从头读：第一页不带游标。
+      expect(cursors[0]).toBeNull()
+      expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50)
+      expect(screen.getByRole('link', { name: '第30段' })).toBeVisible()
+
+      release()
+      expect(await screen.findByRole('link', { name: '另一个窗口建的' })).toBeVisible()
+      expect(cursors).toHaveLength(3)
+      expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50)
+      expect(screen.getByRole('link', { name: '第30段' })).toBeVisible()
+    })
+
+    it('接上来的一行被移进合集：重拉之后它离开任务区，其余行都在', async () => {
+      const collection = addMockCollection('夏季亚麻系列')
+      const { rows, socket } = await renderWithAllPagesLoaded()
+      const tail = rows[0]
+      if (tail === undefined) throw new Error('没有对话')
+
+      tail.collectionId = collection.id
+      socket.deliver(rowUpdated(tail))
+
+      await waitFor(() =>
+        expect(screen.queryByRole('link', { name: '第0段' })).not.toBeInTheDocument(),
+      )
+      expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(49)
+      expect(await screen.findByRole('button', { name: '夏季亚麻系列 (1)' })).toBeVisible()
+    })
+
+    it('断线重连：任务区原位重拉三页，行都在', async () => {
+      const { socket } = await renderWithAllPagesLoaded()
+      const listReads = countReads('/api/conversations/ungrouped')
+      const handshake = socket.onmessage
+
+      socket.onclose?.()
+      // 断开时摘掉旧回调，退避约一秒后重新连上、换上新的消息回调，再回服务端招呼。
+      await waitFor(
+        () => {
+          expect(socket.onmessage).not.toBeNull()
+          expect(socket.onmessage).not.toBe(handshake)
+        },
+        { timeout: 3000 },
+      )
+      socket.deliver(SERVER_HELLO)
+
+      await waitFor(() => expect(listReads.count).toBe(3))
+      await waitFor(() =>
+        expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50),
+      )
+    }, 10_000)
+
+    it('筛「未完成」时接上来的一段收了尾：重拉之后它离开这一档，其余行都在', async () => {
+      const rows = seedConversations(25)
+      const viewport = stubIntersectionObserver({ inRange: true })
+      const { socket, user } = await render()
+      await pickFilter(user, '未完成')
+      await waitFor(() =>
+        expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25),
+      )
+      // 滚离列表末尾：之后列表只能靠重拉保住第二页，不会再自动接上。
+      await viewport.scroll(false)
+      const tail = rows[0]
+      if (tail === undefined) throw new Error('没有对话')
+
+      tail.completedAt = new Date().toISOString()
+      socket.deliver(rowUpdated(tail))
+
+      await waitFor(() =>
+        expect(screen.queryByRole('link', { name: '第0段' })).not.toBeInTheDocument(),
+      )
+      expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(24)
+    })
   })
 })
 
