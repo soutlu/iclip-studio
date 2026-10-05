@@ -538,14 +538,14 @@ def build_app(
     )
     context_limits = live_context_limits(agent_layer)
 
-    # 删除不中止在跑的 run，删掉那一刻在跑或排队的几轮收尾时对话已是墓碑：
+    # 删除不中止在跑或排队的轮，删掉之后才开跑的 run 碰到的对话已是墓碑：
     # 这是预期内的常态，记一条 info 就够，不让 runner 的兜底打成带栈的 exception。
 
     async def name_conversation(row: JobRow) -> None:
-        """轮次结束后调用对话命名用例，连接引擎模型与对话条件更新。"""
+        """一轮开始时由 runner 在后台调用对话命名用例，连接引擎模型与对话条件更新。"""
 
         try:
-            await conversations.service.name_after_turn(uuid.UUID(row.conversation_id), row.text)
+            await conversations.service.name_at_turn_start(uuid.UUID(row.conversation_id), row.text)
         except NotFound:
             _logger.info("对话已删除，跳过自动起名", conversation_id=row.conversation_id)
 
@@ -598,7 +598,7 @@ def build_app(
             max_attempts=settings.agent_runs.max_attempts,
             compaction_max_fraction=settings.compaction.max_fraction,
             compaction_keep_messages=settings.compaction.keep_messages,
-            on_turn_ended=name_conversation,
+            on_turn_started=name_conversation,
             on_run_started=note_run_started,
             display=tool_displays,
         ),

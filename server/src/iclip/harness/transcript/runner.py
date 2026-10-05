@@ -70,8 +70,10 @@ _logger = structlog.stdlib.get_logger(__name__)
 DepsFor = Callable[[JobRow], Awaitable[Any]]
 """为消息构造运行依赖；身份固定为消息入队时的属主，由组合根提供具体依赖。"""
 
-TurnEnded = Callable[[JobRow], Awaitable[None]]
-"""由组合根注入的轮次完成回调；异常仅记录，不影响已持久化的运行结果。"""
+TurnStarted = Callable[[JobRow], Awaitable[None]]
+"""一轮的首次 run 挂上租约后在后台调用一次，与这一轮并行、不等它完成；审批与崩溃续跑不再调用。
+
+异常仅记录；关停时尚未完成的调用被取消。由组合根注入具体动作。"""
 
 RunStarted = Callable[[JobRow, str], Awaitable[None]]
 """每次顶层 run 挂上租约后调用一次，带新 run_id；异常仅记录；子代理运行不经这里。"""
@@ -193,7 +195,7 @@ class ConversationRunner:
         max_attempts: int,
         compaction_max_fraction: float = 0.85,
         compaction_keep_messages: int = 20,
-        on_turn_ended: TurnEnded | None = None,
+        on_turn_started: TurnStarted | None = None,
         on_run_started: RunStarted | None = None,
         display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY,
     ) -> None:
@@ -214,12 +216,14 @@ class ConversationRunner:
         self._display = display
         # 公开租约持有者 id，供提交入口写入租约。
         self.locked_by = uuid.uuid4().hex
-        self._on_turn_ended = on_turn_ended
+        self._on_turn_started = on_turn_started
         self._on_run_started = on_run_started
         self._active: dict[str, _Active] = {}
         self._closing = False
         # 持有任务强引用，避免仅被 asyncio 弱引用的运行任务被回收。
         self._tasks: set[asyncio.Task[None]] = set()
+        # 轮次开场动作与运行并行，同样持强引用；它们不受运行的取消令牌控制，关停时单独取消。
+        self._side_tasks: set[asyncio.Task[None]] = set()
         # 后台循环独立保存，关停时先于活跃运行停止。
         self._loops: tuple[asyncio.Task[None], ...] = ()
 
@@ -305,6 +309,10 @@ class ConversationRunner:
             for active in tuple(self._active.values()):
                 active.token.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
+        # 运行全部收尾后再取消开场动作：此后不会再有新轮次开场。
+        for task in self._side_tasks:
+            task.cancel()
+        await asyncio.gather(*self._side_tasks, return_exceptions=True)
 
     # --- 人机往返 -----------------------------------------------------------
 
@@ -520,8 +528,6 @@ class ConversationRunner:
                 if settled is not None:
                     self._publish(settled)
                 await self._start_next(row.conversation_id)
-                # 先启动队首再生成标题，避免附带模型调用阻塞消息队列。
-                await self._after_turn(row)
 
     async def _release(self, row: JobRow, active: _Active | None) -> None:
         """关停时释放租约并保留 running。
@@ -550,15 +556,22 @@ class ConversationRunner:
             _logger.info("这几条追加没赶上这一轮，退回队列", steers=stranded)
             await self._revert(tuple(active.steered[item] for item in stranded))
 
-    async def _after_turn(self, row: JobRow) -> None:
-        """执行轮次完成后的附带动作，异常仅记录。"""
+    def _spawn_turn_started(self, row: JobRow) -> None:
+        """在后台执行这一轮的开场动作，不让它拖住这一轮的运行。"""
 
-        if self._on_turn_ended is None:
+        if self._on_turn_started is None:
             return
+        task = asyncio.create_task(self._turn_started(self._on_turn_started, row))
+        self._side_tasks.add(task)
+        task.add_done_callback(self._side_tasks.discard)
+
+    async def _turn_started(self, action: TurnStarted, row: JobRow) -> None:
+        """执行一轮的开场动作，异常仅记录。"""
+
         try:
-            await self._on_turn_ended(row)
+            await action(row)
         except Exception:
-            _logger.exception("这一轮的收尾动作没做完", prompt_id=row.prompt_id)
+            _logger.exception("这一轮的开场动作没做完", prompt_id=row.prompt_id)
 
     async def _run_started(self, row: JobRow, run_id: str) -> None:
         """执行 run 挂上租约后的附带动作，异常仅记录。"""
@@ -621,6 +634,9 @@ class ConversationRunner:
         if row.run_id is not None:
             await self._queue.adopt_steered(row.run_id, run_id)
         await self._run_started(row, run_id)
+        # 审批续跑与崩溃续跑接着已开场的那一轮，只有首次发出用户消息的 run 算这一轮开场。
+        if not awaiting and resumed is None:
+            self._spawn_turn_started(row)
 
         active = _Active(
             prompt_id=row.prompt_id,
@@ -816,4 +832,4 @@ class ConversationRunner:
         )
 
 
-__all__ = ["ConversationRunner", "ConversationSnapshots", "DepsFor", "RunStarted", "TurnEnded"]
+__all__ = ["ConversationRunner", "ConversationSnapshots", "DepsFor", "RunStarted", "TurnStarted"]

@@ -17,7 +17,7 @@ from typing import Any, Literal, NoReturn, cast
 import pytest
 
 from iclip.common.errors import NotFound
-from iclip.domains.conversations.models import Conversation, ConversationActivity
+from iclip.domains.conversations.models import Conversation, ConversationActivity, TitleKind
 from iclip.domains.conversations.repository import ConversationRepository
 from iclip.domains.conversations.service import (
     ActivitiesOf,
@@ -378,7 +378,7 @@ async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
         return "模型起的名字"
 
     service = build(repo, clock, announced, generate_title=slow_title)
-    naming = asyncio.create_task(service.name_after_turn(existing.id, "做一条春季新款视频"))
+    naming = asyncio.create_task(service.name_at_turn_start(existing.id, "做一条春季新款视频"))
     await _settle()
     assert not naming.done()
 
@@ -389,6 +389,55 @@ async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
     # 属主改过名，条件更新不再覆盖，也就不发标题帧。
     assert repo.row.title == "用户起的名字"
     assert announced.titles == [(OWNER.user_id, existing.id, "用户起的名字")]
+
+
+async def test_a_default_title_is_generated_and_announced() -> None:
+    clock = SessionEventClock()
+    existing = _row()
+    repo = PlainRepo(row=existing)
+    announced = Announced()
+
+    async def titled(_: str) -> str | None:
+        return "春季新款视频"
+
+    service = build(repo, clock, announced, generate_title=titled)
+    await service.name_at_turn_start(existing.id, "做一条春季新款视频")
+
+    assert (repo.row.title, repo.row.title_kind) == ("春季新款视频", "generated")
+    assert announced.titles == [(OWNER.user_id, existing.id, "春季新款视频")]
+
+
+async def test_a_title_that_could_not_be_generated_stays_default_for_the_next_turn() -> None:
+    clock = SessionEventClock()
+    existing = _row()
+    repo = PlainRepo(row=existing)
+    announced = Announced()
+
+    async def nothing(_: str) -> str | None:
+        return None
+
+    service = build(repo, clock, announced, generate_title=nothing)
+    await service.name_at_turn_start(existing.id, "做一条春季新款视频")
+
+    assert (repo.row.title, repo.row.title_kind) == ("一段对话", "default")
+    assert announced.titles == []
+
+
+@pytest.mark.parametrize("kind", ["custom", "generated"])
+async def test_a_title_that_is_no_longer_default_is_not_generated_again(kind: TitleKind) -> None:
+    """改过名或已经起过名的对话，开新一轮时不再调模型。"""
+
+    clock = SessionEventClock()
+    existing = _row(title="已有的名字", title_kind=kind)
+    repo = PlainRepo(row=existing)
+    announced = Announced()
+
+    # 生成端口是 _untouched：一旦调模型就抛错。
+    service = build(repo, clock, announced)
+    await service.name_at_turn_start(existing.id, "做一条春季新款视频")
+
+    assert (repo.row.title, repo.row.title_kind) == ("已有的名字", kind)
+    assert announced.titles == []
 
 
 async def test_clearing_the_completion_mark_from_another_domain_announces_the_row() -> None:
