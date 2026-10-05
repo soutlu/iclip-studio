@@ -207,7 +207,8 @@ def _require_ffmpeg(required: bool) -> None:
 
     if required and not ffmpeg_available():
         raise RuntimeError(
-            "PATH 上找不到 ffmpeg/ffprobe：取帧与出图要用它抽帧切格，视频裁剪拼接要用它切段合成"
+            "PATH 上找不到 ffmpeg/ffprobe：取帧与出图要用它抽帧切格，视频裁剪拼接要用它切段合成，"
+            "视频拆解要用它读时长与抽帧"
         )
 
 
@@ -477,6 +478,7 @@ def build_app(
         object_store=public_objects,
         video=settings.video,
         shot_video=settings.shot_video if settings.shot_tools_enabled else None,
+        iclip_studio=settings.iclip_studio,
     )
     # 实时与历史共用显示注册表，保证工具卡渲染一致。
     tool_displays = build_display_registry(capability_table)
