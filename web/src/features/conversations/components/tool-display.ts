@@ -161,7 +161,7 @@ const searchResultsMeta = z.object({
 })
 
 const mediaGridMeta = z.object({
-  items: z.array(z.object({ caption: z.string(), url: z.string() })),
+  items: z.array(z.object({ caption: z.string().optional(), url: z.string() })),
 })
 
 /** 没有卡身渲染器的工具可以声明正文不给展开。 */

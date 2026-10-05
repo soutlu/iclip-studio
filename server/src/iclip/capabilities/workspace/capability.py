@@ -52,7 +52,6 @@ from iclip.platform.transcript.display import (
     media_grid,
     search_results,
     tool_note,
-    url_filename,
 )
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -184,7 +183,7 @@ def _search_display(args: Any) -> ToolDisplay | None:
 
 def _media_display(args: Any) -> ToolDisplay | None:
     url = _text(args, "url")
-    return None if url is None else GenericDisplay(summary="读取图片", detail=url_filename(url))
+    return None if url is None else GenericDisplay(summary="读取图片")
 
 
 def _size_chip(size_bytes: int) -> str:
@@ -235,12 +234,6 @@ def _bytes_label(size_bytes: int) -> str:
     if size_bytes >= mib:
         return f"{size_bytes / mib:.1f} MB"
     return f"{size_bytes / 1024:.1f} KB"
-
-
-def _delivery_chip(delivered: str, original: str) -> str:
-    """交付地址带了缩放或裁切参数就是加工过的图，否则是原图。"""
-
-    return "原图" if delivered == original else "已处理"
 
 
 def _checked(path: str) -> str:
@@ -536,7 +529,8 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
                 ImageUrl(url=delivered, media_type=info.media_type),
                 media_tag_close("image"),
             ],
-            metadata=media_grid([(delivered, clause)], note=_delivery_chip(delivered, url)),
+            # 缩放、裁切说明只给模型；卡片只画这张图。
+            metadata=media_grid([(delivered, None)]),
         )
 
     def _deliver(

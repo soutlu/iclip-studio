@@ -10,8 +10,8 @@ export const SIDEBAR_ROW_CLASS = `group ui-state cursor-pointer ${SIDEBAR_ROW_BO
 export const SIDEBAR_ROW_TITLE_CLASS =
   'flex min-w-0 flex-1 items-center gap-2.5 rounded-xs ui-focus'
 
-/** 选中行：浅灰侧栏上浮起的一枚胶囊；深色下 top-layer 是抬高一档的中性灰，不是纯白。 */
-export const SIDEBAR_ROW_ACTIVE = 'bg-top-layer font-semibold shadow-[var(--shadow-1)]'
+/** 选中行：与其余列表的选中态同一层浅墨底，字重只提一档，不浮起、不加阴影。 */
+export const SIDEBAR_ROW_ACTIVE = 'bg-state-active font-medium'
 
 /** 行内 ⋯ 菜单打开时保持悬停底色；选中行保留自己的底色，不加这一层。 */
 export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'

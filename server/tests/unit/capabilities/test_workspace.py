@@ -536,16 +536,8 @@ async def test_a_big_image_is_downsampled_and_says_so() -> None:
     summary = str(facing[1])
     assert "3000×2000" in summary
     assert "1024" in summary
-    # 卡片：交付的是处理过的图就在角标说明。
-    assert result.metadata == {
-        "items": [
-            {
-                "url": f"{OSS_IMAGE}?x-oss-process=image/resize,l_1024",
-                "caption": "已降采样到长边 1024",
-            }
-        ],
-        "note": "已处理",
-    }
+    # 卡片只画交付的图，缩放说明不上卡。
+    assert result.metadata == {"items": [{"url": f"{OSS_IMAGE}?x-oss-process=image/resize,l_1024"}]}
 
 
 async def test_a_small_image_goes_untouched() -> None:
@@ -752,10 +744,8 @@ def test_every_tool_has_a_display(
 
     drawn = ToolDisplayRegistry.merged(capability.display_table()).entries
     assert set(drawn) == set(tools.tools)
-    # 读图不是取网页：走 generic 卡，主语是文件名。
-    media = drawn["ReadMediaFile"].draw({"url": OSS_IMAGE})
-    assert isinstance(media, GenericDisplay)
-    assert media.detail == "style.jpg"
+    # 读图不是取网页：走 generic 卡，卡头不写文件名。
+    assert drawn["ReadMediaFile"].draw({"url": OSS_IMAGE}) == GenericDisplay(summary="读取图片")
     assert drawn["ReadMediaFile"].draw({}) is None
     assert drawn["read_file"].draw({"path": "分镜.md"}) == FileIoDisplay(
         operation="read", path="分镜.md"
