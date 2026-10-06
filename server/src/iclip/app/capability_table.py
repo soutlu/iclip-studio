@@ -15,7 +15,6 @@ from iclip.capabilities.iclip_studio.breakdown.media import FfmpegVideoSampler
 from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.capability import IclipStudio
-from iclip.capabilities.iclip_studio.film.packages import GPT_IMAGE_MODEL
 from iclip.capabilities.iclip_studio.ports import (
     InvalidNodeImageRequest,
     NodeImageJob,
@@ -348,13 +347,6 @@ def build_capability_table(
                 "装配 iclip_studio 要有对象存储：拆过的视频存在那里供所有对话共用；"
                 "配上 OSS，或去掉配置里的 iclip_studio 段"
             )
-        if generation_service is not None and GPT_IMAGE_MODEL not in image_models:
-            # 只少一件工具，检查与导出照常，所以不拒绝装配；说清楚少了什么。
-            _logger.warning(
-                "生图工具没有登记，图片模型里没有它要用的那家",
-                model=GPT_IMAGE_MODEL,
-                configured=sorted(image_models),
-            )
         table["iclip_studio"] = (
             IclipStudio[Any](
                 space=space,
@@ -374,7 +366,7 @@ def build_capability_table(
                     if generation_service is not None
                     else None
                 ),
-                can_generate=GPT_IMAGE_MODEL in image_models,
+                # 现阶段生图由人自己做：生图工具保留，不登记给 agent。
             ),
         )
     if shot_video is not None:
