@@ -38,6 +38,12 @@ media_generation:
       seedream_v5_pro:
         route: seedrance5.0pro # 上游路由拼写沿用它公开契约里的 seedrance
         concurrency: 40
+      gpt-image-2.5:
+        route: openai/gpt-image-2.5-flare-developer
+        concurrency: 10
+        # 这家的两条任务路由与别家不同名，写在它自己这里。
+        text_to_image_task: text-to-image
+        image_edit_task: edit
   poll_interval_seconds: 5 # 状态查询间隔，固定轮询
   job_timeout_seconds: 3600 # 提交后等待终态的上限
 

@@ -263,7 +263,11 @@ def _generation_module(
         video_allowed_models=settings.video_allowed_models,
         image_models=tuple(
             ImageModelConfig(
-                name=model.name, api_base=model.api_base, concurrency=model.concurrency
+                name=model.name,
+                api_base=model.api_base,
+                concurrency=model.concurrency,
+                text_to_image_task=model.text_to_image_task,
+                image_edit_task=model.image_edit_task,
             )
             for model in settings.image_models
         ),

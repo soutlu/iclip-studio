@@ -53,10 +53,13 @@ def image_status(film: Film) -> list[NodeImage]:
     for node in film.image_nodes():
         name = node.attrs["id"]
         chosen = film.selected.get(name)
-        if chosen is None:
-            status.append(NodeImage(name, "还没有图", None))
-        else:
+        latest = film.generated.get(name)
+        if chosen is not None:
             status.append(NodeImage(name, f"运行文件选用「{chosen}」", film.registered[chosen]))
+        elif latest is not None:
+            status.append(NodeImage(name, "最近一次生成", latest))
+        else:
+            status.append(NodeImage(name, "还没有图", None))
     return status
 
 

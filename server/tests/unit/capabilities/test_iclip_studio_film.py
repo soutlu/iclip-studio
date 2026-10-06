@@ -1,9 +1,10 @@
-"""验证工程文件的两件工具：check_film 报出问题或概况，export_shots 写出分镜文件。"""
+"""验证工程文件的三件工具：check_film 报出问题或概况，generate_images 给生图节点出图，export_shots 写出分镜文件。"""
 
 from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Mapping, Sequence
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
+from iclip.capabilities.iclip_studio import capability as studio
 from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.capability import (
@@ -20,16 +22,29 @@ from iclip.capabilities.iclip_studio.capability import (
     IclipStudio,
     IclipStudioToolset,
 )
-from iclip.capabilities.iclip_studio.ports import SampledVideo
+from iclip.capabilities.iclip_studio.ports import (
+    InvalidNodeImageRequest,
+    NodeImageJob,
+    NodeImageRequest,
+    SampledVideo,
+)
 from iclip.capabilities.shot_document import SHOTS_PATH, validate_shots_document
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
-from iclip.platform.transcript.display import GenericDisplay
+from iclip.platform.transcript.display import GenericDisplay, ToolDisplayEntry
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.film import FILM, GIVEN_IMAGES, PERSON_FIXED, RUN, SHOE_PHOTO, VIEW_ONE
+from tests.helpers.film import (
+    FILM,
+    GIVEN_IMAGES,
+    PERSON_FIRST,
+    PERSON_FIXED,
+    RUN,
+    SHOE_PHOTO,
+    VIEW_ONE,
+)
 from tests.helpers.material_ledger import FakeMaterialLedger
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -52,6 +67,64 @@ class NoShared:
 
     async def put(self, video_url: str, document: str) -> None:
         raise AssertionError("不该存共用的拆解")
+
+
+class FakeNodeImages:
+    """生成域的替身：记下每次出图请求，按设定给出结果；出图立刻有结论，不用等。"""
+
+    def __init__(self) -> None:
+        self.requests: list[NodeImageRequest] = []
+        self.failing: dict[str, str] = {}
+        """节点名 → 失败原因。"""
+        self.rejecting: dict[str, str] = {}
+        """节点名 → 受理时就被拒的原因。"""
+        self.pending_polls = 0
+        """出图先停在进行中几次查询，再给结论。"""
+        self.earlier: dict[str, str] = {}
+        """节点名 → 以前生成成功的图。"""
+        self.known: set[str] = set()
+        """生成记录里有的图片地址。"""
+        self._jobs: dict[uuid.UUID, tuple[NodeImageRequest, int]] = {}
+
+    def url_of(self, node: str) -> str:
+        count = sum(1 for request in self.requests if request.node == node)
+        return f"https://cdn.test/generated/{node}-{count}.png"
+
+    def _settled(self, job_id: uuid.UUID, request: NodeImageRequest) -> NodeImageJob:
+        reason = self.failing.get(request.node)
+        if reason is not None:
+            return NodeImageJob(job_id, "failed", error_message=reason)
+        return NodeImageJob(job_id, "completed", output_url=self.url_of(request.node))
+
+    async def submit(self, principal: Principal, request: NodeImageRequest) -> NodeImageJob:
+        if request.node in self.rejecting:
+            raise InvalidNodeImageRequest(self.rejecting[request.node])
+        self.requests.append(request)
+        job_id = uuid.uuid4()
+        if self.pending_polls:
+            self._jobs[job_id] = (request, self.pending_polls)
+            return NodeImageJob(job_id, "submitted")
+        return self._settled(job_id, request)
+
+    async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob:
+        request, left = self._jobs[job_id]
+        if left > 1:
+            self._jobs[job_id] = (request, left - 1)
+            return NodeImageJob(job_id, "submitted")
+        return self._settled(job_id, request)
+
+    async def latest(
+        self, principal: Principal, conversation_id: str, nodes: Sequence[str]
+    ) -> Mapping[str, str]:
+        return {node: url for node, url in self.earlier.items() if node in nodes}
+
+    async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
+        return url in self.known
+
+
+@pytest.fixture
+def images() -> FakeNodeImages:
+    return FakeNodeImages()
 
 
 @pytest.fixture
@@ -80,7 +153,13 @@ def ctx() -> RunContext[object]:
     return RunContext[object](deps=deps, model=TestModel(), usage=RunUsage(), messages=[])
 
 
-def capability(files: FakeFileStore, ledger: FakeMaterialLedger) -> IclipStudio[object]:
+def capability(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages | None = None,
+    *,
+    can_generate: bool = True,
+) -> IclipStudio[object]:
     model = ArkBreakdownModel(
         httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
         url="https://vision.test/responses",
@@ -92,6 +171,8 @@ def capability(files: FakeFileStore, ledger: FakeMaterialLedger) -> IclipStudio[
         breakdown=VideoBreakdown(model=model, sampler=NoSampler()),
         shared=NoShared(),
         ledger=ledger,
+        images=images,
+        can_generate=can_generate,
     )
 
 
@@ -109,13 +190,14 @@ async def workspace(
     project: str | None = FILM,
     run: str | None = RUN,
     images: tuple[str, ...] = GIVEN_IMAGES,
+    generation: FakeNodeImages | None = None,
 ) -> IclipStudioToolset[object]:
     if project is not None:
         await files.write(NAMESPACE, "film.icml", project)
     if run is not None:
         await files.write(NAMESPACE, "film.icrun", run)
     await ledger.record(NAMESPACE, [Material(url=url, kind="image") for url in images])
-    return capability(files, ledger).get_toolset()
+    return capability(files, ledger, generation).get_toolset()
 
 
 async def test_a_passing_check_lists_which_image_each_node_uses(
@@ -212,7 +294,7 @@ async def test_show_prints_the_assembled_prompt_of_one_node(
     image = text_of(await tools.check_film(ctx, show="镜02机位图"))
     video = text_of(await tools.check_film(ctx, show="全片"))
 
-    assert "镜02机位图：画幅 9:16，尺寸 1152x2048" in image
+    assert "镜02机位图：画幅 9:16，分辨率 2k" in image
     assert f"参考图：图1 = {PERSON_FIXED}、图2 = {SHOE_PHOTO}、图3 = {VIEW_ONE}" in image
     assert "图3：同一场戏的上一个机位" in image
     assert "全片：15 秒，画幅 9:16" in video
@@ -294,10 +376,240 @@ async def test_a_project_without_a_video_cannot_be_exported(
         await tools.export_shots(ctx)
 
 
+async def test_a_node_without_a_selection_shows_its_latest_generated_image(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+) -> None:
+    images.earlier = {"公园跑道参考图": "https://cdn.test/generated/track.png"}
+    tools = await workspace(files, ledger, generation=images)
+
+    lines = text_of(await tools.check_film(ctx)).splitlines()
+    await tools.export_shots(ctx)
+
+    assert lines[2] == "公园跑道参考图：最近一次生成"
+    assert lines[1] == "短发女生参考图：运行文件选用「短发女生修过手」", "选用的优先于最近生成的"
+    stored = await files.read(NAMESPACE, SHOTS_PATH)
+    assert stored is not None
+    (row,) = validate_shots_document(stored.content).shots
+    assert row.image_urls == [
+        PERSON_FIXED,
+        SHOE_PHOTO,
+        "https://cdn.test/generated/track.png",
+        VIEW_ONE,
+    ]
+    assert "场景 公园跑道：@Image3，" in row.prompt.global_settings
+
+
+async def test_an_image_edited_elsewhere_in_the_conversation_can_be_registered(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+) -> None:
+    # 分镜页的图片编辑出的图不进素材台账，但生成记录里有它。
+    images.known = {PERSON_FIXED}
+    tools = await workspace(
+        files, ledger, images=(SHOE_PHOTO, PERSON_FIRST, VIEW_ONE), generation=images
+    )
+
+    assert text_of(await tools.check_film(ctx)).startswith("检查通过")
+
+
+async def test_listed_nodes_get_one_image_each_and_become_conversation_material(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+) -> None:
+    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+
+    result = await tools.generate_images(ctx, ["公园跑道参考图", "短发女生参考图"])
+
+    person, track = images.requests
+    assert (person.node, person.model, person.aspect_ratio, person.resolution) == (
+        "短发女生参考图",
+        "gpt-image-2.5",
+        "3:4",
+        "2k",
+    )
+    assert person.reference_image_urls == ()
+    assert person.prompt.startswith("画面是用手机实拍的") and "东亚女性" in person.prompt
+    assert (person.user_name, person.conversation_id) == ("logan", "thread-1")
+    assert track.node == "公园跑道参考图"
+    made = [images.url_of("短发女生参考图"), images.url_of("公园跑道参考图")]
+    assert text_of(result).splitlines() == [
+        "生成结束：2 张成功，0 张失败，0 个没有生成。",
+        f"短发女生参考图：已生成，地址 {made[0]}",
+        f"公园跑道参考图：已生成，地址 {made[1]}",
+    ]
+    assert result.metadata == {
+        "items": [
+            {"url": made[0], "caption": "短发女生参考图"},
+            {"url": made[1], "caption": "公园跑道参考图"},
+        ],
+        "note": "2 张",
+    }
+    assert ledger.urls(NAMESPACE) >= set(made), "生成出来的图登记成对话素材，后面的工具才认"
+
+
+async def test_an_image_that_uses_another_listed_image_waits_for_it(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+) -> None:
+    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+
+    result = await tools.generate_images(ctx, ["镜02机位图", "镜01机位图", "短发女生参考图"])
+
+    assert [request.node for request in images.requests] == [
+        "短发女生参考图",
+        "镜01机位图",
+        "镜02机位图",
+    ]
+    person, first_view = images.url_of("短发女生参考图"), images.url_of("镜01机位图")
+    assert images.requests[1].reference_image_urls == (person, SHOE_PHOTO)
+    assert images.requests[2].reference_image_urls == (person, SHOE_PHOTO, first_view)
+    assert "图3：同一场戏的上一个机位" in images.requests[2].prompt
+    # 公园跑道参考图没有列进来，也没生成过：机位图里这个元素只用文字，结果里说明。
+    assert "镜01机位图：已生成" in text_of(result)
+    assert "公园跑道参考图 还没有图，这次只用了文字" in text_of(result)
+
+
+async def test_a_node_with_a_selection_in_the_run_file_is_not_generated(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+) -> None:
+    tools = await workspace(files, ledger, generation=images)
+
+    result = await tools.generate_images(ctx, ["短发女生参考图", "公园跑道参考图"])
+
+    assert [request.node for request in images.requests] == ["公园跑道参考图"]
+    lines = text_of(result).splitlines()
+    assert lines[0] == "生成结束：1 张成功，0 张失败，1 个没有生成。"
+    assert lines[1] == (
+        "短发女生参考图：没有生成，运行文件里选用了「短发女生修过手」；要重新生成先删掉它的 use"
+    )
+
+
+async def test_one_failure_does_not_stop_the_others(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+) -> None:
+    images.failing = {"短发女生参考图": "上游报告生成失败"}
+    images.rejecting = {"公园跑道参考图": "图片生成仅支持模型 nano_banana_pro"}
+    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+
+    result = await tools.generate_images(ctx, ["短发女生参考图", "公园跑道参考图", "镜01机位图"])
+
+    lines = text_of(result).splitlines()
+    assert lines[0] == "生成结束：1 张成功，2 张失败，0 个没有生成。"
+    assert lines[1] == "短发女生参考图：生成失败，上游报告生成失败"
+    assert lines[2] == "公园跑道参考图：生成失败，请求被拒：图片生成仅支持模型 nano_banana_pro"
+    assert lines[3].startswith("镜01机位图：已生成")
+    assert "公园跑道参考图、短发女生参考图 还没有图，这次只用了文字" in lines[3]
+    assert ledger.urls(NAMESPACE) == {SHOE_PHOTO, images.url_of("镜01机位图")}
+
+
+async def test_generation_waits_for_a_job_that_is_still_running(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(studio, "IMAGE_POLL_SECONDS", 0.0)
+    images.pending_polls = 2
+    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+
+    result = await tools.generate_images(ctx, ["公园跑道参考图"])
+
+    assert text_of(result).splitlines()[0] == "生成结束：1 张成功，0 张失败，0 个没有生成。"
+
+
+async def test_a_job_that_outlasts_the_wait_is_reported_and_left_running(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(studio, "IMAGE_WAIT_SECONDS", 0.0)
+    images.pending_polls = 5
+    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+
+    result = await tools.generate_images(ctx, ["公园跑道参考图"])
+
+    assert "公园跑道参考图：生成失败，等超时了" in text_of(result)
+    assert ledger.urls(NAMESPACE) == {SHOE_PHOTO}
+
+
+@pytest.mark.parametrize(
+    ("nodes", "message"),
+    [
+        ([], "1–10 个不重复的生图节点名"),
+        (["镜01机位图", "镜01机位图"], "1–10 个不重复的生图节点名"),
+        ([f"图{n}" for n in range(11)], "1–10 个不重复的生图节点名"),
+        (["镜01机位图提示词", "全片"], "镜01机位图提示词、全片 不是生图节点"),
+    ],
+)
+async def test_nodes_must_name_image_nodes(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+    nodes: list[str],
+    message: str,
+) -> None:
+    tools = await workspace(files, ledger, generation=images)
+
+    with pytest.raises(ModelRetry, match=message):
+        await tools.generate_images(ctx, nodes)
+    assert images.requests == []
+
+
+async def test_nothing_is_generated_while_the_check_fails(
+    files: FakeFileStore,
+    ledger: FakeMaterialLedger,
+    images: FakeNodeImages,
+    ctx: RunContext[object],
+) -> None:
+    broken = FILM.replace('duration="15"', 'duration="14"')
+    tools = await workspace(files, ledger, project=broken, generation=images)
+
+    with pytest.raises(ModelRetry, match="检查没通过，没有生成"):
+        await tools.generate_images(ctx, ["公园跑道参考图"])
+    assert images.requests == []
+
+
+def test_the_generate_tool_is_offered_only_when_its_model_is_connected(
+    files: FakeFileStore, ledger: FakeMaterialLedger, images: FakeNodeImages
+) -> None:
+    def offered(studio_capability: IclipStudio[object]) -> bool:
+        return "generate_images" in studio_capability.get_toolset().tools
+
+    assert offered(capability(files, ledger, images))
+    assert not offered(capability(files, ledger, images, can_generate=False))
+    assert not offered(capability(files, ledger, None))
+
+
 def test_the_tool_cards_name_the_file_they_work_on(
     files: FakeFileStore, ledger: FakeMaterialLedger
 ) -> None:
     table = capability(files, ledger).display_table()
 
-    assert table["check_film"]({}) == GenericDisplay(summary="检查工程", detail="film.icml")
-    assert table["export_shots"]({}) == GenericDisplay(summary="导出分镜", detail="video_shot.json")
+    check, export, generate = table["check_film"], table["export_shots"], table["generate_images"]
+    assert callable(check) and callable(export)
+    assert check({}) == GenericDisplay(summary="检查工程", detail="film.icml")
+    assert export({}) == GenericDisplay(summary="导出分镜", detail="video_shot.json")
+    assert isinstance(generate, ToolDisplayEntry)
+    assert generate.view == "media_grid"
+    assert generate.draw({"nodes": ["镜01机位图", "镜02机位图"]}) == GenericDisplay(
+        summary="生成图片", detail="镜01机位图、镜02机位图"
+    )

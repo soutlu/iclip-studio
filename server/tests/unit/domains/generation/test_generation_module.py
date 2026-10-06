@@ -36,6 +36,7 @@ COMMON_KEYS = {"data_id", "user_name", "prompt", "task_source", "env"}
 OWN_KEYS = {
     "nano_banana_pro": {"aspect_ratio", "resolution", "channel"},
     "seedream_v5_pro": {"size", "output_format"},
+    "gpt-image-2.5": {"size", "quality"},
 }
 """各家专有的键。表的键也钉住了落库的 provider 名：改名等于丢掉历史对账。"""
 
@@ -113,6 +114,73 @@ async def test_every_registered_image_model_is_wired_to_its_own_payload() -> Non
 
     assert {name: set(payload) - COMMON_KEYS for name, payload in sent.items()} == OWN_KEYS
     assert all(set(payload) >= COMMON_KEYS for payload in sent.values())
+
+
+async def test_a_model_can_declare_its_own_task_routes() -> None:
+    """一家模型在网关上的两条路由与别家不同名时，照它自己声明的打。"""
+
+    hit: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            hit.append(str(request.url))
+            return httpx.Response(200, json={"success": True, "output_str": f"{GATEWAY}/o.png"})
+        return httpx.Response(200, content=b"PNG", headers={"content-type": "image/png"})
+
+    repo = InMemoryGenerationRepository()
+    module = build_generation_module(
+        repo,
+        act_as=ActAs(InMemoryUserRepository()),
+        clear_completion=_keep_completion,
+        lineage=FixedLineage(),
+        video=VideoProviderSettings(
+            submit_url="https://video.test/generate",
+            status_base_url="https://video.test/tasks",
+            api_key="secret-key",
+        ),
+        video_default_model="vendor-a-seedance-2-5",
+        video_allowed_models=("vendor-a-seedance-2-5",),
+        image_models=[
+            ImageModelConfig(name="nano_banana_pro", api_base=f"{GATEWAY}/nano", concurrency=1),
+            ImageModelConfig(
+                name="gpt-image-2.5",
+                api_base=f"{GATEWAY}/openai/gpt-image",
+                concurrency=1,
+                text_to_image_task="text-to-image",
+                image_edit_task="edit",
+            ),
+        ],
+        image_default_model="nano_banana_pro",
+        image_env="test",
+        image_text_to_image_task="text-to-image_shared",
+        image_edit_task="image-edit_shared",
+        object_store=MemoryObjectStore(),
+        queue_connector=InMemoryConnector(),
+        image_transport=httpx.MockTransport(handler),
+    )
+
+    for model, references in (
+        ("gpt-image-2.5", []),
+        ("gpt-image-2.5", [f"{GATEWAY}/ref.png"]),
+        ("nano_banana_pro", []),
+    ):
+        spec = IMAGE_MODEL_SPECS[model]
+        job = await module.service.submit_image(
+            PRINCIPAL,
+            image_request(
+                model=model,
+                aspect_ratio=spec.aspect_ratios[0],
+                resolution=spec.resolutions[0],
+                reference_image_urls=references,
+            ),
+        )
+        await module.queue.run_submit(str(job.id))
+
+    assert hit == [
+        f"{GATEWAY}/openai/gpt-image/text-to-image",
+        f"{GATEWAY}/openai/gpt-image/edit",
+        f"{GATEWAY}/nano/text-to-image_shared",
+    ]
 
 
 def test_an_image_model_without_an_adapter_fails_at_assembly() -> None:

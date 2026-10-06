@@ -26,6 +26,9 @@ class Film:
     selected: dict[str, str] = field(default_factory=dict[str, str])
     """运行文件里的选用：生图节点名 → 登记名。"""
 
+    generated: dict[str, str] = field(default_factory=dict[str, str])
+    """生图节点名 → 它最近一次生成成功的图片地址；由调用方从生成记录里查来填。"""
+
     errors: list[str] = field(default_factory=list[str])
     hints: list[str] = field(default_factory=list[str])
 
@@ -54,7 +57,8 @@ class Film:
     def image_url(self, reference: str | None, *, assume_generated: bool = False) -> str | None:
         """一个「图」引用现在的地址；还没有图时是 None。
 
-        用户给的图用它自己的地址；生图节点在运行文件里选用了登记的图就用那一张，否则还没有图。
+        用户给的图用它自己的地址。生图节点在运行文件里选用了登记的图就用那一张；没有选用就用
+        它最近一次生成成功的；都没有就是还没有图。
         ``assume_generated`` 把还没有图的当作已有，给一个占位地址，只用来按「写了的图全部已生成」
         算张数和字数上限。"""
 
@@ -68,6 +72,9 @@ class Film:
         chosen = self.selected.get(name)
         if chosen is not None:
             return self.registered[chosen]
+        latest = self.generated.get(name)
+        if latest is not None:
+            return latest
         return f"<待生成:{reference}>" if assume_generated else None
 
 

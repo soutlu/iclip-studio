@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import get_args
 
 import pytest
 
@@ -15,7 +14,9 @@ from iclip.capabilities.iclip_studio.film.checks import (
 from iclip.capabilities.iclip_studio.film.export import NothingToExport, export_shots, image_status
 from iclip.capabilities.iclip_studio.film.film import Film
 from iclip.capabilities.iclip_studio.film.packages import (
-    GPT_IMAGE_SIZES,
+    GPT_IMAGE_ASPECTS,
+    GPT_IMAGE_MODEL,
+    GPT_IMAGE_RESOLUTIONS,
     IMAGE_MAX_REFERENCES,
     PROMPT_MAX_CHARS,
     VIDEO_MAX_REFERENCES,
@@ -25,6 +26,7 @@ from iclip.capabilities.shot_document import validate_shots_document
 from iclip.common.shot_prompt import format_shot_prompt
 from iclip.common.shot_rules import MAX_REFERENCE_IMAGES
 from iclip.domains.generation import schemas as generation
+from iclip.domains.generation.gpt_image import GPT_IMAGE_2_5
 from tests.helpers.film import (
     FILM,
     PERSON_FIRST,
@@ -381,6 +383,25 @@ def test_registered_images_that_are_not_selected_are_kept_as_alternatives() -> N
     ]
 
 
+def test_a_node_without_a_selection_uses_its_latest_generated_image() -> None:
+    film = checked(run=None)
+    film.generated["镜01机位图"] = "https://cdn.test/generated-view.png"
+
+    status = {item.name: (item.source, item.url) for item in image_status(film)}
+    assert status["镜01机位图"] == ("最近一次生成", "https://cdn.test/generated-view.png")
+    assert status["镜02机位图"] == ("还没有图", None)
+    _, shots, images = storyboard(film)
+    assert shots[0].startswith("@Image2 的机位。")
+    assert images == (SHOE_PHOTO, "https://cdn.test/generated-view.png")
+
+
+def test_a_selection_in_the_run_file_wins_over_the_latest_generated_image() -> None:
+    film = checked()
+    film.generated["短发女生参考图"] = "https://cdn.test/newer.png"
+
+    assert image_status(film)[0].url == PERSON_FIXED
+
+
 def test_a_node_uses_the_registered_image_selected_for_it() -> None:
     selected = image_status(checked())
     switched = image_status(
@@ -546,18 +567,14 @@ def test_package_limits_match_the_generation_domain() -> None:
     assert IMAGE_MAX_REFERENCES == generation.IMAGE_MAX_REFERENCES
     assert PROMPT_MAX_CHARS == generation.MAX_PROMPT_CHARS
     assert VIDEO_MAX_REFERENCES == MAX_REFERENCE_IMAGES
-    assert {aspect for aspect, _ in GPT_IMAGE_SIZES} == set(
-        get_args(generation.IMAGE_ASPECT_RATIOS)
-    )
 
 
-def test_every_image_size_follows_the_model_rule() -> None:
-    for (aspect, _), size in GPT_IMAGE_SIZES.items():
-        width, height = (int(part) for part in size.split("x"))
-        wide, tall = (int(part) for part in aspect.split(":"))
-        assert width % 16 == 0 and height % 16 == 0, size
-        assert abs(width / height - wide / tall) < 0.01 * wide / tall, (aspect, size)
-        assert max(width, height) <= 3840 and min(width, height) <= 2160, size
+def test_the_image_package_offers_exactly_what_the_image_model_declares() -> None:
+    """文件里能写的画幅和分辨率照生成域里这家模型的声明；这里不能引它，所以用这条测试钉住。"""
+
+    assert GPT_IMAGE_2_5.name == GPT_IMAGE_MODEL
+    assert set(GPT_IMAGE_ASPECTS) == set(GPT_IMAGE_2_5.spec.aspect_ratios)
+    assert GPT_IMAGE_2_5.spec.resolutions == GPT_IMAGE_RESOLUTIONS
 
 
 def test_saving_the_project_file_checks_that_file_alone() -> None:

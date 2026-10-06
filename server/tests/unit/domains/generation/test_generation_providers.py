@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Mapping
+from typing import get_args
 
 import httpx
 import pytest
 
+from iclip.domains.generation.gpt_image import GPT_IMAGE_2_5
 from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
     GatewayImageProvider,
@@ -18,7 +20,7 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import GenerationProvider, ProviderError
-from iclip.domains.generation.schemas import ClipStage
+from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, ClipStage, ImageGenerationIn
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.platform.object_store.layout import MEDIA_PATHS
@@ -653,3 +655,102 @@ async def test_every_provider_reports_a_misrouted_job_with_one_code(
         await provider.submit(job)
     assert (error.value.code, error.value.retryable) == ("PROVIDER_KIND_MISMATCH", False)
     assert provider.name in str(error.value)
+
+
+GPT_IMAGE_API_BASE = "https://image.test/openai/gpt-image-2.5-flare-developer"
+GPT_IMAGE_SETTINGS = GatewayImageSettings(
+    api_base=GPT_IMAGE_API_BASE,
+    env="test",
+    text_to_image_task="text-to-image",
+    image_edit_task="edit",
+)
+
+
+async def gpt_image_sent(job_request: ImageGenerationIn) -> tuple[str, dict[str, object]]:
+    """提交一次，返回 (打到的地址, 发出的 payload)。"""
+
+    sent: list[tuple[str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            sent.append((str(request.url), json.loads(request.content)))
+            return httpx.Response(
+                200, json={"success": True, "output_str": "https://image.test/o.png"}
+            )
+        return httpx.Response(200, content=b"PNG", headers={"content-type": "image/png"})
+
+    provider = GatewayImageProvider(
+        GPT_IMAGE_2_5,
+        GPT_IMAGE_SETTINGS,
+        object_store=MemoryObjectStore(),
+        transport=httpx.MockTransport(handler),
+    )
+    await provider.submit(make_job(job_request))
+    return sent[0]
+
+
+async def test_gpt_image_sends_a_pixel_size_and_auto_quality() -> None:
+    """上游收像素 size；质量档不由调用方选，明确传 auto。没有渠道这个轴。"""
+
+    url, payload = await gpt_image_sent(image_request(aspect_ratio="9:16", resolution="2k"))
+
+    assert url == f"{GPT_IMAGE_API_BASE}/text-to-image"
+    assert set(payload) == {
+        "data_id",
+        "user_name",
+        "prompt",
+        "task_source",
+        "env",
+        "size",
+        "quality",
+    }, "键集变了就是上游合同变了"
+    assert (payload["size"], payload["quality"]) == ("1152x2048", "auto")
+
+
+async def test_gpt_image_with_references_uses_its_edit_route() -> None:
+    references = ["https://image.test/person.png", "https://image.test/shoe.png"]
+
+    url, payload = await gpt_image_sent(
+        image_request(aspect_ratio="3:4", resolution="2k", reference_image_urls=references)
+    )
+
+    assert url == f"{GPT_IMAGE_API_BASE}/edit"
+    assert payload["input_str_list"] == references
+    assert payload["size"] == "1536x2048"
+
+
+def test_gpt_image_offers_every_ratio_at_2k_only() -> None:
+    spec = GPT_IMAGE_2_5.spec
+
+    assert spec.aspect_ratios == get_args(IMAGE_ASPECT_RATIOS)
+    assert spec.resolutions == ("2k",)
+    assert spec.channels == ()
+
+
+@pytest.mark.parametrize("aspect_ratio", get_args(IMAGE_ASPECT_RATIOS))
+async def test_every_gpt_image_size_follows_the_upstream_rule(aspect_ratio: str) -> None:
+    """宽高都是 16 的倍数，比例对得上所写的画幅，不超过上游的最大尺寸。"""
+
+    _, payload = await gpt_image_sent(image_request(aspect_ratio=aspect_ratio, resolution="2k"))
+
+    size = payload["size"]
+    assert isinstance(size, str)
+    width, height = (int(part) for part in size.split("x"))
+    wide, tall = (int(part) for part in aspect_ratio.split(":"))
+    assert width % 16 == 0 and height % 16 == 0
+    assert abs(width / height - wide / tall) < 0.01 * wide / tall
+    assert max(width, height) <= 3840 and min(width, height) <= 2160
+
+
+async def test_gpt_image_refuses_a_tier_it_does_not_declare() -> None:
+    provider = GatewayImageProvider(
+        GPT_IMAGE_2_5,
+        GPT_IMAGE_SETTINGS,
+        object_store=MemoryObjectStore(),
+        transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        await provider.submit(make_job(image_request(aspect_ratio="9:16", resolution="1k")))
+
+    assert raised.value.code == "PROVIDER_SIZE_UNSUPPORTED"
