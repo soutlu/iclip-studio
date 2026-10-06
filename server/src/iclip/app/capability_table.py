@@ -274,6 +274,7 @@ def build_capability_table(
                     sampler=FfmpegVideoSampler(http_client),
                 ),
                 shared=OssSharedBreakdowns(object_store, http_client),
+                ledger=material_ledger,
             ),
         )
     if shot_video is not None:

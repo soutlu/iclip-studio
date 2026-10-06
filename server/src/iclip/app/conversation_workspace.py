@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
+from iclip.capabilities.iclip_studio.film.checks import check_project_content, check_run_content
 from iclip.capabilities.shot_document import validate_shots_document
 from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed
@@ -111,4 +112,31 @@ async def validate_video_shots(owner: uuid.UUID, conversation_id: uuid.UUID, con
         raise ValidationFailed(str(exc)) from exc
 
 
-__all__ = ["ConversationWorkspace", "validate_video_shots"]
+async def validate_film(owner: uuid.UUID, conversation_id: uuid.UUID, content: str) -> None:
+    """用户写回工程文件时，按工具的同一套规则检查这一个文件。
+
+    这里只拿得到这一份内容：要对照运行文件和对话素材的规则留给 ``check_film``。"""
+
+    _ = (owner, conversation_id)
+    _reject(check_project_content(content))
+
+
+async def validate_film_run(owner: uuid.UUID, conversation_id: uuid.UUID, content: str) -> None:
+    """用户写回运行文件时检查这一个文件；``use`` 写的节点存不存在留给 ``check_film``。"""
+
+    _ = (owner, conversation_id)
+    _reject(check_run_content(content))
+
+
+def _reject(problems: list[str]) -> None:
+    if problems:
+        more = f"（共 {len(problems)} 处）" if len(problems) > 1 else ""
+        raise ValidationFailed(problems[0] + more)
+
+
+__all__ = [
+    "ConversationWorkspace",
+    "validate_film",
+    "validate_film_run",
+    "validate_video_shots",
+]

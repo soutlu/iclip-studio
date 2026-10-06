@@ -942,6 +942,47 @@ describe('StoryboardReader', () => {
     expect(audio).toHaveAttribute('aria-pressed', 'false')
   })
 
+  it('分镜文件里这一组写了模型，出片栏默认选它，出片也用它；用户仍然可以改', async () => {
+    provide({
+      ...document,
+      shots: document.shots.map((item) => ({ ...item, model: 'wan3.0-video' })),
+    })
+    const user = userEvent.setup()
+    const posted: { model?: string }[] = []
+    server.use(
+      http.post('*/api/generations/video', async ({ request }) => {
+        posted.push((await request.json()) as { model?: string })
+        return HttpResponse.json({ task_id: runningJob.id }, { status: 202 })
+      }),
+    )
+    await renderReader()
+    await screen.findByRole('region', { name: '镜头组 1' })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const model = within(bar).getByRole('button', { name: '视频模型' })
+    await waitFor(() => expect(model).toHaveTextContent('wan3.0-video'))
+
+    await user.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ model: 'wan3.0-video' })
+
+    await pickFromMenu(user, model, 'vendor-a-seedance-2-5')
+    expect(model).toHaveTextContent('vendor-a-seedance-2-5')
+  })
+
+  it('文件里写的模型不在可选的里面，出片栏用服务端的默认', async () => {
+    provide({
+      ...document,
+      shots: document.shots.map((item) => ({ ...item, model: 'retired-model' })),
+    })
+    await renderReader()
+    await screen.findByRole('region', { name: '镜头组 1' })
+    const model = within(screen.getByRole('group', { name: '出片工具栏' })).getByRole('button', {
+      name: '视频模型',
+    })
+
+    await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
+  })
+
   it('切到 1080p 后出片带上 1080p，换模型不改分辨率', async () => {
     provide()
     const user = userEvent.setup()

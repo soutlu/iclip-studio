@@ -1,0 +1,203 @@
+"""工程文件与运行文件共用的写法：把源文读成节点树。
+
+写法是 XML 加一条：``属性={名字}`` 表示引用前面定义的节点，不加引号。解析分两步：先把标签里
+引号外的 ``={名字}`` 换成带记号的普通属性值，再交给标准库的 XML 解析器。换的时候不增减换行，
+所以报错的行号就是原文的行号。"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from typing import Final, Literal
+from xml.parsers import expat
+
+HEADER_TARGET: Final = "icml"
+"""文件头 ``<?icml using="…"?>`` 的名字，工程文件和运行文件相同。"""
+
+_REFERENCE_MARK: Final = "␞ref:"
+"""换成普通属性值后的引用前缀；记录分隔符的图形字符，正常文本里不会出现。"""
+
+_USING: Final = re.compile(r'using="([^"]+)"')
+
+_Piece = Literal["text", "comment", "instruction", "tag"]
+
+
+class MarkupError(Exception):
+    """源文读不成节点树：XML 写错、引用的花括号没闭合，或缺文件头。"""
+
+    def __init__(self, line: int, message: str) -> None:
+        super().__init__(message)
+        self.line = line
+        self.message = message
+
+
+def _no_parts() -> list[str | Node]:
+    return []
+
+
+@dataclass(eq=False)
+class Node:
+    """一个标签：名字、属性、所在行，以及按出现顺序排的正文片段与子标签。"""
+
+    tag: str
+    attrs: dict[str, str]
+    line: int
+    parent: Node | None = None
+    parts: list[str | Node] = field(default_factory=_no_parts)
+
+    @property
+    def children(self) -> list[Node]:
+        return [part for part in self.parts if isinstance(part, Node)]
+
+    @property
+    def text(self) -> str:
+        """正文：去掉首尾空行和每行共同的缩进。"""
+
+        return _dedent("".join(part for part in self.parts if isinstance(part, str)))
+
+    @property
+    def has_text(self) -> bool:
+        return any(isinstance(part, str) and part.strip() for part in self.parts)
+
+    def reference(self, name: str) -> str | None:
+        """属性写的是引用时返回花括号里的名字；没写这个属性或写的是普通值返回 None。"""
+
+        value = self.attrs.get(name)
+        if value is None or not value.startswith(_REFERENCE_MARK):
+            return None
+        return value[len(_REFERENCE_MARK) :]
+
+    def walk(self) -> Iterator[Node]:
+        """自己和全部后代，按文件里的先后。"""
+
+        yield self
+        for child in self.children:
+            yield from child.walk()
+
+
+def is_reference(value: str) -> bool:
+    """属性值是不是 ``={名字}`` 写出来的引用。"""
+
+    return value.startswith(_REFERENCE_MARK)
+
+
+def parse(source: str, *, using: str) -> tuple[str, Node]:
+    """读源文，返回 (文件头里选的写法, 根节点)。``using`` 只用来在缺文件头时提示该写什么。"""
+
+    document = Node("#document", {}, 0)
+    cursor = [document]
+    headers: list[tuple[str, str]] = []
+    parser = expat.ParserCreate()
+
+    def start(tag: str, attrs: dict[str, str]) -> None:
+        node = Node(tag, attrs, parser.CurrentLineNumber, cursor[0])
+        cursor[0].parts.append(node)
+        cursor[0] = node
+
+    def end(_tag: str) -> None:
+        parent = cursor[0].parent
+        assert parent is not None
+        cursor[0] = parent
+
+    def doctype(*_args: object) -> None:
+        raise MarkupError(parser.CurrentLineNumber, "不能写 DOCTYPE")
+
+    parser.StartElementHandler = start
+    parser.EndElementHandler = end
+    parser.CharacterDataHandler = lambda data: cursor[0].parts.append(data)
+    parser.ProcessingInstructionHandler = lambda target, data: headers.append((target, data))
+    parser.StartDoctypeDeclHandler = doctype
+    try:
+        parser.Parse(_to_xml(source), True)
+    except expat.ExpatError as exc:
+        raise MarkupError(exc.lineno, f"写法错误：{expat.errors.messages[exc.code]}") from exc
+    chosen = _USING.fullmatch(headers[0][1]) if headers and headers[0][0] == HEADER_TARGET else None
+    if chosen is None:
+        raise MarkupError(1, f'第一行要写 <?{HEADER_TARGET} using="{using}"?>')
+    return chosen.group(1), document.children[0]
+
+
+def _dedent(text: str) -> str:
+    lines = text.strip("\n").split("\n")
+    pad = min((len(line) - len(line.lstrip()) for line in lines if line.strip()), default=0)
+    return "\n".join(line[pad:] for line in lines).strip()
+
+
+def _pieces(source: str) -> Iterator[tuple[_Piece, int, int]]:
+    """把源文切成正文、注释、处理指令、标签四种片段，给出起止位置。"""
+
+    index, size = 0, len(source)
+    while index < size:
+        if source.startswith("<!--", index):
+            close = source.find("-->", index)
+            stop = size if close < 0 else close + 3
+            yield "comment", index, stop
+        elif source.startswith("<?", index):
+            close = source.find("?>", index)
+            stop = size if close < 0 else close + 2
+            yield "instruction", index, stop
+        elif source[index] == "<":
+            stop = _tag_end(source, index)
+            yield "tag", index, stop
+        else:
+            close = source.find("<", index)
+            stop = size if close < 0 else close
+            yield "text", index, stop
+        index = stop
+
+
+def _tag_end(source: str, start: int) -> int:
+    """标签的结束位置：引号和花括号里的 ``>`` 不算。"""
+
+    index, quote, depth = start + 1, "", 0
+    while index < len(source):
+        char = source[index]
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "\"'":
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        elif char == ">" and depth <= 0:
+            return index + 1
+        index += 1
+    return len(source)
+
+
+def _to_xml(source: str) -> str:
+    return "".join(
+        _tag_to_xml(source, start, stop) if kind == "tag" else source[start:stop]
+        for kind, start, stop in _pieces(source)
+    )
+
+
+def _tag_to_xml(source: str, start: int, stop: int) -> str:
+    """标签里引号外的 ``={名字}`` 换成 ``="<记号>名字"``。"""
+
+    tag = source[start:stop]
+    out: list[str] = []
+    index, quote = 0, ""
+    while index < len(tag):
+        char = tag[index]
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "\"'":
+            quote = char
+        elif char == "=" and tag[index + 1 : index + 2] == "{":
+            close = tag.find("}", index)
+            if close < 0:
+                line = source.count("\n", 0, start + index) + 1
+                raise MarkupError(line, "引用的花括号没有闭合")
+            name = tag[index + 2 : close].replace("&", "&amp;").replace('"', "&quot;")
+            out.append(f'="{_REFERENCE_MARK}{name.replace("<", "&lt;")}"')
+            index = close + 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+__all__ = ["HEADER_TARGET", "MarkupError", "Node", "is_reference", "parse"]

@@ -32,11 +32,14 @@ from iclip.app.capability_table import build_capability_table, build_display_reg
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
 from iclip.app.conversation_workspace import (
     ConversationWorkspace,
+    validate_film,
+    validate_film_run,
     validate_video_shots,
 )
 from iclip.app.errors import install_error_handlers
 from iclip.app.generation_live import AnnouncingGenerationRepository
 from iclip.app.logging import configure_logging
+from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
 from iclip.common.errors import NotFound
@@ -516,6 +519,8 @@ def build_app(
         write_derived_file=conversation_workspace.write_file,
         document_validators={
             SHOTS_PATH: validate_video_shots,
+            FILM_PATH: validate_film,
+            RUN_PATH: validate_film_run,
         },
         generate_title=live_title_generator(agent_layer),
         announce_title=live_connections.announce_title,
