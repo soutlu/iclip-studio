@@ -241,17 +241,8 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_a_broken_run() -> None:
         await adapter.latest(PRINCIPAL, "thread-1", ["镜01机位图"])
 
 
-@pytest.mark.parametrize(
-    ("image_models", "offered"),
-    [
-        (frozenset({"nano_banana_pro", "gpt-image-2.5"}), True),
-        (frozenset({"nano_banana_pro"}), False),
-    ],
-)
-def test_the_generate_tool_needs_its_image_model_connected(
-    image_models: frozenset[str], offered: bool
-) -> None:
-    """图片模型里没有它要用的那家时只少一件工具，检查和导出照常装配。"""
+def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
+    """生图现阶段由人自己做：要用的图片模型接上了也不登记生图工具，检查和导出照常装配。"""
 
     built = build_capability_table(
         workspace_store=FakeFileStore(),
@@ -264,11 +255,11 @@ def test_the_generate_tool_needs_its_image_model_connected(
             breakdown_api_key="ark",
             breakdown_model="seed-vision",
         ),
-        image_models=image_models,
+        image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),
     )
 
     (capability,) = built["iclip_studio"]
     assert isinstance(capability, IclipStudio)
     tools = capability.get_toolset().tools
-    assert ("generate_images" in tools) is offered
+    assert "generate_images" not in tools
     assert {"check_film", "export_shots"} <= set(tools)

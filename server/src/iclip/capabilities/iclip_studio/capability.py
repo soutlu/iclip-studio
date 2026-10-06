@@ -105,7 +105,7 @@ class IclipStudio(AbstractCapability[AgentDepsT]):
     """生图节点与生成记录的往来；没开媒体生成时为 None。"""
 
     can_generate: bool = False
-    """生图节点要用的那家图片模型接没接入；没接入就不登记生图工具，检查和导出照常。"""
+    """登不登记生图工具；不登记时检查和导出照常。组合根现在不开：生图由人自己做。"""
 
     id: str | None = field(default=CAPABILITY_ID, kw_only=True)
 
