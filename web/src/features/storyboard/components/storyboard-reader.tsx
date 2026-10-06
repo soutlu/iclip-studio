@@ -49,7 +49,6 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   useLiveGenerations(conversationId)
   // 关过编辑器就算看过那一格的终态；只记本次会话，刷新后没看过的终态会再出现一次。
   const [seenFrameJobs, setSeenFrameJobs] = useState<ReadonlySet<string>>(() => new Set())
-  const video = useVideoGeneration(conversationId)
   // 打开时先选中哪一条、从哪个控件点开都由入口决定。
   const [imageEdit, setImageEdit] = useState<FrameEditSession | null>(null)
   const draft = useShotsDraft({ conversationId, path, file: file.data?.file })
@@ -66,6 +65,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   const position =
     search.shot !== undefined && search.shot >= 1 && search.shot <= shots.length ? search.shot : 1
   const stage = useStageSelection(position)
+  const video = useVideoGeneration(conversationId, shots[position - 1]?.model)
 
   const go = (next: ReaderSearch) => {
     const cleared =

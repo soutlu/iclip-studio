@@ -109,6 +109,8 @@ class VideoShotDocumentRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     index: int
+    model: str | None = None
+    """这一组默认用哪个视频模型，写网关里的名字；没写就由分镜页按配置的默认选。"""
     prompt: StoredVideoShotPrompt
     seconds: int
     image_urls: Annotated[list[str], Field(max_length=MAX_REFERENCE_IMAGES)]
@@ -128,7 +130,7 @@ class VideoShotsDocument(BaseModel):
     def file_text(self) -> str:
         """写进工作区文件的原文；交付工具与它的工具卡共用这一份序列化，两边不会分叉。"""
 
-        return self.model_dump_json(indent=2)
+        return self.model_dump_json(indent=2, exclude_none=True)
 
 
 def validate_video_shot_requests(

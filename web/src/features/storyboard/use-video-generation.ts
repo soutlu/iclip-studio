@@ -19,7 +19,8 @@ import {
 const modelsStatus = (query: { isError: boolean; data: unknown }): VideoModelsStatus =>
   query.isError ? 'unavailable' : query.data === undefined ? 'loading' : 'ready'
 
-export const useVideoGeneration = (conversationId: string) => {
+/** `fileModel` 是分镜文件里当前这一组写的模型；没写就传 undefined。 */
+export const useVideoGeneration = (conversationId: string, fileModel?: string) => {
   const queryClient = useQueryClient()
   const models = useVideoModels()
   // 只留最近一次失败：提示挨着出片按钮，同时只看得见当前这一组。
@@ -29,10 +30,12 @@ export const useVideoGeneration = (conversationId: string) => {
     model: undefined,
     resolution: DEFAULT_VIDEO_RESOLUTION,
   })
-  // 选过的模型不在允许表里（配置改了）就退回默认，不用副作用改 state。
+  // 先看这次会话里选过的，再看分镜文件里这一组写的；不在允许表里（配置改了、文件写了别的）
+  // 就往下退，最后是服务端的默认。不用副作用改 state。
   const items = models.data?.items ?? []
-  const model =
-    wanted.model !== undefined && items.includes(wanted.model) ? wanted.model : models.data?.default
+  const allowed = (candidate: string | undefined) =>
+    candidate !== undefined && items.includes(candidate) ? candidate : undefined
+  const model = allowed(wanted.model) ?? allowed(fileModel) ?? models.data?.default
   const options: VideoGenerationOptions = { ...wanted, model }
 
   const submit = async (shot: Shot, aspectRatio: string) => {

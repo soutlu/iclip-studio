@@ -40,6 +40,7 @@ from iclip.platform.file_store.store import FileSpace
 from iclip.platform.media.ffmpeg import MediaError
 from iclip.platform.transcript.display import GenericDisplay
 from tests.helpers.file_store import FakeFileStore
+from tests.helpers.material_ledger import FakeMaterialLedger
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 VIDEO = "https://cdn.test/ref.mp4"
@@ -167,6 +168,7 @@ def capability_for(
         space=FileSpace(store=files, namespace=workspace_namespace),
         breakdown=VideoBreakdown(model=model, sampler=sampler),
         shared=shared,
+        ledger=FakeMaterialLedger(),
     )
 
 
@@ -355,6 +357,7 @@ async def test_a_timeout_is_not_retried(
         space=FileSpace(store=files, namespace=workspace_namespace),
         breakdown=VideoBreakdown(model=model, sampler=FakeSampler(seconds=5)),
         shared=shared,
+        ledger=FakeMaterialLedger(),
     ).get_toolset()
 
     with pytest.raises(ToolFailed, match="不要重试，告诉用户稍后再试"):
@@ -441,6 +444,7 @@ async def test_a_retry_that_succeeds_delivers_the_document(
         space=FileSpace(store=files, namespace=workspace_namespace),
         breakdown=VideoBreakdown(model=model, sampler=FakeSampler(seconds=5)),
         shared=shared,
+        ledger=FakeMaterialLedger(),
     )
 
     messages = await run_agent_that_keeps_calling(capability)
@@ -482,6 +486,7 @@ def test_the_tool_card_names_the_video(files: FakeFileStore, shared: FakeShared)
             sampler=FakeSampler(seconds=5),
         ),
         shared=shared,
+        ledger=FakeMaterialLedger(),
     )
 
     display = capability.display_table()["breakdown_video"]({"video_url": VIDEO})

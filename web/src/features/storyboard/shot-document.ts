@@ -23,6 +23,8 @@ const shotSchema = z
   .strictObject({
     image_urls: z.array(nonblank).max(MAX_REFERENCE_IMAGES),
     index: z.int().positive(),
+    /** 这一组默认用哪个视频模型；写文件的一方可以不给，由出片栏按服务端的默认选。 */
+    model: nonblank.optional(),
     prompt: z.strictObject({
       global_settings: nonblank,
       timeline: z.array(timelineItemSchema).min(1),
