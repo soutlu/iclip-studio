@@ -226,7 +226,7 @@ PROJECT_FAULTS = [
     pytest.param(
         '<text:Value id="拍摄">', '<text:Value id="配乐">', "名字 配乐 重复", id="名字重复"
     ),
-    pytest.param('model="2.5"', 'model="2.0"', "model 只能是 2.5", id="没开放的模型版本"),
+    pytest.param('model="sd2.5"', 'model="sd2.0"', "model 只能是 sd2.5", id="没开放的模型版本"),
     pytest.param(
         'aspect-ratio="3:4"', "aspect-ratio={拍摄}", "是普通值，要加引号", id="普通值写成引用"
     ),
@@ -278,8 +278,8 @@ def test_lines_must_be_spoken_in_script_order() -> None:
 def test_an_image_node_must_take_a_picture_and_a_video_node_a_storyboard() -> None:
     mixed = changed(
         FILM,
-        '<seedance:ReferenceVideo id="全片" model="2.5" prompt={全片分镜}',
-        '<seedance:ReferenceVideo id="全片" model="2.5" prompt={镜01机位图提示词}',
+        '<seedance:ReferenceVideo id="全片" model="sd2.5" prompt={全片分镜}',
+        '<seedance:ReferenceVideo id="全片" model="sd2.5" prompt={镜01机位图提示词}',
     )
 
     assert any("prompt 要写 Storyboard 的名字" in problem for problem in problems(mixed))

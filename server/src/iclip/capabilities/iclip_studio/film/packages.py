@@ -99,7 +99,9 @@ GPT_IMAGE_RESOLUTIONS: Final = ("2k",)
 """文件里只写画幅和分辨率，像素尺寸由生成域换算。能写哪些取值照生成域里这家模型的声明，与它
 不一致由契约测试报出。"""
 
-SEEDANCE_VARIANTS: Final[Mapping[str, tuple[str, int, int]]] = {"2.5": ("mmt-seedance-2-5", 4, 30)}
+SEEDANCE_VARIANTS: Final[Mapping[str, tuple[str, int, int]]] = {
+    "sd2.5": ("mmt-seedance-2-5", 4, 30)
+}
 """``model`` 属性的取值 → (导出到分镜文件的模型名, 最短秒数, 最长秒数)。"""
 
 VIDEO_ASPECTS: Final = ("9:16", "16:9", "1:1", "4:3", "3:4", "21:9")

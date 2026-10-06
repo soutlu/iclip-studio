@@ -97,7 +97,7 @@ FILM: Final = """<?icml using="@iclip/markup@1"?>
     <Shot start="6.0" end="10.0">硬切，手持，全景，平视。短发女生沿着跑道向镜头跑来，跑到镜头前停下，双手叉腰喘了口气，低头看了一眼左手腕的手表，笑着对镜头说：{miles} 音效：连续的脚步声</Shot>
     <Shot start="10.0" end="15.0">硬切，固定机位，产品特写。网面跑鞋摆在跑道边的木长椅上，鞋头朝向镜头。短发女生的右手从画面右侧伸进来，拿起左脚那只鞋。旁白：{shop}</Shot>
   </Storyboard>
-  <seedance:ReferenceVideo id="全片" model="2.5" prompt={全片分镜} duration="15" aspect-ratio="9:16"/>
+  <seedance:ReferenceVideo id="全片" model="sd2.5" prompt={全片分镜} duration="15" aspect-ratio="9:16"/>
 </icml>
 """
 
@@ -121,7 +121,7 @@ SECOND_STORYBOARD: Final = """
     <Block name="拍摄与剪辑" text={拍摄与剪辑}/>
     <Shot start="0.0" end="16.0">硬切，固定机位，产品特写。网面跑鞋放在桌面上，缓慢转动一圈。音效：鞋底落在桌面上的一声轻响</Shot>
   </Storyboard>
-  <seedance:ReferenceVideo id="后半" model="2.5" prompt={后半分镜} duration="16" aspect-ratio="9:16"/>
+  <seedance:ReferenceVideo id="后半" model="sd2.5" prompt={后半分镜} duration="16" aspect-ratio="9:16"/>
 </icml>"""
 """接在工程文件末尾的第二次视频请求，时间从 0.0 开始。"""
 
