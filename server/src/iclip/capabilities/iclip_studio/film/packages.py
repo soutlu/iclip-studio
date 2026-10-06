@@ -91,19 +91,13 @@ PROMPT_MAX_CHARS: Final = 4000
 
 VIDEO_MAX_REFERENCES: Final = 30
 
-GPT_IMAGE_SIZES: Final[Mapping[tuple[str, str], str]] = {
-    ("1:1", "2k"): "2048x2048",
-    ("3:2", "2k"): "2016x1344",
-    ("2:3", "2k"): "1344x2016",
-    ("3:4", "2k"): "1536x2048",
-    ("4:3", "2k"): "2048x1536",
-    ("4:5", "2k"): "1600x2000",
-    ("5:4", "2k"): "2000x1600",
-    ("9:16", "2k"): "1152x2048",
-    ("16:9", "2k"): "2048x1152",
-    ("21:9", "2k"): "2560x1088",
-}
-"""GPT Image 2.5 收像素尺寸，文件里只写画幅和分辨率，生图时按这张表换算；宽高都是 16 的倍数。"""
+GPT_IMAGE_MODEL: Final = "gpt-image-2.5"
+"""生成域里这家图片模型的名字。"""
+
+GPT_IMAGE_ASPECTS: Final = ("1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9")
+GPT_IMAGE_RESOLUTIONS: Final = ("2k",)
+"""文件里只写画幅和分辨率，像素尺寸由生成域换算。能写哪些取值照生成域里这家模型的声明，与它
+不一致由契约测试报出。"""
 
 SEEDANCE_VARIANTS: Final[Mapping[str, tuple[str, int, int]]] = {"2.5": ("mmt-seedance-2-5", 4, 30)}
 """``model`` 属性的取值 → (导出到分镜文件的模型名, 最短秒数, 最长秒数)。"""
@@ -190,19 +184,11 @@ GPT_IMAGE_PACKAGE: Final = Package(
             (
                 Attr("id", "id"),
                 Attr("prompt", "ref", type=PROMPT),
-                Attr(
-                    "aspect-ratio",
-                    "enum",
-                    values=tuple(dict.fromkeys(aspect for aspect, _ in GPT_IMAGE_SIZES)),
-                ),
-                Attr(
-                    "resolution",
-                    "enum",
-                    values=tuple(dict.fromkeys(tier for _, tier in GPT_IMAGE_SIZES)),
-                ),
+                Attr("aspect-ratio", "enum", values=GPT_IMAGE_ASPECTS),
+                Attr("resolution", "enum", values=GPT_IMAGE_RESOLUTIONS),
             ),
             output=("image", IMAGE),
-            generation=Generation("gpt-image-2.5", IMAGE_MAX_REFERENCES, PROMPT_MAX_CHARS),
+            generation=Generation(GPT_IMAGE_MODEL, IMAGE_MAX_REFERENCES, PROMPT_MAX_CHARS),
         ),
     ),
 )
@@ -250,8 +236,10 @@ RUN_TAGS: Final = (
 __all__ = [
     "DIRECTOR_PACKAGE",
     "ELEMENT",
+    "GPT_IMAGE_ASPECTS",
+    "GPT_IMAGE_MODEL",
     "GPT_IMAGE_PACKAGE",
-    "GPT_IMAGE_SIZES",
+    "GPT_IMAGE_RESOLUTIONS",
     "IMAGE",
     "IMAGE_MAX_REFERENCES",
     "LINE",

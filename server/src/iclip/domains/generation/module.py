@@ -12,6 +12,7 @@ import httpx
 import procrastinate
 
 from iclip.domains.generation.api import create_generations_router
+from iclip.domains.generation.gpt_image import GPT_IMAGE_2_5
 from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
     GatewayImageProvider,
@@ -57,6 +58,10 @@ class ImageModelConfig:
 
     concurrency: int
     """这家同时最多挂几个提交。"""
+
+    text_to_image_task: str | None = None
+    image_edit_task: str | None = None
+    """这家自己的两条任务路由；为 None 用各家共用的那两条。"""
 
 
 @dataclass(frozen=True)
@@ -157,7 +162,7 @@ def build_generation_module(
 
 
 _IMAGE_MODELS: Final[Mapping[str, GatewayImageModel]] = {
-    model.name: model for model in (NANO_BANANA_PRO, SEEDREAM_V5_PRO)
+    model.name: model for model in (NANO_BANANA_PRO, SEEDREAM_V5_PRO, GPT_IMAGE_2_5)
 }
 """有适配器的那几家图片模型，适配器与能力声明都从这张表出。加一家＝这里加一项。"""
 
@@ -239,8 +244,8 @@ def _image_provider(
         GatewayImageSettings(
             api_base=config.api_base,
             env=env,
-            text_to_image_task=text_to_image_task,
-            image_edit_task=image_edit_task,
+            text_to_image_task=config.text_to_image_task or text_to_image_task,
+            image_edit_task=config.image_edit_task or image_edit_task,
         ),
         object_store=object_store,
         transport=transport,

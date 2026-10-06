@@ -250,6 +250,11 @@ media_generation:
       nano_banana_pro:
         route: nano-banana-pro
         concurrency: 4
+      gpt-image-2.5:
+        route: openai/gpt-image-2.5-flare-developer
+        concurrency: 2
+        text_to_image_task: text-to-image
+        image_edit_task: edit
 """
 
 MEDIA_ENV = {
@@ -300,8 +305,13 @@ def test_media_generation_resolves_both_providers_and_store(
     assert media.video_model == "seedance", "对方的模型名来自 YAML"
     assert media.video_allowed_models == ("seedance", "seedance-other")
     assert [(model.name, model.api_base, model.concurrency) for model in media.image_models] == [
-        ("nano_banana_pro", "https://image.test/gateway/nano-banana-pro", 4)
+        ("nano_banana_pro", "https://image.test/gateway/nano-banana-pro", 4),
+        ("gpt-image-2.5", "https://image.test/gateway/openai/gpt-image-2.5-flare-developer", 2),
     ], "网关根地址与声明的路由段在这一层拼好"
+    assert [(model.text_to_image_task, model.image_edit_task) for model in media.image_models] == [
+        (None, None),
+        ("text-to-image", "edit"),
+    ], "一家可以写自己的两条任务路由"
     assert (media.image_text_to_image_task, media.image_edit_task) == (
         "text-to-image",
         "image-edit",

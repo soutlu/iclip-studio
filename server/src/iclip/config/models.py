@@ -227,6 +227,9 @@ class ImageModelSection(ConfigSection):
     route: str = Field(min_length=1)
     concurrency: int = Field(gt=0)
     """这家同时最多挂几个提交。一家一条队列，慢的一家占满自己的槽位不拖别家。"""
+    text_to_image_task: str | None = Field(default=None, min_length=1)
+    image_edit_task: str | None = Field(default=None, min_length=1)
+    """这家自己的两条任务路由；不写就用 ``image`` 段里各家共用的那两条。"""
 
 
 class ImageGenerationSection(ConfigSection):
@@ -439,6 +442,9 @@ class ResolvedImageModel:
     name: str
     api_base: str
     concurrency: int
+    text_to_image_task: str | None = None
+    image_edit_task: str | None = None
+    """这家自己的两条任务路由；为 None 用各家共用的那两条。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -630,6 +636,8 @@ def _resolve_media_generation(
                 name=name,
                 api_base=f"{env.image_api_base.rstrip('/')}/{model.route.strip('/')}",
                 concurrency=model.concurrency,
+                text_to_image_task=model.text_to_image_task,
+                image_edit_task=model.image_edit_task,
             )
             for name, model in section.image.models.items()
         ),

@@ -489,6 +489,7 @@ def test_the_tool_card_names_the_video(files: FakeFileStore, shared: FakeShared)
         ledger=FakeMaterialLedger(),
     )
 
-    display = capability.display_table()["breakdown_video"]({"video_url": VIDEO})
+    draw = capability.display_table()["breakdown_video"]
+    assert callable(draw)
 
-    assert display == GenericDisplay(summary="拆解视频", detail="ref.mp4")
+    assert draw({"video_url": VIDEO}) == GenericDisplay(summary="拆解视频", detail="ref.mp4")

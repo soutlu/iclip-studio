@@ -1,9 +1,13 @@
-"""iClip Studio 能力的外部依赖协议，由组合根适配对象存储与 ffmpeg。"""
+"""iClip Studio 能力的外部依赖协议，由组合根适配对象存储、ffmpeg 与生成域。"""
 
 from __future__ import annotations
 
+import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
+
+from iclip.domains.identity.public import Principal
 
 
 class BreakdownError(RuntimeError):
@@ -53,4 +57,69 @@ class SharedBreakdowns(Protocol):
         ...
 
 
-__all__ = ["BreakdownError", "SampledVideo", "SharedBreakdowns", "VideoSampler"]
+class InvalidNodeImageRequest(ValueError):
+    """生图请求在受理时被拒：没有产生付费调用。"""
+
+
+@dataclass(frozen=True, slots=True)
+class NodeImageRequest:
+    """给工程文件里一个生图节点出一张图。取值由生成域统一校验。"""
+
+    node: str
+    """节点的名字；生成记录按它标记，之后按它找这个节点的结果。"""
+
+    prompt: str
+    model: str
+    aspect_ratio: str
+    resolution: str
+    reference_image_urls: tuple[str, ...]
+    user_name: str
+    """替谁出的图：运行依赖里带的归属标签，上游按它落表对账。"""
+
+    conversation_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class NodeImageJob:
+    """一次生图的进度快照。"""
+
+    job_id: uuid.UUID
+    status: Literal["pending", "submitting", "submitted", "completed", "failed"]
+    output_url: str | None = None
+    error_message: str | None = None
+
+    @property
+    def finished(self) -> bool:
+        return self.status in ("completed", "failed")
+
+
+class NodeImages(Protocol):
+    """生图节点与生成记录之间的往来：出图、查进度、找一个节点最近的结果、认一个地址。"""
+
+    async def submit(self, principal: Principal, request: NodeImageRequest) -> NodeImageJob:
+        """受理生成并返回任务记录；实际出图由后台执行。被拒抛 ``InvalidNodeImageRequest``。"""
+        ...
+
+    async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob: ...
+
+    async def latest(
+        self, principal: Principal, conversation_id: str, nodes: Sequence[str]
+    ) -> Mapping[str, str]:
+        """这些节点各自最近一次生成成功的图片地址；没有成功过的节点不在结果里。"""
+        ...
+
+    async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
+        """这个地址是不是这段对话里一张已完成的图片：生成、编辑或切出来的，含继承来的。"""
+        ...
+
+
+__all__ = [
+    "BreakdownError",
+    "InvalidNodeImageRequest",
+    "NodeImageJob",
+    "NodeImageRequest",
+    "NodeImages",
+    "SampledVideo",
+    "SharedBreakdowns",
+    "VideoSampler",
+]

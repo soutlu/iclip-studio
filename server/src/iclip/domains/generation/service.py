@@ -241,6 +241,20 @@ class GenerationService:
             source_url=external,
         )
 
+    async def find_conversation_image(
+        self, principal: Principal, url: str, conversation_id: uuid.UUID
+    ) -> GenerationJob | None:
+        """这个地址是不是这段对话里一张已完成的图片：对话自己的，或它经分叉继承来的。
+
+        生成、帧图编辑与切图都算；上传不属于任何对话，不在这里认。找不到返回 None。"""
+
+        return await self._repo.find_image_by_output(
+            url,
+            owner=visible_owner_incl_act_as(principal),
+            conversation_id=conversation_id,
+            inherited=await self._inheritance(principal, conversation_id),
+        )
+
     async def _resolve_base(
         self, principal: Principal, url: str | None, conversation_id: uuid.UUID | None
     ) -> tuple[uuid.UUID | None, str | None]:
