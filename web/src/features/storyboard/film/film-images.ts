@@ -8,6 +8,7 @@ import { errorMessageOf } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { toast } from '@/shared/ui/toast'
+import type { EditDraftPart } from '../image-edit/image-edit-types'
 import type { GenerationJob } from '../storyboard.api'
 import type { FilmFrame } from './film.api'
 
@@ -89,4 +90,36 @@ export const useFilmReplace = ({ disabled, frame, onReplace }: ReplaceOptions) =
     /** 有图正在换，出片要等它。 */
     busy: pending !== null,
   }
+}
+
+/** 这张图的生图描述摊成输入卡的样子：文字照旧，参考图是图片 chip，名字用图的名字。 */
+export const promptParts = (frame: FilmFrame): EditDraftPart[] =>
+  (frame.prompt ?? []).map((run) =>
+    run.kind === 'image'
+      ? { kind: 'image', name: run.label, url: run.url }
+      : { kind: 'text', text: run.text },
+  )
+
+/** 输入卡里的描述编成发给模型的样子：参考图按第一次出现的先后排，正文里写「图N」，与后端拼文件里的描述同一种写法。 */
+const compilePrompt = (parts: readonly EditDraftPart[]) => {
+  const referenceImageUrls: string[] = []
+  const text = parts
+    .map((part) => {
+      if (part.kind === 'text') return part.text
+      // 再生成的输入卡没有画布，不会有标注。
+      if (part.kind === 'annotation') return ''
+      if (!referenceImageUrls.includes(part.url)) referenceImageUrls.push(part.url)
+      return `图${referenceImageUrls.indexOf(part.url) + 1}`
+    })
+    .join('')
+  return { referenceImageUrls, text }
+}
+
+/** 再生成这次用的描述：和文件里的一样就不给（后端照文件拼），改过的只用这一次、不写回文件。 */
+export const regeneratePrompt = (
+  original: readonly EditDraftPart[],
+  edited: readonly EditDraftPart[],
+): { text: string; referenceImageUrls: string[] } | undefined => {
+  const mine = compilePrompt(edited)
+  return JSON.stringify(mine) === JSON.stringify(compilePrompt(original)) ? undefined : mine
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FilmFrame, FilmGroup } from './film.api'
 import { contentOfFrame, resolveFilmSelection, shotText } from './film-content'
+import { regeneratePrompt } from './film-images'
 
 const frame = (node: string, number: number | null): FilmFrame => ({
   aspectRatio: '9:16',
@@ -68,5 +69,32 @@ describe('shotText', () => {
         parts: ['她走过来。', '然后停下。'],
       }),
     ).toBe('她走过来。旁白“一双就够了。”然后停下。')
+  })
+})
+
+describe('regeneratePrompt', () => {
+  const original = [
+    { kind: 'image' as const, name: '金发女生', url: 'https://example.com/girl.png' },
+    { kind: 'text' as const, text: '的人物，站在坡面上。' },
+  ]
+
+  it('没改过就不给，后端照文件里的描述拼', () => {
+    expect(regeneratePrompt(original, [...original])).toBeUndefined()
+  })
+
+  it('改过的按第一次出现的先后给参考图编号，正文里写「图N」，同一张只算一次', () => {
+    expect(
+      regeneratePrompt(original, [
+        ...original,
+        { kind: 'text', text: '傍晚，' },
+        { kind: 'image', name: '鞋', url: 'https://example.com/shoe.png' },
+        { kind: 'text', text: '放在' },
+        { kind: 'image', name: '金发女生', url: 'https://example.com/girl.png' },
+        { kind: 'text', text: '脚边。' },
+      ]),
+    ).toEqual({
+      referenceImageUrls: ['https://example.com/girl.png', 'https://example.com/shoe.png'],
+      text: '图1的人物，站在坡面上。傍晚，图2放在图1脚边。',
+    })
   })
 })

@@ -360,6 +360,18 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
           group={group}
           latestJob={latestImageJob(imageEdit.node)}
           onApply={(previous, url) => applyEdited(imageEdit.node, previous, url)}
+          onRegenerate={async (prompt) => {
+            const saved = await savedFilm()
+            await generateFilmImage(conversationId, {
+              filmVersion: saved.filmVersion,
+              node: imageEdit.node,
+              runVersion: saved.runVersion,
+              ...(prompt === undefined ? {} : { prompt }),
+            })
+            await queryClient.invalidateQueries({
+              queryKey: imageEditConversationKey(conversationId),
+            })
+          }}
           onClose={(seen) => {
             if (seen !== undefined) setSeenImageJobs((current) => new Set(current).add(seen.id))
             setImageEdit(null)

@@ -13,7 +13,7 @@ import { EditComposer, type EditComposerHandle } from './edit-composer'
 import { EditGenerationSettings } from './edit-generation-settings'
 import { CURRENT_KEY, entryBaseUrl, frameImageEntries } from './edit-history'
 import { editorWordsOf } from './edit-target'
-import { EditStage } from './edit-stage'
+import { EditStage, StillStage } from './edit-stage'
 import { draftOf, editDraftError } from './image-edit-draft'
 import {
   compileEditRequest,
@@ -51,7 +51,18 @@ type FrameImageEditorProps = {
   onClose: (opened: ReadonlySet<string>) => void
   /** 把这一帧从 `previousUrl` 换成 `url`；替换与撤销都走它，这一帧已不是 `previousUrl` 时应当拒绝。 */
   onApply: (previousUrl: string, url: string) => Promise<void>
+  /** 按描述再生成（制作页的生成图才有）：`parts` 是这张图的描述，参考图是图片；`submit` 收输入卡里的样子，
+   * 失败时抛出给人看的原因。新的出来进版本条，替换才用上。 */
+  regenerate?:
+    | {
+        parts: readonly EditDraftPart[]
+        submit: (parts: EditDraftPart[]) => Promise<void>
+      }
+    | undefined
 }
+
+/** 版本条末尾「再生成」那一格的选中键；任务号与地址都不会是它。 */
+const REGENERATE_KEY = 'regenerate'
 
 /** 编辑图片窗口：装配舞台、版本条与输入卡，持有选中条目、选中标注与生成偏好。 */
 export function FrameImageEditor({
@@ -63,6 +74,7 @@ export function FrameImageEditor({
   initialKey,
   onClose,
   onApply,
+  regenerate,
 }: FrameImageEditorProps) {
   const queryClient = useQueryClient()
   const drafts = useFrameEditDrafts(target)
@@ -76,6 +88,9 @@ export function FrameImageEditor({
   // 从外部整份换掉草稿时加一：画布与输入卡换 key 重挂，撤销栈随之清空、输入卡装回新草稿。
   const [draftRevision, setDraftRevision] = useState(0)
   const composerRef = useRef<EditComposerHandle>(null)
+  // 再生成时输入卡里的描述：开着编辑器时留着改过的样子，关掉再开回到文件里的。
+  const [regenerateParts, setRegenerateParts] = useState(regenerate?.parts ?? [])
+  const regenerating = regenerate !== undefined && selectedKey === REGENERATE_KEY
   const modelsQuery = useImageModels()
   const models = modelsQuery.data?.items ?? []
   const options = resolveImageOptions(models, aspectRatio, {
@@ -101,9 +116,11 @@ export function FrameImageEditor({
   const footnote =
     inFlight > 0
       ? `有 ${inFlight} 个任务在生成或排队，关掉窗口也会继续`
-      : selected?.kind === 'image'
-        ? words.replaceNote
-        : words.aspectNote(aspectRatio)
+      : regenerating
+        ? '新的出来后在版本里，替换才用上'
+        : selected?.kind === 'image'
+          ? words.replaceNote
+          : words.aspectNote(aspectRatio)
 
   const select = (key: string) => {
     setSelectedKey(key)
@@ -147,6 +164,15 @@ export function FrameImageEditor({
       seedImageEditJob(queryClient, target, job)
     } catch (error) {
       setOperationError(errorMessageOf(error, '图片编辑提交失败'))
+    }
+  }
+  const submitRegenerate = async (parts: EditDraftPart[]) => {
+    if (regenerate === undefined) return
+    setOperationError(null)
+    try {
+      await regenerate.submit(parts)
+    } catch (error) {
+      setOperationError(errorMessageOf(error, '再生成提交失败'))
     }
   }
   const replace = async (url: string) => {
@@ -222,51 +248,64 @@ export function FrameImageEditor({
         />
         <div className="image-edit-body">
           <div className="image-edit-stage-area">
-            <EditStage
-              aspectRatio={aspectRatio}
-              baseUrl={baseUrl}
-              canvas={
-                <AnnotationCanvas
-                  key={`${baseUrl}:${draftRevision}`}
-                  url={baseUrl}
-                  annotations={draft.annotations}
-                  onChange={(annotations) => {
-                    drafts.updateDraft(baseUrl, (current) => ({ ...current, annotations }))
-                    setOperationError(null)
-                  }}
-                  selectedId={selectedAnnotation}
-                  onSelect={setSelectedAnnotation}
-                  disabled={frameReplace.pending !== null}
-                  onInsertReference={(id) => {
-                    const annotation = draft.annotations.find((item) => item.id === id)
-                    if (annotation !== undefined) composerRef.current?.insertAnnotation(annotation)
-                  }}
-                />
-              }
-              currentUrl={currentUrl}
-              entry={selected}
-              words={words}
-              replace={{
-                error: frameReplace.error,
-                onReplace: (url) => void replace(url),
-                onUndo: () => void frameReplace.undo(),
-                pending: frameReplace.pending,
-                undoable: frameReplace.undoable,
-              }}
-            />
+            {regenerating ? (
+              <StillStage aspectRatio={aspectRatio} label={words.current} url={currentUrl} />
+            ) : (
+              <EditStage
+                aspectRatio={aspectRatio}
+                baseUrl={baseUrl}
+                canvas={
+                  <AnnotationCanvas
+                    key={`${baseUrl}:${draftRevision}`}
+                    url={baseUrl}
+                    annotations={draft.annotations}
+                    onChange={(annotations) => {
+                      drafts.updateDraft(baseUrl, (current) => ({ ...current, annotations }))
+                      setOperationError(null)
+                    }}
+                    selectedId={selectedAnnotation}
+                    onSelect={setSelectedAnnotation}
+                    disabled={frameReplace.pending !== null}
+                    onInsertReference={(id) => {
+                      const annotation = draft.annotations.find((item) => item.id === id)
+                      if (annotation !== undefined)
+                        composerRef.current?.insertAnnotation(annotation)
+                    }}
+                  />
+                }
+                currentUrl={currentUrl}
+                entry={selected}
+                words={words}
+                replace={{
+                  error: frameReplace.error,
+                  onReplace: (url) => void replace(url),
+                  onUndo: () => void frameReplace.undo(),
+                  pending: frameReplace.pending,
+                  undoable: frameReplace.undoable,
+                }}
+              />
+            )}
             <VersionStrip
               entries={entries}
               words={words}
               currentUrl={currentUrl ?? ''}
               disabled={frameReplace.pending !== null}
-              selectedKey={selected?.key ?? CURRENT_KEY}
+              selectedKey={regenerating ? REGENERATE_KEY : (selected?.key ?? CURRENT_KEY)}
               onSelect={select}
+              regenerate={
+                regenerate === undefined
+                  ? undefined
+                  : { onSelect: () => select(REGENERATE_KEY), selected: regenerating }
+              }
               isUnseen={unseen.isUnseen}
               hasMore={jobsQuery.hasNextPage}
               loadingMore={jobsQuery.isFetchingNextPage}
               onLoadMore={() => void jobsQuery.fetchNextPage()}
               actions={
-                selected !== undefined && selected.kind !== 'current' && selected.job !== null ? (
+                !regenerating &&
+                selected !== undefined &&
+                selected.kind !== 'current' &&
+                selected.job !== null ? (
                   <MenuRoot>
                     {/* disabled 交给菜单触发器：它拦下自己的按下与按键，再转交给按钮置灰。 */}
                     <MenuTrigger asChild disabled={frameReplace.pending !== null}>
@@ -287,7 +326,7 @@ export function FrameImageEditor({
               }
             />
           </div>
-          {aspectUnsupported ? (
+          {aspectUnsupported && !regenerating ? (
             <p role="alert" className="text-body-sm text-error">
               暂无模型支持 {aspectRatio}，请先调整分镜画幅
             </p>
@@ -317,36 +356,59 @@ export function FrameImageEditor({
             />
           ) : null}
           {operationError !== null ? <InlineAlert message={operationError} /> : null}
-          <EditComposer
-            key={`${baseUrl}:${draftRevision}`}
-            ref={composerRef}
-            baseUrl={baseUrl}
-            editingResult={selected?.kind === 'image'}
-            frames={frames}
-            aspectRatio={aspectRatio}
-            annotations={draft.annotations}
-            selectedAnnotation={selectedAnnotation}
-            // 芯片指的是画在当前底图上的圈，选中的那条条目不变。
-            onSelectAnnotation={setSelectedAnnotation}
-            initialParts={draft.parts}
-            onPartsChange={(parts) => {
-              drafts.updateDraft(baseUrl, (current) => ({ ...current, parts }))
-              setOperationError(null)
-            }}
-            onSubmit={submit}
-            settings={
-              aspectUnsupported ? null : (
-                <EditGenerationSettings
-                  models={models}
-                  options={options}
-                  aspectRatio={aspectRatio}
-                  onModelChange={setWantedModel}
-                  onChannelChange={setWantedChannel}
-                  onResolutionChange={setWantedResolution}
-                />
-              )
-            }
-          />
+          {regenerating ? (
+            <EditComposer
+              key={REGENERATE_KEY}
+              ref={composerRef}
+              baseUrl={undefined}
+              regenerate
+              editingResult={false}
+              frames={frames}
+              aspectRatio={aspectRatio}
+              annotations={[]}
+              selectedAnnotation={null}
+              onSelectAnnotation={() => {}}
+              initialParts={regenerateParts}
+              onPartsChange={(parts) => {
+                setRegenerateParts(parts)
+                setOperationError(null)
+              }}
+              onSubmit={submitRegenerate}
+              // 模型与画幅照文件里写的，这里不选。
+              settings={null}
+            />
+          ) : (
+            <EditComposer
+              key={`${baseUrl}:${draftRevision}`}
+              ref={composerRef}
+              baseUrl={baseUrl}
+              editingResult={selected?.kind === 'image'}
+              frames={frames}
+              aspectRatio={aspectRatio}
+              annotations={draft.annotations}
+              selectedAnnotation={selectedAnnotation}
+              // 芯片指的是画在当前底图上的圈，选中的那条条目不变。
+              onSelectAnnotation={setSelectedAnnotation}
+              initialParts={draft.parts}
+              onPartsChange={(parts) => {
+                drafts.updateDraft(baseUrl, (current) => ({ ...current, parts }))
+                setOperationError(null)
+              }}
+              onSubmit={submit}
+              settings={
+                aspectUnsupported ? null : (
+                  <EditGenerationSettings
+                    models={models}
+                    options={options}
+                    aspectRatio={aspectRatio}
+                    onModelChange={setWantedModel}
+                    onChannelChange={setWantedChannel}
+                    onResolutionChange={setWantedResolution}
+                  />
+                )
+              }
+            />
+          )}
           <p className="image-edit-footnote">{footnote}</p>
         </div>
       </DialogSurface>

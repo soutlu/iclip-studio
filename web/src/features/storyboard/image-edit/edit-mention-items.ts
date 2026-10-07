@@ -22,12 +22,13 @@ export function editMentionItems({
   query,
 }: {
   annotations: readonly ImageAnnotation[]
-  baseUrl: string
+  /** 编辑底图；按描述再生成没有底图，为 undefined。 */
+  baseUrl: string | undefined
   frames: readonly string[]
   query: string
 }): EditMentionItem[] {
   const items: EditMentionItem[] = [
-    { kind: 'base', url: baseUrl },
+    ...(baseUrl === undefined ? [] : [{ kind: 'base' as const, url: baseUrl }]),
     ...annotations
       .toSorted((a, b) => a.number - b.number)
       .map((annotation) => ({ annotation, kind: 'annotation' as const })),

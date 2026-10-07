@@ -68,6 +68,25 @@ function Hero({
   )
 }
 
+/** 按描述再生成时的舞台：只放在用的那张，不画标注；新的出来进版本条，替换才用上。 */
+export function StillStage({
+  aspectRatio,
+  label,
+  url,
+}: {
+  aspectRatio: string
+  label: string
+  url: string | undefined
+}) {
+  return (
+    <div className="image-edit-stage">
+      <Hero aspectRatio={aspectRatio}>
+        {url === undefined ? null : <img alt={label} className="image-edit-hero-image" src={url} />}
+      </Hero>
+    </div>
+  )
+}
+
 /** 任务提交时的底图，衬在状态胶囊下面。 */
 function BaseImage({ url }: { url: string }) {
   const [failed, setFailed] = useState(false)

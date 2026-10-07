@@ -27,6 +27,8 @@ const RUN_PATH = 'film.icrun'
 const films = new Map<string, FilmViewOut>()
 /** 每段对话里人选用的图：节点 → 地址。 */
 const chosen = new Map<string, Map<string, string>>()
+/** 按描述生图出过几张，给每张一个不同的地址。 */
+let generatedCount = 0
 
 /** 文件页上看到的工程原文；制作页不读它，只是让文件页有东西可看。 */
 const FILM_SOURCE = [
@@ -207,6 +209,7 @@ export const editMockFilmShot = (conversationId: string, shot: number, text: str
 export const resetMockFilm = () => {
   films.clear()
   chosen.clear()
+  generatedCount = 0
 }
 
 /** 读的那一刻每张图用哪张、编号几：选用的优先，生成图其次看最近一次成功的生成，编号只给有图的、按先后从 1 起。 */
@@ -374,10 +377,12 @@ export const filmHandlers = [
       const prompt = (frame.prompt ?? [])
         .map((run) => ('node' in run ? run.label : run.text))
         .join('')
+      // 每次出的地址都不一样：同一个地址会被当成这张图在用的那版，进不了版本条。
+      generatedCount += 1
       const created = acceptMockImage({
         conversationId,
         metadata: { film_node: body.node },
-        outputUrl: backpackImage,
+        outputUrl: `${backpackImage}?generated=${String(generatedCount)}`,
         prompt,
       })
       return HttpResponse.json({ jobId: created.id }, { status: 202 })

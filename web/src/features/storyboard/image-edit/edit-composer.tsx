@@ -79,7 +79,10 @@ export type EditComposerHandle = {
 
 type EditComposerProps = {
   ref?: Ref<EditComposerHandle>
-  baseUrl: string
+  /** 编辑底图；按描述再生成（`regenerate`）没有底图，为 undefined，不占引用名额、`@` 里也没有它。 */
+  baseUrl: string | undefined
+  /** 按描述再生成：输入卡装的是这张图的描述，提交按钮叫「再生成」，没有模型设置。 */
+  regenerate?: boolean
   frames: readonly string[]
   aspectRatio: string
   annotations: readonly ImageAnnotation[]
@@ -107,6 +110,7 @@ export function EditComposer({
   onSelectAnnotation,
   onSubmit,
   ref,
+  regenerate = false,
   selectedAnnotation,
   settings,
 }: EditComposerProps) {
@@ -139,10 +143,10 @@ export function EditComposer({
 
   const slots = imageSlotsOf(parts)
   const referenced = (url: string) => slots.some((slot) => slot.url === url)
-  // 底图隐式提交、固定占一张；正文里指向底图的图片并进它，不另占。
+  // 底图隐式提交、固定占一张；正文里指向底图的图片并进它，不另占。再生成没有底图。
   const remaining = () =>
     MAX_EDIT_REFERENCES -
-    1 -
+    (baseUrl === undefined ? 0 : 1) -
     new Set(slots.filter((slot) => slot.url !== baseUrl).map((slot) => slot.key)).size
   const blockedReason = (url: string) =>
     url === baseUrl || referenced(url) || remaining() > 0 ? undefined : LIMIT_REASON
@@ -213,16 +217,18 @@ export function EditComposer({
         }}
         onSubmit={(submission) => void submit(submission.parts)}
         placeholder={
-          editingResult
-            ? '描述想怎么改这张结果，输入 @ 引用图片或标注'
-            : '描述想怎么改，输入 @ 引用图片或标注'
+          regenerate
+            ? '描述想生成什么，输入 @ 引用图片'
+            : editingResult
+              ? '描述想怎么改这张结果，输入 @ 引用图片或标注'
+              : '描述想怎么改，输入 @ 引用图片或标注'
         }
         ref={composerRef}
         sending={sending}
         submitAction={{
           emphasis: editingResult ? 'neutral' : 'primary',
           icon: 'image',
-          label: '生成图片',
+          label: regenerate ? '再生成' : '生成图片',
           pendingLabel: '提交中…',
         }}
         trailing={settings}
