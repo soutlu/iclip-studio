@@ -192,6 +192,20 @@ def test_multiline_text_keeps_its_indentation() -> None:
     assert group(updated).settings[0].text == "摄影：手机拍摄。\n\n剪辑：硬切。"
 
 
+def test_a_single_line_written_on_its_own_line_stays_there() -> None:
+    project = FILM.replace(
+        '<Line id="miles" role="短发女生">Five miles, and my feet don\'t hurt.</Line>',
+        '<Line id="miles" role="短发女生">\n      Five miles, and my feet don\'t hurt.\n    </Line>',
+    )
+
+    updated = edit_text(project, checked(project), [FilmTextEdit("line:miles", text="Six miles!")])
+
+    assert changed_lines(project, updated) == [
+        "-      Five miles, and my feet don't hurt.",
+        "+      Six miles!",
+    ]
+
+
 def test_the_english_body_sentence_stays_with_the_person() -> None:
     typed = "东亚女性，二十出头；黑色短发。上身穿浅灰色T恤"
 

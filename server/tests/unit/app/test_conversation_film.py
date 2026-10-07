@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from iclip.app.capability_table import FILM_NODE_KEY
 from iclip.app.conversation_film import ConversationFilmAdapter
+from iclip.app.film_images import FILM_NODE_KEY
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed

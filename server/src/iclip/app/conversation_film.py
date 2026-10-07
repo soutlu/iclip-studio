@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from iclip.app.capability_table import FilmImagesAdapter
+from iclip.app.film_images import FilmImagesAdapter
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
 from iclip.capabilities.iclip_studio.film.studio import (

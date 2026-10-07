@@ -10,7 +10,8 @@ from typing import Any
 import httpx
 import pytest
 
-from iclip.app.capability_table import FILM_NODE_KEY, FilmImagesAdapter, build_capability_table
+from iclip.app.capability_table import build_capability_table
+from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from iclip.config import ResolvedIclipStudio
