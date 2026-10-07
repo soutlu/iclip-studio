@@ -38,7 +38,7 @@ const ALIGN_PLACEMENT: Record<
 
 // 侧栏底部的账户卡片：头像、名字与用户名、展开标记排成一行，整张卡片是菜单触发器。
 const USER_CARD_BUTTON_CLASS =
-  'flex h-12 w-full ui-state cursor-pointer items-center gap-2.5 rounded-md px-2 text-body text-on-surface ui-focus select-none'
+  'group flex h-12 w-full ui-state cursor-pointer items-center gap-2.5 rounded-md px-2 text-body text-on-surface select-none focus-visible:bg-inverse-surface focus-visible:text-inverse-on-surface focus-visible:outline-hidden data-[state=open]:bg-state-active'
 
 const APPEARANCE: Record<ThemePreference, { icon: IconName; label: string }> = {
   dark: { icon: 'theme-dark', label: '深色' },
@@ -113,13 +113,13 @@ export function CueUserMenu({
               <span aria-hidden="true" className="flex min-w-0 flex-1 flex-col text-left">
                 <span className="truncate font-semibold">{userLabel}</span>
                 {secondaryLabel ? (
-                  <span className="truncate text-label text-on-surface-faint">
+                  <span className="truncate text-label text-on-surface-faint group-focus-visible:text-inherit">
                     {secondaryLabel}
                   </span>
                 ) : null}
               </span>
               <Icon
-                className="shrink-0 text-on-surface-faint"
+                className="shrink-0 text-on-surface-faint group-focus-visible:text-inherit"
                 decorative
                 name="dropdown"
                 size="md"

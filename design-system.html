@@ -613,7 +613,7 @@
             </li>
             <li>
               <strong>焦点与选中</strong>
-              键盘焦点只在 <code>:focus-visible</code> 时出现，用 2px 墨色描边（<code>--color-focus-ring</code> 即 <code>on-surface</code>，宽度 <code>--state-focus-ring</code>）；输入框聚焦时 1px 边框转墨色，不再外加焦点环；深色媒体面上改用 <code>on-scrim</code>。选中、当前项与拖放目标同样用墨色或中性状态层，不用绿色描边、绿色光环或浅绿铺底。
+              键盘焦点只在 <code>:focus-visible</code> 时出现，默认用 2px 墨色描边（<code>--color-focus-ring</code> 即 <code>on-surface</code>，宽度 <code>--state-focus-ring</code>）；账户菜单入口展开时用中性状态背景，键盘聚焦时用 <code>inverse-surface</code> 与 <code>inverse-on-surface</code> 表示焦点，不叠加描边，系统强制颜色模式保留焦点轮廓；输入框聚焦时 1px 边框转墨色，不再外加焦点环；深色媒体面上改用 <code>on-scrim</code>。选中、当前项与拖放目标同样用墨色或中性状态层，不用绿色描边、绿色光环或浅绿铺底。
             </li>
             <li>
               <strong>Secondary 是中性灰</strong>
