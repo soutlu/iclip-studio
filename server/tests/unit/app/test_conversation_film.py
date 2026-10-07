@@ -47,7 +47,7 @@ PRINCIPAL = Principal(
 )
 CONVERSATION = uuid.uuid4()
 NAMESPACE = namespace_for(OWNER, str(CONVERSATION))
-LATEST_PARK = "https://cdn.test/park-latest.png"
+GENERATED_PARK = "https://cdn.test/park-generated.png"
 UPLOADED = "https://cdn.test/iclip/agent/uploads/my-park.png"
 FIRST_SHOT = (
     "开场，手持，胸部以上近景，平视。短发女生站在跑道边，双手分别握住网面跑鞋的鞋头和鞋跟，"
@@ -106,14 +106,16 @@ async def page(
     return Page(adapter, store, ledger, repo)
 
 
-def latest_park() -> GenerationJob:
+def generated_park() -> GenerationJob:
+    """公园跑道参考图按描述生成成功的一条记录。"""
+
     return make_job(
         image_request(),
         status=STATUS_COMPLETED,
         owner_user_id=OWNER,
         conversation_id=CONVERSATION,
         metadata={FILM_NODE_KEY: "公园跑道参考图"},
-        output_url=LATEST_PARK,
+        output_url=GENERATED_PARK,
     )
 
 
@@ -127,13 +129,15 @@ async def test_there_is_no_view_without_a_film_file() -> None:
     assert await made.adapter.view(PRINCIPAL, OWNER, CONVERSATION) is None
 
 
-async def test_the_view_carries_both_versions_and_the_latest_generated_image() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [latest_park()])
+async def test_the_view_carries_both_versions_and_only_selected_images() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [generated_park()])
 
     view = await made.view()
 
     assert (view.film_version, view.run_version, view.problems) == (1, 1, 0)
-    assert frame_url(view, "公园跑道参考图") == LATEST_PARK
+    assert frame_url(view, "短发女生参考图") == PERSON_FIXED
+    # 生成成功过、运行文件里没选用：还是没有图。
+    assert frame_url(view, "公园跑道参考图") is None
 
 
 async def test_a_film_with_problems_shows_only_how_many() -> None:
@@ -236,21 +240,54 @@ async def test_an_address_that_is_not_this_conversations_image_is_refused() -> N
 
 
 async def test_a_generated_image_of_this_conversation_can_be_chosen_without_recording() -> None:
-    made = await page({FILM_PATH: FILM}, [latest_park()])
+    made = await page({FILM_PATH: FILM}, [generated_park()])
 
     view = await made.adapter.choose_image(
         PRINCIPAL,
         OWNER,
         CONVERSATION,
         node="镜02机位图",
-        url=LATEST_PARK,
+        url=GENERATED_PARK,
         film_version=1,
         run_version=None,
     )
 
     assert view.run_version == 1
-    assert frame_url(view, "镜02机位图") == LATEST_PARK
-    assert LATEST_PARK not in made.ledger.urls(NAMESPACE)
+    assert frame_url(view, "镜02机位图") == GENERATED_PARK
+    assert GENERATED_PARK not in made.ledger.urls(NAMESPACE)
+
+
+async def test_choosing_a_result_writes_its_use_and_clearing_it_leaves_no_image() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [generated_park()])
+
+    chosen = await made.adapter.choose_image(
+        PRINCIPAL,
+        OWNER,
+        CONVERSATION,
+        node="公园跑道参考图",
+        url=GENERATED_PARK,
+        film_version=1,
+        run_version=1,
+    )
+
+    assert frame_url(chosen, "公园跑道参考图") == GENERATED_PARK
+    run = await made.content(RUN_PATH) or ""
+    assert '<use output="公园跑道参考图.image" image={公园跑道参考图-1}/>' in run
+
+    cleared = await made.adapter.choose_image(
+        PRINCIPAL,
+        OWNER,
+        CONVERSATION,
+        node="公园跑道参考图",
+        url=None,
+        film_version=1,
+        run_version=2,
+    )
+
+    # 取消选用就是没图：不回到生成过的那一张。
+    assert cleared.run_version == 3
+    assert frame_url(cleared, "公园跑道参考图") is None
+    assert 'output="公园跑道参考图.image"' not in (await made.content(RUN_PATH) or "")
 
 
 @pytest.mark.parametrize(("film_version", "run_version"), [(2, 1), (1, None), (1, 2)])
@@ -320,26 +357,26 @@ async def test_an_image_without_a_picture_is_generated_from_the_film_without_tou
     assert await made.content(RUN_PATH) == RUN
 
 
-async def test_regenerating_an_image_in_use_first_pins_the_one_in_use() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [latest_park()])
+async def test_generating_again_never_selects_anything() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [generated_park()])
 
     await generate(made, "公园跑道参考图")
 
     view = await made.view()
-    assert view.run_version == 2
-    assert frame_url(view, "公园跑道参考图") == LATEST_PARK
-    assert f'src="{LATEST_PARK}"' in (await made.content(RUN_PATH) or "")
+    assert view.run_version == 1
+    assert frame_url(view, "公园跑道参考图") is None
+    assert await made.content(RUN_PATH) == RUN
 
 
-async def test_a_refused_regeneration_says_the_current_image_was_kept_in_use() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [latest_park()])
+async def test_a_refused_generation_writes_nothing() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [generated_park()])
     too_long = FilmImagePrompt("x" * (MAX_PROMPT_CHARS + 1), ())
 
-    with pytest.raises(ValidationFailed, match=r"^已经选用现在这张图，这次没有生成："):
+    with pytest.raises(ValidationFailed, match=r"^这次没有生成："):
         await generate(made, "公园跑道参考图", prompt=too_long)
 
-    assert [job.output_url for job in made.jobs.jobs.values()] == [LATEST_PARK]
-    assert frame_url(await made.view(), "公园跑道参考图") == LATEST_PARK
+    assert [job.output_url for job in made.jobs.jobs.values()] == [GENERATED_PARK]
+    assert await made.content(RUN_PATH) == RUN
 
 
 async def test_regenerating_an_image_that_is_already_chosen_leaves_the_run_file() -> None:

@@ -212,7 +212,8 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         只在用户说了要生成哪些图时调用。每调用一次，列出的每个节点都重新生成并计费；已经生成
         过、用户没有要求重做的不要再列。一次最多 10 个节点，更多的分几次调用。生成前先做与
         check_film 相同的检查，有问题不生成。运行文件里选用了登记图的节点不生成；一张失败
-        不影响其它张，失败的在结果里说明，不要自动重试。
+        不影响其它张，失败的在结果里说明，不要自动重试。生成出来的图不会自动用上，用户在制作页
+        选用了才算有图。
 
         Args:
             nodes: 要生成的生图节点的名字，如 ``["短发女生参考图", "镜01机位图"]``。
@@ -243,21 +244,17 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                 )
         deps = _deps(ctx)
         namespace = self._cap.space.resolve(ctx)
-        while pending:
-            # 一张图引用了这次也要生成的另一张，就等那一张先出来；互不相干的一起生成。
-            ready = [name for name in pending if not _waits_for(film, known[name]) & set(pending)]
-            results = await asyncio.gather(
-                *(self._generate(images, deps, film, known[name]) for name in ready)
-            )
-            for name, (job, missing) in zip(ready, results, strict=True):
-                pending.remove(name)
-                if job.status == "completed" and job.output_url:
-                    film.generated[name] = job.output_url
-                    made.append((job.output_url, name))
-                    note = f"；{'、'.join(missing)} 还没有图，这次只用了文字" if missing else ""
-                    outcome[name] = f"已生成，地址 {job.output_url}{note}"
-                else:
-                    outcome[name] = f"生成失败，{job.error_message or '没有说明原因'}"
+        # 生成出来的图要用户选用才算有图，同一次里先出的也不给后出的当参考，所以一起生成。
+        results = await asyncio.gather(
+            *(self._generate(images, deps, film, known[name]) for name in pending)
+        )
+        for name, (job, missing) in zip(pending, results, strict=True):
+            if job.status == "completed" and job.output_url:
+                made.append((job.output_url, name))
+                note = f"；{'、'.join(missing)} 还没有图，这次只用了文字" if missing else ""
+                outcome[name] = f"已生成，地址 {job.output_url}{note}"
+            else:
+                outcome[name] = f"生成失败，{job.error_message or '没有说明原因'}"
         await self._cap.ledger.record(
             namespace, [Material(url=url, kind="image") for url, _ in made]
         )
@@ -317,7 +314,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         return job, missing
 
     async def _load(self, ctx: RunContext[AgentDepsT]) -> Film | list[str]:
-        """读两个文件并检查，再查出每个生图节点最近一次生成的图；通过时返回 ``Film``，否则返回问题。"""
+        """读两个文件并检查；通过时返回 ``Film``，否则返回问题。"""
 
         files, namespace = self._cap.space.store, self._cap.space.resolve(ctx)
         project = await files.read(namespace, FILM_PATH)
@@ -379,10 +376,6 @@ def _referenced_images(film: Film, node: Node) -> set[str]:
         if (image := reference.reference("image")) is not None
     }
     return names & image_nodes
-
-
-def _waits_for(film: Film, node: Node) -> set[str]:
-    return _referenced_images(film, node) - {node.attrs["id"]}
 
 
 def _deps(ctx: RunContext[Any]) -> AgentRunDeps:

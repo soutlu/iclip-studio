@@ -47,12 +47,13 @@ def checked(project: str = FILM, run: str | None = RUN) -> Film:
 
 
 def generated(*missing: str) -> Film:
-    """没有运行文件，每个生图节点都有一张最近生成的图，``missing`` 里的除外。"""
+    """每个生图节点都在运行文件里选用了一张图，``missing`` 里的除外。"""
 
     film = checked(run=None)
-    film.generated = {
-        node: f"https://cdn.test/{node}.png" for node in IMAGE_NODES if node not in missing
-    }
+    for node in IMAGE_NODES:
+        if node not in missing:
+            film.registered[f"{node}-1"] = f"https://cdn.test/{node}.png"
+            film.selected[node] = f"{node}-1"
     return film
 
 
@@ -184,6 +185,47 @@ def test_a_reference_without_an_image_is_written_as_text_only() -> None:
     images = [run.node for run in runs if isinstance(run, FilmPromptImage)]
     assert images == ["跑鞋正面", "跑鞋鞋底", "公园跑道参考图", "镜01机位图"]
     assert "东亚女性" in "".join(run.text for run in runs if isinstance(run, FilmPromptText))
+
+
+def missing_of(made: FilmGroup) -> dict[str, tuple[str, ...]]:
+    return {frame.node: frame.missing for frame in made.frames}
+
+
+def test_a_generated_image_names_the_references_that_have_no_image_yet() -> None:
+    (made,) = film_groups(generated(*MISSING, "镜01机位图"), FILM)
+
+    assert missing_of(made) == {
+        "短发女生参考图": (),
+        "跑鞋正面": (),
+        "跑鞋鞋底": (),
+        "公园跑道参考图": (),
+        "镜01机位图": ("短发女生",),
+        "镜02机位图": ("短发女生", "镜头 1"),
+        "镜03机位图": ("短发女生", "镜头 1"),
+        "镜04机位图": ("镜头 1",),
+    }
+
+
+def test_nothing_is_missing_when_every_reference_has_an_image() -> None:
+    (made,) = film_groups(generated(), FILM)
+
+    assert all(frame.missing == () for frame in made.frames)
+
+
+def test_given_photos_are_never_missing() -> None:
+    # 镜04 只挂两张用户给的照片；一张图都没选用，它也不缺。
+    project = FILM.replace(
+        "    <gpt:Reference image={公园跑道参考图.image} for={公园跑道}/>\n"
+        "    <gpt:Reference image={镜01机位图.image}>木长椅和光线与同一场戏的第一个机位保持一致"
+        "</gpt:Reference>\n  </gpt:Image>",
+        "  </gpt:Image>",
+    )
+    assert project != FILM
+
+    made = group(project, None)
+
+    assert missing_of(made)["镜04机位图"] == ()
+    assert [frame.url for frame in made.frames if frame.kind == "generated"] == [None] * 6
 
 
 def test_a_view_from_another_group_is_named_with_that_group() -> None:
@@ -416,7 +458,7 @@ def test_an_image_already_registered_is_reused() -> None:
     ]
 
 
-def test_clearing_a_choice_goes_back_to_the_latest_generation() -> None:
+def test_clearing_a_choice_removes_its_use_and_leaves_the_image_empty() -> None:
     change = choose_image(checked(), FILM, RUN, "短发女生参考图", None)
 
     assert change is not None
@@ -424,8 +466,9 @@ def test_clearing_a_choice_goes_back_to_the_latest_generation() -> None:
         '-  <use output="短发女生参考图.image" image={短发女生修过手}/>'
     ]
     film = checked(FILM, change[1])
-    film.generated["短发女生参考图"] = "https://cdn.test/latest.png"
-    assert film.image_url("短发女生参考图.image") == "https://cdn.test/latest.png"
+    assert film.image_url("短发女生参考图.image") is None
+    # 登记的图留着，可以再选用。
+    assert film.registered["短发女生修过手"] == PERSON_FIXED
 
 
 def test_nothing_is_written_when_the_image_is_already_the_one_in_use() -> None:

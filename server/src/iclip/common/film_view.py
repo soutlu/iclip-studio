@@ -58,6 +58,10 @@ class FilmFrame:
     aspect_ratio: str | None
     """这张图的画幅：生成图照文件里写的；用户给的图文件里不写，为 None。"""
 
+    missing: tuple[str, ...]
+    """按描述生成这张图时挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后、不重复；
+    生成时它们只用文字写。用户给的图为空。"""
+
 
 @dataclass(frozen=True, slots=True)
 class FilmSetting:

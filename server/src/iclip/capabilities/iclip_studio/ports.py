@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -66,7 +65,7 @@ class NodeImageRequest:
     """给工程文件里一个生图节点出一张图。取值由生成域统一校验。"""
 
     node: str
-    """节点的名字；生成记录按它标记，之后按它找这个节点的结果。"""
+    """节点的名字；生成记录按它标记，制作页按它列这个节点的版本。"""
 
     prompt: str
     model: str
@@ -94,19 +93,13 @@ class NodeImageJob:
 
 
 class NodeImages(Protocol):
-    """生图节点与生成记录之间的往来：出图、查进度、找一个节点最近的结果、认一个地址。"""
+    """生图节点与生成记录之间的往来：出图、查进度、认一个地址。"""
 
     async def submit(self, principal: Principal, request: NodeImageRequest) -> NodeImageJob:
         """受理生成并返回任务记录；实际出图由后台执行。被拒抛 ``InvalidNodeImageRequest``。"""
         ...
 
     async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob: ...
-
-    async def latest(
-        self, principal: Principal, conversation_id: str, nodes: Sequence[str]
-    ) -> Mapping[str, str]:
-        """这些节点各自最近一次按描述生成成功的图片地址；编辑出来的不算，没有的节点不在结果里。"""
-        ...
 
     async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
         """这个地址是不是这段对话里一张已完成的图片：生成、编辑或切出来的，含继承来的。"""

@@ -74,6 +74,7 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 continue
             generated = _generated(project, use.image)
             prompt = None
+            missing: tuple[str, ...] = ()
             if generated:
                 prompt = tuple(
                     FilmPromptText(run)
@@ -83,6 +84,12 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                     )
                     for run in image_prompt(film, use.image).runs
                 )
+                missing = tuple(
+                    dict.fromkeys(
+                        _label(name, index, elements, views)
+                        for name in _missing_references(film, use.image)
+                    )
+                )
             frames[use.image] = FilmFrame(
                 node=use.image,
                 label=_label(use.image, index, elements, views),
@@ -91,6 +98,7 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 number=use.number,
                 prompt=prompt,
                 aspect_ratio=project.nodes[use.image].attrs["aspect-ratio"] if generated else None,
+                missing=missing,
             )
         groups.append(
             FilmGroup(
@@ -169,7 +177,7 @@ def choose_image(
 ) -> tuple[str, str] | None:
     """给一个图片节点换图，返回 (要写的文件, 新的原文)；本来就是这样时返回 None。
 
-    生图节点在运行文件里登记这张图并选用它，``url`` 为 None 是取消选用、回到最近一次生成的；
+    生图节点在运行文件里登记这张图并选用它，``url`` 为 None 是删掉它的选用，这张图就没有图了；
     用户给的图直接改工程文件里的地址，不能没有图。``url`` 是不是这段对话的图由调用方先认。"""
 
     project = film.project
@@ -232,6 +240,17 @@ def _label(
 
 def _generated(project: Document, image: str) -> bool:
     return project.declared(project.nodes[image]).generation is not None
+
+
+def _missing_references(film: Film, image: str) -> list[str]:
+    """生图节点 ``image`` 下挂的参考图里现在没有图的那几张，按挂的先后；生成时它们只用文字写。"""
+
+    names: list[str] = []
+    for reference in references(film.project, film.project.nodes[image]):
+        target = _required(reference, "image")
+        if film.image_url(target) is None:
+            names.append(target.partition(".")[0])
+    return names
 
 
 def _settings(project: Document, video: Node, source: str) -> tuple[FilmSetting, ...]:

@@ -1,10 +1,9 @@
-"""验证工程文件的生图节点与生成域之间的适配：出图时标上节点名，按节点名找最近的结果，按地址认图。"""
+"""验证工程文件的生图节点与生成域之间的适配：出图时标上节点名，按地址认图。"""
 
 from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -16,12 +15,7 @@ from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from iclip.config import ResolvedIclipStudio
-from iclip.domains.generation.models import (
-    STATUS_COMPLETED,
-    STATUS_FAILED,
-    GenerationJob,
-    GenerationStatus,
-)
+from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
 from iclip.domains.identity.models import Principal
 from tests.helpers.file_store import FakeFileStore
@@ -68,13 +62,12 @@ def image_row(
     *,
     minutes: int,
     url: str | None,
-    status: GenerationStatus = STATUS_COMPLETED,
     conversation: uuid.UUID = CONVERSATION,
 ) -> GenerationJob:
     moment = START + timedelta(minutes=minutes)
     return make_job(
         image_request(),
-        status=status,
+        status=STATUS_COMPLETED,
         owner_user_id=OWNER,
         conversation_id=conversation,
         metadata=None if node is None else {FILM_NODE_KEY: node},
@@ -108,48 +101,6 @@ async def test_a_request_the_model_cannot_serve_is_refused_before_anything_is_qu
         await adapter.submit(PRINCIPAL, node_request(aspect_ratio="17:9"))
 
     assert repo.jobs == {}
-
-
-async def test_latest_is_the_newest_successful_image_of_each_node() -> None:
-    repo = InMemoryGenerationRepository(
-        [
-            image_row("短发女生参考图", minutes=1, url="https://cdn.test/a.png"),
-            image_row("短发女生参考图", minutes=2, url="https://cdn.test/b.png"),
-            image_row("短发女生参考图", minutes=3, url=None, status=STATUS_FAILED),
-            image_row("镜01机位图", minutes=4, url=None, status=STATUS_FAILED),
-            image_row(
-                "公园跑道参考图",
-                minutes=5,
-                url="https://cdn.test/elsewhere.png",
-                conversation=OTHER_CONVERSATION,
-            ),
-        ]
-    )
-    adapter = FilmImagesAdapter(film_image_service(repo))
-
-    found = await adapter.latest(
-        PRINCIPAL, str(CONVERSATION), ["短发女生参考图", "镜01机位图", "公园跑道参考图"]
-    )
-
-    assert found == {"短发女生参考图": "https://cdn.test/b.png"}
-
-
-async def test_an_edited_image_never_becomes_the_latest_however_many_there_are() -> None:
-    generated = image_row("镜01机位图", minutes=0, url="https://cdn.test/generated.png")
-    edits = [
-        replace(
-            image_row("镜01机位图", minutes=minute, url=f"https://cdn.test/edit-{minute}.png"),
-            source_url="https://cdn.test/generated.png",
-        )
-        for minute in range(1, 26)
-    ]
-    adapter = FilmImagesAdapter(
-        film_image_service(InMemoryGenerationRepository([generated, *edits]))
-    )
-
-    found = await adapter.latest(PRINCIPAL, str(CONVERSATION), ["镜01机位图"])
-
-    assert found == {"镜01机位图": "https://cdn.test/generated.png"}
 
 
 async def test_an_address_belongs_when_the_conversation_has_a_finished_image_at_it() -> None:
@@ -210,9 +161,6 @@ async def test_a_fork_keeps_the_images_its_source_had_at_the_fork() -> None:
         )
     )
 
-    assert await adapter.latest(PRINCIPAL, str(fork), ["短发女生参考图"]) == {
-        "短发女生参考图": "https://cdn.test/before-fork.png"
-    }
     assert await adapter.belongs(PRINCIPAL, str(fork), "https://cdn.test/before-fork.png")
     assert not await adapter.belongs(PRINCIPAL, str(fork), "https://cdn.test/after-fork.png")
 
@@ -221,7 +169,7 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_a_broken_run() -> None:
     adapter = FilmImagesAdapter(film_image_service(InMemoryGenerationRepository()))
 
     with pytest.raises(RuntimeError, match="对话 id 不是 UUID"):
-        await adapter.latest(PRINCIPAL, "thread-1", ["镜01机位图"])
+        await adapter.belongs(PRINCIPAL, "thread-1", "https://cdn.test/a.png")
 
 
 def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
