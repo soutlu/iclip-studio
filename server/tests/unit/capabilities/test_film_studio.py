@@ -17,7 +17,7 @@ from iclip.capabilities.iclip_studio.film.studio import (
     edit_text,
     film_groups,
 )
-from iclip.common.film_view import FilmGroup, FilmTextEdit
+from iclip.common.film_view import FilmGroup, FilmLineEdit, FilmTextEdit
 from tests.helpers.film import FILM, PERSON_FIRST, PERSON_FIXED, RUN, SHOE_PHOTO, VIEW_ONE
 
 BODY_SENTENCE = (
@@ -25,6 +25,10 @@ BODY_SENTENCE = (
     "head-to-shoulder proportions."
 )
 LATEST_PARK = "https://cdn.test/park-latest.png"
+LIGHTER = FilmLineEdit("line:lighter", "短发女生", "It's lighter than it looks.")
+REBOUND = FilmLineEdit(
+    "line:rebound", "旁白", "Every step gives a little back, so you'll run longer."
+)
 
 
 def checked(project: str = FILM, run: str | None = RUN) -> Film:
@@ -36,6 +40,14 @@ def checked(project: str = FILM, run: str | None = RUN) -> Film:
 def group(project: str = FILM, run: str | None = RUN) -> FilmGroup:
     (only,) = film_groups(checked(project, run), project)
     return only
+
+
+def shot(number: int, parts: tuple[str, ...], *lines: FilmLineEdit) -> FilmTextEdit:
+    return FilmTextEdit(f"shot:全片分镜:{number}", parts=parts, lines=lines)
+
+
+def parts_of(number: int, project: str = FILM) -> tuple[str, ...]:
+    return group(project).shots[number - 1].parts
 
 
 def changed_lines(before: str, after: str) -> list[str]:
@@ -146,6 +158,7 @@ def test_settings_and_shots_follow_the_video_prompt() -> None:
         ("line:lighter", "短发女生", "It's lighter than it looks.")
     ]
     assert made.shots[3].view is None
+    assert made.speakers == ("短发女生", "旁白")
 
 
 def test_a_body_with_a_comment_in_it_cannot_be_edited_on_the_page() -> None:
@@ -163,7 +176,7 @@ def test_a_body_with_a_comment_in_it_cannot_be_edited_on_the_page() -> None:
 def test_shot_text_is_written_in_place_and_nothing_else_moves() -> None:
     parts = ("开场，手持。她把 {鞋} 举到 <镜头> 前 & 笑：", " 音效：轻响")
 
-    updated = edit_text(FILM, checked(), [FilmTextEdit("shot:全片分镜:1", parts=parts)])
+    updated = edit_text(FILM, checked(), [shot(1, parts, LIGHTER)])
 
     (removed, added) = changed_lines(FILM, updated)
     assert removed.startswith(
@@ -198,7 +211,9 @@ def test_a_single_line_written_on_its_own_line_stays_there() -> None:
         '<Line id="miles" role="短发女生">\n      Five miles, and my feet don\'t hurt.\n    </Line>',
     )
 
-    updated = edit_text(project, checked(project), [FilmTextEdit("line:miles", text="Six miles!")])
+    miles = FilmLineEdit("line:miles", "短发女生", "Six miles!")
+
+    updated = edit_text(project, checked(project), [shot(3, parts_of(3, project), miles)])
 
     assert changed_lines(project, updated) == [
         "-      Five miles, and my feet don't hurt.",
@@ -217,34 +232,132 @@ def test_the_english_body_sentence_stays_with_the_person() -> None:
     assert group(updated).settings[1].text == typed
 
 
-def test_lines_and_voices_are_edited_on_their_own() -> None:
+def test_a_line_and_a_voice_are_rewritten_where_they_are_written() -> None:
+    lighter = FilmLineEdit("line:lighter", "短发女生", "Lighter than it looks!")
+
+    updated = edit_text(
+        FILM,
+        checked(),
+        [shot(1, parts_of(1), lighter), FilmTextEdit("voice:旁白", text="成熟男性的中低音。")],
+    )
+
+    assert changed_lines(FILM, updated) == [
+        '-  <Voice role="旁白">成熟男性圆润厚实的中低音。清晰松弛的英式英语，不紧不慢，像坐在对面'
+        "认真地跟你讲他的判断。</Voice>",
+        '+  <Voice role="旁白">成熟男性的中低音。</Voice>',
+        '-    <Line id="lighter" role="短发女生">It\'s lighter than it looks.</Line>',
+        '+    <Line id="lighter" role="短发女生">Lighter than it looks!</Line>',
+    ]
+
+
+def test_a_line_left_out_of_a_shot_is_removed_from_the_script() -> None:
+    before, after = parts_of(1)
+
+    updated = edit_text(FILM, checked(), [shot(1, (before + "她笑了。" + after,))])
+
+    removed = [line for line in changed_lines(FILM, updated) if line.startswith("-")]
+    assert (
+        removed[0] == '-    <Line id="lighter" role="短发女生">It\'s lighter than it looks.</Line>'
+    )
+    assert "lighter" not in load_project(updated).nodes
+    assert group(updated).shots[0].lines == ()
+
+
+def test_new_lines_take_their_place_in_the_script_by_shot_order() -> None:
+    first = parts_of(1)
+    second = parts_of(2)
+    opener = FilmLineEdit(None, "旁白", "今天试一双新鞋。")
+    extra = FilmLineEdit(None, "短发女生", "Feels like {nothing}!")
+
     updated = edit_text(
         FILM,
         checked(),
         [
-            FilmTextEdit("line:lighter", text="Lighter than it looks!"),
-            FilmTextEdit("voice:旁白", text="成熟男性的中低音。"),
+            shot(1, ("开场。", first[0], first[1]), opener, LIGHTER),
+            shot(2, (second[0], " 她笑了：", second[1]), REBOUND, extra),
         ],
     )
 
+    script = [line.attrs["id"] for line in load_project(updated).find("Line")]
+    assert script == ["台词1", "lighter", "rebound", "台词2", "miles", "shop"]
+    assert '    <Line id="台词2" role="短发女生">Feels like ｛nothing｝!</Line>' in updated
     made = group(updated)
-    assert made.shots[0].lines[0].text == "Lighter than it looks!"
-    assert made.settings[-1].text == "成熟男性的中低音。"
-    assert len(changed_lines(FILM, updated)) == 4
+    assert [(line.target, line.role) for line in made.shots[1].lines] == [
+        ("line:rebound", "旁白"),
+        ("line:台词2", "短发女生"),
+    ]
+    assert "旁白" in made.speakers
+
+
+def test_changing_the_speaker_rewrites_only_the_role() -> None:
+    narrator = FilmLineEdit("line:lighter", "旁白", LIGHTER.text)
+
+    updated = edit_text(FILM, checked(), [shot(1, parts_of(1), narrator)])
+
+    assert changed_lines(FILM, updated) == [
+        '-    <Line id="lighter" role="短发女生">It\'s lighter than it looks.</Line>',
+        '+    <Line id="lighter" role="旁白">It\'s lighter than it looks.</Line>',
+    ]
+
+
+def test_the_script_goes_with_its_last_line_and_comes_back_with_a_new_one() -> None:
+    made = group()
+    silent = [shot(n, ("".join(item.parts),)) for n, item in enumerate(made.shots, start=1)]
+
+    quiet = edit_text(FILM, checked(), silent)
+
+    assert "<Script>" not in quiet and "<Line" not in quiet
+    last = parts_of(4, quiet)
+    spoken = edit_text(
+        quiet, checked(quiet), [shot(4, (last[0], ""), FilmLineEdit(None, "旁白", "周末前下单。"))]
+    )
+    assert changed_lines(quiet, spoken)[:4] == [
+        "+",
+        "+  <Script>",
+        '+    <Line id="台词1" role="旁白">周末前下单。</Line>',
+        "+  </Script>",
+    ]
+    assert group(spoken).shots[3].lines[0].text == "周末前下单。"
+
+
+def test_lines_keep_their_order() -> None:
+    project = FILM.replace(
+        "笑着对镜头说：{miles} 音效：连续的脚步声",
+        "笑着对镜头说：{miles} 旁白：{shop} 音效：脚步声",
+    ).replace("拿起左脚那只鞋。旁白：{shop}", "拿起左脚那只鞋。")
+    miles, shop = (
+        FilmLineEdit(line.target, line.role, line.text) for line in group(project).shots[2].lines
+    )
+
+    with pytest.raises(FilmEditRejected, match="台词的先后不能调"):
+        edit_text(project, checked(project), [shot(3, ("a", "b", "c"), shop, miles)])
+
+
+def test_a_shot_whose_line_cannot_be_rewritten_is_not_offered() -> None:
+    project = FILM.replace(
+        "It's lighter than it looks.</Line>", "It's lighter.<!-- 待定 --></Line>"
+    )
+
+    assert group(project).shots[0].target is None
 
 
 @pytest.mark.parametrize(
     ("edits", "message"),
     [
-        ([FilmTextEdit("shot:全片分镜:1", parts=("只剩一段",))], "台词不能删"),
-        ([FilmTextEdit("shot:全片分镜:1", parts=(" ", ""))], "镜头的文字不能是空的"),
-        ([FilmTextEdit("line:lighter", text="  ")], "台词不能是空的"),
+        ([shot(1, ("只剩一段",), LIGHTER)], "文字和台词对不上"),
+        ([FilmTextEdit("shot:全片分镜:1", parts=("x", "y"))], "文字和台词对不上"),
+        ([shot(1, (" ", ""), LIGHTER)], "镜头的文字不能是空的"),
+        ([shot(1, ("x", ""), FilmLineEdit("line:lighter", "短发女生", "  "))], "台词不能是空的"),
+        ([shot(1, ("x", ""), FilmLineEdit(None, "公园跑道", "嗨"))], "「公园跑道」不能在这组"),
+        ([shot(1, ("x", ""), FilmLineEdit("line:miles", "短发女生", "a"))], "这句台词找不到了"),
+        ([shot(1, ("x", "", ""), LIGHTER, LIGHTER)], "这句台词找不到了"),
         ([FilmTextEdit("voice:旁白", text="")], "这段字不能是空的"),
-        ([FilmTextEdit("shot:全片分镜:1", parts=("看 @Image1", ""))], "不能写 @Image"),
-        ([FilmTextEdit("shot:全片分镜:9", parts=("x", ""))], "找不到了"),
+        ([shot(1, ("看 @Image1", ""), LIGHTER)], "不能写 @Image"),
+        ([shot(9, ("x", ""), LIGHTER)], "找不到了"),
+        ([FilmTextEdit("line:lighter", text="x")], "找不到了"),
         ([FilmTextEdit("element:拍摄", text="x")], "找不到了"),
         (
-            [FilmTextEdit("line:miles", text="a"), FilmTextEdit("line:miles", text="b")],
+            [FilmTextEdit("voice:旁白", text="a"), FilmTextEdit("voice:旁白", text="b")],
             "一次只改一处",
         ),
         ([], "没有要改的字"),

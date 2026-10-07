@@ -1091,6 +1091,10 @@ export type FilmGroupOut = {
    */
   shots: Array<FilmShotOut>
   /**
+   * Speakers
+   */
+  speakers: Array<string>
+  /**
    * Video
    */
   video: string
@@ -1123,7 +1127,29 @@ export type FilmImageChoiceIn = {
 }
 
 /**
+ * FilmLineEditIn
+ *
+ * 改完的一句台词：原有的带上它的 ``target``，新加的给 null。
+ */
+export type FilmLineEditIn = {
+  /**
+   * Role
+   */
+  role: string
+  /**
+   * Target
+   */
+  target: string | null
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
  * FilmLineOut
+ *
+ * 镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。
  */
 export type FilmLineOut = {
   /**
@@ -1133,7 +1159,7 @@ export type FilmLineOut = {
   /**
    * Target
    */
-  target: string | null
+  target: string
   /**
    * Text
    */
@@ -1171,7 +1197,8 @@ export type FilmSettingOut = {
 /**
  * FilmShotOut
  *
- * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。
+ * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；
+ * ``target`` 为 null 的镜头不能在页面上改。
  */
 export type FilmShotOut = {
   /**
@@ -1203,9 +1230,14 @@ export type FilmShotOut = {
 /**
  * FilmTextEditIn
  *
- * 改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。
+ * 改一段字。镜头给 ``parts`` 与 ``lines``：改完的台词按先后列全，``parts`` 比它多一段；
+ * 其余给 ``text``。
  */
 export type FilmTextEditIn = {
+  /**
+   * Lines
+   */
+  lines?: Array<FilmLineEditIn> | null
   /**
    * Parts
    */

@@ -9,7 +9,13 @@ from typing import Annotated, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
-from iclip.common.film_view import FilmTextEdit, FilmView, FrameKind, SettingKind
+from iclip.common.film_view import (
+    FilmLineEdit,
+    FilmTextEdit,
+    FilmView,
+    FrameKind,
+    SettingKind,
+)
 from iclip.common.urls import is_http_url
 from iclip.domains.conversations.models import (
     Conversation,
@@ -276,13 +282,16 @@ class FilmSettingOut(CamelModel):
 
 
 class FilmLineOut(CamelModel):
-    target: str | None
+    """镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。"""
+
+    target: str
     role: str
     text: str
 
 
 class FilmShotOut(CamelModel):
-    """一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。"""
+    """一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；
+    ``target`` 为 null 的镜头不能在页面上改。"""
 
     target: str | None
     start: float
@@ -301,6 +310,8 @@ class FilmGroupOut(CamelModel):
     frames: list[FilmFrameOut]
     settings: list[FilmSettingOut]
     shots: list[FilmShotOut]
+    speakers: list[str]
+    """这组里能说话的人，加台词和换说话人从这里选。"""
 
 
 class FilmViewOut(CamelModel):
@@ -316,17 +327,30 @@ class FilmViewEnvelope(CamelModel):
     film: FilmViewOut
 
 
+class FilmLineEditIn(CamelModel):
+    """改完的一句台词：原有的带上它的 ``target``，新加的给 null。"""
+
+    target: str | None
+    role: Annotated[str, Field(min_length=1)]
+    text: str
+
+
 class FilmTextEditIn(CamelModel):
-    """改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。"""
+    """改一段字。镜头给 ``parts`` 与 ``lines``：改完的台词按先后列全，``parts`` 比它多一段；
+    其余给 ``text``。"""
 
     target: Annotated[str, Field(min_length=1)]
     text: str | None = None
     parts: list[str] | None = None
+    lines: list[FilmLineEditIn] | None = None
 
     @model_validator(mode="after")
     def _one_of(self) -> FilmTextEditIn:
-        if (self.text is None) == (self.parts is None):
-            raise ValueError("text 与 parts 给且只给一个")
+        shot = (self.parts is not None, self.lines is not None)
+        if self.text is not None and any(shot):
+            raise ValueError("镜头给 parts 与 lines，其余给 text，不能都给")
+        if self.text is None and not all(shot):
+            raise ValueError("镜头要同时给 parts 与 lines，其余给 text")
         return self
 
 
@@ -361,6 +385,9 @@ def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
             target=edit.target,
             text=edit.text,
             parts=None if edit.parts is None else tuple(edit.parts),
+            lines=None
+            if edit.lines is None
+            else tuple(FilmLineEdit(line.target, line.role, line.text) for line in edit.lines),
         )
         for edit in body.edits
     ]
@@ -399,6 +426,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                         )
                         for setting in group.settings
                     ],
+                    speakers=list(group.speakers),
                     shots=[
                         FilmShotOut(
                             target=shot.target,

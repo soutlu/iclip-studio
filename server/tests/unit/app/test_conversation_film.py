@@ -13,7 +13,7 @@ from iclip.app.film_images import FILM_NODE_KEY
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed
-from iclip.common.film_view import FilmTextEdit, FilmView
+from iclip.common.film_view import FilmLineEdit, FilmTextEdit, FilmView
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
 from iclip.domains.identity.models import Principal
 from iclip.platform.material_ledger.store import Material
@@ -40,6 +40,21 @@ CONVERSATION = uuid.uuid4()
 NAMESPACE = namespace_for(OWNER, str(CONVERSATION))
 LATEST_PARK = "https://cdn.test/park-latest.png"
 UPLOADED = "https://cdn.test/iclip/agent/uploads/my-park.png"
+FIRST_SHOT = (
+    "开场，手持，胸部以上近景，平视。短发女生站在跑道边，双手分别握住网面跑鞋的鞋头和鞋跟，"
+    "向内对折到两端相碰，停了一下后松开右手，鞋底立刻弹回平直。她抬头看着镜头说：",
+    " 音效：鞋底弹回时的一声轻响",
+)
+
+
+def say(text: str) -> FilmTextEdit:
+    """把第一个镜头里那句台词改成 ``text``。"""
+
+    return FilmTextEdit(
+        "shot:全片分镜:1",
+        parts=FIRST_SHOT,
+        lines=(FilmLineEdit("line:lighter", "短发女生", text),),
+    )
 
 
 @dataclass
@@ -120,7 +135,7 @@ async def test_a_film_with_problems_shows_only_how_many() -> None:
             PRINCIPAL,
             OWNER,
             CONVERSATION,
-            [FilmTextEdit("line:lighter", text="x")],
+            [say("x")],
             film_version=1,
         )
 
@@ -132,7 +147,7 @@ async def test_an_edit_is_written_with_its_version_and_answered_with_the_new_vie
         PRINCIPAL,
         OWNER,
         CONVERSATION,
-        [FilmTextEdit("line:lighter", text="Lighter than it looks!")],
+        [say("Lighter than it looks!")],
         film_version=1,
     )
 
@@ -150,7 +165,7 @@ async def test_an_edit_on_a_stale_version_is_a_conflict_and_writes_nothing() -> 
             PRINCIPAL,
             OWNER,
             CONVERSATION,
-            [FilmTextEdit("line:lighter", text="x")],
+            [say("x")],
             film_version=1,
         )
     assert await made.content(FILM_PATH) == FILM + "\n"
@@ -164,7 +179,7 @@ async def test_a_refused_edit_comes_back_as_a_plain_validation_error() -> None:
             PRINCIPAL,
             OWNER,
             CONVERSATION,
-            [FilmTextEdit("line:lighter", text=" ")],
+            [say(" ")],
             film_version=1,
         )
     assert await made.content(FILM_PATH) == FILM
