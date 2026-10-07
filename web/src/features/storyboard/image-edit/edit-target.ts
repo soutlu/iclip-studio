@@ -31,6 +31,8 @@ export type EditorWords = {
   replaceNote: string
   /** 版本条的可访问名。 */
   versions: string
+  /** 输入卡 `@` 菜单与「+」里本组图片的统称。 */
+  frames: string
   /** 没选结果时的脚注：编辑出来的图用什么画幅。 */
   aspectNote: (aspectRatio: string) => string
 }
@@ -38,6 +40,7 @@ export type EditorWords = {
 const FRAME_WORDS: EditorWords = {
   aspectNote: (aspectRatio) => `画幅 ${aspectRatio}，跟随分镜`,
   current: '当前帧',
+  frames: '帧',
   gone: '这一帧已经不在分镜里了，关掉窗口重新选一帧',
   replace: '替换当前帧',
   replaceNote: '替换只改当前帧，替换后可以撤销',
@@ -47,6 +50,7 @@ const FRAME_WORDS: EditorWords = {
 const FILM_WORDS: EditorWords = {
   aspectNote: (aspectRatio) => `画幅 ${aspectRatio}`,
   current: '在用',
+  frames: '图',
   gone: '这张图已经不在分镜里了，关掉窗口重新选一张',
   replace: '替换这张图',
   replaceNote: '替换后，用到这张图的地方都换成它，可以撤销',

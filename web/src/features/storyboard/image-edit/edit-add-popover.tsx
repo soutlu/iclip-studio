@@ -1,20 +1,23 @@
-/** 输入卡左下角的「+」：弹出本组的帧（含当前这一帧 @1），点一帧插到光标处；下面一行「从电脑上传」。
+/** 输入卡左下角的「+」：弹出本组的图片（分镜页叫帧，含当前这一帧 @1），点一张插到光标处；下面一行「从电脑上传」。
  *
- * 帧上带勾只表示正文里已引用，再点照样插入，提交时按地址去重。 */
+ * 带勾只表示正文里已引用，再点照样插入，提交时按地址去重。 */
 
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { IconButton } from '@/shared/ui/button'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { FrameTile } from '../components/frame-tile'
+import type { EditFrame } from './image-edit-types'
 
 type EditAddPopoverProps = {
-  /** 本组全部帧，下标 + 1 即帧号。 */
-  frames: readonly string[]
+  /** 本组的图片，下标 + 1 即编号。 */
+  frames: readonly EditFrame[]
+  /** 它们的统称：分镜页叫帧，制作页叫图。 */
+  group: string
   ratio: number
   /** 这张图正文里已经引用了。 */
   referenced: (url: string) => boolean
-  /** 这一帧此刻不能插（图片已到上限）时给出原因。 */
+  /** 这一张此刻不能插（图片已到上限）时给出原因。 */
   blockedReason: (url: string) => string | undefined
   onInsert: (frame: number) => void
   /** 没有上传权限时为 undefined，不给「从电脑上传」。 */
@@ -24,13 +27,14 @@ type EditAddPopoverProps = {
 export function EditAddPopover({
   blockedReason,
   frames,
+  group,
   onInsert,
   onUpload,
   ratio,
   referenced,
 }: EditAddPopoverProps) {
   const [open, setOpen] = useState(false)
-  // 插了帧焦点已回到正文，关弹层时不再还给「+」。
+  // 插了图焦点已回到正文，关弹层时不再还给「+」。
   const [inserted, setInserted] = useState(false)
 
   return (
@@ -55,15 +59,15 @@ export function EditAddPopover({
         side="top"
         sideOffset={8}
       >
-        <ul aria-label="本组的帧" className="flex max-h-60 flex-wrap gap-1 overflow-y-auto">
-          {frames.map((url, index) => {
+        <ul aria-label={`本组的${group}`} className="flex max-h-60 flex-wrap gap-1 overflow-y-auto">
+          {frames.map(({ name, url }, index) => {
             const frame = index + 1
             const used = referenced(url)
             const blocked = blockedReason(url)
             return (
               <li className="relative" key={frame}>
                 <FrameTile
-                  aria-label={`插入帧 @${frame}${used ? '（已引用）' : ''}`}
+                  aria-label={`插入${name}${used ? '（已引用）' : ''}`}
                   className="disabled:cursor-not-allowed disabled:opacity-(--state-disabled-content)"
                   disabled={blocked !== undefined}
                   frame={frame}

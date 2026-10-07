@@ -1,4 +1,4 @@
-/** 修改要求里敲 `@` 的菜单：按「编辑底图 / 标注 / 帧」分组列出能引用的东西，`@` 之后的字按名称筛选。
+/** 修改要求里敲 `@` 的菜单：按「编辑底图 / 标注 / 本组图片」分组列出能引用的东西，`@` 之后的字按名称筛选。
  *
  * 焦点始终留在编辑器里：选项不可聚焦、按下不抢焦点，键盘由编辑器转过来；`active` 是键盘停在的项。 */
 
@@ -8,11 +8,8 @@ import { cn } from '@/shared/lib/utils'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
 import { mentionLabelOf, type EditMentionItem } from './edit-mention-items'
 
-const GROUP_LABEL: Record<EditMentionItem['kind'], string> = {
-  annotation: '标注',
-  base: '编辑底图',
-  frame: '帧',
-}
+const groupLabelOf = (kind: EditMentionItem['kind'], frames: string) =>
+  kind === 'annotation' ? '标注' : kind === 'base' ? '编辑底图' : frames
 
 const keepEditorFocus = (event: { preventDefault: () => void }) => event.preventDefault()
 
@@ -32,11 +29,13 @@ const groupsOf = (items: readonly EditMentionItem[]) => {
 
 type EditMentionMenuProps = {
   menu: ComposerMentionMenu<EditMentionItem>
+  /** 本组图片那一组的标题：分镜页叫帧，制作页叫图。 */
+  frames: string
   /** 这一项此刻不能选（图片已到上限）时给出原因。 */
   blockedReason: (item: EditMentionItem) => string | undefined
 }
 
-export function EditMentionMenu({ blockedReason, menu }: EditMentionMenuProps) {
+export function EditMentionMenu({ blockedReason, frames, menu }: EditMentionMenuProps) {
   const { active, anchor, items, listRef, onClose, onPick } = menu
   const menuId = useId()
   return (
@@ -62,14 +61,14 @@ export function EditMentionMenu({ blockedReason, menu }: EditMentionMenuProps) {
                 className="px-2.5 pt-1.5 pb-1 text-caption text-on-surface-muted"
                 id={`${menuId}-${kind}`}
               >
-                {GROUP_LABEL[kind]}
+                {groupLabelOf(kind, frames)}
               </p>
               <ul role="presentation">
                 {entries.map(({ index, item }) => {
                   const label = mentionLabelOf(item)
                   const blocked = blockedReason(item)
                   return (
-                    <li key={label} role="presentation">
+                    <li key={index} role="presentation">
                       <button
                         aria-disabled={blocked === undefined ? undefined : true}
                         aria-selected={index === active}

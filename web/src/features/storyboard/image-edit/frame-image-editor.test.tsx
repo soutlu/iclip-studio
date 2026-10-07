@@ -55,7 +55,7 @@ function EditorPage({ initialKey, onApply, onClose }: EditorPageProps) {
           target={target}
           currentUrl={frames[0]}
           subtitle="镜头组 1 · 帧 @1"
-          frames={frames}
+          frames={frames.map((url, index) => ({ name: `帧 @${index + 1}`, url }))}
           aspectRatio="9:16"
           initialKey={initialKey}
           onClose={(opened) => {

@@ -1,4 +1,4 @@
-/** 图片编辑的输入卡：首页那张 composer 加上标注 chip、`@` 引用、「+」插帧、卡内拖放、只收图片与张数上限。
+/** 图片编辑的输入卡：首页那张 composer 加上标注 chip、`@` 引用、「+」插本组图片、卡内拖放、只收图片与张数上限。
  *
  * 草稿按底图分份：挂载时（调用方按底图换 key）把这张底图的草稿装回来，之后每次变化只把就绪的部分写回。
  * 编辑底图与引用标注时的标注图是隐式提交的，不占 chip；上限 10 张里它固定占一张。 */
@@ -20,7 +20,7 @@ import { EditAddPopover } from './edit-add-popover'
 import { editMentionItems, type EditMentionItem } from './edit-mention-items'
 import { EditMentionMenu } from './edit-mention-menu'
 import { MAX_PART_NAME } from './image-edit-draft'
-import type { EditDraftPart, ImageAnnotation } from './image-edit-types'
+import type { EditDraftPart, EditFrame, ImageAnnotation } from './image-edit-types'
 
 const NODES = [annotationNodeSpec]
 
@@ -83,7 +83,10 @@ type EditComposerProps = {
   baseUrl: string | undefined
   /** 按描述再生成：输入卡装的是这张图的描述，提交按钮叫「再生成」，没有模型设置。 */
   regenerate?: boolean
-  frames: readonly string[]
+  /** `@` 与「+」能插的本组图片，下标加一是编号。 */
+  frames: readonly EditFrame[]
+  /** 它们的统称：分镜页叫帧，制作页叫图。 */
+  frameGroup: string
   aspectRatio: string
   annotations: readonly ImageAnnotation[]
   selectedAnnotation: string | null
@@ -104,6 +107,7 @@ export function EditComposer({
   aspectRatio,
   baseUrl,
   editingResult,
+  frameGroup,
   frames,
   initialParts,
   onPartsChange,
@@ -152,21 +156,22 @@ export function EditComposer({
     url === baseUrl || referenced(url) || remaining() > 0 ? undefined : LIMIT_REASON
   const ratio = aspectValueOf(aspectRatio)
 
-  const frameName = (frame: number, url: string) =>
-    url === baseUrl ? `帧 @${frame} · 编辑底图` : `帧 @${frame}`
+  const frameName = ({ name, url }: EditFrame) => (url === baseUrl ? `${name} · 编辑底图` : name)
   const partsOfItem = (item: EditMentionItem): ComposerPart<AnnotationNode>[] =>
     item.kind === 'base'
       ? [imagePart(item.url, '编辑底图')]
       : item.kind === 'annotation'
         ? [annotationPart(item.annotation)]
-        : [imagePart(item.url, frameName(item.frame, item.url))]
+        : [imagePart(item.url, frameName(item))]
   const itemBlockedReason = (item: EditMentionItem) =>
     item.kind === 'annotation' ? undefined : blockedReason(item.url)
 
   const mention: ComposerMention<EditMentionItem, AnnotationNode> = {
     items: (query) => editMentionItems({ annotations, baseUrl, frames, query }),
     partsOf: (item) => (itemBlockedReason(item) === undefined ? partsOfItem(item) : undefined),
-    render: (menu) => <EditMentionMenu blockedReason={itemBlockedReason} menu={menu} />,
+    render: (menu) => (
+      <EditMentionMenu blockedReason={itemBlockedReason} frames={frameGroup} menu={menu} />
+    ),
   }
 
   const submit = async (submitted: readonly ComposerPart<AnnotationNode>[]) => {
@@ -191,10 +196,11 @@ export function EditComposer({
           <EditAddPopover
             blockedReason={blockedReason}
             frames={frames}
+            group={frameGroup}
             onInsert={(frame) => {
-              const url = frames[frame - 1]
-              if (url !== undefined)
-                composerRef.current?.insert([imagePart(url, frameName(frame, url))])
+              const item = frames[frame - 1]
+              if (item !== undefined)
+                composerRef.current?.insert([imagePart(item.url, frameName(item))])
             }}
             onUpload={canUpload ? openFilePicker : undefined}
             ratio={ratio}
