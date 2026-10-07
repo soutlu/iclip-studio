@@ -1,16 +1,18 @@
-/** 视频编辑的两次提交与链查询。切参考片段由服务端做，编辑段只给基底与区间；合成给基底与片段列表，
- * 地址由服务端按各段出处填。 */
+/** 视频编辑的两次提交与链查询。编辑段在浏览器里切好参考片段、走上传协议拿到地址，再交给服务端；
+ * 合成给基底与片段列表，地址由服务端按各段出处填。 */
 
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
 import type { VideoComposeIn, VideoEditIn } from '@/shared/api/generated/types.gen'
 import { zGenerationEnvelope, zGenerationsPageOut } from '@/shared/api/generated/zod.gen'
+import { uploadMediaFile } from '@/shared/api/media-upload'
 import {
   generationsRefetchInterval,
   storyboardQueryKeys,
   type GenerationJob,
   type GenerationsPage,
 } from '../storyboard.api'
+import type { SecondsRange } from './reference-clip'
 
 /** 本对话全部编辑链的查询前缀，挂在本对话生成记录的前缀下；按根的键挂在它下面，一次失效全部。 */
 export const videoEditConversationKey = (conversationId: string) =>
@@ -89,8 +91,9 @@ type Origin = {
   taskId: string | null
 }
 
-/** 在一版成片上改一段：服务端按区间切参考片段交给模型。怎么触发编辑照模型名认：前缀拼进正文、
- * 选项并进 provider_options。
+/** 在一版成片上改一段，依次三步：从基底上切参考片段（选段吸附到关键帧）→ 走上传协议拿到片段地址
+ * → 提交编辑段，区间填吸附后的值。任一步失败就停下抛出，后面的不做。怎么触发编辑照模型名认：
+ * 前缀拼进正文、选项并进 provider_options。
  *
  * `seconds: -1` 让结果跟着参考片段的时长走；不显式给，网关按默认 5 秒截断。不带 user_name：
  * 浏览器会话由服务端填登录用户名。 */
@@ -98,8 +101,10 @@ export const submitVideoEdit = async (
   input: Origin & {
     /** 基底那一版的记录 id。 */
     sourceJobId: string
-    rangeStartMs: number
-    rangeEndMs: number
+    /** 基底那一版的视频地址，从它上面切参考片段。 */
+    baseMediaUrl: string
+    /** 用户选的那一段，秒；提交时吸附到关键帧。 */
+    range: SecondsRange
     model: string
     prompt: string
     referenceImageUrls: readonly string[]
@@ -107,12 +112,17 @@ export const submitVideoEdit = async (
 ): Promise<GenerationJob> => {
   const edit = editTriggerOf(input.model)
   if (edit === undefined) throw new Error(`模型 ${input.model} 不支持视频编辑`)
+  // 切片模块连同 mediabunny 只在提交时加载，不进首屏包。
+  const { cutReferenceClip } = await import('./reference-clip')
+  const clip = await cutReferenceClip(input.baseMediaUrl, input.range)
+  const clipUrl = await uploadMediaFile(clip.file, 'video')
   const body: VideoEditIn = {
     conversation_id: input.conversationId,
     task_id: input.taskId,
     source_job_id: input.sourceJobId,
-    range_start_ms: input.rangeStartMs,
-    range_end_ms: input.rangeEndMs,
+    range_start_ms: clip.startMs,
+    range_end_ms: clip.endMs,
+    reference_video_urls: [clipUrl],
     model: input.model,
     prompt: `${edit.promptPrefix ?? ''}${input.prompt}`,
     reference_image_urls: [...input.referenceImageUrls],

@@ -1,6 +1,6 @@
 import { setupWorker } from 'msw/browser'
-import sampleWideUrl from '../fixtures/sample-video-wide.webm?no-inline'
-import sampleVideoUrl from '../fixtures/sample-video.webm?no-inline'
+import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
+import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockLatestMasterUrls } from './conversations'
 import {
   addMockCollection,

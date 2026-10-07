@@ -6,7 +6,7 @@ import { login } from './login'
 // 在 dev:mock 中生成视觉验收截图，输出到忽略入库的 .artifacts/design-qa/。
 const SHOT_DIR = '../.artifacts/design-qa'
 /** 180×320 竖屏测试视频，比悬停卡最小宽度窄。 */
-const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.webm', import.meta.url)
+const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.mp4', import.meta.url)
 /** 媒体悬停卡内边距 6px，预览区边框 1px，两侧合计。 */
 const TIP_PADDING_X_PX = 12
 const TIP_PREVIEW_BORDER_X_PX = 2

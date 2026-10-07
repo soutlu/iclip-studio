@@ -10,8 +10,8 @@ import type {
   zScriptOut,
 } from '@/shared/api/generated/zod.gen'
 // no-inline：地址要进 <video src>，不能被构建内联成 data URI。
-import sampleWideUrl from '../fixtures/sample-video-wide.webm?no-inline'
-import sampleVideoUrl from '../fixtures/sample-video.webm?no-inline'
+import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
+import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockAuthUser } from './auth-user'
 import { pageBy } from './paging'
 

@@ -29,16 +29,17 @@ class GenerationRepository(Protocol):
         数据库时钟。同 id 已存在就跳过、不覆盖，返回值里没有它；返回真正插进去的，与输入同序。"""
         ...
 
-    async def find_image_by_output(
+    async def find_by_output(
         self,
         output_url: str,
         *,
+        kind: GenerationKind,
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
         operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
-        """产物地址就是 ``output_url`` 的一张已完成的图片；给了 ``operation`` 就只找那一种。
+        """产物地址就是 ``output_url`` 的一条已完成的 ``kind`` 记录；给了 ``operation`` 就只找那一种。
 
         范围与按对话列记录相同：按属主收敛、在 ``conversation_id`` 那段对话里的（为空就是没有对话的），
         并上经 ``inherited`` 继承来的。对上多条取最早建立的那条；一条都没有给 ``None``。"""
@@ -134,19 +135,6 @@ class GenerationRepository(Protocol):
         """保存本次 Provider 状态；后续查询时间由队列管理。
 
         指定 only_if_status 时原子校验状态，不匹配返回 None，表示这条已经不在预期状态上。"""
-        ...
-
-    async def record_reference_cut(
-        self,
-        job_id: uuid.UUID,
-        *,
-        range_start_ms: int,
-        range_end_ms: int,
-        only_if_status: GenerationStatus,
-    ) -> GenerationJob | None:
-        """编辑段的参考片段切好了：区间改记实际切点，阶段词清空，业务状态不变、不算一跳。
-
-        原子校验 ``only_if_status``，不匹配返回 None，表示这一行已有结论，调用方不该再交上游。"""
         ...
 
     async def in_flight_by_conversation(

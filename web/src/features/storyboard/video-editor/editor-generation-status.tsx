@@ -7,7 +7,7 @@ import './editor-generation-status.css'
 type EditorGenerationStatusProps = { edit: PendingEdit }
 type StepState = 'completed' | 'current' | 'pending' | 'failed'
 
-const STEPS = ['切片准备', '视频生成', '结果预览'] as const
+const STEPS = ['排队提交', '视频生成', '结果预览'] as const
 const STEP_STATES: Record<StepState, string> = {
   completed: '已完成',
   current: '当前阶段',
@@ -15,15 +15,9 @@ const STEP_STATES: Record<StepState, string> = {
   failed: '失败',
 }
 
-/** 本地加工的处境：`queued` 是还在本系统排队，其余是后端报的加工阶段。 */
+/** 合成的处境：`queued` 是还在本系统排队，其余是后端报的加工阶段。 */
 type ClipProgress = 'queued' | NonNullable<GenerationJob['clipStage']>
 
-/** 处境换成文案；编辑段的参考片段边读边切，没有 `fetching` 这一档。 */
-const CUTTING_TITLES: Partial<Record<ClipProgress, string>> = {
-  queued: '等待切片',
-  processing: '正在截取参考片段',
-  uploading: '正在上传参考片段',
-}
 const COMPOSING_TITLES: Record<ClipProgress, string> = {
   queued: '等待合成',
   fetching: '正在取素材',
@@ -32,18 +26,19 @@ const COMPOSING_TITLES: Record<ClipProgress, string> = {
 }
 
 /** 排队中还没人动它，阶段词要到提交中才有；读不到就让调用方回落。 */
-const titleOf = (job: GenerationJob | undefined, titles: Partial<Record<ClipProgress, string>>) => {
+const composingTitleOf = (job: GenerationJob | undefined) => {
   if (job === undefined) return undefined
   const progress = job.status === 'pending' ? 'queued' : job.clipStage
-  return progress === null ? undefined : titles[progress]
+  return progress === null ? undefined : COMPOSING_TITLES[progress]
 }
 
 function describeProgress(edit: PendingEdit) {
   switch (edit.stage) {
-    case 'cutting':
+    case 'queued':
+      // 参考片段提交前已在浏览器里切好、传好，这一步只剩排队与交给模型。
       return {
         step: 0,
-        title: titleOf(edit.video, CUTTING_TITLES) ?? '正在准备参考片段',
+        title: edit.video.status === 'pending' ? '排队等待中' : '正在提交给模型',
       }
     case 'generating':
       return { step: 1, title: '正在生成视频' }
@@ -52,10 +47,10 @@ function describeProgress(edit: PendingEdit) {
     case 'composing':
       return {
         step: 2,
-        title: titleOf(edit.composite, COMPOSING_TITLES) ?? '正在合成成片',
+        title: composingTitleOf(edit.composite) ?? '正在合成成片',
       }
     case 'failed':
-      // 编辑段切片失败与生成失败落在同一条记录上，记录分不出是哪一步，一律记在视频生成这一步。
+      // 编辑段提交失败与生成失败落在同一条记录上，记录分不出是哪一步，一律记在视频生成这一步。
       return edit.composite !== undefined && edit.composite.status !== 'completed'
         ? { step: 2, title: '成片合成失败' }
         : { step: 1, title: '视频生成失败' }

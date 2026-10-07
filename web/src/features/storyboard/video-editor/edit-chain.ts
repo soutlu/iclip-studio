@@ -15,7 +15,7 @@ export type PlaySegment = {
 /** 排好时钟的一段：`at` 是它在整条预览里的起点。 */
 export type LaidOutSegment = PlaySegment & { at: number; duration: number; end: number }
 
-/** 编辑段改的那一段，单位秒；记的是服务端实际切下的区间，不是用户选的。 */
+/** 编辑段改的那一段，单位秒；记的是提交时吸附到关键帧的区间，可能比用户选的宽。 */
 export type EditRange = { start: number; end: number }
 
 /** 一条完整视频：根出片或某次合成。切段只在它上面切。 */
@@ -32,8 +32,8 @@ export type ChainVersion = {
 }
 
 export type EditStage =
-  /** 编辑段在排队，或服务端正在切参考片段、交给模型。 */
-  | 'cutting'
+  /** 编辑段在本系统排队，或正在交给模型。 */
+  | 'queued'
   | 'generating'
   /** 编辑结果回来了，可以预览、可以合成。 */
   | 'ready'
@@ -42,7 +42,7 @@ export type EditStage =
 
 /** 各阶段给人看的词；版本菜单里在途编辑的备注用它。 */
 export const EDIT_STAGE_LABEL: Record<EditStage, string> = {
-  cutting: '切片中',
+  queued: '排队中',
   generating: '生成中',
   ready: '待预览',
   composing: '合成中',
@@ -150,7 +150,7 @@ const stageOf = (
   if (segment.status === 'completed' && segment.outputUrl !== null)
     return { stage: 'ready', error: undefined }
   if (segment.status === 'pending' || segment.status === 'submitting')
-    return { stage: 'cutting', error: undefined }
+    return { stage: 'queued', error: undefined }
   if (segment.status === 'submitted') return { stage: 'generating', error: undefined }
   return { stage: 'failed', error: segment.errorMessage ?? '生成失败' }
 }

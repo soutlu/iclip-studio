@@ -80,9 +80,8 @@ async def test_every_status_transition_of_a_video_job_is_announced_to_its_owner(
     }
 
 
-async def test_a_composite_announces_its_operation_and_a_reference_cut_is_not_a_step() -> None:
-    """合成与出片同是 video，帧上靠 operation 分、镜号是原作那一镜的；编辑段记切点不改业务状态，
-    不算一跳。"""
+async def test_a_composite_announces_its_operation_and_carries_its_originals_shot() -> None:
+    """合成与出片同是 video，帧上靠 operation 分、镜号是原作那一镜的。"""
 
     live = _RecordingConnections()
     repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
@@ -91,9 +90,6 @@ async def test_a_composite_announces_its_operation_and_a_reference_cut_is_not_a_
 
     await repo.create(edit)
     await repo.mark_submitting(edit.id)
-    await repo.record_reference_cut(
-        edit.id, range_start_ms=0, range_end_ms=4000, only_if_status=STATUS_SUBMITTING
-    )
     await repo.create(composite)
 
     assert [(one[2], one[4], one[5], one[6]) for one in live.announced] == [

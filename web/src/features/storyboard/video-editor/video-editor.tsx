@@ -1,7 +1,7 @@
 /** 视频编辑器：选中一段交给模型改，预览拼好的整条，满意再合成成片。
  *
  * 编辑进行到哪一步不存在本地：每次渲染都从这条出片名下的编辑段与合成推出来，关掉重开、刷新都还在。
- * 切参考片段与拼接都在服务端，这里只提交基底、区间与编辑段。 */
+ * 参考片段在提交时从基底上切好、上传，拼接在服务端。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
@@ -259,6 +259,7 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
       setOperationError('没有可用的编辑模型')
       return
     }
+    // 「生成中」的锁覆盖切参考片段、上传与提交三步，任一步失败都照 operationError 显示。
     setOperation('generating')
     setOperationError(null)
     try {
@@ -267,8 +268,8 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
           conversationId,
           taskId: root.taskId,
           sourceJobId: selectedVersion.jobId,
-          rangeStartMs: Math.round(range.start * 1000),
-          rangeEndMs: Math.round(range.end * 1000),
+          baseMediaUrl: selectedVersion.mediaUrl,
+          range,
           model,
           prompt: text,
           referenceImageUrls: references.map((reference) => reference.url),

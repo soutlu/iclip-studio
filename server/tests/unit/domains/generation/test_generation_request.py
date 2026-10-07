@@ -181,21 +181,27 @@ def test_a_composite_segment_must_be_a_downloadable_forward_span_with_a_source(
         ComposeSegment.model_validate(segment)
 
 
-def test_an_edit_takes_a_forward_range_and_none_of_the_fields_the_server_fills() -> None:
-    """编辑段只收区间与正文；参考视频由服务端切，原作由基底定，结构化镜头组不收。"""
+def test_an_edit_takes_a_forward_range_one_clip_and_none_of_the_fields_the_server_fills() -> None:
+    """编辑段收区间、恰好一条参考片段与正文；原作由基底定，结构化镜头组不收。"""
 
     base = {
         "source_job_id": str(uuid.uuid4()),
         "range_start_ms": 1000,
         "range_end_ms": 4000,
+        "reference_video_urls": ["https://example.com/clip.mp4"],
         "model": "m",
         "prompt": "换成编织凉鞋",
     }
     assert VideoEditIn.model_validate(base).range_end_ms == 4000
+    without_clip = {key: value for key, value in base.items() if key != "reference_video_urls"}
+    with pytest.raises(ValueError, match="reference_video_urls"):
+        VideoEditIn.model_validate(without_clip)
     for flaw in (
         {"range_start_ms": -1},
         {"range_end_ms": 1000},
-        {"reference_video_urls": ["https://example.com/ref.mp4"]},
+        {"reference_video_urls": []},
+        {"reference_video_urls": ["https://example.com/a.mp4", "https://example.com/b.mp4"]},
+        {"reference_video_urls": ["file:///etc/passwd"]},
         {"root_job_id": str(uuid.uuid4())},
         {"shot": video_shot()},
     ):

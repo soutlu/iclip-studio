@@ -65,7 +65,7 @@ const root = job({
   request: { prompt: '原片' },
 })
 
-/** e1 已合成成 V2；e2 在 V2 上切片中；e3 编辑结果回来了待预览；e4 生成失败。 */
+/** e1 已合成成 V2；e2 在 V2 上排队；e3 编辑结果回来了待预览；e4 生成失败。 */
 const chainJobs: GenerationJob[] = [
   segment('e1', 'root', [3.774, 8], {
     createdAt: at('10:01:00'),
@@ -114,7 +114,7 @@ describe('projectEditChain', () => {
     expect(
       chain.pending.map((edit) => [edit.key, edit.label, edit.base.label, edit.stage, edit.error]),
     ).toEqual([
-      ['e2', 'V3', 'V2', 'cutting', undefined],
+      ['e2', 'V3', 'V2', 'queued', undefined],
       ['e3', 'V4', 'V1', 'ready', undefined],
       ['e4', 'V5', 'V1', 'failed', '上游拒绝了这段素材'],
     ])
@@ -265,8 +265,8 @@ describe('projectEditChain', () => {
     EditStage,
     string | undefined,
   ][] = [
-    ['编辑段还在排队', { status: 'pending' }, undefined, 'cutting', undefined],
-    ['服务端在切片、交给模型', { status: 'submitting' }, undefined, 'cutting', undefined],
+    ['编辑段还在排队', { status: 'pending' }, undefined, 'queued', undefined],
+    ['正在交给模型', { status: 'submitting' }, undefined, 'queued', undefined],
     ['上游在生成', { status: 'submitted' }, undefined, 'generating', undefined],
     ['编辑结果回来了', { outputUrl: EDITED_URL }, undefined, 'ready', undefined],
     [

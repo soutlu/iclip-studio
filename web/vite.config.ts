@@ -31,7 +31,8 @@ const developmentApplicationEntryPlugin = (): Plugin => ({
 
 const serveMockAssets = (request: IncomingMessage, response: ServerResponse, next: () => void) => {
   // MSW 转发 no-cors 视频请求会丢掉 Range；静态服务仍支持分段读取，显式声明后浏览器才能 seek。
-  if (request.url?.split('?')[0]?.endsWith('.webm')) response.setHeader('Accept-Ranges', 'bytes')
+  if (/\.(webm|mp4)$/.test(request.url?.split('?')[0] ?? ''))
+    response.setHeader('Accept-Ranges', 'bytes')
 
   if (request.url?.split('?')[0] !== '/mockServiceWorker.js') {
     next()

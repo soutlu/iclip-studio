@@ -192,9 +192,9 @@ for (const width of [1335, 390]) {
     await expect(card).toBeFocused()
     await expect(card).toHaveAttribute('aria-pressed', 'true')
     const video = player.locator('video')
-    // mock 的出片是一条 WebM 测试卡（见 testing/mocks/workspace.ts），舞台放的就是记录上那条地址；
+    // mock 的出片是一条 MP4 测试卡（见 testing/mocks/workspace.ts），舞台放的就是记录上那条地址；
     // dev 下地址没有 hash、带 ?no-inline 查询串，构建产物里有 hash、没查询串。
-    await expect(video).toHaveAttribute('src', /\/sample-video(-[^/?]*)?\.webm(\?.*)?$/)
+    await expect(video).toHaveAttribute('src', /\/sample-video(-[^/?]*)?\.mp4(\?.*)?$/)
     // 共享播放器：没有原生控件（也就没有全屏入口），进度条是自己的；点卡片即开始播，不循环。
     expect(await video.evaluate((el: HTMLVideoElement) => el.controls)).toBe(false)
     await expect(player.getByRole('slider', { name: '播放进度' })).toBeVisible()

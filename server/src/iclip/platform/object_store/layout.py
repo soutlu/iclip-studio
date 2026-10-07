@@ -26,11 +26,6 @@ class MediaPaths:
 
         return f"{OSS_ROOT}/generated-images/{job_id}.{ext}"
 
-    def video_clip(self, *, job_id: uuid.UUID, ext: str) -> str:
-        """编辑时切出来的参考片段，是中间素材；桶上按这一层前缀配过期规则。"""
-
-        return f"{OSS_ROOT}/video-clips/{job_id}.{ext}"
-
     def video_master(self, *, job_id: uuid.UUID, ext: str) -> str:
         """拼出来的成片，长期保留，不进过期规则。"""
 
