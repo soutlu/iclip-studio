@@ -22,7 +22,7 @@ FIRST_SHOT = [
 def say(version: int, text: str) -> dict[str, object]:
     """改第一个镜头里那句台词的请求体。"""
 
-    line = {"target": "line:lighter", "role": "短发女生", "text": text}
+    line = {"target": "line:lighter", "text": text}
     edit = {"target": "shot:全片分镜:1", "parts": FIRST_SHOT, "lines": [line]}
     return {"filmVersion": version, "edits": [edit]}
 
@@ -82,7 +82,6 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
     shoe = group["frames"][1]
     assert (shoe["kind"], shoe["prompt"]) == ("photo", None)
     assert group["shots"][0]["lines"][0]["target"] == "line:lighter"
-    assert group["speakers"] == ["短发女生", "旁白"]
 
     edited = await client.patch(
         f"{URL}/{mine}/film/text",

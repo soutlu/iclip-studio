@@ -54,7 +54,7 @@ def say(text: str) -> FilmTextEdit:
     return FilmTextEdit(
         "shot:全片分镜:1",
         parts=FIRST_SHOT,
-        lines=(FilmLineEdit("line:lighter", "短发女生", text),),
+        lines=(FilmLineEdit("line:lighter", text),),
     )
 
 

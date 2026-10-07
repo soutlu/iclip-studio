@@ -337,8 +337,6 @@ class FilmGroupOut(CamelModel):
     frames: list[FilmFrameOut]
     settings: list[FilmSettingOut]
     shots: list[FilmShotOut]
-    speakers: list[str]
-    """这组里能说话的人，加台词和换说话人从这里选。"""
 
 
 class FilmViewOut(CamelModel):
@@ -355,16 +353,15 @@ class FilmViewEnvelope(CamelModel):
 
 
 class FilmLineEditIn(CamelModel):
-    """改完的一句台词：原有的带上它的 ``target``，新加的给 null。"""
+    """改好的一句台词的字；``target`` 照读到的原样传回。"""
 
-    target: str | None
-    role: Annotated[str, Field(min_length=1)]
+    target: Annotated[str, Field(min_length=1)]
     text: str
 
 
 class FilmTextEditIn(CamelModel):
-    """改一段字。镜头给 ``parts`` 与 ``lines``：改完的台词按先后列全，``parts`` 比它多一段；
-    其余给 ``text``。"""
+    """改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它
+    多一段，台词只改字；其余给 ``text``。"""
 
     target: Annotated[str, Field(min_length=1)]
     text: str | None = None
@@ -467,7 +464,7 @@ def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
             parts=None if edit.parts is None else tuple(edit.parts),
             lines=None
             if edit.lines is None
-            else tuple(FilmLineEdit(line.target, line.role, line.text) for line in edit.lines),
+            else tuple(FilmLineEdit(line.target, line.text) for line in edit.lines),
         )
         for edit in body.edits
     ]
@@ -509,7 +506,6 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                         )
                         for setting in group.settings
                     ],
-                    speakers=list(group.speakers),
                     shots=[
                         FilmShotOut(
                             target=shot.target,
