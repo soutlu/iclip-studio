@@ -68,3 +68,54 @@
 .film-line-words .prompt-editor-content p::after {
   content: '”';
 }
+
+/* ===== 生成卡 =====
+   舞台上一张还没有图的生成图：深色舞台上居中一张浅色卡（与浮起的段卡同一层底色），画幅框里放不下就在卡里滚。
+   描述用小一号的正文、行高给图片芯片留足；底部一行是提交失败的原话与「生成这张」。 */
+.film-generate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  padding: 16px;
+  place-items: center;
+}
+.film-generate-card {
+  display: flex;
+  width: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--color-top-layer);
+  box-shadow: var(--shadow-2);
+  overscroll-behavior: contain;
+}
+.film-generate-title {
+  color: var(--color-on-surface);
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: var(--text-title--line-height);
+}
+.film-generate-prompt {
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.film-generate-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-hairline);
+}
+.film-generate-error {
+  min-width: 0;
+  color: var(--color-error);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}

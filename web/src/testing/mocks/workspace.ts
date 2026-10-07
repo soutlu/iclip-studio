@@ -671,6 +671,23 @@ export const acceptMockVideo = (spec: {
     watermarkOutputUrl: VIDEO_URL,
   })
 
+/** 收下一次按描述生图：同一套记录与完成节奏，出的是 `outputUrl`。制作页的 mock 用它。 */
+export const acceptMockImage = (spec: {
+  conversationId: string
+  prompt: string
+  metadata: Record<string, unknown>
+  outputUrl: string
+}) =>
+  acceptGeneration({
+    ...spec,
+    kind: 'image',
+    request: { prompt: spec.prompt },
+  })
+
+/** 一段对话的全部生成记录，制作页的 mock 按它找一张图最近一次生成的结果。 */
+export const mockConversationJobs = (conversationId: string) =>
+  generations.get(conversationId) ?? []
+
 /** 往一段对话的工作区放一份文件（还没有工作区就建一个）：版本从 1 起，已有就加一，返回新版本。制作页的 mock 用它。 */
 export const putMockWorkspaceFile = (conversationId: string, path: string, content: string) => {
   const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()

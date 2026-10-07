@@ -3,7 +3,13 @@
  * （`StageFrameNav`），焦点在舞台里时 ←/→ 也切帧；成片舞台不接方向键。
  * 整块舞台是替换当前帧的拖放区，拖放提示盖在所有东西上面；显示成片时锁定。舞台列宽随分镜画幅，见 storyboard.css。 */
 
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import {
+  useRef,
+  useState,
+  type ClipboardEventHandler,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { Icon } from '@/shared/icons'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import type { useFileDropTarget } from '@/shared/ui/file-drop'
@@ -149,16 +155,25 @@ function TakeStage({ drop, view }: { drop: ShotStageProps['drop']; view: TakeVie
 export function StageShell({
   children,
   drop,
+  onPaste,
   overlay,
   stageRef,
 }: {
   children: ReactNode
   drop: ShotStageProps['drop']
+  /** 制作页：点过舞台后粘贴的图换掉当前这张；给了它舞台才可聚焦，点空白处焦点落在舞台上。 */
+  onPaste?: ClipboardEventHandler<HTMLDivElement> | undefined
   overlay?: ReactNode
   stageRef?: ((node: HTMLDivElement | null) => void) | undefined
 }) {
   return (
-    <div className="storyboard-stage" ref={stageRef} {...drop.dragHandlers}>
+    <div
+      className="storyboard-stage"
+      onPaste={onPaste}
+      ref={stageRef}
+      tabIndex={onPaste === undefined ? undefined : -1}
+      {...drop.dragHandlers}
+    >
       <div className="storyboard-stage-content animate-in duration-(--dur-m) ease-(--ease-decel) fade-in motion-reduce:animate-none">
         {children}
       </div>
