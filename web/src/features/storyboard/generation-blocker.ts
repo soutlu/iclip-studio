@@ -31,26 +31,20 @@ export const generationBlockerOf = (facts: GenerationFacts): GenerationBlocker |
   return undefined
 }
 
-/** 出片栏上方状态行写的一句；tone 决定配色与是否播报：`hint` 是不拦出片的提醒，与置灰原因一样是灰字、不播报。 */
-export type GenerationStatusLine = { tone: 'blocked' | 'error' | 'hint'; text: string }
+/** 出片栏上方状态行写的一句；tone 决定配色与是否播报：错误播报，置灰原因由主按钮的说明关联读出。 */
+export type GenerationStatusLine = { tone: 'blocked' | 'error'; text: string }
 
-/** 置灰原因、错误提醒与提醒怎么摆：
- * - `line`：状态行看得见的一句。一直挡着的置灰原因优先（主按钮的说明就指向它），其次是错误提醒，最后是不拦出片的提醒
- *   （如制作页的缺图提醒）；暂态原因不上状态行。
+/** 置灰原因与错误提醒怎么摆：
+ * - `line`：状态行看得见的一句。一直挡着的置灰原因优先（主按钮的说明就指向它），其次是错误提醒；暂态原因不上状态行。
  * - `hiddenReason`：暂态的置灰原因，不显示，只给主按钮当说明，读屏照样读得到为什么点不了。 */
 export const generationStatusOf = (
   blocked: GenerationBlocker | undefined,
   notice: string | undefined,
-  hint?: string,
 ): { line: GenerationStatusLine | undefined; hiddenReason: string | undefined } => {
   if (blocked !== undefined && !blocked.transient)
     return { hiddenReason: undefined, line: { text: blocked.reason, tone: 'blocked' } }
   const line: GenerationStatusLine | undefined =
-    notice !== undefined
-      ? { text: notice, tone: 'error' }
-      : hint === undefined
-        ? undefined
-        : { text: hint, tone: 'hint' }
+    notice === undefined ? undefined : { text: notice, tone: 'error' }
   return { hiddenReason: blocked?.reason, line }
 }
 

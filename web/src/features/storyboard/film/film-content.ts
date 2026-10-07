@@ -80,12 +80,6 @@ export const missingReferencesText = (labels: readonly string[]): string | undef
   return names.length === 0 ? undefined : `${beforeChinese(names.join('、'))}的图缺失，参考描述生成`
 }
 
-/** 这组出片挂的生成图里现在没有图（没选用）的那几张的称呼，按 `frames` 的先后；用户给的图总有图，不在里面。 */
-export const groupMissingLabels = (group: FilmGroup): string[] =>
-  group.frames.flatMap((frame) =>
-    frame.kind === 'generated' && frame.url === null ? [frame.label] : [],
-  )
-
 /** 舞台标签与悬停预览用的名字：有编号写 @N，没有就写它的名字。 */
 export const frameTag = (frame: FilmFrame): string =>
   frame.number === null ? frame.label : `@${frame.number}`
