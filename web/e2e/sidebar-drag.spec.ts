@@ -4,9 +4,13 @@ import { login } from './login'
 
 // jsdom 缺少布局几何，dnd-kit 碰撞检测在浏览器测试中验证。
 
-/** 分两步移动以越过 dnd-kit 的 5px 激活阈值；源为对话链接，目标为分区标题或合集按钮。 */
+/** 分两步移动以越过 dnd-kit 的 5px 激活阈值；源为对话链接，目标为分区标题或合集按钮。
+ *
+ * 先把源滚进侧栏的可见区再量位置：列表底部的行会被侧栏底栏挡住（建立时间跨过半夜时多出
+ * 「昨天」分组，最后一行就落到那里），在被挡住的位置按下去按到的是底栏，拖拽不会开始。 */
 const dragOnto = async (page: Page, source: string, to: Locator) => {
   const from = page.getByRole('link', { name: source, exact: true })
+  await from.scrollIntoViewIfNeeded()
   const start = await from.boundingBox()
   const end = await to.boundingBox()
   if (!start || !end) throw new Error('拖拽的两端要先在页面上')
