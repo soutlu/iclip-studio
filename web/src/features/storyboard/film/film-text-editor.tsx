@@ -1,4 +1,5 @@
-/** 制作页上的一段字：shared 的编辑核心，只收纯文字，不收图片也没有 `@` 选图（图的编号由后端排，正文里不写）。
+/** 制作页上的一段字：shared 的编辑核心，只收纯文字，不收图片也没有 `@` 选图（图的编号由后端排，正文里不写）；
+ * 往字里贴图只提示贴到画面上。
  * 受控字符串，每行一个段落；`singleLine` 的（台词）Enter 不换行，粘贴的多行并成一行。 */
 
 import { Plugin } from 'prosemirror-state'
@@ -6,6 +7,7 @@ import { Slice, type Node as PMNode } from 'prosemirror-model'
 import type { EditorView } from 'prosemirror-view'
 import { useEffect, useEffectEvent, useRef } from 'react'
 import { cn } from '@/shared/lib/utils'
+import { toast } from '@/shared/ui/toast'
 import {
   createComposerSchema,
   useAttachmentAdmission,
@@ -33,6 +35,18 @@ const pastedText = (singleLine: boolean) => (text: string) => {
   const doc = textToDoc(singleLine ? text.replace(/\s*\n\s*/g, ' ') : text)
   return new Slice(doc.content, 1, 1)
 }
+
+/** 字里不收图：粘贴进来的图片不落进正文，提示贴到舞台的画面上换图。排在编辑核心的粘贴处理之前。 */
+const imagePasteHintPlugin = () =>
+  new Plugin({
+    props: {
+      handlePaste: (_view, event) => {
+        if ((event.clipboardData?.files.length ?? 0) === 0) return false
+        toast.info('图片请贴到画面上')
+        return true
+      },
+    },
+  })
 
 /** 台词只有一行：Enter 什么也不做（Shift+Enter 也不换行）。排在编辑核心的 Enter 处理之前。 */
 const singleLinePlugin = () =>
@@ -81,7 +95,7 @@ export function FilmTextEditor({
       serializedRef.current = text
       onChange(text)
     },
-    plugins: () => (singleLine ? [singleLinePlugin()] : []),
+    plugins: () => [imagePasteHintPlugin(), ...(singleLine ? [singleLinePlugin()] : [])],
     readOnly,
     viewRef,
   })

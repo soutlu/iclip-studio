@@ -2,11 +2,12 @@
  *
  * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
  * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
- * 出片先把改了的字存下，再按存好的那一版出，发出去的和文件里的一样；画幅照文件，只显示。 */
+ * 出片、换图、生图都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅照文件，只显示。 */
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useState } from 'react'
-import { errorMessageOf } from '@/shared/api/client'
+import { useEffect, useEffectEvent, useState } from 'react'
+import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { Button } from '@/shared/ui/button'
 import {
   DialogBody,
@@ -22,6 +23,7 @@ import { StoryboardToolbar } from '../components/storyboard-toolbar'
 import { TakesTray } from '../components/takes-tray'
 import { VideoGenerationBar } from '../components/video-generation-bar'
 import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
+import { imageEditConversationKey, useFrameImageJobs } from '../image-edit/image-edit.api'
 import { useShotGenerations } from '../storyboard.api'
 import { takeActionsOf, takesOfShot } from '../takes'
 import { useGenerationGate } from '../use-generation-gate'
@@ -30,7 +32,15 @@ import { useShotArrowKeys } from '../use-shot-arrow-keys'
 import { useStageSelection } from '../use-stage-selection'
 import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
-import { generateFilmVideo, useFilmFileChanges, useFilmView } from './film.api'
+import {
+  chooseFilmImage,
+  filmQueryKey,
+  generateFilmImage,
+  generateFilmVideo,
+  useFilmFileChanges,
+  useFilmView,
+  type FilmFrame,
+} from './film.api'
 import {
   contentOfFrame,
   filmGroupSummary,
@@ -38,6 +48,7 @@ import {
   resolveFilmSelection,
   segmentFrames,
 } from './film-content'
+import { latestNodeJob, useFilmReplace } from './film-images'
 import { FilmScript } from './film-script'
 import { FilmStage } from './film-stage'
 import { useFilmDraft, type FilmSaveState } from './use-film-draft'
@@ -50,6 +61,9 @@ type ReaderSearch = {
   video?: string | undefined
 }
 
+/** 出片闸门按组号记上传；换图不属于哪一组，用组号从 1 起之外的 0。 */
+const REPLACE_UPLOAD = 0
+
 export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
@@ -60,7 +74,9 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   useLiveGenerations(conversationId)
   const draft = useFilmDraft(conversationId, film.data)
   const generations = useShotGenerations(conversationId)
+  const imageJobs = useFrameImageJobs(conversationId)
   const gate = useGenerationGate()
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
   const search: ReaderSearch = useSearch({ strict: false })
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
@@ -69,8 +85,70 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const groups = view?.groups ?? []
   const position =
     search.shot !== undefined && search.shot >= 1 && search.shot <= groups.length ? search.shot : 1
+  const group = groups[position - 1]
+  const selection =
+    group === undefined
+      ? undefined
+      : resolveFilmSelection(group, { content: search.content, frame: search.frame })
+  const frame =
+    group === undefined || selection?.frame === undefined
+      ? undefined
+      : group.frames[selection.frame - 1]
   const stage = useStageSelection(position)
-  const video = useVideoGeneration(conversationId, groups[position - 1]?.model)
+  const video = useVideoGeneration(conversationId, group?.model)
+  const takes =
+    generations.data === undefined || group === undefined
+      ? undefined
+      : takesOfShot(generations.data, group.index, group.aspectRatio)
+  // 选中的成片不在本组列表里了就回到图。
+  const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
+  // 按描述生图：正在提交的那张，与提交失败的原话（挨着按钮说，不弹全局提示）。
+  const [imageSubmit, setImageSubmit] = useState<{ node: string; error?: string } | null>(null)
+
+  /** 先存改了的字，按存好的那一版发；没存下就不发。 */
+  const savedFilm = async () => {
+    const saved = await draft.saveNow()
+    if (saved === null) throw new UserFacingError('改的字还没存下，先处理好再继续')
+    return saved
+  }
+  const replace = useFilmReplace({
+    // 舞台在放成片时看不到图，不收拖放与粘贴。
+    disabled: readOnly || selectedTake !== undefined,
+    frame,
+    onReplace: async (target, url) => {
+      const saved = await savedFilm()
+      const changed = await chooseFilmImage(conversationId, {
+        filmVersion: saved.filmVersion,
+        node: target.node,
+        runVersion: saved.runVersion,
+        url,
+      })
+      queryClient.setQueryData(filmQueryKey(conversationId), { film: changed })
+    },
+  })
+  // 有图在换时先别出片：发出去的参考图要是换好的那张。换图一次只有一张、与组无关，记在一个不会是组号的键上。
+  const reportUploading = useEffectEvent((busy: boolean) =>
+    gate.onUploadingChange(REPLACE_UPLOAD, busy),
+  )
+  useEffect(() => {
+    reportUploading(replace.busy)
+    return () => reportUploading(false)
+  }, [replace.busy])
+  const generateImage = async (target: FilmFrame) => {
+    setImageSubmit({ node: target.node })
+    try {
+      const saved = await savedFilm()
+      await generateFilmImage(conversationId, {
+        filmVersion: saved.filmVersion,
+        node: target.node,
+        runVersion: saved.runVersion,
+      })
+      await queryClient.invalidateQueries({ queryKey: imageEditConversationKey(conversationId) })
+      setImageSubmit(null)
+    } catch (error) {
+      setImageSubmit({ error: errorMessageOf(error, '生成提交失败'), node: target.node })
+    }
+  }
 
   const go = (next: ReaderSearch) => {
     const cleared =
@@ -94,11 +172,6 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     )
   }
   if (view.problems > 0) return <FilmProblems count={view.problems} />
-  const group = groups[position - 1]
-  const selection =
-    group === undefined
-      ? undefined
-      : resolveFilmSelection(group, { content: search.content, frame: search.frame })
   if (group === undefined || selection === undefined)
     return <ReaderNotice text="分镜里还没有镜头组" />
 
@@ -112,12 +185,6 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
         (content === selection.contentId ? selection.frame : segmentFrames(group, content)[0]),
     })
   }
-  const takes =
-    generations.data === undefined
-      ? undefined
-      : takesOfShot(generations.data, group.index, group.aspectRatio)
-  // 选中的成片不在本组列表里了就回到图。
-  const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
   const videoEditRoot =
     search.video === undefined
       ? undefined
@@ -183,8 +250,21 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
           >
             <FilmStage
               frame={selection.frame}
+              generate={{
+                error: imageSubmit?.node === frame?.node ? imageSubmit?.error : undefined,
+                job:
+                  frame === undefined
+                    ? undefined
+                    : latestNodeJob(imageJobs.data?.items ?? [], frame.node),
+                onGenerate: () => {
+                  if (frame !== undefined) void generateImage(frame)
+                },
+                submitting: imageSubmit !== null && imageSubmit.error === undefined,
+              }}
               group={group}
-              onOpen={(frame) => setMedia({ kind: 'image', name: frame.label, url: frame.url })}
+              onOpen={(image) => setMedia({ kind: 'image', ...image })}
+              readOnly={readOnly}
+              replace={replace}
               onStep={(frame) =>
                 go({ content: contentOfFrame(group, selection.contentId, frame), frame })
               }
@@ -206,6 +286,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
                 frame={selectedTake === undefined ? selection.frame : undefined}
                 group={group}
                 onEdit={draft.update}
+                onPreview={(image) => setMedia({ kind: 'image', ...image })}
                 onSelect={select}
                 readOnly={readOnly}
                 // 放成片时文案列不标选中：点哪段（包括原来选中的那段）都回到图。

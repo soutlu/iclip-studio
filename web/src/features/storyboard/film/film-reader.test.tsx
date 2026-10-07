@@ -1,11 +1,18 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { describe, expect, it } from 'vitest'
-import type { FilmTextEditsIn, FilmVideoGenerationIn } from '@/shared/api/generated/types.gen'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  FilmImageChoiceIn,
+  FilmImageGenerationIn,
+  FilmTextEditsIn,
+  FilmVideoGenerationIn,
+} from '@/shared/api/generated/types.gen'
+import { Toaster } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
-import { pasteTextIntoComposer } from '@/testing/editor'
+import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
 import { editMockFilmShot, seedMockFilm } from '@/testing/mocks/film'
+import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { DEFAULT_GENERATE_AUDIO, DEFAULT_VIDEO_RESOLUTION } from '../video-generation-options'
@@ -33,7 +40,10 @@ const recordEdits = () => {
 const mount = async ({ readOnly = false, problems = 0 } = {}) => {
   seedMockFilm(CONVERSATION_ID, { problems })
   await renderWithProviders(
-    <FilmReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />,
+    <>
+      <FilmReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
+      <Toaster />
+    </>,
     { initialPath: '/?shot=1' },
   )
 }
@@ -50,6 +60,23 @@ const replaceText = async (editor: HTMLElement, text: string) => {
   await userEvent.keyboard('{Control>}a{/Control}')
   pasteTextIntoComposer(editor, text)
 }
+
+/** 记下换图与按描述生图发出去的体；不拦，照常交给 mock 处理。 */
+const recordImages = () => {
+  const choices: FilmImageChoiceIn[] = []
+  const generations: FilmImageGenerationIn[] = []
+  server.use(
+    http.put('*/api/conversations/:conversationId/film/image', async ({ request }) => {
+      choices.push((await request.clone().json()) as FilmImageChoiceIn)
+    }),
+    http.post('*/api/conversations/:conversationId/film/image-generations', async ({ request }) => {
+      generations.push((await request.clone().json()) as FilmImageGenerationIn)
+    }),
+  )
+  return { choices, generations }
+}
+
+const photo = () => new File(['photo'], '我的照片.png', { type: 'image/png' })
 
 /** 舞台左上的标签：正文编辑器之外、写在舞台工具条上的那一枚。 */
 const stageTag = () => document.querySelector('.storyboard-stage-tag')?.textContent ?? null
@@ -204,5 +231,64 @@ describe('制作页', () => {
     const script = await renderFilm({ readOnly: true })
     for (const editor of within(script).getAllByRole('textbox'))
       expect(editor).toHaveAttribute('contenteditable', 'false')
+  })
+})
+
+describe('制作页的图', () => {
+  beforeEach(() => {
+    // 上传要登录；jsdom 读不出图的尺寸，给一张够大的。
+    loginAs(mockAuthUser)
+    vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('「替换」选一张图：传好就换掉舞台上这张，按读到的两个版本号发', async () => {
+    const { choices } = recordImages()
+    await renderFilm()
+    await userEvent.upload(screen.getByLabelText('选择替换图片'), photo())
+
+    await waitFor(() => expect(choices).toHaveLength(1))
+    expect(choices[0]).toMatchObject({ filmVersion: 1, node: 'girl_look', runVersion: 1 })
+    const url = choices[0]?.url ?? ''
+    await waitFor(() =>
+      expect(screen.getByRole('img', { name: '金发女生' })).toHaveAttribute('src', url),
+    )
+    expect(await screen.findByText('已替换金发女生')).toBeInTheDocument()
+  })
+
+  it('点过舞台后粘贴图片也是换这张；往字里贴图不收，只提示贴到画面上', async () => {
+    const { choices } = recordImages()
+    const script = await renderFilm()
+    pasteFilesIntoComposer(within(script).getByRole('textbox', { name: '镜头 1的描述' }), [photo()])
+    expect(await screen.findByText('图片请贴到画面上')).toBeInTheDocument()
+
+    pasteFilesIntoComposer(screen.getByRole('button', { name: '打开原图' }), [photo()])
+    await waitFor(() => expect(choices).toHaveLength(1))
+    expect(choices[0]?.node).toBe('girl_look')
+  })
+
+  it('还没有图的生成图在舞台上是生成卡：点「生成这张」按这张图发，随即转成生成中', async () => {
+    const { generations } = recordImages()
+    const script = await renderFilm()
+    await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
+
+    const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
+    expect(card).toHaveTextContent('镜头 2 还没有图')
+    await userEvent.click(within(card).getByRole('button', { name: '生成这张' }))
+
+    await waitFor(() =>
+      expect(generations).toEqual([{ filmVersion: 1, node: 'shot2_view', runVersion: 1 }]),
+    )
+    expect(await screen.findByRole('status', { name: /^生成中/ })).toBeInTheDocument()
+  })
+
+  it('悬停图片芯片出预览卡，「放大」开灯箱', async () => {
+    const script = await renderFilm()
+    await userEvent.hover(within(script).getByRole('button', { name: '在舞台查看金发女生' }))
+    const tip = await screen.findByRole('tooltip')
+    await userEvent.click(within(tip).getByRole('button', { name: '放大' }))
+    expect(await screen.findByRole('dialog', { name: /金发女生/ })).toBeInTheDocument()
   })
 })

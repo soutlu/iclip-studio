@@ -1,10 +1,15 @@
-/** 制作页读写 AI 导演的工程：读成镜头组、改字、给一组出片。端点语义见 contract/conventions.md 的「制作页」几条。 */
+/** 制作页读写 AI 导演的工程：读成镜头组、改字、换图、按描述生图、给一组出片。端点语义见 contract/conventions.md 的「制作页」几条。 */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { use, useEffect } from 'react'
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
-import type { FilmTextEditIn, FilmVideoGenerationIn } from '@/shared/api/generated/types.gen'
+import type {
+  FilmImageChoiceIn,
+  FilmImageGenerationIn,
+  FilmTextEditIn,
+  FilmVideoGenerationIn,
+} from '@/shared/api/generated/types.gen'
 import { zFilmJobOut, zFilmViewEnvelope } from '@/shared/api/generated/zod.gen'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { storyboardQueryKeys } from '../storyboard.api'
@@ -67,5 +72,30 @@ export const generateFilmVideo = (conversationId: string, body: FilmVideoGenerat
   apiFetch(`/conversations/${conversationId}/film/video-generations`, zFilmJobOut, {
     body,
     fallbackErrorMessage: '视频提交失败',
+    method: 'POST',
+  })
+
+/** 给一张图换地址，答复换完的整页；`url` 是这段对话的图片或自己刚上传的图。 */
+export const chooseFilmImage = async (
+  conversationId: string,
+  body: FilmImageChoiceIn,
+): Promise<FilmView> => {
+  const envelope = await apiFetch(
+    `/conversations/${conversationId}/film/image`,
+    zFilmViewEnvelope,
+    {
+      body,
+      fallbackErrorMessage: '换图失败',
+      method: 'PUT',
+    },
+  )
+  return envelope.film
+}
+
+/** 按描述给一张图出一张新的，答复 202 与任务号；结果落定后这张图换上（还没有图的）或进版本（已经有图的）。 */
+export const generateFilmImage = (conversationId: string, body: FilmImageGenerationIn) =>
+  apiFetch(`/conversations/${conversationId}/film/image-generations`, zFilmJobOut, {
+    body,
+    fallbackErrorMessage: '生成提交失败',
     method: 'POST',
   })

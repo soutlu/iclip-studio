@@ -1,9 +1,12 @@
 /** 制作页的 mock：每段对话一份读好的工程（形状同 `GET /conversations/{id}/film`），改字照后端的规矩查，
- * 改完把工作区里 `film.icml` 的版本加一，文件列表与制作页的版本对得上；出片记一条视频记录，镜号是组号。 */
+ * 改完把工作区里 `film.icml` 的版本加一，文件列表与制作页的版本对得上；出片记一条视频记录，镜号是组号。
+ * 图照后端的顺序定：选用了的；没选用的生成图是它最近一次按描述生成成功的那张；都没有就还没有图。编号按有图的现算。 */
 
 import { http, HttpResponse } from 'msw'
 import type {
   FilmGroupOut,
+  FilmImageChoiceIn,
+  FilmImageGenerationIn,
   FilmTextEditsIn,
   FilmVideoGenerationIn,
   FilmViewOut,
@@ -11,12 +14,19 @@ import type {
 import apparelImage from './assets/apparel.webp'
 import backpackImage from './assets/backpack.webp'
 import loafersImage from './assets/loafers.webp'
-import { acceptMockVideo, putMockWorkspaceFile } from './workspace'
+import {
+  acceptMockImage,
+  acceptMockVideo,
+  mockConversationJobs,
+  putMockWorkspaceFile,
+} from './workspace'
 
 const FILM_PATH = 'film.icml'
 const RUN_PATH = 'film.icrun'
 
 const films = new Map<string, FilmViewOut>()
+/** 每段对话里人选用的图：节点 → 地址。 */
+const chosen = new Map<string, Map<string, string>>()
 
 /** 文件页上看到的工程原文；制作页不读它，只是让文件页有东西可看。 */
 const FILM_SOURCE = [
@@ -189,7 +199,50 @@ export const editMockFilmShot = (conversationId: string, shot: number, text: str
   })
 }
 
-export const resetMockFilm = () => films.clear()
+export const resetMockFilm = () => {
+  films.clear()
+  chosen.clear()
+}
+
+/** 读的那一刻每张图用哪张、编号几：选用的优先，生成图其次看最近一次成功的生成，编号只给有图的、按先后从 1 起。 */
+const resolved = (conversationId: string, film: FilmViewOut): FilmViewOut => {
+  const picks = chosen.get(conversationId) ?? new Map<string, string>()
+  const generated = (node: string) =>
+    mockConversationJobs(conversationId)
+      .filter(
+        (job) =>
+          job.kind === 'image' &&
+          job.status === 'completed' &&
+          job.sourceJobId === null &&
+          job.sourceUrl === null &&
+          job.metadata?.['film_node'] === node,
+      )
+      .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.outputUrl ?? null
+  return {
+    ...film,
+    groups: film.groups.map((group) => {
+      let number = 0
+      return {
+        ...group,
+        frames: group.frames.map((frame) => {
+          const url =
+            picks.get(frame.node) ??
+            frame.url ??
+            (frame.kind === 'generated' ? generated(frame.node) : null)
+          return { ...frame, number: url === null ? null : ++number, url }
+        }),
+      }
+    }),
+  }
+}
+
+const versionsMatch = (
+  film: FilmViewOut,
+  body: { filmVersion: number; runVersion: number | null },
+) => body.filmVersion === film.filmVersion && body.runVersion === film.runVersion
+
+const frameOf = (film: FilmViewOut, node: string) =>
+  film.groups.flatMap((group) => group.frames).find((frame) => frame.node === node)
 
 const rejected = (detail: string) => HttpResponse.json({ detail }, { status: 422 })
 
@@ -253,9 +306,10 @@ const videoPrompt = (group: FilmGroupOut) =>
 
 export const filmHandlers = [
   http.get('*/api/conversations/:conversationId/film', ({ params }) => {
-    const film = films.get(String(params['conversationId']))
+    const conversationId = String(params['conversationId'])
+    const film = films.get(conversationId)
     if (film === undefined) return HttpResponse.json({ detail: '没有工程文件' }, { status: 404 })
-    return HttpResponse.json({ film })
+    return HttpResponse.json({ film: resolved(conversationId, film) })
   }),
 
   http.patch('*/api/conversations/:conversationId/film/text', async ({ params, request }) => {
@@ -274,8 +328,56 @@ export const filmHandlers = [
       groups,
     }
     films.set(conversationId, next)
-    return HttpResponse.json({ film: next })
+    return HttpResponse.json({ film: resolved(conversationId, next) })
   }),
+
+  // 生成图登记进运行文件并选用，运行文件版本加一；用户给的图改工程文件里的地址，工程文件版本加一。
+  http.put('*/api/conversations/:conversationId/film/image', async ({ params, request }) => {
+    const conversationId = String(params['conversationId'])
+    const film = films.get(conversationId)
+    if (film === undefined) return HttpResponse.json({ detail: '没有工程文件' }, { status: 404 })
+    const body = (await request.json()) as FilmImageChoiceIn
+    if (!versionsMatch(film, body))
+      return HttpResponse.json({ detail: '分镜刚被改过，刷新后再换' }, { status: 409 })
+    const frame = frameOf(film, body.node)
+    if (frame === undefined) return rejected('要换的这张图找不到了，刷新后再换')
+    const picks = chosen.get(conversationId) ?? new Map<string, string>()
+    chosen.set(conversationId, picks)
+    if (body.url === null) {
+      if (frame.kind === 'photo') return rejected('用户给的图不能取消，只能换一张')
+      picks.delete(body.node)
+    } else picks.set(body.node, body.url)
+    const next =
+      frame.kind === 'photo'
+        ? { ...film, filmVersion: putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE) }
+        : { ...film, runVersion: putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE) }
+    films.set(conversationId, next)
+    return HttpResponse.json({ film: resolved(conversationId, next) })
+  }),
+
+  http.post(
+    '*/api/conversations/:conversationId/film/image-generations',
+    async ({ params, request }) => {
+      const conversationId = String(params['conversationId'])
+      const film = films.get(conversationId)
+      if (film === undefined) return HttpResponse.json({ detail: '没有工程文件' }, { status: 404 })
+      const body = (await request.json()) as FilmImageGenerationIn
+      if (!versionsMatch(film, body))
+        return HttpResponse.json({ detail: '分镜刚被改过，刷新后再生成' }, { status: 409 })
+      const frame = frameOf(film, body.node)
+      if (frame?.kind !== 'generated') return rejected('用户给的图不能按描述生成')
+      const prompt = (frame.prompt ?? [])
+        .map((run) => ('node' in run ? run.label : run.text))
+        .join('')
+      const created = acceptMockImage({
+        conversationId,
+        metadata: { film_node: body.node },
+        outputUrl: backpackImage,
+        prompt,
+      })
+      return HttpResponse.json({ jobId: created.id }, { status: 202 })
+    },
+  ),
 
   http.post(
     '*/api/conversations/:conversationId/film/video-generations',

@@ -65,6 +65,10 @@ export const resolveFilmSelection = (
   return { contentId, frame }
 }
 
+/** 「镜头 2 还没有图」「涂鸦滑板场还没有图」：名字以数字或字母结尾时空一格再接中文。 */
+export const missingImageText = (label: string): string =>
+  `${label}${/\w$/.test(label) ? ' ' : ''}还没有图`
+
 /** 舞台标签与悬停预览用的名字：有编号写 @N，没有就写它的名字。 */
 export const frameTag = (frame: FilmFrame): string =>
   frame.number === null ? frame.label : `@${frame.number}`

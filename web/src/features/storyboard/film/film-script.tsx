@@ -13,7 +13,7 @@ import { shotAccentOf } from '../shot-accent'
 import { formatTimecode, promptLength } from '../shot-content'
 import { copyWithToast } from '../components/copy-with-toast'
 import { DurationPill, ScriptHead } from '../components/script-head'
-import type { FilmFrame, FilmGroup, FilmSetting, FilmShot } from './film.api'
+import type { FilmGroup, FilmSetting, FilmShot } from './film.api'
 import {
   SETTINGS_ID,
   filmDuration,
@@ -23,6 +23,7 @@ import {
   shotText,
   shotTime,
 } from './film-content'
+import { FilmImageChip } from './film-image-chip'
 import { FilmTextEditor } from './film-text-editor'
 import type { FilmSegmentValue } from './use-film-draft'
 
@@ -36,6 +37,8 @@ type FilmScriptProps = {
   onSelect: (contentId: string, frame?: number) => void
   /** 一段字改了：`label` 是这段给人看的名字，冲突时用。 */
   onEdit: (target: string, label: string, value: FilmSegmentValue) => void
+  /** 图片芯片预览卡上的「放大」。 */
+  onPreview: (media: { name: string; url: string }) => void
 }
 
 // 段里自带选中动作的控件（展开全局设定、点图片）聚焦时不再走「焦点进段就选中」，免得先选段再选图跳两次。
@@ -62,6 +65,7 @@ export function FilmScript({
   frame,
   group,
   onEdit,
+  onPreview,
   onSelect,
   readOnly,
   selectedId,
@@ -137,16 +141,20 @@ export function FilmScript({
             <div className="film-segment-body">
               {group.settings.map((setting) => (
                 <SettingRow
-                  chip={
-                    setting.image === null ? null : (
-                      <FrameChip
-                        found={frameAt(group, setting.image)}
-                        highlighted={settingsSelected}
-                        onPick={(position) => onSelect(SETTINGS_ID, position)}
-                        selected={frame}
+                  chip={(() => {
+                    const found = frameAt(group, setting.image)
+                    return found === undefined ? null : (
+                      <FilmImageChip
+                        // 全局设定是选中的段，舞台又正在看它，才算这枚芯片的。
+                        highlighted={settingsSelected && frame === found.position}
+                        label={found.frame.label}
+                        onEnlarge={(url) => onPreview({ name: found.frame.label, url })}
+                        onPick={() => onSelect(SETTINGS_ID, found.position)}
+                        tag={frameTag(found.frame)}
+                        url={found.frame.url}
                       />
                     )
-                  }
+                  })()}
                   // 同一组里每段设定的 target 各不相同；没法改的段没有 target，按种类与称呼认。
                   key={setting.target ?? `${setting.kind}:${setting.label ?? ''}`}
                   onEdit={onEdit}
@@ -227,38 +235,6 @@ export function FilmScript({
         </div>
       </div>
     </div>
-  )
-}
-
-/** 设定里元素挂的图：缩略图加 @N（还没有编号的写名字），舞台正在看它时实色高亮。 */
-function FrameChip({
-  found,
-  highlighted,
-  onPick,
-  selected,
-}: {
-  found: { frame: FilmFrame; position: number } | undefined
-  /** 全局设定是选中的段；只有这时舞台上的图才算这枚芯片的。 */
-  highlighted: boolean
-  onPick: (position: number) => void
-  selected: number | undefined
-}) {
-  if (found === undefined) return null
-  const { frame, position } = found
-  return (
-    <button
-      aria-label={`在舞台查看${frame.label}`}
-      className="frame-chip film-chip ui-focus"
-      data-highlighted={highlighted && selected === position ? '' : undefined}
-      onClick={() => onPick(position)}
-      onFocus={keepFocusInside}
-      type="button"
-    >
-      <span className="frame-chip-pill ui-motion-s">
-        {frame.url === null ? <span className="film-chip-empty" /> : <img alt="" src={frame.url} />}
-        <span>{frameTag(frame)}</span>
-      </span>
-    </button>
   )
 }
 
