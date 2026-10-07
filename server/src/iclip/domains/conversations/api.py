@@ -386,7 +386,7 @@ def create_conversations_router(
         body: FilmImageGenerationIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> FilmJobOut:
-        """按描述给一张图出一张新的。已经有图又没选用的，先选用现在这张，新的出来不顶替它。"""
+        """按描述给一张图出一张新的。新的出来只多一个版本，不自动用上，要人选用。"""
 
         job_id = await service.generate_film_image(
             principal,

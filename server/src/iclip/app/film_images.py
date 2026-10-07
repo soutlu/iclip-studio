@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
 
 from pydantic import ValidationError
 
@@ -14,20 +13,17 @@ from iclip.capabilities.iclip_studio.ports import (
 )
 from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.models import GenerationJob
-from iclip.domains.generation.schemas import KIND_IMAGE, STATUS_COMPLETED, ImageGenerationIn
+from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
 from iclip.platform.http import validation_error_detail
 
 FILM_NODE_KEY = "film_node"
-"""生图节点的生成记录在 ``metadata`` 里用这个键记节点名，之后按它找这个节点的结果。"""
-
-_LATEST_PAGE = 20
-"""找一个节点最近一次按描述生成的图时，一次往回看几条记录。"""
+"""生图节点的生成记录在 ``metadata`` 里用这个键记节点名，制作页按它列这个节点的版本。"""
 
 
 class FilmImagesAdapter:
-    """工程文件的生图节点与生成域之间的往来：出图时给记录标上节点名，再按节点名找最近的结果。"""
+    """工程文件的生图节点与生成域之间的往来：出图时给记录标上节点名，查进度，认对话里的图。"""
 
     def __init__(self, service: GenerationService) -> None:
         self._service = service
@@ -54,40 +50,6 @@ class FilmImagesAdapter:
 
     async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob:
         return _node_job(await self._service.get(principal, job_id))
-
-    async def latest(
-        self, principal: Principal, conversation_id: str, nodes: Sequence[str]
-    ) -> Mapping[str, str]:
-        conversation = _conversation_uuid(conversation_id)
-        found: dict[str, str] = {}
-        for node in nodes:
-            url = await self._latest_generated(principal, conversation, node)
-            if url is not None:
-                found[node] = url
-        return found
-
-    async def _latest_generated(
-        self, principal: Principal, conversation: uuid.UUID, node: str
-    ) -> str | None:
-        """一个节点最近一次按描述生成成功的图。编辑出来的不算：它要人点了替换才用上。"""
-
-        before: uuid.UUID | None = None
-        while True:
-            page = await self._service.list_recent(
-                principal,
-                limit=_LATEST_PAGE,
-                conversation_id=conversation,
-                kind=KIND_IMAGE,
-                metadata={FILM_NODE_KEY: node},
-                before=before,
-            )
-            for job in page:
-                generated = job.source_job_id is None and job.source_url is None
-                if generated and job.status == STATUS_COMPLETED and job.output_url:
-                    return job.output_url
-            if len(page) < _LATEST_PAGE:
-                return None
-            before = page[-1].id
 
     async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
         job = await self._service.find_conversation_image(

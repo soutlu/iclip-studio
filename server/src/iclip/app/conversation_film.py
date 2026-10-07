@@ -53,8 +53,7 @@ class ConversationFilmAdapter:
     """对话域制作页端口的实现。
 
     ``store`` 用来读，``announcing`` 用来写：写成功后照常发文件变更帧，打开着的页面据此重读。
-    ``generation`` 为 None 表示没开媒体生成：只认素材台账里的图，查不到最近生成的图，也认不出
-    上传。"""
+    ``generation`` 为 None 表示没开媒体生成：只认素材台账里的图，认不出生成记录与上传。"""
 
     def __init__(
         self,
@@ -192,19 +191,10 @@ class ConversationFilmAdapter:
             user_name=resolve_user_name(principal, None),
             conversation_id=str(conversation_id),
         )
-        current = film.image_url(f"{node}.image")
-        pinned = current is not None and node not in film.selected
-        if pinned:
-            # 已经有图又没选用：先选用现在这张，新的出来只进版本，点了替换才用上。能拒的都在这之前查过。
-            run = None if files.run is None else files.run.content
-            change = choose_image(film, files.project.content, run, node, current)
-            assert change is not None and change[0] == RUN_PATH
-            await self._write(files.namespace, RUN_PATH, change[1], run_version)
         try:
             job = await self._node_images.submit(principal, request)
         except InvalidNodeImageRequest as exc:
-            done = "已经选用现在这张图，" if pinned else ""
-            raise ValidationFailed(f"{done}这次没有生成：{exc}") from exc
+            raise ValidationFailed(f"这次没有生成：{exc}") from exc
         return job.job_id
 
     async def generate_video(

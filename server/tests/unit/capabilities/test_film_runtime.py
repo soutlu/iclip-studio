@@ -816,19 +816,10 @@ def test_registered_images_that_are_not_selected_are_kept_as_alternatives() -> N
     ]
 
 
-def test_a_node_without_a_selection_uses_its_latest_generated_image() -> None:
+def test_without_a_run_file_no_generated_node_has_an_image() -> None:
     film = checked(run=None)
-    film.generated["镜01机位图"] = "https://cdn.test/generated-view.png"
 
-    assert film.image_url("镜01机位图.image") == "https://cdn.test/generated-view.png"
-    assert film.image_url("镜02机位图.image") is None
-
-
-def test_a_selection_in_the_run_file_wins_over_the_latest_generated_image() -> None:
-    film = checked()
-    film.generated["短发女生参考图"] = "https://cdn.test/newer.png"
-
-    assert film.image_url("短发女生参考图.image") == PERSON_FIXED
+    assert node_images(film) == [(name, None) for name in IMAGE_NODES]
 
 
 def test_a_node_uses_the_registered_image_selected_for_it() -> None:
@@ -840,10 +831,13 @@ def test_a_node_uses_the_registered_image_selected_for_it() -> None:
 
 
 def generated(*missing: str) -> Film:
-    """每个生图节点都有一张最近生成的图，``missing`` 里的除外。"""
+    """每个生图节点都在运行文件里选用了一张图，``missing`` 里的除外。"""
 
     film = checked(run=None)
-    film.generated = {node: url_of(node) for node in IMAGE_NODES if node not in missing}
+    for node in IMAGE_NODES:
+        if node not in missing:
+            film.registered[f"{node}-1"] = url_of(node)
+            film.selected[node] = f"{node}-1"
     return film
 
 

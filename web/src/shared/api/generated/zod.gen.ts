@@ -471,7 +471,7 @@ export const zFaceOut = z.object({
 /**
  * FilmImageChoiceIn
  *
- * 给 ``node`` 换成 ``url``；``url`` 为 null 是回到最近一次生成的那张。
+ * 给 ``node`` 换成 ``url``；``url`` 为 null 是取消生成图的选用，这张图就没有图了。
  *
  * 两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。
  */
@@ -560,12 +560,14 @@ export const zFilmPromptTextOut = z.object({
  * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
  *
  * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
- * 用户给的图这两个都是 null。
+ * 用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法
+ * 同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。
  */
 export const zFilmFrameOut = z.object({
   aspectRatio: z.string().nullable(),
   kind: z.enum(['generated', 'photo']),
   label: z.string(),
+  missing: z.array(z.string()),
   node: z.string(),
   number: z.int().nullable(),
   prompt: z.array(z.union([zFilmPromptTextOut, zFilmPromptImageOut])).nullable(),

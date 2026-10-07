@@ -40,7 +40,7 @@ const job = (over: Partial<GenerationJob> = {}): GenerationJob =>
 
 type EditorPageProps = {
   initialKey?: string
-  onApply?: (previousUrl: string, url: string) => void
+  onApply?: (previousUrl: string | null, url: string | null) => void
   onClose?: (opened: ReadonlySet<string>) => void
 }
 
@@ -64,7 +64,8 @@ function EditorPage({ initialKey, onApply, onClose }: EditorPageProps) {
           }}
           onApply={async (previous, url) => {
             onApply?.(previous, url)
-            setFrames([url, FRAME_2])
+            // 分镜页的帧总有图，替换与撤销两头都是地址。
+            if (url !== null) setFrames([url, FRAME_2])
           }}
         />
       )}

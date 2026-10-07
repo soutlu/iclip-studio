@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
 
 import httpx
 import pytest
@@ -111,11 +110,6 @@ class FakeNodeImages:
             self._jobs[job_id] = (request, left - 1)
             return NodeImageJob(job_id, "submitted")
         return self._settled(job_id, request)
-
-    async def latest(
-        self, principal: Principal, conversation_id: str, nodes: Sequence[str]
-    ) -> Mapping[str, str]:
-        return {}
 
     async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
         return url in self.known
@@ -368,7 +362,7 @@ async def test_listed_nodes_get_one_image_each_and_become_conversation_material(
     assert ledger.urls(NAMESPACE) >= set(made), "生成出来的图登记成对话素材，后面的工具才认"
 
 
-async def test_an_image_that_uses_another_listed_image_waits_for_it(
+async def test_images_generated_in_the_same_call_do_not_use_each_other(
     files: FakeFileStore,
     ledger: FakeMaterialLedger,
     images: FakeNodeImages,
@@ -383,13 +377,13 @@ async def test_an_image_that_uses_another_listed_image_waits_for_it(
         "镜01机位图",
         "镜02机位图",
     ]
-    person, first_view = images.url_of("短发女生参考图"), images.url_of("镜01机位图")
-    assert images.requests[1].reference_image_urls == (person, *PHOTOS)
-    assert images.requests[2].reference_image_urls == (person, *PHOTOS, first_view)
-    assert "跑道和光线与同一场戏的上一个机位保持一致，参考@Image4。" in images.requests[2].prompt
-    # 公园跑道参考图没有列进来，也没生成过：机位图里这个元素只用文字，结果里说明。
-    assert "镜01机位图：已生成" in text_of(result)
-    assert "公园跑道参考图 还没有图，这次只用了文字" in text_of(result)
+    # 生成出来的要选用才算有图：同一次里先出的人物图和镜01，镜02 也只用文字写。
+    assert images.requests[1].reference_image_urls == PHOTOS
+    assert images.requests[2].reference_image_urls == PHOTOS
+    assert "跑道和光线与同一场戏的上一个机位保持一致" not in images.requests[2].prompt
+    lines = text_of(result).splitlines()
+    assert lines[3].startswith("镜02机位图：已生成")
+    assert "公园跑道参考图、短发女生参考图、镜01机位图 还没有图，这次只用了文字" in lines[3]
 
 
 async def test_a_node_with_a_selection_in_the_run_file_is_not_generated(

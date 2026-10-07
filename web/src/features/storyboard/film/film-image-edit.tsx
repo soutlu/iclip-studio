@@ -1,6 +1,7 @@
 /** 制作页上挂分镜页的图片编辑器：开在工程里的一张图上，版本条列这张图的全部生成与编辑（`film_node`），
- * 「替换这张图」与撤销都是给这张图换地址，用到它的地方一起换。按描述生成的图版本条末尾有「再生成」：
- * 输入卡装着这张图的描述，改过的只用这一次。关掉后焦点回到点开它的地方。 */
+ * 选中一版点「选用这张」就是选用它，撤销回到上一个选用（或回到没有图），用到它的地方一起换。没选用的生成图
+ * 也能打开，这时没有「在用」那一格。按描述生成的图版本条末尾有「再生成」：输入卡装着这张图的描述，改过的只用
+ * 这一次。关掉后焦点回到点开它的地方。 */
 
 import { FrameImageEditor } from '../image-edit/frame-image-editor'
 import type { GenerationJob } from '../storyboard.api'
@@ -25,8 +26,8 @@ type FilmImageEditProps = {
   /** 这张图最新的那条图片任务；关掉时它若点开看过，交回去标成看过。 */
   latestJob: GenerationJob | undefined
   onClose: (seen: GenerationJob | undefined) => void
-  /** 把这张图从 `previousUrl` 换成 `url`；这张图已经不是 `previousUrl` 时拒绝。 */
-  onApply: (previousUrl: string, url: string) => Promise<void>
+  /** 把这张图从 `previousUrl` 换成 `url`；这张图已经不是 `previousUrl` 时拒绝。null 是没有选用。 */
+  onApply: (previousUrl: string | null, url: string | null) => Promise<void>
   /** 按描述再生成一张；`prompt` 是改过的描述，没改过不给。失败抛出给人看的原因。 */
   onRegenerate: (
     prompt: { text: string; referenceImageUrls: string[] } | undefined,
@@ -55,7 +56,7 @@ export function FilmImageEdit({
   return (
     <FrameImageEditor
       aspectRatio={frame?.aspectRatio ?? group.aspectRatio}
-      currentUrl={frame?.url ?? undefined}
+      currentUrl={frame === undefined ? undefined : frame.url}
       frames={numbered}
       initialKey={session.initialKey}
       key={session.node}

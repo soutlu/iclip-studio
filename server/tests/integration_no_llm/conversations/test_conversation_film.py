@@ -78,8 +78,11 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         "url": "https://cdn.test/b-fixed.png",
         "number": 1,
         "aspectRatio": "3:4",
+        "missing": [],
     }
     assert first["prompt"][0]["text"].startswith("拍摄：\n画面是用手机实拍的")
+    second_view = group["frames"][5]
+    assert (second_view["node"], second_view["missing"]) == ("镜02机位图", ["公园跑道"])
     shoe_setting = group["settings"][2]
     assert (shoe_setting["label"], shoe_setting["images"]) == (
         "产品 网面跑鞋",

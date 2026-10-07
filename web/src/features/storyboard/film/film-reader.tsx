@@ -3,7 +3,8 @@
  * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
  * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
  * 出片、换图、生图都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅照文件，只显示。
- * 有图的那张能开图片编辑器（`FilmImageEdit`），编辑与重新生成的结果在舞台上挂「有新结果」，点开就是那条。 */
+ * 生成的图不会自动用上：生成卡或编辑器里点「选用这张」才写进运行文件。出片栏的状态行提醒这组挂的生成图里哪几张还没图。
+ * 在用或生成过的那张能开图片编辑器（`FilmImageEdit`），编辑与重新生成的结果在舞台上挂「有新结果」，点开就是那条。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
@@ -48,6 +49,8 @@ import {
   contentOfFrame,
   filmGroupSummary,
   filmGroupText,
+  groupMissingLabels,
+  missingReferencesText,
   resolveFilmSelection,
   segmentFrames,
 } from './film-content'
@@ -106,8 +109,12 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
       : takesOfShot(generations.data, group.index, group.aspectRatio)
   // 选中的成片不在本组列表里了就回到图。
   const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
-  // 按描述生图：正在提交的那张，与提交失败的原话（挨着按钮说，不弹全局提示）。
-  const [imageSubmit, setImageSubmit] = useState<{ node: string; error?: string } | null>(null)
+  // 生成卡上的提交：哪张图、在生成还是在选用，与没被收下的原话（挨着按钮说，不弹全局提示）。
+  const [cardAction, setCardAction] = useState<{
+    node: string
+    kind: 'generate' | 'choose'
+    error?: string
+  } | null>(null)
 
   /** 先存改了的字，按存好的那一版发；没存下就不发。 */
   const savedFilm = async () => {
@@ -115,8 +122,8 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     if (saved === null) throw new UserFacingError('改的字还没存下，先处理好再继续')
     return saved
   }
-  /** 给一张图换地址：先存改了的字，按存好的那一版换，答复的整页直接放进缓存。 */
-  const applyImage = async (node: string, url: string) => {
+  /** 给一张图换地址（null 是取消生成图的选用）：先存改了的字，按存好的那一版换，答复的整页直接放进缓存。 */
+  const applyImage = async (node: string, url: string | null) => {
     const saved = await savedFilm()
     const changed = await chooseFilmImage(conversationId, {
       filmVersion: saved.filmVersion,
@@ -136,8 +143,8 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const [imageEdit, setImageEdit] = useState<FilmEditSession | null>(null)
   const [seenImageJobs, setSeenImageJobs] = useState<ReadonlySet<string>>(() => new Set())
   const latestImageJob = (node: string) => latestNodeImageJob(imageJobs.data?.items ?? [], node)
-  /** 编辑器里替换与撤销：这张图此刻已经不是 `previous` 了（别人刚换过）就不换，免得盖掉。 */
-  const applyEdited = async (node: string, previous: string, url: string) => {
+  /** 编辑器里选用与撤销：这张图此刻已经不是 `previous` 了（别人刚换过）就不换，免得盖掉。null 是没有选用。 */
+  const applyEdited = async (node: string, previous: string | null, url: string | null) => {
     const latest = queryClient.getQueryData<{ film: FilmView }>(filmQueryKey(conversationId))
     const current = latest?.film.groups
       .flatMap((item) => item.frames)
@@ -154,7 +161,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     return () => reportUploading(false)
   }, [replace.busy])
   const generateImage = async (target: FilmFrame) => {
-    setImageSubmit({ node: target.node })
+    setCardAction({ kind: 'generate', node: target.node })
     try {
       const saved = await savedFilm()
       await generateFilmImage(conversationId, {
@@ -163,9 +170,23 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
         runVersion: saved.runVersion,
       })
       await queryClient.invalidateQueries({ queryKey: imageEditConversationKey(conversationId) })
-      setImageSubmit(null)
+      setCardAction(null)
     } catch (error) {
-      setImageSubmit({ error: errorMessageOf(error, '生成提交失败'), node: target.node })
+      setCardAction({
+        error: errorMessageOf(error, '生成提交失败'),
+        kind: 'generate',
+        node: target.node,
+      })
+    }
+  }
+  /** 生成卡上「选用这张」：把那次生成出来的图登记进运行文件并选用，舞台换成它。 */
+  const chooseResult = async (target: FilmFrame, url: string) => {
+    setCardAction({ kind: 'choose', node: target.node })
+    try {
+      await applyImage(target.node, url)
+      setCardAction(null)
+    } catch (error) {
+      setCardAction({ error: errorMessageOf(error, '选用失败'), kind: 'choose', node: target.node })
     }
   }
 
@@ -273,6 +294,10 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
                   frame === undefined || frame.url === null
                     ? undefined
                     : frameBadgeOf(latestImageJob(frame.node), frame.url, seenImageJobs),
+                // 生成过没选用的也要能打开：版本条里选一版就是选用。
+                openable:
+                  frame !== undefined &&
+                  (frame.url !== null || latestImageJob(frame.node) !== undefined),
                 onEdit: (open) => {
                   if (frame === undefined) return
                   setImageEdit({
@@ -287,15 +312,19 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
               }}
               frame={selection.frame}
               generate={{
-                error: imageSubmit?.node === frame?.node ? imageSubmit?.error : undefined,
+                busy:
+                  cardAction === null || cardAction.error !== undefined ? null : cardAction.kind,
+                error: cardAction?.node === frame?.node ? cardAction?.error : undefined,
                 job:
                   frame === undefined
                     ? undefined
                     : latestNodeJob(imageJobs.data?.items ?? [], frame.node),
+                onChoose: (url) => {
+                  if (frame !== undefined) void chooseResult(frame, url)
+                },
                 onGenerate: () => {
                   if (frame !== undefined) void generateImage(frame)
                 },
-                submitting: imageSubmit !== null && imageSubmit.error === undefined,
               }}
               group={group}
               onOpen={(image) => setMedia({ kind: 'image', ...image })}
@@ -344,6 +373,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
         <VideoGenerationBar
           aspect={{ kind: 'fixed', value: group.aspectRatio }}
           blocker={generateBlocker}
+          hint={missingReferencesText(groupMissingLabels(group))}
           models={{ items: video.models, status: video.modelsStatus }}
           notice={generateNotice}
           onChange={video.setOptions}

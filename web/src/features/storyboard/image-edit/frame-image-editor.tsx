@@ -38,8 +38,9 @@ import './image-edit.css'
 
 type FrameImageEditorProps = {
   target: FrameEditTarget
-  /** 这张图此刻在用的那一版；已经不在分镜里时为空。随替换实时变，不记打开那一刻的。 */
-  currentUrl: string | undefined
+  /** 这张图此刻在用的那一版；已经不在分镜里时为 undefined，在分镜里但没有在用的（制作页没选用的生成图）为 null。
+   * 随替换实时变，不记打开那一刻的。 */
+  currentUrl: string | null | undefined
   /** 标题「编辑图片」后面的一句：分镜页写组与帧，制作页写图的名字。 */
   subtitle: string
   /** 输入卡里 `@` 与「+」能插的本组图片，下标加一是编号。 */
@@ -49,10 +50,11 @@ type FrameImageEditorProps = {
   initialKey?: string | undefined
   /** `opened` 是本次真正点开看过（看时已落定）的任务 id，只有它们可以标成看过。 */
   onClose: (opened: ReadonlySet<string>) => void
-  /** 把这一帧从 `previousUrl` 换成 `url`；替换与撤销都走它，这一帧已不是 `previousUrl` 时应当拒绝。 */
-  onApply: (previousUrl: string, url: string) => Promise<void>
+  /** 把这一帧从 `previousUrl` 换成 `url`；替换与撤销都走它，这一帧已不是 `previousUrl` 时应当拒绝。
+   * null 只出现在 `currentUrl` 可以为 null 的地方：从没有在用的图第一次选用，或撤销回没有在用的图。 */
+  onApply: (previousUrl: string | null, url: string | null) => Promise<void>
   /** 按描述再生成（制作页的生成图才有）：`parts` 是这张图的描述，参考图是图片；`submit` 收输入卡里的样子，
-   * 失败时抛出给人看的原因。新的出来进版本条，替换才用上。 */
+   * 失败时抛出给人看的原因。新的出来进版本条，选用才用上。 */
   regenerate?:
     | {
         parts: readonly EditDraftPart[]
@@ -106,7 +108,11 @@ export function FrameImageEditor({
   )
   const words = editorWordsOf(target)
   const frameReplace = useFrameReplace({ currentUrl, onApply })
-  const entries = useMemo(() => frameImageEntries(jobs, currentUrl ?? ''), [jobs, currentUrl])
+  // 图已经不在分镜里时舞台只说这一句，当前帧那一格空着。
+  const entries = useMemo(
+    () => frameImageEntries(jobs, currentUrl === undefined ? '' : currentUrl),
+    [jobs, currentUrl],
+  )
   // 选中的那条被折进当前帧格（刚替换过）或还没拉回来时，落回当前帧；撤销后它回到条里，舞台随之回到对比。
   const selected = entries.find((entry) => entry.key === selectedKey) ?? entries[0]
   const unseen = useUnseenResults(entries, selected)
@@ -117,7 +123,7 @@ export function FrameImageEditor({
     inFlight > 0
       ? `有 ${inFlight} 个任务在生成或排队，关掉窗口也会继续`
       : regenerating
-        ? '新的出来后在版本里，替换才用上'
+        ? '新的出来后在版本里，选用才用上'
         : selected?.kind === 'image'
           ? words.replaceNote
           : words.aspectNote(aspectRatio)
@@ -138,6 +144,10 @@ export function FrameImageEditor({
     }
     if (currentUrl === undefined) {
       setOperationError(words.gone)
+      return
+    }
+    if (baseUrl === '') {
+      setOperationError('还没有可以改的图，先在版本里选一张出了图的')
       return
     }
     if (model === undefined || resolution === undefined) {

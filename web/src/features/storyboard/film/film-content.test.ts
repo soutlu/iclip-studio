@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { FilmFrame, FilmGroup } from './film.api'
 import {
   contentOfFrame,
+  groupMissingLabels,
+  missingReferencesText,
   resolveFilmSelection,
   segmentFrames,
   settingText,
@@ -13,6 +15,7 @@ const frame = (node: string, number: number | null): FilmFrame => ({
   aspectRatio: '9:16',
   kind: 'generated',
   label: node,
+  missing: [],
   node,
   number,
   prompt: null,
@@ -98,6 +101,22 @@ describe('shotText', () => {
         parts: ['她走过来。', '然后停下。'],
       }),
     ).toBe('她走过来。旁白“一双就够了。”然后停下。')
+  })
+})
+
+describe('缺图提醒', () => {
+  it('几张没图的用顿号连，同名的只写一次；名字以数字结尾时空一格；一张都不缺就不提醒', () => {
+    expect(missingReferencesText(['短发女生'])).toBe('短发女生缺失，参考描述生成')
+    expect(missingReferencesText(['短发女生', '镜头 1', '短发女生'])).toBe(
+      '短发女生、镜头 1 缺失，参考描述生成',
+    )
+    expect(missingReferencesText([])).toBeUndefined()
+  })
+
+  it('一组出片缺的是没图的生成图，按先后；用户给的图不算', () => {
+    const photo: FilmFrame = { ...frame('p', null), kind: 'photo', url: null }
+    expect(groupMissingLabels({ ...group, frames: [...group.frames, photo] })).toEqual(['c'])
+    expect(groupMissingLabels({ ...group, frames: [frame('a', 1), photo] })).toEqual([])
   })
 })
 

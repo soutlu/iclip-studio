@@ -1,5 +1,5 @@
 /** 分镜工作台底部的出片栏：一排控件（最左是写回分镜的画幅，竖线隔开后是模型、分辨率、音频三项生成设置），
- * 加唯一的主色按钮出当前这一组；控件上方的状态行说明为什么不能出片或哪里有问题（暂态原因不显示，见 `generationStatusOf`）。
+ * 加唯一的主色按钮出当前这一组；控件上方的状态行说明为什么不能出片、哪里有问题，或给一句不拦出片的提醒（暂态原因不显示，见 `generationStatusOf`）。
  * 各档宽度下怎么排见 storyboard.css 的出片栏一节。 */
 
 import { useId, useRef } from 'react'
@@ -39,6 +39,8 @@ type VideoGenerationBarProps = {
   blocker: GenerationBlocker | undefined
   /** 出片栏要提醒的错误（上次提交失败的原话、画幅不被模型支持）；没被一直挡着时写在状态行上。 */
   notice: string | undefined
+  /** 不拦出片的提醒（制作页的缺图提醒）；没有置灰原因与错误时写在状态行上，灰字。 */
+  hint?: string | undefined
   submitting: boolean
   onGenerate: () => void
 }
@@ -46,6 +48,7 @@ type VideoGenerationBarProps = {
 export function VideoGenerationBar({
   aspect,
   blocker,
+  hint,
   models,
   notice,
   onChange,
@@ -61,7 +64,7 @@ export function VideoGenerationBar({
   const { fade } = useScrollFade(paramsRef)
   const statusId = useId()
   const hiddenReasonId = useId()
-  const { hiddenReason, line: status } = generationStatusOf(blocker, notice)
+  const { hiddenReason, line: status } = generationStatusOf(blocker, notice, hint)
 
   return (
     <div
@@ -160,7 +163,7 @@ export function VideoGenerationBar({
   )
 }
 
-/** 控件上方的状态行。错误用 alert 播报；置灰原因不播报，由主按钮的说明关联读出。 */
+/** 控件上方的状态行。错误用 alert 播报；置灰原因与提醒不播报，由主按钮的说明关联读出。 */
 function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLine }) {
   const error = status.tone === 'error'
   return (

@@ -26,7 +26,7 @@ export const FILM_PATH = 'film.icml'
 /** 运行文件：登记与选用的图片都在它里面，变了也要重读。 */
 export const FILM_RUN_PATH = 'film.icrun'
 
-/** 挂在本对话生成记录的前缀下：生成落定会换掉节点用的图，状态跳转帧到了跟着重拉。 */
+/** 挂在本对话生成记录的前缀下，状态跳转帧到了跟着重拉。 */
 export const filmQueryKey = (conversationId: string) =>
   [...storyboardQueryKeys.conversation(conversationId), 'film'] as const
 
@@ -75,7 +75,7 @@ export const generateFilmVideo = (conversationId: string, body: FilmVideoGenerat
     method: 'POST',
   })
 
-/** 给一张图换地址，答复换完的整页；`url` 是这段对话的图片或自己刚上传的图。 */
+/** 给一张图换地址，答复换完的整页；`url` 是这段对话的图片或自己刚上传的图，生成图的 `url` 为 null 是取消选用、没图。 */
 export const chooseFilmImage = async (
   conversationId: string,
   body: FilmImageChoiceIn,
@@ -92,7 +92,7 @@ export const chooseFilmImage = async (
   return envelope.film
 }
 
-/** 按描述给一张图出一张新的，答复 202 与任务号；结果落定后这张图换上（还没有图的）或进版本（已经有图的）。 */
+/** 按描述给一张图出一张新的，答复 202 与任务号；结果只进版本，不自动用上，要选用。 */
 export const generateFilmImage = (conversationId: string, body: FilmImageGenerationIn) =>
   apiFetch(`/conversations/${conversationId}/film/image-generations`, zFilmJobOut, {
     body,

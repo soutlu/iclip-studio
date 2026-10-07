@@ -65,9 +65,26 @@ export const resolveFilmSelection = (
   return { contentId, frame }
 }
 
-/** 「镜头 2 还没有图」「涂鸦滑板场还没有图」：名字以数字或字母结尾时空一格再接中文。 */
-export const missingImageText = (label: string): string =>
-  `${label}${/\w$/.test(label) ? ' ' : ''}还没有图`
+/** 名字后面接中文：以数字或字母结尾时空一格。 */
+const beforeChinese = (label: string): string => `${label}${/\w$/.test(label) ? ' ' : ''}`
+
+/** 「镜头 2 还没有图」「涂鸦滑板场还没有图」。 */
+export const missingImageText = (label: string): string => `${beforeChinese(label)}还没有图`
+
+/** 生成过、还没选用的那张生成卡的标题：「镜头 2 还没选用」。 */
+export const unselectedImageText = (label: string): string => `${beforeChinese(label)}还没选用`
+
+/** 缺图提醒：「短发女生、镜头 1 缺失，参考描述生成」，同名的只写一次；一张都不缺时为 undefined。 */
+export const missingReferencesText = (labels: readonly string[]): string | undefined => {
+  const names = [...new Set(labels)]
+  return names.length === 0 ? undefined : `${beforeChinese(names.join('、'))}缺失，参考描述生成`
+}
+
+/** 这组出片挂的生成图里现在没有图（没选用）的那几张的称呼，按 `frames` 的先后；用户给的图总有图，不在里面。 */
+export const groupMissingLabels = (group: FilmGroup): string[] =>
+  group.frames.flatMap((frame) =>
+    frame.kind === 'generated' && frame.url === null ? [frame.label] : [],
+  )
 
 /** 舞台标签与悬停预览用的名字：有编号写 @N，没有就写它的名字。 */
 export const frameTag = (frame: FilmFrame): string =>

@@ -1,4 +1,4 @@
-"""读两份文件并检查，再认文件里写的图片地址、查每个生图节点最近一次生成的图。
+"""读两份文件并检查，再认文件里写的图片地址。
 
 AI 导演的工具和制作页都从这里拿到同一个 ``Film``。"""
 
@@ -17,7 +17,7 @@ from iclip.platform.material_ledger.store import MaterialLedger
 class ConversationImages:
     """一段对话里的图片：素材台账里登记的，加上生成记录里这段对话的。
 
-    ``images`` 为 None 表示没开媒体生成，只认台账，也查不到最近生成的图。"""
+    ``images`` 为 None 表示没开媒体生成，只认台账。"""
 
     ledger: MaterialLedger
     namespace: str
@@ -57,11 +57,6 @@ async def load_film(
                 film.errors.append(document.errors[-1])
     if film.errors:
         return film.errors
-    if images.images is not None:
-        names = [node.attrs["id"] for node in film.image_nodes()]
-        film.generated.update(
-            await images.images.latest(images.principal, images.conversation_id, names)
-        )
     return film
 
 

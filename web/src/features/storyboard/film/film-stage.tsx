@@ -1,5 +1,6 @@
 /** 制作页的舞台：选了本组的一条成片就放它（与分镜页同一个成片舞台），否则显示这组用到的一张图，点画面看原图。
- * 左上写 @N（还没有编号的写它的名字），下面挂这张图最新图片任务的角标；右上「编辑」（有图才有）与「替换」；左右箭头与焦点在舞台里时的 ←/→ 按这组全部图的先后切，不画帧计数。
+ * 左上写 @N（还没有编号的写它的名字），有图时下面挂这张图最新图片任务的角标；右上「编辑」（这张图在用或生成过才有）与「替换」；
+ * 左右箭头与焦点在舞台里时的 ←/→ 按这组全部图的先后切，不画帧计数。
  * 换图三个入口同一条路（`useFilmReplace`）：「替换」选文件、拖到舞台上、点过舞台后粘贴；没图的那张也能换。
  * 还没有图的生成图是生成卡（`FilmGenerateCard`），没挂图的段写「这段没有图」。列宽随这组的画幅，见 storyboard.css 的布局一节。 */
 
@@ -17,7 +18,7 @@ import type { FrameBadge } from '../frame-status'
 import type { GenerationJob } from '../storyboard.api'
 import type { FilmGroup } from './film.api'
 import { frameTag, missingImageText } from './film-content'
-import { FilmGenerateCard } from './film-generate-card'
+import { FilmGenerateCard, type GenerateCardBusy } from './film-generate-card'
 import { FILM_EDIT_TRIGGER } from './film-image-edit'
 
 /** 换图要的：拖放区、粘贴、选文件，以及舞台上这张是不是正在换。 */
@@ -36,15 +37,18 @@ type FilmStageProps = {
   frame: number | undefined
   readOnly: boolean
   replace: StageReplace
-  /** 还没有图的那张：它最近一次生成的任务、是否正在提交、提交失败的原话与「生成这张」。 */
+  /** 还没有图的那张：它最近一次生成的任务、正在提交的那件事、提交失败的原话，与「生成这张」「选用这张」。 */
   generate: {
     job: GenerationJob | undefined
-    submitting: boolean
+    busy: GenerateCardBusy
     error: string | undefined
     onGenerate: () => void
+    onChoose: (url: string) => void
   }
-  /** 有图时的编辑入口：这张图最新那条图片任务的角标，与打开编辑器（先看底图，或从角标进先看那条结果）。 */
+  /** 编辑入口：能不能打开（这张图在用，或生成过），有图时这张图最新那条图片任务的角标，与打开编辑器
+   * （先看底图，或从角标进先看那条结果）。 */
   edit: {
+    openable: boolean
     badge: FrameBadge | undefined
     onEdit: (open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
   }
@@ -107,7 +111,7 @@ export function FilmStage({
               end={
                 frame === undefined || readOnly ? null : (
                   <>
-                    {url === null ? null : (
+                    {!edit.openable ? null : (
                       <StageAction
                         {...{ [FILM_EDIT_TRIGGER]: '' }}
                         disabled={replace.uploading}
@@ -152,14 +156,15 @@ export function FilmStage({
         {frame !== undefined && url === null && frame.kind === 'generated' ? (
           <div className="storyboard-hero">
             <FilmGenerateCard
+              busy={generate.busy}
               error={generate.error}
               frame={frame}
               group={group}
               job={generate.job}
+              onChoose={generate.onChoose}
               onEnlarge={(image, name) => onOpen({ name, url: image })}
               onGenerate={generate.onGenerate}
               readOnly={readOnly}
-              submitting={generate.submitting}
             />
           </div>
         ) : (
