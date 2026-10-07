@@ -13,48 +13,16 @@ import {
   type ComposerMention,
   type ComposerPart,
 } from '@/shared/ui/composer'
+import { draftPartsOf, imageSlotsOf } from '../edit-prompt'
 import { MAX_EDIT_REFERENCES } from '../generation-limits'
 import { AnnotationChipsProvider } from './annotation-chip'
 import { annotationNodeSpec, annotationPart, type AnnotationNode } from './annotation-node'
 import { EditAddPopover } from './edit-add-popover'
 import { editMentionItems, type EditMentionItem } from './edit-mention-items'
 import { EditMentionMenu } from './edit-mention-menu'
-import { MAX_PART_NAME } from './image-edit-draft'
 import type { EditDraftPart, EditFrame, ImageAnnotation } from './image-edit-types'
 
 const NODES = [annotationNodeSpec]
-
-/** 正文里的一张图片：就绪的按地址认，上传中的还没有地址，按条目认。失败的不算，它提交不了。 */
-type ImageSlot = { key: string; url: string | undefined }
-
-const imageSlotsOf = (parts: readonly ComposerPart<AnnotationNode>[]): ImageSlot[] =>
-  parts.flatMap((part) =>
-    part.kind === 'media' && part.media.status !== 'error'
-      ? [{ key: part.media.url ?? part.media.attId, url: part.media.url }]
-      : [],
-  )
-
-/** 草稿只存就绪的部分；去掉没就绪的图片后相邻的文字并成一段。 */
-const draftPartsOf = (parts: readonly ComposerPart<AnnotationNode>[]): EditDraftPart[] => {
-  const result: EditDraftPart[] = []
-  const pushText = (text: string) => {
-    const previous = result.at(-1)
-    if (previous?.kind === 'text')
-      result[result.length - 1] = { kind: 'text', text: previous.text + text }
-    else result.push({ kind: 'text', text })
-  }
-  for (const part of parts) {
-    if (part.kind === 'text') pushText(part.text)
-    else if (part.kind === 'node') result.push({ kind: 'annotation', ...part.node.attrs })
-    else if (part.media.status === 'ready' && part.media.url !== undefined)
-      result.push({
-        kind: 'image',
-        name: part.media.name.slice(0, MAX_PART_NAME),
-        url: part.media.url,
-      })
-  }
-  return result
-}
 
 const imagePart = (url: string, name: string): ComposerPart<AnnotationNode> => ({
   kind: 'media',

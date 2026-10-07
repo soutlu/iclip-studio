@@ -67,7 +67,8 @@
   height: 18px;
 }
 
-.video-editor-timeline-ruler:focus-within {
+/* 滑块本身透明，键盘焦点环画在刻度区上；指针按住拿到的焦点不画（见 editor-timeline.tsx 的 data-pointer）。 */
+.video-editor-timeline-ruler:has(> .video-editor-timeline-seek:focus-visible:not([data-pointer])) {
   outline: var(--state-focus-ring) solid var(--color-focus-ring);
   outline-offset: var(--state-focus-offset);
 }

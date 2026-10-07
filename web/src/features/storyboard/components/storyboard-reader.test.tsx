@@ -673,7 +673,8 @@ describe('StoryboardReader', () => {
       serveTwoPages()
       await renderReader(`/?shot=1&content=scene:1&video=${editableJob.id}`)
 
-      expect(await screen.findByRole('button', { name: '编辑模型' })).toBeVisible()
+      const editor = await screen.findByRole('dialog', { name: /^编辑视频/ })
+      expect(await within(editor).findByRole('group', { name: '播放控件' })).toBeVisible()
       expect(screen.queryByText(/找不到这条视频记录/)).not.toBeInTheDocument()
     })
   })
@@ -2253,7 +2254,8 @@ describe('StoryboardReader', () => {
       await waitFor(() =>
         expect(router.state.location.search).toMatchObject({ video: editableJob.id }),
       )
-      expect(await screen.findByRole('button', { name: '编辑模型' })).toBeVisible()
+      const editor = await screen.findByRole('dialog', { name: /^编辑视频/ })
+      expect(await within(editor).findByRole('group', { name: '播放控件' })).toBeVisible()
     })
 
     it('在途的成片：舞台是骨架加走表，工具条只有 ⓘ 与回填；失败的成片：舞台写出完整原因，下载与编辑置灰说原因', async () => {

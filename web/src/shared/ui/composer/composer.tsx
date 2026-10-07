@@ -72,6 +72,8 @@ export type ComposerSubmitAction = {
   readonly icon: IconName
   /** primary 用主色（生成）；neutral 退为灰底，让位给页面上别处的主操作。 */
   readonly emphasis: 'primary' | 'neutral'
+  /** 使用方此刻不让提交（如所选的东西还不能交给 AI）：按钮灰着，回车也不提交；原因由使用方在别处说明。 */
+  readonly disabled?: boolean
 }
 
 type ComposerProps<N extends ComposerNode, Item> = {
@@ -185,7 +187,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
 
   /** 只有内容非空且引用附件全部就绪才可发送；编辑器经 ref 获取最新判定闭包。 */
   const canSendNow = () => {
-    if (sending || editor.empty) return false
+    if (sending || submitAction?.disabled === true || editor.empty) return false
     return !editor.attIds.some((attId) => attachments.entries.get(attId)?.status !== 'ready')
   }
 
