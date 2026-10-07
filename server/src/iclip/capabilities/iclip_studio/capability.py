@@ -308,7 +308,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                     NodeImageJob(
                         job.job_id,
                         "failed",
-                        error_message="等超时了；它可能还在后台跑，稍后用 check_film 看这个节点有没有图",
+                        error_message="等超时了；它可能还在后台跑，告诉用户稍后到制作页上看这张图",
                     ),
                     missing,
                 )

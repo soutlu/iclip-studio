@@ -81,8 +81,6 @@ class FakeNodeImages:
         """节点名 → 受理时就被拒的原因。"""
         self.pending_polls = 0
         """出图先停在进行中几次查询，再给结论。"""
-        self.earlier: dict[str, str] = {}
-        """节点名 → 以前生成成功的图。"""
         self.known: set[str] = set()
         """生成记录里有的图片地址。"""
         self._jobs: dict[uuid.UUID, tuple[NodeImageRequest, int]] = {}
@@ -117,7 +115,7 @@ class FakeNodeImages:
     async def latest(
         self, principal: Principal, conversation_id: str, nodes: Sequence[str]
     ) -> Mapping[str, str]:
-        return {node: url for node, url in self.earlier.items() if node in nodes}
+        return {}
 
     async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
         return url in self.known
