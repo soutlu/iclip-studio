@@ -1,12 +1,22 @@
 """检查工程文件和运行文件。
 
-分四步，前一步有问题就不做后一步：按包声明读工程文件；内容规则；运行文件；按「写了的图全部
-已生成」算提示词字数、参考图张数和时长。问题带文件名和行号，改对一处就少一条。"""
+分四步，前一步有问题就不做后一步：按包声明读工程文件；内容规则（剧本、模板与填槽、生成节点和
+参考图、镜头和台词、视频）；运行文件；按「写了的图全部已生成」算提示词字数和参考图张数。问题
+带文件名和行号，改对一处就少一条。"""
 
 from __future__ import annotations
 
+import math
+
 from iclip.capabilities.iclip_studio.film.document import Document, load
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
+from iclip.capabilities.iclip_studio.film.kits import (
+    KITS,
+    PICTURE_KIT,
+    VIDEO_ELEMENT_SLOTS,
+    VIDEO_KIT,
+    VIDEO_SHOTS_SLOT,
+)
 from iclip.capabilities.iclip_studio.film.markup import MarkupError, Node
 from iclip.capabilities.iclip_studio.film.packages import (
     IMAGE,
@@ -17,19 +27,23 @@ from iclip.capabilities.iclip_studio.film.packages import (
     RUN_PACKAGES,
     RUN_ROOT,
     RUN_TAGS,
+    SCRIPT_TAG,
     SEEDANCE_VARIANTS,
 )
 from iclip.capabilities.iclip_studio.film.prompts import (
-    BODY_PHRASE,
     LINE_REFERENCE,
-    PICTURE_BLOCKS,
-    STORYBOARD_BLOCK,
+    element_names,
+    is_kit,
+    references,
     render_picture,
-    render_storyboard,
+    render_video,
+    slot_values,
+    video_shots,
 )
+from iclip.capabilities.iclip_studio.film.script import read_script
 from iclip.common.shot_prompt import format_shot_prompt
 
-_ASSUMED = "（假设）"
+_IMAGE_MARK = "@Image"
 
 
 def check(project_source: str, run_source: str | None = None) -> Film | list[str]:
@@ -43,12 +57,11 @@ def check(project_source: str, run_source: str | None = None) -> Film | list[str
     film = Film(project, errors=project.errors)
     if film.errors:
         return film
-    _check_content(film)
+    _check_content(film, project_source)
     if run_source is not None and not film.errors:
         _check_run(film, run_source)
     if not film.errors:
         _check_limits(film)
-        _hint_split_images(film)
     return film
 
 
@@ -61,6 +74,7 @@ def load_project(source: str) -> Document:
         using=PROJECT_MARKUP,
         root_tag=PROJECT_ROOT,
         packages=PROJECT_PACKAGES,
+        kits=KITS,
     )
 
 
@@ -94,7 +108,7 @@ def load_run(source: str) -> Document:
 
 
 def check_project_content(source: str) -> list[str]:
-    """只看工程文件自己：声明和内容规则。给人保存这个文件时用，那里拿不到另一个文件。"""
+    """只看工程文件自己：声明、内容规则和上限。给人保存这个文件时用，那里拿不到另一个文件。"""
 
     try:
         project = load_project(source)
@@ -102,7 +116,7 @@ def check_project_content(source: str) -> list[str]:
         return [f"{FILM_PATH} 第 {exc.line} 行：{exc.message}"]
     film = Film(project, errors=project.errors)
     if not film.errors:
-        _check_content(film)
+        _check_content(film, source)
     if not film.errors:
         _check_limits(film)
     return film.errors
@@ -117,112 +131,242 @@ def check_run_content(source: str) -> list[str]:
         return [f"{RUN_PATH} 第 {exc.line} 行：{exc.message}"]
 
 
-def _check_content(film: Film) -> None:
+def _check_content(film: Film, source: str) -> None:
+    """内容规则。剧本和填槽有问题时不往下查：镜头、参考图的规则都要先认得台词和槽。"""
+
+    _check_script(film, source)
+    _check_renders(film.project)
+    _check_image_marks(film)
+    if film.errors:
+        return
+    _check_generations(film.project)
+    if film.errors:
+        return
+    _check_shots(film)
+    _check_videos(film)
+
+
+def _check_script(film: Film, source: str) -> None:
     project = film.project
-    voices: dict[str, Node] = {}
-    for voice in project.find("Voice"):
-        role = voice.attrs["role"]
-        if role in voices:
-            project.error(voice, f"{role} 写了两个 Voice")
-        voices[role] = voice
-    lines = project.find("Line")
-    for line in lines:
-        if line.attrs["role"] not in voices:
-            project.error(line, f"说话人 {line.attrs['role']} 没有同名的 Voice")
-        if not line.text:
-            project.error(line, "台词是空的")
-    elements = {node.attrs["id"]: node for node in project.find("Element")}
-    for element in elements.values():
-        if element.text.endswith(_ASSUMED):
-            project.error(element, f"辨识特征末尾的「{_ASSUMED}」不抄进来")
-        if element.attrs["type"] == "人物" and BODY_PHRASE not in element.text:
-            project.error(element, f"人物的身材要写成一句英文，后半句是 {BODY_PHRASE}")
-    for holder in project.find("Picture") + project.find("Storyboard"):
-        cast = [node.reference("element") for node in project.kids(holder, "Cast")]
-        if len(set(cast)) != len(cast):
-            project.error(holder, "同一个出场元素只 Cast 一次")
-        for reference in project.kids(holder, "Reference"):
-            if not reference.text:
-                project.error(reference, "Reference 的正文要写这张图用来做什么")
-    for picture in project.find("Picture"):
-        _check_picture(film, picture, elements)
-    line_ids = [line.attrs["id"] for line in lines]
-    said: list[str] = []
-    for storyboard in project.find("Storyboard"):
-        said += _check_storyboard(film, storyboard, elements, line_ids)
-    if not film.errors and said != line_ids:
-        missing = [name for name in line_ids if name not in said]
-        repeated = sorted({name for name in said if said.count(name) > 1})
-        if missing:
-            film.errors.append(f"{FILM_PATH}：台词 {'、'.join(missing)} 没有被任何镜头引用")
-        elif repeated:
-            film.errors.append(f"{FILM_PATH}：台词 {'、'.join(repeated)} 被引用了不止一次")
-        else:
-            film.errors.append(f"{FILM_PATH}：镜头里台词的先后和 Script 里的顺序不一致")
+    scripts = project.find(SCRIPT_TAG)
+    for extra in scripts[1:]:
+        project.error(extra, "一个文件最多写一份剧本")
+    if not scripts or scripts[0].inner is None:
+        return
+    lines, problems = read_script(source, *scripts[0].inner)
+    for line, message in problems:
+        project.error_at(line, message)
+    film.lines = {line.name: line for line in lines}
 
 
-def _check_picture(film: Film, picture: Node, elements: dict[str, Node]) -> None:
-    project = film.project
-    blocks = [block.attrs["name"] for block in project.kids(picture, "Block")]
-    for name in dict.fromkeys(blocks):
-        if name == "主体":
-            project.error(picture, "「主体」从 Cast 的出场元素取，不用写")
-        elif name not in PICTURE_BLOCKS:
-            project.error(picture, f"Picture 没有「{name}」这一块")
-        elif blocks.count(name) > 1:
-            project.error(picture, f"「{name}」一块只写一次")
-    for required in ("拍摄", "取景"):
-        if required not in blocks:
-            project.error(picture, f"缺「{required}」一块")
-    has_scene = any(
-        elements[name].attrs["type"] == "场景"
-        for cast in project.kids(picture, "Cast")
-        if (name := cast.reference("element")) in elements
-    )
-    if "环境" not in blocks and not has_scene:
-        project.error(picture, "没有 Cast 场景时，要写「环境」一块")
+def _check_renders(project: Document) -> None:
+    """模板与填槽：槽名在模板里，一个槽先 Set 一次再 Append，必填的槽要填；槽里填 text:Value，
+    多镜头视频模板的「镜头」槽 Set 一个 film:Shots；同一段文字在一个 Render 里只填一次。"""
 
-
-def _check_storyboard(
-    film: Film, storyboard: Node, elements: dict[str, Node], line_ids: list[str]
-) -> list[str]:
-    """查一个 Storyboard，返回它的镜头按先后引用的台词名。"""
-
-    project = film.project
-    cast = [node.reference("element") for node in project.kids(storyboard, "Cast")]
-    if [block.attrs["name"] for block in project.kids(storyboard, "Block")] != [STORYBOARD_BLOCK]:
-        project.error(storyboard, f"Storyboard 只有「{STORYBOARD_BLOCK}」一块")
-    said: list[str] = []
-    cursor = 0.0
-    for order, shot in enumerate(project.kids(storyboard, "Shot")):
-        start, end = float(shot.attrs["start"]), float(shot.attrs["end"])
-        if start != cursor and order == 0:
-            project.error(shot, f"每个 Storyboard 的第一个镜头从 0.0 开始，写的是 {start:.1f}")
-        elif start != cursor:
-            project.error(shot, f"镜头从 {start:.1f} 开始，没接上上一个的结束 {cursor:.1f}")
-        if end <= start:
-            project.error(shot, "结束要晚于开始")
-        cursor = end
-        body = shot.text
-        if not LINE_REFERENCE.sub("", body).strip():
-            project.error(shot, "镜头正文是空的")
-        if "@Image" in body:
-            project.error(shot, "镜头正文里不写 @Image，编号由后端算")
-        for name in LINE_REFERENCE.findall(body):
-            if name not in line_ids:
-                project.error(shot, f"花括号里要写台词的名字，「{name[:20]}」不是台词的名字")
+    for render in project.find("Render"):
+        reference = render.reference("template")
+        assert reference is not None
+        kit = project.template(reference)
+        # opened 是 Set 过的槽；filled 是 Set 或 Append 过的槽，先 Append 后 Set 只报一处，
+        # 也不再算成必填没填。
+        opened: set[str] = set()
+        filled: set[str] = set()
+        used: set[str] = set()
+        for child in render.children:
+            is_set = project.is_a(child, "Set")
+            if not (is_set or project.is_a(child, "Append")):
                 continue
-            said.append(name)
-            role = project.nodes[name].attrs["role"]
-            if role in elements and role not in cast:
-                project.error(shot, f"说话的 {role} 没有 Cast")
-        # 长名字先查并从正文里拿掉：一个元素的名字包在另一个的名字里时，不把长的那个算成短的。
-        for name in sorted(elements, key=len, reverse=True):
-            if name in body:
-                if name not in cast:
-                    project.error(shot, f"镜头正文里出现了「{name}」，但没有 Cast")
-                body = body.replace(name, " ")
-    return said
+            slot = child.attrs["name"]
+            target = child.reference("text")
+            assert target is not None
+            if kit.slot(slot) is None:
+                names = "、".join(item.name for item in kit.slots)
+                project.error(child, f"模板 {kit.name} 没有「{slot}」这个槽，可以写 {names}")
+                continue
+            if is_set:
+                if slot in opened:
+                    project.error(child, f"「{slot}」槽只 Set 一次，后面的用 Append")
+                opened.add(slot)
+            elif slot not in opened:
+                project.error(child, f"「{slot}」槽要先 Set 再 Append")
+            filled.add(slot)
+            value = project.nodes[target]
+            if kit.name == VIDEO_KIT and slot == VIDEO_SHOTS_SLOT:
+                if not is_set:
+                    project.error(child, f"「{slot}」槽只 Set 一个 film:Shots，不 Append")
+                elif not project.is_a(value, "Shots"):
+                    project.error(child, f"「{slot}」槽要 Set 一个 film:Shots，{{{target}}} 不是")
+            elif not project.is_a(value, "Value"):
+                project.error(child, f"「{slot}」槽里填 text:Value，{{{target}}} 不是")
+            if target in used:
+                project.error(child, f"{{{target}}} 在这个 Render 里填了两次")
+            used.add(target)
+        for item in kit.slots:
+            if item.required and item.name not in filled:
+                project.error(render, f"模板 {kit.name} 的「{item.name}」槽必填，没有填")
+
+
+def _check_image_marks(film: Film) -> None:
+    """拼进提示词的文字里不写 ``@Image``：图的编号由后端算。"""
+
+    project = film.project
+    message = f"文字里不写 {_IMAGE_MARK}，图的编号由后端算"
+    for node in project.root.walk():
+        written = any(project.is_a(node, name) for name in ("Value", "Reference", "Shot"))
+        if written and _IMAGE_MARK in node.text:
+            project.error(node, message)
+    for line in film.lines.values():
+        if _IMAGE_MARK in line.text:
+            project.error_at(line.line, message)
+
+
+def _check_generations(project: Document) -> None:
+    """生成节点的 prompt 用哪种文字，下面挂的参考图写得对不对。"""
+
+    for node in _generation_nodes(project):
+        reference = node.reference("prompt")
+        assert reference is not None
+        prompt = project.nodes[reference]
+        listed = references(project, node)
+        if project.declared(node).output == ("image", IMAGE):
+            if project.is_a(prompt, "Value"):
+                if listed:
+                    project.error(node, "prompt 是一段 text:Value 时原样发给模型，下面不能挂参考图")
+                continue
+            if not is_kit(project, prompt, PICTURE_KIT):
+                project.error(
+                    node,
+                    f"生图的 prompt 要写画面模板（{PICTURE_KIT}）的 text:Render，或一段 text:Value",
+                )
+                continue
+            filled = slot_values(project, prompt).values()
+            where = "这个生成节点提示词的槽里"
+        else:
+            if not is_kit(project, prompt, VIDEO_KIT):
+                project.error(
+                    node, f"视频的 prompt 要写多镜头视频模板（{VIDEO_KIT}）的 text:Render"
+                )
+                continue
+            values = slot_values(project, prompt)
+            filled = [values[slot] for slot in VIDEO_ELEMENT_SLOTS]
+            where = "这次视频提示词的人物、产品、场景槽里"
+        allowed = {value.attrs["id"] for slot in filled for value in slot}
+        seen: set[str] = set()
+        for item in listed:
+            image = item.reference("image")
+            assert image is not None
+            if image in seen:
+                project.error(item, f"{{{image}}} 在这个生成节点下列了两次")
+            seen.add(image)
+            target = item.reference("for")
+            if target is None:
+                if not item.text:
+                    project.error(item, "没写 for 的参考图要在正文里写一句用途")
+                continue
+            if item.has_text:
+                project.error(item, "写了 for 的参考图不写正文")
+            if not project.is_a(project.nodes[target], "Value"):
+                project.error(item, f"for 要指一段 text:Value，{{{target}}} 不是")
+            elif target not in allowed:
+                project.error(item, f"{{{target}}} 要填在{where}")
+
+
+def _check_shots(film: Film) -> None:
+    """镜头的时间、正文里的台词和出场元素，以及剧本里每句台词正好引用一次、先后一致。"""
+
+    project = film.project
+    holders: dict[Node, list[Node]] = {}
+    for render in project.find("Render"):
+        if is_kit(project, render, VIDEO_KIT):
+            for shots in slot_values(project, render)[VIDEO_SHOTS_SLOT]:
+                holders.setdefault(shots, []).append(render)
+    elements = sorted(element_names(project), key=len, reverse=True)
+    said: list[str] = []
+    for shots in project.find("Shots"):
+        renders = holders.get(shots, [])
+        if len(renders) != 1:
+            project.error(
+                shots,
+                f"film:Shots {shots.attrs['id']} 要正好填进一个视频提示词的「{VIDEO_SHOTS_SLOT}」槽，"
+                f"现在填进了 {len(renders)} 个",
+            )
+        cast = None
+        if len(renders) == 1:
+            filled = slot_values(project, renders[0])
+            cast = {value.attrs["id"] for slot in VIDEO_ELEMENT_SLOTS for value in filled[slot]}
+        cursor = 0.0
+        for order, shot in enumerate(project.kids(shots, "Shot")):
+            start, end = float(shot.attrs["start"]), float(shot.attrs["end"])
+            if start != cursor and order == 0:
+                project.error(shot, f"每组镜头的第一个从 0.0 开始，写的是 {start:.1f}")
+            elif start != cursor:
+                project.error(shot, f"镜头从 {start:.1f} 开始，没接上上一个的结束 {cursor:.1f}")
+            if end <= start:
+                project.error(shot, "结束要晚于开始")
+            cursor = end
+            body = shot.text
+            if not LINE_REFERENCE.sub("", body).strip():
+                project.error(shot, "镜头正文是空的")
+            for name in LINE_REFERENCE.findall(body):
+                if name not in film.lines:
+                    project.error(shot, f"花括号里要写剧本里的段名，「{name[:20]}」不是")
+                elif name in said:
+                    project.error(shot, f"台词 {name} 在前面的镜头里已经引用过")
+                else:
+                    said.append(name)
+            if cast is None:
+                continue
+            # 长名字先查并从正文里拿掉：一个元素的名字包在另一个的名字里时，不把长的那个算成短的。
+            for name in elements:
+                if name in body:
+                    if name not in cast:
+                        project.error(
+                            shot,
+                            f"镜头正文里出现了「{name}」，它要填在这次视频提示词的人物、产品、场景槽里",
+                        )
+                    body = body.replace(name, " ")
+    for name, line in film.lines.items():
+        if name not in said:
+            project.error_at(line.line, f"台词 {name} 没有被任何镜头引用")
+    if not film.errors and said != list(film.lines):
+        film.errors.append(f"{FILM_PATH}：镜头里台词的先后和剧本里的不一样")
+
+
+def _check_videos(film: Film) -> None:
+    """时长等于这组镜头的时长并在模型的范围内；机位图与视频同画幅；所有视频同画幅。"""
+
+    project = film.project
+    first: Node | None = None
+    for video in _generation_nodes(project):
+        if project.declared(video).output == ("image", IMAGE):
+            continue
+        shots = project.kids(video_shots(project, video), "Shot")
+        seconds = math.ceil(float(shots[-1].attrs["end"]))
+        _, shortest, longest = SEEDANCE_VARIANTS[video.attrs["model"]]
+        duration = int(video.attrs["duration"])
+        if duration != seconds:
+            project.error(video, f"duration 写的是 {duration}，这组镜头是 {seconds} 秒")
+        if not shortest <= duration <= longest:
+            project.error(video, f"model {video.attrs['model']} 的时长是 {shortest}–{longest} 秒")
+        aspect = video.attrs["aspect-ratio"]
+        if first is None:
+            first = video
+        elif first.attrs["aspect-ratio"] != aspect:
+            project.error(
+                video,
+                f"画幅是 {aspect}，前面的视频 {first.attrs['id']} 是 "
+                f"{first.attrs['aspect-ratio']}；一个文件里所有视频的画幅要相同",
+            )
+        for shot in shots:
+            reference = shot.reference("view")
+            if reference is None:
+                continue
+            view = project.nodes[reference.partition(".")[0]]
+            view_aspect = view.attrs.get("aspect-ratio")
+            if view_aspect is not None and view_aspect != aspect:
+                project.error(
+                    shot, f"机位图 {view.attrs['id']} 的画幅是 {view_aspect}，视频是 {aspect}"
+                )
 
 
 def _check_run(film: Film, source: str) -> None:
@@ -257,71 +401,31 @@ def _check_run(film: Film, source: str) -> None:
 
 
 def _check_limits(film: Film) -> None:
+    """按「写了的图全部已生成」算：提示词字数和参考图张数不超过模型的上限。"""
+
     project = film.project
-    aspects: set[str] = set()
-    for node in project.root.walk():
-        tag = project.tags.get(node.tag)
-        if tag is None or tag.generation is None:
-            continue
-        reference = node.reference("prompt")
-        assert reference is not None
-        prompt = project.nodes[reference]
-        is_image = tag.output == ("image", IMAGE)
-        wanted = "Picture" if is_image else "Storyboard"
-        if not project.is_a(prompt, wanted):
-            project.error(node, f"{node.tag} 的 prompt 要写 {wanted} 的名字")
-            continue
-        if is_image:
-            picture = render_picture(film, prompt, assume_generated=True)
+    for node in _generation_nodes(project):
+        tag = project.declared(node)
+        assert tag.generation is not None
+        if tag.output == ("image", IMAGE):
+            picture = render_picture(film, node, assume_generated=True)
             text, image_count = picture.text, len(picture.image_urls)
         else:
-            group = render_storyboard(film, prompt, assume_generated=True)
+            group = render_video(film, node, assume_generated=True)
             text, image_count = format_shot_prompt(group), len(group.image_urls)
-            aspects.add(node.attrs["aspect-ratio"])
-            _check_video(film, node, prompt, group.seconds)
         limits = tag.generation
         if len(text) > limits.max_prompt_chars:
             project.error(node, f"拼出的提示词有 {len(text)} 字，超过 {limits.max_prompt_chars} 字")
         if image_count > limits.max_references:
             project.error(node, f"参考图有 {image_count} 张，超过 {limits.max_references} 张")
-    if len(aspects) > 1:
-        film.errors.append(f"{FILM_PATH}：一个文件里所有视频的画幅要相同")
 
 
-def _check_video(film: Film, video: Node, storyboard: Node, seconds: int) -> None:
-    project = film.project
-    _, shortest, longest = SEEDANCE_VARIANTS[video.attrs["model"]]
-    duration = int(video.attrs["duration"])
-    if duration != seconds:
-        project.error(video, f"duration 写的是 {duration}，这组镜头是 {seconds} 秒")
-    if not shortest <= duration <= longest:
-        project.error(video, f"model {video.attrs['model']} 的时长是 {shortest}–{longest} 秒")
-    aspect = video.attrs["aspect-ratio"]
-    for shot in project.kids(storyboard, "Shot"):
-        reference = shot.reference("view")
-        if reference is None:
-            continue
-        view = project.nodes[reference.partition(".")[0]]
-        view_aspect = view.attrs.get("aspect-ratio")
-        if view_aspect is not None and view_aspect != aspect:
-            project.error(
-                shot, f"机位图 {view.attrs['id']} 的画幅是 {view_aspect}，视频是 {aspect}"
-            )
-
-
-def _hint_split_images(film: Film) -> None:
-    """同一个出场元素在不同的提示词里挂了不同的图：不算错，提醒一下。"""
-
-    project = film.project
-    bound: dict[str, set[str]] = {}
-    for holder in project.find("Picture") + project.find("Storyboard"):
-        for cast in project.kids(holder, "Cast"):
-            element, image = cast.reference("element"), cast.reference("image")
-            if element is not None and image is not None:
-                bound.setdefault(element, set()).add(image)
-    for name, images in bound.items():
-        if len(images) > 1:
-            film.hints.append(f"{name} 在不同的提示词里挂了不同的图：{'、'.join(sorted(images))}")
+def _generation_nodes(project: Document) -> list[Node]:
+    return [
+        node
+        for node in project.root.walk()
+        if (tag := project.tags.get(node.tag)) is not None and tag.generation is not None
+    ]
 
 
 __all__ = ["check", "check_project_content", "check_run_content", "load_project", "load_run"]

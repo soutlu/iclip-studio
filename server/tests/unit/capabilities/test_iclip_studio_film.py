@@ -40,12 +40,15 @@ from tests.helpers.film import (
     PERSON_FIRST,
     PERSON_FIXED,
     RUN,
-    SHOE_PHOTO,
+    SHOE_FRONT,
+    SHOE_SOLE,
     VIEW_ONE,
 )
 from tests.helpers.material_ledger import FakeMaterialLedger
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
+PHOTOS = (SHOE_FRONT, SHOE_SOLE)
+"""用户给的两张跑鞋照片。"""
 NAMESPACE = f"{USER}/thread-1"
 
 
@@ -206,11 +209,13 @@ async def test_a_passing_check_lists_which_image_each_node_uses(
     result = await tools.check_film(ctx)
 
     assert text_of(result).splitlines() == [
-        "检查通过：4 个生图节点，1 次视频请求。",
+        "检查通过：6 个生图节点，1 次视频请求。",
         "短发女生参考图：运行文件选用「短发女生修过手」",
         "公园跑道参考图：还没有图",
         "镜01机位图：运行文件选用「镜01第一版」",
         "镜02机位图：还没有图",
+        "镜03机位图：还没有图",
+        "镜04机位图：还没有图",
     ]
     assert result.metadata == {"chip": "通过"}
 
@@ -218,17 +223,15 @@ async def test_a_passing_check_lists_which_image_each_node_uses(
 async def test_problems_come_back_with_file_and_line(
     files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
 ) -> None:
-    broken = FILM.replace(
-        '<Element id="网面跑鞋" type="产品">', '<Element id="网面跑鞋" kind="产品">'
-    )
+    broken = FILM.replace('aspect-ratio="3:4" resolution="2k"', 'aspect-ratio="3:4" size="2k"')
     tools = await workspace(files, ledger, project=broken)
 
     result = await tools.check_film(ctx)
 
     head, *listed = text_of(result).splitlines()
     assert head == "检查没通过，共 2 处问题："
-    assert listed[0].startswith("film.icml 第 ") and "Element 没有属性 kind" in listed[0]
-    assert "Element 缺属性 type" in listed[1]
+    assert listed[0].startswith("film.icml 第 ") and "gpt:Image 没有属性 size" in listed[0]
+    assert "gpt:Image 缺属性 resolution" in listed[1]
     assert result.metadata == {"chip": "2 处问题"}
 
 
@@ -260,7 +263,7 @@ async def test_the_run_file_is_checked_together_with_the_project_file(
 async def test_an_address_from_outside_the_conversation_is_refused_without_echoing_it(
     files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
 ) -> None:
-    tools = await workspace(files, ledger, images=(SHOE_PHOTO, VIEW_ONE))
+    tools = await workspace(files, ledger, images=(*PHOTOS, VIEW_ONE))
 
     result = await tools.check_film(ctx)
 
@@ -276,12 +279,13 @@ async def test_an_address_from_outside_the_conversation_is_refused_without_echoi
 async def test_a_video_address_cannot_stand_in_for_an_image(
     files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
 ) -> None:
-    await ledger.record(NAMESPACE, [Material(url=SHOE_PHOTO, kind="video")])
+    await ledger.record(NAMESPACE, [Material(url=SHOE_FRONT, kind="video")])
     tools = await workspace(files, ledger, run=None)
 
     result = await tools.check_film(ctx)
 
-    assert "film.icml 第 16 行：src 不是这段对话里的图片" in text_of(result)
+    line = FILM.count("\n", 0, FILM.index('<media:Image id="跑鞋正面"')) + 1
+    assert f"film.icml 第 {line} 行：src 不是这段对话里的图片" in text_of(result)
 
 
 async def test_show_prints_the_assembled_prompt_of_one_node(
@@ -293,10 +297,14 @@ async def test_show_prints_the_assembled_prompt_of_one_node(
     video = text_of(await tools.check_film(ctx, show="全片"))
 
     assert "镜02机位图：画幅 9:16，分辨率 2k" in image
-    assert f"参考图：图1 = {PERSON_FIXED}、图2 = {SHOE_PHOTO}、图3 = {VIEW_ONE}" in image
-    assert "图3：同一场戏的上一个机位" in image
+    assert (
+        f"参考图：@Image1 = {PERSON_FIXED}、@Image2 = {SHOE_FRONT}、@Image3 = {SHOE_SOLE}、"
+        f"@Image4 = {VIEW_ONE}"
+    ) in image
+    assert "跑道和光线与同一场戏的上一个机位保持一致，参考@Image4。" in image
     assert "全片：15 秒，画幅 9:16" in video
-    assert f"@Image3 = {VIEW_ONE}" in video
+    assert f"@Image4 = {VIEW_ONE}" in video
+    assert "[0–2.5秒｜镜头1] 参考@Image4，开场" in video
     assert video.splitlines()[-1] == "不要生成字幕，不要生成背景音乐。"
 
 
@@ -305,7 +313,7 @@ async def test_show_must_name_a_generation_node(
 ) -> None:
     tools = await workspace(files, ledger)
 
-    with pytest.raises(ModelRetry, match="镜02机位图、全片"):
+    with pytest.raises(ModelRetry, match="镜04机位图、全片"):
         await tools.check_film(ctx, show="镜02机位图提示词")
 
 
@@ -342,7 +350,7 @@ async def test_an_image_edited_elsewhere_in_the_conversation_can_be_registered(
     # 分镜页的图片编辑出的图不进素材台账，但生成记录里有它。
     images.known = {PERSON_FIXED}
     tools = await workspace(
-        files, ledger, images=(SHOE_PHOTO, PERSON_FIRST, VIEW_ONE), generation=images
+        files, ledger, images=(*PHOTOS, PERSON_FIRST, VIEW_ONE), generation=images
     )
 
     assert text_of(await tools.check_film(ctx)).startswith("检查通过")
@@ -354,7 +362,7 @@ async def test_listed_nodes_get_one_image_each_and_become_conversation_material(
     images: FakeNodeImages,
     ctx: RunContext[object],
 ) -> None:
-    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+    tools = await workspace(files, ledger, run=None, images=PHOTOS, generation=images)
 
     result = await tools.generate_images(ctx, ["公园跑道参考图", "短发女生参考图"])
 
@@ -366,7 +374,7 @@ async def test_listed_nodes_get_one_image_each_and_become_conversation_material(
         "2k",
     )
     assert person.reference_image_urls == ()
-    assert person.prompt.startswith("画面是用手机实拍的") and "东亚女性" in person.prompt
+    assert person.prompt.startswith("拍摄：\n画面是用手机实拍的") and "东亚女性" in person.prompt
     assert (person.user_name, person.conversation_id) == ("logan", "thread-1")
     assert track.node == "公园跑道参考图"
     made = [images.url_of("短发女生参考图"), images.url_of("公园跑道参考图")]
@@ -391,7 +399,7 @@ async def test_an_image_that_uses_another_listed_image_waits_for_it(
     images: FakeNodeImages,
     ctx: RunContext[object],
 ) -> None:
-    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+    tools = await workspace(files, ledger, run=None, images=PHOTOS, generation=images)
 
     result = await tools.generate_images(ctx, ["镜02机位图", "镜01机位图", "短发女生参考图"])
 
@@ -401,9 +409,9 @@ async def test_an_image_that_uses_another_listed_image_waits_for_it(
         "镜02机位图",
     ]
     person, first_view = images.url_of("短发女生参考图"), images.url_of("镜01机位图")
-    assert images.requests[1].reference_image_urls == (person, SHOE_PHOTO)
-    assert images.requests[2].reference_image_urls == (person, SHOE_PHOTO, first_view)
-    assert "图3：同一场戏的上一个机位" in images.requests[2].prompt
+    assert images.requests[1].reference_image_urls == (person, *PHOTOS)
+    assert images.requests[2].reference_image_urls == (person, *PHOTOS, first_view)
+    assert "跑道和光线与同一场戏的上一个机位保持一致，参考@Image4。" in images.requests[2].prompt
     # 公园跑道参考图没有列进来，也没生成过：机位图里这个元素只用文字，结果里说明。
     assert "镜01机位图：已生成" in text_of(result)
     assert "公园跑道参考图 还没有图，这次只用了文字" in text_of(result)
@@ -435,7 +443,7 @@ async def test_one_failure_does_not_stop_the_others(
 ) -> None:
     images.failing = {"短发女生参考图": "上游报告生成失败"}
     images.rejecting = {"公园跑道参考图": "图片生成仅支持模型 nano_banana_pro"}
-    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+    tools = await workspace(files, ledger, run=None, images=PHOTOS, generation=images)
 
     result = await tools.generate_images(ctx, ["短发女生参考图", "公园跑道参考图", "镜01机位图"])
 
@@ -445,7 +453,7 @@ async def test_one_failure_does_not_stop_the_others(
     assert lines[2] == "公园跑道参考图：生成失败，请求被拒：图片生成仅支持模型 nano_banana_pro"
     assert lines[3].startswith("镜01机位图：已生成")
     assert "公园跑道参考图、短发女生参考图 还没有图，这次只用了文字" in lines[3]
-    assert ledger.urls(NAMESPACE) == {SHOE_PHOTO, images.url_of("镜01机位图")}
+    assert ledger.urls(NAMESPACE) == {*PHOTOS, images.url_of("镜01机位图")}
 
 
 async def test_generation_waits_for_a_job_that_is_still_running(
@@ -457,7 +465,7 @@ async def test_generation_waits_for_a_job_that_is_still_running(
 ) -> None:
     monkeypatch.setattr(studio, "IMAGE_POLL_SECONDS", 0.0)
     images.pending_polls = 2
-    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+    tools = await workspace(files, ledger, run=None, images=PHOTOS, generation=images)
 
     result = await tools.generate_images(ctx, ["公园跑道参考图"])
 
@@ -473,12 +481,12 @@ async def test_a_job_that_outlasts_the_wait_is_reported_and_left_running(
 ) -> None:
     monkeypatch.setattr(studio, "IMAGE_WAIT_SECONDS", 0.0)
     images.pending_polls = 5
-    tools = await workspace(files, ledger, run=None, images=(SHOE_PHOTO,), generation=images)
+    tools = await workspace(files, ledger, run=None, images=PHOTOS, generation=images)
 
     result = await tools.generate_images(ctx, ["公园跑道参考图"])
 
     assert "公园跑道参考图：生成失败，等超时了" in text_of(result)
-    assert ledger.urls(NAMESPACE) == {SHOE_PHOTO}
+    assert ledger.urls(NAMESPACE) == set(PHOTOS)
 
 
 @pytest.mark.parametrize(

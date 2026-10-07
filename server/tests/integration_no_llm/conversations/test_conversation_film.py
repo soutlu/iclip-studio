@@ -23,7 +23,7 @@ def say(version: int, text: str) -> dict[str, object]:
     """改第一个镜头里那句台词的请求体。"""
 
     line = {"target": "line:lighter", "text": text}
-    edit = {"target": "shot:全片分镜:1", "parts": FIRST_SHOT, "lines": [line]}
+    edit = {"target": "shot:全片镜头:1", "parts": FIRST_SHOT, "lines": [line]}
     return {"filmVersion": version, "edits": [edit]}
 
 
@@ -79,7 +79,12 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         "number": 1,
         "aspectRatio": "3:4",
     }
-    assert first["prompt"][0]["text"].startswith("画面是用手机实拍的")
+    assert first["prompt"][0]["text"].startswith("拍摄：\n画面是用手机实拍的")
+    shoe_setting = group["settings"][2]
+    assert (shoe_setting["label"], shoe_setting["images"]) == (
+        "产品 网面跑鞋",
+        ["跑鞋正面", "跑鞋鞋底"],
+    )
     shoe = group["frames"][1]
     assert (shoe["kind"], shoe["prompt"], shoe["aspectRatio"]) == ("photo", None, None)
     assert group["shots"][0]["lines"][0]["target"] == "line:lighter"
@@ -151,13 +156,13 @@ async def test_the_page_follows_the_workspace_file_permissions(
 async def test_malformed_page_requests_are_422(client: httpx.AsyncClient, pg_url: str) -> None:
     mine = await film_conversation(client, pg_url)
 
-    both = {"target": "shot:全片分镜:1", "text": "x", "parts": ["x"], "lines": []}
+    both = {"target": "shot:全片镜头:1", "text": "x", "parts": ["x"], "lines": []}
     bad_edit = await client.patch(
         f"{URL}/{mine}/film/text", json={"filmVersion": 1, "edits": [both]}
     )
     bad_url = await client.put(
         f"{URL}/{mine}/film/image",
-        json={"node": "跑鞋照片", "url": "ftp://x/y.png", "filmVersion": 1, "runVersion": 1},
+        json={"node": "跑鞋正面", "url": "ftp://x/y.png", "filmVersion": 1, "runVersion": 1},
     )
 
     assert (bad_edit.status_code, bad_url.status_code) == (422, 422)

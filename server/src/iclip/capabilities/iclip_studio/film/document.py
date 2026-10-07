@@ -9,8 +9,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final
 
+from iclip.capabilities.iclip_studio.film.kits import Kit
 from iclip.capabilities.iclip_studio.film.markup import MarkupError, Node, is_reference, parse
-from iclip.capabilities.iclip_studio.film.packages import Attr, Package, Tag, ValueType
+from iclip.capabilities.iclip_studio.film.packages import TEMPLATE, Attr, Package, Tag, ValueType
 
 _ID: Final = re.compile(r"[\w一-鿿][\w一-鿿-]*")
 _SECONDS: Final = re.compile(r"\d+\.\d")
@@ -31,31 +32,54 @@ class Document:
     packages: dict[str, Package]
     """文件里的写法（带前缀）→ 它来自哪个包；自带的标签不在里面。"""
 
+    kits: dict[str, Mapping[str, Kit]] = field(default_factory=dict[str, Mapping[str, Kit]])
+    """``source`` 引入的模板包：前缀 → 模板名 → 模板。"""
+
     nodes: dict[str, Node] = field(default_factory=dict[str, Node])
     errors: list[str] = field(default_factory=list[str])
 
     def error(self, node: Node, message: str) -> None:
-        self.errors.append(f"{self.label} 第 {node.line} 行：{message}")
+        self.error_at(node.line, message)
+
+    def error_at(self, line: int, message: str) -> None:
+        self.errors.append(f"{self.label} 第 {line} 行：{message}")
 
     def declared(self, node: Node) -> Tag:
         return self.tags[node.tag]
 
-    def is_a(self, node: Node, name: str) -> bool:
+    def is_a(self, node: Node, name: str, package: Package | None = None) -> bool:
+        """``node`` 是不是声明名为 ``name`` 的标签；给了 ``package`` 时还要来自这个包。"""
+
         tag = self.tags.get(node.tag)
-        return tag is not None and tag.name == name
+        if tag is None or tag.name != name:
+            return False
+        return package is None or self.packages.get(node.tag) is package
 
     def kids(self, node: Node, name: str) -> list[Node]:
         return [child for child in node.children if self.is_a(child, name)]
 
-    def find(self, name: str) -> list[Node]:
+    def find(self, name: str, package: Package | None = None) -> list[Node]:
         """全文件里声明名字是 ``name`` 的标签，按先后。"""
 
-        return [node for node in self.root.walk() if self.is_a(node, name)]
+        return [node for node in self.root.walk() if self.is_a(node, name, package)]
+
+    def template(self, reference: str) -> Kit:
+        """``{前缀.模板名}`` 指的模板；只用在读文件时已经查过类型的引用上。"""
+
+        prefix, _, name = reference.partition(".")
+        return self.kits[prefix][name]
 
     def type_of(self, reference: str, at: Node) -> ValueType | None:
         """``{引用}`` 的类型；没定义、写在引用它的地方之后、或输出路径不对时记一条问题并返回 None。"""
 
         name, _, path = reference.partition(".")
+        templates = self.kits.get(name)
+        if templates is not None:
+            if path not in templates:
+                listed = "、".join(f"{{{name}.{template}}}" for template in templates)
+                self.error(at, f"{{{reference}}} 不是模板包里的模板，可以写 {listed}")
+                return None
+            return TEMPLATE
         target = self.nodes.get(name)
         if target is None or target.line > at.line:
             self.error(at, f"{{{reference}}} 在这之前没有定义")
@@ -78,9 +102,12 @@ def load(
     using: str,
     root_tag: str,
     packages: Mapping[str, Package],
+    kits: Mapping[str, Mapping[str, Kit]] | None = None,
     builtins: tuple[Tag, ...] = (),
 ) -> Document:
-    """读一份文件并按声明检查；XML 本身读不通时抛 ``MarkupError``，其余问题记在返回值里。"""
+    """读一份文件并按声明检查；XML 本身读不通时抛 ``MarkupError``，其余问题记在返回值里。
+
+    ``kits`` 是能用 ``source`` 引入的模板包，不给就是一个也没有。"""
 
     chosen, root = parse(source, using=using)
     if chosen != using or root.tag != root_tag:
@@ -88,7 +115,7 @@ def load(
     document = Document(label, root, {tag.name: tag for tag in builtins}, {})
     for node in root.children:
         if node.tag == "import":
-            _import(document, node, packages)
+            _import(document, node, packages, kits or {})
     body_started = False
     for node in root.walk():
         if node is root:
@@ -108,14 +135,43 @@ def load(
     return document
 
 
-def _import(document: Document, node: Node, packages: Mapping[str, Package]) -> None:
-    package = packages.get(node.attrs.get("from", ""))
-    if package is None:
-        document.error(node, f"没有这个包：{node.attrs.get('from')}")
+def _import(
+    document: Document,
+    node: Node,
+    packages: Mapping[str, Package],
+    kits: Mapping[str, Mapping[str, Kit]],
+) -> None:
+    attrs = node.attrs
+    if ("from" in attrs) == ("source" in attrs):
+        document.error(node, "import 里 from 和 source 只写一个")
         return
-    prefix = f"{node.attrs['as']}:" if "as" in node.attrs else ""
+    prefix = attrs.get("as")
+    if prefix is not None and not _ID.fullmatch(prefix):
+        document.error(node, f"前缀 {prefix} 里有不能用的字符")
+        return
+    if "source" in attrs:
+        templates = kits.get(attrs["source"])
+        if templates is None:
+            document.error(node, f"没有这个模板包：{attrs['source']}")
+        elif prefix is None:
+            document.error(node, "用 source 引入的模板包要写 as")
+        elif prefix in document.kits:
+            document.error(node, f"前缀 {prefix} 和前面引入的模板包重名")
+        else:
+            document.kits[prefix] = templates
+        return
+    package = packages.get(attrs["from"])
+    if package is None:
+        document.error(node, f"没有这个包：{attrs['from']}")
+        return
+    if package.bare and prefix is not None:
+        document.error(node, f"{package.ref} 不写 as")
+        return
+    if not package.bare and prefix is None:
+        document.error(node, f"{package.ref} 要写 as，给它的标签起前缀")
+        return
     for tag in package.tags:
-        written = prefix + tag.name
+        written = tag.name if prefix is None else f"{prefix}:{tag.name}"
         if written in document.tags:
             document.error(node, f"标签 {written} 和前面引入的包重名")
         document.tags[written] = tag
@@ -144,7 +200,7 @@ def _check_node(document: Document, node: Node, tag: Tag) -> None:
         document.error(node, f"{node.tag} 不收正文")
     name = node.attrs.get("id")
     if name is not None:
-        if name in document.nodes:
+        if name in document.nodes or name in document.kits:
             document.error(node, f"名字 {name} 重复")
         document.nodes[name] = node
 

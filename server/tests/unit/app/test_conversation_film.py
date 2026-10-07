@@ -19,7 +19,15 @@ from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO, MAX_PROMPT_
 from iclip.domains.identity.models import Principal
 from iclip.platform.material_ledger.store import Material
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.film import FILM, GIVEN_IMAGES, PERSON_FIXED, RUN, SHOE_PHOTO, VIEW_ONE
+from tests.helpers.film import (
+    FILM,
+    GIVEN_IMAGES,
+    PERSON_FIXED,
+    RUN,
+    SHOE_FRONT,
+    SHOE_SOLE,
+    VIEW_ONE,
+)
 from tests.helpers.generation import (
     InMemoryGenerationRepository,
     film_image_service,
@@ -52,7 +60,7 @@ def say(text: str) -> FilmTextEdit:
     """把第一个镜头里那句台词改成 ``text``。"""
 
     return FilmTextEdit(
-        "shot:全片分镜:1",
+        "shot:全片镜头:1",
         parts=FIRST_SHOT,
         lines=(FilmLineEdit("line:lighter", text),),
     )
@@ -306,7 +314,7 @@ async def test_an_image_without_a_picture_is_generated_from_the_film_without_tou
         {FILM_NODE_KEY: "公园跑道参考图"},
     )
     assert job.request is not None and job.request.model_dump()["prompt"].startswith(
-        "画面是用手机实拍的"
+        "拍摄：\n画面是用手机实拍的"
     )
     assert job.conversation_id == CONVERSATION
     assert await made.content(RUN_PATH) == RUN
@@ -345,20 +353,20 @@ async def test_regenerating_an_image_that_is_already_chosen_leaves_the_run_file(
 
 async def test_a_description_edited_in_the_editor_is_used_once() -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-    edited = FilmImagePrompt("只要鞋，不要人。", (SHOE_PHOTO,))
+    edited = FilmImagePrompt("只要鞋，不要人。", (SHOE_FRONT,))
 
     job = made.submitted(await generate(made, "镜02机位图", prompt=edited))
 
     assert job.request is not None
     sent = job.request.model_dump()
-    assert (sent["prompt"], sent["reference_image_urls"]) == ("只要鞋，不要人。", [SHOE_PHOTO])
+    assert (sent["prompt"], sent["reference_image_urls"]) == ("只要鞋，不要人。", [SHOE_FRONT])
     assert await made.content(FILM_PATH) == FILM
 
 
 @pytest.mark.parametrize(
     ("node", "image_models", "message"),
     [
-        ("跑鞋照片", ("nano_banana_pro", "gpt-image-2.5"), "不能按描述生成"),
+        ("跑鞋正面", ("nano_banana_pro", "gpt-image-2.5"), "不能按描述生成"),
         ("短发女生", ("nano_banana_pro", "gpt-image-2.5"), "不能按描述生成"),
         ("公园跑道参考图", ("nano_banana_pro",), "生图模型还没接上"),
     ],
@@ -407,9 +415,9 @@ async def test_a_group_is_sent_as_its_shot_with_the_group_number() -> None:
     assert (job.kind, job.shot_index, job.metadata) == (KIND_VIDEO, 1, {FILM_NODE_KEY: "全片"})
     assert job.request is not None
     sent = job.request.model_dump()
-    assert sent["reference_image_urls"] == [PERSON_FIXED, SHOE_PHOTO, VIEW_ONE]
+    assert sent["reference_image_urls"] == [PERSON_FIXED, SHOE_FRONT, SHOE_SOLE, VIEW_ONE]
     assert (sent["seconds"], sent["aspect_ratio"], sent["resolution"]) == (15, "9:16", "720p")
-    assert sent["shot"]["timeline"][0]["prompt"].startswith("@Image3 的机位。开场")
+    assert sent["shot"]["timeline"][0]["prompt"].startswith("参考@Image4，开场")
     assert "{It's lighter than it looks.}" in sent["prompt"]
 
 

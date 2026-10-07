@@ -35,9 +35,7 @@ async def test_a_broken_run_file_is_refused() -> None:
 
 
 async def test_several_problems_are_counted_in_the_message() -> None:
-    broken = FILM.replace(
-        '<Element id="网面跑鞋" type="产品">', '<Element id="网面跑鞋" kind="产品">'
-    )
+    broken = FILM.replace('aspect-ratio="3:4" resolution="2k"', 'aspect-ratio="3:4" size="2k"')
 
     with pytest.raises(ValidationFailed, match="（共 2 处）"):
         await validate_film(USER, uuid.uuid4(), broken)

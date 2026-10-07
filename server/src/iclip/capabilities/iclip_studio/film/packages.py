@@ -1,7 +1,8 @@
 """包声明：每个包有哪些标签，标签收哪些属性和子标签，产出什么类型。
 
 检查按这份声明进行；文件里没有 import 的包，它的标签不认识。类型属于语言本身：模型包只认
-「提示词」和「图」，不依赖 director 包。加一个模型只加一个包。"""
+「文字」和「图」，三种文字（``text:Value``、``text:Render``、``film:Shots``）各自能填在哪里由
+内容检查限定。加一个模型只加一个包。模板包不在这里，见 ``kits``。"""
 
 from __future__ import annotations
 
@@ -9,14 +10,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final, Literal
 
-ValueType = Literal["文字", "图", "视频", "提示词", "出场元素", "台词"]
+ValueType = Literal["文字", "图", "视频", "模板"]
 
 TEXT: Final[ValueType] = "文字"
 IMAGE: Final[ValueType] = "图"
 VIDEO: Final[ValueType] = "视频"
-PROMPT: Final[ValueType] = "提示词"
-ELEMENT: Final[ValueType] = "出场元素"
-LINE: Final[ValueType] = "台词"
+TEMPLATE: Final[ValueType] = "模板"
 
 AttrKind = Literal["id", "literal", "enum", "int", "seconds", "ref"]
 
@@ -73,6 +72,9 @@ class Package:
     version: int
     tags: tuple[Tag, ...]
 
+    bare: bool = False
+    """不写 ``as``、标签不带前缀引入；只有剧本包这样引入，而且必须这样引入。"""
+
     @property
     def ref(self) -> str:
         return f"{self.name}@{self.version}"
@@ -106,10 +108,23 @@ SEEDANCE_VARIANTS: Final[Mapping[str, tuple[str, int, int]]] = {
 
 VIDEO_ASPECTS: Final = ("9:16", "16:9", "1:1", "4:3", "3:4", "21:9")
 
+SCRIPT_TAG: Final = "script"
+"""剧本的标签名：它的正文不按 XML 读，见 ``script``。"""
+
 TEXT_PACKAGE: Final = Package(
     "@iclip/text",
     1,
-    (Tag("Value", (Attr("id", "id"),), body=True, output=("", TEXT)),),
+    (
+        Tag("Value", (Attr("id", "id"),), body=True, output=("", TEXT)),
+        Tag(
+            "Render",
+            (Attr("id", "id"), Attr("template", "ref", type=TEMPLATE)),
+            {"Set": (0, None), "Append": (0, None)},
+            output=("", TEXT),
+        ),
+        Tag("Set", (Attr("name", "literal"), Attr("text", "ref", type=TEXT)), top=False),
+        Tag("Append", (Attr("name", "literal"), Attr("text", "ref", type=TEXT)), top=False),
+    ),
 )
 
 MEDIA_PACKAGE: Final = Package(
@@ -118,52 +133,18 @@ MEDIA_PACKAGE: Final = Package(
     (Tag("Image", (Attr("id", "id"), Attr("src", "literal")), output=("", IMAGE)),),
 )
 
+SCRIPT_PACKAGE: Final = Package(
+    "@iclip/script",
+    1,
+    (Tag(SCRIPT_TAG, (Attr("id", "id"),), body=True),),
+    bare=True,
+)
+
 DIRECTOR_PACKAGE: Final = Package(
     "@iclip/director",
-    1,
+    2,
     (
-        Tag(
-            "Element",
-            (Attr("id", "id"), Attr("type", "enum", values=("人物", "产品", "场景"))),
-            body=True,
-            output=("", ELEMENT),
-        ),
-        Tag("Voice", (Attr("role", "literal"),), body=True),
-        Tag("Script", children={"Line": (1, None)}),
-        Tag(
-            "Line",
-            (Attr("id", "id"), Attr("role", "literal")),
-            body=True,
-            output=("", LINE),
-            top=False,
-        ),
-        Tag(
-            "Picture",
-            (Attr("id", "id"),),
-            {"Cast": (0, None), "Reference": (0, None), "Block": (0, None)},
-            output=("", PROMPT),
-        ),
-        Tag(
-            "Storyboard",
-            (Attr("id", "id"),),
-            {"Cast": (0, None), "Reference": (0, None), "Block": (1, 1), "Shot": (1, None)},
-            output=("", PROMPT),
-        ),
-        Tag(
-            "Cast",
-            (
-                Attr("element", "ref", type=ELEMENT),
-                Attr("image", "ref", required=False, type=IMAGE),
-            ),
-            top=False,
-        ),
-        Tag("Reference", (Attr("image", "ref", type=IMAGE),), body=True, top=False),
-        Tag(
-            "Block",
-            (Attr("name", "literal"), Attr("text", "ref", required=False, type=TEXT)),
-            body=True,
-            top=False,
-        ),
+        Tag("Shots", (Attr("id", "id"),), {"Shot": (1, None)}, output=("", TEXT)),
         Tag(
             "Shot",
             (
@@ -185,12 +166,22 @@ GPT_IMAGE_PACKAGE: Final = Package(
             "Image",
             (
                 Attr("id", "id"),
-                Attr("prompt", "ref", type=PROMPT),
+                Attr("prompt", "ref", type=TEXT),
                 Attr("aspect-ratio", "enum", values=GPT_IMAGE_ASPECTS),
                 Attr("resolution", "enum", values=GPT_IMAGE_RESOLUTIONS),
             ),
+            {"Reference": (0, None)},
             output=("image", IMAGE),
             generation=Generation(GPT_IMAGE_MODEL, IMAGE_MAX_REFERENCES, PROMPT_MAX_CHARS),
+        ),
+        Tag(
+            "Reference",
+            (
+                Attr("image", "ref", type=IMAGE),
+                Attr("for", "ref", required=False, type=TEXT),
+            ),
+            body=True,
+            top=False,
         ),
     ),
 )
@@ -204,12 +195,19 @@ SEEDANCE_PACKAGE: Final = Package(
             (
                 Attr("id", "id"),
                 Attr("model", "enum", values=tuple(SEEDANCE_VARIANTS)),
-                Attr("prompt", "ref", type=PROMPT),
+                Attr("prompt", "ref", type=TEXT),
                 Attr("duration", "int"),
                 Attr("aspect-ratio", "enum", values=VIDEO_ASPECTS),
             ),
+            {"Reference": (0, None)},
             output=("video", VIDEO),
             generation=Generation("", VIDEO_MAX_REFERENCES, PROMPT_MAX_CHARS),
+        ),
+        # 视频的参考图都是元素的图：用途图在视频里没有地方放，镜头专用的图走 Shot 的 view。
+        Tag(
+            "Reference",
+            (Attr("image", "ref", type=IMAGE), Attr("for", "ref", type=TEXT)),
+            top=False,
         ),
     ),
 )
@@ -219,6 +217,7 @@ PROJECT_PACKAGES: Final[Mapping[str, Package]] = {
     for package in (
         TEXT_PACKAGE,
         MEDIA_PACKAGE,
+        SCRIPT_PACKAGE,
         DIRECTOR_PACKAGE,
         GPT_IMAGE_PACKAGE,
         SEEDANCE_PACKAGE,
@@ -237,26 +236,26 @@ RUN_TAGS: Final = (
 
 __all__ = [
     "DIRECTOR_PACKAGE",
-    "ELEMENT",
     "GPT_IMAGE_ASPECTS",
     "GPT_IMAGE_MODEL",
     "GPT_IMAGE_PACKAGE",
     "GPT_IMAGE_RESOLUTIONS",
     "IMAGE",
     "IMAGE_MAX_REFERENCES",
-    "LINE",
     "MEDIA_PACKAGE",
     "PROJECT_MARKUP",
     "PROJECT_PACKAGES",
     "PROJECT_ROOT",
-    "PROMPT",
     "PROMPT_MAX_CHARS",
     "RUN_MARKUP",
     "RUN_PACKAGES",
     "RUN_ROOT",
     "RUN_TAGS",
+    "SCRIPT_PACKAGE",
+    "SCRIPT_TAG",
     "SEEDANCE_PACKAGE",
     "SEEDANCE_VARIANTS",
+    "TEMPLATE",
     "TEXT",
     "TEXT_PACKAGE",
     "VIDEO",

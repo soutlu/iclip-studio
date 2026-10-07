@@ -32,7 +32,7 @@ from iclip.platform.file_store.pg import PgFileStore
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 from iclip.platform.material_ledger.store import Material
-from tests.helpers.film import FILM, GIVEN_IMAGES, RUN, SHOE_PHOTO
+from tests.helpers.film import FILM, GIVEN_IMAGES, RUN, SHOE_FRONT
 from tests.helpers.pg import truncate_clean
 
 USER = uuid.UUID("55555555-5555-5555-5555-555555555555")
@@ -131,7 +131,7 @@ async def test_check_round_trips_through_postgres(
 
     retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
     assert retries == []
-    assert checked.startswith("检查通过：4 个生图节点，1 次视频请求。")
+    assert checked.startswith("检查通过：6 个生图节点，1 次视频请求。")
 
 
 async def test_an_address_the_conversation_never_received_fails_the_check(
@@ -140,7 +140,7 @@ async def test_an_address_the_conversation_never_received_fails_the_check(
     capability, files, ledger = make_studio(engine)
     namespace = f"{USER}/{conversation_id}"
     await files.write(namespace, FILM_PATH, FILM)
-    await ledger.record(namespace, [Material(url=SHOE_PHOTO, kind="video")])
+    await ledger.record(namespace, [Material(url=SHOE_FRONT, kind="video")])
 
     retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
 
