@@ -354,14 +354,27 @@ test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键�
   const before = await chips.count()
 
   await editor.click()
-  await page.keyboard.press('End')
+  // 正文可能折成多行，End 只到点击所在视觉行的行尾；用整段末尾的键把光标放到文末。
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End')
   await page.keyboard.type(' 与双肩包 @')
+  await expect(editor).toHaveText(/台词并成一句。 与双肩包 @$/)
   const menu = page.getByRole('listbox', { name: '插入参考图' })
   await expect(menu).toBeVisible()
   await expect(menu.getByRole('option')).toHaveCount(4)
-  const [editorBox, menuBox] = await Promise.all([editor.boundingBox(), menu.boundingBox()])
+  const [caret, editorBox, menuBox] = await Promise.all([
+    editor.evaluate(() => {
+      const range = document.getSelection()?.getRangeAt(0)
+      if (!range) throw new Error('编辑器没有光标')
+      const rect = range.getBoundingClientRect()
+      if (rect.height === 0) throw new Error('光标没有可测量的位置')
+      return { bottom: rect.bottom }
+    }),
+    editor.boundingBox(),
+    menu.boundingBox(),
+  ])
   if (editorBox === null || menuBox === null) throw new Error('正文与弹层必须有可见布局')
-  // 光标在正文最后一行：弹层整个落在这一行下面，不遮住正在打的字。
+  // 弹层整个落在光标所在行下面，不遮住正在打的字；光标在正文最后一行，弹层也就在正文下面。
+  expect(menuBox.y).toBeGreaterThanOrEqual(caret.bottom - 1)
   expect(menuBox.y).toBeGreaterThanOrEqual(editorBox.y + editorBox.height - 1)
 
   await page.keyboard.press('ArrowRight')
