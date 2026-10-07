@@ -96,7 +96,7 @@ describe('generationStatusOf', () => {
   })
 
   it('不拦出片的提醒排在最后：没有置灰原因与错误时才上状态行；暂态原因照样只给主按钮', () => {
-    const hint = '涂鸦滑板场缺失，参考描述生成'
+    const hint = '涂鸦滑板场的图缺失，参考描述生成'
     expect(generationStatusOf(undefined, undefined, hint)).toEqual({
       hiddenReason: undefined,
       line: { text: hint, tone: 'hint' },

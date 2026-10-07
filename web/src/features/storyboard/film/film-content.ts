@@ -74,10 +74,10 @@ export const missingImageText = (label: string): string => `${beforeChinese(labe
 /** 生成过、还没选用的那张生成卡的标题：「镜头 2 还没选用」。 */
 export const unselectedImageText = (label: string): string => `${beforeChinese(label)}还没选用`
 
-/** 缺图提醒：「短发女生、镜头 1 缺失，参考描述生成」，同名的只写一次；一张都不缺时为 undefined。 */
+/** 缺图提醒：「短发女生、镜头 1 的图缺失，参考描述生成」，同名的只写一次；一张都不缺时为 undefined。 */
 export const missingReferencesText = (labels: readonly string[]): string | undefined => {
   const names = [...new Set(labels)]
-  return names.length === 0 ? undefined : `${beforeChinese(names.join('、'))}缺失，参考描述生成`
+  return names.length === 0 ? undefined : `${beforeChinese(names.join('、'))}的图缺失，参考描述生成`
 }
 
 /** 这组出片挂的生成图里现在没有图（没选用）的那几张的称呼，按 `frames` 的先后；用户给的图总有图，不在里面。 */
