@@ -245,6 +245,8 @@ const cardOf = (spec: Spec, index: number, now: number): LibraryCard => {
   )
   const conversationId = spec.title === null ? null : idOf('7a1e0000', index)
   return {
+    // 做不做得了同款要看对话的工作区，mock 不建工作区，一律做不了。
+    canMakeSame: false,
     groups,
     video: {
       agentId: conversationId === null ? null : 'storyboard',

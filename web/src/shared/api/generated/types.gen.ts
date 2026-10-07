@@ -615,6 +615,10 @@ export type ConversationIn = {
    */
   id?: string | null
   /**
+   * Sameas
+   */
+  sameAs?: string | null
+  /**
    * Taskid
    */
   taskId?: string | null
@@ -1820,6 +1824,10 @@ export type LibraryAuthorsOut = {
  * LibraryVideoDetailOut
  */
 export type LibraryVideoDetailOut = {
+  /**
+   * Canmakesame
+   */
+  canMakeSame: boolean
   /**
    * Groups
    */

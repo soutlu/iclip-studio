@@ -295,6 +295,7 @@ export const zConversationIn = z.object({
   agentId: z.string().min(1).max(128),
   collectionId: z.uuid().nullish(),
   id: z.uuid().nullish(),
+  sameAs: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   title: z.string().min(1).max(200).nullish(),
   userName: z.string().nullish(),
@@ -1730,6 +1731,7 @@ export const zShotGroupOut = z.object({
  * LibraryVideoDetailOut
  */
 export const zLibraryVideoDetailOut = z.object({
+  canMakeSame: z.boolean(),
   groups: z.array(zShotGroupOut),
   video: zLibraryVideoOut,
 })
