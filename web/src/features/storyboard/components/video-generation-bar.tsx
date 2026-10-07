@@ -23,12 +23,10 @@ import { supportsAspectRatio } from '../video-model-support'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useScrollFade } from './use-scroll-fade'
 
-/** 分镜的画幅：写回分镜文件，不是生成选项。 */
-type AspectControl = {
-  value: string
-  disabled: boolean
-  onChange: (aspectRatio: string) => void
-}
+/** 分镜的画幅：分镜页上能改、写回分镜文件；制作页上照工程文件、只显示（`fixed`）。都不是生成选项。 */
+type AspectControl =
+  | { kind: 'editable'; value: string; disabled: boolean; onChange: (aspectRatio: string) => void }
+  | { kind: 'fixed'; value: string }
 
 type VideoGenerationBarProps = {
   /** 当前镜头组的镜号，主按钮写的就是它。 */
@@ -192,6 +190,24 @@ function AspectPicker({
   model: string | undefined
 }) {
   const unsupported = !supportsAspectRatio(model, aspect.value)
+  const leading = unsupported ? (
+    <Icon decorative name="alert" size="sm" />
+  ) : (
+    <AspectGlyph longSide={13} ratio={aspect.value} />
+  )
+  if (aspect.kind === 'fixed')
+    return (
+      <span
+        aria-describedby={unsupported ? errorId : undefined}
+        className="storyboard-bar-control storyboard-bar-picker"
+        data-fixed=""
+        data-invalid={unsupported}
+      >
+        <span className="sr-only">画幅</span>
+        {leading}
+        <span className="storyboard-bar-picker-text">{aspect.value}</span>
+      </span>
+    )
   const options: GenerationPickerOption[] = ASPECT_RATIOS.map((ratio) => {
     const usable = supportsAspectRatio(model, ratio)
     return {
@@ -213,13 +229,7 @@ function AspectPicker({
       disabled={aspect.disabled}
       invalid={unsupported ? { describedBy: errorId } : undefined}
       label="画幅"
-      leading={
-        unsupported ? (
-          <Icon decorative name="alert" size="sm" />
-        ) : (
-          <AspectGlyph longSide={13} ratio={aspect.value} />
-        )
-      }
+      leading={leading}
       onChange={aspect.onChange}
       options={options}
       text={aspect.value}

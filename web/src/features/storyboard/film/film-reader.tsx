@@ -1,7 +1,8 @@
-/** 制作页的组合根：读 AI 导演的工程、草稿与路由参数在这里，分给顶栏、舞台、文案列与灯箱。
+/** 制作页的组合根：读 AI 导演的工程、草稿、出片与路由参数在这里，分给顶栏、舞台、文案列（末尾是本组成片）、出片栏与浮层。
  *
- * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置。
- * 两个文件检查出问题时整页只写问题数，等 AI 导演改好。 */
+ * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
+ * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
+ * 出片先把改了的字存下，再按存好的那一版出，发出去的和文件里的一样；画幅照文件，只显示。 */
 
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -18,9 +19,18 @@ import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { ReaderNotice, SaveStatus } from '../components/draft-status'
 import { StoryboardToolbar } from '../components/storyboard-toolbar'
+import { TakesTray } from '../components/takes-tray'
+import { VideoGenerationBar } from '../components/video-generation-bar'
+import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
+import { useShotGenerations } from '../storyboard.api'
+import { takeActionsOf, takesOfShot } from '../takes'
+import { useGenerationGate } from '../use-generation-gate'
 import { useLiveGenerations } from '../use-live-generations'
 import { useShotArrowKeys } from '../use-shot-arrow-keys'
-import { useFilmFileChanges, useFilmView } from './film.api'
+import { useStageSelection } from '../use-stage-selection'
+import { useVideoGeneration } from '../use-video-generation'
+import { VideoEditor } from '../video-editor/video-editor'
+import { generateFilmVideo, useFilmFileChanges, useFilmView } from './film.api'
 import {
   contentOfFrame,
   filmGroupSummary,
@@ -36,6 +46,8 @@ type ReaderSearch = {
   content?: string | undefined
   frame?: number | undefined
   shot?: number | undefined
+  /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
+  video?: string | undefined
 }
 
 export function FilmReader(props: ArtifactRendererProps) {
@@ -47,6 +59,8 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   useFilmFileChanges(conversationId)
   useLiveGenerations(conversationId)
   const draft = useFilmDraft(conversationId, film.data)
+  const generations = useShotGenerations(conversationId)
+  const gate = useGenerationGate()
   const navigate = useNavigate()
   const search: ReaderSearch = useSearch({ strict: false })
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
@@ -55,11 +69,13 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const groups = view?.groups ?? []
   const position =
     search.shot !== undefined && search.shot >= 1 && search.shot <= groups.length ? search.shot : 1
+  const stage = useStageSelection(position)
+  const video = useVideoGeneration(conversationId, groups[position - 1]?.model)
 
   const go = (next: ReaderSearch) => {
     const cleared =
       next.shot !== undefined && next.shot !== position
-        ? { content: undefined, frame: undefined }
+        ? { content: undefined, frame: undefined, video: undefined }
         : {}
     void navigate({
       replace: true,
@@ -86,13 +102,58 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   if (group === undefined || selection === undefined)
     return <ReaderNotice text="分镜里还没有镜头组" />
 
-  // 选段不指定图时：选的还是这段就停在当前图，换了段就到它挂的第一张。
-  const select = (content: string, frame?: number) =>
+  // 选段不指定图时：选的还是这段就停在当前图，换了段就到它挂的第一张。舞台回到图。
+  const select = (content: string, frame?: number) => {
+    stage.selectContent()
     go({
       content,
       frame:
         frame ??
         (content === selection.contentId ? selection.frame : segmentFrames(group, content)[0]),
+    })
+  }
+  const takes =
+    generations.data === undefined
+      ? undefined
+      : takesOfShot(generations.data, group.index, group.aspectRatio)
+  // 选中的成片不在本组列表里了就回到图。
+  const selectedTake = takes?.find((take) => take.job.id === stage.takeId)
+  const videoEditRoot =
+    search.video === undefined
+      ? undefined
+      : generations.data?.find((job) => job.id === search.video)
+  // 提交途中按钮自己写着「提交中」，不另说原因。
+  const generateBlocker = gate.preparing
+    ? undefined
+    : generationBlockerOf({
+        modelsStatus: video.modelsStatus,
+        readOnly,
+        saveState: draft.state.kind,
+        uploading: gate.uploading,
+      })
+  const generateNotice = generationNoticeOf({
+    aspectRatio: group.aspectRatio,
+    model: video.options.model,
+    // 改过之后原因就过期了，等下一次出片再说；存盘状态那一格有自己的提示，不重复说。
+    submitError: draft.hasUnsavedChanges ? undefined : video.errorOf(group.index),
+  })
+  const generate = () =>
+    gate.run(async (mounted) => {
+      const saved = await draft.saveNow()
+      if (saved === null || !mounted()) return
+      const current = saved.groups.find((item) => item.video === group.video)
+      if (current === undefined) {
+        video.reportError(group.index, '这一组已经不在分镜里了，刷新后再出片')
+        return
+      }
+      await video.submit(group.index, (choice) =>
+        generateFilmVideo(conversationId, {
+          ...choice,
+          filmVersion: saved.filmVersion,
+          runVersion: saved.runVersion,
+          video: current.video,
+        }),
+      )
     })
 
   return (
@@ -127,22 +188,64 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
               onStep={(frame) =>
                 go({ content: contentOfFrame(group, selection.contentId, frame), frame })
               }
+              take={
+                selectedTake === undefined
+                  ? undefined
+                  : {
+                      actions: takeActionsOf(selectedTake, { readOnly, refillable: false }),
+                      onEditVideo: () => go({ video: selectedTake.job.id }),
+                      // 制作页没有回填，按钮不出现。
+                      onRefill: () => {},
+                      take: selectedTake,
+                    }
+              }
             />
             <div aria-hidden className="storyboard-divider" />
             <div className="storyboard-script">
               <FilmScript
-                frame={selection.frame}
+                frame={selectedTake === undefined ? selection.frame : undefined}
                 group={group}
                 onEdit={draft.update}
                 onSelect={select}
                 readOnly={readOnly}
-                selectedId={selection.contentId}
+                // 放成片时文案列不标选中：点哪段（包括原来选中的那段）都回到图。
+                selectedId={selectedTake === undefined ? selection.contentId : undefined}
+              />
+              <TakesTray
+                error={
+                  generations.isError
+                    ? errorMessageOf(generations.error, '读取视频记录失败')
+                    : undefined
+                }
+                onSelect={stage.selectTake}
+                selectedId={selectedTake?.job.id}
+                takes={takes}
               />
             </div>
           </section>
         </div>
+        <VideoGenerationBar
+          aspect={{ kind: 'fixed', value: group.aspectRatio }}
+          blocker={generateBlocker}
+          models={{ items: video.models, status: video.modelsStatus }}
+          notice={generateNotice}
+          onChange={video.setOptions}
+          onGenerate={() => void generate()}
+          shotIndex={group.index}
+          submitting={gate.preparing}
+          value={video.options}
+        />
       </div>
       <MediaLightbox media={media} onClose={() => setMedia(null)} />
+      {search.video === undefined ? null : (
+        <VideoEditor
+          conversationId={conversationId}
+          loading={generations.isPending}
+          onClose={() => go({ video: undefined })}
+          root={videoEditRoot}
+          shotIndex={videoEditRoot?.shotIndex ?? undefined}
+        />
+      )}
       <FilmConflictDialog resolve={draft.resolveConflict} state={draft.state} />
     </>
   )

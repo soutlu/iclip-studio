@@ -11,7 +11,7 @@ import { frameBadges, latestFrameJobs } from '../frame-status'
 import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
 import { useFrameImageJobs } from '../image-edit/image-edit.api'
 import { SHOTS_PATH } from '../shots'
-import { useShotGenerations } from '../storyboard.api'
+import { submitVideoGeneration, useShotGenerations } from '../storyboard.api'
 import { takeActionsOf, takesOfShot } from '../takes'
 import { useGenerationGate } from '../use-generation-gate'
 import { useShotArrowKeys } from '../use-shot-arrow-keys'
@@ -127,7 +127,14 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
         video.reportError(shot.index, '无法读取已保存的镜头组，请重新打开后生成')
         return
       }
-      await video.submit(current, saved.aspect_ratio)
+      await video.submit(current.index, (choice) =>
+        submitVideoGeneration({
+          ...choice,
+          aspectRatio: saved.aspect_ratio,
+          conversationId,
+          shot: current,
+        }),
+      )
     })
   // 选中成片的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
   const refill = (prompt: Shot['prompt']) => {
@@ -228,6 +235,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
         <VideoGenerationBar
           aspect={{
             disabled: editingDisabled,
+            kind: 'editable',
             onChange: draft.updateAspectRatio,
             value: document.aspect_ratio,
           }}

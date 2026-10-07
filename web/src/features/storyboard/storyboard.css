@@ -731,6 +731,10 @@
   color: var(--color-on-surface);
   cursor: pointer;
 }
+/* 只显示的画幅（制作页照工程文件）：配色同可用态，不接指针。 */
+.storyboard-bar-picker[data-fixed] {
+  color: var(--color-on-surface);
+}
 .storyboard-bar-picker {
   gap: 6px;
   padding: 0 8px 0 10px;
@@ -745,8 +749,8 @@
 .storyboard-bar-picker > .storyboard-bar-glyph {
   flex: none;
 }
-.storyboard-bar-picker:enabled > svg,
-.storyboard-bar-picker:enabled > .storyboard-bar-glyph {
+.storyboard-bar-picker:is(:enabled, [data-fixed]) > svg,
+.storyboard-bar-picker:is(:enabled, [data-fixed]) > .storyboard-bar-glyph {
   color: var(--color-on-surface-variant);
 }
 .storyboard-bar-picker-text {
@@ -764,13 +768,14 @@
   color: var(--color-on-surface-muted);
 }
 /* 当前值有问题（画幅不被模型支持）：错误容器底、错误色描边，字与图标一起换色。 */
-.storyboard-bar-picker[data-invalid='true']:enabled {
+.storyboard-bar-picker[data-invalid='true']:is(:enabled, [data-fixed]) {
   border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
   background-color: var(--color-error-container);
   color: var(--color-on-error-container);
 }
-.storyboard-bar-picker[data-invalid='true']:enabled > svg,
-.storyboard-bar-picker[data-invalid='true']:enabled > .storyboard-bar-picker-chevron {
+.storyboard-bar-picker[data-invalid='true']:is(:enabled, [data-fixed]) > svg,
+.storyboard-bar-picker[data-invalid='true']:is(:enabled, [data-fixed])
+  > .storyboard-bar-picker-chevron {
   color: inherit;
 }
 .storyboard-bar-audio {

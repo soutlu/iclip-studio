@@ -2,12 +2,13 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { describe, expect, it } from 'vitest'
-import type { FilmTextEditsIn } from '@/shared/api/generated/types.gen'
+import type { FilmTextEditsIn, FilmVideoGenerationIn } from '@/shared/api/generated/types.gen'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { editMockFilmShot, seedMockFilm } from '@/testing/mocks/film'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { DEFAULT_GENERATE_AUDIO, DEFAULT_VIDEO_RESOLUTION } from '../video-generation-options'
 import { FilmReader } from './film-reader'
 
 const CONVERSATION_ID = '6d1f0c3e-2b4a-4c8e-9f1d-3a5b7c9e1f20'
@@ -149,6 +150,48 @@ describe('制作页', () => {
       edits: [{ parts: ['我改的第一镜。'], target: 'shot:board:1' }],
       filmVersion: 2,
     })
+  })
+
+  it('出片先存改了的字，再按存好的那一版出这一组：模型默认照文件，画幅只显示；成片进本组，选它舞台就放它', async () => {
+    const bodies = recordEdits()
+    const videos: FilmVideoGenerationIn[] = []
+    server.use(
+      http.post(
+        '*/api/conversations/:conversationId/film/video-generations',
+        async ({ request }) => {
+          videos.push((await request.clone().json()) as FilmVideoGenerationIn)
+        },
+      ),
+    )
+    const script = await renderFilm()
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    expect(within(bar).queryByRole('button', { name: '画幅' })).not.toBeInTheDocument()
+    expect(bar).toHaveTextContent('9:16')
+    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+
+    await replaceText(
+      within(script).getByRole('textbox', { name: '镜头 1的描述' }),
+      '改过的第一镜。',
+    )
+    // 不等停手自动存：点出片时先存，再按存好的那一版出。
+    await userEvent.click(generate)
+    await waitFor(() => expect(videos).toHaveLength(1))
+    expect(bodies).toHaveLength(1)
+    expect(videos[0]).toEqual({
+      filmVersion: 2,
+      generateAudio: DEFAULT_GENERATE_AUDIO,
+      model: 'vendor-a-seedance-2-0',
+      resolution: DEFAULT_VIDEO_RESOLUTION,
+      runVersion: 1,
+      video: 'board_video',
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: /的成片/ }))
+    expect(stageTag()).toBeNull()
+    expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
+    await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
+    await waitFor(() => expect(stageTag()).toBe('@3'))
   })
 
   it('分镜检查出问题时只写有几处，交给 AI 导演改', async () => {

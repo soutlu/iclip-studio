@@ -82,10 +82,13 @@ const ENABLED: TakeAction = { kind: 'enabled' }
 const blocked = (reason: string): TakeAction => ({ kind: 'blocked', reason })
 
 /** 舞台工具条上各动作的状态，规则沿用原生成记录：
- * - 回填只看有没有结构化镜头组，在途、失败也能回填；
+ * - 回填只看有没有结构化镜头组，在途、失败也能回填；制作页没有回填（`refillable: false`），镜头组照文件拼；
  * - 下载、编辑视频只在出了片（成功且有地址）时可用；在途不出现，失败或没给地址置灰；
  * - 只读时没有编辑视频与回填，下载照旧。 */
-export const takeActionsOf = (take: Take, { readOnly }: { readOnly: boolean }): TakeActions => {
+export const takeActionsOf = (
+  take: Take,
+  { readOnly, refillable = true }: { readOnly: boolean; refillable?: boolean },
+): TakeActions => {
   const video = (verb: string): TakeAction => {
     if (take.outputUrl !== undefined) return ENABLED
     if (take.state === 'running') return HIDDEN
@@ -94,11 +97,12 @@ export const takeActionsOf = (take: Take, { readOnly }: { readOnly: boolean }): 
   return {
     download: video('下载'),
     editVideo: readOnly ? HIDDEN : video('编辑'),
-    refill: readOnly
-      ? HIDDEN
-      : take.history === undefined
-        ? blocked('这条出片没记分镜结构，回填不了')
-        : ENABLED,
+    refill:
+      readOnly || !refillable
+        ? HIDDEN
+        : take.history === undefined
+          ? blocked('这条出片没记分镜结构，回填不了')
+          : ENABLED,
   }
 }
 

@@ -655,6 +655,22 @@ const validateShotsContent = (content: string): string | undefined => {
   return undefined
 }
 
+/** 收下一次出片：与 `POST /generations/video` 同一条记录与完成节奏，出的是同一条测试卡。制作页的 mock 用它。 */
+export const acceptMockVideo = (spec: {
+  conversationId: string
+  prompt: string
+  request: Record<string, unknown>
+  shotIndex: number
+  metadata: Record<string, unknown>
+}) =>
+  acceptGeneration({
+    ...spec,
+    durationMs: VIDEO_MS,
+    kind: 'video',
+    outputUrl: VIDEO_URL,
+    watermarkOutputUrl: VIDEO_URL,
+  })
+
 /** 往一段对话的工作区放一份文件（还没有工作区就建一个）：版本从 1 起，已有就加一，返回新版本。制作页的 mock 用它。 */
 export const putMockWorkspaceFile = (conversationId: string, path: string, content: string) => {
   const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()

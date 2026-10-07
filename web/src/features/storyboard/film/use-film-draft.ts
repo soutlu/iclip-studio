@@ -99,7 +99,7 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
   const bookRef = useRef({
     edits: new Map<string, FilmEdit>(),
     conflicts: null as readonly FilmConflict[] | null,
-    inFlight: null as Promise<void> | null,
+    inFlight: null as Promise<boolean> | null,
     timer: null as ReturnType<typeof setTimeout> | null,
   })
 
@@ -128,17 +128,19 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
     [publish],
   )
 
-  const saveNow = useCallback((): Promise<void> => {
+  /** 立刻写回，答复都落盘了没有：保存失败、有冲突或还没读到工程时为 false。 */
+  const persist = useCallback((): Promise<boolean> => {
     const book = bookRef.current
     clearTimer()
     if (book.inFlight !== null) return book.inFlight
-    if (book.conflicts !== null || book.edits.size === 0) return Promise.resolve()
+    if (book.conflicts !== null) return Promise.resolve(false)
+    if (book.edits.size === 0) return Promise.resolve(true)
 
-    const run = async () => {
+    const run = async (): Promise<boolean> => {
       let rebased = false
       while (book.edits.size > 0) {
         const view = readView(queryClient, conversationId)
-        if (view === undefined) return
+        if (view === undefined) return false
         const sending = [...book.edits]
         setState({ kind: 'saving' })
         try {
@@ -165,23 +167,32 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
           if (conflicts.length > 0) {
             book.conflicts = conflicts
             setState({ conflicts, kind: 'conflict' })
-            return
+            return false
           }
           rebased = true
         }
       }
       setState({ kind: 'saved' })
+      return true
     }
 
     book.inFlight = run()
       .catch((error: unknown) => {
         setState({ kind: 'error', message: errorMessageOf(error, '保存失败') })
+        return false
       })
       .finally(() => {
         book.inFlight = null
       })
     return book.inFlight
   }, [clearTimer, conversationId, publish, queryClient, reconcile])
+
+  /** 立刻写回，答复写回后的整页；没全落盘为 null。出片前先存，发出去的和文件里的一样。 */
+  const saveNow = useCallback(
+    async (): Promise<FilmView | null> =>
+      (await persist()) ? (readView(queryClient, conversationId) ?? null) : null,
+    [conversationId, persist, queryClient],
+  )
 
   /** 记下一段的新内容；改回原样就不算改动。冲突没处理完之前只记不存。 */
   const update = useCallback(
@@ -201,9 +212,9 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
       clearTimer()
       if (book.conflicts !== null) return
       setState(book.inFlight === null ? { kind: 'idle' } : { kind: 'saving' })
-      if (book.edits.size > 0) book.timer = setTimeout(() => void saveNow(), SAVE_DELAY_MS)
+      if (book.edits.size > 0) book.timer = setTimeout(() => void persist(), SAVE_DELAY_MS)
     },
-    [clearTimer, conversationId, publish, queryClient, saveNow],
+    [clearTimer, conversationId, persist, publish, queryClient],
   )
 
   /** 留我的：还在的段以新版本为底再发，新版本里没有了的只能放弃；用最新的：放弃冲突的段。 */
@@ -219,17 +230,17 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
       book.conflicts = null
       publish()
       setState({ kind: 'idle' })
-      if (book.edits.size > 0) void saveNow()
+      if (book.edits.size > 0) void persist()
     },
-    [publish, saveNow],
+    [persist, publish],
   )
 
   // 离开页面时还没到点的那次立刻存。
   useEffect(
     () => () => {
-      if (bookRef.current.timer !== null) void saveNow()
+      if (bookRef.current.timer !== null) void persist()
     },
-    [saveNow],
+    [persist],
   )
 
   const view = useMemo(

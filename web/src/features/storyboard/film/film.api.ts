@@ -1,11 +1,11 @@
-/** 制作页读写 AI 导演的工程：读成镜头组、改字。端点语义见 contract/conventions.md 的「制作页」几条。 */
+/** 制作页读写 AI 导演的工程：读成镜头组、改字、给一组出片。端点语义见 contract/conventions.md 的「制作页」几条。 */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { use, useEffect } from 'react'
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
-import type { FilmTextEditIn } from '@/shared/api/generated/types.gen'
-import { zFilmViewEnvelope } from '@/shared/api/generated/zod.gen'
+import type { FilmTextEditIn, FilmVideoGenerationIn } from '@/shared/api/generated/types.gen'
+import { zFilmJobOut, zFilmViewEnvelope } from '@/shared/api/generated/zod.gen'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { storyboardQueryKeys } from '../storyboard.api'
 
@@ -61,3 +61,11 @@ export const editFilmText = async (
   })
   return envelope.film
 }
+
+/** 给一组出片：镜头组与参考图由后端按文件拼，答复 202 与任务号；进度照常看视频记录。 */
+export const generateFilmVideo = (conversationId: string, body: FilmVideoGenerationIn) =>
+  apiFetch(`/conversations/${conversationId}/film/video-generations`, zFilmJobOut, {
+    body,
+    fallbackErrorMessage: '视频提交失败',
+    method: 'POST',
+  })

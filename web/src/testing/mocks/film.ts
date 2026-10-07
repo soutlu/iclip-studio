@@ -1,12 +1,17 @@
 /** 制作页的 mock：每段对话一份读好的工程（形状同 `GET /conversations/{id}/film`），改字照后端的规矩查，
- * 改完把工作区里 `film.icml` 的版本加一，文件列表与制作页的版本对得上。 */
+ * 改完把工作区里 `film.icml` 的版本加一，文件列表与制作页的版本对得上；出片记一条视频记录，镜号是组号。 */
 
 import { http, HttpResponse } from 'msw'
-import type { FilmGroupOut, FilmTextEditsIn, FilmViewOut } from '@/shared/api/generated/types.gen'
+import type {
+  FilmGroupOut,
+  FilmTextEditsIn,
+  FilmVideoGenerationIn,
+  FilmViewOut,
+} from '@/shared/api/generated/types.gen'
 import apparelImage from './assets/apparel.webp'
 import backpackImage from './assets/backpack.webp'
 import loafersImage from './assets/loafers.webp'
-import { putMockWorkspaceFile } from './workspace'
+import { acceptMockVideo, putMockWorkspaceFile } from './workspace'
 
 const FILM_PATH = 'film.icml'
 const RUN_PATH = 'film.icrun'
@@ -79,7 +84,7 @@ const mockGroup = (): FilmGroupOut => ({
     },
   ],
   index: 1,
-  model: 'mmt-seedance-2-5',
+  model: 'vendor-a-seedance-2-0',
   seconds: 12,
   settings: [
     {
@@ -237,6 +242,15 @@ const applyEdits = (film: FilmViewOut, body: FilmTextEditsIn): FilmGroupOut[] | 
   return groups
 }
 
+/** 照后端拼一组出片的正文：设定在前，每镜写起止秒；只给成片卡与回读用。 */
+const videoPrompt = (group: FilmGroupOut) =>
+  [
+    group.settings.map((setting) => setting.text).join('\n'),
+    ...group.shots.map(
+      (shot, index) => `[${shot.start}–${shot.end}秒｜镜头${index + 1}] ${shot.parts.join('')}`,
+    ),
+  ].join('\n')
+
 export const filmHandlers = [
   http.get('*/api/conversations/:conversationId/film', ({ params }) => {
     const film = films.get(String(params['conversationId']))
@@ -262,4 +276,35 @@ export const filmHandlers = [
     films.set(conversationId, next)
     return HttpResponse.json({ film: next })
   }),
+
+  http.post(
+    '*/api/conversations/:conversationId/film/video-generations',
+    async ({ params, request }) => {
+      const conversationId = String(params['conversationId'])
+      const film = films.get(conversationId)
+      if (film === undefined) return HttpResponse.json({ detail: '没有工程文件' }, { status: 404 })
+      const body = (await request.json()) as FilmVideoGenerationIn
+      if (body.filmVersion !== film.filmVersion || body.runVersion !== film.runVersion)
+        return HttpResponse.json({ detail: '分镜刚被改过，刷新后再出片' }, { status: 409 })
+      const group = film.groups.find((item) => item.video === body.video)
+      if (group === undefined) return rejected('这一组已经不在分镜里了')
+      const prompt = videoPrompt(group)
+      const created = acceptMockVideo({
+        conversationId,
+        metadata: { film_node: group.video },
+        prompt,
+        request: {
+          aspect_ratio: group.aspectRatio,
+          generate_audio: body.generateAudio,
+          model: body.model,
+          prompt,
+          resolution: body.resolution,
+          seconds: group.seconds,
+          shot_index: group.index,
+        },
+        shotIndex: group.index,
+      })
+      return HttpResponse.json({ jobId: created.id }, { status: 202 })
+    },
+  ),
 ]
