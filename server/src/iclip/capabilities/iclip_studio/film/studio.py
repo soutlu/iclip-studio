@@ -28,6 +28,7 @@ from iclip.capabilities.iclip_studio.film.packages import (
 from iclip.capabilities.iclip_studio.film.prompts import (
     BODY_PHRASE,
     LINE_REFERENCE,
+    PicturePrompt,
     body_sentence,
     for_video,
     render_picture,
@@ -73,14 +74,13 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
             generated = _generated(project, use.image)
             prompt = None
             if generated:
-                picture = project.nodes[_required(project.nodes[use.image], "prompt")]
                 prompt = tuple(
                     FilmPromptText(run)
                     if isinstance(run, str)
                     else FilmPromptImage(
                         run.image, _label(run.image, index, elements, views), run.url
                     )
-                    for run in render_picture(film, picture).runs
+                    for run in image_prompt(film, use.image).runs
                 )
             frames[use.image] = FilmFrame(
                 node=use.image,
@@ -104,6 +104,13 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
             )
         )
     return tuple(groups)
+
+
+def image_prompt(film: Film, image: str) -> PicturePrompt:
+    """按描述生成 ``image`` 这个生图节点时发给模型的描述与参考图。"""
+
+    node = film.project.nodes[image]
+    return render_picture(film, film.project.nodes[_required(node, "prompt")])
 
 
 def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
@@ -733,4 +740,4 @@ def _required(node: Node, name: str) -> str:
     return reference
 
 
-__all__ = ["FilmEditRejected", "choose_image", "edit_text", "film_groups"]
+__all__ = ["FilmEditRejected", "choose_image", "edit_text", "film_groups", "image_prompt"]

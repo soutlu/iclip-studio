@@ -14,13 +14,12 @@ from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
 from iclip.capabilities.iclip_studio.film.export import video_row
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
-from iclip.capabilities.iclip_studio.film.markup import Node
-from iclip.capabilities.iclip_studio.film.prompts import render_picture
 from iclip.capabilities.iclip_studio.film.studio import (
     FilmEditRejected,
     choose_image,
     edit_text,
     film_groups,
+    image_prompt,
 )
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from iclip.capabilities.workspace.scope import namespace_for
@@ -69,6 +68,7 @@ class ConversationFilmAdapter:
         self._announcing = announcing
         self._ledger = ledger
         self._generation = generation
+        self._node_images = None if generation is None else FilmImagesAdapter(generation)
 
     async def view(
         self, principal: Principal, owner: uuid.UUID, conversation_id: uuid.UUID
@@ -160,6 +160,7 @@ class ConversationFilmAdapter:
         run_version: int | None,
     ) -> uuid.UUID:
         generation = self._require_generation()
+        assert self._node_images is not None
         files = await self._existing(owner, conversation_id)
         self._check_versions(files, film_version, run_version)
         film = await self._clean(principal, conversation_id, files)
@@ -176,34 +177,34 @@ class ConversationFilmAdapter:
         model = tag.generation.gateway
         if model not in {name for name, _ in generation.image_models()[1]}:
             raise ValidationFailed("生图模型还没接上，暂时不能生成")
+        if prompt is None:
+            picture = image_prompt(film, node)
+            text, references = picture.text, picture.image_urls
+        else:
+            text, references = prompt.text, prompt.reference_image_urls
+        request = NodeImageRequest(
+            node=node,
+            prompt=text,
+            model=model,
+            aspect_ratio=target.attrs["aspect-ratio"],
+            resolution=target.attrs["resolution"],
+            reference_image_urls=references,
+            user_name=resolve_user_name(principal, None),
+            conversation_id=str(conversation_id),
+        )
         current = film.image_url(f"{node}.image")
-        if current is not None and node not in film.selected:
-            # 已经有图又没选用：先选用现在这张，新的出来只进版本，点了替换才用上。
+        pinned = current is not None and node not in film.selected
+        if pinned:
+            # 已经有图又没选用：先选用现在这张，新的出来只进版本，点了替换才用上。能拒的都在这之前查过。
             run = None if files.run is None else files.run.content
             change = choose_image(film, files.project.content, run, node, current)
             assert change is not None and change[0] == RUN_PATH
             await self._write(files.namespace, RUN_PATH, change[1], run_version)
-        if prompt is None:
-            picture = render_picture(film, project.nodes[_prompt_of(target)])
-            text, references = picture.text, picture.image_urls
-        else:
-            text, references = prompt.text, prompt.reference_image_urls
         try:
-            job = await FilmImagesAdapter(generation).submit(
-                principal,
-                NodeImageRequest(
-                    node=node,
-                    prompt=text,
-                    model=model,
-                    aspect_ratio=target.attrs["aspect-ratio"],
-                    resolution=target.attrs["resolution"],
-                    reference_image_urls=references,
-                    user_name=resolve_user_name(principal, None),
-                    conversation_id=str(conversation_id),
-                ),
-            )
+            job = await self._node_images.submit(principal, request)
         except InvalidNodeImageRequest as exc:
-            raise ValidationFailed(str(exc)) from exc
+            done = "已经选用现在这张图，" if pinned else ""
+            raise ValidationFailed(f"{done}这次没有生成：{exc}") from exc
         return job.job_id
 
     async def generate_video(
@@ -295,7 +296,7 @@ class ConversationFilmAdapter:
         return ConversationImages(
             ledger=self._ledger,
             namespace=files.namespace,
-            images=None if self._generation is None else FilmImagesAdapter(self._generation),
+            images=self._node_images,
             principal=principal,
             conversation_id=str(conversation_id),
         )
@@ -324,12 +325,6 @@ class ConversationFilmAdapter:
             raise Conflict(_STALE) from exc
         except (InvalidContent, QuotaExceeded) as exc:
             raise ValidationFailed(str(exc)) from exc
-
-
-def _prompt_of(node: Node) -> str:
-    reference = node.reference("prompt")
-    assert reference is not None, "生图节点读文件时已查过 prompt"
-    return reference
 
 
 __all__ = ["ConversationFilmAdapter"]

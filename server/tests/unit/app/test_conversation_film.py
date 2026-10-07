@@ -15,7 +15,7 @@ from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed
 from iclip.common.film_view import FilmImagePrompt, FilmLineEdit, FilmTextEdit, FilmView
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
-from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO
+from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO, MAX_PROMPT_CHARS
 from iclip.domains.identity.models import Principal
 from iclip.platform.material_ledger.store import Material
 from tests.helpers.file_store import FakeFileStore
@@ -321,6 +321,17 @@ async def test_regenerating_an_image_in_use_first_pins_the_one_in_use() -> None:
     assert view.run_version == 2
     assert frame_url(view, "公园跑道参考图") == LATEST_PARK
     assert f'src="{LATEST_PARK}"' in (await made.content(RUN_PATH) or "")
+
+
+async def test_a_refused_regeneration_says_the_current_image_was_kept_in_use() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [latest_park()])
+    too_long = FilmImagePrompt("x" * (MAX_PROMPT_CHARS + 1), ())
+
+    with pytest.raises(ValidationFailed, match=r"^已经选用现在这张图，这次没有生成："):
+        await generate(made, "公园跑道参考图", prompt=too_long)
+
+    assert [job.output_url for job in made.jobs.jobs.values()] == [LATEST_PARK]
+    assert frame_url(await made.view(), "公园跑道参考图") == LATEST_PARK
 
 
 async def test_regenerating_an_image_that_is_already_chosen_leaves_the_run_file() -> None:
