@@ -95,10 +95,14 @@ describe('制作页', () => {
     expect(within(script).getAllByRole('group', { name: /^镜头 \d$/ })).toHaveLength(4)
     expect(stageTag()).toBe('@1')
 
-    await userEvent.click(within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬' }))
+    const [loaferFront] = within(settings).getAllByRole('button', { name: '在舞台查看绒面一脚蹬' })
+    if (loaferFront === undefined) throw new Error('绒面一脚蹬应有图片芯片')
+    await userEvent.click(loaferFront)
     await waitFor(() => expect(stageTag()).toBe('@2'))
 
-    // 第 3 张还没有图，舞台写一句；再往后是镜头 1 的画面，选中跟到镜头 1。
+    // 再往后是同一元素的第二张；第 4 张还没有图，舞台写一句；再往后是镜头 1 的画面，选中跟到镜头 1。
+    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
+    await waitFor(() => expect(stageTag()).toBe('@3'))
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     expect(await screen.findByText('涂鸦滑板场还没有图')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
@@ -108,7 +112,26 @@ describe('制作页', () => {
         'true',
       ),
     )
-    expect(stageTag()).toBe('@3')
+    expect(stageTag()).toBe('@4')
+  })
+
+  it('一个元素挂几张图就排几枚芯片，按先后；点哪枚舞台看哪张，只高亮那一枚', async () => {
+    const script = await renderFilm()
+    const settings = within(script).getByRole('group', { name: '全局设定' })
+    const chips = within(settings).getAllByRole('button', { name: '在舞台查看绒面一脚蹬' })
+    expect(chips.map((chip) => chip.textContent)).toEqual(['@2', '@3'])
+    const [front, sole] = chips
+    if (front === undefined || sole === undefined) throw new Error('绒面一脚蹬应有两枚芯片')
+
+    await userEvent.click(sole)
+    await waitFor(() => expect(stageTag()).toBe('@3'))
+    expect(sole).toHaveAttribute('data-highlighted')
+    expect(front).not.toHaveAttribute('data-highlighted')
+
+    await userEvent.click(front)
+    await waitFor(() => expect(stageTag()).toBe('@2'))
+    expect(front).toHaveAttribute('data-highlighted')
+    expect(sole).not.toHaveAttribute('data-highlighted')
   })
 
   it('改一句台词只发这一镜：正文原样带回，台词按原来的先后带上各自的 target', async () => {
@@ -224,7 +247,7 @@ describe('制作页', () => {
     expect(stageTag()).toBeNull()
     expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
-    await waitFor(() => expect(stageTag()).toBe('@3'))
+    await waitFor(() => expect(stageTag()).toBe('@4'))
   })
 
   it('文件里写的模型不在可选的里面，出片栏用服务端的默认', async () => {
@@ -375,7 +398,7 @@ describe('制作页的图片编辑器', () => {
     await userEvent.click(send() ?? editor)
     await waitFor(() => expect(generations).toHaveLength(2))
     expect(generations[1]?.prompt?.text).toContain('傍晚，')
-    expect(generations[1]?.prompt?.text).toContain('图1')
+    expect(generations[1]?.prompt?.text).toContain('@Image1的人物，站在坡面上')
     expect(generations[1]?.prompt?.referenceImageUrls).toHaveLength(1)
   })
 

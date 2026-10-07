@@ -21,11 +21,11 @@ const framePositionOf = (group: FilmGroup, node: string | null): number | undefi
   return index < 0 ? undefined : index + 1
 }
 
-/** 一段挂着的图在 `frames` 里的位置，按出现的先后：全局设定是各出场元素的图，镜头是它的机位图。 */
+/** 一段挂着的图在 `frames` 里的位置，按出现的先后、去重：全局设定是各出场元素挂的所有图，镜头是它的机位图。 */
 export const segmentFrames = (group: FilmGroup, contentId: string): number[] => {
   const nodes =
     contentId === SETTINGS_ID
-      ? group.settings.map((setting) => setting.image)
+      ? group.settings.flatMap((setting) => setting.images)
       : [shotOf(group, contentId)?.view ?? null]
   return [...new Set(nodes.flatMap((node) => framePositionOf(group, node) ?? []))]
 }

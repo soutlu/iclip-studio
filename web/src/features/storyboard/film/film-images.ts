@@ -100,7 +100,7 @@ export const promptParts = (frame: FilmFrame): EditDraftPart[] =>
       : { kind: 'text', text: run.text },
   )
 
-/** 输入卡里的描述编成发给模型的样子：参考图按第一次出现的先后排，正文里写「图N」，与后端拼文件里的描述同一种写法。 */
+/** 输入卡里的描述编成发给模型的样子：参考图按第一次出现的先后排，正文里写 `@ImageN`，与后端拼文件里的描述同一种写法。 */
 const compilePrompt = (parts: readonly EditDraftPart[]) => {
   const referenceImageUrls: string[] = []
   const text = parts
@@ -109,7 +109,7 @@ const compilePrompt = (parts: readonly EditDraftPart[]) => {
       // 再生成的输入卡没有画布，不会有标注。
       if (part.kind === 'annotation') return ''
       if (!referenceImageUrls.includes(part.url)) referenceImageUrls.push(part.url)
-      return `图${referenceImageUrls.indexOf(part.url) + 1}`
+      return `@Image${referenceImageUrls.indexOf(part.url) + 1}`
     })
     .join('')
   return { referenceImageUrls, text }
