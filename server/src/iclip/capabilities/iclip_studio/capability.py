@@ -18,9 +18,9 @@ from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
-from iclip.capabilities.iclip_studio.film.checks import check
 from iclip.capabilities.iclip_studio.film.export import NothingToExport, export_shots, image_status
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
+from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import IMAGE
 from iclip.capabilities.iclip_studio.film.prompts import render_picture, render_storyboard
@@ -370,29 +370,18 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         if project is None:
             raise ModelRetry(f"工作区里没有 {FILM_PATH}；先按规范把它写出来。")
         run = await files.read(namespace, RUN_PATH)
-        film = check(project.content, None if run is None else run.content)
-        if isinstance(film, list):
-            return film
-        if film.errors:
-            return film.errors
-        images, deps = self._cap.images, _deps(ctx)
-        for document, node in film.given_images():
-            url = node.attrs["src"]
-            recorded = await self._cap.ledger.lookup(namespace, url)
-            known = recorded is not None and recorded.kind == "image"
-            if not known and images is not None:
-                known = await images.belongs(deps.principal, deps.conversation_id, url)
-            if not known:
-                # 不回显地址：没被认可的地址不通过报错进模型上下文。
-                document.error(node, "src 不是这段对话里的图片；只能写对话里给出或生成的图片地址")
-                if document is not film.project:
-                    film.errors.append(document.errors[-1])
-        if film.errors:
-            return film.errors
-        if images is not None:
-            names = [node.attrs["id"] for node in film.image_nodes()]
-            film.generated.update(await images.latest(deps.principal, deps.conversation_id, names))
-        return film
+        deps = _deps(ctx)
+        return await load_film(
+            project.content,
+            None if run is None else run.content,
+            images=ConversationImages(
+                ledger=self._cap.ledger,
+                namespace=namespace,
+                images=self._cap.images,
+                principal=deps.principal,
+                conversation_id=deps.conversation_id,
+            ),
+        )
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
         _ = ctx

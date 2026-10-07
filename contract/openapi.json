@@ -1910,6 +1910,433 @@
         "title": "FaceOut",
         "type": "object"
       },
+      "FilmFrameOut": {
+        "additionalProperties": false,
+        "description": "一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。",
+        "properties": {
+          "kind": {
+            "enum": [
+              "generated",
+              "photo"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "node",
+          "label",
+          "kind",
+          "url",
+          "number"
+        ],
+        "title": "FilmFrameOut",
+        "type": "object"
+      },
+      "FilmGroupOut": {
+        "additionalProperties": false,
+        "properties": {
+          "aspectRatio": {
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/FilmFrameOut"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "integer"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/FilmSettingOut"
+            },
+            "title": "Settings",
+            "type": "array"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/FilmShotOut"
+            },
+            "title": "Shots",
+            "type": "array"
+          },
+          "video": {
+            "title": "Video",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "video",
+          "model",
+          "seconds",
+          "aspectRatio",
+          "frames",
+          "settings",
+          "shots"
+        ],
+        "title": "FilmGroupOut",
+        "type": "object"
+      },
+      "FilmImageChoiceIn": {
+        "additionalProperties": false,
+        "description": "给 ``node`` 换成 ``url``；``url`` 为 null 是回到最近一次生成的那张。\n\n两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "node": {
+            "minLength": 1,
+            "title": "Node",
+            "type": "string"
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "node",
+          "url",
+          "filmVersion",
+          "runVersion"
+        ],
+        "title": "FilmImageChoiceIn",
+        "type": "object"
+      },
+      "FilmLineOut": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "role",
+          "text"
+        ],
+        "title": "FilmLineOut",
+        "type": "object"
+      },
+      "FilmSettingOut": {
+        "additionalProperties": false,
+        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。",
+        "properties": {
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "kind": {
+            "enum": [
+              "shooting",
+              "element",
+              "voice"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target",
+          "label",
+          "text",
+          "image"
+        ],
+        "title": "FilmSettingOut",
+        "type": "object"
+      },
+      "FilmShotOut": {
+        "additionalProperties": false,
+        "description": "一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。",
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/FilmLineOut"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "parts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          }
+        },
+        "required": [
+          "target",
+          "start",
+          "end",
+          "parts",
+          "lines",
+          "view"
+        ],
+        "title": "FilmShotOut",
+        "type": "object"
+      },
+      "FilmTextEditIn": {
+        "additionalProperties": false,
+        "description": "改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。",
+        "properties": {
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
+          },
+          "target": {
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "FilmTextEditIn",
+        "type": "object"
+      },
+      "FilmTextEditsIn": {
+        "additionalProperties": false,
+        "description": "``filmVersion`` 是读到的工程文件版本号，对不上是 409。",
+        "properties": {
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/FilmTextEditIn"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Edits",
+            "type": "array"
+          },
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filmVersion",
+          "edits"
+        ],
+        "title": "FilmTextEditsIn",
+        "type": "object"
+      },
+      "FilmViewEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "film": {
+            "$ref": "#/components/schemas/FilmViewOut"
+          }
+        },
+        "required": [
+          "film"
+        ],
+        "title": "FilmViewEnvelope",
+        "type": "object"
+      },
+      "FilmViewOut": {
+        "additionalProperties": false,
+        "description": "制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/FilmGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "problems": {
+            "title": "Problems",
+            "type": "integer"
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          }
+        },
+        "required": [
+          "filmVersion",
+          "runVersion",
+          "problems",
+          "groups"
+        ],
+        "title": "FilmViewOut",
+        "type": "object"
+      },
       "FrameTarget": {
         "additionalProperties": false,
         "properties": {
@@ -9358,6 +9785,194 @@
           }
         ],
         "summary": "Set Conversation Completion",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film": {
+      "get": {
+        "description": "AI 导演的工程读成制作页：按视频请求分组，带图、全局设定与镜头。没有工程文件 404。",
+        "operationId": "read_conversation_film_conversations__conversation_id__film_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmViewEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Conversation Film",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/image": {
+      "put": {
+        "description": "给一张图换地址，答复换完的制作页。地址不是这段对话的图、也不是自己上传的 422。",
+        "operationId": "choose_conversation_film_image_conversations__conversation_id__film_image_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmImageChoiceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmViewEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Choose Conversation Film Image",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/text": {
+      "patch": {
+        "description": "改几段字，答复改完的制作页。版本对不上 409，改完分镜不合规矩 422。",
+        "operationId": "edit_conversation_film_text_conversations__conversation_id__film_text_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmTextEditsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmViewEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Edit Conversation Film Text",
         "tags": [
           "conversations"
         ]

@@ -31,10 +31,15 @@ from iclip.domains.conversations.schemas import (
     ConversationsAuditOut,
     ConversationsPageOut,
     ConversationTaskIn,
+    FilmImageChoiceIn,
+    FilmTextEditsIn,
+    FilmViewEnvelope,
     SidebarCollectionOut,
     SidebarOut,
     audit_item_out,
     conversation_out,
+    film_text_edits,
+    film_view_out,
 )
 from iclip.domains.conversations.service import (
     ConversationPage,
@@ -328,6 +333,46 @@ def create_conversations_router(
                 path=written.path, content=written.content, version=written.version
             )
         )
+
+    @router.get("/{conversation_id}/film", response_model=FilmViewEnvelope)
+    async def read_conversation_film(
+        conversation_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> FilmViewEnvelope:
+        """AI 导演的工程读成制作页：按视频请求分组，带图、全局设定与镜头。没有工程文件 404。"""
+
+        return film_view_out(await service.film(principal, conversation_id))
+
+    @router.patch("/{conversation_id}/film/text", response_model=FilmViewEnvelope)
+    async def edit_conversation_film_text(
+        conversation_id: uuid.UUID,
+        body: FilmTextEditsIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FilmViewEnvelope:
+        """改几段字，答复改完的制作页。版本对不上 409，改完分镜不合规矩 422。"""
+
+        view = await service.edit_film_text(
+            principal, conversation_id, film_text_edits(body), film_version=body.film_version
+        )
+        return film_view_out(view)
+
+    @router.put("/{conversation_id}/film/image", response_model=FilmViewEnvelope)
+    async def choose_conversation_film_image(
+        conversation_id: uuid.UUID,
+        body: FilmImageChoiceIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FilmViewEnvelope:
+        """给一张图换地址，答复换完的制作页。地址不是这段对话的图、也不是自己上传的 422。"""
+
+        view = await service.choose_film_image(
+            principal,
+            conversation_id,
+            node=body.node,
+            url=body.url,
+            film_version=body.film_version,
+            run_version=body.run_version,
+        )
+        return film_view_out(view)
 
     @router.patch("/{conversation_id}", response_model=ConversationEnvelope)
     async def rename_conversation(

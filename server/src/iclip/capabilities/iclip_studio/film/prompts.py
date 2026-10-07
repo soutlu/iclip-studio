@@ -38,6 +38,21 @@ class PicturePrompt:
 
 
 @dataclass(frozen=True, slots=True)
+class ImageUse:
+    """``Storyboard`` 里写了图的一处。"""
+
+    holder: Node
+    """写这张图的 ``Cast``、``Reference`` 或 ``Shot``。"""
+
+    image: str
+    """图片节点的名字。"""
+
+    url: str | None
+    number: int | None
+    """在发给视频的参考图里排第几，从 1 起；还没有图为 None。"""
+
+
+@dataclass(frozen=True, slots=True)
 class ShotCut:
     timestamps: tuple[float, float]
     prompt: str
@@ -82,15 +97,20 @@ def render_storyboard(film: Film, node: Node, *, assume_generated: bool = False)
     """全局设定加逐镜时间线；镜头时间照文件里写的，不换算。"""
 
     project = film.project
-    images, marks, notes = _references(film, node, "@Image", assume_generated)
+    uses, images = storyboard_images(film, node, assume_generated=assume_generated)
+    numbers = {use.holder: use.number for use in uses if use.number is not None}
     settings = [_block(film, node, STORYBOARD_BLOCK)]
-    for cast, mark in zip(project.kids(node, "Cast"), marks, strict=True):
+    for cast in project.kids(node, "Cast"):
         element = project.nodes[_required(cast, "element")]
-        lead = f"{mark}，" if mark else ""
+        lead = f"@Image{numbers[cast]}，" if cast in numbers else ""
         settings.append(
-            f"{element.attrs['type']} {element.attrs['id']}：{lead}{_for_video(element.text)}"
+            f"{element.attrs['type']} {element.attrs['id']}：{lead}{for_video(element.text)}"
         )
-    settings += notes
+    settings += [
+        f"@Image{numbers[reference]}：{reference.text}"
+        for reference in project.kids(node, "Reference")
+        if reference in numbers
+    ]
     voices = {voice.attrs["role"]: voice for voice in project.find("Voice")}
     speakers: list[str] = []
 
@@ -107,11 +127,8 @@ def render_storyboard(film: Film, node: Node, *, assume_generated: bool = False)
     timeline: list[ShotCut] = []
     for shot in shots:
         text = LINE_REFERENCE.sub(say, shot.text)
-        view = film.image_url(shot.reference("view"), assume_generated=assume_generated)
-        if view is not None:
-            if view not in images:
-                images.append(view)
-            text = f"@Image{images.index(view) + 1} 的机位。{text}"
+        if shot in numbers:
+            text = f"@Image{numbers[shot]} 的机位。{text}"
         timeline.append(ShotCut((float(shot.attrs["start"]), float(shot.attrs["end"])), text))
     settings += [f"声音 {role}：{voices[role].text}" for role in speakers if role in voices]
     return ShotGroup(
@@ -120,6 +137,40 @@ def render_storyboard(film: Film, node: Node, *, assume_generated: bool = False)
         image_urls=tuple(images),
         seconds=math.ceil(float(shots[-1].attrs["end"])),
     )
+
+
+def storyboard_images(
+    film: Film, node: Node, *, assume_generated: bool = False
+) -> tuple[list[ImageUse], list[str]]:
+    """``Storyboard`` 用到的图，按发给视频的先后：先是 Cast 与 Reference，按写的先后；再是各镜头
+    的机位图，与前面同一张的共用编号。只给有图的编号。
+
+    返回 (每一处写了图的地方, 按编号排好的地址)。"""
+
+    project = film.project
+    uses: list[ImageUse] = []
+    images: list[str] = []
+    for child in node.children:
+        if not (project.is_a(child, "Cast") or project.is_a(child, "Reference")):
+            continue
+        reference = child.reference("image")
+        if reference is None:
+            continue
+        url = film.image_url(reference, assume_generated=assume_generated)
+        if url is not None:
+            images.append(url)
+        number = len(images) if url is not None else None
+        uses.append(ImageUse(child, reference.partition(".")[0], url, number))
+    for shot in project.kids(node, "Shot"):
+        reference = shot.reference("view")
+        if reference is None:
+            continue
+        url = film.image_url(reference, assume_generated=assume_generated)
+        if url is not None and url not in images:
+            images.append(url)
+        number = images.index(url) + 1 if url is not None else None
+        uses.append(ImageUse(shot, reference.partition(".")[0], url, number))
+    return uses, images
 
 
 def _references(
@@ -173,8 +224,16 @@ def _sentences(*pieces: str) -> str:
     return "".join(out)
 
 
-def _for_video(description: str) -> str:
+def for_video(description: str) -> str:
+    """出场元素的描述去掉只给生图用的那句英文身材句。"""
+
     return _BODY_SENTENCE.sub("", description).strip()
+
+
+def body_sentence(description: str) -> re.Match[str] | None:
+    """出场元素描述里那句英文身材句；没写为 None。"""
+
+    return _BODY_SENTENCE.search(description)
 
 
 def _required(node: Node, name: str) -> str:
@@ -188,9 +247,13 @@ __all__ = [
     "LINE_REFERENCE",
     "PICTURE_BLOCKS",
     "STORYBOARD_BLOCK",
+    "ImageUse",
     "PicturePrompt",
     "ShotCut",
     "ShotGroup",
+    "body_sentence",
+    "for_video",
     "render_picture",
     "render_storyboard",
+    "storyboard_images",
 ]

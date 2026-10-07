@@ -13,6 +13,7 @@ from typing import Any, Literal, Protocol
 import structlog
 
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from iclip.common.film_view import FilmTextEdit, FilmView
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     Conversation,
@@ -184,6 +185,41 @@ WriteDerivedFile = Callable[[uuid.UUID, uuid.UUID, str, str, int], Awaitable[Der
 版本不匹配抛 Conflict；路径和容量由存储实现校验。"""
 
 
+class ConversationFilm(Protocol):
+    """这段对话里 AI 导演的工程，在制作页上读、改字、换图；由组合根接到工作区文件与生成记录上。
+
+    ``owner`` 是对话属主，权限由用例先判。版本对不上抛 Conflict，改动不合规矩抛
+    ValidationFailed，消息是给人看的一句话。"""
+
+    async def view(
+        self, principal: Principal, owner: uuid.UUID, conversation_id: uuid.UUID
+    ) -> FilmView | None:
+        """没有工程文件返回 None。"""
+        ...
+
+    async def edit_text(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        edits: Sequence[FilmTextEdit],
+        *,
+        film_version: int,
+    ) -> FilmView: ...
+
+    async def choose_image(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        url: str | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> FilmView: ...
+
+
 class WorkspaceDocumentValidator(Protocol):
     """工作区文件写入前的校验协议，由组合根按路径注入。
 
@@ -292,6 +328,7 @@ class ConversationService:
         read_derived_file: ReadDerivedFile,
         write_derived_file: WriteDerivedFile,
         document_validators: Mapping[str, WorkspaceDocumentValidator],
+        film: ConversationFilm,
         generate_title: GenerateTitle,
         announce_title: AnnounceTitle,
         activities_of: ActivitiesOf,
@@ -320,6 +357,7 @@ class ConversationService:
         self._read_derived_file = read_derived_file
         self._write_derived_file = write_derived_file
         self._document_validators = document_validators
+        self._film = film
         # 同一段对话的「写库 → 读活动 → 广播」在本进程串行：帧序号在广播时才发，两次写入若在读活动处
         # 交错，先提交的旧行会拿到更大的序号把新行盖回去。ADR-0004 的「提交后发号」以发号顺序等于提交
         # 顺序为前提。锁只经 _row_lock 用在 async with 里，没人持有也没人等待时随即回收。
@@ -410,18 +448,77 @@ class ConversationService:
     ) -> DerivedFileContent:
         """覆盖属主的工作区文件。不可见对话返回 404，可见但非属主返回 403。"""
 
-        conversation = await self._readable(principal, conversation_id)
-        if conversation.owner_user_id != principal.user_id:
-            raise PermissionDenied("只有属主能改这段对话的工作区文件")
-        # 治理者读得到自己删掉的对话，但墓碑对谁都是只读的。
-        if conversation.deleted_at is not None:
-            raise PermissionDenied("已删除的对话不能再改")
+        conversation = await self._workspace_writable(principal, conversation_id)
         validate = self._document_validators.get(path)
         if validate is not None:
             await validate(conversation.owner_user_id, conversation.id, content)
         return await self._write_derived_file(
             conversation.owner_user_id, conversation.id, path, content, expected_version
         )
+
+    async def film(self, principal: Principal, conversation_id: uuid.UUID) -> FilmView:
+        """读这段对话的制作页；可见范围同读工作区文件，没有工程文件返回 404。"""
+
+        conversation = await self._readable(principal, conversation_id)
+        found = await self._film.view(principal, conversation.owner_user_id, conversation.id)
+        if found is None:
+            raise NotFound("这段对话里没有 AI 导演写的分镜")
+        return found
+
+    async def edit_film_text(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        edits: Sequence[FilmTextEdit],
+        *,
+        film_version: int,
+    ) -> FilmView:
+        """在制作页上改字；只有属主能改，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.edit_text(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            edits,
+            film_version=film_version,
+        )
+
+    async def choose_film_image(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        url: str | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> FilmView:
+        """在制作页上给一张图换地址；只有属主能换，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.choose_image(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            node=node,
+            url=url,
+            film_version=film_version,
+            run_version=run_version,
+        )
+
+    async def _workspace_writable(
+        self, principal: Principal, conversation_id: uuid.UUID
+    ) -> Conversation:
+        """改工作区的权限：看不见是 404，看得见但不是属主是 403。"""
+
+        conversation = await self._readable(principal, conversation_id)
+        if conversation.owner_user_id != principal.user_id:
+            raise PermissionDenied("只有属主能改这段对话的工作区文件")
+        # 治理者读得到自己删掉的对话，但墓碑对谁都是只读的。
+        if conversation.deleted_at is not None:
+            raise PermissionDenied("已删除的对话不能再改")
+        return conversation
 
     async def create(
         self,
@@ -816,6 +913,7 @@ __all__ = [
     "BusyConversationIds",
     "ClaimTask",
     "CollectionInfo",
+    "ConversationFilm",
     "ConversationService",
     "DeletedFilter",
     "DerivedFile",

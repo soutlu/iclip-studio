@@ -255,6 +255,18 @@ class GenerationService:
             inherited=await self._inheritance(principal, conversation_id),
         )
 
+    async def find_upload(self, principal: Principal, url: str) -> GenerationJob | None:
+        """主体看得见的一条图片上传记录，产物就是这个地址；找不到返回 None。
+
+        上传不属于任何对话，只按主体可见范围认。"""
+
+        return await self._repo.find_image_by_output(
+            url,
+            owner=visible_owner_incl_act_as(principal),
+            conversation_id=None,
+            operation=OPERATION_UPLOAD,
+        )
+
     async def _resolve_base(
         self, principal: Principal, url: str | None, conversation_id: uuid.UUID | None
     ) -> tuple[uuid.UUID | None, str | None]:
@@ -273,9 +285,7 @@ class GenerationService:
             inherited=await self._inheritance(principal, conversation_id),
         )
         if found is None:
-            found = await self._repo.find_image_by_output(
-                url, owner=owner, conversation_id=None, operation=OPERATION_UPLOAD
-            )
+            found = await self.find_upload(principal, url)
         return (None, url) if found is None else (found.id, None)
 
     async def _accept(

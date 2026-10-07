@@ -34,6 +34,7 @@ from iclip.platform.transcript.session_events import SessionEventClock
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.film import UnusedFilmPage
 from tests.helpers.generation import (
     MEDIA_ENVS,
     MemoryObjectStore,
@@ -404,6 +405,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             read_derived_file=_untouched,
             write_derived_file=_untouched,
             document_validators={},
+            film=UnusedFilmPage(),
             generate_title=_untouched,
             announce_title=_untouched,
             activities_of=_untouched,

@@ -9,9 +9,9 @@ from typing import Any
 
 import httpx
 import pytest
-from procrastinate.testing import InMemoryConnector
 
-from iclip.app.capability_table import FILM_NODE_KEY, FilmImagesAdapter, build_capability_table
+from iclip.app.capability_table import build_capability_table
+from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from iclip.config import ResolvedIclipStudio
@@ -21,21 +21,17 @@ from iclip.domains.generation.models import (
     GenerationJob,
     GenerationStatus,
 )
-from iclip.domains.generation.module import ImageModelConfig, build_generation_module
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
-from iclip.domains.generation.service import GenerationService
-from iclip.domains.generation.video import VideoProviderSettings
-from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
+    film_image_service,
     image_request,
     make_job,
 )
-from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.material_ledger import FakeMaterialLedger
 
 OWNER = uuid.UUID("77777777-7777-7777-7777-777777777777")
@@ -49,38 +45,6 @@ PRINCIPAL = Principal(
 CONVERSATION = uuid.uuid4()
 OTHER_CONVERSATION = uuid.uuid4()
 START = datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
-
-
-async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> None:
-    return None
-
-
-def service_on(
-    repo: InMemoryGenerationRepository, lineage: FixedLineage | None = None
-) -> GenerationService:
-    return build_generation_module(
-        repo,
-        act_as=ActAs(InMemoryUserRepository()),
-        clear_completion=_keep_completion,
-        lineage=lineage or FixedLineage(),
-        video=VideoProviderSettings(
-            submit_url="https://video.test/generate",
-            status_base_url="https://video.test/tasks",
-            api_key="secret-key",
-        ),
-        video_default_model="vendor-a-seedance-2-5",
-        video_allowed_models=("vendor-a-seedance-2-5",),
-        image_models=[
-            ImageModelConfig(name=name, api_base=f"https://image.test/{name}", concurrency=1)
-            for name in ("nano_banana_pro", "gpt-image-2.5")
-        ],
-        image_default_model="nano_banana_pro",
-        image_env="test",
-        image_text_to_image_task="text-to-image",
-        image_edit_task="image-edit",
-        object_store=MemoryObjectStore(),
-        queue_connector=InMemoryConnector(),
-    ).service
 
 
 def node_request(**overrides: Any) -> NodeImageRequest:
@@ -121,7 +85,7 @@ def image_row(
 
 async def test_an_image_is_filed_under_its_node_and_conversation() -> None:
     repo = InMemoryGenerationRepository()
-    adapter = FilmImagesAdapter(service_on(repo))
+    adapter = FilmImagesAdapter(film_image_service(repo))
 
     job = await adapter.submit(PRINCIPAL, node_request())
 
@@ -135,7 +99,7 @@ async def test_an_image_is_filed_under_its_node_and_conversation() -> None:
 
 async def test_a_request_the_model_cannot_serve_is_refused_before_anything_is_queued() -> None:
     repo = InMemoryGenerationRepository()
-    adapter = FilmImagesAdapter(service_on(repo))
+    adapter = FilmImagesAdapter(film_image_service(repo))
 
     with pytest.raises(InvalidNodeImageRequest, match=re.escape("gpt-image-2.5 不支持分辨率 1k")):
         await adapter.submit(PRINCIPAL, node_request(resolution="1k"))
@@ -160,7 +124,7 @@ async def test_latest_is_the_newest_successful_image_of_each_node() -> None:
             ),
         ]
     )
-    adapter = FilmImagesAdapter(service_on(repo))
+    adapter = FilmImagesAdapter(film_image_service(repo))
 
     found = await adapter.latest(
         PRINCIPAL, str(CONVERSATION), ["短发女生参考图", "镜01机位图", "公园跑道参考图"]
@@ -182,7 +146,7 @@ async def test_an_address_belongs_when_the_conversation_has_a_finished_image_at_
         output_url="https://cdn.test/upload.png",
     )
     adapter = FilmImagesAdapter(
-        service_on(InMemoryGenerationRepository([edited, elsewhere, uploaded]))
+        film_image_service(InMemoryGenerationRepository([edited, elsewhere, uploaded]))
     )
 
     async def belongs(url: str) -> bool:
@@ -221,7 +185,7 @@ async def test_a_fork_keeps_the_images_its_source_had_at_the_fork() -> None:
         finished_at=START + timedelta(minutes=21),
     )
     adapter = FilmImagesAdapter(
-        service_on(
+        film_image_service(
             InMemoryGenerationRepository([before, after]),
             FixedLineage({fork: ((CONVERSATION, forked_at),)}),
         )
@@ -235,7 +199,7 @@ async def test_a_fork_keeps_the_images_its_source_had_at_the_fork() -> None:
 
 
 async def test_a_conversation_id_that_is_not_a_uuid_is_a_broken_run() -> None:
-    adapter = FilmImagesAdapter(service_on(InMemoryGenerationRepository()))
+    adapter = FilmImagesAdapter(film_image_service(InMemoryGenerationRepository()))
 
     with pytest.raises(RuntimeError, match="对话 id 不是 UUID"):
         await adapter.latest(PRINCIPAL, "thread-1", ["镜01机位图"])
@@ -248,7 +212,7 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
-        generation_service=service_on(InMemoryGenerationRepository()),
+        generation_service=film_image_service(InMemoryGenerationRepository()),
         object_store=MemoryObjectStore(),
         iclip_studio=ResolvedIclipStudio(
             breakdown_url="https://vision.test/responses",

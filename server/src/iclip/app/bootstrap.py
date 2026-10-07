@@ -29,6 +29,7 @@ from iclip.app.agent_layer import (
     watch_and_reload,
 )
 from iclip.app.capability_table import build_capability_table, build_display_registry
+from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
 from iclip.app.conversation_workspace import (
     ConversationWorkspace,
@@ -526,6 +527,12 @@ def build_app(
             FILM_PATH: validate_film,
             RUN_PATH: validate_film_run,
         },
+        film=ConversationFilmAdapter(
+            store=workspace_store,
+            announcing=announcing_workspace_store,
+            ledger=material_ledger,
+            generation=generation.service if generation is not None else None,
+        ),
         generate_title=live_title_generator(agent_layer),
         announce_title=live_connections.announce_title,
         event_watermark=live_connections.clock.snapshot,
