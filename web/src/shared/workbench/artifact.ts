@@ -65,7 +65,8 @@ export interface ArtifactEntry {
   icon: IconName
   component: ComponentType<ArtifactRendererProps>
   autoOpen: boolean
-  /** 按路径、模式或工作区命中的类型是常驻项：还没有产物时菜单照样列出它，用这一句解释为什么灰着。 */
+  /** 按路径、模式或工作区命中的类型是常驻项：有了产物就占标签位。给了这一句，还没有产物时选择页也列一行灰的，
+   * 用它解释为什么灰着；不给就等有了产物再出现，只有某个 agent 才交付的类型（制作页）不给，见 ADR-0008。 */
   empty?: string
 }
 
