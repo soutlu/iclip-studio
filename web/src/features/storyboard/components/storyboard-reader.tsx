@@ -6,7 +6,7 @@ import { errorMessageOf } from '@/shared/api/client'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
 import { useWorkspaceFile, type ArtifactRendererProps } from '@/shared/workbench'
-import { formatShotPrompt, validateShot, type Shot } from '../shot-document'
+import { formatShotPrompt, shotGroupSummary, validateShot, type Shot } from '../shot-document'
 import { frameBadges, latestFrameJobs } from '../frame-status'
 import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
 import { useFrameImageJobs } from '../image-edit/image-edit.api'
@@ -150,11 +150,10 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          aspectRatio={document.aspect_ratio}
-          fullPrompt={formatShotPrompt(shot)}
+          copy={{ done: '已复制完整提示词', label: '复制完整提示词', text: formatShotPrompt(shot) }}
+          groups={shots.map((item) => shotGroupSummary(item, document.aspect_ratio))}
           onGoShot={goShot}
           position={position}
-          shots={shots}
           status={
             <SaveStatus
               state={draft.state}

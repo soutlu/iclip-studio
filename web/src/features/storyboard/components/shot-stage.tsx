@@ -100,8 +100,7 @@ function FrameStage({
             replacing={view.replacing}
           />
           <StageFrameNav
-            aspectRatio={aspectRatio}
-            gallery={view.gallery}
+            counter={{ aspectRatio, gallery: view.gallery }}
             hasNext={view.onNext !== undefined}
             hasPrevious={view.onPrevious !== undefined}
             onStep={step}
@@ -147,7 +146,7 @@ function TakeStage({ drop, view }: { drop: ShotStageProps['drop']; view: TakeVie
 /** 舞台底板：深色放映底、内容淡入、拖放提示。`overlay` 叠在内容上面、不跟着淡入，拖放提示再盖在它上面；
  * 两者都在拖放区里，拖到叠层的按钮上照样算落在舞台上。
  * `stageRef` 交出舞台元素，帧视图在上面挂 ←/→ 切帧。 */
-function StageShell({
+export function StageShell({
   children,
   drop,
   overlay,
@@ -156,7 +155,7 @@ function StageShell({
   children: ReactNode
   drop: ShotStageProps['drop']
   overlay?: ReactNode
-  stageRef?: (node: HTMLDivElement | null) => void
+  stageRef?: ((node: HTMLDivElement | null) => void) | undefined
 }) {
   return (
     <div className="storyboard-stage" ref={stageRef} {...drop.dragHandlers}>

@@ -27,8 +27,8 @@ const conversationGenerationsKey = (conversationId: string) =>
   ['generations', 'conversation', conversationId] as const
 
 export const storyboardQueryKeys = {
-  /** 本对话全部生成记录查询的前缀：视频记录、参考帧编辑、视频编辑链都挂在它下面，状态跳转帧到了
-   * 失效它一次就全部重拉。模型清单不在这下面。 */
+  /** 本对话全部生成记录查询的前缀：视频记录、参考帧编辑、视频编辑链，以及看生成结果选图的制作页都挂在它下面，
+   * 状态跳转帧到了失效它一次就全部重拉。模型清单不在这下面。 */
   conversation: conversationGenerationsKey,
   /** 本对话全部视频记录；分镜页与需求单面板共用这一份缓存。 */
   videoJobs: (conversationId: string) =>

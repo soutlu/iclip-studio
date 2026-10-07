@@ -1,4 +1,6 @@
 export { shotContentIdSchema } from './shot-content'
 export { SHOTS_PATH } from './shots'
 export { StoryboardReader as StoryboardPanel } from './components/storyboard-reader'
+export { FILM_PATH } from './film/film.api'
+export { FilmReader as FilmPanel } from './film/film-reader'
 export { ConversationVideos } from './conversation-videos/conversation-videos'

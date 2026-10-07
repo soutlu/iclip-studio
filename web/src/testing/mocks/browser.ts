@@ -10,6 +10,7 @@ import {
   mockGovernor,
 } from './handlers'
 import { seedDemoTasks } from './demo-tasks'
+import { seedMockFilm } from './film'
 import { markMockAwaitingApproval, markMockJustFinished, markMockToolShowcase } from './transcript'
 import { seedMockReplicaWorkspace, seedMockWorkspace } from './workspace'
 
@@ -75,6 +76,10 @@ const toolShowcase = addMockConversation('工具过程展示')
 seedMockWorkspace(toolShowcase.id, { httpFrames: true })
 markMockToolShowcase(toolShowcase.id)
 
+// AI 导演的工程：制作页演示改字与读出镜头组。
+const film = addMockConversation('穿搭种草 · 12 秒')
+seedMockFilm(film.id)
+
 const replica = addMockConversation('乐福鞋 · 完全复刻')
 seedMockReplicaWorkspace(replica.id)
 
@@ -131,6 +136,7 @@ mockLatestMasterUrls.set(wangDone.id, sampleVideoUrl)
 seedDemoTasks([
   ...seeded,
   withoutImages,
+  film,
   replica,
   governorShots,
   governorDone,

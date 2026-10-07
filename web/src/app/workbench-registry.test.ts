@@ -13,4 +13,15 @@ describe('分镜产物注册', () => {
     ])
     expect(workbenchRegistry.autoOpens('storyboard')).toBe(true)
   })
+
+  it('AI 导演的工程文件打开制作页，运行文件不单独成一件', () => {
+    const artifacts = workbenchRegistry.matchFiles([
+      { path: 'film.icml', version: 3 },
+      { path: 'film.icrun', version: 1 },
+    ])
+    expect(artifacts.map(({ id, type }) => ({ id, type }))).toEqual([
+      { id: 'file:film.icml', type: 'film' },
+    ])
+    expect(workbenchRegistry.autoOpens('film')).toBe(true)
+  })
 })

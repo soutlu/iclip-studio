@@ -9,6 +9,7 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
 import { auditHandlers } from './audit'
+import { filmHandlers } from './film'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
@@ -509,6 +510,7 @@ export const handlers = [
   http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
 
   ...workspaceHandlers,
+  ...filmHandlers,
 
   ...transcriptHandlers,
 

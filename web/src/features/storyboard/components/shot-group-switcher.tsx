@@ -8,12 +8,24 @@ import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { IconButton } from '@/shared/ui/button'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { encodeContentId } from '../shot-content'
-import { formatSeconds, shotName, type Shot } from '../shot-document'
+import { formatSeconds } from '../shot-document'
+
+/** 列表里一组要画的几样；分镜页与制作页各自从自己的数据里取。 */
+export type ShotGroupSummary = {
+  index: number
+  seconds: number
+  /** 列表缩略图的画幅。 */
+  aspectRatio: string
+  /** 首帧缩略图；这组还没有图为 undefined。 */
+  thumbnailUrl: string | undefined
+  /** 各镜头的时长，按先后，画成分段细条。 */
+  sceneSeconds: readonly number[]
+  /** 一行描述。 */
+  name: string
+}
 
 type ShotGroupSwitcherProps = {
-  shots: readonly Shot[]
-  /** 分镜画幅，列表缩略图按它的比例。 */
-  aspectRatio: string
+  groups: readonly ShotGroupSummary[]
   /** 当前组在全部组里排第几，从 1 起。 */
   position: number
   /** 切到第几组（从 1 起）。 */
@@ -23,8 +35,8 @@ type ShotGroupSwitcherProps = {
 const STEP_CLASS =
   'size-7 rounded-full text-on-surface-variant aria-disabled:cursor-default aria-disabled:text-disabled-text'
 
-export function ShotGroupSwitcher({ aspectRatio, onGo, position, shots }: ShotGroupSwitcherProps) {
-  const total = shots.length
+export function ShotGroupSwitcher({ groups, onGo, position }: ShotGroupSwitcherProps) {
+  const total = groups.length
   const [open, setOpen] = useState(false)
   const pillRef = useRef<HTMLButtonElement | null>(null)
   const currentRef = useRef<HTMLDivElement | null>(null)
@@ -46,7 +58,7 @@ export function ShotGroupSwitcher({ aspectRatio, onGo, position, shots }: ShotGr
     const next = position + (event.key === 'ArrowDown' ? 1 : -1)
     if (next >= 1 && next <= total) go(next)
   }
-  const totalSeconds = shots.reduce((sum, shot) => sum + shot.seconds, 0)
+  const totalSeconds = groups.reduce((sum, group) => sum + group.seconds, 0)
   return (
     <div
       aria-label="切换镜头组"
@@ -94,15 +106,15 @@ export function ShotGroupSwitcher({ aspectRatio, onGo, position, shots }: ShotGr
             onValueChange={(value) => onGo(Number(value))}
             value={String(position)}
           >
-            {shots.map((shot) => (
+            {groups.map((group) => (
               <MenuRadioItem
                 className="shot-group-menu-row"
-                key={shot.index}
-                ref={shot.index === position ? currentRef : undefined}
-                textValue={`第 ${shot.index} 组 ${shotName(shot)}`}
-                value={String(shot.index)}
+                key={group.index}
+                ref={group.index === position ? currentRef : undefined}
+                textValue={`第 ${group.index} 组 ${group.name}`}
+                value={String(group.index)}
               >
-                <ShotGroupRow aspectRatio={aspectRatio} shot={shot} />
+                <ShotGroupRow group={group} />
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>
@@ -120,44 +132,37 @@ export function ShotGroupSwitcher({ aspectRatio, onGo, position, shots }: ShotGr
   )
 }
 
-type ShotGroupRowProps = {
-  shot: Shot
-  aspectRatio: string
-}
-
 /** 列表里的一行：首帧缩略图、组号与时长、按各镜头时长分段的细条、一行描述。 */
-function ShotGroupRow({ aspectRatio, shot }: ShotGroupRowProps) {
-  // 首帧取第一个镜头引用的第一张图，没引用就用第一张。
-  const frame =
-    shot.prompt.timeline[0]?.image_indexes.find(
-      (value) => value >= 1 && value <= shot.image_urls.length,
-    ) ?? 1
-  const url = shot.image_urls[frame - 1]
+function ShotGroupRow({ group }: { group: ShotGroupSummary }) {
   return (
     <>
       <span
         aria-hidden="true"
         className="shot-group-menu-thumb"
-        style={{ aspectRatio: aspectValueOf(aspectRatio) }}
+        style={{ aspectRatio: aspectValueOf(group.aspectRatio) }}
       >
-        {url === undefined ? <span>无图</span> : <img alt="" draggable={false} src={url} />}
+        {group.thumbnailUrl === undefined ? (
+          <span>无图</span>
+        ) : (
+          <img alt="" draggable={false} src={group.thumbnailUrl} />
+        )}
       </span>
       <span className="shot-group-menu-copy">
         <span className="shot-group-menu-title">
-          <strong>第 {shot.index} 组</strong>
+          <strong>第 {group.index} 组</strong>
           <span>
-            {formatSeconds(shot.seconds)} 秒 · {shot.prompt.timeline.length} 个镜头
+            {formatSeconds(group.seconds)} 秒 · {group.sceneSeconds.length} 个镜头
           </span>
         </span>
         <span aria-hidden="true" className="shot-group-menu-strip">
-          {shot.prompt.timeline.map((item, scene) => (
+          {group.sceneSeconds.map((seconds, scene) => (
             <i
               key={encodeContentId({ kind: 'scene', scene: scene + 1 })}
-              style={{ flexGrow: Math.max(item.timestamps[1] - item.timestamps[0], 0) }}
+              style={{ flexGrow: Math.max(seconds, 0) }}
             />
           ))}
         </span>
-        <span className="shot-group-menu-name">{shotName(shot)}</span>
+        <span className="shot-group-menu-name">{group.name}</span>
       </span>
     </>
   )

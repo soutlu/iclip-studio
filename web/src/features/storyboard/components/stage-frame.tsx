@@ -17,9 +17,17 @@ type StageFrameProps = {
   onOpen: () => void
   /** 「打开原图」按钮；箭头到头隐藏时焦点交给它。 */
   openRef: Ref<HTMLButtonElement>
+  /** 没有图时舞台上写的一句。 */
+  emptyText?: string
 }
 
-export function StageFrame({ frame, onOpen, openRef, uploading }: StageFrameProps) {
+export function StageFrame({
+  emptyText = '这段还没有图',
+  frame,
+  onOpen,
+  openRef,
+  uploading,
+}: StageFrameProps) {
   return (
     <>
       {frame === undefined ? null : (
@@ -28,7 +36,7 @@ export function StageFrame({ frame, onOpen, openRef, uploading }: StageFrameProp
       <div className="storyboard-hero">
         {frame === undefined ? (
           <div className="storyboard-media">
-            <p className="storyboard-stage-empty">这段还没有图</p>
+            <p className="storyboard-stage-empty">{emptyText}</p>
           </div>
         ) : (
           <div aria-label="当前帧图片" className="storyboard-media" role="group">
@@ -63,22 +71,16 @@ export function StageFrame({ frame, onOpen, openRef, uploading }: StageFrameProp
 }
 
 type StageFrameNavProps = {
-  aspectRatio: string
-  gallery: FrameGallery
+  /** 底部正中的帧计数；不给就不画。 */
+  counter: { aspectRatio: string; gallery: FrameGallery } | undefined
   /** 哪一侧还能切；到头的一侧箭头不出现（不是置灰）。 */
   hasPrevious: boolean
   hasNext: boolean
   onStep: (step: -1 | 1) => void
 }
 
-/** 叠在舞台上的切帧箭头与帧计数。 */
-export function StageFrameNav({
-  aspectRatio,
-  gallery,
-  hasNext,
-  hasPrevious,
-  onStep,
-}: StageFrameNavProps) {
+/** 叠在舞台上的切帧箭头与帧计数；制作页不要帧计数。 */
+export function StageFrameNav({ counter, hasNext, hasPrevious, onStep }: StageFrameNavProps) {
   return (
     <>
       {hasPrevious ? (
@@ -101,8 +103,8 @@ export function StageFrameNav({
           size="lg"
         />
       ) : null}
-      {gallery.urls.length === 0 ? null : (
-        <FrameCounter aspectRatio={aspectRatio} gallery={gallery} />
+      {counter === undefined || counter.gallery.urls.length === 0 ? null : (
+        <FrameCounter aspectRatio={counter.aspectRatio} gallery={counter.gallery} />
       )}
     </>
   )
