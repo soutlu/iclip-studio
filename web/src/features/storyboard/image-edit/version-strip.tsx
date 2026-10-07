@@ -29,9 +29,10 @@ type VersionStripProps = {
   regenerate?: { selected: boolean; onSelect: () => void } | undefined
 }
 
-/** 一格读不出图就只换这一格，整条仍能翻；地址换了由调用点重新挂载重置。 */
+/** 一格读不出图就只换这一格，整条仍能翻；地址换了由调用点重新挂载重置。按描述生成、还没出图的任务没有底图（空串），空着。 */
 function SlotImage({ src }: { src: string }) {
   const [failed, setFailed] = useState(false)
+  if (src === '') return null
   if (failed) return <MediaFallback className="size-full p-1" compact kind="image" />
   return (
     <img

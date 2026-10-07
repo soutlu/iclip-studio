@@ -1,4 +1,4 @@
-/** 「替换当前帧」与随后 6 秒的撤销。 */
+/** 「替换当前帧」（制作页是「选用这张」）与随后 6 秒的撤销。 */
 
 import { useEffect, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
@@ -6,10 +6,11 @@ import { errorMessageOf } from '@/shared/api/client'
 const UNDO_MS = 6000
 
 type FrameReplaceOptions = {
-  /** 分镜里这一帧此刻的图；帧已经不在分镜里时为空。 */
-  currentUrl: string | undefined
-  /** 把这一帧从 `previousUrl` 换成 `url`；这一帧已不是 `previousUrl` 时应当拒绝。 */
-  onApply: (previousUrl: string, url: string) => Promise<void>
+  /** 分镜里这一帧此刻的图；帧已经不在分镜里时为 undefined，在分镜里但没有在用的图（制作页没选用的生成图）时为 null。 */
+  currentUrl: string | null | undefined
+  /** 把这一帧从 `previousUrl` 换成 `url`；这一帧已不是 `previousUrl` 时应当拒绝。null 是没有在用的图：
+   * 从 null 换走是第一次选用，换成 null 是撤销回空白。 */
+  onApply: (previousUrl: string | null, url: string | null) => Promise<void>
 }
 
 /**
@@ -24,22 +25,24 @@ export function useFrameReplace({ currentUrl, onApply }: FrameReplaceOptions) {
   // 不能跟着渲染走：这一帧被 agent 换掉时，版本条上那一小格会悄悄改一张图，用户盯着结果
   // 根本不会发现，跟着走等于没有守卫，会直接盖掉别人刚写的。也不能锁死在打开那一刻，否则
   // 替换完窗口留着就再也对不上。所以只在用户确实看过这一格时更新：翻版本条、自己替换或撤销成功、
-  // 以及被拒绝一次之后。
-  const acknowledgedRef = useRef<string | undefined>(undefined)
-  acknowledgedRef.current ??= currentUrl
+  // 以及被拒绝一次之后。没有在用的图（null）也是一种确认过的状态，与「还没确认过」（undefined）分开。
+  const acknowledgedRef = useRef<string | null | undefined>(undefined)
+  if (acknowledgedRef.current === undefined) acknowledgedRef.current = currentUrl
   const busyRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [pending, setPending] = useState<'replace' | 'undo' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [undoable, setUndoable] = useState<{ applied: string; previous: string } | null>(null)
+  const [undoable, setUndoable] = useState<{ applied: string; previous: string | null } | null>(
+    null,
+  )
 
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
   /** 写回一次；成功后认下新图，失败时认下此刻的当前帧（多半是这一帧被别人换过了），用户再点就是冲着它去的。 */
   const write = async (
     kind: 'replace' | 'undo',
-    previous: string,
-    url: string,
+    previous: string | null,
+    url: string | null,
     fallback: string,
   ): Promise<boolean> => {
     busyRef.current = true
@@ -61,7 +64,7 @@ export function useFrameReplace({ currentUrl, onApply }: FrameReplaceOptions) {
 
   /** 把这一帧换成 `url`；返回是否换成了。 */
   const replace = async (url: string): Promise<boolean> => {
-    const previous = acknowledgedRef.current ?? currentUrl
+    const previous = acknowledgedRef.current === undefined ? currentUrl : acknowledgedRef.current
     if (busyRef.current || previous === undefined) return false
     if (!(await write('replace', previous, url, '没替换成功，请重试'))) return false
     clearTimeout(timerRef.current)

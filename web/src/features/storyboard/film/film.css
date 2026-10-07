@@ -71,7 +71,8 @@
 
 /* ===== 生成卡 =====
    舞台上一张还没有图的生成图：深色舞台上居中一张浅色卡（与浮起的段卡同一层底色），画幅框里放不下就在卡里滚。
-   描述用小一号的正文、行高给图片芯片留足；底部一行是提交失败的原话与「生成这张」。 */
+   描述用小一号的正文、行高给图片芯片留足；按钮上方一行灰字是缺图提醒；底部一行是提交失败的原话与按钮。
+   生成好了还没选用时（data-result）卡占满画幅框，结果的预览占去标题与按钮以外的高度，整张放得下。 */
 .film-generate {
   position: absolute;
   inset: 0;
@@ -105,6 +106,33 @@
   line-height: 1.75;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+.film-generate-card[data-result] {
+  height: 100%;
+  overflow: hidden;
+}
+.film-generate-preview {
+  min-height: 0;
+  flex: 1 1 0;
+  border-radius: var(--radius-sm);
+  cursor: zoom-in;
+}
+.film-generate-preview > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.film-generate-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+.film-generate-hint > svg {
+  flex: none;
+  margin-top: 3px;
 }
 .film-generate-foot {
   display: flex;

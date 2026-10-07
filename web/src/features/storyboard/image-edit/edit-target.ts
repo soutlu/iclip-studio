@@ -19,12 +19,18 @@ export const editTargetMetadata = (target: FrameEditTarget): Record<string, unkn
 export const editTargetKeyParts = (target: FrameEditTarget): readonly (string | number)[] =>
   isFilmTarget(target) ? ['film', target.node] : [target.shotIndex, target.frameNumber]
 
-/** 编辑器上随所在页面变的几句话。 */
+/** 编辑器上随所在页面变的几句话，与主操作的样子。 */
 export type EditorWords = {
   /** 版本条第一格、对比时左边：这张图正在用的那一版。 */
   current: string
   /** 对比时的主操作。 */
   replace: string
+  /** 主操作进行中按钮上的字。 */
+  replacing: string
+  /** 主操作做完、撤销入口旁边的那句。 */
+  replaced: string
+  /** 主操作的样子：分镜页替换当前帧用主色；制作页的选用不是生成，不用主色（主色只给生成）。 */
+  replaceTone: 'primary' | 'neutral'
   /** 这张图已经不在分镜里了。 */
   gone: string
   /** 选中一张结果时的脚注。 */
@@ -44,6 +50,9 @@ const FRAME_WORDS: EditorWords = {
   gone: '这一帧已经不在分镜里了，关掉窗口重新选一帧',
   replace: '替换当前帧',
   replaceNote: '替换只改当前帧，替换后可以撤销',
+  replaceTone: 'primary',
+  replaced: '已替换',
+  replacing: '正在替换…',
   versions: '这一帧的图片',
 }
 
@@ -52,8 +61,11 @@ const FILM_WORDS: EditorWords = {
   current: '在用',
   frames: '图',
   gone: '这张图已经不在分镜里了，关掉窗口重新选一张',
-  replace: '替换这张图',
-  replaceNote: '替换后，用到这张图的地方都换成它，可以撤销',
+  replace: '选用这张',
+  replaceNote: '选用后，用到这张图的地方都换成它，可以撤销',
+  replaceTone: 'neutral',
+  replaced: '已选用',
+  replacing: '正在选用…',
   versions: '这张图的版本',
 }
 

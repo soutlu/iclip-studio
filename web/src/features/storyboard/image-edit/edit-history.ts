@@ -18,7 +18,8 @@ export const CURRENT_KEY = 'current'
 
 type Seed = { url: string; job: GenerationJob | null; createdAt: string }
 
-/** 这一帧出现过的所有图：当前帧固定在头一个，其余按时间倒序。
+/** 这一帧出现过的所有图：当前帧固定在头一个，其余按时间倒序。`currentUrl` 为 null 是这张图现在没有在用的
+ * （制作页上没选用的生成图），没有当前帧那一格。
  *
  * 图从两处来：任务的产出，以及任务的来源地址（`sourceUrl`，库内底图与外部底图都有）。
  * 底图未必还在分镜里，它可能是上一轮没落盘的结果，也可能已被后来的编辑覆盖，只有这样
@@ -29,7 +30,7 @@ type Seed = { url: string; job: GenerationJob | null; createdAt: string }
  * 任务都产出过时留最前那条。 */
 export function frameImageEntries(
   jobs: readonly GenerationJob[],
-  currentUrl: string,
+  currentUrl: string | null,
 ): StripEntry[] {
   const running: StripEntry[] = []
   const seeds = new Map<string, Seed>()
@@ -48,7 +49,7 @@ export function frameImageEntries(
     if (phase === 'queued' || phase === 'running')
       running.push({ kind: 'pending', key: job.id, job })
     else if (phase === 'failed') running.push({ kind: 'failed', key: job.id, job })
-    else if (isAppliedResult(job, currentUrl)) currentJob ??= job
+    else if (currentUrl !== null && isAppliedResult(job, currentUrl)) currentJob ??= job
     else if (job.outputUrl !== null) remember(job.outputUrl, job, job.createdAt)
 
     const base = job.sourceUrl
@@ -65,6 +66,7 @@ export function frameImageEntries(
   const rest = [...running, ...images].sort((left, right) =>
     entryTime(right).localeCompare(entryTime(left)),
   )
+  if (currentUrl === null) return rest
   return [{ kind: 'current', key: CURRENT_KEY, url: currentUrl, job: currentJob }, ...rest]
 }
 

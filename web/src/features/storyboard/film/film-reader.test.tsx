@@ -82,6 +82,25 @@ const recordImages = () => {
   return { choices, generations }
 }
 
+/** 本对话的图片记录：图片任务的两种查法（对话级与按图）都给这几条，视频没有。 */
+const serveImageJobs = (jobs: ReturnType<typeof makeGenerationJob>[]) =>
+  server.use(
+    http.get('*/api/generations', ({ request }) =>
+      HttpResponse.json({
+        items: new URL(request.url).searchParams.get('kind') === 'image' ? jobs : [],
+      }),
+    ),
+  )
+
+/** 镜头 2 那张生成图按描述生成过一次，状态与结果照给的。 */
+const shot2Generation = (over: Partial<ReturnType<typeof makeGenerationJob>>) =>
+  makeGenerationJob({
+    kind: 'image',
+    metadata: { film_node: 'shot2_view' },
+    sourceUrl: null,
+    ...over,
+  })
+
 const photo = () => new File(['photo'], '我的照片.png', { type: 'image/png' })
 
 /** 舞台左上的标签：正文编辑器之外、写在舞台工具条上的那一枚。 */
@@ -333,6 +352,62 @@ describe('制作页的图', () => {
     expect(await screen.findByRole('status', { name: /^生成中/ })).toBeInTheDocument()
   })
 
+  it('生成卡：描述里挂的生成图没有图时，按钮上方提醒只用描述；不挂没图的生成图就不提醒', async () => {
+    const script = await renderFilm()
+    await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
+
+    const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
+    expect(card).toHaveTextContent('涂鸦滑板场缺失，参考描述生成')
+    // 没图的参考图只写文字，不出芯片。
+    expect(within(card).queryByRole('img', { name: /涂鸦滑板场/ })).not.toBeInTheDocument()
+    expect(within(card).queryByRole('button', { name: '编辑图片' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '上一帧' }))
+    await userEvent.click(screen.getByRole('button', { name: '上一帧' }))
+    const park = await screen.findByRole('region', { name: '涂鸦滑板场的生图描述' })
+    expect(park).not.toHaveTextContent('缺失')
+    // 从没生成过、也没选用：不能开编辑器。
+    expect(screen.queryByRole('button', { name: '编辑图片' })).not.toBeInTheDocument()
+  })
+
+  it('生成卡：上次生成失败写原因，按钮是「重新生成」', async () => {
+    serveImageJobs([shot2Generation({ errorMessage: '上游超时', status: 'failed' })])
+    const script = await renderFilm()
+    await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
+
+    const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
+    expect(await within(card).findByRole('alert')).toHaveTextContent('上游超时')
+    expect(within(card).getByRole('button', { name: '重新生成' })).toBeInTheDocument()
+  })
+
+  it('生成卡：生成好了不自动用上，卡上放结果与「选用这张」；点了才选用，舞台换成它，出片栏的提醒少了它', async () => {
+    const result = 'https://example.com/shot2-result.png'
+    serveImageJobs([shot2Generation({ outputUrl: result, status: 'completed' })])
+    const { choices } = recordImages()
+    const script = await renderFilm()
+    expect(await screen.findByText('涂鸦滑板场、镜头 2 缺失，参考描述生成')).toBeInTheDocument()
+    await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
+
+    const card = await screen.findByRole('region', { name: '镜头 2的生成结果' })
+    expect(card).toHaveTextContent('镜头 2 还没选用')
+    expect(card.querySelector('img')).toHaveAttribute('src', result)
+    expect(card).toHaveTextContent('涂鸦滑板场缺失，参考描述生成')
+    expect(within(card).getByRole('button', { name: '再生成' })).toBeInTheDocument()
+    // 生成过就能开编辑器，到版本里挑。
+    expect(screen.getByRole('button', { name: '编辑图片' })).toBeInTheDocument()
+
+    await userEvent.click(within(card).getByRole('button', { name: '选用这张' }))
+
+    await waitFor(() =>
+      expect(choices).toEqual([{ filmVersion: 1, node: 'shot2_view', runVersion: 1, url: result }]),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('img', { name: '镜头 2' })).toHaveAttribute('src', result),
+    )
+    expect(screen.queryByRole('region', { name: '镜头 2的生成结果' })).not.toBeInTheDocument()
+    expect(await screen.findByText('涂鸦滑板场缺失，参考描述生成')).toBeInTheDocument()
+  })
+
   it('悬停图片芯片出预览卡，「放大」开灯箱', async () => {
     const script = await renderFilm()
     await userEvent.hover(within(script).getByRole('button', { name: '在舞台查看金发女生 @1' }))
@@ -346,16 +421,6 @@ describe('制作页的图片编辑器', () => {
   beforeEach(() => {
     loginAs(mockAuthUser)
   })
-
-  /** 本对话的图片记录：图片任务的两种查法（对话级与按图）都给这几条，视频没有。 */
-  const serveImageJobs = (jobs: ReturnType<typeof makeGenerationJob>[]) =>
-    server.use(
-      http.get('*/api/generations', ({ request }) =>
-        HttpResponse.json({
-          items: new URL(request.url).searchParams.get('kind') === 'image' ? jobs : [],
-        }),
-      ),
-    )
 
   it('有图的那张能开编辑器：标题写图的名字，第一格叫「在用」，提交的编辑按这张图的画幅、带上它的标记', async () => {
     const submissions: ImageGenerationIn[] = []
@@ -411,7 +476,34 @@ describe('制作页的图片编辑器', () => {
     expect(generations[1]?.prompt?.referenceImageUrls).toHaveLength(1)
   })
 
-  it('编辑出了新结果，舞台挂「有新结果」；点开就是那条，替换这张图给它换地址，换上后角标消失', async () => {
+  it('生成过、没选用的那张也能开编辑器：没有「在用」一格，选中的结果点「选用这张」就选用，撤销回到没图', async () => {
+    const result = 'https://example.com/shot2-result.png'
+    serveImageJobs([shot2Generation({ outputUrl: result, status: 'completed' })])
+    const { choices } = recordImages()
+    const script = await renderFilm()
+    await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
+    await screen.findByRole('region', { name: '镜头 2的生成结果' })
+    await userEvent.click(screen.getByRole('button', { name: '编辑图片' }))
+
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    const strip = within(editor).getByRole('group', { name: '这张图的版本' })
+    expect(strip).not.toHaveTextContent('在用')
+    expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', result)
+    await userEvent.click(within(editor).getByRole('button', { name: '选用这张' }))
+
+    await waitFor(() => expect(choices).toHaveLength(1))
+    expect(choices[0]).toMatchObject({ node: 'shot2_view', url: result })
+    expect(await within(editor).findByText('已选用')).toBeInTheDocument()
+    expect(strip).toHaveTextContent('在用')
+
+    await userEvent.click(within(editor).getByRole('button', { name: '撤销' }))
+    await waitFor(() => expect(choices).toHaveLength(2))
+    expect(choices[1]).toMatchObject({ node: 'shot2_view', url: null })
+    await waitFor(() => expect(strip).not.toHaveTextContent('在用'))
+    expect(within(editor).getByRole('button', { name: '选用这张' })).toBeInTheDocument()
+  })
+
+  it('编辑出了新结果，舞台挂「有新结果」；点开就是那条，「选用这张」给它换地址，换上后角标消失', async () => {
     const edited = 'https://example.com/edited.png'
     serveImageJobs([
       makeGenerationJob({
@@ -426,7 +518,7 @@ describe('制作页的图片编辑器', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /有新结果/ }))
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    await userEvent.click(within(editor).getByRole('button', { name: '替换这张图' }))
+    await userEvent.click(within(editor).getByRole('button', { name: '选用这张' }))
 
     await waitFor(() => expect(choices).toHaveLength(1))
     expect(choices[0]).toMatchObject({ node: 'girl_look', url: edited })

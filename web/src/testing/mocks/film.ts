@@ -1,9 +1,11 @@
 /** 制作页的 mock：每段对话一份读好的工程（形状同 `GET /conversations/{id}/film`），改字照后端的规矩查，
  * 改完把工作区里 `film.icml` 的版本加一，文件列表与制作页的版本对得上；出片记一条视频记录，镜号是组号。
- * 图照后端的顺序定：选用了的；没选用的生成图是它最近一次按描述生成成功的那张；都没有就还没有图。编号按有图的现算。 */
+ * 图照后端的规矩定：用户给的图总有图；生成图只认选用，没选用就没图，生成出来的不自动用上。编号按有图的现算；
+ * 生图描述里没图的参考图照后端只写文字，称呼列进 `missing`。 */
 
 import { http, HttpResponse } from 'msw'
 import type {
+  FilmFrameOut,
   FilmGroupOut,
   FilmImageChoiceIn,
   FilmImageGenerationIn,
@@ -14,19 +16,19 @@ import type {
 import apparelImage from './assets/apparel.webp'
 import backpackImage from './assets/backpack.webp'
 import loafersImage from './assets/loafers.webp'
-import {
-  acceptMockImage,
-  acceptMockVideo,
-  mockConversationJobs,
-  putMockWorkspaceFile,
-} from './workspace'
+import { acceptMockImage, acceptMockVideo, putMockWorkspaceFile } from './workspace'
 
 const FILM_PATH = 'film.icml'
 const RUN_PATH = 'film.icrun'
 
 const films = new Map<string, FilmViewOut>()
-/** 每段对话里人选用的图：节点 → 地址。 */
-const chosen = new Map<string, Map<string, string>>()
+/** 每段对话里每张图现在的地址：生成图是运行文件里的选用（null 是没选用），用户给的图是工程文件里的地址。 */
+const chosen = new Map<string, Map<string, string | null>>()
+/** 放工程时就选用了的生成图。 */
+const SEEDED_CHOICES: ReadonlyMap<string, string> = new Map([
+  ['girl_look', apparelImage],
+  ['shot1_view', backpackImage],
+])
 /** 按描述生图出过几张，给每张一个不同的地址。 */
 let generatedCount = 0
 
@@ -43,7 +45,8 @@ const FILM_SOURCE = [
 const RUN_SOURCE = '<?icml using="iclip-studio/run@1"?>\n<Run version="1"/>\n'
 
 /** 一组 12 秒的穿搭短片：三个出场元素（人物挂一张生成的、产品挂两张用户给的、场景挂一张还没生成的）、四个镜头，两句台词。
- * 同一个元素的几张图都叫元素的名字，与后端相同。 */
+ * 同一个元素的几张图都叫元素的名字，与后端相同。这里是工程文件写的样子：生成图的地址与编号读的时候现算（见 `resolved`），
+ * 描述里的参考图按文件写全，`url` 由 `resolved` 填。 */
 const mockGroup = (): FilmGroupOut => ({
   aspectRatio: '9:16',
   frames: [
@@ -51,22 +54,24 @@ const mockGroup = (): FilmGroupOut => ({
       aspectRatio: '3:4',
       kind: 'generated',
       label: '金发女生',
+      missing: [],
       node: 'girl_look',
-      number: 1,
+      number: null,
       prompt: [
         {
           kind: 'text',
           text: '画面是用手机实拍的，真实自然。二十岁上下的白人女生，金色齐耳波波头。',
         },
       ],
-      url: apparelImage,
+      url: null,
     },
     {
       aspectRatio: null,
       kind: 'photo',
       label: '绒面一脚蹬',
+      missing: [],
       node: 'loafer_photo',
-      number: 2,
+      number: null,
       prompt: null,
       url: loafersImage,
     },
@@ -74,8 +79,9 @@ const mockGroup = (): FilmGroupOut => ({
       aspectRatio: null,
       kind: 'photo',
       label: '绒面一脚蹬',
+      missing: [],
       node: 'loafer_sole',
-      number: 3,
+      number: null,
       prompt: null,
       url: `${loafersImage}?side=sole`,
     },
@@ -83,6 +89,7 @@ const mockGroup = (): FilmGroupOut => ({
       aspectRatio: '9:16',
       kind: 'generated',
       label: '涂鸦滑板场',
+      missing: [],
       node: 'park_look',
       number: null,
       prompt: [{ kind: 'text', text: '户外露天水泥滑板场，坡面和地面喷满街头涂鸦。' }],
@@ -92,21 +99,27 @@ const mockGroup = (): FilmGroupOut => ({
       aspectRatio: '9:16',
       kind: 'generated',
       label: '镜头 1',
+      missing: [],
       node: 'shot1_view',
-      number: 4,
+      number: null,
       prompt: [
-        { kind: 'image', label: '金发女生', node: 'girl_look', url: apparelImage },
+        { kind: 'image', label: '金发女生', node: 'girl_look', url: '' },
         { kind: 'text', text: '的人物，站在坡面上，双手把长板横扛在肩后。' },
       ],
-      url: backpackImage,
+      url: null,
     },
     {
       aspectRatio: '9:16',
       kind: 'generated',
       label: '镜头 2',
+      missing: [],
       node: 'shot2_view',
       number: null,
-      prompt: [{ kind: 'text', text: '高角度俯拍脚部特写，她坐在坡面边缘，小腿悬空。' }],
+      prompt: [
+        { kind: 'text', text: '高角度俯拍脚部特写，她坐在坡面边缘，小腿悬空，参考' },
+        { kind: 'image', label: '涂鸦滑板场', node: 'park_look', url: '' },
+        { kind: 'text', text: '。' },
+      ],
       url: null,
     },
   ],
@@ -195,6 +208,7 @@ export const seedMockFilm = (
   const filmVersion = putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
   const runVersion = putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE)
   const problems = options.problems ?? 0
+  chosen.set(conversationId, new Map(SEEDED_CHOICES))
   films.set(conversationId, {
     filmVersion,
     groups:
@@ -228,20 +242,45 @@ export const resetMockFilm = () => {
   generatedCount = 0
 }
 
-/** 读的那一刻每张图用哪张、编号几：选用的优先，生成图其次看最近一次成功的生成，编号只给有图的、按先后从 1 起。 */
+/** 生图描述里写在参考图前面、只在有图时才写的「，参考」。 */
+const CITE = '，参考'
+
+/** 一张生成图的描述照后端拼：有图的参考图填上地址；没图的参考图去掉，连同前面的「，参考」，称呼记进 `missing`。 */
+const resolvedPrompt = (
+  frame: FilmFrameOut,
+  urlOf: (node: string) => string | null,
+): Pick<FilmFrameOut, 'missing' | 'prompt'> => {
+  if (frame.prompt === null) return { missing: [], prompt: null }
+  const missing: string[] = []
+  const prompt: NonNullable<FilmFrameOut['prompt']> = []
+  for (const run of frame.prompt) {
+    // 生成的类型里 `kind` 有默认值、是可选的，按有没有 `node` 分。
+    if (!('node' in run)) {
+      prompt.push(run)
+      continue
+    }
+    const url = urlOf(run.node)
+    if (url !== null) {
+      prompt.push({ ...run, url })
+      continue
+    }
+    if (!missing.includes(run.label)) missing.push(run.label)
+    const before = prompt.at(-1)
+    if (before !== undefined && !('node' in before) && before.text.endsWith(CITE))
+      prompt[prompt.length - 1] = { ...before, text: before.text.slice(0, -CITE.length) }
+  }
+  return { missing, prompt }
+}
+
+/** 读的那一刻每张图用哪张、编号几：用户给的图用文件里的地址，生成图只认选用；编号只给有图的、按先后从 1 起。 */
 const resolved = (conversationId: string, film: FilmViewOut): FilmViewOut => {
-  const picks = chosen.get(conversationId) ?? new Map<string, string>()
-  const generated = (node: string) =>
-    mockConversationJobs(conversationId)
-      .filter(
-        (job) =>
-          job.kind === 'image' &&
-          job.status === 'completed' &&
-          job.sourceJobId === null &&
-          job.sourceUrl === null &&
-          job.metadata?.['film_node'] === node,
-      )
-      .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.outputUrl ?? null
+  const picks = chosen.get(conversationId) ?? new Map<string, string | null>()
+  const frames = film.groups.flatMap((group) => group.frames)
+  const urlOf = (node: string): string | null => {
+    const frame = frames.find((item) => item.node === node)
+    if (picks.has(node)) return picks.get(node) ?? null
+    return frame?.kind === 'photo' ? frame.url : null
+  }
   return {
     ...film,
     groups: film.groups.map((group) => {
@@ -249,11 +288,13 @@ const resolved = (conversationId: string, film: FilmViewOut): FilmViewOut => {
       return {
         ...group,
         frames: group.frames.map((frame) => {
-          const url =
-            picks.get(frame.node) ??
-            frame.url ??
-            (frame.kind === 'generated' ? generated(frame.node) : null)
-          return { ...frame, number: url === null ? null : ++number, url }
+          const url = urlOf(frame.node)
+          return {
+            ...frame,
+            ...resolvedPrompt(frame, urlOf),
+            number: url === null ? null : ++number,
+            url,
+          }
         }),
       }
     }),
@@ -365,12 +406,12 @@ export const filmHandlers = [
       return HttpResponse.json({ detail: '分镜刚被改过，刷新后再换' }, { status: 409 })
     const frame = frameOf(film, body.node)
     if (frame === undefined) return rejected('要换的这张图找不到了，刷新后再换')
-    const picks = chosen.get(conversationId) ?? new Map<string, string>()
+    const picks = chosen.get(conversationId) ?? new Map<string, string | null>()
     chosen.set(conversationId, picks)
-    if (body.url === null) {
-      if (frame.kind === 'photo') return rejected('用户给的图不能取消，只能换一张')
-      picks.delete(body.node)
-    } else picks.set(body.node, body.url)
+    // 生成图取消选用就是没图，不回到生成过的哪一张。
+    if (body.url === null && frame.kind === 'photo')
+      return rejected('这张图是你给的，只能换成另一张，不能清空')
+    picks.set(body.node, body.url)
     const next =
       frame.kind === 'photo'
         ? { ...film, filmVersion: putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE) }

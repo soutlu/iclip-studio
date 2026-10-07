@@ -94,4 +94,21 @@ describe('generationStatusOf', () => {
       line: undefined,
     })
   })
+
+  it('不拦出片的提醒排在最后：没有置灰原因与错误时才上状态行；暂态原因照样只给主按钮', () => {
+    const hint = '涂鸦滑板场缺失，参考描述生成'
+    expect(generationStatusOf(undefined, undefined, hint)).toEqual({
+      hiddenReason: undefined,
+      line: { text: hint, tone: 'hint' },
+    })
+    expect(generationStatusOf(saving, undefined, hint)).toEqual({
+      hiddenReason: '分镜保存中',
+      line: { text: hint, tone: 'hint' },
+    })
+    expect(generationStatusOf(undefined, '上游拒收', hint).line).toEqual({
+      text: '上游拒收',
+      tone: 'error',
+    })
+    expect(generationStatusOf(persistent, undefined, hint).line?.tone).toBe('blocked')
+  })
 })

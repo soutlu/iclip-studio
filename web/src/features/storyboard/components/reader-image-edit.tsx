@@ -57,7 +57,11 @@ export function ReaderImageEdit({
               ?.focus()
         })
       }}
-      onApply={onApply}
+      onApply={(previousUrl, url) => {
+        // 分镜页的帧总有图（currentUrl 不会是 null），替换与撤销两头都是地址。
+        if (previousUrl === null || url === null) throw new Error('分镜页的帧不能没有图')
+        return onApply(previousUrl, url)
+      }}
     />
   )
 }

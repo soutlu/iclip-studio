@@ -34,16 +34,19 @@ type StageReplace = {
 type EditStageProps = {
   /** 选中的条目；条目还没读回来时为空，按当前帧显示。 */
   entry: StripEntry | undefined
-  /** 分镜里这一帧此刻的图；帧已经不在分镜里时为空。 */
-  currentUrl: string | undefined
-  /** 选中条目的底图：在途与失败的任务显示它当初的底图。 */
+  /** 分镜里这一帧此刻的图；帧已经不在分镜里时为 undefined，没有在用的图（制作页没选用的生成图）时为 null。 */
+  currentUrl: string | null | undefined
+  /** 选中条目的底图：在途与失败的任务显示它当初的底图；没有底图时是空串。 */
   baseUrl: string
   aspectRatio: string
   /** 当前帧上的标注画布。 */
   canvas: ReactNode
   replace: StageReplace
-  /** 随所在页面变的称呼：在用的那一版、主操作、图已经不在了。 */
-  words: Pick<EditorWords, 'current' | 'replace' | 'gone'>
+  /** 随所在页面变的称呼与主操作的样子：在用的那一版、主操作、图已经不在了。 */
+  words: Pick<
+    EditorWords,
+    'current' | 'replace' | 'replacing' | 'replaced' | 'replaceTone' | 'gone'
+  >
 }
 
 /** 不是画布的几种画面共用的图框：按分镜画幅放在标注工具条与版本条之间。 */
@@ -68,7 +71,7 @@ function Hero({
   )
 }
 
-/** 按描述再生成时的舞台：只放在用的那张，不画标注；新的出来进版本条，替换才用上。 */
+/** 按描述再生成时的舞台：只放在用的那张（没有在用的就空着），不画标注；新的出来进版本条，选用才用上。 */
 export function StillStage({
   aspectRatio,
   label,
@@ -76,20 +79,21 @@ export function StillStage({
 }: {
   aspectRatio: string
   label: string
-  url: string | undefined
+  url: string | null | undefined
 }) {
   return (
     <div className="image-edit-stage">
       <Hero aspectRatio={aspectRatio}>
-        {url === undefined ? null : <img alt={label} className="image-edit-hero-image" src={url} />}
+        {url == null ? null : <img alt={label} className="image-edit-hero-image" src={url} />}
       </Hero>
     </div>
   )
 }
 
-/** 任务提交时的底图，衬在状态胶囊下面。 */
+/** 任务提交时的底图，衬在状态胶囊下面；按描述生成的任务没有底图（空串），只留胶囊。 */
 function BaseImage({ url }: { url: string }) {
   const [failed, setFailed] = useState(false)
+  if (url === '') return null
   if (failed) return <MediaFallback className="image-edit-hero-fallback" compact kind="image" />
   return (
     <img
@@ -160,7 +164,7 @@ function useCatchDroppedFocus(target: RefObject<HTMLElement | null>, ready: bool
 }
 
 /** 刚替换完：给 6 秒撤销；撤销失败的原因跟在旁边。 */
-function UndoBar({ replace }: { replace: StageReplace }) {
+function UndoBar({ done, replace }: { done: string; replace: StageReplace }) {
   const undoRef = useRef<HTMLButtonElement>(null)
   useCatchDroppedFocus(undoRef, replace.pending === null)
   return (
@@ -168,7 +172,7 @@ function UndoBar({ replace }: { replace: StageReplace }) {
       <span className="image-edit-undo animate-in ui-motion-m fade-in slide-in-from-bottom-2">
         <span className="image-edit-undo-note" role="status">
           <Icon className="text-on-surface-muted" decorative name="check" size="sm" />
-          已替换
+          {done}
         </span>
         <span aria-hidden="true" className="image-edit-undo-divider" />
         <Button
@@ -189,13 +193,13 @@ function UndoBar({ replace }: { replace: StageReplace }) {
 
 /** 对比时的主操作：把选中的这张换成当前帧。 */
 function ReplaceBar({
-  label,
   replace,
   url,
+  words,
 }: {
-  label: string
   replace: StageReplace
   url: string
+  words: Pick<EditorWords, 'replace' | 'replacing' | 'replaceTone'>
 }) {
   const replaceRef = useRef<HTMLButtonElement>(null)
   useCatchDroppedFocus(replaceRef, replace.pending === null)
@@ -204,12 +208,13 @@ function ReplaceBar({
       <Button
         className="image-edit-replace"
         disabled={replace.pending !== null}
-        leadingIcon="replace"
+        leadingIcon={words.replaceTone === 'primary' ? 'replace' : 'check'}
         loading={replace.pending === 'replace'}
         onClick={() => replace.onReplace(url)}
         ref={replaceRef}
+        variant={words.replaceTone === 'primary' ? 'primary' : 'inverted'}
       >
-        {replace.pending === 'replace' ? '正在替换…' : label}
+        {replace.pending === 'replace' ? words.replacing : words.replace}
       </Button>
       <ReplaceError error={replace.error} />
     </div>
@@ -229,6 +234,7 @@ function ReplaceError({ error }: { error: string | null }) {
 /**
  * 当前帧画标注；排队、生成中是模糊的底图加计时胶囊；失败是压暗的底图加原因；
  * 结果与上一版和当前帧左右对比，满意就「替换当前帧」，替换后 6 秒内可撤销。
+ * 没有在用的图（制作页没选用的生成图）时没有当前帧可画、可比：结果单独放，主操作是「选用这张」。
  */
 export function EditStage({
   entry,
@@ -251,8 +257,12 @@ export function EditStage({
   if (entry === undefined || entry.kind === 'current')
     return (
       <div className="image-edit-stage">
-        {canvas}
-        {replace.undoable ? <UndoBar replace={replace} /> : null}
+        {currentUrl === null ? (
+          <p className="image-edit-stage-message">还没有在用的图，从版本里选一张</p>
+        ) : (
+          canvas
+        )}
+        {replace.undoable ? <UndoBar done={words.replaced} replace={replace} /> : null}
       </div>
     )
 
@@ -294,13 +304,21 @@ export function EditStage({
   return (
     <div className="image-edit-stage">
       <Hero aspectRatio={aspectRatio}>
-        <CompareSlider
-          after={{ label: entryLabel(entry, words.current), url: entry.url }}
-          before={{ label: words.current, url: currentUrl }}
-          key={`${currentUrl}:${entry.url}`}
-        />
+        {currentUrl === null ? (
+          <img
+            alt={entryLabel(entry, words.current)}
+            className="image-edit-hero-image"
+            src={entry.url}
+          />
+        ) : (
+          <CompareSlider
+            after={{ label: entryLabel(entry, words.current), url: entry.url }}
+            before={{ label: words.current, url: currentUrl }}
+            key={`${currentUrl}:${entry.url}`}
+          />
+        )}
       </Hero>
-      <ReplaceBar label={words.replace} replace={replace} url={entry.url} />
+      <ReplaceBar replace={replace} url={entry.url} words={words} />
     </div>
   )
 }
