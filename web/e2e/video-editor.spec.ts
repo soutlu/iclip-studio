@@ -358,9 +358,17 @@ test('从生成记录打开编辑器：切段、生成、预览、合成成为�
   const compose = dialog.getByRole('button', { name: '合成成片', exact: true })
   await expect(compose).toBeEnabled({ timeout: STEP_TIMEOUT })
   await compose.click()
-  // 合成只给编辑段：各段由服务端按它的基底与实际区间算。
-  expect((await compositeRequest).postDataJSON()).toMatchObject({
-    sourceJobId: accepted.generation.id,
+  // 合成给基底与片段列表：基底 [0, 1)、编辑段整条、基底 [4, 结尾)，区间取编辑段上记的值。
+  const baseJobId = edit['source_job_id']
+  expect((await compositeRequest).postDataJSON()).toEqual({
+    conversationId: expect.any(String),
+    taskId: null,
+    baseJobId,
+    segments: [
+      { sourceJobId: baseJobId, start: 0, end: 1 },
+      { sourceJobId: accepted.generation.id, start: 0 },
+      { sourceJobId: baseJobId, start: 4 },
+    ],
   })
 
   // 成片落地后 V2 成为新版本，选中态不跳走，同一个位置的按钮从「合成成片」翻成「下载」。

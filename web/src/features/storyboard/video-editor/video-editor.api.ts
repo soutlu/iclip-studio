@@ -1,5 +1,5 @@
-/** 视频编辑的两次提交与链查询。切参考片段、按实际区间拼接都由服务端做：编辑段只给基底与区间，
- * 合成只给编辑段。 */
+/** 视频编辑的两次提交与链查询。切参考片段由服务端做，编辑段只给基底与区间；合成给基底与片段列表，
+ * 地址由服务端按各段出处填。 */
 
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
@@ -127,14 +127,33 @@ export const submitVideoEdit = async (
   return result.generation
 }
 
-/** 把一条完成的编辑段拼回它的基底，成为新的一版。各段由服务端按编辑段的实际区间算。 */
+/** 合成里的一段：出自哪条记录、取它自己媒体时间里的哪一截（秒）；没有 `end` 就取到结尾。 */
+export type CompositeSegment = { sourceJobId: string; start: number; end?: number }
+
+/** 把一条编辑段夹回它的基底的那几段：基底 `[0, 起点)`（起点为 0 时没有）、编辑段整条、
+ * 基底 `[终点, 结尾)`。区间用编辑段上记的实际值，毫秒换成秒。 */
+export const spliceSegments = (edit: {
+  baseJobId: string
+  editJobId: string
+  rangeStartMs: number
+  rangeEndMs: number
+}): CompositeSegment[] => [
+  ...(edit.rangeStartMs > 0
+    ? [{ sourceJobId: edit.baseJobId, start: 0, end: edit.rangeStartMs / 1000 }]
+    : []),
+  { sourceJobId: edit.editJobId, start: 0 },
+  { sourceJobId: edit.baseJobId, start: edit.rangeEndMs / 1000 },
+]
+
+/** 在基底那一版上按片段列表拼成新的一版。服务端核对各段出处、换成地址再拼。 */
 export const submitVideoComposite = async (
-  input: Origin & { sourceJobId: string },
+  input: Origin & { baseJobId: string; segments: readonly CompositeSegment[] },
 ): Promise<GenerationJob> => {
   const body: VideoComposeIn = {
     conversationId: input.conversationId,
     taskId: input.taskId,
-    sourceJobId: input.sourceJobId,
+    baseJobId: input.baseJobId,
+    segments: [...input.segments],
   }
   const result = await apiFetch('/generations/video-composites', zGenerationEnvelope, {
     method: 'POST',

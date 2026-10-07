@@ -28,7 +28,7 @@ describe('groupConversationVideos', () => {
         rangeStartMs: 0,
         rangeEndMs: 3000,
       }),
-      job('composite', { operation: 'compose', rootJobId: 'original', sourceJobId: 'edited' }),
+      job('composite', { operation: 'compose', rootJobId: 'original', sourceJobId: 'original' }),
     ])
 
     expect(groups.map((group) => group.videos.map((video) => video.id))).toEqual([['original']])

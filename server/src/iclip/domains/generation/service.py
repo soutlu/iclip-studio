@@ -6,11 +6,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 import structlog
 
 from iclip.common.errors import NotFound, ValidationFailed
+from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_PENDING,
@@ -155,30 +156,40 @@ class GenerationService:
     async def submit_video_compose(
         self, principal: Principal, request: VideoComposeIn
     ) -> GenerationJob:
-        """受理一次合成：把编辑段夹回它的基底，拼成一条新成片，原作与镜号随编辑段。
+        """受理一次合成：在基底那一版上按调用方给的片段列表拼成一条新成片，不经外部服务。
 
-        段按编辑段上记的实际区间算：基底从头到起点（起点为 0 时没有这段）、编辑段产物整条、
-        基底从终点到结尾。后两段取到结尾，执行方按下载下来的素材补齐。不经外部服务。"""
+        来源记基底，原作与镜号随基底（基底是出片就是它自己）。每段出自基底本身，或来源是该基底的
+        一条已完成编辑段，都要是这段对话自己的或继承来的；服务端把出处换成那条记录的产物地址，
+        不收调用方给的地址。那条记录量过时长时，段的结尾不能超出它；没量过就交给执行方按下载
+        下来的素材判。"""
 
         _require_user_name(request.user_name)
-        edit = await self._check_source(principal, request.source_job_id, request.conversation_id)
-        if not _is_finished_edit(edit) or edit.output_url is None or edit.source_job_id is None:
-            raise ValidationFailed("来源必须是一条已完成的编辑段")
-        # 组合约束保证编辑段的区间齐全；到这儿为空说明持久化状态坏了。
-        if edit.range_start_ms is None or edit.range_end_ms is None:
-            raise RuntimeError(f"编辑段 {edit.id} 没有区间")
-        base = await self._repo.get(edit.source_job_id, owner=None)
-        if base.output_url is None:
-            raise ValidationFailed("编辑段的基底没有产物地址，合成不了")
-        segments = [
-            *(
-                [ComposeSegment(url=base.output_url, start=0, end=edit.range_start_ms / 1000)]
-                if edit.range_start_ms > 0
-                else []
-            ),
-            ComposeSegment(url=edit.output_url, start=0),
-            ComposeSegment(url=base.output_url, start=edit.range_end_ms / 1000),
-        ]
+        base = await self._check_source(principal, request.base_job_id, request.conversation_id)
+        if not _is_completed_master(base):
+            raise ValidationFailed("基底必须是一条已完成的成片")
+        sources = {base.id: base}
+        for source_id in dict.fromkeys(segment.source_job_id for segment in request.segments):
+            if source_id in sources:
+                continue
+            edit = await self._check_source(principal, source_id, request.conversation_id)
+            if not _is_finished_edit(edit) or edit.source_job_id != base.id:
+                raise ValidationFailed("每段必须出自基底本身，或基于这个基底的一条已完成编辑段")
+            sources[source_id] = edit
+        segments: list[ComposeSegment] = []
+        for position, segment in enumerate(request.segments, start=1):
+            source = sources[segment.source_job_id]
+            # 两种来源都在上面核过产物地址，这里只为收窄类型。
+            if source.output_url is None:
+                raise RuntimeError(f"生成记录 {source.id} 核对过却没有产物地址")
+            _check_segment_end(position, segment.end, source.duration_ms)
+            segments.append(
+                ComposeSegment(
+                    source_job_id=source.id,
+                    url=source.output_url,
+                    start=segment.start,
+                    end=segment.end,
+                )
+            )
         return await self._accept(
             principal,
             VideoComposeRequest(segments=segments, user_name=request.user_name),
@@ -186,9 +197,9 @@ class GenerationService:
             conversation_id=request.conversation_id,
             task_id=request.task_id,
             metadata=request.metadata,
-            shot_index=edit.shot_index,
-            root_job_id=edit.root_job_id,
-            source_job_id=edit.id,
+            shot_index=base.shot_index,
+            root_job_id=base.root_job_id or base.id,
+            source_job_id=base.id,
         )
 
     async def _check_source(
@@ -507,14 +518,35 @@ def _is_completed_master(job: GenerationJob) -> bool:
 
 
 def _is_finished_edit(job: GenerationJob) -> bool:
-    """已完成的编辑段：有来源的视频 generate。"""
+    """已完成、有产物地址的编辑段：有来源的视频 generate。"""
 
     return (
         job.kind == KIND_VIDEO
         and job.operation == OPERATION_GENERATE
         and job.source_job_id is not None
         and job.status == STATUS_COMPLETED
+        and job.output_url is not None
     )
+
+
+COMPOSE_END_TOLERANCE_MS: Final = 50
+"""段的结尾最多比那条记录量出来的时长多出这么多毫秒。
+
+调用方的起止是浏览器里读到的媒体时间（播放器时长、关键帧时刻），与上游或 ffprobe 量出的
+``duration_ms`` 隔着一次容器时长的取整，差不到一帧（24fps 约 42 毫秒）；严格相等会把正常的
+「取到最后一帧」拒掉。"""
+
+
+def _check_segment_end(position: int, end: float | None, duration_ms: int | None) -> None:
+    """第 ``position`` 段（从 1 数）的结尾不能超出那条记录的时长；开放的结尾或没量过时长的不判。"""
+
+    if end is None or duration_ms is None:
+        return
+    if end * 1000 > duration_ms + COMPOSE_END_TOLERANCE_MS:
+        raise ValidationFailed(
+            f"第 {position} 段的结尾 {format_seconds(end)} 秒超出了那条记录的时长 "
+            f"{format_seconds(duration_ms / 1000)} 秒"
+        )
 
 
 def _require_user_name(user_name: str | None) -> None:

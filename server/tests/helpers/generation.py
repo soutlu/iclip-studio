@@ -79,7 +79,10 @@ def edit_request(**overrides: Any) -> VideoGenerationIn:
 
 
 def compose_request(**overrides: Any) -> VideoComposeRequest:
-    """默认是一次合成：基底前段、编辑段产物整条、基底后段取到结尾。"""
+    """默认是一次合成：基底前段、编辑段产物整条、基底后段取到结尾。
+
+    没写出处的段按地址补一个固定的 ``sourceJobId``：执行方只读地址与起止，出处只有受理与迁移
+    关心，那些用例自己给。"""
 
     fields: dict[str, Any] = {
         "segments": [
@@ -90,6 +93,12 @@ def compose_request(**overrides: Any) -> VideoComposeRequest:
         "user_name": "logan",
     }
     fields.update(overrides)
+    fields["segments"] = [
+        segment
+        if "source_job_id" in segment or "sourceJobId" in segment
+        else {"source_job_id": uuid.uuid5(uuid.NAMESPACE_URL, segment["url"]), **segment}
+        for segment in fields["segments"]
+    ]
     return VideoComposeRequest(**fields)
 
 
@@ -225,13 +234,21 @@ def make_edit(base: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
-    """合成 ``edit`` 的一条记录：来源是编辑段，原作与镜号随它，执行方是本地 ffmpeg。"""
+    """把 ``edit`` 夹回它的基底的一条合成：来源是基底，原作与镜号随基底（与编辑段的相同），
+    各段是基底前段、编辑段整条、基底后段，出处分别记基底与编辑段；执行方是本地 ffmpeg。"""
 
+    assert edit.source_job_id is not None, "只能合成编辑段"
+    base = edit.source_job_id
     fields.setdefault("provider", "ffmpeg")
     fields.setdefault("shot_index", edit.shot_index)
-    return make_job(
-        compose_request(), source_job_id=edit.id, root_job_id=edit.root_job_id, **fields
+    request = compose_request(
+        segments=[
+            {"source_job_id": base, "url": "https://example.com/base.mp4", "start": 0, "end": 1},
+            {"source_job_id": edit.id, "url": "https://example.com/edited.mp4", "start": 0},
+            {"source_job_id": base, "url": "https://example.com/base.mp4", "start": 4},
+        ]
     )
+    return make_job(request, source_job_id=base, root_job_id=edit.root_job_id, **fields)
 
 
 def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:

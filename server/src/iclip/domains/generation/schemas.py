@@ -94,6 +94,9 @@ MAX_METADATA_CHARS: Final = 2000
 """``metadata`` 序列化后的长度上限：它是调用方的坐标标签，不是存东西的地方。"""
 MAX_URL_CHARS: Final = 2000
 """服务端要拿去下载的单个地址的长度上限。"""
+MAX_COMPOSE_SEGMENTS: Final = 100
+"""一次合成最多几段。每段在 ffmpeg 里是一路输入，列表又由调用方给，不设上限就能拿一个请求把
+合成机占满；按关键帧分段，30 秒的片几十段已足够。"""
 
 ORIGIN_FIELDS: Final = frozenset(
     {"conversation_id", "task_id", "metadata", "shot_index", "source_url"}
@@ -371,11 +374,31 @@ class VideoEditIn(SnakeModel):
         return self
 
 
-class VideoComposeIn(CamelModel):
-    """一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。"""
+class ComposeSegmentIn(CamelModel):
+    """合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录
+    自己的媒体时间算；``end`` 为空就取到那条的结尾。"""
 
     source_job_id: uuid.UUID
-    """一条已完成的编辑段，这段对话自己的或继承来的。"""
+    """这一段出自哪条记录：基底本身，或来源是基底的一条已完成编辑段。"""
+    start: float = Field(ge=0)
+    end: float | None = None
+    """开放的结尾由执行方按下载下来的素材时长补齐：那条记录的时长受理时不一定知道。"""
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> ComposeSegmentIn:
+        if self.end is not None and self.end <= self.start:
+            raise ValueError("end 必须大于 start")
+        return self
+
+
+class VideoComposeIn(CamelModel):
+    """一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。"""
+
+    base_job_id: uuid.UUID
+    """基底：一条已完成的成片（出片或合成），这段对话自己的或继承来的。合成的来源记它。"""
+    segments: Annotated[
+        list[ComposeSegmentIn], Field(min_length=1, max_length=MAX_COMPOSE_SEGMENTS)
+    ]
     user_name: UserName | None = None
     """规则同出片的 ``user_name``。"""
 
@@ -384,13 +407,11 @@ class VideoComposeIn(CamelModel):
     metadata: Metadata | None = None
 
 
-class ComposeSegment(CamelModel):
-    """合成里的一段：从 ``url`` 那条视频取 ``[start, end)``，单位秒；``end`` 为空就取到那条的结尾。"""
+class ComposeSegment(ComposeSegmentIn):
+    """落库的一段：受理时由服务端把 ``source_job_id`` 换成那条记录的产物地址 ``url``，两者都存；
+    执行方只读地址与起止。"""
 
     url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
-    start: float = Field(ge=0)
-    end: float | None = None
-    """开放的结尾由执行方按下载下来的素材时长补齐：编辑段产物与基底后段多长，受理时不知道。"""
 
     @field_validator("url")
     @classmethod
@@ -399,17 +420,11 @@ class ComposeSegment(CamelModel):
             raise ValueError("必须是 http:// 或 https:// 地址")
         return url
 
-    @model_validator(mode="after")
-    def _end_after_start(self) -> ComposeSegment:
-        if self.end is not None and self.end <= self.start:
-            raise ValueError("end 必须大于 start")
-        return self
-
 
 class VideoComposeRequest(CamelModel):
     """一次合成交给本地执行方的输入：按顺序取各段拼成一条，一律重编码对齐到原片。
 
-    段由服务端按编辑段的基底与实际区间算出，调用方不直接给。``user_name`` 只作对账标签。"""
+    各段的出处由调用方给，地址由服务端按出处填，不收调用方给的地址。``user_name`` 只作对账标签。"""
 
     kind: ClassVar[GenerationKind] = KIND_VIDEO
     operation: ClassVar[GenerationOperation] = OPERATION_COMPOSE
@@ -444,7 +459,8 @@ def request_to_payload(request: GenerationRequest | None) -> dict[str, Any] | No
 
     if request is None:
         return None
-    return request.model_dump(by_alias=True, exclude=set(ORIGIN_FIELDS))
+    # JSON 模式：合成各段的出处是 UUID，要写成字符串才进得了 JSONB。
+    return request.model_dump(mode="json", by_alias=True, exclude=set(ORIGIN_FIELDS))
 
 
 def request_from_payload(
@@ -489,8 +505,8 @@ class GenerationOut(CamelModel):
     root_job_id: uuid.UUID | None
     """原作：编辑段与合成指最初那条出片，出片与图片为空。按它筛（``rootJobId``）拿到整条编辑链。"""
     source_job_id: uuid.UUID | None = None
-    """直接来源：编辑段指它的基底成片，合成指它的编辑段，帧图编辑指底图那一条，切图指它的宫格；
-    别的为空。"""
+    """直接来源：编辑段与合成指它的基底成片，帧图编辑指底图那一条，切图指它的宫格；别的为空。
+    合成的各段出自哪条记录记在 ``request.segments`` 里。"""
     source_url: str | None = None
     """来源的地址：``sourceJobId`` 非空时是那条记录的 ``outputUrl``；为空时只有帧图编辑可能有，是
     库里找不到的外部底图地址；都没有就是空。它是投影，不是列的镜像，来源那条读不读得到都照给。"""
@@ -652,6 +668,7 @@ __all__ = [
     "IMAGE_MAX_REFERENCES",
     "KIND_IMAGE",
     "KIND_VIDEO",
+    "MAX_COMPOSE_SEGMENTS",
     "MAX_METADATA_CHARS",
     "MAX_MODEL_CHARS",
     "MAX_PROMPT_CHARS",
@@ -670,6 +687,7 @@ __all__ = [
     "STATUS_SUBMITTING",
     "ClipStage",
     "ComposeSegment",
+    "ComposeSegmentIn",
     "GenerationEnvelope",
     "GenerationKind",
     "GenerationOperation",

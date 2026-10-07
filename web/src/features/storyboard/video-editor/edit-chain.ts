@@ -1,5 +1,6 @@
 /** 编辑链的投影：一条出片名下的编辑段与合成 → 可播放的版本 + 进行中的编辑。纯函数，不持有状态，刷新即恢复。 */
 
+import { z } from 'zod'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 
@@ -19,7 +20,7 @@ export type EditRange = { start: number; end: number }
 
 /** 一条完整视频：根出片或某次合成。切段只在它上面切。 */
 export type ChainVersion = {
-  /** 根用记录 id；合成用它来源编辑段的 id，和合成前那条编辑同键，选中态跨过合成不会跳走。 */
+  /** 根用记录 id；合成用它夹进去的那条编辑段的 id，和合成前那条编辑同键，选中态跨过合成不会跳走。 */
   key: string
   /** 这一版自己的记录：根就是根，合成是合成那行。下一次编辑以它为基底。 */
   jobId: string
@@ -59,7 +60,7 @@ export type PendingEdit = {
   prompt: string | undefined
   error: string | undefined
   /** 这次编辑的编辑段。 */
-  video: GenerationJob
+  video: EditSegment
   /** 它最新的那次合成；还没合成过就没有。 */
   composite: GenerationJob | undefined
   /** 基底切开、夹进编辑结果；结果还没回来时没有。 */
@@ -68,7 +69,11 @@ export type PendingEdit = {
 
 export type EditChain = { versions: ChainVersion[]; pending: PendingEdit[] }
 
-type EditSegment = GenerationJob & { sourceJobId: string; rangeStartMs: number; rangeEndMs: number }
+type EditSegment = GenerationJob & {
+  sourceJobId: string
+  rangeStartMs: number
+  rangeEndMs: number
+}
 type Composite = GenerationJob & { sourceJobId: string }
 
 /** 编辑段：基于一条成片调模型改一段。来源与区间由服务端定、一定成对出现。 */
@@ -79,9 +84,27 @@ export const isEditSegment = (job: GenerationJob): job is EditSegment =>
   job.rangeStartMs != null &&
   job.rangeEndMs != null
 
-/** 合成：把一条编辑段按它的基底与区间拼成新的一版，来源是那条编辑段。 */
+/** 合成：在基底那一版上按片段列表拼成新的一版，来源是基底，各段出处记在 `request.segments`。 */
 export const isComposite = (job: GenerationJob): job is Composite =>
   job.operation === 'compose' && job.sourceJobId != null
+
+/** `request` 在合同里是一份不定形的 JSON；这里只读各段的出处，别的键（地址、起止）不管。 */
+const compositeSourcesSchema = z.object({
+  segments: z.array(z.object({ sourceJobId: z.string() })),
+})
+
+/** 这次合成夹进去的是哪条编辑段：各段里不是基底的出处恰好一条时就是它。只用基底的（裁剪、删段）、
+ * 夹进几条编辑段的、请求读不出来的，都不对应某一条编辑，返回 `undefined`。 */
+const composedEditOf = (composite: Composite): string | undefined => {
+  const parsed = compositeSourcesSchema.safeParse(composite.request)
+  if (!parsed.success) return undefined
+  const edits = new Set(
+    parsed.data.segments
+      .map((segment) => segment.sourceJobId)
+      .filter((source) => source !== composite.sourceJobId),
+  )
+  return edits.size === 1 ? [...edits][0] : undefined
+}
 
 const rangeOf = (segment: EditSegment): EditRange => ({
   start: segment.rangeStartMs / 1000,
@@ -102,13 +125,15 @@ const byFinish = (left: GenerationJob, right: GenerationJob): number =>
   left.id.localeCompare(right.id)
 
 /** 每条编辑段只认最近发起的那次合成：重新合成过，之前那次就不再算数。按发起时刻比，
- * 在跑的那次还没有完成时刻。 */
+ * 在跑的那次还没有完成时刻。不对应某一条编辑段的合成不在里面。 */
 const latestComposites = (jobs: readonly GenerationJob[]): ReadonlyMap<string, Composite> => {
   const latest = new Map<string, Composite>()
   for (const job of jobs) {
     if (!isComposite(job)) continue
-    const current = latest.get(job.sourceJobId)
-    if (current === undefined || byCreation(job, current) > 0) latest.set(job.sourceJobId, job)
+    const edit = composedEditOf(job)
+    if (edit === undefined) continue
+    const current = latest.get(edit)
+    if (current === undefined || byCreation(job, current) > 0) latest.set(edit, job)
   }
   return latest
 }

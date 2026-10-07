@@ -491,15 +491,18 @@ async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEng
     assert (stored.kind, stored.operation, stored.source_job_id, stored.root_job_id) == (
         "video",
         "compose",
-        edit.id,
+        take.id,
         take.id,
     )
-    assert stored.request == composite.request, "合成的各段读回来原样，取到结尾的那段仍是开放的"
+    assert stored.request == composite.request, (
+        "合成的各段连同出处读回来原样，取到结尾的那段仍是开放的"
+    )
 
     async def listed(**filters: Any) -> set[uuid.UUID]:
         return {job.id for job in await repo.list_for_owner(owner=owner, limit=10, **filters)}
 
-    assert await listed(source_job_id=take.id) == {edit.id, other_edit.id}
+    assert await listed(source_job_id=take.id) == {edit.id, other_edit.id, composite.id}
+    assert await listed(source_job_id=take.id, operation="generate") == {edit.id, other_edit.id}
     assert await listed(operation="compose") == {composite.id}
     assert await listed(operation="generate", root_job_id=take.id) == {edit.id, other_edit.id}
     assert await listed(operation="generate") == {take.id, edit.id, other_edit.id}

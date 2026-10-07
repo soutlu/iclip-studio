@@ -14,14 +14,12 @@ const failedJob: GenerationJob = makeGenerationJob({
 })
 
 /** 这次编辑的编辑段；状态只看它，阶段词由各用例覆盖。 */
-const segment: GenerationJob = makeGenerationJob({
-  id: 'edit-1',
-  status: 'submitting',
-  rootJobId: 'root',
+const segment: PendingEdit['video'] = {
+  ...makeGenerationJob({ id: 'edit-1', status: 'submitting', rootJobId: 'root' }),
   sourceJobId: 'root',
   rangeStartMs: 0,
   rangeEndMs: 3000,
-})
+}
 
 const edit = (changes: Partial<PendingEdit>): PendingEdit => ({
   key: 'edit-1',

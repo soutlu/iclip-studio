@@ -193,8 +193,8 @@ class Seed:
                 shot: int,
                 created_at: datetime,
             ) -> None:
-                """视频编辑确认合成的成片：先在 ``root`` 那次出片上有一段编辑，合成以它为来源；
-                两条都抄着原作的镜号 ``shot``。"""
+                """视频编辑确认合成的成片：先在 ``root`` 那次出片上有一段编辑，合成以 ``root``
+                为来源、把编辑段夹进去；两条都抄着原作的镜号 ``shot``。"""
 
                 edit = await video(
                     conversation_id,
@@ -211,7 +211,7 @@ class Seed:
                         " kind, operation, provider, request, status, shot_index, source_job_id,"
                         " root_job_id, output_url, created_at, submitted_at, finished_at)"
                         " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
-                        " CAST(:request AS jsonb), :status, :shot, :edit, :root,"
+                        " CAST(:request AS jsonb), :status, :shot, :root, :root,"
                         " 'https://example.test/master.mp4', :at, :at, :at)"
                     ),
                     {
@@ -223,13 +223,17 @@ class Seed:
                         "request": json.dumps(
                             {
                                 "segments": [
-                                    {"url": "https://example.test/e.mp4", "start": 0, "end": 3}
+                                    {
+                                        "sourceJobId": str(edit),
+                                        "url": "https://example.test/e.mp4",
+                                        "start": 0,
+                                        "end": 3,
+                                    }
                                 ]
                             }
                         ),
                         "status": STATUS_COMPLETED,
                         "shot": shot,
-                        "edit": edit,
                         "root": root,
                         "at": created_at,
                     },

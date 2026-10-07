@@ -371,6 +371,27 @@ export type CollectionsPageOut = {
 }
 
 /**
+ * ComposeSegmentIn
+ *
+ * 合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录
+ * 自己的媒体时间算；``end`` 为空就取到那条的结尾。
+ */
+export type ComposeSegmentIn = {
+  /**
+   * End
+   */
+  end?: number | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Start
+   */
+  start: number
+}
+
+/**
  * ConversationActivityOut
  *
  * 这段对话此刻在忙什么。侧栏据此画角标。
@@ -3905,9 +3926,13 @@ export type VersionOut = {
 /**
  * VideoComposeIn
  *
- * 一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。
+ * 一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。
  */
 export type VideoComposeIn = {
+  /**
+   * Basejobid
+   */
+  baseJobId: string
   /**
    * Conversationid
    */
@@ -3919,9 +3944,9 @@ export type VideoComposeIn = {
     [key: string]: unknown
   } | null
   /**
-   * Sourcejobid
+   * Segments
    */
-  sourceJobId: string
+  segments: Array<ComposeSegmentIn>
   /**
    * Taskid
    */

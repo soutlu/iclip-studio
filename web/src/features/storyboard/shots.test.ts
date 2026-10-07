@@ -38,7 +38,7 @@ describe('isTake', () => {
         operation: 'compose',
         shotIndex: 2,
         rootJobId: 'take',
-        sourceJobId: 'edit',
+        sourceJobId: 'take',
       }),
     ],
     ['图片', makeGenerationJob({ kind: 'image' })],

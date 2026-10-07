@@ -38,6 +38,7 @@ import {
   editableModels,
   pickEditModel,
   seedVideoEditJob,
+  spliceSegments,
   submitVideoComposite,
   submitVideoEdit,
   useVideoEditChain,
@@ -291,7 +292,13 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
         await submitVideoComposite({
           conversationId,
           taskId: root.taskId,
-          sourceJobId: edit.video.id,
+          baseJobId: edit.base.jobId,
+          segments: spliceSegments({
+            baseJobId: edit.base.jobId,
+            editJobId: edit.video.id,
+            rangeStartMs: edit.video.rangeStartMs,
+            rangeEndMs: edit.video.rangeEndMs,
+          }),
         }),
       )
       toast.success('已提交合成，完成后会成为新版本')
