@@ -484,11 +484,24 @@ export const zFilmImageChoiceIn = z.object({
 })
 
 /**
+ * FilmLineEditIn
+ *
+ * 改完的一句台词：原有的带上它的 ``target``，新加的给 null。
+ */
+export const zFilmLineEditIn = z.object({
+  role: z.string().min(1),
+  target: z.string().nullable(),
+  text: z.string(),
+})
+
+/**
  * FilmLineOut
+ *
+ * 镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。
  */
 export const zFilmLineOut = z.object({
   role: z.string(),
-  target: z.string().nullable(),
+  target: z.string(),
   text: z.string(),
 })
 
@@ -508,7 +521,8 @@ export const zFilmSettingOut = z.object({
 /**
  * FilmShotOut
  *
- * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。
+ * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；
+ * ``target`` 为 null 的镜头不能在页面上改。
  */
 export const zFilmShotOut = z.object({
   end: z.number(),
@@ -530,15 +544,18 @@ export const zFilmGroupOut = z.object({
   seconds: z.int(),
   settings: z.array(zFilmSettingOut),
   shots: z.array(zFilmShotOut),
+  speakers: z.array(z.string()),
   video: z.string(),
 })
 
 /**
  * FilmTextEditIn
  *
- * 改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。
+ * 改一段字。镜头给 ``parts`` 与 ``lines``：改完的台词按先后列全，``parts`` 比它多一段；
+ * 其余给 ``text``。
  */
 export const zFilmTextEditIn = z.object({
+  lines: z.array(zFilmLineEditIn).nullish(),
   parts: z.array(z.string()).nullish(),
   target: z.string().min(1),
   text: z.string().nullish(),

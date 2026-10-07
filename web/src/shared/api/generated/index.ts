@@ -154,6 +154,7 @@ export type {
   FilmFrameOut,
   FilmGroupOut,
   FilmImageChoiceIn,
+  FilmLineEditIn,
   FilmLineOut,
   FilmSettingOut,
   FilmShotOut,

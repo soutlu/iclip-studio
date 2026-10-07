@@ -12,6 +12,19 @@ from tests.helpers.film import FILM, GIVEN_IMAGES, RUN
 from tests.helpers.pg import connected
 
 URL = "/conversations"
+FIRST_SHOT = [
+    "开场，手持，胸部以上近景，平视。短发女生站在跑道边，双手分别握住网面跑鞋的鞋头和鞋跟，"
+    "向内对折到两端相碰，停了一下后松开右手，鞋底立刻弹回平直。她抬头看着镜头说：",
+    " 音效：鞋底弹回时的一声轻响",
+]
+
+
+def say(version: int, text: str) -> dict[str, object]:
+    """改第一个镜头里那句台词的请求体。"""
+
+    line = {"target": "line:lighter", "role": "短发女生", "text": text}
+    edit = {"target": "shot:全片分镜:1", "parts": FIRST_SHOT, "lines": [line]}
+    return {"filmVersion": version, "edits": [edit]}
 
 
 async def film_conversation(client: httpx.AsyncClient, pg_url: str) -> str:
@@ -65,10 +78,11 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         "number": 1,
     }
     assert group["shots"][0]["lines"][0]["target"] == "line:lighter"
+    assert group["speakers"] == ["短发女生", "旁白"]
 
     edited = await client.patch(
         f"{URL}/{mine}/film/text",
-        json={"filmVersion": 1, "edits": [{"target": "line:lighter", "text": "So light!"}]},
+        json=say(1, "So light!"),
     )
     assert edited.status_code == 200, edited.text
     assert edited.json()["film"]["filmVersion"] == 2
@@ -76,13 +90,13 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
 
     stale = await client.patch(
         f"{URL}/{mine}/film/text",
-        json={"filmVersion": 1, "edits": [{"target": "line:lighter", "text": "again"}]},
+        json=say(1, "again"),
     )
     assert stale.status_code == 409
 
     empty = await client.patch(
         f"{URL}/{mine}/film/text",
-        json={"filmVersion": 2, "edits": [{"target": "line:lighter", "text": " "}]},
+        json=say(2, " "),
     )
     assert (empty.status_code, empty.json()) == (422, {"detail": "台词不能是空的"})
 
@@ -112,7 +126,7 @@ async def test_the_page_follows_the_workspace_file_permissions(
 ) -> None:
     mine = await film_conversation(client, pg_url)
     empty = (await client.post(URL, json={"agentId": "director"})).json()["conversation"]["id"]
-    edit = {"filmVersion": 1, "edits": [{"target": "line:lighter", "text": "x"}]}
+    edit = say(1, "x")
 
     assert (await client.get(f"{URL}/{empty}/film")).status_code == 404
 
@@ -133,7 +147,7 @@ async def test_the_page_follows_the_workspace_file_permissions(
 async def test_malformed_page_requests_are_422(client: httpx.AsyncClient, pg_url: str) -> None:
     mine = await film_conversation(client, pg_url)
 
-    both = {"target": "line:lighter", "text": "x", "parts": ["x"]}
+    both = {"target": "shot:全片分镜:1", "text": "x", "parts": ["x"], "lines": []}
     bad_edit = await client.patch(
         f"{URL}/{mine}/film/text", json={"filmVersion": 1, "edits": [both]}
     )

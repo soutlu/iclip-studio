@@ -2003,6 +2003,13 @@
             "title": "Shots",
             "type": "array"
           },
+          "speakers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Speakers",
+            "type": "array"
+          },
           "video": {
             "title": "Video",
             "type": "string"
@@ -2016,7 +2023,8 @@
           "aspectRatio",
           "frames",
           "settings",
-          "shots"
+          "shots",
+          "speakers"
         ],
         "title": "FilmGroupOut",
         "type": "object"
@@ -2066,10 +2074,12 @@
         "title": "FilmImageChoiceIn",
         "type": "object"
       },
-      "FilmLineOut": {
+      "FilmLineEditIn": {
         "additionalProperties": false,
+        "description": "改完的一句台词：原有的带上它的 ``target``，新加的给 null。",
         "properties": {
           "role": {
+            "minLength": 1,
             "title": "Role",
             "type": "string"
           },
@@ -2083,6 +2093,31 @@
               }
             ],
             "title": "Target"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "role",
+          "text"
+        ],
+        "title": "FilmLineEditIn",
+        "type": "object"
+      },
+      "FilmLineOut": {
+        "additionalProperties": false,
+        "description": "镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。",
+        "properties": {
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
           },
           "text": {
             "title": "Text",
@@ -2160,7 +2195,7 @@
       },
       "FilmShotOut": {
         "additionalProperties": false,
-        "description": "一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。",
+        "description": "一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；\n``target`` 为 null 的镜头不能在页面上改。",
         "properties": {
           "end": {
             "title": "End",
@@ -2220,8 +2255,22 @@
       },
       "FilmTextEditIn": {
         "additionalProperties": false,
-        "description": "改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。",
+        "description": "改一段字。镜头给 ``parts`` 与 ``lines``：改完的台词按先后列全，``parts`` 比它多一段；\n其余给 ``text``。",
         "properties": {
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FilmLineEditIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          },
           "parts": {
             "anyOf": [
               {

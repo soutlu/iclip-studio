@@ -1,11 +1,11 @@
 """制作页：把检查通过的工程按视频请求排成镜头组，改一段字，给一张图换地址。
 
-改字和换图只替换原文里对应的那一段，文件其余部分一个字不动；写之前按人保存文件时的同一套规则
+改字和换图只替换原文里对应的那几段，文件其余部分一个字不动；写之前按人保存文件时的同一套规则
 检查，有问题就不写，说明是给人看的一句话。
 
-定位用 ``target``：``shot:<Storyboard 名>:<第几个镜头>``、``line:<台词名>``、
-``element:<元素名>``、``value:<文字名>``、``voice:<说话人>``、``block:<Storyboard 名>``。它只在
-同一版文件里有效，改字时带着文件版本号一起传回。"""
+定位用 ``target``：``shot:<Storyboard 名>:<第几个镜头>``、``element:<元素名>``、
+``value:<文字名>``、``voice:<说话人>``、``block:<Storyboard 名>``；镜头里的台词用
+``line:<台词名>`` 指明是原有的哪一句。它们只在同一版文件里有效，改字时带着文件版本号一起传回。"""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from iclip.common.film_view import (
     FilmFrame,
     FilmGroup,
     FilmLine,
+    FilmLineEdit,
     FilmSetting,
     FilmShot,
     FilmTextEdit,
@@ -44,6 +45,7 @@ from iclip.common.film_view import (
 _SENTENCE_MARKS: Final = "。！？"
 _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
 _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
+_ROLE: Final = re.compile(r"""(\srole\s*=\s*)(["'])(.*?)\2""", re.S)
 _UNWRITABLE: Final = ("<!--", "<![CDATA[")
 """正文里有注释或 CDATA 时只换那一段会把它们弄丢，这样的正文不让在页面上改。"""
 
@@ -81,6 +83,7 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 frames=tuple(frames.values()),
                 settings=_settings(project, storyboard, source),
                 shots=_shots(project, storyboard, source),
+                speakers=tuple(_speakers(project, storyboard)),
             )
         )
     return tuple(groups)
@@ -89,27 +92,31 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
 def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
     """把几段字写回工程文件，返回新的原文。``film`` 是 ``source`` 检查通过后的样子。
 
-    用户打的花括号换成全角，免得当成台词；不能写 ``@Image``，图的编号由后端算。"""
+    镜头的改动带着这一镜改完的全部台词：少了的从台词表里删掉，新加的按镜头先后排进台词表，
+    说话人只能是这组里能说话的人，台词的先后不能调。用户打的花括号换成全角，免得当成台词；
+    不能写 ``@Image``，图的编号由后端算。"""
 
     if not edits:
         raise FilmEditRejected("没有要改的字")
     if len({edit.target for edit in edits}) != len(edits):
         raise FilmEditRejected("同一段字一次只改一处")
     project = film.project
-    replacements: list[tuple[int, int, str]] = []
+    splice = _Splice()
+    script = _ScriptChanges(project)
     expected: list[tuple[str, str]] = []
     for edit in edits:
         node = _resolve(project, edit.target)
-        if node is None or not _writable(source, node):
+        if node is None or not _editable(source, project, node):
             raise FilmEditRejected("要改的这段字找不到了，刷新后再改")
-        text = _new_text(project, node, edit)
+        if project.is_a(node, "Shot"):
+            text = script.shot(source, node, edit)
+        else:
+            text = _new_text(project, node, edit)
         assert node.inner is not None
-        start, stop = node.inner
-        replacements.append((start, stop, _body(source[start:stop], text)))
+        splice.replace(node.inner, _body(source[slice(*node.inner)], text))
         expected.append((edit.target, text))
-    updated = source
-    for start, stop, body in sorted(replacements, reverse=True):
-        updated = updated[:start] + body + updated[stop:]
+    script.write(source, splice)
+    updated = splice.apply(source)
     problems = check_project_content(updated)
     if problems:
         too_long = any(f"超过 {PROMPT_MAX_CHARS} 字" in problem for problem in problems)
@@ -121,6 +128,7 @@ def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
         node = _resolve(rewritten, target)
         if node is None or node.text != text:
             raise RuntimeError(f"写回后 {target} 读出来和要写的不一样")
+    script.verify(rewritten)
     return updated
 
 
@@ -247,22 +255,31 @@ def _settings(project: Document, storyboard: Node, source: str) -> tuple[FilmSet
     return tuple(settings)
 
 
+def _speakers(project: Document, storyboard: Node) -> list[str]:
+    """这组里能说话的人：不是出场元素的声音（如旁白），加上这组里 Cast 了的出场元素。"""
+
+    elements = {element.attrs["id"] for element in project.find("Element")}
+    cast = {cast.reference("element") for cast in project.kids(storyboard, "Cast")}
+    return [
+        voice.attrs["role"]
+        for voice in project.find("Voice")
+        if voice.attrs["role"] not in elements or voice.attrs["role"] in cast
+    ]
+
+
 def _shots(project: Document, storyboard: Node, source: str) -> tuple[FilmShot, ...]:
     name = storyboard.attrs["id"]
     shots: list[FilmShot] = []
     for number, shot in enumerate(project.kids(storyboard, "Shot"), start=1):
         text = shot.text
-        lines: list[FilmLine] = []
-        for line in LINE_REFERENCE.findall(text):
-            said = project.nodes[line]
-            writable = _writable(source, said)
-            lines.append(
-                FilmLine(f"line:{line}" if writable else None, said.attrs["role"], said.text)
-            )
+        lines = [
+            FilmLine(f"line:{line}", project.nodes[line].attrs["role"], project.nodes[line].text)
+            for line in LINE_REFERENCE.findall(text)
+        ]
         view = shot.reference("view")
         shots.append(
             FilmShot(
-                target=f"shot:{name}:{number}" if _writable(source, shot) else None,
+                target=f"shot:{name}:{number}" if _editable(source, project, shot) else None,
                 start=float(shot.attrs["start"]),
                 end=float(shot.attrs["end"]),
                 parts=tuple(_LINE_SPLIT.split(text)),
@@ -293,7 +310,7 @@ def _resolve(project: Document, target: str) -> Node | None:
         return blocks[0] if blocks else None
     if kind == "voice":
         return next((v for v in project.find("Voice") if v.attrs["role"] == rest), None)
-    wanted = {"line": "Line", "element": "Element", "value": "Value"}.get(kind)
+    wanted = {"element": "Element", "value": "Value"}.get(kind)
     node = project.nodes.get(rest)
     if wanted is None or node is None or not project.is_a(node, wanted):
         return None
@@ -301,36 +318,206 @@ def _resolve(project: Document, target: str) -> Node | None:
 
 
 def _writable(source: str, node: Node) -> bool:
-    if node.inner is None or node.children:
+    if node.opening is None or node.inner is None or node.children:
         return False
     raw = source[node.inner[0] : node.inner[1]]
     return not any(mark in raw for mark in _UNWRITABLE)
 
 
-def _new_text(project: Document, node: Node, edit: FilmTextEdit) -> str:
-    """这次要写进这个标签的正文（未转义）。"""
+def _editable(source: str, project: Document, node: Node) -> bool:
+    """页面上能不能改这段：镜头连同它的每句台词都要能就地改。"""
 
-    if project.is_a(node, "Shot"):
-        names = LINE_REFERENCE.findall(node.text)
-        if edit.parts is None or len(edit.parts) != len(names) + 1:
-            raise FilmEditRejected("台词不能删，也不能加；要动台词跟 AI 导演说")
-        parts = [_clean(part) for part in edit.parts]
-        text = parts[0] + "".join(
-            "{" + name + "}" + part for name, part in zip(names, parts[1:], strict=True)
-        )
-        if not LINE_REFERENCE.sub("", text).strip():
-            raise FilmEditRejected("镜头的文字不能是空的")
-        return text.strip()
+    if not _writable(source, node):
+        return False
+    if not project.is_a(node, "Shot"):
+        return True
+    return all(_writable(source, project.nodes[line]) for line in LINE_REFERENCE.findall(node.text))
+
+
+def _new_text(project: Document, node: Node, edit: FilmTextEdit) -> str:
+    """镜头以外这次要写进这个标签的正文（未转义）。"""
+
     if edit.text is None:
         raise FilmEditRejected("要给改好的文字")
     text = _clean(edit.text).strip()
     if not text:
-        raise FilmEditRejected(
-            "台词不能是空的" if project.is_a(node, "Line") else "这段字不能是空的"
-        )
+        raise FilmEditRejected("这段字不能是空的")
     if project.is_a(node, "Element"):
         return _with_body_sentence(text, node.text)
     return text
+
+
+class _Splice:
+    """攒下对原文的几处替换与插入，最后从后往前一次改完，前面的位置不受影响。"""
+
+    def __init__(self) -> None:
+        self._edits: list[tuple[int, int, int, str]] = []
+
+    def replace(self, span: tuple[int, int], text: str) -> None:
+        self._edits.append((span[0], 1, span[1], text))
+
+    def insert(self, position: int, text: str) -> None:
+        self._edits.append((position, 0, position, text))
+
+    def apply(self, source: str) -> str:
+        # 同一处先替换再插入，插入的才不会被替换掉；插在同一处的几段按加进来的先后排。
+        ordered = sorted(
+            enumerate(self._edits), key=lambda item: (item[1][0], item[1][1], item[0]), reverse=True
+        )
+        for _, (start, _, stop, text) in ordered:
+            source = source[:start] + text + source[stop:]
+        return source
+
+
+class _ScriptChanges:
+    """镜头里台词的增删改，连带台词表一起改。"""
+
+    def __init__(self, project: Document) -> None:
+        self._project = project
+        self._shots: dict[Node, list[str]] = {}
+        """改过的镜头 → 改完后按先后引用的台词名。"""
+
+        self._added: dict[str, tuple[str, str]] = {}
+        """新加的台词名 → (说话人, 台词)。"""
+
+        self._changed: dict[str, tuple[str, str]] = {}
+        self._removed: set[str] = set()
+
+    def shot(self, source: str, shot: Node, edit: FilmTextEdit) -> str:
+        """核对一个镜头的改动，返回它的新正文（未转义）。"""
+
+        project = self._project
+        lines = edit.lines
+        if edit.parts is None or lines is None or len(edit.parts) != len(lines) + 1:
+            raise FilmEditRejected("镜头的文字和台词对不上，刷新后再改")
+        before = LINE_REFERENCE.findall(shot.text)
+        assert shot.parent is not None
+        speakers = _speakers(project, shot.parent)
+        names: list[str] = []
+        for line in lines:
+            role, text = line.role, _clean(line.text).strip()
+            if role not in speakers:
+                raise FilmEditRejected(f"「{role}」不能在这组镜头里说话，说话人从列表里选")
+            if not text:
+                raise FilmEditRejected("台词不能是空的")
+            names.append(self._line(before, names, line, role, text))
+        kept = [name for name in names if name not in self._added]
+        if kept != [name for name in before if name in kept]:
+            raise FilmEditRejected("台词的先后不能调，要调跟 AI 导演说")
+        self._removed.update(name for name in before if name not in kept)
+        self._shots[shot] = names
+        parts = [_clean(part) for part in edit.parts]
+        body = parts[0] + "".join(
+            "{" + name + "}" + part for name, part in zip(names, parts[1:], strict=True)
+        )
+        if not LINE_REFERENCE.sub("", body).strip():
+            raise FilmEditRejected("镜头的文字不能是空的")
+        return body.strip()
+
+    def _line(
+        self, before: list[str], taken: list[str], line: FilmLineEdit, role: str, text: str
+    ) -> str:
+        if line.target is None:
+            name = self._fresh()
+            self._added[name] = (role, text)
+            return name
+        kind, _, name = line.target.partition(":")
+        if kind != "line" or name not in before or name in taken:
+            raise FilmEditRejected("这句台词找不到了，刷新后再改")
+        said = self._project.nodes[name]
+        if (said.attrs["role"], said.text) != (role, text):
+            self._changed[name] = (role, text)
+        return name
+
+    def _fresh(self) -> str:
+        number = 1
+        while f"台词{number}" in self._project.nodes or f"台词{number}" in self._added:
+            number += 1
+        return f"台词{number}"
+
+    def write(self, source: str, splice: _Splice) -> None:
+        """把台词表要改的几处加进 ``splice``。"""
+
+        project = self._project
+        for name, (role, text) in self._changed.items():
+            said = project.nodes[name]
+            if role != said.attrs["role"]:
+                assert said.opening is not None
+                found = _ROLE.search(source, *said.opening)
+                assert found is not None, "台词读文件时已查过有 role"
+                splice.replace(found.span(3), _attribute(role, found.group(2)))
+            if text != said.text:
+                assert said.inner is not None
+                splice.replace(said.inner, _body(source[slice(*said.inner)], text))
+        written = project.find("Line")
+        survivors = [line for line in written if line.attrs["id"] not in self._removed]
+        if not survivors and not self._added:
+            for script in project.find("Script"):
+                splice.replace(_whole_lines(source, script), "")
+            return
+        for line in written:
+            if line.attrs["id"] in self._removed:
+                splice.replace(_whole_lines(source, line), "")
+        self._insert(source, splice, survivors)
+
+    def _insert(self, source: str, splice: _Splice, survivors: list[Node]) -> None:
+        """新加的台词按改完后所有镜头引用的先后，接在前一句留下来的台词后面。"""
+
+        if not self._added:
+            return
+        project = self._project
+        runs: dict[str | None, list[str]] = {}
+        anchor: str | None = None
+        for storyboard in project.find("Storyboard"):
+            for shot in project.kids(storyboard, "Shot"):
+                for name in self._shots.get(shot, LINE_REFERENCE.findall(shot.text)):
+                    if name in self._added:
+                        runs.setdefault(anchor, []).append(name)
+                    else:
+                        anchor = name
+        written = project.find("Line")
+        indent = _indent(source, written[0]) if written else ""
+        tag = self._tag("Line")
+        for after, names in runs.items():
+            text = "".join(
+                f'{indent}<{tag} id="{name}" role={_quoted(self._added[name][0])}>'
+                f"{_escape(self._added[name][1])}</{tag}>\n"
+                for name in names
+            )
+            if after is not None:
+                splice.insert(_line_end(source, project.nodes[after]), text)
+            elif survivors:
+                splice.insert(_line_start(source, survivors[0]), text)
+            elif written:
+                # 原有的台词全删了：新的接在台词表里第一句原来所在的那一行。
+                splice.insert(_line_start(source, written[0]), text)
+            else:
+                self._new_script(source, splice, text)
+
+    def _tag(self, name: str) -> str:
+        """台词表与台词的写法，前缀与文件里的声音相同：它们同属导演包。说了话就一定有声音。"""
+
+        voice = self._project.find("Voice")[0]
+        return voice.tag[: -len("Voice")] + name
+
+    def _new_script(self, source: str, splice: _Splice, lines: str) -> None:
+        """还没有台词表：接在最后一个声音后面另起一个。"""
+
+        voice = self._project.find("Voice")[-1]
+        indent = _indent(source, voice)
+        tag = self._tag("Script")
+        body = "".join(f"{indent}  {line}\n" for line in lines.splitlines())
+        splice.insert(_line_end(source, voice), f"\n{indent}<{tag}>\n{body}{indent}</{tag}>\n")
+
+    def verify(self, rewritten: Document) -> None:
+        """写回后台词表读出来要和这次改的一样。"""
+
+        for name, (role, text) in {**self._changed, **self._added}.items():
+            said = rewritten.nodes.get(name)
+            if said is None or (said.attrs["role"], said.text) != (role, text):
+                raise RuntimeError(f"写回后台词 {name} 读出来和要写的不一样")
+        if any(name in rewritten.nodes for name in self._removed):
+            raise RuntimeError("写回后删掉的台词还在")
 
 
 def _clean(text: str) -> str:
@@ -410,7 +597,10 @@ def _select_in_run(film: Film, source: str | None, image: str, url: str | None) 
         None,
     )
     if url is None:
-        return None if current is None else _remove_line(source, current)
+        if current is None:
+            return None
+        start, stop = _whole_lines(source, current)
+        return source[:start] + source[stop:]
     registered = [node for node in run.root.children if run.is_a(node, "Image")]
     same = next((node for node in registered if node.attrs["src"] == url), None)
     edits: list[tuple[int, int, str]] = []
@@ -463,11 +653,36 @@ def _quoted(value: str) -> str:
 
 
 def _span(node: Node) -> tuple[int, int]:
-    """运行文件里一个标签的位置；对不上原文时不在页面上改这个文件。"""
+    """一个标签的开始标签在原文里的位置；对不上原文时不在页面上改。"""
 
     if node.opening is None:
-        raise FilmEditRejected("运行文件没法在页面上改，跟 AI 导演说")
+        raise FilmEditRejected("这一处没法在页面上改，跟 AI 导演说")
     return node.opening
+
+
+def _line_start(source: str, node: Node) -> int:
+    return source.rfind("\n", 0, _span(node)[0]) + 1
+
+
+def _line_end(source: str, node: Node) -> int:
+    """``node`` 整个标签所在那一行之后的位置，即下一行的开头。"""
+
+    end = _span(node)[1] if node.inner is None else source.find(">", node.inner[1]) + 1
+    newline = source.find("\n", end)
+    return len(source) if newline < 0 else newline + 1
+
+
+def _whole_lines(source: str, node: Node) -> tuple[int, int]:
+    """整个标签在原文里的位置；它独占几行时连这几行一起算。"""
+
+    start = _span(node)[0]
+    stop = _span(node)[1] if node.inner is None else source.find(">", node.inner[1]) + 1
+    line_start = source.rfind("\n", 0, start) + 1
+    line_end = source.find("\n", stop)
+    line_end = len(source) if line_end < 0 else line_end
+    if not source[line_start:start].strip() and not source[stop:line_end].strip():
+        return line_start, min(line_end + 1, len(source))
+    return start, stop
 
 
 def _indent(source: str, node: Node) -> str:
@@ -480,8 +695,7 @@ def _indent(source: str, node: Node) -> str:
 def _after(source: str, node: Node, text: str) -> tuple[int, int, str]:
     """在 ``node`` 那一行后面另起一行插入，缩进与它相同。"""
 
-    end = source.find("\n", _span(node)[1])
-    position = len(source) if end < 0 else end + 1
+    position = _line_end(source, node)
     return position, position, f"{_indent(source, node)}{text}\n"
 
 
@@ -494,18 +708,6 @@ def _before_close(source: str, root: Node, text: str) -> tuple[int, int, str]:
     for child in root.children:
         indent = _indent(source, child) or indent
     return position, position, f"{indent}{text}\n"
-
-
-def _remove_line(source: str, node: Node) -> str:
-    """删掉一个自闭合标签；它独占一行时连这一行一起删。"""
-
-    start, stop = _span(node)
-    line_start = source.rfind("\n", 0, start) + 1
-    line_end = source.find("\n", stop)
-    line_end = len(source) if line_end < 0 else line_end
-    if not source[line_start:start].strip() and not source[stop:line_end].strip():
-        return source[:line_start] + source[line_end + 1 :]
-    return source[:start] + source[stop:]
 
 
 def _required(node: Node, name: str) -> str:
