@@ -14,12 +14,7 @@ import { isRunningStatus } from '../shots'
 import { AspectGlyph } from '../components/aspect-glyph'
 import { useTakeElapsed } from '../components/use-take-elapsed'
 import type { FilmFrame, FilmGroup } from './film.api'
-import {
-  frameTag,
-  missingImageText,
-  missingReferencesText,
-  unselectedImageText,
-} from './film-content'
+import { frameTag, missingReferencesText, unselectedImageText } from './film-content'
 import { FilmImageChip } from './film-image-chip'
 
 /** 卡上正在提交的那件事：按描述生成，或选用那次结果。 */
@@ -141,7 +136,7 @@ export function FilmGenerateCard({
   return (
     <div className="film-generate">
       <section aria-label={`${frame.label}的生图描述`} className="film-generate-card">
-        <h3 className="film-generate-title">{missingImageText(frame.label)}</h3>
+        <h3 className="film-generate-title">{frame.label} · 图像生成</h3>
         <p className="film-generate-prompt">
           {(frame.prompt ?? []).map((run, index) => {
             if (run.kind !== 'image') return run.text
