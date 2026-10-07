@@ -320,6 +320,67 @@ describe('TranscriptConnection', () => {
     expect(connection.health().stale).toBe(true)
   })
 
+  it.each([false, true])(
+    '关闭后立即重连，旧连接晚到的事件不影响新连接，旧连接已打开=%s',
+    async (opened) => {
+      vi.useFakeTimers()
+      // 浏览器 close() 异步派发关闭事件；连接尚未建立时还会先派发 error。
+      class ClosingSocket extends FakeSocket {
+        override close(): void {
+          const connecting = this.readyState === 0
+          this.readyState = 2
+          setTimeout(() => {
+            this.readyState = 3
+            if (connecting) this.onerror?.()
+            this.onclose?.()
+          }, 0)
+        }
+      }
+
+      const sockets: ClosingSocket[] = []
+      const applied: TranscriptOps[] = []
+      const connection = new TranscriptConnection({
+        url: 'ws://test/ws',
+        createSocket: () => {
+          const socket = new ClosingSocket()
+          socket.readyState = 0
+          sockets.push(socket)
+          return socket as unknown as WebSocket
+        },
+      })
+      connection.connect()
+      connection.subscribe('c1', {
+        onReset: () => undefined,
+        onOps: (_agent, batch) => {
+          applied.push(batch)
+          return true
+        },
+      })
+      const previous = sockets[0]
+      if (previous === undefined) throw new Error('没有建立第一条连接')
+      if (opened) {
+        previous.readyState = 1
+        previous.deliver(SERVER_HELLO)
+      }
+
+      // React StrictMode 在旧连接的关闭事件到达前，重跑 effect 建立替换连接。
+      connection.close()
+      connection.connect()
+      const active = sockets[1]
+      if (active === undefined) throw new Error('没有建立替换连接')
+      active.readyState = 1
+      active.deliver(SERVER_HELLO)
+      await vi.advanceTimersByTimeAsync(2_000)
+      active.deliver(ops(1))
+
+      expect(applied).toEqual([[]])
+      expect(connection.health().connected).toBe(true)
+      expect(sockets).toHaveLength(2)
+      connection.close()
+      await vi.runOnlyPendingTimersAsync()
+    },
+  )
+
   it('reconnect() 立刻换一条新连接，带着水位重订，旧的那条不再排退避', () => {
     const sockets: FakeSocket[] = []
     let clock = 1_000
