@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
-from iclip.capabilities.iclip_studio.film.export import video_row
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
+from iclip.capabilities.iclip_studio.film.prompts import video_row
 from iclip.capabilities.iclip_studio.film.studio import (
     FilmEditRejected,
     choose_image,

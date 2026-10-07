@@ -225,7 +225,7 @@ async def test_a_conversation_id_that_is_not_a_uuid_is_a_broken_run() -> None:
 
 
 def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
-    """生图现阶段由人自己做：要用的图片模型接上了也不登记生图工具，检查和导出照常装配。"""
+    """生图现阶段由人自己做：要用的图片模型接上了也不登记生图工具，检查照常装配。"""
 
     built = build_capability_table(
         workspace_store=FakeFileStore(),
@@ -245,4 +245,4 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
     assert isinstance(capability, IclipStudio)
     tools = capability.get_toolset().tools
     assert "generate_images" not in tools
-    assert {"check_film", "export_shots"} <= set(tools)
+    assert "check_film" in tools

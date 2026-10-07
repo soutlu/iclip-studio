@@ -1,8 +1,6 @@
-"""验证工程文件与运行文件的运行时：检查规则、取图、拼提示词与导出分镜。"""
+"""验证工程文件与运行文件的运行时：检查规则、取图、拼提示词与出片请求。"""
 
 from __future__ import annotations
-
-import json
 
 import pytest
 
@@ -11,8 +9,7 @@ from iclip.capabilities.iclip_studio.film.checks import (
     check_project_content,
     check_run_content,
 )
-from iclip.capabilities.iclip_studio.film.export import NothingToExport, export_shots, image_status
-from iclip.capabilities.iclip_studio.film.film import Film
+from iclip.capabilities.iclip_studio.film.film import Film, image_status
 from iclip.capabilities.iclip_studio.film.packages import (
     GPT_IMAGE_ASPECTS,
     GPT_IMAGE_MODEL,
@@ -21,8 +18,12 @@ from iclip.capabilities.iclip_studio.film.packages import (
     PROMPT_MAX_CHARS,
     VIDEO_MAX_REFERENCES,
 )
-from iclip.capabilities.iclip_studio.film.prompts import render_picture, render_storyboard
-from iclip.capabilities.shot_document import validate_shots_document
+from iclip.capabilities.iclip_studio.film.prompts import (
+    render_picture,
+    render_storyboard,
+    video_row,
+)
+from iclip.capabilities.shot_document import VideoShotDocumentRow
 from iclip.common.shot_prompt import format_shot_prompt
 from iclip.common.shot_rules import MAX_REFERENCE_IMAGES
 from iclip.domains.generation import schemas as generation
@@ -491,12 +492,15 @@ def test_without_images_the_video_prompt_falls_back_to_text() -> None:
     assert images == (SHOE_PHOTO,)
 
 
-def test_export_copies_shot_times_and_carries_the_model() -> None:
-    document = export_shots(checked())
+def video_rows(film: Film) -> list[VideoShotDocumentRow]:
+    videos = film.project.find("ReferenceVideo")
+    return [video_row(film, video, index) for index, video in enumerate(videos, start=1)]
 
-    (row,) = document.shots
-    assert document.aspect_ratio == "9:16"
-    assert (row.index, row.model, row.seconds) == (1, "mmt-seedance-2-5", 15)
+
+def test_a_video_request_copies_the_shot_times() -> None:
+    (row,) = video_rows(checked())
+
+    assert (row.index, row.seconds) == (1, 15)
     assert [item.timestamps for item in row.prompt.timeline] == [
         [0.0, 2.5],
         [2.5, 6.0],
@@ -505,18 +509,15 @@ def test_export_copies_shot_times_and_carries_the_model() -> None:
     ]
     assert [item.image_indexes for item in row.prompt.timeline] == [[3], [], [], []]
     assert row.image_urls == [PERSON_FIXED, SHOE_PHOTO, VIEW_ONE]
-    validate_shots_document(document.file_text())
-    assert json.loads(document.file_text())["shots"][0]["model"] == "mmt-seedance-2-5"
 
 
 def test_a_long_film_is_split_in_the_project_file_and_each_request_starts_at_zero() -> None:
-    document = export_shots(checked(two_requests()))
+    first, second = video_rows(checked(two_requests()))
 
-    first, second = document.shots
+    assert (first.index, second.index) == (1, 2)
     assert (first.seconds, second.seconds) == (20, 16)
     assert second.prompt.timeline[0].timestamps == [0.0, 16.0]
     assert second.image_urls == [SHOE_PHOTO]
-    validate_shots_document(document.file_text())
 
 
 def test_a_second_request_written_in_film_time_is_rejected() -> None:
@@ -525,18 +526,6 @@ def test_a_second_request_written_in_film_time_is_rejected() -> None:
     assert any(
         "第一个镜头从 0.0 开始，写的是 20.0" in problem for problem in problems(in_film_time)
     )
-
-
-def test_a_project_without_a_video_node_has_nothing_to_export() -> None:
-    start = FILM.index("  <Storyboard")
-    images_only = FILM[:start] + "</icml>\n"
-    # 去掉了镜头，台词就没人说了：连脚本一起去掉。
-    script = images_only[images_only.index("  <Script>") : images_only.index("</Script>") + 10]
-    film = checked(images_only.replace(script, ""), None)
-
-    assert film.errors == []
-    with pytest.raises(NothingToExport):
-        export_shots(film)
 
 
 def test_limits_are_counted_as_if_every_written_image_existed() -> None:

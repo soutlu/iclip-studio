@@ -1,8 +1,7 @@
-"""验证工程文件的三件工具：check_film 报出问题或概况，generate_images 给生图节点出图，export_shots 写出分镜文件。"""
+"""验证工程文件的两件工具：check_film 报出问题或概况，generate_images 给生图节点出图。"""
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Mapping, Sequence
 
@@ -28,7 +27,6 @@ from iclip.capabilities.iclip_studio.ports import (
     NodeImageRequest,
     SampledVideo,
 )
-from iclip.capabilities.shot_document import SHOTS_PATH, validate_shots_document
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
@@ -320,62 +318,6 @@ async def test_checking_needs_the_project_file(
         await tools.check_film(ctx)
 
 
-async def test_export_writes_the_shot_file_the_storyboard_page_reads(
-    files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
-) -> None:
-    tools = await workspace(files, ledger)
-
-    result = await tools.export_shots(ctx)
-
-    stored = await files.read(NAMESPACE, SHOTS_PATH)
-    assert stored is not None
-    document = validate_shots_document(stored.content)
-    (row,) = document.shots
-    assert (row.model, row.seconds) == ("mmt-seedance-2-5", 15)
-    assert row.image_urls == [PERSON_FIXED, SHOE_PHOTO, VIEW_ONE]
-    assert json.loads(stored.content)["aspect_ratio"] == "9:16"
-    assert text_of(result) == (
-        "已导出到 video_shot.json：1 个镜头组，4 个镜头，合计 15 秒，带 3 张参考图。"
-    )
-    assert result.metadata == {"chip": "1 组 · 4 镜 · 15 秒"}
-
-
-async def test_export_replaces_the_previous_shot_file(
-    files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
-) -> None:
-    tools = await workspace(files, ledger)
-    await files.write(NAMESPACE, SHOTS_PATH, "{}")
-
-    await tools.export_shots(ctx)
-
-    stored = await files.read(NAMESPACE, SHOTS_PATH)
-    assert stored is not None and stored.version == 2
-    validate_shots_document(stored.content)
-
-
-async def test_nothing_is_exported_while_the_check_fails(
-    files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
-) -> None:
-    tools = await workspace(files, ledger, project=FILM.replace('duration="15"', 'duration="14"'))
-
-    with pytest.raises(ModelRetry, match="检查没通过，没有导出") as raised:
-        await tools.export_shots(ctx)
-
-    assert "这组镜头是 15 秒" in str(raised.value)
-    assert await files.read(NAMESPACE, SHOTS_PATH) is None
-
-
-async def test_a_project_without_a_video_cannot_be_exported(
-    files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
-) -> None:
-    images_only = FILM[: FILM.index("  <Storyboard")] + "</icml>\n"
-    script = images_only[images_only.index("  <Script>") : images_only.index("</Script>") + 10]
-    tools = await workspace(files, ledger, project=images_only.replace(script, ""), run=None)
-
-    with pytest.raises(ModelRetry, match="没有视频节点"):
-        await tools.export_shots(ctx)
-
-
 async def test_a_node_without_a_selection_shows_its_latest_generated_image(
     files: FakeFileStore,
     ledger: FakeMaterialLedger,
@@ -386,20 +328,9 @@ async def test_a_node_without_a_selection_shows_its_latest_generated_image(
     tools = await workspace(files, ledger, generation=images)
 
     lines = text_of(await tools.check_film(ctx)).splitlines()
-    await tools.export_shots(ctx)
 
     assert lines[2] == "公园跑道参考图：最近一次生成"
     assert lines[1] == "短发女生参考图：运行文件选用「短发女生修过手」", "选用的优先于最近生成的"
-    stored = await files.read(NAMESPACE, SHOTS_PATH)
-    assert stored is not None
-    (row,) = validate_shots_document(stored.content).shots
-    assert row.image_urls == [
-        PERSON_FIXED,
-        SHOE_PHOTO,
-        "https://cdn.test/generated/track.png",
-        VIEW_ONE,
-    ]
-    assert "场景 公园跑道：@Image3，" in row.prompt.global_settings
 
 
 async def test_an_image_edited_elsewhere_in_the_conversation_can_be_registered(
@@ -604,10 +535,9 @@ def test_the_tool_cards_name_the_file_they_work_on(
 ) -> None:
     table = capability(files, ledger).display_table()
 
-    check, export, generate = table["check_film"], table["export_shots"], table["generate_images"]
-    assert callable(check) and callable(export)
+    check, generate = table["check_film"], table["generate_images"]
+    assert callable(check)
     assert check({}) == GenericDisplay(summary="检查工程", detail="film.icml")
-    assert export({}) == GenericDisplay(summary="导出分镜", detail="video_shot.json")
     assert isinstance(generate, ToolDisplayEntry)
     assert generate.view == "media_grid"
     assert generate.draw({"nodes": ["镜01机位图", "镜02机位图"]}) == GenericDisplay(

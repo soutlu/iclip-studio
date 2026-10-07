@@ -1,6 +1,7 @@
 # ADR-0007：AI 导演的工程文件用自己的标记语言，写法照 hypit，运行时自己实现
 
 - 状态：已接受（2026-10-06）
+- 修订（2026-10-07，ADR-0009）：不再导出分镜，出片在制作页上按工程文件拼请求；第 5 条的照搬改在出片时。
 - 不取代已有 ADR。
 - 影响：[CONTEXT.md](../CONTEXT.md) 的「工程文件」词条、[architecture.md](../architecture.md) 的 `iclip_studio` 说明、[contract/conventions.md](../../contract/conventions.md) 的工作区文件写回；后端运行时 [iclip_studio/film/](../../server/src/iclip/capabilities/iclip_studio/film/)。
 

@@ -12,6 +12,12 @@ from typing import Final
 
 from iclip.capabilities.iclip_studio.film.film import Film
 from iclip.capabilities.iclip_studio.film.markup import Node
+from iclip.capabilities.shot_document import (
+    StoredTimelineItem,
+    StoredVideoShotPrompt,
+    VideoShotDocumentRow,
+)
+from iclip.common.shot_rules import image_indexes_of
 
 BODY_PHRASE: Final = "very broad shoulders and excellent head-to-shoulder proportions"
 """人物身材那句英文固定的后半句。这一句只给生图用，拼视频的全局设定时整句去掉。"""
@@ -270,6 +276,28 @@ def body_sentence(description: str) -> re.Match[str] | None:
     return _BODY_SENTENCE.search(description)
 
 
+def video_row(film: Film, video: Node, index: int) -> VideoShotDocumentRow:
+    """一个视频节点发给视频模型的那一组：拼好的镜头组、现在有图的参考图、时长，``index`` 是组号。"""
+
+    group = render_storyboard(film, film.project.nodes[_required(video, "prompt")])
+    return VideoShotDocumentRow(
+        index=index,
+        prompt=StoredVideoShotPrompt(
+            global_settings=group.global_settings,
+            timeline=[
+                StoredTimelineItem(
+                    timestamps=list(cut.timestamps),
+                    prompt=cut.prompt,
+                    image_indexes=image_indexes_of(cut.prompt),
+                )
+                for cut in group.timeline
+            ],
+        ),
+        seconds=int(video.attrs["duration"]),
+        image_urls=list(group.image_urls),
+    )
+
+
 def _required(node: Node, name: str) -> str:
     reference = node.reference(name)
     assert reference is not None, f"{node.tag} 的 {name} 在读文件时已经查过"
@@ -291,4 +319,5 @@ __all__ = [
     "render_picture",
     "render_storyboard",
     "storyboard_images",
+    "video_row",
 ]

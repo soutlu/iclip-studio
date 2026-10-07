@@ -22,7 +22,7 @@ export type VideoChoice = { model: string; resolution: VideoResolution; generate
 const modelsStatus = (query: { isError: boolean; data: unknown }): VideoModelsStatus =>
   query.isError ? 'unavailable' : query.data === undefined ? 'loading' : 'ready'
 
-/** `fileModel` 是文件里当前这一组写的模型（分镜文件可以不写，工程文件一定有）；没写就传 undefined。 */
+/** `fileModel` 是制作页上工程文件里这一组写的模型，出片栏默认选它；分镜页不传。 */
 export const useVideoGeneration = (conversationId: string, fileModel?: string) => {
   const queryClient = useQueryClient()
   const models = useVideoModels()
@@ -33,7 +33,7 @@ export const useVideoGeneration = (conversationId: string, fileModel?: string) =
     model: undefined,
     resolution: DEFAULT_VIDEO_RESOLUTION,
   })
-  // 先看这次会话里选过的，再看分镜文件里这一组写的；不在允许表里（配置改了、文件写了别的）
+  // 先看这次会话里选过的，再看工程文件里这一组写的；不在允许表里（配置改了、文件写了别的）
   // 就往下退，最后是服务端的默认。不用副作用改 state。
   const items = models.data?.items ?? []
   const allowed = (candidate: string | undefined) =>

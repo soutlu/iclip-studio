@@ -78,4 +78,32 @@ class Film:
         return f"<待生成:{reference}>" if assume_generated else None
 
 
-__all__ = ["FILM_PATH", "RUN_PATH", "Film"]
+@dataclass(frozen=True, slots=True)
+class NodeImage:
+    """一个生图节点现在用的图。"""
+
+    name: str
+    source: str
+    """图从哪来，给人看的一句话。"""
+
+    url: str | None
+
+
+def image_status(film: Film) -> list[NodeImage]:
+    """每个生图节点现在用哪张图，按文件里的先后。"""
+
+    status: list[NodeImage] = []
+    for node in film.image_nodes():
+        name = node.attrs["id"]
+        chosen = film.selected.get(name)
+        latest = film.generated.get(name)
+        if chosen is not None:
+            status.append(NodeImage(name, f"运行文件选用「{chosen}」", film.registered[chosen]))
+        elif latest is not None:
+            status.append(NodeImage(name, "最近一次生成", latest))
+        else:
+            status.append(NodeImage(name, "还没有图", None))
+    return status
+
+
+__all__ = ["FILM_PATH", "RUN_PATH", "Film", "NodeImage", "image_status"]

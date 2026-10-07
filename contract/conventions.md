@@ -217,7 +217,6 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - `path` 必须是文件列表里那个写法（规范形式），`/video_shot.json` 这种是 `422`。
   - `video_shot.json` 复用镜头表形状校验，不合法返回 `422`。面板写入不校验地址来源，也不把地址登记成对话素材；用户要让 agent 使用新地址，须以附件提交。
   - `video_shot.json` 由 `write_video_shots` 整份交付，每组 `image_urls` 支持 0–30 张；工具提交与文件写回共用这条上限，超限分别返回重试提示与 `422`。
-  - `video_shot.json` 的每个镜头组可以带一个可选的 `model`，是服务端配置里的视频模型名：分镜页读到且它在可选模型里时默认选它，否则用服务端的默认；用户改选不写回文件。`write_video_shots` 不写这个字段，`export_shots` 导出时带上。
   - `film.icml` 与 `film.icrun` 是 AI 导演的工程文件与运行文件，写回时按 `check_film` 的同一套规则校验被写的这一个文件，不合法返回 `422`；要对照另一个文件或对话素材的规则只在工具里查。
   - `review.md` 是 agent 收尾时写下的需要人工复核的事项，纯文本一条一行，由 `write_file` 写入，不做形状校验。它是可选交付物：没有需要复核的事项时 agent 不写这份文件，取它得到 `404`；调用方把「文件不在」与「内容为空」都按没有复核事项处理。
 - `GET /conversations/{id}/film` 把 AI 导演的工程读成制作页（语义见 [CONTEXT.md「制作页」](../docs/CONTEXT.md#术语)），可见范围同读工作区文件，没有 `film.icml` 是 `404`。`problems` 是两个文件一起检查出的问题数，不为 0 时 `groups` 为空，客户端提示等 AI 导演改好。`filmVersion` / `runVersion` 是两个文件的版本号，没有运行文件时 `runVersion` 为 `null`。
@@ -225,7 +224,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - `PATCH .../film/text` 体是 `{ filmVersion, edits: [{ target, text?, parts?, lines? }] }`。镜头给 `parts` 与 `lines`：`lines` 按原来的先后列出这一镜的每句台词 `{ target, text }`，`parts` 比 `lines` 多一段；其余给 `text`。台词只改字：不能删、不能加、不能调先后，说话人不变。用户打的 `{` `}` 存成全角；写 `@Image`、清空、动台词的句数或先后、改完分镜不合规矩都是 `422`，`detail` 是给人看的一句话。
   - `PUT .../film/image` 体是 `{ node, url, filmVersion, runVersion }`。`url` 要是这段对话的图片（对话素材或这段对话已完成的图片记录），或调用者自己上传的图（§10），后者随即登记成对话素材；其余是 `422`。`url` 为 `null` 是取消选用、回到最近一次生成的那张，用户给的图不能为 `null`。
   - `POST .../film/image-generations` 体是 `{ node, prompt?, filmVersion, runVersion }`，按描述给一张图出一张新的，答复 `202` 与 `{ jobId }`。模型按文件里写的，不收；`prompt` 是编辑器里改过的 `{ text, referenceImageUrls }`（最多 10 张），只用这一次，不给就用文件里的描述。这张图已经有图又没选用时，先在运行文件里选用现在这张，新的出来不顶替它，要人在编辑器里替换；还没有图的，出来就直接用上。用户给的图、没接生图模型、没开媒体生成都是 `422`。生成记录的 `metadata.film_node` 是节点名，编辑器版本条按它列；「最近一次生成」只算按描述生成的，帧图编辑不算。
-  - `POST .../film/video-generations` 体是 `{ video, model, resolution, generateAudio, filmVersion, runVersion }`，给一组出片，答复 `202` 与 `{ jobId }`。镜头组与参考图按文件拼，镜号是组号，`metadata.film_node` 是视频节点名；模型、清晰度、声音是出片栏这次选的，不写回文件，模型的规则同 §11。
+  - `POST .../film/video-generations` 体是 `{ video, model, resolution, generateAudio, filmVersion, runVersion }`，给一组出片，答复 `202` 与 `{ jobId }`。镜头组与参考图按文件拼，镜号是组号，`metadata.film_node` 是视频节点名；模型、清晰度、声音是出片栏这次选的，不写回文件，模型的规则同 §11；出片栏默认选这组的 `model`（文件里写的），它不在可选模型里时用服务端的默认。
   - 这几个写端点都只有属主能用，口径同 `PUT .../workspace/file`；版本对不上是 `409`，分镜有问题时是 `422`；改字与换图答复改完的整页，形状同 `GET`。写文件照常发文件变更帧，生成照常发 `generation.changed`。
 
 ### 分叉

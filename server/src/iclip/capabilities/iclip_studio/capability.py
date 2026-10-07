@@ -1,4 +1,4 @@
-"""iClip Studio 能力：登记视频拆解、工程文件检查、生图与分镜导出四件工具。"""
+"""iClip Studio 能力：登记视频拆解、工程文件检查与生图三件工具。"""
 
 from __future__ import annotations
 
@@ -18,8 +18,7 @@ from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
-from iclip.capabilities.iclip_studio.film.export import NothingToExport, export_shots, image_status
-from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
+from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film, image_status
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import IMAGE
@@ -31,11 +30,6 @@ from iclip.capabilities.iclip_studio.ports import (
     NodeImageRequest,
     NodeImages,
     SharedBreakdowns,
-)
-from iclip.capabilities.shot_document import (
-    SHOTS_PATH,
-    ShotDocumentError,
-    validate_video_shot_requests,
 )
 from iclip.common.shot_prompt import format_shot_prompt
 from iclip.common.urls import is_http_url
@@ -105,7 +99,7 @@ class IclipStudio(AbstractCapability[AgentDepsT]):
     """生图节点与生成记录的往来；没开媒体生成时为 None。"""
 
     can_generate: bool = False
-    """登不登记生图工具；不登记时检查和导出照常。组合根现在不开：生图由人自己做。"""
+    """登不登记生图工具；不登记时检查照常。组合根现在不开：生图由人自己做。"""
 
     id: str | None = field(default=CAPABILITY_ID, kw_only=True)
 
@@ -120,7 +114,6 @@ class IclipStudio(AbstractCapability[AgentDepsT]):
                 summary="拆解视频", detail=_video_name(args)
             ),
             "check_film": lambda args: GenericDisplay(summary="检查工程", detail=FILM_PATH),
-            "export_shots": lambda args: GenericDisplay(summary="导出分镜", detail=SHOTS_PATH),
             "generate_images": ToolDisplayEntry(
                 draw=lambda args: GenericDisplay(summary="生成图片", detail=_node_names(args)),
                 view=MEDIA_GRID_VIEW,
@@ -147,7 +140,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
             )
         )
         self.add_function(self.check_film, name="check_film")
-        self.add_function(self.export_shots, name="export_shots")
         if capability.images is not None and capability.can_generate:
             self.add_function(self.generate_images, name="generate_images")
 
@@ -215,38 +207,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                 raise ModelRetry(f"show 要写生图节点或视频节点的名字，可以写：{names}。")
             lines += ["", *_assembled(film, node)]
         return ToolReturn(return_value="\n".join(lines), metadata=tool_note(chip="通过"))
-
-    async def export_shots(self, ctx: RunContext[AgentDepsT]) -> ToolReturn[str]:
-        """把 film.icml 里的视频节点导出成分镜文件 video_shot.json，整份覆盖原文件。
-
-        导出前先做与 check_film 相同的检查，有问题不导出，先改到通过。每个视频节点导出成一个
-        镜头组，只带上现在有图的参考图。
-        """
-
-        film = await self._load(ctx)
-        if isinstance(film, list):
-            listed = "\n".join(film[:MAX_LISTED_PROBLEMS])
-            raise ModelRetry(f"检查没通过，没有导出。先改掉这 {len(film)} 处问题：\n{listed}")
-        try:
-            document = export_shots(film)
-            validate_video_shot_requests(document.shots)
-        except NothingToExport as exc:
-            raise ModelRetry(f"{exc}；先在 {FILM_PATH} 里写出 Storyboard 和视频节点。") from exc
-        except ShotDocumentError as exc:
-            raise ModelRetry(f"导出的分镜不合格式：{exc}") from exc
-        files, namespace = self._cap.space.store, self._cap.space.resolve(ctx)
-        await write_or_retry(files, namespace, SHOTS_PATH, document.file_text())
-        groups = len(document.shots)
-        shots = sum(len(row.prompt.timeline) for row in document.shots)
-        seconds = sum(row.seconds for row in document.shots)
-        images = sum(len(row.image_urls) for row in document.shots)
-        return ToolReturn(
-            return_value=(
-                f"已导出到 {SHOTS_PATH}：{groups} 个镜头组，{shots} 个镜头，合计 {seconds} 秒，"
-                f"带 {images} 张参考图。"
-            ),
-            metadata=tool_note(chip=f"{groups} 组 · {shots} 镜 · {seconds} 秒"),
-        )
 
     async def generate_images(
         self, ctx: RunContext[AgentDepsT], nodes: list[str]

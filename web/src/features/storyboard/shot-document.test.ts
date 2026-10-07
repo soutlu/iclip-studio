@@ -137,14 +137,6 @@ describe('parseShotsDocument', () => {
     expect(parseShotsDocument(JSON.stringify({ ...document, shots: [empty] }))).toBeNull()
   })
 
-  it('镜头组可以带一个模型名，读进来原样保留；写成空的整份文件读不出', () => {
-    const withModel = { aspect_ratio: '9:16', shots: [{ ...shot, model: 'mmt-seedance-2-5' }] }
-    expect(parseShotsDocument(JSON.stringify(withModel))?.shots[0]?.model).toBe('mmt-seedance-2-5')
-    expect(parseShotsDocument(JSON.stringify(document))?.shots[0]?.model).toBeUndefined()
-    const blank = { aspect_ratio: '9:16', shots: [{ ...shot, model: ' ' }] }
-    expect(parseShotsDocument(JSON.stringify(blank))).toBeNull()
-  })
-
   it('拒绝正文与派生引用不一致，不在读取时修补', () => {
     expect(parseShotsDocument(serializedTimelineItem({ image_indexes: [1, 2] }))).toBeNull()
   })
