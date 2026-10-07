@@ -7628,7 +7628,7 @@
       },
       "VideoEditIn": {
         "additionalProperties": false,
-        "description": "一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。\n\n与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切\n一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoGenerationIn``，来源、原作与区间落列。",
+        "description": "一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。\n\n转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。\n``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条\n记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoGenerationIn``，来源、原作与区间落列。",
         "properties": {
           "conversation_id": {
             "anyOf": [
@@ -7696,6 +7696,15 @@
             "title": "Reference Image Urls",
             "type": "array"
           },
+          "reference_video_urls": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Reference Video Urls",
+            "type": "array"
+          },
           "seconds": {
             "anyOf": [
               {
@@ -7743,6 +7752,7 @@
           "source_job_id",
           "range_start_ms",
           "range_end_ms",
+          "reference_video_urls",
           "model",
           "prompt"
         ],
@@ -11838,7 +11848,7 @@
     },
     "/generations/video-edits": {
       "post": {
-        "description": "在一条成片上改一段：``source_job_id`` 是基底，``range_start_ms`` / ``range_end_ms`` 是区间。\n\n服务端提交上游前按区间从基底上切参考片段交给模型，记录上的区间随之改记实际切点。基底\n必须是这段对话自己的或继承来的一条已完成成片。``user_name`` 的规则同出片。",
+        "description": "在一条成片上改一段：请求就是一次上游视频请求，``reference_video_urls`` 恰好一条，是调用方\n从基底上切好、自己上传的参考片段；``source_job_id`` 与 ``range_start_ms`` /\n``range_end_ms`` 只记账，记下基于哪一版、改的哪一段。\n\n受理时核对：基底是这段对话自己的或继承来的一条已完成成片，区间在它的时长之内；片段是\n调用者本人的一条视频上传，时长与区间长度一致。不合格 422、不入队。``user_name`` 的规则\n同出片。",
         "operationId": "submit_video_edit_generations_video_edits_post",
         "requestBody": {
           "content": {

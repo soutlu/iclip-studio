@@ -24,8 +24,7 @@ class AnnouncingGenerationRepository:
     受理落 ``pending`` 也算一跳，agent 发起的出图才会在页面上冒出来；创建即完成的切图与上传落库
     也算一跳，重复确认的上传没插进去就不发。``record_progress`` 只更新
     provider 原始状态、不改业务状态，不发帧，否则每次轮询上游都会喊一声——本地加工的阶段词也走
-    它，所以最多晚一轮轮询才被看到；``record_reference_cut`` 只改编辑段的区间，同样不发帧；
-    ``mark_failed`` 与 ``mark_completed`` 带状态守卫没命中时返回 None，也不发帧。"""
+    它，所以最多晚一轮轮询才被看到；``mark_failed`` 与 ``mark_completed`` 带状态守卫没命中时返回 None，也不发帧。"""
 
     def __init__(self, inner: GenerationRepository, live: LiveConnections) -> None:
         self._inner = inner
@@ -37,17 +36,19 @@ class AnnouncingGenerationRepository:
     async def create_settled(self, jobs: Sequence[GenerationJob]) -> tuple[GenerationJob, ...]:
         return tuple(self._announce(job) for job in await self._inner.create_settled(jobs))
 
-    async def find_image_by_output(
+    async def find_by_output(
         self,
         output_url: str,
         *,
+        kind: GenerationKind,
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
         operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
-        return await self._inner.find_image_by_output(
+        return await self._inner.find_by_output(
             output_url,
+            kind=kind,
             owner=owner,
             conversation_id=conversation_id,
             inherited=inherited,
@@ -158,21 +159,6 @@ class AnnouncingGenerationRepository:
     ) -> GenerationJob | None:
         return await self._inner.record_progress(
             job_id, provider_status=provider_status, only_if_status=only_if_status
-        )
-
-    async def record_reference_cut(
-        self,
-        job_id: uuid.UUID,
-        *,
-        range_start_ms: int,
-        range_end_ms: int,
-        only_if_status: GenerationStatus,
-    ) -> GenerationJob | None:
-        return await self._inner.record_reference_cut(
-            job_id,
-            range_start_ms=range_start_ms,
-            range_end_ms=range_end_ms,
-            only_if_status=only_if_status,
         )
 
     async def in_flight_by_conversation(

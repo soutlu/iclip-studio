@@ -73,7 +73,7 @@ class GenerationJob:
     """帧图编辑的外部底图地址，与 ``source_job_id`` 恰好一个；其余行为空。"""
     range_start_ms: int | None = None
     range_end_ms: int | None = None
-    """编辑段在基底上改的那一段，毫秒；只有编辑段有。受理时是请求的区间，切出参考片段后改记实际切点。"""
+    """编辑段在基底上改的那一段，毫秒；只有编辑段有。就是受理时请求给的区间，之后不改。"""
     watermark_output_url: str | None = None
     """视频成功时上游发布的水印版地址；图片没有这一份。"""
     duration_ms: int | None = None

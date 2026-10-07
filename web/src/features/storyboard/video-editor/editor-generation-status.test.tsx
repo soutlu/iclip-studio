@@ -32,7 +32,7 @@ const edit = (changes: Partial<PendingEdit>): PendingEdit => ({
     createdAt: failedJob.createdAt,
     edit: undefined,
   },
-  stage: 'cutting',
+  stage: 'queued',
   range: { start: 0, end: 3 },
   prompt: undefined,
   error: undefined,
@@ -44,7 +44,7 @@ const edit = (changes: Partial<PendingEdit>): PendingEdit => ({
 
 describe('EditorGenerationStatus', () => {
   it.each([
-    { stage: 'cutting', current: '切片准备，当前阶段', completed: 0 },
+    { stage: 'queued', current: '排队提交，当前阶段', completed: 0 },
     { stage: 'generating', current: '视频生成，当前阶段', completed: 1 },
   ] as const)('$stage 按真实阶段标记进度', async ({ stage, current, completed }) => {
     await renderWithProviders(<EditorGenerationStatus edit={edit({ stage })} />)
@@ -75,35 +75,42 @@ describe('EditorGenerationStatus', () => {
   })
 
   it.each([
-    { stage: 'cutting', job: 'video', clipStage: 'processing', text: '正在截取参考片段' },
-    { stage: 'cutting', job: 'video', clipStage: 'uploading', text: '正在上传参考片段' },
-    { stage: 'composing', job: 'composite', clipStage: 'fetching', text: '正在取素材' },
-    { stage: 'composing', job: 'composite', clipStage: 'processing', text: '正在编码成片' },
-    { stage: 'composing', job: 'composite', clipStage: 'uploading', text: '正在上传成片' },
-  ] as const)('$stage 显示后端报的加工阶段：$text', async ({ stage, job, clipStage, text }) => {
+    { clipStage: 'fetching', text: '正在取素材' },
+    { clipStage: 'processing', text: '正在编码成片' },
+    { clipStage: 'uploading', text: '正在上传成片' },
+  ] as const)('合成显示后端报的加工阶段：$text', async ({ clipStage, text }) => {
     const running: GenerationJob = { ...failedJob, status: 'submitting', clipStage }
-    await renderWithProviders(<EditorGenerationStatus edit={edit({ stage, [job]: running })} />)
+    await renderWithProviders(
+      <EditorGenerationStatus edit={edit({ stage: 'composing', composite: running })} />,
+    )
 
     expect(screen.getByRole('status', { name: '视频编辑进度' })).toHaveTextContent(text)
   })
 
   it.each([
-    { stage: 'cutting', job: 'video', text: '等待切片' },
-    { stage: 'composing', job: 'composite', text: '等待合成' },
-  ] as const)('$stage 还在本系统排队时说清是在等：$text', async ({ stage, job, text }) => {
+    { status: 'pending', text: '排队等待中' },
+    { status: 'submitting', text: '正在提交给模型' },
+  ] as const)('编辑段还没交给模型时如实说在哪：$text', async ({ status, text }) => {
+    await renderWithProviders(
+      <EditorGenerationStatus edit={edit({ stage: 'queued', video: { ...segment, status } })} />,
+    )
+
+    expect(screen.getByRole('status', { name: '视频编辑进度' })).toHaveTextContent(text)
+  })
+
+  it('合成还在本系统排队时说清是在等', async () => {
     const queued: GenerationJob = { ...failedJob, status: 'pending' }
-    await renderWithProviders(<EditorGenerationStatus edit={edit({ stage, [job]: queued })} />)
+    await renderWithProviders(
+      <EditorGenerationStatus edit={edit({ stage: 'composing', composite: queued })} />,
+    )
 
-    expect(screen.getByRole('status', { name: '视频编辑进度' })).toHaveTextContent(text)
+    expect(screen.getByRole('status', { name: '视频编辑进度' })).toHaveTextContent('等待合成')
   })
 
-  it.each([
-    { stage: 'cutting', text: '正在准备参考片段' },
-    { stage: 'composing', text: '正在合成成片' },
-  ] as const)('$stage 没有阶段可读时回落到原文案', async ({ stage, text }) => {
-    await renderWithProviders(<EditorGenerationStatus edit={edit({ stage })} />)
+  it('合成没有阶段可读时回落到原文案', async () => {
+    await renderWithProviders(<EditorGenerationStatus edit={edit({ stage: 'composing' })} />)
 
-    expect(screen.getByRole('status', { name: '视频编辑进度' })).toHaveTextContent(text)
+    expect(screen.getByRole('status', { name: '视频编辑进度' })).toHaveTextContent('正在合成成片')
   })
 
   it.each([

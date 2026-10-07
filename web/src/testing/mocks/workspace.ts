@@ -10,8 +10,9 @@ import type {
 } from '@/shared/api/generated/types.gen'
 // no-inline：这几条要作为地址进请求体、进 <video src>，不能被构建按小文件内联成 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.webm?no-inline'
-import sampleWideUrl from '../fixtures/sample-video-wide.webm?no-inline'
-import sampleVideoUrl from '../fixtures/sample-video.webm?no-inline'
+import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
+import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
+import { isMockVideoUpload } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
 const FRAME_A =
@@ -39,7 +40,9 @@ const httpFrames = (): MockFrames => {
 
 /** 出片与合成都放这条 6 秒的测试卡；编辑段的结果放另一条 3 秒的彩条，切换时看得出来。
  *
- * 用 WebM 不用 MP4：Playwright 自带的 Chromium 没有 H.264 解码器，mp4 连时长都读不出来。 */
+ * 编码用 VP9 不用 H.264：Playwright 自带的 Chromium 没有 H.264 解码器。能当基底的两条（这条与下面
+ * 的横版）是 VP9-in-MP4、每秒一个关键帧，与线上的成片同为 MP4 容器：编辑时浏览器在关键帧处把它
+ * 原样拷成参考片段，选段的整秒端点正好落在关键帧上。编辑结果那条只拿来播放，仍是 WebM。 */
 const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000
@@ -872,7 +875,8 @@ export const workspaceHandlers = [
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),
 
-  // 编辑段：基底要是这段对话里一条完成的成片。这里切不了视频，编辑结果用现成的彩条代替，区间照请求记。
+  // 编辑段：基底要是这段对话里一条完成的成片，参考片段恰好一条、是登录人确认过的视频上传。
+  // 这里不探时长；编辑结果用现成的彩条代替，区间照请求记。
   http.post('*/api/generations/video-edits', async ({ request }) => {
     const body = (await request.json()) as VideoEditIn
     const base = findJob(body.conversation_id, body.source_job_id)
@@ -882,15 +886,25 @@ export const workspaceHandlers = [
     if (!isFinishedTake(base)) {
       return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
     }
+    const clips = body.reference_video_urls
+    const clip = clips.length === 1 ? clips[0] : undefined
+    if (clip === undefined) {
+      return HttpResponse.json({ detail: 'reference_video_urls 必须恰好一条' }, { status: 422 })
+    }
+    if (!isMockVideoUpload(clip)) {
+      return HttpResponse.json(
+        { detail: 'reference_video_urls 必须是调用者本人上传的一段视频' },
+        { status: 422 },
+      )
+    }
     const created = acceptGeneration({
       kind: 'video',
       prompt: body.prompt,
-      // 片段地址只进发给上游的那一次请求，落库的参考视频为空。
       request: {
         model: body.model,
         prompt: body.prompt,
         reference_image_urls: body.reference_image_urls ?? [],
-        reference_video_urls: [],
+        reference_video_urls: [clip],
         seconds: body.seconds ?? null,
         provider_options: body.provider_options ?? null,
       },

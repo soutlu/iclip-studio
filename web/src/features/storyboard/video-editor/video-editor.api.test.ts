@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
 import {
@@ -10,8 +11,191 @@ import {
   seedVideoEditJob,
   spliceSegments,
   submitVideoComposite,
+  submitVideoEdit,
   videoEditChainKey,
 } from './video-editor.api'
+
+/** mediabunny 的替身：不解码，只按 `media` 里写好的关键帧表与时长回答，记下切了哪一段。 */
+const media = vi.hoisted(() => ({
+  keyframes: [] as number[],
+  duration: 0,
+  discarded: [] as { reason: string }[],
+  events: [] as string[],
+  sources: [] as string[],
+  trims: [] as unknown[],
+  disposed: 0,
+}))
+
+vi.mock('mediabunny', () => {
+  type Packet = { timestamp: number }
+  class UrlSource {
+    constructor(url: string) {
+      media.sources.push(url)
+    }
+  }
+  class Input {
+    getPrimaryVideoTrack = () => Promise.resolve({})
+    computeDuration = () => Promise.resolve(media.duration)
+    dispose = () => {
+      media.disposed += 1
+    }
+  }
+  class EncodedPacketSink {
+    getFirstKeyPacket = () => Promise.resolve(this.at(0))
+    getNextKeyPacket = (packet: Packet) =>
+      Promise.resolve(this.at(media.keyframes.indexOf(packet.timestamp) + 1))
+    private at = (index: number): Packet | null => {
+      const timestamp = media.keyframes[index]
+      return timestamp === undefined ? null : { timestamp }
+    }
+  }
+  class BufferTarget {
+    buffer: ArrayBuffer | null = null
+  }
+  class Output {
+    target: BufferTarget
+    constructor(options: { target: BufferTarget }) {
+      this.target = options.target
+    }
+  }
+  class Mp4OutputFormat {}
+  const Conversion = {
+    init: (options: { output: Output; trim: unknown }) => {
+      media.trims.push(options.trim)
+      return Promise.resolve({
+        isValid: media.discarded.length === 0,
+        discardedTracks: media.discarded,
+        execute: () => {
+          media.events.push('cut')
+          // 只要像个 MP4 就行：ftyp 盒子开头。
+          options.output.target.buffer = new TextEncoder().encode('\0\0\0\x18ftypisom').buffer
+          return Promise.resolve()
+        },
+      })
+    },
+  }
+  return {
+    BufferTarget,
+    Conversion,
+    EncodedPacketSink,
+    Input,
+    MP4: {},
+    Mp4OutputFormat,
+    Output,
+    QTFF: {},
+    UrlSource,
+  }
+})
+
+describe('submitVideoEdit', () => {
+  const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
+  const sourceJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
+  const baseMediaUrl = 'https://oss.example.com/take.mp4'
+  const uploadId = '5a1d8c2e-7b3f-4c9d-8e1a-2b3c4d5e6f70'
+  const uploadUrl = `http://localhost/mock-oss/${uploadId}`
+  const clipUrl = `https://oss.example.com/iclip/agent/uploads/${uploadId}.mp4`
+  let signed: unknown
+  let edited: unknown
+
+  beforeEach(() => {
+    Object.assign(media, {
+      // 24fps 的模型出片：关键帧在镜头切点上，间隔不等。
+      keyframes: [0, 1.916667, 4.208333, 6.5],
+      duration: 8.042,
+      discarded: [],
+      events: [],
+      sources: [],
+      trims: [],
+      disposed: 0,
+    })
+    signed = undefined
+    edited = undefined
+    server.events.removeAllListeners('request:start')
+    server.events.on('request:start', ({ request }) => {
+      media.events.push(`${request.method} ${new URL(request.url).pathname}`)
+    })
+    server.use(
+      http.post('*/api/uploads/sign', async ({ request }) => {
+        signed = await request.json()
+        return HttpResponse.json({
+          uploadId,
+          upload: {
+            expiresAt: '2026-10-07T12:00:00Z',
+            headers: { 'Content-Type': 'video/mp4' },
+            url: uploadUrl,
+          },
+        })
+      }),
+      http.put(uploadUrl, () => new HttpResponse(null, { status: 200 })),
+      http.post('*/api/uploads/:uploadId/confirm', () =>
+        HttpResponse.json({ contentType: 'video/mp4', sizeBytes: 16, url: clipUrl }),
+      ),
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        edited = await request.json()
+        return HttpResponse.json(
+          { generation: makeGenerationJob({ status: 'pending', sourceJobId }) },
+          { status: 202 },
+        )
+      }),
+    )
+  })
+
+  const submit = () =>
+    submitVideoEdit({
+      conversationId,
+      taskId: null,
+      sourceJobId,
+      baseMediaUrl,
+      // 选段落在关键帧之间：起点退到 1.916667，终点进到 6.5。
+      range: { start: 2.5, end: 5 },
+      model: 'wan3.0-video',
+      prompt: '换成浅灰背景',
+      referenceImageUrls: ['https://cdn.example.com/ref.png'],
+    })
+
+  it('先在基底上按关键帧切片，再传上去，最后带着片段地址与吸附后的区间提交编辑', async () => {
+    await submit()
+
+    expect(media.events).toEqual([
+      'cut',
+      'POST /api/uploads/sign',
+      `PUT /mock-oss/${uploadId}`,
+      `POST /api/uploads/${uploadId}/confirm`,
+      'POST /api/generations/video-edits',
+    ])
+    expect(media.sources).toEqual([baseMediaUrl])
+    expect(media.trims).toEqual([{ start: 1.916667, end: 6.5 }])
+    expect(signed).toEqual({ contentType: 'video/mp4', height: null, width: null })
+    expect(edited).toEqual({
+      conversation_id: conversationId,
+      task_id: null,
+      source_job_id: sourceJobId,
+      // 吸附后的秒数四舍五入到毫秒。
+      range_start_ms: 1917,
+      range_end_ms: 6500,
+      reference_video_urls: [clipUrl],
+      model: 'wan3.0-video',
+      prompt: '编辑视频，换成浅灰背景',
+      reference_image_urls: ['https://cdn.example.com/ref.png'],
+      seconds: -1,
+    })
+    expect(media.disposed).toBe(1)
+  })
+
+  it('有轨道拷不进 MP4 就报错，不转码、不上传、不提交', async () => {
+    media.discarded = [{ reason: 'cannot_copy' }]
+
+    const error = await submit().then(
+      () => undefined,
+      (reason: unknown) => reason,
+    )
+
+    expect(error).toBeInstanceOf(UserFacingError)
+    expect(errorMessageOf(error, '兜底')).toBe('参考片段没切出来，请稍后重试')
+    expect(media.events).toEqual([])
+    expect(media.disposed).toBe(1)
+  })
+})
 
 describe('submitVideoComposite', () => {
   const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'

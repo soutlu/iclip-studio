@@ -90,17 +90,10 @@ def seedream_ok(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, content=b"JPGDATA", headers={"content-type": "image/jpeg"})
 
 
-async def no_reference(job: GenerationJob) -> str:
-    """出片不该要参考片段；被调到就说明把出片当成了编辑段。"""
-
-    raise AssertionError(f"出片 {job.id} 不该切参考片段")
-
-
 def video_provider(handler: object) -> HttpVideoProvider:
     assert callable(handler)
     return HttpVideoProvider(
         VIDEO_SETTINGS,
-        prepare_reference=no_reference,
         transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
     )
 

@@ -73,9 +73,16 @@ def video_request(**overrides: Any) -> VideoGenerationIn:
 
 
 def edit_request(**overrides: Any) -> VideoGenerationIn:
-    """编辑段落库的请求：参考视频留空，由服务端提交上游前按区间切。"""
+    """编辑段落库的请求：参考视频恰好一条，是调用方上传的参考片段。"""
 
-    return video_request(**{"seconds": -1, "aspect_ratio": None, **overrides})
+    return video_request(
+        **{
+            "seconds": -1,
+            "aspect_ratio": None,
+            "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
+            **overrides,
+        }
+    )
 
 
 def compose_request(**overrides: Any) -> VideoComposeRequest:
@@ -296,10 +303,11 @@ class InMemoryGenerationRepository:
             created.append(stored)
         return tuple(created)
 
-    async def find_image_by_output(
+    async def find_by_output(
         self,
         output_url: str,
         *,
+        kind: GenerationKind,
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
@@ -308,7 +316,7 @@ class InMemoryGenerationRepository:
         found = [
             job
             for job in self.jobs.values()
-            if job.kind == KIND_IMAGE
+            if job.kind == kind
             and job.status == STATUS_COMPLETED
             and job.output_url == output_url
             and (operation is None or job.operation == operation)
@@ -472,23 +480,6 @@ class InMemoryGenerationRepository:
         if only_if_status is not None and self.jobs[job_id].status != only_if_status:
             return None
         return self._replace(job_id, provider_status=provider_status)
-
-    async def record_reference_cut(
-        self,
-        job_id: uuid.UUID,
-        *,
-        range_start_ms: int,
-        range_end_ms: int,
-        only_if_status: GenerationStatus,
-    ) -> GenerationJob | None:
-        if self.jobs[job_id].status != only_if_status:
-            return None
-        return self._replace(
-            job_id,
-            range_start_ms=range_start_ms,
-            range_end_ms=range_end_ms,
-            provider_status=None,
-        )
 
     async def in_flight_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind

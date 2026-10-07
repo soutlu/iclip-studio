@@ -260,19 +260,33 @@ test('从生成记录打开编辑器：切段、生成、预览、合成成为�
   )
   await dialog.getByRole('button', { name: '生成', exact: true }).click()
 
-  // 一次提交：基底是正在编辑的那条出片，区间按毫秒给；参考片段由服务端切，请求里不带参考视频。
+  // 一次提交：基底是正在编辑的那条出片，区间按毫秒给。参考片段由浏览器从基底上切好、传上去：
+  // mock 基底每秒一个关键帧，1–4 秒正好落在关键帧上，吸附后不变。
   const editSent = await editRequest
   const edit = editSent.postDataJSON() as Record<string, unknown>
   expect(edit).toMatchObject({
     source_job_id: new URL(page.url()).searchParams.get('video'),
     range_start_ms: 1000,
     range_end_ms: 4000,
+    reference_video_urls: [expect.stringMatching(/\/mock-oss\//)],
     model: 'wan3.0-video',
     prompt: '编辑视频，换成浅灰背景，保留运镜。',
     seconds: -1,
     reference_image_urls: [referenceUrl],
   })
-  expect(edit).not.toHaveProperty('reference_video_urls')
+  // 传上去的是一段真 MP4，正好是选的那 3 秒。
+  const [clipUrl] = edit['reference_video_urls'] as string[]
+  const clip = await page.evaluate(async (url) => {
+    const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer())
+    const video = document.createElement('video')
+    video.src = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }))
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = resolve
+      video.onerror = reject
+    })
+    return { box: new TextDecoder().decode(bytes.subarray(4, 8)), duration: video.duration }
+  }, clipUrl)
+  expect(clip).toEqual({ box: 'ftyp', duration: expect.closeTo(3, 1) })
   const accepted = (await (await editSent.response())?.json()) as { generation: { id: string } }
 
   const summary = dialog.getByRole('status', { name: '视频编辑进度' })

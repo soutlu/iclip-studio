@@ -1990,10 +1990,11 @@ export const zOpsCatchup = z.object({
 /**
  * VideoEditIn
  *
- * 一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。
+ * 一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
  *
- * 与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切
- * 一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
+ * 转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+ * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
+ * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
  * ``VideoGenerationIn``，来源、原作与区间落列。
  */
 export const zVideoEditIn = z.object({
@@ -2005,6 +2006,7 @@ export const zVideoEditIn = z.object({
   range_end_ms: z.int(),
   range_start_ms: z.int().gte(0),
   reference_image_urls: z.array(z.string()).max(30).optional().default([]),
+  reference_video_urls: z.tuple([z.string()]),
   seconds: z.int().gte(-1).nullish(),
   source_job_id: z.uuid(),
   task_id: z.uuid().nullish(),

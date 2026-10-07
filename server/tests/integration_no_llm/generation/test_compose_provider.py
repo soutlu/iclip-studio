@@ -1,7 +1,6 @@
 """用真实 ffmpeg 合成素材，验证合成的产物与关键帧、存放前缀、阶段上报与取不到素材时的收尾。
 
-合成先把素材下到本地，httpx 替身喂字节就够；切参考片段是 ffmpeg 自己按需远程读，在
-``test_reference_cutter.py``。"""
+合成先把素材下到本地，httpx 替身喂字节就够。"""
 
 from __future__ import annotations
 

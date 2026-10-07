@@ -354,7 +354,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **`expiresAt` 之前必须发起上传**。过期后重新调用 `sign`，会拿到新的 `uploadId`。
 - 类型、大小和图片尺寸边界以 [上传规则](../server/src/iclip/domains/uploads/models.py) 为准。直传图片在 `sign` 时校验客户端声明的宽高；`confirm` 按桶中对象校验类型和大小，不合格返回 `422`，字节仍留在桶里，不落记录。
 - 桶内没有对应对象时 `confirm` 返回 `409`，不落记录；签名成功本身不代表上传完成。
-- **上传记录**：`kind` 按桶里的类型定（`image` / `video`），`operation` 是 `upload`，状态 `completed`，`outputUrl` 就是交回的 `url`；不挂对话，没有请求（`request` 为 `null`）与来源。记录 id 就是 `uploadId`，开了媒体生成时 `GET /generations/{uploadId}` 读得到（§11）；没开时那组接口不挂，记录照落。
+- **上传记录**：`kind` 按桶里的类型定（`image` / `video`），`operation` 是 `upload`，状态 `completed`，`outputUrl` 就是交回的 `url`；不挂对话，没有请求（`request` 为 `null`）与来源。记录 id 就是 `uploadId`，开了媒体生成时 `GET /generations/{uploadId}` 读得到（§11）；没开时那组接口不挂，记录照落。视频编辑的参考片段也走这条协议，落一条视频上传记录（§11「视频编辑：编辑段与合成」）。
 - **替谁确认**：请求体可选，只有 `userName`。给了按替人办事换主体（§2），浏览器只能写自己的用户名；不给就记在当前主体名下，钥匙调用方不带也不报错，这一点与生成接口不同。
 - **`confirm` 可以重复调**：每次都按桶里的对象重新核对，交回同一份结果、对应同一条记录；第二次的 `userName` 不改属主。
 - 上传不会登记对话素材；把地址作为附件提交后，agent 才能按对话素材规则引用（§6）。
@@ -384,12 +384,18 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 视频编辑：编辑段与合成
 
-- `POST /generations/video-edits` 在一条成片上改一段：`source_job_id` 是基底，`range_start_ms` / `range_end_ms` 是要改的区间（毫秒；起点不小于 0、终点晚于起点，否则 `422`）；`model`、`prompt`、`user_name`、`reference_image_urls`、`seconds`、`provider_options` 与出片同义，照样转发上游；另收归属字段 `conversation_id`、`task_id` 与坐标 `metadata`。不收 `reference_video_urls`、`shot` 与 `root_job_id`，给了是 `422`。模型规则同出片。响应是 `GenerationEnvelope`。
-- 编辑段走视频上游。提交上游前，服务端按区间从基底上切一段参考片段交给模型：不重编码，放在已配过期规则的前缀下，按编辑段的 id 命名，不落行。起点落在之前最近的关键帧上，片段可能比区间长、多出来的在开头；记录上的 `rangeStartMs` / `rangeEndMs` 随之改记实际切点，也就是模型真正看到的那一段。终点超出基底时长按基底时长截；起点不在基底之内是 `EDIT_RANGE_OUT_OF_BOUNDS`（消息里带基底时长），取不到基底是 `MEDIA_SOURCE_UNREACHABLE`，切不出来是 `MEDIA_PROCESS_FAILED`，存不进桶是 `OUTPUT_STORE_FAILED`，这几种失败发生时上游还没被调用。落库的 `request.reference_video_urls` 为空，片段地址只进发给上游的那一次请求。
+- `POST /generations/video-edits` 在一条成片上改一段，请求就是一次上游视频请求（[ADR-0010](../docs/adr/0010-timeline-editing-frontend-clips.md)）：`reference_video_urls` 恰好一条，是调用方从基底上切好、走 §10 上传协议传上来的参考片段地址；`model`、`prompt`、`user_name`、`reference_image_urls`、`seconds`、`provider_options` 与出片同义，原样转发上游。另带两项只记账、不参与处理的字段：`source_job_id`（基底，基于哪一版成片）与 `range_start_ms` / `range_end_ms`（片段在基底上的那一段，毫秒；起点不小于 0、终点晚于起点）；有了它们，这条记录才是编辑段。另收归属字段 `conversation_id`、`task_id` 与坐标 `metadata`。不收 `shot` 与 `root_job_id`；参考视频缺了、多于一条、不是 http(s) 地址、给了这两个字段都是 `422`。模型规则同出片。响应是 `GenerationEnvelope`。
+- 受理时同步核对三件事，不合格是 `422`，不创建任务、不入队：
+  - 片段地址对应一条**调用者本人**的视频上传记录（`kind=video`、`operation=upload`，属主是当前主体；持 `users:act_as` 的钥匙替人办事时是那个人）。别人的上传、图片上传、库里找不到的地址同一句。
+  - 片段时长与区间长度一致，容差 100 毫秒：片段是浏览器重封装的，容器时长会被音轨尾巴拉长一点。片段时长由服务端按地址探测。
+  - 基底按下文「来源与原作」核对，区间在基底时长之内：起点要落在基底里，终点最多超出基底时长 50 毫秒（同合成各段的结尾）。基底没有 `durationMs` 时按地址探测。
+
+  片段或基底的时长探不出来也是 `422`，措辞说的是读不出时长，不是对不上。
+- 服务端不切片、不改写区间：记录上的 `rangeStartMs` / `rangeEndMs` 就是请求给的值，调用方要自己把区间对齐到基底的关键帧再切片。参考片段的地址记进编辑段的 `request.reference_video_urls`，提交时原样发给上游。编辑段没有本地加工，`clipStage` 恒为 `null`。
 - `POST /generations/video-composites` 收基底 `baseJobId` 与一串有序片段 `segments`（至少一段、至多 100 段，超出是 `422`），另有 `userName`、归属字段 `conversationId`、`taskId` 与坐标 `metadata`。每段是 `{ sourceJobId, start, end? }`：出自哪条记录、取它自己媒体时间里的 `[start, end)`（秒，`start` 不小于 0；`end` 省略就取到那条的结尾，给了就要大于 `start`）。服务端按出处把每段换成那条记录的产物地址，不收调用方给的地址；按顺序拼成一条新成片（来源记基底，原作与镜号随基底），存进本系统的桶、长期保留。记录的 `request.segments` 每段是 `{ sourceJobId, url, start, end }`，取到结尾的段 `end` 为 `null`，执行时按素材时长补齐，补出来为空的段跳过。一律重编码：画幅与帧率对齐到原片（按素材整条时长认），模型还回来的片段缩放去适配它，有一段带音轨就出音轨、没音轨的段补静音；产物的关键帧只放在每段的起点和每段内素材原有的关键帧处（按帧取最近的一帧），别处不放。
-- 合成取不到素材是 `MEDIA_SOURCE_UNREACHABLE`，ffmpeg 处理失败是 `MEDIA_PROCESS_FAILED`，存不进桶是 `OUTPUT_STORE_FAILED`。编辑段与合成的这些失败都是终态，不自动重试。
+- 合成取不到素材是 `MEDIA_SOURCE_UNREACHABLE`，ffmpeg 处理失败是 `MEDIA_PROCESS_FAILED`，存不进桶是 `OUTPUT_STORE_FAILED`。这些失败都是终态，不自动重试。
 - `durationMs` 是产物实际时长（毫秒），完成后才有：视频（出片与编辑段）取上游实测的时长，合成是本系统量的，图片为空；上游没给也为空。
-- `clipStage` 是本地加工在途时跑到哪一步（`fetching` / `processing` / `uploading`，编辑段切片只有后两步），只在提交中、还没交给上游时非空，有了结论或交给上游后为空。阶段变化不发实时帧，调用方最多晚一轮轮询才看到。
+- `clipStage` 是合成在途时跑到哪一步（`fetching` / `processing` / `uploading`），只在提交中非空，有了结论后为空；别的记录恒为 `null`。阶段变化不发实时帧，调用方最多晚一轮轮询才看到。
 
 ### 来源与原作
 

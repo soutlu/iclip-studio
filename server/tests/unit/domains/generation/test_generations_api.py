@@ -32,9 +32,10 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import GenerationService
-from iclip.domains.identity.acting import ActAs
+from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
+from iclip.platform.media.ffmpeg import MediaError
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     SHOT_IMAGE_URLS,
@@ -65,15 +66,41 @@ VIDEO_BODY = {
 
 IMAGE_BODY = {"prompt": "一只猫的正面特写", "aspectRatio": "1:1"}
 
+CLIP_URL = "https://cdn.test/iclip/agent/uploads/clip.mp4"
+"""编辑段请求里的参考片段：要是提交者本人的一条视频上传，用例用 ``seed_clip`` 放进去。"""
+
 EDIT_BODY = {
     "model": "vendor-a-seedance-2-5",
     "prompt": "把凉鞋换成编织款",
     "range_start_ms": 1000,
     "range_end_ms": 4000,
+    "reference_video_urls": [CLIP_URL],
     "seconds": -1,
     "reference_image_urls": ["https://cdn.test/sandal.png"],
 }
 """编辑段请求体，缺 ``source_job_id`` 与归属，用例按需补。"""
+
+DURATIONS_MS = {
+    "https://example.com/base.mp4": 6000,
+    "https://example.com/source.mp4": 6000,
+    CLIP_URL: 3000,
+}
+"""远程探测替身认得的地址与时长：基底 6 秒，片段 3 秒，正好是 ``EDIT_BODY`` 的区间。"""
+
+
+class FakeProbe:
+    """远程探测替身：按地址给时长，不认得的地址像取不到一样抛 ``MediaError``；记下探过哪些。"""
+
+    def __init__(self, durations: Mapping[str, int]) -> None:
+        self._durations = dict(durations)
+        self.probed: list[str] = []
+
+    async def __call__(self, url: str) -> int:
+        self.probed.append(url)
+        if url not in self._durations:
+            raise MediaError(f"取不到素材: {url}")
+        return self._durations[url]
+
 
 IMAGE_MODELS = {"nano_banana_pro": NANO_BANANA_PRO.spec, "seedream_v5_pro": SEEDREAM_V5_PRO.spec}
 
@@ -117,10 +144,17 @@ def build_test_app(
     broken_queue: bool = False,
     image_models: Mapping[str, ImageModelSpec] | None = None,
     lineage: FixedLineage | None = None,
+    durations: Mapping[str, int] = DURATIONS_MS,
+    users: InMemoryUserRepository | None = None,
 ) -> FastAPI:
+    """``durations`` 是远程探测替身认得的地址与时长，替身挂在 ``app.state.probe`` 上；``users``
+    是替人办事查的账号表。"""
+
     app = app_with_principal(granted)
     cleared = ClearedCompletions()
     app.state.cleared_completions = cleared
+    probe = FakeProbe(durations)
+    app.state.probe = probe
 
     queue, _ = build_queue(repo)
     if broken_queue:
@@ -140,8 +174,11 @@ def build_test_app(
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
+        probe_duration_ms=probe,
     )
-    app.include_router(create_generations_router(service, act_as=ActAs(InMemoryUserRepository())))
+    app.include_router(
+        create_generations_router(service, act_as=ActAs(users or InMemoryUserRepository()))
+    )
     return app
 
 
@@ -706,6 +743,7 @@ async def test_an_inherited_base_counts_only_for_those_who_can_read_the_fork(
 
     forker = uuid.uuid4()
     repo, fork, inherited, _, lineage = fork_of_someone_elses_take(forker, readable=readable)
+    seed_clip(repo, owner=forker)
     app = build_test_app(
         repo, granted=principal("generation:submit", user_id=forker), lineage=lineage
     )
@@ -800,19 +838,20 @@ async def test_a_record_reads_back_with_its_operation_source_range_and_finish() 
     assert (plain["sourceJobId"], plain["rangeStartMs"], plain["finishedAt"]) == (None, None, None)
 
 
-@pytest.mark.parametrize("role", ["合成", "编辑段"])
-async def test_in_flight_local_processing_reports_the_stage_it_is_on(role: str) -> None:
-    """合成在拼、编辑段在交上游前切片时，阶段词都照实给。"""
+async def test_in_flight_local_processing_reports_the_stage_it_is_on() -> None:
+    """合成在拼时阶段词照实给；编辑段没有本地加工，列里留着什么词都不当阶段。"""
 
-    job = (
-        a_composite(status=STATUS_SUBMITTING)
-        if role == "合成"
-        else make_edit(make_job(video_request()), status=STATUS_SUBMITTING)
+    composite = await read_back(
+        replace(a_composite(status=STATUS_SUBMITTING), provider_status="uploading")
+    )
+    edit = await read_back(
+        replace(
+            make_edit(make_job(video_request()), status=STATUS_SUBMITTING),
+            provider_status="uploading",
+        )
     )
 
-    body = await read_back(replace(job, provider_status="uploading"))
-
-    assert body["clipStage"] == "uploading"
+    assert (composite["clipStage"], edit["clipStage"]) == ("uploading", None)
 
 
 @pytest.mark.parametrize(
@@ -1069,6 +1108,20 @@ def seed_edit(
     return edit
 
 
+def seed_clip(
+    repo: InMemoryGenerationRepository,
+    *,
+    owner: uuid.UUID,
+    url: str = CLIP_URL,
+    kind: GenerationKind = "video",
+) -> GenerationJob:
+    """放一条 ``owner`` 的上传进去，产物就是 ``url``：编辑段的参考片段默认就是它。"""
+
+    upload = make_upload(kind=kind, owner_user_id=owner, output_url=url)
+    repo.jobs[upload.id] = upload
+    return upload
+
+
 def only_new(repo: InMemoryGenerationRepository, seeded: set[uuid.UUID]) -> GenerationJob:
     """仓储里种子之外刚受理的那一条。"""
 
@@ -1100,11 +1153,12 @@ def splice_body(edit: GenerationJob, **fields: object) -> dict[str, object]:
 
 
 async def test_an_edit_on_a_take_is_accepted_as_a_video_generate_with_source_and_range() -> None:
-    """编辑段走视频上游：来源与原作都是那条出片，区间先按请求记；落库的请求没有参考视频。"""
+    """编辑段走视频上游：来源与原作都是那条出片，区间原样记；落库的请求记着参考片段地址。"""
 
     repo = InMemoryGenerationRepository()
     owner, conversation, task = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     take = seed_take(repo, owner=owner, conversation=conversation)
+    clip = seed_clip(repo, owner=owner)
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
         response = await http.post(
@@ -1119,7 +1173,7 @@ async def test_an_edit_on_a_take_is_accepted_as_a_video_generate_with_source_and
         )
 
     assert response.status_code == 202, response.text
-    stored = only_new(repo, {take.id})
+    stored = only_new(repo, {take.id, clip.id})
     assert (stored.kind, stored.operation, stored.provider, stored.status) == (
         "video",
         "generate",
@@ -1134,7 +1188,7 @@ async def test_an_edit_on_a_take_is_accepted_as_a_video_generate_with_source_and
         {"frame": 1},
     )
     request = stored_request(stored).model_dump()
-    assert request["reference_video_urls"] == [], "片段由服务端提交上游前再切"
+    assert request["reference_video_urls"] == [CLIP_URL], "片段地址记进请求，原样转发上游"
     assert (request["user_name"], request["seconds"], request["reference_image_urls"]) == (
         "tester",
         -1,
@@ -1157,6 +1211,7 @@ async def test_an_edit_on_a_composite_keeps_the_original_take_as_its_root() -> N
         seed_edit(repo, take), status=STATUS_COMPLETED, owner_user_id=owner, output_url=BASE_URL
     )
     repo.jobs[composite.id] = composite
+    seed_clip(repo, owner=owner)
     seeded = set(repo.jobs)
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
@@ -1180,6 +1235,7 @@ async def test_edits_and_composites_take_the_shot_index_of_their_original() -> N
         edit, status=STATUS_COMPLETED, owner_user_id=owner, output_url=BASE_URL
     )
     repo.jobs[composite.id] = composite
+    seed_clip(repo, owner=owner)
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
         on_take = await http.post(
@@ -1289,13 +1345,19 @@ async def test_an_edit_needs_a_finished_take_as_its_base(role: str) -> None:
         {"range_start_ms": -1},
         {"range_end_ms": 1000},
         {"model": "vendor-c-seedance-2-5"},
+        {"reference_video_urls": [CLIP_URL, CLIP_URL]},
     ],
-    ids=["起点为负", "终点不晚于起点", "模型不在允许表"],
+    ids=["起点为负", "终点不晚于起点", "模型不在允许表", "参考片段多于一条"],
 )
-async def test_an_edit_with_a_bad_range_or_model_is_rejected(flaw: dict[str, object]) -> None:
+async def test_an_edit_with_a_bad_range_clip_list_or_model_is_rejected(
+    flaw: dict[str, object],
+) -> None:
+    """请求形状的各项规则在请求类型的单测里；这里只确认它们在端点上是 422、不落库。"""
+
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
+    clip = seed_clip(repo, owner=owner)
     app = build_test_app(
         repo, granted=principal("generation:submit", user_id=owner), broken_queue=True
     )
@@ -1306,7 +1368,158 @@ async def test_an_edit_with_a_bad_range_or_model_is_rejected(flaw: dict[str, obj
         )
 
     assert response.status_code == 422, response.text
+    assert list(repo.jobs) == [take.id, clip.id]
+
+
+async def test_an_edit_without_a_clip_is_rejected() -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    body = {key: value for key, value in EDIT_BODY.items() if key != "reference_video_urls"}
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits", json={**body, "source_job_id": str(take.id)}
+        )
+
+    assert response.status_code == 422, response.text
+    assert "reference_video_urls" in response.json()["detail"]
     assert list(repo.jobs) == [take.id]
+
+
+@pytest.mark.parametrize("flaw", ["库里没有", "不是上传", "别人的上传", "图片上传"])
+async def test_the_clip_must_be_the_callers_own_video_upload(flaw: str) -> None:
+    """片段地址要对上调用者本人的一条视频上传；对不上一律同一句，不入队，也不去探任何时长。"""
+
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    if flaw == "不是上传":
+        replica = make_job(
+            video_request(), status=STATUS_COMPLETED, owner_user_id=owner, output_url=CLIP_URL
+        )
+        repo.jobs[replica.id] = replica
+    elif flaw == "别人的上传":
+        seed_clip(repo, owner=uuid.uuid4())
+    elif flaw == "图片上传":
+        seed_clip(repo, owner=owner, kind="image")
+    seeded = set(repo.jobs)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits", json={**EDIT_BODY, "source_job_id": str(take.id)}
+        )
+
+    assert response.status_code == 422, response.text
+    assert "本人上传" in response.json()["detail"]
+    assert set(repo.jobs) == seeded
+    assert app.state.probe.probed == [], "认不出上传行就不替调用方去读那个地址"
+
+
+@pytest.mark.parametrize(
+    ("clip_ms", "accepted"),
+    [(3000, True), (3100, True), (2900, True), (3101, False), (2850, False)],
+    ids=["正好", "长出容差", "短出容差", "长过容差", "短过容差"],
+)
+async def test_the_clip_length_matches_the_range_within_a_tolerance(
+    clip_ms: int, accepted: bool
+) -> None:
+    """区间 1–4 秒，片段要 3 秒上下 100 毫秒以内：浏览器重封装的产物容器时长比视频轨略长。"""
+
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    seed_clip(repo, owner=owner)
+    seeded = set(repo.jobs)
+    app = build_test_app(
+        repo,
+        granted=principal("generation:submit", user_id=owner),
+        durations={**DURATIONS_MS, CLIP_URL: clip_ms},
+    )
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits", json={**EDIT_BODY, "source_job_id": str(take.id)}
+        )
+
+    assert response.status_code == (202 if accepted else 422), response.text
+    if accepted:
+        stored = only_new(repo, seeded)
+        assert (stored.range_start_ms, stored.range_end_ms) == (1000, 4000), "区间原样记"
+    else:
+        assert "对不上" in response.json()["detail"]
+        assert set(repo.jobs) == seeded
+
+
+@pytest.mark.parametrize(
+    ("start_ms", "end_ms", "accepted"),
+    [(5000, 6000, True), (5000, 6050, True), (5000, 6051, False), (6000, 7000, False)],
+    ids=["取到片尾", "片尾在容差内", "终点超出基底", "起点不在基底里"],
+)
+@pytest.mark.parametrize("measured", [True, False], ids=["基底量过时长", "基底没量过"])
+async def test_the_range_stays_within_the_base(
+    start_ms: int, end_ms: int, accepted: bool, measured: bool
+) -> None:
+    """基底 6 秒：区间终点最多多出合成同一个容差，起点要严格在基底里。基底量过时长就照它，
+    没量过才去探。"""
+
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    if measured:
+        take = replace(take, duration_ms=6000)
+        repo.jobs[take.id] = take
+    seed_clip(repo, owner=owner)
+    seeded = set(repo.jobs)
+    app = build_test_app(
+        repo,
+        granted=principal("generation:submit", user_id=owner),
+        durations={**DURATIONS_MS, CLIP_URL: end_ms - start_ms},
+    )
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "range_start_ms": start_ms,
+                "range_end_ms": end_ms,
+            },
+        )
+
+    assert response.status_code == (202 if accepted else 422), response.text
+    if not accepted:
+        assert "基底" in response.json()["detail"]
+        assert set(repo.jobs) == seeded
+    assert (BASE_URL in app.state.probe.probed) is not measured
+
+
+@pytest.mark.parametrize("unreadable", ["参考片段", "基底"])
+async def test_a_duration_that_cannot_be_read_is_refused_in_its_own_words(
+    unreadable: str,
+) -> None:
+    """探不出时长也不受理，但措辞说的是读不出来，不是时长对不上。"""
+
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    seed_clip(repo, owner=owner)
+    seeded = set(repo.jobs)
+    durations = {
+        url: ms
+        for url, ms in DURATIONS_MS.items()
+        if url != (CLIP_URL if unreadable == "参考片段" else BASE_URL)
+    }
+    app = build_test_app(
+        repo, granted=principal("generation:submit", user_id=owner), durations=durations
+    )
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits", json={**EDIT_BODY, "source_job_id": str(take.id)}
+        )
+
+    assert response.status_code == 422, response.text
+    assert f"读不出{unreadable}的时长" in response.json()["detail"]
+    assert set(repo.jobs) == seeded
 
 
 async def test_a_composite_splices_an_edit_back_into_its_base() -> None:
@@ -1583,9 +1796,13 @@ async def test_edits_and_composites_settle_the_author_like_a_take(path: str) -> 
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     source = seed_take(repo, owner=owner)
+    users = InMemoryUserRepository()
+    # 替人办事时片段要是那个人本人的上传，不是钥匙属主的。
+    sara = await users.ensure_by_name("Sara.Hong", email=placeholder_email("Sara.Hong"))
+    seed_clip(repo, owner=sara)
     seeded = set(repo.jobs)
     key = api_key("generation:submit", ACT_AS_PERMISSION)
-    async with client(build_test_app(repo, granted=key)) as http:
+    async with client(build_test_app(repo, granted=key, users=users)) as http:
         nameless = await http.post(path, json=body_for(source, None))
         acting = await http.post(path, json=body_for(source, "Sara.Hong"))
     async with client(
@@ -1596,7 +1813,7 @@ async def test_edits_and_composites_settle_the_author_like_a_take(path: str) -> 
     assert nameless.status_code == 422
     assert acting.status_code == 202, acting.text
     stored = only_new(repo, seeded)
-    assert stored.owner_user_id not in (key.user_id, owner), "属主换成报上来的那个人"
+    assert stored.owner_user_id == sara, "属主换成报上来的那个人"
     assert stored.api_key_id == key.api_key_id
     assert stored_request(stored).model_dump()["user_name"] == "Sara.Hong"
     assert someone_else.status_code == 422

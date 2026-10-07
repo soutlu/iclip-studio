@@ -24,8 +24,6 @@ _STDERR_LIMIT = 400
 _DOWNLOAD_CHUNK = 256 * 1024
 
 PROBE_TIMEOUT_SECONDS = 30.0
-CUT_TIMEOUT_SECONDS = 120.0
-"""按关键帧裁一段不重编码，耗时只有 IO——远程输入还要算上按需读那几段的网络往返。"""
 
 ENCODE_TIMEOUT_SECONDS = 900.0
 """拼接要整条重编码的超时上限。"""
@@ -33,7 +31,7 @@ ENCODE_TIMEOUT_SECONDS = 900.0
 DOWNLOAD_TIMEOUT_SECONDS = 300.0
 
 REMOTE_READ_TIMEOUT_SECONDS = 30.0
-"""远程输入单次读写的等待上限，整段仍受 CUT_TIMEOUT_SECONDS 约束。"""
+"""远程输入单次读写的等待上限，整段仍受调用方给 ``run`` 的超时约束。"""
 
 _REMOTE_INPUT: Final = (
     # ffmpeg 按内容探测格式，一份伪装成 mp4 的播放列表会让 HLS 解复用器去跟里面的地址。
@@ -274,55 +272,6 @@ def _positive_fraction(value: str) -> bool:
         return False
 
 
-async def cut_copy_url(url: str, *, start: float, end: float, dest: Path) -> None:
-    """按需读远程视频并裁出一段，不重编码，只取选区需要的字节。
-
-    ``-c copy`` 只能在关键帧处下刀：起点会落到 ``start`` 之前最近的那个关键帧，产物因此
-    比请求的区间长，多出来的主要在开头；``-t`` 按解码顺序截，尾部也会因 B 帧延迟多出几帧。
-    调用方按产物实际时长反算的起点是差几帧的近似值，不在这里为对齐再解一遍码。
-
-    ffmpeg 自己用 Range 读索引与选区（实测传约三成）。源忽略 Range 时退化为顺序读：moov
-    在文件头部仍能出正确产物，在尾部则退出码为 0 却不产出内容，由产物检查判失败。读取量
-    由索引、关键帧和选区决定，选区接近整片时也接近整片，所以不设流量上限。
-
-    地址非法、区间无效、网络失败、超时或产物无效抛 MediaError；消息里的地址去掉查询串，
-    签名不进日志。超时与取消都先 kill 再 wait，不留子进程。"""
-
-    if not is_http_url(url):
-        raise MediaError(f"要裁的地址不是 http(s): {_safe_url(url)}")
-    duration = end - start
-    if start < 0 or duration <= 0:
-        raise MediaError(f"片段区间无效: [{start}, {end})")
-    try:
-        await run(
-            [
-                "ffmpeg",
-                "-v",
-                "error",
-                "-y",
-                "-ss",
-                f"{start:.3f}",
-                *_REMOTE_INPUT,
-                "-i",
-                url,
-                "-t",
-                f"{duration:.3f}",
-                "-c",
-                "copy",
-                "-avoid_negative_ts",
-                "make_zero",
-                "-movflags",
-                "+faststart",
-                str(dest),
-            ],
-            timeout=CUT_TIMEOUT_SECONDS,
-        )
-    except MediaError as exc:
-        # run() 把 ffmpeg 的 stderr 原样带进消息，而它报 403/404/超时时会写出整条地址。
-        raise MediaError(str(exc).replace(url, _safe_url(url))) from exc
-    _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
-
-
 async def cut_concat(cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: Path) -> None:
     """按顺序裁出各段并拼成一条，一次解码重编码对齐到 ``profile``。
 
@@ -478,7 +427,6 @@ async def run(args: list[str], *, timeout: float) -> bytes:
 
 
 __all__ = [
-    "CUT_TIMEOUT_SECONDS",
     "DOWNLOAD_TIMEOUT_SECONDS",
     "ENCODE_TIMEOUT_SECONDS",
     "MAX_IMAGE_BYTES",
@@ -489,7 +437,6 @@ __all__ = [
     "MediaError",
     "VideoProfile",
     "cut_concat",
-    "cut_copy_url",
     "download",
     "fetched",
     "ffmpeg_available",
