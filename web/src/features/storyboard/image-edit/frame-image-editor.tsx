@@ -29,7 +29,7 @@ import {
   type ImageChannel,
   type ImageResolution,
 } from './image-edit.api'
-import type { EditDraftPart, FrameEditTarget } from './image-edit-types'
+import type { EditDraftPart, EditFrame, FrameEditTarget } from './image-edit-types'
 import { useFrameEditDrafts } from './use-frame-edit-drafts'
 import { useFrameReplace } from './use-frame-replace'
 import { useUnseenResults } from './use-unseen-results'
@@ -43,7 +43,7 @@ type FrameImageEditorProps = {
   /** 标题「编辑图片」后面的一句：分镜页写组与帧，制作页写图的名字。 */
   subtitle: string
   /** 输入卡里 `@` 与「+」能插的本组图片，下标加一是编号。 */
-  frames: readonly string[]
+  frames: readonly EditFrame[]
   aspectRatio: string
   /** 打开时先选中哪一条；从帧上「有新结果」进来时是那条任务。 */
   initialKey?: string | undefined
@@ -364,6 +364,7 @@ export function FrameImageEditor({
               regenerate
               editingResult={false}
               frames={frames}
+              frameGroup={words.frames}
               aspectRatio={aspectRatio}
               annotations={[]}
               selectedAnnotation={null}
@@ -384,6 +385,7 @@ export function FrameImageEditor({
               baseUrl={baseUrl}
               editingResult={selected?.kind === 'image'}
               frames={frames}
+              frameGroup={words.frames}
               aspectRatio={aspectRatio}
               annotations={draft.annotations}
               selectedAnnotation={selectedAnnotation}

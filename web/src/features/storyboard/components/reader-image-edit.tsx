@@ -40,7 +40,7 @@ export function ReaderImageEdit({
       // 当前帧随替换实时变；编辑器不记打开那一刻的地址，不然替换完窗口还留着就对不上了。
       currentUrl={frames[target.frameNumber - 1]}
       subtitle={`镜头组 ${target.shotIndex} · 帧 @${target.frameNumber}`}
-      frames={frames}
+      frames={frames.map((url, index) => ({ name: `帧 @${index + 1}`, url }))}
       aspectRatio={aspectRatio}
       initialKey={session.initialKey}
       onClose={(opened) => {

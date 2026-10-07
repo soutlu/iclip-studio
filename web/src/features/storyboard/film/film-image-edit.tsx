@@ -43,11 +43,13 @@ export function FilmImageEdit({
   session,
 }: FilmImageEditProps) {
   const frame = group.frames.find((item) => item.node === session.node)
-  // 输入卡里按 @N 插图：下标加一要等于编号，只放有编号的。
+  // 输入卡里按 @N 插图：下标加一要等于编号，只放有编号的；菜单与芯片上叫图的名字。
   const numbered = group.frames
-    .flatMap((item) => (item.number === null || item.url === null ? [] : [item]))
-    .toSorted((a, b) => (a.number ?? 0) - (b.number ?? 0))
-    .map((item) => item.url ?? '')
+    .flatMap(({ label, number, url }) =>
+      number === null || url === null ? [] : [{ name: label, number, url }],
+    )
+    .toSorted((a, b) => a.number - b.number)
+    .map(({ name, url }) => ({ name, url }))
   // 只有按描述生成的图能再生成；用户给的图只能换。
   const original = frame?.kind === 'generated' && frame.prompt !== null ? promptParts(frame) : null
   return (
