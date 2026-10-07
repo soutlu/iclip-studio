@@ -4,12 +4,14 @@
  * - 在生成：转圈加已用时长。
  * - 失败：描述照旧，写原因，按钮变「重新生成」。
  * - 生成好了还没选用：放那次结果的预览，底下「再生成」与「选用这张」；生成不会自动用上，选用了舞台才换成它。
- * 有按钮时，按钮上方一行写它挂的参考图里哪几张没有图、只用描述（`missing`），只提醒不拦。 */
+ * 底部显示这张图在工程文件里写的比例，只读时也显示；有按钮时，按钮上方一行写它挂的参考图里哪几张没有图、
+ * 只用描述（`missing`），只提醒不拦。 */
 
 import { Icon } from '@/shared/icons'
 import { Button } from '@/shared/ui/button'
 import type { GenerationJob } from '../storyboard.api'
 import { isRunningStatus } from '../shots'
+import { AspectGlyph } from '../components/aspect-glyph'
 import { useTakeElapsed } from '../components/use-take-elapsed'
 import type { FilmFrame, FilmGroup } from './film.api'
 import {
@@ -57,21 +59,28 @@ export function FilmGenerateCard({
   // 提交没被收下的原话优先；其次是上次生成失败的原因。
   const reason = error ?? (failed ? (job.errorMessage ?? '这次没生成出来') : undefined)
   const hint = missingReferencesText(frame.missing)
-  const foot = readOnly ? null : (
+  const foot = (
     <>
-      {hint === undefined ? null : (
+      {readOnly || hint === undefined ? null : (
         <p className="film-generate-hint">
           <Icon decorative name="info" size="xs" />
           <span>{hint}</span>
         </p>
       )}
       <div className="film-generate-foot">
-        {reason === undefined ? null : (
+        {frame.aspectRatio === null ? null : (
+          <span className="storyboard-bar-control storyboard-bar-picker" data-fixed="">
+            <span className="sr-only">图片比例</span>
+            <AspectGlyph longSide={13} ratio={frame.aspectRatio} />
+            <span className="storyboard-bar-picker-text">{frame.aspectRatio}</span>
+          </span>
+        )}
+        {readOnly || reason === undefined ? null : (
           <p className="film-generate-error" role="alert">
             {reason}
           </p>
         )}
-        {result === undefined ? (
+        {readOnly ? null : result === undefined ? (
           <Button
             className="ml-auto rounded-full"
             disabled={busy !== null}
