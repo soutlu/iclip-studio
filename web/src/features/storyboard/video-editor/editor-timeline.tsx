@@ -1,13 +1,19 @@
 /** 时间线：视频轨铺按时间截的缩略图，原声轨画真实波形，两条轨一一对应（一段就是上下一对）。
  * 点段选中、拖两端裁剪、按住中间拖动调序；比例按所看那一版的时长排，草稿短了右边留一个细框。 */
 
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type Ref,
+} from 'react'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
 import { useTakeElapsed } from '../components/use-take-elapsed'
 import {
-  clickSelect,
   selectedRange,
   stepSelect,
   trimBounds,
@@ -51,7 +57,15 @@ type EditorTimelineProps = {
   editable: boolean
   peaksOf: (url: string) => PeaksState
   onSeek: (clock: number) => void
+  /** 点了能剪的一段（鼠标点、或聚焦时回车与空格）：选中怎么变由调用方定。 */
+  onClickSegment: (id: string) => void
+  /** 键盘左右键改了选中。 */
   onSelect: (selection: Selection) => void
+  /** 开始拖动：播放头、裁剪手柄，或按住段挪过了阈值。 */
+  onScrub: () => void
+  /** 选区外框（视频轨那一圈），弹出卡按它对准；没有选区或拖着段时不在。 */
+  selectionBoxRef: Ref<HTMLSpanElement>
+
   /** 拖完一端：把这段的这一端定在 `value`（这段素材自己的时间，秒）。 */
   onTrim: (id: string, edge: Edge, value: number) => void
   /** 拖动中：预览停到裁剪边界那一刻的画面。 */
@@ -166,7 +180,10 @@ export function EditorTimeline({
   editable,
   peaksOf,
   onSeek,
+  onClickSegment,
   onSelect,
+  onScrub,
+  selectionBoxRef,
   onTrim,
   onTrimPreview,
   onMove,
@@ -179,6 +196,9 @@ export function EditorTimeline({
   const [focusId, setFocusId] = useState<string>()
   const [lift, setLift] = useState<Lift | null>(null)
   const [trim, setTrim] = useState<Trim | null>(null)
+  // 播放位置滑块是被指针按住拿到的焦点：Chrome 对 range 点一下也算 :focus-visible，刻度区的焦点环
+  // 只留给键盘，按下键盘或失焦时清掉这个记号。
+  const [seekByPointer, setSeekByPointer] = useState(false)
 
   const percent = (time: number) => `${(time / scale) * 100}%`
   const span = (at: number, duration: number) => ({
@@ -215,7 +235,7 @@ export function EditorTimeline({
       return
     }
     setFocusId(entry.id)
-    if (editable) onSelect(clickSelect(draft, selection, entry.id))
+    if (editable) onClickSegment(entry.id)
     else onSeek(entry.at)
   }
 
@@ -285,6 +305,7 @@ export function EditorTimeline({
   const dragClip = (event: PointerEvent<HTMLButtonElement>) => {
     if (lift === null || lift.pointerId !== event.pointerId) return
     const moved = lift.moved || Math.abs(event.clientX - lift.originX) > DRAG_THRESHOLD
+    if (moved && !lift.moved) onScrub()
     setLift({ ...lift, clock: clockAt(event.clientX), moved })
   }
 
@@ -314,6 +335,7 @@ export function EditorTimeline({
     event.preventDefault()
     event.currentTarget.focus()
     event.currentTarget.setPointerCapture(event.pointerId)
+    onScrub()
     const value = entry.clip[edge]
     setTrim({ pointerId: event.pointerId, id: entry.id, edge, value })
     onTrimPreview(entry.at + (value - entry.clip.start), edge)
@@ -434,9 +456,16 @@ export function EditorTimeline({
               aria-label="时间线播放位置"
               aria-valuetext={timeLabel(boundedTime)}
               className="video-editor-timeline-seek"
+              data-pointer={seekByPointer ? '' : undefined}
               max={scale}
               min={0}
-              onChange={(event) => onSeek(Math.min(total, Number(event.target.value)))}
+              onBlur={() => setSeekByPointer(false)}
+              onChange={(event) => {
+                onScrub()
+                onSeek(Math.min(total, Number(event.target.value)))
+              }}
+              onKeyDown={() => setSeekByPointer(false)}
+              onPointerDown={() => setSeekByPointer(true)}
               step={0.01}
               type="range"
               value={boundedTime}
@@ -538,6 +567,7 @@ export function EditorTimeline({
               <span
                 aria-hidden="true"
                 className="video-editor-timeline-box"
+                ref={selectionBoxRef}
                 style={{
                   left: `calc(${percent(selectionBox.from)} - 3px)`,
                   width: `calc(${percent(selectionBox.to - selectionBox.from)} + 4px)`,

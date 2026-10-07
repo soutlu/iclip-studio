@@ -1,7 +1,10 @@
 /** 视频编辑器：在一版成片上剪（裁剪、调序、拆分、删除），选几段交给 AI 改，满意再合成成新的一版。
  *
  * 版本、编辑段与合成都从服务端记录推出来，关掉重开、刷新都还在；剪辑草稿只存在浏览器
- * （ADR-0010）。参考片段在提交时从基底上切好、上传，拼接在服务端。 */
+ * （ADR-0010）。参考片段在提交时从基底上切好、上传，拼接在服务端。
+ *
+ * AI 改段的要求写在选中段时弹出的卡里。卡里没提交的要求只有一份，跟着当前选区走：换了选区不清空，
+ * 提交成功才清空。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -10,15 +13,21 @@ import { useMediaDownload } from '@/shared/api/media-download'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button, IconButton } from '@/shared/ui/button'
+import type { ComposerPart, ComposerSubmission } from '@/shared/ui/composer'
 import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
+import { InlineAlert } from '@/shared/ui/inline-alert'
 import { toast } from '@/shared/ui/toast'
+import { GenerationPicker } from '../components/generation-picker'
 import { useUnseenResults } from '../components/use-unseen-results'
+import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
 import { isRunningStatus } from '../shots'
 import { useVideoModels, type GenerationJob } from '../storyboard.api'
+import { AiEditCard } from './ai-edit-card'
 import {
   aiTarget,
   canRemove,
   canSplitAt,
+  clickSelect,
   compositeSegments,
   draftDuration,
   isBaseSegment,
@@ -30,13 +39,12 @@ import {
   trimBounds,
   trimClip,
   type AiTarget,
+  type DraftClip,
   type DraftItem,
   type Edit,
   type EditOutcome,
 } from './draft'
 import { composingOf, editsOf, projectVersions, type ChainVersion } from './edit-chain'
-import { EditorComposer, type EditorReference } from './editor-composer'
-import { EditorModelMenu } from './editor-model-menu'
 import { EditorNotices } from './editor-notices'
 import { EditorPreview, type EditorPreviewHandle } from './editor-preview'
 import { EditorTimeline, type TimelineEntry } from './editor-timeline'
@@ -120,19 +128,23 @@ const isTextEntry = (target: EventTarget) =>
 const positions = (first: number, last: number) =>
   first === last ? `第 ${first} 段` : `第 ${first}–${last} 段`
 
-/** 右栏那一行：AI 要改哪几段，或为什么还不能改。 */
-const targetLine = (target: AiTarget): string => {
+/** 选区为什么还不能交给 AI；卡头与脚注都用它。能交给 AI 或没有选区时没有原因。 */
+const blockedReason = (target: AiTarget): string | undefined => {
   switch (target.kind) {
-    case 'ready':
-      return `AI 改${positions(target.first, target.last)} · ${seconds(target.range.start)} – ${seconds(target.range.end)} 秒`
-    case 'empty':
-      return '先在时间线上点选要改的段'
     case 'modified':
       return '裁过、拆过的段要先合成，再让 AI 改'
     case 'short':
       return '这段太短，连上相邻的段再改'
+    case 'ready':
+    case 'empty':
+      return undefined
   }
 }
+
+/** 卡头的末帧取段尾之前这么多秒：段尾正好是下一段的开头，截在那一刻可能截到下一段。 */
+const LAST_FRAME_LEAD = 0.1
+/** 卡头截图的宽：显示 30px，按两倍像素取。 */
+const CARD_FRAME_WIDTH = 60
 
 function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorProps) {
   const queryClient = useQueryClient()
@@ -143,16 +155,20 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const jobs = useMemo(() => chainJobs ?? [], [chainJobs])
   const versions = useMemo(() => projectVersions(root, jobs), [root, jobs])
   const previewRef = useRef<EditorPreviewHandle>(null)
+  const selectionBoxRef = useRef<HTMLSpanElement>(null)
   const [picked, setPicked] = useState<Picked>()
   const [currentTime, setCurrentTime] = useState(0)
-  const [prompt, setPrompt] = useState('')
-  const [references, setReferences] = useState<EditorReference[]>([])
+  /** 卡里没提交的要求：文字与传好的参考图。 */
+  const [request, setRequest] = useState<readonly ComposerPart[]>([])
+  /** 上次收起卡时有几张参考图还没传好、没留下；下次改要求时收起这句提示。 */
+  const [droppedUploads, setDroppedUploads] = useState(0)
+  /** 卡展开着；一拖、一播、按 Escape 就收成胶囊。 */
+  const [cardOpen, setCardOpen] = useState(true)
   const [wantedModel, setWantedModel] = useState<string>()
-  // 两次互斥的提交加上传参考图；任一在跑时整个编辑器一起锁。
-  const [operation, setOperation] = useState<'idle' | 'uploading' | 'generating' | 'composing'>(
-    'idle',
-  )
-  const [operationError, setOperationError] = useState<string | null>(null)
+  // 两次互斥的提交；任一在跑时整个编辑器一起锁。
+  const [operation, setOperation] = useState<'idle' | 'generating' | 'composing'>('idle')
+  const [generateError, setGenerateError] = useState<string | null>(null)
+  const [composeError, setComposeError] = useState<string | null>(null)
   /** 脚注位置上要让人看到的一句话，下一次剪辑时收起。 */
   const [notice, setNotice] = useState<string | null>(null)
   const { downloading, download } = useMediaDownload()
@@ -216,7 +232,11 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const waitingComposite = composingJob !== undefined || editor?.composite !== undefined
   const editable = editor !== undefined && viewingDraft && !waitingComposite && !busy
   const draft = editor?.draft ?? []
-  const selection = editable ? (editor?.selection ?? []) : []
+  // 提交 AI 改的那一会儿时间线锁着，选中照旧显示，卡也留着转圈；合成时不显示。
+  const selection =
+    editor !== undefined && viewingDraft && !waitingComposite && operation !== 'composing'
+      ? editor.selection
+      : []
   const pendingItems = draft.filter((item) => item.kind === 'pending')
 
   // ---------- 预览 ----------
@@ -263,7 +283,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const peaksFailure = [...peaks.values()].find((state) => state.kind === 'failed')
 
   const target: AiTarget =
-    editor === undefined || !editable
+    editor === undefined
       ? { kind: 'empty' }
       : aiTarget(
           draft,
@@ -305,20 +325,37 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     )
   }
 
-  const generate = async () => {
+  // 没有选区时没有卡；下次选中时卡展开着出来。
+  if (selection.length === 0 && !cardOpen) setCardOpen(true)
+
+  /** 点了时间线上的一段：卡收着时点的是选区里的段，只把卡展开、不改选中（不然点单选的那段会把它取消）；
+   * 别的照点选规则改选中，卡展开。 */
+  const clickSegment = (id: string) => {
+    if (editor === undefined || !editable) return
+    if (!cardOpen && selection.includes(id)) {
+      setCardOpen(true)
+      return
+    }
+    editor.select(clickSelect(draft, selection, id))
+    setCardOpen(true)
+  }
+  const collapseCard = () => setCardOpen(false)
+
+  /** 卡里点「生成视频」：要求里的参考图按出现的先后排成 `reference_image_urls`，正文里写 `@ImageN`。 */
+  const generate = async (submission: ComposerSubmission) => {
     if (busy || editor === undefined || target.kind !== 'ready') return
-    const text = prompt.trim()
-    if (text === '') {
-      setOperationError('先写下想怎么改')
+    if (submission.text.trim() === '') {
+      setGenerateError('先写下想怎么改')
       return
     }
     if (model === undefined) {
-      setOperationError('没有可用的编辑模型')
+      setGenerateError('没有可用的编辑模型')
       return
     }
-    // 「生成中」的锁覆盖切参考片段、上传与提交三步，任一步失败都照 operationError 显示。
+    const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(submission.parts))
+    // 「生成中」的锁覆盖切参考片段、上传与提交三步，任一步失败都照 generateError 显示。
     setOperation('generating')
-    setOperationError(null)
+    setGenerateError(null)
     setNotice(null)
     try {
       const job = await submitVideoEdit({
@@ -328,13 +365,16 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
         baseMediaUrl: version.mediaUrl,
         range: target.range,
         model,
-        prompt: text,
-        referenceImageUrls: references.map((reference) => reference.url),
+        prompt: text.trim(),
+        referenceImageUrls,
       })
       seedJob(job)
+      // 选中的段换成占位，选区没了，卡随之收走；要求清空。
       editor.submitted(job.id)
+      setRequest([])
+      setDroppedUploads(0)
     } catch (error) {
-      setOperationError(errorMessageOf(error, '视频编辑提交失败'))
+      setGenerateError(errorMessageOf(error, '视频编辑提交失败'))
     } finally {
       setOperation('idle')
     }
@@ -345,7 +385,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const compose = async () => {
     if (!canCompose || editor === undefined || segmentsToCompose === undefined) return
     setOperation('composing')
-    setOperationError(null)
+    setComposeError(null)
     setNotice(null)
     try {
       const job = await submitVideoComposite({
@@ -358,7 +398,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       editor.composing(job.id)
       toast.success('已提交合成，完成后会成为新版本')
     } catch (error) {
-      setOperationError(errorMessageOf(error, '合成任务提交失败'))
+      setComposeError(errorMessageOf(error, '合成任务提交失败'))
     } finally {
       setOperation('idle')
     }
@@ -422,8 +462,8 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (operation === 'generating') return '正在切参考片段、交给 AI…'
     if (range !== undefined) {
       const which = positions(range.first, range.last)
-      if (target.kind === 'modified' || target.kind === 'short')
-        return `选中${which}：${targetLine(target)}`
+      const reason = blockedReason(target)
+      if (reason !== undefined) return `选中${which}：${reason}`
       if (selection.length > 1)
         return `选中${which}：AI 只重做选中的段，原声跟着一起重做；其余画面保持不变`
       const only = draft.find((item) => item.id === selection[0])
@@ -434,8 +474,8 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           return min < max
         })
       return trimmable
-        ? `选中${which}：拖两端裁短，按住中间拖动调顺序；要 AI 重做就在右边写要求`
-        : `选中${which}：这段已经最短，裁不动；按住中间拖动调顺序，要 AI 重做就在右边写要求`
+        ? `选中${which}：拖两端裁短，按住中间拖动调顺序；要 AI 重做就在卡片里写要求`
+        : `选中${which}：这段已经最短，裁不动；按住中间拖动调顺序，要 AI 重做就在卡片里写要求`
     }
     if (pendingItems.length > 0)
       return 'AI 正在改，关掉窗口也会继续；其他段照样能剪，等 AI 生成完再合成'
@@ -549,7 +589,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       editable={editable}
       entries={entries}
       onDelete={() => apply(removeItems(draft, selection))}
+      onClickSegment={clickSegment}
       onMove={(ids, before) => apply(moveItems(draft, ids, before))}
+      onScrub={collapseCard}
       onSeek={(time) => previewRef.current?.previewAt(time)}
       onSelect={(next) => editor.select(next)}
       onTrim={(id, edge, value) => apply(trimClip(draft, id, edge, value))}
@@ -557,9 +599,82 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       peaksOf={(url) => peaks.get(url) ?? LOADING_PEAKS}
       scale={scale}
       selection={selection}
+      selectionBoxRef={selectionBoxRef}
       total={total}
     />
   )
+
+  // ---------- AI 改段的弹出卡 ----------
+
+  const selectedClips = selection.flatMap((id) => {
+    const item = draft.find((candidate) => candidate.id === id)
+    return item?.kind === 'clip' ? [item] : []
+  })
+  const frameOf = (clip: DraftClip | undefined, at: (clip: DraftClip) => number) => {
+    const url = clip === undefined ? undefined : urlOf(clip.sourceJobId)
+    return clip === undefined || url === undefined
+      ? undefined
+      : videoSnapshotUrl(url, CARD_FRAME_WIDTH, at(clip))
+  }
+  const cardDetail =
+    target.kind === 'ready'
+      ? `${seconds(target.range.start)} – ${seconds(target.range.end)} 秒 · 视频和原声一起重做`
+      : blockedReason(target)
+  const card =
+    range === undefined || cardDetail === undefined ? null : (
+      <AiEditCard
+        alerts={
+          <>
+            {droppedUploads === 0 ? null : (
+              <InlineAlert
+                message={`有 ${droppedUploads} 张图收起时还没传完，没有保留，请重新添加`}
+              />
+            )}
+            {generateError === null ? null : <InlineAlert message={generateError} />}
+            {modelsQuery.isError ? (
+              <InlineAlert
+                action={{ label: '重新加载模型', onClick: () => void modelsQuery.refetch() }}
+                message={errorMessageOf(modelsQuery.error, '读取视频模型失败')}
+              />
+            ) : null}
+          </>
+        }
+        anchorRef={selectionBoxRef}
+        canGenerate={target.kind === 'ready' && model !== undefined && !busy}
+        detail={cardDetail}
+        draft={request}
+        frames={{
+          first: frameOf(selectedClips[0], (clip) => clip.start),
+          last: frameOf(selectedClips.at(-1), (clip) =>
+            Math.max(clip.start, clip.end - LAST_FRAME_LEAD),
+          ),
+        }}
+        generating={operation === 'generating'}
+        modelPicker={
+          <GenerationPicker
+            className="video-editor-model-picker"
+            disabled={busy || models.length === 0}
+            label="编辑模型"
+            leading={<Icon decorative name="video" size="sm" />}
+            onChange={setWantedModel}
+            options={models.map((value) => ({ value }))}
+            text={model ?? '没有支持编辑的模型'}
+            value={model ?? ''}
+          />
+        }
+        onCollapse={collapseCard}
+        onDraftChange={(parts) => {
+          setRequest(parts)
+          setGenerateError(null)
+          setDroppedUploads(0)
+        }}
+        onExpand={() => setCardOpen(true)}
+        onGenerate={(submission) => void generate(submission)}
+        onUploadsDropped={setDroppedUploads}
+        open={cardOpen}
+        positions={positions(range.first, range.last)}
+      />
+    )
 
   return (
     <DialogRoot
@@ -573,6 +688,12 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       <DialogSurface
         aria-describedby={undefined}
         className="video-editor-dialog"
+        onEscapeKeyDown={(event) => {
+          // 卡展开着时 Escape 先把它收起，再按一次才关编辑器。
+          if (card === null || !cardOpen) return
+          event.preventDefault()
+          collapseCard()
+        }}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={keyDown}
       >
@@ -602,12 +723,30 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
             current={current}
             currentTime={currentTime}
             footnote={
-              <p className="video-editor-footnote" role={notice === null ? undefined : 'status'}>
-                {footnote}
-              </p>
+              <>
+                <EditorNotices
+                  chainError={
+                    chainQuery.isError
+                      ? errorMessageOf(chainQuery.error, '读取编辑记录失败')
+                      : undefined
+                  }
+                  composeError={composeError}
+                  onReloadChain={() => void chainQuery.refetch()}
+                  peaksError={
+                    peaksFailure?.kind === 'failed'
+                      ? errorMessageOf(peaksFailure.error, '原声读不出来')
+                      : undefined
+                  }
+                />
+                <p className="video-editor-footnote" role={notice === null ? undefined : 'status'}>
+                  {footnote}
+                </p>
+              </>
             }
+            onPlay={collapseCard}
             onTime={setCurrentTime}
             original={original}
+            overlay={card}
             poster={posterOf(current?.[0]?.mediaUrl ?? version.mediaUrl)}
             readout={readout}
             ref={previewRef}
@@ -621,62 +760,6 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
               />
             }
           />
-          <section aria-label="AI 改段" className="video-editor-inspector">
-            <p className="video-editor-target">
-              <Icon decorative name="duration" size="sm" />
-              <span>{targetLine(target)}</span>
-            </p>
-            <EditorComposer
-              disabled={busy}
-              footer={
-                <div className="video-editor-generation-controls">
-                  <EditorModelMenu
-                    disabled={busy}
-                    model={model}
-                    models={models}
-                    onChange={setWantedModel}
-                  />
-                  <Button
-                    className="video-editor-generate"
-                    disabled={!editable || target.kind !== 'ready' || model === undefined}
-                    loading={operation === 'generating'}
-                    onClick={() => void generate()}
-                    trailingIcon="send-up"
-                  >
-                    生成
-                  </Button>
-                </div>
-              }
-              onBusyChange={(uploading) => setOperation(uploading ? 'uploading' : 'idle')}
-              onPromptChange={(value) => {
-                setPrompt(value)
-                setOperationError(null)
-              }}
-              onReferencesChange={setReferences}
-              prompt={prompt}
-              references={references}
-            />
-            <EditorNotices
-              chainError={
-                chainQuery.isError
-                  ? errorMessageOf(chainQuery.error, '读取编辑记录失败')
-                  : undefined
-              }
-              modelsError={
-                modelsQuery.isError
-                  ? errorMessageOf(modelsQuery.error, '读取视频模型失败')
-                  : undefined
-              }
-              onReloadChain={() => void chainQuery.refetch()}
-              onReloadModels={() => void modelsQuery.refetch()}
-              operationError={operationError}
-              peaksError={
-                peaksFailure?.kind === 'failed'
-                  ? errorMessageOf(peaksFailure.error, '原声读不出来')
-                  : undefined
-              }
-            />
-          </section>
         </div>
       </DialogSurface>
     </DialogRoot>

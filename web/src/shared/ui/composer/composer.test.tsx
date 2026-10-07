@@ -54,6 +54,30 @@ describe('Composer', () => {
     })
   })
 
+  it('使用方挡住提交时：写了字按钮也灰着、Enter 不提交；放开后照常提交', async () => {
+    const onSubmit = vi.fn()
+    const action = {
+      emphasis: 'primary',
+      icon: 'video',
+      label: '生成视频',
+      pendingLabel: '提交中…',
+    } as const
+    const { rerender } = await renderWithProviders(
+      <Composer onSubmit={onSubmit} submitAction={{ ...action, disabled: true }} />,
+    )
+    const generate = () => screen.getByRole('button', { name: '生成视频' })
+
+    pasteTextIntoComposer(editor(), '换成黄昏的暖光')
+    expect(generate()).toBeDisabled()
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    rerender(<Composer onSubmit={onSubmit} submitAction={{ ...action, disabled: false }} />)
+    expect(generate()).toBeEnabled()
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
   it('IME 组字期间的 Enter 是选字，不触发提交', async () => {
     const onSubmit = vi.fn()
     await renderWithProviders(<Composer onSubmit={onSubmit} />)

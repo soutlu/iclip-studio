@@ -1,4 +1,4 @@
-/** 预览台：舞台（模糊海报底、「原片 | 改后」、按比例居中的画面、版本条）与时间线面板顶上的播放控制条，画面可在应用内放大。
+/** 预览台：舞台（模糊海报底、「原片 | 改后」、按比例居中的画面、盖在上面的浮层、版本条）与时间线面板顶上的播放控制条，画面可在应用内放大。
  *
  * 多段预览靠两个 `<video>` 轮换：一个在放、另一个预载下一段，到点切过去不用等加载。
  * 中间版本不落文件，拼好的整条只在这里连着放。 */
@@ -54,6 +54,10 @@ type Props = {
   backdrop: { current: string | undefined; original: string | undefined }
   currentTime: number
   onTime: (clock: number) => void
+  /** 开始播放（控制条或放大层上的播放钮）。 */
+  onPlay: () => void
+  /** 盖在舞台上的浮层（AI 改段的弹出卡），画面不为它让位。 */
+  overlay: ReactNode
   /** 贴在舞台右缘的版本条（窄屏排到舞台下方）。 */
   versions: ReactNode
   /** 控制条上时钟后面的剪辑操作：撤销、重做、拆分、删除。 */
@@ -103,6 +107,8 @@ export function EditorPreview({
   backdrop,
   currentTime,
   onTime,
+  onPlay,
+  overlay,
   versions,
   tools,
   readout,
@@ -313,6 +319,7 @@ export function EditorPreview({
     }
     if (currentTime >= duration) seek(0)
     setPlaying(true)
+    onPlay()
   }
   const compare = (toOriginal: boolean) => {
     pause()
@@ -441,6 +448,7 @@ export function EditorPreview({
           )}
           {/* 内嵌槽占住画面的位置与尺寸，舞台放大离开时布局不塌。 */}
           <div className="video-editor-hero-wrap" ref={placeInline} />
+          {overlay}
         </section>
         {versions}
       </div>

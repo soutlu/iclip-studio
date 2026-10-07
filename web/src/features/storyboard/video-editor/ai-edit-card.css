@@ -1,0 +1,156 @@
+/* AI 改段的弹出卡：盖在舞台底部，画面不让位。水平位置与尖角由脚本按选区算（见 card-placement.ts），
+   这里只管外形；收成胶囊是同一个元素换外形。 */
+.video-editor-card {
+  position: absolute;
+  bottom: 16px;
+  left: 12px;
+  z-index: var(--z-local-3);
+  width: min(560px, calc(100% - 24px));
+  border-radius: var(--radius-xl);
+  background: var(--color-top-layer);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-3);
+  color: var(--color-on-surface);
+}
+
+/* 底边的小尖角，指向时间线上的选区。 */
+.video-editor-card::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: var(--card-notch, 50%);
+  width: 12px;
+  height: 12px;
+  translate: -50% 0;
+  rotate: 45deg;
+  border-radius: 0 0 var(--radius-xs) 0;
+  background: var(--color-top-layer);
+  box-shadow: 0.5px 0.5px 0 0 var(--color-hairline);
+}
+
+.video-editor-card[data-state='collapsed'] {
+  width: auto;
+  border-radius: var(--radius-full);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-2);
+}
+
+/* 换外形的那一下按动画的尺寸裁住内容；尖角等落定再出来。 */
+.video-editor-card[data-morphing] {
+  overflow: hidden;
+}
+
+.video-editor-card[data-state='collapsed']::after,
+.video-editor-card[data-morphing]::after {
+  display: none;
+}
+
+.video-editor-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 0;
+}
+
+.video-editor-card-frames {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-on-surface-faint);
+}
+
+.video-editor-card-frame {
+  width: 30px;
+  height: 40px;
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+}
+
+/* 截不到帧的占位：卡底是 top-layer，深色下它和 container-high 同值；用默认边框色，两种主题下都看得出一块。 */
+.video-editor-card-frame.is-empty,
+.video-editor-card-mini-frame.is-empty {
+  display: block;
+  background: var(--color-outline-variant);
+}
+
+.video-editor-card-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.video-editor-card-title > p:first-child {
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--text-body--line-height);
+}
+
+.video-editor-card-title > p:last-child {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 共享输入框就是卡身：去掉它自己的外框、底色与投影，贴着卡头排。 */
+.video-editor-card .video-editor-card-composer {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.video-editor-card .composer-editor {
+  min-height: 52px;
+  padding-top: 10px;
+}
+
+.video-editor-card .composer-placeholder-overlay {
+  top: 10px;
+}
+
+/* 卡底的模型选择：与生成钮同高，只有模型名可收缩。 */
+.video-editor-card .video-editor-model-picker {
+  min-width: 96px;
+  height: var(--control-height-md);
+  flex: 0 1 auto;
+}
+
+.video-editor-card-body > [role='alert'] {
+  padding: 0 16px 12px;
+}
+
+/* 收起后的小胶囊：首帧、要改哪几段、有没写完的字，点开再展开。 */
+.video-editor-card-mini {
+  display: flex;
+  height: var(--control-height-lg);
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 6px;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.video-editor-card-mini-frame {
+  width: 22px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+}
+
+.video-editor-card-mini-note {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+}
+
+.video-editor-card-mini > svg {
+  flex: none;
+  color: var(--color-on-surface-muted);
+}

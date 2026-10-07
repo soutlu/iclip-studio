@@ -34,18 +34,17 @@
   font-size: var(--text-body);
 }
 
-/* 宽屏：左边舞台叠时间线面板，输入栏占满右边一整列（它的内容比舞台那一行高）；
-   窄屏按舞台、时间线、输入栏竖排。 */
+/* 舞台在上、时间线面板在下，都铺满弹窗整宽；AI 改段的卡弹在舞台上，不占列。 */
 .video-editor {
   display: grid;
   min-height: 0;
   flex: 1;
   grid-template-areas:
-    'stage inspector'
-    'timeline inspector';
-  grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
+    'stage'
+    'timeline';
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(300px, 1fr) auto;
-  gap: 12px 20px;
+  gap: 12px;
   padding: 0 24px 16px;
   overflow-y: auto;
   color: var(--color-on-surface);
@@ -470,127 +469,6 @@
   text-align: center;
 }
 
-/* 输入栏：没有外框，直接立在弹窗底上。 */
-.video-editor-inspector {
-  display: flex;
-  grid-area: inspector;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-/* AI 要改哪几段：只读一行，选段在时间线上做。 */
-.video-editor-target {
-  display: flex;
-  min-height: 36px;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-low);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-  font-variant-numeric: tabular-nums;
-}
-
-.video-editor-target > svg {
-  flex-shrink: 0;
-  color: var(--color-on-surface-muted);
-}
-
-.video-editor-generation-controls {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  gap: 10px;
-}
-
-.video-editor-model {
-  display: inline-flex;
-  position: relative;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  max-width: calc(100% - 96px);
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--color-chat-hairline);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-lowest);
-  color: var(--color-on-surface);
-  cursor: pointer;
-}
-
-.video-editor-model > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.video-editor-model > svg {
-  flex-shrink: 0;
-  color: var(--color-on-surface-muted);
-}
-
-.video-editor-model:hover:not(:disabled),
-.video-editor-model[data-state='open'] {
-  background: var(--color-surface-container-low);
-}
-
-.video-editor-model:disabled {
-  opacity: var(--state-disabled-content);
-  cursor: not-allowed;
-}
-
-.video-editor-model-menu {
-  max-width: calc(100vw - 32px);
-  max-height: var(--radix-dropdown-menu-content-available-height);
-  overflow-y: auto;
-}
-
-.video-editor-generate {
-  width: auto;
-  min-width: 86px;
-  height: 40px;
-  margin-left: auto;
-  padding: 0 14px;
-  flex-shrink: 0;
-  border-radius: var(--radius-sm);
-  box-shadow: none;
-}
-
-.video-editor-generate:disabled {
-  background: var(--color-secondary-container);
-  color: var(--color-on-surface-muted);
-  opacity: 0.65;
-}
-
-/* 输入框不画焦点环，外框边框转墨色即焦点指示（见 editor-composer.css）。 */
-.video-editor .video-editor-composer-input:focus-visible {
-  outline: none;
-}
-
-@media (min-width: 1000px) and (max-height: 850px) {
-  .video-editor-inspector {
-    gap: 8px;
-  }
-
-  .video-editor-composer {
-    padding: 12px;
-  }
-
-  .video-editor-composer-input {
-    min-height: 64px;
-  }
-}
-
 @media (max-width: 999px) {
   .video-editor-dialog {
     width: calc(100vw - 16px);
@@ -603,13 +481,8 @@
   }
 
   .video-editor {
-    grid-template-areas:
-      'stage'
-      'timeline'
-      'inspector';
-    grid-template-columns: minmax(0, 1fr);
-    /* 三块各按内容高，弹窗里整体滚动；不让定高的容器把各行压扁叠在一起。 */
-    grid-template-rows: repeat(3, max-content);
+    /* 两块各按内容高，弹窗里整体滚动；不让定高的容器把各行压扁叠在一起。 */
+    grid-template-rows: repeat(2, max-content);
     padding: 0 16px 16px;
   }
 
@@ -648,11 +521,6 @@
 
   .video-editor-version[aria-pressed='true'] {
     box-shadow: 0 0 0 1.5px var(--color-on-surface);
-  }
-
-  .video-editor-inspector {
-    min-height: 390px;
-    overflow: visible;
   }
 }
 
