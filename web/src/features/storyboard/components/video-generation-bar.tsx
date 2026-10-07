@@ -4,7 +4,7 @@
 
 import { useId, useRef } from 'react'
 import { Icon } from '@/shared/icons'
-import { ASPECT_RATIOS, aspectOf } from '@/shared/lib/aspect-ratio'
+import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
 import { Button } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -20,6 +20,7 @@ import {
   type GenerationStatusLine,
 } from '../generation-blocker'
 import { supportsAspectRatio } from '../video-model-support'
+import { AspectGlyph } from './aspect-glyph'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useScrollFade } from './use-scroll-fade'
 
@@ -234,19 +235,6 @@ function AspectPicker({
       options={options}
       text={aspect.value}
       value={aspect.value}
-    />
-  )
-}
-
-/** 按画幅描的小方框，长边 `longSide` 像素；认不出的画幅按 9:16 描（见 `aspectOf`）。 */
-function AspectGlyph({ longSide, ratio }: { longSide: number; ratio: string }) {
-  const { h, w } = aspectOf(ratio)
-  const scale = longSide / Math.max(w, h)
-  return (
-    <span
-      aria-hidden
-      className="storyboard-bar-glyph"
-      style={{ height: Math.round(h * scale), width: Math.round(w * scale) }}
     />
   )
 }
