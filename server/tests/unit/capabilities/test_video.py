@@ -38,7 +38,7 @@ from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
-from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
+from iclip.platform.transcript.display import FileIoDisplay, GenericDisplay, ToolDisplayRegistry
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.shot_document import FRAME_URL, OTHER_FRAME_URL, one_shot, shots_document
@@ -244,8 +244,7 @@ def test_every_tool_has_a_display_without_a_renderer(capability: Video[object]) 
     registry = ToolDisplayRegistry.merged(capability.display_table())
     drawn = registry.entries
     shots = drawn["write_video_shots"].draw({})
-    assert isinstance(shots, GenericDisplay)
-    assert shots.detail == SHOTS_PATH
+    assert shots == FileIoDisplay(operation="write", path=SHOTS_PATH)
     parsed = drawn["video_parser"].draw({"video_url": VIDEO})
     assert isinstance(parsed, GenericDisplay)
     assert parsed.detail == "ref.mp4"
@@ -255,6 +254,70 @@ def test_every_tool_has_a_display_without_a_renderer(capability: Video[object]) 
     assert bare.detail is None
     for tool_name in drawn:
         assert registry.view_of(tool_name) is None
+
+
+@pytest.mark.parametrize("stringified", [None, "shots", "prompt"])
+async def test_shots_card_shows_exactly_what_the_delivery_writes(
+    capability: Video[object], files: FakeFileStore, stringified: str | None
+) -> None:
+    """分镜表的交付画成普通文件写入，卡上的原文就是工具写进文件的那份；字符串化入参照常还原且只记一条日志。"""
+
+    shot = one_shot().model_dump()
+    shots: object = [shot]
+    if stringified == "prompt":
+        shot["prompt"] = json.dumps(shot["prompt"], ensure_ascii=False)
+    elif stringified == "shots":
+        shots = json.dumps([shot], ensure_ascii=False)
+    args = {"aspect_ratio": "9:16", "shots": shots}
+
+    with capture_logs() as logs:
+        drawn = capability.display_table()["write_video_shots"](args)
+    rejected, _ = await run_delivery_once(capability, shots)
+
+    assert rejected == []
+    stored = await files.read(NAMESPACE, SHOTS_PATH)
+    assert stored is not None
+    assert drawn == FileIoDisplay(operation="write", path=SHOTS_PATH, content=stored.content)
+    assert logs == [], "画卡是重放入参，字符串还原的日志只由工具调用记"
+
+
+async def test_shots_card_from_json_text_args_matches_the_written_file(
+    capability: Video[object], files: FakeFileStore
+) -> None:
+    """模型多以 JSON 文本给参数：投影经注册表画卡，与工具按 JSON 校验后写下的原文一致。"""
+
+    args = json.dumps(shot_payload([FRAME_URL]), ensure_ascii=False)
+
+    messages = await invoke(capability, "write_video_shots", args)
+
+    assert refusals(messages) == []
+    stored = await files.read(NAMESPACE, SHOTS_PATH)
+    assert stored is not None
+    drawn = ToolDisplayRegistry.merged(capability.display_table()).tool_display(
+        "write_video_shots", args
+    )
+    assert drawn == FileIoDisplay(operation="write", path=SHOTS_PATH, content=stored.content)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"aspect_ratio": "9:16", "shots": [one_shot(index=2).model_dump()]},
+        {"aspect_ratio": "竖版", "shots": [one_shot().model_dump()]},
+        {"aspect_ratio": "9:16", "shots": "index: 1"},
+        {"shots": [one_shot().model_dump()]},
+        "不是对象",
+    ],
+    ids=["bad-index", "bad-aspect", "not-json", "no-aspect", "not-a-mapping"],
+)
+def test_shots_card_without_content_when_the_delivery_would_be_refused(
+    capability: Video[object], args: object
+) -> None:
+    """工具会退回的入参没有要写的原文：照样是写入 video_shot.json 那一行，只是不带内容。"""
+
+    drawn = capability.display_table()["write_video_shots"](args)
+
+    assert drawn == FileIoDisplay(operation="write", path=SHOTS_PATH)
 
 
 async def test_parse_stores_document_in_shared_workspace(

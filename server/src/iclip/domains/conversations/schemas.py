@@ -6,10 +6,26 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
-from iclip.domains.conversations.models import Conversation, ConversationActivity
+from iclip.common.film_view import (
+    FilmImagePrompt,
+    FilmLineEdit,
+    FilmPromptImage,
+    FilmPromptRun,
+    FilmPromptText,
+    FilmTextEdit,
+    FilmView,
+    FrameKind,
+    SettingKind,
+)
+from iclip.common.urls import is_http_url
+from iclip.domains.conversations.models import (
+    Conversation,
+    ConversationActivity,
+    EventWatermark,
+)
 
 MAX_TITLE_CHARS: Final = 200
 MAX_AGENT_ID_CHARS: Final = 128
@@ -57,6 +73,12 @@ class ConversationIn(CamelModel):
     user_name: str | None = None
     """替谁开这段对话。持 ``users:act_as`` 的 API key 按它定属主；其余钥匙照旧记在
     自己名下；浏览器会话只能写自己的用户名。"""
+
+    same_as: uuid.UUID | None = None
+    """做同款的源对话 id（资料库卡的 id）。给了就在建对话时把源的 ``treatment.md``、
+    ``film.icml``（改名 ``old_film.icml``）、``film.icrun``、``video_shot.json``（改名
+    ``old_video_shot.json``）有的拷进来，连同整份素材台账；不拷历史，也不记血缘。源看不见是
+    404，源既没有 ``film.icml`` 也没有 ``video_shot.json`` 是 422；带同一个 ``id`` 重发不再拷。"""
 
 
 class ConversationForkIn(CamelModel):
@@ -139,6 +161,12 @@ class ConversationOut(CamelModel):
     fork_turn: int | None
     """分叉自源对话的第几轮，从 1 数。与 ``forkedFrom`` 同时有值。"""
     activity: ConversationActivityOut
+    last_seq: int
+    """读这一行之前，这段对话已发出的最大会话事件序号（WebSocket 全局帧信封上的 ``seq``）。
+
+    行里的字段至少与序号不大于它的事件一样新；客户端收到序号更大的事件帧时，以帧上的值为准。"""
+    event_epoch: str
+    """``lastSeq`` 所属的服务进程；与帧信封的 ``epoch`` 不同时两者不可比，以这一行为准。"""
 
 
 class ConversationEnvelope(CamelModel):
@@ -239,8 +267,283 @@ class ConversationFileEnvelope(CamelModel):
     file: ConversationFileContentOut
 
 
-def conversation_out(conversation: Conversation, activity: ConversationActivity) -> ConversationOut:
-    """合并对话记录与引擎提供的活动投影，转换为响应模型。"""
+MAX_FILM_EDITS: Final = 64
+"""一次最多改几段字：页面自动保存时一次只送改过的那几段。"""
+
+MAX_FILM_REFERENCES: Final = 10
+"""按描述再生成时最多几张参考图，与生成域的图片参考图上限相同。"""
+
+
+class FilmPromptTextOut(CamelModel):
+    kind: Literal["text"] = "text"
+    text: str
+
+
+class FilmPromptImageOut(CamelModel):
+    """描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。"""
+
+    kind: Literal["image"] = "image"
+    node: str
+    label: str
+    url: str
+
+
+FilmPromptRunOut = Annotated[FilmPromptTextOut | FilmPromptImageOut, Field(discriminator="kind")]
+
+
+class FilmFrameOut(CamelModel):
+    """一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+
+    ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
+    用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法
+    同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。"""
+
+    node: str
+    label: str
+    kind: FrameKind
+    url: str | None
+    number: int | None
+    prompt: list[FilmPromptRunOut] | None
+    aspect_ratio: str | None
+    missing: list[str]
+
+
+class FilmSettingOut(CamelModel):
+    """全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
+    可以几张，拍法和声音为空。"""
+
+    kind: SettingKind
+    target: str | None
+    label: str | None
+    text: str
+    images: list[str]
+
+
+class FilmLineOut(CamelModel):
+    """镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。"""
+
+    target: str
+    role: str
+    text: str
+
+
+class FilmShotOut(CamelModel):
+    """一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；
+    ``target`` 为 null 的镜头不能在页面上改。"""
+
+    target: str | None
+    start: float
+    end: float
+    parts: list[str]
+    lines: list[FilmLineOut]
+    view: str | None
+
+
+class FilmGroupOut(CamelModel):
+    index: int
+    video: str
+    model: str
+    seconds: int
+    aspect_ratio: str
+    frames: list[FilmFrameOut]
+    settings: list[FilmSettingOut]
+    shots: list[FilmShotOut]
+
+
+class FilmViewOut(CamelModel):
+    """制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。"""
+
+    film_version: int
+    run_version: int | None
+    problems: int
+    groups: list[FilmGroupOut]
+
+
+class FilmViewEnvelope(CamelModel):
+    film: FilmViewOut
+
+
+class FilmLineEditIn(CamelModel):
+    """改好的一句台词的字；``target`` 照读到的原样传回。"""
+
+    target: Annotated[str, Field(min_length=1)]
+    text: str
+
+
+class FilmTextEditIn(CamelModel):
+    """改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它
+    多一段，台词只改字；其余给 ``text``。"""
+
+    target: Annotated[str, Field(min_length=1)]
+    text: str | None = None
+    parts: list[str] | None = None
+    lines: list[FilmLineEditIn] | None = None
+
+    @model_validator(mode="after")
+    def _one_of(self) -> FilmTextEditIn:
+        shot = (self.parts is not None, self.lines is not None)
+        if self.text is not None and any(shot):
+            raise ValueError("镜头给 parts 与 lines，其余给 text，不能都给")
+        if self.text is None and not all(shot):
+            raise ValueError("镜头要同时给 parts 与 lines，其余给 text")
+        return self
+
+
+class FilmTextEditsIn(CamelModel):
+    """``filmVersion`` 是读到的工程文件版本号，对不上是 409。"""
+
+    film_version: int
+    edits: Annotated[list[FilmTextEditIn], Field(min_length=1, max_length=MAX_FILM_EDITS)]
+
+
+class FilmImageChoiceIn(CamelModel):
+    """给 ``node`` 换成 ``url``；``url`` 为 null 是取消生成图的选用，这张图就没有图了。
+
+    两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。"""
+
+    node: Annotated[str, Field(min_length=1)]
+    url: str | None
+    film_version: int
+    run_version: int | None
+
+    @field_validator("url")
+    @classmethod
+    def _http(cls, value: str | None) -> str | None:
+        if value is not None and not is_http_url(value):
+            raise ValueError("要写带主机名的 http(s) 地址")
+        return value
+
+
+class FilmImagePromptIn(CamelModel):
+    """编辑器里改过的描述与参考图，只用这一次。"""
+
+    text: Annotated[str, Field(min_length=1)]
+    reference_image_urls: Annotated[list[str], Field(max_length=MAX_FILM_REFERENCES)]
+
+    @field_validator("reference_image_urls")
+    @classmethod
+    def _http(cls, urls: list[str]) -> list[str]:
+        if not all(is_http_url(url) for url in urls):
+            raise ValueError("要写带主机名的 http(s) 地址")
+        return urls
+
+
+class FilmImageGenerationIn(CamelModel):
+    """按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。"""
+
+    node: Annotated[str, Field(min_length=1)]
+    prompt: FilmImagePromptIn | None = None
+    film_version: int
+    run_version: int | None
+
+
+class FilmVideoGenerationIn(CamelModel):
+    """给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。"""
+
+    video: Annotated[str, Field(min_length=1)]
+    model: Annotated[str, Field(min_length=1)]
+    resolution: Annotated[str, Field(min_length=1, max_length=50)]
+    generate_audio: bool
+    film_version: int
+    run_version: int | None
+
+
+class FilmJobOut(CamelModel):
+    """受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。"""
+
+    job_id: uuid.UUID
+
+
+def film_image_prompt(body: FilmImageGenerationIn) -> FilmImagePrompt | None:
+    if body.prompt is None:
+        return None
+    return FilmImagePrompt(body.prompt.text, tuple(body.prompt.reference_image_urls))
+
+
+def _prompt_run_out(run: FilmPromptRun) -> FilmPromptTextOut | FilmPromptImageOut:
+    if isinstance(run, FilmPromptText):
+        return FilmPromptTextOut(text=run.text)
+    assert isinstance(run, FilmPromptImage)
+    return FilmPromptImageOut(node=run.node, label=run.label, url=run.url)
+
+
+def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
+    return [
+        FilmTextEdit(
+            target=edit.target,
+            text=edit.text,
+            parts=None if edit.parts is None else tuple(edit.parts),
+            lines=None
+            if edit.lines is None
+            else tuple(FilmLineEdit(line.target, line.text) for line in edit.lines),
+        )
+        for edit in body.edits
+    ]
+
+
+def film_view_out(view: FilmView) -> FilmViewEnvelope:
+    return FilmViewEnvelope(
+        film=FilmViewOut(
+            film_version=view.film_version,
+            run_version=view.run_version,
+            problems=view.problems,
+            groups=[
+                FilmGroupOut(
+                    index=group.index,
+                    video=group.video,
+                    model=group.model,
+                    seconds=group.seconds,
+                    aspect_ratio=group.aspect_ratio,
+                    frames=[
+                        FilmFrameOut(
+                            node=frame.node,
+                            label=frame.label,
+                            kind=frame.kind,
+                            url=frame.url,
+                            number=frame.number,
+                            prompt=None
+                            if frame.prompt is None
+                            else [_prompt_run_out(run) for run in frame.prompt],
+                            aspect_ratio=frame.aspect_ratio,
+                            missing=list(frame.missing),
+                        )
+                        for frame in group.frames
+                    ],
+                    settings=[
+                        FilmSettingOut(
+                            kind=setting.kind,
+                            target=setting.target,
+                            label=setting.label,
+                            text=setting.text,
+                            images=list(setting.images),
+                        )
+                        for setting in group.settings
+                    ],
+                    shots=[
+                        FilmShotOut(
+                            target=shot.target,
+                            start=shot.start,
+                            end=shot.end,
+                            parts=list(shot.parts),
+                            lines=[
+                                FilmLineOut(target=line.target, role=line.role, text=line.text)
+                                for line in shot.lines
+                            ],
+                            view=shot.view,
+                        )
+                        for shot in group.shots
+                    ],
+                )
+                for group in view.groups
+            ],
+        )
+    )
+
+
+def conversation_out(
+    conversation: Conversation, activity: ConversationActivity, events: EventWatermark
+) -> ConversationOut:
+    """合并对话记录、引擎提供的活动投影与读行之前取的事件水位，转换为响应模型。"""
 
     return ConversationOut(
         id=conversation.id,
@@ -262,16 +565,22 @@ def conversation_out(conversation: Conversation, activity: ConversationActivity)
             last_turn_reason=activity.last_turn_reason,
             video_generation=activity.video_generation,
         ),
+        last_seq=events.seq_of(conversation.id),
+        event_epoch=events.epoch,
     )
 
 
 def audit_item_out(
-    conversation: Conversation, activity: ConversationActivity, latest_master_url: str | None
+    conversation: Conversation,
+    activity: ConversationActivity,
+    latest_master_url: str | None,
+    events: EventWatermark,
 ) -> ConversationsAuditItemOut:
     """在 ``conversation_out`` 之上补这段对话自己最新一条成片的地址，转换为审计列表的条目。"""
 
     return ConversationsAuditItemOut(
-        **dict(conversation_out(conversation, activity)), latest_master_url=latest_master_url
+        **dict(conversation_out(conversation, activity, events)),
+        latest_master_url=latest_master_url,
     )
 
 

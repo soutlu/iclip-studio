@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { openConversation } from './helpers'
+import { login } from './login'
+
+/** MSW 里的长对话（14 轮历史），按地址打开，不在侧栏。 */
+const LONG_CONVERSATION = '/c/0199aaaa-0000-7000-8000-0000000000aa'
 
 // Headless Chromium 默认隐藏滚动条，必须显示它才能检验显隐引起的正文重排。
 test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } })
@@ -14,14 +18,16 @@ test('点开一段对话：历史铺开，回复逐字长出来', async ({ page 
 
   await expect(page.getByText('第 1 个问题')).toBeVisible()
   await expect(page.getByText('这是第 2 轮的回复。')).toBeVisible()
-  // 第 3 轮边流式边写同一文件，路径随时会出现在它的工具行和正文里，所以只在历史轮次里找读取行。
+  // 第 3 轮边流式边写同一文件，文件名随时会出现在它的工具行里，所以只在历史轮次里找读取行。
   const historyTurn = page.getByRole('article', { name: '第 2 轮' })
   await expect(historyTurn.getByText('读取文件')).toBeVisible()
-  await expect(historyTurn.getByText('shots/storyboard.md')).toBeVisible()
+  await expect(
+    historyTurn.getByRole('button', { exact: true, name: 'storyboard.md' }),
+  ).toBeVisible()
 
   await expect(page.getByText('镜头表已经更新。')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('listitem').filter({ hasText: '拆出 3 个镜头' })).toBeVisible()
-  // 路径同时出现在工具行，按 code 标签定位行内代码。
+  // 正文里的路径是行内代码，按 code 标签定位。
   await expect(page.locator('code', { hasText: 'shots/storyboard.md' })).toBeVisible()
 })
 
@@ -124,11 +130,11 @@ test('在跑的时候再发一条：排队、追加、停止', async ({ page }) 
   await page.getByLabel('输入消息').fill('顺便配个音')
   await page.getByLabel('输入消息').press('Enter')
 
-  await expect(page.getByText('1 个任务等待发送')).toBeVisible()
+  await expect(page.getByText('1 条消息等着发')).toBeVisible()
   await expect(page.getByRole('button', { name: '停止' })).toBeVisible()
 
-  await page.getByRole('button', { name: '立即发送到当前回合' }).click()
-  await expect(page.getByText('1 个任务等待发送')).toBeHidden()
+  await page.getByRole('button', { name: '现在就发' }).click()
+  await expect(page.getByText('1 条消息等着发')).toBeHidden()
   await expect(page.getByText('收到，一起做。')).toBeVisible({ timeout: 15_000 })
 })
 
@@ -139,4 +145,34 @@ test('点停止：这一轮收成取消，发送钮回来', async ({ page }) => 
 
   await expect(page.getByRole('button', { name: '发送' })).toBeVisible()
   await expect(page.getByRole('button', { name: '停止' })).toBeHidden()
+})
+
+test('长对话首屏只铺最近 10 轮，点「加载更早」接上前面几轮，眼前那一轮不跳', async ({ page }) => {
+  await page.setViewportSize({ height: 900, width: 1440 })
+  await page.goto('/')
+  await login(page)
+  // 原型环境的登录态在 MSW 内存里，整页跳转会丢；用应用内导航打开不在侧栏的长对话。
+  await page.evaluate((path) => {
+    window.history.pushState(null, '', path)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, LONG_CONVERSATION)
+
+  await expect(page.getByText('长对话第 14 轮的回复。')).toBeVisible()
+  await expect(page.getByText('长对话第 4 轮的回复。')).toHaveCount(0)
+
+  const scroller = page.locator('.chat-scroller')
+  await scroller.hover()
+  await page.mouse.wheel(0, -10_000)
+  const loadEarlier = page.getByRole('button', { name: '加载更早的消息' })
+  await expect(loadEarlier).toBeInViewport()
+  const anchor = page.getByText('长对话第 5 轮的回复。')
+  const before = await anchor.boundingBox()
+  if (!before) throw new Error('第 5 轮没有可测量的位置')
+
+  await loadEarlier.click()
+  await expect(page.getByText('长对话第 1 轮的回复。')).toBeAttached()
+  await expect(loadEarlier).toHaveCount(0)
+  // 旧页插在上面，第 5 轮仍停在原处；容差留给按钮消失带来的那一点位移。
+  const after = await anchor.boundingBox()
+  expect(Math.abs((after?.y ?? 0) - before.y)).toBeLessThan(60)
 })

@@ -6,7 +6,9 @@ import { canvasPng, openConversation, openStoryboardShot } from './helpers'
 // 视口需容纳 264px 侧栏、400px 聊天和 560px 面板。
 test.use({ viewport: { height: 900, width: 1600 } })
 
-test('短桌面中舞台在左、文案列在右，画面完整可见且可键盘切帧', async ({ page }) => {
+test('短桌面中舞台贴着画面在左、文案列在右，画面完整可见；箭头叠在画面上切帧，到头隐藏、不开原图', async ({
+  page,
+}) => {
   await page.setViewportSize({ height: 700, width: 1600 })
   const panel = await openConversation(page, '夜景延时素材生成')
   await openStoryboardShot(panel, 2)
@@ -41,16 +43,51 @@ test('短桌面中舞台在左、文案列在右，画面完整可见且可键�
     expect(box.y).toBeGreaterThanOrEqual(groupBox.y)
     expect(box.y + box.height).toBeLessThanOrEqual(barBox.y)
   }
+  // 舞台列宽跟着画面走：画面左贴主体内距、右边到文案列只隔「间距 + 分隔线 + 间距」，两侧不留边，剩下的宽度都归文案列。
+  expect(previewBox.x - groupBox.x).toBeLessThanOrEqual(16 + 1)
+  expect(scriptBox.x - (previewBox.x + previewBox.width)).toBeLessThanOrEqual(24 + 1 + 24 + 1)
+  // 舞台下面不再有操作行：竖版画面撑满舞台高，舞台一直延伸到出片栏，中间不空出成块空白。
+  expect(barBox.y - (previewBox.y + previewBox.height)).toBeLessThanOrEqual(16)
+  // 编辑、替换叠在画面右上：点它们只开自己的入口，不开原图。
+  const editBox = await group.getByRole('button', { name: '编辑图片', exact: true }).boundingBox()
+  if (editBox === null) throw new Error('舞台工具条必须有可见布局')
+  expect(editBox.y).toBeGreaterThanOrEqual(previewBox.y)
+  expect(editBox.x + editBox.width).toBeLessThanOrEqual(previewBox.x + previewBox.width)
 
+  // 鼠标：悬停画面露出箭头，点箭头只切帧、不开原图；到头的一侧箭头不出现。
   const next = group.getByRole('button', { name: '下一帧', exact: true })
-  await next.focus()
-  await page.keyboard.press('Enter')
+  const previous = group.getByRole('button', { name: '上一帧', exact: true })
+  await expect(previous).toHaveCount(0)
+  await preview.hover()
+  await next.click()
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
-  await expect(next).toBeDisabled()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(next).toHaveCount(0)
+  await expect(previous).toBeVisible()
 
   await scene.getByRole('button', { name: '看第 2 帧' }).focus()
   await page.keyboard.press('Enter')
   await expect(preview).toBeVisible()
+  await expect(previous).toHaveCount(0)
+
+  // 键盘：Enter 切到末帧，这一侧箭头随即消失，焦点落回画面，不掉回页面开头。
+  await next.focus()
+  await page.keyboard.press('Enter')
+  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
+  await expect(next).toHaveCount(0)
+  const open = group.getByRole('button', { name: '打开原图', exact: true })
+  await expect(open).toBeFocused()
+
+  // 焦点在舞台里时 ←/→ 也切帧，到头不动，焦点一直留在舞台里。
+  await page.keyboard.press('ArrowLeft')
+  await expect(preview).toBeInViewport({ ratio: 1 })
+  await expect(page).toHaveURL(/frame=2/)
+  await expect(open).toBeFocused()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page).toHaveURL(/frame=2/)
+  await page.keyboard.press('ArrowRight')
+  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({ ratio: 1 })
+  await expect(open).toBeFocused()
 })
 
 for (const width of [1335, 390]) {
@@ -155,16 +192,16 @@ for (const width of [1335, 390]) {
     await expect(card).toBeFocused()
     await expect(card).toHaveAttribute('aria-pressed', 'true')
     const video = player.locator('video')
-    // mock 的出片是一条 WebM 测试卡（见 testing/mocks/workspace.ts），舞台放的就是记录上那条地址；
+    // mock 的出片是一条 MP4 测试卡（见 testing/mocks/workspace.ts），舞台放的就是记录上那条地址；
     // dev 下地址没有 hash、带 ?no-inline 查询串，构建产物里有 hash、没查询串。
-    await expect(video).toHaveAttribute('src', /\/sample-video(-[^/?]*)?\.webm(\?.*)?$/)
+    await expect(video).toHaveAttribute('src', /\/sample-video(-[^/?]*)?\.mp4(\?.*)?$/)
     // 共享播放器：没有原生控件（也就没有全屏入口），进度条是自己的；点卡片即开始播，不循环。
     expect(await video.evaluate((el: HTMLVideoElement) => el.controls)).toBe(false)
     await expect(player.getByRole('slider', { name: '播放进度' })).toBeVisible()
     await expect(video).toHaveAttribute('autoplay', '')
     await expect(video).not.toHaveAttribute('loop')
     await expect(takes.locator('video')).toHaveCount(0)
-    // 操作行跟在舞台后面，键盘 Tab 进得去；操作按钮一个都不在画面上。
+    // 操作叠在舞台右上、完整可见，不在播放器里，与播放器底部的控件胶囊互不遮挡。
     for (const name of ['下载视频', '编辑视频', '回填提示词'])
       await expect(group.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 })
     await expect(player.getByRole('button', { name: '下载视频' })).toHaveCount(0)
@@ -192,7 +229,7 @@ test.describe('移动触屏分镜', () => {
     await group.getByRole('button', { name: '镜头 2', exact: true }).tap()
     await group.getByRole('button', { name: '下一帧', exact: true }).tap()
 
-    // 上下排：舞台在上，画面整张露出来；帧的操作在舞台下的操作行，不靠悬停。舞台上没有添加入口。
+    // 上下排：舞台在上，画面整张露出来；帧的操作叠在舞台右上，常显不靠悬停。舞台上没有添加入口。
     await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport({
       ratio: 1,
     })
@@ -211,9 +248,9 @@ test.describe('移动触屏分镜', () => {
 })
 
 // MSW 会话随整页加载清空，无法直接验证带参数刷新；此处验证跳组后地址与组号一致，帧号照样点得动。
-test('从组号浮层跳组：地址落在那一组，顶栏组号跟着变，帧号照样点得动', async ({ page }) => {
+test('从镜头组列表跳组：地址落在那一组，顶栏组号跟着变，帧号照样点得动', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  const switcher = panel.getByRole('button', { name: /打开全部镜头组/ })
+  const switcher = panel.getByRole('button', { name: /展开镜头组列表/ })
   await expect(switcher).toHaveAccessibleName(/^镜头组 1 \/ 3/)
 
   await openStoryboardShot(panel, 3)
@@ -317,14 +354,27 @@ test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键�
   const before = await chips.count()
 
   await editor.click()
-  await page.keyboard.press('End')
+  // 正文可能折成多行，End 只到点击所在视觉行的行尾；用整段末尾的键把光标放到文末。
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End')
   await page.keyboard.type(' 与双肩包 @')
+  await expect(editor).toHaveText(/台词并成一句。 与双肩包 @$/)
   const menu = page.getByRole('listbox', { name: '插入参考图' })
   await expect(menu).toBeVisible()
   await expect(menu.getByRole('option')).toHaveCount(4)
-  const [editorBox, menuBox] = await Promise.all([editor.boundingBox(), menu.boundingBox()])
+  const [caret, editorBox, menuBox] = await Promise.all([
+    editor.evaluate(() => {
+      const range = document.getSelection()?.getRangeAt(0)
+      if (!range) throw new Error('编辑器没有光标')
+      const rect = range.getBoundingClientRect()
+      if (rect.height === 0) throw new Error('光标没有可测量的位置')
+      return { bottom: rect.bottom }
+    }),
+    editor.boundingBox(),
+    menu.boundingBox(),
+  ])
   if (editorBox === null || menuBox === null) throw new Error('正文与弹层必须有可见布局')
-  // 光标在正文最后一行：弹层整个落在这一行下面，不遮住正在打的字。
+  // 弹层整个落在光标所在行下面，不遮住正在打的字；光标在正文最后一行，弹层也就在正文下面。
+  expect(menuBox.y).toBeGreaterThanOrEqual(caret.bottom - 1)
   expect(menuBox.y).toBeGreaterThanOrEqual(editorBox.y + editorBox.height - 1)
 
   await page.keyboard.press('ArrowRight')
@@ -368,8 +418,12 @@ test('短桌面深色：文案列整组原文可读，看大图后回到原帧�
   await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
   await expect(settings.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
   await expect(settings).toContainText('剪辑形式：硬切。')
-  await expect(script.getByRole('group', { name: '镜头 1', exact: true })).toContainText('0–4s')
-  await expect(script.getByRole('group', { name: '镜头 2', exact: true })).toContainText('4–11s')
+  await expect(script.getByRole('group', { name: '镜头 1', exact: true })).toContainText(
+    '4.0s，0.0s – 4.0s',
+  )
+  await expect(script.getByRole('group', { name: '镜头 2', exact: true })).toContainText(
+    '7.0s，4.0s – 11.0s',
+  )
   await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
     ratio: 1,
   })
@@ -386,33 +440,7 @@ test('短桌面深色：文案列整组原文可读，看大图后回到原帧�
   const search = new URL(page.url()).searchParams
   expect(search.get('shot')).toBe('2')
   expect(search.get('frame')).toBe('3')
-  expect(search.has('sheet')).toBe(false)
   await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeInViewport()
-})
-
-test('选中即上下文：输入框上出现芯片，× 掉不再回来，发出去的正文带前缀', async ({ page }) => {
-  const panel = await openConversation(page, '夜景延时素材生成')
-  await expect(panel.getByRole('button', { name: /打开全部镜头组/ })).toHaveAccessibleName(
-    /^镜头组 1 \/ 3/,
-  )
-
-  await openStoryboardShot(panel, 2)
-  const chip = page.getByText('镜头组 2 · 全局设定 · @Image1', { exact: true })
-  await expect(chip).toBeVisible()
-
-  await page.getByRole('button', { name: '不再引用 镜头组 2 · 全局设定 · @Image1' }).click()
-  await expect(chip).toBeHidden()
-
-  await openStoryboardShot(panel, 1)
-  await openStoryboardShot(panel, 2)
-  await expect(chip).toBeVisible()
-
-  const composer = page.getByLabel('输入消息')
-  await composer.click()
-  await page.keyboard.type('把这一组的节奏放慢')
-  await page.getByRole('button', { name: '发送' }).click()
-
-  await expect(page.getByText('针对镜头组 2 的全局设定（参考图 @Image1）：').first()).toBeVisible()
 })
 
 test('没有工作区文件的对话仍是折叠空态', async ({ page }) => {

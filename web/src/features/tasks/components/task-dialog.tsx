@@ -125,7 +125,7 @@ export function TaskDialog({
                   <>
                     {hasRelated && !showRelated && (
                       <IconButton
-                        label="打开关联对话与视频"
+                        label="打开关联任务与视频"
                         name="panel-right"
                         size="sm"
                         onClick={() => setClosedRelatedTask(null)}
@@ -188,11 +188,11 @@ export function TaskDialog({
               ))}
           </div>
           {open && showRelated && task && (
-            <aside aria-label="关联对话与视频" className="task-related-panel">
+            <aside aria-label="关联任务与视频" className="task-related-panel">
               <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-6 py-3">
-                <h2 className="text-title-lg font-semibold">关联对话与视频</h2>
+                <h2 className="text-title-lg font-semibold">关联任务与视频</h2>
                 <IconButton
-                  label="收起关联对话与视频"
+                  label="收起关联任务与视频"
                   name="close"
                   size="md"
                   onClick={() => setClosedRelatedTask(task.id)}

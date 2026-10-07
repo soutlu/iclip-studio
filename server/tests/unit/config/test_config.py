@@ -250,6 +250,11 @@ media_generation:
       nano_banana_pro:
         route: nano-banana-pro
         concurrency: 4
+      gpt-image-2.5:
+        route: openai/gpt-image-2.5-flare-developer
+        concurrency: 2
+        text_to_image_task: text-to-image
+        image_edit_task: edit
 """
 
 MEDIA_ENV = {
@@ -300,8 +305,13 @@ def test_media_generation_resolves_both_providers_and_store(
     assert media.video_model == "seedance", "对方的模型名来自 YAML"
     assert media.video_allowed_models == ("seedance", "seedance-other")
     assert [(model.name, model.api_base, model.concurrency) for model in media.image_models] == [
-        ("nano_banana_pro", "https://image.test/gateway/nano-banana-pro", 4)
+        ("nano_banana_pro", "https://image.test/gateway/nano-banana-pro", 4),
+        ("gpt-image-2.5", "https://image.test/gateway/openai/gpt-image-2.5-flare-developer", 2),
     ], "网关根地址与声明的路由段在这一层拼好"
+    assert [(model.text_to_image_task, model.image_edit_task) for model in media.image_models] == [
+        (None, None),
+        ("text-to-image", "edit"),
+    ], "一家可以写自己的两条任务路由"
     assert (media.image_text_to_image_task, media.image_edit_task) == (
         "text-to-image",
         "image-edit",
@@ -472,6 +482,39 @@ def test_shot_video_section_absent_means_off(
     assert settings.shot_video is None
     assert settings.shot_tools_missing == ()
     assert not settings.shot_tools_enabled
+
+
+ICLIP_STUDIO = """
+iclip_studio:
+  breakdown_model: seed-omni
+"""
+
+
+def test_iclip_studio_resolves_with_the_video_understanding_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + ICLIP_STUDIO))
+    _core(monkeypatch)
+    for name, value in VIDEO_ENV.items():
+        monkeypatch.setenv(name, value)
+    settings = resolve_settings(config)
+
+    assert settings.iclip_studio is not None
+    assert settings.iclip_studio.breakdown_url == "https://vision.test/responses"
+    assert settings.iclip_studio.breakdown_api_key == "ark"
+    assert settings.iclip_studio.breakdown_model == "seed-omni", "对方的模型名来自 YAML"
+    assert settings.ffmpeg_required, "读时长与抽帧都要 ffmpeg"
+
+
+def test_iclip_studio_off_when_understanding_url_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + ICLIP_STUDIO))
+    _core(monkeypatch)
+    settings = resolve_settings(config)
+
+    assert settings.iclip_studio is None
+    assert not settings.ffmpeg_required
 
 
 def test_ffmpeg_required_by_shot_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,15 +1,14 @@
-/** 需求单关联对话列表按全局帧重拉：列表里的对话有视频任务跳格、或连接重连时。 */
+/** 需求单关联对话列表的成员随全局帧刷新：这张单下新出现、换走或删掉了对话，或连接重连时。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { use, useEffect } from 'react'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
-import type { Conversation } from './conversations.api'
+import { conversationRowsOf } from './conversation-rows'
 import { taskConversationsQueryKey } from './task-conversations.api'
 
 /**
- * 面板挂载期间订阅；行上的出片汇总帧里算不出来，只能重拉。
- *
- * 活动与标题帧已由 useLiveConversations 补到这份缓存的行上，这里不再处理。
+ * 面板挂载期间订阅。行上的标题、活动与出片汇总由 useLiveConversations 落进行池，面板按 id 取行，
+ * 这里只管成员：列表里有哪几段对话由服务端按需求单算。
  */
 export const useLiveTaskConversations = (taskId: string, canAudit: boolean): void => {
   const connection = use(TranscriptConnectionContext)
@@ -18,21 +17,27 @@ export const useLiveTaskConversations = (taskId: string, canAudit: boolean): voi
 
   useEffect(() => {
     const queryKey = taskConversationsQueryKey(taskId, canAudit)
-    // 不并进 useLiveConversations 的生成分支：那边先按属主拦下别人的对话，治理者看别人的单子就刷不到。
+    const rows = conversationRowsOf(queryClient)
     return connection.watchSessions((update) => {
       if (update.kind === 'reconnected') {
         // 全局帧不补发，重连后对齐一次。
         void queryClient.invalidateQueries({ queryKey })
         return
       }
-      if (update.kind !== 'generation' || update.jobKind !== 'video') return
-      const { conversationId } = update
-      if (conversationId === null) return
-      // 帧只发给属主与治理者，列表里有这段对话就说明与这张单相关。
-      const listed = queryClient
-        .getQueryData<Conversation[]>(queryKey)
-        ?.some(({ id }) => id === conversationId)
-      if (listed === true) void queryClient.invalidateQueries({ queryKey })
+      if (update.kind === 'created' || update.kind === 'updated') {
+        // 先看池里的旧行：帧在同一拍里还没落池（useLiveConversations 合批到微任务里才落）。
+        const before = rows.get(update.conversationId)
+        if (update.row.taskId === taskId || before?.taskId === taskId) {
+          void queryClient.invalidateQueries({ queryKey })
+        }
+        return
+      }
+      if (update.kind === 'deleted') {
+        const listed = queryClient
+          .getQueryData<readonly { id: string }[]>(queryKey)
+          ?.some(({ id }) => id === update.conversationId)
+        if (listed === true) void queryClient.invalidateQueries({ queryKey })
+      }
     })
   }, [canAudit, connection, queryClient, taskId])
 }

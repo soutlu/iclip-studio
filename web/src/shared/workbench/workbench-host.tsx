@@ -15,7 +15,7 @@ import type { Artifact, ArtifactEntry, WorkbenchFrame } from './artifact'
 import { useArtifactSearch, useOpenArtifact } from './artifact-search'
 import { composeArtifacts, isStanding, pickArtifact, type ArtifactRegistry } from './registry'
 import { useWorkbenchRegistry } from './use-workbench-registry'
-import { useWorkbenchSelection } from './use-workbench-selection'
+import { useWorkbenchOpenRequest } from './use-workbench-open-request'
 import { WorkbenchLayoutContext } from './workbench-layout-context'
 import { useWorkspaceFiles, workspaceQueryKeys } from './workspace.api'
 
@@ -61,40 +61,31 @@ type ChooserRow = {
   detail?: string
 }
 
-/** 常驻类型一行一个，没有产物的也列出来；工具卡产物一件一行。 */
+const artifactRow = (entry: ArtifactEntry, artifact: Artifact): ChooserRow => {
+  const detail = entry.detail?.(artifact.source)
+  return {
+    artifactId: artifact.id,
+    icon: entry.icon,
+    key: artifact.id,
+    label: artifact.title,
+    ...(detail === undefined ? {} : { detail }),
+  }
+}
+
+/** 常驻类型按登记顺序，每件产物一行，没有产物且登记了原因的列一行灰的；工具卡产物一件一行。 */
 const chooserRows = (registry: ArtifactRegistry, artifacts: readonly Artifact[]): ChooserRow[] => {
-  const standing = registry.standing().map((entry): ChooserRow => {
-    const artifact = artifacts.find((candidate) => candidate.type === entry.type)
-    if (artifact === undefined) {
-      return {
-        icon: entry.icon,
-        key: entry.type,
-        label: entry.label,
-        ...(entry.empty ? { detail: entry.empty } : {}),
-      }
+  const standing = registry.standing().flatMap((entry): ChooserRow[] => {
+    const own = artifacts.filter((candidate) => candidate.type === entry.type)
+    if (own.length === 0) {
+      return entry.empty === undefined
+        ? []
+        : [{ detail: entry.empty, icon: entry.icon, key: entry.type, label: entry.label }]
     }
-    const detail = entry.detail?.(artifact.source)
-    return {
-      artifactId: artifact.id,
-      icon: entry.icon,
-      key: artifact.id,
-      label: artifact.title,
-      ...(detail === undefined ? {} : { detail }),
-    }
+    return own.map((artifact) => artifactRow(entry, artifact))
   })
   const fromFrames = artifacts.flatMap((artifact): ChooserRow[] => {
     const entry = registry.resolve(artifact.type)
-    if (entry === undefined || isStanding(entry)) return []
-    const detail = entry.detail?.(artifact.source)
-    return [
-      {
-        artifactId: artifact.id,
-        icon: entry.icon,
-        key: artifact.id,
-        label: artifact.title,
-        ...(detail === undefined ? {} : { detail }),
-      },
-    ]
+    return entry === undefined || isStanding(entry) ? [] : [artifactRow(entry, artifact)]
   })
   return [...standing, ...fromFrames]
 }
@@ -111,11 +102,11 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const artifactId = useArtifactSearch()
   const openArtifact = useOpenArtifact()
   const files = useWorkspaceFiles(conversationId)
-  // 与聊天页共用同一个主流读取器（按会话与 agent 登记），这里再订不会踢掉它的订阅。
+  // 与聊天页共用主会话池里的同一份流（按对话记持有数），这里再用不会踢掉它的订阅。
   const { view } = useTranscript(conversationId)
   const readOnly = useConversationReadOnly(view)
   const frames = useMemo(() => toolFrames(view.items), [view.items])
-  const { openToken } = useWorkbenchSelection()
+  const { openToken } = useWorkbenchOpenRequest()
   const layout = use(WorkbenchLayoutContext)
   if (layout === null) throw new Error('WorkbenchHost 要在 WorkbenchLayoutProvider 里用')
   const { compact, onCollapsedChange, onOpen, sideBySide } = layout
@@ -182,7 +173,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
       {!sideBySide ? (
         <IconButton
           label="回到对话"
-          title="回到对话"
           name="back"
           onClick={() => onCollapsedChange(true)}
           size="md"
@@ -192,7 +182,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
           {chrome.onSwapPanes === undefined ? null : (
             <IconButton
               label="交换对话与工作台"
-              title="交换对话与工作台"
               name="swap-panes"
               onClick={chrome.onSwapPanes}
               size="sm"
@@ -200,7 +189,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
           )}
           <IconButton
             label="折叠工作台"
-            title="折叠工作台"
             name="panel-right"
             onClick={() => onCollapsedChange(true)}
             size="sm"

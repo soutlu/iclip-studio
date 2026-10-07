@@ -1,22 +1,17 @@
 /** 结构化分镜工作台的组合根：取数、草稿与路由参数在这里，状态分发给顶栏、分镜页、浮层与出片栏。 */
 
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
-import {
-  useWorkbenchSelection,
-  useWorkspaceFile,
-  type ArtifactRendererProps,
-  type WorkbenchRef,
-} from '@/shared/workbench'
-import { formatShotPrompt, validateShot, type Shot } from '../shot-document'
+import { useWorkspaceFile, type ArtifactRendererProps } from '@/shared/workbench'
+import { formatShotPrompt, shotGroupSummary, validateShot, type Shot } from '../shot-document'
 import { frameBadges, latestFrameJobs } from '../frame-status'
 import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
 import { useFrameImageJobs } from '../image-edit/image-edit.api'
 import { SHOTS_PATH } from '../shots'
-import { useShotGenerations } from '../storyboard.api'
+import { submitVideoGeneration, useShotGenerations } from '../storyboard.api'
 import { takeActionsOf, takesOfShot } from '../takes'
 import { useGenerationGate } from '../use-generation-gate'
 import { useShotArrowKeys } from '../use-shot-arrow-keys'
@@ -27,10 +22,7 @@ import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
 import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
 import { ReaderImageEdit, type FrameEditSession } from './reader-image-edit'
-import { ReaderOverlay } from './reader-overlay'
 import { ReaderPage } from './reader-page'
-import { contentLabel, resolveShotSelection, shotContents, type ReaderSheet } from '../shot-content'
-import { ShotOverview } from './shot-overview'
 import { StoryboardToolbar } from './storyboard-toolbar'
 import { TakesTray } from './takes-tray'
 import { VideoGenerationBar } from './video-generation-bar'
@@ -38,7 +30,6 @@ import { VideoGenerationBar } from './video-generation-bar'
 type ReaderSearch = {
   content?: string | undefined
   frame?: number | undefined
-  sheet?: ReaderSheet | undefined
   shot?: number | undefined
   /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
   video?: string | undefined
@@ -58,7 +49,6 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   useLiveGenerations(conversationId)
   // 关过编辑器就算看过那一格的终态；只记本次会话，刷新后没看过的终态会再出现一次。
   const [seenFrameJobs, setSeenFrameJobs] = useState<ReadonlySet<string>>(() => new Set())
-  const video = useVideoGeneration(conversationId)
   // 打开时先选中哪一条、从哪个控件点开都由入口决定。
   const [imageEdit, setImageEdit] = useState<FrameEditSession | null>(null)
   const draft = useShotsDraft({ conversationId, path, file: file.data?.file })
@@ -69,48 +59,13 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   const navigate = useNavigate()
   const search: ReaderSearch = useSearch({ strict: false })
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
-  const sheetTriggerRef = useRef<HTMLElement | null>(null)
   const [media, setMedia] = useState<LightboxMedia | null>(null)
   const document = draft.document
   const shots = document?.shots ?? []
   const position =
     search.shot !== undefined && search.shot >= 1 && search.shot <= shots.length ? search.shot : 1
   const stage = useStageSelection(position)
-
-  const { clear: clearSelection, set: setSelection } = useWorkbenchSelection()
-  const currentShot = shots[position - 1]
-  const selection =
-    currentShot === undefined
-      ? undefined
-      : resolveShotSelection(shotContents(currentShot), {
-          content: search.content,
-          frame: search.frame,
-        })
-  // 下面的副作用只认原始值：内容对象每次渲染都重建，放进依赖会让选区每帧重设。
-  const selectedFrame = selection?.frame
-  const selectedContentId = selection?.content.id
-  const selectedContentLabel = selection === undefined ? undefined : contentLabel(selection.content)
-  useEffect(() => {
-    if (selectedContentId === undefined) clearSelection()
-    else {
-      const label = selectedContentLabel
-      const reference: WorkbenchRef = {
-        id: `${artifact.id}:shot:${position}:${selectedContentId}:${selectedFrame ?? ''}`,
-        label: `镜头组 ${position} · ${label}${selectedFrame === undefined ? '' : ` · @Image${selectedFrame}`}`,
-        prefix: `针对镜头组 ${position} 的${label}${selectedFrame === undefined ? '' : `（参考图 @Image${selectedFrame}）`}：`,
-      }
-      setSelection([reference])
-    }
-  }, [
-    selectedContentId,
-    selectedContentLabel,
-    artifact.id,
-    clearSelection,
-    position,
-    selectedFrame,
-    setSelection,
-  ])
-  useEffect(() => () => clearSelection(), [clearSelection])
+  const video = useVideoGeneration(conversationId)
 
   const go = (next: ReaderSearch) => {
     const cleared =
@@ -125,20 +80,11 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     })
   }
 
-  const closeSheet = () => {
-    go({ sheet: undefined })
-    requestAnimationFrame(() => sheetTriggerRef.current?.focus())
-  }
+  // ↑↓ 键与顶栏的上一组、下一组、镜头组列表共用这条换组路径。
+  const goShot = (next: number) => go({ shot: next })
 
-  const openSheet = (sheet: NonNullable<ReaderSearch['sheet']>, trigger: HTMLElement) => {
-    sheetTriggerRef.current = trigger
-    go({ sheet })
-  }
-
-  // 浮层开着时不切组：里面的焦点也在工作台里。
   useShotArrowKeys(root, {
-    enabled: search.sheet === undefined,
-    onGo: (next) => go({ shot: next }),
+    onGo: goShot,
     position,
     total: shots.length,
   })
@@ -181,7 +127,14 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
         video.reportError(shot.index, '无法读取已保存的镜头组，请重新打开后生成')
         return
       }
-      await video.submit(current, saved.aspect_ratio)
+      await video.submit(current.index, (choice) =>
+        submitVideoGeneration({
+          ...choice,
+          aspectRatio: saved.aspect_ratio,
+          conversationId,
+          shot: current,
+        }),
+      )
     })
   // 选中成片的回填：把那次出片的镜头组写回当前组，图片跟着文档不跟记录。
   const refill = (prompt: Shot['prompt']) => {
@@ -204,10 +157,10 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          fullPrompt={formatShotPrompt(shot)}
-          onOpenSheet={openSheet}
+          copy={{ done: '已复制完整提示词', label: '复制完整提示词', text: formatShotPrompt(shot) }}
+          groups={shots.map((item) => shotGroupSummary(item, document.aspect_ratio))}
+          onGoShot={goShot}
           position={position}
-          sheet={search.sheet}
           status={
             <SaveStatus
               state={draft.state}
@@ -216,86 +169,73 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
               onRetry={() => void draft.saveNow()}
             />
           }
-          total={shots.length}
         />
-        <div className="relative flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-          <div className="flex min-h-0 min-w-0 flex-1" inert={search.sheet !== undefined}>
-            <ReaderPage
-              editingDisabled={editingDisabled}
-              aspect_ratio={document.aspect_ratio}
-              onUpdateShot={(updater) => draft.updateShot(shot.index, updater)}
-              onReplaceFrame={(frame, previousUrl, url) => {
-                draft.replaceFrame(shot.index, frame, previousUrl, url)
-                draft.recordUpload(shot.index, frame, url)
-              }}
-              onUploaded={(content, frame, url) => {
-                draft.recordUpload(shot.index, frame, url)
-                // 只动路由不动舞台选中：显示帧时舞台跟到新图，放着成片就接着放。
-                go({ content, frame })
-              }}
-              onUploadingChange={gate.onUploadingChange}
-              onEditFrame={(frame, open) => {
-                setImageEdit({
-                  target: { conversationId, shotIndex: shot.index, frameNumber: frame },
-                  ...(open.kind === 'result' ? { initialKey: open.jobId } : {}),
-                  trigger:
-                    window.document.activeElement instanceof HTMLElement
-                      ? window.document.activeElement
-                      : null,
-                })
-              }}
-              content={search.content}
-              frame={search.frame}
-              frameBadges={frameBadges(shot, latestFrameJob, seenFrameJobs)}
-              // 只挂当前组；换组就卸载重挂，进行中的上传属于原来那组，迟到的结果不要了。
-              key={shot.index}
-              onSelect={(content, frame) => {
-                stage.selectContent()
-                go({ content, frame })
-              }}
-              onPreview={setMedia}
-              shot={shot}
-              take={
-                selectedTake === undefined
-                  ? undefined
-                  : {
-                      actions: takeActionsOf(selectedTake, { readOnly }),
-                      onEditVideo: () => go({ video: selectedTake.job.id }),
-                      onRefill: () => {
-                        if (selectedTake.history !== undefined) refill(selectedTake.history)
-                      },
-                      take: selectedTake,
-                    }
-              }
-              takes={
-                <TakesTray
-                  error={
-                    generations.isError
-                      ? errorMessageOf(generations.error, '读取视频记录失败')
-                      : undefined
+        <div className="flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
+          <ReaderPage
+            editingDisabled={editingDisabled}
+            aspect_ratio={document.aspect_ratio}
+            onUpdateShot={(updater) => draft.updateShot(shot.index, updater)}
+            onReplaceFrame={(frame, previousUrl, url) => {
+              draft.replaceFrame(shot.index, frame, previousUrl, url)
+              draft.recordUpload(shot.index, frame, url)
+            }}
+            onUploaded={(content, frame, url, follow) => {
+              draft.recordUpload(shot.index, frame, url)
+              // 只动路由不动舞台选中：显示帧时舞台跟到新图，放着成片就接着放。
+              if (follow) go({ content, frame })
+            }}
+            onUploadingChange={gate.onUploadingChange}
+            onEditFrame={(frame, open) => {
+              setImageEdit({
+                target: { conversationId, shotIndex: shot.index, frameNumber: frame },
+                ...(open.kind === 'result' ? { initialKey: open.jobId } : {}),
+                trigger:
+                  window.document.activeElement instanceof HTMLElement
+                    ? window.document.activeElement
+                    : null,
+              })
+            }}
+            content={search.content}
+            frame={search.frame}
+            frameBadges={frameBadges(shot, latestFrameJob, seenFrameJobs)}
+            // 只挂当前组；换组就卸载重挂，进行中的上传属于原来那组，迟到的结果不要了。
+            key={shot.index}
+            onSelect={(content, frame) => {
+              stage.selectContent()
+              go({ content, frame })
+            }}
+            onPreview={setMedia}
+            shot={shot}
+            take={
+              selectedTake === undefined
+                ? undefined
+                : {
+                    actions: takeActionsOf(selectedTake, { readOnly }),
+                    onEditVideo: () => go({ video: selectedTake.job.id }),
+                    onRefill: () => {
+                      if (selectedTake.history !== undefined) refill(selectedTake.history)
+                    },
+                    take: selectedTake,
                   }
-                  onSelect={stage.selectTake}
-                  selectedId={selectedTake?.job.id}
-                  takes={takes}
-                />
-              }
-            />
-          </div>
-          {search.sheet === 'all' ? (
-            <ReaderOverlay label="全部镜头组" onClose={closeSheet}>
-              <ShotOverview
-                currentIndex={shot.index}
-                shots={shots}
-                aspect_ratio={document.aspect_ratio}
-                onClose={closeSheet}
-                onOpenShot={(index) => go({ sheet: undefined, shot: index })}
+            }
+            takes={
+              <TakesTray
+                error={
+                  generations.isError
+                    ? errorMessageOf(generations.error, '读取视频记录失败')
+                    : undefined
+                }
+                onSelect={stage.selectTake}
+                selectedId={selectedTake?.job.id}
+                takes={takes}
               />
-            </ReaderOverlay>
-          ) : null}
+            }
+          />
         </div>
         <VideoGenerationBar
           aspect={{
             disabled: editingDisabled,
+            kind: 'editable',
             onChange: draft.updateAspectRatio,
             value: document.aspect_ratio,
           }}

@@ -133,9 +133,9 @@ const RULES = [
   },
   {
     id: 'primary-opacity-wash',
-    desc: '主色透明叠层铺底（选中 / 展开 / 工具栏底用 state-active、state-focus、surface-container-*，真正的强调用 primary-container 系列实色 token）',
+    desc: '主色透明叠层铺底（选中 / 展开 / 工具栏底用 state-active、state-focus、surface-container-*，成功状态底用 primary-container）',
     ext: ['.ts', '.tsx'],
-    re: /(?:^|[\s'"`:])bg-primary(?:-container(?:-solid|-soft)?)?\/\d+/g,
+    re: /(?:^|[\s'"`:])bg-primary(?:-container)?\/\d+/g,
   },
   {
     id: 'invalid-design-allow',

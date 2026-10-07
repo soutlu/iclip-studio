@@ -46,14 +46,15 @@ export interface ArtifactRendererProps {
   artifact: Artifact
   /** 看别人的对话时为 true，渲染器要收起所有会写工作区或提交任务的入口。 */
   readOnly: boolean
-  selection?: unknown
-  composerBridge?: unknown
 }
 
 export interface ArtifactEntry {
   type: string
-  /** 文件按路径；工具帧按服务端 display 的 kind；工作区只要有文件就命中。 */
-  match: { path: string } | { displayKind: string } | { workspace: true }
+  /**
+   * 文件按确切路径或文件名模式（`*` 不跨 `/`，`**` 跨目录）；工具帧按服务端 display 的 kind；
+   * 工作区只要有文件就命中。同一文件被多项认领时确切路径优先于模式，见 ADR-0006。
+   */
+  match: { path: string } | { pattern: string } | { displayKind: string } | { workspace: true }
   /** 这一类产物的名字，菜单里还没有产物的常驻行也用它。 */
   label: string
   /** 某一件产物的标题，可以比 label 更具体。 */
@@ -64,7 +65,8 @@ export interface ArtifactEntry {
   icon: IconName
   component: ComponentType<ArtifactRendererProps>
   autoOpen: boolean
-  /** 按路径或工作区命中的类型是常驻项：还没有产物时菜单照样列出它，用这一句解释为什么灰着。 */
+  /** 按路径、模式或工作区命中的类型是常驻项：有了产物就占标签位。给了这一句，还没有产物时选择页也列一行灰的，
+   * 用它解释为什么灰着；不给就等有了产物再出现，只有某个 agent 才交付的类型（制作页）不给，见 ADR-0008。 */
   empty?: string
 }
 

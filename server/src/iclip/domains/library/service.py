@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from iclip.common.errors import NotFound, ValidationFailed
@@ -70,9 +71,17 @@ def _for_reader(principal: Principal, row: CardRow) -> LibraryVideoOut:
     return row.video.model_copy(update={"can_open_conversation": _can_open(principal, row)})
 
 
+HasProductionFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[bool]]
+"""这段对话的工作区里有没有工程文件或分镜文件，参数为 (属主, 对话 id)；由组合根接到工作区上，
+与建对话时做同款的拷贝同一个判断。"""
+
+
 class LibraryService:
-    def __init__(self, reports: LibraryReports) -> None:
+    def __init__(
+        self, reports: LibraryReports, *, has_production_files: HasProductionFiles
+    ) -> None:
         self._reports = reports
+        self._has_production_files = has_production_files
 
     async def videos(
         self,
@@ -104,16 +113,32 @@ class LibraryService:
         )
 
     async def video(self, principal: Principal, card_id: uuid.UUID) -> LibraryVideoDetailOut:
-        """一张卡的详情；``card_id`` 不是卡 id 就是 ``NotFound``。对话删了照常返回。"""
+        """一张卡的详情；``card_id`` 不是卡 id 就是 ``NotFound``。对话删了照常返回。
+
+        做不做得了同款只在详情里算：要读这段对话的工作区，列表上逐张去读太贵。"""
 
         row = await self._reports.card_of(card_id)
         if row is None:
             raise NotFound("资料库里没有这条视频")
         groups = await self._reports.groups_of(card_id)
-        return LibraryVideoDetailOut(video=_for_reader(principal, row), groups=list(groups))
+        video = _for_reader(principal, row)
+        return LibraryVideoDetailOut(
+            video=video,
+            groups=list(groups),
+            can_make_same=await self._can_make_same(video, row),
+        )
+
+    async def _can_make_same(self, video: LibraryVideoOut, row: CardRow) -> bool:
+        """读者打得开这段对话、它的工作区里又有工程文件或分镜文件。"""
+
+        if not video.can_open_conversation:
+            return False
+        if video.conversation_id is None or row.conversation_owner is None:
+            return False
+        return await self._has_production_files(row.conversation_owner, video.conversation_id)
 
     async def authors(self) -> LibraryAuthorsOut:
         return LibraryAuthorsOut(items=list(await self._reports.authors()))
 
 
-__all__ = ["LibraryService"]
+__all__ = ["HasProductionFiles", "LibraryService"]

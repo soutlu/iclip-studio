@@ -7,19 +7,23 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import type { Shot } from './shot-document'
-import { storyboardQueryKeys, submitVideoGeneration, useVideoModels } from './storyboard.api'
+import { storyboardQueryKeys, useVideoModels } from './storyboard.api'
 import {
   DEFAULT_GENERATE_AUDIO,
   DEFAULT_VIDEO_RESOLUTION,
   type VideoGenerationOptions,
   type VideoModelsStatus,
+  type VideoResolution,
 } from './video-generation-options'
+
+/** 出片栏这次选定的三项。 */
+export type VideoChoice = { model: string; resolution: VideoResolution; generateAudio: boolean }
 
 const modelsStatus = (query: { isError: boolean; data: unknown }): VideoModelsStatus =>
   query.isError ? 'unavailable' : query.data === undefined ? 'loading' : 'ready'
 
-export const useVideoGeneration = (conversationId: string) => {
+/** `fileModel` 是制作页上工程文件里这一组写的模型，出片栏默认选它；分镜页不传。 */
+export const useVideoGeneration = (conversationId: string, fileModel?: string) => {
   const queryClient = useQueryClient()
   const models = useVideoModels()
   // 只留最近一次失败：提示挨着出片按钮，同时只看得见当前这一组。
@@ -29,29 +33,25 @@ export const useVideoGeneration = (conversationId: string) => {
     model: undefined,
     resolution: DEFAULT_VIDEO_RESOLUTION,
   })
-  // 选过的模型不在允许表里（配置改了）就退回默认，不用副作用改 state。
+  // 先看这次会话里选过的，再看工程文件里这一组写的；不在允许表里（配置改了、文件写了别的）
+  // 就往下退，最后是服务端的默认。不用副作用改 state。
   const items = models.data?.items ?? []
-  const model =
-    wanted.model !== undefined && items.includes(wanted.model) ? wanted.model : models.data?.default
+  const allowed = (candidate: string | undefined) =>
+    candidate !== undefined && items.includes(candidate) ? candidate : undefined
+  const model = allowed(wanted.model) ?? allowed(fileModel) ?? models.data?.default
   const options: VideoGenerationOptions = { ...wanted, model }
 
-  const submit = async (shot: Shot, aspectRatio: string) => {
+  /** 给第 `index` 组出片：`send` 按出片栏这次选的模型、分辨率、音频发请求，分镜页与制作页各发各的。 */
+  const submit = async (index: number, send: (choice: VideoChoice) => Promise<unknown>) => {
     if (model === undefined) return
     setFailure(undefined)
     try {
-      await submitVideoGeneration({
-        aspectRatio,
-        conversationId,
-        generateAudio: options.generateAudio,
-        model,
-        resolution: options.resolution,
-        shot,
-      })
+      await send({ generateAudio: options.generateAudio, model, resolution: options.resolution })
       void queryClient.invalidateQueries({
         queryKey: storyboardQueryKeys.videoJobs(conversationId),
       })
     } catch (error) {
-      setFailure({ index: shot.index, message: errorMessageOf(error, '视频提交失败') })
+      setFailure({ index, message: errorMessageOf(error, '视频提交失败') })
     }
   }
 

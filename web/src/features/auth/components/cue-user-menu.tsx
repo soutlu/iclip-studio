@@ -1,8 +1,22 @@
 import { useCallback } from 'react'
 import { useLogout, userDisplayName, useUser } from '@/shared/auth'
-import { Icon } from '@/shared/icons'
+import { Icon, type IconName } from '@/shared/icons'
+import {
+  setThemePreference,
+  THEME_PREFERENCES,
+  useThemePreference,
+  type ThemePreference,
+} from '@/shared/lib/theme'
 import { cn } from '@/shared/lib/utils'
-import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import {
+  MenuIconRadioItem,
+  MenuItem,
+  MenuRadioGroup,
+  MenuRoot,
+  MenuSeparator,
+  MenuSurface,
+  MenuTrigger,
+} from '@/shared/ui/menu'
 
 type CueUserMenuAlign = 'bottom-end' | 'bottom-start' | 'top-end' | 'top-start'
 
@@ -22,14 +36,20 @@ const ALIGN_PLACEMENT: Record<
   'top-start': { align: 'start', side: 'top' },
 }
 
-// 侧栏底部整行触发器：与侧栏各行同一套左右内边距，头像、名字与展开标记排成一行。
-const USER_ROW_BUTTON_CLASS =
-  'flex h-11 w-full ui-state cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-body text-on-surface ui-focus select-none'
+// 侧栏底部的账户卡片：头像、名字与用户名、展开标记排成一行，整张卡片是菜单触发器。
+const USER_CARD_BUTTON_CLASS =
+  'group flex h-12 w-full ui-state cursor-pointer items-center gap-2.5 rounded-md px-2 text-body text-on-surface select-none focus-visible:bg-inverse-surface focus-visible:text-inverse-on-surface focus-visible:outline-hidden data-[state=open]:bg-state-active'
+
+const APPEARANCE: Record<ThemePreference, { icon: IconName; label: string }> = {
+  dark: { icon: 'theme-dark', label: '深色' },
+  light: { icon: 'theme-light', label: '浅色' },
+  system: { icon: 'theme-system', label: '跟随系统' },
+}
 
 const USER_AVATAR_CLASS =
-  'grid size-7 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
+  'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
 
-/** 侧栏底部的账户入口：点整行打开账户菜单，菜单里是个人信息、设置（未上线）与退出登录。 */
+/** 侧栏底部的账户入口：点整张卡片打开账户菜单，菜单里是个人信息、外观、设置（未上线）与退出登录。 */
 export function CueUserMenu({
   align = 'bottom-end',
   className = '',
@@ -37,6 +57,7 @@ export function CueUserMenu({
 }: CueUserMenuProps) {
   const { data: user } = useUser()
   const logoutMutation = useLogout()
+  const appearance = useThemePreference()
   const isLoggingOut = logoutMutation.isPending
 
   const handleLogout = useCallback(() => {
@@ -49,6 +70,8 @@ export function CueUserMenu({
   }, [logoutMutation])
 
   const userLabel = userDisplayName(user)
+  // 第二行给用户名；显示名本就退回用户名时不重复。
+  const secondaryLabel = user?.username && user.username !== userLabel ? user.username : ''
   const departments = user?.departments ?? []
   const hasProfileDetails = Boolean(user?.jobTitle || user?.city || departments.length)
   // 头像依次使用 SSO 图片、用户名首字母和通用轮廓。
@@ -62,14 +85,19 @@ export function CueUserMenu({
           type="button"
           aria-label="用户菜单"
           title={userLabel}
-          className={cn(USER_ROW_BUTTON_CLASS, compact && 'justify-center px-0', className)}
+          className={cn(
+            USER_CARD_BUTTON_CLASS,
+            compact && 'mx-auto size-10 justify-center px-0',
+            className,
+          )}
         >
           <span
             aria-hidden="true"
             className={cn(
               USER_AVATAR_CLASS,
-              avatarUrl ? 'border border-border bg-top-layer' : 'bg-surface-container-high',
-              'text-on-surface',
+              avatarUrl
+                ? 'border border-border bg-top-layer text-on-surface'
+                : 'bg-surface-container-high text-on-surface-variant',
             )}
           >
             {avatarUrl ? (
@@ -82,11 +110,16 @@ export function CueUserMenu({
           </span>
           {!compact && (
             <>
-              <span aria-hidden="true" className="min-w-0 flex-1 truncate text-left font-medium">
-                {userLabel}
+              <span aria-hidden="true" className="flex min-w-0 flex-1 flex-col text-left">
+                <span className="truncate font-semibold">{userLabel}</span>
+                {secondaryLabel ? (
+                  <span className="truncate text-label text-on-surface-faint group-focus-visible:text-inherit">
+                    {secondaryLabel}
+                  </span>
+                ) : null}
               </span>
               <Icon
-                className="shrink-0 text-on-surface-faint"
+                className="shrink-0 text-on-surface-faint group-focus-visible:text-inherit"
                 decorative
                 name="dropdown"
                 size="md"
@@ -141,6 +174,34 @@ export function CueUserMenu({
               ) : null}
             </dl>
           ) : null}
+        </div>
+        {/* 外观占一行，与「设置」对齐：左边图标和字，右边三档图标。 */}
+        <div className="flex h-(--control-height-sm) items-center gap-2 pr-1 pl-2 text-body text-on-surface">
+          <Icon
+            className="shrink-0 text-on-surface-variant"
+            decorative
+            name="appearance"
+            size="sm"
+          />
+          <span className="min-w-0 flex-1 truncate">外观</span>
+          <MenuRadioGroup
+            aria-label="外观"
+            className="flex gap-0.5"
+            onValueChange={(value) => {
+              const next = THEME_PREFERENCES.find((item) => item === value)
+              if (next !== undefined) setThemePreference(next)
+            }}
+            value={appearance}
+          >
+            {THEME_PREFERENCES.map((item) => (
+              <MenuIconRadioItem
+                icon={APPEARANCE[item].icon}
+                key={item}
+                label={APPEARANCE[item].label}
+                value={item}
+              />
+            ))}
+          </MenuRadioGroup>
         </div>
         <MenuItem disabled icon="settings">
           <span className="flex items-center justify-between gap-2">

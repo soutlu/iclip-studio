@@ -77,10 +77,13 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoEditIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """在一条成片上改一段：``source_job_id`` 是基底，``range_start_ms`` / ``range_end_ms`` 是区间。
+        """在一条成片上改一段：请求就是一次上游视频请求，``reference_video_urls`` 恰好一条，是调用方
+        从基底上切好、自己上传的参考片段；``source_job_id`` 与 ``range_start_ms`` /
+        ``range_end_ms`` 只记账，记下基于哪一版、改的哪一段。
 
-        服务端提交上游前按区间从基底上切参考片段交给模型，记录上的区间随之改记实际切点。基底
-        必须是这段对话自己的或继承来的一条已完成成片。``user_name`` 的规则同出片。
+        受理时核对：基底是这段对话自己的或继承来的一条已完成成片，区间在它的时长之内；片段是
+        调用者本人的一条视频上传，时长与区间长度一致。不合格 422、不入队。``user_name`` 的规则
+        同出片。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -95,9 +98,12 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoComposeIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """把一条编辑段夹回它的基底，拼成一条新成片，原作与镜号随编辑段。不经外部服务。
+        """在基底那一版上按片段列表拼成一条新成片，来源记基底，原作与镜号随基底。不经外部服务。
 
-        ``sourceJobId`` 必须是这段对话自己的或继承来的一条已完成编辑段。``userName`` 的规则同出片。
+        ``baseJobId`` 必须是这段对话自己的或继承来的一条已完成成片；``segments`` 每段的
+        ``sourceJobId`` 是基底本身或来源是基底的一条已完成编辑段，``start`` / ``end`` 是那条记录
+        自己的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进
+        ``request.segments``。``userName`` 的规则同出片。
         """
 
         user_name = resolve_user_name(principal, body.user_name)

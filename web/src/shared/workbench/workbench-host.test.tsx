@@ -1,5 +1,6 @@
 /** 受控宿主夹具通过恢复入口与隐藏容器模拟应用壳，验证产物交互与布局请求。 */
 
+import { MOCK_STREAM_EPOCH } from '@/testing/mocks/transcript'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -11,7 +12,7 @@ import { ShellChromeContext } from '@/shared/shell'
 import type { ArtifactEntry, ArtifactRendererProps } from './artifact'
 import { useOpenArtifact } from './artifact-search'
 import { ArtifactRegistry } from './registry'
-import { useWorkbenchSelection } from './use-workbench-selection'
+import { useWorkbenchOpenRequest } from './use-workbench-open-request'
 import { WorkbenchHost } from './workbench-host'
 import type { WorkbenchLayout } from './workbench-layout-context'
 import { WorkbenchLayoutProvider } from './workbench-layout-provider'
@@ -51,6 +52,29 @@ const agentEntry: ArtifactEntry = {
   match: { displayKind: 'agent_call' },
   title: () => '委派任务 · 拆解',
   type: 'sub-agent',
+}
+
+/** 按模式认一类文件、不自动打开的常驻类型；标题带路径，同类的几件在菜单里分得开。 */
+const canvasEntry: ArtifactEntry = {
+  autoOpen: false,
+  component: Painted,
+  empty: '还没有画布',
+  icon: 'grid',
+  label: '画布',
+  match: { pattern: 'canvas/*.canvas.json' },
+  title: (source) => `画布 ${source.kind === 'file' ? source.path : ''}`,
+  type: 'canvas',
+}
+
+/** 只有某个 agent 才交付的常驻类型：不给 `empty`，没有文件时选择页不列它。 */
+const scriptEntry: ArtifactEntry = {
+  autoOpen: false,
+  component: Painted,
+  icon: 'video',
+  label: '剧本',
+  match: { path: 'script.md' },
+  title: () => '剧本',
+  type: 'script',
 }
 
 const registryWith = (...entries: ArtifactEntry[]) => {
@@ -93,7 +117,7 @@ function ControlledHost({
     },
     [onOpenRequest],
   )
-  const { requestOpen } = useWorkbenchSelection()
+  const { requestOpen } = useWorkbenchOpenRequest()
   const openArtifact = useOpenArtifact()
   return (
     <WorkbenchLayoutProvider
@@ -192,6 +216,7 @@ const delegationReset = (state: 'running' | 'done') => ({
     },
   },
   session_id: CONVERSATION_ID,
+  stream_epoch: MOCK_STREAM_EPOCH,
   type: 'transcript.reset',
 })
 
@@ -241,6 +266,74 @@ describe('WorkbenchHost 收起态', () => {
     await userEvent.click(within(chooser).getByRole('button', { name: '委派任务 · 拆解' }))
 
     expect(await screen.findByText('画着委派任务 · 拆解')).toBeVisible()
+  })
+
+  it.each([
+    { files: ['video/a.md'], rows: ['分镜agent 交付分镜后出现', '文件'] },
+    {
+      files: ['video/a.md', 'script.md'],
+      rows: ['分镜agent 交付分镜后出现', '剧本', '文件'],
+    },
+  ])('没登记灰着原因的常驻类型等有了文件才列出：$files', async ({ files, rows }) => {
+    serveFiles(files)
+    await renderHost(ROOMY, registryWith(shotsEntry, scriptEntry, workspaceEntry))
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    await waitFor(() =>
+      expect(
+        within(chooser)
+          .getAllByRole('button')
+          .map((row) => row.textContent),
+      ).toEqual(rows),
+    )
+  })
+
+  it('按模式认领的类型也常驻：还没有那类文件时选择页照样列一行灰的', async () => {
+    serveFiles(['video/a.md'])
+    await renderHost(ROOMY, registryWith(shotsEntry, canvasEntry, workspaceEntry))
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const canvas = within(chooser).getByRole('button', { name: /画布/ })
+    expect(canvas).toHaveAttribute('aria-disabled', 'true')
+    expect(canvas).toHaveTextContent('还没有画布')
+  })
+
+  it('同一常驻类型有几件产物就列几行，按登记顺序排在各自类型下，点哪行开哪件', async () => {
+    serveFiles(['canvas/a.canvas.json', 'video/a.md', 'canvas/b.canvas.json'])
+    const { router } = await renderHost(
+      ROOMY,
+      registryWith(shotsEntry, canvasEntry, workspaceEntry),
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    await waitFor(() =>
+      expect(
+        within(chooser)
+          .getAllByRole('button')
+          .map((row) => row.textContent),
+      ).toEqual([
+        '分镜agent 交付分镜后出现',
+        '画布 canvas/a.canvas.json',
+        '画布 canvas/b.canvas.json',
+        '文件',
+      ]),
+    )
+
+    await userEvent.click(
+      within(chooser).getByRole('button', { name: '画布 canvas/b.canvas.json' }),
+    )
+
+    expect(await screen.findByText('画着画布 canvas/b.canvas.json')).toBeVisible()
+    expect(router.state.location.search).toMatchObject({ artifact: 'file:canvas/b.canvas.json' })
+    expect(
+      screen.getByRole('tab', { name: '画布 canvas/a.canvas.json', selected: false }),
+    ).toBeVisible()
   })
 
   it('紧凑屏保持收起，哪怕分镜已经交付', async () => {

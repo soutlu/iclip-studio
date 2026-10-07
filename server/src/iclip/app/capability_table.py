@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import httpx
+import structlog
 from pydantic import ValidationError
 
+from iclip.app.film_images import FilmImagesAdapter
+from iclip.capabilities.iclip_studio.breakdown.media import FfmpegVideoSampler
+from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
+from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
+from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.shot_video.capability import GenerationPolicy, shot_video_capability
 from iclip.capabilities.shot_video.ports import (
     ImageJob,
@@ -22,7 +29,7 @@ from iclip.capabilities.workspace.capability import workspace_capability
 from iclip.capabilities.workspace.ports import ImageInfo, MediaProbeFailed
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.common.errors import ValidationFailed
-from iclip.config import ResolvedShotVideo, ResolvedVideo
+from iclip.config import ResolvedIclipStudio, ResolvedShotVideo, ResolvedVideo
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
@@ -36,6 +43,8 @@ from iclip.platform.material_ledger.store import MaterialLedger
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
 from iclip.platform.transcript.display import ToolDisplayRegistry, ToolDisplaySource
+
+_logger = structlog.stdlib.get_logger(__name__)
 
 CapabilityTable = Mapping[str, AgentCapabilities]
 """能力名称对应一组实例；同一声明可挂载多项能力，运行状态由 for_run 克隆隔离。"""
@@ -146,6 +155,44 @@ class ObjectWriterAdapter:
         return self._store.public_url(object_key)
 
 
+class OssSharedBreakdowns:
+    """把所有用户共用的视频拆解文档放在公开桶里，一条视频一个对象，按地址摘要定位。
+
+    它只为省掉重复的模型调用：取不到一律当作没拆过，存不下只记日志，两头都不让拆解失败。
+    """
+
+    def __init__(self, store: PublicBucket, client: httpx.AsyncClient) -> None:
+        self._store = store
+        self._client = client
+
+    async def get(self, video_url: str) -> str | None:
+        try:
+            response = await self._client.get(self._store.public_url(_breakdown_key(video_url)))
+        except httpx.HTTPError as exc:
+            _logger.warning("共用的视频拆解取不到，按没拆过处理", reason=type(exc).__name__)
+            return None
+        if response.status_code == 404:
+            return None
+        if response.status_code != 200:
+            _logger.warning("共用的视频拆解取不到，按没拆过处理", status=response.status_code)
+            return None
+        return response.content.decode("utf-8", errors="replace").strip() or None
+
+    async def put(self, video_url: str, document: str) -> None:
+        try:
+            await self._store.put_public_object(
+                object_key=_breakdown_key(video_url),
+                content=document.encode("utf-8"),
+                content_type="text/markdown; charset=utf-8",
+            )
+        except ObjectStoreUnavailable as exc:
+            _logger.warning("视频拆解没存进共用目录，下次会重新拆", reason=str(exc))
+
+
+def _breakdown_key(video_url: str) -> str:
+    return MEDIA_PATHS.video_breakdown(digest=hashlib.sha256(video_url.encode("utf-8")).hexdigest())
+
+
 def _job_view(job: GenerationJob) -> ImageJob:
     """生成任务到能力结果的投影，渠道取实际请求快照。"""
 
@@ -176,12 +223,13 @@ def build_capability_table(
     object_store: PublicBucket | None = None,
     video: ResolvedVideo | None = None,
     shot_video: ResolvedShotVideo | None = None,
+    iclip_studio: ResolvedIclipStudio | None = None,
     image_models: frozenset[str] = frozenset(),
 ) -> CapabilityTable:
     """按组合根递进来的运行值登记能力名，没给的不登记。
 
     ``shot_video`` 由组合根按 ``ResolvedSettings.shot_tools_enabled`` 决定是否传入；传了却缺
-    媒体生成、切图记录或对象存储是装配错误，直接报。
+    媒体生成、切图记录或对象存储是装配错误，直接报。``iclip_studio`` 传了却缺对象存储同样直接报。
     """
 
     # 文件生产与读取共用 FileSpace，避免命名空间不一致。
@@ -206,6 +254,34 @@ def build_capability_table(
                     thinking=video.understanding_thinking,
                     fps=video.understanding_fps,
                 ),
+            ),
+        )
+    if iclip_studio is not None:
+        if object_store is None:
+            raise RuntimeError(
+                "装配 iclip_studio 要有对象存储：拆过的视频存在那里供所有对话共用；"
+                "配上 OSS，或去掉配置里的 iclip_studio 段"
+            )
+        table["iclip_studio"] = (
+            IclipStudio[Any](
+                space=space,
+                breakdown=VideoBreakdown(
+                    model=ArkBreakdownModel(
+                        http_client,
+                        url=iclip_studio.breakdown_url,
+                        api_key=iclip_studio.breakdown_api_key,
+                        model=iclip_studio.breakdown_model,
+                    ),
+                    sampler=FfmpegVideoSampler(http_client),
+                ),
+                shared=OssSharedBreakdowns(object_store, http_client),
+                ledger=material_ledger,
+                images=(
+                    FilmImagesAdapter(generation_service)
+                    if generation_service is not None
+                    else None
+                ),
+                # 现阶段生图由人自己做：生图工具保留，不登记给 agent。
             ),
         )
     if shot_video is not None:
@@ -285,6 +361,7 @@ __all__ = [
     "GenerationsAdapter",
     "ObjectWriterAdapter",
     "OssMediaProbe",
+    "OssSharedBreakdowns",
     "RequiresCapabilities",
     "build_capability_table",
     "build_display_registry",

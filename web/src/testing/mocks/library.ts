@@ -10,8 +10,8 @@ import type {
   zScriptOut,
 } from '@/shared/api/generated/zod.gen'
 // no-inline：地址要进 <video src>，不能被构建内联成 data URI。
-import sampleWideUrl from '../fixtures/sample-video-wide.webm?no-inline'
-import sampleVideoUrl from '../fixtures/sample-video.webm?no-inline'
+import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
+import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockAuthUser } from './auth-user'
 import { pageBy } from './paging'
 
@@ -244,12 +244,15 @@ const cardOf = (spec: Spec, index: number, now: number): LibraryCard => {
     Date.parse(version.finishedAt) > Date.parse(newest.finishedAt) ? version : newest,
   )
   const conversationId = spec.title === null ? null : idOf('7a1e0000', index)
+  // mock 不分读者：登录的测试用户是属主时才打得开。
+  const canOpenConversation = conversationId !== null && spec.author === mockAuthUser.username
   return {
+    // mock 不建工作区，当作打得开的对话里都有制作文件：能打开就能做同款。
+    canMakeSame: canOpenConversation,
     groups,
     video: {
       agentId: conversationId === null ? null : 'storyboard',
-      // mock 不分读者：登录的测试用户是属主时才打得开。
-      canOpenConversation: conversationId !== null && spec.author === mockAuthUser.username,
+      canOpenConversation,
       conversationId,
       face,
       groupCount: groups.length,

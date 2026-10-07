@@ -36,7 +36,7 @@ from iclip.harness.agents import DELEGATE_TOOL
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.runner import ConversationRunner, RunStarted
+from iclip.harness.transcript.runner import ConversationRunner, RunStarted, TurnStarted
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.harness.usage_ledger import UsageLedger
 from iclip.platform.transcript.display import ToolDisplayRegistry
@@ -195,6 +195,7 @@ def make_runner(
     max_attempts: int = 2,
     context_limits: Mapping[str, int] | None = None,
     on_run_started: RunStarted | None = None,
+    on_turn_started: TurnStarted | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
     """按生产接法装 runner；context_limits 不给就按 AGENT_ID 开一个窗口。"""
 
@@ -218,6 +219,7 @@ def make_runner(
         sweep_seconds=15,
         max_attempts=max_attempts,
         on_run_started=on_run_started,
+        on_turn_started=on_turn_started,
         display=display,
     )
     return runner, step_store, queue
@@ -233,6 +235,7 @@ def build_runner(
     display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY,
     context_limits: Mapping[str, int] | None = None,
     on_run_started: RunStarted | None = None,
+    on_turn_started: TurnStarted | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
     """一个主 agent、一个假模型的 runner。"""
 
@@ -255,6 +258,7 @@ def build_runner(
         max_attempts=max_attempts,
         context_limits=context_limits,
         on_run_started=on_run_started,
+        on_turn_started=on_turn_started,
     )
 
 
@@ -265,6 +269,7 @@ def approval_runner(
     reply: str = "改完了",
     calls: int = 1,
     on_run_started: RunStarted | None = None,
+    on_turn_started: TurnStarted | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
     """装配待审批工具；首个请求调用工具，后续请求返回文本。"""
 
@@ -274,6 +279,7 @@ def approval_runner(
         store=store,
         tools=[Tool(wrote, name="write_file", requires_approval=True)],
         on_run_started=on_run_started,
+        on_turn_started=on_turn_started,
     )
 
 
@@ -416,7 +422,8 @@ def replay_journal(
     """把客户端实际收到的批次重放进一个新 store；轮持久化后原 store 的 live_turns 会清空。"""
 
     replayed = TranscriptStore()
-    for batch in store.subscribe_view(conversation_id, agent_id, since=0).batches:
+    epoch = store.subscribe_view(conversation_id, agent_id).epoch
+    for batch in store.subscribe_view(conversation_id, agent_id, since=0, epoch=epoch).batches:
         replayed.append(conversation_id, agent_id, batch.ops)
     return replayed
 

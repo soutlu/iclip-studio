@@ -1,9 +1,10 @@
 /** 正文可能包含不可信 HTML。按 react-markdown Security 建议，在 rehype-raw 后执行 rehype-sanitize，过滤脚本、事件属性及危险协议。 */
 
 import { createContext, use, useRef, useState, type ComponentProps } from 'react'
-import ReactMarkdown, { type ExtraProps } from 'react-markdown'
+import ReactMarkdown, { type Components, type ExtraProps, type Options } from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/shared/lib/utils'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
@@ -32,17 +33,35 @@ const CELL = 'border-[0.5px] border-chat-hairline px-3 py-2 text-left align-top'
 /** 链接里的图片点击交给链接本身，不另开灯箱。 */
 const InsideLinkContext = createContext(false)
 
+type MarkdownImageProps = ComponentProps<'img'> & {
+  /** 行内缩略图：固定高度、按原比例限宽裁切，和单元格里的文字排在同一行。 */
+  thumbnail?: boolean
+}
+
 /** 正文图片点开进灯箱。 */
-function MarkdownImage({ alt, height, src, title, width }: ComponentProps<'img'>) {
+function MarkdownImage({ alt, height, onError, src, thumbnail, title, width }: MarkdownImageProps) {
   const inLink = use(InsideLinkContext)
   const [open, setOpen] = useState(false)
-  const image = <img alt={alt ?? ''} height={height} src={src} title={title} width={width} />
+  const image = (
+    <img
+      alt={alt ?? ''}
+      className={thumbnail ? 'block h-20 w-auto max-w-40 object-cover' : undefined}
+      height={height}
+      onError={onError}
+      src={src}
+      title={title}
+      width={width}
+    />
+  )
   if (inLink || typeof src !== 'string' || src === '') return image
   return (
     <>
       <button
         aria-label={alt ? `放大图片：${alt}` : '放大图片'}
-        className="block w-fit max-w-full cursor-zoom-in rounded-sm ui-focus"
+        className={cn(
+          'cursor-zoom-in rounded-sm ui-focus',
+          thumbnail ? 'inline-block overflow-hidden align-middle' : 'block w-fit max-w-full',
+        )}
         onClick={() => setOpen(true)}
         type="button"
       >
@@ -53,6 +72,38 @@ function MarkdownImage({ alt, height, src, title, width }: ComponentProps<'img'>
         onClose={() => setOpen(false)}
       />
     </>
+  )
+}
+
+/** http(s) 图片地址：路径以图片扩展名结尾，后面可跟查询串或锚点。 */
+const IMAGE_URL = /^https?:\/\/[^?#\s]+\.(?:jpe?g|png|webp|gif|avif)(?:[?#]\S*)?$/i
+
+/**
+ * 裸写的图片地址（GFM 自动链接或 `<url>`，链接文字就是地址本身）返回该地址，其余返回 undefined。
+ * 只看路径的扩展名，查询串与锚点不影响判断；写了链接文字的显式链接仍按链接处理。
+ */
+const bareImageUrlOf = (node: ExtraProps['node'], href: string | undefined) => {
+  if (href === undefined || !IMAGE_URL.test(href)) return undefined
+  const [only, ...rest] = node?.children ?? []
+  return rest.length === 0 && only?.type === 'text' && only.value === href ? href : undefined
+}
+
+/** 正文链接新窗口打开；裸写的图片地址改成缩略图，图片读不出来时退回原链接。 */
+function MarkdownLink({ children, href, node }: ComponentProps<'a'> & ExtraProps) {
+  const [failedSrc, setFailedSrc] = useState<string>()
+  const imageUrl = bareImageUrlOf(node, href)
+  if (imageUrl !== undefined && imageUrl !== failedSrc) {
+    return <MarkdownImage onError={() => setFailedSrc(imageUrl)} src={imageUrl} thumbnail />
+  }
+  return (
+    <a
+      className="text-chat-link-text no-underline decoration-chat-link-border underline-offset-2 hover:underline"
+      href={href}
+      rel="noreferrer noopener"
+      target="_blank"
+    >
+      <InsideLinkContext value>{children}</InsideLinkContext>
+    </a>
   )
 }
 
@@ -95,6 +146,48 @@ function MarkdownVideo({ loop, node, poster, src }: ComponentProps<'video'> & Ex
   )
 }
 
+/**
+ * 标签到组件的映射放在模块级：react-markdown 每次渲染都按它取组件类型，渲染里新建的映射会让 React
+ * 认作换了组件、卸掉重挂对应节点，宿主每重渲染一次正文段落就整块重建，选中的文字随之丢失。
+ */
+const COMPONENTS: Components = {
+  a: MarkdownLink,
+  // 代码块由 pre → CodeBlock 读取语言与文本自行渲染，这里只会渲染到行内代码。
+  code: ({ children }) => <code className={CODE_INLINE}>{children}</code>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  // 正文标题使用 title 字阶；页面标题层级留给宿主。
+  h1: ({ children }) => (
+    <h3 className="border-b-[0.5px] border-chat-hairline pb-1 text-title font-semibold">
+      {children}
+    </h3>
+  ),
+  h2: ({ children }) => <h4 className="text-title font-semibold">{children}</h4>,
+  h3: ({ children }) => <h5 className="text-body font-semibold">{children}</h5>,
+  hr: () => <hr className="border-chat-hairline" />,
+  img: MarkdownImage,
+  // 播放器是块级容器，放不进 <p>：同一行写的 <video> 会落在段落里，这时段落改用 div。
+  p: ({ children, node }) =>
+    node?.children.some((child) => child.type === 'element' && child.tagName === 'video') ? (
+      <div>{children}</div>
+    ) : (
+      <p>{children}</p>
+    ),
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  table: ({ children }) => (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-body-sm">{children}</table>
+    </div>
+  ),
+  td: ({ children }) => <td className={CELL}>{children}</td>,
+  th: ({ children }) => <th className={cn(CELL, 'bg-chat-chip-bg font-semibold')}>{children}</th>,
+  video: MarkdownVideo,
+}
+
+// Agent 写的文档常把「**画面**：…」这类字段逐行排列、行间不空行；段落内的单个换行按换行显示，不接成一行。
+const REMARK_PLUGINS: Options['remarkPlugins'] = [remarkGfm, remarkBreaks]
+const REHYPE_PLUGINS: Options['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, SANITIZE]]
+
 type MarkdownProps = {
   text: string
   className?: string
@@ -105,54 +198,9 @@ export function Markdown({ className, text }: MarkdownProps) {
   return (
     <div className={cn('md-body text-body leading-relaxed text-chat-message-text', className)}>
       <ReactMarkdown
-        components={{
-          a: ({ children, href }) => (
-            <a
-              className="text-chat-link-text no-underline decoration-chat-link-border underline-offset-2 hover:underline"
-              href={href}
-              rel="noreferrer noopener"
-              target="_blank"
-            >
-              <InsideLinkContext value>{children}</InsideLinkContext>
-            </a>
-          ),
-          // 代码块由 pre → CodeBlock 读取语言与文本自行渲染，这里只会渲染到行内代码。
-          code: ({ children }) => <code className={CODE_INLINE}>{children}</code>,
-          em: ({ children }) => <em className="italic">{children}</em>,
-          // 正文标题使用 title 字阶；页面标题层级留给宿主。
-          h1: ({ children }) => (
-            <h3 className="border-b-[0.5px] border-chat-hairline pb-1 text-title font-semibold">
-              {children}
-            </h3>
-          ),
-          h2: ({ children }) => <h4 className="text-title font-semibold">{children}</h4>,
-          h3: ({ children }) => <h5 className="text-body font-semibold">{children}</h5>,
-          hr: () => <hr className="border-chat-hairline" />,
-          img: MarkdownImage,
-          // 播放器是块级容器，放不进 <p>：同一行写的 <video> 会落在段落里，这时段落改用 div。
-          p: ({ children, node }) =>
-            node?.children.some(
-              (child) => child.type === 'element' && child.tagName === 'video',
-            ) ? (
-              <div>{children}</div>
-            ) : (
-              <p>{children}</p>
-            ),
-          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-          table: ({ children }) => (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-body-sm">{children}</table>
-            </div>
-          ),
-          td: ({ children }) => <td className={CELL}>{children}</td>,
-          th: ({ children }) => (
-            <th className={cn(CELL, 'bg-chat-chip-bg font-semibold')}>{children}</th>
-          ),
-          video: MarkdownVideo,
-        }}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, SANITIZE]]}
-        remarkPlugins={[remarkGfm]}
+        components={COMPONENTS}
+        rehypePlugins={REHYPE_PLUGINS}
+        remarkPlugins={REMARK_PLUGINS}
       >
         {text}
       </ReactMarkdown>

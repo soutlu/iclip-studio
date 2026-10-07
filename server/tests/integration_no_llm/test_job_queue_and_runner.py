@@ -717,6 +717,97 @@ async def test_a_run_whose_lease_was_taken_cancels_itself(engine: AsyncEngine) -
     assert row.finished_at is None
 
 
+async def test_a_run_that_lost_its_lease_before_starting_does_nothing(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """认领之后、开跑之前租约就被别的进程拿走：一步都不执行，全部交给新持有者。
+
+    不调模型、不写快照、不报开场；不迁插话、不收尾、不启动下一条。
+    """
+
+    model_requests = 0
+
+    async def stream(
+        _messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal model_requests
+        model_requests += 1
+        yield "不该跑到这里"
+
+    started: list[str] = []
+
+    async def note(_row: JobRow, run_id: str) -> None:
+        started.append(run_id)
+
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine, FunctionModel(stream_function=stream), store=store, on_run_started=note
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    for prompt_id, said in (("prm_stale", "先做这个"), ("prm_steer", "顺便改个标题")):
+        await queue.submit(
+            prompt_id=prompt_id,
+            conversation_id=conversation_id,
+            agent_id=AGENT_ID,
+            owner_user_id=OWNER,
+            user_name="logan",
+            content=(TextContent(text=said),),
+            now=now,
+            locked_by=runner.locked_by,
+        )
+    # 上一次运行留下的 run 与挂在它上面的插话：续跑时才会迁插话。
+    await queue.attach_run("prm_stale", "r-old", locked_by=runner.locked_by, attempt=0)
+    await queue.mark_steered(("prm_steer",), run_id="r-old", now=now)
+    stale = await queue.get("prm_stale")
+    assert stale is not None
+    # 别的进程按过期租约认领了它：持有者与 attempt 都变了，runner 手里那份是旧的。
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE agent_runtime.agent_jobs SET locked_by = 'w-other', attempt = 1 "
+                "WHERE prompt_id = 'prm_stale'"
+            )
+        )
+    collected: list[str] = []
+    for name in ("adopt_steered", "settle_steered", "finish", "start_next"):
+        original = getattr(queue, name)
+
+        async def recorded(
+            *args: Any, _name: str = name, _original: Any = original, **kw: Any
+        ) -> Any:
+            collected.append(_name)
+            return await _original(*args, **kw)
+
+        monkeypatch.setattr(queue, name, recorded)
+
+    await runner.submit(stale)
+    await runner.shutdown()
+
+    assert model_requests == 0
+    assert started == []
+    assert collected == []
+    row = await queue.get("prm_stale")
+    assert row is not None
+    assert (row.status, row.locked_by, row.run_id, row.finished_at) == (
+        "running",
+        "w-other",
+        "r-old",
+        None,
+    )
+    steered = await queue.get("prm_steer")
+    assert steered is not None
+    assert (steered.status, steered.run_id) == ("steered", "r-old")
+    assert await queue.prompt_of_runs(conversation_id) == {"r-old": "prm_stale"}
+    assert (
+        await step_store.latest_conversation_snapshot(
+            conversation_id=conversation_id, include_interrupted=True
+        )
+        is None
+    )
+    assert replay(store, conversation_id) == ()
+
+
 async def test_only_the_running_row_carries_a_lease(engine: AsyncEngine) -> None:
 
     queue = JobQueue(engine)
@@ -1562,6 +1653,114 @@ async def test_a_failing_run_start_hook_does_not_stop_the_run(engine: AsyncEngin
     assert row.status == "completed"
     derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
     assert derived[0].steps[0].frames[0].text == "写好了"  # pyright: ignore[reportAttributeAccessIssue]
+
+
+async def test_a_turn_start_action_runs_while_the_turn_is_still_running(
+    engine: AsyncEngine,
+) -> None:
+    """开场动作（自动起名）在这一轮开始时就做，模型还没答完它已经做完，不等这一轮结束。"""
+
+    entered, gate = asyncio.Event(), asyncio.Event()
+    named = asyncio.Event()
+    started: list[str] = []
+
+    async def name(row: JobRow) -> None:
+        started.append(row.prompt_id)
+        named.set()
+
+    store = TranscriptStore()
+    runner, _, queue = build_runner(engine, waits(entered, gate), store=store, on_turn_started=name)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    prompt_id = await submit_text(runner, queue, conversation_id, "做一条春季新款视频")
+    await asyncio.wait_for(asyncio.gather(entered.wait(), named.wait()), timeout=5)
+    row = await queue.get(prompt_id)
+    assert row is not None
+    assert row.status == "running"
+    assert started == [prompt_id]
+
+    gate.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    assert started == [prompt_id]
+
+
+async def test_a_slow_turn_start_action_neither_holds_up_the_turn_nor_outlives_shutdown(
+    engine: AsyncEngine,
+) -> None:
+    """开场动作卡住时这一轮照常跑完；关停时把它取消掉，不留悬挂任务。"""
+
+    never = asyncio.Event()
+    entered = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def hang(_row: JobRow) -> None:
+        entered.set()
+        try:
+            await never.wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    store = TranscriptStore()
+    runner, _, queue = build_runner(engine, says("写好了"), store=store, on_turn_started=hang)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    prompt_id = await submit_text(runner, queue, conversation_id, "写三个镜头")
+    await drained(queue, conversation_id)
+    row = await queue.get(prompt_id)
+    assert row is not None
+    assert row.status == "completed"
+    assert entered.is_set()
+    assert not cancelled.is_set()
+
+    await asyncio.wait_for(runner.shutdown(), timeout=5)
+    assert cancelled.is_set()
+
+
+async def test_a_failing_turn_start_action_does_not_stop_the_turn(engine: AsyncEngine) -> None:
+    """起名失败只记日志，这一轮照常跑完。"""
+
+    async def explode(_row: JobRow) -> None:
+        raise RuntimeError("标题模型不可用")
+
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine, says("写好了"), store=store, on_turn_started=explode
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    prompt_id = await submit_text(runner, queue, conversation_id, "写三个镜头")
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    row = await queue.get(prompt_id)
+    assert row is not None
+    assert row.status == "completed"
+    derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
+    assert derived[0].steps[0].frames[0].text == "写好了"  # pyright: ignore[reportAttributeAccessIssue]
+
+
+async def test_an_approval_continuation_does_not_start_the_turn_again(engine: AsyncEngine) -> None:
+    """审批续跑仍是同一轮：开场动作只在首次 run 做一次。"""
+
+    started: list[str] = []
+
+    async def note(row: JobRow) -> None:
+        started.append(row.prompt_id)
+
+    store = TranscriptStore()
+    runner, _, queue = approval_runner(engine, store, on_turn_started=note)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    prompt_id = await submit_text(runner, queue, conversation_id, "把这个文件改掉")
+    await awaits(queue, prompt_id)
+    await runner.approve(conversation_id, "apr_call_1", approved=True)
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    assert started == [prompt_id]
+    assert len(await queue.prompt_of_runs(conversation_id)) == 2
 
 
 async def test_approving_resumes_the_same_turn(engine: AsyncEngine) -> None:

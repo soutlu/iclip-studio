@@ -1,57 +1,41 @@
-/** 分镜工作台顶栏：组号（点开全部镜头组）、保存状态，以及复制整组完整提示词。 */
+/** 分镜工作台顶栏：保存状态，镜头组切换（上一组、下一组，点中间展开镜头组列表），以及复制整组的字。
+ * 分镜页与制作页共用，各自给镜头组摘要和要复制的字。 */
 
 import type { ReactNode } from 'react'
-import { Icon } from '@/shared/icons'
-import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
-import type { ReaderSheet } from '../shot-content'
 import { copyWithToast } from './copy-with-toast'
+import { ShotGroupSwitcher, type ShotGroupSummary } from './shot-group-switcher'
 import { workbenchControl } from './workbench-control'
 
 type StoryboardToolbarProps = {
+  groups: readonly ShotGroupSummary[]
   /** 当前组在全部组里排第几，从 1 起。 */
   position: number
-  total: number
   /** 保存状态，由调用方渲染好放进来。 */
   status: ReactNode
-  /** 当前盖在分镜上的那一层，对应入口标成展开。 */
-  sheet: ReaderSheet | undefined
-  onOpenSheet: (sheet: ReaderSheet, trigger: HTMLElement) => void
-  /** 复制按钮拷走的整组完整提示词。 */
-  fullPrompt: string
+  /** 切到第几组；与 ↑↓ 键同一条路径。 */
+  onGoShot: (shot: number) => void
+  /** 复制按钮：按钮名、拷走的字与拷好后的提示。 */
+  copy: { label: string; text: string; done: string }
 }
 
 export function StoryboardToolbar({
-  fullPrompt,
-  onOpenSheet,
+  copy,
+  groups,
+  onGoShot,
   position,
-  sheet,
   status,
-  total,
 }: StoryboardToolbarProps) {
   return (
     <div aria-label="分镜工具栏" className="storyboard-toolbar" role="group">
-      <button
-        aria-expanded={sheet === 'all'}
-        aria-label={`镜头组 ${position} / ${total}，打开全部镜头组`}
-        className={cn(workbenchControl({ shape: 'label' }), 'pr-2 text-body')}
-        onClick={(event) => onOpenSheet('all', event.currentTarget)}
-        title="全部镜头组"
-        type="button"
-      >
-        <Icon decorative name="grid" size="sm" />
-        <span className="ml-0.5 font-semibold">{position}</span>
-        <span className="text-on-surface-faint">/ {total}</span>
-        <Icon decorative name="expand" size="xs" />
-      </button>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{status}</div>
+      <ShotGroupSwitcher groups={groups} onGo={onGoShot} position={position} />
       <IconButton
         className={workbenchControl({ shape: 'icon' })}
-        label="复制完整提示词"
+        label={copy.label}
         name="copy"
-        onClick={() => void copyWithToast(fullPrompt, '已复制完整提示词')}
+        onClick={() => void copyWithToast(copy.text, copy.done)}
         size="sm"
-        title="复制完整提示词"
       />
     </div>
   )

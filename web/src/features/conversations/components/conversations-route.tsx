@@ -13,6 +13,7 @@ import { ListEmpty, ListError, NextPageFooter } from '@/shared/ui/list-state'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Tag } from '@/shared/ui/tag'
 import { useAuditConversations, type AuditConversation, type AuditFilters } from '../audit.api'
+import { useConversationRows } from '../conversation-rows'
 import { auditCoverUrl } from '../audit-cover'
 import { conversationStatus } from '../conversation-status'
 import { taskCellOf } from '../task-cell'
@@ -46,7 +47,10 @@ export function ConversationsRoute({
   const directory = useUsersDirectory(true)
   const users = userPickerSourceOf(directory, 'id')
   const query = useAuditConversations(filters, true)
-  const rows = query.data?.pages.flatMap((page) => page.items) ?? []
+  // 成员与顺序取这一页的查询，行取池里的当前值；带墓碑的筛选下保留刚删的那行，等重拉换上带 deletedAt 的。
+  const rows = useConversationRows(query.data?.pages.flatMap((page) => page.items) ?? [], {
+    keepDeleted: filters.deleted !== 'live',
+  })
   const latest = query.data?.pages.at(-1)
   const totals =
     latest === undefined ? undefined : { runningTotal: latest.runningTotal, total: latest.total }
@@ -54,13 +58,13 @@ export function ConversationsRoute({
 
   return (
     <main
-      aria-label="全部对话"
+      aria-label="全部任务"
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-container-lowest"
       ref={mainRef}
     >
       {/* 预留应用壳中侧栏展开按钮的空间。 */}
       <div className="mx-auto flex w-full max-w-(--layout-list-page-max) flex-col px-4 pt-12 pb-8 sm:px-(--layout-list-page-gutter) md:pb-10">
-        <h1 className="mb-4 text-headline font-semibold text-on-surface md:mb-5">全部对话</h1>
+        <h1 className="mb-4 text-headline font-semibold text-on-surface md:mb-5">全部任务</h1>
         <AuditFiltersBar
           filters={filters}
           onChange={onFiltersChange}
@@ -77,16 +81,16 @@ export function ConversationsRoute({
             </Button>
           </div>
         ) : null}
-        <section aria-label="对话列表" className="mt-4 flex flex-col lg:mt-6">
+        <section aria-label="任务列表" className="mt-4 flex flex-col lg:mt-6">
           {query.isPending ? (
             <AuditSkeleton />
           ) : query.isError ? (
             <ListError
-              message={errorMessageOf(query.error, '读取全部对话失败')}
+              message={errorMessageOf(query.error, '读取全部任务失败')}
               onRetry={() => void query.refetch()}
             />
           ) : rows.length === 0 ? (
-            <ListEmpty>这个筛选下没有对话</ListEmpty>
+            <ListEmpty>这个筛选下没有任务</ListEmpty>
           ) : (
             <>
               <ColumnHeader />
@@ -358,7 +362,7 @@ function AuditSkeleton() {
     <>
       <ColumnHeader />
       <p className="sr-only" role="status">
-        正在读取全部对话
+        正在读取全部任务
       </p>
       <ul aria-hidden className="audit-rows motion-safe:animate-pulse">
         {SKELETONS.map(({ id, title, task }) => (

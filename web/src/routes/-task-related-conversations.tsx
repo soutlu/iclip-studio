@@ -4,6 +4,7 @@ import {
   conversationStatus,
   useLiveTaskConversations,
   useTaskConversations,
+  useConversationRows,
   type Conversation,
 } from '@/features/conversations'
 import { ConversationVideos } from '@/features/storyboard'
@@ -18,7 +19,7 @@ export function TaskRelatedConversations({ taskId }: { taskId: string }) {
   if (!user) return null
   if (!hasPermission(user, PERMISSION.agentRead)) {
     return (
-      <p className="py-6 text-body-sm text-on-surface-variant">当前账号没有查看关联对话的权限</p>
+      <p className="py-6 text-body-sm text-on-surface-variant">当前账号没有查看关联任务的权限</p>
     )
   }
   return (
@@ -43,27 +44,29 @@ function RelatedConversations({
   const query = useTaskConversations(taskId, canAudit)
   useLiveTaskConversations(taskId, canAudit)
   const playingVideoRef = useRef<HTMLVideoElement | null>(null)
+  // 成员来自查询，行取池里的当前值。
+  const rows = useConversationRows(query.data ?? [])
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2 py-3 text-caption text-on-surface-muted">
-        <span>{query.data ? `${query.data.length} 个对话` : '关联对话'}</span>
-        {!canAudit && <span>仅我的对话</span>}
+        <span>{query.data ? `${query.data.length} 个任务` : '关联任务'}</span>
+        {!canAudit && <span>仅我的任务</span>}
       </div>
       {query.isPending && (
         <p className="py-4 text-body-sm text-on-surface-variant" role="status">
-          正在加载关联对话…
+          正在加载关联任务…
         </p>
       )}
       {query.isError && (
         <InlineAlert
           action={{ label: '重试', onClick: () => void query.refetch() }}
           className="py-3"
-          message={query.data ? '关联对话刷新失败' : '关联对话加载失败'}
+          message={query.data ? '关联任务刷新失败' : '关联任务加载失败'}
         />
       )}
       {!query.isError && query.data?.length === 0 && (
         <p className="py-6 text-body-sm text-on-surface-variant">
-          {canAudit ? '暂无关联对话' : '你还没有关联到这张需求单的对话'}
+          {canAudit ? '暂无关联任务' : '你还没有关联到这张需求单的任务'}
         </p>
       )}
       {/* 各对话的内嵌播放器与放大后的灯箱（经 portal 仍在这棵树里）同一时刻只放一个。 */}
@@ -75,7 +78,7 @@ function RelatedConversations({
           playingVideoRef.current = event.target
         }}
       >
-        {query.data?.map((conversation) => (
+        {rows.map((conversation) => (
           <RelatedConversation
             key={conversation.id}
             conversation={conversation}
@@ -112,9 +115,9 @@ function RelatedConversation({
           params={{ conversationId: conversation.id }}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`打开对话：${conversation.title}（新标签页）`}
+          aria-label={`打开任务：${conversation.title}（新标签页）`}
         >
-          打开对话
+          打开任务
           <Icon decorative name="external" size="sm" />
         </Link>
       </div>

@@ -1,16 +1,19 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { addMockConversation } from '@/testing/mocks/conversations'
+import { addMockCollection, addMockConversation } from '@/testing/mocks/conversations'
 import { addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
-import { mockTranscriptPage } from '@/testing/mocks/transcript'
+import { MOCK_STREAM_EPOCH, mockTranscriptPage } from '@/testing/mocks/transcript'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
 import { ShellChromeContext } from '@/shared/shell'
 import { Toaster } from '@/shared/ui/toast'
+import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
 import { ConversationRoute } from './conversation-route'
+import { sessionEnvelope } from '@/testing/ws'
 
 // jsdom 不支持 Lottie 加载时的 canvas 探测；替换装饰动画以验证会话行为。
 vi.mock('lottie-web/build/player/lottie_light', () => ({
@@ -29,9 +32,26 @@ const TAIL_TEXT = '这是第 2 轮的回复。'
 const renderConversation = async () =>
   renderWithProviders(<ConversationRoute conversationId="c1" />)
 
+/** 路由按对话 id 换键重挂；这里用开关模拟离开再回来同一段对话。 */
+function RemountableConversation() {
+  const [shown, setShown] = useState(true)
+  return (
+    <>
+      <button onClick={() => setShown(false)} type="button">
+        离开
+      </button>
+      <button onClick={() => setShown(true)} type="button">
+        回来
+      </button>
+      {shown ? <ConversationRoute conversationId="c1" /> : null}
+    </>
+  )
+}
+
 const opsFrame = (ops: unknown[], seq: number) => ({
   payload: { agent_id: 'main', ops, seq },
   session_id: 'c1',
+  stream_epoch: MOCK_STREAM_EPOCH,
   type: 'transcript.ops',
 })
 
@@ -146,8 +166,75 @@ describe('ConversationRoute', () => {
     expect(await screen.findByText('第 1 个问题')).toBeInTheDocument()
     expect(screen.getByText(TAIL_TEXT)).toBeInTheDocument()
     expect(screen.getByText('读取文件')).toBeInTheDocument()
-    expect(screen.getByText('shots/storyboard.md')).toBeInTheDocument()
+    // 文件只写文件名，不带目录。
+    expect(screen.getByRole('button', { name: 'storyboard.md' })).toBeInTheDocument()
+    expect(screen.queryByText('shots/storyboard.md')).not.toBeInTheDocument()
     expect(screen.queryByText('read_file')).not.toBeInTheDocument()
+  })
+
+  it('还有更早的轮次时顶部给「加载更早」：按最早一轮往前取一页，接在前面；失败了改口让人重试', async () => {
+    const user = userEvent.setup()
+    const longId = '0199aaaa-0000-7000-8000-0000000000aa'
+    const asked: (string | null)[] = []
+    let failOnce = true
+    server.use(
+      http.get(`*/api/conversations/${longId}/transcript`, ({ request }) => {
+        const query = new URL(request.url).searchParams
+        const beforeTurn = query.get('before_turn')
+        asked.push(beforeTurn)
+        if (beforeTurn !== null && failOnce) {
+          failOnce = false
+          return HttpResponse.json({ detail: '服务暂时不可用' }, { status: 503 })
+        }
+        return HttpResponse.json(
+          mockTranscriptPage(longId, { beforeTurn, pageSize: Number(query.get('page_size')) }),
+        )
+      }),
+    )
+    await renderWithProviders(<ConversationRoute conversationId={longId} />)
+
+    expect(await screen.findByText('长对话第 14 轮的回复。')).toBeInTheDocument()
+    expect(screen.getByText('长对话第 5 轮的回复。')).toBeInTheDocument()
+    expect(screen.queryByText('长对话第 4 轮的回复。')).not.toBeInTheDocument()
+    expect(asked).toEqual([null])
+
+    await user.click(screen.getByRole('button', { name: '加载更早的消息' }))
+    await user.click(await screen.findByRole('button', { name: '加载失败，点这里重试' }))
+
+    expect(await screen.findByText('长对话第 1 轮的回复。')).toBeInTheDocument()
+    expect(asked).toEqual([null, 't5', 't5'])
+    const replies = screen.getAllByText(/^长对话第 \d+ 轮的回复。$/).map((node) => node.textContent)
+    expect(replies).toHaveLength(14)
+    expect(replies[0]).toBe('长对话第 1 轮的回复。')
+    expect(screen.queryByRole('button', { name: '加载更早的消息' })).not.toBeInTheDocument()
+  })
+
+  it('末轮流式追加时，旧轮的正文节点原样不动：选中的文字不会因别处的更新被清掉', async () => {
+    // 照路由的真实用法给分叉回调，这一行不能删：不给 onForked 时每一轮的 onFork 都是 undefined，
+    // 历史轮拿不到任何回调，memo 本来就挡得住，这条用例在没修的代码上也会通过。
+    // 段落节点不变靠两处共同保证：Markdown 的组件映射不随渲染新建、ConversationTurn 的回调引用不变；
+    // 只回退其中一处这条仍会通过，Markdown 那处另由 markdown.test.tsx 的重渲染用例兜住。
+    const { socket } = await renderWithProviders(
+      <ConversationRoute conversationId="c1" onForked={() => undefined} />,
+    )
+    const earlier = await screen.findByText('这是第 1 轮的回复。')
+
+    socket.deliver(
+      opsFrame(
+        [
+          {
+            offset: TAIL_TEXT.length,
+            op: 'append',
+            target: { frameId: 't2.1.f3', stepId: 't2.1', turnId: 't2', type: 'frame' },
+            text: '再补一句。',
+          },
+        ],
+        11,
+      ),
+    )
+    await screen.findByText(`${TAIL_TEXT}再补一句。`)
+
+    expect(screen.getByText('这是第 1 轮的回复。')).toBe(earlier)
   })
 
   it('逐字追加接在同一块上，不另起一段', async () => {
@@ -168,6 +255,7 @@ describe('ConversationRoute', () => {
         seq: 11,
       },
       session_id: 'c1',
+      stream_epoch: MOCK_STREAM_EPOCH,
       type: 'transcript.ops',
     })
 
@@ -180,10 +268,12 @@ describe('ConversationRoute', () => {
     await screen.findByText(TAIL_TEXT)
 
     let submitted = ''
+    let submittedContent: unknown
     server.use(
       http.post('*/api/conversations/c1/prompts', async ({ request }) => {
         const body = (await request.json()) as { content: { text: string }[]; prompt_id: string }
         submitted = body.prompt_id
+        submittedContent = body.content
         return HttpResponse.json({
           createdAt: '2026-08-31T03:00:00Z',
           promptId: body.prompt_id,
@@ -198,14 +288,15 @@ describe('ConversationRoute', () => {
     await waitFor(() => {
       expect(screen.getAllByText('再拆一段')).toHaveLength(1)
     })
-    expect(screen.getByRole('status')).toHaveTextContent('请求中…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
     expect(submitted).not.toBe('')
+    expect(submittedContent).toEqual([{ text: '再拆一段', type: 'text' }])
 
     // running prompt 不撤销乐观气泡，须由匹配的 turn.prompt 接替。
     socket.deliver(opsFrame([runningPrompt(submitted)], 11))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('请求中…')
+    expect(await screen.findByRole('status')).toHaveTextContent('正在想…')
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
 
     socket.deliver(
@@ -229,7 +320,7 @@ describe('ConversationRoute', () => {
       ),
     )
 
-    expect(await screen.findByRole('status')).toHaveTextContent('请求中…')
+    expect(await screen.findByRole('status')).toHaveTextContent('正在想…')
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
 
     socket.deliver(
@@ -273,7 +364,7 @@ describe('ConversationRoute', () => {
     )
 
     expect(await screen.findByText('思考过程')).toBeInTheDocument()
-    // 防止 completed turn 提前清除 inFlight，使收尾状态回退为请求中。
+    // 防止 completed turn 提前清除 inFlight，使收尾状态回退为正在想。
     expect(screen.getByRole('status')).toHaveTextContent('工作中…')
 
     socket.deliver(
@@ -337,7 +428,7 @@ describe('ConversationRoute', () => {
 
     // 时间线多了一份同样的字，气泡那份还在，本地也仍算在等自己那一轮。
     await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(2))
-    expect(screen.getByRole('status')).toHaveTextContent('请求中…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
   })
 
   it('点派活卡的「查看」：地址上点名这张卡的产物，右侧宿主据此打开', async () => {
@@ -371,6 +462,71 @@ describe('ConversationRoute', () => {
     const editor = await screen.findByLabelText('输入消息')
     await waitFor(() => expect(editor).toHaveTextContent('再拆一段'))
     expect(screen.queryAllByText('再拆一段')).toHaveLength(1)
+  })
+
+  it('发出去后离开再回来，气泡和「正在想」还在：本地发送状态按对话保存，不随页面卸载', async () => {
+    const user = userEvent.setup()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/conversations/c1/prompts', async ({ request }) => {
+        const body = (await request.json()) as { prompt_id: string }
+        await gate
+        return HttpResponse.json({
+          createdAt: '2026-08-31T03:00:00Z',
+          promptId: body.prompt_id,
+          status: 'running',
+        })
+      }),
+    )
+    await renderWithProviders(<RemountableConversation />)
+    await screen.findByText(TAIL_TEXT)
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: '离开' }))
+    expect(screen.queryByText('再拆一段')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '回来' }))
+    await screen.findByText(TAIL_TEXT)
+
+    expect(screen.getAllByText('再拆一段')).toHaveLength(1)
+    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
+    release()
+  })
+
+  it('离开期间发送失败：回来时气泡已撤，也不再显示正在想', async () => {
+    const user = userEvent.setup()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/conversations/c1/prompts', async () => {
+        await gate
+        return HttpResponse.json({ detail: '这段对话不是你的' }, { status: 403 })
+      }),
+    )
+    await renderWithProviders(<RemountableConversation />)
+    await screen.findByText(TAIL_TEXT)
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: '离开' }))
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    await user.click(screen.getByRole('button', { name: '回来' }))
+    await screen.findByText(TAIL_TEXT)
+
+    expect(screen.queryByText('再拆一段')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('在跑的时候发送钮换成停止钮，点它停掉在跑的那条', async () => {
@@ -415,13 +571,38 @@ describe('ConversationRoute', () => {
     socket.deliver(opsFrame([runningPrompt('p-run'), queuedPrompt('p-queued', '顺便配个音')], 11))
 
     expect(await screen.findByText('顺便配个音')).toBeInTheDocument()
-    expect(screen.getByText('1 个任务等待发送')).toBeInTheDocument()
+    expect(screen.getByText('1 条消息等着发')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '立即发送到当前回合' }))
+    await user.click(screen.getByRole('button', { name: '现在就发' }))
 
     await waitFor(() => {
       expect(steered).toEqual(['p-queued'])
     })
+  })
+
+  it('往上翻离开底部后出现「回到底部」圆钮，点了滚回底部并收起', async () => {
+    const user = userEvent.setup()
+    await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
+
+    // jsdom 不排版：手动给出滚动尺寸，模拟停在离底部很远的位置。
+    const scroller = screen.getByTestId('chat-scroller')
+    const scrollTo = vi.fn()
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 2000 },
+      scrollTo: { configurable: true, value: scrollTo },
+    })
+    scroller.scrollTop = 0
+    fireEvent.scroll(scroller)
+
+    const button = await screen.findByRole('button', { name: '回到底部' })
+    expect(button).toHaveAttribute('title', '回到底部')
+    await user.click(button)
+
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: 'smooth', top: 2000 })
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
   })
 
   it('只有最后一轮带「重新生成」钮', async () => {
@@ -486,7 +667,7 @@ describe('ConversationRoute', () => {
     ).toBeNull()
     await user.click(within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '修改' }))
 
-    expect(screen.getByText('正在修改第 2 轮')).toBeInTheDocument()
+    expect(screen.getByText('正在修改上一条消息')).toBeInTheDocument()
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('第 2 个问题')
 
     pasteTextIntoComposer(screen.getByLabelText('输入消息'), '，再具体些')
@@ -502,7 +683,7 @@ describe('ConversationRoute', () => {
     expect(text).toContain('再具体些')
     expect(sent?.prompt_id).not.toBe('')
     await waitFor(() => {
-      expect(screen.queryByText('正在修改第 2 轮')).toBeNull()
+      expect(screen.queryByText('正在修改上一条消息')).toBeNull()
     })
   })
 
@@ -516,7 +697,7 @@ describe('ConversationRoute', () => {
 
     await user.click(screen.getByRole('button', { name: '取消' }))
 
-    expect(screen.queryByText('正在修改第 2 轮')).toBeNull()
+    expect(screen.queryByText('正在修改上一条消息')).toBeNull()
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
   })
 
@@ -529,14 +710,14 @@ describe('ConversationRoute', () => {
       name: '重新生成',
     })
     const edit = latestTurn.getByRole('button', { name: '修改' })
-    expect(regenerate).toBeEnabled()
-    expect(edit).toBeEnabled()
+    expect(regenerate).not.toHaveAttribute('aria-disabled')
+    expect(edit).not.toHaveAttribute('aria-disabled')
 
     socket.deliver(opsFrame([runningPrompt('p-run')], 11))
 
     await waitFor(() => {
-      expect(regenerate).toBeDisabled()
-      expect(edit).toBeDisabled()
+      expect(regenerate).toHaveAttribute('aria-disabled', 'true')
+      expect(edit).toHaveAttribute('aria-disabled', 'true')
     })
   })
 
@@ -565,7 +746,7 @@ describe('ConversationRoute', () => {
     ).toBeInTheDocument()
   })
 
-  it('工具结果是纯文本时可以展开；历史里的读文件卡尾写行数', async () => {
+  it('工具结果是纯文本时可以展开；历史里的读文件行尾不写行数', async () => {
     const user = userEvent.setup()
     const { socket } = await renderConversation()
     await screen.findByText(TAIL_TEXT)
@@ -574,7 +755,7 @@ describe('ConversationRoute', () => {
       'aria-expanded',
       'false',
     )
-    expect(screen.getByText('3 行')).toBeInTheDocument()
+    expect(screen.queryByText('3 行')).toBeNull()
 
     socket.deliver(
       opsFrame(
@@ -751,11 +932,13 @@ describe('ConversationRoute', () => {
       name: /完成：读取了 1 个文件 · 写入了 1 个文件/,
     })
     expect(head).toHaveAttribute('aria-expanded', 'false')
+    // 收起时组里的行对读屏隐藏；点开后读、写两行都出来。
+    const before = screen.queryAllByRole('button', { name: 'storyboard.md' }).length
 
     await user.click(head)
 
     expect(head).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getAllByText('shots/storyboard.md').length).toBeGreaterThan(1)
+    expect(screen.getAllByRole('button', { name: 'storyboard.md' })).toHaveLength(before + 2)
   })
 
   it('历史消息里的附件画成芯片，点开进灯箱', async () => {
@@ -787,8 +970,9 @@ describe('ConversationRoute', () => {
     const card = await screen.findByRole('region', { name: '等你审批' })
     expect(within(card).getByText('写入文件')).toBeInTheDocument()
     // 审批卡预览要写的内容，来自 display 里的 content。
-    expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent('# 封面')
-    expect(within(card).getByText('shots/cover.md')).toBeInTheDocument()
+    expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent(
+      '两张镜头帧拼版，主图在左。',
+    )
 
     await user.click(within(card).getByRole('button', { name: /同意/ }))
 
@@ -844,16 +1028,17 @@ describe('ConversationRoute', () => {
     expect(within(card).getByRole('button', { name: /拒绝/ })).toBeInTheDocument()
   })
 
-  it('等审批时不给追加入口，输入框改口说在等谁', async () => {
+  it('等审批时不给追加入口，状态行与输入框都改口说轮到你确认', async () => {
     serveApprovalPage()
     const { socket } = await renderConversation()
     await screen.findByRole('region', { name: '等你审批' })
+    expect(screen.getByRole('status')).toHaveTextContent('等你确认')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
 
-    expect(await screen.findByText('1 个任务等待发送')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '立即发送到当前回合' })).toBeNull()
-    expect(screen.getByText('等你审批后继续')).toBeInTheDocument()
+    expect(await screen.findByText('1 条消息等着发')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
+    expect(screen.getByText('先确认上面这一步')).toBeInTheDocument()
   })
 
   it('治理者看别人的对话是只读：页头标属主，没有输入框、修改与重新生成，审批和队列只展示', async () => {
@@ -870,7 +1055,7 @@ describe('ConversationRoute', () => {
     const user = userEvent.setup()
     const { socket } = await renderConversation()
 
-    expect(await screen.findByText('只读 · 小王 的对话')).toBeVisible()
+    expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
     expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
     expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull()
@@ -878,12 +1063,12 @@ describe('ConversationRoute', () => {
 
     const card = screen.getByRole('region', { name: '等你审批' })
     expect(within(card).queryByRole('button', { name: '同意' })).toBeNull()
-    expect(within(card).getByText('等属主来决定')).toBeVisible()
+    expect(within(card).getByText('等任务的主人决定')).toBeVisible()
     await user.keyboard('1')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
-    expect(await screen.findByText('1 个任务等待发送')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '立即发送到当前回合' })).toBeNull()
+    expect(await screen.findByText('1 条消息等着发')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
     expect(screen.queryByRole('button', { name: '撤回' })).toBeNull()
     expect(decided).toBe(false)
   })
@@ -915,8 +1100,8 @@ describe('ConversationRoute', () => {
     )
     await renderWithProviders(<ConversationRoute conversationId="c1" onForked={forked} />)
 
-    expect(await screen.findByText('只读 · 小王 的对话')).toBeVisible()
-    const buttons = await screen.findAllByRole('button', { name: '从这里分叉' })
+    expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
+    const buttons = await screen.findAllByRole('button', { name: '从这里另开一个任务' })
     const button = buttons[buttons.length - 1] as HTMLElement
     // 副本的 id 由服务端铸、没有幂等键；请求回来了但还没跳走的那一瞬再点一下，不能开出两段。
     await user.dblClick(button)
@@ -938,13 +1123,13 @@ describe('ConversationRoute', () => {
     await renderWithProviders(
       <ConversationRoute
         conversationId="c1"
-        sourceLink={(sourceId) => <a href={`/c/${sourceId}`}>看源对话</a>}
+        sourceLink={(sourceId) => <a href={`/c/${sourceId}`}>查看源任务</a>}
       />,
     )
 
     const note = await screen.findByRole('note', { name: '分叉来源' })
-    expect(note).toHaveTextContent('历史截到源对话第 2 轮')
-    expect(within(note).getByRole('link', { name: '看源对话' })).toHaveAttribute(
+    expect(note).toHaveTextContent('分叉自源任务第 2 轮')
+    expect(within(note).getByRole('link', { name: '查看源任务' })).toHaveAttribute(
       'href',
       `/c/${source}`,
     )
@@ -956,17 +1141,50 @@ describe('ConversationRoute', () => {
     serveApprovalPage(other.id, '2026-09-04T00:00:00Z')
     const first = await renderConversation()
 
-    expect(await screen.findByText('已删除 · 小王 的对话')).toBeVisible()
-    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王 已删除的对话')
+    expect(await screen.findByText('已删除 · 小王 的任务')).toBeVisible()
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王 已删除的任务')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
     first.unmount()
 
     serveApprovalPage(mockAuthUser.id, '2026-09-04T00:00:00Z')
     await renderConversation()
 
-    expect(await screen.findByText('已删除 · 自己的对话')).toBeVisible()
-    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('这是自己已删除的对话')
+    expect(await screen.findByText('已删除 · 自己的任务')).toBeVisible()
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('这是自己已删除的任务')
     expect(screen.queryByLabelText('输入消息')).toBeNull()
+  })
+
+  it('页头的合集标签取自侧栏已拿到的拓扑：最新那份说它在哪个合集就挂哪个，说它没归类就摘掉', async () => {
+    const { queryClient } = await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+    const item = { ...addMockConversation('夜景延时素材生成'), id: 'c1' }
+    const collection = addMockCollection('夏季亚麻系列')
+    const topology = (grouped: boolean): SidebarTopology => ({
+      collections: [
+        {
+          conversationCount: grouped ? 1 : 0,
+          id: collection.id,
+          name: collection.name,
+          page: { items: grouped ? [item] : [], nextCursor: null },
+          updatedAt: collection.updatedAt,
+        },
+      ],
+      ungrouped: { items: grouped ? [] : [item], nextCursor: null },
+      ungroupedCount: grouped ? 0 : 1,
+    })
+    expect(screen.queryByText('夏季亚麻系列')).toBeNull()
+
+    act(() => {
+      queryClient.setQueryData(conversationsQueryKeys.sidebar('all'), topology(true))
+    })
+    expect(screen.getByText('夏季亚麻系列')).toBeVisible()
+
+    act(() => {
+      queryClient.setQueryData(conversationsQueryKeys.sidebar('open'), topology(false), {
+        updatedAt: Date.now() + 1000,
+      })
+    })
+    expect(screen.queryByText('夏季亚麻系列')).toBeNull()
   })
 
   it('标题来自基线，服务端起了新名字就当场换掉', async () => {
@@ -976,6 +1194,7 @@ describe('ConversationRoute', () => {
     expect(await screen.findByRole('heading', { name: '夜景延时素材生成' })).toBeVisible()
 
     socket.deliver({
+      ...sessionEnvelope('c1'),
       type: 'session.meta.updated',
       payload: { session_id: 'c1', title: '改过的名字' },
     })

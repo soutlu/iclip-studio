@@ -8,33 +8,38 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import { StatusBadge } from '@/shared/ui/status-badge'
+import { mediaStatusLabel } from '@/shared/ui/status-badge'
 import { toast } from '@/shared/ui/toast'
-import { conversationStatus, needsAttention } from '../conversation-status'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import { conversationStatus, needsAttention, type AttentionStatus } from '../conversation-status'
 import {
   useRenameConversation,
   useSetConversationCompletion,
   type Conversation,
 } from '../conversations.api'
 import { useSeenRun } from '../conversations.unread'
+import {
+  SIDEBAR_ROW_ACTIVE,
+  SIDEBAR_ROW_CLASS,
+  SIDEBAR_ROW_MENU_OPEN,
+  SIDEBAR_ROW_TITLE_CLASS,
+  SIDEBAR_ROW_TRAILING_SHOWN,
+} from './sidebar-row-classes'
+import { SidebarRowEditor } from './sidebar-row-editor'
+import { useSidebarRowEditing } from './use-sidebar-row-editing'
 
-// 侧栏各行共用：8px 容器内左右 10px，图标与文字左缘落在同一条线上。
-// 状态层作用于整行及尾部按钮；内部标题按钮只负责焦点环。
-export const SIDEBAR_ROW_CLASS =
-  'group flex h-8 ui-state cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-body text-on-surface'
+/**
+ * 侧栏行尾的说法，比全部对话页的状态词更口语；只在侧栏用，不改共用词表。
+ * 等人与失败要用户动手，行尾直接写这几个字；在跑只画转圈，名字给读屏和提示条。
+ */
+const ROW_STATUS_LABEL: Record<AttentionStatus, string> = {
+  approval: '等你确认',
+  failed: '没跑完',
+  question: '等你回答',
+  running: '正在跑',
+}
 
-export const SIDEBAR_ROW_TITLE_CLASS =
-  'flex min-w-0 flex-1 items-center gap-2.5 rounded-xs ui-focus'
-
-/** 行内 ⋯ 菜单打开时保持悬停底色；选中行保留自己的底色，不加这一层。 */
-export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'
-
-// 行尾信息与操作按钮共用尾部槽位，hover、键盘聚焦或菜单展开时切换。
-export const SIDEBAR_ROW_TRAILING_HIDDEN =
-  'group-hover:hidden group-focus-within:hidden group-has-data-[state=open]:hidden'
-// 负右距让 24px 按钮里的图标右缘落在行内容右缘。
-export const SIDEBAR_ROW_TRAILING_SHOWN =
-  'hidden -mr-1.25 group-hover:flex group-focus-within:flex group-has-data-[state=open]:flex'
+const UNREAD_LABEL = '有新回复'
 
 /** 仅对本浏览器已查看过且 lastRunId 变化的完成对话显示未读；当前打开的对话不显示。 */
 const useUnread = (conversation: Conversation, active: boolean): boolean => {
@@ -50,7 +55,7 @@ type SidebarConversationRowProps = {
   onOpenMembership: () => void
 }
 
-/** 侧栏一行对话：打开、改名、归属、标记完成与删除；改对话要有 agent:run，改完各 mutation 自己刷新列表。 */
+/** 侧栏一行对话：打开、改名、移到合集、标记完成与删除；改对话要有 agent:run，改完各 mutation 自己刷新列表。 */
 export function SidebarConversationRow({
   conversation,
   dragging,
@@ -65,116 +70,176 @@ export function SidebarConversationRow({
   })
   const openedId = useParams({ select: (params) => params.conversationId, strict: false })
   const active = openedId === conversation.id
-  const [editing, setEditing] = useState(false)
+  const { close, editing, returnRef, start } = useSidebarRowEditing<HTMLAnchorElement>()
   const rename = useRenameConversation()
   const completion = useSetConversationCompletion()
+  const [tipOpen, setTipOpen] = useState(false)
   const completed = conversation.completedAt !== null
   const unread = useUnread(conversation, active)
   const status = conversationStatus(conversation.activity)
   // 行尾只画还需要人看一眼的状态；跑完没看过的用小点，其余什么都不画。
   const showUnread = unread && status === 'completed'
+  const video = conversation.activity.videoGeneration
+  const videoLabel = video === 'none' ? undefined : `视频${mediaStatusLabel(video)}`
+  // 整行的提示条按行尾顺序把这一行的状态全列出来，看图形的人不用猜。
+  const statusLabels = [
+    ...(needsAttention(status) ? [ROW_STATUS_LABEL[status]] : []),
+    ...(videoLabel === undefined ? [] : [videoLabel]),
+    ...(showUnread ? [UNREAD_LABEL] : []),
+    ...(completed ? ['已完成'] : []),
+  ]
 
-  const commitRename = (value: string) => {
-    setEditing(false)
-    const title = value.trim()
-    if (title && title !== conversation.title) {
-      rename.mutate(
-        { conversationId: conversation.id, title },
-        { onError: (error) => toast.error(errorMessageOf(error, '重命名失败')) },
-      )
-    }
-  }
+  if (editing)
+    return (
+      <SidebarRowEditor
+        // 正打开的那一行保持加粗，进出编辑字形不变。
+        className={cn(active && 'font-semibold')}
+        failureMessage="重命名失败"
+        initialValue={conversation.title}
+        label={`重命名 ${conversation.title}`}
+        onClose={close}
+        onSubmit={(title) => rename.mutateAsync({ conversationId: conversation.id, title })}
+      />
+    )
 
   return (
-    // 拖拽绑定整行，避免链接原生拖动吞掉指针事件；编辑标题时禁用拖拽以允许文字选择。
-    <div
-      className={cn(
-        SIDEBAR_ROW_CLASS,
-        // 拖动中的行压在侧栏吸顶标题（layer-local-1）之上。
-        dragging && 'layer-local-2 opacity-50',
-        active ? 'bg-state-active font-medium' : SIDEBAR_ROW_MENU_OPEN,
-      )}
-      ref={setNodeRef}
-      style={
-        transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
-      }
-      {...(editing || !canWrite ? {} : listeners)}
-    >
-      {editing ? (
-        <input
-          aria-label={`重命名 ${conversation.title}`}
-          className="min-w-0 flex-1 rounded-xs bg-surface-container-lowest px-1 text-body text-on-surface ui-focus-inline"
-          defaultValue={conversation.title}
-          onBlur={(event) => commitRename(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur()
-            if (event.key === 'Escape') {
-              event.currentTarget.value = conversation.title
-              event.currentTarget.blur()
-            }
-          }}
-          ref={(element) => element?.focus()}
-        />
-      ) : (
-        <Link
-          aria-current={active ? 'page' : undefined}
-          className={SIDEBAR_ROW_TITLE_CLASS}
-          draggable={false}
-          params={{ conversationId: conversation.id }}
-          to="/c/$conversationId"
+    // 提示始终挂着、只在有状态时弹：状态来去时行不重建，键盘焦点不丢。
+    // 键盘移进标题链接时聚焦冒泡上来也弹；⋯ 按钮自己拦下了聚焦打开，焦点还给它时这里也不弹。
+    <TooltipRoot onOpenChange={setTipOpen} open={tipOpen && statusLabels.length > 0 && !dragging}>
+      <TooltipTrigger asChild>
+        {/* 拖拽绑定整行，避免链接原生拖动吞掉指针事件；改名时整行换成编辑行，不挂拖拽。 */}
+        <div
+          className={cn(
+            SIDEBAR_ROW_CLASS,
+            // 拖动中的行压在侧栏吸顶标题（layer-local-1）之上。
+            dragging && 'layer-local-2 opacity-50',
+            active ? SIDEBAR_ROW_ACTIVE : SIDEBAR_ROW_MENU_OPEN,
+          )}
+          ref={setNodeRef}
+          style={
+            transform
+              ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+              : undefined
+          }
+          {...(canWrite ? listeners : {})}
         >
-          <span className="min-w-0 flex-1 truncate text-left">{conversation.title}</span>
-        </Link>
-      )}
-      {/* 出片在跑与轮次在跑互不蕴含，两个角标可以同时出现；跑完与失败在分镜页看。 */}
-      <StatusBadge
-        detail="完成后分镜页会更新结果"
-        kind="video"
-        status={
-          conversation.activity.videoGeneration === 'none'
-            ? 'idle'
-            : conversation.activity.videoGeneration
-        }
-      />
-      {needsAttention(status) && <StatusBadge kind="conversation" status={status} />}
-      {completed && (
-        <Icon className="shrink-0 text-primary" label="已完成" name="success" size="sm" />
-      )}
-      {showUnread && (
-        <span aria-label="未读" className="size-1.5 shrink-0 rounded-full bg-primary" role="img" />
-      )}
-      {!editing && canWrite && (
-        <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
-          <MenuRoot>
-            <MenuTrigger asChild>
-              <IconButton label={`${conversation.title} 的更多操作`} name="more" size="xs" />
-            </MenuTrigger>
-            <MenuSurface align="end">
-              <MenuItem icon="edit" onSelect={() => setEditing(true)}>
-                重命名
-              </MenuItem>
-              <MenuItem icon="folder" onSelect={onOpenMembership}>
-                归属
-              </MenuItem>
-              <MenuItem
-                icon="check"
-                onSelect={() =>
-                  completion.mutate(
-                    { completed: !completed, conversationId: conversation.id },
-                    { onError: (error) => toast.error(errorMessageOf(error, '标记完成失败')) },
-                  )
-                }
-              >
-                {completed ? '取消完成' : '标记完成'}
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem destructive icon="delete" onSelect={onDelete}>
-                删除
-              </MenuItem>
-            </MenuSurface>
-          </MenuRoot>
+          <Link
+            ref={returnRef}
+            aria-current={active ? 'page' : undefined}
+            className={SIDEBAR_ROW_TITLE_CLASS}
+            draggable={false}
+            params={{ conversationId: conversation.id }}
+            to="/c/$conversationId"
+          >
+            {/* 标了收尾的对话标题降为辅助色；正打开的那一行保持常规强调。 */}
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-left',
+                completed && !active && 'text-on-surface-faint',
+              )}
+            >
+              {conversation.title}
+            </span>
+          </Link>
+          {/* 每件事实一个带名字的图形：出片在跑与轮次在跑互不蕴含，可以同时出现。 */}
+          <span className="flex shrink-0 items-center gap-1.5 empty:hidden">
+            {needsAttention(status) && <ConversationGlyph status={status} />}
+            {videoLabel !== undefined && (
+              <span
+                aria-label={videoLabel}
+                className={cn(
+                  'size-3.5 shrink-0 rounded-full border-2',
+                  video === 'running'
+                    ? 'border-primary/20 border-t-primary motion-safe:animate-spin'
+                    : 'border-primary/40',
+                )}
+                role="img"
+              />
+            )}
+            {showUnread && (
+              // 未读用墨色，绿色只留给生成。
+              <span
+                aria-label={UNREAD_LABEL}
+                className="size-2 shrink-0 rounded-full bg-on-surface"
+                role="img"
+              />
+            )}
+            {completed && (
+              <Icon
+                className="shrink-0 text-on-surface-faint"
+                label="已完成"
+                name="check"
+                size="sm"
+              />
+            )}
+          </span>
+          {canWrite && (
+            <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
+              <MenuRoot>
+                <MenuTrigger asChild>
+                  <IconButton label={`${conversation.title} 的更多操作`} name="more" size="xs" />
+                </MenuTrigger>
+                <MenuSurface align="end">
+                  <MenuItem icon="edit" onSelect={start}>
+                    重命名
+                  </MenuItem>
+                  <MenuItem icon="folder" onSelect={onOpenMembership}>
+                    移到合集…
+                  </MenuItem>
+                  <MenuItem
+                    icon="check"
+                    onSelect={() =>
+                      completion.mutate(
+                        { completed: !completed, conversationId: conversation.id },
+                        { onError: (error) => toast.error(errorMessageOf(error, '标记完成失败')) },
+                      )
+                    }
+                  >
+                    {completed ? '取消完成' : '标记完成'}
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem destructive icon="delete" onSelect={onDelete}>
+                    删除
+                  </MenuItem>
+                </MenuSurface>
+              </MenuRoot>
+            </div>
+          )}
         </div>
+      </TooltipTrigger>
+      {statusLabels.length > 0 && (
+        <TooltipContent side="right">{statusLabels.join(' · ')}</TooltipContent>
       )}
-    </div>
+    </TooltipRoot>
+  )
+}
+
+/**
+ * 轮次状态。等人（审批、回答）与失败要用户动手，橙点、红色感叹号后面直接写短词，字用中性色；
+ * 在跑只画转圈，减少动效时停住。
+ */
+function ConversationGlyph({ status }: { status: AttentionStatus }) {
+  if (status === 'running')
+    return (
+      <Icon
+        className="shrink-0 text-on-surface-variant motion-safe:animate-spin"
+        label={ROW_STATUS_LABEL.running}
+        name="spinner"
+        size="sm"
+      />
+    )
+  return (
+    // 橙点外有一圈 3px 光晕，字与图形隔 6px 才不贴着光晕。
+    <span className="flex shrink-0 items-center gap-1.5 text-label whitespace-nowrap text-on-surface-variant">
+      {status === 'failed' ? (
+        <Icon className="shrink-0 text-error" decorative name="alert" size="sm" />
+      ) : (
+        <span
+          aria-hidden
+          className="size-2 shrink-0 rounded-full bg-warning ring-3 ring-warning/20"
+        />
+      )}
+      {ROW_STATUS_LABEL[status]}
+    </span>
   )
 }

@@ -1,13 +1,322 @@
 import { QueryClient } from '@tanstack/react-query'
-import { describe, expect, it } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { server } from '@/testing/mocks/server'
+import { readAudioPeaks, readKeyframes } from './reference-clip'
 import {
   editTriggerOf,
   editableModels,
   pickEditModel,
   seedVideoEditJob,
+  submitVideoComposite,
+  submitVideoEdit,
   videoEditChainKey,
 } from './video-editor.api'
+
+/** 一块解出来的音频：从 `timestamp` 秒起，各声道的样本。 */
+type FakeAudio = { timestamp: number; sampleRate: number; channels: number[][] }
+
+/** mediabunny 的替身：不解码，只按 `media` 里写好的关键帧表、时长与音频回答，记下切了哪一段。 */
+const media = vi.hoisted(() => ({
+  keyframes: [] as number[],
+  duration: 0,
+  /** `null` 是没有音轨，`'undecodable'` 是有音轨却解不了。 */
+  audio: null as FakeAudio[] | null | 'undecodable',
+  discarded: [] as { reason: string }[],
+  events: [] as string[],
+  sources: [] as string[],
+  trims: [] as unknown[],
+  disposed: 0,
+}))
+
+vi.mock('mediabunny', () => {
+  type Packet = { timestamp: number }
+  class UrlSource {
+    constructor(url: string) {
+      media.sources.push(url)
+    }
+  }
+  class Input {
+    getPrimaryVideoTrack = () => Promise.resolve({})
+    getPrimaryAudioTrack = () =>
+      Promise.resolve(
+        media.audio === null
+          ? null
+          : { canDecode: () => Promise.resolve(media.audio !== 'undecodable') },
+      )
+    computeDuration = () => Promise.resolve(media.duration)
+    dispose = () => {
+      media.disposed += 1
+    }
+  }
+  class AudioSampleSink {
+    async *samples() {
+      for (const block of Array.isArray(media.audio) ? media.audio : []) {
+        yield {
+          timestamp: block.timestamp,
+          sampleRate: block.sampleRate,
+          numberOfFrames: block.channels[0]?.length ?? 0,
+          numberOfChannels: block.channels.length,
+          copyTo: (target: Float32Array, options: { planeIndex: number }) =>
+            target.set(block.channels[options.planeIndex] ?? []),
+          close: () => {},
+        }
+      }
+    }
+  }
+  class EncodedPacketSink {
+    getFirstKeyPacket = () => Promise.resolve(this.at(0))
+    getNextKeyPacket = (packet: Packet) =>
+      Promise.resolve(this.at(media.keyframes.indexOf(packet.timestamp) + 1))
+    private at = (index: number): Packet | null => {
+      const timestamp = media.keyframes[index]
+      return timestamp === undefined ? null : { timestamp }
+    }
+  }
+  class BufferTarget {
+    buffer: ArrayBuffer | null = null
+  }
+  class Output {
+    target: BufferTarget
+    constructor(options: { target: BufferTarget }) {
+      this.target = options.target
+    }
+  }
+  class Mp4OutputFormat {}
+  const Conversion = {
+    init: (options: { output: Output; trim: unknown }) => {
+      media.trims.push(options.trim)
+      return Promise.resolve({
+        isValid: media.discarded.length === 0,
+        discardedTracks: media.discarded,
+        execute: () => {
+          media.events.push('cut')
+          // 只要像个 MP4 就行：ftyp 盒子开头。
+          options.output.target.buffer = new TextEncoder().encode('\0\0\0\x18ftypisom').buffer
+          return Promise.resolve()
+        },
+      })
+    },
+  }
+  return {
+    AudioSampleSink,
+    BufferTarget,
+    Conversion,
+    EncodedPacketSink,
+    Input,
+    MP4: {},
+    Mp4OutputFormat,
+    Output,
+    QTFF: {},
+    UrlSource,
+  }
+})
+
+describe('submitVideoEdit', () => {
+  const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
+  const sourceJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
+  const baseMediaUrl = 'https://oss.example.com/take.mp4'
+  const uploadId = '5a1d8c2e-7b3f-4c9d-8e1a-2b3c4d5e6f70'
+  const uploadUrl = `http://localhost/mock-oss/${uploadId}`
+  const clipUrl = `https://oss.example.com/iclip/agent/uploads/${uploadId}.mp4`
+  let signed: unknown
+  let edited: unknown
+
+  beforeEach(() => {
+    Object.assign(media, {
+      // 24fps 的模型出片：关键帧在镜头切点上，间隔不等。
+      keyframes: [0, 1.916667, 4.208333, 6.5],
+      duration: 8.042,
+      discarded: [],
+      events: [],
+      sources: [],
+      trims: [],
+      disposed: 0,
+    })
+    signed = undefined
+    edited = undefined
+    server.events.removeAllListeners('request:start')
+    server.events.on('request:start', ({ request }) => {
+      media.events.push(`${request.method} ${new URL(request.url).pathname}`)
+    })
+    server.use(
+      http.post('*/api/uploads/sign', async ({ request }) => {
+        signed = await request.json()
+        return HttpResponse.json({
+          uploadId,
+          upload: {
+            expiresAt: '2026-10-07T12:00:00Z',
+            headers: { 'Content-Type': 'video/mp4' },
+            url: uploadUrl,
+          },
+        })
+      }),
+      http.put(uploadUrl, () => new HttpResponse(null, { status: 200 })),
+      http.post('*/api/uploads/:uploadId/confirm', () =>
+        HttpResponse.json({ contentType: 'video/mp4', sizeBytes: 16, url: clipUrl }),
+      ),
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        edited = await request.json()
+        return HttpResponse.json(
+          { generation: makeGenerationJob({ status: 'pending', sourceJobId }) },
+          { status: 202 },
+        )
+      }),
+    )
+  })
+
+  const submit = () =>
+    submitVideoEdit({
+      conversationId,
+      taskId: null,
+      sourceJobId,
+      baseMediaUrl,
+      // 两端正好是基底的关键帧（取整到毫秒的读数）。
+      range: { start: 1.917, end: 6.5 },
+      model: 'wan3.0-video',
+      prompt: '换成浅灰背景',
+      referenceImageUrls: ['https://cdn.example.com/ref.png'],
+    })
+
+  it('先在基底上按区间切片，再传上去，最后带着片段地址与区间提交编辑', async () => {
+    await submit()
+
+    expect(media.events).toEqual([
+      'cut',
+      'POST /api/uploads/sign',
+      `PUT /mock-oss/${uploadId}`,
+      `POST /api/uploads/${uploadId}/confirm`,
+      'POST /api/generations/video-edits',
+    ])
+    expect(media.sources).toEqual([baseMediaUrl])
+    expect(media.trims).toEqual([{ start: 1.917, end: 6.5 }])
+    expect(signed).toEqual({ contentType: 'video/mp4', height: null, width: null })
+    expect(edited).toEqual({
+      conversation_id: conversationId,
+      task_id: null,
+      source_job_id: sourceJobId,
+      range_start_ms: 1917,
+      range_end_ms: 6500,
+      reference_video_urls: [clipUrl],
+      model: 'wan3.0-video',
+      prompt: '编辑视频，换成浅灰背景',
+      reference_image_urls: ['https://cdn.example.com/ref.png'],
+      seconds: -1,
+    })
+    expect(media.disposed).toBe(1)
+  })
+
+  it('有轨道拷不进 MP4 就报错，不转码、不上传、不提交', async () => {
+    media.discarded = [{ reason: 'cannot_copy' }]
+
+    const error = await submit().then(
+      () => undefined,
+      (reason: unknown) => reason,
+    )
+
+    expect(error).toBeInstanceOf(UserFacingError)
+    expect(errorMessageOf(error, '兜底')).toBe('参考片段没切出来，请稍后重试')
+    expect(media.events).toEqual([])
+    expect(media.disposed).toBe(1)
+  })
+})
+
+describe('readKeyframes', () => {
+  beforeEach(() => {
+    Object.assign(media, { keyframes: [0, 1.916667, 4.208333, 6.5], duration: 8.0416, disposed: 0 })
+  })
+
+  it('关键帧表与时长都取整到毫秒，读完释放', async () => {
+    expect(await readKeyframes('https://oss.example.com/take.mp4')).toEqual({
+      keyframes: [0, 1.917, 4.208, 6.5],
+      duration: 8.042,
+    })
+    expect(media.disposed).toBe(1)
+  })
+})
+
+describe('readAudioPeaks', () => {
+  beforeEach(() => {
+    media.disposed = 0
+  })
+
+  it('每秒 50 个峰值，各声道取最大的绝对值，整条最响的是 1', async () => {
+    // 采样率 100：每个峰值管两个样本。
+    media.audio = [
+      {
+        timestamp: 0,
+        sampleRate: 100,
+        channels: [
+          [0.1, -0.2, 0.05, 0],
+          [0, 0.1, -0.4, 0],
+        ],
+      },
+      {
+        timestamp: 0.04,
+        sampleRate: 100,
+        channels: [
+          [0.8, 0],
+          [0, 0],
+        ],
+      },
+    ]
+    expect(await readAudioPeaks('https://oss.example.com/take.mp4')).toEqual({
+      rate: 50,
+      // 样本按 32 位浮点存，比值只到浮点精度。
+      peaks: [expect.closeTo(0.25), expect.closeTo(0.5), 1],
+    })
+    expect(media.disposed).toBe(1)
+  })
+
+  it('没有音轨就是无声，返回 null', async () => {
+    media.audio = null
+    expect(await readAudioPeaks('https://oss.example.com/take.mp4')).toBeNull()
+  })
+
+  it('有音轨却解不了是错误，不当成无声', async () => {
+    media.audio = 'undecodable'
+    const error = await readAudioPeaks('https://oss.example.com/take.mp4').then(
+      () => undefined,
+      (reason: unknown) => reason,
+    )
+    expect(errorMessageOf(error, '兜底')).toBe('这个浏览器解不了这条视频的原声')
+    expect(media.disposed).toBe(1)
+  })
+})
+
+describe('submitVideoComposite', () => {
+  const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
+  const baseJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
+  const editJobId = '7e1c3a9b-2d4f-4b1e-8c3d-1f2e3a4b5c6d'
+
+  it('片段列表就是草稿：各段出处与自己媒体时间里的起止原样发出', async () => {
+    const segments = [
+      { sourceJobId: baseJobId, start: 0, end: 1.5 },
+      { sourceJobId: editJobId, start: 0, end: 2.75 },
+      { sourceJobId: baseJobId, start: 5, end: 6 },
+      { sourceJobId: baseJobId, start: 4.25, end: 5 },
+    ]
+    let body: unknown
+    const accepted = makeGenerationJob({
+      operation: 'compose',
+      status: 'pending',
+      sourceJobId: baseJobId,
+    })
+    server.use(
+      http.post('*/api/generations/video-composites', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ generation: accepted }, { status: 202 })
+      }),
+    )
+
+    const result = await submitVideoComposite({ conversationId, taskId: null, baseJobId, segments })
+
+    expect(body).toEqual({ conversationId, taskId: null, baseJobId, segments })
+    expect(result.id).toBe(accepted.id)
+  })
+})
 
 describe('seedVideoEditJob', () => {
   const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'

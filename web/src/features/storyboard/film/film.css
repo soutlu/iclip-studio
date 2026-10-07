@@ -1,0 +1,148 @@
+/* ===== 制作页文案列 =====
+   卡片、左轨、镜头条都用分镜页的（storyboard.css 的「文案列」一节），这里只管制作页多出来的几样：
+   一段里几个编辑器上下排、段间与分镜页一样留 6px；全局设定一段一行，称呼与图片芯片浮在左边，字从它们后面接着排、
+   折行回到行首（编辑器不另起格式化上下文，字才绕得过去）；台词单独一行，说话人是固定的小标签，字套在中文引号里，引号画在编辑器的段落上，跟着字折行。
+   收成摘要时（data-clamped）整段正文按行高截断：镜头两行、全局设定三行。 */
+.film-segment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.storyboard-segment[data-clamped='true'] .film-segment-body {
+  max-height: calc(var(--text-body) * 1.75 * 2);
+  overflow: hidden;
+}
+.storyboard-settings[data-clamped='true'] .film-segment-body {
+  max-height: calc(var(--text-body) * 1.75 * 3);
+}
+/* 段里的编辑器各自不截断，截断交给整段。 */
+.storyboard-segment[data-clamped='true'] .film-segment-body .prompt-editor-content {
+  display: block;
+}
+
+.film-setting-label {
+  float: left;
+  margin-right: 2px;
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: 1.75;
+}
+/* 没有图的出场元素：芯片里画一格空的缩略图位，和有图的一样高。 */
+.film-chip .frame-chip-pill > .film-chip-empty {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container);
+  outline: 0.5px solid var(--color-hairline);
+  outline-offset: -0.5px;
+}
+
+.film-line {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+}
+.film-line-role {
+  flex: none;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-xs);
+  background: var(--color-top-layer);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.film-line-words {
+  min-width: 0;
+  flex: 1;
+}
+.film-line-words .prompt-editor-content p::before {
+  content: '“';
+}
+.film-line-words .prompt-editor-content p::after {
+  content: '”';
+}
+
+/* ===== 生成卡 =====
+   舞台上一张还没有图的生成图：深色舞台上居中一张浅色卡（与浮起的段卡同一层底色），画幅框里放不下就在卡里滚。
+   描述用小一号的正文、行高给图片芯片留足；按钮上方的缺图提醒用错误色；底部放图片比例、提交失败的原话与按钮，窄时换行。
+   生成好了还没选用时（data-result）卡上放结果的预览：按原比例整张放下，高度让出标题、提醒、按钮与舞台上下的
+   工具条（约 280px），卡居中、不顶到工具条。 */
+.film-generate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  padding: 16px;
+  container-type: size;
+  place-items: center;
+}
+.film-generate-card {
+  display: flex;
+  width: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--color-top-layer);
+  box-shadow: var(--shadow-2);
+  overscroll-behavior: contain;
+}
+.film-generate-title {
+  color: var(--color-on-surface);
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: var(--text-title--line-height);
+}
+.film-generate-prompt {
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.film-generate-preview {
+  align-self: center;
+  border-radius: var(--radius-sm);
+  cursor: zoom-in;
+}
+.film-generate-preview > img {
+  display: block;
+  max-width: 100%;
+  max-height: max(96px, calc(100cqh - 280px));
+  border-radius: var(--radius-sm);
+}
+.film-generate-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--color-error);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+.film-generate-hint > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.film-generate-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-hairline);
+}
+.film-generate-error {
+  min-width: 0;
+  color: var(--color-error);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}

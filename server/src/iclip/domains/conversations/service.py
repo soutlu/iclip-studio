@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+import weakref
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import structlog
 
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from iclip.common.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     Conversation,
     ConversationActivity,
+    EventWatermark,
 )
 from iclip.domains.conversations.repository import (
     AuditFilter,
@@ -23,7 +27,7 @@ from iclip.domains.conversations.repository import (
     PageCursor,
     StateFilter,
 )
-from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS
+from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, conversation_out
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
     Principal,
@@ -78,6 +82,19 @@ AnnounceTitle = Callable[[uuid.UUID, uuid.UUID, str], None]
 """同步广播标题更新，参数为 (属主, 对话 id, 标题)。
 
 广播不依赖对话订阅，发给属主与治理者的连接；仅写入出站队列，不等待回执。"""
+
+EventWatermarkOf = Callable[[], EventWatermark]
+"""取一份会话事件水位，由组合根接到广播方的事件时钟上。读库、写库之前各取一份（ADR-0004）。"""
+
+AnnounceConversationRow = Callable[
+    [Literal["created", "updated"], uuid.UUID, uuid.UUID, Mapping[str, Any]], None
+]
+"""同步广播新出现或变化了的整行，参数为 (种类, 属主, 对话 id, camelCase 整行)。
+
+整行的 ``lastSeq`` 是写入之前的水位；广播方在提交之后另发新号作帧序号。与标题广播同一投递范围。"""
+
+AnnounceConversationDeleted = Callable[[uuid.UUID, uuid.UUID], None]
+"""同步广播属主删掉了一段对话，参数为 (属主, 对话 id)；写入提交之后调用。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +173,23 @@ class CopyConversationWorkspace(Protocol):
     ) -> None: ...
 
 
+class CopySameStyle(Protocol):
+    """做同款：把源对话的几份制作文件拷进新对话的工作区，连同整份素材台账。
+
+    拷哪几份、拷过去叫什么由实现定（ADR-0013）。源工作区里既没有工程文件也没有分镜文件时
+    什么都不写、回 ``False``，做不做得了由用例判。台账整份跟着拷：运行文件里选用的图都登记
+    在台账里，新对话靠它认得这些地址。"""
+
+    async def __call__(
+        self,
+        *,
+        source_owner: uuid.UUID,
+        source_id: uuid.UUID,
+        target_owner: uuid.UUID,
+        target_id: uuid.UUID,
+    ) -> bool: ...
+
+
 ListDerivedFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[Sequence[DerivedFile]]]
 """列出工作区文件，参数为 (属主, 对话 id)。"""
 
@@ -166,6 +200,71 @@ ReadDerivedFile = Callable[[uuid.UUID, uuid.UUID, str], Awaitable[DerivedFileCon
 WriteDerivedFile = Callable[[uuid.UUID, uuid.UUID, str, str, int], Awaitable[DerivedFileContent]]
 """覆盖工作区文件，参数为 (属主, 对话 id, 路径, 正文, 期望版本)。
 版本不匹配抛 Conflict；路径和容量由存储实现校验。"""
+
+
+class ConversationFilm(Protocol):
+    """这段对话里 AI 导演的工程，在制作页上读、改字、换图；由组合根接到工作区文件与生成记录上。
+
+    ``owner`` 是对话属主，权限由用例先判。版本对不上抛 Conflict，改动不合规矩抛
+    ValidationFailed，消息是给人看的一句话。"""
+
+    async def view(
+        self, principal: Principal, owner: uuid.UUID, conversation_id: uuid.UUID
+    ) -> FilmView | None:
+        """没有工程文件返回 None。"""
+        ...
+
+    async def edit_text(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        edits: Sequence[FilmTextEdit],
+        *,
+        film_version: int,
+    ) -> FilmView: ...
+
+    async def choose_image(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        url: str | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> FilmView: ...
+
+    async def generate_image(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        prompt: FilmImagePrompt | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """按描述给一张图出一张新的，返回生成任务 id。``prompt`` 为 None 用文件里的描述。"""
+        ...
+
+    async def generate_video(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        video: str,
+        model: str,
+        resolution: str,
+        generate_audio: bool,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """给一个镜头组出片，返回生成任务 id。"""
+        ...
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -276,6 +375,7 @@ class ConversationService:
         read_derived_file: ReadDerivedFile,
         write_derived_file: WriteDerivedFile,
         document_validators: Mapping[str, WorkspaceDocumentValidator],
+        film: ConversationFilm,
         generate_title: GenerateTitle,
         announce_title: AnnounceTitle,
         activities_of: ActivitiesOf,
@@ -283,8 +383,16 @@ class ConversationService:
         latest_master_urls: LatestMasterUrls,
         fork_transcript: ForkTranscript,
         copy_workspace: CopyConversationWorkspace,
+        copy_same_style: CopySameStyle,
+        event_watermark: EventWatermarkOf,
+        announce_row: AnnounceConversationRow,
+        announce_deleted: AnnounceConversationDeleted,
     ) -> None:
         self._repo = repo
+        self._copy_same_style = copy_same_style
+        self._event_watermark = event_watermark
+        self._announce_row = announce_row
+        self._announce_deleted = announce_deleted
         self._claim_task = claim_task
         self._fork_transcript = fork_transcript
         self._copy_workspace = copy_workspace
@@ -298,6 +406,41 @@ class ConversationService:
         self._read_derived_file = read_derived_file
         self._write_derived_file = write_derived_file
         self._document_validators = document_validators
+        self._film = film
+        # 同一段对话的「写库 → 读活动 → 广播」在本进程串行：帧序号在广播时才发，两次写入若在读活动处
+        # 交错，先提交的旧行会拿到更大的序号把新行盖回去。ADR-0004 的「提交后发号」以发号顺序等于提交
+        # 顺序为前提。锁只经 _row_lock 用在 async with 里，没人持有也没人等待时随即回收。
+        self._row_locks: weakref.WeakValueDictionary[uuid.UUID, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
+
+    def _row_lock(self, conversation_id: uuid.UUID) -> asyncio.Lock:
+        lock = self._row_locks.get(conversation_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._row_locks[conversation_id] = lock
+        return lock
+
+    def watermark(self) -> EventWatermark:
+        """取一份会话事件水位；列表与单行接口在读库之前调，结果填进行上的 ``lastSeq``。"""
+
+        return self._event_watermark()
+
+    async def _broadcast_row(
+        self,
+        kind: Literal["created", "updated"],
+        conversation: Conversation,
+        before: EventWatermark,
+    ) -> None:
+        """把写入之后的整行广播出去。``before`` 必须在写入之前取，填作行内 ``lastSeq``：行里的
+        字段读于写入事务，包含了序号不大于它的每一个事件，客户端按它合并 ``activity``。帧本身由
+        广播方在提交之后发新号，客户端按那个号记行内事实字段的水位。"""
+
+        activity = (await self.activities([conversation.id]))[conversation.id]
+        row = conversation_out(conversation, activity, before).model_dump(
+            mode="json", by_alias=True
+        )
+        self._announce_row(kind, conversation.owner_user_id, conversation.id, row)
 
     async def activities(
         self, conversation_ids: Sequence[uuid.UUID]
@@ -354,18 +497,127 @@ class ConversationService:
     ) -> DerivedFileContent:
         """覆盖属主的工作区文件。不可见对话返回 404，可见但非属主返回 403。"""
 
-        conversation = await self._readable(principal, conversation_id)
-        if conversation.owner_user_id != principal.user_id:
-            raise PermissionDenied("只有属主能改这段对话的工作区文件")
-        # 治理者读得到自己删掉的对话，但墓碑对谁都是只读的。
-        if conversation.deleted_at is not None:
-            raise PermissionDenied("已删除的对话不能再改")
+        conversation = await self._workspace_writable(principal, conversation_id)
         validate = self._document_validators.get(path)
         if validate is not None:
             await validate(conversation.owner_user_id, conversation.id, content)
         return await self._write_derived_file(
             conversation.owner_user_id, conversation.id, path, content, expected_version
         )
+
+    async def film(self, principal: Principal, conversation_id: uuid.UUID) -> FilmView:
+        """读这段对话的制作页；可见范围同读工作区文件，没有工程文件返回 404。"""
+
+        conversation = await self._readable(principal, conversation_id)
+        found = await self._film.view(principal, conversation.owner_user_id, conversation.id)
+        if found is None:
+            raise NotFound("这段对话里没有 AI 导演写的分镜")
+        return found
+
+    async def edit_film_text(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        edits: Sequence[FilmTextEdit],
+        *,
+        film_version: int,
+    ) -> FilmView:
+        """在制作页上改字；只有属主能改，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.edit_text(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            edits,
+            film_version=film_version,
+        )
+
+    async def choose_film_image(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        url: str | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> FilmView:
+        """在制作页上给一张图换地址；只有属主能换，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.choose_image(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            node=node,
+            url=url,
+            film_version=film_version,
+            run_version=run_version,
+        )
+
+    async def generate_film_image(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        prompt: FilmImagePrompt | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """在制作页上按描述生成一张图；要花钱，只有属主能发，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.generate_image(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            node=node,
+            prompt=prompt,
+            film_version=film_version,
+            run_version=run_version,
+        )
+
+    async def generate_film_video(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        video: str,
+        model: str,
+        resolution: str,
+        generate_audio: bool,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """在制作页上给一个镜头组出片；只有属主能发，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.generate_video(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            video=video,
+            model=model,
+            resolution=resolution,
+            generate_audio=generate_audio,
+            film_version=film_version,
+            run_version=run_version,
+        )
+
+    async def _workspace_writable(
+        self, principal: Principal, conversation_id: uuid.UUID
+    ) -> Conversation:
+        """改工作区的权限：看不见是 404，看得见但不是属主是 403。"""
+
+        conversation = await self._readable(principal, conversation_id)
+        if conversation.owner_user_id != principal.user_id:
+            raise PermissionDenied("只有属主能改这段对话的工作区文件")
+        # 治理者读得到自己删掉的对话，但墓碑对谁都是只读的。
+        if conversation.deleted_at is not None:
+            raise PermissionDenied("已删除的对话不能再改")
+        return conversation
 
     async def create(
         self,
@@ -376,31 +628,74 @@ class ConversationService:
         title: str | None = None,
         task_id: uuid.UUID | None = None,
         collection_id: uuid.UUID | None = None,
+        same_as: uuid.UUID | None = None,
     ) -> tuple[Conversation, bool]:
         """创建一段对话，返回它与「本次是否新建」；可选归属是否存在由外键约束校验。
 
         ``conversation_id`` 由调用方铸时按它幂等：重发同一个 id 返回已有那一段。
-        新建时挂了需求单，就以属主认领那张单。"""
+        落库的那一段挂着需求单，就以它的属主认领那张单，重发也认领一次。
+
+        给了 ``same_as`` 就是做同款：先把那段对话的制作文件与素材台账拷进来，再落对话行。
+        源看不见抛 ``NotFound``，源没有工程文件或分镜文件抛 ``ValidationFailed``，两种都不落行；
+        这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。"""
 
         now = datetime.now(UTC)
-        conversation, created = await self._repo.create_if_absent(
-            Conversation(
-                id=conversation_id or uuid.uuid4(),
-                owner_user_id=principal.user_id,
-                agent_id=agent_id,
-                title=title or DEFAULT_TITLE,
-                title_kind="custom" if title else "default",
-                last_run_id=None,
-                task_id=task_id,
-                collection_id=collection_id,
-                # 仓储使用数据库 now() 覆盖时间占位值。
-                created_at=now,
-                updated_at=now,
+        new_id = conversation_id or uuid.uuid4()
+        # 调用方铸的 id 在答复之前就可能被拿去改这段对话，created 帧与其他整行帧同样要按提交顺序发号。
+        async with self._row_lock(new_id):
+            if same_as is not None and not (
+                conversation_id is not None and await self._id_taken(conversation_id)
+            ):
+                await self._copy_same_as(principal, source_id=same_as, target_id=new_id)
+            before = self._event_watermark()
+            conversation, created = await self._repo.create_if_absent(
+                Conversation(
+                    id=new_id,
+                    owner_user_id=principal.user_id,
+                    agent_id=agent_id,
+                    title=title or DEFAULT_TITLE,
+                    title_kind="custom" if title else "default",
+                    last_run_id=None,
+                    task_id=task_id,
+                    collection_id=collection_id,
+                    # 仓储使用数据库 now() 覆盖时间占位值。
+                    created_at=now,
+                    updated_at=now,
+                )
             )
-        )
-        if created and task_id is not None:
-            await self._claim_task(task_id, principal.user_id)
+            if created:
+                await self._broadcast_row("created", conversation, before)
+        # 先广播再认领：对话行一提交就是事实，认领失败不能把 created 帧一起吞掉。重发时首次可能死在
+        # 提交之后、认领之前，所以不看 created，按落库那一行补认领；认领本身幂等。
+        if conversation.task_id is not None:
+            await self._claim_task(conversation.task_id, conversation.owner_user_id)
         return conversation, created
+
+    async def _id_taken(self, conversation_id: uuid.UUID) -> bool:
+        """这个 id 有没有对话行，不论属主、删没删；归属与可见性仍由落库那一步判。"""
+
+        try:
+            await self._repo.get(conversation_id, owner=None, include_deleted=True)
+        except NotFound:
+            return False
+        return True
+
+    async def _copy_same_as(
+        self, principal: Principal, *, source_id: uuid.UUID, target_id: uuid.UUID
+    ) -> None:
+        """做同款的拷贝：源的可见范围同分叉，在跑也照拷。
+
+        先拷文件与素材、对话行由调用方最后落，与分叉同一个顺序：中途失败只留下寻址不到的数据，
+        agent 也不会在拷到一半的工作区里开跑。"""
+
+        source = await self._readable(principal, source_id)
+        if not await self._copy_same_style(
+            source_owner=source.owner_user_id,
+            source_id=source.id,
+            target_owner=principal.user_id,
+            target_id=target_id,
+        ):
+            raise ValidationFailed("这段对话没有工程文件或分镜文件，做不了同款")
 
     async def fork(
         self,
@@ -443,6 +738,7 @@ class ConversationService:
             source_id=source_id, target_id=target_id, turn=turn
         ):
             raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
+        before = self._event_watermark()
         conversation, _ = await self._repo.create_if_absent(
             Conversation(
                 id=target_id,
@@ -460,6 +756,7 @@ class ConversationService:
                 fork_turn=turn,
             )
         )
+        await self._broadcast_row("created", conversation, before)
         return conversation
 
     async def list_for_task(
@@ -606,12 +903,18 @@ class ConversationService:
     async def rename(
         self, principal: Principal, conversation_id: uuid.UUID, *, title: str
     ) -> Conversation:
-        renamed = await self._repo.rename(conversation_id, owner=principal.user_id, title=title)
-        self._announce_title(renamed.owner_user_id, conversation_id, renamed.title)
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            renamed = await self._repo.rename(conversation_id, owner=principal.user_id, title=title)
+            self._announce_title(renamed.owner_user_id, conversation_id, renamed.title)
+            await self._broadcast_row("updated", renamed, before)
         return renamed
 
-    async def name_after_turn(self, conversation_id: uuid.UUID, user_text: str) -> None:
-        """轮次结束后生成 default 标题；本次未生成时保留 default，后续轮次可再次尝试。"""
+    async def name_at_turn_start(self, conversation_id: uuid.UUID, user_text: str) -> None:
+        """一轮开始时按这一轮的用户消息生成 default 标题，与这一轮的运行并行。
+
+        本次未生成时保留 default，下一轮开始时再试。生成标题要调模型，放在行锁外面，
+        免得这段对话的改名、开跑等写入跟着等。"""
 
         conversation = await self._repo.get(conversation_id, owner=None)
         if conversation.title_kind != "default":
@@ -619,18 +922,23 @@ class ConversationService:
         title = await self._generate_title(user_text)
         if title is None:
             return
-        # SQL 条件更新防止生成期间的用户改名被覆盖。
-        if await self._repo.apply_generated_title(conversation_id, title=title):
-            self._announce_title(conversation.owner_user_id, conversation_id, title)
+        async with self._row_lock(conversation_id):
+            # SQL 条件更新防止生成期间的用户改名被覆盖。
+            if await self._repo.apply_generated_title(conversation_id, title=title):
+                self._announce_title(conversation.owner_user_id, conversation_id, title)
 
     async def set_collection(
         self, principal: Principal, conversation_id: uuid.UUID, *, collection_id: uuid.UUID | None
     ) -> Conversation:
         """设置或清空对话的合集归属。"""
 
-        return await self._repo.set_collection(
-            conversation_id, owner=principal.user_id, collection_id=collection_id
-        )
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            conversation = await self._repo.set_collection(
+                conversation_id, owner=principal.user_id, collection_id=collection_id
+            )
+            await self._broadcast_row("updated", conversation, before)
+        return conversation
 
     async def set_task(
         self, principal: Principal, conversation_id: uuid.UUID, *, task_id: uuid.UUID | None
@@ -638,11 +946,16 @@ class ConversationService:
         """设置或清空需求单归属。尝试顺序按对话创建时间计算，重新关联不会改变创建时间。
         挂上的那张单由属主认领；摘掉不动认领记录。"""
 
-        conversation = await self._repo.set_task(
-            conversation_id, owner=principal.user_id, task_id=task_id
-        )
-        if task_id is not None:
-            await self._claim_task(task_id, principal.user_id)
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            conversation = await self._repo.set_task(
+                conversation_id, owner=principal.user_id, task_id=task_id
+            )
+            await self._broadcast_row("updated", conversation, before)
+        # 认领是别的模块的端口，不放在行锁里；行一提交就是事实，先广播，认领失败也不吞掉这一帧。
+        # 重新挂同一张单照样认领一次（认领幂等），失败后重试即可补上。
+        if conversation.task_id is not None:
+            await self._claim_task(conversation.task_id, conversation.owner_user_id)
         return conversation
 
     async def set_completed(
@@ -650,34 +963,53 @@ class ConversationService:
     ) -> Conversation:
         """标记或取消属主的收尾标记。机器不会自己标；属主再动手会自动取消。"""
 
-        return await self._repo.set_completed(
-            conversation_id, owner=principal.user_id, completed=completed
-        )
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            conversation = await self._repo.set_completed(
+                conversation_id, owner=principal.user_id, completed=completed
+            )
+            await self._broadcast_row("updated", conversation, before)
+        return conversation
 
     async def clear_completed(self, conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
         """属主在这段对话里又干活了（如提交出片），收尾标记不再成立。
 
         供别的域在受理成功后回调：对话不存在、已删或不是这个人的都当没发生，不影响调用方。
-        标记本来就是空时照样写一次：提交出片本身就是活动，`updated_at` 该跟着走。"""
+        标记本来就是空时照样写一次：提交出片本身就是活动，`updated_at` 该跟着走；行变了就广播
+        ``updated``，与属主手动取消同一种帧。"""
 
-        try:
-            await self._repo.set_completed(conversation_id, owner=owner, completed=False)
-        except NotFound:
-            _logger.debug("对话不可见，跳过取消收尾标记", conversation_id=str(conversation_id))
+        async with self._row_lock(conversation_id):
+            before = self._event_watermark()
+            try:
+                conversation = await self._repo.set_completed(
+                    conversation_id, owner=owner, completed=False
+                )
+            except NotFound:
+                _logger.debug("对话不可见，跳过取消收尾标记", conversation_id=str(conversation_id))
+                return
+            await self._broadcast_row("updated", conversation, before)
 
     async def delete(self, principal: Principal, conversation_id: uuid.UUID) -> None:
         """把对话标记删除。工作区与素材台账留着，治理者复盘时还要看。"""
 
         await self._repo.delete(conversation_id, owner=principal.user_id)
+        self._announce_deleted(principal.user_id, conversation_id)
 
     async def begin_run(
         self, *, owner: uuid.UUID, agent_id: str, conversation_id: str, run_id: str
     ) -> None:
-        """解析对话 id、核对属主与 Agent 后记录运行。"""
+        """解析对话 id、核对属主与 Agent 后记录运行，再广播 ``updated``（照 Kimi 会话元数据一变就发）。
 
-        await self._repo.touch_run(
-            _as_conversation_id(conversation_id), owner=owner, agent_id=agent_id, run_id=run_id
-        )
+        这一帧带出新的 ``lastRunId`` 与被抹掉的收尾标记：开跑帧之后、这次写入之前读出的行晚到，
+        盖不掉它（ADR-0004）。"""
+
+        parsed = _as_conversation_id(conversation_id)
+        async with self._row_lock(parsed):
+            before = self._event_watermark()
+            conversation = await self._repo.touch_run(
+                parsed, owner=owner, agent_id=agent_id, run_id=run_id
+            )
+            await self._broadcast_row("updated", conversation, before)
 
     async def agent_of(self, principal: Principal, conversation_id: str, *, writing: bool) -> str:
         """从可见对话中读取 Agent，拒绝由调用方指定 Agent 绕过对话绑定。
@@ -688,6 +1020,11 @@ class ConversationService:
         if writing:
             return (await self._repo.get(parsed, owner=principal.user_id)).agent_id
         return (await self._readable(principal, parsed)).agent_id
+
+    async def get(self, principal: Principal, conversation_id: uuid.UUID) -> Conversation:
+        """按 id 读一段对话的整行，可见范围同其他读路径：治理者含墓碑，其余人只见自己活着的。"""
+
+        return await self._readable(principal, conversation_id)
 
     async def header_of(self, principal: Principal, conversation_id: str) -> Conversation:
         """读取可见对话的整行，可见范围同 ``agent_of(writing=False)``。会话页首屏用它贴标题、属主与
@@ -704,14 +1041,18 @@ __all__ = [
     "ActivitiesOf",
     "AgentDirectory",
     "AgentEntry",
+    "AnnounceConversationDeleted",
+    "AnnounceConversationRow",
     "AuditPage",
     "BusyConversationIds",
     "ClaimTask",
     "CollectionInfo",
+    "ConversationFilm",
     "ConversationService",
     "DeletedFilter",
     "DerivedFile",
     "DerivedFileContent",
+    "EventWatermarkOf",
     "LatestMasterUrls",
     "ListAgents",
     "ListCollections",

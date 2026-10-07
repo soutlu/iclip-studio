@@ -6,11 +6,12 @@ import {
   type QueryClient,
   type QueryFilters,
 } from '@tanstack/react-query'
-import { useRef } from 'react'
+import { useCallback, useRef, useSyncExternalStore } from 'react'
 import { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
 import { mintUuid } from '@/shared/lib/uuid'
+import { conversationRowsOf, type ConversationRowStore } from './conversation-rows'
 import type { ComposerPart } from '@/shared/ui/composer'
 import {
   zApproveConversationsConversationIdInteractionsInteractionIdPostResponse,
@@ -56,6 +57,7 @@ export type ConversationListState = z.output<typeof conversationListStateSchema>
 const SIDEBAR_KEY = ['conversations', 'sidebar'] as const
 const MORE_KEY = ['conversations', 'more'] as const
 const AUDIT_KEY = ['conversations', 'audit'] as const
+const SEARCH_KEY = ['conversations', 'search'] as const
 
 export const conversationsQueryKeys = {
   all: ['conversations'] as const,
@@ -63,16 +65,17 @@ export const conversationsQueryKeys = {
   /** 治理者的全部对话，按筛选条件分键；auditAll 作前缀整体失效。 */
   audit: (filters: object) => [...AUDIT_KEY, filters] as const,
   auditAll: AUDIT_KEY,
-  /** 用户手动展开的额外分页；拓扑刷新时整体丢弃。 */
+  /** 侧栏任务区与各合集从头读起的分页列表；刷新时整体失效，已读的页按新游标原位重拉。 */
   moreAll: MORE_KEY,
-  more: (bucket: string, cursor: string, state: ConversationListState) =>
-    [...MORE_KEY, bucket, cursor, state] as const,
-  search: (keyword: string) => ['conversations', 'search', keyword] as const,
+  more: (bucket: string, state: ConversationListState) => [...MORE_KEY, bucket, state] as const,
+  search: (keyword: string) => [...SEARCH_KEY, keyword] as const,
+  /** 所有关键词的搜索结果；重连对账时整体失效。 */
+  searchAll: SEARCH_KEY,
   /** 未传 state 时作为所有筛选的缓存键前缀。 */
   sidebar: (state?: ConversationListState): readonly string[] =>
     state === undefined ? SIDEBAR_KEY : [...SIDEBAR_KEY, state],
   /**
-   * 按 all 以外的状态筛选的侧栏拓扑或额外分页，对话状态一变它们的归属就可能不同。
+   * 按 all 以外的状态筛选的侧栏拓扑或分页列表，对话状态一变它们的归属就可能不同。
    * state 是 sidebar(state) 与 more(…) 的末位，改这两种键的布局要连这里一起改。
    */
   filteredLists: (list: 'more' | 'sidebar'): QueryFilters => ({
@@ -82,20 +85,22 @@ export const conversationsQueryKeys = {
 }
 
 /**
- * 对话列表的刷新配方：先丢掉用户手动展开的额外分页（拓扑一变它们的游标就不作数，留着会逐页重拉），
- * 再失效列表。
+ * 对话列表的刷新配方：失效列表，挂着的查询原位重拉。侧栏的分页列表从头按新游标逐页重拉、页数不变，
+ * 重拉完才换上新数据，已展开的行不会收起。
  *
- * 缺省失效全部会话列表（侧栏拓扑、搜索、需求单下的尝试、全部对话页），给改了对话的写操作用。
- * ``'sidebar'`` 只重拉侧栏拓扑，给全局帧与合集变动用：全部对话页另有节流窗口，不跟着每帧重拉。
+ * 缺省失效全部会话列表（侧栏拓扑与分页列表、搜索、需求单下的尝试、全部对话页），给改了对话的写操作用。
+ * ``'sidebar'`` 只重拉侧栏拓扑与分页列表，给全局帧与合集变动用：全部对话页另有节流窗口，不跟着每帧重拉。
+ * 等这些重拉都完成才 resolve。
  */
-export const refreshConversationLists = (
+export const refreshConversationLists = async (
   queryClient: QueryClient,
   scope: 'all' | 'sidebar' = 'all',
 ): Promise<void> => {
-  queryClient.removeQueries({ queryKey: conversationsQueryKeys.moreAll })
-  return queryClient.invalidateQueries({
-    queryKey: scope === 'all' ? conversationsQueryKeys.all : conversationsQueryKeys.sidebar(),
-  })
+  const queryKeys =
+    scope === 'all'
+      ? [conversationsQueryKeys.all]
+      : [conversationsQueryKeys.sidebar(), conversationsQueryKeys.moreAll]
+  await Promise.all(queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
 }
 
 /** 仅提供当前服务实际装配的顶层 Agent；顺序和默认项由服务端定义。 */
@@ -107,7 +112,7 @@ export const useConversationAgents = (enabled: boolean) =>
       apiFetch('/conversations/agents', zConversationAgentsOut, {
         signal,
         cache: 'no-store',
-        fallbackErrorMessage: '读取 Agent 列表失败',
+        fallbackErrorMessage: '读取创作助手列表失败',
       }),
   })
 
@@ -119,41 +124,163 @@ export const searchConversations = async (
   apiFetch(
     `/conversations/search?q=${encodeURIComponent(keyword)}&limit=${SEARCH_LIMIT}`,
     conversationsPageSchema,
-    { signal, cache: 'no-store', fallbackErrorMessage: '搜索对话失败' },
+    { signal, cache: 'no-store', fallbackErrorMessage: '搜索任务失败' },
   )
+
+/** 拓扑里的行进池合并（合同 §5 水位规则），查询里留下合并后的行与成员、计数。 */
+const mergeTopology = (
+  store: ConversationRowStore,
+  topology: SidebarTopology,
+): SidebarTopology => ({
+  ...topology,
+  collections: topology.collections.map((collection) => ({
+    ...collection,
+    page: { ...collection.page, items: store.mergeRows(collection.page.items) },
+  })),
+  ungrouped: { ...topology.ungrouped, items: store.mergeRows(topology.ungrouped.items) },
+})
 
 /** 分组、计数和首页数据来自同一服务端拓扑，避免不同查询时间点造成不一致。 */
 export const useSidebarTopology = (enabled: boolean, state: ConversationListState) =>
   useQuery({
     enabled,
-    queryFn: ({ signal }) =>
-      apiFetch(`/conversations?state=${state}`, zSidebarOut, {
-        signal,
-        cache: 'no-store',
-        fallbackErrorMessage: '读取对话列表失败',
-      }),
+    queryFn: async ({ client, signal }) =>
+      mergeTopology(
+        conversationRowsOf(client),
+        await apiFetch(`/conversations?state=${state}`, zSidebarOut, {
+          signal,
+          cache: 'no-store',
+          fallbackErrorMessage: '读取任务列表失败',
+        }),
+      ),
     queryKey: conversationsQueryKeys.sidebar(state),
   })
 
-/** 额外分页仅由用户触发；拓扑失效时丢弃这些页，避免自动逐页重拉。bucket 筛选需与拓扑一致。 */
-export const useMoreConversations = (
+/**
+ * 在侧栏已缓存的拓扑里找这段对话所在的合集：从最新拉到的那份起，先见到它的那份说了算，
+ * 在合集页里就是那个合集，在未归类里就是没有。拓扑每组只带第一页，哪份都没见到也是没有。
+ */
+const sidebarCollectionOf = (
+  topologies: readonly { data: SidebarTopology | undefined; updatedAt: number }[],
+  conversationId: string,
+): SidebarCollection | undefined => {
+  const newestFirst = [...topologies].sort((a, b) => b.updatedAt - a.updatedAt)
+  for (const { data } of newestFirst) {
+    if (data === undefined) continue
+    const collection = data.collections.find((one) =>
+      one.page.items.some((item) => item.id === conversationId),
+    )
+    if (collection !== undefined) return collection
+    if (data.ungrouped.items.some((item) => item.id === conversationId)) return undefined
+  }
+  return undefined
+}
+
+/** 只读侧栏的查询缓存、不发请求；侧栏重拉或换筛选时跟着更新。 */
+export const useCachedConversationCollection = (
+  conversationId: string,
+): SidebarCollection | undefined => {
+  const queryClient = useQueryClient()
+  const subscribe = useCallback(
+    (onChange: () => void) => queryClient.getQueryCache().subscribe(onChange),
+    [queryClient],
+  )
+  // 返回缓存里的那个合集对象本身：缓存不变时引用不变，满足快照稳定的要求。
+  return useSyncExternalStore(subscribe, () =>
+    sidebarCollectionOf(
+      queryClient
+        .getQueriesData<SidebarTopology>({ queryKey: conversationsQueryKeys.sidebar() })
+        .map(([queryKey, data]) => ({
+          data,
+          updatedAt: queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0,
+        })),
+      conversationId,
+    ),
+  )
+}
+
+/**
+ * 侧栏一个分区（任务区或某个合集）的分页列表，从头读起，列表的行只取这一份。
+ *
+ * 首页取同一筛选下拓扑里那一页（与从头读的第一页同一口径），挂上时不再重读；往后翻页、失效后从头逐页重拉
+ * 都走分区自己的端点。只在显式失效时重拉（见 {@link refreshConversationLists}），切回窗口、重连不逐页重拉。
+ * `enabled` 为假时不发请求，失效了也等启用再重拉。
+ */
+export const useSidebarPages = (
   { collectionId, state }: { collectionId?: string | undefined; state: ConversationListState },
-  cursor: string | null,
-) => {
-  return useInfiniteQuery({
-    queryKey: conversationsQueryKeys.more(collectionId ?? 'ungrouped', cursor ?? '', state),
-    queryFn: ({ pageParam, signal }) =>
-      apiFetch(
+  { enabled = true, firstPage }: { enabled?: boolean; firstPage: ConversationPage },
+) =>
+  useInfiniteQuery({
+    queryKey: conversationsQueryKeys.more(collectionId ?? 'ungrouped', state),
+    queryFn: async ({ client, pageParam, signal }) => {
+      const query = new URLSearchParams({ state })
+      // 不带游标就是从头读；空游标服务端解析不了，不能拿空串代替。
+      if (pageParam !== null) query.set('cursor', pageParam)
+      const page = await apiFetch(
         `${
           collectionId ? `/conversations/by-collection/${collectionId}` : '/conversations/ungrouped'
-        }?cursor=${encodeURIComponent(pageParam)}&state=${state}`,
+        }?${query.toString()}`,
         zConversationPageOut,
-        { signal, cache: 'no-store', fallbackErrorMessage: '加载更多对话失败' },
-      ),
-    initialPageParam: cursor ?? '',
-    getNextPageParam: (last: z.output<typeof zConversationPageOut>) => last.nextCursor,
-    enabled: false,
+        { signal, cache: 'no-store', fallbackErrorMessage: '加载更多任务失败' },
+      )
+      return { ...page, items: conversationRowsOf(client).mergeRows(page.items) }
+    },
+    initialPageParam: null as string | null,
+    initialData: () => ({ pageParams: [null], pages: [firstPage] }),
+    getNextPageParam: (last: ConversationPage) => last.nextCursor,
+    enabled,
+    staleTime: Infinity,
   })
+
+/** 每段对话正在进行的那一次单行补读，按行池分表。 */
+const rowReads = new WeakMap<ConversationRowStore, Map<string, AbortController>>()
+
+const rowReadsOf = (store: ConversationRowStore): Map<string, AbortController> => {
+  let reads = rowReads.get(store)
+  if (reads === undefined) {
+    reads = new Map()
+    rowReads.set(store, reads)
+  }
+  return reads
+}
+
+/**
+ * 取一段对话的整行并合进行池（照 Kimi 的单行补读）：轮次状态、出片汇总变化后用它跟上
+ * `lastRunId`、`activity.videoGeneration` 等帧上没有的字段，不必整份重拉侧栏。看不见了（404）按删除处理。
+ *
+ * 照 Kimi `hydrateLiveSession` 以最后一次为准：新的一次中止在途那次，读回来只认仍是最新的那次。
+ * 不能复用在途的请求：视频汇总没有帧来源，在途期间又来的变化若只等那次旧读，旧值进池后就再也没有东西纠正它。
+ * 记了墓碑的照样读（不照 Kimi 跳过）：治理者复盘时读得到墓碑行，它的视频汇总也要跟上。
+ */
+export const refreshConversationRow = async (
+  queryClient: QueryClient,
+  conversationId: string,
+): Promise<void> => {
+  const store = conversationRowsOf(queryClient)
+  const reads = rowReadsOf(store)
+  reads.get(conversationId)?.abort()
+  const controller = new AbortController()
+  reads.set(conversationId, controller)
+  const current = () => reads.get(conversationId) === controller
+  try {
+    const row = await apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
+      cache: 'no-store',
+      fallbackErrorMessage: '读取任务失败',
+      signal: controller.signal,
+    })
+    if (current()) store.mergeRows([row])
+  } catch (error) {
+    // 已被后来的一次接替（含被它中止）：这次的结果不作数，也不算失败。
+    if (!current()) return
+    if (error instanceof ApiError && error.status === 404) {
+      store.applyDeleted(conversationId)
+      return
+    }
+    // 补读失败不影响列表：行留在帧给的状态，下一帧或下一次重拉再对齐。
+    console.warn('补读对话行失败', { conversationId })
+  } finally {
+    if (current()) reads.delete(conversationId)
+  }
 }
 
 /** 创建对话；调用方可提供幂等编号、需求单和合集归属。 */
@@ -162,16 +289,18 @@ export const createConversation = async (
 ): Promise<Conversation> =>
   apiFetch('/conversations', conversationEnvelopeSchema, {
     body,
-    fallbackErrorMessage: '新建对话失败',
+    fallbackErrorMessage: '新建任务失败',
     method: 'POST',
   })
 
-/** 起一段对话的入参：正文给 composer 的 ``parts`` 或已拼好的 ``content``；归属与标题不给就不带。 */
+/** 起一段对话的入参：正文给 composer 的 ``parts`` 或已拼好的 ``content``；归属、标题与做同款的源不给就不带。 */
 export type StartConversationInput = {
   agentId: string
   collectionId?: string | null
   taskId?: string | null
   title?: string
+  /** 做同款的源对话 id（资料库卡 id），建对话时由服务端拷制作文件与素材台账。 */
+  sameAs?: string | null
 } & ({ parts: readonly ComposerPart[] } | { content: readonly PromptContentPart[] })
 
 /**
@@ -191,7 +320,7 @@ export const useStartConversation = (
   } | null>(null)
   return useMutation({
     mutationFn: async (input: StartConversationInput) => {
-      const { agentId, collectionId, taskId, title } = input
+      const { agentId, collectionId, sameAs, taskId, title } = input
       const content = 'parts' in input ? partsContent(input.parts) : input.content
       // 不给与给 null 都是不挂，算同一份输入；请求体里不给的字段照旧不发。
       const fingerprint = JSON.stringify({
@@ -199,6 +328,7 @@ export const useStartConversation = (
         collectionId: collectionId ?? null,
         content,
         ownerUserId,
+        sameAs: sameAs ?? null,
         taskId: taskId ?? null,
         title: title ?? null,
       })
@@ -213,6 +343,7 @@ export const useStartConversation = (
             agentId,
             collectionId,
             id: current.conversationId,
+            sameAs,
             taskId,
             title,
           }))
@@ -359,10 +490,11 @@ export const useSetConversationMembership = (
           conversationEnvelopeSchema,
           {
             body: { collectionId },
-            fallbackErrorMessage: '移动对话失败',
+            fallbackErrorMessage: '移动任务失败',
             method: 'PUT',
           },
         )
+        conversationRowsOf(queryClient).mergeRows([updated])
         onUpdated?.(updated)
       }
       if (taskId !== undefined) {
@@ -375,6 +507,7 @@ export const useSetConversationMembership = (
             method: 'PUT',
           },
         )
+        conversationRowsOf(queryClient).mergeRows([updated])
         onUpdated?.(updated)
       }
     },
@@ -406,11 +539,16 @@ export const useForkConversation = (onForked: (conversationId: string) => void) 
       onForked(conversation.id)
     },
   })
-  const start = (input: { conversationId: string; turn: number }): Promise<void> => {
-    if (inFlightRef.current) return Promise.resolve()
-    inFlightRef.current = true
-    return mutation.mutateAsync(input).then(() => undefined)
-  }
+  const { mutateAsync } = mutation
+  // 引用保持不变：会话页把它包进交给按轮 memo 的分叉回调，每次渲染换新会让历史轮跟着重渲。
+  const start = useCallback(
+    (input: { conversationId: string; turn: number }): Promise<void> => {
+      if (inFlightRef.current) return Promise.resolve()
+      inFlightRef.current = true
+      return mutateAsync(input).then(() => undefined)
+    },
+    [mutateAsync],
+  )
   return { isPending: mutation.isPending, start }
 }
 
@@ -424,7 +562,10 @@ export const useRenameConversation = () => {
         fallbackErrorMessage: '重命名失败',
         method: 'PATCH',
       }),
-    onSuccess: () => refreshConversationLists(queryClient),
+    onSuccess: (renamed) => {
+      conversationRowsOf(queryClient).mergeRows([renamed])
+      return refreshConversationLists(queryClient)
+    },
   })
 }
 
@@ -438,7 +579,10 @@ export const useSetConversationCompletion = () => {
         fallbackErrorMessage: '标记完成失败',
         method: 'PUT',
       }),
-    onSuccess: () => refreshConversationLists(queryClient),
+    onSuccess: (updated) => {
+      conversationRowsOf(queryClient).mergeRows([updated])
+      return refreshConversationLists(queryClient)
+    },
   })
 }
 
@@ -451,6 +595,10 @@ export const useDeleteConversation = () => {
         fallbackErrorMessage: '删除失败',
         method: 'DELETE',
       }),
-    onSuccess: () => refreshConversationLists(queryClient),
+    onSuccess: (_, conversationId) => {
+      // 删除帧也会到，这里先记墓碑，不等帧。
+      conversationRowsOf(queryClient).applyDeleted(conversationId)
+      return refreshConversationLists(queryClient)
+    },
   })
 }

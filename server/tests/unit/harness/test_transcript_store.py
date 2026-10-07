@@ -98,6 +98,10 @@ def test_append_accumulates_text_on_the_frame() -> None:
     assert _first_text(store) == "好的，我来看看"
 
 
+def _epoch(store: TranscriptStore) -> str:
+    return store.subscribe_view(CONVERSATION, AGENT).epoch
+
+
 def test_append_offset_is_counted_in_utf16_units() -> None:
     """emoji 占两个 UTF-16 单位，Python len 不能直接作为客户端追加偏移。"""
 
@@ -119,7 +123,7 @@ def test_catch_up_returns_the_batches_after_the_given_position() -> None:
     for _ in range(5):
         store.append(CONVERSATION, AGENT, ())
 
-    view = store.subscribe_view(CONVERSATION, AGENT, since=2)
+    view = store.subscribe_view(CONVERSATION, AGENT, since=2, epoch=_epoch(store))
     assert [batch.seq for batch in view.batches] == [3, 4, 5]
     assert view.complete is True
 
@@ -131,7 +135,7 @@ def test_catch_up_reports_incomplete_when_the_window_has_moved_past() -> None:
     for _ in range(JOURNAL_CAPACITY + 2):
         store.append(CONVERSATION, AGENT, ())
 
-    view = store.subscribe_view(CONVERSATION, AGENT, since=0)
+    view = store.subscribe_view(CONVERSATION, AGENT, since=0, epoch=_epoch(store))
     assert view.watermark == JOURNAL_CAPACITY + 2
     assert view.complete is False
 
@@ -141,7 +145,7 @@ def test_catch_up_from_a_position_beyond_the_watermark_is_incomplete() -> None:
     store = TranscriptStore()
     store.append(CONVERSATION, AGENT, ())
 
-    view = store.subscribe_view(CONVERSATION, AGENT, since=57)
+    view = store.subscribe_view(CONVERSATION, AGENT, since=57, epoch=_epoch(store))
     assert view.batches == ()
     assert view.complete is False
 
@@ -233,20 +237,60 @@ def test_unpinned_conversations_are_evicted() -> None:
     assert store.subscribe_view(CONVERSATION, AGENT).watermark == 0
 
 
-def test_catch_up_after_eviction_is_only_safe_behind_a_reset() -> None:
-    """batches 必须接在按 watermark 发送的 reset 之后。
+def test_a_watermark_from_before_eviction_does_not_resume_the_rebuilt_stream() -> None:
+    """淘汰后重建的流从 1 重新编号：旧水位落在新编号的范围里，单看序号会把新批次接到旧内容上。
 
-    complete 无法区分淘汰前后的批次代际，客户端需由 reset 覆盖旧水位。
-    """
+    epoch 换了新的，续订判补不齐，订阅端只能回 reset。"""
 
     store = TranscriptStore(resident=2)
     store.append(CONVERSATION, AGENT, ())
+    before = _epoch(store)
     for index in range(5):
         store.append(f"other-{index}", AGENT, ())
     for _ in range(5):
         store.append(CONVERSATION, AGENT, ())
 
-    view = store.subscribe_view(CONVERSATION, AGENT, since=3)
-    assert view.watermark == 5
-    assert [batch.seq for batch in view.batches] == [4, 5]
-    assert view.complete is True
+    stale = store.subscribe_view(CONVERSATION, AGENT, since=3, epoch=before)
+    assert stale.epoch != before
+    assert stale.batches == ()
+    assert stale.complete is False
+
+    current = store.subscribe_view(CONVERSATION, AGENT, since=3, epoch=stale.epoch)
+    assert [batch.seq for batch in current.batches] == [4, 5]
+    assert current.complete is True
+
+
+def test_a_watermark_from_before_a_restart_does_not_resume_the_new_numbering() -> None:
+    """进程重启后新流很快越过旧水位：日志里最旧一批还是 1，单看序号会判补得齐。"""
+
+    before_restart = TranscriptStore()
+    for _ in range(3):
+        before_restart.append(CONVERSATION, AGENT, ())
+    held = before_restart.subscribe_view(CONVERSATION, AGENT)
+
+    restarted = TranscriptStore()
+    for _ in range(8):
+        restarted.append(CONVERSATION, AGENT, ())
+
+    view = restarted.subscribe_view(CONVERSATION, AGENT, since=held.watermark, epoch=held.epoch)
+    assert view.batches == ()
+    assert view.complete is False
+
+
+def test_a_watermark_without_its_epoch_is_never_resumed() -> None:
+    """只给序号不给 epoch，分不出是哪条流的水位，按补不齐处理。"""
+
+    store = TranscriptStore()
+    for _ in range(3):
+        store.append(CONVERSATION, AGENT, ())
+
+    view = store.subscribe_view(CONVERSATION, AGENT, since=1)
+    assert view.batches == ()
+    assert view.complete is False
+
+
+def test_each_batch_carries_its_streams_epoch() -> None:
+    store = TranscriptStore()
+    batch = store.append(CONVERSATION, AGENT, ())
+
+    assert batch.epoch == _epoch(store)

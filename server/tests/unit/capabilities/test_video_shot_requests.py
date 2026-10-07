@@ -297,7 +297,7 @@ def test_document_only_adds_image_indexes_in_first_appearance_order_per_group() 
     expected[0]["prompt"]["timeline"][0]["image_indexes"] = [2, 1]
     expected[0]["prompt"]["timeline"][1]["image_indexes"] = []
     expected[1]["prompt"]["timeline"][0]["image_indexes"] = [1]
-    assert document.model_dump(mode="json") == {"aspect_ratio": "9:16", "shots": expected}
+    assert json.loads(document.file_text()) == {"aspect_ratio": "9:16", "shots": expected}
     assert [shot.model_dump(mode="json") for shot in requests] == before
     validate_shots_document(document.model_dump_json())
 

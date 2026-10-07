@@ -70,8 +70,10 @@ _logger = structlog.stdlib.get_logger(__name__)
 DepsFor = Callable[[JobRow], Awaitable[Any]]
 """为消息构造运行依赖；身份固定为消息入队时的属主，由组合根提供具体依赖。"""
 
-TurnEnded = Callable[[JobRow], Awaitable[None]]
-"""由组合根注入的轮次完成回调；异常仅记录，不影响已持久化的运行结果。"""
+TurnStarted = Callable[[JobRow], Awaitable[None]]
+"""一轮的首次 run 挂上租约后在后台调用一次，与这一轮并行、不等它完成；审批与崩溃续跑不再调用。
+
+异常仅记录；关停时尚未完成的调用被取消。由组合根注入具体动作。"""
 
 RunStarted = Callable[[JobRow, str], Awaitable[None]]
 """每次顶层 run 挂上租约后调用一次，带新 run_id；异常仅记录；子代理运行不经这里。"""
@@ -193,7 +195,7 @@ class ConversationRunner:
         max_attempts: int,
         compaction_max_fraction: float = 0.85,
         compaction_keep_messages: int = 20,
-        on_turn_ended: TurnEnded | None = None,
+        on_turn_started: TurnStarted | None = None,
         on_run_started: RunStarted | None = None,
         display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY,
     ) -> None:
@@ -214,12 +216,14 @@ class ConversationRunner:
         self._display = display
         # 公开租约持有者 id，供提交入口写入租约。
         self.locked_by = uuid.uuid4().hex
-        self._on_turn_ended = on_turn_ended
+        self._on_turn_started = on_turn_started
         self._on_run_started = on_run_started
         self._active: dict[str, _Active] = {}
         self._closing = False
         # 持有任务强引用，避免仅被 asyncio 弱引用的运行任务被回收。
         self._tasks: set[asyncio.Task[None]] = set()
+        # 轮次开场动作与运行并行，同样持强引用；它们不受运行的取消令牌控制，关停时单独取消。
+        self._side_tasks: set[asyncio.Task[None]] = set()
         # 后台循环独立保存，关停时先于活跃运行停止。
         self._loops: tuple[asyncio.Task[None], ...] = ()
 
@@ -305,6 +309,10 @@ class ConversationRunner:
             for active in tuple(self._active.values()):
                 active.token.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
+        # 运行全部收尾后再取消开场动作：此后不会再有新轮次开场。
+        for task in self._side_tasks:
+            task.cancel()
+        await asyncio.gather(*self._side_tasks, return_exceptions=True)
 
     # --- 人机往返 -----------------------------------------------------------
 
@@ -488,15 +496,19 @@ class ConversationRunner:
         """执行消息并在收尾后启动下一条，包括运行失败的情况。"""
 
         self._store.pin(row.conversation_id)
-        status: JobStatus = "failed"
+        status: JobStatus | None = "failed"
         try:
             status = await self._run_once(row)
         except Exception:
             _logger.exception("这次运行没跑完", prompt_id=row.prompt_id)
         finally:
-            active = self._active.pop(row.conversation_id, None)
+            # 失租那次没登记过控制句柄；此刻同一对话若登记着，那是清扫随后启动的别的运行，不能摘。
+            active = None if status is None else self._active.pop(row.conversation_id, None)
             self._store.unpin(row.conversation_id)
-            if status == "awaiting":
+            if status is None:
+                # 开跑前就失了租：没调模型，插话与终态都归新持有者或清扫处理。
+                pass
+            elif status == "awaiting":
                 # 审批等待不结束轮次或启动下一条；插话保留 steered，由续跑 adopt_steered 接管。
                 # 框架在收尾前已 drain asap 消息，审批等待时没有未消费插话。
                 pass
@@ -516,8 +528,6 @@ class ConversationRunner:
                 if settled is not None:
                     self._publish(settled)
                 await self._start_next(row.conversation_id)
-                # 先启动队首再生成标题，避免附带模型调用阻塞消息队列。
-                await self._after_turn(row)
 
     async def _release(self, row: JobRow, active: _Active | None) -> None:
         """关停时释放租约并保留 running。
@@ -546,15 +556,22 @@ class ConversationRunner:
             _logger.info("这几条追加没赶上这一轮，退回队列", steers=stranded)
             await self._revert(tuple(active.steered[item] for item in stranded))
 
-    async def _after_turn(self, row: JobRow) -> None:
-        """执行轮次完成后的附带动作，异常仅记录。"""
+    def _spawn_turn_started(self, row: JobRow) -> None:
+        """在后台执行这一轮的开场动作，不让它拖住这一轮的运行。"""
 
-        if self._on_turn_ended is None:
+        if self._on_turn_started is None:
             return
+        task = asyncio.create_task(self._turn_started(self._on_turn_started, row))
+        self._side_tasks.add(task)
+        task.add_done_callback(self._side_tasks.discard)
+
+    async def _turn_started(self, action: TurnStarted, row: JobRow) -> None:
+        """执行一轮的开场动作，异常仅记录。"""
+
         try:
-            await self._on_turn_ended(row)
+            await action(row)
         except Exception:
-            _logger.exception("这一轮的收尾动作没做完", prompt_id=row.prompt_id)
+            _logger.exception("这一轮的开场动作没做完", prompt_id=row.prompt_id)
 
     async def _run_started(self, row: JobRow, run_id: str) -> None:
         """执行 run 挂上租约后的附带动作，异常仅记录。"""
@@ -579,8 +596,8 @@ class ConversationRunner:
         for child in await self._queue.settle_steered(active.run_id, status=status, now=_now()):
             self._publish(child)
 
-    async def _run_once(self, row: JobRow) -> JobStatus:
-        """执行单次 run 并返回内部状态。
+    async def _run_once(self, row: JobRow) -> JobStatus | None:
+        """执行单次 run 并返回内部状态；开跑前租约就已不在手上时返回 None，调用方不收尾。
 
         首次运行发送用户原文并关闭旧前沿；崩溃续跑直接提交历史，由框架修复或重放未完成调用；
         审批续跑提供覆盖全部前沿调用的决定。两种续跑均不追加用户消息。
@@ -609,11 +626,17 @@ class ConversationRunner:
         attached = await self._queue.attach_run(
             row.prompt_id, run_id, locked_by=self.locked_by, attempt=row.attempt
         )
+        if not attached:
+            # 租约已归别的持有者，或被清扫判了失败：一步都不执行，收尾归新持有者或清扫。
+            # 迁移插话也要在这之后，否则会把插话改挂到一个没有记录的 run 上，新持有者认领不到。
+            _logger.warning("开跑前租约已经不在手上，放弃这次运行", prompt_id=row.prompt_id)
+            return None
         if row.run_id is not None:
             await self._queue.adopt_steered(row.run_id, run_id)
-        # 租约已不在手上的运行会被心跳取消，不在对话上留痕。
-        if attached:
-            await self._run_started(row, run_id)
+        await self._run_started(row, run_id)
+        # 审批续跑与崩溃续跑接着已开场的那一轮，只有首次发出用户消息的 run 算这一轮开场。
+        if not awaiting and resumed is None:
+            self._spawn_turn_started(row)
 
         active = _Active(
             prompt_id=row.prompt_id,
@@ -809,4 +832,4 @@ class ConversationRunner:
         )
 
 
-__all__ = ["ConversationRunner", "ConversationSnapshots", "DepsFor", "RunStarted", "TurnEnded"]
+__all__ = ["ConversationRunner", "ConversationSnapshots", "DepsFor", "RunStarted", "TurnStarted"]

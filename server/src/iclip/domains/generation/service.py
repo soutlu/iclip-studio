@@ -6,11 +6,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 import structlog
 
 from iclip.common.errors import NotFound, ValidationFailed
+from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_PENDING,
@@ -40,12 +41,16 @@ from iclip.domains.generation.schemas import (
     VideoGenerationIn,
 )
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
+from iclip.platform.media.ffmpeg import MediaError
 from iclip.platform.paging import check_limit
 
 _logger = structlog.stdlib.get_logger(__name__)
 
 ClearCompletion = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
 """按 (对话 id, 属主) 取消那段对话的收尾标记；实现由组合根注入，本域不认识对话表。"""
+
+ProbeDuration = Callable[[str], Awaitable[int]]
+"""按地址探一条远程视频的时长（毫秒），读不到或看不懂抛 ``MediaError``；实现由装配注入。"""
 
 
 class ConversationLineage(Protocol):
@@ -76,10 +81,12 @@ class GenerationService:
         image_default_model: str,
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
+        probe_duration_ms: ProbeDuration,
     ) -> None:
         """收下装配期确定的模型集合；此层不持有或调用 Provider 实例。
 
-        图片可选哪几家由装配表决定，本层只按它校验并把选中的那家写进记录。"""
+        图片可选哪几家由装配表决定，本层只按它校验并把选中的那家写进记录。``probe_duration_ms``
+        只在受理编辑段时用：核对参考片段与基底的时长。"""
 
         self._repo = repo
         self._queue = queue
@@ -91,6 +98,7 @@ class GenerationService:
         self._image_default_model = image_default_model
         self._clear_completion = clear_completion
         self._lineage = lineage
+        self._probe_duration_ms = probe_duration_ms
 
     async def _inheritance(
         self, principal: Principal, conversation_id: uuid.UUID | None
@@ -119,22 +127,45 @@ class GenerationService:
         )
 
     async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
-        """受理一次编辑段：在一条成片上改一段，走视频上游。
+        """受理一次编辑段：一次上游视频请求，参考片段由调用方切好、上传好。
 
-        基底必须是这段对话看得到的一条已完成成片；原作与镜号随基底，基底是出片就是它自己。区间
-        先按请求记，提交上游前服务端切参考片段时改记实际切点。落库的请求不带参考视频，片段地址
-        只进发给上游的那一次请求。"""
+        同步核对三件事，不合格不入队：基底是这段对话看得到的一条已完成成片，区间在它的时长之内；
+        参考片段是调用者本人的一条视频上传；片段时长与区间长度一致。原作与镜号随基底，基底是出片
+        就是它自己。区间原样记，不改写；片段地址记进落库的请求，原样转发上游。"""
 
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
         base = await self._check_source(principal, request.source_job_id, request.conversation_id)
         if not _is_completed_master(base):
             raise ValidationFailed("基底必须是一条已完成的成片")
+        (clip_url,) = request.reference_video_urls
+        # 先认上传行再去探：探的是我们桶里、本人传上来的那一条，不替调用方去读任意地址。
+        clip = await self._repo.find_by_output(
+            clip_url,
+            kind=KIND_VIDEO,
+            owner=principal.user_id,
+            conversation_id=None,
+            operation=OPERATION_UPLOAD,
+        )
+        if clip is None:
+            raise ValidationFailed("reference_video_urls 必须是调用者本人上传的一段视频")
+        base_ms = base.duration_ms
+        if base_ms is None:
+            base_ms = await self._probe(base.output_url, what="基底", job_id=base.id)
+        _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
+        clip_ms = await self._probe(clip_url, what="参考片段", job_id=clip.id)
+        range_ms = request.range_end_ms - request.range_start_ms
+        if abs(clip_ms - range_ms) > EDIT_CLIP_TOLERANCE_MS:
+            raise ValidationFailed(
+                f"参考片段长 {format_seconds(clip_ms / 1000)} 秒，"
+                f"与区间长度 {format_seconds(range_ms / 1000)} 秒对不上"
+            )
         forwarded = VideoGenerationIn(
             model=request.model,
             prompt=request.prompt,
             user_name=request.user_name,
             reference_image_urls=request.reference_image_urls,
+            reference_video_urls=request.reference_video_urls,
             seconds=request.seconds,
             provider_options=request.provider_options,
         )
@@ -155,30 +186,40 @@ class GenerationService:
     async def submit_video_compose(
         self, principal: Principal, request: VideoComposeIn
     ) -> GenerationJob:
-        """受理一次合成：把编辑段夹回它的基底，拼成一条新成片，原作与镜号随编辑段。
+        """受理一次合成：在基底那一版上按调用方给的片段列表拼成一条新成片，不经外部服务。
 
-        段按编辑段上记的实际区间算：基底从头到起点（起点为 0 时没有这段）、编辑段产物整条、
-        基底从终点到结尾。后两段取到结尾，执行方按下载下来的素材补齐。不经外部服务。"""
+        来源记基底，原作与镜号随基底（基底是出片就是它自己）。每段出自基底本身，或来源是该基底的
+        一条已完成编辑段，都要是这段对话自己的或继承来的；服务端把出处换成那条记录的产物地址，
+        不收调用方给的地址。那条记录量过时长时，段的结尾不能超出它；没量过就交给执行方按下载
+        下来的素材判。"""
 
         _require_user_name(request.user_name)
-        edit = await self._check_source(principal, request.source_job_id, request.conversation_id)
-        if not _is_finished_edit(edit) or edit.output_url is None or edit.source_job_id is None:
-            raise ValidationFailed("来源必须是一条已完成的编辑段")
-        # 组合约束保证编辑段的区间齐全；到这儿为空说明持久化状态坏了。
-        if edit.range_start_ms is None or edit.range_end_ms is None:
-            raise RuntimeError(f"编辑段 {edit.id} 没有区间")
-        base = await self._repo.get(edit.source_job_id, owner=None)
-        if base.output_url is None:
-            raise ValidationFailed("编辑段的基底没有产物地址，合成不了")
-        segments = [
-            *(
-                [ComposeSegment(url=base.output_url, start=0, end=edit.range_start_ms / 1000)]
-                if edit.range_start_ms > 0
-                else []
-            ),
-            ComposeSegment(url=edit.output_url, start=0),
-            ComposeSegment(url=base.output_url, start=edit.range_end_ms / 1000),
-        ]
+        base = await self._check_source(principal, request.base_job_id, request.conversation_id)
+        if not _is_completed_master(base):
+            raise ValidationFailed("基底必须是一条已完成的成片")
+        sources = {base.id: base}
+        for source_id in dict.fromkeys(segment.source_job_id for segment in request.segments):
+            if source_id in sources:
+                continue
+            edit = await self._check_source(principal, source_id, request.conversation_id)
+            if not _is_finished_edit(edit) or edit.source_job_id != base.id:
+                raise ValidationFailed("每段必须出自基底本身，或基于这个基底的一条已完成编辑段")
+            sources[source_id] = edit
+        segments: list[ComposeSegment] = []
+        for position, segment in enumerate(request.segments, start=1):
+            source = sources[segment.source_job_id]
+            # 两种来源都在上面核过产物地址，这里只为收窄类型。
+            if source.output_url is None:
+                raise RuntimeError(f"生成记录 {source.id} 核对过却没有产物地址")
+            _check_segment_end(position, segment.end, source.duration_ms)
+            segments.append(
+                ComposeSegment(
+                    source_job_id=source.id,
+                    url=source.output_url,
+                    start=segment.start,
+                    end=segment.end,
+                )
+            )
         return await self._accept(
             principal,
             VideoComposeRequest(segments=segments, user_name=request.user_name),
@@ -186,9 +227,9 @@ class GenerationService:
             conversation_id=request.conversation_id,
             task_id=request.task_id,
             metadata=request.metadata,
-            shot_index=edit.shot_index,
-            root_job_id=edit.root_job_id,
-            source_job_id=edit.id,
+            shot_index=base.shot_index,
+            root_job_id=base.root_job_id or base.id,
+            source_job_id=base.id,
         )
 
     async def _check_source(
@@ -213,6 +254,20 @@ class GenerationService:
         ):
             raise ValidationFailed("来源不是这段对话自己的或继承来的一条记录")
         return source
+
+    async def _probe(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
+        """探 ``what``（那条记录 ``job_id`` 的产物 ``url``）有多长，毫秒。
+
+        探不出来也是不受理，但措辞与「时长对不上」分开：多半是取不到，不是调用方给错了。"""
+
+        if url is None:
+            # 两处调用方都先核过这条有产物地址，这里只为收窄类型。
+            raise RuntimeError(f"生成记录 {job_id} 核对过却没有产物地址")
+        try:
+            return await self._probe_duration_ms(url)
+        except MediaError as exc:
+            _logger.warning("编辑段受理时探不出时长", what=what, job_id=job_id, error=str(exc))
+            raise ValidationFailed(f"读不出{what}的时长，请稍后重试") from exc
 
     def _require_video_model(self, model: str) -> None:
         if model not in self._video_allowed_models:
@@ -241,6 +296,34 @@ class GenerationService:
             source_url=external,
         )
 
+    async def find_conversation_image(
+        self, principal: Principal, url: str, conversation_id: uuid.UUID
+    ) -> GenerationJob | None:
+        """这个地址是不是这段对话里一张已完成的图片：对话自己的，或它经分叉继承来的。
+
+        生成、帧图编辑与切图都算；上传不属于任何对话，不在这里认。找不到返回 None。"""
+
+        return await self._repo.find_by_output(
+            url,
+            kind=KIND_IMAGE,
+            owner=visible_owner_incl_act_as(principal),
+            conversation_id=conversation_id,
+            inherited=await self._inheritance(principal, conversation_id),
+        )
+
+    async def find_upload(self, principal: Principal, url: str) -> GenerationJob | None:
+        """主体看得见的一条图片上传记录，产物就是这个地址；找不到返回 None。
+
+        上传不属于任何对话，只按主体可见范围认。"""
+
+        return await self._repo.find_by_output(
+            url,
+            kind=KIND_IMAGE,
+            owner=visible_owner_incl_act_as(principal),
+            conversation_id=None,
+            operation=OPERATION_UPLOAD,
+        )
+
     async def _resolve_base(
         self, principal: Principal, url: str | None, conversation_id: uuid.UUID | None
     ) -> tuple[uuid.UUID | None, str | None]:
@@ -252,16 +335,15 @@ class GenerationService:
         if url is None:
             return None, None
         owner = visible_owner_incl_act_as(principal)
-        found = await self._repo.find_image_by_output(
+        found = await self._repo.find_by_output(
             url,
+            kind=KIND_IMAGE,
             owner=owner,
             conversation_id=conversation_id,
             inherited=await self._inheritance(principal, conversation_id),
         )
         if found is None:
-            found = await self._repo.find_image_by_output(
-                url, owner=owner, conversation_id=None, operation=OPERATION_UPLOAD
-            )
+            found = await self.find_upload(principal, url)
         return (None, url) if found is None else (found.id, None)
 
     async def _accept(
@@ -483,14 +565,61 @@ def _is_completed_master(job: GenerationJob) -> bool:
 
 
 def _is_finished_edit(job: GenerationJob) -> bool:
-    """已完成的编辑段：有来源的视频 generate。"""
+    """已完成、有产物地址的编辑段：有来源的视频 generate。"""
 
     return (
         job.kind == KIND_VIDEO
         and job.operation == OPERATION_GENERATE
         and job.source_job_id is not None
         and job.status == STATUS_COMPLETED
+        and job.output_url is not None
     )
+
+
+COMPOSE_END_TOLERANCE_MS: Final = 50
+"""合成里段的结尾、编辑段区间的终点，最多比那条记录（基底）量出来的时长多出这么多毫秒。
+
+调用方的起止是浏览器里读到的媒体时间（播放器时长、关键帧时刻），与上游或 ffprobe 量出的
+``duration_ms`` 隔着一次容器时长的取整，差不到一帧（24fps 约 42 毫秒）；严格相等会把正常的
+「取到最后一帧」拒掉。"""
+
+
+def _check_segment_end(position: int, end: float | None, duration_ms: int | None) -> None:
+    """第 ``position`` 段（从 1 数）的结尾不能超出那条记录的时长；开放的结尾或没量过时长的不判。"""
+
+    if end is None or duration_ms is None:
+        return
+    if end * 1000 > duration_ms + COMPOSE_END_TOLERANCE_MS:
+        raise ValidationFailed(
+            f"第 {position} 段的结尾 {format_seconds(end)} 秒超出了那条记录的时长 "
+            f"{format_seconds(duration_ms / 1000)} 秒"
+        )
+
+
+EDIT_CLIP_TOLERANCE_MS: Final = 100
+"""参考片段的时长最多与区间长度差这么多毫秒。
+
+片段是浏览器从基底上按关键帧重封装出来的，容器时长取各轨结尾里最晚的那个，会被音轨尾巴拉长：
+技术验证里比视频轨长约 16 毫秒。再留出一帧以上的余量（24fps 一帧约 42 毫秒），严格相等会把
+正常切出的片段拒掉，差得更多才说明片段与区间不是同一段。"""
+
+
+def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
+    """编辑区间要在基底之内：起点严格落在基底里，终点不超过基底时长。
+
+    终点取到片尾时是浏览器读到的媒体时长，与上游或 ffprobe 量出的隔着一次容器时长的取整，容差
+    与合成各段的结尾同一个（``COMPOSE_END_TOLERANCE_MS``）。"""
+
+    if start_ms >= base_ms:
+        raise ValidationFailed(
+            f"区间起点 {format_seconds(start_ms / 1000)} 秒不在基底之内，"
+            f"基底只有 {format_seconds(base_ms / 1000)} 秒"
+        )
+    if end_ms > base_ms + COMPOSE_END_TOLERANCE_MS:
+        raise ValidationFailed(
+            f"区间终点 {format_seconds(end_ms / 1000)} 秒超出了基底的时长 "
+            f"{format_seconds(base_ms / 1000)} 秒"
+        )
 
 
 def _require_user_name(user_name: str | None) -> None:
@@ -601,4 +730,4 @@ def _settled_job(
     )
 
 
-__all__ = ["ConversationLineage", "GenerationService", "SettledRecords"]
+__all__ = ["ConversationLineage", "GenerationService", "ProbeDuration", "SettledRecords"]

@@ -108,6 +108,22 @@ describe('useFileDropTarget', () => {
     expect(onFiles).not.toHaveBeenCalled()
   })
 
+  it('区域里更内层先接管的 drop：只收起提示，不回调', () => {
+    const onFiles = vi.fn()
+    render(<DropPage onFiles={onFiles} />)
+    const child = screen.getByRole('button', { name: '已有素材' })
+
+    fireEvent.dragEnter(zone(), { dataTransfer: fileDrag() })
+    expect(screen.getByText('松开添加素材')).toBeInTheDocument()
+    // 内层接收者（如按落点插入的编辑器）收下后 preventDefault，事件照常冒泡到区域。
+    const drop = createEvent.drop(child, { dataTransfer: fileDrag() })
+    drop.preventDefault()
+    fireEvent(child, drop)
+
+    expect(onFiles).not.toHaveBeenCalled()
+    expect(screen.queryByText('松开添加素材')).not.toBeInTheDocument()
+  })
+
   it('页内元素、文字的拖动不碰：不 preventDefault、不亮提示', () => {
     render(<DropPage />)
     const dataTransfer = { dropEffect: '', types: ['text/plain'] }

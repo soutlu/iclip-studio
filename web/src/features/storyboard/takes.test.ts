@@ -20,7 +20,7 @@ describe('takesOfShot', () => {
       job({ createdAt: '2026-09-01T11:40:00Z', id: 'b', status: 'failed' }),
       job({ createdAt: '2026-09-01T13:00:00Z', id: 'image', kind: 'image', shotIndex: null }),
       job({ id: 'edited', outputUrl: 'edited.mp4', rootJobId: 'a', sourceJobId: 'a' }),
-      job({ id: 'composite', operation: 'compose', rootJobId: 'a', sourceJobId: 'edited' }),
+      job({ id: 'composite', operation: 'compose', rootJobId: 'a', sourceJobId: 'a' }),
     ]
     expect(takesOfShot(jobs, 2, '9:16').map((take) => take.job.id)).toEqual(['c', 'b', 'a'])
   })
@@ -203,6 +203,15 @@ describe('takeActionsOf', () => {
     expect(takeActionsOf(completed, { readOnly: true })).toEqual({
       download: enabled,
       editVideo: hidden,
+      refill: hidden,
+    })
+  })
+
+  it('制作页没有回填，下载与编辑视频照旧', () => {
+    const completed = take({ outputUrl: 'take.mp4', request: { shot: HISTORY_SHOT } })
+    expect(takeActionsOf(completed, { readOnly: false, refillable: false })).toEqual({
+      download: enabled,
+      editVideo: enabled,
       refill: hidden,
     })
   })

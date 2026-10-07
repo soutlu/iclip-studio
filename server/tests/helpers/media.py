@@ -3,23 +3,41 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from iclip.platform.media.ffmpeg import probe_duration_ms
+from iclip.platform.media.ffmpeg import probe_duration_ms, probe_keyframes
 
 
 def synthesize_video(
-    path: Path, *, size: str, seconds: int, audio: bool, faststart: bool = False
+    path: Path,
+    *,
+    size: str,
+    seconds: int,
+    audio: bool,
+    faststart: bool = False,
+    keyframes: Sequence[float] | None = None,
+    flip_at: float | None = None,
 ) -> bytes:
-    """合成一段图样视频。关键帧每秒一个，裁剪落到的边界才可预期。
+    """合成一段 10 fps 的图样视频。关键帧默认每秒一个，裁剪落到的边界才可预期。
 
-    默认照 ffmpeg 的缺省把 moov 写在尾部，和不少上传素材一样；``faststart`` 把它挪到头部。"""
+    ``keyframes`` 给了就只在这些时刻放关键帧，编码器自己不再插。``flip_at`` 让画面从这一刻
+    起整体反相：一次编码器会当成场景切换的突变。默认照 ffmpeg 的缺省把 moov 写在尾部，和
+    不少上传素材一样；``faststart`` 把它挪到头部。"""
 
-    args = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size={size}:rate=10"]
+    pattern = f"testsrc=size={size}:rate=10"
+    if flip_at is not None:
+        pattern += f",negate=enable='gte(t,{flip_at})'"
+    args = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", pattern]
     if audio:
         args += ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-c:a", "aac"]
-    args += ["-t", str(seconds), "-g", "10", "-pix_fmt", "yuv420p"]
+    args += ["-t", str(seconds), "-pix_fmt", "yuv420p"]
+    if keyframes is None:
+        args += ["-g", "10"]
+    else:
+        args += ["-force_key_frames", ",".join(f"{time:.3f}" for time in keyframes)]
+        args += ["-x264-params", "scenecut=0:keyint=infinite"]
     if faststart:
         args += ["-movflags", "+faststart"]
     args.append(str(path))
@@ -53,4 +71,13 @@ async def duration_ms_of(content: bytes) -> int:
         return await probe_duration_ms(path)
 
 
-__all__ = ["duration_ms_of", "synthesize_noise", "synthesize_video"]
+async def keyframes_of(content: bytes) -> list[float]:
+    """读一段视频字节的关键帧时刻（秒），与服务端用的是同一个探测。"""
+
+    with TemporaryDirectory(prefix="media-probe-") as tmp:
+        path = Path(tmp) / "out.mp4"
+        path.write_bytes(content)
+        return await probe_keyframes(path)
+
+
+__all__ = ["duration_ms_of", "keyframes_of", "synthesize_noise", "synthesize_video"]

@@ -1,20 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileKindOf, formatBytes, formatWhen, groupByDirectory } from './file-kind'
-
-describe('fileKindOf', () => {
-  it('按后缀选渲染器族，类型字样就是后缀本身', () => {
-    expect(fileKindOf('video/a-1b2c.md')).toMatchObject({ kind: 'markdown', label: 'MD' })
-    expect(fileKindOf('anchors/x.JSON')).toMatchObject({ kind: 'json', label: 'JSON' })
-    expect(fileKindOf('notes/todo.txt')).toMatchObject({ kind: 'text', label: 'TXT' })
-    expect(fileKindOf('data/table.csv')).toMatchObject({ kind: 'text', label: 'CSV' })
-  })
-
-  it('没有后缀的文件叫文本；内容以 { 或 [ 开头就按 JSON 排', () => {
-    expect(fileKindOf('LICENSE')).toMatchObject({ kind: 'text', label: '文本' })
-    expect(fileKindOf('manifest', '  {"a": 1}')).toMatchObject({ kind: 'json', label: '文本' })
-    expect(fileKindOf('.env', 'KEY=1')).toMatchObject({ kind: 'text' })
-  })
-})
+import { fileIconOf, formatBytes, formatWhen, groupByDirectory, splitFileName } from './file-kind'
 
 describe('groupByDirectory', () => {
   it('根目录在前，其余目录按路径排，同目录内按文件名排', () => {
@@ -36,6 +21,23 @@ describe('groupByDirectory', () => {
   })
 })
 
+describe('splitFileName', () => {
+  it.each([
+    ['video_shot.json', 'video_', 'shot.json'],
+    ['extraction.final.json', 'extraction.f', 'inal.json'],
+    ['abcde.md', 'a', 'bcde.md'],
+  ])('%s 拆成可截的开头与固定的末 4 字加扩展名', (name, head, tail) => {
+    expect(splitFileName(name)).toEqual({ head, tail })
+  })
+
+  it.each(['README', '.gitignore', 'shot.json', 'a.md'])(
+    '%s 没有扩展名或主名不超过 4 字，不拆，整名按末尾截断',
+    (name) => {
+      expect(splitFileName(name)).toEqual({ head: name, tail: '' })
+    },
+  )
+})
+
 describe('格式化', () => {
   it('大小按 B / KB / MB 给一位小数', () => {
     expect(formatBytes(512)).toBe('512 B')
@@ -48,5 +50,19 @@ describe('格式化', () => {
     expect(formatWhen(new Date(2026, 8, 5, 12, 40).toISOString(), now)).toBe('12:40')
     expect(formatWhen(new Date(2026, 8, 1, 9, 5).toISOString(), now)).toBe('9月1日 09:05')
     expect(formatWhen('not-a-date', now)).toBe('')
+  })
+})
+
+describe('fileIconOf', () => {
+  it.each([
+    ['storyboard.md', 'file'],
+    ['frames/extraction.JSON', 'file-json'],
+    ['口播文案.txt', 'file-plain'],
+    ['frames/a.png', 'file-image'],
+    ['clips/x.mp4', 'file-video'],
+    ['data/table.csv', 'file-other'],
+    ['LICENSE', 'file-other'],
+  ])('%s 用 %s', (path, icon) => {
+    expect(fileIconOf(path)).toBe(icon)
   })
 })

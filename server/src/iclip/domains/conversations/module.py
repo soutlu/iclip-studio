@@ -10,11 +10,16 @@ from iclip.domains.conversations.api import create_conversations_router
 from iclip.domains.conversations.repository import ConversationRepository
 from iclip.domains.conversations.service import (
     ActivitiesOf,
+    AnnounceConversationDeleted,
+    AnnounceConversationRow,
     AnnounceTitle,
     BusyConversationIds,
     ClaimTask,
+    ConversationFilm,
     ConversationService,
     CopyConversationWorkspace,
+    CopySameStyle,
+    EventWatermarkOf,
     ForkTranscript,
     GenerateTitle,
     LatestMasterUrls,
@@ -47,6 +52,7 @@ def build_conversations_module(
     read_derived_file: ReadDerivedFile,
     write_derived_file: WriteDerivedFile,
     document_validators: Mapping[str, WorkspaceDocumentValidator],
+    film: ConversationFilm,
     generate_title: GenerateTitle,
     announce_title: AnnounceTitle,
     activities_of: ActivitiesOf,
@@ -54,6 +60,10 @@ def build_conversations_module(
     latest_master_urls: LatestMasterUrls,
     fork_transcript: ForkTranscript,
     copy_workspace: CopyConversationWorkspace,
+    copy_same_style: CopySameStyle,
+    event_watermark: EventWatermarkOf,
+    announce_row: AnnounceConversationRow,
+    announce_deleted: AnnounceConversationDeleted,
 ) -> ConversationsModule:
     """外部依赖由组合根注入，协议定义见 service.py。"""
 
@@ -65,6 +75,7 @@ def build_conversations_module(
         read_derived_file=read_derived_file,
         write_derived_file=write_derived_file,
         document_validators=document_validators,
+        film=film,
         generate_title=generate_title,
         announce_title=announce_title,
         activities_of=activities_of,
@@ -72,6 +83,10 @@ def build_conversations_module(
         latest_master_urls=latest_master_urls,
         fork_transcript=fork_transcript,
         copy_workspace=copy_workspace,
+        copy_same_style=copy_same_style,
+        event_watermark=event_watermark,
+        announce_row=announce_row,
+        announce_deleted=announce_deleted,
     )
     return ConversationsModule(
         routers=(create_conversations_router(service, agents=list_agents, act_as=act_as),),

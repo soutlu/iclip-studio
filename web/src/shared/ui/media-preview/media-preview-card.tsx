@@ -1,6 +1,9 @@
-/** 参考 Kimi mention-tip；锚点与卡共用悬停时序，hover 桥覆盖二者间隙。 */
+/** 参考 Kimi mention-tip；锚点与卡共用悬停时序，hover 桥覆盖二者间隙。
+ *
+ * 卡用 fixed 定位，位置在视口坐标里算；挂载点可以注入：锚点在模态弹窗里时挂进弹窗，弹窗外的指针事件与焦点都被禁用。
+ * 弹窗带 translate 时 fixed 以弹窗为参照，所以落位前减去包含块原点。 */
 
-import { type SyntheticEvent, useRef, useState } from 'react'
+import { type SyntheticEvent, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -12,6 +15,7 @@ import {
   formatDuration,
 } from './attachment-format'
 import { MEDIA_KIND_ICON, type MediaDescriptor, mediaDisplayName } from './media-descriptor'
+import { UploadRing } from './upload-ring'
 
 /** 媒体元素加载后读到的像素尺寸；时长只有视频有。 */
 type MediaIntrinsic = { width: number; height: number; duration: number | undefined }
@@ -22,9 +26,6 @@ const TIP_GAP_PX = 6
 const TIP_VIEWPORT_MARGIN_PX = 12
 /** 300px 预览区使用两倍分辨率 poster。 */
 const POSTER_WIDTH_PX = 600
-/** 进度环尺寸参考 Kimi mention-tip-media-ring。 */
-const RING_RADIUS = 6.5
-const RING_LENGTH = 40.84
 
 type TipPlacement = {
   left: number
@@ -35,6 +36,8 @@ type TipPlacement = {
 
 type MediaPreviewCardProps = {
   anchorEl: HTMLElement
+  /** 挂载点，默认 body。 */
+  container?: HTMLElement | null
   media: MediaDescriptor
   onEnter: () => void
   onLeave: () => void
@@ -43,6 +46,7 @@ type MediaPreviewCardProps = {
 
 export function MediaPreviewCard({
   anchorEl,
+  container = null,
   media,
   onEnter,
   onLeave,
@@ -51,6 +55,7 @@ export function MediaPreviewCard({
   // 隐藏状态下测量后定位；挂载与媒体加载回调负责重新测量。
   const [placement, setPlacement] = useState<TipPlacement | null>(null)
   const tipElRef = useRef<HTMLDivElement | null>(null)
+  const originRef = useRef<{ x: number; y: number } | null>(null)
   const tipRef = (el: HTMLDivElement | null) => {
     tipElRef.current = el
     measure(el)
@@ -66,11 +71,15 @@ export function MediaPreviewCard({
       window.innerWidth - rect.width - TIP_VIEWPORT_MARGIN_PX,
     )
     const side = anchor.top >= rect.height + TIP_GAP_PX + TIP_VIEWPORT_MARGIN_PX ? 'top' : 'bottom'
+    const top = side === 'top' ? anchor.top - rect.height - TIP_GAP_PX : anchor.bottom + TIP_GAP_PX
+    // 包含块原点：首次测量时卡还在 left / top 为 0 的位置，它的视口坐标就是原点；没有带 transform 的祖先时是视口原点。
+    originRef.current ??= { x: rect.left, y: rect.top }
+    const origin = originRef.current
     const next: TipPlacement = {
       caretX: Math.min(Math.max(anchorCenterX - left, 12), rect.width - 12),
-      left,
+      left: left - origin.x,
       side,
-      top: side === 'top' ? anchor.top - rect.height - TIP_GAP_PX : anchor.bottom + TIP_GAP_PX,
+      top: top - origin.y,
     }
     setPlacement((prev) =>
       prev !== null &&
@@ -103,6 +112,9 @@ export function MediaPreviewCard({
     }
     measure(tipElRef.current)
   }
+  // 竖屏判定会改变媒体封顶高度；尺寸类名生效后重新定位，避免沿用旧卡高。
+  const remeasure = useEffectEvent(() => measure(tipElRef.current))
+  useLayoutEffect(() => remeasure(), [intrinsic])
 
   const name = mediaDisplayName(media)
   const isMedia = media.kind !== 'file'
@@ -111,14 +123,21 @@ export function MediaPreviewCard({
   const details = [
     intrinsic === null ? null : formatDimensions(intrinsic.width, intrinsic.height),
     intrinsic?.duration === undefined ? null : formatDuration(intrinsic.duration),
-    media.size === undefined ? null : formatAttachmentSize(media.size),
+    // 视频第二行只报尺寸与时长。
+    media.size === undefined || media.kind === 'video' ? null : formatAttachmentSize(media.size),
   ]
     .filter((part) => part !== null)
     .join(' · ')
-  const showUploadState = upload !== undefined && upload.status !== 'ready'
-  const hasSecondRow = showUploadState || details !== '' || canEnlarge
+  // 只有竖屏放宽封顶高度；读到像素尺寸前按方形与横屏的 220 渲染。
+  const mediaSizeClass = cn(
+    'block max-w-[300px] rounded-sm object-contain',
+    intrinsic !== null && intrinsic.height > intrinsic.width ? 'max-h-[320px]' : 'max-h-[220px]',
+  )
+  // 失败态由输入框的失败卡片承担，悬停卡只报上传中。
+  const uploading = upload?.status === 'uploading' ? upload : undefined
+  const hasSecondRow = uploading !== undefined || details !== '' || canEnlarge
   const meta = (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="media-tip-meta flex min-w-0 flex-col gap-0.5">
       <div className="flex min-w-0 items-center gap-1">
         <Icon
           className="media-tip-ink shrink-0"
@@ -126,54 +145,21 @@ export function MediaPreviewCard({
           name={MEDIA_KIND_ICON[media.kind]}
           size="sm"
         />
-        <span className="min-w-0 truncate font-semibold">{ellipsizeAttachmentName(name)}</span>
+        <span className="min-w-0 truncate font-semibold" title={name}>
+          {ellipsizeAttachmentName(name)}
+        </span>
       </div>
       {hasSecondRow ? (
         <div className="flex min-w-0 items-center gap-2 pl-0.5">
-          {showUploadState ? (
-            <span
-              className={cn(
-                'media-tip-ink flex min-w-0 flex-1 items-center gap-1.5 truncate font-medium',
-                upload.status === 'error' && 'media-tip-danger',
-              )}
-            >
-              {upload.status === 'uploading' ? (
-                <>
-                  {upload.progress === undefined ? (
-                    <Icon className="animate-spin" decorative name="loading" size="xs" />
-                  ) : (
-                    <svg aria-hidden className="size-3 shrink-0" viewBox="0 0 16 16">
-                      <circle
-                        cx="8"
-                        cy="8"
-                        fill="none"
-                        r={RING_RADIUS}
-                        strokeWidth="1.5"
-                        style={{ stroke: 'color-mix(in srgb, currentColor 18%, transparent)' }}
-                      />
-                      <circle
-                        cx="8"
-                        cy="8"
-                        fill="none"
-                        r={RING_RADIUS}
-                        stroke="currentColor"
-                        strokeDasharray={`${(upload.progress * RING_LENGTH).toFixed(1)} ${RING_LENGTH}`}
-                        strokeLinecap="round"
-                        strokeWidth="1.5"
-                        transform="rotate(-90 8 8)"
-                      />
-                    </svg>
-                  )}
-                  {upload.progress === undefined
-                    ? '上传中'
-                    : `上传中 ${Math.round(upload.progress * 100)}%`}
-                </>
-              ) : (
-                '上传失败'
-              )}
-            </span>
-          ) : (
+          {uploading === undefined ? (
             <span className="media-tip-ink min-w-0 flex-1 truncate tabular-nums">{details}</span>
+          ) : (
+            <span className="media-tip-ink flex min-w-0 flex-1 items-center gap-1.5 truncate font-medium">
+              <UploadRing progress={uploading.progress} size="xs" />
+              {uploading.progress === undefined
+                ? '上传中'
+                : `上传中 ${Math.round(uploading.progress * 100)}%`}
+            </span>
           )}
           {canEnlarge ? (
             <button className="media-tip-open ml-auto flex-none" onClick={onEnlarge} type="button">
@@ -210,17 +196,12 @@ export function MediaPreviewCard({
                 <span>预览不可用</span>
               </div>
             ) : media.kind === 'image' ? (
-              <img
-                alt={name}
-                className="block max-h-[220px] max-w-[300px] rounded-sm object-contain"
-                onLoad={onImageLoad}
-                src={previewUrl}
-              />
+              <img alt={name} className={mediaSizeClass} onLoad={onImageLoad} src={previewUrl} />
             ) : (
               // 仅展示静音首帧，不提供播放控件。
               <video
                 aria-label={name}
-                className="block max-h-[220px] max-w-[300px] rounded-sm object-contain"
+                className={mediaSizeClass}
                 muted
                 onLoadedMetadata={onVideoMetadata}
                 playsInline
@@ -235,7 +216,6 @@ export function MediaPreviewCard({
       ) : (
         meta
       )}
-      {upload?.status === 'error' ? <div className="media-tip-error">{upload.message}</div> : null}
       {placement === null ? null : (
         <span
           aria-hidden
@@ -247,6 +227,6 @@ export function MediaPreviewCard({
         />
       )}
     </div>,
-    document.body,
+    container ?? document.body,
   )
 }

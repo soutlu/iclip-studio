@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 from structlog.testing import capture_logs
 
-from iclip.common.tool_args import JsonText
+from iclip.common.tool_args import REPLAY_CONTEXT, JsonText
 
 
 class Region(BaseModel):
@@ -36,6 +36,19 @@ def test_a_stringified_object_or_array_is_restored_and_logged() -> None:
 def test_values_that_are_not_strings_pass_through_without_a_log() -> None:
     with capture_logs() as logs:
         args = Args.model_validate({"region": {"x": 1, "y": 2}, "items": [3, 4]})
+
+    assert (args.region, args.items) == (Region(x=1, y=2), [3, 4])
+    assert logs == []
+
+
+def test_replaying_received_args_restores_without_a_second_log() -> None:
+    """重放已收到的入参（如画工具卡）照常还原，日志只由那次调用记。"""
+
+    with capture_logs() as logs:
+        args = Args.model_validate(
+            {"region": json.dumps({"x": 1, "y": 2}), "items": json.dumps([3, 4])},
+            context=REPLAY_CONTEXT,
+        )
 
     assert (args.region, args.items) == (Region(x=1, y=2), [3, 4])
     assert logs == []

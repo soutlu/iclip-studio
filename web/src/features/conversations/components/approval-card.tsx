@@ -1,15 +1,19 @@
 /** 审批与工具卡共用 display 合同；两个正式按钮，数字键 1 / 2 是快捷方式。 */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { ToolCallFrame } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
+import { baseName, fileKindOf } from '@/shared/lib/file-kind'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { isBehindModal } from '@/shared/ui/dialog'
+import { Markdown } from '@/shared/ui/markdown'
 import { toast } from '@/shared/ui/toast'
 import { respondInteraction } from '../conversations.api'
+import { EditLines } from './edit-lines'
 import { fileChangeOf, toolCard, type FileChange } from './tool-display'
+import { useClampable } from './use-clampable'
 
 type ApprovalCardProps = {
   conversationId: string
@@ -54,7 +58,7 @@ export function ApprovalCard({
         toast.error('已经做过决定')
         onRefresh()
       } else if (error instanceof ApiError && error.status === 404) {
-        toast.error('这张卡已经不在等了')
+        toast.error('这一步已经处理过了')
       } else {
         toast.error(errorMessageOf(error, '提交决定失败'))
       }
@@ -87,7 +91,12 @@ export function ApprovalCard({
     >
       <header className="flex min-w-0 items-baseline gap-2 px-4 pt-3">
         <h2 className="shrink-0 text-body font-medium text-chat-message-text">{card.label}</h2>
-        {card.detail === undefined ? null : (
+        {/* 写入与编辑只给文件名；其余审批照旧显示主语原文。 */}
+        {change !== undefined ? (
+          <p className="min-w-0 truncate text-body-sm text-chat-muted-text">
+            {baseName(change.path)}
+          </p>
+        ) : card.detail === undefined ? null : (
           <p className="min-w-0 truncate font-mono text-body-sm text-chat-muted-text">
             {card.detail}
           </p>
@@ -103,21 +112,29 @@ export function ApprovalCard({
             {DECISION_LABELS[decision]}
           </p>
         ) : readOnly ? (
-          <p className="text-caption text-chat-muted-text">等属主来决定</p>
+          <p className="text-caption text-chat-muted-text">等任务的主人决定</p>
         ) : (
           <>
-            <p className="text-caption text-chat-muted-text">按 1 同意，按 2 拒绝</p>
-            <div className="flex items-center gap-2">
+            {/* 触屏没有数字键，提示不显示；按钮靠 ml-auto 留在右边。 */}
+            <p className="text-caption text-chat-muted-text touch:hidden">按 1 同意，按 2 拒绝</p>
+            <div className="ml-auto flex items-center gap-2">
               <Button
                 disabled={sending}
                 onClick={() => decide(false)}
                 size="md"
                 type="button"
-                variant="outlined"
+                variant="tonal"
               >
                 拒绝
               </Button>
-              <Button disabled={sending} onClick={() => decide(true)} size="md" type="button">
+              {/* 主操作用墨色：品牌绿只留给「生成」。 */}
+              <Button
+                disabled={sending}
+                onClick={() => decide(true)}
+                size="md"
+                type="button"
+                variant="inverted"
+              >
                 同意
               </Button>
             </div>
@@ -128,34 +145,56 @@ export function ApprovalCard({
   )
 }
 
-/** 编辑给前后对照，写入给整份内容；都最多显示十来行，看全貌不是审批卡的事。 */
+/** 收起时的可见行数；展开后的上限（二十四行）写在 .chat-preview-expanded。 */
+const PREVIEW_LINES = 12
+
+/**
+ * 给用户看「要写进去的是什么」：Markdown 排成文档，其余按正文字体原样换行；
+ * 编辑只给改动前后的片段，相同的首尾行当上下文，删掉的行灰色划线，新写的行墨色加浅灰底。
+ * 超过十二行先收起，「展开全部」后在框内滚动。
+ */
 function ChangePreview({ change }: { change: FileChange }) {
-  // 同一段里可能有相同的行，key 用「哪一段的第几行」；序号在这里算好，不在渲染时取下标。
-  const block = (text: string, tone: 'plain' | 'removed' | 'added') =>
-    text.split('\n').map((line, index) => ({ id: `${tone}-${index}`, text: line, tone }))
-  const lines =
-    'content' in change
-      ? block(change.content, 'plain')
-      : [...block(change.before, 'removed'), ...block(change.after, 'added')]
+  const [expanded, setExpanded] = useState(false)
+  // fileChangeOf 每次渲染都给新对象，按文本重新测量。
+  const text = 'content' in change ? change.content : `${change.before}\n${change.after}`
+  const { clampable, ref } = useClampable(PREVIEW_LINES, text)
+  const bodyId = useId()
   return (
-    <div
-      aria-label="改动预览"
-      className="mx-4 mt-3 max-h-56 overflow-auto rounded-sm border-[0.5px] border-chat-hairline bg-chat-code-block-bg py-1.5 font-mono text-body-sm"
-      role="region"
-    >
-      {lines.map((line) => (
+    <>
+      <div className="mx-4 mt-3 rounded-md bg-surface-container-low py-1.5">
         <div
+          aria-label="改动预览"
           className={cn(
-            'px-3 whitespace-pre-wrap',
-            line.tone === 'removed' && 'bg-error-container text-on-error-container line-through',
-            line.tone === 'added' && 'bg-primary-container text-on-primary-container',
-            line.tone === 'plain' && 'text-chat-message-text',
+            'text-body leading-relaxed text-chat-message-text',
+            clampable && (expanded ? 'chat-preview-expanded' : 'chat-preview-clamp'),
           )}
-          key={line.id}
+          id={bodyId}
+          ref={ref}
+          role="region"
         >
-          {line.text === '' ? ' ' : line.text}
+          {'content' in change ? (
+            fileKindOf(change.path) === 'markdown' ? (
+              <Markdown className="px-3" text={change.content} />
+            ) : (
+              <p className="px-3 break-words whitespace-pre-wrap">{change.content}</p>
+            )
+          ) : (
+            <EditLines after={change.after} before={change.before} />
+          )}
         </div>
-      ))}
-    </div>
+      </div>
+      {clampable ? (
+        <button
+          aria-controls={bodyId}
+          aria-expanded={expanded}
+          className="mx-4 mt-1.5 inline-flex items-center gap-0.5 self-start rounded-xs px-0.5 text-body-sm text-chat-muted-text underline-offset-3 ui-focus hover:text-chat-secondary-text hover:underline"
+          onClick={() => setExpanded((value) => !value)}
+          type="button"
+        >
+          {expanded ? '收起' : '展开全部'}
+          <Icon decorative name={expanded ? 'collapse' : 'expand'} size="xs" />
+        </button>
+      ) : null}
+    </>
   )
 }

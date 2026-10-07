@@ -45,41 +45,50 @@
 }
 
 .attachment-pill {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-  padding-inline: 2px;
-  white-space: nowrap;
-  vertical-align: baseline;
-  color: var(--color-chat-muted-text);
-  font-weight: 500;
+  /* 外观来自共用的 .media-chip（NodeView 同时挂两个类）；这里只有输入框的行内摆放、指针、选中与失败态。
+     24px 芯片放进 20px 行：顶对齐、上探 2px，中线与字身对齐；下方多留 4px，有芯片的行高 26px，
+     附件连排换行时上下两排之间留 2px 缝。纯文字行行距不变。 */
+  margin: -2px 2px 4px;
+  vertical-align: top;
   cursor: text;
-  transition: color var(--dur-s) var(--ease);
-}
-.attachment-pill:hover {
-  color: var(--color-chat-message-text);
 }
 .attachment-pill.attachment-image,
 .attachment-pill.attachment-video {
   cursor: zoom-in;
 }
-.attachment-pill .media-chip-icon {
+/* 上传中文字退到次要色，进度看缩略图上的环。 */
+.attachment-pill.attachment-uploading {
   color: var(--color-on-surface-variant);
 }
-.attachment-pill:hover .media-chip-icon {
-  color: inherit;
+/* 选中与当前一律用墨色细描边（同行内焦点环的 1px），主色只留给「生成」与运行状态。
+   画在 outline 上，不占 box-shadow：失败 chip 的红圈在 box-shadow 上，两者叠着各自可见。
+   使用方节点的内容自己带 data-selected（如画布上选中的标注）时用同一个环。 */
+.attachment-pill.ProseMirror-selectednode,
+.composer-node.ProseMirror-selectednode > *,
+.composer-node > [data-selected] {
+  outline: 1px solid var(--color-focus-ring);
+  outline-offset: 1px;
 }
-.attachment-pill.ProseMirror-selectednode {
-  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
-  border-radius: var(--radius-xs);
-}
-.attachment-pill.attachment-error,
-.attachment-pill.attachment-error:hover {
+.attachment-pill.attachment-error {
+  cursor: pointer;
+  box-shadow:
+    0 0 0 0.5px var(--color-error),
+    var(--shadow-xs);
   color: var(--color-error);
 }
-.attachment-pill.attachment-error .media-chip-icon,
-.attachment-pill.attachment-error:hover .media-chip-icon {
+.attachment-pill.attachment-error .media-chip-icon {
   color: inherit;
+}
+
+.composer-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 16px 0;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
 }
 
 .composer-drop-overlay {
@@ -96,11 +105,24 @@
   align-items: center;
   gap: 12px;
   padding: 16px 24px;
-  border: 0.5px dashed var(--color-primary);
+  border: 0.5px dashed var(--color-outline);
   border-radius: var(--radius-lg);
   background: var(--color-top-layer);
-  color: var(--color-primary);
+  color: var(--color-on-surface);
   font-size: var(--text-title);
   font-weight: 500;
   box-shadow: var(--shadow-2);
+}
+/* 卡片模式：提示只盖住输入卡；所在弹窗带 translate，fixed 会以弹窗为参照，所以用 absolute。 */
+.composer-drop-overlay-card {
+  position: absolute;
+  z-index: var(--z-local-1);
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--color-top-layer) 72%, transparent);
+}
+.composer-drop-overlay-card .composer-drop-card {
+  gap: 10px;
+  padding: 10px 18px;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
 }

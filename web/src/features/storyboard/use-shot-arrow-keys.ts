@@ -2,9 +2,9 @@
 
 import { useEffect, useEffectEvent } from 'react'
 
-/** 方向键归它们自己的地方：正在输入、下拉、单选组、菜单与弹窗。 */
+/** 方向键归它们自己的地方：正在输入、下拉、单选组、菜单（含打开它的按钮，↓ 展开）与弹窗。 */
 const OWNS_ARROW_KEYS =
-  'input, select, textarea, [contenteditable="true"], [role="radiogroup"], [role="listbox"], [role="menu"], [role="dialog"]'
+  'input, select, textarea, [contenteditable="true"], [role="radiogroup"], [role="listbox"], [role="menu"], [aria-haspopup="menu"], [role="dialog"]'
 
 type ArrowKey = Pick<
   KeyboardEvent,
@@ -26,13 +26,12 @@ export const shotAfterArrowKey = (
   return next >= 1 && next <= total ? next : undefined
 }
 
-/** 在 `root` 上监听 ↑↓；`enabled` 为 false 时（例如浮层盖着）不切。切了就吞掉按键，页面不跟着滚。 */
+/** 在 `root` 上监听 ↑↓，切了就吞掉按键，页面不跟着滚。 */
 export const useShotArrowKeys = (
   root: HTMLElement | null,
-  options: { enabled: boolean; position: number; total: number; onGo: (shot: number) => void },
+  options: { position: number; total: number; onGo: (shot: number) => void },
 ) => {
   const handle = useEffectEvent((event: KeyboardEvent) => {
-    if (!options.enabled) return
     const next = shotAfterArrowKey(event, options.position, options.total)
     if (next === undefined) return
     event.preventDefault()

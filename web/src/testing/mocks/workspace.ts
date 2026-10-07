@@ -9,9 +9,10 @@ import type {
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
 // no-inline：这几条要作为地址进请求体、进 <video src>，不能被构建按小文件内联成 data URI。
-import sampleEditedUrl from '../fixtures/sample-edited.webm?no-inline'
-import sampleWideUrl from '../fixtures/sample-video-wide.webm?no-inline'
-import sampleVideoUrl from '../fixtures/sample-video.webm?no-inline'
+import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
+import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
+import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
+import { isMockVideoUpload } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
 const FRAME_A =
@@ -39,7 +40,10 @@ const httpFrames = (): MockFrames => {
 
 /** 出片与合成都放这条 6 秒的测试卡；编辑段的结果放另一条 3 秒的彩条，切换时看得出来。
  *
- * 用 WebM 不用 MP4：Playwright 自带的 Chromium 没有 H.264 解码器，mp4 连时长都读不出来。 */
+ * 编码用 VP9 不用 H.264：Playwright 自带的 Chromium 没有 H.264 解码器。三条都是 VP9-in-MP4、每秒
+ * 一个关键帧，与线上的成片同为 MP4 容器：编辑器按关键帧分段、读原声都走 MP4，参考片段在关键帧处
+ * 原样拷出来。只有这条 6 秒的测试卡带一条 Opus 原声（Chromium 能解，AAC 不能），时间线上看得到
+ * 真实波形；彩条与横版没有音轨，原声轨显示「无声」。 */
 const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000
@@ -99,6 +103,18 @@ const VIDEO_DOC_MD = [
   '| :--- | :--- | :--- | :--- |',
   '| Open Hook | 00:00-00:02 | 明快开篇 | 高架桥车流拉成光带 |',
   '| Detail Show | 00:02-00:08 | 律动轻快 | 楼群灯光逐层亮起 |',
+].join('\n')
+
+const VOICEOVER_TXT = [
+  '开场：周末的早上，不想背太重的包。',
+  '',
+  '它能装下一台 13 寸电脑、一瓶水和一件薄外套，',
+  '提手是植鞣皮，越用颜色越深。',
+  '',
+  '通勤放进地铁座位下面刚好，',
+  '周末去菜市场也不心疼。',
+  '',
+  '收尾：米白帆布托特，今天就带它出门。',
 ].join('\n')
 
 export const SHOTS_MOCK_PATH = 'video_shot.json'
@@ -208,7 +224,7 @@ type MockJob = {
   durationMs?: number
   /** 原作号：编辑段与合成指最初那条出片，出片与图片不填。 */
   rootJobId?: string | null
-  /** 直接来源：编辑段指基底成片，合成指编辑段，帧图编辑指底图那条。 */
+  /** 直接来源：编辑段与合成指基底成片，帧图编辑指底图那条。 */
   sourceJobId?: string | null
   /** 来源的地址：帧图编辑是它改的底图，底图在不在库里都有。 */
   sourceUrl?: string | null
@@ -324,6 +340,7 @@ export const seedMockWorkspace = (
       ],
       // 下面几份照真实工作区的文件各给一份，文件页按类别渲染时有东西可看。
       ['storyboard.md', { content: STORYBOARD_MD, updatedAt: EARLIER, version: 2 }],
+      ['口播文案.txt', { content: VOICEOVER_TXT, updatedAt: EARLIER, version: 1 }],
       [
         'video/night-city-timelapse-9a3f2c1d.md',
         { content: VIDEO_DOC_MD, updatedAt: EARLIER, version: 1 },
@@ -424,7 +441,8 @@ export const seedMockWorkspace = (
     // 演示在途的图片编辑：第 2 组第 3 帧已在上游跑。静态种子，不会自己跑完；分镜页据此画帧角标。
     // 只挂在「预览第 N 帧」这种非镜头首帧上：首帧按钮叫「镜头 N」，带角标后名字会变，e2e 按精确名找它。
     job({
-      createdAt: '2026-09-01T12:50:00Z',
+      // 提交时刻跟着当前时间走：编辑器版本条与舞台上的走表从十几秒起，像一条真在跑的任务。
+      createdAt: new Date(Date.now() - 12_000).toISOString(),
       id: 'c296ace8-7296-44a7-84f1-9fa0b1c2d3e4',
       kind: 'image',
       prompt: '背景换成傍晚的暖光。',
@@ -641,6 +659,45 @@ const validateShotsContent = (content: string): string | undefined => {
   return undefined
 }
 
+/** 收下一次出片：与 `POST /generations/video` 同一条记录与完成节奏，出的是同一条测试卡。制作页的 mock 用它。 */
+export const acceptMockVideo = (spec: {
+  conversationId: string
+  prompt: string
+  request: Record<string, unknown>
+  shotIndex: number
+  metadata: Record<string, unknown>
+}) =>
+  acceptGeneration({
+    ...spec,
+    durationMs: VIDEO_MS,
+    kind: 'video',
+    outputUrl: VIDEO_URL,
+    watermarkOutputUrl: VIDEO_URL,
+  })
+
+/** 收下一次按描述生图：同一套记录与完成节奏，出的是 `outputUrl`。制作页的 mock 用它。 */
+export const acceptMockImage = (spec: {
+  conversationId: string
+  prompt: string
+  metadata: Record<string, unknown>
+  outputUrl: string
+}) =>
+  acceptGeneration({
+    ...spec,
+    kind: 'image',
+    request: { prompt: spec.prompt },
+  })
+
+/** 往一段对话的工作区放一份文件（还没有工作区就建一个）：版本从 1 起，已有就加一，返回新版本。制作页的 mock 用它。 */
+export const putMockWorkspaceFile = (conversationId: string, path: string, content: string) => {
+  const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
+  workspaces.set(conversationId, files)
+  if (!generations.has(conversationId)) generations.set(conversationId, [])
+  const version = (files.get(path)?.version ?? 0) + 1
+  files.set(path, { content, updatedAt: new Date().toISOString(), version })
+  return version
+}
+
 export const resetMockWorkspace = () => {
   for (const timer of timers) clearTimeout(timer)
   timers.clear()
@@ -815,7 +872,8 @@ export const workspaceHandlers = [
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),
 
-  // 编辑段：基底要是这段对话里一条完成的成片。这里切不了视频，编辑结果用现成的彩条代替，区间照请求记。
+  // 编辑段：基底要是这段对话里一条完成的成片，参考片段恰好一条、是登录人确认过的视频上传。
+  // 这里不探时长；编辑结果用现成的彩条代替，区间照请求记。
   http.post('*/api/generations/video-edits', async ({ request }) => {
     const body = (await request.json()) as VideoEditIn
     const base = findJob(body.conversation_id, body.source_job_id)
@@ -825,15 +883,25 @@ export const workspaceHandlers = [
     if (!isFinishedTake(base)) {
       return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
     }
+    const clips = body.reference_video_urls
+    const clip = clips.length === 1 ? clips[0] : undefined
+    if (clip === undefined) {
+      return HttpResponse.json({ detail: 'reference_video_urls 必须恰好一条' }, { status: 422 })
+    }
+    if (!isMockVideoUpload(clip)) {
+      return HttpResponse.json(
+        { detail: 'reference_video_urls 必须是调用者本人上传的一段视频' },
+        { status: 422 },
+      )
+    }
     const created = acceptGeneration({
       kind: 'video',
       prompt: body.prompt,
-      // 片段地址只进发给上游的那一次请求，落库的参考视频为空。
       request: {
         model: body.model,
         prompt: body.prompt,
         reference_image_urls: body.reference_image_urls ?? [],
-        reference_video_urls: [],
+        reference_video_urls: [clip],
         seconds: body.seconds ?? null,
         provider_options: body.provider_options ?? null,
       },
@@ -850,47 +918,62 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 合成：来源要是一条完成的编辑段，各段按它的基底与区间算。这里拼不了视频，产物用现成的测试卡代替。
+  // 合成：基底要是这段对话里一条完成的成片，每段出自基底本身或基于它的一条完成编辑段，地址按出处填。
+  // 这里拼不了视频，产物用现成的测试卡代替。
   http.post('*/api/generations/video-composites', async ({ request }) => {
     const body = (await request.json()) as VideoComposeIn
-    const segment = findJob(body.conversationId, body.sourceJobId)
-    if (segment === undefined) {
+    const base = findJob(body.conversationId, body.baseJobId)
+    if (base === undefined) {
       return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 422 })
     }
-    const base =
-      segment.sourceJobId === null ? undefined : findJob(body.conversationId, segment.sourceJobId)
-    const { outputUrl, rangeStartMs, rangeEndMs } = segment
-    if (
-      segment.operation !== 'generate' ||
-      segment.status !== 'completed' ||
-      outputUrl === null ||
-      rangeStartMs === null ||
-      rangeEndMs === null ||
-      base?.outputUrl == null
-    ) {
-      return HttpResponse.json({ detail: '来源必须是一条已完成的编辑段' }, { status: 422 })
+    if (!isFinishedTake(base)) {
+      return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
+    }
+    const placed: { source: MockRecord; url: string; start: number; end: number | null }[] = []
+    for (const segment of body.segments) {
+      const source: MockRecord | undefined =
+        segment.sourceJobId === base.id ? base : findJob(body.conversationId, segment.sourceJobId)
+      const fromBase =
+        source === base ||
+        (source?.operation === 'generate' &&
+          source.status === 'completed' &&
+          source.sourceJobId === base.id)
+      if (source === undefined || !fromBase || source.outputUrl === null) {
+        return HttpResponse.json(
+          { detail: '每段必须出自基底本身，或基于这个基底的一条已完成编辑段' },
+          { status: 422 },
+        )
+      }
+      placed.push({
+        source,
+        url: source.outputUrl,
+        start: segment.start,
+        end: segment.end ?? null,
+      })
     }
     const created = acceptGeneration({
       kind: 'video',
       operation: 'compose',
       prompt: '',
       request: {
-        segments: [
-          ...(rangeStartMs > 0
-            ? [{ url: base.outputUrl, start: 0, end: rangeStartMs / 1000 }]
-            : []),
-          { url: outputUrl, start: 0, end: null },
-          { url: base.outputUrl, start: rangeEndMs / 1000, end: null },
-        ],
+        segments: placed.map(({ source, url, start, end }) => ({
+          sourceJobId: source.id,
+          url,
+          start,
+          end,
+        })),
       },
       conversationId: body.conversationId ?? null,
       metadata: body.metadata ?? null,
-      shotIndex: segment.shotIndex,
-      rootJobId: segment.rootJobId,
-      sourceJobId: segment.id,
+      shotIndex: base.shotIndex,
+      rootJobId: base.sourceJobId === null ? base.id : base.rootJobId,
+      sourceJobId: base.id,
       outputUrl: VIDEO_URL,
-      // 真实后端拼完自己量；这里按样片时长推算：基底前段、编辑结果整条、基底后段。
-      durationMs: rangeStartMs + EDITED_MS + Math.max(0, VIDEO_MS - rangeEndMs),
+      // 真实后端拼完自己量；这里把各段按出处的时长闭合后相加。mock 的编辑段不记时长，按样片算。
+      durationMs: placed.reduce((total, { source, start, end }) => {
+        const length = source.durationMs ?? (source === base ? VIDEO_MS : EDITED_MS)
+        return total + Math.max(0, (end === null ? length : end * 1000) - start * 1000)
+      }, 0),
     })
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),

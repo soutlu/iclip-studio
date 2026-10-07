@@ -7,6 +7,7 @@ import {
   resetMockTasks,
   resetMockUsers,
 } from './mocks/handlers'
+import { resetMockFilm } from './mocks/film'
 import { resetMockClock } from './mocks/paging'
 import { server } from './mocks/server'
 import { resetMockTranscript } from './mocks/transcript'
@@ -62,6 +63,15 @@ if (!('scrollIntoView' in Element.prototype)) {
   })
 }
 
+// jsdom 没有 Web Animations；变形动画直接算作播完，元素停在终态。
+if (!('animate' in Element.prototype)) {
+  Object.defineProperty(Element.prototype, 'animate', {
+    configurable: true,
+    value: () => ({ cancel: () => {}, finished: Promise.resolve() }),
+    writable: true,
+  })
+}
+
 // 未声明 handler 的请求直接报错，避免访问真实后端。
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' })
@@ -72,6 +82,7 @@ afterEach(() => {
   server.events.removeAllListeners()
   resetMockClock()
   resetMockConversations()
+  resetMockFilm()
   resetMockSession()
   resetMockTasks()
   resetMockTranscript()

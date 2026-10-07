@@ -125,6 +125,11 @@ class VideoShotsDocument(BaseModel):
     aspect_ratio: str
     shots: list[VideoShotDocumentRow]
 
+    def file_text(self) -> str:
+        """写进工作区文件的原文；交付工具与它的工具卡共用这一份序列化，两边不会分叉。"""
+
+        return self.model_dump_json(indent=2)
+
 
 def validate_video_shot_requests(
     shots: Sequence[VideoShotRequest | VideoShotDocumentRow],

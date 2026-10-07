@@ -10,6 +10,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import NoReturn
 
 import httpx
@@ -28,18 +29,25 @@ from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.transcript.session_events import SessionEventClock
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.film import UnusedFilmPage
 from tests.helpers.generation import (
     MEDIA_ENVS,
     MemoryObjectStore,
     config_with_media,
     make_job,
+    make_upload,
     video_request,
 )
+from tests.helpers.media import synthesize_video
+from tests.helpers.media_server import serving
 from tests.helpers.pg import connected, reset_database
 
 URL = "/conversations"
@@ -403,6 +411,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             read_derived_file=_untouched,
             write_derived_file=_untouched,
             document_validators={},
+            film=UnusedFilmPage(),
             generate_title=_untouched,
             announce_title=_untouched,
             activities_of=_untouched,
@@ -410,6 +419,10 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             latest_master_urls=_untouched,
             fork_transcript=start,
             copy_workspace=copy_no_workspace,
+            copy_same_style=_untouched,
+            event_watermark=SessionEventClock().snapshot,
+            announce_row=_untouched,
+            announce_deleted=_untouched,
         )
         principal = Principal(
             kind="user", user_id=uuid.UUID(owner), permissions=frozenset(), audit_label="logan"
@@ -494,6 +507,7 @@ async def complete(repo: SqlGenerationRepository, job: GenerationJob, name: str)
         job.id,
         output_url=f"https://example.test/{name}.mp4",
         provider_status="succeeded",
+        duration_ms=4000,
     )
     assert done is not None
     return done
@@ -512,19 +526,28 @@ async def listed_ids(client: httpx.AsyncClient, conversation_id: str) -> set[str
     return {item["id"] for item in listed.json()["items"]}
 
 
+@pytest.mark.skipif(not ffmpeg_available(), reason="受理编辑要探参考片段的时长，本机没有 ffprobe")
 async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
     media_app: FastAPI, pg_url: str
 ) -> None:
     """分叉不往生成表里写一行；副本按对话列记录时带上源在分叉前完成的，剪片时拿它当原作。
 
     分叉那一刻还在跑的、分叉之后才出的都不归副本，同一个人按属主读得到也不行；
-    读不到副本的人拿副本 id 什么也列不出来。"""
+    读不到副本的人拿副本 id 什么也列不出来。受理编辑要探参考片段的时长，片段放在本地媒体服务上。"""
 
     engine = create_async_engine(pg_url)
     repo = SqlGenerationRepository(engine)
+    with TemporaryDirectory(prefix="fork-clip-") as tmp:
+        clip_bytes = synthesize_video(
+            Path(tmp) / "clip.mp4", size="160x120", seconds=2, audio=False
+        )
     try:
-        async with make_client(media_app) as client:
+        async with make_client(media_app) as client, serving({"clip.mp4": clip_bytes}) as media:
             owner = uuid.UUID(await login_as(client, pg_url, username="logan"))
+            clip_url = media.url("clip.mp4")
+            await repo.create_settled(
+                [make_upload(kind=KIND_VIDEO, owner_user_id=owner, output_url=clip_url)]
+            )
             source = await open_conversation(client)
             await seed_turns(pg_url, source, ["第一句"])
             take = await complete(
@@ -565,6 +588,7 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
                         "source_job_id": str(base),
                         "range_start_ms": 1000,
                         "range_end_ms": 3000,
+                        "reference_video_urls": [clip_url],
                         "model": "seedance",
                         "prompt": "换一双鞋",
                         "conversation_id": copy,

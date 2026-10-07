@@ -1,4 +1,4 @@
-/** 镜头组草稿的保存状态、冲突弹窗与读取提示；两个阅读器共用一份，文案不各自分叉。 */
+/** 镜头组草稿的保存状态、冲突弹窗与读取提示；分镜页与制作页共用一份，文案不各自分叉。 */
 
 import { Icon } from '@/shared/icons'
 import { Button } from '@/shared/ui/button'
@@ -20,8 +20,12 @@ export function ReaderNotice({ text }: { text: string }) {
   )
 }
 
+/** 保存状态只看种类与出错原因；分镜页与制作页的草稿各有自己的冲突细节，这里不用。 */
+type SaveStatusState =
+  { kind: Exclude<SaveState['kind'], 'error'> } | { kind: 'error'; message: string }
+
 type SaveStatusProps = {
-  state: SaveState
+  state: SaveStatusState
   hasUnsavedChanges: boolean
   /** 上传已落地但分镜还没保存时，提示要说清图片没丢。 */
   appliedUpload?: boolean | undefined

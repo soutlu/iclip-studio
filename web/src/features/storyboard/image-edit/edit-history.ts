@@ -1,5 +1,7 @@
 /** 这一帧出现过的图，摊成编辑器缩略图条的条目。 */
 
+import { formatDateTime } from '@/shared/lib/date-time'
+import { mediaStatusLabel } from '@/shared/ui/status-badge'
 import { isAppliedResult } from '../frame-status'
 import { phaseOfStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
@@ -16,7 +18,8 @@ export const CURRENT_KEY = 'current'
 
 type Seed = { url: string; job: GenerationJob | null; createdAt: string }
 
-/** 这一帧出现过的所有图：当前帧固定在头一个，其余按时间倒序。
+/** 这一帧出现过的所有图：当前帧固定在头一个，其余按时间倒序。`currentUrl` 为 null 是这张图现在没有在用的
+ * （制作页上没选用的生成图），没有当前帧那一格。
  *
  * 图从两处来：任务的产出，以及任务的来源地址（`sourceUrl`，库内底图与外部底图都有）。
  * 底图未必还在分镜里，它可能是上一轮没落盘的结果，也可能已被后来的编辑覆盖，只有这样
@@ -27,7 +30,7 @@ type Seed = { url: string; job: GenerationJob | null; createdAt: string }
  * 任务都产出过时留最前那条。 */
 export function frameImageEntries(
   jobs: readonly GenerationJob[],
-  currentUrl: string,
+  currentUrl: string | null,
 ): StripEntry[] {
   const running: StripEntry[] = []
   const seeds = new Map<string, Seed>()
@@ -46,7 +49,7 @@ export function frameImageEntries(
     if (phase === 'queued' || phase === 'running')
       running.push({ kind: 'pending', key: job.id, job })
     else if (phase === 'failed') running.push({ kind: 'failed', key: job.id, job })
-    else if (isAppliedResult(job, currentUrl)) currentJob ??= job
+    else if (currentUrl !== null && isAppliedResult(job, currentUrl)) currentJob ??= job
     else if (job.outputUrl !== null) remember(job.outputUrl, job, job.createdAt)
 
     const base = job.sourceUrl
@@ -63,6 +66,7 @@ export function frameImageEntries(
   const rest = [...running, ...images].sort((left, right) =>
     entryTime(right).localeCompare(entryTime(left)),
   )
+  if (currentUrl === null) return rest
   return [{ kind: 'current', key: CURRENT_KEY, url: currentUrl, job: currentJob }, ...rest]
 }
 
@@ -76,3 +80,24 @@ export const entryBaseUrl = (entry: StripEntry, currentUrl: string): string =>
   entry.kind === 'current' || entry.kind === 'image'
     ? entry.url
     : (entry.job.sourceUrl ?? currentUrl)
+
+/**
+ * 条目的称呼，版本条与舞台共用。
+ *
+ * 在用的那一格叫 `current`（分镜页「当前帧」，制作页「在用」，见 `EditorWords`）。
+ * 没有关联任务的图片曾作为别次编辑的底图保留下来，称为「上一版」。
+ * 只有还没落地的任务才占独立一格，它的词与帧上角标同源；完成的任务已经变成它产出的那张图。
+ */
+export function entryLabel(entry: StripEntry, current: string): string {
+  if (entry.kind === 'current') return current
+  if (entry.kind === 'image') return entry.job === null ? '上一版' : '结果'
+  const phase = phaseOfStatus(entry.job.status)
+  return phase === 'completed' ? '结果' : mediaStatusLabel(phase)
+}
+
+/** 可访问名：用时间补充称呼，区分同一种状态的多条记录。 */
+export function entryName(entry: StripEntry, current: string): string {
+  if (entry.kind === 'current') return entryLabel(entry, current)
+  const createdAt = entry.kind === 'image' ? entry.createdAt : entry.job.createdAt
+  return `${entryLabel(entry, current)} · ${formatDateTime(createdAt)}`
+}

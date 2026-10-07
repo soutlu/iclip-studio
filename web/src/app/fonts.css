@@ -1,3 +1,12 @@
+/*
+ * MiSans — 界面字体，从 npm 包 misans 自托管，构建时由 Vite 带 hash 输出到 assets。
+ * 只引入 400 / 500 / 650 三档静态字重，界面请求 600、700 时落到 650（Semibold）。
+ * 每档按 unicode-range 切片，页面只下载用到的字；许可见 public/licenses/MiSans.txt（随产物发布）。
+ */
+@import 'misans/lib/Normal/MiSans-Regular.min.css';
+@import 'misans/lib/Normal/MiSans-Medium.min.css';
+@import 'misans/lib/Normal/MiSans-Semibold.min.css';
+
 /* Source Serif 4 — 首页标题，参考 CapCut / Dreamina 标题字体 */
 @font-face {
   font-family: 'Source Serif 4';

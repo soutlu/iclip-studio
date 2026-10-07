@@ -1,51 +1,48 @@
-/** 工作区是纯文本存储。渲染器按后缀选，不认识任何具体文件名；后缀说不清时再看内容开头。 */
-
 import type { IconName } from '@/shared/icons'
+import { extensionOf } from '@/shared/lib/file-kind'
 
-/** 渲染器族：Markdown 排成文档，JSON 排成树，其余按行显示。 */
-export type FileKind = 'markdown' | 'json' | 'text'
-
-export type FileKindInfo = {
-  kind: FileKind
-  /** 类型字样取自后缀本身（MD、JSON、CSV…），没有后缀就叫文本。 */
-  label: string
-  icon: IconName
+const FILE_ICONS: Partial<Record<string, IconName>> = {
+  md: 'file',
+  markdown: 'file',
+  mdx: 'file',
+  json: 'file-json',
+  jsonc: 'file-json',
+  json5: 'file-json',
+  txt: 'file-plain',
+  avif: 'file-image',
+  gif: 'file-image',
+  jpeg: 'file-image',
+  jpg: 'file-image',
+  png: 'file-image',
+  svg: 'file-image',
+  webp: 'file-image',
+  m4v: 'file-video',
+  mov: 'file-video',
+  mp4: 'file-video',
+  webm: 'file-video',
 }
 
-const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx'])
-const JSON_EXTENSIONS = new Set(['json', 'jsonc', 'json5'])
-
-const ICONS: Record<FileKind, IconName> = { json: 'braces', markdown: 'file', text: 'file' }
-
-const extensionOf = (path: string): string => {
-  const name = baseName(path)
-  const dot = name.lastIndexOf('.')
-  return dot <= 0 ? '' : name.slice(dot + 1).toLowerCase()
-}
-
-/** 没有后缀或后缀陌生的文件，内容以 { 或 [ 开头就按 JSON 试着排。 */
-const looksLikeJson = (content: string | undefined): boolean => {
-  if (content === undefined) return false
-  const head = content.trimStart().charAt(0)
-  return head === '{' || head === '['
-}
-
-export const fileKindOf = (path: string, content?: string): FileKindInfo => {
-  const extension = extensionOf(path)
-  const kind: FileKind = MARKDOWN_EXTENSIONS.has(extension)
-    ? 'markdown'
-    : JSON_EXTENSIONS.has(extension) || (extension === '' && looksLikeJson(content))
-      ? 'json'
-      : 'text'
-  return { icon: ICONS[kind], kind, label: extension === '' ? '文本' : extension.toUpperCase() }
-}
-
-export const baseName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+/** 列表与阅读页头的类型图标只看后缀：同一套线性图形靠形状区分，认不出的后缀给空白文件。 */
+export const fileIconOf = (path: string): IconName => FILE_ICONS[extensionOf(path)] ?? 'file-other'
 
 /** 根目录文件的目录是空串。 */
 export const dirName = (path: string): string => {
   const slash = path.lastIndexOf('/')
   return slash === -1 ? '' : path.slice(0, slash)
+}
+
+/** 截中间时固定显示的主名末尾字数（扩展名另算）。 */
+const KEPT_STEM_TAIL = 4
+
+/**
+ * 把文件名拆成「可截的开头」与「固定的结尾」，供页头纯 CSS 截中间：窄宽时开头出省略号，
+ * 结尾（主名末 4 字 + 扩展名）始终可见，如 `vid…shot.json`。
+ * 没有扩展名（含 `.gitignore` 这类点开头的名字）或主名不超过 4 字时不拆，`tail` 为空串，整名按末尾截断。
+ */
+export const splitFileName = (name: string): { head: string; tail: string } => {
+  const cut = name.lastIndexOf('.') - KEPT_STEM_TAIL
+  if (cut <= 0) return { head: name, tail: '' }
+  return { head: name.slice(0, cut), tail: name.slice(cut) }
 }
 
 export type FileGroup<T extends { path: string }> = {

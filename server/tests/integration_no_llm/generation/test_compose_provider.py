@@ -1,7 +1,6 @@
-"""用真实 ffmpeg 合成素材，验证合成的产物、存放前缀、阶段上报与取不到素材时的收尾。
+"""用真实 ffmpeg 合成素材，验证合成的产物与关键帧、存放前缀、阶段上报与取不到素材时的收尾。
 
-合成先把素材下到本地，httpx 替身喂字节就够；切参考片段是 ffmpeg 自己按需远程读，在
-``test_reference_cutter.py``。"""
+合成先把素材下到本地，httpx 替身喂字节就够。"""
 
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import ClipStage
 from iclip.platform.media.ffmpeg import ffmpeg_available, probe_video
 from tests.helpers.generation import MemoryObjectStore, compose_request, make_job
-from tests.helpers.media import duration_ms_of, synthesize_video
+from tests.helpers.media import duration_ms_of, keyframes_of, synthesize_video
 
 pytestmark = [
     pytest.mark.anyio,
@@ -174,6 +173,79 @@ async def test_a_tail_that_starts_at_the_end_of_the_base_is_skipped(
     )
 
     assert 3800 <= await duration_ms_of(content) <= 4200, "2 秒前段 + 2 秒编辑段"
+
+
+_FRAME = 0.1
+"""素材是 10 fps，成片照原片也是。"""
+
+
+def _assert_keyframes(actual: list[float], expected: list[float]) -> None:
+    """一一对上，每个差不过一帧：多一个、少一个都算错。"""
+
+    assert len(actual) == len(expected), f"关键帧 {actual}，应为 {expected}"
+    for got, want in zip(actual, expected, strict=True):
+        assert abs(got - want) <= _FRAME + 1e-6, f"关键帧 {actual}，应为 {expected}"
+
+
+async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_them() -> None:
+    """换进去的那段中途画面突变，编码器自己会在那里插关键帧；成片里不该有。"""
+
+    with TemporaryDirectory(prefix="clip-fixture-") as tmp:
+        root = Path(tmp)
+        sources = {
+            BASE_URL: synthesize_video(
+                root / "base.mp4",
+                size="320x240",
+                seconds=4,
+                audio=True,
+                keyframes=[0, 0.6, 1.3, 2.2, 3.4],
+            ),
+            EDITED_URL: synthesize_video(
+                root / "edited.mp4",
+                size="480x360",
+                seconds=2,
+                audio=False,
+                keyframes=[0, 1.6],
+                # 突变离前一个关键帧（这段的起点）不到十来帧时 x264 不按场景插，放远些才测得到。
+                flip_at=1.25,
+            ),
+        }
+    _, content = await _compose(
+        [
+            {"url": BASE_URL, "start": 0, "end": 1},
+            {"url": EDITED_URL, "start": 0},
+            {"url": BASE_URL, "start": 3},
+        ],
+        sources,
+    )
+
+    _assert_keyframes(
+        await keyframes_of(content),
+        # 前段 [0, 1)：起点 0 与 0.6；编辑段整条从 1 起：起点与 1.6；
+        # 后段 [3, 4) 从 3 起：起点与 3.4。基底的 1.3、2.2 不在取到的段里。
+        [0, 0.6, 1.0, 2.6, 3.0, 3.4],
+    )
+
+
+async def test_a_long_stretch_without_source_keyframes_gets_none() -> None:
+    """编码器默认每 250 帧（10 fps 下 25 秒）至少放一个关键帧；成片里不该有。"""
+
+    with TemporaryDirectory(prefix="clip-fixture-") as tmp:
+        root = Path(tmp)
+        sources = {
+            BASE_URL: synthesize_video(
+                root / "base.mp4", size="160x120", seconds=28, audio=False, keyframes=[0]
+            ),
+            EDITED_URL: synthesize_video(
+                root / "edited.mp4", size="160x120", seconds=2, audio=False, keyframes=[0]
+            ),
+        }
+    _, content = await _compose(
+        [{"url": BASE_URL, "start": 0, "end": 27}, {"url": EDITED_URL, "start": 0}],
+        sources,
+    )
+
+    _assert_keyframes(await keyframes_of(content), [0, 27.0])
 
 
 async def test_a_composite_reports_fetching_then_processing_then_uploading(

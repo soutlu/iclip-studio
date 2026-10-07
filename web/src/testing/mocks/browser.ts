@@ -1,6 +1,6 @@
 import { setupWorker } from 'msw/browser'
-import sampleWideUrl from '../fixtures/sample-video-wide.webm?no-inline'
-import sampleVideoUrl from '../fixtures/sample-video.webm?no-inline'
+import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
+import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockLatestMasterUrls } from './conversations'
 import {
   addMockCollection,
@@ -10,7 +10,8 @@ import {
   mockGovernor,
 } from './handlers'
 import { seedDemoTasks } from './demo-tasks'
-import { markMockAwaitingApproval, markMockJustFinished } from './transcript'
+import { seedMockFilm } from './film'
+import { markMockAwaitingApproval, markMockJustFinished, markMockToolShowcase } from './transcript'
 import { seedMockReplicaWorkspace, seedMockWorkspace } from './workspace'
 
 // 演示数据仅在浏览器侧初始化，避免影响每例清空存储的单测。
@@ -22,10 +23,13 @@ const DEMO_CONVERSATIONS = [
   '产品宣传片 · 分镜生成中',
 ]
 
+// id 固定：刷新页面后还是同一段对话，视频编辑器存在浏览器里的草稿对得上。
 const seeded = DEMO_CONVERSATIONS.map((title, index) =>
   addMockConversation(
     title,
     new Date(Date.now() - (DEMO_CONVERSATIONS.length - index) * 3600_000).toISOString(),
+    undefined,
+    `0d3e5a10-7c4b-4e2f-9a61-00000000000${index + 1}`,
   ),
 )
 
@@ -69,6 +73,15 @@ if (queuedVideo !== undefined) {
 // 独立的无图草稿用于演示先编辑正文、再补充第一张图片。
 const withoutImages = addMockConversation('无图分镜草稿')
 seedMockWorkspace(withoutImages.id, { withoutImages: true })
+
+// 工具过程展示：几轮历史摆出工具行的各种状态（失败、被拒绝、中断、整轮失败），带一份工作区可点开文件。
+const toolShowcase = addMockConversation('工具过程展示')
+seedMockWorkspace(toolShowcase.id, { httpFrames: true })
+markMockToolShowcase(toolShowcase.id)
+
+// AI 导演的工程：制作页演示改字与读出镜头组。
+const film = addMockConversation('穿搭种草 · 12 秒')
+seedMockFilm(film.id)
 
 const replica = addMockConversation('乐福鞋 · 完全复刻')
 seedMockReplicaWorkspace(replica.id)
@@ -126,6 +139,7 @@ mockLatestMasterUrls.set(wangDone.id, sampleVideoUrl)
 seedDemoTasks([
   ...seeded,
   withoutImages,
+  film,
   replica,
   governorShots,
   governorDone,

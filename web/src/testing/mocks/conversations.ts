@@ -11,6 +11,22 @@ import { mockCreatedAt } from './paging'
 
 export type MockConversation = z.output<typeof zConversationOut>
 
+/** 原型环境的会话事件时钟：一个进程标识，按对话从 1 连续发号（合同 §5「全局帧」）。 */
+export const MOCK_EVENT_EPOCH = 'mock-events'
+
+const mockEventSeqs = new Map<string, number>()
+
+/** 给这段对话的下一帧全局帧发号，返回信封上的属主与水位。 */
+export const mockSessionEnvelope = (conversationId: string) => {
+  const seq = (mockEventSeqs.get(conversationId) ?? 0) + 1
+  mockEventSeqs.set(conversationId, seq)
+  return {
+    epoch: MOCK_EVENT_EPOCH,
+    owner_user_id: mockConversationOwner(conversationId),
+    seq,
+  }
+}
+
 /** 删除只写 deletedAt（合同 §6 墓碑）；墓碑只有审计列表列得出来。 */
 export const mockConversations: MockConversation[] = []
 
@@ -29,10 +45,12 @@ export const mockAuditRow = (
 export const liveMockConversation = (conversationId: string) =>
   mockConversations.find((item) => item.id === conversationId && item.deletedAt === null)
 
+/** `id` 缺省随机；浏览器演示数据给固定的，刷新页面后还是同一段对话，存在浏览器里的东西对得上。 */
 export const addMockConversation = (
   title: string,
   createdAt = mockCreatedAt(),
   ownerUserId = mockAuthUser.id,
+  id: string = crypto.randomUUID(),
 ) => {
   const conversation: MockConversation = {
     activity: {
@@ -46,15 +64,22 @@ export const addMockConversation = (
     completedAt: null,
     createdAt,
     deletedAt: null,
+    eventEpoch: MOCK_EVENT_EPOCH,
     forkTurn: null,
     forkedFrom: null,
-    id: crypto.randomUUID(),
+    id,
     lastRunId: null,
+    lastSeq: 0,
     ownerUserId,
     taskId: null,
     title,
     updatedAt: createdAt,
   }
+  // 行上的 lastSeq 是读这一行时这段对话已发出的最大序号；取值时现读，展开或序列化那一刻就是读库时刻。
+  Object.defineProperty(conversation, 'lastSeq', {
+    enumerable: true,
+    get: () => mockEventSeqs.get(conversation.id) ?? 0,
+  })
   mockConversations.push(conversation)
   return conversation
 }
@@ -66,6 +91,7 @@ export const mockConversationOwner = (conversationId: string): string =>
 export const resetMockConversations = () => {
   mockConversations.length = 0
   mockLatestMasterUrls.clear()
+  mockEventSeqs.clear()
   mockCollections.length = 0
 }
 

@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
 import { zConversationsAuditOut, zConversationsPageOut } from '@/shared/api/generated/zod.gen'
 import { drainPages } from '@/shared/api/paging'
 import { auditSearchParams, DEFAULT_AUDIT_FILTERS } from './audit.api'
 import { conversationsQueryKeys, type Conversation } from './conversations.api'
+import { conversationRowsOf } from './conversation-rows'
 
 /** 关联对话要的是这张需求单下所有还在的对话，一次多取一些少翻几页。 */
 const TASK_PAGE_LIMIT = 100
@@ -18,7 +19,7 @@ export const fetchTaskConversations = async (
 ): Promise<Conversation[]> => {
   const options = {
     cache: 'no-store' as const,
-    fallbackErrorMessage: '读取关联对话失败',
+    fallbackErrorMessage: '读取关联任务失败',
     signal,
   }
   if (!canAudit) {
@@ -69,9 +70,15 @@ export const taskConversationsQueryKey = (taskId: string, canAudit: boolean) =>
   [...conversationsQueryKeys.all, 'task', taskId, canAudit ? 'audit' : 'own'] as const
 
 /** 面板挂载期间刷新关联关系与运行状态。 */
-export const useTaskConversations = (taskId: string, canAudit: boolean) =>
-  useQuery({
+export const useTaskConversations = (taskId: string, canAudit: boolean) => {
+  const queryClient = useQueryClient()
+  const rows = conversationRowsOf(queryClient)
+  return useQuery({
     queryKey: taskConversationsQueryKey(taskId, canAudit),
-    queryFn: ({ signal }) => fetchTaskConversations(taskId, canAudit, signal),
-    refetchInterval: ({ state }) => taskConversationsRefetchInterval(state.data),
+    queryFn: async ({ client, signal }) =>
+      conversationRowsOf(client).mergeRows(await fetchTaskConversations(taskId, canAudit, signal)),
+    // 是否还在忙看行池里的当前行：帧已把活动推到池里，查询里那份是落地时的。
+    refetchInterval: ({ state }) =>
+      taskConversationsRefetchInterval(state.data?.map((row) => rows.resolve(row) ?? row)),
   })
+}

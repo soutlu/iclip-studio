@@ -1,7 +1,7 @@
 /** app 层连接 shared 宿主与 feature 渲染器，避免 shared 反向依赖 feature。 */
 
 import { SubAgentPanel, agentCallOf } from '@/features/conversations'
-import { SHOTS_PATH, StoryboardPanel } from '@/features/storyboard'
+import { FILM_PATH, FilmPanel, SHOTS_PATH, StoryboardPanel } from '@/features/storyboard'
 import { WorkspaceFilesPanel } from '@/features/workspace'
 import { ArtifactRegistry } from '@/shared/workbench'
 
@@ -17,6 +17,17 @@ workbenchRegistry.register({
   match: { path: SHOTS_PATH },
   title: () => '分镜',
   type: 'storyboard',
+})
+
+// AI 导演的工程文件落地后自动展开制作页；别的 agent 不交付它，没有文件时选择页不列这一行。
+workbenchRegistry.register({
+  autoOpen: true,
+  component: FilmPanel,
+  icon: 'video',
+  label: '制作',
+  match: { path: FILM_PATH },
+  title: () => '制作',
+  type: 'film',
 })
 
 // 工作区里有文件就能翻，但不自动展开，用户从面板的选择页点进来。

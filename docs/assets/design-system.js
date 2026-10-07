@@ -46,6 +46,8 @@ const family = (name, role) => ({
   ],
 });
 
+const accentIndexes = [1, 2, 3, 4, 5, 6, 7, 8];
+
 const semanticGroups = [
   {
     id: "core",
@@ -63,16 +65,12 @@ const semanticGroups = [
   {
     id: "primary-extended",
     title: "Primary extensions",
-    description: "主色的悬停与容器分色",
-    columns: ["Hover", "Container solid", "Container soft"],
+    description: "主色的悬停色",
+    columns: ["Hover"],
     families: [
       {
         name: "Primary",
-        items: [
-          ["Primary Hover", "primary-hover", "on-primary"],
-          ["Container Solid", "primary-container-solid", "on-primary-container"],
-          ["Container Soft", "primary-container-soft", "on-primary-container"],
-        ],
+        items: [["Primary Hover", "primary-hover", "on-primary"]],
       },
     ],
   },
@@ -93,6 +91,17 @@ const semanticGroups = [
         ],
       };
     }),
+  },
+  {
+    id: "accent",
+    title: "Shot accents",
+    description: "只表达镜头身份：时间轴色段与序号旁短色签同色",
+    families: [
+      {
+        name: "Segment",
+        items: accentIndexes.map((n) => [`Accent ${n}`, `accent-${n}`, "on-scrim"]),
+      },
+    ],
   },
   {
     id: "surface",

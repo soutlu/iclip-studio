@@ -25,10 +25,9 @@
         --pg-ink-tertiary: var(--nv40);
         --pg-line: var(--n90);
         --pg-line-strong: var(--nv80);
-        --pg-focus: var(--p40);
 
         /* ===== 字体 ===== */
-        --font-cue-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+        --font-cue-ui: 'MiSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
         --font-home-display: 'Source Serif 4', Georgia, 'Times New Roman', serif;
         --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
@@ -54,8 +53,6 @@
         --color-on-primary: var(--p100);
         --color-primary-container: var(--p90);
         --color-on-primary-container: var(--p10);
-        --color-primary-container-solid: var(--p70);
-        --color-primary-container-soft: var(--p95);
         --color-secondary: var(--s40);
         --color-on-secondary: var(--s100);
         --color-secondary-container: var(--s90);
@@ -107,7 +104,7 @@
         --state-dragged: 0.16;
         --state-disabled-content: 0.38;
         --state-disabled-container: 0.12;
-        --state-focus-ring: 3px;
+        --state-focus-ring: 2px;
         --state-focus-offset: 2px;
         --color-state-hover: color-mix(in srgb, var(--color-on-surface) calc(var(--state-hover) * 100%), transparent);
         --color-state-focus: color-mix(in srgb, var(--color-on-surface) calc(var(--state-focus) * 100%), transparent);
@@ -115,8 +112,7 @@
         --color-state-dragged: color-mix(in srgb, var(--color-on-surface) calc(var(--state-dragged) * 100%), transparent);
         --color-disabled-text: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-content) * 100%), transparent);
         --color-disabled-container: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-container) * 100%), transparent);
-        --color-focus-ring: var(--color-primary);
-        --color-ring-highlight: color-mix(in srgb, var(--color-primary) 70%, transparent);
+        --color-focus-ring: var(--color-on-surface);
         /* Warning = tertiary 族别名 */
         --color-warning: var(--color-tertiary);
         --color-on-warning: var(--color-on-tertiary);
@@ -124,7 +120,7 @@
         --color-on-warning-container: var(--color-on-tertiary-container);
 
         /* ===== ③ 领域别名 · 随主题（引用 ② 层的自动跟随；直接取色板/字面值的在 .dark 另给值） ===== */
-        --color-background: var(--n100);
+        --color-background: var(--n100); /* 页面底与主区；应用侧栏用 surface-container-low 浅灰底，与主区以分隔线分界 */
         --color-on-background: var(--color-on-surface);
         --color-top-layer: var(--n100);
         --color-state-active: color-mix(in srgb, var(--color-on-surface) 6%, transparent);
@@ -162,16 +158,14 @@
         --color-chat-panel-bg-end: var(--n95);
         --color-chat-panel-border: var(--color-hairline);
         --color-chat-card-bg: var(--color-surface-container-lowest);
+        /* 聊天活动卡：无描边的柔和卡片，浅色白底加轻影，深色抬一档底色加极淡边 */
+        --color-chat-soft-card: var(--n100);
+        --color-chat-soft-card-edge: transparent;
+        --shadow-chat-soft-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
         --color-chat-message-text: var(--color-on-surface);
         --color-chat-secondary-text: var(--color-on-surface-variant);
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-low);
-        --color-chat-agent-avatar-bg: #e7f5df;
-        --color-chat-agent-avatar-border: rgba(113, 136, 58, 0.28);
-        --color-chat-agent-identity-bg: #f2f7ed;
-        --color-chat-agent-identity-border: rgba(113, 136, 58, 0.24);
-        --color-chat-agent-identity-text: #213219;
-        --color-chat-agent-rail: #009e77;
         --color-chat-inline-bg: color-mix(in srgb, var(--nv70) 10%, transparent);
         --color-chat-inline-border: var(--color-hairline);
         --color-chat-chip-bg: color-mix(in srgb, var(--nv70) 9%, transparent);
@@ -181,33 +175,25 @@
         --color-chat-code-border: var(--color-hairline);
         --color-chat-link-text: var(--color-primary);
         --color-chat-link-border: color-mix(in srgb, var(--color-primary) 34%, transparent);
-        --color-chat-error-bg: var(--color-error-container);
-        --color-chat-error-border: var(--e80);
-        --color-chat-error-text: var(--e30);
         --color-chat-status-success: var(--color-primary);
         --color-chat-status-error: var(--color-error);
-        --color-chat-status-running: var(--color-warning);
-        --color-chat-focus-ring: color-mix(in srgb, var(--color-primary) 70%, transparent);
+        --color-chat-status-running: var(--color-primary);
         /* 发丝边框与滚动条：透明度随 on-surface 适配主题 */
         --color-chat-hairline: var(--color-hairline);
         --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
-        --shadow-chat-panel: 0 20px 48px rgba(64, 73, 66, 0.18);
-        --shadow-chat-agent-avatar: 0 8px 18px rgba(64, 73, 66, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.62);
-        --shadow-chat-agent-identity: 0 8px 18px rgba(64, 73, 66, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.62);
-        --shadow-rail-inset: inset 3px 0 0 var(--color-chat-agent-rail);
+        --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.18);
         --shadow-hairline-bottom: inset 0 -1px 0 var(--color-hairline);
         /* 画布与故事板工作台 */
         --color-canvas-card-bg: var(--color-surface-container-lowest);
         --color-canvas-card-text: var(--color-on-surface);
-        --color-canvas-card-border: var(--p60);
         --color-canvas-label-text: var(--nv50);
-        --color-storyboard-canvas: #eaefe8;
-        --color-storyboard-canvas-dot: color-mix(in srgb, var(--nv50) 18%, transparent);
-        --shadow-storyboard-media: 0 1px 2px rgba(23, 29, 25, 0.07), 0 10px 22px -12px rgba(23, 29, 25, 0.2);
-        --shadow-storyboard-hero: 0 2px 4px rgba(23, 29, 25, 0.08), 0 18px 34px -14px rgba(23, 29, 25, 0.28);
+        --color-storyboard-stage: #161616;
+        --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 6%, transparent);
+        --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.07), 0 10px 22px -12px rgba(0, 0, 0, 0.2);
+        --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.08), 0 18px 34px -14px rgba(0, 0, 0, 0.28);
         --shadow-storyboard-sidebar-left: 12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
         --shadow-storyboard-sidebar-right: -12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
-        --storyboard-node-shadow: 0 35px 96px rgba(38, 43, 39, 0.22);
+        --storyboard-node-shadow: 0 35px 96px rgba(0, 0, 0, 0.22);
         --storyboard-node-surface: var(--n99);
         --storyboard-node-selected-surface: var(--n95);
         --storyboard-node-border: var(--storyboard-node-surface);
@@ -217,8 +203,6 @@
         --storyboard-node-script-surface: var(--storyboard-node-surface);
         --storyboard-node-tool-surface: var(--storyboard-node-surface);
         --storyboard-node-panel-divider: #e4eae3;
-        --storyboard-node-accent: #00a667;
-        --storyboard-node-accent-line: var(--storyboard-node-accent);
         --storyboard-node-ink: #0a0f0c;
         --storyboard-node-muted: rgba(42, 50, 44, 0.4);
         --storyboard-node-muted-strong: rgba(42, 50, 44, 0.5);
@@ -227,7 +211,7 @@
         --color-dashboard-bg: var(--n96);
         --color-dashboard-card: var(--n100);
         --color-dashboard-card-edge: transparent;
-        --shadow-dashboard-card: 0 1px 2px rgba(23, 29, 25, 0.04), 0 8px 24px rgba(23, 29, 25, 0.05);
+        --shadow-dashboard-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
         /* 图表辅助色：网格线、非活跃日灰底、量大价低不该抢眼的中性分项、30 日均线一类的淡灰参照线 */
         --color-chart-grid: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
         --color-chart-inactive: color-mix(in srgb, var(--color-on-surface) 4%, transparent);
@@ -244,12 +228,22 @@
         --color-on-chart-ord-3: var(--n100);
         --color-on-chart-ord-4: var(--n100);
         --color-on-chart-ord-5: var(--n100);
+        /* 镜头点缀色：只表达镜头身份（时间轴色段与镜头列表的短色签同色），按镜头序号循环取色；只画实色的小面积线条，不做浅色底 */
+        --color-accent-1: #ee5d3f;
+        --color-accent-2: #f39a2b;
+        --color-accent-3: #d9b02a;
+        --color-accent-4: #3a97dd;
+        --color-accent-5: #a05cc4;
+        --color-accent-6: #e35d8c;
+        --color-accent-7: #2a9fb0;
+        --color-accent-8: #5c6bd6;
+        /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线 */
+        --color-code-key: #2e5aa6;
+        --color-code-string: #8a4a8f;
+        --color-code-literal: #1d6f7d;
+        --color-code-guide: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
 
         /* ===== ③ 领域别名 · 主题中立（内容身份色、纸面材质、压在媒体上的遮罩；明暗不变） ===== */
-        --color-annotation-red: #e04f3f;
-        --color-annotation-orange: #e9a13b;
-        --color-annotation-blue: #3f9fd0;
-        --color-annotation-green: #46b06f;
         --color-reference-image: #8a8a84;
         --color-reference-video: #5b6bc0;
         --color-reference-audio: var(--color-primary);
@@ -288,8 +282,6 @@
         --color-brief-board-4: #f8f0c4;
         --color-brief-board-5: #ffcd00;
         --color-brief-board-white: var(--n100);
-        --color-sb-table-accent: #4a7c59;
-        --color-sb-table-accent-soft: rgba(74, 124, 89, 0.12);
         --color-sb-table-background: #faf6f0;
         --color-sb-table-surface: #f5f1ea;
         --color-sb-table-prompt-surface: rgba(255, 255, 255, 0.82);
@@ -327,8 +319,6 @@
         --media-scrim-photo-strong: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.24) 28%, rgba(0, 0, 0, 0.82) 100%);
         --media-vignette: radial-gradient(circle at center, rgba(255, 255, 255, 0.18) 0%, rgba(0, 0, 0, 0.02) 36%, rgba(0, 0, 0, 0.26) 100%);
         --media-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(0, 0, 0, 0.16) 100%);
-        --color-ai-gradient-start: #a875ff;
-        --color-ai-gradient-end: #6d8cff;
 
         /* ===== ④ 尺度 ===== */
         /* 字阶（Tailwind @theme 同名；-line 为存量 CSS 别名） */
@@ -359,12 +349,12 @@
         --breakpoint-md: 840px;
         --breakpoint-lg: 1280px;
         /* 海拔（深色见 .dark） */
-        --shadow-1: 0 2px 8px rgba(23, 29, 25, 0.05), 0 1px 3px rgba(23, 29, 25, 0.05);
-        --shadow-2: 0 6px 18px rgba(23, 29, 25, 0.03), 0 3px 9px rgba(23, 29, 25, 0.04), 0 1px 1px rgba(23, 29, 25, 0.04);
-        --shadow-3: 0 20px 56px rgba(23, 29, 25, 0.14), 0 6px 16px rgba(23, 29, 25, 0.08);
-        --shadow-input: 0 5px 16px -4px rgba(23, 29, 25, 0.07); /* 输入卡常驻浮影（照 kimi composer，focus 不抬升） */
-        --shadow-xs: 0 1px 2px rgba(23, 29, 25, 0.04); /* 代码块等嵌套小件 */
-        --shadow-send: 0 7px 16px -13px rgba(23, 29, 25, 0.38), 0 1px 2px rgba(23, 29, 25, 0.07); /* 发送钮浮起 */
+        --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.05);
+        --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.03), 0 3px 9px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.04);
+        --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.14), 0 6px 16px rgba(0, 0, 0, 0.08);
+        --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, 0.07); /* 输入卡常驻浮影（照 kimi composer，focus 不抬升） */
+        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04); /* 代码块等嵌套小件 */
+        --shadow-send: 0 7px 16px -13px rgba(0, 0, 0, 0.38), 0 1px 2px rgba(0, 0, 0, 0.07); /* 发送钮浮起 */
         /* 动效 */
         --dur-s: 150ms; --dur-m: 250ms; --dur-l: 400ms;
         --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -420,8 +410,6 @@
         --color-on-primary: var(--p10);
         --color-primary-container: var(--p30);
         --color-on-primary-container: var(--p90);
-        --color-primary-container-solid: var(--p70);
-        --color-primary-container-soft: var(--p20);
         --color-secondary: var(--s60);
         --color-on-secondary: var(--s10);
         --color-secondary-container: var(--s30);
@@ -462,20 +450,14 @@
         --color-chat-panel-bg-end: var(--n6);
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-high);
-        --color-chat-agent-avatar-bg: #1b2a20;
-        --color-chat-agent-avatar-border: rgba(113, 136, 58, 0.4);
-        --color-chat-agent-identity-bg: #16211a;
-        --color-chat-agent-identity-border: rgba(113, 136, 58, 0.36);
-        --color-chat-agent-identity-text: #cfe3c5;
-        --color-chat-agent-rail: #33c39a;
         --color-chat-code-block-bg: var(--n12);
-        --color-chat-error-border: var(--e60);
-        --color-chat-error-text: var(--e80);
+        --color-chat-soft-card: var(--n10);
+        --color-chat-soft-card-edge: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+        --shadow-chat-soft-card: none;
         --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.5);
-        --shadow-chat-agent-avatar: 0 8px 18px rgba(0, 0, 0, 0.4);
-        --shadow-chat-agent-identity: 0 8px 18px rgba(0, 0, 0, 0.4);
         --color-canvas-label-text: var(--nv60);
-        --color-storyboard-canvas: #0f1511;
+        --color-storyboard-stage: #0a0a0a;
+        --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 8%, transparent);
         --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
         --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.3), 0 18px 34px -14px rgba(0, 0, 0, 0.7);
         --shadow-storyboard-sidebar-left: 12px 0 24px -18px rgba(0, 0, 0, 0.6);
@@ -504,6 +486,17 @@
         --color-on-chart-ord-3: var(--n10);
         --color-on-chart-ord-4: var(--n10);
         --color-on-chart-ord-5: var(--n10);
+        --color-accent-1: #ff937c;
+        --color-accent-2: #f69c2d;
+        --color-accent-3: #d4ac25;
+        --color-accent-4: #61b7ff;
+        --color-accent-5: #db95ff;
+        --color-accent-6: #ff8eb1;
+        --color-accent-7: #54bfd0;
+        --color-accent-8: #a0abff;
+        --color-code-key: #8fb3ef;
+        --color-code-string: #d4a2d7;
+        --color-code-literal: #62c3d3;
         --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
         --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
         --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.42), 0 6px 16px rgba(0, 0, 0, 0.32);
@@ -604,6 +597,42 @@
           </section>
         </div>
 
+        <div class="color-rules">
+          <div class="column-title">
+            <h3>Usage rules</h3>
+            <span>颜色只用在承载信息的地方</span>
+          </div>
+          <ul class="rule-list">
+            <li>
+              <strong>表面保持中性</strong>
+              页面、侧栏、卡片与控件只用中性灰阶；层次靠海拔（<code>--shadow-*</code>）、发丝线与缩略图区分，不铺浅色调容器底做装饰。
+            </li>
+            <li>
+              <strong>品牌绿</strong>
+              <code>primary</code> 只给主操作「生成」、链接与品牌标识、运行中与成功状态；其余按钮与选中态用墨色或中性灰。
+            </li>
+            <li>
+              <strong>焦点与选中</strong>
+              键盘焦点只在 <code>:focus-visible</code> 时出现，默认用 2px 墨色描边（<code>--color-focus-ring</code> 即 <code>on-surface</code>，宽度 <code>--state-focus-ring</code>）；账户菜单入口展开时用中性状态背景，键盘聚焦时用 <code>inverse-surface</code> 与 <code>inverse-on-surface</code> 表示焦点，不叠加描边，系统强制颜色模式保留焦点轮廓；输入框聚焦时 1px 边框转墨色，不再外加焦点环；深色媒体面上改用 <code>on-scrim</code>。选中、当前项与拖放目标同样用墨色或中性状态层，不用绿色描边、绿色光环或浅绿铺底。
+            </li>
+            <li>
+              <strong>Secondary 是中性灰</strong>
+              <code>secondary</code> 刻意不带色相，承担 tonal 按钮、实色标签等不需要色相的强调。
+            </li>
+            <li>
+              <strong>状态色</strong>
+              警告用 tertiary 琥珀（<code>warning</code> 是其别名），错误与危险操作用 <code>error</code> 红；运行中与成功同用品牌绿。
+            </li>
+            <li>
+              <strong>镜头点缀色</strong>
+              <code>accent-1…8</code> 只表达镜头身份：同一镜头的时间轴色段与镜头列表序号旁的短色签同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
+            </li>
+            <li>
+              <strong>点缀色的用法</strong>
+              色段与短色签都用 <code>accent-N</code> 实色，面积小且固定；序号本身用中性字色。不做浅色底块或彩色徽标，也不画随正文变长的整条色带。
+            </li>
+          </ul>
+        </div>
       </section>
 
       <section class="section" id="type" aria-labelledby="type-title">
@@ -701,7 +730,7 @@
             </article>
 
             <p class="type-source-note">
-              正文用 <code>--font-cue-ui</code>，展示文字用 <code>--font-home-display</code>。
+              正文用 <code>--font-cue-ui</code>（MiSans，随前端自托管；界面字重只用 400 / 500 / 600），展示文字用 <code>--font-home-display</code>。
             </p>
           </div>
 

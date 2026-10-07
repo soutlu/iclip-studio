@@ -191,7 +191,7 @@ function EmptyHint({ canCreate, query }: { canCreate: boolean; query: string }) 
             ? '试试其他名称，或新建一个合集'
             : '试试其他名称'
           : canCreate
-            ? '新建一个合集，整理你的创作对话'
+            ? '新建一个合集，整理你的创作任务'
             : '你可以先不关联合集，直接开始创作'}
       </p>
     </>

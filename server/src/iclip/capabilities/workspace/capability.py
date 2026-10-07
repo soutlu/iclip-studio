@@ -52,7 +52,6 @@ from iclip.platform.transcript.display import (
     media_grid,
     search_results,
     tool_note,
-    url_filename,
 )
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -136,9 +135,10 @@ class Workspace(AbstractCapability[AgentDepsT]):
                 before=_text(args, "old_text"),
                 after=_text(args, "new_text"),
             ),
-            # 列目录按 glob 画；协议的 operation 联合里没有「删」，删文件走 generic。
+            # 列目录按 glob 画；协议的 operation 联合里没有「删」和「移」，删文件、移文件走 generic。
             "list_files": lambda args: _file_io("glob", _text(args, "prefix") or "/"),
             "delete_file": _delete_display,
+            "move_file": _move_display,
             "search_files": ToolDisplayEntry(draw=_search_display, view=SEARCH_RESULTS_VIEW),
             "ReadMediaFile": ToolDisplayEntry(draw=_media_display, view=MEDIA_GRID_VIEW),
         }
@@ -177,6 +177,14 @@ def _delete_display(args: Any) -> ToolDisplay | None:
     return None if path is None else GenericDisplay(summary="删除文件", detail=path)
 
 
+def _move_display(args: Any) -> ToolDisplay | None:
+    source = _text(args, "source")
+    destination = _text(args, "destination")
+    if source is None or destination is None:
+        return None
+    return GenericDisplay(summary="移动文件", detail=f"{source} → {destination}")
+
+
 def _search_display(args: Any) -> ToolDisplay | None:
     query = _text(args, "query")
     return None if query is None else SearchDisplay(query=query)
@@ -184,7 +192,7 @@ def _search_display(args: Any) -> ToolDisplay | None:
 
 def _media_display(args: Any) -> ToolDisplay | None:
     url = _text(args, "url")
-    return None if url is None else GenericDisplay(summary="读取图片", detail=url_filename(url))
+    return None if url is None else GenericDisplay(summary="读取图片")
 
 
 def _size_chip(size_bytes: int) -> str:
@@ -237,12 +245,6 @@ def _bytes_label(size_bytes: int) -> str:
     return f"{size_bytes / 1024:.1f} KB"
 
 
-def _delivery_chip(delivered: str, original: str) -> str:
-    """交付地址带了缩放或裁切参数就是加工过的图，否则是原图。"""
-
-    return "原图" if delivered == original else "已处理"
-
-
 def _checked(path: str) -> str:
     """将路径语法错误转换为 ModelRetry；存储边界仍独立校验外部输入。"""
 
@@ -273,6 +275,7 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
         self.add_function(self.write_file, name="write_file")
         self.add_function(self.edit_file, name="edit_file")
         self.add_function(self.delete_file, name="delete_file")
+        self.add_function(self.move_file, name="move_file")
         self.add_function(self.list_files, name="list_files")
         self.add_function(self.search_files, name="search_files")
         self.add_tool(
@@ -426,10 +429,38 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
             raise ModelRetry(f"工作区里没有 {key!r}，无从删除。")
         return f"已删除 {key}"
 
-    async def list_files(self, ctx: RunContext[AgentDepsT], prefix: str = "") -> ToolReturn[str]:
-        """列出工作区里的文件。
+    async def move_file(self, ctx: RunContext[AgentDepsT], source: str, destination: str) -> str:
+        """给一个工作区文件改名或挪到别的路径，内容原样不变。
 
-        接手一段对话先用它看看已经攒了什么，别从零重来。
+        目标路径上已有文件时会被拒，不覆盖；确实要替换它，先用 ``delete_file`` 删掉目标再移。
+
+        Args:
+            source: 现在的文件路径，如 ``old_film.icml``。
+            destination: 新的文件路径，如 ``film.icml``；可以换到别的目录下。
+        """
+
+        src = _checked(source)
+        dst = _checked(destination)
+        if src == dst:
+            raise ModelRetry(
+                f"source 和 destination 都是 {src!r}，不用移；改名就给一个不同的 destination。"
+            )
+        scope = self._capability.resolve_scope(ctx)
+        store = self._capability.space.store
+        stored = await store.read(scope, src)
+        if stored is None:
+            raise ModelRetry(f"工作区里没有 {src!r}，无从移动。用 list_files 看看有哪些文件。")
+        if await store.read(scope, dst) is not None:
+            raise ModelRetry(
+                f"{dst!r} 已经存在，不会覆盖。确实要替换它，先用 delete_file 删掉 {dst!r} 再移。"
+            )
+        entry = await self._write(scope, dst, stored.content)
+        # 源文件在读之后被别处删掉时 delete 返回 False，此时移动结果不变，不再退回。
+        await store.delete(scope, src)
+        return f"已把 {src} 移到 {entry.path}"
+
+    async def list_files(self, ctx: RunContext[AgentDepsT], prefix: str = "") -> ToolReturn[str]:
+        """列出工作区里的文件，每行一个路径和它的字节数。
 
         Args:
             prefix: 只看某个目录下的，如 ``分镜``。留空即全部。
@@ -538,7 +569,8 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
                 ImageUrl(url=delivered, media_type=info.media_type),
                 media_tag_close("image"),
             ],
-            metadata=media_grid([(delivered, clause)], note=_delivery_chip(delivered, url)),
+            # 缩放、裁切说明只给模型；卡片只画这张图。
+            metadata=media_grid([(delivered, None)]),
         )
 
     def _deliver(

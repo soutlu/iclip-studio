@@ -1,11 +1,14 @@
 """保存进程内实时投影、批次序号与补发日志；持久事实来自 StepPersistence。
 
-重启后序号重新开始，订阅必须发送 reset，让客户端无条件更新水位。
+重启后序号重新开始，订阅必须发送 reset，让客户端无条件更新水位。每条实时流（``(会话, agent)``
+的一份 ``_AgentTranscript``）建出来时生成一个 epoch：进程重启或淘汰后重建都会换新，续订时 epoch
+对不上就回 reset，不拿新编号的批次接旧水位（ADR-0004）。
 所有方法保持同步，发号、应用状态与记录日志不可被 await 分割，确保订阅一致读。
 """
 
 from __future__ import annotations
 
+import uuid
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -47,10 +50,11 @@ RESIDENT_CONVERSATIONS: Final = 256
 
 @dataclass(frozen=True, slots=True)
 class OpBatch:
-    """带连续 Agent 序号的操作批次。"""
+    """带连续 Agent 序号的操作批次；``epoch`` 是它所属的实时流。"""
 
     seq: int
     ops: tuple[EmittableOperation, ...]
+    epoch: str
 
 
 Listener = Callable[[OpBatch], None]
@@ -62,12 +66,14 @@ class SubscribeView:
     """一次性读取订阅水位、批次与快照，避免多次读取之间产生不一致。"""
 
     watermark: int
+    epoch: str
+    """``watermark`` 所属的实时流。"""
     snapshot: TranscriptSnapshot
     live_turns: tuple[TranscriptTurn, ...]
     """尚未交接到持久化历史的轮次，参与 REST 分页。"""
     batches: tuple[OpBatch, ...]
     complete: bool
-    """False 表示所需批次已超出补发窗口，须重新拉取。"""
+    """False 表示所需批次已超出补发窗口或不属于这条实时流，须重新拉取。"""
 
 
 @dataclass(slots=True)
@@ -86,6 +92,7 @@ class _LiveTurn:
 
 @dataclass(slots=True)
 class _AgentTranscript:
+    epoch: str = field(default_factory=lambda: str(uuid.uuid4()))
     next_seq: int = 1
     journal: deque[OpBatch] = field(default_factory=lambda: deque(maxlen=JOURNAL_CAPACITY))
     turns: dict[str, _LiveTurn] = field(default_factory=dict)
@@ -120,7 +127,7 @@ class TranscriptStore:
 
         conversation = self._conversation(conversation_id)
         agent = conversation.agents.setdefault(agent_id, _AgentTranscript())
-        batch = OpBatch(seq=agent.next_seq, ops=ops)
+        batch = OpBatch(seq=agent.next_seq, ops=ops, epoch=agent.epoch)
         agent.next_seq += 1
         for op in ops:
             _apply(conversation, agent, op)
@@ -161,15 +168,24 @@ class TranscriptStore:
     # --- 读 -----------------------------------------------------------------
 
     def subscribe_view(
-        self, conversation_id: str, agent_id: str, *, since: int | None = None
+        self,
+        conversation_id: str,
+        agent_id: str,
+        *,
+        since: int | None = None,
+        epoch: str | None = None,
     ) -> SubscribeView:
-        """一次读取完整订阅视图；帧构造统一由 subscription.subscribe_frames 决定。"""
+        """一次读取完整订阅视图；帧构造统一由 subscription.subscribe_frames 决定。
+
+        ``since`` 与 ``epoch`` 是调用方手上的水位；给了 ``since`` 而 ``epoch`` 缺失或对不上，视为补不齐。
+        """
 
         agent = self._agent(conversation_id, agent_id)
         watermark = agent.next_seq - 1
-        batches, complete = self._since(agent, since)
+        batches, complete = self._since(agent, since, epoch)
         return SubscribeView(
             watermark=watermark,
+            epoch=agent.epoch,
             snapshot=TranscriptSnapshot(
                 tasks=tuple(agent.tasks.values()),
                 interactions=tuple(agent.interactions.values()),
@@ -222,11 +238,15 @@ class TranscriptStore:
                 del self._conversations[conversation_id]
 
     @staticmethod
-    def _since(agent: _AgentTranscript, since: int | None) -> tuple[tuple[OpBatch, ...], bool]:
-        """查询 since 后的批次及完整性。"""
+    def _since(
+        agent: _AgentTranscript, since: int | None, epoch: str | None
+    ) -> tuple[tuple[OpBatch, ...], bool]:
+        """查询 since 后的批次及完整性。先比 epoch 再比序号：另一条流的水位与这条流的编号无关。"""
 
         if since is None:
             return (), True
+        if epoch != agent.epoch:
+            return (), False
         wanted = tuple(batch for batch in agent.journal if batch.seq > since)
         if not wanted:
             # 客户端水位高于服务端时可能来自重启前的序列，必须重新拉取。

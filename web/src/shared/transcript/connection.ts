@@ -1,19 +1,18 @@
-/** 参考 Kimi 客户端，一条连接按 session_id 分派多段对话；改名、活动与生成任务全局帧经 watchSessions 分发。重连携带各 agent 的已应用水位。 */
+/** 参考 Kimi 客户端，一条连接按 session_id 分派多段对话；会话事件全局帧（改名、活动、行的新建 / 变化 / 删除、生成任务）经 watchSessions 分发。重连按各 agent 的水位与它所属的实时流整表重订。 */
 
 import { z } from 'zod'
 
-import { zGenerationOut } from '@/shared/api/generated/zod.gen'
+import { zConversationOut, zGenerationOut } from '@/shared/api/generated/zod.gen'
 
 import { transcriptOpsEventSchema, transcriptResetEventSchema } from './vendor/contract/events'
 import type { TranscriptGrade } from './vendor/granularity/grade'
+import type { AgentTranscriptSnapshot } from './vendor/ops/operation'
 
 export type { TranscriptGrade }
 
 /** 类型从校验 schema 推导，避免重复声明造成可选字段差异。 */
-type ResetEvent = z.infer<typeof transcriptResetEventSchema>
 type OpsEvent = z.infer<typeof transcriptOpsEventSchema>
 
-export type TranscriptSnapshot = ResetEvent['snapshot'] & { hasMoreOlder: boolean }
 export type TranscriptOps = OpsEvent['ops']
 
 /** 主 agent 的 id；子代理的 id 是它的 run id，从工具卡的 agentRefs 拿。 */
@@ -28,11 +27,22 @@ const MAX_RECONNECT_DELAY_MS = 30_000
 /** 加入随机抖动，避免客户端集中重连。 */
 const RECONNECT_JITTER_MS = 250
 
+/** 一条实时流的续订水位：批次号与它所属的流（ADR-0004）；两者都对得上，服务端才接着补批。 */
+export interface StreamWatermark {
+  seq: number
+  epoch: string
+}
+
 export interface TranscriptHandlers {
-  /** snapshot.items 恒为空；历史由 REST 分页提供，reset 只携带全局实体和水位。 */
-  onReset(agentId: string, snapshot: TranscriptSnapshot, seq: number | undefined): void
-  /** seq 用于检测批次缺口；返回 false 表示未应用，不推进水位，允许后续补发。 */
-  onOps(agentId: string, ops: TranscriptOps, seq: number | undefined): boolean | void
+  /** 我们服务端的 reset 不带历史轮；历史由 REST 分页提供，reset 只携带全局实体和水位。 */
+  onReset(
+    agentId: string,
+    snapshot: AgentTranscriptSnapshot,
+    seq: number | undefined,
+    epoch: string,
+  ): void
+  /** seq 与 epoch 用于检测断档；返回 false 表示未应用，连接不推进水位。 */
+  onOps(agentId: string, ops: TranscriptOps, seq: number | undefined, epoch: string): boolean | void
   onNotFound?(): void
 }
 
@@ -64,6 +74,27 @@ const generationChangedSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
+/**
+ * 全局帧信封（合同 §5「全局帧」）：属主与这段对话的会话事件水位。
+ * 序号只在同一 epoch 里可比；没有来源对话的生成任务帧不带 seq。
+ */
+const sessionEnvelopeSchema = z.object({
+  owner_user_id: z.string(),
+  epoch: z.string(),
+  seq: z.int(),
+})
+const generationEnvelopeSchema = sessionEnvelopeSchema.extend({ seq: z.int().optional() })
+
+// 整行 ConversationOut 不省略空值，照生成的 schema 解析。
+const rowFrameSchema = sessionEnvelopeSchema.extend({
+  session_id: z.string(),
+  payload: zConversationOut,
+})
+const deletedFrameSchema = sessionEnvelopeSchema.extend({
+  session_id: z.string(),
+  payload: z.object({ session_id: z.string() }),
+})
+
 type GenerationChange = z.infer<typeof generationChangedSchema>
 
 // session_id 位于信封；版本与写入者从重新读取的文件获取。
@@ -84,9 +115,19 @@ export type FsChange = z.infer<typeof fsChangedSchema>['changes'][number]
 const issuesOf = (error: z.ZodError): string[] =>
   error.issues.map((issue) => `${issue.path.map(String).join('.')}: ${issue.message}`)
 
+/** 一段对话的行，形状同 REST 的 ConversationOut。 */
+export type SessionRow = z.output<typeof zConversationOut>
+
+/** 全局帧的来历：这段对话的属主，与这一帧的会话事件水位（同一 epoch 里按 seq 比先后）。 */
+export interface SessionEventMark {
+  ownerUserId: string
+  epoch: string
+  seq: number
+}
+
 /** 全局事件不补发；reconnected 是本地通知，调用方据此刷新断线期间可能变化的列表。 */
 export type SessionUpdate =
-  | { kind: 'title'; conversationId: string; title: string }
+  | { kind: 'title'; conversationId: string; title: string; mark: SessionEventMark }
   | {
       kind: 'activity'
       conversationId: string
@@ -94,10 +135,19 @@ export type SessionUpdate =
       pendingInteraction: 'none' | 'approval' | 'question'
       /** 未提供结束原因时为 null。 */
       lastTurnReason: 'completed' | 'failed' | 'aborted' | null
+      mark: SessionEventMark
     }
   | {
+      /** 行新出现了（新建或分叉）或变了；mark.seq 是这一帧的序号，行内 lastSeq 是写入之前的水位。 */
+      kind: 'created' | 'updated'
+      conversationId: string
+      row: SessionRow
+      mark: SessionEventMark
+    }
+  | { kind: 'deleted'; conversationId: string; mark: SessionEventMark }
+  | {
       kind: 'generation'
-      /** 任务没有来源对话时为 null。 */
+      /** 任务没有来源对话时为 null，mark.seq 也随之为 null。 */
       conversationId: string | null
       jobId: string
       /** 生成种类与业务状态，词表同 GenerationOut。 */
@@ -105,8 +155,14 @@ export type SessionUpdate =
       status: GenerationChange['status']
       /** 调用方自带的坐标，原样转发；由消费方自己解释。 */
       metadata: Record<string, unknown> | null
+      mark: Omit<SessionEventMark, 'seq'> & { seq: number | null }
     }
   | { kind: 'reconnected' }
+
+const markOf = (envelope: { owner_user_id: string; epoch: string }) => ({
+  epoch: envelope.epoch,
+  ownerUserId: envelope.owner_user_id,
+})
 
 export interface ConnectionHealth {
   connected: boolean
@@ -139,8 +195,8 @@ interface AgentSubscription {
 interface Subscription {
   /** 一段对话里各 agent 各订各的：主流与子代理流互不覆盖，同一帧 subscribe_v2 整表上行。 */
   agents: Map<string, AgentSubscription>
-  /** 按 agent 保存已应用批次号，重连时用于补发或重置。 */
-  watermarks: Map<string, number>
+  /** 按 agent 保存已应用的水位，订阅与重连时带上，服务端据此补批或回 reset。 */
+  watermarks: Map<string, StreamWatermark>
 }
 
 /** 一帧 subscribe_v2 问的是哪段对话、这帧新加了谁；回执 404 时只退新加的，原本订着的不动。 */
@@ -211,19 +267,25 @@ export class TranscriptConnection {
     this.connect()
   }
 
-  /** 更新订阅时保留水位；提高粒度时服务端先发 reset，补足低粒度未下发的内容。 */
+  /**
+   * 订阅或重订一条流（照 Kimi 的 subscribeTranscript）。调用方先读基线，再带基线的水位订阅，服务端从补发日志
+   * 接着发；不给水位就清掉已有水位，服务端回一帧 reset。提高粒度时服务端同样先发 reset。
+   */
   subscribe(
     conversationId: string,
     handlers: TranscriptHandlers,
     grade: TranscriptGrade = 'delta',
     agentId: string = MAIN_AGENT_ID,
+    watermark?: StreamWatermark,
   ): void {
     const subscription = this.subscriptions.get(conversationId) ?? {
       agents: new Map<string, AgentSubscription>(),
-      watermarks: new Map<string, number>(),
+      watermarks: new Map<string, StreamWatermark>(),
     }
     const added = subscription.agents.has(agentId) ? [] : [agentId]
     subscription.agents.set(agentId, { grade, handlers })
+    if (watermark === undefined) subscription.watermarks.delete(agentId)
+    else subscription.watermarks.set(agentId, watermark)
     this.subscriptions.set(conversationId, subscription)
     if (this.connected) this.sendSubscribe(conversationId, added)
   }
@@ -286,13 +348,8 @@ export class TranscriptConnection {
     }
   }
 
-  watermarkOf(conversationId: string, agentId: string): number | undefined {
+  watermarkOf(conversationId: string, agentId: string): StreamWatermark | undefined {
     return this.subscriptions.get(conversationId)?.watermarks.get(agentId)
-  }
-
-  /** REST 基线和补批也须报告已应用水位，避免重连时重复请求完整基线。 */
-  markApplied(conversationId: string, agentId: string, seq: number): void {
-    this.subscriptions.get(conversationId)?.watermarks.set(agentId, seq)
   }
 
   private receive(raw: unknown): void {
@@ -301,6 +358,7 @@ export class TranscriptConnection {
       id?: unknown
       code?: unknown
       session_id?: unknown
+      stream_epoch?: unknown
       payload?: unknown
     }
     try {
@@ -329,17 +387,22 @@ export class TranscriptConnection {
         return
       }
       case 'session.meta.updated': {
+        const envelope = sessionEnvelopeSchema.safeParse(frame)
+        if (!envelope.success) return this.discard(frame.type, issuesOf(envelope.error))
         const parsed = titleSchema.safeParse(frame.payload)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
           conversationId: parsed.data.session_id,
           kind: 'title',
+          mark: { ...markOf(envelope.data), seq: envelope.data.seq },
           title: parsed.data.title,
         })
         return
       }
       case 'event.session.work_changed': {
         if (typeof frame.session_id !== 'string') return
+        const envelope = sessionEnvelopeSchema.safeParse(frame)
+        if (!envelope.success) return this.discard(frame.type, issuesOf(envelope.error))
         const parsed = workChangedSchema.safeParse(frame.payload)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
@@ -347,11 +410,36 @@ export class TranscriptConnection {
           conversationId: frame.session_id,
           kind: 'activity',
           lastTurnReason: parsed.data.last_turn_reason ?? null,
+          mark: { ...markOf(envelope.data), seq: envelope.data.seq },
           pendingInteraction: parsed.data.pending_interaction,
         })
         return
       }
+      case 'event.session.created':
+      case 'event.session.updated': {
+        const parsed = rowFrameSchema.safeParse(frame)
+        if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
+        this.announce({
+          conversationId: parsed.data.session_id,
+          kind: frame.type === 'event.session.created' ? 'created' : 'updated',
+          mark: { ...markOf(parsed.data), seq: parsed.data.seq },
+          row: parsed.data.payload,
+        })
+        return
+      }
+      case 'event.session.deleted': {
+        const parsed = deletedFrameSchema.safeParse(frame)
+        if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
+        this.announce({
+          conversationId: parsed.data.session_id,
+          kind: 'deleted',
+          mark: { ...markOf(parsed.data), seq: parsed.data.seq },
+        })
+        return
+      }
       case 'event.generation.changed': {
+        const envelope = generationEnvelopeSchema.safeParse(frame)
+        if (!envelope.success) return this.discard(frame.type, issuesOf(envelope.error))
         const parsed = generationChangedSchema.safeParse(frame.payload)
         if (!parsed.success) return this.discard(frame.type, issuesOf(parsed.error))
         this.announce({
@@ -359,6 +447,7 @@ export class TranscriptConnection {
           jobId: parsed.data.id,
           jobKind: parsed.data.kind,
           kind: 'generation',
+          mark: { ...markOf(envelope.data), seq: envelope.data.seq ?? null },
           metadata: parsed.data.metadata ?? null,
           status: parsed.data.status,
         })
@@ -379,9 +468,15 @@ export class TranscriptConnection {
       case 'transcript.reset':
       case 'transcript.ops': {
         if (typeof frame.session_id !== 'string') return
+        if (typeof frame.stream_epoch !== 'string') {
+          return this.discard(frame.type, ['stream_epoch: 缺失'])
+        }
         const subscription = this.subscriptions.get(frame.session_id)
         if (subscription === undefined) return
-        this.apply(frame.type, subscription, { type: frame.type, ...(frame.payload as object) })
+        this.apply(frame.type, subscription, frame.stream_epoch, {
+          type: frame.type,
+          ...(frame.payload as object),
+        })
         return
       }
       default:
@@ -398,16 +493,18 @@ export class TranscriptConnection {
     console.warn('丢弃不合协议的 WebSocket 帧', { issues, type })
   }
 
-  private apply(type: string, subscription: Subscription, wrapped: object): void {
+  private apply(type: string, subscription: Subscription, epoch: string, wrapped: object): void {
     if (type === 'transcript.reset') {
       const parsed = transcriptResetEventSchema.safeParse(wrapped)
       if (!parsed.success) return this.discard(type, issuesOf(parsed.error))
       const { agent_id, snapshot, has_more_older, seq } = parsed.data
       const agent = subscription.agents.get(agent_id)
       if (agent === undefined) return
-      agent.handlers.onReset(agent_id, { ...snapshot, hasMoreOlder: has_more_older }, seq)
-      // reset 无条件覆盖水位：服务端重启可能从 1 重新编号。
-      if (seq !== undefined) subscription.watermarks.set(agent_id, seq)
+      // 类型断言衔接 vendor 的可选字段与 zod 推导出的 undefined，见 transcript.api.ts。
+      const full = { ...snapshot, hasMoreOlder: has_more_older } as AgentTranscriptSnapshot
+      agent.handlers.onReset(agent_id, full, seq, epoch)
+      // reset 连同 epoch 无条件覆写水位：服务端重启或重建这条流后，批次号从 1 重来。
+      if (seq !== undefined) subscription.watermarks.set(agent_id, { epoch, seq })
       return
     }
     const parsed = transcriptOpsEventSchema.safeParse(wrapped)
@@ -415,9 +512,13 @@ export class TranscriptConnection {
     const { agent_id, ops, seq } = parsed.data
     const agent = subscription.agents.get(agent_id)
     if (agent === undefined) return
-    const accepted = agent.handlers.onOps(agent_id, ops, seq)
-    // 仅已接受的批次推进水位，未应用的批次需保留补发机会。
-    if (accepted !== false && seq !== undefined) subscription.watermarks.set(agent_id, seq)
+    const accepted = agent.handlers.onOps(agent_id, ops, seq, epoch)
+    // 仅已接受的批次推进水位。同一条流里只升不降：Kimi 把重复批次的号也写进水位，会把它写小，
+    // 只会让续订多补发或被迫重读（ADR-0004 第 8 条）。
+    if (accepted === false || seq === undefined) return
+    const current = subscription.watermarks.get(agent_id)
+    if (current?.epoch === epoch && current.seq >= seq) return
+    subscription.watermarks.set(agent_id, { epoch, seq })
   }
 
   private settleAck(frame: { id?: unknown; code?: unknown; payload?: unknown }): void {
@@ -481,10 +582,13 @@ export class TranscriptConnection {
     if (subscription === undefined || subscription.agents.size === 0) return
     const transcript: Record<string, TranscriptGrade> = {}
     const since: Record<string, number> = {}
+    const epochs: Record<string, string> = {}
     for (const [agentId, agent] of subscription.agents) {
       transcript[agentId] = agent.grade
       const watermark = subscription.watermarks.get(agentId)
-      if (watermark !== undefined) since[agentId] = watermark
+      if (watermark === undefined) continue
+      since[agentId] = watermark.seq
+      epochs[agentId] = watermark.epoch
     }
     const id = this.mintId()
     this.pending.set(id, { added, agentIds: [...subscription.agents.keys()], conversationId })
@@ -494,8 +598,10 @@ export class TranscriptConnection {
       payload: {
         session_id: conversationId,
         transcript,
-        // 首次订阅省略 transcript_since，服务端据此发送 reset。
-        ...(Object.keys(since).length === 0 ? {} : { transcript_since: since }),
+        // 没有水位的 agent 不出现在这两张表里，服务端对它回 reset。
+        ...(Object.keys(since).length === 0
+          ? {}
+          : { transcript_epoch: epochs, transcript_since: since }),
       },
     })
   }

@@ -13,18 +13,25 @@ const SNAPSHOT = {
   meta: {},
 }
 
-function reset(seq: number, conversationId = 'c1') {
+const EPOCH = 'e1'
+
+/** 水位连同它所属的实时流。 */
+const mark = (seq: number, epoch = EPOCH) => ({ epoch, seq })
+
+function reset(seq: number, conversationId = 'c1', epoch = EPOCH) {
   return {
     type: 'transcript.reset',
     session_id: conversationId,
+    stream_epoch: epoch,
     payload: { agent_id: 'main', snapshot: SNAPSHOT, has_more_older: true, seq },
   }
 }
 
-function ops(seq: number, conversationId = 'c1', list: TranscriptOps = []) {
+function ops(seq: number, conversationId = 'c1', list: TranscriptOps = [], epoch = EPOCH) {
   return {
     type: 'transcript.ops',
     session_id: conversationId,
+    stream_epoch: epoch,
     payload: { agent_id: 'main', ops: list, seq },
   }
 }
@@ -39,14 +46,23 @@ const malformed = (type: string, envelope: object) => ({
 })
 
 /** JSON 坏掉的一条，加上各类帧载荷形状不对的各一条；type 是告警里应带的帧类型。 */
+/** 全局帧信封：属主与会话事件水位（合同 §5「全局帧」）。 */
+const ENVELOPE = { epoch: 'e1', owner_user_id: 'u1', seq: 3 }
+const MARK = { epoch: 'e1', ownerUserId: 'u1', seq: 3 }
+
 const MALFORMED = [
   { label: 'JSON', raw: `{"type":"${BODY}`, type: undefined },
-  malformed('session.meta.updated', { payload: { session_id: 'c9', title: { text: BODY } } }),
+  malformed('session.meta.updated', {
+    ...ENVELOPE,
+    payload: { session_id: 'c9', title: { text: BODY } },
+  }),
   malformed('event.session.work_changed', {
+    ...ENVELOPE,
     session_id: 'c9',
     payload: { busy: true, pending_interaction: BODY },
   }),
   malformed('event.generation.changed', {
+    ...ENVELOPE,
     session_id: 'c9',
     payload: { id: 'job-9', kind: BODY, operation: 'generate', status: 'submitted' },
   }),
@@ -56,11 +72,18 @@ const MALFORMED = [
   }),
   malformed('transcript.reset', {
     session_id: 'c1',
+    stream_epoch: EPOCH,
     payload: { agent_id: 'main', has_more_older: true, seq: 9, snapshot: BODY },
   }),
   malformed('transcript.ops', {
     session_id: 'c1',
+    stream_epoch: EPOCH,
     payload: { agent_id: 'main', ops: BODY, seq: 6 },
+  }),
+  // 不知道属于哪条实时流的批次，水位无从记起。
+  malformed('transcript.ops', {
+    session_id: 'c1',
+    payload: { agent_id: 'main', ops: [], seq: 6, note: BODY },
   }),
 ]
 
@@ -112,8 +135,8 @@ describe('TranscriptConnection', () => {
     socket.deliver(ops(9, 'c2'))
 
     expect(received.map(([conversationId]) => conversationId)).toEqual(['c1', 'c2'])
-    expect(connection.watermarkOf('c1', 'main')).toBe(3)
-    expect(connection.watermarkOf('c2', 'main')).toBe(9)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(3))
+    expect(connection.watermarkOf('c2', 'main')).toEqual(mark(9))
   })
 
   it('没订的那段对话的帧直接丢掉', () => {
@@ -129,22 +152,50 @@ describe('TranscriptConnection', () => {
     const connection = connect()
 
     socket.deliver(ops(42))
-    expect(connection.watermarkOf('c1', 'main')).toBe(42)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(42))
 
     // 模拟服务端重启后批次号归一，验证 reset 允许水位回退。
     socket.deliver(reset(1))
-    expect(connection.watermarkOf('c1', 'main')).toBe(1)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(1))
+  })
+
+  it('带水位订阅：subscribe_v2 同时带批次号与它所属的流；不给水位就清掉，服务端回 reset', () => {
+    const connection = connect([])
+    const handlers = { onReset: () => {}, onOps: () => true }
+
+    connection.subscribe('c1', handlers, 'delta', 'main', mark(12, 'e7'))
+    connection.subscribe('c1', handlers, 'delta', 'main')
+
+    const [withMark, without] = socket.frames().filter((frame) => frame.type === 'subscribe_v2')
+    expect(withMark?.payload).toMatchObject({
+      transcript_epoch: { main: 'e7' },
+      transcript_since: { main: 12 },
+    })
+    expect(without?.payload).not.toHaveProperty('transcript_since')
+    expect(without?.payload).not.toHaveProperty('transcript_epoch')
+    expect(connection.watermarkOf('c1', 'main')).toBeUndefined()
+  })
+
+  it('重复批次不把水位写小；换了流的批次照新流记', () => {
+    const connection = connect()
+
+    socket.deliver(ops(9))
+    socket.deliver(ops(4))
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(9))
+
+    socket.deliver(ops(2, 'c1', [], 'e2'))
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(2, 'e2'))
   })
 
   it('上层没吃下这一批就不推进水位', () => {
     const connection = connect()
 
     socket.deliver(ops(7))
-    expect(connection.watermarkOf('c1', 'main')).toBe(7)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(7))
 
     accept = false
     socket.deliver(ops(8))
-    expect(connection.watermarkOf('c1', 'main')).toBe(7)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(7))
   })
 
   it('断线重连之后逐段重订，各带自己那段的水位', () => {
@@ -167,7 +218,11 @@ describe('TranscriptConnection', () => {
       { main: 5 },
       { main: 6 },
     ])
-    expect(connection.watermarkOf('c1', 'main')).toBe(5)
+    expect(resubscribed.map((frame) => frame.payload?.['transcript_epoch'])).toEqual([
+      { main: EPOCH },
+      { main: EPOCH },
+    ])
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(5))
     vi.useRealTimers()
   })
 
@@ -205,20 +260,20 @@ describe('TranscriptConnection', () => {
     ).toEqual(['c1', 'c-gone', 'c1'])
   })
 
-  it('档位随订阅上行，调高之后重订并把水位照旧带上', () => {
+  it('档位随订阅上行，调高之后带着水位重订', () => {
     const connection = connect(['c1'])
     const handlers = { onReset: () => received.push(['c1', []]), onOps: () => true }
 
     connection.subscribe('c1', handlers, 'turn')
     socket.deliver(ops(4, 'c1'))
-    connection.subscribe('c1', handlers, 'delta')
+    connection.subscribe('c1', handlers, 'delta', 'main', connection.watermarkOf('c1', 'main'))
 
     const grades = socket
       .frames()
       .filter((frame) => frame.type === 'subscribe_v2')
       .map((frame) => (frame.payload?.['transcript'] as { main?: string } | undefined)?.main)
     expect(grades).toEqual(['delta', 'turn', 'delta'])
-    expect(connection.watermarkOf('c1', 'main')).toBe(4)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(4))
   })
 
   it('ping 照着 nonce 回 pong', () => {
@@ -241,14 +296,18 @@ describe('TranscriptConnection', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn).toHaveBeenCalledWith(expect.any(String), { issues: expect.any(Array), type })
     expect(JSON.stringify(warn.mock.calls)).not.toContain(BODY)
-    expect(connection.watermarkOf('c1', 'main')).toBe(5)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(5))
     expect(received).toHaveLength(1)
     expect(seen).toEqual([])
 
     socket.deliver(ops(6))
-    socket.deliver({ type: 'session.meta.updated', payload: { session_id: 'c9', title: '新名字' } })
-    expect(connection.watermarkOf('c1', 'main')).toBe(6)
-    expect(seen).toEqual([{ conversationId: 'c9', kind: 'title', title: '新名字' }])
+    socket.deliver({
+      ...ENVELOPE,
+      type: 'session.meta.updated',
+      payload: { session_id: 'c9', title: '新名字' },
+    })
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(6))
+    expect(seen).toEqual([{ conversationId: 'c9', kind: 'title', mark: MARK, title: '新名字' }])
   })
 
   it('太久没有任何入站帧就算 stale', () => {
@@ -277,7 +336,7 @@ describe('TranscriptConnection', () => {
     connection.subscribe('c1', { onReset: () => undefined, onOps: () => true })
     sockets[0]?.deliver(SERVER_HELLO)
     sockets[0]?.deliver(ops(7))
-    expect(connection.watermarkOf('c1', 'main')).toBe(7)
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(7))
 
     clock += 31_000
     connection.reconnect()
@@ -297,21 +356,25 @@ describe('TranscriptConnection', () => {
     connection.watchSessions((update) => seen.push(update))
 
     socket.deliver({
+      ...ENVELOPE,
       type: 'session.meta.updated',
       payload: { session_id: 'c9', title: '夜景延时素材生成' },
     })
     // 运行帧省略结束原因，上层应规范化为 null。
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.session.work_changed',
       session_id: 'c9',
       payload: { busy: true, pending_interaction: 'approval' },
     })
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.session.work_changed',
       session_id: 'c9',
       payload: { busy: false, pending_interaction: 'none', last_turn_reason: 'failed' },
     })
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.generation.changed',
       session_id: 'c9',
       payload: {
@@ -322,12 +385,15 @@ describe('TranscriptConnection', () => {
         metadata: { shot: 2, frame: 3 },
       },
     })
-    // 任务没有来源对话时信封上没有 session_id，空的归属字段服务端整个省略。
+    // 任务没有来源对话时信封上没有 session_id 与 seq，空的归属字段服务端整个省略。
     socket.deliver({
+      epoch: 'e1',
+      owner_user_id: 'u1',
       type: 'event.generation.changed',
       payload: { id: 'job-2', kind: 'video', operation: 'compose', status: 'failed' },
     })
     socket.deliver({
+      ...ENVELOPE,
       type: 'event.generation.changed',
       session_id: 'c9',
       payload: {
@@ -340,12 +406,13 @@ describe('TranscriptConnection', () => {
     })
 
     expect(seen).toEqual([
-      { conversationId: 'c9', kind: 'title', title: '夜景延时素材生成' },
+      { conversationId: 'c9', kind: 'title', mark: MARK, title: '夜景延时素材生成' },
       {
         busy: true,
         conversationId: 'c9',
         kind: 'activity',
         lastTurnReason: null,
+        mark: MARK,
         pendingInteraction: 'approval',
       },
       {
@@ -353,6 +420,7 @@ describe('TranscriptConnection', () => {
         conversationId: 'c9',
         kind: 'activity',
         lastTurnReason: 'failed',
+        mark: MARK,
         pendingInteraction: 'none',
       },
       {
@@ -360,6 +428,7 @@ describe('TranscriptConnection', () => {
         jobId: 'job-1',
         jobKind: 'image',
         kind: 'generation',
+        mark: MARK,
         metadata: { frame: 3, shot: 2 },
         status: 'submitted',
       },
@@ -368,6 +437,7 @@ describe('TranscriptConnection', () => {
         jobId: 'job-2',
         jobKind: 'video',
         kind: 'generation',
+        mark: { ...MARK, seq: null },
         metadata: null,
         status: 'failed',
       },
@@ -376,10 +446,74 @@ describe('TranscriptConnection', () => {
         jobId: 'job-3',
         jobKind: 'video',
         kind: 'generation',
+        mark: MARK,
         metadata: null,
         status: 'pending',
       },
     ])
+  })
+
+  it('行的新建、变化与删除帧：整行照生成的 ConversationOut 解析，空值原样保留', () => {
+    const connection = connect([])
+    const seen: SessionUpdate[] = []
+    connection.watchSessions((update) => seen.push(update))
+    const row = {
+      activity: {
+        busy: false,
+        lastTurnReason: null,
+        pendingInteraction: 'none',
+        videoGeneration: 'none',
+      },
+      agentId: 'storyboard',
+      collectionId: null,
+      completedAt: null,
+      createdAt: '2026-10-01T00:00:00Z',
+      deletedAt: null,
+      eventEpoch: 'e1',
+      forkTurn: null,
+      forkedFrom: null,
+      id: '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001',
+      lastRunId: null,
+      lastSeq: 2,
+      ownerUserId: '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002',
+      taskId: null,
+      title: '新对话',
+      updatedAt: '2026-10-01T00:00:00Z',
+    }
+
+    socket.deliver({ ...ENVELOPE, type: 'event.session.created', session_id: row.id, payload: row })
+    socket.deliver({ ...ENVELOPE, type: 'event.session.updated', session_id: row.id, payload: row })
+    socket.deliver({
+      ...ENVELOPE,
+      type: 'event.session.deleted',
+      session_id: row.id,
+      payload: { session_id: row.id },
+    })
+
+    expect(seen).toEqual([
+      { conversationId: row.id, kind: 'created', mark: MARK, row },
+      { conversationId: row.id, kind: 'updated', mark: MARK, row },
+      { conversationId: row.id, kind: 'deleted', mark: MARK },
+    ])
+  })
+
+  it('全局帧缺了属主或水位就是协议损坏：告警后丢掉', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const connection = connect([])
+    const seen: SessionUpdate[] = []
+    connection.watchSessions((update) => seen.push(update))
+
+    socket.deliver({
+      type: 'event.session.work_changed',
+      session_id: 'c9',
+      payload: { busy: true, pending_interaction: 'none' },
+    })
+
+    expect(seen).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      issues: expect.any(Array),
+      type: 'event.session.work_changed',
+    })
   })
 
   it('退订之后不再收', () => {
@@ -388,7 +522,11 @@ describe('TranscriptConnection', () => {
     const stop = connection.watchSessions((update) => seen.push(update))
 
     stop()
-    socket.deliver({ type: 'session.meta.updated', payload: { session_id: 'c9', title: '新名字' } })
+    socket.deliver({
+      ...ENVELOPE,
+      type: 'session.meta.updated',
+      payload: { session_id: 'c9', title: '新名字' },
+    })
 
     expect(seen).toEqual([])
   })
@@ -512,17 +650,19 @@ describe('TranscriptConnection', () => {
       .at(-1)
     expect(table?.payload?.['transcript']).toEqual({ main: 'delta', 'run-child': 'delta' })
     expect(table?.payload?.['transcript_since']).toEqual({ main: 5 })
+    expect(table?.payload?.['transcript_epoch']).toEqual({ main: EPOCH })
 
     // 子流的帧按 agent_id 分发，主流那份回调不收；水位各记各的。
     socket.deliver({
       type: 'transcript.ops',
       session_id: 'c1',
+      stream_epoch: EPOCH,
       payload: { agent_id: 'run-child', ops: [], seq: 2 },
     })
     expect(child.map(([kind]) => kind)).toEqual(['ops'])
     expect(received.map(([conversationId]) => conversationId)).toEqual(['c1'])
-    expect(connection.watermarkOf('c1', 'run-child')).toBe(2)
-    expect(connection.watermarkOf('c1', 'main')).toBe(5)
+    expect(connection.watermarkOf('c1', 'run-child')).toEqual(mark(2))
+    expect(connection.watermarkOf('c1', 'main')).toEqual(mark(5))
   })
 
   it('只退子代理：发带 agent_ids 的退订，主流照收；退主流最后一个就整段退', () => {
@@ -585,6 +725,7 @@ describe('TranscriptConnection', () => {
     socket.deliver({
       type: 'transcript.ops',
       session_id: 'c1',
+      stream_epoch: EPOCH,
       payload: { agent_id: 'run-a', ops: [], seq: 3 },
     })
     connection.subscribe('c1', { onReset: () => {}, onOps: () => true }, 'delta', 'stale')
@@ -596,7 +737,7 @@ describe('TranscriptConnection', () => {
     socket.deliver({ type: 'ack', id: asked?.id, code: 404, msg: 'agent not in session' })
 
     expect(healthyRefused).toBe(false)
-    expect(connection.watermarkOf('c1', 'run-a')).toBe(3)
+    expect(connection.watermarkOf('c1', 'run-a')).toEqual(mark(3))
     const resent = socket
       .frames()
       .filter((frame) => frame.type === 'subscribe_v2')

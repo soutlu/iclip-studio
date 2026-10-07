@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { TranscriptFrame, TranscriptStep } from '@/shared/transcript/vendor'
+import type {
+  TranscriptFrame,
+  TranscriptInteraction,
+  TranscriptStep,
+} from '@/shared/transcript/vendor'
 import {
+  failedTools,
   formatActivityDuration,
+  groupActivityCards,
   groupTurnEntries,
   runHistoryMs,
   summarizeDone,
@@ -35,11 +41,15 @@ const thinking = (id: string): TranscriptFrame => ({
   text: '想',
 })
 
+const NO_INTERACTIONS: ReadonlyMap<string, TranscriptInteraction> = new Map()
+
 const tool = (
   id: string,
   operation: 'read' | 'write' | 'edit' | 'glob' | 'grep' | undefined,
   state: 'running' | 'done' | 'error' = 'done',
+  approvalId?: string,
 ): TranscriptFrame => ({
+  ...(approvalId === undefined ? {} : { approvalId }),
   display:
     operation === undefined
       ? { kind: 'generic', summary: '出镜头帧' }
@@ -101,6 +111,48 @@ describe('groupTurnEntries', () => {
   })
 })
 
+describe('groupActivityCards', () => {
+  const delegated = (id: string): TranscriptFrame => ({
+    agentRefs: [{ agentId: 'run-child', role: 'child' }],
+    display: { agent_name: 'shot-writer', kind: 'agent_call', prompt: '写三个镜头' },
+    frameId: id,
+    kind: 'tool',
+    name: 'delegate_task',
+    state: 'done',
+    toolCallId: id,
+  })
+
+  it('活动组与紧挨着的单独工具收进同一张卡，派活那一行仍不在活动组里', () => {
+    const blocks = groupActivityCards(
+      groupTurnEntries([
+        entry(tool('f1', 'grep')),
+        entry(tool('f2', 'write')),
+        entry(delegated('f3')),
+      ]),
+    )
+
+    expect(blocks).toHaveLength(1)
+    const card = blocks[0]
+    if (card?.kind !== 'card') throw new Error('应收进一张卡')
+    expect(card.nodes.map((node) => node.kind)).toEqual(['run', 'entry'])
+  })
+
+  it('正文与单独的思考把卡隔开，各自成块', () => {
+    const blocks = groupActivityCards(
+      groupTurnEntries([
+        entry(text('u1', 'user')),
+        entry(tool('f1', 'read')),
+        entry(text('a1')),
+        entry(thinking('f2')),
+        entry(delegated('f3')),
+      ]),
+    )
+
+    expect(blocks.map((block) => block.kind)).toEqual(['entry', 'card', 'entry', 'entry', 'card'])
+    expect(new Set(blocks.flatMap((b) => (b.kind === 'card' ? [b.cardId] : []))).size).toBe(2)
+  })
+})
+
 describe('summarizeDone', () => {
   it('按类别聚合计数、保持出现顺序，失败缀危险子句，尾巴挂时长', () => {
     const clauses = summarizeDone(
@@ -113,6 +165,7 @@ describe('summarizeDone', () => {
         entry(tool('f6', undefined)),
       ],
       191_000,
+      NO_INTERACTIONS,
     )
 
     expect(clauses.map((clause) => clause.text)).toEqual([
@@ -127,23 +180,58 @@ describe('summarizeDone', () => {
   })
 })
 
+describe('被拒绝不算失败', () => {
+  const rejected: ReadonlyMap<string, TranscriptInteraction> = new Map([
+    [
+      'appr_1',
+      { interactionId: 'appr_1', interactionKind: 'approval', state: 'rejected', toolCallId: 'f2' },
+    ],
+  ])
+  const items = [
+    entry(tool('f1', 'read')),
+    entry(tool('f2', 'edit', 'error', 'appr_1')),
+    entry(tool('f3', 'edit', 'error')),
+  ]
+
+  it('摘要的失败数只数真正失败的调用，被拒绝的另记一句弱化的「已拒绝」', () => {
+    const clauses = summarizeDone(items, undefined, rejected)
+    expect(clauses.map((clause) => clause.text)).toEqual([
+      '读取了 1 个文件',
+      '编辑了 2 处',
+      '（1 失败）',
+      '（1 已拒绝）',
+    ])
+    expect(clauses[3]?.tone).toBe('faint')
+  })
+
+  it('收起时露出的失败行按各自状态挑，被拒绝的不在里面', () => {
+    expect(failedTools(items, rejected).map((item) => item.frame.frameId)).toEqual(['f3'])
+  })
+})
+
 describe('summarizeRunning', () => {
   it('当前子句当头，已完成的类别弱化带「已」，尾巴挂实时时长', () => {
     const clauses = summarizeRunning(
       [entry(thinking('f1')), entry(tool('f2', 'grep')), entry(tool('f3', 'read', 'running'))],
       'f3',
       20_000,
+      NO_INTERACTIONS,
     )
 
     expect(clauses.map((clause) => clause.text)).toEqual([
-      '正在读取 shots/storyboard.md',
+      '正在读取 storyboard.md',
       '已搜索了 1 次',
       '20s',
     ])
   })
 
   it('直播块是思考时当前子句是「思考中…」', () => {
-    const clauses = summarizeRunning([entry(thinking('f1')), entry(tool('f2', 'grep'))], 'f1', 0)
+    const clauses = summarizeRunning(
+      [entry(thinking('f1')), entry(tool('f2', 'grep'))],
+      'f1',
+      0,
+      NO_INTERACTIONS,
+    )
     expect(clauses[0]?.text).toBe('思考中…')
   })
 })

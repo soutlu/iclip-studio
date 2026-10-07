@@ -5,6 +5,7 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import re
 import select
 import signal
 import subprocess
@@ -38,29 +39,41 @@ class StreamProgressTest(unittest.TestCase):
         self.assertTrue(ready, "CR 更新必须在子进程退出前可见，不能等 LF/EOF")
         return os.read(process.stdout.fileno(), 65536).decode()
 
+    def elapsed(self, output, code):
+        result = re.search(
+            rf"^Command result: exit_code={code} elapsed_seconds=([0-9.]+)$",
+            output, re.MULTILINE,
+        )
+        self.assertIsNotNone(result, "必须记录子命令退出状态和实际经过时间")
+        return float(result[1])
+
     def test_child_has_nonzero_terminal_dimensions(self):
         process = self.launch(
             "import os; size = os.get_terminal_size(1); print(size.columns, size.lines)"
         )
         output, _ = process.communicate(timeout=5)
         self.assertEqual(process.returncode, 0)
-        columns, rows = map(int, output.split())
+        columns, rows = map(int, output.decode().splitlines()[0].split())
         self.assertGreater(columns, 0)
         self.assertGreater(rows, 0)
+        self.elapsed(output.decode(), 0)
 
     def test_cr_progress_is_live_and_exit_and_eof_are_preserved(self):
         process = self.launch(
             "import os, sys, time; "
-            "os.write(1, b'\\x1b[2KCopying blob abcdef012345 1 MiB / 2 MiB\\r'); "
+            "os.write(1, b'\\x1b[2KCopying blob abcdef012345 [=>--] 1 MiB / 2 MiB | 1.1 GiB/s\\r'); "
             "time.sleep(2); os.write(1, b'final output without newline'); sys.exit(7)"
         )
         first = self.first_output(process)
         self.assertIn("Copying blob abcdef012345", first)
+        self.assertIn("1 MiB / 2 MiB", first)
+        self.assertNotIn("GiB/s", first)
         self.assertNotIn("\x1b", first)
         self.assertIsNone(process.poll())
         remaining, _ = process.communicate(timeout=5)
         self.assertIn("final output without newline", remaining.decode())
         self.assertEqual(process.returncode, 7)
+        self.assertGreaterEqual(self.elapsed(remaining.decode(), 7), 2)
 
     def test_throttle_is_per_layer_and_completion_and_errors_are_immediate(self):
         output, logged = io.StringIO(), {}
@@ -75,7 +88,8 @@ class StreamProgressTest(unittest.TestCase):
             MODULE.emit(b"Copying blob abcdef012345 4 MiB", logged)
             MODULE.emit(b"Copying blob abcdef012345 skipped", logged)
             MODULE.emit(
-                b'error Copying blob abcdef012345 PATCH "https://registry.test/upload?_state=secret&sig=private"',
+                b'time="2026-09-29T12:00:00Z" level=fatal msg="Copying blob abcdef012345: Patch '
+                b'"https://registry.test/upload?_state=secret&sig=private": connection reset by peer"',
                 logged,
             )
         lines = output.getvalue().splitlines()
@@ -87,6 +101,7 @@ class StreamProgressTest(unittest.TestCase):
         self.assertTrue(any("done" in line for line in lines))
         self.assertTrue(any("skipped" in line for line in lines))
         self.assertIn('https://registry.test/upload?<redacted>"', lines[-1])
+        self.assertIn("connection reset by peer", lines[-1])
         self.assertNotIn("secret", output.getvalue())
         self.assertNotIn("private", output.getvalue())
 
@@ -96,7 +111,7 @@ class StreamProgressTest(unittest.TestCase):
         config = "Copying config eb225a2b04 1 KiB / 2 KiB"
         config_done = "Copying config eb225a2b04 done"
         error = "error Copying config eb225a2b04 retry failed"
-        redraws = [skipped, config] * 10 + [done, config_done] * 10 + [error] * 2
+        redraws = [skipped, config + " | 991.9 KiB/s"] * 10 + [done, config_done] * 10 + [error] * 2
         process = self.launch(
             "import os, sys\n"
             f"for line in {redraws!r}:\n"
@@ -122,8 +137,9 @@ class StreamProgressTest(unittest.TestCase):
                 )
                 child_pid = int(self.first_output(process).strip())
                 process.send_signal(signum)
-                process.communicate(timeout=6)
+                remaining, _ = process.communicate(timeout=6)
                 self.assertEqual(process.returncode, 128 + signum)
+                self.assertGreaterEqual(self.elapsed(remaining.decode(), 128 + signum), 3)
                 with self.assertRaises(ProcessLookupError):
                     os.kill(child_pid, 0)
 

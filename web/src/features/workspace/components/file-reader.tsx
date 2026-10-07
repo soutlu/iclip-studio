@@ -1,17 +1,20 @@
-/** 阅读一份工作区文件：头上是返回、文件名、类型；正文按后缀选渲染器。 */
+/** 阅读一份工作区文件：头上是返回、目录与文件名、JSON 的全部收起 / 展开、复制原文；正文按渲染器族分派。 */
 
-import { useState } from 'react'
+import { useMemo } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
+import { Icon } from '@/shared/icons'
 import { copyText } from '@/shared/lib/clipboard'
+import { baseName, fileKindOf } from '@/shared/lib/file-kind'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Markdown } from '@/shared/ui/markdown'
-import { Tag } from '@/shared/ui/tag'
 import { toast } from '@/shared/ui/toast'
 import { useOpenArtifact, useWorkbenchRegistry, useWorkspaceFile } from '@/shared/workbench'
-import { baseName, fileKindOf } from '../file-kind'
-import { JsonTree } from './json-tree'
+import { dirName, fileIconOf, splitFileName } from '../file-kind'
+import { parseJson } from '../json-format'
+import { useJsonFold } from '../use-json-fold'
+import { JsonParseFailure, JsonView } from './json-view'
 import { PanelNotice } from './panel-notice'
-import { TextLines } from './text-lines'
+import { PlainText } from './plain-text'
 
 type FileReaderProps = {
   conversationId: string
@@ -23,16 +26,24 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
   const file = useWorkspaceFile(conversationId, path)
   const registry = useWorkbenchRegistry()
   const openArtifact = useOpenArtifact()
-  const kind = fileKindOf(path, file.data?.file.content)
-  // JSON 默认看结构，想核对原文再切。
-  const [raw, setRaw] = useState(false)
+  const content = file.data?.file.content
+  const empty = content !== undefined && content.trim() === ''
+  const kind = fileKindOf(path, content)
+  // 解析结果要稳定：收起状态与排好的行都跟着它记忆。
+  const json = useMemo(
+    () => (kind === 'json' && content !== undefined && !empty ? parseJson(content) : undefined),
+    [content, empty, kind],
+  )
+  const fold = useJsonFold(json?.ok === true ? json.value : undefined)
   // 这份文件若本身登记成了别的产物（比如分镜），给一个去那边看的入口；匹配只看路径，版本号只是凑齐类型。
   const own = registry.matchFiles([{ path, version: file.data?.file.version ?? 0 }])[0]
+  const dir = dirName(path)
+  const name = splitFileName(baseName(path))
 
   const copy = async () => {
-    if (file.data === undefined) return
+    if (content === undefined) return
     try {
-      await copyText(file.data.file.content)
+      await copyText(content)
       toast('已复制')
     } catch {
       toast.error('复制失败')
@@ -41,26 +52,50 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b-[0.5px] border-chat-hairline pr-2 pl-2">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-chat-hairline px-2">
         <IconButton label="返回文件列表" name="back" onClick={onBack} size="md" />
-        <span className="min-w-0 truncate text-body font-medium text-on-surface">
-          {baseName(path)}
-        </span>
-        <Tag className="shrink-0">{kind.label}</Tag>
-        <span className="flex-1" />
+        <h3 className="flex min-w-0 flex-1 items-center gap-2 text-body font-medium text-on-surface">
+          <Icon
+            className="shrink-0 text-on-surface-variant"
+            decorative
+            name={fileIconOf(path)}
+            size="sm"
+          />
+          {/* 截中间：目录与文件名开头一起从末尾截，主名末 4 字加扩展名固定不截；全名留在文本里供读屏，悬停看 title。 */}
+          <span className="flex min-w-0 whitespace-nowrap" title={path}>
+            <span className="min-w-[1ch] truncate">
+              {dir === '' ? null : (
+                <span className="font-normal text-on-surface-faint">{dir}/</span>
+              )}
+              {name.head}
+            </span>
+            {name.tail === '' ? null : <span className="shrink-0">{name.tail}</span>}
+          </span>
+        </h3>
         {own === undefined ? null : (
-          <Button onClick={() => void openArtifact(own.id)} size="md" variant="ghost">
+          <Button
+            className="shrink-0"
+            onClick={() => void openArtifact(own.id)}
+            size="md"
+            variant="ghost"
+          >
             在{own.title}里打开
           </Button>
         )}
-        {kind.kind === 'json' && file.data !== undefined ? (
-          <Button onClick={() => setRaw(!raw)} size="md" variant="ghost">
-            {raw ? '看结构' : '看原文'}
+        {json?.ok === true && fold.canFoldAll ? (
+          <Button
+            className="shrink-0"
+            onClick={fold.foldedAll ? fold.unfoldAll : fold.foldAll}
+            size="md"
+            variant="ghost"
+          >
+            {fold.foldedAll ? '全部展开' : '全部收起'}
           </Button>
         ) : null}
         <IconButton
-          disabled={file.data === undefined}
-          label="复制内容"
+          className="shrink-0"
+          disabled={content === undefined}
+          label="复制原文"
           name="copy"
           onClick={() => void copy()}
           size="md"
@@ -75,41 +110,29 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
         ) : (
           <PanelNotice text={errorMessageOf(file.error, '读取工作区文件失败')} />
         )
+      ) : empty ? (
+        <PanelNotice text="这份文件还是空的" />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <FileBody kind={kind.kind} raw={raw} text={file.data.file.content} />
+          {kind === 'markdown' ? (
+            <article className="px-6 py-5">
+              <Markdown text={file.data.file.content} />
+            </article>
+          ) : json === undefined ? (
+            <div className="px-6 py-5">
+              <PlainText text={file.data.file.content} />
+            </div>
+          ) : json.ok ? (
+            <div className="py-3 pr-5 pl-1">
+              <JsonView fold={fold} />
+            </div>
+          ) : (
+            <div className="px-6 py-5">
+              <JsonParseFailure text={file.data.file.content} />
+            </div>
+          )}
         </div>
       )}
-    </div>
-  )
-}
-
-function FileBody({
-  kind,
-  raw,
-  text,
-}: {
-  kind: 'markdown' | 'json' | 'text'
-  raw: boolean
-  text: string
-}) {
-  if (kind === 'markdown') {
-    return (
-      <article className="px-6 py-5">
-        <Markdown text={text} />
-      </article>
-    )
-  }
-  if (kind === 'json' && !raw) {
-    return (
-      <div className="px-4 py-4">
-        <JsonTree text={text} />
-      </div>
-    )
-  }
-  return (
-    <div className="px-4 py-4">
-      <TextLines text={text} />
     </div>
   )
 }

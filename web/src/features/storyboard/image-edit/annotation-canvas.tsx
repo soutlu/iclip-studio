@@ -298,7 +298,6 @@ export function AnnotationCanvas({
           <IconButton
             key={kind}
             label={label}
-            title={label}
             name={kind}
             variant={tool === kind ? 'selected' : 'standard'}
             aria-pressed={tool === kind}
@@ -312,22 +311,20 @@ export function AnnotationCanvas({
         <span className="image-edit-canvas-toolbar-divider" aria-hidden="true" />
         <IconButton
           label="撤销标注"
-          title="撤销标注"
           name="undo"
           disabled={Boolean(blocked) || history.past.length === 0}
           onClick={undo}
         />
         <IconButton
           label="重做标注"
-          title="重做标注"
           name="redo"
           disabled={Boolean(blocked) || history.future.length === 0}
           onClick={redo}
         />
         <IconButton
           label="清空标注"
-          title="清空全部标注，可撤销"
           name="delete"
+          tooltip="清空全部标注，可撤销"
           disabled={Boolean(blocked) || annotations.length === 0 || gesture !== null}
           onClick={clearAnnotations}
         />
@@ -548,13 +545,14 @@ function AnnotationMark({
             strokeWidth={2 * unit}
             pointerEvents="none"
           />
+          {/* 序号与标注线同色的红色实心，细白圈；导出给模型的标注图同样画法（annotation-export）。 */}
           <rect
             x={geometry.label.x - geometry.label.width / 2}
             y={geometry.label.y - geometry.label.height / 2}
             width={geometry.label.width}
             height={geometry.label.height}
             rx={geometry.label.radius}
-            fill="var(--color-scrim)"
+            fill="currentColor"
             stroke="var(--color-on-scrim)"
             strokeWidth={1.5 * unit}
           />

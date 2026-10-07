@@ -192,14 +192,14 @@ export function LibraryParamsPanel({ video, version, showVersion }: LibraryParam
   // 对话 id 人人都拿得到，打不打得开看 canOpenConversation。
   if (video.canOpenConversation && video.conversationId !== null) {
     rows.push([
-      '来源对话',
+      '来源任务',
       <Link
         className="text-on-surface underline decoration-hairline underline-offset-4 ui-focus hover:decoration-on-surface"
         key="conversation"
         params={{ conversationId: video.conversationId }}
         to="/c/$conversationId"
       >
-        {video.title ?? '打开对话'}
+        {video.title ?? '打开任务'}
       </Link>,
     ])
   }

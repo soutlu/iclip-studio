@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { renderWithTooltip } from '@/testing/render'
 import { PromptQueue } from './prompt-queue'
 
 const prompt = {
@@ -16,7 +17,7 @@ describe('PromptQueue', () => {
   it.each(['look.png', 'pace.mp4'])(
     '点排队附件 %s 进灯箱，Esc 关掉后焦点回到那个附件',
     async (name) => {
-      render(
+      renderWithTooltip(
         <PromptQueue
           canSteer={false}
           onDiscard={() => {}}

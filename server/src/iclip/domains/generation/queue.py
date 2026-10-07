@@ -4,7 +4,8 @@
 槽位占满，共用一条队列就会拖住别家。轮询另起一条队列。
 轮询通过 StillRunning 复用重试任务，避免每次查询都新增队列记录；总时限由业务状态控制。
 
-提交前先持久化 submitting。恢复时若仍为 submitting，标记失败且不重投，避免重复计费。
+提交前先持久化 submitting。恢复时若仍为 submitting，标记失败且不重投，避免重复计费；若已是
+submitted，补排首个轮询：写回执与排轮询分属两步，中间失败或进程退出都会漏排，而轮询幂等。
 优雅关停的中断任务由重试策略重排；硬中断遗留的 doing 任务由周期任务按心跳恢复。"""
 
 from __future__ import annotations
@@ -182,6 +183,12 @@ class GenerationQueue:
             # 提交结果未知，恢复时标记失败，避免重复计费。
             await self._fail_stranded(job)
             return
+        if job.status == STATUS_SUBMITTED:
+            # 回执已落库，首个轮询可能没排上：上次排轮询失败后重试，或进程死在两步之间被重排。
+            # 轮询幂等；万一上次其实排上了，重复的那条只是多查几次。
+            _logger.info("生成任务已提交，补排首个轮询", job_id=job.id)
+            await self._schedule_poll(job.id)
+            return
         if job.status != STATUS_PENDING:
             _logger.info("生成任务已有结论，不再提交", job_id=job.id, status=job.status)
             return
@@ -236,8 +243,13 @@ class GenerationQueue:
             provider_task_id=submission.provider_task_id,
             provider_status=submission.provider_status,
         )
+        await self._schedule_poll(job.id)
+
+    async def _schedule_poll(self, job_id: uuid.UUID) -> None:
+        """排一次轮询，正常轮询间隔后执行；排不上就抛出，交给提交任务的重试策略。"""
+
         await self._poll.configure(
-            task_kwargs={"job_id": str(job.id)},
+            task_kwargs={"job_id": str(job_id)},
             schedule_in={"seconds": self._settings.poll_interval_seconds},
         ).defer_async()
 

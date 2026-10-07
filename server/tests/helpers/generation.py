@@ -30,6 +30,7 @@ from iclip.domains.generation.models import (
     Inheritance,
     inherited_through,
 )
+from iclip.domains.generation.module import ImageModelConfig, build_generation_module
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -46,9 +47,13 @@ from iclip.domains.generation.schemas import (
     VideoComposeRequest,
     VideoGenerationIn,
 )
+from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.video import VideoProviderSettings
+from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
+from tests.helpers.identity import InMemoryUserRepository
 
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
@@ -68,13 +73,23 @@ def video_request(**overrides: Any) -> VideoGenerationIn:
 
 
 def edit_request(**overrides: Any) -> VideoGenerationIn:
-    """编辑段落库的请求：参考视频留空，由服务端提交上游前按区间切。"""
+    """编辑段落库的请求：参考视频恰好一条，是调用方上传的参考片段。"""
 
-    return video_request(**{"seconds": -1, "aspect_ratio": None, **overrides})
+    return video_request(
+        **{
+            "seconds": -1,
+            "aspect_ratio": None,
+            "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
+            **overrides,
+        }
+    )
 
 
 def compose_request(**overrides: Any) -> VideoComposeRequest:
-    """默认是一次合成：基底前段、编辑段产物整条、基底后段取到结尾。"""
+    """默认是一次合成：基底前段、编辑段产物整条、基底后段取到结尾。
+
+    没写出处的段按地址补一个固定的 ``sourceJobId``：执行方只读地址与起止，出处只有受理与迁移
+    关心，那些用例自己给。"""
 
     fields: dict[str, Any] = {
         "segments": [
@@ -85,6 +100,12 @@ def compose_request(**overrides: Any) -> VideoComposeRequest:
         "user_name": "logan",
     }
     fields.update(overrides)
+    fields["segments"] = [
+        segment
+        if "source_job_id" in segment or "sourceJobId" in segment
+        else {"source_job_id": uuid.uuid5(uuid.NAMESPACE_URL, segment["url"]), **segment}
+        for segment in fields["segments"]
+    ]
     return VideoComposeRequest(**fields)
 
 
@@ -220,13 +241,21 @@ def make_edit(base: GenerationJob, **fields: Any) -> GenerationJob:
 
 
 def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
-    """合成 ``edit`` 的一条记录：来源是编辑段，原作与镜号随它，执行方是本地 ffmpeg。"""
+    """把 ``edit`` 夹回它的基底的一条合成：来源是基底，原作与镜号随基底（与编辑段的相同），
+    各段是基底前段、编辑段整条、基底后段，出处分别记基底与编辑段；执行方是本地 ffmpeg。"""
 
+    assert edit.source_job_id is not None, "只能合成编辑段"
+    base = edit.source_job_id
     fields.setdefault("provider", "ffmpeg")
     fields.setdefault("shot_index", edit.shot_index)
-    return make_job(
-        compose_request(), source_job_id=edit.id, root_job_id=edit.root_job_id, **fields
+    request = compose_request(
+        segments=[
+            {"source_job_id": base, "url": "https://example.com/base.mp4", "start": 0, "end": 1},
+            {"source_job_id": edit.id, "url": "https://example.com/edited.mp4", "start": 0},
+            {"source_job_id": base, "url": "https://example.com/base.mp4", "start": 4},
+        ]
     )
+    return make_job(request, source_job_id=base, root_job_id=edit.root_job_id, **fields)
 
 
 def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
@@ -274,10 +303,11 @@ class InMemoryGenerationRepository:
             created.append(stored)
         return tuple(created)
 
-    async def find_image_by_output(
+    async def find_by_output(
         self,
         output_url: str,
         *,
+        kind: GenerationKind,
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
@@ -286,7 +316,7 @@ class InMemoryGenerationRepository:
         found = [
             job
             for job in self.jobs.values()
-            if job.kind == KIND_IMAGE
+            if job.kind == kind
             and job.status == STATUS_COMPLETED
             and job.output_url == output_url
             and (operation is None or job.operation == operation)
@@ -451,23 +481,6 @@ class InMemoryGenerationRepository:
             return None
         return self._replace(job_id, provider_status=provider_status)
 
-    async def record_reference_cut(
-        self,
-        job_id: uuid.UUID,
-        *,
-        range_start_ms: int,
-        range_end_ms: int,
-        only_if_status: GenerationStatus,
-    ) -> GenerationJob | None:
-        if self.jobs[job_id].status != only_if_status:
-            return None
-        return self._replace(
-            job_id,
-            range_start_ms=range_start_ms,
-            range_end_ms=range_end_ms,
-            provider_status=None,
-        )
-
     async def in_flight_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
@@ -539,8 +552,11 @@ def build_queue(
     video: ScriptedProvider | None = None,
     image: ScriptedProvider | None = None,
     lanes: tuple[ProviderLane, ...] | None = None,
+    connector: InMemoryConnector | None = None,
 ) -> tuple[GenerationQueue, InMemoryConnector]:
-    """两家替身各占一条 lane，名字与 make_job 落到 provider 列上的值一致。"""
+    """两家替身各占一条 lane，名字与 make_job 落到 provider 列上的值一致。
+
+    ``connector`` 给了就用它（如注入排队故障的子类），不给新建一个。"""
 
     if lanes is None:
         video_double = video or ScriptedProvider()
@@ -548,7 +564,7 @@ def build_queue(
         image_double = image or ScriptedProvider()
         image_double.provider_name = FAKE_IMAGE_PROVIDER
         lanes = (ProviderLane(video_double, 1), ProviderLane(image_double, 1))
-    connector = InMemoryConnector()
+    connector = InMemoryConnector() if connector is None else connector
     queue = GenerationQueue(
         repo,
         lanes=lanes,
@@ -591,6 +607,43 @@ def config_with_media() -> RuntimeConfig:
             ),
         }
     )
+
+
+async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> None:
+    return None
+
+
+def film_image_service(
+    repo: InMemoryGenerationRepository,
+    lineage: FixedLineage | None = None,
+    *,
+    image_models: Sequence[str] = ("nano_banana_pro", "gpt-image-2.5"),
+) -> GenerationService:
+    """生成服务：带 AI 导演的图片模型 gpt-image-2.5，视频只接一家替身。"""
+
+    return build_generation_module(
+        repo,
+        act_as=ActAs(InMemoryUserRepository()),
+        clear_completion=_keep_completion,
+        lineage=lineage or FixedLineage(),
+        video=VideoProviderSettings(
+            submit_url="https://video.test/generate",
+            status_base_url="https://video.test/tasks",
+            api_key="secret-key",
+        ),
+        video_default_model="vendor-a-seedance-2-5",
+        video_allowed_models=("vendor-a-seedance-2-5",),
+        image_models=[
+            ImageModelConfig(name=name, api_base=f"https://image.test/{name}", concurrency=1)
+            for name in image_models
+        ],
+        image_default_model="nano_banana_pro",
+        image_env="test",
+        image_text_to_image_task="text-to-image",
+        image_edit_task="image-edit",
+        object_store=MemoryObjectStore(),
+        queue_connector=InMemoryConnector(),
+    ).service
 
 
 class FixedLineage:
@@ -651,6 +704,7 @@ __all__ = [
     "compose_request",
     "config_with_media",
     "edit_request",
+    "film_image_service",
     "image_request",
     "make_composite",
     "make_cut",

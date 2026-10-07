@@ -3,8 +3,8 @@
 :root {
   /* Typography（品牌字体链，不属于 M3 色板） */
   --font-cue-ui:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+    'MiSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
   --font-home-display: 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --font-mono:
     'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas,
@@ -113,17 +113,13 @@
 
   /* Semantic roles */
 
-  /* Primary：品牌主色。主按钮、焦点指示、选中底、画布选中 */
+  /* Primary：品牌主色。只给主操作「生成」、链接与品牌标识、成功状态；焦点与选中用墨色 */
   --color-primary: var(--p40); /* #006D42 白字 6.43:1 */
   --color-primary-hover: var(--p50);
   --color-on-primary: var(--p100);
-  --color-primary-container: var(--p90); /* #AEF2C6 选中底（配 P10 字 13.31:1） */
+  /* 成功状态底：状态徽标、成功标签、差异新增行。 */
+  --color-primary-container: var(--p90); /* #AEF2C6 配 P10 字 13.31:1 */
   --color-on-primary-container: var(--p10);
-  /* 容器分为小件实色与大面浅底，文字与容器色必须配对。 */
-  --color-primary-container-solid: var(--p70); /* #42BA79 小件实色（配 P10 字 6.96:1） */
-  --color-primary-container-soft: var(
-    --p95
-  ); /* #C1FFD5 大面浅底（配 1.5px P70 描边，P10 字 15.12:1） */
 
   /* Secondary：中性强调，无色相。tonal 按钮、实色标签、序号徽标 */
   --color-secondary: var(--s40); /* #5E5E5E 白字 6.48:1 */
@@ -192,7 +188,7 @@
   --state-dragged: 0.16;
   --state-disabled-content: 0.38;
   --state-disabled-container: 0.12;
-  --state-focus-ring: 3px;
+  --state-focus-ring: 2px;
   --state-focus-offset: 2px;
 
   /* State layer 颜色（由上方透明度派生；交互态叠加背景的唯一来源，组件不得散写 hover/pressed 底色） */
@@ -228,7 +224,7 @@
   /* 基础色 */
   --color-background: var(
     --n100
-  ); /* #FFFFFF 页面底；侧栏、右面板与主区同为页面底色，靠 hairline 分隔 */
+  ); /* #FFFFFF 页面底与主区；应用侧栏用 surface-container-low 浅灰底，与主区以分隔线分界 */
   --color-on-background: var(--color-on-surface);
   --color-top-layer: var(--n100);
   --color-state-active: color-mix(
@@ -267,18 +263,14 @@
   --color-chat-panel-bg-end: var(--n95);
   --color-chat-panel-border: var(--color-hairline);
   --color-chat-card-bg: var(--color-surface-container-lowest);
+  /* 聊天活动卡：无描边的柔和卡片，浅色白底加轻影，深色抬一档底色加极淡边。 */
+  --color-chat-soft-card: var(--n100);
+  --color-chat-soft-card-edge: transparent;
+  --shadow-chat-soft-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
   --color-chat-message-text: var(--color-on-surface);
   --color-chat-secondary-text: var(--color-on-surface-variant);
   --color-chat-muted-text: var(--color-on-surface-faint);
   --color-chat-user-bg: var(--color-surface-container-low);
-
-  /* Agent 身份色：独立于状态色，使用 Blend.harmonize 向主色协调。 */
-  --color-chat-agent-avatar-bg: #e7f5df;
-  --color-chat-agent-avatar-border: rgba(113, 136, 58, 0.28);
-  --color-chat-agent-identity-bg: #f2f7ed;
-  --color-chat-agent-identity-border: rgba(113, 136, 58, 0.24);
-  --color-chat-agent-identity-text: #213219;
-  --color-chat-agent-rail: #009e77;
 
   /* 推理、工具、附件、Markdown */
   --color-chat-inline-bg: color-mix(in srgb, var(--nv70) 10%, transparent);
@@ -290,20 +282,12 @@
   --color-chat-code-border: var(--color-hairline);
   --color-chat-link-text: var(--color-primary); /* 链接使用 primary。 */
   --color-chat-link-border: color-mix(in srgb, var(--color-primary) 34%, transparent);
-  --color-chat-error-bg: var(--color-error-container);
-  --color-chat-error-border: var(--e80);
-  --color-chat-error-text: var(--e30);
   --color-chat-status-success: var(--color-primary);
   --color-chat-status-error: var(--color-error);
-  --color-chat-status-running: var(--color-warning);
-  --color-chat-focus-ring: color-mix(in srgb, var(--color-primary) 70%, transparent);
+  --color-chat-status-running: var(--color-primary);
   --color-chat-hairline: var(--color-hairline);
   --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
-  --shadow-chat-panel: 0 20px 48px rgba(64, 73, 66, 0.18);
-  --shadow-chat-agent-avatar:
-    0 8px 18px rgba(64, 73, 66, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.62);
-  --shadow-chat-agent-identity:
-    0 8px 18px rgba(64, 73, 66, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.18);
 
   /* 状态与杂项 */
   --color-disabled-text: color-mix(
@@ -316,37 +300,29 @@
     var(--color-on-surface) calc(var(--state-disabled-container) * 100%),
     transparent
   );
-  --color-ring-highlight: color-mix(in srgb, var(--color-primary) 70%, transparent);
-  --color-focus-ring: var(--color-primary); /* 键盘焦点全局指示（白底 6.43:1） */
+  /* 键盘焦点全局指示：墨色不用主色，明暗随 on-surface 换向，浅深主题对相邻表面都 ≥9:1；深色媒体面由容器改指 on-scrim。 */
+  --color-focus-ring: var(--color-on-surface);
   --color-thumb-fallback: var(--n80);
   --color-badge-border: var(--color-hairline);
 
   /* 画布卡片 */
   --color-canvas-card-bg: var(--color-surface-container-lowest);
   --color-canvas-card-text: var(--color-on-surface);
-  --color-canvas-card-border: var(--p60);
   --color-canvas-label-text: var(--nv50);
 
   /* 故事板工作台 */
-  --color-storyboard-canvas: #eaefe8; /* 版本占位底 */
-  --color-storyboard-canvas-dot: color-mix(
-    in srgb,
-    var(--nv50) 18%,
-    transparent
-  ); /* 版本占位点阵，22px 网格 */
+  /* 放映舞台：浅深主题都是深底，画面是全页视觉重心；内缘一圈白色发丝线勾出舞台边界。 */
+  --color-storyboard-stage: #161616;
+  --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 6%, transparent);
   --shadow-storyboard-media:
-    0 1px 2px rgba(23, 29, 25, 0.07), 0 10px 22px -12px rgba(23, 29, 25, 0.2); /* 参考媒体缩略图浮起 */
+    0 1px 2px rgba(0, 0, 0, 0.07), 0 10px 22px -12px rgba(0, 0, 0, 0.2); /* 参考媒体缩略图浮起 */
   --shadow-storyboard-hero:
-    0 2px 4px rgba(23, 29, 25, 0.08), 0 18px 34px -14px rgba(23, 29, 25, 0.28); /* 创作 Brief 视频封面 */
+    0 2px 4px rgba(0, 0, 0, 0.08), 0 18px 34px -14px rgba(0, 0, 0, 0.28); /* 创作 Brief 视频封面 */
   --shadow-storyboard-sidebar-left: 12px 0 24px -18px
     color-mix(in srgb, var(--color-on-surface) 28%, transparent); /* 左侧栏向工作区的柔和过渡 */
   --shadow-storyboard-sidebar-right: -12px 0 24px -18px
     color-mix(in srgb, var(--color-on-surface) 28%, transparent); /* 右侧栏向工作区的柔和过渡 */
-  --storyboard-node-shadow: 0 35px 96px rgba(38, 43, 39, 0.22); /* 工作台节点投影 */
-  --color-annotation-red: #e04f3f; /* 标注功能色板：仅标注笔触与图钉，不进入界面配色 */
-  --color-annotation-orange: #e9a13b;
-  --color-annotation-blue: #3f9fd0;
-  --color-annotation-green: #46b06f;
+  --storyboard-node-shadow: 0 35px 96px rgba(0, 0, 0, 0.22); /* 工作台节点投影 */
 
   /* 编辑器引用类型色：只表达引用身份，不承载状态或标注笔触语义 */
   --color-reference-image: #8a8a84;
@@ -393,11 +369,29 @@
   --color-on-chart-ord-4: var(--n100);
   --color-on-chart-ord-5: var(--n100);
 
+  /* 镜头点缀色：只表达镜头身份，同一镜头的时间轴色段与镜头列表序号旁的短色签同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
+     色段与短色签都用 accent-N 实色；序号用中性字色，不做浅色底块或彩色徽标。 */
+  --color-accent-1: #ee5d3f; /* 珊瑚 */
+  --color-accent-2: #f39a2b; /* 橙 */
+  --color-accent-3: #d9b02a; /* 芥末黄 */
+  --color-accent-4: #3a97dd; /* 天蓝 */
+  --color-accent-5: #a05cc4; /* 紫 */
+  --color-accent-6: #e35d8c; /* 粉 */
+  --color-accent-7: #2a9fb0; /* 青 */
+  --color-accent-8: #5c6bd6; /* 靛蓝 */
+
+  /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。
+     三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线。 */
+  --color-code-key: #2e5aa6;
+  --color-code-string: #8a4a8f;
+  --color-code-literal: #1d6f7d;
+  --color-code-guide: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
+
   /* 数据看板：内容区铺浅灰、卡片纯白不描边，靠一层淡影分层；深色下影子看不见，改用一圈极淡的边。 */
   --color-dashboard-bg: var(--n96);
   --color-dashboard-card: var(--n100);
   --color-dashboard-card-edge: transparent;
-  --shadow-dashboard-card: 0 1px 2px rgba(23, 29, 25, 0.04), 0 8px 24px rgba(23, 29, 25, 0.05);
+  --shadow-dashboard-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
 
   /* 产物书签身份色：使用 Blend.harmonize 向主色协调。 */
   --color-artifact-brief: #bda669;
@@ -424,8 +418,6 @@
   --color-brief-danger-soft: rgba(184, 50, 48, 0.1);
 
   /* Storyboard 分镜表纸面色板。 */
-  --color-sb-table-accent: #4a7c59;
-  --color-sb-table-accent-soft: rgba(74, 124, 89, 0.12);
   --color-sb-table-background: #faf6f0;
   --color-sb-table-surface: #f5f1ea;
   --color-sb-table-prompt-surface: rgba(255, 255, 255, 0.82);
@@ -468,8 +460,6 @@
   --storyboard-node-script-surface: var(--storyboard-node-surface);
   --storyboard-node-tool-surface: var(--storyboard-node-surface);
   --storyboard-node-panel-divider: #e4eae3;
-  --storyboard-node-accent: #00a667;
-  --storyboard-node-accent-line: var(--storyboard-node-accent);
   --storyboard-node-ink: #0a0f0c;
   --storyboard-node-muted: rgba(42, 50, 44, 0.4);
   --storyboard-node-muted-strong: rgba(42, 50, 44, 0.5);
@@ -497,8 +487,6 @@
   );
   --media-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(0, 0, 0, 0.16) 100%);
 
-  /* 左缘 accent 条（box-shadow 形态，不占布局） */
-  --shadow-rail-inset: inset 3px 0 0 var(--color-chat-agent-rail);
   /* 底边细线（box-shadow 形态）：吸顶表头的底线跟着单元格走 */
   --shadow-hairline-bottom: inset 0 -1px 0 var(--color-hairline);
 
@@ -516,23 +504,17 @@
   --color-brief-board-5: #ffcd00;
   --color-brief-board-white: var(--n100);
 
-  /* AI 徽标渐变（品牌紫蓝，系统 6 族之外的身份色） */
-  --color-ai-gradient-start: #a875ff;
-  --color-ai-gradient-end: #6d8cff;
-
   /* 尺寸、阴影与动效 */
 
   /* M3 tonal elevation：静态表面无投影；shadow-1 小件、shadow-2 菜单、shadow-3 弹窗。 */
-  --shadow-1: 0 2px 8px rgba(23, 29, 25, 0.05), 0 1px 3px rgba(23, 29, 25, 0.05); /* 悬浮小件轻影 */
+  --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.05); /* 悬浮小件轻影 */
   --shadow-2:
-    0 6px 18px rgba(23, 29, 25, 0.03), 0 3px 9px rgba(23, 29, 25, 0.04),
-    0 1px 1px rgba(23, 29, 25, 0.04); /* 菜单/@列表/进度 pill */
-  --shadow-3:
-    0 20px 56px rgba(23, 29, 25, 0.14), 0 6px 16px rgba(23, 29, 25, 0.08); /* 弹窗/toast */
-  --shadow-input: 0 5px 16px -4px rgba(23, 29, 25, 0.07); /* 输入卡使用 Kimi composer 常驻投影，聚焦时不抬升。 */
-  --shadow-xs: 0 1px 2px rgba(23, 29, 25, 0.04); /* 代码块等嵌套小件 */
+    0 6px 18px rgba(0, 0, 0, 0.03), 0 3px 9px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.04); /* 菜单/@列表/进度 pill */
+  --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.14), 0 6px 16px rgba(0, 0, 0, 0.08); /* 弹窗/toast */
+  --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, 0.07); /* 输入卡使用 Kimi composer 常驻投影，聚焦时不抬升。 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04); /* 代码块等嵌套小件 */
   --shadow-send:
-    0 7px 16px -13px rgba(23, 29, 25, 0.38), 0 1px 2px rgba(23, 29, 25, 0.07); /* 发送钮浮起 */
+    0 7px 16px -13px rgba(0, 0, 0, 0.38), 0 1px 2px rgba(0, 0, 0, 0.07); /* 发送钮浮起 */
 
   /* M3 动效时值；退场时长约为进场的一半。 */
   --dur-s: 150ms; /* 微交互：hover/按压/工具切换 */
@@ -621,8 +603,6 @@
   --color-on-primary: var(--p10);
   --color-primary-container: var(--p30);
   --color-on-primary-container: var(--p90);
-  --color-primary-container-solid: var(--p70);
-  --color-primary-container-soft: var(--p20);
   --color-secondary: var(--s60);
   --color-on-secondary: var(--s10);
   --color-secondary-container: var(--s30);
@@ -664,20 +644,14 @@
   --color-chat-panel-bg-end: var(--n6);
   --color-chat-muted-text: var(--color-on-surface-faint);
   --color-chat-user-bg: var(--color-surface-container-high);
-  --color-chat-agent-avatar-bg: #1b2a20;
-  --color-chat-agent-avatar-border: rgba(113, 136, 58, 0.4);
-  --color-chat-agent-identity-bg: #16211a;
-  --color-chat-agent-identity-border: rgba(113, 136, 58, 0.36);
-  --color-chat-agent-identity-text: #cfe3c5;
-  --color-chat-agent-rail: #33c39a;
   --color-chat-code-block-bg: var(--n12);
-  --color-chat-error-border: var(--e60);
-  --color-chat-error-text: var(--e80);
+  --color-chat-soft-card: var(--n10);
+  --color-chat-soft-card-edge: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+  --shadow-chat-soft-card: none;
   --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.5);
-  --shadow-chat-agent-avatar: 0 8px 18px rgba(0, 0, 0, 0.4);
-  --shadow-chat-agent-identity: 0 8px 18px rgba(0, 0, 0, 0.4);
   --color-canvas-label-text: var(--nv60);
-  --color-storyboard-canvas: #0f1511;
+  --color-storyboard-stage: #0a0a0a;
+  --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 8%, transparent);
   --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
   --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.3), 0 18px 34px -14px rgba(0, 0, 0, 0.7);
   --shadow-storyboard-sidebar-left: 12px 0 24px -18px rgba(0, 0, 0, 0.6);
@@ -706,6 +680,18 @@
   --color-on-chart-ord-3: var(--n10);
   --color-on-chart-ord-4: var(--n10);
   --color-on-chart-ord-5: var(--n10);
+  /* 深色点缀色取同色相 HCT tone 72，在深色页面底上保持同等辨识度。 */
+  --color-accent-1: #ff937c;
+  --color-accent-2: #f69c2d;
+  --color-accent-3: #d4ac25;
+  --color-accent-4: #61b7ff;
+  --color-accent-5: #db95ff;
+  --color-accent-6: #ff8eb1;
+  --color-accent-7: #54bfd0;
+  --color-accent-8: #a0abff;
+  --color-code-key: #8fb3ef;
+  --color-code-string: #d4a2d7;
+  --color-code-literal: #62c3d3;
   --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
   --shadow-2:
     0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);

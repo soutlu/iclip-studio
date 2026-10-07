@@ -1,11 +1,11 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
 import { PromptEditor, type PromptEditorHandle } from './prompt-editor'
-import { docToPrompt, promptOffsetAt, promptPositionAt, promptToDoc } from './prompt-editor-doc'
+import { docToPrompt, promptOffsetAt, promptToDoc } from './prompt-editor-doc'
 
 const FIXTURES = [
   '她走向镜头 @Image1，脚步放慢。',
@@ -31,15 +31,21 @@ describe('promptToDoc / docToPrompt', () => {
     ).toEqual([0, 3, 11, 12, 13, 14, text.length])
   })
 
-  it('正文偏移换回编辑器位置：与 promptOffsetAt 互逆，帧标记中间取标记之前，越界取末尾', () => {
-    const text = '前😀@Image01后\n\n尾@Image2'
-    const doc = promptToDoc(text)
-    const positions = [1, 4, 5, 6, 8, 10, doc.content.size - 1]
-    expect(
-      positions.map((position) => promptPositionAt(doc, promptOffsetAt(doc, position))),
-    ).toEqual(positions)
-    expect(promptPositionAt(doc, 5)).toBe(4)
-    expect(promptPositionAt(doc, text.length + 5)).toBe(doc.content.size - 1)
+  it('上传中的附件 chip 不进正文、在正文里占 0 个字符，前后文字的偏移与没有 chip 时相同', () => {
+    const plain = promptToDoc('前文后文')
+    const { schema } = plain.type
+    const chip = schema.node('attachment', { attId: 'a1', kind: 'image', name: '新帧.png' })
+    const withChip = schema.node('doc', null, [
+      schema.node('paragraph', null, [schema.text('前文'), chip, schema.text('后文')]),
+    ])
+    expect(docToPrompt(withChip)).toBe('前文后文')
+    // 有 chip 的文档在 chip 处多一个位置：chip 前后两个位置都对应正文偏移 2。
+    expect([1, 2, 3, 4, 5, 6, 7].map((position) => promptOffsetAt(withChip, position))).toEqual([
+      0, 1, 2, 2, 3, 4, 4,
+    ])
+    expect([1, 2, 3, 4, 5].map((position) => promptOffsetAt(plain, position))).toEqual([
+      0, 1, 2, 3, 4,
+    ])
   })
 })
 
@@ -91,8 +97,10 @@ describe('PromptEditor', () => {
     expect(changed).toBe(`新增${original}`)
     await userEvent.keyboard('{Control>}z{/Control}')
     expect(changed).toBe(original)
+    // 全选后插入引用：选区覆盖整段正文，整段换成这个引用。
     await userEvent.keyboard('{Control>}a{/Control}')
-    expect(ref.current?.getInsertion()).toEqual({ text: original, start: 0, end: original.length })
+    act(() => ref.current?.insertFrame(1))
+    expect(changed).toBe('@Image1')
   })
 
   it('多行粘贴保留原始帧标记并可继续选择该帧', async () => {

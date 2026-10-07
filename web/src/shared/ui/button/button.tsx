@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority'
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 
@@ -10,7 +10,7 @@ const buttonVariants = cva(
       variant: {
         primary: 'bg-primary text-on-primary shadow-[var(--shadow-1)]',
         tonal: 'bg-secondary-container text-on-secondary-container',
-        outlined: 'border border-outline bg-transparent text-primary',
+        outlined: 'border border-outline bg-transparent text-on-surface',
         inverted: 'bg-inverse-surface text-inverse-on-surface',
         danger: 'bg-error text-on-error',
         ghost: 'bg-transparent text-on-surface',
@@ -29,6 +29,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
     children: ReactNode
     leadingIcon?: Parameters<typeof Icon>[0]['name']
     loading?: boolean
+    ref?: Ref<HTMLButtonElement> | undefined
     trailingIcon?: Parameters<typeof Icon>[0]['name']
   }
 

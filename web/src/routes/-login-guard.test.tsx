@@ -80,7 +80,7 @@ describe('整页要登录的那几页', () => {
     const router = await renderAt('/conversations')
 
     expect(router.state.location.pathname).toBe('/conversations')
-    expect(await screen.findByRole('main', { name: '全部对话' })).toBeVisible()
+    expect(await screen.findByRole('main', { name: '全部任务' })).toBeVisible()
     expect(await screen.findByRole('link', { name: /小王的秋季片/ })).toBeVisible()
     expect(screen.getByText('小王')).toBeVisible()
   })

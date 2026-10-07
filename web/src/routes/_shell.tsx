@@ -50,6 +50,9 @@ function AppShell() {
   const { state, update, persist } = useShellLayout()
   const [viewport, setViewport] = useState(() => window.innerWidth)
   const [mobileSidebarCollapsed, setMobileSidebarCollapsed] = useState(true)
+  const [composerFocusPending, setComposerFocusPending] = useState(false)
+  const requestComposerFocus = useCallback(() => setComposerFocusPending(true), [])
+  const consumeComposerFocus = useCallback(() => setComposerFocusPending(false), [])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   useEffect(() => {
@@ -128,6 +131,11 @@ function AppShell() {
   }
   const chrome = {
     sidebarOverlay: compact,
+    composerFocus: {
+      pending: composerFocusPending,
+      request: requestComposerFocus,
+      consume: consumeComposerFocus,
+    },
     ...(hasWorkbench && !compact
       ? {
           chat: {
@@ -154,6 +162,7 @@ function AppShell() {
   return (
     <LoginPromptProvider value={requireLogin}>
       <ShellChromeContext value={chrome}>
+        {/* 桌面：主区贴住侧栏与视口三边，与侧栏之间由拖柄画出常显分隔线；紧凑屏侧栏是抽屉，主区铺满。 */}
         <div className="relative flex h-dvh overflow-hidden" style={shellVars}>
           <AppSidebar
             collapsed={compact ? mobileSidebarCollapsed : state.sidebarCollapsed}
@@ -196,7 +205,7 @@ function AppShell() {
             />
           )}
           <div
-            className="relative flex min-w-0 flex-1"
+            className="relative flex min-w-0 flex-1 bg-background"
             ref={contentRef}
             style={{ flexDirection: state.firstPane === 'chat' ? 'row' : 'row-reverse' }}
           >

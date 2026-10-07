@@ -53,11 +53,11 @@ export function ConversationMembershipDialog({
 }: ConversationMembershipDialogProps) {
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogSurface aria-label="对话归属">
+      <DialogSurface aria-label="任务归属">
         <DialogHeader
           className="h-(--layout-dialog-header-height) items-center border-b-0 px-6 py-0"
           closeLabel="关闭"
-          title="对话归属"
+          title="任务归属"
         />
         {open && conversation ? (
           <MembershipForm

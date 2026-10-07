@@ -287,9 +287,7 @@ export function SearchListOptionContent({
       <span className="min-w-0 flex-1 truncate">
         <HighlightedLabel text={option.label} />
       </span>
-      {selected ? (
-        <Icon className="shrink-0 text-primary" decorative name="check" size="sm" />
-      ) : null}
+      {selected ? <Icon className="shrink-0" decorative name="check" size="sm" /> : null}
     </>
   )
 }

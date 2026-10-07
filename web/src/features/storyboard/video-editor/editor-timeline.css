@@ -1,423 +1,434 @@
+/* 面板的底色、圆角与控制条在 video-editor.css；这里只排两条轨。
+   一段是上下一对：视频 46px、中间 8px 放「改过」的灰线、原声 30px，上面 18px 是刻度。 */
 .video-editor-timeline {
-  margin-top: 20px;
+  --timeline-wave: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
+
   display: flex;
-  flex-direction: column;
-  flex: 0 0 auto;
   min-width: 0;
-  padding: 16px 20px 12px;
-  border: 1px solid var(--color-chat-hairline);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-lowest);
+  margin-top: 6px;
   color: var(--color-on-surface);
 }
 
-.video-editor-timeline-toolbar,
-.video-editor-timeline-heading,
-.video-editor-timeline-tools,
-.video-editor-timeline-footer,
-.video-editor-timeline-legend,
-.video-editor-timeline-ancestor {
+.dark .video-editor-timeline {
+  --timeline-wave: color-mix(in srgb, var(--color-on-surface) 52%, transparent);
+}
+
+.video-editor-timeline-heads {
+  position: relative;
+  flex: none;
+  width: 76px;
+  height: 102px;
+}
+
+.video-editor-timeline-head {
+  position: absolute;
+  left: 0;
   display: flex;
   align-items: center;
-}
-
-.video-editor-timeline-toolbar {
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 0 16px;
-}
-
-.video-editor-timeline-heading {
-  gap: 10px;
-  min-width: 0;
-}
-.video-editor-timeline-heading h3 {
-  font-size: var(--text-title-lg);
-  line-height: var(--text-title-lg--line-height);
-  font-weight: 600;
-  white-space: nowrap;
-}
-.video-editor-timeline-tools {
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.video-editor-timeline-tools button {
-  border: 1px solid var(--color-chat-hairline);
-  background: var(--color-surface-container-low);
-  color: var(--color-on-surface);
-}
-
-.video-editor-timeline-tools button:last-child {
-  margin-left: 8px;
-}
-
-.video-editor-timeline-tools button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.video-editor-timeline-viewport {
-  display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
-  gap: 12px;
-}
-
-.video-editor-timeline-ruler-spacer {
-  height: 38px;
-}
-.video-editor-timeline-track-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 72px;
-  padding-bottom: 24px;
-}
-.video-editor-timeline-track-label div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.video-editor-timeline-track-label strong {
-  font-size: var(--text-body);
-  font-weight: 500;
-  max-width: 55px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.video-editor-timeline-track-label span {
+  gap: 6px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
-  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
 }
-.video-editor-timeline-current-label {
-  height: 64px;
-  padding-bottom: 8px;
+
+.video-editor-timeline-head.is-video {
+  top: 18px;
+  height: 46px;
 }
+
+.video-editor-timeline-head.is-audio {
+  top: 72px;
+  height: 30px;
+}
+
+/* 让出气泡、手柄与焦点环的位置；窄屏横向滚动。 */
 .video-editor-timeline-scroll {
+  min-width: 0;
+  flex: 1;
+  margin: -10px -8px -6px;
+  padding: 10px 8px 6px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0 16px 6px;
-  margin: 0 -16px;
   scrollbar-width: thin;
 }
-.video-editor-timeline-content {
+
+.video-editor-timeline-lanes {
   position: relative;
+  min-width: 520px;
+  height: 102px;
   isolation: isolate;
-  width: 100%;
 }
+
 .video-editor-timeline-ruler {
-  position: relative;
-  height: 38px;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 18px;
 }
+
+/* 滑块本身透明，键盘焦点环画在刻度区上；指针按住拿到的焦点不画（见 editor-timeline.tsx 的 data-pointer）。 */
+.video-editor-timeline-ruler:has(> .video-editor-timeline-seek:focus-visible:not([data-pointer])) {
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: var(--state-focus-offset);
+}
+
 .video-editor-timeline-tick {
   position: absolute;
   top: 0;
-  color: var(--color-on-surface-muted);
+  translate: -50% 0;
+  color: var(--color-on-surface-faint);
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.video-editor-timeline-tick::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 23px;
-  height: 9px;
-  border-left: 1px solid var(--color-outline-variant);
+
+.video-editor-timeline-tick.is-first {
+  translate: 0 0;
 }
+
 .video-editor-timeline-tick.is-last {
-  transform: translateX(-100%);
+  translate: -100% 0;
 }
-.video-editor-timeline-tick.is-last::after {
-  left: auto;
-  right: 0;
-}
+
 .video-editor-timeline-seek {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  margin: 0;
   opacity: 0;
-  cursor: crosshair;
-}
-.video-editor-timeline-ruler:focus-within {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
-}
-.video-editor-timeline-track {
-  display: flex;
-  position: relative;
-}
-.video-editor-timeline-source-track {
-  height: 72px;
-  padding-bottom: 24px;
-}
-.video-editor-timeline-source-segment {
-  position: relative;
-  min-width: 0;
-  border-right: 2px solid var(--color-surface);
-}
-.video-editor-timeline-frames {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container);
-}
-.video-editor-timeline-frames img {
-  flex: 1 1 0;
-  min-width: 0;
-  width: 0;
-  height: 100%;
-  object-fit: cover;
-  border-right: 1px solid var(--color-surface);
-}
-.video-editor-timeline-empty {
-  display: grid;
-  height: 100%;
-  width: 100%;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container);
-  color: var(--color-on-surface-muted);
-}
-.video-editor-timeline-source-time {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 5px);
-  max-width: 100%;
-  overflow: hidden;
-  font-size: var(--text-caption);
-  color: var(--color-on-surface-muted);
-  font-variant-numeric: tabular-nums;
-}
-.video-editor-timeline-source-time.is-end {
-  left: auto;
-  right: 0;
-}
-.video-editor-timeline-gap {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  padding: 0 4px;
-  border: 1px dashed var(--color-outline);
-  border-radius: var(--radius-xs);
-  background: repeating-linear-gradient(
-    135deg,
-    transparent,
-    transparent 4px,
-    var(--color-surface-container) 4px,
-    var(--color-surface-container) 5px
-  );
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  text-align: center;
-  overflow: hidden;
-}
-.video-editor-timeline-current-track {
-  height: 64px;
-  padding-top: 4px;
-  padding-bottom: 8px;
-}
-.video-editor-timeline-segment {
-  position: relative;
-  min-width: 0;
-  height: 52px;
-  border: 0;
-  border-right: 2px solid var(--color-surface);
-  border-radius: var(--radius-xs);
-  padding: 0;
-  background: var(--color-surface-container);
   cursor: pointer;
 }
-.video-editor-timeline-change-label {
-  z-index: var(--z-local-2);
+
+/* 一段：视频、灰线位、原声上下一列，点哪里都是点这一段。 */
+.video-editor-timeline-item {
   position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  max-width: calc(100% - 24px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-on-primary-container);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-}
-.video-editor-timeline-selection {
-  position: absolute;
-  top: 0;
-  height: 60px;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-xs);
-  background: var(--color-state-active);
-  pointer-events: none;
-  z-index: var(--z-local-1);
-}
-.video-editor-timeline-handle {
-  position: absolute;
-  top: 0;
-  width: 28px;
-  height: 60px;
-  transform: translateX(-50%);
-  display: grid;
-  place-items: center;
-  z-index: var(--z-local-3);
+  top: 18px;
+  display: flex;
+  height: 84px;
+  flex-direction: column;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-on-primary);
+  cursor: pointer;
+}
+
+.video-editor-timeline-item.is-pending,
+.video-editor-timeline-lanes.is-readonly .video-editor-timeline-item {
+  cursor: default;
+}
+
+.video-editor-timeline-face {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.video-editor-timeline-face.is-video {
+  height: 46px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+}
+
+.video-editor-timeline-face.is-gap {
+  position: relative;
+  height: 8px;
+  overflow: visible;
+}
+
+.video-editor-timeline-face.is-audio {
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+/* 拖走的那几段在原处只留一个空框。 */
+.video-editor-timeline-item.is-slot .video-editor-timeline-face.is-video,
+.video-editor-timeline-item.is-slot .video-editor-timeline-face.is-audio {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+.video-editor-timeline-item.is-slot .video-editor-timeline-face > * {
+  visibility: hidden;
+}
+
+.video-editor-timeline-frames {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-basis: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-surface-faint);
+}
+
+.video-editor-timeline-frames img,
+.video-editor-timeline-frame-empty {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 0;
+  object-fit: cover;
+}
+
+.video-editor-timeline-mark {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface-muted);
+}
+
+.video-editor-timeline-wave {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-basis: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-editor-timeline-wave svg {
+  position: absolute;
+  inset: 3px 0;
+  width: 100%;
+  height: calc(100% - 6px);
+}
+
+.video-editor-timeline-wave path {
+  fill: none;
+  stroke: var(--timeline-wave);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.video-editor-timeline-wave-loading {
+  width: calc(100% - 16px);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-hairline);
+}
+
+.video-editor-timeline-wave-note {
+  overflow: hidden;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+/* 草稿比所看那一版短：右边空出的那截只描一个细框。 */
+.video-editor-timeline-tail {
+  position: absolute;
+  top: 18px;
+  height: 46px;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  pointer-events: none;
+}
+
+/* 裁剪中被裁掉的那截：压一层面板底色，淡下去。 */
+.video-editor-timeline-ghost {
+  position: absolute;
+  top: 18px;
+  z-index: var(--z-local-1);
+  height: 84px;
+  background: color-mix(in srgb, var(--color-surface-container-low) 72%, transparent);
+  pointer-events: none;
+}
+
+/* 选中：视频段墨色 2px 框，对应的原声段 1px 淡墨细框。 */
+.video-editor-timeline-box {
+  position: absolute;
+  top: 15px;
+  z-index: var(--z-local-2);
+  height: 52px;
+  border: 2px solid var(--color-on-surface);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}
+
+.video-editor-timeline-box.is-linked {
+  top: 71px;
+  height: 32px;
+  border-width: 1px;
+  border-color: var(--color-on-surface-faint);
+  border-radius: var(--radius-sm);
+}
+
+.video-editor-timeline-handle {
+  position: absolute;
+  top: 15px;
+  z-index: var(--z-local-3);
+  display: grid;
+  width: 8px;
+  height: 52px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: var(--color-on-surface);
   cursor: ew-resize;
   touch-action: none;
 }
+
+.video-editor-timeline-handle.is-start {
+  translate: -3px 0;
+  border-radius: var(--radius-md) var(--radius-xs) var(--radius-xs) var(--radius-md);
+}
+
+.video-editor-timeline-handle.is-end {
+  translate: -7px 0;
+  border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
+}
+
+/* 手柄只有 8px 宽，热区向两侧放宽。 */
 .video-editor-timeline-handle::before {
   content: '';
   position: absolute;
-  width: 10px;
-  height: 24px;
-  border-radius: var(--radius-xs);
-  background: var(--color-primary);
+  inset: -4px -10px;
 }
-.video-editor-timeline-handle span {
-  position: relative;
-  display: block;
+
+.video-editor-timeline-handle::after {
+  content: '';
   width: 2px;
-  height: 12px;
+  height: 14px;
   border-radius: var(--radius-full);
-  background: currentColor;
+  background: var(--color-surface-container-lowest);
 }
-.video-editor-timeline-playhead {
-  position: absolute;
-  top: 23px;
-  bottom: 13px;
-  width: 1px;
-  background: var(--color-primary);
-  z-index: var(--z-local-2);
-  pointer-events: none;
+
+.video-editor-timeline-handle.is-pressed {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-on-surface) 16%, transparent);
 }
-.video-editor-timeline-playhead > span {
+
+.video-editor-timeline-bubble {
   position: absolute;
-  top: -24px;
-  left: 0;
-  transform: translateX(-50%);
-  border-radius: var(--radius-xs);
-  padding: 3px 6px;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  top: -8px;
+  z-index: var(--z-local-3);
+  display: flex;
+  height: 22px;
+  align-items: center;
+  translate: -50% 0;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  pointer-events: none;
 }
-.video-editor-timeline-playhead > span.at-start {
-  transform: none;
-}
-.video-editor-timeline-playhead > span.at-end {
-  transform: translateX(-100%);
-}
-.video-editor-timeline-footer {
-  margin-top: 8px;
-  gap: 14px;
-  min-height: 36px;
-}
-.video-editor-timeline-legend {
-  gap: 18px;
-  font-size: var(--text-label);
-  white-space: nowrap;
-}
-.video-editor-timeline-legend > span {
+
+/* AI 正在改的那几段：盖一层半透明玻璃，写着已等了多久。 */
+.video-editor-timeline-running {
+  position: absolute;
+  top: 18px;
+  z-index: var(--z-local-2);
   display: flex;
+  height: 84px;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-glass-base) 62%, transparent);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  backdrop-filter: blur(2px);
 }
-.video-editor-timeline-legend > span::before {
+
+/* 拖动调序：被拖的那串浮起来跟着指针，插入处一条墨线。 */
+.video-editor-timeline-lifted {
+  position: absolute;
+  top: 8px;
+  z-index: var(--z-local-3);
+  display: flex;
+  height: 46px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--color-on-surface);
+  outline-offset: 1px;
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-3);
+  pointer-events: none;
+}
+
+.video-editor-timeline-insert {
+  position: absolute;
+  top: 18px;
+  z-index: var(--z-local-3);
+  width: 2px;
+  height: 84px;
+  translate: -2px 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  pointer-events: none;
+}
+
+.video-editor-timeline-insert::before,
+.video-editor-timeline-insert::after {
   content: '';
-  width: 16px;
-  height: 16px;
-  border-radius: var(--radius-xs);
-  background: var(--color-primary-container-solid);
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  translate: -50% 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
 }
-.video-editor-timeline-ancestors {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  flex: 0 1 auto;
-  margin-left: auto;
-  min-width: 0;
-  overflow-x: auto;
-  font-size: var(--text-label);
-  scrollbar-width: thin;
+
+.video-editor-timeline-insert::before {
+  top: -4px;
 }
-.video-editor-timeline-ancestor {
-  gap: 5px;
-  flex-shrink: 0;
+
+.video-editor-timeline-insert::after {
+  bottom: -4px;
 }
-.video-editor-timeline-ancestor button {
-  min-height: 30px;
-  margin: 0 6px;
-  padding: 0 2px;
-  border-bottom: 1px solid transparent;
-  border-radius: var(--radius-none);
-  color: var(--color-on-surface-muted);
-  white-space: nowrap;
-  cursor: pointer;
+
+.video-editor-timeline-playhead {
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  z-index: var(--z-local-3);
+  width: 2px;
+  translate: -1px 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-surface-container-lowest) 70%, transparent);
+  pointer-events: none;
 }
-.video-editor-timeline-ancestor button[aria-current] {
-  border-bottom-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.video-editor-timeline-ancestor > svg {
-  color: var(--color-on-surface-muted);
+
+.video-editor-timeline-playhead::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  translate: -50% 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  box-shadow: 0 0 0 2px var(--color-surface-container-low);
 }
 
 @media (max-width: 599px) {
-  .video-editor-timeline {
-    padding: 12px;
+  .video-editor-timeline-heads {
+    width: 52px;
   }
-  .video-editor-timeline-toolbar {
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .video-editor-timeline-tools {
-    gap: 8px;
-  }
-  .video-editor-timeline-tools button:last-child {
-    margin-left: 0;
-  }
-  .video-editor-timeline-viewport {
-    grid-template-columns: 60px minmax(0, 1fr);
-    gap: 8px;
-  }
-  .video-editor-timeline-track-label {
-    gap: 6px;
-  }
-  .video-editor-timeline-track-label > svg {
+
+  .video-editor-timeline-head > svg {
     display: none;
   }
-  .video-editor-timeline-footer {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .video-editor-timeline-legend {
-    gap: 12px;
-  }
-  .video-editor-timeline-ancestors {
-    justify-content: flex-start;
-  }
-}
-
-.video-editor-timeline-segment.is-edited::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-xs);
-  background: var(--color-primary-container);
-  pointer-events: none;
-  z-index: var(--z-local-1);
 }

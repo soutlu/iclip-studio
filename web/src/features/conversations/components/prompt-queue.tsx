@@ -33,7 +33,7 @@ export function PromptQueue({ canSteer, onDiscard, onSteer, prompts, readOnly }:
         <section aria-label="排队队列" className="flex w-full flex-col items-end gap-2">
           <p className="flex items-center gap-1 px-1.5 text-body-sm text-chat-muted-text">
             <Icon decorative name="mail" size="xs" />
-            队列 · <strong className="font-medium">{prompts.length} 个任务等待发送</strong>
+            {prompts.length} 条消息等着发
           </p>
           {prompts.map((prompt, index) => (
             <QueueRow
@@ -80,8 +80,8 @@ function QueueRow({
     <div className="flex items-center justify-end gap-2">
       {first && canSteer ? (
         <button
-          aria-label="立即发送到当前回合"
-          className="grid size-(--control-height-xs) shrink-0 cursor-pointer place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-xs)] ui-focus transition-[background-color,transform] ui-motion-s hover:bg-primary-hover active:scale-90"
+          aria-label="现在就发"
+          className="grid size-(--control-height-xs) shrink-0 cursor-pointer place-items-center rounded-full bg-inverse-surface text-inverse-on-surface shadow-[var(--shadow-xs)] ui-focus transition-[background-color,transform] ui-motion-s active:scale-90"
           onClick={() => onSteer(prompt.promptId)}
           type="button"
         >
@@ -134,14 +134,14 @@ function QueueRow({
           </span>
         ) : null}
         {first ? (
-          <span className="shrink-0 rounded-full bg-primary-container px-1.5 py-0.5 text-caption text-on-primary-container">
+          <span className="shrink-0 rounded-full bg-secondary-container px-1.5 py-0.5 text-caption text-on-secondary-container">
             下一条
           </span>
         ) : null}
         {readOnly ? null : (
           <button
             aria-label="撤回"
-            className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-xs text-chat-muted-text opacity-0 ui-focus transition-[opacity,color,background-color] ui-motion-s group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-danger-bg hover:text-danger-text"
+            className="grid size-[22px] shrink-0 cursor-pointer place-items-center rounded-xs text-chat-muted-text opacity-0 ui-focus transition-[opacity,color,background-color] ui-motion-s group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-danger-bg hover:text-danger-text touch:opacity-100"
             onClick={() => onDiscard(prompt.promptId)}
             type="button"
           >

@@ -1,12 +1,13 @@
-import { createEvent, fireEvent, render, screen } from '@testing-library/react'
+import { createEvent, fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { renderWithTooltip } from '@/testing/render'
 import { DialogHeader, DialogRoot, DialogSurface } from './dialog'
 
 const fileDrag = () => ({ dropEffect: '', files: [], items: [], types: ['Files'] })
 
 describe('DialogSurface 对文件拖放', () => {
   it('弹窗本体与遮罩都标成禁止落点，drop 带着 defaultPrevented 冒出去', () => {
-    render(
+    renderWithTooltip(
       <DialogRoot open>
         <DialogSurface aria-describedby={undefined}>
           <DialogHeader closeLabel="关闭" title="编辑图片" />
@@ -27,7 +28,7 @@ describe('DialogSurface 对文件拖放', () => {
   })
 
   it('弹窗里自己的拖放区先接管的，弹窗不再改写它的落点效果', () => {
-    render(
+    renderWithTooltip(
       <DialogRoot open>
         <DialogSurface aria-describedby={undefined}>
           <DialogHeader closeLabel="关闭" title="编辑图片" />
@@ -47,7 +48,7 @@ describe('DialogSurface 对文件拖放', () => {
   })
 
   it('拖的不是文件时不插手', () => {
-    render(
+    renderWithTooltip(
       <DialogRoot open>
         <DialogSurface aria-describedby={undefined}>
           <DialogHeader closeLabel="关闭" title="编辑图片" />

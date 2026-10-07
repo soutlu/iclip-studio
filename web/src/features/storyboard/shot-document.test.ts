@@ -15,7 +15,6 @@ import {
   type ShotsDocument,
   extractImageIndexes,
   formatShotPrompt,
-  formatShotPrompts,
   updateTimelinePrompt,
   validateShot,
 } from './shot-document'
@@ -206,7 +205,7 @@ describe('structured editing', () => {
     expect(first.prompt.timeline[0]?.image_indexes).toEqual([1])
   })
 
-  it('文本导出保留原文空白、原始标记和小数时间，批量导出显式分组', () => {
+  it('文本导出保留原文空白、原始标记和小数时间', () => {
     const original = updateTimelinePrompt(shot, 0, '  原文 @Image02。\n')
     const exported = formatShotPrompt(original)
     expect(exported).toBe(
@@ -215,9 +214,6 @@ describe('structured editing', () => {
         '[4.25–8.5秒｜镜头2] 走近拍摄鞋面 @Image1。\n' +
         '[8.5–9秒｜镜头3] 只有旁白，没有图片引用。\n' +
         '不要生成字幕，不要生成背景音乐。',
-    )
-    expect(formatShotPrompts([original, { ...original, index: 2 }])).toBe(
-      `镜头组 1\n${exported}\n\n镜头组 2\n${exported}`,
     )
   })
 

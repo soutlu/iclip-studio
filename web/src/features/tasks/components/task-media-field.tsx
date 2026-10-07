@@ -134,7 +134,7 @@ export function TaskMediaField({
         aria-label={name}
         className={cn(
           'relative flex flex-wrap gap-2 rounded-sm',
-          dragOver && 'outline-2 outline-offset-4 outline-primary',
+          dragOver && 'outline-2 outline-offset-4 outline-on-surface',
         )}
         {...dragHandlers}
         role="group"
@@ -216,7 +216,8 @@ export function TaskMediaField({
           <p className="text-body-sm text-on-surface-faint">未添加</p>
         )}
         {dragOver && (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-sm bg-primary-container text-body-sm text-on-primary-container">
+          // 拖放目标与其他投放区一致保持中性：外圈墨色描边标出目标，提示面用不透明中性底盖住缩略图。
+          <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-sm bg-surface-container-high text-body-sm font-medium text-on-surface">
             松开{kind === 'video' && value.length > 0 ? '替换视频' : '添加素材'}
           </div>
         )}

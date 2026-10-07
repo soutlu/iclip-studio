@@ -371,6 +371,27 @@ export type CollectionsPageOut = {
 }
 
 /**
+ * ComposeSegmentIn
+ *
+ * 合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录
+ * 自己的媒体时间算；``end`` 为空就取到那条的结尾。
+ */
+export type ComposeSegmentIn = {
+  /**
+   * End
+   */
+  end?: number | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Start
+   */
+  start: number
+}
+
+/**
  * ConversationActivityOut
  *
  * 这段对话此刻在忙什么。侧栏据此画角标。
@@ -594,6 +615,10 @@ export type ConversationIn = {
    */
   id?: string | null
   /**
+   * Sameas
+   */
+  sameAs?: string | null
+  /**
    * Taskid
    */
   taskId?: string | null
@@ -633,6 +658,10 @@ export type ConversationOut = {
    */
   deletedAt: string | null
   /**
+   * Eventepoch
+   */
+  eventEpoch: string
+  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -648,6 +677,10 @@ export type ConversationOut = {
    * Lastrunid
    */
   lastRunId: string | null
+  /**
+   * Lastseq
+   */
+  lastSeq: number
   /**
    * Owneruserid
    */
@@ -735,6 +768,10 @@ export type ConversationsAuditItemOut = {
    */
   deletedAt: string | null
   /**
+   * Eventepoch
+   */
+  eventEpoch: string
+  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -750,6 +787,10 @@ export type ConversationsAuditItemOut = {
    * Lastrunid
    */
   lastRunId: string | null
+  /**
+   * Lastseq
+   */
+  lastSeq: number
   /**
    * Latestmasterurl
    */
@@ -1012,6 +1053,403 @@ export type FaceOut = {
    * Watermarkoutputurl
    */
   watermarkOutputUrl: string | null
+}
+
+/**
+ * FilmFrameOut
+ *
+ * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ *
+ * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
+ * 用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法
+ * 同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。
+ */
+export type FilmFrameOut = {
+  /**
+   * Aspectratio
+   */
+  aspectRatio: string | null
+  /**
+   * Kind
+   */
+  kind: 'generated' | 'photo'
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Missing
+   */
+  missing: Array<string>
+  /**
+   * Node
+   */
+  node: string
+  /**
+   * Number
+   */
+  number: number | null
+  /**
+   * Prompt
+   */
+  prompt: Array<FilmPromptTextOut | FilmPromptImageOut> | null
+  /**
+   * Url
+   */
+  url: string | null
+}
+
+/**
+ * FilmGroupOut
+ */
+export type FilmGroupOut = {
+  /**
+   * Aspectratio
+   */
+  aspectRatio: string
+  /**
+   * Frames
+   */
+  frames: Array<FilmFrameOut>
+  /**
+   * Index
+   */
+  index: number
+  /**
+   * Model
+   */
+  model: string
+  /**
+   * Seconds
+   */
+  seconds: number
+  /**
+   * Settings
+   */
+  settings: Array<FilmSettingOut>
+  /**
+   * Shots
+   */
+  shots: Array<FilmShotOut>
+  /**
+   * Video
+   */
+  video: string
+}
+
+/**
+ * FilmImageChoiceIn
+ *
+ * 给 ``node`` 换成 ``url``；``url`` 为 null 是取消生成图的选用，这张图就没有图了。
+ *
+ * 两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。
+ */
+export type FilmImageChoiceIn = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Node
+   */
+  node: string
+  /**
+   * Runversion
+   */
+  runVersion: number | null
+  /**
+   * Url
+   */
+  url: string | null
+}
+
+/**
+ * FilmImageGenerationIn
+ *
+ * 按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。
+ */
+export type FilmImageGenerationIn = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Node
+   */
+  node: string
+  prompt?: FilmImagePromptIn | null
+  /**
+   * Runversion
+   */
+  runVersion: number | null
+}
+
+/**
+ * FilmImagePromptIn
+ *
+ * 编辑器里改过的描述与参考图，只用这一次。
+ */
+export type FilmImagePromptIn = {
+  /**
+   * Referenceimageurls
+   */
+  referenceImageUrls: Array<string>
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmJobOut
+ *
+ * 受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。
+ */
+export type FilmJobOut = {
+  /**
+   * Jobid
+   */
+  jobId: string
+}
+
+/**
+ * FilmLineEditIn
+ *
+ * 改好的一句台词的字；``target`` 照读到的原样传回。
+ */
+export type FilmLineEditIn = {
+  /**
+   * Target
+   */
+  target: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmLineOut
+ *
+ * 镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。
+ */
+export type FilmLineOut = {
+  /**
+   * Role
+   */
+  role: string
+  /**
+   * Target
+   */
+  target: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmPromptImageOut
+ *
+ * 描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。
+ */
+export type FilmPromptImageOut = {
+  /**
+   * Kind
+   */
+  kind?: 'image'
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Node
+   */
+  node: string
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * FilmPromptTextOut
+ */
+export type FilmPromptTextOut = {
+  /**
+   * Kind
+   */
+  kind?: 'text'
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmSettingOut
+ *
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
+ * 可以几张，拍法和声音为空。
+ */
+export type FilmSettingOut = {
+  /**
+   * Images
+   */
+  images: Array<string>
+  /**
+   * Kind
+   */
+  kind: 'shooting' | 'element' | 'voice'
+  /**
+   * Label
+   */
+  label: string | null
+  /**
+   * Target
+   */
+  target: string | null
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmShotOut
+ *
+ * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；
+ * ``target`` 为 null 的镜头不能在页面上改。
+ */
+export type FilmShotOut = {
+  /**
+   * End
+   */
+  end: number
+  /**
+   * Lines
+   */
+  lines: Array<FilmLineOut>
+  /**
+   * Parts
+   */
+  parts: Array<string>
+  /**
+   * Start
+   */
+  start: number
+  /**
+   * Target
+   */
+  target: string | null
+  /**
+   * View
+   */
+  view: string | null
+}
+
+/**
+ * FilmTextEditIn
+ *
+ * 改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它
+ * 多一段，台词只改字；其余给 ``text``。
+ */
+export type FilmTextEditIn = {
+  /**
+   * Lines
+   */
+  lines?: Array<FilmLineEditIn> | null
+  /**
+   * Parts
+   */
+  parts?: Array<string> | null
+  /**
+   * Target
+   */
+  target: string
+  /**
+   * Text
+   */
+  text?: string | null
+}
+
+/**
+ * FilmTextEditsIn
+ *
+ * ``filmVersion`` 是读到的工程文件版本号，对不上是 409。
+ */
+export type FilmTextEditsIn = {
+  /**
+   * Edits
+   */
+  edits: Array<FilmTextEditIn>
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+}
+
+/**
+ * FilmVideoGenerationIn
+ *
+ * 给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。
+ */
+export type FilmVideoGenerationIn = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Generateaudio
+   */
+  generateAudio: boolean
+  /**
+   * Model
+   */
+  model: string
+  /**
+   * Resolution
+   */
+  resolution: string
+  /**
+   * Runversion
+   */
+  runVersion: number | null
+  /**
+   * Video
+   */
+  video: string
+}
+
+/**
+ * FilmViewEnvelope
+ */
+export type FilmViewEnvelope = {
+  film: FilmViewOut
+}
+
+/**
+ * FilmViewOut
+ *
+ * 制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。
+ */
+export type FilmViewOut = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Groups
+   */
+  groups: Array<FilmGroupOut>
+  /**
+   * Problems
+   */
+  problems: number
+  /**
+   * Runversion
+   */
+  runVersion: number | null
 }
 
 /**
@@ -1387,6 +1825,10 @@ export type LibraryAuthorsOut = {
  */
 export type LibraryVideoDetailOut = {
   /**
+   * Canmakesame
+   */
+  canMakeSame: boolean
+  /**
    * Groups
    */
   groups: Array<ShotGroupOut>
@@ -1709,7 +2151,8 @@ export type OpsBatchOut = {
  *
  * ``GET /transcript/ops`` 的补批响应。
  *
- * ``complete`` 为假表示要的批次已经出了日志窗口，客户端得整页重拉。
+ * ``complete`` 为假表示要的批次已经出了日志窗口，或调用方给的 ``stream_epoch`` 与当前实时流
+ * 对不上，客户端得整页重拉。``stream_epoch`` 是这些批次所属的实时流。
  */
 export type OpsCatchup = {
   /**
@@ -1728,6 +2171,10 @@ export type OpsCatchup = {
    * Latest Seq
    */
   latest_seq: number
+  /**
+   * Stream Epoch
+   */
+  stream_epoch: string
 }
 
 /**
@@ -2845,6 +3292,10 @@ export type TranscriptPage = {
    */
   seq: number
   /**
+   * Stream Epoch
+   */
+  stream_epoch: string
+  /**
    * Tasks
    */
   tasks?: Array<TranscriptTask>
@@ -3488,9 +3939,13 @@ export type VersionOut = {
 /**
  * VideoComposeIn
  *
- * 一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。
+ * 一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。
  */
 export type VideoComposeIn = {
+  /**
+   * Basejobid
+   */
+  baseJobId: string
   /**
    * Conversationid
    */
@@ -3502,9 +3957,9 @@ export type VideoComposeIn = {
     [key: string]: unknown
   } | null
   /**
-   * Sourcejobid
+   * Segments
    */
-  sourceJobId: string
+  segments: Array<ComposeSegmentIn>
   /**
    * Taskid
    */
@@ -3529,10 +3984,11 @@ export type VideoContent = {
 /**
  * VideoEditIn
  *
- * 一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。
+ * 一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
  *
- * 与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切
- * 一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
+ * 转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+ * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
+ * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
  * ``VideoGenerationIn``，来源、原作与区间落列。
  */
 export type VideoEditIn = {
@@ -3572,6 +4028,10 @@ export type VideoEditIn = {
    * Reference Image Urls
    */
   reference_image_urls?: Array<string>
+  /**
+   * Reference Video Urls
+   */
+  reference_video_urls: [string]
   /**
    * Seconds
    */
@@ -4651,6 +5111,38 @@ export type DeleteConversationConversationsConversationIdDeleteResponses = {
 export type DeleteConversationConversationsConversationIdDeleteResponse =
   DeleteConversationConversationsConversationIdDeleteResponses[keyof DeleteConversationConversationsConversationIdDeleteResponses]
 
+export type ReadConversationConversationsConversationIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}'
+}
+
+export type ReadConversationConversationsConversationIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadConversationConversationsConversationIdGetError =
+  ReadConversationConversationsConversationIdGetErrors[keyof ReadConversationConversationsConversationIdGetErrors]
+
+export type ReadConversationConversationsConversationIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ConversationEnvelope
+}
+
+export type ReadConversationConversationsConversationIdGetResponse =
+  ReadConversationConversationsConversationIdGetResponses[keyof ReadConversationConversationsConversationIdGetResponses]
+
 export type RenameConversationConversationsConversationIdPatchData = {
   body: ConversationRename
   path: {
@@ -4746,6 +5238,170 @@ export type SetConversationCompletionConversationsConversationIdCompletionPutRes
 
 export type SetConversationCompletionConversationsConversationIdCompletionPutResponse =
   SetConversationCompletionConversationsConversationIdCompletionPutResponses[keyof SetConversationCompletionConversationsConversationIdCompletionPutResponses]
+
+export type ReadConversationFilmConversationsConversationIdFilmGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film'
+}
+
+export type ReadConversationFilmConversationsConversationIdFilmGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadConversationFilmConversationsConversationIdFilmGetError =
+  ReadConversationFilmConversationsConversationIdFilmGetErrors[keyof ReadConversationFilmConversationsConversationIdFilmGetErrors]
+
+export type ReadConversationFilmConversationsConversationIdFilmGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: FilmViewEnvelope
+}
+
+export type ReadConversationFilmConversationsConversationIdFilmGetResponse =
+  ReadConversationFilmConversationsConversationIdFilmGetResponses[keyof ReadConversationFilmConversationsConversationIdFilmGetResponses]
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutData = {
+  body: FilmImageChoiceIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/image'
+}
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutError =
+  ChooseConversationFilmImageConversationsConversationIdFilmImagePutErrors[keyof ChooseConversationFilmImageConversationsConversationIdFilmImagePutErrors]
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses = {
+  /**
+   * Successful Response
+   */
+  200: FilmViewEnvelope
+}
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponse =
+  ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses[keyof ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses]
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostData = {
+  body: FilmImageGenerationIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/image-generations'
+}
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostErrors =
+  {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError
+  }
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostError =
+  GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostErrors[keyof GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostErrors]
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponses =
+  {
+    /**
+     * Successful Response
+     */
+    202: FilmJobOut
+  }
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponse =
+  GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponses[keyof GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponses]
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchData = {
+  body: FilmTextEditsIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/text'
+}
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchError =
+  EditConversationFilmTextConversationsConversationIdFilmTextPatchErrors[keyof EditConversationFilmTextConversationsConversationIdFilmTextPatchErrors]
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: FilmViewEnvelope
+}
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchResponse =
+  EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses[keyof EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses]
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostData = {
+  body: FilmVideoGenerationIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/video-generations'
+}
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostErrors =
+  {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError
+  }
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostError =
+  GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostErrors[keyof GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostErrors]
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses =
+  {
+    /**
+     * Successful Response
+     */
+    202: FilmJobOut
+  }
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponse =
+  GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses[keyof GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses]
 
 export type ApproveConversationsConversationIdInteractionsInteractionIdPostData = {
   body: ApprovalRequest
@@ -5045,6 +5701,10 @@ export type CatchupConversationsConversationIdTranscriptOpsGetData = {
      * Agent Id
      */
     agent_id?: string
+    /**
+     * Stream Epoch
+     */
+    stream_epoch?: string | null
   }
   url: '/conversations/{conversation_id}/transcript/ops'
 }

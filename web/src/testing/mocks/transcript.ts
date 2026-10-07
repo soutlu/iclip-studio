@@ -1,12 +1,20 @@
 /** MSW 同时模拟 REST 历史、WebSocket 批次和消息提交；单测可覆盖端点以固定场景。 */
 
 import { http, HttpResponse, ws } from 'msw'
-import { mockConversationOwner } from './conversations'
+import { type MockConversation, mockConversationOwner, mockSessionEnvelope } from './conversations'
+import { toolShowcaseInteractions, toolShowcaseTurns } from './tool-showcase'
 import { SHOTS_MOCK_PATH, touchMockShots, watchMockGenerations } from './workspace'
 
 const HISTORY_TURNS = 2
 
 const HISTORY_SEQ = 10
+
+/** 原型环境的实时流不会重启，epoch 固定。 */
+export const MOCK_STREAM_EPOCH = 'mock-stream'
+
+/** 长对话：14 轮历史，验证首屏只读 10 轮、向上翻接上更早的；按地址打开，不进侧栏，也不自动起演示运行。 */
+export const MOCK_LONG_CONVERSATION_ID = '0199aaaa-0000-7000-8000-0000000000aa'
+const LONG_HISTORY_TURNS = 14
 
 const DEMO_CHUNKS = [
   '好的，我先看一下这段素材：\n\n',
@@ -37,9 +45,23 @@ type Batch = unknown[]
 
 type Connection = {
   conversationId: string
-  /** 这条连接订了哪些 agent 的流；主流与子代理流各自推送。 */
+  /** 这条连接在这段对话里订了哪些 agent 的流；主流与子代理流各自推送。 */
   agents: Set<string>
   send: (payload: { agent_id: string; ops: Batch; seq: number }) => void
+}
+
+/** 能接着补就返回要补的批次，否则（没带水位、epoch 不对、水位越界）返回 null，该回 reset。 */
+const replayFrom = (
+  conversationId: string,
+  agentId: string,
+  since: number | undefined,
+  epoch: string | undefined,
+): { ops: Batch; seq: number }[] | null => {
+  if (since === undefined || epoch !== MOCK_STREAM_EPOCH) return null
+  const key = streamKey(conversationId, agentId)
+  const current = seqOf.get(key) ?? HISTORY_SEQ
+  if (since < HISTORY_SEQ || since > current) return null
+  return (logOf.get(key) ?? []).filter((batch) => batch.seq > since)
 }
 
 const connections = new Set<Connection>()
@@ -81,10 +103,17 @@ const timers = new Map<string, ReturnType<typeof setTimeout>[]>()
 /** 待审批会话使用固定未结束轮次，不自动启动演示运行。 */
 const awaitingApproval = new Set<string>()
 
-const justFinished = new Set<{ id: string; lastRunId: string | null }>()
+const justFinished = new Set<MockConversation>()
 
-/** 连接后更新行上的 lastRunId 并发送结束事件，模拟未读运行。 */
-export const markMockJustFinished = (conversation: { id: string; lastRunId: string | null }) => {
+/** 工具过程展示对话：只回看历史，不自动起演示运行。 */
+const toolShowcases = new Set<string>()
+
+export const markMockToolShowcase = (conversationId: string) => {
+  toolShowcases.add(conversationId)
+}
+
+/** 连接后照服务端发开跑的 updated（带新 lastRunId）与结束事件，模拟未读运行。 */
+export const markMockJustFinished = (conversation: MockConversation) => {
   justFinished.add(conversation)
 }
 
@@ -108,6 +137,7 @@ export const resetMockTranscript = () => {
   queues.clear()
   awaitingApproval.clear()
   justFinished.clear()
+  toolShowcases.clear()
   decisions.clear()
 }
 
@@ -130,21 +160,42 @@ export const markMockAwaitingApproval = (conversationId: string) => {
   })
 }
 
+/** 超过十二行，审批卡预览先收起、可展开全部。 */
+const APPROVAL_DOCUMENT = [
+  '# 封面',
+  '',
+  '两张镜头帧拼版，主图在左。',
+  '',
+  '## 画面',
+  '',
+  '- 左：镜头 1 的亚麻衬衫袖口特写，占画面三分之二',
+  '- 右：镜头 2 的户外全景，压暗两档做衬底',
+  '- 品牌字样放在右下角，不压住衬衫',
+  '',
+  '## 文字',
+  '',
+  '标题「夏季亚麻」用粗体，副标题写「轻、透、松弛」。',
+  '',
+  '## 尺寸',
+  '',
+  '竖版 9:16，导出 1080 × 1920，另存一张 1:1 给商品页。',
+].join('\n')
+
 const approvalFrame = (state: 'running' | 'done' | 'error') => ({
   approvalId: APPROVAL_INTERACTION_ID,
   display: {
-    content: '# 封面\n\n两张镜头帧拼版，主图在左。',
+    content: APPROVAL_DOCUMENT,
     kind: 'file_io',
     operation: 'write',
     path: 'shots/cover.md',
   },
   frameId: `${APPROVAL_STEP_ID}.f4`,
-  input: { path: 'shots/cover.md', text: '# 封面\n\n两张镜头帧拼版，主图在左。' },
+  input: { path: 'shots/cover.md', text: APPROVAL_DOCUMENT },
   kind: 'tool',
   name: 'write_file',
   state,
   toolCallId: APPROVAL_TOOL_CALL_ID,
-  ...(state === 'done' ? { output: '已写入 8 行' } : {}),
+  ...(state === 'done' ? { output: '已写入 17 行' } : {}),
   ...(state === 'error' ? { error: '你拒绝了这一步' } : {}),
 })
 
@@ -272,23 +323,44 @@ export const mockChildPage = (conversationId: string, childId: string) => ({
   pending_interactions: [],
   prompts: [],
   seq: seqOf.get(streamKey(conversationId, childId)) ?? HISTORY_SEQ,
+  stream_epoch: MOCK_STREAM_EPOCH,
   tasks: [],
   title: '',
   todos: [],
 })
 
+/** 一页历史：照后端按轮切，缺省取最新的 pageSize 轮，给了 beforeTurn 取它之前的那一页。 */
+const pageOf = <T extends { turnId: string }>(
+  turns: readonly T[],
+  { beforeTurn, pageSize }: { beforeTurn?: string | null; pageSize?: number },
+): { items: T[]; hasMore: boolean } => {
+  const end =
+    beforeTurn === undefined || beforeTurn === null
+      ? turns.length
+      : turns.findIndex((item) => item.turnId === beforeTurn)
+  const start = Math.max(0, end - (pageSize ?? turns.length))
+  return { hasMore: start > 0, items: turns.slice(start, end) }
+}
+
 /** 为待审批会话追加固定审批轮；未传 ID 时返回普通历史。 */
-export const mockTranscriptPage = (conversationId = '') => {
+export const mockTranscriptPage = (
+  conversationId = '',
+  request: { beforeTurn?: string | null; pageSize?: number } = {},
+) => {
   const awaiting = awaitingApproval.has(conversationId)
+  const showcase = toolShowcases.has(conversationId)
+  const history = showcase
+    ? toolShowcaseTurns()
+    : conversationId === MOCK_LONG_CONVERSATION_ID
+      ? Array.from({ length: LONG_HISTORY_TURNS }, (_, index) => longTurn(index + 1))
+      : Array.from({ length: HISTORY_TURNS }, (_, index) => historyTurn(index + 1))
+  const page = pageOf([...history, ...(awaiting ? [approvalTurn()] : [])], request)
   return {
     agent_id: 'main',
     agents: [{ agentId: 'main', type: 'main' }],
-    has_more: false,
-    interactions: awaiting ? [pendingApproval] : [],
-    items: [
-      ...Array.from({ length: HISTORY_TURNS }, (_, index) => historyTurn(index + 1)),
-      ...(awaiting ? [approvalTurn()] : []),
-    ],
+    has_more: page.hasMore,
+    interactions: awaiting ? [pendingApproval] : showcase ? toolShowcaseInteractions : [],
+    items: page.items,
     meta: {
       activity: awaiting ? 'turn' : 'idle',
       agent: { contextTokens: 32768, contextUsage: 0.03125, maxContextTokens: 1048576 },
@@ -308,11 +380,47 @@ export const mockTranscriptPage = (conversationId = '') => {
       : [],
     // 页里只有历史那几轮，水位也停在历史处；之后的都从日志补，页与水位才对得上。
     seq: HISTORY_SEQ,
+    stream_epoch: MOCK_STREAM_EPOCH,
     tasks: [],
-    title: '夜景延时素材生成',
+    title: showcase
+      ? '工具过程展示'
+      : conversationId === MOCK_LONG_CONVERSATION_ID
+        ? '长对话回看'
+        : '夜景延时素材生成',
     todos: [],
   }
 }
+
+/** 长对话里的一轮：一问一答，回复带轮号，便于断言顺序。 */
+const longTurn = (ordinal: number) => ({
+  content: [{ text: `长对话第 ${ordinal} 问`, type: 'text' }],
+  durationMs: 1200,
+  endedAt: '2026-08-30T01:00:00Z',
+  kind: 'turn',
+  ordinal,
+  origin: { kind: 'user' },
+  startedAt: '2026-08-30T01:00:00Z',
+  state: 'completed',
+  steps: [
+    {
+      frames: [
+        {
+          frameId: `t${ordinal}.1.f1`,
+          kind: 'text',
+          role: 'assistant',
+          text: `长对话第 ${ordinal} 轮的回复。`,
+        },
+      ],
+      kind: 'step',
+      ordinal: 1,
+      state: 'completed',
+      stepId: `t${ordinal}.1`,
+      turnId: `t${ordinal}`,
+    },
+  ],
+  triggerPromptId: `p_long_${ordinal}`,
+  turnId: `t${ordinal}`,
+})
 
 const historyTurn = (ordinal: number) => ({
   durationMs: 4200,
@@ -374,8 +482,17 @@ const socket = ws.link('*/api/ws')
 export const transcriptHandlers = [
   http.get('*/api/conversations/:conversationId/transcript', ({ params, request }) => {
     const conversationId = String(params['conversationId'])
-    const agentId = new URL(request.url).searchParams.get('agent_id') ?? 'main'
-    if (agentId === 'main') return HttpResponse.json(mockTranscriptPage(conversationId))
+    const query = new URL(request.url).searchParams
+    const agentId = query.get('agent_id') ?? 'main'
+    const pageSize = query.get('page_size')
+    if (agentId === 'main') {
+      return HttpResponse.json(
+        mockTranscriptPage(conversationId, {
+          beforeTurn: query.get('before_turn'),
+          ...(pageSize === null ? {} : { pageSize: Number(pageSize) }),
+        }),
+      )
+    }
     if (!children.has(agentId)) {
       return HttpResponse.json({ detail: '这段对话里没有这个 agent' }, { status: 404 })
     }
@@ -404,22 +521,6 @@ export const transcriptHandlers = [
       return new HttpResponse(null, { status: 204 })
     },
   ),
-
-  // 返回 since 之后的日志批次；固定历史基线之外的内容依赖此端点补齐。
-  http.get('*/api/conversations/:conversationId/transcript/ops', ({ params, request }) => {
-    const conversationId = String(params['conversationId'])
-    const query = new URL(request.url).searchParams
-    const since = Number(query.get('since_seq') ?? 0)
-    const agentId = query.get('agent_id') ?? 'main'
-    const key = streamKey(conversationId, agentId)
-    const log = logOf.get(key) ?? []
-    return HttpResponse.json({
-      agent_id: agentId,
-      batches: log.filter((batch) => batch.seq > since),
-      complete: true,
-      latest_seq: seqOf.get(key) ?? HISTORY_SEQ,
-    })
-  }),
 
   http.post('*/api/conversations/:conversationId/prompts', async ({ params, request }) => {
     const body = (await request.json()) as { content: PromptContent[]; prompt_id: string }
@@ -514,9 +615,21 @@ export const transcriptHandlers = [
     // 结束事件广播到所有连接，侧栏据此刷新 lastRunId。
     setTimeout(() => {
       for (const conversation of justFinished) {
+        // 照服务端：开跑记录运行发 updated 带出新的 lastRunId（ADR-0005），收场再发活动帧。
+        const before = conversation.lastSeq
         conversation.lastRunId = crypto.randomUUID()
+        conversation.completedAt = null
         client.send(
           JSON.stringify({
+            ...mockSessionEnvelope(conversation.id),
+            payload: { ...conversation, lastSeq: before },
+            session_id: conversation.id,
+            type: 'event.session.updated',
+          }),
+        )
+        client.send(
+          JSON.stringify({
+            ...mockSessionEnvelope(conversation.id),
             payload: { busy: false, last_turn_reason: 'completed', pending_interaction: 'none' },
             session_id: conversation.id,
             type: 'event.session.work_changed',
@@ -525,7 +638,8 @@ export const transcriptHandlers = [
       }
     }, WORK_DONE_DELAY_MS)
 
-    let joined: Connection | null = null
+    /** 这条连接订着的对话；一条连接可以同时订多段（主会话池常驻最近几段）。 */
+    const joined = new Map<string, Connection>()
     // 按连接去重文件更新计划，避免 StrictMode 重订造成重复版本递增。
     const fsScheduled = new Set<string>()
     client.addEventListener('message', (event) => {
@@ -537,6 +651,8 @@ export const transcriptHandlers = [
           paths?: string[]
           session_id?: string
           transcript?: Record<string, string>
+          transcript_epoch?: Record<string, string>
+          transcript_since?: Record<string, number>
         }
         type?: string
       }
@@ -570,16 +686,22 @@ export const transcriptHandlers = [
       }
 
       if (frame.type === 'unsubscribe_v2') {
+        const conversationId = frame.payload?.session_id ?? ''
+        const connection = joined.get(conversationId)
         const agentIds = frame.payload?.agent_ids ?? []
-        if (agentIds.length === 0) joined?.agents.clear()
-        for (const agentId of agentIds) joined?.agents.delete(agentId)
+        if (agentIds.length === 0) connection?.agents.clear()
+        for (const agentId of agentIds) connection?.agents.delete(agentId)
+        if (connection !== undefined && connection.agents.size === 0) {
+          joined.delete(conversationId)
+          connections.delete(connection)
+        }
         client.send(JSON.stringify({ id: frame.id, type: 'ack' }))
         return
       }
 
       if (frame.type !== 'subscribe_v2') return
       const conversationId = frame.payload?.session_id ?? ''
-      // 表里每个 agent 各回一帧 reset；不属于这段对话的子代理整帧拒绝，与后端一致。
+      // 不属于这段对话的子代理整帧拒绝，与后端一致。
       const agentIds = Object.keys(frame.payload?.transcript ?? { main: 'delta' })
       if (agentIds.some((agentId) => agentId !== 'main' && !children.has(agentId))) {
         client.send(
@@ -587,10 +709,28 @@ export const transcriptHandlers = [
         )
         return
       }
-      client.send(
-        JSON.stringify({ id: frame.id, payload: { accepted: [conversationId] }, type: 'ack' }),
-      )
+      // 带着基线水位与 epoch 订阅的，从日志接着补；没带或对不上的，回一帧不带历史轮的 reset。
       for (const agentId of agentIds) {
+        const replay = replayFrom(
+          conversationId,
+          agentId,
+          frame.payload?.transcript_since?.[agentId],
+          frame.payload?.transcript_epoch?.[agentId],
+        )
+        if (replay !== null) {
+          for (const batch of replay) {
+            client.send(
+              JSON.stringify({
+                payload: { agent_id: agentId, ops: batch.ops, seq: batch.seq },
+                seq: 1,
+                session_id: conversationId,
+                stream_epoch: MOCK_STREAM_EPOCH,
+                type: 'transcript.ops',
+              }),
+            )
+          }
+          continue
+        }
         client.send(
           JSON.stringify({
             payload: {
@@ -609,12 +749,16 @@ export const transcriptHandlers = [
             },
             seq: 1,
             session_id: conversationId,
+            stream_epoch: MOCK_STREAM_EPOCH,
             type: 'transcript.reset',
           }),
         )
       }
-      const first = joined === null
-      joined ??= {
+      client.send(
+        JSON.stringify({ id: frame.id, payload: { accepted: [conversationId] }, type: 'ack' }),
+      )
+      const existing = joined.get(conversationId)
+      const connection: Connection = existing ?? {
         agents: new Set<string>(),
         conversationId,
         send: (payload) =>
@@ -623,15 +767,21 @@ export const transcriptHandlers = [
               payload,
               seq: payload.seq,
               session_id: conversationId,
+              stream_epoch: MOCK_STREAM_EPOCH,
               type: 'transcript.ops',
             }),
           ),
       }
-      for (const agentId of agentIds) joined.agents.add(agentId)
-      if (!first) return
-      connections.add(joined)
-      // 普通订阅自动启动演示运行，待审批会话保持等待。
-      if (!awaitingApproval.has(conversationId)) {
+      for (const agentId of agentIds) connection.agents.add(agentId)
+      if (existing !== undefined) return
+      joined.set(conversationId, connection)
+      connections.add(connection)
+      // 普通订阅自动启动演示运行；待审批会话保持等待，长对话与工具过程展示只用来回看。
+      if (
+        !awaitingApproval.has(conversationId) &&
+        !toolShowcases.has(conversationId) &&
+        conversationId !== MOCK_LONG_CONVERSATION_ID
+      ) {
         playTurn(conversationId, {
           content: [{ text: '把这段素材拆一下', type: 'text' }],
           promptId: 'demo',
@@ -644,6 +794,7 @@ export const transcriptHandlers = [
     const unwatchGenerations = watchMockGenerations(({ conversationId, ...payload }) => {
       client.send(
         JSON.stringify({
+          ...mockSessionEnvelope(conversationId),
           payload,
           session_id: conversationId,
           type: 'event.generation.changed',
@@ -653,7 +804,7 @@ export const transcriptHandlers = [
 
     client.addEventListener('close', () => {
       unwatchGenerations()
-      if (joined !== null) connections.delete(joined)
+      for (const connection of joined.values()) connections.delete(connection)
     })
   }),
 ]

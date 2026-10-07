@@ -332,7 +332,7 @@ describe('library viewer', () => {
       `https://iclip.test/library?video=${own?.id}`,
     )
     await user.click(within(viewer).getByRole('button', { name: '更多操作' }))
-    await user.click(await screen.findByRole('menuitem', { name: '打开来源对话' }))
+    await user.click(await screen.findByRole('menuitem', { name: '打开来源任务' }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/c/${own?.conversationId}`))
 
     // 别人的卡同样带着对话 id，但读者打不开那段对话，就不给入口
@@ -491,25 +491,62 @@ describe('library viewer', () => {
     expect(within(viewer).queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('shows 做同款 as coming soon on focus and on click without doing anything', async () => {
+  it('holds 做同款 until the detail says it can, then goes home with the card', async () => {
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // 挂住详情；放行后不回响应，交给默认的 mock（属主的卡做得了同款）。
+    server.use(
+      http.get('*/api/library/videos/:id', async () => {
+        await held
+      }),
+    )
     const user = userEvent.setup()
     const { router } = await renderWithProviders(<Harness />)
     const viewer = await openCard(user, '跑鞋手持展示')
-    const pathname = router.state.location.pathname
-    await navigator.clipboard.writeText('原来的内容')
+    const card = mockLibraryVideos().find((video) => video.title === '跑鞋手持展示')
+
+    // 详情回来之前不知道做不做得了：置灰、不说原因。
+    const pending = within(viewer).getByRole('button', { name: '做同款' })
+    expect(pending).toHaveAttribute('aria-disabled', 'true')
+    act(() => pending.focus())
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    release()
+    await waitFor(() =>
+      expect(within(viewer).getByRole('button', { name: '做同款' })).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    await user.click(within(viewer).getByRole('button', { name: '做同款' }))
+    expect(router.state.location.pathname).toBe('/')
+    expect(router.state.location.search).toEqual({ same: card?.id })
+  })
+
+  it('explains why a card cannot be made the same way, on focus and on click', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderWithProviders(<Harness />)
+    // 别人的卡：打不开那段对话，做不了同款。
+    const viewer = await openCard(user, SANDALS)
+    await within(viewer).findByRole('group', { name: '镜头组' })
+    const search = router.state.location.search
 
     const make = within(viewer).getByRole('button', { name: '做同款' })
     expect(make).toHaveAttribute('aria-disabled', 'true')
     act(() => make.focus())
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('即将开放')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '这条视频没有可用的制作文件，做不了同款',
+    )
     act(() => make.blur())
     await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
 
     await user.click(make)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('即将开放')
-    expect(screen.getByRole('dialog', { name: '跑鞋手持展示' })).toBe(viewer)
-    expect(router.state.location.pathname).toBe(pathname)
-    await expect(navigator.clipboard.readText()).resolves.toBe('原来的内容')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '这条视频没有可用的制作文件，做不了同款',
+    )
+    expect(screen.getByRole('dialog', { name: SANDALS })).toBe(viewer)
+    expect(router.state.location.search).toEqual(search)
   })
 
   it('copies the prompt of the version on screen', async () => {

@@ -2,15 +2,10 @@
  *
  * 焦点始终留在编辑器里：格子不可聚焦、按下不抢焦点，键盘由编辑器插件转发过来；`active` 是键盘停在的那格。 */
 
-import type { RefObject } from 'react'
+import type { Ref, RefObject } from 'react'
+import type { CaretAnchor } from '@/shared/ui/composer/mention'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
-import { FrameAddTile, FrameTile, type FrameAdd } from './frame-tile'
-
-/** 光标所在的矩形；`contextElement` 让弹层跟着编辑器所在的滚动容器走。 */
-export type CaretAnchor = {
-  getBoundingClientRect: () => DOMRect
-  contextElement?: Element | undefined
-}
+import { FrameAddTile, FrameTile } from './frame-tile'
 
 type FrameMentionMenuProps = {
   anchor: RefObject<CaretAnchor>
@@ -19,8 +14,9 @@ type FrameMentionMenuProps = {
   ratio: number
   /** 键盘停在第几格；等于 `frames.length` 时停在「+」。 */
   active: number
-  add: FrameAdd
-  listRef: RefObject<HTMLUListElement | null>
+  /** 末格「+」：添加图片。 */
+  onAdd: () => void
+  listRef: Ref<HTMLUListElement>
   onPick: (frame: number) => void
   onClose: () => void
 }
@@ -29,10 +25,10 @@ const keepEditorFocus = (event: { preventDefault: () => void }) => event.prevent
 
 export function FrameMentionMenu({
   active,
-  add,
   anchor,
   frames,
   listRef,
+  onAdd,
   onClose,
   onPick,
   ratio,
@@ -78,8 +74,7 @@ export function FrameMentionMenu({
           <li className="p-1 pb-6" role="presentation">
             <FrameAddTile
               aria-selected={active === frames.length}
-              blocker={add.blocker}
-              onAdd={add.onAdd}
+              onClick={onAdd}
               onPointerDown={keepEditorFocus}
               role="option"
               tabIndex={-1}

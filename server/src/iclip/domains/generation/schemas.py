@@ -63,15 +63,14 @@ OPERATION_UPLOAD: Final = "upload"
 """用户上传：确认过的一次直传，没有来源、不挂对话。创建即完成，没有请求。"""
 
 ClipStage = Literal["fetching", "processing", "uploading"]
-"""本地加工（合成、编辑段提交上游前的切片）在途时跑到哪一步，加工时上报，落在 provider_status 上。
+"""本地加工（合成）在途时跑到哪一步，加工时上报，落在 provider_status 上。编辑段没有本地加工。
 
-排队由 ``status == "pending"`` 表达，终态由 status 表达，都不另给词。切参考片段没有取素材
-这一步——它是边读边切的。"""
+排队由 ``status == "pending"`` 表达，终态由 status 表达，都不另给词。"""
 
 CLIP_FETCHING: Final = "fetching"
 """取素材：下载各段的源，以及探它们的规格。"""
 CLIP_PROCESSING: Final = "processing"
-"""加工：切一段，或者拼起来重编码。"""
+"""加工：拼起来重编码。"""
 CLIP_UPLOADING: Final = "uploading"
 """上传：把产物交给对象存储。"""
 
@@ -94,6 +93,9 @@ MAX_METADATA_CHARS: Final = 2000
 """``metadata`` 序列化后的长度上限：它是调用方的坐标标签，不是存东西的地方。"""
 MAX_URL_CHARS: Final = 2000
 """服务端要拿去下载的单个地址的长度上限。"""
+MAX_COMPOSE_SEGMENTS: Final = 100
+"""一次合成最多几段。每段在 ffmpeg 里是一路输入，列表又由调用方给，不设上限就能拿一个请求把
+合成机占满；按关键帧分段，30 秒的片几十段已足够。"""
 
 ORIGIN_FIELDS: Final = frozenset(
     {"conversation_id", "task_id", "metadata", "shot_index", "source_url"}
@@ -102,8 +104,8 @@ ORIGIN_FIELDS: Final = frozenset(
 
 它们不是发给 provider 的参数，而是「这一行属于谁、为谁出的」：对话与需求单按索引查；视频的
 镜头组编号落 ``shot_index`` 列；``metadata`` 是调用方自己的键，服务端不读不写、原样存、按包含
-匹配筛。帧图编辑的 ``source_url``（底图地址）是请求字段，受理时解析成来源；其余来源、原作与
-区间也落列，但不是请求字段，由服务端按基底定。"""
+匹配筛。帧图编辑的 ``source_url``（底图地址）是请求字段，受理时解析成来源；编辑段的基底与区间
+由它的受理输入给，核对后落列；原作不是请求字段，由服务端按基底定。"""
 
 NOT_FORWARDED_FIELDS: Final = ORIGIN_FIELDS | frozenset({"shot"})
 """发给上游时去掉的字段：归属字段是我们自己的；``shot`` 已经拼成 ``prompt``，上游只认正文。
@@ -339,17 +341,20 @@ class ImageGenerationIn(CamelModel):
 
 
 class VideoEditIn(SnakeModel):
-    """一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。
+    """一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
 
-    与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切
-    一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
+    转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+    ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
+    记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
     ``VideoGenerationIn``，来源、原作与区间落列。"""
 
     source_job_id: uuid.UUID
     """基底：一条已完成的成片（出片或合成），这段对话自己的或继承来的。"""
     range_start_ms: Annotated[int, Field(ge=0)]
     range_end_ms: int
-    """要改的那一段，毫秒。结束超出基底时长按基底时长截；起点落在基底之外，这次编辑判失败。"""
+    """参考片段在基底上的那一段，毫秒，原样记下；要在基底时长之内，并与片段时长对得上。"""
+    reference_video_urls: Annotated[list[str], Field(min_length=1, max_length=1)]
+    """参考片段的地址：调用者本人的一条视频上传。"""
     model: ModelName
     prompt: Prompt
     user_name: UserName | None = None
@@ -362,7 +367,7 @@ class VideoEditIn(SnakeModel):
     task_id: uuid.UUID | None = None
     metadata: Metadata | None = None
 
-    _check_urls = field_validator("reference_image_urls")(_http_only)
+    _check_urls = field_validator("reference_image_urls", "reference_video_urls")(_http_only)
 
     @model_validator(mode="after")
     def _end_after_start(self) -> VideoEditIn:
@@ -371,11 +376,31 @@ class VideoEditIn(SnakeModel):
         return self
 
 
-class VideoComposeIn(CamelModel):
-    """一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。"""
+class ComposeSegmentIn(CamelModel):
+    """合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录
+    自己的媒体时间算；``end`` 为空就取到那条的结尾。"""
 
     source_job_id: uuid.UUID
-    """一条已完成的编辑段，这段对话自己的或继承来的。"""
+    """这一段出自哪条记录：基底本身，或来源是基底的一条已完成编辑段。"""
+    start: float = Field(ge=0)
+    end: float | None = None
+    """开放的结尾由执行方按下载下来的素材时长补齐：那条记录的时长受理时不一定知道。"""
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> ComposeSegmentIn:
+        if self.end is not None and self.end <= self.start:
+            raise ValueError("end 必须大于 start")
+        return self
+
+
+class VideoComposeIn(CamelModel):
+    """一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。"""
+
+    base_job_id: uuid.UUID
+    """基底：一条已完成的成片（出片或合成），这段对话自己的或继承来的。合成的来源记它。"""
+    segments: Annotated[
+        list[ComposeSegmentIn], Field(min_length=1, max_length=MAX_COMPOSE_SEGMENTS)
+    ]
     user_name: UserName | None = None
     """规则同出片的 ``user_name``。"""
 
@@ -384,13 +409,11 @@ class VideoComposeIn(CamelModel):
     metadata: Metadata | None = None
 
 
-class ComposeSegment(CamelModel):
-    """合成里的一段：从 ``url`` 那条视频取 ``[start, end)``，单位秒；``end`` 为空就取到那条的结尾。"""
+class ComposeSegment(ComposeSegmentIn):
+    """落库的一段：受理时由服务端把 ``source_job_id`` 换成那条记录的产物地址 ``url``，两者都存；
+    执行方只读地址与起止。"""
 
     url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
-    start: float = Field(ge=0)
-    end: float | None = None
-    """开放的结尾由执行方按下载下来的素材时长补齐：编辑段产物与基底后段多长，受理时不知道。"""
 
     @field_validator("url")
     @classmethod
@@ -399,17 +422,11 @@ class ComposeSegment(CamelModel):
             raise ValueError("必须是 http:// 或 https:// 地址")
         return url
 
-    @model_validator(mode="after")
-    def _end_after_start(self) -> ComposeSegment:
-        if self.end is not None and self.end <= self.start:
-            raise ValueError("end 必须大于 start")
-        return self
-
 
 class VideoComposeRequest(CamelModel):
     """一次合成交给本地执行方的输入：按顺序取各段拼成一条，一律重编码对齐到原片。
 
-    段由服务端按编辑段的基底与实际区间算出，调用方不直接给。``user_name`` 只作对账标签。"""
+    各段的出处由调用方给，地址由服务端按出处填，不收调用方给的地址。``user_name`` 只作对账标签。"""
 
     kind: ClassVar[GenerationKind] = KIND_VIDEO
     operation: ClassVar[GenerationOperation] = OPERATION_COMPOSE
@@ -444,7 +461,8 @@ def request_to_payload(request: GenerationRequest | None) -> dict[str, Any] | No
 
     if request is None:
         return None
-    return request.model_dump(by_alias=True, exclude=set(ORIGIN_FIELDS))
+    # JSON 模式：合成各段的出处是 UUID，要写成字符串才进得了 JSONB。
+    return request.model_dump(mode="json", by_alias=True, exclude=set(ORIGIN_FIELDS))
 
 
 def request_from_payload(
@@ -489,14 +507,14 @@ class GenerationOut(CamelModel):
     root_job_id: uuid.UUID | None
     """原作：编辑段与合成指最初那条出片，出片与图片为空。按它筛（``rootJobId``）拿到整条编辑链。"""
     source_job_id: uuid.UUID | None = None
-    """直接来源：编辑段指它的基底成片，合成指它的编辑段，帧图编辑指底图那一条，切图指它的宫格；
-    别的为空。"""
+    """直接来源：编辑段与合成指它的基底成片，帧图编辑指底图那一条，切图指它的宫格；别的为空。
+    合成的各段出自哪条记录记在 ``request.segments`` 里。"""
     source_url: str | None = None
     """来源的地址：``sourceJobId`` 非空时是那条记录的 ``outputUrl``；为空时只有帧图编辑可能有，是
     库里找不到的外部底图地址；都没有就是空。它是投影，不是列的镜像，来源那条读不读得到都照给。"""
     range_start_ms: int | None = None
     range_end_ms: int | None = None
-    """编辑段在基底上改的那一段，毫秒；参考片段切好之后是实际切点。只有编辑段有。"""
+    """编辑段在基底上改的那一段，毫秒，就是受理时请求给的区间。只有编辑段有。"""
     output_url: str | None
     watermark_output_url: str | None
     """视频的水印版地址；图片与合成没有这一份，恒为空。"""
@@ -505,8 +523,8 @@ class GenerationOut(CamelModel):
     """产物实际多长，毫秒，完成后才有：视频（出片与编辑段）取上游实测的时长，合成是本系统量的，
     图片为空；上游没给也为空。"""
     clip_stage: ClipStage | None
-    """在途的本地加工跑到哪一步：合成的取素材、拼接、上传，编辑段交上游之前的切片、上传。
-    排队中、已有结论、交给上游之后都为空。"""
+    """在途的本地加工跑到哪一步：合成的取素材、拼接、上传。排队中、已有结论都为空；编辑段与
+    别的记录没有本地加工，恒为空。"""
     created_at: datetime
     finished_at: datetime | None = None
     """到终态的时刻（数据库时钟）；同一镜头组的成片按它排版本。"""
@@ -540,13 +558,12 @@ def generation_out(job: GenerationJob, *, source_address: str | None) -> Generat
 
 
 def _clip_stage(job: GenerationJob) -> ClipStage | None:
-    """在途的本地加工跑到哪一步。
+    """在途的本地加工跑到哪一步。只有合成有本地加工，别的记录一律为空。
 
     只在 submitting 时认：收尾写终态时不带 provider_status，那一列会留着最后上报的阶段词，
-    照它读会让一条已失败的记录看着还在上传。交给上游之后 provider_status 是上游的状态词，
-    不在阶段词里，自然为空。"""
+    照它读会让一条已失败的记录看着还在上传。"""
 
-    if job.status != STATUS_SUBMITTING:
+    if job.operation != OPERATION_COMPOSE or job.status != STATUS_SUBMITTING:
         return None
     return next((stage for stage in CLIP_STAGES if stage == job.provider_status), None)
 
@@ -652,6 +669,7 @@ __all__ = [
     "IMAGE_MAX_REFERENCES",
     "KIND_IMAGE",
     "KIND_VIDEO",
+    "MAX_COMPOSE_SEGMENTS",
     "MAX_METADATA_CHARS",
     "MAX_MODEL_CHARS",
     "MAX_PROMPT_CHARS",
@@ -670,6 +688,7 @@ __all__ = [
     "STATUS_SUBMITTING",
     "ClipStage",
     "ComposeSegment",
+    "ComposeSegmentIn",
     "GenerationEnvelope",
     "GenerationKind",
     "GenerationOperation",

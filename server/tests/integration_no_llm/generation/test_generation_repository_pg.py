@@ -24,6 +24,7 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
     GenerationJob,
+    GenerationKind,
     GenerationOperation,
 )
 from iclip.domains.generation.schemas import GenerationRequest
@@ -491,15 +492,18 @@ async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEng
     assert (stored.kind, stored.operation, stored.source_job_id, stored.root_job_id) == (
         "video",
         "compose",
-        edit.id,
+        take.id,
         take.id,
     )
-    assert stored.request == composite.request, "合成的各段读回来原样，取到结尾的那段仍是开放的"
+    assert stored.request == composite.request, (
+        "合成的各段连同出处读回来原样，取到结尾的那段仍是开放的"
+    )
 
     async def listed(**filters: Any) -> set[uuid.UUID]:
         return {job.id for job in await repo.list_for_owner(owner=owner, limit=10, **filters)}
 
-    assert await listed(source_job_id=take.id) == {edit.id, other_edit.id}
+    assert await listed(source_job_id=take.id) == {edit.id, other_edit.id, composite.id}
+    assert await listed(source_job_id=take.id, operation="generate") == {edit.id, other_edit.id}
     assert await listed(operation="compose") == {composite.id}
     assert await listed(operation="generate", root_job_id=take.id) == {edit.id, other_edit.id}
     assert await listed(operation="generate") == {take.id, edit.id, other_edit.id}
@@ -771,11 +775,11 @@ async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
     assert nulls is True, "没有请求落的是 SQL NULL，不是 JSON null"
 
 
-async def test_an_image_is_found_by_its_address_within_the_conversation_and_what_it_inherits(
+async def test_a_record_is_found_by_its_address_within_the_conversation_and_what_it_inherits(
     engine: AsyncEngine,
 ) -> None:
-    """按产物地址找图片：本对话按属主收敛的、经继承读得到的；没有对话就只找没有对话的；给了操作
-    只找那一种；未完成的、视频、别的对话、边界之后的都找不到；对上多条取最早建立的。"""
+    """按产物地址找某一种记录：本对话按属主收敛的、经继承读得到的；没有对话就只找没有对话的；给了
+    操作只找那一种；未完成的、别的种类、别的对话、边界之后的都找不到；对上多条取最早建立的。"""
 
     repo = SqlGenerationRepository(engine)
     conversations = SqlConversationRepository(engine)
@@ -795,6 +799,13 @@ async def test_an_image_is_found_by_its_address_within_the_conversation_and_what
     )
     (upload,) = await repo.create_settled(
         [make_upload(owner_user_id=forker, output_url="https://example.test/upload.png")]
+    )
+    (clip,) = await repo.create_settled(
+        [
+            make_upload(
+                kind="video", owner_user_id=forker, output_url="https://example.test/clip.mp4"
+            )
+        ]
     )
     broken = await repo.create(
         make_job(image_request(), owner_user_id=forker, conversation_id=copy.id)
@@ -817,10 +828,12 @@ async def test_an_image_is_found_by_its_address_within_the_conversation_and_what
         owner: uuid.UUID | None = forker,
         conversation_id: uuid.UUID | None = copy.id,
         operation: GenerationOperation | None = None,
+        kind: GenerationKind = "image",
     ) -> uuid.UUID | None:
         assert job_url is not None
-        found = await repo.find_image_by_output(
+        found = await repo.find_by_output(
             job_url,
+            kind=kind,
             owner=owner,
             conversation_id=conversation_id,
             inherited=inheritance if conversation_id == copy.id else (),
@@ -840,6 +853,14 @@ async def test_an_image_is_found_by_its_address_within_the_conversation_and_what
     assert await find(loose.output_url, conversation_id=None) == loose.id
     assert await find(upload.output_url, conversation_id=None, operation="upload") == upload.id
     assert await find(loose.output_url, conversation_id=None, operation="upload") is None
+    assert await find(take.output_url, kind="video") == take.id, "按种类找，视频也找得到"
+    clip_url = clip.output_url
+    assert await find(clip_url, conversation_id=None, operation="upload", kind="video") == clip.id
+    assert await find(clip_url, conversation_id=None, operation="upload") is None, "图片里没有它"
+    assert (
+        await find(clip_url, owner=stranger, conversation_id=None, operation="upload", kind="video")
+        is None
+    ), "别人的上传按属主筛掉"
 
 
 async def test_output_urls_answer_only_for_rows_that_have_one(engine: AsyncEngine) -> None:
@@ -850,47 +871,6 @@ async def test_output_urls_answer_only_for_rows_that_have_one(engine: AsyncEngin
 
     assert await repo.output_urls([]) == {}
     assert await repo.output_urls([done.id, pending.id, uuid.uuid4()]) == {done.id: done.output_url}
-
-
-async def test_a_reference_cut_records_the_actual_range_only_while_submitting(
-    engine: AsyncEngine,
-) -> None:
-    """切好参考片段：区间改记实际切点、阶段词清掉、业务状态不动；这一行不在提交中就一行都不改。"""
-
-    repo = SqlGenerationRepository(engine)
-    owner = await make_user(engine)
-    take = await repo.create(make_job(video_request(), owner_user_id=owner))
-    edit = await repo.create(
-        make_edit(take, owner_user_id=owner, range_start_ms=1500, range_end_ms=4000)
-    )
-
-    early = await repo.record_reference_cut(
-        edit.id, range_start_ms=0, range_end_ms=4000, only_if_status=STATUS_SUBMITTING
-    )
-    assert early is None, "还没开始提交"
-    await repo.mark_submitting(edit.id)
-    await repo.record_progress(
-        edit.id, provider_status="processing", only_if_status=STATUS_SUBMITTING
-    )
-    # 起点落在最前面的关键帧上，夹到 0：组合约束仍然认它是一段编辑区间。
-    cut = await repo.record_reference_cut(
-        edit.id, range_start_ms=0, range_end_ms=4000, only_if_status=STATUS_SUBMITTING
-    )
-    assert cut is not None
-    assert (cut.status, cut.provider_status, cut.range_start_ms, cut.range_end_ms) == (
-        STATUS_SUBMITTING,
-        None,
-        0,
-        4000,
-    )
-
-    await repo.mark_failed(edit.id, error_code="SUBMIT_INTERRUPTED", error_message="中断了")
-    late = await repo.record_reference_cut(
-        edit.id, range_start_ms=500, range_end_ms=4000, only_if_status=STATUS_SUBMITTING
-    )
-    assert late is None, "已有结论，迟到的切点不许改它"
-    stored = await repo.get(edit.id, owner=owner)
-    assert (stored.range_start_ms, stored.range_end_ms) == (0, 4000)
 
 
 # --- 分叉继承 -------------------------------------------------------------------

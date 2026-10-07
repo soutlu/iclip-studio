@@ -119,6 +119,9 @@ class LibraryVideoDetailOut(CamelModel):
     video: LibraryVideoOut
     groups: list[ShotGroupOut]
     """有镜号的组按镜号从小到大在前；没镜号的组在后，按出片完成先后。"""
+    can_make_same: bool
+    """这位读者能不能拿这张卡做同款：卡挂着对话、读者打得开它（同 ``canOpenConversation``），
+    且那段对话的工作区里有 ``film.icml`` 或 ``video_shot.json``。只在详情里给。"""
 
 
 class LibraryAuthorOut(CamelModel):

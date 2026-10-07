@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { login } from './login'
 
 /** mock 出片用的测试卡源文件；下载回来的字节要和它一致。 */
-const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.webm', import.meta.url)
+const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.mp4', import.meta.url)
 
 const SHOT_DIR = '../.artifacts/design-qa/task-videos'
 const TASK_TITLE = '通勤背包 · 城市宣传片'
@@ -50,8 +50,8 @@ const submitMockVideo = (page: Page, conversationId: string) =>
 test('需求详情可直接播放、切版、下载和放大，关闭预览保留表单', async ({ page }) => {
   await page.setViewportSize({ width: 1374, height: 1145 })
   const dialog = await openTask(page)
-  const related = dialog.getByRole('complementary', { name: '关联对话与视频' })
-  await expect(related.getByText('3 个对话', { exact: true })).toBeVisible()
+  const related = dialog.getByRole('complementary', { name: '关联任务与视频' })
+  await expect(related.getByText('3 个任务', { exact: true })).toBeVisible()
   await expect(related.getByText('暂无视频产物', { exact: true })).toHaveCount(2)
   const conversation = related.getByRole('region', { name: '夜景延时素材生成', exact: true })
   const group = conversation.getByRole('region', { name: '镜头组 2', exact: true })
@@ -61,7 +61,7 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
     .poll(() => video.evaluate((el: HTMLVideoElement) => el.readyState))
     .toBeGreaterThan(0)
 
-  const link = conversation.getByRole('link', { name: /打开对话/ })
+  const link = conversation.getByRole('link', { name: /打开任务/ })
   const href = await link.getAttribute('href')
   if (!href) throw new Error('关联对话缺少打开地址')
   await expect(link).toHaveAttribute('target', '_blank')
@@ -104,14 +104,14 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
   await page.getByRole('menuitem', { name: '下载原片', exact: true }).click()
   const saved = await download
   expect(await saved.failure()).toBeNull()
-  // 文件名取自地址（mock 的出片是构建产物里那条 WebM 测试卡），字节要和源文件一致。
-  expect(saved.suggestedFilename()).toMatch(/^sample-video(-[^/]*)?\.webm$/)
+  // 文件名取自地址（mock 的出片是构建产物里那条 MP4 测试卡），字节要和源文件一致。
+  expect(saved.suggestedFilename()).toMatch(/^sample-video(-[^/]*)?\.mp4$/)
   const path = await saved.path()
   expect(await readFile(path)).toEqual(await readFile(SAMPLE_VIDEO))
   await group.getByRole('button', { name: '下载视频', exact: true }).click()
   const watermarkDownload = page.waitForEvent('download')
   await page.getByRole('menuitem', { name: '下载水印版', exact: true }).click()
-  expect((await watermarkDownload).suggestedFilename()).toMatch(/\.webm$/)
+  expect((await watermarkDownload).suggestedFilename()).toMatch(/\.mp4$/)
 
   await dialog.getByLabel('需求单名称', { exact: true }).fill(TASK_TITLE)
   for (const colorScheme of ['light', 'dark'] as const) {
@@ -129,9 +129,9 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
 test('手机单列可滚动查看视频、长标题和操作，面板重开不丢表单', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const dialog = await openTask(page)
-  const related = dialog.getByRole('complementary', { name: '关联对话与视频' })
+  const related = dialog.getByRole('complementary', { name: '关联任务与视频' })
   await related.scrollIntoViewIfNeeded()
-  await expect(related.getByRole('heading', { name: '关联对话与视频' })).toBeVisible()
+  await expect(related.getByRole('heading', { name: '关联任务与视频' })).toBeVisible()
   const player = related.getByLabel('镜头组 2视频', { exact: true })
   await player.scrollIntoViewIfNeeded()
   await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeVisible()
@@ -153,12 +153,12 @@ test('手机单列可滚动查看视频、长标题和操作，面板重开不�
     await page.emulateMedia({ colorScheme })
     await page.screenshot({ path: `${SHOT_DIR}/mobile-${colorScheme}.png`, animations: 'disabled' })
   }
-  await related.getByRole('button', { name: '收起关联对话与视频' }).click()
+  await related.getByRole('button', { name: '收起关联任务与视频' }).click()
   await expect(related).toBeHidden()
   await dialog
     .getByLabel('需求单名称', { exact: true })
     .fill('这是一份包含很长中文名称的商品口播视频创作需求单')
-  await dialog.getByRole('button', { name: '打开关联对话与视频' }).click()
+  await dialog.getByRole('button', { name: '打开关联任务与视频' }).click()
   await expect(related).toBeVisible()
   await expect(dialog.getByLabel('需求单名称', { exact: true })).toHaveValue(
     '这是一份包含很长中文名称的商品口播视频创作需求单',
@@ -168,10 +168,10 @@ test('手机单列可滚动查看视频、长标题和操作，面板重开不�
 
 test('不同关联对话的内联播放与放大播放互斥', async ({ page }) => {
   const dialog = await openTask(page)
-  const related = dialog.getByRole('complementary', { name: '关联对话与视频' })
+  const related = dialog.getByRole('complementary', { name: '关联任务与视频' })
   const first = related.getByRole('region', { name: '夜景延时素材生成', exact: true })
   const second = related.getByRole('region', { name: '通勤背包短视频', exact: true })
-  const href = await second.getByRole('link', { name: /打开对话/ }).getAttribute('href')
+  const href = await second.getByRole('link', { name: /打开任务/ }).getAttribute('href')
   const id = href?.split('/').at(-1)
   if (!id) throw new Error('缺少第二段对话编号')
   expect(await submitMockVideo(page, id)).toBe(202)

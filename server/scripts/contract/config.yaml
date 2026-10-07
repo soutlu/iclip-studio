@@ -38,6 +38,12 @@ media_generation:
       seedream_v5_pro:
         route: seedrance5.0pro # 上游路由拼写沿用它公开契约里的 seedrance
         concurrency: 40
+      gpt-image-2.5:
+        route: openai/gpt-image-2.5-flare-developer
+        concurrency: 10
+        # 这家的两条任务路由与别家不同名，写在它自己这里。
+        text_to_image_task: text-to-image
+        image_edit_task: edit
   poll_interval_seconds: 5 # 状态查询间隔，固定轮询
   job_timeout_seconds: 3600 # 提交后等待终态的上限
 
@@ -47,6 +53,10 @@ video:
   understanding_thinking: medium # minimal / low / medium / high；省略时使用供应方默认值
   # 采样帧率范围 0.2–5；提高帧率有助于识别快速剪辑点，同时增加视频 token 消耗。
   understanding_fps: 5
+
+iclip_studio:
+  # 写出这一段即启用导演流程的工具；须同时配置 VIDEO_UNDERSTANDING_* 与对象存储，并在 PATH 上有 ffmpeg。
+  breakdown_model: doubao-seed-2-1-lite-260915 # 拆解视频用的供应方模型名
 
 shot_video:
   # 写出这一段即启用取帧与出图；须同时启用媒体生成与对象存储，并在 PATH 上有 ffmpeg。

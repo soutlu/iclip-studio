@@ -1,4 +1,4 @@
-/** 舞台右下的帧计数「1 / 2」：数的是当前段引用的帧；点开列出本组全部图片（含未被引用的），只用来切画面、开大图。 */
+/** 叠在舞台底部正中的帧计数胶囊「1 / 2」：数的是当前段引用的帧；点开向上列出本组全部图片（含未被引用的），只用来切画面、开大图。 */
 
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
@@ -6,7 +6,6 @@ import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { IconButton } from '@/shared/ui/button'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { FrameTile } from './frame-tile'
-import { workbenchControl } from './workbench-control'
 
 export type FrameGallery = {
   /** 本组全部图片，下标 + 1 即帧号。 */
@@ -39,7 +38,7 @@ export function FrameCounter({ aspectRatio, gallery }: FrameCounterProps) {
       <PopupTrigger asChild>
         <button
           aria-label={`${position === undefined ? '' : `第 ${position.index} / ${position.count} 帧，`}查看本组全部图片${freshElsewhere ? '，有新结果' : ''}`}
-          className={workbenchControl({ shape: 'label', size: 'sm' })}
+          className="storyboard-stage-glass storyboard-stage-counter ui-state ui-focus"
           title="本组全部图片"
           type="button"
         >
@@ -53,7 +52,7 @@ export function FrameCounter({ aspectRatio, gallery }: FrameCounterProps) {
         </button>
       </PopupTrigger>
       <PopupSurface
-        align="end"
+        align="center"
         aria-label="本组全部图片"
         className="max-h-[min(20rem,var(--radix-popover-content-available-height))] max-w-[min(28rem,calc(100vw-32px))] overflow-y-auto overscroll-contain p-1.5"
         collisionPadding={12}

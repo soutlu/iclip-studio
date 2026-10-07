@@ -1,7 +1,6 @@
 import { frameJobKey } from '../frame-status'
 import { FrameImageEditor } from '../image-edit/frame-image-editor'
-import type { FrameEditTarget } from '../image-edit/image-edit-types'
-import { isRunningStatus } from '../shots'
+import type { StoryboardFrameTarget } from '../image-edit/image-edit-types'
 import type { GenerationJob } from '../storyboard.api'
 import { frameEditTriggerSelector } from './frame-edit-trigger'
 
@@ -9,7 +8,7 @@ import { frameEditTriggerSelector } from './frame-edit-trigger'
  *
  * target 本身不带图，应用之后这一格换了图它也不用变。 */
 export type FrameEditSession = {
-  target: FrameEditTarget
+  target: StoryboardFrameTarget
   initialKey?: string | undefined
   trigger: HTMLElement | null
 }
@@ -18,7 +17,7 @@ type Props = {
   session: FrameEditSession
   frames: readonly string[]
   aspectRatio: string
-  /** 各帧最新的图片任务，按 `frameJobKey` 取；关掉时把这一帧落定的那条交回去标成看过。 */
+  /** 各帧最新的图片任务，按 `frameJobKey` 取；关掉时那条若在编辑器里点开看过，交回去标成看过。 */
   latestFrameJobs: ReadonlyMap<string, GenerationJob>
   onClose: (seen: GenerationJob | undefined) => void
   onApply: (previousUrl: string, url: string) => Promise<void>
@@ -38,13 +37,16 @@ export function ReaderImageEdit({
     <FrameImageEditor
       key={JSON.stringify(target)}
       target={target}
-      frames={frames}
+      // 当前帧随替换实时变；编辑器不记打开那一刻的地址，不然替换完窗口还留着就对不上了。
+      currentUrl={frames[target.frameNumber - 1]}
+      subtitle={`镜头组 ${target.shotIndex} · 帧 @${target.frameNumber}`}
+      frames={frames.map((url, index) => ({ name: `帧 @${index + 1}`, url }))}
       aspectRatio={aspectRatio}
       initialKey={session.initialKey}
-      onClose={() => {
+      onClose={(opened) => {
         const latest = latestFrameJobs.get(frameJobKey(target.shotIndex, target.frameNumber))
-        // 还在跑的那条不算看过，落定后照样要在帧上冒出来。
-        onClose(latest !== undefined && !isRunningStatus(latest.status) ? latest : undefined)
+        // 只有真正点开看过的才算看过：没点开的结果、失败，以及还在跑的那条，照样要在帧上冒出来。
+        onClose(latest !== undefined && opened.has(latest.id) ? latest : undefined)
         requestAnimationFrame(() => {
           const trigger = session.trigger
           if (trigger?.isConnected) trigger.focus()
@@ -55,7 +57,11 @@ export function ReaderImageEdit({
               ?.focus()
         })
       }}
-      onApply={onApply}
+      onApply={(previousUrl, url) => {
+        // 分镜页的帧总有图（currentUrl 不会是 null），替换与撤销两头都是地址。
+        if (previousUrl === null || url === null) throw new Error('分镜页的帧不能没有图')
+        return onApply(previousUrl, url)
+      }}
     />
   )
 }

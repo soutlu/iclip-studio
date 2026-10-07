@@ -1,10 +1,9 @@
-"""本地加工：编辑段交上游前切参考片段，以及合成时把各段拼接成片。都在本机 ffmpeg 完成，不经外部服务。"""
+"""本地加工：合成时把各段拼接成片。在本机 ffmpeg 完成，不经外部服务。"""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -33,10 +32,8 @@ from iclip.platform.media.ffmpeg import (
     MediaError,
     VideoProfile,
     cut_concat,
-    cut_copy_url,
     download,
     probe_duration_ms,
-    probe_remote_duration_ms,
     probe_video,
 )
 from iclip.platform.object_store.layout import MEDIA_PATHS
@@ -59,7 +56,7 @@ _Report = Callable[[ClipStage], Awaitable[None]]
 def _stage_reporter(report_stage: ReportStage, job_id: uuid.UUID) -> _Report:
     """造一个只服务这一次加工的上报器。
 
-    合成器与切片器的实例被多个任务共享，所以「还在途」这个标记留在闭包里。上报被拒之后就
+    合成器的实例被多个任务共享，所以「还在途」这个标记留在闭包里。上报被拒之后就
     不再报，但活照样干完——产物按任务 id 落在固定的 key 上，同 key 已存在则保留先到的那份。"""
 
     live = True
@@ -94,70 +91,6 @@ async def _store(object_store: PublicObjectStore, key: str, content: bytes) -> s
             code="OUTPUT_STORE_FAILED",
             retryable=False,
         ) from exc
-
-
-@dataclass(frozen=True, slots=True)
-class ReferenceCut:
-    """切好的参考片段：公开地址，以及它在基底上实际覆盖的区间（毫秒）。"""
-
-    url: str
-    start_ms: int
-    end_ms: int
-
-
-class ReferenceCutter:
-    """编辑段交上游前，从基底上切出给模型看的参考片段。"""
-
-    def __init__(self, *, object_store: PublicObjectStore, report_stage: ReportStage) -> None:
-        """``report_stage`` 由装配注入，切片器自己不碰数据库。
-
-        基底由 ffmpeg 自己发 http 请求按需读，httpx 替身拦不到它——测试得起一个真服务。"""
-
-        self._object_store = object_store
-        self._report_stage = report_stage
-
-    async def cut(
-        self, *, job_id: uuid.UUID, source_url: str, start_ms: int, end_ms: int
-    ) -> ReferenceCut:
-        """切出基底上 ``[start_ms, end_ms)`` 这一段，存到编辑段名下，交回地址与实际区间。
-
-        起点不在基底之内是 ``EDIT_RANGE_OUT_OF_BOUNDS``；终点超过基底时长就截到时长。不重编码，
-        ``-c copy`` 只能在关键帧处下刀，产物比区间长、多出来的在开头，所以实际起点按产物时长
-        从终点倒推——记下的区间就是模型真正看到的那一段。取不到基底是
-        ``MEDIA_SOURCE_UNREACHABLE``，切不出来是 ``MEDIA_PROCESS_FAILED``，存不进桶是
-        ``OUTPUT_STORE_FAILED``，都不重试。"""
-
-        report = _stage_reporter(self._report_stage, job_id)
-        try:
-            base_ms = await probe_remote_duration_ms(source_url)
-        except MediaError as exc:
-            raise ProviderError(
-                f"取不到要编辑的基底: {exc}", code="MEDIA_SOURCE_UNREACHABLE", retryable=False
-            ) from exc
-        if start_ms >= base_ms:
-            raise ProviderError(
-                f"编辑区间从 {start_ms} 毫秒起，基底只有 {base_ms} 毫秒",
-                code="EDIT_RANGE_OUT_OF_BOUNDS",
-                retryable=False,
-            )
-        end_ms = min(end_ms, base_ms)
-        # 读取与裁剪交错进行，分不出「取素材」和「加工」，所以没有 fetching 这一步。
-        await report(CLIP_PROCESSING)
-        with TemporaryDirectory(prefix="iclip-reference-") as tmp:
-            dest = Path(tmp) / f"out.{_EXT}"
-            try:
-                await cut_copy_url(source_url, start=start_ms / 1000, end=end_ms / 1000, dest=dest)
-                clip_ms = await probe_duration_ms(dest)
-            except MediaError as exc:
-                raise ProviderError(
-                    f"参考片段切不出来: {exc}", code="MEDIA_PROCESS_FAILED", retryable=False
-                ) from exc
-            content = dest.read_bytes()
-        await report(CLIP_UPLOADING)
-        url = await _store(
-            self._object_store, MEDIA_PATHS.video_clip(job_id=job_id, ext=_EXT), content
-        )
-        return ReferenceCut(url=url, start_ms=max(0, end_ms - clip_ms), end_ms=end_ms)
 
 
 class FfmpegComposeProvider:
@@ -297,7 +230,5 @@ async def _target_profile(cuts: Sequence[MediaCut]) -> VideoProfile:
 __all__ = [
     "PROVIDER_NAME",
     "FfmpegComposeProvider",
-    "ReferenceCut",
-    "ReferenceCutter",
     "ReportStage",
 ]

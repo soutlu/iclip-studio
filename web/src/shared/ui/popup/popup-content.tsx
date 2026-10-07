@@ -14,20 +14,28 @@ export const POPUP_SURFACE_CLASS = [
 
 type PopupSurfaceProps = ComponentPropsWithoutRef<typeof Popover.Content> & {
   showArrow?: boolean
+  /** 箭头填色须与 className 改过的表面底色一致。 */
+  arrowClassName?: string
+  /** 挂载点，默认 body；宿主在模态弹窗里时挂到宿主内，弹窗外的指针事件被禁用。 */
+  container?: HTMLElement | null
 }
 
 /** 共用弹层外观；触发按钮的焦点与键盘关闭由 Radix 管理。 */
 export function PopupSurface({
+  arrowClassName,
   children,
   className,
+  container = null,
   showArrow = false,
   ...props
 }: PopupSurfaceProps) {
   return (
-    <Popover.Portal>
+    <Popover.Portal container={container}>
       <Popover.Content className={cn(POPUP_SURFACE_CLASS, className)} {...props}>
         {children}
-        {showArrow ? <Popover.Arrow className="fill-popup-bg" height={8} width={16} /> : null}
+        {showArrow ? (
+          <Popover.Arrow className={cn('fill-popup-bg', arrowClassName)} height={8} width={16} />
+        ) : null}
       </Popover.Content>
     </Popover.Portal>
   )

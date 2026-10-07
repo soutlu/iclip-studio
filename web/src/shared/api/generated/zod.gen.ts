@@ -152,6 +152,18 @@ export const zCollectionsPageOut = z.object({
 })
 
 /**
+ * ComposeSegmentIn
+ *
+ * 合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录
+ * 自己的媒体时间算；``end`` 为空就取到那条的结尾。
+ */
+export const zComposeSegmentIn = z.object({
+  end: z.number().nullish(),
+  sourceJobId: z.uuid(),
+  start: z.number().gte(0),
+})
+
+/**
  * ConversationActivityOut
  *
  * 这段对话此刻在忙什么。侧栏据此画角标。
@@ -283,6 +295,7 @@ export const zConversationIn = z.object({
   agentId: z.string().min(1).max(128),
   collectionId: z.uuid().nullish(),
   id: z.uuid().nullish(),
+  sameAs: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   title: z.string().min(1).max(200).nullish(),
   userName: z.string().nullish(),
@@ -298,10 +311,12 @@ export const zConversationOut = z.object({
   completedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   deletedAt: z.iso.datetime().nullable(),
+  eventEpoch: z.string(),
   forkTurn: z.int().nullable(),
   forkedFrom: z.uuid().nullable(),
   id: z.uuid(),
   lastRunId: z.string().nullable(),
+  lastSeq: z.int(),
   ownerUserId: z.uuid(),
   taskId: z.uuid().nullable(),
   title: z.string(),
@@ -356,10 +371,12 @@ export const zConversationsAuditItemOut = z.object({
   completedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   deletedAt: z.iso.datetime().nullable(),
+  eventEpoch: z.string(),
   forkTurn: z.int().nullable(),
   forkedFrom: z.uuid().nullable(),
   id: z.uuid(),
   lastRunId: z.string().nullable(),
+  lastSeq: z.int(),
   latestMasterUrl: z.string().nullable(),
   ownerUserId: z.uuid(),
   taskId: z.uuid().nullable(),
@@ -450,6 +467,211 @@ export const zFaceOut = z.object({
   outputUrl: z.string(),
   userName: z.string().nullable(),
   watermarkOutputUrl: z.string().nullable(),
+})
+
+/**
+ * FilmImageChoiceIn
+ *
+ * 给 ``node`` 换成 ``url``；``url`` 为 null 是取消生成图的选用，这张图就没有图了。
+ *
+ * 两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。
+ */
+export const zFilmImageChoiceIn = z.object({
+  filmVersion: z.int(),
+  node: z.string().min(1),
+  runVersion: z.int().nullable(),
+  url: z.string().nullable(),
+})
+
+/**
+ * FilmImagePromptIn
+ *
+ * 编辑器里改过的描述与参考图，只用这一次。
+ */
+export const zFilmImagePromptIn = z.object({
+  referenceImageUrls: z.array(z.string()).max(10),
+  text: z.string().min(1),
+})
+
+/**
+ * FilmImageGenerationIn
+ *
+ * 按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。
+ */
+export const zFilmImageGenerationIn = z.object({
+  filmVersion: z.int(),
+  node: z.string().min(1),
+  prompt: zFilmImagePromptIn.nullish(),
+  runVersion: z.int().nullable(),
+})
+
+/**
+ * FilmJobOut
+ *
+ * 受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。
+ */
+export const zFilmJobOut = z.object({
+  jobId: z.uuid(),
+})
+
+/**
+ * FilmLineEditIn
+ *
+ * 改好的一句台词的字；``target`` 照读到的原样传回。
+ */
+export const zFilmLineEditIn = z.object({
+  target: z.string().min(1),
+  text: z.string(),
+})
+
+/**
+ * FilmLineOut
+ *
+ * 镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。
+ */
+export const zFilmLineOut = z.object({
+  role: z.string(),
+  target: z.string(),
+  text: z.string(),
+})
+
+/**
+ * FilmPromptImageOut
+ *
+ * 描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。
+ */
+export const zFilmPromptImageOut = z.object({
+  kind: z.literal('image').optional().default('image'),
+  label: z.string(),
+  node: z.string(),
+  url: z.string(),
+})
+
+/**
+ * FilmPromptTextOut
+ */
+export const zFilmPromptTextOut = z.object({
+  kind: z.literal('text').optional().default('text'),
+  text: z.string(),
+})
+
+/**
+ * FilmFrameOut
+ *
+ * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ *
+ * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
+ * 用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法
+ * 同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。
+ */
+export const zFilmFrameOut = z.object({
+  aspectRatio: z.string().nullable(),
+  kind: z.enum(['generated', 'photo']),
+  label: z.string(),
+  missing: z.array(z.string()),
+  node: z.string(),
+  number: z.int().nullable(),
+  prompt: z.array(z.union([zFilmPromptTextOut, zFilmPromptImageOut])).nullable(),
+  url: z.string().nullable(),
+})
+
+/**
+ * FilmSettingOut
+ *
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
+ * 可以几张，拍法和声音为空。
+ */
+export const zFilmSettingOut = z.object({
+  images: z.array(z.string()),
+  kind: z.enum(['shooting', 'element', 'voice']),
+  label: z.string().nullable(),
+  target: z.string().nullable(),
+  text: z.string(),
+})
+
+/**
+ * FilmShotOut
+ *
+ * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；
+ * ``target`` 为 null 的镜头不能在页面上改。
+ */
+export const zFilmShotOut = z.object({
+  end: z.number(),
+  lines: z.array(zFilmLineOut),
+  parts: z.array(z.string()),
+  start: z.number(),
+  target: z.string().nullable(),
+  view: z.string().nullable(),
+})
+
+/**
+ * FilmGroupOut
+ */
+export const zFilmGroupOut = z.object({
+  aspectRatio: z.string(),
+  frames: z.array(zFilmFrameOut),
+  index: z.int(),
+  model: z.string(),
+  seconds: z.int(),
+  settings: z.array(zFilmSettingOut),
+  shots: z.array(zFilmShotOut),
+  video: z.string(),
+})
+
+/**
+ * FilmTextEditIn
+ *
+ * 改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它
+ * 多一段，台词只改字；其余给 ``text``。
+ */
+export const zFilmTextEditIn = z.object({
+  lines: z.array(zFilmLineEditIn).nullish(),
+  parts: z.array(z.string()).nullish(),
+  target: z.string().min(1),
+  text: z.string().nullish(),
+})
+
+/**
+ * FilmTextEditsIn
+ *
+ * ``filmVersion`` 是读到的工程文件版本号，对不上是 409。
+ */
+export const zFilmTextEditsIn = z.object({
+  edits: z.array(zFilmTextEditIn).min(1).max(64),
+  filmVersion: z.int(),
+})
+
+/**
+ * FilmVideoGenerationIn
+ *
+ * 给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。
+ */
+export const zFilmVideoGenerationIn = z.object({
+  filmVersion: z.int(),
+  generateAudio: z.boolean(),
+  model: z.string().min(1),
+  resolution: z.string().min(1).max(50),
+  runVersion: z.int().nullable(),
+  video: z.string().min(1),
+})
+
+/**
+ * FilmViewOut
+ *
+ * 制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。
+ */
+export const zFilmViewOut = z.object({
+  filmVersion: z.int(),
+  groups: z.array(zFilmGroupOut),
+  problems: z.int(),
+  runVersion: z.int().nullable(),
+})
+
+/**
+ * FilmViewEnvelope
+ */
+export const zFilmViewEnvelope = z.object({
+  film: zFilmViewOut,
 })
 
 /**
@@ -1509,6 +1731,7 @@ export const zShotGroupOut = z.object({
  * LibraryVideoDetailOut
  */
 export const zLibraryVideoDetailOut = z.object({
+  canMakeSame: z.boolean(),
   groups: z.array(zShotGroupOut),
   video: zLibraryVideoOut,
 })
@@ -1516,12 +1739,13 @@ export const zLibraryVideoDetailOut = z.object({
 /**
  * VideoComposeIn
  *
- * 一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。
+ * 一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。
  */
 export const zVideoComposeIn = z.object({
+  baseJobId: z.uuid(),
   conversationId: z.uuid().nullish(),
   metadata: z.record(z.string(), z.unknown()).nullish(),
-  sourceJobId: z.uuid(),
+  segments: z.array(zComposeSegmentIn).min(1).max(100),
   taskId: z.uuid().nullish(),
   userName: z.string().min(1).max(200).nullish(),
 })
@@ -1697,6 +1921,7 @@ export const zTranscriptPage = z.object({
   pending_interactions: z.array(z.string()).optional().default([]),
   prompts: z.array(zPrompt).optional().default([]),
   seq: z.int(),
+  stream_epoch: z.string(),
   tasks: z.array(zTranscriptTask).optional().default([]),
   title: z.string().optional().default(''),
   todos: z.array(z.unknown()).optional().default([]),
@@ -1755,22 +1980,25 @@ export const zOpsBatchOut = z.object({
  *
  * ``GET /transcript/ops`` 的补批响应。
  *
- * ``complete`` 为假表示要的批次已经出了日志窗口，客户端得整页重拉。
+ * ``complete`` 为假表示要的批次已经出了日志窗口，或调用方给的 ``stream_epoch`` 与当前实时流
+ * 对不上，客户端得整页重拉。``stream_epoch`` 是这些批次所属的实时流。
  */
 export const zOpsCatchup = z.object({
   agent_id: z.string(),
   batches: z.array(zOpsBatchOut),
   complete: z.boolean(),
   latest_seq: z.int(),
+  stream_epoch: z.string(),
 })
 
 /**
  * VideoEditIn
  *
- * 一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。
+ * 一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
  *
- * 与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切
- * 一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
+ * 转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+ * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
+ * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
  * ``VideoGenerationIn``，来源、原作与区间落列。
  */
 export const zVideoEditIn = z.object({
@@ -1782,6 +2010,7 @@ export const zVideoEditIn = z.object({
   range_end_ms: z.int(),
   range_start_ms: z.int().gte(0),
   reference_image_urls: z.array(z.string()).max(30).optional().default([]),
+  reference_video_urls: z.tuple([z.string()]),
   seconds: z.int().gte(-1).nullish(),
   source_job_id: z.uuid(),
   task_id: z.uuid().nullish(),
@@ -2131,6 +2360,15 @@ export const zDeleteConversationConversationsConversationIdDeletePath = z.object
  */
 export const zDeleteConversationConversationsConversationIdDeleteResponse = z.void()
 
+export const zReadConversationConversationsConversationIdGetPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadConversationConversationsConversationIdGetResponse = zConversationEnvelope
+
 export const zRenameConversationConversationsConversationIdPatchBody = zConversationRename
 
 export const zRenameConversationConversationsConversationIdPatchPath = z.object({
@@ -2167,6 +2405,69 @@ export const zSetConversationCompletionConversationsConversationIdCompletionPutP
  */
 export const zSetConversationCompletionConversationsConversationIdCompletionPutResponse =
   zConversationEnvelope
+
+export const zReadConversationFilmConversationsConversationIdFilmGetPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadConversationFilmConversationsConversationIdFilmGetResponse = zFilmViewEnvelope
+
+export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutBody =
+  zFilmImageChoiceIn
+
+export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutResponse =
+  zFilmViewEnvelope
+
+export const zGenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostBody =
+  zFilmImageGenerationIn
+
+export const zGenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zGenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponse =
+  zFilmJobOut
+
+export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchBody =
+  zFilmTextEditsIn
+
+export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchResponse =
+  zFilmViewEnvelope
+
+export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostBody =
+  zFilmVideoGenerationIn
+
+export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponse =
+  zFilmJobOut
 
 export const zApproveConversationsConversationIdInteractionsInteractionIdPostBody = zApprovalRequest
 
@@ -2272,6 +2573,7 @@ export const zCatchupConversationsConversationIdTranscriptOpsGetQuery = z.object
     .regex(/^[A-Za-z0-9._-]{1,128}$/)
     .optional()
     .default('main'),
+  stream_epoch: z.string().max(64).nullish(),
 })
 
 /**

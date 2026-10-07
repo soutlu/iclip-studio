@@ -1,6 +1,6 @@
-"""本地 HTTP 媒体服务，供远程切片测试用。
+"""本地 HTTP 媒体服务，供远程探测测试用。
 
-ffmpeg 自己走 http 去拿素材，不经 httpx transport，所以喂它假响应的办法只有起一个真服务。
+ffprobe 自己走 http 去拿素材，不经 httpx transport，所以喂它假响应的办法只有起一个真服务。
 ``ranges=False`` 用来模拟忽略 Range 的源：整份返回 200。
 """
 

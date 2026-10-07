@@ -1,27 +1,37 @@
-import { use, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { use, useEffect, useSyncExternalStore } from 'react'
 import { MAIN_AGENT_ID } from './connection'
-import type { TranscriptView } from './reader'
-import { TranscriptReadersContext } from './transcript-context'
+import { TranscriptPoolsContext } from './transcript-context'
+import type { TranscriptView } from './view'
 
-/** 订一段对话里某个 agent 的流；同一段流多处同时用时共享一个读取器。 */
+export type { TranscriptView } from './view'
+
+/**
+ * 用一段对话里某个 agent 的流：主流走主会话池，子代理走子代理池；挂载时 activate，卸载时释放。
+ * 同一段流多处同时用时共享一份；主流离开后仍在池里常驻，切回来不用重读。
+ */
 export const useTranscript = (
   conversationId: string,
   agentId: string = MAIN_AGENT_ID,
-): { view: TranscriptView; refresh: () => void } => {
-  const readers = use(TranscriptReadersContext)
-  if (readers === null) throw new Error('useTranscript 要在 TranscriptProvider 里用')
+): { view: TranscriptView; refresh: () => void; loadOlder: () => Promise<void> } => {
+  const pools = use(TranscriptPoolsContext)
+  if (pools === null) throw new Error('useTranscript 要在 TranscriptProvider 里用')
+  const main = agentId === MAIN_AGENT_ID
 
-  const reader = useMemo(
-    () => readers.get(conversationId, agentId),
-    [readers, conversationId, agentId],
+  useEffect(
+    () =>
+      main ? pools.main.activate(conversationId) : pools.sub.activate(conversationId, agentId),
+    [agentId, conversationId, main, pools],
   )
 
-  useEffect(() => readers.retain(reader), [readers, reader])
-
-  const view = useSyncExternalStore(
-    (onChange) => reader.listen(onChange),
-    () => reader.view(),
+  const view = useSyncExternalStore(main ? pools.main.subscribe : pools.sub.subscribe, () =>
+    main ? pools.main.view(conversationId) : pools.sub.view(conversationId, agentId),
   )
 
-  return { refresh: () => reader.refresh(), view }
+  return {
+    loadOlder: () =>
+      main ? pools.main.loadOlder(conversationId) : pools.sub.loadOlder(conversationId, agentId),
+    refresh: () =>
+      main ? pools.main.refresh(conversationId) : pools.sub.refresh(conversationId, agentId),
+    view,
+  }
 }

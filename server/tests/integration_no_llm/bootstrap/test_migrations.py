@@ -1077,6 +1077,9 @@ IMAGE_SOURCE = "fd0a5be42793"
 COLUMNS_RETIRED = "4acae9f7b988"
 """0021：删掉 updated_at 与 provider_snapshot，表到 ADR-0001 §9 的 27 列的那一版。"""
 
+COMPOSE_SOURCE = "a97c2445795a"
+"""0022：合成的来源改记基底，``request.segments`` 每段带出处的那一版。"""
+
 _INSERT_BEFORE_OPERATION = text(
     "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, provider, request, status, "
     "metadata, root_job_id, output_url, created_at, updated_at, finished_at) VALUES (:id, :owner, "
@@ -2430,3 +2433,279 @@ async def test_retire_migration_drops_the_two_columns_and_downgrade_restores_the
     assert rolled_back[composite]["provider_snapshot"] == {"durationMs": 7040}, (
         "时长还在列上，再降过 0018 时写回快照"
     )
+
+
+def _video_url(job_id: uuid.UUID) -> str:
+    return f"https://example.test/{job_id}.mp4"
+
+
+async def _insert_video(
+    conn: AsyncConnection,
+    job_id: uuid.UUID,
+    owner: uuid.UUID,
+    *,
+    operation: str = "generate",
+    status: str = "completed",
+    source: uuid.UUID | None = None,
+    root: uuid.UUID | None = None,
+    span: tuple[int, int] | None = None,
+    segments: Sequence[Mapping[str, object]] | None = None,
+    url: str | None = None,
+) -> None:
+    """按 0021 起的形状插一行视频：出片、编辑段（给来源、原作与区间）或合成（给来源、原作与各段）。
+
+    完成了的产物地址默认按 id 起，各行互不相同；``url`` 覆盖它。镜号一律记 2。"""
+
+    request: Mapping[str, object] = (
+        {"segments": list(segments or []), "userName": "logan"}
+        if operation == "compose"
+        else {"model": "m", "prompt": "p"}
+    )
+    done = status == "completed"
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, operation, provider, "
+            "request, status, source_job_id, root_job_id, range_start_ms, range_end_ms, "
+            "shot_index, output_url, created_at, finished_at) VALUES (:id, :owner, 'video', "
+            ":operation, 'test', CAST(:request AS jsonb), :status, :source, :root, :start, :end, "
+            "2, :url, now(), :finished)"
+        ),
+        {
+            "id": job_id,
+            "owner": owner,
+            "operation": operation,
+            "request": json.dumps(request),
+            "status": status,
+            "source": source,
+            "root": root,
+            "start": None if span is None else span[0],
+            "end": None if span is None else span[1],
+            "url": url if url is not None else (_video_url(job_id) if done else None),
+            "finished": datetime.now(UTC) if done else None,
+        },
+    )
+
+
+_COMPOSE_COLUMNS = "source_job_id, root_job_id, shot_index, request"
+
+
+async def test_compose_source_migration_moves_the_source_to_the_base_and_names_each_segment(
+    migrated_pg: str,
+) -> None:
+    """0022：合成的来源从编辑段改成编辑段的来源（基底），各段按地址补出处：对上基底填基底 id，
+    对上编辑段填编辑段 id，段的先后与开放的结尾不变；原作、镜号与别的行不动。在合成上再剪、
+    还在跑的合成照样回填。降级写回原样，再升结果不变。"""
+
+    cfg = _alembic(migrated_pg)
+    owner = uuid.uuid4()
+    take, edit, composite, re_edit, pending = (uuid.uuid4() for _ in range(5))
+    engine = create_async_engine(migrated_pg)
+    try:
+        command.downgrade(cfg, COLUMNS_RETIRED)
+        async with engine.begin() as conn:
+            await _insert_generation_owner(conn, owner)
+            await _insert_video(conn, take, owner)
+            await _insert_video(conn, edit, owner, source=take, root=take, span=(1000, 4000))
+            await _insert_video(
+                conn,
+                composite,
+                owner,
+                operation="compose",
+                source=edit,
+                root=take,
+                segments=[
+                    {"url": _video_url(take), "start": 0, "end": 1},
+                    {"url": _video_url(edit), "start": 0, "end": None},
+                    {"url": _video_url(take), "start": 4, "end": None},
+                ],
+            )
+            await _insert_video(conn, re_edit, owner, source=composite, root=take, span=(0, 2000))
+            await _insert_video(
+                conn,
+                pending,
+                owner,
+                operation="compose",
+                status="pending",
+                source=re_edit,
+                root=take,
+                segments=[
+                    {"url": _video_url(re_edit), "start": 0, "end": None},
+                    {"url": _video_url(composite), "start": 2, "end": None},
+                ],
+            )
+        await engine.dispose()
+        seeded = await _select_rows(migrated_pg, owner, _COMPOSE_COLUMNS)
+        command.upgrade(cfg, COMPOSE_SOURCE)
+        upgraded = await _select_rows(migrated_pg, owner, _COMPOSE_COLUMNS)
+        command.downgrade(cfg, COLUMNS_RETIRED)
+        restored = await _select_rows(migrated_pg, owner, _COMPOSE_COLUMNS)
+        command.upgrade(cfg, COMPOSE_SOURCE)
+        replayed = await _select_rows(migrated_pg, owner, _COMPOSE_COLUMNS)
+    finally:
+        await engine.dispose()
+        await _clear(migrated_pg)
+        command.upgrade(cfg, "head")
+
+    assert upgraded[composite] == {
+        "source_job_id": take,
+        "root_job_id": take,
+        "shot_index": 2,
+        "request": {
+            "segments": [
+                {"sourceJobId": str(take), "url": _video_url(take), "start": 0, "end": 1},
+                {"sourceJobId": str(edit), "url": _video_url(edit), "start": 0, "end": None},
+                {"sourceJobId": str(take), "url": _video_url(take), "start": 4, "end": None},
+            ],
+            "userName": "logan",
+        },
+    }
+    assert upgraded[pending]["source_job_id"] == composite, "基底是那次合成"
+    assert upgraded[pending]["request"] == {
+        "segments": [
+            {"sourceJobId": str(re_edit), "url": _video_url(re_edit), "start": 0, "end": None},
+            {"sourceJobId": str(composite), "url": _video_url(composite), "start": 2, "end": None},
+        ],
+        "userName": "logan",
+    }
+    assert {job_id: upgraded[job_id] for job_id in (take, edit, re_edit)} == {
+        job_id: seeded[job_id] for job_id in (take, edit, re_edit)
+    }, "出片与编辑段一列不动"
+
+    assert restored == seeded, "降级写回编辑段来源，擦掉各段出处"
+    assert replayed == upgraded, "降级再升，回填出同样的结果"
+
+
+@pytest.mark.parametrize(
+    "flaw",
+    ["url 对不上", "两个都对得上", "来源不是编辑段", "segments 不是数组"],
+)
+async def test_compose_source_migration_refuses_composites_it_cannot_place(
+    migrated_pg: str, flaw: str
+) -> None:
+    """认不出出处的合成交人判断：点名报错，库停在 0021，能回填的那条也不动。"""
+
+    cfg = _alembic(migrated_pg)
+    owner = uuid.uuid4()
+    take, edit, fine, offender = (uuid.uuid4() for _ in range(4))
+    fine_segments = [
+        {"url": _video_url(take), "start": 0, "end": 1},
+        {"url": _video_url(edit), "start": 0, "end": None},
+    ]
+    engine = create_async_engine(migrated_pg)
+    try:
+        command.downgrade(cfg, COLUMNS_RETIRED)
+        async with engine.begin() as conn:
+            await _insert_generation_owner(conn, owner)
+            await _insert_video(conn, take, owner)
+            await _insert_video(
+                conn,
+                edit,
+                owner,
+                source=take,
+                root=take,
+                span=(1000, 4000),
+                # 编辑段与基底同一个地址：说不清一段是出自哪条。
+                url=_video_url(take) if flaw == "两个都对得上" else None,
+            )
+            await _insert_video(
+                conn,
+                fine,
+                owner,
+                operation="compose",
+                source=edit,
+                root=take,
+                segments=fine_segments,
+            )
+            await _insert_video(
+                conn,
+                offender,
+                owner,
+                operation="compose",
+                source=take if flaw == "来源不是编辑段" else edit,
+                root=take,
+                segments=[
+                    {
+                        "url": "https://example.test/stranger.mp4"
+                        if flaw == "url 对不上"
+                        else _video_url(take),
+                        "start": 0,
+                    }
+                ],
+            )
+            if flaw == "segments 不是数组":
+                await conn.execute(
+                    text(
+                        "UPDATE iclip.generation_jobs SET request = '{\"segments\": {}}' "
+                        "WHERE id = :id"
+                    ),
+                    {"id": offender},
+                )
+        await engine.dispose()
+        with pytest.raises(RuntimeError, match="先人工处理") as refused:
+            command.upgrade(cfg, COMPOSE_SOURCE)
+        version = await _alembic_version(migrated_pg)
+        kept = await _select_rows(migrated_pg, owner, "source_job_id, request")
+    finally:
+        await engine.dispose()
+        await _clear(migrated_pg)
+        command.upgrade(cfg, "head")
+
+    assert str(offender) in str(refused.value), "报错要点名是哪一条合成"
+    if flaw != "两个都对得上":
+        assert str(fine) not in str(refused.value)
+    assert version == COLUMNS_RETIRED, "整个迁移回滚"
+    assert kept[fine]["source_job_id"] == edit, "能回填的那条也跟着回滚"
+    assert kept[fine]["request"] == {"segments": fine_segments, "userName": "logan"}
+
+
+@pytest.mark.parametrize("shape", ["只用基底", "夹进两条编辑段"])
+async def test_compose_source_migration_refuses_to_downgrade_what_the_old_shape_cannot_hold(
+    migrated_pg: str, shape: str
+) -> None:
+    """旧形状只认「基底加恰好一条基于它的编辑段」：裁剪出来的、夹进几条编辑段的合成拒绝降级，
+    库停在 0022，一行不动。"""
+
+    cfg = _alembic(migrated_pg)
+    owner = uuid.uuid4()
+    take, first, second, composite = (uuid.uuid4() for _ in range(4))
+    segments: list[Mapping[str, object]] = [
+        {"sourceJobId": str(take), "url": _video_url(take), "start": 0, "end": 1},
+        {"sourceJobId": str(take), "url": _video_url(take), "start": 3, "end": None},
+    ]
+    if shape == "夹进两条编辑段":
+        segments = [
+            {"sourceJobId": str(first), "url": _video_url(first), "start": 0, "end": None},
+            {"sourceJobId": str(second), "url": _video_url(second), "start": 0, "end": None},
+        ]
+    engine = create_async_engine(migrated_pg)
+    try:
+        async with engine.begin() as conn:
+            await _insert_generation_owner(conn, owner)
+            await _insert_video(conn, take, owner)
+            for edit in (first, second):
+                await _insert_video(conn, edit, owner, source=take, root=take, span=(1000, 4000))
+            await _insert_video(
+                conn,
+                composite,
+                owner,
+                operation="compose",
+                source=take,
+                root=take,
+                segments=segments,
+            )
+        await engine.dispose()
+        with pytest.raises(RuntimeError, match="旧形状表达不了") as refused:
+            command.downgrade(cfg, COLUMNS_RETIRED)
+        version = await _alembic_version(migrated_pg)
+        kept = await _select_rows(migrated_pg, owner, "source_job_id, request")
+    finally:
+        await engine.dispose()
+        await _clear(migrated_pg)
+        command.upgrade(cfg, "head")
+
+    assert str(composite) in str(refused.value)
+    assert version == COMPOSE_SOURCE
+    assert kept[composite] == {
+        "source_job_id": take,
+        "request": {"segments": segments, "userName": "logan"},
+    }

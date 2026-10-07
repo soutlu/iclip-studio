@@ -1,6 +1,6 @@
 name: release-images
 
-# GitHub 构建镜像并直接上传到 ACR；GHCR 只保存跨版本共享的 BuildKit 构建缓存。
+# GitHub 构建镜像，经专用代理上传到 ACR；GHCR 只保存跨版本共享的 BuildKit 构建缓存。
 # 正式发布只由版本标签触发；手动运行只验证分支，不更新 latest。
 permissions:
   contents: read
@@ -133,12 +133,75 @@ jobs:
             org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
           cache-from: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest
           cache-to: type=registry,ref=ghcr.io/${{ needs.prepare.outputs.repository }}/iclip-${{ matrix.service }}-buildcache:latest,mode=max
+      - name: Start ACR upload proxy
+        id: proxy
+        timeout-minutes: 3
+        env:
+          DMIT_CONFIG: ${{ secrets.ACR_DMIT_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DMIT_CONFIG" ]; then
+            echo '::error::Missing ACR_DMIT_CONFIG secret'
+            exit 1
+          fi
+          proxy_dir="$RUNNER_TEMP/acr-proxy"
+          mkdir -m 700 "$proxy_dir"
+          curl -fsSL --retry 2 \
+            https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-linux-amd64-compatible-v1.19.29.gz \
+            -o "$proxy_dir/mihomo.gz"
+          if ! printf '%s  %s\n' \
+            5612e698e96c8b8ad15abc4c0a4f098eba9234354b4f248cb97f2528e215b094 \
+            "$proxy_dir/mihomo.gz" | sha256sum --check --status; then
+            echo '::error::Mihomo checksum validation failed'
+            exit 1
+          fi
+          gzip -d "$proxy_dir/mihomo.gz"
+          chmod 700 "$proxy_dir/mihomo"
+          umask 077
+          printf '%s' "$DMIT_CONFIG" > "$proxy_dir/config.yaml"
+          # 配置及原始代理日志包含节点信息，不输出到公开日志或 artifact。
+          if ! "$proxy_dir/mihomo" -t -d "$proxy_dir" -f "$proxy_dir/config.yaml" > "$proxy_dir/config-check.log" 2>&1; then
+            echo '::error::Invalid ACR_DMIT_CONFIG; validate it locally with Mihomo v1.19.29 -t'
+            exit 1
+          fi
+          nohup "$proxy_dir/mihomo" -d "$proxy_dir" -f "$proxy_dir/config.yaml" > "$proxy_dir/proxy.log" 2>&1 &
+          echo "$!" > "$proxy_dir/pid"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import socket
+          import time
+          pid = int((Path(os.environ["RUNNER_TEMP"]) / "acr-proxy/pid").read_text())
+          for _ in range(40):
+              try:
+                  os.kill(pid, 0)
+              except ProcessLookupError:
+                  raise SystemExit("ACR upload proxy exited before opening its listener")
+              try:
+                  with socket.create_connection(("127.0.0.1", 17891), timeout=0.25):
+                      break
+              except OSError:
+                  time.sleep(0.25)
+          else:
+              raise SystemExit("ACR upload proxy listener did not start")
+          PY
+          status=$(curl --proxy http://127.0.0.1:17891 --noproxy '' \
+            --max-time 30 --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            "https://$REGISTRY/v2/")
+          case "$status" in
+            200|401) echo 'ACR upload proxy is ready; registry TLS verified.' ;;
+            *) echo "::error::ACR connectivity check through proxy returned HTTP $status"; exit 1 ;;
+          esac
       - name: Push missing image layers to ACR
         id: push
         timeout-minutes: 25
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
+          HTTP_PROXY: http://127.0.0.1:17891
+          HTTPS_PROXY: http://127.0.0.1:17891
+          NO_PROXY: localhost,127.0.0.1,::1
         run: |
+          SECONDS=0
           export REGISTRY_AUTH_FILE="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
           python3 .github/scripts/stream-progress.py \
             skopeo copy --preserve-digests --retry-times 2 \
@@ -147,6 +210,7 @@ jobs:
           digest=$(cat "$RUNNER_TEMP/pushed-digest")
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
       - name: Verify ACR image digest
         id: verify
         timeout-minutes: 3
@@ -178,20 +242,31 @@ jobs:
             printf '核验失败：期望 `%s`，ACR 实际 `%s`。\n' "$EXPECTED_DIGEST" "$actual" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+      - name: Stop ACR upload proxy and remove its credentials
+        if: always()
+        run: |
+          proxy_dir="$RUNNER_TEMP/acr-proxy"
+          if [ -f "$proxy_dir/pid" ]; then
+            kill "$(cat "$proxy_dir/pid")" 2>/dev/null || true
+          fi
+          rm -rf "$proxy_dir"
       - name: Record image result
         if: always()
         env:
           RESULT: ${{ job.status }}
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/iclip-${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
           BUILD_RESULT: ${{ steps.image.outcome }}
+          PROXY_RESULT: ${{ steps.proxy.outcome }}
           PUSH_RESULT: ${{ steps.push.outcome }}
+          PUSH_SECONDS: ${{ steps.push.outputs.seconds }}
           VERIFY_RESULT: ${{ steps.verify.outcome }}
           EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
           ACTUAL_DIGEST: ${{ steps.verify.outputs.digest }}
         run: |
           {
             printf '镜像：`%s`；结果：**%s**\n\n' "$IMAGE_REF" "$RESULT"
-            printf '构建：%s；上传：%s；远端核验：%s\n\n' "$BUILD_RESULT" "$PUSH_RESULT" "$VERIFY_RESULT"
+            printf '构建：%s；代理：%s；上传：%s；远端核验：%s\n\n' "$BUILD_RESULT" "$PROXY_RESULT" "$PUSH_RESULT" "$VERIFY_RESULT"
+            printf '上传路径：DMIT；上传完成耗时：%s 秒（包含远端已有层检查）。\n\n' "${PUSH_SECONDS:-未完成}"
             printf '构建摘要：`%s`；ACR 摘要：`%s`\n' "${EXPECTED_DIGEST:-未返回}" "${ACTUAL_DIGEST:-未取得}"
           } >> "$GITHUB_STEP_SUMMARY"
 

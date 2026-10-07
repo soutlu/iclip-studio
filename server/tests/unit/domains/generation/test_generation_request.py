@@ -100,12 +100,20 @@ def test_stored_payload_keeps_each_kinds_own_field_names() -> None:
 
 
 def test_a_composite_round_trips_and_keeps_open_ends_open() -> None:
-    """合成落库的是各段与对账名；取到结尾的段存成 null，读回仍是开放的。"""
+    """合成落库的是各段（出处、地址、起止）与对账名；出处存成字符串，取到结尾的段存成 null，
+    读回仍是开放的。"""
 
-    original = compose_request()
+    edit = uuid.uuid4()
+    original = compose_request(
+        segments=[
+            {"source_job_id": uuid.uuid4(), "url": "https://example.com/base.mp4", "start": 0},
+            {"source_job_id": edit, "url": "https://example.com/edited.mp4", "start": 0},
+        ]
+    )
     payload = request_to_payload(original)
 
     assert payload["segments"][1] == {
+        "sourceJobId": str(edit),
         "url": "https://example.com/edited.mp4",
         "start": 0,
         "end": None,
@@ -114,21 +122,26 @@ def test_a_composite_round_trips_and_keeps_open_ends_open() -> None:
     assert request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, payload) == original
 
 
-def test_a_legacy_master_payload_reads_back_as_a_composite() -> None:
-    """迁移前拼好的成片只存了各段，去掉 purpose 后原样读回，没有对账名。"""
+def test_a_composite_stored_before_user_names_reads_back_without_one() -> None:
+    """0017 之前拼好的成片没有对账名，读回 ``user_name`` 为空；各段的出处由 0022 补齐。"""
 
-    legacy = {
+    base, edit = uuid.uuid4(), uuid.uuid4()
+    stored = {
         "segments": [
-            {"url": "https://example.com/base.mp4", "start": 0, "end": 4},
-            {"url": "https://example.com/edited.mp4", "start": 0, "end": 4.3},
-            {"url": "https://example.com/base.mp4", "start": 8, "end": 15},
+            {"sourceJobId": str(base), "url": "https://example.com/base.mp4", "start": 0, "end": 4},
+            {
+                "sourceJobId": str(edit),
+                "url": "https://example.com/edited.mp4",
+                "start": 0,
+                "end": 4.3,
+            },
         ]
     }
 
-    restored = request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, legacy)
+    restored = request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, stored)
 
     assert isinstance(restored, VideoComposeRequest)
-    assert [segment.end for segment in restored.segments] == [4, 4.3, 15]
+    assert [segment.source_job_id for segment in restored.segments] == [base, edit]
     assert restored.user_name is None
 
 
@@ -147,38 +160,48 @@ def test_the_stored_shape_is_chosen_by_kind_and_operation() -> None:
         request_from_payload("clip", OPERATION_COMPOSE, request_to_payload(compose_request()))
 
 
+_SOURCE = str(uuid.uuid4())
+
+
 @pytest.mark.parametrize(
     "segment",
     [
-        {"url": "file:///etc/passwd", "start": 0, "end": 1},
-        {"url": "https:///a.mp4", "start": 0},
-        {"url": "https://example.com/a.mp4", "start": -1},
-        {"url": "https://example.com/a.mp4", "start": 2, "end": 2},
+        {"sourceJobId": _SOURCE, "url": "file:///etc/passwd", "start": 0, "end": 1},
+        {"sourceJobId": _SOURCE, "url": "https:///a.mp4", "start": 0},
+        {"sourceJobId": _SOURCE, "url": "https://example.com/a.mp4", "start": -1},
+        {"sourceJobId": _SOURCE, "url": "https://example.com/a.mp4", "start": 2, "end": 2},
+        {"url": "https://example.com/a.mp4", "start": 0},
     ],
-    ids=["不是 http", "没有主机名", "起点为负", "结尾不晚于起点"],
+    ids=["不是 http", "没有主机名", "起点为负", "结尾不晚于起点", "没有出处"],
 )
-def test_a_composite_segment_must_be_a_downloadable_forward_span(
+def test_a_composite_segment_must_be_a_downloadable_forward_span_with_a_source(
     segment: dict[str, object],
 ) -> None:
     with pytest.raises(ValueError):
         ComposeSegment.model_validate(segment)
 
 
-def test_an_edit_takes_a_forward_range_and_none_of_the_fields_the_server_fills() -> None:
-    """编辑段只收区间与正文；参考视频由服务端切，原作由基底定，结构化镜头组不收。"""
+def test_an_edit_takes_a_forward_range_one_clip_and_none_of_the_fields_the_server_fills() -> None:
+    """编辑段收区间、恰好一条参考片段与正文；原作由基底定，结构化镜头组不收。"""
 
     base = {
         "source_job_id": str(uuid.uuid4()),
         "range_start_ms": 1000,
         "range_end_ms": 4000,
+        "reference_video_urls": ["https://example.com/clip.mp4"],
         "model": "m",
         "prompt": "换成编织凉鞋",
     }
     assert VideoEditIn.model_validate(base).range_end_ms == 4000
+    without_clip = {key: value for key, value in base.items() if key != "reference_video_urls"}
+    with pytest.raises(ValueError, match="reference_video_urls"):
+        VideoEditIn.model_validate(without_clip)
     for flaw in (
         {"range_start_ms": -1},
         {"range_end_ms": 1000},
-        {"reference_video_urls": ["https://example.com/ref.mp4"]},
+        {"reference_video_urls": []},
+        {"reference_video_urls": ["https://example.com/a.mp4", "https://example.com/b.mp4"]},
+        {"reference_video_urls": ["file:///etc/passwd"]},
         {"root_job_id": str(uuid.uuid4())},
         {"shot": video_shot()},
     ):

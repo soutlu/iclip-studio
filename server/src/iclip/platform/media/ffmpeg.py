@@ -8,9 +8,10 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -23,8 +24,6 @@ _STDERR_LIMIT = 400
 _DOWNLOAD_CHUNK = 256 * 1024
 
 PROBE_TIMEOUT_SECONDS = 30.0
-CUT_TIMEOUT_SECONDS = 120.0
-"""按关键帧裁一段不重编码，耗时只有 IO——远程输入还要算上按需读那几段的网络往返。"""
 
 ENCODE_TIMEOUT_SECONDS = 900.0
 """拼接要整条重编码的超时上限。"""
@@ -32,7 +31,7 @@ ENCODE_TIMEOUT_SECONDS = 900.0
 DOWNLOAD_TIMEOUT_SECONDS = 300.0
 
 REMOTE_READ_TIMEOUT_SECONDS = 30.0
-"""远程输入单次读写的等待上限，整段仍受 CUT_TIMEOUT_SECONDS 约束。"""
+"""远程输入单次读写的等待上限，整段仍受调用方给 ``run`` 的超时约束。"""
 
 _REMOTE_INPUT: Final = (
     # ffmpeg 按内容探测格式，一份伪装成 mp4 的播放列表会让 HLS 解复用器去跟里面的地址。
@@ -58,6 +57,18 @@ _VIDEO_CODEC = ("-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt"
 
 比视觉无损档多留一档（18 → 16，体积涨约四分之一）：编辑链上每出一版都要把整条重编一遍，
 下一版是在上一版的产物上再编，损失会累积。"""
+
+_ONLY_FORCED_KEYFRAMES: Final = (
+    "-forced-idr",
+    "1",
+    # 关键帧只能出现在 -force_key_frames 给的时刻（ADR-0010）。x264 自己会在两处插：场景切换，
+    # 和默认 250 帧的 keyint 上限。两处都用 x264 的参数关：「不设上限」只有 keyint=infinite
+    # 写得出来，ffmpeg 的 -g 只收一个有限的数；scenecut=0 跟它写在一处，不必再对 ffmpeg 的
+    # -sc_threshold 映射到 x264 的哪一项。
+    "-x264-params",
+    "scenecut=0:keyint=infinite",
+)
+"""接在 ``_VIDEO_CODEC`` 之后，与 ``-force_key_frames`` 同用：关键帧只放在给定的时刻。"""
 
 _AUDIO_CODEC = ("-c:a", "aac", "-b:a", "192k")
 _AUDIO_RATE = 48000
@@ -212,61 +223,53 @@ async def probe_video(path: Path) -> VideoProfile:
     )
 
 
+async def probe_keyframes(path: Path) -> list[float]:
+    """读第一条视频流的关键帧时刻（秒），从小到大。
+
+    时刻从文件的起始时间算起，与 ffmpeg 读这条素材时 ``trim``、``-ss`` 用的是同一条时间轴。
+    读的是容器里每个包的关键帧标记，不解码。没有视频流、一个关键帧都没有、或 ffprobe 读不了
+    抛 MediaError。"""
+
+    stdout = await run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=index:packet=pts_time,flags:format=start_time",
+            "-of",
+            "json",
+            str(path),
+        ],
+        timeout=PROBE_TIMEOUT_SECONDS,
+    )
+    try:
+        report = json.loads(stdout)
+        streams = report["streams"]
+        packets = report["packets"]
+        start = float(report["format"].get("start_time", 0))
+        keyframes = sorted(
+            float(packet["pts_time"]) - start
+            for packet in packets
+            if "K" in packet.get("flags", "")
+        )
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise MediaError("ffprobe 的关键帧信息看不懂") from exc
+    if not streams:
+        raise MediaError(f"这条素材里没有视频流: {path.name}")
+    if not keyframes:
+        raise MediaError(f"这条素材的视频流里没有关键帧: {path.name}")
+    return keyframes
+
+
 def _positive_fraction(value: str) -> bool:
     numerator, _, denominator = value.partition("/")
     try:
         return float(numerator) > 0 and float(denominator or 1) > 0
     except ValueError:
         return False
-
-
-async def cut_copy_url(url: str, *, start: float, end: float, dest: Path) -> None:
-    """按需读远程视频并裁出一段，不重编码，只取选区需要的字节。
-
-    ``-c copy`` 只能在关键帧处下刀：起点会落到 ``start`` 之前最近的那个关键帧，产物因此
-    比请求的区间长，多出来的主要在开头；``-t`` 按解码顺序截，尾部也会因 B 帧延迟多出几帧。
-    调用方按产物实际时长反算的起点是差几帧的近似值，不在这里为对齐再解一遍码。
-
-    ffmpeg 自己用 Range 读索引与选区（实测传约三成）。源忽略 Range 时退化为顺序读：moov
-    在文件头部仍能出正确产物，在尾部则退出码为 0 却不产出内容，由产物检查判失败。读取量
-    由索引、关键帧和选区决定，选区接近整片时也接近整片，所以不设流量上限。
-
-    地址非法、区间无效、网络失败、超时或产物无效抛 MediaError；消息里的地址去掉查询串，
-    签名不进日志。超时与取消都先 kill 再 wait，不留子进程。"""
-
-    if not is_http_url(url):
-        raise MediaError(f"要裁的地址不是 http(s): {_safe_url(url)}")
-    duration = end - start
-    if start < 0 or duration <= 0:
-        raise MediaError(f"片段区间无效: [{start}, {end})")
-    try:
-        await run(
-            [
-                "ffmpeg",
-                "-v",
-                "error",
-                "-y",
-                "-ss",
-                f"{start:.3f}",
-                *_REMOTE_INPUT,
-                "-i",
-                url,
-                "-t",
-                f"{duration:.3f}",
-                "-c",
-                "copy",
-                "-avoid_negative_ts",
-                "make_zero",
-                "-movflags",
-                "+faststart",
-                str(dest),
-            ],
-            timeout=CUT_TIMEOUT_SECONDS,
-        )
-    except MediaError as exc:
-        # run() 把 ffmpeg 的 stderr 原样带进消息，而它报 403/404/超时时会写出整条地址。
-        raise MediaError(str(exc).replace(url, _safe_url(url))) from exc
-    _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
 
 
 async def cut_concat(cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: Path) -> None:
@@ -276,13 +279,21 @@ async def cut_concat(cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: P
     各输入参数一致。``profile`` 要音轨而某一段没有时，那一段配一条等长静音。
 
     哪几段没有音轨在这里自己探一遍（每个源几十毫秒），不要调用方随 ``MediaCut`` 带进来：
-    那会把「记住各段有没有音轨」变成调用方的义务，记错就是一条拼不出来的滤镜图。"""
+    那会把「记住各段有没有音轨」变成调用方的义务，记错就是一条拼不出来的滤镜图。
+
+    产物的关键帧只放在每段的起点和每段内素材原有的关键帧处，别处不放（ADR-0010）；
+    素材的关键帧同样在这里自己读，算法见 ``_concat_keyframes``。"""
 
     if not cuts:
         raise MediaError("没有要拼的片段")
     for cut in cuts:
         _check_cut(cut)
     silent = [not (await probe_video(cut.source)).has_audio for cut in cuts]
+    keyframes = _concat_keyframes(
+        cuts,
+        {source: await probe_keyframes(source) for source in {cut.source for cut in cuts}},
+        frame_rate=Fraction(profile.frame_rate),
+    )
 
     inputs: list[str] = []
     chains: list[str] = []
@@ -330,9 +341,35 @@ async def cut_concat(cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: P
     args += ["-map", "[outv]"]
     if profile.has_audio:
         args += ["-map", "[outa]", *_AUDIO_CODEC]
-    args += [*_VIDEO_CODEC, "-movflags", "+faststart", str(dest)]
+    args += [*_VIDEO_CODEC, "-force_key_frames", keyframes, *_ONLY_FORCED_KEYFRAMES]
+    args += ["-movflags", "+faststart", str(dest)]
     await run(args, timeout=ENCODE_TIMEOUT_SECONDS)
     _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
+
+
+def _concat_keyframes(
+    cuts: Sequence[MediaCut], keyframes: Mapping[Path, Sequence[float]], *, frame_rate: Fraction
+) -> str:
+    """拼接产物的关键帧时刻表，写成 ``-force_key_frames`` 收的逗号分隔串。
+
+    每段在产物里从之前各段时长之和处起；关键帧是每段的起点，加上这段素材在 ``[start, end)``
+    里原有的关键帧，换算到产物时间。换算后落到产物的第几帧（按 ``frame_rate`` 取最近的一帧），
+    同一帧只留一个。
+
+    交给 ffmpeg 的是每个关键帧往前半帧的时刻：ffmpeg 把第一个时间戳不早于给定时刻的帧编成
+    关键帧，给帧的正点时刻会因为写成十进制时向上舍入而落到下一帧；同一帧给两个时刻，它会把
+    后一帧也编成关键帧。"""
+
+    frames: set[int] = set()
+    offset = 0.0
+    for cut in cuts:
+        inside = [k for k in keyframes[cut.source] if cut.start <= k < cut.end]
+        for time in [cut.start, *inside]:
+            frames.add(round(Fraction(offset + time - cut.start) * frame_rate))
+        offset += cut.duration
+    return ",".join(
+        f"{max(Fraction(0), (frame - Fraction(1, 2)) / frame_rate):.6f}" for frame in sorted(frames)
+    )
 
 
 def _check_cut(cut: MediaCut) -> None:
@@ -390,7 +427,6 @@ async def run(args: list[str], *, timeout: float) -> bytes:
 
 
 __all__ = [
-    "CUT_TIMEOUT_SECONDS",
     "DOWNLOAD_TIMEOUT_SECONDS",
     "ENCODE_TIMEOUT_SECONDS",
     "MAX_IMAGE_BYTES",
@@ -401,11 +437,11 @@ __all__ = [
     "MediaError",
     "VideoProfile",
     "cut_concat",
-    "cut_copy_url",
     "download",
     "fetched",
     "ffmpeg_available",
     "probe_duration_ms",
+    "probe_keyframes",
     "probe_remote_duration_ms",
     "probe_video",
     "run",

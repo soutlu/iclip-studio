@@ -708,6 +708,39 @@
         "title": "CollectionsPageOut",
         "type": "object"
       },
+      "ComposeSegmentIn": {
+        "additionalProperties": false,
+        "description": "合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录\n自己的媒体时间算；``end`` 为空就取到那条的结尾。",
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sourceJobId",
+          "start"
+        ],
+        "title": "ComposeSegmentIn",
+        "type": "object"
+      },
       "ConversationActivityOut": {
         "additionalProperties": false,
         "description": "这段对话此刻在忙什么。侧栏据此画角标。\n\n嵌套一层而不是把字段平铺到行上：这一组事实还会长，平铺的话每加一个都要在行上再开一个\n顶层字段。",
@@ -1059,6 +1092,18 @@
             ],
             "title": "Id"
           },
+          "sameAs": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas"
+          },
           "taskId": {
             "anyOf": [
               {
@@ -1153,6 +1198,10 @@
             ],
             "title": "Deletedat"
           },
+          "eventEpoch": {
+            "title": "Eventepoch",
+            "type": "string"
+          },
           "forkTurn": {
             "anyOf": [
               {
@@ -1191,6 +1240,10 @@
               }
             ],
             "title": "Lastrunid"
+          },
+          "lastSeq": {
+            "title": "Lastseq",
+            "type": "integer"
           },
           "ownerUserId": {
             "format": "uuid",
@@ -1233,7 +1286,9 @@
           "completedAt",
           "forkedFrom",
           "forkTurn",
-          "activity"
+          "activity",
+          "lastSeq",
+          "eventEpoch"
         ],
         "title": "ConversationOut",
         "type": "object"
@@ -1359,6 +1414,10 @@
             ],
             "title": "Deletedat"
           },
+          "eventEpoch": {
+            "title": "Eventepoch",
+            "type": "string"
+          },
           "forkTurn": {
             "anyOf": [
               {
@@ -1397,6 +1456,10 @@
               }
             ],
             "title": "Lastrunid"
+          },
+          "lastSeq": {
+            "title": "Lastseq",
+            "type": "integer"
           },
           "latestMasterUrl": {
             "anyOf": [
@@ -1451,6 +1514,8 @@
           "forkedFrom",
           "forkTurn",
           "activity",
+          "lastSeq",
+          "eventEpoch",
           "latestMasterUrl"
         ],
         "title": "ConversationsAuditItemOut",
@@ -1888,6 +1953,693 @@
           "userName"
         ],
         "title": "FaceOut",
+        "type": "object"
+      },
+      "FilmFrameOut": {
+        "additionalProperties": false,
+        "description": "一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。\n\n``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。\n用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法\n同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。",
+        "properties": {
+          "aspectRatio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspectratio"
+          },
+          "kind": {
+            "enum": [
+              "generated",
+              "photo"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "image": "#/components/schemas/FilmPromptImageOut",
+                      "text": "#/components/schemas/FilmPromptTextOut"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FilmPromptTextOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FilmPromptImageOut"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "node",
+          "label",
+          "kind",
+          "url",
+          "number",
+          "prompt",
+          "aspectRatio",
+          "missing"
+        ],
+        "title": "FilmFrameOut",
+        "type": "object"
+      },
+      "FilmGroupOut": {
+        "additionalProperties": false,
+        "properties": {
+          "aspectRatio": {
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/FilmFrameOut"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "integer"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/FilmSettingOut"
+            },
+            "title": "Settings",
+            "type": "array"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/FilmShotOut"
+            },
+            "title": "Shots",
+            "type": "array"
+          },
+          "video": {
+            "title": "Video",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "video",
+          "model",
+          "seconds",
+          "aspectRatio",
+          "frames",
+          "settings",
+          "shots"
+        ],
+        "title": "FilmGroupOut",
+        "type": "object"
+      },
+      "FilmImageChoiceIn": {
+        "additionalProperties": false,
+        "description": "给 ``node`` 换成 ``url``；``url`` 为 null 是取消生成图的选用，这张图就没有图了。\n\n两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "node": {
+            "minLength": 1,
+            "title": "Node",
+            "type": "string"
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "node",
+          "url",
+          "filmVersion",
+          "runVersion"
+        ],
+        "title": "FilmImageChoiceIn",
+        "type": "object"
+      },
+      "FilmImageGenerationIn": {
+        "additionalProperties": false,
+        "description": "按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "node": {
+            "minLength": 1,
+            "title": "Node",
+            "type": "string"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilmImagePromptIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          }
+        },
+        "required": [
+          "node",
+          "filmVersion",
+          "runVersion"
+        ],
+        "title": "FilmImageGenerationIn",
+        "type": "object"
+      },
+      "FilmImagePromptIn": {
+        "additionalProperties": false,
+        "description": "编辑器里改过的描述与参考图，只用这一次。",
+        "properties": {
+          "referenceImageUrls": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Referenceimageurls",
+            "type": "array"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "referenceImageUrls"
+        ],
+        "title": "FilmImagePromptIn",
+        "type": "object"
+      },
+      "FilmJobOut": {
+        "additionalProperties": false,
+        "description": "受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。",
+        "properties": {
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "title": "FilmJobOut",
+        "type": "object"
+      },
+      "FilmLineEditIn": {
+        "additionalProperties": false,
+        "description": "改好的一句台词的字；``target`` 照读到的原样传回。",
+        "properties": {
+          "target": {
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "text"
+        ],
+        "title": "FilmLineEditIn",
+        "type": "object"
+      },
+      "FilmLineOut": {
+        "additionalProperties": false,
+        "description": "镜头里的一句台词。改这个镜头时用 ``target`` 指明是原有的哪一句。",
+        "properties": {
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "role",
+          "text"
+        ],
+        "title": "FilmLineOut",
+        "type": "object"
+      },
+      "FilmPromptImageOut": {
+        "additionalProperties": false,
+        "description": "描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。",
+        "properties": {
+          "kind": {
+            "const": "image",
+            "default": "image",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "label",
+          "url"
+        ],
+        "title": "FilmPromptImageOut",
+        "type": "object"
+      },
+      "FilmPromptTextOut": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "FilmPromptTextOut",
+        "type": "object"
+      },
+      "FilmSettingOut": {
+        "additionalProperties": false,
+        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，\n可以几张，拍法和声音为空。",
+        "properties": {
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Images",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "shooting",
+              "element",
+              "voice"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target",
+          "label",
+          "text",
+          "images"
+        ],
+        "title": "FilmSettingOut",
+        "type": "object"
+      },
+      "FilmShotOut": {
+        "additionalProperties": false,
+        "description": "一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间；\n``target`` 为 null 的镜头不能在页面上改。",
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/FilmLineOut"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "parts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          }
+        },
+        "required": [
+          "target",
+          "start",
+          "end",
+          "parts",
+          "lines",
+          "view"
+        ],
+        "title": "FilmShotOut",
+        "type": "object"
+      },
+      "FilmTextEditIn": {
+        "additionalProperties": false,
+        "description": "改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它\n多一段，台词只改字；其余给 ``text``。",
+        "properties": {
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FilmLineEditIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
+          },
+          "target": {
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "FilmTextEditIn",
+        "type": "object"
+      },
+      "FilmTextEditsIn": {
+        "additionalProperties": false,
+        "description": "``filmVersion`` 是读到的工程文件版本号，对不上是 409。",
+        "properties": {
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/FilmTextEditIn"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Edits",
+            "type": "array"
+          },
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filmVersion",
+          "edits"
+        ],
+        "title": "FilmTextEditsIn",
+        "type": "object"
+      },
+      "FilmVideoGenerationIn": {
+        "additionalProperties": false,
+        "description": "给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "generateAudio": {
+            "title": "Generateaudio",
+            "type": "boolean"
+          },
+          "model": {
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "resolution": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Resolution",
+            "type": "string"
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          },
+          "video": {
+            "minLength": 1,
+            "title": "Video",
+            "type": "string"
+          }
+        },
+        "required": [
+          "video",
+          "model",
+          "resolution",
+          "generateAudio",
+          "filmVersion",
+          "runVersion"
+        ],
+        "title": "FilmVideoGenerationIn",
+        "type": "object"
+      },
+      "FilmViewEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "film": {
+            "$ref": "#/components/schemas/FilmViewOut"
+          }
+        },
+        "required": [
+          "film"
+        ],
+        "title": "FilmViewEnvelope",
+        "type": "object"
+      },
+      "FilmViewOut": {
+        "additionalProperties": false,
+        "description": "制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/FilmGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "problems": {
+            "title": "Problems",
+            "type": "integer"
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          }
+        },
+        "required": [
+          "filmVersion",
+          "runVersion",
+          "problems",
+          "groups"
+        ],
+        "title": "FilmViewOut",
         "type": "object"
       },
       "FrameTarget": {
@@ -2630,6 +3382,10 @@
       "LibraryVideoDetailOut": {
         "additionalProperties": false,
         "properties": {
+          "canMakeSame": {
+            "title": "Canmakesame",
+            "type": "boolean"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/ShotGroupOut"
@@ -2643,7 +3399,8 @@
         },
         "required": [
           "video",
-          "groups"
+          "groups",
+          "canMakeSame"
         ],
         "title": "LibraryVideoDetailOut",
         "type": "object"
@@ -3337,7 +4094,7 @@
       },
       "OpsCatchup": {
         "additionalProperties": false,
-        "description": "``GET /transcript/ops`` 的补批响应。\n\n``complete`` 为假表示要的批次已经出了日志窗口，客户端得整页重拉。",
+        "description": "``GET /transcript/ops`` 的补批响应。\n\n``complete`` 为假表示要的批次已经出了日志窗口，或调用方给的 ``stream_epoch`` 与当前实时流\n对不上，客户端得整页重拉。``stream_epoch`` 是这些批次所属的实时流。",
         "properties": {
           "agent_id": {
             "title": "Agent Id",
@@ -3357,13 +4114,18 @@
           "latest_seq": {
             "title": "Latest Seq",
             "type": "integer"
+          },
+          "stream_epoch": {
+            "title": "Stream Epoch",
+            "type": "string"
           }
         },
         "required": [
           "agent_id",
           "batches",
           "latest_seq",
-          "complete"
+          "complete",
+          "stream_epoch"
         ],
         "title": "OpsCatchup",
         "type": "object"
@@ -5452,6 +6214,10 @@
             "title": "Seq",
             "type": "integer"
           },
+          "stream_epoch": {
+            "title": "Stream Epoch",
+            "type": "string"
+          },
           "tasks": {
             "default": [],
             "items": {
@@ -5476,7 +6242,8 @@
           "agent_id",
           "items",
           "has_more",
-          "seq"
+          "seq",
+          "stream_epoch"
         ],
         "title": "TranscriptPage",
         "type": "object"
@@ -6792,8 +7559,13 @@
       },
       "VideoComposeIn": {
         "additionalProperties": false,
-        "description": "一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。",
+        "description": "一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。",
         "properties": {
+          "baseJobId": {
+            "format": "uuid",
+            "title": "Basejobid",
+            "type": "string"
+          },
           "conversationId": {
             "anyOf": [
               {
@@ -6818,10 +7590,14 @@
             ],
             "title": "Metadata"
           },
-          "sourceJobId": {
-            "format": "uuid",
-            "title": "Sourcejobid",
-            "type": "string"
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/ComposeSegmentIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
           },
           "taskId": {
             "anyOf": [
@@ -6850,7 +7626,8 @@
           }
         },
         "required": [
-          "sourceJobId"
+          "baseJobId",
+          "segments"
         ],
         "title": "VideoComposeIn",
         "type": "object"
@@ -6876,7 +7653,7 @@
       },
       "VideoEditIn": {
         "additionalProperties": false,
-        "description": "一次编辑段的受理输入：在一条成片上改 ``[range_start_ms, range_end_ms)`` 这一段。\n\n与出片同族，转发给上游的字段照上游命名。不收参考视频：服务端提交上游前按区间从基底上切\n一段交给模型。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoGenerationIn``，来源、原作与区间落列。",
+        "description": "一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。\n\n转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。\n``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条\n记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoGenerationIn``，来源、原作与区间落列。",
         "properties": {
           "conversation_id": {
             "anyOf": [
@@ -6944,6 +7721,15 @@
             "title": "Reference Image Urls",
             "type": "array"
           },
+          "reference_video_urls": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Reference Video Urls",
+            "type": "array"
+          },
           "seconds": {
             "anyOf": [
               {
@@ -6991,6 +7777,7 @@
           "source_job_id",
           "range_start_ms",
           "range_end_ms",
+          "reference_video_urls",
           "model",
           "prompt"
         ],
@@ -8479,7 +9266,7 @@
         ]
       },
       "post": {
-        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。",
+        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：源看不见是 404，源没有工程文件或分镜文件是 422。",
         "operationId": "create_conversation_conversations_post",
         "requestBody": {
           "content": {
@@ -9084,6 +9871,60 @@
           "conversations"
         ]
       },
+      "get": {
+        "description": "读一段对话的整行，给列表在轮次状态变化后单独刷新这一行（照 Kimi 按 id 取会话）。\n\n可见范围同其他读路径：治理者读得到所有人的对话，含属主删掉的墓碑；其余人只见自己活着的，\n看不见与不存在一样是 404。``lastSeq`` 是读这一行之前的事件水位。",
+        "operationId": "read_conversation_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Conversation",
+        "tags": [
+          "conversations"
+        ]
+      },
       "patch": {
         "operationId": "rename_conversation_conversations__conversation_id__patch",
         "parameters": [
@@ -9274,6 +10115,326 @@
           }
         ],
         "summary": "Set Conversation Completion",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film": {
+      "get": {
+        "description": "AI 导演的工程读成制作页：按视频请求分组，带图、全局设定与镜头。没有工程文件 404。",
+        "operationId": "read_conversation_film_conversations__conversation_id__film_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmViewEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Conversation Film",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/image": {
+      "put": {
+        "description": "给一张图换地址，答复换完的制作页。地址不是这段对话的图、也不是自己上传的 422。",
+        "operationId": "choose_conversation_film_image_conversations__conversation_id__film_image_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmImageChoiceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmViewEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Choose Conversation Film Image",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/image-generations": {
+      "post": {
+        "description": "按描述给一张图出一张新的。新的出来只多一个版本，不自动用上，要人选用。",
+        "operationId": "generate_conversation_film_image_conversations__conversation_id__film_image_generations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmImageGenerationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Generate Conversation Film Image",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/text": {
+      "patch": {
+        "description": "改几段字，答复改完的制作页。版本对不上 409，改完分镜不合规矩 422。",
+        "operationId": "edit_conversation_film_text_conversations__conversation_id__film_text_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmTextEditsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmViewEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Edit Conversation Film Text",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/video-generations": {
+      "post": {
+        "description": "给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。",
+        "operationId": "generate_conversation_film_video_conversations__conversation_id__film_video_generations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmVideoGenerationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Generate Conversation Film Video",
         "tags": [
           "conversations"
         ]
@@ -9826,7 +10987,7 @@
     },
     "/conversations/{conversation_id}/transcript/ops": {
       "get": {
-        "description": "补上断线期间漏掉的批次。``complete`` 为假就整页重拉。",
+        "description": "补上断线期间漏掉的批次。``complete`` 为假就整页重拉。\n\n给机器调用方用，浏览器不走这里。``stream_epoch`` 是手上水位所属的实时流，给了且对不上也是\n``complete`` 为假；不给只按序号判，分不出服务重启后重新编号的批次。",
         "operationId": "catchup_conversations__conversation_id__transcript_ops_get",
         "parameters": [
           {
@@ -9858,6 +11019,23 @@
               "pattern": "^[A-Za-z0-9._-]{1,128}$",
               "title": "Agent Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream_epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stream Epoch"
             }
           }
         ],
@@ -10644,7 +11822,7 @@
     },
     "/generations/video-composites": {
       "post": {
-        "description": "把一条编辑段夹回它的基底，拼成一条新成片，原作与镜号随编辑段。不经外部服务。\n\n``sourceJobId`` 必须是这段对话自己的或继承来的一条已完成编辑段。``userName`` 的规则同出片。",
+        "description": "在基底那一版上按片段列表拼成一条新成片，来源记基底，原作与镜号随基底。不经外部服务。\n\n``baseJobId`` 必须是这段对话自己的或继承来的一条已完成成片；``segments`` 每段的\n``sourceJobId`` 是基底本身或来源是基底的一条已完成编辑段，``start`` / ``end`` 是那条记录\n自己的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进\n``request.segments``。``userName`` 的规则同出片。",
         "operationId": "submit_video_composite_generations_video_composites_post",
         "requestBody": {
           "content": {
@@ -10695,7 +11873,7 @@
     },
     "/generations/video-edits": {
       "post": {
-        "description": "在一条成片上改一段：``source_job_id`` 是基底，``range_start_ms`` / ``range_end_ms`` 是区间。\n\n服务端提交上游前按区间从基底上切参考片段交给模型，记录上的区间随之改记实际切点。基底\n必须是这段对话自己的或继承来的一条已完成成片。``user_name`` 的规则同出片。",
+        "description": "在一条成片上改一段：请求就是一次上游视频请求，``reference_video_urls`` 恰好一条，是调用方\n从基底上切好、自己上传的参考片段；``source_job_id`` 与 ``range_start_ms`` /\n``range_end_ms`` 只记账，记下基于哪一版、改的哪一段。\n\n受理时核对：基底是这段对话自己的或继承来的一条已完成成片，区间在它的时长之内；片段是\n调用者本人的一条视频上传，时长与区间长度一致。不合格 422、不入队。``user_name`` 的规则\n同出片。",
         "operationId": "submit_video_edit_generations_video_edits_post",
         "requestBody": {
           "content": {

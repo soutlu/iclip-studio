@@ -3,7 +3,7 @@ import '@/app/globals.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from '@/app/app'
-import { initTheme } from '@/app/theme'
+import { initTheme } from '@/shared/lib/theme'
 
 const rootElement = document.getElementById('root')
 

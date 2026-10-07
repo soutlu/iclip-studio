@@ -29,14 +29,19 @@ from iclip.app.agent_layer import (
     watch_and_reload,
 )
 from iclip.app.capability_table import build_capability_table, build_display_registry
+from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
+from iclip.app.conversation_same_style import SameStyleCopier
 from iclip.app.conversation_workspace import (
     ConversationWorkspace,
+    validate_film,
+    validate_film_run,
     validate_video_shots,
 )
 from iclip.app.errors import install_error_handlers
 from iclip.app.generation_live import AnnouncingGenerationRepository
 from iclip.app.logging import configure_logging
+from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
 from iclip.common.errors import NotFound
@@ -207,7 +212,8 @@ def _require_ffmpeg(required: bool) -> None:
 
     if required and not ffmpeg_available():
         raise RuntimeError(
-            "PATH 上找不到 ffmpeg/ffprobe：取帧与出图要用它抽帧切格，视频裁剪拼接要用它切段合成"
+            "PATH 上找不到 ffmpeg/ffprobe：取帧与出图要用它抽帧切格，视频裁剪拼接要用它切段合成，"
+            "视频拆解要用它读时长与抽帧"
         )
 
 
@@ -259,7 +265,11 @@ def _generation_module(
         video_allowed_models=settings.video_allowed_models,
         image_models=tuple(
             ImageModelConfig(
-                name=model.name, api_base=model.api_base, concurrency=model.concurrency
+                name=model.name,
+                api_base=model.api_base,
+                concurrency=model.concurrency,
+                text_to_image_task=model.text_to_image_task,
+                image_edit_task=model.image_edit_task,
             )
             for model in settings.image_models
         ),
@@ -477,6 +487,7 @@ def build_app(
         object_store=public_objects,
         video=settings.video,
         shot_video=settings.shot_video if settings.shot_tools_enabled else None,
+        iclip_studio=settings.iclip_studio,
     )
     # 实时与历史共用显示注册表，保证工具卡渲染一致。
     tool_displays = build_display_registry(capability_table)
@@ -502,7 +513,11 @@ def build_app(
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     # 审计报表与资料库跨模块只读聚合，直接查表。
     audit = build_audit_module(PgAuditReports(active_engine))
-    library = build_library_module(PgLibraryReports(active_engine))
+    # 做同款的拷贝与资料库的「做得了同款」共用一份文件表。
+    same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
+    library = build_library_module(
+        PgLibraryReports(active_engine), has_production_files=same_style.has_production_files
+    )
     conversations = build_conversations_module(
         conversation_repo,
         act_as=identity.act_as,
@@ -514,14 +529,26 @@ def build_app(
         write_derived_file=conversation_workspace.write_file,
         document_validators={
             SHOTS_PATH: validate_video_shots,
+            FILM_PATH: validate_film,
+            RUN_PATH: validate_film_run,
         },
+        film=ConversationFilmAdapter(
+            store=workspace_store,
+            announcing=announcing_workspace_store,
+            ledger=material_ledger,
+            generation=generation.service if generation is not None else None,
+        ),
         generate_title=live_title_generator(agent_layer),
         announce_title=live_connections.announce_title,
+        event_watermark=live_connections.clock.snapshot,
+        announce_row=live_connections.announce_session_row,
+        announce_deleted=live_connections.announce_session_deleted,
         activities_of=activities_of,
         busy_conversation_ids=busy_conversation_ids,
         latest_master_urls=latest_master_urls,
         fork_transcript=ForkTranscriptAdapter(queue=job_queue, history=transcript_history),
         copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
+        copy_same_style=same_style,
     )
     # 确认上传经 uploads 声明的端口落一条上传记录；绑定方法与端口的签名结构一致，不另写适配器。
     uploads = (
@@ -533,14 +560,14 @@ def build_app(
     )
     context_limits = live_context_limits(agent_layer)
 
-    # 删除不中止在跑的 run，删掉那一刻在跑或排队的几轮收尾时对话已是墓碑：
+    # 删除不中止在跑或排队的轮，删掉之后才开跑的 run 碰到的对话已是墓碑：
     # 这是预期内的常态，记一条 info 就够，不让 runner 的兜底打成带栈的 exception。
 
     async def name_conversation(row: JobRow) -> None:
-        """轮次结束后调用对话命名用例，连接引擎模型与对话条件更新。"""
+        """一轮开始时由 runner 在后台调用对话命名用例，连接引擎模型与对话条件更新。"""
 
         try:
-            await conversations.service.name_after_turn(uuid.UUID(row.conversation_id), row.text)
+            await conversations.service.name_at_turn_start(uuid.UUID(row.conversation_id), row.text)
         except NotFound:
             _logger.info("对话已删除，跳过自动起名", conversation_id=row.conversation_id)
 
@@ -593,7 +620,7 @@ def build_app(
             max_attempts=settings.agent_runs.max_attempts,
             compaction_max_fraction=settings.compaction.max_fraction,
             compaction_keep_messages=settings.compaction.keep_messages,
-            on_turn_ended=name_conversation,
+            on_turn_started=name_conversation,
             on_run_started=note_run_started,
             display=tool_displays,
         ),

@@ -9,6 +9,7 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
 import { auditHandlers } from './audit'
+import { filmHandlers } from './film'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
@@ -23,6 +24,7 @@ import {
 } from './conversations'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { transcriptHandlers } from './transcript'
+import { resetMockUploads, uploadHandlers } from './uploads'
 import { workspaceHandlers } from './workspace'
 
 // MSW handlers 由单测与 dev:mock 共用；普通 dev 不注册。响应字段以 contract/openapi.json 为准。
@@ -55,14 +57,9 @@ export const loginAs = (user: MockUser, overrides: Partial<MockUser> = {}): Mock
 /** 列表按属主过滤时用的身份；没登录就调列表接口的 API 测试按测试用户算。 */
 const activeUserId = () => (currentUser ?? mockAuthUser).id
 
-// 按 assetId 记录签名时的 contentType，登记响应复用此信息。
-const mockUploads = new Map<string, string>()
-const mockUploadBytes = new Map<string, { body: ArrayBuffer; contentType: string }>()
-
 export const resetMockSession = () => {
   currentUser = null
-  mockUploads.clear()
-  mockUploadBytes.clear()
+  resetMockUploads()
 }
 
 const SIDEBAR_PER_COLLECTION = 10
@@ -334,6 +331,13 @@ export const handlers = [
     return HttpResponse.json({ conversation })
   }),
 
+  // 单行读取：属主读自己活着的（合同 §6）；mock 只有一个登录用户，墓碑与别人的一律 404。
+  http.get('*/api/conversations/:conversationId', ({ params }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    return HttpResponse.json({ conversation })
+  }),
+
   // 删除留下墓碑：行还在，deletedAt 记下时刻，审计的 deleted 筛选列得出它（合同 §6）。
   http.delete('*/api/conversations/:conversationId', ({ params }) => {
     const conversation = liveMockConversation(String(params['conversationId']))
@@ -459,49 +463,13 @@ export const handlers = [
     return HttpResponse.json({ task })
   }),
 
-  // 签名、直传与确认共用上传类型记录，保持确认响应与签名一致。
-  http.post('*/api/uploads/sign', async ({ request }) => {
-    const body = (await request.json()) as { contentType: string }
-    const uploadId = crypto.randomUUID()
-    mockUploads.set(uploadId, body.contentType)
-    return HttpResponse.json({
-      uploadId,
-      upload: {
-        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
-        headers: { 'Content-Type': body.contentType },
-        url: `http://localhost/mock-oss/${uploadId}`,
-      },
-    })
-  }),
-
-  http.put('*/mock-oss/:uploadId', async ({ params, request }) => {
-    mockUploadBytes.set(String(params['uploadId']), {
-      body: await request.arrayBuffer(),
-      contentType: request.headers.get('Content-Type') ?? 'application/octet-stream',
-    })
-    return new HttpResponse(null, { status: 200 })
-  }),
-  http.get('*/mock-oss/:uploadId', ({ params }) => {
-    const media = mockUploadBytes.get(String(params['uploadId']))
-    return media
-      ? new HttpResponse(media.body, { headers: { 'Content-Type': media.contentType } })
-      : new HttpResponse(null, { status: 404 })
-  }),
-
-  http.post('*/api/uploads/:uploadId/confirm', ({ params }) => {
-    const uploadId = params['uploadId'] as string
-    const contentType = mockUploads.get(uploadId) ?? 'image/png'
-    return HttpResponse.json({
-      contentType,
-      sizeBytes: 1024,
-      url: `http://localhost/mock-oss/${uploadId}`,
-    })
-  }),
+  ...uploadHandlers,
 
   // 埋点只收不回；不校验主语，夹具里的记录 id 不都是 UUID。
   http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
 
   ...workspaceHandlers,
+  ...filmHandlers,
 
   ...transcriptHandlers,
 

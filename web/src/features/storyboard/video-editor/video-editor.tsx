@@ -1,37 +1,57 @@
-/** 视频编辑器：选中一段交给模型改，预览拼好的整条，满意再合成成片。
+/** 视频编辑器：在一版成片上剪（裁剪、调序、拆分、删除），选几段交给 AI 改，满意再合成成新的一版。
  *
- * 编辑进行到哪一步不存在本地：每次渲染都从这条出片名下的编辑段与合成推出来，关掉重开、刷新都还在。
- * 切参考片段与拼接都在服务端，这里只提交基底、区间与编辑段。 */
+ * 版本、编辑段与合成都从服务端记录推出来，关掉重开、刷新都还在；剪辑草稿只存在浏览器
+ * （ADR-0010）。参考片段在提交时从基底上切好、上传，拼接在服务端。
+ *
+ * AI 改段的要求写在选中段时弹出的卡里。卡里没提交的要求只有一份，跟着当前选区走：换了选区不清空，
+ * 提交成功才清空。 */
 
 import { useQueryClient } from '@tanstack/react-query'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { useMediaDownload } from '@/shared/api/media-download'
+import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
-import { Button } from '@/shared/ui/button'
+import { Button, IconButton } from '@/shared/ui/button'
+import type { ComposerPart, ComposerSubmission } from '@/shared/ui/composer'
 import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
+import { InlineAlert } from '@/shared/ui/inline-alert'
 import { toast } from '@/shared/ui/toast'
+import { GenerationPicker } from '../components/generation-picker'
+import { useUnseenResults } from '../components/use-unseen-results'
+import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
+import { isRunningStatus } from '../shots'
 import { useVideoModels, type GenerationJob } from '../storyboard.api'
+import { AiEditCard } from './ai-edit-card'
 import {
-  EDIT_STAGE_LABEL,
-  ancestorsOf,
-  isComposite,
-  layoutSegments,
-  projectEditChain,
-  totalDuration,
-  type ChainVersion,
-  type PendingEdit,
-  type PlaySegment,
-} from './edit-chain'
-import { EditorComposer, type EditorReference } from './editor-composer'
-import { EditorGenerationStatus } from './editor-generation-status'
-import { EditorModelMenu } from './editor-model-menu'
+  aiTarget,
+  canRemove,
+  canSplitAt,
+  clickSelect,
+  compositeSegments,
+  draftDuration,
+  isBaseSegment,
+  keyframeSegments,
+  layoutDraft,
+  moveItems,
+  removeItems,
+  splitAt,
+  trimBounds,
+  trimClip,
+  type AiTarget,
+  type DraftClip,
+  type DraftItem,
+  type Edit,
+  type EditOutcome,
+} from './draft'
+import { composingOf, editsOf, projectVersions, type ChainVersion } from './edit-chain'
 import { EditorNotices } from './editor-notices'
 import { EditorPreview, type EditorPreviewHandle } from './editor-preview'
-import { EditorRangeFields } from './editor-range-fields'
-import { EditorTimeline } from './editor-timeline'
-import type { VersionMenuEntry } from './editor-version-menu'
-import { clampRange, MIN_RANGE_SECONDS, type TimeRange } from './time-range'
+import { EditorTimeline, type TimelineEntry } from './editor-timeline'
+import { EditorVersionStrip, type VersionStripEntry } from './editor-version-strip'
+import { layoutPlay, type PlaySegment } from './play-layout'
+import { useEditDraft } from './use-edit-draft'
+import { useAudioPeaks, useKeyframes, type PeaksState } from './use-media-analysis'
 import { useMediaDurations } from './use-media-durations'
 import { useStableValue } from './use-stable-value'
 import {
@@ -43,13 +63,15 @@ import {
   useVideoEditChain,
 } from './video-editor.api'
 
-const DEFAULT_RANGE_SECONDS = 4
+/** 当前这一版的草稿与它不同时，版本条上多出来的那一格。 */
+const UNCOMPOSED_LABEL = '未合成'
+const DRAFT_KEY = 'draft'
 const posterOf = (url: string) => videoSnapshotUrl(url, 320)
-const isActive = (edit: PendingEdit) => edit.stage !== 'ready' && edit.stage !== 'failed'
+const LOADING_PEAKS: PeaksState = { kind: 'loading' }
+const seconds = (value: number) => value.toFixed(1)
 
-type Selected =
-  | { kind: 'version'; key: string; label: string; version: ChainVersion }
-  | { kind: 'pending'; key: string; label: string; edit: PendingEdit }
+/** 看哪一版、看它的草稿还是它本身。只有草稿有改动时两者才不同。 */
+type Picked = { jobId: string; view: 'draft' | 'version' }
 
 type Props = {
   conversationId: string
@@ -79,6 +101,7 @@ export function VideoEditor({ conversationId, root, loading, shotIndex, onClose 
     <Editor
       conversationId={conversationId}
       key={root.id}
+      mediaUrl={root.outputUrl}
       onClose={onClose}
       root={root}
       shotIndex={shotIndex}
@@ -89,257 +112,568 @@ export function VideoEditor({ conversationId, root, loading, shotIndex, onClose 
 type EditorProps = {
   conversationId: string
   root: GenerationJob
+  mediaUrl: string
   shotIndex: number | undefined
   onClose: () => void
 }
 
-function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
+/** 按键落在输入框里时让给输入框自己（Cmd/Ctrl+Z 在那里是撤销打字）。 */
+const isTextEntry = (target: EventTarget) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLInputElement && target.type !== 'range'))
+
+/** 一段或几段的名字：第 2 段、第 2–3 段。 */
+const positions = (first: number, last: number) =>
+  first === last ? `第 ${first} 段` : `第 ${first}–${last} 段`
+
+/** 选区为什么还不能交给 AI；卡头与脚注都用它。能交给 AI 或没有选区时没有原因。 */
+const blockedReason = (target: AiTarget): string | undefined => {
+  switch (target.kind) {
+    case 'modified':
+      return '裁过、拆过的段要先合成，再让 AI 改'
+    case 'short':
+      return '这段太短，连上相邻的段再改'
+    case 'ready':
+    case 'empty':
+      return undefined
+  }
+}
+
+/** 卡头的末帧取段尾之前这么多秒：段尾正好是下一段的开头，截在那一刻可能截到下一段。 */
+const LAST_FRAME_LEAD = 0.1
+/** 卡头截图的宽：显示 30px，按两倍像素取。 */
+const CARD_FRAME_WIDTH = 60
+
+function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorProps) {
   const queryClient = useQueryClient()
   const chainQuery = useVideoEditChain(conversationId, root.id)
   const modelsQuery = useVideoModels()
   const models = useMemo(() => editableModels(modelsQuery.data?.items ?? []), [modelsQuery.data])
-  const chain = useMemo(
-    () => projectEditChain(root, chainQuery.data?.items ?? []),
-    [root, chainQuery.data],
-  )
+  const chainJobs = chainQuery.data?.items
+  const jobs = useMemo(() => chainJobs ?? [], [chainJobs])
+  const versions = useMemo(() => projectVersions(root, jobs), [root, jobs])
   const previewRef = useRef<EditorPreviewHandle>(null)
-  const [selectedKey, setSelectedKey] = useState<string>()
-  const [selection, setSelection] = useState<TimeRange | null>(null)
+  const selectionBoxRef = useRef<HTMLSpanElement>(null)
+  const [picked, setPicked] = useState<Picked>()
   const [currentTime, setCurrentTime] = useState(0)
-  const [prompt, setPrompt] = useState('')
-  const [references, setReferences] = useState<EditorReference[]>([])
+  /** 卡里没提交的要求：文字与传好的参考图。 */
+  const [request, setRequest] = useState<readonly ComposerPart[]>([])
+  /** 上次收起卡时有几张参考图还没传好、没留下；下次改要求时收起这句提示。 */
+  const [droppedUploads, setDroppedUploads] = useState(0)
+  /** 卡展开着；一拖、一播、按 Escape 就收成胶囊。 */
+  const [cardOpen, setCardOpen] = useState(true)
   const [wantedModel, setWantedModel] = useState<string>()
-  // 两次互斥的提交加上传参考图；任一在跑时整个编辑器一起锁。
-  const [operation, setOperation] = useState<'idle' | 'uploading' | 'generating' | 'composing'>(
-    'idle',
-  )
-  const [operationError, setOperationError] = useState<string | null>(null)
+  // 两次互斥的提交；任一在跑时整个编辑器一起锁。
+  const [operation, setOperation] = useState<'idle' | 'generating' | 'composing'>('idle')
+  const [generateError, setGenerateError] = useState<string | null>(null)
+  const [composeError, setComposeError] = useState<string | null>(null)
+  /** 脚注位置上要让人看到的一句话，下一次剪辑时收起。 */
+  const [notice, setNotice] = useState<string | null>(null)
   const { downloading, download } = useMediaDownload()
   const busy = operation !== 'idle'
   const model = pickEditModel(models, wantedModel, modelsQuery.data?.default)
 
-  const pending = chain.pending
-  const previewable = useMemo(() => pending.filter((edit) => edit.preview !== undefined), [pending])
-  const selected = useMemo<Selected | undefined>(() => {
-    const version = chain.versions.find((item) => item.key === selectedKey)
-    if (version !== undefined)
-      return { kind: 'version', key: version.key, label: version.label, version }
-    const edit = previewable.find((item) => item.key === selectedKey)
-    if (edit !== undefined) return { kind: 'pending', key: edit.key, label: edit.label, edit }
-    const latest = chain.versions.at(-1)
-    return latest === undefined
-      ? undefined
-      : { kind: 'version', key: latest.key, label: latest.label, version: latest }
-  }, [chain.versions, previewable, selectedKey])
-  const selectedKind = selected?.kind
-  // 编辑结果一回来就把视线挪到它的预览上——合成按钮就在那里。一条只挪一次，正看着别的编辑时不抢；
-  // 关掉重开也会落在等着合成的那条上，而不是根。渲染期调整状态，不绕一轮 effect。
-  const [revealed, setRevealed] = useState<readonly string[]>([])
-  const fresh = previewable.find((edit) => edit.stage === 'ready' && !revealed.includes(edit.key))
-  if (fresh !== undefined) {
-    setRevealed((current) => (current.includes(fresh.key) ? current : [...current, fresh.key]))
-    if (selectedKind === 'version') setSelectedKey(fresh.key)
-  }
-  const selectedVersion = selected?.kind === 'version' ? selected.version : undefined
-  const base =
-    selected === undefined
-      ? undefined
-      : selected.kind === 'pending'
-        ? selected.edit.base
-        : chain.versions.find((item) => item.key === selected.version.edit?.baseKey)
+  const version: ChainVersion = versions.find((item) => item.jobId === picked?.jobId) ??
+    versions.at(-1) ?? { jobId: root.id, label: 'V1', mediaUrl, sourceJobId: undefined }
+  const keyframes = useKeyframes(version.mediaUrl)
+  const segments = useMemo(
+    () =>
+      keyframes.data === undefined ? undefined : keyframeSegments(version.jobId, keyframes.data),
+    [keyframes.data, version.jobId],
+  )
+  const versionDuration = keyframes.data?.duration
+  const edits = useMemo(() => editsOf(jobs, version.jobId), [jobs, version.jobId])
+  const composingJob = composingOf(jobs, version.jobId)
 
-  const urls = useMemo(() => {
-    const seen = new Set<string>()
-    for (const version of chain.versions) seen.add(version.mediaUrl)
-    for (const edit of chain.pending)
-      for (const segment of edit.preview ?? []) seen.add(segment.mediaUrl)
-    return [...seen]
-  }, [chain])
-  // 合成出来的视频时长由后端量好随记录返回，不用再开播放器去探。
-  const clipDurations = useMemo(() => {
+  // AI 结果多长：记录上有就用，没有就开播放器去探。
+  const resultUrls = useMemo(
+    () =>
+      edits.flatMap((edit) =>
+        edit.status === 'completed' && edit.outputUrl !== null ? [edit.outputUrl] : [],
+      ),
+    [edits],
+  )
+  const knownDurations = useMemo(() => {
     const known: Record<string, number> = {}
-    for (const job of chainQuery.data?.items ?? [])
-      if (isComposite(job) && job.outputUrl !== null && job.durationMs !== null)
-        known[job.outputUrl] = job.durationMs / 1000
+    for (const edit of edits)
+      if (edit.outputUrl !== null && edit.durationMs !== null)
+        known[edit.outputUrl] = edit.durationMs / 1000
     return known
-  }, [chainQuery.data])
-  const durations = useMediaDurations(urls, clipDurations)
-  const currentSegments: PlaySegment[] | undefined =
-    selected === undefined
+  }, [edits])
+  const durations = useMediaDurations(resultUrls, knownDurations)
+  const resultDuration = (edit: GenerationJob) =>
+    edit.outputUrl === null ? undefined : (durations[edit.outputUrl] ?? undefined)
+
+  const outcomeOf = (editJobId: string): EditOutcome | undefined => {
+    const edit = edits.find((item) => item.id === editJobId)
+    if (edit === undefined) return undefined
+    if (isRunningStatus(edit.status)) return { kind: 'running' }
+    if (edit.status !== 'completed' || edit.outputUrl === null)
+      return { kind: 'failed', message: edit.errorMessage ?? '没有生成结果' }
+    const duration = durations[edit.outputUrl]
+    if (duration === null) return { kind: 'failed', message: '读不出结果的时长' }
+    return duration === undefined ? { kind: 'running' } : { kind: 'done', duration }
+  }
+
+  const editor = useEditDraft({
+    conversationId,
+    version,
+    segments,
+    jobs: chainJobs,
+    edits,
+    outcomeOf,
+    onNotice: setNotice,
+    onComposed: (jobId) => setPicked({ jobId, view: 'draft' }),
+  })
+  const changed = editor?.changed ?? false
+  const viewingDraft = !changed || picked?.view !== 'version'
+  const waitingComposite = composingJob !== undefined || editor?.composite !== undefined
+  const editable = editor !== undefined && viewingDraft && !waitingComposite && !busy
+  const draft = editor?.draft ?? []
+  // 提交 AI 改的那一会儿时间线锁着，选中照旧显示，卡也留着转圈；合成时不显示。
+  const selection =
+    editor !== undefined && viewingDraft && !waitingComposite && operation !== 'composing'
+      ? editor.selection
+      : []
+  const pendingItems = draft.filter((item) => item.kind === 'pending')
+
+  // ---------- 预览 ----------
+
+  const urlOf = (sourceJobId: string) =>
+    sourceJobId === version.jobId
+      ? version.mediaUrl
+      : (edits.find((edit) => edit.id === sourceJobId)?.outputUrl ?? undefined)
+  const partsOf = (item: DraftItem): PlaySegment[] =>
+    (item.kind === 'clip' ? [item] : item.replaced).flatMap((clip) => {
+      const url = urlOf(clip.sourceJobId)
+      return url === undefined ? [] : [{ mediaUrl: url, start: clip.start, end: clip.end }]
+    })
+  const versionPlay =
+    versionDuration === undefined
       ? undefined
-      : selected.kind === 'version'
-        ? [{ mediaUrl: selected.version.mediaUrl, start: 0, role: 'base' }]
-        : (selected.edit.preview ?? [])
-  // 探过了却读不出时长：预览与合成都做不了，要说出来，不静默卡在占位文案上。
-  const unreadable = (segments: readonly PlaySegment[] | undefined) =>
-    segments?.some((segment) => durations[segment.mediaUrl] === null) ?? false
-  // 轮询每次都重建版本对象，段列表按内容稳定住，播放器才不会被无谓地归零。
-  const laid = useStableValue(
-    currentSegments === undefined ? undefined : layoutSegments(currentSegments, durations),
-  )
-  const originalLaid = useStableValue(
-    base === undefined
-      ? undefined
-      : layoutSegments([{ mediaUrl: base.mediaUrl, start: 0, role: 'base' }], durations),
-  )
-  const duration = laid === undefined ? undefined : totalDuration(laid)
-  const durationOf = (url: string) => durations[url] ?? undefined
-  const range =
-    selectedVersion !== undefined && duration !== undefined && duration > 0
-      ? clampRange(
-          selection ?? { start: 0, end: Math.min(DEFAULT_RANGE_SECONDS, duration) },
-          duration,
+      : layoutPlay([{ mediaUrl: version.mediaUrl, start: 0, end: versionDuration }])
+  const draftPlay = editor === undefined ? undefined : layoutPlay(draft.flatMap(partsOf))
+  // 轮询每次都重建对象，段列表按内容稳定住，播放器才不会被无谓地重装。
+  const current = useStableValue(viewingDraft ? draftPlay : versionPlay)
+  const original = useStableValue(viewingDraft && changed ? versionPlay : undefined)
+  const total = viewingDraft && editor !== undefined ? draftDuration(draft) : (versionDuration ?? 0)
+  const scale = Math.max(versionDuration ?? 0, total)
+
+  // ---------- 时间线 ----------
+
+  const shownItems: readonly DraftItem[] = viewingDraft ? draft : (segments ?? [])
+  const entries: TimelineEntry[] = layoutDraft(shownItems).map(({ item, at, duration }) => ({
+    id: item.id,
+    at,
+    duration,
+    parts: partsOf(item),
+    clip: item.kind === 'clip' ? item : undefined,
+    changed: segments !== undefined && !isBaseSegment(item, segments),
+    runningSince:
+      item.kind === 'pending'
+        ? edits.find((edit) => edit.id === item.editJobId)?.createdAt
+        : undefined,
+  }))
+  const audioUrls = useStableValue([
+    ...new Set(entries.flatMap((entry) => entry.parts.map((part) => part.mediaUrl))),
+  ])
+  const peaks = useAudioPeaks(audioUrls)
+  const peaksFailure = [...peaks.values()].find((state) => state.kind === 'failed')
+
+  const target: AiTarget =
+    editor === undefined
+      ? { kind: 'empty' }
+      : aiTarget(
+          draft,
+          selection,
+          editor.segments,
+          edits.map((edit) => ({
+            id: edit.id,
+            rangeStartMs: edit.rangeStartMs,
+            rangeEndMs: edit.rangeEndMs,
+            duration: resultDuration(edit),
+          })),
         )
-      : undefined
-  const menuEntries: VersionMenuEntry[] = [
-    ...chain.versions.map((version) => ({
-      key: version.key,
-      label: version.label,
-      baseLabel: chain.versions.find((item) => item.key === version.edit?.baseKey)?.label,
-      note: undefined,
-      mediaUrl: version.mediaUrl,
-      duration: durationOf(version.mediaUrl),
-    })),
-    ...previewable.map((edit) => ({
-      key: edit.key,
-      label: edit.label,
-      baseLabel: edit.base.label,
-      note: EDIT_STAGE_LABEL[edit.stage],
-      mediaUrl: edit.video?.outputUrl ?? edit.base.mediaUrl,
-      duration: undefined,
-    })),
-  ]
-  // 编辑预览还没成版，来源链到它的基底为止。
-  const ancestors =
-    selected === undefined
-      ? []
-      : ancestorsOf(
-          chain.versions,
-          selected.kind === 'version' ? selected.version : selected.edit.base,
-        )
-  // 状态面板跟着看的那条走：选中了某条编辑就说它，否则说最要紧的那条。
-  const shownEdit =
-    selected?.kind === 'pending' ? selected.edit : (pending.find(isActive) ?? pending.at(-1))
+
+  // 版本条上「未合成」那格的小绿点：本次打开期间见过它在生成、结果回来时没在看草稿、之后也还没看。
+  const completedEdits = edits.filter((edit) => edit.status === 'completed')
+  const unseen = useUnseenResults(
+    edits.filter((edit) => isRunningStatus(edit.status)).map((edit) => edit.id),
+    viewingDraft && changed ? completedEdits.at(-1)?.id : undefined,
+  )
+  const freshResult = !viewingDraft && completedEdits.some((edit) => unseen.isUnseen(edit.id))
+
+  // ---------- 操作 ----------
 
   const seedJob = (job: GenerationJob) =>
     seedVideoEditJob(queryClient, conversationId, root.id, job)
 
-  const select = (key: string) => {
-    setSelectedKey(key)
-    setOperationError(null)
-  }
-  const changeRange = (next: TimeRange, boundary: keyof TimeRange) => {
-    if (duration === undefined) return
-    // 调整起点只收紧这一端，不能把已有终点向后推。
-    const bounded = clampRange(
-      boundary === 'start'
-        ? { ...next, start: Math.min(next.start, next.end - MIN_RANGE_SECONDS) }
-        : next,
-      duration,
-    )
-    if (bounded === undefined) return
-    setSelection(bounded)
-    setOperationError(null)
-    previewRef.current?.previewAt(bounded[boundary], boundary)
-  }
-  const changeBoundary = (boundary: keyof TimeRange, value: number) => {
-    if (range === undefined || duration === undefined || !Number.isFinite(value)) return
-    changeRange({ ...range, [boundary]: value }, boundary)
+  const apply = (edit: Edit | undefined) => {
+    if (edit === undefined || editor === undefined || !editable) return
+    editor.apply(edit)
+    setPicked({ jobId: version.jobId, view: 'draft' })
+    setNotice(null)
   }
 
-  const generate = async () => {
-    if (busy || selectedVersion === undefined || range === undefined) return
-    const text = prompt.trim()
-    if (text === '') {
-      setOperationError('先写下想怎么改')
+  const pick = (key: string) => {
+    if (busy) return
+    setNotice(null)
+    setPicked(
+      key === DRAFT_KEY ? { jobId: version.jobId, view: 'draft' } : { jobId: key, view: 'version' },
+    )
+  }
+
+  // 没有选区时没有卡；下次选中时卡展开着出来。
+  if (selection.length === 0 && !cardOpen) setCardOpen(true)
+
+  /** 点了时间线上的一段：卡收着时点的是选区里的段，只把卡展开、不改选中（不然点单选的那段会把它取消）；
+   * 别的照点选规则改选中，卡展开。 */
+  const clickSegment = (id: string) => {
+    if (editor === undefined || !editable) return
+    if (!cardOpen && selection.includes(id)) {
+      setCardOpen(true)
+      return
+    }
+    editor.select(clickSelect(draft, selection, id))
+    setCardOpen(true)
+  }
+  const collapseCard = () => setCardOpen(false)
+
+  /** 卡里点「生成视频」：要求里的参考图按出现的先后排成 `reference_image_urls`，正文里写 `@ImageN`。 */
+  const generate = async (submission: ComposerSubmission) => {
+    if (busy || editor === undefined || target.kind !== 'ready') return
+    if (submission.text.trim() === '') {
+      setGenerateError('先写下想怎么改')
       return
     }
     if (model === undefined) {
-      setOperationError('没有可用的编辑模型')
+      setGenerateError('没有可用的编辑模型')
       return
     }
+    const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(submission.parts))
+    // 「生成中」的锁覆盖切参考片段、上传与提交三步，任一步失败都照 generateError 显示。
     setOperation('generating')
-    setOperationError(null)
+    setGenerateError(null)
+    setNotice(null)
     try {
-      seedJob(
-        await submitVideoEdit({
-          conversationId,
-          taskId: root.taskId,
-          sourceJobId: selectedVersion.jobId,
-          rangeStartMs: Math.round(range.start * 1000),
-          rangeEndMs: Math.round(range.end * 1000),
-          model,
-          prompt: text,
-          referenceImageUrls: references.map((reference) => reference.url),
-        }),
-      )
+      const job = await submitVideoEdit({
+        conversationId,
+        taskId: root.taskId,
+        sourceJobId: version.jobId,
+        baseMediaUrl: version.mediaUrl,
+        range: target.range,
+        model,
+        prompt: text.trim(),
+        referenceImageUrls,
+      })
+      seedJob(job)
+      // 选中的段换成占位，选区没了，卡随之收走；要求清空。
+      editor.submitted(job.id)
+      setRequest([])
+      setDroppedUploads(0)
     } catch (error) {
-      setOperationError(errorMessageOf(error, '视频编辑提交失败'))
+      setGenerateError(errorMessageOf(error, '视频编辑提交失败'))
     } finally {
       setOperation('idle')
     }
   }
 
-  const compose = async (edit: PendingEdit) => {
-    // 预览排不出来的不让合成，与按钮的可用条件一致。
-    if (busy || edit.preview === undefined || layoutSegments(edit.preview, durations) === undefined)
-      return
+  const segmentsToCompose = compositeSegments(draft)
+  const canCompose = changed && segmentsToCompose !== undefined && !waitingComposite && !busy
+  const compose = async () => {
+    if (!canCompose || editor === undefined || segmentsToCompose === undefined) return
     setOperation('composing')
-    setOperationError(null)
+    setComposeError(null)
+    setNotice(null)
     try {
-      seedJob(
-        await submitVideoComposite({
-          conversationId,
-          taskId: root.taskId,
-          sourceJobId: edit.video.id,
-        }),
-      )
+      const job = await submitVideoComposite({
+        conversationId,
+        taskId: root.taskId,
+        baseJobId: version.jobId,
+        segments: segmentsToCompose,
+      })
+      seedJob(job)
+      editor.composing(job.id)
       toast.success('已提交合成，完成后会成为新版本')
     } catch (error) {
-      setOperationError(errorMessageOf(error, '合成任务提交失败'))
+      setComposeError(errorMessageOf(error, '合成任务提交失败'))
     } finally {
       setOperation('idle')
     }
   }
 
-  const canGenerate =
-    !busy && selectedVersion !== undefined && range !== undefined && model !== undefined
-  const canCompose = (edit: PendingEdit) =>
-    !busy &&
-    edit.preview !== undefined &&
-    layoutSegments(edit.preview, durations) !== undefined &&
-    (edit.stage === 'ready' || (edit.stage === 'failed' && edit.composite !== undefined))
-  // 只在看着那条时说，它正好和灰着的合成按钮同时在屏幕上。
-  const composeBlocked =
-    selected?.kind === 'pending' &&
-    selected.edit.stage === 'ready' &&
-    unreadable(selected.edit.preview)
+  const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (isTextEntry(event.target) || !(event.metaKey || event.ctrlKey)) return
+    if (event.key.toLowerCase() !== 'z' || editor === undefined || !editable) return
+    event.preventDefault()
+    if (event.shiftKey) {
+      if (editor.canRedo) editor.redo()
+    } else if (editor.canUndo) editor.undo()
+  }
 
-  /** 时间线上那个主按钮：看某一版就下载它，看编辑预览就把它合成成片。 */
-  const action =
-    selected === undefined ? undefined : selected.kind === 'version' ? (
+  // ---------- 版本条 ----------
+
+  const stripEntries: VersionStripEntry[] = [...versions].reverse().flatMap((item) => {
+    const own: VersionStripEntry = {
+      key: item.jobId,
+      label: item.label,
+      name: item.label,
+      poster: posterOf(item.mediaUrl),
+      running: undefined,
+      unseen: false,
+    }
+    if (item.jobId !== version.jobId || !changed) return [own]
+    const draftEntry: VersionStripEntry = {
+      key: DRAFT_KEY,
+      label: UNCOMPOSED_LABEL,
+      name: [
+        UNCOMPOSED_LABEL,
+        waitingComposite ? '合成中' : undefined,
+        freshResult ? '新结果' : undefined,
+      ]
+        .filter((part) => part !== undefined)
+        .join(' · '),
+      poster: posterOf(item.mediaUrl),
+      running: composingJob === undefined ? undefined : { since: composingJob.createdAt },
+      unseen: freshResult,
+    }
+    return [draftEntry, own]
+  })
+  const selectedKey = changed && viewingDraft ? DRAFT_KEY : version.jobId
+
+  // ---------- 脚注 ----------
+
+  const range =
+    selection.length === 0
+      ? undefined
+      : {
+          first: draft.findIndex((item) => item.id === selection[0]) + 1,
+          last: draft.findIndex((item) => item.id === selection.at(-1)) + 1,
+        }
+  const shorter = (versionDuration ?? 0) - total
+  const footnote = (() => {
+    if (notice !== null) return notice
+    if (editor === undefined) return ''
+    if (!viewingDraft)
+      return `正在看 ${version.label} 本身；点「${UNCOMPOSED_LABEL}」回到草稿接着剪`
+    if (waitingComposite) return '正在合成，完成后成为新的一版；合成期间先不能剪'
+    if (operation === 'generating') return '正在切参考片段、交给 AI…'
+    if (range !== undefined) {
+      const which = positions(range.first, range.last)
+      const reason = blockedReason(target)
+      if (reason !== undefined) return `选中${which}：${reason}`
+      if (selection.length > 1)
+        return `选中${which}：AI 只重做选中的段，原声跟着一起重做；其余画面保持不变`
+      const only = draft.find((item) => item.id === selection[0])
+      const trimmable =
+        only?.kind === 'clip' &&
+        (['start', 'end'] as const).some((edge) => {
+          const { min, max } = trimBounds(only, edge)
+          return min < max
+        })
+      return trimmable
+        ? `选中${which}：拖两端裁短，按住中间拖动调顺序；要 AI 重做就在卡片里写要求`
+        : `选中${which}：这段已经最短，裁不动；按住中间拖动调顺序，要 AI 重做就在卡片里写要求`
+    }
+    if (pendingItems.length > 0)
+      return 'AI 正在改，关掉窗口也会继续；其他段照样能剪，等 AI 生成完再合成'
+    if (changed) {
+      const delta =
+        Math.abs(shorter) >= 0.05
+          ? `比 ${version.label} ${shorter > 0 ? '短' : '长'} ${seconds(Math.abs(shorter))} 秒；`
+          : ''
+      return `${delta}剪辑还没合成，满意就点右上角「合成成片」`
+    }
+    return '点一段选中，再点相邻的段连着选；拖两端裁剪，按住中间拖动调顺序'
+  })()
+
+  // ---------- 渲染 ----------
+
+  const toolButtons = (
+    <>
+      <span aria-hidden="true" className="video-editor-bar-divider" />
+      <IconButton
+        disabled={!editable || editor?.canUndo !== true}
+        label="撤销"
+        name="undo"
+        onClick={() => editor?.undo()}
+        size="sm"
+      />
+      <IconButton
+        disabled={!editable || editor?.canRedo !== true}
+        label="重做"
+        name="redo"
+        onClick={() => editor?.redo()}
+        size="sm"
+      />
+      <span aria-hidden="true" className="video-editor-bar-divider" />
       <Button
-        leadingIcon="download"
-        loading={downloading}
-        onClick={() => void download(selected.version.mediaUrl, '生成的视频')}
+        className="video-editor-bar-button video-editor-tool"
+        disabled={!editable || !canSplitAt(draft, currentTime)}
+        leadingIcon="split"
+        onClick={() => apply(splitAt(draft, currentTime))}
         size="md"
         variant="ghost"
       >
-        下载
+        <span className="video-editor-tool-label">拆分</span>
       </Button>
-    ) : (
       <Button
-        disabled={!canCompose(selected.edit)}
-        loading={operation === 'composing' || selected.edit.stage === 'composing'}
-        onClick={() => void compose(selected.edit)}
+        className="video-editor-bar-button video-editor-tool"
+        disabled={!editable || !canRemove(draft, selection)}
+        leadingIcon="delete"
+        onClick={() => apply(removeItems(draft, selection))}
         size="md"
+        variant="ghost"
       >
-        {selected.edit.stage === 'composing'
-          ? '合成中'
-          : selected.edit.composite === undefined
-            ? '合成成片'
-            : '重新合成'}
+        <span className="video-editor-tool-label">删除</span>
       </Button>
+    </>
+  )
+
+  const readout = (
+    <span className="video-editor-readout">
+      共 <b>{seconds(total)}</b> 秒
+      {viewingDraft && changed && Math.abs(shorter) >= 0.05
+        ? ` · 比 ${version.label} ${shorter > 0 ? '短' : '长'} ${seconds(Math.abs(shorter))} 秒`
+        : null}
+    </span>
+  )
+
+  /** 标题行的主按钮：草稿有改动时把它合成成片。 */
+  const composeButton = changed ? (
+    <Button
+      className="video-editor-compose"
+      disabled={!canCompose}
+      leadingIcon="video"
+      loading={operation === 'composing' || waitingComposite}
+      onClick={() => void compose()}
+      size="md"
+      title={pendingItems.length > 0 ? '等 AI 生成完再合成' : undefined}
+    >
+      {waitingComposite ? '合成中' : '合成成片'}
+    </Button>
+  ) : undefined
+
+  /** 控制条最右的下载：下的是这一版本身，看着有改动的草稿时灰着。 */
+  const downloadButton = (
+    <Button
+      className="video-editor-bar-button"
+      disabled={viewingDraft && changed}
+      leadingIcon="download"
+      loading={downloading}
+      onClick={() => void download(version.mediaUrl, '生成的视频')}
+      size="md"
+      variant="ghost"
+    >
+      下载
+    </Button>
+  )
+
+  const timeline = keyframes.isError ? (
+    <p className="video-editor-timeline-loading" role="alert">
+      {errorMessageOf(keyframes.error, '读不出这条视频的关键帧')}
+      <Button onClick={() => void keyframes.refetch()} size="md" variant="ghost">
+        重试
+      </Button>
+    </p>
+  ) : editor === undefined || versionDuration === undefined ? (
+    <p className="video-editor-timeline-loading" role="status">
+      正在读取分段…
+    </p>
+  ) : (
+    <EditorTimeline
+      currentTime={currentTime}
+      draft={shownItems}
+      editable={editable}
+      entries={entries}
+      onDelete={() => apply(removeItems(draft, selection))}
+      onClickSegment={clickSegment}
+      onMove={(ids, before) => apply(moveItems(draft, ids, before))}
+      onScrub={collapseCard}
+      onSeek={(time) => previewRef.current?.previewAt(time)}
+      onSelect={(next) => editor.select(next)}
+      onTrim={(id, edge, value) => apply(trimClip(draft, id, edge, value))}
+      onTrimPreview={(clock, edge) => previewRef.current?.previewAt(clock, edge)}
+      peaksOf={(url) => peaks.get(url) ?? LOADING_PEAKS}
+      scale={scale}
+      selection={selection}
+      selectionBoxRef={selectionBoxRef}
+      total={total}
+    />
+  )
+
+  // ---------- AI 改段的弹出卡 ----------
+
+  const selectedClips = selection.flatMap((id) => {
+    const item = draft.find((candidate) => candidate.id === id)
+    return item?.kind === 'clip' ? [item] : []
+  })
+  const frameOf = (clip: DraftClip | undefined, at: (clip: DraftClip) => number) => {
+    const url = clip === undefined ? undefined : urlOf(clip.sourceJobId)
+    return clip === undefined || url === undefined
+      ? undefined
+      : videoSnapshotUrl(url, CARD_FRAME_WIDTH, at(clip))
+  }
+  const cardDetail =
+    target.kind === 'ready'
+      ? `${seconds(target.range.start)} – ${seconds(target.range.end)} 秒 · 视频和原声一起重做`
+      : blockedReason(target)
+  const card =
+    range === undefined || cardDetail === undefined ? null : (
+      <AiEditCard
+        alerts={
+          <>
+            {droppedUploads === 0 ? null : (
+              <InlineAlert
+                message={`有 ${droppedUploads} 张图收起时还没传完，没有保留，请重新添加`}
+              />
+            )}
+            {generateError === null ? null : <InlineAlert message={generateError} />}
+            {modelsQuery.isError ? (
+              <InlineAlert
+                action={{ label: '重新加载模型', onClick: () => void modelsQuery.refetch() }}
+                message={errorMessageOf(modelsQuery.error, '读取视频模型失败')}
+              />
+            ) : null}
+          </>
+        }
+        anchorRef={selectionBoxRef}
+        canGenerate={target.kind === 'ready' && model !== undefined && !busy}
+        detail={cardDetail}
+        draft={request}
+        frames={{
+          first: frameOf(selectedClips[0], (clip) => clip.start),
+          last: frameOf(selectedClips.at(-1), (clip) =>
+            Math.max(clip.start, clip.end - LAST_FRAME_LEAD),
+          ),
+        }}
+        generating={operation === 'generating'}
+        modelPicker={
+          <GenerationPicker
+            className="video-editor-model-picker"
+            disabled={busy || models.length === 0}
+            label="编辑模型"
+            leading={<Icon decorative name="video" size="sm" />}
+            onChange={setWantedModel}
+            options={models.map((value) => ({ value }))}
+            text={model ?? '没有支持编辑的模型'}
+            value={model ?? ''}
+          />
+        }
+        onCollapse={collapseCard}
+        onDraftChange={(parts) => {
+          setRequest(parts)
+          setGenerateError(null)
+          setDroppedUploads(0)
+        }}
+        onExpand={() => setCardOpen(true)}
+        onGenerate={(submission) => void generate(submission)}
+        onUploadsDropped={setDroppedUploads}
+        open={cardOpen}
+        positions={positions(range.first, range.last)}
+      />
     )
 
   return (
@@ -354,9 +688,17 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
       <DialogSurface
         aria-describedby={undefined}
         className="video-editor-dialog"
+        onEscapeKeyDown={(event) => {
+          // 卡展开着时 Escape 先把它收起，再按一次才关编辑器。
+          if (card === null || !cardOpen) return
+          event.preventDefault()
+          collapseCard()
+        }}
         onInteractOutside={(event) => event.preventDefault()}
+        onKeyDown={keyDown}
       >
         <DialogHeader
+          actions={composeButton}
           className="video-editor-header border-0"
           closeLabel="关闭视频编辑"
           title={
@@ -364,122 +706,60 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
               <span>编辑视频</span>
               {shotIndex === undefined ? null : (
                 <span className="text-body-sm font-normal text-on-surface-muted">
-                  · 镜头组 {shotIndex}
+                  镜头组 {shotIndex}
                 </span>
               )}
             </span>
           }
         />
         <div aria-label="视频编辑器" className="video-editor">
-          <div className="video-editor-workspace">
-            <EditorPreview
-              current={laid}
-              currentLabel={selected?.label ?? ''}
-              currentTime={currentTime}
-              onTime={setCurrentTime}
-              original={base === undefined ? undefined : originalLaid}
-              poster={selected === undefined ? undefined : posterOf(laid?.[0]?.mediaUrl ?? '')}
-              ref={previewRef}
-              selection={range ?? null}
-            />
-            <section aria-label="编辑选段" className="video-editor-inspector">
-              <div className="video-editor-inspector-heading">
-                <h3>编辑片段</h3>
-              </div>
-              <EditorRangeFields
-                disabled={busy}
-                duration={duration}
-                onChange={changeBoundary}
-                range={range}
+          <EditorPreview
+            backdrop={{
+              current: posterOf(current?.[0]?.mediaUrl ?? version.mediaUrl),
+              original: posterOf(version.mediaUrl),
+            }}
+            barEnd={downloadButton}
+            contentKey={`${version.jobId}:${viewingDraft ? 'draft' : 'version'}`}
+            current={current}
+            currentTime={currentTime}
+            footnote={
+              <>
+                <EditorNotices
+                  chainError={
+                    chainQuery.isError
+                      ? errorMessageOf(chainQuery.error, '读取编辑记录失败')
+                      : undefined
+                  }
+                  composeError={composeError}
+                  onReloadChain={() => void chainQuery.refetch()}
+                  peaksError={
+                    peaksFailure?.kind === 'failed'
+                      ? errorMessageOf(peaksFailure.error, '原声读不出来')
+                      : undefined
+                  }
+                />
+                <p className="video-editor-footnote" role={notice === null ? undefined : 'status'}>
+                  {footnote}
+                </p>
+              </>
+            }
+            onPlay={collapseCard}
+            onTime={setCurrentTime}
+            original={original}
+            overlay={card}
+            poster={posterOf(current?.[0]?.mediaUrl ?? version.mediaUrl)}
+            readout={readout}
+            ref={previewRef}
+            timeline={timeline}
+            tools={toolButtons}
+            versions={
+              <EditorVersionStrip
+                entries={stripEntries}
+                onSelect={pick}
+                selectedKey={selectedKey}
               />
-              <EditorComposer
-                disabled={busy}
-                footer={
-                  <div className="video-editor-generation-controls">
-                    <EditorModelMenu
-                      disabled={busy}
-                      model={model}
-                      models={models}
-                      onChange={setWantedModel}
-                    />
-                    <Button
-                      className="video-editor-generate"
-                      disabled={!canGenerate}
-                      loading={operation === 'generating'}
-                      onClick={() => void generate()}
-                      trailingIcon="send-up"
-                    >
-                      生成
-                    </Button>
-                  </div>
-                }
-                onBusyChange={(uploading) => setOperation(uploading ? 'uploading' : 'idle')}
-                onPromptChange={(value) => {
-                  setPrompt(value)
-                  setOperationError(null)
-                }}
-                onReferencesChange={setReferences}
-                prompt={prompt}
-                references={references}
-              />
-              <EditorNotices
-                chainError={
-                  chainQuery.isError
-                    ? errorMessageOf(chainQuery.error, '读取编辑记录失败')
-                    : undefined
-                }
-                composeBlocked={composeBlocked}
-                modelsError={
-                  modelsQuery.isError
-                    ? errorMessageOf(modelsQuery.error, '读取视频模型失败')
-                    : undefined
-                }
-                onReloadChain={() => void chainQuery.refetch()}
-                onReloadModels={() => void modelsQuery.refetch()}
-                operationError={operationError}
-                previewing={selected?.kind === 'pending' ? selected.label : undefined}
-                tooShort={
-                  selectedVersion !== undefined &&
-                  duration !== undefined &&
-                  duration < MIN_RANGE_SECONDS
-                }
-              />
-              {shownEdit === undefined ? null : <EditorGenerationStatus edit={shownEdit} />}
-            </section>
-          </div>
-          {selected !== undefined &&
-          laid !== undefined &&
-          duration !== undefined &&
-          duration > 0 ? (
-            <EditorTimeline
-              action={action}
-              ancestors={ancestors}
-              // 根自己就是原片：上轨照样摆它。
-              base={base ?? selectedVersion}
-              baseDuration={durationOf((base ?? selectedVersion)?.mediaUrl ?? '')}
-              currentTime={currentTime}
-              duration={duration}
-              entries={menuEntries}
-              label={selected.label}
-              onSeek={(time) => previewRef.current?.previewAt(time)}
-              onSelect={select}
-              onSelectionChange={changeRange}
-              posterOf={posterOf}
-              segments={laid}
-              selectedKey={selected.key}
-              selection={selectedVersion === undefined ? null : (range ?? null)}
-            />
-          ) : (
-            // 时长读不出来时时间线摆不出来，但当前这一版该能下载，按钮跟着占位一起摆。
-            <div className="video-editor-timeline-loading">
-              <p role="status">
-                {unreadable(currentSegments)
-                  ? '读不到视频时长，无法预览与选段；关掉编辑器重开可再试一次'
-                  : '读到视频时长后即可选择片段'}
-              </p>
-              {action}
-            </div>
-          )}
+            }
+          />
         </div>
       </DialogSurface>
     </DialogRoot>

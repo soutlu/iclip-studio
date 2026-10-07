@@ -1,6 +1,6 @@
 # AGENTS.md — 前端开发约定
 
-适用于 `web/`，与根 [AGENTS.md](../AGENTS.md) 一起遵守。目录与文档入口见 [README.md](README.md)；组件和测试规则见 [实现规范](docs/frontend-implementation.md)。
+适用于 `web/`，与根 [AGENTS.md](../AGENTS.md) 一起遵守；组件和测试规则见 [实现规范](docs/frontend-implementation.md)。
 
 ## 1. 命令
 
@@ -22,18 +22,34 @@
 
 ## 2. 职责与实现边界
 
+| 路径                                  | 职责                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `src/app/`                            | Provider、router、主题与工作台注册装配                                                    |
+| `src/routes/`                         | 文件路由与应用壳                                                                          |
+| `src/features/`                       | 登录、首页、合集、会话、需求单、审计、工作区文件与分镜业务模块                            |
+| `src/shared/api/`                     | REST 客户端与后端合同生成物                                                               |
+| `src/shared/auth/`                    | 会话与权限能力                                                                            |
+| `src/shared/shell/`                   | 壳向页面公布的布局状态（ShellChromeContext）                                              |
+| `src/shared/icons/`、`src/shared/ui/` | 图标与共用 UI 组件                                                                        |
+| `src/shared/transcript/`              | 对话协议、订阅与投影；vendor 维护要求见[目录说明](src/shared/transcript/vendor/README.md) |
+| `src/shared/workbench/`               | 产物面板宿主、布局与选择状态                                                              |
+| `src/testing/`、`e2e/`                | 测试基建、MSW 与浏览器用例                                                                |
+| `vite/`、`scripts/`                   | 构建助手与开发、检查命令                                                                  |
+| `../design/cue-mascot/`               | 首页吉祥物素材源包与重建方式见[目录说明](../design/cue-mascot/README.md)                  |
+
 - `src/routes/` 负责路由装配、守卫、search params 与跨 feature 组合；业务逻辑留在 feature。共用侧边栏、登录弹窗、布局和工作台由 `_shell.tsx` 及同目录 `-` 前缀助手承载。
 - feature 之间的稳定共用能力提取到 `shared/`，跨 feature 流程在 `app/` 或 `routes/` 组合。构建期助手放 `vite/`。
 - 后端 REST 请求使用 `@/shared/api/client` 的 `apiFetch`；需要响应头或状态码时使用 `apiFetchWithResponse`。两者共用同源请求、鉴权回调和 zod 校验。裸 `fetch` / `XMLHttpRequest` 仅用于 OSS 预签名直传与外链素材下载。
 - 接口 schema 使用 `src/shared/api/generated/` 的生成物；额外业务校验叠在生成 schema 上。后端字段缺失时保留其空值语义，不编造业务默认值。
 - 登录与守卫规则见 [实现规范](docs/frontend-implementation.md#登录与守卫)；权限门控使用后端 `user.permissions`，不使用用户名白名单。
 - 不手改生成文件，不抬高 design-guard 基线；修复存量后可以收紧基线。
+- 分镜工作台用于查看和编辑 Agent 交付的分镜、发起媒体生成；制作页（`features/storyboard/film/`）复用它的舞台与文案列，查看和改 AI 导演的工程（见 [CONTEXT.md「制作页」](../docs/CONTEXT.md#术语)）。产物与渲染器登记以 [artifact.ts](src/shared/workbench/artifact.ts) 为准，认领与重叠规则见 [ADR-0006](../docs/adr/0006-workbench-views-claim-by-specificity.md)，文件写回与生成约定见[跨端合同](../contract/conventions.md)。
 
 依赖边界、导入入口、命名与语法由 [ESLint](eslint.config.js) 管理；死代码范围由 [knip](knip.json) 管理；基础 token 见根 [设计系统](../design-system.html)。
 
 ## 3. 验证
 
-- 代码变更执行 `pnpm ci:check`，合入前通过 `pnpm verify`；核心用户旅程变更还要运行相关 Playwright 用例，全部用例由 CI 运行。
+- 代码变更推送前执行 `pnpm ci:static` 与 `pnpm typecheck`，并运行与改动直接相关的 Vitest 文件；核心用户旅程变更另跑相关 Playwright 用例。完整单测、生产构建与全部用例由 CI 运行，本地不重复跑 `pnpm ci:check`。
 - 新增页面、变更共享逻辑、跨层合同或用户行为时，按[实现规范的测试归层](docs/frontend-implementation.md#测试)补充或更新覆盖；纯文档或措辞变更检查格式和链接。
 - UI 变更核对桌面与移动布局、浅深主题、键盘操作和中文长内容；截图位置见根开发约定。
 - 修改生产反代时，验证路径 rewrite、WebSocket upgrade 与同源 Host / Origin；部署约定见[跨端合同](../contract/conventions.md)。

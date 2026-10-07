@@ -6,18 +6,24 @@ import difflib
 import json
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic_ai_harness.step_persistence import InMemoryStepStore
+from pydantic_ai_harness.step_persistence import (
+    InMemoryStepStore,
+    RunRecord,
+    StepEvent,
+    StepStore,
+    ToolEffectRecord,
+)
 
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.from_messages import SteeredPrompt
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
+from iclip.harness.transcript.store import OpBatch, TranscriptStore
 from iclip.harness.transcript.subscription import subscribe_frames
 from iclip.platform.transcript.display import ToolDisplayRegistry
 from iclip.platform.transcript.ops import MAIN_AGENT_ID
@@ -27,7 +33,34 @@ GOLDEN_DIR = Path(__file__).resolve().parents[3] / "contract" / "transcript"
 """金样放在跨端合同目录，前端测试读同一份。"""
 
 
-class EmptyConversationSnapshots(InMemoryStepStore):
+class PerRunBatchReads:
+    """历史重建的三个批量读，用官方协议的逐个读方法拼出来。
+
+    混在官方内存 store 上就是测试替身；混在 ``PgStepStore`` 上就是参照实现：批量 SQL 与它读出的
+    东西必须一模一样。"""
+
+    async def list_events_for_runs(
+        self: StepStore, run_ids: Sequence[str]
+    ) -> Mapping[str, list[StepEvent]]:
+        return {run_id: await self.list_events(run_id=run_id) for run_id in run_ids}
+
+    async def list_child_runs(
+        self: StepStore, parent_run_ids: Sequence[str]
+    ) -> Mapping[str, list[RunRecord]]:
+        return {run_id: await self.list_runs(parent_run_id=run_id) for run_id in parent_run_ids}
+
+    async def get_tool_effects(
+        self: StepStore, keys: Sequence[tuple[str, str]]
+    ) -> Mapping[tuple[str, str], ToolEffectRecord]:
+        found: dict[tuple[str, str], ToolEffectRecord] = {}
+        for run_id, tool_call_id in keys:
+            effect = await self.get_tool_effect(run_id=run_id, tool_call_id=tool_call_id)
+            if effect is not None:
+                found[(run_id, tool_call_id)] = effect
+        return found
+
+
+class EmptyConversationSnapshots(PerRunBatchReads, InMemoryStepStore):
     """实时页用的空历史：官方内存 store 补上按对话取快照的入口，恒无快照。"""
 
     async def latest_conversation_snapshot(
@@ -75,6 +108,9 @@ class Normalizer:
         return value
 
     def _field(self, key: str, value: Any) -> Any:
+        if key == "stream_epoch":
+            # 实时流的身份每次建流都换新：两条路的流不是同一条，金样只关心它在不在。
+            return "<epoch>"
         if key == "durationMs":
             # 两条路的时钟不同，耗时对不上；金样要能过前端的 number schema，所以写 0 不写占位串。
             return 0
@@ -148,7 +184,7 @@ async def live_page(
 
     replayed = TranscriptStore()
     for replayed_agent in dict.fromkeys((MAIN_AGENT_ID, agent_id)):
-        for batch in store.subscribe_view(conversation_id, replayed_agent, since=0).batches:
+        for batch in whole_journal(store, conversation_id, replayed_agent):
             replayed.append(conversation_id, replayed_agent, batch.ops)
     history = TranscriptHistory(EmptyConversationSnapshots(), NoPromptRuns(), display)
     return await _service(replayed, history, queue, runner).page(
@@ -175,20 +211,37 @@ async def cold_page(
     )
 
 
+def whole_journal(
+    store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
+) -> tuple[OpBatch, ...]:
+    """这条实时流补发日志里的全部批次：带上流自己的 epoch 从 0 续订。"""
+
+    epoch = store.subscribe_view(conversation_id, agent_id).epoch
+    return store.subscribe_view(conversation_id, agent_id, since=0, epoch=epoch).batches
+
+
 def ws_frames(
     store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
 ) -> list[Any]:
-    """这条流从订阅起会收到的全部帧：一帧 reset，之后每批一帧 ops。"""
+    """这条流从订阅起会收到的全部帧：一帧 reset，之后每批一帧 ops。
 
-    view = store.subscribe_view(conversation_id, agent_id, since=0)
+    只记客户端要解析的部分：帧类型、信封上的 ``stream_epoch`` 与载荷；会话事件序号与时间戳不进金样。
+    """
+
+    view = store.subscribe_view(conversation_id, agent_id)
     frames: list[Any] = [
-        {"type": "transcript.reset", "payload": frame.model_dump(by_alias=True, exclude_none=True)}
+        {
+            "type": "transcript.reset",
+            "stream_epoch": view.epoch,
+            "payload": frame.model_dump(by_alias=True, exclude_none=True),
+        }
         for frame in subscribe_frames(view, agent_id=agent_id, since=None)
     ]
-    for batch in view.batches:
+    for batch in whole_journal(store, conversation_id, agent_id):
         frames.append(
             {
                 "type": "transcript.ops",
+                "stream_epoch": batch.epoch,
                 "payload": {
                     "agent_id": agent_id,
                     "seq": batch.seq,
@@ -239,11 +292,13 @@ __all__ = [
     "EmptyConversationSnapshots",
     "NoPromptRuns",
     "Normalizer",
+    "PerRunBatchReads",
     "check_golden",
     "cold_page",
     "comparable",
     "frames_of",
     "live_page",
     "normalize",
+    "whole_journal",
     "ws_frames",
 ]

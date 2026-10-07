@@ -46,7 +46,6 @@ from iclip.domains.generation.models import (
     Inheritance,
 )
 from iclip.domains.generation.schemas import (
-    KIND_IMAGE,
     KIND_VIDEO,
     OPERATION_COMPOSE,
     OPERATION_GENERATE,
@@ -271,24 +270,26 @@ class SqlGenerationRepository:
         order = {job.id: position for position, job in enumerate(jobs)}
         return tuple(sorted((_job_from_row(row) for row in rows), key=lambda job: order[job.id]))
 
-    async def find_image_by_output(
+    async def find_by_output(
         self,
         output_url: str,
         *,
+        kind: GenerationKind,
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
         operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
         own = owner_conditions(_JOBS.owner_user_id, owner)
-        # 不用 IS NOT DISTINCT FROM：它走不了（对话，产物地址）那条索引。
+        # 不用 IS NOT DISTINCT FROM：图片走不了（对话，产物地址）那条索引。视频没有这条索引，
+        # 只按属主找本人的上传，走（属主，建立时刻）那条再筛。
         own.append(
             _JOBS.conversation_id.is_(None)
             if conversation_id is None
             else _JOBS.conversation_id == conversation_id
         )
         stmt = select(generation_jobs_table).where(
-            _JOBS.kind == KIND_IMAGE,
+            _JOBS.kind == kind,
             _JOBS.status == STATUS_COMPLETED,
             _JOBS.output_url == output_url,
             _visible(own, inherited),
@@ -480,23 +481,6 @@ class SqlGenerationRepository:
         if only_if_status is not None:
             return await self._update_if(job_id, only_if_status, provider_status=provider_status)
         return await self._update(job_id, provider_status=provider_status)
-
-    async def record_reference_cut(
-        self,
-        job_id: uuid.UUID,
-        *,
-        range_start_ms: int,
-        range_end_ms: int,
-        only_if_status: GenerationStatus,
-    ) -> GenerationJob | None:
-        return await self._update_if(
-            job_id,
-            only_if_status,
-            range_start_ms=range_start_ms,
-            range_end_ms=range_end_ms,
-            # 切片阶段结束，阶段词清掉；接下来等上游的回执。
-            provider_status=None,
-        )
 
     async def _update_if(
         self, job_id: uuid.UUID, expected: GenerationStatus, **values: Any

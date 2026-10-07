@@ -187,9 +187,6 @@ export const formatShotPrompt = (shot: Shot): string => {
   return `${shot.prompt.global_settings}\n\n${lines.join('\n')}\n${OUTPUT_CONSTRAINT}`
 }
 
-export const formatShotPrompts = (shots: readonly Shot[]): string =>
-  shots.map((shot) => `镜头组 ${shot.index}\n${formatShotPrompt(shot)}`).join('\n\n')
-
 const SENTENCE_END = /[。；！？!?;]/
 
 /** 只读标题从镜头正文取首句，文件中的正文保持原样。 */
@@ -211,3 +208,19 @@ export const promptTitle = (prompt: string): string | undefined => {
 
 export const shotName = (shot: Shot): string =>
   promptTitle(shot.prompt.timeline[0]?.prompt ?? '') ?? `镜头组 ${shot.index}`
+
+/** 顶栏镜头组列表里的一行；首帧取第一个镜头引用的第一张图，没引用就用第一张。 */
+export const shotGroupSummary = (shot: Shot, aspectRatio: string) => {
+  const frame =
+    shot.prompt.timeline[0]?.image_indexes.find(
+      (value) => value >= 1 && value <= shot.image_urls.length,
+    ) ?? 1
+  return {
+    aspectRatio,
+    index: shot.index,
+    name: shotName(shot),
+    sceneSeconds: shot.prompt.timeline.map((item) => item.timestamps[1] - item.timestamps[0]),
+    seconds: shot.seconds,
+    thumbnailUrl: shot.image_urls[frame - 1],
+  }
+}

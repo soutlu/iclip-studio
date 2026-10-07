@@ -4,8 +4,12 @@
 @import '../../node_modules/tailwindcss/preflight.css' layer(base);
 @tailwind utilities;
 
-/* 深色变体：主题由 <html> 上的 .dark 决定（见 src/app/theme.ts），dark: 前缀跟着它走。 */
+/* 深色变体：主题由 <html> 上的 .dark 决定（见 src/shared/lib/theme.ts），dark: 前缀跟着它走。 */
 @custom-variant dark (&:is(.dark *));
+
+/* 触屏变体：hover / group-hover 只在 (hover: hover) 下生效，悬停才露出的控件在触屏上永远看不见；
+   touch: 是它的补集，用来让这些控件在没有悬停的设备上常驻。 */
+@custom-variant touch (@media (hover: none));
 
 /* 唯一圆角标尺：同时驱动 CSS token 和 Tailwind rounded-* utilities。 */
 @theme {
@@ -70,8 +74,6 @@
   --color-on-primary: var(--color-on-primary);
   --color-primary-container: var(--color-primary-container);
   --color-on-primary-container: var(--color-on-primary-container);
-  --color-primary-container-solid: var(--color-primary-container-solid);
-  --color-primary-container-soft: var(--color-primary-container-soft);
   --color-secondary: var(--color-secondary);
   --color-on-secondary: var(--color-on-secondary);
   --color-secondary-container: var(--color-secondary-container);
@@ -122,7 +124,6 @@
   --color-disabled-text: var(--color-disabled-text);
   --color-disabled-container: var(--color-disabled-container);
   --color-focus-ring: var(--color-focus-ring);
-  --color-ring-highlight: var(--color-ring-highlight);
   --color-warning: var(--color-warning);
   --color-on-warning: var(--color-on-warning);
   --color-warning-container: var(--color-warning-container);
@@ -164,16 +165,12 @@
   --color-chat-panel-bg-end: var(--color-chat-panel-bg-end);
   --color-chat-panel-border: var(--color-chat-panel-border);
   --color-chat-card-bg: var(--color-chat-card-bg);
+  --color-chat-soft-card: var(--color-chat-soft-card);
+  --color-chat-soft-card-edge: var(--color-chat-soft-card-edge);
   --color-chat-message-text: var(--color-chat-message-text);
   --color-chat-secondary-text: var(--color-chat-secondary-text);
   --color-chat-muted-text: var(--color-chat-muted-text);
   --color-chat-user-bg: var(--color-chat-user-bg);
-  --color-chat-agent-avatar-bg: var(--color-chat-agent-avatar-bg);
-  --color-chat-agent-avatar-border: var(--color-chat-agent-avatar-border);
-  --color-chat-agent-identity-bg: var(--color-chat-agent-identity-bg);
-  --color-chat-agent-identity-border: var(--color-chat-agent-identity-border);
-  --color-chat-agent-identity-text: var(--color-chat-agent-identity-text);
-  --color-chat-agent-rail: var(--color-chat-agent-rail);
   --color-chat-inline-bg: var(--color-chat-inline-bg);
   --color-chat-inline-border: var(--color-chat-inline-border);
   --color-chat-chip-bg: var(--color-chat-chip-bg);
@@ -183,25 +180,16 @@
   --color-chat-code-border: var(--color-chat-code-border);
   --color-chat-link-text: var(--color-chat-link-text);
   --color-chat-link-border: var(--color-chat-link-border);
-  --color-chat-error-bg: var(--color-chat-error-bg);
-  --color-chat-error-border: var(--color-chat-error-border);
-  --color-chat-error-text: var(--color-chat-error-text);
   --color-chat-status-success: var(--color-chat-status-success);
   --color-chat-status-error: var(--color-chat-status-error);
   --color-chat-status-running: var(--color-chat-status-running);
-  --color-chat-focus-ring: var(--color-chat-focus-ring);
   --color-chat-hairline: var(--color-chat-hairline);
   --color-chat-scrollbar-thumb: var(--color-chat-scrollbar-thumb);
   --color-canvas-card-bg: var(--color-canvas-card-bg);
   --color-canvas-card-text: var(--color-canvas-card-text);
-  --color-canvas-card-border: var(--color-canvas-card-border);
   --color-canvas-label-text: var(--color-canvas-label-text);
-  --color-storyboard-canvas: var(--color-storyboard-canvas);
-  --color-storyboard-canvas-dot: var(--color-storyboard-canvas-dot);
-  --color-annotation-red: var(--color-annotation-red);
-  --color-annotation-orange: var(--color-annotation-orange);
-  --color-annotation-blue: var(--color-annotation-blue);
-  --color-annotation-green: var(--color-annotation-green);
+  --color-storyboard-stage: var(--color-storyboard-stage);
+  --color-storyboard-stage-line: var(--color-storyboard-stage-line);
   --color-reference-image: var(--color-reference-image);
   --color-reference-video: var(--color-reference-video);
   --color-reference-audio: var(--color-reference-audio);
@@ -228,6 +216,18 @@
   --color-on-chart-ord-3: var(--color-on-chart-ord-3);
   --color-on-chart-ord-4: var(--color-on-chart-ord-4);
   --color-on-chart-ord-5: var(--color-on-chart-ord-5);
+  --color-accent-1: var(--color-accent-1);
+  --color-accent-2: var(--color-accent-2);
+  --color-accent-3: var(--color-accent-3);
+  --color-accent-4: var(--color-accent-4);
+  --color-accent-5: var(--color-accent-5);
+  --color-accent-6: var(--color-accent-6);
+  --color-accent-7: var(--color-accent-7);
+  --color-accent-8: var(--color-accent-8);
+  --color-code-key: var(--color-code-key);
+  --color-code-string: var(--color-code-string);
+  --color-code-literal: var(--color-code-literal);
+  --color-code-guide: var(--color-code-guide);
   --color-dashboard-bg: var(--color-dashboard-bg);
   --color-dashboard-card: var(--color-dashboard-card);
   --color-dashboard-card-edge: var(--color-dashboard-card-edge);
@@ -257,8 +257,6 @@
   --color-brief-board-4: var(--color-brief-board-4);
   --color-brief-board-5: var(--color-brief-board-5);
   --color-brief-board-white: var(--color-brief-board-white);
-  --color-sb-table-accent: var(--color-sb-table-accent);
-  --color-sb-table-accent-soft: var(--color-sb-table-accent-soft);
   --color-sb-table-background: var(--color-sb-table-background);
   --color-sb-table-surface: var(--color-sb-table-surface);
   --color-sb-table-prompt-surface: var(--color-sb-table-prompt-surface);
@@ -281,8 +279,6 @@
   --color-sb-table-stage-neutral-bg: var(--color-sb-table-stage-neutral-bg);
   --color-sb-table-stage-neutral-text: var(--color-sb-table-stage-neutral-text);
   --color-on-scrim: var(--color-on-scrim);
-  --color-ai-gradient-start: var(--color-ai-gradient-start);
-  --color-ai-gradient-end: var(--color-ai-gradient-end);
   --shadow-1: var(--shadow-1);
   --shadow-2: var(--shadow-2);
   --shadow-3: var(--shadow-3);
@@ -376,4 +372,5 @@
 @import '../features/library/library.css';
 @import '../features/conversations/conversations.css';
 @import '../features/storyboard/storyboard.css';
+@import '../features/storyboard/film/film.css';
 @import '../features/storyboard/video-editor/video-editor.css';

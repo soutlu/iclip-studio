@@ -1,4 +1,5 @@
 export {
+  MenuIconRadioItem,
   MenuItem,
   MenuRadioGroup,
   MenuRadioItem,

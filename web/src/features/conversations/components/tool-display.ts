@@ -5,8 +5,10 @@
  */
 
 import { z } from 'zod'
-import type { ToolCallFrame } from '@/shared/transcript/vendor'
+import type { ToolCallFrame, TranscriptInteraction } from '@/shared/transcript/vendor'
 import type { IconName } from '@/shared/icons'
+import { baseName, fileKindOf } from '@/shared/lib/file-kind'
+import { workspacePathOf } from '@/shared/workbench'
 
 const fileOperationLabels = {
   edit: '编辑文件',
@@ -65,13 +67,16 @@ export type ToolCard = {
   icon: IconName
   /** 标题：书面动宾短语。 */
   label: string
-  /** 主语：这一步作用的对象实例。 */
+  /** 主语：这一步作用的对象实例；文件只写文件名，不带目录。 */
   detail?: string
-  /** 主语是路径或地址时用等宽字。 */
-  mono?: boolean
   /** 活动组按操作类型聚合；检索按 grep 归类。 */
   operation?: FileOperation
+  /** 读、写、改的那份工作区文件（规范化后的键）；路径不合法或操作的是目录时没有。 */
+  file?: string
 }
+
+/** 这三种操作作用在一份文件上；浏览目录与检索不是。 */
+const FILE_TARGET_OPERATIONS: ReadonlySet<FileOperation> = new Set(['read', 'write', 'edit'])
 
 const FALLBACK_CARD: ToolCard = { icon: 'task', label: '调用工具' }
 
@@ -81,18 +86,27 @@ export const toolCard = (display: unknown, view?: string): ToolCard => {
   if (!parsed.success) return FALLBACK_CARD
   const card = parsed.data
   switch (card.kind) {
-    case 'file_io':
-      return {
-        detail: card.path,
+    case 'file_io': {
+      const base = {
         icon: fileOperationIcons[card.operation],
         label: fileOperationLabels[card.operation],
-        mono: true,
         operation: card.operation,
       }
+      if (!FILE_TARGET_OPERATIONS.has(card.operation)) return { ...base, detail: card.path }
+      const file = workspacePathOf(card.path)
+      return file === undefined
+        ? { ...base, detail: baseName(card.path) }
+        : { ...base, detail: baseName(file), file }
+    }
     case 'search':
-      return { detail: clip(card.query), icon: 'search', label: '搜索工作区', operation: 'grep' }
+      return {
+        detail: clip(card.query),
+        icon: 'search',
+        label: '搜索工作区',
+        operation: 'grep',
+      }
     case 'url_fetch':
-      return { detail: shortUrl(card.url), icon: 'external', label: '读取网页', mono: true }
+      return { detail: shortUrl(card.url), icon: 'external', label: '读取网页' }
     case 'skill_call':
       // 只展示文档名，skill 名不进入界面。
       return card.args
@@ -118,15 +132,17 @@ export const agentCallOf = (
   return { agentName: parsed.data.agent_name, prompt: parsed.data.prompt }
 }
 
-export type FileChange = { before: string; after: string } | { content: string }
+export type FileChange = { path: string } & (
+  { before: string; after: string } | { content: string }
+)
 
 /** 审批卡预览用：编辑给前后文，写入给整份内容；别的 display 没有可预览的东西。 */
 export const fileChangeOf = (display: unknown): FileChange | undefined => {
   const parsed = displaySchema.safeParse(display)
   if (!parsed.success || parsed.data.kind !== 'file_io') return undefined
-  const { before, after, content } = parsed.data
-  if (typeof before === 'string' && typeof after === 'string') return { after, before }
-  if (typeof content === 'string') return { content }
+  const { after, before, content, path } = parsed.data
+  if (typeof before === 'string' && typeof after === 'string') return { after, before, path }
+  if (typeof content === 'string') return { content, path }
   return undefined
 }
 
@@ -145,84 +161,68 @@ const searchResultsMeta = z.object({
 })
 
 const mediaGridMeta = z.object({
-  items: z.array(z.object({ caption: z.string(), url: z.string() })),
-  note: optionalText,
+  items: z.array(z.object({ caption: z.string().optional(), url: z.string() })),
 })
 
-/** 没有卡身渲染器的工具只能带角标，或者声明正文不给展开。 */
+/** 没有卡身渲染器的工具可以声明正文不给展开。 */
 const noteMeta = z.object({
-  chip: optionalText,
-  added: z.number().int().nullish(),
-  removed: z.number().int().nullish(),
   body: z.literal('none').nullish(),
 })
 
 export type SearchMatch = z.output<typeof searchResultsMeta>['matches'][number]
 export type MediaGridItem = z.output<typeof mediaGridMeta>['items'][number]
 
-export type ToolResult =
-  | { kind: 'file_content'; path: string; lines: number; truncated: boolean }
-  | { kind: 'search_results'; query: string; matches: readonly SearchMatch[]; truncated: boolean }
-  | { kind: 'media_grid'; items: readonly MediaGridItem[]; note?: string }
-  | { kind: 'note'; chip?: string; added?: number; removed?: number; hideBody: boolean }
+type ToolResult =
+  | { kind: 'file_content' }
+  | { kind: 'search_results'; matches: readonly SearchMatch[]; truncated: boolean }
+  | { kind: 'media_grid'; items: readonly MediaGridItem[] }
+  | { kind: 'note'; hideBody: boolean }
 
 /** 按 view 解析 metadata；形状对不上就当没有结果，卡退回朴素行。 */
-export const toolResult = (frame: ToolCallFrame): ToolResult | undefined => {
+const toolResult = (frame: ToolCallFrame): ToolResult | undefined => {
   switch (frame.view) {
-    case 'file_content': {
-      const parsed = fileContentMeta.safeParse(frame.metadata)
-      return parsed.success ? { kind: 'file_content', ...parsed.data } : undefined
-    }
+    case 'file_content':
+      return fileContentMeta.safeParse(frame.metadata).success
+        ? { kind: 'file_content' }
+        : undefined
     case 'search_results': {
       const parsed = searchResultsMeta.safeParse(frame.metadata)
-      return parsed.success ? { kind: 'search_results', ...parsed.data } : undefined
+      if (!parsed.success) return undefined
+      return {
+        kind: 'search_results',
+        matches: parsed.data.matches,
+        truncated: parsed.data.truncated,
+      }
     }
     case 'media_grid': {
       const parsed = mediaGridMeta.safeParse(frame.metadata)
-      if (!parsed.success) return undefined
-      const { items, note } = parsed.data
-      return note ? { items, kind: 'media_grid', note } : { items, kind: 'media_grid' }
+      return parsed.success ? { items: parsed.data.items, kind: 'media_grid' } : undefined
     }
     case undefined: {
       const parsed = noteMeta.safeParse(frame.metadata ?? {})
-      if (!parsed.success) return undefined
-      const { chip, added, removed, body } = parsed.data
-      return {
-        kind: 'note',
-        hideBody: body === 'none',
-        ...(chip ? { chip } : {}),
-        ...(typeof added === 'number' ? { added } : {}),
-        ...(typeof removed === 'number' ? { removed } : {}),
-      }
+      return parsed.success ? { hideBody: parsed.data.body === 'none', kind: 'note' } : undefined
     }
     default:
       return undefined
   }
 }
 
-/** 卡尾的文字角标；改文件的增删数另走 toolDiff。 */
-export const toolChip = (frame: ToolCallFrame): string | undefined => {
-  const result = toolResult(frame)
-  if (result === undefined) return undefined
-  switch (result.kind) {
-    case 'file_content':
-      return result.truncated ? `${result.lines} 行 · 未读完` : `${result.lines} 行`
-    case 'search_results':
-      return result.matches.length === 0 ? '无命中' : `${result.matches.length} 处命中`
-    case 'media_grid':
-      return result.note ?? `${result.items.length} 张`
-    case 'note':
-      return result.chip
-  }
+/** 一次调用给人看的结局：协议给的三态，外加「被拒绝」——它在协议里是 error，审批交互记着 rejected。 */
+export type ToolOutcome = ToolCallFrame['state'] | 'denied'
+
+export const toolOutcome = (
+  frame: ToolCallFrame,
+  interactions: ReadonlyMap<string, TranscriptInteraction>,
+): ToolOutcome => {
+  if (frame.state !== 'error' || frame.approvalId === undefined) return frame.state
+  return interactions.get(frame.approvalId)?.state === 'rejected' ? 'denied' : 'error'
 }
 
-/** 改文件的增删行数；没改动或不是改文件就没有。 */
-export const toolDiff = (frame: ToolCallFrame): { added: number; removed: number } | undefined => {
+/** 行尾只留检索的命中数；行数、增删数、张数都不上行尾。 */
+export const toolSearchCount = (frame: ToolCallFrame): string | undefined => {
   const result = toolResult(frame)
-  if (result?.kind !== 'note') return undefined
-  const added = result.added ?? 0
-  const removed = result.removed ?? 0
-  return added + removed > 0 ? { added, removed } : undefined
+  if (result?.kind !== 'search_results') return undefined
+  return result.matches.length === 0 ? '无命中' : `${result.matches.length} 处命中`
 }
 
 /** 仅展示已完成且形状合法的媒体墙；活动分组复用此判据，保证媒体始终可见。 */
@@ -237,4 +237,91 @@ export const toolBodyText = (frame: ToolCallFrame): string | undefined => {
   if (typeof frame.output !== 'string' || !frame.output.includes('\n')) return undefined
   const result = toolResult(frame)
   return result?.kind === 'note' && result.hideBody ? undefined : frame.output
+}
+
+// --- 详情面板：展开后看的东西 --------------------------------------------------
+
+const NUMBERED_LINE = /^\s*\d+\t(.*)$/
+
+/**
+ * 读文件的返回每行带「行号 + 制表符」，末尾可能跟几句写给模型的续读提示。
+ * 给人看的只要文件本身：去掉行号，提示句不是文件内容，不要。
+ */
+export const fileTextOf = (output: string): string =>
+  output
+    .split('\n')
+    .flatMap((line) => {
+      const match = NUMBERED_LINE.exec(line)
+      return match === null ? [] : [match[1] ?? '']
+    })
+    .join('\n')
+
+export type DiffLine = { kind: 'context' | 'removed' | 'added'; text: string }
+
+/** 一次替换改了哪些行：首尾相同的行是上下文，中间是真正改了的部分，先列删掉的、再列新写的。 */
+export const diffLinesOf = (before: string, after: string): DiffLine[] => {
+  const old = before.split('\n')
+  const next = after.split('\n')
+  let head = 0
+  while (head < old.length && head < next.length && old[head] === next[head]) head += 1
+  let tail = 0
+  while (
+    tail < old.length - head &&
+    tail < next.length - head &&
+    old[old.length - 1 - tail] === next[next.length - 1 - tail]
+  ) {
+    tail += 1
+  }
+  const context = (text: string): DiffLine => ({ kind: 'context', text })
+  return [
+    ...old.slice(0, head).map(context),
+    ...old.slice(head, old.length - tail).map((text): DiffLine => ({ kind: 'removed', text })),
+    ...next.slice(head, next.length - tail).map((text): DiffLine => ({ kind: 'added', text })),
+    ...old.slice(old.length - tail).map(context),
+  ]
+}
+
+/**
+ * 展开后的面板，照 Kimi ToolPanel：失败给错误原文，读写给文件内容，编辑给改动行，检索给命中，
+ * 其余多行结果给原文。被拒绝与运行中的调用没有面板；没有可看的东西也没有。
+ */
+export type ToolPanel =
+  | { kind: 'error'; text: string }
+  | { kind: 'file'; text: string; markdown: boolean }
+  | { kind: 'diff'; before: string; after: string }
+  | { kind: 'matches'; matches: readonly SearchMatch[]; truncated: boolean }
+  | { kind: 'text'; text: string }
+
+export const toolPanel = (frame: ToolCallFrame, outcome: ToolOutcome): ToolPanel | undefined => {
+  if (outcome === 'running' || outcome === 'denied') return undefined
+  if (outcome === 'error')
+    return frame.error === undefined ? undefined : { kind: 'error', text: frame.error }
+  const parsed = displaySchema.safeParse(frame.display)
+  const display = parsed.success ? parsed.data : undefined
+  if (display?.kind === 'file_io') {
+    const markdown = fileKindOf(display.path) === 'markdown'
+    if (display.operation === 'read' && toolResult(frame)?.kind === 'file_content') {
+      return typeof frame.output === 'string'
+        ? { kind: 'file', markdown, text: fileTextOf(frame.output) }
+        : undefined
+    }
+    if (display.operation === 'write' && typeof display.content === 'string') {
+      return { kind: 'file', markdown, text: display.content }
+    }
+    if (
+      display.operation === 'edit' &&
+      typeof display.before === 'string' &&
+      typeof display.after === 'string'
+    ) {
+      return { after: display.after, before: display.before, kind: 'diff' }
+    }
+  }
+  const result = toolResult(frame)
+  if (result?.kind === 'search_results') {
+    return result.matches.length === 0
+      ? undefined
+      : { kind: 'matches', matches: result.matches, truncated: result.truncated }
+  }
+  const text = toolBodyText(frame)
+  return text === undefined ? undefined : { kind: 'text', text }
 }

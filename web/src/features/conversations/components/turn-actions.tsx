@@ -1,17 +1,12 @@
-/** 回复的终态栏：复制、重新生成、用量、时刻。只有最新一轮常驻，历史轮悬停才露出，别让每条回复下面都挂一排小图标。 */
+/** 回复的终态栏：复制、重新生成、分叉、时刻，用量收在时刻的提示里（悬停、聚焦或点一下弹出）。只有最新一轮常驻，历史轮悬停才露出（触屏上常驻），别让每条回复下面都挂一排小图标。 */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { TranscriptUsage } from '@/shared/transcript/vendor'
-import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { CopyButton } from './copy-button'
-
-/** ≥1000 缩成 x.xxk（两位小数去尾零），不足 1000 显整数。 */
-const compactTokens = (tokens: number): string => {
-  if (tokens < 1000) return String(tokens)
-  return `${(tokens / 1000).toFixed(2).replace(/\.?0+$/, '')}k`
-}
+import { TOUCH_HIT_40 } from './touch-hit'
 
 const exactTokens = (tokens: number): string => tokens.toLocaleString('zh-CN')
 
@@ -39,34 +34,53 @@ const fullTime = (iso: string): string => {
   return `${then.getFullYear()}/${pad2(then.getMonth() + 1)}/${pad2(then.getDate())} ${pad2(then.getHours())}:${pad2(then.getMinutes())}:${pad2(then.getSeconds())}`
 }
 
-const UsageStats = ({ usage }: { usage: TranscriptUsage }) => {
-  const input = usage.inputTokens ?? 0
-  const cached = usage.cachedTokens ?? 0
-  const output = usage.outputTokens ?? 0
-  return (
-    <p
-      className="flex items-center gap-1 text-caption text-chat-muted-text tabular-nums"
-      title={`输入 ${exactTokens(input)} · 缓存 ${exactTokens(cached)} · 输出 ${exactTokens(output)}`}
-    >
-      <Icon decorative name="credit" size="xs" />
-      {`输入 ${compactTokens(input)} · 缓存 ${compactTokens(cached)} · 输出 ${compactTokens(output)}`}
-    </p>
-  )
-}
+/** 悬停里的精确用量，千分位；缺的项按 0 计。 */
+const usageLine = (usage: TranscriptUsage): string =>
+  `输入 ${exactTokens(usage.inputTokens ?? 0)} · 缓存 ${exactTokens(usage.cachedTokens ?? 0)} · 输出 ${exactTokens(usage.outputTokens ?? 0)}`
 
-const TurnTime = ({ endedAt }: { endedAt: string }) => {
+/** 时刻：悬停、聚焦弹出完整时刻与用量；触屏没有悬停，Radix 提示又不接触摸，所以受控开合、点一下开、再点收起，做法同成片信息按钮。 */
+const TurnTime = ({ endedAt, usage }: { endedAt: string; usage: TranscriptUsage | undefined }) => {
   // 相对日期以组件挂载时刻为参照。
   const [now] = useState(() => new Date())
+  const [open, setOpen] = useState(false)
+  // 按下那一刻提示开没开：Radix 在按下时就先把提示关了，点击要按按下前的状态翻转。键盘合成的点击没有按下，用当前状态。
+  const openAtPressRef = useRef<boolean | null>(null)
   const label = messageTime(endedAt, now)
   if (label === '') return null
   return (
-    <time
-      className="text-caption text-chat-muted-text tabular-nums"
-      dateTime={endedAt}
-      title={fullTime(endedAt)}
-    >
-      {label}
-    </time>
+    <>
+      {/* 间隔点把时刻和按钮隔开，时刻不再像第四个按钮；随时刻一起隐藏。 */}
+      <span aria-hidden className="mx-0.5 text-caption text-chat-muted-text">
+        ·
+      </span>
+      <TooltipRoot onOpenChange={setOpen} open={open}>
+        <TooltipTrigger
+          asChild
+          onPointerDown={() => {
+            openAtPressRef.current = open
+          }}
+          // 拦下默认处理，Radix 才不会在点击时把提示关掉。
+          onClick={(event) => {
+            event.preventDefault()
+            const wasOpen = openAtPressRef.current ?? open
+            openAtPressRef.current = null
+            setOpen(!wasOpen)
+          }}
+        >
+          <button
+            className="shrink-0 rounded-xs text-caption text-chat-muted-text tabular-nums ui-focus"
+            type="button"
+          >
+            <time dateTime={endedAt}>{label}</time>
+          </button>
+        </TooltipTrigger>
+        {/* 完整时刻一行，有用量再接一行精确用量。 */}
+        <TooltipContent className="tabular-nums" side="top">
+          <p>{fullTime(endedAt)}</p>
+          {usage === undefined ? null : <p>{usageLine(usage)}</p>}
+        </TooltipContent>
+      </TooltipRoot>
+    </>
   )
 }
 
@@ -75,7 +89,7 @@ type TurnActionsProps = {
   copyText: string
   /** 缺失或无效的结束时间不显示。 */
   endedAt?: string | undefined
-  /** 缺少 usage 时省略统计。 */
+  /** 只进时刻的悬停提示；缺少 usage 或时刻不显示时都不出用量。 */
   usage?: TranscriptUsage | undefined
   /** 未提供回调时隐藏按钮；调用方负责末轮与空闲状态判断。 */
   onRegenerate?: (() => void) | undefined
@@ -83,11 +97,14 @@ type TurnActionsProps = {
   /** 未提供回调时隐藏按钮。每一轮都能分叉，不限末轮。 */
   onFork?: (() => void) | undefined
   forkDisabled?: boolean | undefined
-  /** 最新一轮常驻；历史轮只在悬停或聚焦时露出。 */
+  /** 最新一轮常驻；历史轮只在悬停或聚焦时露出，触屏上常驻。 */
   revealed?: boolean | undefined
+  /** 摆放位置由所在轮决定。 */
+  className?: string | undefined
 }
 
 export function TurnActions({
+  className,
   copyText,
   endedAt,
   forkDisabled = false,
@@ -100,39 +117,40 @@ export function TurnActions({
   return (
     <div
       className={cn(
-        'flex flex-wrap items-center gap-2 pt-2 transition-opacity ui-motion-s',
-        !revealed && 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+        // 触屏上按钮热区扩到 40px，这一排随之撑到 40px 高、按钮间距拉到 16px，热区挨着而不重叠。
+        'flex items-center gap-2 transition-opacity ui-motion-s touch:min-h-10',
+        !revealed && 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 touch:opacity-100',
+        className,
       )}
     >
-      <div className="flex items-center gap-2">
-        <CopyButton text={copyText} />
+      <div className="flex shrink-0 items-center gap-2 touch:gap-4">
+        <CopyButton className={TOUCH_HIT_40} text={copyText} />
         {onRegenerate === undefined ? null : (
           <IconButton
-            className="text-chat-muted-text"
+            className={cn('text-chat-muted-text', TOUCH_HIT_40)}
             disabled={regenerateDisabled}
             label="重新生成"
             name="refresh"
             onClick={onRegenerate}
             size="xs"
-            title="重新生成"
+            tooltip={regenerateDisabled ? '等这一条跑完再重新生成' : undefined}
             variant="standard"
           />
         )}
         {onFork === undefined ? null : (
           <IconButton
-            className="text-chat-muted-text"
+            className={cn('text-chat-muted-text', TOUCH_HIT_40)}
             disabled={forkDisabled}
-            label="从这里分叉"
+            label="从这里另开一个任务"
             name="fork"
             onClick={onFork}
             size="xs"
-            title="从这里分叉：复制到这一轮为止，接着自己跑"
+            tooltip={forkDisabled ? '等这一条跑完再分叉' : undefined}
             variant="standard"
           />
         )}
       </div>
-      {usage === undefined ? null : <UsageStats usage={usage} />}
-      {endedAt === undefined ? null : <TurnTime endedAt={endedAt} />}
+      {endedAt === undefined ? null : <TurnTime endedAt={endedAt} usage={usage} />}
     </div>
   )
 }

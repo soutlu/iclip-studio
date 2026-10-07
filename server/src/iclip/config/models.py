@@ -46,7 +46,7 @@ VIDEO_SUBMIT_URL_ENV: Final = "VIDEO_SUBMIT_URL"
 """媒体生成的总开关：这个地址为空即整项关闭。"""
 
 VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
-"""视频拆解的总开关：这个地址为空即 `video` 不登记。"""
+"""视频拆解的总开关：这个地址为空即 `video` 与 `iclip_studio` 都不登记。"""
 
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 """PDM 款目录的总开关：这个连接串为空即爆款视频的降级不可用。"""
@@ -227,6 +227,9 @@ class ImageModelSection(ConfigSection):
     route: str = Field(min_length=1)
     concurrency: int = Field(gt=0)
     """这家同时最多挂几个提交。一家一条队列，慢的一家占满自己的槽位不拖别家。"""
+    text_to_image_task: str | None = Field(default=None, min_length=1)
+    image_edit_task: str | None = Field(default=None, min_length=1)
+    """这家自己的两条任务路由；不写就用 ``image`` 段里各家共用的那两条。"""
 
 
 class ImageGenerationSection(ConfigSection):
@@ -285,6 +288,13 @@ class VideoSection(ConfigSection):
     快剪片一秒切两三刀，每秒只看一帧就看不见剪辑点，时间码全压在整秒上。方舟只收
     0.2-5，装配期就拦住。
     """
+
+
+class IclipStudioSection(ConfigSection):
+    """导演流程工具对方约定的取值。地址与 key 复用 ``VideoUnderstandingEnv``。"""
+
+    breakdown_model: str
+    """拆解视频用对方哪个模型。"""
 
 
 class ShotVideoSection(ConfigSection):
@@ -373,6 +383,7 @@ class RuntimeConfig(BaseSettings):
     media_generation: MediaGenerationSection | None = None
     video: VideoSection | None = None
     shot_video: ShotVideoSection | None = None
+    iclip_studio: IclipStudioSection | None = None
     models: dict[str, ModelSection] = Field(default_factory=dict[str, ModelSection])
     conversations: ConversationsSection = ConversationsSection()
     agent_runs: AgentRunsSection = AgentRunsSection()
@@ -431,6 +442,9 @@ class ResolvedImageModel:
     name: str
     api_base: str
     concurrency: int
+    text_to_image_task: str | None = None
+    image_edit_task: str | None = None
+    """这家自己的两条任务路由；为 None 用各家共用的那两条。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -460,6 +474,15 @@ class ResolvedVideo:
     understanding_model: str
     understanding_thinking: ArkReasoningEffort | None
     understanding_fps: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedIclipStudio:
+    """导演流程工具的运行值。"""
+
+    breakdown_url: str
+    breakdown_api_key: str
+    breakdown_model: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,6 +550,7 @@ class ResolvedSettings:
     media_generation: ResolvedMediaGeneration | None
     video: ResolvedVideo | None
     shot_video: ResolvedShotVideo | None
+    iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
     models: tuple[ResolvedModel, ...]
     title_model: str | None
@@ -559,9 +583,13 @@ class ResolvedSettings:
 
     @property
     def ffmpeg_required(self) -> bool:
-        """是否必须有 ffmpeg：取帧与出图要用，媒体生成带的视频裁剪拼接也要用。"""
+        """是否必须有 ffmpeg：取帧与出图要用，媒体生成带的视频裁剪拼接要用，视频拆解读时长与抽帧也要用。"""
 
-        return self.shot_tools_enabled or self.media_generation is not None
+        return (
+            self.shot_tools_enabled
+            or self.media_generation is not None
+            or self.iclip_studio is not None
+        )
 
 
 def _from_env[EnvT: EnvSettings](cls: type[EnvT]) -> EnvT:
@@ -608,6 +636,8 @@ def _resolve_media_generation(
                 name=name,
                 api_base=f"{env.image_api_base.rstrip('/')}/{model.route.strip('/')}",
                 concurrency=model.concurrency,
+                text_to_image_task=model.text_to_image_task,
+                image_edit_task=model.image_edit_task,
             )
             for name, model in section.image.models.items()
         ),
@@ -632,6 +662,19 @@ def _resolve_video(section: VideoSection | None) -> ResolvedVideo | None:
         understanding_model=section.understanding_model,
         understanding_thinking=section.understanding_thinking,
         understanding_fps=section.understanding_fps,
+    )
+
+
+def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
+    """按声明与视频理解开关解析；对象存储是否可用由能力登记处判。"""
+
+    if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
+        return None
+    env = _from_env(VideoUnderstandingEnv)
+    return ResolvedIclipStudio(
+        breakdown_url=env.url,
+        breakdown_api_key=env.api_key,
+        breakdown_model=section.breakdown_model,
     )
 
 
@@ -695,6 +738,7 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         media_generation=media_generation,
         video=_resolve_video(config.video),
         shot_video=_resolve_shot_video(config.shot_video),
+        iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),
         models=tuple(
             ResolvedModel(

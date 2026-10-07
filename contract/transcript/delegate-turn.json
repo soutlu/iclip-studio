@@ -125,7 +125,8 @@
         "disposedAt": "<ts>"
       }
     ],
-    "pending_interactions": []
+    "pending_interactions": [],
+    "stream_epoch": "<epoch>"
   },
   "child_rest": {
     "agent_id": "<id-1>",
@@ -201,6 +202,7 @@
         "disposedAt": "<ts>"
       }
     ],
-    "pending_interactions": []
+    "pending_interactions": [],
+    "stream_epoch": "<epoch>"
   }
 }

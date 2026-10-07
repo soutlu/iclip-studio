@@ -25,6 +25,8 @@ from iclip.domains.conversations.service import (
     ListState,
 )
 from iclip.domains.identity.public import Principal
+from iclip.platform.transcript.session_events import SessionEventClock
+from tests.helpers.film import UnusedFilmPage
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
 OWNER = Principal(
@@ -146,6 +148,7 @@ def build(
         read_derived_file=_untouched,
         write_derived_file=_untouched,
         document_validators={},
+        film=UnusedFilmPage(),
         generate_title=_untouched,
         announce_title=_untouched,
         activities_of=activities,
@@ -153,6 +156,10 @@ def build(
         latest_master_urls=_untouched,
         fork_transcript=cast("ForkTranscript", object()),
         copy_workspace=_untouched,
+        copy_same_style=_untouched,
+        event_watermark=SessionEventClock().snapshot,
+        announce_row=_untouched,
+        announce_deleted=_untouched,
     )
 
 

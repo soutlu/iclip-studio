@@ -24,6 +24,31 @@ test('游客发送后登录，保留正文并发起对话', async ({ page }) => 
   await expect(page.getByText(prompt, { exact: true })).toBeVisible({ timeout: 15_000 })
 })
 
+test('在侧栏合集行上新建任务：回首页预选这个合集、输入框聚焦，地址栏不留参数', async ({ page }) => {
+  await page.goto('/')
+  await login(page)
+  // 先进一段对话，从别的页面点回首页。
+  await page.getByRole('link', { name: '无图分镜草稿', exact: true }).click()
+  await expect(page).toHaveURL(/\/c\//)
+
+  // 新建按钮与 ⋯ 一样随行悬停显示，紧挨在 ⋯ 左边。
+  await page.getByRole('button', { name: '夏季亚麻系列 (2)', exact: true }).hover()
+  const start = page.getByRole('button', { name: '在「夏季亚麻系列」里新建任务', exact: true })
+  const more = page.getByRole('button', { name: '夏季亚麻系列 的操作', exact: true })
+  await expect(start).toBeVisible()
+  const startBox = await start.boundingBox()
+  const moreBox = await more.boundingBox()
+  expect(startBox && moreBox && moreBox.x - (startBox.x + startBox.width)).toBe(0)
+
+  await start.click()
+
+  await expect(page).toHaveURL('/')
+  await expect(
+    page.getByRole('button', { name: '关联合集：夏季亚麻系列', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByLabel('输入消息')).toBeFocused()
+})
+
 test('首页搜索并新建合集，首条消息带上关联，回首页后同步侧栏重命名', async ({ page }) => {
   const collectionName = '秋季轻便跑鞋'
   const renamedCollection = '秋季轻便跑鞋宣传片'
@@ -97,10 +122,12 @@ test('首页搜索并新建合集，首条消息带上关联，回首页后同�
   await page.getByRole('button', { name: `${collectionName} (1)`, exact: true }).hover()
   await page.getByRole('button', { name: `${collectionName} 的操作`, exact: true }).click()
   await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
-  const renameDialog = page.getByRole('dialog', { name: '重命名合集', exact: true })
-  await renameDialog.getByRole('textbox', { name: '合集名称' }).fill(renamedCollection)
-  await renameDialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(renameDialog).toBeHidden()
+  // 侧栏合集在行内原位改名，回车保存。
+  const renameInput = page.getByRole('textbox', { name: `重命名 ${collectionName}`, exact: true })
+  await expect(renameInput).toBeFocused()
+  await renameInput.fill(renamedCollection)
+  await renameInput.press('Enter')
+  await expect(renameInput).toBeHidden()
   await expect(
     page.getByRole('button', { name: `关联合集：${renamedCollection}`, exact: true }),
   ).toBeVisible()

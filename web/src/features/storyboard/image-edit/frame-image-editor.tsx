@@ -2,28 +2,27 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
-import { mintUuid } from '@/shared/lib/uuid'
-import { Button, IconButton } from '@/shared/ui/button'
+import { IconButton } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
-import { MediaFallback } from '@/shared/ui/media-fallback'
-import { type LightboxMedia, MediaLightbox } from '@/shared/ui/media-lightbox'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
+import { useUnseenResults } from '../components/use-unseen-results'
 import { AnnotationCanvas } from './annotation-canvas'
 import { exportAnnotatedImage } from './annotation-export'
+import { EditComposer, type EditComposerHandle } from './edit-composer'
 import { EditGenerationSettings } from './edit-generation-settings'
 import { CURRENT_KEY, entryBaseUrl, frameImageEntries } from './edit-history'
-import { EditInstructionEditor } from './edit-instruction-editor'
-import { EditReferences } from './edit-references'
-import { EditResultStrip } from './edit-result-strip'
-import { EditTaskPreview } from './edit-task-preview'
+import { editorWordsOf } from './edit-target'
+import { EditStage, StillStage } from './edit-stage'
 import { draftOf, editDraftError } from './image-edit-draft'
 import {
-  parseEditPrompt,
+  compileEditRequest,
   readSubmittedImages,
   readSubmittedPrompt,
+  referencesAnnotation,
   resolveImageOptions,
+  restoreEditParts,
   seedImageEditJob,
   submitImageEdit,
   useImageEditJobs,
@@ -31,74 +30,69 @@ import {
   type ImageChannel,
   type ImageResolution,
 } from './image-edit.api'
-import type { EditReference, FrameEditTarget } from './image-edit-types'
+import type { EditDraftPart, EditFrame, FrameEditTarget } from './image-edit-types'
 import { useFrameEditDrafts } from './use-frame-edit-drafts'
+import { useFrameReplace } from './use-frame-replace'
+import { VersionStrip } from './version-strip'
 import './image-edit.css'
-
-/** 快照里只有地址，名字重新推一份：和这次底图同一张标「编辑底图」，其余取文件名。 */
-const restoredReference =
-  (baseUrl: string) =>
-  (url: string): EditReference => ({
-    id: mintUuid(),
-    kind: 'image',
-    url,
-    label:
-      url === baseUrl
-        ? '编辑底图'
-        : (decodeURIComponent(url.split('?')[0] ?? '')
-            .split('/')
-            .at(-1) ?? '图片'),
-  })
 
 type FrameImageEditorProps = {
   target: FrameEditTarget
-  frames: readonly string[]
+  /** 这张图此刻在用的那一版；已经不在分镜里时为 undefined，在分镜里但没有在用的（制作页没选用的生成图）为 null。
+   * 随替换实时变，不记打开那一刻的。 */
+  currentUrl: string | null | undefined
+  /** 标题「编辑图片」后面的一句：分镜页写组与帧，制作页写图的名字。 */
+  subtitle: string
+  /** 输入卡里 `@` 与「+」能插的本组图片，下标加一是编号。 */
+  frames: readonly EditFrame[]
   aspectRatio: string
   /** 打开时先选中哪一条；从帧上「有新结果」进来时是那条任务。 */
   initialKey?: string | undefined
-  onClose: () => void
-  onApply: (previousUrl: string, url: string) => Promise<void>
+  /** `opened` 是本次真正点开看过（看时已落定）的任务 id，只有它们可以标成看过。 */
+  onClose: (opened: ReadonlySet<string>) => void
+  /** 把这一帧从 `previousUrl` 换成 `url`；替换与撤销都走它，这一帧已不是 `previousUrl` 时应当拒绝。
+   * null 只出现在 `currentUrl` 可以为 null 的地方：从没有在用的图第一次选用，或撤销回没有在用的图。 */
+  onApply: (previousUrl: string | null, url: string | null) => Promise<void>
+  /** 按描述再生成（制作页的生成图才有）：`parts` 是这张图的描述，参考图是图片；`submit` 收输入卡里的样子，
+   * 失败时抛出给人看的原因。新的出来进版本条，选用才用上。 */
+  regenerate?:
+    | {
+        parts: readonly EditDraftPart[]
+        submit: (parts: EditDraftPart[]) => Promise<void>
+      }
+    | undefined
 }
 
+/** 版本条末尾「再生成」那一格的选中键；任务号与地址都不会是它。 */
+const REGENERATE_KEY = 'regenerate'
+
+/** 编辑图片窗口：装配舞台、版本条与输入卡，持有选中条目、选中标注与生成偏好。 */
 export function FrameImageEditor({
   target,
+  currentUrl,
+  subtitle,
   frames,
   aspectRatio,
   initialKey,
   onClose,
   onApply,
+  regenerate,
 }: FrameImageEditorProps) {
   const queryClient = useQueryClient()
   const drafts = useFrameEditDrafts(target)
+  // 只随用户点版本条而变：提交新任务、任务落定都不挪舞台。
   const [selectedKey, setSelectedKey] = useState(initialKey ?? CURRENT_KEY)
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
-  const [pendingInsertion, setPendingInsertion] = useState<{
-    kind: 'annotation' | 'referenceImage'
-    id: string
-    requestId: number
-  } | null>(null)
-  const [preview, setPreview] = useState<LightboxMedia | null>(null)
-  // 记地址而不是布尔：换一条结果就该重新试着加载那张图。
-  const [brokenResult, setBrokenResult] = useState<string | null>(null)
   const [wantedModel, setWantedModel] = useState<string>()
   const [wantedChannel, setWantedChannel] = useState<ImageChannel>('dev')
   const [wantedResolution, setWantedResolution] = useState<ImageResolution>('2k')
-  // 三段互斥的写操作：同一时刻只可能有一段在跑，编辑器其余部分按 busy 一起锁住。
-  const [operation, setOperation] = useState<'idle' | 'uploading' | 'submitting' | 'applying'>(
-    'idle',
-  )
   const [operationError, setOperationError] = useState<string | null>(null)
-  // 从外部整份换掉画布标注时加一：画布换 key 重挂，撤销栈随之清空。
-  const [canvasRevision, setCanvasRevision] = useState(0)
-  // 用户确认过的当前帧，应用时拿它当替换凭据。
-  //
-  // 不能跟着渲染走：这一帧被 agent 换掉时，缩略图条上那一小格会悄悄改一张图，用户盯着结果
-  // 根本不会发现，跟着走等于没有守卫，会直接盖掉别人刚写的。也不能锁死在打开那一刻，否则
-  // 应用完窗口留着就再也对不上。所以只在用户确实看过这一格时更新：翻缩略图条、自己应用成功、
-  // 以及被拒绝一次之后。
-  const acknowledgedRef = useRef<string | undefined>(undefined)
-  const activeRef = useRef(false)
-  const insertionRef = useRef(0)
+  // 从外部整份换掉草稿时加一：画布与输入卡换 key 重挂，撤销栈随之清空、输入卡装回新草稿。
+  const [draftRevision, setDraftRevision] = useState(0)
+  const composerRef = useRef<EditComposerHandle>(null)
+  // 再生成时输入卡里的描述：开着编辑器时留着改过的样子，关掉再开回到文件里的。
+  const [regenerateParts, setRegenerateParts] = useState(regenerate?.parts ?? [])
+  const regenerating = regenerate !== undefined && selectedKey === REGENERATE_KEY
   const modelsQuery = useImageModels()
   const models = modelsQuery.data?.items ?? []
   const options = resolveImageOptions(models, aspectRatio, {
@@ -106,117 +100,100 @@ export function FrameImageEditor({
     channel: wantedChannel,
     resolution: wantedResolution,
   })
-  const { model, resolution, channel } = options
+  const { model, resolution, channel, aspectUnsupported } = options
   const jobsQuery = useImageEditJobs(target)
   const jobs = useMemo(
     () => jobsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [jobsQuery.data],
   )
-  // 当前帧随应用实时变；编辑器不记打开那一刻的地址，不然应用完窗口还留着就对不上了。
-  const currentUrl = frames[target.frameNumber - 1]
-  acknowledgedRef.current ??= currentUrl
-  const entries = useMemo(() => frameImageEntries(jobs, currentUrl ?? ''), [jobs, currentUrl])
-  // 选中的那条被折进当前帧格（刚应用过）或还没拉回来时，落回当前帧。
+  const words = editorWordsOf(target)
+  const frameReplace = useFrameReplace({ currentUrl, onApply })
+  // 图已经不在分镜里时舞台只说这一句，当前帧那一格空着。
+  const entries = useMemo(
+    () => frameImageEntries(jobs, currentUrl === undefined ? '' : currentUrl),
+    [jobs, currentUrl],
+  )
+  // 选中的那条被折进当前帧格（刚替换过）或还没拉回来时，落回当前帧；撤销后它回到条里，舞台随之回到对比。
   const selected = entries.find((entry) => entry.key === selectedKey) ?? entries[0]
+  const unseen = useUnseenResults(
+    entries.flatMap((entry) => (entry.kind === 'pending' ? [entry.job.id] : [])),
+    (selected?.kind === 'image' || selected?.kind === 'failed') && selected.job !== null
+      ? selected.job.id
+      : undefined,
+  )
   const baseUrl = selected === undefined ? '' : entryBaseUrl(selected, currentUrl ?? '')
   const draft = useMemo(() => draftOf(drafts.drafts, baseUrl), [drafts.drafts, baseUrl])
-  const busy = operation !== 'idle'
-  const problem = editDraftError(draft)
-  const canApply =
-    selected?.kind === 'image' && currentUrl !== undefined && selected.url !== currentUrl
+  const inFlight = entries.filter((entry) => entry.kind === 'pending').length
+  const footnote =
+    inFlight > 0
+      ? `有 ${inFlight} 个任务在生成或排队，关掉窗口也会继续`
+      : regenerating
+        ? '新的出来后在版本里，选用才用上'
+        : selected?.kind === 'image'
+          ? words.replaceNote
+          : words.aspectNote(aspectRatio)
 
-  const changeDraft = (next: typeof draft) => {
-    drafts.updateDraft(baseUrl, next)
-    setOperationError(null)
-  }
-  const insert = (kind: 'annotation' | 'referenceImage', id: string) => {
-    insertionRef.current += 1
-    setPendingInsertion({ kind, id, requestId: insertionRef.current })
-  }
   const select = (key: string) => {
     setSelectedKey(key)
     setSelectedAnnotation(null)
     setOperationError(null)
-    // 翻看缩略图条时正好看见了当前帧那一格。
-    acknowledgedRef.current = currentUrl
+    // 翻看版本条时正好看见了当前帧那一格。
+    frameReplace.acknowledge()
   }
-  // 标注图没有独立地址，预览时看的是底图本身。
-  const previewReference = (reference: EditReference | null) =>
-    setPreview(
-      reference === null
-        ? null
-        : {
-            kind: 'image',
-            name: reference.label,
-            url: reference.kind === 'annotated' ? baseUrl : reference.url,
-          },
-    )
-  const submit = async () => {
-    if (busy || activeRef.current) return
+  const submit = async (parts: EditDraftPart[]) => {
+    const { annotations } = draft
+    const problem = editDraftError({ annotations, parts }, baseUrl)
     if (problem !== null) {
       setOperationError(problem)
+      return
+    }
+    if (currentUrl === undefined) {
+      setOperationError(words.gone)
+      return
+    }
+    if (baseUrl === '') {
+      setOperationError('还没有可以改的图，先在版本里选一张出了图的')
       return
     }
     if (model === undefined || resolution === undefined) {
       setOperationError('图片模型还没读到，稍等一下再提交')
       return
     }
-    activeRef.current = true
-    setOperation('submitting')
     setOperationError(null)
     try {
-      // 仅用户选中的标注图需要导出；普通图片直接使用列表中的地址。
-      const references: EditReference[] = []
-      for (const reference of draft.references) {
-        references.push(
-          reference.kind === 'annotated'
-            ? {
-                ...reference,
-                url: await uploadMediaFile(
-                  await exportAnnotatedImage(baseUrl, draft.annotations),
-                  'image',
-                ),
-              }
-            : reference,
-        )
-      }
-      const snapshot = { ...draft, references }
-      const job = await submitImageEdit(target, snapshot, baseUrl, {
+      // 引用了标注才导出标注图，它代替干净底图占 @图片1。
+      const annotatedUrl = referencesAnnotation(parts)
+        ? await uploadMediaFile(await exportAnnotatedImage(baseUrl, annotations), 'image')
+        : undefined
+      const request = compileEditRequest(parts, {
+        annotatedUrl,
+        baseUrl,
+        numberOf: (id) => annotations.find((annotation) => annotation.id === id)?.number,
+      })
+      const job = await submitImageEdit(target, request, baseUrl, {
         aspectRatio,
         model: model.model,
         resolution,
         ...(channel === undefined ? {} : { channel }),
       })
-      drafts.updateDraft(baseUrl, snapshot)
-      setSelectedKey(job.id)
       seedImageEditJob(queryClient, target, job)
     } catch (error) {
       setOperationError(errorMessageOf(error, '图片编辑提交失败'))
-    } finally {
-      activeRef.current = false
-      setOperation('idle')
     }
   }
-  const apply = async () => {
-    if (!canApply || busy || activeRef.current) return
-    const applied = selected.url
-    activeRef.current = true
-    setOperation('applying')
+  const submitRegenerate = async (parts: EditDraftPart[]) => {
+    if (regenerate === undefined) return
     setOperationError(null)
     try {
-      await onApply(acknowledgedRef.current ?? currentUrl, applied)
-      // 这张图成了当前帧，画在它上面的圈是上一轮的输入，留着只会误导。
-      drafts.clearDraft(applied)
-      acknowledgedRef.current = applied
-      setSelectedKey(CURRENT_KEY)
-      toast.success('已应用到当前帧')
+      await regenerate.submit(parts)
     } catch (error) {
-      // 多半是这一帧被 agent 换过了：报出来的同时认下新的那张，用户再点一次就是冲着它去的。
-      acknowledgedRef.current = currentUrl
-      setOperationError(errorMessageOf(error, '图片尚未应用，请重试'))
-    } finally {
-      activeRef.current = false
-      setOperation('idle')
+      setOperationError(errorMessageOf(error, '再生成提交失败'))
+    }
+  }
+  const replace = async (url: string) => {
+    if (await frameReplace.replace(url)) {
+      // 这张图成了当前帧，画在它上面的圈是上一轮的输入，留着只会误导。
+      drafts.clearDraft(url)
     }
   }
 
@@ -236,14 +213,13 @@ export function FrameImageEditor({
     const destination = onBase ?? entries[0]
     if (destination === undefined) return
     const base = entryBaseUrl(destination, currentUrl ?? '')
-    const references = urls.map(restoredReference(base))
-    drafts.updateDraft(base, {
-      // 保存的是带标注的图片，无法还原画布上可编辑的圈与编号。
-      annotations: [],
-      instructions: parseEditPrompt(readSubmittedPrompt(job), references),
-      references,
-    })
-    setCanvasRevision((value) => value + 1)
+    const parts = restoreEditParts(
+      { prompt: readSubmittedPrompt(job), referenceImageUrls: urls },
+      base,
+    )
+    // 保存的是带标注的图片，无法还原画布上可编辑的圈与编号。
+    drafts.updateDraft(base, () => ({ annotations: [], parts }))
+    setDraftRevision((value) => value + 1)
     select(destination.key)
     toast.info('已装回这次提交的图片和修改要求；画布上的标注需要重画')
   }
@@ -253,8 +229,8 @@ export function FrameImageEditor({
       open
       onOpenChange={(open) => {
         if (!open) {
-          if (busy) toast.info('请等待上传或保存完成')
-          else onClose()
+          if (frameReplace.pending !== null) toast.info('请等待替换完成')
+          else onClose(unseen.opened)
         }
       }}
     >
@@ -280,87 +256,85 @@ export function FrameImageEditor({
           title={
             <span className="image-edit-title">
               <span>编辑图片</span>{' '}
-              <span className="text-body-sm font-normal text-on-surface-muted">
-                · 镜头组 {target.shotIndex} · 帧 @{target.frameNumber}
-              </span>
+              <span className="text-body-sm font-normal text-on-surface-muted">· {subtitle}</span>
             </span>
           }
           closeLabel="关闭图片编辑"
         />
         <div className="image-edit-body">
-          <div className="image-edit-left">
-            {currentUrl === undefined ? (
-              <p className="image-edit-photo text-body-sm text-on-surface-muted" role="alert">
-                这一帧已经不在分镜里了，关掉窗口重新选一帧
-              </p>
-            ) : selected?.kind === 'pending' || selected?.kind === 'failed' ? (
-              <EditTaskPreview
-                key={`${selected.key}:${baseUrl}`}
-                entry={selected}
-                baseUrl={baseUrl}
-                disabled={busy}
-                onReturnToCurrent={() => select(CURRENT_KEY)}
-              />
-            ) : selected?.kind === 'image' ? (
-              brokenResult === selected.url ? (
-                <p className="image-edit-photo">
-                  <MediaFallback kind="image" />
-                </p>
-              ) : (
-                <div className="image-edit-photo">
-                  <button
-                    aria-label="预览图片编辑结果"
-                    className="size-full cursor-zoom-in rounded-[inherit] ui-focus ui-focus-inline"
-                    onClick={() =>
-                      setPreview({ kind: 'image', name: '图片编辑结果', url: selected.url })
-                    }
-                    type="button"
-                  >
-                    <img
-                      alt="图片编辑结果"
-                      src={selected.url}
-                      onError={() => setBrokenResult(selected.url)}
-                    />
-                  </button>
-                </div>
-              )
+          <div className="image-edit-stage-area">
+            {regenerating ? (
+              <StillStage aspectRatio={aspectRatio} label={words.current} url={currentUrl} />
             ) : (
-              <div className="image-edit-canvas-slot">
-                <AnnotationCanvas
-                  key={`${baseUrl}:${canvasRevision}`}
-                  url={baseUrl}
-                  annotations={draft.annotations}
-                  onChange={(annotations) => changeDraft({ ...draft, annotations })}
-                  selectedId={selectedAnnotation}
-                  onSelect={setSelectedAnnotation}
-                  disabled={busy}
-                  onInsertReference={(id) => insert('annotation', id)}
-                />
-              </div>
+              <EditStage
+                aspectRatio={aspectRatio}
+                baseUrl={baseUrl}
+                canvas={
+                  <AnnotationCanvas
+                    key={`${baseUrl}:${draftRevision}`}
+                    url={baseUrl}
+                    annotations={draft.annotations}
+                    onChange={(annotations) => {
+                      drafts.updateDraft(baseUrl, (current) => ({ ...current, annotations }))
+                      setOperationError(null)
+                    }}
+                    selectedId={selectedAnnotation}
+                    onSelect={setSelectedAnnotation}
+                    disabled={frameReplace.pending !== null}
+                    onInsertReference={(id) => {
+                      const annotation = draft.annotations.find((item) => item.id === id)
+                      if (annotation !== undefined)
+                        composerRef.current?.insertAnnotation(annotation)
+                    }}
+                  />
+                }
+                currentUrl={currentUrl}
+                entry={selected}
+                words={words}
+                replace={{
+                  error: frameReplace.error,
+                  onReplace: (url) => void replace(url),
+                  onUndo: () => void frameReplace.undo(),
+                  pending: frameReplace.pending,
+                  undoable: frameReplace.undoable,
+                }}
+              />
             )}
-            <EditResultStrip
+            <VersionStrip
               entries={entries}
+              words={words}
               currentUrl={currentUrl ?? ''}
-              disabled={busy}
-              selectedKey={selected?.key ?? CURRENT_KEY}
+              disabled={frameReplace.pending !== null}
+              selectedKey={regenerating ? REGENERATE_KEY : (selected?.key ?? CURRENT_KEY)}
               onSelect={select}
+              regenerate={
+                regenerate === undefined
+                  ? undefined
+                  : { onSelect: () => select(REGENERATE_KEY), selected: regenerating }
+              }
+              isUnseen={(entry) =>
+                entry.kind === 'image' && entry.job !== null && unseen.isUnseen(entry.job.id)
+              }
               hasMore={jobsQuery.hasNextPage}
               loadingMore={jobsQuery.isFetchingNextPage}
               onLoadMore={() => void jobsQuery.fetchNextPage()}
               actions={
-                selected !== undefined && selected.kind !== 'current' && selected.job !== null ? (
+                !regenerating &&
+                selected !== undefined &&
+                selected.kind !== 'current' &&
+                selected.job !== null ? (
                   <MenuRoot>
-                    <MenuTrigger asChild>
+                    {/* disabled 交给菜单触发器：它拦下自己的按下与按键，再转交给按钮置灰。 */}
+                    <MenuTrigger asChild disabled={frameReplace.pending !== null}>
                       <IconButton
-                        disabled={busy}
                         label="图片历史操作"
                         name="more"
                         size="md"
                         className="rounded-full"
                       />
                     </MenuTrigger>
-                    <MenuSurface align="end">
-                      <MenuItem icon="history" disabled={busy} onSelect={restoreInputs}>
+                    <MenuSurface align="end" side="left">
+                      <MenuItem icon="history" onSelect={restoreInputs}>
                         恢复这次的输入
                       </MenuItem>
                     </MenuSurface>
@@ -369,111 +343,93 @@ export function FrameImageEditor({
               }
             />
           </div>
-          <div className="image-edit-right">
-            <div className="image-edit-inputs">
-              <section className="flex flex-col gap-4">
-                <div>
-                  <h3 className="text-title-lg font-semibold">想怎么修改？</h3>
-                  <p className="mt-1 text-body-sm text-on-surface-muted">
-                    描述你的想法，也可以引用图片或标注
-                  </p>
-                </div>
-                <EditInstructionEditor
-                  key={baseUrl}
-                  value={draft.instructions}
-                  onChange={(instructions) => changeDraft({ ...draft, instructions })}
-                  annotations={draft.annotations}
-                  references={draft.references}
-                  selectedAnnotationId={selectedAnnotation}
-                  disabled={busy}
-                  // 芯片指的是画在当前底图上的圈，选中的那条条目不变。
-                  onSelectAnnotation={setSelectedAnnotation}
-                  onPreviewReference={(id) =>
-                    previewReference(
-                      draft.references.find((reference) => reference.id === id) ?? null,
-                    )
-                  }
-                  pendingInsertion={pendingInsertion}
-                  onInserted={() => setPendingInsertion(null)}
-                />
-              </section>
-              <EditReferences
-                references={draft.references}
-                frames={frames}
-                currentFrame={target.frameNumber}
-                baseUrl={baseUrl}
-                hasAnnotations={draft.annotations.length > 0}
-                disabled={busy}
-                onChange={(references) => changeDraft({ ...draft, references })}
-                // 参考图上传只会从空闲态发起，结束时直接回到空闲。
-                onBusyChange={(uploading) => setOperation(uploading ? 'uploading' : 'idle')}
-                onInsertReference={(id) => insert('referenceImage', id)}
-                onPreview={previewReference}
-              />
-            </div>
-            <div className="image-edit-submit-area">
-              <EditGenerationSettings
-                models={models}
-                options={options}
-                aspectRatio={aspectRatio}
-                disabled={busy}
-                onModelChange={setWantedModel}
-                onChannelChange={setWantedChannel}
-                onResolutionChange={setWantedResolution}
-              />
-              {modelsQuery.isError ? (
-                <InlineAlert
-                  action={{ label: '重新加载模型', onClick: () => void modelsQuery.refetch() }}
-                  message={errorMessageOf(modelsQuery.error, '读取图片模型失败')}
-                />
-              ) : null}
-              {drafts.error !== null ? (
-                <InlineAlert
-                  action={{
-                    label: '重新开始',
-                    onClick: () => {
-                      drafts.reset()
-                      setCanvasRevision((value) => value + 1)
-                    },
-                  }}
-                  message={drafts.error}
-                />
-              ) : null}
-              {jobsQuery.isError ? (
-                <InlineAlert
-                  action={{ label: '重试', onClick: () => void jobsQuery.refetch() }}
-                  message={errorMessageOf(jobsQuery.error, '读取图片编辑记录失败')}
-                />
-              ) : null}
-              {operationError !== null ? <InlineAlert message={operationError} /> : null}
-              {canApply ? (
-                <Button
-                  className="image-edit-primary-action"
-                  disabled={busy}
-                  loading={operation === 'applying'}
-                  onClick={() => void apply()}
-                >
-                  应用到当前帧
-                </Button>
-              ) : null}
-              <Button
-                className="image-edit-primary-action"
-                variant={canApply ? 'ghost' : 'primary'}
-                disabled={
-                  busy || drafts.error !== null || model === undefined || currentUrl === undefined
-                }
-                loading={operation === 'submitting'}
-                onClick={() => void submit()}
-              >
-                生成图片
-              </Button>
-              <p className="text-center text-caption text-on-surface-muted">
-                {canApply ? '应用只替换当前帧，之后可以继续修改' : '满意后再应用到当前帧'}
-              </p>
-            </div>
-          </div>
+          {aspectUnsupported && !regenerating ? (
+            <p role="alert" className="text-body-sm text-error">
+              暂无模型支持 {aspectRatio}，请先调整分镜画幅
+            </p>
+          ) : null}
+          {modelsQuery.isError ? (
+            <InlineAlert
+              action={{ label: '重新加载模型', onClick: () => void modelsQuery.refetch() }}
+              message={errorMessageOf(modelsQuery.error, '读取图片模型失败')}
+            />
+          ) : null}
+          {drafts.error !== null ? (
+            <InlineAlert
+              action={{
+                label: '重新开始',
+                onClick: () => {
+                  drafts.reset()
+                  setDraftRevision((value) => value + 1)
+                },
+              }}
+              message={drafts.error}
+            />
+          ) : null}
+          {jobsQuery.isError ? (
+            <InlineAlert
+              action={{ label: '重试', onClick: () => void jobsQuery.refetch() }}
+              message={errorMessageOf(jobsQuery.error, '读取图片编辑记录失败')}
+            />
+          ) : null}
+          {operationError !== null ? <InlineAlert message={operationError} /> : null}
+          {regenerating ? (
+            <EditComposer
+              key={REGENERATE_KEY}
+              ref={composerRef}
+              baseUrl={undefined}
+              regenerate
+              editingResult={false}
+              frames={frames}
+              frameGroup={words.frames}
+              aspectRatio={aspectRatio}
+              annotations={[]}
+              selectedAnnotation={null}
+              onSelectAnnotation={() => {}}
+              initialParts={regenerateParts}
+              onPartsChange={(parts) => {
+                setRegenerateParts(parts)
+                setOperationError(null)
+              }}
+              onSubmit={submitRegenerate}
+              // 模型与画幅照文件里写的，这里不选。
+              settings={null}
+            />
+          ) : (
+            <EditComposer
+              key={`${baseUrl}:${draftRevision}`}
+              ref={composerRef}
+              baseUrl={baseUrl}
+              editingResult={selected?.kind === 'image'}
+              frames={frames}
+              frameGroup={words.frames}
+              aspectRatio={aspectRatio}
+              annotations={draft.annotations}
+              selectedAnnotation={selectedAnnotation}
+              // 芯片指的是画在当前底图上的圈，选中的那条条目不变。
+              onSelectAnnotation={setSelectedAnnotation}
+              initialParts={draft.parts}
+              onPartsChange={(parts) => {
+                drafts.updateDraft(baseUrl, (current) => ({ ...current, parts }))
+                setOperationError(null)
+              }}
+              onSubmit={submit}
+              settings={
+                aspectUnsupported ? null : (
+                  <EditGenerationSettings
+                    models={models}
+                    options={options}
+                    aspectRatio={aspectRatio}
+                    onModelChange={setWantedModel}
+                    onChannelChange={setWantedChannel}
+                    onResolutionChange={setWantedResolution}
+                  />
+                )
+              }
+            />
+          )}
+          <p className="image-edit-footnote">{footnote}</p>
         </div>
-        <MediaLightbox media={preview} onClose={() => setPreview(null)} />
       </DialogSurface>
     </DialogRoot>
   )

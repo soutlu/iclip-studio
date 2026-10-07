@@ -539,7 +539,7 @@ class SqlConversationRepository:
 
     async def touch_run(
         self, conversation_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str, run_id: str
-    ) -> None:
+    ) -> Conversation:
         # agent_id 仅用于匹配，不能改写对话绑定。属主又开跑就不再算收尾。
         statement = (
             update(conversations_table)
@@ -550,12 +550,13 @@ class SqlConversationRepository:
                 _LIVE,
             )
             .values(last_run_id=run_id, updated_at=func.now(), completed_at=None)
-            .returning(_ROWS.id)
+            .returning(*conversations_table.c)
         )
         async with self._engine.begin() as conn:
-            row = (await conn.execute(statement)).first()
+            row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
             raise NotFound("没有这段对话")
+        return _row(row)
 
 
 __all__ = [

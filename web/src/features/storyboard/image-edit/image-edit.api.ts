@@ -12,14 +12,17 @@ import {
   zImageGenerationIn,
   zImageModelsOut,
 } from '@/shared/api/generated/zod.gen'
-import { metadataFilterParam, storyboardMetadata } from '../generation-metadata'
+import { metadataFilterParam } from '../generation-metadata'
 import {
   generationsRefetchInterval,
   storyboardQueryKeys,
   type GenerationJob,
   type GenerationsPage,
 } from '../storyboard.api'
-import type { EditInstruction, FrameEditDraft, FrameEditTarget } from './image-edit-types'
+import { fileNameOfUrl } from '@/shared/lib/media-url'
+import { editTargetKeyParts, editTargetMetadata } from './edit-target'
+import { MAX_PART_NAME } from './image-edit-draft'
+import type { EditDraftPart, FrameEditTarget } from './image-edit-types'
 
 /** 按格编辑记录一页取几条；取满一页才可能还有更早的，不满就是翻到底了。 */
 const EDIT_JOBS_PAGE_LIMIT = 20
@@ -29,11 +32,7 @@ export const imageEditConversationKey = (conversationId: string) =>
   [...storyboardQueryKeys.conversation(conversationId), 'frame-edits'] as const
 
 export const imageEditQueryKey = (target: FrameEditTarget) =>
-  [
-    ...imageEditConversationKey(target.conversationId),
-    target.shotIndex,
-    target.frameNumber,
-  ] as const
+  [...imageEditConversationKey(target.conversationId), ...editTargetKeyParts(target)] as const
 
 /** 本对话最近的图片任务，给分镜页在帧上挂状态用。
  *
@@ -65,7 +64,7 @@ export function useImageEditJobs(target: FrameEditTarget) {
       const params = new URLSearchParams({
         conversationId: target.conversationId,
         kind: 'image',
-        metadata: metadataFilterParam(storyboardMetadata(target.shotIndex, target.frameNumber)),
+        metadata: metadataFilterParam(editTargetMetadata(target)),
         limit: `${EDIT_JOBS_PAGE_LIMIT}`,
       })
       if (pageParam !== undefined) params.set('before', pageParam)
@@ -116,46 +115,88 @@ export const readSubmittedPrompt = (job: GenerationJob) => {
 const ANNOTATION_NOTICE = '图中的编号和圈选只表示位置，输出干净的图片，不保留标注。'
 const IMAGE_MARK = /@图片(\d+)/g
 
-/** 芯片落成 `@图片N` / `@标注N`；编号即它在本次提交里的位置，与仓里 `@ImageN` 同一套写法。 */
-export function compileEditPrompt(draft: FrameEditDraft): string {
-  const indexOf = new Map(draft.references.map((reference, at) => [reference.id, at + 1]))
-  const numberOf = new Map(
-    draft.annotations.map((annotation) => [annotation.id, annotation.number]),
-  )
-  const annotated = draft.references.some((reference) => reference.kind === 'annotated')
-  const body = draft.instructions
-    .map((part) =>
-      part.kind === 'text'
-        ? part.text
-        : part.kind === 'referenceImage'
-          ? `@图片${indexOf.get(part.id)}`
-          : `@标注${numberOf.get(part.id)}`,
-    )
+/** 正文里有没有引用标注：引用了就要导出一张标注图代替干净底图。 */
+export const referencesAnnotation = (parts: readonly EditDraftPart[]): boolean =>
+  parts.some((part) => part.kind === 'annotation')
+
+/** 一次编辑请求的正文与图片，与合同 `prompt` / `referenceImageUrls` 同义。 */
+export type EditRequest = { prompt: string; referenceImageUrls: string[] }
+
+/** 把修改要求编成请求：chip 落成 `@图片N` / `@标注N`，N 是图片在 `referenceImageUrls` 里的位置、标注在画布上的编号。
+ *
+ * 底图只发一张，固定是 `@图片1`：引用了标注时发导出的标注图（干净底图不再发）并在末尾补一句说明，否则发干净底图。
+ * 正文里指向底图的图片（「编辑底图」、帧 @N 恰好是底图）同样落成 `@图片1`；其余图片按地址去重，按首次出现的顺序排在后面。
+ * `numberOf` 取画布上标注的当前编号；查不到说明调用方漏了终校（editDraftError），直接抛错。 */
+export function compileEditRequest(
+  parts: readonly EditDraftPart[],
+  ctx: {
+    baseUrl: string
+    annotatedUrl: string | undefined
+    numberOf: (id: string) => number | undefined
+  },
+): EditRequest {
+  const annotated = referencesAnnotation(parts)
+  const first = annotated ? ctx.annotatedUrl : ctx.baseUrl
+  if (first === undefined) throw new Error('引用了标注却没有标注图')
+  const referenceImageUrls = [first]
+  const positionOf = (url: string) => {
+    if (url === ctx.baseUrl) return 1
+    const at = referenceImageUrls.indexOf(url, 1)
+    if (at > 0) return at + 1
+    referenceImageUrls.push(url)
+    return referenceImageUrls.length
+  }
+  const body = parts
+    .map((part) => {
+      if (part.kind === 'text') return part.text
+      if (part.kind === 'image') return `@图片${positionOf(part.url)}`
+      const number = ctx.numberOf(part.id)
+      if (number === undefined) throw new Error(`标注 ${part.id} 已不在画布上`)
+      return `@标注${number}`
+    })
     .join('')
-  return annotated ? `${body}\n${ANNOTATION_NOTICE}` : body
+  return { prompt: annotated ? `${body}\n${ANNOTATION_NOTICE}` : body, referenceImageUrls }
 }
 
-/** 把提交过的 prompt 拆回编辑器：`@图片N` 装回芯片，其余原样留成文字。
+/** 把提交过的请求拆回修改要求：`@图片N` 装回图片 chip（底图叫「编辑底图」，其余取文件名），其余原样留成文字。
  *
- * `@标注N` 只能留成文字——芯片要指向画布上那个圈，而圈的形状没有随请求存下来。 */
-export function parseEditPrompt(
-  prompt: string,
-  references: readonly { id: string }[],
-): EditInstruction[] {
-  const body = prompt.replace(`\n${ANNOTATION_NOTICE}`, '')
-  const parts: EditInstruction[] = []
+ * `@标注N` 只能留成文字：标注 chip 要指向画布上那个圈，而圈的形状没有随请求存下来。
+ * 正文没提到的图片也装回来、接在末尾，免得丢掉（早先的请求可以带不在正文里的参考图）；
+ * 底图本身，以及引用标注时排第一的标注图，都是隐式提交的，不装成 chip。 */
+export function restoreEditParts(
+  request: { prompt: string; referenceImageUrls: readonly string[] },
+  baseUrl: string,
+): EditDraftPart[] {
+  const { prompt, referenceImageUrls: urls } = request
+  const notice = `\n${ANNOTATION_NOTICE}`
+  const annotated = prompt.endsWith(notice)
+  const body = annotated ? prompt.slice(0, -notice.length) : prompt
+  const nameOf = (url: string) => {
+    if (url === baseUrl) return '编辑底图'
+    const fileName = fileNameOfUrl(url).slice(0, MAX_PART_NAME)
+    return fileName === '' ? '图片' : fileName
+  }
+  const imageOf = (url: string): EditDraftPart => ({ kind: 'image', name: nameOf(url), url })
+  const parts: EditDraftPart[] = []
+  const mentioned = new Set<number>()
   const pushText = (text: string) => {
     if (text.length > 0) parts.push({ kind: 'text', text })
   }
   let at = 0
   for (const match of body.matchAll(IMAGE_MARK)) {
-    const reference = references[Number(match[1]) - 1]
-    if (reference === undefined) continue
+    const index = Number(match[1]) - 1
+    const url = urls[index]
+    if (url === undefined) continue
     pushText(body.slice(at, match.index))
-    parts.push({ kind: 'referenceImage', id: reference.id })
+    parts.push(imageOf(url))
+    mentioned.add(index)
     at = match.index + match[0].length
   }
   pushText(body.slice(at))
+  urls.forEach((url, index) => {
+    const implicit = url === baseUrl || (index === 0 && annotated)
+    if (!implicit && !mentioned.has(index)) parts.push(imageOf(url))
+  })
   return parts
 }
 
@@ -228,8 +269,8 @@ export const isChannel = (value: string): value is ImageChannel => CHANNELS.incl
 
 export async function submitImageEdit(
   target: FrameEditTarget,
-  draft: FrameEditDraft,
-  /** 这次改的是哪张图，作为请求字段 `sourceUrl` 发给服务端；参考图列表里它可以被挪位置甚至移走，所以单独传。 */
+  request: EditRequest,
+  /** 这次改的是哪张图，作为请求字段 `sourceUrl` 发给服务端；引用了标注时它不在 `referenceImageUrls` 里，所以单独传。 */
   baseUrl: string,
   options: {
     model: string
@@ -241,11 +282,10 @@ export async function submitImageEdit(
   // 不带 userName：浏览器会话由服务端填登录用户名。
   const body = zImageGenerationIn.parse({
     conversationId: target.conversationId,
-    metadata: storyboardMetadata(target.shotIndex, target.frameNumber),
+    metadata: editTargetMetadata(target),
     sourceUrl: baseUrl,
     ...options,
-    prompt: compileEditPrompt(draft),
-    referenceImageUrls: draft.references.map((reference) => reference.url),
+    ...request,
   })
   const result = await apiFetch('/generations/image', zGenerationEnvelope, {
     method: 'POST',
