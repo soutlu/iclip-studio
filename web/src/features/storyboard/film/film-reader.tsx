@@ -2,7 +2,8 @@
  *
  * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
  * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
- * 出片、换图、生图都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅照文件，只显示。 */
+ * 出片、换图、生图都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅照文件，只显示。
+ * 有图的那张能开图片编辑器（`FilmImageEdit`），编辑与重新生成的结果在舞台上挂「有新结果」，点开就是那条。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
@@ -22,6 +23,7 @@ import { ReaderNotice, SaveStatus } from '../components/draft-status'
 import { StoryboardToolbar } from '../components/storyboard-toolbar'
 import { TakesTray } from '../components/takes-tray'
 import { VideoGenerationBar } from '../components/video-generation-bar'
+import { frameBadgeOf } from '../frame-status'
 import { generationBlockerOf, generationNoticeOf } from '../generation-blocker'
 import { imageEditConversationKey, useFrameImageJobs } from '../image-edit/image-edit.api'
 import { useShotGenerations } from '../storyboard.api'
@@ -40,6 +42,7 @@ import {
   useFilmFileChanges,
   useFilmView,
   type FilmFrame,
+  type FilmView,
 } from './film.api'
 import {
   contentOfFrame,
@@ -48,7 +51,8 @@ import {
   resolveFilmSelection,
   segmentFrames,
 } from './film-content'
-import { latestNodeJob, useFilmReplace } from './film-images'
+import { FilmImageEdit, type FilmEditSession } from './film-image-edit'
+import { latestNodeImageJob, latestNodeJob, useFilmReplace } from './film-images'
 import { FilmScript } from './film-script'
 import { FilmStage } from './film-stage'
 import { useFilmDraft, type FilmSaveState } from './use-film-draft'
@@ -111,21 +115,36 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     if (saved === null) throw new UserFacingError('改的字还没存下，先处理好再继续')
     return saved
   }
+  /** 给一张图换地址：先存改了的字，按存好的那一版换，答复的整页直接放进缓存。 */
+  const applyImage = async (node: string, url: string) => {
+    const saved = await savedFilm()
+    const changed = await chooseFilmImage(conversationId, {
+      filmVersion: saved.filmVersion,
+      node,
+      runVersion: saved.runVersion,
+      url,
+    })
+    queryClient.setQueryData(filmQueryKey(conversationId), { film: changed })
+  }
   const replace = useFilmReplace({
     // 舞台在放成片时看不到图，不收拖放与粘贴。
     disabled: readOnly || selectedTake !== undefined,
     frame,
-    onReplace: async (target, url) => {
-      const saved = await savedFilm()
-      const changed = await chooseFilmImage(conversationId, {
-        filmVersion: saved.filmVersion,
-        node: target.node,
-        runVersion: saved.runVersion,
-        url,
-      })
-      queryClient.setQueryData(filmQueryKey(conversationId), { film: changed })
-    },
+    onReplace: (target, url) => applyImage(target.node, url),
   })
+  // 图片编辑器开在哪张图上；关窗时点开看过的那条结果记成看过，舞台上不再挂它的角标（只记本次会话）。
+  const [imageEdit, setImageEdit] = useState<FilmEditSession | null>(null)
+  const [seenImageJobs, setSeenImageJobs] = useState<ReadonlySet<string>>(() => new Set())
+  const latestImageJob = (node: string) => latestNodeImageJob(imageJobs.data?.items ?? [], node)
+  /** 编辑器里替换与撤销：这张图此刻已经不是 `previous` 了（别人刚换过）就不换，免得盖掉。 */
+  const applyEdited = async (node: string, previous: string, url: string) => {
+    const latest = queryClient.getQueryData<{ film: FilmView }>(filmQueryKey(conversationId))
+    const current = latest?.film.groups
+      .flatMap((item) => item.frames)
+      .find((item) => item.node === node)?.url
+    if (current !== previous) throw new UserFacingError('这张图刚被换过，看一眼再换')
+    await applyImage(node, url)
+  }
   // 有图在换时先别出片：发出去的参考图要是换好的那张。换图一次只有一张、与组无关，记在一个不会是组号的键上。
   const reportUploading = useEffectEvent((busy: boolean) =>
     gate.onUploadingChange(REPLACE_UPLOAD, busy),
@@ -249,6 +268,23 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
             tabIndex={-1}
           >
             <FilmStage
+              edit={{
+                badge:
+                  frame === undefined || frame.url === null
+                    ? undefined
+                    : frameBadgeOf(latestImageJob(frame.node), frame.url, seenImageJobs),
+                onEdit: (open) => {
+                  if (frame === undefined) return
+                  setImageEdit({
+                    node: frame.node,
+                    ...(open.kind === 'result' ? { initialKey: open.jobId } : {}),
+                    trigger:
+                      window.document.activeElement instanceof HTMLElement
+                        ? window.document.activeElement
+                        : null,
+                  })
+                },
+              }}
               frame={selection.frame}
               generate={{
                 error: imageSubmit?.node === frame?.node ? imageSubmit?.error : undefined,
@@ -318,6 +354,19 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
         />
       </div>
       <MediaLightbox media={media} onClose={() => setMedia(null)} />
+      {imageEdit === null ? null : (
+        <FilmImageEdit
+          conversationId={conversationId}
+          group={group}
+          latestJob={latestImageJob(imageEdit.node)}
+          onApply={(previous, url) => applyEdited(imageEdit.node, previous, url)}
+          onClose={(seen) => {
+            if (seen !== undefined) setSeenImageJobs((current) => new Set(current).add(seen.id))
+            setImageEdit(null)
+          }}
+          session={imageEdit}
+        />
+      )}
       {search.video === undefined ? null : (
         <VideoEditor
           conversationId={conversationId}

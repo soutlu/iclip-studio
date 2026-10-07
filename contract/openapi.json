@@ -1912,8 +1912,19 @@
       },
       "FilmFrameOut": {
         "additionalProperties": false,
-        "description": "一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。\n\n``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；用户给的图为 null。",
+        "description": "一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。\n\n``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。\n用户给的图这两个都是 null。",
         "properties": {
+          "aspectRatio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspectratio"
+          },
           "kind": {
             "enum": [
               "generated",
@@ -1987,7 +1998,8 @@
           "kind",
           "url",
           "number",
-          "prompt"
+          "prompt",
+          "aspectRatio"
         ],
         "title": "FilmFrameOut",
         "type": "object"

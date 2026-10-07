@@ -41,7 +41,23 @@ export const latestFrameJobs = (
   return latest
 }
 
-/** 这一组每帧要挂的角标。结果已经是当前帧的不算新结果；失败与未采用的结果在 `seen` 里就不再显示。 */
+/** 一张图最新那条图片任务的角标，没有就是 undefined：在跑的一直显示；结果已经是这张图在用的那版不算新结果；
+ * 失败与没用上的结果在 `seen` 里就不再显示。分镜页按格、制作页按图都用它。 */
+export const frameBadgeOf = (
+  job: GenerationJob | undefined,
+  url: string,
+  seen: ReadonlySet<string>,
+): FrameBadge | undefined => {
+  if (job === undefined) return undefined
+  const phase = phaseOfStatus(job.status)
+  if (phase === 'queued' || phase === 'running') return { kind: phase }
+  if (seen.has(job.id)) return undefined
+  if (phase === 'failed') return { kind: 'failed', message: job.errorMessage }
+  if (job.outputUrl !== null && !isAppliedResult(job, url)) return { kind: 'result', jobId: job.id }
+  return undefined
+}
+
+/** 这一组每帧要挂的角标，规则见 `frameBadgeOf`。 */
 export const frameBadges = (
   shot: Shot,
   latest: ReadonlyMap<string, GenerationJob>,
@@ -50,16 +66,8 @@ export const frameBadges = (
   const badges = new Map<number, FrameBadge>()
   shot.image_urls.forEach((url, position) => {
     const frameNumber = position + 1
-    const job = latest.get(frameJobKey(shot.index, frameNumber))
-    if (job === undefined) return
-    const phase = phaseOfStatus(job.status)
-    if (phase === 'queued' || phase === 'running') badges.set(frameNumber, { kind: phase })
-    else if (seen.has(job.id)) return
-    else if (phase === 'failed') {
-      badges.set(frameNumber, { kind: 'failed', message: job.errorMessage })
-    } else if (job.outputUrl !== null && !isAppliedResult(job, url)) {
-      badges.set(frameNumber, { kind: 'result', jobId: job.id })
-    }
+    const badge = frameBadgeOf(latest.get(frameJobKey(shot.index, frameNumber)), url, seen)
+    if (badge !== undefined) badges.set(frameNumber, badge)
   })
   return badges
 }

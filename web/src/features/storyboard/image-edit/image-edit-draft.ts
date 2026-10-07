@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { MAX_ANNOTATIONS, MAX_EDIT_REFERENCES } from '../generation-limits'
+import { editTargetKeyParts } from './edit-target'
 import type { FrameEditDraft, FrameEditTarget } from './image-edit-types'
 
 /** 草稿里图片名的长度上限：上传的文件名、恢复时取的文件名都按它截。 */
@@ -47,7 +48,7 @@ const EMPTY_DRAFT: FrameEditDraft = { annotations: [], parts: [] }
 /** 草稿按格存，不按底图地址：应用之后这一格换了图，别的底图上没提交完的输入还在。
  * 形状换过一次（修改要求从「芯片 + 参考图列表」改成正文里的 parts），前缀随之换，旧草稿自然作废。 */
 export const editDraftKey = (target: FrameEditTarget) =>
-  `cue:frame-edit-v2:${target.conversationId}:${target.shotIndex}:${target.frameNumber}`
+  `cue:frame-edit-v2:${target.conversationId}:${editTargetKeyParts(target).join(':')}`
 
 export function loadEditDrafts(target: FrameEditTarget): FrameEditDrafts {
   const raw = sessionStorage.getItem(editDraftKey(target))

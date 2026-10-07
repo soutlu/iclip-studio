@@ -55,6 +55,9 @@ class FilmFrame:
     """按描述生成这张图时发给模型的描述，参考图在它出现的位置；用户给的图为 None。还没有图的
     参考图不在这里出现，只用文字写。"""
 
+    aspect_ratio: str | None
+    """这张图的画幅：生成图照文件里写的；用户给的图文件里不写，为 None。"""
+
 
 @dataclass(frozen=True, slots=True)
 class FilmSetting:

@@ -87,6 +87,7 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 url=use.url,
                 number=use.number,
                 prompt=prompt,
+                aspect_ratio=project.nodes[use.image].attrs["aspect-ratio"] if generated else None,
             )
         groups.append(
             FilmGroup(

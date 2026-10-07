@@ -11,7 +11,10 @@ import { toast } from '@/shared/ui/toast'
 import type { GenerationJob } from '../storyboard.api'
 import type { FilmFrame } from './film.api'
 
-/** 一张图最近一次按描述生成的任务；帧图编辑有底图，不算。 */
+const newestFirst = (a: GenerationJob, b: GenerationJob) =>
+  Date.parse(b.createdAt) - Date.parse(a.createdAt)
+
+/** 一张图最近一次按描述生成的任务；帧图编辑有底图，不算。没图时生成卡看它。 */
 export const latestNodeJob = (
   jobs: readonly GenerationJob[],
   node: string,
@@ -21,7 +24,14 @@ export const latestNodeJob = (
       (job) =>
         job.metadata?.['film_node'] === node && job.sourceJobId == null && job.sourceUrl == null,
     )
-    .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0]
+    .toSorted(newestFirst)[0]
+
+/** 一张图最新的那条图片任务，按描述生成与帧图编辑都算；有图时舞台上的角标看它。 */
+export const latestNodeImageJob = (
+  jobs: readonly GenerationJob[],
+  node: string,
+): GenerationJob | undefined =>
+  jobs.filter((job) => job.metadata?.['film_node'] === node).toSorted(newestFirst)[0]
 
 type ReplaceOptions = {
   /** 舞台上的那张图；选中的段没挂图时为 undefined，无可换。 */

@@ -547,9 +547,11 @@ export const zFilmPromptTextOut = z.object({
  *
  * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
  *
- * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；用户给的图为 null。
+ * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
+ * 用户给的图这两个都是 null。
  */
 export const zFilmFrameOut = z.object({
+  aspectRatio: z.string().nullable(),
   kind: z.enum(['generated', 'photo']),
   label: z.string(),
   node: z.string(),

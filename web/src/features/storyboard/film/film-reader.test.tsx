@@ -1,8 +1,9 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  ImageGenerationIn,
   FilmImageChoiceIn,
   FilmImageGenerationIn,
   FilmTextEditsIn,
@@ -14,6 +15,7 @@ import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
 import { editMockFilmShot, seedMockFilm } from '@/testing/mocks/film'
 import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
+import { makeGenerationJob } from '@/testing/generation-job'
 import { renderWithProviders } from '@/testing/render'
 import { DEFAULT_GENERATE_AUDIO, DEFAULT_VIDEO_RESOLUTION } from '../video-generation-options'
 import { FilmReader } from './film-reader'
@@ -290,5 +292,72 @@ describe('制作页的图', () => {
     const tip = await screen.findByRole('tooltip')
     await userEvent.click(within(tip).getByRole('button', { name: '放大' }))
     expect(await screen.findByRole('dialog', { name: /金发女生/ })).toBeInTheDocument()
+  })
+})
+
+describe('制作页的图片编辑器', () => {
+  beforeEach(() => {
+    loginAs(mockAuthUser)
+  })
+
+  /** 本对话的图片记录：图片任务的两种查法（对话级与按图）都给这几条，视频没有。 */
+  const serveImageJobs = (jobs: ReturnType<typeof makeGenerationJob>[]) =>
+    server.use(
+      http.get('*/api/generations', ({ request }) =>
+        HttpResponse.json({
+          items: new URL(request.url).searchParams.get('kind') === 'image' ? jobs : [],
+        }),
+      ),
+    )
+
+  it('有图的那张能开编辑器：标题写图的名字，第一格叫「在用」，提交的编辑按这张图的画幅、带上它的标记', async () => {
+    const submissions: ImageGenerationIn[] = []
+    server.use(
+      http.post('*/api/generations/image', async ({ request }) => {
+        submissions.push((await request.clone().json()) as ImageGenerationIn)
+      }),
+    )
+    await renderFilm()
+    await userEvent.click(screen.getByRole('button', { name: '编辑图片' }))
+
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    expect(editor).toHaveTextContent('金发女生')
+    expect(within(editor).getByRole('group', { name: '这张图的版本' })).toHaveTextContent('在用')
+    pasteTextIntoComposer(
+      within(editor).getByRole('textbox', { name: '修改要求' }),
+      '把背景换成傍晚的暖光',
+    )
+    await userEvent.click(within(editor).getByRole('button', { name: '生成图片' }))
+
+    await waitFor(() => expect(submissions).toHaveLength(1))
+    expect(submissions[0]).toMatchObject({
+      aspectRatio: '3:4',
+      metadata: { film_node: 'girl_look' },
+    })
+  })
+
+  it('编辑出了新结果，舞台挂「有新结果」；点开就是那条，替换这张图给它换地址，换上后角标消失', async () => {
+    const edited = 'https://example.com/edited.png'
+    serveImageJobs([
+      makeGenerationJob({
+        kind: 'image',
+        metadata: { film_node: 'girl_look' },
+        outputUrl: edited,
+        sourceUrl: 'https://example.com/base.png',
+      }),
+    ])
+    const { choices } = recordImages()
+    await renderFilm()
+
+    await userEvent.click(await screen.findByRole('button', { name: /有新结果/ }))
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    await userEvent.click(within(editor).getByRole('button', { name: '替换这张图' }))
+
+    await waitFor(() => expect(choices).toHaveLength(1))
+    expect(choices[0]).toMatchObject({ node: 'girl_look', url: edited })
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /有新结果/ })).not.toBeInTheDocument(),
+    )
   })
 })

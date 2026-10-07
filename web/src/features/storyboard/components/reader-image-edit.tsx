@@ -1,6 +1,6 @@
 import { frameJobKey } from '../frame-status'
 import { FrameImageEditor } from '../image-edit/frame-image-editor'
-import type { FrameEditTarget } from '../image-edit/image-edit-types'
+import type { StoryboardFrameTarget } from '../image-edit/image-edit-types'
 import type { GenerationJob } from '../storyboard.api'
 import { frameEditTriggerSelector } from './frame-edit-trigger'
 
@@ -8,7 +8,7 @@ import { frameEditTriggerSelector } from './frame-edit-trigger'
  *
  * target 本身不带图，应用之后这一格换了图它也不用变。 */
 export type FrameEditSession = {
-  target: FrameEditTarget
+  target: StoryboardFrameTarget
   initialKey?: string | undefined
   trigger: HTMLElement | null
 }
@@ -37,6 +37,9 @@ export function ReaderImageEdit({
     <FrameImageEditor
       key={JSON.stringify(target)}
       target={target}
+      // 当前帧随替换实时变；编辑器不记打开那一刻的地址，不然替换完窗口还留着就对不上了。
+      currentUrl={frames[target.frameNumber - 1]}
+      subtitle={`镜头组 ${target.shotIndex} · 帧 @${target.frameNumber}`}
       frames={frames}
       aspectRatio={aspectRatio}
       initialKey={session.initialKey}

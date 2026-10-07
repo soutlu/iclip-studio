@@ -45,6 +45,7 @@ const mockGroup = (): FilmGroupOut => ({
   aspectRatio: '9:16',
   frames: [
     {
+      aspectRatio: '3:4',
       kind: 'generated',
       label: '金发女生',
       node: 'girl_look',
@@ -58,6 +59,7 @@ const mockGroup = (): FilmGroupOut => ({
       url: apparelImage,
     },
     {
+      aspectRatio: null,
       kind: 'photo',
       label: '绒面一脚蹬',
       node: 'loafer_photo',
@@ -66,6 +68,7 @@ const mockGroup = (): FilmGroupOut => ({
       url: loafersImage,
     },
     {
+      aspectRatio: '9:16',
       kind: 'generated',
       label: '涂鸦滑板场',
       node: 'park_look',
@@ -74,6 +77,7 @@ const mockGroup = (): FilmGroupOut => ({
       url: null,
     },
     {
+      aspectRatio: '9:16',
       kind: 'generated',
       label: '镜头 1',
       node: 'shot1_view',
@@ -85,6 +89,7 @@ const mockGroup = (): FilmGroupOut => ({
       url: backpackImage,
     },
     {
+      aspectRatio: '9:16',
       kind: 'generated',
       label: '镜头 2',
       node: 'shot2_view',
