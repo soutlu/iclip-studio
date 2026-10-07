@@ -73,7 +73,7 @@ class PgMaterialLedger:
         return Material(url=url, kind=cast(MaterialKind, row[0]))
 
     async def list_all(self, namespace: str) -> tuple[Material, ...]:
-        """整份读出一个命名空间的素材，供组合根在分叉时搬进副本。
+        """整份读出一个命名空间的素材，供组合根在分叉与做同款时搬进新对话。
 
         不进 ``MaterialLedger`` 协议：那份契约是给能力用的，能力只按 URL 精确查。"""
 

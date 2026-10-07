@@ -109,7 +109,10 @@ def create_conversations_router(
         principal: Annotated[Principal, require_permission("agent:run")],
         response: Response,
     ) -> ConversationEnvelope:
-        """开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。"""
+        """开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。
+
+        带 ``sameAs`` 是做同款：源看不见是 404，源没有工程文件或分镜文件是 422。
+        """
 
         principal = await act_as(principal, body.user_name)
         events = service.watermark()
@@ -120,6 +123,7 @@ def create_conversations_router(
             title=body.title,
             task_id=body.task_id,
             collection_id=body.collection_id,
+            same_as=body.same_as,
         )
         if not created:
             response.status_code = 200

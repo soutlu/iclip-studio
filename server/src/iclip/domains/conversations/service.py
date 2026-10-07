@@ -173,6 +173,23 @@ class CopyConversationWorkspace(Protocol):
     ) -> None: ...
 
 
+class CopySameStyle(Protocol):
+    """做同款：把源对话的几份制作文件拷进新对话的工作区，连同整份素材台账。
+
+    拷哪几份、拷过去叫什么由实现定（ADR-0013）。源工作区里既没有工程文件也没有分镜文件时
+    什么都不写、回 ``False``，做不做得了由用例判。台账整份跟着拷：运行文件里选用的图都登记
+    在台账里，新对话靠它认得这些地址。"""
+
+    async def __call__(
+        self,
+        *,
+        source_owner: uuid.UUID,
+        source_id: uuid.UUID,
+        target_owner: uuid.UUID,
+        target_id: uuid.UUID,
+    ) -> bool: ...
+
+
 ListDerivedFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[Sequence[DerivedFile]]]
 """列出工作区文件，参数为 (属主, 对话 id)。"""
 
@@ -366,11 +383,13 @@ class ConversationService:
         latest_master_urls: LatestMasterUrls,
         fork_transcript: ForkTranscript,
         copy_workspace: CopyConversationWorkspace,
+        copy_same_style: CopySameStyle,
         event_watermark: EventWatermarkOf,
         announce_row: AnnounceConversationRow,
         announce_deleted: AnnounceConversationDeleted,
     ) -> None:
         self._repo = repo
+        self._copy_same_style = copy_same_style
         self._event_watermark = event_watermark
         self._announce_row = announce_row
         self._announce_deleted = announce_deleted
@@ -609,16 +628,25 @@ class ConversationService:
         title: str | None = None,
         task_id: uuid.UUID | None = None,
         collection_id: uuid.UUID | None = None,
+        same_as: uuid.UUID | None = None,
     ) -> tuple[Conversation, bool]:
         """创建一段对话，返回它与「本次是否新建」；可选归属是否存在由外键约束校验。
 
         ``conversation_id`` 由调用方铸时按它幂等：重发同一个 id 返回已有那一段。
-        落库的那一段挂着需求单，就以它的属主认领那张单，重发也认领一次。"""
+        落库的那一段挂着需求单，就以它的属主认领那张单，重发也认领一次。
+
+        给了 ``same_as`` 就是做同款：先把那段对话的制作文件与素材台账拷进来，再落对话行。
+        源看不见抛 ``NotFound``，源没有工程文件或分镜文件抛 ``ValidationFailed``，两种都不落行；
+        这个 id 已有对话行时不再拷，重发不会盖掉建好之后改过的文件。"""
 
         now = datetime.now(UTC)
         new_id = conversation_id or uuid.uuid4()
         # 调用方铸的 id 在答复之前就可能被拿去改这段对话，created 帧与其他整行帧同样要按提交顺序发号。
         async with self._row_lock(new_id):
+            if same_as is not None and not (
+                conversation_id is not None and await self._id_taken(conversation_id)
+            ):
+                await self._copy_same_as(principal, source_id=same_as, target_id=new_id)
             before = self._event_watermark()
             conversation, created = await self._repo.create_if_absent(
                 Conversation(
@@ -642,6 +670,32 @@ class ConversationService:
         if conversation.task_id is not None:
             await self._claim_task(conversation.task_id, conversation.owner_user_id)
         return conversation, created
+
+    async def _id_taken(self, conversation_id: uuid.UUID) -> bool:
+        """这个 id 有没有对话行，不论属主、删没删；归属与可见性仍由落库那一步判。"""
+
+        try:
+            await self._repo.get(conversation_id, owner=None, include_deleted=True)
+        except NotFound:
+            return False
+        return True
+
+    async def _copy_same_as(
+        self, principal: Principal, *, source_id: uuid.UUID, target_id: uuid.UUID
+    ) -> None:
+        """做同款的拷贝：源的可见范围同分叉，在跑也照拷。
+
+        先拷文件与素材、对话行由调用方最后落，与分叉同一个顺序：中途失败只留下寻址不到的数据，
+        agent 也不会在拷到一半的工作区里开跑。"""
+
+        source = await self._readable(principal, source_id)
+        if not await self._copy_same_style(
+            source_owner=source.owner_user_id,
+            source_id=source.id,
+            target_owner=principal.user_id,
+            target_id=target_id,
+        ):
+            raise ValidationFailed("这段对话没有工程文件或分镜文件，做不了同款")
 
     async def fork(
         self,

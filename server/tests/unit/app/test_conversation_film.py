@@ -239,7 +239,9 @@ async def test_an_address_that_is_not_this_conversations_image_is_refused() -> N
     assert await made.content(RUN_PATH) == RUN
 
 
-async def test_a_generated_image_of_this_conversation_can_be_chosen_without_recording() -> None:
+async def test_a_chosen_generated_image_is_recorded_as_material() -> None:
+    """选用的生成图也登记：做同款拷台账时，运行文件里选用的图才跟得过去。"""
+
     made = await page({FILM_PATH: FILM}, [generated_park()])
 
     view = await made.adapter.choose_image(
@@ -254,7 +256,9 @@ async def test_a_generated_image_of_this_conversation_can_be_chosen_without_reco
 
     assert view.run_version == 1
     assert frame_url(view, "镜02机位图") == GENERATED_PARK
-    assert GENERATED_PARK not in made.ledger.urls(NAMESPACE)
+    assert made.ledger.rows[(NAMESPACE, GENERATED_PARK)] == Material(
+        url=GENERATED_PARK, kind="image"
+    )
 
 
 async def test_choosing_a_result_writes_its_use_and_clearing_it_leaves_no_image() -> None:
@@ -273,6 +277,7 @@ async def test_choosing_a_result_writes_its_use_and_clearing_it_leaves_no_image(
     assert frame_url(chosen, "公园跑道参考图") == GENERATED_PARK
     run = await made.content(RUN_PATH) or ""
     assert '<use output="公园跑道参考图.image" image={公园跑道参考图-1}/>' in run
+    recorded = dict(made.ledger.rows)
 
     cleared = await made.adapter.choose_image(
         PRINCIPAL,
@@ -288,6 +293,7 @@ async def test_choosing_a_result_writes_its_use_and_clearing_it_leaves_no_image(
     assert cleared.run_version == 3
     assert frame_url(cleared, "公园跑道参考图") is None
     assert 'output="公园跑道参考图.image"' not in (await made.content(RUN_PATH) or "")
+    assert made.ledger.rows == recorded, "取消选用不登记任何东西"
 
 
 @pytest.mark.parametrize(("film_version", "run_version"), [(2, 1), (1, None), (1, 2)])

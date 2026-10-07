@@ -7,7 +7,7 @@ from typing import Any
 
 from iclip.domains.library.api import create_library_router
 from iclip.domains.library.repository import LibraryReports
-from iclip.domains.library.service import LibraryService
+from iclip.domains.library.service import HasProductionFiles, LibraryService
 
 
 @dataclass(frozen=True)
@@ -18,8 +18,10 @@ class LibraryModule:
     service: LibraryService
 
 
-def build_library_module(reports: LibraryReports) -> LibraryModule:
-    service = LibraryService(reports)
+def build_library_module(
+    reports: LibraryReports, *, has_production_files: HasProductionFiles
+) -> LibraryModule:
+    service = LibraryService(reports, has_production_files=has_production_files)
     return LibraryModule(routers=(create_library_router(service),), service=service)
 
 

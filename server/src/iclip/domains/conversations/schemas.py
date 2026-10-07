@@ -74,6 +74,12 @@ class ConversationIn(CamelModel):
     """替谁开这段对话。持 ``users:act_as`` 的 API key 按它定属主；其余钥匙照旧记在
     自己名下；浏览器会话只能写自己的用户名。"""
 
+    same_as: uuid.UUID | None = None
+    """做同款的源对话 id（资料库卡的 id）。给了就在建对话时把源的 ``treatment.md``、
+    ``film.icml``（改名 ``old_film.icml``）、``film.icrun``、``video_shot.json``（改名
+    ``old_video_shot.json``）有的拷进来，连同整份素材台账；不拷历史，也不记血缘。源看不见是
+    404，源既没有 ``film.icml`` 也没有 ``video_shot.json`` 是 422；带同一个 ``id`` 重发不再拷。"""
+
 
 class ConversationForkIn(CamelModel):
     """从源对话的第 ``turn`` 轮分叉出一段新对话，归调用者所有。

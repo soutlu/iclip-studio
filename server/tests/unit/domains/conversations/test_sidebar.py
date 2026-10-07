@@ -156,6 +156,7 @@ def build(
         latest_master_urls=_untouched,
         fork_transcript=cast("ForkTranscript", object()),
         copy_workspace=_untouched,
+        copy_same_style=_untouched,
         event_watermark=SessionEventClock().snapshot,
         announce_row=_untouched,
         announce_deleted=_untouched,

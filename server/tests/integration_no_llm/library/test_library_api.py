@@ -91,6 +91,28 @@ async def mark_deleted(pg_url: str, conversation_id: uuid.UUID) -> None:
         )
 
 
+async def detach(pg_url: str, video_id: uuid.UUID) -> None:
+    """把出片从对话上摘下来：它成了一张不挂对话的卡，卡 id 是出片 id。"""
+
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text("UPDATE iclip.generation_jobs SET conversation_id = NULL WHERE id = :id"),
+            {"id": video_id},
+        )
+
+
+async def plant_file(pg_url: str, owner: uuid.UUID, conversation_id: uuid.UUID, path: str) -> None:
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_runtime.workspace_files"
+                " (namespace, path, content, version, created_at, updated_at)"
+                " VALUES (:ns, :path, 'x', 1, now(), now())"
+            ),
+            {"ns": f"{owner}/{conversation_id}", "path": path},
+        )
+
+
 async def test_anonymous_is_401(client: httpx.AsyncClient) -> None:
     for path in (VIDEOS, f"{VIDEOS}/{uuid.uuid4()}", AUTHORS):
         assert (await client.get(path)).status_code == 401
@@ -161,6 +183,37 @@ async def test_everyone_gets_the_conversation_only_readers_can_open_it(
     assert governor_after_delete.json()["video"]["canOpenConversation"] is True
     assert owner_after_delete.status_code == 200
     assert owner_after_delete.json()["video"]["canOpenConversation"] is False
+
+
+async def test_can_make_same_needs_an_openable_conversation_with_a_film_or_shot_file(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    """做得了同款：卡挂着对话、读者打得开、工作区里有 ``film.icml`` 或 ``video_shot.json``。"""
+
+    owner = await login_as(client, pg_url, "nora", "editor")
+    with_film, _ = await plant_video(pg_url, owner=owner, user_name="nora")
+    with_shots, _ = await plant_video(pg_url, owner=owner, user_name="nora")
+    without, _ = await plant_video(pg_url, owner=owner, user_name="nora")
+    was_in, orphan = await plant_video(pg_url, owner=owner, user_name="nora")
+    await plant_file(pg_url, owner, with_film, "film.icml")
+    await plant_file(pg_url, owner, with_shots, "video_shot.json")
+    for path in ("brief.md", "treatment.md", "film.icrun", "old_film.icml"):
+        await plant_file(pg_url, owner, without, path)
+    await plant_file(pg_url, owner, was_in, "film.icml")
+    await detach(pg_url, orphan)
+
+    async def can_make_same(card_id: uuid.UUID) -> bool:
+        detail = await client.get(f"{VIDEOS}/{card_id}")
+        assert detail.status_code == 200, detail.text
+        return detail.json()["canMakeSame"]
+
+    assert await can_make_same(with_film) is True
+    assert await can_make_same(with_shots) is True
+    assert await can_make_same(without) is False, "别的文件都不算"
+    assert await can_make_same(orphan) is False, "不挂对话的卡没有对话可拷"
+
+    await login_as(client, pg_url, "lena", "editor")
+    assert await can_make_same(with_film) is False, "打不开那段对话就做不了"
 
 
 async def test_bad_parameters_are_422(client: httpx.AsyncClient, pg_url: str) -> None:

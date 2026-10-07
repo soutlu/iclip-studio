@@ -124,13 +124,24 @@ class FakeReports:
         return [LibraryAuthorOut(user_name="Nora.Ho", count=len(self.cards))]
 
 
+def library(
+    reports: FakeReports, *, with_files: frozenset[tuple[uuid.UUID, uuid.UUID]] = frozenset()
+) -> LibraryService:
+    """``with_files`` 是工作区里有工程文件或分镜文件的（属主，对话 id）。"""
+
+    async def has_production_files(owner: uuid.UUID, conversation_id: uuid.UUID) -> bool:
+        return (owner, conversation_id) in with_files
+
+    return LibraryService(reports, has_production_files=has_production_files)
+
+
 async def test_can_open_follows_the_conversation_read_scope() -> None:
     """活着的、删了的、不挂对话的三张卡，逐个读者看能不能打开来源对话。"""
 
     alive = card(NOW)
     dead = card(NOW - timedelta(hours=1), deleted=True)
     orphan = card(NOW - timedelta(hours=2), conversation_owner=None)
-    service = LibraryService(FakeReports([alive, dead, orphan]))
+    service = library(FakeReports([alive, dead, orphan]))
 
     async def can_open(reader: Principal) -> list[bool]:
         return [item.can_open_conversation for item in (await service.videos(reader)).items]
@@ -148,7 +159,7 @@ async def test_can_open_follows_the_conversation_read_scope() -> None:
 async def test_detail_carries_the_groups_and_the_reader_view() -> None:
     first, second = card(NOW), card(NOW - timedelta(hours=1))
     reports = FakeReports([first, second])
-    service = LibraryService(reports)
+    service = library(reports)
 
     as_owner = await service.video(principal(OWNER), first.video.id)
     as_colleague = await service.video(principal(uuid.uuid4()), first.video.id)
@@ -162,7 +173,7 @@ async def test_detail_carries_the_groups_and_the_reader_view() -> None:
 
 async def test_cursor_keys_on_the_face_finish_time_and_total_is_only_on_page_one() -> None:
     reports = FakeReports([card(NOW - timedelta(minutes=minute)) for minute in range(5)])
-    service = LibraryService(reports)
+    service = library(reports)
 
     first = await service.videos(principal(OWNER), limit=2)
     second = await service.videos(principal(OWNER), limit=2, cursor=first.next_cursor)
@@ -179,7 +190,7 @@ async def test_cursor_keys_on_the_face_finish_time_and_total_is_only_on_page_one
 
 async def test_blank_keyword_means_no_keyword() -> None:
     reports = FakeReports()
-    service = LibraryService(reports)
+    service = library(reports)
 
     await service.videos(principal(OWNER), q="   ")
     await service.videos(principal(OWNER), q=" 滑板 ")
@@ -188,7 +199,7 @@ async def test_blank_keyword_means_no_keyword() -> None:
 
 
 async def test_limit_out_of_range_is_rejected() -> None:
-    service = LibraryService(FakeReports())
+    service = library(FakeReports())
 
     with pytest.raises(ValidationFailed):
         await service.videos(principal(OWNER), limit=0)
