@@ -272,9 +272,12 @@ def _check_generations(project: Document) -> None:
 
 
 def _check_shots(film: Film) -> None:
-    """镜头的时间、正文里的台词和出场元素，以及剧本里每句台词正好引用一次、先后一致。"""
+    """镜头的时间、正文里的台词和出场元素，以及剧本里每句台词正好引用一次、先后一致；剧本写在
+    引用它台词的镜头之前。"""
 
     project = film.project
+    scripts = project.find(SCRIPT_TAG)
+    script = scripts[0] if scripts else None
     holders: dict[Node, list[Node]] = {}
     for render in project.find("Render"):
         if is_kit(project, render, VIDEO_KIT):
@@ -295,6 +298,7 @@ def _check_shots(film: Film) -> None:
             filled = slot_values(project, renders[0])
             cast = {value.attrs["id"] for slot in VIDEO_ELEMENT_SLOTS for value in filled[slot]}
         cursor = 0.0
+        quotes_script = False
         for order, shot in enumerate(project.kids(shots, "Shot")):
             start, end = float(shot.attrs["start"]), float(shot.attrs["end"])
             if start != cursor and order == 0:
@@ -310,7 +314,9 @@ def _check_shots(film: Film) -> None:
             for name in LINE_REFERENCE.findall(body):
                 if name not in film.lines:
                     project.error(shot, f"花括号里要写剧本里的段名，「{name[:20]}」不是")
-                elif name in said:
+                    continue
+                quotes_script = True
+                if name in said:
                     project.error(shot, f"台词 {name} 在前面的镜头里已经引用过")
                 else:
                     said.append(name)
@@ -325,6 +331,9 @@ def _check_shots(film: Film) -> None:
                             f"镜头正文里出现了「{name}」，它要填在这次视频提示词的人物、产品、场景槽里",
                         )
                     body = body.replace(name, " ")
+        # 先定义后引用：读文件时只查了属性里的 {引用}，镜头正文里的 {段名} 在这里查。
+        if quotes_script and script is not None and script.line > shots.line:
+            project.error(shots, f"剧本 {script.attrs['id']} 要写在引用它台词的 film:Shots 之前")
     for name, line in film.lines.items():
         if name not in said:
             project.error_at(line.line, f"台词 {name} 没有被任何镜头引用")

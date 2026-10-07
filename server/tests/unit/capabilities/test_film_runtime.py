@@ -45,6 +45,11 @@ USE_PERSON = '<use output="短发女生参考图.image" image={短发女生修�
 MISSING = ("短发女生参考图", "镜02机位图")
 """规格第 13.3 节的情况：这两张还没有图。"""
 
+_SCRIPT_BLOCK = FILM[
+    FILM.index('  <script id="原版台词">') : FILM.index("  </script>\n") + len("  </script>\n")
+]
+"""示例里的整份剧本，连同缩进和末尾的换行。"""
+
 
 def checked(project: str = FILM, run: str | None = RUN) -> Film:
     film = check(project, run)
@@ -552,6 +557,14 @@ SHOT_FAULTS = [
         anchor='<film:Shot start="2.5"',
         also=(("    <seedance:Reference image={公园跑道参考图.image} for={公园跑道}/>\n", ""),),
         id="镜头里的元素没填进视频提示词",
+    ),
+    fault(
+        _SCRIPT_BLOCK,
+        "",
+        "剧本 原版台词 要写在引用它台词的 film:Shots 之前",
+        anchor='<film:Shots id="全片镜头">',
+        also=(("  </film:Shots>\n", "  </film:Shots>\n" + _SCRIPT_BLOCK),),
+        id="剧本写在镜头之后",
     ),
 ]
 
