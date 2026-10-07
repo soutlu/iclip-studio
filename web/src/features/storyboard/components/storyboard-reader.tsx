@@ -65,7 +65,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   const position =
     search.shot !== undefined && search.shot >= 1 && search.shot <= shots.length ? search.shot : 1
   const stage = useStageSelection(position)
-  const video = useVideoGeneration(conversationId, shots[position - 1]?.model)
+  const video = useVideoGeneration(conversationId)
 
   const go = (next: ReaderSearch) => {
     const cleared =

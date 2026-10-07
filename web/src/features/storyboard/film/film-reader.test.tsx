@@ -39,8 +39,12 @@ const recordEdits = () => {
   return bodies
 }
 
-const mount = async ({ readOnly = false, problems = 0 } = {}) => {
-  seedMockFilm(CONVERSATION_ID, { problems })
+const mount = async ({
+  readOnly = false,
+  problems = 0,
+  model,
+}: { readOnly?: boolean; problems?: number; model?: string } = {}) => {
+  seedMockFilm(CONVERSATION_ID, { model, problems })
   await renderWithProviders(
     <>
       <FilmReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
@@ -221,6 +225,17 @@ describe('制作页', () => {
     expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
     await waitFor(() => expect(stageTag()).toBe('@3'))
+  })
+
+  it('文件里写的模型不在可选的里面，出片栏用服务端的默认', async () => {
+    await mount({ model: 'retired-model' })
+    const bar = await screen.findByRole('group', { name: '出片工具栏' })
+
+    await waitFor(() =>
+      expect(within(bar).getByRole('button', { name: '视频模型' })).toHaveTextContent(
+        'vendor-a-seedance-2-5',
+      ),
+    )
   })
 
   it('分镜检查出问题时只写有几处，交给 AI 导演改', async () => {

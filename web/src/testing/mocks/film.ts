@@ -178,13 +178,19 @@ const mockGroup = (): FilmGroupOut => ({
 })
 
 /** 给一段对话放一份能用的工程：工作区里有 `film.icml` 与 `film.icrun`，制作页读得出一组。 */
-export const seedMockFilm = (conversationId: string, options: { problems?: number } = {}) => {
+export const seedMockFilm = (
+  conversationId: string,
+  options: { problems?: number; model?: string | undefined } = {},
+) => {
   const filmVersion = putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
   const runVersion = putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE)
   const problems = options.problems ?? 0
   films.set(conversationId, {
     filmVersion,
-    groups: problems > 0 ? [] : [mockGroup()],
+    groups:
+      problems > 0
+        ? []
+        : [{ ...mockGroup(), ...(options.model === undefined ? {} : { model: options.model }) }],
     problems,
     runVersion,
   })

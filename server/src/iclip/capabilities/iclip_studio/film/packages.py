@@ -37,7 +37,7 @@ class Generation:
     """生成节点发给模型时的名字和上限。"""
 
     gateway: str
-    """我们这边的模型名：生图是生成域的 provider 名，视频是导出到分镜文件的 ``model``。"""
+    """我们这边的模型名：生图是生成域的 provider 名，视频是制作页出片栏默认选的视频模型名。"""
 
     max_references: int
     max_prompt_chars: int
@@ -102,7 +102,7 @@ GPT_IMAGE_RESOLUTIONS: Final = ("2k",)
 SEEDANCE_VARIANTS: Final[Mapping[str, tuple[str, int, int]]] = {
     "sd2.5": ("mmt-seedance-2-5", 4, 30)
 }
-"""``model`` 属性的取值 → (导出到分镜文件的模型名, 最短秒数, 最长秒数)。"""
+"""``model`` 属性的取值 → (出片栏默认选的视频模型名, 最短秒数, 最长秒数)。"""
 
 VIDEO_ASPECTS: Final = ("9:16", "16:9", "1:1", "4:3", "3:4", "21:9")
 

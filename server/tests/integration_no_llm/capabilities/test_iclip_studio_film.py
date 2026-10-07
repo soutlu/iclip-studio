@@ -1,4 +1,4 @@
-"""工程文件的两件工具经真实 Postgres 文件存储与素材台账的往返：检查、导出，写回校验认得导出的文件。"""
+"""工程文件的检查经真实 Postgres 文件存储与素材台账的往返。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.iclip_studio.ports import SampledVideo
-from iclip.capabilities.shot_document import SHOTS_PATH, validate_shots_document
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
@@ -33,7 +32,7 @@ from iclip.platform.file_store.pg import PgFileStore
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 from iclip.platform.material_ledger.store import Material
-from tests.helpers.film import FILM, GIVEN_IMAGES, PERSON_FIXED, RUN, SHOE_PHOTO, VIEW_ONE
+from tests.helpers.film import FILM, GIVEN_IMAGES, RUN, SHOE_PHOTO
 from tests.helpers.pg import truncate_clean
 
 USER = uuid.UUID("55555555-5555-5555-5555-555555555555")
@@ -121,7 +120,7 @@ def make_studio(engine: AsyncEngine) -> tuple[IclipStudio[object], PgFileStore, 
     return capability, files, ledger
 
 
-async def test_check_then_export_round_trips_through_postgres(
+async def test_check_round_trips_through_postgres(
     engine: AsyncEngine, conversation_id: str
 ) -> None:
     capability, files, ledger = make_studio(engine)
@@ -134,19 +133,8 @@ async def test_check_then_export_round_trips_through_postgres(
     assert retries == []
     assert checked.startswith("检查通过：4 个生图节点，1 次视频请求。")
 
-    retries, (exported,) = await call_once(capability, conversation_id, "export_shots", {})
-    assert retries == []
-    assert exported.startswith("已导出到 video_shot.json：1 个镜头组")
-    stored = await files.read(namespace, SHOTS_PATH)
-    assert stored is not None
-    assert stored.version == 1
-    # 用户在面板写回走的是同一个校验入口，工具导出的文件必须原样通过。
-    document = validate_shots_document(stored.content)
-    assert document.shots[0].model == "mmt-seedance-2-5"
-    assert document.shots[0].image_urls == [PERSON_FIXED, SHOE_PHOTO, VIEW_ONE]
 
-
-async def test_an_address_the_conversation_never_received_blocks_the_export(
+async def test_an_address_the_conversation_never_received_fails_the_check(
     engine: AsyncEngine, conversation_id: str
 ) -> None:
     capability, files, ledger = make_studio(engine)
@@ -154,8 +142,8 @@ async def test_an_address_the_conversation_never_received_blocks_the_export(
     await files.write(namespace, FILM_PATH, FILM)
     await ledger.record(namespace, [Material(url=SHOE_PHOTO, kind="video")])
 
-    retries, results = await call_once(capability, conversation_id, "export_shots", {})
+    retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
 
-    assert results == []
-    assert "src 不是这段对话里的图片" in str(retries[0].content)
-    assert await files.read(namespace, SHOTS_PATH) is None
+    assert retries == []
+    assert checked.startswith("检查没通过")
+    assert "src 不是这段对话里的图片" in checked
