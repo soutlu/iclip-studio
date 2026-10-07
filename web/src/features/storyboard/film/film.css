@@ -1,0 +1,70 @@
+/* ===== 制作页文案列 =====
+   卡片、左轨、镜头条都用分镜页的（storyboard.css 的「文案列」一节），这里只管制作页多出来的几样：
+   一段里几个编辑器上下排、段间与分镜页一样留 6px；全局设定一段一行，称呼与图片芯片浮在左边，字从它们后面接着排、
+   折行回到行首（编辑器不另起格式化上下文，字才绕得过去）；台词单独一行，说话人是固定的小标签，字套在中文引号里，引号画在编辑器的段落上，跟着字折行。
+   收成摘要时（data-clamped）整段正文按行高截断：镜头两行、全局设定三行。 */
+.film-segment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.storyboard-segment[data-clamped='true'] .film-segment-body {
+  max-height: calc(var(--text-body) * 1.75 * 2);
+  overflow: hidden;
+}
+.storyboard-settings[data-clamped='true'] .film-segment-body {
+  max-height: calc(var(--text-body) * 1.75 * 3);
+}
+/* 段里的编辑器各自不截断，截断交给整段。 */
+.storyboard-segment[data-clamped='true'] .film-segment-body .prompt-editor-content {
+  display: block;
+}
+
+.film-setting-label {
+  float: left;
+  margin-right: 2px;
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: 1.75;
+}
+/* 没有图的出场元素：芯片里画一格空的缩略图位，和有图的一样高。 */
+.film-chip .frame-chip-pill > .film-chip-empty {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container);
+  outline: 0.5px solid var(--color-hairline);
+  outline-offset: -0.5px;
+}
+
+.film-line {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+}
+.film-line-role {
+  flex: none;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-xs);
+  background: var(--color-top-layer);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.film-line-words {
+  min-width: 0;
+  flex: 1;
+}
+.film-line-words .prompt-editor-content p::before {
+  content: '“';
+}
+.film-line-words .prompt-editor-content p::after {
+  content: '”';
+}

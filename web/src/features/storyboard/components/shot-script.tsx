@@ -1,4 +1,4 @@
-/** 文案列：列头写镜头数与总长，带「收成摘要」开关和按时长切分的镜头条（色段与左轨短色签同取镜头的点缀色）；正文区最上面是全局设定卡，
+/** 文案列：列头（`ScriptHead`）写镜头数与总长、带「收成摘要」开关和镜头条；正文区最上面是全局设定卡，
  * 之后按时间线排各镜头，左轨写序号与起始时间，末尾一行写总长与「结束」。
  * 默认全文；收成摘要时未选中的镜头只露两行、全局设定三行。点哪段选中哪段，舞台跟着切到它的首帧。
  * 时间一律写一位小数加 s，总长取最后一镜的止秒。版式见 storyboard.css 的「文案列」一节。
@@ -12,10 +12,8 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { refuseFileDropProps, useFileDropTarget } from '@/shared/ui/file-drop'
-import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
   contentLabel,
-  formatTimeRange,
   formatTimecode,
   promptLength,
   segmentTimeRange,
@@ -28,6 +26,7 @@ import { shotAccentOf, type ShotAccent } from '../shot-accent'
 import type { Shot } from '../shot-document'
 import { copyWithToast } from './copy-with-toast'
 import { PromptEditor, type PromptEditorHandle, type PromptImages } from './prompt-editor'
+import { DurationPill, ScriptHead } from './script-head'
 
 /** 段卡上的拖放：`blocked` 时照样接管文件、不收；落下的交给第 `content` 段。 */
 type ScriptDrop = {
@@ -93,7 +92,6 @@ export function ShotScript({
         ]
   })
   const settings = segments.find((segment) => segment.kind === 'global')
-  const total = formatTimecode(timelineDuration(shot))
 
   // 焦点落进这段（点正文、Tab 进来）或点段标题就选中；已选中的段再点、再打字不重置帧。
   const select = (segment: ShotContent) => {
@@ -139,51 +137,22 @@ export function ShotScript({
 
   return (
     <div aria-label="分镜文案" className="storyboard-prose" role="region" {...refuseFileDropProps}>
-      <div className="storyboard-script-head">
-        <div className="flex min-h-7 items-center gap-2">
-          <p className="min-w-0 text-body-sm text-on-surface-muted tabular-nums">
-            <span className="text-body font-semibold text-on-surface">{scenes.length} 个镜头</span>
-            {` · 共 ${total}`}
-          </p>
-          <Button
-            className="ml-auto h-7 px-2.5 text-label text-on-surface-variant"
-            onClick={() => setCompact((current) => !current)}
-            size="md"
-            variant="ghost"
-          >
-            {compact ? '显示全文' : '收成摘要'}
-          </Button>
-        </div>
-        <div aria-label="镜头时间条" className="storyboard-timeline" role="group">
-          {scenes.map(({ accent, segment, time }) => {
-            const summary = [
-              contentLabel(segment),
-              formatTimecode(time.duration),
-              formatTimeRange(time),
-            ]
-            return (
-              <TooltipRoot key={segment.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    aria-current={segment.id === selectedId}
-                    aria-label={summary.join('，')}
-                    className={cn('storyboard-timeline-segment ui-focus', accent.segment)}
-                    onClick={() => jumpTo(segment)}
-                    // 按原始起止秒排比例，不用取整后的时长。
-                    style={{ flexGrow: time.end - time.start }}
-                    type="button"
-                  />
-                </TooltipTrigger>
-                <TooltipContent>{summary.join(' · ')}</TooltipContent>
-              </TooltipRoot>
-            )
-          })}
-        </div>
-        <div aria-hidden className="storyboard-timeline-ticks">
-          <span>{formatTimecode(0)}</span>
-          <span>{total}</span>
-        </div>
-      </div>
+      <ScriptHead
+        compact={compact}
+        onJump={(id) => {
+          const segment = segments.find((item) => item.id === id)
+          if (segment !== undefined) jumpTo(segment)
+        }}
+        onToggleCompact={() => setCompact((current) => !current)}
+        scenes={scenes.map(({ accent, segment, time }) => ({
+          accent,
+          id: segment.id,
+          label: contentLabel(segment),
+          time,
+        }))}
+        selectedId={selectedId}
+        total={timelineDuration(shot)}
+      />
       <div className="storyboard-script-list">
         {settings === undefined ? null : (
           <SettingsCard
@@ -268,29 +237,12 @@ export function ShotScript({
         </ol>
         <div aria-hidden className="storyboard-shot-end">
           <span className="storyboard-rail">
-            <span className="storyboard-rail-stamp">{total}</span>
+            <span className="storyboard-rail-stamp">{formatTimecode(timelineDuration(shot))}</span>
           </span>
           <span className="storyboard-shot-end-label">结束</span>
         </div>
       </div>
     </div>
-  )
-}
-
-/** 时长胶囊：显示时长，悬停提示与读屏给完整区间。 */
-function DurationPill({ time }: { time: SegmentTime }) {
-  const range = formatTimeRange(time)
-  return (
-    <TooltipRoot>
-      <TooltipTrigger asChild>
-        <span className="storyboard-duration">
-          <Icon decorative name="duration" size="xs" />
-          {formatTimecode(time.duration)}
-          <span className="sr-only">，{range}</span>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{range}</TooltipContent>
-    </TooltipRoot>
   )
 }
 

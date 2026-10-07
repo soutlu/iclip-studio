@@ -655,6 +655,16 @@ const validateShotsContent = (content: string): string | undefined => {
   return undefined
 }
 
+/** 往一段对话的工作区放一份文件（还没有工作区就建一个）：版本从 1 起，已有就加一，返回新版本。制作页的 mock 用它。 */
+export const putMockWorkspaceFile = (conversationId: string, path: string, content: string) => {
+  const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
+  workspaces.set(conversationId, files)
+  if (!generations.has(conversationId)) generations.set(conversationId, [])
+  const version = (files.get(path)?.version ?? 0) + 1
+  files.set(path, { content, updatedAt: new Date().toISOString(), version })
+  return version
+}
+
 export const resetMockWorkspace = () => {
   for (const timer of timers) clearTimeout(timer)
   timers.clear()
