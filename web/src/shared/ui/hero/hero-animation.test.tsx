@@ -59,6 +59,24 @@ describe('HeroAnimation', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('点击固定展开后，点鞋盒以外的地方收起', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <HeroAnimation />
+        <p>页面空白处</p>
+      </>,
+    )
+    const trigger = screen.getByRole('button', { name: EXPAND })
+
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByText('页面空白处'))
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger).toHaveAccessibleName(EXPAND)
+  })
+
   it('触屏的悬停事件不触发展开', () => {
     render(<HeroAnimation />)
     const trigger = screen.getByRole('button', { name: EXPAND })
