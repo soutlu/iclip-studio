@@ -606,7 +606,10 @@ async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> No
 
 
 def film_image_service(
-    repo: InMemoryGenerationRepository, lineage: FixedLineage | None = None
+    repo: InMemoryGenerationRepository,
+    lineage: FixedLineage | None = None,
+    *,
+    image_models: Sequence[str] = ("nano_banana_pro", "gpt-image-2.5"),
 ) -> GenerationService:
     """生成服务：带 AI 导演的图片模型 gpt-image-2.5，视频只接一家替身。"""
 
@@ -624,7 +627,7 @@ def film_image_service(
         video_allowed_models=("vendor-a-seedance-2-5",),
         image_models=[
             ImageModelConfig(name=name, api_base=f"https://image.test/{name}", concurrency=1)
-            for name in ("nano_banana_pro", "gpt-image-2.5")
+            for name in image_models
         ],
         image_default_model="nano_banana_pro",
         image_env="test",

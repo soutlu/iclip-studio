@@ -13,7 +13,7 @@ from typing import Any, Literal, Protocol
 import structlog
 
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
-from iclip.common.film_view import FilmTextEdit, FilmView
+from iclip.common.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     Conversation,
@@ -218,6 +218,36 @@ class ConversationFilm(Protocol):
         film_version: int,
         run_version: int | None,
     ) -> FilmView: ...
+
+    async def generate_image(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        prompt: FilmImagePrompt | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """按描述给一张图出一张新的，返回生成任务 id。``prompt`` 为 None 用文件里的描述。"""
+        ...
+
+    async def generate_video(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        video: str,
+        model: str,
+        resolution: str,
+        generate_audio: bool,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """给一个镜头组出片，返回生成任务 id。"""
+        ...
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -503,6 +533,56 @@ class ConversationService:
             conversation.id,
             node=node,
             url=url,
+            film_version=film_version,
+            run_version=run_version,
+        )
+
+    async def generate_film_image(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        prompt: FilmImagePrompt | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """在制作页上按描述生成一张图；要花钱，只有属主能发，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.generate_image(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            node=node,
+            prompt=prompt,
+            film_version=film_version,
+            run_version=run_version,
+        )
+
+    async def generate_film_video(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        video: str,
+        model: str,
+        resolution: str,
+        generate_audio: bool,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        """在制作页上给一个镜头组出片；只有属主能发，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.generate_video(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            video=video,
+            model=model,
+            resolution=resolution,
+            generate_audio=generate_audio,
             film_version=film_version,
             run_version=run_version,
         )

@@ -16,6 +16,25 @@ SettingKind = Literal["shooting", "element", "voice"]
 
 
 @dataclass(frozen=True, slots=True)
+class FilmPromptText:
+    """生图描述里的一段文字。"""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class FilmPromptImage:
+    """生图描述里一张参考图所在的位置。"""
+
+    node: str
+    label: str
+    url: str
+
+
+FilmPromptRun = FilmPromptText | FilmPromptImage
+
+
+@dataclass(frozen=True, slots=True)
 class FilmFrame:
     """一组视频请求用到的一张图。"""
 
@@ -31,6 +50,10 @@ class FilmFrame:
 
     number: int | None
     """发给视频的编号，即 @N：只给有图的，按发送的先后从 1 起。"""
+
+    prompt: tuple[FilmPromptRun, ...] | None
+    """按描述生成这张图时发给模型的描述，参考图在它出现的位置；用户给的图为 None。还没有图的
+    参考图不在这里出现，只用文字写。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +133,14 @@ class FilmView:
 
 
 @dataclass(frozen=True, slots=True)
+class FilmImagePrompt:
+    """按描述再生成时，在编辑器里改过的描述与参考图；只用这一次，不写回文件。"""
+
+    text: str
+    reference_image_urls: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class FilmLineEdit:
     """改好的一句台词：``target`` 是原有那句的定位，新加的为 None。"""
 
@@ -132,8 +163,12 @@ class FilmTextEdit:
 __all__ = [
     "FilmFrame",
     "FilmGroup",
+    "FilmImagePrompt",
     "FilmLine",
     "FilmLineEdit",
+    "FilmPromptImage",
+    "FilmPromptRun",
+    "FilmPromptText",
     "FilmSetting",
     "FilmShot",
     "FilmTextEdit",

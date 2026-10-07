@@ -10,14 +10,24 @@ from iclip.capabilities.iclip_studio.film.checks import check, load_project
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.markup import parse
 from iclip.capabilities.iclip_studio.film.packages import PROMPT_MAX_CHARS
-from iclip.capabilities.iclip_studio.film.prompts import for_video, render_storyboard
+from iclip.capabilities.iclip_studio.film.prompts import (
+    for_video,
+    render_picture,
+    render_storyboard,
+)
 from iclip.capabilities.iclip_studio.film.studio import (
     FilmEditRejected,
     choose_image,
     edit_text,
     film_groups,
 )
-from iclip.common.film_view import FilmGroup, FilmLineEdit, FilmTextEdit
+from iclip.common.film_view import (
+    FilmGroup,
+    FilmLineEdit,
+    FilmPromptImage,
+    FilmPromptText,
+    FilmTextEdit,
+)
 from tests.helpers.film import FILM, PERSON_FIRST, PERSON_FIXED, RUN, SHOE_PHOTO, VIEW_ONE
 
 BODY_SENTENCE = (
@@ -108,6 +118,29 @@ def test_a_generated_image_shows_its_latest_result_until_one_is_chosen() -> None
     park = next(frame for frame in made.frames if frame.node == "公园跑道参考图")
     assert (park.url, park.number) == (LATEST_PARK, 3)
     assert next(frame for frame in made.frames if frame.node == "镜01机位图").number == 4
+
+
+def test_a_generated_image_carries_its_prompt_with_the_references_in_place() -> None:
+    film = checked()
+    (made,) = film_groups(film, FILM)
+    frames = {frame.node: frame for frame in made.frames}
+    sent = render_picture(film, film.project.nodes["镜02机位图提示词"])
+
+    runs = frames["镜02机位图"].prompt
+    assert runs is not None
+    images = [run for run in runs if isinstance(run, FilmPromptImage)]
+    assert [(run.node, run.label, run.url) for run in images] == [
+        ("短发女生参考图", "短发女生", PERSON_FIXED),
+        ("跑鞋照片", "网面跑鞋", SHOE_PHOTO),
+        ("镜01机位图", "镜头 1", VIEW_ONE),
+    ]
+    numbers = {run.node: n for n, run in enumerate(images, start=1)}
+    joined = "".join(
+        run.text if isinstance(run, FilmPromptText) else f"图{numbers[run.node]}" for run in runs
+    )
+    assert joined == sent.text
+    assert "公园跑道参考图" not in numbers and "城市社区公园" in joined
+    assert frames["跑鞋照片"].prompt is None
 
 
 def test_a_view_from_another_group_is_named_with_that_group() -> None:

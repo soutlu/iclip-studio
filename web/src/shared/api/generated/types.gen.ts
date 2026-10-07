@@ -1034,6 +1034,8 @@ export type FaceOut = {
  * FilmFrameOut
  *
  * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ *
+ * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；用户给的图为 null。
  */
 export type FilmFrameOut = {
   /**
@@ -1052,6 +1054,10 @@ export type FilmFrameOut = {
    * Number
    */
   number: number | null
+  /**
+   * Prompt
+   */
+  prompt: Array<FilmPromptTextOut | FilmPromptImageOut> | null
   /**
    * Url
    */
@@ -1127,6 +1133,55 @@ export type FilmImageChoiceIn = {
 }
 
 /**
+ * FilmImageGenerationIn
+ *
+ * 按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。
+ */
+export type FilmImageGenerationIn = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Node
+   */
+  node: string
+  prompt?: FilmImagePromptIn | null
+  /**
+   * Runversion
+   */
+  runVersion: number | null
+}
+
+/**
+ * FilmImagePromptIn
+ *
+ * 编辑器里改过的描述与参考图，只用这一次。
+ */
+export type FilmImagePromptIn = {
+  /**
+   * Referenceimageurls
+   */
+  referenceImageUrls: Array<string>
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmJobOut
+ *
+ * 受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。
+ */
+export type FilmJobOut = {
+  /**
+   * Jobid
+   */
+  jobId: string
+}
+
+/**
  * FilmLineEditIn
  *
  * 改完的一句台词：原有的带上它的 ``target``，新加的给 null。
@@ -1160,6 +1215,44 @@ export type FilmLineOut = {
    * Target
    */
   target: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmPromptImageOut
+ *
+ * 描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。
+ */
+export type FilmPromptImageOut = {
+  /**
+   * Kind
+   */
+  kind?: 'image'
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Node
+   */
+  node: string
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * FilmPromptTextOut
+ */
+export type FilmPromptTextOut = {
+  /**
+   * Kind
+   */
+  kind?: 'text'
   /**
    * Text
    */
@@ -1266,6 +1359,38 @@ export type FilmTextEditsIn = {
    * Filmversion
    */
   filmVersion: number
+}
+
+/**
+ * FilmVideoGenerationIn
+ *
+ * 给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。
+ */
+export type FilmVideoGenerationIn = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Generateaudio
+   */
+  generateAudio: boolean
+  /**
+   * Model
+   */
+  model: string
+  /**
+   * Resolution
+   */
+  resolution: string
+  /**
+   * Runversion
+   */
+  runVersion: number | null
+  /**
+   * Video
+   */
+  video: string
 }
 
 /**
@@ -5137,6 +5262,40 @@ export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutRe
 export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponse =
   ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses[keyof ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses]
 
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostData = {
+  body: FilmImageGenerationIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/image-generations'
+}
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostErrors =
+  {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError
+  }
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostError =
+  GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostErrors[keyof GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostErrors]
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponses =
+  {
+    /**
+     * Successful Response
+     */
+    202: FilmJobOut
+  }
+
+export type GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponse =
+  GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponses[keyof GenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponses]
+
 export type EditConversationFilmTextConversationsConversationIdFilmTextPatchData = {
   body: FilmTextEditsIn
   path: {
@@ -5168,6 +5327,40 @@ export type EditConversationFilmTextConversationsConversationIdFilmTextPatchResp
 
 export type EditConversationFilmTextConversationsConversationIdFilmTextPatchResponse =
   EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses[keyof EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses]
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostData = {
+  body: FilmVideoGenerationIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/video-generations'
+}
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostErrors =
+  {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError
+  }
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostError =
+  GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostErrors[keyof GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostErrors]
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses =
+  {
+    /**
+     * Successful Response
+     */
+    202: FilmJobOut
+  }
+
+export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponse =
+  GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses[keyof GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses]
 
 export type ApproveConversationsConversationIdInteractionsInteractionIdPostData = {
   body: ApprovalRequest

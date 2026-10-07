@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -131,6 +132,24 @@ async def test_latest_is_the_newest_successful_image_of_each_node() -> None:
     )
 
     assert found == {"短发女生参考图": "https://cdn.test/b.png"}
+
+
+async def test_an_edited_image_never_becomes_the_latest_however_many_there_are() -> None:
+    generated = image_row("镜01机位图", minutes=0, url="https://cdn.test/generated.png")
+    edits = [
+        replace(
+            image_row("镜01机位图", minutes=minute, url=f"https://cdn.test/edit-{minute}.png"),
+            source_url="https://cdn.test/generated.png",
+        )
+        for minute in range(1, 26)
+    ]
+    adapter = FilmImagesAdapter(
+        film_image_service(InMemoryGenerationRepository([generated, *edits]))
+    )
+
+    found = await adapter.latest(PRINCIPAL, str(CONVERSATION), ["镜01机位图"])
+
+    assert found == {"镜01机位图": "https://cdn.test/generated.png"}
 
 
 async def test_an_address_belongs_when_the_conversation_has_a_finished_image_at_it() -> None:

@@ -28,8 +28,10 @@ from iclip.capabilities.iclip_studio.film.packages import (
 from iclip.capabilities.iclip_studio.film.prompts import (
     BODY_PHRASE,
     LINE_REFERENCE,
+    PicturePrompt,
     body_sentence,
     for_video,
+    render_picture,
     storyboard_images,
 )
 from iclip.common.film_view import (
@@ -37,6 +39,8 @@ from iclip.common.film_view import (
     FilmGroup,
     FilmLine,
     FilmLineEdit,
+    FilmPromptImage,
+    FilmPromptText,
     FilmSetting,
     FilmShot,
     FilmTextEdit,
@@ -65,14 +69,27 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
     for index, (video, storyboard) in enumerate(zip(videos, storyboards, strict=True), start=1):
         frames: dict[str, FilmFrame] = {}
         for use in storyboard_images(film, storyboard)[0]:
-            if use.image not in frames:
-                frames[use.image] = FilmFrame(
-                    node=use.image,
-                    label=_label(use.image, index, elements, views),
-                    kind="generated" if _generated(project, use.image) else "photo",
-                    url=use.url,
-                    number=use.number,
+            if use.image in frames:
+                continue
+            generated = _generated(project, use.image)
+            prompt = None
+            if generated:
+                prompt = tuple(
+                    FilmPromptText(run)
+                    if isinstance(run, str)
+                    else FilmPromptImage(
+                        run.image, _label(run.image, index, elements, views), run.url
+                    )
+                    for run in image_prompt(film, use.image).runs
                 )
+            frames[use.image] = FilmFrame(
+                node=use.image,
+                label=_label(use.image, index, elements, views),
+                kind="generated" if generated else "photo",
+                url=use.url,
+                number=use.number,
+                prompt=prompt,
+            )
         groups.append(
             FilmGroup(
                 index=index,
@@ -87,6 +104,13 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
             )
         )
     return tuple(groups)
+
+
+def image_prompt(film: Film, image: str) -> PicturePrompt:
+    """按描述生成 ``image`` 这个生图节点时发给模型的描述与参考图。"""
+
+    node = film.project.nodes[image]
+    return render_picture(film, film.project.nodes[_required(node, "prompt")])
 
 
 def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
@@ -716,4 +740,4 @@ def _required(node: Node, name: str) -> str:
     return reference
 
 
-__all__ = ["FilmEditRejected", "choose_image", "edit_text", "film_groups"]
+__all__ = ["FilmEditRejected", "choose_image", "edit_text", "film_groups", "image_prompt"]

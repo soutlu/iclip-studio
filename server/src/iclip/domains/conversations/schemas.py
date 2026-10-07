@@ -10,7 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from pydantic.alias_generators import to_camel
 
 from iclip.common.film_view import (
+    FilmImagePrompt,
     FilmLineEdit,
+    FilmPromptImage,
+    FilmPromptRun,
+    FilmPromptText,
     FilmTextEdit,
     FilmView,
     FrameKind,
@@ -260,15 +264,38 @@ class ConversationFileEnvelope(CamelModel):
 MAX_FILM_EDITS: Final = 64
 """一次最多改几段字：页面自动保存时一次只送改过的那几段。"""
 
+MAX_FILM_REFERENCES: Final = 10
+"""按描述再生成时最多几张参考图，与生成域的图片参考图上限相同。"""
+
+
+class FilmPromptTextOut(CamelModel):
+    kind: Literal["text"] = "text"
+    text: str
+
+
+class FilmPromptImageOut(CamelModel):
+    """描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。"""
+
+    kind: Literal["image"] = "image"
+    node: str
+    label: str
+    url: str
+
+
+FilmPromptRunOut = Annotated[FilmPromptTextOut | FilmPromptImageOut, Field(discriminator="kind")]
+
 
 class FilmFrameOut(CamelModel):
-    """一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。"""
+    """一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+
+    ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；用户给的图为 null。"""
 
     node: str
     label: str
     kind: FrameKind
     url: str | None
     number: int | None
+    prompt: list[FilmPromptRunOut] | None
 
 
 class FilmSettingOut(CamelModel):
@@ -379,6 +406,59 @@ class FilmImageChoiceIn(CamelModel):
         return value
 
 
+class FilmImagePromptIn(CamelModel):
+    """编辑器里改过的描述与参考图，只用这一次。"""
+
+    text: Annotated[str, Field(min_length=1)]
+    reference_image_urls: Annotated[list[str], Field(max_length=MAX_FILM_REFERENCES)]
+
+    @field_validator("reference_image_urls")
+    @classmethod
+    def _http(cls, urls: list[str]) -> list[str]:
+        if not all(is_http_url(url) for url in urls):
+            raise ValueError("要写带主机名的 http(s) 地址")
+        return urls
+
+
+class FilmImageGenerationIn(CamelModel):
+    """按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。"""
+
+    node: Annotated[str, Field(min_length=1)]
+    prompt: FilmImagePromptIn | None = None
+    film_version: int
+    run_version: int | None
+
+
+class FilmVideoGenerationIn(CamelModel):
+    """给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。"""
+
+    video: Annotated[str, Field(min_length=1)]
+    model: Annotated[str, Field(min_length=1)]
+    resolution: Annotated[str, Field(min_length=1, max_length=50)]
+    generate_audio: bool
+    film_version: int
+    run_version: int | None
+
+
+class FilmJobOut(CamelModel):
+    """受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。"""
+
+    job_id: uuid.UUID
+
+
+def film_image_prompt(body: FilmImageGenerationIn) -> FilmImagePrompt | None:
+    if body.prompt is None:
+        return None
+    return FilmImagePrompt(body.prompt.text, tuple(body.prompt.reference_image_urls))
+
+
+def _prompt_run_out(run: FilmPromptRun) -> FilmPromptTextOut | FilmPromptImageOut:
+    if isinstance(run, FilmPromptText):
+        return FilmPromptTextOut(text=run.text)
+    assert isinstance(run, FilmPromptImage)
+    return FilmPromptImageOut(node=run.node, label=run.label, url=run.url)
+
+
 def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
     return [
         FilmTextEdit(
@@ -413,6 +493,9 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                             kind=frame.kind,
                             url=frame.url,
                             number=frame.number,
+                            prompt=None
+                            if frame.prompt is None
+                            else [_prompt_run_out(run) for run in frame.prompt],
                         )
                         for frame in group.frames
                     ],

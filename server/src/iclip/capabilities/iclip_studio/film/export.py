@@ -42,7 +42,7 @@ def export_shots(film: Film) -> VideoShotsDocument:
         raise NothingToExport(f"{FILM_PATH} 里没有视频节点，导不出分镜")
     return VideoShotsDocument(
         aspect_ratio=videos[0].attrs["aspect-ratio"],
-        shots=[_row(film, video, index) for index, video in enumerate(videos, start=1)],
+        shots=[video_row(film, video, index) for index, video in enumerate(videos, start=1)],
     )
 
 
@@ -63,7 +63,11 @@ def image_status(film: Film) -> list[NodeImage]:
     return status
 
 
-def _row(film: Film, video: Node, index: int) -> VideoShotDocumentRow:
+def video_row(film: Film, video: Node, index: int) -> VideoShotDocumentRow:
+    """一个视频节点发给视频模型的那一组：拼好的镜头组、现在有图的参考图、时长，``index`` 是组号。
+
+    导出分镜和制作页出片用的是同一份。"""
+
     reference = video.reference("prompt")
     assert reference is not None
     group = render_storyboard(film, film.project.nodes[reference])
@@ -86,4 +90,4 @@ def _row(film: Film, video: Node, index: int) -> VideoShotDocumentRow:
     )
 
 
-__all__ = ["NodeImage", "NothingToExport", "export_shots", "image_status"]
+__all__ = ["NodeImage", "NothingToExport", "export_shots", "image_status", "video_row"]
