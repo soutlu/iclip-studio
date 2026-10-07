@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { FilmFrame, FilmGroup } from './film.api'
 import {
   contentOfFrame,
-  groupMissingLabels,
   missingReferencesText,
   resolveFilmSelection,
   segmentFrames,
@@ -111,12 +110,6 @@ describe('缺图提醒', () => {
       '短发女生、镜头 1 的图缺失，参考描述生成',
     )
     expect(missingReferencesText([])).toBeUndefined()
-  })
-
-  it('一组出片缺的是没图的生成图，按先后；用户给的图不算', () => {
-    const photo: FilmFrame = { ...frame('p', null), kind: 'photo', url: null }
-    expect(groupMissingLabels({ ...group, frames: [...group.frames, photo] })).toEqual(['c'])
-    expect(groupMissingLabels({ ...group, frames: [frame('a', 1), photo] })).toEqual([])
   })
 })
 

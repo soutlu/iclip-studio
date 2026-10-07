@@ -236,7 +236,7 @@ describe('制作页', () => {
     })
   })
 
-  it('出片先存改了的字，再按存好的那一版出这一组：模型默认照文件，画幅只显示；成片进本组，选它舞台就放它', async () => {
+  it('缺图不拦出片，先存改了的字再按存好的那一版出这一组：模型默认照文件，画幅只显示；成片进本组，选它舞台就放它', async () => {
     const bodies = recordEdits()
     const videos: FilmVideoGenerationIn[] = []
     server.use(
@@ -352,12 +352,13 @@ describe('制作页的图', () => {
     expect(await screen.findByRole('status', { name: /^生成中/ })).toBeInTheDocument()
   })
 
-  it('生成卡：描述里挂的生成图没有图时，按钮上方提醒只用描述；不挂没图的生成图就不提醒', async () => {
+  it('生成卡：描述里挂的生成图没有图时，按钮上方提醒只用描述，出片栏不重复提醒；不挂没图的生成图就不提醒', async () => {
     const script = await renderFilm()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
 
     const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
     expect(card).toHaveTextContent('涂鸦滑板场的图缺失，参考描述生成')
+    expect(screen.getByRole('group', { name: '出片工具栏' })).not.toHaveTextContent('图缺失')
     // 没图的参考图只写文字，不出芯片。
     expect(within(card).queryByRole('img', { name: /涂鸦滑板场/ })).not.toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: '编辑图片' })).not.toBeInTheDocument()
@@ -380,12 +381,11 @@ describe('制作页的图', () => {
     expect(within(card).getByRole('button', { name: '重新生成' })).toBeInTheDocument()
   })
 
-  it('生成卡：生成好了不自动用上，卡上放结果与「选用这张」；点了才选用，舞台换成它，出片栏的提醒少了它', async () => {
+  it('生成卡：生成好了不自动用上，卡上放结果与「选用这张」；点了才选用，舞台换成它', async () => {
     const result = 'https://example.com/shot2-result.png'
     serveImageJobs([shot2Generation({ outputUrl: result, status: 'completed' })])
     const { choices } = recordImages()
     const script = await renderFilm()
-    expect(await screen.findByText('涂鸦滑板场、镜头 2 的图缺失，参考描述生成')).toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
 
     const card = await screen.findByRole('region', { name: '镜头 2的生成结果' })
@@ -405,7 +405,6 @@ describe('制作页的图', () => {
       expect(screen.getByRole('img', { name: '镜头 2' })).toHaveAttribute('src', result),
     )
     expect(screen.queryByRole('region', { name: '镜头 2的生成结果' })).not.toBeInTheDocument()
-    expect(await screen.findByText('涂鸦滑板场的图缺失，参考描述生成')).toBeInTheDocument()
   })
 
   it('悬停图片芯片出预览卡，「放大」开灯箱', async () => {

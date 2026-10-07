@@ -49,8 +49,6 @@ import {
   contentOfFrame,
   filmGroupSummary,
   filmGroupText,
-  groupMissingLabels,
-  missingReferencesText,
   resolveFilmSelection,
   segmentFrames,
 } from './film-content'
@@ -373,7 +371,6 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
         <VideoGenerationBar
           aspect={{ kind: 'fixed', value: group.aspectRatio }}
           blocker={generateBlocker}
-          hint={missingReferencesText(groupMissingLabels(group))}
           models={{ items: video.models, status: video.modelsStatus }}
           notice={generateNotice}
           onChange={video.setOptions}
