@@ -2,6 +2,7 @@
 
 - 状态：已接受（2026-10-06）
 - 修订（2026-10-07，ADR-0009）：不再导出分镜，出片在制作页上按工程文件拼请求；第 5 条的照搬改在出片时。
+- 修订（2026-10-07，ADR-0010）：第 2 条与第 4 条被取代：出场元素是文字，提示词按后端的模板包拼，台词是剧本，参考图挂在生成节点下。
 - 不取代已有 ADR。
 - 影响：[CONTEXT.md](../CONTEXT.md) 的「工程文件」词条、[architecture.md](../architecture.md) 的 `iclip_studio` 说明、[contract/conventions.md](../../contract/conventions.md) 的工作区文件写回；后端运行时 [iclip_studio/film/](../../server/src/iclip/capabilities/iclip_studio/film/)。
 
