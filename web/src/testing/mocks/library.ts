@@ -244,14 +244,15 @@ const cardOf = (spec: Spec, index: number, now: number): LibraryCard => {
     Date.parse(version.finishedAt) > Date.parse(newest.finishedAt) ? version : newest,
   )
   const conversationId = spec.title === null ? null : idOf('7a1e0000', index)
+  // mock 不分读者：登录的测试用户是属主时才打得开。
+  const canOpenConversation = conversationId !== null && spec.author === mockAuthUser.username
   return {
-    // 做不做得了同款要看对话的工作区，mock 不建工作区，一律做不了。
-    canMakeSame: false,
+    // mock 不建工作区，当作打得开的对话里都有制作文件：能打开就能做同款。
+    canMakeSame: canOpenConversation,
     groups,
     video: {
       agentId: conversationId === null ? null : 'storyboard',
-      // mock 不分读者：登录的测试用户是属主时才打得开。
-      canOpenConversation: conversationId !== null && spec.author === mockAuthUser.username,
+      canOpenConversation,
       conversationId,
       face,
       groupCount: groups.length,

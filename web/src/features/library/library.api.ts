@@ -1,6 +1,6 @@
 /** 资料库的只读口：筛选翻成查询串，列表用 useInfiniteQuery，作者名单用 useQuery。 */
 
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { skipToken, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import type { z } from 'zod'
 import { apiFetch, errorMessageOf } from '@/shared/api/client'
 import {
@@ -85,15 +85,18 @@ export const useLibraryVideos = (scope: LibraryScope) =>
     queryKey: libraryQueryKeys.videos(scope),
   })
 
-/** 一张卡的详情：按镜头组列全部版本。按卡 id 单独取，分享来的链接未必在已读的列表里。 */
-export const useLibraryVideo = (id: string) =>
+/** 一张卡的详情：按镜头组列全部版本。按卡 id 单独取，分享来的链接未必在已读的列表里。`id` 为 null 时不读。 */
+export const useLibraryVideo = (id: string | null) =>
   useQuery({
-    queryFn: ({ signal }) =>
-      apiFetch(`/library/videos/${encodeURIComponent(id)}`, zLibraryVideoDetailOut, {
-        fallbackErrorMessage: '读取这条片子失败',
-        signal,
-      }),
-    queryKey: libraryQueryKeys.video(id),
+    queryFn:
+      id === null
+        ? skipToken
+        : ({ signal }) =>
+            apiFetch(`/library/videos/${encodeURIComponent(id)}`, zLibraryVideoDetailOut, {
+              fallbackErrorMessage: '读取这条片子失败',
+              signal,
+            }),
+    queryKey: libraryQueryKeys.video(id ?? ''),
   })
 
 /** 按人筛选的候选：名下有卡的作者，候选 id 与显示名都是作者的用户名。 */

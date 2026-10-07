@@ -8,6 +8,7 @@ import {
   useStartConversation,
 } from '@/features/conversations'
 import { HomeRoute } from '@/features/home'
+import { useLibraryVideo } from '@/features/library'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
@@ -51,19 +52,68 @@ export function HomePage() {
     setAppliedRequest(requestedCollection)
     if (requestedCollection !== undefined) chooseCollection(requestedCollection)
   }
+  // 资料库「做同款」把卡 id 带在查询串里，同合集一样：身份就绪后进入做同款一次，再从地址栏移除。
+  // 换了身份就不再算数；助手改回由源视频预选。
+  const requestedSame = useSearch({
+    select: (search) => search.same,
+    strict: false,
+  })
+  const [appliedSame, setAppliedSame] = useState<string | undefined>(undefined)
+  const [sameStyle, setSameStyle] = useState<{ ownerUserId: string | null; id: string } | null>(
+    null,
+  )
+  if (user !== undefined && requestedSame !== appliedSame) {
+    setAppliedSame(requestedSame)
+    if (requestedSame !== undefined) {
+      setSameStyle({ ownerUserId: user?.id ?? null, id: requestedSame })
+      setChosenAgentId(null)
+    }
+  }
   useEffect(() => {
-    if (user === undefined || requestedCollection === undefined) return
+    if (user === undefined || (requestedCollection === undefined && requestedSame === undefined))
+      return
     void navigate({
       replace: true,
-      search: (prev) => ({ ...prev, collection: undefined }),
+      search: (prev) => ({ ...prev, collection: undefined, same: undefined }),
       to: '/',
     })
-  }, [navigate, requestedCollection, user])
+  }, [navigate, requestedCollection, requestedSame, user])
+  const sameAs =
+    sameStyle !== null && sameStyle.ownerUserId === (user?.id ?? null) ? sameStyle.id : null
+  // 能不能做同款只有资料库详情知道；读不了、读失败或做不了都退出做同款并说明原因。
+  const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
+  const source = useLibraryVideo(sameAs !== null && canReadLibrary ? sameAs : null)
+  const sourceCard = sameAs === null ? undefined : source.data
+  const sameStyleFailure =
+    sameAs === null
+      ? null
+      : !canReadLibrary
+        ? '你没有查看资料库的权限，做不了同款'
+        : // 上次读失败留在缓存里时，等这次重读落定再判断。
+          source.isError && !source.isFetching
+          ? errorMessageOf(source.error, '读取这条视频失败，做不了同款')
+          : sourceCard?.canMakeSame === false
+            ? '这条视频没有可用的制作文件，做不了同款'
+            : null
+  // 渲染期退出，提示交给 effect 弹；每次失败一个新对象，同样的原因再来一次也照样提示。
+  const [sameStyleNotice, setSameStyleNotice] = useState<{ message: string } | null>(null)
+  if (sameStyleFailure !== null) {
+    setSameStyle(null)
+    setSameStyleNotice({ message: sameStyleFailure })
+  }
+  useEffect(() => {
+    if (sameStyleNotice !== null) toast.error(sameStyleNotice.message)
+  }, [sameStyleNotice])
   // 已删除的合集回到无关联；读取失败时保留缓存里的当前选择。
   const collectionId = collections.some((item) => item.id === chosenCollectionId)
     ? chosenCollectionId
     : null
-  const agentId = chosenAgentId ?? agents.data?.default ?? null
+  // 做同款默认用源视频的助手，它不在可选列表里时用默认助手；用户选过的优先。
+  const sourceAgentId = sourceCard?.video.agentId ?? null
+  const presetAgentId = agents.data?.items.some((item) => item.id === sourceAgentId)
+    ? sourceAgentId
+    : null
+  const agentId = chosenAgentId ?? presetAgentId ?? agents.data?.default ?? null
   const chosenAgent = agents.data?.items.find((item) => item.id === agentId) ?? null
   const validAgent = chosenAgent !== null
   const start = useStartConversation(user?.id ?? null, (conversationId) => {
@@ -87,7 +137,13 @@ export function HomePage() {
       return false
     }
     try {
-      await start.mutateAsync({ agentId, collectionId, parts })
+      await start.mutateAsync({
+        agentId,
+        collectionId,
+        parts,
+        ...(sameAs === null ? {} : { sameAs }),
+      })
+      setSameStyle(null)
       return true
     } catch (error) {
       toast.error(errorMessageOf(error, '发送失败，请重试'))
@@ -181,6 +237,21 @@ export function HomePage() {
         onFocusHandled={composerFocus?.consume}
         onSend={send}
         preserveForLogin={!user}
+        sameStyle={
+          sameAs === null
+            ? undefined
+            : {
+                onExit: () => setSameStyle(null),
+                video:
+                  sourceCard?.canMakeSame === true
+                    ? {
+                        aspectRatio: sourceCard.video.take.aspectRatio,
+                        outputUrl: sourceCard.video.face.outputUrl,
+                        title: sourceCard.video.title,
+                      }
+                    : null,
+              }
+        }
         sending={start.isPending}
       />
       <CollectionFormDialog
