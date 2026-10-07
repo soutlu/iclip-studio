@@ -74,10 +74,10 @@ class FilmSetting:
 
 @dataclass(frozen=True, slots=True)
 class FilmLine:
-    """镜头里的一句台词。"""
+    """镜头里的一句台词：说话人不变，只改字。"""
 
     target: str
-    """改这个镜头时用它指明是原有的哪一句。"""
+    """改这个镜头时用它对上是哪一句。"""
 
     role: str
     """说话人。"""
@@ -116,8 +116,6 @@ class FilmGroup:
     frames: tuple[FilmFrame, ...]
     settings: tuple[FilmSetting, ...]
     shots: tuple[FilmShot, ...]
-    speakers: tuple[str, ...]
-    """这组里能说话的人：旁白这类不是出场元素的声音，加上这组里出场的人物。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,17 +140,16 @@ class FilmImagePrompt:
 
 @dataclass(frozen=True, slots=True)
 class FilmLineEdit:
-    """改好的一句台词：``target`` 是原有那句的定位，新加的为 None。"""
+    """改好的一句台词的字。"""
 
-    target: str | None
-    role: str
+    target: str
     text: str
 
 
 @dataclass(frozen=True, slots=True)
 class FilmTextEdit:
-    """改一段字。镜头给 ``parts`` 与 ``lines``：改完的台词按先后列全，``parts`` 比它多一段；
-    其余给 ``text``。"""
+    """改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它
+    多一段；其余给 ``text``。"""
 
     target: str
     text: str | None = None

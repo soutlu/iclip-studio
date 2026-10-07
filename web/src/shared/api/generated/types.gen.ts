@@ -1097,10 +1097,6 @@ export type FilmGroupOut = {
    */
   shots: Array<FilmShotOut>
   /**
-   * Speakers
-   */
-  speakers: Array<string>
-  /**
    * Video
    */
   video: string
@@ -1184,17 +1180,13 @@ export type FilmJobOut = {
 /**
  * FilmLineEditIn
  *
- * 改完的一句台词：原有的带上它的 ``target``，新加的给 null。
+ * 改好的一句台词的字；``target`` 照读到的原样传回。
  */
 export type FilmLineEditIn = {
   /**
-   * Role
-   */
-  role: string
-  /**
    * Target
    */
-  target: string | null
+  target: string
   /**
    * Text
    */
@@ -1323,8 +1315,8 @@ export type FilmShotOut = {
 /**
  * FilmTextEditIn
  *
- * 改一段字。镜头给 ``parts`` 与 ``lines``：改完的台词按先后列全，``parts`` 比它多一段；
- * 其余给 ``text``。
+ * 改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它
+ * 多一段，台词只改字；其余给 ``text``。
  */
 export type FilmTextEditIn = {
   /**
