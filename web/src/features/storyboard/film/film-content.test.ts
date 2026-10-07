@@ -106,9 +106,9 @@ describe('shotText', () => {
 
 describe('缺图提醒', () => {
   it('几张没图的用顿号连，同名的只写一次；名字以数字结尾时空一格；一张都不缺就不提醒', () => {
-    expect(missingReferencesText(['短发女生'])).toBe('短发女生缺失，参考描述生成')
+    expect(missingReferencesText(['短发女生'])).toBe('短发女生的图缺失，参考描述生成')
     expect(missingReferencesText(['短发女生', '镜头 1', '短发女生'])).toBe(
-      '短发女生、镜头 1 缺失，参考描述生成',
+      '短发女生、镜头 1 的图缺失，参考描述生成',
     )
     expect(missingReferencesText([])).toBeUndefined()
   })
