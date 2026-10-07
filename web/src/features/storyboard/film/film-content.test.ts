@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { FilmFrame, FilmGroup } from './film.api'
-import { contentOfFrame, resolveFilmSelection, segmentFrames, shotText } from './film-content'
+import {
+  contentOfFrame,
+  resolveFilmSelection,
+  segmentFrames,
+  settingText,
+  shotText,
+} from './film-content'
 import { regeneratePrompt } from './film-images'
 
 const frame = (node: string, number: number | null): FilmFrame => ({
@@ -71,6 +77,16 @@ describe('contentOfFrame', () => {
     expect(contentOfFrame(group, 'scene:3', 1)).toBe('scene:3')
     expect(contentOfFrame(group, 'scene:2', 1)).toBe('global')
     expect(contentOfFrame(group, 'global', 3)).toBe('scene:1')
+  })
+})
+
+describe('settingText', () => {
+  it('称呼后面接「：」；声音的正文开头已有说话人，空一格接；拍法没有称呼', () => {
+    expect(settingText({ kind: 'element', label: '人物 甲', text: '甲' })).toBe('人物 甲：甲')
+    expect(settingText({ kind: 'voice', label: '声音', text: '旁白：低沉的男声。' })).toBe(
+      '声音 旁白：低沉的男声。',
+    )
+    expect(settingText({ kind: 'shooting', label: null, text: '手持' })).toBe('手持')
   })
 })
 

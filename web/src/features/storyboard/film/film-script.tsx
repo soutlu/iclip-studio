@@ -18,6 +18,7 @@ import {
   SETTINGS_ID,
   filmDuration,
   frameTag,
+  settingSeparator,
   settingText,
   shotContentId,
   shotText,
@@ -260,7 +261,10 @@ function SettingRow({
     <div className="film-setting">
       {setting.label === null ? null : (
         <span className="film-setting-label">
-          {setting.label}：{chips}
+          {setting.label}
+          {/* 称呼浮在左边，行尾的普通空格会被吃掉，换成不折行的空格才留得住。 */}
+          {settingSeparator(setting).replace(' ', ' ')}
+          {chips}
         </span>
       )}
       <FilmTextEditor

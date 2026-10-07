@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { MediaPreviewCard, useHoverPreview } from '@/shared/ui/media-preview'
 
 type FilmImageChipProps = {
-  /** 给人看的名字，读屏与预览卡都用它。 */
+  /** 给人看的名字：预览卡用它，读屏念它加 `tag`。 */
   label: string
   /** 芯片上的字：@N 或名字。 */
   tag: string
@@ -39,6 +39,8 @@ export function FilmImageChip({
     }
   }, [anchor, onEnter, onLeave, url])
 
+  // 读屏念名字加芯片上的字，同一元素的几张图才分得开；还没有编号时芯片上就是名字，只念一次。
+  const spoken = tag === label ? label : `${label} ${tag}`
   const pill = (
     <span className="frame-chip-pill ui-motion-s">
       {url === null ? <span className="film-chip-empty" /> : <img alt="" src={url} />}
@@ -48,12 +50,12 @@ export function FilmImageChip({
   return (
     <>
       {onPick === undefined ? (
-        <span aria-label={label} className="frame-chip film-chip" ref={setAnchor} role="img">
+        <span aria-label={spoken} className="frame-chip film-chip" ref={setAnchor} role="img">
           {pill}
         </span>
       ) : (
         <button
-          aria-label={`在舞台查看${label}`}
+          aria-label={`在舞台查看${spoken}`}
           className="frame-chip film-chip ui-focus"
           data-highlighted={highlighted ? '' : undefined}
           onClick={onPick}

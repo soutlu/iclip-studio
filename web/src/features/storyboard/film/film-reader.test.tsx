@@ -92,12 +92,17 @@ describe('制作页', () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
     expect(within(settings).getByText(/人物 金发女生：/)).toBeInTheDocument()
+    // 声音的正文开头已有说话人，称呼后面空一格接，不再写「：」。
+    expect(
+      within(settings).getByText('声音', { selector: '.film-setting-label' }).textContent,
+    ).toBe('声音 ')
+    expect(within(settings).getByRole('textbox', { name: '声音' })).toHaveTextContent(
+      /^旁白：年轻女性/,
+    )
     expect(within(script).getAllByRole('group', { name: /^镜头 \d$/ })).toHaveLength(4)
     expect(stageTag()).toBe('@1')
 
-    const [loaferFront] = within(settings).getAllByRole('button', { name: '在舞台查看绒面一脚蹬' })
-    if (loaferFront === undefined) throw new Error('绒面一脚蹬应有图片芯片')
-    await userEvent.click(loaferFront)
+    await userEvent.click(within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' }))
     await waitFor(() => expect(stageTag()).toBe('@2'))
 
     // 再往后是同一元素的第二张；第 4 张还没有图，舞台写一句；再往后是镜头 1 的画面，选中跟到镜头 1。
@@ -118,10 +123,14 @@ describe('制作页', () => {
   it('一个元素挂几张图就排几枚芯片，按先后；点哪枚舞台看哪张，只高亮那一枚', async () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
-    const chips = within(settings).getAllByRole('button', { name: '在舞台查看绒面一脚蹬' })
-    expect(chips.map((chip) => chip.textContent)).toEqual(['@2', '@3'])
-    const [front, sole] = chips
-    if (front === undefined || sole === undefined) throw new Error('绒面一脚蹬应有两枚芯片')
+    // 读屏名字带芯片上的字，同一元素的两张分得开；排在前面的是 @2。
+    const front = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' })
+    const sole = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @3' })
+    expect(front.compareDocumentPosition(sole) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 还没有编号的芯片上就是名字，只念一次。
+    expect(
+      within(settings).getByRole('button', { name: '在舞台查看涂鸦滑板场' }),
+    ).toHaveTextContent('涂鸦滑板场')
 
     await userEvent.click(sole)
     await waitFor(() => expect(stageTag()).toBe('@3'))
@@ -326,7 +335,7 @@ describe('制作页的图', () => {
 
   it('悬停图片芯片出预览卡，「放大」开灯箱', async () => {
     const script = await renderFilm()
-    await userEvent.hover(within(script).getByRole('button', { name: '在舞台查看金发女生' }))
+    await userEvent.hover(within(script).getByRole('button', { name: '在舞台查看金发女生 @1' }))
     const tip = await screen.findByRole('tooltip')
     await userEvent.click(within(tip).getByRole('button', { name: '放大' }))
     expect(await screen.findByRole('dialog', { name: /金发女生/ })).toBeInTheDocument()
