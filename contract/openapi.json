@@ -2290,18 +2290,14 @@
       },
       "FilmSettingOut": {
         "additionalProperties": false,
-        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。",
+        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，\n可以几张，拍法和声音为空。",
         "properties": {
-          "image": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image"
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Images",
+            "type": "array"
           },
           "kind": {
             "enum": [
@@ -2344,7 +2340,7 @@
           "target",
           "label",
           "text",
-          "image"
+          "images"
         ],
         "title": "FilmSettingOut",
         "type": "object"

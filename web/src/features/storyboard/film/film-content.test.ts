@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { FilmFrame, FilmGroup } from './film.api'
-import { contentOfFrame, resolveFilmSelection, shotText } from './film-content'
+import {
+  contentOfFrame,
+  resolveFilmSelection,
+  segmentFrames,
+  settingText,
+  shotText,
+} from './film-content'
 import { regeneratePrompt } from './film-images'
 
 const frame = (node: string, number: number | null): FilmFrame => ({
@@ -22,16 +28,18 @@ const shot = (view: string | null, start: number) => ({
   view,
 })
 
-/** 两个元素挂图（a、b），镜头 1 的画面是 c，镜头 2 没挂图，镜头 3 也用 a 当画面。 */
+/** 甲挂 a，乙挂 b、d 两张，丙也挂 b；镜头 1 的画面是 c，镜头 2 没挂图，镜头 3 也用 a 当画面。 */
 const group: FilmGroup = {
   aspectRatio: '9:16',
-  frames: [frame('a', 1), frame('b', 2), frame('c', null)],
+  frames: [frame('a', 1), frame('b', 2), frame('c', null), frame('d', 3)],
   index: 1,
   model: 'seedance',
   seconds: 6,
   settings: [
-    { image: 'a', kind: 'element', label: '人物 甲', target: 'element:甲', text: '甲' },
-    { image: 'b', kind: 'element', label: '产品 乙', target: 'element:乙', text: '乙' },
+    { images: [], kind: 'shooting', label: null, target: 'value:拍法', text: '手持' },
+    { images: ['a'], kind: 'element', label: '人物 甲', target: 'value:甲', text: '甲' },
+    { images: ['b', 'd'], kind: 'element', label: '产品 乙', target: 'value:乙', text: '乙' },
+    { images: ['b'], kind: 'element', label: '场景 丙', target: 'value:丙', text: '丙' },
   ],
   shots: [shot('c', 0), shot(null, 2), shot('a', 4)],
   video: 'v',
@@ -53,11 +61,32 @@ describe('resolveFilmSelection', () => {
   })
 })
 
+describe('segmentFrames', () => {
+  it('全局设定是各元素挂的所有图，按先后、去重；一个元素挂几张就有几张', () => {
+    expect(segmentFrames(group, 'global')).toEqual([1, 2, 4])
+  })
+
+  it('镜头是它的机位图，没挂图的没有', () => {
+    expect(segmentFrames(group, 'scene:1')).toEqual([3])
+    expect(segmentFrames(group, 'scene:2')).toEqual([])
+  })
+})
+
 describe('contentOfFrame', () => {
   it('当前段挂着这张就不动，否则选第一段挂着它的', () => {
     expect(contentOfFrame(group, 'scene:3', 1)).toBe('scene:3')
     expect(contentOfFrame(group, 'scene:2', 1)).toBe('global')
     expect(contentOfFrame(group, 'global', 3)).toBe('scene:1')
+  })
+})
+
+describe('settingText', () => {
+  it('称呼后面接「：」；声音的正文开头已有说话人，空一格接；拍法没有称呼', () => {
+    expect(settingText({ kind: 'element', label: '人物 甲', text: '甲' })).toBe('人物 甲：甲')
+    expect(settingText({ kind: 'voice', label: '声音', text: '旁白：低沉的男声。' })).toBe(
+      '声音 旁白：低沉的男声。',
+    )
+    expect(settingText({ kind: 'shooting', label: null, text: '手持' })).toBe('手持')
   })
 })
 
@@ -82,7 +111,7 @@ describe('regeneratePrompt', () => {
     expect(regeneratePrompt(original, [...original])).toBeUndefined()
   })
 
-  it('改过的按第一次出现的先后给参考图编号，正文里写「图N」，同一张只算一次', () => {
+  it('改过的按第一次出现的先后给参考图编号，正文里写 @ImageN，同一张只算一次', () => {
     expect(
       regeneratePrompt(original, [
         ...original,
@@ -94,7 +123,7 @@ describe('regeneratePrompt', () => {
       ]),
     ).toEqual({
       referenceImageUrls: ['https://example.com/girl.png', 'https://example.com/shoe.png'],
-      text: '图1的人物，站在坡面上。傍晚，图2放在图1脚边。',
+      text: '@Image1的人物，站在坡面上。傍晚，@Image2放在@Image1脚边。',
     })
   })
 })

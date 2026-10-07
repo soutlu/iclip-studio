@@ -22,7 +22,7 @@ from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film,
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import IMAGE
-from iclip.capabilities.iclip_studio.film.prompts import render_picture, render_storyboard
+from iclip.capabilities.iclip_studio.film.prompts import references, render_picture, render_video
 from iclip.capabilities.iclip_studio.ports import (
     BreakdownError,
     InvalidNodeImageRequest,
@@ -198,7 +198,6 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         status = image_status(film)
         lines = [f"检查通过：{len(status)} 个生图节点，{len(videos)} 次视频请求。"]
         lines += [f"{item.name}：{item.source}" for item in status]
-        lines += [f"提示：{hint}" for hint in film.hints]
         if show is not None:
             node = project.nodes.get(show)
             tag = project.tags.get(node.tag) if node is not None else None
@@ -280,9 +279,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         """给一个节点出一张图并等它出结果；返回 (结果, 它引用的、现在还没有图的节点名)。"""
 
         project = film.project
-        reference = node.reference("prompt")
-        assert reference is not None
-        picture = render_picture(film, project.nodes[reference])
+        picture = render_picture(film, node)
         missing = sorted(
             name for name in _referenced_images(film, node) if film.image_url(name) is None
         )
@@ -362,34 +359,27 @@ def _problems(problems: list[str]) -> ToolReturn[str]:
 def _assembled(film: Film, node: Node) -> list[str]:
     """一个生成节点拼好的提示词，连同发给模型的参数和参考图。"""
 
-    project = film.project
-    reference = node.reference("prompt")
-    assert reference is not None
-    prompt = project.nodes[reference]
     name = node.attrs["id"]
-    if project.declared(node).output == ("image", IMAGE):
-        picture = render_picture(film, prompt)
+    if film.project.declared(node).output == ("image", IMAGE):
+        picture = render_picture(film, node)
         head = f"{name}：画幅 {node.attrs['aspect-ratio']}，分辨率 {node.attrs['resolution']}"
-        text, images, mark = picture.text, picture.image_urls, "图"
+        text, images = picture.text, picture.image_urls
     else:
-        group = render_storyboard(film, prompt)
+        group = render_video(film, node)
         head = f"{name}：{group.seconds} 秒，画幅 {node.attrs['aspect-ratio']}"
-        text, images, mark = format_shot_prompt(group), group.image_urls, "@Image"
-    references = "、".join(f"{mark}{n} = {url}" for n, url in enumerate(images, start=1)) or "无"
-    return [head, f"参考图：{references}", "", text]
+        text, images = format_shot_prompt(group), group.image_urls
+    listed = "、".join(f"@Image{n} = {url}" for n, url in enumerate(images, start=1)) or "无"
+    return [head, f"参考图：{listed}", "", text]
 
 
 def _referenced_images(film: Film, node: Node) -> set[str]:
-    """一个生图节点的提示词里引用了哪些生图节点的图。"""
+    """一个生图节点下列的参考图里有哪些生图节点的图。"""
 
-    project = film.project
-    reference = node.reference("prompt")
-    assert reference is not None
     image_nodes = {item.attrs["id"] for item in film.image_nodes()}
     names = {
         image.partition(".")[0]
-        for child in project.nodes[reference].children
-        if (image := child.reference("image")) is not None
+        for reference in references(film.project, node)
+        if (image := reference.reference("image")) is not None
     }
     return names & image_nodes
 

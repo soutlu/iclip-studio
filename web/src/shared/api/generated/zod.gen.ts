@@ -563,10 +563,11 @@ export const zFilmFrameOut = z.object({
 /**
  * FilmSettingOut
  *
- * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
+ * 可以几张，拍法和声音为空。
  */
 export const zFilmSettingOut = z.object({
-  image: z.string().nullable(),
+  images: z.array(z.string()),
   kind: z.enum(['shooting', 'element', 'voice']),
   label: z.string().nullable(),
   target: z.string().nullable(),

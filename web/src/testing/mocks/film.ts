@@ -42,7 +42,8 @@ const FILM_SOURCE = [
 
 const RUN_SOURCE = '<?icml using="iclip-studio/run@1"?>\n<Run version="1"/>\n'
 
-/** 一组 12 秒的穿搭短片：三个出场元素（一张生成的、一张用户给的、一张还没生成）、四个镜头，两句台词。 */
+/** 一组 12 秒的穿搭短片：三个出场元素（人物挂一张生成的、产品挂两张用户给的、场景挂一张还没生成的）、四个镜头，两句台词。
+ * 同一个元素的几张图都叫元素的名字，与后端相同。 */
 const mockGroup = (): FilmGroupOut => ({
   aspectRatio: '9:16',
   frames: [
@@ -70,6 +71,15 @@ const mockGroup = (): FilmGroupOut => ({
       url: loafersImage,
     },
     {
+      aspectRatio: null,
+      kind: 'photo',
+      label: '绒面一脚蹬',
+      node: 'loafer_sole',
+      number: 3,
+      prompt: null,
+      url: `${loafersImage}?side=sole`,
+    },
+    {
       aspectRatio: '9:16',
       kind: 'generated',
       label: '涂鸦滑板场',
@@ -83,7 +93,7 @@ const mockGroup = (): FilmGroupOut => ({
       kind: 'generated',
       label: '镜头 1',
       node: 'shot1_view',
-      number: 3,
+      number: 4,
       prompt: [
         { kind: 'image', label: '金发女生', node: 'girl_look', url: apparelImage },
         { kind: 'text', text: '的人物，站在坡面上，双手把长板横扛在肩后。' },
@@ -105,39 +115,39 @@ const mockGroup = (): FilmGroupOut => ({
   seconds: 12,
   settings: [
     {
-      image: null,
+      images: [],
       kind: 'shooting',
       label: null,
-      target: 'value:shooting',
+      target: 'value:拍摄与剪辑',
       text: '摄影：手持拍摄，带轻微呼吸感，以低机位仰拍和脚部特写为主。\n剪辑：全片硬切，快节奏。',
     },
     {
-      image: 'girl_look',
+      images: ['girl_look'],
       kind: 'element',
       label: '人物 金发女生',
-      target: 'element:金发女生',
+      target: 'value:金发女生',
       text: '二十岁上下的白人女生，脸型偏长，肤色白皙，金色齐耳波波头。',
     },
     {
-      image: 'loafer_photo',
+      images: ['loafer_photo', 'loafer_sole'],
       kind: 'element',
       label: '产品 绒面一脚蹬',
-      target: 'element:绒面一脚蹬',
+      target: 'value:绒面一脚蹬',
       text: '低帮一脚蹬绒面鞋，鞋面是浅米色反绒皮。',
     },
     {
-      image: 'park_look',
+      images: ['park_look'],
       kind: 'element',
       label: '场景 涂鸦滑板场',
-      target: 'element:涂鸦滑板场',
+      target: 'value:涂鸦滑板场',
       text: '户外露天水泥滑板场，坡面和地面喷满街头涂鸦。',
     },
     {
-      image: null,
+      images: [],
       kind: 'voice',
-      label: '声音 旁白',
-      target: 'voice:旁白',
-      text: '年轻女性松弛的中音，普通话，语速偏慢。',
+      label: '声音',
+      target: 'value:旁白声音',
+      text: '旁白：年轻女性松弛的中音，普通话，语速偏慢。',
     },
   ],
   shots: [

@@ -21,11 +21,11 @@ const framePositionOf = (group: FilmGroup, node: string | null): number | undefi
   return index < 0 ? undefined : index + 1
 }
 
-/** 一段挂着的图在 `frames` 里的位置，按出现的先后：全局设定是各出场元素的图，镜头是它的机位图。 */
+/** 一段挂着的图在 `frames` 里的位置，按出现的先后、去重：全局设定是各出场元素挂的所有图，镜头是它的机位图。 */
 export const segmentFrames = (group: FilmGroup, contentId: string): number[] => {
   const nodes =
     contentId === SETTINGS_ID
-      ? group.settings.map((setting) => setting.image)
+      ? group.settings.flatMap((setting) => setting.images)
       : [shotOf(group, contentId)?.view ?? null]
   return [...new Set(nodes.flatMap((node) => framePositionOf(group, node) ?? []))]
 }
@@ -93,9 +93,15 @@ export const shotText = (shot: Pick<FilmShot, 'parts' | 'lines'>): string =>
     return text + (line === undefined ? '' : lineText(line)) + part
   }, '')
 
+/** 称呼与正文之间：声音的正文开头已经写着说话人，用空格接，与视频提示词里的「声音 旁白：……」同一个样子；其余用「：」。 */
+export const settingSeparator = (setting: Pick<FilmSetting, 'kind'>): string =>
+  setting.kind === 'voice' ? ' ' : '：'
+
 /** 全局设定的一段照页面上的样子：有称呼的写在前面。 */
-export const settingText = (setting: Pick<FilmSetting, 'label' | 'text'>): string =>
-  setting.label === null ? setting.text : `${setting.label}：${setting.text}`
+export const settingText = (setting: Pick<FilmSetting, 'kind' | 'label' | 'text'>): string =>
+  setting.label === null
+    ? setting.text
+    : `${setting.label}${settingSeparator(setting)}${setting.text}`
 
 /** 整组复制成文字：全局设定在前，镜头按先后，每镜写序号与起止秒。 */
 export const filmGroupText = (group: FilmGroup): string => {

@@ -1,4 +1,5 @@
-"""一条新片读进来以后的样子：工程文件、运行文件里登记和选用的图，以及每个图引用现在的地址。"""
+"""一条新片读进来以后的样子：工程文件、剧本里的台词、运行文件里登记和选用的图，以及每个图引用
+现在的地址。"""
 
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from typing import Final
 from iclip.capabilities.iclip_studio.film.document import Document
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import IMAGE
+from iclip.capabilities.iclip_studio.film.script import ScriptLine
 
 FILM_PATH: Final = "film.icml"
 RUN_PATH: Final = "film.icrun"
@@ -29,8 +31,10 @@ class Film:
     generated: dict[str, str] = field(default_factory=dict[str, str])
     """生图节点名 → 它最近一次生成成功的图片地址；由调用方从生成记录里查来填。"""
 
+    lines: dict[str, ScriptLine] = field(default_factory=dict[str, ScriptLine])
+    """剧本里的台词：段名 → 台词，按剧本的先后；检查内容时读出来。"""
+
     errors: list[str] = field(default_factory=list[str])
-    hints: list[str] = field(default_factory=list[str])
 
     def image_nodes(self) -> list[Node]:
         """工程文件里的生图节点，按先后。"""

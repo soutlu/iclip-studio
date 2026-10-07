@@ -1,6 +1,6 @@
 /** 制作页的文案列：列头与分镜页相同（`ScriptHead`）；正文区最上面是全局设定卡，之后按时间排各镜头，末尾一行写总长与「结束」。
  *
- * 全局设定一段一行：拍法只有字，出场元素与声音前面写称呼，元素挂着图的在称呼后放一枚图片芯片，点它看那张图。
+ * 全局设定一段一行：拍法只有字，出场元素与声音前面写称呼，元素挂着几张图就在称呼后放几枚图片芯片，点哪枚看哪张图。
  * 镜头正文与台词交替排：台词单独一行，说话人是固定的小标签，只能改引号里的字。没法在页面上改的段只读。
  * 点哪段选中哪段，舞台跟着切到它挂的图。列里不收拖进来的文件，免得漏给聊天输入框。 */
 
@@ -18,6 +18,7 @@ import {
   SETTINGS_ID,
   filmDuration,
   frameTag,
+  settingSeparator,
   settingText,
   shotContentId,
   shotText,
@@ -141,20 +142,23 @@ export function FilmScript({
             <div className="film-segment-body">
               {group.settings.map((setting) => (
                 <SettingRow
-                  chip={(() => {
-                    const found = frameAt(group, setting.image)
-                    return found === undefined ? null : (
-                      <FilmImageChip
-                        // 全局设定是选中的段，舞台又正在看它，才算这枚芯片的。
-                        highlighted={settingsSelected && frame === found.position}
-                        label={found.frame.label}
-                        onEnlarge={(url) => onPreview({ name: found.frame.label, url })}
-                        onPick={() => onSelect(SETTINGS_ID, found.position)}
-                        tag={frameTag(found.frame)}
-                        url={found.frame.url}
-                      />
-                    )
-                  })()}
+                  chips={setting.images.flatMap((node) => {
+                    const found = frameAt(group, node)
+                    return found === undefined
+                      ? []
+                      : [
+                          <FilmImageChip
+                            // 全局设定是选中的段，舞台又正在看它，才算这枚芯片的。
+                            highlighted={settingsSelected && frame === found.position}
+                            key={node}
+                            label={found.frame.label}
+                            onEnlarge={(url) => onPreview({ name: found.frame.label, url })}
+                            onPick={() => onSelect(SETTINGS_ID, found.position)}
+                            tag={frameTag(found.frame)}
+                            url={found.frame.url}
+                          />,
+                        ]
+                  })}
                   // 同一组里每段设定的 target 各不相同；没法改的段没有 target，按种类与称呼认。
                   key={setting.target ?? `${setting.kind}:${setting.label ?? ''}`}
                   onEdit={onEdit}
@@ -240,12 +244,13 @@ export function FilmScript({
 
 /** 全局设定的一段：称呼与图片芯片浮在左边，字从它们后面接着排、折行回到行首。 */
 function SettingRow({
-  chip,
+  chips,
   onEdit,
   readOnly,
   setting,
 }: {
-  chip: ReactNode
+  /** 这段挂的图，一张一枚，按 `images` 的先后。 */
+  chips: ReactNode[]
   onEdit: FilmScriptProps['onEdit']
   readOnly: boolean
   setting: FilmSetting
@@ -256,7 +261,10 @@ function SettingRow({
     <div className="film-setting">
       {setting.label === null ? null : (
         <span className="film-setting-label">
-          {setting.label}：{chip}
+          {setting.label}
+          {/* 称呼浮在左边，行尾的普通空格会被吃掉，换成不折行的空格才留得住。 */}
+          {settingSeparator(setting).replace(' ', ' ')}
+          {chips}
         </span>
       )}
       <FilmTextEditor

@@ -1,0 +1,167 @@
+<?icml using="@iclip/markup@1"?>
+<icml>
+  <import as="text" from="@iclip/text@1"/>
+  <import as="media" from="@iclip/media@1"/>
+  <import from="@iclip/script@1"/>
+  <import as="film" from="@iclip/director@2"/>
+  <import as="kit" source="@iclip/film-kits"/>
+  <import as="gpt" from="@iclip/gpt-image@1"/>
+  <import as="seedance" from="@iclip/seedance@1"/>
+
+  <!-- 一、内容 -->
+  <text:Value id="拍摄与剪辑">
+    摄影：手机拍摄，手持跟拍，带轻微呼吸感；景别以中近景和鞋部特写为主。
+    剪辑：全片硬切，快节奏，平均每镜三到四秒，在动作点上剪。
+    影调：清晨自然光，低对比，不做风格化调色。
+  </text:Value>
+  <text:Value id="配乐">纯音乐，二十秒，轻快放克，拨弦贝斯与电吉他切音，轻快节奏，松弛有活力，适合跑鞋种草短视频的背景音乐，录音室品质，真实乐器演奏，混音干净，低频扎实，高频通透，立体声饱满</text:Value>
+
+  <!-- 出场元素：一段文字。身材句单独一段，只在生图时追加 -->
+  <text:Value id="短发女生">东亚女性，二十出头；鹅蛋脸，单眼皮，细长眉，淡妆；黑色齐耳短发，中分。上身穿浅灰色速干短袖T恤，下身穿黑色及膝运动短裤，左手腕戴一块白色运动手表</text:Value>
+  <text:Value id="短发女生身材">She has a slim, well-proportioned figure, very broad shoulders and excellent head-to-shoulder proportions.</text:Value>
+  <text:Value id="网面跑鞋">一双低帮跑步鞋，鞋头圆润，鞋面是透气网布，中底加厚，外底有横向防滑纹；鞋面浅蓝色，中底白色，鞋带白色；鞋舌上印一行小字「AIRLITE」，侧面有一道银灰色反光条</text:Value>
+  <text:Value id="公园跑道">城市社区公园里的一条红色塑胶跑道。跑道边有一排木长椅和垃圾桶，跑道外侧是修剪整齐的草坪，远处是一排梧桐树和几栋浅色公寓楼</text:Value>
+
+  <!-- 用户给的图 -->
+  <media:Image id="跑鞋正面" src="https://…/uploads/1f0c2a9e-….jpg"/>
+  <media:Image id="跑鞋鞋底" src="https://…/uploads/7b3e5d10-….jpg"/>
+
+  <!-- 台词：一句一段，段名就是台词名 -->
+  <script id="原版台词">
+    <lighter><短发女生>It's lighter than it looks.</lighter>
+    <rebound><旁白>Every step gives a little back, so you'll run longer.</rebound>
+    <miles><短发女生>Five miles, and my feet don't hurt.</miles>
+    <shop><旁白>Light &amp; fast — grab yours before the weekend.</shop>
+  </script>
+
+  <!-- 声音：一个说话人一段 -->
+  <text:Value id="短发女生声音">短发女生：年轻女性甜而清亮的声音，高音区明亮。口语化的美式英语，灵巧俏皮，像朋友兴奋地告诉你一个新发现。</text:Value>
+  <text:Value id="旁白声音">旁白：成熟男性圆润厚实的中低音。清晰松弛的英式英语，不紧不慢，像坐在对面认真地跟你讲他的判断。</text:Value>
+
+  <!-- 二、图 -->
+  <text:Value id="拍摄">画面是用手机实拍的，真实自然，没有过度美颜。</text:Value>
+
+  <!-- 短发女生参考图 -->
+  <text:Value id="短发女生参考图拍摄">人物清楚。光线是柔和均匀的室内光。</text:Value>
+  <text:Value id="短发女生参考图取景">全身入画。她站在画面正中，脸正对镜头，双手自然下垂。</text:Value>
+  <text:Value id="短发女生参考图场景">摄影棚。她身后是一面浅灰色的墙，脚下是同色的地面。</text:Value>
+  <text:Render id="短发女生参考图提示词" template={kit.画面-v1}>
+    <text:Set name="拍摄" text={拍摄}/>
+    <text:Append name="拍摄" text={短发女生参考图拍摄}/>
+    <text:Set name="主体" text={短发女生}/>
+    <text:Append name="主体" text={短发女生身材}/>
+    <text:Set name="取景" text={短发女生参考图取景}/>
+    <text:Set name="场景" text={短发女生参考图场景}/>
+  </text:Render>
+  <gpt:Image id="短发女生参考图" prompt={短发女生参考图提示词} aspect-ratio="3:4" resolution="2k"/>
+
+  <!-- 公园跑道参考图 -->
+  <text:Value id="公园跑道参考图拍摄">背景清楚。光线是清晨的自然光。</text:Value>
+  <text:Value id="公园跑道参考图取景">从跑道边平视过去，画面里没有人。</text:Value>
+  <text:Render id="公园跑道参考图提示词" template={kit.画面-v1}>
+    <text:Set name="拍摄" text={拍摄}/>
+    <text:Append name="拍摄" text={公园跑道参考图拍摄}/>
+    <text:Set name="取景" text={公园跑道参考图取景}/>
+    <text:Set name="场景" text={公园跑道}/>
+  </text:Render>
+  <gpt:Image id="公园跑道参考图" prompt={公园跑道参考图提示词} aspect-ratio="9:16" resolution="2k"/>
+
+  <!-- 镜01机位图 -->
+  <text:Value id="镜01拍摄">人物清楚，背景略微虚化。光线是清晨的自然光。</text:Value>
+  <text:Value id="镜01取景">胸部以上近景，平视。她站在跑道边、画面正中，身后是那排木长椅；脸正对镜头，双手分别握住一只鞋的鞋头和鞋跟，把鞋横举在胸前。</text:Value>
+  <text:Render id="镜01机位图提示词" template={kit.画面-v1}>
+    <text:Set name="拍摄" text={拍摄}/>
+    <text:Append name="拍摄" text={镜01拍摄}/>
+    <text:Set name="主体" text={短发女生}/>
+    <text:Append name="主体" text={短发女生身材}/>
+    <text:Append name="主体" text={网面跑鞋}/>
+    <text:Set name="取景" text={镜01取景}/>
+    <text:Set name="场景" text={公园跑道}/>
+  </text:Render>
+  <gpt:Image id="镜01机位图" prompt={镜01机位图提示词} aspect-ratio="9:16" resolution="2k">
+    <gpt:Reference image={短发女生参考图.image} for={短发女生}/>
+    <gpt:Reference image={跑鞋正面} for={网面跑鞋}/>
+    <gpt:Reference image={跑鞋鞋底} for={网面跑鞋}/>
+    <gpt:Reference image={公园跑道参考图.image} for={公园跑道}/>
+  </gpt:Image>
+
+  <!-- 镜02机位图 -->
+  <text:Value id="镜02拍摄">鞋清楚，背景略微虚化。光线是清晨的自然光。</text:Value>
+  <text:Value id="镜02取景">低机位，脚部特写，只拍到她膝盖以下。她穿着这双鞋在跑道上从画面左侧跑向右侧，右脚刚落地。</text:Value>
+  <text:Render id="镜02机位图提示词" template={kit.画面-v1}>
+    <text:Set name="拍摄" text={拍摄}/>
+    <text:Append name="拍摄" text={镜02拍摄}/>
+    <text:Set name="主体" text={短发女生}/>
+    <text:Append name="主体" text={短发女生身材}/>
+    <text:Append name="主体" text={网面跑鞋}/>
+    <text:Set name="取景" text={镜02取景}/>
+    <text:Set name="场景" text={公园跑道}/>
+  </text:Render>
+  <gpt:Image id="镜02机位图" prompt={镜02机位图提示词} aspect-ratio="9:16" resolution="2k">
+    <gpt:Reference image={短发女生参考图.image} for={短发女生}/>
+    <gpt:Reference image={跑鞋正面} for={网面跑鞋}/>
+    <gpt:Reference image={跑鞋鞋底} for={网面跑鞋}/>
+    <gpt:Reference image={公园跑道参考图.image} for={公园跑道}/>
+    <gpt:Reference image={镜01机位图.image}>跑道和光线与同一场戏的上一个机位保持一致</gpt:Reference>
+  </gpt:Image>
+
+  <!-- 镜03机位图 -->
+  <text:Value id="镜03拍摄">人物和跑道都清楚。光线是清晨的自然光。</text:Value>
+  <text:Value id="镜03取景">全景，平视。她在画面远处的跑道上，正对镜头跑来，全身入画。</text:Value>
+  <text:Render id="镜03机位图提示词" template={kit.画面-v1}>
+    <text:Set name="拍摄" text={拍摄}/>
+    <text:Append name="拍摄" text={镜03拍摄}/>
+    <text:Set name="主体" text={短发女生}/>
+    <text:Append name="主体" text={短发女生身材}/>
+    <text:Append name="主体" text={网面跑鞋}/>
+    <text:Set name="取景" text={镜03取景}/>
+    <text:Set name="场景" text={公园跑道}/>
+  </text:Render>
+  <gpt:Image id="镜03机位图" prompt={镜03机位图提示词} aspect-ratio="9:16" resolution="2k">
+    <gpt:Reference image={短发女生参考图.image} for={短发女生}/>
+    <gpt:Reference image={跑鞋正面} for={网面跑鞋}/>
+    <gpt:Reference image={跑鞋鞋底} for={网面跑鞋}/>
+    <gpt:Reference image={公园跑道参考图.image} for={公园跑道}/>
+    <gpt:Reference image={镜01机位图.image}>跑道、长椅和光线与同一场戏的另一个机位保持一致</gpt:Reference>
+  </gpt:Image>
+
+  <!-- 镜04机位图 -->
+  <text:Value id="镜04拍摄">鞋清楚，背景略微虚化。光线是清晨的自然光。</text:Value>
+  <text:Value id="镜04取景">产品特写，平视。这双鞋并排摆在跑道边的木长椅上，在画面正中，鞋头朝向镜头。</text:Value>
+  <text:Render id="镜04机位图提示词" template={kit.画面-v1}>
+    <text:Set name="拍摄" text={拍摄}/>
+    <text:Append name="拍摄" text={镜04拍摄}/>
+    <text:Set name="主体" text={网面跑鞋}/>
+    <text:Set name="取景" text={镜04取景}/>
+    <text:Set name="场景" text={公园跑道}/>
+  </text:Render>
+  <gpt:Image id="镜04机位图" prompt={镜04机位图提示词} aspect-ratio="9:16" resolution="2k">
+    <gpt:Reference image={跑鞋正面} for={网面跑鞋}/>
+    <gpt:Reference image={跑鞋鞋底} for={网面跑鞋}/>
+    <gpt:Reference image={公园跑道参考图.image} for={公园跑道}/>
+    <gpt:Reference image={镜01机位图.image}>木长椅和光线与同一场戏的第一个机位保持一致</gpt:Reference>
+  </gpt:Image>
+
+  <!-- 三、视频 -->
+  <film:Shots id="全片镜头">
+    <film:Shot start="0.0" end="2.5" view={镜01机位图.image}>开场，手持，胸部以上近景，平视。短发女生站在跑道边，双手分别握住网面跑鞋的鞋头和鞋跟，向内对折到两端相碰，停了一下后松开右手，鞋底立刻弹回平直。她抬头看着镜头说：{lighter} 音效：鞋底弹回时的一声轻响</film:Shot>
+    <film:Shot start="2.5" end="6.0" view={镜02机位图.image}>硬切，手持，低机位，脚部特写，跟拍向前。短发女生穿着网面跑鞋在公园跑道上慢跑，每一步落地时中底先压扁一点再弹起。旁白：{rebound} 音效：鞋底踩在塑胶跑道上的轻响</film:Shot>
+    <film:Shot start="6.0" end="10.0" view={镜03机位图.image}>硬切，手持，全景，平视。短发女生沿着跑道向镜头跑来，跑到镜头前停下，双手叉腰喘了口气，低头看了一眼左手腕的手表，笑着对镜头说：{miles} 音效：连续的脚步声</film:Shot>
+    <film:Shot start="10.0" end="15.0" view={镜04机位图.image}>硬切，固定机位，产品特写。网面跑鞋摆在跑道边的木长椅上，鞋头朝向镜头。短发女生的右手从画面右侧伸进来，拿起左脚那只鞋。旁白：{shop}</film:Shot>
+  </film:Shots>
+  <text:Render id="全片提示词" template={kit.多镜头视频-v1}>
+    <text:Set name="拍摄与剪辑" text={拍摄与剪辑}/>
+    <text:Set name="人物" text={短发女生}/>
+    <text:Set name="产品" text={网面跑鞋}/>
+    <text:Set name="场景" text={公园跑道}/>
+    <text:Set name="声音" text={短发女生声音}/>
+    <text:Append name="声音" text={旁白声音}/>
+    <text:Set name="镜头" text={全片镜头}/>
+  </text:Render>
+  <seedance:ReferenceVideo id="全片" model="sd2.5" prompt={全片提示词} duration="15" aspect-ratio="9:16">
+    <seedance:Reference image={短发女生参考图.image} for={短发女生}/>
+    <seedance:Reference image={跑鞋正面} for={网面跑鞋}/>
+    <seedance:Reference image={跑鞋鞋底} for={网面跑鞋}/>
+    <seedance:Reference image={公园跑道参考图.image} for={公园跑道}/>
+  </seedance:ReferenceVideo>
+</icml>

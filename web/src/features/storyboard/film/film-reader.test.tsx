@@ -92,13 +92,22 @@ describe('制作页', () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
     expect(within(settings).getByText(/人物 金发女生：/)).toBeInTheDocument()
+    // 声音的正文开头已有说话人，称呼后面空一格接，不再写「：」。
+    expect(
+      within(settings).getByText('声音', { selector: '.film-setting-label' }).textContent,
+    ).toBe('声音 ')
+    expect(within(settings).getByRole('textbox', { name: '声音' })).toHaveTextContent(
+      /^旁白：年轻女性/,
+    )
     expect(within(script).getAllByRole('group', { name: /^镜头 \d$/ })).toHaveLength(4)
     expect(stageTag()).toBe('@1')
 
-    await userEvent.click(within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬' }))
+    await userEvent.click(within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' }))
     await waitFor(() => expect(stageTag()).toBe('@2'))
 
-    // 第 3 张还没有图，舞台写一句；再往后是镜头 1 的画面，选中跟到镜头 1。
+    // 再往后是同一元素的第二张；第 4 张还没有图，舞台写一句；再往后是镜头 1 的画面，选中跟到镜头 1。
+    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
+    await waitFor(() => expect(stageTag()).toBe('@3'))
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     expect(await screen.findByText('涂鸦滑板场还没有图')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
@@ -108,7 +117,30 @@ describe('制作页', () => {
         'true',
       ),
     )
-    expect(stageTag()).toBe('@3')
+    expect(stageTag()).toBe('@4')
+  })
+
+  it('一个元素挂几张图就排几枚芯片，按先后；点哪枚舞台看哪张，只高亮那一枚', async () => {
+    const script = await renderFilm()
+    const settings = within(script).getByRole('group', { name: '全局设定' })
+    // 读屏名字带芯片上的字，同一元素的两张分得开；排在前面的是 @2。
+    const front = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' })
+    const sole = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @3' })
+    expect(front.compareDocumentPosition(sole) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 还没有编号的芯片上就是名字，只念一次。
+    expect(
+      within(settings).getByRole('button', { name: '在舞台查看涂鸦滑板场' }),
+    ).toHaveTextContent('涂鸦滑板场')
+
+    await userEvent.click(sole)
+    await waitFor(() => expect(stageTag()).toBe('@3'))
+    expect(sole).toHaveAttribute('data-highlighted')
+    expect(front).not.toHaveAttribute('data-highlighted')
+
+    await userEvent.click(front)
+    await waitFor(() => expect(stageTag()).toBe('@2'))
+    expect(front).toHaveAttribute('data-highlighted')
+    expect(sole).not.toHaveAttribute('data-highlighted')
   })
 
   it('改一句台词只发这一镜：正文原样带回，台词按原来的先后带上各自的 target', async () => {
@@ -224,7 +256,7 @@ describe('制作页', () => {
     expect(stageTag()).toBeNull()
     expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
-    await waitFor(() => expect(stageTag()).toBe('@3'))
+    await waitFor(() => expect(stageTag()).toBe('@4'))
   })
 
   it('文件里写的模型不在可选的里面，出片栏用服务端的默认', async () => {
@@ -303,7 +335,7 @@ describe('制作页的图', () => {
 
   it('悬停图片芯片出预览卡，「放大」开灯箱', async () => {
     const script = await renderFilm()
-    await userEvent.hover(within(script).getByRole('button', { name: '在舞台查看金发女生' }))
+    await userEvent.hover(within(script).getByRole('button', { name: '在舞台查看金发女生 @1' }))
     const tip = await screen.findByRole('tooltip')
     await userEvent.click(within(tip).getByRole('button', { name: '放大' }))
     expect(await screen.findByRole('dialog', { name: /金发女生/ })).toBeInTheDocument()
@@ -375,7 +407,7 @@ describe('制作页的图片编辑器', () => {
     await userEvent.click(send() ?? editor)
     await waitFor(() => expect(generations).toHaveLength(2))
     expect(generations[1]?.prompt?.text).toContain('傍晚，')
-    expect(generations[1]?.prompt?.text).toContain('图1')
+    expect(generations[1]?.prompt?.text).toContain('@Image1的人物，站在坡面上')
     expect(generations[1]?.prompt?.referenceImageUrls).toHaveLength(1)
   })
 

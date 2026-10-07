@@ -3,9 +3,9 @@
 改字和换图只替换原文里对应的那几段，文件其余部分一个字不动；写之前按人保存文件时的同一套规则
 检查，有问题就不写，说明是给人看的一句话。
 
-定位用 ``target``：``shot:<Storyboard 名>:<第几个镜头>``、``element:<元素名>``、
-``value:<文字名>``、``voice:<说话人>``、``block:<Storyboard 名>``；镜头里的台词用
-``line:<台词名>`` 对上是哪一句。它们只在同一版文件里有效，改字时带着文件版本号一起传回。"""
+定位用 ``target``：``value:<名字>`` 是一段 ``text:Value`` 的正文，``shot:<Shots 名>:<第几镜>``
+是一个镜头的正文；镜头里的台词用 ``line:<段名>`` 对上是剧本里的哪一句。它们只在同一版文件里
+有效，改字时带着文件版本号一起传回。"""
 
 from __future__ import annotations
 
@@ -13,9 +13,14 @@ import re
 from collections.abc import Sequence
 from typing import Final
 
-from iclip.capabilities.iclip_studio.film.checks import check, check_project_content, load_project
+from iclip.capabilities.iclip_studio.film.checks import check, check_project_content
 from iclip.capabilities.iclip_studio.film.document import Document
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
+from iclip.capabilities.iclip_studio.film.kits import (
+    VIDEO_ELEMENT_SLOTS,
+    VIDEO_SHOOTING_SLOT,
+    VIDEO_VOICE_SLOT,
+)
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import (
     IMAGE,
@@ -26,13 +31,13 @@ from iclip.capabilities.iclip_studio.film.packages import (
     SEEDANCE_VARIANTS,
 )
 from iclip.capabilities.iclip_studio.film.prompts import (
-    BODY_PHRASE,
     LINE_REFERENCE,
     PicturePrompt,
-    body_sentence,
-    for_video,
+    references,
     render_picture,
-    storyboard_images,
+    slot_values,
+    video_images,
+    video_shots,
 )
 from iclip.common.film_view import (
     FilmFrame,
@@ -45,7 +50,6 @@ from iclip.common.film_view import (
     FilmTextEdit,
 )
 
-_SENTENCE_MARKS: Final = "。！？"
 _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
 _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
 _UNWRITABLE: Final = ("<!--", "<![CDATA[")
@@ -61,12 +65,11 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
 
     project = film.project
     videos = project.find("ReferenceVideo")
-    storyboards = [project.nodes[_required(video, "prompt")] for video in videos]
-    elements, views = _image_owners(project, storyboards)
+    elements, views = _image_owners(project, videos)
     groups: list[FilmGroup] = []
-    for index, (video, storyboard) in enumerate(zip(videos, storyboards, strict=True), start=1):
+    for index, video in enumerate(videos, start=1):
         frames: dict[str, FilmFrame] = {}
-        for use in storyboard_images(film, storyboard)[0]:
+        for use in video_images(film, video)[0]:
             if use.image in frames:
                 continue
             generated = _generated(project, use.image)
@@ -97,8 +100,8 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 seconds=int(video.attrs["duration"]),
                 aspect_ratio=video.attrs["aspect-ratio"],
                 frames=tuple(frames.values()),
-                settings=_settings(project, storyboard, source),
-                shots=_shots(project, storyboard, source),
+                settings=_settings(project, video, source),
+                shots=_shots(film, video, source),
             )
         )
     return tuple(groups)
@@ -107,15 +110,15 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
 def image_prompt(film: Film, image: str) -> PicturePrompt:
     """按描述生成 ``image`` 这个生图节点时发给模型的描述与参考图。"""
 
-    node = film.project.nodes[image]
-    return render_picture(film, film.project.nodes[_required(node, "prompt")])
+    return render_picture(film, film.project.nodes[image])
 
 
 def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
     """把几段字写回工程文件，返回新的原文。``film`` 是 ``source`` 检查通过后的样子。
 
     镜头的改动带着这一镜的每句台词，台词只改字：不能删、不能加、不能调先后，说话人不变。台词的字
-    改在台词表里。用户打的花括号换成全角，免得当成台词；不能写 ``@Image``，图的编号由后端算。"""
+    改在剧本里那一段说话人的后面。用户打的花括号换成全角，免得当成台词；不能写 ``@Image``，图的
+    编号由后端算。"""
 
     if not edits:
         raise FilmEditRejected("没有要改的字")
@@ -127,35 +130,36 @@ def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
     said: list[tuple[str, str]] = []
     for edit in edits:
         node = _resolve(project, edit.target)
-        if node is None or not _editable(source, project, node):
+        if node is None or not _editable(source, film, node):
             raise FilmEditRejected("要改的这段字找不到了，刷新后再改")
         if project.is_a(node, "Shot"):
             text, lines = _shot_text(node, edit)
             for name, words in lines:
-                line = project.nodes[name]
+                line = film.lines[name]
                 if words != line.text:
-                    assert line.inner is not None
-                    splice.replace(line.inner, _body(source[slice(*line.inner)], words))
+                    assert line.span is not None
+                    splice.replace(line.span, _escape(words))
                     said.append((name, words))
         else:
-            text = _new_text(project, node, edit)
+            text = _new_text(edit)
         assert node.inner is not None
         splice.replace(node.inner, _body(source[slice(*node.inner)], text))
         expected.append((edit.target, text))
     updated = splice.apply(source)
-    problems = check_project_content(updated)
+    rewritten = check(updated)
+    problems = rewritten if isinstance(rewritten, list) else rewritten.errors
     if problems:
         too_long = any(f"超过 {PROMPT_MAX_CHARS} 字" in problem for problem in problems)
         if too_long:
             raise FilmEditRejected(f"改完以后描述超过 {PROMPT_MAX_CHARS} 字了，删短一些再保存")
         raise FilmEditRejected("这样改以后分镜有问题，没有保存；可以跟 AI 导演说想怎么改")
-    rewritten = load_project(updated)
+    assert not isinstance(rewritten, list)
     for target, text in expected:
-        node = _resolve(rewritten, target)
+        node = _resolve(rewritten.project, target)
         if node is None or node.text != text:
             raise RuntimeError(f"写回后 {target} 读出来和要写的不一样")
     for name, words in said:
-        if rewritten.nodes[name].text != words:
+        if rewritten.lines[name].text != words:
             raise RuntimeError(f"写回后台词 {name} 读出来和要写的不一样")
     return updated
 
@@ -195,24 +199,20 @@ def choose_image(
 
 
 def _image_owners(
-    project: Document, storyboards: list[Node]
+    project: Document, videos: list[Node]
 ) -> tuple[dict[str, str], dict[str, tuple[int, int]]]:
-    """图片节点 → 挂它的出场元素；图片节点 → 用它当机位图的 (第几组, 第几个镜头)。都取最先写的。"""
+    """图片节点 → 全文件里第一个用 ``for`` 指着它的元素；图片节点 → 用它当机位图的
+    (第几组, 第几个镜头)，取最先写的。"""
 
     elements: dict[str, str] = {}
-    holders = [
-        node
-        for node in project.root.walk()
-        if project.is_a(node, "Picture") or project.is_a(node, "Storyboard")
-    ]
-    for holder in holders:
-        for cast in project.kids(holder, "Cast"):
-            image, element = cast.reference("image"), cast.reference("element")
+    for node in project.root.walk():
+        if project.is_a(node, "Reference"):
+            image, element = node.reference("image"), node.reference("for")
             if image is not None and element is not None:
                 elements.setdefault(image.partition(".")[0], element)
     views: dict[str, tuple[int, int]] = {}
-    for group, storyboard in enumerate(storyboards, start=1):
-        for number, shot in enumerate(project.kids(storyboard, "Shot"), start=1):
+    for group, video in enumerate(videos, start=1):
+        for number, shot in enumerate(project.kids(video_shots(project, video), "Shot"), start=1):
             view = shot.reference("view")
             if view is not None:
                 views.setdefault(view.partition(".")[0], (group, number))
@@ -234,68 +234,51 @@ def _generated(project: Document, image: str) -> bool:
     return project.declared(project.nodes[image]).generation is not None
 
 
-def _settings(project: Document, storyboard: Node, source: str) -> tuple[FilmSetting, ...]:
-    """全局设定，与拼给视频的先后相同：拍法、各出场元素、这组里说了话的声音。"""
+def _settings(project: Document, video: Node, source: str) -> tuple[FilmSetting, ...]:
+    """全局设定，与拼给视频的先后相同：拍法、人物产品场景的各元素、声音。"""
 
-    name = storyboard.attrs["id"]
+    filled = slot_values(project, project.nodes[_required(video, "prompt")])
 
-    def target(node: Node, value: str) -> str | None:
-        return value if _writable(source, node) else None
+    def target(value: Node) -> str | None:
+        return f"value:{value.attrs['id']}" if _writable(source, value) else None
 
-    settings: list[FilmSetting] = []
-    for block in project.kids(storyboard, "Block"):
-        shared = block.reference("text")
-        if shared is not None:
-            value = project.nodes[shared]
+    settings = [
+        FilmSetting("shooting", target(value), None, value.text, ())
+        for value in filled[VIDEO_SHOOTING_SLOT]
+    ]
+    for slot in VIDEO_ELEMENT_SLOTS:
+        for value in filled[slot]:
+            name = value.attrs["id"]
+            images = tuple(
+                _required(reference, "image").partition(".")[0]
+                for reference in references(project, video)
+                if reference.reference("for") == name
+            )
             settings.append(
-                FilmSetting("shooting", target(value, f"value:{shared}"), None, value.text, None)
+                FilmSetting("element", target(value), f"{slot} {name}", value.text, images)
             )
-        if block.text:
-            settings.append(
-                FilmSetting("shooting", target(block, f"block:{name}"), None, block.text, None)
-            )
-    for cast in project.kids(storyboard, "Cast"):
-        element = project.nodes[_required(cast, "element")]
-        image = cast.reference("image")
-        settings.append(
-            FilmSetting(
-                "element",
-                target(element, f"element:{element.attrs['id']}"),
-                f"{element.attrs['type']} {element.attrs['id']}",
-                for_video(element.text),
-                None if image is None else image.partition(".")[0],
-            )
-        )
-    voices = {voice.attrs["role"]: voice for voice in project.find("Voice")}
-    speakers: list[str] = []
-    for shot in project.kids(storyboard, "Shot"):
-        for line in LINE_REFERENCE.findall(shot.text):
-            role = project.nodes[line].attrs["role"]
-            if role not in speakers:
-                speakers.append(role)
     settings += [
-        FilmSetting(
-            "voice", target(voices[role], f"voice:{role}"), f"声音 {role}", voices[role].text, None
-        )
-        for role in speakers
-        if role in voices
+        FilmSetting("voice", target(value), VIDEO_VOICE_SLOT, value.text, ())
+        for value in filled[VIDEO_VOICE_SLOT]
     ]
     return tuple(settings)
 
 
-def _shots(project: Document, storyboard: Node, source: str) -> tuple[FilmShot, ...]:
-    name = storyboard.attrs["id"]
+def _shots(film: Film, video: Node, source: str) -> tuple[FilmShot, ...]:
+    project = film.project
+    holder = video_shots(project, video)
+    name = holder.attrs["id"]
     shots: list[FilmShot] = []
-    for number, shot in enumerate(project.kids(storyboard, "Shot"), start=1):
+    for number, shot in enumerate(project.kids(holder, "Shot"), start=1):
         text = shot.text
         lines = [
-            FilmLine(f"line:{line}", project.nodes[line].attrs["role"], project.nodes[line].text)
+            FilmLine(f"line:{line}", film.lines[line].speaker, film.lines[line].text)
             for line in LINE_REFERENCE.findall(text)
         ]
         view = shot.reference("view")
         shots.append(
             FilmShot(
-                target=f"shot:{name}:{number}" if _editable(source, project, shot) else None,
+                target=f"shot:{name}:{number}" if _editable(source, film, shot) else None,
                 start=float(shot.attrs["start"]),
                 end=float(shot.attrs["end"]),
                 parts=tuple(_LINE_SPLIT.split(text)),
@@ -312,23 +295,14 @@ def _resolve(project: Document, target: str) -> Node | None:
     kind, _, rest = target.partition(":")
     if kind == "shot":
         name, _, number = rest.rpartition(":")
-        storyboard = project.nodes.get(name)
-        if storyboard is None or not project.is_a(storyboard, "Storyboard"):
+        holder = project.nodes.get(name)
+        if holder is None or not project.is_a(holder, "Shots"):
             return None
-        shots = project.kids(storyboard, "Shot")
+        shots = project.kids(holder, "Shot")
         index = int(number) - 1 if number.isdigit() else -1
         return shots[index] if 0 <= index < len(shots) else None
-    if kind == "block":
-        storyboard = project.nodes.get(rest)
-        if storyboard is None or not project.is_a(storyboard, "Storyboard"):
-            return None
-        blocks = project.kids(storyboard, "Block")
-        return blocks[0] if blocks else None
-    if kind == "voice":
-        return next((v for v in project.find("Voice") if v.attrs["role"] == rest), None)
-    wanted = {"element": "Element", "value": "Value"}.get(kind)
     node = project.nodes.get(rest)
-    if wanted is None or node is None or not project.is_a(node, wanted):
+    if kind != "value" or node is None or not project.is_a(node, "Value"):
         return None
     return node
 
@@ -340,17 +314,17 @@ def _writable(source: str, node: Node) -> bool:
     return not any(mark in raw for mark in _UNWRITABLE)
 
 
-def _editable(source: str, project: Document, node: Node) -> bool:
+def _editable(source: str, film: Film, node: Node) -> bool:
     """页面上能不能改这段：镜头连同它的每句台词都要能就地改。"""
 
     if not _writable(source, node):
         return False
-    if not project.is_a(node, "Shot"):
+    if not film.project.is_a(node, "Shot"):
         return True
-    return all(_writable(source, project.nodes[line]) for line in LINE_REFERENCE.findall(node.text))
+    return all(film.lines[line].span is not None for line in LINE_REFERENCE.findall(node.text))
 
 
-def _new_text(project: Document, node: Node, edit: FilmTextEdit) -> str:
+def _new_text(edit: FilmTextEdit) -> str:
     """镜头以外这次要写进这个标签的正文（未转义）。"""
 
     if edit.text is None:
@@ -358,8 +332,6 @@ def _new_text(project: Document, node: Node, edit: FilmTextEdit) -> str:
     text = _clean(edit.text).strip()
     if not text:
         raise FilmEditRejected("这段字不能是空的")
-    if project.is_a(node, "Element"):
-        return _with_body_sentence(text, node.text)
     return text
 
 
@@ -386,7 +358,8 @@ class _Splice:
 
 
 def _shot_text(shot: Node, edit: FilmTextEdit) -> tuple[str, list[tuple[str, str]]]:
-    """核对一个镜头的改动，返回 (镜头的新正文, 每句台词的名字与新的字)，都未转义。"""
+    """核对一个镜头的改动，返回 (镜头的新正文, 每句台词的段名与新的字)，都未转义。台词的字
+    照剧本的读法去掉首尾空白、连续空白合成一个空格。"""
 
     names = LINE_REFERENCE.findall(shot.text)
     lines = edit.lines
@@ -396,7 +369,7 @@ def _shot_text(shot: Node, edit: FilmTextEdit) -> tuple[str, list[tuple[str, str
         raise FilmEditRejected("台词只能改字，不能删、不能加，也不能调先后；要动台词跟 AI 导演说")
     said: list[tuple[str, str]] = []
     for name, line in zip(names, lines, strict=True):
-        words = _clean(line.text).strip()
+        words = " ".join(_clean(line.text).split())
         if not words:
             raise FilmEditRejected("台词不能是空的")
         said.append((name, words))
@@ -413,28 +386,6 @@ def _clean(text: str) -> str:
     if "@Image" in text:
         raise FilmEditRejected("文字里不能写 @Image，图的编号是自动排的")
     return text.replace("{", "｛").replace("}", "｝")
-
-
-def _with_body_sentence(visible: str, old: str) -> str:
-    """把只给生图用的那句英文身材句放回描述里：放在原来前面有几句话的位置，句数不够就放最后。"""
-
-    found = body_sentence(old)
-    if found is None or BODY_PHRASE in visible:
-        return visible
-    sentence = found.group(0).strip()
-    before = sum(old[: found.start()].count(mark) for mark in _SENTENCE_MARKS)
-    position = 0
-    for _ in range(before):
-        ends = [visible.find(mark, position) for mark in _SENTENCE_MARKS]
-        ends = [end for end in ends if end >= 0]
-        if not ends:
-            position = len(visible)
-            break
-        position = min(ends) + 1
-    head, tail = visible[:position], visible[position:]
-    if head and head[-1] not in _SENTENCE_MARKS:
-        head += " "
-    return head + sentence + (" " + tail if tail else "")
 
 
 def _body(raw: str, text: str) -> str:

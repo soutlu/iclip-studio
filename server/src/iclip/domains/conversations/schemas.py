@@ -301,13 +301,14 @@ class FilmFrameOut(CamelModel):
 
 
 class FilmSettingOut(CamelModel):
-    """全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。"""
+    """全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
+    可以几张，拍法和声音为空。"""
 
     kind: SettingKind
     target: str | None
     label: str | None
     text: str
-    image: str | None
+    images: list[str]
 
 
 class FilmLineOut(CamelModel):
@@ -505,7 +506,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                             target=setting.target,
                             label=setting.label,
                             text=setting.text,
-                            image=setting.image,
+                            images=list(setting.images),
                         )
                         for setting in group.settings
                     ],

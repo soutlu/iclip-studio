@@ -1,8 +1,10 @@
 """工程文件与运行文件共用的写法：把源文读成节点树。
 
-写法是 XML 加一条：``属性={名字}`` 表示引用前面定义的节点，不加引号。解析分两步：先把标签里
-引号外的 ``={名字}`` 换成带记号的普通属性值，再交给标准库的 XML 解析器。换的时候不增减换行，
-所以报错的行号就是原文的行号；每个标签还记下它在原文里的位置，改一处正文或属性时只换那一段。"""
+写法是 XML 加两条：``属性={名字}`` 表示引用前面定义的节点，不加引号；``<script>`` 的正文是剧本，
+不按 XML 读。解析分两步：先把标签里引号外的 ``={名字}`` 换成带记号的普通属性值、把剧本正文转义成
+普通文字，再交给标准库的 XML 解析器。换的时候不增减换行，所以报错的行号就是原文的行号；每个标签
+还记下它在原文里的位置，改一处正文或属性时只换那一段。剧本正文读出来与原文一字不差，由
+``script`` 按剧本的写法再读。"""
 
 from __future__ import annotations
 
@@ -13,6 +15,8 @@ from dataclasses import dataclass, field
 from typing import Final, Literal
 from xml.parsers import expat
 
+from iclip.capabilities.iclip_studio.film.packages import SCRIPT_TAG
+
 HEADER_TARGET: Final = "icml"
 """文件头 ``<?icml using="…"?>`` 的名字，工程文件和运行文件相同。"""
 
@@ -21,7 +25,10 @@ _REFERENCE_MARK: Final = "␞ref:"
 
 _USING: Final = re.compile(r'using="([^"]+)"')
 
-_Piece = Literal["text", "comment", "instruction", "tag"]
+_RAW_OPENING: Final = re.compile(rf"<{SCRIPT_TAG}[\s/>]")
+_RAW_CLOSING: Final = f"</{SCRIPT_TAG}"
+
+_Piece = Literal["text", "comment", "instruction", "tag", "raw"]
 
 
 class MarkupError(Exception):
@@ -147,7 +154,7 @@ def _dedent(text: str) -> str:
 
 
 def _pieces(source: str) -> Iterator[tuple[_Piece, int, int]]:
-    """把源文切成正文、注释、处理指令、标签四种片段，给出起止位置。"""
+    """把源文切成正文、注释、处理指令、标签、剧本正文五种片段，给出起止位置。"""
 
     index, size = 0, len(source)
     while index < size:
@@ -162,6 +169,12 @@ def _pieces(source: str) -> Iterator[tuple[_Piece, int, int]]:
         elif source[index] == "<":
             stop = _tag_end(source, index)
             yield "tag", index, stop
+            if _RAW_OPENING.match(source, index) and not source.endswith("/>", index, stop):
+                # 剧本正文一直到 </script>；没有结束标签时剩下的全算正文，由 XML 解析器报没闭合。
+                close = source.find(_RAW_CLOSING, stop)
+                index, stop = stop, size if close < 0 else close
+                if stop > index:
+                    yield "raw", index, stop
         else:
             close = source.find("<", index)
             stop = size if close < 0 else close
@@ -196,7 +209,14 @@ def _to_xml(source: str) -> tuple[str, list[tuple[int, int, int]]]:
     pieces: list[tuple[int, int, int]] = []
     offset = 0
     for kind, start, stop in _pieces(source):
-        text = _tag_to_xml(source, start, stop) if kind == "tag" else source[start:stop]
+        if kind == "tag":
+            text = _tag_to_xml(source, start, stop)
+        elif kind == "raw":
+            text = (
+                source[start:stop].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            )
+        else:
+            text = source[start:stop]
         pieces.append((offset, start, stop))
         out.append(text)
         offset += len(text.encode("utf-8"))

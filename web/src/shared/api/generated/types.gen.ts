@@ -1259,13 +1259,14 @@ export type FilmPromptTextOut = {
 /**
  * FilmSettingOut
  *
- * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
+ * 可以几张，拍法和声音为空。
  */
 export type FilmSettingOut = {
   /**
-   * Image
+   * Images
    */
-  image: string | null
+  images: Array<string>
   /**
    * Kind
    */
