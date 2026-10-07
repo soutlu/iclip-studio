@@ -128,7 +128,9 @@ describe('制作页', () => {
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     await waitFor(() => expect(stageTag()).toBe('@3'))
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
-    expect(await screen.findByText('涂鸦滑板场还没有图')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: '涂鸦滑板场 · 图像生成' }),
+    ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     await waitFor(() =>
       expect(within(script).getByRole('group', { name: '镜头 1' })).toHaveAttribute(
@@ -343,7 +345,7 @@ describe('制作页的图', () => {
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
 
     const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
-    expect(card).toHaveTextContent('镜头 2 还没有图')
+    expect(within(card).getByRole('heading', { name: '镜头 2 · 图像生成' })).toBeInTheDocument()
     await userEvent.click(within(card).getByRole('button', { name: '生成这张' }))
 
     await waitFor(() =>
