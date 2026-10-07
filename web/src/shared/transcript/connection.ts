@@ -251,9 +251,10 @@ export class TranscriptConnection {
   close(): void {
     this.closed = true
     this.clearTimer()
-    this.socket?.close(1000)
-    this.socket = null
-    this.connected = false
+    // 关闭事件异步到达，先解绑，避免 StrictMode 重连后旧事件清掉新连接。
+    const socket = this.socket
+    this.detach()
+    socket?.close(1000)
   }
 
   /** 立即重连并跳过退避；先移除旧 socket 回调，避免 onclose 再次排入退避。 */
