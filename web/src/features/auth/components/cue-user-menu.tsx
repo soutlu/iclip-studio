@@ -1,8 +1,22 @@
 import { useCallback } from 'react'
 import { useLogout, userDisplayName, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
+import {
+  setThemePreference,
+  THEME_PREFERENCES,
+  useThemePreference,
+  type ThemePreference,
+} from '@/shared/lib/theme'
 import { cn } from '@/shared/lib/utils'
-import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import {
+  MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRoot,
+  MenuSeparator,
+  MenuSurface,
+  MenuTrigger,
+} from '@/shared/ui/menu'
 
 type CueUserMenuAlign = 'bottom-end' | 'bottom-start' | 'top-end' | 'top-start'
 
@@ -26,10 +40,16 @@ const ALIGN_PLACEMENT: Record<
 const USER_CARD_BUTTON_CLASS =
   'flex h-12 w-full ui-state cursor-pointer items-center gap-2.5 rounded-md px-2 text-body text-on-surface ui-focus select-none'
 
+const APPEARANCE_LABEL: Record<ThemePreference, string> = {
+  dark: '深色',
+  light: '浅色',
+  system: '跟随系统',
+}
+
 const USER_AVATAR_CLASS =
   'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
 
-/** 侧栏底部的账户入口：点整张卡片打开账户菜单，菜单里是个人信息、设置（未上线）与退出登录。 */
+/** 侧栏底部的账户入口：点整张卡片打开账户菜单，菜单里是个人信息、外观、设置（未上线）与退出登录。 */
 export function CueUserMenu({
   align = 'bottom-end',
   className = '',
@@ -37,6 +57,7 @@ export function CueUserMenu({
 }: CueUserMenuProps) {
   const { data: user } = useUser()
   const logoutMutation = useLogout()
+  const appearance = useThemePreference()
   const isLoggingOut = logoutMutation.isPending
 
   const handleLogout = useCallback(() => {
@@ -154,6 +175,23 @@ export function CueUserMenu({
             </dl>
           ) : null}
         </div>
+        <MenuRadioGroup
+          aria-label="外观"
+          className="flex flex-col gap-0.5 pt-1"
+          onValueChange={(value) => {
+            const next = THEME_PREFERENCES.find((item) => item === value)
+            if (next !== undefined) setThemePreference(next)
+          }}
+          value={appearance}
+        >
+          <p className="px-2 pt-1 pb-0.5 text-caption text-on-surface-variant">外观</p>
+          {THEME_PREFERENCES.map((item) => (
+            <MenuRadioItem key={item} value={item}>
+              {APPEARANCE_LABEL[item]}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+        <MenuSeparator />
         <MenuItem disabled icon="settings">
           <span className="flex items-center justify-between gap-2">
             设置
