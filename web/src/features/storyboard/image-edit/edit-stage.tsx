@@ -19,6 +19,7 @@ import { useTakeElapsed } from '../components/use-take-elapsed'
 import { phaseOfStatus } from '../shots'
 import { CompareSlider } from './compare-slider'
 import { entryLabel, type StripEntry } from './edit-history'
+import type { EditorWords } from './edit-target'
 
 /** 替换当前帧与撤销的状态，由 useFrameReplace 提供。 */
 type StageReplace = {
@@ -41,6 +42,8 @@ type EditStageProps = {
   /** 当前帧上的标注画布。 */
   canvas: ReactNode
   replace: StageReplace
+  /** 随所在页面变的称呼：在用的那一版、主操作、图已经不在了。 */
+  words: Pick<EditorWords, 'current' | 'replace' | 'gone'>
 }
 
 /** 不是画布的几种画面共用的图框：按分镜画幅放在标注工具条与版本条之间。 */
@@ -166,7 +169,15 @@ function UndoBar({ replace }: { replace: StageReplace }) {
 }
 
 /** 对比时的主操作：把选中的这张换成当前帧。 */
-function ReplaceBar({ replace, url }: { replace: StageReplace; url: string }) {
+function ReplaceBar({
+  label,
+  replace,
+  url,
+}: {
+  label: string
+  replace: StageReplace
+  url: string
+}) {
   const replaceRef = useRef<HTMLButtonElement>(null)
   useCatchDroppedFocus(replaceRef, replace.pending === null)
   return (
@@ -179,7 +190,7 @@ function ReplaceBar({ replace, url }: { replace: StageReplace; url: string }) {
         onClick={() => replace.onReplace(url)}
         ref={replaceRef}
       >
-        {replace.pending === 'replace' ? '正在替换…' : '替换当前帧'}
+        {replace.pending === 'replace' ? '正在替换…' : label}
       </Button>
       <ReplaceError error={replace.error} />
     </div>
@@ -207,12 +218,13 @@ export function EditStage({
   aspectRatio,
   canvas,
   replace,
+  words,
 }: EditStageProps) {
   if (currentUrl === undefined)
     return (
       <div className="image-edit-stage">
         <p className="image-edit-stage-message" role="alert">
-          这一帧已经不在分镜里了，关掉窗口重新选一帧
+          {words.gone}
         </p>
       </div>
     )
@@ -264,12 +276,12 @@ export function EditStage({
     <div className="image-edit-stage">
       <Hero aspectRatio={aspectRatio}>
         <CompareSlider
-          after={{ label: entryLabel(entry), url: entry.url }}
-          before={{ label: '当前帧', url: currentUrl }}
+          after={{ label: entryLabel(entry, words.current), url: entry.url }}
+          before={{ label: words.current, url: currentUrl }}
           key={`${currentUrl}:${entry.url}`}
         />
       </Hero>
-      <ReplaceBar replace={replace} url={entry.url} />
+      <ReplaceBar label={words.replace} replace={replace} url={entry.url} />
     </div>
   )
 }

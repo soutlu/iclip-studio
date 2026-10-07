@@ -77,10 +77,11 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         "kind": "generated",
         "url": "https://cdn.test/b-fixed.png",
         "number": 1,
+        "aspectRatio": "3:4",
     }
     assert first["prompt"][0]["text"].startswith("画面是用手机实拍的")
     shoe = group["frames"][1]
-    assert (shoe["kind"], shoe["prompt"]) == ("photo", None)
+    assert (shoe["kind"], shoe["prompt"], shoe["aspectRatio"]) == ("photo", None, None)
     assert group["shots"][0]["lines"][0]["target"] == "line:lighter"
 
     edited = await client.patch(

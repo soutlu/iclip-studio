@@ -12,6 +12,7 @@ import { exportAnnotatedImage } from './annotation-export'
 import { EditComposer, type EditComposerHandle } from './edit-composer'
 import { EditGenerationSettings } from './edit-generation-settings'
 import { CURRENT_KEY, entryBaseUrl, frameImageEntries } from './edit-history'
+import { editorWordsOf } from './edit-target'
 import { EditStage } from './edit-stage'
 import { draftOf, editDraftError } from './image-edit-draft'
 import {
@@ -37,6 +38,11 @@ import './image-edit.css'
 
 type FrameImageEditorProps = {
   target: FrameEditTarget
+  /** 这张图此刻在用的那一版；已经不在分镜里时为空。随替换实时变，不记打开那一刻的。 */
+  currentUrl: string | undefined
+  /** 标题「编辑图片」后面的一句：分镜页写组与帧，制作页写图的名字。 */
+  subtitle: string
+  /** 输入卡里 `@` 与「+」能插的本组图片，下标加一是编号。 */
   frames: readonly string[]
   aspectRatio: string
   /** 打开时先选中哪一条；从帧上「有新结果」进来时是那条任务。 */
@@ -50,6 +56,8 @@ type FrameImageEditorProps = {
 /** 编辑图片窗口：装配舞台、版本条与输入卡，持有选中条目、选中标注与生成偏好。 */
 export function FrameImageEditor({
   target,
+  currentUrl,
+  subtitle,
   frames,
   aspectRatio,
   initialKey,
@@ -81,8 +89,7 @@ export function FrameImageEditor({
     () => jobsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [jobsQuery.data],
   )
-  // 当前帧随替换实时变；编辑器不记打开那一刻的地址，不然替换完窗口还留着就对不上了。
-  const currentUrl = frames[target.frameNumber - 1]
+  const words = editorWordsOf(target)
   const frameReplace = useFrameReplace({ currentUrl, onApply })
   const entries = useMemo(() => frameImageEntries(jobs, currentUrl ?? ''), [jobs, currentUrl])
   // 选中的那条被折进当前帧格（刚替换过）或还没拉回来时，落回当前帧；撤销后它回到条里，舞台随之回到对比。
@@ -95,8 +102,8 @@ export function FrameImageEditor({
     inFlight > 0
       ? `有 ${inFlight} 个任务在生成或排队，关掉窗口也会继续`
       : selected?.kind === 'image'
-        ? '替换只改当前帧，替换后可以撤销'
-        : `画幅 ${aspectRatio}，跟随分镜`
+        ? words.replaceNote
+        : words.aspectNote(aspectRatio)
 
   const select = (key: string) => {
     setSelectedKey(key)
@@ -113,7 +120,7 @@ export function FrameImageEditor({
       return
     }
     if (currentUrl === undefined) {
-      setOperationError('这一帧已经不在分镜里了，关掉窗口重新选一帧')
+      setOperationError(words.gone)
       return
     }
     if (model === undefined || resolution === undefined) {
@@ -208,9 +215,7 @@ export function FrameImageEditor({
           title={
             <span className="image-edit-title">
               <span>编辑图片</span>{' '}
-              <span className="text-body-sm font-normal text-on-surface-muted">
-                · 镜头组 {target.shotIndex} · 帧 @{target.frameNumber}
-              </span>
+              <span className="text-body-sm font-normal text-on-surface-muted">· {subtitle}</span>
             </span>
           }
           closeLabel="关闭图片编辑"
@@ -240,6 +245,7 @@ export function FrameImageEditor({
               }
               currentUrl={currentUrl}
               entry={selected}
+              words={words}
               replace={{
                 error: frameReplace.error,
                 onReplace: (url) => void replace(url),
@@ -250,6 +256,7 @@ export function FrameImageEditor({
             />
             <VersionStrip
               entries={entries}
+              words={words}
               currentUrl={currentUrl ?? ''}
               disabled={frameReplace.pending !== null}
               selectedKey={selected?.key ?? CURRENT_KEY}

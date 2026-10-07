@@ -1,4 +1,4 @@
-/** 这一帧出现过的图，竖排在舞台右缘（窄屏横排在舞台下方）。只画调用方给的条目，不查数据。 */
+/** 这一帧（制作页是这张图）出现过的图，竖排在舞台右缘（窄屏横排在舞台下方）。只画调用方给的条目，不查数据。 */
 
 import { useState, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
@@ -7,9 +7,12 @@ import { MediaFallback } from '@/shared/ui/media-fallback'
 import { useTakeElapsed } from '../components/use-take-elapsed'
 import { phaseOfStatus } from '../shots'
 import { entryBaseUrl, entryLabel, entryName, type StripEntry } from './edit-history'
+import type { EditorWords } from './edit-target'
 
 type VersionStripProps = {
   entries: readonly StripEntry[]
+  /** 在用那一格的称呼与整条的可访问名，随所在页面变。 */
+  words: Pick<EditorWords, 'current' | 'versions'>
   currentUrl: string
   /** 替换进行中锁住整条：这段时间换选中会让守卫认错当前帧。 */
   disabled: boolean
@@ -69,6 +72,7 @@ function EntryState({ entry }: { entry: StripEntry }) {
 
 export function VersionStrip({
   entries,
+  words,
   currentUrl,
   disabled,
   selectedKey,
@@ -81,11 +85,11 @@ export function VersionStrip({
 }: VersionStripProps) {
   return (
     <div className="image-edit-versions">
-      <div aria-label="这一帧的图片" className="image-edit-versions-list" role="group">
+      <div aria-label={words.versions} className="image-edit-versions-list" role="group">
         {entries.map((entry) => {
           const baseUrl = entryBaseUrl(entry, currentUrl)
           const unseen = isUnseen(entry)
-          const name = unseen ? `${entryName(entry)} · 新结果` : entryName(entry)
+          const name = `${entryName(entry, words.current)}${unseen ? ' · 新结果' : ''}`
           return (
             <button
               aria-label={name}
@@ -102,7 +106,7 @@ export function VersionStrip({
                 <EntryState entry={entry} />
                 {unseen ? <span className="image-edit-version-dot" /> : null}
               </span>
-              <span className="image-edit-version-label">{entryLabel(entry)}</span>
+              <span className="image-edit-version-label">{entryLabel(entry, words.current)}</span>
             </button>
           )
         })}

@@ -89,12 +89,15 @@ def test_a_group_lists_its_images_in_the_order_and_numbering_sent_to_the_video()
     (made,) = film_groups(film, FILM)
     sent = render_storyboard(film, film.project.nodes["全片分镜"]).image_urls
 
-    assert [(frame.node, frame.label, frame.kind, frame.number) for frame in made.frames] == [
-        ("短发女生参考图", "短发女生", "generated", 1),
-        ("跑鞋照片", "网面跑鞋", "photo", 2),
-        ("公园跑道参考图", "公园跑道", "generated", None),
-        ("镜01机位图", "镜头 1", "generated", 3),
-        ("镜02机位图", "镜头 2", "generated", None),
+    assert [
+        (frame.node, frame.label, frame.kind, frame.number, frame.aspect_ratio)
+        for frame in made.frames
+    ] == [
+        ("短发女生参考图", "短发女生", "generated", 1, "3:4"),
+        ("跑鞋照片", "网面跑鞋", "photo", 2, None),
+        ("公园跑道参考图", "公园跑道", "generated", None, "9:16"),
+        ("镜01机位图", "镜头 1", "generated", 3, "9:16"),
+        ("镜02机位图", "镜头 2", "generated", None, "9:16"),
     ]
     numbered = [frame for frame in made.frames if frame.number is not None]
     assert [frame.url for frame in numbered] == list(sent)

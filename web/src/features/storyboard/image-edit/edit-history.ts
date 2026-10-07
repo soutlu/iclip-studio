@@ -82,19 +82,20 @@ export const entryBaseUrl = (entry: StripEntry, currentUrl: string): string =>
 /**
  * 条目的称呼，版本条与舞台共用。
  *
+ * 在用的那一格叫 `current`（分镜页「当前帧」，制作页「在用」，见 `EditorWords`）。
  * 没有关联任务的图片曾作为别次编辑的底图保留下来，称为「上一版」。
  * 只有还没落地的任务才占独立一格，它的词与帧上角标同源；完成的任务已经变成它产出的那张图。
  */
-export function entryLabel(entry: StripEntry): string {
-  if (entry.kind === 'current') return '当前帧'
+export function entryLabel(entry: StripEntry, current: string): string {
+  if (entry.kind === 'current') return current
   if (entry.kind === 'image') return entry.job === null ? '上一版' : '结果'
   const phase = phaseOfStatus(entry.job.status)
   return phase === 'completed' ? '结果' : mediaStatusLabel(phase)
 }
 
 /** 可访问名：用时间补充称呼，区分同一种状态的多条记录。 */
-export function entryName(entry: StripEntry): string {
-  if (entry.kind === 'current') return entryLabel(entry)
+export function entryName(entry: StripEntry, current: string): string {
+  if (entry.kind === 'current') return entryLabel(entry, current)
   const createdAt = entry.kind === 'image' ? entry.createdAt : entry.job.createdAt
-  return `${entryLabel(entry)} · ${formatDateTime(createdAt)}`
+  return `${entryLabel(entry, current)} · ${formatDateTime(createdAt)}`
 }

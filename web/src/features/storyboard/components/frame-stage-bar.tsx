@@ -110,8 +110,9 @@ function FrameTools({
   )
 }
 
-/** 这一帧最新图片任务的角标：有新结果时是按钮，点了看那条结果；其余只是状态，失败带原话（放不下时截断，悬停看全）。 */
-function FrameBadgeMark({
+/** 这一帧最新图片任务的角标：有新结果时是按钮，点了看那条结果；其余只是状态，失败带原话（放不下时截断，悬停看全）。
+ * 制作页的舞台也用它。 */
+export function FrameBadgeMark({
   badge,
   disabled,
   onOpenResult,

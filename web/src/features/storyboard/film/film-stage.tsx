@@ -1,5 +1,5 @@
 /** 制作页的舞台：选了本组的一条成片就放它（与分镜页同一个成片舞台），否则显示这组用到的一张图，点画面看原图。
- * 左上写 @N（还没有编号的写它的名字），右上「替换」；左右箭头与焦点在舞台里时的 ←/→ 按这组全部图的先后切，不画帧计数。
+ * 左上写 @N（还没有编号的写它的名字），下面挂这张图最新图片任务的角标；右上「编辑」（有图才有）与「替换」；左右箭头与焦点在舞台里时的 ←/→ 按这组全部图的先后切，不画帧计数。
  * 换图三个入口同一条路（`useFilmReplace`）：「替换」选文件、拖到舞台上、点过舞台后粘贴；没图的那张也能换。
  * 还没有图的生成图是生成卡（`FilmGenerateCard`），没挂图的段写「这段没有图」。列宽随这组的画幅，见 storyboard.css 的布局一节。 */
 
@@ -8,14 +8,17 @@ import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import type { useFileDropTarget } from '@/shared/ui/file-drop'
 import { ShotStage, StageShell, type TakeView } from '../components/shot-stage'
+import { FrameBadgeMark } from '../components/frame-stage-bar'
 import { StageAction } from '../components/stage-action'
 import { StageBar } from '../components/stage-bar'
 import { StageFrame, StageFrameNav } from '../components/stage-frame'
 import { stepFrame, useStageFrameKeys } from '../components/use-stage-frame-steps'
+import type { FrameBadge } from '../frame-status'
 import type { GenerationJob } from '../storyboard.api'
 import type { FilmGroup } from './film.api'
 import { frameTag, missingImageText } from './film-content'
 import { FilmGenerateCard } from './film-generate-card'
+import { FILM_EDIT_TRIGGER } from './film-image-edit'
 
 /** 换图要的：拖放区、粘贴、选文件，以及舞台上这张是不是正在换。 */
 export type StageReplace = {
@@ -40,12 +43,18 @@ type FilmStageProps = {
     error: string | undefined
     onGenerate: () => void
   }
+  /** 有图时的编辑入口：这张图最新那条图片任务的角标，与打开编辑器（先看底图，或从角标进先看那条结果）。 */
+  edit: {
+    badge: FrameBadge | undefined
+    onEdit: (open: { kind: 'draft' } | { kind: 'result'; jobId: string }) => void
+  }
   /** 切到第几张。 */
   onStep: (position: number) => void
   onOpen: (media: { name: string; url: string }) => void
 }
 
 export function FilmStage({
+  edit,
   frame: position,
   generate,
   group,
@@ -97,15 +106,36 @@ export function FilmStage({
             <StageBar
               end={
                 frame === undefined || readOnly ? null : (
-                  <ReplaceAction
-                    locked={replace.uploading}
-                    onFile={(file) => void replace.replace(file)}
-                  />
+                  <>
+                    {url === null ? null : (
+                      <StageAction
+                        {...{ [FILM_EDIT_TRIGGER]: '' }}
+                        disabled={replace.uploading}
+                        icon="edit-image"
+                        label="编辑图片"
+                        onClick={() => edit.onEdit({ kind: 'draft' })}
+                        text="编辑"
+                      />
+                    )}
+                    <ReplaceAction
+                      locked={replace.uploading}
+                      onFile={(file) => void replace.replace(file)}
+                    />
+                  </>
                 )
               }
               start={
                 frame === undefined ? null : (
-                  <p className="storyboard-stage-glass storyboard-stage-tag">{frameTag(frame)}</p>
+                  <>
+                    <p className="storyboard-stage-glass storyboard-stage-tag">{frameTag(frame)}</p>
+                    {url === null || edit.badge === undefined ? null : (
+                      <FrameBadgeMark
+                        badge={edit.badge}
+                        disabled={readOnly || replace.uploading}
+                        onOpenResult={(jobId) => edit.onEdit({ jobId, kind: 'result' })}
+                      />
+                    )}
+                  </>
                 )
               }
             />

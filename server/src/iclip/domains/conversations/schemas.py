@@ -288,7 +288,8 @@ FilmPromptRunOut = Annotated[FilmPromptTextOut | FilmPromptImageOut, Field(discr
 class FilmFrameOut(CamelModel):
     """一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
 
-    ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；用户给的图为 null。"""
+    ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
+    用户给的图这两个都是 null。"""
 
     node: str
     label: str
@@ -296,6 +297,7 @@ class FilmFrameOut(CamelModel):
     url: str | None
     number: int | None
     prompt: list[FilmPromptRunOut] | None
+    aspect_ratio: str | None
 
 
 class FilmSettingOut(CamelModel):
@@ -493,6 +495,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                             prompt=None
                             if frame.prompt is None
                             else [_prompt_run_out(run) for run in frame.prompt],
+                            aspect_ratio=frame.aspect_ratio,
                         )
                         for frame in group.frames
                     ],

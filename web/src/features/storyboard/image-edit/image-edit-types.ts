@@ -13,8 +13,11 @@ export type EditDraftPart =
   | { kind: 'text'; text: string }
   | { kind: 'image'; url: string; name: string }
   | { kind: 'annotation'; id: string; number: number }
-/** 编辑器开在哪一格。底图不在里面：它随选中的图变，应用之后这一格的图也会变。 */
-export type FrameEditTarget = {
+/** 编辑器开在哪一张图上：分镜页是第几组的第几帧，制作页是工程里的一张图（`node`，用 `isFilmTarget` 区分）。
+ * 底图不在里面：它随选中的图变，应用之后这一格的图也会变。 */
+export type FrameEditTarget = StoryboardFrameTarget | { conversationId: string; node: string }
+/** 分镜页的一格：第几组的第几帧。 */
+export type StoryboardFrameTarget = {
   conversationId: string
   shotIndex: number
   frameNumber: number

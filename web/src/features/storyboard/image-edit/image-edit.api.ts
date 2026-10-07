@@ -12,7 +12,7 @@ import {
   zImageGenerationIn,
   zImageModelsOut,
 } from '@/shared/api/generated/zod.gen'
-import { metadataFilterParam, storyboardMetadata } from '../generation-metadata'
+import { metadataFilterParam } from '../generation-metadata'
 import {
   generationsRefetchInterval,
   storyboardQueryKeys,
@@ -20,6 +20,7 @@ import {
   type GenerationsPage,
 } from '../storyboard.api'
 import { fileNameOfUrl } from '@/shared/lib/media-url'
+import { editTargetKeyParts, editTargetMetadata } from './edit-target'
 import { MAX_PART_NAME } from './image-edit-draft'
 import type { EditDraftPart, FrameEditTarget } from './image-edit-types'
 
@@ -31,11 +32,7 @@ export const imageEditConversationKey = (conversationId: string) =>
   [...storyboardQueryKeys.conversation(conversationId), 'frame-edits'] as const
 
 export const imageEditQueryKey = (target: FrameEditTarget) =>
-  [
-    ...imageEditConversationKey(target.conversationId),
-    target.shotIndex,
-    target.frameNumber,
-  ] as const
+  [...imageEditConversationKey(target.conversationId), ...editTargetKeyParts(target)] as const
 
 /** 本对话最近的图片任务，给分镜页在帧上挂状态用。
  *
@@ -67,7 +64,7 @@ export function useImageEditJobs(target: FrameEditTarget) {
       const params = new URLSearchParams({
         conversationId: target.conversationId,
         kind: 'image',
-        metadata: metadataFilterParam(storyboardMetadata(target.shotIndex, target.frameNumber)),
+        metadata: metadataFilterParam(editTargetMetadata(target)),
         limit: `${EDIT_JOBS_PAGE_LIMIT}`,
       })
       if (pageParam !== undefined) params.set('before', pageParam)
@@ -285,7 +282,7 @@ export async function submitImageEdit(
   // 不带 userName：浏览器会话由服务端填登录用户名。
   const body = zImageGenerationIn.parse({
     conversationId: target.conversationId,
-    metadata: storyboardMetadata(target.shotIndex, target.frameNumber),
+    metadata: editTargetMetadata(target),
     sourceUrl: baseUrl,
     ...options,
     ...request,

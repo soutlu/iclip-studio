@@ -3,6 +3,7 @@ import type { FilmFrame, FilmGroup } from './film.api'
 import { contentOfFrame, resolveFilmSelection, shotText } from './film-content'
 
 const frame = (node: string, number: number | null): FilmFrame => ({
+  aspectRatio: '9:16',
   kind: 'generated',
   label: node,
   node,
