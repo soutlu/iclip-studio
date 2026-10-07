@@ -201,22 +201,14 @@ async def workspace(
     return capability(files, ledger, generation).get_toolset()
 
 
-async def test_a_passing_check_lists_which_image_each_node_uses(
+async def test_a_passing_check_reports_one_line_of_counts(
     files: FakeFileStore, ledger: FakeMaterialLedger, ctx: RunContext[object]
 ) -> None:
     tools = await workspace(files, ledger)
 
     result = await tools.check_film(ctx)
 
-    assert text_of(result).splitlines() == [
-        "检查通过：6 个生图节点，1 次视频请求。",
-        "短发女生参考图：运行文件选用「短发女生修过手」",
-        "公园跑道参考图：还没有图",
-        "镜01机位图：运行文件选用「镜01第一版」",
-        "镜02机位图：还没有图",
-        "镜03机位图：还没有图",
-        "镜04机位图：还没有图",
-    ]
+    assert text_of(result).splitlines() == ["检查通过：6 张图，1 段视频。"]
     assert result.metadata == {"chip": "通过"}
 
 
@@ -324,21 +316,6 @@ async def test_checking_needs_the_project_file(
 
     with pytest.raises(ModelRetry, match=r"没有 film\.icml"):
         await tools.check_film(ctx)
-
-
-async def test_a_node_without_a_selection_shows_its_latest_generated_image(
-    files: FakeFileStore,
-    ledger: FakeMaterialLedger,
-    images: FakeNodeImages,
-    ctx: RunContext[object],
-) -> None:
-    images.earlier = {"公园跑道参考图": "https://cdn.test/generated/track.png"}
-    tools = await workspace(files, ledger, generation=images)
-
-    lines = text_of(await tools.check_film(ctx)).splitlines()
-
-    assert lines[2] == "公园跑道参考图：最近一次生成"
-    assert lines[1] == "短发女生参考图：运行文件选用「短发女生修过手」", "选用的优先于最近生成的"
 
 
 async def test_an_image_edited_elsewhere_in_the_conversation_can_be_registered(
