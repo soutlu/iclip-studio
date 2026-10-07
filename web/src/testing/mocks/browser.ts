@@ -23,10 +23,13 @@ const DEMO_CONVERSATIONS = [
   '产品宣传片 · 分镜生成中',
 ]
 
+// id 固定：刷新页面后还是同一段对话，视频编辑器存在浏览器里的草稿对得上。
 const seeded = DEMO_CONVERSATIONS.map((title, index) =>
   addMockConversation(
     title,
     new Date(Date.now() - (DEMO_CONVERSATIONS.length - index) * 3600_000).toISOString(),
+    undefined,
+    `0d3e5a10-7c4b-4e2f-9a61-00000000000${index + 1}`,
   ),
 )
 

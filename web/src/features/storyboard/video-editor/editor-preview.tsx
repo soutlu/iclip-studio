@@ -20,13 +20,15 @@ import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
-import { locateClock, totalDuration, type LaidOutSegment } from './edit-chain'
+import { locateClock, totalDuration, type LaidOutSegment } from './play-layout'
 import { timeLabel } from './time-label'
-import type { TimeRange } from './time-range'
+
+/** 定位到的是一段的哪一端：结尾那端显示段内最后一刻的画面，不跳进下一段。 */
+type Boundary = 'start' | 'end'
 
 export type EditorPreviewHandle = {
   /** 暂停并切回当前编辑版本；右边界显示区间内侧的画面，游标仍标记准确边界。 */
-  previewAt: (clock: number, boundary?: keyof TimeRange) => void
+  previewAt: (clock: number, boundary?: Boundary) => void
 }
 
 type Slot = 0 | 1
@@ -41,23 +43,29 @@ const SWITCH_AHEAD = 0.03
 const END_PREVIEW_OFFSET = 0.001
 
 type Props = {
-  /** 当前看的这一版（或拼好的编辑预览）；`undefined` 是素材时长还没读到。换选中项时换一个新数组。 */
+  /** 当前看的这一版或剪辑草稿；`undefined` 是还没读到分段。 */
   current: readonly LaidOutSegment[] | undefined
-  /** 它基于的那一版，「原片」放它；选的就是根时没有，也就不出「原片 | 改后」。 */
+  /** 所看内容的身份（哪一版、看草稿还是这一版本身）：变了就回到开头；不变只是草稿剪了一刀。 */
+  contentKey: string
+  /** 草稿基于的那一版，「原片」放它；看的不是有改动的草稿时没有，也就不出「原片 | 改后」。 */
   original: readonly LaidOutSegment[] | undefined
   poster: string | undefined
   /** 舞台底的模糊海报：当前这条与它基于的那一版各一张，跟着「原片 | 改后」换；读不到截帧时没有。 */
   backdrop: { current: string | undefined; original: string | undefined }
   currentTime: number
-  /** 当前版本的选区；null 时完整播放，原片对比不使用这个范围。 */
-  selection: TimeRange | null
   onTime: (clock: number) => void
   /** 贴在舞台右缘的版本条（窄屏排到舞台下方）。 */
   versions: ReactNode
-  /** 时间线面板里控制条下面的内容：轨道，或读不到时长时的说明。 */
+  /** 控制条上时钟后面的剪辑操作：撤销、重做、拆分、删除。 */
+  tools: ReactNode
+  /** 控制条右侧的总长读数。 */
+  readout: ReactNode
+  /** 时间线面板里控制条下面的内容：轨道，或读不到分段时的说明。 */
   timeline: ReactNode
   /** 控制条最右的操作，如下载。 */
   barEnd: ReactNode
+  /** 时间线面板下面一行脚注。 */
+  footnote: ReactNode
   ref: Ref<EditorPreviewHandle>
 }
 
@@ -89,15 +97,18 @@ function StageBackdrop({ url }: { url: string | undefined }) {
 
 export function EditorPreview({
   current,
+  contentKey,
   original,
   poster,
   backdrop,
   currentTime,
-  selection,
   onTime,
   versions,
+  tools,
+  readout,
   timeline,
   barEnd,
+  footnote,
   ref,
 }: Props) {
   const elementsRef = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null])
@@ -107,7 +118,7 @@ export function EditorPreview({
   const pendingPreviewRef = useRef<{
     segments: readonly LaidOutSegment[]
     clock: number
-    boundary: keyof TimeRange | undefined
+    boundary: Boundary | undefined
   } | null>(null)
   // 拖动开始时同步撤销播放，不必等下一次 render 的 effect 清理。
   const stopPlaybackRef = useRef<(() => void) | null>(null)
@@ -157,21 +168,22 @@ export function EditorPreview({
   const onOriginal = showOriginal && original !== undefined
   const segments = onOriginal ? original : current
   const duration = segments === undefined ? 0 : totalDuration(segments)
-  const playbackRange = !onOriginal && selection !== null ? selection : { start: 0, end: duration }
-  // 选区显示到百分之一秒，末端可能被四舍五入到真实时长之外。
-  const playbackStart = Math.min(duration, playbackRange.start)
-  const playbackEnd = Math.min(duration, playbackRange.end)
-  // 换了一组段就回到开头：播放位置是跟着段列表走的派生状态，在渲染里对齐，不等一帧。
-  const [shown, setShown] = useState(segments)
-  if (shown !== segments) {
-    setShown(segments)
+  // 所看的是哪一条：换版本、在草稿与这一版之间切、在原片与改后之间切，都算换了内容。
+  const showing = `${contentKey}:${onOriginal ? 'original' : 'current'}`
+  // 段列表变了就停下、重新装段：播放位置是跟着段列表走的派生状态，在渲染里对齐，不等一帧。
+  // 换了内容回到开头、遮一下；同一条草稿剪了一刀只是重排，播放头留在原处。
+  const [shown, setShown] = useState({ segments, showing })
+  if (shown.segments !== segments || shown.showing !== showing) {
+    setShown({ segments, showing })
     setPlaying(false)
     setFailed(false)
     setActive(0)
     setIndex(0)
-    // 时长读到之前没有画面可换，那一次不算切换。
-    if (shown !== undefined) setSwitches(switches + 1)
+    // 读到分段之前没有画面可换，那一次不算切换。
+    if (shown.showing !== showing && shown.segments !== undefined) setSwitches(switches + 1)
   }
+  const lastShowingRef = useRef(showing)
+  const resumeClock = useEffectEvent(() => currentTime)
 
   /** 把一段装进某个槽并跳到段内 `offset`；`reload` 是加载失败后重来。 */
   const load = useCallback(
@@ -192,7 +204,7 @@ export function EditorPreview({
     [],
   )
 
-  const seek = (clock: number, boundary?: keyof TimeRange) => {
+  const seek = (clock: number, boundary?: Boundary) => {
     if (segments === undefined) return
     const boundedClock = Math.min(duration, Math.max(0, clock))
     const mediaClock =
@@ -226,10 +238,12 @@ export function EditorPreview({
     },
   }))
 
-  // 切源默认回到开头；从原片切回编辑版本时，先应用最后一次边界定位。
+  // 换了内容回到开头，同一条剪过一刀留在原处；从原片切回编辑版本时，先应用最后一次边界定位。
   useEffect(() => {
     const pending = pendingPreviewRef.current
     pendingPreviewRef.current = null
+    const switched = lastShowingRef.current !== showing
+    lastShowingRef.current = showing
     if (segments === undefined) {
       emitTime(0)
       return
@@ -237,9 +251,9 @@ export function EditorPreview({
     if (pending !== null && pending.segments === segments) {
       seekFromEffect(pending.clock, pending.boundary)
     } else {
-      seekFromEffect(0)
+      seekFromEffect(switched ? 0 : resumeClock())
     }
-  }, [segments])
+  }, [segments, showing])
 
   // 主槽换段之后，把再下一段预载进腾出来的那个槽。
   useEffect(() => {
@@ -273,18 +287,14 @@ export function EditorPreview({
       const now = element.currentTime
       const clock = segment.at + Math.min(segment.duration, Math.max(0, now - segment.start))
       const segmentEnd = segment.at + segment.duration
-      if (
-        clock >= playbackEnd ||
-        (element.ended && (playbackEnd <= segmentEnd || index === segments.length - 1))
-      ) {
+      if (clock >= duration || (element.ended && index === segments.length - 1)) {
         stop()
         setPlaying(false)
-        seekFromEffect(playbackEnd, 'end')
+        seekFromEffect(duration, 'end')
         return
       }
       emitTime(clock)
-      // 选段终点在本段内时继续等到终点，不能被提前换段逻辑带到下一段。
-      if (segmentEnd < playbackEnd && (element.ended || now >= segment.end - SWITCH_AHEAD)) {
+      if (segmentEnd < duration && (element.ended || now >= segment.end - SWITCH_AHEAD)) {
         stop()
         setActive(active === 0 ? 1 : 0)
         setIndex(index + 1)
@@ -294,14 +304,14 @@ export function EditorPreview({
     }
     frame = requestAnimationFrame(tick)
     return stop
-  }, [playing, index, active, segments, playbackEnd])
+  }, [playing, index, active, segments, duration])
 
   const togglePlay = () => {
     if (playing) {
       pause()
       return
     }
-    if (currentTime < playbackStart || currentTime >= playbackEnd) seek(playbackStart)
+    if (currentTime >= duration) seek(0)
     setPlaying(true)
   }
   const compare = (toOriginal: boolean) => {
@@ -482,31 +492,31 @@ export function EditorPreview({
           </DialogSurface>
         ) : null}
       </DialogRoot>
-      <div className="video-editor-timeline-panel">
-        <div aria-label="播放控件" className="video-editor-bar" role="group">
-          <div className="video-editor-bar-group">
-            {playButton}
-            {clock}
+      <div className="video-editor-timeline-area">
+        <div className="video-editor-timeline-panel">
+          <div aria-label="播放控件" className="video-editor-bar" role="group">
+            <div className="video-editor-bar-group">
+              {playButton}
+              {clock}
+              {tools}
+            </div>
+            <div className="video-editor-bar-group">
+              {readout}
+              <span aria-hidden="true" className="video-editor-bar-divider" />
+              {muteButton}
+              <IconButton
+                label="放大"
+                name="zoom"
+                onClick={() => setEnlarged(true)}
+                ref={enlargeRef}
+                size="sm"
+              />
+              {barEnd}
+            </div>
           </div>
-          <div className="video-editor-bar-group">
-            {current === undefined ? null : (
-              <span className="video-editor-readout">
-                共 <b>{totalDuration(current).toFixed(1)}</b> 秒
-              </span>
-            )}
-            <span aria-hidden="true" className="video-editor-bar-divider" />
-            {muteButton}
-            <IconButton
-              label="放大"
-              name="zoom"
-              onClick={() => setEnlarged(true)}
-              ref={enlargeRef}
-              size="sm"
-            />
-            {barEnd}
-          </div>
+          {timeline}
         </div>
-        {timeline}
+        {footnote}
       </div>
     </>
   )

@@ -12,6 +12,7 @@ import {
   type GenerationJob,
   type GenerationsPage,
 } from '../storyboard.api'
+import type { Clip } from './draft'
 import type { SecondsRange } from './reference-clip'
 
 /** 本对话全部编辑链的查询前缀，挂在本对话生成记录的前缀下；按根的键挂在它下面，一次失效全部。 */
@@ -91,8 +92,8 @@ type Origin = {
   taskId: string | null
 }
 
-/** 在一版成片上改一段，依次三步：从基底上切参考片段（选段吸附到关键帧）→ 走上传协议拿到片段地址
- * → 提交编辑段，区间填吸附后的值。任一步失败就停下抛出，后面的不做。怎么触发编辑照模型名认：
+/** 在一版成片上改一段，依次三步：从基底上切参考片段 → 走上传协议拿到片段地址 → 提交编辑段，
+ * 区间填切出来的那一段。任一步失败就停下抛出，后面的不做。怎么触发编辑照模型名认：
  * 前缀拼进正文、选项并进 provider_options。
  *
  * `seconds: -1` 让结果跟着参考片段的时长走；不显式给，网关按默认 5 秒截断。不带 user_name：
@@ -103,7 +104,7 @@ export const submitVideoEdit = async (
     sourceJobId: string
     /** 基底那一版的视频地址，从它上面切参考片段。 */
     baseMediaUrl: string
-    /** 用户选的那一段，秒；提交时吸附到关键帧。 */
+    /** 要改的那一段，秒；两端正好是基底的关键帧（或片尾）。 */
     range: SecondsRange
     model: string
     prompt: string
@@ -137,27 +138,9 @@ export const submitVideoEdit = async (
   return result.generation
 }
 
-/** 合成里的一段：出自哪条记录、取它自己媒体时间里的哪一截（秒）；没有 `end` 就取到结尾。 */
-export type CompositeSegment = { sourceJobId: string; start: number; end?: number }
-
-/** 把一条编辑段夹回它的基底的那几段：基底 `[0, 起点)`（起点为 0 时没有）、编辑段整条、
- * 基底 `[终点, 结尾)`。区间用编辑段上记的实际值，毫秒换成秒。 */
-export const spliceSegments = (edit: {
-  baseJobId: string
-  editJobId: string
-  rangeStartMs: number
-  rangeEndMs: number
-}): CompositeSegment[] => [
-  ...(edit.rangeStartMs > 0
-    ? [{ sourceJobId: edit.baseJobId, start: 0, end: edit.rangeStartMs / 1000 }]
-    : []),
-  { sourceJobId: edit.editJobId, start: 0 },
-  { sourceJobId: edit.baseJobId, start: edit.rangeEndMs / 1000 },
-]
-
-/** 在基底那一版上按片段列表拼成新的一版。服务端核对各段出处、换成地址再拼。 */
+/** 在基底那一版上按片段列表拼成新的一版：片段就是剪辑草稿。服务端核对各段出处、换成地址再拼。 */
 export const submitVideoComposite = async (
-  input: Origin & { baseJobId: string; segments: readonly CompositeSegment[] },
+  input: Origin & { baseJobId: string; segments: readonly Clip[] },
 ): Promise<GenerationJob> => {
   const body: VideoComposeIn = {
     conversationId: input.conversationId,

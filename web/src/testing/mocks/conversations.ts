@@ -45,10 +45,12 @@ export const mockAuditRow = (
 export const liveMockConversation = (conversationId: string) =>
   mockConversations.find((item) => item.id === conversationId && item.deletedAt === null)
 
+/** `id` 缺省随机；浏览器演示数据给固定的，刷新页面后还是同一段对话，存在浏览器里的东西对得上。 */
 export const addMockConversation = (
   title: string,
   createdAt = mockCreatedAt(),
   ownerUserId = mockAuthUser.id,
+  id: string = crypto.randomUUID(),
 ) => {
   const conversation: MockConversation = {
     activity: {
@@ -65,7 +67,7 @@ export const addMockConversation = (
     eventEpoch: MOCK_EVENT_EPOCH,
     forkTurn: null,
     forkedFrom: null,
-    id: crypto.randomUUID(),
+    id,
     lastRunId: null,
     lastSeq: 0,
     ownerUserId,
