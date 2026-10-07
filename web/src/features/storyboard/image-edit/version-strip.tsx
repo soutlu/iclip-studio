@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { MediaFallback } from '@/shared/ui/media-fallback'
-import { useTakeElapsed } from '../components/use-take-elapsed'
+import { RunningElapsed } from '../components/running-elapsed'
 import { phaseOfStatus } from '../shots'
 import { entryBaseUrl, entryLabel, entryName, type StripEntry } from './edit-history'
 import type { EditorWords } from './edit-target'
@@ -45,17 +45,6 @@ function SlotImage({ src }: { src: string }) {
   )
 }
 
-/** 生成中：绿色细圆环加走表，从提交时刻算起，与工作台成片卡一致。 */
-function RunningState({ since }: { since: string }) {
-  const elapsed = useTakeElapsed(since)
-  return (
-    <span className="image-edit-version-state">
-      <Icon className="text-primary motion-safe:animate-spin" decorative name="loading" size="sm" />
-      <span className="tabular-nums">{elapsed}</span>
-    </span>
-  )
-}
-
 function EntryState({ entry }: { entry: StripEntry }) {
   if (entry.kind === 'failed')
     return (
@@ -70,7 +59,12 @@ function EntryState({ entry }: { entry: StripEntry }) {
         <Icon className="text-on-surface-muted" decorative name="duration" size="sm" />
       </span>
     )
-  return <RunningState since={entry.job.createdAt} />
+  // 生成中：绿色细圆环加走表。
+  return (
+    <span className="image-edit-version-state">
+      <RunningElapsed iconClassName="text-primary" since={entry.job.createdAt} />
+    </span>
+  )
 }
 
 export function VersionStrip({

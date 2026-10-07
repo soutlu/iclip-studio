@@ -1,16 +1,13 @@
 /** 时间线：上轨是基底里对应的内容，下轨是当前这一版；在版本上拖手柄选段，方向键微调。 */
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { useRef, type KeyboardEvent, type PointerEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { IconButton } from '@/shared/ui/button'
 import type { ChainVersion, LaidOutSegment } from './edit-chain'
-import { EditorVersionMenu, type VersionMenuEntry } from './editor-version-menu'
 import { roundSeconds, timeLabel } from './time-label'
 import { MIN_RANGE_SECONDS, type TimeRange } from './time-range'
 import './editor-timeline.css'
 
-const ZOOM_LEVELS = [1, 1.5, 2, 3, 4] as const
 const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 15, 30, 60]
 
 type EditorTimelineProps = {
@@ -21,9 +18,6 @@ type EditorTimelineProps = {
   /** 它基于哪一版；根没有。 */
   base: ChainVersion | undefined
   baseDuration: number | undefined
-  /** 版本菜单里能选的：各版与已能预览的编辑。 */
-  entries: readonly VersionMenuEntry[]
-  selectedKey: string
   /** 从根到当前版本的来源链。 */
   ancestors: readonly ChainVersion[]
   posterOf: (url: string) => string | undefined
@@ -33,8 +27,6 @@ type EditorTimelineProps = {
   onSeek: (time: number) => void
   onSelectionChange: (range: TimeRange, boundary: keyof TimeRange) => void
   onSelect: (key: string) => void
-  /** 工具栏最右那个主按钮：看某一版是下载，看编辑预览是合成。 */
-  action: ReactNode
 }
 
 function SegmentFrames({ poster, count }: { poster: string | undefined; count: number }) {
@@ -60,8 +52,6 @@ export function EditorTimeline({
   duration,
   base,
   baseDuration,
-  entries,
-  selectedKey,
   ancestors,
   posterOf,
   currentTime,
@@ -69,14 +59,11 @@ export function EditorTimeline({
   onSeek,
   onSelectionChange,
   onSelect,
-  action,
 }: EditorTimelineProps) {
-  const [zoomIndex, setZoomIndex] = useState(0)
   const contentRef = useRef<HTMLDivElement>(null)
-  const zoom = ZOOM_LEVELS[zoomIndex] ?? 1
   const boundedTime = Math.max(0, Math.min(duration, currentTime))
   const lastBase = segments.filter((segment) => segment.role === 'base').at(-1)
-  const tickTarget = duration / (8 * zoom)
+  const tickTarget = duration / 8
   const tickStep = TICK_STEPS.find((step) => step >= tickTarget) ?? Math.ceil(tickTarget / 60) * 60
   const ticks = Array.from(
     { length: Math.ceil(duration / tickStep) },
@@ -85,7 +72,7 @@ export function EditorTimeline({
   ticks.push(duration)
   const percent = (time: number) => `${(time / duration) * 100}%`
   const frameCount = (segment: LaidOutSegment) =>
-    Math.max(1, Math.min(48, Math.ceil((segment.duration * zoom) / 1.2)))
+    Math.max(1, Math.min(48, Math.ceil(segment.duration / 1.2)))
 
   const changeBoundary = (boundary: keyof TimeRange, value: number) => {
     if (selection === null) return
@@ -119,45 +106,6 @@ export function EditorTimeline({
 
   return (
     <section aria-label="视频编辑时间线" className="video-editor-timeline">
-      <header className="video-editor-timeline-toolbar">
-        <div className="video-editor-timeline-heading">
-          <h3>时间线</h3>
-          <EditorVersionMenu
-            entries={entries}
-            label={label}
-            onSelect={onSelect}
-            posterOf={posterOf}
-            selectedKey={selectedKey}
-          />
-        </div>
-        <div aria-label="时间线操作" className="video-editor-timeline-tools" role="group">
-          <IconButton
-            disabled={zoomIndex === 0}
-            label="缩小时间线"
-            name="zoom-out"
-            onClick={() => setZoomIndex((current) => Math.max(0, current - 1))}
-            size="md"
-          />
-          <IconButton
-            disabled={zoomIndex === ZOOM_LEVELS.length - 1}
-            label="放大时间线"
-            name="add"
-            onClick={() => setZoomIndex((current) => Math.min(ZOOM_LEVELS.length - 1, current + 1))}
-            size="md"
-          />
-          <IconButton
-            label="时间线适应宽度"
-            name="maximize-panel"
-            onClick={() => {
-              setZoomIndex(0)
-              contentRef.current?.parentElement?.scrollTo({ left: 0 })
-            }}
-            size="md"
-          />
-          {action}
-        </div>
-      </header>
-
       <div className="video-editor-timeline-viewport">
         <div aria-hidden="true" className="video-editor-timeline-labels">
           <div className="video-editor-timeline-ruler-spacer" />
@@ -177,15 +125,11 @@ export function EditorTimeline({
           </div>
         </div>
         <div
-          aria-label="时间线轨道，放大后可横向滚动"
+          aria-label="时间线轨道，窄屏可横向滚动"
           className="video-editor-timeline-scroll"
           role="region"
         >
-          <div
-            className="video-editor-timeline-content"
-            ref={contentRef}
-            style={{ minWidth: `${640 * zoom}px` }}
-          >
+          <div className="video-editor-timeline-content" ref={contentRef}>
             <div className="video-editor-timeline-ruler">
               {ticks.map((time) => (
                 <span

@@ -291,6 +291,16 @@ test('从生成记录打开编辑器：切段、生成、预览、合成成为�
 
   const summary = dialog.getByRole('status', { name: '视频编辑进度' })
   await expect(summary).toHaveText(/正在生成视频/, { timeout: STEP_TIMEOUT })
+  // 生成中的编辑已摆进版本条、挂着走表，结果没回来前点不动，选中的仍是原片。
+  const versions = dialog.getByRole('group', { name: '视频版本' })
+  await expect(versions.getByRole('button', { name: '未合成 · 生成中' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
+  await expect(versions.getByRole('button', { name: 'V1', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await page.screenshot({ path: `${SHOT_DIR}/generation-running.png`, animations: 'disabled' })
   await expect(summary).toHaveText(/待预览/, { timeout: STEP_TIMEOUT })
   await expect(summary.getByRole('listitem', { name: '结果预览，当前阶段' })).toHaveAttribute(
@@ -315,7 +325,10 @@ test('从生成记录打开编辑器：切段、生成、预览、合成成为�
 
   // 结果回来就把视线挪到它的预览上，不用自己去找。
   // 预览拼好的整条：原片放到 1 秒就该切到编辑结果那条，时钟接着走。
-  await expect(dialog.getByRole('button', { name: '切换版本', exact: true })).toHaveText('V2')
+  await expect(versions.getByRole('button', { name: '未合成', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await expect(dialog.getByRole('region', { name: '视频编辑时间线' })).toBeVisible({
     timeout: STEP_TIMEOUT,
   })
@@ -368,9 +381,11 @@ test('从生成记录打开编辑器：切段、生成、预览、合成成为�
     (request) =>
       request.url().endsWith('/api/generations/video-composites') && request.method() === 'POST',
   )
-  // 看着哪一条，工具栏那个按钮就管哪一条：看的是待预览的编辑，它就是「合成成片」。
+  // 看着待预览的编辑，标题行有「合成成片」；控制条上的下载灰着，预览还不是一个文件。
   const compose = dialog.getByRole('button', { name: '合成成片', exact: true })
   await expect(compose).toBeEnabled({ timeout: STEP_TIMEOUT })
+  const downloadButton = dialog.getByRole('button', { name: '下载', exact: true })
+  await expect(downloadButton).toBeDisabled()
   await compose.click()
   // 合成给基底与片段列表：基底 [0, 1)、编辑段整条、基底 [4, 结尾)，区间取编辑段上记的值。
   const baseJobId = edit['source_job_id']
@@ -385,15 +400,20 @@ test('从生成记录打开编辑器：切段、生成、预览、合成成为�
     ],
   })
 
-  // 成片落地后 V2 成为新版本，选中态不跳走，同一个位置的按钮从「合成成片」翻成「下载」。
-  const downloadButton = dialog.getByRole('button', { name: '下载', exact: true })
-  await expect(downloadButton).toBeVisible({ timeout: STEP_TIMEOUT })
-  await expect(dialog.getByRole('button', { name: '切换版本', exact: true })).toHaveText('V2')
+  // 成片落地后 V2 成为新版本，选中态不跳走：「合成成片」收起，下载可用。
+  await expect(versions.getByRole('button', { name: 'V2', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+    { timeout: STEP_TIMEOUT },
+  )
+  await expect(compose).toHaveCount(0)
+  await expect(versions.getByRole('button', { name: /^未合成/ })).toHaveCount(0)
+  await expect(downloadButton).toBeEnabled()
   const download = page.waitForEvent('download')
   await downloadButton.click()
   expect((await download).suggestedFilename()).toBeTruthy()
   const previewTabs = dialog.getByRole('group', { name: '预览版本' })
-  const versionTab = previewTabs.getByRole('button', { name: 'V2', exact: true })
+  const versionTab = previewTabs.getByRole('button', { name: '改后', exact: true })
   await expect(versionTab).toHaveAttribute('aria-pressed', 'true')
   const versionSource = await dialog.getByLabel('视频播放器', { exact: true }).getAttribute('src')
   expect(versionSource).not.toBeNull()
@@ -462,34 +482,36 @@ test('移动布局：对话框内部自己滚，页面不横向溢出', async ({
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
 
-test('横版素材：播放控件贴住画面底边，不落进黑边', async ({ page }) => {
-  // 高一点的视口才让 16:9 在固定比例的黑框里露出足够宽的上下黑边。
+test('横版素材：舞台按画面比例摆，不留黑边；画面上不压播放控件，放大后控件贴住画面底边', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1303, height: 1006 })
   const dialog = await openEditor(page, false, 3)
   await expect(dialog.getByRole('region', { name: '视频编辑时间线' })).toBeVisible({
     timeout: STEP_TIMEOUT,
   })
-  await expect(dialog.getByText('16:9', { exact: true })).toBeVisible()
 
+  // 读到元数据后画面框换成 16:9，播放器铺满画面框，contain 不再留出上下黑边。
+  const preview = dialog.getByLabel('视频预览', { exact: true })
+  await expect
+    .poll(async () => {
+      const box = await preview.boundingBox()
+      return box === null ? 0 : box.width / box.height
+    })
+    .toBeCloseTo(16 / 9, 2)
   const picture = await dialog.getByLabel('视频播放器', { exact: true }).evaluate((element) => {
     const media = element as HTMLVideoElement
     const box = media.getBoundingClientRect()
-    // contain 后画面居中，上下各留 (box.height - drawn) / 2 的黑边
-    const drawn = Math.min(box.height, (box.width * media.videoHeight) / media.videoWidth)
-    return { boxHeight: box.height, drawn, bottom: box.top + (box.height + drawn) / 2 }
+    return { boxRatio: box.width / box.height, mediaRatio: media.videoWidth / media.videoHeight }
   })
-  // 黑边不够宽就说明这条用例没测到该测的东西
-  expect(picture.boxHeight - picture.drawn).toBeGreaterThan(48)
+  expect(picture.boxRatio).toBeCloseTo(picture.mediaRatio, 2)
+  // 播放控件只在时间线面板顶上那一行，舞台里没有。
+  await expect(preview.getByRole('group', { name: '播放控件' })).toHaveCount(0)
+  await expect(dialog.getByRole('group', { name: '播放控件' })).toHaveCount(1)
 
   await page.screenshot({ path: `${SHOT_DIR}/wide-desktop.png`, animations: 'disabled' })
 
-  const pill = await dialog.getByRole('group', { name: '播放控件' }).boundingBox()
-  expect(pill).not.toBeNull()
-  if (pill === null) throw new Error('播放控件尚未布局')
-  expect(pill.y + pill.height).toBeLessThanOrEqual(picture.bottom)
-  expect(pill.y + pill.height).toBeGreaterThan(picture.bottom - 40)
-
-  // 放大后舞台按画面比例取到灯箱的宽度上限，没有黑边，控件仍贴着画面底边。
+  // 放大后舞台按画面比例取到灯箱的宽度上限，没有黑边，控件贴着画面底边。
   const overlay = await openEnlarged(page, dialog)
   const stage = await overlay.getByLabel('视频预览', { exact: true }).boundingBox()
   const enlargedPill = await overlay.getByRole('group', { name: '播放控件' }).boundingBox()

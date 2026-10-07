@@ -3,14 +3,15 @@
   max-width: 1480px;
   height: min(1000px, calc(100dvh - 32px));
   max-height: calc(100dvh - 32px);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl);
   background: var(--color-surface-container-lowest);
 }
 
 .video-editor-header {
   align-items: center;
+  min-height: 60px;
   border: 0;
-  padding: 12px 20px;
+  padding: 0 20px 0 24px;
 }
 
 .video-editor-header h2 {
@@ -27,50 +28,105 @@
   gap: 4px 12px;
 }
 
+.video-editor-compose {
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+}
+
+/* 宽屏：左边舞台叠时间线面板，输入栏占满右边一整列（它的内容比舞台那一行高）；
+   窄屏按舞台、时间线、输入栏竖排。 */
 .video-editor {
-  display: flex;
+  display: grid;
   min-height: 0;
   flex: 1;
-  flex-direction: column;
-  padding: 0 20px 20px;
+  grid-template-areas:
+    'stage inspector'
+    'timeline inspector';
+  grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
+  grid-template-rows: minmax(300px, 1fr) auto;
+  gap: 12px 20px;
+  padding: 0 24px 16px;
   overflow-y: auto;
   color: var(--color-on-surface);
   font-size: var(--text-body);
   scrollbar-width: thin;
 }
-.video-editor-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
-  gap: 20px;
-  min-height: clamp(460px, calc(100dvh - 440px), 620px);
-  flex-shrink: 0;
-}
-/* 内嵌槽占住预览的位置与尺寸，舞台放大离开时编辑器布局不塌 */
-.video-editor-preview-slot {
-  display: grid;
+
+/* 舞台与贴在它右缘的版本条。 */
+.video-editor-stage-area {
+  position: relative;
+  display: flex;
+  grid-area: stage;
   min-width: 0;
   min-height: 0;
 }
+
+.video-editor-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+/* 模糊海报底：放大、模糊后压一层底色，画面两侧不留空。 */
+.video-editor-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.video-editor-backdrop-image {
+  position: absolute;
+  inset: -60px;
+  width: calc(100% + 120px);
+  height: calc(100% + 120px);
+  object-fit: cover;
+  filter: blur(44px) saturate(1.15);
+  scale: 1.1;
+}
+
+.video-editor-backdrop-veil {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-surface-container-low) 38%, transparent);
+}
+
+.dark .video-editor-backdrop-veil {
+  background: color-mix(in srgb, var(--color-surface-container-lowest) 50%, transparent);
+}
+
+/* 内嵌槽：画面在左右留给版本条的空位之间按比例撑满（容器查询单位同时量宽高）。 */
+.video-editor-hero-wrap {
+  position: absolute;
+  inset: 20px 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+
 /* 舞台所在的节点在内嵌槽与放大层之间搬动，自己不参与布局 */
 .video-editor-stage-host {
   display: contents;
 }
+
 .video-editor-preview {
-  /* 深色预览面上墨色焦点环看不见，改用 on-scrim。 */
-  --color-focus-ring: var(--color-on-scrim);
   position: relative;
+  width: min(100cqw, 100cqh * var(--preview-ratio));
+  aspect-ratio: var(--preview-ratio);
   overflow: hidden;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-scrim) 84%, var(--color-on-scrim));
-  color: var(--color-on-scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-container);
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--color-scrim) 10%, transparent),
+    0 18px 40px -16px color-mix(in srgb, var(--color-scrim) 45%, transparent);
   isolation: isolate;
-  /* 播放胶囊靠 cq 单位量黑边，子元素全是绝对定位，尺寸包含不改变布局 */
-  container-type: size;
 }
+
 .video-editor-video {
   position: absolute;
   inset: 0;
@@ -78,91 +134,192 @@
   height: 100%;
   object-fit: contain;
 }
-.video-editor-preview-tabs {
+
+/* 换了所看的内容时盖一层画面底色再淡出。 */
+.video-editor-preview-fade {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-1);
+  background: var(--color-surface-container);
+  pointer-events: none;
+}
+
+.video-editor-preview-message {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  background: var(--color-surface-container);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  text-align: center;
+}
+
+/* 「原片 | 改后」：舞台左上的毛玻璃两段式，选中段墨色淡底。 */
+.video-editor-compare {
   position: absolute;
   top: 12px;
   left: 12px;
-  display: flex;
-  border: 1px solid color-mix(in srgb, var(--color-on-scrim) 20%, transparent);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.video-editor-preview-tab {
+  z-index: var(--z-local-2);
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-width: 84px;
-  padding: 10px 18px;
-  background: color-mix(in srgb, var(--color-scrim) 84%, var(--color-on-scrim));
-  cursor: pointer;
-  font-size: var(--text-body);
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-glass-base) 88%, transparent);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+  backdrop-filter: blur(14px);
 }
-.video-editor-preview-tab:disabled {
+
+.video-editor-compare button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.video-editor-compare button:hover {
+  color: var(--color-on-surface);
+}
+
+.video-editor-compare button[aria-pressed='true'] {
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+/* 版本条：竖版小画面直接立在模糊底上，没选的淡一些、小一点，选中的完整亮度加一圈细白边。
+   条目多时要能滚，滚动容器会按自己的内边距框裁掉格子的阴影；内边距放宽到阴影的扩散范围
+   （横向约 14px、纵向约 24px），阴影才跟着圆角走、不被切成直边。格子仍离舞台右缘 22px。 */
+.video-editor-versions {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  z-index: var(--z-local-2);
+  display: flex;
+  max-height: 100%;
+  flex-direction: column;
+  gap: 12px;
+  translate: 0 -50%;
+  padding: 24px 20px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.video-editor-version {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 71px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-high);
+  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+  opacity: 0.62;
+  scale: 0.9;
+  cursor: pointer;
+  transition-property: opacity, scale, box-shadow;
+  transition-duration: var(--dur-m);
+  transition-timing-function: var(--ease);
+}
+
+.video-editor-version:hover:not([aria-disabled='true'], [aria-pressed='true']) {
+  opacity: 0.85;
+}
+
+.video-editor-version[aria-pressed='true'] {
+  opacity: 1;
+  scale: 1;
+  box-shadow:
+    0 0 0 1.5px var(--color-on-scrim),
+    0 10px 22px -8px color-mix(in srgb, var(--color-scrim) 55%, transparent);
+}
+
+.video-editor-version[aria-disabled='true'] {
   cursor: default;
 }
-/* 当前版本用反相实底标出，选中态不用主色。 */
-.video-editor-preview-tab.is-active {
-  background: var(--color-on-scrim);
-  color: var(--color-scrim);
+
+.video-editor-version img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
-.video-editor-ratio {
-  position: absolute;
-  top: 24px;
-  right: 24px;
+
+/* 没有截帧海报：中性实底加居中的小视频图标，不做成白卡。 */
+.video-editor-version-empty {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
 }
-.video-editor-transport {
+
+/* 压在画面上的字与圈不随主题换：深色渐变、白字，任何画面上都读得清。 */
+.video-editor-version-label {
   position: absolute;
-  /* 贴画面底而不是黑框底：16px 之外再让开 contain 留出的那条黑边 */
-  bottom: calc(16px + (100cqh - min(100cqh, 100cqw / var(--preview-ratio, 0.5625))) / 2);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: color-mix(in srgb, var(--color-scrim) 80%, transparent);
-  border: 0;
-  padding: 5px 12px;
-  border-radius: var(--radius-full);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 14px 2px 4px;
+  overflow: hidden;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--color-scrim) 60%, transparent),
+    transparent
+  );
   color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 12px;
+  text-align: center;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.video-editor-transport button {
-  color: inherit;
-}
-.video-editor-playback-time {
-  font-variant-numeric: tabular-nums;
-  padding: 0 12px;
-}
-.video-editor-playback-time span {
-  opacity: 0.65;
-}
-.video-editor-preview-message {
+
+.video-editor-version-state {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  background: color-mix(in srgb, var(--color-scrim) 84%, var(--color-on-scrim));
-  padding: 24px;
-  text-align: center;
+  gap: 2px;
+  background: color-mix(in srgb, var(--color-scrim) 35%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 12px;
+  white-space: nowrap;
 }
-.video-editor-preview-tabs,
-.video-editor-ratio,
-.video-editor-transport {
-  z-index: var(--z-local-2);
+
+.video-editor-version-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 1.5px var(--color-on-scrim);
 }
-.video-editor-preview-message {
-  z-index: var(--z-local-1);
-}
+
 /* 放大预览：与灯箱同款的应用内遮罩，盖满视口、舞台居中 */
 .video-editor-enlarge-scrim {
   /* 编辑器弹窗同在 popup 层，遮罩要盖过它；DOM 顺序让放大层仍在遮罩之上 */
   z-index: var(--z-popup);
   background: color-mix(in srgb, var(--color-scrim) 60%, transparent);
 }
+
 .video-editor-enlarge {
   inset: 0;
   width: auto;
@@ -173,36 +330,140 @@
   justify-content: center;
   padding: 24px;
 }
-/* 按画面比例放大，不留黑边；尺寸上限与灯箱一致 */
+
+/* 按画面比例放大；尺寸上限与灯箱一致 */
 .video-editor-preview.is-enlarged {
   width: min(960px, 90vw, calc(80vh * var(--preview-ratio)));
   height: auto;
-  min-height: 0;
-  aspect-ratio: var(--preview-ratio);
   border-radius: var(--radius-md);
+  box-shadow: none;
 }
+
+/* 放大层里时间线面板被遮罩盖住，画面底边挂一份同样的播放控件。 */
+.video-editor-enlarge-transport {
+  /* 深色胶囊上墨色焦点环看不见，改用 on-scrim。 */
+  --color-focus-ring: var(--color-on-scrim);
+
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: var(--z-local-2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  translate: -50% 0;
+  padding: 4px 6px 4px 4px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 72%, transparent);
+  color: var(--color-on-scrim);
+  white-space: nowrap;
+}
+
+.video-editor-enlarge-transport button {
+  color: inherit;
+}
+
+.video-editor-enlarge-transport .video-editor-play {
+  background: var(--color-on-scrim);
+  color: var(--color-scrim);
+}
+
+.video-editor-enlarge-transport .video-editor-clock span {
+  color: inherit;
+  opacity: 0.65;
+}
+
+/* 时间线面板：顶上一行播放控制条，下面是轨道。 */
+.video-editor-timeline-panel {
+  display: flex;
+  grid-area: timeline;
+  min-width: 0;
+  flex-direction: column;
+  padding: 8px 12px 12px;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.video-editor-bar {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.video-editor-bar-group {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.video-editor-bar button,
+.video-editor-enlarge-transport button {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-full);
+}
+
+.video-editor-bar .video-editor-bar-button {
+  width: auto;
+  padding: 0 10px;
+  color: var(--color-on-surface-variant);
+}
+
+.video-editor-clock {
+  padding: 0 6px 0 10px;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.video-editor-clock span {
+  color: var(--color-on-surface-muted);
+}
+
+.video-editor-readout {
+  margin-right: 4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.video-editor-readout b {
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.video-editor-bar-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 8px;
+  background: var(--color-hairline);
+}
+
+.video-editor-timeline-loading {
+  padding: 32px 16px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  text-align: center;
+}
+
+/* 输入栏：没有外框，直接立在弹窗底上。 */
 .video-editor-inspector {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  grid-area: inspector;
   min-width: 0;
   min-height: 0;
-  padding: 20px;
-  border: 1px solid var(--color-chat-hairline);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-lowest);
+  flex-direction: column;
+  gap: 12px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.video-editor-inspector-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.video-editor-inspector h3 {
-  font-size: var(--text-title-lg);
-  font-weight: 600;
-}
+
 .video-editor-range {
   display: flex;
   align-items: center;
@@ -214,6 +475,7 @@
   color: var(--color-on-surface-muted);
   font-variant-numeric: tabular-nums;
 }
+
 .video-editor-range input {
   width: 64px;
   min-width: 0;
@@ -226,19 +488,23 @@
   text-align: center;
   appearance: textfield;
 }
+
 .video-editor-range input::-webkit-inner-spin-button,
 .video-editor-range input::-webkit-outer-spin-button {
   appearance: none;
   margin: 0;
 }
+
 .video-editor-range > svg,
 .video-editor-range > span {
   flex-shrink: 0;
 }
+
 .video-editor-range > span {
   font-size: var(--text-label);
   padding-left: 6px;
 }
+
 .video-editor-generation-controls {
   display: flex;
   align-items: center;
@@ -246,6 +512,7 @@
   min-width: 0;
   gap: 10px;
 }
+
 .video-editor-model {
   display: inline-flex;
   position: relative;
@@ -261,29 +528,35 @@
   color: var(--color-on-surface);
   cursor: pointer;
 }
+
 .video-editor-model > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .video-editor-model > svg {
   flex-shrink: 0;
   color: var(--color-on-surface-muted);
 }
+
 .video-editor-model:hover:not(:disabled),
 .video-editor-model[data-state='open'] {
   background: var(--color-surface-container-low);
 }
+
 .video-editor-model:disabled {
   opacity: var(--state-disabled-content);
   cursor: not-allowed;
 }
+
 .video-editor-model-menu {
   max-width: calc(100vw - 32px);
   max-height: var(--radix-dropdown-menu-content-available-height);
   overflow-y: auto;
 }
+
 .video-editor-generate {
   width: auto;
   min-width: 86px;
@@ -294,79 +567,121 @@
   border-radius: var(--radius-sm);
   box-shadow: none;
 }
+
 .video-editor-generate:disabled {
   background: var(--color-secondary-container);
   color: var(--color-on-surface-muted);
   opacity: 0.65;
 }
-.video-editor-timeline-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 60px;
-  color: var(--color-on-surface-muted);
-  text-align: center;
-}
+
 .video-editor-muted {
   color: var(--color-on-surface-muted);
   font-size: var(--text-body);
   line-height: 1.6;
 }
+
 /* 输入框不画焦点环，外框边框转墨色即焦点指示（见 editor-composer.css）。 */
 .video-editor .video-editor-composer-input:focus-visible {
   outline: none;
 }
+
 @media (min-width: 1000px) and (max-height: 850px) {
   .video-editor-inspector {
     gap: 8px;
-    padding: 16px;
   }
+
   .video-editor-composer {
     padding: 12px;
   }
+
   .video-editor-composer-input {
     min-height: 64px;
   }
 }
+
 @media (max-width: 999px) {
   .video-editor-dialog {
     width: calc(100vw - 16px);
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
   }
+
   .video-editor-header {
-    padding: 16px 16px 4px;
+    padding: 8px 12px 8px 16px;
   }
+
   .video-editor {
+    grid-template-areas:
+      'stage'
+      'timeline'
+      'inspector';
+    grid-template-columns: minmax(0, 1fr);
+    /* 三块各按内容高，弹窗里整体滚动；不让定高的容器把各行压扁叠在一起。 */
+    grid-template-rows: repeat(3, max-content);
     padding: 0 16px 16px;
   }
-  .video-editor-workspace {
-    height: auto;
-    grid-template-columns: 1fr;
-    gap: 24px;
+
+  /* 版本条改成舞台下方的横条。 */
+  .video-editor-stage-area {
+    flex-direction: column;
+    gap: 10px;
   }
-  .video-editor-preview-slot {
+
+  .video-editor-stage {
     height: min(58dvh, 560px);
     min-height: 300px;
+    flex: none;
   }
+
+  .video-editor-hero-wrap {
+    inset: 12px;
+  }
+
+  .video-editor-versions {
+    position: static;
+    max-height: none;
+    flex-direction: row;
+    translate: none;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-container-low);
+  }
+
+  /* 横条是浅灰实面、会被滚动裁切：不投阴影，选中格只留细环；白环在浅灰上看不见，换成墨色。 */
+  .video-editor-version {
+    box-shadow: none;
+  }
+
+  .video-editor-version[aria-pressed='true'] {
+    box-shadow: 0 0 0 1.5px var(--color-on-surface);
+  }
+
   .video-editor-inspector {
     min-height: 390px;
-    padding: 16px;
     overflow: visible;
   }
-  .video-editor-transport {
-    gap: 0;
-    padding: 4px;
-    max-width: calc(100% - 20px);
+}
+
+/* 手机宽度放不下整行：总时长读数让给按钮，时钟里已经有总长。 */
+@media (max-width: 599px) {
+  .video-editor-readout,
+  .video-editor-bar-divider {
+    display: none;
   }
-  .video-editor-playback-time {
-    padding: 0 4px;
-    font-size: var(--text-label);
+
+  .video-editor-clock {
+    padding: 0 4px 0 6px;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .video-editor * {
     scroll-behavior: auto;
+  }
+
+  .video-editor-version {
+    transition: none;
   }
 }

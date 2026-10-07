@@ -7,6 +7,7 @@ import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
+import { useUnseenResults } from '../components/use-unseen-results'
 import { AnnotationCanvas } from './annotation-canvas'
 import { exportAnnotatedImage } from './annotation-export'
 import { EditComposer, type EditComposerHandle } from './edit-composer'
@@ -32,7 +33,6 @@ import {
 import type { EditDraftPart, EditFrame, FrameEditTarget } from './image-edit-types'
 import { useFrameEditDrafts } from './use-frame-edit-drafts'
 import { useFrameReplace } from './use-frame-replace'
-import { useUnseenResults } from './use-unseen-results'
 import { VersionStrip } from './version-strip'
 import './image-edit.css'
 
@@ -115,7 +115,12 @@ export function FrameImageEditor({
   )
   // 选中的那条被折进当前帧格（刚替换过）或还没拉回来时，落回当前帧；撤销后它回到条里，舞台随之回到对比。
   const selected = entries.find((entry) => entry.key === selectedKey) ?? entries[0]
-  const unseen = useUnseenResults(entries, selected)
+  const unseen = useUnseenResults(
+    entries.flatMap((entry) => (entry.kind === 'pending' ? [entry.job.id] : [])),
+    (selected?.kind === 'image' || selected?.kind === 'failed') && selected.job !== null
+      ? selected.job.id
+      : undefined,
+  )
   const baseUrl = selected === undefined ? '' : entryBaseUrl(selected, currentUrl ?? '')
   const draft = useMemo(() => draftOf(drafts.drafts, baseUrl), [drafts.drafts, baseUrl])
   const inFlight = entries.filter((entry) => entry.kind === 'pending').length
@@ -307,7 +312,9 @@ export function FrameImageEditor({
                   ? undefined
                   : { onSelect: () => select(REGENERATE_KEY), selected: regenerating }
               }
-              isUnseen={unseen.isUnseen}
+              isUnseen={(entry) =>
+                entry.kind === 'image' && entry.job !== null && unseen.isUnseen(entry.job.id)
+              }
               hasMore={jobsQuery.hasNextPage}
               loadingMore={jobsQuery.isFetchingNextPage}
               onLoadMore={() => void jobsQuery.fetchNextPage()}
