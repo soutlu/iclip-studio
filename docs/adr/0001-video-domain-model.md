@@ -3,6 +3,7 @@
 - 状态：已接受（2026-09-25）
 - 修订（2026-09-25，ADR-0002）：第 3 条「版本组是原作的（对话，`shot_index`）；原作没有 `shot_index` 时自己一组」与「在副本里剪继承来的出片，合成那行属于副本，版本归源那一组」、第 10 条「资料库：一组一张卡，卡面是最新一版」由 [ADR-0002](0002-library-card-per-storyboard.md) 取代。
 - 修订（2026-09-28，ADR-0003）：第 10 条「审计出片次数：同组无来源的 video / generate 行，含失败与在途」由 [ADR-0003](0003-audit-count-successful-generations.md) 取代。
+- 修订（2026-10-07，ADR-0010）：第 1 条「参考片段、编辑过程中的中间状态、标注草稿不记」里的参考片段与表格里「合成 — 来源：编辑段」一行、第 4 条「合成的来源是编辑段，编辑段的来源是基底成片，区间记在编辑段上」里关于合成的部分、第 5 条「编辑与合成由服务端完成」整条，以及取舍里「不做：记录编辑的中间状态、参考片段、标注草稿」中的参考片段，由 [ADR-0010](0010-timeline-editing-frontend-clips.md) 取代。
 - 取代现行实现中的做法：#303 与 #401（镜头组编号升为列，查询、分组不再读 `metadata`；衍生记录在原作号之外再记直接来源）、#305（上传确认落一行，外部地址仍不登记）、#353（参考片段不落行，切片与合成由服务端按编辑段完成，`/generations/clips` 下线）。
 - 沿用：#466（分叉不拷记录，副本按血缘继承祖先已完成的记录）；替人办事（持 `users:act_as` 的钥匙按 `user_name` 换属主）。
 - 影响：[CONTEXT.md](../CONTEXT.md) 术语「分镜」「镜头组」「成片」「生成任务」「审计口径」；合同 [§10 上传](../../contract/conventions.md#10-上传-uploads)、[§11 媒体生成](../../contract/conventions.md#11-媒体生成-generations)、[§12 审计报表](../../contract/conventions.md#12-审计报表-audit)、[§13 资料库](../../contract/conventions.md#13-资料库-library)；[openapi.json](../../contract/openapi.json) 的 `/generations/*` 与 `/uploads/*`。
