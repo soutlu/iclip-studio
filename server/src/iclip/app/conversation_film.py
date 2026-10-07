@@ -116,7 +116,6 @@ class ConversationFilmAdapter:
         files = await self._existing(owner, conversation_id)
         self._check_versions(files, film_version, run_version)
         film = await self._clean(principal, conversation_id, files)
-        upload = False
         if url is not None and not await self._images(principal, conversation_id, files).known(url):
             found = (
                 None
@@ -125,7 +124,6 @@ class ConversationFilmAdapter:
             )
             if found is None:
                 raise ValidationFailed("只能换成这段对话里的图，或你自己上传的图")
-            upload = True
         try:
             change = choose_image(
                 film,
@@ -136,11 +134,13 @@ class ConversationFilmAdapter:
             )
         except FilmEditRejected as exc:
             raise ValidationFailed(str(exc)) from exc
+        if url is not None:
+            # 选用的图不论生成、编辑还是上传，一律先登记再写文件：文件写进去时它已经是对话素材，
+            # AI 导演检查时认得它；做同款拷台账就带上了运行文件选用的每一张。已选用的再选一次
+            # 也登记，没登记过的就此补上；重复登记保留首条，没有别的副作用。
+            await self._ledger.record(files.namespace, [Material(url=url, kind="image")])
         if change is None:
             return await self._fresh(principal, owner, conversation_id)
-        if upload and url is not None:
-            # 先登记再写文件：文件写进去时这张图已经是对话素材，AI 导演检查时认得它。
-            await self._ledger.record(files.namespace, [Material(url=url, kind="image")])
         path, content = change
         # 还没有运行文件时没有版本可对，新建的这一份直接写。
         expected = film_version if path == FILM_PATH else run_version

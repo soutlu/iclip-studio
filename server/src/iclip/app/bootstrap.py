@@ -31,6 +31,7 @@ from iclip.app.agent_layer import (
 from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
+from iclip.app.conversation_same_style import SameStyleCopier
 from iclip.app.conversation_workspace import (
     ConversationWorkspace,
     validate_film,
@@ -512,7 +513,11 @@ def build_app(
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     # 审计报表与资料库跨模块只读聚合，直接查表。
     audit = build_audit_module(PgAuditReports(active_engine))
-    library = build_library_module(PgLibraryReports(active_engine))
+    # 做同款的拷贝与资料库的「做得了同款」共用一份文件表。
+    same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
+    library = build_library_module(
+        PgLibraryReports(active_engine), has_production_files=same_style.has_production_files
+    )
     conversations = build_conversations_module(
         conversation_repo,
         act_as=identity.act_as,
@@ -543,6 +548,7 @@ def build_app(
         latest_master_urls=latest_master_urls,
         fork_transcript=ForkTranscriptAdapter(queue=job_queue, history=transcript_history),
         copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
+        copy_same_style=same_style,
     )
     # 确认上传经 uploads 声明的端口落一条上传记录；绑定方法与端口的签名结构一致，不另写适配器。
     uploads = (

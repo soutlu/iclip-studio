@@ -222,7 +222,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /conversations/{id}/film` 把 AI 导演的工程读成制作页（语义见 [CONTEXT.md「制作页」](../docs/CONTEXT.md#术语)），可见范围同读工作区文件，没有 `film.icml` 是 `404`。`problems` 是两个文件一起检查出的问题数，不为 0 时 `groups` 为空，客户端提示等 AI 导演改好。`filmVersion` / `runVersion` 是两个文件的版本号，没有运行文件时 `runVersion` 为 `null`。
   - `target`（改字定位）与 `node`（图片定位）只在同一版文件里有效，当不透明字符串原样传回；为 `null` 的那段不能在页面上改。改字定位指的是文件里的一段文字、一个镜头的正文或剧本里的一句台词，客户端不解析它。`frames` 是这组视频节点下挂的参考图加各镜的机位图，按发给视频的先后，同一张图只占一格；`label` 对元素的图是元素名（同一元素的几张图同名），对机位图是「镜头 N」（别组的机位图是「第 M 组镜头 N」），都不是的是节点名。`settings` 按拼给视频的先后：拍法、出场元素、声音；`settings[].images` 是出场元素挂的图（`frames` 里的 `node`），按先后，可以几张，拍法与声音为空。`frames[].number` 是发给视频的编号，没有图为 `null`；`frames[].aspectRatio` 是文件里写的这张图的画幅，用户给的图为 `null`（编辑时跟这组的画幅）；`shots[].parts` 比 `lines` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。按描述生成的图带 `prompt`：发给模型的描述按参考图拆成几段，`kind: "text"` 是文字，`kind: "image"` 是参考图所在的位置（`node` 在这组 `frames` 里时用它的 `number` 当 @N）；还没有图的参考图只用文字写，不出现在这里，它们的 `label` 按挂的先后、不重复列在 `missing` 里，客户端据此提醒哪几张缺图、只用描述；用户给的图 `prompt` 为 `null`、`missing` 为空。生图节点的 `url` 只认运行文件里的选用，没选用就是 `null`，生成过也不算。
   - `PATCH .../film/text` 体是 `{ filmVersion, edits: [{ target, text?, parts?, lines? }] }`。镜头给 `parts` 与 `lines`：`lines` 按原来的先后列出这一镜的每句台词 `{ target, text }`，`parts` 比 `lines` 多一段；其余给 `text`。台词只改字：不能删、不能加、不能调先后，说话人不变。用户打的 `{` `}` 存成全角；写 `@Image`、清空、动台词的句数或先后、改完分镜不合规矩都是 `422`，`detail` 是给人看的一句话。
-  - `PUT .../film/image` 体是 `{ node, url, filmVersion, runVersion }`。`url` 要是这段对话的图片（对话素材或这段对话已完成的图片记录），或调用者自己上传的图（§10），后者随即登记成对话素材；其余是 `422`。`url` 为 `null` 是取消选用：删掉运行文件里这张图的选用，它就没有图，不回到生成过的任何一张；用户给的图不能为 `null`。
+  - `PUT .../film/image` 体是 `{ node, url, filmVersion, runVersion }`。`url` 要是这段对话的图片（对话素材或这段对话已完成的图片记录），或调用者自己上传的图（§10），其余是 `422`；选用的图不论哪种，写文件之前都登记成对话素材。`url` 为 `null` 是取消选用，不登记任何东西：删掉运行文件里这张图的选用，它就没有图，不回到生成过的任何一张；用户给的图不能为 `null`。
   - `POST .../film/image-generations` 体是 `{ node, prompt?, filmVersion, runVersion }`，按描述给一张图出一张新的，答复 `202` 与 `{ jobId }`。模型按文件里写的，不收；`prompt` 是编辑器里改过的 `{ text, referenceImageUrls }`（最多 10 张），只用这一次，不给就用文件里的描述；参考图按在描述里第一次出现的先后排进 `referenceImageUrls`，`text` 里写成 `@ImageN`，N 是它在列表里的位置，与后端拼文件里的描述同一种写法。生成不写运行文件：结果只是这张图多一个版本，不自动用上，要人用 `PUT .../film/image` 选用。用户给的图、没接生图模型、没开媒体生成都是 `422`。生成记录的 `metadata.film_node` 是节点名，编辑器版本条按它列。
   - `POST .../film/video-generations` 体是 `{ video, model, resolution, generateAudio, filmVersion, runVersion }`，给一组出片，答复 `202` 与 `{ jobId }`。镜头组与参考图按文件拼，镜号是组号，`metadata.film_node` 是视频节点名；模型、清晰度、声音是出片栏这次选的，不写回文件，模型的规则同 §11；出片栏默认选这组的 `model`（文件里写的），它不在可选模型里时用服务端的默认。
   - 这几个写端点都只有属主能用，口径同 `PUT .../workspace/file`；版本对不上是 `409`，分镜有问题时是 `422`；改字与换图答复改完的整页，形状同 `GET`。写文件照常发文件变更帧，生成照常发 `generation.changed`。
@@ -239,6 +239,16 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 继承来的轮 `:regenerate` 返回 `404`；副本上发过一条新消息之后，那一轮照常可重新生成。源对话里跨多次运行的一轮（审批后恢复、续跑）在副本里会拆成多轮显示。
 - 媒体字节不复制：两边的地址指向同一批对象，编辑只会按新任务 id 产出新地址，不覆盖也不删除。
 - 副本不进审计报表（见 §12）。
+
+### 做同款
+
+`POST /conversations` 带 `sameAs`（源对话 id，即资料库卡的 id）就是做同款：建对话时把源的几份制作文件与素材台账拷进新对话，语义见 [CONTEXT.md「对话」](../docs/CONTEXT.md#术语)。不带时一切照旧。
+
+- **拷过去的**：源工作区里有的才拷，`treatment.md` 原名，`film.icml` 改名 `old_film.icml`，`film.icrun` 原名，`video_shot.json` 改名 `old_video_shot.json`；连同整份素材台账。文件版本从 1 起。两份改名的不会自动打开制作页、分镜页，由 AI 导演改完再改回原名。其余文件（`brief.md`、`references/` 等）一概不拷。
+- **不拷的**：对话历史、运行记录、出片记录（新对话不继承，不是分叉）；行上 `forkedFrom` 与 `forkTurn` 都是 `null`。
+- 源的可见范围同分叉：看不见是 `404`，治理者连墓碑也能拿来做。源在跑也照拷。源工作区里既没有 `film.icml` 也没有 `video_shot.json` 是 `422`。两种失败都不建对话。
+- 带同一个 `id` 重发时这段对话已经在了，答复它（`200`）、不再拷，建好之后改过的文件不会被盖掉。
+- 先拷文件与台账，最后落对话行：`created` 帧发出时文件已经在了，中途失败只留下寻址不到的数据。
 
 ### 两处归属
 
@@ -477,5 +487,5 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外（[ADR-0002](../docs/adr/0002-library-card-per-storyboard.md)）；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面成片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面成片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的成片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
 - **卡的字段**：`face` 是卡面那一版，即对话自己最新的成片；`take` 是它对应的出片（出片是它自己，合成沿原作取，原作可以在祖先对话里）；`userName` 是卡的作者，即对话属主的用户名，不挂对话的是出片属主的；`groupCount` / `versionCount` 是卡里有几个镜头组、一共几版，都含继承来的。
 - **版本的形状**（`face` 与详情里的每一版）：`kind` 是 `take`（出片）或 `composite`（合成）；`jobId` 是那条成片；`watermarkOutputUrl` 合成恒为 `null`；`durationMs` 是实际时长（毫秒），出片取上游实测的、合成是本系统量的，上游没给为 `null`；`finishedAt` 是完成时刻；`userName` 是那条成片属主的用户名。详情里的每一版另带 `take`，合成的 `take` 沿原作取。`take.prompt` 是发给模型的原文；`take.script` 是镜头组（`globalSettings` 加 `timeline[]`，每镜 `start`、`end`、`prompt`、`imageIndexes`），为 `null` 表示纯文本。`imageIndexes` 指向 `referenceImageUrls` 的第 N 张。画面尺寸不在数据里，占位比例按 `aspectRatio`。账号没有用户名时各处 `userName` 为 `null`。
-- `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。
+- `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、`canOpenConversation` 为真、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 三条都成立才是 `true`。列表的卡上没有这一项。
 - `GET /library/authors` 列作者与各自的卡数（`userName`、`count`），多的在前、同数按名字，不受筛选影响。

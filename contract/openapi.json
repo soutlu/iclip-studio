@@ -1092,6 +1092,18 @@
             ],
             "title": "Id"
           },
+          "sameAs": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas"
+          },
           "taskId": {
             "anyOf": [
               {
@@ -3370,6 +3382,10 @@
       "LibraryVideoDetailOut": {
         "additionalProperties": false,
         "properties": {
+          "canMakeSame": {
+            "title": "Canmakesame",
+            "type": "boolean"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/ShotGroupOut"
@@ -3383,7 +3399,8 @@
         },
         "required": [
           "video",
-          "groups"
+          "groups",
+          "canMakeSame"
         ],
         "title": "LibraryVideoDetailOut",
         "type": "object"
@@ -9249,7 +9266,7 @@
         ]
       },
       "post": {
-        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。",
+        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：源看不见是 404，源没有工程文件或分镜文件是 422。",
         "operationId": "create_conversation_conversations_post",
         "requestBody": {
           "content": {
