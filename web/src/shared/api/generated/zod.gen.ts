@@ -457,6 +457,123 @@ export const zFaceOut = z.object({
 })
 
 /**
+ * FilmFrameOut
+ *
+ * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ */
+export const zFilmFrameOut = z.object({
+  kind: z.enum(['generated', 'photo']),
+  label: z.string(),
+  node: z.string(),
+  number: z.int().nullable(),
+  url: z.string().nullable(),
+})
+
+/**
+ * FilmImageChoiceIn
+ *
+ * 给 ``node`` 换成 ``url``；``url`` 为 null 是回到最近一次生成的那张。
+ *
+ * 两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。
+ */
+export const zFilmImageChoiceIn = z.object({
+  filmVersion: z.int(),
+  node: z.string().min(1),
+  runVersion: z.int().nullable(),
+  url: z.string().nullable(),
+})
+
+/**
+ * FilmLineOut
+ */
+export const zFilmLineOut = z.object({
+  role: z.string(),
+  target: z.string().nullable(),
+  text: z.string(),
+})
+
+/**
+ * FilmSettingOut
+ *
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。
+ */
+export const zFilmSettingOut = z.object({
+  image: z.string().nullable(),
+  kind: z.enum(['shooting', 'element', 'voice']),
+  label: z.string().nullable(),
+  target: z.string().nullable(),
+  text: z.string(),
+})
+
+/**
+ * FilmShotOut
+ *
+ * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。
+ */
+export const zFilmShotOut = z.object({
+  end: z.number(),
+  lines: z.array(zFilmLineOut),
+  parts: z.array(z.string()),
+  start: z.number(),
+  target: z.string().nullable(),
+  view: z.string().nullable(),
+})
+
+/**
+ * FilmGroupOut
+ */
+export const zFilmGroupOut = z.object({
+  aspectRatio: z.string(),
+  frames: z.array(zFilmFrameOut),
+  index: z.int(),
+  model: z.string(),
+  seconds: z.int(),
+  settings: z.array(zFilmSettingOut),
+  shots: z.array(zFilmShotOut),
+  video: z.string(),
+})
+
+/**
+ * FilmTextEditIn
+ *
+ * 改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。
+ */
+export const zFilmTextEditIn = z.object({
+  parts: z.array(z.string()).nullish(),
+  target: z.string().min(1),
+  text: z.string().nullish(),
+})
+
+/**
+ * FilmTextEditsIn
+ *
+ * ``filmVersion`` 是读到的工程文件版本号，对不上是 409。
+ */
+export const zFilmTextEditsIn = z.object({
+  edits: z.array(zFilmTextEditIn).min(1).max(64),
+  filmVersion: z.int(),
+})
+
+/**
+ * FilmViewOut
+ *
+ * 制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。
+ */
+export const zFilmViewOut = z.object({
+  filmVersion: z.int(),
+  groups: z.array(zFilmGroupOut),
+  problems: z.int(),
+  runVersion: z.int().nullable(),
+})
+
+/**
+ * FilmViewEnvelope
+ */
+export const zFilmViewEnvelope = z.object({
+  film: zFilmViewOut,
+})
+
+/**
  * FrameTarget
  */
 export const zFrameTarget = z.object({
@@ -2183,6 +2300,41 @@ export const zSetConversationCompletionConversationsConversationIdCompletionPutP
  */
 export const zSetConversationCompletionConversationsConversationIdCompletionPutResponse =
   zConversationEnvelope
+
+export const zReadConversationFilmConversationsConversationIdFilmGetPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadConversationFilmConversationsConversationIdFilmGetResponse = zFilmViewEnvelope
+
+export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutBody =
+  zFilmImageChoiceIn
+
+export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutResponse =
+  zFilmViewEnvelope
+
+export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchBody =
+  zFilmTextEditsIn
+
+export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchResponse =
+  zFilmViewEnvelope
 
 export const zApproveConversationsConversationIdInteractionsInteractionIdPostBody = zApprovalRequest
 

@@ -6,9 +6,11 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
+from iclip.common.film_view import FilmTextEdit, FilmView, FrameKind, SettingKind
+from iclip.common.urls import is_http_url
 from iclip.domains.conversations.models import (
     Conversation,
     ConversationActivity,
@@ -247,6 +249,175 @@ class ConversationFileWriteIn(CamelModel):
 
 class ConversationFileEnvelope(CamelModel):
     file: ConversationFileContentOut
+
+
+MAX_FILM_EDITS: Final = 64
+"""一次最多改几段字：页面自动保存时一次只送改过的那几段。"""
+
+
+class FilmFrameOut(CamelModel):
+    """一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。"""
+
+    node: str
+    label: str
+    kind: FrameKind
+    url: str | None
+    number: int | None
+
+
+class FilmSettingOut(CamelModel):
+    """全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。"""
+
+    kind: SettingKind
+    target: str | None
+    label: str | None
+    text: str
+    image: str | None
+
+
+class FilmLineOut(CamelModel):
+    target: str | None
+    role: str
+    text: str
+
+
+class FilmShotOut(CamelModel):
+    """一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。"""
+
+    target: str | None
+    start: float
+    end: float
+    parts: list[str]
+    lines: list[FilmLineOut]
+    view: str | None
+
+
+class FilmGroupOut(CamelModel):
+    index: int
+    video: str
+    model: str
+    seconds: int
+    aspect_ratio: str
+    frames: list[FilmFrameOut]
+    settings: list[FilmSettingOut]
+    shots: list[FilmShotOut]
+
+
+class FilmViewOut(CamelModel):
+    """制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。"""
+
+    film_version: int
+    run_version: int | None
+    problems: int
+    groups: list[FilmGroupOut]
+
+
+class FilmViewEnvelope(CamelModel):
+    film: FilmViewOut
+
+
+class FilmTextEditIn(CamelModel):
+    """改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。"""
+
+    target: Annotated[str, Field(min_length=1)]
+    text: str | None = None
+    parts: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _one_of(self) -> FilmTextEditIn:
+        if (self.text is None) == (self.parts is None):
+            raise ValueError("text 与 parts 给且只给一个")
+        return self
+
+
+class FilmTextEditsIn(CamelModel):
+    """``filmVersion`` 是读到的工程文件版本号，对不上是 409。"""
+
+    film_version: int
+    edits: Annotated[list[FilmTextEditIn], Field(min_length=1, max_length=MAX_FILM_EDITS)]
+
+
+class FilmImageChoiceIn(CamelModel):
+    """给 ``node`` 换成 ``url``；``url`` 为 null 是回到最近一次生成的那张。
+
+    两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。"""
+
+    node: Annotated[str, Field(min_length=1)]
+    url: str | None
+    film_version: int
+    run_version: int | None
+
+    @field_validator("url")
+    @classmethod
+    def _http(cls, value: str | None) -> str | None:
+        if value is not None and not is_http_url(value):
+            raise ValueError("要写带主机名的 http(s) 地址")
+        return value
+
+
+def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
+    return [
+        FilmTextEdit(
+            target=edit.target,
+            text=edit.text,
+            parts=None if edit.parts is None else tuple(edit.parts),
+        )
+        for edit in body.edits
+    ]
+
+
+def film_view_out(view: FilmView) -> FilmViewEnvelope:
+    return FilmViewEnvelope(
+        film=FilmViewOut(
+            film_version=view.film_version,
+            run_version=view.run_version,
+            problems=view.problems,
+            groups=[
+                FilmGroupOut(
+                    index=group.index,
+                    video=group.video,
+                    model=group.model,
+                    seconds=group.seconds,
+                    aspect_ratio=group.aspect_ratio,
+                    frames=[
+                        FilmFrameOut(
+                            node=frame.node,
+                            label=frame.label,
+                            kind=frame.kind,
+                            url=frame.url,
+                            number=frame.number,
+                        )
+                        for frame in group.frames
+                    ],
+                    settings=[
+                        FilmSettingOut(
+                            kind=setting.kind,
+                            target=setting.target,
+                            label=setting.label,
+                            text=setting.text,
+                            image=setting.image,
+                        )
+                        for setting in group.settings
+                    ],
+                    shots=[
+                        FilmShotOut(
+                            target=shot.target,
+                            start=shot.start,
+                            end=shot.end,
+                            parts=list(shot.parts),
+                            lines=[
+                                FilmLineOut(target=line.target, role=line.role, text=line.text)
+                                for line in shot.lines
+                            ],
+                            view=shot.view,
+                        )
+                        for shot in group.shots
+                    ],
+                )
+                for group in view.groups
+            ],
+        )
+    )
 
 
 def conversation_out(

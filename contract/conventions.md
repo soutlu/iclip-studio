@@ -220,6 +220,11 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - `video_shot.json` 的每个镜头组可以带一个可选的 `model`，是服务端配置里的视频模型名：分镜页读到且它在可选模型里时默认选它，否则用服务端的默认；用户改选不写回文件。`write_video_shots` 不写这个字段，`export_shots` 导出时带上。
   - `film.icml` 与 `film.icrun` 是 AI 导演的工程文件与运行文件，写回时按 `check_film` 的同一套规则校验被写的这一个文件，不合法返回 `422`；要对照另一个文件或对话素材的规则只在工具里查。
   - `review.md` 是 agent 收尾时写下的需要人工复核的事项，纯文本一条一行，由 `write_file` 写入，不做形状校验。它是可选交付物：没有需要复核的事项时 agent 不写这份文件，取它得到 `404`；调用方把「文件不在」与「内容为空」都按没有复核事项处理。
+- `GET /conversations/{id}/film` 把 AI 导演的工程读成制作页（语义见 [CONTEXT.md「制作页」](../docs/CONTEXT.md#术语)），可见范围同读工作区文件，没有 `film.icml` 是 `404`。`problems` 是两个文件一起检查出的问题数，不为 0 时 `groups` 为空，客户端提示等 AI 导演改好。`filmVersion` / `runVersion` 是两个文件的版本号，没有运行文件时 `runVersion` 为 `null`。
+  - `target`（改字定位）与 `node`（图片定位）只在同一版文件里有效，当不透明字符串原样传回；为 `null` 的那段不能在页面上改。`frames[].number` 是发给视频的编号，没有图为 `null`；`shots[].parts` 比 `lines` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。
+  - `PATCH .../film/text` 体是 `{ filmVersion, edits: [{ target, text?, parts? }] }`，镜头给 `parts`（段数不变），其余给 `text`，两者只给一个。用户打的 `{` `}` 存成全角；写 `@Image`、清空、动台词、改完分镜不合规矩都是 `422`，`detail` 是给人看的一句话。
+  - `PUT .../film/image` 体是 `{ node, url, filmVersion, runVersion }`。`url` 要是这段对话的图片（对话素材或这段对话已完成的图片记录），或调用者自己上传的图（§10），后者随即登记成对话素材；其余是 `422`。`url` 为 `null` 是取消选用、回到最近一次生成的那张，用户给的图不能为 `null`。
+  - 两个写端点都只有属主能用，口径同 `PUT .../workspace/file`；版本对不上是 `409`，分镜有问题时是 `422`；答复都是改完的整页，形状同 `GET`。写成功照常发文件变更帧。
 
 ### 分叉
 

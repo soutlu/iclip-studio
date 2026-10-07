@@ -2,10 +2,11 @@
 
 写法是 XML 加一条：``属性={名字}`` 表示引用前面定义的节点，不加引号。解析分两步：先把标签里
 引号外的 ``={名字}`` 换成带记号的普通属性值，再交给标准库的 XML 解析器。换的时候不增减换行，
-所以报错的行号就是原文的行号。"""
+所以报错的行号就是原文的行号；每个标签还记下它在原文里的位置，改一处正文或属性时只换那一段。"""
 
 from __future__ import annotations
 
+import bisect
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -45,6 +46,12 @@ class Node:
     line: int
     parent: Node | None = None
     parts: list[str | Node] = field(default_factory=_no_parts)
+
+    opening: tuple[int, int] | None = None
+    """开始标签在原文里的起止位置（字符下标，含尖括号）；对不上原文时为 None，这个标签不能就地改。"""
+
+    inner: tuple[int, int] | None = None
+    """开始标签与结束标签之间那一段在原文里的起止位置；自闭合或对不上原文时为 None。"""
 
     @property
     def children(self) -> list[Node]:
@@ -89,14 +96,29 @@ def parse(source: str, *, using: str) -> tuple[str, Node]:
     cursor = [document]
     headers: list[tuple[str, str]] = []
     parser = expat.ParserCreate()
+    xml, pieces = _to_xml(source)
+    # 解析器报的位置是换过之后、按 UTF-8 编码的字节下标；按片段起点查回原文的字符下标。
+    starts = [piece[0] for piece in pieces]
+
+    def piece_at(offset: int) -> tuple[int, int, int] | None:
+        index = bisect.bisect_left(starts, offset)
+        return pieces[index] if index < len(pieces) and starts[index] == offset else None
 
     def start(tag: str, attrs: dict[str, str]) -> None:
         node = Node(tag, attrs, parser.CurrentLineNumber, cursor[0])
+        piece = piece_at(parser.CurrentByteIndex)
+        if piece is not None:
+            node.opening = (piece[1], piece[2])
         cursor[0].parts.append(node)
         cursor[0] = node
 
     def end(_tag: str) -> None:
-        parent = cursor[0].parent
+        node = cursor[0]
+        # 自闭合的标签报的是标签末尾，那里不是结束标签，这样的标签没有正文那一段。
+        closing = piece_at(parser.CurrentByteIndex)
+        if node.opening is not None and closing is not None and source.startswith("</", closing[1]):
+            node.inner = (node.opening[1], closing[1])
+        parent = node.parent
         assert parent is not None
         cursor[0] = parent
 
@@ -109,7 +131,7 @@ def parse(source: str, *, using: str) -> tuple[str, Node]:
     parser.ProcessingInstructionHandler = lambda target, data: headers.append((target, data))
     parser.StartDoctypeDeclHandler = doctype
     try:
-        parser.Parse(_to_xml(source), True)
+        parser.Parse(xml, True)
     except expat.ExpatError as exc:
         raise MarkupError(exc.lineno, f"写法错误：{expat.errors.messages[exc.code]}") from exc
     chosen = _USING.fullmatch(headers[0][1]) if headers and headers[0][0] == HEADER_TARGET else None
@@ -167,11 +189,18 @@ def _tag_end(source: str, start: int) -> int:
     return len(source)
 
 
-def _to_xml(source: str) -> str:
-    return "".join(
-        _tag_to_xml(source, start, stop) if kind == "tag" else source[start:stop]
-        for kind, start, stop in _pieces(source)
-    )
+def _to_xml(source: str) -> tuple[str, list[tuple[int, int, int]]]:
+    """换成标准 XML，并给出每个片段 (换过之后的字节起点, 原文起点, 原文终点)。"""
+
+    out: list[str] = []
+    pieces: list[tuple[int, int, int]] = []
+    offset = 0
+    for kind, start, stop in _pieces(source):
+        text = _tag_to_xml(source, start, stop) if kind == "tag" else source[start:stop]
+        pieces.append((offset, start, stop))
+        out.append(text)
+        offset += len(text.encode("utf-8"))
+    return "".join(out), pieces
 
 
 def _tag_to_xml(source: str, start: int, stop: int) -> str:

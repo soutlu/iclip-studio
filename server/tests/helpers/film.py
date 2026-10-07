@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, NoReturn
 
 SHOE_PHOTO: Final = "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/1f0c2a9e-6b1d-4c55-9a77-3e8f0d2b7c41.jpg"
 PERSON_FIRST: Final = "https://cdn.test/a.png"
@@ -133,6 +133,19 @@ def two_requests() -> str:
     return first.replace('duration="15"', 'duration="20"').replace("</icml>", SECOND_STORYBOARD)
 
 
+class UnusedFilmPage:
+    """对话服务要一个制作页端口；测试用不到它时传这个，被调用就算测试写错了。"""
+
+    async def view(self, *_: object, **__: object) -> NoReturn:
+        raise AssertionError("这里用不到制作页")
+
+    async def edit_text(self, *_: object, **__: object) -> NoReturn:
+        raise AssertionError("这里用不到制作页")
+
+    async def choose_image(self, *_: object, **__: object) -> NoReturn:
+        raise AssertionError("这里用不到制作页")
+
+
 __all__ = [
     "FILM",
     "GIVEN_IMAGES",
@@ -142,5 +155,6 @@ __all__ = [
     "SECOND_STORYBOARD",
     "SHOE_PHOTO",
     "VIEW_ONE",
+    "UnusedFilmPage",
     "two_requests",
 ]

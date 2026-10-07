@@ -30,6 +30,7 @@ from iclip.domains.generation.models import (
     Inheritance,
     inherited_through,
 )
+from iclip.domains.generation.module import ImageModelConfig, build_generation_module
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -46,9 +47,13 @@ from iclip.domains.generation.schemas import (
     VideoComposeRequest,
     VideoGenerationIn,
 )
+from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.video import VideoProviderSettings
+from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
+from tests.helpers.identity import InMemoryUserRepository
 
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
@@ -596,6 +601,40 @@ def config_with_media() -> RuntimeConfig:
     )
 
 
+async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> None:
+    return None
+
+
+def film_image_service(
+    repo: InMemoryGenerationRepository, lineage: FixedLineage | None = None
+) -> GenerationService:
+    """生成服务：带 AI 导演的图片模型 gpt-image-2.5，视频只接一家替身。"""
+
+    return build_generation_module(
+        repo,
+        act_as=ActAs(InMemoryUserRepository()),
+        clear_completion=_keep_completion,
+        lineage=lineage or FixedLineage(),
+        video=VideoProviderSettings(
+            submit_url="https://video.test/generate",
+            status_base_url="https://video.test/tasks",
+            api_key="secret-key",
+        ),
+        video_default_model="vendor-a-seedance-2-5",
+        video_allowed_models=("vendor-a-seedance-2-5",),
+        image_models=[
+            ImageModelConfig(name=name, api_base=f"https://image.test/{name}", concurrency=1)
+            for name in ("nano_banana_pro", "gpt-image-2.5")
+        ],
+        image_default_model="nano_banana_pro",
+        image_env="test",
+        image_text_to_image_task="text-to-image",
+        image_edit_task="image-edit",
+        object_store=MemoryObjectStore(),
+        queue_connector=InMemoryConnector(),
+    ).service
+
+
 class FixedLineage:
     """ConversationLineage 替身：各对话的继承边界对与主体读不读得到都预先写死。"""
 
@@ -654,6 +693,7 @@ __all__ = [
     "compose_request",
     "config_with_media",
     "edit_request",
+    "film_image_service",
     "image_request",
     "make_composite",
     "make_cut",

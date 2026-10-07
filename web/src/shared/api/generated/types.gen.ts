@@ -1031,6 +1031,243 @@ export type FaceOut = {
 }
 
 /**
+ * FilmFrameOut
+ *
+ * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ */
+export type FilmFrameOut = {
+  /**
+   * Kind
+   */
+  kind: 'generated' | 'photo'
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Node
+   */
+  node: string
+  /**
+   * Number
+   */
+  number: number | null
+  /**
+   * Url
+   */
+  url: string | null
+}
+
+/**
+ * FilmGroupOut
+ */
+export type FilmGroupOut = {
+  /**
+   * Aspectratio
+   */
+  aspectRatio: string
+  /**
+   * Frames
+   */
+  frames: Array<FilmFrameOut>
+  /**
+   * Index
+   */
+  index: number
+  /**
+   * Model
+   */
+  model: string
+  /**
+   * Seconds
+   */
+  seconds: number
+  /**
+   * Settings
+   */
+  settings: Array<FilmSettingOut>
+  /**
+   * Shots
+   */
+  shots: Array<FilmShotOut>
+  /**
+   * Video
+   */
+  video: string
+}
+
+/**
+ * FilmImageChoiceIn
+ *
+ * 给 ``node`` 换成 ``url``；``url`` 为 null 是回到最近一次生成的那张。
+ *
+ * 两个版本号都按读到的给，没有运行文件时 ``runVersion`` 为 null。
+ */
+export type FilmImageChoiceIn = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Node
+   */
+  node: string
+  /**
+   * Runversion
+   */
+  runVersion: number | null
+  /**
+   * Url
+   */
+  url: string | null
+}
+
+/**
+ * FilmLineOut
+ */
+export type FilmLineOut = {
+  /**
+   * Role
+   */
+  role: string
+  /**
+   * Target
+   */
+  target: string | null
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmSettingOut
+ *
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``image`` 是出场元素挂的图。
+ */
+export type FilmSettingOut = {
+  /**
+   * Image
+   */
+  image: string | null
+  /**
+   * Kind
+   */
+  kind: 'shooting' | 'element' | 'voice'
+  /**
+   * Label
+   */
+  label: string | null
+  /**
+   * Target
+   */
+  target: string | null
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FilmShotOut
+ *
+ * 一个镜头。``parts`` 比 ``lines`` 多一段，第 i 句台词夹在第 i 段与第 i+1 段之间。
+ */
+export type FilmShotOut = {
+  /**
+   * End
+   */
+  end: number
+  /**
+   * Lines
+   */
+  lines: Array<FilmLineOut>
+  /**
+   * Parts
+   */
+  parts: Array<string>
+  /**
+   * Start
+   */
+  start: number
+  /**
+   * Target
+   */
+  target: string | null
+  /**
+   * View
+   */
+  view: string | null
+}
+
+/**
+ * FilmTextEditIn
+ *
+ * 改一段字：镜头给 ``parts``，段数与原来相同；其余给 ``text``。
+ */
+export type FilmTextEditIn = {
+  /**
+   * Parts
+   */
+  parts?: Array<string> | null
+  /**
+   * Target
+   */
+  target: string
+  /**
+   * Text
+   */
+  text?: string | null
+}
+
+/**
+ * FilmTextEditsIn
+ *
+ * ``filmVersion`` 是读到的工程文件版本号，对不上是 409。
+ */
+export type FilmTextEditsIn = {
+  /**
+   * Edits
+   */
+  edits: Array<FilmTextEditIn>
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+}
+
+/**
+ * FilmViewEnvelope
+ */
+export type FilmViewEnvelope = {
+  film: FilmViewOut
+}
+
+/**
+ * FilmViewOut
+ *
+ * 制作页。``problems`` 不为 0 时 ``groups`` 为空：分镜正在改，等 AI 导演改好。
+ */
+export type FilmViewOut = {
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+  /**
+   * Groups
+   */
+  groups: Array<FilmGroupOut>
+  /**
+   * Problems
+   */
+  problems: number
+  /**
+   * Runversion
+   */
+  runVersion: number | null
+}
+
+/**
  * FrameTarget
  */
 export type FrameTarget = {
@@ -4803,6 +5040,102 @@ export type SetConversationCompletionConversationsConversationIdCompletionPutRes
 
 export type SetConversationCompletionConversationsConversationIdCompletionPutResponse =
   SetConversationCompletionConversationsConversationIdCompletionPutResponses[keyof SetConversationCompletionConversationsConversationIdCompletionPutResponses]
+
+export type ReadConversationFilmConversationsConversationIdFilmGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film'
+}
+
+export type ReadConversationFilmConversationsConversationIdFilmGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadConversationFilmConversationsConversationIdFilmGetError =
+  ReadConversationFilmConversationsConversationIdFilmGetErrors[keyof ReadConversationFilmConversationsConversationIdFilmGetErrors]
+
+export type ReadConversationFilmConversationsConversationIdFilmGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: FilmViewEnvelope
+}
+
+export type ReadConversationFilmConversationsConversationIdFilmGetResponse =
+  ReadConversationFilmConversationsConversationIdFilmGetResponses[keyof ReadConversationFilmConversationsConversationIdFilmGetResponses]
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutData = {
+  body: FilmImageChoiceIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/image'
+}
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutError =
+  ChooseConversationFilmImageConversationsConversationIdFilmImagePutErrors[keyof ChooseConversationFilmImageConversationsConversationIdFilmImagePutErrors]
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses = {
+  /**
+   * Successful Response
+   */
+  200: FilmViewEnvelope
+}
+
+export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponse =
+  ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses[keyof ChooseConversationFilmImageConversationsConversationIdFilmImagePutResponses]
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchData = {
+  body: FilmTextEditsIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/text'
+}
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchError =
+  EditConversationFilmTextConversationsConversationIdFilmTextPatchErrors[keyof EditConversationFilmTextConversationsConversationIdFilmTextPatchErrors]
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: FilmViewEnvelope
+}
+
+export type EditConversationFilmTextConversationsConversationIdFilmTextPatchResponse =
+  EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses[keyof EditConversationFilmTextConversationsConversationIdFilmTextPatchResponses]
 
 export type ApproveConversationsConversationIdInteractionsInteractionIdPostData = {
   body: ApprovalRequest
