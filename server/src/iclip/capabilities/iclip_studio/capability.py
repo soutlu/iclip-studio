@@ -18,7 +18,7 @@ from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
-from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film, image_status
+from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import IMAGE
@@ -180,14 +180,13 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
     async def check_film(
         self, ctx: RunContext[AgentDepsT], show: str | None = None
     ) -> ToolReturn[str]:
-        """检查工程文件 film.icml 和运行文件 film.icrun，返回全部问题，或通过后的概况。
+        """检查工程文件 film.icml 和运行文件 film.icrun，返回全部问题，或检查通过。
 
-        每次改完这两个文件都调用一次，按返回的问题改到通过；问题带文件名和行号。通过时列出每个
-        生图节点现在用哪张图。重复调用不花钱。
+        每次改完这两个文件都调用一次，按返回的问题改到通过；问题带文件名和行号。重复调用不花钱。
 
         Args:
-            show: 检查通过后另外输出这个生图节点或视频节点拼好的提示词，写节点的名字；不需要
-                时不传。
+            show: 要看某张图或某段视频最终发给模型的完整提示词时，填它在 film.icml 里的 id，如
+                "镜02机位图"、"全片"；检查通过才输出。
         """
 
         film = await self._load(ctx)
@@ -195,15 +194,13 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
             return _problems(film)
         project = film.project
         videos = project.find("ReferenceVideo")
-        status = image_status(film)
-        lines = [f"检查通过：{len(status)} 个生图节点，{len(videos)} 次视频请求。"]
-        lines += [f"{item.name}：{item.source}" for item in status]
+        lines = [f"检查通过：{len(film.image_nodes())} 张图，{len(videos)} 段视频。"]
         if show is not None:
             node = project.nodes.get(show)
             tag = project.tags.get(node.tag) if node is not None else None
             if node is None or tag is None or tag.generation is None:
                 names = "、".join(n.attrs["id"] for n in [*film.image_nodes(), *videos])
-                raise ModelRetry(f"show 要写生图节点或视频节点的名字，可以写：{names}。")
+                raise ModelRetry(f"show 要填某张图或某段视频的 id，可以填：{names}。")
             lines += ["", *_assembled(film, node)]
         return ToolReturn(return_value="\n".join(lines), metadata=tool_note(chip="通过"))
 
@@ -311,7 +308,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                     NodeImageJob(
                         job.job_id,
                         "failed",
-                        error_message="等超时了；它可能还在后台跑，稍后用 check_film 看这个节点有没有图",
+                        error_message="等超时了；它可能还在后台跑，告诉用户稍后到制作页上看这张图",
                     ),
                     missing,
                 )

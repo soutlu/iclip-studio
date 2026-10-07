@@ -131,7 +131,7 @@ async def test_check_round_trips_through_postgres(
 
     retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
     assert retries == []
-    assert checked.startswith("检查通过：6 个生图节点，1 次视频请求。")
+    assert checked.startswith("检查通过：6 张图，1 段视频。")
 
 
 async def test_an_address_the_conversation_never_received_fails_the_check(

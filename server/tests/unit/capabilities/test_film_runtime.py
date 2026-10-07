@@ -9,7 +9,7 @@ from iclip.capabilities.iclip_studio.film.checks import (
     check_project_content,
     check_run_content,
 )
-from iclip.capabilities.iclip_studio.film.film import Film, image_status
+from iclip.capabilities.iclip_studio.film.film import Film
 from iclip.capabilities.iclip_studio.film.packages import (
     GPT_IMAGE_ASPECTS,
     GPT_IMAGE_MODEL,
@@ -796,10 +796,17 @@ def test_one_fault_in_the_run_file_is_reported(old: str, new: str, expected: str
     assert all(problem.startswith("film.icrun") for problem in found)
 
 
+def node_images(film: Film) -> list[tuple[str, str | None]]:
+    """每个生图节点现在用的图片地址，按文件里的先后。"""
+
+    names = [node.attrs["id"] for node in film.image_nodes()]
+    return [(name, film.image_url(f"{name}.image")) for name in names]
+
+
 def test_registered_images_that_are_not_selected_are_kept_as_alternatives() -> None:
     film = checked(run=changed(RUN, "  " + USE_PERSON + "\n", ""))
 
-    assert [(item.name, item.url) for item in image_status(film)] == [
+    assert node_images(film) == [
         ("短发女生参考图", None),
         ("公园跑道参考图", None),
         ("镜01机位图", VIEW_ONE),
@@ -813,27 +820,23 @@ def test_a_node_without_a_selection_uses_its_latest_generated_image() -> None:
     film = checked(run=None)
     film.generated["镜01机位图"] = "https://cdn.test/generated-view.png"
 
-    status = {item.name: (item.source, item.url) for item in image_status(film)}
-    assert status["镜01机位图"] == ("最近一次生成", "https://cdn.test/generated-view.png")
-    assert status["镜02机位图"] == ("还没有图", None)
+    assert film.image_url("镜01机位图.image") == "https://cdn.test/generated-view.png"
+    assert film.image_url("镜02机位图.image") is None
 
 
 def test_a_selection_in_the_run_file_wins_over_the_latest_generated_image() -> None:
     film = checked()
     film.generated["短发女生参考图"] = "https://cdn.test/newer.png"
 
-    assert image_status(film)[0].url == PERSON_FIXED
+    assert film.image_url("短发女生参考图.image") == PERSON_FIXED
 
 
 def test_a_node_uses_the_registered_image_selected_for_it() -> None:
-    selected = image_status(checked())
-    switched = image_status(
-        checked(run=RUN.replace("image={短发女生修过手}", "image={短发女生第一版}"))
-    )
+    selected = checked()
+    switched = checked(run=RUN.replace("image={短发女生修过手}", "image={短发女生第一版}"))
 
-    assert (selected[0].name, selected[0].url) == ("短发女生参考图", PERSON_FIXED)
-    assert "短发女生修过手" in selected[0].source
-    assert switched[0].url == PERSON_FIRST
+    assert selected.image_url("短发女生参考图.image") == PERSON_FIXED
+    assert switched.image_url("短发女生参考图.image") == PERSON_FIRST
 
 
 def generated(*missing: str) -> Film:
