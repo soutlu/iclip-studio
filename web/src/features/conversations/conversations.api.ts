@@ -293,12 +293,14 @@ export const createConversation = async (
     method: 'POST',
   })
 
-/** 起一段对话的入参：正文给 composer 的 ``parts`` 或已拼好的 ``content``；归属与标题不给就不带。 */
+/** 起一段对话的入参：正文给 composer 的 ``parts`` 或已拼好的 ``content``；归属、标题与做同款的源不给就不带。 */
 export type StartConversationInput = {
   agentId: string
   collectionId?: string | null
   taskId?: string | null
   title?: string
+  /** 做同款的源对话 id（资料库卡 id），建对话时由服务端拷制作文件与素材台账。 */
+  sameAs?: string | null
 } & ({ parts: readonly ComposerPart[] } | { content: readonly PromptContentPart[] })
 
 /**
@@ -318,7 +320,7 @@ export const useStartConversation = (
   } | null>(null)
   return useMutation({
     mutationFn: async (input: StartConversationInput) => {
-      const { agentId, collectionId, taskId, title } = input
+      const { agentId, collectionId, sameAs, taskId, title } = input
       const content = 'parts' in input ? partsContent(input.parts) : input.content
       // 不给与给 null 都是不挂，算同一份输入；请求体里不给的字段照旧不发。
       const fingerprint = JSON.stringify({
@@ -326,6 +328,7 @@ export const useStartConversation = (
         collectionId: collectionId ?? null,
         content,
         ownerUserId,
+        sameAs: sameAs ?? null,
         taskId: taskId ?? null,
         title: title ?? null,
       })
@@ -340,6 +343,7 @@ export const useStartConversation = (
             agentId,
             collectionId,
             id: current.conversationId,
+            sameAs,
             taskId,
             title,
           }))

@@ -384,7 +384,7 @@ function ViewerBody({
         </TabsRoot>
 
         <footer className="flex shrink-0 items-center gap-2 border-t border-hairline bg-surface-container-lowest px-6 pt-3.5 pb-4.5 max-md:sticky max-md:bottom-0 max-md:px-4 max-md:pb-[calc(12px+env(safe-area-inset-bottom))]">
-          <MakeSameButton />
+          <MakeSameButton canMakeSame={detail?.canMakeSame ?? null} cardId={video.id} />
           <Button
             aria-label={copied ? '已复制' : '复制提示词'}
             className="shrink-0 rounded-full border-[0.5px] border-hairline px-3.5 text-body-sm max-sm:w-(--control-height-lg) max-sm:px-0"
@@ -419,9 +419,38 @@ function ViewerBody({
   )
 }
 
-/** 「做同款」还没接线：外观是禁用的主按钮，但留在 tab 序列里，悬停、聚焦、点按都亮出「即将开放」，点了不做别的。 */
-function MakeSameButton() {
+const MAKE_SAME_CLASS =
+  'flex-1 rounded-full aria-disabled:bg-disabled-container aria-disabled:active:scale-100'
+
+/** 「做同款」：能做时去首页、把卡 id 带在查询串里，由首页进入做同款；能不能做只有详情知道，详情回来之前置灰、不说原因。
+ *
+ * 做不了时外观是禁用的主按钮，但留在 tab 序列里，悬停、聚焦、点按都亮出原因，点了不做别的。 */
+function MakeSameButton({ cardId, canMakeSame }: { cardId: string; canMakeSame: boolean | null }) {
+  const navigate = useNavigate()
   const [hint, setHint] = useState(false)
+  if (canMakeSame === true) {
+    return (
+      <Button
+        className={MAKE_SAME_CLASS}
+        leadingIcon="edit-image"
+        onClick={() => void navigate({ search: { same: cardId }, to: '/' })}
+        variant="inverted"
+      >
+        做同款
+      </Button>
+    )
+  }
+  const button = (
+    <Button
+      aria-disabled="true"
+      className={MAKE_SAME_CLASS}
+      leadingIcon="edit-image"
+      variant="inverted"
+    >
+      做同款
+    </Button>
+  )
+  if (canMakeSame === null) return button
   return (
     <TooltipRoot onOpenChange={setHint} open={hint}>
       <TooltipTrigger
@@ -432,16 +461,9 @@ function MakeSameButton() {
           setHint(true)
         }}
       >
-        <Button
-          aria-disabled="true"
-          className="flex-1 rounded-full aria-disabled:bg-disabled-container aria-disabled:active:scale-100"
-          leadingIcon="edit-image"
-          variant="inverted"
-        >
-          做同款
-        </Button>
+        {button}
       </TooltipTrigger>
-      <TooltipContent side="top">即将开放</TooltipContent>
+      <TooltipContent side="top">这条视频没有可用的制作文件，做不了同款</TooltipContent>
     </TooltipRoot>
   )
 }
