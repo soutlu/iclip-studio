@@ -32,12 +32,16 @@ from iclip.domains.conversations.schemas import (
     ConversationsPageOut,
     ConversationTaskIn,
     FilmImageChoiceIn,
+    FilmImageGenerationIn,
+    FilmJobOut,
     FilmTextEditsIn,
+    FilmVideoGenerationIn,
     FilmViewEnvelope,
     SidebarCollectionOut,
     SidebarOut,
     audit_item_out,
     conversation_out,
+    film_image_prompt,
     film_text_edits,
     film_view_out,
 )
@@ -373,6 +377,48 @@ def create_conversations_router(
             run_version=body.run_version,
         )
         return film_view_out(view)
+
+    @router.post(
+        "/{conversation_id}/film/image-generations", response_model=FilmJobOut, status_code=202
+    )
+    async def generate_conversation_film_image(
+        conversation_id: uuid.UUID,
+        body: FilmImageGenerationIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FilmJobOut:
+        """按描述给一张图出一张新的。已经有图又没选用的，先选用现在这张，新的出来不顶替它。"""
+
+        job_id = await service.generate_film_image(
+            principal,
+            conversation_id,
+            node=body.node,
+            prompt=film_image_prompt(body),
+            film_version=body.film_version,
+            run_version=body.run_version,
+        )
+        return FilmJobOut(job_id=job_id)
+
+    @router.post(
+        "/{conversation_id}/film/video-generations", response_model=FilmJobOut, status_code=202
+    )
+    async def generate_conversation_film_video(
+        conversation_id: uuid.UUID,
+        body: FilmVideoGenerationIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FilmJobOut:
+        """给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。"""
+
+        job_id = await service.generate_film_video(
+            principal,
+            conversation_id,
+            video=body.video,
+            model=body.model,
+            resolution=body.resolution,
+            generate_audio=body.generate_audio,
+            film_version=body.film_version,
+            run_version=body.run_version,
+        )
+        return FilmJobOut(job_id=job_id)
 
     @router.patch("/{conversation_id}", response_model=ConversationEnvelope)
     async def rename_conversation(

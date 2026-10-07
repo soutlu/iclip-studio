@@ -457,19 +457,6 @@ export const zFaceOut = z.object({
 })
 
 /**
- * FilmFrameOut
- *
- * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
- */
-export const zFilmFrameOut = z.object({
-  kind: z.enum(['generated', 'photo']),
-  label: z.string(),
-  node: z.string(),
-  number: z.int().nullable(),
-  url: z.string().nullable(),
-})
-
-/**
  * FilmImageChoiceIn
  *
  * 给 ``node`` 换成 ``url``；``url`` 为 null 是回到最近一次生成的那张。
@@ -481,6 +468,37 @@ export const zFilmImageChoiceIn = z.object({
   node: z.string().min(1),
   runVersion: z.int().nullable(),
   url: z.string().nullable(),
+})
+
+/**
+ * FilmImagePromptIn
+ *
+ * 编辑器里改过的描述与参考图，只用这一次。
+ */
+export const zFilmImagePromptIn = z.object({
+  referenceImageUrls: z.array(z.string()).max(10),
+  text: z.string().min(1),
+})
+
+/**
+ * FilmImageGenerationIn
+ *
+ * 按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。
+ */
+export const zFilmImageGenerationIn = z.object({
+  filmVersion: z.int(),
+  node: z.string().min(1),
+  prompt: zFilmImagePromptIn.nullish(),
+  runVersion: z.int().nullable(),
+})
+
+/**
+ * FilmJobOut
+ *
+ * 受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。
+ */
+export const zFilmJobOut = z.object({
+  jobId: z.uuid(),
 })
 
 /**
@@ -503,6 +521,42 @@ export const zFilmLineOut = z.object({
   role: z.string(),
   target: z.string(),
   text: z.string(),
+})
+
+/**
+ * FilmPromptImageOut
+ *
+ * 描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。
+ */
+export const zFilmPromptImageOut = z.object({
+  kind: z.literal('image').optional().default('image'),
+  label: z.string(),
+  node: z.string(),
+  url: z.string(),
+})
+
+/**
+ * FilmPromptTextOut
+ */
+export const zFilmPromptTextOut = z.object({
+  kind: z.literal('text').optional().default('text'),
+  text: z.string(),
+})
+
+/**
+ * FilmFrameOut
+ *
+ * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ *
+ * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；用户给的图为 null。
+ */
+export const zFilmFrameOut = z.object({
+  kind: z.enum(['generated', 'photo']),
+  label: z.string(),
+  node: z.string(),
+  number: z.int().nullable(),
+  prompt: z.array(z.union([zFilmPromptTextOut, zFilmPromptImageOut])).nullable(),
+  url: z.string().nullable(),
 })
 
 /**
@@ -569,6 +623,20 @@ export const zFilmTextEditIn = z.object({
 export const zFilmTextEditsIn = z.object({
   edits: z.array(zFilmTextEditIn).min(1).max(64),
   filmVersion: z.int(),
+})
+
+/**
+ * FilmVideoGenerationIn
+ *
+ * 给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。
+ */
+export const zFilmVideoGenerationIn = z.object({
+  filmVersion: z.int(),
+  generateAudio: z.boolean(),
+  model: z.string().min(1),
+  resolution: z.string().min(1).max(50),
+  runVersion: z.int().nullable(),
+  video: z.string().min(1),
 })
 
 /**
@@ -2340,6 +2408,20 @@ export const zChooseConversationFilmImageConversationsConversationIdFilmImagePut
 export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutResponse =
   zFilmViewEnvelope
 
+export const zGenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostBody =
+  zFilmImageGenerationIn
+
+export const zGenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zGenerateConversationFilmImageConversationsConversationIdFilmImageGenerationsPostResponse =
+  zFilmJobOut
+
 export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchBody =
   zFilmTextEditsIn
 
@@ -2352,6 +2434,20 @@ export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchPa
  */
 export const zEditConversationFilmTextConversationsConversationIdFilmTextPatchResponse =
   zFilmViewEnvelope
+
+export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostBody =
+  zFilmVideoGenerationIn
+
+export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponse =
+  zFilmJobOut
 
 export const zApproveConversationsConversationIdInteractionsInteractionIdPostBody = zApprovalRequest
 

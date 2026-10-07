@@ -105,7 +105,7 @@ class NodeImages(Protocol):
     async def latest(
         self, principal: Principal, conversation_id: str, nodes: Sequence[str]
     ) -> Mapping[str, str]:
-        """这些节点各自最近一次生成成功的图片地址；没有成功过的节点不在结果里。"""
+        """这些节点各自最近一次按描述生成成功的图片地址；编辑出来的不算，没有的节点不在结果里。"""
         ...
 
     async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:

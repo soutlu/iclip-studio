@@ -22,8 +22,8 @@ from iclip.platform.http import validation_error_detail
 FILM_NODE_KEY = "film_node"
 """生图节点的生成记录在 ``metadata`` 里用这个键记节点名，之后按它找这个节点的结果。"""
 
-_LATEST_LOOKBACK = 20
-"""找一个节点最近一次成功的图时，往回看几条记录。"""
+_LATEST_PAGE = 20
+"""找一个节点最近一次按描述生成的图时，一次往回看几条记录。"""
 
 
 class FilmImagesAdapter:
@@ -61,19 +61,33 @@ class FilmImagesAdapter:
         conversation = _conversation_uuid(conversation_id)
         found: dict[str, str] = {}
         for node in nodes:
-            recent = await self._service.list_recent(
+            url = await self._latest_generated(principal, conversation, node)
+            if url is not None:
+                found[node] = url
+        return found
+
+    async def _latest_generated(
+        self, principal: Principal, conversation: uuid.UUID, node: str
+    ) -> str | None:
+        """一个节点最近一次按描述生成成功的图。编辑出来的不算：它要人点了替换才用上。"""
+
+        before: uuid.UUID | None = None
+        while True:
+            page = await self._service.list_recent(
                 principal,
-                limit=_LATEST_LOOKBACK,
+                limit=_LATEST_PAGE,
                 conversation_id=conversation,
                 kind=KIND_IMAGE,
                 metadata={FILM_NODE_KEY: node},
+                before=before,
             )
-            done = next(
-                (job for job in recent if job.status == STATUS_COMPLETED and job.output_url), None
-            )
-            if done is not None and done.output_url is not None:
-                found[node] = done.output_url
-        return found
+            for job in page:
+                generated = job.source_job_id is None and job.source_url is None
+                if generated and job.status == STATUS_COMPLETED and job.output_url:
+                    return job.output_url
+            if len(page) < _LATEST_PAGE:
+                return None
+            before = page[-1].id
 
     async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
         job = await self._service.find_conversation_image(

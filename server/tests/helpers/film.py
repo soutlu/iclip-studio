@@ -145,6 +145,12 @@ class UnusedFilmPage:
     async def choose_image(self, *_: object, **__: object) -> NoReturn:
         raise AssertionError("这里用不到制作页")
 
+    async def generate_image(self, *_: object, **__: object) -> NoReturn:
+        raise AssertionError("这里用不到制作页")
+
+    async def generate_video(self, *_: object, **__: object) -> NoReturn:
+        raise AssertionError("这里用不到制作页")
+
 
 __all__ = [
     "FILM",

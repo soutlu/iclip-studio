@@ -1,4 +1,4 @@
-"""验证制作页的组合根适配：从工作区读工程，认图片地址，带版本写回。"""
+"""验证制作页的组合根适配：从工作区读工程，认图片地址，带版本写回，按文件生图与出片。"""
 
 from __future__ import annotations
 
@@ -13,12 +13,13 @@ from iclip.app.film_images import FILM_NODE_KEY
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, ValidationFailed
-from iclip.common.film_view import FilmLineEdit, FilmTextEdit, FilmView
+from iclip.common.film_view import FilmImagePrompt, FilmLineEdit, FilmTextEdit, FilmView
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
+from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO
 from iclip.domains.identity.models import Principal
 from iclip.platform.material_ledger.store import Material
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.film import FILM, GIVEN_IMAGES, RUN
+from tests.helpers.film import FILM, GIVEN_IMAGES, PERSON_FIXED, RUN, SHOE_PHOTO, VIEW_ONE
 from tests.helpers.generation import (
     InMemoryGenerationRepository,
     film_image_service,
@@ -62,6 +63,10 @@ class Page:
     adapter: ConversationFilmAdapter
     store: FakeFileStore
     ledger: FakeMaterialLedger
+    jobs: InMemoryGenerationRepository
+
+    def submitted(self, job_id: uuid.UUID) -> GenerationJob:
+        return self.jobs.jobs[job_id]
 
     async def view(self) -> FilmView:
         found = await self.adapter.view(PRINCIPAL, OWNER, CONVERSATION)
@@ -78,19 +83,19 @@ async def page(
     jobs: Sequence[GenerationJob] = (),
     *,
     with_generation: bool = True,
+    image_models: Sequence[str] = ("nano_banana_pro", "gpt-image-2.5"),
 ) -> Page:
     store = FakeFileStore()
     for path, content in files.items():
         await store.write(NAMESPACE, path, content)
     ledger = FakeMaterialLedger()
     await ledger.record(NAMESPACE, [Material(url=url, kind="image") for url in GIVEN_IMAGES])
-    generation = (
-        film_image_service(InMemoryGenerationRepository(list(jobs))) if with_generation else None
-    )
+    repo = InMemoryGenerationRepository(list(jobs))
+    generation = film_image_service(repo, image_models=image_models) if with_generation else None
     adapter = ConversationFilmAdapter(
         store=store, announcing=store, ledger=ledger, generation=generation
     )
-    return Page(adapter, store, ledger)
+    return Page(adapter, store, ledger, repo)
 
 
 def latest_park() -> GenerationJob:
@@ -267,6 +272,148 @@ async def test_without_media_generation_only_recorded_material_counts() -> None:
             CONVERSATION,
             node="公园跑道参考图",
             url=UPLOADED,
+            film_version=1,
+            run_version=1,
+        )
+
+
+async def generate(
+    made: Page,
+    node: str,
+    *,
+    run_version: int | None = 1,
+    prompt: FilmImagePrompt | None = None,
+) -> uuid.UUID:
+    return await made.adapter.generate_image(
+        PRINCIPAL,
+        OWNER,
+        CONVERSATION,
+        node=node,
+        prompt=prompt,
+        film_version=1,
+        run_version=run_version,
+    )
+
+
+async def test_an_image_without_a_picture_is_generated_from_the_film_without_touching_it() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    job = made.submitted(await generate(made, "公园跑道参考图"))
+
+    assert (job.kind, job.provider, job.metadata) == (
+        KIND_IMAGE,
+        "gpt-image-2.5",
+        {FILM_NODE_KEY: "公园跑道参考图"},
+    )
+    assert job.request is not None and job.request.model_dump()["prompt"].startswith(
+        "画面是用手机实拍的"
+    )
+    assert job.conversation_id == CONVERSATION
+    assert await made.content(RUN_PATH) == RUN
+
+
+async def test_regenerating_an_image_in_use_first_pins_the_one_in_use() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [latest_park()])
+
+    await generate(made, "公园跑道参考图")
+
+    view = await made.view()
+    assert view.run_version == 2
+    assert frame_url(view, "公园跑道参考图") == LATEST_PARK
+    assert f'src="{LATEST_PARK}"' in (await made.content(RUN_PATH) or "")
+
+
+async def test_regenerating_an_image_that_is_already_chosen_leaves_the_run_file() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    await generate(made, "短发女生参考图")
+
+    assert await made.content(RUN_PATH) == RUN
+    assert frame_url(await made.view(), "短发女生参考图") == PERSON_FIXED
+
+
+async def test_a_description_edited_in_the_editor_is_used_once() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+    edited = FilmImagePrompt("只要鞋，不要人。", (SHOE_PHOTO,))
+
+    job = made.submitted(await generate(made, "镜02机位图", prompt=edited))
+
+    assert job.request is not None
+    sent = job.request.model_dump()
+    assert (sent["prompt"], sent["reference_image_urls"]) == ("只要鞋，不要人。", [SHOE_PHOTO])
+    assert await made.content(FILM_PATH) == FILM
+
+
+@pytest.mark.parametrize(
+    ("node", "image_models", "message"),
+    [
+        ("跑鞋照片", ("nano_banana_pro", "gpt-image-2.5"), "不能按描述生成"),
+        ("短发女生", ("nano_banana_pro", "gpt-image-2.5"), "不能按描述生成"),
+        ("公园跑道参考图", ("nano_banana_pro",), "生图模型还没接上"),
+    ],
+)
+async def test_an_image_that_cannot_be_generated_here_is_refused(
+    node: str, image_models: tuple[str, ...], message: str
+) -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, image_models=image_models)
+
+    with pytest.raises(ValidationFailed, match=message):
+        await generate(made, node)
+    assert made.jobs.jobs == {}
+
+
+async def test_nothing_is_generated_without_media_generation() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, with_generation=False)
+
+    with pytest.raises(ValidationFailed, match="还没开生成"):
+        await generate(made, "公园跑道参考图")
+
+
+async def test_generating_on_a_stale_version_is_a_conflict() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    with pytest.raises(Conflict):
+        await generate(made, "公园跑道参考图", run_version=None)
+    assert made.jobs.jobs == {}
+
+
+async def test_a_group_is_sent_as_its_shot_with_the_group_number() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    job_id = await made.adapter.generate_video(
+        PRINCIPAL,
+        OWNER,
+        CONVERSATION,
+        video="全片",
+        model="vendor-a-seedance-2-5",
+        resolution="720p",
+        generate_audio=True,
+        film_version=1,
+        run_version=1,
+    )
+
+    job = made.submitted(job_id)
+    assert (job.kind, job.shot_index, job.metadata) == (KIND_VIDEO, 1, {FILM_NODE_KEY: "全片"})
+    assert job.request is not None
+    sent = job.request.model_dump()
+    assert sent["reference_image_urls"] == [PERSON_FIXED, SHOE_PHOTO, VIEW_ONE]
+    assert (sent["seconds"], sent["aspect_ratio"], sent["resolution"]) == (15, "9:16", "720p")
+    assert sent["shot"]["timeline"][0]["prompt"].startswith("@Image3 的机位。开场")
+    assert "{It's lighter than it looks.}" in sent["prompt"]
+
+
+async def test_an_unknown_group_is_refused() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    with pytest.raises(ValidationFailed, match="找不到这一组"):
+        await made.adapter.generate_video(
+            PRINCIPAL,
+            OWNER,
+            CONVERSATION,
+            video="短发女生参考图",
+            model="vendor-a-seedance-2-5",
+            resolution="720p",
+            generate_audio=False,
             film_version=1,
             run_version=1,
         )

@@ -1912,7 +1912,7 @@
       },
       "FilmFrameOut": {
         "additionalProperties": false,
-        "description": "一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。",
+        "description": "一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。\n\n``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；用户给的图为 null。",
         "properties": {
           "kind": {
             "enum": [
@@ -1941,6 +1941,34 @@
             ],
             "title": "Number"
           },
+          "prompt": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "image": "#/components/schemas/FilmPromptImageOut",
+                      "text": "#/components/schemas/FilmPromptTextOut"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FilmPromptTextOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FilmPromptImageOut"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
           "url": {
             "anyOf": [
               {
@@ -1958,7 +1986,8 @@
           "label",
           "kind",
           "url",
-          "number"
+          "number",
+          "prompt"
         ],
         "title": "FilmFrameOut",
         "type": "object"
@@ -2074,6 +2103,90 @@
         "title": "FilmImageChoiceIn",
         "type": "object"
       },
+      "FilmImageGenerationIn": {
+        "additionalProperties": false,
+        "description": "按描述给 ``node`` 出一张新的。``prompt`` 不给就用文件里的描述；模型按文件里写的，不收。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "node": {
+            "minLength": 1,
+            "title": "Node",
+            "type": "string"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilmImagePromptIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          }
+        },
+        "required": [
+          "node",
+          "filmVersion",
+          "runVersion"
+        ],
+        "title": "FilmImageGenerationIn",
+        "type": "object"
+      },
+      "FilmImagePromptIn": {
+        "additionalProperties": false,
+        "description": "编辑器里改过的描述与参考图，只用这一次。",
+        "properties": {
+          "referenceImageUrls": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Referenceimageurls",
+            "type": "array"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "referenceImageUrls"
+        ],
+        "title": "FilmImagePromptIn",
+        "type": "object"
+      },
+      "FilmJobOut": {
+        "additionalProperties": false,
+        "description": "受理了的生成任务；进度照常看生成记录与 ``generation.changed`` 帧。",
+        "properties": {
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "title": "FilmJobOut",
+        "type": "object"
+      },
       "FilmLineEditIn": {
         "additionalProperties": false,
         "description": "改完的一句台词：原有的带上它的 ``target``，新加的给 null。",
@@ -2130,6 +2243,57 @@
           "text"
         ],
         "title": "FilmLineOut",
+        "type": "object"
+      },
+      "FilmPromptImageOut": {
+        "additionalProperties": false,
+        "description": "描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。",
+        "properties": {
+          "kind": {
+            "const": "image",
+            "default": "image",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "label",
+          "url"
+        ],
+        "title": "FilmPromptImageOut",
+        "type": "object"
+      },
+      "FilmPromptTextOut": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "FilmPromptTextOut",
         "type": "object"
       },
       "FilmSettingOut": {
@@ -2331,6 +2495,57 @@
           "edits"
         ],
         "title": "FilmTextEditsIn",
+        "type": "object"
+      },
+      "FilmVideoGenerationIn": {
+        "additionalProperties": false,
+        "description": "给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。",
+        "properties": {
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          },
+          "generateAudio": {
+            "title": "Generateaudio",
+            "type": "boolean"
+          },
+          "model": {
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "resolution": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Resolution",
+            "type": "string"
+          },
+          "runVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runversion"
+          },
+          "video": {
+            "minLength": 1,
+            "title": "Video",
+            "type": "string"
+          }
+        },
+        "required": [
+          "video",
+          "model",
+          "resolution",
+          "generateAudio",
+          "filmVersion",
+          "runVersion"
+        ],
+        "title": "FilmVideoGenerationIn",
         "type": "object"
       },
       "FilmViewEnvelope": {
@@ -9961,6 +10176,72 @@
         ]
       }
     },
+    "/conversations/{conversation_id}/film/image-generations": {
+      "post": {
+        "description": "按描述给一张图出一张新的。已经有图又没选用的，先选用现在这张，新的出来不顶替它。",
+        "operationId": "generate_conversation_film_image_conversations__conversation_id__film_image_generations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmImageGenerationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Generate Conversation Film Image",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
     "/conversations/{conversation_id}/film/text": {
       "patch": {
         "description": "改几段字，答复改完的制作页。版本对不上 409，改完分镜不合规矩 422。",
@@ -10022,6 +10303,72 @@
           }
         ],
         "summary": "Edit Conversation Film Text",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/video-generations": {
+      "post": {
+        "description": "给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。",
+        "operationId": "generate_conversation_film_video_conversations__conversation_id__film_video_generations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmVideoGenerationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Generate Conversation Film Video",
         "tags": [
           "conversations"
         ]

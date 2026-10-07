@@ -70,13 +70,17 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         15,
         "mmt-seedance-2-5",
     )
-    assert group["frames"][0] == {
+    first = group["frames"][0]
+    assert {key: value for key, value in first.items() if key != "prompt"} == {
         "node": "短发女生参考图",
         "label": "短发女生",
         "kind": "generated",
         "url": "https://cdn.test/b-fixed.png",
         "number": 1,
     }
+    assert first["prompt"][0]["text"].startswith("画面是用手机实拍的")
+    shoe = group["frames"][1]
+    assert (shoe["kind"], shoe["prompt"]) == ("photo", None)
     assert group["shots"][0]["lines"][0]["target"] == "line:lighter"
     assert group["speakers"] == ["短发女生", "旁白"]
 
@@ -157,3 +161,40 @@ async def test_malformed_page_requests_are_422(client: httpx.AsyncClient, pg_url
     )
 
     assert (bad_edit.status_code, bad_url.status_code) == (422, 422)
+
+
+async def test_generation_on_the_page_is_owner_only_and_needs_media_generation(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    mine = await film_conversation(client, pg_url)
+    image = {"node": "公园跑道参考图", "filmVersion": 1, "runVersion": 1}
+    video = {
+        "video": "全片",
+        "model": "mmt-seedance-2-5",
+        "resolution": "720p",
+        "generateAudio": True,
+        "filmVersion": 1,
+        "runVersion": 1,
+    }
+
+    for path, body in (("image-generations", image), ("video-generations", video)):
+        refused = await client.post(f"{URL}/{mine}/film/{path}", json=body)
+        assert (refused.status_code, refused.json()) == (
+            422,
+            {"detail": "这里还没开生成，暂时不能生成"},
+        )
+
+    async with make_client(app) as governor:
+        await register_and_login(governor, username="gov", email="gov@example.com")
+        await set_roles_in_db(pg_url, "gov@example.com", ["root"])
+        assert (
+            await governor.post(f"{URL}/{mine}/film/image-generations", json=image)
+        ).status_code == 403
+
+    too_many = {
+        **image,
+        "prompt": {"text": "x", "referenceImageUrls": ["https://a.test/1.png"] * 11},
+    }
+    assert (
+        await client.post(f"{URL}/{mine}/film/image-generations", json=too_many)
+    ).status_code == 422

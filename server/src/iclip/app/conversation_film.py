@@ -8,20 +8,27 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from iclip.app.film_images import FilmImagesAdapter
+from pydantic import ValidationError
+
+from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
+from iclip.capabilities.iclip_studio.film.export import video_row
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
+from iclip.capabilities.iclip_studio.film.markup import Node
+from iclip.capabilities.iclip_studio.film.prompts import render_picture
 from iclip.capabilities.iclip_studio.film.studio import (
     FilmEditRejected,
     choose_image,
     edit_text,
     film_groups,
 )
+from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from iclip.capabilities.workspace.scope import namespace_for
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
-from iclip.common.film_view import FilmTextEdit, FilmView
+from iclip.common.film_view import FilmImagePrompt, FilmTextEdit, FilmView
+from iclip.domains.generation.schemas import VideoGenerationIn
 from iclip.domains.generation.service import GenerationService
-from iclip.domains.identity.public import Principal
+from iclip.domains.identity.public import Principal, resolve_user_name
 from iclip.platform.file_store.store import (
     FileStore,
     InvalidContent,
@@ -29,6 +36,7 @@ from iclip.platform.file_store.store import (
     StoredFile,
     VersionConflict,
 )
+from iclip.platform.http import validation_error_detail
 from iclip.platform.material_ledger.store import Material, MaterialLedger
 
 _STALE = "分镜刚被改过，刷新后再改"
@@ -107,9 +115,7 @@ class ConversationFilmAdapter:
         run_version: int | None,
     ) -> FilmView:
         files = await self._existing(owner, conversation_id)
-        current_run = None if files.run is None else files.run.version
-        if files.project.version != film_version or current_run != run_version:
-            raise Conflict(_STALE)
+        self._check_versions(files, film_version, run_version)
         film = await self._clean(principal, conversation_id, files)
         upload = False
         if url is not None and not await self._images(principal, conversation_id, files).known(url):
@@ -141,6 +147,126 @@ class ConversationFilmAdapter:
         expected = film_version if path == FILM_PATH else run_version
         await self._write(files.namespace, path, content, expected)
         return await self._fresh(principal, owner, conversation_id)
+
+    async def generate_image(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        node: str,
+        prompt: FilmImagePrompt | None,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        generation = self._require_generation()
+        files = await self._existing(owner, conversation_id)
+        self._check_versions(files, film_version, run_version)
+        film = await self._clean(principal, conversation_id, files)
+        project = film.project
+        target = project.nodes.get(node)
+        tag = None if target is None else project.tags.get(target.tag)
+        if (
+            target is None
+            or tag is None
+            or tag.generation is None
+            or node not in {item.attrs["id"] for item in film.image_nodes()}
+        ):
+            raise ValidationFailed("这张图不能按描述生成")
+        model = tag.generation.gateway
+        if model not in {name for name, _ in generation.image_models()[1]}:
+            raise ValidationFailed("生图模型还没接上，暂时不能生成")
+        current = film.image_url(f"{node}.image")
+        if current is not None and node not in film.selected:
+            # 已经有图又没选用：先选用现在这张，新的出来只进版本，点了替换才用上。
+            run = None if files.run is None else files.run.content
+            change = choose_image(film, files.project.content, run, node, current)
+            assert change is not None and change[0] == RUN_PATH
+            await self._write(files.namespace, RUN_PATH, change[1], run_version)
+        if prompt is None:
+            picture = render_picture(film, project.nodes[_prompt_of(target)])
+            text, references = picture.text, picture.image_urls
+        else:
+            text, references = prompt.text, prompt.reference_image_urls
+        try:
+            job = await FilmImagesAdapter(generation).submit(
+                principal,
+                NodeImageRequest(
+                    node=node,
+                    prompt=text,
+                    model=model,
+                    aspect_ratio=target.attrs["aspect-ratio"],
+                    resolution=target.attrs["resolution"],
+                    reference_image_urls=references,
+                    user_name=resolve_user_name(principal, None),
+                    conversation_id=str(conversation_id),
+                ),
+            )
+        except InvalidNodeImageRequest as exc:
+            raise ValidationFailed(str(exc)) from exc
+        return job.job_id
+
+    async def generate_video(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        video: str,
+        model: str,
+        resolution: str,
+        generate_audio: bool,
+        film_version: int,
+        run_version: int | None,
+    ) -> uuid.UUID:
+        generation = self._require_generation()
+        files = await self._existing(owner, conversation_id)
+        self._check_versions(files, film_version, run_version)
+        film = await self._clean(principal, conversation_id, files)
+        videos = film.project.find("ReferenceVideo")
+        found = next(
+            (
+                (index, item)
+                for index, item in enumerate(videos, start=1)
+                if item.attrs["id"] == video
+            ),
+            None,
+        )
+        if found is None:
+            raise ValidationFailed("找不到这一组，刷新后再出片")
+        index, target = found
+        row = video_row(film, target, index)
+        try:
+            request = VideoGenerationIn.model_validate(
+                {
+                    "model": model,
+                    "shot": row.prompt.model_dump(),
+                    "reference_image_urls": row.image_urls,
+                    "generate_audio": generate_audio,
+                    "resolution": resolution,
+                    "aspect_ratio": target.attrs["aspect-ratio"],
+                    "seconds": row.seconds,
+                    "user_name": resolve_user_name(principal, None),
+                    "conversation_id": conversation_id,
+                    "metadata": {FILM_NODE_KEY: video},
+                    "shot_index": index,
+                }
+            )
+        except ValidationError as exc:
+            raise ValidationFailed(validation_error_detail(exc.errors())) from exc
+        job = await generation.submit_video(principal, request)
+        return job.id
+
+    def _require_generation(self) -> GenerationService:
+        if self._generation is None:
+            raise ValidationFailed("这里还没开生成，暂时不能生成")
+        return self._generation
+
+    @staticmethod
+    def _check_versions(files: _Files, film_version: int, run_version: int | None) -> None:
+        current_run = None if files.run is None else files.run.version
+        if files.project.version != film_version or current_run != run_version:
+            raise Conflict(_STALE)
 
     async def _read(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> _Files | None:
         namespace = namespace_for(owner, str(conversation_id))
@@ -198,6 +324,12 @@ class ConversationFilmAdapter:
             raise Conflict(_STALE) from exc
         except (InvalidContent, QuotaExceeded) as exc:
             raise ValidationFailed(str(exc)) from exc
+
+
+def _prompt_of(node: Node) -> str:
+    reference = node.reference("prompt")
+    assert reference is not None, "生图节点读文件时已查过 prompt"
+    return reference
 
 
 __all__ = ["ConversationFilmAdapter"]
