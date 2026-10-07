@@ -152,6 +152,18 @@ export const zCollectionsPageOut = z.object({
 })
 
 /**
+ * ComposeSegmentIn
+ *
+ * 合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录
+ * 自己的媒体时间算；``end`` 为空就取到那条的结尾。
+ */
+export const zComposeSegmentIn = z.object({
+  end: z.number().nullish(),
+  sourceJobId: z.uuid(),
+  start: z.number().gte(0),
+})
+
+/**
  * ConversationActivityOut
  *
  * 这段对话此刻在忙什么。侧栏据此画角标。
@@ -1723,12 +1735,13 @@ export const zLibraryVideoDetailOut = z.object({
 /**
  * VideoComposeIn
  *
- * 一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。
+ * 一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。
  */
 export const zVideoComposeIn = z.object({
+  baseJobId: z.uuid(),
   conversationId: z.uuid().nullish(),
   metadata: z.record(z.string(), z.unknown()).nullish(),
-  sourceJobId: z.uuid(),
+  segments: z.array(zComposeSegmentIn).min(1).max(100),
   taskId: z.uuid().nullish(),
   userName: z.string().min(1).max(200).nullish(),
 })

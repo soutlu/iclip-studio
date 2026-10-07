@@ -29,7 +29,7 @@ EVENTS = "/tracking/events"
 _JOBS: tuple[tuple[str, str, str, str, str | None, bool], ...] = (
     ("video", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
     ("edit", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, "video", True),
-    ("composite", KIND_VIDEO, OPERATION_COMPOSE, STATUS_COMPLETED, "edit", True),
+    ("composite", KIND_VIDEO, OPERATION_COMPOSE, STATUS_COMPLETED, "video", True),
     ("failed", KIND_VIDEO, OPERATION_GENERATE, STATUS_FAILED, None, False),
     ("no_url", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, None, False),
     ("image", KIND_IMAGE, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
@@ -65,7 +65,14 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
                 None
                 if upload
                 else {
-                    "segments": [{"url": "https://oss.example.test/edit.mp4", "start": 0, "end": 3}]
+                    "segments": [
+                        {
+                            "sourceJobId": str(ids["edit"]),
+                            "url": "https://oss.example.test/edit.mp4",
+                            "start": 0,
+                            "end": 3,
+                        }
+                    ]
                 }
                 if operation == OPERATION_COMPOSE
                 else {"model": "m", "prompt": "p", "user_name": "nora"}

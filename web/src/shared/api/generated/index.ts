@@ -70,6 +70,7 @@ export type {
   CollectionIn,
   CollectionOut,
   CollectionsPageOut,
+  ComposeSegmentIn,
   ConfirmTaskTasksTaskIdConfirmPostData,
   ConfirmTaskTasksTaskIdConfirmPostError,
   ConfirmTaskTasksTaskIdConfirmPostErrors,

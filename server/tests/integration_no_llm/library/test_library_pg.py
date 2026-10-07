@@ -376,8 +376,8 @@ async def _composite(
     url_name: str | None = None,
     duration_ms: int | None = None,
 ) -> None:
-    """在 ``base`` 那条成片上剪一段再合成：先落编辑段（合成前两分钟建、前一分钟完成），合成以它为
-    来源，原作与镜号随基底。合成请求按别名落库，归属标签的键是 ``userName``。"""
+    """在 ``base`` 那条成片上剪一段再合成：先落编辑段（合成前两分钟建、前一分钟完成），合成以基底为
+    来源、把编辑段夹进去，原作与镜号随基底。合成请求按别名落库，归属标签的键是 ``userName``。"""
 
     edit_id = uuid.uuid4()
     await _edit(
@@ -395,7 +395,7 @@ async def _composite(
             " operation, provider, request, status, shot_index, source_job_id, root_job_id,"
             " output_url, duration_ms, created_at, finished_at)"
             " SELECT :id, :owner, CAST(:conversation_id AS uuid), :kind, :operation, 'local',"
-            " CAST(:request AS jsonb), :status, shot_index, :edit, COALESCE(root_job_id, id),"
+            " CAST(:request AS jsonb), :status, shot_index, id, COALESCE(root_job_id, id),"
             " :output_url, :duration_ms, :created_at, :finished_at"
             " FROM iclip.generation_jobs WHERE id = :base"
         ),
@@ -407,12 +407,18 @@ async def _composite(
             "operation": OPERATION_COMPOSE,
             "request": json.dumps(
                 {
-                    "segments": [{"url": url(f"{edit_id}-edit"), "start": 0, "end": 3}],
+                    "segments": [
+                        {
+                            "sourceJobId": str(edit_id),
+                            "url": url(f"{edit_id}-edit"),
+                            "start": 0,
+                            "end": 3,
+                        }
+                    ],
                     "userName": user_name,
                 }
             ),
             "status": STATUS_COMPLETED,
-            "edit": edit_id,
             "base": base,
             "output_url": url(url_name or str(composite_id)),
             "duration_ms": duration_ms,

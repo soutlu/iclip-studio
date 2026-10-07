@@ -708,6 +708,39 @@
         "title": "CollectionsPageOut",
         "type": "object"
       },
+      "ComposeSegmentIn": {
+        "additionalProperties": false,
+        "description": "合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录\n自己的媒体时间算；``end`` 为空就取到那条的结尾。",
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sourceJobId",
+          "start"
+        ],
+        "title": "ComposeSegmentIn",
+        "type": "object"
+      },
       "ConversationActivityOut": {
         "additionalProperties": false,
         "description": "这段对话此刻在忙什么。侧栏据此画角标。\n\n嵌套一层而不是把字段平铺到行上：这一组事实还会长，平铺的话每加一个都要在行上再开一个\n顶层字段。",
@@ -7501,8 +7534,13 @@
       },
       "VideoComposeIn": {
         "additionalProperties": false,
-        "description": "一次合成的受理输入：只给编辑段，服务端按它的基底与实际区间算出前段、编辑段、后段再拼。",
+        "description": "一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。",
         "properties": {
+          "baseJobId": {
+            "format": "uuid",
+            "title": "Basejobid",
+            "type": "string"
+          },
           "conversationId": {
             "anyOf": [
               {
@@ -7527,10 +7565,14 @@
             ],
             "title": "Metadata"
           },
-          "sourceJobId": {
-            "format": "uuid",
-            "title": "Sourcejobid",
-            "type": "string"
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/ComposeSegmentIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
           },
           "taskId": {
             "anyOf": [
@@ -7559,7 +7601,8 @@
           }
         },
         "required": [
-          "sourceJobId"
+          "baseJobId",
+          "segments"
         ],
         "title": "VideoComposeIn",
         "type": "object"
@@ -11744,7 +11787,7 @@
     },
     "/generations/video-composites": {
       "post": {
-        "description": "把一条编辑段夹回它的基底，拼成一条新成片，原作与镜号随编辑段。不经外部服务。\n\n``sourceJobId`` 必须是这段对话自己的或继承来的一条已完成编辑段。``userName`` 的规则同出片。",
+        "description": "在基底那一版上按片段列表拼成一条新成片，来源记基底，原作与镜号随基底。不经外部服务。\n\n``baseJobId`` 必须是这段对话自己的或继承来的一条已完成成片；``segments`` 每段的\n``sourceJobId`` 是基底本身或来源是基底的一条已完成编辑段，``start`` / ``end`` 是那条记录\n自己的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进\n``request.segments``。``userName`` 的规则同出片。",
         "operationId": "submit_video_composite_generations_video_composites_post",
         "requestBody": {
           "content": {

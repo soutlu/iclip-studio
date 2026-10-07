@@ -1,13 +1,66 @@
 import { QueryClient } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { server } from '@/testing/mocks/server'
 import {
   editTriggerOf,
   editableModels,
   pickEditModel,
   seedVideoEditJob,
+  spliceSegments,
+  submitVideoComposite,
   videoEditChainKey,
 } from './video-editor.api'
+
+describe('submitVideoComposite', () => {
+  const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
+  const baseJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
+  const editJobId = '7e1c3a9b-2d4f-4b1e-8c3d-1f2e3a4b5c6d'
+
+  it.each([
+    [
+      '从中间改起：基底前段、编辑段整条、基底后段，毫秒换成秒',
+      { rangeStartMs: 1500, rangeEndMs: 4250 },
+      [
+        { sourceJobId: baseJobId, start: 0, end: 1.5 },
+        { sourceJobId: editJobId, start: 0 },
+        { sourceJobId: baseJobId, start: 4.25 },
+      ],
+    ],
+    [
+      '从头改起没有前段',
+      { rangeStartMs: 0, rangeEndMs: 3000 },
+      [
+        { sourceJobId: editJobId, start: 0 },
+        { sourceJobId: baseJobId, start: 3 },
+      ],
+    ],
+  ])('%s', async (_name, range, segments) => {
+    let body: unknown
+    const accepted = makeGenerationJob({
+      operation: 'compose',
+      status: 'pending',
+      sourceJobId: baseJobId,
+    })
+    server.use(
+      http.post('*/api/generations/video-composites', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ generation: accepted }, { status: 202 })
+      }),
+    )
+
+    const result = await submitVideoComposite({
+      conversationId,
+      taskId: null,
+      baseJobId,
+      segments: spliceSegments({ baseJobId, editJobId, ...range }),
+    })
+
+    expect(body).toEqual({ conversationId, taskId: null, baseJobId, segments })
+    expect(result.id).toBe(accepted.id)
+  })
+})
 
 describe('seedVideoEditJob', () => {
   const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'

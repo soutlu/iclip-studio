@@ -220,7 +220,7 @@ type MockJob = {
   durationMs?: number
   /** 原作号：编辑段与合成指最初那条出片，出片与图片不填。 */
   rootJobId?: string | null
-  /** 直接来源：编辑段指基底成片，合成指编辑段，帧图编辑指底图那条。 */
+  /** 直接来源：编辑段与合成指基底成片，帧图编辑指底图那条。 */
   sourceJobId?: string | null
   /** 来源的地址：帧图编辑是它改的底图，底图在不在库里都有。 */
   sourceUrl?: string | null
@@ -907,47 +907,62 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 合成：来源要是一条完成的编辑段，各段按它的基底与区间算。这里拼不了视频，产物用现成的测试卡代替。
+  // 合成：基底要是这段对话里一条完成的成片，每段出自基底本身或基于它的一条完成编辑段，地址按出处填。
+  // 这里拼不了视频，产物用现成的测试卡代替。
   http.post('*/api/generations/video-composites', async ({ request }) => {
     const body = (await request.json()) as VideoComposeIn
-    const segment = findJob(body.conversationId, body.sourceJobId)
-    if (segment === undefined) {
+    const base = findJob(body.conversationId, body.baseJobId)
+    if (base === undefined) {
       return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 422 })
     }
-    const base =
-      segment.sourceJobId === null ? undefined : findJob(body.conversationId, segment.sourceJobId)
-    const { outputUrl, rangeStartMs, rangeEndMs } = segment
-    if (
-      segment.operation !== 'generate' ||
-      segment.status !== 'completed' ||
-      outputUrl === null ||
-      rangeStartMs === null ||
-      rangeEndMs === null ||
-      base?.outputUrl == null
-    ) {
-      return HttpResponse.json({ detail: '来源必须是一条已完成的编辑段' }, { status: 422 })
+    if (!isFinishedTake(base)) {
+      return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
+    }
+    const placed: { source: MockRecord; url: string; start: number; end: number | null }[] = []
+    for (const segment of body.segments) {
+      const source: MockRecord | undefined =
+        segment.sourceJobId === base.id ? base : findJob(body.conversationId, segment.sourceJobId)
+      const fromBase =
+        source === base ||
+        (source?.operation === 'generate' &&
+          source.status === 'completed' &&
+          source.sourceJobId === base.id)
+      if (source === undefined || !fromBase || source.outputUrl === null) {
+        return HttpResponse.json(
+          { detail: '每段必须出自基底本身，或基于这个基底的一条已完成编辑段' },
+          { status: 422 },
+        )
+      }
+      placed.push({
+        source,
+        url: source.outputUrl,
+        start: segment.start,
+        end: segment.end ?? null,
+      })
     }
     const created = acceptGeneration({
       kind: 'video',
       operation: 'compose',
       prompt: '',
       request: {
-        segments: [
-          ...(rangeStartMs > 0
-            ? [{ url: base.outputUrl, start: 0, end: rangeStartMs / 1000 }]
-            : []),
-          { url: outputUrl, start: 0, end: null },
-          { url: base.outputUrl, start: rangeEndMs / 1000, end: null },
-        ],
+        segments: placed.map(({ source, url, start, end }) => ({
+          sourceJobId: source.id,
+          url,
+          start,
+          end,
+        })),
       },
       conversationId: body.conversationId ?? null,
       metadata: body.metadata ?? null,
-      shotIndex: segment.shotIndex,
-      rootJobId: segment.rootJobId,
-      sourceJobId: segment.id,
+      shotIndex: base.shotIndex,
+      rootJobId: base.sourceJobId === null ? base.id : base.rootJobId,
+      sourceJobId: base.id,
       outputUrl: VIDEO_URL,
-      // 真实后端拼完自己量；这里按样片时长推算：基底前段、编辑结果整条、基底后段。
-      durationMs: rangeStartMs + EDITED_MS + Math.max(0, VIDEO_MS - rangeEndMs),
+      // 真实后端拼完自己量；这里把各段按出处的时长闭合后相加。mock 的编辑段不记时长，按样片算。
+      durationMs: placed.reduce((total, { source, start, end }) => {
+        const length = source.durationMs ?? (source === base ? VIDEO_MS : EDITED_MS)
+        return total + Math.max(0, (end === null ? length : end * 1000) - start * 1000)
+      }, 0),
     })
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),

@@ -36,9 +36,27 @@ const segment = (
     ...spec,
   })
 
-/** 合成：来源是它拼回去的那条编辑段。 */
-const composite = (id: string, source: string, spec: Partial<GenerationJob> = {}): GenerationJob =>
-  job({ id, operation: 'compose', rootJobId: 'root', sourceJobId: source, ...spec })
+/** 合成：来源是基底，各段是基底前段、夹进去的那条编辑段、基底后段，出处记在请求里。 */
+const composite = (
+  id: string,
+  base: string,
+  edit: string,
+  spec: Partial<GenerationJob> = {},
+): GenerationJob =>
+  job({
+    id,
+    operation: 'compose',
+    rootJobId: 'root',
+    sourceJobId: base,
+    request: {
+      segments: [
+        { sourceJobId: base, url: `${base}.mp4`, start: 0, end: 1 },
+        { sourceJobId: edit, url: `${edit}.mp4`, start: 0, end: null },
+        { sourceJobId: base, url: `${base}.mp4`, start: 3, end: null },
+      ],
+    },
+    ...spec,
+  })
 
 const root = job({
   id: 'root',
@@ -54,7 +72,7 @@ const chainJobs: GenerationJob[] = [
     outputUrl: 'https://oss.example/e1.mp4',
     request: { prompt: '编辑视频，换成浅灰背景' },
   }),
-  composite('m1', 'e1', {
+  composite('m1', 'root', 'e1', {
     createdAt: at('10:02:00'),
     finishedAt: at('10:03:00'),
     outputUrl: 'https://oss.example/m1.mp4',
@@ -116,7 +134,7 @@ describe('projectEditChain', () => {
     const { versions } = projectEditChain(root, [
       ...chainJobs.slice(0, 2),
       segment('e2', 'm1', [1, 2], { createdAt: at('10:04:00'), outputUrl: 'e2.mp4' }),
-      composite('m2', 'e2', {
+      composite('m2', 'm1', 'e2', {
         createdAt: at('10:05:00'),
         finishedAt: at('10:06:00'),
         outputUrl: 'm2.mp4',
@@ -136,19 +154,19 @@ describe('projectEditChain', () => {
   it('完成的合成按完成时刻编号，不看提交先后；缺完成时刻的按创建时刻排', () => {
     const { versions } = projectEditChain(root, [
       segment('slow', 'root', [0, 1], { createdAt: at('10:01:00'), outputUrl: 'slow.mp4' }),
-      composite('slow-m', 'slow', {
+      composite('slow-m', 'root', 'slow', {
         createdAt: at('10:02:00'),
         finishedAt: at('10:09:00'),
         outputUrl: 'slow-m.mp4',
       }),
       segment('fast', 'root', [1, 2], { createdAt: at('10:03:00'), outputUrl: 'fast.mp4' }),
-      composite('fast-m', 'fast', {
+      composite('fast-m', 'root', 'fast', {
         createdAt: at('10:04:00'),
         finishedAt: at('10:05:00'),
         outputUrl: 'fast-m.mp4',
       }),
       segment('undated', 'root', [2, 3], { createdAt: at('10:05:30'), outputUrl: 'undated.mp4' }),
-      composite('undated-m', 'undated', {
+      composite('undated-m', 'root', 'undated', {
         createdAt: at('10:07:00'),
         finishedAt: null,
         outputUrl: 'undated-m.mp4',
@@ -167,7 +185,7 @@ describe('projectEditChain', () => {
       createdAt: at('10:07:00'),
       outputUrl: EDITED_URL,
     })
-    const failed = composite('m5-failed', 'e5', {
+    const failed = composite('m5-failed', 'root', 'e5', {
       createdAt: at('10:08:00'),
       finishedAt: at('10:09:00'),
       status: 'failed',
@@ -175,7 +193,7 @@ describe('projectEditChain', () => {
     })
 
     const running = projectEditChain(root, [
-      composite('m5', 'e5', { createdAt: at('10:10:00'), status: 'submitting' }),
+      composite('m5', 'root', 'e5', { createdAt: at('10:10:00'), status: 'submitting' }),
       failed,
       edited,
     ])
@@ -184,7 +202,7 @@ describe('projectEditChain', () => {
     ])
 
     const done = projectEditChain(root, [
-      composite('m5', 'e5', {
+      composite('m5', 'root', 'e5', {
         createdAt: at('10:10:00'),
         finishedAt: at('10:11:00'),
         outputUrl: 'm5.mp4',
@@ -197,6 +215,47 @@ describe('projectEditChain', () => {
       ['e5', 'm5'],
     ])
     expect(done.pending).toEqual([])
+  })
+
+  it.each([
+    [
+      '只用基底（裁剪、删段）',
+      [
+        { sourceJobId: 'root', url: 'root.mp4', start: 0, end: 1 },
+        { sourceJobId: 'root', url: 'root.mp4', start: 3, end: null },
+      ],
+    ],
+    [
+      '夹进两条编辑段',
+      [
+        { sourceJobId: 'e6', url: 'e6.mp4', start: 0, end: null },
+        { sourceJobId: 'e7', url: 'e7.mp4', start: 0, end: null },
+      ],
+    ],
+    ['请求里读不出各段', undefined],
+  ])('不对应某一条编辑段的合成不算哪条编辑的版本：%s', (_name, segments) => {
+    const edits = [
+      segment('e6', 'root', [0, 1], { createdAt: at('10:01:00'), outputUrl: 'e6.mp4' }),
+      segment('e7', 'root', [1, 2], { createdAt: at('10:02:00'), outputUrl: 'e7.mp4' }),
+    ]
+    const { versions, pending } = projectEditChain(root, [
+      ...edits,
+      job({
+        id: 'cut',
+        operation: 'compose',
+        rootJobId: 'root',
+        sourceJobId: 'root',
+        createdAt: at('10:03:00'),
+        finishedAt: at('10:04:00'),
+        outputUrl: 'cut.mp4',
+        request: segments === undefined ? {} : { segments },
+      }),
+    ])
+    expect(versions.map((version) => version.key)).toEqual(['root'])
+    expect(pending.map((edit) => [edit.key, edit.stage, edit.composite])).toEqual([
+      ['e6', 'ready', undefined],
+      ['e7', 'ready', undefined],
+    ])
   })
 
   const stageCases: [
@@ -225,7 +284,7 @@ describe('projectEditChain', () => {
     const { pending } = projectEditChain(root, [
       ...(compositeSpec === undefined
         ? []
-        : [composite('m', 'e', { createdAt: at('10:02:00'), ...compositeSpec })]),
+        : [composite('m', 'root', 'e', { createdAt: at('10:02:00'), ...compositeSpec })]),
       segment('e', 'root', [1, 3], { createdAt: at('10:01:00'), ...segmentSpec }),
     ])
     expect(pending.map((edit) => [edit.stage, edit.error])).toEqual([[stage, error]])
@@ -234,7 +293,10 @@ describe('projectEditChain', () => {
   it('基底不在链里的编辑与合成都不展示', () => {
     const orphaned = projectEditChain(root, [
       segment('orphan', 'elsewhere', [0, 1], { outputUrl: 'orphan.mp4' }),
-      composite('orphan-m', 'orphan', { finishedAt: at('10:01:00'), outputUrl: 'orphan-m.mp4' }),
+      composite('orphan-m', 'elsewhere', 'orphan', {
+        finishedAt: at('10:01:00'),
+        outputUrl: 'orphan-m.mp4',
+      }),
       segment('orphan-running', 'elsewhere', [0, 1], { status: 'submitted' }),
     ])
     expect(orphaned.versions.map((version) => version.key)).toEqual(['root'])
