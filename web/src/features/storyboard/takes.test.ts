@@ -206,6 +206,15 @@ describe('takeActionsOf', () => {
       refill: hidden,
     })
   })
+
+  it('制作页没有回填，下载与编辑视频照旧', () => {
+    const completed = take({ outputUrl: 'take.mp4', request: { shot: HISTORY_SHOT } })
+    expect(takeActionsOf(completed, { readOnly: false, refillable: false })).toEqual({
+      download: enabled,
+      editVideo: enabled,
+      refill: hidden,
+    })
+  })
 })
 
 describe('takeCardSize', () => {

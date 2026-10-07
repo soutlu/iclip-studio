@@ -7,19 +7,22 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import type { Shot } from './shot-document'
-import { storyboardQueryKeys, submitVideoGeneration, useVideoModels } from './storyboard.api'
+import { storyboardQueryKeys, useVideoModels } from './storyboard.api'
 import {
   DEFAULT_GENERATE_AUDIO,
   DEFAULT_VIDEO_RESOLUTION,
   type VideoGenerationOptions,
   type VideoModelsStatus,
+  type VideoResolution,
 } from './video-generation-options'
+
+/** 出片栏这次选定的三项。 */
+export type VideoChoice = { model: string; resolution: VideoResolution; generateAudio: boolean }
 
 const modelsStatus = (query: { isError: boolean; data: unknown }): VideoModelsStatus =>
   query.isError ? 'unavailable' : query.data === undefined ? 'loading' : 'ready'
 
-/** `fileModel` 是分镜文件里当前这一组写的模型；没写就传 undefined。 */
+/** `fileModel` 是文件里当前这一组写的模型（分镜文件可以不写，工程文件一定有）；没写就传 undefined。 */
 export const useVideoGeneration = (conversationId: string, fileModel?: string) => {
   const queryClient = useQueryClient()
   const models = useVideoModels()
@@ -38,23 +41,17 @@ export const useVideoGeneration = (conversationId: string, fileModel?: string) =
   const model = allowed(wanted.model) ?? allowed(fileModel) ?? models.data?.default
   const options: VideoGenerationOptions = { ...wanted, model }
 
-  const submit = async (shot: Shot, aspectRatio: string) => {
+  /** 给第 `index` 组出片：`send` 按出片栏这次选的模型、分辨率、音频发请求，分镜页与制作页各发各的。 */
+  const submit = async (index: number, send: (choice: VideoChoice) => Promise<unknown>) => {
     if (model === undefined) return
     setFailure(undefined)
     try {
-      await submitVideoGeneration({
-        aspectRatio,
-        conversationId,
-        generateAudio: options.generateAudio,
-        model,
-        resolution: options.resolution,
-        shot,
-      })
+      await send({ generateAudio: options.generateAudio, model, resolution: options.resolution })
       void queryClient.invalidateQueries({
         queryKey: storyboardQueryKeys.videoJobs(conversationId),
       })
     } catch (error) {
-      setFailure({ index: shot.index, message: errorMessageOf(error, '视频提交失败') })
+      setFailure({ index, message: errorMessageOf(error, '视频提交失败') })
     }
   }
 
