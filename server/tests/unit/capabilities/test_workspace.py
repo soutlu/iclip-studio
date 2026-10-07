@@ -431,6 +431,57 @@ async def test_delete_removes_the_file_and_reports_a_miss(
         await tools.delete_file(ctx, "废稿.md")
 
 
+async def test_move_renames_the_file_with_identical_content(
+    tools: WorkspaceToolset[object], store: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    content = "镜头一\n  缩进与末尾空白 \n\n"
+    await tools.write_file(ctx, "old_film.icml", content)
+
+    moved = await tools.move_file(ctx, "old_film.icml", "成片/film.icml")
+
+    assert "old_film.icml" in moved
+    assert "成片/film.icml" in moved
+    stored = await store.read(NS, "成片/film.icml")
+    assert stored is not None and stored.content == content
+    assert await store.read(NS, "old_film.icml") is None
+
+
+async def test_move_refuses_to_overwrite_an_existing_destination(
+    tools: WorkspaceToolset[object], store: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "old_film.icml", "新稿")
+    await tools.write_file(ctx, "film.icml", "旧稿")
+
+    with pytest.raises(ModelRetry, match="delete_file"):
+        await tools.move_file(ctx, "old_film.icml", "film.icml")
+
+    source = await store.read(NS, "old_film.icml")
+    destination = await store.read(NS, "film.icml")
+    assert source is not None and source.content == "新稿"
+    assert destination is not None and destination.content == "旧稿"
+
+
+async def test_move_of_a_missing_source_is_retryable(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    with pytest.raises(ModelRetry, match="list_files"):
+        await tools.move_file(ctx, "不存在.md", "film.icml")
+
+
+async def test_move_onto_the_same_path_is_refused(
+    tools: WorkspaceToolset[object], store: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    """两个写法归一化后是同一路径，照常移动会把文件删掉。"""
+
+    await tools.write_file(ctx, "分镜/film.icml", "原稿")
+
+    with pytest.raises(ModelRetry, match="destination"):
+        await tools.move_file(ctx, "分镜/film.icml", "/分镜//film.icml")
+
+    stored = await store.read(NS, "分镜/film.icml")
+    assert stored is not None and stored.content == "原稿"
+
+
 async def test_list_scopes_by_segment_boundary(
     tools: WorkspaceToolset[object], ctx: RunContext[object]
 ) -> None:
@@ -764,12 +815,24 @@ def test_every_tool_has_a_display(
     deleted = drawn["delete_file"].draw({"path": "分镜.md"})
     assert isinstance(deleted, GenericDisplay)
     assert deleted.detail == "分镜.md"
+    # 移动同样没有对应的 operation，主语是「源 → 目标」。
+    moved = drawn["move_file"].draw({"source": "old_film.icml", "destination": "film.icml"})
+    assert isinstance(moved, GenericDisplay)
+    assert moved.detail == "old_film.icml → film.icml"
+    assert drawn["move_file"].draw({"source": "old_film.icml"}) is None
     assert drawn["search_files"].draw({"query": "门厅"}) == SearchDisplay(query="门厅")
     assert drawn["list_files"].draw({}) == FileIoDisplay(operation="glob", path="/")
     assert drawn["list_files"].draw({"prefix": "分镜"}) == FileIoDisplay(
         operation="glob", path="分镜"
     )
-    for tool_name in ("read_file", "write_file", "edit_file", "delete_file", "search_files"):
+    for tool_name in (
+        "read_file",
+        "write_file",
+        "edit_file",
+        "delete_file",
+        "move_file",
+        "search_files",
+    ):
         assert drawn[tool_name].draw({}) is None
 
 
@@ -779,7 +842,7 @@ def test_only_the_three_readable_results_pick_a_renderer(capability: Workspace[o
     assert views.view_of("read_file") == "file_content"
     assert views.view_of("search_files") == "search_results"
     assert views.view_of("ReadMediaFile") == "media_grid"
-    for tool_name in ("write_file", "edit_file", "delete_file", "list_files"):
+    for tool_name in ("write_file", "edit_file", "delete_file", "move_file", "list_files"):
         assert views.view_of(tool_name) is None
 
 
@@ -811,6 +874,7 @@ async def test_capability_attaches_to_a_real_agent(store: FakeFileStore) -> None
         "write_file",
         "edit_file",
         "delete_file",
+        "move_file",
         "list_files",
         "search_files",
         "ReadMediaFile",
