@@ -66,6 +66,17 @@ const canvasEntry: ArtifactEntry = {
   type: 'canvas',
 }
 
+/** 只有某个 agent 才交付的常驻类型：不给 `empty`，没有文件时选择页不列它。 */
+const scriptEntry: ArtifactEntry = {
+  autoOpen: false,
+  component: Painted,
+  icon: 'video',
+  label: '剧本',
+  match: { path: 'script.md' },
+  title: () => '剧本',
+  type: 'script',
+}
+
 const registryWith = (...entries: ArtifactEntry[]) => {
   const registry = new ArtifactRegistry()
   for (const entry of entries) registry.register(entry)
@@ -255,6 +266,28 @@ describe('WorkbenchHost 收起态', () => {
     await userEvent.click(within(chooser).getByRole('button', { name: '委派任务 · 拆解' }))
 
     expect(await screen.findByText('画着委派任务 · 拆解')).toBeVisible()
+  })
+
+  it.each([
+    { files: ['video/a.md'], rows: ['分镜agent 交付分镜后出现', '文件'] },
+    {
+      files: ['video/a.md', 'script.md'],
+      rows: ['分镜agent 交付分镜后出现', '剧本', '文件'],
+    },
+  ])('没登记灰着原因的常驻类型等有了文件才列出：$files', async ({ files, rows }) => {
+    serveFiles(files)
+    await renderHost(ROOMY, registryWith(shotsEntry, scriptEntry, workspaceEntry))
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    await waitFor(() =>
+      expect(
+        within(chooser)
+          .getAllByRole('button')
+          .map((row) => row.textContent),
+      ).toEqual(rows),
+    )
   })
 
   it('按模式认领的类型也常驻：还没有那类文件时选择页照样列一行灰的', async () => {

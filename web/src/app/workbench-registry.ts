@@ -19,11 +19,10 @@ workbenchRegistry.register({
   type: 'storyboard',
 })
 
-// AI 导演的工程文件落地后自动展开制作页。
+// AI 导演的工程文件落地后自动展开制作页；别的 agent 不交付它，没有文件时选择页不列这一行。
 workbenchRegistry.register({
   autoOpen: true,
   component: FilmPanel,
-  empty: 'AI 导演写好分镜后出现',
   icon: 'video',
   label: '制作',
   match: { path: FILM_PATH },

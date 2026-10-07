@@ -1,6 +1,7 @@
 # ADR-0006：工作台只登记专门视图，文件按越具体越优先认领
 
 - 状态：已接受（2026-10-02）
+- 修订（2026-10-07，ADR-0008）：常驻项登记了灰着的原因才在没有产物时列灰行。
 - 不取代已有 ADR。
 - 影响：[web/AGENTS.md](../../web/AGENTS.md) 的工作台登记说明；前端工作台注册表 [artifact.ts](../../web/src/shared/workbench/artifact.ts)、[registry.ts](../../web/src/shared/workbench/registry.ts)，选择页 [workbench-host.tsx](../../web/src/shared/workbench/workbench-host.tsx)。
 
