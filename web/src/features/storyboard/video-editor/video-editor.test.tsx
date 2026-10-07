@@ -100,6 +100,75 @@ describe('VideoEditor', () => {
   })
 })
 
+describe('版本条', () => {
+  const editSegment = (overrides: Parameters<typeof makeGenerationJob>[0]) =>
+    makeGenerationJob({
+      rootJobId: ROOT_ID,
+      sourceJobId: ROOT_ID,
+      rangeStartMs: 2000,
+      rangeEndMs: 4000,
+      request: { prompt: '把背景换成海边' },
+      createdAt: '2026-09-16T10:02:00Z',
+      ...overrides,
+    })
+  const serveChain = (items: ReturnType<typeof makeGenerationJob>[]) =>
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items })))
+
+  it('只有原片一版时没得切，不显示版本条', async () => {
+    restoreMedia = stubMediaDurations({ [ROOT_URL]: 8 })
+    serveChain([])
+    await renderEditor()
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
+    )
+    expect(screen.queryByRole('group', { name: '视频版本' })).toBeNull()
+    expect(screen.queryByRole('group', { name: '预览版本' })).toBeNull()
+  })
+
+  it('结果回来的编辑叫「未合成」排在最前、自动选中；可对照原片与合成，点 V1 切回原片', async () => {
+    restoreMedia = stubMediaDurations({ [ROOT_URL]: 8, [EDITED_URL]: 2 })
+    serveChain([editSegment({ outputUrl: EDITED_URL })])
+    const user = userEvent.setup()
+    await renderEditor()
+
+    const strip = await screen.findByRole('group', { name: '视频版本' })
+    const entries = within(strip).getAllByRole('button')
+    expect(entries.map((entry) => entry.getAttribute('aria-label'))).toEqual(['未合成', 'V1'])
+    await waitFor(() => expect(entries[0]).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByRole('group', { name: '预览版本' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '下载' })).toBeDisabled()
+
+    await user.click(within(strip).getByRole('button', { name: 'V1' }))
+    expect(within(strip).getByRole('button', { name: 'V1' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.queryByRole('button', { name: '合成成片' })).toBeNull()
+    expect(screen.queryByRole('group', { name: '预览版本' })).toBeNull()
+    expect(screen.getByRole('button', { name: '下载' })).toBeEnabled()
+  })
+
+  it('还在生成的编辑挂着走表摆进来，但没有可看的预览，点不动', async () => {
+    restoreMedia = stubMediaDurations({ [ROOT_URL]: 8 })
+    serveChain([editSegment({ status: 'submitted' })])
+    const user = userEvent.setup()
+    await renderEditor()
+
+    const strip = await screen.findByRole('group', { name: '视频版本' })
+    const running = within(strip).getByRole('button', { name: '未合成 · 生成中' })
+    expect(running).toHaveAttribute('aria-disabled', 'true')
+    expect(running).toHaveTextContent(/\d+:\d{2}/)
+    await user.click(running)
+    expect(running).toHaveAttribute('aria-pressed', 'false')
+    expect(within(strip).getByRole('button', { name: 'V1' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+})
+
 describe('放大预览', () => {
   const renderPlayable = async () => {
     restoreMedia = stubMediaDurations({ [ROOT_URL]: 8 })

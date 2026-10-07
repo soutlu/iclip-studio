@@ -3,8 +3,8 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 type Props = {
   /** 当前这一版不足最短选段长度。 */
   tooShort: boolean
-  /** 正在看某条编辑预览时它的名字；看着版本时为空。 */
-  previewing: string | undefined
+  /** 正在看某条没合成的编辑预览，而不是某一版。 */
+  previewing: boolean
   modelsError: string | undefined
   onReloadModels: () => void
   chainError: string | undefined
@@ -32,11 +32,9 @@ export function EditorNotices({
           视频不足 1 秒，无法选择编辑片段。
         </p>
       ) : null}
-      {previewing === undefined ? null : (
-        <p className="video-editor-muted">
-          正在看的是 {previewing} 的预览；要继续编辑，先切回某一版。
-        </p>
-      )}
+      {previewing ? (
+        <p className="video-editor-muted">正在看的是未合成的预览；要继续编辑，先切回某一版。</p>
+      ) : null}
       {modelsError === undefined ? null : (
         <InlineAlert
           action={{ label: '重新加载模型', onClick: onReloadModels }}

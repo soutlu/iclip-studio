@@ -11,6 +11,7 @@ import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button } from '@/shared/ui/button'
 import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { toast } from '@/shared/ui/toast'
+import { useUnseenResults } from '../components/use-unseen-results'
 import { useVideoModels, type GenerationJob } from '../storyboard.api'
 import {
   EDIT_STAGE_LABEL,
@@ -30,7 +31,7 @@ import { EditorNotices } from './editor-notices'
 import { EditorPreview, type EditorPreviewHandle } from './editor-preview'
 import { EditorRangeFields } from './editor-range-fields'
 import { EditorTimeline } from './editor-timeline'
-import type { VersionMenuEntry } from './editor-version-menu'
+import { EditorVersionStrip, type VersionStripEntry } from './editor-version-strip'
 import { clampRange, MIN_RANGE_SECONDS, type TimeRange } from './time-range'
 import { useMediaDurations } from './use-media-durations'
 import { useStableValue } from './use-stable-value'
@@ -45,8 +46,13 @@ import {
 } from './video-editor.api'
 
 const DEFAULT_RANGE_SECONDS = 4
+/** 没合成的编辑在版本条与时间线上的名字；合成后才排上 V 几。 */
+const UNCOMPOSED_LABEL = '未合成'
 const posterOf = (url: string) => videoSnapshotUrl(url, 320)
 const isActive = (edit: PendingEdit) => edit.stage !== 'ready' && edit.stage !== 'failed'
+/** 结果还没回来：没有可看的预览。 */
+const isAwaitingResult = (edit: PendingEdit) =>
+  edit.stage === 'queued' || edit.stage === 'generating'
 
 type Selected =
   | { kind: 'version'; key: string; label: string; version: ChainVersion }
@@ -126,7 +132,7 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
     if (version !== undefined)
       return { kind: 'version', key: version.key, label: version.label, version }
     const edit = previewable.find((item) => item.key === selectedKey)
-    if (edit !== undefined) return { kind: 'pending', key: edit.key, label: edit.label, edit }
+    if (edit !== undefined) return { kind: 'pending', key: edit.key, label: UNCOMPOSED_LABEL, edit }
     const latest = chain.versions.at(-1)
     return latest === undefined
       ? undefined
@@ -192,24 +198,55 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
           duration,
         )
       : undefined
-  const menuEntries: VersionMenuEntry[] = [
-    ...chain.versions.map((version) => ({
+  // 版本条上的小绿点：本次打开期间见过它在生成、结果回来后还没点开看过。
+  const unseen = useUnseenResults(
+    pending.filter(isAwaitingResult).map((edit) => edit.key),
+    selected?.kind === 'pending' && selected.edit.stage === 'ready' ? selected.key : undefined,
+  )
+  // 各版加上没合成的编辑，新的在前。结果还没回来的编辑也摆出来、挂着走表，只是没有可看的预览，点不动。
+  const stripEntries: VersionStripEntry[] = [
+    ...chain.versions.map((version): VersionStripEntry => ({
       key: version.key,
       label: version.label,
-      baseLabel: chain.versions.find((item) => item.key === version.edit?.baseKey)?.label,
-      note: undefined,
-      mediaUrl: version.mediaUrl,
-      duration: durationOf(version.mediaUrl),
+      name: version.label,
+      poster: posterOf(version.mediaUrl),
+      progress: undefined,
+      selectable: true,
+      unseen: false,
     })),
-    ...previewable.map((edit) => ({
-      key: edit.key,
-      label: edit.label,
-      baseLabel: edit.base.label,
-      note: EDIT_STAGE_LABEL[edit.stage],
-      mediaUrl: edit.video?.outputUrl ?? edit.base.mediaUrl,
-      duration: undefined,
-    })),
-  ]
+    ...pending
+      .filter((edit) => edit.preview !== undefined || isAwaitingResult(edit))
+      .map((edit): VersionStripEntry => {
+        const fresh = edit.stage === 'ready' && unseen.isUnseen(edit.key)
+        const since =
+          edit.stage === 'composing'
+            ? edit.composite?.createdAt
+            : edit.stage === 'generating'
+              ? edit.video.createdAt
+              : undefined
+        return {
+          key: edit.key,
+          label: UNCOMPOSED_LABEL,
+          name: [
+            UNCOMPOSED_LABEL,
+            isActive(edit) ? EDIT_STAGE_LABEL[edit.stage] : undefined,
+            fresh ? '新结果' : undefined,
+          ]
+            .filter((part) => part !== undefined)
+            .join(' · '),
+          poster: posterOf(edit.video.outputUrl ?? edit.base.mediaUrl),
+          progress:
+            edit.stage === 'queued'
+              ? { kind: 'queued' }
+              : since === undefined
+                ? undefined
+                : { kind: 'running', since },
+          selectable: edit.preview !== undefined,
+          unseen: fresh,
+        }
+      }),
+  ].reverse()
+  const selectedPoster = stripEntries.find((entry) => entry.key === selected?.key)?.poster
   // 编辑预览还没成版，来源链到它的基底为止。
   const ancestors =
     selected === undefined
@@ -323,21 +360,13 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
     selected.edit.stage === 'ready' &&
     unreadable(selected.edit.preview)
 
-  /** 时间线上那个主按钮：看某一版就下载它，看编辑预览就把它合成成片。 */
-  const action =
-    selected === undefined ? undefined : selected.kind === 'version' ? (
+  /** 标题行的主按钮：看着编辑预览时把它合成成片。 */
+  const composeButton =
+    selected?.kind === 'pending' ? (
       <Button
-        leadingIcon="download"
-        loading={downloading}
-        onClick={() => void download(selected.version.mediaUrl, '生成的视频')}
-        size="md"
-        variant="ghost"
-      >
-        下载
-      </Button>
-    ) : (
-      <Button
+        className="video-editor-compose"
         disabled={!canCompose(selected.edit)}
+        leadingIcon="video"
         loading={operation === 'composing' || selected.edit.stage === 'composing'}
         onClick={() => void compose(selected.edit)}
         size="md"
@@ -348,7 +377,23 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
             ? '合成成片'
             : '重新合成'}
       </Button>
-    )
+    ) : undefined
+  /** 控制条最右的下载：看某一版时下载它；编辑预览还没成文件，灰着。 */
+  const downloadButton = (
+    <Button
+      className="video-editor-bar-button"
+      disabled={selectedVersion === undefined}
+      leadingIcon="download"
+      loading={downloading}
+      onClick={() => {
+        if (selectedVersion !== undefined) void download(selectedVersion.mediaUrl, '生成的视频')
+      }}
+      size="md"
+      variant="ghost"
+    >
+      下载
+    </Button>
+  )
 
   return (
     <DialogRoot
@@ -365,6 +410,7 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogHeader
+          actions={composeButton}
           className="video-editor-header border-0"
           closeLabel="关闭视频编辑"
           title={
@@ -372,122 +418,123 @@ function Editor({ conversationId, root, shotIndex, onClose }: EditorProps) {
               <span>编辑视频</span>
               {shotIndex === undefined ? null : (
                 <span className="text-body-sm font-normal text-on-surface-muted">
-                  · 镜头组 {shotIndex}
+                  镜头组 {shotIndex}
                 </span>
               )}
             </span>
           }
         />
         <div aria-label="视频编辑器" className="video-editor">
-          <div className="video-editor-workspace">
-            <EditorPreview
-              current={laid}
-              currentLabel={selected?.label ?? ''}
-              currentTime={currentTime}
-              onTime={setCurrentTime}
-              original={base === undefined ? undefined : originalLaid}
-              poster={selected === undefined ? undefined : posterOf(laid?.[0]?.mediaUrl ?? '')}
-              ref={previewRef}
-              selection={range ?? null}
-            />
-            <section aria-label="编辑选段" className="video-editor-inspector">
-              <div className="video-editor-inspector-heading">
-                <h3>编辑片段</h3>
-              </div>
-              <EditorRangeFields
-                disabled={busy}
-                duration={duration}
-                onChange={changeBoundary}
-                range={range}
+          <EditorPreview
+            backdrop={{
+              current: selectedPoster,
+              original: base === undefined ? undefined : posterOf(base.mediaUrl),
+            }}
+            barEnd={downloadButton}
+            current={laid}
+            currentTime={currentTime}
+            onTime={setCurrentTime}
+            original={base === undefined ? undefined : originalLaid}
+            poster={selected === undefined ? undefined : posterOf(laid?.[0]?.mediaUrl ?? '')}
+            ref={previewRef}
+            selection={range ?? null}
+            timeline={
+              selected !== undefined &&
+              laid !== undefined &&
+              duration !== undefined &&
+              duration > 0 ? (
+                <EditorTimeline
+                  ancestors={ancestors}
+                  // 根自己就是原片：上轨照样摆它。
+                  base={base ?? selectedVersion}
+                  baseDuration={durationOf((base ?? selectedVersion)?.mediaUrl ?? '')}
+                  currentTime={currentTime}
+                  duration={duration}
+                  label={selected.label}
+                  onSeek={(time) => previewRef.current?.previewAt(time)}
+                  onSelect={select}
+                  onSelectionChange={changeRange}
+                  posterOf={posterOf}
+                  segments={laid}
+                  selection={selectedVersion === undefined ? null : (range ?? null)}
+                />
+              ) : (
+                <p className="video-editor-timeline-loading" role="status">
+                  {unreadable(currentSegments)
+                    ? '读不到视频时长，无法预览与选段；关掉编辑器重开可再试一次'
+                    : '读到视频时长后即可选择片段'}
+                </p>
+              )
+            }
+            versions={
+              <EditorVersionStrip
+                entries={stripEntries}
+                onSelect={select}
+                selectedKey={selected?.key ?? ''}
               />
-              <EditorComposer
-                disabled={busy}
-                footer={
-                  <div className="video-editor-generation-controls">
-                    <EditorModelMenu
-                      disabled={busy}
-                      model={model}
-                      models={models}
-                      onChange={setWantedModel}
-                    />
-                    <Button
-                      className="video-editor-generate"
-                      disabled={!canGenerate}
-                      loading={operation === 'generating'}
-                      onClick={() => void generate()}
-                      trailingIcon="send-up"
-                    >
-                      生成
-                    </Button>
-                  </div>
-                }
-                onBusyChange={(uploading) => setOperation(uploading ? 'uploading' : 'idle')}
-                onPromptChange={(value) => {
-                  setPrompt(value)
-                  setOperationError(null)
-                }}
-                onReferencesChange={setReferences}
-                prompt={prompt}
-                references={references}
-              />
-              <EditorNotices
-                chainError={
-                  chainQuery.isError
-                    ? errorMessageOf(chainQuery.error, '读取编辑记录失败')
-                    : undefined
-                }
-                composeBlocked={composeBlocked}
-                modelsError={
-                  modelsQuery.isError
-                    ? errorMessageOf(modelsQuery.error, '读取视频模型失败')
-                    : undefined
-                }
-                onReloadChain={() => void chainQuery.refetch()}
-                onReloadModels={() => void modelsQuery.refetch()}
-                operationError={operationError}
-                previewing={selected?.kind === 'pending' ? selected.label : undefined}
-                tooShort={
-                  selectedVersion !== undefined &&
-                  duration !== undefined &&
-                  duration < MIN_RANGE_SECONDS
-                }
-              />
-              {shownEdit === undefined ? null : <EditorGenerationStatus edit={shownEdit} />}
-            </section>
-          </div>
-          {selected !== undefined &&
-          laid !== undefined &&
-          duration !== undefined &&
-          duration > 0 ? (
-            <EditorTimeline
-              action={action}
-              ancestors={ancestors}
-              // 根自己就是原片：上轨照样摆它。
-              base={base ?? selectedVersion}
-              baseDuration={durationOf((base ?? selectedVersion)?.mediaUrl ?? '')}
-              currentTime={currentTime}
+            }
+          />
+          <section aria-label="编辑选段" className="video-editor-inspector">
+            <EditorRangeFields
+              disabled={busy}
               duration={duration}
-              entries={menuEntries}
-              label={selected.label}
-              onSeek={(time) => previewRef.current?.previewAt(time)}
-              onSelect={select}
-              onSelectionChange={changeRange}
-              posterOf={posterOf}
-              segments={laid}
-              selectedKey={selected.key}
-              selection={selectedVersion === undefined ? null : (range ?? null)}
+              onChange={changeBoundary}
+              range={range}
             />
-          ) : (
-            // 时长读不出来时时间线摆不出来，但当前这一版该能下载，按钮跟着占位一起摆。
-            <div className="video-editor-timeline-loading">
-              <p role="status">
-                {unreadable(currentSegments)
-                  ? '读不到视频时长，无法预览与选段；关掉编辑器重开可再试一次'
-                  : '读到视频时长后即可选择片段'}
-              </p>
-              {action}
-            </div>
-          )}
+            <EditorComposer
+              disabled={busy}
+              footer={
+                <div className="video-editor-generation-controls">
+                  <EditorModelMenu
+                    disabled={busy}
+                    model={model}
+                    models={models}
+                    onChange={setWantedModel}
+                  />
+                  <Button
+                    className="video-editor-generate"
+                    disabled={!canGenerate}
+                    loading={operation === 'generating'}
+                    onClick={() => void generate()}
+                    trailingIcon="send-up"
+                  >
+                    生成
+                  </Button>
+                </div>
+              }
+              onBusyChange={(uploading) => setOperation(uploading ? 'uploading' : 'idle')}
+              onPromptChange={(value) => {
+                setPrompt(value)
+                setOperationError(null)
+              }}
+              onReferencesChange={setReferences}
+              prompt={prompt}
+              references={references}
+            />
+            <EditorNotices
+              chainError={
+                chainQuery.isError
+                  ? errorMessageOf(chainQuery.error, '读取编辑记录失败')
+                  : undefined
+              }
+              composeBlocked={composeBlocked}
+              modelsError={
+                modelsQuery.isError
+                  ? errorMessageOf(modelsQuery.error, '读取视频模型失败')
+                  : undefined
+              }
+              onReloadChain={() => void chainQuery.refetch()}
+              onReloadModels={() => void modelsQuery.refetch()}
+              operationError={operationError}
+              previewing={selected?.kind === 'pending'}
+              tooShort={
+                selectedVersion !== undefined &&
+                duration !== undefined &&
+                duration < MIN_RANGE_SECONDS
+              }
+            />
+            {shownEdit === undefined ? null : <EditorGenerationStatus edit={shownEdit} />}
+          </section>
         </div>
       </DialogSurface>
     </DialogRoot>
