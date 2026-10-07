@@ -9,7 +9,7 @@ import type {
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
 // no-inline：这几条要作为地址进请求体、进 <video src>，不能被构建按小文件内联成 data URI。
-import sampleEditedUrl from '../fixtures/sample-edited.webm?no-inline'
+import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { isMockVideoUpload } from './uploads'
@@ -40,9 +40,10 @@ const httpFrames = (): MockFrames => {
 
 /** 出片与合成都放这条 6 秒的测试卡；编辑段的结果放另一条 3 秒的彩条，切换时看得出来。
  *
- * 编码用 VP9 不用 H.264：Playwright 自带的 Chromium 没有 H.264 解码器。能当基底的两条（这条与下面
- * 的横版）是 VP9-in-MP4、每秒一个关键帧，与线上的成片同为 MP4 容器：编辑时浏览器在关键帧处把它
- * 原样拷成参考片段，选段的整秒端点正好落在关键帧上。编辑结果那条只拿来播放，仍是 WebM。 */
+ * 编码用 VP9 不用 H.264：Playwright 自带的 Chromium 没有 H.264 解码器。三条都是 VP9-in-MP4、每秒
+ * 一个关键帧，与线上的成片同为 MP4 容器：编辑器按关键帧分段、读原声都走 MP4，参考片段在关键帧处
+ * 原样拷出来。只有这条 6 秒的测试卡带一条 Opus 原声（Chromium 能解，AAC 不能），时间线上看得到
+ * 真实波形；彩条与横版没有音轨，原声轨显示「无声」。 */
 const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000

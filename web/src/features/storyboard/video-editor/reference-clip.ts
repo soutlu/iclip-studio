@@ -1,11 +1,12 @@
-/** 编辑段的参考片段在浏览器里切（ADR-0010）：读基底的关键帧，把选段吸附到关键帧上，在关键帧处
- * 重封装成 MP4，不重编码。
+/** 编辑器读视频文件的地方（ADR-0010）：读关键帧表给时间线分段，解码原声轨给波形，在关键帧处把
+ * AI 改的那一段重封装成参考片段（不重编码）。只认成片的容器：MP4 与同族的 MOV。
  *
- * 本模块静态引入 mediabunny，只由提交路径动态 `import()`，打包时与 mediabunny 用到的部分一起
- * 摇成一个懒加载块，不进首屏包。mediabunny 按 MPL-2.0 发布，许可全文与源码地址见
+ * 本模块静态引入 mediabunny，只经动态 `import()` 加载，打包时与 mediabunny 用到的部分一起摇成一个
+ * 懒加载块，不进首屏包。mediabunny 按 MPL-2.0 发布，许可全文与源码地址见
  * public/licenses/mediabunny.txt（随产物发布）。 */
 
 import {
+  AudioSampleSink,
   BufferTarget,
   Conversion,
   EncodedPacketSink,
@@ -21,71 +22,122 @@ import { UserFacingError } from '@/shared/api/client'
 /** 一段时间，单位秒。 */
 export type SecondsRange = { start: number; end: number }
 
-/** 选段端点与关键帧相差不到 1 毫秒就算正好落在关键帧上：两边都是浮点秒，同一时刻从不同的时间基
- * 换算过来可能差一点，不能因此退到前一个关键帧、多切出整整一段。 */
-const KEYFRAME_EPSILON = 0.001
+/** 一条视频的关键帧表与时长，秒，都取整到毫秒。 */
+export type KeyframeIndex = { keyframes: number[]; duration: number }
 
-/**
- * 把选段吸附到关键帧上：起点退到不晚于它的最近关键帧，终点进到不早于它的最近关键帧，后面没有
- * 关键帧就到片尾 `duration`。片头之前没有关键帧（首个关键帧晚于起点）时从 0 起。
- *
- * 只在关键帧处下刀，切出来的片段才不用重编码；吸附后的区间只会比选段宽，不会窄。
- */
-export const snapToKeyframes = (
-  keyframes: readonly number[],
-  duration: number,
-  range: SecondsRange,
-): SecondsRange => {
-  const sorted = [...keyframes].sort((left, right) => left - right)
-  const start = sorted.findLast((time) => time <= range.start + KEYFRAME_EPSILON) ?? 0
-  const end = sorted.find((time) => time >= range.end - KEYFRAME_EPSILON) ?? duration
-  return { start, end }
-}
+/** 原声的波形：每秒 `rate` 个峰值，按时间排，各值在 0–1 之间，整条里最响的是 1。 */
+export type AudioPeaks = { rate: number; peaks: number[] }
 
-/** 秒换成记录上的毫秒：四舍五入到最近的毫秒。关键帧时刻落在帧边界上，取整后离真实边界不到半毫秒，
- * 合成按帧取最近的一帧时仍落回同一帧；片段时长与区间长度也只差这一点取整。 */
-const toMs = (seconds: number): number => Math.round(seconds * 1000)
+/** 波形的精度：每秒 50 个峰值，时间线上一秒宽几十像素，够画出起伏。 */
+const PEAKS_PER_SECOND = 50
 
-export type ReferenceClip = {
-  /** 切好的片段，MP4 容器。 */
-  file: File
-  /** 吸附后的区间，毫秒，按 {@link toMs} 取整；编辑请求的 `range_start_ms` / `range_end_ms` 就填它。 */
-  startMs: number
-  endMs: number
-}
+/** 秒取整到毫秒。mediabunny 按各轨的时间基换算出浮点秒（0.99999…）；分段、比对、记录区间都用
+ * 取整后的值，同一时刻处处相等，不用到处带容差。 */
+const roundToMs = (seconds: number): number => Math.round(seconds * 1000) / 1000
 
 /** 只读样本表、不取帧数据：读关键帧表只要索引。 */
 const METADATA_ONLY = { metadataOnly: true } as const
 
+const openInput = (url: string) => new Input({ source: new UrlSource(url), formats: [MP4, QTFF] })
+
+/** 失败一律换成可直接展示的 {@link UserFacingError}，原始错误放在 cause。 */
+const asUserFacing = (cause: unknown, message: string): UserFacingError =>
+  cause instanceof UserFacingError ? cause : new UserFacingError(message, { cause })
+
 /**
- * 从基底 `baseUrl` 上切出吸附到关键帧后的那一段。基底是成片，只认 MP4 与同族的 MOV。
- *
- * 只拷贝不转码：有哪条轨拷不进 MP4 就报错，不静默转码、不丢轨。失败抛 {@link UserFacingError}，
- * message 可直接展示，原始错误放在 cause。
+ * 读一条视频的关键帧表与时长。只读索引、不解码。关键帧按时刻排、去重；第一个不在 0 上时，片头
+ * 那一截也算一段，由调用方从 0 起分。
  */
-export const cutReferenceClip = async (
-  baseUrl: string,
-  range: SecondsRange,
-): Promise<ReferenceClip> => {
-  const input = new Input({ source: new UrlSource(baseUrl), formats: [MP4, QTFF] })
+export const readKeyframes = async (url: string): Promise<KeyframeIndex> => {
+  const input = openInput(url)
   try {
     const track = await input.getPrimaryVideoTrack()
-    if (track === null) throw new UserFacingError('这条视频没有画面，切不出参考片段')
+    if (track === null) throw new UserFacingError('这条视频没有画面，分不了段')
     const sink = new EncodedPacketSink(track)
-    const keyframes: number[] = []
+    const keyframes = new Set<number>()
     for (
       let packet = await sink.getFirstKeyPacket(METADATA_ONLY);
       packet !== null;
       packet = await sink.getNextKeyPacket(packet, METADATA_ONLY)
     ) {
-      keyframes.push(packet.timestamp)
+      keyframes.add(roundToMs(packet.timestamp))
     }
-    const snapped = snapToKeyframes(keyframes, await input.computeDuration(), range)
+    return {
+      keyframes: [...keyframes].sort((left, right) => left - right),
+      duration: roundToMs(await input.computeDuration()),
+    }
+  } catch (cause) {
+    throw asUserFacing(cause, '读不出这条视频的关键帧，请稍后重试')
+  } finally {
+    input.dispose()
+  }
+}
+
+/**
+ * 解码一条视频的原声，算成波形峰值。没有音轨返回 `null`（这条视频本来无声）；有音轨却解不了
+ * 是错误，不当成无声。各声道取最大的绝对值。
+ */
+export const readAudioPeaks = async (url: string): Promise<AudioPeaks | null> => {
+  const input = openInput(url)
+  try {
+    const track = await input.getPrimaryAudioTrack()
+    if (track === null) return null
+    if (!(await track.canDecode())) throw new UserFacingError('这个浏览器解不了这条视频的原声')
+    const peaks: number[] = []
+    for await (const sample of new AudioSampleSink(track).samples()) {
+      try {
+        const plane = new Float32Array(sample.numberOfFrames)
+        for (let channel = 0; channel < sample.numberOfChannels; channel += 1) {
+          sample.copyTo(plane, { planeIndex: channel, format: 'f32-planar' })
+          plane.forEach((value, frame) => {
+            const bucket = Math.floor(
+              (sample.timestamp + frame / sample.sampleRate) * PEAKS_PER_SECOND,
+            )
+            if (bucket >= 0) peaks[bucket] = Math.max(peaks[bucket] ?? 0, Math.abs(value))
+          })
+        }
+      } finally {
+        sample.close()
+      }
+    }
+    const filled = Array.from(peaks, (peak) => peak ?? 0)
+    const loudest = Math.max(0, ...filled)
+    return {
+      rate: PEAKS_PER_SECOND,
+      peaks: loudest === 0 ? filled : filled.map((peak) => peak / loudest),
+    }
+  } catch (cause) {
+    throw asUserFacing(cause, '原声读不出来，请稍后重试')
+  } finally {
+    input.dispose()
+  }
+}
+
+export type ReferenceClip = {
+  /** 切好的片段，MP4 容器。 */
+  file: File
+  /** 区间，毫秒；编辑请求的 `range_start_ms` / `range_end_ms` 就填它。 */
+  startMs: number
+  endMs: number
+}
+
+/**
+ * 从基底 `baseUrl` 上切出 `range` 那一段。`range` 的两端必须正好是基底的关键帧（或片尾），取自
+ * {@link readKeyframes}：只在关键帧处下刀，才不用重编码，切出来的长度也正好是区间长。
+ *
+ * 只拷贝不转码：有哪条轨拷不进 MP4 就报错，不静默转码、不丢轨。
+ */
+export const cutReferenceClip = async (
+  baseUrl: string,
+  range: SecondsRange,
+): Promise<ReferenceClip> => {
+  const input = openInput(baseUrl)
+  try {
     const target = new BufferTarget()
     const conversion = await Conversion.init({
       input,
       output: new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target }),
-      trim: snapped,
+      trim: range,
       copy: { mode: 'forced' },
       showWarnings: false,
     })
@@ -97,12 +149,11 @@ export const cutReferenceClip = async (
     if (target.buffer === null) throw new Error('切片完成了却没有产物')
     return {
       file: new File([target.buffer], 'reference-clip.mp4', { type: 'video/mp4' }),
-      startMs: toMs(snapped.start),
-      endMs: toMs(snapped.end),
+      startMs: Math.round(range.start * 1000),
+      endMs: Math.round(range.end * 1000),
     }
   } catch (cause) {
-    if (cause instanceof UserFacingError) throw cause
-    throw new UserFacingError('参考片段没切出来，请稍后重试', { cause })
+    throw asUserFacing(cause, '参考片段没切出来，请稍后重试')
   } finally {
     input.dispose()
   }

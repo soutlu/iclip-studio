@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowUpRight,
+  AudioLines,
   Brush,
   Circle,
   CircleDot,
@@ -219,6 +220,7 @@ const ICONS = {
   'send-up': ArrowUp,
   settings: Settings,
   spinner: LoaderCircle,
+  split: Scissors,
   stop: Square,
   stopped: CircleStop,
   success: CircleCheck,
@@ -231,6 +233,7 @@ const ICONS = {
   user: User,
   video: Video,
   warning: TriangleAlert,
+  waveform: AudioLines,
   zoom: ZoomIn,
 } as const
 

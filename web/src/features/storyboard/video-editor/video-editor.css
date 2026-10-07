@@ -232,7 +232,7 @@
   transition-timing-function: var(--ease);
 }
 
-.video-editor-version:hover:not([aria-disabled='true'], [aria-pressed='true']) {
+.video-editor-version:hover:not([aria-pressed='true']) {
   opacity: 0.85;
 }
 
@@ -242,10 +242,6 @@
   box-shadow:
     0 0 0 1.5px var(--color-on-scrim),
     0 10px 22px -8px color-mix(in srgb, var(--color-scrim) 55%, transparent);
-}
-
-.video-editor-version[aria-disabled='true'] {
-  cursor: default;
 }
 
 .video-editor-version img {
@@ -373,15 +369,32 @@
   opacity: 0.65;
 }
 
+/* 时间线面板与它下面一行脚注。 */
+.video-editor-timeline-area {
+  display: flex;
+  grid-area: timeline;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
 /* 时间线面板：顶上一行播放控制条，下面是轨道。 */
 .video-editor-timeline-panel {
   display: flex;
-  grid-area: timeline;
   min-width: 0;
   flex-direction: column;
   padding: 8px 12px 12px;
   border-radius: var(--radius-xl);
   background: var(--color-surface-container-low);
+}
+
+/* 按状态给一句人话：选中了什么、能做什么、按钮为什么是灰的。 */
+.video-editor-footnote {
+  min-height: var(--text-caption--line-height);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-align: center;
 }
 
 .video-editor-bar {
@@ -410,6 +423,11 @@
   width: auto;
   padding: 0 10px;
   color: var(--color-on-surface-variant);
+}
+
+.video-editor-bar .video-editor-bar-button:disabled {
+  opacity: var(--state-disabled-content);
+  cursor: default;
 }
 
 .video-editor-clock {
@@ -464,45 +482,25 @@
   scrollbar-width: thin;
 }
 
-.video-editor-range {
+/* AI 要改哪几段：只读一行，选段在时间线上做。 */
+.video-editor-target {
   display: flex;
-  align-items: center;
+  min-height: 36px;
   flex-shrink: 0;
+  align-items: center;
   gap: 8px;
-  padding: 2px 10px;
+  padding: 0 12px;
   border-radius: var(--radius-sm);
   background: var(--color-surface-container-low);
-  color: var(--color-on-surface-muted);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
   font-variant-numeric: tabular-nums;
 }
 
-.video-editor-range input {
-  width: 64px;
-  min-width: 0;
-  height: 32px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--color-on-surface);
-  text-align: center;
-  appearance: textfield;
-}
-
-.video-editor-range input::-webkit-inner-spin-button,
-.video-editor-range input::-webkit-outer-spin-button {
-  appearance: none;
-  margin: 0;
-}
-
-.video-editor-range > svg,
-.video-editor-range > span {
+.video-editor-target > svg {
   flex-shrink: 0;
-}
-
-.video-editor-range > span {
-  font-size: var(--text-label);
-  padding-left: 6px;
+  color: var(--color-on-surface-muted);
 }
 
 .video-editor-generation-controls {
@@ -572,12 +570,6 @@
   background: var(--color-secondary-container);
   color: var(--color-on-surface-muted);
   opacity: 0.65;
-}
-
-.video-editor-muted {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-body);
-  line-height: 1.6;
 }
 
 /* 输入框不画焦点环，外框边框转墨色即焦点指示（见 editor-composer.css）。 */
@@ -664,11 +656,31 @@
   }
 }
 
-/* 手机宽度放不下整行：总时长读数让给按钮，时钟里已经有总长。 */
+/* 手机宽度放不下一行：总时长读数让给按钮（时钟里已经有总长），剪辑操作折到第二行。 */
 @media (max-width: 599px) {
   .video-editor-readout,
   .video-editor-bar-divider {
     display: none;
+  }
+
+  .video-editor-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  /* 拆分、删除只留图标，名字留给读屏。 */
+  .video-editor-bar .video-editor-tool {
+    width: 30px;
+    padding: 0;
+  }
+
+  .video-editor-tool-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .video-editor-clock {

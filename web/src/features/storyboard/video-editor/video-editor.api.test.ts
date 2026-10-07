@@ -4,21 +4,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
+import { readAudioPeaks, readKeyframes } from './reference-clip'
 import {
   editTriggerOf,
   editableModels,
   pickEditModel,
   seedVideoEditJob,
-  spliceSegments,
   submitVideoComposite,
   submitVideoEdit,
   videoEditChainKey,
 } from './video-editor.api'
 
-/** mediabunny 的替身：不解码，只按 `media` 里写好的关键帧表与时长回答，记下切了哪一段。 */
+/** 一块解出来的音频：从 `timestamp` 秒起，各声道的样本。 */
+type FakeAudio = { timestamp: number; sampleRate: number; channels: number[][] }
+
+/** mediabunny 的替身：不解码，只按 `media` 里写好的关键帧表、时长与音频回答，记下切了哪一段。 */
 const media = vi.hoisted(() => ({
   keyframes: [] as number[],
   duration: 0,
+  /** `null` 是没有音轨，`'undecodable'` 是有音轨却解不了。 */
+  audio: null as FakeAudio[] | null | 'undecodable',
   discarded: [] as { reason: string }[],
   events: [] as string[],
   sources: [] as string[],
@@ -35,9 +40,30 @@ vi.mock('mediabunny', () => {
   }
   class Input {
     getPrimaryVideoTrack = () => Promise.resolve({})
+    getPrimaryAudioTrack = () =>
+      Promise.resolve(
+        media.audio === null
+          ? null
+          : { canDecode: () => Promise.resolve(media.audio !== 'undecodable') },
+      )
     computeDuration = () => Promise.resolve(media.duration)
     dispose = () => {
       media.disposed += 1
+    }
+  }
+  class AudioSampleSink {
+    async *samples() {
+      for (const block of Array.isArray(media.audio) ? media.audio : []) {
+        yield {
+          timestamp: block.timestamp,
+          sampleRate: block.sampleRate,
+          numberOfFrames: block.channels[0]?.length ?? 0,
+          numberOfChannels: block.channels.length,
+          copyTo: (target: Float32Array, options: { planeIndex: number }) =>
+            target.set(block.channels[options.planeIndex] ?? []),
+          close: () => {},
+        }
+      }
     }
   }
   class EncodedPacketSink {
@@ -75,6 +101,7 @@ vi.mock('mediabunny', () => {
     },
   }
   return {
+    AudioSampleSink,
     BufferTarget,
     Conversion,
     EncodedPacketSink,
@@ -146,14 +173,14 @@ describe('submitVideoEdit', () => {
       taskId: null,
       sourceJobId,
       baseMediaUrl,
-      // 选段落在关键帧之间：起点退到 1.916667，终点进到 6.5。
-      range: { start: 2.5, end: 5 },
+      // 两端正好是基底的关键帧（取整到毫秒的读数）。
+      range: { start: 1.917, end: 6.5 },
       model: 'wan3.0-video',
       prompt: '换成浅灰背景',
       referenceImageUrls: ['https://cdn.example.com/ref.png'],
     })
 
-  it('先在基底上按关键帧切片，再传上去，最后带着片段地址与吸附后的区间提交编辑', async () => {
+  it('先在基底上按区间切片，再传上去，最后带着片段地址与区间提交编辑', async () => {
     await submit()
 
     expect(media.events).toEqual([
@@ -164,13 +191,12 @@ describe('submitVideoEdit', () => {
       'POST /api/generations/video-edits',
     ])
     expect(media.sources).toEqual([baseMediaUrl])
-    expect(media.trims).toEqual([{ start: 1.916667, end: 6.5 }])
+    expect(media.trims).toEqual([{ start: 1.917, end: 6.5 }])
     expect(signed).toEqual({ contentType: 'video/mp4', height: null, width: null })
     expect(edited).toEqual({
       conversation_id: conversationId,
       task_id: null,
       source_job_id: sourceJobId,
-      // 吸附后的秒数四舍五入到毫秒。
       range_start_ms: 1917,
       range_end_ms: 6500,
       reference_video_urls: [clipUrl],
@@ -197,30 +223,81 @@ describe('submitVideoEdit', () => {
   })
 })
 
+describe('readKeyframes', () => {
+  beforeEach(() => {
+    Object.assign(media, { keyframes: [0, 1.916667, 4.208333, 6.5], duration: 8.0416, disposed: 0 })
+  })
+
+  it('关键帧表与时长都取整到毫秒，读完释放', async () => {
+    expect(await readKeyframes('https://oss.example.com/take.mp4')).toEqual({
+      keyframes: [0, 1.917, 4.208, 6.5],
+      duration: 8.042,
+    })
+    expect(media.disposed).toBe(1)
+  })
+})
+
+describe('readAudioPeaks', () => {
+  beforeEach(() => {
+    media.disposed = 0
+  })
+
+  it('每秒 50 个峰值，各声道取最大的绝对值，整条最响的是 1', async () => {
+    // 采样率 100：每个峰值管两个样本。
+    media.audio = [
+      {
+        timestamp: 0,
+        sampleRate: 100,
+        channels: [
+          [0.1, -0.2, 0.05, 0],
+          [0, 0.1, -0.4, 0],
+        ],
+      },
+      {
+        timestamp: 0.04,
+        sampleRate: 100,
+        channels: [
+          [0.8, 0],
+          [0, 0],
+        ],
+      },
+    ]
+    expect(await readAudioPeaks('https://oss.example.com/take.mp4')).toEqual({
+      rate: 50,
+      // 样本按 32 位浮点存，比值只到浮点精度。
+      peaks: [expect.closeTo(0.25), expect.closeTo(0.5), 1],
+    })
+    expect(media.disposed).toBe(1)
+  })
+
+  it('没有音轨就是无声，返回 null', async () => {
+    media.audio = null
+    expect(await readAudioPeaks('https://oss.example.com/take.mp4')).toBeNull()
+  })
+
+  it('有音轨却解不了是错误，不当成无声', async () => {
+    media.audio = 'undecodable'
+    const error = await readAudioPeaks('https://oss.example.com/take.mp4').then(
+      () => undefined,
+      (reason: unknown) => reason,
+    )
+    expect(errorMessageOf(error, '兜底')).toBe('这个浏览器解不了这条视频的原声')
+    expect(media.disposed).toBe(1)
+  })
+})
+
 describe('submitVideoComposite', () => {
   const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
   const baseJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
   const editJobId = '7e1c3a9b-2d4f-4b1e-8c3d-1f2e3a4b5c6d'
 
-  it.each([
-    [
-      '从中间改起：基底前段、编辑段整条、基底后段，毫秒换成秒',
-      { rangeStartMs: 1500, rangeEndMs: 4250 },
-      [
-        { sourceJobId: baseJobId, start: 0, end: 1.5 },
-        { sourceJobId: editJobId, start: 0 },
-        { sourceJobId: baseJobId, start: 4.25 },
-      ],
-    ],
-    [
-      '从头改起没有前段',
-      { rangeStartMs: 0, rangeEndMs: 3000 },
-      [
-        { sourceJobId: editJobId, start: 0 },
-        { sourceJobId: baseJobId, start: 3 },
-      ],
-    ],
-  ])('%s', async (_name, range, segments) => {
+  it('片段列表就是草稿：各段出处与自己媒体时间里的起止原样发出', async () => {
+    const segments = [
+      { sourceJobId: baseJobId, start: 0, end: 1.5 },
+      { sourceJobId: editJobId, start: 0, end: 2.75 },
+      { sourceJobId: baseJobId, start: 5, end: 6 },
+      { sourceJobId: baseJobId, start: 4.25, end: 5 },
+    ]
     let body: unknown
     const accepted = makeGenerationJob({
       operation: 'compose',
@@ -234,12 +311,7 @@ describe('submitVideoComposite', () => {
       }),
     )
 
-    const result = await submitVideoComposite({
-      conversationId,
-      taskId: null,
-      baseJobId,
-      segments: spliceSegments({ baseJobId, editJobId, ...range }),
-    })
+    const result = await submitVideoComposite({ conversationId, taskId: null, baseJobId, segments })
 
     expect(body).toEqual({ conversationId, taskId: null, baseJobId, segments })
     expect(result.id).toBe(accepted.id)
