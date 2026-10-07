@@ -72,7 +72,7 @@ test('全部对话的筛选在窄屏和深色主题下可用，关闭后保留�
   await login(page, 'governor')
   await page.getByRole('button', { name: '全部任务', exact: true }).click()
   const audit = page.getByRole('main', { name: '全部任务' })
-  await expect(audit.getByRole('link')).toHaveCount(12)
+  await expect(audit.getByRole('link')).toHaveCount(13)
   await page.screenshot({ path: `${screenshotDir}/desktop-light.png`, animations: 'disabled' })
 
   await page.emulateMedia({ colorScheme: 'dark' })
@@ -94,13 +94,13 @@ test('全部对话的筛选在窄屏和深色主题下可用，关闭后保留�
   await expect(audit.getByRole('link')).toHaveCount(2)
   await selectedUser.click()
   await page.getByRole('option', { name: '小王', exact: true }).click()
-  await expect(audit.getByRole('link')).toHaveCount(12)
+  await expect(audit.getByRole('link')).toHaveCount(13)
 
   const timeTrigger = page.getByRole('button', { name: '建立时间', exact: true })
   await timeTrigger.click()
   await page.getByRole('radio', { name: '自定义', exact: true }).click()
   await page.getByRole('button', { name: '2026年9月8日', exact: true }).click()
-  await expect(audit.getByRole('link')).toHaveCount(12)
+  await expect(audit.getByRole('link')).toHaveCount(13)
   await page.getByRole('button', { name: '2026年9月12日', exact: true }).click()
   const selectedTime = page.getByRole('button', {
     name: '建立时间：9月8日 — 9月12日',
@@ -115,6 +115,6 @@ test('全部对话的筛选在窄屏和深色主题下可用，关闭后保留�
   await selectedTime.click()
   await page.getByRole('radio', { name: '自定义', exact: true }).click()
   await expect(timeTrigger).toBeFocused()
-  await expect(audit.getByRole('link')).toHaveCount(12)
+  await expect(audit.getByRole('link')).toHaveCount(13)
   await page.screenshot({ path: `${screenshotDir}/mobile-light.png`, animations: 'disabled' })
 })
