@@ -57,25 +57,21 @@ describe('CueUserMenu', () => {
     },
   )
 
-  it('外观选深色：页面立即变深，再打开菜单勾在深色上', async () => {
+  it('外观选深色：页面立即变深，菜单不关，选中的换到深色', async () => {
     const user = userEvent.setup()
     const trigger = await renderMenu()
 
     await user.click(trigger)
     const appearance = await screen.findByRole('group', { name: '外观' })
-    expect(within(appearance).getByRole('menuitemradio', { name: '跟随系统' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    )
-    await user.click(within(appearance).getByRole('menuitemradio', { name: '深色' }))
+    const system = within(appearance).getByRole('menuitemradio', { name: '跟随系统' })
+    const dark = within(appearance).getByRole('menuitemradio', { name: '深色' })
+    expect(system).toHaveAttribute('aria-checked', 'true')
+    await user.click(dark)
 
     expect(document.documentElement).toHaveClass('dark')
-    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    await user.click(trigger)
-    expect(await screen.findByRole('menuitemradio', { name: '深色' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    )
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(dark).toHaveAttribute('aria-checked', 'true')
+    expect(system).toHaveAttribute('aria-checked', 'false')
   })
 
   it('点退出登录发出退出请求，会话清空后头像回到通用轮廓', async () => {

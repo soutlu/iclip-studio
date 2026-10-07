@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useLogout, userDisplayName, useUser } from '@/shared/auth'
-import { Icon } from '@/shared/icons'
+import { Icon, type IconName } from '@/shared/icons'
 import {
   setThemePreference,
   THEME_PREFERENCES,
@@ -9,9 +9,9 @@ import {
 } from '@/shared/lib/theme'
 import { cn } from '@/shared/lib/utils'
 import {
+  MenuIconRadioItem,
   MenuItem,
   MenuRadioGroup,
-  MenuRadioItem,
   MenuRoot,
   MenuSeparator,
   MenuSurface,
@@ -40,10 +40,10 @@ const ALIGN_PLACEMENT: Record<
 const USER_CARD_BUTTON_CLASS =
   'flex h-12 w-full ui-state cursor-pointer items-center gap-2.5 rounded-md px-2 text-body text-on-surface ui-focus select-none'
 
-const APPEARANCE_LABEL: Record<ThemePreference, string> = {
-  dark: '深色',
-  light: '浅色',
-  system: '跟随系统',
+const APPEARANCE: Record<ThemePreference, { icon: IconName; label: string }> = {
+  dark: { icon: 'theme-dark', label: '深色' },
+  light: { icon: 'theme-light', label: '浅色' },
+  system: { icon: 'theme-system', label: '跟随系统' },
 }
 
 const USER_AVATAR_CLASS =
@@ -175,23 +175,34 @@ export function CueUserMenu({
             </dl>
           ) : null}
         </div>
-        <MenuRadioGroup
-          aria-label="外观"
-          className="flex flex-col gap-0.5 pt-1"
-          onValueChange={(value) => {
-            const next = THEME_PREFERENCES.find((item) => item === value)
-            if (next !== undefined) setThemePreference(next)
-          }}
-          value={appearance}
-        >
-          <p className="px-2 pt-1 pb-0.5 text-caption text-on-surface-variant">外观</p>
-          {THEME_PREFERENCES.map((item) => (
-            <MenuRadioItem key={item} value={item}>
-              {APPEARANCE_LABEL[item]}
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
-        <MenuSeparator />
+        {/* 外观占一行，与「设置」对齐：左边图标和字，右边三档图标。 */}
+        <div className="flex h-(--control-height-sm) items-center gap-2 pr-1 pl-2 text-body text-on-surface">
+          <Icon
+            className="shrink-0 text-on-surface-variant"
+            decorative
+            name="appearance"
+            size="sm"
+          />
+          <span className="min-w-0 flex-1 truncate">外观</span>
+          <MenuRadioGroup
+            aria-label="外观"
+            className="flex gap-0.5"
+            onValueChange={(value) => {
+              const next = THEME_PREFERENCES.find((item) => item === value)
+              if (next !== undefined) setThemePreference(next)
+            }}
+            value={appearance}
+          >
+            {THEME_PREFERENCES.map((item) => (
+              <MenuIconRadioItem
+                icon={APPEARANCE[item].icon}
+                key={item}
+                label={APPEARANCE[item].label}
+                value={item}
+              />
+            ))}
+          </MenuRadioGroup>
+        </div>
         <MenuItem disabled icon="settings">
           <span className="flex items-center justify-between gap-2">
             设置
