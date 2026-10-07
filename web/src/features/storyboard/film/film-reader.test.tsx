@@ -336,6 +336,34 @@ describe('制作页的图片编辑器', () => {
     })
   })
 
+  it('生成图的版本条末尾有「再生成」：输入卡装着这张图的描述，没改就按文件里的出，改过的这一次带上', async () => {
+    const { generations } = recordImages()
+    const script = await renderFilm()
+    await userEvent.click(within(script).getByRole('button', { name: '在舞台查看镜头 1的画面' }))
+    await userEvent.click(await screen.findByRole('button', { name: '编辑图片' }))
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    const strip = within(editor).getByRole('group', { name: '这张图的版本' })
+    await userEvent.click(within(strip).getByRole('button', { name: '再生成' }))
+
+    const box = within(editor).getByRole('textbox', { name: '修改要求' })
+    expect(box).toHaveTextContent('金发女生的人物，站在坡面上')
+    // 输入卡的提交按钮也叫「再生成」，不在版本条里。
+    const send = () =>
+      within(editor)
+        .getAllByRole('button', { name: '再生成' })
+        .find((button) => !strip.contains(button))
+    await userEvent.click(send() ?? editor)
+    await waitFor(() => expect(generations).toHaveLength(1))
+    expect(generations[0]).toEqual({ filmVersion: 1, node: 'shot1_view', runVersion: 1 })
+
+    pasteTextIntoComposer(box, '傍晚，')
+    await userEvent.click(send() ?? editor)
+    await waitFor(() => expect(generations).toHaveLength(2))
+    expect(generations[1]?.prompt?.text).toContain('傍晚，')
+    expect(generations[1]?.prompt?.text).toContain('图1')
+    expect(generations[1]?.prompt?.referenceImageUrls).toHaveLength(1)
+  })
+
   it('编辑出了新结果，舞台挂「有新结果」；点开就是那条，替换这张图给它换地址，换上后角标消失', async () => {
     const edited = 'https://example.com/edited.png'
     serveImageJobs([

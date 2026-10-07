@@ -25,6 +25,8 @@ type VersionStripProps = {
   onLoadMore: () => void
   /** 条尾的操作，如选中条目的「⋯」菜单。 */
   actions?: ReactNode
+  /** 按描述再生成（制作页的生成图）：条目之后多一格「再生成」，选中时舞台与输入卡换成再生成。 */
+  regenerate?: { selected: boolean; onSelect: () => void } | undefined
 }
 
 /** 一格读不出图就只换这一格，整条仍能翻；地址换了由调用点重新挂载重置。 */
@@ -82,6 +84,7 @@ export function VersionStrip({
   loadingMore,
   onLoadMore,
   actions,
+  regenerate,
 }: VersionStripProps) {
   return (
     <div className="image-edit-versions">
@@ -129,6 +132,21 @@ export function VersionStrip({
             <span className="image-edit-version-label">更早</span>
           </button>
         ) : null}
+        {regenerate === undefined ? null : (
+          <button
+            aria-pressed={regenerate.selected}
+            className="image-edit-version ui-focus"
+            disabled={disabled}
+            onClick={regenerate.onSelect}
+            title="按描述再生成一张"
+            type="button"
+          >
+            <span className="image-edit-version-slot image-edit-version-more">
+              <Icon decorative name="refresh" size="sm" />
+            </span>
+            <span className="image-edit-version-label">再生成</span>
+          </button>
+        )}
       </div>
       {actions ? (
         <>

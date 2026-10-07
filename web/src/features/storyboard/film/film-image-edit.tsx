@@ -1,9 +1,11 @@
 /** 制作页上挂分镜页的图片编辑器：开在工程里的一张图上，版本条列这张图的全部生成与编辑（`film_node`），
- * 「替换这张图」与撤销都是给这张图换地址，用到它的地方一起换。关掉后焦点回到点开它的地方。 */
+ * 「替换这张图」与撤销都是给这张图换地址，用到它的地方一起换。按描述生成的图版本条末尾有「再生成」：
+ * 输入卡装着这张图的描述，改过的只用这一次。关掉后焦点回到点开它的地方。 */
 
 import { FrameImageEditor } from '../image-edit/frame-image-editor'
 import type { GenerationJob } from '../storyboard.api'
 import type { FilmGroup } from './film.api'
+import { promptParts, regeneratePrompt } from './film-images'
 
 /** 打开编辑器的这一次：哪张图、先选中哪条结果、从哪个控件点开。 */
 export type FilmEditSession = {
@@ -25,6 +27,10 @@ type FilmImageEditProps = {
   onClose: (seen: GenerationJob | undefined) => void
   /** 把这张图从 `previousUrl` 换成 `url`；这张图已经不是 `previousUrl` 时拒绝。 */
   onApply: (previousUrl: string, url: string) => Promise<void>
+  /** 按描述再生成一张；`prompt` 是改过的描述，没改过不给。失败抛出给人看的原因。 */
+  onRegenerate: (
+    prompt: { text: string; referenceImageUrls: string[] } | undefined,
+  ) => Promise<void>
 }
 
 export function FilmImageEdit({
@@ -33,6 +39,7 @@ export function FilmImageEdit({
   latestJob,
   onApply,
   onClose,
+  onRegenerate,
   session,
 }: FilmImageEditProps) {
   const frame = group.frames.find((item) => item.node === session.node)
@@ -41,6 +48,8 @@ export function FilmImageEdit({
     .flatMap((item) => (item.number === null || item.url === null ? [] : [item]))
     .toSorted((a, b) => (a.number ?? 0) - (b.number ?? 0))
     .map((item) => item.url ?? '')
+  // 只有按描述生成的图能再生成；用户给的图只能换。
+  const original = frame?.kind === 'generated' && frame.prompt !== null ? promptParts(frame) : null
   return (
     <FrameImageEditor
       aspectRatio={frame?.aspectRatio ?? group.aspectRatio}
@@ -57,6 +66,14 @@ export function FilmImageEdit({
           else window.document.querySelector<HTMLElement>(`[${FILM_EDIT_TRIGGER}]`)?.focus()
         })
       }}
+      regenerate={
+        original === null
+          ? undefined
+          : {
+              parts: original,
+              submit: (parts) => onRegenerate(regeneratePrompt(original, parts)),
+            }
+      }
       subtitle={frame?.label ?? ''}
       target={{ conversationId, node: session.node }}
     />
