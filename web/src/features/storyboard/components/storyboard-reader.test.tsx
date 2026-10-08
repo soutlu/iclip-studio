@@ -1015,10 +1015,10 @@ describe('StoryboardReader', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
     const bar = screen.getByRole('group', { name: '出片工具栏' })
     expect(
-      await within(bar).findByRole('alert', { name: 'wan3.0-video 做不了 21:9' }),
+      await within(bar).findByRole('alert', { name: 'wan3.0-video 不支持 21:9 画幅' }),
     ).toBeVisible()
     // 画幅按钮自己也标着错，说明指向同一行提醒。
-    expect(aspect).toHaveAccessibleDescription('wan3.0-video 做不了 21:9')
+    expect(aspect).toHaveAccessibleDescription('wan3.0-video 不支持 21:9 画幅')
 
     const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
     expect(generate).not.toHaveAttribute('aria-disabled')
@@ -1132,13 +1132,13 @@ describe('StoryboardReader', () => {
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
     const model = screen.getByRole('button', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveTextContent('视频模型读不到'))
+    await waitFor(() => expect(model).toHaveTextContent('无法读取视频模型'))
     expect(model).toBeDisabled()
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')
 
     // 原因常显在出片栏的状态行上，不用悬停或聚焦；置灰的按钮仍能聚焦，说明关联到这一行。
-    expect(generate).toHaveAccessibleDescription('视频模型读不到')
+    expect(generate).toHaveAccessibleDescription('无法读取视频模型')
     const reason = window.document.getElementById(generate.getAttribute('aria-describedby') ?? '')
     expect(screen.getByRole('group', { name: '出片工具栏' })).toContainElement(reason)
     expect(reason).toBeVisible()

@@ -308,7 +308,7 @@ for (const width of [1335, 390]) {
     await expect(dialog.getByRole('button', { name: '图片模型' })).toBeEnabled()
     await expect(strip.getByRole('button', { name: /^生成中 · / })).toContainText(/\d+:\d{2}/)
     await expect(
-      dialog.getByText('有 1 个任务在生成或排队，关掉窗口也会继续', { exact: true }),
+      dialog.getByText('有 1 个任务正在生成或排队，关闭窗口不影响生成', { exact: true }),
     ).toBeVisible()
     await screenshotBothThemes(page, `${STAGE_QA}/running-${width}`)
 

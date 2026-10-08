@@ -117,7 +117,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   /** 先存改了的字，按存好的那一版发；没存下就不发。 */
   const savedFilm = async () => {
     const saved = await draft.saveNow()
-    if (saved === null) throw new UserFacingError('改的字还没存下，先处理好再继续')
+    if (saved === null) throw new UserFacingError('修改尚未保存，请先处理后再继续')
     return saved
   }
   /** 给一张图换地址（null 是取消生成图的选用）：先存改了的字，按存好的那一版换，答复的整页直接放进缓存。 */
@@ -147,7 +147,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     const current = latest?.film.groups
       .flatMap((item) => item.frames)
       .find((item) => item.node === node)?.url
-    if (current !== previous) throw new UserFacingError('这张图刚被换过，看一眼再换')
+    if (current !== previous) throw new UserFacingError('该图片刚被更换，请确认后再操作')
     await applyImage(node, url)
   }
   // 有图在换时先别出片：发出去的参考图要是换好的那张。换图一次只有一张、与组无关，记在一个不会是组号的键上。
@@ -248,7 +248,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
       if (saved === null || !mounted()) return
       const current = saved.groups.find((item) => item.video === group.video)
       if (current === undefined) {
-        video.reportError(group.index, '这一组已经不在分镜里了，刷新后再出片')
+        video.reportError(group.index, '该组已不在分镜中，请刷新后再出片')
         return
       }
       await video.submit(group.index, (choice) =>

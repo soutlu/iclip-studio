@@ -25,9 +25,9 @@ describe('generationBlockerOf', () => {
 
   // 每一行都叠上排在它后面的原因，说出来的必须是排在最前的那一条；一直挡着的排在暂态前面。
   it.each<[string, Partial<GenerationFacts>, string, boolean]>([
-    ['只读', { ...laterAll, readOnly: true, saveState: 'conflict' }, '只读任务，不能出片', false],
-    ['版本冲突', { ...laterAll, saveState: 'conflict' }, '先处理分镜的版本冲突', false],
-    ['保存失败', { ...laterAll, saveState: 'error' }, '分镜没存下，先重试保存', false],
+    ['只读', { ...laterAll, readOnly: true, saveState: 'conflict' }, '只读任务，无法出片', false],
+    ['版本冲突', { ...laterAll, saveState: 'conflict' }, '分镜存在版本冲突，请先处理', false],
+    ['保存失败', { ...laterAll, saveState: 'error' }, '分镜保存失败，请重试保存', false],
     [
       '模型读不到',
       { saveState: 'saving', uploading: true, modelsStatus: 'unavailable' },
@@ -52,7 +52,7 @@ describe('generationNoticeOf', () => {
   it('模型做不了当前画幅时提醒，做得了或还没选出模型时不说', () => {
     expect(
       generationNoticeOf({ aspectRatio: '21:9', model: 'wan3.0-video', submitError: undefined }),
-    ).toBe('wan3.0-video 做不了 21:9')
+    ).toBe('wan3.0-video 不支持 21:9 画幅')
     expect(
       generationNoticeOf({ aspectRatio: '9:16', model: 'wan3.0-video', submitError: undefined }),
     ).toBeUndefined()
@@ -63,13 +63,13 @@ describe('generationNoticeOf', () => {
 })
 
 describe('generationStatusOf', () => {
-  const persistent = { reason: '只读任务，不能出片', transient: false }
+  const persistent = { reason: '只读任务，无法出片', transient: false }
   const saving = { reason: '分镜保存中', transient: true }
 
   it('一直挡着的原因上状态行，压过错误提醒', () => {
     expect(generationStatusOf(persistent, '上游拒收')).toEqual({
       hiddenReason: undefined,
-      line: { text: '只读任务，不能出片', tone: 'blocked' },
+      line: { text: '只读任务，无法出片', tone: 'blocked' },
     })
   })
 
@@ -78,9 +78,9 @@ describe('generationStatusOf', () => {
       hiddenReason: '分镜保存中',
       line: undefined,
     })
-    expect(generationStatusOf(saving, 'wan3.0-video 做不了 21:9')).toEqual({
+    expect(generationStatusOf(saving, 'wan3.0-video 不支持 21:9 画幅')).toEqual({
       hiddenReason: '分镜保存中',
-      line: { text: 'wan3.0-video 做不了 21:9', tone: 'error' },
+      line: { text: 'wan3.0-video 不支持 21:9 画幅', tone: 'error' },
     })
   })
 

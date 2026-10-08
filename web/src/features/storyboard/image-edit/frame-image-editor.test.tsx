@@ -320,7 +320,7 @@ describe('图片编辑器', () => {
     )
     expect(within(editor).getByRole('img', { name: '当前编辑帧' })).toBeInTheDocument()
     expect(textbox).toHaveTextContent('将衣服改成蓝色，领口不变')
-    expect(within(editor).getByText('有 1 个任务在生成或排队，关掉窗口也会继续')).toBeVisible()
+    expect(within(editor).getByText('有 1 个任务正在生成或排队，关闭窗口不影响生成')).toBeVisible()
     expect(await within(editor).findByText(/记录刷新失败/)).toBeVisible()
   })
 

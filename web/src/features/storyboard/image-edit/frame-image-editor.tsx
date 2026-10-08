@@ -130,9 +130,9 @@ export function FrameImageEditor({
   // 说的是舞台上这一张；没有要提醒的就不占这一行（画幅在输入卡的设置行里）。
   const footnote =
     inFlight > 0
-      ? `有 ${inFlight} 个任务在生成或排队，关掉窗口也会继续`
+      ? `有 ${inFlight} 个任务正在生成或排队，关闭窗口不影响生成`
       : regenerating
-        ? '新的出来后在版本里，选用才用上'
+        ? '新结果将出现在版本中，选用后才会生效'
         : selected?.kind === 'image'
           ? words.replaceNote
           : null
@@ -156,11 +156,11 @@ export function FrameImageEditor({
       return
     }
     if (baseUrl === '') {
-      setOperationError('还没有可以改的图，先在版本里选一张出了图的')
+      setOperationError('暂无可编辑的图片，请先在版本中选择一张已生成的图片')
       return
     }
     if (model === undefined || resolution === undefined) {
-      setOperationError('图片模型还没读到，稍等一下再提交')
+      setOperationError('图片模型尚未加载，请稍后再提交')
       return
     }
     setOperationError(null)

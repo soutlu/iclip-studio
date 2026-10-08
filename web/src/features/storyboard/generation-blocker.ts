@@ -21,9 +21,9 @@ const blocker = (reason: string, transient = false): GenerationBlocker => ({ rea
 /** 出片按钮置灰的原因，能出片时为 undefined。出片发的是描述的当前版本，还在存或没存下就先别发，
  * 免得发出去的和文件里的不一样。一次只说一条：要用户动手或一直挡着的排在前，等一下就好的暂态在后。 */
 export const generationBlockerOf = (facts: GenerationFacts): GenerationBlocker | undefined => {
-  if (facts.readOnly) return blocker('只读任务，不能出片')
-  if (facts.saveState === 'conflict') return blocker('先处理分镜的版本冲突')
-  if (facts.saveState === 'error') return blocker('分镜没存下，先重试保存')
+  if (facts.readOnly) return blocker('只读任务，无法出片')
+  if (facts.saveState === 'conflict') return blocker('分镜存在版本冲突，请先处理')
+  if (facts.saveState === 'error') return blocker('分镜保存失败，请重试保存')
   if (facts.modelsStatus === 'unavailable') return blocker(MODELS_PENDING_TEXT.unavailable)
   if (facts.saveState === 'saving') return blocker('分镜保存中', true)
   if (facts.uploading) return blocker('图片还在上传', true)
@@ -57,5 +57,5 @@ export const generationNoticeOf = (facts: {
 }): string | undefined => {
   if (facts.submitError !== undefined) return facts.submitError
   if (supportsAspectRatio(facts.model, facts.aspectRatio)) return undefined
-  return `${facts.model} 做不了 ${facts.aspectRatio}`
+  return `${facts.model} 不支持 ${facts.aspectRatio} 画幅`
 }

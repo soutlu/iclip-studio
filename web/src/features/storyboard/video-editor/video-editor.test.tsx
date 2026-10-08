@@ -213,12 +213,12 @@ describe('AI 改段的弹出卡', () => {
     const track = await timeline()
 
     await user.click(segmentOf(track, 2))
-    expect(within(openCard()).getByText('AI 改第 2 段')).toBeVisible()
+    expect(within(openCard()).getByText('第 2 段 · 视频生成')).toBeVisible()
     expect(within(openCard()).getByText('1.0 – 2.0 秒 · 视频和原声一起重做')).toBeVisible()
     expect(segmentOf(track, 2)).toHaveFocus()
 
     await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
-    expect(within(openCard()).getByText('AI 改第 2–3 段')).toBeVisible()
+    expect(within(openCard()).getByText('第 2–3 段 · 视频生成')).toBeVisible()
     expect(within(openCard()).getByText('1.0 – 3.0 秒 · 视频和原声一起重做')).toBeVisible()
     expect(segmentOf(track, 3)).toHaveFocus()
   })
@@ -237,7 +237,7 @@ describe('AI 改段的弹出卡', () => {
 
     expect(card()).toBeNull()
     expect(screen.getByRole('dialog', { name: /编辑视频/ })).toBeVisible()
-    const mini = screen.getByRole('button', { name: '展开 AI 改第 2 段，写了一半' })
+    const mini = screen.getByRole('button', { name: '展开第 2 段 · 视频生成，写了一半' })
     expect(mini).toHaveFocus()
 
     await user.click(mini)
@@ -246,7 +246,7 @@ describe('AI 改段的弹出卡', () => {
 
     // 换一段：卡跟着换，要求留着。
     await user.click(segmentOf(track, 5))
-    expect(within(openCard()).getByText('AI 改第 5 段')).toBeVisible()
+    expect(within(openCard()).getByText('第 5 段 · 视频生成')).toBeVisible()
     expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
   })
 
@@ -266,15 +266,15 @@ describe('AI 改段的弹出卡', () => {
     await user.keyboard('{Escape}')
     expect(card()).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: /^展开 AI 改第 2 段/ }))
+    await user.click(screen.getByRole('button', { name: /^展开第 2 段 · 视频生成/ }))
     expect(
-      within(openCard()).getByText('有 1 张图收起时还没传完，没有保留，请重新添加'),
+      within(openCard()).getByText('有 1 张图片收起时尚未上传完成，未能保留，请重新添加'),
     ).toBeVisible()
     expect(requestBox()).toHaveTextContent('色调参考')
     expect(within(requestBox()).queryByText('黄昏.png')).toBeNull()
 
     pasteTextIntoComposer(requestBox(), '，暖一点')
-    expect(within(openCard()).queryByText(/张图收起时还没传完/)).toBeNull()
+    expect(within(openCard()).queryByText(/张图片收起时尚未上传完成/)).toBeNull()
   })
 
   it('拖播放头、按播放都把卡收起；点选区里的段只展开、不改选中', async () => {
@@ -290,7 +290,7 @@ describe('AI 改段的弹出卡', () => {
       target: { value: '4.5' },
     })
     expect(card()).toBeNull()
-    expect(screen.getByRole('button', { name: '展开 AI 改第 2 段' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '展开第 2 段 · 视频生成' })).toBeVisible()
 
     await user.click(segmentOf(track, 2))
     expect(openCard()).toBeVisible()
@@ -301,7 +301,7 @@ describe('AI 改段的弹出卡', () => {
     )
     await user.click(screen.getByRole('button', { name: '播放' }))
     expect(card()).toBeNull()
-    expect(screen.getByRole('button', { name: '展开 AI 改第 2 段' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '展开第 2 段 · 视频生成' })).toBeVisible()
   })
 
   it.each([
@@ -310,7 +310,7 @@ describe('AI 改段的弹出卡', () => {
       keyframes: [0, 0.5, 1, 2, 3, 4, 5, 6, 7],
       prepare: async () => {},
       position: 1,
-      reason: '这段太短，连上相邻的段再改',
+      reason: '时长不足 1 秒，无法生成视频；请点击相邻的段一并选中',
     },
     {
       name: '拆过',
@@ -322,7 +322,7 @@ describe('AI 改段的弹出卡', () => {
         await user.click(screen.getByRole('button', { name: '拆分' }))
       },
       position: 1,
-      reason: '裁过、拆过的段要先合成，再让 AI 改',
+      reason: '含已剪辑的段，无法生成视频；请先点「合成成片」',
     },
   ])(
     '选区不能交给 AI（$name）：卡头写原因，写了要求也生成不了',
@@ -413,7 +413,7 @@ describe('AI 改段的弹出卡', () => {
     // 选中的两段换成锁定的占位，选区没了，卡也收走；点占位不弹卡。
     const running = await within(track).findByRole('img', { name: /AI 生成中/ })
     expect(card()).toBeNull()
-    expect(screen.queryByRole('button', { name: /^展开 AI 改/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^展开第 \d/ })).toBeNull()
     await user.click(running)
     expect(card()).toBeNull()
 
@@ -470,7 +470,7 @@ describe('版本条与草稿', () => {
     )
     expect(screen.queryByRole('group', { name: '预览版本' })).toBeNull()
     expect(screen.getByRole('button', { name: '下载' })).toBeEnabled()
-    expect(screen.getByText(/正在看 V1 本身/)).toBeVisible()
+    expect(screen.getByText(/正在查看 V1 原片/)).toBeVisible()
   })
 
   it('还在生成的编辑段放成锁定的占位，盖着「生成中」，合成灰着', async () => {

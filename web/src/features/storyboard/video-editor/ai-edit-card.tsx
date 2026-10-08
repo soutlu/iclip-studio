@@ -196,7 +196,7 @@ export function AiEditCard({
   const wasOpenRef = useRef(open)
   const morphRef = useRef<Animation | null>(null)
   const [focusInput, setFocusInput] = useState(false)
-  const title = `AI 改${positions}`
+  const title = `${positions} · 视频生成`
   const unfinished = draft.some((part) => part.kind === 'media' || part.text.trim() !== '')
 
   /** 按选区摆好水平位置，并记下此刻的外形。选区外框不在（拖着段）时不挪。 */
@@ -324,7 +324,7 @@ export function AiEditCard({
         </section>
       ) : (
         <button
-          aria-label={`展开 ${title}${unfinished ? '，写了一半' : ''}`}
+          aria-label={`展开${title}${unfinished ? '，写了一半' : ''}`}
           className="video-editor-card-mini animate-in ui-focus duration-(--dur-m) ease-(--ease-decel) fade-in motion-reduce:animate-none"
           onClick={() => {
             setFocusInput(true)
