@@ -378,7 +378,7 @@ describe('图片编辑器', () => {
     expect(within(editor).getByRole('img', { name: '当前帧' })).toHaveAttribute('src', BASE)
     expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', RESULT)
     // 选中结果时才有脚注，说的是替换这件事。
-    expect(within(editor).getByText('替换只改当前帧，替换后可以撤销')).toBeVisible()
+    expect(within(editor).getByText('替换仅影响当前帧，替换后可撤销')).toBeVisible()
 
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
 
@@ -499,7 +499,7 @@ describe('图片编辑器', () => {
       await renderWithProviders(<EditorPage initialKey={failed.id} />)
 
       const editor = await screen.findByRole('dialog')
-      expect(await within(editor).findByRole('alert')).toHaveTextContent('未成功')
+      expect(await within(editor).findByRole('alert')).toHaveTextContent('生成失败')
       expect(within(editor).getByRole('img', { name: '本次编辑底图' })).toHaveAttribute('src', BASE)
       expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
       if (errorMessage === null) {
@@ -676,7 +676,7 @@ describe('图片编辑器', () => {
 
     pasteFilesIntoComposer(textbox, [imageFile()])
     expect(within(textbox).queryByText('参考.png')).not.toBeInTheDocument()
-    expect(within(editor).getByText('最多引用 10 张图片，这次有 1 张没有添加')).toBeVisible()
+    expect(within(editor).getByText('最多引用 10 张图片，本次有 1 张未添加')).toBeVisible()
   })
 
   it('拖进输入卡就地上传，事件带着 defaultPrevented 冒到 window 供聊天遮罩收尾', async () => {

@@ -89,7 +89,7 @@ export function LibraryRoute({
           <div>
             <h1 className="text-headline font-semibold text-on-surface">资料库</h1>
             <p className="mt-2 text-body text-on-surface-variant">
-              团队出过的每一条片，连同生成它的脚本。挑一条，直接拿来再创作。
+              收录团队生成的每一条视频及其生成脚本。选择任一视频，可直接基于它再创作。
             </p>
           </div>
           <SearchBox onSearch={(q) => onScopeChange({ ...scope, q })} value={scope.q} />
@@ -116,7 +116,7 @@ export function LibraryRoute({
             />
           ) : loaded.length === 0 ? (
             <ListEmpty>
-              {filtered ? '没有找到匹配的片子，换个关键词或清除筛选再看看' : '还没有成功出过的片'}
+              {filtered ? '暂无匹配的视频，请更换关键词或清除筛选' : '暂无成功生成的视频'}
             </ListEmpty>
           ) : (
             <LibraryGrid
@@ -190,7 +190,7 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         aria-label="搜索脚本"
         leadingIcon="search"
         onChange={(event) => setDraft(event.target.value)}
-        placeholder="搜场景、动作、镜头语言…"
+        placeholder="搜索场景、动作、镜头语言…"
         value={draft}
         wrapperClassName="h-(--control-height-xl) rounded-full"
       />

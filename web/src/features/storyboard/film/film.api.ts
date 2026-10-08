@@ -85,7 +85,7 @@ export const chooseFilmImage = async (
     zFilmViewEnvelope,
     {
       body,
-      fallbackErrorMessage: '换图失败',
+      fallbackErrorMessage: '替换图片失败',
       method: 'PUT',
     },
   )

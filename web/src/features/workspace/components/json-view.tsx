@@ -41,7 +41,7 @@ export function JsonParseFailure({ text }: { text: string }) {
     <div className="flex flex-col gap-3">
       <p className="flex items-center gap-1.5 text-body-sm text-chat-secondary-text">
         <Icon className="shrink-0 text-chat-status-error" decorative name="failed" size="sm" />
-        JSON 格式有误，按原文显示
+        JSON 格式有误，已按原文显示
       </p>
       <pre className="font-mono text-body-sm leading-5 wrap-anywhere whitespace-pre-wrap text-on-surface">
         {text}

@@ -52,7 +52,7 @@ export const readKeyframes = async (url: string): Promise<KeyframeIndex> => {
   const input = openInput(url)
   try {
     const track = await input.getPrimaryVideoTrack()
-    if (track === null) throw new UserFacingError('这条视频没有画面，分不了段')
+    if (track === null) throw new UserFacingError('该视频没有画面，无法分段')
     const sink = new EncodedPacketSink(track)
     const keyframes = new Set<number>()
     for (
@@ -67,7 +67,7 @@ export const readKeyframes = async (url: string): Promise<KeyframeIndex> => {
       duration: roundToMs(await input.computeDuration()),
     }
   } catch (cause) {
-    throw asUserFacing(cause, '读不出这条视频的关键帧，请稍后重试')
+    throw asUserFacing(cause, '无法读取该视频的关键帧，请稍后重试')
   } finally {
     input.dispose()
   }
@@ -82,7 +82,7 @@ export const readAudioPeaks = async (url: string): Promise<AudioPeaks | null> =>
   try {
     const track = await input.getPrimaryAudioTrack()
     if (track === null) return null
-    if (!(await track.canDecode())) throw new UserFacingError('这个浏览器解不了这条视频的原声')
+    if (!(await track.canDecode())) throw new UserFacingError('当前浏览器无法解码该视频的原声')
     const peaks: number[] = []
     for await (const sample of new AudioSampleSink(track).samples()) {
       try {
@@ -107,7 +107,7 @@ export const readAudioPeaks = async (url: string): Promise<AudioPeaks | null> =>
       peaks: loudest === 0 ? filled : filled.map((peak) => peak / loudest),
     }
   } catch (cause) {
-    throw asUserFacing(cause, '原声读不出来，请稍后重试')
+    throw asUserFacing(cause, '无法读取原声，请稍后重试')
   } finally {
     input.dispose()
   }
@@ -153,7 +153,7 @@ export const cutReferenceClip = async (
       endMs: Math.round(range.end * 1000),
     }
   } catch (cause) {
-    throw asUserFacing(cause, '参考片段没切出来，请稍后重试')
+    throw asUserFacing(cause, '参考片段截取失败，请稍后重试')
   } finally {
     input.dispose()
   }

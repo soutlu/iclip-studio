@@ -203,7 +203,7 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
       const base =
         existing?.base ?? (view === undefined ? undefined : segmentValues(view).get(target))
       if (base === undefined) {
-        setState({ kind: 'error', message: '这段字找不到了，刷新后再改' })
+        setState({ kind: 'error', message: '该段文字已不存在，请刷新后再修改' })
         return
       }
       if (sameValue(base, value)) book.edits.delete(target)

@@ -265,7 +265,7 @@ function RangePicker({
           <span role="status">
             {last === null ? (
               <>
-                已选开始 <b className="text-on-surface">{monthDay(first)}</b>，再点结束日
+                已选开始日期 <b className="text-on-surface">{monthDay(first)}</b>，请点击结束日期
               </>
             ) : (
               <>

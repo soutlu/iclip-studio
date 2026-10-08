@@ -26,7 +26,7 @@ export const generationBlockerOf = (facts: GenerationFacts): GenerationBlocker |
   if (facts.saveState === 'error') return blocker('分镜保存失败，请重试保存')
   if (facts.modelsStatus === 'unavailable') return blocker(MODELS_PENDING_TEXT.unavailable)
   if (facts.saveState === 'saving') return blocker('分镜保存中', true)
-  if (facts.uploading) return blocker('图片还在上传', true)
+  if (facts.uploading) return blocker('图片上传中', true)
   if (facts.modelsStatus === 'loading') return blocker(MODELS_PENDING_TEXT.loading, true)
   return undefined
 }

@@ -237,7 +237,7 @@ describe('AI 改段的弹出卡', () => {
 
     expect(card()).toBeNull()
     expect(screen.getByRole('dialog', { name: /编辑视频/ })).toBeVisible()
-    const mini = screen.getByRole('button', { name: '展开第 2 段 · 视频生成，写了一半' })
+    const mini = screen.getByRole('button', { name: '展开第 2 段 · 视频生成，未提交' })
     expect(mini).toHaveFocus()
 
     await user.click(mini)
@@ -488,7 +488,7 @@ describe('版本条与草稿', () => {
     serveChain([editSegment({ outputUrl: EDITED_URL })])
     await renderEditor()
 
-    expect(await screen.findByText('AI 没改成：读不出结果的时长，已换回原来的段')).toBeVisible()
+    expect(await screen.findByText('AI 修改失败：无法读取结果的时长，已恢复原来的段')).toBeVisible()
     const track = await timeline()
     expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(8)
     expect(screen.queryByRole('group', { name: '视频版本' })).toBeNull()
@@ -499,7 +499,7 @@ describe('版本条与草稿', () => {
     serveChain([])
     await renderEditor()
 
-    expect(await screen.findByText('草稿读不出来，已按服务端的 AI 结果重建')).toBeVisible()
+    expect(await screen.findByText('无法读取草稿，已根据 AI 生成结果重建')).toBeVisible()
     expect(window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID))).toBeNull()
   })
 

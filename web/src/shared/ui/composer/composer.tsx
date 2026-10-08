@@ -300,7 +300,9 @@ export function Composer<N extends ComposerNode = never, Item = never>({
       {/* 跑着时写了字才提示，放在卡片上方而不挤进控件行。卡片之前固定占一个子节点位，提示出没不重挂卡片；
           不传 busy 的使用方这里恒为 null，DOM 与之前一致。 */}
       {busy && !editor.empty ? (
-        <p className="px-3 pb-1.5 text-caption text-on-surface-faint">发送后排队，这一轮结束再跑</p>
+        <p className="px-3 pb-1.5 text-caption text-on-surface-faint">
+          发送后将排队，本轮结束后再执行
+        </p>
       ) : null}
       <div
         className={cn(
@@ -422,7 +424,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
           >
             <div className="composer-drop-card">
               <Icon decorative name="add-file" size="md" />
-              松开鼠标添加附件
+              松开鼠标可添加附件
             </div>
           </div>
         ) : null}
@@ -435,7 +437,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
               >
                 <div className="composer-drop-card">
                   <Icon decorative name="add-file" size="lg" />
-                  松开鼠标添加附件
+                  松开鼠标可添加附件
                 </div>
               </div>,
               document.body,

@@ -42,7 +42,7 @@ export function SaveStatus({
     return (
       <>
         <span className="text-body-sm text-error" role="alert">
-          <span>{appliedUpload && hasUnsavedChanges ? '已上传，分镜未保存' : '没存下'}</span>：
+          <span>{appliedUpload && hasUnsavedChanges ? '已上传，分镜未保存' : '分镜未保存'}</span>：
           {state.message}
         </span>
         <Button onClick={onRetry} size="md" variant="ghost">
@@ -91,7 +91,9 @@ export function ConflictDialog({
   const aspect = state.kind === 'conflict' ? state.aspect : undefined
   const removed = conflicts.some((conflict) => conflict.theirs === undefined)
   const changed = [
-    ...(aspect === undefined ? [] : [`画幅（你选了 ${aspect.mine}，最新是 ${aspect.theirs}）`]),
+    ...(aspect === undefined
+      ? []
+      : [`画幅（你选择的是 ${aspect.mine}，最新版本是 ${aspect.theirs}）`]),
     ...(conflicts.length === 0 ? [] : [`第 ${conflicts.map((item) => item.index).join('、')} 组`]),
   ].join('，')
   return (
@@ -101,13 +103,13 @@ export function ConflictDialog({
     >
       <DialogSurface aria-label="这份分镜有别的改动">
         <DialogHeader closeLabel="关闭（用最新的）" title="这份分镜有别的改动">
-          {changed}在你编辑时被更新了。
+          {changed}在你编辑期间已被修改
         </DialogHeader>
         <DialogBody>
           <p className="text-body text-on-surface">
             {removed
-              ? '原镜头组已被移除，当前修改不能覆盖到其它镜头组。采用最新版本只会放弃冲突处的修改。'
-              : '选择保留你的修改，或采用最新版本；没冲突的草稿会保留。'}
+              ? '原镜头组已被移除，当前修改无法覆盖到其他镜头组。选择「用最新的」只会放弃冲突处的修改。'
+              : '选择「留我的」保留你的修改，或选择「用最新的」采用最新版本；无冲突的修改将保留'}
           </p>
         </DialogBody>
         <DialogFooter>

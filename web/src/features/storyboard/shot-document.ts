@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { UserFacingError } from '@/shared/api/client'
 import { MAX_REFERENCE_IMAGES } from './shots'
 
-const nonblank = z.string().refine((value) => value.trim().length > 0, '内容不能为空')
+const nonblank = z.string().refine((value) => value.trim().length > 0, '请填写内容')
 const timestamp = z.number().nonnegative()
 const FRAME_REF = /@Image(\d+)/g
 
@@ -39,7 +39,7 @@ const shotSchema = z
           code: 'custom',
           message:
             shot.image_urls.length === 0
-              ? `本组没有图片，请添加图片或移除 @Image${invalid} 引用`
+              ? `本组暂无图片，请添加图片或移除 @Image${invalid} 引用`
               : `@Image${invalid} 超出本组的 ${shot.image_urls.length} 张图片`,
           path,
         })
@@ -140,7 +140,7 @@ export type PromptInsertion = { text: string; start: number; end: number }
 
 export const updateTimelinePrompt = (shot: Shot, position: number, prompt: string): Shot => {
   if (shot.prompt.timeline[position] === undefined)
-    throw new UserFacingError('这个镜头已不存在，请重新选择')
+    throw new UserFacingError('该镜头已不存在，请重新选择')
   return {
     ...shot,
     prompt: {

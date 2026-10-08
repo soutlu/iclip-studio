@@ -403,7 +403,7 @@ describe('首页做同款', () => {
       scene: '这张卡做不了同款',
       // 别人的卡，mock 里打不开那段对话。
       id: () => mockLibraryVideos().find((video) => video.title === '春夏凉鞋合集')?.id,
-      message: /这条视频没有可用的制作文件，做不了同款/,
+      message: /该视频没有可用的制作文件，无法做同款/,
     },
   ])('$scene：提示原因并回到普通首页', async ({ id, message }) => {
     loginAs(mockAuthUser)

@@ -81,7 +81,7 @@ export function LibraryScriptPanel({
           </p>
 
           <SectionHeading
-            note={`${script.timeline.length} 个镜头 · ${formatSecond(script.timeline.at(-1)?.end ?? 0)} 秒 · 点镜头跳到对应画面`}
+            note={`${script.timeline.length} 个镜头 · ${formatSecond(script.timeline.at(-1)?.end ?? 0)} 秒 · 点击镜头可跳转到对应画面`}
             title="分镜"
           />
           <div aria-hidden className="mb-3.5 flex h-1.5 gap-0.5">
@@ -137,7 +137,7 @@ export function LibraryScriptPanel({
       {take.referenceImageUrls.length === 0 ? null : (
         <>
           <SectionHeading
-            note={`${take.referenceImageUrls.length} 张 · 正文里的「图N」`}
+            note={`${take.referenceImageUrls.length} 张 · 对应正文中的「图N」`}
             title="参考图"
           />
           <div className="flex flex-wrap gap-2">

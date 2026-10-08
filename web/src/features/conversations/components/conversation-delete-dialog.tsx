@@ -34,7 +34,9 @@ export function ConversationDeleteDialog({
         />
         <DialogBody className="flex flex-col gap-2 px-6 pt-2.5 pb-6">
           <p className="text-body break-all text-on-surface">{conversation?.title}</p>
-          <p className="text-body-sm text-on-surface-variant">删除后在侧栏和搜索里都找不到它。</p>
+          <p className="text-body-sm text-on-surface-variant">
+            删除后，该任务将不再出现在侧栏和搜索结果中
+          </p>
         </DialogBody>
         <DialogFooter>
           <span />

@@ -1,4 +1,4 @@
-/** 由 activity 推出的一格状态，侧栏行尾与全部对话页的状态列共用；全部对话页的画法与词见 @/shared/ui/status-badge，侧栏行另有自己的说法。 */
+/** 由 activity 推出的一格状态，侧栏行尾与全部对话页的状态列共用；两处的状态词都取自 @/shared/ui/status-badge。 */
 
 import type { ConversationBadgeStatus } from '@/shared/ui/status-badge'
 import type { Conversation } from './conversations.api'

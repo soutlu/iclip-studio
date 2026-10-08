@@ -56,7 +56,8 @@ export const canEditTaskField = (user: TaskActor, task: Task, field: TaskField):
 
 /** 为什么还不能从这张单开始创作；能开始时返回 null。 */
 export const creationBlockReason = (user: TaskActor, task: Task | undefined): string | null => {
-  if (!user || !hasPermission(user, PERMISSION.agentRun)) return '当前账号没有启动创作权限'
+  if (!user || !hasPermission(user, PERMISSION.agentRun))
+    return '当前账号没有创作权限，无法开始创作'
   if (!task) return '无法读取需求单，请返回后重试'
   switch (task.status) {
     case 'withdrawn':
@@ -65,6 +66,6 @@ export const creationBlockReason = (user: TaskActor, task: Task | undefined): st
     case 'published':
       return '需求单尚未认领，无法开始创作'
     case 'confirmed':
-      return task.assigneeUserIds.includes(user.id) ? null : '你尚未认领这张需求单，无法开始创作'
+      return task.assigneeUserIds.includes(user.id) ? null : '你尚未认领该需求单，无法开始创作'
   }
 }

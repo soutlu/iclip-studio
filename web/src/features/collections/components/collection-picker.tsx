@@ -184,15 +184,15 @@ function ClearSearchButton({ disabled }: { disabled: boolean | undefined }) {
 function EmptyHint({ canCreate, query }: { canCreate: boolean; query: string }) {
   return (
     <>
-      <p className="text-body-sm text-on-surface">{query ? '没有找到相关合集' : '暂无可选合集'}</p>
+      <p className="text-body-sm text-on-surface">{query ? '暂无匹配的合集' : '暂无可选合集'}</p>
       <p className="mt-2 text-caption">
         {query
           ? canCreate
-            ? '试试其他名称，或新建一个合集'
-            : '试试其他名称'
+            ? '请尝试其他名称，或新建合集'
+            : '请尝试其他名称'
           : canCreate
-            ? '新建一个合集，整理你的创作任务'
-            : '你可以先不关联合集，直接开始创作'}
+            ? '新建合集可整理你的创作任务'
+            : '可暂不关联合集，直接开始创作'}
       </p>
     </>
   )

@@ -196,7 +196,7 @@ describe('uploadMediaFile 图片', () => {
   ])('图片尺寸 %i × %i 不合规时释放解码资源，不请求签名', async (width, height) => {
     decode.mockResolvedValue({ close, height, width })
 
-    await expect(uploadMediaFile(imageFile(), 'image')).rejects.toThrow('图片短边至少')
+    await expect(uploadMediaFile(imageFile(), 'image')).rejects.toThrow('图片尺寸不符，无法上传')
     expect(close).toHaveBeenCalledOnce()
     expect(requests).toEqual([])
   })

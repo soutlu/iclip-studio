@@ -254,7 +254,7 @@ const withUnit = (spec: MetricSpec, value: number | null): string => {
 
 export type Delta = {
   tone: 'good' | 'bad' | 'flat'
-  /** 数值涨跌；持平与上期无数据没有方向。 */
+  /** 数值涨跌；持平与上期暂无数据没有方向。 */
   direction: 'up' | 'down' | null
   text: string
 }
@@ -269,7 +269,7 @@ export const relativeDelta = (
   text?: string,
 ): Delta => {
   if (current === null || previous === null || previous === 0) {
-    return { direction: null, text: '上期无数据', tone: 'flat' }
+    return { direction: null, text: '上期暂无数据', tone: 'flat' }
   }
   const change = (current - previous) / previous
   if (Math.abs(change) < 0.02) return FLAT
@@ -351,7 +351,7 @@ export function cardHead(key: CardKey, overview: Overview, previousRange: string
               'down',
             )
           : null,
-        detail: `中位 ${fmtDuration(current.activeCycleSeconds?.median ?? null)}；不去掉空档时平均 ${fmtDuration(current.cycleSeconds?.avg ?? null)}`,
+        detail: `中位 ${fmtDuration(current.activeCycleSeconds?.median ?? null)}；含空闲时段的平均 ${fmtDuration(current.cycleSeconds?.avg ?? null)}`,
         unit,
         value,
       }
@@ -386,7 +386,7 @@ export function cardHead(key: CardKey, overview: Overview, previousRange: string
           : null,
         detail:
           current.deliveries === 0
-            ? '这段时间没有成片'
+            ? '所选时间范围内暂无成片'
             : `每件：输入 ${each(current.usage.inputTokens)} · 输出 ${each(current.usage.outputTokens)} · 缓存写入 ${each(current.usage.cacheWriteTokens)} · 缓存读取 ${each(current.usage.cacheReadTokens)}`,
         unit: magnitude === '' ? 'token' : `${magnitude} token`,
         value,

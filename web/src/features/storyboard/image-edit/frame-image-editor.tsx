@@ -206,7 +206,7 @@ export function FrameImageEditor({
     if (job === undefined || job === null) return
     const urls = readSubmittedImages(job)
     if (urls.length === 0) {
-      toast.error('这条记录没有可恢复的输入')
+      toast.error('该记录没有可恢复的输入')
       return
     }
     // 草稿归属于底图。恢复时也切回它，避免画面和装回的输入指向不同图片。
@@ -225,7 +225,7 @@ export function FrameImageEditor({
     drafts.updateDraft(base, () => ({ annotations: [], parts }))
     setDraftRevision((value) => value + 1)
     select(destination.key)
-    toast.info('已装回这次提交的图片和修改要求；画布上的标注需要重画')
+    toast.info('已恢复本次提交的图片和修改要求；画布上的标注需重新绘制')
   }
 
   return (

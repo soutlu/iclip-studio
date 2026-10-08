@@ -118,7 +118,7 @@ function CardComposer({
       accept="image"
       ariaLabel="修改要求"
       attachmentLimit={{
-        notice: (dropped) => `参考图最多 ${MAX_EDIT_REFERENCES} 张，这次有 ${dropped} 张没有添加`,
+        notice: (dropped) => `参考图最多 ${MAX_EDIT_REFERENCES} 张，本次有 ${dropped} 张未添加`,
         remaining,
       }}
       attachmentsEnabled={hasPermission(user, PERMISSION.uploadsWrite)}
@@ -130,7 +130,7 @@ function CardComposer({
         onDraftChange(next.filter((part) => part.kind !== 'media' || part.media.status === 'ready'))
       }}
       onSubmit={onSubmit}
-      placeholder="描述这段想怎么改，可以粘贴或拖入参考图"
+      placeholder="描述该段的修改要求，可粘贴或拖入参考图"
       ref={composerRef}
       sending={sending}
       submitAction={{
@@ -324,7 +324,7 @@ export function AiEditCard({
         </section>
       ) : (
         <button
-          aria-label={`展开${title}${unfinished ? '，写了一半' : ''}`}
+          aria-label={`展开${title}${unfinished ? '，未提交' : ''}`}
           className="video-editor-card-mini animate-in ui-focus duration-(--dur-m) ease-(--ease-decel) fade-in motion-reduce:animate-none"
           onClick={() => {
             setFocusInput(true)
@@ -335,7 +335,7 @@ export function AiEditCard({
         >
           <Thumb className="video-editor-card-mini-frame" src={frames.first} />
           <span>{title}</span>
-          {unfinished ? <span className="video-editor-card-mini-note">· 写了一半</span> : null}
+          {unfinished ? <span className="video-editor-card-mini-note">· 未提交</span> : null}
           <Icon decorative name="collapse" size="sm" />
         </button>
       )}

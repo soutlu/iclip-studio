@@ -272,7 +272,7 @@ function AnomalyFlag({
 
 function DeletedMark() {
   return (
-    <MarkTip text="这段对话已删除">
+    <MarkTip text="该对话已删除">
       <span
         aria-label="已删除"
         className="mr-1 inline-grid size-3.5 shrink-0 place-items-center text-on-surface-muted"

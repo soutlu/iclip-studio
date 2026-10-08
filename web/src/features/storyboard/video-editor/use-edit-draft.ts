@@ -36,7 +36,7 @@ type Entry = {
 export const draftStorageKey = (conversationId: string, versionJobId: string) =>
   `video-editor-draft:${conversationId}:${versionJobId}`
 
-const UNREADABLE = '草稿读不出来，已按服务端的 AI 结果重建'
+const UNREADABLE = '无法读取草稿，已根据 AI 生成结果重建'
 
 const readStored = (key: string): string | null => {
   try {
@@ -60,10 +60,10 @@ const compositeVerdict = (
   compositeId: string,
 ): { kind: 'waiting' } | { kind: 'done'; jobId: string } | { kind: 'dropped'; message: string } => {
   const job = jobs.find((item) => item.id === compositeId)
-  if (job === undefined) return { kind: 'dropped', message: '找不到上次提交的合成，可以重新合成' }
+  if (job === undefined) return { kind: 'dropped', message: '未找到上次提交的合成，可重新合成' }
   if (job.status === 'completed' && job.outputUrl !== null) return { kind: 'done', jobId: job.id }
   if (job.status === 'completed' || job.status === 'failed')
-    return { kind: 'dropped', message: `合成没成功：${job.errorMessage ?? '没有产物'}` }
+    return { kind: 'dropped', message: `合成失败：${job.errorMessage ?? '未返回生成结果'}` }
   return { kind: 'waiting' }
 }
 
@@ -116,7 +116,7 @@ type Args = {
   edits: readonly EditSegment[]
   /** 一条编辑段此刻的结论；完成了却还不知道结果多长时仍算在跑。 */
   outcomeOf: (editJobId: string) => EditOutcome | undefined
-  /** 要让人看到的一句话：草稿重建、AI 没改成、合成没成功、存不进浏览器。 */
+  /** 要让人看到的一句话：草稿重建、AI 修改失败、合成失败、浏览器无法保存草稿。 */
   onNotice: (message: string) => void
   /** 这一版的草稿合成完成，成了新的一版。 */
   onComposed: (compositeJobId: string) => void
@@ -176,7 +176,7 @@ export function useEditDraft({
     if (settled.history !== entry.history) {
       entry = { ...entry, history: settled.history }
       put(entry)
-      for (const message of settled.failures) onNotice(`AI 没改成：${message}，已换回原来的段`)
+      for (const message of settled.failures) onNotice(`AI 修改失败：${message}，已恢复原来的段`)
     }
     if (entry.composite !== undefined) {
       const verdict = compositeVerdict(jobs, entry.composite)
@@ -201,7 +201,7 @@ export function useEditDraft({
   const noticeStorageFailure = useEffectEvent(() => {
     if (storageFailedRef.current) return
     storageFailedRef.current = true
-    onNotice('草稿存不进这个浏览器，关掉编辑器后剪辑会丢')
+    onNotice('当前浏览器无法保存草稿，关闭编辑器后剪辑内容将丢失')
   })
   useEffect(() => {
     try {

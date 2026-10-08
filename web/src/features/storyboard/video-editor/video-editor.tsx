@@ -91,7 +91,7 @@ export function VideoEditor({ conversationId, root, loading, shotIndex, onClose 
           <DialogHeader title="编辑视频" closeLabel="关闭视频编辑" />
           <DialogBody>
             <p className="text-body-sm text-on-surface-muted" role="status">
-              {loading ? '正在读取视频记录…' : '找不到这条视频记录，关掉后从成片区重新打开。'}
+              {loading ? '正在读取视频记录…' : '未找到该视频记录，请关闭后在「本组成片」中重新打开'}
             </p>
           </DialogBody>
         </DialogSurface>
@@ -212,9 +212,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (edit === undefined) return undefined
     if (isRunningStatus(edit.status)) return { kind: 'running' }
     if (edit.status !== 'completed' || edit.outputUrl === null)
-      return { kind: 'failed', message: edit.errorMessage ?? '没有生成结果' }
+      return { kind: 'failed', message: edit.errorMessage ?? '未返回生成结果' }
     const duration = durations[edit.outputUrl]
-    if (duration === null) return { kind: 'failed', message: '读不出结果的时长' }
+    if (duration === null) return { kind: 'failed', message: '无法读取结果的时长' }
     return duration === undefined ? { kind: 'running' } : { kind: 'done', duration }
   }
 
@@ -350,7 +350,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       return
     }
     if (model === undefined) {
-      setGenerateError('没有可用的编辑模型')
+      setGenerateError('暂无可用的编辑模型')
       return
     }
     const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(submission.parts))
@@ -397,7 +397,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       })
       seedJob(job)
       editor.composing(job.id)
-      toast.success('已提交合成，完成后会成为新版本')
+      toast.success('已提交合成，完成后将生成新版本')
     } catch (error) {
       setComposeError(errorMessageOf(error, '合成任务提交失败'))
     } finally {
@@ -460,7 +460,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (!viewingDraft)
       return `正在查看 ${version.label} 原片；点击「${UNCOMPOSED_LABEL}」可返回草稿继续剪辑`
     if (waitingComposite) return '正在合成，完成后将生成新版本；合成期间无法剪辑'
-    if (operation === 'generating') return '正在切参考片段、交给 AI…'
+    if (operation === 'generating') return '正在截取参考片段并提交给 AI…'
     if (range !== undefined) {
       const which = positions(range.first, range.last)
       const reason = blockedReason(target)
@@ -573,7 +573,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
 
   const timeline = keyframes.isError ? (
     <p className="video-editor-timeline-loading" role="alert">
-      {errorMessageOf(keyframes.error, '读不出这条视频的关键帧')}
+      {errorMessageOf(keyframes.error, '无法读取该视频的关键帧')}
       <Button onClick={() => void keyframes.refetch()} size="md" variant="ghost">
         重试
       </Button>
@@ -658,7 +658,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
             leading={<Icon decorative name="video" size="sm" />}
             onChange={setWantedModel}
             options={models.map((value) => ({ value }))}
-            text={model ?? '没有支持编辑的模型'}
+            text={model ?? '暂无可用的编辑模型'}
             value={model ?? ''}
           />
         }
@@ -734,7 +734,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                   onReloadChain={() => void chainQuery.refetch()}
                   peaksError={
                     peaksFailure?.kind === 'failed'
-                      ? errorMessageOf(peaksFailure.error, '原声读不出来')
+                      ? errorMessageOf(peaksFailure.error, '无法读取原声')
                       : undefined
                   }
                 />

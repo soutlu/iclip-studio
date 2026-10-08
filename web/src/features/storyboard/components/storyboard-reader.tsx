@@ -94,7 +94,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     return <ReaderNotice text={errorMessageOf(file.error, '读取分镜失败')} />
   const shot = shots[position - 1]
   if (document === null || shot === undefined) {
-    return <ReaderNotice text="文件格式不对，读不出镜头组" />
+    return <ReaderNotice text="文件格式不正确，无法读取镜头组" />
   }
 
   const videoEditRoot =
@@ -144,7 +144,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       return
     }
     draft.updateShot(shot.index, (current) => ({ ...current, prompt }))
-    toast('历史提示词已回填到当前镜头组')
+    toast('已将历史提示词回填到当前镜头组')
   }
   const takes =
     generations.data === undefined

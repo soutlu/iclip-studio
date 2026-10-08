@@ -34,7 +34,7 @@ type DetailsPanelProps = {
 }
 
 const PEOPLE_INFO =
-  '成片数：同一需求单下的多段对话合起来算 1 件；没挂需求单的对话，有成功出片的每段算 1 件。只跑过、没出片的人也列出来。'
+  '成片数：同一需求单下的多段对话合计为 1 件；未关联需求单的对话，每段有成功出片的计为 1 件。仅运行过、未出片的人也会列出。'
 
 export function DetailsPanel({
   range,
@@ -140,7 +140,7 @@ function ExecutionsSection({
         )
       }
       id={id}
-      info="一段对话算一次任务执行。"
+      info="一段对话计为一次任务执行"
       title="按任务执行次数"
     >
       <TableCard>
@@ -153,7 +153,7 @@ function ExecutionsSection({
           <ListPending label="正在读取任务执行" />
         ) : rows.length === 0 ? (
           <p className="text-label text-on-surface-muted">
-            {who === null ? '这个范围里没有任务执行' : `${who}这段时间没有任务执行`}
+            {who === null ? '所选时间范围内暂无任务执行' : `${who}在所选时间范围内暂无任务执行`}
           </p>
         ) : (
           <div

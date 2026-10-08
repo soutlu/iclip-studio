@@ -183,7 +183,7 @@ export const insertContentReference = (
   const content = shotContents(shot).find((item) => item.id === id)
   if (content?.prompt === undefined) throw new UserFacingError('请先选择全局设定或镜头')
   if (!Number.isInteger(number) || number < 1 || number > shot.image_urls.length)
-    throw new UserFacingError('这张图片已不存在，请重新选择')
+    throw new UserFacingError('该图片已不存在，请重新选择')
   return updateContentPrompt(shot, id, insertReferenceText(content.prompt, number, insertion))
 }
 
@@ -196,7 +196,7 @@ export const appendContentImage = (
 ): Shot => {
   if (shot.image_urls.length >= MAX_REFERENCE_IMAGES)
     throw new UserFacingError(REFERENCE_LIMIT_TEXT)
-  if (url.trim() === '') throw new UserFacingError('图片地址不能为空')
+  if (url.trim() === '') throw new UserFacingError('图片地址为空，无法添加')
   const image_urls = [...shot.image_urls, url]
   return insertContentReference({ ...shot, image_urls }, id, image_urls.length, insertion)
 }

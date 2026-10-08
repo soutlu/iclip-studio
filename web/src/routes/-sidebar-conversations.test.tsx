@@ -169,15 +169,15 @@ describe('SidebarConversations', () => {
     )
     const { user } = await render()
     expect(await screen.findByText('正在加载任务…')).toBeVisible()
-    expect(screen.queryByText('还没有任务')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无任务')).not.toBeInTheDocument()
     finishRequest?.(HttpResponse.json({ detail: '对话服务暂不可用' }, { status: 503 }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('对话服务暂不可用')
-    expect(screen.queryByText('还没有任务')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无任务')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '重新加载任务' }))
 
-    expect(await screen.findByText('还没有任务')).toBeVisible()
-    expect(screen.getByText('还没有合集')).toBeVisible()
+    expect(await screen.findByText('暂无任务')).toBeVisible()
+    expect(screen.getByText('暂无合集')).toBeVisible()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -190,7 +190,7 @@ describe('SidebarConversations', () => {
 
     expect(await screen.findByText('当前账号没有查看任务权限')).toBeVisible()
     expect(listed).toEqual([])
-    expect(screen.queryByText('还没有任务')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无任务')).not.toBeInTheDocument()
   })
 
   it('只读用户能打开对话，但没有重命名、归属、删除和合集管理入口', async () => {
@@ -435,7 +435,7 @@ describe('SidebarConversations', () => {
 
     const more = screen.getByRole('button', { name: '第0段 的更多操作' })
     expect(more).toHaveFocus()
-    expect(screen.getByText('没跑完')).toBeVisible()
+    expect(screen.getByText('上次失败')).toBeVisible()
     expect(screen.getByRole('img', { name: '视频生成中' })).toBeVisible()
     await user.keyboard('{Enter}')
     expect(await screen.findByRole('menuitem', { name: '重命名' })).toHaveFocus()
@@ -522,7 +522,7 @@ describe('SidebarConversations', () => {
     // 后端 touch_run 抹掉标记但不发帧，行上要照开跑与收尾互斥自己收掉。
     socket.deliver(workChanged(conversation?.id ?? '', { busy: true }))
 
-    expect(await screen.findByLabelText('正在跑')).toBeVisible()
+    expect(await screen.findByLabelText('进行中')).toBeVisible()
     await waitFor(() => expect(screen.queryByLabelText('已完成')).not.toBeInTheDocument())
   })
 
@@ -826,14 +826,14 @@ describe('SidebarConversations', () => {
     }
     const { socket } = await render()
     expect(await screen.findByLabelText('视频排队中')).toBeVisible()
-    expect(screen.getByLabelText('正在跑')).toBeVisible()
+    expect(screen.getByLabelText('进行中')).toBeVisible()
 
     // 轮次帧只改轮次那几项，不把行上的出片状态冲掉；收场后的重拉也返回同一事实。
     if (conversation !== undefined) {
       conversation.activity = { ...conversation.activity, busy: false, lastTurnReason: 'completed' }
     }
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'completed' }))
-    await waitFor(() => expect(screen.queryByLabelText('正在跑')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByLabelText('进行中')).not.toBeInTheDocument())
     expect(screen.getByLabelText('视频排队中')).toBeVisible()
 
     if (conversation !== undefined) conversation.activity.videoGeneration = 'running'
@@ -870,13 +870,13 @@ describe('SidebarConversations', () => {
     const { socket } = await render()
     await screen.findByText('第0段')
 
-    expect(screen.queryByLabelText('正在跑')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('进行中')).not.toBeInTheDocument()
 
     socket.deliver(workChanged(conversation?.id ?? '', { busy: true }))
-    expect(await screen.findByLabelText('正在跑')).toBeVisible()
+    expect(await screen.findByLabelText('进行中')).toBeVisible()
 
     socket.deliver(workChanged(conversation?.id ?? '', { busy: false }))
-    await waitFor(() => expect(screen.queryByLabelText('正在跑')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByLabelText('进行中')).not.toBeInTheDocument())
   })
 
   it('行尾等人与失败直接写短词；悬停整行出提示条，按行尾顺序列出这一行的全部状态', async () => {
@@ -899,17 +899,17 @@ describe('SidebarConversations', () => {
     }
     const { user } = await render()
 
-    expect(await screen.findByText('等你回答')).toBeVisible()
-    expect(screen.getByRole('img', { name: '正在跑' })).toBeVisible()
+    expect(await screen.findByText('等待回答')).toBeVisible()
+    expect(screen.getByRole('img', { name: '进行中' })).toBeVisible()
     expect(screen.getByRole('img', { name: '视频生成中' })).toBeVisible()
 
     await user.hover(screen.getByRole('link', { name: busy?.title ?? '' }))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('正在跑 · 视频生成中')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('进行中 · 视频生成中')
     // jsdom 没有几何，移开时 Radix 的悬停宽限区收不起上一条提示，先按 Esc 关掉。
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
     await user.hover(screen.getByRole('link', { name: waiting?.title ?? '' }))
-    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(/^等你回答$/))
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(/^等待回答$/))
   })
 
   it('行尾状态跟着帧上的活儿换：等你确认、没跑完，跑完了什么都不画', async () => {
@@ -919,11 +919,11 @@ describe('SidebarConversations', () => {
     await screen.findByText('第0段')
 
     socket.deliver(workChanged(id, { busy: true, pending_interaction: 'approval' }))
-    expect(await screen.findByText('等你确认')).toBeVisible()
-    expect(screen.queryByLabelText('正在跑')).not.toBeInTheDocument()
+    expect(await screen.findByText('等待审批')).toBeVisible()
+    expect(screen.queryByLabelText('进行中')).not.toBeInTheDocument()
 
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'failed' }))
-    expect(await screen.findByText('没跑完')).toBeVisible()
+    expect(await screen.findByText('上次失败')).toBeVisible()
 
     // 同步更新 MSW 列表状态，使推送后的重拉返回一致事实。
     if (conversation !== undefined) {
@@ -935,8 +935,8 @@ describe('SidebarConversations', () => {
       }
     }
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'completed' }))
-    await waitFor(() => expect(screen.queryByText('没跑完')).not.toBeInTheDocument())
-    expect(screen.queryByLabelText('正在跑')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('上次失败')).not.toBeInTheDocument())
+    expect(screen.queryByLabelText('进行中')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('有新回复')).not.toBeInTheDocument()
   })
 
@@ -1062,7 +1062,7 @@ describe('SidebarConversations', () => {
     // 最旧对话位于滚动接上的第二页。
     socket.deliver(workChanged(rows[0]?.id ?? '', { busy: true }))
 
-    expect(await screen.findByLabelText('正在跑')).toBeVisible()
+    expect(await screen.findByLabelText('进行中')).toBeVisible()
   })
 
   it('筛「已完成」时把一段取消完成，重拉之后它不在这一档里了', async () => {
@@ -1358,14 +1358,14 @@ describe('侧栏原位编辑', () => {
   ])('新建合集的编辑行：$case 时撤掉这一行，不发请求，焦点回到「+」', async ({ keys }) => {
     const writes = recordWrites()
     const { user } = await render()
-    await screen.findByText('还没有合集')
+    await screen.findByText('暂无合集')
 
     await user.click(screen.getByRole('button', { name: '新建合集' }))
     expect(screen.getByRole('textbox', { name: '新合集名称' })).toHaveFocus()
     await user.keyboard(keys)
 
     expect(screen.queryByRole('textbox', { name: '新合集名称' })).not.toBeInTheDocument()
-    expect(screen.getByText('还没有合集')).toBeVisible()
+    expect(screen.getByText('暂无合集')).toBeVisible()
     expect(screen.getByRole('button', { name: '新建合集' })).toHaveFocus()
     expect(writes).toEqual([])
   })
@@ -1379,7 +1379,7 @@ describe('侧栏原位编辑', () => {
       ),
     )
     const { user } = await render()
-    await screen.findByText('还没有合集')
+    await screen.findByText('暂无合集')
 
     await user.click(screen.getByRole('button', { name: '新建合集' }))
     await user.keyboard('春季童鞋{Enter}')

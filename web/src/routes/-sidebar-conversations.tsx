@@ -317,7 +317,7 @@ export function SidebarConversations({
                 />
               ))}
               {allCollections.length === 0 && !creatingCollection && (
-                <EmptyHint>还没有合集</EmptyHint>
+                <EmptyHint>暂无合集</EmptyHint>
               )}
               {allCollections.length > COLLECTIONS_PREVIEW && (
                 <button
@@ -598,7 +598,7 @@ function SidebarFeedback({
 }
 
 const emptyConversations = (state: SidebarFilter) =>
-  state === 'done' ? '没有标记完成的任务' : state === 'running' ? '没有运行中的任务' : '还没有任务'
+  state === 'done' ? '暂无标记完成的任务' : state === 'running' ? '暂无运行中的任务' : '暂无任务'
 
 /** 页边界可因活动时间变化重叠，保留首页优先的第一条记录。 */
 const uniqueConversations = (items: readonly Conversation[]): Conversation[] => {
@@ -850,9 +850,7 @@ function CollectionGroup({
             />
           ))}
           {items.length === 0 && (
-            <EmptyHint>
-              {state === 'all' ? '这个合集还是空的' : emptyConversations(state)}
-            </EmptyHint>
+            <EmptyHint>{state === 'all' ? '该合集暂无任务' : emptyConversations(state)}</EmptyHint>
           )}
           {isError && (
             <RetryRow

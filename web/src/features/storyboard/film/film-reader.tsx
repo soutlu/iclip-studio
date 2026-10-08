@@ -211,7 +211,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   }
   if (view.problems > 0) return <FilmProblems count={view.problems} />
   if (group === undefined || selection === undefined)
-    return <ReaderNotice text="分镜里还没有镜头组" />
+    return <ReaderNotice text="分镜中暂无镜头组" />
 
   // 选段不指定图时：选的还是这段就停在当前图，换了段就到它挂的第一张。舞台回到图。
   const select = (content: string, frame?: number) => {
@@ -265,7 +265,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          copy={{ done: '已复制这组的字', label: '复制这组的字', text: filmGroupText(group) }}
+          copy={{ done: '已复制本组文字', label: '复制这组的字', text: filmGroupText(group) }}
           groups={groups.map(filmGroupSummary)}
           onGoShot={goShot}
           position={position}
@@ -424,9 +424,11 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
 function FilmProblems({ count }: { count: number }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-      <p className="text-body font-semibold text-on-surface">分镜有 {count} 处要 AI 导演改一下</p>
+      <p className="text-body font-semibold text-on-surface">
+        分镜有 {count} 处问题，需要 AI 导演修改
+      </p>
       <p className="text-body-sm text-on-surface-variant">
-        在对话里让它检查一下分镜，改好了这里就能用
+        请在对话中让 AI 导演检查分镜，修改完成后即可在此使用
       </p>
     </div>
   )
@@ -445,10 +447,10 @@ function FilmConflictDialog({
   const names = (items: typeof conflicts) => items.map((conflict) => conflict.label).join('、')
   const note =
     gone.length === 0
-      ? '选择留你的修改，或用最新的；没冲突的修改会保留。'
+      ? '选择「留我的」保留你的修改，或选择「用最新的」采用最新版本；无冲突的修改将保留'
       : gone.length === conflicts.length
-        ? '这几段在最新的分镜里已经没有了，只能用最新的。'
-        : `${names(gone)}在最新的分镜里已经没有了，留你的只留还在的几段。`
+        ? '以上各段已不在最新的分镜中，只能选择「用最新的」'
+        : `${names(gone)}已不在最新的分镜中，选择「留我的」只保留仍存在的段`
   return (
     <DialogRoot
       onOpenChange={(open) => !open && resolve('theirs')}
@@ -456,7 +458,7 @@ function FilmConflictDialog({
     >
       <DialogSurface aria-label="分镜有别的改动">
         <DialogHeader closeLabel="关闭（用最新的）" title="分镜有别的改动">
-          {names(conflicts)}在你编辑时被改了。
+          {names(conflicts)}在你编辑期间已被修改
         </DialogHeader>
         <DialogBody>
           <p className="text-body text-on-surface">{note}</p>

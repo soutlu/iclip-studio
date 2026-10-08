@@ -35,7 +35,7 @@ describe('generationBlockerOf', () => {
       false,
     ],
     ['保存中', { ...laterAll, saveState: 'saving' }, '分镜保存中', true],
-    ['上传中', laterAll, '图片还在上传', true],
+    ['上传中', laterAll, '图片上传中', true],
     ['模型还在读', { modelsStatus: 'loading' }, MODELS_PENDING_TEXT.loading, true],
   ])('%s', (_, facts, reason, transient) => {
     expect(generationBlockerOf({ ...ready, ...facts })).toEqual({ reason, transient })

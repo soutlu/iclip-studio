@@ -150,4 +150,4 @@ export function SidebarRowEditor({
 }
 
 /** 原因后面接一句怎么办；原因末尾的句号去掉再接。 */
-const retryHint = (message: string) => `${message.replace(/[。.！!]+$/, '')}，回车重试`
+const retryHint = (message: string) => `${message.replace(/[。.！!]+$/, '')}，请按回车重试`

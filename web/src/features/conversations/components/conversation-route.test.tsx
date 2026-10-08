@@ -199,7 +199,7 @@ describe('ConversationRoute', () => {
     expect(asked).toEqual([null])
 
     await user.click(screen.getByRole('button', { name: '加载更早的消息' }))
-    await user.click(await screen.findByRole('button', { name: '加载失败，点这里重试' }))
+    await user.click(await screen.findByRole('button', { name: '加载失败，请点击重试' }))
 
     expect(await screen.findByText('长对话第 1 轮的回复。')).toBeInTheDocument()
     expect(asked).toEqual([null, 't5', 't5'])
@@ -288,7 +288,7 @@ describe('ConversationRoute', () => {
     await waitFor(() => {
       expect(screen.getAllByText('再拆一段')).toHaveLength(1)
     })
-    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
     expect(submitted).not.toBe('')
     expect(submittedContent).toEqual([{ text: '再拆一段', type: 'text' }])
@@ -296,7 +296,7 @@ describe('ConversationRoute', () => {
     // running prompt 不撤销乐观气泡，须由匹配的 turn.prompt 接替。
     socket.deliver(opsFrame([runningPrompt(submitted)], 11))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('正在想…')
+    expect(await screen.findByRole('status')).toHaveTextContent('正在思考…')
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
 
     socket.deliver(
@@ -320,7 +320,7 @@ describe('ConversationRoute', () => {
       ),
     )
 
-    expect(await screen.findByRole('status')).toHaveTextContent('正在想…')
+    expect(await screen.findByRole('status')).toHaveTextContent('正在思考…')
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
 
     socket.deliver(
@@ -428,7 +428,7 @@ describe('ConversationRoute', () => {
 
     // 时间线多了一份同样的字，气泡那份还在，本地也仍算在等自己那一轮。
     await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(2))
-    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
   })
 
   it('点派活卡的「查看」：地址上点名这张卡的产物，右侧宿主据此打开', async () => {
@@ -494,7 +494,7 @@ describe('ConversationRoute', () => {
     await screen.findByText(TAIL_TEXT)
 
     expect(screen.getAllByText('再拆一段')).toHaveLength(1)
-    expect(screen.getByRole('status')).toHaveTextContent('正在想…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
     release()
   })
 
@@ -571,7 +571,7 @@ describe('ConversationRoute', () => {
     socket.deliver(opsFrame([runningPrompt('p-run'), queuedPrompt('p-queued', '顺便配个音')], 11))
 
     expect(await screen.findByText('顺便配个音')).toBeInTheDocument()
-    expect(screen.getByText('1 条消息等着发')).toBeInTheDocument()
+    expect(screen.getByText('1 条消息等待发送')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '现在就发' }))
 
@@ -1024,7 +1024,7 @@ describe('ConversationRoute', () => {
     const card = await screen.findByRole('region', { name: '等你审批' })
     await user.click(within(card).getByRole('button', { name: /同意/ }))
 
-    expect(await screen.findByText('已经做过决定')).toBeInTheDocument()
+    expect(await screen.findByText('该步骤已做出决定，无法再次提交')).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: /拒绝/ })).toBeInTheDocument()
   })
 
@@ -1032,13 +1032,13 @@ describe('ConversationRoute', () => {
     serveApprovalPage()
     const { socket } = await renderConversation()
     await screen.findByRole('region', { name: '等你审批' })
-    expect(screen.getByRole('status')).toHaveTextContent('等你确认')
+    expect(screen.getByRole('status')).toHaveTextContent('等待审批')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
 
-    expect(await screen.findByText('1 条消息等着发')).toBeInTheDocument()
+    expect(await screen.findByText('1 条消息等待发送')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
-    expect(screen.getByText('先确认上面这一步')).toBeInTheDocument()
+    expect(screen.getByText('请先确认上方的步骤')).toBeInTheDocument()
   })
 
   it('治理者看别人的对话是只读：页头标属主，没有输入框、修改与重新生成，审批和队列只展示', async () => {
@@ -1063,11 +1063,11 @@ describe('ConversationRoute', () => {
 
     const card = screen.getByRole('region', { name: '等你审批' })
     expect(within(card).queryByRole('button', { name: '同意' })).toBeNull()
-    expect(within(card).getByText('等任务的主人决定')).toBeVisible()
+    expect(within(card).getByText('等待任务属主决定')).toBeVisible()
     await user.keyboard('1')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
-    expect(await screen.findByText('1 条消息等着发')).toBeInTheDocument()
+    expect(await screen.findByText('1 条消息等待发送')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
     expect(screen.queryByRole('button', { name: '撤回' })).toBeNull()
     expect(decided).toBe(false)
@@ -1128,7 +1128,7 @@ describe('ConversationRoute', () => {
     )
 
     const note = await screen.findByRole('note', { name: '分叉来源' })
-    expect(note).toHaveTextContent('分叉自源任务第 2 轮')
+    expect(note).toHaveTextContent('本任务从源任务第 2 轮另开')
     expect(within(note).getByRole('link', { name: '查看源任务' })).toHaveAttribute(
       'href',
       `/c/${source}`,

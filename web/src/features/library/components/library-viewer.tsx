@@ -100,7 +100,7 @@ export function LibraryViewer({
         <div className="relative flex size-full max-h-215 min-h-0 max-w-310 overflow-hidden bg-surface-container-lowest text-on-surface shadow-[var(--shadow-3)] max-md:flex-col max-md:overflow-y-auto md:rounded-2xl">
           {video === undefined ? (
             <ViewerPending
-              error={detail.isError ? errorMessageOf(detail.error, '读取这条片子失败') : null}
+              error={detail.isError ? errorMessageOf(detail.error, '读取该视频失败') : null}
               onClose={onClose}
               onRetry={() => void detail.refetch()}
             />
@@ -108,7 +108,7 @@ export function LibraryViewer({
             <ViewerBody
               detail={detail.data}
               detailError={
-                detail.isError ? errorMessageOf(detail.error, '读取这张卡的全部版本失败') : null
+                detail.isError ? errorMessageOf(detail.error, '读取该视频的全部版本失败') : null
               }
               key={videoId}
               onAuthor={onAuthor}
@@ -463,7 +463,7 @@ function MakeSameButton({ cardId, canMakeSame }: { cardId: string; canMakeSame: 
       >
         {button}
       </TooltipTrigger>
-      <TooltipContent side="top">这条视频没有可用的制作文件，做不了同款</TooltipContent>
+      <TooltipContent side="top">该视频没有可用的制作文件，无法做同款</TooltipContent>
     </TooltipRoot>
   )
 }
@@ -482,7 +482,7 @@ function MoreMenu({
       await copyText(shareLink)
       toast.success('已复制链接')
     } catch {
-      toast.error('复制失败')
+      toast.error('复制失败，请重试')
     }
   }
   return (

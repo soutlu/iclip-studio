@@ -217,7 +217,7 @@ describe('submitVideoEdit', () => {
     )
 
     expect(error).toBeInstanceOf(UserFacingError)
-    expect(errorMessageOf(error, '兜底')).toBe('参考片段没切出来，请稍后重试')
+    expect(errorMessageOf(error, '兜底')).toBe('参考片段截取失败，请稍后重试')
     expect(media.events).toEqual([])
     expect(media.disposed).toBe(1)
   })
@@ -281,7 +281,7 @@ describe('readAudioPeaks', () => {
       () => undefined,
       (reason: unknown) => reason,
     )
-    expect(errorMessageOf(error, '兜底')).toBe('这个浏览器解不了这条视频的原声')
+    expect(errorMessageOf(error, '兜底')).toBe('当前浏览器无法解码该视频的原声')
     expect(media.disposed).toBe(1)
   })
 })

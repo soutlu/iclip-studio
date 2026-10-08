@@ -8,7 +8,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import { mediaStatusLabel } from '@/shared/ui/status-badge'
+import { conversationStatusLabel, mediaStatusLabel } from '@/shared/ui/status-badge'
 import { toast } from '@/shared/ui/toast'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { conversationStatus, needsAttention, type AttentionStatus } from '../conversation-status'
@@ -27,17 +27,6 @@ import {
 } from './sidebar-row-classes'
 import { SidebarRowEditor } from './sidebar-row-editor'
 import { useSidebarRowEditing } from './use-sidebar-row-editing'
-
-/**
- * 侧栏行尾的说法，比全部对话页的状态词更口语；只在侧栏用，不改共用词表。
- * 等人与失败要用户动手，行尾直接写这几个字；在跑只画转圈，名字给读屏和提示条。
- */
-const ROW_STATUS_LABEL: Record<AttentionStatus, string> = {
-  approval: '等你确认',
-  failed: '没跑完',
-  question: '等你回答',
-  running: '正在跑',
-}
 
 const UNREAD_LABEL = '有新回复'
 
@@ -83,7 +72,7 @@ export function SidebarConversationRow({
   const videoLabel = video === 'none' ? undefined : `视频${mediaStatusLabel(video)}`
   // 整行的提示条按行尾顺序把这一行的状态全列出来，看图形的人不用猜。
   const statusLabels = [
-    ...(needsAttention(status) ? [ROW_STATUS_LABEL[status]] : []),
+    ...(needsAttention(status) ? [conversationStatusLabel(status)] : []),
     ...(videoLabel === undefined ? [] : [videoLabel]),
     ...(showUnread ? [UNREAD_LABEL] : []),
     ...(completed ? ['已完成'] : []),
@@ -223,7 +212,7 @@ function ConversationGlyph({ status }: { status: AttentionStatus }) {
     return (
       <Icon
         className="shrink-0 text-on-surface-variant motion-safe:animate-spin"
-        label={ROW_STATUS_LABEL.running}
+        label={conversationStatusLabel('running')}
         name="spinner"
         size="sm"
       />
@@ -239,7 +228,7 @@ function ConversationGlyph({ status }: { status: AttentionStatus }) {
           className="size-2 shrink-0 rounded-full bg-warning ring-3 ring-warning/20"
         />
       )}
-      {ROW_STATUS_LABEL[status]}
+      {conversationStatusLabel(status)}
     </span>
   )
 }

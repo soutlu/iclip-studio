@@ -14,7 +14,7 @@ export type ComposerAttachmentLimit = {
 type AnyPart = ComposerPart<ComposerNode>
 
 /** 拖进来的是文件夹：整批不收时的就地提示。 */
-export const DIRECTORY_NOTICE = '不能添加文件夹'
+export const DIRECTORY_NOTICE = '无法添加文件夹'
 
 export const useAttachmentAdmission = (
   accept: ComposerAccept,

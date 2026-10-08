@@ -20,7 +20,7 @@ import {
   type TranscriptView,
 } from './view'
 
-const MISSING_MESSAGE = '无法加载这个子代理的对话'
+const MISSING_MESSAGE = '无法加载该子代理的对话'
 
 interface Entry {
   conversationId: string

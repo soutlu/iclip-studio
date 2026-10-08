@@ -177,7 +177,7 @@ export function EditComposer({
         )}
         ariaLabel="修改要求"
         attachmentLimit={{
-          notice: (dropped) => `${LIMIT_REASON}，这次有 ${dropped} 张没有添加`,
+          notice: (dropped) => `${LIMIT_REASON}，本次有 ${dropped} 张未添加`,
           remaining,
         }}
         attachmentsEnabled={canUpload}
@@ -192,10 +192,10 @@ export function EditComposer({
         onSubmit={(submission) => void submit(submission.parts)}
         placeholder={
           regenerate
-            ? '描述想生成什么，输入 @ 引用图片'
+            ? '描述想生成的内容，输入 @ 可引用图片'
             : editingResult
-              ? '描述想怎么改这张结果，输入 @ 引用图片或标注'
-              : '描述想怎么改，输入 @ 引用图片或标注'
+              ? '描述对该结果的修改要求，输入 @ 可引用图片或标注'
+              : '描述修改要求，输入 @ 可引用图片或标注'
         }
         ref={composerRef}
         sending={sending}

@@ -27,7 +27,7 @@ export function LoadOlder({ hasMoreOlder, loadOlderError, loadingOlder, onLoad }
         {loadingOlder
           ? '正在加载更早的消息'
           : loadOlderError
-            ? '加载失败，点这里重试'
+            ? '加载失败，请点击重试'
             : '加载更早的消息'}
       </button>
     </div>

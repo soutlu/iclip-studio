@@ -31,7 +31,7 @@ export function StageTake({ take }: { take: Take }) {
         <div className="storyboard-take-stage" role="alert">
           <Icon className="text-error" decorative name="alert" size="lg" />
           <p className="storyboard-take-stage-reason">
-            {take.error ?? (take.state === 'failed' ? '没有返回失败原因' : '没有返回视频地址')}
+            {take.error ?? (take.state === 'failed' ? '未返回失败原因' : '未返回视频地址')}
           </p>
         </div>
       )}

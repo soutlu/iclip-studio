@@ -22,7 +22,7 @@ type StageFrameProps = {
 }
 
 export function StageFrame({
-  emptyText = '这段还没有图',
+  emptyText = '该段暂无图片',
   frame,
   onOpen,
   openRef,

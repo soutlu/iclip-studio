@@ -78,7 +78,7 @@ export function EditAddPopover({
                   }}
                   outlined={used}
                   ratio={ratio}
-                  title={blocked ?? (used ? '正文里已引用，再点仍会插入' : '插入到光标处')}
+                  title={blocked ?? (used ? '正文中已引用，再次点击仍会插入' : '插入到光标处')}
                   url={url}
                 />
                 {used ? (
