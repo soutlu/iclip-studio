@@ -105,7 +105,8 @@ def _item(principal: Principal, row: ReferenceVideo) -> ReferenceVideoItemOut:
 
 
 class ReferenceService:
-    """``queue`` 为 ``None`` 即拆解没配置：读照常，建行、重拆与 ``ensure`` 不可用。"""
+    """``queue`` 为 ``None`` 即拆解没配置：读照常，建行、重拆与 ``ensure`` 不可用。``uploads_available``
+    为假即上传没装配（没有对象存储）：建行不可用，重拆与 ``ensure`` 照常。"""
 
     def __init__(
         self,
@@ -113,19 +114,27 @@ class ReferenceService:
         *,
         own_video_upload: OwnVideoUpload,
         queue: BreakdownQueue | None,
+        uploads_available: bool,
         poll_seconds: float = ENSURE_POLL_SECONDS,
         wait_seconds: float = BREAKDOWN_TIMEOUT_SECONDS,
     ) -> None:
         self._store = store
         self._own_video_upload = own_video_upload
         self._queue = queue
+        self._uploads_available = uploads_available
         self._poll_seconds = poll_seconds
         self._wait_seconds = wait_seconds
 
-    def can_upload(self, principal: Principal) -> bool:
-        """拆解已配置，且读者持 ``uploads:write``。"""
+    @property
+    def accepts_uploads(self) -> bool:
+        """能不能把视频上传放进资料库：拆解已配置，且上传可用。"""
 
-        return self._queue is not None and principal.has(UPLOAD_PERMISSION)
+        return self._queue is not None and self._uploads_available
+
+    def can_upload(self, principal: Principal) -> bool:
+        """资料库收上传，且读者持 ``uploads:write``。"""
+
+        return self.accepts_uploads and principal.has(UPLOAD_PERMISSION)
 
     async def create(
         self, principal: Principal, upload_id: uuid.UUID
@@ -135,6 +144,8 @@ class ReferenceService:
         同一个文件在上传时已经合成一个地址，所以按地址找行就够了：新建的排上第一次拆解；已有的直接
         交回，不再付费，移除过的回到资料库。别人的上传、不是视频的上传、不存在的都是 ``NotFound``。"""
 
+        if not self.accepts_uploads:
+            raise RuntimeError("资料库不收上传，建行的入口不该挂上")
         queue = self._require_queue()
         video_url = await self._own_video_upload(principal, upload_id)
         if video_url is None:
@@ -258,12 +269,13 @@ class ReferenceService:
         if not await self._store.remove(reference_id):
             raise NotFound("资料库里没有这条参考视频")
 
-    async def ensure(self, principal: Principal, video_url: str, *, retry: bool) -> Outcome:
+    async def ensure(self, principal: Principal, video_url: str) -> Outcome:
         """AI 导演的入口：同一条视频只拆一次，别人在拆就等那一次。
 
-        有拆解就直接用，哪怕有人正在重拆；没有就建行并排队，已失败且 ``retry`` 为真就重新排队；然后
-        每 ``poll_seconds`` 查一次，最多等 ``wait_seconds``，交回文档或失败原因。不查上传记录：这条
-        视频是对话素材，不一定是本人的上传；属主记第一次拆它的人。移除过的照样用。"""
+        有拆解就直接用，哪怕有人正在重拆；没有就建行并排队，已失败的重新排队（导演每调一次工具就是
+        一次尝试，还拆不拆由工具的重试次数管）；然后每 ``poll_seconds`` 查一次，最多等
+        ``wait_seconds``，交回文档或失败原因。不查上传记录：这条视频是对话素材，不一定是本人的上传；
+        属主记第一次拆它的人。移除过的照样用。"""
 
         queue = self._require_queue()
         row, created = await self._store.ensure_row(
@@ -276,7 +288,7 @@ class ReferenceService:
             return Outcome(document=row.document)
         if created:
             await self._enqueue(queue, row.id)
-        elif row.breakdown_status == STATUS_FAILED and retry:
+        elif row.breakdown_status == STATUS_FAILED:
             # 条件更新：并发的几次只有一次改得动，只有它排队。
             requeued = await self._store.requeue(
                 row.id,

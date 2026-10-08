@@ -453,6 +453,8 @@ def build_app(
         SqlReferenceStore(active_engine),
         own_video_upload=own_video_upload,
         breakdown=breakdown_setup,
+        # 上传模块只在有对象存储时装配（见下面的 uploads）；没有它，资料库就不收上传。
+        uploads_available=public_objects is not None,
     )
 
     # step store、工作区与 identity 共用同一个 engine（表在 agent_runtime schema）。
@@ -530,6 +532,8 @@ def build_app(
         video=settings.video,
         shot_video=settings.shot_video if settings.shot_tools_enabled else None,
         iclip_studio=settings.iclip_studio,
+        # 拆解配好时才有队列；AI 导演拆视频走它，与资料库读写同一行。
+        reference_service=references.service if references.queue is not None else None,
     )
     # 实时与历史共用显示注册表，保证工具卡渲染一致。
     tool_displays = build_display_registry(capability_table)

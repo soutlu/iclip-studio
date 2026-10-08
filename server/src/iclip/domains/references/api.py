@@ -1,7 +1,7 @@
 """参考视频 HTTP 端点，约定见合同「参考视频」一节。
 
 读要 ``generation:read``；建行要 ``uploads:write``；重拆是一次付费调用，另要 ``generation:submit``；
-修改与移除只要读权限，属主检查在用例里。拆解没配置时只挂读端点。"""
+修改与移除只要读权限，属主检查在用例里。拆解没配置时只挂读端点；上传不可用时另不挂建行，重拆照挂。"""
 
 from __future__ import annotations
 
@@ -24,8 +24,11 @@ from iclip.domains.references.service import ReferenceService
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 
-def create_references_router(service: ReferenceService, *, writable: bool) -> APIRouter:
-    """``writable`` 为假（拆解没配置）时不挂建行与重拆。"""
+def create_references_router(
+    service: ReferenceService, *, uploadable: bool, rerunnable: bool
+) -> APIRouter:
+    """``uploadable`` 为假（拆解没配置或上传不可用）时不挂建行；``rerunnable`` 为假（拆解没配置）时
+    不挂重拆。"""
 
     router = APIRouter(prefix="/references", tags=["references"])
 
@@ -96,7 +99,7 @@ def create_references_router(service: ReferenceService, *, writable: bool) -> AP
 
         await service.remove(principal, reference_id)
 
-    if writable:
+    if uploadable:
 
         @router.post("", response_model=ReferenceVideoOut, status_code=status.HTTP_201_CREATED)
         async def create_reference(
@@ -113,6 +116,8 @@ def create_references_router(service: ReferenceService, *, writable: bool) -> AP
             if not created:
                 response.status_code = status.HTTP_200_OK
             return created_row
+
+    if rerunnable:
 
         @router.post("/{reference_id}/breakdowns", response_model=ReferenceVideoOut)
         async def rerun_reference(

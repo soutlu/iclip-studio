@@ -44,11 +44,6 @@ class MediaPaths:
 
         return f"{OSS_ROOT}/anchor-sheets/{job_id}/{index}.jpg"
 
-    def video_breakdown(self, *, digest: str) -> str:
-        """所有用户共用的视频拆解文档，按视频地址的摘要一条一份。"""
-
-        return f"{OSS_ROOT}/video-breakdowns/{digest}.md"
-
     def upload(self, *, upload_id: uuid.UUID, ext: str) -> str:
 
         return f"{OSS_ROOT}/uploads/{upload_id}.{ext}"

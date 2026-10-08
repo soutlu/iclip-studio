@@ -1,4 +1,4 @@
-"""参考视频端点：端点权限、只收本人的视频上传、属主检查与状态码；拆解没配置时只挂读端点。
+"""参考视频端点：端点权限、只收本人的视频上传、属主检查与状态码；拆解没配置时只挂读端点，上传不可用时不挂建行。
 
 拆解与打标是替身，队列连接器是内存替身（不跑 lifespan，排进去的任务不执行）。"""
 
@@ -23,6 +23,7 @@ from tests.helpers.references import (
     FakeArk,
     ark_pipeline,
     config_with_studio,
+    plant_reference,
     upload_video,
 )
 
@@ -184,6 +185,45 @@ async def test_a_viewer_reads_but_cannot_upload_or_rerun(
     assert filters.status_code == 200
     assert len(filters.json()["videoTypes"]) == 8
     assert rerun.status_code == 403
+
+
+async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
+    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """拆解配好、对象存储没配：上传模块不装配，资料库不收上传；重拆不需要对象存储。"""
+
+    for name, value in STUDIO_ENVS.items():
+        if not name.startswith("OSS_"):
+            monkeypatch.setenv(name, value)
+    monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
+    engine = create_async_engine(migrated_pg)
+    async with engine.begin() as conn:
+        await reset_database(conn)
+    breakdowns, tagger = ark_pipeline(FakeArk())
+    try:
+        app = build_app(
+            config_with_studio(),
+            engine=engine,
+            queue_connector=InMemoryConnector(),
+            reference_breakdowns=breakdowns,
+            reference_tagger=tagger,
+        )
+        async with make_client(app) as client:
+            await login_as(client, migrated_pg, "maya", "editor")
+            maya = uuid.UUID((await client.get("/users/me")).json()["user"]["id"])
+            reference_id = await plant_reference(
+                engine, owner=maya, status="failed", error_code="model_call_failed"
+            )
+            listed = await client.get("/references")
+            created = await client.post("/references", json={"uploadId": str(uuid.uuid4())})
+            rerun = await client.post(f"/references/{reference_id}/breakdowns")
+    finally:
+        await engine.dispose()
+
+    assert (listed.status_code, listed.json()["canUpload"]) == (200, False)
+    assert created.status_code == 405
+    assert rerun.status_code == 200, rerun.text
+    assert rerun.json()["breakdownStatus"] == "pending"
 
 
 async def test_without_breakdown_configured_only_reads_are_mounted(

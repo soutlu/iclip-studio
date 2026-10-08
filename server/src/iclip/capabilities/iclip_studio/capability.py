@@ -10,26 +10,25 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
-import structlog
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
-from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import IMAGE
 from iclip.capabilities.iclip_studio.film.prompts import references, render_picture, render_video
 from iclip.capabilities.iclip_studio.ports import (
-    BreakdownError,
+    BreakdownFailureReason,
+    FailedBreakdown,
     InvalidNodeImageRequest,
     NodeImageJob,
     NodeImageRequest,
     NodeImages,
-    SharedBreakdowns,
+    ReferenceBreakdowns,
 )
 from iclip.common.shot_prompt import format_shot_prompt
 from iclip.common.urls import is_http_url
@@ -37,7 +36,6 @@ from iclip.domains.agents.public import AgentRunDeps
 from iclip.harness.files import write_or_retry
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material, MaterialLedger
-from iclip.platform.media.ffmpeg import MediaError
 from iclip.platform.transcript.display import (
     MEDIA_GRID_VIEW,
     DisplayFn,
@@ -51,9 +49,7 @@ from iclip.platform.transcript.display import (
 CAPABILITY_ID: Final = "iclip_studio"
 
 BREAKDOWN_RETRIES: Final = 3
-"""拆解遇到可以重试的失败时，让模型再调几次；每次都是一次新的付费拆解。"""
-
-_logger = structlog.stdlib.get_logger(__name__)
+"""拆解遇到可以重试的失败时，让模型再调几次；每次都把这条视频重新排一次付费拆解。"""
 
 MAX_LISTED_PROBLEMS: Final = 30
 """一次检查最多列出几条问题；再多的改完前面的再查。"""
@@ -88,9 +84,8 @@ class IclipStudio(AbstractCapability[AgentDepsT]):
     space: FileSpace
     """与工作区能力相同的 FileSpace。"""
 
-    breakdown: VideoBreakdown
-
-    shared: SharedBreakdowns
+    breakdowns: ReferenceBreakdowns
+    """参考视频的拆解：工具交给它拆，等它的结果。"""
 
     ledger: MaterialLedger
     """对话素材台账：用户给的图片地址在里面，生成出来的图也登记进去。"""
@@ -153,28 +148,14 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         files, namespace = self._cap.space.store, self._cap.space.resolve(ctx)
         path = breakdown_doc_path(video_url)
         done = f"视频拆解完毕，文档在 {path}。"
-        # 工作区里已有的那份可能被用户指正过，不能拿共享的原始结果盖掉。
+        # 工作区里已有的那份可能被用户指正过，不能拿参考视频里的那份盖掉。
         if await files.read(namespace, path) is not None:
             return done
-        document = await self._cap.shared.get(video_url)
-        fresh = document is None
-        if document is None:
-            try:
-                document = await self._cap.breakdown.run(video_url)
-            except MediaError as exc:
-                _logger.warning("视频拆解失败，视频读不了", reason=str(exc))
-                raise ToolFailed("拆解失败，视频无法打开，不要重试，告诉用户换一条视频。") from exc
-            except BreakdownError as exc:
-                # 重试次数由登记处的 max_retries 管；用完后改报终局失败，不让整次运行中止。
-                retry = exc.retryable and not ctx.last_attempt
-                _logger.warning("视频拆解失败，模型没给出可用文档", reason=str(exc), retry=retry)
-                if retry:
-                    raise ModelRetry("拆解失败，再调用一次。") from exc
-                raise ToolFailed("拆解失败，不要重试，告诉用户稍后再试。") from exc
-        if fresh:
-            # 先存共用的那份：工作区写入被配额等原因退回时，重试能直接取到，不必再付一次拆解。
-            await self._cap.shared.put(video_url, document)
-        await write_or_retry(files, namespace, path, document)
+        result = await self._cap.breakdowns.ensure(_deps(ctx).principal, video_url)
+        if isinstance(result, FailedBreakdown):
+            raise _breakdown_failure(result.reason, last_attempt=ctx.last_attempt)
+        # 拆解已存在参考视频那一行上：工作区写入被配额等原因退回时，重试直接取到，不再付费。
+        await write_or_retry(files, namespace, path, result)
         return done
 
     async def check_film(
@@ -376,6 +357,17 @@ def _referenced_images(film: Film, node: Node) -> set[str]:
         if (image := reference.reference("image")) is not None
     }
     return names & image_nodes
+
+
+def _breakdown_failure(reason: BreakdownFailureReason, *, last_attempt: bool) -> Exception:
+    """没拆成时回给模型的话。只有模型调用失败值得再调一次（再调会把这一行重新排队）；重试次数由
+    登记处的 max_retries 管，用完后改报终局失败，不让整次运行中止。"""
+
+    if reason == "video_unreadable":
+        return ToolFailed("拆解失败，视频无法打开，不要重试，告诉用户换一条视频。")
+    if reason == "model_call_failed" and not last_attempt:
+        return ModelRetry("拆解失败，再调用一次。")
+    return ToolFailed("拆解失败，不要重试，告诉用户稍后再试。")
 
 
 def _deps(ctx: RunContext[Any]) -> AgentRunDeps:

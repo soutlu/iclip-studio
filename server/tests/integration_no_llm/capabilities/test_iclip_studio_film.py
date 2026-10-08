@@ -6,7 +6,6 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import httpx
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
@@ -20,11 +19,9 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
-from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.capabilities.iclip_studio.ports import SampledVideo
+from iclip.capabilities.iclip_studio.ports import FailedBreakdown
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
@@ -38,20 +35,9 @@ from tests.helpers.pg import truncate_clean
 USER = uuid.UUID("55555555-5555-5555-5555-555555555555")
 
 
-class NoSampler:
-    async def duration_seconds(self, video_url: str) -> float:
-        raise AssertionError("不该读视频")
-
-    async def sample(self, video_url: str) -> SampledVideo:
-        raise AssertionError("不该抽帧")
-
-
-class NoShared:
-    async def get(self, video_url: str) -> str | None:
-        raise AssertionError("不该查共用的拆解")
-
-    async def put(self, video_url: str, document: str) -> None:
-        raise AssertionError("不该存共用的拆解")
+class NoBreakdowns:
+    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+        raise AssertionError("不该拆视频")
 
 
 @pytest.fixture
@@ -105,16 +91,9 @@ async def call_once(
 def make_studio(engine: AsyncEngine) -> tuple[IclipStudio[object], PgFileStore, PgMaterialLedger]:
     files = PgFileStore(engine)
     ledger = PgMaterialLedger(engine)
-    model = ArkBreakdownModel(
-        httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
-        url="https://vision.test/responses",
-        api_key="ark",
-        model="seed-vision",
-    )
     capability = IclipStudio[object](
         space=FileSpace(store=files, namespace=workspace_namespace),
-        breakdown=VideoBreakdown(model=model, sampler=NoSampler()),
-        shared=NoShared(),
+        breakdowns=NoBreakdowns(),
         ledger=ledger,
     )
     return capability, files, ledger

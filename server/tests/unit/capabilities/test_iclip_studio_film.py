@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import uuid
 
-import httpx
 import pytest
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ToolReturn
@@ -13,18 +12,16 @@ from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
 from iclip.capabilities.iclip_studio import capability as studio
-from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
-from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.capability import (
     MAX_LISTED_PROBLEMS,
     IclipStudio,
     IclipStudioToolset,
 )
 from iclip.capabilities.iclip_studio.ports import (
+    FailedBreakdown,
     InvalidNodeImageRequest,
     NodeImageJob,
     NodeImageRequest,
-    SampledVideo,
 )
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
@@ -51,22 +48,11 @@ PHOTOS = (SHOE_FRONT, SHOE_SOLE)
 NAMESPACE = f"{USER}/thread-1"
 
 
-class NoSampler:
+class NoBreakdowns:
     """这组测试不拆视频。"""
 
-    async def duration_seconds(self, video_url: str) -> float:
-        raise AssertionError("不该读视频")
-
-    async def sample(self, video_url: str) -> SampledVideo:
-        raise AssertionError("不该抽帧")
-
-
-class NoShared:
-    async def get(self, video_url: str) -> str | None:
-        raise AssertionError("不该查共用的拆解")
-
-    async def put(self, video_url: str, document: str) -> None:
-        raise AssertionError("不该存共用的拆解")
+    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+        raise AssertionError("不该拆视频")
 
 
 class FakeNodeImages:
@@ -153,16 +139,9 @@ def capability(
     *,
     can_generate: bool = True,
 ) -> IclipStudio[object]:
-    model = ArkBreakdownModel(
-        httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
-        url="https://vision.test/responses",
-        api_key="ark",
-        model="seed-vision",
-    )
     return IclipStudio[object](
         space=FileSpace(store=files, namespace=workspace_namespace),
-        breakdown=VideoBreakdown(model=model, sampler=NoSampler()),
-        shared=NoShared(),
+        breakdowns=NoBreakdowns(),
         ledger=ledger,
         images=images,
         can_generate=can_generate,
