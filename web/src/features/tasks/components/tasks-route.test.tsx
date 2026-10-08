@@ -243,7 +243,7 @@ describe('TasksRoute', () => {
     expect(await all.findByText('暂无需求单')).toBeVisible()
   })
 
-  it('搜索没有匹配时两个分区显示没有匹配的需求单', async () => {
+  it('搜索没有匹配时两个分区显示暂无匹配的需求单', async () => {
     mockTasks.push(
       makeTask({
         assigneeUserIds: [mockAuthUser.id],

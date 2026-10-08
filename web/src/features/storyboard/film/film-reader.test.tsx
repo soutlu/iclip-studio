@@ -339,7 +339,7 @@ describe('制作页的图', () => {
     expect(choices[0]?.node).toBe('girl_look')
   })
 
-  it('还没有图的生成图在舞台上是生成卡：点「生成这张」按这张图发，随即转成生成中', async () => {
+  it('暂无图片的生成图在舞台上是生成卡：点「生成这张」按这张图发，随即转成生成中', async () => {
     const { generations } = recordImages()
     const script = await renderFilm()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))

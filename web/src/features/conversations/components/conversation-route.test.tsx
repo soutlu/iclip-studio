@@ -1006,7 +1006,7 @@ describe('ConversationRoute', () => {
     expect(await within(card).findByText('已拒绝')).toBeInTheDocument()
   })
 
-  it('改主意（409）时说清已经做过决定', async () => {
+  it('改主意（409）时说清该步骤已做出决定', async () => {
     const user = userEvent.setup()
     serveApprovalPage()
     server.use(

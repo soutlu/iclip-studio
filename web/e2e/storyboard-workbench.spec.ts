@@ -314,7 +314,7 @@ test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可�
     return transfer
   }, Array.from(png))
   await imageArea.dispatchEvent('dragenter', { dataTransfer })
-  await expect(shot2.getByText('松开替换当前图片', { exact: true })).toBeVisible()
+  await expect(shot2.getByText('松开可替换当前图片', { exact: true })).toBeVisible()
   await expect(page.getByTestId('composer-drop-overlay')).toBeHidden()
   await page.screenshot({ path: '../.artifacts/design-qa/storyboard-replace-drop.png' })
   await page.emulateMedia({ colorScheme: 'dark' })

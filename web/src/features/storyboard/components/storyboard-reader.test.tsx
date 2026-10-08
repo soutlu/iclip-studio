@@ -2079,7 +2079,7 @@ describe('StoryboardReader', () => {
       expect(files.snapshot().shots[0]?.image_urls).toHaveLength(1)
     })
 
-    it('文件拖到段卡上：亮出「松开添加到镜头 2」，落在正文以外的地方接到这段末尾', async () => {
+    it('文件拖到段卡上：亮出「松开可添加到镜头 2」，落在正文以外的地方接到这段末尾', async () => {
       const files = provide()
       await renderReader('/?shot=1&content=scene:1')
       const page = await screen.findByRole('region', { name: '镜头组 1' })
@@ -2112,7 +2112,7 @@ describe('StoryboardReader', () => {
           types: ['Files'],
         },
       })
-      expect(await within(segment).findByText('不能添加文件夹')).toBeVisible()
+      expect(await within(segment).findByText('无法添加文件夹')).toBeVisible()
       expect(counter.signs).toBe(0)
       expect(files.writes).toEqual([])
     })

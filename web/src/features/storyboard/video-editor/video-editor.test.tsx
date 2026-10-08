@@ -223,7 +223,7 @@ describe('AI 改段的弹出卡', () => {
     expect(segmentOf(track, 3)).toHaveFocus()
   })
 
-  it('Escape 把卡收成胶囊，写了一半的字还在；点胶囊展开、光标进输入框；换了选区要求不清空', async () => {
+  it('Escape 把卡收成胶囊，未提交的字还在；点胶囊展开、光标进输入框；换了选区要求不清空', async () => {
     serveChain([])
     const user = userEvent.setup()
     await renderEditor()

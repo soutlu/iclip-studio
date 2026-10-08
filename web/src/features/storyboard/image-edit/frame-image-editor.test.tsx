@@ -492,7 +492,7 @@ describe('图片编辑器', () => {
   })
 
   it.each(['图像服务拒绝了请求（400）: {"detail":"invalid reference image"}', null])(
-    '失败格在舞台上标「未成功」，原因按需就地展开：%s',
+    '失败格在舞台上标「生成失败」，原因按需就地展开：%s',
     async (errorMessage) => {
       const failed = job({ status: 'failed', errorMessage })
       server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [failed] })))

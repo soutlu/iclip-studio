@@ -194,7 +194,7 @@ test('删除、拆分、撤销与重做：总长跟着变，多出「未合成�
   await expect(versions(reopened).getByRole('button', { name: '未合成' })).toBeVisible()
 })
 
-test('裁剪 1 秒的原片段：气泡说裁到多长，松手后总长变短，裁过的段不能再让 AI 改', async ({
+test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变短，裁过的段不能再让 AI 改', async ({
   page,
 }) => {
   const dialog = await openEditor(page)
@@ -207,7 +207,7 @@ test('裁剪 1 秒的原片段：气泡说裁到多长，松手后总长变短�
     dialog.getByRole('slider', { name: '裁剪这段的结尾' }),
     1.4,
   )
-  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁到 0.4 秒 · 短了 0.6 秒')
+  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 0.4 秒 · 缩短 0.6 秒')
   // 一拖手柄卡就收成胶囊，画面不被挡。
   await expect(card(dialog)).toHaveCount(0)
   await expect(capsule(dialog)).toBeVisible()
@@ -224,7 +224,7 @@ test('裁剪 1 秒的原片段：气泡说裁到多长，松手后总长变短�
     dialog.getByRole('slider', { name: '裁剪这段的结尾' }),
     1,
   )
-  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁到 0.2 秒 · 短了 0.2 秒')
+  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 0.2 秒 · 缩短 0.2 秒')
   await tooFar()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.2 秒')
 })
@@ -380,14 +380,14 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
   await segment(dialog, 2).click()
   await expectCard(dialog, '第 2 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
 
-  // 裁短 AI 结果：拖结尾手柄，卡收成胶囊；气泡说裁到多长、短了多少；松手后后面的段跟上。
+  // 裁短 AI 结果：拖结尾手柄，卡收成胶囊；气泡说裁剪后多长、缩短多少；松手后后面的段跟上。
   const release = await holdDrag(
     page,
     dialog,
     dialog.getByRole('slider', { name: '裁剪这段的结尾' }),
     3,
   )
-  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁到 2.0 秒 · 短了 1.0 秒')
+  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 2.0 秒 · 缩短 1.0 秒')
   await expect(card(dialog)).toHaveCount(0)
   await release()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–3 秒')
@@ -458,7 +458,7 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await segment(dialog, 3).click()
   await requestBox(dialog).fill('换成黄昏的暖光')
 
-  // 按住播放头拖：卡收成画面底部的小胶囊，标着写了一半。
+  // 按住播放头拖：卡收成画面底部的小胶囊，标着未提交。
   const release = await holdDrag(
     page,
     dialog,
@@ -466,8 +466,8 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
     4.6,
   )
   await expect(card(dialog)).toHaveCount(0)
-  await expect(capsule(dialog)).toHaveAccessibleName('展开第 2–3 段 · 视频生成，写了一半')
-  await expect(capsule(dialog)).toContainText('· 写了一半')
+  await expect(capsule(dialog)).toHaveAccessibleName('展开第 2–3 段 · 视频生成，未提交')
+  await expect(capsule(dialog)).toContainText('· 未提交')
   await capsule(dialog).evaluate((element) =>
     Promise.all(
       (element.parentElement?.getAnimations() ?? []).map((animation) => animation.finished),

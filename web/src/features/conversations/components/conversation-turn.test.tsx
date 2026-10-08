@@ -735,7 +735,7 @@ describe('轮次没跑完', () => {
     state: 'failed',
   })
 
-  it('一行「这一轮没有完成」，错误原文不铺开，「复制错误信息」复制的就是它', async () => {
+  it('一行「该轮未完成」，错误原文不铺开，「复制错误信息」复制的就是它', async () => {
     const user = userEvent.setup()
     const writeText = stubClipboard()
     await renderTurn(failedTurn())

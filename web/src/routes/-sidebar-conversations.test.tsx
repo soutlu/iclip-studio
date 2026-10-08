@@ -912,7 +912,7 @@ describe('SidebarConversations', () => {
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(/^等待回答$/))
   })
 
-  it('行尾状态跟着帧上的活儿换：等你确认、没跑完，跑完了什么都不画', async () => {
+  it('行尾状态跟着帧上的活儿换：等待审批、上次失败，跑完了什么都不画', async () => {
     const [conversation] = seedConversations(1)
     const id = conversation?.id ?? ''
     const { socket } = await render()
