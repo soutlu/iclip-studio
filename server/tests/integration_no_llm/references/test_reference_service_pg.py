@@ -15,7 +15,7 @@ from iclip.common.errors import Conflict, NotFound, PermissionDenied
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ROLE_PERMISSIONS
 from iclip.domains.references.infra_sql import SqlReferenceStore
-from iclip.domains.references.models import Tags
+from iclip.domains.references.models import ReferenceVideo, Tags
 from iclip.domains.references.repository import OwnVideoUpload
 from iclip.domains.references.schemas import ReferenceUpdateIn
 from iclip.domains.references.service import ReferenceService
@@ -71,6 +71,7 @@ def service(
         SqlReferenceStore(engine),
         own_video_upload=uploads_of(owned or {}),
         queue=queue,
+        uploads_available=True,
         poll_seconds=0.01,
         wait_seconds=5,
     )
@@ -214,7 +215,7 @@ async def test_a_removed_video_leaves_the_list_but_its_breakdown_is_still_used(
     assert (await references.list(principal(maya))).items == []
     with pytest.raises(NotFound):
         await references.get(principal(maya), reference_id)
-    outcome = await references.ensure(principal(maya), VIDEO, retry=True)
+    outcome = await references.ensure(principal(maya), VIDEO)
     assert outcome.document == DOCUMENT
     assert queue.enqueued == []
 
@@ -241,7 +242,7 @@ async def test_ensure_uses_an_existing_breakdown_even_while_it_is_rerun(
     await plant_reference(engine, owner=maya, status="running")
     queue = RecordingQueue(SqlReferenceStore(engine))
 
-    outcome = await service(engine, queue).ensure(principal(sara), VIDEO, retry=True)
+    outcome = await service(engine, queue).ensure(principal(sara), VIDEO)
 
     assert outcome.document == DOCUMENT
     assert queue.enqueued == []
@@ -253,8 +254,8 @@ async def test_two_ensures_of_a_new_video_break_it_down_once(engine: AsyncEngine
     references = service(engine, queue)
 
     first, second = await asyncio.gather(
-        references.ensure(principal(maya), VIDEO, retry=True),
-        references.ensure(principal(sara), VIDEO, retry=True),
+        references.ensure(principal(maya), VIDEO),
+        references.ensure(principal(sara), VIDEO),
     )
 
     assert (first.document, second.document) == ("新拆的", "新拆的")
@@ -263,36 +264,64 @@ async def test_two_ensures_of_a_new_video_break_it_down_once(engine: AsyncEngine
     assert item.user_name in {"maya", "sara"}
 
 
-async def test_ensure_without_retry_reports_a_failure_at_once(engine: AsyncEngine) -> None:
-    maya = await plant_user(engine, "maya")
-    await plant_reference(
-        engine, owner=maya, status="failed", document=None, error_code="video_unreadable"
-    )
-    queue = RecordingQueue(SqlReferenceStore(engine))
-    references = ReferenceService(
-        SqlReferenceStore(engine),
-        own_video_upload=uploads_of({}),
-        queue=queue,
-        poll_seconds=60,
-        wait_seconds=60,
-    )
-
-    outcome = await asyncio.wait_for(references.ensure(principal(maya), VIDEO, retry=False), 5)
-
-    assert (outcome.document, outcome.error_code) == (None, "video_unreadable")
-    assert queue.enqueued == []
-
-
-async def test_ensure_with_retry_puts_a_failed_video_back_in_line(engine: AsyncEngine) -> None:
+async def test_ensure_puts_a_failed_video_back_in_line_and_waits_for_the_new_result(
+    engine: AsyncEngine,
+) -> None:
     maya = await plant_user(engine, "maya")
     reference_id = await plant_reference(
         engine, owner=maya, status="failed", document=None, error_code="model_call_failed"
     )
     queue = RecordingQueue(SqlReferenceStore(engine), finish_with="重拆的")
 
-    outcome = await service(engine, queue).ensure(principal(maya), VIDEO, retry=True)
+    outcome = await service(engine, queue).ensure(principal(maya), VIDEO)
 
     assert outcome.document == "重拆的"
+    assert queue.enqueued == [reference_id]
+
+
+class LockstepStore(SqlReferenceStore):
+    """两次 ``ensure_row`` 都读完才放行，让两次 ``ensure`` 都看到那一行还是已失败。"""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine)
+        self._both_read = asyncio.Barrier(2)
+
+    async def ensure_row(
+        self,
+        video_url: str,
+        *,
+        owner: uuid.UUID,
+        requested_by: uuid.UUID,
+        api_key_id: uuid.UUID | None,
+    ) -> tuple[ReferenceVideo, bool]:
+        found = await super().ensure_row(
+            video_url, owner=owner, requested_by=requested_by, api_key_id=api_key_id
+        )
+        await self._both_read.wait()
+        return found
+
+
+async def test_two_ensures_of_a_failed_video_put_it_back_in_line_once(engine: AsyncEngine) -> None:
+    maya, sara = await plant_user(engine, "maya"), await plant_user(engine, "sara")
+    reference_id = await plant_reference(
+        engine, owner=maya, status="failed", document=None, error_code="model_call_failed"
+    )
+    queue = RecordingQueue(SqlReferenceStore(engine), finish_with="重拆的")
+    references = ReferenceService(
+        LockstepStore(engine),
+        own_video_upload=uploads_of({}),
+        queue=queue,
+        uploads_available=True,
+        poll_seconds=0.01,
+        wait_seconds=5,
+    )
+
+    first, second = await asyncio.gather(
+        references.ensure(principal(maya), VIDEO),
+        references.ensure(principal(sara), VIDEO),
+    )
+
+    assert (first.document, second.document) == ("重拆的", "重拆的")
     assert queue.enqueued == [reference_id]
 
 

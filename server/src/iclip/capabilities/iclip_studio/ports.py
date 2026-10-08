@@ -1,4 +1,4 @@
-"""iClip Studio 能力的外部依赖协议，由组合根适配对象存储、ffmpeg 与生成域。"""
+"""iClip Studio 能力的外部依赖协议，由组合根适配 ffmpeg、参考视频与生成域。"""
 
 from __future__ import annotations
 
@@ -41,18 +41,24 @@ class VideoSampler(Protocol):
         ...
 
 
-class SharedBreakdowns(Protocol):
-    """所有用户共用的拆解结果，按视频地址存取。
+BreakdownFailureReason = Literal["video_unreadable", "model_call_failed", "model_failed", "timeout"]
+"""一次拆解为什么没拿到文档。``video_unreadable`` 视频取不到或解不开；``model_call_failed`` 模型调用
+失败（限流、服务端错、连不上、答得不完整），再拆可能就好；``model_failed`` 请求被拒或等满了总超时；
+``timeout`` 等满了上限还没拆完。"""
 
-    它只用来省掉重复的模型调用：取不到一律当作没拆过，存不下只记日志，都不让拆解失败。
-    """
 
-    async def get(self, video_url: str) -> str | None:
-        """这条视频已有的拆解文档；没有或取不到返回 None。"""
-        ...
+@dataclass(frozen=True, slots=True)
+class FailedBreakdown:
+    """这条视频这次没拆成。"""
 
-    async def put(self, video_url: str, document: str) -> None:
-        """存下这条视频的拆解文档；已有的不覆盖。"""
+    reason: BreakdownFailureReason
+
+
+class ReferenceBreakdowns(Protocol):
+    """参考视频的拆解：所有对话与资料库共用一份，按视频地址认。"""
+
+    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+        """交回这条视频的拆解文档：已有就直接给；没有或上次没拆成就排一次拆解，等到出结果。"""
         ...
 
 
@@ -108,11 +114,13 @@ class NodeImages(Protocol):
 
 __all__ = [
     "BreakdownError",
+    "BreakdownFailureReason",
+    "FailedBreakdown",
     "InvalidNodeImageRequest",
     "NodeImageJob",
     "NodeImageRequest",
     "NodeImages",
+    "ReferenceBreakdowns",
     "SampledVideo",
-    "SharedBreakdowns",
     "VideoSampler",
 ]

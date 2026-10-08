@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from collections.abc import Callable
 from typing import Any, cast
@@ -16,11 +15,11 @@ from iclip.app.capability_table import (
     GenerationsAdapter,
     ObjectWriterAdapter,
     OssMediaProbe,
-    OssSharedBreakdowns,
     build_capability_table,
     build_display_registry,
     resolve_capabilities,
 )
+from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.shot_video.capability import ShotVideo
 from iclip.capabilities.shot_video.generation import IMAGE_MODEL
@@ -38,6 +37,8 @@ from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
+from iclip.domains.references.models import Outcome
+from iclip.domains.references.service import ReferenceService
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
@@ -122,21 +123,43 @@ STUDIO = ResolvedIclipStudio(
     breakdown_model="seed-vision",
     breakdown_concurrency=2,
 )
-SHARED_VIDEO = "https://cdn.test/ref.mp4"
-SHARED_KEY = f"iclip/agent/video-breakdowns/{hashlib.sha256(SHARED_VIDEO.encode()).hexdigest()}.md"
+STUDIO_VIDEO = "https://cdn.test/ref.mp4"
+STUDIO_PRINCIPAL = Principal(
+    kind="user",
+    user_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+    permissions=frozenset({"agent:run"}),
+    audit_label="logan",
+)
 
 
-def test_iclip_studio_is_registered_when_the_object_store_is_there() -> None:
+class RecordingReferences:
+    """参考视频服务的替身：记下导演要了哪条视频，交回一份拆解。"""
+
+    def __init__(self) -> None:
+        self.asked: list[tuple[Principal, str]] = []
+
+    async def ensure(self, principal: Principal, video_url: str) -> Outcome:
+        self.asked.append((principal, video_url))
+        return Outcome(document="# 出场元素")
+
+
+async def test_iclip_studio_breaks_videos_down_through_the_reference_service() -> None:
+    """不需要对象存储：拆解在参考视频那一行上，与资料库共用。"""
+
+    references = RecordingReferences()
     built = build_capability_table(
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
-        object_store=MemoryObjectStore(),
         iclip_studio=STUDIO,
+        reference_service=cast("ReferenceService", references),
     )
 
     (capability,) = built["iclip_studio"]
     assert isinstance(capability, IclipStudio)
+    assert isinstance(capability.breakdowns, ReferenceBreakdownsAdapter)
+    assert await capability.breakdowns.ensure(STUDIO_PRINCIPAL, STUDIO_VIDEO) == "# 出场元素"
+    assert references.asked == [(STUDIO_PRINCIPAL, STUDIO_VIDEO)]
     assert resolve_capabilities(
         ("workspace", "iclip_studio"), table=built, declared_by="agent director"
     )
@@ -144,64 +167,15 @@ def test_iclip_studio_is_registered_when_the_object_store_is_there() -> None:
         resolve_capabilities(("iclip_studio",), table=built, declared_by="agent director")
 
 
-def test_iclip_studio_without_an_object_store_is_an_assembly_error() -> None:
-    with pytest.raises(RuntimeError, match="iclip_studio 要有对象存储"):
+def test_iclip_studio_without_the_reference_service_is_an_assembly_error() -> None:
+    with pytest.raises(RuntimeError, match="iclip_studio 要有参考视频服务"):
         build_capability_table(
             workspace_store=FakeFileStore(),
             material_ledger=FakeMaterialLedger(),
             http_client=idle_client(),
+            object_store=MemoryObjectStore(),
             iclip_studio=STUDIO,
         )
-
-
-def shared_breakdowns(
-    store: MemoryObjectStore, handler: Callable[[httpx.Request], httpx.Response]
-) -> OssSharedBreakdowns:
-    return OssSharedBreakdowns(store, httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-
-
-async def test_shared_breakdown_is_stored_under_the_digest_of_the_video_address() -> None:
-    store = MemoryObjectStore()
-    seen: list[str] = []
-
-    def serve(request: httpx.Request) -> httpx.Response:
-        seen.append(str(request.url))
-        return httpx.Response(200, content="# 出场元素\n……".encode())
-
-    shared = shared_breakdowns(store, serve)
-    await shared.put(SHARED_VIDEO, "# 出场元素\n……")
-
-    assert store.objects[SHARED_KEY] == (
-        "# 出场元素\n……".encode(),
-        "text/markdown; charset=utf-8",
-    )
-    assert await shared.get(SHARED_VIDEO) == "# 出场元素\n……"
-    assert seen == [store.public_url(SHARED_KEY)]
-
-
-@pytest.mark.parametrize("status", [404, 403, 500])
-async def test_shared_breakdown_that_cannot_be_fetched_counts_as_missing(status: int) -> None:
-    """共用结果只为省调用：取不到就当没拆过，不让拆解失败。"""
-
-    shared = shared_breakdowns(MemoryObjectStore(), lambda _: httpx.Response(status))
-
-    assert await shared.get(SHARED_VIDEO) is None
-
-
-async def test_shared_breakdown_survives_a_network_error_and_a_failed_upload() -> None:
-    def refuse(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("refused", request=request)
-
-    class DownStore(MemoryObjectStore):
-        async def put_public_object(
-            self, *, object_key: str, content: bytes, content_type: str
-        ) -> str:
-            raise ObjectStoreUnavailable("OSS 写入失败")
-
-    shared = shared_breakdowns(DownStore(), refuse)
-
-    assert await shared.get(SHARED_VIDEO) is None
-    await shared.put(SHARED_VIDEO, "# 出场元素")
 
 
 def test_shot_video_passed_without_its_backing_is_an_assembly_error(

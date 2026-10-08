@@ -43,8 +43,10 @@ def build_references_module(
     *,
     own_video_upload: OwnVideoUpload,
     breakdown: BreakdownSetup | None,
+    uploads_available: bool,
 ) -> ReferencesModule:
-    """``breakdown`` 为 ``None`` 即拆解没配置：只挂读端点，列表的 ``canUpload`` 恒为假。"""
+    """``breakdown`` 为 ``None`` 即拆解没配置：只挂读端点，列表的 ``canUpload`` 恒为假。
+    ``uploads_available`` 为假即上传模块没装配：不挂建行，``canUpload`` 同样恒为假，重拆照挂。"""
 
     queue = (
         ReferenceQueue(
@@ -57,9 +59,18 @@ def build_references_module(
         if breakdown is not None
         else None
     )
-    service = ReferenceService(store, own_video_upload=own_video_upload, queue=queue)
+    service = ReferenceService(
+        store,
+        own_video_upload=own_video_upload,
+        queue=queue,
+        uploads_available=uploads_available,
+    )
     return ReferencesModule(
-        routers=(create_references_router(service, writable=queue is not None),),
+        routers=(
+            create_references_router(
+                service, uploadable=service.accepts_uploads, rerunnable=queue is not None
+            ),
+        ),
         service=service,
         queue=queue,
     )

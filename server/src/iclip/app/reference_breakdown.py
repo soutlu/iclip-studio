@@ -1,5 +1,5 @@
 """参考视频的拆解与打标：把 references 声明的两个端口接到导演那一份拆解（``VideoBreakdown``）与方舟
-Responses 接口上。
+Responses 接口上；反过来把 AI 导演的 ``ReferenceBreakdowns`` 端口接到参考视频服务上。
 
 打标是一次纯文本调用：系统提示词固定，由两份标签清单拼成；用户消息只放拆解全文；输出用 Responses 的
 ``text.format``（``TAG_FORMAT``，json_schema、strict）约束，``parse_tags`` 是唯一的解析处。"""
@@ -14,8 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from iclip.capabilities.iclip_studio.breakdown.media import FfmpegVideoSampler
 from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
-from iclip.capabilities.iclip_studio.ports import BreakdownError
+from iclip.capabilities.iclip_studio.ports import BreakdownError, FailedBreakdown
 from iclip.config import ResolvedIclipStudio
+from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
     CATEGORIES,
     ERROR_MODEL_CALL_FAILED,
@@ -28,6 +29,7 @@ from iclip.domains.references.models import (
     Tags,
     VideoTypeValue,
 )
+from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.ffmpeg import MediaError
 
 
@@ -142,6 +144,21 @@ class ArkTagger:
         return parse_tags(raw)
 
 
+class ReferenceBreakdownsAdapter:
+    """AI 导演的 ``ReferenceBreakdowns``：接到参考视频服务的 ``ensure``，与资料库读写同一行。"""
+
+    def __init__(self, service: ReferenceService) -> None:
+        self._service = service
+
+    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+        outcome = await self._service.ensure(principal, video_url)
+        if outcome.document is not None:
+            return outcome.document
+        if outcome.error_code is None:
+            raise RuntimeError(f"参考视频 {video_url} 的拆解既没有文档也没有失败原因")
+        return FailedBreakdown(reason=outcome.error_code)
+
+
 def build_reference_breakdown(
     settings: ResolvedIclipStudio, client: httpx.AsyncClient
 ) -> tuple[ArkVideoBreakdowns, ArkTagger]:
@@ -165,6 +182,7 @@ __all__ = [
     "TAG_TIMEOUT_SECONDS",
     "ArkTagger",
     "ArkVideoBreakdowns",
+    "ReferenceBreakdownsAdapter",
     "build_reference_breakdown",
     "parse_tags",
 ]

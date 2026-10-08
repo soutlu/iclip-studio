@@ -670,7 +670,7 @@ def _resolve_video(section: VideoSection | None) -> ResolvedVideo | None:
 
 
 def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
-    """按声明与视频理解开关解析；对象存储是否可用由能力登记处判。"""
+    """按声明与视频理解开关解析。"""
 
     if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
         return None
