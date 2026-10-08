@@ -45,6 +45,7 @@ from iclip.domains.generation.module import IMAGE_MODEL_SPECS
 from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import Material
+from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
 from tests.helpers.file_store import FakeFileStore
@@ -161,6 +162,7 @@ def capability(
         client=None,  # type: ignore[arg-type]  # 本测试不调用素材下载。
         image_models=frozenset({IMAGE_MODEL}),
         policy=FAST,
+        codec=SOFTWARE,
     )
 
 
@@ -681,6 +683,7 @@ async def test_generate_stays_on_dev_when_pro_is_off(
         client=None,  # type: ignore[arg-type]
         image_models=frozenset({IMAGE_MODEL}),
         policy=replace(FAST, dev_attempts=2, pro_attempts=0),
+        codec=SOFTWARE,
     ).get_toolset()
     assert isinstance(toolset, ShotVideoToolset)
     result = await submit_once(toolset, ctx, files)
@@ -722,6 +725,7 @@ async def test_generate_timeout_is_a_brief_failure_and_logs_the_record(
         client=None,  # type: ignore[arg-type]
         image_models=frozenset({IMAGE_MODEL}),
         policy=replace(FAST, dev_attempts=1, pro_attempts=1, total_timeout_seconds=0.02),
+        codec=SOFTWARE,
     ).get_toolset()
     assert isinstance(toolset, ShotVideoToolset)
     with capture_logs() as logs:

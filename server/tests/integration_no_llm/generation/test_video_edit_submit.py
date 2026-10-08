@@ -30,6 +30,7 @@ from iclip.domains.generation.service import SettledRecords
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
+from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.ffmpeg import ffmpeg_available
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import (
@@ -95,6 +96,7 @@ def _edit_module(repo: GenerationRepository, sent: list[dict[str, Any]]) -> Gene
         image_edit_task="image-edit",
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
         video_transport=httpx.MockTransport(upstream),
     )
 

@@ -26,6 +26,7 @@ from iclip.domains.generation.schemas import (
     ComposeSegment,
     VideoComposeRequest,
 )
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.ffmpeg import (
     MAX_VIDEO_BYTES,
     MediaCut,
@@ -101,13 +102,15 @@ class FfmpegComposeProvider:
         *,
         object_store: PublicObjectStore,
         report_stage: ReportStage,
+        codec: MediaCodec,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         """``transport`` 给下载素材用，测试替身从这里进；``report_stage`` 由装配注入，provider
-        自己不碰数据库。"""
+        自己不碰数据库；``codec`` 是组合根在启动时选定的那一档编解码。"""
 
         self._object_store = object_store
         self._report_stage = report_stage
+        self._codec = codec
         self._transport = transport
 
     @property
@@ -154,7 +157,7 @@ class FfmpegComposeProvider:
                 # 探规格也算取素材：它读的是刚下来的那几条源，还没开始编码。
                 profile = await _target_profile(cuts)
                 await report(CLIP_PROCESSING)
-                await cut_concat(cuts, profile=profile, dest=dest)
+                await cut_concat(cuts, profile=profile, dest=dest, codec=self._codec)
                 duration_ms = await probe_duration_ms(dest)
             except MediaError as exc:
                 raise ProviderError(

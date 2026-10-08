@@ -52,6 +52,7 @@ from iclip.domains.generation.service import GenerationService
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
+from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
 from tests.helpers.identity import InMemoryUserRepository
@@ -656,6 +657,7 @@ def film_image_service(
         image_edit_task="image-edit",
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
     ).service
 
 

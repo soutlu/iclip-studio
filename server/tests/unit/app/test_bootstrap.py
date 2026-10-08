@@ -10,6 +10,8 @@ import httpx
 import pytest
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import create_async_engine
+from structlog.testing import capture_logs
+from structlog.typing import EventDict
 
 from iclip.app.agent_layer import CurrentAgentLayer
 from iclip.app.bootstrap import AnnouncingFileStore, build_app
@@ -26,7 +28,9 @@ from iclip.config import (
     VideoGenerationSection,
     VideoSection,
 )
+from iclip.config.models import IclipStudioSection
 from iclip.domains.agents.transcript_api import LiveConnections
+from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.agents import declared_agent
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import MemoryObjectStore
@@ -52,7 +56,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OSS_ACCESS_KEY_ID", "ak")
     monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "sk")
     monkeypatch.setenv("OSS_PUBLIC_URL_BASE", "https://cdn.test")
-    for name in MEDIA_ENVS:
+    for name in (*MEDIA_ENVS, *STUDIO_ENVS):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -121,6 +125,111 @@ def test_media_generation_without_ffmpeg_fails_at_startup(
 
     with pytest.raises(RuntimeError, match="ffmpeg"):
         build_app(config_with_media(), engine=engine(), models={}, object_store=MemoryObjectStore())
+
+
+STUDIO_ENVS = {
+    "VIDEO_UNDERSTANDING_URL": "https://vision.test/responses",
+    "VIDEO_UNDERSTANDING_API_KEY": "test-key",
+}
+
+
+def _keep_logging(_level: str, _fmt: str) -> None:
+    """替换 ``configure_logging``：不动 structlog 的配置，``capture_logs`` 才截得到。"""
+
+
+@pytest.fixture
+def local_media_env(base_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """开媒体生成与拆解两条本地加工队列的环境。
+
+    unit 门禁的机器不一定装 ffmpeg，这里只看装配。``configure_logging`` 会整个换掉 structlog
+    的配置，要先让它不动，才截得到启动日志。"""
+
+    for name, value in {**MEDIA_ENVS, **STUDIO_ENVS}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
+    monkeypatch.setattr("iclip.app.bootstrap.configure_logging", _keep_logging)
+
+
+def build_local_media(
+    *,
+    compose: int | None = None,
+    breakdown: int | None = None,
+    media_codec: MediaCodec | None = None,
+) -> list[EventDict]:
+    """装配一次，交回「编解码已选定」那几条日志。"""
+
+    config = config_with_media()
+    assert config.media_generation is not None
+    config = config.model_copy(
+        update={
+            "media_generation": config.media_generation.model_copy(
+                update={"compose_concurrency": compose}
+            ),
+            "iclip_studio": IclipStudioSection(
+                breakdown_model="seed", breakdown_concurrency=breakdown
+            ),
+        }
+    )
+    with capture_logs() as logs:
+        build_app(
+            config,
+            engine=engine(),
+            models={},
+            object_store=MemoryObjectStore(),
+            media_codec=media_codec,
+        )
+    return [log for log in logs if log["event"] == "本地视频编解码已选定"]
+
+
+@pytest.mark.parametrize(
+    ("codec", "compose", "breakdown", "expected"),
+    [
+        pytest.param(VIDEOTOOLBOX, None, None, (4, 4), id="hardware-unwritten"),
+        pytest.param(SOFTWARE, None, None, (2, 2), id="software-unwritten"),
+        pytest.param(VIDEOTOOLBOX, 1, 3, (1, 3), id="written-wins"),
+    ],
+)
+def test_local_queues_take_the_written_concurrency_or_the_codec_default(
+    local_media_env: None,
+    codec: MediaCodec,
+    compose: int | None,
+    breakdown: int | None,
+    expected: tuple[int, int],
+) -> None:
+    chosen = build_local_media(compose=compose, breakdown=breakdown, media_codec=codec)
+
+    assert [
+        (log["codec"], log["hardware"], log["compose_concurrency"], log["breakdown_concurrency"])
+        for log in chosen
+    ] == [(codec.name, codec.hardware, *expected)]
+
+
+def test_without_an_injected_codec_the_startup_probe_chooses(
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    probes: list[None] = []
+
+    def probe() -> MediaCodec:
+        probes.append(None)
+        return VIDEOTOOLBOX
+
+    monkeypatch.setattr("iclip.app.bootstrap.detect_codec", probe)
+
+    chosen = build_local_media()
+
+    assert len(probes) == 1
+    assert [(log["codec"], log["compose_concurrency"]) for log in chosen] == [("videotoolbox", 4)]
+
+
+def test_nothing_is_probed_when_no_feature_needs_ffmpeg(
+    base_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def probe() -> MediaCodec:
+        raise AssertionError("不用 ffmpeg 的部署不该跑编解码探测")
+
+    monkeypatch.setattr("iclip.app.bootstrap.detect_codec", probe)
+
+    build_app(minimal_config(), engine=engine(), models={})
 
 
 class _RecordingConnections(LiveConnections):

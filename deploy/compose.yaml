@@ -29,6 +29,16 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # 本地视频加工（合成、拆解抽帧、分镜取帧）启动时探测，有 NVIDIA 显卡就用它编解码，没有用软件。
+    # 宿主机要装 NVIDIA 驱动与 NVIDIA Container Toolkit，申请不到显卡容器起不来；没有显卡的机器删掉
+    # 这一段。capabilities 里的 video 让容器里有 libnvidia-encode / libnvcuvid，少了它 NVENC 起不来。
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility, video]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7788/healthz', timeout=3)"]
       interval: 15s

@@ -20,6 +20,7 @@ from iclip.domains.generation.module import (
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
+from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
@@ -81,6 +82,7 @@ def build(
         image_edit_task="image-edit",
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
         image_transport=transport,
     )
 
@@ -156,6 +158,7 @@ async def test_a_model_can_declare_its_own_task_routes() -> None:
         image_edit_task="image-edit_shared",
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
         image_transport=httpx.MockTransport(handler),
     )
 

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.app.bootstrap import build_app
+from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor
 from tests.helpers.generation import MemoryObjectStore
@@ -51,6 +52,7 @@ async def test_breakdowns_run_in_the_app_lifespan_without_media_generation(
         object_store=bucket,
         reference_breakdowns=breakdowns,
         reference_tagger=tagger,
+        media_codec=SOFTWARE,
     )
 
     lifespan = app.router.lifespan_context(app)

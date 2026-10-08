@@ -10,6 +10,7 @@ from scripts.dump_openapi import PLACEHOLDER_CONFIG_DIR, PLACEHOLDER_ENV
 from iclip.app.bootstrap import build_app
 from iclip.config import load_agent_declarations, load_runtime_config
 from iclip.domains.identity.public import PERMISSIONS
+from iclip.platform.media.codec import SOFTWARE
 
 SCHEMES = {"SessionCookie", "BearerToken"}
 """合同公开的两个 scheme 名；改名就是改合同。"""
@@ -33,11 +34,12 @@ def document() -> dict[str, Any]:
     with pytest.MonkeyPatch.context() as patch:
         for name, value in PLACEHOLDER_ENV.items():
             patch.setenv(name, value)
-        # unit 门禁的机器不装 ffmpeg；这里只取文档，不处理媒体。
+        # unit 门禁的机器不装 ffmpeg；这里只取文档，不处理媒体，也不跑编解码探测。
         patch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
         app = build_app(
             load_runtime_config(PLACEHOLDER_CONFIG_DIR / "config.yaml"),
             agents=load_agent_declarations(PLACEHOLDER_CONFIG_DIR / "agents.yaml"),
+            media_codec=SOFTWARE,
         )
         return app.openapi()
 

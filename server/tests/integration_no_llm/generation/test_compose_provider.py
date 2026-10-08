@@ -16,9 +16,18 @@ import pytest
 from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import ClipStage
+from iclip.platform.media.codec import SOFTWARE, MediaCodec
 from iclip.platform.media.ffmpeg import ffmpeg_available, probe_video
 from tests.helpers.generation import MemoryObjectStore, compose_request, make_job
-from tests.helpers.media import duration_ms_of, keyframes_of, synthesize_video
+from tests.helpers.media import (
+    BROKEN_DECODE,
+    CODECS,
+    decode_all,
+    duration_ms_of,
+    keyframes_of,
+    local_codec,
+    synthesize_video,
+)
 
 pytestmark = [
     pytest.mark.anyio,
@@ -71,17 +80,28 @@ class _Stages:
         return self.live
 
 
+@pytest.fixture(params=list(CODECS))
+def codec(request: pytest.FixtureRequest) -> MediaCodec:
+    """每一档编解码；本机用不了的硬件档跳过。"""
+
+    return local_codec(request.param)
+
+
 async def _compose(
     segments: list[dict[str, Any]],
     sources: dict[str, bytes],
     *,
     stages: _Stages | None = None,
+    codec: MediaCodec = SOFTWARE,
 ) -> tuple[str, bytes]:
     """跑一次合成，返回落库的对象 key 与产物字节。"""
 
     store = MemoryObjectStore()
     provider = FfmpegComposeProvider(
-        object_store=store, report_stage=(stages or _Stages()).report, transport=_client(sources)
+        object_store=store,
+        report_stage=(stages or _Stages()).report,
+        codec=codec,
+        transport=_client(sources),
     )
     submission = await provider.submit(
         make_job(compose_request(segments=segments), provider="ffmpeg")
@@ -187,8 +207,12 @@ def _assert_keyframes(actual: list[float], expected: list[float]) -> None:
         assert abs(got - want) <= _FRAME + 1e-6, f"关键帧 {actual}，应为 {expected}"
 
 
-async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_them() -> None:
-    """换进去的那段中途画面突变，编码器自己会在那里插关键帧；成片里不该有。"""
+async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_them(
+    codec: MediaCodec,
+) -> None:
+    """换进去的那段中途画面突变，编码器自己会在那里插关键帧；成片里不该有。
+
+    换进去的那段没有音轨，原片有：成片在这一段配静音。每一档编解码都要守这条，产物也要解得开。"""
 
     with TemporaryDirectory(prefix="clip-fixture-") as tmp:
         root = Path(tmp)
@@ -217,6 +241,7 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
             {"url": BASE_URL, "start": 3},
         ],
         sources,
+        codec=codec,
     )
 
     _assert_keyframes(
@@ -225,10 +250,12 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
         # 后段 [3, 4) 从 3 起：起点与 3.4。基底的 1.3、2.2 不在取到的段里。
         [0, 0.6, 1.0, 2.6, 3.0, 3.4],
     )
+    assert (await _profile(content))[2], "静音段配了静音，成片照原片带音轨"
+    await decode_all(content, codec)
 
 
-async def test_a_long_stretch_without_source_keyframes_gets_none() -> None:
-    """编码器默认每 250 帧（10 fps 下 25 秒）至少放一个关键帧；成片里不该有。"""
+async def test_a_long_stretch_without_source_keyframes_gets_none(codec: MediaCodec) -> None:
+    """编码器默认隔一段（x264 是 250 帧，10 fps 下 25 秒）至少放一个关键帧；成片里不该有。"""
 
     with TemporaryDirectory(prefix="clip-fixture-") as tmp:
         root = Path(tmp)
@@ -243,9 +270,24 @@ async def test_a_long_stretch_without_source_keyframes_gets_none() -> None:
     _, content = await _compose(
         [{"url": BASE_URL, "start": 0, "end": 27}, {"url": EDITED_URL, "start": 0}],
         sources,
+        codec=codec,
     )
 
     _assert_keyframes(await keyframes_of(content), [0, 27.0])
+
+
+async def test_the_decode_options_go_on_the_video_inputs(sources: dict[str, bytes]) -> None:
+    """解码选项真的加在了视频输入上：ffmpeg 不认的选项让这次合成失败，且不重试。"""
+
+    with pytest.raises(ProviderError) as caught:
+        await _compose(
+            [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
+            sources,
+            codec=BROKEN_DECODE,
+        )
+
+    assert caught.value.code == "MEDIA_PROCESS_FAILED"
+    assert "no-such-accel" in str(caught.value)
 
 
 async def test_a_composite_reports_fetching_then_processing_then_uploading(
@@ -301,7 +343,10 @@ async def test_a_source_that_cannot_be_fetched_fails_without_retry() -> None:
     """先下到本地，取不到素材有自己的错误码。"""
 
     provider = FfmpegComposeProvider(
-        object_store=MemoryObjectStore(), report_stage=_Stages().report, transport=_client({})
+        object_store=MemoryObjectStore(),
+        report_stage=_Stages().report,
+        codec=SOFTWARE,
+        transport=_client({}),
     )
     job = make_job(
         compose_request(

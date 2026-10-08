@@ -22,6 +22,7 @@ from iclip.capabilities.shot_video.ports import (
 from iclip.capabilities.shot_video.toolset import ShotVideoToolset
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.store import MaterialLedger
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.transcript.display import (
     MEDIA_GRID_VIEW,
     DisplayFn,
@@ -113,8 +114,9 @@ def shot_video_capability(
     client: httpx.AsyncClient,
     image_models: frozenset[str],
     policy: GenerationPolicy,
+    codec: MediaCodec,
 ) -> ShotVideo[Any]:
-    """装配取帧与出图服务。缺少出图要用的模型即拒绝装配。"""
+    """装配取帧与出图服务，取帧解码用 ``codec``。缺少出图要用的模型即拒绝装配。"""
 
     if IMAGE_MODEL not in image_models:
         # 出图把用哪家钉在代码里，配置没接这家就是每次出图都失败，起不来比跑起来好。
@@ -126,7 +128,7 @@ def shot_video_capability(
         space=space,
         ledger=ledger,
         paths=paths,
-        extractor=FrameExtractor(client=client, paths=paths, objects=objects),
+        extractor=FrameExtractor(client=client, paths=paths, objects=objects, codec=codec),
         generator=FrameGenerator(
             generations=generations,
             objects=objects,

@@ -9,6 +9,7 @@ from typing import Final
 import httpx
 
 from iclip.capabilities.iclip_studio.ports import SampledVideo
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.ffmpeg import (
     ENCODE_TIMEOUT_SECONDS,
     MAX_VIDEO_BYTES,
@@ -31,10 +32,11 @@ _SCALE: Final = (
 
 
 class FfmpegVideoSampler:
-    """``VideoSampler`` 的 ffmpeg 实现，HTTP 客户端由组合根注入。"""
+    """``VideoSampler`` 的 ffmpeg 实现，HTTP 客户端与编解码由组合根注入。"""
 
-    def __init__(self, client: httpx.AsyncClient) -> None:
+    def __init__(self, client: httpx.AsyncClient, codec: MediaCodec) -> None:
         self._client = client
+        self._codec = codec
 
     async def duration_seconds(self, video_url: str) -> float:
         return await probe_remote_duration_ms(video_url) / 1000
@@ -43,11 +45,12 @@ class FfmpegVideoSampler:
         async with fetched(
             self._client, video_url, max_bytes=MAX_VIDEO_BYTES, suffix=".mp4"
         ) as source:
-            return await sample_file(source)
+            return await sample_file(source, codec=self._codec)
 
 
-async def sample_file(source: Path) -> SampledVideo:
-    """一次解码同时抽帧与取音轨；产物写在源文件旁边，随源文件的临时目录一起清理。"""
+async def sample_file(source: Path, *, codec: MediaCodec) -> SampledVideo:
+    """一次解码同时抽帧与取音轨，解码用 ``codec`` 的选项；产物写在源文件旁边，随源文件的临时
+    目录一起清理。"""
 
     out_dir = source.parent
     audio_path = out_dir / "audio.mp3"
@@ -55,6 +58,7 @@ async def sample_file(source: Path) -> SampledVideo:
         "ffmpeg",
         "-v",
         "error",
+        *codec.decode,
         "-i",
         str(source),
         "-vf",

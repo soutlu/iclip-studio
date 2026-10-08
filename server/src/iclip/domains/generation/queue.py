@@ -89,7 +89,8 @@ class GenerationQueueSettings:
     """视频只有一家，它那条提交队列的并发不进配置。图片按家配，见 ProviderLane。"""
 
     compose_concurrency: int = 2
-    """本地合成那条队列的并发。别的队列都在等网络，这一条在占 CPU，所以取个小数。"""
+    """本地合成那条队列的并发。别的队列都在等网络，这一条在本机解码重编码；组合根按部署配置给，
+    配置没写就取启动时选定的编解码的默认值（硬件编解码比软件的高）。"""
 
     poll_concurrency: int = 100
 

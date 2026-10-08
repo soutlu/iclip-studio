@@ -30,6 +30,7 @@ from iclip.domains.references.models import (
     VideoTypeValue,
 )
 from iclip.domains.references.service import ReferenceService
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.ffmpeg import MediaError
 
 
@@ -160,9 +161,10 @@ class ReferenceBreakdownsAdapter:
 
 
 def build_reference_breakdown(
-    settings: ResolvedIclipStudio, client: httpx.AsyncClient
+    settings: ResolvedIclipStudio, client: httpx.AsyncClient, codec: MediaCodec
 ) -> tuple[ArkVideoBreakdowns, ArkTagger]:
-    """按 ``iclip_studio`` 的配置建参考视频自己的一份拆解与打标；HTTP 连接池与组合根共用。"""
+    """按 ``iclip_studio`` 的配置建参考视频自己的一份拆解与打标；HTTP 连接池与组合根共用，
+    抽帧解码用启动时选定的 ``codec``。"""
 
     model = ArkBreakdownModel(
         client,
@@ -170,7 +172,7 @@ def build_reference_breakdown(
         api_key=settings.breakdown_api_key,
         model=settings.breakdown_model,
     )
-    breakdown = VideoBreakdown(model=model, sampler=FfmpegVideoSampler(client))
+    breakdown = VideoBreakdown(model=model, sampler=FfmpegVideoSampler(client, codec))
     return ArkVideoBreakdowns(breakdown), ArkTagger(model)
 
 
