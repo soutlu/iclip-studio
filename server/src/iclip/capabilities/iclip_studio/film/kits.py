@@ -1,8 +1,9 @@
 """模板包 ``@iclip/film-kits``：生图和视频提示词的两份模板，放在后端代码里，不能自己写。
 
-模板文件（``kits/*.svs``）只写槽：名字、先后、必不必填、段名。各段怎么排、图号写在哪是每份
-模板一套写法，写在 ``prompts`` 里；这里给出那套写法要认的几个槽。改模板的槽或排法时出一份新
-模板（如 ``画面-v2``），旧的留着。"""
+模板文件（``kits/*.svs``）只写槽：名字、先后、必不必填、段名，视频的人物、产品、场景另写有图时
+冒号后那几个字。各段怎么排、图号写在哪是每份模板一套写法，写在 ``prompts`` 里；这里给出那套
+写法要认的几个槽。改模板的槽或排法时在原文件上改，不出新版本，工程文件下次生成时就按新的拼
+（ADR-0014）。"""
 
 from __future__ import annotations
 
@@ -45,6 +46,9 @@ class Slot:
     label: str | None
     """拼提示词时这一段的段名，如「拍摄：」；不写段名的为 None。"""
 
+    cite: str | None
+    """视频提示词里这个槽的元素有图时，冒号后只写这几个字再接图号，如「外观」；不写的为 None。"""
+
 
 @dataclass(frozen=True, slots=True)
 class Kit:
@@ -77,7 +81,12 @@ def _read(name: str) -> Kit:
             continue
         if len(path) != 3 or path[0] != name or path[1] != "block" or declared["kind"] != "slot":
             raise RuntimeError(f"模板 {name} 里有读不懂的规则：{rule.group(0)}")
-        slot = Slot(declared["slot"], declared["optional"] == "false", declared.get("label"))
+        slot = Slot(
+            declared["slot"],
+            declared["optional"] == "false",
+            declared.get("label"),
+            declared.get("cite"),
+        )
         ordered.append((int(declared["order"]), slot))
     return Kit(name, tuple(slot for _, slot in sorted(ordered, key=lambda item: item[0])))
 
@@ -92,6 +101,11 @@ def _kits() -> dict[str, Kit]:
         missing = [name for name in names if kit.slot(name) is None]
         if missing:
             raise RuntimeError(f"模板 {kit.name} 缺代码里要认的槽：{'、'.join(missing)}")
+    uncited = [
+        slot.name for slot in video.slots if slot.name in VIDEO_ELEMENT_SLOTS and slot.cite is None
+    ]
+    if uncited:
+        raise RuntimeError(f"模板 {video.name} 的槽没写 cite：{'、'.join(uncited)}")
     return {picture.name: picture, video.name: video}
 
 

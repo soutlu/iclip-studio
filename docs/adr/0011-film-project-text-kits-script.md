@@ -1,6 +1,7 @@
 # ADR-0011：工程文件照 hypit 写成文字、模板与剧本，参考图挂在生成节点下，编号用时现算
 
 - 状态：已接受（2026-10-07）
+- 修订（2026-10-07，ADR-0014）：第 2 条末句「改模板的槽或排法时出一份新模板，旧的留着」被取代：模板在原文件上改，不出新版本，工程文件下次生成时按现在的写法拼。
 - 取代 ADR-0007 第 2 条（出场元素层与 `Cast`）、第 4 条（没有模板）；ADR-0007 的其余各条与 ADR-0009 不变。
 - 影响：[CONTEXT.md](../CONTEXT.md) 的「工程文件」「制作页」词条、[architecture.md](../architecture.md) 的 `iclip_studio` 说明、[contract/conventions.md](../../contract/conventions.md) §6 的制作页；后端 [iclip_studio/film/](../../server/src/iclip/capabilities/iclip_studio/film/) 的包声明、模板包、剧本、拼提示词、检查与制作页；前端制作页的全局设定 [film-script.tsx](../../web/src/features/storyboard/film/film-script.tsx) 与改过的描述 [film-images.ts](../../web/src/features/storyboard/film/film-images.ts)。
 

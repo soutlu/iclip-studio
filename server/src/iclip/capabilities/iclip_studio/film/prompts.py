@@ -1,8 +1,8 @@
 """按模板把生成节点的提示词拼出来：``画面-v1`` 拼一张图的描述，``多镜头视频-v1`` 拼一次视频请求。
 
 两份模板各有一套写法，只在这里定。图的编号不写在文件里：每次生成时按生成节点下列的参考图先后，
-只给现在有图的编号，视频再接上各镜的机位图；所以用户生成了哪些图，文件都不用改。这里不加任何
-固定的话，段名来自模板。"""
+只给现在有图的编号，视频再接上各镜的机位图；所以用户生成了哪些图，文件都不用改。固定的话除了
+图号前的「参考」都来自模板：生图的段名，视频里有图的元素冒号后那几个字。"""
 
 from __future__ import annotations
 
@@ -206,14 +206,20 @@ def render_picture(film: Film, image: Node, *, assume_generated: bool = False) -
 def render_video(film: Film, video: Node, *, assume_generated: bool = False) -> ShotGroup:
     """视频节点发给模型的镜头组：全局设定加逐镜时间线；镜头时间照文件里写的，不换算。
 
-    全局设定三段，段与段之间空一行：拍摄与剪辑；人物、产品、场景每项一行；声音每项一行。"""
+    全局设定三段，段与段之间空一行：拍摄与剪辑；人物、产品、场景每项一行；声音每项一行。元素有图时
+    冒号后只写模板里这个槽的那几个字加图号，如「产品 网面跑鞋：外观参考@Image1」，不写元素的文字；
+    还没有图的写全文字。"""
 
     project = film.project
     uses, images = video_images(film, video, assume_generated=assume_generated)
     numbers = {use.holder: use.number for use in uses if use.number is not None}
-    filled = slot_values(project, project.nodes[_required(video, "prompt")])
+    prompt = project.nodes[_required(video, "prompt")]
+    kit = project.template(_required(prompt, "template"))
+    filled = slot_values(project, prompt)
     cast: list[str] = []
     for slot in VIDEO_ELEMENT_SLOTS:
+        declared = kit.slot(slot)
+        assert declared is not None and declared.cite is not None, f"{slot} 在读模板时已经查过"
         for value in filled[slot]:
             name = value.attrs["id"]
             marks = [
@@ -221,7 +227,8 @@ def render_video(film: Film, video: Node, *, assume_generated: bool = False) -> 
                 for reference in references(project, video)
                 if reference.reference("for") == name and reference in numbers
             ]
-            cast.append(f"{slot} {name}：{_cite_line(value.text, marks)}")
+            said = f"{declared.cite}参考{'、'.join(marks)}" if marks else value.text
+            cast.append(f"{slot} {name}：{said}")
     sections = [
         "\n".join(value.text for value in filled[VIDEO_SHOOTING_SLOT]),
         "\n".join(cast),
@@ -322,15 +329,6 @@ def _cite_sentence(text: str, marks: list[str]) -> str:
     if text[-1] not in _SENTENCE_END:
         return f"{text}，{cite}"
     return text + (" " if text[-1] in _LATIN_END else "") + cite
-
-
-def _cite_line(text: str, marks: list[str]) -> str:
-    """视频全局设定里一个元素的描述：有图时行尾接「参考@ImageN」，不加句号。"""
-
-    if not marks:
-        return text
-    cite = f"参考{'、'.join(marks)}"
-    return text + cite if text and text[-1] in _SENTENCE_END else f"{text}，{cite}"
 
 
 def _required(node: Node, name: str) -> str:
