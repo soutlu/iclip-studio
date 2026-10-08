@@ -41,8 +41,7 @@ CODECS = {codec.name: codec for codec in (SOFTWARE, *HARDWARE_CANDIDATES)}
 def encodes_here(codec: MediaCodec) -> bool:
     """这一档的编码参数在本机编得出东西：有这块硬件、驱动认这些参数。
 
-    不看关键帧，也不走启动探测：关键帧参数写错时探测会把这一档拒掉、测试跟着跳过，就测不出来了；
-    这里只问「编不编得了」，编得了的档就该守关键帧的规矩。"""
+    只问「编不编得了」，不看关键帧：编得了的档就该守关键帧的规矩，由按档参数化的合成测试核对。"""
 
     result = subprocess.run(
         [

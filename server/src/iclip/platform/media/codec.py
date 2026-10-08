@@ -1,19 +1,15 @@
 """本地视频加工的编解码：三档配置，以及启动时选用哪一档的探测。
 
-硬件优先：先试 VideoToolbox（macOS），再试 NVENC（NVIDIA），都不行用软件 libx264。每一档都要满足
-同一个约束：产物的关键帧只出现在 ``-force_key_frames`` 给的时刻，编码器自己不插（ADR-0010）。
-「编码器认得」不等于「有硬件、关键帧守规矩」，所以探测不看 ``ffmpeg -encoders``，而是真编一小段、
-读回关键帧、再解一遍。
-
-关键帧的读法（ffprobe 报告的参数与解析）和「往前半帧」的写法也放在这里，拼接与探测共用一份。"""
+硬件优先：先试 VideoToolbox（macOS），再试 NVENC（NVIDIA），都不行用软件 libx264。每一档的编码
+参数都要让产物的关键帧只出现在 ``-force_key_frames`` 给的时刻，编码器自己不插（ADR-0010）。
+「编码器认得」不等于「有这块硬件、驱动认这些参数」，所以探测不看 ``ffmpeg -encoders``，而是用这一档
+真编一小段、再解一遍，两步都成功就选中。"""
 
 from __future__ import annotations
 
-import json
 import subprocess
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -63,7 +59,7 @@ VIDEOTOOLBOX: Final = MediaCodec(
     decode=("-hwaccel", "videotoolbox"),
     # -q:v 80 实测与 x264 crf 16 画质（VMAF）、体积相当；只有 Apple Silicon 收 -q:v，Intel Mac
     # 上编码直接失败，由探测落到下一档。-g 取最大值关掉默认 12 帧的 GOP 上限；VideoToolbox
-    # 没有关场景切换的开关，实测配 -force_key_frames 时不按场景插，这一点靠启动探测把关。
+    # 没有关场景切换的开关，实测配 -force_key_frames 时不按场景插。
     encode=(
         "-c:v", "h264_videotoolbox", "-q:v", "80", "-g", "2147483647", "-pix_fmt", "yuv420p",
     ),
@@ -78,7 +74,7 @@ NVENC: Final = MediaCodec(
     decode=("-hwaccel", "cuda"),
     # 画质参数（p5 + hq + 恒定质量 cq 16）按 x264 crf 16 的档位估的，没在真卡上核对过。
     # 关键帧：-g 取最大值关 GOP 上限，-no-scenecut 关场景切换，-forced-idr 让强制的关键帧是 IDR；
-    # 是否守规矩由启动探测在真机上把关。
+    # 这几项同样没在真卡上核对过。
     encode=(
         "-c:v", "h264_nvenc", "-preset", "p5", "-tune", "hq", "-rc", "vbr", "-cq", "16",
         "-b:v", "0", "-profile:v", "high", "-g", "2147483647", "-forced-idr", "1",
@@ -91,73 +87,14 @@ HARDWARE_CANDIDATES: Final = (VIDEOTOOLBOX, NVENC)
 """探测按这个顺序试，第一个通过的选中。"""
 
 
-def force_key_frames(frames: Iterable[int], *, frame_rate: Fraction) -> str:
-    """把要做关键帧的帧号写成 ``-force_key_frames`` 收的逗号分隔串，从小到大、去重。
-
-    写的是每帧往前半帧的时刻：ffmpeg 把第一个时间戳不早于给定时刻的帧编成关键帧，给帧的正点
-    时刻会因为写成十进制时向上舍入而落到下一帧；同一帧给两个时刻，它会把后一帧也编成关键帧。"""
-
-    return ",".join(
-        f"{max(Fraction(0), (frame - Fraction(1, 2)) / frame_rate):.6f}"
-        for frame in sorted(set(frames))
-    )
-
-
-def keyframe_report_args(path: Path) -> list[str]:
-    """读第一条视频流各包关键帧标记的 ffprobe 命令；输出交给 ``parse_keyframe_report``。"""
-
-    return [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=index:packet=pts_time,flags:format=start_time",
-        "-of",
-        "json",
-        str(path),
-    ]
-
-
-def parse_keyframe_report(stdout: bytes, *, name: str) -> list[float]:
-    """解析 ``keyframe_report_args`` 的输出：关键帧时刻（秒），从文件起始时间算起，从小到大。
-
-    报告看不懂、没有视频流、一个关键帧都没有都抛 ValueError，消息里带 ``name``（素材的文件名）。"""
-
-    try:
-        report = json.loads(stdout)
-        streams = report["streams"]
-        packets = report["packets"]
-        start = float(report["format"].get("start_time", 0))
-        keyframes = sorted(
-            float(packet["pts_time"]) - start
-            for packet in packets
-            if "K" in packet.get("flags", "")
-        )
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        raise ValueError("ffprobe 的关键帧信息看不懂") from exc
-    if not streams:
-        raise ValueError(f"这条素材里没有视频流: {name}")
-    if not keyframes:
-        raise ValueError(f"这条素材的视频流里没有关键帧: {name}")
-    return keyframes
-
-
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[bytes]]
 """跑一条命令并交回结果；起不来抛 OSError，超时抛 subprocess.TimeoutExpired。"""
 
 TRIAL_TIMEOUT_SECONDS: Final = 30.0
 """探测里每条命令的超时。正常一条不到一秒，卡住的硬件驱动不能拖住启动。"""
 
-_TRIAL_RATE: Final = Fraction(30)
 _TRIAL_FRAMES: Final = 30
-_TRIAL_KEYFRAMES: Final = (0, 17)
-_TRIAL_FLIP: Final = 23
-"""试编 30 帧，在第 0、17 帧强制关键帧，第 23 帧画面整体反相（编码器会当成场景切换）。
-
-几个帧号都避开 12 的倍数：ffmpeg 默认的 GOP 是 12 帧，撞上了就分不出关键帧是强制的还是 GOP
-插的。产物的关键帧必须恰好是 0 与 17：多了 12、24、29 是 GOP 上限没关，多了 23 是场景切换没关。"""
+"""试编的帧数：ffmpeg 的测试图样，30 fps 下一秒。"""
 
 
 def _run(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
@@ -176,8 +113,9 @@ def detect_codec(
 ) -> MediaCodec:
     """按顺序试 ``candidates``，交回第一个通过的；都不通过交回 ``SOFTWARE``。
 
-    同步执行，只在启动时调一次。每个不通过的候选记一条日志带原因；落到软件记 warning。
-    选中谁由调用方记（它知道这一档最终给了各队列多少并发）。"""
+    每一档用它真编一小段、再解一遍，两步都成功算通过。同步执行，只在启动时调一次。每个不通过的
+    候选记一条日志带原因；落到软件记 warning。选中谁由调用方记（它知道这一档最终给了各队列多少
+    并发）。"""
 
     for codec in candidates:
         reason = _trial(codec, run)
@@ -193,43 +131,30 @@ def detect_codec(
 
 
 def _trial(codec: MediaCodec, run: Runner) -> str | None:
-    """用这一档编一小段、读回关键帧、再解一遍；通过交回 None，不通过交回原因。"""
+    """用这一档的编码参数把一小段测试图样编成 mp4，再用它的解码选项解一遍；通过交回 None，
+    不通过交回原因。"""
 
     with TemporaryDirectory(prefix="iclip-codec-") as tmp:
         dest = Path(tmp) / f"{codec.name}.mp4"
-        pattern = f"testsrc2=size=256x256:rate={_TRIAL_RATE},negate=enable='gte(n,{_TRIAL_FLIP})'"
-        encoded = _step(
+        reason = _step(
             "编码",
             [
-                "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", pattern,
-                "-frames:v", str(_TRIAL_FRAMES), *codec.encode,
-                "-force_key_frames", force_key_frames(_TRIAL_KEYFRAMES, frame_rate=_TRIAL_RATE),
-                str(dest),
+                "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=256x256:rate=30",
+                "-frames:v", str(_TRIAL_FRAMES), *codec.encode, str(dest),
             ],
             run,
         )  # fmt: skip
-        if isinstance(encoded, str):
-            return encoded
-        report = _step("读关键帧", keyframe_report_args(dest), run)
-        if isinstance(report, str):
-            return report
-        try:
-            times = parse_keyframe_report(report.stdout, name=dest.name)
-        except ValueError as exc:
-            return f"读关键帧: {exc}"
-        frames = sorted({round(Fraction(time) * _TRIAL_RATE) for time in times})
-        if frames != list(_TRIAL_KEYFRAMES):
-            return f"关键帧落在第 {frames} 帧，应只在第 {list(_TRIAL_KEYFRAMES)} 帧"
-        decoded = _step(
+        if reason is not None:
+            return reason
+        return _step(
             "解码",
             ["ffmpeg", "-v", "error", *codec.decode, "-i", str(dest), "-f", "null", "-"],
             run,
         )
-        return decoded if isinstance(decoded, str) else None
 
 
-def _step(step: str, args: Sequence[str], run: Runner) -> subprocess.CompletedProcess[bytes] | str:
-    """跑探测的一步：成功交回结果，起不来、超时或退出码非 0 交回带步骤名的原因。"""
+def _step(step: str, args: Sequence[str], run: Runner) -> str | None:
+    """跑探测的一步：成功交回 None，起不来、超时或退出码非 0 交回带步骤名的原因。"""
 
     try:
         result = run(args)
@@ -238,7 +163,7 @@ def _step(step: str, args: Sequence[str], run: Runner) -> subprocess.CompletedPr
     if result.returncode != 0:
         detail = result.stderr.decode(errors="replace").strip()[:_STDERR_LIMIT]
         return f"{step}失败（退出码 {result.returncode}）: {detail}"
-    return result
+    return None
 
 
 __all__ = [
@@ -250,7 +175,4 @@ __all__ = [
     "MediaCodec",
     "Runner",
     "detect_codec",
-    "force_key_frames",
-    "keyframe_report_args",
-    "parse_keyframe_report",
 ]
