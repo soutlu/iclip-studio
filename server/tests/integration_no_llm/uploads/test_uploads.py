@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from iclip.app.bootstrap import build_app
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
+from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
@@ -220,6 +222,88 @@ async def test_confirming_again_keeps_the_one_record_and_its_first_owner(
     assert (str(job.owner_user_id), str(job.api_key_id)) == (sara, issued["id"])
 
 
+async def confirmed_upload(
+    http: httpx.AsyncClient,
+    bucket: MemoryObjectStore,
+    content: bytes,
+    content_type: str = "video/mp4",
+    ext: str = "mp4",
+) -> tuple[str, str, dict[str, object]]:
+    """签一次、把 ``content`` 放进桶、确认；返回 uploadId、对象 key 与确认交回的 JSON。"""
+
+    upload_id = (await sign(http, content_type)).json()["uploadId"]
+    key = f"iclip/agent/uploads/{upload_id}.{ext}"
+    await bucket.put_public_object(object_key=key, content=content, content_type=content_type)
+    response = await http.post(f"/uploads/{upload_id}/confirm")
+    assert response.status_code == 200, response.text
+    return upload_id, key, response.json()
+
+
+@pytest.mark.parametrize("second_user", ["logan", "sara"], ids=["同一个人", "另一个人"])
+async def test_the_same_video_uploaded_again_shares_the_first_address(
+    uploads_app: FastAPI, pg_url: str, bucket: MemoryObjectStore, second_user: str
+) -> None:
+    """同一个视频文件第二次传：交回第一次的地址，两行上传记录都在、各记自己的属主与 MD5，第二份
+    对象删掉。再确认第二次那个 uploadId：交回同一份结果，不报还没传上来。"""
+
+    content = b"MP4DATA" * 10
+    async with make_client(uploads_app) as first_http, make_client(uploads_app) as second_http:
+        first_user_id = await login_as_editor(first_http, pg_url)
+        second_user_id = (
+            first_user_id
+            if second_user == "logan"
+            else await login_as_editor(second_http, pg_url, username=second_user)
+        )
+        second_client = first_http if second_user == "logan" else second_http
+        first_id, first_key, first = await confirmed_upload(first_http, bucket, content)
+        second_id, second_key, second = await confirmed_upload(second_client, bucket, content)
+        again = await second_client.post(f"/uploads/{second_id}/confirm")
+
+    assert first == {
+        "url": f"https://cdn.example.test/{first_key}",
+        "contentType": "video/mp4",
+        "sizeBytes": 70,
+    }
+    assert second == first
+    assert again.status_code == 200, again.text
+    assert again.json() == first
+    assert (first_key in bucket.objects, second_key in bucket.objects) == (True, False)
+    assert await upload_rows(pg_url) == 2
+    first_row, second_row = await stored(pg_url, first_id), await stored(pg_url, second_id)
+    md5 = hashlib.md5(content).hexdigest()
+    assert (first_row.owner_user_id, first_row.output_url, first_row.content_md5) == (
+        uuid.UUID(first_user_id),
+        first["url"],
+        md5,
+    )
+    assert (second_row.owner_user_id, second_row.output_url, second_row.content_md5) == (
+        uuid.UUID(second_user_id),
+        first["url"],
+        md5,
+    )
+
+
+async def test_the_same_image_uploaded_twice_keeps_two_addresses(
+    client: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+) -> None:
+    """图片不去重：同样的字节传两次，各留各的地址与对象，不记 MD5。"""
+
+    await login_as_editor(client, pg_url)
+    content = b"PNGDATA" * 10
+    first_id, first_key, first = await confirmed_upload(client, bucket, content, "image/png", "png")
+    second_id, second_key, second = await confirmed_upload(
+        client, bucket, content, "image/png", "png"
+    )
+
+    assert (first["url"], second["url"]) == (
+        f"https://cdn.example.test/{first_key}",
+        f"https://cdn.example.test/{second_key}",
+    )
+    assert (first_key in bucket.objects, second_key in bucket.objects) == (True, True)
+    rows = [await stored(pg_url, upload_id) for upload_id in (first_id, second_id)]
+    assert [row.content_md5 for row in rows] == [None, None]
+
+
 @pytest.fixture
 async def media_app(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch, bucket: MemoryObjectStore
@@ -237,6 +321,7 @@ async def media_app(
             engine=engine,
             object_store=bucket,
             queue_connector=InMemoryConnector(),
+            media_codec=SOFTWARE,
         )
     finally:
         await engine.dispose()

@@ -140,7 +140,9 @@ describe('全部对话的需求单预览', () => {
     await renderAt('/conversations')
 
     const row = await screen.findByRole('link', { name: /关联需求的对话/ })
-    expect((await within(row).findAllByText('无需求单查看权限')).length).toBeGreaterThan(0)
+    expect((await within(row).findAllByText('当前账号没有查看需求单权限')).length).toBeGreaterThan(
+      0,
+    )
     expect(requests).toEqual([])
   })
 })

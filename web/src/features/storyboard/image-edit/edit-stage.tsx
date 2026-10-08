@@ -11,10 +11,10 @@ import {
 } from 'react'
 import { Icon } from '@/shared/icons'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
-import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
+import { StageBackdrop } from '../components/stage-backdrop'
 import { useTakeElapsed } from '../components/use-take-elapsed'
 import { phaseOfStatus } from '../shots'
 import { CompareSlider } from './compare-slider'
@@ -49,24 +49,26 @@ type EditStageProps = {
   >
 }
 
-/** 不是画布的几种画面共用的图框：按分镜画幅放在标注工具条与版本条之间。 */
-function Hero({
-  aspectRatio,
-  children,
-  className,
-}: {
-  aspectRatio: string
-  children: ReactNode
-  className?: string
-}) {
+/** 不是画布的几种画面共用的图框：按分镜画幅放在标注工具条与版本条之间，圆角投影与画布上的图一致。 */
+function Hero({ aspectRatio, children }: { aspectRatio: string; children: ReactNode }) {
   return (
     <div className="image-edit-hero-wrap">
       <div
-        className={cn('image-edit-hero', className)}
+        className="image-edit-hero stage-picture"
         style={{ '--image-edit-ratio': aspectValueOf(aspectRatio) } as CSSProperties}
       >
         {children}
       </div>
+    </div>
+  )
+}
+
+/** 舞台：底下铺舞台上那张图的模糊放大版（没有图时不铺），上面放画面与操作。 */
+function Stage({ backdrop, children }: { backdrop: string | undefined; children: ReactNode }) {
+  return (
+    <div className="image-edit-stage">
+      <StageBackdrop url={backdrop === '' ? undefined : backdrop} />
+      {children}
     </div>
   )
 }
@@ -82,11 +84,11 @@ export function StillStage({
   url: string | null | undefined
 }) {
   return (
-    <div className="image-edit-stage">
+    <Stage backdrop={url ?? undefined}>
       <Hero aspectRatio={aspectRatio}>
         {url == null ? null : <img alt={label} className="image-edit-hero-image" src={url} />}
       </Hero>
-    </div>
+    </Stage>
   )
 }
 
@@ -116,19 +118,19 @@ function RunningPill({ since }: { since: string }) {
   )
 }
 
-/** 失败原因就地展开；原文常是服务端的长响应，只在用户要看时铺开。 */
+/** 失败原因就地展开在胶囊下面；原文常是服务端的长响应，只在用户要看时铺开。 */
 function FailedPills({ message }: { message: string | undefined }) {
   const [open, setOpen] = useState(false)
   const reasonId = useId()
   useEscapeAheadOfDialog(open, () => setOpen(false))
   return (
     <>
-      <span className="image-edit-pill" role="alert">
-        <Icon className="text-error" decorative name="alert" size="sm" />
-        未成功
-      </span>
-      {!message ? null : (
-        <>
+      <div className="image-edit-status-row">
+        <span className="image-edit-pill" role="alert">
+          <Icon className="text-error" decorative name="alert" size="sm" />
+          生成失败
+        </span>
+        {!message ? null : (
           <button
             aria-controls={reasonId}
             aria-expanded={open}
@@ -139,10 +141,12 @@ function FailedPills({ message }: { message: string | undefined }) {
             查看原因
             <Icon decorative name="expand" size="sm" />
           </button>
-          <p className="image-edit-reason" hidden={!open} id={reasonId}>
-            {message}
-          </p>
-        </>
+        )}
+      </div>
+      {!message ? null : (
+        <p className="image-edit-reason" hidden={!open} id={reasonId}>
+          {message}
+        </p>
       )}
     </>
   )
@@ -232,9 +236,10 @@ function ReplaceError({ error }: { error: string | null }) {
 }
 
 /**
- * 当前帧画标注；排队、生成中是模糊的底图加计时胶囊；失败是压暗的底图加原因；
+ * 当前帧画标注；排队、生成中是压暗的底图，计时胶囊在正中；失败压得更暗，胶囊与原因在正中；
  * 结果与上一版和当前帧左右对比，满意就「替换当前帧」，替换后 6 秒内可撤销。
  * 没有在用的图（制作页没选用的生成图）时没有当前帧可画、可比：结果单独放，主操作是「选用这张」。
+ * 舞台底的模糊图取舞台上那一张：画布与在途、失败是底图，对比是结果。
  */
 export function EditStage({
   entry,
@@ -247,33 +252,33 @@ export function EditStage({
 }: EditStageProps) {
   if (currentUrl === undefined)
     return (
-      <div className="image-edit-stage">
+      <Stage backdrop={undefined}>
         <p className="image-edit-stage-message" role="alert">
           {words.gone}
         </p>
-      </div>
+      </Stage>
     )
 
   if (entry === undefined || entry.kind === 'current')
     return (
-      <div className="image-edit-stage">
+      <Stage backdrop={currentUrl ?? undefined}>
         {currentUrl === null ? (
-          <p className="image-edit-stage-message">还没有在用的图，从版本里选一张</p>
+          <p className="image-edit-stage-message">暂无在用的图片，请从版本中选择一张</p>
         ) : (
           canvas
         )}
         {replace.undoable ? <UndoBar done={words.replaced} replace={replace} /> : null}
-      </div>
+      </Stage>
     )
 
   if (entry.kind === 'pending') {
     const queued = phaseOfStatus(entry.job.status) === 'queued'
     return (
-      <div className="image-edit-stage">
-        <Hero aspectRatio={aspectRatio} className="image-edit-hero-blurred">
+      <Stage backdrop={baseUrl}>
+        <Hero aspectRatio={aspectRatio}>
           <BaseImage key={baseUrl} url={baseUrl} />
-          <span aria-hidden="true" className="image-edit-hero-veil" />
-          <div className="image-edit-pills">
+          <span aria-hidden="true" className="image-edit-hero-dim" />
+          <div className="image-edit-status">
             {queued ? (
               <span className="image-edit-pill" role="status">
                 <Icon className="text-on-surface-muted" decorative name="duration" size="sm" />
@@ -284,25 +289,25 @@ export function EditStage({
             )}
           </div>
         </Hero>
-      </div>
+      </Stage>
     )
   }
 
   if (entry.kind === 'failed')
     return (
-      <div className="image-edit-stage">
-        <Hero aspectRatio={aspectRatio} className="image-edit-hero-failed">
+      <Stage backdrop={baseUrl}>
+        <Hero aspectRatio={aspectRatio}>
           <BaseImage key={baseUrl} url={baseUrl} />
-          <span aria-hidden="true" className="image-edit-hero-veil" />
-          <div className="image-edit-pills">
+          <span aria-hidden="true" className="image-edit-hero-dim" data-failed="" />
+          <div className="image-edit-status">
             <FailedPills key={entry.key} message={entry.job.errorMessage?.trim()} />
           </div>
         </Hero>
-      </div>
+      </Stage>
     )
 
   return (
-    <div className="image-edit-stage">
+    <Stage backdrop={entry.url}>
       <Hero aspectRatio={aspectRatio}>
         {currentUrl === null ? (
           <img
@@ -319,6 +324,6 @@ export function EditStage({
         )}
       </Hero>
       <ReplaceBar replace={replace} url={entry.url} words={words} />
-    </div>
+    </Stage>
   )
 }

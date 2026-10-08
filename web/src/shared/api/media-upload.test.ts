@@ -53,8 +53,11 @@ describe('uploadMediaFile 视频', () => {
   it.each([
     ['video/mp4', 5],
     ['video/quicktime', 512 * 1024 * 1024],
-  ])('上传 %s 后确认并返回永久地址，尺寸保留空值', async (type, size) => {
-    await expect(uploadMediaFile(videoFile(type, size), 'video')).resolves.toBe(assetUrl)
+  ])('上传 %s 后确认并返回永久地址与上传 id，尺寸保留空值', async (type, size) => {
+    await expect(uploadMediaFile(videoFile(type, size), 'video')).resolves.toEqual({
+      uploadId,
+      url: assetUrl,
+    })
     expect(signedBody).toEqual({ contentType: type, height: null, width: null })
     expect(requests).toEqual([
       'POST /api/uploads/sign',
@@ -81,7 +84,7 @@ describe('uploadMediaFile 视频', () => {
       uploadMediaFile(videoFile('video/mp4', 5), 'video', {
         onProgress: (ratio) => ratios.push(ratio),
       }),
-    ).resolves.toBe(assetUrl)
+    ).resolves.toMatchObject({ url: assetUrl })
     expect(ratios.at(-1)).toBe(1)
   })
 
@@ -157,7 +160,7 @@ describe('uploadMediaFile 图片', () => {
     decode.mockResolvedValue({ close, height, width })
     const file = imageFile(type, size)
 
-    await expect(uploadMediaFile(file, 'image')).resolves.toBe(assetUrl)
+    await expect(uploadMediaFile(file, 'image')).resolves.toMatchObject({ url: assetUrl })
 
     expect(decode).toHaveBeenCalledWith(file)
     expect(close).toHaveBeenCalledOnce()
@@ -196,7 +199,7 @@ describe('uploadMediaFile 图片', () => {
   ])('图片尺寸 %i × %i 不合规时释放解码资源，不请求签名', async (width, height) => {
     decode.mockResolvedValue({ close, height, width })
 
-    await expect(uploadMediaFile(imageFile(), 'image')).rejects.toThrow('图片短边至少')
+    await expect(uploadMediaFile(imageFile(), 'image')).rejects.toThrow('图片尺寸不符，无法上传')
     expect(close).toHaveBeenCalledOnce()
     expect(requests).toEqual([])
   })

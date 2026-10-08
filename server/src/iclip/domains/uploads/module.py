@@ -7,7 +7,7 @@ from typing import Any
 
 from iclip.domains.identity.public import ActAs
 from iclip.domains.uploads.api import create_uploads_router
-from iclip.domains.uploads.service import RecordUpload, UploadService
+from iclip.domains.uploads.service import FindRecordedUpload, RecordUpload, UploadService
 from iclip.platform.object_store.store import SignedUploadStore
 
 
@@ -20,11 +20,16 @@ class UploadsModule:
 
 
 def build_uploads_module(
-    objects: SignedUploadStore, *, act_as: ActAs, record: RecordUpload
+    objects: SignedUploadStore,
+    *,
+    act_as: ActAs,
+    record: RecordUpload,
+    find_recorded: FindRecordedUpload,
 ) -> UploadsModule:
-    """``record`` 把确认过的上传记成一条记录，由组合根接到生成域。"""
+    """``record`` 把确认过的上传记成一条记录，``find_recorded`` 查这次上传记过没有；两者都由
+    组合根接到生成域。"""
 
-    service = UploadService(objects, record=record)
+    service = UploadService(objects, record=record, find_recorded=find_recorded)
     return UploadsModule(routers=(create_uploads_router(service, act_as=act_as),), service=service)
 
 

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { RunningElapsed } from '../components/running-elapsed'
+import { VersionThumb } from '../components/version-thumb'
 
 export type VersionStripEntry = {
   key: string
@@ -29,7 +30,7 @@ function Thumbnail({ src }: { src: string | undefined }) {
   const [failed, setFailed] = useState(false)
   if (src === undefined || failed)
     return (
-      <span className="video-editor-version-empty">
+      <span className="version-thumb-empty">
         <Icon decorative name="video" size="sm" />
       </span>
     )
@@ -42,24 +43,19 @@ export function EditorVersionStrip({ entries, selectedKey, onSelect }: EditorVer
   return (
     <div aria-label="视频版本" className="video-editor-versions" role="group">
       {entries.map((entry) => (
-        <button
-          aria-label={entry.name}
-          aria-pressed={entry.key === selectedKey}
-          className="video-editor-version ui-focus"
+        <VersionThumb
           key={entry.key}
+          label={entry.label}
+          name={entry.name}
           onClick={() => onSelect(entry.key)}
-          title={entry.name}
-          type="button"
+          selected={entry.key === selectedKey}
+          state={
+            entry.running === undefined ? undefined : <RunningElapsed since={entry.running.since} />
+          }
+          unseen={entry.unseen}
         >
           <Thumbnail key={entry.poster} src={entry.poster} />
-          {entry.running === undefined ? null : (
-            <span className="video-editor-version-state">
-              <RunningElapsed since={entry.running.since} />
-            </span>
-          )}
-          {entry.unseen ? <span className="video-editor-version-dot" /> : null}
-          <span className="video-editor-version-label">{entry.label}</span>
-        </button>
+        </VersionThumb>
       ))}
     </div>
   )

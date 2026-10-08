@@ -1,4 +1,4 @@
-/** 带搜索框的单选列表：过滤、活动项、键盘与 ARIA 在这里；候选顺序、行内容和选中语义由调用方组合。 */
+/** 带搜索框的选择列表（单选或多选）：过滤、活动项、键盘与 ARIA 在这里；候选顺序、行内容和选中语义由调用方组合。 */
 
 import {
   createContext,
@@ -21,7 +21,8 @@ type SearchListContextValue = {
   matches: readonly SearchListOption[]
   query: string
   changeQuery: (query: string) => void
-  value: string | null
+  isSelected: (id: string) => boolean
+  multiple: boolean
   activeId: string | null
   setActiveId: (id: string | null) => void
   disabled: boolean
@@ -48,8 +49,9 @@ const OPTION_CLASS =
 
 type SearchListRootProps = {
   options: readonly SearchListOption[]
-  value: string | null
-  /** 点击或 Enter 选中某项；再次选中已选项是否清除由调用方决定。 */
+  /** 单选给一个 id 或 null；多选给已选 id 的数组，列表随之标成多选。 */
+  value: string | null | readonly string[]
+  /** 点击或 Enter 选中某项；再次选中已选项是清除还是取消勾选由调用方决定。 */
   onSelect: (id: string) => void
   disabled?: boolean | undefined
   /** 首次加载中：列表标 aria-busy，状态区显示加载文案。 */
@@ -80,6 +82,8 @@ export function SearchListRoot({
   const matches = options.filter((option) => option.label.toLocaleLowerCase().includes(search))
   const activeIndex = matches.findIndex((option) => option.id === activeId)
   const activeOption = matches[activeIndex]
+  const multiple = Array.isArray(value)
+  const isSelected = (id: string) => (Array.isArray(value) ? value.includes(id) : value === id)
 
   const changeQuery = (next: string) => {
     setQuery(next)
@@ -137,7 +141,8 @@ export function SearchListRoot({
         matches,
         query,
         changeQuery,
-        value,
+        isSelected,
+        multiple,
         activeId,
         setActiveId,
         disabled,
@@ -222,12 +227,23 @@ export function SearchListOptions({
     <SearchListOptionContent option={option} selected={selected} />
   ),
 }: SearchListOptionsProps) {
-  const { matches, value, activeId, setActiveId, disabled, pending, listId, listRef, select } =
-    useSearchListContext()
+  const {
+    matches,
+    isSelected,
+    multiple,
+    activeId,
+    setActiveId,
+    disabled,
+    pending,
+    listId,
+    listRef,
+    select,
+  } = useSearchListContext()
   return (
     <div
       aria-busy={pending}
       aria-label={label}
+      aria-multiselectable={multiple || undefined}
       // 列表自己限高滚动，不随外层弹层的高度上限收缩，否则受限空间里选项会被裁掉。
       className={cn('max-h-72 shrink-0 overflow-y-auto overscroll-contain', className)}
       id={listId}
@@ -235,7 +251,7 @@ export function SearchListOptions({
       role="listbox"
     >
       {matches.map((option) => {
-        const selected = option.id === value
+        const selected = isSelected(option.id)
         const active = option.id === activeId
         return (
           <button

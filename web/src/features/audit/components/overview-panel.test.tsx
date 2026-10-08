@@ -26,8 +26,8 @@ const renderOverview = async (overview: Overview, range: OverviewRange = { prese
 
 const card = (name: string) => screen.getByRole('article', { name })
 
-/** 卡上的环比字悬停写着「和 X–Y 比」，没有环比就找不到。 */
-const deltaOf = (element: HTMLElement) => within(element).queryByTitle(/^和 .+ 比$/)
+/** 卡上的环比字悬停写着「与 X–Y 相比」，没有环比就找不到。 */
+const deltaOf = (element: HTMLElement) => within(element).queryByTitle(/^与 .+ 相比$/)
 
 const legend = () => screen.getByRole('group', { name: '图例' })
 

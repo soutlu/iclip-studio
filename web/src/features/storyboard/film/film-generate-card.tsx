@@ -52,7 +52,7 @@ export function FilmGenerateCard({
   const result = job?.status === 'completed' ? (job.outputUrl ?? undefined) : undefined
   const failed = job?.status === 'failed'
   // 提交没被收下的原话优先；其次是上次生成失败的原因。
-  const reason = error ?? (failed ? (job.errorMessage ?? '这次没生成出来') : undefined)
+  const reason = error ?? (failed ? (job.errorMessage ?? '本次生成失败') : undefined)
   const hint = missingReferencesText(frame.missing)
   const foot = (
     <>

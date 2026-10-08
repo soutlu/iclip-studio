@@ -182,6 +182,17 @@
   font-weight: 400;
 }
 
+/* 参考视频拆解里的表：表头与第一列（类型）是两三个字，不逐字折行；第二列（名字）留够宽度。
+   放不下时在表自己的横向滚动里看，不撑开右栏。 */
+.reference-breakdown th,
+.reference-breakdown td:first-child {
+  white-space: nowrap;
+}
+
+.reference-breakdown td:nth-child(2) {
+  min-width: 6em;
+}
+
 /* 读取中的占位用原生多列排版，列宽与真卡的列数档位相近。 */
 .library-skeleton-grid {
   columns: 5 220px;

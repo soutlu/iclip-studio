@@ -24,7 +24,7 @@ export function FileList({ error, files, lastOpened, onOpen, pending }: FileList
   if (pending) return <PanelNotice text="正在读取文件…" />
   if (error !== undefined) return <PanelNotice text={error} />
   if (files === undefined || files.length === 0) {
-    return <PanelNotice hint="agent 写下的每一份文件都会列在这里。" text="还没有文件" />
+    return <PanelNotice hint="agent 写入的所有文件都将显示在这里" text="暂无文件" />
   }
 
   return (

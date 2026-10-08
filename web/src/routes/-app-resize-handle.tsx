@@ -97,7 +97,7 @@ export function AppResizeHandle({
       onKeyDown={nudge}
       onPointerDown={startDrag}
       style={{ left: position - APP_RESIZE_HANDLE_WIDTH / 2, width: APP_RESIZE_HANDLE_WIDTH }}
-      title={`${label}（当前 ${value}px，可拖动 ${min}–${max}，双击恢复默认）`}
+      title={`${label}（当前 ${value}px，拖动可在 ${min}–${max}px 之间调整，双击可恢复默认）`}
       type="button"
     >
       {/* 热区覆盖边界；分隔线自身不占列宽。 */}

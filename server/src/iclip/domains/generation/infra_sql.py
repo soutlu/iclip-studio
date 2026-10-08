@@ -49,6 +49,7 @@ from iclip.domains.generation.schemas import (
     KIND_VIDEO,
     OPERATION_COMPOSE,
     OPERATION_GENERATE,
+    OPERATION_UPLOAD,
     request_from_payload,
     request_to_payload,
 )
@@ -108,6 +109,8 @@ generation_jobs_table = Table(
     Column("watermark_output_url", Text, nullable=True),
     # 产物时长（毫秒）：只有本系统自己加工、量过的才有。
     Column("duration_ms", Integer, nullable=True),
+    # 文件的 MD5，只有视频上传有：桶里是一次整传的对象时取它的 ETag，确认时按它认出同一个文件。
+    Column("content_md5", Text, nullable=True),
     Column("error_code", Text, nullable=True),
     Column("error_message", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -140,6 +143,13 @@ generation_jobs_table = Table(
         "conversation_id",
         "output_url",
         postgresql_where=text("kind = 'image' AND output_url IS NOT NULL"),
+    ),
+    # 确认视频上传时按 MD5 找同一个文件最早的那条；与迁移 0023 同名同式。
+    Index(
+        "ix_generation_jobs_video_upload_md5",
+        "content_md5",
+        "created_at",
+        postgresql_where=text("content_md5 IS NOT NULL"),
     ),
     # 每种行的必填与留空由组合约束兜底，与迁移 0020 同名同式：出片与图片生成没有来源和区间，
     # 编辑段必有来源、原作与区间，合成必有来源与原作、没有区间；帧图编辑两种来源至多一个，
@@ -190,6 +200,11 @@ generation_jobs_table = Table(
         "operation NOT IN ('cut', 'upload')"
         " OR (status = 'completed' AND output_url IS NOT NULL AND finished_at IS NOT NULL)",
         name="ck_generation_jobs_settled",
+    ),
+    # 只有视频上传记 MD5；与迁移 0023 同名同式。
+    CheckConstraint(
+        "content_md5 IS NULL OR (kind = 'video' AND operation = 'upload')",
+        name="ck_generation_jobs_content_md5",
     ),
 )
 
@@ -297,6 +312,21 @@ class SqlGenerationRepository:
         if operation is not None:
             stmt = stmt.where(_JOBS.operation == operation)
         stmt = stmt.order_by(_JOBS.created_at, _JOBS.id).limit(1)
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).mappings().one_or_none()
+        return None if row is None else _job_from_row(row)
+
+    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
+        stmt = (
+            select(generation_jobs_table)
+            .where(
+                _JOBS.content_md5 == content_md5,
+                _JOBS.kind == KIND_VIDEO,
+                _JOBS.operation == OPERATION_UPLOAD,
+            )
+            .order_by(_JOBS.created_at, _JOBS.id)
+            .limit(1)
+        )
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).mappings().one_or_none()
         return None if row is None else _job_from_row(row)
@@ -573,6 +603,7 @@ def _settled_values(job: GenerationJob) -> dict[str, Any]:
         "output_url": job.output_url,
         "watermark_output_url": None,
         "duration_ms": None,
+        "content_md5": job.content_md5,
         "error_code": None,
         "error_message": None,
         "created_at": func.now(),
@@ -608,6 +639,7 @@ def _job_from_row(row: RowMapping) -> GenerationJob:
         output_url=row["output_url"],
         watermark_output_url=row["watermark_output_url"],
         duration_ms=row["duration_ms"],
+        content_md5=row["content_md5"],
         error_code=row["error_code"],
         error_message=row["error_message"],
         created_at=row["created_at"],

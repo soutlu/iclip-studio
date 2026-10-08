@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import httpx
-import structlog
 from pydantic import ValidationError
 
 from iclip.app.film_images import FilmImagesAdapter
-from iclip.capabilities.iclip_studio.breakdown.media import FfmpegVideoSampler
-from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
-from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
+from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.shot_video.capability import GenerationPolicy, shot_video_capability
 from iclip.capabilities.shot_video.ports import (
@@ -34,17 +30,17 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import ImageGenerationIn
 from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
+from iclip.domains.references.service import ReferenceService
 from iclip.harness.agents import AgentCapabilities, delegate_display_table
 from iclip.harness.media import image_info_url
 from iclip.harness.skills import skill_display_table
 from iclip.platform.file_store.store import FileSpace, FileStore
 from iclip.platform.http import validation_error_detail
 from iclip.platform.material_ledger.store import MaterialLedger
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
 from iclip.platform.transcript.display import ToolDisplayRegistry, ToolDisplaySource
-
-_logger = structlog.stdlib.get_logger(__name__)
 
 CapabilityTable = Mapping[str, AgentCapabilities]
 """能力名称对应一组实例；同一声明可挂载多项能力，运行状态由 for_run 克隆隔离。"""
@@ -155,44 +151,6 @@ class ObjectWriterAdapter:
         return self._store.public_url(object_key)
 
 
-class OssSharedBreakdowns:
-    """把所有用户共用的视频拆解文档放在公开桶里，一条视频一个对象，按地址摘要定位。
-
-    它只为省掉重复的模型调用：取不到一律当作没拆过，存不下只记日志，两头都不让拆解失败。
-    """
-
-    def __init__(self, store: PublicBucket, client: httpx.AsyncClient) -> None:
-        self._store = store
-        self._client = client
-
-    async def get(self, video_url: str) -> str | None:
-        try:
-            response = await self._client.get(self._store.public_url(_breakdown_key(video_url)))
-        except httpx.HTTPError as exc:
-            _logger.warning("共用的视频拆解取不到，按没拆过处理", reason=type(exc).__name__)
-            return None
-        if response.status_code == 404:
-            return None
-        if response.status_code != 200:
-            _logger.warning("共用的视频拆解取不到，按没拆过处理", status=response.status_code)
-            return None
-        return response.content.decode("utf-8", errors="replace").strip() or None
-
-    async def put(self, video_url: str, document: str) -> None:
-        try:
-            await self._store.put_public_object(
-                object_key=_breakdown_key(video_url),
-                content=document.encode("utf-8"),
-                content_type="text/markdown; charset=utf-8",
-            )
-        except ObjectStoreUnavailable as exc:
-            _logger.warning("视频拆解没存进共用目录，下次会重新拆", reason=str(exc))
-
-
-def _breakdown_key(video_url: str) -> str:
-    return MEDIA_PATHS.video_breakdown(digest=hashlib.sha256(video_url.encode("utf-8")).hexdigest())
-
-
 def _job_view(job: GenerationJob) -> ImageJob:
     """生成任务到能力结果的投影，渠道取实际请求快照。"""
 
@@ -224,12 +182,15 @@ def build_capability_table(
     video: ResolvedVideo | None = None,
     shot_video: ResolvedShotVideo | None = None,
     iclip_studio: ResolvedIclipStudio | None = None,
+    reference_service: ReferenceService | None = None,
     image_models: frozenset[str] = frozenset(),
+    media_codec: MediaCodec | None = None,
 ) -> CapabilityTable:
     """按组合根递进来的运行值登记能力名，没给的不登记。
 
     ``shot_video`` 由组合根按 ``ResolvedSettings.shot_tools_enabled`` 决定是否传入；传了却缺
-    媒体生成、切图记录或对象存储是装配错误，直接报。``iclip_studio`` 传了却缺对象存储同样直接报。
+    媒体生成、切图记录、对象存储或取帧用的编解码（``media_codec``）是装配错误，直接报。
+    ``iclip_studio`` 传了却缺参考视频服务（拆解配好的那个）同样直接报。
     """
 
     # 文件生产与读取共用 FileSpace，避免命名空间不一致。
@@ -257,24 +218,15 @@ def build_capability_table(
             ),
         )
     if iclip_studio is not None:
-        if object_store is None:
+        if reference_service is None:
             raise RuntimeError(
-                "装配 iclip_studio 要有对象存储：拆过的视频存在那里供所有对话共用；"
-                "配上 OSS，或去掉配置里的 iclip_studio 段"
+                "装配 iclip_studio 要有参考视频服务：导演拆的视频与资料库共用一份拆解；"
+                "组合根应在配了 iclip_studio 时传入"
             )
         table["iclip_studio"] = (
             IclipStudio[Any](
                 space=space,
-                breakdown=VideoBreakdown(
-                    model=ArkBreakdownModel(
-                        http_client,
-                        url=iclip_studio.breakdown_url,
-                        api_key=iclip_studio.breakdown_api_key,
-                        model=iclip_studio.breakdown_model,
-                    ),
-                    sampler=FfmpegVideoSampler(http_client),
-                ),
-                shared=OssSharedBreakdowns(object_store, http_client),
+                breakdowns=ReferenceBreakdownsAdapter(reference_service),
                 ledger=material_ledger,
                 images=(
                     FilmImagesAdapter(generation_service)
@@ -285,9 +237,14 @@ def build_capability_table(
             ),
         )
     if shot_video is not None:
-        if generation_service is None or settled_records is None or object_store is None:
+        if (
+            generation_service is None
+            or settled_records is None
+            or object_store is None
+            or media_codec is None
+        ):
             raise RuntimeError(
-                "装配 shot_video 要有媒体生成服务、切图记录与对象存储；"
+                "装配 shot_video 要有媒体生成服务、切图记录、对象存储与编解码；"
                 "组合根应按 shot_tools_enabled 决定是否传入"
             )
         table["shot_video"] = (
@@ -307,6 +264,7 @@ def build_capability_table(
                     backoff_factor=shot_video.backoff_factor,
                     total_timeout_seconds=shot_video.job_timeout_seconds,
                 ),
+                codec=media_codec,
             ),
         )
     return table
@@ -361,7 +319,6 @@ __all__ = [
     "GenerationsAdapter",
     "ObjectWriterAdapter",
     "OssMediaProbe",
-    "OssSharedBreakdowns",
     "RequiresCapabilities",
     "build_capability_table",
     "build_display_registry",

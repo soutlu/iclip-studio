@@ -60,7 +60,7 @@ export const useFrameAdditions = ({
   const pickExisting = (number: number, previousUrl: string) => {
     if (editingDisabled) return
     if (shot.image_urls[number - 1] !== previousUrl) {
-      toast.error('这张图片已发生变化，请重新选择')
+      toast.error('该图片已发生变化，请重新选择')
       return
     }
     const taken = takeTarget()

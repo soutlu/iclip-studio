@@ -37,6 +37,7 @@ from iclip.capabilities.shot_video.shots import (
     sample_rows,
 )
 from iclip.platform.file_store.store import FileStore
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.ffmpeg import MAX_VIDEO_BYTES, MediaError, fetched, probe_duration_ms
 
 EXTRACTION_PATH: Final = "frames/extraction.json"
@@ -79,10 +80,12 @@ class FrameExtractor:
         client: httpx.AsyncClient,
         paths: ShotVideoPaths,
         objects: PublicObjectWriter,
+        codec: MediaCodec,
     ) -> None:
         self._client = client
         self._paths = paths
         self._objects = objects
+        self._codec = codec
 
     async def shot_rows(
         self, files: FileStore, namespace: str, doc_path: str
@@ -187,7 +190,9 @@ class FrameExtractor:
         它与建账时逐字相同。"""
 
         with TemporaryDirectory(prefix="shot-video-frames-") as tmp:
-            frames = await extract_frames(source, fps=1000 / FRAME_INTERVAL_MS, out_dir=Path(tmp))
+            frames = await extract_frames(
+                source, fps=1000 / FRAME_INTERVAL_MS, out_dir=Path(tmp), codec=self._codec
+            )
             cell_aspect = await asyncio.to_thread(image_aspect, frames[0])
             sampled = sample_rows(rows, interval_ms=FRAME_INTERVAL_MS)
             boards: list[LedgerBoard] = []

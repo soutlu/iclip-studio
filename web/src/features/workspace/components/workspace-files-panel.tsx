@@ -41,7 +41,7 @@ export function WorkspaceFilesPanel({ conversationId }: ArtifactRendererProps) {
   }
   return (
     <FileList
-      error={files.isError ? errorMessageOf(files.error, '读取工作区文件失败') : undefined}
+      error={files.isError ? errorMessageOf(files.error, '读取工作区文件失败，请重试') : undefined}
       files={files.data?.files}
       lastOpened={lastOpened}
       onOpen={show}

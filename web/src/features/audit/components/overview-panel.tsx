@@ -30,28 +30,28 @@ const CARDS: readonly {
 }[] = [
   {
     key: 'deliveries',
-    info: '有成片的需求单各算一件；没挂需求单、但有成片的对话各算一件。环比按活跃日的日均比。',
+    info: '有成片的需求单各计为 1 件；未关联需求单、但有成片的对话各计为 1 件。环比按活跃日的日均值计算。',
     section: 'output',
   },
   {
     key: 'attempts',
-    info: '一个镜是一段对话里的一个镜号。平均每个镜成功生成了几次，失败的不计费、不算；一次都没成功的镜不算。越接近 1 越好。',
+    info: '一个镜头指一段对话中的一个镜号。统计平均每个镜头成功生成的次数，失败的不计费、不计入；从未成功生成的镜头不计入。越接近 1 越好。',
     section: 'quality',
   },
   {
     key: 'cycle',
-    info: '一段对话从第一次运行到最后一条成片，只算 agent 在干活或视频在生成的时间，取平均。中间空了超过 30 分钟的不计，30 分钟以内的照算。',
+    info: '统计一段对话从首次运行到最后一条成片的时长，仅计 agent 运行或视频生成的时间，取平均值。中途间隔超过 30 分钟的部分不计入，30 分钟以内的照常计入。',
     section: 'speed',
   },
   {
     key: 'effective',
-    info: '有人下载过的镜 ÷ 镜数。下载的是合成时，按原作算到原作所在的镜。',
+    info: '有人下载过的镜头数 ÷ 镜头总数。下载的是合成视频时，按原作计入原作所在的镜头。',
     section: 'quality',
     wide: true,
   },
   {
     key: 'perDelivery',
-    info: '模型 token 合计 ÷ 成片件数，按输入、输出、缓存写入、缓存读取拆开。标题生成、压缩摘要、视频理解不计。',
+    info: '模型 token 合计 ÷ 成片件数，按输入、输出、缓存写入、缓存读取分项统计。标题生成、压缩摘要、视频理解不计入。',
     section: 'cost',
     wide: true,
   },
@@ -69,7 +69,7 @@ const BUCKET_UNIT = { hour: '小时', day: '天', week: '周' } as const
 
 /** 均线窗里不够这么多活跃日、镜、件就往前补；数字与服务端的补窗规则一致，只用在说明里。 */
 const AVERAGE_INFO =
-  '这一天往前推 7 天 / 30 天（含这一天）的平均。件数只平均活跃日；比率与中位数在这段时间里重算。这段时间里不够 3 个活跃日、或不够 30 镜 / 10 件，就再往前补。'
+  '当天往前 7 天 / 30 天（含当天）的平均值。件数仅按活跃日平均；比率与中位数在该时间段内重新计算。该时间段内不足 3 个活跃日、或不足 30 镜 / 10 件时，继续向前补足。'
 
 export function OverviewPanel({ range, onRangeChange, nameOf }: OverviewPanelProps) {
   const overview = useAuditOverview(range)
@@ -162,7 +162,7 @@ function OverviewCard({
   return (
     <TrendCard
       className={card.wide === true ? 'lg:col-span-3' : 'lg:col-span-2'}
-      deltaTitle={`和 ${previousRange} 比`}
+      deltaTitle={`与 ${previousRange} 相比`}
       head={cardHead(card.key, overview, previousRange)}
       info={card.info}
       legend={legend}
@@ -214,14 +214,14 @@ function Legend({ overview }: { overview: Overview }) {
           <LegendItem marks={<Mark kind="line" />}>7 日均线</LegendItem>
           <LegendItem marks={<Mark kind="dash" />}>
             30 日均线
-            <InfoTip text={`按小时只给比率类画均线。${AVERAGE_INFO}`} />
+            <InfoTip text={`按小时统计时，仅比率类指标显示均线。${AVERAGE_INFO}`} />
           </LegendItem>
         </>
       ) : null}
       {inactive ? (
         <LegendItem marks={<Mark kind="inactive" />}>
           非活跃日
-          <InfoTip text="当天没有人发起过运行。均线和日均只算活跃日。" />
+          <InfoTip text="当天无人发起运行。均线和日均仅计算活跃日。" />
         </LegendItem>
       ) : null}
     </div>

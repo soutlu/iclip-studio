@@ -46,6 +46,8 @@ media_generation:
         image_edit_task: edit
   poll_interval_seconds: 5 # 状态查询间隔，固定轮询
   job_timeout_seconds: 3600 # 提交后等待终态的上限
+  # 本地合成每个进程的并发；不写时按启动探测选中的编解码取：硬件 4，软件 2
+  # compose_concurrency: 4
 
 video:
   # VIDEO_UNDERSTANDING_URL 为空时不注册 video。
@@ -55,8 +57,10 @@ video:
   understanding_fps: 5
 
 iclip_studio:
-  # 写出这一段即启用导演流程的工具；须同时配置 VIDEO_UNDERSTANDING_* 与对象存储，并在 PATH 上有 ffmpeg。
+  # 写出这一段即启用导演流程的工具；须同时配置 VIDEO_UNDERSTANDING_*，并在 PATH 上有 ffmpeg。
   breakdown_model: doubao-seed-2-1-lite-260915 # 拆解视频用的供应方模型名
+  # 参考视频后台拆解每个进程的并发，多进程时总并发乘以进程数；不写时按启动探测选中的编解码取：硬件 4，软件 2
+  # breakdown_concurrency: 4
 
 shot_video:
   # 写出这一段即启用取帧与出图；须同时启用媒体生成与对象存储，并在 PATH 上有 ffmpeg。

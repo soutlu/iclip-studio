@@ -18,7 +18,7 @@ export function ShotStrip({
   retryAtLeast: number
 }) {
   if (shots.length === 0) {
-    return <p className="text-label text-on-surface-muted">没有成功生成的镜头</p>
+    return <p className="text-label text-on-surface-muted">暂无成功生成的镜头</p>
   }
   return (
     <ul aria-label="镜头带" className="flex flex-wrap gap-x-5 gap-y-2">

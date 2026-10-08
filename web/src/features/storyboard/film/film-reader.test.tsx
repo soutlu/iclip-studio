@@ -228,7 +228,7 @@ describe('制作页', () => {
     )
 
     const dialog = await screen.findByRole('dialog', { name: '分镜有别的改动' })
-    expect(dialog).toHaveTextContent('镜头 1在你编辑时被改了')
+    expect(dialog).toHaveTextContent('镜头 1在你编辑期间已被修改')
     await userEvent.click(within(dialog).getByRole('button', { name: '留我的' }))
 
     await waitFor(() => expect(bodies).toHaveLength(2))
@@ -293,7 +293,7 @@ describe('制作页', () => {
 
   it('分镜检查出问题时只写有几处，交给 AI 导演改', async () => {
     await mount({ problems: 2 })
-    expect(await screen.findByText('分镜有 2 处要 AI 导演改一下')).toBeInTheDocument()
+    expect(await screen.findByText('分镜有 2 处问题，需要 AI 导演修改')).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
@@ -332,14 +332,14 @@ describe('制作页的图', () => {
     const { choices } = recordImages()
     const script = await renderFilm()
     pasteFilesIntoComposer(within(script).getByRole('textbox', { name: '镜头 1的描述' }), [photo()])
-    expect(await screen.findByText('图片请贴到画面上')).toBeInTheDocument()
+    expect(await screen.findByText('请将图片粘贴到画面上')).toBeInTheDocument()
 
     pasteFilesIntoComposer(screen.getByRole('button', { name: '打开原图' }), [photo()])
     await waitFor(() => expect(choices).toHaveLength(1))
     expect(choices[0]?.node).toBe('girl_look')
   })
 
-  it('还没有图的生成图在舞台上是生成卡：点「生成这张」按这张图发，随即转成生成中', async () => {
+  it('暂无图片的生成图在舞台上是生成卡：点「生成这张」按这张图发，随即转成生成中', async () => {
     const { generations } = recordImages()
     const script = await renderFilm()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
@@ -359,8 +359,8 @@ describe('制作页的图', () => {
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
 
     const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
-    expect(card).toHaveTextContent('涂鸦滑板场的图缺失，参考描述生成')
-    expect(screen.getByRole('group', { name: '出片工具栏' })).not.toHaveTextContent('图缺失')
+    expect(card).toHaveTextContent('涂鸦滑板场的图片缺失，将参考描述生成')
+    expect(screen.getByRole('group', { name: '出片工具栏' })).not.toHaveTextContent('图片缺失')
     // 没图的参考图只写文字，不出芯片。
     expect(within(card).queryByRole('img', { name: /涂鸦滑板场/ })).not.toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: '编辑图片' })).not.toBeInTheDocument()
@@ -393,7 +393,7 @@ describe('制作页的图', () => {
     const card = await screen.findByRole('region', { name: '镜头 2的生成结果' })
     expect(card).toHaveTextContent('镜头 2 还没选用')
     expect(card.querySelector('img')).toHaveAttribute('src', result)
-    expect(card).toHaveTextContent('涂鸦滑板场的图缺失，参考描述生成')
+    expect(card).toHaveTextContent('涂鸦滑板场的图片缺失，将参考描述生成')
     expect(within(card).getByRole('button', { name: '再生成' })).toBeInTheDocument()
     // 生成过就能开编辑器，到版本里挑。
     expect(screen.getByRole('button', { name: '编辑图片' })).toBeInTheDocument()

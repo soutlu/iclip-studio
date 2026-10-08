@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import { IconButton } from '@/shared/ui/button'
@@ -8,6 +8,7 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 import { useUnseenResults } from '../components/use-unseen-results'
+import { versionThumbSize } from '../components/version-thumb-size'
 import { AnnotationCanvas } from './annotation-canvas'
 import { exportAnnotatedImage } from './annotation-export'
 import { EditComposer, type EditComposerHandle } from './edit-composer'
@@ -89,6 +90,8 @@ export function FrameImageEditor({
   const [operationError, setOperationError] = useState<string | null>(null)
   // 从外部整份换掉草稿时加一：画布与输入卡换 key 重挂，撤销栈随之清空、输入卡装回新草稿。
   const [draftRevision, setDraftRevision] = useState(0)
+  // 标注工具条的位置：桌面叠在舞台左侧，窄屏是舞台下方一行；画布用 portal 渲染进来。
+  const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null)
   const composerRef = useRef<EditComposerHandle>(null)
   // 再生成时输入卡里的描述：开着编辑器时留着改过的样子，关掉再开回到文件里的。
   const [regenerateParts, setRegenerateParts] = useState(regenerate?.parts ?? [])
@@ -124,14 +127,15 @@ export function FrameImageEditor({
   const baseUrl = selected === undefined ? '' : entryBaseUrl(selected, currentUrl ?? '')
   const draft = useMemo(() => draftOf(drafts.drafts, baseUrl), [drafts.drafts, baseUrl])
   const inFlight = entries.filter((entry) => entry.kind === 'pending').length
+  // 说的是舞台上这一张；没有要提醒的就不占这一行（画幅在输入卡的设置行里）。
   const footnote =
     inFlight > 0
-      ? `有 ${inFlight} 个任务在生成或排队，关掉窗口也会继续`
+      ? `有 ${inFlight} 个任务正在生成或排队，关闭窗口不影响生成`
       : regenerating
-        ? '新的出来后在版本里，选用才用上'
+        ? '新结果将出现在版本中，选用后才会生效'
         : selected?.kind === 'image'
           ? words.replaceNote
-          : words.aspectNote(aspectRatio)
+          : null
 
   const select = (key: string) => {
     setSelectedKey(key)
@@ -152,18 +156,18 @@ export function FrameImageEditor({
       return
     }
     if (baseUrl === '') {
-      setOperationError('还没有可以改的图，先在版本里选一张出了图的')
+      setOperationError('暂无可编辑的图片，请先在版本中选择一张已生成的图片')
       return
     }
     if (model === undefined || resolution === undefined) {
-      setOperationError('图片模型还没读到，稍等一下再提交')
+      setOperationError('图片模型尚未加载，请稍后再提交')
       return
     }
     setOperationError(null)
     try {
       // 引用了标注才导出标注图，它代替干净底图占 @图片1。
       const annotatedUrl = referencesAnnotation(parts)
-        ? await uploadMediaFile(await exportAnnotatedImage(baseUrl, annotations), 'image')
+        ? (await uploadMediaFile(await exportAnnotatedImage(baseUrl, annotations), 'image')).url
         : undefined
       const request = compileEditRequest(parts, {
         annotatedUrl,
@@ -202,7 +206,7 @@ export function FrameImageEditor({
     if (job === undefined || job === null) return
     const urls = readSubmittedImages(job)
     if (urls.length === 0) {
-      toast.error('这条记录没有可恢复的输入')
+      toast.error('该记录没有可恢复的输入')
       return
     }
     // 草稿归属于底图。恢复时也切回它，避免画面和装回的输入指向不同图片。
@@ -221,7 +225,7 @@ export function FrameImageEditor({
     drafts.updateDraft(base, () => ({ annotations: [], parts }))
     setDraftRevision((value) => value + 1)
     select(destination.key)
-    toast.info('已装回这次提交的图片和修改要求；画布上的标注需要重画')
+    toast.info('已恢复本次提交的图片和修改要求；画布上的标注需重新绘制')
   }
 
   return (
@@ -256,13 +260,21 @@ export function FrameImageEditor({
           title={
             <span className="image-edit-title">
               <span>编辑图片</span>{' '}
-              <span className="text-body-sm font-normal text-on-surface-muted">· {subtitle}</span>
+              <span className="text-body-sm font-normal text-on-surface-muted">{subtitle}</span>
             </span>
           }
           closeLabel="关闭图片编辑"
         />
         <div className="image-edit-body">
-          <div className="image-edit-stage-area">
+          <div
+            className="image-edit-stage-area"
+            // 横版的小图格更宽，画面两侧按它让出版本条的位置。
+            style={
+              {
+                '--image-edit-thumb-width': `${versionThumbSize(aspectRatio).width}px`,
+              } as CSSProperties
+            }
+          >
             {regenerating ? (
               <StillStage aspectRatio={aspectRatio} label={words.current} url={currentUrl} />
             ) : (
@@ -286,6 +298,7 @@ export function FrameImageEditor({
                       if (annotation !== undefined)
                         composerRef.current?.insertAnnotation(annotation)
                     }}
+                    toolbarHost={toolbarHost}
                   />
                 }
                 currentUrl={currentUrl}
@@ -300,10 +313,12 @@ export function FrameImageEditor({
                 }}
               />
             )}
+            <div className="image-edit-tools-host" ref={setToolbarHost} />
             <VersionStrip
               entries={entries}
               words={words}
               currentUrl={currentUrl ?? ''}
+              aspectRatio={aspectRatio}
               disabled={frameReplace.pending !== null}
               selectedKey={regenerating ? REGENERATE_KEY : (selected?.key ?? CURRENT_KEY)}
               onSelect={select}
@@ -329,8 +344,8 @@ export function FrameImageEditor({
                       <IconButton
                         label="图片历史操作"
                         name="more"
-                        size="md"
-                        className="rounded-full"
+                        size="sm"
+                        className="image-edit-versions-more"
                       />
                     </MenuTrigger>
                     <MenuSurface align="end" side="left">
@@ -343,6 +358,7 @@ export function FrameImageEditor({
               }
             />
           </div>
+          {footnote === null ? null : <p className="image-edit-footnote">{footnote}</p>}
           {aspectUnsupported && !regenerating ? (
             <p role="alert" className="text-body-sm text-error">
               暂无模型支持 {aspectRatio}，请先调整分镜画幅
@@ -420,6 +436,7 @@ export function FrameImageEditor({
                     models={models}
                     options={options}
                     aspectRatio={aspectRatio}
+                    aspectNote={words.aspectNote(aspectRatio)}
                     onModelChange={setWantedModel}
                     onChannelChange={setWantedChannel}
                     onResolutionChange={setWantedResolution}
@@ -428,7 +445,6 @@ export function FrameImageEditor({
               }
             />
           )}
-          <p className="image-edit-footnote">{footnote}</p>
         </div>
       </DialogSurface>
     </DialogRoot>

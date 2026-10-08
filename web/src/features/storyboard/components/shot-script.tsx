@@ -284,7 +284,7 @@ function SegmentCard({
         <div aria-hidden className="storyboard-drop bg-glass-surface">
           <span className="storyboard-drop-hint">
             <Icon decorative name="add-file" size="md" />
-            松开添加到{label}
+            松开可添加到{label}
           </span>
         </div>
       ) : null}

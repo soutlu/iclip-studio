@@ -352,9 +352,10 @@ test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', as
   await entry.click()
   const editor = page.getByRole('dialog', { name: /^编辑图片/ })
   await expect(editor).toBeVisible()
-  await expect(editor).toHaveAccessibleName('编辑图片 · 镜头组 1 · 帧 @1')
-  await expect(editor.getByRole('group', { name: '这一帧的图片', exact: true })).toBeVisible()
+  await expect(editor).toHaveAccessibleName('编辑图片 镜头组 1 · 帧 @1')
   await expect(editor.getByLabel('图片模型', { exact: true })).toBeVisible()
+  // 这一帧还没编辑过，只有当前帧一张：没得切，版本条不显示。
+  await expect(editor.getByRole('group', { name: '这一帧的图片', exact: true })).toHaveCount(0)
   await page.screenshot({
     animations: 'disabled',
     path: '../.artifacts/design-qa/storyboard-reader/image-edit-entry-desktop.png',
@@ -498,12 +499,12 @@ for (const width of [1335, 390] as const) {
     await heading.scrollIntoViewIfNeeded()
     const dropped = await imageTransfer(page, png, '拖入.png')
     await heading.dispatchEvent('dragenter', { dataTransfer: dropped })
-    await expect(second.getByText('松开添加到镜头 2')).toBeVisible()
+    await expect(second.getByText('松开可添加到镜头 2')).toBeVisible()
     await expect(page.getByTestId('composer-drop-overlay')).toHaveCount(0)
     await screenshotBothThemes(page, `${qa}-drop`)
     await heading.dispatchEvent('drop', { dataTransfer: dropped })
     await dropped.dispose()
-    await expect(second.getByText('松开添加到镜头 2')).toHaveCount(0)
+    await expect(second.getByText('松开可添加到镜头 2')).toHaveCount(0)
     await expect(second.getByRole('button', { name: '看第 3 帧', exact: true })).toBeVisible()
     await expect
       .poll(async () => (await readDocument(page)).document.shots[0]?.prompt.timeline[1])

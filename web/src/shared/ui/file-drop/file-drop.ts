@@ -13,7 +13,8 @@
  * - 兜底接收者 {@link useWindowFileDrop}（聊天输入框）：挂在 window 上，只收没被接管的文件；
  *   自己区域里的 preventDefault（编辑器按落点插入）不算被别处接管。
  *
- * 文件夹没有 MIME、上传签名不收：局部拖放区整批拒收并回调 `onDirectory`，兜底接收者滤掉文件夹收其余的。
+ * 文件夹没有 MIME、上传签名不收：局部拖放区不调 `onFiles`，改调 `onDirectory` 并交出其余文件，整批拒收还是其余照收由调用方定；
+ * 兜底接收者滤掉文件夹收其余的。
  */
 
 import {
@@ -42,8 +43,9 @@ type FileDropTargetOptions = {
   blocked: boolean
   /** 落下的本机文件；含文件夹时改调 `onDirectory`。 */
   onFiles: (files: File[]) => void
-  /** 落下的内容含文件夹：整批不收，提示由调用方给。 */
-  onDirectory: () => void
+  /** 落下的内容含文件夹：不调 `onFiles`，提示由调用方给。`files` 是滤掉文件夹后剩下的文件，
+   * 整批拒收的调用方不理它，要「其余照收」的自己接着处理。 */
+  onDirectory: (files: File[]) => void
 }
 
 /** 局部拖放区：把 `dragHandlers` 展开到容器上；`dragOver` 表示可落下的文件正悬在区域上方。 */
@@ -80,7 +82,7 @@ export const useFileDropTarget = ({ blocked, onFiles, onDirectory }: FileDropTar
       event.preventDefault()
       if (blocked) return
       if ([...event.dataTransfer.items].some((item) => isDirectory(item))) {
-        onDirectory()
+        onDirectory(filesWithoutDirectories(event.dataTransfer))
         return
       }
       onFiles([...event.dataTransfer.files])

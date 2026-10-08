@@ -65,7 +65,7 @@ describe('ConversationSearchDialog', () => {
     const user = userEvent.setup()
     await openDialog()
 
-    expect(screen.getByText('输入关键词搜索你的任务')).toBeVisible()
+    expect(screen.getByText('输入关键词可搜索你的任务')).toBeVisible()
 
     await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '  亚麻  ')
 
@@ -85,7 +85,7 @@ describe('ConversationSearchDialog', () => {
 
     await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '亚麻')
 
-    expect(await screen.findByText('没有匹配的任务')).toBeVisible()
+    expect(await screen.findByText('暂无匹配的任务')).toBeVisible()
   })
 
   it('接口出错时把后端的错误文案就地显示出来', async () => {

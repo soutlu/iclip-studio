@@ -93,7 +93,7 @@ export const useLibraryVideo = (id: string | null) =>
         ? skipToken
         : ({ signal }) =>
             apiFetch(`/library/videos/${encodeURIComponent(id)}`, zLibraryVideoDetailOut, {
-              fallbackErrorMessage: '读取这条片子失败',
+              fallbackErrorMessage: '读取该视频失败',
               signal,
             }),
     queryKey: libraryQueryKeys.video(id ?? ''),

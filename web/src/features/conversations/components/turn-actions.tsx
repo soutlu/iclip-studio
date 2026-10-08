@@ -133,7 +133,7 @@ export function TurnActions({
             name="refresh"
             onClick={onRegenerate}
             size="xs"
-            tooltip={regenerateDisabled ? '等这一条跑完再重新生成' : undefined}
+            tooltip={regenerateDisabled ? '该条消息尚未完成，无法重新生成' : undefined}
             variant="standard"
           />
         )}
@@ -145,7 +145,7 @@ export function TurnActions({
             name="fork"
             onClick={onFork}
             size="xs"
-            tooltip={forkDisabled ? '等这一条跑完再分叉' : undefined}
+            tooltip={forkDisabled ? '该条消息尚未完成，无法另开任务' : undefined}
             variant="standard"
           />
         )}

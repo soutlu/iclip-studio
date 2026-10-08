@@ -58,11 +58,11 @@ export function FrameAssignmentPicker({
           closeLabel="关闭添加图片"
           title="添加图片"
         >
-          选择本组图片插入引用，或上传新图。
+          选择本组图片可插入引用，或点击「上传图片」上传新图
         </DialogHeader>
         <DialogBody className="space-y-5">
           {references.length === 0 ? (
-            <p className="text-body-sm text-on-surface-faint">本组还没有图片。</p>
+            <p className="text-body-sm text-on-surface-faint">本组暂无图片</p>
           ) : (
             <section aria-label="本组已有图片">
               <h3 className="mb-3 text-body-sm font-medium text-on-surface">本组图片</h3>

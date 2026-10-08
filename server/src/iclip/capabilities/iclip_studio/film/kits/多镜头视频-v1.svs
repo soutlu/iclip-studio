@@ -2,9 +2,9 @@
 <sheet version="1" id="多镜头视频-v1">
   text-template.多镜头视频-v1 { separator: paragraph; }
   text-template.多镜头视频-v1.block.拍摄与剪辑 { kind: slot; order: 10; slot: 拍摄与剪辑; optional: false; }
-  text-template.多镜头视频-v1.block.人物 { kind: slot; order: 20; slot: 人物; optional: true; }
-  text-template.多镜头视频-v1.block.产品 { kind: slot; order: 30; slot: 产品; optional: true; }
-  text-template.多镜头视频-v1.block.场景 { kind: slot; order: 40; slot: 场景; optional: true; }
+  text-template.多镜头视频-v1.block.人物 { kind: slot; order: 20; slot: 人物; optional: true; cite: "长相、发型和穿着"; }
+  text-template.多镜头视频-v1.block.产品 { kind: slot; order: 30; slot: 产品; optional: true; cite: "外观"; }
+  text-template.多镜头视频-v1.block.场景 { kind: slot; order: 40; slot: 场景; optional: true; cite: "环境"; }
   text-template.多镜头视频-v1.block.声音 { kind: slot; order: 50; slot: 声音; optional: true; }
   text-template.多镜头视频-v1.block.镜头 { kind: slot; order: 60; slot: 镜头; optional: false; }
 </sheet>

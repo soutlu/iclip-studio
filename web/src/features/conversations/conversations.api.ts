@@ -528,7 +528,7 @@ export const useForkConversation = (onForked: (conversationId: string) => void) 
     mutationFn: ({ conversationId, turn }: { conversationId: string; turn: number }) =>
       apiFetch(`/conversations/${conversationId}:fork`, conversationEnvelopeSchema, {
         body: { turn },
-        fallbackErrorMessage: '分叉失败',
+        fallbackErrorMessage: '另开任务失败',
         method: 'POST',
       }),
     onError: () => {

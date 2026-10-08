@@ -91,7 +91,7 @@ export function PromptEditor({
     images === undefined
       ? undefined
       : {
-          notice: (dropped) => `${REFERENCE_LIMIT_TEXT}，这次有 ${dropped} 张没有添加`,
+          notice: (dropped) => `${REFERENCE_LIMIT_TEXT}，本次有 ${dropped} 张未添加`,
           remaining: images.remaining,
         },
   )

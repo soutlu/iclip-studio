@@ -9,7 +9,7 @@ import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
 import { Button, IconButton } from '@/shared/ui/button'
 import { useCopyFeedback } from '@/shared/ui/copy-feedback'
-import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
+import { DialogTitle } from '@/shared/ui/dialog'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
@@ -23,6 +23,7 @@ import { cardTitleOf, durationSecondsOf, formatSecond, versionsOf } from '../lib
 import { AuthorAvatar } from './author-avatar'
 import { LibraryParamsPanel, LibraryScriptPanel } from './library-script'
 import { LibraryVersionBar, LibraryVersionBarSkeleton } from './library-version-bar'
+import { LibraryViewerFrame } from './library-viewer-frame'
 
 /** 点镜头跳过去时往后让一点，免得停在上一镜的最后一帧。 */
 const SEEK_NUDGE_S = 0.05
@@ -77,54 +78,39 @@ export function LibraryViewer({
   }
 
   return (
-    <DialogRoot
-      onOpenChange={(open) => {
-        if (!open) onClose()
-      }}
-      open
+    <LibraryViewerFrame
+      onClose={onClose}
+      onKeyDown={onKeyDown}
+      onRestoreFocus={onRestoreFocus}
+      outside={
+        <>
+          <NavButton direction="prev" id={prevId} onNavigate={onNavigate} />
+          <NavButton direction="next" id={nextId} onNavigate={onNavigate} />
+        </>
+      }
     >
-      <DialogSurface
-        aria-describedby={undefined}
-        bare
-        className="inset-0 top-0 left-0 grid h-full max-h-none w-full max-w-none translate-x-0 translate-y-0 place-items-center max-sm:top-0 max-sm:max-h-none md:p-6 lg:px-22 lg:py-8"
-        onCloseAutoFocus={(event) => {
-          if (onRestoreFocus()) event.preventDefault()
-        }}
-        onKeyDown={onKeyDown}
-        // 弹层铺满视口，框外的空白也在弹层里：按下落在空白处就关。
-        onPointerDown={(event) => {
-          if (event.target === event.currentTarget) onClose()
-        }}
-        overlayClassName="bg-scrim/60 backdrop-blur-sm"
-      >
-        <div className="relative flex size-full max-h-215 min-h-0 max-w-310 overflow-hidden bg-surface-container-lowest text-on-surface shadow-[var(--shadow-3)] max-md:flex-col max-md:overflow-y-auto md:rounded-2xl">
-          {video === undefined ? (
-            <ViewerPending
-              error={detail.isError ? errorMessageOf(detail.error, '读取这条片子失败') : null}
-              onClose={onClose}
-              onRetry={() => void detail.refetch()}
-            />
-          ) : (
-            <ViewerBody
-              detail={detail.data}
-              detailError={
-                detail.isError ? errorMessageOf(detail.error, '读取这张卡的全部版本失败') : null
-              }
-              key={videoId}
-              onAuthor={onAuthor}
-              onClose={onClose}
-              onRetry={() => void detail.refetch()}
-              shareLink={shareLink}
-              startAt={startAt}
-              video={video}
-            />
-          )}
-        </div>
-        {/* 排在框后面：打开时焦点先落到框里的关闭按钮。 */}
-        <NavButton direction="prev" id={prevId} onNavigate={onNavigate} />
-        <NavButton direction="next" id={nextId} onNavigate={onNavigate} />
-      </DialogSurface>
-    </DialogRoot>
+      {video === undefined ? (
+        <ViewerPending
+          error={detail.isError ? errorMessageOf(detail.error, '读取该视频失败') : null}
+          onClose={onClose}
+          onRetry={() => void detail.refetch()}
+        />
+      ) : (
+        <ViewerBody
+          detail={detail.data}
+          detailError={
+            detail.isError ? errorMessageOf(detail.error, '读取该视频的全部版本失败') : null
+          }
+          key={videoId}
+          onAuthor={onAuthor}
+          onClose={onClose}
+          onRetry={() => void detail.refetch()}
+          shareLink={shareLink}
+          startAt={startAt}
+          video={video}
+        />
+      )}
+    </LibraryViewerFrame>
   )
 }
 
@@ -463,7 +449,7 @@ function MakeSameButton({ cardId, canMakeSame }: { cardId: string; canMakeSame: 
       >
         {button}
       </TooltipTrigger>
-      <TooltipContent side="top">这条视频没有可用的制作文件，做不了同款</TooltipContent>
+      <TooltipContent side="top">该视频没有可用的制作文件，无法做同款</TooltipContent>
     </TooltipRoot>
   )
 }
@@ -482,7 +468,7 @@ function MoreMenu({
       await copyText(shareLink)
       toast.success('已复制链接')
     } catch {
-      toast.error('复制失败')
+      toast.error('复制失败，请重试')
     }
   }
   return (

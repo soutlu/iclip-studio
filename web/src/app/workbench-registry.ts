@@ -35,7 +35,7 @@ workbenchRegistry.register({
   autoOpen: false,
   component: WorkspaceFilesPanel,
   detail: (source) => (source.kind === 'workspace' ? `${source.fileCount} 个文件` : undefined),
-  empty: '还没有文件',
+  empty: '暂无文件',
   icon: 'folder',
   label: '文件',
   match: { workspace: true },

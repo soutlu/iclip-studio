@@ -54,9 +54,20 @@ class FakeListing:
 
 
 class FakeHead:
-    def __init__(self, *, content_type: str, content_length: int) -> None:
+    """SDK 的 HeadObjectResult：ETag 已去掉引号，缺的头为 None。"""
+
+    def __init__(
+        self,
+        *,
+        content_type: str,
+        content_length: int,
+        etag: str | None = None,
+        object_type: str | None = None,
+    ) -> None:
         self.content_type = content_type
         self.content_length = content_length
+        self.etag = etag
+        self.object_type = object_type
 
 
 class FakeBucket:
@@ -75,6 +86,7 @@ class FakeBucket:
         self.head = head
         self.writes: list[tuple[str, bytes, str]] = []
         self.signed: list[tuple[str, str, int, dict[str, str], bool]] = []
+        self.deleted: list[str] = []
 
     def _answer(self) -> None:
         if self.failures:
@@ -105,6 +117,11 @@ class FakeBucket:
     def head_object(self, key: str) -> FakeHead:
         assert self.head is not None
         return self.head
+
+    def delete_object(self, key: str) -> None:
+        self._answer()
+        self.existing.discard(key)
+        self.deleted.append(key)
 
 
 def store(bucket: FakeBucket) -> OssObjectStore:
@@ -260,12 +277,53 @@ def test_signed_put_refuses_a_blank_content_type() -> None:
 
 async def test_find_object_reports_what_the_bucket_says() -> None:
 
-    bucket = FakeBucket(listed=[KEY], head=FakeHead(content_type="image/png", content_length=7))
+    bucket = FakeBucket(
+        listed=[KEY],
+        head=FakeHead(
+            content_type="image/png",
+            content_length=7,
+            etag="0123456789ABCDEF0123456789ABCDEF",
+            object_type="Normal",
+        ),
+    )
 
     found = await store(bucket).find_object(prefix=f"{OSS_ROOT}/generated-images/a.")
 
     assert found is not None
-    assert (found.object_key, found.content_type, found.size_bytes) == (KEY, "image/png", 7)
+    assert (
+        found.object_key,
+        found.content_type,
+        found.size_bytes,
+        found.etag,
+        found.object_type,
+    ) == (KEY, "image/png", 7, "0123456789ABCDEF0123456789ABCDEF", "Normal")
+
+
+async def test_delete_survives_a_network_blip() -> None:
+    bucket = FakeBucket(existing={KEY}, failures=[timeout()])
+
+    await store(bucket).delete_object(KEY)
+
+    assert bucket.deleted == [KEY]
+
+
+async def test_a_refused_delete_becomes_the_known_error_without_retrying() -> None:
+    bucket = FakeBucket(existing={KEY}, failures=[server_error(403), server_error(403)])
+
+    with pytest.raises(ObjectStoreUnavailable, match="删除"):
+        await store(bucket).delete_object(KEY)
+
+    assert len(bucket.failures) == 1
+    assert bucket.deleted == []
+
+
+async def test_delete_refuses_keys_outside_the_namespace() -> None:
+    bucket = FakeBucket()
+
+    with pytest.raises(ValueError, match=OSS_ROOT):
+        await store(bucket).delete_object("uploads/a.mp4")
+
+    assert bucket.deleted == []
 
 
 async def test_find_object_returns_none_when_nothing_was_uploaded() -> None:

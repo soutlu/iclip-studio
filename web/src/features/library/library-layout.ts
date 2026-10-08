@@ -22,6 +22,12 @@ export const cardHeightFor = (video: LibraryVideo, columnWidth: number): number 
   return (columnWidth * h) / w + CARD_BODY_HEIGHT
 }
 
+/** 参考视频的列表项不带画幅：按最常见的竖版 9:16 估，封面到了再按实际比例撑开。 */
+export const REFERENCE_FALLBACK_RATIO = 9 / 16
+
+export const referenceCardHeightFor = (columnWidth: number): number =>
+  columnWidth / REFERENCE_FALLBACK_RATIO + CARD_BODY_HEIGHT
+
 /** 截帧宽度按显示宽度乘像素密度，向上取到几档固定宽，同一张图在不同列宽下能命中缓存。 */
 const SNAPSHOT_WIDTHS = [240, 360, 480, 640, 720] as const
 

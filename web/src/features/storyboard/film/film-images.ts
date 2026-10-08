@@ -53,10 +53,10 @@ export const useFilmReplace = ({ disabled, frame, onReplace }: ReplaceOptions) =
     const target = frame
     setPending(target.node)
     try {
-      await onReplace(target, await uploadMediaFile(file, 'image'))
+      await onReplace(target, (await uploadMediaFile(file, 'image')).url)
       toast(`已替换${target.label}`)
     } catch (error) {
-      toast.error(errorMessageOf(error, '换图失败'))
+      toast.error(errorMessageOf(error, '替换图片失败'))
     } finally {
       setPending(null)
     }
@@ -69,7 +69,7 @@ export const useFilmReplace = ({ disabled, frame, onReplace }: ReplaceOptions) =
 
   const drop = useFileDropTarget({
     blocked,
-    onDirectory: () => toast.error('请拖入一张图片文件，不支持文件夹'),
+    onDirectory: () => toast.error('不支持文件夹，请拖入一张图片文件'),
     onFiles: take,
   })
 

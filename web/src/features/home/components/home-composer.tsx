@@ -8,7 +8,7 @@ const LOGIN_DRAFT_KEY = 'cue.home.login-draft'
 // 首页用一句完整的创作要求做占位，示范该写什么；对话页等其他输入框仍用默认占位。
 const PLACEHOLDER = '例如：给这双白色帆布鞋写一份 15 秒的产品分镜'
 // 换什么由下面的快捷词示范，占位只说一句，窄屏也放得下一行。
-const SAME_STYLE_PLACEHOLDER = '照这条视频做同款，想换成什么？'
+const SAME_STYLE_PLACEHOLDER = '参照该视频做同款，请输入要替换的内容'
 /** 做同款的快捷词：点一下把句子开头插到光标处，接着写换成什么。 */
 const SAME_STYLE_PHRASES = [
   { label: '换人物', text: '把人物换成' },

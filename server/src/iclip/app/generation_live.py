@@ -55,6 +55,9 @@ class AnnouncingGenerationRepository:
             operation=operation,
         )
 
+    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
+        return await self._inner.find_video_upload_by_md5(content_md5)
+
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         return await self._inner.output_urls(ids)
 

@@ -285,7 +285,7 @@ function MatchesBody({
           <MatchRow match={match} />
         </li>
       ))}
-      {truncated ? <li className="text-chat-muted-text">命中较多，只列出一部分</li> : null}
+      {truncated ? <li className="text-chat-muted-text">命中较多，仅列出部分结果</li> : null}
     </ul>
   )
 }

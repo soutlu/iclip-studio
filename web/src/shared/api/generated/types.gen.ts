@@ -316,6 +316,76 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
+ * CategoryCountOut
+ */
+export type CategoryCountOut = {
+  /**
+   * Count
+   */
+  count: number
+  /**
+   * Name
+   */
+  name:
+    | '高跟鞋'
+    | '平底鞋'
+    | '乐福鞋'
+    | '牛津鞋'
+    | '一脚蹬'
+    | '穆勒鞋'
+    | '拖鞋'
+    | '短靴'
+    | '中筒靴'
+    | '及膝靴'
+    | '过膝靴'
+    | '高跟凉鞋'
+    | '坡跟凉鞋'
+    | '厚底凉鞋'
+    | '平底凉鞋'
+    | '夹趾拖'
+    | '凉拖鞋'
+    | '运动凉鞋'
+    | '跑鞋'
+    | '足球鞋'
+    | '篮球鞋'
+    | '啦啦队鞋'
+    | '棒&垒球鞋'
+    | '滑板鞋'
+    | '舞蹈鞋'
+    | '橄榄球鞋'
+    | '高尔夫鞋'
+    | '网球鞋'
+    | '训练鞋'
+    | '女性骑行鞋'
+    | '健步鞋'
+    | '板鞋'
+    | '徒步鞋'
+    | '徒步靴'
+    | '雪地靴'
+    | '雨靴'
+    | '水鞋'
+    | '猎靴'
+    | '医疗用鞋'
+    | '餐厨用鞋'
+    | '军事用靴'
+    | '工业用鞋'
+    | '工业用靴'
+    | '皮带'
+    | '钱包'
+    | '包'
+    | '袜子'
+    | '鞋垫'
+    | 'T恤'
+    | '衬衫'
+    | '卫衣'
+    | '毛衣'
+    | '外套'
+    | '裤子'
+    | '半身裙'
+    | '连衣裙'
+}
+
+/**
  * CollectionEnvelope
  */
 export type CollectionEnvelope = {
@@ -2248,6 +2318,20 @@ export type OverviewWindowOut = {
 }
 
 /**
+ * OwnerCountOut
+ */
+export type OwnerCountOut = {
+  /**
+   * Count
+   */
+  count: number
+  /**
+   * Username
+   */
+  userName: string
+}
+
+/**
  * PeriodDeliveriesOut
  */
 export type PeriodDeliveriesOut = {
@@ -2377,6 +2461,386 @@ export type PromptUpsertOp = {
    */
   op?: 'prompt.upsert'
   prompt: Prompt
+}
+
+/**
+ * ReferenceCreateIn
+ */
+export type ReferenceCreateIn = {
+  /**
+   * Uploadid
+   */
+  uploadId: string
+}
+
+/**
+ * ReferenceFiltersOut
+ */
+export type ReferenceFiltersOut = {
+  /**
+   * Categories
+   */
+  categories: Array<CategoryCountOut>
+  /**
+   * Owners
+   */
+  owners: Array<OwnerCountOut>
+  /**
+   * Videotypes
+   */
+  videoTypes: Array<VideoTypeCountOut>
+}
+
+/**
+ * ReferenceUpdateIn
+ *
+ * 整份改：拆解正文与两组标签都照给的存，重复的标签去掉。
+ */
+export type ReferenceUpdateIn = {
+  /**
+   * Categories
+   */
+  categories: Array<
+    | '高跟鞋'
+    | '平底鞋'
+    | '乐福鞋'
+    | '牛津鞋'
+    | '一脚蹬'
+    | '穆勒鞋'
+    | '拖鞋'
+    | '短靴'
+    | '中筒靴'
+    | '及膝靴'
+    | '过膝靴'
+    | '高跟凉鞋'
+    | '坡跟凉鞋'
+    | '厚底凉鞋'
+    | '平底凉鞋'
+    | '夹趾拖'
+    | '凉拖鞋'
+    | '运动凉鞋'
+    | '跑鞋'
+    | '足球鞋'
+    | '篮球鞋'
+    | '啦啦队鞋'
+    | '棒&垒球鞋'
+    | '滑板鞋'
+    | '舞蹈鞋'
+    | '橄榄球鞋'
+    | '高尔夫鞋'
+    | '网球鞋'
+    | '训练鞋'
+    | '女性骑行鞋'
+    | '健步鞋'
+    | '板鞋'
+    | '徒步鞋'
+    | '徒步靴'
+    | '雪地靴'
+    | '雨靴'
+    | '水鞋'
+    | '猎靴'
+    | '医疗用鞋'
+    | '餐厨用鞋'
+    | '军事用靴'
+    | '工业用鞋'
+    | '工业用靴'
+    | '皮带'
+    | '钱包'
+    | '包'
+    | '袜子'
+    | '鞋垫'
+    | 'T恤'
+    | '衬衫'
+    | '卫衣'
+    | '毛衣'
+    | '外套'
+    | '裤子'
+    | '半身裙'
+    | '连衣裙'
+  >
+  /**
+   * Document
+   */
+  document: string
+  /**
+   * Version
+   */
+  version: number
+  /**
+   * Videotypes
+   */
+  videoTypes: Array<
+    | 'live_clip'
+    | 'slideshow'
+    | 'drama'
+    | 'review'
+    | 'talking_head'
+    | 'try_on'
+    | 'lifestyle'
+    | 'product_showcase'
+  >
+}
+
+/**
+ * ReferenceVideoItemOut
+ *
+ * 列表里的一条参考视频；不带拆解正文，正文在详情里。
+ */
+export type ReferenceVideoItemOut = {
+  /**
+   * Breakdownstatus
+   */
+  breakdownStatus: 'pending' | 'running' | 'completed' | 'failed'
+  /**
+   * Canedit
+   */
+  canEdit: boolean
+  /**
+   * Categories
+   */
+  categories: Array<
+    | '高跟鞋'
+    | '平底鞋'
+    | '乐福鞋'
+    | '牛津鞋'
+    | '一脚蹬'
+    | '穆勒鞋'
+    | '拖鞋'
+    | '短靴'
+    | '中筒靴'
+    | '及膝靴'
+    | '过膝靴'
+    | '高跟凉鞋'
+    | '坡跟凉鞋'
+    | '厚底凉鞋'
+    | '平底凉鞋'
+    | '夹趾拖'
+    | '凉拖鞋'
+    | '运动凉鞋'
+    | '跑鞋'
+    | '足球鞋'
+    | '篮球鞋'
+    | '啦啦队鞋'
+    | '棒&垒球鞋'
+    | '滑板鞋'
+    | '舞蹈鞋'
+    | '橄榄球鞋'
+    | '高尔夫鞋'
+    | '网球鞋'
+    | '训练鞋'
+    | '女性骑行鞋'
+    | '健步鞋'
+    | '板鞋'
+    | '徒步鞋'
+    | '徒步靴'
+    | '雪地靴'
+    | '雨靴'
+    | '水鞋'
+    | '猎靴'
+    | '医疗用鞋'
+    | '餐厨用鞋'
+    | '军事用靴'
+    | '工业用鞋'
+    | '工业用靴'
+    | '皮带'
+    | '钱包'
+    | '包'
+    | '袜子'
+    | '鞋垫'
+    | 'T恤'
+    | '衬衫'
+    | '卫衣'
+    | '毛衣'
+    | '外套'
+    | '裤子'
+    | '半身裙'
+    | '连衣裙'
+  >
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Errorcode
+   */
+  errorCode: 'video_unreadable' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Username
+   */
+  userName: string | null
+  /**
+   * Version
+   */
+  version: number
+  /**
+   * Videotypes
+   */
+  videoTypes: Array<
+    | 'live_clip'
+    | 'slideshow'
+    | 'drama'
+    | 'review'
+    | 'talking_head'
+    | 'try_on'
+    | 'lifestyle'
+    | 'product_showcase'
+  >
+  /**
+   * Videourl
+   */
+  videoUrl: string
+}
+
+/**
+ * ReferenceVideoOut
+ *
+ * 一条参考视频，连同当前拆解。
+ */
+export type ReferenceVideoOut = {
+  /**
+   * Breakdownstatus
+   */
+  breakdownStatus: 'pending' | 'running' | 'completed' | 'failed'
+  /**
+   * Canedit
+   */
+  canEdit: boolean
+  /**
+   * Categories
+   */
+  categories: Array<
+    | '高跟鞋'
+    | '平底鞋'
+    | '乐福鞋'
+    | '牛津鞋'
+    | '一脚蹬'
+    | '穆勒鞋'
+    | '拖鞋'
+    | '短靴'
+    | '中筒靴'
+    | '及膝靴'
+    | '过膝靴'
+    | '高跟凉鞋'
+    | '坡跟凉鞋'
+    | '厚底凉鞋'
+    | '平底凉鞋'
+    | '夹趾拖'
+    | '凉拖鞋'
+    | '运动凉鞋'
+    | '跑鞋'
+    | '足球鞋'
+    | '篮球鞋'
+    | '啦啦队鞋'
+    | '棒&垒球鞋'
+    | '滑板鞋'
+    | '舞蹈鞋'
+    | '橄榄球鞋'
+    | '高尔夫鞋'
+    | '网球鞋'
+    | '训练鞋'
+    | '女性骑行鞋'
+    | '健步鞋'
+    | '板鞋'
+    | '徒步鞋'
+    | '徒步靴'
+    | '雪地靴'
+    | '雨靴'
+    | '水鞋'
+    | '猎靴'
+    | '医疗用鞋'
+    | '餐厨用鞋'
+    | '军事用靴'
+    | '工业用鞋'
+    | '工业用靴'
+    | '皮带'
+    | '钱包'
+    | '包'
+    | '袜子'
+    | '鞋垫'
+    | 'T恤'
+    | '衬衫'
+    | '卫衣'
+    | '毛衣'
+    | '外套'
+    | '裤子'
+    | '半身裙'
+    | '连衣裙'
+  >
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Document
+   */
+  document: string | null
+  /**
+   * Errorcode
+   */
+  errorCode: 'video_unreadable' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Username
+   */
+  userName: string | null
+  /**
+   * Version
+   */
+  version: number
+  /**
+   * Videotypes
+   */
+  videoTypes: Array<
+    | 'live_clip'
+    | 'slideshow'
+    | 'drama'
+    | 'review'
+    | 'talking_head'
+    | 'try_on'
+    | 'lifestyle'
+    | 'product_showcase'
+  >
+  /**
+   * Videourl
+   */
+  videoUrl: string
+}
+
+/**
+ * ReferenceVideosOut
+ */
+export type ReferenceVideosOut = {
+  /**
+   * Canupload
+   */
+  canUpload: boolean
+  /**
+   * Items
+   */
+  items: Array<ReferenceVideoItemOut>
+  /**
+   * Nextcursor
+   */
+  nextCursor: string | null
+  /**
+   * Total
+   */
+  total: number | null
 }
 
 /**
@@ -4283,6 +4747,36 @@ export type VideoTaskResult = {
    * Watermark Output Url
    */
   watermark_output_url: string
+}
+
+/**
+ * VideoTypeCountOut
+ */
+export type VideoTypeCountOut = {
+  /**
+   * Count
+   */
+  count: number
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Rule
+   */
+  rule: string
+  /**
+   * Value
+   */
+  value:
+    | 'live_clip'
+    | 'slideshow'
+    | 'drama'
+    | 'review'
+    | 'talking_head'
+    | 'try_on'
+    | 'lifestyle'
+    | 'product_showcase'
 }
 
 export type ListKeysApiKeysGetData = {
@@ -6366,6 +6860,304 @@ export type VideoLibraryVideosVideoIdGetResponses = {
 
 export type VideoLibraryVideosVideoIdGetResponse =
   VideoLibraryVideosVideoIdGetResponses[keyof VideoLibraryVideosVideoIdGetResponses]
+
+export type ListReferencesReferencesGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Videotypes
+     */
+    videoTypes?: Array<
+      | 'live_clip'
+      | 'slideshow'
+      | 'drama'
+      | 'review'
+      | 'talking_head'
+      | 'try_on'
+      | 'lifestyle'
+      | 'product_showcase'
+    > | null
+    /**
+     * Categories
+     */
+    categories?: Array<
+      | '高跟鞋'
+      | '平底鞋'
+      | '乐福鞋'
+      | '牛津鞋'
+      | '一脚蹬'
+      | '穆勒鞋'
+      | '拖鞋'
+      | '短靴'
+      | '中筒靴'
+      | '及膝靴'
+      | '过膝靴'
+      | '高跟凉鞋'
+      | '坡跟凉鞋'
+      | '厚底凉鞋'
+      | '平底凉鞋'
+      | '夹趾拖'
+      | '凉拖鞋'
+      | '运动凉鞋'
+      | '跑鞋'
+      | '足球鞋'
+      | '篮球鞋'
+      | '啦啦队鞋'
+      | '棒&垒球鞋'
+      | '滑板鞋'
+      | '舞蹈鞋'
+      | '橄榄球鞋'
+      | '高尔夫鞋'
+      | '网球鞋'
+      | '训练鞋'
+      | '女性骑行鞋'
+      | '健步鞋'
+      | '板鞋'
+      | '徒步鞋'
+      | '徒步靴'
+      | '雪地靴'
+      | '雨靴'
+      | '水鞋'
+      | '猎靴'
+      | '医疗用鞋'
+      | '餐厨用鞋'
+      | '军事用靴'
+      | '工业用鞋'
+      | '工业用靴'
+      | '皮带'
+      | '钱包'
+      | '包'
+      | '袜子'
+      | '鞋垫'
+      | 'T恤'
+      | '衬衫'
+      | '卫衣'
+      | '毛衣'
+      | '外套'
+      | '裤子'
+      | '半身裙'
+      | '连衣裙'
+    > | null
+    /**
+     * Username
+     */
+    userName?: string | null
+    /**
+     * Q
+     */
+    q?: string | null
+    /**
+     * Since
+     */
+    since?: string | null
+    /**
+     * Until
+     */
+    until?: string | null
+    /**
+     * Limit
+     */
+    limit?: number
+    /**
+     * Cursor
+     */
+    cursor?: string | null
+  }
+  url: '/references'
+}
+
+export type ListReferencesReferencesGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListReferencesReferencesGetError =
+  ListReferencesReferencesGetErrors[keyof ListReferencesReferencesGetErrors]
+
+export type ListReferencesReferencesGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideosOut
+}
+
+export type ListReferencesReferencesGetResponse =
+  ListReferencesReferencesGetResponses[keyof ListReferencesReferencesGetResponses]
+
+export type CreateReferenceReferencesPostData = {
+  body: ReferenceCreateIn
+  path?: never
+  query?: never
+  url: '/references'
+}
+
+export type CreateReferenceReferencesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateReferenceReferencesPostError =
+  CreateReferenceReferencesPostErrors[keyof CreateReferenceReferencesPostErrors]
+
+export type CreateReferenceReferencesPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: ReferenceVideoOut
+}
+
+export type CreateReferenceReferencesPostResponse =
+  CreateReferenceReferencesPostResponses[keyof CreateReferenceReferencesPostResponses]
+
+export type ReferenceFiltersReferencesFiltersGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/references/filters'
+}
+
+export type ReferenceFiltersReferencesFiltersGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceFiltersOut
+}
+
+export type ReferenceFiltersReferencesFiltersGetResponse =
+  ReferenceFiltersReferencesFiltersGetResponses[keyof ReferenceFiltersReferencesFiltersGetResponses]
+
+export type RemoveReferenceReferencesReferenceIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}'
+}
+
+export type RemoveReferenceReferencesReferenceIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RemoveReferenceReferencesReferenceIdDeleteError =
+  RemoveReferenceReferencesReferenceIdDeleteErrors[keyof RemoveReferenceReferencesReferenceIdDeleteErrors]
+
+export type RemoveReferenceReferencesReferenceIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type RemoveReferenceReferencesReferenceIdDeleteResponse =
+  RemoveReferenceReferencesReferenceIdDeleteResponses[keyof RemoveReferenceReferencesReferenceIdDeleteResponses]
+
+export type GetReferenceReferencesReferenceIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}'
+}
+
+export type GetReferenceReferencesReferenceIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type GetReferenceReferencesReferenceIdGetError =
+  GetReferenceReferencesReferenceIdGetErrors[keyof GetReferenceReferencesReferenceIdGetErrors]
+
+export type GetReferenceReferencesReferenceIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type GetReferenceReferencesReferenceIdGetResponse =
+  GetReferenceReferencesReferenceIdGetResponses[keyof GetReferenceReferencesReferenceIdGetResponses]
+
+export type UpdateReferenceReferencesReferenceIdPatchData = {
+  body: ReferenceUpdateIn
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}'
+}
+
+export type UpdateReferenceReferencesReferenceIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateReferenceReferencesReferenceIdPatchError =
+  UpdateReferenceReferencesReferenceIdPatchErrors[keyof UpdateReferenceReferencesReferenceIdPatchErrors]
+
+export type UpdateReferenceReferencesReferenceIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type UpdateReferenceReferencesReferenceIdPatchResponse =
+  UpdateReferenceReferencesReferenceIdPatchResponses[keyof UpdateReferenceReferencesReferenceIdPatchResponses]
+
+export type RerunReferenceReferencesReferenceIdBreakdownsPostData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}/breakdowns'
+}
+
+export type RerunReferenceReferencesReferenceIdBreakdownsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RerunReferenceReferencesReferenceIdBreakdownsPostError =
+  RerunReferenceReferencesReferenceIdBreakdownsPostErrors[keyof RerunReferenceReferencesReferenceIdBreakdownsPostErrors]
+
+export type RerunReferenceReferencesReferenceIdBreakdownsPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type RerunReferenceReferencesReferenceIdBreakdownsPostResponse =
+  RerunReferenceReferencesReferenceIdBreakdownsPostResponses[keyof RerunReferenceReferencesReferenceIdBreakdownsPostResponses]
 
 export type ListTasksTasksGetData = {
   body?: never

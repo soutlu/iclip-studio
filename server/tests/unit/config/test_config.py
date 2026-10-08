@@ -506,6 +506,54 @@ def test_iclip_studio_resolves_with_the_video_understanding_credentials(
     assert settings.ffmpeg_required, "读时长与抽帧都要 ffmpeg"
 
 
+def _local_concurrencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, written: str
+) -> tuple[int | None, int | None]:
+    """（合成并发，拆解并发）；``written`` 是追加在两段末尾的那一行，空串即都不写。"""
+
+    media = MEDIA + (f"  {written}\n" if written.startswith("compose") else "")
+    studio = ICLIP_STUDIO + (f"  {written}\n" if written.startswith("breakdown") else "")
+    config = load_runtime_config(write(tmp_path, VALID + media + studio))
+    _media_env(monkeypatch)
+    for name, value in VIDEO_ENV.items():
+        monkeypatch.setenv(name, value)
+    settings = resolve_settings(config)
+    assert settings.media_generation is not None
+    assert settings.iclip_studio is not None
+    return (
+        settings.media_generation.compose_concurrency,
+        settings.iclip_studio.breakdown_concurrency,
+    )
+
+
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        ("", (None, None)),
+        ("compose_concurrency: 3", (3, None)),
+        ("breakdown_concurrency: 5", (None, 5)),
+    ],
+    ids=["unwritten", "compose", "breakdown"],
+)
+def test_local_queue_concurrency_is_none_until_written(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    written: str,
+    expected: tuple[int | None, int | None],
+) -> None:
+    """不写留给组合根按选定的编解码取；配置解析不跑 ffmpeg。"""
+
+    assert _local_concurrencies(tmp_path, monkeypatch, written=written) == expected
+
+
+@pytest.mark.parametrize("written", ["compose_concurrency: 0", "breakdown_concurrency: 0"])
+def test_local_queue_concurrency_must_be_positive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, written: str
+) -> None:
+    with pytest.raises(ValidationError, match=written.split(":")[0]):
+        _local_concurrencies(tmp_path, monkeypatch, written=written)
+
+
 def test_iclip_studio_off_when_understanding_url_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

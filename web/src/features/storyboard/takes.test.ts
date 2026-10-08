@@ -158,7 +158,7 @@ describe('takeActionsOf', () => {
   const enabled = { kind: 'enabled' }
   const hidden = { kind: 'hidden' }
   const blocked = (reason: string) => ({ kind: 'blocked', reason })
-  const refillBlocked = blocked('这条出片没记分镜结构，回填不了')
+  const refillBlocked = blocked('该成片未记录分镜结构，无法回填')
 
   it.each([
     {
@@ -178,8 +178,8 @@ describe('takeActionsOf', () => {
     },
     {
       expected: {
-        download: blocked('生成失败，没有视频可下载'),
-        editVideo: blocked('生成失败，没有视频可编辑'),
+        download: blocked('生成失败，无法下载视频'),
+        editVideo: blocked('生成失败，无法编辑视频'),
         refill: enabled,
       },
       spec: { request: { shot: HISTORY_SHOT }, status: 'failed' as const },
@@ -187,8 +187,8 @@ describe('takeActionsOf', () => {
     },
     {
       expected: {
-        download: blocked('没有返回视频地址'),
-        editVideo: blocked('没有返回视频地址'),
+        download: blocked('未返回视频地址'),
+        editVideo: blocked('未返回视频地址'),
         refill: refillBlocked,
       },
       spec: { outputUrl: '  ' },

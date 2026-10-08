@@ -132,7 +132,7 @@ export const useComposerAttachments = (accept: ComposerAccept = 'media') => {
       patch(entry.attId, { progress: ratio })
     }
     try {
-      const url = await uploadMediaFile(file, kind, { onProgress })
+      const { url } = await uploadMediaFile(file, kind, { onProgress })
       setEntries((prev) => {
         const current = prev.get(entry.attId)
         if (current === undefined) return prev

@@ -32,6 +32,7 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.ffmpeg import ffmpeg_available
 from iclip.platform.transcript.session_events import SessionEventClock
 from tests.helpers.agents import declared_agent
@@ -496,6 +497,7 @@ async def media_app(
             engine=engine,
             object_store=MemoryObjectStore(),
             queue_connector=InMemoryConnector(),
+            media_codec=SOFTWARE,
         )
     finally:
         await engine.dispose()

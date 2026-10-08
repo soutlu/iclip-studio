@@ -45,7 +45,7 @@ function MiniHead({ title, info, end }: { title: string; info?: string; end?: Re
 }
 
 const deltaTitleOf = (overview: Overview) =>
-  `和 ${fmtDayRange(new Date(overview.window.previousSince), new Date(overview.window.previousUntil))} 比`
+  `与 ${fmtDayRange(new Date(overview.window.previousSince), new Date(overview.window.previousUntil))} 相比`
 
 // ——— 出片质量 ———
 
@@ -59,21 +59,21 @@ export function QualitySection({
   return (
     <Section
       id={id}
-      info="只数成功生成、带镜号的出片，失败的不计费、不算；一个镜是一段对话里的一个镜号，一次都没成功的镜不算。"
+      info="仅统计成功生成且带镜号的出片，失败的不计费、不计入；一个镜头指一段对话中的一个镜号，从未成功生成的镜头不计入。"
       title="出片质量"
     >
       <div className="grid gap-3 md:grid-cols-2">
         <Panel>
-          <MiniHead info="每成功生成一条算一次，失败的不算。" title="每个镜出了几次" />
+          <MiniHead info="每成功生成一条计为 1 次，失败的不计入" title="每个镜出了几次" />
           <p className="mt-0.5 mb-2.5 text-body text-on-surface-variant">
             {summary.totalShots === 0 ? (
-              '这段时间没有新镜'
+              '所选时间范围内暂无新镜头'
             ) : (
               <>
                 <b className="font-semibold text-on-surface">
                   {fmtRate(summary.shotShares[0] ?? 0)}
                 </b>{' '}
-                的镜只出了 1 次，
+                的镜头仅出片 1 次，
                 <b className="font-semibold text-on-surface">{fmtRate(within)}</b> 不超过{' '}
                 {RETRY_AT_LEAST} 次
               </>
@@ -87,7 +87,10 @@ export function QualitySection({
         </Panel>
       </div>
       <Panel>
-        <MiniHead info="只用一次成功生成就达标的镜占镜数的比例。失败的不算。" title="一次通过率" />
+        <MiniHead
+          info="仅需一次成功生成即达标的镜头占镜头总数的比例。失败的生成不计入。"
+          title="一次通过率"
+        />
         <OverviewChart height={200} label="一次通过率" model={chartModel(overview, 'oneTake')} />
       </Panel>
     </Section>
@@ -105,7 +108,9 @@ function ReworkShare({
   nameOf: (userName: string) => string | undefined
 }) {
   if (summary.totalShots === 0) {
-    return <p className="mt-0.5 mb-2.5 text-body text-on-surface-variant">这个范围里没有新镜</p>
+    return (
+      <p className="mt-0.5 mb-2.5 text-body text-on-surface-variant">所选时间范围内暂无新镜头</p>
+    )
   }
   // 段宽不到一成就不在段里写字，靠悬停和图例。
   const bar = (shares: readonly number[]) =>
@@ -126,12 +131,12 @@ function ReworkShare({
     <>
       <p className="mt-0.5 mb-2.5 text-body text-on-surface-variant">
         {summary.heavy === null ? (
-          `没有出到 ${RETRY_AT_LEAST} 次及以上的镜`
+          `暂无出片 ${RETRY_AT_LEAST} 次及以上的镜头`
         ) : (
           <>
-            出了 {RETRY_AT_LEAST} 次及以上的镜占{' '}
+            出片 {RETRY_AT_LEAST} 次及以上的镜头占{' '}
             <b className="font-semibold text-on-surface">{fmtRate(summary.heavy.shotShare)}</b>
-            ，用了{' '}
+            ，消耗了{' '}
             <b className="font-semibold text-on-surface">
               {fmtRate(summary.heavy.attemptShare)}
             </b>{' '}
@@ -196,15 +201,15 @@ const SPAN_ROWS: readonly {
 }[] = [
   {
     name: '单任务平均时长',
-    hint: '首次运行到最后成片，只算在跑的时间',
+    hint: '从首次运行到最后一条成片，仅计运行中的时间',
     pick: (m) => m.activeCycleSeconds,
   },
   {
     name: 'agent 平均运行时长',
-    hint: '一轮从开始运行到回完话，不含排队和等审批',
+    hint: '一轮从开始运行到回复完成，不含排队和等待审批的时间',
     pick: (m) => m.agentRunSeconds,
   },
-  { name: '视频生成平均时长', hint: '提交上游到出结果', pick: (m) => m.upstreamSeconds },
+  { name: '视频生成平均时长', hint: '从提交上游到返回结果', pick: (m) => m.upstreamSeconds },
 ]
 
 export function SpeedSection({ id, overview }: SectionProps) {
@@ -212,7 +217,7 @@ export function SpeedSection({ id, overview }: SectionProps) {
   return (
     <Section
       id={id}
-      info="中位：一半在这之内；最慢一成：排在最慢 10% 的那条线。单任务平均时长只算在跑的时间，中间空了超过 30 分钟的不计。"
+      info="中位：一半样本在此时长以内；最慢一成：最慢 10% 样本的分界线。单任务平均时长仅计运行中的时间，中途间隔超过 30 分钟的部分不计入。"
       title="耗时"
     >
       <div className="grid gap-3 md:grid-cols-2">
@@ -239,7 +244,7 @@ export function SpeedSection({ id, overview }: SectionProps) {
           </div>
         </Panel>
         <Panel>
-          <MiniHead info="一条视频从提交上游到出结果，取平均。" title="视频生成平均时长" />
+          <MiniHead info="一条视频从提交上游到返回结果的时长，取平均值" title="视频生成平均时长" />
           <OverviewChart
             height={200}
             label="视频生成平均时长"
@@ -295,7 +300,7 @@ function SpanRow({
     return (
       <div className="grid grid-cols-1 items-center gap-1 md:grid-cols-[148px_1fr] md:gap-4">
         {title}
-        <p className="text-label text-on-surface-muted">没有样本</p>
+        <p className="text-label text-on-surface-muted">暂无样本</p>
       </div>
     )
   }
@@ -370,7 +375,7 @@ export function CostSection({ id, overview }: SectionProps) {
   return (
     <Section
       id={id}
-      info="视频按成功出片的秒数算，重出的也算、失败的不算；token 取自用量台账，标题生成、压缩摘要、视频理解不计。"
+      info="视频按成功出片的秒数统计，重新生成的也计入、失败的不计入；token 取自用量台账，标题生成、压缩摘要、视频理解不计入。"
       title="模型消耗"
     >
       <div className="grid gap-3 md:grid-cols-3">
@@ -384,7 +389,7 @@ export function CostSection({ id, overview }: SectionProps) {
                 />
               ) : null
             }
-            info="只算成功出片的秒数，失败的不算。一个镜头成功出过多条时，最后一条计入最终成片长度，其余计入废片长度。"
+            info="仅统计成功出片的秒数，失败的不计入。一个镜头成功生成多条时，最后一条计入最终成片长度，其余计入废片长度。"
             title="视频生成总时长"
           />
           {hasLength ? (
@@ -475,7 +480,7 @@ export function CostSection({ id, overview }: SectionProps) {
       <div className="grid gap-3 md:grid-cols-2">
         <Panel>
           <MiniHead
-            info="成功出片按完成的时刻归到哪一天。"
+            info="成功出片按完成时刻归入对应日期"
             title={`${BUCKET_WORD[bucket]}总视频生成秒数`}
           />
           {hasLength ? (
@@ -491,7 +496,7 @@ export function CostSection({ id, overview }: SectionProps) {
           )}
         </Panel>
         <Panel>
-          <MiniHead info="一段对话的用量按它最后一次记账的时刻归到哪一天。" title="token 消耗" />
+          <MiniHead info="一段对话的用量按其最后一次记账的时刻归入对应日期" title="token 消耗" />
           <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-label text-on-surface-muted">
             {TOKEN_PARTS.map((part) => (
               <LegendItem key={part.name} marks={<Mark color={part.color} kind="swatch" />}>
@@ -606,12 +611,12 @@ export function ProducersSection({ id, overview }: SectionProps) {
       aside={
         <span className="text-label text-on-surface-muted">
           {current.producers === 0
-            ? '这段时间没人出片'
-            : `这段时间 ${current.producers} 人出过片，人均 ${(current.deliveries / current.producers).toFixed(1)} 件`}
+            ? '所选时间范围内暂无人出片'
+            : `所选时间范围内共 ${current.producers} 人出片，人均 ${(current.deliveries / current.producers).toFixed(1)} 件`}
         </span>
       }
       id={id}
-      info="这段时间里出过片的人。"
+      info="所选时间范围内出过片的人"
       title="使用人次"
     >
       <Panel>

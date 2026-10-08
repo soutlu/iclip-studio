@@ -165,7 +165,7 @@ for (const width of [1600, 390]) {
     const dialog = page.getByRole('dialog', { name: /^编辑图片/ })
     const history = dialog.getByRole('group', { name: '这一帧的图片' })
     await history.getByRole('button', { name: /^生成失败 · / }).click()
-    await expect(dialog.getByRole('alert')).toHaveText('未成功')
+    await expect(dialog.getByRole('alert')).toHaveText('生成失败')
 
     const reason = dialog.getByRole('button', { name: '查看原因', exact: true })
     await reason.focus()
@@ -308,7 +308,7 @@ for (const width of [1335, 390]) {
     await expect(dialog.getByRole('button', { name: '图片模型' })).toBeEnabled()
     await expect(strip.getByRole('button', { name: /^生成中 · / })).toContainText(/\d+:\d{2}/)
     await expect(
-      dialog.getByText('有 1 个任务在生成或排队，关掉窗口也会继续', { exact: true }),
+      dialog.getByText('有 1 个任务正在生成或排队，关闭窗口不影响生成', { exact: true }),
     ).toBeVisible()
     await screenshotBothThemes(page, `${STAGE_QA}/running-${width}`)
 
@@ -411,7 +411,7 @@ for (const width of [1335, 390]) {
       Array.from({ length: 9 }, (_, index) => `材质${index + 1}.png`),
     )
     await card.dispatchEvent('drop', { dataTransfer: many })
-    await expect(dialog.getByText('最多引用 10 张图片，这次有 1 张没有添加')).toBeVisible()
+    await expect(dialog.getByText('最多引用 10 张图片，本次有 1 张未添加')).toBeVisible()
     await expect(editor.getByText('材质8.png', { exact: true })).toBeVisible()
     await screenshotBothThemes(page, `${QA}/limit-${width}`)
   })

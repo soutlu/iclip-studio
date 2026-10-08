@@ -64,7 +64,7 @@ export function TaskMediaField({
     if (files.length > available) {
       setError(
         kind === 'video'
-          ? '每次只能选择一个参考视频'
+          ? '每次仅可选择 1 个参考视频'
           : `最多添加 ${limit} 张图片，还可添加 ${available} 张`,
       )
       return
@@ -80,7 +80,7 @@ export function TaskMediaField({
         if (!operation.active) return
         setProgress(`正在上传 ${index + 1}/${files.length}：${file.name}`)
         try {
-          const url = await uploadMediaFile(file, kind)
+          const { url } = await uploadMediaFile(file, kind)
           if (!operation.active) return
           nextUrls = kind === 'video' ? [url] : [...nextUrls, url]
           callbacksRef.current.onChange(nextUrls)
@@ -89,7 +89,9 @@ export function TaskMediaField({
         }
       }
       if (operation.active && failures.length > 0) {
-        setError(`上传失败 ${failures.length} 个，已成功上传的素材已保留。${failures.join('；')}`)
+        setError(
+          `${failures.length} 个文件上传失败，已上传成功的素材已保留。${failures.join('；')}`,
+        )
       }
     } finally {
       operation.busy = false
@@ -103,7 +105,7 @@ export function TaskMediaField({
 
   const { dragOver, dragHandlers } = useFileDropTarget({
     blocked,
-    onDirectory: () => setError('请选择文件，不支持上传文件夹'),
+    onDirectory: () => setError('不支持上传文件夹，请选择文件'),
     onFiles: (files) => void uploadFiles(files),
   })
 
@@ -218,7 +220,7 @@ export function TaskMediaField({
         {dragOver && (
           // 拖放目标与其他投放区一致保持中性：外圈墨色描边标出目标，提示面用不透明中性底盖住缩略图。
           <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-sm bg-surface-container-high text-body-sm font-medium text-on-surface">
-            松开{kind === 'video' && value.length > 0 ? '替换视频' : '添加素材'}
+            松开可{kind === 'video' && value.length > 0 ? '替换视频' : '添加素材'}
           </div>
         )}
       </div>
@@ -303,7 +305,7 @@ export function TaskVideoPreview({
         <MediaFallback
           className="absolute right-2 bottom-2 left-2 rounded-xs bg-scrim/60 px-2 py-1 text-on-scrim"
           compact
-          hint="点击打开预览"
+          hint="点击可打开预览"
           kind="video"
         />
       ) : durationLabel ? (

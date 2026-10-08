@@ -37,6 +37,7 @@ from iclip.domains.generation.service import (
 )
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.domains.identity.public import ActAs
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.ffmpeg import probe_remote_duration_ms
 from iclip.platform.object_store.store import PublicObjectStore
 
@@ -85,6 +86,7 @@ def build_generation_module(
     image_edit_task: str,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
+    media_codec: MediaCodec,
     queue_settings: GenerationQueueSettings | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
@@ -92,7 +94,8 @@ def build_generation_module(
     """装配 Provider 与队列；transport 支持测试替身，queue_connector 由组合根选择数据库驱动。
 
     编辑段受理时用 ffprobe 按需读远程视频探时长（基底与参考片段）。对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；合成的产物本来就是
-    我们自己造的。视频上游给的是它自己发布好的稳定地址，不转存。"""
+    我们自己造的。视频上游给的是它自己发布好的稳定地址，不转存。``media_codec`` 是本地合成
+    用的那一档编解码，由组合根在启动时选定。"""
 
     if not image_models:
         raise RuntimeError("媒体生成开着却一家图片模型都没声明")
@@ -104,7 +107,9 @@ def build_generation_module(
     settings = queue_settings or GenerationQueueSettings()
     report_stage = _clip_stage_reporter(repo)
     video_provider = HttpVideoProvider(video, transport=video_transport)
-    compose_provider = FfmpegComposeProvider(object_store=object_store, report_stage=report_stage)
+    compose_provider = FfmpegComposeProvider(
+        object_store=object_store, report_stage=report_stage, codec=media_codec
+    )
     image_providers = [
         _image_provider(
             model,

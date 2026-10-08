@@ -116,7 +116,7 @@ export const submitVideoEdit = async (
   // 切片模块连同 mediabunny 只在提交时加载，不进首屏包。
   const { cutReferenceClip } = await import('./reference-clip')
   const clip = await cutReferenceClip(input.baseMediaUrl, input.range)
-  const clipUrl = await uploadMediaFile(clip.file, 'video')
+  const { url: clipUrl } = await uploadMediaFile(clip.file, 'video')
   const body: VideoEditIn = {
     conversation_id: input.conversationId,
     task_id: input.taskId,

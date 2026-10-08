@@ -26,6 +26,7 @@ APP_TABLES = (
     "iclip.generation_jobs",
     "iclip.tracking_events",
     "iclip.inspiration_videos",
+    "iclip.reference_videos",
 )
 """iclip 里每个用例自己造数据的表。"""
 
@@ -83,6 +84,18 @@ async def reset_database(conn: AsyncConnection) -> None:
     await truncate_clean(conn, (*APP_TABLES, *AGENT_RUNTIME_TABLES))
 
 
+async def reset_present_tables(conn: AsyncConnection) -> None:
+    """同 ``reset_database``，但只清此刻存在的表：迁移用例停在旧版本时，后来才建的表还不在。"""
+
+    present = [
+        table
+        for table in (*APP_TABLES, *AGENT_RUNTIME_TABLES)
+        if (await conn.execute(text("SELECT to_regclass(:t)"), {"t": table})).scalar_one()
+        is not None
+    ]
+    await truncate_clean(conn, present)
+
+
 @asynccontextmanager
 async def connected(url: str) -> AsyncGenerator[AsyncConnection]:
     """在一次性引擎上开一个事务连接，块正常结束提交、出错回滚，最后释放引擎。
@@ -104,5 +117,6 @@ __all__ = [
     "LOCK_TIMEOUT",
     "connected",
     "reset_database",
+    "reset_present_tables",
     "truncate_clean",
 ]

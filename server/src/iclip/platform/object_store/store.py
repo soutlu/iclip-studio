@@ -17,6 +17,10 @@ class StoredObject:
     object_key: str
     content_type: str
     size_bytes: int
+    etag: str | None = None
+    """存储给的 ETag，不带引号；一次整传的对象（``object_type`` 为 ``Normal``）就是内容的 MD5。"""
+    object_type: str | None = None
+    """存储给的对象类型：``Normal`` 是一次整传，分片与追加上传的 ETag 不是 MD5。"""
 
 
 class ObjectStoreUnavailable(Exception):
@@ -41,6 +45,10 @@ class SignedUploadStore(Protocol):
 
     async def find_object(self, *, prefix: str) -> StoredObject | None:
         """按前缀查询唯一对象；不存在返回 None，多个匹配视为错误。"""
+        ...
+
+    async def delete_object(self, object_key: str) -> None:
+        """删除这个对象；对象本来就不在也算删掉。失败抛 ``ObjectStoreUnavailable``。"""
         ...
 
     def public_url(self, object_key: str) -> str:

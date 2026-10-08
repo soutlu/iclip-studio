@@ -127,7 +127,7 @@ export const ConversationTurn = memo(function ConversationTurn({
         />
       )}
       {turn.state === 'queued' ? (
-        <p className="text-body-sm text-chat-muted-text">排队中，等前一条跑完</p>
+        <p className="text-body-sm text-chat-muted-text">排队中，等待上一条完成</p>
       ) : null}
     </article>
   )

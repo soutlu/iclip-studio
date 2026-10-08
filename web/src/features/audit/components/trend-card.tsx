@@ -11,7 +11,7 @@ type TrendCardProps = {
   title: string
   info: string
   head: CardHead
-  /** 环比悬停时写的「和 X–Y 比」。 */
+  /** 环比悬停时写的「与 X–Y 相比」。 */
   deltaTitle: string
   model: ChartModel
   /** 标题点了滚到的那一节。 */
@@ -50,7 +50,7 @@ export function TrendCard({
             <button
               className="-mx-1 -my-0.5 inline-flex ui-state cursor-pointer items-center gap-0.5 rounded-sm px-1 py-0.5 ui-focus hover:text-on-surface"
               onClick={onJump}
-              title="往下看这一项的分布"
+              title="点击可查看下方该项的分布"
               type="button"
             >
               {title}

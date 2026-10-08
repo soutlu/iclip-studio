@@ -15,7 +15,7 @@ describe('taskCellOf', () => {
   it.each([
     { state: 'loading', text: '正在读取需求单…' },
     { state: 'error', text: '需求单信息暂不可用' },
-    { state: 'forbidden', text: '无需求单查看权限' },
+    { state: 'forbidden', text: '当前账号没有查看需求单权限' },
     { state: 'ready', text: '需求单暂不可用' },
   ] as const)('预览没到时按 $state 说话，能用候选标题顶一下', ({ state, text }) => {
     expect(taskCellOf('t1', undefined, undefined, state)).toBe(text)

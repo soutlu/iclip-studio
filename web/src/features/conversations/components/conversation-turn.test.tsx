@@ -490,7 +490,7 @@ describe('工具结果按 view 选渲染器', () => {
     await user.click(screen.getByRole('button', { name: '展开「搜索工作区 夜景」的详情' }))
 
     expect(screen.getByRole('button', { name: /s02\.md\s*结尾也是夜景/ })).toBeInTheDocument()
-    expect(screen.getByText('命中较多，只列出一部分')).toBeInTheDocument()
+    expect(screen.getByText('命中较多，仅列出部分结果')).toBeInTheDocument()
   })
 
   it('画出图的那次调用不折进活动组：折起来图就跟着不见了', async () => {
@@ -735,12 +735,12 @@ describe('轮次没跑完', () => {
     state: 'failed',
   })
 
-  it('一行「这一轮没有完成」，错误原文不铺开，「复制错误信息」复制的就是它', async () => {
+  it('一行「该轮未完成」，错误原文不铺开，「复制错误信息」复制的就是它', async () => {
     const user = userEvent.setup()
     const writeText = stubClipboard()
     await renderTurn(failedTurn())
 
-    expect(screen.getByText('这一轮没有完成')).toBeInTheDocument()
+    expect(screen.getByText('该轮未完成')).toBeInTheDocument()
     expect(screen.queryByText(/UnexpectedModelBehavior/)).toBeNull()
 
     await user.click(screen.getByRole('button', { name: '复制错误信息' }))

@@ -31,6 +31,7 @@ function Harness({
       onVideoChange={setVideoId}
       scope={scope}
       shareLinkOf={(id) => `https://iclip.test/library?video=${id}`}
+      tabs={null}
       videoId={videoId}
     />
   )
@@ -203,7 +204,7 @@ describe('library paging', () => {
     expect(queries).toHaveLength(3)
 
     await user.type(screen.getByRole('textbox', { name: '搜索脚本' }), '没有的词')
-    expect(await screen.findByText(/没有找到匹配的片子/)).toBeVisible()
+    expect(await screen.findByText(/暂无匹配的视频/)).toBeVisible()
   })
 
   it('waits for the footer to near the bottom, and starts over from the first page after a filter change', async () => {
@@ -536,14 +537,14 @@ describe('library viewer', () => {
     expect(make).toHaveAttribute('aria-disabled', 'true')
     act(() => make.focus())
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      '这条视频没有可用的制作文件，做不了同款',
+      '该视频没有可用的制作文件，无法做同款',
     )
     act(() => make.blur())
     await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
 
     await user.click(make)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      '这条视频没有可用的制作文件，做不了同款',
+      '该视频没有可用的制作文件，无法做同款',
     )
     expect(screen.getByRole('dialog', { name: SANDALS })).toBe(viewer)
     expect(router.state.location.search).toEqual(search)

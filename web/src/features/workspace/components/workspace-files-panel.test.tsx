@@ -60,8 +60,8 @@ describe('WorkspaceFilesPanel 列表', () => {
     )
     await renderPanel()
 
-    expect(await screen.findByText('还没有文件')).toBeVisible()
-    expect(screen.getByText('agent 写下的每一份文件都会列在这里。')).toBeVisible()
+    expect(await screen.findByText('暂无文件')).toBeVisible()
+    expect(screen.getByText('agent 写入的所有文件都将显示在这里')).toBeVisible()
   })
 })
 
@@ -120,7 +120,7 @@ describe('WorkspaceFilesPanel 阅读', () => {
     }
   })
 
-  it('空文件说一句「这份文件还是空的」', async () => {
+  it('空文件说一句「该文件暂无内容」', async () => {
     server.use(
       http.get('*/api/conversations/:conversationId/workspace/file', () =>
         HttpResponse.json({ file: { content: '', path: 'notes.json', version: 1 } }),
@@ -128,8 +128,8 @@ describe('WorkspaceFilesPanel 阅读', () => {
     )
     await renderPanel(`/c/${CONVERSATION_ID}?file=notes.json`)
 
-    expect(await screen.findByText('这份文件还是空的')).toBeVisible()
-    expect(screen.queryByText('JSON 格式有误，按原文显示')).not.toBeInTheDocument()
+    expect(await screen.findByText('该文件暂无内容')).toBeVisible()
+    expect(screen.queryByText('JSON 格式有误，已按原文显示')).not.toBeInTheDocument()
   })
 
   it('这份文件本身是别的产物时，给一个去那边打开的入口', async () => {
@@ -145,7 +145,7 @@ describe('WorkspaceFilesPanel 阅读', () => {
     seedMockWorkspace(CONVERSATION_ID)
     await renderPanel(`/c/${CONVERSATION_ID}?file=gone.md`)
 
-    expect(await screen.findByText('这个文件已经不在了')).toBeVisible()
+    expect(await screen.findByText('该文件已不存在')).toBeVisible()
     expect(screen.getByRole('button', { name: '返回文件列表' })).toBeVisible()
   })
 })

@@ -76,13 +76,13 @@ describe('环比', () => {
       current: 5,
       previous: 0,
       better: 'up',
-      expected: { direction: null, text: '上期无数据', tone: 'flat' },
+      expected: { direction: null, text: '上期暂无数据', tone: 'flat' },
     },
     {
       current: null,
       previous: 3,
       better: 'up',
-      expected: { direction: null, text: '上期无数据', tone: 'flat' },
+      expected: { direction: null, text: '上期暂无数据', tone: 'flat' },
     },
   ] as const)(
     '$previous → $current（越 $better 越好）',

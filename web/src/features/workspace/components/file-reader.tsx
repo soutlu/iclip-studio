@@ -46,7 +46,7 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
       await copyText(content)
       toast('已复制')
     } catch {
-      toast.error('复制失败')
+      toast.error('复制失败，请重试')
     }
   }
 
@@ -106,12 +106,12 @@ export function FileReader({ conversationId, onBack, path }: FileReaderProps) {
         <PanelNotice text="正在读取文件…" />
       ) : file.isError ? (
         file.error instanceof ApiError && file.error.status === 404 ? (
-          <PanelNotice hint="它已经被删掉了，回列表看看还有什么。" text="这个文件已经不在了" />
+          <PanelNotice hint="该文件已被删除，请返回文件列表查看其他文件" text="该文件已不存在" />
         ) : (
-          <PanelNotice text={errorMessageOf(file.error, '读取工作区文件失败')} />
+          <PanelNotice text={errorMessageOf(file.error, '读取工作区文件失败，请重试')} />
         )
       ) : empty ? (
-        <PanelNotice text="这份文件还是空的" />
+        <PanelNotice text="该文件暂无内容" />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           {kind === 'markdown' ? (

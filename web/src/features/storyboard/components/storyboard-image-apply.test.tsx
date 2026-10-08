@@ -191,7 +191,7 @@ describe('图片编辑结果替换当前帧', () => {
     )
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
     expect(
-      await within(editor).findByText('这张图片已发生变化，请重新选择要替换的图片'),
+      await within(editor).findByText('该图片已发生变化，请重新选择要替换的图片'),
     ).toBeVisible()
     expect(writes).toHaveLength(0)
     expect(persisted.shots[0]?.image_urls).toEqual([externalUrl])

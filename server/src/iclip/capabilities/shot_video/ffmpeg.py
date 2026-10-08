@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from iclip.capabilities.shot_video.grid import GrayImage, parse_pgm
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.ffmpeg import PROBE_TIMEOUT_SECONDS, MediaError, run
 
 EXTRACT_TIMEOUT_SECONDS = 900.0
@@ -21,8 +22,9 @@ DETECT_WIDTH = 640
 """网格检测的降采样宽度；裁剪仍使用原图，输出画质不受检测分辨率影响。"""
 
 
-async def extract_frames(path: Path, *, fps: float, out_dir: Path) -> list[Path]:
-    """按固定帧率抽帧并返回时间升序的路径；第 i 帧对应 i / fps 秒，避免全量载入内存。"""
+async def extract_frames(path: Path, *, fps: float, out_dir: Path, codec: MediaCodec) -> list[Path]:
+    """按固定帧率抽帧并返回时间升序的路径；第 i 帧对应 i / fps 秒，避免全量载入内存。
+    解码用 ``codec`` 的选项。"""
 
     if fps <= 0:
         raise MediaError(f"抽帧帧率必须为正: {fps}")
@@ -31,6 +33,7 @@ async def extract_frames(path: Path, *, fps: float, out_dir: Path) -> list[Path]
             "ffmpeg",
             "-v",
             "error",
+            *codec.decode,
             "-i",
             str(path),
             "-vf",

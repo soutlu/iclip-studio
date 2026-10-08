@@ -325,9 +325,9 @@ describe('按任务执行次数', () => {
       return flag
     }
     const retry = expectFlagFirst('每镜头重试次数', /^反复重试：单镜成功生成 4 次及以上$/)
-    expectFlagFirst('成片', /^视频悬挂：提交上游超过 2 小时还没结果$/)
+    expectFlagFirst('成片', /^视频悬挂：提交上游超过 2 小时尚未返回结果$/)
     expectFlagFirst('token 消耗', /^消耗离群：.*5 倍（250 万 token）$/)
-    expectFlagFirst('需求单', /^需求单卡住：挂了 6 段以上对话/)
+    expectFlagFirst('需求单', /^需求单卡住：已关联 6 段以上对话/)
     expect(within(cellOf(table, row, '运行时长')).queryByRole('img')).not.toBeInTheDocument()
 
     await user.hover(retry)

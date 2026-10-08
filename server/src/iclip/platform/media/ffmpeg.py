@@ -19,6 +19,7 @@ from typing import Final
 import httpx
 
 from iclip.common.urls import is_http_url
+from iclip.platform.media.codec import MediaCodec
 
 _STDERR_LIMIT = 400
 _DOWNLOAD_CHUNK = 256 * 1024
@@ -51,24 +52,6 @@ _REMOTE_INPUT: Final = (
 MAX_VIDEO_BYTES = 512 * 1024 * 1024
 MAX_IMAGE_BYTES = 64 * 1024 * 1024
 """下载大小上限，限制 worker 的内存与临时文件占用。"""
-
-_VIDEO_CODEC = ("-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p")
-"""重编码目标：H.264 视觉无损档，浏览器与上游都认。
-
-比视觉无损档多留一档（18 → 16，体积涨约四分之一）：编辑链上每出一版都要把整条重编一遍，
-下一版是在上一版的产物上再编，损失会累积。"""
-
-_ONLY_FORCED_KEYFRAMES: Final = (
-    "-forced-idr",
-    "1",
-    # 关键帧只能出现在 -force_key_frames 给的时刻（ADR-0010）。x264 自己会在两处插：场景切换，
-    # 和默认 250 帧的 keyint 上限。两处都用 x264 的参数关：「不设上限」只有 keyint=infinite
-    # 写得出来，ffmpeg 的 -g 只收一个有限的数；scenecut=0 跟它写在一处，不必再对 ffmpeg 的
-    # -sc_threshold 映射到 x264 的哪一项。
-    "-x264-params",
-    "scenecut=0:keyint=infinite",
-)
-"""接在 ``_VIDEO_CODEC`` 之后，与 ``-force_key_frames`` 同用：关键帧只放在给定的时刻。"""
 
 _AUDIO_CODEC = ("-c:a", "aac", "-b:a", "192k")
 _AUDIO_RATE = 48000
@@ -272,8 +255,10 @@ def _positive_fraction(value: str) -> bool:
         return False
 
 
-async def cut_concat(cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: Path) -> None:
-    """按顺序裁出各段并拼成一条，一次解码重编码对齐到 ``profile``。
+async def cut_concat(
+    cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: Path, codec: MediaCodec
+) -> None:
+    """按顺序裁出各段并拼成一条，一次解码重编码对齐到 ``profile``；解码与编码用 ``codec`` 这一档。
 
     各段来自不同素材、参数互不相同，所以走 ``concat`` 滤镜而不是 concat 分离器——后者要求
     各输入参数一致。``profile`` 要音轨而某一段没有时，那一段配一条等长静音。
@@ -299,7 +284,7 @@ async def cut_concat(cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: P
     chains: list[str] = []
     labels: list[str] = []
     for index, cut in enumerate(cuts):
-        inputs += ["-i", str(cut.source)]
+        inputs += [*codec.decode, "-i", str(cut.source)]
         chains.append(
             f"[{index}:v]trim=start={cut.start:.3f}:end={cut.end:.3f},setpts=PTS-STARTPTS,"
             # 模型还回来的片段分辨率档位比原片高，这一步多半在下采样，lanczos 比默认的
@@ -341,7 +326,7 @@ async def cut_concat(cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: P
     args += ["-map", "[outv]"]
     if profile.has_audio:
         args += ["-map", "[outa]", *_AUDIO_CODEC]
-    args += [*_VIDEO_CODEC, "-force_key_frames", keyframes, *_ONLY_FORCED_KEYFRAMES]
+    args += [*codec.encode, "-force_key_frames", keyframes]
     args += ["-movflags", "+faststart", str(dest)]
     await run(args, timeout=ENCODE_TIMEOUT_SECONDS)
     _check_output(dest, max_bytes=MAX_VIDEO_BYTES)

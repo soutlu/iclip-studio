@@ -273,7 +273,7 @@ function StoryboardStrip({
             {formatSecond(current.start)}–{formatSecond(current.end)}s
           </span>
           {current.prompt === null
-            ? '这条片没有分镜脚本，按时长均匀取帧'
+            ? '该视频没有分镜脚本，已按时长均匀取帧'
             : current.prompt.replace(/@Image\d+\s?/g, '')}
         </p>
       )}

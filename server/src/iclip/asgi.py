@@ -5,6 +5,8 @@
 
 装配在 import 期完成且不建立任何连接，连接与后台循环都留给 lifespan。合同导出靠
 的就是这一点：``scripts/dump_openapi.py`` 只 import 本模块取 OpenAPI，从不启动应用。
+配置里有要用 ffmpeg 的功能时，装配会同步跑一次本地视频编解码探测（几条秒内结束的
+ffmpeg 子进程）；没有硬件的机器上它落到软件，照样装配完成。
 
 两个文件所在目录被监听，文件一变就从同样两个路径重读，热换模型表与 agent 层
 （见 app/agent_layer.py）；SIGHUP 触发同一次重读。

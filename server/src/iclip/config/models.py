@@ -262,8 +262,8 @@ class MediaGenerationSection(ConfigSection):
     整项能力的开关在环境里（``VIDEO_SUBMIT_URL`` 为空即关闭），不在这份文件
     里。关闭时 ``/generations`` 不挂载、后台也不跑。
 
-    节奏参数只暴露两个：查得多勤、多久算超时。图片的并发按家声明在 ``image.models``
-    里；轮询、视频提交与关停宽限是实现细节（按「纯等待」定的高值），默认值在
+    节奏参数暴露三个：查得多勤、多久算超时、本地合成同时跑几条。图片的并发按家声明在
+    ``image.models`` 里；轮询、视频提交与关停宽限是实现细节（按「纯等待」定的高值），默认值在
     ``GenerationQueueSettings`` 里，真要调再往上抬。
     """
 
@@ -271,6 +271,8 @@ class MediaGenerationSection(ConfigSection):
     image: ImageGenerationSection
     poll_interval_seconds: int = Field(default=5, ge=1)
     job_timeout_seconds: int = Field(default=3600, ge=1)
+    compose_concurrency: int | None = Field(default=None, ge=1)
+    """本地合成每个服务进程同时跑几条。不写时按启动时选定的编解码取：硬件 4，软件 2。"""
 
 
 class VideoSection(ConfigSection):
@@ -295,6 +297,10 @@ class IclipStudioSection(ConfigSection):
 
     breakdown_model: str
     """拆解视频用对方哪个模型。"""
+
+    breakdown_concurrency: int | None = Field(default=None, ge=1)
+    """参考视频的后台拆解每个服务进程同时跑几条；多个进程时总并发是它乘进程数。不写时按启动时
+    选定的编解码取：硬件 4，软件 2。"""
 
 
 class ShotVideoSection(ConfigSection):
@@ -463,6 +469,8 @@ class ResolvedMediaGeneration:
     image_edit_task: str
     poll_interval_seconds: int
     job_timeout_seconds: int
+    compose_concurrency: int | None
+    """None 即没写，由组合根按选定的编解码取默认值。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,6 +491,8 @@ class ResolvedIclipStudio:
     breakdown_url: str
     breakdown_api_key: str
     breakdown_model: str
+    breakdown_concurrency: int | None
+    """None 即没写，由组合根按选定的编解码取默认值。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -647,6 +657,7 @@ def _resolve_media_generation(
         image_edit_task=section.image.image_edit_task,
         poll_interval_seconds=section.poll_interval_seconds,
         job_timeout_seconds=section.job_timeout_seconds,
+        compose_concurrency=section.compose_concurrency,
     )
 
 
@@ -666,7 +677,7 @@ def _resolve_video(section: VideoSection | None) -> ResolvedVideo | None:
 
 
 def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
-    """按声明与视频理解开关解析；对象存储是否可用由能力登记处判。"""
+    """按声明与视频理解开关解析。"""
 
     if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
         return None
@@ -675,6 +686,7 @@ def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipSt
         breakdown_url=env.url,
         breakdown_api_key=env.api_key,
         breakdown_model=section.breakdown_model,
+        breakdown_concurrency=section.breakdown_concurrency,
     )
 
 

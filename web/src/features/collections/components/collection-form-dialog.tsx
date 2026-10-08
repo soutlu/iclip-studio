@@ -100,7 +100,7 @@ function CollectionForm({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit()
           }}
-          placeholder="给这个合集起个名字"
+          placeholder="请输入合集名称"
           ref={inputRef}
           value={name}
         />

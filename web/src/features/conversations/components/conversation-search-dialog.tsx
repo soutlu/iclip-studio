@@ -87,7 +87,7 @@ type SearchResultsProps = {
 }
 
 function SearchResults({ keyword, onNavigate, query }: SearchResultsProps) {
-  if (!keyword) return <Hint>输入关键词搜索你的任务</Hint>
+  if (!keyword) return <Hint>输入关键词可搜索你的任务</Hint>
   if (query.isPending) return <Hint>搜索中…</Hint>
   if (query.isError) {
     return <Hint>{errorMessageOf(query.error, '搜索任务失败')}</Hint>
@@ -104,7 +104,7 @@ function SearchRows({
   rows: Awaited<ReturnType<typeof searchConversations>>
 }) {
   const shown = useConversationRows(rows)
-  if (shown.length === 0) return <Hint>没有匹配的任务</Hint>
+  if (shown.length === 0) return <Hint>暂无匹配的任务</Hint>
 
   return (
     <ul aria-label="搜索结果" className="flex flex-col gap-0.5">

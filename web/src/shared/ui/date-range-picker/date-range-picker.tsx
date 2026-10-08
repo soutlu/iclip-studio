@@ -105,9 +105,9 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
 
   const rangeDescription =
     start === null
-      ? '选择开始日期'
+      ? '请选择开始日期'
       : end === null
-        ? `${start.getMonth() + 1}月${start.getDate()}日 — 选择结束日期`
+        ? `已选开始日期 ${start.getMonth() + 1}月${start.getDate()}日，请选择结束日期`
         : dateRangeLabel({
             range: 'custom',
             since: formatLocalDate(start),

@@ -84,6 +84,12 @@ class OssObjectStore:
 
         return await asyncio.to_thread(self._find, _validate_object_key(prefix))
 
+    async def delete_object(self, object_key: str) -> None:
+        """在线程中执行删除；OSS 删除不存在的对象也返回成功，重试不会因为上一次已删而报错。"""
+
+        key = _validate_object_key(object_key)
+        await asyncio.to_thread(_with_retries, lambda: self._bucket.delete_object(key), what="删除")
+
     def public_url(self, object_key: str) -> str:
         return f"{self._public_url_base}/{quote(object_key, safe='/')}"
 
@@ -104,6 +110,9 @@ class OssObjectStore:
             object_key=key,
             content_type=str(head.content_type or "").split(";")[0].strip(),
             size_bytes=int(head.content_length),
+            # SDK 已去掉 ETag 两边的引号；缺这两个头时为 None。
+            etag=head.etag,
+            object_type=head.object_type,
         )
 
     def _put(self, object_key: str, content: bytes, content_type: str) -> None:

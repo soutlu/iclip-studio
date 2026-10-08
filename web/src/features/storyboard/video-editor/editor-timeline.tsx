@@ -122,7 +122,7 @@ function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
       case 'silent':
         return <span className="video-editor-timeline-wave-note">无声</span>
       case 'failed':
-        return <span className="video-editor-timeline-wave-note">原声读不出</span>
+        return <span className="video-editor-timeline-wave-note">无法读取原声</span>
       case 'ready': {
         const { rate, peaks } = state.peaks
         const from = Math.floor(part.start * rate)
@@ -610,7 +610,7 @@ export function EditorTimeline({
                     onPointerUp={releaseHandle}
                     role="slider"
                     style={{ left: percent(entry.at + (value - clip.start)) }}
-                    title="拖动裁剪；方向键微调，Shift 一次一秒"
+                    title="拖动可裁剪，按方向键可微调，按住 Shift 每次调整 1 秒"
                     type="button"
                   />
                 )
@@ -622,10 +622,10 @@ export function EditorTimeline({
               role="status"
               style={{ left: percent(trim?.edge === 'start' ? trimmed.from : trimmed.to) }}
             >
-              裁到 {(trimmed.to - trimmed.from).toFixed(1)} 秒 ·{' '}
+              裁剪后 {(trimmed.to - trimmed.from).toFixed(1)} 秒 ·{' '}
               {trimmed.shorter >= 0
-                ? `短了 ${trimmed.shorter.toFixed(1)} 秒`
-                : `长了 ${(-trimmed.shorter).toFixed(1)} 秒`}
+                ? `缩短 ${trimmed.shorter.toFixed(1)} 秒`
+                : `延长 ${(-trimmed.shorter).toFixed(1)} 秒`}
             </span>
           )}
 
