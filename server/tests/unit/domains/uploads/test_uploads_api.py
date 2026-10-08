@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 from fastapi import FastAPI
+from structlog.testing import capture_logs
 
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
@@ -38,25 +39,47 @@ def uploader(user_id: uuid.UUID | None = None, *, api_key_id: uuid.UUID | None =
     )
 
 
+@dataclass(frozen=True)
+class Recorded:
+    url: str
+    object_upload_id: uuid.UUID
+
+
+RecordCall = tuple[Principal, uuid.UUID, MediaKind, str, str | None]
+
+
 @dataclass
 class RecordedUploads:
-    """RecordUpload 替身：记下每次确认记给了谁、哪一次上传、什么种类、什么地址。"""
+    """RecordUpload 与 FindRecordedUpload 的替身：记下每次确认记给了谁、哪一次上传、什么种类、
+    什么地址、什么 MD5，按 upload_id 存一条记录。``earlier`` 给了就当同一个文件早先传过，记录的
+    地址落它的；去不去重由生成域判断，这里不复制那条规则。"""
 
-    calls: list[tuple[Principal, uuid.UUID, MediaKind, str]] = field(
-        default_factory=list[tuple[Principal, uuid.UUID, MediaKind, str]]
-    )
+    calls: list[RecordCall] = field(default_factory=list[RecordCall])
+    rows: dict[uuid.UUID, Recorded] = field(default_factory=dict[uuid.UUID, Recorded])
+    earlier: Recorded | None = None
 
-    async def __call__(
-        self, principal: Principal, *, upload_id: uuid.UUID, kind: MediaKind, url: str
-    ) -> None:
-        self.calls.append((principal, upload_id, kind, url))
+    async def record(
+        self,
+        principal: Principal,
+        *,
+        upload_id: uuid.UUID,
+        kind: MediaKind,
+        url: str,
+        content_md5: str | None,
+    ) -> Recorded:
+        self.calls.append((principal, upload_id, kind, url, content_md5))
+        return self.rows.setdefault(upload_id, self.earlier or Recorded(url, upload_id))
+
+    async def find(self, upload_id: uuid.UUID) -> Recorded | None:
+        return self.rows.get(upload_id)
 
 
 def build_test_app(
     bucket: FakeBucket, *, granted: Principal | None, recorded: RecordedUploads | None = None
 ) -> FastAPI:
     app = app_with_principal(granted)
-    service = UploadService(bucket, record=recorded or RecordedUploads())
+    records = recorded or RecordedUploads()
+    service = UploadService(bucket, record=records.record, find_recorded=records.find)
     app.include_router(create_uploads_router(service, act_as=ActAs(InMemoryUserRepository())))
     return app
 
@@ -279,7 +302,7 @@ async def test_the_upload_is_recorded_under_whoever_confirms_it(
         response = await confirm(http, upload_id, user_name=name)
 
     assert response.status_code == 200, response.text
-    ((recorded_as, _, _, _),) = recorded.calls
+    ((recorded_as, _, _, _, _),) = recorded.calls
     assert recorded_as.api_key_id == key_id
     if owner == "self":
         assert recorded_as.user_id == me.user_id
@@ -298,3 +321,125 @@ async def test_a_browser_may_not_confirm_in_someone_elses_name() -> None:
 
     assert response.status_code == 422
     assert recorded.calls == []
+
+
+# --- 视频按内容去重 -----------------------------------------------------------------
+
+MD5_ETAG = "0123456789ABCDEF0123456789ABCDEF"
+
+
+async def test_a_video_put_in_one_go_is_recorded_with_its_md5() -> None:
+    """一次整传的视频，ETag 就是 MD5：照小写记下，交回本次的地址。"""
+
+    bucket = FakeBucket()
+    recorded = RecordedUploads()
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        upload_id = (await sign(http, "video/mp4", width=None, height=None)).json()["uploadId"]
+        key = f"iclip/agent/uploads/{upload_id}.mp4"
+        bucket.put(key, content_type="video/mp4", etag=MD5_ETAG)
+        response = await confirm(http, upload_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["url"] == bucket.public_url(key)
+    ((_, _, kind, _, content_md5),) = recorded.calls
+    assert (kind, content_md5) == ("video", MD5_ETAG.lower())
+    assert key in bucket.objects
+
+
+@pytest.mark.parametrize(
+    ("content_type", "ext", "etag", "object_type"),
+    [
+        ("image/jpeg", "jpg", MD5_ETAG, "Normal"),
+        ("video/mp4", "mp4", MD5_ETAG, "Multipart"),
+        ("video/mp4", "mp4", MD5_ETAG, "Appendable"),
+        ("video/mp4", "mp4", f"{MD5_ETAG[:-2]}-3", "Normal"),
+        ("video/mp4", "mp4", None, "Normal"),
+        ("video/mp4", "mp4", MD5_ETAG, None),
+    ],
+    ids=["图片", "分片上传", "追加上传", "ETag 不是 MD5", "没有 ETag", "没有对象类型"],
+)
+async def test_only_a_video_put_in_one_go_gets_an_md5(
+    content_type: str, ext: str, etag: str | None, object_type: str | None
+) -> None:
+    """图片、不是一次整传的视频不记 MD5，照旧交回本次的地址。"""
+
+    bucket = FakeBucket()
+    recorded = RecordedUploads()
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        upload_id = (await sign(http, content_type)).json()["uploadId"]
+        key = f"iclip/agent/uploads/{upload_id}.{ext}"
+        bucket.put(key, content_type=content_type, etag=etag, object_type=object_type)
+        response = await confirm(http, upload_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["url"] == bucket.public_url(key)
+    ((_, _, _, _, content_md5),) = recorded.calls
+    assert content_md5 is None
+
+
+def seed_earlier(bucket: FakeBucket, *, size_bytes: int = 70) -> Recorded:
+    """桶里放一份早先传过的视频，交回它那条记录。"""
+
+    first = uuid.uuid4()
+    key = f"iclip/agent/uploads/{first}.mp4"
+    bucket.put(key, content_type="video/mp4", size_bytes=size_bytes, etag=MD5_ETAG)
+    return Recorded(bucket.public_url(key), first)
+
+
+async def test_a_duplicate_hands_back_the_earlier_address_and_drops_this_copy() -> None:
+    """记录交回别人先传的地址：交回那个地址与那份对象的类型、大小，删掉本次传上来的对象。"""
+
+    bucket = FakeBucket()
+    earlier = seed_earlier(bucket)
+    recorded = RecordedUploads(earlier=earlier)
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        upload_id = (await sign(http, "video/quicktime")).json()["uploadId"]
+        key = f"iclip/agent/uploads/{upload_id}.mov"
+        bucket.put(key, content_type="video/quicktime", size_bytes=70, etag=MD5_ETAG)
+        response = await confirm(http, upload_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"url": earlier.url, "contentType": "video/mp4", "sizeBytes": 70}
+    assert key not in bucket.objects, "本次的对象删掉了"
+    assert f"iclip/agent/uploads/{earlier.object_upload_id}.mp4" in bucket.objects
+
+
+async def test_confirming_a_recorded_upload_again_answers_from_the_shared_object() -> None:
+    """记过的上传再确认：本次的对象已经删了，照样交回记录上的地址与那份对象的事实，不再记一次。"""
+
+    bucket = FakeBucket()
+    earlier = seed_earlier(bucket, size_bytes=90)
+    upload_id = uuid.uuid4()
+    recorded = RecordedUploads(rows={upload_id: earlier})
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        response = await confirm(http, str(upload_id))
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"url": earlier.url, "contentType": "video/mp4", "sizeBytes": 90}
+    assert recorded.calls == []
+
+
+async def test_a_copy_that_cannot_be_dropped_still_confirms_and_leaves_a_warning() -> None:
+    bucket = FakeBucket()
+    bucket.delete_fails = True
+    earlier = seed_earlier(bucket)
+    recorded = RecordedUploads(earlier=earlier)
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        upload_id = (await sign(http, "video/mp4", width=None, height=None)).json()["uploadId"]
+        key = f"iclip/agent/uploads/{upload_id}.mp4"
+        bucket.put(key, content_type="video/mp4", etag=MD5_ETAG)
+        with capture_logs() as logs:
+            response = await confirm(http, upload_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["url"] == earlier.url
+    warnings = [entry for entry in logs if entry["log_level"] == "warning"]
+    assert [(entry["upload_id"], entry["object_key"]) for entry in warnings] == [
+        (uuid.UUID(upload_id), key)
+    ]
+    assert key in bucket.objects

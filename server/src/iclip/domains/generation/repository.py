@@ -45,6 +45,10 @@ class GenerationRepository(Protocol):
         并上经 ``inherited`` 继承来的。对上多条取最早建立的那条；一条都没有给 ``None``。"""
         ...
 
+    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
+        """记着这个 MD5 的视频上传里最早建立的那条（按建立时刻、id）；不按属主过滤，没有给 ``None``。"""
+        ...
+
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         """这几条记录的产物地址，没有产物的不在结果里。不按属主过滤：只给已经可见的行找来源地址。"""
         ...

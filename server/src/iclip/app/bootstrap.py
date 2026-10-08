@@ -550,10 +550,13 @@ def build_app(
         copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
         copy_same_style=same_style,
     )
-    # 确认上传经 uploads 声明的端口落一条上传记录；绑定方法与端口的签名结构一致，不另写适配器。
+    # 确认上传经 uploads 声明的端口查、落上传记录；绑定方法与端口的签名结构一致，不另写适配器。
     uploads = (
         build_uploads_module(
-            public_objects, act_as=identity.act_as, record=settled_records.record_upload
+            public_objects,
+            act_as=identity.act_as,
+            record=settled_records.record_upload,
+            find_recorded=settled_records.recorded_upload,
         )
         if public_objects is not None
         else None

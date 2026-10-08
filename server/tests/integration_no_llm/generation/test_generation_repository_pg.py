@@ -631,6 +631,8 @@ async def test_combined_constraints_refuse_rows_of_no_known_shape(
 
 _BASE_URL = "https://example.test/base.png"
 
+_MD5 = "0123456789abcdef0123456789abcdef"
+
 _IMAGE_ROW: dict[str, Any] = {
     "kind": "image",
     "operation": "generate",
@@ -642,6 +644,7 @@ _IMAGE_ROW: dict[str, Any] = {
     "root": False,
     "output_url": None,
     "finished": False,
+    "content_md5": None,
 }
 """一条合法的图片生成；各用例在它上面改几列，``conversation`` / ``source`` / ``root`` 为真就填上。"""
 
@@ -668,6 +671,8 @@ _REFUSED_SHAPES: dict[str, dict[str, Any]] = {
     "切图还没完成": {"operation": "cut", "source": True, "request": None},
     "上传没有产物地址": {"operation": "upload", **_SETTLED, "output_url": None},
     "上传没有完成时刻": {"operation": "upload", **_SETTLED, "finished": False},
+    "图片上传带 MD5": {"operation": "upload", **_SETTLED, "content_md5": _MD5},
+    "视频出片带 MD5": {"kind": "video", "content_md5": _MD5},
     "图片合成": {
         "operation": "compose",
         "source": True,
@@ -682,6 +687,7 @@ _ACCEPTED_SHAPES: dict[str, dict[str, Any]] = {
     "切图": {"operation": "cut", "source": True, "conversation": True, **_SETTLED},
     "图片上传": {"operation": "upload", **_SETTLED},
     "视频上传": {"kind": "video", "operation": "upload", **_SETTLED},
+    "视频上传带 MD5": {"kind": "video", "operation": "upload", **_SETTLED, "content_md5": _MD5},
 }
 
 
@@ -697,9 +703,9 @@ async def _insert_shaped(engine: AsyncEngine, shape: Mapping[str, Any]) -> None:
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind, "
                 "operation, provider, request, status, source_job_id, source_url, root_job_id, "
-                "output_url, created_at, finished_at) VALUES (:id, :owner, "
+                "output_url, content_md5, created_at, finished_at) VALUES (:id, :owner, "
                 ":conversation, :kind, :operation, 'test', CAST(:request AS jsonb), :status, "
-                ":source, :source_url, :root, :output_url, now(), :finished_at)"
+                ":source, :source_url, :root, :output_url, :content_md5, now(), :finished_at)"
             ),
             {
                 "id": uuid.uuid4(),
@@ -713,6 +719,7 @@ async def _insert_shaped(engine: AsyncEngine, shape: Mapping[str, Any]) -> None:
                 "source_url": row["source_url"],
                 "root": grid.id if row["root"] else None,
                 "output_url": row["output_url"],
+                "content_md5": row["content_md5"],
                 "finished_at": datetime.now(UTC) if row["finished"] else None,
             },
         )
@@ -773,6 +780,28 @@ async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
             )
         ).scalar_one()
     assert nulls is True, "没有请求落的是 SQL NULL，不是 JSON null"
+
+
+async def test_a_video_upload_is_found_by_its_md5_earliest_first_across_owners(
+    engine: AsyncEngine,
+) -> None:
+    """按 MD5 找视频上传：不看属主，取最早建立的那条；别的 MD5、没记 MD5 的不算，没有给 None。"""
+
+    repo = SqlGenerationRepository(engine)
+    sara, logan = await make_user(engine), await make_user(engine)
+    other = "f" * 32
+    first = make_upload(kind="video", owner_user_id=sara, content_md5=_MD5)
+    later = make_upload(kind="video", owner_user_id=logan, content_md5=_MD5)
+    await repo.create_settled([make_upload(kind="video", owner_user_id=logan)])
+    await repo.create_settled([make_upload(kind="video", owner_user_id=logan, content_md5=other)])
+    await repo.create_settled([first])
+    await repo.create_settled([later])
+
+    found = await repo.find_video_upload_by_md5(_MD5)
+
+    assert found is not None
+    assert (found.id, found.owner_user_id, found.content_md5) == (first.id, sara, _MD5)
+    assert await repo.find_video_upload_by_md5("e" * 32) is None
 
 
 async def test_a_record_is_found_by_its_address_within_the_conversation_and_what_it_inherits(

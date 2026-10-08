@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Protocol
 
@@ -629,6 +630,16 @@ def _require_user_name(user_name: str | None) -> None:
         raise ValidationFailed("user_name 必填")
 
 
+@dataclass(frozen=True, slots=True)
+class UploadRecord:
+    """一条上传记录交回的地址，以及这个地址上的对象是哪一次上传传上来的。"""
+
+    url: str
+    object_upload_id: uuid.UUID
+    """对象 key 里的 uploadId：记了 MD5 的是同一个 MD5 最早那条视频上传的 id（去重后是先传的那一次），
+    没记的就是这一行自己的 id。"""
+
+
 class SettledRecords:
     """创建即完成的两种记录：上传与切图。只要仓储，不经队列，媒体生成没开也能落上传行。"""
 
@@ -636,27 +647,67 @@ class SettledRecords:
         self._repo = repo
 
     async def record_upload(
-        self, principal: Principal, *, upload_id: uuid.UUID, kind: GenerationKind, url: str
-    ) -> None:
+        self,
+        principal: Principal,
+        *,
+        upload_id: uuid.UUID,
+        kind: GenerationKind,
+        url: str,
+        content_md5: str | None,
+    ) -> UploadRecord:
         """记一条上传：行 id 就是 ``upload_id``，属主与钥匙取 ``principal``，不挂对话，没有来源与请求。
 
-        按 ``upload_id`` 幂等：已经记过就不动它，第二次确认换了主体属主也照旧；同一个 id 却不是
-        上传，说明 id 撞了，抛 ``RuntimeError``。"""
+        给了 ``content_md5``（只有视频）就照记，并且同一个 MD5 已有视频上传时，这一行的地址落最早
+        那条的地址，不落 ``url``（ADR-0015）。交回这一行最终的地址。
 
+        按 ``upload_id`` 幂等：已经记过就不动它，第二次确认换了主体属主也照旧，交回已有那行的地址；
+        同一个 id 却不是上传，说明 id 撞了，抛 ``RuntimeError``。"""
+
+        first = (
+            None if content_md5 is None else await self._repo.find_video_upload_by_md5(content_md5)
+        )
         created = await self._repo.create_settled(
             [
                 _settled_job(
-                    principal, job_id=upload_id, kind=kind, operation=OPERATION_UPLOAD, url=url
+                    principal,
+                    job_id=upload_id,
+                    kind=kind,
+                    operation=OPERATION_UPLOAD,
+                    url=url if first is None else _settled_url(first),
+                    content_md5=content_md5,
                 )
             ]
         )
         if created:
-            return
-        existing = await self._repo.get(upload_id, owner=None)
-        if existing.operation != OPERATION_UPLOAD:
-            raise RuntimeError(
-                f"上传 {upload_id} 撞上了一条 {existing.kind} / {existing.operation} 记录"
+            (job,) = created
+            return UploadRecord(
+                url=_settled_url(job), object_upload_id=upload_id if first is None else first.id
             )
+        return await self._upload_record(await self._repo.get(upload_id, owner=None))
+
+    async def recorded_upload(self, upload_id: uuid.UUID) -> UploadRecord | None:
+        """这次上传记过没有：记过交回那一行的地址，没记过给 ``None``。不按属主过滤，同确认本身；
+        同一个 id 却不是上传，抛 ``RuntimeError``。"""
+
+        try:
+            job = await self._repo.get(upload_id, owner=None)
+        except NotFound:
+            return None
+        return await self._upload_record(job)
+
+    async def _upload_record(self, job: GenerationJob) -> UploadRecord:
+        """已落库的一行上传：记了 MD5 的，对象归同一个 MD5 最早那条视频上传（去重时抄的就是它的
+        地址）；没记 MD5 的地址就是它自己传上来的对象。"""
+
+        if job.operation != OPERATION_UPLOAD:
+            raise RuntimeError(f"上传 {job.id} 撞上了一条 {job.kind} / {job.operation} 记录")
+        url = _settled_url(job)
+        if job.content_md5 is None:
+            return UploadRecord(url=url, object_upload_id=job.id)
+        first = await self._repo.find_video_upload_by_md5(job.content_md5)
+        if first is None:
+            raise RuntimeError(f"上传 {job.id} 按自己的 MD5 找不到视频上传记录")
+        return UploadRecord(url=url, object_upload_id=first.id)
 
     async def record_cuts(
         self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
@@ -702,6 +753,7 @@ def _settled_job(
     conversation_id: uuid.UUID | None = None,
     task_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
+    content_md5: str | None = None,
 ) -> GenerationJob:
     """一条创建即完成的记录。它们不进队列，``provider`` 只是标签，就写操作名；时刻由仓储改成
     数据库时钟。"""
@@ -727,7 +779,22 @@ def _settled_job(
         created_at=now,
         submitted_at=None,
         finished_at=now,
+        content_md5=content_md5,
     )
 
 
-__all__ = ["ConversationLineage", "GenerationService", "ProbeDuration", "SettledRecords"]
+def _settled_url(job: GenerationJob) -> str:
+    """创建即完成的行必有产物地址（库里由 ``ck_generation_jobs_settled`` 兜底）。"""
+
+    if job.output_url is None:
+        raise RuntimeError(f"记录 {job.id} 创建即完成却没有产物地址")
+    return job.output_url
+
+
+__all__ = [
+    "ConversationLineage",
+    "GenerationService",
+    "ProbeDuration",
+    "SettledRecords",
+    "UploadRecord",
+]

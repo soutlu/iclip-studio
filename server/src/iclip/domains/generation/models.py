@@ -78,6 +78,8 @@ class GenerationJob:
     """视频成功时上游发布的水印版地址；图片没有这一份。"""
     duration_ms: int | None = None
     """产物实际多长，毫秒；只有本系统自己加工、量过的（合成）才有，完成时写入。"""
+    content_md5: str | None = None
+    """文件的 MD5（小写十六进制），只有视频上传有；同一个文件的上传按它共用最早那条的地址（ADR-0015）。"""
 
 
 def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:
