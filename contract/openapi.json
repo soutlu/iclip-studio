@@ -623,6 +623,83 @@
         "title": "Body_auth_cookie_login_auth_login_post",
         "type": "object"
       },
+      "CategoryCountOut": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "name": {
+            "enum": [
+              "高跟鞋",
+              "平底鞋",
+              "乐福鞋",
+              "牛津鞋",
+              "一脚蹬",
+              "穆勒鞋",
+              "拖鞋",
+              "短靴",
+              "中筒靴",
+              "及膝靴",
+              "过膝靴",
+              "高跟凉鞋",
+              "坡跟凉鞋",
+              "厚底凉鞋",
+              "平底凉鞋",
+              "夹趾拖",
+              "凉拖鞋",
+              "运动凉鞋",
+              "跑鞋",
+              "足球鞋",
+              "篮球鞋",
+              "啦啦队鞋",
+              "棒&垒球鞋",
+              "滑板鞋",
+              "舞蹈鞋",
+              "橄榄球鞋",
+              "高尔夫鞋",
+              "网球鞋",
+              "训练鞋",
+              "女性骑行鞋",
+              "健步鞋",
+              "板鞋",
+              "徒步鞋",
+              "徒步靴",
+              "雪地靴",
+              "雨靴",
+              "水鞋",
+              "猎靴",
+              "医疗用鞋",
+              "餐厨用鞋",
+              "军事用靴",
+              "工业用鞋",
+              "工业用靴",
+              "皮带",
+              "钱包",
+              "包",
+              "袜子",
+              "鞋垫",
+              "T恤",
+              "衬衫",
+              "卫衣",
+              "毛衣",
+              "外套",
+              "裤子",
+              "半身裙",
+              "连衣裙"
+            ],
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "count"
+        ],
+        "title": "CategoryCountOut",
+        "type": "object"
+      },
       "CollectionEnvelope": {
         "additionalProperties": false,
         "properties": {
@@ -4516,6 +4593,545 @@
         "title": "PromptUpsertOp",
         "type": "object"
       },
+      "ReferenceCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "uploadId": {
+            "format": "uuid",
+            "title": "Uploadid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadId"
+        ],
+        "title": "ReferenceCreateIn",
+        "type": "object"
+      },
+      "ReferenceFiltersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryCountOut"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "videoTypes": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTypeCountOut"
+            },
+            "title": "Videotypes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "videoTypes",
+          "categories"
+        ],
+        "title": "ReferenceFiltersOut",
+        "type": "object"
+      },
+      "ReferenceUpdateIn": {
+        "additionalProperties": false,
+        "description": "整份改：拆解正文与两组标签都照给的存，重复的标签去掉。",
+        "properties": {
+          "categories": {
+            "items": {
+              "enum": [
+                "高跟鞋",
+                "平底鞋",
+                "乐福鞋",
+                "牛津鞋",
+                "一脚蹬",
+                "穆勒鞋",
+                "拖鞋",
+                "短靴",
+                "中筒靴",
+                "及膝靴",
+                "过膝靴",
+                "高跟凉鞋",
+                "坡跟凉鞋",
+                "厚底凉鞋",
+                "平底凉鞋",
+                "夹趾拖",
+                "凉拖鞋",
+                "运动凉鞋",
+                "跑鞋",
+                "足球鞋",
+                "篮球鞋",
+                "啦啦队鞋",
+                "棒&垒球鞋",
+                "滑板鞋",
+                "舞蹈鞋",
+                "橄榄球鞋",
+                "高尔夫鞋",
+                "网球鞋",
+                "训练鞋",
+                "女性骑行鞋",
+                "健步鞋",
+                "板鞋",
+                "徒步鞋",
+                "徒步靴",
+                "雪地靴",
+                "雨靴",
+                "水鞋",
+                "猎靴",
+                "医疗用鞋",
+                "餐厨用鞋",
+                "军事用靴",
+                "工业用鞋",
+                "工业用靴",
+                "皮带",
+                "钱包",
+                "包",
+                "袜子",
+                "鞋垫",
+                "T恤",
+                "衬衫",
+                "卫衣",
+                "毛衣",
+                "外套",
+                "裤子",
+                "半身裙",
+                "连衣裙"
+              ],
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "document": {
+            "minLength": 1,
+            "title": "Document",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "videoTypes": {
+            "items": {
+              "enum": [
+                "live_clip",
+                "slideshow",
+                "drama",
+                "review",
+                "talking_head",
+                "try_on",
+                "lifestyle",
+                "product_showcase"
+              ],
+              "type": "string"
+            },
+            "title": "Videotypes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "version",
+          "document",
+          "videoTypes",
+          "categories"
+        ],
+        "title": "ReferenceUpdateIn",
+        "type": "object"
+      },
+      "ReferenceVideoItemOut": {
+        "additionalProperties": false,
+        "description": "列表里的一条参考视频；不带拆解正文，正文在详情里。",
+        "properties": {
+          "breakdownStatus": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Breakdownstatus",
+            "type": "string"
+          },
+          "canEdit": {
+            "title": "Canedit",
+            "type": "boolean"
+          },
+          "categories": {
+            "items": {
+              "enum": [
+                "高跟鞋",
+                "平底鞋",
+                "乐福鞋",
+                "牛津鞋",
+                "一脚蹬",
+                "穆勒鞋",
+                "拖鞋",
+                "短靴",
+                "中筒靴",
+                "及膝靴",
+                "过膝靴",
+                "高跟凉鞋",
+                "坡跟凉鞋",
+                "厚底凉鞋",
+                "平底凉鞋",
+                "夹趾拖",
+                "凉拖鞋",
+                "运动凉鞋",
+                "跑鞋",
+                "足球鞋",
+                "篮球鞋",
+                "啦啦队鞋",
+                "棒&垒球鞋",
+                "滑板鞋",
+                "舞蹈鞋",
+                "橄榄球鞋",
+                "高尔夫鞋",
+                "网球鞋",
+                "训练鞋",
+                "女性骑行鞋",
+                "健步鞋",
+                "板鞋",
+                "徒步鞋",
+                "徒步靴",
+                "雪地靴",
+                "雨靴",
+                "水鞋",
+                "猎靴",
+                "医疗用鞋",
+                "餐厨用鞋",
+                "军事用靴",
+                "工业用鞋",
+                "工业用靴",
+                "皮带",
+                "钱包",
+                "包",
+                "袜子",
+                "鞋垫",
+                "T恤",
+                "衬衫",
+                "卫衣",
+                "毛衣",
+                "外套",
+                "裤子",
+                "半身裙",
+                "连衣裙"
+              ],
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "video_unreadable",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorcode"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "videoTypes": {
+            "items": {
+              "enum": [
+                "live_clip",
+                "slideshow",
+                "drama",
+                "review",
+                "talking_head",
+                "try_on",
+                "lifestyle",
+                "product_showcase"
+              ],
+              "type": "string"
+            },
+            "title": "Videotypes",
+            "type": "array"
+          },
+          "videoUrl": {
+            "title": "Videourl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "videoUrl",
+          "userName",
+          "videoTypes",
+          "categories",
+          "breakdownStatus",
+          "errorCode",
+          "version",
+          "canEdit",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ReferenceVideoItemOut",
+        "type": "object"
+      },
+      "ReferenceVideoOut": {
+        "additionalProperties": false,
+        "description": "一条参考视频，连同当前拆解。",
+        "properties": {
+          "breakdownStatus": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Breakdownstatus",
+            "type": "string"
+          },
+          "canEdit": {
+            "title": "Canedit",
+            "type": "boolean"
+          },
+          "categories": {
+            "items": {
+              "enum": [
+                "高跟鞋",
+                "平底鞋",
+                "乐福鞋",
+                "牛津鞋",
+                "一脚蹬",
+                "穆勒鞋",
+                "拖鞋",
+                "短靴",
+                "中筒靴",
+                "及膝靴",
+                "过膝靴",
+                "高跟凉鞋",
+                "坡跟凉鞋",
+                "厚底凉鞋",
+                "平底凉鞋",
+                "夹趾拖",
+                "凉拖鞋",
+                "运动凉鞋",
+                "跑鞋",
+                "足球鞋",
+                "篮球鞋",
+                "啦啦队鞋",
+                "棒&垒球鞋",
+                "滑板鞋",
+                "舞蹈鞋",
+                "橄榄球鞋",
+                "高尔夫鞋",
+                "网球鞋",
+                "训练鞋",
+                "女性骑行鞋",
+                "健步鞋",
+                "板鞋",
+                "徒步鞋",
+                "徒步靴",
+                "雪地靴",
+                "雨靴",
+                "水鞋",
+                "猎靴",
+                "医疗用鞋",
+                "餐厨用鞋",
+                "军事用靴",
+                "工业用鞋",
+                "工业用靴",
+                "皮带",
+                "钱包",
+                "包",
+                "袜子",
+                "鞋垫",
+                "T恤",
+                "衬衫",
+                "卫衣",
+                "毛衣",
+                "外套",
+                "裤子",
+                "半身裙",
+                "连衣裙"
+              ],
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "video_unreadable",
+                  "model_call_failed",
+                  "model_failed",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorcode"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "videoTypes": {
+            "items": {
+              "enum": [
+                "live_clip",
+                "slideshow",
+                "drama",
+                "review",
+                "talking_head",
+                "try_on",
+                "lifestyle",
+                "product_showcase"
+              ],
+              "type": "string"
+            },
+            "title": "Videotypes",
+            "type": "array"
+          },
+          "videoUrl": {
+            "title": "Videourl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "videoUrl",
+          "userName",
+          "videoTypes",
+          "categories",
+          "breakdownStatus",
+          "errorCode",
+          "version",
+          "canEdit",
+          "createdAt",
+          "updatedAt",
+          "document"
+        ],
+        "title": "ReferenceVideoOut",
+        "type": "object"
+      },
+      "ReferenceVideosOut": {
+        "additionalProperties": false,
+        "properties": {
+          "canUpload": {
+            "title": "Canupload",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceVideoItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total",
+          "canUpload"
+        ],
+        "title": "ReferenceVideosOut",
+        "type": "object"
+      },
       "RegenerateBody": {
         "additionalProperties": false,
         "description": "``POST /turns/{turn_id}:regenerate`` 的请求体。两个字段都可省，整个体也可以不带。\n\n``content`` 给了就是「改了内容再重跑」，不给照原样重跑。``prompt_id`` 给了就与发消息同一套\n幂等：重发同一个 id 退回已有那条，不会再截一轮。",
@@ -8245,6 +8861,45 @@
           "watermark_output_url"
         ],
         "title": "VideoTaskResult",
+        "type": "object"
+      },
+      "VideoTypeCountOut": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "rule": {
+            "title": "Rule",
+            "type": "string"
+          },
+          "value": {
+            "enum": [
+              "live_clip",
+              "slideshow",
+              "drama",
+              "review",
+              "talking_head",
+              "try_on",
+              "lifestyle",
+              "product_showcase"
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "rule",
+          "count"
+        ],
+        "title": "VideoTypeCountOut",
         "type": "object"
       }
     },
@@ -12381,6 +13036,565 @@
         "summary": "Video",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/references": {
+      "get": {
+        "description": "全站没移除的参考视频，建立晚的排前面。\n\n``videoTypes``、``categories`` 可以重复给，同一组里命中任一即算；``userName`` 筛属主；``q``\n按字面包含匹配拆解全文；时间窗 ``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。",
+        "operationId": "list_references_references_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoTypes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "live_clip",
+                      "slideshow",
+                      "drama",
+                      "review",
+                      "talking_head",
+                      "try_on",
+                      "lifestyle",
+                      "product_showcase"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Videotypes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categories",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "高跟鞋",
+                      "平底鞋",
+                      "乐福鞋",
+                      "牛津鞋",
+                      "一脚蹬",
+                      "穆勒鞋",
+                      "拖鞋",
+                      "短靴",
+                      "中筒靴",
+                      "及膝靴",
+                      "过膝靴",
+                      "高跟凉鞋",
+                      "坡跟凉鞋",
+                      "厚底凉鞋",
+                      "平底凉鞋",
+                      "夹趾拖",
+                      "凉拖鞋",
+                      "运动凉鞋",
+                      "跑鞋",
+                      "足球鞋",
+                      "篮球鞋",
+                      "啦啦队鞋",
+                      "棒&垒球鞋",
+                      "滑板鞋",
+                      "舞蹈鞋",
+                      "橄榄球鞋",
+                      "高尔夫鞋",
+                      "网球鞋",
+                      "训练鞋",
+                      "女性骑行鞋",
+                      "健步鞋",
+                      "板鞋",
+                      "徒步鞋",
+                      "徒步靴",
+                      "雪地靴",
+                      "雨靴",
+                      "水鞋",
+                      "猎靴",
+                      "医疗用鞋",
+                      "餐厨用鞋",
+                      "军事用靴",
+                      "工业用鞋",
+                      "工业用靴",
+                      "皮带",
+                      "钱包",
+                      "包",
+                      "袜子",
+                      "鞋垫",
+                      "T恤",
+                      "衬衫",
+                      "卫衣",
+                      "毛衣",
+                      "外套",
+                      "裤子",
+                      "半身裙",
+                      "连衣裙"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Categories"
+            }
+          },
+          {
+            "in": "query",
+            "name": "userName",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 150,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideosOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List References",
+        "tags": [
+          "references"
+        ]
+      },
+      "post": {
+        "description": "把调用者自己的一条视频上传放进资料库，新建的排上第一次拆解（``201``）。\n\n同一条视频已在表里就交回那一行（``200``），不再拆；移除过的回到资料库。别人的上传、\n不是视频的上传、不存在的 ``uploadId`` 都是 ``404``。",
+        "operationId": "create_reference_references_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "uploads:write"
+            ]
+          },
+          {
+            "BearerToken": [
+              "uploads:write"
+            ]
+          }
+        ],
+        "summary": "Create Reference",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/filters": {
+      "get": {
+        "description": "全部片子类型与用到的品类，各带条数；只数没移除的，不受筛选影响。",
+        "operationId": "reference_filters_references_filters_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceFiltersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Reference Filters",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}": {
+      "delete": {
+        "description": "属主把它从资料库移除；AI 导演按地址仍能用它的拆解。别人的是 ``403``。",
+        "operationId": "remove_reference_references__reference_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Remove Reference",
+        "tags": [
+          "references"
+        ]
+      },
+      "get": {
+        "description": "一条参考视频连同当前拆解；移除了是 ``404``。",
+        "operationId": "get_reference_references__reference_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Get Reference",
+        "tags": [
+          "references"
+        ]
+      },
+      "patch": {
+        "description": "属主改拆解正文与两组标签，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。",
+        "operationId": "update_reference_references__reference_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Update Reference",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}/breakdowns": {
+      "post": {
+        "description": "属主重新拆解：重新排队，拆成就覆盖拆解与标签，失败保留原来的。正在拆是 ``409``。",
+        "operationId": "rerun_reference_references__reference_id__breakdowns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read",
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read",
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Rerun Reference",
+        "tags": [
+          "references"
         ]
       }
     },

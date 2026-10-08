@@ -24,9 +24,10 @@ from iclip.domains.generation.infra_sql import metadata_obj as generation_metada
 from iclip.domains.identity.acting import placeholder_email
 from iclip.domains.identity.infra_sql import DB_SCHEMA, Base
 from iclip.domains.inspirations.infra_sql import metadata_obj as inspirations_metadata
+from iclip.domains.references.infra_sql import metadata_obj as references_metadata
 from iclip.domains.tasks.infra_sql import metadata_obj as tasks_metadata
 from iclip.domains.tracking.infra_sql import metadata_obj as tracking_metadata
-from tests.helpers.pg import reset_database
+from tests.helpers.pg import reset_database, reset_present_tables
 
 _MODULE_METADATA: tuple[MetaData, ...] = (
     Base.metadata,
@@ -36,6 +37,7 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     tasks_metadata,
     inspirations_metadata,
     tracking_metadata,
+    references_metadata,
 )
 
 
@@ -772,7 +774,7 @@ async def _seed_forks(
     engine = create_async_engine(migrated_pg)
     try:
         async with engine.begin() as conn:
-            await reset_database(conn)
+            await reset_present_tables(conn)
             await _insert_generation_owner(conn, owner)
             for conversation_id, parent, minute in conversations:
                 await conn.execute(
@@ -808,10 +810,12 @@ async def _seed_forks(
 
 
 async def _clear(migrated_pg: str) -> None:
+    """用例停在旧版本时清表，后来才建的表此刻还不在。"""
+
     engine = create_async_engine(migrated_pg)
     try:
         async with engine.begin() as conn:
-            await reset_database(conn)
+            await reset_present_tables(conn)
     finally:
         await engine.dispose()
 

@@ -120,6 +120,7 @@ STUDIO = ResolvedIclipStudio(
     breakdown_url="https://vision.test/responses",
     breakdown_api_key="ark",
     breakdown_model="seed-vision",
+    breakdown_concurrency=2,
 )
 SHARED_VIDEO = "https://cdn.test/ref.mp4"
 SHARED_KEY = f"iclip/agent/video-breakdowns/{hashlib.sha256(SHARED_VIDEO.encode()).hexdigest()}.md"

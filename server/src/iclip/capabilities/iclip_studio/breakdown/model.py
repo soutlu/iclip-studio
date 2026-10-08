@@ -49,22 +49,55 @@ class ArkBreakdownModel:
             ]
         )
 
-    async def _ask(self, content: list[dict[str, Any]]) -> str:
+    async def ask_text(
+        self,
+        system: str,
+        text: str,
+        *,
+        reasoning_effort: str,
+        max_output_tokens: int,
+        text_format: dict[str, Any] | None = None,
+        timeout: float = TIMEOUT_SECONDS,
+    ) -> str:
+        """一次纯文本调用：``system`` 是系统提示词，``text`` 是整条用户消息，``text_format`` 给了就作为
+        Responses 的 ``text.format`` 约束输出。交回模型的正文原文，失败照拆解一样抛 ``BreakdownError``。"""
+
+        return await self._ask(
+            [{"type": "input_text", "text": text}],
+            system=system,
+            reasoning_effort=reasoning_effort,
+            max_output_tokens=max_output_tokens,
+            text_format=text_format,
+            timeout=timeout,
+        )
+
+    async def _ask(
+        self,
+        content: list[dict[str, Any]],
+        *,
+        system: str = SYSTEM_PROMPT,
+        reasoning_effort: str = REASONING_EFFORT,
+        max_output_tokens: int = MAX_OUTPUT_TOKENS,
+        text_format: dict[str, Any] | None = None,
+        timeout: float = TIMEOUT_SECONDS,
+    ) -> str:
         payload: dict[str, Any] = {
             "model": self._model,
-            "reasoning": {"effort": REASONING_EFFORT},
-            "max_output_tokens": MAX_OUTPUT_TOKENS,
+            "reasoning": {"effort": reasoning_effort},
+            "max_output_tokens": max_output_tokens,
             "input": [
-                {"role": "system", "content": [{"type": "input_text", "text": SYSTEM_PROMPT}]},
+                {"role": "system", "content": [{"type": "input_text", "text": system}]},
                 {"role": "user", "content": content},
             ],
         }
+        if text_format is not None:
+            payload["text"] = {"format": text_format}
         try:
             response = await self._client.post(
                 self._url,
                 json=payload,
                 headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=TIMEOUT_SECONDS,
+                timeout=timeout,
             )
             response.raise_for_status()
             body = response.json()
