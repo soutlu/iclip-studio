@@ -39,6 +39,7 @@ from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService
+from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
@@ -205,6 +206,7 @@ def test_shot_video_is_registered_when_backed(
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
+        media_codec=SOFTWARE,
     )
     resolved = resolve_capabilities(
         ("workspace", "video", "shot_video"), table=built, declared_by="agent storyboard"
@@ -227,6 +229,7 @@ def test_shot_video_without_workspace_and_video_fails_at_assembly(
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
+        media_codec=SOFTWARE,
     )
     with pytest.raises(RuntimeError, match=r"没挂 'workspace', 'video'.*agents\.yaml"):
         resolve_capabilities(("shot_video",), table=built, declared_by="agent storyboard")
@@ -251,6 +254,7 @@ def test_the_display_registry_merges_every_display_source(
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
+        media_codec=SOFTWARE,
     )
 
     registry = build_display_registry(built)
@@ -543,6 +547,7 @@ def test_shot_video_refuses_to_mount_when_its_image_model_is_not_wired(
             http_client=idle_client(),
             shot_video=shot_video_settings,
             image_models=frozenset({"别的一家"}),
+            media_codec=SOFTWARE,
         )
 
 

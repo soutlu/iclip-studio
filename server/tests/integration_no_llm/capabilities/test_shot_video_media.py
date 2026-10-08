@@ -31,6 +31,7 @@ from structlog.testing import capture_logs
 from iclip.capabilities.shot_video.capability import GenerationPolicy, shot_video_capability
 from iclip.capabilities.shot_video.delivery import FrameRequest
 from iclip.capabilities.shot_video.extraction import EXTRACTION_PATH
+from iclip.capabilities.shot_video.ffmpeg import extract_frames
 from iclip.capabilities.shot_video.generation import IMAGE_MODEL
 from iclip.capabilities.shot_video.ports import ObjectWriteFailed
 from iclip.capabilities.shot_video.toolset import (
@@ -45,11 +46,13 @@ from iclip.harness.transcript.from_messages import turns_from_messages
 from iclip.harness.transcript.projector import TranscriptEventStream
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.platform.file_store.store import FileSpace
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.media.ffmpeg import MediaError, ffmpeg_available
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.media import BROKEN_DECODE, CODECS, local_codec
 from tests.helpers.shot_video import FakeGenerations, FakeObjects, Outcome
 
 pytestmark = pytest.mark.skipif(not ffmpeg_available(), reason="本机 PATH 上没有 ffmpeg/ffprobe")
@@ -224,6 +227,7 @@ def make_tools(
         client=client,
         image_models=frozenset({IMAGE_MODEL}),
         policy=FAST,
+        codec=SOFTWARE,
     ).get_toolset()
     assert isinstance(toolset, ShotVideoToolset)
     return toolset
@@ -284,6 +288,29 @@ async def test_a_grid_without_gutters_is_cut_evenly_and_logged(tmp_path: Path) -
     assert [(log["job_id"], log["cells"]) for log in fallbacks] == [
         (str(generations.job_ids[0]), 4)
     ]
+
+
+@pytest.mark.parametrize("codec_name", list(CODECS))
+async def test_extracting_frames_gives_one_per_interval(codec_name: str, tmp_path: Path) -> None:
+    """每一档解码抽出来的都一样：三秒每秒两帧。本机用不了的硬件档跳过。"""
+
+    clip = tmp_path / "clip.mp4"
+    make_clip_mp4(clip)
+    out_dir = tmp_path / "frames"
+    out_dir.mkdir()
+
+    frames = await extract_frames(clip, fps=2, out_dir=out_dir, codec=local_codec(codec_name))
+
+    assert len(frames) == 6
+    assert {probe_size(frame.read_bytes()) for frame in frames} == {(320, 240)}
+
+
+async def test_extracting_frames_puts_the_decode_options_on_the_input(tmp_path: Path) -> None:
+    clip = tmp_path / "clip.mp4"
+    make_clip_mp4(clip)
+
+    with pytest.raises(MediaError, match="no-such-accel"):
+        await extract_frames(clip, fps=2, out_dir=tmp_path, codec=BROKEN_DECODE)
 
 
 def model_facing(result: ToolReturn[dict[str, Any]]) -> dict[str, Any]:

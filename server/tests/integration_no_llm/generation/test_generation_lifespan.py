@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from iclip.app.bootstrap import build_app
+from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
 
 
@@ -20,7 +21,7 @@ async def test_app_with_generation_starts_and_stops_cleanly(
         monkeypatch.setenv(name, value)
 
     # 对象存储使用替身；队列连接真实测试数据库，覆盖完整 lifespan。
-    app = build_app(config_with_media(), object_store=MemoryObjectStore())
+    app = build_app(config_with_media(), object_store=MemoryObjectStore(), media_codec=SOFTWARE)
 
     lifespan = app.router.lifespan_context(app)
     await lifespan.__aenter__()

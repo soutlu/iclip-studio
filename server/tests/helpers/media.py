@@ -1,13 +1,81 @@
-"""用真实 ffmpeg 合成测试素材，供切片与合成的集成测试共用。"""
+"""用真实 ffmpeg 合成测试素材、按档取编解码，供切片、合成与抽帧的集成测试共用。"""
 
 from __future__ import annotations
 
+import functools
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from iclip.platform.media.ffmpeg import probe_duration_ms, probe_keyframes
+import pytest
+
+from iclip.platform.media.codec import (
+    HARDWARE_CANDIDATES,
+    SOFTWARE,
+    TRIAL_TIMEOUT_SECONDS,
+    MediaCodec,
+)
+from iclip.platform.media.ffmpeg import (
+    PROBE_TIMEOUT_SECONDS,
+    probe_duration_ms,
+    probe_keyframes,
+    run,
+)
+
+BROKEN_DECODE = MediaCodec(
+    name="broken-decode",
+    hardware=False,
+    decode=("-hwaccel", "no-such-accel"),
+    encode=SOFTWARE.encode,
+    concurrency=1,
+)
+"""解码选项 ffmpeg 不认的一档：哪个视频输入带上了它，那条命令就失败。用来证明解码选项真交给了 ffmpeg。"""
+
+
+CODECS = {codec.name: codec for codec in (SOFTWARE, *HARDWARE_CANDIDATES)}
+"""每一档的名字，供测试按档参数化。"""
+
+
+@functools.cache
+def encodes_here(codec: MediaCodec) -> bool:
+    """这一档的编码参数在本机编得出东西：有这块硬件、驱动认这些参数。
+
+    不看关键帧，也不走启动探测：关键帧参数写错时探测会把这一档拒掉、测试跟着跳过，就测不出来了；
+    这里只问「编不编得了」，编得了的档就该守关键帧的规矩。"""
+
+    result = subprocess.run(
+        [
+            "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=256x256:rate=30",
+            "-frames:v", "5", *codec.encode, "-f", "null", "-",
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+        timeout=TRIAL_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    return result.returncode == 0
+
+
+def local_codec(name: str) -> MediaCodec:
+    """按名字取一档；硬件档在本机编不了就跳过这条测试。"""
+
+    codec = CODECS[name]
+    if codec.hardware and not encodes_here(codec):
+        pytest.skip(f"本机用不了 {codec.name}")
+    return codec
+
+
+async def decode_all(content: bytes, codec: MediaCodec) -> None:
+    """用 ``codec`` 的解码选项把一段视频字节整条解一遍；解不了抛 MediaError。"""
+
+    with TemporaryDirectory(prefix="media-decode-") as tmp:
+        path = Path(tmp) / "out.mp4"
+        path.write_bytes(content)
+        await run(
+            ["ffmpeg", "-v", "error", *codec.decode, "-i", str(path), "-f", "null", "-"],
+            timeout=PROBE_TIMEOUT_SECONDS,
+        )
 
 
 def synthesize_video(
@@ -80,4 +148,14 @@ async def keyframes_of(content: bytes) -> list[float]:
         return await probe_keyframes(path)
 
 
-__all__ = ["duration_ms_of", "keyframes_of", "synthesize_noise", "synthesize_video"]
+__all__ = [
+    "BROKEN_DECODE",
+    "CODECS",
+    "decode_all",
+    "duration_ms_of",
+    "encodes_here",
+    "keyframes_of",
+    "local_codec",
+    "synthesize_noise",
+    "synthesize_video",
+]

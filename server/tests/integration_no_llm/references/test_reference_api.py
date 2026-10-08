@@ -14,6 +14,7 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.app.bootstrap import build_app
+from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.generation import MemoryObjectStore
@@ -56,6 +57,7 @@ async def studio_app(
             queue_connector=InMemoryConnector(),
             reference_breakdowns=breakdowns,
             reference_tagger=tagger,
+            media_codec=SOFTWARE,
         )
     finally:
         await engine.dispose()
@@ -208,6 +210,7 @@ async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
             queue_connector=InMemoryConnector(),
             reference_breakdowns=breakdowns,
             reference_tagger=tagger,
+            media_codec=SOFTWARE,
         )
         async with make_client(app) as client:
             await login_as(client, migrated_pg, "maya", "editor")

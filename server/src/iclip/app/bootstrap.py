@@ -114,6 +114,7 @@ from iclip.platform.file_store.store import (
     StoredFile,
 )
 from iclip.platform.material_ledger.pg import PgMaterialLedger
+from iclip.platform.media.codec import MediaCodec, detect_codec
 from iclip.platform.media.ffmpeg import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
@@ -240,6 +241,20 @@ def _read_only_engine(database_url: str) -> AsyncEngine:
     )
 
 
+def _media_codec(required: bool, injected: MediaCodec | None) -> MediaCodec | None:
+    """本地视频加工用的编解码：注入的优先（测试替身）；要用 ffmpeg 时启动探测一次；用不上为 None。"""
+
+    if injected is not None:
+        return injected
+    return detect_codec() if required else None
+
+
+def _local_concurrency(configured: int | None, codec: MediaCodec) -> int:
+    """本地加工队列的并发：部署配置写了用写的，没写取编解码的默认值。"""
+
+    return configured if configured is not None else codec.concurrency
+
+
 def _generation_module(
     settings: ResolvedMediaGeneration,
     repo: GenerationRepository,
@@ -249,11 +264,14 @@ def _generation_module(
     lineage: ConversationLineage,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
+    media_codec: MediaCodec,
+    compose_concurrency: int,
 ) -> GenerationModule:
     """将配置解析结果转换为生成域的运行设置，保持业务域与配置层隔离。
 
     ``repo`` 是组合根建的那一个带状态广播的仓储，受理、队列与创建即完成的记录共用它；
-    ``queue_connector`` 是组合根建的那一个队列连接器，与参考视频的队列共用。"""
+    ``queue_connector`` 是组合根建的那一个队列连接器，与参考视频的队列共用；
+    ``compose_concurrency`` 已按配置与 ``media_codec`` 取好。"""
 
     return build_generation_module(
         repo,
@@ -283,9 +301,11 @@ def _generation_module(
         image_edit_task=settings.image_edit_task,
         object_store=object_store,
         queue_connector=queue_connector,
+        media_codec=media_codec,
         queue_settings=GenerationQueueSettings(
             poll_interval_seconds=settings.poll_interval_seconds,
             job_timeout_seconds=settings.job_timeout_seconds,
+            compose_concurrency=compose_concurrency,
         ),
     )
 
@@ -303,14 +323,17 @@ def build_app(
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
     reference_tagger: Tagger | None = None,
+    media_codec: MediaCodec | None = None,
     reload_source: ReloadSource | None = None,
     watch_paths: Sequence[Path] = (),
 ) -> FastAPI:
     """装配 FastAPI 应用与资源生命周期，支持注入基础设施替身。
 
     ``reference_breakdowns`` / ``reference_tagger`` 替换参考视频的拆解与打标（测试替身）；只在
-    拆解已配置时用得上。``reload_source`` 重读配置与 agent 声明，不给就沿用传入的 ``config`` 与
-    ``agents``；``watch_paths`` 下的文件一变就用它热换 agent 层，SIGHUP 也触发同一次重载。
+    拆解已配置时用得上。``media_codec`` 指定本地视频加工的编解码（测试替身）；不给且要用
+    ffmpeg 时，这里同步跑一次探测（几条短 ffmpeg 子进程）选出来。``reload_source`` 重读配置与
+    agent 声明，不给就沿用传入的 ``config`` 与 ``agents``；``watch_paths`` 下的文件一变就用它
+    热换 agent 层，SIGHUP 也触发同一次重载。
     """
 
     settings = resolve_settings(config)
@@ -349,6 +372,26 @@ def build_app(
     # 素材、生成与镜头能力依赖同一对象存储，先完成装配。
     public_objects = _object_store(settings.object_store, object_store)
     _require_ffmpeg(settings.ffmpeg_required)
+    # 合成、拆解抽帧与分镜取帧共用这一档；三者都只在 ffmpeg_required 时装配。
+    codec = _media_codec(settings.ffmpeg_required, media_codec)
+    compose_concurrency = (
+        _local_concurrency(settings.media_generation.compose_concurrency, codec)
+        if settings.media_generation is not None and codec is not None
+        else None
+    )
+    breakdown_concurrency = (
+        _local_concurrency(settings.iclip_studio.breakdown_concurrency, codec)
+        if settings.iclip_studio is not None and codec is not None
+        else None
+    )
+    if codec is not None:
+        _logger.info(
+            "本地视频编解码已选定",
+            codec=codec.name,
+            hardware=codec.hardware,
+            compose_concurrency=compose_concurrency,
+            breakdown_concurrency=breakdown_concurrency,
+        )
     if settings.shot_tools_missing:
         # 声明了 shot_video 的 Agent 会在解析能力名时报错，这里先点名缺什么。
         _logger.warning(
@@ -415,6 +458,8 @@ def build_app(
             raise RuntimeError("媒体生成已启用却没有对象存储；resolve_settings 应当已拒绝这种配置")
         if connector is None:
             raise RuntimeError("媒体生成已启用却没建队列连接器；上面的条件漏了媒体生成")
+        if codec is None or compose_concurrency is None:
+            raise RuntimeError("媒体生成已启用却没选编解码；ffmpeg_required 应当已包含媒体生成")
         generation = _generation_module(
             settings.media_generation,
             generation_repo,
@@ -425,6 +470,8 @@ def build_app(
             ),
             object_store=public_objects,
             queue_connector=connector,
+            media_codec=codec,
+            compose_concurrency=compose_concurrency,
         )
 
     async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
@@ -440,14 +487,16 @@ def build_app(
 
     breakdown_setup: BreakdownSetup | None = None
     if settings.iclip_studio is not None and connector is not None:
+        if codec is None or breakdown_concurrency is None:
+            raise RuntimeError("拆解已启用却没选编解码；ffmpeg_required 应当已包含 iclip_studio")
         default_breakdowns, default_tagger = build_reference_breakdown(
-            settings.iclip_studio, http_client
+            settings.iclip_studio, http_client, codec
         )
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns or default_breakdowns,
             tagger=reference_tagger or default_tagger,
             connector=connector,
-            concurrency=settings.iclip_studio.breakdown_concurrency,
+            concurrency=breakdown_concurrency,
         )
     references = build_references_module(
         SqlReferenceStore(active_engine),
@@ -534,6 +583,7 @@ def build_app(
         iclip_studio=settings.iclip_studio,
         # 拆解配好时才有队列；AI 导演拆视频走它，与资料库读写同一行。
         reference_service=references.service if references.queue is not None else None,
+        media_codec=codec,
     )
     # 实时与历史共用显示注册表，保证工具卡渲染一致。
     tool_displays = build_display_registry(capability_table)

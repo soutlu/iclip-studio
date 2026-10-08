@@ -37,6 +37,7 @@ from iclip.harness.skills import skill_display_table
 from iclip.platform.file_store.store import FileSpace, FileStore
 from iclip.platform.http import validation_error_detail
 from iclip.platform.material_ledger.store import MaterialLedger
+from iclip.platform.media.codec import MediaCodec
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket
 from iclip.platform.transcript.display import ToolDisplayRegistry, ToolDisplaySource
@@ -183,12 +184,13 @@ def build_capability_table(
     iclip_studio: ResolvedIclipStudio | None = None,
     reference_service: ReferenceService | None = None,
     image_models: frozenset[str] = frozenset(),
+    media_codec: MediaCodec | None = None,
 ) -> CapabilityTable:
     """按组合根递进来的运行值登记能力名，没给的不登记。
 
     ``shot_video`` 由组合根按 ``ResolvedSettings.shot_tools_enabled`` 决定是否传入；传了却缺
-    媒体生成、切图记录或对象存储是装配错误，直接报。``iclip_studio`` 传了却缺参考视频服务（拆解
-    配好的那个）同样直接报。
+    媒体生成、切图记录、对象存储或取帧用的编解码（``media_codec``）是装配错误，直接报。
+    ``iclip_studio`` 传了却缺参考视频服务（拆解配好的那个）同样直接报。
     """
 
     # 文件生产与读取共用 FileSpace，避免命名空间不一致。
@@ -235,9 +237,14 @@ def build_capability_table(
             ),
         )
     if shot_video is not None:
-        if generation_service is None or settled_records is None or object_store is None:
+        if (
+            generation_service is None
+            or settled_records is None
+            or object_store is None
+            or media_codec is None
+        ):
             raise RuntimeError(
-                "装配 shot_video 要有媒体生成服务、切图记录与对象存储；"
+                "装配 shot_video 要有媒体生成服务、切图记录、对象存储与编解码；"
                 "组合根应按 shot_tools_enabled 决定是否传入"
             )
         table["shot_video"] = (
@@ -257,6 +264,7 @@ def build_capability_table(
                     backoff_factor=shot_video.backoff_factor,
                     total_timeout_seconds=shot_video.job_timeout_seconds,
                 ),
+                codec=media_codec,
             ),
         )
     return table
