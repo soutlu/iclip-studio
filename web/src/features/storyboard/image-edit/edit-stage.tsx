@@ -128,7 +128,7 @@ function FailedPills({ message }: { message: string | undefined }) {
       <div className="image-edit-status-row">
         <span className="image-edit-pill" role="alert">
           <Icon className="text-error" decorative name="alert" size="sm" />
-          未成功
+          生成失败
         </span>
         {!message ? null : (
           <button
@@ -263,7 +263,7 @@ export function EditStage({
     return (
       <Stage backdrop={currentUrl ?? undefined}>
         {currentUrl === null ? (
-          <p className="image-edit-stage-message">还没有在用的图，从版本里选一张</p>
+          <p className="image-edit-stage-message">暂无在用的图片，请从版本中选择一张</p>
         ) : (
           canvas
         )}

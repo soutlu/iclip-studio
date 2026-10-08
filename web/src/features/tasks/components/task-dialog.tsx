@@ -98,7 +98,7 @@ export function TaskDialog({
       setCreationDraft(null)
       onOpenChange(false)
     } catch (cause) {
-      setStartError(errorMessageOf(cause, '创作启动失败，请重试'))
+      setStartError(errorMessageOf(cause, '开始创作失败，请重试'))
     } finally {
       sendingRef.current = false
       setSending(false)
@@ -278,11 +278,11 @@ function TaskDialogForm({ onOpenChange, onPreview, task }: TaskDialogFormProps) 
       style_no: product.style_no.trim(),
     }))
     if (!form.title.trim() || products.some((product) => !product.style_no)) {
-      toast.error('需求单名称和商品款号必填')
+      toast.error('请填写需求单名称和商品款号')
       return
     }
     if (new Set(products.map((product) => product.style_no)).size !== products.length) {
-      toast.error('商品款号不能重复')
+      toast.error('商品款号不可重复')
       return
     }
     const body = {
@@ -314,10 +314,10 @@ function TaskDialogForm({ onOpenChange, onPreview, task }: TaskDialogFormProps) 
       {canStartCreation && (hasUnsavedChanges || uploading || !draft) && (
         <p className="px-6 pb-3 text-body-sm text-on-surface-variant" role="status">
           {uploading
-            ? '素材上传中，完成后请先保存'
+            ? '素材上传中，无法开始创作；请在上传完成后保存'
             : hasUnsavedChanges
-              ? '先保存修改，再开始创作'
-              : '请补充创作要求、视频规格或参考素材后开始'}
+              ? '修改尚未保存，无法开始创作；请先保存'
+              : '尚未填写创作要求、视频规格或参考素材，无法开始创作；请先补充'}
         </p>
       )}
       {(isCreate || (task && (canWrite || canStartCreation))) && (
@@ -334,7 +334,9 @@ function TaskDialogForm({ onOpenChange, onPreview, task }: TaskDialogFormProps) 
               </Button>
             )}
             {task?.status === 'draft' && canManageDraft(user, task) && hasUnsavedChanges && (
-              <span className="text-caption text-on-surface-variant">先保存修改，再发布</span>
+              <span className="text-caption text-on-surface-variant">
+                修改尚未保存，无法发布；请先保存
+              </span>
             )}
             {canWrite &&
               (task?.status === 'published' || (task?.status === 'confirmed' && !claimed)) && (

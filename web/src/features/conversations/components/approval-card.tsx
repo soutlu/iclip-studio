@@ -55,10 +55,10 @@ export function ApprovalCard({
       setDecision(approved ? 'approved' : 'rejected')
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        toast.error('已经做过决定')
+        toast.error('该步骤已做出决定，无法再次提交')
         onRefresh()
       } else if (error instanceof ApiError && error.status === 404) {
-        toast.error('这一步已经处理过了')
+        toast.error('该步骤已处理，无法再次提交')
       } else {
         toast.error(errorMessageOf(error, '提交决定失败'))
       }
@@ -104,7 +104,7 @@ export function ApprovalCard({
       </header>
       {/* display 提供操作说明与可预览的改动，内部参数不进入审批正文。 */}
       {change === undefined ? null : <ChangePreview change={change} />}
-      <p className="px-4 pt-3 text-body text-chat-message-text">这一步要你点头才会继续</p>
+      <p className="px-4 pt-3 text-body text-chat-message-text">该步骤需要你同意后才会继续</p>
       <footer className="mt-3 flex items-center justify-between gap-3 border-t-[0.5px] border-chat-hairline px-4 py-3">
         {settled ? (
           <p className="flex items-center gap-1 text-body-sm text-chat-muted-text">
@@ -112,11 +112,13 @@ export function ApprovalCard({
             {DECISION_LABELS[decision]}
           </p>
         ) : readOnly ? (
-          <p className="text-caption text-chat-muted-text">等任务的主人决定</p>
+          <p className="text-caption text-chat-muted-text">等待任务属主决定</p>
         ) : (
           <>
             {/* 触屏没有数字键，提示不显示；按钮靠 ml-auto 留在右边。 */}
-            <p className="text-caption text-chat-muted-text touch:hidden">按 1 同意，按 2 拒绝</p>
+            <p className="text-caption text-chat-muted-text touch:hidden">
+              按 1 可同意，按 2 可拒绝
+            </p>
             <div className="ml-auto flex items-center gap-2">
               <Button
                 disabled={sending}

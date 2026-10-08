@@ -85,7 +85,7 @@ export function editDraftError(draft: FrameEditDraft, baseUrl: string): string |
     draft.parts.reduce((total, part) => total + (part.kind === 'text' ? part.text.length : 0), 0) >
     4000
   )
-    return '修改要求不能超过 4000 字'
+    return '修改要求最多 4000 字'
   if (draft.parts.every((part) => part.kind !== 'text' || part.text.trim() === ''))
     return '请填写修改要求'
   if (

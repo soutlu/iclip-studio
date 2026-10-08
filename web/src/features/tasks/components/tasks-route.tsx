@@ -102,7 +102,7 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
                 onRetry={() => void myTasks.refetch()}
               />
             ) : mine.length === 0 ? (
-              <ListEmpty>{searching ? '没有匹配的需求单' : '还没有认领的需求单'}</ListEmpty>
+              <ListEmpty>{searching ? '暂无匹配的需求单' : '暂无已认领的需求单'}</ListEmpty>
             ) : (
               <div className="grid-task-cards" id={myTasksId} ref={myGridRef}>
                 {visibleMine.map((task) => (
@@ -160,7 +160,7 @@ export function TasksRoute({ creation, relatedContent }: TasksRouteProps = {}) {
                 onRetry={() => void allTasks.refetch()}
               />
             ) : all.length === 0 ? (
-              <ListEmpty>{searching ? '没有匹配的需求单' : '还没有需求单'}</ListEmpty>
+              <ListEmpty>{searching ? '暂无匹配的需求单' : '暂无需求单'}</ListEmpty>
             ) : (
               <div className="grid-task-cards">
                 {all.map((task) => (

@@ -33,6 +33,7 @@ import {
   isBaseSegment,
   keyframeSegments,
   layoutDraft,
+  MIN_RANGE_SECONDS,
   moveItems,
   removeItems,
   splitAt,
@@ -90,7 +91,7 @@ export function VideoEditor({ conversationId, root, loading, shotIndex, onClose 
           <DialogHeader title="编辑视频" closeLabel="关闭视频编辑" />
           <DialogBody>
             <p className="text-body-sm text-on-surface-muted" role="status">
-              {loading ? '正在读取视频记录…' : '找不到这条视频记录，关掉后从成片区重新打开。'}
+              {loading ? '正在读取视频记录…' : '未找到该视频记录，请关闭后在「本组成片」中重新打开'}
             </p>
           </DialogBody>
         </DialogSurface>
@@ -132,9 +133,9 @@ const positions = (first: number, last: number) =>
 const blockedReason = (target: AiTarget): string | undefined => {
   switch (target.kind) {
     case 'modified':
-      return '裁过、拆过的段要先合成，再让 AI 改'
+      return '含已剪辑的段，无法生成视频；请先点「合成成片」'
     case 'short':
-      return '这段太短，连上相邻的段再改'
+      return `时长不足 ${MIN_RANGE_SECONDS} 秒，无法生成视频；请点击相邻的段一并选中`
     case 'ready':
     case 'empty':
       return undefined
@@ -211,9 +212,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (edit === undefined) return undefined
     if (isRunningStatus(edit.status)) return { kind: 'running' }
     if (edit.status !== 'completed' || edit.outputUrl === null)
-      return { kind: 'failed', message: edit.errorMessage ?? '没有生成结果' }
+      return { kind: 'failed', message: edit.errorMessage ?? '未返回生成结果' }
     const duration = durations[edit.outputUrl]
-    if (duration === null) return { kind: 'failed', message: '读不出结果的时长' }
+    if (duration === null) return { kind: 'failed', message: '无法读取结果的时长' }
     return duration === undefined ? { kind: 'running' } : { kind: 'done', duration }
   }
 
@@ -345,11 +346,11 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const generate = async (submission: ComposerSubmission) => {
     if (busy || editor === undefined || target.kind !== 'ready') return
     if (submission.text.trim() === '') {
-      setGenerateError('先写下想怎么改')
+      setGenerateError('请填写修改要求')
       return
     }
     if (model === undefined) {
-      setGenerateError('没有可用的编辑模型')
+      setGenerateError('暂无可用的编辑模型')
       return
     }
     const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(submission.parts))
@@ -396,7 +397,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       })
       seedJob(job)
       editor.composing(job.id)
-      toast.success('已提交合成，完成后会成为新版本')
+      toast.success('已提交合成，完成后将生成新版本')
     } catch (error) {
       setComposeError(errorMessageOf(error, '合成任务提交失败'))
     } finally {
@@ -457,15 +458,14 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (notice !== null) return notice
     if (editor === undefined) return ''
     if (!viewingDraft)
-      return `正在看 ${version.label} 本身；点「${UNCOMPOSED_LABEL}」回到草稿接着剪`
-    if (waitingComposite) return '正在合成，完成后成为新的一版；合成期间先不能剪'
-    if (operation === 'generating') return '正在切参考片段、交给 AI…'
+      return `正在查看 ${version.label} 原片；点击「${UNCOMPOSED_LABEL}」可返回草稿继续剪辑`
+    if (waitingComposite) return '正在合成，完成后将生成新版本；合成期间无法剪辑'
+    if (operation === 'generating') return '正在截取参考片段并提交给 AI…'
     if (range !== undefined) {
       const which = positions(range.first, range.last)
       const reason = blockedReason(target)
       if (reason !== undefined) return `选中${which}：${reason}`
-      if (selection.length > 1)
-        return `选中${which}：AI 只重做选中的段，原声跟着一起重做；其余画面保持不变`
+      if (selection.length > 1) return `选中${which}：仅重做所选段的画面和原声，其余部分保持不变`
       const only = draft.find((item) => item.id === selection[0])
       const trimmable =
         only?.kind === 'clip' &&
@@ -474,19 +474,19 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           return min < max
         })
       return trimmable
-        ? `选中${which}：拖两端裁短，按住中间拖动调顺序；要 AI 重做就在卡片里写要求`
-        : `选中${which}：这段已经最短，裁不动；按住中间拖动调顺序，要 AI 重做就在卡片里写要求`
+        ? `选中${which}：拖动两端可裁剪，按住中间拖动可调整顺序；如需 AI 重做，请在卡片中填写修改要求`
+        : `选中${which}：已是最短，无法继续裁剪；按住中间拖动可调整顺序，如需 AI 重做，请在卡片中填写修改要求`
     }
     if (pendingItems.length > 0)
-      return 'AI 正在改，关掉窗口也会继续；其他段照样能剪，等 AI 生成完再合成'
+      return 'AI 生成中，关闭窗口不影响生成；其他段可继续剪辑，生成完成后才能合成'
     if (changed) {
       const delta =
         Math.abs(shorter) >= 0.05
           ? `比 ${version.label} ${shorter > 0 ? '短' : '长'} ${seconds(Math.abs(shorter))} 秒；`
           : ''
-      return `${delta}剪辑还没合成，满意就点右上角「合成成片」`
+      return `${delta}剪辑尚未合成，确认后请点击右上角「合成成片」`
     }
-    return '点一段选中，再点相邻的段连着选；拖两端裁剪，按住中间拖动调顺序'
+    return '点击一段即可选中，再点击相邻的段可连续选中；拖动两端可裁剪，按住中间拖动可调整顺序'
   })()
 
   // ---------- 渲染 ----------
@@ -550,7 +550,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       loading={operation === 'composing' || waitingComposite}
       onClick={() => void compose()}
       size="md"
-      title={pendingItems.length > 0 ? '等 AI 生成完再合成' : undefined}
+      title={pendingItems.length > 0 ? 'AI 生成完成后才能合成' : undefined}
     >
       {waitingComposite ? '合成中' : '合成成片'}
     </Button>
@@ -573,7 +573,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
 
   const timeline = keyframes.isError ? (
     <p className="video-editor-timeline-loading" role="alert">
-      {errorMessageOf(keyframes.error, '读不出这条视频的关键帧')}
+      {errorMessageOf(keyframes.error, '无法读取该视频的关键帧')}
       <Button onClick={() => void keyframes.refetch()} size="md" variant="ghost">
         重试
       </Button>
@@ -627,7 +627,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           <>
             {droppedUploads === 0 ? null : (
               <InlineAlert
-                message={`有 ${droppedUploads} 张图收起时还没传完，没有保留，请重新添加`}
+                message={`有 ${droppedUploads} 张图片收起时尚未上传完成，未能保留，请重新添加`}
               />
             )}
             {generateError === null ? null : <InlineAlert message={generateError} />}
@@ -658,7 +658,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
             leading={<Icon decorative name="video" size="sm" />}
             onChange={setWantedModel}
             options={models.map((value) => ({ value }))}
-            text={model ?? '没有支持编辑的模型'}
+            text={model ?? '暂无可用的编辑模型'}
             value={model ?? ''}
           />
         }
@@ -734,7 +734,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                   onReloadChain={() => void chainQuery.refetch()}
                   peaksError={
                     peaksFailure?.kind === 'failed'
-                      ? errorMessageOf(peaksFailure.error, '原声读不出来')
+                      ? errorMessageOf(peaksFailure.error, '无法读取原声')
                       : undefined
                   }
                 />

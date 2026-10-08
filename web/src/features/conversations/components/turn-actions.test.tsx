@@ -61,8 +61,8 @@ describe('TurnActions', () => {
   })
 
   it.each([
-    ['重新生成', '等这一条跑完再重新生成'],
-    ['从这里另开一个任务', '等这一条跑完再分叉'],
+    ['重新生成', '该条消息尚未完成，无法重新生成'],
+    ['从这里另开一个任务', '该条消息尚未完成，无法另开任务'],
   ])('置灰的「%s」悬停时提示原因：%s', async (name, reason) => {
     const user = userEvent.setup()
     renderWithTooltip(
@@ -97,13 +97,15 @@ describe('TurnActions', () => {
     await user.tab()
     expect(screen.getByRole('button', { name: '重新生成' })).toHaveFocus()
     await waitFor(() =>
-      expect(screen.getByRole('tooltip')).toHaveTextContent('等这一条跑完再重新生成'),
+      expect(screen.getByRole('tooltip')).toHaveTextContent('该条消息尚未完成，无法重新生成'),
     )
     await user.keyboard('{Enter}')
 
     await user.tab()
     expect(screen.getByRole('button', { name: '从这里另开一个任务' })).toHaveFocus()
-    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('等这一条跑完再分叉'))
+    await waitFor(() =>
+      expect(screen.getByRole('tooltip')).toHaveTextContent('该条消息尚未完成，无法另开任务'),
+    )
     await user.keyboard('{Enter}')
 
     await user.click(screen.getByRole('button', { name: '重新生成' }))

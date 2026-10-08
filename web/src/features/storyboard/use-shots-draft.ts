@@ -266,7 +266,7 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
       const current = book.edited ?? book.base?.document
       const shot = current === undefined ? undefined : shotOf(current, index)
       if (current === undefined || shot === undefined) {
-        setState({ kind: 'error', message: '这个镜头组已不存在，请重新读取分镜' })
+        setState({ kind: 'error', message: '该镜头组已不存在，请重新读取分镜' })
         return undefined
       }
       const next = update(shot)
@@ -296,7 +296,7 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     (index: number, frame: number, previousUrl: string, url: string) => {
       const result = updateShot(index, (shot) => {
         if (!Number.isInteger(frame) || frame < 1 || shot.image_urls[frame - 1] !== previousUrl) {
-          throw new UserFacingError('这张图片已发生变化，请重新选择要替换的图片')
+          throw new UserFacingError('该图片已发生变化，请重新选择要替换的图片')
         }
         return {
           ...shot,

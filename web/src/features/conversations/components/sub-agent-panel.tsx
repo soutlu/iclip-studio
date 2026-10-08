@@ -32,7 +32,7 @@ const duration = (ms: number | undefined): string | undefined => {
 export function SubAgentPanel({ artifact, conversationId }: ArtifactRendererProps) {
   const source = artifact.source.kind === 'frame' ? artifact.source : undefined
   const agentId = source?.agentRefs?.[0]?.agentId
-  if (agentId === undefined) return <PanelNotice text="这张卡没有派出子代理" />
+  if (agentId === undefined) return <PanelNotice text="该卡片未派出子代理" />
   return (
     <SubAgentStream
       agentId={agentId}

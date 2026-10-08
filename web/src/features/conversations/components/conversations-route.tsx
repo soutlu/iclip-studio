@@ -75,7 +75,7 @@ export function ConversationsRoute({
 
         {taskPreviewState === 'error' ? (
           <div role="alert" className="mt-4 flex flex-wrap items-center gap-3 text-body text-error">
-            <span>部分需求单读取失败，已读取的内容仍可查看。</span>
+            <span>部分需求单读取失败，已读取的内容仍可查看</span>
             <Button onClick={taskPreviewRetry} size="md" variant="ghost">
               重新读取需求单
             </Button>
@@ -90,7 +90,7 @@ export function ConversationsRoute({
               onRetry={() => void query.refetch()}
             />
           ) : rows.length === 0 ? (
-            <ListEmpty>这个筛选下没有任务</ListEmpty>
+            <ListEmpty>暂无符合筛选条件的任务</ListEmpty>
           ) : (
             <>
               <ColumnHeader />

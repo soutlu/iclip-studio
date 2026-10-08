@@ -66,7 +66,7 @@ export function useFrameReplace({ currentUrl, onApply }: FrameReplaceOptions) {
   const replace = async (url: string): Promise<boolean> => {
     const previous = acknowledgedRef.current === undefined ? currentUrl : acknowledgedRef.current
     if (busyRef.current || previous === undefined) return false
-    if (!(await write('replace', previous, url, '没替换成功，请重试'))) return false
+    if (!(await write('replace', previous, url, '替换失败，请重试'))) return false
     clearTimeout(timerRef.current)
     setUndoable({ applied: url, previous })
     timerRef.current = setTimeout(() => setUndoable(null), UNDO_MS)
@@ -76,7 +76,7 @@ export function useFrameReplace({ currentUrl, onApply }: FrameReplaceOptions) {
   const undo = async () => {
     if (busyRef.current || undoable === null) return
     // 撤销失败时入口留着，计时照走：多半是网络抖了，还来得及再点。
-    if (!(await write('undo', undoable.applied, undoable.previous, '没撤销成功，请重试'))) return
+    if (!(await write('undo', undoable.applied, undoable.previous, '撤销失败，请重试'))) return
     clearTimeout(timerRef.current)
     setUndoable(null)
   }

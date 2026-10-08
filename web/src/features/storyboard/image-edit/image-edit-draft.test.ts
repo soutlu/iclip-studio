@@ -75,7 +75,7 @@ describe('editDraftError', () => {
     [
       '超过 4000 字',
       { annotations: [], parts: [{ kind: 'text', text: '长'.repeat(4001) }] },
-      '修改要求不能超过 4000 字',
+      '修改要求最多 4000 字',
     ],
     [
       '引用了画布上删掉的标注',

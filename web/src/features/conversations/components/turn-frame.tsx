@@ -63,7 +63,7 @@ export function RunFailedNotice({ error, onRetry, retryDisabled = false }: RunFa
   return (
     <div className="flex min-h-8 flex-wrap items-center gap-2 text-body">
       <Icon className="shrink-0 text-chat-status-error" decorative name="failed" size="sm" />
-      <span className="text-chat-secondary-text">这一轮没有完成</span>
+      <span className="text-chat-secondary-text">该轮未完成</span>
       {onRetry === undefined ? null : (
         <button
           className="inline-flex h-7 ui-state cursor-pointer items-center gap-1 rounded-full px-2.5 text-body-sm font-medium text-chat-message-text ui-focus"

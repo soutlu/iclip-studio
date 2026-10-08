@@ -36,7 +36,7 @@ const versions = (dialog: Locator) => dialog.getByRole('group', { name: '视频�
 /** 选中段时盖在舞台上的弹出卡。 */
 const card = (dialog: Locator) => dialog.getByRole('region', { name: 'AI 改段' })
 /** 卡收起后的小胶囊。 */
-const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开 AI 改/ })
+const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开第 \d/ })
 const requestBox = (dialog: Locator) =>
   card(dialog).getByRole('textbox', { name: '修改要求', exact: true })
 const generateButton = (dialog: Locator) =>
@@ -98,29 +98,29 @@ test('选中：点段选中、点相邻连选、点两端去掉、点别处重�
 
   await segment(dialog, 2).click()
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
-  await expectCard(dialog, 'AI 改第 2 段', '1.0 – 2.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 2 段 · 视频生成', '1.0 – 2.0 秒 · 视频和原声一起重做')
   await segment(dialog, 3).click()
-  await expectCard(dialog, 'AI 改第 2–3 段', '1.0 – 3.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
   await segment(dialog, 1).click()
-  await expectCard(dialog, 'AI 改第 1–3 段', '0.0 – 3.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 1–3 段 · 视频生成', '0.0 – 3.0 秒 · 视频和原声一起重做')
   // 点两端的段把它去掉。
   await segment(dialog, 1).click()
   await expect(segment(dialog, 1)).toHaveAttribute('aria-pressed', 'false')
-  await expectCard(dialog, 'AI 改第 2–3 段', '1.0 – 3.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
   // 点不相邻的段从那段重新选。
   await segment(dialog, 5).click()
-  await expectCard(dialog, 'AI 改第 5 段', '4.0 – 5.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 5 段 · 视频生成', '4.0 – 5.0 秒 · 视频和原声一起重做')
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'false')
 
   // 卡不抢焦点：键盘左右挪到相邻的段，Shift 扩展。
   await segment(dialog, 5).press('ArrowLeft')
   await expect(segment(dialog, 4)).toBeFocused()
-  await expectCard(dialog, 'AI 改第 4 段', '3.0 – 4.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 4 段 · 视频生成', '3.0 – 4.0 秒 · 视频和原声一起重做')
   await page.keyboard.press('Shift+ArrowRight')
   await page.keyboard.press('Shift+ArrowRight')
-  await expectCard(dialog, 'AI 改第 4–6 段', '3.0 – 6.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 4–6 段 · 视频生成', '3.0 – 6.0 秒 · 视频和原声一起重做')
   await page.keyboard.press('Shift+ArrowLeft')
-  await expectCard(dialog, 'AI 改第 4–5 段', '3.0 – 5.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 4–5 段 · 视频生成', '3.0 – 5.0 秒 · 视频和原声一起重做')
 
   // 卡的尖角指着选区：卡盖在舞台上，水平中线对准选区的中线（夹在舞台内）。
   const box = await card(dialog).boundingBox()
@@ -182,7 +182,7 @@ test('删除、拆分、撤销与重做：总长跟着变，多出「未合成�
   await expect(controls(dialog)).toContainText('共 4.0 秒')
   // 拆过的段不能直接让 AI 改：卡头写原因，写了要求也生成不了。拆完选中的是右边那半，点左边那半连上它。
   await segment(dialog, 1).click()
-  await expectCard(dialog, 'AI 改第 1–2 段', '裁过、拆过的段要先合成，再让 AI 改')
+  await expectCard(dialog, '第 1–2 段 · 视频生成', '含已剪辑的段，无法生成视频；请先点「合成成片」')
   await requestBox(dialog).fill('换成黄昏的暖光')
   await expect(generateButton(dialog)).toBeDisabled()
 
@@ -194,7 +194,7 @@ test('删除、拆分、撤销与重做：总长跟着变，多出「未合成�
   await expect(versions(reopened).getByRole('button', { name: '未合成' })).toBeVisible()
 })
 
-test('裁剪 1 秒的原片段：气泡说裁到多长，松手后总长变短，裁过的段不能再让 AI 改', async ({
+test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变短，裁过的段不能再让 AI 改', async ({
   page,
 }) => {
   const dialog = await openEditor(page)
@@ -207,7 +207,7 @@ test('裁剪 1 秒的原片段：气泡说裁到多长，松手后总长变短�
     dialog.getByRole('slider', { name: '裁剪这段的结尾' }),
     1.4,
   )
-  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁到 0.4 秒 · 短了 0.6 秒')
+  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 0.4 秒 · 缩短 0.6 秒')
   // 一拖手柄卡就收成胶囊，画面不被挡。
   await expect(card(dialog)).toHaveCount(0)
   await expect(capsule(dialog)).toBeVisible()
@@ -215,7 +215,7 @@ test('裁剪 1 秒的原片段：气泡说裁到多长，松手后总长变短�
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.4 秒')
   await expect(controls(dialog)).toContainText('共 5.4 秒 · 比 V1 短 0.6 秒')
   await capsule(dialog).click()
-  await expectCard(dialog, 'AI 改第 2 段', '裁过、拆过的段要先合成，再让 AI 改')
+  await expectCard(dialog, '第 2 段 · 视频生成', '含已剪辑的段，无法生成视频；请先点「合成成片」')
 
   // 拖过头停在最短的 0.2 秒。
   const tooFar = await holdDrag(
@@ -224,7 +224,7 @@ test('裁剪 1 秒的原片段：气泡说裁到多长，松手后总长变短�
     dialog.getByRole('slider', { name: '裁剪这段的结尾' }),
     1,
   )
-  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁到 0.2 秒 · 短了 0.2 秒')
+  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 0.2 秒 · 缩短 0.2 秒')
   await tooFar()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.2 秒')
 })
@@ -260,7 +260,7 @@ test('拖动调序：插入处一条墨线，原声跟着走；合成请求就�
   await expect.poll(pillOffset).toBeLessThan(4)
   // 连上后面那段，按基底时间不连续，不能交给 AI。
   await segment(dialog, 2).click()
-  await expectCard(dialog, 'AI 改第 1–2 段', '裁过、拆过的段要先合成，再让 AI 改')
+  await expectCard(dialog, '第 1–2 段 · 视频生成', '含已剪辑的段，无法生成视频；请先点「合成成片」')
 
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
@@ -299,7 +299,7 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
 
   await segment(dialog, 3).click()
   await expect(dialog.getByRole('slider', { name: '裁剪这段的结尾' })).toHaveCount(0)
-  await expectCard(dialog, 'AI 改第 2–3 段', '1.0 – 3.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
   // 模型菜单向上展开（菜单开着时别处对读屏隐藏，按钮位置先量好）。
   const modelPicker = card(dialog).getByRole('button', { name: '编辑模型', exact: true })
   const pickerBox = await modelPicker.boundingBox()
@@ -378,23 +378,23 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
 
   // 整条没动过的 AI 结果可以在它当初那一段上再改。
   await segment(dialog, 2).click()
-  await expectCard(dialog, 'AI 改第 2 段', '1.0 – 3.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 2 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
 
-  // 裁短 AI 结果：拖结尾手柄，卡收成胶囊；气泡说裁到多长、短了多少；松手后后面的段跟上。
+  // 裁短 AI 结果：拖结尾手柄，卡收成胶囊；气泡说裁剪后多长、缩短多少；松手后后面的段跟上。
   const release = await holdDrag(
     page,
     dialog,
     dialog.getByRole('slider', { name: '裁剪这段的结尾' }),
     3,
   )
-  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁到 2.0 秒 · 短了 1.0 秒')
+  await expect(timelineOf(dialog).getByRole('status')).toHaveText('裁剪后 2.0 秒 · 缩短 1.0 秒')
   await expect(card(dialog)).toHaveCount(0)
   await release()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–3 秒')
   await expect(controls(dialog)).toContainText('共 6.0 秒')
   // 裁过的段不能再让 AI 改：展开卡，卡头写原因，写了要求也生成不了。
   await capsule(dialog).click()
-  await expectCard(dialog, 'AI 改第 2 段', '裁过、拆过的段要先合成，再让 AI 改')
+  await expectCard(dialog, '第 2 段 · 视频生成', '含已剪辑的段，无法生成视频；请先点「合成成片」')
   await expect(requestBox(dialog)).toBeFocused()
   await page.keyboard.type('再暖一点')
   await expect(generateButton(dialog)).toBeDisabled()
@@ -458,7 +458,7 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await segment(dialog, 3).click()
   await requestBox(dialog).fill('换成黄昏的暖光')
 
-  // 按住播放头拖：卡收成画面底部的小胶囊，标着写了一半。
+  // 按住播放头拖：卡收成画面底部的小胶囊，标着未提交。
   const release = await holdDrag(
     page,
     dialog,
@@ -466,8 +466,8 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
     4.6,
   )
   await expect(card(dialog)).toHaveCount(0)
-  await expect(capsule(dialog)).toHaveAccessibleName('展开 AI 改第 2–3 段，写了一半')
-  await expect(capsule(dialog)).toContainText('· 写了一半')
+  await expect(capsule(dialog)).toHaveAccessibleName('展开第 2–3 段 · 视频生成，未提交')
+  await expect(capsule(dialog)).toContainText('· 未提交')
   await capsule(dialog).evaluate((element) =>
     Promise.all(
       (element.parentElement?.getAnimations() ?? []).map((animation) => animation.finished),
@@ -499,7 +499,7 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await expect(capsule(dialog)).toBeVisible()
   await dialog.getByRole('button', { name: '暂停', exact: true }).click()
   await segment(dialog, 3).click()
-  await expectCard(dialog, 'AI 改第 2–3 段', '1.0 – 3.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
   await expect(requestBox(dialog)).toHaveText('换成黄昏的暖光')
 
   // Escape：第一下收卡，编辑器还在；第二下关编辑器。

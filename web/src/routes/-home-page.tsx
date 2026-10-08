@@ -88,12 +88,12 @@ export function HomePage() {
     sameAs === null
       ? null
       : !canReadLibrary
-        ? '你没有查看资料库的权限，做不了同款'
+        ? '当前账号没有查看资料库权限，无法做同款'
         : // 上次读失败留在缓存里时，等这次重读落定再判断。
           source.isError && !source.isFetching
-          ? errorMessageOf(source.error, '读取这条视频失败，做不了同款')
+          ? errorMessageOf(source.error, '读取该视频失败，无法做同款')
           : sourceCard?.canMakeSame === false
-            ? '这条视频没有可用的制作文件，做不了同款'
+            ? '该视频没有可用的制作文件，无法做同款'
             : null
   // 渲染期退出，提示交给 effect 弹；每次失败一个新对象，同样的原因再来一次也照样提示。
   const [sameStyleNotice, setSameStyleNotice] = useState<{ message: string } | null>(null)
@@ -125,7 +125,7 @@ export function HomePage() {
       return false
     }
     if (!canRun) {
-      toast.error('你没有发起创作的权限')
+      toast.error('当前账号没有创作权限，无法开始创作')
       return false
     }
     if (!validAgent || agentId === null || agents.isError) {
@@ -151,9 +151,9 @@ export function HomePage() {
     }
   }
   const agentLabel = !user
-    ? '登录后选择创作助手'
+    ? '登录后可选择创作助手'
     : !canRun
-      ? '无创作权限'
+      ? '当前账号没有创作权限'
       : agents.isPending
         ? '正在加载创作助手…'
         : agents.isError

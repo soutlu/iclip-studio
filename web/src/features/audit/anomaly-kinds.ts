@@ -20,19 +20,19 @@ export const ANOMALY_META: Record<ExecutionAnomalyKind, AnomalyMeta> = {
   stuck: {
     label: '视频悬挂',
     tone: 'bad',
-    describe: ({ stuckHours }) => `提交上游超过 ${stuckHours} 小时还没结果`,
+    describe: ({ stuckHours }) => `提交上游超过 ${stuckHours} 小时尚未返回结果`,
   },
   spend: {
     label: '消耗离群',
     tone: 'warn',
     // 本期没有成片时算不出门槛的 token 数，只说倍数。
     describe: ({ spendTimes, spendTokens }) =>
-      `单段对话的 token 超过这段时间每件成片平均消耗的 ${spendTimes} 倍${spendTokens === null ? '' : `（${fmtTokens(spendTokens)} token）`}`,
+      `单段对话的 token 超过所选时间范围内每件成片平均消耗的 ${spendTimes} 倍${spendTokens === null ? '' : `（${fmtTokens(spendTokens)} token）`}`,
   },
   task_stuck: {
     label: '需求单卡住',
     tone: 'warn',
-    describe: ({ taskConversations }) => `挂了 ${taskConversations} 段以上对话，一条成片都没有`,
+    describe: ({ taskConversations }) => `已关联 ${taskConversations} 段以上对话，尚无成片`,
   },
 }
 

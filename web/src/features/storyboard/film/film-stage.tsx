@@ -2,7 +2,7 @@
  * 左上写 @N（还没有编号的写它的名字），有图时下面挂这张图最新图片任务的角标；右上「编辑」（这张图在用或生成过才有）与「替换」；
  * 左右箭头与焦点在舞台里时的 ←/→ 按这组全部图的先后切，不画帧计数。
  * 换图三个入口同一条路（`useFilmReplace`）：「替换」选文件、拖到舞台上、点过舞台后粘贴；没图的那张也能换。
- * 还没有图的生成图是生成卡（`FilmGenerateCard`），没挂图的段写「这段没有图」。列宽随这组的画幅，见 storyboard.css 的布局一节。 */
+ * 还没有图的生成图是生成卡（`FilmGenerateCard`），没挂图的段写「该段暂无图片」。列宽随这组的画幅，见 storyboard.css 的布局一节。 */
 
 import { useRef, useState, type ClipboardEvent, type CSSProperties } from 'react'
 import { MEDIA_IMAGE_ACCEPT } from '@/shared/api/media-upload'
@@ -169,7 +169,7 @@ export function FilmStage({
           </div>
         ) : (
           <StageFrame
-            emptyText={frame === undefined ? '这段没有图' : missingImageText(frame.label)}
+            emptyText={frame === undefined ? '该段暂无图片' : missingImageText(frame.label)}
             frame={url === null || frame === undefined ? undefined : { name: frame.label, url }}
             onOpen={() => {
               if (frame !== undefined && url !== null) onOpen({ name: frame.label, url })

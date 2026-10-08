@@ -130,11 +130,11 @@ test('在跑的时候再发一条：排队、追加、停止', async ({ page }) 
   await page.getByLabel('输入消息').fill('顺便配个音')
   await page.getByLabel('输入消息').press('Enter')
 
-  await expect(page.getByText('1 条消息等着发')).toBeVisible()
+  await expect(page.getByText('1 条消息等待发送')).toBeVisible()
   await expect(page.getByRole('button', { name: '停止' })).toBeVisible()
 
   await page.getByRole('button', { name: '现在就发' }).click()
-  await expect(page.getByText('1 条消息等着发')).toBeHidden()
+  await expect(page.getByText('1 条消息等待发送')).toBeHidden()
   await expect(page.getByText('收到，一起做。')).toBeVisible({ timeout: 15_000 })
 })
 

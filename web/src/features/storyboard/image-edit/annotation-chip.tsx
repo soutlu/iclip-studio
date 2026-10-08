@@ -35,7 +35,7 @@ export function AnnotationChip({ node }: { node: AnnotationNode }) {
       <span
         aria-disabled="true"
         className="media-chip attachment-pill annotation-chip annotation-chip-stale"
-        title="这个标注已在画布上删除"
+        title="该标注已在画布上删除"
       >
         <span className="media-chip-icon">
           <span aria-hidden className="annotation-chip-number">

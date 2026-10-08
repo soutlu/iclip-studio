@@ -182,7 +182,7 @@ export function StageShell({
         <div aria-hidden className="storyboard-drop bg-glass-surface">
           <span className="storyboard-drop-hint">
             <Icon decorative name="image" size="md" />
-            松开替换当前图片
+            松开可替换当前图片
           </span>
         </div>
       ) : null}

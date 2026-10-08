@@ -21,7 +21,7 @@ export function useCopyFeedback(): { copied: boolean; copy: (text: string) => Pr
     try {
       await copyText(text)
     } catch {
-      toast.error('复制失败')
+      toast.error('复制失败，请重试')
       return
     }
     setCopies((count) => count + 1)

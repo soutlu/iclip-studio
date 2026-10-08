@@ -92,7 +92,7 @@ export const takeActionsOf = (
   const video = (verb: string): TakeAction => {
     if (take.outputUrl !== undefined) return ENABLED
     if (take.state === 'running') return HIDDEN
-    return blocked(take.state === 'failed' ? `生成失败，没有视频可${verb}` : '没有返回视频地址')
+    return blocked(take.state === 'failed' ? `生成失败，无法${verb}视频` : '未返回视频地址')
   }
   return {
     download: video('下载'),
@@ -101,7 +101,7 @@ export const takeActionsOf = (
       readOnly || !refillable
         ? HIDDEN
         : take.history === undefined
-          ? blocked('这条出片没记分镜结构，回填不了')
+          ? blocked('该成片未记录分镜结构，无法回填')
           : ENABLED,
   }
 }

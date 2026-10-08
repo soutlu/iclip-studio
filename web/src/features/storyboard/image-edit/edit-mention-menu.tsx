@@ -52,7 +52,7 @@ export function EditMentionMenu({ blockedReason, frames, menu }: EditMentionMenu
         sideOffset={4}
       >
         {items.length === 0 ? (
-          <p className="px-2.5 py-2 text-body-sm text-on-surface-muted">没有匹配的图片或标注</p>
+          <p className="px-2.5 py-2 text-body-sm text-on-surface-muted">暂无匹配的图片或标注</p>
         ) : null}
         <ul aria-label="引用图片或标注" ref={listRef} role="listbox">
           {groupsOf(items).map(({ kind, entries }) => (

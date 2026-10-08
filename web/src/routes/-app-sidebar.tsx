@@ -239,9 +239,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
                 icon="library"
                 label="资料库"
                 disabled={session.isPending || Boolean(user && !canReadLibrary)}
-                disabledReason={
-                  user && !canReadLibrary ? '当前账号没有查看出片记录权限' : undefined
-                }
+                disabledReason={user && !canReadLibrary ? '当前账号没有查看资料库权限' : undefined}
                 onClick={user ? () => navigate({ to: '/library' }) : requireLogin}
               />
             </div>
@@ -308,7 +306,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
               <SidebarConversations onStartInCollection={startNew} />
             ) : (
               <div className="min-h-0 flex-1 px-4.5 pt-4">
-                <p className="text-body-sm text-on-surface-faint">登录后查看任务</p>
+                <p className="text-body-sm text-on-surface-faint">登录后可查看任务</p>
               </div>
             )}
           </div>

@@ -19,6 +19,7 @@ import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
 import { Button, IconButton } from '@/shared/ui/button'
 import { type ComposerPart, composerParts } from '@/shared/ui/composer'
+import { conversationStatusLabel } from '@/shared/ui/status-badge'
 import { Tag } from '@/shared/ui/tag'
 import { toast } from '@/shared/ui/toast'
 import { sameContent } from '@/shared/transcript/claims'
@@ -185,15 +186,15 @@ export function ConversationRoute({
     inFlight && !turns.some((turn) => turn.triggerPromptId === inFlightPromptId)
       ? undefined
       : latestTurn
-  // 卡在审批上时轮次仍算在跑，但该轮到用户了：状态行换成「等你确认」、吉祥物停住，不再像在忙。
+  // 卡在审批上时轮次仍算在跑，但该轮到用户了：状态行换成「等待审批」、吉祥物停住，不再像在忙。
   const awaitingApproval = approval !== undefined
   const workingLabel = awaitingApproval
-    ? '等你确认'
+    ? conversationStatusLabel('approval')
     : retry !== undefined
-      ? `没连上，正在重试（第 ${retry.nextAttempt} 次）…`
+      ? `连接失败，正在重试（第 ${retry.nextAttempt} 次）…`
       : hasAssistantOutput(currentTurn)
         ? '工作中…'
-        : '正在想…'
+        : '正在思考…'
   const showEmptyState = view.status === 'ready' && turns.length === 0 && bubbles.length === 0
 
   /** 发送失败时撤销乐观气泡，输入框负责恢复内容；气泡由带同一 promptId 的轮或插话块接替。 */
@@ -375,7 +376,7 @@ export function ConversationRoute({
                   Cue
                 </span>
                 <p className="text-body-sm text-on-surface-variant">
-                  还没有消息 —— 在下方输入开始对话
+                  暂无消息，请在下方输入开始对话
                 </p>
               </div>
             ) : null}
@@ -430,7 +431,7 @@ export function ConversationRoute({
                   <Icon decorative name="fork" size="sm" />
                 </span>
                 <span className="line-clamp-2">
-                  分叉自源任务第 {view.forkTurn} 轮。工作区与出片记录停在分叉那一刻。
+                  本任务从源任务第 {view.forkTurn} 轮另开。工作区与出片记录保持另开时的状态。
                 </span>
               </span>
               {sourceLink(view.forkedFrom)}
@@ -448,7 +449,7 @@ export function ConversationRoute({
                 </span>
                 <span className="line-clamp-2">
                   这是{noteSubject}
-                  {deleted ? '已删除的任务' : '的任务'}，只能查看
+                  {deleted ? '已删除的任务' : '的任务'}，仅可查看
                 </span>
               </span>
               {backLink}

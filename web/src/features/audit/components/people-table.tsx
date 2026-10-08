@@ -27,7 +27,7 @@ const BAR_MAX = 80
 export function PeopleTable({ people, bucket, nameOf }: PeopleTableProps) {
   const [sort, setSort] = useState(DEFAULT_PEOPLE_SORT)
   if (people.length === 0) {
-    return <p className="text-label text-on-surface-muted">这个范围里没人出片，也没人跑过</p>
+    return <p className="text-label text-on-surface-muted">所选时间范围内暂无出片或运行记录</p>
   }
   const onSort = (key: PeopleSortKey) => setSort((current) => nextSort(current, key))
   const maxDeliveries = Math.max(1, ...people.map((person) => person.metrics.deliveries))

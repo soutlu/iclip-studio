@@ -66,7 +66,7 @@ describe('AppSidebar', () => {
     for (const name of ['新建任务', '搜索', '需求单', '资料库', '登录']) {
       expect(screen.getByRole('button', { name })).toBeVisible()
     }
-    expect(await screen.findByText('登录后查看任务')).not.toBeVisible()
+    expect(await screen.findByText('登录后可查看任务')).not.toBeVisible()
 
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
 
@@ -122,7 +122,7 @@ describe('AppSidebar', () => {
 
     await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
 
-    expect(screen.getByText('登录后查看任务')).toBeVisible()
+    expect(screen.getByText('登录后可查看任务')).toBeVisible()
     expect(screen.queryByRole('button', { name: '用户菜单' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '新建任务' }))
@@ -290,7 +290,7 @@ describe('AppSidebar', () => {
       expect(router.state.location.pathname).toBe('/tasks')
 
       await user.hover(library)
-      expect(await screen.findByRole('tooltip')).toHaveTextContent('当前账号没有查看出片记录权限')
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('当前账号没有查看资料库权限')
     },
   )
 
@@ -305,7 +305,7 @@ describe('AppSidebar', () => {
     screen.getByRole('button', { name: '需求单' }).focus()
     await user.tab()
     expect(library).toHaveFocus()
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('当前账号没有查看出片记录权限')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('当前账号没有查看资料库权限')
     await user.keyboard('{Enter}')
     expect(router.state.location.pathname).toBe('/tasks')
   })
@@ -431,12 +431,12 @@ describe('AppSidebar 对话区', () => {
 
   it('「+」在合集区顶部插入一行原位编辑，回车新建后换成合集行', async () => {
     const user = await openSidebar()
-    await screen.findByText('还没有合集')
+    await screen.findByText('暂无合集')
 
     await user.click(screen.getByRole('button', { name: '新建合集' }))
     const draft = screen.getByRole('textbox', { name: '新合集名称' })
     expect(draft).toHaveFocus()
-    expect(screen.queryByText('还没有合集')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无合集')).not.toBeInTheDocument()
     await user.type(draft, '春季童鞋{Enter}')
 
     // 回车建成后焦点交给新合集那一行。

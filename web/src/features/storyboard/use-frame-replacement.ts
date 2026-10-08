@@ -61,7 +61,7 @@ export const useFrameReplacement = ({
 
   const drop = useFileDropTarget({
     blocked: editingDisabled || uploading || frame === undefined || showingTake,
-    onDirectory: () => toast.error('请拖入一张图片文件，不支持文件夹'),
+    onDirectory: () => toast.error('不支持文件夹，请拖入一张图片文件'),
     onFiles: (files) => {
       const [file] = files
       if (files.length !== 1 || file === undefined) toast.error('每次只能替换一张图片')

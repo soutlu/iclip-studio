@@ -150,7 +150,7 @@ describe('JSON 格式化视图', () => {
     const broken = '{\n  "a": 1,\n}'
     await openJson(broken)
 
-    expect(await screen.findByText('JSON 格式有误，按原文显示')).toBeVisible()
+    expect(await screen.findByText('JSON 格式有误，已按原文显示')).toBeVisible()
     expect(
       screen.getByText(
         (_, element) => element?.tagName === 'PRE' && element.textContent === broken,

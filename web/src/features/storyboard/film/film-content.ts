@@ -68,16 +68,18 @@ export const resolveFilmSelection = (
 /** 名字后面接中文：以数字或字母结尾时空一格。 */
 const beforeChinese = (label: string): string => `${label}${/\w$/.test(label) ? ' ' : ''}`
 
-/** 「镜头 2 还没有图」「涂鸦滑板场还没有图」。 */
-export const missingImageText = (label: string): string => `${beforeChinese(label)}还没有图`
+/** 「镜头 2 暂无图片」「涂鸦滑板场暂无图片」。 */
+export const missingImageText = (label: string): string => `${beforeChinese(label)}暂无图片`
 
 /** 生成过、还没选用的那张生成卡的标题：「镜头 2 还没选用」。 */
 export const unselectedImageText = (label: string): string => `${beforeChinese(label)}还没选用`
 
-/** 缺图提醒：「短发女生、镜头 1 的图缺失，参考描述生成」，同名的只写一次；一张都不缺时为 undefined。 */
+/** 缺图提醒：「短发女生、镜头 1 的图片缺失，将参考描述生成」，同名的只写一次；一张都不缺时为 undefined。 */
 export const missingReferencesText = (labels: readonly string[]): string | undefined => {
   const names = [...new Set(labels)]
-  return names.length === 0 ? undefined : `${beforeChinese(names.join('、'))}的图缺失，参考描述生成`
+  return names.length === 0
+    ? undefined
+    : `${beforeChinese(names.join('、'))}的图片缺失，将参考描述生成`
 }
 
 /** 舞台标签与悬停预览用的名字：有编号写 @N，没有就写它的名字。 */

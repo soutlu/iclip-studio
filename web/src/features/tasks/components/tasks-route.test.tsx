@@ -239,11 +239,11 @@ describe('TasksRoute', () => {
 
     const mine = within(screen.getByRole('region', { name: '我的需求单' }))
     const all = within(screen.getByRole('region', { name: '全部需求单' }))
-    expect(await mine.findByText('还没有认领的需求单')).toBeVisible()
-    expect(await all.findByText('还没有需求单')).toBeVisible()
+    expect(await mine.findByText('暂无已认领的需求单')).toBeVisible()
+    expect(await all.findByText('暂无需求单')).toBeVisible()
   })
 
-  it('搜索没有匹配时两个分区显示没有匹配的需求单', async () => {
+  it('搜索没有匹配时两个分区显示暂无匹配的需求单', async () => {
     mockTasks.push(
       makeTask({
         assigneeUserIds: [mockAuthUser.id],
@@ -261,8 +261,8 @@ describe('TasksRoute', () => {
     await all.findByRole('button', { name: '查看需求：夏季新品视频' })
 
     await user.type(screen.getByRole('textbox', { name: '搜索需求单' }), '没有这个关键字')
-    expect(mine.getByText('没有匹配的需求单')).toBeVisible()
-    expect(all.getByText('没有匹配的需求单')).toBeVisible()
+    expect(mine.getByText('暂无匹配的需求单')).toBeVisible()
+    expect(all.getByText('暂无匹配的需求单')).toBeVisible()
     expect(screen.queryAllByRole('button', { name: /^查看需求：/ })).toHaveLength(0)
   })
 
@@ -711,7 +711,7 @@ describe('TasksRoute', () => {
     expect(publish).toBeEnabled()
     await user.type(within(dialog).getByLabelText('创作要求'), '要保留的新要求')
     expect(publish).toBeDisabled()
-    expect(within(dialog).getByText('先保存修改，再发布')).toBeVisible()
+    expect(within(dialog).getByText('修改尚未保存，无法发布；请先保存')).toBeVisible()
     await user.click(publish)
     expect(task.status).toBe('draft')
     expect(task.inputs.creative_requirement).toBe('')
@@ -721,7 +721,9 @@ describe('TasksRoute', () => {
     await user.click(await screen.findByText('待修改草稿'))
     const savedDialog = await screen.findByRole('dialog')
     expect(within(savedDialog).getByRole('button', { name: '发布' })).toBeEnabled()
-    expect(within(savedDialog).queryByText('先保存修改，再发布')).not.toBeInTheDocument()
+    expect(
+      within(savedDialog).queryByText('修改尚未保存，无法发布；请先保存'),
+    ).not.toBeInTheDocument()
     await user.click(within(savedDialog).getByRole('button', { name: '发布' }))
     await waitFor(() => expect(task.status).toBe('published'))
   })
@@ -807,14 +809,16 @@ describe('TasksRoute', () => {
     expect(within(dialog).getByRole('button', { name: '开始创作' })).toBeEnabled()
     await user.type(within(dialog).getByLabelText('创作要求'), '补充内容')
     expect(within(dialog).getByRole('button', { name: '开始创作' })).toBeDisabled()
-    expect(within(dialog).getByText('先保存修改，再开始创作')).toBeVisible()
+    expect(within(dialog).getByText('修改尚未保存，无法开始创作；请先保存')).toBeVisible()
     expect(within(dialog).getByRole('button', { name: '保存' })).toBeEnabled()
     await user.click(within(dialog).getByRole('button', { name: '关闭' }))
     await user.click(
       await within(screen.getByRole('region', { name: '我的需求单' })).findByText(emptyTask.title),
     )
     expect(screen.getByRole('button', { name: '开始创作' })).toBeDisabled()
-    expect(screen.getByText('请补充创作要求、视频规格或参考素材后开始')).toBeVisible()
+    expect(
+      screen.getByText('尚未填写创作要求、视频规格或参考素材，无法开始创作；请先补充'),
+    ).toBeVisible()
   })
 
   it.each([
