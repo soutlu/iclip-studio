@@ -8,6 +8,7 @@ import uuid
 from dataclasses import replace
 from typing import Any, get_args
 
+import httpx
 import pytest
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
@@ -35,7 +36,8 @@ from iclip.capabilities.shot_video.generation import (
     GRID_RESOLUTION,
     IMAGE_MODEL,
 )
-from iclip.capabilities.shot_video.ports import ImageChannel
+from iclip.capabilities.shot_video.ports import ImageChannel, ImageJob
+from iclip.capabilities.shot_video.shots import parse_shot_rows
 from iclip.capabilities.shot_video.toolset import ShotVideoToolset
 from iclip.capabilities.video.capability import Video
 from iclip.capabilities.video_document import video_doc_path
@@ -48,6 +50,7 @@ from iclip.platform.material_ledger.store import Material
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
+from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.shot_video import (
@@ -160,6 +163,7 @@ def capability(
         objects=objects,
         paths=MEDIA_PATHS,
         client=None,  # type: ignore[arg-type]  # 本测试不调用素材下载。
+        fetch_url=as_is,
         image_models=frozenset({IMAGE_MODEL}),
         policy=FAST,
         codec=SOFTWARE,
@@ -681,6 +685,7 @@ async def test_generate_stays_on_dev_when_pro_is_off(
         objects=objects,
         paths=MEDIA_PATHS,
         client=None,  # type: ignore[arg-type]
+        fetch_url=as_is,
         image_models=frozenset({IMAGE_MODEL}),
         policy=replace(FAST, dev_attempts=2, pro_attempts=0),
         codec=SOFTWARE,
@@ -723,6 +728,7 @@ async def test_generate_timeout_is_a_brief_failure_and_logs_the_record(
         objects=objects,
         paths=MEDIA_PATHS,
         client=None,  # type: ignore[arg-type]
+        fetch_url=as_is,
         image_models=frozenset({IMAGE_MODEL}),
         policy=replace(FAST, dev_attempts=1, pro_attempts=1, total_timeout_seconds=0.02),
         codec=SOFTWARE,
@@ -829,3 +835,67 @@ def test_the_pinned_image_model_can_do_what_the_frame_tools_ask_for() -> None:
     assert GRID_RESOLUTION in spec.resolutions
     assert ANCHOR_ASPECT in spec.aspect_ratios
     assert set(get_args(ImageChannel)) <= set(spec.channels)
+
+
+INTERNAL = "https://iclip.oss-cn-shenzhen-internal.aliyuncs.com"
+
+
+def downloading_capability(
+    asked: list[str], files: FakeFileStore, generations: FakeGenerations, objects: FakeObjects
+) -> ShotVideo[object]:
+    """下载一律 404 并记下请求地址；本桶前缀 ``https://cdn.test`` 换到 ``INTERNAL``。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(404)
+
+    return shot_video_capability(
+        space=FileSpace(store=files, namespace=workspace_namespace),
+        ledger=FakeMaterialLedger(),
+        generations=generations,
+        objects=objects,
+        paths=MEDIA_PATHS,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        fetch_url=rewriting("https://cdn.test", INTERNAL),
+        image_models=frozenset({IMAGE_MODEL}),
+        policy=FAST,
+        codec=SOFTWARE,
+    )
+
+
+async def test_frame_extraction_downloads_the_reference_video_from_the_rewritten_address(
+    files: FakeFileStore, generations: FakeGenerations, objects: FakeObjects
+) -> None:
+    asked: list[str] = []
+    capability = downloading_capability(asked, files, generations, objects)
+
+    with pytest.raises(ModelRetry):
+        await capability.extractor.ledger(
+            files, NAMESPACE, video_url=VIDEO, rows=parse_shot_rows(DOCUMENT)
+        )
+
+    assert asked == [f"{INTERNAL}/ref.mp4"]
+
+
+async def test_cutting_a_grid_downloads_it_from_the_rewritten_address(
+    files: FakeFileStore, generations: FakeGenerations, objects: FakeObjects
+) -> None:
+    asked: list[str] = []
+    capability = downloading_capability(asked, files, generations, objects)
+    job = ImageJob(
+        job_id=uuid.uuid4(),
+        status="completed",
+        channel="dev",
+        output_url="https://cdn.test/iclip/agent/generated-images/grid.png",
+    )
+
+    with pytest.raises(ToolFailed):
+        await capability.generator.cut(
+            make_deps().principal,
+            job,
+            object_keys=["k"],
+            aspect=None,
+            failure_message="整图下载失败。",
+        )
+
+    assert asked == [f"{INTERNAL}/iclip/agent/generated-images/grid.png"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Final, NoReturn
 
@@ -87,11 +87,16 @@ class FrameGenerator:
         generations: ImageGenerations,
         objects: PublicObjectWriter,
         client: httpx.AsyncClient,
+        fetch_url: Callable[[str], str],
         policy: GenerationPolicy,
     ) -> None:
+        """``fetch_url`` 在下载整图前换算地址（本桶对象走内网），由组合根注入；交回的
+        ``CellCut.grid_url`` 仍是原地址。"""
+
         self._generations = generations
         self._objects = objects
         self._client = client
+        self._fetch_url = fetch_url
         self._policy = policy
 
     async def generate(self, principal: Principal, request: ImageRequest) -> ImageJob:
@@ -195,7 +200,7 @@ class FrameGenerator:
         """检测网格并裁剪，指定 aspect 时居中收缩；检测不到分隔带的轴由 grid 按等分退回，并记告警。"""
 
         async with fetched(
-            self._client, grid_url, max_bytes=MAX_IMAGE_BYTES, suffix=".img"
+            self._client, self._fetch_url(grid_url), max_bytes=MAX_IMAGE_BYTES, suffix=".img"
         ) as source:
             gray, full_width = await decode_gray(source)
             layout = grid_cell_boxes(gray, rows=GRID_ROWS, cols=GRID_COLS)

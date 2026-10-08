@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -18,6 +19,7 @@ from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import ClipStage
 from iclip.platform.media.codec import SOFTWARE, MediaCodec
 from iclip.platform.media.ffmpeg import ffmpeg_available, probe_video
+from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.generation import MemoryObjectStore, compose_request, make_job
 from tests.helpers.media import (
     BROKEN_DECODE,
@@ -93,6 +95,7 @@ async def _compose(
     *,
     stages: _Stages | None = None,
     codec: MediaCodec = SOFTWARE,
+    fetch_url: Callable[[str], str] = as_is,
 ) -> tuple[str, bytes]:
     """跑一次合成，返回落库的对象 key 与产物字节。"""
 
@@ -101,6 +104,7 @@ async def _compose(
         object_store=store,
         report_stage=(stages or _Stages()).report,
         codec=codec,
+        fetch_url=fetch_url,
         transport=_client(sources),
     )
     submission = await provider.submit(
@@ -140,6 +144,27 @@ async def test_a_composite_aligns_to_the_original_and_keeps_total_length(
     assert await _profile(content) == (320, 240, True), (
         "对齐到原片；有一段带音轨就出音轨，没音轨的那段补静音"
     )
+
+
+async def test_sources_are_downloaded_from_the_rewritten_addresses(
+    sources: dict[str, bytes],
+) -> None:
+    """请求里是本桶的公网地址，素材只在换过的地址上取得到。"""
+
+    to_internal = rewriting("https://example.test", "https://iclip.oss-internal.test")
+    internal_only = {to_internal(url): body for url, body in sources.items()}
+
+    _, content = await _compose(
+        [
+            {"url": BASE_URL, "start": 0, "end": 1},
+            {"url": EDITED_URL, "start": 0.3, "end": 1.7},
+            {"url": BASE_URL, "start": 3, "end": 4},
+        ],
+        internal_only,
+        fetch_url=to_internal,
+    )
+
+    assert 3100 <= await duration_ms_of(content) <= 3700
 
 
 async def test_a_composite_still_aligns_to_the_original_when_the_edit_covers_most_of_it(
@@ -346,6 +371,7 @@ async def test_a_source_that_cannot_be_fetched_fails_without_retry() -> None:
         object_store=MemoryObjectStore(),
         report_stage=_Stages().report,
         codec=SOFTWARE,
+        fetch_url=as_is,
         transport=_client({}),
     )
     job = make_job(

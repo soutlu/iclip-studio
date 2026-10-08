@@ -6,6 +6,7 @@ Responses 接口上；反过来把 AI 导演的 ``ReferenceBreakdowns`` 端口�
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Final
 
 import httpx
@@ -161,10 +162,14 @@ class ReferenceBreakdownsAdapter:
 
 
 def build_reference_breakdown(
-    settings: ResolvedIclipStudio, client: httpx.AsyncClient, codec: MediaCodec
+    settings: ResolvedIclipStudio,
+    client: httpx.AsyncClient,
+    codec: MediaCodec,
+    *,
+    fetch_url: Callable[[str], str],
 ) -> tuple[ArkVideoBreakdowns, ArkTagger]:
     """按 ``iclip_studio`` 的配置建参考视频自己的一份拆解与打标；HTTP 连接池与组合根共用，
-    抽帧解码用启动时选定的 ``codec``。"""
+    抽帧解码用启动时选定的 ``codec``，探时长与下载视频前用 ``fetch_url`` 换算地址。"""
 
     model = ArkBreakdownModel(
         client,
@@ -172,7 +177,9 @@ def build_reference_breakdown(
         api_key=settings.breakdown_api_key,
         model=settings.breakdown_model,
     )
-    breakdown = VideoBreakdown(model=model, sampler=FfmpegVideoSampler(client, codec))
+    breakdown = VideoBreakdown(
+        model=model, sampler=FfmpegVideoSampler(client, codec, fetch_url=fetch_url)
+    )
     return ArkVideoBreakdowns(breakdown), ArkTagger(model)
 
 

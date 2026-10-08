@@ -1,6 +1,10 @@
-"""使用 bucket 替身验证公开对象存储适配器的 key 边界、URL、重试与直传签名。"""
+"""使用 bucket 替身验证公开对象存储适配器的 key 边界、URL、重试与直传签名，以及内网 endpoint 的
+校验、读写与签名的分工和下载地址换算。"""
 
 from __future__ import annotations
+
+from dataclasses import replace
+from urllib.parse import urlsplit
 
 import oss2
 import pytest
@@ -11,6 +15,8 @@ from iclip.platform.object_store.oss import (
     RETRY_ATTEMPTS,
     OssObjectStore,
     OssSettings,
+    oss_fetch_url,
+    validate_internal_endpoint,
     validate_public_url_base,
 )
 from iclip.platform.object_store.store import ObjectStoreUnavailable
@@ -352,3 +358,88 @@ def test_public_url_base_must_be_http(bad_base: str) -> None:
 
 def test_public_url_base_trailing_slash_is_trimmed() -> None:
     assert validate_public_url_base("https://cdn.test/") == "https://cdn.test"
+
+
+# --- 内网 endpoint ---------------------------------------------------------------
+
+INTERNAL = replace(SETTINGS, internal_endpoint="https://oss-cn-shenzhen-internal.aliyuncs.com")
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_a_blank_internal_endpoint_means_none(blank: str) -> None:
+    assert validate_internal_endpoint(blank) is None
+
+
+def test_an_internal_endpoint_is_kept_without_its_trailing_slash() -> None:
+    assert (
+        validate_internal_endpoint(" https://oss-cn-shenzhen-internal.aliyuncs.com/ ")
+        == "https://oss-cn-shenzhen-internal.aliyuncs.com"
+    )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "oss-cn-shenzhen-internal.aliyuncs.com",
+        "ftp://oss-cn-shenzhen-internal.aliyuncs.com",
+        "https://",
+        "https://oss-cn-shenzhen-internal.aliyuncs.com/iclip",
+        "https://oss-cn-shenzhen-internal.aliyuncs.com?x=1",
+    ],
+)
+def test_an_internal_endpoint_must_be_a_bare_http_origin(bad: str) -> None:
+    with pytest.raises(ValueError, match="OSS_INTERNAL_ENDPOINT"):
+        validate_internal_endpoint(bad)
+
+
+def test_own_bucket_addresses_are_rewritten_to_the_internal_host() -> None:
+    fetch_url = oss_fetch_url(INTERNAL)
+
+    assert fetch_url(f"https://cdn.test/{KEY}") == (
+        f"https://iclip.oss-cn-shenzhen-internal.aliyuncs.com/{KEY}"
+    )
+    assert fetch_url(f"https://cdn.test/{KEY}?x-oss-process=image/info") == (
+        f"https://iclip.oss-cn-shenzhen-internal.aliyuncs.com/{KEY}?x-oss-process=image/info"
+    ), "查询串原样保留"
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        "https://vendor.test/result.mp4",
+        "https://image-gateway.test/tmp/a.png?Expires=1&Signature=abc",
+        "https://cdn.test.evil/iclip/agent/a.png",
+        "https://cdn.test",
+    ],
+)
+def test_other_addresses_are_left_alone(other: str) -> None:
+    assert oss_fetch_url(INTERNAL)(other) == other
+
+
+def test_without_an_internal_endpoint_nothing_is_rewritten() -> None:
+    assert oss_fetch_url(SETTINGS)(f"https://cdn.test/{KEY}") == f"https://cdn.test/{KEY}"
+
+
+async def test_reads_writes_and_deletes_go_to_the_data_bucket_and_signing_to_the_other() -> None:
+    data = FakeBucket(listed=[KEY], head=FakeHead(content_type="image/png", content_length=1))
+    signing = FakeBucket()
+    store = OssObjectStore(INTERNAL, bucket=data, signing_bucket=signing)
+
+    await store.put_public_object(object_key=KEY, content=b"X", content_type="image/png")
+    found = await store.find_object(prefix=f"{OSS_ROOT}/generated-images/a.")
+    await store.delete_object(KEY)
+    store.sign_put(object_key=KEY, headers={"Content-Type": "image/png"})
+
+    assert found is not None and found.object_key == KEY, "列举与元信息问的是读写客户端"
+    assert (data.writes, data.deleted, data.signed) == ([(KEY, b"X", "image/png")], [KEY], [])
+    assert (signing.writes, signing.deleted) == ([], [])
+    assert [(method, key) for method, key, *_ in signing.signed] == [("PUT", KEY)]
+
+
+def test_signed_put_uses_the_public_endpoint_even_with_an_internal_one() -> None:
+    """签名在本地算，不发请求；浏览器拿到的直传地址必须是公网 host。"""
+
+    settings = replace(INTERNAL, endpoint="https://oss-cn-shenzhen.aliyuncs.com")
+    url = OssObjectStore(settings).sign_put(object_key=KEY, headers={"Content-Type": "image/png"})
+
+    assert urlsplit(url).netloc == "iclip.oss-cn-shenzhen.aliyuncs.com"

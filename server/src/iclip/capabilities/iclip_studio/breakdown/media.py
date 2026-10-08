@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
@@ -32,18 +33,24 @@ _SCALE: Final = (
 
 
 class FfmpegVideoSampler:
-    """``VideoSampler`` 的 ffmpeg 实现，HTTP 客户端与编解码由组合根注入。"""
+    """``VideoSampler`` 的 ffmpeg 实现，HTTP 客户端、编解码与地址换算由组合根注入。
 
-    def __init__(self, client: httpx.AsyncClient, codec: MediaCodec) -> None:
+    ``fetch_url`` 只用在本服务自己探时长与下载的那一刻（本桶对象走内网）；交给拆解模型的地址
+    不经过这里，仍是原地址。"""
+
+    def __init__(
+        self, client: httpx.AsyncClient, codec: MediaCodec, *, fetch_url: Callable[[str], str]
+    ) -> None:
         self._client = client
         self._codec = codec
+        self._fetch_url = fetch_url
 
     async def duration_seconds(self, video_url: str) -> float:
-        return await probe_remote_duration_ms(video_url) / 1000
+        return await probe_remote_duration_ms(self._fetch_url(video_url)) / 1000
 
     async def sample(self, video_url: str) -> SampledVideo:
         async with fetched(
-            self._client, video_url, max_bytes=MAX_VIDEO_BYTES, suffix=".mp4"
+            self._client, self._fetch_url(video_url), max_bytes=MAX_VIDEO_BYTES, suffix=".mp4"
         ) as source:
             return await sample_file(source, codec=self._codec)
 
