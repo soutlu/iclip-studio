@@ -21,6 +21,7 @@ from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from iclip.platform.media.codec import SOFTWARE
+from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
@@ -83,6 +84,7 @@ def build(
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
+        fetch_url=as_is,
         image_transport=transport,
     )
 
@@ -159,6 +161,7 @@ async def test_a_model_can_declare_its_own_task_routes() -> None:
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
+        fetch_url=as_is,
         image_transport=httpx.MockTransport(handler),
     )
 

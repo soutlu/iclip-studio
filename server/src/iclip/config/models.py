@@ -111,6 +111,9 @@ class ObjectStoreEnv(EnvSettings):
     access_key_id: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_ID")
     access_key_secret: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_SECRET")
     public_url_base: RequiredEnv = Field(validation_alias="OSS_PUBLIC_URL_BASE")
+    internal_endpoint: OptionalEnv = Field("", validation_alias="OSS_INTERNAL_ENDPOINT")
+    """桶所在地域的内网 endpoint，只在与桶同地域的阿里云 ECS 或 VPC 内可用。配了时服务端读写、
+    删除与下载本桶对象走它；为空则全部走 ``OSS_ENDPOINT``。浏览器直传的签名始终用 ``OSS_ENDPOINT``。"""
 
 
 class MediaGenerationEnv(EnvSettings):
