@@ -217,6 +217,67 @@ describe('图片编辑器', () => {
     expect(unsupported).toHaveAttribute('aria-disabled', 'true')
   })
 
+  it('刚打开只有当前帧：没有版本条也没有脚注，画幅只读排在设置行，标注工具在舞台旁照常可用', async () => {
+    let listed = false
+    server.use(
+      http.get('*/api/generations', () => {
+        listed = true
+        return HttpResponse.json({ items: [] })
+      }),
+    )
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    await waitFor(() => expect(listed).toBe(true))
+    await waitFor(() =>
+      expect(within(editor).getByRole('button', { name: '图片模型' })).toBeEnabled(),
+    )
+
+    // 只有一样能看的，没得切：整条不显示。
+    expect(within(editor).queryByRole('group', { name: '这一帧的图片' })).not.toBeInTheDocument()
+    // 画幅在设置行里、悬停说明跟随分镜；这句话只出现这一处，不再另起一行脚注。
+    const aspect = within(editor).getByTitle('画幅 9:16，跟随分镜')
+    expect(aspect).toHaveTextContent('9:16')
+    expect(within(editor).getByText('画幅 9:16，跟随分镜').closest('[title]')).toBe(aspect)
+
+    // 工具条渲染在画布之外的宿主里，选工具、画、撤销都照常。
+    const canvasEditor = within(editor).getByRole('group', { name: '图片标注编辑器' })
+    const tools = within(editor).getByRole('toolbar', { name: '标注工具' })
+    expect(canvasEditor).not.toContainElement(tools)
+    const canvas = loadCanvas(editor)
+    await userEvent.click(within(tools).getByRole('button', { name: '矩形标注' }))
+    expect(within(tools).getByRole('button', { name: '矩形标注' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    fireEvent.pointerDown(canvas, { clientX: 320, clientY: 240, button: 0 })
+    fireEvent.pointerMove(canvas, { clientX: 480, clientY: 560 })
+    fireEvent.pointerUp(canvas, { clientX: 480, clientY: 560, button: 0 })
+    expect(within(editor).getByRole('button', { name: '标注 1' })).toBeInTheDocument()
+    await userEvent.click(within(tools).getByRole('button', { name: '撤销标注' }))
+    expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
+  })
+
+  it('只有当前帧但还有更早的记录：版本条照样显示，末尾一格「更早」', async () => {
+    // 一整页都是已经换上去的结果，都折进当前帧那一格；页满说明还有更早的。
+    const applied = Array.from({ length: 20 }, (_, index) =>
+      job({
+        status: 'completed',
+        outputUrl: BASE,
+        createdAt: `2026-09-07T12:${String(index).padStart(2, '0')}:00Z`,
+      }),
+    )
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: applied })))
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+
+    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    expect(
+      within(strip)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['当前帧', '更早'])
+  })
+
   it('提交后舞台不动，新任务占一格并走表，输入不清空；草稿暂存与记录刷新都失败也不挡着', async () => {
     const completed = job({ status: 'completed', outputUrl: RESULT })
     const running = job({
@@ -237,7 +298,8 @@ describe('图片编辑器', () => {
     )
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    // 记录读回来、有不止当前帧一格时版本条才出现。
+    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
     await within(strip).findByRole('button', { name: /^结果 · / })
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage full', 'QuotaExceededError')
@@ -278,7 +340,7 @@ describe('图片编辑器', () => {
     )
     const { queryClient } = await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
     await within(strip).findByRole('button', { name: /^生成中 · / })
 
     landed = true
@@ -306,7 +368,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage initialKey={completed.id} onApply={onApply} />)
 
     const editor = await screen.findByRole('dialog')
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
     await waitFor(() =>
       expect(within(strip).getByRole('button', { name: /^结果 · / })).toHaveAttribute(
         'aria-pressed',
@@ -315,6 +377,8 @@ describe('图片编辑器', () => {
     )
     expect(within(editor).getByRole('img', { name: '当前帧' })).toHaveAttribute('src', BASE)
     expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', RESULT)
+    // 选中结果时才有脚注，说的是替换这件事。
+    expect(within(editor).getByText('替换只改当前帧，替换后可以撤销')).toBeVisible()
 
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
 
@@ -402,7 +466,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage initialKey={existing.id} />)
 
     const editor = await screen.findByRole('dialog')
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
     const selected = await within(strip).findByRole('button', { name: /^(排队中|生成中) · / })
     expect(selected).toHaveAttribute('aria-pressed', 'true')
     expect(within(editor).getByRole('status')).toHaveTextContent(
@@ -463,7 +527,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
     await waitForUploadPermission(editor)
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
     const result = await within(strip).findByRole('button', { name: /^结果 · / })
     const textbox = () => within(editor).getByRole('textbox', { name: '修改要求' })
 
@@ -757,7 +821,7 @@ describe('图片编辑器', () => {
     const onClose = vi.fn()
     await renderWithProviders(<EditorPage onClose={onClose} />)
     const editor = await screen.findByRole('dialog')
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
     const [first] = await within(strip).findAllByRole('button', { name: /^结果 · / })
     if (first === undefined) throw new Error('缺少结果格')
     await userEvent.click(first)

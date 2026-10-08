@@ -20,6 +20,7 @@ import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
+import { StageBackdrop } from '../components/stage-backdrop'
 import { locateClock, totalDuration, type LaidOutSegment } from './play-layout'
 import { timeLabel } from './time-label'
 
@@ -71,32 +72,6 @@ type Props = {
   /** 时间线面板下面一行脚注。 */
   footnote: ReactNode
   ref: Ref<EditorPreviewHandle>
-}
-
-/** 舞台底：当前海报放大、模糊，压一层底色。换海报时新的一层淡入、盖住旧的，不闪；
- * 新内容没有海报时清空，露出舞台底色，不留上一条的画面。 */
-function StageBackdrop({ url }: { url: string | undefined }) {
-  const [layers, setLayers] = useState<readonly string[]>(url === undefined ? [] : [url])
-  const last = layers.at(-1)
-  if (last !== url) setLayers(url === undefined ? [] : last === undefined ? [url] : [last, url])
-  return (
-    <div aria-hidden="true" className="video-editor-backdrop">
-      {layers.map((layer, at) => (
-        <img
-          alt=""
-          className={cn(
-            'video-editor-backdrop-image',
-            at === layers.length - 1 &&
-              'animate-in duration-(--dur-m) ease-(--ease-decel) fade-in motion-reduce:animate-none',
-          )}
-          draggable={false}
-          key={layer}
-          src={layer}
-        />
-      ))}
-      <span className="video-editor-backdrop-veil" />
-    </div>
-  )
 }
 
 export function EditorPreview({
@@ -356,7 +331,7 @@ export function EditorPreview({
   const stage = (
     <div
       aria-label="视频预览"
-      className={cn('video-editor-preview', enlarged && 'is-enlarged')}
+      className={cn('video-editor-preview stage-picture', enlarged && 'is-enlarged')}
       style={{ '--preview-ratio': aspect } as CSSProperties}
     >
       {SLOTS.map(({ id, slot }) => (
