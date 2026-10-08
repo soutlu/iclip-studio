@@ -499,7 +499,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解与打标中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 与标签不动。客户端按 `errorCode` 出一句话，不展示原始报错。
 - **标签**：`videoTypes` 与 `categories` 都可以几个，空就是未标注；取值是合同里的两个枚举，拆完自动打，打标失败只留空标签、拆解照常完成。
 - `GET /references` 按 §3 的排序（建立时间倒序），翻页 `limit` 与 `cursor`，规则同 §6。筛选：`videoTypes`、`categories` 可以重复给，同一组里命中任一即算，两组都给时两组都要命中；`userName`（属主）；`q` 按字面包含匹配拆解全文，不区分大小写，首尾空白去掉后为空即不筛；`since` / `until` 左闭右开，作用在建立时刻上。移除的不在列表里。列表项不带 `document`，正文在详情里。`total` 只在第一页给，`canUpload` 是这位读者能不能加参考视频（拆解已配置、上传可用且持 `uploads:write`）。
-- `GET /references/filters` 给 `videoTypes`（全部八种，按清单先后，各带 `label`、`rule` 与条数，没用到的为 0）与 `categories`（用到的品类各带条数，多的在前、同数按清单先后），只数没移除的，不受筛选影响。
+- `GET /references/filters` 给 `videoTypes`（全部八种，按清单先后，各带 `label`、`rule` 与条数，没用到的为 0）、`categories`（用到的品类各带条数，多的在前、同数按清单先后）与 `owners`（名下有参考视频的属主用户名各带条数，多的在前、同数按用户名，是按人筛选的候选），只数没移除的，不受筛选影响。
 - `GET /references/{id}` 是一条连同 `document`（当前拆解的 Markdown 原文，还没拆完过为 `null`）；移除了是 `404`。`canEdit` 是这位读者能不能改、重拆、移除。
 - `PATCH /references/{id}` 体是 `{ version, document, videoTypes, categories }`，整份改，重复的标签去掉，成功后 `version` 加一。`version` 对不上，或这一行正在排队或拆解，都是 `409`；清单外的标签、空的 `document` 是 `422`。
 - `POST /references/{id}/breakdowns` 重新拆解：`completed` 或 `failed` 的行回到 `pending` 再排队，答复改完的整行；正在排队或拆解是 `409`。拆成就覆盖拆解与标签、`version` 加一，人改过的也会被覆盖。

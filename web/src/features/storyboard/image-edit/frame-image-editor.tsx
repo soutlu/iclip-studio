@@ -167,7 +167,7 @@ export function FrameImageEditor({
     try {
       // 引用了标注才导出标注图，它代替干净底图占 @图片1。
       const annotatedUrl = referencesAnnotation(parts)
-        ? await uploadMediaFile(await exportAnnotatedImage(baseUrl, annotations), 'image')
+        ? (await uploadMediaFile(await exportAnnotatedImage(baseUrl, annotations), 'image')).url
         : undefined
       const request = compileEditRequest(parts, {
         annotatedUrl,

@@ -9,6 +9,7 @@ import {
 } from './mocks/handlers'
 import { resetMockFilm } from './mocks/film'
 import { resetMockClock } from './mocks/paging'
+import { resetMockReferences } from './mocks/references'
 import { server } from './mocks/server'
 import { resetMockTranscript } from './mocks/transcript'
 import { resetMockWorkspace } from './mocks/workspace'
@@ -83,6 +84,7 @@ afterEach(() => {
   resetMockClock()
   resetMockConversations()
   resetMockFilm()
+  resetMockReferences()
   resetMockSession()
   resetMockTasks()
   resetMockTranscript()

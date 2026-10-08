@@ -77,6 +77,9 @@ type UploadMediaOptions = {
   onProgress?: (ratio: number) => void
 }
 
+/** 确认过的一次上传：可持久化的地址，以及把它交给别的端点（如建参考视频）时用的上传 id。 */
+export type UploadedMedia = { url: string; uploadId: string }
+
 /**
  * 校验、签名、直传并确认；服务端按桶里的对象核对通过后才返回可持久化的地址。
  *
@@ -86,7 +89,7 @@ export const uploadMediaFile = async (
   file: File,
   kind: 'image' | 'video',
   { onProgress }: UploadMediaOptions = {},
-): Promise<string> => {
+): Promise<UploadedMedia> => {
   const dimensions = await mediaDimensions(file, kind)
   const ticket = await apiFetch('/uploads/sign', zUploadTicketOut, {
     body: { contentType: file.type, ...dimensions },
@@ -98,5 +101,5 @@ export const uploadMediaFile = async (
     fallbackErrorMessage: UPLOAD_FAILED,
     method: 'POST',
   })
-  return confirmed.url
+  return { uploadId: ticket.uploadId, url: confirmed.url }
 }

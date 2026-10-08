@@ -32,6 +32,7 @@ from iclip.domains.references.models import (
 from iclip.domains.references.repository import BreakdownQueue, OwnVideoUpload, ReferenceStore
 from iclip.domains.references.schemas import (
     CategoryCountOut,
+    OwnerCountOut,
     ReferenceFiltersOut,
     ReferenceUpdateIn,
     ReferenceVideoItemOut,
@@ -207,9 +208,10 @@ class ReferenceService:
         )
 
     async def filters(self) -> ReferenceFiltersOut:
-        """全部片子类型与用到的品类，各带条数；只数没移除的。"""
+        """全部片子类型、用到的品类与名下有参考视频的属主，各带条数；只数没移除的。"""
 
         type_counts, category_counts = await self._store.filter_counts()
+        owner_counts = await self._store.owner_counts()
         return ReferenceFiltersOut(
             video_types=[
                 VideoTypeCountOut(
@@ -220,6 +222,7 @@ class ReferenceService:
             categories=[
                 CategoryCountOut(name=name, count=count) for name, count in category_counts
             ],
+            owners=[OwnerCountOut(user_name=name, count=count) for name, count in owner_counts],
         )
 
     async def get(self, principal: Principal, reference_id: uuid.UUID) -> ReferenceVideoOut:

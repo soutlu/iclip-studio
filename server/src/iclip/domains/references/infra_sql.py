@@ -142,6 +142,14 @@ FROM iclip.reference_videos r, unnest(r.categories) AS c(value)
 WHERE r.deleted_at IS NULL
 GROUP BY c.value""")
 
+_OWNER_COUNTS: Final = text("""
+SELECT u.username, count(*) AS n
+FROM iclip.reference_videos r
+JOIN iclip.users u ON u.id = r.owner_user_id
+WHERE r.deleted_at IS NULL
+GROUP BY u.username
+ORDER BY n DESC, u.username""")
+
 _UPDATE: Final = text("""
 UPDATE iclip.reference_videos
 SET document = :document, video_types = CAST(:video_types AS text[]),
@@ -317,6 +325,11 @@ class SqlReferenceStore:
         ]
         used = sorted(listed, key=lambda item: -item[1])
         return type_counts, used
+
+    async def owner_counts(self) -> Sequence[tuple[str, int]]:
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(_OWNER_COUNTS)
+            return [(str(row[0]), int(row[1])) for row in rows]
 
     async def update(
         self,

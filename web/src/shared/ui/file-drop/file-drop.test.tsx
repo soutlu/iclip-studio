@@ -6,7 +6,7 @@ import { useFileDropTarget, useWindowFileDrop } from './file-drop'
 type HarnessProps = {
   blocked?: boolean
   onFiles?: (files: File[]) => void
-  onDirectory?: () => void
+  onDirectory?: (files: File[]) => void
   onFallbackFiles?: (files: File[]) => void
 }
 
@@ -79,7 +79,7 @@ describe('useFileDropTarget', () => {
     expect(screen.queryByText('松开添加素材')).not.toBeInTheDocument()
   })
 
-  it('含文件夹整批拒收：只调 onDirectory', () => {
+  it('含文件夹：不调 onFiles，改调 onDirectory 并交出滤掉文件夹后的其余文件', () => {
     const onFiles = vi.fn()
     const onDirectory = vi.fn()
     render(<DropPage onDirectory={onDirectory} onFiles={onFiles} />)
@@ -88,7 +88,7 @@ describe('useFileDropTarget', () => {
       dataTransfer: fileDrag([{ file: image }, { directory: true, file: new File([], '素材夹') }]),
     })
 
-    expect(onDirectory).toHaveBeenCalledTimes(1)
+    expect(onDirectory).toHaveBeenCalledExactlyOnceWith([image])
     expect(onFiles).not.toHaveBeenCalled()
   })
 

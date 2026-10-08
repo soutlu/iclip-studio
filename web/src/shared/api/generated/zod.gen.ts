@@ -989,6 +989,14 @@ export const zOverviewWindowOut = z.object({
 })
 
 /**
+ * OwnerCountOut
+ */
+export const zOwnerCountOut = z.object({
+  count: z.int(),
+  userName: z.string(),
+})
+
+/**
  * PeriodDeliveriesOut
  */
 export const zPeriodDeliveriesOut = z.object({
@@ -2514,6 +2522,7 @@ export const zVideoTypeCountOut = z.object({
  */
 export const zReferenceFiltersOut = z.object({
   categories: z.array(zCategoryCountOut),
+  owners: z.array(zOwnerCountOut),
   videoTypes: z.array(zVideoTypeCountOut),
 })
 
