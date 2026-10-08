@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
@@ -167,6 +168,7 @@ def make_job(
     output_url: str | None = None,
     watermark_output_url: str | None = None,
     duration_ms: int | None = None,
+    content_md5: str | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> GenerationJob:
@@ -211,6 +213,7 @@ def make_job(
         output_url=output_url,
         watermark_output_url=watermark_output_url,
         duration_ms=duration_ms,
+        content_md5=content_md5,
         error_code=error_code,
         error_message=error_message,
         created_at=created_at or now,
@@ -327,6 +330,16 @@ class InMemoryGenerationRepository:
                 )
                 or inherited_through(job, inherited)
             )
+        ]
+        return min(found, key=lambda job: (job.created_at, job.id), default=None)
+
+    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
+        found = [
+            job
+            for job in self.jobs.values()
+            if job.content_md5 == content_md5
+            and job.kind == KIND_VIDEO
+            and job.operation == OPERATION_UPLOAD
         ]
         return min(found, key=lambda job: (job.created_at, job.id), default=None)
 
@@ -683,11 +696,22 @@ class MemoryObjectStore:
         return f"{self.base}/{object_key}?signed-for={headers['Content-Type']}"
 
     async def find_object(self, *, prefix: str) -> StoredObject | None:
+        """对象都当一次整传：ETag 照 OSS 写成内容 MD5 的大写十六进制。"""
+
         found = [key for key in self.objects if key.startswith(prefix)]
         if not found:
             return None
         content, content_type = self.objects[found[0]]
-        return StoredObject(object_key=found[0], content_type=content_type, size_bytes=len(content))
+        return StoredObject(
+            object_key=found[0],
+            content_type=content_type,
+            size_bytes=len(content),
+            etag=hashlib.md5(content).hexdigest().upper(),
+            object_type="Normal",
+        )
+
+    async def delete_object(self, object_key: str) -> None:
+        self.objects.pop(object_key, None)
 
     def public_url(self, object_key: str) -> str:
         return f"{self.base}/{object_key}"

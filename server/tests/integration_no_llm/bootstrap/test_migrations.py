@@ -2694,6 +2694,7 @@ async def test_compose_source_migration_refuses_to_downgrade_what_the_old_shape_
                 segments=segments,
             )
         await engine.dispose()
+        command.downgrade(cfg, COMPOSE_SOURCE)
         with pytest.raises(RuntimeError, match="旧形状表达不了") as refused:
             command.downgrade(cfg, COLUMNS_RETIRED)
         version = await _alembic_version(migrated_pg)
