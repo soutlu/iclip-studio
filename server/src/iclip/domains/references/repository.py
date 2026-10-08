@@ -103,8 +103,8 @@ class ReferenceStore(Protocol):
         """开始超过这么久还在拆解中的行改成 ``failed / timeout``，交回改了几行。"""
         ...
 
-    async def restore(self, reference_id: uuid.UUID) -> None:
-        """清掉移除时刻，让这一行回到资料库；没移除的不动。"""
+    async def restore(self, reference_id: uuid.UUID, *, owner: uuid.UUID) -> None:
+        """清掉移除时刻，让这一行回到资料库，属主换成 ``owner``；没移除的不动。"""
         ...
 
     async def remove(self, reference_id: uuid.UUID) -> bool:

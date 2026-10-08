@@ -93,7 +93,8 @@ async def test_creating_twice_from_the_same_video_makes_one_row_and_one_breakdow
     assert (was_new, again_new) == (True, False)
     assert again.id == created.id
     assert created.breakdown_status == "pending"
-    assert created.user_name == "maya"
+    # 还在资料库里的那一行，别人再传只是打开它，属主不变。
+    assert (created.user_name, again.user_name, again.can_edit) == ("maya", "maya", False)
     assert queue.enqueued == [created.id]
     listed = await references.list(principal(maya))
     assert [item.id for item in listed.items] == [created.id]
@@ -232,6 +233,22 @@ async def test_uploading_a_removed_video_again_brings_it_back(engine: AsyncEngin
 
     assert (back.id, created, back.document) == (reference_id, False, DOCUMENT)
     assert [item.id for item in (await references.list(principal(maya))).items] == [reference_id]
+    assert queue.enqueued == []
+
+
+async def test_someone_else_uploading_a_removed_video_takes_it_over(engine: AsyncEngine) -> None:
+    maya, sara = await plant_user(engine, "maya"), await plant_user(engine, "sara")
+    upload = uuid.uuid4()
+    reference_id = await plant_reference(engine, owner=maya)
+    queue = RecordingQueue(SqlReferenceStore(engine))
+    references = service(engine, queue, owned={(sara, upload): VIDEO})
+    await references.remove(principal(maya), reference_id)
+
+    back, created = await references.create(principal(sara), upload)
+
+    assert (back.id, created, back.document) == (reference_id, False, DOCUMENT)
+    assert (back.user_name, back.can_edit) == ("sara", True)
+    assert (await references.get(principal(maya), reference_id)).can_edit is False
     assert queue.enqueued == []
 
 

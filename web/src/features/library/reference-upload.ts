@@ -1,7 +1,7 @@
 /** 参考视频的上传：选文件、整页拖放、页面粘贴三个入口走同一个 `uploadVideos`，一个文件一张卡。
  *
- * 每个文件先直传对象存储并确认，再用上传 id 建行；同一条视频已经在资料库里时服务端交回原来那一行，
- * 这时提示一句并打开它。不是 MP4 / MOV 的文件和文件夹不传，给一句提示，其余照传。 */
+ * 每个文件先直传对象存储并确认，再用上传 id 建行；同一条视频之前传过时服务端交回原来那一行（移除过的
+ * 会回到资料库），这时提示一句并打开它。不是 MP4 / MOV 的文件和文件夹不传，给一句提示，其余照传。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useEffectEvent, useState } from 'react'
@@ -57,7 +57,7 @@ export const useReferenceUpload = ({ enabled, onOpenExisting }: ReferenceUploadO
       // 新行读回来再撤掉上传卡，前面那张卡不会先空一下。
       await queryClient.invalidateQueries({ queryKey: referenceQueryKeys.all })
       if (!created) {
-        toast('该视频已在资料库中，已为你打开')
+        toast('该视频之前已上传过，已为你打开')
         onOpenExisting(reference.id)
       }
     } catch (error) {
