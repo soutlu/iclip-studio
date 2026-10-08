@@ -19,12 +19,7 @@ from typing import Final
 import httpx
 
 from iclip.common.urls import is_http_url
-from iclip.platform.media.codec import (
-    MediaCodec,
-    force_key_frames,
-    keyframe_report_args,
-    parse_keyframe_report,
-)
+from iclip.platform.media.codec import MediaCodec
 
 _STDERR_LIMIT = 400
 _DOWNLOAD_CHUNK = 256 * 1024
@@ -218,11 +213,38 @@ async def probe_keyframes(path: Path) -> list[float]:
     读的是容器里每个包的关键帧标记，不解码。没有视频流、一个关键帧都没有、或 ffprobe 读不了
     抛 MediaError。"""
 
-    stdout = await run(keyframe_report_args(path), timeout=PROBE_TIMEOUT_SECONDS)
+    stdout = await run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=index:packet=pts_time,flags:format=start_time",
+            "-of",
+            "json",
+            str(path),
+        ],
+        timeout=PROBE_TIMEOUT_SECONDS,
+    )
     try:
-        return parse_keyframe_report(stdout, name=path.name)
-    except ValueError as exc:
-        raise MediaError(str(exc)) from exc
+        report = json.loads(stdout)
+        streams = report["streams"]
+        packets = report["packets"]
+        start = float(report["format"].get("start_time", 0))
+        keyframes = sorted(
+            float(packet["pts_time"]) - start
+            for packet in packets
+            if "K" in packet.get("flags", "")
+        )
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise MediaError("ffprobe 的关键帧信息看不懂") from exc
+    if not streams:
+        raise MediaError(f"这条素材里没有视频流: {path.name}")
+    if not keyframes:
+        raise MediaError(f"这条素材的视频流里没有关键帧: {path.name}")
+    return keyframes
 
 
 def _positive_fraction(value: str) -> bool:
@@ -317,7 +339,11 @@ def _concat_keyframes(
 
     每段在产物里从之前各段时长之和处起；关键帧是每段的起点，加上这段素材在 ``[start, end)``
     里原有的关键帧，换算到产物时间。换算后落到产物的第几帧（按 ``frame_rate`` 取最近的一帧），
-    同一帧只留一个；写成时刻的方式见 ``force_key_frames``。"""
+    同一帧只留一个。
+
+    交给 ffmpeg 的是每个关键帧往前半帧的时刻：ffmpeg 把第一个时间戳不早于给定时刻的帧编成
+    关键帧，给帧的正点时刻会因为写成十进制时向上舍入而落到下一帧；同一帧给两个时刻，它会把
+    后一帧也编成关键帧。"""
 
     frames: set[int] = set()
     offset = 0.0
@@ -326,7 +352,9 @@ def _concat_keyframes(
         for time in [cut.start, *inside]:
             frames.add(round(Fraction(offset + time - cut.start) * frame_rate))
         offset += cut.duration
-    return force_key_frames(frames, frame_rate=frame_rate)
+    return ",".join(
+        f"{max(Fraction(0), (frame - Fraction(1, 2)) / frame_rate):.6f}" for frame in sorted(frames)
+    )
 
 
 def _check_cut(cut: MediaCut) -> None:
