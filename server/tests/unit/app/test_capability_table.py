@@ -41,6 +41,7 @@ from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.store import ObjectStoreUnavailable
+from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
     InMemoryGenerationRepository,
@@ -112,6 +113,7 @@ def test_shot_video_is_not_registered_unless_the_composition_root_passes_it() ->
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
+        fetch_url=as_is,
     )
     assert list(built) == ["workspace"]
     with pytest.raises(RuntimeError, match="引用了未登记的 capability 'shot_video'"):
@@ -152,6 +154,7 @@ async def test_iclip_studio_breaks_videos_down_through_the_reference_service() -
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
+        fetch_url=as_is,
         iclip_studio=STUDIO,
         reference_service=cast("ReferenceService", references),
     )
@@ -174,6 +177,7 @@ def test_iclip_studio_without_the_reference_service_is_an_assembly_error() -> No
             workspace_store=FakeFileStore(),
             material_ledger=FakeMaterialLedger(),
             http_client=idle_client(),
+            fetch_url=as_is,
             object_store=MemoryObjectStore(),
             iclip_studio=STUDIO,
         )
@@ -189,6 +193,7 @@ def test_shot_video_passed_without_its_backing_is_an_assembly_error(
             workspace_store=FakeFileStore(),
             material_ledger=FakeMaterialLedger(),
             http_client=idle_client(),
+            fetch_url=as_is,
             shot_video=shot_video_settings,
         )
 
@@ -203,6 +208,7 @@ def test_shot_video_is_registered_when_backed(
         settled_records=cast("SettledRecords", object()),
         object_store=MemoryObjectStore(),
         http_client=idle_client(),
+        fetch_url=as_is,
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
@@ -226,6 +232,7 @@ def test_shot_video_without_workspace_and_video_fails_at_assembly(
         settled_records=cast("SettledRecords", object()),
         object_store=MemoryObjectStore(),
         http_client=idle_client(),
+        fetch_url=as_is,
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
@@ -251,6 +258,7 @@ def test_the_display_registry_merges_every_display_source(
         settled_records=cast("SettledRecords", object()),
         object_store=MemoryObjectStore(),
         http_client=idle_client(),
+        fetch_url=as_is,
         video=video_settings,
         shot_video=shot_video_settings,
         image_models=frozenset({IMAGE_MODEL}),
@@ -334,8 +342,14 @@ class _StoreDown(MemoryObjectStore):
         raise ObjectStoreUnavailable("OSS 写入失败（试了 3 次）: Read timed out")
 
 
-def oss(handler: Callable[[httpx.Request], httpx.Response]) -> OssMediaProbe:
-    return OssMediaProbe(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+def oss(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    fetch_url: Callable[[str], str] = as_is,
+) -> OssMediaProbe:
+    return OssMediaProbe(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetch_url=fetch_url
+    )
 
 
 # OSS image/info 的字段值均为字符串。
@@ -359,6 +373,22 @@ async def test_the_probe_reads_the_oss_image_info() -> None:
 
     assert asked == [f"{IMAGE_URL}?x-oss-process=image/info"]
     assert info == ImageInfo(media_type="image/jpeg", size_bytes=21839, width=400, height=267)
+
+
+async def test_the_probe_asks_the_rewritten_address_for_image_info() -> None:
+    """本桶地址先换成内网地址，再挂查询参数。"""
+
+    internal = "https://bucket.oss-ap-southeast-1-internal.aliyuncs.com"
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(200, json=INFO_BODY)
+
+    to_internal = rewriting("https://bucket.oss-ap-southeast-1.aliyuncs.com", internal)
+    await oss(handler, fetch_url=to_internal).image_info(IMAGE_URL)
+
+    assert asked == [f"{internal}/style.jpg?x-oss-process=image/info"]
 
 
 async def test_an_unknown_format_keeps_its_own_name() -> None:
@@ -545,6 +575,7 @@ def test_shot_video_refuses_to_mount_when_its_image_model_is_not_wired(
             settled_records=cast("SettledRecords", object()),
             object_store=MemoryObjectStore(),
             http_client=idle_client(),
+            fetch_url=as_is,
             shot_video=shot_video_settings,
             image_models=frozenset({"别的一家"}),
             media_codec=SOFTWARE,
@@ -556,6 +587,7 @@ def test_video_mounts_without_generation_or_object_store(video_settings: Resolve
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
+        fetch_url=as_is,
         video=video_settings,
     )
     resolved = resolve_capabilities(("workspace", "video"), table=built, declared_by="agent video")
@@ -576,6 +608,7 @@ def test_video_is_unavailable_without_understanding() -> None:
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=idle_client(),
+        fetch_url=as_is,
     )
     with pytest.raises(RuntimeError, match="未登记的 capability 'video'"):
         resolve_capabilities(("workspace", "video"), table=built, declared_by="agent video")

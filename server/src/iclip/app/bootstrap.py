@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import signal
 import uuid
-from collections.abc import AsyncGenerator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -119,6 +119,8 @@ from iclip.platform.media.ffmpeg import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
     OssSettings,
+    oss_fetch_url,
+    validate_internal_endpoint,
     validate_public_url_base,
 )
 from iclip.platform.object_store.store import PublicBucket, PublicObjectStore
@@ -128,22 +130,29 @@ _logger = structlog.stdlib.get_logger(__name__)
 
 def _object_store(
     settings: ObjectStoreEnv | None, injected: PublicBucket | None
-) -> PublicBucket | None:
-    """公开对象存储：素材上传、生成结果转存、镜头帧共用这一个（测试可注入替身）。"""
+) -> tuple[PublicBucket | None, Callable[[str], str]]:
+    """公开对象存储：素材上传、生成结果转存、镜头帧共用这一个（测试可注入替身）。
+
+    第二项是本服务下载本桶对象前的地址换算：配了内网 endpoint 时把本桶地址换成内网地址；没有
+    对象存储或注入了替身时原样返回。"""
 
     if injected is not None:
-        return injected
+        return injected, _as_is
     if settings is None:
-        return None
-    return OssObjectStore(
-        OssSettings(
-            bucket=settings.bucket,
-            endpoint=settings.endpoint,
-            access_key_id=settings.access_key_id,
-            access_key_secret=settings.access_key_secret,
-            public_url_base=validate_public_url_base(settings.public_url_base),
-        )
+        return None, _as_is
+    oss = OssSettings(
+        bucket=settings.bucket,
+        endpoint=settings.endpoint,
+        access_key_id=settings.access_key_id,
+        access_key_secret=settings.access_key_secret,
+        public_url_base=validate_public_url_base(settings.public_url_base),
+        internal_endpoint=validate_internal_endpoint(settings.internal_endpoint),
     )
+    return OssObjectStore(oss), oss_fetch_url(oss)
+
+
+def _as_is(url: str) -> str:
+    return url
 
 
 def _namespace_owner(namespace: str) -> tuple[uuid.UUID, uuid.UUID] | None:
@@ -266,12 +275,14 @@ def _generation_module(
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
     compose_concurrency: int,
+    fetch_url: Callable[[str], str],
 ) -> GenerationModule:
     """将配置解析结果转换为生成域的运行设置，保持业务域与配置层隔离。
 
     ``repo`` 是组合根建的那一个带状态广播的仓储，受理、队列与创建即完成的记录共用它；
     ``queue_connector`` 是组合根建的那一个队列连接器，与参考视频的队列共用；
-    ``compose_concurrency`` 已按配置与 ``media_codec`` 取好。"""
+    ``compose_concurrency`` 已按配置与 ``media_codec`` 取好；``fetch_url`` 是下载本桶对象前的
+    地址换算。"""
 
     return build_generation_module(
         repo,
@@ -302,6 +313,7 @@ def _generation_module(
         object_store=object_store,
         queue_connector=queue_connector,
         media_codec=media_codec,
+        fetch_url=fetch_url,
         queue_settings=GenerationQueueSettings(
             poll_interval_seconds=settings.poll_interval_seconds,
             job_timeout_seconds=settings.job_timeout_seconds,
@@ -369,8 +381,9 @@ def build_app(
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
-    # 素材、生成与镜头能力依赖同一对象存储，先完成装配。
-    public_objects = _object_store(settings.object_store, object_store)
+    # 素材、生成与镜头能力依赖同一对象存储，先完成装配。服务端下载本桶对象的几处（查图片信息、
+    # 取帧与出图、拆解探时长与抽帧、编辑段探时长、合成）共用这一个地址换算。
+    public_objects, fetch_url = _object_store(settings.object_store, object_store)
     _require_ffmpeg(settings.ffmpeg_required)
     # 合成、拆解抽帧与分镜取帧共用这一档；三者都只在 ffmpeg_required 时装配。
     codec = _media_codec(settings.ffmpeg_required, media_codec)
@@ -472,6 +485,7 @@ def build_app(
             queue_connector=connector,
             media_codec=codec,
             compose_concurrency=compose_concurrency,
+            fetch_url=fetch_url,
         )
 
     async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
@@ -490,7 +504,7 @@ def build_app(
         if codec is None or breakdown_concurrency is None:
             raise RuntimeError("拆解已启用却没选编解码；ffmpeg_required 应当已包含 iclip_studio")
         default_breakdowns, default_tagger = build_reference_breakdown(
-            settings.iclip_studio, http_client, codec
+            settings.iclip_studio, http_client, codec, fetch_url=fetch_url
         )
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns or default_breakdowns,
@@ -574,6 +588,7 @@ def build_app(
         workspace_store=announcing_workspace_store,
         material_ledger=material_ledger,
         http_client=http_client,
+        fetch_url=fetch_url,
         generation_service=generation.service if generation is not None else None,
         settled_records=settled_records,
         image_models=generation.image_models if generation is not None else frozenset(),

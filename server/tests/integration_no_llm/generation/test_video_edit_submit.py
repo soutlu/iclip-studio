@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -32,6 +33,7 @@ from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.ffmpeg import ffmpeg_available
+from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import (
     FixedLineage,
@@ -68,7 +70,12 @@ async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> No
     return None
 
 
-def _edit_module(repo: GenerationRepository, sent: list[dict[str, Any]]) -> GenerationModule:
+def _edit_module(
+    repo: GenerationRepository,
+    sent: list[dict[str, Any]],
+    *,
+    fetch_url: Callable[[str], str] = as_is,
+) -> GenerationModule:
     """装配好的生成模块；上游是 MockTransport，收到的请求体记进 ``sent``。"""
 
     def upstream(request: httpx.Request) -> httpx.Response:
@@ -97,6 +104,7 @@ def _edit_module(repo: GenerationRepository, sent: list[dict[str, Any]]) -> Gene
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
+        fetch_url=fetch_url,
         video_transport=httpx.MockTransport(upstream),
     )
 
@@ -158,6 +166,43 @@ async def test_an_edit_goes_upstream_as_is_with_its_clip_recorded() -> None:
     assert (edit.range_start_ms, edit.range_end_ms) == (1000, 3000), "区间原样记，不改写"
     assert stored_request(edit).model_dump()["reference_video_urls"] == [clip_url]
     assert generation_out(edit, source_address=None).clip_stage is None, "编辑段没有本地加工"
+
+
+async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets_the_public_ones() -> (
+    None
+):
+    """基底与片段记的是本桶公网地址，只在换过的地址上读得到；受理时探的是换过的，交给上游的
+    仍是公网地址。"""
+
+    public = "https://cdn.test"
+    base_url, clip_url = f"{public}/iclip/agent/base.mp4", f"{public}/iclip/agent/clip.mp4"
+    repo = InMemoryGenerationRepository()
+    sent: list[dict[str, Any]] = []
+    with TemporaryDirectory(prefix="edit-fixture-") as tmp:
+        base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
+        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=2, audio=True)
+    async with serving({"iclip/agent/base.mp4": base, "iclip/agent/clip.mp4": clip}) as server:
+        module = _edit_module(repo, sent, fetch_url=rewriting(public, server.base_url))
+        take = make_job(
+            video_request(),
+            status=STATUS_COMPLETED,
+            owner_user_id=PRINCIPAL.user_id,
+            output_url=base_url,
+        )
+        upload = make_upload(kind=KIND_VIDEO, owner_user_id=PRINCIPAL.user_id, output_url=clip_url)
+        repo.jobs.update({take.id: take, upload.id: upload})
+        job = await module.service.submit_video_edit(
+            PRINCIPAL, _edit_in(take.id, clip_url, start_ms=1000, end_ms=3000)
+        )
+        await module.queue.run_submit(str(job.id))
+
+    assert repo.jobs[job.id].status == STATUS_SUBMITTED, repo.jobs[job.id].error_message
+    assert {delivery.target for delivery in server.deliveries} == {
+        "iclip/agent/base.mp4",
+        "iclip/agent/clip.mp4",
+    }
+    (body,) = sent
+    assert body["reference_video_urls"] == [clip_url], "交给上游的是公网地址"
 
 
 async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(

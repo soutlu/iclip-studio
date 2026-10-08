@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -87,6 +87,7 @@ def build_generation_module(
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
+    fetch_url: Callable[[str], str],
     queue_settings: GenerationQueueSettings | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
@@ -95,7 +96,8 @@ def build_generation_module(
 
     编辑段受理时用 ffprobe 按需读远程视频探时长（基底与参考片段）。对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；合成的产物本来就是
     我们自己造的。视频上游给的是它自己发布好的稳定地址，不转存。``media_codec`` 是本地合成
-    用的那一档编解码，由组合根在启动时选定。"""
+    用的那一档编解码，由组合根在启动时选定。``fetch_url`` 只用在受理时探时长与合成时下载素材
+    的那一刻（本桶对象走内网），落库与交给上游的地址不经过它。"""
 
     if not image_models:
         raise RuntimeError("媒体生成开着却一家图片模型都没声明")
@@ -108,8 +110,12 @@ def build_generation_module(
     report_stage = _clip_stage_reporter(repo)
     video_provider = HttpVideoProvider(video, transport=video_transport)
     compose_provider = FfmpegComposeProvider(
-        object_store=object_store, report_stage=report_stage, codec=media_codec
+        object_store=object_store, report_stage=report_stage, codec=media_codec, fetch_url=fetch_url
     )
+
+    async def probe_duration_ms(url: str) -> int:
+        return await probe_remote_duration_ms(fetch_url(url))
+
     image_providers = [
         _image_provider(
             model,
@@ -147,7 +153,7 @@ def build_generation_module(
         image_default_model=image_default_model,
         clear_completion=clear_completion,
         lineage=lineage,
-        probe_duration_ms=probe_remote_duration_ms,
+        probe_duration_ms=probe_duration_ms,
     )
     return GenerationModule(
         routers=(create_generations_router(service, act_as=act_as),),

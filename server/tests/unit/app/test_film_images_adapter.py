@@ -19,6 +19,7 @@ from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
 from iclip.domains.identity.models import Principal
 from iclip.domains.references.service import ReferenceService
+from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
     FixedLineage,
@@ -180,6 +181,7 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
         workspace_store=FakeFileStore(),
         material_ledger=FakeMaterialLedger(),
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
+        fetch_url=as_is,
         generation_service=film_image_service(InMemoryGenerationRepository()),
         object_store=MemoryObjectStore(),
         reference_service=cast("ReferenceService", object()),

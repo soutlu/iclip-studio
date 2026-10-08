@@ -25,6 +25,7 @@ from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.layout import MEDIA_PATHS
+from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import (
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
@@ -635,7 +636,10 @@ async def _report_stage(_job_id: uuid.UUID, _stage: ClipStage) -> bool:
         ),
         (
             FfmpegComposeProvider(
-                object_store=MemoryObjectStore(), report_stage=_report_stage, codec=SOFTWARE
+                object_store=MemoryObjectStore(),
+                report_stage=_report_stage,
+                codec=SOFTWARE,
+                fetch_url=as_is,
             ),
             make_job(video_request()),
         ),

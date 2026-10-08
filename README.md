@@ -34,7 +34,7 @@ Productor 的后端与 Web 前端。产品定位、业务术语和不变量见 [
    CREATE DATABASE iclip OWNER iclip;
    ```
 
-3. 服务器上建一个目录，放入 `compose.yaml`、`.env`（镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](server/src/iclip/config/models.py)，`DATABASE_URL` 指向上面的库），以及 `configs/`、`agents/` 两个目录（后端只读挂载，镜像里没有）。
+3. 服务器上建一个目录，放入 `compose.yaml`、`.env`（镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](server/src/iclip/config/models.py)，`DATABASE_URL` 指向上面的库），以及 `configs/`、`agents/` 两个目录（后端只读挂载，镜像里没有）。服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时，把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写与下载桶里的对象走内网；浏览器直传仍用 `OSS_ENDPOINT`。留空则全部走 `OSS_ENDPOINT`。
 4. 拉取并启动：
 
    ```bash

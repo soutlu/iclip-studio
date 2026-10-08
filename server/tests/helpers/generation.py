@@ -55,6 +55,7 @@ from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
+from tests.helpers.fetch_url import as_is
 from tests.helpers.identity import InMemoryUserRepository
 
 FAKE_VIDEO_PROVIDER = "video_fake"
@@ -658,6 +659,7 @@ def film_image_service(
         object_store=MemoryObjectStore(),
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
+        fetch_url=as_is,
     ).service
 
 

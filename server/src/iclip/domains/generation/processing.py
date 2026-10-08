@@ -103,14 +103,17 @@ class FfmpegComposeProvider:
         object_store: PublicObjectStore,
         report_stage: ReportStage,
         codec: MediaCodec,
+        fetch_url: Callable[[str], str],
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         """``transport`` 给下载素材用，测试替身从这里进；``report_stage`` 由装配注入，provider
-        自己不碰数据库；``codec`` 是组合根在启动时选定的那一档编解码。"""
+        自己不碰数据库；``codec`` 是组合根在启动时选定的那一档编解码；``fetch_url`` 在下载各段
+        素材前换算地址（本桶对象走内网），请求里的地址不改。"""
 
         self._object_store = object_store
         self._report_stage = report_stage
         self._codec = codec
+        self._fetch_url = fetch_url
         self._transport = transport
 
     @property
@@ -177,7 +180,9 @@ class FfmpegComposeProvider:
                     continue
                 target = root / f"src-{uuid.uuid4().hex}.{_EXT}"
                 try:
-                    await download(client, segment.url, target, max_bytes=MAX_VIDEO_BYTES)
+                    await download(
+                        client, self._fetch_url(segment.url), target, max_bytes=MAX_VIDEO_BYTES
+                    )
                 except MediaError as exc:
                     raise ProviderError(
                         f"取不到要加工的素材: {exc}",

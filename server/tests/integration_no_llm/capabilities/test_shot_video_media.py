@@ -50,6 +50,7 @@ from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.ffmpeg import MediaError, ffmpeg_available
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
+from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.media import BROKEN_DECODE, CODECS, local_codec
@@ -225,6 +226,7 @@ def make_tools(
         objects=objects,
         paths=MEDIA_PATHS,
         client=client,
+        fetch_url=as_is,
         image_models=frozenset({IMAGE_MODEL}),
         policy=FAST,
         codec=SOFTWARE,

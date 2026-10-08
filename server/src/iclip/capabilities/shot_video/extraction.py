@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Annotated, Final
@@ -78,11 +78,15 @@ class FrameExtractor:
         self,
         *,
         client: httpx.AsyncClient,
+        fetch_url: Callable[[str], str],
         paths: ShotVideoPaths,
         objects: PublicObjectWriter,
         codec: MediaCodec,
     ) -> None:
+        """``fetch_url`` 在下载参考视频前换算地址（本桶对象走内网），由组合根注入。"""
+
         self._client = client
+        self._fetch_url = fetch_url
         self._paths = paths
         self._objects = objects
         self._codec = codec
@@ -116,7 +120,7 @@ class FrameExtractor:
 
         try:
             async with fetched(
-                self._client, video_url, max_bytes=MAX_VIDEO_BYTES, suffix=".mp4"
+                self._client, self._fetch_url(video_url), max_bytes=MAX_VIDEO_BYTES, suffix=".mp4"
             ) as source:
                 duration = await probe_duration_ms(source)
                 _check_in_range(rows, duration_ms=duration)

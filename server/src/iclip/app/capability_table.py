@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import httpx
@@ -104,14 +104,16 @@ _IMAGE_MEDIA_TYPES: Mapping[str, str] = {
 class OssMediaProbe:
     """通过 OSS image/info 查询尺寸、大小与格式，无需下载像素。
 
-    查询地址由 ``harness.media`` 构造；对外错误使用固定文案，避免回显带参数的地址。"""
+    查询地址由 ``harness.media`` 构造，先经 ``fetch_url`` 换算（本桶对象走内网）再挂参数；对外
+    错误使用固定文案，避免回显带参数的地址。"""
 
-    def __init__(self, client: httpx.AsyncClient) -> None:
+    def __init__(self, client: httpx.AsyncClient, *, fetch_url: Callable[[str], str]) -> None:
         self._client = client
+        self._fetch_url = fetch_url
 
     async def image_info(self, url: str) -> ImageInfo:
         try:
-            info_url = image_info_url(url)
+            info_url = image_info_url(self._fetch_url(url))
         except ValueError as exc:
             raise MediaProbeFailed("不是能挂 OSS 处理参数的地址") from exc
         try:
@@ -176,6 +178,7 @@ def build_capability_table(
     workspace_store: FileStore,
     material_ledger: MaterialLedger,
     http_client: httpx.AsyncClient,
+    fetch_url: Callable[[str], str],
     generation_service: GenerationService | None = None,
     settled_records: SettledRecords | None = None,
     object_store: PublicBucket | None = None,
@@ -188,6 +191,7 @@ def build_capability_table(
 ) -> CapabilityTable:
     """按组合根递进来的运行值登记能力名，没给的不登记。
 
+    ``fetch_url`` 是本服务下载本桶对象前的地址换算，交给查图片信息与取帧、出图的下载。
     ``shot_video`` 由组合根按 ``ResolvedSettings.shot_tools_enabled`` 决定是否传入；传了却缺
     媒体生成、切图记录、对象存储或取帧用的编解码（``media_codec``）是装配错误，直接报。
     ``iclip_studio`` 传了却缺参考视频服务（拆解配好的那个）同样直接报。
@@ -198,7 +202,9 @@ def build_capability_table(
     table: dict[str, AgentCapabilities] = {
         "workspace": (
             workspace_capability(
-                space=space, probe=OssMediaProbe(http_client), ledger=material_ledger
+                space=space,
+                probe=OssMediaProbe(http_client, fetch_url=fetch_url),
+                ledger=material_ledger,
             ),
         ),
     }
@@ -255,6 +261,7 @@ def build_capability_table(
                 objects=ObjectWriterAdapter(object_store),
                 paths=MEDIA_PATHS,
                 client=http_client,
+                fetch_url=fetch_url,
                 image_models=image_models,
                 policy=GenerationPolicy(
                     poll_interval_seconds=shot_video.poll_interval_seconds,

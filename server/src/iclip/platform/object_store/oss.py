@@ -1,6 +1,7 @@
 """OSS 公开对象适配器：实现 store.py 的端口，负责稳定 key 写入、直传签名、重试和异常映射。
 
-同步网络调用在线程中执行；供应商生成结果转存后避免依赖临时签名 URL。
+同步网络调用在线程中执行；供应商生成结果转存后避免依赖临时签名 URL。配了内网 endpoint 时，服务端
+读写走内网，浏览器直传的签名仍用公网 endpoint；``oss_fetch_url`` 给服务端下载本桶对象换内网地址。
 """
 
 from __future__ import annotations
@@ -39,16 +40,40 @@ class OssSettings:
     public_url_base: str
     """公网访问前缀（自定义域名或 bucket 默认域名），不带尾斜杠。"""
 
+    internal_endpoint: str | None = None
+    """同地域内网 endpoint（经 ``validate_internal_endpoint``）；None 表示服务端也走 ``endpoint``。"""
+
 
 class OssObjectStore:
-    """``PublicBucket`` 的 OSS 实现。"""
+    """``PublicBucket`` 的 OSS 实现。
 
-    def __init__(self, settings: OssSettings, *, bucket: Any | None = None) -> None:
-        """允许注入 bucket 替身；未提供时按 settings 创建客户端。"""
+    写入、存在性检查、列举、元信息与删除用读写客户端：配了内网 endpoint 时连内网，否则连
+    ``endpoint``；直传签名用签名客户端，始终按 ``endpoint`` 拼地址，浏览器才连得上。两个客户端
+    共用一份凭证。"""
+
+    def __init__(
+        self,
+        settings: OssSettings,
+        *,
+        bucket: Any | None = None,
+        signing_bucket: Any | None = None,
+    ) -> None:
+        """``bucket`` 替换读写客户端，``signing_bucket`` 替换签名客户端（测试替身）。只注入
+        ``bucket`` 时签名也用它；未注入的按 ``settings`` 创建。"""
 
         self._public_url_base = settings.public_url_base.rstrip("/")
+        auth = oss2.Auth(settings.access_key_id, settings.access_key_secret)
         # OSS SDK 无类型标注，边界处显式使用 Any。
-        self._bucket: Any = bucket if bucket is not None else _build_bucket(settings)
+        if signing_bucket is None:
+            signing_bucket = bucket
+        if signing_bucket is None:
+            signing_bucket = oss2.Bucket(auth, settings.endpoint, settings.bucket)
+        if bucket is None and settings.internal_endpoint is not None:
+            bucket = oss2.Bucket(auth, settings.internal_endpoint, settings.bucket)
+        if bucket is None:
+            bucket = signing_bucket
+        self._signing_bucket: Any = signing_bucket
+        self._bucket: Any = bucket
 
     async def put_public_object(self, *, object_key: str, content: bytes, content_type: str) -> str:
         """在线程中执行同步 OSS 上传，避免阻塞事件循环。"""
@@ -67,7 +92,7 @@ class OssObjectStore:
             raise ValueError("预签名 PUT 必须指定内容类型")
         try:
             return str(
-                self._bucket.sign_url(
+                self._signing_bucket.sign_url(
                     "PUT",
                     key,
                     SIGNED_PUT_EXPIRES_SECONDS,
@@ -149,11 +174,6 @@ def _is_transient(exc: oss2.exceptions.OssError) -> bool:
     return isinstance(exc, oss2.exceptions.RequestError) or exc.status >= 500
 
 
-def _build_bucket(settings: OssSettings) -> oss2.Bucket:
-    auth = oss2.Auth(settings.access_key_id, settings.access_key_secret)
-    return oss2.Bucket(auth, settings.endpoint, settings.bucket)
-
-
 def _validate_object_key(object_key: str) -> str:
     """校验 key 的路径与命名空间，避免写入共享桶中本服务范围之外。"""
 
@@ -177,10 +197,53 @@ def validate_public_url_base(value: str) -> str:
     return base
 
 
+def validate_internal_endpoint(value: str) -> str | None:
+    """启动时校验内网 endpoint：留空返回 None（不走内网）；否则必须是只有 scheme 与 host 的
+    http:// 或 https:// 地址，带路径或查询串即拒，因为下载地址按 ``{scheme}://{bucket}.{host}/`` 拼。"""
+
+    endpoint = value.strip().rstrip("/")
+    if not endpoint:
+        return None
+    parts = urlsplit(endpoint)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise ValueError("OSS_INTERNAL_ENDPOINT 必须是 http:// 或 https:// 地址")
+    if parts.path or parts.query or parts.fragment:
+        raise ValueError("OSS_INTERNAL_ENDPOINT 只写 scheme 与 host，不带路径或查询串")
+    return endpoint
+
+
+def oss_fetch_url(settings: OssSettings) -> Callable[[str], str]:
+    """本服务下载本桶对象前用的地址换算，不发网络请求。
+
+    以 ``public_url_base`` 加 ``/`` 开头的地址换成 ``{内网 scheme}://{bucket}.{内网 host}/`` 加原来
+    剩下的部分（key 与查询串原样）；其余地址（供应商、图片网关等）原样返回。没配内网 endpoint 时
+    一律原样返回。只在发起下载的那一刻换，落库、回给前端或交给外部服务的地址不经过它。"""
+
+    internal = settings.internal_endpoint
+    if internal is None:
+        return _as_is
+    parts = urlsplit(internal)
+    public_prefix = f"{settings.public_url_base.rstrip('/')}/"
+    internal_prefix = f"{parts.scheme}://{settings.bucket}.{parts.netloc}/"
+
+    def fetch_url(url: str) -> str:
+        if url.startswith(public_prefix):
+            return internal_prefix + url[len(public_prefix) :]
+        return url
+
+    return fetch_url
+
+
+def _as_is(url: str) -> str:
+    return url
+
+
 __all__ = [
     "RETRY_ATTEMPTS",
     "RETRY_BACKOFF_SECONDS",
     "OssObjectStore",
     "OssSettings",
+    "oss_fetch_url",
+    "validate_internal_endpoint",
     "validate_public_url_base",
 ]

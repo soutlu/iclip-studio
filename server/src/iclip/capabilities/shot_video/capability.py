@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
@@ -112,11 +112,13 @@ def shot_video_capability(
     objects: PublicObjectWriter,
     paths: ShotVideoPaths,
     client: httpx.AsyncClient,
+    fetch_url: Callable[[str], str],
     image_models: frozenset[str],
     policy: GenerationPolicy,
     codec: MediaCodec,
 ) -> ShotVideo[Any]:
-    """装配取帧与出图服务，取帧解码用 ``codec``。缺少出图要用的模型即拒绝装配。"""
+    """装配取帧与出图服务，取帧解码用 ``codec``；下载参考视频与整图前用 ``fetch_url`` 换算地址。
+    缺少出图要用的模型即拒绝装配。"""
 
     if IMAGE_MODEL not in image_models:
         # 出图把用哪家钉在代码里，配置没接这家就是每次出图都失败，起不来比跑起来好。
@@ -128,11 +130,14 @@ def shot_video_capability(
         space=space,
         ledger=ledger,
         paths=paths,
-        extractor=FrameExtractor(client=client, paths=paths, objects=objects, codec=codec),
+        extractor=FrameExtractor(
+            client=client, fetch_url=fetch_url, paths=paths, objects=objects, codec=codec
+        ),
         generator=FrameGenerator(
             generations=generations,
             objects=objects,
             client=client,
+            fetch_url=fetch_url,
             policy=policy,
         ),
     )
