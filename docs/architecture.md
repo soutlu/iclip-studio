@@ -50,7 +50,7 @@ skill 与 capability 都按 Agent 显式挂载，子代理不继承主代理的�
 
 模型适配集中在 [harness/models.py](../server/src/iclip/harness/models.py)，同名模型复用实例。provider 选择交给官方 `infer_model`；`api: responses` 使用本仓的 Responses 子类。模型参数转换不进入业务模块或工具。
 
-lifespan 启动运行驱动与已启用的生成队列；关停时先停止后台任务并等待运行终态落库，再关闭 HTTP 客户端和本应用持有的连接池。启动不建表，迁移单独执行。
+lifespan 启动运行驱动、已启用的生成队列与参考视频的拆解队列；关停时先停止后台任务并等待运行终态落库，再关闭 HTTP 客户端和本应用持有的连接池。启动不建表，迁移单独执行。
 
 ## 3. 身份与模块协作
 
@@ -74,6 +74,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 | `iclip` 埋点事件 | `domains/tracking/infra_sql.py`；只追加，主语资格按表名读生成记录，审计按表名读下载事件 |
 | PDM 款目录外部库 | `domains/products/catalog_pg.py`，独立连接池设置会话级只读 |
 | 审计报表（跨 `iclip` 与 `agent_runtime` 九张表的只读聚合，含运行事件 `events` 与运行关联 `agent_job_runs`） | `domains/audit/reports_pg.py`；不建表、不写入，列、状态词或运行事件名被改动时由它的集成测试先红；总览与按人的时间窗、粒度、分期与均线补窗是 `domains/audit/overview.py` 里的纯函数，任务执行的异常门槛与翻页游标在 `domains/audit/executions.py` |
+| `iclip` 参考视频 | `domains/references/infra_sql.py`；一条视频一行，拆解、标签与状态都在行上，状态跳转都是带条件的更新 |
 | 资料库（跨生成记录、对话、用户三张表的只读聚合） | `domains/library/reports_pg.py`；同上，每次请求现算卡面与副本的血缘装填，数据到十万级再换成随出片完成更新的读表 |
 
 对话分叉横跨上表前四行：对话领域服务的分叉用例按顺序调两个端口写工作区与素材、种子快照，最后自己落对话行；端口由 [app/conversation_fork.py](../server/src/iclip/app/conversation_fork.py) 接到文件存储与 agent 引擎上，只回报事实，冲突与否由用例判。四处写入各开各的事务，没有统一回滚，靠这个顺序保证中途失败只留下寻址不到的孤儿数据。出片记录不拷，副本按血缘继承：生成域按对话读记录时经同一文件里的适配器问对话域要祖先与边界、主体读不读得到这段对话，递归查询只在对话的 Postgres 仓储上，不进对话仓储协议。做同款走建对话用例里的另一个端口，同样先拷后落行：[app/conversation_same_style.py](../server/src/iclip/app/conversation_same_style.py) 只拷固定几份制作文件（两份改名）与素材台账，同一份文件表也给资料库判断一段对话做不做得了同款（[ADR-0013](adr/0013-same-style-copy-on-create.md)）。
@@ -88,6 +89,8 @@ Agent 运行由 [ConversationRunner](../server/src/iclip/harness/transcript/runn
 - StepPersistence 保存消息历史与可续跑快照；恢复读取持久记录。停止运行使用框架取消入口，等待终态落库。
 - 审批结束当前 run，决定持久化后以新 run 续跑，仍属于同一轮；审批工具只挂顶层 Agent。
 - 生成任务另由 procrastinate 的提交、轮询队列驱动，业务状态写回生成任务表；切图与上传创建即完成，直接落库，不进队列。视频的提交与任务查询对外是上游异步接口的镜像，请求原样转发、结果地址直接存。合成（video / compose）是同一套队列里的一家本地 provider，用 ffmpeg 在服务端拼接；编辑段与出片一样走视频 provider、原样转发，参考片段由前端切好上传，服务端只在受理时用 ffprobe 探片段与基底的时长做核对（[ADR-0010](adr/0010-timeline-editing-frontend-clips.md)）。
+
+参考视频（[ADR-0014](adr/0014-reference-videos.md)）在 `domains/references/`：用例、自有表与它自己的 procrastinate App（队列 `references`）。拆解、打标与读上传记录都是领域声明的端口，领域不 import 能力包与生成域：组合根在 [app/reference_breakdown.py](../server/src/iclip/app/reference_breakdown.py) 用 `iclip_studio` 配置另建一份 `VideoBreakdown` 与方舟适配器，把 ffmpeg 与模型的失败换成落到行上的失败原因（视频打不开、模型调用失败、模型失败；超时由下面的周期任务记），打标的输出格式与解析也只在这个文件里；上传记录经组合根的闭包按主体读生成域的那一行。一次后台任务先接手（排队改成拆解中，记开始时刻），再拆解、打标，最后按开始时刻核对后一次写回，打标失败只留空标签；任务不挂自动重试，崩在半路的行由每分钟一次的周期任务在拆解中满 20 分钟时按超时收尾。生成队列与拆解队列共用组合根建的一个连接器：媒体生成或拆解任一配好就建它，lifespan 里打开一次、两个 worker 都停了再关；拆解队列的 worker 只看 `iclip_studio` 配没配，不以媒体生成为前提，每个进程的并发取 `iclip_studio.breakdown_concurrency`。它与对话运行在同一个进程、同一个 lifespan 里起停，AI 导演的工具才等得到结果。
 
 transcript 是运行记录的投影。历史由 `from_messages` 从持久消息生成，实时由 `projector` 从引擎事件生成；两条路径必须得到相同的编号和结构，共用工具 display 注册表。上下文压缩在完整历史中插入 `CompactionPart`，发送模型时从最后一条边界计算窗口，不删除原始消息。
 

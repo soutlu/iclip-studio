@@ -101,6 +101,11 @@ depends_on = [
     "iclip.domains.identity",
 ]
 
+# 参考视频的拆解与打标、上传记录都是端口，由组合根接到能力包与生成域上。
+[[modules]]
+path = "iclip.domains.references"
+depends_on = ["iclip.common", "iclip.platform.paging", "iclip.domains.identity"]
+
 [[modules]]
 path = "iclip.domains.products"
 depends_on = ["iclip.common"]
@@ -158,6 +163,7 @@ depends_on = [
     "iclip.domains.tasks",
     "iclip.domains.audit",
     "iclip.domains.library",
+    "iclip.domains.references",
     "iclip.domains.tracking",
     "iclip.harness",
     "iclip.capabilities",

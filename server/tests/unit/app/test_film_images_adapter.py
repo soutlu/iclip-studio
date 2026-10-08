@@ -185,6 +185,7 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
             breakdown_url="https://vision.test/responses",
             breakdown_api_key="ark",
             breakdown_model="seed-vision",
+            breakdown_concurrency=2,
         ),
         image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),
     )

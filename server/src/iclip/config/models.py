@@ -296,6 +296,9 @@ class IclipStudioSection(ConfigSection):
     breakdown_model: str
     """拆解视频用对方哪个模型。"""
 
+    breakdown_concurrency: int = Field(default=2, ge=1)
+    """参考视频的后台拆解每个服务进程同时跑几条；多个进程时总并发是它乘进程数。"""
+
 
 class ShotVideoSection(ConfigSection):
     """取帧与出图的节奏与渠道重试；写出这一段即启用。
@@ -483,6 +486,7 @@ class ResolvedIclipStudio:
     breakdown_url: str
     breakdown_api_key: str
     breakdown_model: str
+    breakdown_concurrency: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -675,6 +679,7 @@ def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipSt
         breakdown_url=env.url,
         breakdown_api_key=env.api_key,
         breakdown_model=section.breakdown_model,
+        breakdown_concurrency=section.breakdown_concurrency,
     )
 
 
