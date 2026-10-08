@@ -1294,6 +1294,149 @@
 .storyboard-gallery-item:focus-within .storyboard-gallery-zoom {
   opacity: 1;
 }
+/* ===== 编辑器舞台共用 =====
+   图片编辑与视频编辑的舞台模糊底、画面图框与版本条小图格（components/stage-backdrop、version-thumb）。 */
+/* 舞台模糊底：舞台上那张图放大、模糊后压一层底色，画面两侧不留空。 */
+.stage-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.stage-backdrop-image {
+  position: absolute;
+  inset: -60px;
+  width: calc(100% + 120px);
+  height: calc(100% + 120px);
+  object-fit: cover;
+  filter: blur(44px) saturate(1.15);
+  scale: 1.1;
+}
+.stage-backdrop-veil {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-surface-container-low) 38%, transparent);
+}
+.dark .stage-backdrop-veil {
+  background: color-mix(in srgb, var(--color-surface-container-lowest) 50%, transparent);
+}
+/* 立在模糊底上的画面：圆角加一圈极淡的边和向下的投影。 */
+.stage-picture {
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--color-scrim) 10%, transparent),
+    0 18px 40px -16px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+}
+/* 版本小图格：竖版小画面，没选的淡一些、小一点，选中的完整亮度加一圈细白边。
+   默认 40×71，按画幅的尺寸由组件写在元素上。放在实底横条（窄屏）里时，所在编辑器在自己的断点里
+   去掉投影、把白环换成墨色。 */
+.version-thumb {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 71px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-high);
+  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+  opacity: 0.62;
+  scale: 0.9;
+  cursor: pointer;
+  transition-property: opacity, scale, box-shadow;
+  transition-duration: var(--dur-m);
+  transition-timing-function: var(--ease);
+}
+.version-thumb:hover:not([aria-pressed='true']) {
+  opacity: 0.85;
+}
+.version-thumb[aria-pressed='true'] {
+  opacity: 1;
+  scale: 1;
+  box-shadow:
+    0 0 0 1.5px var(--color-on-scrim),
+    0 10px 22px -8px color-mix(in srgb, var(--color-scrim) 55%, transparent);
+}
+.version-thumb:disabled {
+  cursor: default;
+}
+.version-thumb > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* 没有缩略图：中性实底加居中的小图标，不做成白卡。 */
+.version-thumb-empty {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
+}
+/* 压在画面上的字与圈不随主题换：深色渐变、白字，任何画面上都读得清。 */
+.version-thumb-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 14px 2px 4px;
+  overflow: hidden;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--color-scrim) 60%, transparent),
+    transparent
+  );
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 12px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.version-thumb-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: color-mix(in srgb, var(--color-scrim) 35%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 12px;
+  white-space: nowrap;
+}
+.version-thumb-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 1.5px var(--color-on-scrim);
+}
+/* 不是某一版的格子（「更早」「再生成」）：同尺寸的浅色玻璃格，图标居中、名字在下。 */
+.version-thumb-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--color-glass-base) 72%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    0 6px 14px -6px color-mix(in srgb, var(--color-scrim) 30%, transparent);
+  backdrop-filter: blur(14px);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 12px;
+  opacity: 0.85;
+}
 @media (hover: none) {
   .storyboard-gallery-zoom,
   .storyboard-segment-copy {
@@ -1316,7 +1459,8 @@
   .storyboard-take,
   .storyboard-take-veil,
   .storyboard-stage-nav,
-  .storyboard-stage-tool {
+  .storyboard-stage-tool,
+  .version-thumb {
     transition: none;
   }
 }

@@ -30,16 +30,22 @@ function Editor({
 }) {
   const [annotations, setAnnotations] = useState(initial)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 编辑器把工具条摆在舞台旁的宿主里，这里同样给一个。
+  const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null)
   return (
-    <AnnotationCanvas
-      url="/frame.png"
-      annotations={annotations}
-      onChange={setAnnotations}
-      selectedId={selectedId}
-      onSelect={setSelectedId}
-      disabled={disabled}
-      {...(onInsertReference ? { onInsertReference } : {})}
-    />
+    <>
+      <AnnotationCanvas
+        url="/frame.png"
+        annotations={annotations}
+        onChange={setAnnotations}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        disabled={disabled}
+        toolbarHost={toolbarHost}
+        {...(onInsertReference ? { onInsertReference } : {})}
+      />
+      <div ref={setToolbarHost} />
+    </>
   )
 }
 

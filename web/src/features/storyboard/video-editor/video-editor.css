@@ -71,33 +71,6 @@
   background: var(--color-surface-container-low);
 }
 
-/* 模糊海报底：放大、模糊后压一层底色，画面两侧不留空。 */
-.video-editor-backdrop {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.video-editor-backdrop-image {
-  position: absolute;
-  inset: -60px;
-  width: calc(100% + 120px);
-  height: calc(100% + 120px);
-  object-fit: cover;
-  filter: blur(44px) saturate(1.15);
-  scale: 1.1;
-}
-
-.video-editor-backdrop-veil {
-  position: absolute;
-  inset: 0;
-  background: color-mix(in srgb, var(--color-surface-container-low) 38%, transparent);
-}
-
-.dark .video-editor-backdrop-veil {
-  background: color-mix(in srgb, var(--color-surface-container-lowest) 50%, transparent);
-}
-
 /* 内嵌槽：画面在左右留给版本条的空位之间按比例撑满（容器查询单位同时量宽高）。 */
 .video-editor-hero-wrap {
   position: absolute;
@@ -113,16 +86,13 @@
   display: contents;
 }
 
+/* 圆角与投影由 .stage-picture 给。 */
 .video-editor-preview {
   position: relative;
   width: min(100cqw, 100cqh * var(--preview-ratio));
   aspect-ratio: var(--preview-ratio);
   overflow: hidden;
-  border-radius: var(--radius-lg);
   background: var(--color-surface-container);
-  box-shadow:
-    0 0 0 0.5px color-mix(in srgb, var(--color-scrim) 10%, transparent),
-    0 18px 40px -16px color-mix(in srgb, var(--color-scrim) 45%, transparent);
   isolation: isolate;
 }
 
@@ -195,7 +165,7 @@
   font-weight: 500;
 }
 
-/* 版本条：竖版小画面直接立在模糊底上，没选的淡一些、小一点，选中的完整亮度加一圈细白边。
+/* 版本条：小图格（.version-thumb）直接立在模糊底上。
    条目多时要能滚，滚动容器会按自己的内边距框裁掉格子的阴影；内边距放宽到阴影的扩散范围
    （横向约 14px、纵向约 24px），阴影才跟着圆角走、不被切成直边。格子仍离舞台右缘 22px。 */
 .video-editor-versions {
@@ -211,101 +181,6 @@
   padding: 24px 20px;
   overflow-y: auto;
   scrollbar-width: none;
-}
-
-.video-editor-version {
-  position: relative;
-  flex: none;
-  width: 40px;
-  height: 71px;
-  padding: 0;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-high);
-  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-scrim) 45%, transparent);
-  opacity: 0.62;
-  scale: 0.9;
-  cursor: pointer;
-  transition-property: opacity, scale, box-shadow;
-  transition-duration: var(--dur-m);
-  transition-timing-function: var(--ease);
-}
-
-.video-editor-version:hover:not([aria-pressed='true']) {
-  opacity: 0.85;
-}
-
-.video-editor-version[aria-pressed='true'] {
-  opacity: 1;
-  scale: 1;
-  box-shadow:
-    0 0 0 1.5px var(--color-on-scrim),
-    0 10px 22px -8px color-mix(in srgb, var(--color-scrim) 55%, transparent);
-}
-
-.video-editor-version img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* 没有截帧海报：中性实底加居中的小视频图标，不做成白卡。 */
-.video-editor-version-empty {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  place-items: center;
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-muted);
-}
-
-/* 压在画面上的字与圈不随主题换：深色渐变、白字，任何画面上都读得清。 */
-.video-editor-version-label {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  padding: 14px 2px 4px;
-  overflow: hidden;
-  background: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--color-scrim) 60%, transparent),
-    transparent
-  );
-  color: var(--color-on-scrim);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  line-height: 12px;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.video-editor-version-state {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  background: color-mix(in srgb, var(--color-scrim) 35%, transparent);
-  color: var(--color-on-scrim);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  line-height: 12px;
-  white-space: nowrap;
-}
-
-.video-editor-version-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-  box-shadow: 0 0 0 1.5px var(--color-on-scrim);
 }
 
 /* 放大预览：与灯箱同款的应用内遮罩，盖满视口、舞台居中 */
@@ -515,11 +390,11 @@
   }
 
   /* 横条是浅灰实面、会被滚动裁切：不投阴影，选中格只留细环；白环在浅灰上看不见，换成墨色。 */
-  .video-editor-version {
+  .video-editor-versions .version-thumb {
     box-shadow: none;
   }
 
-  .video-editor-version[aria-pressed='true'] {
+  .video-editor-versions .version-thumb[aria-pressed='true'] {
     box-shadow: 0 0 0 1.5px var(--color-on-surface);
   }
 }
@@ -559,9 +434,5 @@
 @media (prefers-reduced-motion: reduce) {
   .video-editor * {
     scroll-behavior: auto;
-  }
-
-  .video-editor-version {
-    transition: none;
   }
 }

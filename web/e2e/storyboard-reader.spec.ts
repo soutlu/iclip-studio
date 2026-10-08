@@ -352,9 +352,10 @@ test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', as
   await entry.click()
   const editor = page.getByRole('dialog', { name: /^编辑图片/ })
   await expect(editor).toBeVisible()
-  await expect(editor).toHaveAccessibleName('编辑图片 · 镜头组 1 · 帧 @1')
-  await expect(editor.getByRole('group', { name: '这一帧的图片', exact: true })).toBeVisible()
+  await expect(editor).toHaveAccessibleName('编辑图片 镜头组 1 · 帧 @1')
   await expect(editor.getByLabel('图片模型', { exact: true })).toBeVisible()
+  // 这一帧还没编辑过，只有当前帧一张：没得切，版本条不显示。
+  await expect(editor.getByRole('group', { name: '这一帧的图片', exact: true })).toHaveCount(0)
   await page.screenshot({
     animations: 'disabled',
     path: '../.artifacts/design-qa/storyboard-reader/image-edit-entry-desktop.png',

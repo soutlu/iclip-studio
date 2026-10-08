@@ -869,7 +869,7 @@ describe('StoryboardReader', () => {
 
     const view = await within(page).findByRole('button', { name: '有新结果 · 查看' })
     await userEvent.click(view)
-    const editor = await screen.findByRole('dialog', { name: '编辑图片 · 镜头组 1 · 帧 @2' })
+    const editor = await screen.findByRole('dialog', { name: '编辑图片 镜头组 1 · 帧 @2' })
     // 从角标进来直接落在那条结果上，不是落在标注画布上。
     await waitFor(() =>
       expect(

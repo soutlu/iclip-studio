@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react'
+import { createPortal } from 'react-dom'
 import { mintUuid } from '@/shared/lib/uuid'
 import { Button, IconButton } from '@/shared/ui/button'
 import { MediaFallback } from '@/shared/ui/media-fallback'
@@ -24,6 +32,9 @@ type AnnotationCanvasProps = {
   onSelect: (id: string | null) => void
   disabled?: boolean
   onInsertReference?: (id: string) => void
+  /** 标注工具条渲染进的元素：由调用方摆位置（桌面叠在舞台左侧，窄屏在舞台下方一行）。
+   * 还没挂上（null）时不渲染工具条。 */
+  toolbarHost: HTMLElement | null
 }
 
 type Gesture = {
@@ -51,6 +62,7 @@ export function AnnotationCanvas({
   onSelect,
   disabled = false,
   onInsertReference,
+  toolbarHost,
 }: AnnotationCanvasProps) {
   const [tool, setTool] = useState<AnnotationKind>('point')
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -291,15 +303,16 @@ export function AnnotationCanvas({
       })
     : null
 
-  return (
-    <div className="image-edit-canvas" role="group" aria-label="图片标注编辑器">
-      <div className="image-edit-canvas-toolbar" role="toolbar" aria-label="标注工具">
+  // 工具与撤销、重做、清空分两组：窄屏排成一行时两组各靠一端。
+  const tools = (
+    <div className="image-edit-tools" role="toolbar" aria-label="标注工具">
+      <div className="image-edit-tools-group">
         {TOOLS.map(({ kind, label }) => (
           <IconButton
             key={kind}
             label={label}
             name={kind}
-            variant={tool === kind ? 'selected' : 'standard'}
+            size="sm"
             aria-pressed={tool === kind}
             disabled={Boolean(blocked)}
             onClick={() => {
@@ -308,85 +321,115 @@ export function AnnotationCanvas({
             }}
           />
         ))}
-        <span className="image-edit-canvas-toolbar-divider" aria-hidden="true" />
+      </div>
+      <span className="image-edit-tools-divider" aria-hidden="true" />
+      <div className="image-edit-tools-group">
         <IconButton
           label="撤销标注"
           name="undo"
+          size="sm"
           disabled={Boolean(blocked) || history.past.length === 0}
           onClick={undo}
         />
         <IconButton
           label="重做标注"
           name="redo"
+          size="sm"
           disabled={Boolean(blocked) || history.future.length === 0}
           onClick={redo}
         />
         <IconButton
           label="清空标注"
           name="delete"
+          size="sm"
           tooltip="清空全部标注，可撤销"
           disabled={Boolean(blocked) || annotations.length === 0 || gesture !== null}
           onClick={clearAnnotations}
         />
       </div>
-      <div ref={viewportRef} className="image-edit-canvas-viewport">
-        <img
-          src={url}
-          alt="当前编辑帧"
-          className="image-edit-canvas-source"
-          draggable={false}
-          onLoad={(event) => {
-            setImageFailed(false)
-            setSize({
-              width: event.currentTarget.naturalWidth,
-              height: event.currentTarget.naturalHeight,
-            })
-          }}
-          onError={() => setImageFailed(true)}
-        />
+    </div>
+  )
+  const ready = size.width > 0 && !imageFailed
+
+  return (
+    <div className="image-edit-canvas" role="group" aria-label="图片标注编辑器">
+      {toolbarHost === null ? null : createPortal(tools, toolbarHost)}
+      <div
+        ref={viewportRef}
+        className="image-edit-canvas-viewport"
+        onPointerDown={(event) => {
+          // 图框只有图那么大，点在图外的舞台上落在这里：与点在图上的空白一样，只取消选择。
+          if (event.target === event.currentTarget && !blocked && !gesture) onSelect(null)
+        }}
+      >
+        {/* 图框按图片本身的宽高比 contain 在可用区域里，圆角投影画在它上面；读到尺寸前铺满、不画投影。 */}
+        <div
+          className={ready ? 'image-edit-canvas-frame stage-picture' : 'image-edit-canvas-frame'}
+          data-ready={ready ? '' : undefined}
+          style={
+            ready
+              ? ({ '--image-edit-canvas-ratio': size.width / size.height } as CSSProperties)
+              : undefined
+          }
+        >
+          <img
+            src={url}
+            alt="当前编辑帧"
+            className="image-edit-canvas-source"
+            draggable={false}
+            onLoad={(event) => {
+              setImageFailed(false)
+              setSize({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              })
+            }}
+            onError={() => setImageFailed(true)}
+          />
+          {ready && (
+            <svg
+              onKeyDown={handleKeyDown}
+              data-annotation-canvas=""
+              className="image-edit-canvas-surface ui-focus ui-focus-inline"
+              viewBox={`0 0 ${size.width} ${size.height}`}
+              preserveAspectRatio="xMidYMid meet"
+              role="group"
+              aria-label="图片标注画布"
+              tabIndex={0}
+              style={{
+                touchAction: 'none',
+                cursor: blocked ? 'default' : 'crosshair',
+              }}
+              onPointerDown={startGesture}
+              onPointerMove={updateGesture}
+              onPointerUp={finishGesture}
+              onPointerCancel={() => {
+                setGesture(null)
+                if (gesture?.kind === 'draw') onSelect(null)
+              }}
+              onLostPointerCapture={() => {
+                setGesture(null)
+              }}
+            >
+              {visible.map((annotation) => (
+                <AnnotationMark
+                  key={annotation.id}
+                  annotation={annotation}
+                  size={size}
+                  unitsPerPixel={unitsPerPixel}
+                  draft={gesture?.kind === 'draw' && gesture.current.id === annotation.id}
+                  selected={annotation.id === selectedId}
+                  disabled={Boolean(blocked)}
+                  onSelect={() => onSelect(annotation.id)}
+                />
+              ))}
+            </svg>
+          )}
+        </div>
         {imageFailed && (
           <div role="alert">
             <MediaFallback hint="请关闭后重试" kind="image" />
           </div>
-        )}
-        {size.width > 0 && !imageFailed && (
-          <svg
-            onKeyDown={handleKeyDown}
-            data-annotation-canvas=""
-            className="image-edit-canvas-surface ui-focus ui-focus-inline"
-            viewBox={`0 0 ${size.width} ${size.height}`}
-            preserveAspectRatio="xMidYMid meet"
-            role="group"
-            aria-label="图片标注画布"
-            tabIndex={0}
-            style={{
-              touchAction: 'none',
-              cursor: blocked ? 'default' : 'crosshair',
-            }}
-            onPointerDown={startGesture}
-            onPointerMove={updateGesture}
-            onPointerUp={finishGesture}
-            onPointerCancel={() => {
-              setGesture(null)
-              if (gesture?.kind === 'draw') onSelect(null)
-            }}
-            onLostPointerCapture={() => {
-              setGesture(null)
-            }}
-          >
-            {visible.map((annotation) => (
-              <AnnotationMark
-                key={annotation.id}
-                annotation={annotation}
-                size={size}
-                unitsPerPixel={unitsPerPixel}
-                draft={gesture?.kind === 'draw' && gesture.current.id === annotation.id}
-                selected={annotation.id === selectedId}
-                disabled={Boolean(blocked)}
-                onSelect={() => onSelect(annotation.id)}
-              />
-            ))}
-          </svg>
         )}
         {selectedAnnotation && toolbar && !blocked && !gesture && (
           <div

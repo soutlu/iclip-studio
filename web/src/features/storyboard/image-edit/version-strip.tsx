@@ -5,6 +5,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { RunningElapsed } from '../components/running-elapsed'
+import { VersionThumb, VersionTile } from '../components/version-thumb'
 import { phaseOfStatus } from '../shots'
 import { entryBaseUrl, entryLabel, entryName, type StripEntry } from './edit-history'
 import type { EditorWords } from './edit-target'
@@ -14,6 +15,8 @@ type VersionStripProps = {
   /** 在用那一格的称呼与整条的可访问名，随所在页面变。 */
   words: Pick<EditorWords, 'current' | 'versions'>
   currentUrl: string
+  /** 分镜画幅：小图格按它定宽高比。 */
+  aspectRatio: string
   /** 替换进行中锁住整条：这段时间换选中会让守卫认错当前帧。 */
   disabled: boolean
   selectedKey: string
@@ -33,44 +36,36 @@ type VersionStripProps = {
 function SlotImage({ src }: { src: string }) {
   const [failed, setFailed] = useState(false)
   if (src === '') return null
-  if (failed) return <MediaFallback className="size-full p-1" compact kind="image" />
-  return (
-    <img
-      alt=""
-      className="image-edit-version-image"
-      loading="lazy"
-      onError={() => setFailed(true)}
-      src={src}
-    />
-  )
+  if (failed)
+    return (
+      <span className="version-thumb-empty">
+        <MediaFallback className="p-1" compact kind="image" />
+      </span>
+    )
+  return <img alt="" draggable={false} loading="lazy" onError={() => setFailed(true)} src={src} />
 }
 
-function EntryState({ entry }: { entry: StripEntry }) {
+/** 盖在小图上的状态：生成中转圈加走表，排队一个时钟，失败一个感叹号加「失败」。落定的图没有。 */
+function entryState(entry: StripEntry): ReactNode {
   if (entry.kind === 'failed')
     return (
-      <span className="image-edit-version-state">
-        <Icon className="text-error" decorative name="alert" size="sm" />
-      </span>
+      <>
+        <Icon className="image-edit-version-failed" decorative name="alert" size="sm" />
+        失败
+      </>
     )
-  if (entry.kind !== 'pending') return null
+  if (entry.kind !== 'pending') return undefined
   if (phaseOfStatus(entry.job.status) === 'queued')
-    return (
-      <span className="image-edit-version-state">
-        <Icon className="text-on-surface-muted" decorative name="duration" size="sm" />
-      </span>
-    )
-  // 生成中：绿色细圆环加走表。
-  return (
-    <span className="image-edit-version-state">
-      <RunningElapsed iconClassName="text-primary" since={entry.job.createdAt} />
-    </span>
-  )
+    return <Icon decorative name="duration" size="sm" />
+  return <RunningElapsed since={entry.job.createdAt} />
 }
 
+/** 只剩一样能看的（只有当前帧，没有「更早」也没有「再生成」）时没得切，整条不显示。 */
 export function VersionStrip({
   entries,
   words,
   currentUrl,
+  aspectRatio,
   disabled,
   selectedKey,
   onSelect,
@@ -81,74 +76,65 @@ export function VersionStrip({
   actions,
   regenerate,
 }: VersionStripProps) {
+  if (entries.length + (hasMore ? 1 : 0) + (regenerate === undefined ? 0 : 1) < 2) return null
   return (
     <div className="image-edit-versions">
       <div aria-label={words.versions} className="image-edit-versions-list" role="group">
         {entries.map((entry) => {
           const baseUrl = entryBaseUrl(entry, currentUrl)
           const unseen = isUnseen(entry)
-          const name = `${entryName(entry, words.current)}${unseen ? ' · 新结果' : ''}`
+          const state = entryState(entry)
+          // 生成中与失败由状态遮罩自己说明，底部不再压名字；排队只有一个时钟，名字留着。
+          const labelled =
+            entry.kind === 'current' ||
+            entry.kind === 'image' ||
+            (entry.kind === 'pending' && phaseOfStatus(entry.job.status) === 'queued')
           return (
-            <button
-              aria-label={name}
-              aria-pressed={entry.key === selectedKey}
-              className="image-edit-version ui-focus"
+            <VersionThumb
               disabled={disabled}
               key={entry.key}
+              label={labelled ? entryLabel(entry, words.current) : undefined}
+              name={`${entryName(entry, words.current)}${unseen ? ' · 新结果' : ''}`}
               onClick={() => onSelect(entry.key)}
-              title={name}
-              type="button"
+              ratio={aspectRatio}
+              selected={entry.key === selectedKey}
+              state={state}
+              unseen={unseen}
             >
-              <span className="image-edit-version-slot">
-                <SlotImage key={baseUrl} src={baseUrl} />
-                <EntryState entry={entry} />
-                {unseen ? <span className="image-edit-version-dot" /> : null}
-              </span>
-              <span className="image-edit-version-label">{entryLabel(entry, words.current)}</span>
-            </button>
+              <SlotImage key={baseUrl} src={baseUrl} />
+            </VersionThumb>
           )
         })}
         {hasMore ? (
-          <button
-            className="image-edit-version ui-focus"
+          <VersionTile
             disabled={disabled || loadingMore}
-            onClick={onLoadMore}
-            title="加载更早的图片"
-            type="button"
-          >
-            <span className="image-edit-version-slot image-edit-version-more">
+            icon={
               <Icon
                 className={cn(loadingMore && 'motion-safe:animate-spin')}
                 decorative
                 name={loadingMore ? 'loading' : 'history'}
                 size="sm"
               />
-            </span>
-            <span className="image-edit-version-label">更早</span>
-          </button>
+            }
+            label="更早"
+            onClick={onLoadMore}
+            ratio={aspectRatio}
+            title="加载更早的图片"
+          />
         ) : null}
         {regenerate === undefined ? null : (
-          <button
-            aria-pressed={regenerate.selected}
-            className="image-edit-version ui-focus"
+          <VersionTile
             disabled={disabled}
+            icon={<Icon decorative name="refresh" size="sm" />}
+            label="再生成"
             onClick={regenerate.onSelect}
+            ratio={aspectRatio}
+            selected={regenerate.selected}
             title="按描述再生成一张"
-            type="button"
-          >
-            <span className="image-edit-version-slot image-edit-version-more">
-              <Icon decorative name="refresh" size="sm" />
-            </span>
-            <span className="image-edit-version-label">再生成</span>
-          </button>
+          />
         )}
       </div>
-      {actions ? (
-        <>
-          <span aria-hidden="true" className="image-edit-versions-divider" />
-          {actions}
-        </>
-      ) : null}
+      {actions}
     </div>
   )
 }
