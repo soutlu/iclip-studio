@@ -54,6 +54,10 @@ class ReferenceStore(Protocol):
         """没移除的行里每种片子类型、每个用到的品类各有几条；品类按条数多的在前。"""
         ...
 
+    async def owner_counts(self) -> Sequence[tuple[str, int]]:
+        """没移除的行按属主的用户名各有几条；条数多的在前，同数按用户名。"""
+        ...
+
     async def update(
         self,
         reference_id: uuid.UUID,

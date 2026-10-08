@@ -53,7 +53,7 @@ export const useFilmReplace = ({ disabled, frame, onReplace }: ReplaceOptions) =
     const target = frame
     setPending(target.node)
     try {
-      await onReplace(target, await uploadMediaFile(file, 'image'))
+      await onReplace(target, (await uploadMediaFile(file, 'image')).url)
       toast(`已替换${target.label}`)
     } catch (error) {
       toast.error(errorMessageOf(error, '替换图片失败'))

@@ -47,7 +47,7 @@ export const useFrameReplacement = ({
     const revision = ++revisionRef.current
     setPending(target)
     try {
-      const nextUrl = await uploadMediaFile(file, 'image')
+      const { url: nextUrl } = await uploadMediaFile(file, 'image')
       if (revision === revisionRef.current) {
         onReplace(number, url, nextUrl)
         toast(`已替换第 ${number} 帧`)

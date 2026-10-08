@@ -4326,6 +4326,25 @@
         "title": "OverviewWindowOut",
         "type": "object"
       },
+      "OwnerCountOut": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "userName": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userName",
+          "count"
+        ],
+        "title": "OwnerCountOut",
+        "type": "object"
+      },
       "PeriodDeliveriesOut": {
         "additionalProperties": false,
         "properties": {
@@ -4618,6 +4637,13 @@
             "title": "Categories",
             "type": "array"
           },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerCountOut"
+            },
+            "title": "Owners",
+            "type": "array"
+          },
           "videoTypes": {
             "items": {
               "$ref": "#/components/schemas/VideoTypeCountOut"
@@ -4628,7 +4654,8 @@
         },
         "required": [
           "videoTypes",
-          "categories"
+          "categories",
+          "owners"
         ],
         "title": "ReferenceFiltersOut",
         "type": "object"

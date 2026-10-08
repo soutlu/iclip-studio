@@ -23,6 +23,7 @@ import {
   type MockConversation,
 } from './conversations'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
+import { referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
 import { workspaceHandlers } from './workspace'
@@ -476,4 +477,6 @@ export const handlers = [
   ...auditHandlers((taskId) => mockTasks.find((task) => task.id === taskId)?.title ?? null),
 
   ...libraryHandlers,
+
+  ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
 ]

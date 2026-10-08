@@ -31,6 +31,7 @@ function Harness({
       onVideoChange={setVideoId}
       scope={scope}
       shareLinkOf={(id) => `https://iclip.test/library?video=${id}`}
+      tabs={null}
       videoId={videoId}
     />
   )

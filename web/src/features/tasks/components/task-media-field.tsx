@@ -80,7 +80,7 @@ export function TaskMediaField({
         if (!operation.active) return
         setProgress(`正在上传 ${index + 1}/${files.length}：${file.name}`)
         try {
-          const url = await uploadMediaFile(file, kind)
+          const { url } = await uploadMediaFile(file, kind)
           if (!operation.active) return
           nextUrls = kind === 'video' ? [url] : [...nextUrls, url]
           callbacksRef.current.onChange(nextUrls)

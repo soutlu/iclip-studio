@@ -88,15 +88,24 @@ class CategoryCountOut(CamelModel):
     count: int
 
 
+class OwnerCountOut(CamelModel):
+    user_name: str
+    count: int
+    """这个人名下有几条。"""
+
+
 class ReferenceFiltersOut(CamelModel):
     video_types: list[VideoTypeCountOut]
     """全部片子类型，按清单的先后，没用到的数量为 0。"""
     categories: list[CategoryCountOut]
     """用到的品类，条数多的在前，同数按清单的先后。"""
+    owners: list[OwnerCountOut]
+    """名下有参考视频的属主，条数多的在前，同数按用户名。"""
 
 
 __all__ = [
     "CategoryCountOut",
+    "OwnerCountOut",
     "ReferenceCreateIn",
     "ReferenceFiltersOut",
     "ReferenceUpdateIn",

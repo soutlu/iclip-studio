@@ -308,6 +308,7 @@ export type {
   OverviewOut,
   OverviewPeriodOut,
   OverviewWindowOut,
+  OwnerCountOut,
   PageConversationsConversationIdTranscriptGetData,
   PageConversationsConversationIdTranscriptGetError,
   PageConversationsConversationIdTranscriptGetErrors,

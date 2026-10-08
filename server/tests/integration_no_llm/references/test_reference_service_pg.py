@@ -379,6 +379,32 @@ async def test_filters_match_any_tag_in_a_group_and_q_searches_the_breakdown(
     }
 
 
+async def test_filters_list_owners_by_count_and_skip_removed_rows(engine: AsyncEngine) -> None:
+    maya = await plant_user(engine, "maya")
+    sara = await plant_user(engine, "sara")
+    nora = await plant_user(engine, "nora")
+    for index in range(2):
+        await plant_reference(
+            engine, owner=maya, video_url=f"https://cdn.example.test/m{index}.mp4"
+        )
+    await plant_reference(engine, owner=sara, video_url="https://cdn.example.test/s.mp4")
+    await plant_reference(engine, owner=nora, video_url="https://cdn.example.test/n.mp4")
+    removed = await plant_reference(engine, owner=nora, video_url="https://cdn.example.test/n2.mp4")
+    gone = await plant_reference(engine, owner=nora, video_url="https://cdn.example.test/n3.mp4")
+    references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
+    await references.remove(principal(nora), removed)
+    await references.remove(principal(nora), gone)
+
+    owners = (await references.filters()).owners
+
+    # 条数多的在前，同数按用户名；移除的不算。
+    assert [(one.user_name, one.count) for one in owners] == [
+        ("maya", 2),
+        ("nora", 1),
+        ("sara", 1),
+    ]
+
+
 async def test_the_list_pages_with_a_cursor_and_gives_the_total_on_the_first_page(
     engine: AsyncEngine,
 ) -> None:

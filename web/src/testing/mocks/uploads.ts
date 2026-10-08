@@ -21,6 +21,16 @@ export const resetMockUploads = () => {
 export const isMockVideoUpload = (url: string): boolean =>
   confirmedUploads.get(url)?.startsWith('video/') ?? false
 
+/** 确认过的一次上传：地址、类型与直传上来的字节；没确认过是 undefined。建参考视频按它认人认内容。 */
+export const mockConfirmedUpload = (
+  uploadId: string,
+): { url: string; contentType: string; body: ArrayBuffer | undefined } | undefined => {
+  const url = uploadUrlOf(uploadId)
+  const contentType = confirmedUploads.get(url)
+  if (contentType === undefined) return undefined
+  return { body: storedBytes.get(uploadId)?.body, contentType, url }
+}
+
 export const uploadHandlers = [
   http.post('*/api/uploads/sign', async ({ request }) => {
     const body = (await request.json()) as { contentType: string }

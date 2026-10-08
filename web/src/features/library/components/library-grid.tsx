@@ -1,10 +1,8 @@
-/** 瀑布流：TanStack Virtual 的多列（lanes）虚拟列表，只渲染视口附近的卡片；列数随容器宽度变。 */
+/** 瀑布流：TanStack Virtual 的多列（lanes）虚拟列表，只渲染视口附近的卡片；列数随容器宽度变。成片与参考视频共用，卡片长什么样由调用方给。 */
 
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useCallback, useLayoutEffect, useState } from 'react'
-import type { LibraryVideo } from '../library.api'
-import { cardHeightFor, columnCountFor, columnGapFor } from '../library-layout'
-import { LibraryCard } from './library-card'
+import { useCallback, useLayoutEffect, useState, type ReactNode } from 'react'
+import { columnCountFor, columnGapFor } from '../library-layout'
 
 /** 同一列里上下两张卡的间距。 */
 const ROW_GAP = 20
@@ -12,15 +10,23 @@ const ROW_GAP = 20
 /** 首帧还没量到容器时按这个视口估，jsdom 里也靠它渲染出卡片。 */
 const INITIAL_RECT = { height: 900, width: 1200 }
 
-type LibraryGridProps = {
-  videos: readonly LibraryVideo[]
+type LibraryGridProps<T> = {
+  items: readonly T[]
+  keyOf: (item: T) => string
+  /** 按列宽估的整张卡高度；估准了布局就不跳，估不准由挂上后的实测纠正。 */
+  estimateHeight: (item: T, columnWidth: number) => number
+  renderItem: (item: T, columnWidth: number) => ReactNode
   /** 页面的滚动容器；虚拟列表跟着它的滚动位置算哪些卡在视口里。 */
   getScrollElement: () => HTMLElement | null
-  onAuthor: (userName: string) => void
-  onOpen: (id: string, startAt: number | null) => void
 }
 
-export function LibraryGrid({ videos, getScrollElement, onAuthor, onOpen }: LibraryGridProps) {
+export function LibraryGrid<T>({
+  items,
+  keyOf,
+  estimateHeight,
+  renderItem,
+  getScrollElement,
+}: LibraryGridProps<T>) {
   const [{ width, offsetTop }, containerRef] = useContainerBox(getScrollElement)
   const lanes = columnCountFor(width)
   const gap = columnGapFor(width)
@@ -28,13 +34,16 @@ export function LibraryGrid({ videos, getScrollElement, onAuthor, onOpen }: Libr
 
   // eslint-disable-next-line react-hooks/incompatible-library -- 虚拟列表的方法随滚动变化，编译器跳过这个组件正是需要的
   const virtualizer = useVirtualizer({
-    count: videos.length,
+    count: items.length,
     estimateSize: (index) => {
-      const video = videos[index]
-      return video === undefined ? 0 : cardHeightFor(video, columnWidth)
+      const item = items[index]
+      return item === undefined ? 0 : estimateHeight(item, columnWidth)
     },
     gap: ROW_GAP,
-    getItemKey: (index) => videos[index]?.id ?? index,
+    getItemKey: (index) => {
+      const item = items[index]
+      return item === undefined ? index : keyOf(item)
+    },
     getScrollElement,
     initialRect: INITIAL_RECT,
     lanes,
@@ -53,22 +62,22 @@ export function LibraryGrid({ videos, getScrollElement, onAuthor, onOpen }: Libr
       ref={containerRef}
       style={{ height: virtualizer.getTotalSize() }}
     >
-      {virtualizer.getVirtualItems().map((item) => {
-        const video = videos[item.index]
-        if (video === undefined) return null
+      {virtualizer.getVirtualItems().map((row) => {
+        const item = items[row.index]
+        if (item === undefined) return null
         return (
           <div
             className="absolute top-0"
-            data-index={item.index}
-            key={item.key}
+            data-index={row.index}
+            key={row.key}
             ref={virtualizer.measureElement}
             style={{
-              left: item.lane * (columnWidth + gap),
-              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+              left: row.lane * (columnWidth + gap),
+              transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
               width: columnWidth,
             }}
           >
-            <LibraryCard onAuthor={onAuthor} onOpen={onOpen} video={video} width={columnWidth} />
+            {renderItem(item, columnWidth)}
           </div>
         )
       })}

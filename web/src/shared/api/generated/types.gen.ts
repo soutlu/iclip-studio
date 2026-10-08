@@ -2318,6 +2318,20 @@ export type OverviewWindowOut = {
 }
 
 /**
+ * OwnerCountOut
+ */
+export type OwnerCountOut = {
+  /**
+   * Count
+   */
+  count: number
+  /**
+   * Username
+   */
+  userName: string
+}
+
+/**
  * PeriodDeliveriesOut
  */
 export type PeriodDeliveriesOut = {
@@ -2467,6 +2481,10 @@ export type ReferenceFiltersOut = {
    * Categories
    */
   categories: Array<CategoryCountOut>
+  /**
+   * Owners
+   */
+  owners: Array<OwnerCountOut>
   /**
    * Videotypes
    */

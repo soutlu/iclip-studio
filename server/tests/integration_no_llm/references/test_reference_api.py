@@ -184,6 +184,7 @@ async def test_a_viewer_reads_but_cannot_upload_or_rerun(
     assert (listed.status_code, listed.json()["canUpload"]) == (200, False)
     assert filters.status_code == 200
     assert len(filters.json()["videoTypes"]) == 8
+    assert filters.json()["owners"] == [{"userName": "maya", "count": 1}]
     assert rerun.status_code == 403
 
 
