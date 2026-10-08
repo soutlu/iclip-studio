@@ -199,7 +199,7 @@ RETURNING id""")
 
 _RESTORE: Final = text("""
 UPDATE iclip.reference_videos
-SET deleted_at = NULL, updated_at = now()
+SET deleted_at = NULL, owner_user_id = :owner, updated_at = now()
 WHERE id = :id AND deleted_at IS NOT NULL""")
 
 _REMOVE: Final = text("""
@@ -448,9 +448,9 @@ class SqlReferenceStore:
             ).all()
         return len(rows)
 
-    async def restore(self, reference_id: uuid.UUID) -> None:
+    async def restore(self, reference_id: uuid.UUID, *, owner: uuid.UUID) -> None:
         async with self._engine.begin() as conn:
-            await conn.execute(_RESTORE, {"id": reference_id})
+            await conn.execute(_RESTORE, {"id": reference_id, "owner": owner})
 
     async def remove(self, reference_id: uuid.UUID) -> bool:
         async with self._engine.begin() as conn:

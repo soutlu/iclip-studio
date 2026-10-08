@@ -143,7 +143,7 @@ class ReferenceService:
         """把调用者自己的一条视频上传放进资料库；第二项是这次是不是新建的。
 
         同一个文件在上传时已经合成一个地址，所以按地址找行就够了：新建的排上第一次拆解；已有的直接
-        交回，不再付费，移除过的回到资料库。别人的上传、不是视频的上传、不存在的都是 ``NotFound``。"""
+        交回，不再付费；移除过的回到资料库，属主换成这次上传的人（原属主移除时已经放手）。别人的上传、不是视频的上传、不存在的都是 ``NotFound``。"""
 
         if not self.accepts_uploads:
             raise RuntimeError("资料库不收上传，建行的入口不该挂上")
@@ -160,7 +160,7 @@ class ReferenceService:
         if created:
             await self._enqueue(queue, row.id)
         elif row.deleted_at is not None:
-            await self._store.restore(row.id)
+            await self._store.restore(row.id, owner=principal.user_id)
             row = await self._get(row.id)
         return _detail(principal, row), created
 
