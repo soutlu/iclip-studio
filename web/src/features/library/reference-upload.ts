@@ -57,7 +57,7 @@ export const useReferenceUpload = ({ enabled, onOpenExisting }: ReferenceUploadO
       // 新行读回来再撤掉上传卡，前面那张卡不会先空一下。
       await queryClient.invalidateQueries({ queryKey: referenceQueryKeys.all })
       if (!created) {
-        toast('该视频此前已上传，已打开该视频')
+        toast('该视频此前已上传，已打开其详情')
         onOpenExisting(reference.id)
       }
     } catch (error) {

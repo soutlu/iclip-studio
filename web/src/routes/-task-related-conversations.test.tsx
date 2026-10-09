@@ -140,7 +140,7 @@ describe('需求单关联任务与视频', () => {
     const dialog = await openTask(user, task.title)
     const panel = await within(dialog).findByRole('complementary')
     expect(await within(panel).findByRole('alert')).toHaveTextContent('关联任务加载失败')
-    expect(within(panel).queryByText('暂无当前账号关联到该需求单的任务')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('当前账号暂无关联该需求单的任务')).not.toBeInTheDocument()
     expect(within(panel).queryByText('暂无关联任务')).not.toBeInTheDocument()
     failed = false
     await user.click(within(panel).getByRole('button', { name: '重试' }))

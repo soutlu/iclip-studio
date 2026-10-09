@@ -165,11 +165,11 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
         }
         setState({ kind: 'saving' })
         try {
-          const saved = await writeWorkspaceFile(conversationId, {
-            content: JSON.stringify(mine, null, 2),
-            expectedVersion: base.version,
-            path,
-          })
+          const saved = await writeWorkspaceFile(
+            conversationId,
+            { content: JSON.stringify(mine, null, 2), expectedVersion: base.version, path },
+            '分镜保存失败',
+          )
           book.base = { document: mine, version: saved.file.version }
           landed = mine
           // 请求中的快照已落盘。后续编辑仍以最新草稿为准，不能被这次响应清除。

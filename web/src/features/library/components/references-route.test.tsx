@@ -320,7 +320,7 @@ describe('上传参考视频', () => {
 
     await user.upload(fileInput(), video('同一条.mp4'))
 
-    expect(await screen.findByText('该视频此前已上传，已打开该视频')).toBeVisible()
+    expect(await screen.findByText('该视频此前已上传，已打开其详情')).toBeVisible()
     expect(onReference).toHaveBeenLastCalledWith(existing.id)
     expect(await screen.findByRole('dialog', { name: '上身展示 · 短靴 · 卫衣' })).toBeVisible()
   })
