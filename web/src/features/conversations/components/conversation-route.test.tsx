@@ -573,7 +573,7 @@ describe('ConversationRoute', () => {
     expect(await screen.findByText('顺便配个音')).toBeInTheDocument()
     expect(screen.getByText('1 条消息等待发送')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '现在就发' }))
+    await user.click(screen.getByRole('button', { name: '立即发送' }))
 
     await waitFor(() => {
       expect(steered).toEqual(['p-queued'])
@@ -929,7 +929,7 @@ describe('ConversationRoute', () => {
     )
 
     const head = await screen.findByRole('button', {
-      name: /完成：读取了 1 个文件 · 写入了 1 个文件/,
+      name: /已完成：读取 1 个文件 · 写入 1 个文件/,
     })
     expect(head).toHaveAttribute('aria-expanded', 'false')
     // 收起时组里的行对读屏隐藏；点开后读、写两行都出来。
@@ -967,7 +967,7 @@ describe('ConversationRoute', () => {
     )
     await renderConversation()
 
-    const card = await screen.findByRole('region', { name: '等你审批' })
+    const card = await screen.findByRole('region', { name: '等待审批' })
     expect(within(card).getByText('写入文件')).toBeInTheDocument()
     // 审批卡预览要写的内容，来自 display 里的 content。
     expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent(
@@ -999,7 +999,7 @@ describe('ConversationRoute', () => {
     )
     await renderConversation()
 
-    const card = await screen.findByRole('region', { name: '等你审批' })
+    const card = await screen.findByRole('region', { name: '等待审批' })
     await user.click(within(card).getByRole('button', { name: /拒绝/ }))
 
     await waitFor(() => expect(body).toEqual({ approved: false }))
@@ -1021,7 +1021,7 @@ describe('ConversationRoute', () => {
       </>,
     )
 
-    const card = await screen.findByRole('region', { name: '等你审批' })
+    const card = await screen.findByRole('region', { name: '等待审批' })
     await user.click(within(card).getByRole('button', { name: /同意/ }))
 
     expect(await screen.findByText('该步骤已做出决定，无法再次提交')).toBeInTheDocument()
@@ -1031,13 +1031,13 @@ describe('ConversationRoute', () => {
   it('等审批时不给追加入口，状态行与输入框都改口说轮到你确认', async () => {
     serveApprovalPage()
     const { socket } = await renderConversation()
-    await screen.findByRole('region', { name: '等你审批' })
+    await screen.findByRole('region', { name: '等待审批' })
     expect(screen.getByRole('status')).toHaveTextContent('等待审批')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
 
     expect(await screen.findByText('1 条消息等待发送')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '立即发送' })).toBeNull()
     expect(screen.getByText('请先确认上方的步骤')).toBeInTheDocument()
   })
 
@@ -1061,14 +1061,14 @@ describe('ConversationRoute', () => {
     expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull()
     expect(screen.queryByRole('button', { name: '修改' })).toBeNull()
 
-    const card = screen.getByRole('region', { name: '等你审批' })
+    const card = screen.getByRole('region', { name: '等待审批' })
     expect(within(card).queryByRole('button', { name: '同意' })).toBeNull()
     expect(within(card).getByText('等待任务属主决定')).toBeVisible()
     await user.keyboard('1')
 
     socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
     expect(await screen.findByText('1 条消息等待发送')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '现在就发' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '立即发送' })).toBeNull()
     expect(screen.queryByRole('button', { name: '撤回' })).toBeNull()
     expect(decided).toBe(false)
   })
@@ -1101,7 +1101,7 @@ describe('ConversationRoute', () => {
     await renderWithProviders(<ConversationRoute conversationId="c1" onForked={forked} />)
 
     expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
-    const buttons = await screen.findAllByRole('button', { name: '从这里另开一个任务' })
+    const buttons = await screen.findAllByRole('button', { name: '从此处另开任务' })
     const button = buttons[buttons.length - 1] as HTMLElement
     // 副本的 id 由服务端铸、没有幂等键；请求回来了但还没跳走的那一瞬再点一下，不能开出两段。
     await user.dblClick(button)
@@ -1135,14 +1135,16 @@ describe('ConversationRoute', () => {
     )
   })
 
-  it('治理者看已删的对话也是只读，页头与说明都标出已删除；自己删的主语写「自己」', async () => {
+  it('治理者看已删的对话也是只读，页头与说明都标出已删除；自己删的主语写「当前账号」', async () => {
     const other = addMockUser('小王')
     loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
     serveApprovalPage(other.id, '2026-09-04T00:00:00Z')
     const first = await renderConversation()
 
     expect(await screen.findByText('已删除 · 小王 的任务')).toBeVisible()
-    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王 已删除的任务')
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent(
+      '该任务属于 小王，已删除，仅可查看',
+    )
     expect(screen.queryByLabelText('输入消息')).toBeNull()
     first.unmount()
 
@@ -1150,7 +1152,9 @@ describe('ConversationRoute', () => {
     await renderConversation()
 
     expect(await screen.findByText('已删除 · 自己的任务')).toBeVisible()
-    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('这是自己已删除的任务')
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent(
+      '该任务属于当前账号，已删除，仅可查看',
+    )
     expect(screen.queryByLabelText('输入消息')).toBeNull()
   })
 

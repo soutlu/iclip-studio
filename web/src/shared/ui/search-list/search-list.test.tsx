@@ -110,7 +110,7 @@ describe('SearchList', () => {
     await user.type(search, '不存在')
     expect(screen.queryAllByRole('option')).toHaveLength(0)
     expect(search).not.toHaveAttribute('aria-activedescendant')
-    expect(screen.getByRole('status')).toHaveTextContent('未找到匹配的水果')
+    expect(screen.getByRole('status')).toHaveTextContent('暂无匹配的水果')
 
     await user.click(screen.getByRole('button', { name: /清空搜索词/ }))
     expect(screen.getAllByRole('option')).toHaveLength(FRUITS.length)

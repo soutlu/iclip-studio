@@ -154,7 +154,7 @@ function OverviewCard({
         ))}
         {bucket === 'week' ? null : (
           <LegendItem marks={<Mark color="var(--color-on-surface-variant)" kind="dot" />}>
-            {bucket === 'day' ? '当天合计' : '这小时合计'}
+            {bucket === 'day' ? '当天合计' : '本小时合计'}
           </LegendItem>
         )}
       </div>

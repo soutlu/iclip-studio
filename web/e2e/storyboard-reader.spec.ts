@@ -113,7 +113,7 @@ for (const width of [1335, 390]) {
     // 整组原文就排在文案列里：全局设定打头，各镜头标出时长与区间。
     const settings = group.getByRole('textbox', { name: '全局设定', exact: true })
     await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
-    await expect(settings.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
+    await expect(settings.getByRole('button', { name: '查看第 1 帧', exact: true })).toBeVisible()
     await expect(group.getByRole('group', { name: '镜头 1', exact: true })).toContainText(
       '4.0s，0.0s – 4.0s',
     )
@@ -355,7 +355,7 @@ test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', as
   await expect(editor).toHaveAccessibleName('编辑图片 镜头组 1 · 帧 @1')
   await expect(editor.getByLabel('图片模型', { exact: true })).toBeVisible()
   // 这一帧还没编辑过，只有当前帧一张：没得切，版本条不显示。
-  await expect(editor.getByRole('group', { name: '这一帧的图片', exact: true })).toHaveCount(0)
+  await expect(editor.getByRole('group', { name: '该帧的图片', exact: true })).toHaveCount(0)
   await page.screenshot({
     animations: 'disabled',
     path: '../.artifacts/design-qa/storyboard-reader/image-edit-entry-desktop.png',
@@ -468,7 +468,7 @@ for (const width of [1335, 390] as const) {
     await screenshotBothThemes(page, `${qa}-uploading`)
     await gate.release()
     // 传好：chip 换成 @1，地址与引用一起写进本组。
-    await expect(editor.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
+    await expect(editor.getByRole('button', { name: '查看第 1 帧', exact: true })).toBeVisible()
     await expect(editor.getByText('粘贴.png')).toHaveCount(0)
     await expect
       .poll(async () => (await readDocument(page)).document.shots[0]?.prompt.timeline[0])
@@ -488,7 +488,7 @@ for (const width of [1335, 390] as const) {
     await expect(card).toBeVisible()
     await screenshotBothThemes(page, `${qa}-failed`)
     await card.getByRole('button', { name: '重试' }).click()
-    await expect(editor.getByRole('button', { name: '看第 2 帧', exact: true })).toBeVisible()
+    await expect(editor.getByRole('button', { name: '查看第 2 帧', exact: true })).toBeVisible()
     await expect
       .poll(async () => (await readDocument(page)).document.shots[0]?.image_urls.length)
       .toBe(2)
@@ -505,7 +505,7 @@ for (const width of [1335, 390] as const) {
     await heading.dispatchEvent('drop', { dataTransfer: dropped })
     await dropped.dispose()
     await expect(second.getByText('松开可添加到镜头 2')).toHaveCount(0)
-    await expect(second.getByRole('button', { name: '看第 3 帧', exact: true })).toBeVisible()
+    await expect(second.getByRole('button', { name: '查看第 3 帧', exact: true })).toBeVisible()
     await expect
       .poll(async () => (await readDocument(page)).document.shots[0]?.prompt.timeline[1])
       .toEqual({

@@ -320,7 +320,7 @@ describe('上传参考视频', () => {
 
     await user.upload(fileInput(), video('同一条.mp4'))
 
-    expect(await screen.findByText('该视频之前已上传过，已为你打开')).toBeVisible()
+    expect(await screen.findByText('该视频此前已上传，已打开其详情')).toBeVisible()
     expect(onReference).toHaveBeenLastCalledWith(existing.id)
     expect(await screen.findByRole('dialog', { name: '上身展示 · 短靴 · 卫衣' })).toBeVisible()
   })
@@ -392,7 +392,7 @@ describe('参考视频详情', () => {
     const { dialog, row } = await openDetail()
     await within(dialog).findByText('第一版拆解')
 
-    await user.click(within(dialog).getByRole('button', { name: '去掉卫衣' }))
+    await user.click(within(dialog).getByRole('button', { name: '移除卫衣' }))
     await waitFor(() => expect(within(dialog).queryByText('卫衣')).not.toBeInTheDocument())
     expect(writes.at(-1)).toEqual({
       body: {
@@ -491,7 +491,7 @@ describe('参考视频详情', () => {
 
     await user.click(within(dialog).getByRole('button', { name: '重新拆解' }))
     expect(
-      within(dialog).getByText('重新拆解会覆盖当前的拆解和标签，包括你修改过的内容'),
+      within(dialog).getByText('重新拆解会覆盖当前的拆解和标签，包括手动修改过的内容'),
     ).toBeVisible()
     const confirm = within(dialog).getByRole('button', { name: '重新拆解' })
     expect(confirm).toHaveFocus()
@@ -528,12 +528,12 @@ describe('参考视频详情', () => {
 
     expect(within(dialog).getByRole('button', { name: '复制拆解' })).toBeEnabled()
     expect(within(dialog).getByRole('button', { name: '下载视频' })).toBeVisible()
-    for (const name of ['编辑拆解', '重新拆解', '更多操作', '去掉卫衣', '添加品类'])
+    for (const name of ['编辑拆解', '重新拆解', '更多操作', '移除卫衣', '添加品类'])
       expect(within(dialog).queryByRole('button', { name })).not.toBeInTheDocument()
   })
 
   it.each([
-    ['video_unreadable', null, /换一条视频/],
+    ['video_unreadable', null, /请上传其他视频/],
     ['model_call_failed', '# 上一次的拆解', /下方仍是上一次的拆解/],
   ] as const)(
     '拆解失败（%s）：按原因说一句给人看的话，不出现原因代码',

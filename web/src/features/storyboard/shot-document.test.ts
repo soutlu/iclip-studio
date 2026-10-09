@@ -17,6 +17,7 @@ import {
   formatShotPrompt,
   updateTimelinePrompt,
   validateShot,
+  validateShotsDocument,
 } from './shot-document'
 
 const shot: Shot = {
@@ -173,6 +174,38 @@ describe('structured editing', () => {
     expect(validateShot(blank)).toContain('第 2 镜')
     expect(validateShot(invalid)).toContain('@Image9')
     expect(extractImageIndexes('@Image02 @Image1 @Image2')).toEqual([2, 1])
+  })
+
+  it.each([
+    [
+      '参考图片超过上限',
+      { ...shot, image_urls: Array.from({ length: 31 }, (_, index) => `${index}.png`) },
+      '镜头组 1：参考图片最多 30 张',
+    ],
+    ['时长超出范围', { ...shot, seconds: 31 }, '镜头组 1：时长须为 4–30 秒的整数'],
+    [
+      '没有镜头',
+      { ...shot, prompt: { ...shot.prompt, timeline: [] } },
+      '镜头组 1：请至少保留 1 个镜头',
+    ],
+    ['多出的字段', { ...shot, extra: true }, '镜头组 1：包含无法识别的内容'],
+    [
+      '没有专门文案的类型不符',
+      {
+        ...shot,
+        prompt: {
+          ...shot.prompt,
+          timeline: [{ ...shot.prompt.timeline[0], timestamps: [0, '3.5'] }],
+        },
+      },
+      '镜头组 1 的第 1 镜：格式不正确',
+    ],
+  ])('校验不过时（%s）给出中文原因，不出现 zod 的英文默认文案', (_case, input, message) => {
+    expect(validateShot(input as Shot)).toBe(message)
+  })
+
+  it('整份分镜没有镜头组时给出中文原因', () => {
+    expect(validateShotsDocument({ ...document, shots: [] })).toBe('请至少保留 1 个镜头组')
   })
 
   it('上传追加新编号，并将引用插到指定的正文选区', () => {

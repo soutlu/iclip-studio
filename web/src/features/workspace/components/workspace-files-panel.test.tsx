@@ -61,7 +61,7 @@ describe('WorkspaceFilesPanel 列表', () => {
     await renderPanel()
 
     expect(await screen.findByText('暂无文件')).toBeVisible()
-    expect(screen.getByText('agent 写入的所有文件都将显示在这里')).toBeVisible()
+    expect(screen.getByText('agent 写入的所有文件都将显示在此处')).toBeVisible()
   })
 })
 

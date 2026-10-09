@@ -14,17 +14,19 @@ const UPLOAD_FAILED = '上传失败'
 /** 文件选择与拖放共用校验；图片尺寸须解码后才能用于签名。 */
 const mediaDimensions = async (file: File, kind: 'image' | 'video') => {
   if (kind === 'video') {
-    if (!VIDEO_TYPES.includes(file.type)) throw new UserFacingError('请选择 MP4 或 MOV 视频')
+    if (!VIDEO_TYPES.includes(file.type))
+      throw new UserFacingError('文件格式不受支持，无法上传；请选择 MP4 或 MOV 视频')
     if (file.size > 512 * 1024 * 1024) throw new UserFacingError('视频超过 512 MiB，无法上传')
     return { height: null, width: null }
   }
-  if (!IMAGE_TYPES.includes(file.type)) throw new UserFacingError('请选择 JPEG、PNG 或 WebP 图片')
+  if (!IMAGE_TYPES.includes(file.type))
+    throw new UserFacingError('文件格式不受支持，无法上传；请选择 JPEG、PNG 或 WebP 图片')
   if (file.size > 16 * 1024 * 1024) throw new UserFacingError('图片超过 16 MiB，无法上传')
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
   } catch (cause) {
-    throw new UserFacingError('无法读取图片，请选择有效的图片文件', { cause })
+    throw new UserFacingError('图片读取失败，请选择有效的图片文件', { cause })
   }
   const { width, height } = bitmap
   bitmap.close()
@@ -38,7 +40,7 @@ const mediaDimensions = async (file: File, kind: 'image' | 'video') => {
 
 type UploadInstruction = z.infer<typeof zUploadTicketOut>['upload']
 
-/** 用 XHR 直传以便取进度；签名里的 headers 必须原样发送。失败文案与 apiFetch 同格式：状态码或断网。 */
+/** 用 XHR 直传以便取进度；签名里的 headers 必须原样发送。失败文案与 apiFetch 同格式：断网时带原因，其余只给前缀、不外露状态码。 */
 const putToStorage = (
   upload: UploadInstruction,
   file: File,
@@ -63,9 +65,7 @@ const putToStorage = (
       }
       reject(
         new UserFacingError(
-          request.status === 0
-            ? `${UPLOAD_FAILED}：${NETWORK_FAILURE}`
-            : `${UPLOAD_FAILED}（${request.status}）`,
+          request.status === 0 ? `${UPLOAD_FAILED}：${NETWORK_FAILURE}` : UPLOAD_FAILED,
         ),
       )
     })

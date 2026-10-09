@@ -139,7 +139,7 @@ describe('HomeRoute', () => {
     )
     pasteTextIntoComposer(screen.getByLabelText('输入消息'), '请保留这一段创作要求')
     await user.click(screen.getByRole('button', { name: '发送' }))
-    expect(await screen.findByText('浏览器无法暂存输入，请复制内容后再登录')).toBeVisible()
+    expect(await screen.findByText('输入内容暂存失败，请复制内容后登录')).toBeVisible()
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('请保留这一段创作要求')
     expect(sent).toHaveLength(0)
   })

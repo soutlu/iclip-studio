@@ -104,7 +104,7 @@ describe('creationBlockReason', () => {
       case: '别人认领的进行中',
       user: creator,
       target: task({ status: 'confirmed', assigneeUserIds: [OTHER_ID] }),
-      reason: /你尚未认领/,
+      reason: /当前账号尚未认领/,
     },
   ])('$case 时拦下并说明原因', ({ user, target, reason }) => {
     expect(creationBlockReason(user, target)).toMatch(reason)

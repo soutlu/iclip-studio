@@ -157,7 +157,7 @@ export function ReferencesRoute({
       <div className="flex w-full flex-col px-4 pt-12 pb-10 sm:px-(--layout-list-page-gutter) sm:pt-14">
         <LibraryPageHeader
           action={canUpload ? <UploadButton onPick={pickFiles} /> : undefined}
-          description="收录可供参考的视频及其拆解。选择任一视频，可照着它拍摄。"
+          description="收录可供参考的视频及其拆解。选择任一视频，可参照其拍摄。"
           search={{
             label: '搜索拆解',
             onSearch: (q) => onScopeChange({ ...scope, q }),

@@ -231,7 +231,7 @@ function TaskDialogForm({ onOpenChange, onPreview, task }: TaskDialogFormProps) 
     mutationFn: createTask,
     onError: showError,
     onSuccess: () => {
-      toast.success('需求单已创建')
+      toast.success('已创建需求单')
       void invalidateTasks()
       onOpenChange(false)
     },
@@ -278,11 +278,11 @@ function TaskDialogForm({ onOpenChange, onPreview, task }: TaskDialogFormProps) 
       style_no: product.style_no.trim(),
     }))
     if (!form.title.trim() || products.some((product) => !product.style_no)) {
-      toast.error('请填写需求单名称和商品款号')
+      toast.error('需求单名称或商品款号尚未填写，无法保存；请补充完整')
       return
     }
     if (new Set(products.map((product) => product.style_no)).size !== products.length) {
-      toast.error('商品款号不可重复')
+      toast.error('商品款号重复，无法保存；请修改重复的款号')
       return
     }
     const body = {

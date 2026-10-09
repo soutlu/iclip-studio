@@ -44,7 +44,7 @@ describe('Composer', () => {
     pasteTextIntoComposer(editor(), '做一个产品宣传片')
     expect(sendButton()).toBeEnabled()
     // 没在跑时写了字也没有排队提示。
-    expect(screen.queryByText('发送后将排队，本轮结束后再执行')).toBeNull()
+    expect(screen.queryByText('发送后将排队，本轮结束后执行')).toBeNull()
 
     fireEvent.keyDown(editor(), { key: 'Enter' })
     expect(onSubmit).toHaveBeenCalledWith({
@@ -96,14 +96,14 @@ describe('Composer', () => {
 
     expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
-    expect(screen.queryByText('发送后将排队，本轮结束后再执行')).toBeNull()
+    expect(screen.queryByText('发送后将排队，本轮结束后执行')).toBeNull()
 
     pasteTextIntoComposer(editor(), '顺便配个音')
 
     expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
     expect(sendButton()).toBeEnabled()
     // 排队提示在输入卡上方，不挤在控件行里。
-    const hint = screen.getByText('发送后将排队，本轮结束后再执行')
+    const hint = screen.getByText('发送后将排队，本轮结束后执行')
     expect(sendButton().parentElement).not.toContainElement(hint)
     expect(hint.compareDocumentPosition(editor()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 

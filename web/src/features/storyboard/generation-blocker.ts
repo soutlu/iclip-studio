@@ -22,7 +22,7 @@ const blocker = (reason: string, transient = false): GenerationBlocker => ({ rea
  * 免得发出去的和文件里的不一样。一次只说一条：要用户动手或一直挡着的排在前，等一下就好的暂态在后。 */
 export const generationBlockerOf = (facts: GenerationFacts): GenerationBlocker | undefined => {
   if (facts.readOnly) return blocker('只读任务，无法出片')
-  if (facts.saveState === 'conflict') return blocker('分镜存在版本冲突，请先处理')
+  if (facts.saveState === 'conflict') return blocker('分镜存在版本冲突，无法出片；请处理冲突')
   if (facts.saveState === 'error') return blocker('分镜保存失败，请重试保存')
   if (facts.modelsStatus === 'unavailable') return blocker(MODELS_PENDING_TEXT.unavailable)
   if (facts.saveState === 'saving') return blocker('分镜保存中', true)

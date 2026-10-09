@@ -78,7 +78,7 @@ export function ActivityRun({ interactions, items, liveFrameId, settled }: Activ
   const clauses = running
     ? summarizeRunning(items, liveFrameId, elapsedMs, interactions)
     : summarizeDone(items, elapsedMs, interactions)
-  const stateLabel = running ? '进行中' : failed.length > 0 ? '有失败' : '完成'
+  const stateLabel = running ? '进行中' : failed.length > 0 ? '有失败' : '已完成'
   // 显式提供 aria-label，避免分色 span 的边界空白被可访问名称计算裁掉。
   const summaryText = clauses.map((clause) => clause.text).join(' · ')
   // 以内容和出现次数组成 key，区分相同的失败子句。

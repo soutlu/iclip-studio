@@ -29,9 +29,9 @@ test('共用文件按路径打开：全局参考图逐张可看，只有编辑�
   expect(shot.prompt.timeline).toHaveLength(3)
   expect(shot.image_urls).toHaveLength(30)
   const global = panel.getByRole('group', { name: '全局设定', exact: true })
-  await expect(global.getByRole('button', { name: /^看第 \d+ 帧$/ })).toHaveCount(30)
+  await expect(global.getByRole('button', { name: /^查看第 \d+ 帧$/ })).toHaveCount(30)
   for (const index of [30, 2, 1]) {
-    const reference = global.getByRole('button', { name: `看第 ${index} 帧`, exact: true })
+    const reference = global.getByRole('button', { name: `查看第 ${index} 帧`, exact: true })
     await reference.focus()
     await page.keyboard.press('Enter')
     await expect(
@@ -42,7 +42,7 @@ test('共用文件按路径打开：全局参考图逐张可看，只有编辑�
   await panel.getByRole('button', { name: '镜头 1', exact: true }).click()
   await expect(global).toHaveAttribute('aria-current', 'false')
   await expect(panel.getByRole('textbox', { name: '镜头 1 的描述', exact: true })).toBeVisible()
-  await global.getByRole('button', { name: '看第 1 帧', exact: true }).click()
+  await global.getByRole('button', { name: '查看第 1 帧', exact: true }).click()
   await expect(global).toHaveAttribute('aria-current', 'true')
 
   expect(await readReplica(page)).toEqual(initial)
@@ -94,7 +94,7 @@ for (const viewport of [
     const panel = await openReplica(page, viewport.mobile)
     const global = panel.getByRole('group', { name: '全局设定', exact: true })
     for (const theme of ['light', 'dark'] as const) {
-      await global.getByRole('button', { name: '看第 1 帧', exact: true }).click()
+      await global.getByRole('button', { name: '查看第 1 帧', exact: true }).click()
       await page.emulateMedia({ colorScheme: theme })
       await expect
         .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
@@ -106,7 +106,7 @@ for (const viewport of [
       await expect(
         panel.getByRole('img', { name: '镜头组 1 第 1 帧', exact: true }),
       ).toHaveJSProperty('naturalWidth', 360)
-      const lastReference = global.getByRole('button', { name: '看第 30 帧', exact: true })
+      const lastReference = global.getByRole('button', { name: '查看第 30 帧', exact: true })
       await lastReference.focus()
       await page.keyboard.press('Enter')
       await expect(lastReference).toBeInViewport({ ratio: 1 })

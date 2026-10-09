@@ -155,7 +155,7 @@ export function LibraryCard({ video, width, onAuthor, onOpen }: LibraryCardProps
             <button
               className="inline-flex min-w-0 ui-state items-center gap-1.5 rounded-full py-0.5 pr-1.5 ui-focus"
               onClick={() => onAuthor(author)}
-              title={`只看 ${author} 的片子`}
+              title={`仅显示 ${author} 的视频`}
               type="button"
             >
               <AuthorAvatar className="size-4.5 text-caption" name={author} />

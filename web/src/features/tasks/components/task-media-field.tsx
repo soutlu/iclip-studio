@@ -85,12 +85,12 @@ export function TaskMediaField({
           nextUrls = kind === 'video' ? [url] : [...nextUrls, url]
           callbacksRef.current.onChange(nextUrls)
         } catch (cause) {
-          failures.push(`${file.name}：${errorMessageOf(cause, '上传失败')}`)
+          failures.push(`${file.name} ${errorMessageOf(cause, '上传失败')}`)
         }
       }
       if (operation.active && failures.length > 0) {
         setError(
-          `${failures.length} 个文件上传失败，已上传成功的素材已保留。${failures.join('；')}`,
+          `${failures.length} 个文件上传失败，已上传成功的素材已保留。${failures.join('。')}。`,
         )
       }
     } finally {
@@ -105,7 +105,7 @@ export function TaskMediaField({
 
   const { dragOver, dragHandlers } = useFileDropTarget({
     blocked,
-    onDirectory: () => setError('不支持上传文件夹，请选择文件'),
+    onDirectory: () => setError('无法上传文件夹；请选择文件'),
     onFiles: (files) => void uploadFiles(files),
   })
 

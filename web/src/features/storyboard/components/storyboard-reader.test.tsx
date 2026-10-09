@@ -318,9 +318,9 @@ describe('StoryboardReader', () => {
     expect(first).toHaveAttribute('aria-current', 'true')
     expect(
       within(first)
-        .getAllByRole('button', { name: /^看第 \d+ 帧$/ })
+        .getAllByRole('button', { name: /^查看第 \d+ 帧$/ })
         .map((chip) => chip.getAttribute('aria-label')),
-    ).toEqual(['看第 2 帧', '看第 1 帧'])
+    ).toEqual(['查看第 2 帧', '查看第 1 帧'])
     // 时长胶囊写时长，完整区间给读屏。
     expect(first).toHaveTextContent('2.5s，0.0s – 2.5s')
   })
@@ -342,7 +342,7 @@ describe('StoryboardReader', () => {
     await userEvent.click(within(page).getByRole('button', { name: '上一帧' }))
     expect(within(page).getByRole('img', { name: '镜头组 1 第 2 帧' })).toBeVisible()
     expect(second).toHaveAttribute('aria-current', 'true')
-    await userEvent.click(within(second).getByRole('button', { name: '看第 2 帧' }))
+    await userEvent.click(within(second).getByRole('button', { name: '查看第 2 帧' }))
     expect(second).toHaveAttribute('aria-current', 'true')
     expect(segmentOf(page, '镜头 1')).toHaveAttribute('aria-current', 'false')
   })
@@ -523,7 +523,7 @@ describe('StoryboardReader', () => {
       within(secondPrompt)
         .getAllByRole('button')
         .map((chip) => chip.getAttribute('aria-label')),
-    ).toEqual(['看第 2 帧', '看第 1 帧'])
+    ).toEqual(['查看第 2 帧', '查看第 1 帧'])
     expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:1', frame: 2 })
   })
 
@@ -873,7 +873,7 @@ describe('StoryboardReader', () => {
     // 从角标进来直接落在那条结果上，不是落在标注画布上。
     await waitFor(() =>
       expect(
-        within(editor).getByRole('group', { name: '这一帧的图片' }).querySelector('[aria-pressed]'),
+        within(editor).getByRole('group', { name: '该帧的图片' }).querySelector('[aria-pressed]'),
       ).toBeTruthy(),
     )
     expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeVisible()
@@ -1132,13 +1132,13 @@ describe('StoryboardReader', () => {
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
     const model = screen.getByRole('button', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveTextContent('无法读取视频模型'))
+    await waitFor(() => expect(model).toHaveTextContent('视频模型读取失败'))
     expect(model).toBeDisabled()
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')
 
     // 原因常显在出片栏的状态行上，不用悬停或聚焦；置灰的按钮仍能聚焦，说明关联到这一行。
-    expect(generate).toHaveAccessibleDescription('无法读取视频模型')
+    expect(generate).toHaveAccessibleDescription('视频模型读取失败')
     const reason = window.document.getElementById(generate.getAttribute('aria-describedby') ?? '')
     expect(screen.getByRole('group', { name: '出片工具栏' })).toContainElement(reason)
     expect(reason).toBeVisible()
@@ -1178,7 +1178,7 @@ describe('StoryboardReader', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     // 点第二镜里的 @2：地址里记下第 2 帧，刷新后这一帧不再属于第二镜。
     await userEvent.click(
-      within(segmentOf(page, '镜头 2')).getByRole('button', { name: '看第 2 帧' }),
+      within(segmentOf(page, '镜头 2')).getByRole('button', { name: '查看第 2 帧' }),
     )
     await waitFor(() =>
       expect(router.state.location.search).toEqual({ shot: 1, content: 'scene:2', frame: 2 }),
@@ -1249,7 +1249,7 @@ describe('StoryboardReader', () => {
       <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />,
       { initialPath: '/?shot=1&content=scene:1' },
     )
-    expect(await screen.findByText('文件格式不正确，无法读取镜头组')).toBeVisible()
+    expect(await screen.findByText('文件格式不正确，镜头组读取失败')).toBeVisible()
     expect(screen.queryByRole('region', { name: /镜头组 \d/ })).not.toBeInTheDocument()
   })
 
@@ -1295,7 +1295,7 @@ describe('StoryboardReader', () => {
     expect(editor).toHaveTextContent('暂时输入 @9。')
     expect(within(page).queryByRole('button', { name: '打开原图' })).not.toBeInTheDocument()
     expect(
-      within(page).getByRole('button', { name: '看第 9 帧' }).querySelector('img'),
+      within(page).getByRole('button', { name: '查看第 9 帧' }).querySelector('img'),
     ).not.toHaveAttribute('src')
     await replaceText(editor, '已修正的正文。')
     await screen.findByText('已保存', undefined, { timeout: 3000 })
@@ -1405,7 +1405,7 @@ describe('StoryboardReader', () => {
     })
     expect(saved?.prompt.timeline[1]).toEqual(emptyDocument.shots[0]?.prompt.timeline[1])
     expect(within(editor).queryByText('新帧.png')).not.toBeInTheDocument()
-    expect(within(editor).getByRole('button', { name: '看第 1 帧' })).toBeVisible()
+    expect(within(editor).getByRole('button', { name: '查看第 1 帧' })).toBeVisible()
     expect(within(page).getByRole('img', { name: '镜头组 1 第 1 帧' })).toHaveAttribute(
       'src',
       saved?.image_urls[0],
@@ -1476,7 +1476,7 @@ describe('StoryboardReader', () => {
     await act(async () => {
       release()
     })
-    expect(await screen.findByText('上传失败（503）')).toBeVisible()
+    expect(await screen.findByText('上传失败')).toBeVisible()
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
     expect(files.writes).toEqual([])
     expect(files.snapshot()).toEqual(document)
@@ -1493,7 +1493,7 @@ describe('StoryboardReader', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     await userEvent.upload(within(page).getByLabelText('选择替换图片'), imageFile())
     const retry = await screen.findByRole('button', { name: '重试保存' }, { timeout: 3000 })
-    expect(screen.getByText('已上传，分镜未保存')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('已上传图片，分镜保存失败：服务暂时不可用')
     const replacement = within(page)
       .getByRole('img', { name: '镜头组 1 第 2 帧' })
       .getAttribute('src')
@@ -1519,9 +1519,9 @@ describe('StoryboardReader', () => {
     editor.focus()
     pasteTextIntoComposer(editor, '后续文字。')
     expect(await screen.findByRole('alert', undefined, { timeout: 3000 })).toHaveTextContent(
-      '分镜未保存',
+      '分镜保存失败：后续正文暂时无法保存',
     )
-    expect(screen.queryByText('已上传，分镜未保存')).not.toBeInTheDocument()
+    expect(screen.queryByText(/已上传图片/)).not.toBeInTheDocument()
   })
 
   it('新增上传后保存失败，提示图片已上传、分镜未保存', async () => {
@@ -1531,7 +1531,7 @@ describe('StoryboardReader', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     pasteImage(page, '镜头 1 的描述')
     await screen.findByRole('button', { name: '重试保存' }, { timeout: 3000 })
-    expect(screen.getByText('已上传，分镜未保存')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('已上传图片，分镜保存失败：服务暂时不可用')
     expect(files.snapshot()).toEqual(document)
   })
 
@@ -1592,9 +1592,9 @@ describe('StoryboardReader', () => {
     const picker = await openAddImage(editorOf(page, '镜头 1 的描述'))
     await userEvent.click(within(picker).getByRole('button', { name: '关联第 3 张图片' }))
     expect(await screen.findByRole('alert', undefined, { timeout: 3000 })).toHaveTextContent(
-      '分镜未保存',
+      '分镜保存失败',
     )
-    expect(screen.queryByText('已上传，分镜未保存')).not.toBeInTheDocument()
+    expect(screen.queryByText(/已上传图片/)).not.toBeInTheDocument()
   })
 
   it.each(['新增', '替换'])('%s上传失败保留原文件和图片，不安排分镜保存', async (mode) => {
@@ -1609,17 +1609,17 @@ describe('StoryboardReader', () => {
       const editor = editorOf(page, '镜头 1 的描述')
       await within(editor).findByRole('img', { name: '上传失败' })
       fireEvent.click(within(editor).getByText('新帧.png'))
-      expect(await screen.findByRole('dialog', { name: '新帧.png上传失败' })).toHaveTextContent(
-        '上传失败（503）',
-      )
-    } else expect(await screen.findByText('上传失败（503）')).toBeVisible()
+      const card = await screen.findByRole('dialog', { name: '新帧.png上传失败' })
+      expect(card).toHaveTextContent('上传失败')
+      expect(card).not.toHaveTextContent('503')
+    } else expect(await screen.findByText('上传失败')).toBeVisible()
     expect(files.writes).toEqual([])
     expect(files.snapshot()).toEqual(document)
     expect(within(page).getByRole('img', { name: '镜头组 1 第 2 帧' })).toHaveAttribute(
       'src',
       'https://example.com/two.png',
     )
-    expect(screen.queryByText('已上传，分镜未保存')).not.toBeInTheDocument()
+    expect(screen.queryByText(/已上传图片/)).not.toBeInTheDocument()
   })
 
   it('替换上传期间服务器换掉目标地址，迟到上传不覆盖服务器新图', async () => {
@@ -1815,7 +1815,7 @@ describe('StoryboardReader', () => {
       fireEvent.drop(within(page).getByRole('group', { name: '当前帧图片' }), {
         dataTransfer: fileTransfer([imageFile(), imageFile()]),
       })
-      expect(await screen.findByText('每次只能替换一张图片')).toBeVisible()
+      expect(await screen.findByText('已选择多个文件，无法替换；请仅选择一张图片')).toBeVisible()
       expect(counter.signs).toBe(0)
       expect(files.writes).toEqual([])
     })
@@ -2317,7 +2317,7 @@ describe('StoryboardReader', () => {
 
       await select()
       await userEvent.click(
-        within(segmentOf(page, '镜头 1')).getByRole('button', { name: '看第 1 帧' }),
+        within(segmentOf(page, '镜头 1')).getByRole('button', { name: '查看第 1 帧' }),
       )
       expect(player(page)).not.toBeInTheDocument()
       frameShown(1)
@@ -2624,7 +2624,7 @@ describe('StoryboardReader', () => {
       expect(clamped()).toEqual([false, false, false, false])
       expect(within(page).queryByRole('button', { name: '展开' })).toBeNull()
 
-      await userEvent.click(within(page).getByRole('button', { name: '收成摘要' }))
+      await userEvent.click(within(page).getByRole('button', { name: '收起为摘要' }))
       expect(clamped()).toEqual([true, false, true, true])
       const expand = within(segmentOf(page, '全局设定')).getByRole('button', { name: '展开' })
       expect(expand).toHaveAttribute('aria-expanded', 'false')

@@ -233,7 +233,7 @@ describe('图片编辑器', () => {
     )
 
     // 只有一样能看的，没得切：整条不显示。
-    expect(within(editor).queryByRole('group', { name: '这一帧的图片' })).not.toBeInTheDocument()
+    expect(within(editor).queryByRole('group', { name: '该帧的图片' })).not.toBeInTheDocument()
     // 画幅在设置行里、悬停说明跟随分镜；这句话只出现这一处，不再另起一行脚注。
     const aspect = within(editor).getByTitle('画幅 9:16，跟随分镜')
     expect(aspect).toHaveTextContent('9:16')
@@ -270,7 +270,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
 
-    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     expect(
       within(strip)
         .getAllByRole('button')
@@ -299,7 +299,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
     // 记录读回来、有不止当前帧一格时版本条才出现。
-    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     await within(strip).findByRole('button', { name: /^结果 · / })
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage full', 'QuotaExceededError')
@@ -340,7 +340,7 @@ describe('图片编辑器', () => {
     )
     const { queryClient } = await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
-    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     await within(strip).findByRole('button', { name: /^生成中 · / })
 
     landed = true
@@ -368,7 +368,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage initialKey={completed.id} onApply={onApply} />)
 
     const editor = await screen.findByRole('dialog')
-    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     await waitFor(() =>
       expect(within(strip).getByRole('button', { name: /^结果 · / })).toHaveAttribute(
         'aria-pressed',
@@ -466,7 +466,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage initialKey={existing.id} />)
 
     const editor = await screen.findByRole('dialog')
-    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     const selected = await within(strip).findByRole('button', { name: /^(排队中|生成中) · / })
     expect(selected).toHaveAttribute('aria-pressed', 'true')
     expect(within(editor).getByRole('status')).toHaveTextContent(
@@ -527,7 +527,7 @@ describe('图片编辑器', () => {
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
     await waitForUploadPermission(editor)
-    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     const result = await within(strip).findByRole('button', { name: /^结果 · / })
     const textbox = () => within(editor).getByRole('textbox', { name: '修改要求' })
 
@@ -753,11 +753,11 @@ describe('图片编辑器', () => {
 
     const editor = await screen.findByRole('dialog')
     await within(editor).findByRole('slider', { name: '对比分割线' })
-    expect(screen.queryByRole('menuitem', { name: '恢复这次的输入' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '恢复本次输入' })).not.toBeInTheDocument()
     await userEvent.click(within(editor).getByRole('button', { name: '图片历史操作' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: '恢复这次的输入' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '恢复本次输入' }))
 
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = within(editor).getByRole('group', { name: '该帧的图片' })
     expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -821,7 +821,7 @@ describe('图片编辑器', () => {
     const onClose = vi.fn()
     await renderWithProviders(<EditorPage onClose={onClose} />)
     const editor = await screen.findByRole('dialog')
-    const strip = await within(editor).findByRole('group', { name: '这一帧的图片' })
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     const [first] = await within(strip).findAllByRole('button', { name: /^结果 · / })
     if (first === undefined) throw new Error('缺少结果格')
     await userEvent.click(first)

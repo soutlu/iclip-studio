@@ -25,14 +25,16 @@ export const useWorkspaceFiles = (conversationId: string) =>
     queryKey: workspaceQueryKeys.files(conversationId),
   })
 
-/** 整份写回须携带读取版本；409 时由调用方重拉处理，成功返回递增后的版本。 */
+/** 整份写回须携带读取版本；409 时由调用方重拉处理，成功返回递增后的版本。`failureMessage` 是失败时报错的前缀，
+ * 由调用方按它写的是什么文件给出，如「分镜保存失败」。 */
 export const writeWorkspaceFile = (
   conversationId: string,
   body: { path: string; content: string; expectedVersion: number },
+  failureMessage: string,
 ) =>
   apiFetch(`/conversations/${conversationId}/workspace/file`, zConversationFileEnvelope, {
     body,
-    fallbackErrorMessage: '保存失败',
+    fallbackErrorMessage: failureMessage,
     method: 'PUT',
   })
 

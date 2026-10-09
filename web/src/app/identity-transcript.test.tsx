@@ -185,7 +185,9 @@ describe('换了登录身份时订阅连接与 transcript 状态按身份换代�
     await act(() =>
       router.navigate({ params: { conversationId: CONVERSATION_A }, to: '/c/$conversationId' }),
     )
-    await waitFor(() => expect(screen.getByText('该对话不存在或不属于你，无法查看')).toBeVisible())
+    await waitFor(() =>
+      expect(screen.getByText('该对话不存在或不属于当前账号，无法查看')).toBeVisible(),
+    )
     expect(screen.queryByText('甲的私密内容')).not.toBeInTheDocument()
     expect(accounts.pageReads(CONVERSATION_A)).toBe(2)
 
@@ -201,7 +203,7 @@ describe('换了登录身份时订阅连接与 transcript 状态按身份换代�
     await flushNetwork()
     // 订阅回执回来之后仍是乙的对话，没有按甲的握手身份被判看不见。
     expect(screen.getByText('乙自己的内容')).toBeVisible()
-    expect(screen.queryByText('该对话不存在或不属于你，无法查看')).not.toBeInTheDocument()
+    expect(screen.queryByText('该对话不存在或不属于当前账号，无法查看')).not.toBeInTheDocument()
 
     // 甲握手的、退出后的游客、乙登录后的，各一条；前两条已关。
     const connections = accounts.fake.connections()
@@ -238,7 +240,9 @@ describe('换了登录身份时订阅连接与 transcript 状态按身份换代�
       await refreshSessionUser()
     })
 
-    await waitFor(() => expect(screen.getByText('该对话不存在或不属于你，无法查看')).toBeVisible())
+    await waitFor(() =>
+      expect(screen.getByText('该对话不存在或不属于当前账号，无法查看')).toBeVisible(),
+    )
     expect(screen.queryByText('甲的私密内容')).not.toBeInTheDocument()
     expect(screen.queryByText('甲改过的名字')).not.toBeInTheDocument()
     // 换的是连接与读取状态，应用壳与页面没有重新挂载。

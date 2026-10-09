@@ -106,7 +106,7 @@ describe('LibraryRoute', () => {
     expect(screen.getByText('找到 2 条')).toBeVisible()
 
     await user.click(screen.getByRole('radio', { name: '全部' }))
-    await user.click(screen.getByRole('radio', { name: '我出的' }))
+    await user.click(screen.getByRole('radio', { name: '我生成的' }))
     await waitFor(() => expect(queries.at(-1)?.get('userName')).toBe('tester'))
     expect(queries.at(-1)?.get('orientation')).toBeNull()
 
@@ -303,7 +303,7 @@ describe('library viewer', () => {
     await renderWithProviders(<Harness />)
 
     const viewer = await openCard(user, SKATE)
-    const versions = await within(viewer).findByRole('group', { name: '这个镜头组的版本' })
+    const versions = await within(viewer).findByRole('group', { name: '该镜头组的版本' })
     expect(within(versions).getAllByRole('button')).toHaveLength(6)
     expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('6')
     // 只有一个镜头组，不出组分段
@@ -434,13 +434,11 @@ describe('library viewer', () => {
     const groups = await within(viewer).findByRole('group', { name: '镜头组' })
     // 卡面在只有一版的镜头组 1 上，没有版本分段
     expect(within(groups).getByRole('button', { pressed: true })).toHaveAccessibleName('1')
-    expect(
-      within(viewer).queryByRole('group', { name: '这个镜头组的版本' }),
-    ).not.toBeInTheDocument()
+    expect(within(viewer).queryByRole('group', { name: '该镜头组的版本' })).not.toBeInTheDocument()
 
     // 点组切到那一组最新的一版
     await user.click(within(groups).getByRole('button', { name: '2' }))
-    const versions = await within(viewer).findByRole('group', { name: '这个镜头组的版本' })
+    const versions = await within(viewer).findByRole('group', { name: '该镜头组的版本' })
     expect(within(versions).getAllByRole('button')).toHaveLength(2)
     expect(within(versions).getByRole('button', { pressed: true })).toHaveAccessibleName('2')
     expect(within(viewer).getByText('居家客厅，几何地毯与木柜；自然窗光。')).toBeVisible()
@@ -455,9 +453,7 @@ describe('library viewer', () => {
     expect(screen.getByRole('dialog', { name: SANDALS })).toBe(viewer)
 
     await user.click(within(groups).getByRole('button', { name: '1' }))
-    expect(
-      within(viewer).queryByRole('group', { name: '这个镜头组的版本' }),
-    ).not.toBeInTheDocument()
+    expect(within(viewer).queryByRole('group', { name: '该镜头组的版本' })).not.toBeInTheDocument()
   })
 
   it('holds the bar row while the detail is on its way, only for cards that will show it', async () => {
@@ -481,14 +477,10 @@ describe('library viewer', () => {
 
     viewer = await openCard(user, SKATE)
     expect(within(viewer).getByRole('status')).toBeInTheDocument()
-    expect(
-      within(viewer).queryByRole('group', { name: '这个镜头组的版本' }),
-    ).not.toBeInTheDocument()
+    expect(within(viewer).queryByRole('group', { name: '该镜头组的版本' })).not.toBeInTheDocument()
 
     release()
-    expect(
-      await within(viewer).findByRole('group', { name: '这个镜头组的版本' }),
-    ).toBeInTheDocument()
+    expect(await within(viewer).findByRole('group', { name: '该镜头组的版本' })).toBeInTheDocument()
     expect(within(viewer).queryByRole('status')).not.toBeInTheDocument()
   })
 

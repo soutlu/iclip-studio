@@ -133,7 +133,7 @@ const positions = (first: number, last: number) =>
 const blockedReason = (target: AiTarget): string | undefined => {
   switch (target.kind) {
     case 'modified':
-      return '含已剪辑的段，无法生成视频；请先点「合成成片」'
+      return '含已剪辑的段，无法生成视频；请先点击「合成成片」'
     case 'short':
       return `时长不足 ${MIN_RANGE_SECONDS} 秒，无法生成视频；请点击相邻的段一并选中`
     case 'ready':
@@ -214,7 +214,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (edit.status !== 'completed' || edit.outputUrl === null)
       return { kind: 'failed', message: edit.errorMessage ?? '未返回生成结果' }
     const duration = durations[edit.outputUrl]
-    if (duration === null) return { kind: 'failed', message: '无法读取结果的时长' }
+    if (duration === null) return { kind: 'failed', message: '结果时长读取失败' }
     return duration === undefined ? { kind: 'running' } : { kind: 'done', duration }
   }
 
@@ -478,7 +478,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
         : `选中${which}：已是最短，无法继续裁剪；按住中间拖动可调整顺序，如需 AI 重做，请在卡片中填写修改要求`
     }
     if (pendingItems.length > 0)
-      return 'AI 生成中，关闭窗口不影响生成；其他段可继续剪辑，生成完成后才能合成'
+      return 'AI 生成中，关闭窗口不影响生成；其他段可继续剪辑，生成完成后可合成'
     if (changed) {
       const delta =
         Math.abs(shorter) >= 0.05
@@ -550,7 +550,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       loading={operation === 'composing' || waitingComposite}
       onClick={() => void compose()}
       size="md"
-      title={pendingItems.length > 0 ? 'AI 生成完成后才能合成' : undefined}
+      title={pendingItems.length > 0 ? 'AI 生成尚未完成，无法合成' : undefined}
     >
       {waitingComposite ? '合成中' : '合成成片'}
     </Button>
@@ -573,7 +573,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
 
   const timeline = keyframes.isError ? (
     <p className="video-editor-timeline-loading" role="alert">
-      {errorMessageOf(keyframes.error, '无法读取该视频的关键帧')}
+      {errorMessageOf(keyframes.error, '该视频的关键帧读取失败')}
       <Button onClick={() => void keyframes.refetch()} size="md" variant="ghost">
         重试
       </Button>
@@ -734,7 +734,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                   onReloadChain={() => void chainQuery.refetch()}
                   peaksError={
                     peaksFailure?.kind === 'failed'
-                      ? errorMessageOf(peaksFailure.error, '无法读取原声')
+                      ? errorMessageOf(peaksFailure.error, '原声读取失败')
                       : undefined
                   }
                 />

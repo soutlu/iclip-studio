@@ -178,7 +178,7 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
 
     book.inFlight = run()
       .catch((error: unknown) => {
-        setState({ kind: 'error', message: errorMessageOf(error, '保存失败') })
+        setState({ kind: 'error', message: errorMessageOf(error, '分镜保存失败') })
         return false
       })
       .finally(() => {
@@ -203,7 +203,7 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
       const base =
         existing?.base ?? (view === undefined ? undefined : segmentValues(view).get(target))
       if (base === undefined) {
-        setState({ kind: 'error', message: '该段文字已不存在，请刷新后再修改' })
+        setState({ kind: 'error', message: '该段文字已不存在，无法修改；请刷新分镜' })
         return
       }
       if (sameValue(base, value)) book.edits.delete(target)

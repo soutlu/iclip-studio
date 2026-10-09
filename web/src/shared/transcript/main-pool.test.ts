@@ -458,7 +458,7 @@ describe('MainTranscriptPool', () => {
     pool.activate('missing')
 
     await vi.waitFor(() => expect(pool.view('missing').status).toBe('error'))
-    expect(pool.view('missing').error).toBe('该对话不存在或不属于你，无法查看')
+    expect(pool.view('missing').error).toBe('该对话不存在或不属于当前账号，无法查看')
     await new Promise((resolve) => setTimeout(resolve, 2_500))
     expect(fake.pageRequests).toHaveLength(1)
   })

@@ -63,21 +63,21 @@ function TakesRail({ onSelect, selectedId, takes }: TakeSelection & { takes: rea
         {fade === 'none' ? null : (
           <div className="storyboard-takes-pager">
             <button
-              aria-label="往前看"
+              aria-label="向前滚动"
               className={control}
               disabled={fade === 'end'}
               onClick={() => page(-1)}
-              title="往前看"
+              title="向前滚动"
               type="button"
             >
               <Icon decorative name="back" size="xs" />
             </button>
             <button
-              aria-label="往后看"
+              aria-label="向后滚动"
               className={control}
               disabled={fade === 'start'}
               onClick={() => page(1)}
-              title="往后看"
+              title="向后滚动"
               type="button"
             >
               <Icon decorative name="next" size="xs" />

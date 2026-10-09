@@ -63,13 +63,14 @@ export const useFilmReplace = ({ disabled, frame, onReplace }: ReplaceOptions) =
   }
   const take = (files: readonly File[]) => {
     const [file] = files
-    if (files.length !== 1 || file === undefined) toast.error('每次只能替换一张图片')
+    if (files.length !== 1 || file === undefined)
+      toast.error('已选择多个文件，无法替换；请仅选择一张图片')
     else void replace(file)
   }
 
   const drop = useFileDropTarget({
     blocked,
-    onDirectory: () => toast.error('不支持文件夹，请拖入一张图片文件'),
+    onDirectory: () => toast.error('无法用文件夹替换图片；请拖入一张图片文件'),
     onFiles: take,
   })
 

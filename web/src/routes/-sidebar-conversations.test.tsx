@@ -374,7 +374,9 @@ describe('SidebarConversations', () => {
     await pickFilter(user, '全部')
     await screen.findByText('第0段')
     socket.deliver(workChanged(conversation?.id ?? '', { busy: true }))
-    expect(await within(filter).findByRole('radio', { name: '运行中，有任务在跑' })).toBeVisible()
+    expect(
+      await within(filter).findByRole('radio', { name: '运行中，有任务正在运行' }),
+    ).toBeVisible()
   })
 
   it('换档时拓扑还在读：筛选留在原处、选中项当场切换并留住焦点，加载提示出在它下方；读到后列表出现', async () => {
@@ -466,7 +468,7 @@ describe('SidebarConversations', () => {
 
     await user.click(await screen.findByRole('button', { name: '要删的那段 的更多操作' }))
     await user.click(await screen.findByRole('menuitem', { name: '删除' }))
-    const dialog = await screen.findByRole('dialog', { name: '删除这个任务？' })
+    const dialog = await screen.findByRole('dialog', { name: '删除该任务？' })
     expect(within(dialog).getByText('要删的那段')).toBeVisible()
     await user.click(within(dialog).getByRole('button', { name: '取消' }))
 
@@ -477,7 +479,7 @@ describe('SidebarConversations', () => {
     await user.click(screen.getByRole('button', { name: '要删的那段 的更多操作' }))
     await user.click(await screen.findByRole('menuitem', { name: '删除' }))
     await user.click(
-      within(await screen.findByRole('dialog', { name: '删除这个任务？' })).getByRole('button', {
+      within(await screen.findByRole('dialog', { name: '删除该任务？' })).getByRole('button', {
         name: '删除',
       }),
     )
@@ -500,7 +502,7 @@ describe('SidebarConversations', () => {
 
     await user.click(await screen.findByRole('button', { name: '删不掉的那段 的更多操作' }))
     await user.click(await screen.findByRole('menuitem', { name: '删除' }))
-    const dialog = await screen.findByRole('dialog', { name: '删除这个任务？' })
+    const dialog = await screen.findByRole('dialog', { name: '删除该任务？' })
     await user.click(within(dialog).getByRole('button', { name: '删除' }))
 
     expect(await screen.findByText(/对话服务暂不可用/)).toBeVisible()

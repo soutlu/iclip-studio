@@ -367,7 +367,7 @@ export function SearchListStatus({ label, onRetry, renderEmpty }: SearchListStat
   const search = query.trim()
   return (
     <div className="px-3 py-6 text-center text-body-sm text-on-surface-variant" role="status">
-      {renderEmpty ? renderEmpty(search) : search ? `未找到匹配的${label}` : `暂无可选${label}`}
+      {renderEmpty ? renderEmpty(search) : search ? `暂无匹配的${label}` : `暂无可选${label}`}
     </div>
   )
 }

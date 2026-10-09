@@ -140,7 +140,7 @@ describe('explicit annotation image export', () => {
 
   it('reports unreadable source images', async () => {
     imageFails = true
-    await expect(exportAnnotatedImage('/unreadable.png', [])).rejects.toThrow('原图无法读取')
+    await expect(exportAnnotatedImage('/unreadable.png', [])).rejects.toThrow('原图读取失败')
   })
 
   it.each(['tainted', 'empty', 'oversized'] as const)(

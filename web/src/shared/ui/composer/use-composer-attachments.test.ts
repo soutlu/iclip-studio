@@ -50,7 +50,7 @@ describe('useComposerAttachments', () => {
     expect(entry?.file).toBeUndefined()
   })
 
-  it('直传被对象存储拒绝：error 态，文案给出状态码，原文件留着供重试', async () => {
+  it('直传被对象存储拒绝：error 态，文案不外露状态码，原文件留着供重试', async () => {
     server.use(http.put('*/mock-oss/:uploadId', () => new HttpResponse(null, { status: 403 })))
     const { result } = renderHook(() => useComposerAttachments())
 
@@ -58,7 +58,7 @@ describe('useComposerAttachments', () => {
     const attId = mint(result, file)
 
     await waitFor(() => expect(result.current.entries.get(attId)?.status).toBe('error'))
-    expect(result.current.entries.get(attId)?.error).toContain('403')
+    expect(result.current.entries.get(attId)?.error).toBe('上传失败')
     expect(result.current.entries.get(attId)?.file).toBe(file)
   })
 
