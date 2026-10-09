@@ -46,7 +46,7 @@ if tuple(one.value for one in VIDEO_TYPES) != get_args(VideoTypeValue):
     raise RuntimeError("VIDEO_TYPES 与 VideoTypeValue 的取值或顺序对不上")
 
 CategoryValue = Literal[
-    # 照抄 PDM 品类表的全部第四级，以后由我们维护，不再读 PDM（ADR-0014）。
+    # 照抄 PDM 品类表的全部第四级，以后由我们维护，不再读 PDM。
     "高跟鞋",
     "平底鞋",
     "乐福鞋",
