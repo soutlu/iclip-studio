@@ -1,4 +1,4 @@
-"""iclip.generation_jobs：删掉 ``updated_at`` 与 ``provider_snapshot``，表到 ADR-0001 §9 的 27 列。
+"""iclip.generation_jobs：删掉 ``updated_at`` 与 ``provider_snapshot``，表到 27 列。
 
 Revision ID: 4acae9f7b988
 Revises: fd0a5be42793

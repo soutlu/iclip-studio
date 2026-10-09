@@ -101,7 +101,7 @@ const reduce = (
   effects: Effects,
 ): void => {
   if (update.kind === 'reconnected') {
-    // 全局帧不补发；重连后整份重拉，按水位规则合进池里（ADR-0004 第 7 条）。
+    // 全局帧不补发；重连后整份重拉，按水位规则合进池里。
     effects.sidebar = true
     effects.audit = true
     effects.search = true
@@ -135,7 +135,7 @@ const reduce = (
       )
       if (!mine) return
       // 照 Kimi：轮状态变了（开跑、收场、待审批 / 提问出现或消失）按 id 补读一行兜底，结果仍按 lastSeq 合并。
-      // 随运行变的行字段虽然另有 updated 帧（ADR-0005），补读不依赖服务端每个写入口都发了帧。
+      // 随运行变的行字段虽然另有 updated 帧，补读不依赖服务端每个写入口都发了帧。
       // 筛选列表也只在轮状态变了时重算：同样的状态再来一帧，归属不会变。
       if (
         before === undefined ||

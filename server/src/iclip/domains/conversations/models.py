@@ -59,7 +59,7 @@ IDLE_ACTIVITY = ConversationActivity()
 class EventWatermark(Protocol):
     """某一刻各段对话的会话事件水位，由组合根从广播方取来。
 
-    读库或写库之前取一份：行上的 ``lastSeq`` 按它填，客户端拿帧序号与它比先后（ADR-0004）。"""
+    读库或写库之前取一份：行上的 ``lastSeq`` 按它填，客户端拿帧序号与它比先后。"""
 
     @property
     def epoch(self) -> str:

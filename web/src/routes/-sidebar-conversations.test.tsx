@@ -65,7 +65,7 @@ const workChanged = (
   return workFrame(conversationId, payload)
 }
 
-/** 开跑记录运行：服务端写下新的 lastRunId、抹掉收尾标记，再发一帧 updated 带出整行（ADR-0005）。 */
+/** 开跑记录运行：服务端写下新的 lastRunId、抹掉收尾标记，再发一帧 updated 带出整行。 */
 const runStarted = (conversationId: string, runId: string) => {
   const row = mockConversations.find((one) => one.id === conversationId)
   if (row === undefined) throw new Error('没有这段对话')
@@ -108,7 +108,7 @@ const render = async (initialPath = '/', permissions = mockAuthUser.permissions)
   return { onStartInCollection, router, socket, user }
 }
 
-/** 服务端改了一行之后发的 updated 帧，带出整行（ADR-0005）；行内 lastSeq 是写入之前的水位。 */
+/** 服务端改了一行之后发的 updated 帧，带出整行；行内 lastSeq 是写入之前的水位。 */
 const rowUpdated = (row: (typeof mockConversations)[number]) => {
   const before = row.lastSeq
   return {

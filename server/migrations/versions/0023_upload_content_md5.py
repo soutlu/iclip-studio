@@ -1,4 +1,4 @@
-"""iclip.generation_jobs：视频上传记下文件的 MD5，确认时按它认出同一个文件（ADR-0015）。
+"""iclip.generation_jobs：视频上传记下文件的 MD5，确认时按它认出同一个文件。
 
 Revision ID: 602b9cec091d
 Revises: a97c2445795a

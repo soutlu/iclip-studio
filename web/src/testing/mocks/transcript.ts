@@ -615,7 +615,7 @@ export const transcriptHandlers = [
     // 结束事件广播到所有连接，侧栏据此刷新 lastRunId。
     setTimeout(() => {
       for (const conversation of justFinished) {
-        // 照服务端：开跑记录运行发 updated 带出新的 lastRunId（ADR-0005），收场再发活动帧。
+        // 照服务端：开跑记录运行发 updated 带出新的 lastRunId，收场再发活动帧。
         const before = conversation.lastSeq
         conversation.lastRunId = crypto.randomUUID()
         conversation.completedAt = null

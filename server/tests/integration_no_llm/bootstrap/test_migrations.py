@@ -1079,7 +1079,7 @@ IMAGE_SOURCE = "fd0a5be42793"
 """0020：图片记来源，上传与切图各落一行的那一版。"""
 
 COLUMNS_RETIRED = "4acae9f7b988"
-"""0021：删掉 updated_at 与 provider_snapshot，表到 ADR-0001 §9 的 27 列的那一版。"""
+"""0021：删掉 updated_at 与 provider_snapshot，表到 27 列的那一版。"""
 
 COMPOSE_SOURCE = "a97c2445795a"
 """0022：合成的来源改记基底，``request.segments`` 每段带出处的那一版。"""
@@ -2420,7 +2420,7 @@ async def test_retire_migration_drops_the_two_columns_and_downgrade_restores_the
         command.upgrade(cfg, "head")
 
     assert (before - after, after - before) == (_RETIRED, set())
-    assert len(after) == 27, "ADR-0001 §9 的终态"
+    assert len(after) == 27, "27 列的终态"
     assert upgraded == seeded, "其余 27 列逐行不变"
 
     assert restored_columns == before, "降级回到 0020 的列"

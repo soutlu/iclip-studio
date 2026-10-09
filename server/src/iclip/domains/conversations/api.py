@@ -67,7 +67,7 @@ def create_conversations_router(
     router = APIRouter(prefix="/conversations", tags=["conversations"])
 
     # 活动状态独立于对话记录，在序列化前批量读取。事件水位 ``events`` 由各端点在读库或写库
-    # 之前取，行上的 ``lastSeq`` 才不会比行里的字段新（ADR-0004）。
+    # 之前取，行上的 ``lastSeq`` 才不会比行里的字段新。
     async def _out(conversation: Conversation, events: EventWatermark) -> ConversationOut:
         activities = await service.activities([conversation.id])
         return conversation_out(conversation, activities[conversation.id], events)

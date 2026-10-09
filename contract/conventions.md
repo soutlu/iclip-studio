@@ -104,7 +104,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   `subscribe_v2`，体里 `session_id` 是对话 id，`transcript` 是按 agent 给的档位，
   `transcript_since` 与 `transcript_epoch` 是按 agent 给的水位与它所属的实时流，**两者都对得上才补批**。
   表里每个 agent 各自订阅、各自水位，同一帧里再发就是更新；出现不属于这段对话的 agent 时整帧拒绝，
-  `ack` 带 `code: 404`，订阅不变。协议里的 `client_hello` 我们不收（[ADR-0004](../docs/adr/0004-align-realtime-protocol-with-kimi.md)）。
+  `ack` 带 `code: 404`，订阅不变。协议里的 `client_hello` 我们不收。
 - **先基线、后订阅**（照 Kimi）：打开一段流先 `GET .../transcript` 拿一页，再用页上的 `seq` 与
   `stream_epoch` 订阅，服务端从补发日志接着发、不回 reset。不带水位的首订会收到一帧 reset，
   那是给没有基线的调用方的。
@@ -365,14 +365,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 类型、大小和图片尺寸边界以 [上传规则](../server/src/iclip/domains/uploads/models.py) 为准。直传图片在 `sign` 时校验客户端声明的宽高；`confirm` 按桶中对象校验类型和大小，不合格返回 `422`，字节仍留在桶里，不落记录。
 - 桶内没有对应对象时 `confirm` 返回 `409`，不落记录；签名成功本身不代表上传完成。
 - **上传记录**：`kind` 按桶里的类型定（`image` / `video`），`operation` 是 `upload`，状态 `completed`，`outputUrl` 就是交回的 `url`；不挂对话，没有请求（`request` 为 `null`）与来源。记录 id 就是 `uploadId`，开了媒体生成时 `GET /generations/{uploadId}` 读得到（§11）；没开时那组接口不挂，记录照落。视频编辑的参考片段也走这条协议，落一条视频上传记录（§11「视频编辑：编辑段与合成」）。
-- **同一个视频文件只留一个地址**（[ADR-0015](../docs/adr/0015-dedupe-video-uploads-by-content.md)）：确认视频时按桶里对象的 MD5 认出传过的文件，不论谁传的，交回最早那份的 `url`，`contentType`、`sizeBytes` 也是那份对象的；这次传上来的字节删掉，这条记录的 `outputUrl` 就是那个共用的地址。图片、不是一次整传的视频照旧交回这次的地址。两个人同时首次确认同一个文件时可能各留一个地址。
+- **同一个视频文件只留一个地址**：确认视频时按桶里对象的 MD5 认出传过的文件，不论谁传的，交回最早那份的 `url`，`contentType`、`sizeBytes` 也是那份对象的；这次传上来的字节删掉，这条记录的 `outputUrl` 就是那个共用的地址。图片、不是一次整传的视频照旧交回这次的地址。两个人同时首次确认同一个文件时可能各留一个地址。
 - **替谁确认**：请求体可选，只有 `userName`。给了按替人办事换主体（§2），浏览器只能写自己的用户名；不给就记在当前主体名下，钥匙调用方不带也不报错，这一点与生成接口不同。
 - **`confirm` 可以重复调**：记过就交回记录上的地址，`contentType`、`sizeBytes` 按那个地址上的对象读，不再核对这次的对象；交回同一份结果、对应同一条记录，第二次的 `userName` 不改属主。那个地址上的对象不在桶里了返回 `409`。
 - 上传不会登记对话素材；把地址作为附件提交后，agent 才能按对话素材规则引用（§6）。
 
 ## 11. 媒体生成 (Generations)
 
-四条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）与 `POST /generations/video-composites`（合成，本地拼接，不经外部服务）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传）与有没有来源决定（[ADR-0001](../docs/adr/0001-video-domain-model.md)）：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image 或 video / upload（§10）。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
+四条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）与 `POST /generations/video-composites`（合成，本地拼接，不经外部服务）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传）与有没有来源决定：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image 或 video / upload（§10）。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
 
 业务状态每跳一格，属主连着的每条 WebSocket 都收到一帧 `event.generation.changed`（见 §5 全局帧）；帧易失且不带结果，`GET /generations` 与任务查询接口仍是事实源，浏览器在有运行中任务时保留轮询兜底。
 
@@ -395,7 +395,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 视频编辑：编辑段与合成
 
-- `POST /generations/video-edits` 在一条成片上改一段，请求就是一次上游视频请求（[ADR-0010](../docs/adr/0010-timeline-editing-frontend-clips.md)）：`reference_video_urls` 恰好一条，是调用方从基底上切好、走 §10 上传协议传上来的参考片段地址；`model`、`prompt`、`user_name`、`reference_image_urls`、`seconds`、`provider_options` 与出片同义，原样转发上游。另带两项只记账、不参与处理的字段：`source_job_id`（基底，基于哪一版成片）与 `range_start_ms` / `range_end_ms`（片段在基底上的那一段，毫秒；起点不小于 0、终点晚于起点）；有了它们，这条记录才是编辑段。另收归属字段 `conversation_id`、`task_id` 与坐标 `metadata`。不收 `shot` 与 `root_job_id`；参考视频缺了、多于一条、不是 http(s) 地址、给了这两个字段都是 `422`。模型规则同出片。响应是 `GenerationEnvelope`。
+- `POST /generations/video-edits` 在一条成片上改一段，请求就是一次上游视频请求：`reference_video_urls` 恰好一条，是调用方从基底上切好、走 §10 上传协议传上来的参考片段地址；`model`、`prompt`、`user_name`、`reference_image_urls`、`seconds`、`provider_options` 与出片同义，原样转发上游。另带两项只记账、不参与处理的字段：`source_job_id`（基底，基于哪一版成片）与 `range_start_ms` / `range_end_ms`（片段在基底上的那一段，毫秒；起点不小于 0、终点晚于起点）；有了它们，这条记录才是编辑段。另收归属字段 `conversation_id`、`task_id` 与坐标 `metadata`。不收 `shot` 与 `root_job_id`；参考视频缺了、多于一条、不是 http(s) 地址、给了这两个字段都是 `422`。模型规则同出片。响应是 `GenerationEnvelope`。
 - 受理时同步核对三件事，不合格是 `422`，不创建任务、不入队：
   - 片段地址对应一条**调用者本人**的视频上传记录（`kind=video`、`operation=upload`，属主是当前主体；持 `users:act_as` 的钥匙替人办事时是那个人）。别人的上传、图片上传、库里找不到的地址同一句。
   - 片段时长与区间长度一致，容差 100 毫秒：片段是浏览器重封装的，容器时长会被音轨尾巴拉长一点。片段时长由服务端按地址探测。
@@ -442,7 +442,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 - **分叉出来的副本一律不计入**（口径见 [CONTEXT.md「审计口径」](../docs/CONTEXT.md#术语)），分叉见 §6。
 - 时间窗 `since` / `until` 左闭右开，三个端点都必填 `since`，`until` 不给或晚于此刻按此刻算，`since` 不早于 `until` 是 `422`。指标的时间窗作用在各指标自己的锚点上：成片、视频生成时长与片长看完成时刻，镜数、生成次数、一次通过与有效镜看该镜第一条成功生成的完成时刻，运行次数与活跃人数看发起时刻，agent 运行时长看开始时刻，交付周期与单任务时长看最后成片时刻，模型用量整段对话按最后记账时刻归期。任务执行另按对话建立时刻圈定，见下文。
-- 每一格指标都是同一个 `metrics` 形状：`deliveries`（成片件数 = `deliveredTasks` + `deliveredOrphanConversations`）、`completedVideos`、`producers`、`shots`（至少成功生成过一条的镜）/ `attempts`（这些镜的成功生成次数，失败与还没出结果的不计，见 [ADR-0003](../docs/adr/0003-audit-count-successful-generations.md)）/ `oneTakeShots`（一次通过：只用一次成功生成就达标的镜）与派生的 `attemptsPerShot`、`oneTakeRate`、`effectiveShots`（有效镜）与派生的 `effectiveRate`（有效镜 ÷ 镜数）、`runs`（agent 运行次数，按消息数，归发起人）、`activeUsers`（发起过运行的人数）、`deliveredConversations`、四组秒数分布、`lengthVideos` / `lengthSeconds` / `discardedLengthSeconds`（片长）、`usage`（五个 token 计数、`totalTokens`、`cacheHitRate`）与 `tokensPerDelivery`。分母为零的比率是 `null`。
+- 每一格指标都是同一个 `metrics` 形状：`deliveries`（成片件数 = `deliveredTasks` + `deliveredOrphanConversations`）、`completedVideos`、`producers`、`shots`（至少成功生成过一条的镜）/ `attempts`（这些镜的成功生成次数，失败与还没出结果的不计）/ `oneTakeShots`（一次通过：只用一次成功生成就达标的镜）与派生的 `attemptsPerShot`、`oneTakeRate`、`effectiveShots`（有效镜）与派生的 `effectiveRate`（有效镜 ÷ 镜数）、`runs`（agent 运行次数，按消息数，归发起人）、`activeUsers`（发起过运行的人数）、`deliveredConversations`、四组秒数分布、`lengthVideos` / `lengthSeconds` / `discardedLengthSeconds`（片长）、`usage`（五个 token 计数、`totalTokens`、`cacheHitRate`）与 `tokensPerDelivery`。分母为零的比率是 `null`。
 - 四组秒数分布各带 `avg`、`median`、`p90` 与样本数 `count`，没有样本为 `null`：`cycleSeconds`（交付周期，墙钟，含空档）；`activeCycleSeconds`（单任务时长：每段有成片的对话一个样本，把这段对话有终态的顶层运行「开始到终态」与每条出片（含失败的）「受理到完成，没完成的只是受理那一刻」裁进交付周期，按开始排序合并，下一段开始距已合并段的结束不超过 30 分钟就并进来、空档照算，超过就断开、空档不计，样本值是各合并段长度之和）；`agentRunSeconds`（一次顶层运行从 `run_started` 到第一条 `run_completed` / `run_failed`，子代理的内部运行不单算，没有终态的不计，审批批完续跑是另一次运行）；`upstreamSeconds`（视频生成时长：单条出片提交上游到完成）。
 - 片长读出片记录的产物时长（生成记录的 `duration_ms` 列），为空的不计，不拿请求里的时长顶替。`lengthVideos` 是有片长的成片条数，`lengthSeconds` 是它们的合计，`discardedLengthSeconds` 是其中废片的合计：废片是同一镜（对话 + 镜号）全时段按完成时刻、再按 id 排最后一条以外的成片，按时间窗或按人切开看也照全时段判定，所以各格可加、不随筛选变。
 
@@ -482,10 +482,10 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 13. 资料库 (Library)
 
-全站成片连同出片时脚本的三个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张卡是一段对话的分镜，装着这段对话读得到的全部成片（[ADR-0002](../docs/adr/0002-library-card-per-storyboard.md)）。
+全站成片连同出片时脚本的三个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张卡是一段对话的分镜，装着这段对话读得到的全部成片。
 
 - **可见范围**：任何持 `generation:read` 的人都能看到全部卡、脚本与来源对话。卡的 `id` 是对话 id，不挂对话（对话不存在也算）的卡是那条出片的 id。`conversationId` 对所有人都给，不挂对话为 `null`；`title`、`agentId`、`taskId` 取自来源对话，对话删了照给。`canOpenConversation` 是这位读者能不能打开那段对话，口径同 §6 的对话可读范围：谁读得到那段对话，谁就能打开；治理者含墓碑。不挂对话的卡恒为 `false`。
-- `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外（[ADR-0002](../docs/adr/0002-library-card-per-storyboard.md)）；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面成片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面成片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的成片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
+- `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面成片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面成片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的成片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
 - **卡的字段**：`face` 是卡面那一版，即对话自己最新的成片；`take` 是它对应的出片（出片是它自己，合成沿原作取，原作可以在祖先对话里）；`userName` 是卡的作者，即对话属主的用户名，不挂对话的是出片属主的；`groupCount` / `versionCount` 是卡里有几个镜头组、一共几版，都含继承来的。
 - **版本的形状**（`face` 与详情里的每一版）：`kind` 是 `take`（出片）或 `composite`（合成）；`jobId` 是那条成片；`watermarkOutputUrl` 合成恒为 `null`；`durationMs` 是实际时长（毫秒），出片取上游实测的、合成是本系统量的，上游没给为 `null`；`finishedAt` 是完成时刻；`userName` 是那条成片属主的用户名。详情里的每一版另带 `take`，合成的 `take` 沿原作取。`take.prompt` 是发给模型的原文；`take.script` 是镜头组（`globalSettings` 加 `timeline[]`，每镜 `start`、`end`、`prompt`、`imageIndexes`），为 `null` 表示纯文本。`imageIndexes` 指向 `referenceImageUrls` 的第 N 张。画面尺寸不在数据里，占位比例按 `aspectRatio`。账号没有用户名时各处 `userName` 为 `null`。
 - `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、`canOpenConversation` 为真、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 三条都成立才是 `true`。列表的卡上没有这一项。
@@ -493,7 +493,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 14. 参考视频 (References)
 
-资料库里用户上传的、AI 导演在对话里拆过的视频，一条视频一行，带当前拆解与两组标签，语义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)（[ADR-0014](../docs/adr/0014-reference-videos.md)）。端点权限看 `openapi.json`；修改、重拆、移除另限属主（替人办事的钥匙与治理者也行），看得见的别人的那条是 `403`。拆解没配置时只挂读端点（`POST /references` 与 `POST /references/{id}/breakdowns` 不在），列表的 `canUpload` 恒为 `false`；拆解配好但上传不可用（没配对象存储）时只少 `POST /references`，`canUpload` 同样恒为 `false`，重拆照常。
+资料库里用户上传的、AI 导演在对话里拆过的视频，一条视频一行，带当前拆解与两组标签，语义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)。端点权限看 `openapi.json`；修改、重拆、移除另限属主（替人办事的钥匙与治理者也行），看得见的别人的那条是 `403`。拆解没配置时只挂读端点（`POST /references` 与 `POST /references/{id}/breakdowns` 不在），列表的 `canUpload` 恒为 `false`；拆解配好但上传不可用（没配对象存储）时只少 `POST /references`，`canUpload` 同样恒为 `false`，重拆照常。
 
 - **建行**：`POST /references` 体是 `{ uploadId }`，只收调用者本人确认过的视频上传（§10）；别人的、图片的、不存在的 `uploadId` 一律 `404`。新建的行 `201`，排上第一次拆解；同一条视频已在表里就交回那一行、状态码 `200`，不再拆；移除过的那一行回到资料库，属主换成这次上传的人，拆解照旧。
 - **状态**：`breakdownStatus` 是 `pending`（排队）/ `running`（拆解与打标中）/ `completed`（有拆解）/ `failed`（最近一次没拆成）。`errorCode` 是最近一次失败的原因，拆成之后清空：`video_unreadable` 视频打不开，换一条；`model_call_failed` 模型调用失败（限流、服务端错、连不上、答得不完整，或者没排上队），再拆可能就好；`model_failed` 请求被拒或等满了总超时；`timeout` 拆解中超过 20 分钟没结束。失败时原来的 `document` 与标签不动。客户端按 `errorCode` 出一句话，不展示原始报错。
