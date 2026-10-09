@@ -154,19 +154,17 @@ export function FilmStage({
         stageRef={setStage}
       >
         {frame !== undefined && url === null && frame.kind === 'generated' ? (
-          <div className="storyboard-hero">
-            <FilmGenerateCard
-              busy={generate.busy}
-              error={generate.error}
-              frame={frame}
-              group={group}
-              job={generate.job}
-              onChoose={generate.onChoose}
-              onEnlarge={(image, name) => onOpen({ name, url: image })}
-              onGenerate={generate.onGenerate}
-              readOnly={readOnly}
-            />
-          </div>
+          <FilmGenerateCard
+            busy={generate.busy}
+            error={generate.error}
+            frame={frame}
+            group={group}
+            job={generate.job}
+            onChoose={generate.onChoose}
+            onEnlarge={(image, name) => onOpen({ name, url: image })}
+            onGenerate={generate.onGenerate}
+            readOnly={readOnly}
+          />
         ) : (
           <StageFrame
             emptyText={frame === undefined ? '该段暂无图片' : missingImageText(frame.label)}
