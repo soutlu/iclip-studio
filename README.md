@@ -24,7 +24,7 @@ Productor 的后端与 Web 前端。产品定位、业务术语和不变量见 [
 
 ## 部署
 
-单机部署用 [deploy/compose.yaml](deploy/compose.yaml)：一次性迁移 → 后端 → 前端，镜像从 ACR 拉取，构建与上传见[镜像发布](docs/release.md)。
+单机部署用 [deploy/compose.yaml](deploy/compose.yaml)：后端 → 前端，镜像从 ACR 拉取，构建与上传见[镜像发布](docs/release.md)。数据库迁移由操作者使用具备 DDL 权限的账号手动执行，部署和服务启动不执行迁移；首次部署或升级涉及表结构变化时，需先完成目标版本的数据库迁移。
 
 1. 服务器要有 NVIDIA 显卡，装好 NVIDIA 驱动与 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)：后端容器按 compose.yaml 申请显卡，本地视频加工用它编解码，申请不到容器起不来。没有显卡的机器删掉 compose.yaml 里 `server` 的 `deploy` 段，加工改用软件。用没用上显卡看启动日志「本地视频编解码已选定」那一条的 `codec`：`nvenc` 即用上了。
 2. Postgres 用服务器现有实例，本项目独占一个库。以管理员建库建账号：
@@ -45,7 +45,7 @@ Productor 的后端与 Web 前端。产品定位、业务术语和不变量见 [
 
 5. 首个管理员：SSO 场景在 `.env` 设置 `ROOT_EMAIL`，该邮箱首次登录即 root；密码注册场景执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
 
-后端只跑 1 个 worker，实时订阅在进程内存中。升级：改 `.env` 的 `IMAGE_TAG`，再 `docker compose pull && docker compose up -d`；迁移随启动执行，数据卷保留。
+后端只跑 1 个 worker，实时订阅在进程内存中。升级：按需手动完成数据库迁移，改 `.env` 的 `IMAGE_TAG`，再 `docker compose pull && docker compose up -d`；数据卷保留。
 
 ### 改配置
 

@@ -1,5 +1,6 @@
-# 单机部署：一次性迁移 → 后端 → nginx 前端。Postgres 用服务器现有实例，本项目独占一个数据库。
-# 变量与凭证来自同目录的 .env，migrate / server 容器也整份加载它；env 文件不进仓库。
+# 单机部署：后端 → nginx 前端。数据库迁移由操作者手动执行，部署和服务启动不执行迁移。
+# Postgres 用服务器现有实例，本项目独占一个数据库。
+# 变量与凭证来自同目录的 .env，server 容器也整份加载它；env 文件不进仓库。
 # 本文件用到的变量：ACR_REGISTRY 镜像仓库地址（如 registry.<region>.aliyuncs.com）、
 # ACR_NAMESPACE 仓库里的命名空间、IMAGE_TAG 镜像版本（缺省 latest，升级时改它再 up -d）、
 # WEB_PORT 对外端口（缺省 80，改了 SSO_REDIRECT_URL 的端口要跟着改）。应用变量见 server/src/iclip/config/models.py。
@@ -7,16 +8,6 @@
 # 改文件保存即热重载。
 
 services:
-  # 服务启动不建表，迁移单独跑完退出，后端等它成功才起。
-  migrate:
-    image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-server:${IMAGE_TAG:-latest}
-    restart: "no"
-    env_file: .env
-    command: ["alembic", "upgrade", "head"]
-    extra_hosts:
-      # 让容器能用 host.docker.internal 访问宿主机上的 Postgres。
-      - "host.docker.internal:host-gateway"
-
   server:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-server:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -26,9 +17,6 @@ services:
       - ./agents:/app/agents:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     # 本地视频加工（合成、拆解抽帧、分镜取帧）启动时探测，有 NVIDIA 显卡就用它编解码，没有用软件。
     # 宿主机要装 NVIDIA 驱动与 NVIDIA Container Toolkit，申请不到显卡容器起不来；没有显卡的机器删掉
     # 这一段。capabilities 里的 video 让容器里有 libnvidia-encode / libnvcuvid，少了它 NVENC 起不来。
