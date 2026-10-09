@@ -20,7 +20,7 @@ export function ReaderNotice({ text }: { text: string }) {
   )
 }
 
-/** 保存状态只看种类与出错原因；分镜页与制作页的草稿各有自己的冲突细节，这里不用。 */
+/** 保存状态只看种类与出错原因；分镜页与制作页的草稿各有自己的冲突细节，这里不用。出错原因是一句完整的话，原样显示、不另加前缀。 */
 type SaveStatusState =
   { kind: Exclude<SaveState['kind'], 'error'> } | { kind: 'error'; message: string }
 
@@ -42,7 +42,7 @@ export function SaveStatus({
     return (
       <>
         <span className="text-body-sm text-error" role="alert">
-          <span>{appliedUpload && hasUnsavedChanges ? '已上传，分镜未保存' : '分镜未保存'}</span>：
+          {appliedUpload && hasUnsavedChanges ? '已上传图片，' : ''}
           {state.message}
         </span>
         <Button onClick={onRetry} size="md" variant="ghost">
@@ -93,7 +93,7 @@ export function ConflictDialog({
   const changed = [
     ...(aspect === undefined
       ? []
-      : [`画幅（你选择的是 ${aspect.mine}，最新版本是 ${aspect.theirs}）`]),
+      : [`画幅（当前修改为 ${aspect.mine}，最新版本为 ${aspect.theirs}）`]),
     ...(conflicts.length === 0 ? [] : [`第 ${conflicts.map((item) => item.index).join('、')} 组`]),
   ].join('，')
   return (
@@ -101,25 +101,25 @@ export function ConflictDialog({
       onOpenChange={(open) => !open && resolve('theirs')}
       open={state.kind === 'conflict'}
     >
-      <DialogSurface aria-label="这份分镜有别的改动">
-        <DialogHeader closeLabel="关闭（用最新的）" title="这份分镜有别的改动">
-          {changed}在你编辑期间已被修改
+      <DialogSurface aria-label="分镜版本冲突">
+        <DialogHeader closeLabel="关闭（采用最新版本）" title="分镜版本冲突">
+          {changed}在编辑期间已被修改
         </DialogHeader>
         <DialogBody>
           <p className="text-body text-on-surface">
             {removed
-              ? '原镜头组已被移除，当前修改无法覆盖到其他镜头组。选择「用最新的」只会放弃冲突处的修改。'
-              : '选择「留我的」保留你的修改，或选择「用最新的」采用最新版本；无冲突的修改将保留'}
+              ? '原镜头组已被移除，当前修改无法覆盖到其他镜头组。选择「采用最新版本」仅放弃冲突处的修改。'
+              : '选择「保留我的修改」可保留当前修改，选择「采用最新版本」可改用最新版本；无冲突的修改将保留'}
           </p>
         </DialogBody>
         <DialogFooter>
           <span />
           <span className="flex gap-2">
             <Button onClick={() => resolve('theirs')} size="md" variant="ghost">
-              用最新的
+              采用最新版本
             </Button>
             <Button disabled={removed} onClick={() => resolve('mine')} size="md">
-              留我的
+              保留我的修改
             </Button>
           </span>
         </DialogFooter>

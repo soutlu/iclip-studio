@@ -10,7 +10,7 @@ const OPERATION_LABELS = { edit: '已编辑', write: '已写入' } as const
 export function TurnResultList({ results }: { results: readonly TurnResult[] }) {
   const link = useWorkspaceFileLink()
   return (
-    <ul aria-label="这一轮的结果" className="flex flex-col">
+    <ul aria-label="本轮结果" className="flex flex-col">
       {results.map((result) => (
         <li key={result.path}>
           <button

@@ -75,7 +75,7 @@ test('上传一条视频：先排队、拆完自动出标签；改拆解保存�
   await expect(dialog).toBeHidden()
 
   await upload()
-  await expect(page.getByText('该视频之前已上传过，已为你打开')).toBeVisible()
+  await expect(page.getByText('该视频此前已上传，已打开该视频')).toBeVisible()
   await expect(dialog.getByText('只留一句话。')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(main.getByText('共 14 条')).toBeVisible()

@@ -27,7 +27,7 @@ const MAIN_PAGE_SIZE = 10
 /** refresh 前后本地发送状态还在变时，最多重读几次（Kimi 同为 3）。 */
 const MAX_REFRESH_PASSES = 3
 
-const GONE_MESSAGE = '该对话不存在或不属于你，无法查看'
+const GONE_MESSAGE = '该对话不存在或不属于当前账号，无法查看'
 
 interface PendingReset {
   snapshot: AgentTranscriptSnapshot

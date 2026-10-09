@@ -46,7 +46,7 @@ const FAILURE_HINTS: Record<BreakdownError, string> = {
   model_call_failed: '拆解服务连接失败，请稍后点击「重新拆解」重试。',
   model_failed: '模型未能拆解该视频，请稍后点击「重新拆解」重试。',
   timeout: '拆解超时，请稍后点击「重新拆解」重试。',
-  video_unreadable: '视频无法打开，请换一条视频。',
+  video_unreadable: '视频读取失败，请上传其他视频。',
 }
 
 /** 详情顶上那句话：有上一次的拆解时说明下面还是上一次的；原因缺失时只请人稍后再试。 */

@@ -7,7 +7,7 @@ const Placeholder = () => null
 const shotsEntry: ArtifactEntry = {
   autoOpen: true,
   component: Placeholder,
-  empty: 'agent 交付分镜后出现',
+  empty: '暂无分镜，agent 交付后显示',
   icon: 'grid',
   label: '分镜',
   match: { path: 'video_shot.json' },

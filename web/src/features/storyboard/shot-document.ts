@@ -5,7 +5,14 @@ import { UserFacingError } from '@/shared/api/client'
 import { MAX_REFERENCE_IMAGES } from './shots'
 
 const nonblank = z.string().refine((value) => value.trim().length > 0, '请填写内容')
-const timestamp = z.number().nonnegative()
+const timestamp = z.number().nonnegative({ error: '镜头时间不得小于 0 秒' })
+const UNKNOWN_CONTENT = '包含无法识别的内容'
+
+/**
+ * 校验没有专门文案的问题（类型不符等）时的兜底；zod 默认文案是英文，不给用户看。
+ * 逐条写了 error 的校验优先于它。
+ */
+const FALLBACK_ISSUE = { error: () => '格式不正确' }
 const FRAME_REF = /@Image(\d+)/g
 
 /** 与工具相同，按正文首次出现顺序提取编号；不改写原始标记。 */
@@ -13,22 +20,38 @@ export const extractImageIndexes = (prompt: string): number[] => [
   ...new Set([...prompt.matchAll(FRAME_REF)].map((match) => Number(match[1]))),
 ]
 
-const timelineItemSchema = z.strictObject({
-  image_indexes: z.array(z.int().positive()),
-  prompt: nonblank,
-  timestamps: z.tuple([timestamp, timestamp]),
-})
+const SECONDS_RANGE = '时长须为 4–30 秒的整数'
+
+const timelineItemSchema = z.strictObject(
+  {
+    image_indexes: z.array(z.int().positive({ error: '镜头的图片编号无效' })),
+    prompt: nonblank,
+    timestamps: z.tuple([timestamp, timestamp]),
+  },
+  { error: UNKNOWN_CONTENT },
+)
 
 const shotSchema = z
-  .strictObject({
-    image_urls: z.array(nonblank).max(MAX_REFERENCE_IMAGES),
-    index: z.int().positive(),
-    prompt: z.strictObject({
-      global_settings: nonblank,
-      timeline: z.array(timelineItemSchema).min(1),
-    }),
-    seconds: z.int().min(4).max(30),
-  })
+  .strictObject(
+    {
+      image_urls: z
+        .array(nonblank)
+        .max(MAX_REFERENCE_IMAGES, { error: `参考图片最多 ${MAX_REFERENCE_IMAGES} 张` }),
+      index: z.int().positive({ error: '镜头组编号无效' }),
+      prompt: z.strictObject(
+        {
+          global_settings: nonblank,
+          timeline: z.array(timelineItemSchema).min(1, { error: '请至少保留 1 个镜头' }),
+        },
+        { error: UNKNOWN_CONTENT },
+      ),
+      seconds: z
+        .int({ error: SECONDS_RANGE })
+        .min(4, { error: SECONDS_RANGE })
+        .max(30, { error: SECONDS_RANGE }),
+    },
+    { error: UNKNOWN_CONTENT },
+  )
   .superRefine((shot, ctx) => {
     const checkReferences = (text: string, path: (string | number)[]) => {
       const invalid = extractImageIndexes(text).find(
@@ -83,10 +106,13 @@ const shotSchema = z
   })
 
 const shotsDocumentSchema = z
-  .strictObject({
-    aspect_ratio: nonblank,
-    shots: z.array(shotSchema).min(1),
-  })
+  .strictObject(
+    {
+      aspect_ratio: z.string().refine((value) => value.trim().length > 0, '请选择画幅'),
+      shots: z.array(shotSchema).min(1, { error: '请至少保留 1 个镜头组' }),
+    },
+    { error: `分镜${UNKNOWN_CONTENT}` },
+  )
   .superRefine((document, ctx) => {
     for (const [position, shot] of document.shots.entries()) {
       if (shot.index !== position + 1) {
@@ -115,7 +141,7 @@ export const parseShotsDocument = (content: string): ShotsDocument | null => {
 
 /** 草稿可以暂时不合法；保存边界使用同一文档校验并返回可显示的原因。 */
 export const validateShot = (shot: Shot): string | undefined => {
-  const result = shotSchema.safeParse(shot)
+  const result = shotSchema.safeParse(shot, FALLBACK_ISSUE)
   if (result.success) return undefined
   const issue = result.error.issues[0]
   if (issue === undefined) return '镜头组格式不正确'
@@ -128,7 +154,7 @@ export const validateShot = (shot: Shot): string | undefined => {
 }
 
 export const validateShotsDocument = (document: ShotsDocument): string | undefined => {
-  const result = shotsDocumentSchema.safeParse(document)
+  const result = shotsDocumentSchema.safeParse(document, FALLBACK_ISSUE)
   if (result.success) return undefined
   const issue = result.error.issues[0]
   const position = issue?.path[0] === 'shots' ? issue.path[1] : undefined

@@ -33,7 +33,7 @@ const openGroupTwoEditor = async (page: Page, { mobile = false } = {}) => {
   const dialog = page.getByRole('dialog', { name: /^编辑图片/ })
   // 默认选中的是这一帧在跑的任务，切回当前帧才是画布。
   await dialog
-    .getByRole('group', { name: '这一帧的图片' })
+    .getByRole('group', { name: '该帧的图片' })
     .getByRole('button', { name: '当前帧', exact: true })
     .click()
   const editor = dialog.getByRole('textbox', { name: '修改要求', exact: true })
@@ -163,7 +163,7 @@ for (const width of [1600, 390]) {
     await group.getByRole('img', { name: '镜头组 2 第 3 帧' }).hover()
     await group.getByRole('button', { name: '编辑图片', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: /^编辑图片/ })
-    const history = dialog.getByRole('group', { name: '这一帧的图片' })
+    const history = dialog.getByRole('group', { name: '该帧的图片' })
     await history.getByRole('button', { name: /^生成失败 · / }).click()
     await expect(dialog.getByRole('alert')).toHaveText('生成失败')
 
@@ -256,7 +256,7 @@ for (const width of [1335, 390]) {
     const { dialog, editor, sourceUrl } = await openFrameEditor(page, {
       mobile: width === 390,
     })
-    const strip = dialog.getByRole('group', { name: '这一帧的图片' })
+    const strip = dialog.getByRole('group', { name: '该帧的图片' })
     await expect(dialog.getByRole('button', { name: '图片模型' })).toBeEnabled()
     await drawPoint(dialog)
     await editor.click()
@@ -304,7 +304,7 @@ for (const width of [1335, 390]) {
   test(`舞台验收截图 ${width}px：生成中、查看生成中、失败`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
     const { dialog } = await openGroupTwoEditor(page, { mobile: width === 390 })
-    const strip = dialog.getByRole('group', { name: '这一帧的图片' })
+    const strip = dialog.getByRole('group', { name: '该帧的图片' })
     await expect(dialog.getByRole('button', { name: '图片模型' })).toBeEnabled()
     await expect(strip.getByRole('button', { name: /^生成中 · / })).toContainText(/\d+:\d{2}/)
     await expect(

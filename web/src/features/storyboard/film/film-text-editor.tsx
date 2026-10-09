@@ -42,7 +42,7 @@ const imagePasteHintPlugin = () =>
     props: {
       handlePaste: (_view, event) => {
         if ((event.clipboardData?.files.length ?? 0) === 0) return false
-        toast.info('请将图片粘贴到画面上')
+        toast.info('文字中无法粘贴图片；请将图片粘贴到画面上')
         return true
       },
     },

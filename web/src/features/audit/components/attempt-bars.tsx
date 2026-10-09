@@ -112,7 +112,7 @@ function BinTooltip({ active, payload }: TooltipContentProps) {
           value: `${row.shots} 镜`,
         },
       ]}
-      title={`出了 ${row.name}的镜`}
+      title={`出片 ${row.name}的镜头`}
     />
   )
 }

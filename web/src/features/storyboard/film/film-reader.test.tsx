@@ -215,7 +215,7 @@ describe('制作页', () => {
 
     await waitFor(() => expect(bodies.map((body) => body.filmVersion)).toEqual([1, 2]))
     expect(await screen.findByText('AI 导演改过的第四镜。')).toBeInTheDocument()
-    expect(screen.queryByRole('dialog', { name: '分镜有别的改动' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '分镜版本冲突' })).not.toBeInTheDocument()
   })
 
   it('写回时同一段也被改过：问留谁的，留我的就以新版本为底写回', async () => {
@@ -227,9 +227,9 @@ describe('制作页', () => {
       '我改的第一镜。',
     )
 
-    const dialog = await screen.findByRole('dialog', { name: '分镜有别的改动' })
-    expect(dialog).toHaveTextContent('镜头 1在你编辑期间已被修改')
-    await userEvent.click(within(dialog).getByRole('button', { name: '留我的' }))
+    const dialog = await screen.findByRole('dialog', { name: '分镜版本冲突' })
+    expect(dialog).toHaveTextContent('镜头 1在编辑期间已被修改')
+    await userEvent.click(within(dialog).getByRole('button', { name: '保留我的修改' }))
 
     await waitFor(() => expect(bodies).toHaveLength(2))
     expect(bodies[1]).toMatchObject({
@@ -332,21 +332,21 @@ describe('制作页的图', () => {
     const { choices } = recordImages()
     const script = await renderFilm()
     pasteFilesIntoComposer(within(script).getByRole('textbox', { name: '镜头 1的描述' }), [photo()])
-    expect(await screen.findByText('请将图片粘贴到画面上')).toBeInTheDocument()
+    expect(await screen.findByText('文字中无法粘贴图片；请将图片粘贴到画面上')).toBeInTheDocument()
 
     pasteFilesIntoComposer(screen.getByRole('button', { name: '打开原图' }), [photo()])
     await waitFor(() => expect(choices).toHaveLength(1))
     expect(choices[0]?.node).toBe('girl_look')
   })
 
-  it('暂无图片的生成图在舞台上是生成卡：点「生成这张」按这张图发，随即转成生成中', async () => {
+  it('暂无图片的生成图在舞台上是生成卡：点「生成图片」按这张图发，随即转成生成中', async () => {
     const { generations } = recordImages()
     const script = await renderFilm()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
 
     const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
     expect(within(card).getByRole('heading', { name: '镜头 2 · 图像生成' })).toBeInTheDocument()
-    await userEvent.click(within(card).getByRole('button', { name: '生成这张' }))
+    await userEvent.click(within(card).getByRole('button', { name: '生成图片' }))
 
     await waitFor(() =>
       expect(generations).toEqual([{ filmVersion: 1, node: 'shot2_view', runVersion: 1 }]),
@@ -383,7 +383,7 @@ describe('制作页的图', () => {
     expect(within(card).getByRole('button', { name: '重新生成' })).toBeInTheDocument()
   })
 
-  it('生成卡：生成好了不自动用上，卡上放结果与「选用这张」；点了才选用，舞台换成它', async () => {
+  it('生成卡：生成好了不自动用上，卡上放结果与「选用该图片」；点了才选用，舞台换成它', async () => {
     const result = 'https://example.com/shot2-result.png'
     serveImageJobs([shot2Generation({ outputUrl: result, status: 'completed' })])
     const { choices } = recordImages()
@@ -391,14 +391,14 @@ describe('制作页的图', () => {
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
 
     const card = await screen.findByRole('region', { name: '镜头 2的生成结果' })
-    expect(card).toHaveTextContent('镜头 2 还没选用')
+    expect(card).toHaveTextContent('镜头 2 尚未选用图片')
     expect(card.querySelector('img')).toHaveAttribute('src', result)
     expect(card).toHaveTextContent('涂鸦滑板场的图片缺失，将参考描述生成')
     expect(within(card).getByRole('button', { name: '再生成' })).toBeInTheDocument()
     // 生成过就能开编辑器，到版本里挑。
     expect(screen.getByRole('button', { name: '编辑图片' })).toBeInTheDocument()
 
-    await userEvent.click(within(card).getByRole('button', { name: '选用这张' }))
+    await userEvent.click(within(card).getByRole('button', { name: '选用该图片' }))
 
     await waitFor(() =>
       expect(choices).toEqual([{ filmVersion: 1, node: 'shot2_view', runVersion: 1, url: result }]),
@@ -435,7 +435,7 @@ describe('制作页的图片编辑器', () => {
 
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
     expect(editor).toHaveTextContent('金发女生')
-    expect(within(editor).getByRole('group', { name: '这张图的版本' })).toHaveTextContent('在用')
+    expect(within(editor).getByRole('group', { name: '该图片的版本' })).toHaveTextContent('在用')
     pasteTextIntoComposer(
       within(editor).getByRole('textbox', { name: '修改要求' }),
       '把背景换成傍晚的暖光',
@@ -455,7 +455,7 @@ describe('制作页的图片编辑器', () => {
     await userEvent.click(within(script).getByRole('button', { name: '在舞台查看镜头 1的画面' }))
     await userEvent.click(await screen.findByRole('button', { name: '编辑图片' }))
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    const strip = within(editor).getByRole('group', { name: '这张图的版本' })
+    const strip = within(editor).getByRole('group', { name: '该图片的版本' })
     await userEvent.click(within(strip).getByRole('button', { name: '再生成' }))
 
     const box = within(editor).getByRole('textbox', { name: '修改要求' })
@@ -477,7 +477,7 @@ describe('制作页的图片编辑器', () => {
     expect(generations[1]?.prompt?.referenceImageUrls).toHaveLength(1)
   })
 
-  it('生成过、没选用的那张也能开编辑器：没有「在用」一格，选中的结果点「选用这张」就选用，撤销回到没图', async () => {
+  it('生成过、没选用的那张也能开编辑器：没有「在用」一格，选中的结果点「选用该图片」就选用，撤销回到没图', async () => {
     const result = 'https://example.com/shot2-result.png'
     serveImageJobs([shot2Generation({ outputUrl: result, status: 'completed' })])
     const { choices } = recordImages()
@@ -487,10 +487,10 @@ describe('制作页的图片编辑器', () => {
     await userEvent.click(screen.getByRole('button', { name: '编辑图片' }))
 
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    const strip = within(editor).getByRole('group', { name: '这张图的版本' })
+    const strip = within(editor).getByRole('group', { name: '该图片的版本' })
     expect(strip).not.toHaveTextContent('在用')
     expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', result)
-    await userEvent.click(within(editor).getByRole('button', { name: '选用这张' }))
+    await userEvent.click(within(editor).getByRole('button', { name: '选用该图片' }))
 
     await waitFor(() => expect(choices).toHaveLength(1))
     expect(choices[0]).toMatchObject({ node: 'shot2_view', url: result })
@@ -501,10 +501,10 @@ describe('制作页的图片编辑器', () => {
     await waitFor(() => expect(choices).toHaveLength(2))
     expect(choices[1]).toMatchObject({ node: 'shot2_view', url: null })
     await waitFor(() => expect(strip).not.toHaveTextContent('在用'))
-    expect(within(editor).getByRole('button', { name: '选用这张' })).toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '选用该图片' })).toBeInTheDocument()
   })
 
-  it('编辑出了新结果，舞台挂「有新结果」；点开就是那条，「选用这张」给它换地址，换上后角标消失', async () => {
+  it('编辑出了新结果，舞台挂「有新结果」；点开就是那条，「选用该图片」给它换地址，换上后角标消失', async () => {
     const edited = 'https://example.com/edited.png'
     serveImageJobs([
       makeGenerationJob({
@@ -519,7 +519,7 @@ describe('制作页的图片编辑器', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /有新结果/ }))
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    await userEvent.click(within(editor).getByRole('button', { name: '选用这张' }))
+    await userEvent.click(within(editor).getByRole('button', { name: '选用该图片' }))
 
     await waitFor(() => expect(choices).toHaveLength(1))
     expect(choices[0]).toMatchObject({ node: 'girl_look', url: edited })

@@ -322,7 +322,7 @@ describe('AI 改段的弹出卡', () => {
         await user.click(screen.getByRole('button', { name: '拆分' }))
       },
       position: 1,
-      reason: '含已剪辑的段，无法生成视频；请先点「合成成片」',
+      reason: '含已剪辑的段，无法生成视频；请先点击「合成成片」',
     },
   ])(
     '选区不能交给 AI（$name）：卡头写原因，写了要求也生成不了',
@@ -488,7 +488,7 @@ describe('版本条与草稿', () => {
     serveChain([editSegment({ outputUrl: EDITED_URL })])
     await renderEditor()
 
-    expect(await screen.findByText('AI 修改失败：无法读取结果的时长，已恢复原来的段')).toBeVisible()
+    expect(await screen.findByText('AI 修改失败：结果时长读取失败，已恢复原来的段')).toBeVisible()
     const track = await timeline()
     expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(8)
     expect(screen.queryByRole('group', { name: '视频版本' })).toBeNull()
@@ -499,7 +499,7 @@ describe('版本条与草稿', () => {
     serveChain([])
     await renderEditor()
 
-    expect(await screen.findByText('无法读取草稿，已根据 AI 生成结果重建')).toBeVisible()
+    expect(await screen.findByText('草稿读取失败，已根据 AI 生成结果重建')).toBeVisible()
     expect(window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID))).toBeNull()
   })
 

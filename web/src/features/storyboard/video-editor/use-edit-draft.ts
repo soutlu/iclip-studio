@@ -36,7 +36,7 @@ type Entry = {
 export const draftStorageKey = (conversationId: string, versionJobId: string) =>
   `video-editor-draft:${conversationId}:${versionJobId}`
 
-const UNREADABLE = '无法读取草稿，已根据 AI 生成结果重建'
+const UNREADABLE = '草稿读取失败，已根据 AI 生成结果重建'
 
 const readStored = (key: string): string | null => {
   try {

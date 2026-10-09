@@ -26,11 +26,11 @@ export function ConversationDeleteDialog({
 
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogSurface aria-label="删除这个任务？">
+      <DialogSurface aria-label="删除该任务？">
         <DialogHeader
           className="h-(--layout-dialog-header-height) items-center border-b-0 px-6 py-0"
           closeLabel="关闭"
-          title="删除这个任务？"
+          title="删除该任务？"
         />
         <DialogBody className="flex flex-col gap-2 px-6 pt-2.5 pb-6">
           <p className="text-body break-all text-on-surface">{conversation?.title}</p>

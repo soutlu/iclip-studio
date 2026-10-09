@@ -499,7 +499,7 @@ describe('工具结果按 view 选渲染器', () => {
     )
 
     expect(screen.getAllByRole('figure')).toHaveLength(2)
-    expect(screen.queryByText(/读取了 1 个文件/)).toBeNull()
+    expect(screen.queryByText(/读取 1 个文件/)).toBeNull()
   })
 })
 
@@ -663,7 +663,7 @@ describe('活动组的开合', () => {
         fileTool('t2.1.f2', 'read', 'shots/甲.md'),
       ]),
     )
-    expect(screen.getByRole('button', { name: /^完成：/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^已完成：/ })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
@@ -696,7 +696,7 @@ describe('结果入口', () => {
       ]),
     )
 
-    const list = screen.getByRole('list', { name: '这一轮的结果' })
+    const list = screen.getByRole('list', { name: '本轮结果' })
     const items = within(list).getAllByRole('button')
     expect(items.map((item) => item.textContent)).toEqual([
       '剪辑说明.md已编辑',
@@ -713,7 +713,7 @@ describe('结果入口', () => {
       ]),
     )
 
-    await user.click(within(screen.getByRole('list', { name: '这一轮的结果' })).getByRole('button'))
+    await user.click(within(screen.getByRole('list', { name: '本轮结果' })).getByRole('button'))
 
     expect(router.state.location.search).toMatchObject({ artifact: 'file:video_shot.json' })
   })
@@ -724,7 +724,7 @@ describe('结果入口', () => {
       state: 'running',
     })
 
-    expect(screen.queryByRole('list', { name: '这一轮的结果' })).toBeNull()
+    expect(screen.queryByRole('list', { name: '本轮结果' })).toBeNull()
   })
 })
 

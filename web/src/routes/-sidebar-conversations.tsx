@@ -545,7 +545,7 @@ function ConversationFilter({
           key={option}
           value={option}
           variant="segmented"
-          {...(option === 'running' && busy ? { 'aria-label': '运行中，有任务在跑' } : {})}
+          {...(option === 'running' && busy ? { 'aria-label': '运行中，有任务正在运行' } : {})}
         >
           {FILTER_LABEL[option]}
           {option === 'running' && busy && (

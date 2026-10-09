@@ -132,7 +132,7 @@ export function FrameImageEditor({
     inFlight > 0
       ? `有 ${inFlight} 个任务正在生成或排队，关闭窗口不影响生成`
       : regenerating
-        ? '新结果将出现在版本中，选用后才会生效'
+        ? '新结果将出现在版本中，选用后生效'
         : selected?.kind === 'image'
           ? words.replaceNote
           : null
@@ -160,7 +160,7 @@ export function FrameImageEditor({
       return
     }
     if (model === undefined || resolution === undefined) {
-      setOperationError('图片模型尚未加载，请稍后再提交')
+      setOperationError('图片模型尚未加载，无法提交；请稍后重试')
       return
     }
     setOperationError(null)
@@ -350,7 +350,7 @@ export function FrameImageEditor({
                     </MenuTrigger>
                     <MenuSurface align="end" side="left">
                       <MenuItem icon="history" onSelect={restoreInputs}>
-                        恢复这次的输入
+                        恢复本次输入
                       </MenuItem>
                     </MenuSurface>
                   </MenuRoot>

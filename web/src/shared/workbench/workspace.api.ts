@@ -32,7 +32,7 @@ export const writeWorkspaceFile = (
 ) =>
   apiFetch(`/conversations/${conversationId}/workspace/file`, zConversationFileEnvelope, {
     body,
-    fallbackErrorMessage: '保存失败',
+    fallbackErrorMessage: '分镜保存失败',
     method: 'PUT',
   })
 

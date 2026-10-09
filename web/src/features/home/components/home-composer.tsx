@@ -54,7 +54,7 @@ export function HomeComposer({
       composerRef.current?.restore({ media: [], parts: [{ kind: 'text', text }], text })
       window.sessionStorage.removeItem(LOGIN_DRAFT_KEY)
     } catch {
-      toast.error('浏览器无法读取或清理登录前的草稿，请检查输入内容')
+      toast.error('登录前的草稿读取失败，请检查输入内容')
     }
   }, [])
 
@@ -70,7 +70,7 @@ export function HomeComposer({
       try {
         window.sessionStorage.setItem(LOGIN_DRAFT_KEY, submission.text)
       } catch {
-        toast.error('浏览器无法暂存输入，请复制内容后再登录')
+        toast.error('输入内容暂存失败，请复制内容后登录')
         return
       }
     }

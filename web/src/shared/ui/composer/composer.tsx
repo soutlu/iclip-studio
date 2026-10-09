@@ -301,7 +301,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
           不传 busy 的使用方这里恒为 null，DOM 与之前一致。 */}
       {busy && !editor.empty ? (
         <p className="px-3 pb-1.5 text-caption text-on-surface-faint">
-          发送后将排队，本轮结束后再执行
+          发送后将排队，本轮结束后执行
         </p>
       ) : null}
       <div

@@ -71,8 +71,8 @@ const beforeChinese = (label: string): string => `${label}${/\w$/.test(label) ? 
 /** 「镜头 2 暂无图片」「涂鸦滑板场暂无图片」。 */
 export const missingImageText = (label: string): string => `${beforeChinese(label)}暂无图片`
 
-/** 生成过、还没选用的那张生成卡的标题：「镜头 2 还没选用」。 */
-export const unselectedImageText = (label: string): string => `${beforeChinese(label)}还没选用`
+/** 生成过、还没选用的那张生成卡的标题：「镜头 2 尚未选用图片」。 */
+export const unselectedImageText = (label: string): string => `${beforeChinese(label)}尚未选用图片`
 
 /** 缺图提醒：「短发女生、镜头 1 的图片缺失，将参考描述生成」，同名的只写一次；一张都不缺时为 undefined。 */
 export const missingReferencesText = (labels: readonly string[]): string | undefined => {

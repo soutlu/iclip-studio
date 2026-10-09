@@ -304,7 +304,7 @@ function ViewerBody({
             <button
               className="-ml-1 inline-flex max-w-full ui-state cursor-pointer items-center gap-2.5 rounded-full py-1 pr-3 pl-1 text-left ui-focus"
               onClick={() => onAuthor(author)}
-              title={`只看 ${author} 的片子`}
+              title={`仅显示 ${author} 的视频`}
               type="button"
             >
               <AuthorAvatar className="size-8 text-label" name={author} />

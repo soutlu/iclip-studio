@@ -67,7 +67,7 @@ export const readKeyframes = async (url: string): Promise<KeyframeIndex> => {
       duration: roundToMs(await input.computeDuration()),
     }
   } catch (cause) {
-    throw asUserFacing(cause, '无法读取该视频的关键帧，请稍后重试')
+    throw asUserFacing(cause, '该视频的关键帧读取失败，请稍后重试')
   } finally {
     input.dispose()
   }
@@ -107,7 +107,7 @@ export const readAudioPeaks = async (url: string): Promise<AudioPeaks | null> =>
       peaks: loudest === 0 ? filled : filled.map((peak) => peak / loudest),
     }
   } catch (cause) {
-    throw asUserFacing(cause, '无法读取原声，请稍后重试')
+    throw asUserFacing(cause, '原声读取失败，请稍后重试')
   } finally {
     input.dispose()
   }

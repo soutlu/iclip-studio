@@ -138,7 +138,7 @@ export const METRICS = {
     format: (v) => v.toFixed(1),
     axis: (v) => v.toFixed(1),
     floor: 1,
-    baseline: { value: 1, label: '1 次就成' },
+    baseline: { value: 1, label: '1 次成功' },
   },
   cycle: {
     label: '单任务平均时长',

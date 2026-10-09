@@ -66,7 +66,7 @@ function RelatedConversations({
       )}
       {!query.isError && query.data?.length === 0 && (
         <p className="py-6 text-body-sm text-on-surface-variant">
-          {canAudit ? '暂无关联任务' : '暂无你关联到该需求单的任务'}
+          {canAudit ? '暂无关联任务' : '暂无当前账号关联到该需求单的任务'}
         </p>
       )}
       {/* 各对话的内嵌播放器与放大后的灯箱（经 portal 仍在这棵树里）同一时刻只放一个。 */}

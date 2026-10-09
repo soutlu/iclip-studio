@@ -149,5 +149,11 @@ export function SidebarRowEditor({
   )
 }
 
-/** 原因后面接一句怎么办；原因末尾的句号去掉再接。 */
-const retryHint = (message: string) => `${message.replace(/[。.！!]+$/, '')}，请按回车重试`
+/**
+ * 原因后面接一句怎么办；原因末尾的句号去掉再接。带服务端原文（「X 失败：原文」）时用分号隔开，
+ * 不让「请按回车重试」读成原文的一部分；只有前缀时按「X 失败，请 Y」接。
+ */
+const retryHint = (message: string) => {
+  const reason = message.replace(/[。.！!]+$/, '')
+  return `${reason}${reason.includes('：') ? '；' : '，'}请按回车重试`
+}

@@ -12,7 +12,7 @@ export async function exportAnnotatedImage(
     element.crossOrigin = 'anonymous'
     element.onload = () => resolve(element)
     element.onerror = () =>
-      reject(new UserFacingError('原图无法读取，请检查图片地址是否支持跨域访问'))
+      reject(new UserFacingError('原图读取失败，请检查图片地址是否支持跨域访问'))
     element.src = url
   })
   if (!image.naturalWidth || !image.naturalHeight) throw new UserFacingError('原图尺寸无效')
@@ -133,6 +133,6 @@ export async function exportAnnotatedImage(
     }
   })
   if (blob.size > 16 * 1024 * 1024)
-    throw new UserFacingError('标注图片超过 16 MB，请使用更小的原图')
+    throw new UserFacingError('标注图片超过 16 MB，无法提交；请使用更小的原图')
   return new File([blob], 'annotated-frame.png', { type: blob.type })
 }

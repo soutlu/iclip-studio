@@ -331,7 +331,7 @@ function ViewerBody({
             <button
               className="-ml-1 inline-flex max-w-full ui-state cursor-pointer items-center gap-2.5 rounded-full py-1 pr-3 pl-1 text-left ui-focus"
               onClick={() => onAuthor(author)}
-              title={`只看 ${author} 的参考视频`}
+              title={`仅显示 ${author} 的参考视频`}
               type="button"
             >
               <AuthorAvatar className="size-8 text-label" name={author} />
@@ -469,7 +469,7 @@ function ViewerBody({
                 role="status"
               >
                 {mode === 'confirm-rerun'
-                  ? '重新拆解会覆盖当前的拆解和标签，包括你修改过的内容'
+                  ? '重新拆解会覆盖当前的拆解和标签，包括手动修改过的内容'
                   : '移除后该视频不再出现在资料库中，AI 导演仍可使用它的拆解'}
               </span>
               <Button

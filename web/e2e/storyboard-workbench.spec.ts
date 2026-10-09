@@ -65,7 +65,7 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
   await expect(next).toHaveCount(0)
   await expect(previous).toBeVisible()
 
-  await scene.getByRole('button', { name: '看第 2 帧' }).focus()
+  await scene.getByRole('button', { name: '查看第 2 帧' }).focus()
   await page.keyboard.press('Enter')
   await expect(preview).toBeVisible()
   await expect(previous).toHaveCount(0)
@@ -263,7 +263,7 @@ test('从镜头组列表跳组：地址落在那一组，顶栏组号跟着变�
   const shot2 = panel.getByRole('region', { name: '镜头组 2' })
   const scene = shot2.getByRole('group', { name: '镜头 2', exact: true })
   await scene.getByRole('button', { name: '镜头 2', exact: true }).click()
-  await scene.getByRole('button', { name: '看第 3 帧' }).click()
+  await scene.getByRole('button', { name: '查看第 3 帧' }).click()
   await expect(page).toHaveURL(/frame=3/)
   await expect(shot2.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
 })
@@ -275,7 +275,7 @@ test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可�
 
   // 点第二镜里的 @2，地址记下第 2 帧，替换与拖放都要留在这一帧。
   const secondScene = shot2.getByRole('group', { name: '镜头 2', exact: true })
-  await secondScene.getByRole('button', { name: '看第 2 帧' }).click()
+  await secondScene.getByRole('button', { name: '查看第 2 帧' }).click()
   await expect(page).toHaveURL(/frame=2/)
   const preview = shot2.getByRole('img', { name: '镜头组 2 第 2 帧' })
   const imageArea = shot2.getByRole('group', { name: '当前帧图片' })
@@ -350,7 +350,7 @@ test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键�
   const editor = shot2.getByRole('textbox', { name: '镜头 2 的描述' })
   // 夹具订阅后会整份重写分镜；等它落定再编辑，免得打的字被重置。
   await expect(editor).toContainText('台词并成一句', { timeout: 20_000 })
-  const chips = editor.getByRole('button', { name: '看第 2 帧' })
+  const chips = editor.getByRole('button', { name: '查看第 2 帧' })
   const before = await chips.count()
 
   await editor.click()
@@ -416,7 +416,7 @@ test('短桌面深色：文案列整组原文可读，看大图后回到原帧�
   const script = group.getByRole('region', { name: '分镜文案' })
   const settings = script.getByRole('textbox', { name: '全局设定', exact: true })
   await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
-  await expect(settings.getByRole('button', { name: '看第 1 帧', exact: true })).toBeVisible()
+  await expect(settings.getByRole('button', { name: '查看第 1 帧', exact: true })).toBeVisible()
   await expect(settings).toContainText('剪辑形式：硬切。')
   await expect(script.getByRole('group', { name: '镜头 1', exact: true })).toContainText(
     '4.0s，0.0s – 4.0s',

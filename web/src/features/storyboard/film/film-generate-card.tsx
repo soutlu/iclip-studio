@@ -83,7 +83,7 @@ export function FilmGenerateCard({
             onClick={onGenerate}
             size="md"
           >
-            {busy === 'generate' ? '提交中…' : failed ? '重新生成' : '生成这张'}
+            {busy === 'generate' ? '提交中…' : failed ? '重新生成' : '生成图片'}
           </Button>
         ) : (
           <>
@@ -105,7 +105,7 @@ export function FilmGenerateCard({
               size="md"
               variant="inverted"
             >
-              {busy === 'choose' ? '正在选用…' : '选用这张'}
+              {busy === 'choose' ? '正在选用…' : '选用该图片'}
             </Button>
           </>
         )}
@@ -122,7 +122,7 @@ export function FilmGenerateCard({
         >
           <h3 className="film-generate-title">{unselectedImageText(frame.label)}</h3>
           <button
-            aria-label={`放大看${frame.label}的生成结果`}
+            aria-label={`放大查看${frame.label}的生成结果`}
             className="film-generate-preview ui-focus"
             onClick={() => onEnlarge(result, frame.label)}
             type="button"

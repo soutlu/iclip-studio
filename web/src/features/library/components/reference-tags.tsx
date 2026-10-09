@@ -1,4 +1,4 @@
-/** 详情里的一组标签：每个是一小块，能改时带「去掉」，最后一个「+」从清单里挑一个加上。改动交给调用方去保存。 */
+/** 详情里的一组标签：每个是一小块，能改时带「移除」，最后一个「+」从清单里挑一个加上。改动交给调用方去保存。 */
 
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
@@ -16,7 +16,7 @@ type ReferenceTagRowProps = {
   values: readonly TagOption[]
   /** 能加的全部候选；已打的不再列出。 */
   options: readonly TagOption[]
-  /** 能改：小块带「去掉」，末尾有「+」。 */
+  /** 能改：小块带「移除」，末尾有「+」。 */
   editable: boolean
   /** 正在保存：先不接新的改动。 */
   busy: boolean
@@ -51,7 +51,7 @@ export function ReferenceTagRow({
                 {value.label}
                 {editable ? (
                   <button
-                    aria-label={`去掉${value.label}`}
+                    aria-label={`移除${value.label}`}
                     className="-mr-1 grid size-4 shrink-0 ui-state cursor-pointer place-items-center rounded-xs text-on-surface-faint ui-focus hover:text-on-surface disabled:cursor-not-allowed"
                     disabled={busy}
                     onClick={() => onChange(ids.filter((id) => id !== value.id))}

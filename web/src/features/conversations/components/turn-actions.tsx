@@ -141,7 +141,7 @@ export function TurnActions({
           <IconButton
             className={cn('text-chat-muted-text', TOUCH_HIT_40)}
             disabled={forkDisabled}
-            label="从这里另开一个任务"
+            label="从此处另开任务"
             name="fork"
             onClick={onFork}
             size="xs"

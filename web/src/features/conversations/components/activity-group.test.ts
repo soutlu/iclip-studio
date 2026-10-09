@@ -169,8 +169,8 @@ describe('summarizeDone', () => {
     )
 
     expect(clauses.map((clause) => clause.text)).toEqual([
-      '搜索了 2 次',
-      '写入了 1 个文件',
+      '搜索 2 次',
+      '写入 1 个文件',
       '出镜头帧 ×2',
       '（1 失败）',
       '3m11s',
@@ -196,8 +196,8 @@ describe('被拒绝不算失败', () => {
   it('摘要的失败数只数真正失败的调用，被拒绝的另记一句弱化的「已拒绝」', () => {
     const clauses = summarizeDone(items, undefined, rejected)
     expect(clauses.map((clause) => clause.text)).toEqual([
-      '读取了 1 个文件',
-      '编辑了 2 处',
+      '读取 1 个文件',
+      '编辑 2 处',
       '（1 失败）',
       '（1 已拒绝）',
     ])
@@ -220,7 +220,7 @@ describe('summarizeRunning', () => {
 
     expect(clauses.map((clause) => clause.text)).toEqual([
       '正在读取 storyboard.md',
-      '已搜索了 1 次',
+      '已搜索 1 次',
       '20s',
     ])
   })

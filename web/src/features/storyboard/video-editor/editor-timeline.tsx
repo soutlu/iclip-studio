@@ -122,7 +122,7 @@ function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
       case 'silent':
         return <span className="video-editor-timeline-wave-note">无声</span>
       case 'failed':
-        return <span className="video-editor-timeline-wave-note">无法读取原声</span>
+        return <span className="video-editor-timeline-wave-note">原声读取失败</span>
       case 'ready': {
         const { rate, peaks } = state.peaks
         const from = Math.floor(part.start * rate)
@@ -592,7 +592,7 @@ export function EditorTimeline({
                 const bounds = trimBounds(clip, edge)
                 return (
                   <button
-                    aria-label={edge === 'start' ? '裁剪这段的开头' : '裁剪这段的结尾'}
+                    aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
                     aria-valuemax={roundSeconds(bounds.max)}
                     aria-valuemin={roundSeconds(bounds.min)}
                     aria-valuenow={roundSeconds(value)}

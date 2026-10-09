@@ -1,4 +1,4 @@
-/** 资料库的筛选条：全部 / 我出的、按人、时间、竖版 / 横版。人的候选是名下有卡的归属用户名。 */
+/** 资料库的筛选条：全部 / 我生成的、按人、时间、竖版 / 横版。人的候选是名下有卡的归属用户名。 */
 
 import { dateRangeLabel } from '@/shared/lib/date-range'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
@@ -9,7 +9,7 @@ import { isDefaultScope, type LibraryScope, type Orientation } from '../library.
 type LibraryFiltersProps = {
   scope: LibraryScope
   onChange: (next: LibraryScope) => void
-  /** 当前登录账号的用户名；没有用户名的账号不显示「我出的」。 */
+  /** 当前登录账号的用户名；没有用户名的账号不显示「我生成的」。 */
   myUserName: string | null
   authors: PickerSource
   /** 右侧的计数，如「共 286 条」。 */
@@ -59,10 +59,10 @@ function Filters({ scope, onChange, myUserName, authors, trailing }: LibraryFilt
         value={isDefaultScope({ ...scope, q: '' }) ? 'all' : mine ? 'mine' : ''}
       >
         <FilterChip value="all">全部</FilterChip>
-        {myUserName === null ? null : <FilterChip value="mine">我出的</FilterChip>}
+        {myUserName === null ? null : <FilterChip value="mine">我生成的</FilterChip>}
       </ChipGroup>
 
-      {/* 选了自己就算「我出的」，这里不重复显示。 */}
+      {/* 选了自己就算「我生成的」，这里不重复显示。 */}
       <PickerFilter
         className={TRIGGER_CLASS}
         fallbackLabel={scope.userName ?? '人'}

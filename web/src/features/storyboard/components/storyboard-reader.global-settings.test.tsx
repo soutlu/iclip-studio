@@ -164,7 +164,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     await renderReader()
     const global = await screen.findByRole('group', { name: '全局设定' })
     expect(global).toHaveAttribute('aria-current', 'true')
-    expect(within(global).getAllByRole('button', { name: /^看第 \d+ 帧$/ })).toHaveLength(2)
+    expect(within(global).getAllByRole('button', { name: /^查看第 \d+ 帧$/ })).toHaveLength(2)
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     expect(await screen.findByRole('img', { name: '镜头组 1 第 2 帧' })).toHaveAttribute(
       'src',
@@ -244,9 +244,9 @@ describe('StoryboardReader 全局设定与参考图', () => {
     await replaceText(await screen.findByRole('textbox', { name: '镜头 1 的描述' }), '本地动作。')
     state.changeRemote()
     await userEvent.click(screen.getByRole('button', { name: '生成第 1 组' }))
-    const dialog = await screen.findByRole('dialog', { name: '这份分镜有别的改动' })
+    const dialog = await screen.findByRole('dialog', { name: '分镜版本冲突' })
     expect(state.submissions).toEqual([])
-    await userEvent.click(within(dialog).getByRole('button', { name: '留我的' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: '保留我的修改' }))
     await waitFor(() =>
       expect(state.stored().shots[0]?.prompt.timeline[0]?.prompt).toBe('本地动作。'),
     )
@@ -263,7 +263,7 @@ describe('StoryboardReader 全局设定与参考图', () => {
     await waitFor(() => expect(state.stored().shots[0]?.image_urls).toHaveLength(3))
     expect(state.stored().shots[0]?.prompt.global_settings).toContain('@Image3')
     expect(state.stored().shots[0]?.prompt.timeline).toEqual(fixture.shots[0]?.prompt.timeline)
-    await userEvent.click(within(global).getByRole('button', { name: '看第 2 帧' }))
+    await userEvent.click(within(global).getByRole('button', { name: '查看第 2 帧' }))
     await userEvent.upload(
       screen.getByLabelText('选择替换图片'),
       new File(['replacement'], 'replacement.png', { type: 'image/png' }),
@@ -310,8 +310,8 @@ describe('StoryboardReader 全局设定与参考图', () => {
     const state = provide(document)
     await renderReader()
     const global = await screen.findByRole('group', { name: '全局设定' })
-    expect(within(global).getAllByRole('button', { name: /^看第 \d+ 帧$/ })).toHaveLength(30)
-    await userEvent.click(within(global).getByRole('button', { name: '看第 30 帧' }))
+    expect(within(global).getAllByRole('button', { name: /^查看第 \d+ 帧$/ })).toHaveLength(30)
+    await userEvent.click(within(global).getByRole('button', { name: '查看第 30 帧' }))
     expect(screen.getByRole('textbox', { name: '全局设定' })).toBeVisible()
     expect(screen.getByRole('img', { name: '镜头组 1 第 30 帧' })).toHaveAttribute(
       'src',

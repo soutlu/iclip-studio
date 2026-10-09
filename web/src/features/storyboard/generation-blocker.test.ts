@@ -26,7 +26,12 @@ describe('generationBlockerOf', () => {
   // 每一行都叠上排在它后面的原因，说出来的必须是排在最前的那一条；一直挡着的排在暂态前面。
   it.each<[string, Partial<GenerationFacts>, string, boolean]>([
     ['只读', { ...laterAll, readOnly: true, saveState: 'conflict' }, '只读任务，无法出片', false],
-    ['版本冲突', { ...laterAll, saveState: 'conflict' }, '分镜存在版本冲突，请先处理', false],
+    [
+      '版本冲突',
+      { ...laterAll, saveState: 'conflict' },
+      '分镜存在版本冲突，无法出片；请处理冲突',
+      false,
+    ],
     ['保存失败', { ...laterAll, saveState: 'error' }, '分镜保存失败，请重试保存', false],
     [
       '模型读不到',

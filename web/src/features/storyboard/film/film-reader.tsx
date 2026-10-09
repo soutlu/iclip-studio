@@ -117,7 +117,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   /** 先存改了的字，按存好的那一版发；没存下就不发。 */
   const savedFilm = async () => {
     const saved = await draft.saveNow()
-    if (saved === null) throw new UserFacingError('修改尚未保存，请先处理后再继续')
+    if (saved === null) throw new UserFacingError('修改尚未保存，无法继续；请处理保存问题后重试')
     return saved
   }
   /** 给一张图换地址（null 是取消生成图的选用）：先存改了的字，按存好的那一版换，答复的整页直接放进缓存。 */
@@ -147,7 +147,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     const current = latest?.film.groups
       .flatMap((item) => item.frames)
       .find((item) => item.node === node)?.url
-    if (current !== previous) throw new UserFacingError('该图片刚被更换，请确认后再操作')
+    if (current !== previous) throw new UserFacingError('该图片已被更换，无法继续；请确认后重试')
     await applyImage(node, url)
   }
   // 有图在换时先别出片：发出去的参考图要是换好的那张。换图一次只有一张、与组无关，记在一个不会是组号的键上。
@@ -248,7 +248,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
       if (saved === null || !mounted()) return
       const current = saved.groups.find((item) => item.video === group.video)
       if (current === undefined) {
-        video.reportError(group.index, '该组已不在分镜中，请刷新后再出片')
+        video.reportError(group.index, '该组已不在分镜中，无法出片；请刷新分镜')
         return
       }
       await video.submit(group.index, (choice) =>
@@ -265,7 +265,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          copy={{ done: '已复制本组文字', label: '复制这组的字', text: filmGroupText(group) }}
+          copy={{ done: '已复制本组文字', label: '复制本组文字', text: filmGroupText(group) }}
           groups={groups.map(filmGroupSummary)}
           onGoShot={goShot}
           position={position}
@@ -447,18 +447,18 @@ function FilmConflictDialog({
   const names = (items: typeof conflicts) => items.map((conflict) => conflict.label).join('、')
   const note =
     gone.length === 0
-      ? '选择「留我的」保留你的修改，或选择「用最新的」采用最新版本；无冲突的修改将保留'
+      ? '选择「保留我的修改」可保留当前修改，选择「采用最新版本」可改用最新版本；无冲突的修改将保留'
       : gone.length === conflicts.length
-        ? '以上各段已不在最新的分镜中，只能选择「用最新的」'
-        : `${names(gone)}已不在最新的分镜中，选择「留我的」只保留仍存在的段`
+        ? '以上各段已不在最新的分镜中，仅可选择「采用最新版本」'
+        : `${names(gone)}已不在最新的分镜中，选择「保留我的修改」仅保留仍存在的段`
   return (
     <DialogRoot
       onOpenChange={(open) => !open && resolve('theirs')}
       open={state.kind === 'conflict'}
     >
-      <DialogSurface aria-label="分镜有别的改动">
-        <DialogHeader closeLabel="关闭（用最新的）" title="分镜有别的改动">
-          {names(conflicts)}在你编辑期间已被修改
+      <DialogSurface aria-label="分镜版本冲突">
+        <DialogHeader closeLabel="关闭（采用最新版本）" title="分镜版本冲突">
+          {names(conflicts)}在编辑期间已被修改
         </DialogHeader>
         <DialogBody>
           <p className="text-body text-on-surface">{note}</p>
@@ -467,14 +467,14 @@ function FilmConflictDialog({
           <span />
           <span className="flex gap-2">
             <Button onClick={() => resolve('theirs')} size="md" variant="ghost">
-              用最新的
+              采用最新版本
             </Button>
             <Button
               disabled={gone.length === conflicts.length}
               onClick={() => resolve('mine')}
               size="md"
             >
-              留我的
+              保留我的修改
             </Button>
           </span>
         </DialogFooter>

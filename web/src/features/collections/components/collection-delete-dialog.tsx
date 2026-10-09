@@ -24,7 +24,7 @@ export function CollectionDeleteDialog({
   open,
 }: CollectionDeleteDialogProps) {
   const deleteMutation = useDeleteCollection(() => {
-    toast.success('合集已删除')
+    toast.success('已删除合集')
     onDeleted()
     onOpenChange(false)
   })
