@@ -1440,6 +1440,10 @@ export type FilmShotOut = {
  */
 export type FilmTextEditIn = {
   /**
+   * Images
+   */
+  images?: Array<string>
+  /**
    * Lines
    */
   lines?: Array<FilmLineEditIn> | null

@@ -219,6 +219,59 @@ async def test_a_refused_edit_comes_back_as_a_plain_validation_error() -> None:
     assert await made.content(FILM_PATH) == FILM
 
 
+def insert_into_setting(url: str) -> FilmTextEdit:
+    """在第 1 组的场景字里插入一张新图：列表现有 10 张，新图写成 @Image11。"""
+
+    return FilmTextEdit(
+        "value:video01Setting", text="纽约红砖街区参考 @Image7，街角参考 @Image11。", images=(url,)
+    )
+
+
+async def test_an_inserted_upload_is_recorded_as_material_and_joins_the_list() -> None:
+    upload = make_upload(owner_user_id=OWNER, output_url=UPLOADED)
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
+
+    view = await made.adapter.edit_text(
+        PRINCIPAL, OWNER, CONVERSATION, [insert_into_setting(UPLOADED)], film_version=1
+    )
+
+    assert UPLOADED in made.ledger.urls(NAMESPACE)
+    assert made.store.written == [FILM_PATH]
+    inserted = view.groups[0].frames[7]
+    assert (inserted.node, inserted.url, inserted.number, view.film_version) == (
+        "素材照片1",
+        UPLOADED,
+        8,
+        2,
+    )
+    assert view.groups[0].settings[4].text == "纽约红砖街区参考 @Image7，街角参考 @Image8。"
+
+
+async def test_inserting_an_address_that_is_not_this_conversations_image_is_refused() -> None:
+    someone_else = make_upload(owner_user_id=uuid.uuid4(), output_url=UPLOADED)
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [someone_else])
+
+    with pytest.raises(ValidationFailed, match="只能插入这段对话里的图"):
+        await made.adapter.edit_text(
+            PRINCIPAL, OWNER, CONVERSATION, [insert_into_setting(UPLOADED)], film_version=1
+        )
+    assert UPLOADED not in made.ledger.urls(NAMESPACE)
+    assert await made.content(FILM_PATH) == FILM
+
+
+async def test_a_refused_insertion_records_nothing() -> None:
+    upload = make_upload(owner_user_id=OWNER, output_url=UPLOADED)
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
+    shared = FilmTextEdit(
+        "value:videoCapture", text="摄影：手机拍摄，参考 @Image11。", images=(UPLOADED,)
+    )
+
+    with pytest.raises(ValidationFailed, match="无法插入图片"):
+        await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [shared], film_version=1)
+    assert UPLOADED not in made.ledger.urls(NAMESPACE)
+    assert made.store.written == []
+
+
 async def choose(
     made: Page, node: str, url: str | None, *, film_version: int = 1, run_version: int | None = 1
 ) -> FilmView:

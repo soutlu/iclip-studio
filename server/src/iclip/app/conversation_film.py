@@ -96,11 +96,21 @@ class ConversationFilmAdapter:
         if files.project.version != film_version:
             raise Conflict(_STALE)
         film = await self._clean(files)
+        for url in dict.fromkeys(url for edit in edits for url in edit.images):
+            if not await self._choosable(principal, conversation_id, files, url):
+                raise ValidationFailed("只能插入这段对话里的图，或你自己上传的图")
         try:
-            updated = edit_text(files.project.content, film, edits)
+            edited = edit_text(
+                files.project.content, None if files.run is None else files.run.content, film, edits
+            )
         except FilmEditRejected as exc:
             raise ValidationFailed(str(exc)) from exc
-        await self._write(files.namespace, FILM_PATH, updated, film_version)
+        if edited.inserted:
+            # 同换图：插进列表的图先登记再写文件，文件写进去时它已经是对话素材。
+            await self._ledger.record(
+                files.namespace, [Material(url=url, kind="image") for url in edited.inserted]
+            )
+        await self._write(files.namespace, FILM_PATH, edited.source, film_version)
         return await self._fresh(principal, owner, conversation_id)
 
     async def choose_image(

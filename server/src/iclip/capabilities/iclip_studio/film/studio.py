@@ -1,7 +1,9 @@
-"""制作页：把检查通过的工程按视频请求排成镜头组，改一段字，给一张图换地址或选用。
+"""制作页：把检查通过的工程按视频请求排成镜头组，改一段字（连同字里插入、删除的图），给一张图换地址
+或选用。
 
-改字和换图只替换原文里对应的那几段，文件其余部分一个字不动；写之前按人保存文件时的同一套规则
-检查，有问题就不写，说明是给人看的一句话。
+改字和换图只替换原文里对应的那几段，文件其余部分一个字不动；改字插入或删掉图时，这组视频的参考图
+列表、「素材」里的照片和这组文字里的图号跟着改。写之前按人保存文件时的同一套规则检查，有问题就
+不写，说明是给人看的一句话。
 
 定位用 ``target``：``value:<名字>`` 是一段 ``text:Value`` 的正文，``shot:<Shots 名>:<第几镜>``
 是一个镜头的正文；镜头里的台词用 ``line:<段名>`` 对上是剧本里的哪一句。它们只在同一版文件里
@@ -30,6 +32,7 @@ from iclip.capabilities.iclip_studio.film.packages import (
     RUN_MARKUP,
     RUN_ROOT,
     SEEDANCE_VARIANTS,
+    VIDEO_MAX_REFERENCES,
 )
 from iclip.capabilities.iclip_studio.film.prompts import (
     IMAGE_NUMBER,
@@ -65,9 +68,42 @@ _UNWRITABLE: Final = ("<!--", "<![CDATA[")
 _VIEW_CITE: Final = "参考@Image{}，"
 """机位图选用时写在那一镜正文开头的一句，N 是它在这组视频参考图列表里的位置。"""
 
+_VIEW_LOCKED: Final = "机位图的引用随选用增删；请在镜头上取消选用"
+
+_PHOTO_NAME: Final = "素材照片{}"
+"""页面上插入的新照片在「素材」里的名字，N 从 1 起取第一个没被占用的。"""
+
 
 class FilmEditRejected(ValueError):
     """这次改动没有写进文件；消息是给人看的一句话。"""
+
+
+@dataclass(frozen=True, slots=True)
+class TextEdited:
+    """改字写好的工程文件。"""
+
+    source: str
+    inserted: tuple[str, ...]
+    """这次新进参考图列表的图的地址，按先后；调用方写文件之前把它们登记成对话素材。"""
+
+
+@dataclass(frozen=True, slots=True)
+class _Slot:
+    """改过的字里一处图号指的图：``int`` 是这组参考图列表里现有的第几张（从 0 起），``str`` 是新插入
+    的图的地址。"""
+
+    key: int | str
+
+
+@dataclass(frozen=True, slots=True)
+class _Typed:
+    """这组视频里改过的一段字：按 ``_Slot`` 拆开的新正文（未转义）。"""
+
+    target: str
+    node: Node
+    runs: tuple[str | _Slot, ...]
+    head: str
+    """用户写的新正文本身，图号还是用户编的；查机位图的引用在不在开头时看它。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,12 +184,16 @@ def missing_references(film: Film, node: str) -> tuple[str, ...]:
     )
 
 
-def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
-    """把几段字写回工程文件，返回新的原文。``film`` 是 ``source`` 检查通过后的样子。
+def edit_text(
+    source: str, run_source: str | None, film: Film, edits: Sequence[FilmTextEdit]
+) -> TextEdited:
+    """把几段字写回工程文件。``film`` 是 ``source`` 与运行文件 ``run_source`` 检查通过后的样子。
 
     镜头的改动带着这一镜的每句台词，台词只改字：不能删、不能加、不能调先后，说话人不变。台词的字
-    改在剧本里那一段说话人的后面。用户打的花括号换成全角，免得当成台词。改完的文件按保存检查把关，
-    图号对不上参考图列表时不写。"""
+    改在剧本里那一段说话人的后面。用户打的花括号换成全角，免得当成台词。
+
+    只用在一个视频里的字可以插入、删掉图（见 ``_renumber_group``）；几个节点共用的字里不能有图号。
+    改完的两个文件按保存检查把关，不通过就不写。"""
 
     if not edits:
         raise FilmEditRejected("没有要改的字")
@@ -163,10 +203,13 @@ def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
     splice = _Splice()
     expected: list[tuple[str, str]] = []
     said: list[tuple[str, str]] = []
+    groups: dict[Node, list[_Typed]] = {}
+    edited: set[Node] = set()
     for edit in edits:
         node = _resolve(project, edit.target)
         if node is None or not _editable(source, film, node):
             raise FilmEditRejected("要改的这段字找不到了，刷新后再改")
+        edited.add(node)
         if project.is_a(node, "Shot"):
             text, lines = _shot_text(node, edit)
             for name, words in lines:
@@ -177,16 +220,34 @@ def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
                     said.append((name, words))
         else:
             text = _new_text(edit)
+        users = _users(project, node)
+        video = users[0] if len(users) == 1 and project.is_a(users[0], "ReferenceVideo") else None
+        if video is not None:
+            groups.setdefault(video, []).append(_typed(film, video, edit, node, text))
+            continue
+        if len(users) > 1 and (edit.images or IMAGE_NUMBER.search(text)):
+            raise FilmEditRejected(
+                "这段文字用在几个地方，无法插入图片；带图号的文字只能用在一个节点里"
+            )
+        if edit.images:
+            raise FilmEditRejected("只能在视频的文字里插入图片")
         assert node.inner is not None
         splice.replace(node.inner, _body(source[slice(*node.inner)], text))
         expected.append((edit.target, text))
+    photos = _Photos(project)
+    for video, typed in groups.items():
+        expected += _renumber_group(source, film, video, typed, edited, splice, photos)
+    photos.write(source, splice)
     updated = splice.apply(source)
-    rewritten = check(updated)
+    rewritten = check(updated, run_source)
     problems = rewritten if isinstance(rewritten, list) else rewritten.errors
     if problems:
-        too_long = any(f"超过 {PROMPT_MAX_CHARS} 字" in problem for problem in problems)
-        if too_long:
+        if any(f"超过 {PROMPT_MAX_CHARS} 字" in problem for problem in problems):
             raise FilmEditRejected(f"改完以后描述超过 {PROMPT_MAX_CHARS} 字了，删短一些再保存")
+        if any(f"超过 {VIDEO_MAX_REFERENCES} 张" in problem for problem in problems):
+            raise FilmEditRejected(
+                f"插入以后这一组的参考图超过 {VIDEO_MAX_REFERENCES} 张了，删掉几张再保存"
+            )
         raise FilmEditRejected("这样改以后分镜有问题，没有保存；可以跟 AI 导演说想怎么改")
     assert not isinstance(rewritten, list)
     for target, text in expected:
@@ -196,7 +257,7 @@ def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
     for name, words in said:
         if rewritten.lines[name].text != words:
             raise RuntimeError(f"写回后台词 {name} 读出来和要写的不一样")
-    return updated
+    return TextEdited(updated, photos.inserted)
 
 
 def choose_image(
@@ -444,6 +505,215 @@ def _shifted(found: re.Match[str], number: int, shift: int) -> str:
     current = int(found.group(1))
     moves = current >= number if shift > 0 else current > number
     return f"@Image{current + shift}" if moves else found.group(0)
+
+
+def _users(project: Document, text: Node) -> list[Node]:
+    """用到这段字的生成节点，按先后。"""
+
+    return [
+        node
+        for node in project.root.walk()
+        if (tag := project.tags.get(node.tag)) is not None
+        and tag.generation is not None
+        and text in written_texts(project, node)
+    ]
+
+
+def _typed(film: Film, video: Node, edit: FilmTextEdit, node: Node, text: str) -> _Typed:
+    """把视频 ``video`` 里改过的一段字按图号拆开：列表现有 M 张时，``@Image1``…``@ImageM`` 是现有的图，
+    ``@Image(M+1)`` 起依次是 ``edit.images`` 里的图；新图的地址就是列表里某张现有的图时，当作那一张。"""
+
+    old = listed_images(film, video)
+    count = len(old)
+    keys: list[int | str] = []
+    for url in edit.images:
+        same = next((index for index, item in enumerate(old) if item.url == url), None)
+        keys.append(url if same is None else same)
+    runs: list[str | _Slot] = []
+    temps: set[int] = set()
+    for index, piece in enumerate(IMAGE_NUMBER.split(text)):
+        if index % 2 == 0:
+            if piece:
+                runs.append(piece)
+            continue
+        number = int(piece)
+        if number <= count:
+            runs.append(_Slot(number - 1))
+        elif number <= count + len(keys):
+            runs.append(_Slot(keys[number - count - 1]))
+            temps.add(number)
+        else:
+            raise FilmEditRejected(f"字里的 @Image{number} 没有对应的图，刷新后再改")
+    if len(temps) != len(keys):
+        raise FilmEditRejected("插入的图和字对不上，刷新后再改")
+    return _Typed(edit.target, node, tuple(runs), text)
+
+
+def _renumber_group(
+    source: str,
+    film: Film,
+    video: Node,
+    typed: list[_Typed],
+    edited: set[Node],
+    splice: _Splice,
+    photos: _Photos,
+) -> list[tuple[str, str]]:
+    """视频 ``video`` 里几段字改好以后，按这组全部的字重排它的参考图列表，返回改过的每段应读出的正文。
+
+    新插入的图不在列表里时排在元素图之后、机位图之前（「素材」里已有同一地址的照片就引用它，没有就
+    新加一张）；元素图在这组的字里一处都不用了就从列表删掉。列表定下以后按一张新旧编号对照表改一遍
+    这组的字：改过的段写新的正文，没改的段只改图号。机位图的「参考@ImageN，」随选用增删，改字时
+    删掉或挪动它不写。"""
+
+    project = film.project
+    listing = references(project, video)
+    count = len(listing)
+    shots = {
+        view: shot
+        for shot in project.kids(video_shots(project, video), "Shot")
+        if (view := shot.reference("view")) is not None
+    }
+    views = {
+        index: shots[reference]
+        for index, item in enumerate(listing)
+        if (reference := item.reference("image")) is not None and reference in shots
+    }
+    texts = written_texts(project, video)
+    by_node = {item.node: item for item in typed}
+    used: dict[int | str, int] = {}
+    for text in texts:
+        item = by_node.get(text)
+        keys = (
+            [run.key for run in item.runs if isinstance(run, _Slot)]
+            if item is not None
+            else [int(number) - 1 for number in IMAGE_NUMBER.findall(text.text)]
+        )
+        for key in keys:
+            used[key] = used.get(key, 0) + 1
+    for index, shot in views.items():
+        item = by_node.get(shot)
+        lead = item is None or item.head.startswith(_VIEW_CITE.format(index + 1))
+        if not lead or used.get(index) != 1:
+            raise FilmEditRejected(_VIEW_LOCKED)
+    added = list(dict.fromkeys(key for key in used if isinstance(key, str)))
+    first_view = min(views, default=count)
+    kept = [index for index in range(count) if index in views or index in used]
+    order: list[int | str] = [
+        *(index for index in kept if index < first_view),
+        *added,
+        *(index for index in kept if index >= first_view),
+    ]
+    final = {key: position for position, key in enumerate(order, start=1)}
+
+    for index in range(count):
+        if index not in final:
+            splice.replace(_tag_lines(source, listing[index]), "")
+    if added:
+        prefix = video.tag.rpartition(":")[0]
+        tag = f"{prefix}:Reference" if prefix else "Reference"
+        lines = [f"<{tag} image={{{photos.name_for(url)}}}/>" for url in added]
+        if first_view < count:
+            anchor = listing[first_view]
+            indent = _indent(source, anchor)
+            position = source.rfind("\n", 0, _span(anchor)[0]) + 1
+            splice.insert(position, "".join(f"{indent}{line}\n" for line in lines))
+        elif listing:
+            indent = _indent(source, listing[-1])
+            splice.insert(*_after(source, listing[-1], f"\n{indent}".join(lines)))
+        else:
+            indent = _indent(source, video) + "  "
+            splice.insert(*_before_end(source, video, f"\n{indent}".join(lines)))
+
+    def numbered(key: int | str) -> str:
+        return f"@Image{final[key]}"
+
+    expected: list[tuple[str, str]] = []
+    for text in texts:
+        item = by_node.get(text)
+        if item is not None:
+            assert text.inner is not None, "改过的段在核对时已经确认能就地改"
+            written = "".join(
+                run if isinstance(run, str) else numbered(run.key) for run in item.runs
+            )
+            splice.replace(text.inner, _body(source[slice(*text.inner)], written))
+            expected.append((item.target, written))
+            continue
+        if text in edited or text.inner is None:
+            continue
+        raw = source[slice(*text.inner)]
+        renumbered = IMAGE_NUMBER.sub(lambda found: numbered(int(found.group(1)) - 1), raw)
+        if renumbered == raw:
+            continue
+        if not _writable(source, text):
+            raise FilmEditRejected("这一组的文字没法在页面上调整图号，跟 AI 导演说")
+        splice.replace(text.inner, renumbered)
+    return expected
+
+
+class _Photos:
+    """改字时新进参考图列表的图在「素材」里的照片：同一地址的照片已经有了就用它，没有就新加一张，
+    几组插入同一张图时只加一次。"""
+
+    def __init__(self, project: Document) -> None:
+        self._project = project
+        self._named = {
+            node.attrs["src"]: node.attrs["id"]
+            for node in project.find("Image", MEDIA_PACKAGE)
+            if node.parent is project.root
+        }
+        self._new: list[tuple[str, str]] = []
+        self._inserted: list[str] = []
+
+    @property
+    def inserted(self) -> tuple[str, ...]:
+        """新进了某组参考图列表的图的地址，按先后，不重复。"""
+
+        return tuple(self._inserted)
+
+    def name_for(self, url: str) -> str:
+        """``url`` 这张照片的名字。"""
+
+        if url not in self._inserted:
+            self._inserted.append(url)
+        name = self._named.get(url)
+        if name is not None:
+            return name
+        taken = {*self._project.nodes, *self._project.kits, *self._named.values()}
+        number = 1
+        while _PHOTO_NAME.format(number) in taken:
+            number += 1
+        name = _PHOTO_NAME.format(number)
+        self._named[url] = name
+        self._new.append((name, url))
+        return name
+
+    def write(self, source: str, splice: _Splice) -> None:
+        """把新加的照片写进「素材」：接在第一个视频之前的最后一张照片后面；还没有照片时接在引入的包
+        后面，没引入 media 时一并引入。"""
+
+        if not self._new:
+            return
+        project = self._project
+        root = project.root.children
+        videos = project.find("ReferenceVideo")
+        before = videos[0].line if videos else None
+        photos = [
+            node
+            for node in project.find("Image", MEDIA_PACKAGE)
+            if node.parent is project.root and (before is None or node.line < before)
+        ]
+        imports = [node for node in root if node.tag == "import"]
+        media = next(
+            (node for node in imports if node.attrs.get("from") == MEDIA_PACKAGE.ref), None
+        )
+        prefix = media.attrs.get("as", "media") if media is not None else "media"
+        lines = [f'<{prefix}:Image id="{name}" src={_quoted(url)}/>' for name, url in self._new]
+        if media is None:
+            lines.insert(0, f'<import as="media" from="{MEDIA_PACKAGE.ref}"/>')
+        # 检查通过的工程文件总引入了模板与文字的包；没引入 media 时也就还没有照片，接在包后面。
+        anchor = photos[-1] if photos else imports[-1]
+        indent = _indent(source, anchor)
+        splice.insert(*_after(source, anchor, f"\n{indent}".join(lines)))
 
 
 def _resolve(project: Document, target: str) -> Node | None:
@@ -707,6 +977,7 @@ def _required(node: Node, name: str) -> str:
 
 __all__ = [
     "FilmEditRejected",
+    "TextEdited",
     "choose_image",
     "edit_text",
     "film_groups",

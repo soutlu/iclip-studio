@@ -15,8 +15,13 @@ export type PromptDoc = {
   promptOffsetAt: (doc: PMNode, position: number) => number
 }
 
-/** 按一张只有帧节点的节点表（模块级常量）建互转；与编辑器挂载时按同一张表建的 schema 是同一个实例。 */
-export const createPromptDoc = (nodes: readonly ComposerNodeSpec<FrameNode>[]): PromptDoc => {
+/** 按一张只有帧节点的节点表（模块级常量）建互转；与编辑器挂载时按同一张表建的 schema 是同一个实例。
+ * `tokens` 是正文里认成帧节点的记号（全局匹配）：第一个分组是编号，没有编号的记号（制作页新插入的图）编号记 0，
+ * 原文记号照样往返。 */
+export const createPromptDoc = (
+  nodes: readonly ComposerNodeSpec<FrameNode>[],
+  tokens: RegExp = FRAME_REF,
+): PromptDoc => {
   const promptSchema = createComposerSchema(nodes)
 
   const nodeType = (name: 'doc' | 'frame' | 'paragraph') => {
@@ -31,10 +36,11 @@ export const createPromptDoc = (nodes: readonly ComposerNodeSpec<FrameNode>[]): 
       prompt.split('\n').map((line) => {
         const children: PMNode[] = []
         let cursor = 0
-        for (const match of line.matchAll(FRAME_REF)) {
+        for (const match of line.matchAll(tokens)) {
           if (match.index > cursor)
             children.push(promptSchema.text(line.slice(cursor, match.index)))
-          children.push(nodeType('frame').create({ n: Number(match[1]), token: match[0] }))
+          const n = match[1] === undefined ? 0 : Number(match[1])
+          children.push(nodeType('frame').create({ n, token: match[0] }))
           cursor = match.index + match[0].length
         }
         if (cursor < line.length) children.push(promptSchema.text(line.slice(cursor)))

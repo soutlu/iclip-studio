@@ -2557,6 +2557,14 @@
         "additionalProperties": false,
         "description": "改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它\n多一段，台词只改字；其余给 ``text``。",
         "properties": {
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Images",
+            "type": "array"
+          },
           "lines": {
             "anyOf": [
               {

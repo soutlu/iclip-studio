@@ -9,8 +9,9 @@
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
+import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Button } from '@/shared/ui/button'
 import {
   DialogBody,
@@ -70,6 +71,9 @@ type ReaderSearch = {
 /** 出片闸门按组号记上传；换图不属于哪一组，用组号从 1 起之外的 0。 */
 const REPLACE_UPLOAD = 0
 
+/** 文案列里往字里插入的图在上传：同样不属于哪一组，用 -1。 */
+const TEXT_UPLOAD = -1
+
 export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
@@ -82,6 +86,8 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const generations = useShotGenerations(conversationId)
   const imageJobs = useFrameImageJobs(conversationId)
   const gate = useGenerationGate()
+  const { data: user } = useUser()
+  const uploads = hasPermission(user, PERMISSION.uploadsWrite)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const search: ReaderSearch = useSearch({ strict: false })
@@ -159,6 +165,25 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     reportUploading(replace.busy)
     return () => reportUploading(false)
   }, [replace.busy])
+  // 字里在传的图：哪几个编辑器有图在传；传完之前不出片，传好的图落进字里才会存下。
+  const [textUploads, setTextUploads] = useState<ReadonlySet<string>>(() => new Set())
+  const onTextUploading = useCallback((key: string, busy: boolean) => {
+    setTextUploads((current) => {
+      if (current.has(key) === busy) return current
+      const next = new Set(current)
+      if (busy) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
+  const reportTextUploading = useEffectEvent((busy: boolean) =>
+    gate.onUploadingChange(TEXT_UPLOAD, busy),
+  )
+  const textUploading = textUploads.size > 0
+  useEffect(() => {
+    reportTextUploading(textUploading)
+    return () => reportTextUploading(false)
+  }, [textUploading])
   const generateImage = async (target: FilmFrame) => {
     setCardAction({ kind: 'generate', node: target.node })
     try {
@@ -398,9 +423,11 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
                 }
                 onPreview={(image) => setMedia({ kind: 'image', ...image })}
                 onSelect={select}
+                onUploadingChange={onTextUploading}
                 readOnly={readOnly}
                 // 放成片时文案列不标选中：点哪段（包括原来选中的那段）都回到图。
                 selectedId={selectedTake === undefined ? selection.contentId : undefined}
+                uploads={uploads}
               />
               <TakesTray
                 error={

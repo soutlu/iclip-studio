@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -454,10 +454,10 @@ describe('制作页的图', () => {
     expect(await screen.findByText('已替换金发女生')).toBeInTheDocument()
   })
 
-  it('点过舞台后粘贴图片也是换这张；往字里贴图不收，只提示贴到画面上', async () => {
+  it('点过舞台后粘贴图片也是换这张；往共用的字里贴图不收，只提示贴到画面上', async () => {
     const { choices } = recordImages()
     const script = await renderFilm()
-    pasteFilesIntoComposer(within(script).getByRole('textbox', { name: '镜头 1的描述' }), [photo()])
+    pasteFilesIntoComposer(within(script).getByRole('textbox', { name: '拍摄与剪辑' }), [photo()])
     expect(await screen.findByText('文字中无法粘贴图片；请将图片粘贴到画面上')).toBeInTheDocument()
 
     pasteFilesIntoComposer(screen.getByRole('button', { name: '打开原图' }), [photo()])
@@ -720,5 +720,114 @@ describe('制作页的图片编辑器', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /有新结果/ })).not.toBeInTheDocument(),
     )
+  })
+})
+
+describe('制作页字里插入、删除图片', () => {
+  beforeEach(() => {
+    // 上传要登录；jsdom 读不出图的尺寸，给一张够大的。
+    loginAs(mockAuthUser)
+    vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** 聚焦一段字（光标在段首）敲 @，等向上弹出的选图菜单。 */
+  const openMention = async (editor: HTMLElement) => {
+    act(() => editor.focus())
+    await userEvent.keyboard('@')
+    return screen.findByRole('listbox', { name: '插入参考图' })
+  }
+
+  it('粘贴的图传好后在原位置是「新」芯片，保存时按 M+1 起编并带上地址；保存后按实际编号显示，图条多出这张', async () => {
+    const bodies = recordEdits()
+    const script = await renderFilm()
+    const shot3 = within(script).getByRole('textbox', { name: '镜头 3的描述' })
+    act(() => shot3.focus())
+    pasteFilesIntoComposer(shot3, [photo()])
+
+    expect(await within(shot3).findByRole('img', { name: '新插入的图片 新' })).toBeInTheDocument()
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    // 列表现有 5 张（4 张元素图加镜头 2 的机位图），新图写成 @Image6。
+    const [edit] = bodies[0]?.edits ?? []
+    expect(edit?.target).toBe('shot:board:3')
+    expect(edit?.parts?.[0]).toMatch(/^@Image6低机位脚部特写/)
+    expect(edit?.images).toHaveLength(1)
+
+    // 新照片排在机位图之前成了 @5，镜头 2 开头的机位图引用顺延成 @6。
+    await waitFor(() => expect(chipsIn(shot3)).toEqual(['在舞台查看素材照片1 @5']))
+    expect(stripTexts(script)).toContain('@5素材照片1')
+    expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 2的描述' }))).toEqual([
+      '在舞台查看镜头 2 @6',
+    ])
+  })
+
+  it('从 @ 菜单选一张已在列表里的图：插入它原来的编号，不带新图；机位图不在菜单里', async () => {
+    const bodies = recordEdits()
+    const script = await renderFilm()
+    const shot3 = within(script).getByRole('textbox', { name: '镜头 3的描述' })
+    const menu = await openMention(shot3)
+    expect(
+      within(menu)
+        .getAllByRole('option')
+        .map((option) => option.getAttribute('aria-label')),
+    ).toEqual(['插入金发女生', '插入绒面一脚蹬', '插入绒面一脚蹬', '插入涂鸦滑板场', '从电脑上传'])
+
+    // 鞋面与鞋底两张照片同名，第一张是鞋面（@2）。
+    const [upper] = within(menu).getAllByRole('option', { name: '插入绒面一脚蹬' })
+    if (upper === undefined) throw new Error('菜单里没有绒面一脚蹬')
+    await userEvent.click(upper)
+
+    expect(chipsIn(shot3)).toEqual(['在舞台查看绒面一脚蹬 @2'])
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]?.edits[0]).not.toHaveProperty('images')
+    expect(bodies[0]?.edits[0]?.parts?.[0]).toMatch(/^@Image2低机位/)
+    expect(await screen.findByText('已保存')).toBeInTheDocument()
+    expect(stripTexts(script)).toHaveLength(5)
+  })
+
+  it('删掉某张图唯一的一处引用：保存后图条少了这张，后面的编号跟着减', async () => {
+    const script = await renderFilm()
+    expect(stripTexts(script)).toContain('@4涂鸦滑板场未选用')
+    await replaceText(
+      within(script).getByRole('textbox', { name: '场景' }),
+      '户外露天水泥滑板场，坡面和地面喷满街头涂鸦。',
+    )
+
+    await waitFor(() =>
+      expect(stripTexts(script).some((text) => text?.includes('涂鸦滑板场'))).toBe(false),
+    )
+    expect(stripTexts(script)).toHaveLength(4)
+    expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 2的描述' }))).toEqual([
+      '在舞台查看镜头 2 @4',
+    ])
+  })
+
+  it('镜头开头的机位图引用删不掉：改动不收，提示去镜头上取消选用', async () => {
+    const bodies = recordEdits()
+    const script = await renderFilm()
+    const shot2 = within(script).getByRole('textbox', { name: '镜头 2的描述' })
+    await replaceText(shot2, '只剩这一句。')
+
+    expect(
+      await screen.findByText('机位图的引用随选用增删，无法删除或移动；请在镜头上取消选用'),
+    ).toBeInTheDocument()
+    expect(chipsIn(shot2)).toEqual(['在舞台查看镜头 2 @5'])
+    expect(shot2).toHaveTextContent(/^参考@5，高角度俯拍/)
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 900)))
+    expect(bodies).toHaveLength(0)
+  })
+
+  it('共用的拍法与声音没有插入入口：敲 @ 不弹选图', async () => {
+    const script = await renderFilm()
+    for (const name of ['拍摄与剪辑', '声音']) {
+      const editor = within(script).getByRole('textbox', { name })
+      act(() => editor.focus())
+      await userEvent.keyboard('@')
+      expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
+    }
+    // 出场元素的描述有。
+    await openMention(within(script).getByRole('textbox', { name: '人物' }))
   })
 })

@@ -698,6 +698,7 @@ export const zFilmGroupOut = z.object({
  * 多一段，台词只改字；其余给 ``text``。
  */
 export const zFilmTextEditIn = z.object({
+  images: z.array(z.string()).max(30).optional(),
   lines: z.array(zFilmLineEditIn).nullish(),
   parts: z.array(z.string()).nullish(),
   target: z.string().min(1),

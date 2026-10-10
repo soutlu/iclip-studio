@@ -1,13 +1,17 @@
 /** 制作页改字的草稿：按段（`target`）记改动，停手 800ms 后一次写回；保存期间的新改动接着排下一次。
  *
  * `target` 只在读到的那一版文件里有效。写回撞上新版本（409）就重读：这段在新版本里还是改之前的样子，就按新版本
- * 再发；已经和我改的一样，就不用发了；别的情况算冲突，交给人选留谁的。不合规矩（422）保留草稿，说明原因。 */
+ * 再发；已经和我改的一样，就不用发了；别的情况算冲突，交给人选留谁的。不合规矩（422）保留草稿，说明原因。
+ *
+ * 字里的图在草稿里记身份、不记编号（见 `film-draft-text`）：别处插入、删除图片或选用机位图让编号变了，草稿照样指着
+ * 原来那张图；显示与发送时再按当下的列表编号，新插入的图按改字接口的约定从 M+1 起编、地址带在 `images` 里。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { FilmTextEditIn } from '@/shared/api/generated/types.gen'
-import { editFilmText, filmQueryKey, type FilmView } from './film.api'
+import { editFilmText, filmQueryKey, type FilmGroup, type FilmView } from './film.api'
+import { toDraftText, toRequestText, toShownText } from './film-draft-text'
 
 const SAVE_DELAY_MS = 800
 
@@ -32,60 +36,89 @@ type FilmEdit = { label: string; base: FilmSegmentValue; value: FilmSegmentValue
 const sameValue = (left: FilmSegmentValue | undefined, right: FilmSegmentValue | undefined) =>
   JSON.stringify(left ?? null) === JSON.stringify(right ?? null)
 
-/** 一版文件里每段能改的字，按 `target` 认；同一段出现在几组里时内容相同，取哪组都一样。 */
+/** 一段字换一种写法：全局设定换整段，镜头换台词前后的每段（台词里不写图）。 */
+const mapText = (value: FilmSegmentValue, map: (text: string) => string): FilmSegmentValue =>
+  value.kind === 'text'
+    ? { kind: 'text', text: map(value.text) }
+    : { kind: 'shot', lines: value.lines, parts: value.parts.map(map) }
+
+/** 一版文件里每段能改的字，按 `target` 认，写成草稿的样子（图记身份，见 `film-draft-text`）；同一段出现在几组里时
+ * 内容相同（几组共用的字里没有图），取哪组都一样。 */
 const segmentValues = (view: FilmView): Map<string, FilmSegmentValue> => {
   const values = new Map<string, FilmSegmentValue>()
   for (const group of view.groups) {
+    const draft = (value: FilmSegmentValue) => mapText(value, (text) => toDraftText(text, group))
     for (const setting of group.settings) {
-      if (setting.target !== null) values.set(setting.target, { kind: 'text', text: setting.text })
+      if (setting.target !== null)
+        values.set(setting.target, draft({ kind: 'text', text: setting.text }))
     }
     for (const shot of group.shots) {
       if (shot.target !== null)
-        values.set(shot.target, {
-          kind: 'shot',
-          lines: shot.lines.map((line) => line.text),
-          parts: shot.parts,
-        })
+        values.set(
+          shot.target,
+          draft({ kind: 'shot', lines: shot.lines.map((line) => line.text), parts: shot.parts }),
+        )
     }
   }
   return values
 }
 
-/** 把草稿叠到文件上，页面看到的是叠完的样子。 */
+/** 一段字所在的那组；几组共用时取第一组。 */
+const groupOf = (view: FilmView, target: string): FilmGroup | undefined =>
+  view.groups.find(
+    (group) =>
+      group.settings.some((setting) => setting.target === target) ||
+      group.shots.some((shot) => shot.target === target),
+  )
+
+/** 把草稿叠到文件上，页面看到的是叠完的样子：图按这组当下的列表写回编号。 */
 const withEdits = (view: FilmView, edits: ReadonlyMap<string, FilmEdit>): FilmView => {
   if (edits.size === 0) return view
   return {
     ...view,
-    groups: view.groups.map((group) => ({
-      ...group,
-      settings: group.settings.map((setting) => {
-        const value = setting.target === null ? undefined : edits.get(setting.target)?.value
-        return value?.kind === 'text' ? { ...setting, text: value.text } : setting
-      }),
-      shots: group.shots.map((shot) => {
-        const value = shot.target === null ? undefined : edits.get(shot.target)?.value
-        if (value?.kind !== 'shot') return shot
-        return {
-          ...shot,
-          lines: shot.lines.map((line, index) => ({ ...line, text: value.lines[index] ?? '' })),
-          parts: [...value.parts],
-        }
-      }),
-    })),
+    groups: view.groups.map((group) => {
+      const shown = (target: string | null) => {
+        const value = target === null ? undefined : edits.get(target)?.value
+        return value === undefined ? undefined : mapText(value, (text) => toShownText(text, group))
+      }
+      return {
+        ...group,
+        settings: group.settings.map((setting) => {
+          const value = shown(setting.target)
+          return value?.kind === 'text' ? { ...setting, text: value.text } : setting
+        }),
+        shots: group.shots.map((shot) => {
+          const value = shown(shot.target)
+          if (value?.kind !== 'shot') return shot
+          return {
+            ...shot,
+            lines: shot.lines.map((line, index) => ({ ...line, text: value.lines[index] ?? '' })),
+            parts: [...value.parts],
+          }
+        }),
+      }
+    }),
   }
 }
 
-/** 发给后端的一段：镜头带上每句台词原来的 `target`，按原来的先后。 */
+/** 发给后端的一段：图按这组当下的列表编号，新插入的图从 M+1 起编、地址放进 `images`；镜头带上每句台词原来的 `target`，
+ * 按原来的先后。 */
 const editIn = (view: FilmView, target: string, value: FilmSegmentValue): FilmTextEditIn => {
-  if (value.kind === 'text') return { target, text: value.text }
-  const shot = view.groups.flatMap((group) => group.shots).find((item) => item.target === target)
+  const group = groupOf(view, target)
+  const images: string[] = []
+  const sent =
+    group === undefined ? value : mapText(value, (text) => toRequestText(text, group, images))
+  const inserted = images.length === 0 ? {} : { images }
+  if (sent.kind === 'text') return { target, text: sent.text, ...inserted }
+  const shot = group?.shots.find((item) => item.target === target)
   return {
     lines: (shot?.lines ?? []).map((line, index) => ({
       target: line.target,
-      text: value.lines[index] ?? '',
+      text: sent.lines[index] ?? '',
     })),
-    parts: [...value.parts],
+    parts: [...sent.parts],
     target,
+    ...inserted,
   }
 }
 
@@ -194,18 +227,20 @@ export const useFilmDraft = (conversationId: string, server: FilmView | undefine
     [conversationId, persist, queryClient],
   )
 
-  /** 记下一段的新内容；改回原样就不算改动。冲突没处理完之前只记不存。 */
+  /** 记下一段的新内容（页面上的写法，图按当下的编号）；改回原样就不算改动。冲突没处理完之前只记不存。 */
   const update = useCallback(
-    (target: string, label: string, value: FilmSegmentValue) => {
+    (target: string, label: string, shown: FilmSegmentValue) => {
       const book = bookRef.current
       const view = readView(queryClient, conversationId)
+      const group = view === undefined ? undefined : groupOf(view, target)
       const existing = book.edits.get(target)
       const base =
         existing?.base ?? (view === undefined ? undefined : segmentValues(view).get(target))
-      if (base === undefined) {
+      if (base === undefined || group === undefined) {
         setState({ kind: 'error', message: '该段文字已不存在，无法修改；请刷新分镜' })
         return
       }
+      const value = mapText(shown, (text) => toDraftText(text, group))
       if (sameValue(base, value)) book.edits.delete(target)
       else book.edits.set(target, { base, label, value })
       publish()

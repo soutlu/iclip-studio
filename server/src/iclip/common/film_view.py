@@ -171,6 +171,9 @@ class FilmTextEdit:
     text: str | None = None
     parts: tuple[str, ...] | None = None
     lines: tuple[FilmLineEdit, ...] | None = None
+    images: tuple[str, ...] = ()
+    """这段字里新插入的图的地址。这组视频的参考图列表现在有 M 张时，字里的 ``@Image1``…``@ImageM``
+    指列表里现有的图，``@Image(M+1)``…``@Image(M+k)`` 依次指这里的第 1…k 张。"""
 
 
 __all__ = [
