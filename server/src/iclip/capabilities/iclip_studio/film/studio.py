@@ -1,4 +1,4 @@
-"""制作页：把检查通过的工程按视频请求排成镜头组，改一段字，给一张图换地址。
+"""制作页：把检查通过的工程按视频请求排成镜头组，改一段字，给一张图换地址或选用。
 
 改字和换图只替换原文里对应的那几段，文件其余部分一个字不动；写之前按人保存文件时的同一套规则
 检查，有问题就不写，说明是给人看的一句话。
@@ -11,15 +11,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Final
 
 from iclip.capabilities.iclip_studio.film.checks import check, check_project_content
 from iclip.capabilities.iclip_studio.film.document import Document
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.kits import (
-    VIDEO_ELEMENT_SLOTS,
-    VIDEO_SHOOTING_SLOT,
-    VIDEO_VOICE_SLOT,
+    VIDEO_AUDIO_SLOT,
+    VIDEO_CAPTURE_SLOT,
+    VIDEO_SETTING_SLOTS,
 )
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import (
@@ -31,23 +32,27 @@ from iclip.capabilities.iclip_studio.film.packages import (
     SEEDANCE_VARIANTS,
 )
 from iclip.capabilities.iclip_studio.film.prompts import (
+    IMAGE_NUMBER,
     LINE_REFERENCE,
     PicturePrompt,
+    listed_images,
     references,
     render_picture,
     slot_values,
-    video_images,
     video_shots,
+    written_texts,
 )
 from iclip.common.film_view import (
     FilmFrame,
     FilmGroup,
     FilmLine,
     FilmPromptImage,
+    FilmPromptRun,
     FilmPromptText,
     FilmSetting,
     FilmShot,
     FilmTextEdit,
+    SettingKind,
 )
 
 _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
@@ -55,9 +60,25 @@ _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
 _UNWRITABLE: Final = ("<!--", "<![CDATA[")
 """正文里有注释或 CDATA 时只换那一段会把它们弄丢，这样的正文不让在页面上改。"""
 
+_VIEW_CITE: Final = "参考@Image{}，"
+"""机位图选用时写在那一镜正文开头的一句，N 是它在这组视频参考图列表里的位置。"""
+
 
 class FilmEditRejected(ValueError):
     """这次改动没有写进文件；消息是给人看的一句话。"""
+
+
+@dataclass(frozen=True, slots=True)
+class _View:
+    """一张机位图：用它的那一镜，以及这一镜所在的视频。"""
+
+    video: Node
+    group: int
+    """视频是第几组，从 1 起。"""
+
+    shot: Node
+    number: int
+    """这一镜在这组里排第几，从 1 起。"""
 
 
 def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
@@ -65,41 +86,13 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
 
     project = film.project
     videos = project.find("ReferenceVideo")
-    elements, views = _image_owners(project, videos)
+    views = _views(project, videos)
     groups: list[FilmGroup] = []
     for index, video in enumerate(videos, start=1):
-        frames: dict[str, FilmFrame] = {}
-        for use in video_images(film, video)[0]:
-            if use.image in frames:
-                continue
-            generated = _generated(project, use.image)
-            prompt = None
-            missing: tuple[str, ...] = ()
-            if generated:
-                prompt = tuple(
-                    FilmPromptText(run)
-                    if isinstance(run, str)
-                    else FilmPromptImage(
-                        run.image, _label(run.image, index, elements, views), run.url
-                    )
-                    for run in image_prompt(film, use.image).runs
-                )
-                missing = tuple(
-                    dict.fromkeys(
-                        _label(name, index, elements, views)
-                        for name in _missing_references(film, use.image)
-                    )
-                )
-            frames[use.image] = FilmFrame(
-                node=use.image,
-                label=_label(use.image, index, elements, views),
-                kind="generated" if generated else "photo",
-                url=use.url,
-                number=use.number,
-                prompt=prompt,
-                aspect_ratio=project.nodes[use.image].attrs["aspect-ratio"] if generated else None,
-                missing=missing,
-            )
+        frames = tuple(
+            _frame(film, item.image, item.url, number, index, views)
+            for number, item in enumerate(listed_images(film, video), start=1)
+        )
         groups.append(
             FilmGroup(
                 index=index,
@@ -107,7 +100,7 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 model=SEEDANCE_VARIANTS[video.attrs["model"]][0],
                 seconds=int(video.attrs["duration"]),
                 aspect_ratio=video.attrs["aspect-ratio"],
-                frames=tuple(frames.values()),
+                frames=frames,
                 settings=_settings(project, video, source),
                 shots=_shots(film, video, source),
             )
@@ -121,12 +114,30 @@ def image_prompt(film: Film, image: str) -> PicturePrompt:
     return render_picture(film, film.project.nodes[image])
 
 
+def missing_references(film: Film, node: str) -> tuple[str, ...]:
+    """生成节点 ``node`` 的参考图列表里现在没有图的那几张，按列表先后，用给人看的称呼；不为空时
+    不能生成。机位图按 ``node`` 所在的那一组称呼：视频是它自己这组，生图节点是用它当机位图的那组。"""
+
+    project = film.project
+    videos = project.find("ReferenceVideo")
+    views = _views(project, videos)
+    target = project.nodes[node]
+    if target in videos:
+        group: int | None = videos.index(target) + 1
+    else:
+        owner = views.get(node)
+        group = None if owner is None else owner.group
+    return tuple(
+        _label(item.image, group, views) for item in listed_images(film, target) if item.url is None
+    )
+
+
 def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
     """把几段字写回工程文件，返回新的原文。``film`` 是 ``source`` 检查通过后的样子。
 
     镜头的改动带着这一镜的每句台词，台词只改字：不能删、不能加、不能调先后，说话人不变。台词的字
-    改在剧本里那一段说话人的后面。用户打的花括号换成全角，免得当成台词；不能写 ``@Image``，图的
-    编号由后端算。"""
+    改在剧本里那一段说话人的后面。用户打的花括号换成全角，免得当成台词。改完的文件按保存检查把关，
+    图号对不上参考图列表时不写。"""
 
     if not edits:
         raise FilmEditRejected("没有要改的字")
@@ -174,28 +185,42 @@ def edit_text(source: str, film: Film, edits: Sequence[FilmTextEdit]) -> str:
 
 def choose_image(
     film: Film, project_source: str, run_source: str | None, image: str, url: str | None
-) -> tuple[str, str] | None:
-    """给一个图片节点换图，返回 (要写的文件, 新的原文)；本来就是这样时返回 None。
+) -> list[tuple[str, str]]:
+    """给一个图片节点换图，返回按先后要写的 (文件, 新的原文)；本来就是这样时返回空列表。
 
     生图节点在运行文件里登记这张图并选用它，``url`` 为 None 是删掉它的选用，这张图就没有图了；
-    用户给的图直接改工程文件里的地址，不能没有图。``url`` 是不是这段对话的图由调用方先认。"""
+    用户给的图直接改工程文件里的地址，不能没有图。``url`` 是不是这段对话的图由调用方先认。
+
+    生图节点是某一镜的机位图（那一镜的 ``view`` 指着它）时，工程文件跟着改：选用时它不在那组视频的
+    参考图列表里，就插进列表、在那一镜正文开头写「参考@ImageN，」、这组文字里不小于 N 的图号各加 1；
+    取消选用时它在列表里，就删掉这两处、比 N 大的图号各减 1；换成另一版只改运行文件。
+
+    两个文件都要写时，先写的那一个写完而后一个没写成，留下的是「列表里有、但没有选用」：两份文件
+    都照样通过检查，出片时这组被缺图拦住，再选用或取消选用一次就补齐。所以选用先写工程文件，
+    取消选用先写运行文件。"""
 
     project = film.project
     node = project.nodes.get(image)
     if node is None or project.declared(node).output not in (("", IMAGE), ("image", IMAGE)):
         raise FilmEditRejected("找不到这张图，刷新后再换")
     if _generated(project, image):
-        updated = _select_in_run(film, run_source, image, url)
-        if updated is None:
-            return None
-        written = check(project_source, updated)
+        run_updated = _select_in_run(film, run_source, image, url)
+        project_updated = _place_view(film, project_source, image, listed=url is not None)
+        if run_updated is None and project_updated is None:
+            return []
+        new_project = project_updated or project_source
+        new_run = run_source if run_updated is None else run_updated
+        written = check(new_project, new_run)
         if isinstance(written, list) or written.errors:
-            raise RuntimeError(f"给 {image} 换图后运行文件没有通过检查")
-        return RUN_PATH, updated
+            raise RuntimeError(f"给 {image} 换图后两个文件没有通过检查")
+        changes = [(FILM_PATH, project_updated), (RUN_PATH, run_updated)]
+        if url is None:
+            changes.reverse()
+        return [(path, content) for path, content in changes if content is not None]
     if url is None:
         raise FilmEditRejected("这张图是你给的，只能换成另一张，不能清空")
     if node.attrs.get("src") == url:
-        return None
+        return []
     found = None if node.opening is None else _SRC.search(project_source, *node.opening)
     if node.opening is None or found is None:
         raise FilmEditRejected("这张图的地址没法在页面上换，跟 AI 导演说")
@@ -203,83 +228,91 @@ def choose_image(
     updated = project_source[:start] + _attribute(url, found.group(2)) + project_source[stop:]
     if check_project_content(updated):
         raise RuntimeError(f"给 {image} 换图后工程文件没有通过检查")
-    return FILM_PATH, updated
+    return [(FILM_PATH, updated)]
 
 
-def _image_owners(
-    project: Document, videos: list[Node]
-) -> tuple[dict[str, str], dict[str, tuple[int, int]]]:
-    """图片节点 → 全文件里第一个用 ``for`` 指着它的元素；图片节点 → 用它当机位图的
-    (第几组, 第几个镜头)，取最先写的。"""
+def _views(project: Document, videos: list[Node]) -> dict[str, _View]:
+    """图片节点 → 用它当机位图的那一镜。保存检查保证一张机位图只给一个镜头用。"""
 
-    elements: dict[str, str] = {}
-    for node in project.root.walk():
-        if project.is_a(node, "Reference"):
-            image, element = node.reference("image"), node.reference("for")
-            if image is not None and element is not None:
-                elements.setdefault(image.partition(".")[0], element)
-    views: dict[str, tuple[int, int]] = {}
+    views: dict[str, _View] = {}
     for group, video in enumerate(videos, start=1):
         for number, shot in enumerate(project.kids(video_shots(project, video), "Shot"), start=1):
             view = shot.reference("view")
             if view is not None:
-                views.setdefault(view.partition(".")[0], (group, number))
-    return elements, views
+                views.setdefault(view.partition(".")[0], _View(video, group, shot, number))
+    return views
 
 
-def _label(
-    image: str, group: int, elements: dict[str, str], views: dict[str, tuple[int, int]]
-) -> str:
-    if image in elements:
-        return elements[image]
-    if image in views:
-        owner, number = views[image]
-        return f"镜头 {number}" if owner == group else f"第 {owner} 组镜头 {number}"
-    return image
+def _label(image: str, group: int | None, views: dict[str, _View]) -> str:
+    """给人看的称呼：机位图叫「镜头 N」，别组的叫「第 M 组镜头 N」；其余的叫图片节点的名字。"""
+
+    view = views.get(image)
+    if view is None:
+        return image
+    if view.group == group:
+        return f"镜头 {view.number}"
+    return f"第 {view.group} 组镜头 {view.number}"
+
+
+def _frame(
+    film: Film, image: str, url: str | None, number: int, group: int, views: dict[str, _View]
+) -> FilmFrame:
+    project = film.project
+    generated = _generated(project, image)
+    prompt: tuple[FilmPromptRun, ...] | None = None
+    missing: tuple[str, ...] = ()
+    if generated:
+        picture = image_prompt(film, image)
+        prompt = tuple(
+            FilmPromptText(run)
+            if isinstance(run, str)
+            else FilmPromptImage(run.image, _label(run.image, group, views), run.url)
+            for run in picture.runs
+        )
+        missing = tuple(_label(name, group, views) for name in picture.missing)
+    return FilmFrame(
+        node=image,
+        label=_label(image, group, views),
+        kind="generated" if generated else "photo",
+        url=url,
+        number=number,
+        prompt=prompt,
+        aspect_ratio=project.nodes[image].attrs["aspect-ratio"] if generated else None,
+        missing=missing,
+    )
 
 
 def _generated(project: Document, image: str) -> bool:
     return project.declared(project.nodes[image]).generation is not None
 
 
-def _missing_references(film: Film, image: str) -> list[str]:
-    """生图节点 ``image`` 下挂的参考图里现在没有图的那几张，按挂的先后；生成时它们只用文字写。"""
-
-    names: list[str] = []
-    for reference in references(film.project, film.project.nodes[image]):
-        target = _required(reference, "image")
-        if film.image_url(target) is None:
-            names.append(target.partition(".")[0])
-    return names
-
-
 def _settings(project: Document, video: Node, source: str) -> tuple[FilmSetting, ...]:
-    """全局设定，与拼给视频的先后相同：拍法、人物产品场景的各元素、声音。"""
+    """全局设定，与拼给视频的先后相同：拍法、人物产品场景、声音；称呼是模板里这个槽的段名。"""
 
-    filled = slot_values(project, project.nodes[_required(video, "prompt")])
-
-    def target(value: Node) -> str | None:
-        return f"value:{value.attrs['id']}" if _writable(source, value) else None
-
-    settings = [
-        FilmSetting("shooting", target(value), None, value.text, ())
-        for value in filled[VIDEO_SHOOTING_SLOT]
-    ]
-    for slot in VIDEO_ELEMENT_SLOTS:
-        for value in filled[slot]:
-            name = value.attrs["id"]
-            images = tuple(
-                _required(reference, "image").partition(".")[0]
-                for reference in references(project, video)
-                if reference.reference("for") == name
+    prompt = project.nodes[_required(video, "prompt")]
+    kit = project.template(_required(prompt, "template"))
+    filled = slot_values(project, prompt)
+    settings: list[FilmSetting] = []
+    for name in VIDEO_SETTING_SLOTS:
+        slot = kit.slot(name)
+        assert slot is not None, f"{name} 在读模板时已经查过"
+        kind: SettingKind = (
+            "shooting"
+            if name == VIDEO_CAPTURE_SLOT
+            else "voice"
+            if name == VIDEO_AUDIO_SLOT
+            else "element"
+        )
+        settings += [
+            FilmSetting(
+                kind,
+                f"value:{value.attrs['id']}" if _writable(source, value) else None,
+                slot.title,
+                value.text,
+                (),
             )
-            settings.append(
-                FilmSetting("element", target(value), f"{slot} {name}", value.text, images)
-            )
-    settings += [
-        FilmSetting("voice", target(value), VIDEO_VOICE_SLOT, value.text, ())
-        for value in filled[VIDEO_VOICE_SLOT]
-    ]
+            for value in filled[name]
+        ]
     return tuple(settings)
 
 
@@ -306,6 +339,90 @@ def _shots(film: Film, video: Node, source: str) -> tuple[FilmShot, ...]:
             )
         )
     return tuple(shots)
+
+
+def _place_view(film: Film, source: str, image: str, *, listed: bool) -> str | None:
+    """``image`` 是某一镜的机位图时，让它在那组视频的参考图列表里（``listed``）或不在，连同那一镜
+    开头的引用和这组的图号；返回新的原文，不是机位图或本来就是这样时返回 None。"""
+
+    project = film.project
+    view = _views(project, project.find("ReferenceVideo")).get(image)
+    if view is None:
+        return None
+    target = f"{image}.image"
+    listing = references(project, view.video)
+    present = next((item for item in listing if item.reference("image") == target), None)
+    if listed == (present is not None):
+        return None
+    splice = _Splice()
+    if present is None:
+        later = _later_views(project, view, listing)
+        number = (listing.index(later) if later is not None else len(listing)) + 1
+        prefix = view.video.tag.rpartition(":")[0]
+        line = f"<{prefix + ':' if prefix else ''}Reference image={{{target}}}/>"
+        if later is not None:
+            start = _span(later)[0]
+            splice.insert(source.rfind("\n", 0, start) + 1, f"{_indent(source, later)}{line}\n")
+        elif listing:
+            splice.insert(*_after(source, listing[-1], line))
+        else:
+            splice.insert(*_before_end(source, view.video, line))
+        shift, cite = 1, _VIEW_CITE.format(number)
+    else:
+        number = listing.index(present) + 1
+        splice.replace(_tag_lines(source, present), "")
+        shift, cite = -1, ""
+    for text in written_texts(project, view.video):
+        raw = source[slice(*text.inner)] if text.inner is not None else ""
+        kept = raw if shift > 0 else _drop_cite(raw, number, text, view)
+        renumbered = IMAGE_NUMBER.sub(lambda found: _shifted(found, number, shift), kept)
+        if text is view.shot and cite:
+            lead = len(renumbered) - len(renumbered.lstrip())
+            renumbered = renumbered[:lead] + cite + renumbered[lead:]
+        if renumbered == raw:
+            continue
+        if not _writable(source, text):
+            raise FilmEditRejected("这一组的文字没法在页面上调整图号，跟 AI 导演说")
+        assert text.inner is not None
+        splice.replace(text.inner, renumbered)
+    return splice.apply(source)
+
+
+def _later_views(project: Document, view: _View, listing: list[Node]) -> Node | None:
+    """列表里第一张排在 ``view`` 那一镜之后的机位图：新的机位图插在它前面。"""
+
+    order = {
+        shot.reference("view"): number
+        for number, shot in enumerate(project.kids(video_shots(project, view.video), "Shot"), 1)
+        if shot.reference("view") is not None
+    }
+    return next(
+        (
+            item
+            for item in listing
+            if (position := order.get(item.reference("image"))) is not None
+            and position > view.number
+        ),
+        None,
+    )
+
+
+def _drop_cite(raw: str, number: int, text: Node, view: _View) -> str:
+    """取消选用时去掉那一镜开头的「参考@ImageN，」；其余原样。"""
+
+    cite = _VIEW_CITE.format(number)
+    lead = len(raw) - len(raw.lstrip())
+    if text is not view.shot or not raw[lead:].startswith(cite):
+        return raw
+    return raw[:lead] + raw[lead + len(cite) :]
+
+
+def _shifted(found: re.Match[str], number: int, shift: int) -> str:
+    """插入时不小于 N 的图号加 1；删除时比 N 大的减 1。"""
+
+    current = int(found.group(1))
+    moves = current >= number if shift > 0 else current > number
+    return f"@Image{current + shift}" if moves else found.group(0)
 
 
 def _resolve(project: Document, target: str) -> Node | None:
@@ -402,8 +519,6 @@ def _shot_text(shot: Node, edit: FilmTextEdit) -> tuple[str, list[tuple[str, str
 
 
 def _clean(text: str) -> str:
-    if "@Image" in text:
-        raise FilmEditRejected("文字里不能写 @Image，图的编号是自动排的")
     return text.replace("{", "｛").replace("}", "｝")
 
 
@@ -551,10 +666,29 @@ def _before_close(source: str, root: Node, text: str) -> tuple[int, str]:
     return position, f"{indent}{text}\n"
 
 
+def _before_end(source: str, node: Node, text: str) -> tuple[int, str]:
+    """插在 ``node`` 的结束标签那一行前面，比它多缩进一级；``node`` 自闭合或结束标签不独占一行时
+    不在页面上改。"""
+
+    if node.inner is None:
+        raise FilmEditRejected("这一组的参考图列表没法在页面上改，跟 AI 导演说")
+    position = source.rfind("\n", 0, node.inner[1]) + 1
+    if source[position : node.inner[1]].strip() or position <= node.inner[0]:
+        raise FilmEditRejected("这一组的参考图列表没法在页面上改，跟 AI 导演说")
+    return position, f"{_indent(source, node)}  {text}\n"
+
+
 def _required(node: Node, name: str) -> str:
     reference = node.reference(name)
     assert reference is not None, f"{node.tag} 的 {name} 在读文件时已经查过"
     return reference
 
 
-__all__ = ["FilmEditRejected", "choose_image", "edit_text", "film_groups", "image_prompt"]
+__all__ = [
+    "FilmEditRejected",
+    "choose_image",
+    "edit_text",
+    "film_groups",
+    "image_prompt",
+    "missing_references",
+]

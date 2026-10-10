@@ -20,6 +20,7 @@ from iclip.capabilities.iclip_studio.film.studio import (
     edit_text,
     film_groups,
     image_prompt,
+    missing_references,
 )
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from iclip.capabilities.workspace.scope import namespace_for
@@ -75,7 +76,7 @@ class ConversationFilmAdapter:
         files = await self._read(owner, conversation_id)
         if files is None:
             return None
-        film = await self._load(principal, conversation_id, files)
+        film = await self._load(files)
         run_version = None if files.run is None else files.run.version
         if isinstance(film, list):
             return FilmView(files.project.version, run_version, len(film), ())
@@ -94,7 +95,7 @@ class ConversationFilmAdapter:
         files = await self._existing(owner, conversation_id)
         if files.project.version != film_version:
             raise Conflict(_STALE)
-        film = await self._clean(principal, conversation_id, files)
+        film = await self._clean(files)
         try:
             updated = edit_text(files.project.content, film, edits)
         except FilmEditRejected as exc:
@@ -115,17 +116,11 @@ class ConversationFilmAdapter:
     ) -> FilmView:
         files = await self._existing(owner, conversation_id)
         self._check_versions(files, film_version, run_version)
-        film = await self._clean(principal, conversation_id, files)
-        if url is not None and not await self._images(principal, conversation_id, files).known(url):
-            found = (
-                None
-                if self._generation is None
-                else await self._generation.find_upload(principal, url)
-            )
-            if found is None:
-                raise ValidationFailed("只能换成这段对话里的图，或你自己上传的图")
+        film = await self._clean(files)
+        if url is not None and not await self._choosable(principal, conversation_id, files, url):
+            raise ValidationFailed("只能换成这段对话里的图，或你自己上传的图")
         try:
-            change = choose_image(
+            changes = choose_image(
                 film,
                 files.project.content,
                 None if files.run is None else files.run.content,
@@ -136,15 +131,14 @@ class ConversationFilmAdapter:
             raise ValidationFailed(str(exc)) from exc
         if url is not None:
             # 选用的图不论生成、编辑还是上传，一律先登记再写文件：文件写进去时它已经是对话素材，
-            # AI 导演检查时认得它；做同款拷台账就带上了运行文件选用的每一张。已选用的再选一次
-            # 也登记，没登记过的就此补上；重复登记保留首条，没有别的副作用。
+            # 检查时认得它；做同款拷台账就带上了运行文件选用的每一张。已选用的再选一次也登记，
+            # 没登记过的就此补上；重复登记保留首条，没有别的副作用。
             await self._ledger.record(files.namespace, [Material(url=url, kind="image")])
-        if change is None:
-            return await self._fresh(principal, owner, conversation_id)
-        path, content = change
+        # 选用机位图时两个文件都要写，先后由 choose_image 定：后一个没写成时留下的状态出片会被拦住。
         # 还没有运行文件时没有版本可对，新建的这一份直接写。
-        expected = film_version if path == FILM_PATH else run_version
-        await self._write(files.namespace, path, content, expected)
+        for path, content in changes:
+            expected = film_version if path == FILM_PATH else run_version
+            await self._write(files.namespace, path, content, expected)
         return await self._fresh(principal, owner, conversation_id)
 
     async def generate_image(
@@ -162,7 +156,7 @@ class ConversationFilmAdapter:
         assert self._node_images is not None
         files = await self._existing(owner, conversation_id)
         self._check_versions(files, film_version, run_version)
-        film = await self._clean(principal, conversation_id, files)
+        film = await self._clean(files)
         project = film.project
         target = project.nodes.get(node)
         tag = None if target is None else project.tags.get(target.tag)
@@ -176,6 +170,7 @@ class ConversationFilmAdapter:
         model = tag.generation.gateway
         if model not in {name for name, _ in generation.image_models()[1]}:
             raise ValidationFailed("生图模型还没接上，暂时不能生成")
+        _require_images(missing_references(film, node))
         if prompt is None:
             picture = image_prompt(film, node)
             text, references = picture.text, picture.image_urls
@@ -213,7 +208,7 @@ class ConversationFilmAdapter:
         generation = self._require_generation()
         files = await self._existing(owner, conversation_id)
         self._check_versions(files, film_version, run_version)
-        film = await self._clean(principal, conversation_id, files)
+        film = await self._clean(files)
         videos = film.project.find("ReferenceVideo")
         found = next(
             (
@@ -226,6 +221,7 @@ class ConversationFilmAdapter:
         if found is None:
             raise ValidationFailed("找不到这一组，刷新后再出片")
         index, target = found
+        _require_images(missing_references(film, video))
         row = video_row(film, target, index)
         try:
             request = VideoGenerationIn.model_validate(
@@ -280,30 +276,31 @@ class ConversationFilmAdapter:
             raise NotFound("这段对话里没有 AI 导演写的分镜")
         return view
 
-    def _images(
-        self, principal: Principal, conversation_id: uuid.UUID, files: _Files
-    ) -> ConversationImages:
-        return ConversationImages(
-            ledger=self._ledger,
-            namespace=files.namespace,
-            images=self._node_images,
-            principal=principal,
-            conversation_id=str(conversation_id),
-        )
+    async def _choosable(
+        self, principal: Principal, conversation_id: uuid.UUID, files: _Files, url: str
+    ) -> bool:
+        """能不能选用这个地址：对话素材，这段对话出过的图（制作页上刚生成或编辑出的版本选用前还不在
+        素材台账里），或调用者自己上传的图。选用时都会登记成对话素材。"""
 
-    async def _load(
-        self, principal: Principal, conversation_id: uuid.UUID, files: _Files
-    ) -> Film | list[str]:
+        if await ConversationImages(self._ledger, files.namespace).known(url):
+            return True
+        if self._generation is None or self._node_images is None:
+            return False
+        if await self._node_images.belongs(principal, str(conversation_id), url):
+            return True
+        return await self._generation.find_upload(principal, url) is not None
+
+    async def _load(self, files: _Files) -> Film | list[str]:
         return await load_film(
             files.project.content,
             None if files.run is None else files.run.content,
-            images=self._images(principal, conversation_id, files),
+            images=ConversationImages(self._ledger, files.namespace),
         )
 
-    async def _clean(self, principal: Principal, conversation_id: uuid.UUID, files: _Files) -> Film:
+    async def _clean(self, files: _Files) -> Film:
         """页面只在检查通过的分镜上改；有问题时改了也分不清是谁的。"""
 
-        film = await self._load(principal, conversation_id, files)
+        film = await self._load(files)
         if isinstance(film, list):
             raise ValidationFailed(_BROKEN)
         return film
@@ -315,6 +312,13 @@ class ConversationFilmAdapter:
             raise Conflict(_STALE) from exc
         except (InvalidContent, QuotaExceeded) as exc:
             raise ValidationFailed(str(exc)) from exc
+
+
+def _require_images(missing: tuple[str, ...]) -> None:
+    """参考图列表里每一张都要有图才能生成；缺的按称呼列出来。"""
+
+    if missing:
+        raise ValidationFailed(f"以下参考图尚未选用：{'、'.join(missing)}；无法生成")
 
 
 __all__ = ["ConversationFilmAdapter"]

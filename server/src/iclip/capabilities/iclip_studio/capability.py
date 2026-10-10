@@ -20,7 +20,7 @@ from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip.capabilities.iclip_studio.film.load import ConversationImages, load_film
 from iclip.capabilities.iclip_studio.film.markup import Node
 from iclip.capabilities.iclip_studio.film.packages import IMAGE
-from iclip.capabilities.iclip_studio.film.prompts import references, render_picture, render_video
+from iclip.capabilities.iclip_studio.film.prompts import render_picture, render_video
 from iclip.capabilities.iclip_studio.ports import (
     BreakdownFailureReason,
     FailedBreakdown,
@@ -166,8 +166,8 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         每次改完这两个文件都调用一次，按返回的问题改到通过；问题带文件名和行号。重复调用不花钱。
 
         Args:
-            show: 要看某张图或某段视频最终发给模型的完整提示词时，填它在 film.icml 里的 id，如
-                "镜02机位图"、"全片"；检查通过才输出。
+            show: 要看某张图或某段视频最终发给模型的完整提示词和参考图时，填它在 film.icml 里的
+                id，如 "view02"、"video01"；检查通过才输出。
         """
 
         film = await self._load(ctx)
@@ -192,12 +192,13 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
 
         只在用户说了要生成哪些图时调用。每调用一次，列出的每个节点都重新生成并计费；已经生成
         过、用户没有要求重做的不要再列。一次最多 10 个节点，更多的分几次调用。生成前先做与
-        check_film 相同的检查，有问题不生成。运行文件里选用了登记图的节点不生成；一张失败
+        check_film 相同的检查，有问题不生成。运行文件里选用了登记图的节点不生成；挂的参考图里
+        有还没选用的，这个节点不生成，结果里列出缺哪几张，等用户在制作页选用后再生成。一张失败
         不影响其它张，失败的在结果里说明，不要自动重试。生成出来的图不会自动用上，用户在制作页
         选用了才算有图。
 
         Args:
-            nodes: 要生成的生图节点的名字，如 ``["短发女生参考图", "镜01机位图"]``。
+            nodes: 要生成的生图节点的名字，如 ``["personB", "view01"]``。
         """
 
         images = self._cap.images
@@ -217,23 +218,27 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         targets = [name for name in known if name in nodes]
         outcome: dict[str, str] = {}
         made: list[tuple[str, str]] = []
-        pending = [name for name in targets if name not in film.selected]
+        pending: list[str] = []
         for name in targets:
+            missing = render_picture(film, known[name]).missing
             if name in film.selected:
                 outcome[name] = (
                     f"没有生成，运行文件里选用了「{film.selected[name]}」；要重新生成先删掉它的 use"
                 )
+            elif missing:
+                outcome[name] = f"没有生成，参考图 {'、'.join(missing)} 还没有选用图"
+            else:
+                pending.append(name)
         deps = _deps(ctx)
         namespace = self._cap.space.resolve(ctx)
         # 生成出来的图要用户选用才算有图，同一次里先出的也不给后出的当参考，所以一起生成。
         results = await asyncio.gather(
             *(self._generate(images, deps, film, known[name]) for name in pending)
         )
-        for name, (job, missing) in zip(pending, results, strict=True):
+        for name, job in zip(pending, results, strict=True):
             if job.status == "completed" and job.output_url:
                 made.append((job.output_url, name))
-                note = f"；{'、'.join(missing)} 还没有图，这次只用了文字" if missing else ""
-                outcome[name] = f"已生成，地址 {job.output_url}{note}"
+                outcome[name] = f"已生成，地址 {job.output_url}"
             else:
                 outcome[name] = f"生成失败，{job.error_message or '没有说明原因'}"
         await self._cap.ledger.record(
@@ -250,14 +255,11 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
 
     async def _generate(
         self, images: NodeImages, deps: AgentRunDeps, film: Film, node: Node
-    ) -> tuple[NodeImageJob, list[str]]:
-        """给一个节点出一张图并等它出结果；返回 (结果, 它引用的、现在还没有图的节点名)。"""
+    ) -> NodeImageJob:
+        """给一个参考图都有图的节点出一张图并等它出结果。"""
 
         project = film.project
         picture = render_picture(film, node)
-        missing = sorted(
-            name for name in _referenced_images(film, node) if film.image_url(name) is None
-        )
         tag = project.declared(node)
         assert tag.generation is not None
         try:
@@ -275,24 +277,19 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                 ),
             )
         except InvalidNodeImageRequest as exc:
-            return NodeImageJob(
-                uuid.UUID(int=0), "failed", error_message=f"请求被拒：{exc}"
-            ), missing
+            return NodeImageJob(uuid.UUID(int=0), "failed", error_message=f"请求被拒：{exc}")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + IMAGE_WAIT_SECONDS
         while not job.finished:
             if loop.time() >= deadline:
-                return (
-                    NodeImageJob(
-                        job.job_id,
-                        "failed",
-                        error_message="等超时了；它可能还在后台跑，告诉用户稍后到制作页上看这张图",
-                    ),
-                    missing,
+                return NodeImageJob(
+                    job.job_id,
+                    "failed",
+                    error_message="等超时了；它可能还在后台跑，告诉用户稍后到制作页上看这张图",
                 )
             await asyncio.sleep(IMAGE_POLL_SECONDS)
             job = await images.get(deps.principal, job.job_id)
-        return job, missing
+        return job
 
     async def _load(self, ctx: RunContext[AgentDepsT]) -> Film | list[str]:
         """读两个文件并检查；通过时返回 ``Film``，否则返回问题。"""
@@ -302,17 +299,10 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         if project is None:
             raise ModelRetry(f"工作区里没有 {FILM_PATH}；先按规范把它写出来。")
         run = await files.read(namespace, RUN_PATH)
-        deps = _deps(ctx)
         return await load_film(
             project.content,
             None if run is None else run.content,
-            images=ConversationImages(
-                ledger=self._cap.ledger,
-                namespace=namespace,
-                images=self._cap.images,
-                principal=deps.principal,
-                conversation_id=deps.conversation_id,
-            ),
+            images=ConversationImages(ledger=self._cap.ledger, namespace=namespace),
         )
 
     async def _validate_video_url(self, ctx: RunContext[Any], video_url: str) -> None:
@@ -338,25 +328,19 @@ def _assembled(film: Film, node: Node) -> list[str]:
     if film.project.declared(node).output == ("image", IMAGE):
         picture = render_picture(film, node)
         head = f"{name}：画幅 {node.attrs['aspect-ratio']}，分辨率 {node.attrs['resolution']}"
-        text, images = picture.text, picture.image_urls
+        text, images = picture.text, picture.images
     else:
         group = render_video(film, node)
         head = f"{name}：{group.seconds} 秒，画幅 {node.attrs['aspect-ratio']}"
-        text, images = format_shot_prompt(group), group.image_urls
-    listed = "、".join(f"@Image{n} = {url}" for n, url in enumerate(images, start=1)) or "无"
+        text, images = format_shot_prompt(group), group.images
+    listed = (
+        "、".join(
+            f"@Image{n} = {item.url or f'{item.image}（还没有选用图，不能生成）'}"
+            for n, item in enumerate(images, start=1)
+        )
+        or "无"
+    )
     return [head, f"参考图：{listed}", "", text]
-
-
-def _referenced_images(film: Film, node: Node) -> set[str]:
-    """一个生图节点下列的参考图里有哪些生图节点的图。"""
-
-    image_nodes = {item.attrs["id"] for item in film.image_nodes()}
-    names = {
-        image.partition(".")[0]
-        for reference in references(film.project, node)
-        if (image := reference.reference("image")) is not None
-    }
-    return names & image_nodes
 
 
 def _breakdown_failure(reason: BreakdownFailureReason, *, last_attempt: bool) -> Exception:

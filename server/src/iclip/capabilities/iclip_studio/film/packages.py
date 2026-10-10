@@ -174,15 +174,7 @@ GPT_IMAGE_PACKAGE: Final = Package(
             output=("image", IMAGE),
             generation=Generation(GPT_IMAGE_MODEL, IMAGE_MAX_REFERENCES, PROMPT_MAX_CHARS),
         ),
-        Tag(
-            "Reference",
-            (
-                Attr("image", "ref", type=IMAGE),
-                Attr("for", "ref", required=False, type=TEXT),
-            ),
-            body=True,
-            top=False,
-        ),
+        Tag("Reference", (Attr("image", "ref", type=IMAGE),), top=False),
     ),
 )
 
@@ -203,12 +195,7 @@ SEEDANCE_PACKAGE: Final = Package(
             output=("video", VIDEO),
             generation=Generation("", VIDEO_MAX_REFERENCES, PROMPT_MAX_CHARS),
         ),
-        # 视频的参考图都是元素的图：用途图在视频里没有地方放，镜头专用的图走 Shot 的 view。
-        Tag(
-            "Reference",
-            (Attr("image", "ref", type=IMAGE), Attr("for", "ref", type=TEXT)),
-            top=False,
-        ),
+        Tag("Reference", (Attr("image", "ref", type=IMAGE),), top=False),
     ),
 )
 

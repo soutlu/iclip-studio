@@ -1,8 +1,0 @@
-<?icml using="@iclip/text/svs@1"?>
-<sheet version="1" id="画面-v1">
-  text-template.画面-v1 { separator: paragraph; }
-  text-template.画面-v1.block.拍摄 { kind: slot; order: 10; slot: 拍摄; optional: false; label: "拍摄："; }
-  text-template.画面-v1.block.主体 { kind: slot; order: 20; slot: 主体; optional: true; label: "主体："; }
-  text-template.画面-v1.block.取景 { kind: slot; order: 30; slot: 取景; optional: false; label: "取景："; }
-  text-template.画面-v1.block.场景 { kind: slot; order: 40; slot: 场景; optional: true; label: "场景："; }
-</sheet>

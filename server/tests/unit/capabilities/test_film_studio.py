@@ -16,6 +16,7 @@ from iclip.capabilities.iclip_studio.film.studio import (
     choose_image,
     edit_text,
     film_groups,
+    missing_references,
 )
 from iclip.common.film_view import (
     FilmGroup,
@@ -25,19 +26,23 @@ from iclip.common.film_view import (
     FilmTextEdit,
 )
 from tests.helpers.film import (
+    EXPECTED,
     FILM,
-    IMAGE_NODES,
-    PERSON_FIRST,
-    PERSON_FIXED,
+    FILM_NO_VIEW04,
+    GENERATED,
+    PHOTOS,
     RUN,
+    RUN_NO_VIEW04,
     SHOE_FRONT,
-    VIEW_ONE,
-    expected_prompt,
-    two_requests,
+    VIEW04,
+    project_of,
+    run_of,
 )
 
-LIGHTER = FilmLineEdit("line:lighter", "It's lighter than it looks.")
-MISSING = ("短发女生参考图", "镜02机位图")
+HOOK = FilmLineEdit("line:hook", "这一双，走起来很轻。")
+REPLY = FilmLineEdit("line:reply", "鞋底是软的吗？")
+
+USE_VIEW01 = '  <use output="view01.image" image={view01-v1}/>\n'
 
 
 def checked(project: str = FILM, run: str | None = RUN) -> Film:
@@ -46,28 +51,20 @@ def checked(project: str = FILM, run: str | None = RUN) -> Film:
     return film
 
 
-def generated(*missing: str) -> Film:
-    """每个生图节点都在运行文件里选用了一张图，``missing`` 里的除外。"""
-
-    film = checked(run=None)
-    for node in IMAGE_NODES:
-        if node not in missing:
-            film.registered[f"{node}-1"] = f"https://cdn.test/{node}.png"
-            film.selected[node] = f"{node}-1"
-    return film
+def groups(project: str = FILM, run: str | None = RUN) -> tuple[FilmGroup, ...]:
+    return film_groups(checked(project, run), project)
 
 
-def group(project: str = FILM, run: str | None = RUN) -> FilmGroup:
-    (only,) = film_groups(checked(project, run), project)
-    return only
+def first(project: str = FILM, run: str | None = RUN) -> FilmGroup:
+    return groups(project, run)[0]
 
 
 def shot(number: int, parts: tuple[str, ...], *lines: FilmLineEdit) -> FilmTextEdit:
-    return FilmTextEdit(f"shot:全片镜头:{number}", parts=parts, lines=lines)
+    return FilmTextEdit(f"shot:video01Shots:{number}", parts=parts, lines=lines)
 
 
 def parts_of(number: int, project: str = FILM) -> tuple[str, ...]:
-    return group(project).shots[number - 1].parts
+    return first(project).shots[number - 1].parts
 
 
 def changed_lines(before: str, after: str) -> list[str]:
@@ -109,226 +106,223 @@ def frames(made: FilmGroup) -> list[tuple[str, str, str, int | None, str | None]
     ]
 
 
-def test_a_group_lists_its_images_in_the_order_and_numbering_sent_to_the_video() -> None:
-    film = generated()
-    (made,) = film_groups(film, FILM)
-    sent = render_video(film, film.project.nodes["全片"]).image_urls
+def test_a_group_lists_its_reference_list_as_it_is_numbered_by_position() -> None:
+    film = checked()
+    made, later = film_groups(film, FILM)
 
     assert frames(made) == [
-        ("短发女生参考图", "短发女生", "generated", 1, "3:4"),
-        ("跑鞋正面", "网面跑鞋", "photo", 2, None),
-        ("跑鞋鞋底", "网面跑鞋", "photo", 3, None),
-        ("公园跑道参考图", "公园跑道", "generated", 4, "9:16"),
-        ("镜01机位图", "镜头 1", "generated", 5, "9:16"),
-        ("镜02机位图", "镜头 2", "generated", 6, "9:16"),
-        ("镜03机位图", "镜头 3", "generated", 7, "9:16"),
-        ("镜04机位图", "镜头 4", "generated", 8, "9:16"),
+        ("modelAPortraitPhoto", "modelAPortraitPhoto", "photo", 1, None),
+        ("modelAFullBodyPhoto", "modelAFullBodyPhoto", "photo", 2, None),
+        ("personB", "personB", "generated", 3, "3:4"),
+        ("shoeSidePhoto", "shoeSidePhoto", "photo", 4, None),
+        ("shoeFrontPhoto", "shoeFrontPhoto", "photo", 5, None),
+        ("shoeSolePhoto", "shoeSolePhoto", "photo", 6, None),
+        ("scene", "scene", "generated", 7, "16:9"),
+        ("view01", "镜头 1", "generated", 8, "16:9"),
+        ("view02", "镜头 2", "generated", 9, "16:9"),
+        ("view03", "镜头 3", "generated", 10, "16:9"),
     ]
-    assert [frame.url for frame in made.frames] == list(sent)
+    assert [frame.url for frame in made.frames] == list(
+        render_video(film, film.project.nodes["video01"]).image_urls
+    )
     assert (made.index, made.video, made.model, made.seconds, made.aspect_ratio) == (
         1,
-        "全片",
+        "video01",
         "mmt-seedance-2-5",
-        15,
-        "9:16",
+        18,
+        "16:9",
     )
+    assert (later.index, later.video, later.seconds) == (2, "video02", 15)
 
 
-def test_only_images_that_exist_are_numbered() -> None:
-    (made,) = film_groups(generated(*MISSING), FILM)
+def test_an_image_without_a_picture_keeps_its_number_and_has_no_url() -> None:
+    made = first(project_of("no-personB"), run_of("no-personB"))
 
-    assert [(frame.node, frame.number) for frame in made.frames] == [
-        ("短发女生参考图", None),
-        ("跑鞋正面", 1),
-        ("跑鞋鞋底", 2),
-        ("公园跑道参考图", 3),
-        ("镜01机位图", 4),
-        ("镜02机位图", None),
-        ("镜03机位图", 5),
-        ("镜04机位图", 6),
+    assert [(frame.node, frame.number, frame.url) for frame in made.frames[:4]] == [
+        ("modelAPortraitPhoto", 1, PHOTOS["modelAPortraitPhoto"]),
+        ("modelAFullBodyPhoto", 2, PHOTOS["modelAFullBodyPhoto"]),
+        ("personB", 3, None),
+        ("shoeSidePhoto", 4, PHOTOS["shoeSidePhoto"]),
+    ]
+
+
+def test_a_view_that_is_not_chosen_is_not_in_its_group() -> None:
+    _, later = groups(FILM_NO_VIEW04, RUN_NO_VIEW04)
+
+    assert [(frame.label, frame.number) for frame in later.frames[5:]] == [
+        ("scene", 6),
+        ("镜头 2", 7),
+        ("镜头 3", 8),
     ]
 
 
 def test_a_generated_image_carries_its_prompt_with_the_references_in_place() -> None:
-    film = generated()
-    (made,) = film_groups(film, FILM)
+    film = checked()
+    made = film_groups(film, FILM)[0]
     by_node = {frame.node: frame for frame in made.frames}
 
-    runs = by_node["镜02机位图"].prompt
+    runs = by_node["view02"].prompt
     assert runs is not None
     images = [run for run in runs if isinstance(run, FilmPromptImage)]
     assert [(run.node, run.label) for run in images] == [
-        ("短发女生参考图", "短发女生"),
-        ("跑鞋正面", "网面跑鞋"),
-        ("跑鞋鞋底", "网面跑鞋"),
-        ("公园跑道参考图", "公园跑道"),
-        ("镜01机位图", "镜头 1"),
+        ("modelAFullBodyPhoto", "modelAFullBodyPhoto"),
+        ("shoeSidePhoto", "shoeSidePhoto"),
+        ("shoeSolePhoto", "shoeSolePhoto"),
+        ("scene", "scene"),
+        ("view01", "镜头 1"),
     ]
-    assert [run.url for run in images] == list(
-        render_picture(film, film.project.nodes["镜02机位图"]).image_urls
-    )
-    # 参考图按在描述里第一次出现的先后编号，写回 @ImageN，就是发给模型的那段描述。
+    assert [run.url for run in images] == EXPECTED["images"]["view02"]["input_str_list"]
+    # 按在描述里第一次出现的先后编号写回 @ImageN，就是发给模型的那段描述。
     numbers = {run.node: n for n, run in enumerate(images, start=1)}
     joined = "".join(
         run.text if isinstance(run, FilmPromptText) else f"@Image{numbers[run.node]}"
         for run in runs
     )
-    assert joined == expected_prompt("一", "生图：镜02机位图")[0]
-    assert by_node["跑鞋正面"].prompt is None
+    assert joined == EXPECTED["images"]["view02"]["prompt"]
+    assert by_node["shoeFrontPhoto"].prompt is None
 
 
-def test_a_reference_without_an_image_is_written_as_text_only() -> None:
-    (made,) = film_groups(generated(*MISSING), FILM)
+def test_a_reference_without_a_picture_stays_in_the_text_and_is_named_as_missing() -> None:
+    made = first(project_of("no-personB"), run_of("no-personB"))
+    by_node = {frame.node: frame for frame in made.frames}
 
-    runs = next(frame.prompt for frame in made.frames if frame.node == "镜03机位图")
+    runs = by_node["view01"].prompt
     assert runs is not None
-    images = [run.node for run in runs if isinstance(run, FilmPromptImage)]
-    assert images == ["跑鞋正面", "跑鞋鞋底", "公园跑道参考图", "镜01机位图"]
-    assert "东亚女性" in "".join(run.text for run in runs if isinstance(run, FilmPromptText))
-
-
-def missing_of(made: FilmGroup) -> dict[str, tuple[str, ...]]:
-    return {frame.node: frame.missing for frame in made.frames}
-
-
-def test_a_generated_image_names_the_references_that_have_no_image_yet() -> None:
-    (made,) = film_groups(generated(*MISSING, "镜01机位图"), FILM)
-
-    assert missing_of(made) == {
-        "短发女生参考图": (),
-        "跑鞋正面": (),
-        "跑鞋鞋底": (),
-        "公园跑道参考图": (),
-        "镜01机位图": ("短发女生",),
-        "镜02机位图": ("短发女生", "镜头 1"),
-        "镜03机位图": ("短发女生", "镜头 1"),
-        "镜04机位图": ("镜头 1",),
+    assert [run.node for run in runs if isinstance(run, FilmPromptImage)] == [
+        "modelAPortraitPhoto",
+        "modelAFullBodyPhoto",
+        "shoeSidePhoto",
+        "shoeFrontPhoto",
+        "scene",
+    ]
+    assert "@Image3" in "".join(run.text for run in runs if isinstance(run, FilmPromptText))
+    assert {node: frame.missing for node, frame in by_node.items()} == {
+        **{node: () for node in by_node},
+        "view01": ("personB",),
+        "view03": ("personB",),
     }
 
 
-def test_nothing_is_missing_when_every_reference_has_an_image() -> None:
-    (made,) = film_groups(generated(), FILM)
+def test_missing_views_are_named_by_the_group_that_asks() -> None:
+    project, run = FILM, RUN.replace(USE_VIEW01, "")
+    made, later = groups(project, run)
+    film = checked(project, run)
 
-    assert all(frame.missing == () for frame in made.frames)
+    assert {frame.node: frame.missing for frame in made.frames}["view02"] == ("镜头 1",)
+    assert {frame.node: frame.missing for frame in later.frames}["view04"] == ("第 1 组镜头 1",)
+    assert missing_references(film, "video01") == ("镜头 1",)
+    assert missing_references(film, "view02") == ("镜头 1",)
+    assert missing_references(film, "view04") == ("第 1 组镜头 1",)
+    assert missing_references(film, "video02") == ()
 
 
 def test_given_photos_are_never_missing() -> None:
-    # 镜04 只挂两张用户给的照片；一张图都没选用，它也不缺。
-    project = FILM.replace(
-        "    <gpt:Reference image={公园跑道参考图.image} for={公园跑道}/>\n"
-        "    <gpt:Reference image={镜01机位图.image}>木长椅和光线与同一场戏的第一个机位保持一致"
-        "</gpt:Reference>\n  </gpt:Image>",
-        "  </gpt:Image>",
+    made = first(FILM, None)
+
+    assert {frame.node: frame.missing for frame in made.frames if frame.kind == "photo"} == (
+        dict.fromkeys(PHOTOS, ())
     )
-    assert project != FILM
-
-    made = group(project, None)
-
-    assert missing_of(made)["镜04机位图"] == ()
-    assert [frame.url for frame in made.frames if frame.kind == "generated"] == [None] * 6
+    assert [frame.url for frame in made.frames if frame.kind == "generated"] == [None] * 5
 
 
-def test_a_view_from_another_group_is_named_with_that_group() -> None:
-    project = two_requests()
-
-    _, later = film_groups(checked(project), project)
-
-    assert [(frame.label, frame.number) for frame in later.frames] == [
-        ("网面跑鞋", 1),
-        ("第 1 组镜头 1", 2),
-    ]
-
-
-def test_settings_follow_the_video_prompt() -> None:
-    made = group()
+def test_settings_follow_the_video_prompt_and_are_named_by_the_slot() -> None:
+    made, later = groups()
 
     assert [(item.kind, item.target, item.label, item.images) for item in made.settings] == [
-        ("shooting", "value:拍摄与剪辑", None, ()),
-        ("element", "value:短发女生", "人物 短发女生", ("短发女生参考图",)),
-        ("element", "value:网面跑鞋", "产品 网面跑鞋", ("跑鞋正面", "跑鞋鞋底")),
-        ("element", "value:公园跑道", "场景 公园跑道", ("公园跑道参考图",)),
-        ("voice", "value:短发女生声音", "声音", ()),
-        ("voice", "value:旁白声音", "声音", ()),
+        ("shooting", "value:videoCapture", "拍摄与剪辑", ()),
+        ("element", "value:video01ModelA", "人物", ()),
+        ("element", "value:video01ModelB", "人物", ()),
+        ("element", "value:video01Shoe", "产品", ()),
+        ("element", "value:video01Setting", "场景", ()),
+        ("voice", "value:模特A声音", "声音", ()),
+        ("voice", "value:模特B声音", "声音", ()),
     ]
-    texts = [item.text for item in made.settings]
-    assert (
-        texts[0].splitlines()[0]
-        == "摄影：手机拍摄，手持跟拍，带轻微呼吸感；景别以中近景和鞋部特写为主。"
-    )
-    assert texts[1].endswith("左手腕戴一块白色运动手表"), "人物的身材句只在生图里，不在设定里"
-    assert "head-to-shoulder" not in "\n".join(texts)
-    assert texts[4].startswith("短发女生：年轻女性")
+    assert [item.text for item in made.settings] == [
+        "摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n"
+        "剪辑：全片硬切，在迈步的动作点上剪。\n"
+        "影调：清晨自然光，低对比，不做风格化调色。",
+        "模特A，长相和发型参考 @Image1，身材和服装参考 @Image2。",
+        "模特B，长相、发型和服装参考 @Image3。",
+        "SOLE_STRETCHY 鞋款，外观参考 @Image4（侧面）、@Image5（鞋头）、@Image6（鞋底）。",
+        "纽约红砖街区参考 @Image7。",
+        "模特A：年轻女声，语气轻快，像随口跟朋友分享。",
+        "模特B：略低的女声，带点好奇。",
+    ]
+    assert [item.label for item in later.settings] == ["拍摄与剪辑", "人物", "产品", "场景", "声音"]
 
 
 def test_shots_carry_their_lines_with_the_speaker_from_the_script() -> None:
-    made = group()
+    made = first()
 
-    first = made.shots[0]
-    assert (first.target, first.start, first.end, first.view) == (
-        "shot:全片镜头:1",
+    opening = made.shots[0]
+    assert (opening.target, opening.start, opening.end, opening.view) == (
+        "shot:video01Shots:1",
         0.0,
-        2.5,
-        "镜01机位图",
+        6.0,
+        "view01",
     )
-    assert first.parts[0].endswith("她抬头看着镜头说：")
-    assert first.parts[1] == " 音效：鞋底弹回时的一声轻响"
-    assert [(line.target, line.role, line.text) for line in first.lines] == [
-        ("line:lighter", "短发女生", "It's lighter than it looks.")
-    ]
-    last = made.shots[3]
-    assert [(line.target, line.role, line.text) for line in last.lines] == [
-        ("line:shop", "旁白", "Light & fast — grab yours before the weekend.")
+    assert opening.parts == (
+        "参考@Image8，中景，平视，手持跟拍。模特A和模特B在红砖街区的人行道上并肩走向镜头。"
+        "模特A低头看鞋说：",
+        " 模特B侧头问：",
+        " 音效：两人的脚步声与街道环境声。",
+    )
+    assert [(line.target, line.role, line.text) for line in opening.lines] == [
+        ("line:hook", "模特A", "这一双，走起来很轻。"),
+        ("line:reply", "模特B", "鞋底是软的吗？"),
     ]
 
 
 def test_a_body_with_a_comment_in_it_cannot_be_edited_on_the_page() -> None:
     project = FILM.replace(
-        "左手腕戴一块白色运动手表</text:Value>",
-        "左手腕戴一块白色运动手表<!-- 待定 --></text:Value>",
+        "服装参考 @Image3。</text:Value>", "服装参考 @Image3。<!-- 待定 --></text:Value>", 1
     )
 
-    person = group(project).settings[1]
+    person = first(project).settings[2]
 
-    assert (person.label, person.target) == ("人物 短发女生", None)
+    assert (person.label, person.target) == ("人物", None)
     with pytest.raises(FilmEditRejected, match="找不到了"):
-        edit_text(project, checked(project), [FilmTextEdit("value:短发女生", text="东亚女性")])
+        edit_text(project, checked(project), [FilmTextEdit("value:video01ModelB", text="x")])
 
 
-def test_a_value_is_rewritten_in_place_and_nothing_else_moves() -> None:
-    typed = "东亚女性，二十出头；黑色短发。上身穿浅灰色T恤"
+def test_a_value_with_image_numbers_is_rewritten_in_place_and_nothing_else_moves() -> None:
+    typed = "清晨的纽约红砖街区，参考 @Image7。"
 
-    updated = edit_text(FILM, checked(), [FilmTextEdit("value:短发女生", text=typed)])
+    updated = edit_text(FILM, checked(), [FilmTextEdit("value:video01Setting", text=typed)])
 
     assert changed_lines(FILM, updated) == [
-        '-  <text:Value id="短发女生">东亚女性，二十出头；鹅蛋脸，单眼皮，细长眉，淡妆；黑色齐耳短发，'
-        "中分。上身穿浅灰色速干短袖T恤，下身穿黑色及膝运动短裤，左手腕戴一块白色运动手表</text:Value>",
-        f'+  <text:Value id="短发女生">{typed}</text:Value>',
+        '-  <text:Value id="video01Setting">纽约红砖街区参考 @Image7。</text:Value>',
+        f'+  <text:Value id="video01Setting">{typed}</text:Value>',
     ]
-    assert group(updated).settings[1].text == typed
+    assert first(updated).settings[4].text == typed
 
 
 def test_shot_text_is_written_in_place_and_nothing_else_moves() -> None:
-    parts = ("开场，手持。她把 {鞋} 举到 <镜头> 前 & 笑：", " 音效：轻响")
+    parts = ("参考@Image8，开场。她把 {鞋} 举到 <镜头> 前 & 说：", " 她问：", " 音效：轻响")
 
-    updated = edit_text(FILM, checked(), [shot(1, parts, LIGHTER)])
+    updated = edit_text(FILM, checked(), [shot(1, parts, HOOK, REPLY)])
 
     (removed, added) = changed_lines(FILM, updated)
     assert removed.startswith(
-        '-    <film:Shot start="0.0" end="2.5" view={镜01机位图.image}>开场，手持，'
+        '-    <film:Shot start="0.0" end="6.0" view={view01.image}>参考@Image8，中景'
     )
     assert added == (
-        '+    <film:Shot start="0.0" end="2.5" view={镜01机位图.image}>'
-        "开场，手持。她把 ｛鞋｝ 举到 &lt;镜头&gt; 前 &amp; 笑：{lighter} 音效：轻响</film:Shot>"
+        '+    <film:Shot start="0.0" end="6.0" view={view01.image}>'
+        "参考@Image8，开场。她把 ｛鞋｝ 举到 &lt;镜头&gt; 前 &amp; 说：{hook} 她问：{reply} 音效：轻响"
+        "</film:Shot>"
     )
-    assert group(updated).shots[0].parts == (
-        "开场，手持。她把 ｛鞋｝ 举到 <镜头> 前 & 笑：",
+    assert first(updated).shots[0].parts == (
+        "参考@Image8，开场。她把 ｛鞋｝ 举到 <镜头> 前 & 说：",
+        " 她问：",
         " 音效：轻响",
     )
 
 
 def test_multiline_text_keeps_its_indentation() -> None:
     updated = edit_text(
-        FILM, checked(), [FilmTextEdit("value:拍摄与剪辑", text="摄影：手机拍摄。\n\n剪辑：硬切。")]
+        FILM,
+        checked(),
+        [FilmTextEdit("value:videoCapture", text="摄影：手机拍摄。\n\n剪辑：硬切。")],
     )
 
     assert changed_lines(FILM, updated)[3:] == [
@@ -336,94 +330,90 @@ def test_multiline_text_keeps_its_indentation() -> None:
         "+",
         "+    剪辑：硬切。",
     ]
-    assert group(updated).settings[0].text == "摄影：手机拍摄。\n\n剪辑：硬切。"
+    assert first(updated).settings[0].text == "摄影：手机拍摄。\n\n剪辑：硬切。"
 
 
 def test_a_line_and_a_voice_are_rewritten_where_they_are_written() -> None:
-    lighter = FilmLineEdit("line:lighter", "Lighter  &  <brighter>!")
+    hook = FilmLineEdit("line:hook", "这一双  &  <很轻>！")
 
     updated = edit_text(
         FILM,
         checked(),
         [
-            shot(1, parts_of(1), lighter),
-            FilmTextEdit("value:旁白声音", text="旁白：成熟男性的中低音。"),
+            shot(1, parts_of(1), hook, REPLY),
+            FilmTextEdit("value:模特B声音", text="模特B：略低的女声。"),
         ],
     )
 
     assert changed_lines(FILM, updated) == [
-        "-    <lighter><短发女生>It's lighter than it looks.</lighter>",
-        "+    <lighter><短发女生>Lighter &amp; &lt;brighter&gt;!</lighter>",
-        '-  <text:Value id="旁白声音">旁白：成熟男性圆润厚实的中低音。清晰松弛的英式英语，不紧不慢，'
-        "像坐在对面认真地跟你讲他的判断。</text:Value>",
-        '+  <text:Value id="旁白声音">旁白：成熟男性的中低音。</text:Value>',
+        "-    <hook><模特A>这一双，走起来很轻。</hook>",
+        "+    <hook><模特A>这一双 &amp; &lt;很轻&gt;！</hook>",
+        '-  <text:Value id="模特B声音">模特B：略低的女声，带点好奇。</text:Value>',
+        '+  <text:Value id="模特B声音">模特B：略低的女声。</text:Value>',
     ]
-    assert group(updated).shots[0].lines[0].text == "Lighter & <brighter>!"
+    assert first(updated).shots[0].lines[0].text == "这一双 & <很轻>！"
 
 
 def test_a_line_written_on_its_own_line_stays_there() -> None:
     project = FILM.replace(
-        "<miles><短发女生>Five miles, and my feet don't hurt.</miles>",
-        "<miles><短发女生>\n      Five miles, and my feet don't hurt.\n    </miles>",
+        "<answer><模特A>软，还回弹。</answer>",
+        "<answer><模特A>\n      软，还回弹。\n    </answer>",
     )
-    miles = FilmLineEdit("line:miles", "Six miles!")
+    answer = FilmLineEdit("line:answer", "软，而且回弹。")
 
-    updated = edit_text(project, checked(project), [shot(3, parts_of(3, project), miles)])
+    updated = edit_text(project, checked(project), [shot(2, parts_of(2, project), answer)])
 
-    assert changed_lines(project, updated) == [
-        "-      Five miles, and my feet don't hurt.",
-        "+      Six miles!",
-    ]
+    assert changed_lines(project, updated) == ["-      软，还回弹。", "+      软，而且回弹。"]
 
 
 def test_lines_can_only_be_reworded() -> None:
-    project = FILM.replace(
-        "笑着对镜头说：{miles} 音效：连续的脚步声",
-        "笑着对镜头说：{miles} 旁白：{shop} 音效：脚步声",
-    ).replace("拿起左脚那只鞋。旁白：{shop}", "拿起左脚那只鞋。")
-    miles, shop = (FilmLineEdit(line.target, line.text) for line in group(project).shots[2].lines)
-    film = checked(project)
+    film = checked()
 
-    for lines in ((shop, miles), (miles,), (miles, shop, FilmLineEdit("line:lighter", "x"))):
+    for lines in ((REPLY, HOOK), (HOOK,), (HOOK, REPLY, FilmLineEdit("line:answer", "x"))):
         parts = ("a",) * (len(lines) + 1)
         with pytest.raises(FilmEditRejected, match="台词只能改字"):
-            edit_text(project, film, [shot(3, parts, *lines)])
+            edit_text(FILM, film, [shot(1, parts, *lines)])
 
 
 def test_a_shot_whose_line_has_a_comment_is_not_offered() -> None:
-    project = FILM.replace(
-        "It's lighter than it looks.</lighter>", "It's lighter.<!-- 待定 --></lighter>"
-    )
+    project = FILM.replace("这一双，走起来很轻。</hook>", "这一双。<!-- 待定 --></hook>")
 
-    made = group(project)
+    made = first(project)
 
     assert made.shots[0].target is None
-    assert made.shots[0].lines[0].text == "It's lighter."
+    assert made.shots[0].lines[0].text == "这一双。"
 
 
 @pytest.mark.parametrize(
     ("edits", "message"),
     [
-        ([shot(1, ("只剩一段",), LIGHTER)], "文字和台词对不上"),
-        ([FilmTextEdit("shot:全片镜头:1", parts=("x", "y"))], "文字和台词对不上"),
-        ([shot(1, (" ", ""), LIGHTER)], "镜头的文字不能是空的"),
-        ([shot(1, ("x", ""), FilmLineEdit("line:lighter", "  "))], "台词不能是空的"),
-        ([shot(1, ("x", ""), FilmLineEdit("line:miles", "a"))], "台词只能改字"),
+        ([shot(1, ("只剩一段",), HOOK, REPLY)], "文字和台词对不上"),
+        ([FilmTextEdit("shot:video01Shots:1", parts=("x", "y"))], "文字和台词对不上"),
+        ([shot(1, (" ", "", ""), HOOK, REPLY)], "镜头的文字不能是空的"),
+        ([shot(1, ("x", "", ""), FilmLineEdit("line:hook", "  "), REPLY)], "台词不能是空的"),
+        ([shot(1, ("x", "", ""), FilmLineEdit("line:answer", "a"), REPLY)], "台词只能改字"),
         ([shot(1, ("x",))], "台词只能改字"),
-        ([FilmTextEdit("value:旁白声音", text="")], "这段字不能是空的"),
-        ([shot(1, ("看 @Image1", ""), LIGHTER)], "不能写 @Image"),
-        ([shot(9, ("x", ""), LIGHTER)], "找不到了"),
-        ([FilmTextEdit("line:lighter", text="x")], "找不到了"),
-        ([FilmTextEdit("value:全片镜头", text="x")], "找不到了"),
-        ([FilmTextEdit("element:短发女生", text="x")], "找不到了"),
+        ([FilmTextEdit("value:模特B声音", text="")], "这段字不能是空的"),
+        ([shot(9, ("x", ""), HOOK)], "找不到了"),
+        ([FilmTextEdit("line:hook", text="x")], "找不到了"),
+        ([FilmTextEdit("value:video01Shots", text="x")], "找不到了"),
+        ([FilmTextEdit("element:video01ModelA", text="x")], "找不到了"),
         (
-            [FilmTextEdit("value:旁白声音", text="a"), FilmTextEdit("value:旁白声音", text="b")],
+            [FilmTextEdit("value:模特B声音", text="a"), FilmTextEdit("value:模特B声音", text="b")],
             "一次只改一处",
         ),
         ([], "没有要改的字"),
-        ([shot(1, ("x", ""), FilmLineEdit("line:lighter", "a | b"))], "分镜有问题"),
+        ([shot(1, ("x", "", ""), FilmLineEdit("line:hook", "a | b"), REPLY)], "分镜有问题"),
+        # 去掉机位图开头的引用，或写出列表里没有的图号，改完的文件过不了保存检查。
+        ([shot(1, ("中景。", " ", ""), HOOK, REPLY)], "分镜有问题"),
+        ([FilmTextEdit("value:video01Setting", text="街区参考 @Image11。")], "分镜有问题"),
+        ([FilmTextEdit("value:video01Setting", text="街区参考 @image7。")], "分镜有问题"),
         (
-            [FilmTextEdit("value:网面跑鞋", text="浅蓝色" * 1400)],
+            [shot(1, ("参考@Image8，x", "", ""), FilmLineEdit("line:hook", "看 @Image1"), REPLY)],
+            "分镜有问题",
+        ),
+        (
+            [FilmTextEdit("value:view01Framing", text="浅灰色" * 1400)],
             f"超过 {PROMPT_MAX_CHARS} 字",
         ),
     ],
@@ -436,75 +426,77 @@ def test_an_edit_that_would_break_the_film_is_not_written(
 
 
 def test_choosing_an_image_for_a_generated_node_registers_and_selects_it() -> None:
-    url = 'https://cdn.test/park & "x".png'
+    url = 'https://cdn.test/person & "x".png'
+    run = run_of("no-personB")
 
-    change = choose_image(checked(), FILM, RUN, "公园跑道参考图", url)
+    changes = choose_image(checked(FILM, run), FILM, run, "personB", url)
 
-    assert change is not None and change[0] == RUN_PATH
-    assert changed_lines(RUN, change[1]) == [
-        '+  <media:Image id="公园跑道参考图-1" src="https://cdn.test/park &amp; &quot;x&quot;.png"/>',
-        '+  <use output="公园跑道参考图.image" image={公园跑道参考图-1}/>',
+    ((path, content),) = changes
+    assert path == RUN_PATH
+    assert changed_lines(run, content) == [
+        '+  <media:Image id="personB-1" src="https://cdn.test/person &amp; &quot;x&quot;.png"/>',
+        '+  <use output="personB.image" image={personB-1}/>',
     ]
-    assert checked(FILM, change[1]).image_url("公园跑道参考图.image") == url
+    assert checked(FILM, content).image_url("personB.image") == url
 
 
 def test_an_image_already_registered_is_reused() -> None:
-    change = choose_image(checked(), FILM, RUN, "短发女生参考图", PERSON_FIRST)
+    ((_, content),) = choose_image(checked(), FILM, RUN, "personB", GENERATED["scene"])
 
-    assert change is not None
-    assert changed_lines(RUN, change[1]) == [
-        '-  <use output="短发女生参考图.image" image={短发女生修过手}/>',
-        '+  <use output="短发女生参考图.image" image={短发女生第一版}/>',
+    assert changed_lines(RUN, content) == [
+        '-  <use output="personB.image" image={personB-v1}/>',
+        '+  <use output="personB.image" image={scene-v1}/>',
     ]
 
 
 def test_clearing_a_choice_removes_its_use_and_leaves_the_image_empty() -> None:
-    change = choose_image(checked(), FILM, RUN, "短发女生参考图", None)
+    ((path, content),) = choose_image(checked(), FILM, RUN, "personB", None)
 
-    assert change is not None
-    assert changed_lines(RUN, change[1]) == [
-        '-  <use output="短发女生参考图.image" image={短发女生修过手}/>'
-    ]
-    film = checked(FILM, change[1])
-    assert film.image_url("短发女生参考图.image") is None
+    assert path == RUN_PATH
+    assert content == run_of("no-personB")
+    film = checked(FILM, content)
+    assert film.image_url("personB.image") is None
     # 登记的图留着，可以再选用。
-    assert film.registered["短发女生修过手"] == PERSON_FIXED
+    assert film.registered["personB-v1"] == GENERATED["personB"]
 
 
 def test_nothing_is_written_when_the_image_is_already_the_one_in_use() -> None:
     film = checked()
+    unchosen = run_of("no-personB")
 
-    assert choose_image(film, FILM, RUN, "短发女生参考图", PERSON_FIXED) is None
-    assert choose_image(film, FILM, RUN, "公园跑道参考图", None) is None
-    assert choose_image(film, FILM, RUN, "跑鞋正面", SHOE_FRONT) is None
+    assert choose_image(film, FILM, RUN, "personB", GENERATED["personB"]) == []
+    assert choose_image(checked(FILM, unchosen), FILM, unchosen, "personB", None) == []
+    assert choose_image(film, FILM, RUN, "shoeFrontPhoto", SHOE_FRONT) == []
 
 
 def test_the_first_choice_creates_the_run_file() -> None:
-    change = choose_image(checked(FILM, None), FILM, None, "镜01机位图", VIEW_ONE)
+    ((path, content),) = choose_image(
+        checked(FILM, None), FILM, None, "personB", GENERATED["personB"]
+    )
 
-    assert change is not None and change[0] == RUN_PATH
-    film = checked(FILM, change[1])
-    assert film.selected == {"镜01机位图": "镜01机位图-1"}
-    assert film.image_url("镜01机位图.image") == VIEW_ONE
+    assert path == RUN_PATH
+    film = checked(FILM, content)
+    assert film.selected == {"personB": "personB-1"}
+    assert film.image_url("personB.image") == GENERATED["personB"]
 
 
 def test_a_given_photo_gets_its_new_address_in_the_project_file() -> None:
     url = "https://cdn.test/new-shoe.jpg?size=2&crop=1"
 
-    change = choose_image(checked(), FILM, RUN, "跑鞋正面", url)
+    ((path, content),) = choose_image(checked(), FILM, RUN, "shoeFrontPhoto", url)
 
-    assert change is not None and change[0] == FILM_PATH
-    assert changed_lines(FILM, change[1])[1] == (
-        '+  <media:Image id="跑鞋正面" src="https://cdn.test/new-shoe.jpg?size=2&amp;crop=1"/>'
+    assert path == FILM_PATH
+    assert changed_lines(FILM, content)[1] == (
+        '+  <media:Image id="shoeFrontPhoto" src="https://cdn.test/new-shoe.jpg?size=2&amp;crop=1"/>'
     )
-    assert checked(change[1]).image_url("跑鞋正面") == url
+    assert checked(content).image_url("shoeFrontPhoto") == url
 
 
 @pytest.mark.parametrize(
     ("image", "url", "message"),
     [
-        ("跑鞋正面", None, "不能清空"),
-        ("短发女生", "https://cdn.test/x.png", "找不到这张图"),
+        ("shoeFrontPhoto", None, "不能清空"),
+        ("capture", "https://cdn.test/x.png", "找不到这张图"),
         ("没有这个", "https://cdn.test/x.png", "找不到这张图"),
     ],
 )
@@ -513,3 +505,76 @@ def test_a_choice_that_does_not_fit_the_image_is_refused(
 ) -> None:
     with pytest.raises(FilmEditRejected, match=message):
         choose_image(checked(), FILM, RUN, image, url)
+
+
+def test_choosing_a_view_for_the_first_time_writes_it_into_its_group() -> None:
+    film = checked(FILM_NO_VIEW04, RUN_NO_VIEW04)
+
+    changes = choose_image(film, FILM_NO_VIEW04, RUN_NO_VIEW04, "view04", VIEW04)
+
+    # 先写工程文件：插在 video02 元素图之后、镜头 2 的机位图之前，镜头 1 开头写引用，后面的图号各加 1。
+    assert [path for path, _ in changes] == [FILM_PATH, RUN_PATH]
+    project, run = (content for _, content in changes)
+    assert project == FILM
+    assert checked(project, run).image_url("view04.image") == VIEW04
+
+
+def test_clearing_a_view_takes_it_out_of_its_group() -> None:
+    changes = choose_image(checked(), FILM, RUN, "view04", None)
+
+    # 先写运行文件：删掉选用，再删掉列表里的这一行和镜头 1 开头的引用，后面的图号各减 1。
+    assert changes == [(RUN_PATH, RUN_NO_VIEW04), (FILM_PATH, FILM_NO_VIEW04)]
+
+
+def test_switching_a_view_to_another_version_only_writes_the_run_file() -> None:
+    ((path, content),) = choose_image(
+        checked(), FILM, RUN, "view04", "https://cdn.test/view04-v2.png"
+    )
+
+    assert path == RUN_PATH
+    assert changed_lines(RUN, content)[-2:] == [
+        '-  <use output="view04.image" image={view04-v1}/>',
+        '+  <use output="view04.image" image={view04-1}/>',
+    ]
+
+
+def test_a_view_in_the_middle_moves_the_later_numbers() -> None:
+    expected = (
+        FILM.replace("    <seedance:Reference image={view05.image}/>\n", "")
+        .replace(">参考@Image8，硬切，中景，手持跟拍。", ">硬切，中景，手持跟拍。")
+        .replace(">参考@Image9，硬切，全景", ">参考@Image8，硬切，全景")
+    )
+    without = RUN.replace('  <use output="view05.image" image={view05-v1}/>\n', "")
+
+    cleared = choose_image(checked(), FILM, RUN, "view05", None)
+    chosen = choose_image(
+        checked(expected, without), expected, without, "view05", GENERATED["view05"]
+    )
+
+    assert cleared == [(RUN_PATH, without), (FILM_PATH, expected)]
+    assert chosen[0] == (FILM_PATH, FILM)
+
+
+def test_a_half_written_choice_still_passes_and_blocks_its_group_until_it_is_repeated() -> None:
+    # 两种写法中途失败都会停在这里：列表里有 view04，运行文件里没有选用它。
+    film = checked(FILM, RUN_NO_VIEW04)
+
+    assert missing_references(film, "video02") == ("镜头 1",)
+    assert choose_image(film, FILM, RUN_NO_VIEW04, "view04", VIEW04)[0][0] == RUN_PATH
+    assert choose_image(film, FILM, RUN_NO_VIEW04, "view04", None) == [(FILM_PATH, FILM_NO_VIEW04)]
+
+
+def test_a_view_whose_shot_cannot_be_rewritten_in_place_is_refused() -> None:
+    project = FILM_NO_VIEW04.replace("她说：{stride} 音效", "她说：{stride}<!-- 待定 --> 音效")
+
+    with pytest.raises(FilmEditRejected, match="跟 AI 导演说"):
+        choose_image(checked(project, RUN_NO_VIEW04), project, RUN_NO_VIEW04, "view04", VIEW04)
+
+
+def test_images_are_assembled_from_the_film_as_it_stands() -> None:
+    film = checked()
+
+    picture = render_picture(film, film.project.nodes["personB"])
+
+    assert picture.text == EXPECTED["images"]["personB"]["prompt"]
+    assert picture.image_urls == ()

@@ -55,13 +55,11 @@ class Film:
             if "src" in node.attrs and document.tags.get(node.tag) is not None
         ]
 
-    def image_url(self, reference: str | None, *, assume_generated: bool = False) -> str | None:
+    def image_url(self, reference: str | None) -> str | None:
         """一个「图」引用现在的地址；还没有图时是 None。
 
         用户给的图用它自己的地址。生图节点只认运行文件里的选用：选用了登记的图就用那一张，
-        没有选用就是还没有图，生成过也不算。
-        ``assume_generated`` 把还没有图的当作已有，给一个占位地址，只用来按「写了的图全部已生成」
-        算张数和字数上限。"""
+        没有选用就是还没有图，生成过也不算。"""
 
         if reference is None:
             return None
@@ -73,7 +71,7 @@ class Film:
         chosen = self.selected.get(name)
         if chosen is not None:
             return self.registered[chosen]
-        return f"<待生成:{reference}>" if assume_generated else None
+        return None
 
 
 __all__ = ["FILM_PATH", "RUN_PATH", "Film"]

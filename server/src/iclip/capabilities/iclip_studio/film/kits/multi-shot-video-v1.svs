@@ -1,0 +1,54 @@
+<?icml using="@iclip/text/svs@1"?>
+<sheet version="1" id="multi-shot-video-v1">
+  text-template.multi-shot-video-v1 {
+    separator: paragraph;
+  }
+
+  text-template.multi-shot-video-v1.block.capture {
+    kind: slot;
+    order: 10;
+    slot: capture;
+    optional: false;
+    label: "拍摄与剪辑：";
+  }
+
+  text-template.multi-shot-video-v1.block.person {
+    kind: slot;
+    order: 20;
+    slot: person;
+    optional: true;
+    label: "人物：";
+  }
+
+  text-template.multi-shot-video-v1.block.product {
+    kind: slot;
+    order: 30;
+    slot: product;
+    optional: true;
+    label: "产品：";
+  }
+
+  text-template.multi-shot-video-v1.block.setting {
+    kind: slot;
+    order: 40;
+    slot: setting;
+    optional: true;
+    label: "场景：";
+  }
+
+  text-template.multi-shot-video-v1.block.audio {
+    kind: slot;
+    order: 50;
+    slot: audio;
+    optional: true;
+    label: "声音：";
+  }
+
+  text-template.multi-shot-video-v1.block.shots {
+    kind: slot;
+    order: 60;
+    slot: shots;
+    optional: false;
+    label: "镜头：";
+  }
+</sheet>
