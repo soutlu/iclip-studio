@@ -100,11 +100,13 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         "number": 3,
     }
     shoe_setting = group["settings"][3]
-    assert (shoe_setting["kind"], shoe_setting["label"], shoe_setting["images"]) == (
-        "element",
-        "产品",
-        [],
-    )
+    assert (
+        shoe_setting["kind"],
+        shoe_setting["label"],
+        shoe_setting["images"],
+        shoe_setting["shared"],
+    ) == ("element", "产品", [], False)
+    assert group["settings"][0]["shared"] is True
     photo = group["frames"][0]
     assert (photo["kind"], photo["url"], photo["prompt"], photo["aspectRatio"]) == (
         "photo",

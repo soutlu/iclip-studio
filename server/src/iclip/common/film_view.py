@@ -85,6 +85,10 @@ class FilmSetting:
     images: tuple[str, ...]
     """恒为空：这组的图都在 ``FilmGroup.frames`` 里。"""
 
+    shared: bool
+    """这段字还用在别的生成节点里（几组共用的拍法与声音，或与生图共用的描述）：字里不能有图号，
+    页面上不给插入图片。"""
+
 
 @dataclass(frozen=True, slots=True)
 class FilmLine:

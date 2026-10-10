@@ -1374,7 +1374,8 @@ export type FilmPromptTextOut = {
  * FilmSettingOut
  *
  * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；
- * ``images`` 恒为空列表，这组的图都在 ``frames`` 里。
+ * ``images`` 恒为空列表，这组的图都在 ``frames`` 里；``shared`` 为 true 的这段还用在别的生成节点里，
+ * 字里不能有图号，页面上不给插入图片。
  */
 export type FilmSettingOut = {
   /**
@@ -1389,6 +1390,10 @@ export type FilmSettingOut = {
    * Label
    */
   label: string | null
+  /**
+   * Shared
+   */
+  shared: boolean
   /**
    * Target
    */

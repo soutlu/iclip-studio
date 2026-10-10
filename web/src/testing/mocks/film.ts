@@ -117,11 +117,13 @@ const mockGroup = (): MockGroup => ({
   index: 1,
   model: 'vendor-a-seedance-2-0',
   seconds: 12,
+  // 拍法与声音在完整的工程里是几组视频共用的（这里只摆出第 1 组），`shared` 为 true。
   settings: [
     {
       images: [],
       kind: 'shooting',
       label: '拍摄与剪辑',
+      shared: true,
       target: 'value:拍摄与剪辑',
       text: '摄影：手持拍摄，带轻微呼吸感，以低机位仰拍和脚部特写为主。\n剪辑：全片硬切，快节奏。',
     },
@@ -129,6 +131,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'element',
       label: '人物',
+      shared: false,
       target: 'value:金发女生',
       text: '金发女生，二十岁上下的白人女生，脸型偏长，金色齐耳波波头，长相参考@Image1。',
     },
@@ -136,6 +139,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'element',
       label: '产品',
+      shared: false,
       target: 'value:绒面一脚蹬',
       text: '绒面一脚蹬，浅米色反绒皮的低帮鞋，鞋面参考@Image2，鞋底参考@Image3。',
     },
@@ -143,6 +147,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'element',
       label: '场景',
+      shared: false,
       target: 'value:涂鸦滑板场',
       text: '户外露天水泥滑板场参考@Image4，坡面和地面喷满街头涂鸦。',
     },
@@ -150,6 +155,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'voice',
       label: '声音',
+      shared: true,
       target: 'value:旁白声音',
       text: '旁白：年轻女性松弛的中音，普通话，语速偏慢。',
     },
@@ -273,11 +279,27 @@ const placeViews = (groups: readonly MockGroup[], picks: ReadonlyMap<string, str
     ),
   )
 
+/** 人物的身材句：同时用在人物设定图的描述里，是一段与生图共用的元素描述（`shared`），字里不能有图。 */
+const SHARED_BODY: FilmGroupOut['settings'][number] = {
+  images: [],
+  kind: 'element',
+  label: '人物',
+  shared: true,
+  target: 'value:金发女生身材',
+  text: '身材高挑匀称，肩宽适中。',
+}
+
 /** 给一段对话放一份能用的工程：工作区里有 `film.icml` 与 `film.icrun`，制作页读得出一组。默认场景图与镜头 1 的
- * 机位图没选用、出不了片；`complete` 时全都选用了。工程按选用经 `placeView` 摆好，与后端选用时写回的一样。 */
+ * 机位图没选用、出不了片；`complete` 时全都选用了；`sharedBody` 时人物后面多一段与生图共用的身材句。工程按选用经
+ * `placeView` 摆好，与后端选用时写回的一样。 */
 export const seedMockFilm = (
   conversationId: string,
-  options: { problems?: number; model?: string | undefined; complete?: boolean } = {},
+  options: {
+    problems?: number
+    model?: string | undefined
+    complete?: boolean
+    sharedBody?: boolean
+  } = {},
 ) => {
   const filmVersion = putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
   const runVersion = putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE)
@@ -287,7 +309,14 @@ export const seedMockFilm = (
     ...(options.complete === true ? COMPLETE_CHOICES : []),
   ])
   chosen.set(conversationId, picks)
-  const group = { ...mockGroup(), ...(options.model === undefined ? {} : { model: options.model }) }
+  const seeded = mockGroup()
+  const group = {
+    ...seeded,
+    ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.sharedBody === true
+      ? { settings: seeded.settings.toSpliced(2, 0, SHARED_BODY) }
+      : {}),
+  }
   films.set(conversationId, {
     filmVersion,
     groups: problems > 0 ? [] : placeViews([group], picks),
@@ -492,7 +521,7 @@ const renumberGroup = (
     const texts = setting === undefined ? (edit.parts ?? []) : [edit.text ?? '']
     const images = edit.images ?? []
     if (
-      (setting?.kind === 'shooting' || setting?.kind === 'voice') &&
+      setting?.shared === true &&
       (images.length > 0 || texts.join('').match(IMAGE_NUMBER) !== null)
     )
       return '这段文字用在几个地方，无法插入图片；带图号的文字只能用在一个节点里'

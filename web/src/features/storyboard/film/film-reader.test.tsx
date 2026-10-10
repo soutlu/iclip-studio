@@ -56,8 +56,15 @@ const mount = async ({
   problems = 0,
   model,
   complete = false,
-}: { readOnly?: boolean; problems?: number; model?: string; complete?: boolean } = {}) => {
-  seedMockFilm(CONVERSATION_ID, { complete, model, problems })
+  sharedBody = false,
+}: {
+  readOnly?: boolean
+  problems?: number
+  model?: string
+  complete?: boolean
+  sharedBody?: boolean
+} = {}) => {
+  seedMockFilm(CONVERSATION_ID, { complete, model, problems, sharedBody })
   await renderWithProviders(
     <>
       <FilmReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
@@ -261,6 +268,29 @@ describe('制作页', () => {
     await waitFor(() => expect(copy).not.toHaveAttribute('aria-disabled'))
     await user.click(copy)
     await expect(navigator.clipboard.readText()).resolves.toContain('6–9秒 改过的第三镜。')
+  })
+
+  it('有没存下的改动时各段的复制按钮也不可用，原因与顶栏相同；存好后复制的是存好的字', async () => {
+    const user = userEvent.setup()
+    const script = await renderFilm()
+    const copy = within(script).getByRole('button', { name: '复制镜头 3' })
+    await replaceText(
+      within(script).getByRole('textbox', { name: '镜头 3的描述' }),
+      '改过的第三镜。',
+    )
+
+    expect(copy).toHaveAttribute('aria-disabled', 'true')
+    await user.hover(copy)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('修改尚未保存，无法复制')
+    expect(within(script).getByRole('button', { name: '复制全局设定' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+
+    expect(await screen.findByText('已保存')).toBeInTheDocument()
+    await waitFor(() => expect(copy).not.toHaveAttribute('aria-disabled'))
+    await user.click(copy)
+    await expect(navigator.clipboard.readText()).resolves.toBe('改过的第三镜。')
   })
 
   it('改了带芯片的那段：写回的字里 @ImageN 照原样，粘贴进来的 @ImageN 也是芯片', async () => {
@@ -829,5 +859,18 @@ describe('制作页字里插入、删除图片', () => {
     }
     // 出场元素的描述有。
     await openMention(within(script).getByRole('textbox', { name: '人物' }))
+  })
+
+  it('与生图共用的元素描述按 shared 不给插入入口，同一槽里不共用的那段照样有', async () => {
+    await mount({ sharedBody: true })
+    const script = await screen.findByRole('region', { name: '分镜文案' })
+    const [person, body] = within(script).getAllByRole('textbox', { name: '人物' })
+    if (person === undefined || body === undefined) throw new Error('人物下应有两段')
+    expect(body).toHaveTextContent('身材高挑匀称')
+
+    act(() => body.focus())
+    await userEvent.keyboard('@')
+    expect(screen.queryByRole('listbox', { name: '插入参考图' })).not.toBeInTheDocument()
+    await openMention(person)
   })
 })

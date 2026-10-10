@@ -234,7 +234,7 @@ def edit_text(
         assert node.inner is not None
         splice.replace(node.inner, _body(source[slice(*node.inner)], text))
         expected.append((edit.target, text))
-    photos = _Photos(project)
+    photos = _Photos(film)
     for video, typed in groups.items():
         expected += _renumber_group(source, film, video, typed, edited, splice, photos)
     photos.write(source, splice)
@@ -392,6 +392,7 @@ def _settings(project: Document, video: Node, source: str) -> tuple[FilmSetting,
                 slot.title,
                 value.text,
                 (),
+                len(_users(project, value)) > 1,
             )
             for value in filled[name]
         ]
@@ -560,8 +561,8 @@ def _renumber_group(
 ) -> list[tuple[str, str]]:
     """视频 ``video`` 里几段字改好以后，按这组全部的字重排它的参考图列表，返回改过的每段应读出的正文。
 
-    新插入的图不在列表里时排在元素图之后、机位图之前（「素材」里已有同一地址的照片就引用它，没有就
-    新加一张）；元素图在这组的字里一处都不用了就从列表删掉。列表定下以后按一张新旧编号对照表改一遍
+    新插入的图不在列表里时排在元素图之后、机位图之前（是生图节点选用的图就引用那个节点，否则引用
+    「素材」里同一地址的照片，没有就新加一张，见 ``_Photos``）；元素图在这组的字里一处都不用了就从列表删掉。列表定下以后按一张新旧编号对照表改一遍
     这组的字：改过的段写新的正文，没改的段只改图号。机位图的「参考@ImageN，」随选用增删，改字时
     删掉或挪动它不写。"""
 
@@ -611,7 +612,7 @@ def _renumber_group(
     if added:
         prefix = video.tag.rpartition(":")[0]
         tag = f"{prefix}:Reference" if prefix else "Reference"
-        lines = [f"<{tag} image={{{photos.name_for(url)}}}/>" for url in added]
+        lines = [f"<{tag} image={{{photos.reference_for(url)}}}/>" for url in added]
         if first_view < count:
             anchor = listing[first_view]
             indent = _indent(source, anchor)
@@ -651,11 +652,25 @@ def _renumber_group(
 
 
 class _Photos:
-    """改字时新进参考图列表的图在「素材」里的照片：同一地址的照片已经有了就用它，没有就新加一张，
-    几组插入同一张图时只加一次。"""
+    """改字时新进参考图列表的图在列表里怎么引用：地址是某个生图节点现在选用的图，就引用那个节点的
+    输出，它以后重新生成或换了选用，引用跟着变；否则是「素材」里的照片，同一地址的照片已经有了就用它，
+    没有就新加一张，几组插入同一张图时只加一次。"""
 
-    def __init__(self, project: Document) -> None:
+    def __init__(self, film: Film) -> None:
+        project = film.project
         self._project = project
+        views = {
+            view.partition(".")[0]
+            for shot in project.find("Shot")
+            if (view := shot.reference("view")) is not None
+        }
+        self._generated: dict[str, str] = {}
+        for node in film.image_nodes():
+            name = node.attrs["id"]
+            url = film.image_url(f"{name}.image")
+            if url is not None:
+                self._generated.setdefault(url, name)
+        self._views = views
         self._named = {
             node.attrs["src"]: node.attrs["id"]
             for node in project.find("Image", MEDIA_PACKAGE)
@@ -670,11 +685,20 @@ class _Photos:
 
         return tuple(self._inserted)
 
-    def name_for(self, url: str) -> str:
-        """``url`` 这张照片的名字。"""
+    def reference_for(self, url: str) -> str:
+        """列表里引用 ``url`` 这张图的写法（花括号里的名字）。机位图只随选用进列表，它选用的图不能
+        这样插入。"""
 
         if url not in self._inserted:
             self._inserted.append(url)
+        generated = self._generated.get(url)
+        if generated is not None:
+            if generated in self._views:
+                raise FilmEditRejected("机位图只随选用进参考图列表，无法插入；请在镜头上选用")
+            return f"{generated}.image"
+        return self._photo(url)
+
+    def _photo(self, url: str) -> str:
         name = self._named.get(url)
         if name is not None:
             return name

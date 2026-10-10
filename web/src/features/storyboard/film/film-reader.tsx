@@ -281,6 +281,10 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     search.video === undefined
       ? undefined
       : generations.data?.find((job) => job.id === search.video)
+  // 有没存下的改动时（保存中、保存失败、版本冲突）顶栏与各段的复制都不可用：拷走的要是存好的字，草稿里新插入的图还是
+  // 私用区的记号。几种情况同一句原因。
+  const copyBlocked =
+    draft.hasUnsavedChanges || draft.state.kind === 'saving' ? '修改尚未保存，无法复制' : undefined
   // 提交途中按钮自己写着「提交中」，不另说原因。参考图有没选用的一直挡着（后端也会拒），排在保存、上传这些暂态之前，
   // 免得每次自动保存时原因从状态行上消失；只读与冲突、保存失败照旧先说。
   const missingBlocker = missingFramesText(group)
@@ -327,10 +331,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
           // 后端拼好的正文，与这组出片时发的逐字相同；有没存下的改动时（保存中、保存失败、版本冲突）它还是旧的，
           // 存好之前不让复制，几种情况同一句原因。
           copy={{
-            blocked:
-              draft.hasUnsavedChanges || draft.state.kind === 'saving'
-                ? '修改尚未保存，无法复制'
-                : undefined,
+            blocked: copyBlocked,
             done: '已复制完整提示词',
             label: '复制完整提示词',
             text: group.prompt,
@@ -415,6 +416,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
             <div aria-hidden className="storyboard-divider" />
             <div className="storyboard-script">
               <FilmScript
+                copyBlocked={copyBlocked}
                 frame={selectedTake === undefined ? selection.frame : undefined}
                 group={group}
                 onEdit={draft.update}

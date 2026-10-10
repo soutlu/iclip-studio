@@ -6,8 +6,8 @@
  * 全局设定一段一行，前面写模板里的段名。字里的 `@ImageN` 在原位置是图片芯片（镜头开头的「参考@ImageN，」也是），
  * 点芯片选中这段、舞台看那张图；这段选中且舞台正看着那张时芯片高亮。
  * 镜头正文与台词交替排：台词单独一行，说话人是固定的小标签，只能改引号里的字。没法在页面上改的段只读。
- * 出场元素的描述与镜头正文里能插入、删除图片（见 `FilmTextEditor`），镜头开头机位图的引用删不掉；拍法与声音几组共用，
- * 台词里不能写图，都不给插入的入口。
+ * 全局设定与镜头正文里能插入、删除图片（见 `FilmTextEditor`），镜头开头机位图的引用删不掉；还被别的生成节点用到的设定
+ * （`shared`）与台词里不能写图，都不给插入的入口。有没存下的改动时各段的复制按钮不可用，拷走的总是存好的字。
  * 点哪段选中哪段，舞台跟着切到它挂的图。列里不收拖进来的文件，免得漏给聊天输入框。 */
 
 import { Fragment, useRef, useState, type FocusEvent } from 'react'
@@ -53,18 +53,22 @@ type FilmScriptProps = {
   uploads: boolean
   /** 第 `key` 个编辑器里有没有图正在上传；出片要等它们传完。 */
   onUploadingChange: (key: string, uploading: boolean) => void
+  /** 此刻不能复制段落的原因（有没存下的改动），给了就置灰、悬停说原因；与顶栏复制按钮同一句。 */
+  copyBlocked: string | undefined
 }
 
 // 段里自带选中动作的控件（展开全局设定、点图片）聚焦时不再走「焦点进段就选中」，免得先选段再选图跳两次。
 const keepFocusInside = (event: FocusEvent) => event.stopPropagation()
 
-const copyButton = (label: string, text: string) => (
+const copyButton = (label: string, text: string, blocked: string | undefined) => (
   <IconButton
     className="storyboard-segment-copy"
+    disabled={blocked !== undefined}
     label={`复制${label}`}
     name="copy"
     onClick={() => void copyWithToast(text, '已复制')}
     size="sm"
+    tooltip={blocked}
   />
 )
 
@@ -76,6 +80,7 @@ const frameAt = (group: FilmGroup, node: string | null) => {
 }
 
 export function FilmScript({
+  copyBlocked,
   frame,
   group,
   onEdit,
@@ -154,7 +159,7 @@ export function FilmScript({
                 {promptLength(group.settings.map(settingText).join('\n'))} 字
               </span>
               <span className="ml-auto flex items-center gap-0.5">
-                {copyButton('全局设定', group.settings.map(settingText).join('\n'))}
+                {copyButton('全局设定', group.settings.map(settingText).join('\n'), copyBlocked)}
                 {settingsClamped ? (
                   <Button
                     aria-expanded={settingsExpanded}
@@ -174,9 +179,9 @@ export function FilmScript({
               <div className="film-segment-body">
                 {group.settings.map((setting) => (
                   <SettingRow
-                    // 拍法与声音是几组共用的，字里不能有图，不给插入的入口；出场元素的描述只用在这一组。
+                    // 还被别的生成节点用到的字（几组共用的拍法与声音、与生图共用的描述）里不能有图，不给插入的入口。
                     insert={
-                      setting.kind === 'element' && setting.target !== null
+                      !setting.shared && setting.target !== null
                         ? insertOf(setting.target)
                         : undefined
                     }
@@ -245,7 +250,7 @@ export function FilmScript({
                           </button>
                         </span>
                       )}
-                      {copyButton(label, shotText(shot))}
+                      {copyButton(label, shotText(shot), copyBlocked)}
                     </span>
                   </div>
                   <FilmFrameChipsProvider value={chipsOf(id, selected)}>
