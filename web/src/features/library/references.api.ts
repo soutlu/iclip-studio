@@ -18,6 +18,7 @@ import {
   type zReferenceUpdateIn,
   type zReferenceVideoItemOut,
 } from '@/shared/api/generated/zod.gen'
+import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { dateRangeBounds, UNBOUNDED_RANGE, type DateRange } from '@/shared/lib/date-range'
 
 export type ReferencesPage = z.output<typeof zReferenceVideosOut>
@@ -74,17 +75,12 @@ export const isBreakdownBusy = (status: BreakdownStatus): boolean =>
 /** 试生成可选的画幅，按合同的先后。 */
 const TEST_ASPECT_RATIOS: readonly TestAspectRatio[] = zTestVideoIn.shape.aspectRatio.options
 
-const ratioValueOf = (aspectRatio: TestAspectRatio): number => {
-  const [width = 1, height = 1] = aspectRatio.split(':').map(Number)
-  return width / height
-}
-
 /** 取与原片宽高比最接近的画幅；按比值的对数比较，竖版与横版偏差同样计算。 */
 export const nearestTestAspectRatio = (ratio: number): TestAspectRatio => {
   let best: TestAspectRatio = '9:16'
   let bestDistance = Number.POSITIVE_INFINITY
   for (const candidate of TEST_ASPECT_RATIOS) {
-    const distance = Math.abs(Math.log(ratio / ratioValueOf(candidate)))
+    const distance = Math.abs(Math.log(ratio / aspectValueOf(candidate)))
     if (distance < bestDistance) {
       best = candidate
       bestDistance = distance

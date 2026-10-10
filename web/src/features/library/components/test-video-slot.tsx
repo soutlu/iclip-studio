@@ -3,11 +3,11 @@
  * 只有属主本人能试生成：拆解完成后点「试生成」才生成，拆完、改拆解、重拆都不自动生成。
  * 没有视频时铺原片首帧的模糊暗版，居中说明当前状态；生成好了换成共用播放器，与原片同款。 */
 
-import { useEffect, useId, useState, type ReactNode, type Ref } from 'react'
+import { useId, type ReactNode, type Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
-import { formatDuration } from '@/shared/ui/media-preview'
+import { useElapsed } from '@/shared/ui/media-preview'
 import { VideoPlayer } from '@/shared/ui/video-player'
 import type { TestVideo } from '../references.api'
 
@@ -40,16 +40,6 @@ export function CompareOverlay({ label, meta, action, note }: CompareOverlayProp
       {note}
     </div>
   )
-}
-
-/** 在途试生成的已用时长，每秒走一格；两端时钟有偏差时不出负数。 */
-const useElapsed = (since: string): string => {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
-  return formatDuration(Math.max(0, (now - Date.parse(since)) / 1000))
 }
 
 type TestVideoCellProps = {

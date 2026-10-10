@@ -12,7 +12,7 @@ import {
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
-import { useTakeElapsed } from '../components/use-take-elapsed'
+import { useElapsed } from '@/shared/ui/media-preview'
 import {
   selectedRange,
   stepSelect,
@@ -149,7 +149,7 @@ function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
 
 /** 占位上那层「生成中 0:42」，盖住视频与原声。 */
 function RunningCover({ since, style }: { since: string; style: CSSProperties }) {
-  const elapsed = useTakeElapsed(since)
+  const elapsed = useElapsed(since)
   return (
     <span className="video-editor-timeline-running" role="status" style={style}>
       <Icon className="motion-safe:animate-spin" decorative name="loading" size="sm" />

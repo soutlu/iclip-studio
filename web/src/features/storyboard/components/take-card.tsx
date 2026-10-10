@@ -6,7 +6,7 @@ import { formatShortTime } from '@/shared/lib/date-time'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { formatDuration } from '@/shared/ui/media-preview'
 import type { Take } from '../takes'
-import { useTakeElapsed } from './use-take-elapsed'
+import { useElapsed } from '@/shared/ui/media-preview'
 
 /** 封面截帧宽度：横屏卡最宽三百来像素，两倍屏也够；固定一档，卡宽变了不重新请求。 */
 const POSTER_WIDTH = 640
@@ -93,7 +93,7 @@ function CompletedFace({ url }: { url: string | undefined }) {
 
 /** 在途卡：扫光加转圈与已用时长。 */
 function RunningFace({ since }: { since: string }) {
-  const elapsed = useTakeElapsed(since)
+  const elapsed = useElapsed(since)
   return (
     <>
       <span className="storyboard-take-shine" />
