@@ -74,7 +74,7 @@ class TestVideoIn(CamelModel):
         ]
         | None
     ) = None
-    """归属标签，规则同媒体生成：钥匙必填；浏览器可不给，给了只能是自己。"""
+    """归属标签，规则同媒体生成。"""
 
 
 class TestVideoOut(CamelModel):
