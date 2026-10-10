@@ -17,10 +17,9 @@ const readDocument = (page: Page) => readVideoShots(page, '读取工作区失败
 
 const rawGroupPrompt = (shot: VideoShot) => {
   const lines = shot.prompt.timeline.map(
-    (item, position) =>
-      `[${item.timestamps[0]}–${item.timestamps[1]}秒｜镜头${position + 1}] ${item.prompt}`,
+    (item) => `${item.timestamps[0]}–${item.timestamps[1]}秒 ${item.prompt}`,
   )
-  return `${shot.prompt.global_settings}\n\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
+  return `${shot.prompt.global_settings}\n\n镜头：\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
 }
 const watchGenerationPosts = (page: Page) => {
   const posts: string[] = []

@@ -360,13 +360,14 @@ const applyEdits = (film: FilmViewOut, body: FilmTextEditsIn): FilmGroupOut[] | 
   return groups
 }
 
-/** 照后端拼一组出片的正文：设定在前，每镜写起止秒；只给成片卡与回读用。 */
+/** 照后端（shot_prompt.py）拼一组出片的正文：设定、空一行、「镜头：」、每镜一行起止秒与正文、末尾约束；只给成片卡与回读用。 */
 const videoPrompt = (group: FilmGroupOut) =>
   [
     group.settings.map((setting) => setting.text).join('\n'),
-    ...group.shots.map(
-      (shot, index) => `[${shot.start}–${shot.end}秒｜镜头${index + 1}] ${shot.parts.join('')}`,
-    ),
+    '',
+    '镜头：',
+    ...group.shots.map((shot) => `${shot.start}–${shot.end}秒 ${shot.parts.join('')}`),
+    '不要生成字幕，不要生成背景音乐。',
   ].join('\n')
 
 export const filmHandlers = [

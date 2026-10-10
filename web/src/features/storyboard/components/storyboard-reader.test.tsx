@@ -89,8 +89,9 @@ const historyPrompt = [
   '历史版参考锁定：人物和产品保持一致。',
   '剪辑形式：硬切。',
   '',
-  '[0–2.5秒｜镜头1] 历史版：模特走出门厅 @Image2。',
-  '[2.5–6秒｜镜头2] 历史版：转身看向鞋面 @Image1。',
+  '镜头：',
+  '0–2.5秒 历史版：模特走出门厅 @Image2。',
+  '2.5–6秒 历史版：转身看向鞋面 @Image1。',
   '不要生成字幕，不要生成背景音乐。',
 ].join('\n')
 
@@ -1318,9 +1319,9 @@ describe('StoryboardReader', () => {
     await user.click(screen.getByRole('button', { name: '复制完整提示词' }))
     expect(copied).toHaveBeenLastCalledWith(
       settings +
-        '\n\n[0–2.5秒｜镜头1]   模特走出门厅 @Image2，再看向鞋面 @Image1。\n' +
-        '\n[3.25–5秒｜镜头2] 共用同一帧继续动作 @Image2，再次看向 @Image1。\n' +
-        '[5–6秒｜镜头3] 这里保留旁白，没有图片引用。\n' +
+        '\n\n镜头：\n0–2.5秒   模特走出门厅 @Image2，再看向鞋面 @Image1。\n' +
+        '\n3.25–5秒 共用同一帧继续动作 @Image2，再次看向 @Image1。\n' +
+        '5–6秒 这里保留旁白，没有图片引用。\n' +
         '不要生成字幕，不要生成背景音乐。',
     )
   })

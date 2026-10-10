@@ -267,7 +267,7 @@ async def test_show_prints_the_assembled_prompt_of_one_node(
     assert "跑道和光线与同一场戏的上一个机位保持一致，参考@Image4。" in image
     assert "全片：15 秒，画幅 9:16" in video
     assert f"@Image4 = {VIEW_ONE}" in video
-    assert "[0–2.5秒｜镜头1] 参考@Image4，开场" in video
+    assert "\n镜头：\n0–2.5秒 参考@Image4，开场" in video
     assert video.splitlines()[-1] == "不要生成字幕，不要生成背景音乐。"
 
 

@@ -17,7 +17,7 @@ from iclip.common.shot_prompt import (
     parse_shot_prompt,
 )
 from iclip.domains.generation.schemas import VideoShotIn
-from tests.helpers.generation import SHOT_PROMPT, video_shot
+from tests.helpers.generation import LEGACY_SHOT_PROMPT, SHOT_PROMPT, video_shot
 
 
 def shot_of(global_settings: str, *timeline: dict[str, Any]) -> VideoShotIn:
@@ -41,9 +41,10 @@ def test_timestamps_are_printed_as_given_including_gaps_and_decimals() -> None:
     )
     assert format_shot_prompt(shot) == (
         "设定。\n\n"
-        "[0–3.5秒｜镜头1] 一。\n"
-        "[4.25–8.5秒｜镜头2] 二。\n"
-        "[8.5–9秒｜镜头3] 三。\n"
+        "镜头：\n"
+        "0–3.5秒 一。\n"
+        "4.25–8.5秒 二。\n"
+        "8.5–9秒 三。\n"
         "不要生成字幕，不要生成背景音乐。"
     )
 
@@ -54,7 +55,7 @@ def test_whitespace_inside_the_texts_is_kept() -> None:
         {"timestamps": [0, 2.0], "prompt": "  原文 @Image02。\n", "image_indexes": [2]},
     )
     assert format_shot_prompt(shot) == (
-        "  设定。\n\n\n[0–2秒｜镜头1]   原文 @Image02。\n\n不要生成字幕，不要生成背景音乐。"
+        "  设定。\n\n\n镜头：\n0–2秒   原文 @Image02。\n\n不要生成字幕，不要生成背景音乐。"
     )
 
 
@@ -68,11 +69,15 @@ def test_format_seconds(value: float, text: str) -> None:
 
 MULTI_CUT = (
     "设定第一行。\n设定第二行。\n\n"
-    "[0–3.5秒｜镜头1] 走近 @Image2，再看 @Image1。\n"
-    "[4.25–8.5秒｜镜头2] 转身。\n第二行接着写。\n"
-    "[8.5–9秒｜镜头3] 收尾。\n"
+    "镜头：\n"
+    "0–3.5秒 走近 @Image2，再看 @Image1。\n"
+    "4.25–8.5秒 转身。\n第二行接着写。\n"
+    "8.5–9秒 收尾。\n"
     "不要生成字幕，不要生成背景音乐。"
 )
+
+LOOKALIKE_SETTINGS = "0–2秒 这一行是设定，不是镜头。\n镜头语言统一用手持。"
+"""全局设定里有一行长得像镜头，「镜头：」之前的都不能拆成镜头。"""
 
 
 @pytest.mark.parametrize(
@@ -80,7 +85,10 @@ MULTI_CUT = (
     [
         SHOT_PROMPT,
         MULTI_CUT,
-        "  设定。\n\n\n[0–2秒｜镜头1]   原文 @Image02。\n\n不要生成字幕，不要生成背景音乐。",
+        "  设定。\n\n\n镜头：\n0–2秒   原文 @Image02。\n\n不要生成字幕，不要生成背景音乐。",
+        # 空的全局设定、空的正文，以及正文里另起一行写约束的原话
+        "\n\n镜头：\n0–2秒 \n2–3秒 一。\n不要生成字幕，不要生成背景音乐。\n不要生成字幕，不要生成背景音乐。",
+        f"{LOOKALIKE_SETTINGS}\n\n镜头：\n0–3秒 一。\n不要生成字幕，不要生成背景音乐。",
     ],
 )
 def test_parsing_then_formatting_gives_back_the_same_text(text: str) -> None:
@@ -115,6 +123,39 @@ def test_formatted_request_shot_parses_back_to_the_same_timeline() -> None:
     ]
 
 
+def test_a_settings_line_that_looks_like_a_shot_stays_in_the_settings() -> None:
+    shot = shot_of(
+        LOOKALIKE_SETTINGS,
+        {"timestamps": [0, 3], "prompt": "一。", "image_indexes": []},
+        {"timestamps": [3, 5], "prompt": "二。", "image_indexes": []},
+    )
+
+    parsed = parse_shot_prompt(format_shot_prompt(shot))
+
+    assert parsed == ShotScript(
+        global_settings=LOOKALIKE_SETTINGS,
+        timeline=(
+            ShotCut(timestamps=(0, 3), prompt="一。", image_indexes=()),
+            ShotCut(timestamps=(3, 5), prompt="二。", image_indexes=()),
+        ),
+    )
+
+
+def test_the_bracketed_layout_with_one_line_per_shot_still_parses() -> None:
+    """2026-10-09 之前：每镜一行 ``[起–止秒｜镜头N] 正文``，没有「镜头：」。"""
+
+    text = (
+        "设定第一行。\n设定第二行。\n\n"
+        "[0–3.5秒｜镜头1] 走近 @Image2，再看 @Image1。\n"
+        "[4.25–8.5秒｜镜头2] 转身。\n第二行接着写。\n"
+        "[8.5–9秒｜镜头3] 收尾。\n"
+        "不要生成字幕，不要生成背景音乐。"
+    )
+
+    assert parse_shot_prompt(text) == parse_shot_prompt(MULTI_CUT)
+    assert parse_shot_prompt(LEGACY_SHOT_PROMPT) == parse_shot_prompt(SHOT_PROMPT)
+
+
 def test_the_old_layout_with_markers_on_their_own_line_still_parses() -> None:
     """2026-09-08 之前：约束行夹在全局设定里，标记独占一行，镜与镜之间空一行。"""
 
@@ -138,6 +179,16 @@ def test_the_old_layout_with_markers_on_their_own_line_still_parses() -> None:
     "text",
     [
         "模特走向镜头，停下微笑。",
+        # 现行写法：时间线接不上
+        "设定。\n\n镜头：\n1–3秒 第一镜不从 0 起。",
+        "设定。\n\n镜头：\n0–3秒 一。\n2–4秒 和上一镜交叠。",
+        "设定。\n\n镜头：\n0–0秒 结束不晚于开始。",
+        # 现行写法：「镜头：」下面没有镜头，或第一行不是一镜
+        "设定。\n\n镜头：\n不要生成字幕，不要生成背景音乐。",
+        "设定。\n\n镜头：\n先写一句。\n0–3秒 一。",
+        # 没有「镜头：」时，长得像镜头的行不算
+        "设定。\n\n0–3秒 一。\n不要生成字幕，不要生成背景音乐。",
+        # 旧写法：时间线接不上
         "设定。\n\n[1–3秒｜镜头1] 第一镜不从 0 起。",
         "设定。\n\n[0–3秒｜镜头1] 一。\n[2–4秒｜镜头2] 和上一镜交叠。",
         "设定。\n\n[0–0秒｜镜头1] 结束不晚于开始。",

@@ -243,18 +243,19 @@ describe('structured editing', () => {
     const exported = formatShotPrompt(original)
     expect(exported).toBe(
       `${original.prompt.global_settings}\n\n` +
-        '[0–3.5秒｜镜头1]   原文 @Image02。\n\n' +
-        '[4.25–8.5秒｜镜头2] 走近拍摄鞋面 @Image1。\n' +
-        '[8.5–9秒｜镜头3] 只有旁白，没有图片引用。\n' +
+        '镜头：\n' +
+        '0–3.5秒   原文 @Image02。\n\n' +
+        '4.25–8.5秒 走近拍摄鞋面 @Image1。\n' +
+        '8.5–9秒 只有旁白，没有图片引用。\n' +
         '不要生成字幕，不要生成背景音乐。',
     )
   })
 
   // 与服务端 test_format_seconds 同一组样例：保留到毫秒，整秒不带小数点。
   it.each([
-    [0, 4, '[0–4秒｜镜头1]'],
-    [3.5, 8.25, '[3.5–8.25秒｜镜头1]'],
-    [1.0004, 2.0006, '[1–2.001秒｜镜头1]'],
+    [0, 4, '0–4秒'],
+    [3.5, 8.25, '3.5–8.25秒'],
+    [1.0004, 2.0006, '1–2.001秒'],
   ])('起止秒 %d–%d 取整到毫秒并去掉末尾的零', (start, end, heading) => {
     const timed: Shot = {
       ...shot,
