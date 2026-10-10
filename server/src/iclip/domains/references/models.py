@@ -191,6 +191,28 @@ class Outcome:
     error_code: BreakdownErrorCode | None = None
 
 
+TestVideoStatus = Literal["running", "completed", "failed"]
+"""试生成的状态：``running`` 还没结束（排队、提交中或等上游），其余是终态。"""
+
+TEST_VIDEO_RUNNING: Final = "running"
+TEST_VIDEO_COMPLETED: Final = "completed"
+TEST_VIDEO_FAILED: Final = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class TestVideoJob:
+    """属主名下这条参考视频最新的一次试生成，从生成记录投影过来，不引用生成域的类型。"""
+
+    status: TestVideoStatus
+    url: str | None
+    """成片地址；还没完成或失败了为 ``None``。"""
+    error_message: str | None
+    """上游给的失败原文。"""
+    prompt: str | None
+    """记录里发给模型的正文；记录读不出视频请求时为 ``None``。"""
+    created_at: datetime
+
+
 @dataclass(frozen=True, slots=True)
 class Scope:
     """列表的筛选范围。两组标签各自命中任一即算；时间窗 ``[since, until)`` 作用在建立时刻上。"""
@@ -224,6 +246,9 @@ __all__ = [
     "STATUS_FAILED",
     "STATUS_PENDING",
     "STATUS_RUNNING",
+    "TEST_VIDEO_COMPLETED",
+    "TEST_VIDEO_FAILED",
+    "TEST_VIDEO_RUNNING",
     "VIDEO_TYPES",
     "BreakdownErrorCode",
     "BreakdownFailed",
@@ -236,6 +261,8 @@ __all__ = [
     "Scope",
     "TaggingFailed",
     "Tags",
+    "TestVideoJob",
+    "TestVideoStatus",
     "VideoType",
     "VideoTypeValue",
 ]

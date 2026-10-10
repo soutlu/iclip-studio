@@ -1,4 +1,4 @@
-"""参考视频的端口：自有表的仓储，以及由组合根接上的拆解、打标与上传记录。"""
+"""参考视频的端口：自有表的仓储，以及由组合根接上的拆解、打标、上传记录与试生成。"""
 
 from __future__ import annotations
 
@@ -15,8 +15,10 @@ from iclip.domains.references.models import (
     ReferenceVideo,
     Scope,
     Tags,
+    TestVideoJob,
     VideoTypeValue,
 )
+from iclip.domains.references.test_prompt import TestPrompt
 
 
 class ReferenceStore(Protocol):
@@ -141,10 +143,25 @@ class BreakdownQueue(Protocol):
         ...
 
 
+class TestVideos(Protocol):
+    """参考视频的试生成：记成生成域的一条视频生成，由组合根接上。"""
+
+    async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None:
+        """``owner`` 名下这条参考视频最新的一次试生成；没有给 ``None``。"""
+        ...
+
+    async def submit(
+        self, principal: Principal, reference_id: uuid.UUID, prompt: TestPrompt, aspect_ratio: str
+    ) -> None:
+        """以主体的名义提交一次试生成，排上队就返回。正文超长或请求不合法抛 ``ValidationFailed``。"""
+        ...
+
+
 __all__ = [
     "BreakdownQueue",
     "OwnVideoUpload",
     "ReferenceStore",
     "Tagger",
+    "TestVideos",
     "VideoBreakdowns",
 ]

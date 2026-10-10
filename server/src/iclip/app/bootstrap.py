@@ -42,6 +42,7 @@ from iclip.app.errors import install_error_handlers
 from iclip.app.generation_live import AnnouncingGenerationRepository
 from iclip.app.logging import configure_logging
 from iclip.app.reference_breakdown import build_reference_breakdown
+from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
@@ -518,6 +519,11 @@ def build_app(
         breakdown=breakdown_setup,
         # 上传模块只在有对象存储时装配（见下面的 uploads）；没有它，资料库就不收上传。
         uploads_available=public_objects is not None,
+        # 读最新一次试生成只要生成仓储；提交要生成服务，媒体生成没开就不挂试生成。
+        test_videos=GenerationTestVideos(
+            generation_repo, generation.service if generation is not None else None
+        ),
+        testable=generation is not None,
     )
 
     # step store、工作区与 identity 共用同一个 engine（表在 agent_runtime schema）。

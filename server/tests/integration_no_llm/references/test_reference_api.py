@@ -190,6 +190,24 @@ async def test_a_viewer_reads_but_cannot_upload_or_rerun(
     assert rerun.status_code == 403
 
 
+async def test_without_media_generation_there_is_no_test_video(
+    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+) -> None:
+    """媒体生成没开：试生成的入口不挂，详情里的 ``testVideo`` 为空。"""
+
+    await login_as(http, pg_url, "maya", "editor")
+    upload_id = await upload_video(http, bucket)
+    reference = (await http.post("/references", json={"uploadId": upload_id})).json()
+
+    detail = await http.get(f"/references/{reference['id']}")
+    submitted = await http.post(
+        f"/references/{reference['id']}/test-generations", json={"aspectRatio": "9:16"}
+    )
+
+    assert (detail.status_code, detail.json()["testVideo"]) == (200, None)
+    assert submitted.status_code in (404, 405)
+
+
 async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

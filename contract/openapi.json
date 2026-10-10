@@ -4935,7 +4935,7 @@
       },
       "ReferenceVideoOut": {
         "additionalProperties": false,
-        "description": "一条参考视频，连同当前拆解。",
+        "description": "一条参考视频，连同当前拆解与最新的一次试生成。",
         "properties": {
           "breakdownStatus": {
             "enum": [
@@ -5054,6 +5054,16 @@
             "title": "Id",
             "type": "string"
           },
+          "testVideo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TestVideoOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "title": "Updatedat",
@@ -5108,7 +5118,8 @@
           "canEdit",
           "createdAt",
           "updatedAt",
-          "document"
+          "document",
+          "testVideo"
         ],
         "title": "ReferenceVideoOut",
         "type": "object"
@@ -6387,6 +6398,83 @@
           "total"
         ],
         "title": "TasksPageOut",
+        "type": "object"
+      },
+      "TestVideoIn": {
+        "additionalProperties": false,
+        "description": "试生成的请求：画幅由调用方定，其余参数服务端定。",
+        "properties": {
+          "aspectRatio": {
+            "enum": [
+              "9:16",
+              "16:9",
+              "1:1",
+              "3:4",
+              "4:3"
+            ],
+            "title": "Aspectratio",
+            "type": "string"
+          }
+        },
+        "required": [
+          "aspectRatio"
+        ],
+        "title": "TestVideoIn",
+        "type": "object"
+      },
+      "TestVideoOut": {
+        "additionalProperties": false,
+        "description": "属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "errorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errormessage"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "status",
+          "url",
+          "errorMessage",
+          "stale",
+          "createdAt"
+        ],
+        "title": "TestVideoOut",
         "type": "object"
       },
       "TextContent": {
@@ -13620,6 +13708,74 @@
           }
         ],
         "summary": "Rerun Reference",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}/test-generations": {
+      "post": {
+        "description": "属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。\n\n别人的（治理者与替人办事的钥匙也算）是 ``403``；拆解还没完成、上一次试生成还没结束是\n``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
+        "operationId": "start_reference_test_video_references__reference_id__test_generations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestVideoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read",
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read",
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Start Reference Test Video",
         "tags": [
           "references"
         ]

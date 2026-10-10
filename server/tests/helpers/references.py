@@ -15,14 +15,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.reference_breakdown import ArkTagger, ArkVideoBreakdowns
+from iclip.app.reference_test_video import TEST_VIDEO_MODEL
 from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
 from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
 from iclip.capabilities.iclip_studio.ports import SampledVideo
-from iclip.config import RuntimeConfig
+from iclip.config import RuntimeConfig, VideoGenerationSection
 from iclip.config.models import IclipStudioSection
+from iclip.domains.identity.public import Principal
+from iclip.domains.references.models import TestVideoJob
+from iclip.domains.references.test_prompt import TestPrompt
 from iclip.platform.media.ffmpeg import MediaError
 from tests.helpers.app import make_runtime_config
-from tests.helpers.generation import MemoryObjectStore
+from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
 
 STUDIO_ENVS = {
     "OSS_BUCKET": "iclip-test",
@@ -42,6 +46,36 @@ def config_with_studio() -> RuntimeConfig:
     return make_runtime_config().model_copy(
         update={"iclip_studio": IclipStudioSection(breakdown_model="seed-vision")}
     )
+
+
+STUDIO_MEDIA_ENVS = STUDIO_ENVS | MEDIA_ENVS
+"""拆解配好、媒体生成也开着要的环境变量。"""
+
+
+def config_with_studio_and_media() -> RuntimeConfig:
+    """拆解配好、媒体生成也开着：视频允许表里有试生成用的模型。"""
+
+    media = config_with_media()
+    assert media.media_generation is not None
+    video = VideoGenerationSection(model="seedance", allowed_models=("seedance", TEST_VIDEO_MODEL))
+    return media.model_copy(
+        update={
+            "iclip_studio": IclipStudioSection(breakdown_model="seed-vision"),
+            "media_generation": media.media_generation.model_copy(update={"video": video}),
+        }
+    )
+
+
+class NoTestVideos:
+    """没有试生成过；提交不该被调到。"""
+
+    async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None:
+        return None
+
+    async def submit(
+        self, principal: Principal, reference_id: uuid.UUID, prompt: TestPrompt, aspect_ratio: str
+    ) -> None:
+        raise AssertionError("这里不该提交试生成")
 
 
 async def upload_video(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> str:
@@ -227,12 +261,15 @@ async def reference_row(engine: AsyncEngine, reference_id: uuid.UUID) -> dict[st
 __all__ = [
     "DOCUMENT",
     "STUDIO_ENVS",
+    "STUDIO_MEDIA_ENVS",
     "VIDEO",
     "FakeArk",
     "FakeSampler",
+    "NoTestVideos",
     "ark_pipeline",
     "breakdown_answer",
     "config_with_studio",
+    "config_with_studio_and_media",
     "plant_reference",
     "plant_user",
     "reference_row",

@@ -1,7 +1,8 @@
 """参考视频 HTTP 端点，约定见合同「参考视频」一节。
 
-读要 ``generation:read``；建行要 ``uploads:write``；重拆是一次付费调用，另要 ``generation:submit``；
-修改与移除只要读权限，属主检查在用例里。拆解没配置时只挂读端点；上传不可用时另不挂建行，重拆照挂。"""
+读要 ``generation:read``；建行要 ``uploads:write``；重拆与试生成都是付费调用，另要 ``generation:submit``；
+修改与移除只要读权限，属主检查在用例里。拆解没配置时只挂读端点；上传不可用时另不挂建行，重拆照挂；
+媒体生成没开时不挂试生成。"""
 
 from __future__ import annotations
 
@@ -19,16 +20,17 @@ from iclip.domains.references.schemas import (
     ReferenceUpdateIn,
     ReferenceVideoOut,
     ReferenceVideosOut,
+    TestVideoIn,
 )
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 
 def create_references_router(
-    service: ReferenceService, *, uploadable: bool, rerunnable: bool
+    service: ReferenceService, *, uploadable: bool, rerunnable: bool, testable: bool
 ) -> APIRouter:
     """``uploadable`` 为假（拆解没配置或上传不可用）时不挂建行；``rerunnable`` 为假（拆解没配置）时
-    不挂重拆。"""
+    不挂重拆；``testable`` 为假（媒体生成没开）时不挂试生成。"""
 
     router = APIRouter(prefix="/references", tags=["references"])
 
@@ -129,6 +131,23 @@ def create_references_router(
             """属主重新拆解：重新排队，拆成就覆盖拆解与标签，失败保留原来的。正在拆是 ``409``。"""
 
             return await service.rerun(principal, reference_id)
+
+    if testable:
+
+        @router.post("/{reference_id}/test-generations", response_model=ReferenceVideoOut)
+        async def start_reference_test_video(
+            principal: Annotated[
+                Principal, require_permission("generation:read", "generation:submit")
+            ],
+            reference_id: uuid.UUID,
+            body: TestVideoIn,
+        ) -> ReferenceVideoOut:
+            """属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。
+
+            别人的（治理者与替人办事的钥匙也算）是 ``403``；拆解还没完成、上一次试生成还没结束是
+            ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。"""
+
+            return await service.start_test_video(principal, reference_id, body)
 
     return router
 

@@ -1,6 +1,6 @@
-"""参考视频用例：建行与排拆解、列表与筛选、修改、重拆、移除，以及给 AI 导演用的 ``ensure``。
+"""参考视频用例：建行与排拆解、列表与筛选、修改、重拆、移除、试生成，以及给 AI 导演用的 ``ensure``。
 
-端点权限由路由声明；这里管行级归属：谁都看得到，只有属主能改、能重拆、能移除。"""
+端点权限由路由声明；这里管行级归属：谁都看得到，只有属主能改、能重拆、能移除；试生成只限属主本人。"""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from iclip.domains.references.models import (
     STATUS_FAILED,
     STATUS_PENDING,
     STATUS_RUNNING,
+    TEST_VIDEO_RUNNING,
     VIDEO_TYPES,
     CategoryValue,
     Outcome,
@@ -27,9 +28,15 @@ from iclip.domains.references.models import (
     ReferenceVideo,
     Scope,
     Tags,
+    TestVideoJob,
     VideoTypeValue,
 )
-from iclip.domains.references.repository import BreakdownQueue, OwnVideoUpload, ReferenceStore
+from iclip.domains.references.repository import (
+    BreakdownQueue,
+    OwnVideoUpload,
+    ReferenceStore,
+    TestVideos,
+)
 from iclip.domains.references.schemas import (
     CategoryCountOut,
     OwnerCountOut,
@@ -38,8 +45,11 @@ from iclip.domains.references.schemas import (
     ReferenceVideoItemOut,
     ReferenceVideoOut,
     ReferenceVideosOut,
+    TestVideoIn,
+    TestVideoOut,
     VideoTypeCountOut,
 )
+from iclip.domains.references.test_prompt import build_test_prompt
 from iclip.platform.paging import check_limit, decode_cursor, encode_cursor
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -95,10 +105,27 @@ def _item_fields(principal: Principal, row: ReferenceVideo) -> dict[str, object]
     }
 
 
-def _detail(principal: Principal, row: ReferenceVideo) -> ReferenceVideoOut:
-    return ReferenceVideoOut.model_validate(
-        {**_item_fields(principal, row), "document": row.document}
+def _test_video(row: ReferenceVideo, job: TestVideoJob | None) -> TestVideoOut | None:
+    if job is None:
+        return None
+    return TestVideoOut(
+        status=job.status,
+        url=job.url,
+        error_message=job.error_message,
+        stale=_stale(row.document, job.prompt),
+        created_at=job.created_at,
     )
+
+
+def _stale(document: str | None, prompt: str | None) -> bool:
+    """当前拆解拼出的提示词与试生成用的不同；拼不出、或记录里没有正文，也算不同。"""
+
+    if document is None or prompt is None:
+        return True
+    try:
+        return build_test_prompt(document).text != prompt
+    except ValidationFailed:
+        return True
 
 
 def _item(principal: Principal, row: ReferenceVideo) -> ReferenceVideoItemOut:
@@ -107,7 +134,8 @@ def _item(principal: Principal, row: ReferenceVideo) -> ReferenceVideoItemOut:
 
 class ReferenceService:
     """``queue`` 为 ``None`` 即拆解没配置：读照常，建行、重拆与 ``ensure`` 不可用。``uploads_available``
-    为假即上传没装配（没有对象存储）：建行不可用，重拆与 ``ensure`` 照常。"""
+    为假即上传没装配（没有对象存储）：建行不可用，重拆与 ``ensure`` 照常。``test_videos`` 一直在：
+    详情都带最新的一次试生成；它能不能提交由组合根定，提交不了时试生成的入口不挂。"""
 
     def __init__(
         self,
@@ -116,12 +144,14 @@ class ReferenceService:
         own_video_upload: OwnVideoUpload,
         queue: BreakdownQueue | None,
         uploads_available: bool,
+        test_videos: TestVideos,
         poll_seconds: float = ENSURE_POLL_SECONDS,
         wait_seconds: float = BREAKDOWN_TIMEOUT_SECONDS,
     ) -> None:
         self._store = store
         self._own_video_upload = own_video_upload
         self._queue = queue
+        self._test_videos = test_videos
         self._uploads_available = uploads_available
         self._poll_seconds = poll_seconds
         self._wait_seconds = wait_seconds
@@ -162,7 +192,7 @@ class ReferenceService:
         elif row.deleted_at is not None:
             await self._store.restore(row.id, owner=principal.user_id)
             row = await self._get(row.id)
-        return _detail(principal, row), created
+        return await self._detail(principal, row), created
 
     async def list(
         self,
@@ -226,7 +256,7 @@ class ReferenceService:
         )
 
     async def get(self, principal: Principal, reference_id: uuid.UUID) -> ReferenceVideoOut:
-        return _detail(principal, await self._listed(reference_id))
+        return await self._detail(principal, await self._listed(reference_id))
 
     async def update(
         self, principal: Principal, reference_id: uuid.UUID, body: ReferenceUpdateIn
@@ -245,7 +275,7 @@ class ReferenceService:
         )
         if written is None:
             raise Conflict("这条参考视频已经变了（别处改过、刚拆完或正在拆），刷新后再改")
-        return _detail(principal, await self._get(reference_id))
+        return await self._detail(principal, await self._get(reference_id))
 
     async def rerun(self, principal: Principal, reference_id: uuid.UUID) -> ReferenceVideoOut:
         """属主重新拆解：已完成或已失败的行重新排队，拆成就覆盖拆解与标签。正在拆是 ``Conflict``。"""
@@ -262,7 +292,29 @@ class ReferenceService:
         if not requeued:
             raise Conflict("这条参考视频正在拆解，拆完再重拆")
         await self._enqueue(queue, reference_id)
-        return _detail(principal, await self._get(reference_id))
+        return await self._detail(principal, await self._get(reference_id))
+
+    async def start_test_video(
+        self, principal: Principal, reference_id: uuid.UUID, body: TestVideoIn
+    ) -> ReferenceVideoOut:
+        """属主本人按当前拆解拼一段提示词，生成一条视频与原片对照。
+
+        治理者与替人办事的钥匙也不行：这条生成记在提交人名下，只有属主本人提交才记在属主名下，
+        所有读者看到的才是同一条。别人的是 ``PermissionDenied``；拆解还没完成、上一次试生成还没结束
+        都是 ``Conflict``；拆解拼不出提示词或拼出来太长是 ``ValidationFailed``。两次同时提交可能都过
+        了检查，各生成一条，不加锁。"""
+
+        row = await self._listed(reference_id)
+        if principal.user_id != row.owner_user_id:
+            raise PermissionDenied("只有它的属主本人能试生成这条参考视频")
+        if row.breakdown_status in _BUSY or row.document is None:
+            raise Conflict("拆解尚未完成，无法试生成")
+        latest = await self._test_videos.latest(row.owner_user_id, reference_id)
+        if latest is not None and latest.status == TEST_VIDEO_RUNNING:
+            raise Conflict("试生成进行中，无法重复提交")
+        prompt = build_test_prompt(row.document)
+        await self._test_videos.submit(principal, reference_id, prompt, body.aspect_ratio)
+        return await self._detail(principal, row)
 
     async def remove(self, principal: Principal, reference_id: uuid.UUID) -> None:
         """属主把它从资料库移除：只记移除时刻，按地址仍能读到它的拆解。"""
@@ -332,6 +384,18 @@ class ReferenceService:
         if self._queue is None:
             raise RuntimeError("拆解没配置，参考视频的写入口不该挂上")
         return self._queue
+
+    async def _detail(self, principal: Principal, row: ReferenceVideo) -> ReferenceVideoOut:
+        """详情连同属主名下最新的一次试生成：按属主查，不按读者，谁读都是同一条。"""
+
+        job = await self._test_videos.latest(row.owner_user_id, row.id)
+        return ReferenceVideoOut.model_validate(
+            {
+                **_item_fields(principal, row),
+                "document": row.document,
+                "test_video": _test_video(row, job),
+            }
+        )
 
     async def _get(self, reference_id: uuid.UUID) -> ReferenceVideo:
         row = await self._store.get(reference_id)
