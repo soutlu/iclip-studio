@@ -60,7 +60,8 @@ export function EditAddPopover({
         sideOffset={8}
       >
         <ul aria-label={`本组的${group}`} className="flex max-h-60 flex-wrap gap-1 overflow-y-auto">
-          {frames.map(({ name, url }, index) => {
+          {frames.map(({ name, number, url }, index) => {
+            // `frame` 是在列表里的先后，插入时按它取；图块上写的编号以图自己给的为准。
             const frame = index + 1
             const used = referenced(url)
             const blocked = blockedReason(url)
@@ -70,7 +71,7 @@ export function EditAddPopover({
                   aria-label={`插入${name}${used ? '（已引用）' : ''}`}
                   className="disabled:cursor-not-allowed disabled:opacity-(--state-disabled-content)"
                   disabled={blocked !== undefined}
-                  frame={frame}
+                  frame={number ?? frame}
                   onClick={() => {
                     setInserted(true)
                     setOpen(false)

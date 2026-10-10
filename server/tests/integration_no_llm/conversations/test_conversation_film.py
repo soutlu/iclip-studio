@@ -90,6 +90,15 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
     assert person["prompt"] == [{"kind": "text", "text": EXPECTED["images"]["personB"]["prompt"]}]
     first_view = group["frames"][7]
     assert (first_view["label"], first_view["missing"]) == ("镜头 1", ["personB"])
+    # 描述里没图的那张也是图片段：带它在这张图自己列表里的编号，地址为 null。
+    cited = [run for run in first_view["prompt"] if run["kind"] == "image"]
+    assert cited[2] == {
+        "kind": "image",
+        "node": "personB",
+        "label": "personB",
+        "url": None,
+        "number": 3,
+    }
     shoe_setting = group["settings"][3]
     assert (shoe_setting["kind"], shoe_setting["label"], shoe_setting["images"]) == (
         "element",

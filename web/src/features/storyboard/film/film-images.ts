@@ -94,12 +94,15 @@ export const useFilmReplace = ({ disabled, frame, onReplace }: ReplaceOptions) =
   }
 }
 
-/** 这张图的生图描述摊成输入卡的样子：文字照旧，参考图是图片 chip，名字用图的名字。 */
+/** 这张图的生图描述摊成输入卡的样子：文字照旧，参考图是图片 chip，名字用图的名字；还没选用的参考图没有地址、放不成
+ * chip，写成它的名字（这时再生成会因缺图被后端拒绝）。 */
 export const promptParts = (frame: FilmFrame): EditDraftPart[] =>
   (frame.prompt ?? []).map((run) =>
-    run.kind === 'image'
-      ? { kind: 'image', name: run.label, url: run.url }
-      : { kind: 'text', text: run.text },
+    run.kind !== 'image'
+      ? { kind: 'text', text: run.text }
+      : run.url === null
+        ? { kind: 'text', text: run.label }
+        : { kind: 'image', name: run.label, url: run.url },
   )
 
 /** 再生成这次用的描述：和文件里的一样就不给（后端照文件拼），改过的只用这一次、不写回文件。 */

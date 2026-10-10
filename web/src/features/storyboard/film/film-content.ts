@@ -1,6 +1,7 @@
 /** 制作页一组里能选的段与舞台上的图：全局设定一段，每个镜头一段；段身份沿用分镜页的内容 id
  * （`global`、`scene:N`），图按它在这组 `frames` 里的位置（从 1 起）认，没有图的也有位置。
- * 段里的字用 `@ImageN` 指这组的第 N 张图，段挂哪几张图就看字里写了哪几个编号。 */
+ * `frames` 先是参考图列表（`number` 是编号），再是没进列表的机位图（没有编号）。段里的字用 `@ImageN` 指编号为 N 的图，
+ * 段挂哪几张图就看字里写了哪几个编号；镜头另挂它的机位图，没进列表的也算。 */
 
 import { encodeContentId } from '../shot-content'
 import { extractImageIndexes, promptTitle } from '../shot-document'
@@ -16,16 +17,23 @@ export const filmContentIds = (group: FilmGroup): string[] => [
   ...group.shots.map((_, index) => shotContentId(index + 1)),
 ]
 
-/** 一段挂着的图在 `frames` 里的位置：字里写的 `@ImageN`，按出现的先后、去重；全局设定是各段设定的字，
- * 镜头是它的正文（选用了机位图的镜头开头写着「参考@ImageN，」）。超出这组的编号不算。 */
+/** 编号为 `number` 的那张图在 `frames` 里的位置；这组没有这个编号时为 undefined。 */
+export const positionOfNumber = (group: FilmGroup, number: number): number | undefined => {
+  const index = group.frames.findIndex((frame) => frame.number === number)
+  return index < 0 ? undefined : index + 1
+}
+
+/** 一段挂着的图在 `frames` 里的位置，按先后、去重：全局设定是各段设定的字里写的 `@ImageN`；镜头先是它的机位图
+ * （没进列表的也算），再是正文里写的（选用了机位图的镜头开头写着「参考@ImageN，」）。这组没有的编号不算。 */
 export const segmentFrames = (group: FilmGroup, contentId: string): number[] => {
+  const shot = contentId === SETTINGS_ID ? undefined : shotOf(group, contentId)
   const texts =
-    contentId === SETTINGS_ID
-      ? group.settings.map((setting) => setting.text)
-      : (shotOf(group, contentId)?.parts ?? [])
-  return extractImageIndexes(texts.join('\n')).filter(
-    (position) => position >= 1 && position <= group.frames.length,
+    contentId === SETTINGS_ID ? group.settings.map((setting) => setting.text) : (shot?.parts ?? [])
+  const view = group.frames.findIndex((frame) => frame.node === shot?.view)
+  const cited = extractImageIndexes(texts.join('\n')).flatMap(
+    (number) => positionOfNumber(group, number) ?? [],
   )
+  return [...new Set([...(view < 0 ? [] : [view + 1]), ...cited])]
 }
 
 /** 第几镜；不是镜头段为 undefined。 */
@@ -72,21 +80,21 @@ export const missingImageText = (label: string): string => `${beforeChinese(labe
 /** 生成过、还没选用的那张生成卡的标题：「镜头 2 尚未选用图片」。 */
 export const unselectedImageText = (label: string): string => `${beforeChinese(label)}尚未选用图片`
 
-/** 参考图里有没选用的就不能生成：「参考图尚未选用：涂鸦滑板场、镜头 2，无法生成视频；请先选用图片」，
+/** 一张图的参考图里有没选用的就不能生成：「参考图尚未选用：涂鸦滑板场、镜头 2，无法生成图片；请先选用图片」，
  * 同名的只写一次；一张都不缺时为 undefined。 */
-export const missingReferencesText = (
-  labels: readonly string[],
-  target: '视频' | '图片',
-): string | undefined => {
+export const missingReferencesText = (labels: readonly string[]): string | undefined => {
   const names = [...new Set(labels)]
   return names.length === 0
     ? undefined
-    : `参考图尚未选用：${names.join('、')}，无法生成${target}；请先选用图片`
+    : `参考图尚未选用：${names.join('、')}，无法生成图片；请先选用图片`
 }
 
-/** 这组参考图列表里还没有图的那几张的名字，按列表先后；出片要它为空。 */
-export const missingFrameLabels = (group: FilmGroup): string[] =>
-  group.frames.flatMap((frame) => (frame.url === null ? [frame.label] : []))
+/** 这组参考图列表里有没图的就不能出片：只写张数，「2 张参考图尚未选用，无法生成视频；请先选用图片」，缺哪几张看
+ * 参考图条上的「未选用」；没进列表的机位图不发，不算。一张都不缺时为 undefined。 */
+export const missingFramesText = (group: FilmGroup): string | undefined => {
+  const count = group.frames.filter((frame) => frame.number !== null && frame.url === null).length
+  return count === 0 ? undefined : `${count} 张参考图尚未选用，无法生成视频；请先选用图片`
+}
 
 /** 舞台标签与悬停预览用的名字：有编号写 @N，没有就写它的名字。 */
 export const frameTag = (frame: FilmFrame): string =>

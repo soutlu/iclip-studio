@@ -280,23 +280,26 @@ class FilmPromptTextOut(CamelModel):
 
 
 class FilmPromptImageOut(CamelModel):
-    """描述里一张有图的参考图所在的位置，即文件里写 ``@ImageN`` 的地方。"""
+    """描述里一张参考图所在的位置，即文件里写 ``@ImageN`` 的地方。``number`` 是它在这张图自己的
+    参考图列表里的位置（即 N），``url`` 还没有选用时为 null。"""
 
     kind: Literal["image"] = "image"
     node: str
     label: str
-    url: str
+    url: str | None
+    number: int
 
 
 FilmPromptRunOut = Annotated[FilmPromptTextOut | FilmPromptImageOut, Field(discriminator="kind")]
 
 
 class FilmFrameOut(CamelModel):
-    """这组视频参考图列表里的一张图，按列表先后。``node`` 是换图时传回的定位；``number`` 是它在
-    列表里的位置，即 @N；``url`` 没有图时为 null。
+    """镜头组里的一张图：先是这组视频参考图列表里的，按列表先后；再是这组镜头里还没进列表的机位图，
+    按镜头先后。``node`` 是换图时传回的定位；``number`` 是它在列表里的位置，即 @N，没进列表的为
+    null；``url`` 没有图时为 null。
 
     ``prompt`` 是按描述生成时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图
-    留在文字里；``aspectRatio`` 是文件里写的画幅。用户给的图这两个都是 null。``missing`` 是这张图
+    也拆出来；``aspectRatio`` 是文件里写的画幅。用户给的图这两个都是 null。``missing`` 是这张图
     挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后；不为空时这张图不能生成。用户
     给的图为空列表。"""
 
@@ -469,7 +472,7 @@ def _prompt_run_out(run: FilmPromptRun) -> FilmPromptTextOut | FilmPromptImageOu
     if isinstance(run, FilmPromptText):
         return FilmPromptTextOut(text=run.text)
     assert isinstance(run, FilmPromptImage)
-    return FilmPromptImageOut(node=run.node, label=run.label, url=run.url)
+    return FilmPromptImageOut(node=run.node, label=run.label, url=run.url, number=run.number)
 
 
 def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:

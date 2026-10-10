@@ -21,7 +21,7 @@ export const FILM_EDIT_TRIGGER = 'data-film-edit'
 type FilmImageEditProps = {
   conversationId: string
   session: FilmEditSession
-  /** 正在看的这一组：编号、输入卡里能插的图都按它。 */
+  /** 正在看的这一组：这张图在其中；用户给的图编辑时，输入卡里能插的是这组参考图列表里的图。 */
   group: FilmGroup
   /** 这张图最新的那条图片任务；关掉时它若点开看过，交回去标成看过。 */
   latestJob: GenerationJob | undefined
@@ -44,13 +44,21 @@ export function FilmImageEdit({
   session,
 }: FilmImageEditProps) {
   const frame = group.frames.find((item) => item.node === session.node)
-  // 输入卡里按 @N 插图：下标加一要等于编号，只放有编号的；菜单与芯片上叫图的名字。
-  const numbered = group.frames
-    .flatMap(({ label, number, url }) =>
-      number === null || url === null ? [] : [{ name: label, number, url }],
-    )
-    .toSorted((a, b) => a.number - b.number)
-    .map(({ name, url }) => ({ name, url }))
+  // 输入卡里能插的图，编号照给的写在图块上：按描述生成的图是它自己的参考图列表（编号取描述里图片段的 `number`），
+  // 其余的是这组参考图列表（编号取 `frame.number`）。只放有图的；菜单与芯片上叫图的名字。
+  const listed =
+    frame?.prompt != null
+      ? frame.prompt.flatMap((run) =>
+          run.kind === 'image' ? [{ label: run.label, number: run.number, url: run.url }] : [],
+        )
+      : group.frames
+  const numbered = [
+    ...new Map(
+      listed.flatMap(({ label, number, url }) =>
+        number === null || url === null ? [] : [[number, { name: label, number, url }] as const],
+      ),
+    ).values(),
+  ].toSorted((a, b) => a.number - b.number)
   // 只有按描述生成的图能再生成；用户给的图只能换。
   const original = frame?.kind === 'generated' && frame.prompt !== null ? promptParts(frame) : null
   return (

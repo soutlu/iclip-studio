@@ -24,11 +24,15 @@ class FilmPromptText:
 
 @dataclass(frozen=True, slots=True)
 class FilmPromptImage:
-    """生图描述里一张有图的参考图所在的位置，即文件里写 ``@ImageN`` 的地方。"""
+    """生图描述里一张参考图所在的位置，即文件里写 ``@ImageN`` 的地方。"""
 
     node: str
     label: str
-    url: str
+    url: str | None
+    """现在的地址；还没有选用时为 None。"""
+
+    number: int
+    """这张参考图在这张图自己的参考图列表里的位置，即 ``@ImageN`` 的 N，从 1 起。"""
 
 
 FilmPromptRun = FilmPromptText | FilmPromptImage
@@ -36,7 +40,8 @@ FilmPromptRun = FilmPromptText | FilmPromptImage
 
 @dataclass(frozen=True, slots=True)
 class FilmFrame:
-    """一组视频参考图列表里的一张图，按列表先后。"""
+    """镜头组里的一张图：先是这组视频的参考图列表，按列表先后；再是这组镜头里还没进列表的机位图
+    （没选用的），按镜头先后，它们没有编号，照样能生成、能选用。"""
 
     node: str
     """图片节点；换图时原样传回。"""
@@ -49,11 +54,12 @@ class FilmFrame:
     """现在用的图；还没有图时为 None。"""
 
     number: int | None
-    """在这组参考图列表里的位置，即 @ImageN 的 N，从 1 起；没有图的也有。"""
+    """在这组参考图列表里的位置，即 @ImageN 的 N，从 1 起；列表里没有图的也有，没进列表的机位图为
+    None。"""
 
     prompt: tuple[FilmPromptRun, ...] | None
-    """按描述生成这张图时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段；没有图的参考图不拆开，
-    ``@ImageN`` 留在文字里。用户给的图为 None。"""
+    """按描述生成这张图时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图也拆出来。
+    用户给的图为 None。"""
 
     aspect_ratio: str | None
     """这张图的画幅：生成图照文件里写的；用户给的图文件里不写，为 None。"""

@@ -1,7 +1,8 @@
 /** 制作页的文案列：列头与分镜页相同（`ScriptHead`）；正文区最上面是这组的参考图条，其次是全局设定卡，之后按时间排各镜头，
  * 末尾一行写总长与「结束」。
  *
- * 参考图条按列表先后列这组的全部参考图，每张写 @N 与名字，没选用的画空位、写「未选用」，点哪张舞台看哪张。
+ * 参考图条按列表先后列这组会发出去的参考图（有编号的），每张写 @N 与名字，没选用的画空位、写「未选用」，点哪张舞台看哪张；
+ * 还没进列表的机位图不在条上，在它那一镜头部的缩略图里。
  * 全局设定一段一行，前面写模板里的段名。字里的 `@ImageN` 在原位置是图片芯片（镜头开头的「参考@ImageN，」也是），
  * 点芯片选中这段、舞台看那张图；这段选中且舞台正看着那张时芯片高亮。
  * 镜头正文与台词交替排：台词单独一行，说话人是固定的小标签，只能改引号里的字。没法在页面上改的段只读。
@@ -119,7 +120,7 @@ export function FilmScript({
         total={total}
       />
       <div className="storyboard-script-list">
-        {group.frames.length === 0 ? null : (
+        {group.frames.every((item) => item.number === null) ? null : (
           <FrameStrip frame={frame} group={group} onPick={onPickFrame} onPreview={onPreview} />
         )}
         {group.settings.length === 0 ? null : (
@@ -265,19 +266,24 @@ function FrameStrip({
         <Icon decorative name="image" size="xs" />
         参考图
       </span>
-      {group.frames.map((item, index) => (
-        <FilmImageChip
-          highlighted={frame === index + 1}
-          key={item.node}
-          label={item.label}
-          named
-          note={item.url === null ? '未选用' : undefined}
-          onEnlarge={(url) => onPreview({ name: item.label, url })}
-          onPick={() => onPick(index + 1)}
-          tag={frameTag(item)}
-          url={item.url}
-        />
-      ))}
+      {group.frames.flatMap((item, index) =>
+        // 只列会发出去的（有编号的）；没进列表的机位图在它那一镜的头部与舞台上。位置照 `frames` 里的算。
+        item.number === null
+          ? []
+          : [
+              <FilmImageChip
+                highlighted={frame === index + 1}
+                key={item.node}
+                label={item.label}
+                named
+                note={item.url === null ? '未选用' : undefined}
+                onEnlarge={(url) => onPreview({ name: item.label, url })}
+                onPick={() => onPick(index + 1)}
+                tag={frameTag(item)}
+                url={item.url}
+              />,
+            ],
+      )}
     </div>
   )
 }

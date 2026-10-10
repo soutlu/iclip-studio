@@ -9,7 +9,7 @@
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { Button } from '@/shared/ui/button'
 import {
@@ -49,8 +49,7 @@ import {
 import {
   contentOfFrame,
   filmGroupSummary,
-  missingFrameLabels,
-  missingReferencesText,
+  missingFramesText,
   resolveFilmSelection,
   segmentFrames,
 } from './film-content'
@@ -204,6 +203,34 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const goShot = (next: number) => go({ shot: next })
   useShotArrowKeys(root, { onGo: goShot, position, total: groups.length })
 
+  // 正看着的那张图在 `frames` 里挪了位置（选用机位图插进列表、取消选用移出列表，后面的跟着挪）：舞台跟着那张图走，
+  // 不停在原来的位置上换成别的图。只在同一组里跟，换组时位置本来就重来；那张图不在这组了就交给选段的规则落位。
+  const shownRef = useRef<{ group: number; node: string; order: string } | undefined>(undefined)
+  const followShown = useEffectEvent(
+    (groupIndex: number | undefined, node: string | undefined, order: string | undefined) => {
+      const previous = shownRef.current
+      shownRef.current =
+        groupIndex === undefined || node === undefined || order === undefined
+          ? undefined
+          : { group: groupIndex, node, order }
+      if (
+        previous === undefined ||
+        group === undefined ||
+        previous.group !== groupIndex ||
+        previous.order === order ||
+        previous.node === node
+      )
+        return
+      const index = group.frames.findIndex((item) => item.node === previous.node)
+      if (index >= 0) go({ frame: index + 1 })
+    },
+  )
+  const frameOrder = group?.frames.map((item) => item.node).join('\n')
+  useEffect(
+    () => followShown(group?.index, frame?.node, frameOrder),
+    [group?.index, frame?.node, frameOrder],
+  )
+
   if (view === undefined) {
     return (
       <ReaderNotice
@@ -231,7 +258,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
       : generations.data?.find((job) => job.id === search.video)
   // 提交途中按钮自己写着「提交中」，不另说原因。参考图有没选用的一直挡着（后端也会拒），排在保存、上传这些暂态之前，
   // 免得每次自动保存时原因从状态行上消失；只读与冲突、保存失败照旧先说。
-  const missingBlocker = missingReferencesText(missingFrameLabels(group), '视频')
+  const missingBlocker = missingFramesText(group)
   const baseBlocker = generationBlockerOf({
     modelsStatus: video.modelsStatus,
     readOnly,
@@ -272,8 +299,16 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          // 后端拼好的正文，与这组出片时发的逐字相同。
-          copy={{ done: '已复制完整提示词', label: '复制完整提示词', text: group.prompt }}
+          // 后端拼好的正文，与这组出片时发的逐字相同；有没存下的改动时它还是旧的，存好之前不让复制。
+          copy={{
+            blocked:
+              draft.hasUnsavedChanges || draft.state.kind === 'saving'
+                ? '正在保存，保存后可复制'
+                : undefined,
+            done: '已复制完整提示词',
+            label: '复制完整提示词',
+            text: group.prompt,
+          }}
           groups={groups.map(filmGroupSummary)}
           onGoShot={goShot}
           position={position}

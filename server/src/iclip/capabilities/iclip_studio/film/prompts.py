@@ -55,7 +55,9 @@ class PictureImage:
     image: str
     """图片节点的名字。"""
 
-    url: str
+    url: str | None
+    """现在的地址；生图节点没有选用时为 None。"""
+
     number: int
     """在参考图列表里排第几，从 1 起；描述里写成 ``@ImageN``。"""
 
@@ -86,8 +88,8 @@ class _Listed:
 class PicturePrompt(_Listed):
     """一张图的提示词和它的参考图列表。
 
-    ``runs`` 是同一段提示词按 ``@ImageN`` 拆开：文字原样，有图的参考图在它的位置；没有图的参考图
-    不拆开，``@ImageN`` 留在文字里。``text`` 由它拼成。"""
+    ``runs`` 是同一段提示词按 ``@ImageN`` 拆开：文字原样，参考图在它的位置，没有图的也拆出来、
+    地址为 None。``text`` 由它拼成。"""
 
     runs: tuple[str | PictureImage, ...]
     images: tuple[ListedImage, ...]
@@ -193,15 +195,11 @@ def render_picture(film: Film, image: Node) -> PicturePrompt:
     images = listed_images(film, image)
     runs: list[str | PictureImage] = []
     for index, piece in enumerate(IMAGE_NUMBER.split("\n\n".join(sections))):
-        listed = images[int(piece) - 1] if index % 2 else None
-        if listed is not None and listed.url is not None:
+        if index % 2:
+            listed = images[int(piece) - 1]
             runs.append(PictureImage(listed.image, listed.url, int(piece)))
-            continue
-        text = f"@Image{piece}" if listed is not None else piece
-        if runs and isinstance(runs[-1], str):
-            runs[-1] += text
-        elif text:
-            runs.append(text)
+        elif piece:
+            runs.append(piece)
     return PicturePrompt(tuple(runs), images)
 
 

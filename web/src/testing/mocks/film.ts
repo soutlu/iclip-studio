@@ -1,11 +1,13 @@
 /** 制作页的 mock：每段对话一份读好的工程（形状同 `GET /conversations/{id}/film`），改字照后端的规矩查，
  * 改完把工作区里 `film.icml` 的版本加一，文件列表与制作页的版本对得上；出片记一条视频记录，镜号是组号。
  *
- * 照后端现行的写法：`frames` 是这组视频的参考图列表，按列表先后，`number` 就是位置，没有图的也有；全局设定与镜头
- * 正文里用 `@ImageN` 指列表第 N 张，选用了机位图的镜头开头写「参考@ImageN，」；`settings[].images` 恒为空。
- * 图照后端的规矩定：用户给的图总有图；生成图只认选用，没选用就没图，生成出来的不自动用上。生图描述按它自己的参考图列表
- * 写 `@ImageN`，读的时候有图的拆成图片段，没图的留在文字里、称呼记进 `missing`。列表里有没图的，生图、出片都拒。
- * 选用、取消选用只改地址，列表与编号不动（后端在机位图第一次选用、取消选用时才改列表，这里不模拟）。 */
+ * 照后端现行的写法：`frames` 先是这组视频的参考图列表，按列表先后，`number` 就是位置，没有图的也有；再按镜头先后接上
+ * 还没进列表的机位图，`number` 为 null。全局设定与镜头正文里用 `@ImageN` 指列表第 N 张，选用了机位图的镜头开头写
+ * 「参考@ImageN，」；`settings[].images` 恒为空。
+ * 图照后端的规矩定：用户给的图总有图；生成图只认选用，没选用就没图，生成出来的不自动用上。机位图第一次选用时插进列表
+ * （排在镜头更靠后的机位图之前）、那一镜开头写引用、后面的图号加一，取消选用时反过来（同后端 `_place_view`）。
+ * 生图描述按它自己的参考图列表写 `@ImageN`，读的时候每个都拆成图片段，带这个编号，没图的地址为 null、称呼记进
+ * `missing`。列表里有没图的，生图、出片都拒。 */
 
 import { http, HttpResponse } from 'msw'
 import type {
@@ -32,23 +34,27 @@ type MockImage = Pick<FilmFrameOut, 'aspectRatio' | 'kind' | 'label' | 'node'> &
   references: readonly string[]
 }
 
-/** 工程文件里的一组视频：参考图列表照文件写；地址、编号、描述的拆分与正文读的时候现算（见 `resolved`）。 */
-type MockGroup = Omit<FilmGroupOut, 'frames' | 'prompt'> & { images: readonly MockImage[] }
+/** 工程文件里的一组视频：`images` 是参考图列表照文件写，`views` 是各镜头 `view` 指的机位图；地址、编号、描述的拆分与
+ * 正文读的时候现算（见 `resolved`）。 */
+type MockGroup = Omit<FilmGroupOut, 'frames' | 'prompt'> & {
+  images: readonly MockImage[]
+  views: readonly MockImage[]
+}
 
 type MockFilm = Omit<FilmViewOut, 'groups'> & { groups: MockGroup[] }
 
 const films = new Map<string, MockFilm>()
 /** 每段对话里每张图现在的地址：生成图是运行文件里的选用（null 是没选用），用户给的图是工程文件里的地址。 */
 const chosen = new Map<string, Map<string, string | null>>()
-/** 放工程时就选用了的生成图。 */
+/** 放工程时就选用了的生成图：人物与镜头 2 的机位图；场景图与镜头 1 的机位图没选用。 */
 const SEEDED_CHOICES: ReadonlyMap<string, string> = new Map([
   ['girl_look', apparelImage],
-  ['shot1_view', backpackImage],
+  ['shot2_view', backpackImage],
 ])
 /** `complete` 时另外选用的：列表里每张都有图，能出片。 */
 const COMPLETE_CHOICES: ReadonlyMap<string, string> = new Map([
   ['park_look', `${backpackImage}?view=park`],
-  ['shot2_view', `${apparelImage}?view=shot2`],
+  ['shot1_view', `${apparelImage}?view=shot1`],
 ])
 /** 按描述生图出过几张，给每张一个不同的地址。 */
 let generatedCount = 0
@@ -91,8 +97,8 @@ const photo = (node: string, label: string, url: string): MockImage => ({
   references: [],
 })
 
-/** 一组 12 秒的穿搭短片：参考图列表依次是人物一张生成图、产品两张用户给的、场景一张还没选用的生成图、镜头 1 与镜头 2
- * 的机位图（镜头 2 的列在表里、还没选用）；四个镜头，两句台词。同一个元素的几张图都叫元素的名字，与后端相同。 */
+/** 一组 12 秒的穿搭短片，照文件写、还没有任何机位图进列表：参考图列表依次是人物一张生成图、产品两张用户给的、场景一张
+ * 生成图；镜头 1、镜头 2 各有一张机位图；四个镜头，两句台词。同一个元素的几张图都叫元素的名字，与后端相同。 */
 const mockGroup = (): MockGroup => ({
   aspectRatio: '9:16',
   images: [
@@ -105,16 +111,6 @@ const mockGroup = (): MockGroup => ({
     photo('loafer_photo', '绒面一脚蹬', loafersImage),
     photo('loafer_sole', '绒面一脚蹬', `${loafersImage}?side=sole`),
     generated('park_look', '涂鸦滑板场', '9:16', '户外露天水泥滑板场，坡面和地面喷满街头涂鸦。'),
-    generated('shot1_view', '镜头 1', '9:16', '@Image1的人物，站在坡面上，双手把长板横扛在肩后。', [
-      'girl_look',
-    ]),
-    generated(
-      'shot2_view',
-      '镜头 2',
-      '9:16',
-      '高角度俯拍脚部特写，她坐在坡面边缘，小腿悬空，场地参考@Image1。',
-      ['park_look'],
-    ),
   ],
   index: 1,
   model: 'vendor-a-seedance-2-0',
@@ -160,9 +156,7 @@ const mockGroup = (): MockGroup => ({
     {
       end: 3,
       lines: [],
-      parts: [
-        '参考@Image5，低机位仰拍全景，镜头缓慢后拉。女生站在坡面上，双手把一块长板横扛在肩后。',
-      ],
+      parts: ['低机位仰拍全景，镜头缓慢后拉。女生站在坡面上，双手把一块长板横扛在肩后。'],
       start: 0,
       target: 'shot:board:1',
       view: 'shot1_view',
@@ -170,7 +164,7 @@ const mockGroup = (): MockGroup => ({
     {
       end: 6,
       lines: [{ role: '旁白', target: 'line:soft', text: '软得像拖鞋，稳得像板鞋。' }],
-      parts: ['参考@Image6，高角度俯拍脚部特写，镜头缓慢右移。她坐在坡面边缘，小腿悬空。\n', ''],
+      parts: ['高角度俯拍脚部特写，镜头缓慢右移。她坐在坡面边缘，小腿悬空。\n', ''],
       start: 3,
       target: 'shot:board:2',
       view: 'shot2_view',
@@ -193,10 +187,92 @@ const mockGroup = (): MockGroup => ({
     },
   ],
   video: 'board_video',
+  views: [
+    generated(
+      'shot1_view',
+      '镜头 1',
+      '9:16',
+      '@Image1的人物，站在@Image2的坡面上，双手把长板横扛在肩后。',
+      ['girl_look', 'park_look'],
+    ),
+    generated(
+      'shot2_view',
+      '镜头 2',
+      '9:16',
+      '高角度俯拍@Image1的脚部特写，她坐在坡面边缘，小腿悬空。',
+      ['girl_look'],
+    ),
+  ],
 })
 
-/** 给一段对话放一份能用的工程：工作区里有 `film.icml` 与 `film.icrun`，制作页读得出一组。默认场景图与镜头 2 的
- * 机位图没选用、出不了片；`complete` 时全都选用了。 */
+const IMAGE_NUMBER = /@Image(\d+)/g
+
+const cite = (number: number) => `参考@Image${String(number)}，`
+
+/** 一组的字（全局设定与镜头正文）里的图号按 `shift` 改：`shift(K)` 给出新的 K。 */
+const renumbered = (group: MockGroup, shift: (number: number) => number): MockGroup => {
+  const apply = (text: string) =>
+    text.replace(IMAGE_NUMBER, (_, digits: string) => `@Image${String(shift(Number(digits)))}`)
+  return {
+    ...group,
+    settings: group.settings.map((setting) => ({ ...setting, text: apply(setting.text) })),
+    shots: group.shots.map((shot) => ({ ...shot, parts: shot.parts.map(apply) })),
+  }
+}
+
+/** 第 `index` 镜正文开头（首部空白之后）的字换成 `edit(去掉首部空白的字)`。 */
+const editShotHead = (group: MockGroup, index: number, edit: (text: string) => string) => ({
+  ...group,
+  shots: group.shots.map((shot, at) => {
+    if (at !== index) return shot
+    const [head = '', ...rest] = shot.parts
+    const lead = head.length - head.trimStart().length
+    return { ...shot, parts: [head.slice(0, lead) + edit(head.slice(lead)), ...rest] }
+  }),
+})
+
+/** 让机位图 `node` 在这组的参考图列表里（`listed`）或不在，同后端 `_place_view`：插进列表时排在镜头更靠后的机位图之前，
+ * 那一镜开头写「参考@ImageN，」，不小于 N 的图号加一；移出时删掉这两处，比 N 大的图号减一。不是这组的机位图或本来就是
+ * 这样时原样返回。 */
+const placeView = (group: MockGroup, node: string, listed: boolean): MockGroup => {
+  const shot = group.shots.findIndex((item) => item.view === node)
+  const view = group.views.find((item) => item.node === node)
+  if (shot < 0 || view === undefined) return group
+  const present = group.images.findIndex((item) => item.node === node)
+  if (listed === present >= 0) return group
+  if (listed) {
+    const later = group.images.findIndex((item) => {
+      const owner = group.shots.findIndex((candidate) => candidate.view === item.node)
+      return owner > shot
+    })
+    const at = later < 0 ? group.images.length : later
+    const number = at + 1
+    const shifted = renumbered(group, (k) => (k >= number ? k + 1 : k))
+    return editShotHead(
+      { ...shifted, images: shifted.images.toSpliced(at, 0, view) },
+      shot,
+      (text) => cite(number) + text,
+    )
+  }
+  const number = present + 1
+  const stripped = editShotHead(group, shot, (text) =>
+    text.startsWith(cite(number)) ? text.slice(cite(number).length) : text,
+  )
+  const shifted = renumbered(stripped, (k) => (k > number ? k - 1 : k))
+  return { ...shifted, images: shifted.images.toSpliced(present, 1) }
+}
+
+/** 按选用把各组的机位图放进或移出列表。 */
+const placeViews = (groups: readonly MockGroup[], picks: ReadonlyMap<string, string | null>) =>
+  groups.map((group) =>
+    group.views.reduce(
+      (placed, view) => placeView(placed, view.node, (picks.get(view.node) ?? null) !== null),
+      group,
+    ),
+  )
+
+/** 给一段对话放一份能用的工程：工作区里有 `film.icml` 与 `film.icrun`，制作页读得出一组。默认场景图与镜头 1 的
+ * 机位图没选用、出不了片；`complete` 时全都选用了。工程按选用经 `placeView` 摆好，与后端选用时写回的一样。 */
 export const seedMockFilm = (
   conversationId: string,
   options: { problems?: number; model?: string | undefined; complete?: boolean } = {},
@@ -204,16 +280,15 @@ export const seedMockFilm = (
   const filmVersion = putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
   const runVersion = putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE)
   const problems = options.problems ?? 0
-  chosen.set(
-    conversationId,
-    new Map([...SEEDED_CHOICES, ...(options.complete === true ? COMPLETE_CHOICES : [])]),
-  )
+  const picks = new Map<string, string | null>([
+    ...SEEDED_CHOICES,
+    ...(options.complete === true ? COMPLETE_CHOICES : []),
+  ])
+  chosen.set(conversationId, picks)
+  const group = { ...mockGroup(), ...(options.model === undefined ? {} : { model: options.model }) }
   films.set(conversationId, {
     filmVersion,
-    groups:
-      problems > 0
-        ? []
-        : [{ ...mockGroup(), ...(options.model === undefined ? {} : { model: options.model }) }],
+    groups: problems > 0 ? [] : placeViews([group], picks),
     problems,
     runVersion,
   })
@@ -241,9 +316,8 @@ export const resetMockFilm = () => {
   generatedCount = 0
 }
 
-const IMAGE_NUMBER = /@Image(\d+)/g
-
-/** 一张生成图的描述照后端拆：有图的参考图是图片段，没图的 `@ImageN` 留在文字里，称呼按列表先后记进 `missing`。 */
+/** 一张生成图的描述照后端拆：每个 `@ImageN` 都是图片段，带 N 与现在的地址（没图为 null）；没图的称呼按列表先后记进
+ * `missing`。 */
 const resolvedPrompt = (
   image: MockImage,
   labelOf: (node: string) => string,
@@ -252,23 +326,17 @@ const resolvedPrompt = (
   if (image.description === null) return { missing: [], prompt: null }
   const missing = image.references.flatMap((node) => (urlOf(node) === null ? [labelOf(node)] : []))
   const prompt: NonNullable<FilmFrameOut['prompt']> = []
-  const pushText = (text: string) => {
-    if (text === '') return
-    const before = prompt.at(-1)
-    if (before?.kind === 'text')
-      prompt[prompt.length - 1] = { kind: 'text', text: before.text + text }
-    else prompt.push({ kind: 'text', text })
-  }
   let cursor = 0
   for (const match of image.description.matchAll(IMAGE_NUMBER)) {
-    pushText(image.description.slice(cursor, match.index))
+    const text = image.description.slice(cursor, match.index)
+    if (text !== '') prompt.push({ kind: 'text', text })
     cursor = match.index + match[0].length
-    const node = image.references[Number(match[1]) - 1]
-    const url = node === undefined ? null : urlOf(node)
-    if (node === undefined || url === null) pushText(match[0])
-    else prompt.push({ kind: 'image', label: labelOf(node), node, url })
+    const number = Number(match[1])
+    const node = image.references[number - 1] ?? ''
+    prompt.push({ kind: 'image', label: labelOf(node), node, number, url: urlOf(node) })
   }
-  pushText(image.description.slice(cursor))
+  const rest = image.description.slice(cursor)
+  if (rest !== '') prompt.push({ kind: 'text', text: rest })
   return { missing, prompt }
 }
 
@@ -300,35 +368,47 @@ const videoPrompt = (group: MockGroup): string => {
   ].join('\n')
 }
 
+const allImages = (film: MockFilm) =>
+  film.groups.flatMap((group) => [...group.images, ...group.views])
+
 /** 这段对话现在每张图的地址：用户给的图用文件里的地址，生成图只认选用。 */
 const urlsOf = (conversationId: string, film: MockFilm) => {
   const picks = chosen.get(conversationId) ?? new Map<string, string | null>()
-  const images = film.groups.flatMap((group) => group.images)
+  const images = allImages(film)
   return (node: string): string | null => {
     if (picks.has(node)) return picks.get(node) ?? null
     return images.find((item) => item.node === node)?.photo ?? null
   }
 }
 
-/** 读的那一刻的制作页：参考图按列表先后编号，地址、描述的拆分与这组的正文现算。 */
+/** 读的那一刻的制作页：参考图按列表先后编号，后面接没进列表的机位图；地址、描述的拆分与这组的正文现算。 */
 const resolved = (conversationId: string, film: MockFilm): FilmViewOut => {
   const urlOf = urlsOf(conversationId, film)
-  const images = film.groups.flatMap((group) => group.images)
+  const images = allImages(film)
   const labelOf = (node: string) => images.find((item) => item.node === node)?.label ?? node
+  const frameOf = (image: MockImage, number: number | null): FilmFrameOut => ({
+    aspectRatio: image.aspectRatio,
+    kind: image.kind,
+    label: image.label,
+    node: image.node,
+    number,
+    url: urlOf(image.node),
+    ...resolvedPrompt(image, labelOf, urlOf),
+  })
   return {
     ...film,
-    groups: film.groups.map(({ images: listed, ...group }) => ({
+    groups: film.groups.map(({ images: listed, views, ...group }) => ({
       ...group,
-      frames: listed.map((image, index) => ({
-        aspectRatio: image.aspectRatio,
-        kind: image.kind,
-        label: image.label,
-        node: image.node,
-        number: index + 1,
-        url: urlOf(image.node),
-        ...resolvedPrompt(image, labelOf, urlOf),
-      })),
-      prompt: videoPrompt({ images: listed, ...group }),
+      frames: [
+        ...listed.map((image, index) => frameOf(image, index + 1)),
+        ...group.shots.flatMap((shot) => {
+          const view = views.find((item) => item.node === shot.view)
+          return view === undefined || listed.some((item) => item.node === view.node)
+            ? []
+            : [frameOf(view, null)]
+        }),
+      ],
+      prompt: videoPrompt({ images: listed, views, ...group }),
     })),
   }
 }
@@ -337,7 +417,7 @@ const versionsMatch = (film: MockFilm, body: { filmVersion: number; runVersion: 
   body.filmVersion === film.filmVersion && body.runVersion === film.runVersion
 
 const imageOf = (film: MockFilm, node: string) =>
-  film.groups.flatMap((group) => group.images).find((image) => image.node === node)
+  allImages(film).find((image) => image.node === node)
 
 const rejected = (detail: string) => HttpResponse.json({ detail }, { status: 422 })
 
@@ -428,7 +508,8 @@ export const filmHandlers = [
     return HttpResponse.json({ film: resolved(conversationId, next) })
   }),
 
-  // 生成图登记进运行文件并选用，运行文件版本加一；用户给的图改工程文件里的地址，工程文件版本加一。
+  // 生成图登记进运行文件并选用，运行文件版本加一；机位图第一次选用、取消选用时工程文件跟着改，版本也加一。
+  // 用户给的图改工程文件里的地址，工程文件版本加一。
   http.put('*/api/conversations/:conversationId/film/image', async ({ params, request }) => {
     const conversationId = String(params['conversationId'])
     const film = films.get(conversationId)
@@ -444,10 +525,24 @@ export const filmHandlers = [
     if (body.url === null && image.kind === 'photo')
       return rejected('这张图是你给的，只能换成另一张，不能清空')
     picks.set(body.node, body.url)
-    const next =
-      image.kind === 'photo'
-        ? { ...film, filmVersion: putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE) }
-        : { ...film, runVersion: putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE) }
+    if (image.kind === 'photo') {
+      const next = {
+        ...film,
+        filmVersion: putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE),
+      }
+      films.set(conversationId, next)
+      return HttpResponse.json({ film: resolved(conversationId, next) })
+    }
+    const groups = film.groups.map((group) => placeView(group, body.node, body.url !== null))
+    const placed = groups.some((group, index) => group !== film.groups[index])
+    const next = {
+      ...film,
+      filmVersion: placed
+        ? putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
+        : film.filmVersion,
+      groups,
+      runVersion: putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE),
+    }
     films.set(conversationId, next)
     return HttpResponse.json({ film: resolved(conversationId, next) })
   }),
