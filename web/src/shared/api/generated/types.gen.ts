@@ -1173,6 +1173,8 @@ export type FilmFrameOut = {
 
 /**
  * FilmGroupOut
+ *
+ * 一个镜头组。``prompt`` 是这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样给出。
  */
 export type FilmGroupOut = {
   /**
@@ -1191,6 +1193,10 @@ export type FilmGroupOut = {
    * Model
    */
   model: string
+  /**
+   * Prompt
+   */
+  prompt: string
   /**
    * Seconds
    */

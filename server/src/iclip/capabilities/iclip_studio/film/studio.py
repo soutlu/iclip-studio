@@ -38,6 +38,7 @@ from iclip.capabilities.iclip_studio.film.prompts import (
     listed_images,
     references,
     render_picture,
+    render_video,
     slot_values,
     video_shots,
     written_texts,
@@ -54,6 +55,7 @@ from iclip.common.film_view import (
     FilmTextEdit,
     SettingKind,
 )
+from iclip.common.shot_prompt import format_shot_prompt
 
 _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
 _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
@@ -103,6 +105,7 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 frames=frames,
                 settings=_settings(project, video, source),
                 shots=_shots(film, video, source),
+                prompt=format_shot_prompt(render_video(film, video)),
             )
         )
     return tuple(groups)

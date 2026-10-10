@@ -124,6 +124,8 @@ class FilmGroup:
     frames: tuple[FilmFrame, ...]
     settings: tuple[FilmSetting, ...]
     shots: tuple[FilmShot, ...]
+    prompt: str
+    """这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样拼出，只是不能出片。"""
 
 
 @dataclass(frozen=True, slots=True)

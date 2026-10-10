@@ -25,6 +25,7 @@ from iclip.common.film_view import (
     FilmPromptText,
     FilmTextEdit,
 )
+from iclip.common.shot_prompt import OUTPUT_CONSTRAINT, SHOTS_HEADING, format_seconds
 from tests.helpers.film import (
     EXPECTED,
     FILM,
@@ -34,6 +35,7 @@ from tests.helpers.film import (
     RUN,
     RUN_NO_VIEW04,
     SHOE_FRONT,
+    STATES,
     VIEW04,
     project_of,
     run_of,
@@ -133,6 +135,39 @@ def test_a_group_lists_its_reference_list_as_it_is_numbered_by_position() -> Non
         "16:9",
     )
     assert (later.index, later.video, later.seconds) == (2, "video02", 15)
+
+
+def golden_prompt(state: str, video: str) -> str:
+    """样例里这组发给视频模型的正文：全局设定、空一行、「镜头：」、每镜一行「起–止秒 正文」、末尾约束。"""
+
+    shot = EXPECTED["states"][state][video]["shot"]
+    lines = [
+        f"{format_seconds(start)}–{format_seconds(end)}秒 {cut['prompt']}"
+        for cut in shot["timeline"]
+        for start, end in [cut["timestamps"]]
+    ]
+    return "\n".join([shot["global_settings"], "", SHOTS_HEADING, *lines, OUTPUT_CONSTRAINT])
+
+
+@pytest.mark.parametrize(
+    ("state", "video"),
+    [
+        pytest.param(state, video, id=f"{state}-{video}")
+        for state in STATES
+        for video in ("video01", "video02")
+        if not EXPECTED["states"][state][video]["blocked"]
+    ],
+)
+def test_a_group_carries_the_prompt_it_sends(state: str, video: str) -> None:
+    made = {group.video: group for group in groups(project_of(state), run_of(state))}
+
+    assert made[video].prompt == golden_prompt(state, video)
+
+
+def test_a_group_that_cannot_be_sent_still_shows_its_prompt_with_the_number_in_place() -> None:
+    made = first(project_of("no-personB"), run_of("no-personB"))
+
+    assert made.prompt == golden_prompt("both", "video01")
 
 
 def test_an_image_without_a_picture_keeps_its_number_and_has_no_url() -> None:

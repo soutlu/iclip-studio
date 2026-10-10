@@ -1,12 +1,13 @@
 /** 舞台上一张没有图（没选用）的生成图，按它最近一次按描述生成的任务分四种：
- * - 从没生成过：照发给模型的描述画出来，参考图在它出现的位置是图片芯片（编号与舞台、正文同一套），没有图的参考图后端只用
- *   文字写；底下「生成这张」。
+ * - 从没生成过：照发给模型的描述画出来，参考图在它出现的位置是图片芯片（编号与舞台、正文同一套），没有图的参考图
+ *   留着 `@ImageN` 原文；底下「生成这张」。
  * - 在生成：转圈加已用时长。
  * - 失败：描述照旧，写原因，按钮变「重新生成」。
  * - 生成好了还没选用：放那次结果的预览，底下「再生成」与「选用这张」；生成不会自动用上，选用了舞台才换成它。
- * 底部显示这张图在工程文件里写的比例，只读时也显示；有按钮时，按钮上方一行写它挂的参考图里哪几张没有图、
- * 只用描述（`missing`），只提醒不拦。 */
+ * 底部显示这张图在工程文件里写的比例，只读时也显示；有按钮时，它挂的参考图里有没选用的（`missing`），按钮上方一行写
+ * 缺哪几张，生成与再生成不可用，「选用这张」照常。 */
 
+import { useId } from 'react'
 import { Icon } from '@/shared/icons'
 import { Button } from '@/shared/ui/button'
 import type { GenerationJob } from '../storyboard.api'
@@ -48,18 +49,25 @@ export function FilmGenerateCard({
   onGenerate,
   readOnly,
 }: FilmGenerateCardProps) {
+  const blockerId = useId()
   if (job !== undefined && isRunningStatus(job.status)) return <Generating since={job.createdAt} />
   const result = job?.status === 'completed' ? (job.outputUrl ?? undefined) : undefined
   const failed = job?.status === 'failed'
   // 提交没被收下的原话优先；其次是上次生成失败的原因。
   const reason = error ?? (failed ? (job.errorMessage ?? '本次生成失败') : undefined)
-  const hint = missingReferencesText(frame.missing)
+  // 参考图有没选用的就不能生成：后端照样会拒，这里先拦住并说清缺哪几张。
+  const blocker = missingReferencesText(frame.missing, '图片')
+  const generateProps = {
+    'aria-describedby': blocker === undefined ? undefined : blockerId,
+    disabled: busy !== null || blocker !== undefined,
+    onClick: onGenerate,
+  }
   const foot = (
     <>
-      {readOnly || hint === undefined ? null : (
-        <p className="film-generate-hint">
+      {readOnly || blocker === undefined ? null : (
+        <p className="film-generate-hint" id={blockerId}>
           <Icon decorative name="info" size="xs" />
-          <span>{hint}</span>
+          <span>{blocker}</span>
         </p>
       )}
       <div className="film-generate-foot">
@@ -76,24 +84,17 @@ export function FilmGenerateCard({
           </p>
         )}
         {readOnly ? null : result === undefined ? (
-          <Button
-            className="ml-auto rounded-full"
-            disabled={busy !== null}
-            leadingIcon="image"
-            onClick={onGenerate}
-            size="md"
-          >
+          <Button className="ml-auto rounded-full" leadingIcon="image" size="md" {...generateProps}>
             {busy === 'generate' ? '提交中…' : failed ? '重新生成' : '生成图片'}
           </Button>
         ) : (
           <>
             <Button
               className="ml-auto rounded-full"
-              disabled={busy !== null}
               leadingIcon="refresh"
-              onClick={onGenerate}
               size="md"
               variant="outlined"
+              {...generateProps}
             >
               {busy === 'generate' ? '提交中…' : '再生成'}
             </Button>

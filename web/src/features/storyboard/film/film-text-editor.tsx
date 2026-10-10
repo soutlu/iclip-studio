@@ -1,38 +1,26 @@
-/** 制作页上的一段字：shared 的编辑核心，只收纯文字，不收图片也没有 `@` 选图（图的编号由后端排，正文里不写）；
- * 往字里贴图只提示贴到画面上。
- * 受控字符串，每行一个段落；`singleLine` 的（台词）Enter 不换行，粘贴的多行并成一行。 */
+/** 制作页上的一段字：shared 的编辑核心加帧节点，字里的 `@ImageN` 读进来是图片芯片（`FILM_FRAME_NODES`），
+ * 写回时还原成原来的记号；芯片要的这组图与点击经 `FilmFrameChipsProvider` 现取，由使用方包在外面。
+ * 这里不提供插入图片的入口，也没有 `@` 选图；删掉芯片照样交出去，图号对不上由保存时的检查拒绝。
+ * 往字里贴图只提示贴到画面上。受控字符串，每行一个段落；`singleLine` 的（台词）Enter 不换行，粘贴的多行并成一行。 */
 
 import { Plugin } from 'prosemirror-state'
-import { Slice, type Node as PMNode } from 'prosemirror-model'
+import { Slice } from 'prosemirror-model'
 import type { EditorView } from 'prosemirror-view'
 import { useEffect, useEffectEvent, useRef } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { toast } from '@/shared/ui/toast'
 import {
-  createComposerSchema,
+  ComposerNodeViews,
   useAttachmentAdmission,
   useComposerAttachments,
   useComposerEditor,
 } from '@/shared/ui/composer'
+import { FILM_FRAME_NODES, filmPromptDoc } from './film-frame-node'
 
-/** 不挂任何节点；schema 按这个数组建一次，文档与编辑器用的是同一个。 */
-const NO_NODES = [] as const
-const schema = createComposerSchema(NO_NODES)
-
-const paragraph = (text: string) =>
-  schema.node('paragraph', null, text === '' ? [] : [schema.text(text)])
-
-const textToDoc = (text: string): PMNode =>
-  schema.node('doc', null, text.split('\n').map(paragraph))
-
-const docToText = (doc: PMNode): string => {
-  const lines: string[] = []
-  doc.forEach((node) => lines.push(node.textContent))
-  return lines.join('\n')
-}
+const { docToPrompt, promptToDoc } = filmPromptDoc
 
 const pastedText = (singleLine: boolean) => (text: string) => {
-  const doc = textToDoc(singleLine ? text.replace(/\s*\n\s*/g, ' ') : text)
+  const doc = promptToDoc(singleLine ? text.replace(/\s*\n\s*/g, ' ') : text)
   return new Slice(doc.content, 1, 1)
 }
 
@@ -87,10 +75,10 @@ export function FilmTextEditor({
     className: 'prompt-editor-content',
     clipboardTextParser: pastedText(singleLine),
     enter: { kind: 'paragraph' },
-    initialDoc: () => textToDoc(value),
-    nodes: NO_NODES,
+    initialDoc: () => promptToDoc(value),
+    nodes: FILM_FRAME_NODES,
     onDocChange: (doc) => {
-      const text = docToText(doc)
+      const text = docToPrompt(doc)
       if (text === serializedRef.current) return
       serializedRef.current = text
       onChange(text)
@@ -101,13 +89,18 @@ export function FilmTextEditor({
   })
   const { mountEditor, resetDoc } = editor
 
-  // 外面换了这段字（AI 导演改了文件、冲突时用了最新的）：整篇重置文档与撤销历史。
+  // 外面换了这段字（AI 导演改了文件、冲突时用了最新的、选用机位图改了图号）：整篇重置文档与撤销历史。
   const resetTo = useEffectEvent((next: string) => {
     if (next === serializedRef.current) return
     serializedRef.current = next
-    resetDoc(textToDoc(next))
+    resetDoc(promptToDoc(next))
   })
   useEffect(() => resetTo(value), [value])
 
-  return <div className={cn('prompt-editor', className)} ref={mountEditor} />
+  return (
+    <>
+      <div className={cn('prompt-editor', className)} ref={mountEditor} />
+      <ComposerNodeViews attachments={attachments} editor={editor} layerContainer={null} />
+    </>
+  )
 }

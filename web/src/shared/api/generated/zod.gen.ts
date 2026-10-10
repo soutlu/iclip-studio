@@ -673,12 +673,15 @@ export const zFilmShotOut = z.object({
 
 /**
  * FilmGroupOut
+ *
+ * 一个镜头组。``prompt`` 是这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样给出。
  */
 export const zFilmGroupOut = z.object({
   aspectRatio: z.string(),
   frames: z.array(zFilmFrameOut),
   index: z.int(),
   model: z.string(),
+  prompt: z.string(),
   seconds: z.int(),
   settings: z.array(zFilmSettingOut),
   shots: z.array(zFilmShotOut),

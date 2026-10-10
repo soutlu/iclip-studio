@@ -2136,6 +2136,7 @@
       },
       "FilmGroupOut": {
         "additionalProperties": false,
+        "description": "一个镜头组。``prompt`` 是这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样给出。",
         "properties": {
           "aspectRatio": {
             "title": "Aspectratio",
@@ -2154,6 +2155,10 @@
           },
           "model": {
             "title": "Model",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
             "type": "string"
           },
           "seconds": {
@@ -2187,7 +2192,8 @@
           "aspectRatio",
           "frames",
           "settings",
-          "shots"
+          "shots",
+          "prompt"
         ],
         "title": "FilmGroupOut",
         "type": "object"

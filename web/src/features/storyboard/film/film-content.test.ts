@@ -10,7 +10,7 @@ import {
 } from './film-content'
 import { regeneratePrompt } from './film-images'
 
-const frame = (node: string, number: number | null): FilmFrame => ({
+const frame = (node: string, number: number, url: string | null): FilmFrame => ({
   aspectRatio: '9:16',
   kind: 'generated',
   label: node,
@@ -18,32 +18,49 @@ const frame = (node: string, number: number | null): FilmFrame => ({
   node,
   number,
   prompt: null,
-  url: number === null ? null : `https://example.com/${node}.png`,
+  url,
 })
 
-const shot = (view: string | null, start: number) => ({
+const shot = (text: string, view: string | null, start: number) => ({
   end: start + 2,
   lines: [],
-  parts: ['正文'],
+  parts: [text],
   start,
   target: `shot:board:${start}`,
   view,
 })
 
-/** 甲挂 a，乙挂 b、d 两张，丙也挂 b；镜头 1 的画面是 c，镜头 2 没挂图，镜头 3 也用 a 当画面。 */
+/** 列表四张，c 没选用；甲写 @1，乙写 @2、@4，丙也写 @2；镜头 1 开头引用机位图 c（@3），镜头 2 只写了一个超出列表的编号，
+ * 镜头 3 正文里写 @1。 */
 const group: FilmGroup = {
   aspectRatio: '9:16',
-  frames: [frame('a', 1), frame('b', 2), frame('c', null), frame('d', 3)],
+  frames: [
+    frame('a', 1, 'https://example.com/a.png'),
+    frame('b', 2, 'https://example.com/b.png'),
+    frame('c', 3, null),
+    frame('d', 4, 'https://example.com/d.png'),
+  ],
   index: 1,
   model: 'seedance',
+  prompt: '',
   seconds: 6,
   settings: [
-    { images: [], kind: 'shooting', label: null, target: 'value:拍法', text: '手持' },
-    { images: ['a'], kind: 'element', label: '人物 甲', target: 'value:甲', text: '甲' },
-    { images: ['b', 'd'], kind: 'element', label: '产品 乙', target: 'value:乙', text: '乙' },
-    { images: ['b'], kind: 'element', label: '场景 丙', target: 'value:丙', text: '丙' },
+    { images: [], kind: 'shooting', label: '拍摄与剪辑', target: 'value:拍法', text: '手持' },
+    { images: [], kind: 'element', label: '人物', target: 'value:甲', text: '甲参考@Image1' },
+    {
+      images: [],
+      kind: 'element',
+      label: '产品',
+      target: 'value:乙',
+      text: '乙参考@Image2、@Image4，再看@Image2',
+    },
+    { images: [], kind: 'element', label: '场景', target: 'value:丙', text: '丙参考@Image2' },
   ],
-  shots: [shot('c', 0), shot(null, 2), shot('a', 4)],
+  shots: [
+    shot('参考@Image3，正文', 'c', 0),
+    shot('正文写了@Image9', null, 2),
+    shot('正文用@Image1', null, 4),
+  ],
   video: 'v',
 }
 
@@ -64,13 +81,14 @@ describe('resolveFilmSelection', () => {
 })
 
 describe('segmentFrames', () => {
-  it('全局设定是各元素挂的所有图，按先后、去重；一个元素挂几张就有几张', () => {
+  it('全局设定是各段字里写的 @ImageN，按先后、去重', () => {
     expect(segmentFrames(group, 'global')).toEqual([1, 2, 4])
   })
 
-  it('镜头是它的机位图，没挂图的没有', () => {
+  it('镜头是正文里写的，开头的「参考@ImageN，」也算；超出列表的编号不算', () => {
     expect(segmentFrames(group, 'scene:1')).toEqual([3])
     expect(segmentFrames(group, 'scene:2')).toEqual([])
+    expect(segmentFrames(group, 'scene:3')).toEqual([1])
   })
 })
 
@@ -103,13 +121,12 @@ describe('shotText', () => {
   })
 })
 
-describe('缺图提醒', () => {
-  it('几张没图的用顿号连，同名的只写一次；名字以数字结尾时空一格；一张都不缺就不提醒', () => {
-    expect(missingReferencesText(['短发女生'])).toBe('短发女生的图片缺失，将参考描述生成')
-    expect(missingReferencesText(['短发女生', '镜头 1', '短发女生'])).toBe(
-      '短发女生、镜头 1 的图片缺失，将参考描述生成',
+describe('缺图原因', () => {
+  it('几张没选用的按先后用顿号连，同名的只写一次；一张都不缺就没有原因', () => {
+    expect(missingReferencesText(['短发女生', '镜头 1', '短发女生'], '视频')).toBe(
+      '参考图尚未选用：短发女生、镜头 1，无法生成视频；请先选用图片',
     )
-    expect(missingReferencesText([])).toBeUndefined()
+    expect(missingReferencesText([], '图片')).toBeUndefined()
   })
 })
 

@@ -342,6 +342,8 @@ class FilmShotOut(CamelModel):
 
 
 class FilmGroupOut(CamelModel):
+    """一个镜头组。``prompt`` 是这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样给出。"""
+
     index: int
     video: str
     model: str
@@ -350,6 +352,7 @@ class FilmGroupOut(CamelModel):
     frames: list[FilmFrameOut]
     settings: list[FilmSettingOut]
     shots: list[FilmShotOut]
+    prompt: str
 
 
 class FilmViewOut(CamelModel):
@@ -535,6 +538,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                         )
                         for shot in group.shots
                     ],
+                    prompt=group.prompt,
                 )
                 for group in view.groups
             ],

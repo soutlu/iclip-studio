@@ -8,6 +8,7 @@ import type {
   FilmImageGenerationIn,
   FilmTextEditsIn,
   FilmVideoGenerationIn,
+  FilmViewOut,
 } from '@/shared/api/generated/types.gen'
 import { Toaster } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
@@ -39,12 +40,24 @@ const recordEdits = () => {
   return bodies
 }
 
+/** 记下每次出片发出去的体；不拦，照常交给 mock 处理。 */
+const recordVideos = () => {
+  const videos: FilmVideoGenerationIn[] = []
+  server.use(
+    http.post('*/api/conversations/:conversationId/film/video-generations', async ({ request }) => {
+      videos.push((await request.clone().json()) as FilmVideoGenerationIn)
+    }),
+  )
+  return videos
+}
+
 const mount = async ({
   readOnly = false,
   problems = 0,
   model,
-}: { readOnly?: boolean; problems?: number; model?: string } = {}) => {
-  seedMockFilm(CONVERSATION_ID, { model, problems })
+  complete = false,
+}: { readOnly?: boolean; problems?: number; model?: string; complete?: boolean } = {}) => {
+  seedMockFilm(CONVERSATION_ID, { complete, model, problems })
   await renderWithProviders(
     <>
       <FilmReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
@@ -54,11 +67,17 @@ const mount = async ({
   )
 }
 
-/** 挂上一份能用的工程，返回文案列。 */
-const renderFilm = async ({ readOnly = false } = {}) => {
-  await mount({ readOnly })
+/** 挂上一份能用的工程，返回文案列；默认场景图与镜头 2 的机位图没选用，`complete` 时全都选用了。 */
+const renderFilm = async ({ readOnly = false, complete = false } = {}) => {
+  await mount({ complete, readOnly })
   return screen.findByRole('region', { name: '分镜文案' })
 }
+
+/** 一段字的编辑器里那几枚图片芯片的读屏名字，按先后。 */
+const chipsIn = (editor: HTMLElement) =>
+  within(editor)
+    .queryAllByRole('button')
+    .map((chip) => chip.getAttribute('aria-label'))
 
 /** 整段换成 `text`：全选后粘贴，走编辑器自己的事务。 */
 const replaceText = async (editor: HTMLElement, text: string) => {
@@ -107,61 +126,113 @@ const photo = () => new File(['photo'], '我的照片.png', { type: 'image/png' 
 const stageTag = () => document.querySelector('.storyboard-stage-tag')?.textContent ?? null
 
 describe('制作页', () => {
-  it('全局设定一段一行，元素挂的图是芯片；舞台先看第一张，点芯片换图，左右切图时文案列跟到挂它的段', async () => {
+  it('字里的 @ImageN 在原位置是对应编号的芯片，镜头开头的「参考@ImageN，」也是；段名照模板，后面不挂芯片', async () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
-    expect(within(settings).getByText(/人物 金发女生：/)).toBeInTheDocument()
+    const label = (name: string) =>
+      within(settings).getByText(name, { selector: '.film-setting-label' })
+    expect(within(label('人物：')).queryAllByRole('button')).toEqual([])
     // 声音的正文开头已有说话人，称呼后面空一格接，不再写「：」。
-    expect(
-      within(settings).getByText('声音', { selector: '.film-setting-label' }).textContent,
-    ).toBe('声音 ')
+    expect(label('声音').textContent).toBe('声音 ')
     expect(within(settings).getByRole('textbox', { name: '声音' })).toHaveTextContent(
       /^旁白：年轻女性/,
     )
+
+    const product = within(settings).getByRole('textbox', { name: '产品' })
+    expect(chipsIn(product)).toEqual(['在舞台查看绒面一脚蹬 @2', '在舞台查看绒面一脚蹬 @3'])
+    expect(product).toHaveTextContent('鞋面参考@2，鞋底参考@3。')
+    // 没选用的图照样按编号出芯片，画一格空位。
+    expect(chipsIn(within(settings).getByRole('textbox', { name: '场景' }))).toEqual([
+      '在舞台查看涂鸦滑板场 @4',
+    ])
+    const shot1 = within(script).getByRole('textbox', { name: '镜头 1的描述' })
+    expect(chipsIn(shot1)).toEqual(['在舞台查看镜头 1 @5'])
+    expect(shot1).toHaveTextContent(/^参考@5，低机位仰拍全景/)
+    expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 3的描述' }))).toEqual([])
     expect(within(script).getAllByRole('group', { name: /^镜头 \d$/ })).toHaveLength(4)
-    expect(stageTag()).toBe('@1')
-
-    await userEvent.click(within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' }))
-    await waitFor(() => expect(stageTag()).toBe('@2'))
-
-    // 再往后是同一元素的第二张；第 4 张还没有图，舞台写一句；再往后是镜头 1 的画面，选中跟到镜头 1。
-    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
-    await waitFor(() => expect(stageTag()).toBe('@3'))
-    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
-    expect(
-      await screen.findByRole('heading', { name: '涂鸦滑板场 · 图像生成' }),
-    ).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
-    await waitFor(() =>
-      expect(within(script).getByRole('group', { name: '镜头 1' })).toHaveAttribute(
-        'aria-current',
-        'true',
-      ),
-    )
-    expect(stageTag()).toBe('@4')
   })
 
-  it('一个元素挂几张图就排几枚芯片，按先后；点哪枚舞台看哪张，只高亮那一枚', async () => {
+  it('点字里的芯片：选中这段、舞台看那张，只高亮那一枚；左右切图时文案列跟到写着它的段', async () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
-    // 读屏名字带芯片上的字，同一元素的两张分得开；排在前面的是 @2。
+    expect(stageTag()).toBe('@1')
     const front = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' })
     const sole = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @3' })
-    expect(front.compareDocumentPosition(sole) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // 还没有编号的芯片上就是名字，只念一次。
-    expect(
-      within(settings).getByRole('button', { name: '在舞台查看涂鸦滑板场' }),
-    ).toHaveTextContent('涂鸦滑板场')
 
     await userEvent.click(sole)
     await waitFor(() => expect(stageTag()).toBe('@3'))
     expect(sole).toHaveAttribute('data-highlighted')
     expect(front).not.toHaveAttribute('data-highlighted')
 
-    await userEvent.click(front)
-    await waitFor(() => expect(stageTag()).toBe('@2'))
-    expect(front).toHaveAttribute('data-highlighted')
+    // 第 4 张还没有图，舞台是生成卡；再往后是镜头 1 的画面，选中跟到镜头 1，它开头那枚芯片高亮。
+    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
+    expect(
+      await screen.findByRole('heading', { name: '涂鸦滑板场 · 图像生成' }),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
+    const shot = within(script).getByRole('group', { name: '镜头 1' })
+    await waitFor(() => expect(shot).toHaveAttribute('aria-current', 'true'))
+    expect(stageTag()).toBe('@5')
+    expect(within(shot).getByRole('button', { name: '在舞台查看镜头 1 @5' })).toHaveAttribute(
+      'data-highlighted',
+    )
     expect(sole).not.toHaveAttribute('data-highlighted')
+  })
+
+  it('参考图条按列表先后列这组的全部图，写编号与名字，没选用的标出来；点哪张舞台看哪张，文案列跟到写着它的段', async () => {
+    const script = await renderFilm()
+    const strip = within(script).getByRole('group', { name: '参考图' })
+    expect(
+      within(strip)
+        .getAllByRole('button')
+        .map((chip) => chip.textContent),
+    ).toEqual([
+      '@1金发女生',
+      '@2绒面一脚蹬',
+      '@3绒面一脚蹬',
+      '@4涂鸦滑板场未选用',
+      '@5镜头 1',
+      '@6镜头 2未选用',
+    ])
+    const shot2 = within(strip).getByRole('button', { name: '在舞台查看镜头 2 @6，未选用' })
+
+    await userEvent.click(shot2)
+    expect(await screen.findByRole('region', { name: '镜头 2的生图描述' })).toBeInTheDocument()
+    expect(within(script).getByRole('group', { name: '镜头 2' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+    expect(shot2).toHaveAttribute('data-highlighted')
+  })
+
+  it('「复制完整提示词」复制的是后端给的这组正文', async () => {
+    const served: string[] = []
+    server.events.on('response:mocked', async ({ request, response }) => {
+      if (request.method !== 'GET' || !new URL(request.url).pathname.endsWith('/film')) return
+      const body = (await response.clone().json()) as { film: FilmViewOut }
+      served.push(body.film.groups[0]?.prompt ?? '')
+    })
+    const user = userEvent.setup()
+    await renderFilm()
+    await user.click(screen.getByRole('button', { name: '复制完整提示词' }))
+
+    expect(served.at(-1)).toContain('参考@Image5，')
+    await expect(navigator.clipboard.readText()).resolves.toBe(served.at(-1))
+  })
+
+  it('改了带芯片的那段：写回的字里 @ImageN 照原样，粘贴进来的 @ImageN 也是芯片', async () => {
+    const bodies = recordEdits()
+    const script = await renderFilm()
+    const scene = within(script).getByRole('textbox', { name: '场景' })
+    const original = '户外露天水泥滑板场参考@Image4，坡面和地面喷满街头涂鸦。'
+    scene.focus()
+    pasteTextIntoComposer(scene, '傍晚，参考@Image1，')
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    const text = bodies[0]?.edits[0]?.text ?? ''
+    expect(bodies[0]?.edits[0]?.target).toBe('value:涂鸦滑板场')
+    expect(text.replace('傍晚，参考@Image1，', '')).toBe(original)
+    expect(chipsIn(scene).toSorted()).toEqual(['在舞台查看涂鸦滑板场 @4', '在舞台查看金发女生 @1'])
   })
 
   it('改一句台词只发这一镜：正文原样带回，台词按原来的先后带上各自的 target', async () => {
@@ -177,7 +248,10 @@ describe('制作页', () => {
       edits: [
         {
           lines: [{ target: 'line:soft', text: '一双就够了。' }],
-          parts: ['高角度俯拍脚部特写，镜头缓慢右移。她坐在坡面边缘，小腿悬空。\n', ''],
+          parts: [
+            '参考@Image6，高角度俯拍脚部特写，镜头缓慢右移。她坐在坡面边缘，小腿悬空。\n',
+            '',
+          ],
           target: 'shot:board:2',
         },
       ],
@@ -189,10 +263,13 @@ describe('制作页', () => {
   it('改镜头正文只换中间的字，台词前的换行照旧', async () => {
     const bodies = recordEdits()
     const script = await renderFilm()
-    await replaceText(within(script).getByRole('textbox', { name: '镜头 2的描述' }), '换了一句。')
+    await replaceText(
+      within(script).getByRole('textbox', { name: '镜头 2的描述' }),
+      '参考@Image6，换了一句。',
+    )
 
     await waitFor(() => expect(bodies).toHaveLength(1))
-    expect(bodies[0]?.edits[0]?.parts).toEqual(['换了一句。\n', ''])
+    expect(bodies[0]?.edits[0]?.parts).toEqual(['参考@Image6，换了一句。\n', ''])
   })
 
   it('不合规矩的改动不写回：说清原因，草稿留着', async () => {
@@ -209,8 +286,8 @@ describe('制作页', () => {
     const script = await renderFilm()
     editMockFilmShot(CONVERSATION_ID, 4, 'AI 导演改过的第四镜。')
     await replaceText(
-      within(script).getByRole('textbox', { name: '镜头 1的描述' }),
-      '我改的第一镜。',
+      within(script).getByRole('textbox', { name: '镜头 3的描述' }),
+      '我改的第三镜。',
     )
 
     await waitFor(() => expect(bodies.map((body) => body.filmVersion)).toEqual([1, 2]))
@@ -221,35 +298,43 @@ describe('制作页', () => {
   it('写回时同一段也被改过：问留谁的，留我的就以新版本为底写回', async () => {
     const bodies = recordEdits()
     const script = await renderFilm()
-    editMockFilmShot(CONVERSATION_ID, 1, 'AI 导演改过的第一镜。')
+    editMockFilmShot(CONVERSATION_ID, 3, 'AI 导演改过的第三镜。')
     await replaceText(
-      within(script).getByRole('textbox', { name: '镜头 1的描述' }),
-      '我改的第一镜。',
+      within(script).getByRole('textbox', { name: '镜头 3的描述' }),
+      '我改的第三镜。',
     )
 
     const dialog = await screen.findByRole('dialog', { name: '分镜版本冲突' })
-    expect(dialog).toHaveTextContent('镜头 1在编辑期间已被修改')
+    expect(dialog).toHaveTextContent('镜头 3在编辑期间已被修改')
     await userEvent.click(within(dialog).getByRole('button', { name: '保留我的修改' }))
 
     await waitFor(() => expect(bodies).toHaveLength(2))
     expect(bodies[1]).toMatchObject({
-      edits: [{ parts: ['我改的第一镜。'], target: 'shot:board:1' }],
+      edits: [{ parts: ['我改的第三镜。'], target: 'shot:board:3' }],
       filmVersion: 2,
     })
   })
 
-  it('缺图不拦出片，先存改了的字再按存好的那一版出这一组：模型默认照文件，画幅只显示；成片进本组，选它舞台就放它', async () => {
-    const bodies = recordEdits()
-    const videos: FilmVideoGenerationIn[] = []
-    server.use(
-      http.post(
-        '*/api/conversations/:conversationId/film/video-generations',
-        async ({ request }) => {
-          videos.push((await request.clone().json()) as FilmVideoGenerationIn)
-        },
+  it('这组参考图有没选用的：出片按钮不可用，状态行写明缺哪几张', async () => {
+    const videos = recordVideos()
+    await renderFilm()
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+
+    await waitFor(() =>
+      expect(bar).toHaveTextContent(
+        '参考图尚未选用：涂鸦滑板场、镜头 2，无法生成视频；请先选用图片',
       ),
     )
-    const script = await renderFilm()
+    expect(generate).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(generate)
+    expect(videos).toEqual([])
+  })
+
+  it('参考图都有图时，先存改了的字再按存好的那一版出这一组：模型默认照文件，画幅只显示；成片进本组，选它舞台就放它', async () => {
+    const bodies = recordEdits()
+    const videos = recordVideos()
+    const script = await renderFilm({ complete: true })
     const bar = screen.getByRole('group', { name: '出片工具栏' })
     expect(within(bar).queryByRole('button', { name: '画幅' })).not.toBeInTheDocument()
     expect(bar).toHaveTextContent('9:16')
@@ -257,8 +342,8 @@ describe('制作页', () => {
     await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
 
     await replaceText(
-      within(script).getByRole('textbox', { name: '镜头 1的描述' }),
-      '改过的第一镜。',
+      within(script).getByRole('textbox', { name: '镜头 3的描述' }),
+      '改过的第三镜。',
     )
     // 不等停手自动存：点出片时先存，再按存好的那一版出。
     await userEvent.click(generate)
@@ -277,7 +362,7 @@ describe('制作页', () => {
     expect(stageTag()).toBeNull()
     expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
-    await waitFor(() => expect(stageTag()).toBe('@4'))
+    await waitFor(() => expect(stageTag()).toBe('@5'))
   })
 
   it('文件里写的模型不在可选的里面，出片栏用服务端的默认', async () => {
@@ -342,35 +427,35 @@ describe('制作页的图', () => {
   it('暂无图片的生成图在舞台上是生成卡：点「生成图片」按这张图发，随即转成生成中', async () => {
     const { generations } = recordImages()
     const script = await renderFilm()
-    await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
+    const strip = within(script).getByRole('group', { name: '参考图' })
+    await userEvent.click(
+      within(strip).getByRole('button', { name: '在舞台查看涂鸦滑板场 @4，未选用' }),
+    )
 
-    const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
-    expect(within(card).getByRole('heading', { name: '镜头 2 · 图像生成' })).toBeInTheDocument()
+    const card = await screen.findByRole('region', { name: '涂鸦滑板场的生图描述' })
+    expect(within(card).getByRole('heading', { name: '涂鸦滑板场 · 图像生成' })).toBeInTheDocument()
     await userEvent.click(within(card).getByRole('button', { name: '生成图片' }))
 
     await waitFor(() =>
-      expect(generations).toEqual([{ filmVersion: 1, node: 'shot2_view', runVersion: 1 }]),
+      expect(generations).toEqual([{ filmVersion: 1, node: 'park_look', runVersion: 1 }]),
     )
     expect(await screen.findByRole('status', { name: /^生成中/ })).toBeInTheDocument()
   })
 
-  it('生成卡：描述里挂的生成图没有图时，按钮上方提醒只用描述，出片栏不重复提醒；不挂没图的生成图就不提醒', async () => {
+  it('生成卡：这张图的参考图有没选用的，「生成图片」不可用，写明缺哪几张；没选用的参考图在描述里留原文', async () => {
+    const { generations } = recordImages()
     const script = await renderFilm()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 2' }))
 
     const card = await screen.findByRole('region', { name: '镜头 2的生图描述' })
-    expect(card).toHaveTextContent('涂鸦滑板场的图片缺失，将参考描述生成')
-    expect(screen.getByRole('group', { name: '出片工具栏' })).not.toHaveTextContent('图片缺失')
-    // 没图的参考图只写文字，不出芯片。
+    const blocker = '参考图尚未选用：涂鸦滑板场，无法生成图片；请先选用图片'
+    expect(card).toHaveTextContent(blocker)
+    const button = within(card).getByRole('button', { name: '生成图片' })
+    expect(button).toBeDisabled()
+    expect(button).toHaveAccessibleDescription(blocker)
     expect(within(card).queryByRole('img', { name: /涂鸦滑板场/ })).not.toBeInTheDocument()
-    expect(within(card).queryByRole('button', { name: '编辑图片' })).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: '上一帧' }))
-    await userEvent.click(screen.getByRole('button', { name: '上一帧' }))
-    const park = await screen.findByRole('region', { name: '涂鸦滑板场的生图描述' })
-    expect(park).not.toHaveTextContent('缺失')
-    // 从没生成过、也没选用：不能开编辑器。
-    expect(screen.queryByRole('button', { name: '编辑图片' })).not.toBeInTheDocument()
+    expect(card).toHaveTextContent('场地参考@Image1')
+    expect(generations).toEqual([])
   })
 
   it('生成卡：上次生成失败写原因，按钮是「重新生成」', async () => {
@@ -383,7 +468,7 @@ describe('制作页的图', () => {
     expect(within(card).getByRole('button', { name: '重新生成' })).toBeInTheDocument()
   })
 
-  it('生成卡：生成好了不自动用上，卡上放结果与「选用该图片」；点了才选用，舞台换成它', async () => {
+  it('生成卡：生成好了不自动用上，卡上放结果与「选用该图片」；缺参考图时「再生成」不可用、选用照常，选用后舞台换成它', async () => {
     const result = 'https://example.com/shot2-result.png'
     serveImageJobs([shot2Generation({ outputUrl: result, status: 'completed' })])
     const { choices } = recordImages()
@@ -393,8 +478,8 @@ describe('制作页的图', () => {
     const card = await screen.findByRole('region', { name: '镜头 2的生成结果' })
     expect(card).toHaveTextContent('镜头 2 尚未选用图片')
     expect(card.querySelector('img')).toHaveAttribute('src', result)
-    expect(card).toHaveTextContent('涂鸦滑板场的图片缺失，将参考描述生成')
-    expect(within(card).getByRole('button', { name: '再生成' })).toBeInTheDocument()
+    expect(card).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先选用图片')
+    expect(within(card).getByRole('button', { name: '再生成' })).toBeDisabled()
     // 生成过就能开编辑器，到版本里挑。
     expect(screen.getByRole('button', { name: '编辑图片' })).toBeInTheDocument()
 
@@ -411,7 +496,8 @@ describe('制作页的图', () => {
 
   it('悬停图片芯片出预览卡，「放大」开灯箱', async () => {
     const script = await renderFilm()
-    await userEvent.hover(within(script).getByRole('button', { name: '在舞台查看金发女生 @1' }))
+    const settings = within(script).getByRole('group', { name: '全局设定' })
+    await userEvent.hover(within(settings).getByRole('button', { name: '在舞台查看金发女生 @1' }))
     const tip = await screen.findByRole('tooltip')
     await userEvent.click(within(tip).getByRole('button', { name: '放大' }))
     expect(await screen.findByRole('dialog', { name: /金发女生/ })).toBeInTheDocument()
