@@ -286,6 +286,7 @@ async def _video(
     url_name: str | None = None,
     status: str = STATUS_COMPLETED,
     request: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """一条出片；地址按 ``url_name`` 起，缺省用 id。"""
 
@@ -303,10 +304,10 @@ async def _video(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
             " operation, provider, request, status, shot_index, output_url,"
-            " watermark_output_url, created_at, finished_at)"
+            " watermark_output_url, created_at, finished_at, metadata)"
             " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
             " CAST(:request AS jsonb), :status, :shot, :output_url, :watermark_url, :created_at,"
-            " :finished_at)"
+            " :finished_at, CAST(:metadata AS jsonb))"
         ),
         {
             "id": video_id,
@@ -315,6 +316,7 @@ async def _video(
             "kind": KIND_VIDEO,
             "operation": OPERATION_GENERATE,
             "request": json.dumps(body),
+            "metadata": None if metadata is None else json.dumps(metadata),
             "status": status,
             "shot": shot,
             "output_url": url(name) if status == STATUS_COMPLETED else None,
@@ -679,6 +681,33 @@ async def test_a_dangling_conversation_id_counts_as_no_conversation(
     assert row is not None
     assert (row.video.id, row.video.conversation_id, row.video.title) == (stray, None, None)
     assert (await ids(reports, Scope()))[0] == stray
+
+
+async def test_a_reference_test_video_is_not_a_card(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    """参考视频的试生成只是拿来对照拆解的：``metadata`` 带 ``referenceId`` 的出片不成卡；别的坐标
+    不影响，同样的出片照成卡。"""
+
+    before = await ids(reports, Scope())
+    trial, take = uuid.uuid4(), uuid.uuid4()
+    async with engine.begin() as conn:
+        for job_id, metadata in ((trial, {"referenceId": str(uuid.uuid4())}), (take, {"k": 1})):
+            await _video(
+                conn,
+                job_id,
+                None,
+                owner=seed.nora,
+                user_name=NORA,
+                shot=None,
+                created=190,
+                finished=200,
+                metadata=metadata,
+            )
+
+    assert await reports.card_of(trial) is None
+    assert await reports.card_of(take) is not None
+    assert await ids(reports, Scope()) == [take, *before]
 
 
 async def test_a_video_upload_is_not_a_card_or_a_version(
