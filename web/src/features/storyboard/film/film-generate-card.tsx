@@ -12,7 +12,7 @@ import { Button } from '@/shared/ui/button'
 import type { GenerationJob } from '../storyboard.api'
 import { isRunningStatus } from '../shots'
 import { AspectGlyph } from '../components/aspect-glyph'
-import { useTakeElapsed } from '../components/use-take-elapsed'
+import { useElapsed } from '@/shared/ui/media-preview'
 import type { FilmFrame, FilmGroup } from './film.api'
 import { frameTag, missingReferencesText, unselectedImageText } from './film-content'
 import { FilmImageChip } from './film-image-chip'
@@ -160,7 +160,7 @@ export function FilmGenerateCard({
 }
 
 function Generating({ since }: { since: string }) {
-  const elapsed = useTakeElapsed(since)
+  const elapsed = useElapsed(since)
   // 占的是将要出来的那张图的位置，与在途成片一样铺满画幅框；描述卡不进画幅框。
   return (
     <div className="storyboard-hero">

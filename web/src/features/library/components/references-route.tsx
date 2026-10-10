@@ -245,6 +245,7 @@ export function ReferencesRoute({
           key={referenceId}
           labels={labels}
           listed={listed}
+          myUserName={myUserName}
           onAuthor={filterByAuthor}
           onClose={() => onReferenceChange(null, true)}
           onRestoreFocus={() => focusCard(referenceId)}
