@@ -1,9 +1,10 @@
-/** 参考视频详情：布局照成片详情，左边播放，右边是属主、两组标签与拆解；底栏是编辑、重新拆解与更多操作。
+/** 参考视频详情：布局照成片详情，左边是「原片｜试生成」对照，右边是属主、两组标签与拆解；底栏是编辑、重新拆解与更多操作。
  *
  * 只有属主（`canEdit`）能改标签与拆解、重拆、移除；别人的只能看、复制拆解、下载视频。改动整份带 `version` 提交，
- * 版本对不上（别处改过或重拆过）给一句提示并重读，不覆盖。重新拆解与移除都在底栏原地确认，不另开弹窗。 */
+ * 版本对不上（别处改过或重拆过）给一句提示并重读，不覆盖。重新拆解与移除都在底栏原地确认，不另开弹窗。
+ * 试生成只限属主本人（按用户名比，替人办事与治理者的 `canEdit` 不算），画幅取与原片最接近的一种。 */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { useMediaDownload } from '@/shared/api/media-download'
 import { Icon } from '@/shared/icons'
@@ -24,9 +25,11 @@ import { failureMessageOf, tagsOf, UNTAGGED_YET, type VideoTypeLabels } from '..
 import {
   CATEGORY_VALUES,
   isBreakdownBusy,
+  nearestTestAspectRatio,
   useReference,
   useRemoveReference,
   useRerunReference,
+  useStartTestVideo,
   useUpdateReference,
   VIDEO_TYPE_VALUES,
   type ReferenceDetail,
@@ -35,6 +38,7 @@ import {
 import { AuthorAvatar } from './author-avatar'
 import { ReferenceTagRow } from './reference-tags'
 import { LibraryViewerFrame } from './library-viewer-frame'
+import { CompareOverlay, TestVideoCell } from './test-video-slot'
 
 /** 深色主按钮：置灰时换成禁用底，不留深底配浅灰字。 */
 const INVERTED_CLASS = 'rounded-full disabled:bg-disabled-container'
@@ -51,6 +55,8 @@ type ReferenceViewerProps = {
   /** 列表里已读到的这一条；详情读回来之前先拿它铺画面和标签。 */
   listed: ReferenceItem | undefined
   labels: VideoTypeLabels
+  /** 此刻登录的用户名；属主本人才能试生成。 */
+  myUserName: string | null
   onClose: () => void
   onAuthor: (userName: string) => void
   /** 关掉后由列表把焦点放回卡片；卡片已被虚拟列表回收时返回 false。 */
@@ -61,6 +67,7 @@ export function ReferenceViewer({
   referenceId,
   listed,
   labels,
+  myUserName,
   onClose,
   onAuthor,
   onRestoreFocus,
@@ -91,6 +98,7 @@ export function ReferenceViewer({
           detail={detail.data}
           labels={labels}
           mode={mode}
+          myUserName={myUserName}
           onAuthor={onAuthor}
           onClose={onClose}
           onModeChange={setMode}
@@ -144,26 +152,33 @@ type ViewerBodyProps = {
   detail: ReferenceDetail | undefined
   labels: VideoTypeLabels
   mode: Mode
+  myUserName: string | null
   onModeChange: (mode: Mode) => void
   onRefresh: () => void
   onClose: () => void
   onAuthor: (userName: string) => void
 }
 
+/** 放大的是哪一格：关掉灯箱后把播到的秒数还给那个播放器。 */
+type Preview = { media: LightboxMedia; player: 'original' | 'test' }
+
 function ViewerBody({
   reference,
   detail,
   labels,
   mode,
+  myUserName,
   onModeChange,
   onRefresh,
   onClose,
   onAuthor,
 }: ViewerBodyProps) {
   const playerRef = useRef<HTMLVideoElement>(null)
-  // 读到元数据后量出的真实比例；列表项不带画幅，先按竖版占位。
-  const [ratio, setRatio] = useState(REFERENCE_FALLBACK_RATIO)
-  const [preview, setPreview] = useState<LightboxMedia | null>(null)
+  const testPlayerRef = useRef<HTMLVideoElement>(null)
+  // 读到元数据后量出的真实比例；列表项不带画幅，量到之前按竖版占位，也不能试生成，免得按猜的画幅生成。
+  const [measuredRatio, setMeasuredRatio] = useState<number | null>(null)
+  const ratio = measuredRatio ?? REFERENCE_FALLBACK_RATIO
+  const [preview, setPreview] = useState<Preview | null>(null)
   const [draft, setDraft] = useState('')
   const [conflict, setConflict] = useState(false)
   const editorRef = useRef<HTMLTextAreaElement>(null)
@@ -188,6 +203,7 @@ function ViewerBody({
   const update = useUpdateReference(reference.id)
   const rerun = useRerunReference(reference.id)
   const remove = useRemoveReference(reference.id)
+  const startTest = useStartTestVideo(reference.id)
   const { downloading, download } = useMediaDownload()
 
   const busy = isBreakdownBusy(reference.breakdownStatus)
@@ -279,6 +295,19 @@ function ViewerBody({
     }
   }
 
+  // 试生成只用拆解文字：拆解排队、拆解中或从没拆成时不能提交。
+  const testReady = detail !== undefined && document !== null && !busy
+  const submitTest = () => {
+    if (measuredRatio === null || !testReady) return
+    startTest.mutate(nearestTestAspectRatio(measuredRatio), {
+      onError: (error) => {
+        toast.error(errorMessageOf(error, '试生成失败'))
+        // 409：拆解状态或上一次试生成与画面上的不一致，读回最新的。
+        if (isConflict(error)) onRefresh()
+      },
+    })
+  }
+
   const poster = videoSnapshotUrl(reference.videoUrl, 720)
   const downloadVideo = () => void download(reference.videoUrl, '参考视频')
 
@@ -291,32 +320,61 @@ function ViewerBody({
           name="close"
           onClick={onClose}
         />
-        <div className="relative min-h-0 flex-1 max-md:h-[56vh] max-md:flex-none">
-          {/* 视频盒与画面同比例、在这块区域里等比放到最大：圆角落在画面上，两侧不留底色块。 */}
-          <div className="[container-type:size] absolute inset-3 grid place-items-center md:inset-6">
-            <VideoPlayer
-              autoPlay
-              className="bg-surface-container-low"
-              label={title}
-              loop
-              onExpand={(at) =>
-                setPreview({
-                  kind: 'video',
-                  name: title,
-                  poster,
-                  startAt: at,
-                  url: reference.videoUrl,
-                })
-              }
-              onLoadedMetadata={(event) => {
-                const { videoWidth, videoHeight } = event.currentTarget
-                if (videoWidth > 0 && videoHeight > 0) setRatio(videoWidth / videoHeight)
-              }}
-              poster={poster}
-              ref={playerRef}
-              src={reference.videoUrl}
-              style={{ aspectRatio: ratio, width: `min(100cqw, ${100 * ratio}cqh)` }}
-            />
+        <div className="relative min-h-0 flex-1 max-md:flex-none">
+          {/* 两格与原片同比例、在这块区域里等比放到最大：圆角落在画面上，两侧不留底色块。
+              手机上按内容高度排，顶部让出关闭按钮。 */}
+          <div className="[container-type:size] absolute inset-3 grid place-items-center max-md:[container-type:inline-size] max-md:static max-md:px-3 max-md:pt-16 max-md:pb-2 md:inset-6">
+            <div
+              className="reference-compare"
+              data-orient={ratio > 1 ? 'landscape' : 'portrait'}
+              style={{ '--reference-ratio': ratio } as CSSProperties}
+            >
+              <div className="reference-compare-cell">
+                <VideoPlayer
+                  autoPlay
+                  className="absolute inset-0 bg-surface-container-low"
+                  label="原片"
+                  loop
+                  onExpand={(at) =>
+                    setPreview({
+                      media: {
+                        kind: 'video',
+                        name: title,
+                        poster,
+                        startAt: at,
+                        url: reference.videoUrl,
+                      },
+                      player: 'original',
+                    })
+                  }
+                  onLoadedMetadata={(event) => {
+                    const { videoWidth, videoHeight } = event.currentTarget
+                    if (videoWidth > 0 && videoHeight > 0)
+                      setMeasuredRatio(videoWidth / videoHeight)
+                  }}
+                  poster={poster}
+                  ref={playerRef}
+                  src={reference.videoUrl}
+                />
+                <CompareOverlay label="原片" />
+              </div>
+              <TestVideoCell
+                measured={measuredRatio !== null}
+                onExpand={(url, at) =>
+                  setPreview({
+                    media: { kind: 'video', name: '试生成', startAt: at, url },
+                    player: 'test',
+                  })
+                }
+                onStart={submitTest}
+                owner={myUserName !== null && reference.userName === myUserName}
+                playerRef={testPlayerRef}
+                poster={poster}
+                ready={testReady}
+                starting={startTest.isPending}
+                testVideo={detail?.testVideo}
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -555,10 +613,11 @@ function ViewerBody({
       </section>
 
       <MediaLightbox
-        media={preview}
+        media={preview?.media ?? null}
         onClose={(at) => {
+          const player = (preview?.player === 'test' ? testPlayerRef : playerRef).current
           setPreview(null)
-          if (at !== undefined && playerRef.current !== null) playerRef.current.currentTime = at
+          if (at !== undefined && player !== null) player.currentTime = at
         }}
       />
     </>

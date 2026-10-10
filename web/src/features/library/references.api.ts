@@ -1,4 +1,4 @@
-/** 资料库「参考视频」的接口：筛选翻成查询串、列表与详情的读取和轮询、建行与改、重拆、移除。合同见 contract/conventions.md §14。 */
+/** 资料库「参考视频」的接口：筛选翻成查询串、列表与详情的读取和轮询、建行与改、重拆、移除、试生成。合同见 contract/conventions.md §14。 */
 
 import {
   skipToken,
@@ -14,6 +14,7 @@ import {
   zRemoveReferenceReferencesReferenceIdDeleteResponse,
   zReferenceVideoOut,
   zReferenceVideosOut,
+  zTestVideoIn,
   type zReferenceUpdateIn,
   type zReferenceVideoItemOut,
 } from '@/shared/api/generated/zod.gen'
@@ -28,6 +29,8 @@ export type VideoType = ReferenceItem['videoTypes'][number]
 export type Category = ReferenceItem['categories'][number]
 export type BreakdownStatus = ReferenceItem['breakdownStatus']
 export type BreakdownError = NonNullable<ReferenceItem['errorCode']>
+export type TestVideo = NonNullable<ReferenceDetail['testVideo']>
+export type TestAspectRatio = z.input<typeof zTestVideoIn>['aspectRatio']
 
 /** 合同里的两份清单：片子类型的取值（名称与说明另由 /references/filters 给）与全部品类，都按合同的先后。 */
 export const zVideoType = zReferenceVideoOut.shape.videoTypes.element
@@ -67,6 +70,28 @@ const POLL_MS = 5000
 /** 后台还没拆完：排队或拆解中。 */
 export const isBreakdownBusy = (status: BreakdownStatus): boolean =>
   status === 'pending' || status === 'running'
+
+/** 试生成可选的画幅，按合同的先后。 */
+const TEST_ASPECT_RATIOS: readonly TestAspectRatio[] = zTestVideoIn.shape.aspectRatio.options
+
+const ratioValueOf = (aspectRatio: TestAspectRatio): number => {
+  const [width = 1, height = 1] = aspectRatio.split(':').map(Number)
+  return width / height
+}
+
+/** 取与原片宽高比最接近的画幅；按比值的对数比较，竖版与横版偏差同样计算。 */
+export const nearestTestAspectRatio = (ratio: number): TestAspectRatio => {
+  let best: TestAspectRatio = '9:16'
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const candidate of TEST_ASPECT_RATIOS) {
+    const distance = Math.abs(Math.log(ratio / ratioValueOf(candidate)))
+    if (distance < bestDistance) {
+      best = candidate
+      bestDistance = distance
+    }
+  }
+  return best
+}
 
 /** now 可注入方便测试；预设范围按此刻往前数。两组标签是重复的同名参数。 */
 export const referenceSearchParams = (
@@ -132,7 +157,7 @@ export const useReferenceFilters = (poll: boolean) =>
 
 const referencePath = (id: string) => `/references/${encodeURIComponent(id)}`
 
-/** 一条连同拆解正文；还没拆完时轮询，拆完的结果自动出现。`id` 为 null 时不读。 */
+/** 一条连同拆解正文与最新的试生成；还没拆完或试生成还没结束时轮询，结果自动出现。`id` 为 null 时不读。 */
 export const useReference = (id: string | null) =>
   useQuery({
     queryFn:
@@ -145,7 +170,10 @@ export const useReference = (id: string | null) =>
             }),
     queryKey: referenceQueryKeys.detail(id ?? ''),
     refetchInterval: ({ state }) =>
-      state.data !== undefined && isBreakdownBusy(state.data.breakdownStatus) ? POLL_MS : false,
+      state.data !== undefined &&
+      (isBreakdownBusy(state.data.breakdownStatus) || state.data.testVideo?.status === 'running')
+        ? POLL_MS
+        : false,
   })
 
 /** 用一次确认过的视频上传建行。`created` 为假表示这条视频已经在资料库里（200），交回的是原来那一行。 */
@@ -195,6 +223,21 @@ export const useRerunReference = (id: string) => {
         method: 'POST',
       }),
     onSuccess: (reference) => settle(reference, id),
+  })
+}
+
+/** 试生成：只用当前拆解的文字按给定画幅生成一条视频，答复改完的整行，详情换成它。
+ * 列表项不带试生成，列表与条数不用重读。拆解未完成或上一次还没结束是 409。 */
+export const useStartTestVideo = (id: string) => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (aspectRatio: TestAspectRatio) =>
+      apiFetch(`${referencePath(id)}/test-generations`, zReferenceVideoOut, {
+        body: { aspectRatio },
+        fallbackErrorMessage: '试生成失败',
+        method: 'POST',
+      }),
+    onSuccess: (reference) => queryClient.setQueryData(referenceQueryKeys.detail(id), reference),
   })
 }
 

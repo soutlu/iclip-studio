@@ -1,7 +1,17 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { createElement, type ReactNode } from 'react'
+import { describe, expect, it, vi } from 'vitest'
 import { server } from '@/testing/mocks/server'
-import { createReference, DEFAULT_REFERENCE_SCOPE, referenceSearchParams } from './references.api'
+import {
+  createReference,
+  DEFAULT_REFERENCE_SCOPE,
+  nearestTestAspectRatio,
+  referenceSearchParams,
+  useReference,
+  type TestVideo,
+} from './references.api'
 
 const NOW = new Date('2026-09-23T12:00:00Z')
 
@@ -68,5 +78,78 @@ describe('createReference', () => {
       reference,
     })
     expect(body).toEqual({ uploadId: 'f40a7a4b-90ec-438b-8bf0-9bde53a290fc' })
+  })
+})
+
+describe('nearestTestAspectRatio', () => {
+  it.each([
+    [720 / 1280, '9:16'],
+    [1080 / 1920, '9:16'],
+    [0.6, '9:16'],
+    [0.7, '3:4'],
+    [1, '1:1'],
+    [1.4, '4:3'],
+    [1920 / 1080, '16:9'],
+    [2.39, '16:9'],
+  ] as const)('宽高比 %f 取 %s', (ratio, expected) => {
+    expect(nearestTestAspectRatio(ratio)).toBe(expected)
+  })
+})
+
+describe('useReference', () => {
+  const ID = '5ef00000-0000-4000-8000-000000000043'
+
+  it('试生成进行中时轮询，结束后停', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let testVideo: TestVideo = {
+        createdAt: '2026-09-23T12:00:00Z',
+        errorMessage: null,
+        stale: false,
+        status: 'running',
+        url: null,
+      }
+      let reads = 0
+      server.use(
+        http.get('*/api/references/:id', () => {
+          reads += 1
+          return HttpResponse.json({
+            breakdownStatus: 'completed',
+            canEdit: true,
+            categories: [],
+            createdAt: '2026-09-23T11:00:00Z',
+            document: '# 拆解',
+            errorCode: null,
+            id: ID,
+            testVideo,
+            updatedAt: '2026-09-23T11:00:00Z',
+            userName: 'tester',
+            version: 1,
+            videoTypes: [],
+            videoUrl: 'https://assets.example.com/a.mp4',
+          })
+        }),
+      )
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const { result } = renderHook(() => useReference(ID), {
+        wrapper: ({ children }: { children: ReactNode }) =>
+          createElement(QueryClientProvider, { client: queryClient }, children),
+      })
+      await waitFor(() => expect(result.current.data?.testVideo?.status).toBe('running'))
+      expect(reads).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(5000)
+      await waitFor(() => expect(reads).toBe(2))
+
+      testVideo = { ...testVideo, status: 'completed', url: 'https://assets.example.com/t.mp4' }
+      await vi.advanceTimersByTimeAsync(5000)
+      await waitFor(() => expect(result.current.data?.testVideo?.status).toBe('completed'))
+      const settled = reads
+
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(reads).toBe(settled)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

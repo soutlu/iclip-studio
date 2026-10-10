@@ -547,6 +547,164 @@ describe('参考视频详情', () => {
     },
   )
 
+  describe('试生成', () => {
+    const TEST_VIDEO = {
+      createdAt: '2026-09-23T11:30:00Z',
+      errorMessage: null,
+      stale: false,
+      status: 'completed',
+      url: 'https://assets.example.com/test.mp4',
+    } as const
+
+    /** jsdom 不解码视频：给视频报一个画面尺寸，再在原片上发出 loadedmetadata，当作读到了元数据。 */
+    const loadOriginal = (dialog: HTMLElement, width: number, height: number) => {
+      vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(width)
+      vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(height)
+      fireEvent.loadedMetadata(within(dialog).getByLabelText('原片', { selector: 'video' }))
+    }
+
+    const testWrites = (writes: ReturnType<typeof recordWrites>) =>
+      writes.filter((write) => write.path.endsWith('/test-generations'))
+
+    it.each([
+      [720, 1280, '9:16'],
+      [1920, 1080, '16:9'],
+    ] as const)(
+      '属主未试生成：量到原片画幅前不能提交；原片 %i×%i 时带 %s 提交，随即显示生成中',
+      async (width, height, aspectRatio) => {
+        const writes = recordWrites()
+        const user = userEvent.setup()
+        const { dialog, row } = await openDetail()
+        await within(dialog).findByText('第一版拆解')
+
+        expect(within(dialog).getByText('用拆解试生成')).toBeVisible()
+        const start = within(dialog).getByRole('button', { name: '试生成' })
+        expect(start).toBeDisabled()
+
+        loadOriginal(dialog, width, height)
+        await user.click(start)
+
+        const status = await within(dialog).findByRole('status')
+        expect(status).toHaveTextContent(/试生成中 · \d+:\d{2}/)
+        expect(testWrites(writes)).toEqual([
+          { body: { aspectRatio }, method: 'POST', path: `/references/${row.id}/test-generations` },
+        ])
+        expect(within(dialog).queryByRole('button', { name: '试生成' })).not.toBeInTheDocument()
+      },
+    )
+
+    it('提交失败：toast 显示后端给的原因', async () => {
+      server.use(
+        http.post('*/api/references/:id/test-generations', () =>
+          HttpResponse.json({ detail: '上一次试生成尚未结束' }, { status: 409 }),
+        ),
+      )
+      const user = userEvent.setup()
+      const { dialog } = await openDetail()
+      await within(dialog).findByText('第一版拆解')
+
+      loadOriginal(dialog, 720, 1280)
+      await user.click(within(dialog).getByRole('button', { name: '试生成' }))
+
+      expect(await screen.findByText('试生成失败：上一次试生成尚未结束')).toBeVisible()
+    })
+
+    it('别人的、未试生成：没有「试生成」，显示暂无', async () => {
+      const { dialog } = await openDetail({ userName: 'Maya.Cheng' })
+      await within(dialog).findByText('第一版拆解')
+
+      expect(within(dialog).getByText('暂无试生成')).toBeVisible()
+      for (const name of ['试生成', '重新试生成'])
+        expect(within(dialog).queryByRole('button', { name })).not.toBeInTheDocument()
+    })
+
+    it('拆解未完成：「试生成」置灰（aria-disabled），点了不提交', async () => {
+      const writes = recordWrites()
+      const user = userEvent.setup()
+      const { dialog } = await openDetail({ breakdownStatus: 'running', document: null })
+      await within(dialog).findByText(/正在拆解/)
+
+      loadOriginal(dialog, 720, 1280)
+      const start = within(dialog).getByRole('button', { name: '试生成' })
+      expect(start).toHaveAttribute('aria-disabled', 'true')
+      await user.click(start)
+
+      expect(testWrites(writes)).toEqual([])
+    })
+
+    it('完成：第二个播放器是试生成；属主有「重新试生成」，没有过时提醒', async () => {
+      const { dialog } = await openDetail({ testVideo: TEST_VIDEO })
+      await within(dialog).findByText('第一版拆解')
+
+      expect(within(dialog).getByRole('group', { name: '播放器：原片' })).toBeVisible()
+      expect(within(dialog).getByRole('group', { name: '播放器：试生成' })).toBeVisible()
+      expect(within(dialog).getByRole('button', { name: '重新试生成' })).toBeVisible()
+      expect(within(dialog).queryByText(/拆解已更新/)).not.toBeInTheDocument()
+    })
+
+    it('能改但不是属主本人（canEdit 为真，如治理者）：没有「试生成」', async () => {
+      const row = addMockReference({ document: '# 出场元素\n\n第一版拆解', userName: 'Maya.Cheng' })
+      server.use(
+        // 同一路径也匹配 /references/filters：只接管这一行，其余交给默认 mock。
+        http.get('*/api/references/:id', ({ params }) =>
+          params['id'] === row.id ? HttpResponse.json({ ...row, canEdit: true }) : undefined,
+        ),
+      )
+      await renderWithProviders(<Harness initialReference={row.id} />)
+      const dialog = await screen.findByRole('dialog')
+      await within(dialog).findByText('第一版拆解')
+
+      expect(within(dialog).getByRole('button', { name: '编辑拆解' })).toBeVisible()
+      expect(within(dialog).getByText('暂无试生成')).toBeVisible()
+      expect(within(dialog).queryByRole('button', { name: '试生成' })).not.toBeInTheDocument()
+    })
+
+    it('别人的、已完成：能看试生成，没有「重新试生成」', async () => {
+      const { dialog } = await openDetail({ testVideo: TEST_VIDEO, userName: 'Maya.Cheng' })
+      await within(dialog).findByText('第一版拆解')
+
+      expect(within(dialog).getByRole('group', { name: '播放器：试生成' })).toBeVisible()
+      expect(within(dialog).queryByRole('button', { name: '重新试生成' })).not.toBeInTheDocument()
+    })
+
+    it('拆解改过（stale）：试生成上方提醒该结果按更新前的拆解生成', async () => {
+      const { dialog } = await openDetail({ testVideo: { ...TEST_VIDEO, stale: true } })
+      await within(dialog).findByText('第一版拆解')
+
+      expect(within(dialog).getByText('拆解已更新，该结果按更新前的拆解生成')).toBeVisible()
+    })
+
+    it('失败：显示上游原因；属主点「重新试生成」再提交一次', async () => {
+      const writes = recordWrites()
+      const user = userEvent.setup()
+      const { dialog, row } = await openDetail({
+        testVideo: {
+          ...TEST_VIDEO,
+          errorMessage: '视频时长 45 秒，超出模型支持的时长',
+          status: 'failed',
+          url: null,
+        },
+      })
+      await within(dialog).findByText('第一版拆解')
+
+      const alert = within(dialog).getByRole('alert')
+      expect(alert).toHaveTextContent('试生成失败')
+      expect(alert).toHaveTextContent('视频时长 45 秒，超出模型支持的时长')
+
+      loadOriginal(dialog, 720, 1280)
+      await user.click(within(alert).getByRole('button', { name: '重新试生成' }))
+
+      expect(await within(dialog).findByRole('status')).toHaveTextContent(/试生成中/)
+      expect(testWrites(writes)).toEqual([
+        {
+          body: { aspectRatio: '9:16' },
+          method: 'POST',
+          path: `/references/${row.id}/test-generations`,
+        },
+      ])
+    })
+  })
+
   it('拆解中：标签处说拆完自动打，正文是占位，编辑与重拆先不能点', async () => {
     const { dialog } = await openDetail({
       breakdownStatus: 'running',

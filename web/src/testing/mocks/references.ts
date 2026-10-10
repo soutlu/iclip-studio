@@ -1,8 +1,10 @@
-/** 参考视频的 mock：内存里的一张表，筛选、翻页、改、重拆与移除照合同 §14 做。
+/** 参考视频的 mock：内存里的一张表，筛选、翻页、改、重拆、移除与试生成照合同 §14 做。
  *
  * 上传建的行和重拆的行按时间往前走：先排队，过一会儿拆解中，再过一会儿拆完（带演示拆解与标签），
  * dev:mock 下轮询看得见状态变化。同一份文件内容再传一次交回原来那一行（200）。
- * 演示行覆盖各种状态：拆完的、没标签的、排队与拆解中的、没拆成的（有无上一次拆解）、别人的。
+ * 试生成同样按时间往前走：提交后生成中，过一会儿完成，成片与原片同一个示例视频；改过或重拆过拆解就标为过时。
+ * 演示行覆盖各种状态：拆完的、没标签的、排队与拆解中的、没拆成的（有无上一次拆解）、别人的；
+ * 试生成有未试生成、生成中、完成（含横版）、拆解已更新、失败，以及别人的完成与未试生成。
  * 单测要断言具体内容就先 `resetMockReferences([])` 再用 `addMockReference` 放自己的行。 */
 
 import { http, HttpResponse } from 'msw'
@@ -20,6 +22,7 @@ import { pageBy } from './paging'
 import { mockConfirmedUpload } from './uploads'
 
 type Reference = z.output<typeof zReferenceVideoOut>
+type TestVideo = NonNullable<Reference['testVideo']>
 type VideoType = Reference['videoTypes'][number]
 type Category = Reference['categories'][number]
 type Filters = z.output<typeof zReferenceFiltersOut>
@@ -110,12 +113,17 @@ const HOUR_MS = 60 * 60_000
 const PENDING_MS = 1500
 const SETTLE_MS = 4000
 
+/** 试生成提交后多久完成。 */
+const TEST_SETTLE_MS = 5000
+
 type Row = Reference & {
   removed: boolean
   /** 上传字节的指纹；同样的内容再传一次认出是同一条。演示行没有。 */
   contentKey: string | null
   /** 后台拆解的进度：什么时候排进去的。没有就是静止的演示行。 */
   queuedAt: number | null
+  /** 试生成什么时候提交的；没有就是静止的演示状态。 */
+  testQueuedAt: number | null
 }
 
 const rows: Row[] = []
@@ -138,6 +146,7 @@ export const addMockReference = (overrides: Partial<Reference> = {}): Reference 
     id: idOf(seq),
     queuedAt: null,
     removed: false,
+    testQueuedAt: null,
     testVideo: null,
     updatedAt: at,
     userName: mockAuthUser.username,
@@ -151,6 +160,16 @@ export const addMockReference = (overrides: Partial<Reference> = {}): Reference 
 }
 
 const ago = (hours: number) => new Date(Date.now() - hours * HOUR_MS).toISOString()
+
+/** 一次已经结束或静止的试生成；完成的成片用与原片同方向的示例视频。 */
+const demoTestVideo = (overrides: Partial<TestVideo>): TestVideo => ({
+  createdAt: ago(1),
+  errorMessage: null,
+  stale: false,
+  status: 'completed',
+  url: null,
+  ...overrides,
+})
 
 const seedDemo = () => {
   const me = mockAuthUser.username
@@ -174,6 +193,7 @@ const seedDemo = () => {
     {
       categories: ['拖鞋'],
       createdAt: ago(2),
+      testVideo: demoTestVideo({ url: sampleVideoUrl }),
       userName: 'Maya.Cheng',
       videoTypes: ['review', 'product_showcase'],
     },
@@ -182,6 +202,8 @@ const seedDemo = () => {
       categories: ['拖鞋'],
       createdAt: ago(5),
       errorCode: 'model_call_failed',
+      // 静止的生成中：从 42 秒前开始，dev:mock 下一直走表。
+      testVideo: demoTestVideo({ createdAt: ago(42 / 3600), status: 'running' }),
       userName: me,
       videoTypes: ['review', 'product_showcase'],
     },
@@ -193,7 +215,12 @@ const seedDemo = () => {
       videoUrl: sampleWideUrl,
     },
     { categories: ['拖鞋'], createdAt: ago(30), userName: 'Nora.Ho', videoTypes: ['slideshow'] },
-    { createdAt: ago(50), userName: me },
+    {
+      createdAt: ago(50),
+      testVideo: demoTestVideo({ url: sampleWideUrl }),
+      userName: me,
+      videoUrl: sampleWideUrl,
+    },
     {
       categories: ['板鞋', 'T恤'],
       createdAt: ago(75),
@@ -204,11 +231,21 @@ const seedDemo = () => {
       categories: ['穆勒鞋', '凉拖鞋', '平底鞋', '乐福鞋', '雪地靴', '外套'],
       createdAt: ago(100),
       document: LONG_DOCUMENT,
+      testVideo: demoTestVideo({ stale: true, url: sampleVideoUrl }),
       userName: me,
       videoTypes: ['try_on', 'lifestyle', 'talking_head', 'product_showcase'],
     },
     { categories: ['穆勒鞋'], createdAt: ago(120), userName: 'Sara.Hong', videoTypes: ['try_on'] },
-    { categories: ['拖鞋'], createdAt: ago(170), userName: me, videoTypes: ['product_showcase'] },
+    {
+      categories: ['拖鞋'],
+      createdAt: ago(170),
+      testVideo: demoTestVideo({
+        errorMessage: '视频时长 45 秒，超出模型支持的时长',
+        status: 'failed',
+      }),
+      userName: me,
+      videoTypes: ['product_showcase'],
+    },
   ]
   for (const overrides of demo)
     addMockReference({ updatedAt: overrides.createdAt ?? ago(0), ...overrides })
@@ -222,8 +259,22 @@ export const resetMockReferences = (seed?: readonly Partial<Reference>[]) => {
   else for (const overrides of seed) addMockReference(overrides)
 }
 
-/** 按时间推进后台拆解：排队 → 拆解中 → 拆完，拆完写回演示拆解与标签、版本加一。 */
+/** 拆解变了：已有的试生成按更新前的拆解生成，标为过时。 */
+const markTestStale = (row: Row) => {
+  if (row.testVideo !== null) row.testVideo = { ...row.testVideo, stale: true }
+}
+
+/** 按时间推进后台拆解：排队 → 拆解中 → 拆完，拆完写回演示拆解与标签、版本加一；
+ * 试生成到点就完成。 */
 const advance = (row: Row, now: number) => {
+  if (
+    row.testQueuedAt !== null &&
+    row.testVideo !== null &&
+    now - row.testQueuedAt >= TEST_SETTLE_MS
+  ) {
+    row.testVideo = { ...row.testVideo, status: 'completed', url: row.videoUrl }
+    row.testQueuedAt = null
+  }
   if (row.queuedAt === null) return
   const elapsed = now - row.queuedAt
   if (elapsed < PENDING_MS) row.breakdownStatus = 'pending'
@@ -239,6 +290,7 @@ const advance = (row: Row, now: number) => {
       version: row.version + 1,
       videoTypes: ['review', 'product_showcase'],
     } satisfies Partial<Row>)
+    markTestStale(row)
   }
 }
 
@@ -250,7 +302,13 @@ const live = (): Row[] => {
 
 /** 交出去的样子：去掉 mock 自己的字段，`canEdit` 按此刻登录的人算。 */
 const publicOf = (row: Row, viewer: string): Reference => {
-  const { removed: _removed, contentKey: _contentKey, queuedAt: _queuedAt, ...reference } = row
+  const {
+    removed: _removed,
+    contentKey: _contentKey,
+    queuedAt: _queuedAt,
+    testQueuedAt: _testQueuedAt,
+    ...reference
+  } = row
   return { ...reference, canEdit: row.userName === viewer }
 }
 
@@ -332,7 +390,7 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json({
       canUpload: true,
       items: page.items.map((row) => {
-        const { document: _document, ...item } = publicOf(row, viewer())
+        const { document: _document, testVideo: _testVideo, ...item } = publicOf(row, viewer())
         return item
       }),
       nextCursor: page.nextCursor,
@@ -366,6 +424,7 @@ export const referenceHandlers = (viewer: () => string) => [
       id: idOf(1000 + seq),
       queuedAt: Date.now(),
       removed: false,
+      testQueuedAt: null,
       testVideo: null,
       updatedAt: now,
       userName: viewer(),
@@ -392,6 +451,7 @@ export const referenceHandlers = (viewer: () => string) => [
       return HttpResponse.json({ detail: [{ msg: '拆解不能为空' }] }, { status: 422 })
     if (body.version !== row.version || isBusy(row))
       return HttpResponse.json({ detail: '这条参考视频已经变了' }, { status: 409 })
+    if (body.document !== row.document) markTestStale(row)
     Object.assign(row, {
       categories: [...new Set(body.categories)],
       document: body.document,
@@ -409,6 +469,27 @@ export const referenceHandlers = (viewer: () => string) => [
       return HttpResponse.json({ detail: '只有属主能重拆' }, { status: 403 })
     if (isBusy(row)) return HttpResponse.json({ detail: '正在拆解' }, { status: 409 })
     Object.assign(row, { breakdownStatus: 'pending', queuedAt: Date.now() } satisfies Partial<Row>)
+    return HttpResponse.json(publicOf(row, viewer()))
+  }),
+
+  // 画幅不影响 mock：成片沿用原片的示例视频。
+  http.post('*/api/references/:id/test-generations', ({ params }) => {
+    const row = find(params['id'])
+    if (row === undefined) return NOT_FOUND()
+    if (row.userName !== viewer())
+      return HttpResponse.json({ detail: '仅上传者本人可以试生成' }, { status: 403 })
+    if (isBusy(row) || row.document === null)
+      return HttpResponse.json({ detail: '拆解尚未完成' }, { status: 409 })
+    if (row.testVideo?.status === 'running')
+      return HttpResponse.json({ detail: '上一次试生成尚未结束' }, { status: 409 })
+    row.testQueuedAt = Date.now()
+    row.testVideo = {
+      createdAt: new Date().toISOString(),
+      errorMessage: null,
+      stale: false,
+      status: 'running',
+      url: null,
+    }
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 

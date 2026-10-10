@@ -38,6 +38,41 @@ test('资料库切到参考视频，页签与两组标签筛选都在地址里�
   await expect(main.getByText('找到 3 条')).toBeVisible()
 })
 
+test('属主试生成：提交后显示生成中，完成后原片与试生成两格左右并排', async ({ page }) => {
+  await page.goto('/')
+  await login(page, 'tester')
+  await page.getByRole('button', { name: '资料库' }).click()
+  await page.getByRole('tab', { name: '参考视频' }).click()
+  const main = page.getByRole('main', { name: '资料库' })
+
+  const name = '上身展示 · 短靴 · 卫衣 · 裤子'
+  await main
+    .getByRole('article', { name })
+    .getByRole('button', { name: /查看详情/ })
+    .click()
+  const dialog = page.getByRole('dialog', { name })
+  await expect(dialog.getByText('用拆解试生成')).toBeVisible()
+
+  // 读到原片元数据（画幅）后按钮才可点，click 会等到它可点。
+  await dialog.getByRole('button', { name: '试生成', exact: true }).click()
+  await expect(dialog.getByRole('status').filter({ hasText: '试生成中' })).toBeVisible()
+
+  // mock 提交 5 秒后完成，详情每 5 秒轮询一次。
+  const tested = dialog.getByRole('group', { name: '播放器：试生成' })
+  await expect(tested).toBeVisible({ timeout: 15_000 })
+  await expect(dialog.getByRole('button', { name: '重新试生成' })).toBeVisible()
+
+  const original = await dialog.getByRole('group', { name: '播放器：原片' }).boundingBox()
+  const result = await tested.boundingBox()
+  expect(original).not.toBeNull()
+  expect(result).not.toBeNull()
+  if (original === null || result === null) return
+  // 竖版原片：两格同高、同一行，试生成在原片右边。
+  expect(Math.abs(result.y - original.y)).toBeLessThan(1)
+  expect(Math.abs(result.height - original.height)).toBeLessThan(1)
+  expect(result.x).toBeGreaterThanOrEqual(original.x + original.width)
+})
+
 test('上传一条视频：先排队、拆完自动出标签；改拆解保存；同一个文件再传一次打开原来那条', async ({
   page,
 }) => {
