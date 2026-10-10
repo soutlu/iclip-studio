@@ -1128,11 +1128,13 @@ export type FaceOut = {
 /**
  * FilmFrameOut
  *
- * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ * 这组视频参考图列表里的一张图，按列表先后。``node`` 是换图时传回的定位；``number`` 是它在
+ * 列表里的位置，即 @N；``url`` 没有图时为 null。
  *
- * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
- * 用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法
- * 同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。
+ * ``prompt`` 是按描述生成时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图
+ * 留在文字里；``aspectRatio`` 是文件里写的画幅。用户给的图这两个都是 null。``missing`` 是这张图
+ * 挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后；不为空时这张图不能生成。用户
+ * 给的图为空列表。
  */
 export type FilmFrameOut = {
   /**
@@ -1321,7 +1323,7 @@ export type FilmLineOut = {
 /**
  * FilmPromptImageOut
  *
- * 描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。
+ * 描述里一张有图的参考图所在的位置，即文件里写 ``@ImageN`` 的地方。
  */
 export type FilmPromptImageOut = {
   /**
@@ -1359,8 +1361,8 @@ export type FilmPromptTextOut = {
 /**
  * FilmSettingOut
  *
- * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
- * 可以几张，拍法和声音为空。
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；
+ * ``images`` 恒为空列表，这组的图都在 ``frames`` 里。
  */
 export type FilmSettingOut = {
   /**

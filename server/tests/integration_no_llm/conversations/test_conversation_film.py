@@ -8,34 +8,38 @@ from sqlalchemy import text
 
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
-from tests.helpers.film import FILM, GIVEN_IMAGES, RUN
+from tests.helpers.film import EXPECTED, FILM, GIVEN_IMAGES, PHOTOS, RUN, run_of
 from tests.helpers.pg import connected
 
 URL = "/conversations"
 FIRST_SHOT = [
-    "开场，手持，胸部以上近景，平视。短发女生站在跑道边，双手分别握住网面跑鞋的鞋头和鞋跟，"
-    "向内对折到两端相碰，停了一下后松开右手，鞋底立刻弹回平直。她抬头看着镜头说：",
-    " 音效：鞋底弹回时的一声轻响",
+    "参考@Image8，中景，平视，手持跟拍。模特A和模特B在红砖街区的人行道上并肩走向镜头。"
+    "模特A低头看鞋说：",
+    " 模特B侧头问：",
+    " 音效：两人的脚步声与街道环境声。",
 ]
 
 
 def say(version: int, text: str) -> dict[str, object]:
-    """改第一个镜头里那句台词的请求体。"""
+    """改第一个镜头里第一句台词的请求体。"""
 
-    line = {"target": "line:lighter", "text": text}
-    edit = {"target": "shot:全片镜头:1", "parts": FIRST_SHOT, "lines": [line]}
+    lines = [
+        {"target": "line:hook", "text": text},
+        {"target": "line:reply", "text": "鞋底是软的吗？"},
+    ]
+    edit = {"target": "shot:video01Shots:1", "parts": FIRST_SHOT, "lines": lines}
     return {"filmVersion": version, "edits": [edit]}
 
 
-async def film_conversation(client: httpx.AsyncClient, pg_url: str) -> str:
+async def film_conversation(client: httpx.AsyncClient, pg_url: str, run: str = RUN) -> str:
     """登录、开一段对话，放进样例工程与它用到的素材，返回对话 id。"""
 
     user_id = await login_as_editor(client, pg_url)
-    created = await client.post(URL, json={"agentId": "director", "title": "跑鞋"})
+    created = await client.post(URL, json={"agentId": "director", "title": "鞋款"})
     conversation = created.json()["conversation"]["id"]
     namespace = f"{user_id}/{conversation}"
     async with connected(pg_url) as conn:
-        for path, content in (("film.icml", FILM), ("film.icrun", RUN)):
+        for path, content in (("film.icml", FILM), ("film.icrun", run)):
             await conn.execute(
                 text(
                     "INSERT INTO agent_runtime.workspace_files "
@@ -58,47 +62,53 @@ async def film_conversation(client: httpx.AsyncClient, pg_url: str) -> str:
 async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    mine = await film_conversation(client, pg_url)
+    mine = await film_conversation(client, pg_url, run_of("no-personB"))
 
     read = await client.get(f"{URL}/{mine}/film")
     assert read.status_code == 200, read.text
     film = read.json()["film"]
     assert (film["filmVersion"], film["runVersion"], film["problems"]) == (1, 1, 0)
-    (group,) = film["groups"]
+    group, _ = film["groups"]
     assert (group["aspectRatio"], group["seconds"], group["model"]) == (
-        "9:16",
-        15,
+        "16:9",
+        18,
         "mmt-seedance-2-5",
     )
-    first = group["frames"][0]
-    assert {key: value for key, value in first.items() if key != "prompt"} == {
-        "node": "短发女生参考图",
-        "label": "短发女生",
+    person = group["frames"][2]
+    assert {key: value for key, value in person.items() if key != "prompt"} == {
+        "node": "personB",
+        "label": "personB",
         "kind": "generated",
-        "url": "https://cdn.test/b-fixed.png",
-        "number": 1,
+        "url": None,
+        "number": 3,
         "aspectRatio": "3:4",
         "missing": [],
     }
-    assert first["prompt"][0]["text"].startswith("拍摄：\n画面是用手机实拍的")
-    second_view = group["frames"][5]
-    assert (second_view["node"], second_view["missing"]) == ("镜02机位图", ["公园跑道"])
-    shoe_setting = group["settings"][2]
-    assert (shoe_setting["label"], shoe_setting["images"]) == (
-        "产品 网面跑鞋",
-        ["跑鞋正面", "跑鞋鞋底"],
+    assert person["prompt"] == [{"kind": "text", "text": EXPECTED["images"]["personB"]["prompt"]}]
+    first_view = group["frames"][7]
+    assert (first_view["label"], first_view["missing"]) == ("镜头 1", ["personB"])
+    shoe_setting = group["settings"][3]
+    assert (shoe_setting["kind"], shoe_setting["label"], shoe_setting["images"]) == (
+        "element",
+        "产品",
+        [],
     )
-    shoe = group["frames"][1]
-    assert (shoe["kind"], shoe["prompt"], shoe["aspectRatio"]) == ("photo", None, None)
-    assert group["shots"][0]["lines"][0]["target"] == "line:lighter"
+    photo = group["frames"][0]
+    assert (photo["kind"], photo["url"], photo["prompt"], photo["aspectRatio"]) == (
+        "photo",
+        PHOTOS["modelAPortraitPhoto"],
+        None,
+        None,
+    )
+    assert group["shots"][0]["lines"][0]["target"] == "line:hook"
 
     edited = await client.patch(
         f"{URL}/{mine}/film/text",
-        json=say(1, "So light!"),
+        json=say(1, "这一双，真轻。"),
     )
     assert edited.status_code == 200, edited.text
     assert edited.json()["film"]["filmVersion"] == 2
-    assert edited.json()["film"]["groups"][0]["shots"][0]["lines"][0]["text"] == "So light!"
+    assert edited.json()["film"]["groups"][0]["shots"][0]["lines"][0]["text"] == "这一双，真轻。"
 
     stale = await client.patch(
         f"{URL}/{mine}/film/text",
@@ -114,16 +124,16 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
 
     cleared = await client.put(
         f"{URL}/{mine}/film/image",
-        json={"node": "短发女生参考图", "url": None, "filmVersion": 2, "runVersion": 1},
+        json={"node": "scene", "url": None, "filmVersion": 2, "runVersion": 1},
     )
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["film"]["runVersion"] == 2
-    assert cleared.json()["film"]["groups"][0]["frames"][0]["url"] is None
+    assert cleared.json()["film"]["groups"][0]["frames"][6]["url"] is None
 
     foreign = await client.put(
         f"{URL}/{mine}/film/image",
         json={
-            "node": "短发女生参考图",
+            "node": "scene",
             "url": "https://elsewhere.test/a.png",
             "filmVersion": 2,
             "runVersion": 2,
@@ -159,13 +169,13 @@ async def test_the_page_follows_the_workspace_file_permissions(
 async def test_malformed_page_requests_are_422(client: httpx.AsyncClient, pg_url: str) -> None:
     mine = await film_conversation(client, pg_url)
 
-    both = {"target": "shot:全片镜头:1", "text": "x", "parts": ["x"], "lines": []}
+    both = {"target": "shot:video01Shots:1", "text": "x", "parts": ["x"], "lines": []}
     bad_edit = await client.patch(
         f"{URL}/{mine}/film/text", json={"filmVersion": 1, "edits": [both]}
     )
     bad_url = await client.put(
         f"{URL}/{mine}/film/image",
-        json={"node": "跑鞋正面", "url": "ftp://x/y.png", "filmVersion": 1, "runVersion": 1},
+        json={"node": "shoeFrontPhoto", "url": "ftp://x/y.png", "filmVersion": 1, "runVersion": 1},
     )
 
     assert (bad_edit.status_code, bad_url.status_code) == (422, 422)
@@ -175,9 +185,9 @@ async def test_generation_on_the_page_is_owner_only_and_needs_media_generation(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
     mine = await film_conversation(client, pg_url)
-    image = {"node": "公园跑道参考图", "filmVersion": 1, "runVersion": 1}
+    image = {"node": "scene", "filmVersion": 1, "runVersion": 1}
     video = {
-        "video": "全片",
+        "video": "video01",
         "model": "mmt-seedance-2-5",
         "resolution": "720p",
         "generateAudio": True,
