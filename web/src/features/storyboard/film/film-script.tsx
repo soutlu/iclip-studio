@@ -1,10 +1,14 @@
-/** 制作页的文案列：列头与分镜页相同（`ScriptHead`）；正文区最上面是全局设定卡，之后按时间排各镜头，末尾一行写总长与「结束」。
+/** 制作页的文案列：列头与分镜页相同（`ScriptHead`）；正文区最上面是这组的参考图条，其次是全局设定卡，之后按时间排各镜头，
+ * 末尾一行写总长与「结束」。
  *
- * 全局设定一段一行：拍法只有字，出场元素与声音前面写称呼，元素挂着几张图就在称呼后放几枚图片芯片，点哪枚看哪张图。
+ * 参考图条按列表先后列这组会发出去的参考图（有编号的），每张写 @N 与名字，没选用的画空位、写「未选用」，点哪张舞台看哪张；
+ * 还没进列表的机位图不在条上，在它那一镜头部的缩略图里。
+ * 全局设定一段一行，前面写模板里的段名。字里的 `@ImageN` 在原位置是图片芯片（镜头开头的「参考@ImageN，」也是），
+ * 点芯片选中这段、舞台看那张图；这段选中且舞台正看着那张时芯片高亮。
  * 镜头正文与台词交替排：台词单独一行，说话人是固定的小标签，只能改引号里的字。没法在页面上改的段只读。
  * 点哪段选中哪段，舞台跟着切到它挂的图。列里不收拖进来的文件，免得漏给聊天输入框。 */
 
-import { Fragment, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { Fragment, useRef, useState, type FocusEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
@@ -24,6 +28,7 @@ import {
   shotText,
   shotTime,
 } from './film-content'
+import { FilmFrameChipsProvider } from './film-frame-chip'
 import { FilmImageChip } from './film-image-chip'
 import { FilmTextEditor } from './film-text-editor'
 import type { FilmSegmentValue } from './use-film-draft'
@@ -36,6 +41,8 @@ type FilmScriptProps = {
   frame: number | undefined
   readOnly: boolean
   onSelect: (contentId: string, frame?: number) => void
+  /** 在参考图条上点了第 `position` 张：舞台看它，选哪段由使用方定。 */
+  onPickFrame: (position: number) => void
   /** 一段字改了：`label` 是这段给人看的名字，冲突时用。 */
   onEdit: (target: string, label: string, value: FilmSegmentValue) => void
   /** 图片芯片预览卡上的「放大」。 */
@@ -66,6 +73,7 @@ export function FilmScript({
   frame,
   group,
   onEdit,
+  onPickFrame,
   onPreview,
   onSelect,
   readOnly,
@@ -89,6 +97,13 @@ export function FilmScript({
   }
   const settingsSelected = selectedId === SETTINGS_ID
   const settingsClamped = compact && !settingsSelected
+  /** 一段里的图片芯片：这段选中、舞台又正在看那张，才算这枚芯片的；点芯片选中这段、看那张。 */
+  const chipsOf = (id: string, selected: boolean) => ({
+    frames: group.frames,
+    highlighted: selected ? frame : undefined,
+    onEnlarge: onPreview,
+    onPick: (position: number) => onSelect(id, position),
+  })
 
   return (
     <div aria-label="分镜文案" className="storyboard-prose" role="region" {...refuseFileDropProps}>
@@ -105,6 +120,9 @@ export function FilmScript({
         total={total}
       />
       <div className="storyboard-script-list">
+        {group.frames.every((item) => item.number === null) ? null : (
+          <FrameStrip frame={frame} group={group} onPick={onPickFrame} onPreview={onPreview} />
+        )}
         {group.settings.length === 0 ? null : (
           <div
             aria-current={settingsSelected}
@@ -139,34 +157,20 @@ export function FilmScript({
                 ) : null}
               </span>
             </div>
-            <div className="film-segment-body">
-              {group.settings.map((setting) => (
-                <SettingRow
-                  chips={setting.images.flatMap((node) => {
-                    const found = frameAt(group, node)
-                    return found === undefined
-                      ? []
-                      : [
-                          <FilmImageChip
-                            // 全局设定是选中的段，舞台又正在看它，才算这枚芯片的。
-                            highlighted={settingsSelected && frame === found.position}
-                            key={node}
-                            label={found.frame.label}
-                            onEnlarge={(url) => onPreview({ name: found.frame.label, url })}
-                            onPick={() => onSelect(SETTINGS_ID, found.position)}
-                            tag={frameTag(found.frame)}
-                            url={found.frame.url}
-                          />,
-                        ]
-                  })}
-                  // 同一组里每段设定的 target 各不相同；没法改的段没有 target，按种类与称呼认。
-                  key={setting.target ?? `${setting.kind}:${setting.label ?? ''}`}
-                  onEdit={onEdit}
-                  readOnly={readOnly}
-                  setting={setting}
-                />
-              ))}
-            </div>
+            <FilmFrameChipsProvider value={chipsOf(SETTINGS_ID, settingsSelected)}>
+              <div className="film-segment-body">
+                {group.settings.map((setting) => (
+                  <SettingRow
+                    // 同一组里每段设定的 target 各不相同；没法改的段没有 target、字也不会变，同一段名下可以有几段，
+                    // 按段名连同字认。
+                    key={setting.target ?? `${setting.kind}:${setting.label ?? ''}:${setting.text}`}
+                    onEdit={onEdit}
+                    readOnly={readOnly}
+                    setting={setting}
+                  />
+                ))}
+              </div>
+            </FilmFrameChipsProvider>
           </div>
         )}
         <ol className="storyboard-shots">
@@ -225,7 +229,9 @@ export function FilmScript({
                       {copyButton(label, shotText(shot))}
                     </span>
                   </div>
-                  <ShotBody label={label} onEdit={onEdit} readOnly={readOnly} shot={shot} />
+                  <FilmFrameChipsProvider value={chipsOf(id, selected)}>
+                    <ShotBody label={label} onEdit={onEdit} readOnly={readOnly} shot={shot} />
+                  </FilmFrameChipsProvider>
                 </div>
               </li>
             )
@@ -242,15 +248,52 @@ export function FilmScript({
   )
 }
 
-/** 全局设定的一段：称呼与图片芯片浮在左边，字从它们后面接着排、折行回到行首。 */
+/** 这组的参考图条：按列表先后一张一枚，写 @N 与名字，没选用的画空位、写「未选用」；舞台正看着的那张高亮。 */
+function FrameStrip({
+  frame,
+  group,
+  onPick,
+  onPreview,
+}: {
+  frame: number | undefined
+  group: FilmGroup
+  onPick: (position: number) => void
+  onPreview: FilmScriptProps['onPreview']
+}) {
+  return (
+    <div aria-label="参考图" className="film-frames" role="group">
+      <span className="storyboard-settings-label">
+        <Icon decorative name="image" size="xs" />
+        参考图
+      </span>
+      {group.frames.flatMap((item, index) =>
+        // 只列会发出去的（有编号的）；没进列表的机位图在它那一镜的头部与舞台上。位置照 `frames` 里的算。
+        item.number === null
+          ? []
+          : [
+              <FilmImageChip
+                highlighted={frame === index + 1}
+                key={item.node}
+                label={item.label}
+                named
+                note={item.url === null ? '未选用' : undefined}
+                onEnlarge={(url) => onPreview({ name: item.label, url })}
+                onPick={() => onPick(index + 1)}
+                tag={frameTag(item)}
+                url={item.url}
+              />,
+            ],
+      )}
+    </div>
+  )
+}
+
+/** 全局设定的一段：称呼浮在左边，字从它后面接着排、折行回到行首。 */
 function SettingRow({
-  chips,
   onEdit,
   readOnly,
   setting,
 }: {
-  /** 这段挂的图，一张一枚，按 `images` 的先后。 */
-  chips: ReactNode[]
   onEdit: FilmScriptProps['onEdit']
   readOnly: boolean
   setting: FilmSetting
@@ -264,7 +307,6 @@ function SettingRow({
           {setting.label}
           {/* 称呼浮在左边，行尾的普通空格会被吃掉，换成不折行的空格才留得住。 */}
           {settingSeparator(setting).replace(' ', ' ')}
-          {chips}
         </span>
       )}
       <FilmTextEditor

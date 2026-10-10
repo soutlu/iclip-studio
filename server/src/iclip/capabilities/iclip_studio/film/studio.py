@@ -38,6 +38,7 @@ from iclip.capabilities.iclip_studio.film.prompts import (
     listed_images,
     references,
     render_picture,
+    render_video,
     slot_values,
     video_shots,
     written_texts,
@@ -54,6 +55,7 @@ from iclip.common.film_view import (
     FilmTextEdit,
     SettingKind,
 )
+from iclip.common.shot_prompt import format_shot_prompt
 
 _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
 _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
@@ -82,16 +84,29 @@ class _View:
 
 
 def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
-    """每个视频节点一组，顺序与文件里相同。``film`` 是工程文件 ``source`` 检查通过后的样子。"""
+    """每个视频节点一组，顺序与文件里相同。``film`` 是工程文件 ``source`` 检查通过后的样子。
+
+    ``frames`` 先是这组视频的参考图列表，编号就是位置；再按镜头先后接上这组里还没进列表的机位图，
+    没有编号，好让人在页面上生成、选用它们。"""
 
     project = film.project
     videos = project.find("ReferenceVideo")
     views = _views(project, videos)
     groups: list[FilmGroup] = []
     for index, video in enumerate(videos, start=1):
+        listed = listed_images(film, video)
+        names = {item.image for item in listed}
+        unlisted = sorted(
+            (view.number, image)
+            for image, view in views.items()
+            if view.group == index and image not in names
+        )
         frames = tuple(
             _frame(film, item.image, item.url, number, index, views)
-            for number, item in enumerate(listed_images(film, video), start=1)
+            for number, item in enumerate(listed, start=1)
+        ) + tuple(
+            _frame(film, image, film.image_url(f"{image}.image"), None, index, views)
+            for _, image in unlisted
         )
         groups.append(
             FilmGroup(
@@ -103,6 +118,7 @@ def film_groups(film: Film, source: str) -> tuple[FilmGroup, ...]:
                 frames=frames,
                 settings=_settings(project, video, source),
                 shots=_shots(film, video, source),
+                prompt=format_shot_prompt(render_video(film, video)),
             )
         )
     return tuple(groups)
@@ -255,7 +271,12 @@ def _label(image: str, group: int | None, views: dict[str, _View]) -> str:
 
 
 def _frame(
-    film: Film, image: str, url: str | None, number: int, group: int, views: dict[str, _View]
+    film: Film,
+    image: str,
+    url: str | None,
+    number: int | None,
+    group: int,
+    views: dict[str, _View],
 ) -> FilmFrame:
     project = film.project
     generated = _generated(project, image)
@@ -266,7 +287,7 @@ def _frame(
         prompt = tuple(
             FilmPromptText(run)
             if isinstance(run, str)
-            else FilmPromptImage(run.image, _label(run.image, group, views), run.url)
+            else FilmPromptImage(run.image, _label(run.image, group, views), run.url, run.number)
             for run in picture.runs
         )
         missing = tuple(_label(name, group, views) for name in picture.missing)

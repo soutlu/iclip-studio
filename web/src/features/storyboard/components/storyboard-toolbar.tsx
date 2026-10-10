@@ -15,8 +15,8 @@ type StoryboardToolbarProps = {
   status: ReactNode
   /** 切到第几组；与 ↑↓ 键同一条路径。 */
   onGoShot: (shot: number) => void
-  /** 复制按钮：按钮名、拷走的字与拷好后的提示。 */
-  copy: { label: string; text: string; done: string }
+  /** 复制按钮：按钮名、拷走的字与拷好后的提示；`blocked` 是此刻不能复制的原因，给了就置灰、悬停说原因。 */
+  copy: { label: string; text: string; done: string; blocked?: string | undefined }
 }
 
 export function StoryboardToolbar({
@@ -32,10 +32,12 @@ export function StoryboardToolbar({
       <ShotGroupSwitcher groups={groups} onGo={onGoShot} position={position} />
       <IconButton
         className={workbenchControl({ shape: 'icon' })}
+        disabled={copy.blocked !== undefined}
         label={copy.label}
         name="copy"
         onClick={() => void copyWithToast(copy.text, copy.done)}
         size="sm"
+        tooltip={copy.blocked}
       />
     </div>
   )

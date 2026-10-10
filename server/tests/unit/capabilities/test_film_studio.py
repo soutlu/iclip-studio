@@ -25,6 +25,7 @@ from iclip.common.film_view import (
     FilmPromptText,
     FilmTextEdit,
 )
+from iclip.common.shot_prompt import OUTPUT_CONSTRAINT, SHOTS_HEADING, format_seconds
 from tests.helpers.film import (
     EXPECTED,
     FILM,
@@ -34,6 +35,7 @@ from tests.helpers.film import (
     RUN,
     RUN_NO_VIEW04,
     SHOE_FRONT,
+    STATES,
     VIEW04,
     project_of,
     run_of,
@@ -135,6 +137,39 @@ def test_a_group_lists_its_reference_list_as_it_is_numbered_by_position() -> Non
     assert (later.index, later.video, later.seconds) == (2, "video02", 15)
 
 
+def golden_prompt(state: str, video: str) -> str:
+    """样例里这组发给视频模型的正文：全局设定、空一行、「镜头：」、每镜一行「起–止秒 正文」、末尾约束。"""
+
+    shot = EXPECTED["states"][state][video]["shot"]
+    lines = [
+        f"{format_seconds(start)}–{format_seconds(end)}秒 {cut['prompt']}"
+        for cut in shot["timeline"]
+        for start, end in [cut["timestamps"]]
+    ]
+    return "\n".join([shot["global_settings"], "", SHOTS_HEADING, *lines, OUTPUT_CONSTRAINT])
+
+
+@pytest.mark.parametrize(
+    ("state", "video"),
+    [
+        pytest.param(state, video, id=f"{state}-{video}")
+        for state in STATES
+        for video in ("video01", "video02")
+        if not EXPECTED["states"][state][video]["blocked"]
+    ],
+)
+def test_a_group_carries_the_prompt_it_sends(state: str, video: str) -> None:
+    made = {group.video: group for group in groups(project_of(state), run_of(state))}
+
+    assert made[video].prompt == golden_prompt(state, video)
+
+
+def test_a_group_that_cannot_be_sent_still_shows_its_prompt_with_the_number_in_place() -> None:
+    made = first(project_of("no-personB"), run_of("no-personB"))
+
+    assert made.prompt == golden_prompt("both", "video01")
+
+
 def test_an_image_without_a_picture_keeps_its_number_and_has_no_url() -> None:
     made = first(project_of("no-personB"), run_of("no-personB"))
 
@@ -146,13 +181,30 @@ def test_an_image_without_a_picture_keeps_its_number_and_has_no_url() -> None:
     ]
 
 
-def test_a_view_that_is_not_chosen_is_not_in_its_group() -> None:
+def test_a_view_that_is_not_chosen_follows_the_list_without_a_number() -> None:
     _, later = groups(FILM_NO_VIEW04, RUN_NO_VIEW04)
 
-    assert [(frame.label, frame.number) for frame in later.frames[5:]] == [
+    assert [(frame.node, frame.label, frame.number, frame.url) for frame in later.frames[5:]] == [
+        ("scene", "scene", 6, GENERATED["scene"]),
+        ("view05", "镜头 2", 7, GENERATED["view05"]),
+        ("view06", "镜头 3", 8, GENERATED["view06"]),
+        ("view04", "镜头 1", None, None),
+    ]
+    # 没进列表的机位图照样带着它的描述，能生成。
+    view04 = later.frames[-1]
+    assert view04.kind == "generated" and view04.prompt is not None and view04.missing == ()
+
+
+def test_views_not_chosen_follow_the_list_in_shot_order() -> None:
+    film = checked(FILM_NO_VIEW04, RUN_NO_VIEW04)
+    written = dict(choose_image(film, FILM_NO_VIEW04, RUN_NO_VIEW04, "view05", None))
+    _, later = groups(written[FILM_PATH], written[RUN_PATH])
+
+    assert [(frame.node, frame.number) for frame in later.frames[5:]] == [
         ("scene", 6),
-        ("镜头 2", 7),
-        ("镜头 3", 8),
+        ("view06", 7),
+        ("view04", None),
+        ("view05", None),
     ]
 
 
@@ -172,30 +224,32 @@ def test_a_generated_image_carries_its_prompt_with_the_references_in_place() -> 
         ("view01", "镜头 1"),
     ]
     assert [run.url for run in images] == EXPECTED["images"]["view02"]["input_str_list"]
-    # 按在描述里第一次出现的先后编号写回 @ImageN，就是发给模型的那段描述。
-    numbers = {run.node: n for n, run in enumerate(images, start=1)}
+    # 图片段带着它在这张图自己的参考图列表里的编号，按它写回 @ImageN 就是发给模型的那段描述。
+    assert [run.number for run in images] == [1, 2, 3, 4, 5]
     joined = "".join(
-        run.text if isinstance(run, FilmPromptText) else f"@Image{numbers[run.node]}"
-        for run in runs
+        run.text if isinstance(run, FilmPromptText) else f"@Image{run.number}" for run in runs
     )
     assert joined == EXPECTED["images"]["view02"]["prompt"]
     assert by_node["shoeFrontPhoto"].prompt is None
 
 
-def test_a_reference_without_a_picture_stays_in_the_text_and_is_named_as_missing() -> None:
+def test_a_reference_without_a_picture_is_split_out_without_a_url_and_named_as_missing() -> None:
     made = first(project_of("no-personB"), run_of("no-personB"))
     by_node = {frame.node: frame for frame in made.frames}
 
     runs = by_node["view01"].prompt
     assert runs is not None
-    assert [run.node for run in runs if isinstance(run, FilmPromptImage)] == [
-        "modelAPortraitPhoto",
-        "modelAFullBodyPhoto",
-        "shoeSidePhoto",
-        "shoeFrontPhoto",
-        "scene",
+    assert [
+        (run.node, run.number, run.url is None) for run in runs if isinstance(run, FilmPromptImage)
+    ] == [
+        ("modelAPortraitPhoto", 1, False),
+        ("modelAFullBodyPhoto", 2, False),
+        ("personB", 3, True),
+        ("shoeSidePhoto", 4, False),
+        ("shoeFrontPhoto", 5, False),
+        ("scene", 6, False),
     ]
-    assert "@Image3" in "".join(run.text for run in runs if isinstance(run, FilmPromptText))
+    assert "@Image" not in "".join(run.text for run in runs if isinstance(run, FilmPromptText))
     assert {node: frame.missing for node, frame in by_node.items()} == {
         **{node: () for node in by_node},
         "view01": ("personB",),

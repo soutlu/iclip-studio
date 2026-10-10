@@ -995,14 +995,15 @@ def test_a_video_whose_list_has_an_image_without_a_picture_cannot_be_sent(state:
         _ = group.image_urls
 
 
-def test_a_missing_reference_stays_written_in_the_text_and_is_not_split_out() -> None:
+def test_a_missing_reference_is_split_out_without_a_url_and_the_text_is_unchanged() -> None:
     film = checked(project_of("no-personB"), run_of("no-personB"))
 
     picture = render_picture(film, film.project.nodes["view01"])
 
     assert picture.text == EXPECTED["images"]["view01"]["prompt"]
-    assert [run.number for run in picture.runs if not isinstance(run, str)] == [1, 2, 4, 5, 6]
-    assert any(isinstance(run, str) and "@Image3" in run for run in picture.runs)
+    split = [(run.number, run.url is None) for run in picture.runs if not isinstance(run, str)]
+    assert split == [(1, False), (2, False), (3, True), (4, False), (5, False), (6, False)]
+    assert not any(isinstance(run, str) and "@Image" in run for run in picture.runs)
 
 
 def test_a_video_request_copies_the_shot_times_and_the_list_as_it_is() -> None:

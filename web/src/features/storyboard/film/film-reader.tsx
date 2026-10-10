@@ -3,12 +3,13 @@
  * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
  * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
  * 出片、换图、生图都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅照文件，只显示。
- * 生成的图不会自动用上：生成卡或编辑器里点「选用这张」才写进运行文件。出片栏的状态行提醒这组挂的生成图里哪几张还没图。
+ * 生成的图不会自动用上：生成卡或编辑器里点「选用这张」才写进运行文件。这组参考图列表里有没选用的就不能出片，
+ * 出片栏的状态行写缺哪几张。顶栏「复制完整提示词」复制后端拼好的这组正文（`group.prompt`）。
  * 在用或生成过的那张能开图片编辑器（`FilmImageEdit`），编辑与重新生成的结果在舞台上挂「有新结果」，点开就是那条。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { Button } from '@/shared/ui/button'
 import {
@@ -48,7 +49,7 @@ import {
 import {
   contentOfFrame,
   filmGroupSummary,
-  filmGroupText,
+  missingFramesText,
   resolveFilmSelection,
   segmentFrames,
 } from './film-content'
@@ -202,6 +203,34 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const goShot = (next: number) => go({ shot: next })
   useShotArrowKeys(root, { onGo: goShot, position, total: groups.length })
 
+  // 正看着的那张图在 `frames` 里挪了位置（选用机位图插进列表、取消选用移出列表，后面的跟着挪）：舞台跟着那张图走，
+  // 不停在原来的位置上换成别的图。只在同一组里跟，换组时位置本来就重来；那张图不在这组了就交给选段的规则落位。
+  const shownRef = useRef<{ group: number; node: string; order: string } | undefined>(undefined)
+  const followShown = useEffectEvent(
+    (groupIndex: number | undefined, node: string | undefined, order: string | undefined) => {
+      const previous = shownRef.current
+      shownRef.current =
+        groupIndex === undefined || node === undefined || order === undefined
+          ? undefined
+          : { group: groupIndex, node, order }
+      if (
+        previous === undefined ||
+        group === undefined ||
+        previous.group !== groupIndex ||
+        previous.order === order ||
+        previous.node === node
+      )
+        return
+      const index = group.frames.findIndex((item) => item.node === previous.node)
+      if (index >= 0) go({ frame: index + 1 })
+    },
+  )
+  const frameOrder = group?.frames.map((item) => item.node).join('\n')
+  useEffect(
+    () => followShown(group?.index, frame?.node, frameOrder),
+    [group?.index, frame?.node, frameOrder],
+  )
+
   if (view === undefined) {
     return (
       <ReaderNotice
@@ -227,15 +256,20 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     search.video === undefined
       ? undefined
       : generations.data?.find((job) => job.id === search.video)
-  // 提交途中按钮自己写着「提交中」，不另说原因。
+  // 提交途中按钮自己写着「提交中」，不另说原因。参考图有没选用的一直挡着（后端也会拒），排在保存、上传这些暂态之前，
+  // 免得每次自动保存时原因从状态行上消失；只读与冲突、保存失败照旧先说。
+  const missingBlocker = missingFramesText(group)
+  const baseBlocker = generationBlockerOf({
+    modelsStatus: video.modelsStatus,
+    readOnly,
+    saveState: draft.state.kind,
+    uploading: gate.uploading,
+  })
   const generateBlocker = gate.preparing
     ? undefined
-    : generationBlockerOf({
-        modelsStatus: video.modelsStatus,
-        readOnly,
-        saveState: draft.state.kind,
-        uploading: gate.uploading,
-      })
+    : missingBlocker !== undefined && (baseBlocker === undefined || baseBlocker.transient)
+      ? { reason: missingBlocker, transient: false }
+      : baseBlocker
   const generateNotice = generationNoticeOf({
     aspectRatio: group.aspectRatio,
     model: video.options.model,
@@ -265,7 +299,17 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          copy={{ done: '已复制本组文字', label: '复制本组文字', text: filmGroupText(group) }}
+          // 后端拼好的正文，与这组出片时发的逐字相同；有没存下的改动时（保存中、保存失败、版本冲突）它还是旧的，
+          // 存好之前不让复制，几种情况同一句原因。
+          copy={{
+            blocked:
+              draft.hasUnsavedChanges || draft.state.kind === 'saving'
+                ? '修改尚未保存，无法复制'
+                : undefined,
+            done: '已复制完整提示词',
+            label: '复制完整提示词',
+            text: group.prompt,
+          }}
           groups={groups.map(filmGroupSummary)}
           onGoShot={goShot}
           position={position}
@@ -349,6 +393,9 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
                 frame={selectedTake === undefined ? selection.frame : undefined}
                 group={group}
                 onEdit={draft.update}
+                onPickFrame={(position) =>
+                  select(contentOfFrame(group, selection.contentId, position), position)
+                }
                 onPreview={(image) => setMedia({ kind: 'image', ...image })}
                 onSelect={select}
                 readOnly={readOnly}

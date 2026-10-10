@@ -20,6 +20,30 @@
   display: block;
 }
 
+/* 参考图条：全局设定卡上方一行，段名与芯片同一行排、放不下折行，左右与段卡的正文对齐。
+   芯片里 @N 之后的名字用常规字重，「未选用」再淡一档；高亮（墨色实底）时跟着反色。 */
+.film-frames {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 2px;
+  margin-bottom: 8px;
+  padding: 0 12px;
+}
+.film-frames > .storyboard-settings-label {
+  margin-right: 6px;
+}
+.film-chip .frame-chip-pill > .film-chip-name {
+  font-weight: 400;
+}
+.film-chip .frame-chip-pill > .film-chip-note {
+  color: var(--color-on-surface-muted);
+  font-weight: 400;
+}
+.film-chip[data-highlighted] .frame-chip-pill > .film-chip-note {
+  color: inherit;
+}
+
 .film-setting-label {
   float: left;
   margin-right: 2px;

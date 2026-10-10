@@ -1,6 +1,7 @@
-/** 制作页正文里的一张图：缩略图加 @N（还没有编号的写它的名字），外观同分镜页的帧芯片（storyboard.css「帧芯片」）。
+/** 制作页的一张图：缩略图加 @N（还没有编号的写它的名字），外观同分镜页的帧芯片（storyboard.css「帧芯片」）。
  * 有图的悬停出预览卡（与输入框里的图片 chip 同一张卡），卡上「放大」开灯箱；还没有图的画一格空位。
- * 能点的（全局设定里）点了让舞台看它，舞台正在看它时实色高亮；生图描述里的只看不点。 */
+ * 能点的（正文与图条里）点了让舞台看它，舞台正在看它时实色高亮；生图描述里的只看不点。
+ * 图条里的在 @N 后面接着写名字（`named`）与「未选用」这类说明（`note`）。 */
 
 import { useEffect, useState } from 'react'
 import { MediaPreviewCard, useHoverPreview } from '@/shared/ui/media-preview'
@@ -12,6 +13,10 @@ type FilmImageChipProps = {
   tag: string
   url: string | null
   highlighted?: boolean
+  /** `tag` 后面再写一遍名字（与 `tag` 相同时不重复）。 */
+  named?: boolean
+  /** 名字后面的一句说明，如「未选用」；读屏一起念。 */
+  note?: string | undefined
   /** 点芯片；不给就不能点。 */
   onPick?: (() => void) | undefined
   onEnlarge: (url: string) => void
@@ -20,6 +25,8 @@ type FilmImageChipProps = {
 export function FilmImageChip({
   highlighted = false,
   label,
+  named = false,
+  note,
   onEnlarge,
   onPick,
   tag,
@@ -40,11 +47,13 @@ export function FilmImageChip({
   }, [anchor, onEnter, onLeave, url])
 
   // 读屏念名字加芯片上的字，同一元素的几张图才分得开；还没有编号时芯片上就是名字，只念一次。
-  const spoken = tag === label ? label : `${label} ${tag}`
+  const spoken = `${tag === label ? label : `${label} ${tag}`}${note === undefined ? '' : `，${note}`}`
   const pill = (
     <span className="frame-chip-pill ui-motion-s">
       {url === null ? <span className="film-chip-empty" /> : <img alt="" src={url} />}
       <span>{tag}</span>
+      {named && tag !== label ? <span className="film-chip-name">{label}</span> : null}
+      {note === undefined ? null : <span className="film-chip-note">{note}</span>}
     </span>
   )
   return (

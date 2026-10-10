@@ -158,7 +158,6 @@ export function FilmStage({
             busy={generate.busy}
             error={generate.error}
             frame={frame}
-            group={group}
             job={generate.job}
             onChoose={generate.onChoose}
             onEnlarge={(image, name) => onOpen({ name, url: image })}

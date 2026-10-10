@@ -68,6 +68,8 @@ type EditComposerProps = {
   settings: ReactNode
   /** 底图是一张还没替换上去的结果：舞台的主操作是「替换当前帧」，生成退为中性。 */
   editingResult: boolean
+  /** 此刻不让提交（如再生成缺参考图）：按钮灰着，回车也不提交；原因由调用方在输入卡旁说明。 */
+  submitBlocked?: boolean
 }
 
 export function EditComposer({
@@ -85,6 +87,7 @@ export function EditComposer({
   regenerate = false,
   selectedAnnotation,
   settings,
+  submitBlocked = false,
 }: EditComposerProps) {
   const composerRef = useRef<ComposerHandle<AnnotationNode>>(null)
   const { data: user } = useUser()
@@ -200,6 +203,7 @@ export function EditComposer({
         ref={composerRef}
         sending={sending}
         submitAction={{
+          disabled: submitBlocked,
           emphasis: editingResult ? 'neutral' : 'primary',
           icon: 'image',
           label: regenerate ? '再生成' : '生成图片',
