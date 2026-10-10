@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from iclip.common.errors import ValidationFailed
-from iclip.common.shot_prompt import OUTPUT_CONSTRAINT, format_seconds
+from iclip.common.shot_prompt import ShotCut, ShotScript, format_shot_prompt
 
 _ELEMENTS: Final = "出场元素"
 _TIMELINE: Final = "时间线"
@@ -49,9 +49,9 @@ class _Shot:
 
 
 def build_test_prompt(document: str) -> TestPrompt:
-    """出场元素每行一句，空一行，``镜头：`` 下每镜一行，末行是输出约束。
+    """出场元素每行一句当全局设定，按出片的拼法（``format_shot_prompt``）拼成正文。
 
-    每镜一行写 ``起–止秒 镜头语言。画面``，音效不是「无」时再接 `` 音效：…``；一块写了几行的，去掉
+    每镜正文写 ``镜头语言。画面``，音效不是「无」时再接 `` 音效：…``；一块写了几行的，去掉
     ``- `` 前缀用「；」连起来。没有出场元素、没有镜头，或某一镜缺镜头语言或画面，抛
     ``ValidationFailed``。"""
 
@@ -60,9 +60,15 @@ def build_test_prompt(document: str) -> TestPrompt:
     shots = _shots(sections.get(_TIMELINE, []))
     if not elements or not shots:
         raise ValidationFailed(_INCOMPLETE)
-    shot_lines = [_shot_line(shot) for shot in shots]
-    text = "\n".join([*elements, "", "镜头：", *shot_lines, OUTPUT_CONSTRAINT])
-    return TestPrompt(text=text, seconds=math.ceil(shots[-1].end))
+    script = ShotScript(
+        global_settings="\n".join(elements),
+        # 文生视频没有参考图，正文里也就没有 @ImageN。
+        timeline=tuple(
+            ShotCut(timestamps=(shot.start, shot.end), prompt=_shot_body(shot), image_indexes=())
+            for shot in shots
+        ),
+    )
+    return TestPrompt(text=format_shot_prompt(script), seconds=math.ceil(shots[-1].end))
 
 
 def _sections(document: str) -> dict[str, list[str]]:
@@ -127,18 +133,16 @@ def _shots(lines: list[str]) -> list[_Shot]:
     return shots
 
 
-def _shot_line(shot: _Shot) -> str:
+def _shot_body(shot: _Shot) -> str:
     lens = "；".join(shot.blocks.get(_LENS, []))
     picture = "；".join(shot.blocks.get(_PICTURE, []))
     if not lens or not picture:
         raise ValidationFailed(_INCOMPLETE)
-    line = (
-        f"{format_seconds(shot.start)}–{format_seconds(shot.end)}秒 {lens.rstrip('。')}。{picture}"
-    )
+    body = f"{lens.rstrip('。')}。{picture}"
     sound = "；".join(shot.blocks.get(_SOUND, []))
     if sound and sound != _NONE:
-        line += f" 音效：{sound}"
-    return line
+        body += f" 音效：{sound}"
+    return body
 
 
 __all__ = ["TestPrompt", "build_test_prompt"]

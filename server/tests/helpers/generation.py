@@ -114,8 +114,11 @@ def compose_request(**overrides: Any) -> VideoComposeRequest:
 
 SHOT_IMAGE_URLS = ["https://example.com/a.png", "https://example.com/b.png"]
 
-SHOT_PROMPT = "人物保持一致。\n\n[0–6秒｜镜头1] 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
+SHOT_PROMPT = "人物保持一致。\n\n镜头：\n0–6秒 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
 """与 web/src/features/storyboard/storyboard.api.test.ts 里的镜头组拼出的正文一字不差。"""
+
+LEGACY_SHOT_PROMPT = "人物保持一致。\n\n[0–6秒｜镜头1] 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
+"""同一个镜头组按旧拼法（每镜 ``[起–止秒｜镜头N] 正文``）拼出的正文，历史记录里存的是这种。"""
 
 
 def video_shot(**overrides: Any) -> dict[str, Any]:

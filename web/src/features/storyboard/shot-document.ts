@@ -199,18 +199,22 @@ export const insertReferenceText = (
 }
 
 const OUTPUT_CONSTRAINT = '不要生成字幕，不要生成背景音乐。'
+const SHOTS_HEADING = '镜头：'
 
 /** 起止秒保留到毫秒并去掉末尾的零，同服务端 format_seconds：3.5、4、8.25。 */
 /** 秒数给人看：最多三位小数，去掉浮点尾差与多余的零。 */
 export const formatSeconds = (value: number): string => Number(value.toFixed(3)).toString()
 
-/** 「复制完整提示词」显示的正文。拼装规则归服务端（shot_prompt.py），这里照同一规则给人看，出片时发的是结构化镜头组。 */
+/**
+ * 「复制完整提示词」显示的正文：全局设定、空一行、「镜头：」、每镜一行「起–止秒 正文」、末尾约束。
+ * 拼装规则归服务端（shot_prompt.py），这里照同一规则给人看，出片时发的是结构化镜头组。
+ */
 export const formatShotPrompt = (shot: Shot): string => {
   const lines = shot.prompt.timeline.map(
-    (item, position) =>
-      `[${formatSeconds(item.timestamps[0])}–${formatSeconds(item.timestamps[1])}秒｜镜头${position + 1}] ${item.prompt}`,
+    (item) =>
+      `${formatSeconds(item.timestamps[0])}–${formatSeconds(item.timestamps[1])}秒 ${item.prompt}`,
   )
-  return `${shot.prompt.global_settings}\n\n${lines.join('\n')}\n${OUTPUT_CONSTRAINT}`
+  return `${shot.prompt.global_settings}\n\n${SHOTS_HEADING}\n${lines.join('\n')}\n${OUTPUT_CONSTRAINT}`
 }
 
 const SENTENCE_END = /[。；！？!?;]/
