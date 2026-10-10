@@ -167,7 +167,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
 
         Args:
             show: 要看某张图或某段视频最终发给模型的完整提示词和参考图时，填它在 film.icml 里的
-                id，如 "view02"、"video01"；检查通过才输出。
+                id，如 "镜02机位图"、"全片"；检查通过才输出。
         """
 
         film = await self._load(ctx)
@@ -198,7 +198,7 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
         选用了才算有图。
 
         Args:
-            nodes: 要生成的生图节点的名字，如 ``["personB", "view01"]``。
+            nodes: 要生成的生图节点的名字，如 ``["短发女生设定图", "镜01机位图"]``。
         """
 
         images = self._cap.images
