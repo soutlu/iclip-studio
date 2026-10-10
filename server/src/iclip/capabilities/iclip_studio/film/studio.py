@@ -234,7 +234,7 @@ def edit_text(
         assert node.inner is not None
         splice.replace(node.inner, _body(source[slice(*node.inner)], text))
         expected.append((edit.target, text))
-    photos = _Photos(film)
+    photos = _InsertedImages(film)
     for video, typed in groups.items():
         expected += _renumber_group(source, film, video, typed, edited, splice, photos)
     photos.write(source, splice)
@@ -557,12 +557,12 @@ def _renumber_group(
     typed: list[_Typed],
     edited: set[Node],
     splice: _Splice,
-    photos: _Photos,
+    photos: _InsertedImages,
 ) -> list[tuple[str, str]]:
     """视频 ``video`` 里几段字改好以后，按这组全部的字重排它的参考图列表，返回改过的每段应读出的正文。
 
     新插入的图不在列表里时排在元素图之后、机位图之前（是生图节点选用的图就引用那个节点，否则引用
-    「素材」里同一地址的照片，没有就新加一张，见 ``_Photos``）；元素图在这组的字里一处都不用了就从列表删掉。列表定下以后按一张新旧编号对照表改一遍
+    「素材」里同一地址的照片，没有就新加一张，见 ``_InsertedImages``）；元素图在这组的字里一处都不用了就从列表删掉。列表定下以后按一张新旧编号对照表改一遍
     这组的字：改过的段写新的正文，没改的段只改图号。机位图的「参考@ImageN，」随选用增删，改字时
     删掉或挪动它不写。"""
 
@@ -651,7 +651,7 @@ def _renumber_group(
     return expected
 
 
-class _Photos:
+class _InsertedImages:
     """改字时新进参考图列表的图在列表里怎么引用：地址是某个生图节点现在选用的图，就引用那个节点的
     输出，它以后重新生成或换了选用，引用跟着变；否则是「素材」里的照片，同一地址的照片已经有了就用它，
     没有就新加一张，几组插入同一张图时只加一次。"""
