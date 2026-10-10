@@ -23,7 +23,7 @@ from iclip.domains.generation.schemas import (
     VideoGenerationIn,
 )
 from iclip.domains.generation.service import GenerationService
-from iclip.domains.identity.public import Principal, resolve_user_name
+from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
     TEST_VIDEO_COMPLETED,
     TEST_VIDEO_FAILED,
@@ -67,7 +67,13 @@ class GenerationTestVideos:
         )
 
     async def submit(
-        self, principal: Principal, reference_id: uuid.UUID, prompt: TestPrompt, aspect_ratio: str
+        self,
+        principal: Principal,
+        reference_id: uuid.UUID,
+        prompt: TestPrompt,
+        aspect_ratio: str,
+        *,
+        user_name: str,
     ) -> None:
         if self._generation is None:
             raise RuntimeError("媒体生成没开，试生成的入口不该挂上")
@@ -82,7 +88,7 @@ class GenerationTestVideos:
                 seconds=prompt.seconds,
                 aspect_ratio=aspect_ratio,
                 generate_audio=True,
-                user_name=resolve_user_name(principal, None),
+                user_name=user_name,
                 metadata={REFERENCE_KEY: str(reference_id)},
             )
         except ValidationError as exc:

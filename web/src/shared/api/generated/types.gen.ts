@@ -3522,13 +3522,17 @@ export type TasksPageOut = {
 /**
  * TestVideoIn
  *
- * 试生成的请求：画幅由调用方定，其余参数服务端定。
+ * 试生成的请求：画幅与归属标签由调用方定，其余参数服务端定。
  */
 export type TestVideoIn = {
   /**
    * Aspectratio
    */
   aspectRatio: '9:16' | '16:9' | '1:1' | '3:4' | '4:3'
+  /**
+   * Username
+   */
+  userName?: string | null
 }
 
 /**

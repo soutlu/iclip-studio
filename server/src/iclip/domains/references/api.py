@@ -12,7 +12,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
-from iclip.domains.identity.public import Principal, require_permission
+from iclip.domains.identity.public import (
+    ActAs,
+    Principal,
+    require_permission,
+    resolve_user_name,
+)
 from iclip.domains.references.models import CategoryValue, VideoTypeValue
 from iclip.domains.references.schemas import (
     ReferenceCreateIn,
@@ -27,7 +32,12 @@ from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 
 def create_references_router(
-    service: ReferenceService, *, uploadable: bool, rerunnable: bool, testable: bool
+    service: ReferenceService,
+    *,
+    act_as: ActAs,
+    uploadable: bool,
+    rerunnable: bool,
+    testable: bool,
 ) -> APIRouter:
     """``uploadable`` 为假（拆解没配置或上传不可用）时不挂建行；``rerunnable`` 为假（拆解没配置）时
     不挂重拆；``testable`` 为假（媒体生成没开）时不挂试生成。"""
@@ -144,10 +154,14 @@ def create_references_router(
         ) -> ReferenceVideoOut:
             """属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。
 
-            别人的（治理者与替人办事的钥匙也算）是 ``403``；拆解还没完成、上一次试生成还没结束是
-            ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。"""
+            ``userName`` 同媒体生成。只限属主本人，别人的是 ``403``；拆解还没完成、上一次试生成
+            还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。"""
 
-            return await service.start_test_video(principal, reference_id, body)
+            user_name = resolve_user_name(principal, body.user_name)
+            principal = await act_as(principal, user_name)
+            return await service.start_test_video(
+                principal, reference_id, body, user_name=user_name
+            )
 
     return router
 

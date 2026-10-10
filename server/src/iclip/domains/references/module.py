@@ -7,6 +7,7 @@ from typing import Any
 
 import procrastinate
 
+from iclip.domains.identity.public import ActAs
 from iclip.domains.references.api import create_references_router
 from iclip.domains.references.queue import ReferenceQueue, ReferenceQueueSettings
 from iclip.domains.references.repository import (
@@ -42,6 +43,7 @@ class ReferencesModule:
 def build_references_module(
     store: ReferenceStore,
     *,
+    act_as: ActAs,
     own_video_upload: OwnVideoUpload,
     breakdown: BreakdownSetup | None,
     uploads_available: bool,
@@ -74,6 +76,7 @@ def build_references_module(
         routers=(
             create_references_router(
                 service,
+                act_as=act_as,
                 uploadable=service.accepts_uploads,
                 rerunnable=queue is not None,
                 testable=testable,
