@@ -6402,7 +6402,7 @@
       },
       "TestVideoIn": {
         "additionalProperties": false,
-        "description": "试生成的请求：画幅由调用方定，其余参数服务端定。",
+        "description": "试生成的请求：画幅与归属标签由调用方定，其余参数服务端定。",
         "properties": {
           "aspectRatio": {
             "enum": [
@@ -6414,6 +6414,19 @@
             ],
             "title": "Aspectratio",
             "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
@@ -13715,7 +13728,7 @@
     },
     "/references/{reference_id}/test-generations": {
       "post": {
-        "description": "属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。\n\n别人的（治理者与替人办事的钥匙也算）是 ``403``；拆解还没完成、上一次试生成还没结束是\n``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
+        "description": "属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。\n\n``userName`` 的规则同出片。只限属主本人，别人的是 ``403``；拆解还没完成、上一次试生成\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
         "operationId": "start_reference_test_video_references__reference_id__test_generations_post",
         "parameters": [
           {

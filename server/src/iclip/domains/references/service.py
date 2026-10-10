@@ -295,14 +295,14 @@ class ReferenceService:
         return await self._detail(principal, await self._get(reference_id))
 
     async def start_test_video(
-        self, principal: Principal, reference_id: uuid.UUID, body: TestVideoIn
+        self, principal: Principal, reference_id: uuid.UUID, body: TestVideoIn, *, user_name: str
     ) -> ReferenceVideoOut:
-        """属主本人按当前拆解拼一段提示词，生成一条视频与原片对照。
+        """属主本人按当前拆解拼一段提示词，生成一条视频与原片对照；``user_name`` 是入口定好的归属标签。
 
-        治理者与替人办事的钥匙也不行：这条生成记在提交人名下，只有属主本人提交才记在属主名下，
-        所有读者看到的才是同一条。别人的是 ``PermissionDenied``；拆解还没完成、上一次试生成还没结束
-        都是 ``Conflict``；拆解拼不出提示词或拼出来太长是 ``ValidationFailed``。两次同时提交可能都过
-        了检查，各生成一条，不加锁。"""
+        只限属主本人：这条生成记在提交人名下，只有属主本人提交才记在属主名下，所有读者看到的才是
+        同一条。别人的是 ``PermissionDenied``；拆解还没完成、上一次试生成还没结束都是 ``Conflict``；
+        拆解拼不出提示词或拼出来太长是 ``ValidationFailed``。两次同时提交可能都过了检查，各生成一条，
+        不加锁。"""
 
         row = await self._listed(reference_id)
         if principal.user_id != row.owner_user_id:
@@ -313,7 +313,9 @@ class ReferenceService:
         if latest is not None and latest.status == TEST_VIDEO_RUNNING:
             raise Conflict("试生成进行中，无法重复提交")
         prompt = build_test_prompt(row.document)
-        await self._test_videos.submit(principal, reference_id, prompt, body.aspect_ratio)
+        await self._test_videos.submit(
+            principal, reference_id, prompt, body.aspect_ratio, user_name=user_name
+        )
         return await self._detail(principal, row)
 
     async def remove(self, principal: Principal, reference_id: uuid.UUID) -> None:

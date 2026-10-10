@@ -151,9 +151,16 @@ class TestVideos(Protocol):
         ...
 
     async def submit(
-        self, principal: Principal, reference_id: uuid.UUID, prompt: TestPrompt, aspect_ratio: str
+        self,
+        principal: Principal,
+        reference_id: uuid.UUID,
+        prompt: TestPrompt,
+        aspect_ratio: str,
+        *,
+        user_name: str,
     ) -> None:
-        """以主体的名义提交一次试生成，排上队就返回。正文超长或请求不合法抛 ``ValidationFailed``。"""
+        """以主体的名义提交一次试生成，``user_name`` 照原样作发往上游的归属标签，排上队就返回。
+        正文超长或请求不合法抛 ``ValidationFailed``。"""
         ...
 
 

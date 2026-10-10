@@ -1,5 +1,5 @@
-"""参考视频试生成端点：只限属主本人、什么时候 409 与 422、落成一条什么样的视频生成，以及详情里的
-``testVideo`` 怎么跟着生成记录与当前拆解变。
+"""参考视频试生成端点：只限属主本人、``userName`` 同出片、什么时候 409 与 422、落成一条什么样的
+视频生成，以及详情里的 ``testVideo`` 怎么跟着生成记录与当前拆解变。
 
 拆解配好、媒体生成开着；队列连接器是内存替身，不跑 worker，生成记录的状态直接改表模拟。"""
 
@@ -34,6 +34,7 @@ from tests.helpers.references import (
 )
 
 PASSWORD = "password-123"
+SUBMIT_GRANTS = ["generation:read", "generation:submit"]
 
 FULL = """\
 # 出场元素
@@ -148,6 +149,22 @@ def path(reference_id: uuid.UUID) -> str:
     return f"/references/{reference_id}/test-generations"
 
 
+async def issue_key(client: httpx.AsyncClient, permissions: list[str]) -> str:
+    """以这个客户端当前登录的人签一把钥匙，交回明文。"""
+
+    created = await client.post(
+        "/api-keys", json={"name": "partner-app", "permissions": permissions}
+    )
+    assert created.status_code == 201, created.text
+    return str(created.json()["apiKey"]["token"])
+
+
+def machine(app: FastAPI, token: str) -> httpx.AsyncClient:
+    client = make_client(app)
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client
+
+
 async def test_the_owner_submits_one_wan3_video_from_the_breakdown(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
@@ -200,6 +217,27 @@ async def test_only_the_owner_themself_may_submit(
 
     assert (by_editor.status_code, by_root.status_code, by_viewer.status_code) == (403, 403, 403)
     assert await trial_jobs(pg_url, reference_id) == []
+
+
+async def test_a_key_must_give_a_user_name(
+    media_app: FastAPI, http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    """同出片：钥匙给的 ``userName`` 照记，不给是 ``422``。"""
+
+    logan = await login_as(http, pg_url, "logan", "root")
+    reference_id = await plant_reference(engine, owner=logan, document=FULL)
+    token = await issue_key(http, SUBMIT_GRANTS)
+
+    async with machine(media_app, token) as gateway:
+        unnamed = await gateway.post(path(reference_id), json={"aspectRatio": "9:16"})
+        named = await gateway.post(
+            path(reference_id), json={"aspectRatio": "9:16", "userName": "partner-user"}
+        )
+
+    assert unnamed.status_code == 422, unnamed.text
+    assert named.status_code == 200, named.text
+    (job,) = await trial_jobs(pg_url, reference_id)
+    assert (job["owner_user_id"], job["request"]["user_name"]) == (logan, "partner-user")
 
 
 async def test_an_unfinished_breakdown_is_409(

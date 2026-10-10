@@ -73,7 +73,13 @@ class NoTestVideos:
         return None
 
     async def submit(
-        self, principal: Principal, reference_id: uuid.UUID, prompt: TestPrompt, aspect_ratio: str
+        self,
+        principal: Principal,
+        reference_id: uuid.UUID,
+        prompt: TestPrompt,
+        aspect_ratio: str,
+        *,
+        user_name: str,
     ) -> None:
         raise AssertionError("这里不该提交试生成")
 

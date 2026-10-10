@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from pydantic.alias_generators import to_camel
@@ -16,6 +16,9 @@ from iclip.domains.references.models import (
     TestVideoStatus,
     VideoTypeValue,
 )
+
+MAX_USER_NAME_CHARS: Final = 200
+"""与 ``generation.schemas.MAX_USER_NAME_CHARS`` 同一个数；参考视频不依赖生成域，照抄。"""
 
 
 class CamelModel(BaseModel):
@@ -61,9 +64,17 @@ class ReferenceVideoItemOut(CamelModel):
 
 
 class TestVideoIn(CamelModel):
-    """试生成的请求：画幅由调用方定，其余参数服务端定。"""
+    """试生成的请求：画幅与归属标签由调用方定，其余参数服务端定。"""
 
     aspect_ratio: Literal["9:16", "16:9", "1:1", "3:4", "4:3"]
+    user_name: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_USER_NAME_CHARS),
+        ]
+        | None
+    ) = None
+    """归属标签，规则同媒体生成：钥匙必填；浏览器可不给，给了只能是自己。"""
 
 
 class TestVideoOut(CamelModel):
@@ -128,6 +139,7 @@ class ReferenceFiltersOut(CamelModel):
 
 
 __all__ = [
+    "MAX_USER_NAME_CHARS",
     "CategoryCountOut",
     "OwnerCountOut",
     "ReferenceCreateIn",

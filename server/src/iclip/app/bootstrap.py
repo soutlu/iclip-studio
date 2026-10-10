@@ -515,6 +515,7 @@ def build_app(
         )
     references = build_references_module(
         SqlReferenceStore(active_engine),
+        act_as=identity.act_as,
         own_video_upload=own_video_upload,
         breakdown=breakdown_setup,
         # 上传模块只在有对象存储时装配（见下面的 uploads）；没有它，资料库就不收上传。
