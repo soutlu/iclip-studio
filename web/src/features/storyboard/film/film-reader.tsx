@@ -9,8 +9,9 @@
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
+import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Button } from '@/shared/ui/button'
 import {
   DialogBody,
@@ -70,6 +71,9 @@ type ReaderSearch = {
 /** 出片闸门按组号记上传；换图不属于哪一组，用组号从 1 起之外的 0。 */
 const REPLACE_UPLOAD = 0
 
+/** 文案列里往字里插入的图在上传：同样不属于哪一组，用 -1。 */
+const TEXT_UPLOAD = -1
+
 export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
@@ -82,6 +86,8 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const generations = useShotGenerations(conversationId)
   const imageJobs = useFrameImageJobs(conversationId)
   const gate = useGenerationGate()
+  const { data: user } = useUser()
+  const uploads = hasPermission(user, PERMISSION.uploadsWrite)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const search: ReaderSearch = useSearch({ strict: false })
@@ -159,6 +165,25 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     reportUploading(replace.busy)
     return () => reportUploading(false)
   }, [replace.busy])
+  // 字里在传的图：哪几个编辑器有图在传；传完之前不出片，传好的图落进字里才会存下。
+  const [textUploads, setTextUploads] = useState<ReadonlySet<string>>(() => new Set())
+  const onTextUploading = useCallback((key: string, busy: boolean) => {
+    setTextUploads((current) => {
+      if (current.has(key) === busy) return current
+      const next = new Set(current)
+      if (busy) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
+  const reportTextUploading = useEffectEvent((busy: boolean) =>
+    gate.onUploadingChange(TEXT_UPLOAD, busy),
+  )
+  const textUploading = textUploads.size > 0
+  useEffect(() => {
+    reportTextUploading(textUploading)
+    return () => reportTextUploading(false)
+  }, [textUploading])
   const generateImage = async (target: FilmFrame) => {
     setCardAction({ kind: 'generate', node: target.node })
     try {
@@ -256,6 +281,10 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     search.video === undefined
       ? undefined
       : generations.data?.find((job) => job.id === search.video)
+  // 有没存下的改动时（保存中、保存失败、版本冲突）顶栏与各段的复制都不可用：拷走的要是存好的字，草稿里新插入的图还是
+  // 私用区的记号。几种情况同一句原因。
+  const copyBlocked =
+    draft.hasUnsavedChanges || draft.state.kind === 'saving' ? '修改尚未保存，无法复制' : undefined
   // 提交途中按钮自己写着「提交中」，不另说原因。参考图有没选用的一直挡着（后端也会拒），排在保存、上传这些暂态之前，
   // 免得每次自动保存时原因从状态行上消失；只读与冲突、保存失败照旧先说。
   const missingBlocker = missingFramesText(group)
@@ -302,10 +331,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
           // 后端拼好的正文，与这组出片时发的逐字相同；有没存下的改动时（保存中、保存失败、版本冲突）它还是旧的，
           // 存好之前不让复制，几种情况同一句原因。
           copy={{
-            blocked:
-              draft.hasUnsavedChanges || draft.state.kind === 'saving'
-                ? '修改尚未保存，无法复制'
-                : undefined,
+            blocked: copyBlocked,
             done: '已复制完整提示词',
             label: '复制完整提示词',
             text: group.prompt,
@@ -390,6 +416,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
             <div aria-hidden className="storyboard-divider" />
             <div className="storyboard-script">
               <FilmScript
+                copyBlocked={copyBlocked}
                 frame={selectedTake === undefined ? selection.frame : undefined}
                 group={group}
                 onEdit={draft.update}
@@ -398,9 +425,11 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
                 }
                 onPreview={(image) => setMedia({ kind: 'image', ...image })}
                 onSelect={select}
+                onUploadingChange={onTextUploading}
                 readOnly={readOnly}
                 // 放成片时文案列不标选中：点哪段（包括原来选中的那段）都回到图。
                 selectedId={selectedTake === undefined ? selection.contentId : undefined}
+                uploads={uploads}
               />
               <TakesTray
                 error={

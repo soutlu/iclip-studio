@@ -100,11 +100,13 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         "number": 3,
     }
     shoe_setting = group["settings"][3]
-    assert (shoe_setting["kind"], shoe_setting["label"], shoe_setting["images"]) == (
-        "element",
-        "产品",
-        [],
-    )
+    assert (
+        shoe_setting["kind"],
+        shoe_setting["label"],
+        shoe_setting["images"],
+        shoe_setting["shared"],
+    ) == ("element", "产品", [], False)
+    assert group["settings"][0]["shared"] is True
     photo = group["frames"][0]
     assert (photo["kind"], photo["url"], photo["prompt"], photo["aspectRatio"]) == (
         "photo",
@@ -178,6 +180,43 @@ async def test_the_page_follows_the_workspace_file_permissions(
     assert (await client.get(f"{URL}/{mine}/film")).json()["film"]["filmVersion"] == 1
 
 
+async def test_an_image_inserted_into_the_text_joins_the_list_before_the_views(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    mine = await film_conversation(client, pg_url)
+    corner = "https://cdn.test/corner.jpg"
+    async with connected(pg_url) as conn:
+        namespace = await conn.scalar(
+            text("SELECT DISTINCT namespace FROM agent_runtime.materials WHERE namespace LIKE :ns"),
+            {"ns": f"%/{mine}"},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO agent_runtime.materials (namespace, url, kind) "
+                "VALUES (:ns, :url, 'image')"
+            ),
+            {"ns": namespace, "url": corner},
+        )
+    edit = {
+        "target": "value:video01Setting",
+        "text": "纽约红砖街区参考 @Image7，街角参考 @Image11。",
+        "images": [corner],
+    }
+
+    edited = await client.patch(f"{URL}/{mine}/film/text", json={"filmVersion": 1, "edits": [edit]})
+
+    assert edited.status_code == 200, edited.text
+    group = edited.json()["film"]["groups"][0]
+    assert [(frame["node"], frame["number"]) for frame in group["frames"][6:9]] == [
+        ("scene", 7),
+        ("素材照片1", 8),
+        ("view01", 9),
+    ]
+    assert group["shots"][0]["parts"][0].startswith("参考@Image9，")
+    file = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "film.icml"})
+    assert f'<media:Image id="素材照片1" src="{corner}"/>' in file.json()["file"]["content"]
+
+
 async def test_malformed_page_requests_are_422(client: httpx.AsyncClient, pg_url: str) -> None:
     mine = await film_conversation(client, pg_url)
 
@@ -189,8 +228,12 @@ async def test_malformed_page_requests_are_422(client: httpx.AsyncClient, pg_url
         f"{URL}/{mine}/film/image",
         json={"node": "shoeFrontPhoto", "url": "ftp://x/y.png", "filmVersion": 1, "runVersion": 1},
     )
+    inserted = {"target": "value:video01Setting", "text": "x", "images": ["ftp://x/y.png"]}
+    bad_insert = await client.patch(
+        f"{URL}/{mine}/film/text", json={"filmVersion": 1, "edits": [inserted]}
+    )
 
-    assert (bad_edit.status_code, bad_url.status_code) == (422, 422)
+    assert (bad_edit.status_code, bad_url.status_code, bad_insert.status_code) == (422, 422, 422)
 
 
 async def test_generation_on_the_page_is_owner_only_and_needs_media_generation(

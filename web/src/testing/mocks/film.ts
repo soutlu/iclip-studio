@@ -7,7 +7,9 @@
  * 图照后端的规矩定：用户给的图总有图；生成图只认选用，没选用就没图，生成出来的不自动用上。机位图第一次选用时插进列表
  * （排在镜头更靠后的机位图之前）、那一镜开头写引用、后面的图号加一，取消选用时反过来（同后端 `_place_view`）。
  * 生图描述按它自己的参考图列表写 `@ImageN`，读的时候每个都拆成图片段，带这个编号，没图的地址为 null、称呼记进
- * `missing`。列表里有没图的，生图、出片都拒。 */
+ * `missing`。列表里有没图的，生图、出片都拒。
+ * 改字时字里插入、删除图片照后端 `_renumber_group`：新图从 M+1 起编、地址在 `images` 里，已在列表里的用原编号，不在的
+ * 排在机位图之前（叫「素材照片N」），后面的编号与镜头开头的引用顺延；不再用的元素图出列表；机位图的引用删不掉、挪不动。 */
 
 import { http, HttpResponse } from 'msw'
 import type {
@@ -115,11 +117,13 @@ const mockGroup = (): MockGroup => ({
   index: 1,
   model: 'vendor-a-seedance-2-0',
   seconds: 12,
+  // 拍法与声音在完整的工程里是几组视频共用的（这里只摆出第 1 组），`shared` 为 true。
   settings: [
     {
       images: [],
       kind: 'shooting',
       label: '拍摄与剪辑',
+      shared: true,
       target: 'value:拍摄与剪辑',
       text: '摄影：手持拍摄，带轻微呼吸感，以低机位仰拍和脚部特写为主。\n剪辑：全片硬切，快节奏。',
     },
@@ -127,6 +131,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'element',
       label: '人物',
+      shared: false,
       target: 'value:金发女生',
       text: '金发女生，二十岁上下的白人女生，脸型偏长，金色齐耳波波头，长相参考@Image1。',
     },
@@ -134,6 +139,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'element',
       label: '产品',
+      shared: false,
       target: 'value:绒面一脚蹬',
       text: '绒面一脚蹬，浅米色反绒皮的低帮鞋，鞋面参考@Image2，鞋底参考@Image3。',
     },
@@ -141,6 +147,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'element',
       label: '场景',
+      shared: false,
       target: 'value:涂鸦滑板场',
       text: '户外露天水泥滑板场参考@Image4，坡面和地面喷满街头涂鸦。',
     },
@@ -148,6 +155,7 @@ const mockGroup = (): MockGroup => ({
       images: [],
       kind: 'voice',
       label: '声音',
+      shared: true,
       target: 'value:旁白声音',
       text: '旁白：年轻女性松弛的中音，普通话，语速偏慢。',
     },
@@ -271,11 +279,27 @@ const placeViews = (groups: readonly MockGroup[], picks: ReadonlyMap<string, str
     ),
   )
 
+/** 人物的身材句：同时用在人物设定图的描述里，是一段与生图共用的元素描述（`shared`），字里不能有图。 */
+const SHARED_BODY: FilmGroupOut['settings'][number] = {
+  images: [],
+  kind: 'element',
+  label: '人物',
+  shared: true,
+  target: 'value:金发女生身材',
+  text: '身材高挑匀称，肩宽适中。',
+}
+
 /** 给一段对话放一份能用的工程：工作区里有 `film.icml` 与 `film.icrun`，制作页读得出一组。默认场景图与镜头 1 的
- * 机位图没选用、出不了片；`complete` 时全都选用了。工程按选用经 `placeView` 摆好，与后端选用时写回的一样。 */
+ * 机位图没选用、出不了片；`complete` 时全都选用了；`sharedBody` 时人物后面多一段与生图共用的身材句。工程按选用经
+ * `placeView` 摆好，与后端选用时写回的一样。 */
 export const seedMockFilm = (
   conversationId: string,
-  options: { problems?: number; model?: string | undefined; complete?: boolean } = {},
+  options: {
+    problems?: number
+    model?: string | undefined
+    complete?: boolean
+    sharedBody?: boolean
+  } = {},
 ) => {
   const filmVersion = putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
   const runVersion = putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE)
@@ -285,7 +309,14 @@ export const seedMockFilm = (
     ...(options.complete === true ? COMPLETE_CHOICES : []),
   ])
   chosen.set(conversationId, picks)
-  const group = { ...mockGroup(), ...(options.model === undefined ? {} : { model: options.model }) }
+  const seeded = mockGroup()
+  const group = {
+    ...seeded,
+    ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.sharedBody === true
+      ? { settings: seeded.settings.toSpliced(2, 0, SHARED_BODY) }
+      : {}),
+  }
   films.set(conversationId, {
     filmVersion,
     groups: problems > 0 ? [] : placeViews([group], picks),
@@ -431,12 +462,158 @@ const numbersMatch = (group: MockGroup): boolean => {
   return used.size === group.images.length && group.images.every((_, index) => used.has(index + 1))
 }
 
+/** 改过的字里一处图号指的图：数字是这组参考图列表里现有的第几张（从 0 起），字符串是新插入的图的地址。 */
+type MockKey = number | string
+type MockRun = string | { key: MockKey }
+
+const VIEW_LOCKED = '机位图的引用随选用增删；请在镜头上取消选用'
+
+/** 照后端拆一段改过的字：列表现有 `count` 张，`@Image1`…`@Image{count}` 是现有的图，再往后依次是 `keys`（新插入的图）。
+ * 这组没有的编号返回给人看的一句话。 */
+const parseRuns = (
+  text: string,
+  count: number,
+  keys: readonly MockKey[],
+  temps: Set<number>,
+): MockRun[] | string => {
+  const runs: MockRun[] = []
+  let cursor = 0
+  for (const match of text.matchAll(IMAGE_NUMBER)) {
+    if (match.index > cursor) runs.push(text.slice(cursor, match.index))
+    cursor = match.index + match[0].length
+    const number = Number(match[1])
+    const temp = keys[number - count - 1]
+    if (number >= 1 && number <= count) runs.push({ key: number - 1 })
+    else if (number > count && temp !== undefined) {
+      runs.push({ key: temp })
+      temps.add(number)
+    } else return `字里的 @Image${String(number)} 没有对应的图，刷新后再改`
+  }
+  if (cursor < text.length) runs.push(text.slice(cursor))
+  return runs
+}
+
+/** 页面插入的新照片：「素材」里已有同一地址的就用它，没有就叫「素材照片N」（N 取第一个没被占用的）。 */
+const photoFor = (film: MockFilm, url: string): MockImage => {
+  const images = allImages(film)
+  const same = images.find((image) => image.kind === 'photo' && image.photo === url)
+  if (same !== undefined) return same
+  let number = 1
+  while (images.some((image) => image.node === `素材照片${String(number)}`)) number += 1
+  const name = `素材照片${String(number)}`
+  return photo(name, name, url)
+}
+
+/** 照后端 `_renumber_group` 改一组的字：新插入的图不在列表里时排在元素图之后、机位图之前，字里一处都不再用的元素图从
+ * 列表删掉，再按新旧编号对照改这组全部的字；机位图开头的引用删掉、挪动或多写一处都不写。拍法与声音在后端是几组共用的字，
+ * 不能写图号。 */
+const renumberGroup = (
+  film: MockFilm,
+  group: MockGroup,
+  edits: readonly FilmTextEditsIn['edits'][number][],
+  urlOf: (node: string) => string | null,
+): MockGroup | string => {
+  const count = group.images.length
+  const runsOf = new Map<string, MockRun[][]>()
+  const heads = new Map<string, string>()
+  for (const edit of edits) {
+    const setting = group.settings.find((item) => item.target === edit.target)
+    const texts = setting === undefined ? (edit.parts ?? []) : [edit.text ?? '']
+    const images = edit.images ?? []
+    if (
+      setting?.shared === true &&
+      (images.length > 0 || texts.join('').match(IMAGE_NUMBER) !== null)
+    )
+      return '这段文字用在几个地方，无法插入图片；带图号的文字只能用在一个节点里'
+    const keys = images.map((url) => {
+      const same = group.images.findIndex((image) => urlOf(image.node) === url)
+      return same < 0 ? url : same
+    })
+    const temps = new Set<number>()
+    const parsed = texts.map((text) => parseRuns(text, count, keys, temps))
+    const failed = parsed.find((item) => typeof item === 'string')
+    if (failed !== undefined) return failed
+    if (temps.size !== keys.length) return '插入的图和字对不上，刷新后再改'
+    runsOf.set(
+      edit.target,
+      parsed.filter((item) => typeof item !== 'string'),
+    )
+    heads.set(edit.target, texts.join('').trimStart())
+  }
+  const originalKeys = (text: string) =>
+    [...text.matchAll(IMAGE_NUMBER)].map((match) => Number(match[1]) - 1)
+  const keysOf = (target: string | null, texts: readonly string[]): MockKey[] => {
+    const runs = target === null ? undefined : runsOf.get(target)
+    return runs === undefined
+      ? texts.flatMap(originalKeys)
+      : runs.flat().flatMap((run) => (typeof run === 'string' ? [] : [run.key]))
+  }
+  const used = new Map<MockKey, number>()
+  for (const key of [
+    ...group.settings.flatMap((setting) => keysOf(setting.target, [setting.text])),
+    ...group.shots.flatMap((shot) => keysOf(shot.target, shot.parts)),
+  ])
+    used.set(key, (used.get(key) ?? 0) + 1)
+  const views = new Map<number, number>()
+  group.images.forEach((image, index) => {
+    const shot = group.shots.findIndex((item) => item.view === image.node)
+    if (shot >= 0) views.set(index, shot)
+  })
+  for (const [index, shot] of views) {
+    const target = group.shots[shot]?.target ?? null
+    const head = target === null ? undefined : heads.get(target)
+    if ((head !== undefined && !head.startsWith(cite(index + 1))) || used.get(index) !== 1)
+      return VIEW_LOCKED
+  }
+  const added = [...new Set([...used.keys()].filter((key) => typeof key === 'string'))]
+  const firstView = Math.min(count, ...views.keys())
+  const kept = group.images.flatMap((_, index) =>
+    views.has(index) || used.has(index) ? [index] : [],
+  )
+  const order: MockKey[] = [
+    ...kept.filter((index) => index < firstView),
+    ...added,
+    ...kept.filter((index) => index >= firstView),
+  ]
+  const final = new Map(order.map((key, position) => [key, position + 1]))
+  const numbered = (key: MockKey) => `@Image${String(final.get(key) ?? 0)}`
+  const render = (runs: readonly MockRun[]) =>
+    runs.map((run) => (typeof run === 'string' ? run : numbered(run.key))).join('')
+  const renumber = (text: string) =>
+    text.replace(IMAGE_NUMBER, (_, digits: string) => numbered(Number(digits) - 1))
+  return {
+    ...group,
+    images: order.map((key) =>
+      typeof key === 'string' ? photoFor(film, key) : (group.images[key] as MockImage),
+    ),
+    settings: group.settings.map((setting) => {
+      const runs = setting.target === null ? undefined : runsOf.get(setting.target)
+      return {
+        ...setting,
+        text: runs === undefined ? renumber(setting.text) : render(runs[0] ?? []),
+      }
+    }),
+    shots: group.shots.map((shot) => {
+      const runs = shot.target === null ? undefined : runsOf.get(shot.target)
+      return {
+        ...shot,
+        parts: runs === undefined ? shot.parts.map(renumber) : runs.map(render),
+      }
+    }),
+  }
+}
+
 /** 按后端的规矩把几段字改进去；不合规矩返回给人看的一句话。 */
-const applyEdits = (film: MockFilm, body: FilmTextEditsIn): MockGroup[] | string => {
-  let groups = film.groups
+const applyEdits = (
+  film: MockFilm,
+  body: FilmTextEditsIn,
+  urlOf: (node: string) => string | null,
+): MockGroup[] | string => {
   for (const edit of body.edits) {
-    const shot = groups.flatMap((group) => group.shots).find((item) => item.target === edit.target)
-    const setting = groups
+    const shot = film.groups
+      .flatMap((group) => group.shots)
+      .find((item) => item.target === edit.target)
+    const setting = film.groups
       .flatMap((group) => group.settings)
       .find((item) => item.target === edit.target)
     if (shot !== undefined) {
@@ -447,32 +624,37 @@ const applyEdits = (film: MockFilm, body: FilmTextEditsIn): MockGroup[] | string
         return '台词只能改字，不能删、不能加，也不能调先后；要动台词跟 AI 导演说'
       if (lines.some((line) => line.text.trim() === '')) return '台词不能是空的'
       if (parts.join('').trim() === '') return '镜头的文字不能是空的'
-      groups = groups.map((group) => ({
-        ...group,
-        shots: group.shots.map((item) =>
-          item.target !== edit.target
-            ? item
-            : {
-                ...item,
-                lines: item.lines.map((line, index) => ({
-                  ...line,
-                  text: lines[index]?.text ?? '',
-                })),
-                parts,
-              },
-        ),
-      }))
     } else if (setting !== undefined) {
       if ((edit.text ?? '').trim() === '') return '这段字不能是空的'
-      groups = groups.map((group) => ({
-        ...group,
-        settings: group.settings.map((item) =>
-          item.target === edit.target ? { ...item, text: edit.text ?? '' } : item,
-        ),
-      }))
     } else {
       return '要改的这段字找不到了，刷新后再改'
     }
+  }
+  const groups: MockGroup[] = []
+  for (const group of film.groups) {
+    const mine = body.edits.filter(
+      (edit) =>
+        group.shots.some((shot) => shot.target === edit.target) ||
+        group.settings.some((setting) => setting.target === edit.target),
+    )
+    const lined = {
+      ...group,
+      shots: group.shots.map((shot) => {
+        const edit = mine.find((item) => item.target === shot.target)
+        return edit === undefined
+          ? shot
+          : {
+              ...shot,
+              lines: shot.lines.map((line, index) => ({
+                ...line,
+                text: edit.lines?.[index]?.text ?? '',
+              })),
+            }
+      }),
+    }
+    const renumbered = renumberGroup(film, lined, mine, urlOf)
+    if (typeof renumbered === 'string') return renumbered
+    groups.push(renumbered)
   }
   if (!groups.every(numbersMatch)) return '这样改以后分镜有问题，没有保存；可以跟 AI 导演说想怎么改'
   return groups
@@ -497,7 +679,7 @@ export const filmHandlers = [
     if (body.filmVersion !== film.filmVersion)
       return HttpResponse.json({ detail: '分镜刚被改过，刷新后再改' }, { status: 409 })
     if (film.problems > 0) return rejected('分镜有问题，等 AI 导演改好再改')
-    const groups = applyEdits(film, body)
+    const groups = applyEdits(film, body, urlsOf(conversationId, film))
     if (typeof groups === 'string') return rejected(groups)
     const next = {
       ...film,

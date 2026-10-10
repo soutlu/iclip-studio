@@ -85,6 +85,10 @@ class FilmSetting:
     images: tuple[str, ...]
     """恒为空：这组的图都在 ``FilmGroup.frames`` 里。"""
 
+    shared: bool
+    """这段字还用在别的生成节点里（几组共用的拍法与声音，或与生图共用的描述）：字里不能有图号，
+    页面上不给插入图片。"""
+
 
 @dataclass(frozen=True, slots=True)
 class FilmLine:
@@ -171,6 +175,9 @@ class FilmTextEdit:
     text: str | None = None
     parts: tuple[str, ...] | None = None
     lines: tuple[FilmLineEdit, ...] | None = None
+    images: tuple[str, ...] = ()
+    """这段字里新插入的图的地址。这组视频的参考图列表现在有 M 张时，字里的 ``@Image1``…``@ImageM``
+    指列表里现有的图，``@Image(M+1)``…``@Image(M+k)`` 依次指这里的第 1…k 张。"""
 
 
 __all__ = [

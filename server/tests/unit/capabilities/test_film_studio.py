@@ -61,6 +61,12 @@ def first(project: str = FILM, run: str | None = RUN) -> FilmGroup:
     return groups(project, run)[0]
 
 
+def written(edits: list[FilmTextEdit], project: str = FILM, run: str | None = RUN) -> str:
+    """把 ``edits`` 写进 ``project``，返回改好的工程文件。"""
+
+    return edit_text(project, run, checked(project, run), edits).source
+
+
 def shot(number: int, parts: tuple[str, ...], *lines: FilmLineEdit) -> FilmTextEdit:
     return FilmTextEdit(f"shot:video01Shots:{number}", parts=parts, lines=lines)
 
@@ -282,14 +288,16 @@ def test_given_photos_are_never_missing() -> None:
 def test_settings_follow_the_video_prompt_and_are_named_by_the_slot() -> None:
     made, later = groups()
 
-    assert [(item.kind, item.target, item.label, item.images) for item in made.settings] == [
-        ("shooting", "value:videoCapture", "拍摄与剪辑", ()),
-        ("element", "value:video01ModelA", "人物", ()),
-        ("element", "value:video01ModelB", "人物", ()),
-        ("element", "value:video01Shoe", "产品", ()),
-        ("element", "value:video01Setting", "场景", ()),
-        ("voice", "value:模特A声音", "声音", ()),
-        ("voice", "value:模特B声音", "声音", ()),
+    assert [
+        (item.kind, item.target, item.label, item.images, item.shared) for item in made.settings
+    ] == [
+        ("shooting", "value:videoCapture", "拍摄与剪辑", (), True),
+        ("element", "value:video01ModelA", "人物", (), False),
+        ("element", "value:video01ModelB", "人物", (), False),
+        ("element", "value:video01Shoe", "产品", (), False),
+        ("element", "value:video01Setting", "场景", (), False),
+        ("voice", "value:模特A声音", "声音", (), True),
+        ("voice", "value:模特B声音", "声音", (), False),
     ]
     assert [item.text for item in made.settings] == [
         "摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n"
@@ -336,13 +344,13 @@ def test_a_body_with_a_comment_in_it_cannot_be_edited_on_the_page() -> None:
 
     assert (person.label, person.target) == ("人物", None)
     with pytest.raises(FilmEditRejected, match="找不到了"):
-        edit_text(project, checked(project), [FilmTextEdit("value:video01ModelB", text="x")])
+        written([FilmTextEdit("value:video01ModelB", text="x")], project)
 
 
 def test_a_value_with_image_numbers_is_rewritten_in_place_and_nothing_else_moves() -> None:
     typed = "清晨的纽约红砖街区，参考 @Image7。"
 
-    updated = edit_text(FILM, checked(), [FilmTextEdit("value:video01Setting", text=typed)])
+    updated = written([FilmTextEdit("value:video01Setting", text=typed)])
 
     assert changed_lines(FILM, updated) == [
         '-  <text:Value id="video01Setting">纽约红砖街区参考 @Image7。</text:Value>',
@@ -354,7 +362,7 @@ def test_a_value_with_image_numbers_is_rewritten_in_place_and_nothing_else_moves
 def test_shot_text_is_written_in_place_and_nothing_else_moves() -> None:
     parts = ("参考@Image8，开场。她把 {鞋} 举到 <镜头> 前 & 说：", " 她问：", " 音效：轻响")
 
-    updated = edit_text(FILM, checked(), [shot(1, parts, HOOK, REPLY)])
+    updated = written([shot(1, parts, HOOK, REPLY)])
 
     (removed, added) = changed_lines(FILM, updated)
     assert removed.startswith(
@@ -373,11 +381,7 @@ def test_shot_text_is_written_in_place_and_nothing_else_moves() -> None:
 
 
 def test_multiline_text_keeps_its_indentation() -> None:
-    updated = edit_text(
-        FILM,
-        checked(),
-        [FilmTextEdit("value:videoCapture", text="摄影：手机拍摄。\n\n剪辑：硬切。")],
-    )
+    updated = written([FilmTextEdit("value:videoCapture", text="摄影：手机拍摄。\n\n剪辑：硬切。")])
 
     assert changed_lines(FILM, updated)[3:] == [
         "+    摄影：手机拍摄。",
@@ -390,13 +394,11 @@ def test_multiline_text_keeps_its_indentation() -> None:
 def test_a_line_and_a_voice_are_rewritten_where_they_are_written() -> None:
     hook = FilmLineEdit("line:hook", "这一双  &  <很轻>！")
 
-    updated = edit_text(
-        FILM,
-        checked(),
+    updated = written(
         [
             shot(1, parts_of(1), hook, REPLY),
             FilmTextEdit("value:模特B声音", text="模特B：略低的女声。"),
-        ],
+        ]
     )
 
     assert changed_lines(FILM, updated) == [
@@ -415,18 +417,16 @@ def test_a_line_written_on_its_own_line_stays_there() -> None:
     )
     answer = FilmLineEdit("line:answer", "软，而且回弹。")
 
-    updated = edit_text(project, checked(project), [shot(2, parts_of(2, project), answer)])
+    updated = written([shot(2, parts_of(2, project), answer)], project)
 
     assert changed_lines(project, updated) == ["-      软，还回弹。", "+      软，而且回弹。"]
 
 
 def test_lines_can_only_be_reworded() -> None:
-    film = checked()
-
     for lines in ((REPLY, HOOK), (HOOK,), (HOOK, REPLY, FilmLineEdit("line:answer", "x"))):
         parts = ("a",) * (len(lines) + 1)
         with pytest.raises(FilmEditRejected, match="台词只能改字"):
-            edit_text(FILM, film, [shot(1, parts, *lines)])
+            written([shot(1, parts, *lines)])
 
 
 def test_a_shot_whose_line_has_a_comment_is_not_offered() -> None:
@@ -457,10 +457,15 @@ def test_a_shot_whose_line_has_a_comment_is_not_offered() -> None:
             "一次只改一处",
         ),
         ([], "没有要改的字"),
-        ([shot(1, ("x", "", ""), FilmLineEdit("line:hook", "a | b"), REPLY)], "分镜有问题"),
-        # 去掉机位图开头的引用，或写出列表里没有的图号，改完的文件过不了保存检查。
-        ([shot(1, ("中景。", " ", ""), HOOK, REPLY)], "分镜有问题"),
-        ([FilmTextEdit("value:video01Setting", text="街区参考 @Image11。")], "分镜有问题"),
+        (
+            [shot(1, ("参考@Image8，x", "", ""), FilmLineEdit("line:hook", "a | b"), REPLY)],
+            "分镜有问题",
+        ),
+        # 列表里没有、也不是新插入的图号不写；写错的图号过不了保存检查。
+        (
+            [FilmTextEdit("value:video01Setting", text="街区参考 @Image11。")],
+            "@Image11 没有对应的图",
+        ),
         ([FilmTextEdit("value:video01Setting", text="街区参考 @image7。")], "分镜有问题"),
         (
             [shot(1, ("参考@Image8，x", "", ""), FilmLineEdit("line:hook", "看 @Image1"), REPLY)],
@@ -476,7 +481,365 @@ def test_an_edit_that_would_break_the_film_is_not_written(
     edits: list[FilmTextEdit], message: str
 ) -> None:
     with pytest.raises(FilmEditRejected, match=message):
-        edit_text(FILM, checked(), edits)
+        written(edits)
+
+
+NEW_PHOTO = "https://cdn.test/uploads/corner.jpg"
+SETTING_LINE = '  <text:Value id="video01Setting">纽约红砖街区参考 @Image7。</text:Value>\n'
+FIRST_VIEW = "    <seedance:Reference image={view01.image}/>\n"
+
+
+def setting(text: str, *images: str, video: str = "video01") -> FilmTextEdit:
+    return FilmTextEdit(f"value:{video}Setting", text=text, images=images)
+
+
+def numbered(group: FilmGroup) -> list[tuple[str, int | None]]:
+    return [(frame.node, frame.number) for frame in group.frames]
+
+
+def test_inserting_an_image_already_in_the_list_uses_its_number() -> None:
+    edited = edit_text(
+        FILM, RUN, checked(), [setting("纽约红砖街区参考 @Image7，鞋头参考 @Image11。", SHOE_FRONT)]
+    )
+
+    assert changed_lines(FILM, edited.source) == [
+        f"-{SETTING_LINE.rstrip()}",
+        '+  <text:Value id="video01Setting">纽约红砖街区参考 @Image7，鞋头参考 @Image5。</text:Value>',
+    ]
+    assert edited.inserted == ()
+
+
+def test_inserting_a_new_photo_puts_it_before_the_views_and_moves_their_numbers() -> None:
+    edited = edit_text(
+        FILM, RUN, checked(), [setting("纽约红砖街区参考 @Image7，街角参考 @Image11。", NEW_PHOTO)]
+    )
+
+    expected = (
+        FILM.replace(
+            '  <media:Image id="shoeSolePhoto" src="https://preview.invalid/uploads/shoeSolePhoto.jpg"/>\n',
+            '  <media:Image id="shoeSolePhoto" src="https://preview.invalid/uploads/shoeSolePhoto.jpg"/>\n'
+            f'  <media:Image id="素材照片1" src="{NEW_PHOTO}"/>\n',
+        )
+        .replace(
+            SETTING_LINE,
+            '  <text:Value id="video01Setting">纽约红砖街区参考 @Image7，街角参考 @Image8。</text:Value>\n',
+        )
+        .replace(">参考@Image10，硬切，近景", ">参考@Image11，硬切，近景")
+        .replace(">参考@Image9，硬切，侧面", ">参考@Image10，硬切，侧面")
+        .replace(">参考@Image8，中景", ">参考@Image9，中景")
+        .replace(FIRST_VIEW, "    <seedance:Reference image={素材照片1}/>\n" + FIRST_VIEW)
+    )
+    assert edited.source == expected
+    assert edited.inserted == (NEW_PHOTO,)
+    made, later = groups(edited.source)
+    assert numbered(made)[6:] == [
+        ("scene", 7),
+        ("素材照片1", 8),
+        ("view01", 9),
+        ("view02", 10),
+        ("view03", 11),
+    ]
+    assert made.frames[7].url == NEW_PHOTO
+    # 另一组不动。
+    assert numbered(later) == numbered(groups()[1])
+
+
+def test_a_photo_already_in_the_materials_is_reused_for_another_group() -> None:
+    once = written([setting("纽约红砖街区参考 @Image7，街角参考 @Image11。", NEW_PHOTO)])
+
+    edited = edit_text(
+        once,
+        RUN,
+        checked(once),
+        [setting("纽约红砖街区参考 @Image6，街角参考 @Image10。", NEW_PHOTO, video="video02")],
+    )
+
+    # 「素材」里已经有这张照片：不再加，第 2 组的列表引用它。
+    expected = (
+        once.replace(
+            '  <text:Value id="video02Setting">纽约红砖街区参考 @Image6。</text:Value>',
+            '  <text:Value id="video02Setting">纽约红砖街区参考 @Image6，街角参考 @Image7。</text:Value>',
+        )
+        .replace(">参考@Image9，硬切，全景", ">参考@Image10，硬切，全景")
+        .replace(">参考@Image8，硬切，中景，手持跟拍", ">参考@Image9，硬切，中景，手持跟拍")
+        .replace(">参考@Image7，低机位", ">参考@Image8，低机位")
+        .replace(
+            "    <seedance:Reference image={view04.image}/>\n",
+            "    <seedance:Reference image={素材照片1}/>\n"
+            "    <seedance:Reference image={view04.image}/>\n",
+        )
+    )
+    assert edited.source == expected
+    assert edited.inserted == (NEW_PHOTO,)
+    assert numbered(groups(edited.source)[1])[5:7] == [("scene", 6), ("素材照片1", 7)]
+
+
+def test_one_new_photo_inserted_into_two_groups_is_added_once() -> None:
+    edited = edit_text(
+        FILM,
+        RUN,
+        checked(),
+        [
+            setting("纽约红砖街区参考 @Image7，街角参考 @Image11。", NEW_PHOTO),
+            setting("纽约红砖街区参考 @Image6，街角参考 @Image10。", NEW_PHOTO, video="video02"),
+        ],
+    )
+
+    assert edited.source.count(f'src="{NEW_PHOTO}"') == 1
+    assert edited.inserted == (NEW_PHOTO,)
+    made, later = groups(edited.source)
+    assert (made.frames[7].node, later.frames[6].node) == ("素材照片1", "素材照片1")
+
+
+def test_removing_the_only_reference_to_an_image_takes_it_out_of_the_list() -> None:
+    edited = edit_text(
+        FILM, RUN, checked(), [FilmTextEdit("value:video01ModelB", text="模特B，短发。")]
+    )
+
+    expected = (
+        FILM.replace(
+            '  <text:Value id="video01ModelB">模特B，长相、发型和服装参考 @Image3。</text:Value>',
+            '  <text:Value id="video01ModelB">模特B，短发。</text:Value>',
+        )
+        .replace(
+            "外观参考 @Image4（侧面）、@Image5（鞋头）、@Image6（鞋底）。</text:Value>\n"
+            '  <text:Value id="video01Setting">纽约红砖街区参考 @Image7。',
+            "外观参考 @Image3（侧面）、@Image4（鞋头）、@Image5（鞋底）。</text:Value>\n"
+            '  <text:Value id="video01Setting">纽约红砖街区参考 @Image6。',
+        )
+        .replace(">参考@Image8，中景", ">参考@Image7，中景")
+        .replace(">参考@Image9，硬切，侧面", ">参考@Image8，硬切，侧面")
+        .replace(">参考@Image10，硬切，近景", ">参考@Image9，硬切，近景")
+        .replace(
+            "    <seedance:Reference image={modelAFullBodyPhoto}/>\n"
+            "    <seedance:Reference image={personB.image}/>\n",
+            "    <seedance:Reference image={modelAFullBodyPhoto}/>\n",
+            1,
+        )
+    )
+    assert edited.source == expected
+    assert [node for node, _ in numbered(first(edited.source))] == [
+        "modelAPortraitPhoto",
+        "modelAFullBodyPhoto",
+        "shoeSidePhoto",
+        "shoeFrontPhoto",
+        "shoeSolePhoto",
+        "scene",
+        "view01",
+        "view02",
+        "view03",
+    ]
+    # personB 仍是第 2 组的设定图，只是不在第 1 组的列表里了。
+    assert "personB" in checked(edited.source).project.nodes
+
+
+def test_removing_one_of_two_references_keeps_the_list() -> None:
+    project = FILM.replace(
+        SETTING_LINE, SETTING_LINE.replace("@Image7。", "@Image7，人行道参考 @Image4。")
+    )
+
+    updated = written([setting("纽约红砖街区参考 @Image7。")], project)
+
+    assert changed_lines(project, updated) == [
+        '-  <text:Value id="video01Setting">纽约红砖街区参考 @Image7，人行道参考 @Image4。</text:Value>',
+        f"+{SETTING_LINE.rstrip()}",
+    ]
+
+
+def test_inserting_and_removing_in_one_edit_renumbers_once() -> None:
+    # 删掉 personB（@3）的唯一一处，同时在场景里插入新照片：personB 出列表，新照片排在 scene 之后、机位图之前。
+    edited = edit_text(
+        FILM,
+        RUN,
+        checked(),
+        [
+            FilmTextEdit("value:video01ModelB", text="模特B，短发。"),
+            setting("纽约红砖街区参考 @Image7，街角参考 @Image11。", NEW_PHOTO),
+        ],
+    )
+
+    made = first(edited.source)
+    assert numbered(made)[5:] == [
+        ("scene", 6),
+        ("素材照片1", 7),
+        ("view01", 8),
+        ("view02", 9),
+        ("view03", 10),
+    ]
+    assert made.settings[4].text == "纽约红砖街区参考 @Image6，街角参考 @Image7。"
+    assert [shot.parts[0].partition("，")[0] for shot in made.shots] == [
+        "参考@Image8",
+        "参考@Image9",
+        "参考@Image10",
+    ]
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        # 删掉镜头开头的机位图引用。
+        shot(1, ("中景，平视。", " ", ""), HOOK, REPLY),
+        # 挪到别处。
+        shot(1, ("中景，参考@Image8，平视。", " ", ""), HOOK, REPLY),
+        # 在别的字里再写一次机位图的图号。
+        setting("纽约红砖街区参考 @Image7，与 @Image8 一致。"),
+        # 新插入的图就是机位图那张。
+        setting("纽约红砖街区参考 @Image7，与 @Image11 一致。", GENERATED["view01"]),
+    ],
+)
+def test_view_references_only_follow_the_choice(edit: FilmTextEdit) -> None:
+    with pytest.raises(FilmEditRejected, match="机位图的引用随选用增删；请在镜头上取消选用"):
+        written([edit])
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        FilmTextEdit(
+            "value:videoCapture", text="摄影：手机拍摄，参考 @Image11。", images=(NEW_PHOTO,)
+        ),
+        FilmTextEdit("value:模特A声音", text="模特A：年轻女声，参考 @Image1。"),
+    ],
+)
+def test_text_shared_by_several_nodes_takes_no_images(edit: FilmTextEdit) -> None:
+    with pytest.raises(FilmEditRejected, match="用在几个地方，无法插入图片"):
+        written([edit])
+
+
+SHARED_BODY = FILM.replace(
+    '    <text:Append name="person" text={video01ModelB}/>\n',
+    '    <text:Append name="person" text={video01ModelB}/>\n'
+    '    <text:Append name="person" text={模特B身材}/>\n',
+)
+"""模特B 的身材句同时用在 personB 的设定图和第 1 组的人物里：一段与生图共用的元素描述。"""
+
+
+def test_a_setting_is_shared_when_another_generation_node_uses_it() -> None:
+    made, later = groups(SHARED_BODY)
+
+    assert [(item.target, item.shared) for item in made.settings] == [
+        ("value:videoCapture", True),
+        ("value:video01ModelA", False),
+        ("value:video01ModelB", False),
+        ("value:模特B身材", True),
+        ("value:video01Shoe", False),
+        ("value:video01Setting", False),
+        ("value:模特A声音", True),
+        ("value:模特B声音", False),
+    ]
+    assert [item.shared for item in later.settings] == [True, False, False, False, True]
+    # 保存时按同一个口径拒绝：往这段里插图不写。
+    body = FilmTextEdit("value:模特B身材", text="身材匀称，参考 @Image11。", images=(NEW_PHOTO,))
+    with pytest.raises(FilmEditRejected, match="用在几个地方，无法插入图片"):
+        written([body], SHARED_BODY)
+
+
+def test_inserting_a_generated_image_references_its_node() -> None:
+    # personB 选用的图不在第 2 组的列表里：列表引用 personB 的输出，不复制成照片。
+    edited = edit_text(
+        FILM,
+        RUN,
+        checked(),
+        [
+            setting(
+                "纽约红砖街区参考 @Image6，路人参考 @Image10。",
+                GENERATED["personB"],
+                video="video02",
+            )
+        ],
+    )
+
+    assert "素材照片" not in edited.source
+    assert edited.inserted == (GENERATED["personB"],)
+    assert (
+        "    <seedance:Reference image={scene.image}/>\n"
+        "    <seedance:Reference image={personB.image}/>\n"
+        "    <seedance:Reference image={view04.image}/>\n"
+    ) in edited.source
+    later = groups(edited.source)[1]
+    assert numbered(later)[5:8] == [("scene", 6), ("personB", 7), ("view04", 8)]
+    assert later.frames[6].url == GENERATED["personB"]
+    # 之后 personB 换了选用，第 2 组的这张跟着变。
+    rechosen = RUN.replace(
+        '<use output="personB.image" image={personB-v1}/>',
+        '<use output="personB.image" image={scene-v1}/>',
+    )
+    assert groups(edited.source, rechosen)[1].frames[6].url == GENERATED["scene"]
+
+
+def test_a_view_image_cannot_be_inserted_into_another_group() -> None:
+    with pytest.raises(FilmEditRejected, match="机位图只随选用进参考图列表"):
+        written([setting("纽约红砖街区参考 @Image7，@Image11。", GENERATED["view04"])])
+
+
+BARE = """<?icml using="@iclip/markup@1"?>
+<icml>
+  <import as="text" from="@iclip/text@1"/>
+  <import as="film" from="@iclip/director@2"/>
+  <import as="seedance" from="@iclip/seedance@1"/>
+  <import as="kit" source="@iclip/film-kits"/>
+
+  <text:Value id="拍摄">手机拍摄。</text:Value>
+  <text:Value id="场景">红砖街区。</text:Value>
+  <film:Shots id="镜头">
+    <film:Shot start="0.0" end="5.0">她走过街角。</film:Shot>
+  </film:Shots>
+  <text:Render id="提示词" template={kit.multi-shot-video-v1}>
+    <text:Set name="capture" text={拍摄}/>
+    <text:Set name="setting" text={场景}/>
+    <text:Set name="shots" text={镜头}/>
+  </text:Render>
+  <seedance:ReferenceVideo id="全片" model="sd2.5" prompt={提示词} duration="5" aspect-ratio="16:9">
+  </seedance:ReferenceVideo>
+</icml>
+"""
+"""没有照片、也没引入 media 的工程，视频一张参考图都没有。"""
+
+INTO_BARE = FilmTextEdit("value:场景", text="红砖街区参考 @Image1。", images=(NEW_PHOTO,))
+
+
+def test_a_photo_inserted_without_media_imported_brings_the_import() -> None:
+    updated = written([INTO_BARE], BARE, None)
+
+    assert changed_lines(BARE, updated)[:2] == [
+        '+  <import as="media" from="@iclip/media@1"/>',
+        f'+  <media:Image id="素材照片1" src="{NEW_PHOTO}"/>',
+    ]
+    assert checked(updated, None).image_url("素材照片1") == NEW_PHOTO
+
+
+def test_a_photo_inserted_into_an_empty_list_goes_inside_the_video() -> None:
+    updated = written([INTO_BARE], BARE, None)
+
+    assert (
+        '<seedance:ReferenceVideo id="全片" model="sd2.5" prompt={提示词} duration="5" '
+        'aspect-ratio="16:9">\n'
+        "    <seedance:Reference image={素材照片1}/>\n"
+        "  </seedance:ReferenceVideo>\n"
+    ) in updated
+    (group,) = groups(updated, None)
+    assert [(frame.node, frame.number, frame.url) for frame in group.frames] == [
+        ("素材照片1", 1, NEW_PHOTO)
+    ]
+    assert group.settings[1].text == "红砖街区参考 @Image1。"
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (setting("纽约红砖街区参考 @Image7。", NEW_PHOTO), "插入的图和字对不上"),
+        (setting("纽约红砖街区参考 @Image7，@Image12。", NEW_PHOTO), "@Image12 没有对应的图"),
+        (
+            FilmTextEdit(
+                "value:view01Setting", text="街区参考 @Image6，@Image7。", images=(NEW_PHOTO,)
+            ),
+            "只能在视频的文字里插入图片",
+        ),
+    ],
+)
+def test_inserted_images_must_match_the_text(edit: FilmTextEdit, message: str) -> None:
+    with pytest.raises(FilmEditRejected, match=message):
+        written([edit])
 
 
 def test_choosing_an_image_for_a_generated_node_registers_and_selects_it() -> None:

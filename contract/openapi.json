@@ -2438,7 +2438,7 @@
       },
       "FilmSettingOut": {
         "additionalProperties": false,
-        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；\n``images`` 恒为空列表，这组的图都在 ``frames`` 里。",
+        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；\n``images`` 恒为空列表，这组的图都在 ``frames`` 里；``shared`` 为 true 的这段还用在别的生成节点里，\n字里不能有图号，页面上不给插入图片。",
         "properties": {
           "images": {
             "items": {
@@ -2467,6 +2467,10 @@
             ],
             "title": "Label"
           },
+          "shared": {
+            "title": "Shared",
+            "type": "boolean"
+          },
           "target": {
             "anyOf": [
               {
@@ -2488,7 +2492,8 @@
           "target",
           "label",
           "text",
-          "images"
+          "images",
+          "shared"
         ],
         "title": "FilmSettingOut",
         "type": "object"
@@ -2557,6 +2562,14 @@
         "additionalProperties": false,
         "description": "改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它\n多一段，台词只改字；其余给 ``text``。",
         "properties": {
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Images",
+            "type": "array"
+          },
           "lines": {
             "anyOf": [
               {

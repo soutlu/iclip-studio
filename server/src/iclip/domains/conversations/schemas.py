@@ -273,6 +273,9 @@ MAX_FILM_EDITS: Final = 64
 MAX_FILM_REFERENCES: Final = 10
 """按描述再生成时最多几张参考图，与生成域的图片参考图上限相同。"""
 
+MAX_FILM_VIDEO_REFERENCES: Final = 30
+"""改一段字时最多新插入几张图：一次视频请求最多 30 张参考图，再多保存检查也不会通过。"""
+
 
 class FilmPromptTextOut(CamelModel):
     kind: Literal["text"] = "text"
@@ -315,13 +318,15 @@ class FilmFrameOut(CamelModel):
 
 class FilmSettingOut(CamelModel):
     """全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；
-    ``images`` 恒为空列表，这组的图都在 ``frames`` 里。"""
+    ``images`` 恒为空列表，这组的图都在 ``frames`` 里；``shared`` 为 true 的这段还用在别的生成节点里，
+    字里不能有图号，页面上不给插入图片。"""
 
     kind: SettingKind
     target: str | None
     label: str | None
     text: str
     images: list[str]
+    shared: bool
 
 
 class FilmLineOut(CamelModel):
@@ -386,6 +391,17 @@ class FilmTextEditIn(CamelModel):
     text: str | None = None
     parts: list[str] | None = None
     lines: list[FilmLineEditIn] | None = None
+    images: Annotated[
+        list[str], Field(default_factory=list[str], max_length=MAX_FILM_VIDEO_REFERENCES)
+    ]
+    """新插入的图：列表现有 M 张时，字里的 ``@Image(M+1)`` 起依次指这里的每一张。"""
+
+    @field_validator("images")
+    @classmethod
+    def _http(cls, urls: list[str]) -> list[str]:
+        if not all(is_http_url(url) for url in urls):
+            raise ValueError("要写带主机名的 http(s) 地址")
+        return urls
 
     @model_validator(mode="after")
     def _one_of(self) -> FilmTextEditIn:
@@ -484,6 +500,7 @@ def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
             lines=None
             if edit.lines is None
             else tuple(FilmLineEdit(line.target, line.text) for line in edit.lines),
+            images=tuple(edit.images),
         )
         for edit in body.edits
     ]
@@ -524,6 +541,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                             label=setting.label,
                             text=setting.text,
                             images=list(setting.images),
+                            shared=setting.shared,
                         )
                         for setting in group.settings
                     ],

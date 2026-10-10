@@ -6,6 +6,8 @@
  * 全局设定一段一行，前面写模板里的段名。字里的 `@ImageN` 在原位置是图片芯片（镜头开头的「参考@ImageN，」也是），
  * 点芯片选中这段、舞台看那张图；这段选中且舞台正看着那张时芯片高亮。
  * 镜头正文与台词交替排：台词单独一行，说话人是固定的小标签，只能改引号里的字。没法在页面上改的段只读。
+ * 全局设定与镜头正文里能插入、删除图片（见 `FilmTextEditor`），镜头开头机位图的引用删不掉；还被别的生成节点用到的设定
+ * （`shared`）与台词里不能写图，都不给插入的入口。有没存下的改动时各段的复制按钮不可用，拷走的总是存好的字。
  * 点哪段选中哪段，舞台跟着切到它挂的图。列里不收拖进来的文件，免得漏给聊天输入框。 */
 
 import { Fragment, useRef, useState, type FocusEvent } from 'react'
@@ -30,7 +32,7 @@ import {
 } from './film-content'
 import { FilmFrameChipsProvider } from './film-frame-chip'
 import { FilmImageChip } from './film-image-chip'
-import { FilmTextEditor } from './film-text-editor'
+import { FilmTextEditor, type FilmTextInsert } from './film-text-editor'
 import type { FilmSegmentValue } from './use-film-draft'
 
 type FilmScriptProps = {
@@ -47,18 +49,26 @@ type FilmScriptProps = {
   onEdit: (target: string, label: string, value: FilmSegmentValue) => void
   /** 图片芯片预览卡上的「放大」。 */
   onPreview: (media: { name: string; url: string }) => void
+  /** 有上传权限：能插入图片的段收粘贴、拖入与「+」上传的图。 */
+  uploads: boolean
+  /** 第 `key` 个编辑器里有没有图正在上传；出片要等它们传完。 */
+  onUploadingChange: (key: string, uploading: boolean) => void
+  /** 此刻不能复制段落的原因（有没存下的改动），给了就置灰、悬停说原因；与顶栏复制按钮同一句。 */
+  copyBlocked: string | undefined
 }
 
 // 段里自带选中动作的控件（展开全局设定、点图片）聚焦时不再走「焦点进段就选中」，免得先选段再选图跳两次。
 const keepFocusInside = (event: FocusEvent) => event.stopPropagation()
 
-const copyButton = (label: string, text: string) => (
+const copyButton = (label: string, text: string, blocked: string | undefined) => (
   <IconButton
     className="storyboard-segment-copy"
+    disabled={blocked !== undefined}
     label={`复制${label}`}
     name="copy"
     onClick={() => void copyWithToast(text, '已复制')}
     size="sm"
+    tooltip={blocked}
   />
 )
 
@@ -70,14 +80,17 @@ const frameAt = (group: FilmGroup, node: string | null) => {
 }
 
 export function FilmScript({
+  copyBlocked,
   frame,
   group,
   onEdit,
   onPickFrame,
   onPreview,
   onSelect,
+  onUploadingChange,
   readOnly,
   selectedId,
+  uploads,
 }: FilmScriptProps) {
   const [compact, setCompact] = useState(false)
   const [settingsExpanded, setSettingsExpanded] = useState(false)
@@ -104,6 +117,11 @@ export function FilmScript({
     onEnlarge: onPreview,
     onPick: (position: number) => onSelect(id, position),
   })
+  /** 第 `key` 个编辑器插入图片要的；只读时不给。 */
+  const insertOf = (key: string): FilmTextInsert | undefined =>
+    readOnly
+      ? undefined
+      : { group, onUploadingChange: (busy) => onUploadingChange(key, busy), uploads }
 
   return (
     <div aria-label="分镜文案" className="storyboard-prose" role="region" {...refuseFileDropProps}>
@@ -141,7 +159,7 @@ export function FilmScript({
                 {promptLength(group.settings.map(settingText).join('\n'))} 字
               </span>
               <span className="ml-auto flex items-center gap-0.5">
-                {copyButton('全局设定', group.settings.map(settingText).join('\n'))}
+                {copyButton('全局设定', group.settings.map(settingText).join('\n'), copyBlocked)}
                 {settingsClamped ? (
                   <Button
                     aria-expanded={settingsExpanded}
@@ -161,6 +179,12 @@ export function FilmScript({
               <div className="film-segment-body">
                 {group.settings.map((setting) => (
                   <SettingRow
+                    // 还被别的生成节点用到的字（几组共用的拍法与声音、与生图共用的描述）里不能有图，不给插入的入口。
+                    insert={
+                      !setting.shared && setting.target !== null
+                        ? insertOf(setting.target)
+                        : undefined
+                    }
                     // 同一组里每段设定的 target 各不相同；没法改的段没有 target、字也不会变，同一段名下可以有几段，
                     // 按段名连同字认。
                     key={setting.target ?? `${setting.kind}:${setting.label ?? ''}:${setting.text}`}
@@ -226,11 +250,20 @@ export function FilmScript({
                           </button>
                         </span>
                       )}
-                      {copyButton(label, shotText(shot))}
+                      {copyButton(label, shotText(shot), copyBlocked)}
                     </span>
                   </div>
                   <FilmFrameChipsProvider value={chipsOf(id, selected)}>
-                    <ShotBody label={label} onEdit={onEdit} readOnly={readOnly} shot={shot} />
+                    <ShotBody
+                      insertOf={insertOf}
+                      label={label}
+                      lead={
+                        view?.frame.number == null ? undefined : `参考@Image${view.frame.number}，`
+                      }
+                      onEdit={onEdit}
+                      readOnly={readOnly}
+                      shot={shot}
+                    />
                   </FilmFrameChipsProvider>
                 </div>
               </li>
@@ -290,10 +323,12 @@ function FrameStrip({
 
 /** 全局设定的一段：称呼浮在左边，字从它后面接着排、折行回到行首。 */
 function SettingRow({
+  insert,
   onEdit,
   readOnly,
   setting,
 }: {
+  insert: FilmTextInsert | undefined
   onEdit: FilmScriptProps['onEdit']
   readOnly: boolean
   setting: FilmSetting
@@ -311,6 +346,7 @@ function SettingRow({
       )}
       <FilmTextEditor
         aria-label={name}
+        insert={insert}
         onChange={(text) => {
           if (target !== null) onEdit(target, name, { kind: 'text', text })
         }}
@@ -334,12 +370,17 @@ const splitPadding = (text: string): Padded => {
 /** 镜头正文：台词前后的文字各是一段，台词单独一行。只有空白的那段不画（排版留下的换行），正在改的那段照画，
  * 删空了也不会从手底下消失；整镜都没有字时画第一段，好往里写。 */
 function ShotBody({
+  insertOf,
   label,
+  lead,
   onEdit,
   readOnly,
   shot,
 }: {
+  insertOf: (key: string) => FilmTextInsert | undefined
   label: string
+  /** 开头机位图的引用「参考@ImageN，」：选用了机位图的镜头才有，删不掉、挪不动。 */
+  lead: string | undefined
   onEdit: FilmScriptProps['onEdit']
   readOnly: boolean
   shot: FilmShot
@@ -396,6 +437,8 @@ function ShotBody({
               >
                 <FilmTextEditor
                   aria-label={`${label}的描述`}
+                  insert={target === null ? undefined : insertOf(`${target}#${String(index)}`)}
+                  lockedLead={index === 0 ? lead : undefined}
                   onChange={(text) => {
                     setEmitted((current) => new Map(current).set(index, { ...part, core: text }))
                     change({
