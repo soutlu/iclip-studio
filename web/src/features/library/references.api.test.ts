@@ -43,6 +43,7 @@ describe('createReference', () => {
     document: null,
     errorCode: null,
     id: '5ef00000-0000-4000-8000-000000000042',
+    testVideo: null,
     updatedAt: '2026-09-23T12:00:00Z',
     userName: 'tester',
     version: 1,

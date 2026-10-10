@@ -2702,7 +2702,7 @@ export type ReferenceVideoItemOut = {
 /**
  * ReferenceVideoOut
  *
- * 一条参考视频，连同当前拆解。
+ * 一条参考视频，连同当前拆解与最新的一次试生成。
  */
 export type ReferenceVideoOut = {
   /**
@@ -2790,6 +2790,7 @@ export type ReferenceVideoOut = {
    * Id
    */
   id: string
+  testVideo: TestVideoOut | null
   /**
    * Updatedat
    */
@@ -3516,6 +3517,46 @@ export type TasksPageOut = {
    * Total
    */
   total: number
+}
+
+/**
+ * TestVideoIn
+ *
+ * 试生成的请求：画幅由调用方定，其余参数服务端定。
+ */
+export type TestVideoIn = {
+  /**
+   * Aspectratio
+   */
+  aspectRatio: '9:16' | '16:9' | '1:1' | '3:4' | '4:3'
+}
+
+/**
+ * TestVideoOut
+ *
+ * 属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。
+ */
+export type TestVideoOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Errormessage
+   */
+  errorMessage: string | null
+  /**
+   * Stale
+   */
+  stale: boolean
+  /**
+   * Status
+   */
+  status: 'running' | 'completed' | 'failed'
+  /**
+   * Url
+   */
+  url: string | null
 }
 
 /**
@@ -7158,6 +7199,38 @@ export type RerunReferenceReferencesReferenceIdBreakdownsPostResponses = {
 
 export type RerunReferenceReferencesReferenceIdBreakdownsPostResponse =
   RerunReferenceReferencesReferenceIdBreakdownsPostResponses[keyof RerunReferenceReferencesReferenceIdBreakdownsPostResponses]
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData = {
+  body: TestVideoIn
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}/test-generations'
+}
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostError =
+  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors]
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
+  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses]
 
 export type ListTasksTasksGetData = {
   body?: never
