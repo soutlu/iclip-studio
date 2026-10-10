@@ -55,11 +55,13 @@ type FrameImageEditorProps = {
    * null 只出现在 `currentUrl` 可以为 null 的地方：从没有在用的图第一次选用，或撤销回没有在用的图。 */
   onApply: (previousUrl: string | null, url: string | null) => Promise<void>
   /** 按描述再生成（制作页的生成图才有）：`parts` 是这张图的描述，参考图是图片；`submit` 收输入卡里的样子，
-   * 失败时抛出给人看的原因。新的出来进版本条，选用才用上。 */
+   * 失败时抛出给人看的原因。新的出来进版本条，选用才用上。`blocked` 是此刻不能再生成的原因（如参考图尚未选用），
+   * 给了就在输入卡上方写出来，提交按钮置灰、回车不提交。 */
   regenerate?:
     | {
         parts: readonly EditDraftPart[]
         submit: (parts: EditDraftPart[]) => Promise<void>
+        blocked?: string | undefined
       }
     | undefined
 }
@@ -186,7 +188,7 @@ export function FrameImageEditor({
     }
   }
   const submitRegenerate = async (parts: EditDraftPart[]) => {
-    if (regenerate === undefined) return
+    if (regenerate === undefined || regenerate.blocked !== undefined) return
     setOperationError(null)
     try {
       await regenerate.submit(parts)
@@ -389,6 +391,9 @@ export function FrameImageEditor({
             />
           ) : null}
           {operationError !== null ? <InlineAlert message={operationError} /> : null}
+          {regenerating && regenerate.blocked !== undefined ? (
+            <p className="text-body-sm text-error">{regenerate.blocked}</p>
+          ) : null}
           {regenerating ? (
             <EditComposer
               key={REGENERATE_KEY}
@@ -410,6 +415,7 @@ export function FrameImageEditor({
               onSubmit={submitRegenerate}
               // 模型与画幅照文件里写的，这里不选。
               settings={null}
+              submitBlocked={regenerate.blocked !== undefined}
             />
           ) : (
             <EditComposer

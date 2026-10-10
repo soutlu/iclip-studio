@@ -1,11 +1,12 @@
 /** 制作页上挂分镜页的图片编辑器：开在工程里的一张图上，版本条列这张图的全部生成与编辑（`film_node`），
  * 选中一版点「选用这张」就是选用它，撤销回到上一个选用（或回到没有图），用到它的地方一起换。没选用的生成图
  * 也能打开，这时没有「在用」那一格。按描述生成的图版本条末尾有「再生成」：输入卡装着这张图的描述，改过的只用
- * 这一次。关掉后焦点回到点开它的地方。 */
+ * 这一次；这张图的参考图有没选用的就不能再生成，原因与生成卡同一句。关掉后焦点回到点开它的地方。 */
 
 import { FrameImageEditor } from '../image-edit/frame-image-editor'
 import type { GenerationJob } from '../storyboard.api'
 import type { FilmGroup } from './film.api'
+import { missingReferencesText } from './film-content'
 import { promptParts, regeneratePrompt } from './film-images'
 
 /** 打开编辑器的这一次：哪张图、先选中哪条结果、从哪个控件点开。 */
@@ -81,6 +82,8 @@ export function FilmImageEdit({
         original === null
           ? undefined
           : {
+              // 参考图有没选用的就不能再生成，与生成卡同一句原因。
+              blocked: missingReferencesText(frame?.missing ?? []),
               parts: original,
               submit: (parts) => onRegenerate(regeneratePrompt(original, parts)),
             }

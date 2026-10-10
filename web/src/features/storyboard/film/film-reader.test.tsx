@@ -255,7 +255,7 @@ describe('制作页', () => {
 
     expect(copy).toHaveAttribute('aria-disabled', 'true')
     await user.hover(copy)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('正在保存，保存后可复制')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('修改尚未保存，无法复制')
 
     expect(await screen.findByText('已保存')).toBeInTheDocument()
     await waitFor(() => expect(copy).not.toHaveAttribute('aria-disabled'))
@@ -626,6 +626,30 @@ describe('制作页的图片编辑器', () => {
     expect(generations[1]?.prompt?.text).toContain('傍晚，')
     expect(generations[1]?.prompt?.text).toContain('@Image1的脚部特写')
     expect(generations[1]?.prompt?.referenceImageUrls).toHaveLength(1)
+  })
+
+  it('这张图的参考图有没选用的：「再生成」与生成卡一样拦住，写同一句原因，按钮与回车都不提交', async () => {
+    serveImageJobs([
+      shot1Generation({ outputUrl: 'https://example.com/shot1-result.png', status: 'completed' }),
+    ])
+    const { generations } = recordImages()
+    const script = await renderFilm()
+    await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
+    await screen.findByRole('region', { name: '镜头 1的生成结果' })
+    await userEvent.click(screen.getByRole('button', { name: '编辑图片' }))
+    const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
+    const strip = within(editor).getByRole('group', { name: '该图片的版本' })
+    await userEvent.click(within(strip).getByRole('button', { name: '再生成' }))
+
+    expect(editor).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先选用图片')
+    const send = within(editor)
+      .getAllByRole('button', { name: '再生成' })
+      .find((button) => !strip.contains(button))
+    expect(send).toBeDisabled()
+    const box = within(editor).getByRole('textbox', { name: '修改要求' })
+    box.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(generations).toEqual([])
   })
 
   it('生成过、没选用的那张也能开编辑器：选用再撤销，机位图进列表又移出，舞台一直跟着这张图，编号跟着还原', async () => {

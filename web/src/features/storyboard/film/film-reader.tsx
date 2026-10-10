@@ -299,11 +299,12 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          // 后端拼好的正文，与这组出片时发的逐字相同；有没存下的改动时它还是旧的，存好之前不让复制。
+          // 后端拼好的正文，与这组出片时发的逐字相同；有没存下的改动时（保存中、保存失败、版本冲突）它还是旧的，
+          // 存好之前不让复制，几种情况同一句原因。
           copy={{
             blocked:
               draft.hasUnsavedChanges || draft.state.kind === 'saving'
-                ? '正在保存，保存后可复制'
+                ? '修改尚未保存，无法复制'
                 : undefined,
             done: '已复制完整提示词',
             label: '复制完整提示词',
