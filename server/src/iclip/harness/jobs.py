@@ -56,6 +56,9 @@ _ACTIVE: Final = ("running", "awaiting")
 _LIVE: Final = ("running", "awaiting", "queued")
 """队列管理的状态；steered 已交由运行侧管理。"""
 
+STEERED_ABORT_CONFLICT: Final = "这条消息已经递进当前这一轮了，要停就停整段对话"
+"""单条停止一条已插进当前一轮的消息时的冲突说明；内容已交给框架，撤不回来。"""
+
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
 agent_jobs_table = Table(
@@ -323,7 +326,7 @@ class JobQueue:
             }
 
     async def steered_prompts(self, conversation_id: str) -> tuple[SteeredPrompt, ...]:
-        """本会话插过话的消息，按插话先后；退回队列的行插话时间已清空，自然不在其中。"""
+        """本会话插过话的消息，按插话先后；只有确认递进模型的行才有插话时间。"""
 
         stmt = (
             select(agent_jobs_table)
@@ -483,13 +486,18 @@ class JobQueue:
         if row is None or row.conversation_id != conversation_id:
             raise NotFound(f"没有这条消息：{prompt_id}")
         if row.status == "steered":
-            raise Conflict("这条消息已经递进当前这一轮了，要停就停整段对话")
+            raise Conflict(STEERED_ABORT_CONFLICT)
         if row.status != "running":
             raise Conflict("这条消息已经结束了，停不了")
         return row
 
-    async def abort_queued(self, conversation_id: str, *, now: datetime) -> tuple[JobRow, ...]:
-        """单条 UPDATE 撤回全部排队消息，避免逐条更新期间队首被 start_next 启动。"""
+    async def abort_queued(
+        self, conversation_id: str, *, now: datetime, only: tuple[str, ...] | None = None
+    ) -> tuple[JobRow, ...]:
+        """单条 UPDATE 撤回排队消息，避免逐条更新期间队首被 start_next 启动。
+
+        only 给出时只撤这几条，其余排队消息不动；已不在 queued 的行跳过。
+        """
 
         stmt = (
             update(agent_jobs_table)
@@ -498,6 +506,8 @@ class JobQueue:
             .values(status="aborted", finished_at=now)
             .returning(agent_jobs_table)
         )
+        if only is not None:
+            stmt = stmt.where(agent_jobs_table.c.prompt_id.in_(only))
         return await self._all(stmt)
 
     async def pick_for_steer(
@@ -520,7 +530,10 @@ class JobQueue:
     async def mark_steered(
         self, prompt_ids: tuple[str, ...], *, run_id: str, now: datetime
     ) -> tuple[JobRow, ...]:
-        """递入内容前先记录 steered 与 run_id，确保运行结束时能将未消费消息退回队列。"""
+        """框架确认插话已进入消息历史后记录 steered、run_id 与插话时间。
+
+        只改仍 queued 的行：递入前已被撤回的行原样跳过，不计入返回。
+        """
 
         stmt = (
             update(agent_jobs_table)
@@ -541,18 +554,6 @@ class JobQueue:
             .where(agent_jobs_table.c.run_id == run_id)
             .where(agent_jobs_table.c.status == "steered")
             .values(status=status, finished_at=now)
-            .returning(agent_jobs_table)
-        )
-        return await self._all(stmt)
-
-    async def requeue_steered(self, prompt_ids: tuple[str, ...]) -> tuple[JobRow, ...]:
-        """将运行结束时未消费的插话退回 queued。"""
-
-        stmt = (
-            update(agent_jobs_table)
-            .where(agent_jobs_table.c.prompt_id.in_(prompt_ids))
-            .where(agent_jobs_table.c.status == "steered")
-            .values(status="queued", run_id=None, steered_at=None)
             .returning(agent_jobs_table)
         )
         return await self._all(stmt)
@@ -816,6 +817,7 @@ def _row(row: object) -> JobRow:
 
 __all__ = [
     "DB_SCHEMA",
+    "STEERED_ABORT_CONFLICT",
     "ActivityChanged",
     "JobQueue",
     "JobQueueView",

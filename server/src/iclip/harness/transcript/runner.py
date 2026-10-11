@@ -2,7 +2,8 @@
 
 停止使用 cancellation_token，确保框架发送终态；task.cancel() 无法进入其常规异常收尾。
 插话通过 capability 捕获 RunContext，并立即 enqueue(asap)，让框架结束前的 drain 能消费晚到消息。
-未消费消息在收尾时退回队列。
+递入后消息仍是 queued，框架以 EnqueuedMessagesEvent 确认它进了消息历史才记为 steered；
+没递进去的留在队列，由下一轮处理。
 审批以 DeferredToolRequests 结束 run，持久化快照与 awaiting 状态，决定齐备后启动续跑。
 运行独立于提交请求和客户端连接。
 """
@@ -11,16 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 import structlog
 from pydantic_ai import Agent, CancellationToken, ToolFailed
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, on_event
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
+    EnqueuedMessagesEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -35,7 +38,7 @@ from iclip.harness.agents import DELEGATE_TOOL
 from iclip.harness.background import interrupt_stale_receipts
 from iclip.harness.context_compaction import ContextCompaction
 from iclip.harness.job_status import JobStatus
-from iclip.harness.jobs import JobQueue, JobRow
+from iclip.harness.jobs import STEERED_ABORT_CONFLICT, JobQueue, JobRow
 from iclip.harness.transcript.from_messages import (
     ORPHAN_TOOL_ERROR,
     run_ids_from_messages,
@@ -140,27 +143,35 @@ def _seed_ops(
 
 @dataclass
 class _RunHandle(AbstractCapability[Any]):
-    """捕获 RunContext 以递入消息；pending_messages 为 run 级共享列表，首次 context 可供整轮使用。"""
+    """捕获 RunContext 以递入消息，并把框架的递入确认转给 runner。
 
+    pending_messages 为 run 级共享列表，首次 context 可供整轮使用。
+    """
+
+    delivered: Callable[[str], Awaitable[None]]
+    """框架确认某次入队的内容进了消息历史后调用，参数为入队 id。"""
     ctx: RunContext[Any] | None = None
 
     async def before_run(self, ctx: RunContext[Any]) -> None:
         self.ctx = ctx
 
     def deliver(self, content: list[UserContent]) -> str | None:
-        """整条递入多模态追加并返回入队 id；运行 context 尚未就绪时返回 None。"""
+        """整条递入多模态追加并返回入队 id。
+
+        运行 context 尚未就绪，或框架末次 drain 已关上队列时返回 None，调用方把消息留在队列。
+        """
 
         if self.ctx is None:
             return None
-        return self.ctx.enqueue(*content, priority="asap")
+        try:
+            return self.ctx.enqueue(*content, priority="asap")
+        except UserError:
+            # 框架只在 run 结束后拒收；此时运行还没从 runner 摘下，由它的收尾启动队首。
+            return None
 
-    def undelivered(self, enqueue_ids: Iterable[str]) -> tuple[str, ...]:
-        """返回仍在框架队列中等待消费的入队 id。"""
-
-        if self.ctx is None or self.ctx.pending_messages is None:
-            return tuple(enqueue_ids)
-        waiting = {message.enqueue_id for message in self.ctx.pending_messages}
-        return tuple(item for item in enqueue_ids if item in waiting)
+    @on_event(EnqueuedMessagesEvent)
+    async def acknowledge(self, ctx: RunContext[Any], event: EnqueuedMessagesEvent) -> None:
+        await self.delivered(event.enqueue_id)
 
 
 @dataclass(slots=True)
@@ -174,7 +185,9 @@ class _Active:
     token: CancellationToken
     handle: _RunHandle
     steered: dict[str, str] = field(default_factory=dict[str, str])
-    """框架入队 id 到 prompt id 的映射，供收尾处理插话。"""
+    """框架入队 id 到 prompt id 的映射，供确认递入与投影标注插话。"""
+    pending: set[str] = field(default_factory=set[str])
+    """已在这次运行入队、框架还没确认递入的 prompt id；这些行仍是 queued。"""
 
 
 class ConversationRunner:
@@ -318,8 +331,14 @@ class ConversationRunner:
     # --- 人机往返 -----------------------------------------------------------
 
     async def abort(self, conversation_id: str, prompt_id: str) -> None:
-        """在已授权会话内停止消息：排队或审批直接撤回，活跃运行通过框架取消。"""
+        """在已授权会话内停止消息：排队或审批直接撤回，活跃运行通过框架取消。
 
+        已插进当前一轮、等框架递入的消息抛 Conflict，与已递入的同一口径：内容撤不出框架队列。
+        """
+
+        active = self._active.get(conversation_id)
+        if active is not None and prompt_id in active.pending:
+            raise Conflict(STEERED_ABORT_CONFLICT)
         row = await self._queue.abort(prompt_id, conversation_id=conversation_id, now=_now())
         if row.status == "aborted":
             self._publish(row)
@@ -346,9 +365,10 @@ class ConversationRunner:
             await self.abort(conversation_id, waiting.prompt_id)
 
     async def steer(self, conversation_id: str, prompt_ids: tuple[str, ...]) -> None:
-        """先验证插话，再记录 steered，最后同步递入内容。
+        """验证插话后把内容递入当前运行；消息保持 queued，等框架确认递入再记为 steered。
 
-        若运行已结束，将消息退回 queued 并显式启动队首；原运行的 start_next 可能已执行。
+        已在这次运行里等递入的消息跳过，重复插话只入队一次。递不进去的消息留在队列：
+        运行还登记着时由它收尾启动队首，已摘下时在此启动。
         """
 
         active = self._active.get(conversation_id)
@@ -359,32 +379,33 @@ class ConversationRunner:
                 raise Conflict("这段对话在等审批，插不进去")
             raise Conflict("这段对话现在没有在跑的运行，插不进去")
         picked = await self._queue.pick_for_steer(conversation_id, prompt_ids)
-        moved = await self._queue.mark_steered(
-            tuple(row.prompt_id for row in picked), run_id=active.run_id, now=_now()
-        )
         if self._active.get(conversation_id) is not active:
-            await self._revert(tuple(row.prompt_id for row in moved))
-            # 原运行已完成 start_next，退回后须再次唤醒队列。
+            # 验证期间运行已收尾，它的 start_next 可能早于验证执行，须再次唤醒队列。
             await self._start_next(conversation_id)
             return
-        # _active 可能早于 context 就绪；递入失败时退回队列，避免未消费消息被标记完成。
-        undeliverable: list[str] = []
-        for row in moved:
+        for row in picked:
+            if row.prompt_id in active.pending:
+                continue
             enqueue_id = active.handle.deliver(model_prompt(row.content))
             if enqueue_id is None:
-                undeliverable.append(row.prompt_id)
                 continue
             active.steered[enqueue_id] = row.prompt_id
-            self._publish(row)
-        await self._revert(tuple(undeliverable))
+            active.pending.add(row.prompt_id)
 
-    async def _revert(self, prompt_ids: tuple[str, ...]) -> None:
-        """将未消费的插话退回队列，由调用方启动下一条。"""
+    async def _acknowledge(self, active: _Active, enqueue_id: str) -> None:
+        """框架确认插话进了消息历史后记为 steered 并广播；别处的入队 id 不予理会。
 
-        if not prompt_ids:
+        递入前已被撤回的行 mark_steered 不改动。写库失败照常抛出、让运行失败：
+        内容已在历史里，行若留在 queued 会被当成新一轮再跑一遍。
+        """
+
+        prompt_id = active.steered.get(enqueue_id)
+        if prompt_id is None:
             return
-        for row in await self._queue.requeue_steered(prompt_ids):
+        for row in await self._queue.mark_steered((prompt_id,), run_id=active.run_id, now=_now()):
             self._publish(row)
+        # 写库完成后才移出：此前单条停止仍按「已递进这一轮」拒绝，不会抢先把行撤掉。
+        active.pending.discard(prompt_id)
 
     async def approve(self, conversation_id: str, interaction_id: str, *, approved: bool) -> None:
         """持久化审批决定，齐备后通过 CAS 启动唯一续跑。
@@ -510,12 +531,12 @@ class ConversationRunner:
                 # 开跑前就失了租：没调模型，插话与终态都归新持有者或清扫处理。
                 pass
             elif status == "awaiting":
-                # 审批等待不结束轮次或启动下一条；插话保留 steered，由续跑 adopt_steered 接管。
-                # 框架在收尾前已 drain asap 消息，审批等待时没有未消费插话。
+                # 审批等待不结束轮次或启动下一条；已递入的插话保留 steered，由续跑 adopt_steered
+                # 接管。框架在收尾前已 drain asap 消息，之后到达的插话留在队列，续跑结束后再跑。
                 pass
             # 关停取消时释放租约供续跑；与用户停止同时发生时，也按此路径处理。
             elif self._closing and status == "aborted":
-                await self._release(row, active)
+                await self._release(row)
             else:
                 await self._settle(active, status=status)
                 await self._queue.finish(
@@ -530,13 +551,12 @@ class ConversationRunner:
                     self._publish(settled)
                 await self._start_next(row.conversation_id)
 
-    async def _release(self, row: JobRow, active: _Active | None) -> None:
+    async def _release(self, row: JobRow) -> None:
         """关停时释放租约并保留 running。
 
-        未消费插话退回 queued，已消费插话保留 steered，由后续运行接管。
+        已递入的插话保留 steered，由续跑接管；没递入的本就是 queued，续跑结束后再跑。
         """
 
-        await self._revert_stranded(active)
         await self._queue.release(
             row.prompt_id,
             locked_by=self.locked_by,
@@ -546,16 +566,6 @@ class ConversationRunner:
         released = await self._queue.get(row.prompt_id)
         if released is not None:
             self._publish(released)
-
-    async def _revert_stranded(self, active: _Active | None) -> None:
-        """退回未消费插话，已消费项留待续跑认领。"""
-
-        if active is None:
-            return
-        stranded = active.handle.undelivered(active.steered)
-        if stranded:
-            _logger.info("这几条追加没赶上这一轮，退回队列", steers=stranded)
-            await self._revert(tuple(active.steered[item] for item in stranded))
 
     def _spawn_turn_started(self, row: JobRow) -> None:
         """在后台执行这一轮的开场动作，不让它拖住这一轮的运行。"""
@@ -585,15 +595,18 @@ class ConversationRunner:
             _logger.exception("这次运行的开场动作没做完", prompt_id=row.prompt_id, run_id=run_id)
 
     async def _settle(self, active: _Active | None, *, status: JobStatus) -> None:
-        """先将未消费插话退回队列，再更新已消费项的终态。
+        """将已递入的插话更新为运行终态；没递入的留在队列，由随后的 start_next 当作新一轮。
 
-        用户停止时全部撤回，避免未消费插话立即作为新轮次运行。
+        用户停止时没递入的也一并撤回，避免未消费插话立即作为新轮次运行。
         """
 
         if active is None:
             return
-        if status != "aborted":
-            await self._revert_stranded(active)
+        if status == "aborted" and active.pending:
+            for row in await self._queue.abort_queued(
+                active.conversation_id, now=_now(), only=tuple(active.pending)
+            ):
+                self._publish(row)
         for child in await self._queue.settle_steered(active.run_id, status=status, now=_now()):
             self._publish(child)
 
@@ -640,13 +653,16 @@ class ConversationRunner:
         if not awaiting and resumed is None:
             self._spawn_turn_started(row)
 
+        async def delivered(enqueue_id: str) -> None:
+            await self._acknowledge(active, enqueue_id)
+
         active = _Active(
             prompt_id=row.prompt_id,
             conversation_id=row.conversation_id,
             run_id=run_id,
             turn_id=turn_id,
             token=CancellationToken(),
-            handle=_RunHandle(),
+            handle=_RunHandle(delivered=delivered),
         )
         # 先登记控制句柄，再启动引擎，以接收首事件前的停止和插话。
         self._active[row.conversation_id] = active
