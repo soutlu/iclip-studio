@@ -323,9 +323,10 @@ async def test_stream_records_parent_and_subagent_runs(tmp_path: Path) -> None:
         await drive(registry, "producer")
 
     runs = await step_store.list_runs()
-    # 顶层与子代理都不设 agent_name，落库 id 与消息 run_id 一致；子代理的名字放 metadata。
+    # StepPersistence 不显式设 agent_name，落库 id 与消息 run_id 一致；
+    # 运行记录的 agent_name 由框架取 Agent 自身名字，页面用的子代理档案仍放 metadata。
     assert [run.run_id for run in runs] == ["run-1", runs[1].run_id]
-    assert [run.agent_name for run in runs] == [None, None]
+    assert [run.agent_name for run in runs] == ["producer", "shot-writer"]
     assert runs[1].metadata["agent_name"] == "shot-writer"
     assert runs[0].conversation_id == "c1"
     assert runs[1].parent_run_id == runs[0].run_id
