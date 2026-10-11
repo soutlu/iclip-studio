@@ -13,8 +13,8 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from pydantic_ai import Agent, Tool
-from pydantic_ai.exceptions import ModelRetry
+from pydantic_ai import Agent, RunContext, Tool
+from pydantic_ai.exceptions import ApprovalRequired, ModelRetry
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     ModelMessage,
@@ -521,10 +521,12 @@ BREAKDOWN_DONE = "视频拆解完毕，文档在 references/ref.md。"
 BREAKDOWN_ARGS = '{"video_url": "https://cdn.test/ref.mp4"}'
 
 
-def slow_breakdown(release: asyncio.Event) -> Tool[Any]:
-    """后台跑的拆解：等测试放行才返回。"""
+def slow_breakdown(release: asyncio.Event, entered: asyncio.Event | None = None) -> Tool[Any]:
+    """后台跑的拆解：等测试放行才返回；给了 entered 就在进入工具体时置位。"""
 
     async def breakdown_video(video_url: str) -> str:
+        if entered is not None:
+            entered.set()
         await release.wait()
         return BREAKDOWN_DONE
 
@@ -729,6 +731,83 @@ async def test_stopping_during_a_background_breakdown_interrupts_the_call(
     ]
     assert [turn.state for turn in live.items] == ["cancelled", "completed"]
     assert _breakdown_card(live).error == ORPHAN_TOOL_ERROR
+
+
+def breaks_down_and_writes(reply: str) -> FunctionModel:
+    """首个请求在同一响应里调后台拆解和一件要审批的写文件，之后的请求直接答。"""
+
+    asked = 0
+
+    async def stream(
+        _messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal asked
+        asked += 1
+        if asked == 1:
+            yield {
+                0: _breakdown_call(),
+                1: DeltaToolCall(name="write_file", json_args="{}", tool_call_id="call_1"),
+            }
+        else:
+            yield reply
+
+    return FunctionModel(stream_function=stream)
+
+
+def approved_write_after(entered: asyncio.Event) -> Tool[Any]:
+    """要审批的写文件：等后台拆解进了工具体，才要求审批、让这次 run 停下。
+
+    不等就停，暂停取消后台任务时它可能还在持久化钩子里写库，这次运行转不进 awaiting。
+    """
+
+    async def write_file(ctx: RunContext[Any]) -> str:
+        if not ctx.tool_call_approved:
+            await entered.wait()
+            raise ApprovalRequired
+        return "写好了"
+
+    return Tool(write_file, name="write_file")
+
+
+async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approval_open(
+    engine: AsyncEngine,
+) -> None:
+    never, entered = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        breaks_down_and_writes("改完了"),
+        store=store,
+        tools=[slow_breakdown(never, entered), approved_write_after(entered)],
+        capabilities=[BackgroundTools()],
+        display=DISPLAYS,
+        context_limits={},
+    )
+    conversation_id = new_conversation_id()
+
+    prompt_id = await submit_text(runner, queue, conversation_id, "拆一下视频，再改文件")
+    await awaits(queue, prompt_id)
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    # 暂停时没跑完的后台调用被丢掉，卡收成中断；等审批的卡带着审批 id 保持开放。
+    assert live.items[0].state == "running"
+    card = _breakdown_card(live)
+    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+    approval = _breakdown_card(live, "call_1")
+    assert (approval.state, approval.approval_id) == ("running", "apr_call_1")
+
+    await runner.approve(conversation_id, "apr_call_1", approved=True)
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    assert live.items[0].state == "completed"
+    assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2"]
+    card = _breakdown_card(live)
+    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+    approval = _breakdown_card(live, "call_1")
+    assert (approval.state, approval.approval_id) == ("done", "apr_call_1")
+    assert frames_of(live, "t1", "t1.2")[0].text == "改完了"
 
 
 async def _receipt_without_outcome(run_id: str) -> list[ModelMessage]:
