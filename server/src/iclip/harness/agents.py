@@ -186,7 +186,6 @@ def _build_subagents(
         # 禁用磁盘扫描，避免个人 .agents/.claude 目录中的 Agent 定义进入运行环境。
         agent_folders=None,
         # 共享的只有 transcript 镜像；业务能力仍按子代理各自声明。
-        # 工具统一经 capability 挂载；inherit_tools 仅影响直接注册的 toolset。
         shared_capabilities=[mirror],
     )
 

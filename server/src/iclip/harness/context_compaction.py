@@ -1,6 +1,7 @@
 """通过 CompactionPart 标记摘要边界，保留完整历史。
 
-before_model_request 将边界写入历史；wrap_model_request 仅裁剪发往模型的窗口。
+before_model_request 超线时把边界同时写入持久历史（ctx.messages）与本次请求，
+再把每次请求都换成最新边界后的窗口；持久历史只多出边界，不删原始消息。
 SummarizingCompaction 提供摘要和工具对完整的切点，触发条件由本模块控制。
 摘要以 user 消息置于 instructions 之后，适配 Chat Completions。
 """
@@ -14,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from pydantic_ai.capabilities import AbstractCapability, WrapModelRequestHandler
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     CompactionPart,
     ModelMessage,
@@ -104,30 +105,46 @@ class ContextCompaction(AbstractCapability[Any]):
     async def before_model_request(
         self, ctx: RunContext[Any], request_context: ModelRequestContext
     ) -> ModelRequestContext:
-        """超过阈值时插入摘要边界；最近响应的 input_tokens 对应上次实际发送的窗口。"""
+        """每次请求都换成最新边界后的模型窗口；历史超过阈值时先插入新边界。"""
 
-        messages = request_context.messages
+        request = await self._compact(ctx, request_context)
+        # 没超线也要裁剪，否则两次压缩之间的请求会发出完整历史。
+        return dataclasses.replace(request_context, messages=model_window(request))
+
+    async def _compact(
+        self, ctx: RunContext[Any], request_context: ModelRequestContext
+    ) -> list[ModelMessage]:
+        """超过阈值时把摘要边界插入持久历史，返回同样插好边界的本次请求消息。
+
+        ctx.messages 就是持久历史，request_context.messages 只代表本次请求、钩子返回后不写回；
+        两者装的是同一批消息对象，按对象身份在两边定位同一切点。
+        最近响应的 input_tokens 对应上次实际发送的窗口，阈值据此估算。
+        """
+
+        history = ctx.messages
+        request = list(request_context.messages)
         if (
             estimate_context_tokens(
-                messages, model_request_parameters=request_context.model_request_parameters
+                history, model_request_parameters=request_context.model_request_parameters
             )
             <= self.max_tokens
         ):
-            return request_context
+            return request
 
-        window = summarizer_input(messages)
+        window = summarizer_input(history)
         result = await self.strategy.compact(window, ctx)
         if result is window:
             # 保留尾部消息后，没有可摘要的内容。
-            _logger.info("历史超线但切不动，这次不压", run_id=ctx.run_id, messages=len(messages))
-            return request_context
+            _logger.info("历史超线但切不动，这次不压", run_id=ctx.run_id, messages=len(history))
+            return request
 
         summary = _summary_of(result[0])
-        index = _cut_index(messages, result[1:])
+        preserved = result[1:]
+        index = _cut_index(history, preserved)
         boundary = ModelResponse(
             parts=[CompactionPart(content=summary, provider_name=ctx.model.system)],
             # 使用切点消息的 run_id；框架合并时保留前一消息的 id，避免历史响应被归入当前轮。
-            run_id=messages[index].run_id if index < len(messages) else ctx.run_id,
+            run_id=history[index].run_id if index < len(history) else ctx.run_id,
             # 显式记录时间；框架仅为末条请求补充运行元数据。
             timestamp=datetime.now(UTC),
         )
@@ -135,24 +152,12 @@ class ContextCompaction(AbstractCapability[Any]):
             "历史压成摘要",
             run_id=ctx.run_id,
             boundary_index=index,
-            messages_before=len(messages),
+            messages_before=len(history),
         )
-        messages.insert(index, boundary)
+        history.insert(index, boundary)
+        request.insert(_cut_index(request, preserved), boundary)
         self.on_compaction(summary)
-        return request_context
-
-    async def wrap_model_request(
-        self,
-        ctx: RunContext[Any],
-        *,
-        request_context: ModelRequestContext,
-        handler: WrapModelRequestHandler,
-    ) -> ModelResponse:
-        """复制请求 context 并替换为模型窗口，保持完整历史不变。"""
-
-        return await handler(
-            dataclasses.replace(request_context, messages=model_window(request_context.messages))
-        )
+        return request
 
 
 def _summary_of(message: ModelMessage) -> str:
