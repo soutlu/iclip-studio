@@ -9,7 +9,7 @@
 | 命令 | 用途 |
 |---|---|
 | `make setup` | 安装后端与前端依赖 |
-| `make dev` | 启动后端；环境准备见 [README.md](README.md#启动指南) |
+| `make dev` | 启动后端；环境准备见[本地启动](docs/deploy.md#本地启动) |
 | `make db-upgrade` | 执行 Alembic 迁移；服务启动不自动建表 |
 | `make check` | 后端 lint、格式、类型、依赖边界、常规测试，以及合同与文档对账；CI 已包含这些检查，本地不必跑 |
 | `make web-check` | 前端 `ci:check`；CI 已包含这些检查，本地不必跑 |
@@ -19,7 +19,7 @@
 | `make docs-check` | 核对 Markdown 相对链接与 make 目标 |
 | `make hooks` | 安装本地 pre-commit / pre-push hooks |
 
-`make up` 调用本机维护、不入库的 `scripts/dev-up.sh`；新检出的仓库使用 README 的启动步骤。
+`make up` 调用本机维护、不入库的 `scripts/dev-up.sh`；新检出的仓库按[本地启动](docs/deploy.md#本地启动)的步骤。
 
 本地只跑与改动相关的检查，通过后再推送；生产构建与全量 e2e 交给 CI，不在本地重复。
 
@@ -102,12 +102,13 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 | 文档 | 何时读 | 内容与更新时机 |
 |---|---|---|
-| [README.md](README.md) | 本地启动或部署服务器前 | 简介、本地启动与服务器部署步骤变化时更新 |
+| [README.md](README.md) | 了解项目时 | 项目背景与架构变化时更新 |
 | [AGENTS.md](AGENTS.md) | 任何改动前 | 全仓操作与开发规则变化时更新 |
 | [web/AGENTS.md](web/AGENTS.md) | 修改前端时 | 前端命令、目录职责、边界、验证要求变化时更新 |
 | [docs/CONTEXT.md](docs/CONTEXT.md) | 任何改动前 | 两端共用的领域术语、不变量和禁止逻辑变化时更新 |
 | [docs/architecture.md](docs/architecture.md) | 修改后端时 | 后端分层、职责和装配机制变化时更新 |
 | [docs/adr/](docs/adr/) | 新增或修改 ADR 前 | 已接受的架构决策与取舍，编写规则见目录内 README；决策变化时新增一篇并标明取代关系 |
+| [docs/deploy.md](docs/deploy.md) | 本地启动、部署或升级服务器前 | 本地启动、服务器部署、升级与改配置步骤变化时更新 |
 | [docs/release.md](docs/release.md) | 发版、热修、热修回流或修改镜像流水线前 | 发版与热修步骤、版本号规则、镜像构建与上传流水线、仓库配置变化时更新 |
 | [contract/openapi.json](contract/openapi.json) | 调用或修改端点前 | 后端端点变更后由 `make contract` 导出 |
 | [contract/conventions.md](contract/conventions.md) | 修改端点或跨端约定前 | OpenAPI 无法表达的跨端约定变化时更新 |

@@ -1,54 +1,69 @@
 # Productor — iclip-studio
 
-Productor 的后端与 Web 前端。产品定位、业务术语和不变量见 [docs/CONTEXT.md](docs/CONTEXT.md)，开发约定与文档地图见 [AGENTS.md](AGENTS.md)。
+Productor 是一款 AI 视频创作产品，用来做商品短视频。用户在网页上和 AI agent 对话：先拆解一条参考视频，再写出分镜和每个镜头的提示词，然后生成镜头图片和视频，最后剪辑、合成出成片。本仓库包含它的后端与 Web 前端。
 
-## 启动指南
+## 项目背景
 
-1. 安装 Python、uv、Node.js、pnpm，准备可连接的 PostgreSQL；版本以 [server/pyproject.toml](server/pyproject.toml)、[web/package.json](web/package.json) 与各自 lockfile 为准。Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还需有 `ffmpeg` 和 `ffprobe`。然后执行 `make setup`。
-2. 在仓库根目录创建 `.env`，数据库指向开发库，密钥不入库。必需变量与各能力的启用条件见[配置模型](server/src/iclip/config/models.py)与[配置与装配](docs/architecture.md#2-配置与装配)；启动时会列出缺失的变量名。
-3. 把一份 `server/configs/`（`config.yaml`）与 `server/agents/`（`agents.yaml`、各 agent 目录、`skills/`）放到本机，两者不进仓库，改动保存即生效（见[改配置](#改配置)）。默认的 `storyboard` Agent 需要视频理解、媒体生成与对象存储；只跑基础对话时，去掉这条 Agent 声明与 `config.yaml` 的 `video`、`shot_video` 段，另声明一条不挂这些能力的 Agent。
-4. 迁移并启动后端（已有数据库先备份）：
+创作以团队方式进行：一次视频创作要求记成一张需求单，下发后由成员认领；成员开一段对话就是一次创作尝试，由 AI 完成从拆解到出片的过程。做好的成片收进资料库，下次可以照着做同款。
 
-   ```bash
-   make db-upgrade
-   make dev          # http://localhost:7788，健康检查 /healthz
-   ```
+| 功能 | 说明 |
+|---|---|
+| 对话创作 | 选一个 agent 开始对话，如 AI 导演。agent 拆解参考视频、写分镜和提示词，再调用模型出图、出视频；有哪些 agent 由部署方在配置里声明 |
+| 分镜与制作页 | 查看和修改 agent 写下的分镜与提示词，逐个镜头生成图片和视频 |
+| 编辑图片和视频 | 修改图片，剪辑视频片段，把几段视频合成一条成片 |
+| 创作需求单 | 记录视频规格、商品信息、参考素材和创作说明；下发后可多人认领 |
+| 资料库 | 全站的成片和参考视频，可以照着做同款 |
+| 审计 | 治理者查看产量、成功率、耗时和模型用量 |
+| 开放接口 | 网页上能用的功能同样开放给 API key 调用；另提供按商品品类、品牌查找同类爆款视频的接口 |
 
-5. 另开终端启动前端：
+业务术语与规则见 [docs/CONTEXT.md](docs/CONTEXT.md)。
 
-   ```bash
-   cd web && pnpm dev   # http://localhost:3013，同源 /api 代理到后端
-   ```
+## 项目架构
 
-   只验证前端时用 `pnpm dev:mock`，不连后端；端口与代理目标见[前端启动参数](web/README.md#启动参数)。
+```mermaid
+flowchart LR
+  B[浏览器] --> W["web/<br>React 单页应用"]
+  W -- "/api 同源代理（含 WebSocket）" --> S["server/<br>FastAPI 后端 + Agent 引擎"]
+  K[API 调用方] -- API key --> S
+  S --> DB[("Postgres<br>业务数据与运行记录")]
+  S --> O[("对象存储<br>图片与视频")]
+  S --> M["外部模型<br>对话、视频理解、出图、出视频"]
+  S --> E["企业 SSO / PMS<br>PDM 款目录"]
+```
 
-## 部署
+| 目录 | 内容 |
+|---|---|
+| `server/` | 后端：Python FastAPI 模块化单体，Agent 引擎基于 PydanticAI |
+| `web/` | 前端：Vite + React 单页应用，使用 TanStack Router、TanStack Query 和 Tailwind CSS |
+| `contract/` | 后端导出的 OpenAPI 合同，以及它表达不了的跨端约定 |
+| `deploy/` | 单机部署用的 docker compose 文件 |
+| `docs/` | 业务术语、后端架构、架构决策（ADR）、测试规范、启动部署与发版文档 |
 
-单机部署用 [deploy/compose.yaml](deploy/compose.yaml)：后端 → 前端，镜像从 ACR 拉取，构建与上传见[镜像发布](docs/release.md)。数据库迁移由操作者使用具备 DDL 权限的账号手动执行，部署和服务启动不执行迁移；首次部署或升级涉及表结构变化时，需先完成目标版本的数据库迁移。
+### 后端
 
-1. 服务器要有 NVIDIA 显卡，装好 NVIDIA 驱动与 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)：后端容器按 compose.yaml 申请显卡，本地视频加工用它编解码，申请不到容器起不来。没有显卡的机器删掉 compose.yaml 里 `server` 的 `deploy` 段，加工改用软件。用没用上显卡看启动日志「本地视频编解码已选定」那一条的 `codec`：`nvenc` 即用上了。
-2. Postgres 用服务器现有实例，本项目独占一个库。以管理员建库建账号：
+后端代码在 `server/src/iclip/`，按职责分层，由 `app/` 统一读取配置、装配各模块并管理启停：
 
-   ```sql
-   CREATE ROLE iclip LOGIN PASSWORD '<密码>';
-   CREATE DATABASE iclip OWNER iclip;
-   ```
+| 目录 | 职责 |
+|---|---|
+| `domains/` | 业务模块：身份与权限、对话、生成任务、需求单、资料库、参考视频、审计等 |
+| `harness/` | Agent 运行框架：装配 agent、驱动运行、保存消息、压缩上下文 |
+| `capabilities/` | 给模型调用的工具：读写工作区文件、拆解视频、取帧出图、AI 导演的工程文件 |
+| `platform/` | 共用的技术适配：数据库、对象存储、ffmpeg 媒体处理等 |
+| `app/` | 组合根：读取配置、创建连接、装配模块 |
 
-3. 服务器上建一个目录，放入 `compose.yaml`、`.env`（镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](server/src/iclip/config/models.py)，`DATABASE_URL` 指向上面的库），以及 `configs/`、`agents/` 两个目录（后端只读挂载，镜像里没有）。服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时，把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写与下载桶里的对象走内网；浏览器直传仍用 `OSS_ENDPOINT`。留空则全部走 `OSS_ENDPOINT`。
-4. 拉取并启动：
+几项贯穿全局的设计：
 
-   ```bash
-   docker login <ACR_REGISTRY>   # 与 .env 的 ACR_REGISTRY 相同
-   docker compose pull && docker compose up -d
-   curl http://localhost/api/healthz
-   ```
+- **agent 靠配置声明**：每个 agent 用哪个模型、提示词、skill 和工具，都写在部署方的 `agents.yaml` 与 `config.yaml` 里，这两份配置不进仓库，修改后保存即生效。
+- **对话运行不依赖浏览器连接**：消息先进 Postgres 队列，再由后端执行，关掉页面不会中断运行；运行过程经 WebSocket 实时推给前端。
+- **生成走后台队列**：出图、出视频提交给外部模型，由后台队列跟踪结果；剪辑、合成与抽帧在服务端用 ffmpeg 完成，能用硬件编解码时优先用硬件。
+- **用户与机器共用一套权限**：浏览器用户经企业 SSO 或密码注册登录，机器调用方使用 API key，两者按同一套角色与权限授权。
 
-5. 首个管理员：SSO 场景在 `.env` 设置 `ROOT_EMAIL`，该邮箱首次登录即 root；密码注册场景执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
+分层边界、配置装配、持久化与运行机制见[后端架构](docs/architecture.md)。
 
-后端只跑 1 个 worker，实时订阅在进程内存中。升级：按需手动完成数据库迁移，改 `.env` 的 `IMAGE_TAG`，再 `docker compose pull && docker compose up -d`；数据卷保留。
+### 前端
 
-### 改配置
+前端按业务模块组织页面，接口类型与校验从后端导出的 OpenAPI 合同生成，不手写。目录职责与开发约定见 [web/AGENTS.md](web/AGENTS.md)。
 
-模型、agent、skill 与参考资料只在服务器的 `configs/`、`agents/` 里，不随镜像发版；改文件保存即生效，机制见[配置与装配](docs/architecture.md#2-配置与装配)。写错的原因在 `docker compose logs server` 与 `/healthz` 的 `config` 段；手动重载：`docker compose kill -s HUP server`。
+## 文档
 
-只有两种情况要执行 `docker compose up -d`（`restart` 不重读 `.env`）：改了 `models` 与 agents 以外的配置段（`/healthz` 会标 `needs_restart`），或 `.env` 新增了变量（如新模型用新的 key 变量）。
+本地启动、部署与升级见 [docs/deploy.md](docs/deploy.md)；其余文档的入口见 [AGENTS.md 的文档地图](AGENTS.md#文档地图)。
