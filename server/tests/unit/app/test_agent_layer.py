@@ -11,7 +11,7 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from iclip.app.agent_layer import CurrentAgentLayer
+from iclip.app.agent_layer import CurrentAgentLayer, watch_dirs
 from iclip.app.bootstrap import build_app
 from iclip.config import (
     AppSection,
@@ -228,6 +228,27 @@ async def test_healthz_reports_reload_state(base_env: None, tmp_path: Path) -> N
     assert body["config"]["generation"] == 1
     assert body["config"]["needs_restart"] is True
     assert "security" in body["config"]["error"]
+
+
+def test_existing_skill_library_is_watched_with_the_declaration_dirs(tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    skills.mkdir()
+
+    dirs = watch_dirs(
+        tmp_path / "configs" / "config.yaml", tmp_path / "agents" / "agents.yaml", skills
+    )
+
+    assert dirs == (tmp_path / "configs", tmp_path / "agents", skills)
+
+
+def test_missing_skill_library_is_left_out_of_the_watch(tmp_path: Path) -> None:
+    dirs = watch_dirs(
+        tmp_path / "configs" / "config.yaml",
+        tmp_path / "agents" / "agents.yaml",
+        tmp_path / "skills",
+    )
+
+    assert dirs == (tmp_path / "configs", tmp_path / "agents")
 
 
 async def test_watching_a_directory_reloads_after_a_file_changes(tmp_path: Path) -> None:

@@ -38,7 +38,10 @@ def document() -> dict[str, Any]:
         patch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
         app = build_app(
             load_runtime_config(PLACEHOLDER_CONFIG_DIR / "config.yaml"),
-            agents=load_agent_declarations(PLACEHOLDER_CONFIG_DIR / "agents.yaml"),
+            # 占位注册表是空的，没人声明 skill，skill 库目录不会被查。
+            agents=load_agent_declarations(
+                PLACEHOLDER_CONFIG_DIR / "agents.yaml", skills_dir=PLACEHOLDER_CONFIG_DIR / "skills"
+            ),
             media_codec=SOFTWARE,
         )
         return app.openapi()

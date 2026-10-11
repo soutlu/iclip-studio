@@ -13,8 +13,6 @@ from pydantic import Field
 from iclip.config.models import ConfigSection
 
 INSTRUCTIONS_FILENAME = "instructions.md"
-SKILLS_DIRNAME = "skills"
-"""skill 库：声明文件同级的这个目录，一个子目录一个 skill。"""
 
 
 class CapabilitySection(ConfigSection):
@@ -102,20 +100,22 @@ def _resolve_spec(base_dir: Path, spec: str, *, declared_by: str) -> tuple[Path,
 
 
 def _resolve_skills(
-    base_dir: Path, names: tuple[str, ...], *, declared_by: str
+    library: Path, names: tuple[str, ...], *, declared_by: str
 ) -> SkillMount | None:
-    """将选定技能解析为绝对路径挂载；空列表不挂载，避免依赖进程工作目录。"""
+    """将选定技能挂到已解析的 skill 库；空列表不挂载。
+
+    库只在有人声明 skill 时才检查存在：不挂 skill 的部署可以没有这个目录。
+    """
 
     if not names:
         return None
-    library = (base_dir / SKILLS_DIRNAME).resolve()
     if not library.is_dir():
         raise RuntimeError(f"{declared_by} 声明了 skill，但 skill 库不存在: {library}")
     return SkillMount(library=library, names=names)
 
 
 def _resolve_subagent(
-    base_dir: Path, sub: SubAgentSection, *, declared_by: str
+    base_dir: Path, library: Path, sub: SubAgentSection, *, declared_by: str
 ) -> ResolvedSubAgent:
     spec, instructions = _resolve_spec(base_dir, sub.spec, declared_by=declared_by)
     return ResolvedSubAgent(
@@ -123,7 +123,7 @@ def _resolve_subagent(
         spec=spec,
         instructions=instructions,
         model=sub.model,
-        skills=_resolve_skills(base_dir, sub.skills, declared_by=declared_by),
+        skills=_resolve_skills(library, sub.skills, declared_by=declared_by),
         capabilities=sub.capabilities,
         timeout_seconds=sub.timeout_seconds,
         max_calls=sub.max_calls,
@@ -131,8 +131,12 @@ def _resolve_subagent(
     )
 
 
-def load_agent_declarations(path: Path) -> tuple[ResolvedAgent, ...]:
-    """加载并解析 agent 声明；``agent`` 段为空即空注册表，文件缺失即报错。"""
+def load_agent_declarations(path: Path, *, skills_dir: Path) -> tuple[ResolvedAgent, ...]:
+    """加载并解析 agent 声明；``agent`` 段为空即空注册表，文件缺失即报错。
+
+    ``spec`` 相对声明文件所在目录解析；``skills_dir`` 是 skill 库（一个子目录一个 skill），
+    解析成绝对路径挂载，避免运行期依赖进程工作目录。
+    """
 
     if not path.is_file():
         raise FileNotFoundError(
@@ -146,6 +150,7 @@ def load_agent_declarations(path: Path) -> tuple[ResolvedAgent, ...]:
     declaration = AgentsDeclaration.model_validate(raw)
 
     base_dir = path.parent
+    library = skills_dir.resolve()
     resolved: list[ResolvedAgent] = []
     for agent_id, section in declaration.agent.items():
         spec, instructions = _resolve_spec(base_dir, section.spec, declared_by=f"agent.{agent_id}")
@@ -156,10 +161,12 @@ def load_agent_declarations(path: Path) -> tuple[ResolvedAgent, ...]:
                 spec=spec,
                 instructions=instructions,
                 model=section.model,
-                skills=_resolve_skills(base_dir, section.skills, declared_by=f"agent.{agent_id}"),
+                skills=_resolve_skills(library, section.skills, declared_by=f"agent.{agent_id}"),
                 capabilities=section.capabilities,
                 subagents=tuple(
-                    _resolve_subagent(base_dir, sub, declared_by=f"agent.{agent_id}.subagent")
+                    _resolve_subagent(
+                        base_dir, library, sub, declared_by=f"agent.{agent_id}.subagent"
+                    )
                     for sub in section.subagent
                 ),
             )
@@ -169,7 +176,6 @@ def load_agent_declarations(path: Path) -> tuple[ResolvedAgent, ...]:
 
 __all__ = [
     "INSTRUCTIONS_FILENAME",
-    "SKILLS_DIRNAME",
     "AgentSection",
     "AgentsDeclaration",
     "CapabilitySection",

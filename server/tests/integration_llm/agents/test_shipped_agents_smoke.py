@@ -30,7 +30,9 @@ def shipped_registry() -> AgentRegistry:
     settings = resolve_settings(load_runtime_config(SERVER_DIR / "configs" / "config.yaml"))
     if not settings.models:
         pytest.skip("config.yaml 未声明任何模型")
-    declared = load_agent_declarations(SERVER_DIR / "agents" / "agents.yaml")
+    declared = load_agent_declarations(
+        SERVER_DIR / "agents" / "agents.yaml", skills_dir=SERVER_DIR / "skills"
+    )
     return build_agent_registry(
         tuple(
             AgentDefinition(
