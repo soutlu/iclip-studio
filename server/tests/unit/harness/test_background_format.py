@@ -112,7 +112,7 @@ async def test_only_a_receipt_without_an_outcome_is_interrupted() -> None:
         Tool(_slow_success, name="breakdown_video", metadata={"background": True})
     )
 
-    assert interrupt_stale_receipts(messages) == (messages, ())
+    assert interrupt_stale_receipts(messages) == messages
 
     # 去掉送达结果的那条请求：回执后面再没有结果，就是被停或崩溃时留下的历史。
     dropped = [
@@ -126,11 +126,11 @@ async def test_only_a_receipt_without_an_outcome_is_interrupted() -> None:
             )
         )
     ]
-    repaired, stale = interrupt_stale_receipts(dropped)
+    repaired = interrupt_stale_receipts(dropped)
 
-    assert stale == ("call_bg",)
     (returned,) = _parts(repaired, ToolReturnPart)
-    assert (returned.tool_name, returned.content, returned.outcome) == (
+    assert (returned.tool_call_id, returned.tool_name, returned.content, returned.outcome) == (
+        "call_bg",
         "breakdown_video",
         INTERRUPTED_TOOL_RETURN_CONTENT,
         "interrupted",

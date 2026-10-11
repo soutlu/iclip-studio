@@ -66,13 +66,12 @@ def parse_outcome(part: UserPromptPart) -> BackgroundOutcome | None:
     )
 
 
-def interrupt_stale_receipts(
-    history: Sequence[ModelMessage],
-) -> tuple[list[ModelMessage], tuple[str, ...]]:
-    """把后面没有结果的回执换成框架的 interrupted 返回，交回新历史与被换掉的调用 id。
+def interrupt_stale_receipts(history: Sequence[ModelMessage]) -> list[ModelMessage]:
+    """把后面没有结果的回执换成框架的 interrupted 返回，交回新历史；原历史不改。
 
     持久历史里不会有还活着的后台任务：停止、崩溃或审批暂停都会丢掉没跑完的那次调用。留着回执，
-    模型会以为结果还会来，什么都不做就结束这一步。
+    模型会以为结果还会来，什么都不做就结束这一步。工具卡不用另修：历史重建本来就把没结的卡收成
+    中断。
     """
 
     delivered = {
@@ -83,7 +82,6 @@ def interrupt_stale_receipts(
         if isinstance(part, UserPromptPart)
         if (outcome := parse_outcome(part)) is not None
     }
-    stale: list[str] = []
     repaired: list[ModelMessage] = []
     for message in history:
         closed = (
@@ -100,7 +98,6 @@ def interrupt_stale_receipts(
         if not closed:
             repaired.append(message)
             continue
-        stale.extend(closed)
         parts = [
             ToolReturnPart(
                 tool_name=part.tool_name,
@@ -113,7 +110,7 @@ def interrupt_stale_receipts(
             for part in message.parts
         ]
         repaired.append(replace(message, parts=parts))
-    return repaired, tuple(stale)
+    return repaired
 
 
 __all__ = [
