@@ -8,7 +8,7 @@ DeferredToolRequests 仅结束当前 run，不发轮次终态；历史与审批�
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from dataclasses import KW_ONLY, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -215,8 +215,15 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
             # 取消或失败已发送终态，不能再覆盖为完成。
             return
         if self.deferred is not None:
-            # 审批仅结束当前 run，轮次仍为 running；此处仅补充用量。
-            yield (TurnUpsertOp(turn=self._turn_header(state="running")),)
+            # 审批仅结束当前 run，轮次仍为 running。暂停等的调用保持开放，其余没结果的卡
+            # （如暂停时被丢掉的后台调用）与历史重建一样收成中断。
+            waiting = {
+                part.tool_call_id for part in (*self.deferred.approvals, *self.deferred.calls)
+            }
+            yield (
+                *self._orphan_card_ops(keep_open=waiting),
+                TurnUpsertOp(turn=self._turn_header(state="running")),
+            )
             return
         yield (
             *self._orphan_card_ops(),
@@ -616,12 +623,19 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
             ended_at=None if state == "running" else _now(),
         )
 
-    def _orphan_card_ops(self) -> list[EmittableOperation]:
-        """结束轮次时将无结果工具卡标记为错误，与历史投影一致；审批等待不走此路径。"""
+    def _orphan_card_ops(self, *, keep_open: Collection[str] = ()) -> list[EmittableOperation]:
+        """结束轮次或审批暂停时将无结果工具卡标记为错误，与历史投影一致。
+
+        keep_open 是审批暂停所等的调用，这些卡保持 running。
+        """
 
         ops: list[EmittableOperation] = []
         for tool_call_id, card in self._tool_cards.items():
-            if tool_call_id in self._settled_calls or card.state != "running":
+            if (
+                tool_call_id in self._settled_calls
+                or tool_call_id in keep_open
+                or card.state != "running"
+            ):
                 continue
             ops.append(
                 FrameUpsertOp(
