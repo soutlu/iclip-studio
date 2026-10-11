@@ -132,6 +132,8 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
                 name="breakdown_video",
                 max_retries=BREAKDOWN_RETRIES,
                 args_validator=self._validate_video_url,
+                # 拆一条视频要等几分钟：挂了 BackgroundTools 的 agent 在等待时可以接着干别的。
+                metadata={"background": True},
             )
         )
         self.add_function(self.check_film, name="check_film")

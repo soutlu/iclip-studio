@@ -32,6 +32,7 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 
 from iclip.common.errors import Conflict, NotFound
 from iclip.harness.agents import DELEGATE_TOOL
+from iclip.harness.background import interrupt_stale_receipts
 from iclip.harness.context_compaction import ContextCompaction
 from iclip.harness.job_status import JobStatus
 from iclip.harness.jobs import JobQueue, JobRow
@@ -610,7 +611,10 @@ class ConversationRunner:
         context_window = self._context_limits.get(row.agent_id)
 
         awaiting = row.status == "awaiting"
-        history = await self._messages(row.conversation_id)
+        # 持久历史里没有活着的后台任务，没等到结果的回执一律换成 interrupted 返回再交给模型。
+        history, stale_receipts = interrupt_stale_receipts(
+            await self._messages(row.conversation_id)
+        )
         # 轮号按历史合并后的轮次计数，保持实时与历史一致。
         prompt_of_run = await self._queue.prompt_of_runs(row.conversation_id)
         turns = turn_run_ids(history, prompt_of_run)
@@ -664,14 +668,19 @@ class ConversationRunner:
                     "续跑前有没收尾的工具副作用",
                     effects=[(r.tool_name, r.tool_call_id, r.idempotency_key) for r in unresolved],
                 )
-        # 末尾为中断请求时，框架补结果但不发事件，实时投影须同步修复原卡。
+        # 末尾为中断请求时，框架补结果但不发事件，实时投影须同步修复原卡；换掉的过期回执同理。
         tail = history[-1] if history else None
         repaired = (
-            unanswered_tool_calls(history)
-            if crashed_run is not None
-            and isinstance(tail, ModelRequest)
-            and tail.state == "interrupted"
-            else ()
+            ()
+            if crashed_run is None
+            else (
+                *(
+                    unanswered_tool_calls(history)
+                    if isinstance(tail, ModelRequest) and tail.state == "interrupted"
+                    else ()
+                ),
+                *stale_receipts,
+            )
         )
         projector = TranscriptEventStream(
             turn_id=turn_id,

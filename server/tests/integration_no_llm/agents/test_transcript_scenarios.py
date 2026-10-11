@@ -13,9 +13,19 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from pydantic_ai import Tool
+from pydantic_ai import Agent, Tool
 from pydantic_ai.exceptions import ModelRetry
-from pydantic_ai.messages import ModelMessage, ToolReturn
+from pydantic_ai.messages import (
+    INTERRUPTED_TOOL_RETURN_CONTENT,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturn,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import (
     AgentInfo,
     DeltaThinkingCalls,
@@ -26,6 +36,11 @@ from pydantic_ai.models.function import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.capabilities.iclip_studio.capability import IclipStudio
+from iclip.capabilities.iclip_studio.ports import FailedBreakdown
+from iclip.capabilities.workspace.scope import workspace_namespace
+from iclip.domains.agents.public import AgentRunDeps
+from iclip.domains.identity.public import Principal
 from iclip.harness.agents import (
     DELEGATE_TOOL,
     AgentDefinition,
@@ -34,21 +49,32 @@ from iclip.harness.agents import (
     delegate_display_table,
     subagent_profiles,
 )
-from iclip.harness.jobs import JobQueue
+from iclip.harness.background import BackgroundOutcome, BackgroundTools, parse_outcome
+from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.service import TranscriptService
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.harness.transcript.subagents import SubAgentMirror
+from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import (
     FileIoDisplay,
     ToolDisplay,
     ToolDisplayEntry,
     ToolDisplayRegistry,
 )
-from iclip.platform.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame, utf16_len
+from iclip.platform.transcript.ops import (
+    MAIN_AGENT_ID,
+    TextContent,
+    TextFrame,
+    ToolFrame,
+    utf16_len,
+)
 from iclip.platform.transcript.wire import TranscriptPage
+from tests.helpers.file_store import FakeFileStore
+from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.runtime import (
     AGENT_ID,
     approval_runner,
@@ -65,6 +91,8 @@ from tests.helpers.runtime import (
     records_nothing,
     says,
     submit_text,
+    texts,
+    tool_cards,
 )
 from tests.helpers.transcript import (
     check_golden,
@@ -484,6 +512,383 @@ async def test_regenerating_the_last_turn_replaces_it(engine: AsyncEngine) -> No
     ]
     assert again.prompt_id != first
     assert frames_of(live, "t1", "t1.1")[0].text == "第二次"
+
+
+# --- 后台工具 -------------------------------------------------------------------
+
+BREAKDOWN_CALL = "call_bd"
+BREAKDOWN_DONE = "视频拆解完毕，文档在 references/ref.md。"
+BREAKDOWN_ARGS = '{"video_url": "https://cdn.test/ref.mp4"}'
+
+
+def slow_breakdown(release: asyncio.Event) -> Tool[Any]:
+    """后台跑的拆解：等测试放行才返回。"""
+
+    async def breakdown_video(video_url: str) -> str:
+        await release.wait()
+        return BREAKDOWN_DONE
+
+    return Tool(breakdown_video, name="breakdown_video", metadata={"background": True})
+
+
+def sequential_write() -> Tool[Any]:
+    """与工作区写文件工具一样依次执行。"""
+
+    def write_file(path: str) -> str:
+        return f"{path} 写好了"
+
+    return Tool(write_file, name="write_file", sequential=True)
+
+
+def _outcomes(messages: list[ModelMessage]) -> list[BackgroundOutcome]:
+    return [
+        outcome
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+        if (outcome := parse_outcome(part)) is not None
+    ]
+
+
+def _breakdown_call(tool_call_id: str = BREAKDOWN_CALL) -> DeltaToolCall:
+    return DeltaToolCall(
+        name="breakdown_video", json_args=BREAKDOWN_ARGS, tool_call_id=tool_call_id
+    )
+
+
+def waits_for_breakdown(
+    ended: asyncio.Event, *, write: bool = False, seen: list[list[ModelMessage]] | None = None
+) -> FunctionModel:
+    """首个请求调拆解（write 时同一响应里再写一份简报）；拆解没回来就说一句、结束这次响应，回来了
+    再答一句。用户另起一条「继续」时直接答。seen 记下每次请求模型收到的消息。"""
+
+    async def stream(
+        messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        if seen is not None:
+            seen.append(list(messages))
+        last = messages[-1]
+        if len(messages) == 1:
+            calls = {0: _breakdown_call()}
+            if write:
+                calls[1] = DeltaToolCall(
+                    name="write_file", json_args='{"path": "brief.md"}', tool_call_id="call_write"
+                )
+            yield calls
+        elif isinstance(last, ModelRequest) and texts([last]) == ["继续"]:
+            yield "好，接着来。"
+        elif _outcomes(messages):
+            yield "拆解好了，接着写分镜。"
+        else:
+            yield "简报写好了，等拆解。"
+            ended.set()
+
+    return FunctionModel(stream_function=stream)
+
+
+async def _history(step_store: PgStepStore, conversation_id: str) -> list[ModelMessage]:
+    snapshot = await step_store.latest_conversation_snapshot(
+        conversation_id=conversation_id, include_interrupted=True
+    )
+    assert snapshot is not None
+    return list(snapshot.messages)
+
+
+def _user_frames(page: TranscriptPage) -> list[TextFrame]:
+    return [
+        frame
+        for turn in page.items
+        for step in turn.steps
+        for frame in step.frames
+        if isinstance(frame, TextFrame) and frame.role == "user"
+    ]
+
+
+def _breakdown_card(page: TranscriptPage, tool_call_id: str = BREAKDOWN_CALL) -> ToolFrame:
+    (card,) = [card for card in tool_cards(page.items) if card.tool_call_id == tool_call_id]
+    return card
+
+
+async def test_a_background_breakdown_lets_the_model_write_first_and_settles_later(
+    engine: AsyncEngine,
+) -> None:
+    ended, release = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        waits_for_breakdown(ended, write=True),
+        store=store,
+        tools=[slow_breakdown(release), sequential_write()],
+        capabilities=[BackgroundTools()],
+        display=DISPLAYS,
+        context_limits={},
+    )
+    conversation_id = new_conversation_id()
+
+    await submit_text(runner, queue, conversation_id, "拆一下这条视频")
+    await ended.wait()
+    release.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    # 模型在拆解跑着时结束了响应，结果到了被拉回来再答一次：中间没有工具调用，也开新的一步。
+    assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2", "t1.3"]
+    card = _breakdown_card(live)
+    assert (card.state, card.output, card.error) == ("done", BREAKDOWN_DONE, None)
+    assert card.frame_id == f"t1.1.{BREAKDOWN_CALL}"
+    assert _user_frames(live) == []
+    assert live.items[0].content == (TextContent(text="拆一下这条视频"),)
+    messages = await _history(step_store, conversation_id)
+    written = next(
+        index
+        for index, message in enumerate(messages)
+        if any(
+            isinstance(part, ToolReturnPart) and part.tool_name == "write_file"
+            for part in message.parts
+        )
+    )
+    delivered = next(index for index, message in enumerate(messages) if _outcomes([message]))
+    assert written < delivered
+
+
+async def test_a_steer_during_a_background_wait_still_shows_and_the_outcome_settles(
+    engine: AsyncEngine,
+) -> None:
+    ended, release = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        waits_for_breakdown(ended),
+        store=store,
+        tools=[slow_breakdown(release)],
+        capabilities=[BackgroundTools()],
+        display=DISPLAYS,
+        context_limits={},
+    )
+    conversation_id = new_conversation_id()
+
+    await submit_text(runner, queue, conversation_id, "拆一下这条视频")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await ended.wait()
+    await runner.steer(conversation_id, (second,))
+    release.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    assert [(frame.text, frame.prompt_ids) for frame in _user_frames(live)] == [
+        ("临时插一句", (second,))
+    ]
+    card = _breakdown_card(live)
+    assert (card.state, card.output) == ("done", BREAKDOWN_DONE)
+
+
+async def test_stopping_during_a_background_breakdown_interrupts_the_call(
+    engine: AsyncEngine,
+) -> None:
+    ended, never = asyncio.Event(), asyncio.Event()
+    seen: list[list[ModelMessage]] = []
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        waits_for_breakdown(ended, seen=seen),
+        store=store,
+        tools=[slow_breakdown(never)],
+        capabilities=[BackgroundTools()],
+        display=DISPLAYS,
+        context_limits={},
+    )
+    conversation_id = new_conversation_id()
+
+    prompt_id = await submit_text(runner, queue, conversation_id, "拆一下这条视频")
+    await ended.wait()
+    await runner.abort(conversation_id, prompt_id)
+    await drained(queue, conversation_id)
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    assert [turn.state for turn in live.items] == ["cancelled"]
+    card = _breakdown_card(live)
+    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+
+    await submit_text(runner, queue, conversation_id, "继续")
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    # 下一轮交给模型的历史里，回执换成了 interrupted 返回，模型不会再等一个不会来的结果。
+    returns = [
+        part
+        for message in seen[-1]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == BREAKDOWN_CALL
+    ]
+    assert [(part.outcome, part.content) for part in returns] == [
+        ("interrupted", INTERRUPTED_TOOL_RETURN_CONTENT)
+    ]
+    assert [turn.state for turn in live.items] == ["cancelled", "completed"]
+    assert _breakdown_card(live).error == ORPHAN_TOOL_ERROR
+
+
+async def _receipt_without_outcome(run_id: str) -> list[ModelMessage]:
+    """真跑一次后台拆解，截到回执那条请求：等同于在模型下一次作答时崩了留下的快照。"""
+
+    async def breakdown_video(video_url: str) -> str:
+        await asyncio.sleep(0.2)
+        return BREAKDOWN_DONE
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("breakdown_video", BREAKDOWN_ARGS, tool_call_id=BREAKDOWN_CALL)]
+            )
+        return ModelResponse(parts=[TextPart("等拆解。")])
+
+    agent = Agent(
+        FunctionModel(script),
+        tools=[Tool(breakdown_video, name="breakdown_video", metadata={"background": True})],
+        capabilities=[BackgroundTools()],
+    )
+    messages = (await agent.run("把这三个镜头出图", run_id=run_id)).all_messages()[:3]
+    assert not _outcomes(messages), "截下来的快照里不该已经有结果"
+    return messages
+
+
+async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_interrupted(
+    engine: AsyncEngine,
+) -> None:
+    seen: list[list[ModelMessage]] = []
+
+    async def stream(
+        messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        seen.append(list(messages))
+        yield "拆解没有结果，换个办法。"
+
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        FunctionModel(stream_function=stream),
+        store=store,
+        capabilities=[BackgroundTools()],
+        display=DISPLAYS,
+        context_limits={},
+    )
+    conversation_id = new_conversation_id()
+    dead_run = f"{AGENT_ID}-dead"
+    await plant_interrupted(
+        engine,
+        step_store,
+        queue,
+        conversation_id,
+        run_id=dead_run,
+        messages=await _receipt_without_outcome(dead_run),
+    )
+
+    await runner.sweep_once()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    (received,) = seen
+    returns = [
+        part
+        for message in received
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == BREAKDOWN_CALL
+    ]
+    assert [(part.outcome, part.content) for part in returns] == [
+        ("interrupted", INTERRUPTED_TOOL_RETURN_CONTENT)
+    ]
+    assert [step.state for step in live.items[0].steps] == ["interrupted", "completed"]
+    card = _breakdown_card(live)
+    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+
+
+class FailingBreakdowns:
+    """参考视频拆解的替身：每次都是模型调用失败；记下被要了几次。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+        self.calls += 1
+        return FailedBreakdown(reason="model_call_failed")
+
+
+CALL_AGAIN = "拆解失败，再调用一次。"
+
+
+async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_card(
+    engine: AsyncEngine,
+) -> None:
+    """真 IclipStudio 挂 BackgroundTools：可重试的失败作为后台结果送到模型，卡片记错误；模型照
+    提示再调一次，就再排一次拆解。"""
+
+    seen: list[list[ModelMessage]] = []
+
+    async def stream(
+        messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        seen.append(list(messages))
+        failed = [item for item in _outcomes(messages) if item.state == "error"]
+        last_is_outcome = isinstance(messages[-1], ModelRequest) and _outcomes([messages[-1]])
+        if len(messages) == 1:
+            yield {0: _breakdown_call("call_bd1")}
+        elif last_is_outcome and len(failed) == 1:
+            yield {0: _breakdown_call("call_bd2")}
+        elif last_is_outcome:
+            yield "拆解没成，请稍后再试。"
+        else:
+            yield "等拆解。"
+
+    breakdowns = FailingBreakdowns()
+    studio = IclipStudio[Any](
+        space=FileSpace(store=FakeFileStore(), namespace=workspace_namespace),
+        breakdowns=breakdowns,
+        ledger=FakeMaterialLedger(),
+    )
+
+    async def deps_for(row: JobRow) -> AgentRunDeps:
+        return AgentRunDeps(
+            principal=Principal(
+                kind="user",
+                user_id=row.owner_user_id,
+                permissions=frozenset({"agent:run"}),
+                audit_label="logan",
+                api_key_id=None,
+            ),
+            conversation_id=row.conversation_id,
+            user_name="logan",
+        )
+
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(
+        engine,
+        FunctionModel(stream_function=stream),
+        store=store,
+        capabilities=[studio, BackgroundTools()],
+        deps_for=deps_for,
+        display=DISPLAYS,
+        context_limits={},
+    )
+    conversation_id = new_conversation_id()
+
+    await submit_text(runner, queue, conversation_id, "拆一下这条视频")
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+
+    assert [(item.tool_call_id, item.state, item.text) for item in _outcomes(seen[-1])] == [
+        ("call_bd1", "error", CALL_AGAIN),
+        ("call_bd2", "error", CALL_AGAIN),
+    ]
+    for tool_call_id in ("call_bd1", "call_bd2"):
+        card = _breakdown_card(live, tool_call_id)
+        assert (card.state, card.output, card.error) == ("error", None, CALL_AGAIN)
+    assert breakdowns.calls == 2, "每次再调都重新排一次拆解"
+    assert _user_frames(live) == []
 
 
 # --- 子代理 -------------------------------------------------------------------
