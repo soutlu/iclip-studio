@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     CompactionPart,
@@ -11,6 +12,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     RetryPromptPart,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -40,6 +42,7 @@ from iclip.platform.transcript.ops import (
     StepUsage,
     TextContent,
     TextFrame,
+    ThinkingFrame,
     ToolFrame,
     TranscriptTurn,
     VideoContent,
@@ -100,6 +103,29 @@ def test_trailing_message_without_a_run_id_stays_in_the_same_turn() -> None:
     assert card.frame_id == "t1.1.c1"
     assert isinstance(card, ToolFrame)
     assert card.state == "error"
+
+
+@pytest.mark.parametrize(
+    ("part", "shown"),
+    [
+        (
+            ThinkingPart(content="思考摘要", provider_details={"raw_content": ["原始思维链"]}),
+            "思考摘要",
+        ),
+        (ThinkingPart(content="", signature="enc", provider_name="openai"), ""),
+    ],
+    ids=["content-over-raw-content", "signature-only"],
+)
+def test_thinking_frame_prefers_content_and_is_empty_without_any_text(
+    part: ThinkingPart, shown: str
+) -> None:
+    """content 有字就用 content；只有加密签名的思考块显示为空。"""
+
+    turns = turns_from_messages([_ask("想一想"), _reply(part)])
+
+    frame = turns[0].steps[0].frames[0]
+    assert isinstance(frame, ThinkingFrame)
+    assert frame.text == shown
 
 
 def test_two_runs_become_two_turns_in_time_order() -> None:

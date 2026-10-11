@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Final, Literal, cast
+from typing import Any, Final, Literal, cast
 
 from pydantic_ai.messages import (
     ModelMessage,
@@ -19,6 +19,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     TextPart,
     ThinkingPart,
+    ThinkingPartDelta,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -580,6 +581,37 @@ def _user_content(message: ModelRequest) -> tuple[PromptContent, ...]:
     return tuple(parts)
 
 
+def thinking_text(part: ThinkingPart) -> str:
+    """思考块的展示文本：content 为空时拼接 provider_details 的 raw_content，两者都没有时为空串。
+
+    Responses API 的原始思维链（如百炼的 reasoning_text）被 pydantic-ai 只存进
+    provider_details['raw_content']，content 留空；回传供应方也读这份，所以展示层只读不改。
+    """
+
+    if part.content:
+        return part.content
+    return _joined_raw_content(part.provider_details)
+
+
+def thinking_delta_text(delta: ThinkingPartDelta) -> str:
+    """思考增量的展示文本，与 thinking_text 同一规则；没有新文本时为空串。
+
+    原始思维链增量是 pydantic-ai 的更新函数，传 None 只返回本块；
+    dict 形式的 provider_details 是整份合并而非增量，不算新文本。
+    """
+
+    if delta.content_delta:
+        return delta.content_delta
+    if callable(delta.provider_details):
+        return _joined_raw_content(delta.provider_details(None))
+    return ""
+
+
+def _joined_raw_content(details: Mapping[str, Any] | None) -> str:
+    raw = None if details is None else details.get("raw_content")
+    return "".join(cast("list[str]", raw)) if raw else ""
+
+
 def _open_frames(
     message: ModelResponse,
     *,
@@ -594,7 +626,7 @@ def _open_frames(
     for part in message.parts:
         if isinstance(part, ThinkingPart):
             frame_id = f"{step_id}.f{next_frame_ordinal(frames)}"
-            frames[frame_id] = ThinkingFrame(frame_id=frame_id, text=part.content)
+            frames[frame_id] = ThinkingFrame(frame_id=frame_id, text=thinking_text(part))
         elif isinstance(part, TextPart):
             frame_id = f"{step_id}.f{next_frame_ordinal(frames)}"
             frames[frame_id] = TextFrame(frame_id=frame_id, role="assistant", text=part.content)
@@ -793,6 +825,8 @@ __all__ = [
     "settle_tool_return",
     "step_usage",
     "tasks_from_messages",
+    "thinking_delta_text",
+    "thinking_text",
     "turn_run_ids",
     "turn_usage",
     "turns_from_messages",
