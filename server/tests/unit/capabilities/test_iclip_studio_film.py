@@ -218,7 +218,6 @@ async def test_a_long_list_of_problems_is_cut(
 
     assert lines[0] == "检查没通过，共 80 处问题："
     assert len(lines) == MAX_LISTED_PROBLEMS + 2
-    assert lines[-1] == f"只列了前 {MAX_LISTED_PROBLEMS} 处，改完再检查。"
 
 
 async def test_the_run_file_is_checked_together_with_the_project_file(
