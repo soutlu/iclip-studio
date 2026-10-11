@@ -3,20 +3,13 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
-from openai import AsyncOpenAI, AsyncStream
-from openai.types import responses
-from pydantic_ai.models import Model, ModelRequestParameters, infer_model
-from pydantic_ai.models.openai import (
-    OpenAIChatModelSettings,
-    OpenAIModelName,
-    OpenAIResponsesModel,
-    OpenAIResponsesModelSettings,
-    OpenAIResponsesStreamedResponse,
-)
+from openai import AsyncOpenAI
+from pydantic_ai.models import Model, infer_model
+from pydantic_ai.models.openai import OpenAIChatModelSettings, OpenAIResponsesModel
 from pydantic_ai.providers import Provider, infer_provider_class
 
 ModelApi = Literal["chat", "responses"]
@@ -39,56 +32,6 @@ class ModelSpec:
     api_key: str
     base_url: str | None
     thinking: ThinkingEffort | None = None
-
-
-class _RawReasoningAsSummary:
-    """每条原始思维链块后面补一条同 id 的 summary 块，其余事件原样透传。"""
-
-    def __init__(self, source: AsyncStream[responses.ResponseStreamEvent]) -> None:
-        self._source = source
-
-    async def __aiter__(self) -> AsyncIterator[responses.ResponseStreamEvent]:
-        async for chunk in self._source:
-            yield chunk
-            if isinstance(chunk, responses.ResponseReasoningTextDeltaEvent):
-                yield responses.ResponseReasoningSummaryTextDeltaEvent(
-                    delta=chunk.delta,
-                    item_id=chunk.item_id,
-                    output_index=chunk.output_index,
-                    sequence_number=chunk.sequence_number,
-                    summary_index=0,
-                    type="response.reasoning_summary_text.delta",
-                )
-
-    async def close(self) -> None:
-        await self._source.close()
-
-
-class RawReasoningResponsesModel(OpenAIResponsesModel):
-    """将供应方原始思维块映射为同 id 的 summary，供 ThinkingPart.content 展示。
-
-    保留 raw_content，确保回传供应方时使用原始推理格式，避免退化为 assistant 的 <think> 文本。
-    """
-
-    async def _process_streamed_response(
-        self,
-        response: AsyncStream[responses.ResponseStreamEvent],
-        model_settings: OpenAIResponsesModelSettings,
-        model_request_parameters: ModelRequestParameters,
-        *,
-        expected_model_name: OpenAIModelName | None = None,
-        expected_response_id: str | None = None,
-    ) -> OpenAIResponsesStreamedResponse:
-        wrapped = cast(
-            "AsyncStream[responses.ResponseStreamEvent]", _RawReasoningAsSummary(response)
-        )
-        return await super()._process_streamed_response(
-            wrapped,
-            model_settings,
-            model_request_parameters,
-            expected_model_name=expected_model_name,
-            expected_response_id=expected_response_id,
-        )
 
 
 def _build_provider(spec: ModelSpec) -> Provider[Any]:
@@ -145,7 +88,7 @@ def build_model(spec: ModelSpec) -> Model:
             f"模型 {spec.name}：api: responses 只适用于 OpenAI 兼容的 provider，"
             f"{spec.provider} 不是"
         )
-    return RawReasoningResponsesModel(spec.model, provider=provider, settings=settings)
+    return OpenAIResponsesModel(spec.model, provider=provider, settings=settings)
 
 
 def build_models(specs: Sequence[ModelSpec]) -> BuiltModels:
@@ -167,7 +110,6 @@ __all__ = [
     "BuiltModels",
     "ModelApi",
     "ModelSpec",
-    "RawReasoningResponsesModel",
     "ThinkingEffort",
     "build_model",
     "build_models",

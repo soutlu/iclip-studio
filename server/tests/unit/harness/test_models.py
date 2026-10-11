@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from typing import cast
 
-import httpx2
 import pytest
-from openai import AsyncOpenAI
-from pydantic_ai.messages import ModelRequest, ThinkingPart
-from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
-from pydantic_ai.providers.alibaba import AlibabaProvider
 
 from iclip.harness.models import (
     ModelApi,
     ModelSpec,
-    RawReasoningResponsesModel,
     ThinkingEffort,
     build_model,
     build_models,
@@ -121,108 +114,3 @@ def test_thinking_lands_in_model_settings_on_both_apis() -> None:
     plain = build_model(spec())
     assert plain.settings is None
     assert thinking_effort_of(plain) is None
-
-
-def _reasoning_stream() -> bytes:
-    """模拟百炼流：原始思考为 reasoning_text，done 项携带 summary。"""
-
-    reasoning_done = {
-        "id": "msg_r",
-        "type": "reasoning",
-        "summary": [{"type": "summary_text", "text": "先想一想"}],
-    }
-    message_done = {
-        "id": "msg_a",
-        "type": "message",
-        "role": "assistant",
-        "status": "completed",
-        "content": [{"type": "output_text", "text": "2", "annotations": []}],
-    }
-    base = {
-        "id": "r1",
-        "object": "response",
-        "created_at": 1,
-        "model": "qwen3.8-max",
-        "parallel_tool_calls": False,
-        "tool_choice": "auto",
-        "tools": [],
-    }
-    reasoning_delta = {
-        "type": "response.reasoning_text.delta",
-        "output_index": 0,
-        "item_id": "msg_r",
-        "content_index": 0,
-    }
-    events: list[dict[str, object]] = [
-        {"type": "response.created", "response": {**base, "status": "queued", "output": []}},
-        {
-            "type": "response.output_item.added",
-            "output_index": 0,
-            "item": {**reasoning_done, "summary": []},
-        },
-        {**reasoning_delta, "delta": "先想"},
-        {**reasoning_delta, "delta": "一想"},
-        {"type": "response.output_item.done", "output_index": 0, "item": reasoning_done},
-        {
-            "type": "response.output_item.added",
-            "output_index": 1,
-            "item": {**message_done, "content": []},
-        },
-        {
-            "type": "response.output_text.delta",
-            "output_index": 1,
-            "item_id": "msg_a",
-            "content_index": 0,
-            "delta": "2",
-        },
-        {"type": "response.output_item.done", "output_index": 1, "item": message_done},
-        {
-            "type": "response.completed",
-            "response": {
-                **base,
-                "status": "completed",
-                "output": [reasoning_done, message_done],
-                "usage": {
-                    "input_tokens": 5,
-                    "output_tokens": 3,
-                    "total_tokens": 8,
-                    "input_tokens_details": {"cached_tokens": 0},
-                    "output_tokens_details": {"reasoning_tokens": 2},
-                },
-            },
-        },
-    ]
-    frames = [
-        f"event: {event['type']}\ndata: {json.dumps({**event, 'sequence_number': seq})}\n\n"
-        for seq, event in enumerate(events)
-    ]
-    return "".join(frames).encode()
-
-
-async def test_raw_reasoning_streams_as_thinking_content() -> None:
-    """通过 SSE 解析覆盖覆写方法的兼容性，确认原始思考保存在 content 与回传用 raw_content 中。"""
-
-    def serve(_: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(
-            200, headers={"content-type": "text/event-stream"}, content=_reasoning_stream()
-        )
-
-    client = AsyncOpenAI(
-        api_key="sk-test",
-        base_url=BAILIAN,
-        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(serve)),
-    )
-    model = RawReasoningResponsesModel(
-        "qwen3.8-max", provider=AlibabaProvider(openai_client=client)
-    )
-
-    async with model.request_stream(
-        [ModelRequest.user_text_prompt("1+1=?")], None, ModelRequestParameters()
-    ) as stream:
-        async for _ in stream:
-            pass
-        response = stream.get()
-
-    thinking = [part for part in response.parts if isinstance(part, ThinkingPart)]
-    assert [part.content for part in thinking] == ["先想一想"]
-    assert thinking[0].provider_details == {"raw_content": ["先想一想"]}

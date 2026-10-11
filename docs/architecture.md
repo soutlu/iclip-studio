@@ -49,7 +49,7 @@ skill 与 capability 都按 Agent 显式挂载，子代理不继承主代理的�
 
 [shot_document.py](../server/src/iclip/capabilities/shot_document.py) 持有镜头组表的结构与校验措辞，供 `video` 的交付工具、制作页拼出片请求与对话域的文件写回共用；工程文件与运行文件的写回校验用 `iclip_studio/film/` 的同一套检查，只看被写的那一个文件；[video_understanding.py](../server/src/iclip/capabilities/video_understanding.py) 持有视频拆解协议与方舟适配器；[video_document.py](../server/src/iclip/capabilities/video_document.py) 回答拆解文档在工作区的路径与镜头时间码的写法，`shot_video` 靠它定位 `video` 写下的文档，拆解提示词与取帧解析器的报错引同一个写法。划分标准：模型看得见的东西（工具名、docstring、参数 schema、验证器措辞、display 表、指令）留在各自包内，换 agent 就可以不同；模型看不见、换 agent 也不允许有差异的机制下沉到 `harness/`、`common/` 或这类共用模块，不在包之间复制：素材台账校验在 [harness/materials.py](../server/src/iclip/harness/materials.py)，工作区写入与配额、版本错误的翻译在 [harness/files.py](../server/src/iclip/harness/files.py)，镜头组的时间线连续、`@ImageN` 引用与参考图上限在 [common/shot_rules.py](../server/src/iclip/common/shot_rules.py)，与生成域的出片请求共用。
 
-模型适配集中在 [harness/models.py](../server/src/iclip/harness/models.py)，同名模型复用实例。provider 选择交给官方 `infer_model`；`api: responses` 使用本仓的 Responses 子类。模型参数转换不进入业务模块或工具。
+模型适配集中在 [harness/models.py](../server/src/iclip/harness/models.py)，同名模型复用实例。provider 选择交给官方 `infer_model`；`api: responses` 使用官方 `OpenAIResponsesModel`。模型参数转换不进入业务模块或工具。
 
 lifespan 启动运行驱动、已启用的生成队列与参考视频的拆解队列；关停时先停止后台任务并等待运行终态落库，再关闭 HTTP 客户端和本应用持有的连接池。启动不建表，迁移单独执行。
 

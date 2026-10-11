@@ -42,6 +42,8 @@ from iclip.harness.transcript.from_messages import (
     ORPHAN_TOOL_ERROR,
     settle_tool_return,
     step_usage,
+    thinking_delta_text,
+    thinking_text,
     turn_usage,
 )
 from iclip.harness.transcript.prompt_media import plain_text, prompt_content
@@ -359,11 +361,11 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
     async def handle_thinking_start(
         self, part: ThinkingPart, follows_thinking: bool = False
     ) -> AsyncIterator[OpsBatch]:
-        async for batch in self._open_text_frame(part.content, thinking=True):
+        async for batch in self._open_text_frame(thinking_text(part), thinking=True):
             yield batch
 
     async def handle_thinking_delta(self, delta: ThinkingPartDelta) -> AsyncIterator[OpsBatch]:
-        async for batch in self._append(delta.content_delta or ""):
+        async for batch in self._append(thinking_delta_text(delta)):
             yield batch
 
     async def handle_thinking_end(
