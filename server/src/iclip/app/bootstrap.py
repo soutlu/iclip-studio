@@ -8,7 +8,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 import procrastinate
@@ -241,12 +241,22 @@ def _product_catalog_engine(
     return injected if injected is not None else _read_only_engine(settings.database_url)
 
 
+def build_engine(database_url: str, **options: Any) -> AsyncEngine:
+    """建数据库 engine 的唯一入口，测试也经它建，连接池行为与生产一致。
+
+    取连接前先 ping：查询被取消打断时，SQLAlchemy 作废连接的清理可能被再次取消，已关闭的
+    asyncpg 连接会留在池里，ping 在下次取出时把它换掉。``options`` 原样传给
+    ``create_async_engine``，如 ``connect_args``、``poolclass``。
+    """
+
+    return create_async_engine(database_url, pool_pre_ping=True, **options)
+
+
 def _read_only_engine(database_url: str) -> AsyncEngine:
     """为外部库设置会话级只读，独立于上游账号可能拥有的写权限。"""
 
-    return create_async_engine(
+    return build_engine(
         database_url,
-        pool_pre_ping=True,
         connect_args={"server_settings": {"default_transaction_read_only": "on"}},
     )
 
@@ -355,11 +365,7 @@ def build_app(
     configure_logging(settings.log_level, settings.log_format)
 
     owns_engine = engine is None
-    active_engine = (
-        engine
-        if engine is not None
-        else create_async_engine(settings.database_url, pool_pre_ping=True)
-    )
+    active_engine = engine if engine is not None else build_engine(settings.database_url)
     sessions = async_sessionmaker(active_engine, expire_on_commit=False)
 
     identity = build_identity_module(
@@ -847,4 +853,4 @@ def build_app(
     return app
 
 
-__all__ = ["build_app"]
+__all__ = ["build_app", "build_engine"]
