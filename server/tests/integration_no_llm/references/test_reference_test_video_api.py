@@ -17,8 +17,9 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app, build_engine
+from iclip.app.bootstrap import build_app
 from iclip.domains.references.test_prompt import build_test_prompt
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client
 from tests.helpers.auth import set_roles_in_db

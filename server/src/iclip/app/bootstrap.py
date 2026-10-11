@@ -8,14 +8,14 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import httpx
 import procrastinate
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from iclip.app.agent_layer import (
     CurrentAgentLayer,
@@ -107,6 +107,7 @@ from iclip.harness.transcript.service import TranscriptService
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.harness.usage_ledger import UsageLedger
 from iclip.harness.usage_ledger_pg import PgConversationUsage
+from iclip.platform.db.engine import build_engine
 from iclip.platform.file_store.pg import PgFileStore
 from iclip.platform.file_store.store import (
     FileEntry,
@@ -239,17 +240,6 @@ def _product_catalog_engine(
     if settings is None:
         return None
     return injected if injected is not None else _read_only_engine(settings.database_url)
-
-
-def build_engine(database_url: str, **options: Any) -> AsyncEngine:
-    """建数据库 engine 的唯一入口，测试也经它建，连接池行为与生产一致。
-
-    取连接前先 ping：查询被取消打断时，SQLAlchemy 作废连接的清理可能被再次取消，已关闭的
-    asyncpg 连接会留在池里，ping 在下次取出时把它换掉。``options`` 原样传给
-    ``create_async_engine``，如 ``connect_args``、``poolclass``。
-    """
-
-    return create_async_engine(database_url, pool_pre_ping=True, **options)
 
 
 def _read_only_engine(database_url: str) -> AsyncEngine:
@@ -853,4 +843,4 @@ def build_app(
     return app
 
 
-__all__ = ["build_app", "build_engine"]
+__all__ = ["build_app"]

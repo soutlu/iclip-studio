@@ -7,8 +7,8 @@ from collections.abc import AsyncGenerator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_engine
 from iclip.domains.products.catalog_pg import PgStyleDirectory
+from iclip.platform.db.engine import build_engine
 from tests.helpers.pdm import recreate_pdm_styles, seed_pdm_style
 
 

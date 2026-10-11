@@ -13,9 +13,10 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 
-from iclip.app.bootstrap import build_app, build_engine
+from iclip.app.bootstrap import build_app
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db

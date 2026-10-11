@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_engine
+from iclip.platform.db.engine import build_engine
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 from iclip.platform.material_ledger.store import Material
 from tests.helpers.pg import truncate_clean

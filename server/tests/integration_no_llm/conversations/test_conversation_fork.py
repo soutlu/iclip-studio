@@ -21,7 +21,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
 
-from iclip.app.bootstrap import build_app, build_engine
+from iclip.app.bootstrap import build_app
 from iclip.common.errors import Conflict, NotFound
 from iclip.config import ResolvedAgent
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -31,6 +31,7 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.ffmpeg import ffmpeg_available
 from iclip.platform.transcript.session_events import SessionEventClock

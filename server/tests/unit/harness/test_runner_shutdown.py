@@ -9,13 +9,13 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_engine
 from iclip.harness.job_status import JobStatus
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import ConversationRunner
 from iclip.harness.transcript.store import TranscriptStore
+from iclip.platform.db.engine import build_engine
 from iclip.platform.transcript.ops import TextContent
 
 pytestmark = pytest.mark.unit

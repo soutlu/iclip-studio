@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import RowMapping, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_engine
 from iclip.harness.usage_ledger_pg import PgConversationUsage, conversation_usage_table
+from iclip.platform.db.engine import build_engine
 from iclip.platform.transcript.ops import StepUsage
 from tests.helpers.pg import truncate_clean
 

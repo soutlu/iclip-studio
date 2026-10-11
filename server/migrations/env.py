@@ -9,8 +9,8 @@ from alembic import context
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from iclip.app.bootstrap import build_engine
 from iclip.domains.identity.infra_sql import DB_SCHEMA, Base
+from iclip.platform.db.engine import build_engine
 
 target_metadata = Base.metadata
 

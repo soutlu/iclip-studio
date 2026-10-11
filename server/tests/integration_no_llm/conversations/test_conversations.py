@@ -13,12 +13,12 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
 
-from iclip.app.bootstrap import build_engine
 from iclip.common.errors import NotFound
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.repository import AuditFilter
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected

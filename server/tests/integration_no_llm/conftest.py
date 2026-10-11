@@ -21,10 +21,11 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
-from iclip.app.bootstrap import build_app, build_engine
+from iclip.app.bootstrap import build_app
 from iclip.config import ResolvedAgent
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.sso import SsoVerifier
+from iclip.platform.db.engine import build_engine
 from tests.helpers.app import TEST_MODEL_NAME, make_client, make_runtime_config
 from tests.helpers.pg import connected, reset_database
 

@@ -13,7 +13,7 @@ from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from iclip.app.agent_layer import CurrentAgentLayer
-from iclip.app.bootstrap import AnnouncingFileStore, build_app, build_engine
+from iclip.app.bootstrap import AnnouncingFileStore, build_app
 from iclip.config import (
     AppSection,
     DbSection,
@@ -29,6 +29,7 @@ from iclip.config import (
 )
 from iclip.config.models import IclipStudioSection
 from iclip.domains.agents.transcript_api import LiveConnections
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.agents import declared_agent
 from tests.helpers.file_store import FakeFileStore

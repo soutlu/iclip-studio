@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.pool import NullPool
 
-from iclip.app.bootstrap import build_engine
+from iclip.platform.db.engine import build_engine
 
 APP_TABLES = (
     "iclip.users",

@@ -10,7 +10,8 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app, build_engine
+from iclip.app.bootstrap import build_app
+from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_runtime_config
 from tests.helpers.pdm import recreate_pdm_styles
 from tests.helpers.pg import reset_database

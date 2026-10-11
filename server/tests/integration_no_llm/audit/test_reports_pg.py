@@ -15,7 +15,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_engine
 from iclip.domains.audit.models import Scope
 from iclip.domains.audit.reports_pg import PgAuditReports, audit_connection
 from iclip.domains.audit.schemas import ExecutionOut
@@ -30,6 +29,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_UPLOAD,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
+from iclip.platform.db.engine import build_engine
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 SARA = "Sara.Hong"

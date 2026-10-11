@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from iclip.app.agent_layer import CurrentAgentLayer, watch_dirs
-from iclip.app.bootstrap import build_app, build_engine
+from iclip.app.bootstrap import build_app
 from iclip.config import (
     AppSection,
     DbSection,
@@ -25,6 +25,7 @@ from iclip.config import (
 from iclip.config.models import ConversationsSection
 from iclip.domains.identity.middleware import PrincipalResolver
 from iclip.domains.identity.models import Principal
+from iclip.platform.db.engine import build_engine
 from tests.helpers.agents import declared_agent
 
 MODEL_KEY_ENV = "TEST_MODEL_KEY"

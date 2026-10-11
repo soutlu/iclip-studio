@@ -31,8 +31,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_engine
 from iclip.harness.step_store_pg import PgMediaStore, PgStepStore
+from iclip.platform.db.engine import build_engine
 from tests.helpers.pg import truncate_clean
 
 T0 = datetime(2026, 8, 21, 10, 0, 0, tzinfo=UTC)

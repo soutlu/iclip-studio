@@ -12,7 +12,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_engine
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -27,6 +26,7 @@ from iclip.domains.generation.queue import (
     queue_dsn,
     submit_queue,
 )
+from iclip.platform.db.engine import build_engine
 from tests.helpers.generation import (
     FAKE_IMAGE_PROVIDER,
     FAKE_VIDEO_PROVIDER,

@@ -25,7 +25,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from iclip.app.bootstrap import build_engine
 from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.infra_sql import ApiKeyRow, User
 from iclip.domains.identity.rbac import PERMISSIONS, ROLES
@@ -35,6 +34,7 @@ from iclip.domains.identity.service import (
     hash_api_key_token,
     validate_api_key_token,
 )
+from iclip.platform.db.engine import build_engine
 
 _TOKEN_ENV = "API_KEY_TOKEN"
 
