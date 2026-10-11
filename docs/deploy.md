@@ -9,7 +9,7 @@
    - Agent 挂载 `shot_video` 或启用视频编辑时，PATH 中还要有 `ffmpeg` 和 `ffprobe`。
 2. 在仓库根目录创建 `.env`，`DATABASE_URL` 指向开发库，密钥不入库。
    - 要填哪些变量、各项能力怎样启用，见[配置模型](../server/src/iclip/config/models.py)与[配置与装配](architecture.md#2-配置与装配)；缺少变量时，启动会列出变量名。
-3. 把一份 `server/configs/`（`config.yaml`）和 `server/agents/`（`agents.yaml`、各 agent 目录、`skills/`）放到本机。这两个目录不进仓库，修改后保存即生效。
+3. 把一份 `server/configs/`（`config.yaml`）、`server/agents/`（`agents.yaml`、各 agent 目录）和 `server/skills/`（一个子目录一个 skill）放到本机。这三个目录不进仓库，修改后保存即生效；不挂 skill 时可以没有 `skills/`。
    - 默认的 `storyboard` Agent 需要视频理解、媒体生成和对象存储。只跑基础对话时，去掉这条 Agent 声明和 `config.yaml` 的 `video`、`shot_video` 段，另声明一条不挂这些能力的 Agent。
 4. 迁移数据库并启动后端：
 
@@ -43,7 +43,7 @@
 3. 在服务器上建一个部署目录，放入：
    - `compose.yaml`
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
-   - `configs/`、`agents/`：后端只读挂载，镜像里没有
+   - `configs/`、`agents/`、`skills/`：后端只读挂载，镜像里没有
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
 4. 用有 DDL 权限的账号执行目标版本的数据库迁移。部署和服务启动都不会自动迁移。
 5. 登录镜像仓库，拉取并启动：
@@ -67,7 +67,7 @@
 
 ### 改配置
 
-模型、agent、skill 与参考资料只在服务器的 `configs/`、`agents/` 里，不随镜像发版。修改后保存即生效，机制见[配置与装配](architecture.md#2-配置与装配)。
+模型、agent、skill 与参考资料只在服务器的 `configs/`、`agents/`、`skills/` 里，不随镜像发版。修改后保存即生效，机制见[配置与装配](architecture.md#2-配置与装配)。
 
 - 配置写错时，原因在 `docker compose logs server` 和 `/healthz` 的 `config` 段。
 - 手动重载：`docker compose kill -s HUP server`。

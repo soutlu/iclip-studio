@@ -7,7 +7,7 @@
 | 内容 | 落点 |
 |---|---|
 | 工具做什么、参数来源、适用范围、上限、重复调用和失败语义 | 工具 docstring |
-| 何时选择工具、跨工具接力顺序、判断标准与产出格式 | `server/agents/skills/<名>/SKILL.md` 及其 references |
+| 何时选择工具、跨工具接力顺序、判断标准与产出格式 | `server/skills/<名>/SKILL.md` 及其 references |
 | 整组工具共有、单个 docstring 无法表达的语义 | capability 的 `get_instructions`；没有则返回 `None` |
 | 本次失败后可以采取的动作 | 给模型的错误消息 |
 
