@@ -1,6 +1,6 @@
 # 发版与镜像发布
 
-本文讲发版、热修与热修回流的操作步骤、版本号规则，以及镜像怎样构建和上传。目标为 `main` 的 PR 的确认要求见 [AGENTS.md](../AGENTS.md#发版与热修)，服务器上线与升级见 [README](../README.md#部署)。
+本文讲发版、热修与热修回流的操作步骤、版本号规则，以及镜像怎样构建和上传。目标为 `main` 的 PR 的确认要求见 [AGENTS.md](../AGENTS.md#发版与热修)，服务器上线与升级见[本地启动与服务器部署](deploy.md#服务器部署)。
 
 ## 发版与热修
 
@@ -24,7 +24,7 @@ gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes
 git fetch --tags
 ```
 
-创建 Release 不会自动部署。下面的命令输出 `completed success` 后，再按 [README 部署说明](../README.md#部署) 更新服务器；无输出表示 tag 还没触发运行：
+创建 Release 不会自动部署。下面的命令输出 `completed success` 后，再按[升级步骤](deploy.md#升级)更新服务器；无输出表示 tag 还没触发运行：
 
 ```bash
 gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=push&branch=vX.Y.Z" --jq 'first(.workflow_runs[]) | .status + " " + .conclusion'
