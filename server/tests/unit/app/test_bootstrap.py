@@ -9,7 +9,6 @@ from typing import Literal
 import httpx
 import pytest
 from pydantic_ai.models.test import TestModel
-from sqlalchemy.ext.asyncio import create_async_engine
 from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
@@ -30,6 +29,7 @@ from iclip.config import (
 )
 from iclip.config.models import IclipStudioSection
 from iclip.domains.agents.transcript_api import LiveConnections
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.agents import declared_agent
 from tests.helpers.file_store import FakeFileStore
@@ -63,7 +63,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def engine():
     """仅构造 engine，不连接数据库；测试只覆盖装配。"""
 
-    return create_async_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
+    return build_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
 
 
 async def test_transcript_endpoints_are_always_mounted(base_env: None) -> None:

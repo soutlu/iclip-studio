@@ -23,7 +23,7 @@
 
 能力包之间不互相 import。确需共享的技术协议下沉到 `platform/`，由组合根注入同一个实例；共用的产物形状与校验规则会用到 `pydantic_ai`（框架围栏只放 `harness/` 与 `capabilities/`），放在 `capabilities/` 下不带工具的模块里。协议随实际调用需求定义，不提前建立抽象层。
 
-存储适配跟随使用其协议的模块：业务自有表放对应模块的 `infra_sql.py`，外部只读库用独立适配器；官方 StepPersistence 的 Postgres 实现在 `harness/step_store_pg.py`。数据库 engine 只由组合根创建。
+存储适配跟随使用其协议的模块：业务自有表放对应模块的 `infra_sql.py`，外部只读库用独立适配器；官方 StepPersistence 的 Postgres 实现在 `harness/step_store_pg.py`。应用的数据库 engine 由组合根经 [platform/db/engine.py](../server/src/iclip/platform/db/engine.py) 的 `build_engine` 创建，测试、迁移与管理脚本也经同一个函数建 engine。
 
 显式组合根、Principal 解析器与 `api_keys` 表、StepPersistence 的 Postgres 后端是刻意自研的，不以「不重复造轮子」为由换成 DI 容器或第三方库。引擎依赖的精确版本由 [uv.lock](../server/uv.lock) 固定，CI 使用 `uv sync --locked`；升级时同步 [pyproject.toml](../server/pyproject.toml) 与 lockfile，并验证装配、持久化与 transcript 契约。
 

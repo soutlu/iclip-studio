@@ -9,7 +9,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.app.agent_layer import CurrentAgentLayer, watch_dirs
 from iclip.app.bootstrap import build_app
@@ -26,6 +25,7 @@ from iclip.config import (
 from iclip.config.models import ConversationsSection
 from iclip.domains.identity.middleware import PrincipalResolver
 from iclip.domains.identity.models import Principal
+from iclip.platform.db.engine import build_engine
 from tests.helpers.agents import declared_agent
 
 MODEL_KEY_ENV = "TEST_MODEL_KEY"
@@ -82,7 +82,7 @@ def build(tmp_path: Path) -> tuple[CurrentAgentLayer, _Source, httpx.AsyncClient
     app = build_app(
         initial,
         agents=source.agents,
-        engine=create_async_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere"),
+        engine=build_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere"),
         reload_source=source,
     )
     layer: CurrentAgentLayer = app.state.agent_layer

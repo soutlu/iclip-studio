@@ -13,8 +13,8 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from pydantic_ai import Agent, RunContext, Tool
-from pydantic_ai.exceptions import ApprovalRequired, ModelRetry
+from pydantic_ai import Agent, Tool
+from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     ModelMessage,
@@ -93,6 +93,7 @@ from tests.helpers.runtime import (
     submit_text,
     texts,
     tool_cards,
+    wrote,
 )
 from tests.helpers.transcript import (
     check_golden,
@@ -521,12 +522,10 @@ BREAKDOWN_DONE = "视频拆解完毕，文档在 references/ref.md。"
 BREAKDOWN_ARGS = '{"video_url": "https://cdn.test/ref.mp4"}'
 
 
-def slow_breakdown(release: asyncio.Event, entered: asyncio.Event | None = None) -> Tool[Any]:
-    """后台跑的拆解：等测试放行才返回；给了 entered 就在进入工具体时置位。"""
+def slow_breakdown(release: asyncio.Event) -> Tool[Any]:
+    """后台跑的拆解：等测试放行才返回。"""
 
     async def breakdown_video(video_url: str) -> str:
-        if entered is not None:
-            entered.set()
         await release.wait()
         return BREAKDOWN_DONE
 
@@ -754,31 +753,16 @@ def breaks_down_and_writes(reply: str) -> FunctionModel:
     return FunctionModel(stream_function=stream)
 
 
-def approved_write_after(entered: asyncio.Event) -> Tool[Any]:
-    """要审批的写文件：等后台拆解进了工具体，才要求审批、让这次 run 停下。
-
-    不等就停，暂停取消后台任务时它可能还在持久化钩子里写库，这次运行转不进 awaiting。
-    """
-
-    async def write_file(ctx: RunContext[Any]) -> str:
-        if not ctx.tool_call_approved:
-            await entered.wait()
-            raise ApprovalRequired
-        return "写好了"
-
-    return Tool(write_file, name="write_file")
-
-
 async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approval_open(
     engine: AsyncEngine,
 ) -> None:
-    never, entered = asyncio.Event(), asyncio.Event()
+    never = asyncio.Event()
     store = TranscriptStore()
     runner, step_store, queue = build_runner(
         engine,
         breaks_down_and_writes("改完了"),
         store=store,
-        tools=[slow_breakdown(never, entered), approved_write_after(entered)],
+        tools=[slow_breakdown(never), Tool(wrote, name="write_file", requires_approval=True)],
         capabilities=[BackgroundTools()],
         display=DISPLAYS,
         context_limits={},

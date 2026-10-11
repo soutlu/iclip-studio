@@ -17,7 +17,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
@@ -25,6 +25,7 @@ from iclip.capabilities.iclip_studio.ports import FailedBreakdown
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
+from iclip.platform.db.engine import build_engine
 from iclip.platform.file_store.pg import PgFileStore
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.material_ledger.pg import PgMaterialLedger
@@ -42,7 +43,7 @@ class NoBreakdowns:
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await truncate_clean(conn, ("agent_runtime.workspace_files", "agent_runtime.materials"))
     yield engine

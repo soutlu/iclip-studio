@@ -15,7 +15,7 @@ import procrastinate
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from iclip.app.agent_layer import (
     CurrentAgentLayer,
@@ -107,6 +107,7 @@ from iclip.harness.transcript.service import TranscriptService
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.harness.usage_ledger import UsageLedger
 from iclip.harness.usage_ledger_pg import PgConversationUsage
+from iclip.platform.db.engine import build_engine
 from iclip.platform.file_store.pg import PgFileStore
 from iclip.platform.file_store.store import (
     FileEntry,
@@ -244,9 +245,8 @@ def _product_catalog_engine(
 def _read_only_engine(database_url: str) -> AsyncEngine:
     """为外部库设置会话级只读，独立于上游账号可能拥有的写权限。"""
 
-    return create_async_engine(
+    return build_engine(
         database_url,
-        pool_pre_ping=True,
         connect_args={"server_settings": {"default_transaction_read_only": "on"}},
     )
 
@@ -355,11 +355,7 @@ def build_app(
     configure_logging(settings.log_level, settings.log_format)
 
     owns_engine = engine is None
-    active_engine = (
-        engine
-        if engine is not None
-        else create_async_engine(settings.database_url, pool_pre_ping=True)
-    )
+    active_engine = engine if engine is not None else build_engine(settings.database_url)
     sessions = async_sessionmaker(active_engine, expire_on_commit=False)
 
     identity = build_identity_module(

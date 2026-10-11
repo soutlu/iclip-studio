@@ -12,11 +12,11 @@ import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.app.bootstrap import build_app
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
@@ -48,7 +48,7 @@ async def uploads_app(
 
     for name, value in OSS_ENVS.items():
         monkeypatch.setenv(name, value)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     try:
@@ -121,7 +121,7 @@ async def uploaded(
 
 
 async def stored(pg_url: str, upload_id: str) -> GenerationJob:
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     try:
         return await SqlGenerationRepository(engine).get(uuid.UUID(upload_id), owner=None)
     finally:
@@ -312,7 +312,7 @@ async def media_app(
 
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     try:
@@ -367,7 +367,7 @@ async def test_viewer_cannot_sign(client: httpx.AsyncClient) -> None:
 
 
 async def test_routes_are_absent_without_a_bucket(base_env: None, migrated_pg: str) -> None:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     try:
         app = build_app(make_runtime_config(), engine=engine)
         async with make_client(app) as http:

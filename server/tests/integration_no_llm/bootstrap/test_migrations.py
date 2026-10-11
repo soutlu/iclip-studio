@@ -10,7 +10,6 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import MetaData, inspect
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.domains.collections.infra_sql import metadata_obj as collections_metadata
 from iclip.domains.conversations.infra_sql import metadata_obj as conversations_metadata
@@ -20,6 +19,7 @@ from iclip.domains.inspirations.infra_sql import metadata_obj as inspirations_me
 from iclip.domains.references.infra_sql import metadata_obj as references_metadata
 from iclip.domains.tasks.infra_sql import metadata_obj as tasks_metadata
 from iclip.domains.tracking.infra_sql import metadata_obj as tracking_metadata
+from iclip.platform.db.engine import build_engine
 
 _MODULE_METADATA: tuple[MetaData, ...] = (
     Base.metadata,
@@ -34,7 +34,7 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
 
 
 async def test_alembic_head_matches_orm_metadata(migrated_pg: str) -> None:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     try:
         async with engine.connect() as conn:
             actual: dict[str, set[str]] = await conn.run_sync(
