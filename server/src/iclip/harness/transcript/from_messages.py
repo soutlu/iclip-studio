@@ -27,6 +27,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
+from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome
 from iclip.harness.context_compaction import compaction_boundary, compaction_only
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.prompt_media import plain_text, prompt_content
@@ -570,11 +571,11 @@ def _duration_ms(started: datetime, ended: datetime | None) -> int | None:
 
 
 def _user_content(message: ModelRequest) -> tuple[PromptContent, ...]:
-    """从请求还原用户 part；媒体 tag 解析为附件，避免显示协议文本。"""
+    """从请求还原用户 part；媒体 tag 解析为附件，避免显示协议文本。后台工具的结果不算用户说的话。"""
 
     parts: list[PromptContent] = []
     for part in message.parts:
-        if not isinstance(part, UserPromptPart):
+        if not isinstance(part, UserPromptPart) or parse_outcome(part) is not None:
             continue
         items = [part.content] if isinstance(part.content, str) else list(part.content)
         parts.extend(prompt_content(items))
@@ -653,14 +654,24 @@ def _settle_tools(
     tool_frames: dict[str, str],
     frames_by_step: list[dict[str, TranscriptFrame]],
 ) -> None:
-    """回填工具结果，收尾口径见 settle_tool_return。"""
+    """回填工具结果，收尾口径见 settle_tool_return；后台工具的回执不结卡，由之后递入的结果结。"""
 
     for part in message.parts:
-        if not isinstance(part, ToolReturnPart | RetryPromptPart):
+        if isinstance(part, UserPromptPart):
+            outcome = parse_outcome(part)
+            if outcome is None:
+                continue
+            tool_call_id = outcome.tool_call_id
+            state, output, metadata, error = settle_background_outcome(outcome)
+        elif isinstance(part, ToolReturnPart | RetryPromptPart):
+            if isinstance(part, ToolReturnPart) and is_receipt(part):
+                continue
+            tool_call_id = part.tool_call_id
+            state, output, metadata, error = settle_tool_return(part)
+        else:
             continue
-        state, output, metadata, error = settle_tool_return(part)
         _replace_tool(
-            part.tool_call_id,
+            tool_call_id,
             tool_frames,
             frames_by_step,
             state=state,
@@ -716,6 +727,19 @@ def settle_tool_return(
         return "error", None, None, ORPHAN_TOOL_ERROR
     state = TOOL_STATE_BY_OUTCOME.get(part.outcome, "error")
     return state, part.content, part.metadata, None if state == "done" else str(part.content)
+
+
+def settle_background_outcome(
+    outcome: BackgroundOutcome,
+) -> tuple[Literal["done", "error"], object, object, str | None]:
+    """一次后台工具结果收尾成工具卡的 (state, output, metadata, error)，两条投影共用。
+
+    结果只带给模型的文本，工具的 metadata 不随它送达；失败与 RetryPromptPart 一样只写错误。
+    """
+
+    if outcome.state == "done":
+        return "done", outcome.text, None, None
+    return "error", None, None, outcome.text
 
 
 def _stamp_approval(
@@ -822,6 +846,7 @@ __all__ = [
     "run_error_from_events",
     "run_ids_from_messages",
     "run_state_from_events",
+    "settle_background_outcome",
     "settle_tool_return",
     "step_usage",
     "tasks_from_messages",

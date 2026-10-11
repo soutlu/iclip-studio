@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic_ai import Agent, Tool
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -36,7 +37,12 @@ from iclip.harness.agents import DELEGATE_TOOL
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.runner import ConversationRunner, RunStarted, TurnStarted
+from iclip.harness.transcript.runner import (
+    ConversationRunner,
+    DepsFor,
+    RunStarted,
+    TurnStarted,
+)
 from iclip.harness.transcript.store import TranscriptStore
 from iclip.harness.usage_ledger import UsageLedger
 from iclip.platform.transcript.display import ToolDisplayRegistry
@@ -196,12 +202,13 @@ def make_runner(
     context_limits: Mapping[str, int] | None = None,
     on_run_started: RunStarted | None = None,
     on_turn_started: TurnStarted | None = None,
+    deps_for: DepsFor | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """按生产接法装 runner；context_limits 不给就按 AGENT_ID 开一个窗口。"""
+    """按生产接法装 runner；context_limits 不给就按 AGENT_ID 开一个窗口，deps_for 不给运行依赖为 None。"""
 
     queue = JobQueue(engine)
 
-    async def deps_for(_row: Any) -> object:
+    async def no_deps(_row: Any) -> object:
         return None
 
     runner = ConversationRunner(
@@ -210,7 +217,7 @@ def make_runner(
         queue=queue,
         snapshots=step_store,
         history=TranscriptHistory(step_store, queue, display, DELEGATE_TOOL),
-        deps_for=deps_for,
+        deps_for=no_deps if deps_for is None else deps_for,
         context_limits=(
             {AGENT_ID: MAX_CONTEXT_TOKENS} if context_limits is None else dict(context_limits)
         ),
@@ -236,8 +243,10 @@ def build_runner(
     context_limits: Mapping[str, int] | None = None,
     on_run_started: RunStarted | None = None,
     on_turn_started: TurnStarted | None = None,
+    capabilities: Sequence[AbstractCapability[Any]] = (),
+    deps_for: DepsFor | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """一个主 agent、一个假模型的 runner。"""
+    """一个主 agent、一个假模型的 runner；capabilities 挂在持久化之后。"""
 
     step_store = PgStepStore(engine)
     agent = Agent(
@@ -247,7 +256,7 @@ def build_runner(
         # DeferredToolRequests 必须纳入输出类型，以允许待审批工具结束本次 run。
         output_type=[str, DeferredToolRequests],
         # 不设置顶层 agent_name，保持调用方传入的 run_id。
-        capabilities=[StepPersistence(store=step_store)],
+        capabilities=[StepPersistence(store=step_store), *capabilities],
     )
     return make_runner(
         engine,
@@ -259,6 +268,7 @@ def build_runner(
         context_limits=context_limits,
         on_run_started=on_run_started,
         on_turn_started=on_turn_started,
+        deps_for=deps_for,
     )
 
 

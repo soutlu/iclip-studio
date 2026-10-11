@@ -1,6 +1,7 @@
 """基于 UIEventStream 将运行事件投影为 transcript 操作，与 from_messages 共享编号和展示规则。
 
 续跑通过 resume_from 继承整轮步骤、用量和工具卡。
+后台工具的回执不结卡，结果随递入消息到达时回填原卡。
 DeferredToolRequests 仅结束当前 run，不发轮次终态；历史与审批请求交由运行侧持久化。
 """
 
@@ -37,9 +38,11 @@ from pydantic_ai.ui import UIEventStream
 from pydantic_ai_harness.compaction import ContextUsageEvent, estimate_context_tokens
 
 from iclip.harness.agents import SubAgentProfile
+from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome
 from iclip.harness.context_compaction import compaction_only
 from iclip.harness.transcript.from_messages import (
     ORPHAN_TOOL_ERROR,
+    settle_background_outcome,
     settle_tool_return,
     step_usage,
     thinking_delta_text,
@@ -451,6 +454,9 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
             # 基类的 _pending_tool_calls（pydantic_ai 2.51 UIEventStream）在分发真实结果前已弹出该调用，
             # 只有异常收尾时补的返回到这里还挂着；升级框架时要复核这一点。
             return
+        if isinstance(part, ToolReturnPart) and is_receipt(part):
+            # 后台工具的回执：调用还在跑，卡等结果递入时再结。
+            return
         self._settled_calls.add(part.tool_call_id)
         state, output, metadata, error = settle_tool_return(part)
         stopped = isinstance(part, ToolReturnPart) and part.outcome == "interrupted"
@@ -538,28 +544,36 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
     async def handle_enqueued_messages(
         self, event: EnqueuedMessagesEvent
     ) -> AsyncIterator[OpsBatch]:
-        """已递入的插话挂在当前末步，与历史投影一致。"""
+        """已递入的插话挂在当前末步，与历史投影一致；后台工具的结果回填原卡，不成插话块。"""
 
-        said = [
-            content
-            for message in event.messages
-            for part in message.parts
-            if isinstance(part, UserPromptPart)
-            if (content := _prompt_content(part))
-        ]
-        if not said:
+        outcomes: list[BackgroundOutcome] = []
+        said: list[tuple[PromptContent, ...]] = []
+        for message in event.messages:
+            for part in message.parts:
+                if not isinstance(part, UserPromptPart):
+                    continue
+                outcome = parse_outcome(part)
+                if outcome is not None:
+                    outcomes.append(outcome)
+                elif content := _prompt_content(part):
+                    said.append(content)
+        if not outcomes and not said:
             return
+        # 结果与插话都让模型在同一次 run 里再答一次，中间没有工具调用，下个 part 开始时换步。
+        if self._in_response:
+            self._pending_step_break = True
+        ops: list[EmittableOperation] = [
+            op for outcome in outcomes for op in self._background_settled_ops(outcome)
+        ]
         prompt_id = self.steered.get(event.enqueue_id)
         prompt_ids = None if prompt_id is None else (prompt_id,)
         if self._step_ordinal == 0:
             self._pending_steers.extend((content, prompt_ids) for content in said)
-            return
-        if self._in_response:
-            self._pending_step_break = True
-        ops: list[EmittableOperation] = []
-        for content in said:
-            ops.extend(self._user_frame(content, prompt_ids))
-        yield tuple(ops)
+        else:
+            for content in said:
+                ops.extend(self._user_frame(content, prompt_ids))
+        if ops:
+            yield tuple(ops)
 
     # --- 内部 ---------------------------------------------------------------
 
@@ -632,6 +646,20 @@ class TranscriptEventStream(UIEventStream[Any, OpsBatch, Any, Any]):
             self._subagent_tasks[tool_call_id] = settled
             ops.append(TaskUpsertOp(task=settled))
         return ops
+
+    def _background_settled_ops(self, outcome: BackgroundOutcome) -> list[EmittableOperation]:
+        """后台工具的结果回填原卡；结果晚到几步，步号从卡上回推。"""
+
+        card = self._tool_cards.get(outcome.tool_call_id)
+        if card is None:
+            return []
+        state, output, metadata, error = settle_background_outcome(outcome)
+        settled = card.model_copy(
+            update={"state": state, "output": output, "metadata": metadata, "error": error}
+        )
+        self._tool_cards[outcome.tool_call_id] = settled
+        self._settled_calls.add(outcome.tool_call_id)
+        return [FrameUpsertOp(turn_id=self.turn_id, step_id=_step_of(card), frame=settled)]
 
     def _repaired_card_ops(self) -> list[EmittableOperation]:
         """处理框架补充 interrupted 返回但未发送事件的调用，按历史里那条返回收尾原卡。"""

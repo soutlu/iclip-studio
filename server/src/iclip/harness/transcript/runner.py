@@ -32,6 +32,7 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 
 from iclip.common.errors import Conflict, NotFound
 from iclip.harness.agents import DELEGATE_TOOL
+from iclip.harness.background import interrupt_stale_receipts
 from iclip.harness.context_compaction import ContextCompaction
 from iclip.harness.job_status import JobStatus
 from iclip.harness.jobs import JobQueue, JobRow
@@ -610,7 +611,8 @@ class ConversationRunner:
         context_window = self._context_limits.get(row.agent_id)
 
         awaiting = row.status == "awaiting"
-        history = await self._messages(row.conversation_id)
+        # 持久历史里没有活着的后台任务，没等到结果的回执一律换成 interrupted 返回再交给模型。
+        history = interrupt_stale_receipts(await self._messages(row.conversation_id))
         # 轮号按历史合并后的轮次计数，保持实时与历史一致。
         prompt_of_run = await self._queue.prompt_of_runs(row.conversation_id)
         turns = turn_run_ids(history, prompt_of_run)
