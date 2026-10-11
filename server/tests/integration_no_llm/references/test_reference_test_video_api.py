@@ -15,9 +15,9 @@ import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
+from iclip.app.bootstrap import build_app, build_engine
 from iclip.domains.references.test_prompt import build_test_prompt
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client
@@ -80,7 +80,7 @@ async def media_app(
 ) -> AsyncGenerator[FastAPI]:
     for name, value in STUDIO_MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())

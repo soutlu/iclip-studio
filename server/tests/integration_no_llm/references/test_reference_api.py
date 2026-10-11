@@ -11,9 +11,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
-from sqlalchemy.ext.asyncio import create_async_engine
 
-from iclip.app.bootstrap import build_app
+from iclip.app.bootstrap import build_app, build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import register_and_login, set_roles_in_db
@@ -45,7 +44,7 @@ async def studio_app(
     for name, value in STUDIO_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
@@ -217,7 +216,7 @@ async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
         if not name.startswith("OSS_"):
             monkeypatch.setenv(name, value)
     monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
@@ -252,7 +251,7 @@ async def test_without_breakdown_configured_only_reads_are_mounted(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("VIDEO_UNDERSTANDING_URL", raising=False)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     try:

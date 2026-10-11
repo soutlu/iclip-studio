@@ -7,8 +7,9 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.bootstrap import build_engine
 from iclip.harness.job_status import JobStatus
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.step_store_pg import PgStepStore
@@ -66,7 +67,7 @@ async def _no_deps(_row: JobRow) -> None:
 
 async def test_shutdown_returns_when_a_finished_run_is_still_on_the_books() -> None:
     # 不会真连：替身接住了收尾要用的方法，运行在碰数据库之前就失败了。
-    engine = create_async_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
+    engine = build_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
     queue = _InstantQueue(engine)
     step_store = PgStepStore(engine)
     runner = ConversationRunner(

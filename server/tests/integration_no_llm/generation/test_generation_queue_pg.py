@@ -10,8 +10,9 @@ from typing import Protocol
 import procrastinate
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.bootstrap import build_engine
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -52,7 +53,7 @@ class QueueFactory(Protocol):
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    created = create_async_engine(migrated_pg)
+    created = build_engine(migrated_pg)
     async with created.begin() as conn:
         await reset_database(conn)
         # 清理任务及 worker，避免上一用例的失联心跳影响当前恢复判断。

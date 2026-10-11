@@ -5,15 +5,16 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.bootstrap import build_engine
 from iclip.domains.products.catalog_pg import PgStyleDirectory
 from tests.helpers.pdm import recreate_pdm_styles, seed_pdm_style
 
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     try:
         await recreate_pdm_styles(engine)
         yield engine

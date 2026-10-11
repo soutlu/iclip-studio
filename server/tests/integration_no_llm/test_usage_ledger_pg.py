@@ -6,8 +6,9 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from sqlalchemy import RowMapping, select
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.bootstrap import build_engine
 from iclip.harness.usage_ledger_pg import PgConversationUsage, conversation_usage_table
 from iclip.platform.transcript.ops import StepUsage
 from tests.helpers.pg import truncate_clean
@@ -15,7 +16,7 @@ from tests.helpers.pg import truncate_clean
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await truncate_clean(conn, ("agent_runtime.conversation_usage",))
     try:

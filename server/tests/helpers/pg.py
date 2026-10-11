@@ -12,8 +12,10 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.pool import NullPool
+
+from iclip.app.bootstrap import build_engine
 
 APP_TABLES = (
     "iclip.users",
@@ -91,7 +93,7 @@ async def connected(url: str) -> AsyncGenerator[AsyncConnection]:
     NullPool 让连接随块关闭，``asyncio.run`` 里用也不会把连接留给下一个事件循环。
     """
 
-    engine = create_async_engine(url, poolclass=NullPool)
+    engine = build_engine(url, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
             yield conn

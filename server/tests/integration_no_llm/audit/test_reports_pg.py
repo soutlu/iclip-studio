@@ -13,8 +13,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.bootstrap import build_engine
 from iclip.domains.audit.models import Scope
 from iclip.domains.audit.reports_pg import PgAuditReports, audit_connection
 from iclip.domains.audit.schemas import ExecutionOut
@@ -931,7 +932,7 @@ async def test_audit_connections_turn_off_jit_only_for_their_own_transaction(
     """审计读连接在本事务里关掉 JIT；归还后池里同一条物理连接回到默认值。池只留一条连接，归还后
     下一次拿到的一定是它（后端进程号相同）；默认值钉成 on，不赖测试库的配置。"""
 
-    engine = create_async_engine(
+    engine = build_engine(
         migrated_pg,
         pool_size=1,
         max_overflow=0,

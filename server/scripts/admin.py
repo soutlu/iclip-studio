@@ -23,8 +23,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from iclip.app.bootstrap import build_engine
 from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.infra_sql import ApiKeyRow, User
 from iclip.domains.identity.rbac import PERMISSIONS, ROLES
@@ -55,7 +56,7 @@ async def _find_user(session_factory: async_sessionmaker[AsyncSession], identifi
 
 
 async def _list_users() -> None:
-    engine = create_async_engine(_database_url())
+    engine = build_engine(_database_url())
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with sessions() as session:
@@ -80,7 +81,7 @@ async def _set_roles(identifier: str, roles_csv: str) -> None:
         sys.exit(
             f"角色列表非法（未知: {', '.join(sorted(unknown)) or '空'}；可选: {', '.join(ROLES)}）"
         )
-    engine = create_async_engine(_database_url())
+    engine = build_engine(_database_url())
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
         user = await _find_user(sessions, identifier)
@@ -98,7 +99,7 @@ async def _issue_key(identifier: str, name: str, permissions_csv: str) -> None:
     unknown = permissions - set(PERMISSIONS)
     if not permissions or unknown:
         sys.exit(f"权限列表非法（未知: {', '.join(sorted(unknown)) or '空'}）")
-    engine = create_async_engine(_database_url())
+    engine = build_engine(_database_url())
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
         user = await _find_user(sessions, identifier)

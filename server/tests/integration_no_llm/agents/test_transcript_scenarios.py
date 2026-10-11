@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
-import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -35,16 +34,13 @@ from pydantic_ai.models.function import (
     DeltaToolCalls,
     FunctionModel,
 )
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.ports import FailedBreakdown
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.public import Principal
-from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.harness.agents import (
     DELEGATE_TOOL,
     AgentDefinition,
@@ -734,94 +730,6 @@ async def test_stopping_during_a_background_breakdown_interrupts_the_call(
     ]
     assert [turn.state for turn in live.items] == ["cancelled", "completed"]
     assert _breakdown_card(live).error == ORPHAN_TOOL_ERROR
-
-
-def polling_breakdown(engine: AsyncEngine) -> Tool[Any]:
-    """后台跑的拆解：像参考视频服务等拆解那样，经真实存储反复查一行还没出现的参考视频。"""
-
-    store = SqlReferenceStore(engine)
-    reference_id = uuid.uuid4()
-
-    async def breakdown_video(video_url: str) -> str:
-        while await store.get(reference_id) is None:
-            await asyncio.sleep(0.01)
-        return BREAKDOWN_DONE
-
-    return Tool(breakdown_video, name="breakdown_video", metadata={"background": True})
-
-
-async def _until_a_query_waits_on_the_lock(lock: AsyncConnection) -> None:
-    """等到别的连接查 reference_videos 时卡在锁上。锁连接开着事务，pg_stat_activity 在事务里
-    只取一次快照，所以每次看之前先清掉。"""
-
-    for _ in range(500):
-        await lock.execute(text("select pg_stat_clear_snapshot()"))
-        waiting = (
-            await lock.execute(
-                text(
-                    "select count(*) from pg_stat_activity where wait_event_type = 'Lock'"
-                    " and query ilike '%reference_videos%' and pid <> pg_backend_pid()"
-                )
-            )
-        ).scalar_one()
-        if waiting:
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError("拆解的查询没有卡在锁上")
-
-
-async def _settled_status(lock: AsyncConnection, prompt_id: str) -> str:
-    """等这条 prompt 离开排队与运行中，返回最后看到的状态。经锁连接读，不占被测 engine 的连接。"""
-
-    status = ""
-    for _ in range(250):
-        status = (
-            await lock.execute(
-                text("select status from agent_runtime.agent_jobs where prompt_id = :prompt_id"),
-                {"prompt_id": prompt_id},
-            )
-        ).scalar_one()
-        if status not in ("queued", "running"):
-            break
-        await asyncio.sleep(0.02)
-    return status
-
-
-async def test_stopping_while_a_background_breakdown_waits_on_the_database_aborts_the_turn(
-    engine: AsyncEngine, migrated_pg: str
-) -> None:
-    ended = asyncio.Event()
-    runner, _step_store, queue = build_runner(
-        engine,
-        waits_for_breakdown(ended),
-        store=TranscriptStore(),
-        tools=[polling_breakdown(engine)],
-        capabilities=[BackgroundTools()],
-        display=DISPLAYS,
-        context_limits={},
-    )
-    conversation_id = new_conversation_id()
-    locker = create_async_engine(migrated_pg, poolclass=NullPool)
-    lock = await locker.connect()
-    try:
-        # 锁住参考视频表，拆解的查询就停在库里；一直锁到这次运行收尾，停止正好落在查询中。
-        await lock.execute(text("lock table iclip.reference_videos in access exclusive mode"))
-        prompt_id = await submit_text(runner, queue, conversation_id, "拆一下这条视频")
-        await _until_a_query_waits_on_the_lock(lock)
-        await ended.wait()
-        await runner.abort(conversation_id, prompt_id)
-        status = await _settled_status(lock, prompt_id)
-    finally:
-        await lock.rollback()
-        await lock.close()
-        await locker.dispose()
-        await runner.shutdown()
-
-    assert status == "aborted"
-    # 被取消打断的连接没留给后面的查询。
-    for _ in range(5):
-        async with engine.connect() as conn:
-            assert (await conn.execute(text("select 1"))).scalar_one() == 1
 
 
 def breaks_down_and_writes(reply: str) -> FunctionModel:

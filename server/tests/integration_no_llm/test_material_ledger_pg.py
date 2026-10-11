@@ -7,8 +7,9 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.bootstrap import build_engine
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 from iclip.platform.material_ledger.store import Material
 from tests.helpers.pg import truncate_clean
@@ -19,7 +20,7 @@ IMAGE = "https://cdn.test/poster.jpg?x-oss-process=image/resize,l_1024"
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await truncate_clean(conn, ("agent_runtime.materials",))
     yield engine

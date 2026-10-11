@@ -16,8 +16,9 @@ from pydantic_ai.messages import (
     ToolCallPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.bootstrap import build_engine
 from iclip.capabilities.shot_document import SHOTS_PATH, validate_shots_document
 from iclip.capabilities.video.capability import Video
 from iclip.capabilities.video_document import video_doc_path
@@ -55,7 +56,7 @@ SHOTS: dict[str, Any] = {
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await truncate_clean(conn, ("agent_runtime.workspace_files", "agent_runtime.materials"))
     yield engine

@@ -8,8 +8,8 @@ import os
 from alembic import context
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import create_async_engine
 
+from iclip.app.bootstrap import build_engine
 from iclip.domains.identity.infra_sql import DB_SCHEMA, Base
 
 target_metadata = Base.metadata
@@ -35,7 +35,7 @@ def _run_migrations(connection: Connection) -> None:
 
 
 async def _run_async() -> None:
-    engine = create_async_engine(_database_url())
+    engine = build_engine(_database_url())
     try:
         async with engine.connect() as connection:
             await connection.run_sync(_run_migrations)
