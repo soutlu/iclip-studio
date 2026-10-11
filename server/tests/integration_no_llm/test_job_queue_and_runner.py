@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from pydantic_ai import Tool
+from pydantic_ai import Agent, AgentRunResult, Tool
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     ModelMessage,
@@ -25,11 +27,14 @@ from pydantic_ai.models.function import (
     DeltaToolCalls,
     FunctionModel,
 )
+from pydantic_ai.tools import DeferredToolRequests, RunContext
+from pydantic_ai_harness.step_persistence import StepPersistence
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.errors import Conflict, NotFound
 from iclip.harness.jobs import JobQueue, JobRow
+from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.activity import IDLE, ActivityState
 from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR, run_ids_from_messages
 from iclip.harness.transcript.history import TranscriptHistory
@@ -38,7 +43,9 @@ from iclip.harness.transcript.store import TranscriptStore
 from iclip.platform.transcript.ops import (
     MAIN_AGENT_ID,
     AgentStatusMeta,
+    PromptUpsertOp,
     TextContent,
+    TextFrame,
     TranscriptTurn,
 )
 from tests.helpers.runtime import (
@@ -54,6 +61,7 @@ from tests.helpers.runtime import (
     drained,
     expire_lease,
     first_run_messages,
+    make_runner,
     plant_interrupted,
     prompt_text,
     records_nothing,
@@ -1270,7 +1278,7 @@ async def test_an_append_landing_after_the_last_model_request_still_reaches_the_
 async def test_an_append_is_cancelled_with_the_turn_instead_of_starting_a_new_one(
     engine: AsyncEngine,
 ) -> None:
-    """已读取追加消息随当前轮取消，不可重新排队，否则停止后会启动新轮。"""
+    """插进当前一轮的追加消息随停止一并撤回，否则停止后会作为新轮启动。"""
 
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
@@ -1294,13 +1302,19 @@ async def test_an_append_is_cancelled_with_the_turn_instead_of_starting_a_new_on
     assert [prompt_text(turn) for turn in replay(store, conversation_id)] == ["先做这个"]
 
 
-async def test_an_append_the_run_never_read_goes_back_to_the_queue(engine: AsyncEngine) -> None:
-    """直接验证标记 steered 与退回 queued 的状态转换，覆盖结束竞态中的未读消息回收。"""
+async def test_marking_a_delivered_append_takes_only_rows_still_queued(
+    engine: AsyncEngine,
+) -> None:
+    """确认递入时 queued 转 steered 并离开队列；递入前已撤回的行不动。"""
 
     queue = JobQueue(engine)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
     now = datetime.now(UTC)
-    for prompt_id, said in (("prm_head", "先做这个"), ("prm_tail", "临时插一句")):
+    for prompt_id, said in (
+        ("prm_head", "先做这个"),
+        ("prm_tail", "临时插一句"),
+        ("prm_dropped", "算了不要了"),
+    ):
         await queue.submit(
             prompt_id=prompt_id,
             conversation_id=conversation_id,
@@ -1312,18 +1326,22 @@ async def test_an_append_the_run_never_read_goes_back_to_the_queue(engine: Async
             locked_by=LOCKED_BY,
         )
 
-    (moved,) = await queue.mark_steered(("prm_tail",), run_id=f"{AGENT_ID}-dead", now=now)
+    (dropped,) = await queue.abort_queued(conversation_id, now=now, only=("prm_dropped",))
+    assert dropped.prompt_id == "prm_dropped"
+
+    (moved,) = await queue.mark_steered(
+        ("prm_tail", "prm_dropped"), run_id=f"{AGENT_ID}-live", now=now
+    )
+    assert moved.prompt_id == "prm_tail"
     assert moved.status == "steered"
-    assert moved.run_id == f"{AGENT_ID}-dead"
+    assert moved.run_id == f"{AGENT_ID}-live"
+    assert moved.steered_at == now
     # 对外协议不含 steered，需映射为已定义状态。
     assert moved.as_entity().status == "running"
     assert (await queue.view(conversation_id)).queued == ()
-
-    (back,) = await queue.requeue_steered(("prm_tail",))
-    assert back.status == "queued"
-    assert back.run_id is None
-    assert back.steered_at is None
-    assert [row.prompt_id for row in (await queue.view(conversation_id)).queued] == ["prm_tail"]
+    still = await queue.get("prm_dropped")
+    assert still is not None
+    assert (still.status, still.run_id, still.steered_at) == ("aborted", None, None)
 
 
 async def test_appending_when_nothing_is_running_is_a_conflict(engine: AsyncEngine) -> None:
@@ -1338,6 +1356,331 @@ async def test_appending_when_nothing_is_running_is_a_conflict(engine: AsyncEngi
 
     with pytest.raises(Conflict):
         await runner.steer(conversation_id, (prompt_id,))
+
+
+@dataclass
+class _SteersAfterRun(AbstractCapability[Any]):
+    """在 after_run 里插一次话：此时框架末次 drain 已关上队列，runner 还登记着这次运行。"""
+
+    steer: Callable[[], Awaitable[None]] | None = None
+
+    async def after_run(
+        self, ctx: RunContext[Any], *, result: AgentRunResult[Any]
+    ) -> AgentRunResult[Any]:
+        steer, self.steer = self.steer, None
+        if steer is not None:
+            await steer()
+        return result
+
+
+async def test_a_steer_landing_after_the_final_drain_runs_as_the_next_turn(
+    engine: AsyncEngine,
+) -> None:
+    """框架队列关上之后、运行摘下控制句柄之前到达的插话留在队列，下一轮照常跑它。"""
+
+    entered, gate = asyncio.Event(), asyncio.Event()
+    late = _SteersAfterRun()
+    step_store = PgStepStore(engine)
+    agent = Agent(
+        waits(entered, gate),
+        name=AGENT_ID,
+        output_type=[str, DeferredToolRequests],
+        capabilities=[StepPersistence(store=step_store), late],
+    )
+    store = TranscriptStore()
+    runner, _step_store, queue = make_runner(
+        engine, agents={AGENT_ID: agent}, step_store=step_store, store=store
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    first = await submit_text(runner, queue, conversation_id, "先做这个")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await entered.wait()
+    errors: list[Exception] = []
+    seen: list[str] = []
+
+    async def steer() -> None:
+        try:
+            await runner.steer(conversation_id, (second,))
+        except Exception as exc:
+            errors.append(exc)
+        row = await queue.get(second)
+        assert row is not None
+        seen.append(row.status)
+
+    late.steer = steer
+    gate.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    assert errors == []
+    assert seen == ["queued"]
+    started = await queue.get(first)
+    appended = await queue.get(second)
+    assert started is not None
+    assert appended is not None
+    assert (started.status, appended.status) == ("completed", "completed")
+    assert appended.run_id is not None
+    assert appended.run_id != started.run_id
+    assert (await queue.prompt_of_runs(conversation_id))[appended.run_id] == second
+    derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
+    assert [prompt_text(turn) for turn in derived] == ["先做这个", "临时插一句"]
+
+
+async def test_a_steer_the_crashed_run_never_took_is_not_settled_by_the_resume(
+    engine: AsyncEngine,
+) -> None:
+    """崩溃时还没递进模型的插话保持 queued：续跑不认领它，它在续跑之后作为自己的一轮运行。"""
+
+    entered, gate = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    first = await submit_text(runner, queue, conversation_id, "先做这个")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await entered.wait()
+    await runner.steer(conversation_id, (second,))
+    # 进程「死了」：心跳过期，第一个 runner 卡在请求里，既不推进也不收尾。
+    await expire_lease(engine, conversation_id)
+
+    store2 = TranscriptStore()
+    runner2, step_store2, queue2 = build_runner(engine, says("接着写完了"), store=store2)
+    await runner2.sweep_once()
+    await drained(queue2, conversation_id)
+    await runner2.shutdown()
+
+    resumed = await queue.get(first)
+    appended = await queue.get(second)
+    assert resumed is not None
+    assert appended is not None
+    assert (resumed.status, resumed.attempt) == ("completed", 1)
+    assert appended.status == "completed"
+    assert appended.run_id is not None
+    assert appended.run_id != resumed.run_id
+    assert (await queue.prompt_of_runs(conversation_id))[appended.run_id] == second
+    derived = (await TranscriptHistory(step_store2, queue).read(conversation_id)).turns
+    assert [prompt_text(turn) for turn in derived] == ["先做这个", "临时插一句"]
+
+    # 收拾卡住的第一个 runner；它的租约早已易手，收尾写不进任何一行。
+    await runner.shutdown()
+
+
+def _blocks_then_speaks(
+    entered: tuple[asyncio.Event, asyncio.Event],
+    gates: tuple[asyncio.Event, asyncio.Event],
+    after_delivery: Callable[[], Awaitable[None]] | None = None,
+) -> FunctionModel:
+    """首个请求阻塞到 gates[0]；后续请求先吐一段，再执行 after_delivery、置 entered[1]、阻塞到 gates[1]。
+
+    框架拉取响应的下一段之前先派发已缓冲的事件，吐出首段之后递入确认已经处理完。
+    """
+
+    asked = 0
+
+    async def stream(
+        _messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal asked
+        asked += 1
+        if asked == 1:
+            entered[0].set()
+            await gates[0].wait()
+            yield "第一句"
+            return
+        yield "补充收到了"
+        if after_delivery is not None:
+            await after_delivery()
+        entered[1].set()
+        await gates[1].wait()
+
+    return FunctionModel(stream_function=stream)
+
+
+async def test_a_steer_stays_queued_until_the_model_takes_it(engine: AsyncEngine) -> None:
+    """插话递入后仍是 queued；框架确认它进了消息历史才记为 steered，带上 run_id 与插话时间并广播。"""
+
+    entered = (asyncio.Event(), asyncio.Event())
+    gates = (asyncio.Event(), asyncio.Event())
+    delivered: list[JobRow | None] = []
+
+    async def look() -> None:
+        delivered.append(await queue.get(second))
+
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(
+        engine, _blocks_then_speaks(entered, gates, look), store=store
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    first = await submit_text(runner, queue, conversation_id, "先做这个")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await entered[0].wait()
+    await runner.steer(conversation_id, (second,))
+
+    waiting = await queue.get(second)
+    assert waiting is not None
+    assert (waiting.status, waiting.run_id, waiting.steered_at) == ("queued", None, None)
+
+    gates[0].set()
+    await entered[1].wait()
+    started = await queue.get(first)
+    assert started is not None
+    (taken,) = delivered
+    assert taken is not None
+    assert (taken.status, taken.run_id) == ("steered", started.run_id)
+    assert taken.steered_at is not None
+    epoch = store.subscribe_view(conversation_id, MAIN_AGENT_ID).epoch
+    published = [
+        op.prompt
+        for batch in store.subscribe_view(
+            conversation_id, MAIN_AGENT_ID, since=0, epoch=epoch
+        ).batches
+        for op in batch.ops
+        if isinstance(op, PromptUpsertOp) and op.prompt.prompt_id == second
+    ]
+    assert [(prompt.status, prompt.steered_at is not None) for prompt in published] == [
+        ("queued", False),
+        ("running", True),
+    ]
+
+    gates[1].set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    settled = await queue.get(second)
+    assert settled is not None
+    assert (settled.status, settled.run_id) == ("completed", started.run_id)
+    assert [
+        frame.prompt_ids
+        for turn in replay(store, conversation_id)
+        for step in turn.steps
+        for frame in step.frames
+        if isinstance(frame, TextFrame) and frame.role == "user"
+    ] == [(second,)]
+
+
+async def test_stopping_the_turn_drops_a_steer_it_never_took(engine: AsyncEngine) -> None:
+    """单条停止当前一轮时，还没递进模型的插话一并撤回，不作为新一轮运行。"""
+
+    entered, gate = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    first = await submit_text(runner, queue, conversation_id, "先做这个")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await entered.wait()
+    await runner.steer(conversation_id, (second,))
+
+    await runner.abort(conversation_id, first)
+    gate.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    stopped = await queue.get(first)
+    appended = await queue.get(second)
+    assert stopped is not None
+    assert appended is not None
+    assert (stopped.status, appended.status) == ("aborted", "aborted")
+    # 没递进模型：不挂在这一轮上，也没有插话时间。
+    assert (appended.run_id, appended.steered_at) == (None, None)
+    assert await queue.prompt_of_runs(conversation_id) == {stopped.run_id: first}
+    assert [prompt_text(turn) for turn in replay(store, conversation_id)] == ["先做这个"]
+
+
+async def test_a_steer_withdrawn_before_the_model_takes_it_stays_aborted(
+    engine: AsyncEngine,
+) -> None:
+    """停整段对话先撤队列、后发取消；插话在两者之间被框架递入时，确认递入不改动已撤回的行。"""
+
+    seen: list[list[ModelMessage]] = []
+    entered, gate = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(engine, _records(seen, entered, gate), store=store)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    first = await submit_text(runner, queue, conversation_id, "先做这个")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await entered.wait()
+    await runner.steer(conversation_id, (second,))
+
+    # abort_conversation 的第一步；取消还没发出，框架照常递入。
+    await queue.abort_queued(conversation_id, now=datetime.now(UTC))
+    gate.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    assert "临时插一句" in texts(seen[1])
+    started = await queue.get(first)
+    appended = await queue.get(second)
+    assert started is not None
+    assert appended is not None
+    assert started.status == "completed"
+    assert (appended.status, appended.run_id, appended.steered_at) == ("aborted", None, None)
+
+
+async def test_stopping_one_steer_waiting_for_delivery_conflicts_like_a_delivered_one(
+    engine: AsyncEngine,
+) -> None:
+    """已入队、框架还没递入的插话也撤不出框架队列，单条停止与已递入的一样返回冲突。"""
+
+    entered = (asyncio.Event(), asyncio.Event())
+    gates = (asyncio.Event(), asyncio.Event())
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(
+        engine, _blocks_then_speaks(entered, gates), store=store
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    await submit_text(runner, queue, conversation_id, "先做这个")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await entered[0].wait()
+    await runner.steer(conversation_id, (second,))
+
+    with pytest.raises(Conflict) as waiting:
+        await runner.abort(conversation_id, second)
+    pending = await queue.get(second)
+    assert pending is not None
+    assert pending.status == "queued"
+
+    gates[0].set()
+    await entered[1].wait()
+    with pytest.raises(Conflict) as taken:
+        await runner.abort(conversation_id, second)
+    assert str(waiting.value) == str(taken.value)
+
+    gates[1].set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    settled = await queue.get(second)
+    assert settled is not None
+    assert settled.status == "completed"
+
+
+async def test_steering_the_same_prompt_twice_enqueues_it_once(engine: AsyncEngine) -> None:
+
+    seen: list[list[ModelMessage]] = []
+    entered, gate = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(engine, _records(seen, entered, gate), store=store)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    await submit_text(runner, queue, conversation_id, "先做这个")
+    second = await submit_text(runner, queue, conversation_id, "临时插一句")
+    await entered.wait()
+    await runner.steer(conversation_id, (second, second))
+    await runner.steer(conversation_id, (second,))
+    gate.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    assert len(seen) == 2
+    assert texts(seen[1]).count("临时插一句") == 1
+    appended = await queue.get(second)
+    assert appended is not None
+    assert appended.status == "completed"
 
 
 async def test_a_run_that_died_mid_tool_still_shows_up_after_a_refresh(
@@ -1446,10 +1789,10 @@ async def test_the_next_turn_after_a_failed_one_does_not_reuse_its_ordinal(
     assert [turn.state for turn in derived] == ["failed", "completed"]
 
 
-async def test_shutdown_puts_an_append_the_run_never_read_back_in_the_queue(
+async def test_shutdown_leaves_an_append_the_run_never_read_in_the_queue(
     engine: AsyncEngine,
 ) -> None:
-    """关停时框架尚未读取的追加消息须退回 queued，避免被续跑误标为已完成。"""
+    """关停时框架尚未递入的追加消息保持 queued，避免被续跑误标为已完成。"""
 
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
