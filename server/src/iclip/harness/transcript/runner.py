@@ -395,8 +395,8 @@ class ConversationRunner:
     async def _acknowledge(self, active: _Active, enqueue_id: str) -> None:
         """框架确认插话进了消息历史后记为 steered 并广播；别处的入队 id 不予理会。
 
-        递入前已被撤回的行 mark_steered 不改动。写库失败照常抛出、让运行失败：
-        内容已在历史里，行若留在 queued 会被当成新一轮再跑一遍。
+        递入前已被撤回的行 mark_steered 不改动。写库失败照常抛出、让运行失败，不吞掉；
+        这时内容已在历史里而行仍是 queued，收尾后会被当成新一轮再跑一遍。
         """
 
         prompt_id = active.steered.get(enqueue_id)
