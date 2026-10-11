@@ -514,7 +514,7 @@ def _turn(
         origin=TurnOrigin(kind="user"),
         content=content or (),
         started_at=_iso(started),
-        ended_at=_iso(ended),
+        ended_at=_iso(ended) if state in _ENDED_STATES else None,
         usage=turn_usage([step.usage for step in steps if step.usage is not None]),
         duration_ms=_duration_ms(started, ended) if state in _ENDED_STATES else None,
         error=error,

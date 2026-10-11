@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -199,15 +199,11 @@ async def both_pages(
     return live, cold
 
 
-def assert_same_page(
-    live: TranscriptPage,
-    cold: TranscriptPage,
-    view: Callable[[TranscriptPage], dict[str, Any]] = comparable,
-) -> None:
-    """两页按 view 取出的部分不等时给出逐行 diff，比 pytest 对大字典的摘要好读。"""
+def assert_same_page(live: TranscriptPage, cold: TranscriptPage) -> None:
+    """两页不等时给出逐行 diff，比 pytest 对大字典的摘要好读。"""
 
-    a = json.dumps(view(live), ensure_ascii=False, indent=1).splitlines()
-    b = json.dumps(view(cold), ensure_ascii=False, indent=1).splitlines()
+    a = json.dumps(comparable(live), ensure_ascii=False, indent=1).splitlines()
+    b = json.dumps(comparable(cold), ensure_ascii=False, indent=1).splitlines()
     if a != b:
         diff = "\n".join(difflib.unified_diff(a, b, "实时重放", "冷启动重建", lineterm="", n=2))
         raise AssertionError(f"两条路的页不一样：\n{diff}")
@@ -773,15 +769,6 @@ def approved_write_after(entered: asyncio.Event) -> Tool[Any]:
     return Tool(write_file, name="write_file")
 
 
-def _without_turn_end(page: TranscriptPage) -> dict[str, Any]:
-    """去掉轮次头部的 endedAt：等审批时历史重建按末条消息填它，实时头部不填。"""
-
-    data = comparable(page)
-    for turn in data["items"]:
-        turn.pop("endedAt", None)
-    return data
-
-
 async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approval_open(
     engine: AsyncEngine,
 ) -> None:
@@ -800,26 +787,7 @@ async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approv
 
     prompt_id = await submit_text(runner, queue, conversation_id, "拆一下视频，再改文件")
     await awaits(queue, prompt_id)
-    live = await live_page(
-        store,
-        conversation_id,
-        MAIN_AGENT_ID,
-        queue=queue,
-        runner=runner,
-        display=DISPLAYS,
-        runtime_agent_id=AGENT_ID,
-    )
-    cold = await cold_page(
-        step_store,
-        conversation_id,
-        MAIN_AGENT_ID,
-        queue=queue,
-        runner=runner,
-        display=DISPLAYS,
-        runtime_agent_id=AGENT_ID,
-        delegate_tool=DELEGATE_TOOL,
-    )
-    assert_same_page(live, cold, _without_turn_end)
+    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
     # 暂停时没跑完的后台调用被丢掉，卡收成中断；等审批的卡带着审批 id 保持开放。
     assert live.items[0].state == "running"
