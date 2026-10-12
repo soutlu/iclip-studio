@@ -76,6 +76,9 @@ class TextFrame(_Wire):
     content: tuple[PromptContent, ...] | None = None
     """用户原始图文 parts；助手文本不使用此字段。"""
     prompt_ids: tuple[str, ...] | None = None
+    task_id: str | None = None
+    """后台工具的完成通知：等于发起它的那次调用的 toolCallId，也是任务列表里那条任务的 id。
+    带它的用户块不是用户说的话，``content`` 只有一段与 ``text`` 相同的文字。"""
 
     @model_validator(mode="after")
     def _user_block_carries_content(self) -> TextFrame:
@@ -149,7 +152,8 @@ TaskState = Literal["running", "completed", "failed", "timed_out", "killed", "lo
 
 
 class TranscriptTask(_Wire):
-    """一件后台活儿。本系统只产出 ``subagent``：一次 delegate_task 一条。"""
+    """一件后台活儿。本系统产出两种：``subagent`` 是一次 delegate_task 一条；``tool`` 是一次后台
+    工具调用一条（``detached`` 为真），``task_id`` 等于那次调用的 toolCallId。"""
 
     task_id: str
     kind: Literal["shell", "subagent", "tool", "other"]
