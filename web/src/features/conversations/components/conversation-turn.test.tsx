@@ -6,6 +6,7 @@ import type {
   PromptContentPart,
   ToolCallFrame,
   TranscriptInteraction,
+  TranscriptTask,
   TranscriptTurn,
 } from '@/shared/transcript/vendor'
 import { ArtifactRegistry } from '@/shared/workbench'
@@ -220,12 +221,14 @@ const registry = () => {
 type RenderTurnOptions = {
   interactions?: ReadonlyMap<string, TranscriptInteraction>
   onRegenerate?: () => void
+  toolTasks?: ReadonlyMap<string, TranscriptTask>
 }
 
 const turnElement = (turn: TranscriptTurn, options: RenderTurnOptions = {}) => (
   <ConversationTurn
     interactions={options.interactions ?? new Map()}
     onRegenerate={options.onRegenerate}
+    toolTasks={options.toolTasks ?? new Map()}
     turn={turn}
   />
 )
@@ -768,5 +771,119 @@ describe('轮次没跑完', () => {
     await renderTurn(failedTurn())
 
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+})
+
+describe('后台工具', () => {
+  const breakdownTool = (fields: Partial<ToolCallFrame> = {}): ToolCallFrame => ({
+    display: { detail: 'ugg-ref.mp4', kind: 'generic', summary: '拆解视频' },
+    frameId: 't1.1.f1',
+    kind: 'tool',
+    name: 'breakdown_video',
+    output: "Tool 'breakdown_video' is running in background (task call_bd).",
+    state: 'done',
+    toolCallId: 'call_bd',
+    ...fields,
+  })
+
+  const toolTask = (fields: Partial<TranscriptTask> = {}): ReadonlyMap<string, TranscriptTask> =>
+    new Map([
+      [
+        'call_bd',
+        {
+          description: '拆解视频 ugg-ref.mp4',
+          detached: true,
+          endedAt: '2026-10-11T08:03:12Z',
+          kind: 'tool',
+          outputTail: '',
+          startedAt: '2026-10-11T08:00:00Z',
+          state: 'completed',
+          taskId: 'call_bd',
+          ...fields,
+        },
+      ],
+    ])
+
+  const notice = (value: string, frameId = 't1.1.f3') => ({
+    content: [text(value)],
+    frameId,
+    kind: 'text' as const,
+    role: 'user' as const,
+    taskId: 'call_bd',
+    text: value,
+  })
+
+  /** 不带开场输入，页面上的用户气泡只可能来自通知块。 */
+  const noticeTurn = (value: string) => ({ ...turnWithFrames([notice(value)]), content: [] })
+
+  it('转入后台的调用：卡尾写「已转入后台」，不画状态图标', async () => {
+    await renderTurn(turnWithFrames([breakdownTool()]), { toolTasks: toolTask() })
+
+    expect(screen.getByText('已转入后台')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: /失败|完成|进行中/ })).toBeNull()
+  })
+
+  it('没有对应的后台工具任务时，同样的完成调用卡尾什么都不写', async () => {
+    await renderTurn(turnWithFrames([breakdownTool()]))
+
+    expect(screen.queryByText('已转入后台')).toBeNull()
+  })
+
+  it('回执后被中断的调用照失败画：红 ×，不写「已转入后台」', async () => {
+    await renderTurn(
+      turnWithFrames([
+        breakdownTool({ error: '运行中断，这次调用没有结果', output: undefined, state: 'error' }),
+      ]),
+      { toolTasks: toolTask({ state: 'killed' }) },
+    )
+
+    expect(screen.getByRole('img', { name: '失败' })).toBeInTheDocument()
+    expect(screen.queryByText('已转入后台')).toBeNull()
+  })
+
+  it('完成通知：对勾加文字，第二行是任务用时；不是用户气泡，没有复制与修改', async () => {
+    await renderTurn(noticeTurn('已拆解视频 ugg-ref.mp4'), { toolTasks: toolTask() })
+
+    expect(screen.getByRole('img', { name: '已完成' })).toBeInTheDocument()
+    expect(screen.getByText('已拆解视频 ugg-ref.mp4')).toBeInTheDocument()
+    expect(screen.getByText('3m12s')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '复制消息' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '修改' })).toBeNull()
+  })
+
+  it('失败通知：红 × 加文字', async () => {
+    await renderTurn(noticeTurn('拆解视频 ugg-ref.mp4 失败'), {
+      toolTasks: toolTask({ endedAt: '2026-10-11T08:03:40Z', state: 'failed' }),
+    })
+
+    expect(screen.getByRole('img', { name: '失败' })).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '已完成' })).toBeNull()
+    expect(screen.getByText('3m40s')).toBeInTheDocument()
+  })
+
+  it('找不到对应任务时只写文字，不画图标也不写用时', async () => {
+    await renderTurn(noticeTurn('已拆解视频 ugg-ref.mp4'))
+
+    expect(screen.getByText('已拆解视频 ugg-ref.mp4')).toBeInTheDocument()
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.queryByRole('button', { name: '复制消息' })).toBeNull()
+  })
+
+  it('复制本轮回复时跳过完成通知：仍从最后一句用户插话之后算起', async () => {
+    const user = userEvent.setup()
+    const writeText = stubClipboard()
+    await renderTurn(
+      turnWithFrames([
+        breakdownTool(),
+        { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '简报写好了，等拆解。' },
+        notice('已拆解视频 ugg-ref.mp4'),
+        { frameId: 't1.1.f4', kind: 'text', role: 'assistant', text: '拆解好了，接着写分镜。' },
+      ]),
+      { toolTasks: toolTask() },
+    )
+
+    await user.click(screen.getByRole('button', { name: '复制' }))
+
+    expect(writeText).toHaveBeenCalledWith('简报写好了，等拆解。\n\n拆解好了，接着写分镜。')
   })
 })

@@ -36,10 +36,12 @@ import {
   useForkConversation,
 } from '../conversations.api'
 import { ApprovalCard } from './approval-card'
+import { BackgroundTaskBar } from './background-task-bar'
 import { ConversationComposer } from './conversation-composer'
 import { ConversationTurn } from './conversation-turn'
 import { LoadOlder } from './load-older'
 import { useKeepPlaceOnPrepend } from './use-keep-place-on-prepend'
+import { useToolTasks } from './use-tool-tasks'
 import { PromptQueue } from './prompt-queue'
 import { UserBubble } from './user-bubble'
 import { WorkingIndicator } from './working-indicator'
@@ -145,6 +147,7 @@ export function ConversationRoute({
   )
 
   const turns = view.items.filter((item) => item.kind === 'turn')
+  const toolTasks = useToolTasks(view.tasks)
   const keepPlace = useKeepPlaceOnPrepend(scrollerRef, turns[0]?.turnId, view.loadingOlder)
   const loadEarlier = () => {
     keepPlace()
@@ -348,6 +351,7 @@ export function ConversationRoute({
                   !readOnly && turn.turnId === latestTurn?.turnId ? regenerateTurn : undefined
                 }
                 regenerateDisabled={conversationBusy}
+                toolTasks={toolTasks}
                 turn={turn}
               />
             ))}
@@ -438,6 +442,7 @@ export function ConversationRoute({
               {sourceLink(view.forkedFrom)}
             </p>
           )}
+          <BackgroundTaskBar tasks={toolTasks} />
           {readOnly ? (
             <p
               aria-label="只读说明"

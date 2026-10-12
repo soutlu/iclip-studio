@@ -1,7 +1,11 @@
 /** 按 turn → step → frame 顺序渲染，连续活动由 activity-group 分组并收进活动卡，单块由 turn-frame 渲染。 */
 
 import { memo } from 'react'
-import type { TranscriptInteraction, TranscriptTurn } from '@/shared/transcript/vendor'
+import type {
+  TranscriptInteraction,
+  TranscriptTask,
+  TranscriptTurn,
+} from '@/shared/transcript/vendor'
 import { ActivityCard } from './activity-card'
 import { groupActivityCards, groupTurnEntries, type TurnEntry } from './activity-group'
 import { ActivityRun } from './activity-run'
@@ -15,6 +19,8 @@ type ConversationTurnProps = {
   turn: TranscriptTurn
   /** 本段对话的全部交互（含已决定的）；工具卡凭它认出被拒绝的那一步。 */
   interactions: ReadonlyMap<string, TranscriptInteraction>
+  /** 本段对话的后台工具任务（见 useToolTasks）；只在工具任务变化时换引用，memo 才挡得住无关重渲染。 */
+  toolTasks: ReadonlyMap<string, TranscriptTask>
   /** 最新一轮：终态栏常驻；历史轮悬停才露出。 */
   latest?: boolean | undefined
   /** 仅在末轮且对话空闲时提供重新生成回调。三个回调都收本轮，调用方据此传稳定引用，memo 才挡得住无关重渲染。 */
@@ -40,12 +46,14 @@ export const ConversationTurn = memo(function ConversationTurn({
   onFork,
   onRegenerate,
   regenerateDisabled,
+  toolTasks,
   turn,
 }: ConversationTurnProps) {
   const settled = isSettled(turn)
   const entries = turn.steps.flatMap((step) => step.frames.map((frame) => ({ frame, step })))
+  // 复制从最后一句用户插话之后算起；后台任务的完成通知（带 taskId）不是用户说的话，不算边界。
   const lastUserFrameIndex = entries.findLastIndex(
-    ({ frame }) => frame.kind === 'text' && frame.role === 'user',
+    ({ frame }) => frame.kind === 'text' && frame.role === 'user' && frame.taskId === undefined,
   )
   const copyText = entries
     .slice(lastUserFrameIndex + 1)
@@ -69,6 +77,7 @@ export const ConversationTurn = memo(function ConversationTurn({
       interactions={interactions}
       key={frame.frameId}
       live={frame.frameId === liveFrameId}
+      toolTasks={toolTasks}
     />
   )
 
@@ -91,6 +100,7 @@ export const ConversationTurn = memo(function ConversationTurn({
                   key={node.runId}
                   liveFrameId={liveFrameId}
                   settled={settled}
+                  toolTasks={toolTasks}
                 />
               ) : (
                 frameOf(node.entry)

@@ -19,6 +19,7 @@ import {
   type TranscriptItem,
   type TranscriptOperation,
   type TranscriptPrompt,
+  type TranscriptTask,
   type TranscriptTurn,
 } from './vendor'
 
@@ -55,6 +56,8 @@ export interface ChannelData extends PageHeader {
   pendingInteractions: readonly TranscriptInteraction[]
   /** 全部交互（含已决定的），按 id 查；工具卡凭 approvalId 认出被拒绝的那一步。 */
   interactions: ReadonlyMap<string, TranscriptInteraction>
+  /** 全部任务，按 taskId 查；transcript 只在任务变化时换新 Map，没变时引用不变。 */
+  tasks: ReadonlyMap<string, TranscriptTask>
   /** 当前最早一轮之前是否还有更早的轮次。 */
   hasMoreOlder: boolean
   /** 正在读更早的一页。 */
@@ -300,6 +303,7 @@ export class TranscriptChannel {
         .listPendingInteractions()
         .flatMap((id) => this.transcript.getInteraction(id) ?? []),
       prompts: [...this.transcript.getPrompts().values()],
+      tasks: this.transcript.getTasks(),
     }
   }
 }

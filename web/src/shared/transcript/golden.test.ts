@@ -1,6 +1,7 @@
 /** 后端场景测试存下的金样，用 vendored schema 逐帧解析并回放：两端形状对不上先在这里红。 */
 
 import { describe, expect, it } from 'vitest'
+import backgroundTurn from '../../../../contract/transcript/background-turn.json'
 import delegateTurn from '../../../../contract/transcript/delegate-turn.json'
 import toolTurn from '../../../../contract/transcript/tool-turn.json'
 import {
@@ -17,7 +18,11 @@ interface Golden {
   child_rest?: unknown
 }
 
-const SAMPLES: Record<string, Golden> = { 'tool-turn': toolTurn, 'delegate-turn': delegateTurn }
+const SAMPLES: Record<string, Golden> = {
+  'tool-turn': toolTurn,
+  'delegate-turn': delegateTurn,
+  'background-turn': backgroundTurn,
+}
 
 describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
   const sample = SAMPLES[name] as Golden
@@ -71,5 +76,25 @@ describe.each(Object.keys(SAMPLES))('金样 %s', (name) => {
     expect(transcript.getItems().filter((item) => item.kind === 'turn')).toHaveLength(
       page.items.filter((item) => item.kind === 'turn').length,
     )
+  })
+})
+
+describe('金样 background-turn 的后台工具字段', () => {
+  // 已发布字段只增不改（contract/conventions.md「后台工具」）：经 schema 解析后两处都还在，没被剥掉。
+  const page = transcriptResponseSchema.parse(backgroundTurn.rest)
+
+  it('页里有带 taskId 的 user 正文块（完成通知）', () => {
+    const frames = page.items.flatMap((item) =>
+      item.kind === 'turn' ? item.steps.flatMap((step) => step.frames) : [],
+    )
+    expect(
+      frames.some(
+        (frame) => frame.kind === 'text' && frame.role === 'user' && frame.taskId !== undefined,
+      ),
+    ).toBe(true)
+  })
+
+  it('tasks 里有 kind 为 tool 的任务', () => {
+    expect(page.tasks.some((task) => task.kind === 'tool')).toBe(true)
   })
 })
