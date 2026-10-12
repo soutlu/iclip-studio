@@ -104,6 +104,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - **工具卡只记启动**：回执到达就是 `done`，`output` 是回执原文，之后不再变。唯一的例外：回执之后没等到结果、运行已不再存活，卡改为 `error`，`output` 清空，`error` 是中断文案。
 - **任务**：回执到达时 `tasks` 里多一条 `kind: "tool"`、`detached: true` 的任务，`taskId` 等于那次调用的 `toolCallId`，`description` 是标题。结果送达后是 `completed`（`resultSummary` 是结果原文）或 `failed`（`error` 是失败原文）；没等到结果时，被停与审批暂停是 `killed`，失败、崩溃或运行结束仍没结果是 `failed`，都不带结果与错误。不出现 `lost`。
 - **完成通知**：结果送达处插一个 `role: "user"` 的正文块，带 `taskId`（同上）：成功是「已{标题}」，失败是「{标题} 失败」，`content` 只有一段相同的文字，没有 `promptIds`。它不是用户说的话，位置与插话一样挂在当时的末步、共用块序号；同一次送达里有插话也有结果时按送达顺序排。
+- **金样**：成功拆解的场景存成 [transcript/background-turn.json](transcript/background-turn.json)，完成通知的 `taskId` 与 `kind: "tool"` 任务都在里面（后端场景测试生成时断言两者存在）；按「已发布字段只增不改」，前端金样测试要对这两处做存在性断言。
 
 ### 订阅
 

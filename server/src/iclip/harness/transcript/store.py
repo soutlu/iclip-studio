@@ -38,6 +38,7 @@ from iclip.platform.transcript.ops import (
     TranscriptTurn,
     TurnHeader,
     TurnUpsertOp,
+    owned_task_ids,
     utf16_len,
 )
 
@@ -315,7 +316,8 @@ def _remove_items(
 ) -> None:
     """删除时间线条目及关联工具交互，避免残留审批；客户端协议不会自动清理关联交互。
 
-    被删轮次派出过的子代理连同它自己那条流一起清掉，否则重新生成后仍能订到上一次的子流。
+    被删轮次的任务（owned_task_ids：后台工具任务与子代理任务）一起清掉；子代理连同它自己那条流
+    也清掉，否则重新生成后仍能订到上一次的子流。
     """
 
     cards = [
@@ -330,8 +332,9 @@ def _remove_items(
     children = {ref.agent_id for frame in cards for ref in frame.agent_refs or ()}
     for turn_id in ids:
         agent.turns.pop(turn_id, None)
+    for task_id in owned_task_ids(cards):
+        agent.tasks.pop(task_id, None)
     for child_id in children:
-        agent.tasks.pop(child_id, None)
         conversation.agents.pop(child_id, None)
     agent.interactions = {
         key: item

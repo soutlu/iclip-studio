@@ -1,7 +1,7 @@
 """transcript 场景测试：假模型跑真实运行，实时收到的页与冷启动重建的页必须一字不差。
 
 一个场景一个用例。先比两条路（补发日志重放出来的页 vs 空实时店从持久化重建的页），
-再补这个场景特有的几条事实。两个场景另存金样给前端测试消费。
+再补这个场景特有的几条事实。三个场景另存金样给前端测试消费。
 """
 
 from __future__ import annotations
@@ -686,7 +686,7 @@ async def test_a_background_breakdown_lets_the_model_write_first_and_settles_lat
     release.set()
     await drained(queue, conversation_id)
     await runner.shutdown()
-    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+    live, cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
     # 模型在拆解跑着时结束了响应，结果到了被拉回来再答一次：中间没有工具调用，也开新的一步。
     assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2", "t1.3"]
@@ -718,6 +718,14 @@ async def test_a_background_breakdown_lets_the_model_write_first_and_settles_lat
     )
     delivered = next(index for index, message in enumerate(messages) if _outcomes([message]))
     assert written < delivered
+
+    sample = {"ws": normalize(ws_frames(store, conversation_id)), "rest": comparable(cold)}
+    # 前端 schema 会剥掉未声明的字段：金样里要真有完成通知的 taskId 与 tool 任务，前端才测得出漏声明。
+    rest = sample["rest"]
+    frames = [frame for turn in rest["items"] for step in turn["steps"] for frame in step["frames"]]
+    assert [frame["taskId"] for frame in frames if "taskId" in frame] == [BREAKDOWN_CALL]
+    assert [(item["kind"], item["detached"]) for item in rest["tasks"]] == [("tool", True)]
+    check_golden("background-turn", sample)
 
 
 async def test_a_steer_during_a_background_wait_still_shows_and_the_outcome_settles(
@@ -936,7 +944,7 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
     await runner.sweep_once()
     await drained(queue, conversation_id)
     await runner.shutdown()
-    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+    live, cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
     (received,) = seen
     returns = [
@@ -949,8 +957,11 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
         ("interrupted", INTERRUPTED_TOOL_RETURN_CONTENT)
     ]
     assert [step.state for step in live.items[0].steps] == ["interrupted", "completed"]
-    card = _breakdown_card(live)
-    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+    # 续跑后回执已换成带标记的 interrupted 返回：历史仍认得出这次后台调用，续跑基线也带上了任务。
+    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "failed")
+    assert _breakdown_task(cold).started_at == _breakdown_task(before).started_at, (
+        "换下的返回保留回执的时间戳"
+    )
 
 
 class FailingBreakdowns:

@@ -1,0 +1,813 @@
+{
+  "ws": [
+    {
+      "type": "transcript.reset",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "snapshot": {
+          "items": [],
+          "tasks": [
+            {
+              "taskId": "call_bd",
+              "kind": "tool",
+              "state": "completed",
+              "detached": true,
+              "description": "拆解视频 ref.mp4",
+              "outputTail": "",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>",
+              "resultSummary": "视频拆解完毕，文档在 references/ref.md。"
+            }
+          ],
+          "interactions": [],
+          "todos": [],
+          "prompts": [
+            {
+              "promptId": "<id-1>",
+              "status": "completed",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "拆一下这条视频"
+                }
+              ],
+              "createdAt": "<ts>",
+              "finishedAt": "<ts>"
+            }
+          ],
+          "meta": {
+            "activity": "idle"
+          },
+          "hasMoreOlder": true
+        },
+        "has_more_older": true,
+        "seq": 20
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 1,
+        "ops": [
+          {
+            "op": "prompt.upsert",
+            "prompt": {
+              "promptId": "<id-1>",
+              "status": "running",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "拆一下这条视频"
+                }
+              ],
+              "createdAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 2,
+        "ops": [
+          {
+            "op": "turn.upsert",
+            "turn": {
+              "kind": "turn",
+              "turnId": "t1",
+              "triggerPromptId": "<id-1>",
+              "ordinal": 1,
+              "state": "running",
+              "origin": {
+                "kind": "user"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "拆一下这条视频"
+                }
+              ],
+              "startedAt": "<ts>"
+            }
+          },
+          {
+            "op": "meta.merge",
+            "meta": {
+              "activity": "turn"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 3,
+        "ops": [
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.1",
+              "turnId": "t1",
+              "ordinal": 1,
+              "state": "running",
+              "startedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 4,
+        "ops": [
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.1",
+              "turnId": "t1",
+              "ordinal": 1,
+              "state": "completed",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 5,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.1",
+            "frame": {
+              "kind": "tool",
+              "frameId": "t1.1.call_bd",
+              "toolCallId": "call_bd",
+              "name": "breakdown_video",
+              "state": "running",
+              "input": "{\"video_url\": \"https://cdn.test/ref.mp4\"}",
+              "display": {
+                "kind": "generic",
+                "summary": "拆解视频",
+                "detail": "ref.mp4"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 6,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.1",
+            "frame": {
+              "kind": "tool",
+              "frameId": "t1.1.call_write",
+              "toolCallId": "call_write",
+              "name": "write_file",
+              "state": "running",
+              "input": "{\"path\": \"brief.md\"}",
+              "display": {
+                "kind": "generic",
+                "summary": "write_file"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 7,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.1",
+            "frame": {
+              "kind": "tool",
+              "frameId": "t1.1.call_bd",
+              "toolCallId": "call_bd",
+              "name": "breakdown_video",
+              "state": "done",
+              "input": "{\"video_url\": \"https://cdn.test/ref.mp4\"}",
+              "output": "Tool 'breakdown_video' is running in background (task call_bd). This call is pending. Do not repeat or poll it; its result will arrive automatically. Continue independent work, or end your response.",
+              "display": {
+                "kind": "generic",
+                "summary": "拆解视频",
+                "detail": "ref.mp4"
+              }
+            }
+          },
+          {
+            "op": "task.upsert",
+            "task": {
+              "taskId": "call_bd",
+              "kind": "tool",
+              "state": "running",
+              "detached": true,
+              "description": "拆解视频 ref.mp4",
+              "outputTail": "",
+              "startedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 8,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.1",
+            "frame": {
+              "kind": "tool",
+              "frameId": "t1.1.call_write",
+              "toolCallId": "call_write",
+              "name": "write_file",
+              "state": "done",
+              "input": "{\"path\": \"brief.md\"}",
+              "output": "brief.md 写好了",
+              "display": {
+                "kind": "generic",
+                "summary": "write_file"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 9,
+        "ops": [
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.2",
+              "turnId": "t1",
+              "ordinal": 2,
+              "state": "running",
+              "startedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 10,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.2",
+            "frame": {
+              "kind": "text",
+              "frameId": "t1.2.f1",
+              "role": "assistant",
+              "text": ""
+            }
+          },
+          {
+            "op": "append",
+            "target": {
+              "type": "frame",
+              "turnId": "t1",
+              "stepId": "t1.2",
+              "frameId": "t1.2.f1"
+            },
+            "offset": 0,
+            "text": "简报写好了，等拆解。"
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 11,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.2",
+            "frame": {
+              "kind": "text",
+              "frameId": "t1.2.f1",
+              "role": "assistant",
+              "text": "简报写好了，等拆解。"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 12,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.2",
+            "frame": {
+              "kind": "text",
+              "frameId": "t1.2.f2",
+              "role": "user",
+              "text": "已拆解视频 ref.mp4",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "已拆解视频 ref.mp4"
+                }
+              ],
+              "taskId": "call_bd"
+            }
+          },
+          {
+            "op": "task.upsert",
+            "task": {
+              "taskId": "call_bd",
+              "kind": "tool",
+              "state": "completed",
+              "detached": true,
+              "description": "拆解视频 ref.mp4",
+              "outputTail": "",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>",
+              "resultSummary": "视频拆解完毕，文档在 references/ref.md。"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 13,
+        "ops": [
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.2",
+              "turnId": "t1",
+              "ordinal": 2,
+              "state": "completed",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 14,
+        "ops": [
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.3",
+              "turnId": "t1",
+              "ordinal": 3,
+              "state": "running",
+              "startedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 15,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.3",
+            "frame": {
+              "kind": "text",
+              "frameId": "t1.3.f1",
+              "role": "assistant",
+              "text": ""
+            }
+          },
+          {
+            "op": "append",
+            "target": {
+              "type": "frame",
+              "turnId": "t1",
+              "stepId": "t1.3",
+              "frameId": "t1.3.f1"
+            },
+            "offset": 0,
+            "text": "拆解好了，接着写分镜。"
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 16,
+        "ops": [
+          {
+            "op": "frame.upsert",
+            "turnId": "t1",
+            "stepId": "t1.3",
+            "frame": {
+              "kind": "text",
+              "frameId": "t1.3.f1",
+              "role": "assistant",
+              "text": "拆解好了，接着写分镜。"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 17,
+        "ops": [
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.3",
+              "turnId": "t1",
+              "ordinal": 3,
+              "state": "completed",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 18,
+        "ops": [
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.1",
+              "turnId": "t1",
+              "ordinal": 1,
+              "state": "completed",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>",
+              "usage": {
+                "inputOther": 50,
+                "output": 12,
+                "inputCacheRead": 0,
+                "inputCacheCreation": 0
+              }
+            }
+          },
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.2",
+              "turnId": "t1",
+              "ordinal": 2,
+              "state": "completed",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>",
+              "usage": {
+                "inputOther": 50,
+                "output": 1,
+                "inputCacheRead": 0,
+                "inputCacheCreation": 0
+              }
+            }
+          },
+          {
+            "op": "step.upsert",
+            "turnId": "t1",
+            "step": {
+              "kind": "step",
+              "stepId": "t1.3",
+              "turnId": "t1",
+              "ordinal": 3,
+              "state": "completed",
+              "startedAt": "<ts>",
+              "endedAt": "<ts>",
+              "usage": {
+                "inputOther": 50,
+                "output": 1,
+                "inputCacheRead": 0,
+                "inputCacheCreation": 0
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 19,
+        "ops": [
+          {
+            "op": "turn.upsert",
+            "turn": {
+              "kind": "turn",
+              "turnId": "t1",
+              "triggerPromptId": "<id-1>",
+              "ordinal": 1,
+              "state": "completed",
+              "origin": {
+                "kind": "user"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "拆一下这条视频"
+                }
+              ],
+              "startedAt": "<ts>",
+              "endedAt": "<ts>",
+              "usage": {
+                "inputTokens": 150,
+                "outputTokens": 14,
+                "cachedTokens": 0
+              },
+              "durationMs": 0
+            }
+          },
+          {
+            "op": "meta.merge",
+            "meta": {
+              "activity": "idle"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "transcript.ops",
+      "stream_epoch": "<epoch>",
+      "payload": {
+        "agent_id": "main",
+        "seq": 20,
+        "ops": [
+          {
+            "op": "prompt.upsert",
+            "prompt": {
+              "promptId": "<id-1>",
+              "status": "completed",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "拆一下这条视频"
+                }
+              ],
+              "createdAt": "<ts>",
+              "finishedAt": "<ts>"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "rest": {
+    "agent_id": "main",
+    "items": [
+      {
+        "kind": "turn",
+        "turnId": "t1",
+        "triggerPromptId": "<id-1>",
+        "ordinal": 1,
+        "state": "completed",
+        "origin": {
+          "kind": "user"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "拆一下这条视频"
+          }
+        ],
+        "startedAt": "<ts>",
+        "endedAt": "<ts>",
+        "usage": {
+          "inputTokens": 150,
+          "outputTokens": 14,
+          "cachedTokens": 0
+        },
+        "durationMs": 0,
+        "steps": [
+          {
+            "kind": "step",
+            "stepId": "t1.1",
+            "turnId": "t1",
+            "ordinal": 1,
+            "state": "completed",
+            "startedAt": "<ts>",
+            "endedAt": "<ts>",
+            "usage": {
+              "inputOther": 50,
+              "output": 12,
+              "inputCacheRead": 0,
+              "inputCacheCreation": 0
+            },
+            "frames": [
+              {
+                "kind": "tool",
+                "frameId": "t1.1.call_bd",
+                "toolCallId": "call_bd",
+                "name": "breakdown_video",
+                "state": "done",
+                "input": "{\"video_url\": \"https://cdn.test/ref.mp4\"}",
+                "output": "Tool 'breakdown_video' is running in background (task call_bd). This call is pending. Do not repeat or poll it; its result will arrive automatically. Continue independent work, or end your response.",
+                "display": {
+                  "kind": "generic",
+                  "summary": "拆解视频",
+                  "detail": "ref.mp4"
+                }
+              },
+              {
+                "kind": "tool",
+                "frameId": "t1.1.call_write",
+                "toolCallId": "call_write",
+                "name": "write_file",
+                "state": "done",
+                "input": "{\"path\": \"brief.md\"}",
+                "output": "brief.md 写好了",
+                "display": {
+                  "kind": "generic",
+                  "summary": "write_file"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "step",
+            "stepId": "t1.2",
+            "turnId": "t1",
+            "ordinal": 2,
+            "state": "completed",
+            "startedAt": "<ts>",
+            "endedAt": "<ts>",
+            "usage": {
+              "inputOther": 50,
+              "output": 1,
+              "inputCacheRead": 0,
+              "inputCacheCreation": 0
+            },
+            "frames": [
+              {
+                "kind": "text",
+                "frameId": "t1.2.f1",
+                "role": "assistant",
+                "text": "简报写好了，等拆解。"
+              },
+              {
+                "kind": "text",
+                "frameId": "t1.2.f2",
+                "role": "user",
+                "text": "已拆解视频 ref.mp4",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "已拆解视频 ref.mp4"
+                  }
+                ],
+                "taskId": "call_bd"
+              }
+            ]
+          },
+          {
+            "kind": "step",
+            "stepId": "t1.3",
+            "turnId": "t1",
+            "ordinal": 3,
+            "state": "completed",
+            "startedAt": "<ts>",
+            "endedAt": "<ts>",
+            "usage": {
+              "inputOther": 50,
+              "output": 1,
+              "inputCacheRead": 0,
+              "inputCacheCreation": 0
+            },
+            "frames": [
+              {
+                "kind": "text",
+                "frameId": "t1.3.f1",
+                "role": "assistant",
+                "text": "拆解好了，接着写分镜。"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "has_more": false,
+    "tasks": [
+      {
+        "taskId": "call_bd",
+        "kind": "tool",
+        "state": "completed",
+        "detached": true,
+        "description": "拆解视频 ref.mp4",
+        "outputTail": "",
+        "startedAt": "<ts>",
+        "endedAt": "<ts>",
+        "resultSummary": "视频拆解完毕，文档在 references/ref.md。"
+      }
+    ],
+    "interactions": [],
+    "todos": [],
+    "meta": {
+      "activity": "idle"
+    },
+    "title": "",
+    "agents": [
+      {
+        "agentId": "main",
+        "type": "main"
+      }
+    ],
+    "pending_interactions": [],
+    "stream_epoch": "<epoch>"
+  }
+}

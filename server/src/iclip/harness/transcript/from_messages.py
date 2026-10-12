@@ -27,7 +27,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
-from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome
+from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome, was_receipt
 from iclip.harness.context_compaction import compaction_boundary, compaction_only
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.prompt_media import plain_text, prompt_content
@@ -208,8 +208,10 @@ def _background_tasks(
 ) -> list[TranscriptTask]:
     """每条回执开一条 tool 任务，结果递入时按结果收尾。
 
-    回执之后没有递入结果的，它所在的运行已不再存活（实时侧还活着的会盖掉这一份）：
-    终态按 interrupted_task_state 定，结束时间取那次运行的最后一条消息。
+    回执之后没有递入结果的，它所在的运行已不再存活（实时侧还活着的会盖掉这一份）：终态按发起
+    它的那次运行定（interrupted_task_state，审批暂停只看那次运行自己那一组），结束时间取那次运行的
+    最后一条消息。后续运行开跑时回执已被换成带标记的 interrupted 返回（was_receipt），按同一规则处理，
+    它保留着回执的时间戳与所在运行。
     """
 
     calls = {
@@ -234,7 +236,9 @@ def _background_tasks(
             if not isinstance(message, ModelRequest):
                 continue
             for part in message.parts:
-                if not isinstance(part, ToolReturnPart) or not is_receipt(part):
+                if not isinstance(part, ToolReturnPart):
+                    continue
+                if not is_receipt(part) and not was_receipt(part):
                     continue
                 call = calls.get(part.tool_call_id)
                 if call is None:

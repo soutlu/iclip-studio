@@ -181,6 +181,20 @@ class AgentDescriptor(_Wire):
     disposed_at: str | None = None
 
 
+def owned_task_ids(frames: Iterable[TranscriptFrame]) -> frozenset[str]:
+    """这些块里的工具卡认领的任务 id：tool 任务是卡的 toolCallId，subagent 任务是卡 agentRefs 里的子运行。
+
+    一轮的任务就是它的工具卡认领的这些；续跑写基线与重新生成清任务共用这一条认定。
+    """
+
+    owned: set[str] = set()
+    for frame in frames:
+        if isinstance(frame, ToolFrame):
+            owned.add(frame.tool_call_id)
+            owned.update(ref.agent_id for ref in frame.agent_refs or ())
+    return frozenset(owned)
+
+
 def agents_from_tasks(tasks: Iterable[TranscriptTask]) -> tuple[AgentDescriptor, ...]:
     """主 agent 加每个子代理各一条；实时与历史共用这一个函数，两条路的名册才对得上。"""
 
@@ -466,5 +480,6 @@ __all__ = [
     "agent_context_status",
     "agents_from_tasks",
     "next_frame_ordinal",
+    "owned_task_ids",
     "utf16_len",
 ]

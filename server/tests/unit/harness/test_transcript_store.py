@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 
 from iclip.harness.transcript.store import JOURNAL_CAPACITY, TranscriptStore
 from iclip.platform.transcript.ops import (
+    AgentRef,
     AppendOp,
     FrameTarget,
     FrameUpsertOp,
@@ -14,9 +17,11 @@ from iclip.platform.transcript.ops import (
     ItemsRemoveOp,
     StepHeader,
     StepUpsertOp,
+    TaskUpsertOp,
     TextContent,
     TextFrame,
     ToolFrame,
+    TranscriptTask,
     TurnHeader,
     TurnOrigin,
     TurnUpsertOp,
@@ -183,6 +188,50 @@ def test_removing_a_turn_cancels_the_interactions_anchored_to_its_tools() -> Non
 
     store.append(CONVERSATION, AGENT, (ItemsRemoveOp(ids=("t1",)),))
     assert store.pending_interactions(CONVERSATION, AGENT) == ()
+
+
+def test_removing_a_turn_drops_the_tasks_its_tool_cards_own() -> None:
+    """重新生成移除一轮时，这一轮的后台工具任务与子代理任务一起清掉，别的轮的任务留着。"""
+
+    def task(task_id: str, kind: Literal["tool", "subagent"]) -> TaskUpsertOp:
+        return TaskUpsertOp(
+            task=TranscriptTask(task_id=task_id, kind=kind, state="completed", detached=False)
+        )
+
+    store = TranscriptStore()
+    _open_turn(store)
+    store.append(
+        CONVERSATION,
+        AGENT,
+        (
+            FrameUpsertOp(
+                turn_id="t1",
+                step_id="t1.1",
+                frame=ToolFrame(
+                    frame_id="t1.1.call_bg", tool_call_id="call_bg", name="bg", state="done"
+                ),
+            ),
+            FrameUpsertOp(
+                turn_id="t1",
+                step_id="t1.1",
+                frame=ToolFrame(
+                    frame_id="t1.1.call_dl",
+                    tool_call_id="call_dl",
+                    name="delegate_task",
+                    state="done",
+                    agent_refs=(AgentRef(agent_id="child-1", role="child"),),
+                ),
+            ),
+            task("call_bg", "tool"),
+            task("child-1", "subagent"),
+            task("call_elsewhere", "tool"),
+        ),
+    )
+
+    store.append(CONVERSATION, AGENT, (ItemsRemoveOp(ids=("t1",)),))
+
+    remaining = store.subscribe_view(CONVERSATION, AGENT).snapshot.tasks
+    assert [item.task_id for item in remaining] == ["call_elsewhere"]
 
 
 def test_a_turn_is_held_until_the_message_history_has_it() -> None:
