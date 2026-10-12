@@ -20,28 +20,51 @@
   display: block;
 }
 
-/* 参考图条：全局设定卡上方一行，段名与芯片同一行排、放不下折行，左右与段卡的正文对齐。
-   芯片里 @N 之后的名字用常规字重，「未选用」再淡一档；高亮（墨色实底）时跟着反色。 */
+/* 参考图：一块只放芯片（缩略图加 @N），一行放不下在块里折行，第二行与第一枚芯片左对齐，不横向滚动。
+   芯片 22px 高，块上下各留 3px，与同一行里 28px 高的段名、字数、按钮居中对齐；芯片自带左右 2px 外距，列距再加 2px。
+   芯片的按钮排成 flex，小件不按行内基线下沉，高度就是 22px。 */
 .film-frames {
   display: flex;
+  min-width: 0;
+  flex: 1 1 0;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 2px;
+  padding: 3px 0;
+}
+.film-frames > .film-chip {
+  display: flex;
+}
+/* 全局设定卡的标题行：段名、字数、参考图、右端按钮排一行，标题行本身不折行；段名、字数与按钮钉在第一行，
+   各自 28px 高、内容居中，参考图占中间剩下的宽度。 */
+.film-settings-head {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+.film-settings-head > .storyboard-settings-label,
+.film-settings-head > .storyboard-settings-count {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  white-space: nowrap;
+}
+.film-settings-head > .film-settings-actions {
+  height: 28px;
+  flex: none;
+}
+/* 这组没有全局设定时，参考图单独一行，前面写「参考图」；左右与段卡的正文对齐。 */
+.film-frames-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 8px;
   padding: 0 12px;
 }
-.film-frames > .storyboard-settings-label {
-  margin-right: 6px;
-}
-.film-chip .frame-chip-pill > .film-chip-name {
-  font-weight: 400;
-}
-.film-chip .frame-chip-pill > .film-chip-note {
-  color: var(--color-on-surface-muted);
-  font-weight: 400;
-}
-.film-chip[data-highlighted] .frame-chip-pill > .film-chip-note {
-  color: inherit;
+.film-frames-row > .storyboard-settings-label {
+  height: 28px;
+  flex: none;
+  white-space: nowrap;
 }
 
 .film-setting-label {
