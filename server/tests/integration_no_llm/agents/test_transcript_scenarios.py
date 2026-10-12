@@ -1,7 +1,7 @@
 """transcript 场景测试：假模型跑真实运行，实时收到的页与冷启动重建的页必须一字不差。
 
 一个场景一个用例。先比两条路（补发日志重放出来的页 vs 空实时店从持久化重建的页），
-再补这个场景特有的几条事实。两个场景另存金样给前端测试消费。
+再补这个场景特有的几条事实。三个场景另存金样给前端测试消费。
 """
 
 from __future__ import annotations
@@ -49,7 +49,12 @@ from iclip.harness.agents import (
     delegate_display_table,
     subagent_profiles,
 )
-from iclip.harness.background import BackgroundOutcome, BackgroundTools, parse_outcome
+from iclip.harness.background import (
+    BackgroundOutcome,
+    BackgroundTools,
+    is_receipt,
+    parse_outcome,
+)
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
@@ -61,6 +66,7 @@ from iclip.harness.transcript.subagents import SubAgentMirror
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import (
     FileIoDisplay,
+    GenericDisplay,
     ToolDisplay,
     ToolDisplayEntry,
     ToolDisplayRegistry,
@@ -70,6 +76,7 @@ from iclip.platform.transcript.ops import (
     TextContent,
     TextFrame,
     ToolFrame,
+    TranscriptTask,
     utf16_len,
 )
 from iclip.platform.transcript.wire import TranscriptPage
@@ -112,7 +119,11 @@ def _read_display(args: Any) -> ToolDisplay | None:
 
 
 DISPLAYS = ToolDisplayRegistry.merged(
-    {"Read": ToolDisplayEntry(draw=_read_display, view="file_content")}, delegate_display_table()
+    {
+        "Read": ToolDisplayEntry(draw=_read_display, view="file_content"),
+        "breakdown_video": lambda _args: GenericDisplay(summary="拆解视频", detail="ref.mp4"),
+    },
+    delegate_display_table(),
 )
 """非空注册表，避免两条路同时缺 display 也能相等。"""
 
@@ -611,6 +622,49 @@ def _breakdown_card(page: TranscriptPage, tool_call_id: str = BREAKDOWN_CALL) ->
     return card
 
 
+BREAKDOWN_TITLE = "拆解视频 ref.mp4"
+"""DISPLAYS 给拆解卡的标题，任务描述与完成通知都用它。"""
+
+
+def _breakdown_task(page: TranscriptPage, tool_call_id: str = BREAKDOWN_CALL) -> TranscriptTask:
+    """这次后台调用的任务；描述是卡标题，id 是调用 id。"""
+
+    (task,) = [task for task in page.tasks if task.task_id == tool_call_id]
+    assert (task.kind, task.detached, task.description) == ("tool", True, BREAKDOWN_TITLE)
+    assert task.started_at is not None
+    return task
+
+
+def _receipt(messages: list[ModelMessage], tool_call_id: str = BREAKDOWN_CALL) -> ToolReturnPart:
+    (receipt,) = [
+        part
+        for message in messages
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == tool_call_id
+    ]
+    assert is_receipt(receipt)
+    return receipt
+
+
+def _assert_settled_by_receipt(card: ToolFrame, receipt: ToolReturnPart) -> None:
+    """原卡只记启动：回执到达即正常结卡，output 是回执原文。"""
+
+    assert (card.state, card.output, card.error) == ("done", receipt.content, None)
+
+
+def _assert_interrupted(card: ToolFrame, task: TranscriptTask, state: str) -> None:
+    """回执之后没等到结果、运行已不在：卡收成中断，任务进入终态，不带结果与错误。"""
+
+    assert (card.state, card.output, card.metadata, card.error) == (
+        "error",
+        None,
+        None,
+        ORPHAN_TOOL_ERROR,
+    )
+    assert (task.state, task.result_summary, task.error) == (state, None, None)
+    assert task.ended_at is not None
+
+
 async def test_a_background_breakdown_lets_the_model_write_first_and_settles_later(
     engine: AsyncEngine,
 ) -> None:
@@ -632,16 +686,28 @@ async def test_a_background_breakdown_lets_the_model_write_first_and_settles_lat
     release.set()
     await drained(queue, conversation_id)
     await runner.shutdown()
-    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+    live, cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
     # 模型在拆解跑着时结束了响应，结果到了被拉回来再答一次：中间没有工具调用，也开新的一步。
     assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2", "t1.3"]
-    card = _breakdown_card(live)
-    assert (card.state, card.output, card.error) == ("done", BREAKDOWN_DONE, None)
-    assert card.frame_id == f"t1.1.{BREAKDOWN_CALL}"
-    assert _user_frames(live) == []
-    assert live.items[0].content == (TextContent(text="拆一下这条视频"),)
     messages = await _history(step_store, conversation_id)
+    card = _breakdown_card(live)
+    _assert_settled_by_receipt(card, _receipt(messages))
+    assert card.frame_id == f"t1.1.{BREAKDOWN_CALL}"
+    # 结果到达处（当时的末步）插一条完成通知，原卡不动。
+    notice = TextFrame(
+        frame_id="t1.2.f2",
+        role="user",
+        text=f"已{BREAKDOWN_TITLE}",
+        content=(TextContent(text=f"已{BREAKDOWN_TITLE}"),),
+        task_id=BREAKDOWN_CALL,
+    )
+    assert frames_of(live, "t1", "t1.2")[-1] == notice
+    assert _user_frames(live) == [notice]
+    task = _breakdown_task(live)
+    assert (task.state, task.result_summary, task.error) == ("completed", BREAKDOWN_DONE, None)
+    assert task.ended_at is not None
+    assert live.items[0].content == (TextContent(text="拆一下这条视频"),)
     written = next(
         index
         for index, message in enumerate(messages)
@@ -652,6 +718,14 @@ async def test_a_background_breakdown_lets_the_model_write_first_and_settles_lat
     )
     delivered = next(index for index, message in enumerate(messages) if _outcomes([message]))
     assert written < delivered
+
+    sample = {"ws": normalize(ws_frames(store, conversation_id)), "rest": comparable(cold)}
+    # 前端 schema 会剥掉未声明的字段：金样里要真有完成通知的 taskId 与 tool 任务，前端才测得出漏声明。
+    rest = sample["rest"]
+    frames = [frame for turn in rest["items"] for step in turn["steps"] for frame in step["frames"]]
+    assert [frame["taskId"] for frame in frames if "taskId" in frame] == [BREAKDOWN_CALL]
+    assert [(item["kind"], item["detached"]) for item in rest["tasks"]] == [("tool", True)]
+    check_golden("background-turn", sample)
 
 
 async def test_a_steer_during_a_background_wait_still_shows_and_the_outcome_settles(
@@ -679,11 +753,19 @@ async def test_a_steer_during_a_background_wait_still_shows_and_the_outcome_sett
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    assert [(frame.text, frame.prompt_ids) for frame in _user_frames(live)] == [
-        ("临时插一句", (second,))
+    # 插话与完成通知各是一块，按递入先后挂在当时的末步：插话让模型先答一次，结果到时末步已是下一步。
+    # 插话带消息 id，通知带任务 id。
+    assert [
+        (frame.frame_id, frame.text, frame.prompt_ids, frame.task_id)
+        for frame in _user_frames(live)
+    ] == [
+        ("t1.2.f2", "临时插一句", (second,), None),
+        ("t1.3.f2", f"已{BREAKDOWN_TITLE}", None, BREAKDOWN_CALL),
     ]
-    card = _breakdown_card(live)
-    assert (card.state, card.output) == ("done", BREAKDOWN_DONE)
+    _assert_settled_by_receipt(
+        _breakdown_card(live), _receipt(await _history(step_store, conversation_id))
+    )
+    assert _breakdown_task(live).state == "completed"
 
 
 async def test_stopping_during_a_background_breakdown_interrupts_the_call(
@@ -710,8 +792,8 @@ async def test_stopping_during_a_background_breakdown_interrupts_the_call(
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
     assert [turn.state for turn in live.items] == ["cancelled"]
-    card = _breakdown_card(live)
-    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "killed")
+    assert _user_frames(live) == []
 
     await submit_text(runner, queue, conversation_id, "继续")
     await drained(queue, conversation_id)
@@ -729,7 +811,7 @@ async def test_stopping_during_a_background_breakdown_interrupts_the_call(
         ("interrupted", INTERRUPTED_TOOL_RETURN_CONTENT)
     ]
     assert [turn.state for turn in live.items] == ["cancelled", "completed"]
-    assert _breakdown_card(live).error == ORPHAN_TOOL_ERROR
+    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "killed")
 
 
 def breaks_down_and_writes(reply: str) -> FunctionModel:
@@ -773,10 +855,9 @@ async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approv
     await awaits(queue, prompt_id)
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 暂停时没跑完的后台调用被丢掉，卡收成中断；等审批的卡带着审批 id 保持开放。
+    # 暂停时没跑完的后台调用被丢掉，卡收成中断、任务 killed；等审批的卡带着审批 id 保持开放。
     assert live.items[0].state == "running"
-    card = _breakdown_card(live)
-    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "killed")
     approval = _breakdown_card(live, "call_1")
     assert (approval.state, approval.approval_id) == ("running", "apr_call_1")
 
@@ -787,8 +868,7 @@ async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approv
 
     assert live.items[0].state == "completed"
     assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2"]
-    card = _breakdown_card(live)
-    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "killed")
     approval = _breakdown_card(live, "call_1")
     assert (approval.state, approval.approval_id) == ("done", "apr_call_1")
     assert frames_of(live, "t1", "t1.2")[0].text == "改完了"
@@ -848,11 +928,23 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
         run_id=dead_run,
         messages=await _receipt_without_outcome(dead_run),
     )
+    # 续跑前刷新：死掉的运行留下回执却没有结果，卡收成中断、任务 failed。
+    before = await cold_page(
+        step_store,
+        conversation_id,
+        MAIN_AGENT_ID,
+        queue=queue,
+        runner=runner,
+        display=DISPLAYS,
+        runtime_agent_id=AGENT_ID,
+        delegate_tool=DELEGATE_TOOL,
+    )
+    _assert_interrupted(_breakdown_card(before), _breakdown_task(before), "failed")
 
     await runner.sweep_once()
     await drained(queue, conversation_id)
     await runner.shutdown()
-    live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
+    live, cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
     (received,) = seen
     returns = [
@@ -865,8 +957,11 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
         ("interrupted", INTERRUPTED_TOOL_RETURN_CONTENT)
     ]
     assert [step.state for step in live.items[0].steps] == ["interrupted", "completed"]
-    card = _breakdown_card(live)
-    assert (card.state, card.error) == ("error", ORPHAN_TOOL_ERROR)
+    # 续跑后回执已换成带标记的 interrupted 返回：历史仍认得出这次后台调用，续跑基线也带上了任务。
+    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "failed")
+    assert _breakdown_task(cold).started_at == _breakdown_task(before).started_at, (
+        "换下的返回保留回执的时间戳"
+    )
 
 
 class FailingBreakdowns:
@@ -947,11 +1042,19 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
         ("call_bd1", "error", CALL_AGAIN),
         ("call_bd2", "error", CALL_AGAIN),
     ]
-    for tool_call_id in ("call_bd1", "call_bd2"):
-        card = _breakdown_card(live, tool_call_id)
-        assert (card.state, card.output, card.error) == ("error", None, CALL_AGAIN)
     assert breakdowns.calls == 2, "每次再调都重新排一次拆解"
-    assert _user_frames(live) == []
+    # 失败的结果不改原卡；到达处插「… 失败」的通知，任务 failed 并带错误原文。
+    messages = await _history(step_store, conversation_id)
+    for tool_call_id in ("call_bd1", "call_bd2"):
+        _assert_settled_by_receipt(
+            _breakdown_card(live, tool_call_id), _receipt(messages, tool_call_id)
+        )
+        task = _breakdown_task(live, tool_call_id)
+        assert (task.state, task.result_summary, task.error) == ("failed", None, CALL_AGAIN)
+    assert [(frame.text, frame.task_id) for frame in _user_frames(live)] == [
+        (f"{BREAKDOWN_TITLE} 失败", "call_bd1"),
+        (f"{BREAKDOWN_TITLE} 失败", "call_bd2"),
+    ]
 
 
 # --- 子代理 -------------------------------------------------------------------

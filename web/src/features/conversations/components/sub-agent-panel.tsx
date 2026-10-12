@@ -10,6 +10,7 @@ import type { ArtifactRendererProps } from '@/shared/workbench'
 import { ConversationTurn } from './conversation-turn'
 import { LoadOlder } from './load-older'
 import { useKeepPlaceOnPrepend } from './use-keep-place-on-prepend'
+import { useToolTasks } from './use-tool-tasks'
 import { agentCallOf } from './tool-display'
 
 const STATUS = {
@@ -51,6 +52,7 @@ type SubAgentStreamProps = {
 function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamProps) {
   const { loadOlder, refresh, view } = useTranscript(conversationId, agentId)
   const turns = view.items.filter((item): item is TranscriptTurn => item.kind === 'turn')
+  const toolTasks = useToolTasks(view.tasks)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const keepPlace = useKeepPlaceOnPrepend(scrollerRef, turns[0]?.turnId, view.loadingOlder)
   const latest = turns.at(-1)
@@ -92,7 +94,12 @@ function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamPr
               }}
             />
             {turns.map((turn) => (
-              <ConversationTurn interactions={view.interactions} key={turn.turnId} turn={turn} />
+              <ConversationTurn
+                interactions={view.interactions}
+                key={turn.turnId}
+                toolTasks={toolTasks}
+                turn={turn}
+              />
             ))}
           </div>
         </div>

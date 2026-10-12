@@ -3625,6 +3625,10 @@ export type TextFrame = {
    */
   role: 'assistant' | 'user'
   /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
    * Text
    */
   text: string
@@ -3897,7 +3901,8 @@ export type TranscriptStep = {
 /**
  * TranscriptTask
  *
- * 一件后台活儿。本系统只产出 ``subagent``：一次 delegate_task 一条。
+ * 一件后台活儿。本系统产出两种：``subagent`` 是一次 delegate_task 一条；``tool`` 是一次后台
+ * 工具调用一条（``detached`` 为真），``task_id`` 等于那次调用的 toolCallId。
  */
 export type TranscriptTask = {
   /**

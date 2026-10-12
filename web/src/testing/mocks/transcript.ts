@@ -2,7 +2,6 @@
 
 import { http, HttpResponse, ws } from 'msw'
 import { type MockConversation, mockConversationOwner, mockSessionEnvelope } from './conversations'
-import { toolShowcaseInteractions, toolShowcaseTurns } from './tool-showcase'
 import { SHOTS_MOCK_PATH, touchMockShots, watchMockGenerations } from './workspace'
 
 const HISTORY_TURNS = 2
@@ -105,11 +104,21 @@ const awaitingApproval = new Set<string>()
 
 const justFinished = new Set<MockConversation>()
 
-/** 工具过程展示对话：只回看历史，不自动起演示运行。 */
-const toolShowcases = new Set<string>()
+/** 展示对话：几轮固定历史摆出某一类界面状态，只回看、不自动起演示运行。 */
+export type MockShowcase = {
+  title: string
+  turns: () => (Record<string, unknown> & { turnId: string })[]
+  interactions?: readonly unknown[]
+  /** 每次取页现算，进行中任务的开始时间才能相对当前时刻。 */
+  tasks?: () => readonly unknown[]
+  /** 缺省 idle；末轮还在跑的展示给 turn。 */
+  activity?: 'idle' | 'turn'
+}
 
-export const markMockToolShowcase = (conversationId: string) => {
-  toolShowcases.add(conversationId)
+const showcases = new Map<string, MockShowcase>()
+
+export const markMockShowcase = (conversationId: string, showcase: MockShowcase) => {
+  showcases.set(conversationId, showcase)
 }
 
 /** 连接后照服务端发开跑的 updated（带新 lastRunId）与结束事件，模拟未读运行。 */
@@ -137,7 +146,7 @@ export const resetMockTranscript = () => {
   queues.clear()
   awaitingApproval.clear()
   justFinished.clear()
-  toolShowcases.clear()
+  showcases.clear()
   decisions.clear()
 }
 
@@ -348,9 +357,9 @@ export const mockTranscriptPage = (
   request: { beforeTurn?: string | null; pageSize?: number } = {},
 ) => {
   const awaiting = awaitingApproval.has(conversationId)
-  const showcase = toolShowcases.has(conversationId)
+  const showcase = showcases.get(conversationId)
   const history = showcase
-    ? toolShowcaseTurns()
+    ? showcase.turns()
     : conversationId === MOCK_LONG_CONVERSATION_ID
       ? Array.from({ length: LONG_HISTORY_TURNS }, (_, index) => longTurn(index + 1))
       : Array.from({ length: HISTORY_TURNS }, (_, index) => historyTurn(index + 1))
@@ -359,10 +368,10 @@ export const mockTranscriptPage = (
     agent_id: 'main',
     agents: [{ agentId: 'main', type: 'main' }],
     has_more: page.hasMore,
-    interactions: awaiting ? [pendingApproval] : showcase ? toolShowcaseInteractions : [],
+    interactions: awaiting ? [pendingApproval] : (showcase?.interactions ?? []),
     items: page.items,
     meta: {
-      activity: awaiting ? 'turn' : 'idle',
+      activity: awaiting ? 'turn' : (showcase?.activity ?? 'idle'),
       agent: { contextTokens: 32768, contextUsage: 0.03125, maxContextTokens: 1048576 },
     },
     // 属主照对话行上的来；没有对话行时按测试用户算，只读用例在测试里改这个字段。
@@ -381,9 +390,9 @@ export const mockTranscriptPage = (
     // 页里只有历史那几轮，水位也停在历史处；之后的都从日志补，页与水位才对得上。
     seq: HISTORY_SEQ,
     stream_epoch: MOCK_STREAM_EPOCH,
-    tasks: [],
+    tasks: showcase?.tasks?.() ?? [],
     title: showcase
-      ? '工具过程展示'
+      ? showcase.title
       : conversationId === MOCK_LONG_CONVERSATION_ID
         ? '长对话回看'
         : '夜景延时素材生成',
@@ -776,10 +785,10 @@ export const transcriptHandlers = [
       if (existing !== undefined) return
       joined.set(conversationId, connection)
       connections.add(connection)
-      // 普通订阅自动启动演示运行；待审批会话保持等待，长对话与工具过程展示只用来回看。
+      // 普通订阅自动启动演示运行；待审批会话保持等待，长对话与展示对话只用来回看。
       if (
         !awaitingApproval.has(conversationId) &&
-        !toolShowcases.has(conversationId) &&
+        !showcases.has(conversationId) &&
         conversationId !== MOCK_LONG_CONVERSATION_ID
       ) {
         playTurn(conversationId, {

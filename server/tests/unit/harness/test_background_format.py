@@ -14,6 +14,7 @@ from pydantic_ai import Agent, ModelRetry, Tool, ToolFailed
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     ModelMessage,
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     TextPart,
@@ -29,6 +30,7 @@ from iclip.harness.background import (
     interrupt_stale_receipts,
     is_receipt,
     parse_outcome,
+    was_receipt,
 )
 
 DOCUMENT = "视频拆解完毕，文档在 references/ref.md。\n第二行"
@@ -135,3 +137,24 @@ async def test_only_a_receipt_without_an_outcome_is_interrupted() -> None:
         INTERRUPTED_TOOL_RETURN_CONTENT,
         "interrupted",
     )
+    # 换下的返回带着标记、保留回执的时间戳，落库再读回来仍认得出；模型看到的只有中断文案。
+    (receipt,) = _parts(dropped, ToolReturnPart)
+    assert returned.timestamp == receipt.timestamp
+    assert was_receipt(returned) and not is_receipt(returned)
+    (reloaded,) = _parts(
+        ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(repaired)),
+        ToolReturnPart,
+    )
+    assert was_receipt(reloaded)
+    assert not was_receipt(receipt)
+
+
+def test_an_ordinary_interrupted_return_is_not_a_stale_receipt() -> None:
+    framework_repair = ToolReturnPart(
+        tool_name="breakdown_video",
+        content=INTERRUPTED_TOOL_RETURN_CONTENT,
+        tool_call_id="call_bg",
+        outcome="interrupted",
+    )
+
+    assert not was_receipt(framework_repair)

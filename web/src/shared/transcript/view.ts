@@ -24,6 +24,7 @@ const EMPTY_DATA: ChannelData = {
   ownerUserId: null,
   pendingInteractions: [],
   prompts: [],
+  tasks: new Map(),
   title: '',
 }
 

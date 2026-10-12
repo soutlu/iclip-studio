@@ -1777,7 +1777,8 @@ export const zMetaMergeOp = z.object({
 /**
  * TranscriptTask
  *
- * 一件后台活儿。本系统只产出 ``subagent``：一次 delegate_task 一条。
+ * 一件后台活儿。本系统产出两种：``subagent`` 是一次 delegate_task 一条；``tool`` 是一次后台
+ * 工具调用一条（``detached`` 为真），``task_id`` 等于那次调用的 toolCallId。
  */
 export const zTranscriptTask = z.object({
   agentId: z.string().nullish(),
@@ -2232,6 +2233,7 @@ export const zTextFrame = z.object({
   kind: z.literal('text').optional().default('text'),
   promptIds: z.array(z.string()).nullish(),
   role: z.enum(['assistant', 'user']),
+  taskId: z.string().nullish(),
   text: z.string(),
 })
 

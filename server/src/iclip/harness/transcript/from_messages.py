@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Literal, cast
@@ -27,11 +27,11 @@ from pydantic_ai.messages import (
 from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
-from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome
+from iclip.harness.background import BackgroundOutcome, is_receipt, parse_outcome, was_receipt
 from iclip.harness.context_compaction import compaction_boundary, compaction_only
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.prompt_media import plain_text, prompt_content
-from iclip.platform.transcript.display import ToolDisplayRegistry
+from iclip.platform.transcript.display import GenericDisplay, ToolDisplayRegistry
 from iclip.platform.transcript.ops import (
     APPROVAL_ID_PREFIX,
     COMPACTION_NOTICE,
@@ -42,6 +42,7 @@ from iclip.platform.transcript.ops import (
     PromptContent,
     StepUsage,
     TaskState,
+    TextContent,
     TextFrame,
     ThinkingFrame,
     ToolFrame,
@@ -165,10 +166,14 @@ def tasks_from_messages(
     *,
     subagent_of_call: Mapping[str, str],
     child_runs: Sequence[ChildRun],
+    run_states: Mapping[str, TurnState] | None = None,
+    display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY,
 ) -> tuple[TranscriptTask, ...]:
-    """把子运行重建成 subagent 任务；结果与错误取父侧那次 delegate_task 的返回。
+    """把子运行重建成 subagent 任务，把后台工具调用重建成 tool 任务。
 
-    父侧返回找不到（子运行中途崩、账本没写上）时结果与错误都留空。
+    subagent 任务的结果与错误取父侧那次 delegate_task 的返回；父侧返回找不到（子运行中途崩、
+    账本没写上）时结果与错误都留空。tool 任务见 _background_tasks；run_states 按 run_id 给出
+    运行终态，display 须与实时投影共享，任务描述才一致。
     """
 
     call_of_child = {child_id: call_id for call_id, child_id in subagent_of_call.items()}
@@ -192,7 +197,136 @@ def tasks_from_messages(
                 thinking_effort=child.thinking_effort,
             )
         )
+    tasks.extend(_background_tasks(messages, run_states or {}, display))
     return tuple(tasks)
+
+
+def _background_tasks(
+    messages: Sequence[ModelMessage],
+    run_states: Mapping[str, TurnState],
+    display: ToolDisplayRegistry,
+) -> list[TranscriptTask]:
+    """每条回执开一条 tool 任务，结果递入时按结果收尾。
+
+    回执之后没有递入结果的，它所在的运行已不再存活（实时侧还活着的会盖掉这一份）：终态按发起
+    它的那次运行定（interrupted_task_state，审批暂停只看那次运行自己那一组），结束时间取那次运行的
+    最后一条消息。后续运行开跑时回执已被换成带标记的 interrupted 返回（was_receipt），按同一规则处理，
+    它保留着回执的时间戳与所在运行。
+    """
+
+    calls = {
+        part.tool_call_id: part
+        for message in messages
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    }
+    outcomes = {
+        outcome.tool_call_id: (outcome, part.timestamp)
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+        if (outcome := parse_outcome(part)) is not None
+    }
+    tasks: list[TranscriptTask] = []
+    for run_id, group in _group_by_run(messages):
+        paused = run_states.get(run_id) == "completed" and bool(unanswered_tool_calls(group))
+        for message in group:
+            if not isinstance(message, ModelRequest):
+                continue
+            for part in message.parts:
+                if not isinstance(part, ToolReturnPart):
+                    continue
+                if not is_receipt(part) and not was_receipt(part):
+                    continue
+                call = calls.get(part.tool_call_id)
+                if call is None:
+                    continue
+                task = background_task(
+                    _call_card(call, step_id="", display=display), started_at=_iso(part.timestamp)
+                )
+                delivered = outcomes.get(part.tool_call_id)
+                if delivered is not None:
+                    outcome, at = delivered
+                    tasks.append(settle_background_task(task, outcome, ended_at=_iso(at)))
+                    continue
+                state = interrupted_task_state(
+                    run_states.get(run_id, "failed"), paused_for_approval=paused
+                )
+                ended_at = _iso(_ended_at(group) or part.timestamp)
+                tasks.append(task.model_copy(update={"state": state, "ended_at": ended_at}))
+    return tasks
+
+
+def card_title(card: ToolFrame) -> str:
+    """工具卡的标题：generic display 的 summary 与 detail 用空格连接，其余退回工具名。
+
+    后台任务的描述与完成通知的文字都由它来，两条投影共用。
+    """
+
+    display = card.display
+    if isinstance(display, GenericDisplay):
+        return " ".join(item for item in (display.summary, display.detail) if item)
+    return card.name
+
+
+def background_task(card: ToolFrame, *, started_at: str | None) -> TranscriptTask:
+    """回执到达时为这次后台调用开的任务：id 是调用 id，描述是卡标题。"""
+
+    return TranscriptTask(
+        task_id=card.tool_call_id,
+        kind="tool",
+        state="running",
+        detached=True,
+        description=card_title(card),
+        started_at=started_at,
+    )
+
+
+def background_notice(card: ToolFrame, outcome: BackgroundOutcome, *, frame_id: str) -> TextFrame:
+    """后台结果递入时插在到达处的完成通知：成功「已{标题}」，失败「{标题} 失败」。
+
+    它是 role user 的块，带 task_id 与前端区分用户的话；content 只有一段相同的文字。
+    """
+
+    title = card_title(card)
+    text = f"已{title}" if outcome.state == "done" else f"{title} 失败"
+    return TextFrame(
+        frame_id=frame_id,
+        role="user",
+        text=text,
+        content=(TextContent(text=text),),
+        task_id=card.tool_call_id,
+    )
+
+
+def settle_background_task(
+    task: TranscriptTask, outcome: BackgroundOutcome, *, ended_at: str | None
+) -> TranscriptTask:
+    """按递入的结果收尾任务：成功写结果文本，失败写错误文本，与 subagent 任务同一约定。"""
+
+    done = outcome.state == "done"
+    return task.model_copy(
+        update={
+            "state": "completed" if done else "failed",
+            "ended_at": ended_at,
+            "result_summary": outcome.text if done else None,
+            "error": None if done else outcome.text,
+        }
+    )
+
+
+def interrupted_task_state(run_state: TurnState, *, paused_for_approval: bool) -> TaskState:
+    """回执之后没等到结果、运行已不再存活时任务的终态。
+
+    被停与审批暂停是 killed（暂停会丢掉没跑完的后台调用），其余（失败、崩溃、运行结束仍没结果）
+    是 failed。
+    """
+
+    if run_state == "cancelled" or paused_for_approval:
+        return "killed"
+    return "failed"
 
 
 def _tool_returns(
@@ -418,6 +552,8 @@ def _turn(
     pending_request: ModelRequest | None = None
     pending_steers: list[_Steer] = []
     pending_summaries: list[tuple[datetime, str]] = []
+    # 有回执、还没递入结果的后台调用；轮末仍在的按中断收卡。
+    awaiting_outcome: set[str] = set()
     # 插话行按轮取而不按 run：续跑会把它们挪到新 run，消息却留在旧 run 的段里。
     turn_runs = {run_id for run_id, _ in segments}
     unclaimed = [row for row in steered if row.run_id in turn_runs]
@@ -436,23 +572,32 @@ def _turn(
                     # 纯边界消息不计为模型步骤；包含其他响应 part 时仍计一步。
                     continue
             if isinstance(message, ModelRequest):
-                said = _user_content(message)
-                if content is None and said:
+                _settle_tools(message, tool_frames, frames_by_step, awaiting_outcome)
+                if content is None and (said := _user_content(message)):
                     # 首条用户消息属于轮次输入，不另建块。
                     content = said
-                elif said and steps:
-                    # 插话挂在当时的末步，与实时投影保持一致。
-                    step_index = len(steps) - 1
-                    _user_frame(
-                        frames_by_step[step_index],
-                        f"{turn_id}.{step_index + 1}",
-                        said,
-                        _claim(unclaimed, said),
-                    )
-                elif said:
-                    # 首步尚未创建时暂存插话，随后插入首步开头。
-                    pending_steers.append((said, _claim(unclaimed, said)))
-                _settle_tools(message, tool_frames, frames_by_step)
+                else:
+                    # 插话与后台结果按 part 顺序挂在当时的末步，与实时投影保持一致。
+                    for part in message.parts:
+                        if not isinstance(part, UserPromptPart):
+                            continue
+                        outcome = parse_outcome(part)
+                        if outcome is not None:
+                            awaiting_outcome.discard(outcome.tool_call_id)
+                            _notice_frame(outcome, steps, tool_frames, frames_by_step, turn_id)
+                        elif not (said := _part_content(part)):
+                            continue
+                        elif steps:
+                            step_index = len(steps) - 1
+                            _user_frame(
+                                frames_by_step[step_index],
+                                f"{turn_id}.{step_index + 1}",
+                                said,
+                                _claim(unclaimed, said),
+                            )
+                        else:
+                            # 首步尚未创建时暂存插话，随后插入首步开头。
+                            pending_steers.append((said, _claim(unclaimed, said)))
                 pending_request = message
                 continue
 
@@ -502,7 +647,9 @@ def _turn(
 
     for tool_call_id in approvals:
         _stamp_approval(tool_call_id, tool_frames, frames_by_step)
-    _close_orphan_tools(tool_frames, frames_by_step, keep_open=waiting)
+    _close_orphan_tools(
+        tool_frames, frames_by_step, keep_open=waiting, awaiting_outcome=awaiting_outcome
+    )
 
     messages = [message for _, group in segments for message in group]
     started, ended = _started_at(messages), _ended_at(messages)
@@ -552,6 +699,23 @@ def _user_frame(
     )
 
 
+def _notice_frame(
+    outcome: BackgroundOutcome,
+    steps: Sequence[TranscriptStep],
+    tool_frames: dict[str, str],
+    frames_by_step: list[dict[str, TranscriptFrame]],
+    turn_id: str,
+) -> None:
+    """后台结果的完成通知挂在末步，与插话共用块序号；对不上本轮的卡就不出通知，与实时投影一致。"""
+
+    card = _find_tool(outcome.tool_call_id, tool_frames, frames_by_step)
+    if card is None or not steps:
+        return
+    frames = frames_by_step[len(steps) - 1]
+    frame_id = f"{turn_id}.{len(steps)}.f{next_frame_ordinal(frames)}"
+    frames[frame_id] = background_notice(card, outcome, frame_id=frame_id)
+
+
 def _claim(
     unclaimed: list[SteeredPrompt], content: tuple[PromptContent, ...]
 ) -> tuple[str, ...] | None:
@@ -577,9 +741,15 @@ def _user_content(message: ModelRequest) -> tuple[PromptContent, ...]:
     for part in message.parts:
         if not isinstance(part, UserPromptPart) or parse_outcome(part) is not None:
             continue
-        items = [part.content] if isinstance(part.content, str) else list(part.content)
-        parts.extend(prompt_content(items))
+        parts.extend(_part_content(part))
     return tuple(parts)
+
+
+def _part_content(part: UserPromptPart) -> tuple[PromptContent, ...]:
+    """一个用户 part 还原成的内容；实时侧一次递入正好是一个 part。"""
+
+    items = [part.content] if isinstance(part.content, str) else list(part.content)
+    return prompt_content(items)
 
 
 def thinking_text(part: ThinkingPart) -> str:
@@ -632,46 +802,45 @@ def _open_frames(
             frame_id = f"{step_id}.f{next_frame_ordinal(frames)}"
             frames[frame_id] = TextFrame(frame_id=frame_id, role="assistant", text=part.content)
         elif isinstance(part, ToolCallPart):
-            frame_id = f"{step_id}.{part.tool_call_id}"
             child_id = subagent_of_call.get(part.tool_call_id)
-            frames[frame_id] = ToolFrame(
-                frame_id=frame_id,
-                tool_call_id=part.tool_call_id,
-                name=part.tool_name,
-                state="running",
-                input=part.args,
-                display=display.tool_display(part.tool_name, part.args),
-                view=display.view_of(part.tool_name),
-                agent_refs=(
-                    None if child_id is None else (AgentRef(agent_id=child_id, role="child"),)
-                ),
-            )
-            tool_frames[part.tool_call_id] = frame_id
+            card = _call_card(part, step_id=step_id, display=display, child_id=child_id)
+            frames[card.frame_id] = card
+            tool_frames[part.tool_call_id] = card.frame_id
+
+
+def _call_card(
+    part: ToolCallPart, *, step_id: str, display: ToolDisplayRegistry, child_id: str | None = None
+) -> ToolFrame:
+    """一次调用刚发起时的工具卡。"""
+
+    return ToolFrame(
+        frame_id=f"{step_id}.{part.tool_call_id}",
+        tool_call_id=part.tool_call_id,
+        name=part.tool_name,
+        state="running",
+        input=part.args,
+        display=display.tool_display(part.tool_name, part.args),
+        view=display.view_of(part.tool_name),
+        agent_refs=None if child_id is None else (AgentRef(agent_id=child_id, role="child"),),
+    )
 
 
 def _settle_tools(
     message: ModelRequest,
     tool_frames: dict[str, str],
     frames_by_step: list[dict[str, TranscriptFrame]],
+    awaiting_outcome: set[str],
 ) -> None:
-    """回填工具结果，收尾口径见 settle_tool_return；后台工具的回执不结卡，由之后递入的结果结。"""
+    """回填工具结果，收尾口径见 settle_tool_return；后台工具的回执照常结卡，并记进 awaiting_outcome。"""
 
     for part in message.parts:
-        if isinstance(part, UserPromptPart):
-            outcome = parse_outcome(part)
-            if outcome is None:
-                continue
-            tool_call_id = outcome.tool_call_id
-            state, output, metadata, error = settle_background_outcome(outcome)
-        elif isinstance(part, ToolReturnPart | RetryPromptPart):
-            if isinstance(part, ToolReturnPart) and is_receipt(part):
-                continue
-            tool_call_id = part.tool_call_id
-            state, output, metadata, error = settle_tool_return(part)
-        else:
+        if not isinstance(part, ToolReturnPart | RetryPromptPart):
             continue
+        if isinstance(part, ToolReturnPart) and is_receipt(part):
+            awaiting_outcome.add(part.tool_call_id)
+        state, output, metadata, error = settle_tool_return(part)
         _replace_tool(
-            tool_call_id,
+            part.tool_call_id,
             tool_frames,
             frames_by_step,
             state=state,
@@ -729,19 +898,6 @@ def settle_tool_return(
     return state, part.content, part.metadata, None if state == "done" else str(part.content)
 
 
-def settle_background_outcome(
-    outcome: BackgroundOutcome,
-) -> tuple[Literal["done", "error"], object, object, str | None]:
-    """一次后台工具结果收尾成工具卡的 (state, output, metadata, error)，两条投影共用。
-
-    结果只带给模型的文本，工具的 metadata 不随它送达；失败与 RetryPromptPart 一样只写错误。
-    """
-
-    if outcome.state == "done":
-        return "done", outcome.text, None, None
-    return "error", None, None, outcome.text
-
-
 def _stamp_approval(
     tool_call_id: str,
     tool_frames: dict[str, str],
@@ -766,15 +922,21 @@ def _close_orphan_tools(
     frames_by_step: list[dict[str, TranscriptFrame]],
     *,
     keep_open: Sequence[str] = (),
+    awaiting_outcome: Collection[str] = (),
 ) -> None:
-    """将无结果调用标记为错误；等待审批的调用保持开放。"""
+    """将无结果调用标记为错误；等待审批的调用保持开放。
+
+    有回执却没等到结果的后台调用也算无结果：历史里的运行都已不再存活，实时侧还活着的轮会盖掉这一份。
+    """
 
     for tool_call_id in tool_frames:
         if tool_call_id in keep_open:
             continue
         for step_frames in frames_by_step:
             existing = step_frames.get(tool_frames[tool_call_id])
-            if isinstance(existing, ToolFrame) and existing.state == "running":
+            if isinstance(existing, ToolFrame) and (
+                existing.state == "running" or tool_call_id in awaiting_outcome
+            ):
                 _replace_tool(
                     tool_call_id,
                     tool_frames,
@@ -785,6 +947,21 @@ def _close_orphan_tools(
                     error=ORPHAN_TOOL_ERROR,
                 )
                 break
+
+
+def _find_tool(
+    tool_call_id: str,
+    tool_frames: dict[str, str],
+    frames_by_step: list[dict[str, TranscriptFrame]],
+) -> ToolFrame | None:
+    frame_id = tool_frames.get(tool_call_id)
+    if frame_id is None:
+        return None
+    for step_frames in frames_by_step:
+        existing = step_frames.get(frame_id)
+        if isinstance(existing, ToolFrame):
+            return existing
+    return None
 
 
 def _replace_tool(
@@ -841,12 +1018,16 @@ __all__ = [
     "SteeredPrompt",
     "TurnState",
     "approvals_from_messages",
+    "background_notice",
+    "background_task",
+    "card_title",
     "drop_last_turn",
+    "interrupted_task_state",
     "keep_turns",
     "run_error_from_events",
     "run_ids_from_messages",
     "run_state_from_events",
-    "settle_background_outcome",
+    "settle_background_task",
     "settle_tool_return",
     "step_usage",
     "tasks_from_messages",

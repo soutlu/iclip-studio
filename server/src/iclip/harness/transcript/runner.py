@@ -62,11 +62,14 @@ from iclip.platform.transcript.ops import (
     PromptUpsertOp,
     StepHeader,
     StepUpsertOp,
+    TaskUpsertOp,
     ToolFrame,
     TranscriptMeta,
+    TranscriptTask,
     TranscriptTurn,
     TurnHeader,
     TurnUpsertOp,
+    owned_task_ids,
 )
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -114,11 +117,12 @@ def _approvals_of(row: JobRow, history: Sequence[ModelMessage]) -> DeferredToolR
 
 
 def _seed_ops(
-    turn: TranscriptTurn, *, last_step_interrupted: bool
+    turn: TranscriptTurn, tasks: Sequence[TranscriptTask], *, last_step_interrupted: bool
 ) -> tuple[EmittableOperation, ...]:
-    """按轮、步、块的依赖顺序写入实时基线。
+    """按轮、步、块的依赖顺序写入实时基线，再写这一轮的任务。
 
-    last_step_interrupted 仅用于崩溃续跑，审批续跑的末步仍为正常结束。
+    tasks 是历史重建的本对话任务，只取这一轮工具卡认领的（owned_task_ids）：崩溃续跑的实时店里
+    没有它们，不写就与刷新后的页对不上。last_step_interrupted 仅用于崩溃续跑，审批续跑的末步仍为正常结束。
     """
 
     ops: list[EmittableOperation] = [
@@ -138,6 +142,8 @@ def _seed_ops(
             FrameUpsertOp(turn_id=turn.turn_id, step_id=step.step_id, frame=frame)
             for frame in step.frames
         )
+    owned = owned_task_ids(frame for step in turn.steps for frame in step.frames)
+    ops.extend(TaskUpsertOp(task=task) for task in tasks if task.task_id in owned)
     return tuple(ops)
 
 
@@ -667,11 +673,8 @@ class ConversationRunner:
         # 先登记控制句柄，再启动引擎，以接收首事件前的停止和插话。
         self._active[row.conversation_id] = active
 
-        resume_from = (
-            None
-            if resumed is None
-            else (await self._history.read(row.conversation_id)).turns[resumed]
-        )
+        baseline = None if resumed is None else await self._history.read(row.conversation_id)
+        resume_from = None if baseline is None or resumed is None else baseline.turns[resumed]
         # 仅崩溃续跑需要修复旧 run，审批续跑已正常结束。
         crashed_run = None if resumed is None or awaiting else row.run_id
         if crashed_run is not None:
@@ -703,12 +706,12 @@ class ConversationRunner:
             repaired_calls=repaired,
             display=self._display,
         )
-        if resume_from is not None:
+        if baseline is not None and resume_from is not None:
             # 首批实时操作前写入完整基线，避免同号实时轮次覆盖已有历史步骤。
             self._store.append(
                 row.conversation_id,
                 MAIN_AGENT_ID,
-                _seed_ops(resume_from, last_step_interrupted=not awaiting),
+                _seed_ops(resume_from, baseline.tasks, last_step_interrupted=not awaiting),
             )
 
         deps = await self._deps_for(row)

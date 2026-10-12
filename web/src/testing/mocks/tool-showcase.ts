@@ -3,6 +3,8 @@
  * 检索、运行中断与整轮失败。只读历史，不自动起演示运行；文件名对得上 seedMockWorkspace 里的文件。
  */
 
+import type { MockShowcase } from './transcript'
+
 const numbered = (lines: readonly string[]) =>
   lines.map((line, index) => `${String(index + 1).padStart(6)}\t${line}`).join('\n')
 
@@ -124,7 +126,7 @@ const turn = (
   turnId: `t${ordinal}`,
 })
 
-export const toolShowcaseTurns = (): (Frame & { turnId: string })[] => [
+const toolShowcaseTurns = (): (Frame & { turnId: string })[] => [
   turn(1, '把拍摄需求里的 6 个镜头整理成分镜，总时长控制在 30 秒。', [
     {
       frameId: 't1.1.f1',
@@ -252,7 +254,7 @@ export const toolShowcaseTurns = (): (Frame & { turnId: string })[] => [
   ),
 ]
 
-export const toolShowcaseInteractions = [
+const toolShowcaseInteractions = [
   {
     interactionId: TOOL_SHOWCASE_DENIED_INTERACTION,
     interactionKind: 'approval',
@@ -260,3 +262,9 @@ export const toolShowcaseInteractions = [
     toolCallId: DENIED_CALL,
   },
 ]
+
+export const toolShowcase: MockShowcase = {
+  interactions: toolShowcaseInteractions,
+  title: '工具过程展示',
+  turns: toolShowcaseTurns,
+}

@@ -97,6 +97,15 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 重新生成可省略整个请求体；省略 `content` 使用原输入，提供则替换。提供 `prompt_id` 时沿用发消息的幂等语义，省略时由服务端生成。
 - `POST /conversations/{id}/interactions/{interaction_id}` 提交审批决定，记录后返回 `204`；同批决定齐备后服务端续跑。仍在等待的审批重复同值幂等，改值返回 `409`；已不在等待的卡返回 `404`。
 
+### 后台工具
+
+后台跑的工具（现在是 `breakdown_video`）被调用后先回一条回执，结果之后才到。下面的「标题」是工具卡 `display` 的 `summary` 与 `detail` 用空格连起来（generic 卡），其余卡是工具名。
+
+- **工具卡只记启动**：回执到达就是 `done`，`output` 是回执原文，之后不再变。唯一的例外：回执之后没等到结果、运行已不再存活，卡改为 `error`，`output` 清空，`error` 是中断文案。
+- **任务**：回执到达时 `tasks` 里多一条 `kind: "tool"`、`detached: true` 的任务，`taskId` 等于那次调用的 `toolCallId`，`description` 是标题。结果送达后是 `completed`（`resultSummary` 是结果原文）或 `failed`（`error` 是失败原文）；没等到结果时，被停与审批暂停是 `killed`，失败、崩溃或运行结束仍没结果是 `failed`，都不带结果与错误。不出现 `lost`。
+- **完成通知**：结果送达处插一个 `role: "user"` 的正文块，带 `taskId`（同上）：成功是「已{标题}」，失败是「{标题} 失败」，`content` 只有一段相同的文字，没有 `promptIds`。它不是用户说的话，位置与插话一样挂在当时的末步、共用块序号；同一次送达里有插话也有结果时按送达顺序排。
+- **金样**：成功拆解的场景存成 [transcript/background-turn.json](transcript/background-turn.json)，完成通知的 `taskId` 与 `kind: "tool"` 任务都在里面（后端场景测试生成时断言两者存在）；按「已发布字段只增不改」，前端金样测试要对这两处做存在性断言。
+
 ### 订阅
 
 `WS /ws` 一条连接订阅多段对话，经过同源代理时使用 `/api/ws`。WebSocket 帧不在 OpenAPI 中：标准 Transcript 实体与操作消费 [vendor](../web/src/shared/transcript/vendor/README.md)，本项目的连接帧 schema 位于 [connection.ts](../web/src/shared/transcript/connection.ts)。后端实际发出的帧序列与 REST 一页存成金样 [transcript/](transcript/)，覆盖 `transcript.reset` / `transcript.ops`，两端形状对不上会在其中一边先红，生成与解析见[测试规范](../docs/test-design.md#1-按行为选择测试层)；全局帧与文件变更帧没有金样，前端 schema 照后端 [wire.py](../server/src/iclip/platform/transcript/wire.py) 手写。

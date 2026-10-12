@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { TranscriptInteraction } from '@/shared/transcript/vendor'
+import type { TranscriptInteraction, TranscriptTask } from '@/shared/transcript/vendor'
 import { cn } from '@/shared/lib/utils'
 import {
   failedTools,
@@ -23,6 +23,7 @@ type ActivityRunProps = {
   liveFrameId: string | undefined
   settled: boolean
   interactions: ReadonlyMap<string, TranscriptInteraction>
+  toolTasks: ReadonlyMap<string, TranscriptTask>
 }
 
 /** 运行时本地计时并在结束时冻结；历史记录使用步骤起止时间，缺失时不显示。 */
@@ -56,7 +57,13 @@ const CLAUSE_TONE_CLASS = {
 const toneClass = (clause: SummaryClause) =>
   clause.tone === undefined ? undefined : CLAUSE_TONE_CLASS[clause.tone]
 
-export function ActivityRun({ interactions, items, liveFrameId, settled }: ActivityRunProps) {
+export function ActivityRun({
+  interactions,
+  items,
+  liveFrameId,
+  settled,
+  toolTasks,
+}: ActivityRunProps) {
   const running =
     !settled &&
     items.some(
@@ -98,6 +105,7 @@ export function ActivityRun({ interactions, items, liveFrameId, settled }: Activ
       interactions={interactions}
       key={entry.frame.frameId}
       live={entry.frame.frameId === liveFrameId}
+      toolTasks={toolTasks}
     />
   )
 
