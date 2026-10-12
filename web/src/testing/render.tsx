@@ -6,7 +6,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, type RenderOptions } from '@testing-library/react'
+import { act, render, type RenderOptions } from '@testing-library/react'
 import { createContext, use, type ReactElement, type ReactNode } from 'react'
 import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
 import { TooltipProvider } from '@/shared/ui/tooltip'
@@ -81,6 +81,8 @@ export const renderWithProviders = async (
     </QueryClientProvider>
   )
   const result = render(tree(ui))
+  // Provider 在微任务里建连，等它建好再握手。
+  await act(async () => {})
   socket.deliver(SERVER_HELLO)
 
   return {
