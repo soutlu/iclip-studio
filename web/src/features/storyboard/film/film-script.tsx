@@ -1,8 +1,8 @@
-/** 制作页的文案列：列头与分镜页相同（`ScriptHead`）；正文区最上面是这组的参考图条，其次是全局设定卡，之后按时间排各镜头，
- * 末尾一行写总长与「结束」。
+/** 制作页的文案列：列头与分镜页相同（`ScriptHead`）；正文区最上面是全局设定卡，之后按时间排各镜头，末尾一行写总长与「结束」。
  *
- * 参考图条按列表先后列这组会发出去的参考图（有编号的），每张写 @N 与名字，没选用的画空位、写「未选用」，点哪张舞台看哪张；
- * 还没进列表的机位图不在条上，在它那一镜头部的缩略图里。
+ * 参考图按列表先后列这组会发出去的图（有编号的），每张只画缩略图与 @N，没选用的画空位，名字与「未选用」在悬停里；
+ * 点哪张舞台看哪张。它们排在全局设定卡的标题行里（段名、字数之后，右端按钮之前），一行放不下在自己那块里折行；
+ * 这组没有全局设定时单独一行，前面写「参考图」。还没进列表的机位图不在其中，在它那一镜头部的缩略图里。
  * 全局设定一段一行，前面写模板里的段名。字里的 `@ImageN` 在原位置是图片芯片（镜头开头的「参考@ImageN，」也是），
  * 点芯片选中这段、舞台看那张图；这段选中且舞台正看着那张时芯片高亮。
  * 镜头正文与台词交替排：台词单独一行，说话人是固定的小标签，只能改引号里的字。没法在页面上改的段只读。
@@ -43,7 +43,7 @@ type FilmScriptProps = {
   frame: number | undefined
   readOnly: boolean
   onSelect: (contentId: string, frame?: number) => void
-  /** 在参考图条上点了第 `position` 张：舞台看它，选哪段由使用方定。 */
+  /** 在参考图里点了第 `position` 张：舞台看它，选哪段由使用方定。 */
   onPickFrame: (position: number) => void
   /** 一段字改了：`label` 是这段给人看的名字，冲突时用。 */
   onEdit: (target: string, label: string, value: FilmSegmentValue) => void
@@ -122,6 +122,9 @@ export function FilmScript({
     readOnly
       ? undefined
       : { group, onUploadingChange: (busy) => onUploadingChange(key, busy), uploads }
+  const strip = group.frames.every((item) => item.number === null) ? null : (
+    <FrameStrip frame={frame} group={group} onPick={onPickFrame} onPreview={onPreview} />
+  )
 
   return (
     <div aria-label="分镜文案" className="storyboard-prose" role="region" {...refuseFileDropProps}>
@@ -138,10 +141,17 @@ export function FilmScript({
         total={total}
       />
       <div className="storyboard-script-list">
-        {group.frames.every((item) => item.number === null) ? null : (
-          <FrameStrip frame={frame} group={group} onPick={onPickFrame} onPreview={onPreview} />
-        )}
-        {group.settings.length === 0 ? null : (
+        {group.settings.length === 0 ? (
+          strip === null ? null : (
+            <div className="film-frames-row">
+              <span className="storyboard-settings-label">
+                <Icon decorative name="image" size="xs" />
+                参考图
+              </span>
+              {strip}
+            </div>
+          )
+        ) : (
           <div
             aria-current={settingsSelected}
             aria-label="全局设定"
@@ -150,7 +160,7 @@ export function FilmScript({
             onFocus={() => select(SETTINGS_ID)}
             role="group"
           >
-            <div className="storyboard-segment-head">
+            <div className="storyboard-segment-head film-settings-head">
               <span className="storyboard-settings-label">
                 <Icon decorative name="filter" size="xs" />
                 全局设定
@@ -158,7 +168,8 @@ export function FilmScript({
               <span className="storyboard-settings-count">
                 {promptLength(group.settings.map(settingText).join('\n'))} 字
               </span>
-              <span className="ml-auto flex items-center gap-0.5">
+              {strip}
+              <span className="film-settings-actions ml-auto flex items-center gap-0.5">
                 {copyButton('全局设定', group.settings.map(settingText).join('\n'), copyBlocked)}
                 {settingsClamped ? (
                   <Button
@@ -281,7 +292,8 @@ export function FilmScript({
   )
 }
 
-/** 这组的参考图条：按列表先后一张一枚，写 @N 与名字，没选用的画空位、写「未选用」；舞台正看着的那张高亮。 */
+/** 这组的参考图：按列表先后一张一枚，只画缩略图与 @N，没选用的画空位（读屏与悬停说「未选用」）；
+ * 舞台正看着的那张高亮。只是芯片那一块，放在哪一行由使用方定。 */
 function FrameStrip({
   frame,
   group,
@@ -295,10 +307,6 @@ function FrameStrip({
 }) {
   return (
     <div aria-label="参考图" className="film-frames" role="group">
-      <span className="storyboard-settings-label">
-        <Icon decorative name="image" size="xs" />
-        参考图
-      </span>
       {group.frames.flatMap((item, index) =>
         // 只列会发出去的（有编号的）；没进列表的机位图在它那一镜的头部与舞台上。位置照 `frames` 里的算。
         item.number === null
@@ -308,7 +316,6 @@ function FrameStrip({
                 highlighted={frame === index + 1}
                 key={item.node}
                 label={item.label}
-                named
                 note={item.url === null ? '未选用' : undefined}
                 onEnlarge={(url) => onPreview({ name: item.label, url })}
                 onPick={() => onPick(index + 1)}

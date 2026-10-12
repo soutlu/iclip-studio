@@ -90,7 +90,7 @@ export const missingReferencesText = (labels: readonly string[]): string | undef
 }
 
 /** 这组参考图列表里有没图的就不能出片：只写张数，「2 张参考图尚未选用，无法生成视频；请先选用图片」，缺哪几张看
- * 参考图条上的「未选用」；没进列表的机位图不发，不算。一张都不缺时为 undefined。 */
+ * 参考图里画成空位的芯片（悬停写名字与「未选用」）；没进列表的机位图不发，不算。一张都不缺时为 undefined。 */
 export const missingFramesText = (group: FilmGroup): string | undefined => {
   const count = group.frames.filter((frame) => frame.number !== null && frame.url === null).length
   return count === 0 ? undefined : `${count} 张参考图尚未选用，无法生成视频；请先选用图片`

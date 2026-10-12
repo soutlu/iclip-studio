@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { getResponse, http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ImageGenerationIn,
@@ -13,7 +13,7 @@ import type {
 import { Toaster } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
-import { editMockFilmShot, seedMockFilm } from '@/testing/mocks/film'
+import { editMockFilmShot, filmHandlers, seedMockFilm } from '@/testing/mocks/film'
 import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { makeGenerationJob } from '@/testing/generation-job'
@@ -127,11 +127,13 @@ const shot1Generation = (over: Partial<ReturnType<typeof makeGenerationJob>>) =>
     ...over,
   })
 
-/** 参考图条上每枚芯片的字，按先后。 */
-const stripTexts = (script: HTMLElement) =>
-  within(within(script).getByRole('group', { name: '参考图' }))
-    .getAllByRole('button')
-    .map((chip) => chip.textContent)
+/** 参考图里的芯片，按先后。 */
+const stripChips = (script: HTMLElement) =>
+  within(within(script).getByRole('group', { name: '参考图' })).getAllByRole('button')
+
+/** 参考图里每枚芯片的读屏名（名字、编号与有没有选用），按先后。 */
+const stripNames = (script: HTMLElement) =>
+  stripChips(script).map((chip) => chip.getAttribute('aria-label'))
 
 const photo = () => new File(['photo'], '我的照片.png', { type: 'image/png' })
 
@@ -170,8 +172,10 @@ describe('制作页', () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
     expect(stageTag()).toBe('@1')
-    const front = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' })
-    const sole = within(settings).getByRole('button', { name: '在舞台查看绒面一脚蹬 @3' })
+    // 标题行里的参考图也有同名芯片，按字里的找。
+    const product = within(settings).getByRole('textbox', { name: '产品' })
+    const front = within(product).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' })
+    const sole = within(product).getByRole('button', { name: '在舞台查看绒面一脚蹬 @3' })
 
     await userEvent.click(sole)
     await waitFor(() => expect(stageTag()).toBe('@3'))
@@ -202,17 +206,27 @@ describe('制作页', () => {
     expect(stageTag()).toBe('镜头 1')
   })
 
-  it('参考图条按列表先后只列会发出去的图，写编号与名字，没选用的标出来；点哪张舞台看哪张，文案列跟到写着它的段', async () => {
+  it('参考图排在全局设定的标题行里，按列表先后只列会发出去的图，芯片上只写编号；点哪张舞台看哪张，文案列跟到写着它的段', async () => {
     const script = await renderFilm()
-    // 没进列表的镜头 1 机位图不在条上。
-    expect(stripTexts(script)).toEqual([
-      '@1金发女生',
-      '@2绒面一脚蹬',
-      '@3绒面一脚蹬',
-      '@4涂鸦滑板场未选用',
-      '@5镜头 2',
+    const settings = within(script).getByRole('group', { name: '全局设定' })
+    const strip = within(settings).getByRole('group', { name: '参考图' })
+    // 在全局设定卡里，不另写「参考图」。
+    expect(within(script).queryByText('参考图')).not.toBeInTheDocument()
+    // 没进列表的镜头 1 机位图不在其中；名字与没选用只在读屏名里。
+    expect(stripNames(script)).toEqual([
+      '在舞台查看金发女生 @1',
+      '在舞台查看绒面一脚蹬 @2',
+      '在舞台查看绒面一脚蹬 @3',
+      '在舞台查看涂鸦滑板场 @4，未选用',
+      '在舞台查看镜头 2 @5',
     ])
-    const strip = within(script).getByRole('group', { name: '参考图' })
+    expect(stripChips(script).map((chip) => chip.textContent)).toEqual([
+      '@1',
+      '@2',
+      '@3',
+      '@4',
+      '@5',
+    ])
     const view = within(strip).getByRole('button', { name: '在舞台查看镜头 2 @5' })
 
     await userEvent.click(view)
@@ -222,6 +236,35 @@ describe('制作页', () => {
       'true',
     )
     expect(view).toHaveAttribute('data-highlighted')
+  })
+
+  it('这组没有全局设定时参考图单独一行，前面写「参考图」', async () => {
+    // 照常读工程，只把这组的全局设定拿掉。
+    server.use(
+      http.get('*/api/conversations/:conversationId/film', async ({ request }) => {
+        const response = await getResponse(filmHandlers, request)
+        if (response === undefined) throw new Error('mock 没有接住读工程的请求')
+        const body = (await response.json()) as { film: FilmViewOut }
+        return HttpResponse.json({
+          film: {
+            ...body.film,
+            groups: body.film.groups.map((group) => ({ ...group, settings: [] })),
+          },
+        })
+      }),
+    )
+    const script = await renderFilm()
+
+    expect(within(script).queryByRole('group', { name: '全局设定' })).not.toBeInTheDocument()
+    const strip = within(script).getByRole('group', { name: '参考图' })
+    expect(strip.previousElementSibling).toHaveTextContent(/^参考图$/)
+    expect(stripNames(script)).toEqual([
+      '在舞台查看金发女生 @1',
+      '在舞台查看绒面一脚蹬 @2',
+      '在舞台查看绒面一脚蹬 @3',
+      '在舞台查看涂鸦滑板场 @4，未选用',
+      '在舞台查看镜头 2 @5',
+    ])
   })
 
   it('没选用的机位图在它那一镜的头部、舞台与生图卡上：没有编号，舞台写它的名字', async () => {
@@ -569,13 +612,13 @@ describe('制作页的图', () => {
       expect(screen.getByRole('img', { name: '镜头 1' })).toHaveAttribute('src', result),
     )
     expect(stageTag()).toBe('@5')
-    expect(stripTexts(script)).toEqual([
-      '@1金发女生',
-      '@2绒面一脚蹬',
-      '@3绒面一脚蹬',
-      '@4涂鸦滑板场未选用',
-      '@5镜头 1',
-      '@6镜头 2',
+    expect(stripNames(script)).toEqual([
+      '在舞台查看金发女生 @1',
+      '在舞台查看绒面一脚蹬 @2',
+      '在舞台查看绒面一脚蹬 @3',
+      '在舞台查看涂鸦滑板场 @4，未选用',
+      '在舞台查看镜头 1 @5',
+      '在舞台查看镜头 2 @6',
     ])
     expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 1的描述' }))).toEqual([
       '在舞台查看镜头 1 @5',
@@ -591,11 +634,20 @@ describe('制作页的图', () => {
 
   it('悬停图片芯片出预览卡，「放大」开灯箱', async () => {
     const script = await renderFilm()
-    const settings = within(script).getByRole('group', { name: '全局设定' })
-    await userEvent.hover(within(settings).getByRole('button', { name: '在舞台查看金发女生 @1' }))
+    const person = within(script).getByRole('textbox', { name: '人物' })
+    await userEvent.hover(within(person).getByRole('button', { name: '在舞台查看金发女生 @1' }))
     const tip = await screen.findByRole('tooltip')
     await userEvent.click(within(tip).getByRole('button', { name: '放大' }))
     expect(await screen.findByRole('dialog', { name: /金发女生/ })).toBeInTheDocument()
+  })
+
+  it('悬停没有图的芯片出提示，写编号、名字与「未选用」', async () => {
+    const script = await renderFilm()
+    const strip = within(script).getByRole('group', { name: '参考图' })
+    await userEvent.hover(
+      within(strip).getByRole('button', { name: '在舞台查看涂鸦滑板场 @4，未选用' }),
+    )
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('@4 涂鸦滑板场 · 未选用')
   })
 })
 
@@ -714,12 +766,12 @@ describe('制作页的图片编辑器', () => {
     await waitFor(() => expect(stageTag()).toBe('镜头 1'))
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(editor).not.toBeInTheDocument())
-    expect(stripTexts(script)).toEqual([
-      '@1金发女生',
-      '@2绒面一脚蹬',
-      '@3绒面一脚蹬',
-      '@4涂鸦滑板场未选用',
-      '@5镜头 2',
+    expect(stripNames(script)).toEqual([
+      '在舞台查看金发女生 @1',
+      '在舞台查看绒面一脚蹬 @2',
+      '在舞台查看绒面一脚蹬 @3',
+      '在舞台查看涂鸦滑板场 @4，未选用',
+      '在舞台查看镜头 2 @5',
     ])
     expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 1的描述' }))).toEqual([])
     expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 2的描述' }))).toEqual([
@@ -787,7 +839,7 @@ describe('制作页字里插入、删除图片', () => {
 
     // 新照片排在机位图之前成了 @5，镜头 2 开头的机位图引用顺延成 @6。
     await waitFor(() => expect(chipsIn(shot3)).toEqual(['在舞台查看素材照片1 @5']))
-    expect(stripTexts(script)).toContain('@5素材照片1')
+    expect(stripNames(script)).toContain('在舞台查看素材照片1 @5')
     expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 2的描述' }))).toEqual([
       '在舞台查看镜头 2 @6',
     ])
@@ -814,21 +866,21 @@ describe('制作页字里插入、删除图片', () => {
     expect(bodies[0]?.edits[0]).not.toHaveProperty('images')
     expect(bodies[0]?.edits[0]?.parts?.[0]).toMatch(/^@Image2低机位/)
     expect(await screen.findByText('已保存')).toBeInTheDocument()
-    expect(stripTexts(script)).toHaveLength(5)
+    expect(stripNames(script)).toHaveLength(5)
   })
 
   it('删掉某张图唯一的一处引用：保存后图条少了这张，后面的编号跟着减', async () => {
     const script = await renderFilm()
-    expect(stripTexts(script)).toContain('@4涂鸦滑板场未选用')
+    expect(stripNames(script)).toContain('在舞台查看涂鸦滑板场 @4，未选用')
     await replaceText(
       within(script).getByRole('textbox', { name: '场景' }),
       '户外露天水泥滑板场，坡面和地面喷满街头涂鸦。',
     )
 
     await waitFor(() =>
-      expect(stripTexts(script).some((text) => text?.includes('涂鸦滑板场'))).toBe(false),
+      expect(stripNames(script).some((name) => name?.includes('涂鸦滑板场'))).toBe(false),
     )
-    expect(stripTexts(script)).toHaveLength(4)
+    expect(stripNames(script)).toHaveLength(4)
     expect(chipsIn(within(script).getByRole('textbox', { name: '镜头 2的描述' }))).toEqual([
       '在舞台查看镜头 2 @4',
     ])
