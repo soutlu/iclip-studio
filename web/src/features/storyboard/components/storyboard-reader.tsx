@@ -234,8 +234,8 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
         </div>
         <VideoGenerationBar
           aspect={{
+            description: '画幅写回分镜，不是生成参数',
             disabled: editingDisabled,
-            kind: 'editable',
             onChange: draft.updateAspectRatio,
             value: document.aspect_ratio,
           }}

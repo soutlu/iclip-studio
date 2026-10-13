@@ -1,10 +1,11 @@
-/** 制作页读写 AI 导演的工程：读成镜头组、改字、换图、按描述生图、给一组出片。端点语义见 contract/conventions.md 的「制作页」几条。 */
+/** 制作页读写 AI 导演的工程：读成镜头组、改字、换图、改画幅、按描述生图、给一组出片。端点语义见 contract/conventions.md 的「制作页」几条。 */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { use, useEffect } from 'react'
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
 import type {
+  FilmAspectRatioIn,
   FilmImageChoiceIn,
   FilmImageGenerationIn,
   FilmTextEditIn,
@@ -86,6 +87,23 @@ export const chooseFilmImage = async (
     {
       body,
       fallbackErrorMessage: '替换图片失败',
+      method: 'PUT',
+    },
+  )
+  return envelope.film
+}
+
+/** 改整份工程的画幅（所有组的视频与机位图），答复改完的整页；本来就是它时不写文件，照样答复整页。 */
+export const setFilmAspectRatio = async (
+  conversationId: string,
+  body: FilmAspectRatioIn,
+): Promise<FilmView> => {
+  const envelope = await apiFetch(
+    `/conversations/${conversationId}/film/aspect-ratio`,
+    zFilmViewEnvelope,
+    {
+      body,
+      fallbackErrorMessage: '画幅修改失败',
       method: 'PUT',
     },
   )

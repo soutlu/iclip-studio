@@ -1126,6 +1126,23 @@ export type FaceOut = {
 }
 
 /**
+ * FilmAspectRatioIn
+ *
+ * 把整份工程的画幅改成 ``aspectRatio``：所有视频与机位图一起改。``filmVersion`` 是读到的工程文件
+ * 版本号，对不上是 409；能写哪些画幅由后端按视频的档位查，不合规矩是 422。
+ */
+export type FilmAspectRatioIn = {
+  /**
+   * Aspectratio
+   */
+  aspectRatio: string
+  /**
+   * Filmversion
+   */
+  filmVersion: number
+}
+
+/**
  * FilmFrameOut
  *
  * 镜头组里的一张图：先是这组视频参考图列表里的，按列表先后；再是这组镜头里还没进列表的机位图，
@@ -5837,6 +5854,38 @@ export type ReadConversationFilmConversationsConversationIdFilmGetResponses = {
 
 export type ReadConversationFilmConversationsConversationIdFilmGetResponse =
   ReadConversationFilmConversationsConversationIdFilmGetResponses[keyof ReadConversationFilmConversationsConversationIdFilmGetResponses]
+
+export type SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutData = {
+  body: FilmAspectRatioIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/film/aspect-ratio'
+}
+
+export type SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutError =
+  SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutErrors[keyof SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutErrors]
+
+export type SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: FilmViewEnvelope
+}
+
+export type SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutResponse =
+  SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutResponses[keyof SetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutResponses]
 
 export type ChooseConversationFilmImageConversationsConversationIdFilmImagePutData = {
   body: FilmImageChoiceIn

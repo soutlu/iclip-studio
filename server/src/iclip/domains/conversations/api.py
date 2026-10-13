@@ -31,6 +31,7 @@ from iclip.domains.conversations.schemas import (
     ConversationsAuditOut,
     ConversationsPageOut,
     ConversationTaskIn,
+    FilmAspectRatioIn,
     FilmImageChoiceIn,
     FilmImageGenerationIn,
     FilmJobOut,
@@ -379,6 +380,23 @@ def create_conversations_router(
             url=body.url,
             film_version=body.film_version,
             run_version=body.run_version,
+        )
+        return film_view_out(view)
+
+    @router.put("/{conversation_id}/film/aspect-ratio", response_model=FilmViewEnvelope)
+    async def set_conversation_film_aspect_ratio(
+        conversation_id: uuid.UUID,
+        body: FilmAspectRatioIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FilmViewEnvelope:
+        """改整份工程的画幅（所有视频与机位图），答复改完的制作页；本来就是它时不写文件。
+        版本对不上 409，画幅不在视频的档位里 422。"""
+
+        view = await service.set_film_aspect_ratio(
+            principal,
+            conversation_id,
+            aspect_ratio=body.aspect_ratio,
+            film_version=body.film_version,
         )
         return film_view_out(view)
 
