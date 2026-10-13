@@ -75,13 +75,21 @@ class OssObjectStore:
         self._signing_bucket: Any = signing_bucket
         self._bucket: Any = bucket
 
-    async def put_public_object(self, *, object_key: str, content: bytes, content_type: str) -> str:
+    async def put_public_object(
+        self,
+        *,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: Mapping[str, str] | None = None,
+    ) -> str:
         """在线程中执行同步 OSS 上传，避免阻塞事件循环。"""
 
         key = _validate_object_key(object_key)
         if not content:
             raise ValueError("对象内容不能为空")
-        await asyncio.to_thread(self._put, key, content, content_type)
+        headers = {**(metadata or {}), "Content-Type": content_type}
+        await asyncio.to_thread(self._put, key, content, headers)
         return self.public_url(key)
 
     def sign_put(self, *, object_key: str, headers: Mapping[str, str]) -> str:
@@ -140,7 +148,7 @@ class OssObjectStore:
             object_type=head.object_type,
         )
 
-    def _put(self, object_key: str, content: bytes, content_type: str) -> None:
+    def _put(self, object_key: str, content: bytes, headers: Mapping[str, str]) -> None:
         """已存在 key 直接复用；存在性检查与写入整体重试。
 
         稳定 key 对应确定内容，并发写入相同 key 不改变结果；响应超时后可通过检查避免重传。
@@ -149,7 +157,7 @@ class OssObjectStore:
         def once() -> None:
             if self._bucket.object_exists(object_key):
                 return
-            self._bucket.put_object(object_key, content, headers={"Content-Type": content_type})
+            self._bucket.put_object(object_key, content, headers=dict(headers))
 
         _with_retries(once, what="写入")
 

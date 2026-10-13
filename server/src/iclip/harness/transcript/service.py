@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 import structlog
 
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
-from iclip.common.urls import is_http_url
+from iclip.common.urls import is_http_url, is_oss_processable
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.transcript.history import TranscriptHistory
 from iclip.harness.transcript.runner import ConversationRunner
@@ -400,15 +400,22 @@ class TranscriptService:
 
 
 def _check_content(content: Sequence[PromptContent]) -> None:
-    """消息至少一段，附件只收 http(s) 地址；发消息与重新生成都在写任何东西之前过这一遍。"""
+    """消息至少一段，附件只收 http(s) 地址，图片地址还要挂得上 OSS 处理参数（给模型的缩图靠它）；
+    发消息与重新生成都在写任何东西之前过这一遍。外部图片在入口已转存成本桶地址，到这里还挂不上
+    的，是没配对象存储时的外部地址，或重新生成原样重放的旧消息。"""
 
     if not content:
         raise ValidationFailed("消息是空的")
     for part in content:
         if not isinstance(part, ImageContent | VideoContent):
             continue
-        if part.source.url is None or not is_http_url(part.source.url):
+        url = part.source.url
+        if url is None or not is_http_url(url):
             raise ValidationFailed("附件地址必须是 http(s) 地址")
+        if isinstance(part, ImageContent) and not is_oss_processable(url):
+            raise ValidationFailed(
+                f"图片附件的地址要能挂 OSS 图片处理参数（OSS 域名、不带 query），这个地址不行：{url}"
+            )
 
 
 def _timeline(

@@ -1,7 +1,8 @@
-"""直传签名与确认。签名本地算；确认从桶里读，通过后记一条上传记录。
+"""直传签名与确认，以及按地址转存图片。签名本地算；确认从桶里读，通过后记一条上传记录。
 
 上传者与 API key 照旧签进 ``x-oss-meta-*`` 请求头随对象存在桶里；记录的属主是确认时的主体。
-同一个视频文件只留一个地址：确认时按 MD5 认出重复，交回最早那份的地址，删掉新传的。"""
+同一个视频文件只留一个地址：确认时按 MD5 认出重复，交回最早那份的地址，删掉新传的。
+转存是上传记录的第二个来源：服务端自己下载一张外部图片，按直传同一套规则核对后写进桶、记一条。"""
 
 from __future__ import annotations
 
@@ -24,13 +25,16 @@ from iclip.domains.uploads.models import (
     UploadTicket,
 )
 from iclip.domains.uploads.schemas import UploadSignIn
+from iclip.platform.media.image import read_image_header
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import (
     SIGNED_PUT_EXPIRES_SECONDS,
     ObjectStoreUnavailable,
-    SignedUploadStore,
+    PublicBucket,
     StoredObject,
 )
+from iclip.platform.outbound.fetch import FetchTooLarge
+from iclip.platform.outbound.guard import FetchFailed, FetchRefused
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -78,19 +82,29 @@ class FindRecordedUpload(Protocol):
     async def __call__(self, upload_id: uuid.UUID) -> RecordedUpload | None: ...
 
 
+class FetchBytes(Protocol):
+    """按地址下载字节，最多 ``max_bytes``。地址或 IP 不合出网规则抛 ``FetchRefused``，超过上限抛
+    ``FetchTooLarge``，其余失败抛 ``FetchFailed``（都在 ``iclip.platform.outbound``）。实现由组合根
+    接到出网下载器。"""
+
+    async def __call__(self, url: str, *, max_bytes: int) -> bytes: ...
+
+
 class UploadService:
-    """直传的两个用例：签许可、按桶确认并记录。"""
+    """直传的两个用例：签许可、按桶确认并记录；另有按地址转存一张图片。"""
 
     def __init__(
         self,
-        objects: SignedUploadStore,
+        objects: PublicBucket,
         *,
         record: RecordUpload,
         find_recorded: FindRecordedUpload,
+        fetch: FetchBytes,
     ) -> None:
         self._objects = objects
         self._record = record
         self._find_recorded = find_recorded
+        self._fetch = fetch
 
     def sign_upload(self, principal: Principal, body: UploadSignIn) -> UploadTicket:
         kind, ext, normalized = _accepted_type(body.content_type)
@@ -98,9 +112,7 @@ class UploadService:
             if body.width is None or body.height is None:
                 raise ValidationFailed("传图要报宽高")
             _check_dimensions(body.width, body.height)
-        headers = {"Content-Type": normalized, UPLOADER_HEADER: str(principal.user_id)}
-        if principal.api_key_id is not None:
-            headers[API_KEY_HEADER] = str(principal.api_key_id)
+        headers = {"Content-Type": normalized, **_audit_metadata(principal)}
         upload_id = uuid.uuid4()
         upload_url = self._objects.sign_put(
             object_key=MEDIA_PATHS.upload(upload_id=upload_id, ext=ext), headers=headers
@@ -145,6 +157,53 @@ class UploadService:
             await self._discard(found.object_key, upload_id=upload_id)
         return await self._describe(recorded)
 
+    async def import_image(self, principal: Principal, url: str, *, upload_id: uuid.UUID) -> str:
+        """把一张外部图片转存进桶，记成 ``principal`` 的一条图片上传，交回桶里的地址。
+
+        ``upload_id`` 由调用方按稳定规则算，记过就直接交回记录上的地址，不再下载。没记过：下载，
+        按文件头定类型（不信对方报的 Content-Type），类型、大小与宽高按直传同一套规则核对，写到
+        这次上传的对象位置并带上传者与 key 的审计元数据，再记一条上传（图片不去重）。
+
+        下载失败、被出网规则拒绝、不是图片、类型不收、超过大小、宽高不合格都抛 ``ValidationFailed``，
+        不写桶、不记录；写桶失败抛 ``ObjectStoreUnavailable``。"""
+
+        recorded = await self._find_recorded(upload_id)
+        if recorded is not None:
+            return recorded.url
+        limit = MAX_BYTES["image"]
+        try:
+            content = await self._fetch(url, max_bytes=limit)
+        except FetchTooLarge as exc:
+            raise ValidationFailed(_too_large(limit)) from exc
+        except FetchRefused as exc:
+            raise ValidationFailed(f"这个地址不允许服务端下载：{exc}") from exc
+        except FetchFailed as exc:
+            raise ValidationFailed(f"这张图下载不下来：{exc}") from exc
+        if len(content) > limit:
+            raise ValidationFailed(_too_large(limit))
+        header = read_image_header(content)
+        if header is None:
+            raise ValidationFailed("下载下来的不是能读的图片")
+        known = UPLOAD_TYPES.get(header.mime or "")
+        if header.mime is None or known is None or known[0] != "image":
+            allowed = "、".join(
+                sorted(mime for mime, (kind, _) in UPLOAD_TYPES.items() if kind == "image")
+            )
+            raise ValidationFailed(
+                f"下载下来的图片是 {header.mime or '认不出类型的'} 格式，只收：{allowed}"
+            )
+        _check_dimensions(header.width, header.height)
+        stored = await self._objects.put_public_object(
+            object_key=MEDIA_PATHS.upload(upload_id=upload_id, ext=known[1]),
+            content=content,
+            content_type=header.mime,
+            metadata=_audit_metadata(principal),
+        )
+        recorded = await self._record(
+            principal, upload_id=upload_id, kind="image", url=stored, content_md5=None
+        )
+        return recorded.url
+
     async def _describe(self, recorded: RecordedUpload) -> ConfirmedUpload:
         """按记录交回地址，类型与大小读那个地址上的对象。"""
 
@@ -176,9 +235,21 @@ def _checked_kind(found: StoredObject) -> MediaKind:
         raise ValidationFailed(f"桶里那个对象的类型是 {found.content_type}，不在收的范围内")
     kind: MediaKind = known[0]
     if found.size_bytes > MAX_BYTES[kind]:
-        limit_mb = MAX_BYTES[kind] // (1024 * 1024)
-        raise ValidationFailed(f"超过 {limit_mb}MB 上限，这个文件不能用")
+        raise ValidationFailed(_too_large(MAX_BYTES[kind]))
     return kind
+
+
+def _too_large(limit: int) -> str:
+    return f"超过 {limit // (1024 * 1024)}MB 上限，这个文件不能用"
+
+
+def _audit_metadata(principal: Principal) -> dict[str, str]:
+    """随对象存进桶的上传者与 key；直传签进请求头，转存写对象时带上。"""
+
+    metadata = {UPLOADER_HEADER: str(principal.user_id)}
+    if principal.api_key_id is not None:
+        metadata[API_KEY_HEADER] = str(principal.api_key_id)
+    return metadata
 
 
 def _content_md5(kind: MediaKind, found: StoredObject) -> str | None:
@@ -218,6 +289,7 @@ def _check_dimensions(width: int, height: int) -> None:
 __all__ = [
     "API_KEY_HEADER",
     "UPLOADER_HEADER",
+    "FetchBytes",
     "FindRecordedUpload",
     "RecordUpload",
     "RecordedUpload",

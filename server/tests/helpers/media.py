@@ -1,14 +1,17 @@
-"""用真实 ffmpeg 合成测试素材、按档取编解码，供切片、合成与抽帧的集成测试共用。"""
+"""用真实 ffmpeg 合成测试素材、按档取编解码，供切片、合成与抽帧的集成测试共用；另有用 Pillow
+生成的特殊格式图片。"""
 
 from __future__ import annotations
 
 import functools
 import subprocess
 from collections.abc import Sequence
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
+from PIL import Image
 
 from iclip.platform.media.codec import (
     HARDWARE_CANDIDATES,
@@ -147,6 +150,15 @@ async def keyframes_of(content: bytes) -> list[float]:
         return await probe_keyframes(path)
 
 
+def multi_picture_jpeg(width: int = 1200, height: int = 1600) -> bytes:
+    """两帧的 MPO：手机、相机拍的 JPEG 常带这种多帧扩展，Pillow 认成 MPO。"""
+
+    out = BytesIO()
+    first = Image.new("RGB", (width, height), "white")
+    first.save(out, format="MPO", save_all=True, append_images=[Image.new("RGB", (width, height))])
+    return out.getvalue()
+
+
 __all__ = [
     "BROKEN_DECODE",
     "CODECS",
@@ -155,6 +167,7 @@ __all__ = [
     "encodes_here",
     "keyframes_of",
     "local_codec",
+    "multi_picture_jpeg",
     "synthesize_noise",
     "synthesize_video",
 ]

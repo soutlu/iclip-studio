@@ -1,4 +1,4 @@
-"""video 能力经真实 Postgres 文件存储与素材台账的往返：拆解文档与镜头组表落库，写回校验认得它。"""
+"""video 能力经真实 Postgres 文件存储与素材台账的往返：拆解文档落库。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.capabilities.shot_document import SHOTS_PATH, validate_shots_document
 from iclip.capabilities.video.capability import Video
 from iclip.capabilities.video_document import video_doc_path
 from iclip.capabilities.workspace.scope import workspace_namespace
@@ -34,24 +33,7 @@ from tests.helpers.shot_video import FakeUnderstanding
 
 USER = uuid.UUID("44444444-4444-4444-4444-444444444444")
 VIDEO = "https://cdn.test/ref.mp4"
-FRAME = "https://cdn.test/frames/s1-1.jpg"
 DOCUMENT = "## 逐镜拉片表\n**[00:00.000-00:08.000]** 她走进门厅。"
-SHOTS: dict[str, Any] = {
-    "aspect_ratio": "9:16",
-    "shots": [
-        {
-            "index": 1,
-            "prompt": {
-                "global_settings": "人物与门厅保持一致。",
-                "timeline": [
-                    {"timestamps": [0, 8], "prompt": "全景，平视，固定，她走进门厅 @Image1。"}
-                ],
-            },
-            "seconds": 8,
-            "image_urls": [FRAME],
-        }
-    ],
-}
 
 
 @pytest.fixture
@@ -114,25 +96,14 @@ def make_video(engine: AsyncEngine) -> tuple[Video[object], PgFileStore, PgMater
     return capability, files, ledger
 
 
-async def test_parse_then_deliver_round_trips_through_postgres(
+async def test_parse_round_trips_through_postgres(
     engine: AsyncEngine, conversation_id: str
 ) -> None:
     capability, files, ledger = make_video(engine)
     namespace = f"{USER}/{conversation_id}"
-    await ledger.record(
-        namespace, [Material(url=VIDEO, kind="video"), Material(url=FRAME, kind="image")]
-    )
+    await ledger.record(namespace, [Material(url=VIDEO, kind="video")])
 
     assert await call_once(capability, conversation_id, "video_parser", {"video_url": VIDEO}) == []
     parsed = await files.read(namespace, video_doc_path(VIDEO))
     assert parsed is not None
     assert parsed.content == DOCUMENT
-
-    assert await call_once(capability, conversation_id, "write_video_shots", SHOTS) == []
-    stored = await files.read(namespace, SHOTS_PATH)
-    assert stored is not None
-    assert stored.version == 1
-    # 用户在面板写回走的是同一个校验入口，工具交付的文件必须原样通过。
-    document = validate_shots_document(stored.content)
-    assert document.shots[0].image_urls == [FRAME]
-    assert document.shots[0].prompt.timeline[0].image_indexes == [1]

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Final, Literal
 from urllib.parse import urlsplit
 
-from iclip.common.urls import is_http_url
+from iclip.common.urls import is_http_url, is_oss_processable
 
 MediaKind = Literal["image", "video", "audio", "file"]
 
@@ -136,13 +136,14 @@ def image_info_url(url: str) -> str:
 
 
 def _require_oss_processable(url: str, *, what: str) -> None:
-    """校验 OSS 域名且 URL 不含已有 query，确保可追加处理参数。"""
+    """校验 OSS 域名且 URL 不含已有 query，确保可追加处理参数；判定见 ``is_oss_processable``。"""
 
-    parsed = urlsplit(url)
-    if not (parsed.hostname or "").endswith(".aliyuncs.com"):
-        raise ValueError(f"这个域名不支持 OSS 处理参数，{what}: {url!r}")
-    if parsed.query:
+    if is_oss_processable(url):
+        return
+    # 判定只答能不能挂；去掉 query 就能挂，毛病才在 query 上，否则先说域名。
+    if is_oss_processable(urlsplit(url)._replace(query="").geturl()):
         raise ValueError(f"地址已经带了 query，没法再挂 OSS 处理参数: {url!r}")
+    raise ValueError(f"这个域名不支持 OSS 处理参数，{what}: {url!r}")
 
 
 __all__ = [

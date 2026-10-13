@@ -22,20 +22,19 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
 
-from iclip.capabilities.iclip_studio.capability import (
+from iclip.capabilities.video_breakdown.capability import (
     BREAKDOWN_RETRIES,
-    IclipStudio,
-    IclipStudioToolset,
+    VideoBreakdown,
+    VideoBreakdownToolset,
     breakdown_doc_path,
 )
-from iclip.capabilities.iclip_studio.ports import BreakdownFailureReason, FailedBreakdown
+from iclip.capabilities.video_breakdown.ports import BreakdownFailureReason, FailedBreakdown
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
 from iclip.platform.file_store.store import FileSpace
 from iclip.platform.transcript.display import GenericDisplay
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 VIDEO = "https://cdn.test/ref.mp4"
@@ -91,15 +90,13 @@ def make_ctx(*, retry: int = 0) -> RunContext[object]:
     )
 
 
-def capability_for(files: FakeFileStore, breakdowns: FakeBreakdowns) -> IclipStudio[object]:
-    return IclipStudio[object](
-        space=FileSpace(store=files, namespace=workspace_namespace),
-        breakdowns=breakdowns,
-        ledger=FakeMaterialLedger(),
+def capability_for(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBreakdown[object]:
+    return VideoBreakdown[object](
+        space=FileSpace(store=files, namespace=workspace_namespace), breakdowns=breakdowns
     )
 
 
-def toolset(files: FakeFileStore, breakdowns: FakeBreakdowns) -> IclipStudioToolset[object]:
+def toolset(files: FakeFileStore, breakdowns: FakeBreakdowns) -> VideoBreakdownToolset[object]:
     return capability_for(files, breakdowns).get_toolset()
 
 
@@ -163,7 +160,7 @@ async def test_a_failed_model_call_on_the_last_attempt_is_final(files: FakeFileS
     assert raised.value.message == TRY_LATER
 
 
-async def run_agent_that_keeps_calling(capability: IclipStudio[object]) -> list[ModelMessage]:
+async def run_agent_that_keeps_calling(capability: VideoBreakdown[object]) -> list[ModelMessage]:
     """模型每次收到重试提示就原样再调一次，直到拿到工具结果。"""
 
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:

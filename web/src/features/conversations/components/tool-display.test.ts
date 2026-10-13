@@ -266,12 +266,9 @@ describe('toolPanel', () => {
     expect(toolPanel(frame, 'done')).toEqual({ after: '黄昏', before: '夜景', kind: 'diff' })
   })
 
-  it('失败：错误原文；运行中与被拒绝没有面板', () => {
+  it('失败、运行中与被拒绝都没有面板，错误原文不给人看', () => {
     const failed = read({ error: '运行中断，这次调用没有结果', state: 'error' })
-    expect(toolPanel(failed, 'error')).toEqual({
-      kind: 'error',
-      text: '运行中断，这次调用没有结果',
-    })
+    expect(toolPanel(failed, 'error')).toBeUndefined()
     expect(toolPanel(read({ state: 'running' }), 'running')).toBeUndefined()
     expect(toolPanel(failed, 'denied')).toBeUndefined()
   })

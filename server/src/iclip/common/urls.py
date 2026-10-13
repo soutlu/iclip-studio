@@ -21,4 +21,19 @@ def is_http_url(value: str) -> bool:
     return parsed.scheme in _HTTP_SCHEMES and bool(parsed.hostname)
 
 
-__all__ = ["is_http_url"]
+_OSS_HOST_SUFFIX: Final = ".aliyuncs.com"
+
+
+def is_oss_processable(value: str) -> bool:
+    """能不能在地址后面挂 OSS 图片处理参数：阿里云 OSS 域名，且地址自己不带 query。纯判定，不抛异常。
+
+    给模型的缩图、查图片信息、缩放与裁切都靠挂参数；不满足的图片地址在发消息入口转存进本桶。"""
+
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    return (parsed.hostname or "").endswith(_OSS_HOST_SUFFIX) and not parsed.query
+
+
+__all__ = ["is_http_url", "is_oss_processable"]

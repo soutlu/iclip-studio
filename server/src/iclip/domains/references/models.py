@@ -130,8 +130,8 @@ ERROR_MODEL_FAILED: Final = "model_failed"
 ERROR_TIMEOUT: Final = "timeout"
 
 BREAKDOWN_TIMEOUT_SECONDS: Final = 20 * 60
-"""拆解中的行最多等这么久：单次拆解请求最长 900 秒，再加打标与余量。超过即按 ``timeout`` 收尾；导演
-等一条拆解的上限也是它。"""
+"""拆解中的行最多等这么久：单次拆解请求最长 900 秒，再加打标与余量。超过即按 ``timeout`` 收尾；对话
+里等一条拆解的上限也是它。"""
 
 
 class BreakdownFailed(Exception):
@@ -185,7 +185,7 @@ class Claim:
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    """导演等一条拆解的结果：有文档就用文档，否则是失败原因。"""
+    """对话里等一条拆解的结果：有文档就用文档，否则是失败原因。"""
 
     document: str | None
     error_code: BreakdownErrorCode | None = None

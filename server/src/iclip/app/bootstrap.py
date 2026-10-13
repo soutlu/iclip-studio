@@ -41,6 +41,7 @@ from iclip.app.conversation_workspace import (
 from iclip.app.errors import install_error_handlers
 from iclip.app.generation_live import AnnouncingGenerationRepository
 from iclip.app.logging import configure_logging
+from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
@@ -95,7 +96,8 @@ from iclip.domains.tasks.infra_sql import SqlTaskRepository
 from iclip.domains.tasks.module import build_tasks_module
 from iclip.domains.tracking.infra_sql import SqlTrackingRepository
 from iclip.domains.tracking.module import build_tracking_module
-from iclip.domains.uploads.module import build_uploads_module
+from iclip.domains.uploads.module import UploadsModule, build_uploads_module
+from iclip.domains.uploads.service import FetchBytes
 from iclip.harness.agents import DELEGATE_TOOL
 from iclip.harness.jobs import JobQueue, JobRow
 from iclip.harness.models import BuiltModels
@@ -126,6 +128,7 @@ from iclip.platform.object_store.oss import (
     validate_public_url_base,
 )
 from iclip.platform.object_store.store import PublicBucket, PublicObjectStore
+from iclip.platform.outbound.fetch import PublicFetcher
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -332,6 +335,7 @@ def build_app(
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
     object_store: PublicBucket | None = None,
+    image_fetcher: FetchBytes | None = None,
     queue_connector: procrastinate.BaseConnector | None = None,
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
@@ -342,7 +346,8 @@ def build_app(
 ) -> FastAPI:
     """装配 FastAPI 应用与资源生命周期，支持注入基础设施替身。
 
-    ``reference_breakdowns`` / ``reference_tagger`` 替换参考视频的拆解与打标（测试替身）；只在
+    ``image_fetcher`` 替换转存附件图片用的出网下载（测试替身）；不给且有对象存储时建一个
+    ``PublicFetcher``，lifespan 里关掉。``reference_breakdowns`` / ``reference_tagger`` 替换参考视频的拆解与打标（测试替身）；只在
     拆解已配置时用得上。``media_codec`` 指定本地视频加工的编解码（测试替身）；不给且要用
     ffmpeg 时，这里同步跑一次探测（几条短 ffmpeg 子进程）选出来。``reload_source`` 重读配置与
     agent 声明，不给就沿用传入的 ``config`` 与 ``agents``；``watch_paths`` 下的文件一变就用它
@@ -599,7 +604,7 @@ def build_app(
         video=settings.video,
         shot_video=settings.shot_video if settings.shot_tools_enabled else None,
         iclip_studio=settings.iclip_studio,
-        # 拆解配好时才有队列；AI 导演拆视频走它，与资料库读写同一行。
+        # 拆解配好时才有队列；对话里拆视频走它，与资料库读写同一行。
         reference_service=references.service if references.queue is not None else None,
         media_codec=codec,
     )
@@ -665,16 +670,20 @@ def build_app(
         copy_same_style=same_style,
     )
     # 确认上传经 uploads 声明的端口查、落上传记录；绑定方法与端口的签名结构一致，不另写适配器。
-    uploads = (
-        build_uploads_module(
+    # 转存附件图片要写桶，出网下载器也只在有对象存储时建。
+    uploads: UploadsModule | None = None
+    owned_fetcher: PublicFetcher | None = None
+    if public_objects is not None:
+        if image_fetcher is None:
+            owned_fetcher = PublicFetcher()
+            image_fetcher = owned_fetcher.fetch
+        uploads = build_uploads_module(
             public_objects,
             act_as=identity.act_as,
             record=settled_records.record_upload,
             find_recorded=settled_records.recorded_upload,
+            fetch=image_fetcher,
         )
-        if public_objects is not None
-        else None
-    )
     context_limits = live_context_limits(agent_layer)
 
     # 删除不中止在跑或排队的轮，删掉之后才开跑的 run 碰到的对话已是墓碑：
@@ -761,7 +770,7 @@ def build_app(
         if generation is not None:
             generation.queue.start()
         if references.queue is not None:
-            # 导演的工具在本进程里等拆解结果，worker 必须和对话运行一起起停。
+            # 对话里的拆解工具在本进程里等拆解结果，worker 必须和对话运行一起起停。
             references.queue.start()
         try:
             yield
@@ -776,6 +785,8 @@ def build_app(
             # 通过框架取消运行，等待终态落库后再关闭 engine。
             await transcripts.runner.shutdown()
             await http_client.aclose()
+            if owned_fetcher is not None:
+                await owned_fetcher.aclose()
             if hup_installed:
                 asyncio.get_running_loop().remove_signal_handler(signal.SIGHUP)
             if watcher is not None:
@@ -824,6 +835,12 @@ def build_app(
             act_as=identity.act_as,
             allowed_origins=settings.security.cors_allow_origins,
             live=live_connections,
+            # 发消息的附件经 uploads 转存；没有对象存储就不转，挂不上处理参数的图片受理时 422。
+            import_attachments=(
+                PromptAttachmentImporter(uploads.service.import_image)
+                if uploads is not None
+                else None
+            ),
         )
     )
 

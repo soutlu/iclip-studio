@@ -9,7 +9,7 @@ from typing import Final
 
 import httpx
 
-from iclip.capabilities.iclip_studio.ports import SampledVideo
+from iclip.capabilities.video_breakdown.ports import SampledVideo
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.ffmpeg import (
     ENCODE_TIMEOUT_SECONDS,

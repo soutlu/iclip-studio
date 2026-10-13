@@ -688,15 +688,25 @@ class FixedLineage:
 class MemoryObjectStore:
     """PublicBucket 内存替身。
 
-    sign_put 不产生可访问的地址；测试通过 put_public_object 模拟直传完成。
+    sign_put 不产生可访问的地址；测试通过 put_public_object 模拟直传完成。``metadata`` 按 key
+    记下随对象写入的 x-oss-meta-* 头。
     """
 
     def __init__(self, *, base: str = "https://cdn.example.test") -> None:
         self.base = base
         self.objects: dict[str, tuple[bytes, str]] = {}
+        self.metadata: dict[str, dict[str, str]] = {}
 
-    async def put_public_object(self, *, object_key: str, content: bytes, content_type: str) -> str:
+    async def put_public_object(
+        self,
+        *,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: Mapping[str, str] | None = None,
+    ) -> str:
         self.objects[object_key] = (content, content_type)
+        self.metadata[object_key] = dict(metadata or {})
         return self.public_url(object_key)
 
     def sign_put(self, *, object_key: str, headers: Mapping[str, str]) -> str:

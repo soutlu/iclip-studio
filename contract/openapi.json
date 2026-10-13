@@ -11391,7 +11391,7 @@
         ]
       },
       "post": {
-        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n``user_name`` 是这条消息替谁发的：API key 调用方必须给，浏览器会话默认是登录用户名。",
+        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n``user_name`` 是这条消息替谁发的：API key 调用方必须给，浏览器会话默认是登录用户名。\n\n图片附件的地址挂不上 OSS 处理参数时，受理前先转存进本桶、记成发消息那个人的一条上传，\n消息里存新地址；转存失败是 422，说明第几张附件。",
         "operationId": "submit_conversations__conversation_id__prompts_post",
         "parameters": [
           {
@@ -11907,7 +11907,7 @@
     },
     "/conversations/{conversation_id}/turns/{turn_id}:regenerate": {
       "post": {
-        "description": "重新生成最后一轮：把它从历史里抹掉重跑一次，答复是重跑那条的记录。\n\n``turn_id`` 是协议里的轮 id（``t{N}``），客户端从轮头部直接拿得到。请求体可以不带：\n带 ``content`` 就换成新内容重跑，带 ``prompt_id`` 就与发消息同一套幂等。",
+        "description": "重新生成最后一轮：把它从历史里抹掉重跑一次，答复是重跑那条的记录。\n\n``turn_id`` 是协议里的轮 id（``t{N}``），客户端从轮头部直接拿得到。请求体可以不带：\n带 ``content`` 就换成新内容重跑，带 ``prompt_id`` 就与发消息同一套幂等；新内容里的图片附件\n与发消息一样先转存。",
         "operationId": "regenerate_conversations__conversation_id__turns__turn_id__regenerate_post",
         "parameters": [
           {
@@ -13545,7 +13545,7 @@
     },
     "/references/{reference_id}": {
       "delete": {
-        "description": "属主把它从资料库移除；AI 导演按地址仍能用它的拆解。别人的是 ``403``。",
+        "description": "属主把它从资料库移除；对话里按地址仍能用它的拆解。别人的是 ``403``。",
         "operationId": "remove_reference_references__reference_id__delete",
         "parameters": [
           {

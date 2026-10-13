@@ -31,8 +31,9 @@ from pydantic_ai.tools import DeferredToolRequests, RunContext
 from pydantic_ai_harness.step_persistence import StepPersistence
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from structlog.testing import capture_logs
 
-from iclip.common.errors import Conflict, NotFound
+from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.harness.background import BackgroundTools
 from iclip.harness.jobs import JobQueue, JobRow
@@ -45,6 +46,8 @@ from iclip.harness.transcript.store import TranscriptStore
 from iclip.platform.transcript.ops import (
     MAIN_AGENT_ID,
     AgentStatusMeta,
+    AttachmentSource,
+    ImageContent,
     PromptUpsertOp,
     TextContent,
     TextFrame,
@@ -2372,3 +2375,100 @@ async def test_stopping_the_conversation_also_drops_the_one_waiting_for_approval
     assert child is not None
     assert child.status == "aborted"
     assert [turn.state for turn in replay(store, conversation_id)] == ["cancelled"]
+
+
+# --- 受理规则收紧之前排进队列的旧消息：图片地址挂不上缩放参数 ------------------------
+
+LEGACY_IMAGE = (
+    TextContent(text="照这张图"),
+    ImageContent(source=AttachmentSource(kind="url", url="https://cdn.test/legacy.jpg")),
+)
+"""直接写进队列，绕过受理时的检查，模拟上线那一刻已经排着的旧消息。"""
+
+
+def _prompt_texts(messages: list[ModelMessage]) -> list[str]:
+    """用户 part 里的文字，连同开跑时 ``model_prompt`` 交的列表形式（共用的 ``texts`` 只认字符串）。"""
+
+    found: list[str] = []
+    for message in messages:
+        for part in getattr(message, "parts", ()):
+            if not isinstance(part, UserPromptPart):
+                continue
+            items = [part.content] if isinstance(part.content, str) else list(part.content)
+            found.extend(item for item in items if isinstance(item, str))
+    return found
+
+
+async def test_a_queued_legacy_image_fails_its_run_and_the_queue_moves_on(
+    engine: AsyncEngine,
+) -> None:
+    """开跑时拼不出模型输入：这条记失败、模型一次没调，不挂住，下一条照常跑。"""
+
+    seen: list[list[ModelMessage]] = []
+
+    async def stream(
+        messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        seen.append(list(messages))
+        yield "好"
+
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(
+        engine, FunctionModel(stream_function=stream), store=store
+    )
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    with capture_logs() as logs:
+        legacy = await submit_text(runner, queue, conversation_id, "", content=LEGACY_IMAGE)
+        following = await submit_text(runner, queue, conversation_id, "接着做")
+        await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    failed = await queue.get(legacy)
+    assert failed is not None
+    assert failed.status == "failed"
+    done = await queue.get(following)
+    assert done is not None
+    assert done.status == "completed"
+    assert len(seen) == 1, "旧消息没有发给模型"
+    assert "接着做" in _prompt_texts(seen[0])
+    assert "照这张图" not in _prompt_texts(seen[0])
+    # 原因随失败记进带栈的错误日志，异常里带着那个地址。
+    assert [
+        entry["log_level"]
+        for entry in logs
+        if entry["event"] == "这次运行没跑完" and entry.get("prompt_id") == legacy
+    ] == ["error"]
+
+
+async def test_steering_a_legacy_image_is_refused_and_the_batch_stays_queued(
+    engine: AsyncEngine,
+) -> None:
+    """插话时拼不出模型输入：整批一条都不递，都留在队列里，调用方拿到 ValidationFailed（422）。"""
+
+    entered, gate = asyncio.Event(), asyncio.Event()
+    store = TranscriptStore()
+    runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
+    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
+
+    first = await submit_text(runner, queue, conversation_id, "先做这个")
+    plain = await submit_text(runner, queue, conversation_id, "顺便改个标题")
+    legacy = await submit_text(runner, queue, conversation_id, "", content=LEGACY_IMAGE)
+    await entered.wait()
+
+    with pytest.raises(ValidationFailed, match=r"cdn\.test/legacy\.jpg"):
+        await runner.steer(conversation_id, (plain, legacy))
+
+    for prompt_id in (plain, legacy):
+        row = await queue.get(prompt_id)
+        assert row is not None
+        assert (row.status, row.run_id, row.steered_at) == ("queued", None, None)
+
+    gate.set()
+    await drained(queue, conversation_id)
+    await runner.shutdown()
+
+    started = await queue.get(first)
+    after = await queue.get(plain)
+    assert started is not None and after is not None
+    assert after.run_id != started.run_id, "没插进去的那条收尾后按新一轮跑"

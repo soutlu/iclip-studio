@@ -36,8 +36,8 @@ from pydantic_ai.models.function import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.capabilities.iclip_studio.capability import IclipStudio
-from iclip.capabilities.iclip_studio.ports import FailedBreakdown
+from iclip.capabilities.video_breakdown.capability import VideoBreakdown
+from iclip.capabilities.video_breakdown.ports import FailedBreakdown
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.public import Principal
@@ -81,7 +81,6 @@ from iclip.platform.transcript.ops import (
 )
 from iclip.platform.transcript.wire import TranscriptPage
 from tests.helpers.file_store import FakeFileStore
-from tests.helpers.material_ledger import FakeMaterialLedger
 from tests.helpers.runtime import (
     AGENT_ID,
     approval_runner,
@@ -981,7 +980,7 @@ CALL_AGAIN = "拆解失败，再调用一次。"
 async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_card(
     engine: AsyncEngine,
 ) -> None:
-    """真 IclipStudio 挂 BackgroundTools：可重试的失败作为后台结果送到模型，卡片记错误；模型照
+    """真 VideoBreakdown 挂 BackgroundTools：可重试的失败作为后台结果送到模型，卡片记错误；模型照
     提示再调一次，就再排一次拆解。"""
 
     seen: list[list[ModelMessage]] = []
@@ -1002,10 +1001,9 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
             yield "等拆解。"
 
     breakdowns = FailingBreakdowns()
-    studio = IclipStudio[Any](
+    capability = VideoBreakdown[Any](
         space=FileSpace(store=FakeFileStore(), namespace=workspace_namespace),
         breakdowns=breakdowns,
-        ledger=FakeMaterialLedger(),
     )
 
     async def deps_for(row: JobRow) -> AgentRunDeps:
@@ -1026,7 +1024,7 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
         engine,
         FunctionModel(stream_function=stream),
         store=store,
-        capabilities=[studio, BackgroundTools()],
+        capabilities=[capability, BackgroundTools()],
         deps_for=deps_for,
         display=DISPLAYS,
         context_limits={},
