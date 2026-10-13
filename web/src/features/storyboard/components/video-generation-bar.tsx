@@ -1,4 +1,4 @@
-/** 分镜工作台底部的出片栏：一排控件（最左是写回分镜的画幅，竖线隔开后是模型、分辨率、音频三项生成设置），
+/** 分镜工作台底部的出片栏：一排控件（最左是写回文件的画幅，竖线隔开后是模型、分辨率、音频三项生成设置），
  * 加唯一的主色按钮出当前这一组；控件上方的状态行说明为什么不能出片、哪里有问题（暂态原因不显示，见 `generationStatusOf`）。
  * 各档宽度下怎么排见 storyboard.css 的出片栏一节。 */
 
@@ -24,10 +24,14 @@ import { AspectGlyph } from './aspect-glyph'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useScrollFade } from './use-scroll-fade'
 
-/** 分镜的画幅：分镜页上能改、写回分镜文件；制作页上照工程文件、只显示（`fixed`）。都不是生成选项。 */
-type AspectControl =
-  | { kind: 'editable'; value: string; disabled: boolean; onChange: (aspectRatio: string) => void }
-  | { kind: 'fixed'; value: string }
+/** 画幅：分镜页上写回分镜文件，制作页上写回工程文件（所有组与机位图一起改），都不是生成选项。写回到哪里由调用方
+ * 在 `description` 里说明，悬停画幅按钮时显示。 */
+type AspectControl = {
+  value: string
+  disabled: boolean
+  onChange: (aspectRatio: string) => void
+  description: string
+}
 
 type VideoGenerationBarProps = {
   /** 当前镜头组的镜号，主按钮写的就是它。 */
@@ -196,19 +200,6 @@ function AspectPicker({
   ) : (
     <AspectGlyph longSide={13} ratio={aspect.value} />
   )
-  if (aspect.kind === 'fixed')
-    return (
-      <span
-        aria-describedby={unsupported ? errorId : undefined}
-        className="storyboard-bar-control storyboard-bar-picker"
-        data-fixed=""
-        data-invalid={unsupported}
-      >
-        <span className="sr-only">画幅</span>
-        {leading}
-        <span className="storyboard-bar-picker-text">{aspect.value}</span>
-      </span>
-    )
   const options: GenerationPickerOption[] = ASPECT_RATIOS.map((ratio) => {
     const usable = supportsAspectRatio(model, ratio)
     return {
@@ -226,7 +217,7 @@ function AspectPicker({
     })
   return (
     <GenerationPicker
-      description="画幅写回分镜，不是生成参数"
+      description={aspect.description}
       disabled={aspect.disabled}
       invalid={unsupported ? { describedBy: errorId } : undefined}
       label="画幅"

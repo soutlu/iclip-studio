@@ -21,6 +21,7 @@ from iclip.capabilities.iclip_studio.film.studio import (
     film_groups,
     image_prompt,
     missing_references,
+    set_aspect_ratio,
 )
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
 from iclip.capabilities.workspace.scope import namespace_for
@@ -149,6 +150,28 @@ class ConversationFilmAdapter:
         for path, content in changes:
             expected = film_version if path == FILM_PATH else run_version
             await self._write(files.namespace, path, content, expected)
+        return await self._fresh(principal, owner, conversation_id)
+
+    async def set_aspect_ratio(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        aspect_ratio: str,
+        film_version: int,
+    ) -> FilmView:
+        files = await self._existing(owner, conversation_id)
+        # 只写工程文件，同改字只对它的版本。
+        if files.project.version != film_version:
+            raise Conflict(_STALE)
+        film = await self._clean(files)
+        try:
+            updated = set_aspect_ratio(film, files.project.content, aspect_ratio)
+        except FilmEditRejected as exc:
+            raise ValidationFailed(str(exc)) from exc
+        if updated is not None:
+            await self._write(files.namespace, FILM_PATH, updated, film_version)
         return await self._fresh(principal, owner, conversation_id)
 
     async def generate_image(

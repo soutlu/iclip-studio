@@ -4,6 +4,7 @@ import { getResponse, http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ImageGenerationIn,
+  FilmAspectRatioIn,
   FilmImageChoiceIn,
   FilmImageGenerationIn,
   FilmTextEditsIn,
@@ -91,6 +92,24 @@ const replaceText = async (editor: HTMLElement, text: string) => {
   editor.focus()
   await userEvent.keyboard('{Control>}a{/Control}')
   pasteTextIntoComposer(editor, text)
+}
+
+/** 记下每次改画幅发出去的体；不拦，照常交给 mock 处理。 */
+const recordAspects = () => {
+  const bodies: FilmAspectRatioIn[] = []
+  server.use(
+    http.put('*/api/conversations/:conversationId/film/aspect-ratio', async ({ request }) => {
+      bodies.push((await request.clone().json()) as FilmAspectRatioIn)
+    }),
+  )
+  return bodies
+}
+
+/** 在出片栏的画幅菜单里选 `value`。 */
+const pickAspect = async (aspect: HTMLElement, value: string) => {
+  await userEvent.click(aspect)
+  const menu = await screen.findByRole('menu', { name: '画幅' })
+  await userEvent.click(within(menu).getByRole('menuitemradio', { name: new RegExp(`^${value}`) }))
 }
 
 /** 记下换图与按描述生图发出去的体；不拦，照常交给 mock 处理。 */
@@ -445,13 +464,12 @@ describe('制作页', () => {
     expect(videos).toEqual([])
   })
 
-  it('参考图都有图时，先存改了的字再按存好的那一版出这一组：模型默认照文件，画幅只显示；成片进本组，选它舞台就放它', async () => {
+  it('参考图都有图时，先存改了的字再按存好的那一版出这一组：模型默认照文件；成片进本组，选它舞台就放它', async () => {
     const bodies = recordEdits()
     const videos = recordVideos()
     const script = await renderFilm({ complete: true })
     const bar = screen.getByRole('group', { name: '出片工具栏' })
-    expect(within(bar).queryByRole('button', { name: '画幅' })).not.toBeInTheDocument()
-    expect(bar).toHaveTextContent('9:16')
+    expect(within(bar).getByRole('button', { name: '画幅' })).toHaveTextContent('9:16')
     const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
     await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
 
@@ -477,6 +495,59 @@ describe('制作页', () => {
     expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
     await waitFor(() => expect(stageTag()).toBe('@5'))
+  })
+
+  it('改画幅：先存改了的字，按存好的那一版发，出片栏的画幅换成答复里的新画幅', async () => {
+    const bodies = recordEdits()
+    const aspects = recordAspects()
+    const script = await renderFilm({ complete: true })
+    const aspect = within(screen.getByRole('group', { name: '出片工具栏' })).getByRole('button', {
+      name: '画幅',
+    })
+
+    await replaceText(
+      within(script).getByRole('textbox', { name: '镜头 3的描述' }),
+      '改过的第三镜。',
+    )
+    await pickAspect(aspect, '16:9')
+
+    await waitFor(() => expect(aspects).toHaveLength(1))
+    expect(bodies).toHaveLength(1)
+    expect(aspects[0]).toEqual({ aspectRatio: '16:9', filmVersion: 2 })
+    await waitFor(() => expect(aspect).toHaveTextContent('16:9'))
+  })
+
+  it('画幅在改时出片与画幅都不可用；没改成时提示原因，画幅照旧', async () => {
+    let answer = () => {}
+    server.use(
+      http.put('*/api/conversations/:conversationId/film/aspect-ratio', async () => {
+        await new Promise<void>((resolve) => {
+          answer = resolve
+        })
+        return HttpResponse.json({ detail: '分镜刚被改过，刷新后再改' }, { status: 409 })
+      }),
+    )
+    await renderFilm({ complete: true })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    const aspect = within(bar).getByRole('button', { name: '画幅' })
+    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+
+    await pickAspect(aspect, '1:1')
+
+    await waitFor(() => expect(generate).toHaveAttribute('aria-disabled', 'true'))
+    expect(aspect).toBeDisabled()
+    act(() => answer())
+    expect(await screen.findByText(/分镜刚被改过，刷新后再改$/)).toBeInTheDocument()
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+    expect(aspect).toBeEnabled()
+    expect(aspect).toHaveTextContent('9:16')
+  })
+
+  it('只读时画幅不可改', async () => {
+    await renderFilm({ readOnly: true })
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    expect(within(bar).getByRole('button', { name: '画幅' })).toBeDisabled()
   })
 
   it('文件里写的模型不在可选的里面，出片栏用服务端的默认', async () => {

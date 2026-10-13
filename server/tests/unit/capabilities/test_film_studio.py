@@ -17,6 +17,7 @@ from iclip.capabilities.iclip_studio.film.studio import (
     edit_text,
     film_groups,
     missing_references,
+    set_aspect_ratio,
 )
 from iclip.common.film_view import (
     FilmGroup,
@@ -986,6 +987,63 @@ def test_a_view_whose_shot_cannot_be_rewritten_in_place_is_refused() -> None:
 
     with pytest.raises(FilmEditRejected, match="跟 AI 导演说"):
         choose_image(checked(project, RUN_NO_VIEW04), project, RUN_NO_VIEW04, "view04", VIEW04)
+
+
+VIEWS = ("view01", "view02", "view03", "view04", "view05", "view06")
+
+
+def test_the_aspect_ratio_is_rewritten_on_every_video_and_view_and_nowhere_else() -> None:
+    expected = FILM
+    openings = [
+        *(f'duration="{seconds}" aspect-ratio=' for seconds in (18, 15)),
+        *(f'<gpt:Image id="{view}" prompt={{{view}Prompt}} aspect-ratio=' for view in VIEWS),
+    ]
+    for opening in openings:
+        expected = expected.replace(f'{opening}"16:9"', f'{opening}"9:16"')
+
+    updated = set_aspect_ratio(checked(), FILM, "9:16")
+
+    # 两个视频与六张机位图各改一行；设定图 scene 同是 16:9、personB 是 3:4，都不动。
+    assert updated == expected
+    assert len(changed_lines(FILM, expected)) == 16
+    made = groups(expected, RUN)
+    assert {group.aspect_ratio for group in made} == {"9:16"}
+    aspects = {frame.node: frame.aspect_ratio for group in made for frame in group.frames}
+    assert {view: aspects[view] for view in VIEWS} == dict.fromkeys(VIEWS, "9:16")
+    assert (aspects["scene"], aspects["personB"]) == ("16:9", "3:4")
+
+
+def test_the_aspect_ratio_keeps_the_quotes_it_was_written_with() -> None:
+    project = FILM.replace('"15" aspect-ratio="16:9"', "\"15\" aspect-ratio='16:9'")
+
+    updated = set_aspect_ratio(checked(project), project, "1:1")
+
+    assert updated is not None
+    assert "duration=\"15\" aspect-ratio='1:1'>" in updated
+    assert 'duration="18" aspect-ratio="1:1">' in updated
+
+
+def test_a_view_that_is_a_given_photo_has_no_aspect_ratio_to_change() -> None:
+    street = '  <media:Image id="streetPhoto" src="https://preview.invalid/uploads/street.jpg"/>\n'
+    project = FILM_NO_VIEW04.replace("view={view04.image}", "view={streetPhoto}").replace(
+        '  <media:Image id="shoeSolePhoto"', f'{street}  <media:Image id="shoeSolePhoto"', 1
+    )
+
+    updated = set_aspect_ratio(checked(project, RUN_NO_VIEW04), project, "4:3")
+
+    assert updated is not None
+    assert street in updated
+    assert {group.aspect_ratio for group in groups(updated, RUN_NO_VIEW04)} == {"4:3"}
+
+
+def test_nothing_is_written_when_the_aspect_ratio_is_already_the_one_in_the_file() -> None:
+    assert set_aspect_ratio(checked(), FILM, "16:9") is None
+
+
+@pytest.mark.parametrize("aspect", ["2:3", "3:2", "adaptive", ""])
+def test_an_aspect_ratio_videos_cannot_take_is_refused(aspect: str) -> None:
+    with pytest.raises(FilmEditRejected, match="画幅"):
+        set_aspect_ratio(checked(), FILM, aspect)
 
 
 def test_images_are_assembled_from_the_film_as_it_stands() -> None:

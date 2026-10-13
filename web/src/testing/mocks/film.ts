@@ -13,6 +13,7 @@
 
 import { http, HttpResponse } from 'msw'
 import type {
+  FilmAspectRatioIn,
   FilmFrameOut,
   FilmGroupOut,
   FilmImageChoiceIn,
@@ -21,6 +22,7 @@ import type {
   FilmVideoGenerationIn,
   FilmViewOut,
 } from '@/shared/api/generated/types.gen'
+import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
 import apparelImage from './assets/apparel.webp'
 import backpackImage from './assets/backpack.webp'
 import loafersImage from './assets/loafers.webp'
@@ -724,6 +726,42 @@ export const filmHandlers = [
         : film.filmVersion,
       groups,
       runVersion: putMockWorkspaceFile(conversationId, RUN_PATH, RUN_SOURCE),
+    }
+    films.set(conversationId, next)
+    return HttpResponse.json({ film: resolved(conversationId, next) })
+  }),
+
+  // 整份工程一起改：每组视频与各组的机位图换成新画幅，工程文件版本加一；本来就是它时不写，照样答复整页。
+  http.put('*/api/conversations/:conversationId/film/aspect-ratio', async ({ params, request }) => {
+    const conversationId = String(params['conversationId'])
+    const film = films.get(conversationId)
+    if (film === undefined) return HttpResponse.json({ detail: '没有工程文件' }, { status: 404 })
+    const body = (await request.json()) as FilmAspectRatioIn
+    if (body.filmVersion !== film.filmVersion)
+      return HttpResponse.json({ detail: '分镜刚被改过，刷新后再改' }, { status: 409 })
+    // 视频能写的画幅与出片栏的档位是同一组（后端 `VIDEO_ASPECTS`）。
+    if (!ASPECT_RATIOS.some((ratio) => ratio === body.aspectRatio))
+      return rejected(`不支持 ${body.aspectRatio} 画幅，可选 ${ASPECT_RATIOS.join('、')}`)
+    const views = new Set(film.groups.flatMap((group) => group.views.map((view) => view.node)))
+    const reshaped = (image: MockImage): MockImage =>
+      views.has(image.node) && image.aspectRatio !== null
+        ? { ...image, aspectRatio: body.aspectRatio }
+        : image
+    const changed = film.groups.some(
+      (group) =>
+        group.aspectRatio !== body.aspectRatio ||
+        group.views.some((view) => reshaped(view).aspectRatio !== view.aspectRatio),
+    )
+    if (!changed) return HttpResponse.json({ film: resolved(conversationId, film) })
+    const next = {
+      ...film,
+      filmVersion: putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE),
+      groups: film.groups.map((group) => ({
+        ...group,
+        aspectRatio: body.aspectRatio,
+        images: group.images.map(reshaped),
+        views: group.views.map(reshaped),
+      })),
     }
     films.set(conversationId, next)
     return HttpResponse.json({ film: resolved(conversationId, next) })

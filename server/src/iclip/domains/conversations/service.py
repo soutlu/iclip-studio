@@ -236,6 +236,18 @@ class ConversationFilm(Protocol):
         run_version: int | None,
     ) -> FilmView: ...
 
+    async def set_aspect_ratio(
+        self,
+        principal: Principal,
+        owner: uuid.UUID,
+        conversation_id: uuid.UUID,
+        *,
+        aspect_ratio: str,
+        film_version: int,
+    ) -> FilmView:
+        """把所有视频与机位图的画幅改成 ``aspect_ratio``；本来就是它时不写文件。"""
+        ...
+
     async def generate_image(
         self,
         principal: Principal,
@@ -554,6 +566,25 @@ class ConversationService:
             url=url,
             film_version=film_version,
             run_version=run_version,
+        )
+
+    async def set_film_aspect_ratio(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        aspect_ratio: str,
+        film_version: int,
+    ) -> FilmView:
+        """在制作页上改整份工程的画幅；只有属主能改，口径同覆盖工作区文件。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._film.set_aspect_ratio(
+            principal,
+            conversation.owner_user_id,
+            conversation.id,
+            aspect_ratio=aspect_ratio,
+            film_version=film_version,
         )
 
     async def generate_film_image(

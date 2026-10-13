@@ -166,18 +166,59 @@ async def test_the_page_follows_the_workspace_file_permissions(
 
     assert (await client.get(f"{URL}/{empty}/film")).status_code == 404
 
+    aspect = {"aspectRatio": "9:16", "filmVersion": 1}
+
     async with make_client(app) as stranger:
         await login_as_editor(stranger, pg_url, username="mallory")
         assert (await stranger.get(f"{URL}/{mine}/film")).status_code == 404
         assert (await stranger.patch(f"{URL}/{mine}/film/text", json=edit)).status_code == 404
+        assert (
+            await stranger.put(f"{URL}/{mine}/film/aspect-ratio", json=aspect)
+        ).status_code == 404
 
     async with make_client(app) as governor:
         await register_and_login(governor, username="gov", email="gov@example.com")
         await set_roles_in_db(pg_url, "gov@example.com", ["root"])
         assert (await governor.get(f"{URL}/{mine}/film")).status_code == 200
         assert (await governor.patch(f"{URL}/{mine}/film/text", json=edit)).status_code == 403
+        assert (
+            await governor.put(f"{URL}/{mine}/film/aspect-ratio", json=aspect)
+        ).status_code == 403
 
     assert (await client.get(f"{URL}/{mine}/film")).json()["film"]["filmVersion"] == 1
+
+
+async def test_the_aspect_ratio_changes_every_group_and_view_but_not_the_settings_images(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    mine = await film_conversation(client, pg_url)
+
+    changed = await client.put(
+        f"{URL}/{mine}/film/aspect-ratio", json={"aspectRatio": "9:16", "filmVersion": 1}
+    )
+
+    assert changed.status_code == 200, changed.text
+    film = changed.json()["film"]
+    assert (film["filmVersion"], film["runVersion"]) == (2, 1)
+    assert [group["aspectRatio"] for group in film["groups"]] == ["9:16", "9:16"]
+    aspects = {frame["node"]: frame["aspectRatio"] for frame in film["groups"][0]["frames"]}
+    assert (aspects["view01"], aspects["scene"], aspects["personB"]) == ("9:16", "16:9", "3:4")
+
+    same = await client.put(
+        f"{URL}/{mine}/film/aspect-ratio", json={"aspectRatio": "9:16", "filmVersion": 2}
+    )
+    assert (same.status_code, same.json()["film"]["filmVersion"]) == (200, 2)
+
+    stale = await client.put(
+        f"{URL}/{mine}/film/aspect-ratio", json={"aspectRatio": "1:1", "filmVersion": 1}
+    )
+    assert stale.status_code == 409
+
+    unknown = await client.put(
+        f"{URL}/{mine}/film/aspect-ratio", json={"aspectRatio": "2:3", "filmVersion": 2}
+    )
+    assert unknown.status_code == 422
+    assert "2:3" in unknown.json()["detail"]
 
 
 async def test_an_image_inserted_into_the_text_joins_the_list_before_the_views(

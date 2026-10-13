@@ -219,6 +219,54 @@ async def test_a_refused_edit_comes_back_as_a_plain_validation_error() -> None:
     assert await made.content(FILM_PATH) == FILM
 
 
+async def test_a_new_aspect_ratio_writes_only_the_project_file_and_keeps_the_choices() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    view = await made.adapter.set_aspect_ratio(
+        PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="9:16", film_version=1
+    )
+
+    assert made.store.written == [FILM_PATH]
+    assert await made.content(RUN_PATH) == RUN
+    assert (view.film_version, view.run_version) == (2, 1)
+    assert {group.aspect_ratio for group in view.groups} == {"9:16"}
+    # 选用了的机位图照旧选用。
+    assert frame_url(view, "view01") == GENERATED["view01"]
+
+
+async def test_the_aspect_ratio_already_in_the_file_writes_nothing() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    view = await made.adapter.set_aspect_ratio(
+        PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="16:9", film_version=1
+    )
+
+    assert made.store.written == []
+    assert (view.film_version, view.groups[0].aspect_ratio) == (1, "16:9")
+
+
+async def test_an_aspect_ratio_on_a_stale_version_is_a_conflict_and_writes_nothing() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+    await made.store.write(NAMESPACE, FILM_PATH, FILM + "\n")
+    made.store.written.clear()
+
+    with pytest.raises(Conflict, match="刷新后再改"):
+        await made.adapter.set_aspect_ratio(
+            PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="9:16", film_version=1
+        )
+    assert made.store.written == []
+
+
+async def test_an_aspect_ratio_videos_cannot_take_is_a_validation_error() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    with pytest.raises(ValidationFailed, match="2:3"):
+        await made.adapter.set_aspect_ratio(
+            PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="2:3", film_version=1
+        )
+    assert made.store.written == []
+
+
 def insert_into_setting(url: str) -> FilmTextEdit:
     """在第 1 组的场景字里插入一张新图：列表现有 10 张，新图写成 @Image11。"""
 
