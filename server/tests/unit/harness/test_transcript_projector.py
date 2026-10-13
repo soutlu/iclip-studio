@@ -1,14 +1,17 @@
-"""投影器自己的规则：端到端跑不出来、只能用手工事件钉住的那几条。
+"""投影器自己的规则：端到端跑不出来、只能用手工事件或官方模型解析的协议流钉住的那几条。
 
 真实运行能产出的形状都在 integration_no_llm/agents/test_transcript_scenarios.py 里比两条路。
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx2
+from openai import AsyncOpenAI
 from pydantic_ai.messages import (
     CompactionPart,
     EnqueuedMessagesEvent,
@@ -21,10 +24,14 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPart,
     TextPartDelta,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.providers.alibaba import AlibabaProvider
 
 from iclip.harness.agents import DELEGATE_TOOL, SubAgentProfile, delegate_display_table
 from iclip.harness.transcript.from_messages import turns_from_messages
@@ -42,6 +49,7 @@ from iclip.platform.transcript.ops import (
     FrameUpsertOp,
     PromptContent,
     TextContent,
+    ThinkingFrame,
     ToolFrame,
     TranscriptStep,
     TranscriptTask,
@@ -179,6 +187,126 @@ async def test_a_compaction_notice_lands_on_the_same_step_on_both_paths() -> Non
     )
 
     assert [frame.frame_id for frame in live[0].steps[1].frames] == ["t1.2.compaction", "t1.2.f1"]
+    assert _shape(live) == _shape(derived)
+
+
+# --- 只有真实 Responses 流才有的形状 --------------------------------------------
+
+RAW_THOUGHT = ("先想", "一", "想")
+
+
+def _bailian_reasoning_stream() -> bytes:
+    """百炼 Responses 流：思考只以原始思维链 reasoning_text 增量下发，没有 summary。"""
+
+    reasoning_done = {"id": "msg_r", "type": "reasoning", "summary": []}
+    message_done = {
+        "id": "msg_a",
+        "type": "message",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "text": "2", "annotations": []}],
+    }
+    base = {
+        "id": "r1",
+        "object": "response",
+        "created_at": 1,
+        "model": "qwen3.8-flash",
+        "parallel_tool_calls": False,
+        "tool_choice": "auto",
+        "tools": [],
+    }
+    reasoning_delta = {
+        "type": "response.reasoning_text.delta",
+        "output_index": 0,
+        "item_id": "msg_r",
+        "content_index": 0,
+    }
+    events: list[dict[str, object]] = [
+        {"type": "response.created", "response": {**base, "status": "queued", "output": []}},
+        {"type": "response.output_item.added", "output_index": 0, "item": reasoning_done},
+        *({**reasoning_delta, "delta": chunk} for chunk in RAW_THOUGHT),
+        {"type": "response.output_item.done", "output_index": 0, "item": reasoning_done},
+        {
+            "type": "response.output_item.added",
+            "output_index": 1,
+            "item": {**message_done, "content": []},
+        },
+        {
+            "type": "response.output_text.delta",
+            "output_index": 1,
+            "item_id": "msg_a",
+            "content_index": 0,
+            "delta": "2",
+        },
+        {"type": "response.output_item.done", "output_index": 1, "item": message_done},
+        {
+            "type": "response.completed",
+            "response": {
+                **base,
+                "status": "completed",
+                "output": [reasoning_done, message_done],
+                "usage": {
+                    "input_tokens": 5,
+                    "output_tokens": 3,
+                    "total_tokens": 8,
+                    "input_tokens_details": {"cached_tokens": 0},
+                    "output_tokens_details": {"reasoning_tokens": 2},
+                },
+            },
+        },
+    ]
+    frames = [
+        f"event: {event['type']}\ndata: {json.dumps({**event, 'sequence_number': seq})}\n\n"
+        for seq, event in enumerate(events)
+    ]
+    return "".join(frames).encode()
+
+
+async def test_raw_reasoning_shows_as_thinking_on_both_paths() -> None:
+    """原始思维链只在 provider_details 里，两条路都要显示出来。
+
+    假模型的 DeltaThinkingPart 造不出 raw_content 与更新函数增量，场景测试覆盖不到；
+    这里用官方 Responses 模型解析百炼形状的 SSE，pydantic-ai 改了这份约定时测试会失败。
+    """
+
+    def serve(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"}, content=_bailian_reasoning_stream()
+        )
+
+    client = AsyncOpenAI(
+        api_key="sk-test",
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(serve)),
+    )
+    model = OpenAIResponsesModel("qwen3.8-flash", provider=AlibabaProvider(openai_client=client))
+    events: list[Any] = []
+    async with model.request_stream(
+        [ModelRequest.user_text_prompt(PROMPT)], None, ModelRequestParameters()
+    ) as stream:
+        async for event in stream:
+            events.append(event)
+        response = stream.get()
+
+    async def replay() -> AsyncIterator[Any]:
+        for event in events:
+            yield event
+
+    thought = "".join(RAW_THOUGHT)
+    thinking = response.parts[0]
+    assert isinstance(thinking, ThinkingPart)
+    assert thinking.content == ""
+    assert thinking.provider_details == {"raw_content": [thought]}
+
+    live = await _live(_projector(), replay())
+    derived = _derived(
+        ModelRequest(parts=[UserPromptPart(content=PROMPT)], run_id=RUN, timestamp=_at(0)),
+        ModelResponse(parts=response.parts, run_id=RUN, timestamp=_at(1)),
+    )
+
+    shown = live[0].steps[0].frames[0]
+    assert isinstance(shown, ThinkingFrame)
+    assert shown.text == thought
     assert _shape(live) == _shape(derived)
 
 

@@ -89,7 +89,7 @@ describe('uploadMediaFile 视频', () => {
   })
 
   it.each([
-    ['对象存储拒绝', () => new HttpResponse(null, { status: 403 }), '上传失败（403）'],
+    ['对象存储拒绝', () => new HttpResponse(null, { status: 403 }), '上传失败'],
     ['断网', () => HttpResponse.error(), '上传失败：网络连接失败，请检查网络后重试'],
   ])('直传失败（%s）给出与接口错误同格式的中文，不再确认', async (_case, respond, message) => {
     server.use(http.put(uploadUrl, respond))
@@ -187,7 +187,7 @@ describe('uploadMediaFile 图片', () => {
   it('图片解码失败时保留错误，不请求上传签名', async () => {
     decode.mockRejectedValue(new DOMException('Invalid image', 'InvalidStateError'))
 
-    await expect(uploadMediaFile(imageFile(), 'image')).rejects.toThrow('无法读取图片')
+    await expect(uploadMediaFile(imageFile(), 'image')).rejects.toThrow('图片读取失败')
     expect(requests).toEqual([])
   })
 

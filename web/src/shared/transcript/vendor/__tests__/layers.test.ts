@@ -336,13 +336,14 @@ describe('contract schemas', () => {
           kind: 'step', stepId: 't1.1', turnId: 't1', ordinal: 1, state: 'interrupted',
           usage,
           finishReason: 'stop',
-          timing: {
+          llmTiming: {
             llmFirstTokenLatencyMs: 120,
             llmStreamDurationMs: 900,
             llmRequestBuildMs: 5,
             llmServerFirstTokenMs: 110,
             llmServerDecodeMs: 700,
             llmClientConsumeMs: 950,
+            llmClientBlockedMs: 25,
           },
           retry: { failedAttempt: 1, nextAttempt: 2, maxAttempts: 3, delayMs: 500, errorName: 'RateLimit', errorMessage: 'slow down', statusCode: 429 },
           endReason: 'aborted',

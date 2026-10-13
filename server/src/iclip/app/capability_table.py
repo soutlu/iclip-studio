@@ -32,6 +32,7 @@ from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.service import ReferenceService
 from iclip.harness.agents import AgentCapabilities, delegate_display_table
+from iclip.harness.background import BackgroundTools
 from iclip.harness.media import image_info_url
 from iclip.harness.skills import skill_display_table
 from iclip.platform.file_store.store import FileSpace, FileStore
@@ -241,6 +242,8 @@ def build_capability_table(
                 ),
                 # 现阶段生图由人自己做：生图工具保留，不登记给 agent。
             ),
+            # 让标了 background 的 breakdown_video 在后台跑，结果晚些作为消息送达。
+            BackgroundTools[Any](),
         )
     if shot_video is not None:
         if (

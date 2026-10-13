@@ -53,7 +53,7 @@ const FRAME_WORDS: EditorWords = {
   replaceTone: 'primary',
   replaced: '已替换',
   replacing: '正在替换…',
-  versions: '这一帧的图片',
+  versions: '该帧的图片',
 }
 
 const FILM_WORDS: EditorWords = {
@@ -61,12 +61,12 @@ const FILM_WORDS: EditorWords = {
   current: '在用',
   frames: '图',
   gone: '该图片已不在分镜中，请关闭窗口后重新选择',
-  replace: '选用这张',
+  replace: '选用该图片',
   replaceNote: '选用后，所有用到该图片的位置都将换成此图，可撤销',
   replaceTone: 'neutral',
   replaced: '已选用',
   replacing: '正在选用…',
-  versions: '这张图的版本',
+  versions: '该图片的版本',
 }
 
 export const editorWordsOf = (target: FrameEditTarget): EditorWords =>

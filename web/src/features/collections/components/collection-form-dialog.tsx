@@ -70,7 +70,7 @@ function CollectionForm({
 }: Omit<CollectionFormDialogProps, 'open'> & { inputRef: RefObject<HTMLInputElement | null> }) {
   const [name, setName] = useState(initialName ?? '')
   const saveMutation = useSaveCollection((saved) => {
-    toast.success('合集已新建')
+    toast.success('已新建合集')
     onSaved(saved)
     onOpenChange(false)
   })

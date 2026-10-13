@@ -273,6 +273,9 @@ MAX_FILM_EDITS: Final = 64
 MAX_FILM_REFERENCES: Final = 10
 """按描述再生成时最多几张参考图，与生成域的图片参考图上限相同。"""
 
+MAX_FILM_VIDEO_REFERENCES: Final = 30
+"""改一段字时最多新插入几张图：一次视频请求最多 30 张参考图，再多保存检查也不会通过。"""
+
 
 class FilmPromptTextOut(CamelModel):
     kind: Literal["text"] = "text"
@@ -280,23 +283,28 @@ class FilmPromptTextOut(CamelModel):
 
 
 class FilmPromptImageOut(CamelModel):
-    """描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。"""
+    """描述里一张参考图所在的位置，即文件里写 ``@ImageN`` 的地方。``number`` 是它在这张图自己的
+    参考图列表里的位置（即 N），``url`` 还没有选用时为 null。"""
 
     kind: Literal["image"] = "image"
     node: str
     label: str
-    url: str
+    url: str | None
+    number: int
 
 
 FilmPromptRunOut = Annotated[FilmPromptTextOut | FilmPromptImageOut, Field(discriminator="kind")]
 
 
 class FilmFrameOut(CamelModel):
-    """一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+    """镜头组里的一张图：先是这组视频参考图列表里的，按列表先后；再是这组镜头里还没进列表的机位图，
+    按镜头先后。``node`` 是换图时传回的定位；``number`` 是它在列表里的位置，即 @N，没进列表的为
+    null；``url`` 没有图时为 null。
 
-    ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
-    用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法
-    同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。"""
+    ``prompt`` 是按描述生成时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图
+    也拆出来；``aspectRatio`` 是文件里写的画幅。用户给的图这两个都是 null。``missing`` 是这张图
+    挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后；不为空时这张图不能生成。用户
+    给的图为空列表。"""
 
     node: str
     label: str
@@ -309,14 +317,16 @@ class FilmFrameOut(CamelModel):
 
 
 class FilmSettingOut(CamelModel):
-    """全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
-    可以几张，拍法和声音为空。"""
+    """全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；
+    ``images`` 恒为空列表，这组的图都在 ``frames`` 里；``shared`` 为 true 的这段还用在别的生成节点里，
+    字里不能有图号，页面上不给插入图片。"""
 
     kind: SettingKind
     target: str | None
     label: str | None
     text: str
     images: list[str]
+    shared: bool
 
 
 class FilmLineOut(CamelModel):
@@ -340,6 +350,8 @@ class FilmShotOut(CamelModel):
 
 
 class FilmGroupOut(CamelModel):
+    """一个镜头组。``prompt`` 是这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样给出。"""
+
     index: int
     video: str
     model: str
@@ -348,6 +360,7 @@ class FilmGroupOut(CamelModel):
     frames: list[FilmFrameOut]
     settings: list[FilmSettingOut]
     shots: list[FilmShotOut]
+    prompt: str
 
 
 class FilmViewOut(CamelModel):
@@ -378,6 +391,17 @@ class FilmTextEditIn(CamelModel):
     text: str | None = None
     parts: list[str] | None = None
     lines: list[FilmLineEditIn] | None = None
+    images: Annotated[
+        list[str], Field(default_factory=list[str], max_length=MAX_FILM_VIDEO_REFERENCES)
+    ]
+    """新插入的图：列表现有 M 张时，字里的 ``@Image(M+1)`` 起依次指这里的每一张。"""
+
+    @field_validator("images")
+    @classmethod
+    def _http(cls, urls: list[str]) -> list[str]:
+        if not all(is_http_url(url) for url in urls):
+            raise ValueError("要写带主机名的 http(s) 地址")
+        return urls
 
     @model_validator(mode="after")
     def _one_of(self) -> FilmTextEditIn:
@@ -464,7 +488,7 @@ def _prompt_run_out(run: FilmPromptRun) -> FilmPromptTextOut | FilmPromptImageOu
     if isinstance(run, FilmPromptText):
         return FilmPromptTextOut(text=run.text)
     assert isinstance(run, FilmPromptImage)
-    return FilmPromptImageOut(node=run.node, label=run.label, url=run.url)
+    return FilmPromptImageOut(node=run.node, label=run.label, url=run.url, number=run.number)
 
 
 def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
@@ -476,6 +500,7 @@ def film_text_edits(body: FilmTextEditsIn) -> list[FilmTextEdit]:
             lines=None
             if edit.lines is None
             else tuple(FilmLineEdit(line.target, line.text) for line in edit.lines),
+            images=tuple(edit.images),
         )
         for edit in body.edits
     ]
@@ -516,6 +541,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                             label=setting.label,
                             text=setting.text,
                             images=list(setting.images),
+                            shared=setting.shared,
                         )
                         for setting in group.settings
                     ],
@@ -533,6 +559,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
                         )
                         for shot in group.shots
                     ],
+                    prompt=group.prompt,
                 )
                 for group in view.groups
             ],

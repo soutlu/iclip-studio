@@ -194,7 +194,7 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
         image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),
     )
 
-    (capability,) = built["iclip_studio"]
+    capability, _background = built["iclip_studio"]
     assert isinstance(capability, IclipStudio)
     tools = capability.get_toolset().tools
     assert "generate_images" not in tools

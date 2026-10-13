@@ -38,6 +38,7 @@ from iclip.domains.identity.rbac import ACT_AS_PERMISSION
 from iclip.platform.media.ffmpeg import MediaError
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
+    LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
     FixedLineage,
@@ -358,6 +359,7 @@ async def test_video_submit_assembles_the_prompt_from_a_shot_and_stores_both() -
     [
         {key: value for key, value in VIDEO_BODY.items() if key != "prompt"},
         {**SHOT_BODY, "prompt": "自己写的一段正文"},
+        {**SHOT_BODY, "prompt": LEGACY_SHOT_PROMPT},
         {**SHOT_BODY, "reference_image_urls": []},
         {**SHOT_BODY, "shot": video_shot(timeline=[])},
     ],

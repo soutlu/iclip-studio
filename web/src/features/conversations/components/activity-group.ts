@@ -122,17 +122,17 @@ const doneClause = (key: string, count: number, live: boolean): string => {
     const operation = key.slice(3) as keyof typeof OPERATION_LABELS
     return `${prefix}${OPERATION_LABELS[operation](count)}`
   }
-  if (key === 'other') return `${prefix}执行了 ${count} 次操作`
+  if (key === 'other') return `${prefix}执行 ${count} 次操作`
   return `${prefix}${key.slice(8)} ×${count}`
 }
 
 /** 完成态的计数句，动词与卡头标题同一套词（docs/tool-design.md §4）。 */
 const OPERATION_LABELS = {
-  read: (n: number) => `读取了 ${n} 个文件`,
-  write: (n: number) => `写入了 ${n} 个文件`,
-  edit: (n: number) => `编辑了 ${n} 处`,
-  glob: (n: number) => `浏览了 ${n} 个目录`,
-  grep: (n: number) => `搜索了 ${n} 次`,
+  read: (n: number) => `读取 ${n} 个文件`,
+  write: (n: number) => `写入 ${n} 个文件`,
+  edit: (n: number) => `编辑 ${n} 处`,
+  glob: (n: number) => `浏览 ${n} 个目录`,
+  grep: (n: number) => `搜索 ${n} 次`,
 } as const
 
 /** 运行中的当前项：动词加主语；标题本身就是动宾短语，前面加「正在」即可。 */

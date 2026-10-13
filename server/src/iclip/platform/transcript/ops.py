@@ -76,6 +76,9 @@ class TextFrame(_Wire):
     content: tuple[PromptContent, ...] | None = None
     """用户原始图文 parts；助手文本不使用此字段。"""
     prompt_ids: tuple[str, ...] | None = None
+    task_id: str | None = None
+    """后台工具的完成通知：等于发起它的那次调用的 toolCallId，也是任务列表里那条任务的 id。
+    带它的用户块不是用户说的话，``content`` 只有一段与 ``text`` 相同的文字。"""
 
     @model_validator(mode="after")
     def _user_block_carries_content(self) -> TextFrame:
@@ -149,7 +152,8 @@ TaskState = Literal["running", "completed", "failed", "timed_out", "killed", "lo
 
 
 class TranscriptTask(_Wire):
-    """一件后台活儿。本系统只产出 ``subagent``：一次 delegate_task 一条。"""
+    """一件后台活儿。本系统产出两种：``subagent`` 是一次 delegate_task 一条；``tool`` 是一次后台
+    工具调用一条（``detached`` 为真），``task_id`` 等于那次调用的 toolCallId。"""
 
     task_id: str
     kind: Literal["shell", "subagent", "tool", "other"]
@@ -175,6 +179,20 @@ class AgentDescriptor(_Wire):
     label: str | None = None
     created_at: str | None = None
     disposed_at: str | None = None
+
+
+def owned_task_ids(frames: Iterable[TranscriptFrame]) -> frozenset[str]:
+    """这些块里的工具卡认领的任务 id：tool 任务是卡的 toolCallId，subagent 任务是卡 agentRefs 里的子运行。
+
+    一轮的任务就是它的工具卡认领的这些；续跑写基线与重新生成清任务共用这一条认定。
+    """
+
+    owned: set[str] = set()
+    for frame in frames:
+        if isinstance(frame, ToolFrame):
+            owned.add(frame.tool_call_id)
+            owned.update(ref.agent_id for ref in frame.agent_refs or ())
+    return frozenset(owned)
 
 
 def agents_from_tasks(tasks: Iterable[TranscriptTask]) -> tuple[AgentDescriptor, ...]:
@@ -462,5 +480,6 @@ __all__ = [
     "agent_context_status",
     "agents_from_tasks",
     "next_frame_ordinal",
+    "owned_task_ids",
     "utf16_len",
 ]

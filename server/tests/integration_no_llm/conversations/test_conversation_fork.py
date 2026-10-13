@@ -20,7 +20,6 @@ from procrastinate.testing import InMemoryConnector
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.app.bootstrap import build_app
 from iclip.common.errors import Conflict, NotFound
@@ -32,6 +31,7 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.ffmpeg import ffmpeg_available
 from iclip.platform.transcript.session_events import SessionEventClock
@@ -86,7 +86,7 @@ async def seed_turns(pg_url: str, conversation_id: str, prompts: list[str]) -> l
     没有 agent_jobs 映射时每个 run 自成一轮，正是副本读继承轮的样子。
     """
 
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     run_ids: list[str] = []
     try:
         store = PgStepStore(engine)
@@ -401,7 +401,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
     owner = await login_as(client, pg_url, username="logan")
     source = await open_conversation(client)
     start = StartMovedUnderUs()
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     try:
         repo = SqlConversationRepository(engine)
         service = ConversationService(
@@ -490,7 +490,7 @@ async def media_app(
         monkeypatch.setenv(name, value)
     async with connected(migrated_pg) as conn:
         await reset_database(conn)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     try:
         yield build_app(
             config_with_media(),
@@ -537,7 +537,7 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
     分叉那一刻还在跑的、分叉之后才出的都不归副本，同一个人按属主读得到也不行；
     读不到副本的人拿副本 id 什么也列不出来。受理编辑要探参考片段的时长，片段放在本地媒体服务上。"""
 
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     repo = SqlGenerationRepository(engine)
     with TemporaryDirectory(prefix="fork-clip-") as tmp:
         clip_bytes = synthesize_video(
@@ -622,7 +622,7 @@ async def test_audit_list_carries_only_each_conversations_own_latest_master(
 ) -> None:
     """全部对话列表的每一段带自己名下最新一条成片的地址：源对话有，只继承了它的副本为空。"""
 
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     repo = SqlGenerationRepository(engine)
     try:
         async with make_client(media_app) as client:

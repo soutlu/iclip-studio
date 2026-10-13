@@ -2034,7 +2034,7 @@
       },
       "FilmFrameOut": {
         "additionalProperties": false,
-        "description": "一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。\n\n``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。\n用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法\n同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。",
+        "description": "镜头组里的一张图：先是这组视频参考图列表里的，按列表先后；再是这组镜头里还没进列表的机位图，\n按镜头先后。``node`` 是换图时传回的定位；``number`` 是它在列表里的位置，即 @N，没进列表的为\nnull；``url`` 没有图时为 null。\n\n``prompt`` 是按描述生成时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图\n也拆出来；``aspectRatio`` 是文件里写的画幅。用户给的图这两个都是 null。``missing`` 是这张图\n挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后；不为空时这张图不能生成。用户\n给的图为空列表。",
         "properties": {
           "aspectRatio": {
             "anyOf": [
@@ -2136,6 +2136,7 @@
       },
       "FilmGroupOut": {
         "additionalProperties": false,
+        "description": "一个镜头组。``prompt`` 是这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样给出。",
         "properties": {
           "aspectRatio": {
             "title": "Aspectratio",
@@ -2154,6 +2155,10 @@
           },
           "model": {
             "title": "Model",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
             "type": "string"
           },
           "seconds": {
@@ -2187,7 +2192,8 @@
           "aspectRatio",
           "frames",
           "settings",
-          "shots"
+          "shots",
+          "prompt"
         ],
         "title": "FilmGroupOut",
         "type": "object"
@@ -2369,7 +2375,7 @@
       },
       "FilmPromptImageOut": {
         "additionalProperties": false,
-        "description": "描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。",
+        "description": "描述里一张参考图所在的位置，即文件里写 ``@ImageN`` 的地方。``number`` 是它在这张图自己的\n参考图列表里的位置（即 N），``url`` 还没有选用时为 null。",
         "properties": {
           "kind": {
             "const": "image",
@@ -2385,15 +2391,27 @@
             "title": "Node",
             "type": "string"
           },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
           "url": {
-            "title": "Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           }
         },
         "required": [
           "node",
           "label",
-          "url"
+          "url",
+          "number"
         ],
         "title": "FilmPromptImageOut",
         "type": "object"
@@ -2420,7 +2438,7 @@
       },
       "FilmSettingOut": {
         "additionalProperties": false,
-        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，\n可以几张，拍法和声音为空。",
+        "description": "全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；\n``images`` 恒为空列表，这组的图都在 ``frames`` 里；``shared`` 为 true 的这段还用在别的生成节点里，\n字里不能有图号，页面上不给插入图片。",
         "properties": {
           "images": {
             "items": {
@@ -2449,6 +2467,10 @@
             ],
             "title": "Label"
           },
+          "shared": {
+            "title": "Shared",
+            "type": "boolean"
+          },
           "target": {
             "anyOf": [
               {
@@ -2470,7 +2492,8 @@
           "target",
           "label",
           "text",
-          "images"
+          "images",
+          "shared"
         ],
         "title": "FilmSettingOut",
         "type": "object"
@@ -2539,6 +2562,14 @@
         "additionalProperties": false,
         "description": "改一段字。镜头给 ``parts`` 与 ``lines``：这一镜的每句台词按原来的先后列全，``parts`` 比它\n多一段，台词只改字；其余给 ``text``。",
         "properties": {
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Images",
+            "type": "array"
+          },
           "lines": {
             "anyOf": [
               {
@@ -4935,7 +4966,7 @@
       },
       "ReferenceVideoOut": {
         "additionalProperties": false,
-        "description": "一条参考视频，连同当前拆解。",
+        "description": "一条参考视频，连同当前拆解与最新的一次试生成。",
         "properties": {
           "breakdownStatus": {
             "enum": [
@@ -5054,6 +5085,16 @@
             "title": "Id",
             "type": "string"
           },
+          "testVideo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TestVideoOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "title": "Updatedat",
@@ -5108,7 +5149,8 @@
           "canEdit",
           "createdAt",
           "updatedAt",
-          "document"
+          "document",
+          "testVideo"
         ],
         "title": "ReferenceVideoOut",
         "type": "object"
@@ -6389,6 +6431,96 @@
         "title": "TasksPageOut",
         "type": "object"
       },
+      "TestVideoIn": {
+        "additionalProperties": false,
+        "description": "试生成的请求：画幅与归属标签由调用方定，其余参数服务端定。",
+        "properties": {
+          "aspectRatio": {
+            "enum": [
+              "9:16",
+              "16:9",
+              "1:1",
+              "3:4",
+              "4:3"
+            ],
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "aspectRatio"
+        ],
+        "title": "TestVideoIn",
+        "type": "object"
+      },
+      "TestVideoOut": {
+        "additionalProperties": false,
+        "description": "属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "errorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errormessage"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "status",
+          "url",
+          "errorMessage",
+          "stale",
+          "createdAt"
+        ],
+        "title": "TestVideoOut",
+        "type": "object"
+      },
       "TextContent": {
         "additionalProperties": false,
         "properties": {
@@ -6475,6 +6607,17 @@
             ],
             "title": "Role",
             "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
           },
           "text": {
             "title": "Text",
@@ -7030,7 +7173,7 @@
       },
       "TranscriptTask": {
         "additionalProperties": false,
-        "description": "一件后台活儿。本系统只产出 ``subagent``：一次 delegate_task 一条。",
+        "description": "一件后台活儿。本系统产出两种：``subagent`` 是一次 delegate_task 一条；``tool`` 是一次后台\n工具调用一条（``detached`` 为真），``task_id`` 等于那次调用的 toolCallId。",
         "properties": {
           "agentId": {
             "anyOf": [
@@ -13620,6 +13763,74 @@
           }
         ],
         "summary": "Rerun Reference",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}/test-generations": {
+      "post": {
+        "description": "属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。\n\n``userName`` 同媒体生成。只限属主本人，别人的是 ``403``；拆解还没完成、上一次试生成\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
+        "operationId": "start_reference_test_video_references__reference_id__test_generations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestVideoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceVideoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read",
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read",
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Start Reference Test Video",
         "tags": [
           "references"
         ]

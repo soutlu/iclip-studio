@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import uuid
@@ -881,6 +882,52 @@ async def test_capability_attaches_to_a_real_agent(store: FakeFileStore) -> None
     }
     stored = await store.read(NS, "稿.md")
     assert stored is not None and stored.content == "夜景"
+
+
+async def test_edits_to_one_file_in_one_reply_both_land() -> None:
+    """模型在同一回复里对同一文件发出多个 edit_file 时依次执行，不因版本冲突退回重试。"""
+
+    class YieldingStore(FakeFileStore):
+        async def read(self, namespace: str, path: str) -> StoredFile | None:
+            found = await super().read(namespace, path)
+            # 真实存储的读写之间会让出事件循环；内存替身不让出就复现不了并行读改写。
+            await asyncio.sleep(0)
+            return found
+
+    store = YieldingStore()
+    await store.write(NS, "treatment.md", "开场是夜景\n结尾是日景")
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "edit_file",
+                        {"path": "treatment.md", "old_text": "夜景", "new_text": "黄昏"},
+                    ),
+                    ToolCallPart(
+                        "edit_file",
+                        {"path": "treatment.md", "old_text": "日景", "new_text": "雨夜"},
+                    ),
+                ]
+            )
+        return ModelResponse(parts=[TextPart("改完了")])
+
+    agent = Agent(
+        FunctionModel(script), deps_type=AgentRunDeps, capabilities=[make_workspace(store)]
+    )
+    result = await agent.run("改稿", deps=make_deps())
+
+    retries = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, RetryPromptPart)
+    ]
+    assert retries == []
+    assert result.output == "改完了"
+    stored = await store.read(NS, "treatment.md")
+    assert stored is not None and stored.content == "开场是黄昏\n结尾是雨夜"
 
 
 async def test_a_subagent_shares_the_conversation_workspace(store: FakeFileStore) -> None:

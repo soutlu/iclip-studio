@@ -24,11 +24,15 @@ class FilmPromptText:
 
 @dataclass(frozen=True, slots=True)
 class FilmPromptImage:
-    """生图描述里一张参考图所在的位置。"""
+    """生图描述里一张参考图所在的位置，即文件里写 ``@ImageN`` 的地方。"""
 
     node: str
     label: str
-    url: str
+    url: str | None
+    """现在的地址；还没有选用时为 None。"""
+
+    number: int
+    """这张参考图在这张图自己的参考图列表里的位置，即 ``@ImageN`` 的 N，从 1 起。"""
 
 
 FilmPromptRun = FilmPromptText | FilmPromptImage
@@ -36,31 +40,33 @@ FilmPromptRun = FilmPromptText | FilmPromptImage
 
 @dataclass(frozen=True, slots=True)
 class FilmFrame:
-    """一组视频请求用到的一张图。"""
+    """镜头组里的一张图：先是这组视频的参考图列表，按列表先后；再是这组镜头里还没进列表的机位图
+    （没选用的），按镜头先后，它们没有编号，照样能生成、能选用。"""
 
     node: str
     """图片节点；换图时原样传回。"""
 
     label: str
-    """给人看的名字：出场元素的图叫元素的名字，机位图叫「镜头 N」，都不是的叫图片节点的名字。"""
+    """给人看的名字：机位图叫「镜头 N」（别组的叫「第 M 组镜头 N」），其余的叫图片节点的名字。"""
 
     kind: FrameKind
     url: str | None
     """现在用的图；还没有图时为 None。"""
 
     number: int | None
-    """发给视频的编号，即 @ImageN 的 N：只给有图的，按发送的先后从 1 起。"""
+    """在这组参考图列表里的位置，即 @ImageN 的 N，从 1 起；列表里没有图的也有，没进列表的机位图为
+    None。"""
 
     prompt: tuple[FilmPromptRun, ...] | None
-    """按描述生成这张图时发给模型的描述，参考图在它出现的位置；用户给的图为 None。还没有图的
-    参考图不在这里出现，只用文字写。"""
+    """按描述生成这张图时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图也拆出来。
+    用户给的图为 None。"""
 
     aspect_ratio: str | None
     """这张图的画幅：生成图照文件里写的；用户给的图文件里不写，为 None。"""
 
     missing: tuple[str, ...]
-    """按描述生成这张图时挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后、不重复；
-    生成时它们只用文字写。用户给的图为空。"""
+    """这张图的参考图列表里现在没有图的那几张的称呼（叫法同 ``label``），按列表先后；不为空时这张图
+    不能生成。用户给的图为空。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,12 +78,16 @@ class FilmSetting:
     """改这段字时传回；这段在文件里没法单独改时为 None。"""
 
     label: str | None
-    """段首的称呼：出场元素是「槽名 元素名」，如「人物 短发女生」；声音是「声音」，说话人写在
-    正文开头；拍法没有。"""
+    """段首的称呼：模板里这个槽的段名去掉冒号，如「拍摄与剪辑」「人物」「声音」；同一个槽的几段
+    同一个称呼。声音的说话人写在正文开头。"""
 
     text: str
     images: tuple[str, ...]
-    """出场元素挂的图片节点，按视频节点下列的先后，可以几张；拍法和声音没有。"""
+    """恒为空：这组的图都在 ``FilmGroup.frames`` 里。"""
+
+    shared: bool
+    """这段字还用在别的生成节点里（几组共用的拍法与声音，或与生图共用的描述）：字里不能有图号，
+    页面上不给插入图片。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +134,8 @@ class FilmGroup:
     frames: tuple[FilmFrame, ...]
     settings: tuple[FilmSetting, ...]
     shots: tuple[FilmShot, ...]
+    prompt: str
+    """这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样拼出，只是不能出片。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +175,9 @@ class FilmTextEdit:
     text: str | None = None
     parts: tuple[str, ...] | None = None
     lines: tuple[FilmLineEdit, ...] | None = None
+    images: tuple[str, ...] = ()
+    """这段字里新插入的图的地址。这组视频的参考图列表现在有 M 张时，字里的 ``@Image1``…``@ImageM``
+    指列表里现有的图，``@Image(M+1)``…``@Image(M+k)`` 依次指这里的第 1…k 张。"""
 
 
 __all__ = [

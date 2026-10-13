@@ -12,8 +12,10 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.pool import NullPool
+
+from iclip.platform.db.engine import build_engine
 
 APP_TABLES = (
     "iclip.users",
@@ -84,18 +86,6 @@ async def reset_database(conn: AsyncConnection) -> None:
     await truncate_clean(conn, (*APP_TABLES, *AGENT_RUNTIME_TABLES))
 
 
-async def reset_present_tables(conn: AsyncConnection) -> None:
-    """同 ``reset_database``，但只清此刻存在的表：迁移用例停在旧版本时，后来才建的表还不在。"""
-
-    present = [
-        table
-        for table in (*APP_TABLES, *AGENT_RUNTIME_TABLES)
-        if (await conn.execute(text("SELECT to_regclass(:t)"), {"t": table})).scalar_one()
-        is not None
-    ]
-    await truncate_clean(conn, present)
-
-
 @asynccontextmanager
 async def connected(url: str) -> AsyncGenerator[AsyncConnection]:
     """在一次性引擎上开一个事务连接，块正常结束提交、出错回滚，最后释放引擎。
@@ -103,7 +93,7 @@ async def connected(url: str) -> AsyncGenerator[AsyncConnection]:
     NullPool 让连接随块关闭，``asyncio.run`` 里用也不会把连接留给下一个事件循环。
     """
 
-    engine = create_async_engine(url, poolclass=NullPool)
+    engine = build_engine(url, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
             yield conn
@@ -117,6 +107,5 @@ __all__ = [
     "LOCK_TIMEOUT",
     "connected",
     "reset_database",
-    "reset_present_tables",
     "truncate_clean",
 ]

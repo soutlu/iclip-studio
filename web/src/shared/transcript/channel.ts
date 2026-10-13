@@ -4,7 +4,7 @@
  * - refresh 与 loadOlder 共用一条串行读取链；读取在途时到达的批次先缓冲，读完按到达顺序回放，旧响应不会盖掉新批次。
  * - 批次号规则照 Kimi：不大于已应用的是重复，直接认下；不是下一号就报断档，交给池重读基线再重订。
  * - append 缺口也照 Kimi：同批其余操作照常应用、水位照常赋值，再报断档，由池用基线纠正。
- * - epoch（ADR-0004，Kimi 的 Transcript 流没有）：批次所属的实时流与已应用的不同，同样报断档。少了这一条，
+ * - epoch（Kimi 的 Transcript 流没有）：批次所属的实时流与已应用的不同，同样报断档。少了这一条，
  *   重启后新流的低号批次会落进「重复」分支被悄悄认下，直到下一次重读才发现。
  */
 
@@ -19,6 +19,7 @@ import {
   type TranscriptItem,
   type TranscriptOperation,
   type TranscriptPrompt,
+  type TranscriptTask,
   type TranscriptTurn,
 } from './vendor'
 
@@ -55,6 +56,8 @@ export interface ChannelData extends PageHeader {
   pendingInteractions: readonly TranscriptInteraction[]
   /** 全部交互（含已决定的），按 id 查；工具卡凭 approvalId 认出被拒绝的那一步。 */
   interactions: ReadonlyMap<string, TranscriptInteraction>
+  /** 全部任务，按 taskId 查；transcript 只在任务变化时换新 Map，没变时引用不变。 */
+  tasks: ReadonlyMap<string, TranscriptTask>
   /** 当前最早一轮之前是否还有更早的轮次。 */
   hasMoreOlder: boolean
   /** 正在读更早的一页。 */
@@ -192,7 +195,7 @@ export class TranscriptChannel {
       this.buffered.push({ epoch, ops, seq })
       return false
     }
-    // Kimi 的 hY 没有这一步。它是 ADR-0004 第 2 条 epoch 规则在客户端的直接推论：批次号只在同一条实时流里可比，
+    // Kimi 的 hY 没有这一步。它是 epoch 规则在客户端的直接推论：批次号只在同一条实时流里可比，
     // 换了流的批次不论号大号小都接不上；不拦下的话，重启后新流的低号批次会被当成重复批次悄悄认下。
     if (this.epoch_ !== undefined && epoch !== this.epoch_) {
       this.onGap?.()
@@ -300,6 +303,7 @@ export class TranscriptChannel {
         .listPendingInteractions()
         .flatMap((id) => this.transcript.getInteraction(id) ?? []),
       prompts: [...this.transcript.getPrompts().values()],
+      tasks: this.transcript.getTasks(),
     }
   }
 }

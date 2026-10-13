@@ -36,10 +36,12 @@ import {
   useForkConversation,
 } from '../conversations.api'
 import { ApprovalCard } from './approval-card'
+import { BackgroundTaskBar } from './background-task-bar'
 import { ConversationComposer } from './conversation-composer'
 import { ConversationTurn } from './conversation-turn'
 import { LoadOlder } from './load-older'
 import { useKeepPlaceOnPrepend } from './use-keep-place-on-prepend'
+import { useToolTasks } from './use-tool-tasks'
 import { PromptQueue } from './prompt-queue'
 import { UserBubble } from './user-bubble'
 import { WorkingIndicator } from './working-indicator'
@@ -118,7 +120,8 @@ export function ConversationRoute({
     : ownerName === undefined
       ? undefined
       : `${ownerName} 的任务`
-  const noteSubject = ownMine ? '自己' : ownerName === undefined ? '别人' : ` ${ownerName} `
+  const noteOwner = ownMine ? '当前账号' : ownerName === undefined ? '其他账号' : ` ${ownerName}`
+  const readOnlyNote = `该任务属于${noteOwner}${deleted ? '，已删除' : ''}，仅可查看`
   const chrome = useShellChrome()
   // 乐观气泡与在途那一轮存在对话级的 store 里，离开页面再回来仍在，读取池也据此判断本地是否有未完成的发送。
   const { state: local, store: localPrompts } = useLocalPrompts(conversationId)
@@ -144,6 +147,7 @@ export function ConversationRoute({
   )
 
   const turns = view.items.filter((item) => item.kind === 'turn')
+  const toolTasks = useToolTasks(view.tasks)
   const keepPlace = useKeepPlaceOnPrepend(scrollerRef, turns[0]?.turnId, view.loadingOlder)
   const loadEarlier = () => {
     keepPlace()
@@ -347,6 +351,7 @@ export function ConversationRoute({
                   !readOnly && turn.turnId === latestTurn?.turnId ? regenerateTurn : undefined
                 }
                 regenerateDisabled={conversationBusy}
+                toolTasks={toolTasks}
                 turn={turn}
               />
             ))}
@@ -437,6 +442,7 @@ export function ConversationRoute({
               {sourceLink(view.forkedFrom)}
             </p>
           )}
+          <BackgroundTaskBar tasks={toolTasks} />
           {readOnly ? (
             <p
               aria-label="只读说明"
@@ -447,10 +453,7 @@ export function ConversationRoute({
                 <span className="flex h-[1lh] shrink-0 items-center">
                   <Icon decorative name="preview" size="sm" />
                 </span>
-                <span className="line-clamp-2">
-                  这是{noteSubject}
-                  {deleted ? '已删除的任务' : '的任务'}，仅可查看
-                </span>
+                <span className="line-clamp-2">{readOnlyNote}</span>
               </span>
               {backLink}
             </p>

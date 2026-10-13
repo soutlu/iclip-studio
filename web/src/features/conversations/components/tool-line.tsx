@@ -1,7 +1,7 @@
 /**
  * 工具行，结构照 Kimi ToolDisclosure / ToolPanel：20px 图标栏 + 动词 + 对象 + 小箭头，行尾只放状态；
  * 展开是一块 13 行封顶、内部滚动的面板。整行点了展开，文件名是另一个按钮，点了在工作台打开那份文件。
- * 每次调用只按自己的协议状态画：成功不画图标，失败红 ×，被拒绝灰 × 加「已拒绝」，不看前后调用。
+ * 每次调用只按自己的协议状态画：成功不画图标，失败红 ×，被拒绝灰 × 加「已拒绝」，转入后台的写「已转入后台」，不看前后调用。
  */
 
 import { useState, type ReactNode } from 'react'
@@ -37,9 +37,11 @@ type ToolLineProps = {
   frame: ToolCallFrame
   /** 本段对话的全部交互，用 approvalId 认出被拒绝的调用。 */
   interactions: ReadonlyMap<string, TranscriptInteraction>
+  /** 这次调用转入了后台（有以它的 toolCallId 为 taskId 的后台工具任务）。 */
+  backgrounded: boolean
 }
 
-export function ToolLine({ frame, interactions }: ToolLineProps) {
+export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
   const card = toolCard(frame.display, frame.view)
   const outcome = toolOutcome(frame, interactions)
   const delegated = (frame.agentRefs?.length ?? 0) > 0
@@ -60,7 +62,7 @@ export function ToolLine({ frame, interactions }: ToolLineProps) {
     ) : (
       <FileName name={name} onOpen={openFile} />
     )
-  const tail = <Tail frame={frame} outcome={outcome} />
+  const tail = <Tail backgrounded={backgrounded} frame={frame} outcome={outcome} />
 
   return (
     <div className="flex flex-col">
@@ -152,8 +154,19 @@ export function Indented({ children }: { children: ReactNode }) {
   )
 }
 
-/** 行尾：检索命中数；运行中转圈，失败红 ×，被拒绝灰 × 加字。成功不画。 */
-function Tail({ frame, outcome }: { frame: ToolCallFrame; outcome: ToolOutcome }) {
+/**
+ * 行尾：检索命中数；运行中转圈，失败红 ×，被拒绝灰 × 加字。成功不画，转入后台的写「已转入后台」：
+ * 这张卡只记启动，进度看输入框上方的后台任务卡。
+ */
+function Tail({
+  backgrounded,
+  frame,
+  outcome,
+}: {
+  backgrounded: boolean
+  frame: ToolCallFrame
+  outcome: ToolOutcome
+}) {
   const count = toolSearchCount(frame)
   return (
     <span className="flex shrink-0 items-center gap-2">
@@ -174,6 +187,8 @@ function Tail({ frame, outcome }: { frame: ToolCallFrame; outcome: ToolOutcome }
           已拒绝
           <Icon decorative name="failed" size="sm" />
         </span>
+      ) : outcome === 'done' && backgrounded ? (
+        <span className="text-body-sm text-chat-muted-text">已转入后台</span>
       ) : null}
     </span>
   )

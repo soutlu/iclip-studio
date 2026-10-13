@@ -87,7 +87,7 @@ type SearchResultsProps = {
 }
 
 function SearchResults({ keyword, onNavigate, query }: SearchResultsProps) {
-  if (!keyword) return <Hint>输入关键词可搜索你的任务</Hint>
+  if (!keyword) return <Hint>输入关键词可搜索任务</Hint>
   if (query.isPending) return <Hint>搜索中…</Hint>
   if (query.isError) {
     return <Hint>{errorMessageOf(query.error, '搜索任务失败')}</Hint>

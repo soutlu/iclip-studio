@@ -119,6 +119,8 @@ const renderWorkspace = async () => {
       </TranscriptProvider>
     </QueryClientProvider>,
   )
+  // Provider 在微任务里建连，等它建好再握手。
+  await act(async () => {})
   act(() => socket.deliver(SERVER_HELLO))
   const user = userEvent.setup()
   await screen.findByRole('button', { name: '用户菜单' })

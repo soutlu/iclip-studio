@@ -1,4 +1,4 @@
-"""实时流 epoch、会话事件水位与会话生命周期帧（ADR-0004）。
+"""实时流 epoch、会话事件水位与会话生命周期帧。
 
 客户端先读基线、再带 ``transcript_since`` + ``transcript_epoch`` 订阅；全局帧带属主与这段对话的事件
 序号，列表行带读行之前的水位，两边按序号比先后。
@@ -154,7 +154,7 @@ def test_lifecycle_frames_carry_the_owner_and_order_against_row_watermarks(
 
             _send(tc, conversation_id, "prm_life")
             busy = until(ws, "event.session.work_changed")
-            # 开跑记录运行也是一次行变化（ADR-0005）：带出新的 lastRunId 与抹掉的收尾标记。
+            # 开跑记录运行也是一次行变化：带出新的 lastRunId 与抹掉的收尾标记。
             began = until(ws, "event.session.updated")
             idle = until(ws, "event.session.work_changed")
             assert busy["owner_user_id"] == owner_id

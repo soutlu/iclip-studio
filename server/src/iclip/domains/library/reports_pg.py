@@ -5,10 +5,10 @@ OPERATION_GENERATE / OPERATION_COMPOSE / STATUS_COMPLETED（按表名直接查�
 集成测试的种子取自那些常量，生成域改词这里的用例就红。外部输入一律走绑定参数。
 
 继承规则在这里照 ``conversations.infra_sql.ancestry`` 与 ``generation.infra_sql._inherited``
-手写了一份：模块边界不让复用，ADR-0002 取舍第 2 条接受这份重复；两份由同一个分叉场景
+手写了一份：模块边界不让复用，接受这份重复；两份由同一个分叉场景
 （tests/helpers/fork_lineage.py）钉住，漂了会现形。
 
-列表层不碰血缘（ADR-0002 决策 3）：继承来的行完成时刻不晚于副本的建立时刻；副本 id 由服务端
+列表层不碰血缘：继承来的行完成时刻不晚于副本的建立时刻；副本 id 由服务端
 在分叉时铸，挂副本的行都在副本建立之后才落。所以对话自己最新的成片就是整卡最新的：有没有卡、
 卡面、排序、游标与筛选都只看自己的行，只有组数、版数与详情要用血缘，列表里也只算当页那几张卡。
 """
@@ -52,8 +52,10 @@ _COMPOSE: Final = "compose"
 # ---------------------------------------------------------------------------
 
 _MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND g.output_url IS NOT NULL
-      AND (g.operation = 'compose' OR (g.operation = 'generate' AND g.source_job_id IS NULL))"""
-"""成片：已完成、有地址的出片（没有来源的视频 generate）或合成；按别名 ``g`` 拼进条件。"""
+      AND (g.operation = 'compose' OR (g.operation = 'generate' AND g.source_job_id IS NULL))
+      AND NOT (coalesce(g.metadata, '{}') ? 'referenceId')"""
+"""成片：已完成、有地址的出片（没有来源的视频 generate）或合成；按别名 ``g`` 拼进条件。参考视频的
+试生成（``metadata`` 带 ``referenceId``）只是拿来对照拆解的，不收。"""
 
 _JOB_COLUMNS: Final = """g.id, g.operation, g.shot_index, g.root_job_id, g.output_url,
            g.watermark_output_url, g.duration_ms, g.finished_at, g.owner_user_id"""

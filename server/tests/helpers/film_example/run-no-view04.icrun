@@ -1,0 +1,22 @@
+<?icml using="@iclip/run-markup@1"?>
+<icrun version="1">
+  <film source="./film.icml"/>
+  <import as="media" from="@iclip/media@1"/>
+
+  <media:Image id="personB-v1" src="https://preview.invalid/generated/personB-v1.png"/>
+  <media:Image id="scene-v1" src="https://preview.invalid/generated/scene-v1.png"/>
+  <media:Image id="view01-v1" src="https://preview.invalid/generated/view01-v1.png"/>
+  <media:Image id="view02-v1" src="https://preview.invalid/generated/view02-v1.png"/>
+  <media:Image id="view03-v1" src="https://preview.invalid/generated/view03-v1.png"/>
+  <media:Image id="view04-v1" src="https://preview.invalid/generated/view04-v1.png"/>
+  <media:Image id="view05-v1" src="https://preview.invalid/generated/view05-v1.png"/>
+  <media:Image id="view06-v1" src="https://preview.invalid/generated/view06-v1.png"/>
+
+  <use output="personB.image" image={personB-v1}/>
+  <use output="scene.image" image={scene-v1}/>
+  <use output="view01.image" image={view01-v1}/>
+  <use output="view02.image" image={view02-v1}/>
+  <use output="view03.image" image={view03-v1}/>
+  <use output="view05.image" image={view05-v1}/>
+  <use output="view06.image" image={view06-v1}/>
+</icrun>

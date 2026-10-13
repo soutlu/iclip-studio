@@ -12,7 +12,8 @@ type TileButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' 
 
 type FrameTileProps = TileButtonProps & {
   frame: number
-  url: string
+  /** 还没有图（制作页没选用的生成图）为 null，画一格同样大小的空位。 */
+  url: string | null
   /** 画幅宽高比，缩略图按它占位。 */
   ratio: number
   /** 舞台上正在看的这张，缩略图描边。 */
@@ -39,16 +40,24 @@ export function FrameTile({
       type="button"
       {...props}
     >
-      <img
-        alt=""
-        className={cn(
-          'block h-16 rounded-xs bg-surface-container object-contain',
-          outlined && 'outline-2 outline-offset-1 outline-on-surface',
-        )}
-        loading="lazy"
-        src={url}
-        style={{ aspectRatio: ratio }}
-      />
+      {url === null ? (
+        <span
+          aria-hidden
+          className="block h-16 rounded-xs bg-surface-container"
+          style={{ aspectRatio: ratio }}
+        />
+      ) : (
+        <img
+          alt=""
+          className={cn(
+            'block h-16 rounded-xs bg-surface-container object-contain',
+            outlined && 'outline-2 outline-offset-1 outline-on-surface',
+          )}
+          loading="lazy"
+          src={url}
+          style={{ aspectRatio: ratio }}
+        />
+      )}
       @{frame}
     </button>
   )

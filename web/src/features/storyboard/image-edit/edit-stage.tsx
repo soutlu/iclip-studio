@@ -15,7 +15,7 @@ import { Button } from '@/shared/ui/button'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
-import { useTakeElapsed } from '../components/use-take-elapsed'
+import { useElapsed } from '@/shared/ui/media-preview'
 import { phaseOfStatus } from '../shots'
 import { CompareSlider } from './compare-slider'
 import { entryLabel, type StripEntry } from './edit-history'
@@ -108,7 +108,7 @@ function BaseImage({ url }: { url: string }) {
 }
 
 function RunningPill({ since }: { since: string }) {
-  const elapsed = useTakeElapsed(since)
+  const elapsed = useElapsed(since)
   return (
     <span aria-label={`生成中，已用 ${elapsed}`} className="image-edit-pill" role="status">
       <span aria-hidden="true" className="image-edit-pill-dot" />

@@ -1,4 +1,4 @@
-"""对话行变化的广播：整行里的 ``lastSeq`` 必须取在写入之前（ADR-0004）。不连库。
+"""对话行变化的广播：整行里的 ``lastSeq`` 必须取在写入之前。不连库。
 
 客户端拿事件序号与行上的 ``lastSeq`` 合并 ``activity``：序号不大于水位的事件，行里已经有了；大于的，
 以事件为准。水位要是取在写入之后，写入与取水位之间发生的事件会被当成「行里已经有了」，而行其实早于
@@ -336,7 +336,7 @@ async def test_concurrent_writes_take_frame_numbers_in_commit_order() -> None:
     """两次改名在读活动处交错：先提交那次的活动读得慢，它的整行帧也不能比后提交那次晚取号。
 
     不串行时帧是 seq 3 = new-write、seq 4 = old-write，客户端按「序号大者为准」把标题改回旧的，
-    库里却是新的（ADR-0004）。"""
+    库里却是新的。"""
 
     clock = SessionEventClock()
     existing = _row()
@@ -478,7 +478,7 @@ async def test_a_delete_is_announced_after_it_lands() -> None:
 
 
 async def test_starting_a_run_announces_the_new_run_and_the_cleared_mark() -> None:
-    """开跑记录运行发 ``updated``（ADR-0005）：帧带新的 lastRunId、收尾标记为空，行内水位停在写入之前。
+    """开跑记录运行发 ``updated``：帧带新的 lastRunId、收尾标记为空，行内水位停在写入之前。
 
     写入途中另有一帧发号（开跑的活动帧），行内 ``lastSeq`` 小于它；广播方随后给这一帧另发的号更大。"""
 

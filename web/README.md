@@ -1,6 +1,6 @@
 # 前端
 
-Vite + React SPA，使用 TanStack Router、TanStack Query 和 Tailwind CSS。依赖及版本见 [package.json](package.json)。整套联调从[仓库 README](../README.md#启动指南)开始；前端命令、目录职责与验证要求见 [AGENTS.md](AGENTS.md)。
+Vite + React SPA，使用 TanStack Router、TanStack Query 和 Tailwind CSS。依赖及版本见 [package.json](package.json)。整套联调从[本地启动](../docs/deploy.md#本地启动)开始；前端命令、目录职责与验证要求见 [AGENTS.md](AGENTS.md)。
 
 ## 启动参数
 

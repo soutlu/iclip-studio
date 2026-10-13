@@ -1,0 +1,38 @@
+<?icml using="@iclip/text/svs@1"?>
+<sheet version="1" id="picture-v1">
+  text-template.picture-v1 {
+    separator: paragraph;
+  }
+
+  text-template.picture-v1.block.capture {
+    kind: slot;
+    order: 10;
+    slot: capture;
+    optional: false;
+    label: "capture:";
+  }
+
+  text-template.picture-v1.block.subject {
+    kind: slot;
+    order: 20;
+    slot: subject;
+    optional: true;
+    label: "subject:";
+  }
+
+  text-template.picture-v1.block.framing {
+    kind: slot;
+    order: 30;
+    slot: framing;
+    optional: false;
+    label: "framing:";
+  }
+
+  text-template.picture-v1.block.setting {
+    kind: slot;
+    order: 40;
+    slot: setting;
+    optional: true;
+    label: "setting:";
+  }
+</sheet>

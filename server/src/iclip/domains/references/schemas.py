@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from pydantic.alias_generators import to_camel
@@ -13,8 +13,12 @@ from iclip.domains.references.models import (
     BreakdownErrorCode,
     BreakdownStatus,
     CategoryValue,
+    TestVideoStatus,
     VideoTypeValue,
 )
+
+MAX_USER_NAME_CHARS: Final = 200
+"""与 ``generation.schemas.MAX_USER_NAME_CHARS`` 同一个数；参考视频不依赖生成域，照抄。"""
 
 
 class CamelModel(BaseModel):
@@ -59,11 +63,42 @@ class ReferenceVideoItemOut(CamelModel):
     updated_at: datetime
 
 
+class TestVideoIn(CamelModel):
+    """试生成的请求：画幅与归属标签由调用方定，其余参数服务端定。"""
+
+    aspect_ratio: Literal["9:16", "16:9", "1:1", "3:4", "4:3"]
+    user_name: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_USER_NAME_CHARS),
+        ]
+        | None
+    ) = None
+    """归属标签，规则同媒体生成。"""
+
+
+class TestVideoOut(CamelModel):
+    """属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。"""
+
+    status: TestVideoStatus
+    """``running`` 还没结束；``completed`` 有成片；``failed`` 没生成成。"""
+    url: str | None
+    """成片地址；只有 ``completed`` 有。"""
+    error_message: str | None
+    """上游给的失败原文，只有 ``failed`` 可能有；不翻译、不归类。"""
+    stale: bool
+    """当前拆解拼出的提示词与这次试生成用的不同：拆解改过或重拆过，这条成片对照的已不是当前拆解。
+    当前拆解拼不出提示词时也为真。"""
+    created_at: datetime
+
+
 class ReferenceVideoOut(ReferenceVideoItemOut):
-    """一条参考视频，连同当前拆解。"""
+    """一条参考视频，连同当前拆解与最新的一次试生成。"""
 
     document: str | None
     """当前拆解的 Markdown 原文；还没拆完过是 ``None``。"""
+    test_video: TestVideoOut | None
+    """属主名下最新的一次试生成；没有试生成过是 ``None``。"""
 
 
 class ReferenceVideosOut(CamelModel):
@@ -104,6 +139,7 @@ class ReferenceFiltersOut(CamelModel):
 
 
 __all__ = [
+    "MAX_USER_NAME_CHARS",
     "CategoryCountOut",
     "OwnerCountOut",
     "ReferenceCreateIn",
@@ -112,5 +148,7 @@ __all__ = [
     "ReferenceVideoItemOut",
     "ReferenceVideoOut",
     "ReferenceVideosOut",
+    "TestVideoIn",
+    "TestVideoOut",
     "VideoTypeCountOut",
 ]

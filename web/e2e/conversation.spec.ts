@@ -133,7 +133,7 @@ test('在跑的时候再发一条：排队、追加、停止', async ({ page }) 
   await expect(page.getByText('1 条消息等待发送')).toBeVisible()
   await expect(page.getByRole('button', { name: '停止' })).toBeVisible()
 
-  await page.getByRole('button', { name: '现在就发' }).click()
+  await page.getByRole('button', { name: '立即发送' }).click()
   await expect(page.getByText('1 条消息等待发送')).toBeHidden()
   await expect(page.getByText('收到，一起做。')).toBeVisible({ timeout: 15_000 })
 })

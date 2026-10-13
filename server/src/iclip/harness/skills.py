@@ -13,6 +13,7 @@ from pydantic_ai import ModelRetry
 from pydantic_ai.capabilities import AgentCapability, Capability
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.tools import RunContext, Tool
+from pydantic_ai.workspaces import LocalWorkspaceBackend
 from pydantic_ai_harness.skills import Skills
 
 from iclip.platform.transcript.display import (
@@ -40,7 +41,13 @@ def build_skill_capabilities(
     granted = tuple(names)
     if not granted:
         raise ValueError("build_skill_capabilities 至少要挑一个 skill；不挂就别调它。")
-    return (Skills(library, include=granted), _references_capability(library, granted))
+    # 官方 Skills 每次运行开始才校验 include，这里提前到装配时，配置写错在启动时就报出来。
+    missing = [name for name in granted if not (library / name / "SKILL.md").is_file()]
+    if missing:
+        raise ValueError(f"skill 库 {library} 里没有这些 skill: {', '.join(missing)}。")
+    # 技能库只作为 Skills 自己的工作区，不给整个运行挂 LocalWorkspace，其他组件拿不到本机文件。
+    skills = Skills(".", include=granted, workspace=LocalWorkspaceBackend(library))
+    return (skills, _references_capability(library, granted))
 
 
 def _references_capability(library: Path, granted: tuple[str, ...]) -> Capability[Any]:

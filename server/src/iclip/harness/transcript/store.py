@@ -2,7 +2,7 @@
 
 重启后序号重新开始，订阅必须发送 reset，让客户端无条件更新水位。每条实时流（``(会话, agent)``
 的一份 ``_AgentTranscript``）建出来时生成一个 epoch：进程重启或淘汰后重建都会换新，续订时 epoch
-对不上就回 reset，不拿新编号的批次接旧水位（ADR-0004）。
+对不上就回 reset，不拿新编号的批次接旧水位。
 所有方法保持同步，发号、应用状态与记录日志不可被 await 分割，确保订阅一致读。
 """
 
@@ -38,6 +38,7 @@ from iclip.platform.transcript.ops import (
     TranscriptTurn,
     TurnHeader,
     TurnUpsertOp,
+    owned_task_ids,
     utf16_len,
 )
 
@@ -315,7 +316,8 @@ def _remove_items(
 ) -> None:
     """删除时间线条目及关联工具交互，避免残留审批；客户端协议不会自动清理关联交互。
 
-    被删轮次派出过的子代理连同它自己那条流一起清掉，否则重新生成后仍能订到上一次的子流。
+    被删轮次的任务（owned_task_ids：后台工具任务与子代理任务）一起清掉；子代理连同它自己那条流
+    也清掉，否则重新生成后仍能订到上一次的子流。
     """
 
     cards = [
@@ -330,8 +332,9 @@ def _remove_items(
     children = {ref.agent_id for frame in cards for ref in frame.agent_refs or ()}
     for turn_id in ids:
         agent.turns.pop(turn_id, None)
+    for task_id in owned_task_ids(cards):
+        agent.tasks.pop(task_id, None)
     for child_id in children:
-        agent.tasks.pop(child_id, None)
         conversation.agents.pop(child_id, None)
     agent.interactions = {
         key: item

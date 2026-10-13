@@ -39,6 +39,7 @@ from iclip.domains.generation.service import GenerationService, SettledRecords
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import Outcome
 from iclip.domains.references.service import ReferenceService
+from iclip.harness.background import BackgroundTools
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 from tests.helpers.fetch_url import as_is, rewriting
@@ -159,8 +160,9 @@ async def test_iclip_studio_breaks_videos_down_through_the_reference_service() -
         reference_service=cast("ReferenceService", references),
     )
 
-    (capability,) = built["iclip_studio"]
+    capability, background = built["iclip_studio"]
     assert isinstance(capability, IclipStudio)
+    assert isinstance(background, BackgroundTools), "breakdown_video 要挂着后台工具才在后台跑"
     assert isinstance(capability.breakdowns, ReferenceBreakdownsAdapter)
     assert await capability.breakdowns.ensure(STUDIO_PRINCIPAL, STUDIO_VIDEO) == "# 出场元素"
     assert references.asked == [(STUDIO_PRINCIPAL, STUDIO_VIDEO)]

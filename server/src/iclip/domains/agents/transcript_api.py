@@ -264,7 +264,7 @@ class LiveConnections:
     多 worker 各自持有连接集合，未收到广播的客户端需重新读取数据库状态。
 
     事件序号由 ``clock`` 发：所有 ``announce_*`` 都在写入提交之后调用，发号与入队之间不 await，
-    所以同一段对话的帧在每条连接上按序号递增送达（ADR-0004）。"""
+    所以同一段对话的帧在每条连接上按序号递增送达。"""
 
     def __init__(self, clock: SessionEventClock | None = None) -> None:
         self._connections: set[_Connection] = set()
@@ -377,7 +377,7 @@ class LiveConnections:
         ``lastSeq`` 是调用方在写入之前取的水位，比信封序号小。客户端拿信封序号记行内事实字段
         （标题、归属、收尾标记等）的水位，拿 ``lastSeq`` 按 HTTP 行的口径合并 ``activity``：
         写入之前读库的旧行晚到也盖不掉这一帧带来的事实，帧里可能稍旧的活动也盖不掉序号更大的
-        ``work_changed``（ADR-0004）。"""
+        ``work_changed``。"""
 
         frame_type = SessionCreated if kind == "created" else SessionUpdated
         self._announce(

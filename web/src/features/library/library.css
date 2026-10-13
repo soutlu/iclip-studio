@@ -193,6 +193,86 @@
   min-width: 6em;
 }
 
+/* 参考视频详情的「原片｜试生成」对照：两格都按原片的宽高比（--reference-ratio，挂在对照容器上），
+   在播放区里等比放到最大。竖版与方形左右并排，横版上下排列。
+   手机上播放区按内容高度排（容器只量宽度），格宽只按宽度算。 */
+.reference-compare {
+  --reference-compare-gap: 12px;
+  /* 压在深色画面上，墨色焦点环看不见，改用 on-scrim。 */
+  --color-focus-ring: var(--color-on-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--reference-compare-gap);
+}
+
+.reference-compare[data-orient='landscape'] {
+  flex-direction: column;
+}
+
+.reference-compare-cell {
+  position: relative;
+  flex: none;
+  aspect-ratio: var(--reference-ratio);
+}
+
+.reference-compare[data-orient='portrait'] .reference-compare-cell {
+  width: min(
+    calc((100cqw - var(--reference-compare-gap)) / 2),
+    calc(100cqh * var(--reference-ratio))
+  );
+}
+
+.reference-compare[data-orient='landscape'] .reference-compare-cell {
+  width: min(100cqw, calc((100cqh - var(--reference-compare-gap)) / 2 * var(--reference-ratio)));
+}
+
+@media (width < 48rem) {
+  .reference-compare {
+    --reference-compare-gap: 8px;
+    width: 100%;
+  }
+
+  .reference-compare[data-orient='portrait'] .reference-compare-cell {
+    width: calc((100cqw - var(--reference-compare-gap)) / 2);
+  }
+
+  .reference-compare[data-orient='landscape'] .reference-compare-cell {
+    width: 100cqw;
+  }
+}
+
+/* 叠在两格画面上的深色玻璃：标签、右上角操作、提醒与重新试生成，与分镜舞台的工具按钮同一套配色，不随主题换。 */
+.reference-compare-glass {
+  border: 1px solid color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  background-color: color-mix(in srgb, var(--color-scrim) 64%, transparent);
+  color: var(--color-on-scrim);
+  backdrop-filter: blur(12px);
+  transition: background-color var(--dur-s) var(--ease);
+}
+
+button.reference-compare-glass:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-scrim) 78%, transparent);
+}
+
+button.reference-compare-glass:disabled {
+  color: color-mix(in srgb, var(--color-on-scrim) 60%, transparent);
+  cursor: not-allowed;
+}
+
+/* 还没有试生成视频的那一格：原片首帧外扩一圈再模糊压暗铺底，边缘不透出底色，上面的白字读得清。 */
+.reference-test-backdrop {
+  position: absolute;
+  top: -32px;
+  left: -32px;
+  width: calc(100% + 64px);
+  max-width: none;
+  height: calc(100% + 64px);
+  object-fit: cover;
+  filter: blur(28px) saturate(1.1) brightness(0.42);
+  pointer-events: none;
+}
+
 /* 读取中的占位用原生多列排版，列宽与真卡的列数档位相近。 */
 .library-skeleton-grid {
   columns: 5 220px;

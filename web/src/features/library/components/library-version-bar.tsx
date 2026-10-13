@@ -54,7 +54,7 @@ export function LibraryVersionBar({
         </SegmentUnit>
       )}
       {versions.length < 2 ? null : (
-        <SegmentUnit caption="版本" label="这个镜头组的版本" selected={version.jobId}>
+        <SegmentUnit caption="版本" label="该镜头组的版本" selected={version.jobId}>
           {versions.map((item, order) => (
             <button
               aria-pressed={item.jobId === version.jobId}

@@ -28,7 +28,7 @@ async def test_a_broken_project_file_is_refused_with_the_first_problem() -> None
 
 
 async def test_a_broken_run_file_is_refused() -> None:
-    broken = RUN.replace("{短发女生修过手}", "{没登记}")
+    broken = RUN.replace("{personB-v1}", "{没登记}")
 
     with pytest.raises(ValidationFailed, match=r"film\.icrun 第 \d+ 行"):
         await validate_film_run(USER, uuid.uuid4(), broken)

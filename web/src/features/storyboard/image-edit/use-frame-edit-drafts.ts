@@ -30,7 +30,7 @@ export function useFrameEditDrafts(target: FrameEditTarget): FrameEditDraftStore
     } catch {
       return {
         drafts: {},
-        error: '本地编辑草稿读取失败，请点击「重新开始」，或在历史任务中点击「恢复这次的输入」',
+        error: '本地编辑草稿读取失败，请点击「重新开始」，或在历史任务中点击「恢复本次输入」',
       }
     }
   })

@@ -65,7 +65,7 @@ describe('ConversationSearchDialog', () => {
     const user = userEvent.setup()
     await openDialog()
 
-    expect(screen.getByText('输入关键词可搜索你的任务')).toBeVisible()
+    expect(screen.getByText('输入关键词可搜索任务')).toBeVisible()
 
     await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '  亚麻  ')
 

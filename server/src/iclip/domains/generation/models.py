@@ -65,7 +65,7 @@ class GenerationJob:
     root_job_id: uuid.UUID | None = None
     """原作：编辑段与合成都指最初那条出片，不管基于哪一版，所以链只有一层；出片自己为空。
 
-    原作用于血缘与没有镜号时的分组（ADR-0002）。在分叉副本里剪继承来的出片，原作照样指源对话里那条。"""
+    原作用于血缘与没有镜号时的分组。在分叉副本里剪继承来的出片，原作照样指源对话里那条。"""
     source_job_id: uuid.UUID | None = None
     """直接来源：编辑段与合成指它的基底成片，帧图编辑指底图那一条，切图指它的宫格；出片、图片
     生成与上传为空。可以指继承来的记录。合成的各段出自哪条记录记在请求的 ``segments`` 里。"""
@@ -79,7 +79,7 @@ class GenerationJob:
     duration_ms: int | None = None
     """产物实际多长，毫秒；只有本系统自己加工、量过的（合成）才有，完成时写入。"""
     content_md5: str | None = None
-    """文件的 MD5（小写十六进制），只有视频上传有；同一个文件的上传按它共用最早那条的地址（ADR-0015）。"""
+    """文件的 MD5（小写十六进制），只有视频上传有；同一个文件的上传按它共用最早那条的地址。"""
 
 
 def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:

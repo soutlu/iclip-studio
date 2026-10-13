@@ -19,7 +19,14 @@ from iclip.domains.references.models import ReferenceVideo, Tags
 from iclip.domains.references.repository import OwnVideoUpload
 from iclip.domains.references.schemas import ReferenceUpdateIn
 from iclip.domains.references.service import ReferenceService
-from tests.helpers.references import DOCUMENT, VIDEO, plant_reference, plant_user, reference_row
+from tests.helpers.references import (
+    DOCUMENT,
+    VIDEO,
+    NoTestVideos,
+    plant_reference,
+    plant_user,
+    reference_row,
+)
 
 
 def principal(user_id: uuid.UUID, role: str = "editor") -> Principal:
@@ -72,6 +79,7 @@ def service(
         own_video_upload=uploads_of(owned or {}),
         queue=queue,
         uploads_available=True,
+        test_videos=NoTestVideos(),
         poll_seconds=0.01,
         wait_seconds=5,
     )
@@ -329,6 +337,7 @@ async def test_two_ensures_of_a_failed_video_put_it_back_in_line_once(engine: As
         own_video_upload=uploads_of({}),
         queue=queue,
         uploads_available=True,
+        test_videos=NoTestVideos(),
         poll_seconds=0.01,
         wait_seconds=5,
     )

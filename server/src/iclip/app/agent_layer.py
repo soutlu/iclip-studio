@@ -1,7 +1,8 @@
 """可热换的 agent 层：模型表、agent 注册表、上下文窗口与标题模型一次装配、整体替换。
 
-config.yaml 的 ``models`` 段、``conversations.title_model`` 与 agents/ 目录下的一切
-（agents.yaml、agent.yaml、instructions.md、SKILL.md）属于这一层，运行期可以重载：
+config.yaml 的 ``models`` 段、``conversations.title_model``、agents/ 目录下的一切
+（agents.yaml、agent.yaml、instructions.md）与 skill 库（SKILL.md 及其 references）
+属于这一层，运行期可以重载：
 目录里的文件一变就重读，SIGHUP 是手动触发的备用入口。
 其余配置段与环境变量在启动期冻结，改了要重启。
 """
@@ -330,6 +331,17 @@ async def watch_and_reload(
         _logger.exception("配置目录监听退出，之后的改动不会自动重载，可发 SIGHUP 手动触发")
 
 
+def watch_dirs(config_file: Path, agents_file: Path, skills_dir: Path) -> tuple[Path, ...]:
+    """热重载要监听的目录：两个声明文件所在目录，加上存在的 skill 库。
+
+    不挂 skill 的部署可以没有 skill 库，而监听不存在的路径会让整个监听退出，所以它缺席
+    就不监听。存在与否在调用时（启动期）判定：之后才建的目录要重启才被监听。
+    """
+
+    dirs = (config_file.parent, agents_file.parent)
+    return (*dirs, skills_dir) if skills_dir.is_dir() else dirs
+
+
 class LiveView[K, V](Mapping[K, V]):
     """始终读当前层某个映射的只读视图；持有它的组件不用知道层被换过。"""
 
@@ -381,4 +393,5 @@ __all__ = [
     "live_context_limits",
     "live_title_generator",
     "watch_and_reload",
+    "watch_dirs",
 ]

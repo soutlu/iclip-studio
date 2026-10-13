@@ -85,7 +85,7 @@ export function ApprovalCard({
 
   return (
     <section
-      aria-label="等你审批"
+      aria-label="等待审批"
       className="mb-2 flex animate-in flex-col rounded-lg border-[0.5px] border-chat-hairline bg-chat-card-bg shadow-[var(--shadow-2)] duration-(--dur-m) ease-(--ease-decel) fade-in slide-in-from-bottom-2"
       ref={cardRef}
     >
@@ -104,7 +104,7 @@ export function ApprovalCard({
       </header>
       {/* display 提供操作说明与可预览的改动，内部参数不进入审批正文。 */}
       {change === undefined ? null : <ChangePreview change={change} />}
-      <p className="px-4 pt-3 text-body text-chat-message-text">该步骤需要你同意后才会继续</p>
+      <p className="px-4 pt-3 text-body text-chat-message-text">该步骤需经同意后继续执行</p>
       <footer className="mt-3 flex items-center justify-between gap-3 border-t-[0.5px] border-chat-hairline px-4 py-3">
         {settled ? (
           <p className="flex items-center gap-1 text-body-sm text-chat-muted-text">

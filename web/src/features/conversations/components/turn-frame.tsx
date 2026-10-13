@@ -1,12 +1,17 @@
 /** 单块分派由普通轮次与活动组共用，避免两者循环依赖。 */
 
 import { useEffect, useRef, useState } from 'react'
-import type { TranscriptFrame, TranscriptInteraction } from '@/shared/transcript/vendor'
+import type {
+  TranscriptFrame,
+  TranscriptInteraction,
+  TranscriptTask,
+} from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useCopyFeedback } from '@/shared/ui/copy-feedback'
 import { Markdown } from '@/shared/ui/markdown'
 import { DisclosureBody, DisclosureChevron } from './disclosure'
+import { TaskNoticeBubble } from './task-notice-bubble'
 import { Indented, RowIcon, ToolLine } from './tool-line'
 import { UserBubble } from './user-bubble'
 
@@ -15,21 +20,33 @@ type TurnFrameProps = {
   /** 未结束轮次的最后一块，用于思考计时与动效。 */
   live: boolean
   interactions: ReadonlyMap<string, TranscriptInteraction>
+  /** 后台工具任务，按 taskId（即发起调用的 toolCallId）查。 */
+  toolTasks: ReadonlyMap<string, TranscriptTask>
 }
 
-export function TurnFrame({ frame, interactions, live }: TurnFrameProps) {
+export function TurnFrame({ frame, interactions, live, toolTasks }: TurnFrameProps) {
   switch (frame.kind) {
     case 'text':
-      return frame.role === 'user' ? (
+      if (frame.role === 'assistant') {
+        // 助手正文不加气泡，行距比共用排版松一档，长段中文读着不挤。
+        return <Markdown className="leading-[1.75]" text={frame.text} />
+      }
+      // 带 taskId 的 user 块是后台任务的完成通知，不是用户说的话。
+      return frame.taskId === undefined ? (
         <UserBubble content={frame.content} />
       ) : (
-        // 助手正文不加气泡，行距比共用排版松一档，长段中文读着不挤。
-        <Markdown className="leading-[1.75]" text={frame.text} />
+        <TaskNoticeBubble task={toolTasks.get(frame.taskId)} text={frame.text} />
       )
     case 'thinking':
       return <ThinkingBlock live={live} text={frame.text} />
     case 'tool':
-      return <ToolLine frame={frame} interactions={interactions} />
+      return (
+        <ToolLine
+          backgrounded={toolTasks.has(frame.toolCallId)}
+          frame={frame}
+          interactions={interactions}
+        />
+      )
     case 'notice':
       return frame.level === 'error' ? (
         <ErrorNotice message={frame.message} />

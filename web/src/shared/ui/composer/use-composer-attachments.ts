@@ -36,8 +36,8 @@ export type ComposerAttachment = {
 const PROGRESS_WRITE_MS = 120
 
 const UNSUPPORTED: Record<ComposerAccept, string> = {
-  image: '只能添加图片',
-  media: '只能添加图片或视频附件',
+  image: '该文件不是图片，无法添加；请选择图片',
+  media: '该文件不是图片或视频，无法添加；请选择图片或视频',
 }
 
 /** 这种媒体收不收。 */

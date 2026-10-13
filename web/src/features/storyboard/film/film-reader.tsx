@@ -3,13 +3,15 @@
  * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
  * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
  * 出片、换图、生图都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅照文件，只显示。
- * 生成的图不会自动用上：生成卡或编辑器里点「选用这张」才写进运行文件。出片栏的状态行提醒这组挂的生成图里哪几张还没图。
+ * 生成的图不会自动用上：生成卡或编辑器里点「选用这张」才写进运行文件。这组参考图列表里有没选用的就不能出片，
+ * 出片栏的状态行写缺哪几张。顶栏「复制完整提示词」复制后端拼好的这组正文（`group.prompt`）。
  * 在用或生成过的那张能开图片编辑器（`FilmImageEdit`），编辑与重新生成的结果在舞台上挂「有新结果」，点开就是那条。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
+import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Button } from '@/shared/ui/button'
 import {
   DialogBody,
@@ -48,7 +50,7 @@ import {
 import {
   contentOfFrame,
   filmGroupSummary,
-  filmGroupText,
+  missingFramesText,
   resolveFilmSelection,
   segmentFrames,
 } from './film-content'
@@ -69,6 +71,9 @@ type ReaderSearch = {
 /** 出片闸门按组号记上传；换图不属于哪一组，用组号从 1 起之外的 0。 */
 const REPLACE_UPLOAD = 0
 
+/** 文案列里往字里插入的图在上传：同样不属于哪一组，用 -1。 */
+const TEXT_UPLOAD = -1
+
 export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
@@ -81,6 +86,8 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const generations = useShotGenerations(conversationId)
   const imageJobs = useFrameImageJobs(conversationId)
   const gate = useGenerationGate()
+  const { data: user } = useUser()
+  const uploads = hasPermission(user, PERMISSION.uploadsWrite)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const search: ReaderSearch = useSearch({ strict: false })
@@ -117,7 +124,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   /** 先存改了的字，按存好的那一版发；没存下就不发。 */
   const savedFilm = async () => {
     const saved = await draft.saveNow()
-    if (saved === null) throw new UserFacingError('修改尚未保存，请先处理后再继续')
+    if (saved === null) throw new UserFacingError('修改尚未保存，无法继续；请处理保存问题后重试')
     return saved
   }
   /** 给一张图换地址（null 是取消生成图的选用）：先存改了的字，按存好的那一版换，答复的整页直接放进缓存。 */
@@ -147,7 +154,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     const current = latest?.film.groups
       .flatMap((item) => item.frames)
       .find((item) => item.node === node)?.url
-    if (current !== previous) throw new UserFacingError('该图片刚被更换，请确认后再操作')
+    if (current !== previous) throw new UserFacingError('该图片已被更换，无法继续；请确认后重试')
     await applyImage(node, url)
   }
   // 有图在换时先别出片：发出去的参考图要是换好的那张。换图一次只有一张、与组无关，记在一个不会是组号的键上。
@@ -158,6 +165,25 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     reportUploading(replace.busy)
     return () => reportUploading(false)
   }, [replace.busy])
+  // 字里在传的图：哪几个编辑器有图在传；传完之前不出片，传好的图落进字里才会存下。
+  const [textUploads, setTextUploads] = useState<ReadonlySet<string>>(() => new Set())
+  const onTextUploading = useCallback((key: string, busy: boolean) => {
+    setTextUploads((current) => {
+      if (current.has(key) === busy) return current
+      const next = new Set(current)
+      if (busy) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
+  const reportTextUploading = useEffectEvent((busy: boolean) =>
+    gate.onUploadingChange(TEXT_UPLOAD, busy),
+  )
+  const textUploading = textUploads.size > 0
+  useEffect(() => {
+    reportTextUploading(textUploading)
+    return () => reportTextUploading(false)
+  }, [textUploading])
   const generateImage = async (target: FilmFrame) => {
     setCardAction({ kind: 'generate', node: target.node })
     try {
@@ -202,6 +228,34 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const goShot = (next: number) => go({ shot: next })
   useShotArrowKeys(root, { onGo: goShot, position, total: groups.length })
 
+  // 正看着的那张图在 `frames` 里挪了位置（选用机位图插进列表、取消选用移出列表，后面的跟着挪）：舞台跟着那张图走，
+  // 不停在原来的位置上换成别的图。只在同一组里跟，换组时位置本来就重来；那张图不在这组了就交给选段的规则落位。
+  const shownRef = useRef<{ group: number; node: string; order: string } | undefined>(undefined)
+  const followShown = useEffectEvent(
+    (groupIndex: number | undefined, node: string | undefined, order: string | undefined) => {
+      const previous = shownRef.current
+      shownRef.current =
+        groupIndex === undefined || node === undefined || order === undefined
+          ? undefined
+          : { group: groupIndex, node, order }
+      if (
+        previous === undefined ||
+        group === undefined ||
+        previous.group !== groupIndex ||
+        previous.order === order ||
+        previous.node === node
+      )
+        return
+      const index = group.frames.findIndex((item) => item.node === previous.node)
+      if (index >= 0) go({ frame: index + 1 })
+    },
+  )
+  const frameOrder = group?.frames.map((item) => item.node).join('\n')
+  useEffect(
+    () => followShown(group?.index, frame?.node, frameOrder),
+    [group?.index, frame?.node, frameOrder],
+  )
+
   if (view === undefined) {
     return (
       <ReaderNotice
@@ -227,15 +281,24 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     search.video === undefined
       ? undefined
       : generations.data?.find((job) => job.id === search.video)
-  // 提交途中按钮自己写着「提交中」，不另说原因。
+  // 有没存下的改动时（保存中、保存失败、版本冲突）顶栏与各段的复制都不可用：拷走的要是存好的字，草稿里新插入的图还是
+  // 私用区的记号。几种情况同一句原因。
+  const copyBlocked =
+    draft.hasUnsavedChanges || draft.state.kind === 'saving' ? '修改尚未保存，无法复制' : undefined
+  // 提交途中按钮自己写着「提交中」，不另说原因。参考图有没选用的一直挡着（后端也会拒），排在保存、上传这些暂态之前，
+  // 免得每次自动保存时原因从状态行上消失；只读与冲突、保存失败照旧先说。
+  const missingBlocker = missingFramesText(group)
+  const baseBlocker = generationBlockerOf({
+    modelsStatus: video.modelsStatus,
+    readOnly,
+    saveState: draft.state.kind,
+    uploading: gate.uploading,
+  })
   const generateBlocker = gate.preparing
     ? undefined
-    : generationBlockerOf({
-        modelsStatus: video.modelsStatus,
-        readOnly,
-        saveState: draft.state.kind,
-        uploading: gate.uploading,
-      })
+    : missingBlocker !== undefined && (baseBlocker === undefined || baseBlocker.transient)
+      ? { reason: missingBlocker, transient: false }
+      : baseBlocker
   const generateNotice = generationNoticeOf({
     aspectRatio: group.aspectRatio,
     model: video.options.model,
@@ -248,7 +311,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
       if (saved === null || !mounted()) return
       const current = saved.groups.find((item) => item.video === group.video)
       if (current === undefined) {
-        video.reportError(group.index, '该组已不在分镜中，请刷新后再出片')
+        video.reportError(group.index, '该组已不在分镜中，无法出片；请刷新分镜')
         return
       }
       await video.submit(group.index, (choice) =>
@@ -265,7 +328,14 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     <>
       <div className="storyboard-workbench" ref={setRoot}>
         <StoryboardToolbar
-          copy={{ done: '已复制本组文字', label: '复制这组的字', text: filmGroupText(group) }}
+          // 后端拼好的正文，与这组出片时发的逐字相同；有没存下的改动时（保存中、保存失败、版本冲突）它还是旧的，
+          // 存好之前不让复制，几种情况同一句原因。
+          copy={{
+            blocked: copyBlocked,
+            done: '已复制完整提示词',
+            label: '复制完整提示词',
+            text: group.prompt,
+          }}
           groups={groups.map(filmGroupSummary)}
           onGoShot={goShot}
           position={position}
@@ -346,14 +416,20 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
             <div aria-hidden className="storyboard-divider" />
             <div className="storyboard-script">
               <FilmScript
+                copyBlocked={copyBlocked}
                 frame={selectedTake === undefined ? selection.frame : undefined}
                 group={group}
                 onEdit={draft.update}
+                onPickFrame={(position) =>
+                  select(contentOfFrame(group, selection.contentId, position), position)
+                }
                 onPreview={(image) => setMedia({ kind: 'image', ...image })}
                 onSelect={select}
+                onUploadingChange={onTextUploading}
                 readOnly={readOnly}
                 // 放成片时文案列不标选中：点哪段（包括原来选中的那段）都回到图。
                 selectedId={selectedTake === undefined ? selection.contentId : undefined}
+                uploads={uploads}
               />
               <TakesTray
                 error={
@@ -447,18 +523,18 @@ function FilmConflictDialog({
   const names = (items: typeof conflicts) => items.map((conflict) => conflict.label).join('、')
   const note =
     gone.length === 0
-      ? '选择「留我的」保留你的修改，或选择「用最新的」采用最新版本；无冲突的修改将保留'
+      ? '选择「保留我的修改」可保留当前修改，选择「采用最新版本」可改用最新版本；无冲突的修改将保留'
       : gone.length === conflicts.length
-        ? '以上各段已不在最新的分镜中，只能选择「用最新的」'
-        : `${names(gone)}已不在最新的分镜中，选择「留我的」只保留仍存在的段`
+        ? '以上各段已不在最新的分镜中，仅可选择「采用最新版本」'
+        : `${names(gone)}已不在最新的分镜中，选择「保留我的修改」仅保留仍存在的段`
   return (
     <DialogRoot
       onOpenChange={(open) => !open && resolve('theirs')}
       open={state.kind === 'conflict'}
     >
-      <DialogSurface aria-label="分镜有别的改动">
-        <DialogHeader closeLabel="关闭（用最新的）" title="分镜有别的改动">
-          {names(conflicts)}在你编辑期间已被修改
+      <DialogSurface aria-label="分镜版本冲突">
+        <DialogHeader closeLabel="关闭（采用最新版本）" title="分镜版本冲突">
+          {names(conflicts)}在编辑期间已被修改
         </DialogHeader>
         <DialogBody>
           <p className="text-body text-on-surface">{note}</p>
@@ -467,14 +543,14 @@ function FilmConflictDialog({
           <span />
           <span className="flex gap-2">
             <Button onClick={() => resolve('theirs')} size="md" variant="ghost">
-              用最新的
+              采用最新版本
             </Button>
             <Button
               disabled={gone.length === conflicts.length}
               onClick={() => resolve('mine')}
               size="md"
             >
-              留我的
+              保留我的修改
             </Button>
           </span>
         </DialogFooter>

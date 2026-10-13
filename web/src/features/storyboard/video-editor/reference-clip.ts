@@ -1,4 +1,4 @@
-/** 编辑器读视频文件的地方（ADR-0010）：读关键帧表给时间线分段，解码原声轨给波形，在关键帧处把
+/** 编辑器读视频文件的地方：读关键帧表给时间线分段，解码原声轨给波形，在关键帧处把
  * AI 改的那一段重封装成参考片段（不重编码）。只认成片的容器：MP4 与同族的 MOV。
  *
  * 本模块静态引入 mediabunny，只经动态 `import()` 加载，打包时与 mediabunny 用到的部分一起摇成一个
@@ -67,7 +67,7 @@ export const readKeyframes = async (url: string): Promise<KeyframeIndex> => {
       duration: roundToMs(await input.computeDuration()),
     }
   } catch (cause) {
-    throw asUserFacing(cause, '无法读取该视频的关键帧，请稍后重试')
+    throw asUserFacing(cause, '该视频的关键帧读取失败，请稍后重试')
   } finally {
     input.dispose()
   }
@@ -107,7 +107,7 @@ export const readAudioPeaks = async (url: string): Promise<AudioPeaks | null> =>
       peaks: loudest === 0 ? filled : filled.map((peak) => peak / loudest),
     }
   } catch (cause) {
-    throw asUserFacing(cause, '无法读取原声，请稍后重试')
+    throw asUserFacing(cause, '原声读取失败，请稍后重试')
   } finally {
     input.dispose()
   }

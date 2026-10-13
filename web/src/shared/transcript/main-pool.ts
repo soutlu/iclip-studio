@@ -1,6 +1,6 @@
 /**
  * 主会话流的读取池，照 Kimi 的 TFe：先读基线、再带水位订阅；断档时重读基线再重订；常驻最近几段，切回来不用重读。
- * 水位带 epoch（ADR-0004 第 2 条），订阅与续订把它一起带上。
+ * 水位带 epoch，订阅与续订把它一起带上。
  */
 
 import { errorMessageOf } from '@/shared/api/client'
@@ -27,7 +27,7 @@ const MAIN_PAGE_SIZE = 10
 /** refresh 前后本地发送状态还在变时，最多重读几次（Kimi 同为 3）。 */
 const MAX_REFRESH_PASSES = 3
 
-const GONE_MESSAGE = '该对话不存在或不属于你，无法查看'
+const GONE_MESSAGE = '该对话不存在或不属于当前账号，无法查看'
 
 interface PendingReset {
   snapshot: AgentTranscriptSnapshot

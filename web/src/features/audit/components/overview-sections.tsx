@@ -59,12 +59,12 @@ export function QualitySection({
   return (
     <Section
       id={id}
-      info="仅统计成功生成且带镜号的出片，失败的不计费、不计入；一个镜头指一段对话中的一个镜号，从未成功生成的镜头不计入。"
+      info="仅统计成功生成且带镜号的出片，失败的不计费、不计入；一个镜头指一段对话中的一个镜号，从未成功生成的镜头不计入"
       title="出片质量"
     >
       <div className="grid gap-3 md:grid-cols-2">
         <Panel>
-          <MiniHead info="每成功生成一条计为 1 次，失败的不计入" title="每个镜出了几次" />
+          <MiniHead info="每成功生成一条计为 1 次，失败的不计入" title="每镜出片次数" />
           <p className="mt-0.5 mb-2.5 text-body text-on-surface-variant">
             {summary.totalShots === 0 ? (
               '所选时间范围内暂无新镜头'
@@ -82,7 +82,7 @@ export function QualitySection({
           <AttemptBars summary={summary} />
         </Panel>
         <Panel>
-          <MiniHead title="出片次数都花在哪" />
+          <MiniHead title="出片次数分布" />
           <ReworkShare nameOf={nameOf} overview={overview} summary={summary} />
         </Panel>
       </div>
@@ -161,7 +161,7 @@ function ReworkShare({
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-label text-on-surface-muted sm:ml-19">
         {ATTEMPT_BINS.map((bin) => (
           <LegendItem key={bin.name} marks={<Mark color={bin.color} kind="swatch" />}>
-            出了 {bin.name}
+            出片 {bin.name}
           </LegendItem>
         ))}
       </div>
@@ -375,7 +375,7 @@ export function CostSection({ id, overview }: SectionProps) {
   return (
     <Section
       id={id}
-      info="视频按成功出片的秒数统计，重新生成的也计入、失败的不计入；token 取自用量台账，标题生成、压缩摘要、视频理解不计入。"
+      info="视频按成功出片的秒数统计，重新生成的也计入、失败的不计入；token 取自用量台账，标题生成、压缩摘要、视频理解不计入"
       title="模型消耗"
     >
       <div className="grid gap-3 md:grid-cols-3">
@@ -462,7 +462,7 @@ export function CostSection({ id, overview }: SectionProps) {
                 title={deltaTitle}
               />
             }
-            info="缓存读取 ÷（输入 + 缓存读取 + 缓存写入），越高越省。"
+            info="缓存读取 ÷（输入 + 缓存读取 + 缓存写入），越高越节省成本"
             title="缓存命中率"
           />
           <div className="mt-2 flex items-center gap-4.5">

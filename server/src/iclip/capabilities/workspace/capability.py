@@ -272,10 +272,11 @@ class WorkspaceToolset(FunctionToolset[AgentDepsT]):
         super().__init__(id=CAPABILITY_ID)
         self._capability = capability
         self.add_function(self.read_file, name="read_file")
-        self.add_function(self.write_file, name="write_file")
-        self.add_function(self.edit_file, name="edit_file")
-        self.add_function(self.delete_file, name="delete_file")
-        self.add_function(self.move_file, name="move_file")
+        # 改文件的工具依次执行：同一回复里改同一文件的多个调用并行时会互相冲突版本号。
+        self.add_function(self.write_file, name="write_file", sequential=True)
+        self.add_function(self.edit_file, name="edit_file", sequential=True)
+        self.add_function(self.delete_file, name="delete_file", sequential=True)
+        self.add_function(self.move_file, name="move_file", sequential=True)
         self.add_function(self.list_files, name="list_files")
         self.add_function(self.search_files, name="search_files")
         self.add_tool(

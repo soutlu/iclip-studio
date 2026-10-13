@@ -94,7 +94,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
     return <ReaderNotice text={errorMessageOf(file.error, '读取分镜失败')} />
   const shot = shots[position - 1]
   if (document === null || shot === undefined) {
-    return <ReaderNotice text="文件格式不正确，无法读取镜头组" />
+    return <ReaderNotice text="文件格式不正确，镜头组读取失败" />
   }
 
   const videoEditRoot =
@@ -124,7 +124,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       if (saved === null || !mounted()) return
       const current = saved.shots.find((item) => item.index === shot.index)
       if (current === undefined) {
-        video.reportError(shot.index, '无法读取已保存的镜头组，请重新打开后生成')
+        video.reportError(shot.index, '已保存的镜头组读取失败，请重新打开后生成')
         return
       }
       await video.submit(current.index, (choice) =>

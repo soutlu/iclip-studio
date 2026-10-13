@@ -69,7 +69,7 @@ describe('PromptEditor', () => {
     )
     const editor = screen.getByRole('textbox', { name: '镜头 1 的描述' })
     expect(editor).toHaveTextContent('她走向镜头 @1，停下 @2。')
-    const chip = screen.getByRole('button', { name: '看第 2 帧' })
+    const chip = screen.getByRole('button', { name: '查看第 2 帧' })
     expect(chip.querySelector('img')).toHaveAttribute('src', frames[1])
     fireEvent.click(chip)
     expect(selected).toBe(2)
@@ -122,7 +122,7 @@ describe('PromptEditor', () => {
     await userEvent.keyboard('{Control>}a{/Control}')
     pasteTextIntoComposer(editor, pasted)
     expect(changed).toBe(pasted)
-    expect(screen.getByRole('button', { name: '看第 2 帧' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '查看第 2 帧' })).toBeVisible()
   })
 
   it.each(['{Enter}', ' '])('帧标记可通过键盘 %s 激活', async (key) => {
@@ -138,7 +138,7 @@ describe('PromptEditor', () => {
         value={value}
       />,
     )
-    const chip = screen.getByRole('button', { name: '看第 2 帧' })
+    const chip = screen.getByRole('button', { name: '查看第 2 帧' })
     chip.focus()
     await userEvent.keyboard(key)
     expect(selected).toBe(2)

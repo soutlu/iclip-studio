@@ -313,7 +313,7 @@ describe('Composer 扩展点', () => {
     pasteFilesIntoComposer(editor(), [videoFile()])
     fireEvent.click(pillHost('样片.mp4'))
     const card = await screen.findByRole('dialog', { name: '样片.mp4上传失败' })
-    expect(within(card).getByText('只能添加图片')).toBeInTheDocument()
+    expect(within(card).getByText('该文件不是图片，无法添加；请选择图片')).toBeInTheDocument()
 
     pasteTextIntoComposer(
       editor(),

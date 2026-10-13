@@ -125,7 +125,7 @@ describe('图片编辑结果替换当前帧', () => {
     pasteTextIntoComposer(description, '同时修改的描述')
     await userEvent.click(within(page).getByRole('button', { name: '编辑图片' }))
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = within(editor).getByRole('group', { name: '该帧的图片' })
     await userEvent.click(await resultSlot(strip, 0))
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
     try {
@@ -178,7 +178,7 @@ describe('图片编辑结果替换当前帧', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     await userEvent.click(within(page).getByRole('button', { name: '编辑图片' }))
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = within(editor).getByRole('group', { name: '该帧的图片' })
     await userEvent.click(await resultSlot(strip, 0))
     const externalUrl = 'https://example.com/external.png'
     persisted = {
@@ -225,7 +225,7 @@ describe('图片编辑结果替换当前帧', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     await userEvent.click(within(page).getByRole('button', { name: '编辑图片' }))
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = within(editor).getByRole('group', { name: '该帧的图片' })
     await userEvent.click(await resultSlot(strip, 0))
 
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
@@ -270,7 +270,7 @@ describe('图片编辑结果替换当前帧', () => {
     const page = await screen.findByRole('region', { name: '镜头组 1' })
     await userEvent.click(within(page).getByRole('button', { name: '编辑图片' }))
     const editor = await screen.findByRole('dialog', { name: /^编辑图片/ })
-    const strip = within(editor).getByRole('group', { name: '这一帧的图片' })
+    const strip = within(editor).getByRole('group', { name: '该帧的图片' })
     await userEvent.click(await resultSlot(strip, 0))
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
     await within(editor).findByText('已替换')

@@ -2,7 +2,7 @@
 
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { useTakeElapsed } from './use-take-elapsed'
+import { useElapsed } from '@/shared/ui/media-preview'
 
 type RunningElapsedProps = {
   /** 提交时刻（ISO）。 */
@@ -12,7 +12,7 @@ type RunningElapsedProps = {
 }
 
 export function RunningElapsed({ since, iconClassName }: RunningElapsedProps) {
-  const elapsed = useTakeElapsed(since)
+  const elapsed = useElapsed(since)
   return (
     <>
       <Icon

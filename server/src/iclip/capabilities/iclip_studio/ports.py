@@ -99,17 +99,13 @@ class NodeImageJob:
 
 
 class NodeImages(Protocol):
-    """生图节点与生成记录之间的往来：出图、查进度、认一个地址。"""
+    """生图节点与生成记录之间的往来：出图、查进度。"""
 
     async def submit(self, principal: Principal, request: NodeImageRequest) -> NodeImageJob:
         """受理生成并返回任务记录；实际出图由后台执行。被拒抛 ``InvalidNodeImageRequest``。"""
         ...
 
     async def get(self, principal: Principal, job_id: uuid.UUID) -> NodeImageJob: ...
-
-    async def belongs(self, principal: Principal, conversation_id: str, url: str) -> bool:
-        """这个地址是不是这段对话里一张已完成的图片：生成、编辑或切出来的，含继承来的。"""
-        ...
 
 
 __all__ = [

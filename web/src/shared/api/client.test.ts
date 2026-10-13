@@ -60,26 +60,26 @@ describe('apiFetch 失败形态', () => {
       name: '合同外的键',
       respond: () => HttpResponse.json({ message: 'upstream exploded' }, { status: 500 }),
       status: 500,
-      message: `${FALLBACK}（500）`,
+      message: FALLBACK,
     },
     {
       name: '非字符串的 detail',
       respond: () =>
         HttpResponse.json({ detail: [{ loc: ['body'], msg: 'field required' }] }, { status: 422 }),
       status: 422,
-      message: `${FALLBACK}（422）`,
+      message: FALLBACK,
     },
     {
       name: '纯文本正文',
       respond: () => new HttpResponse('Bad Gateway: upstream timed out', { status: 502 }),
       status: 502,
-      message: `${FALLBACK}（502）`,
+      message: FALLBACK,
     },
     {
       name: '网关 HTML 错误页',
       respond: () => new HttpResponse('<!doctype html><title>502</title>', { status: 502 }),
       status: 502,
-      message: `${FALLBACK}（502）`,
+      message: FALLBACK,
     },
   ])('HTTP 失败遇到$name时保留状态码，文案为 $message', async ({ respond, status, message }) => {
     server.use(http.get('*/api/probe', respond))

@@ -11,7 +11,7 @@ export interface TranscriptPage {
   snapshot: AgentTranscriptSnapshot
   /** 这一页对应的实时流水位，订阅时连同 epoch 一起带上。 */
   seq: number
-  /** 水位所属的实时流（ADR-0004）。 */
+  /** 水位所属的实时流。 */
   epoch: string
   /** 当前页之前是否还有更早的轮次。 */
   hasMoreOlder: boolean

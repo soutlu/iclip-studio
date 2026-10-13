@@ -30,7 +30,7 @@ export function FrameChip({ n }: { n: number }) {
   const pick = () => chips?.onPick(n)
   return (
     <span
-      aria-label={`看第 ${n} 帧`}
+      aria-label={`查看第 ${n} 帧`}
       className="frame-chip cursor-pointer select-none"
       data-highlighted={chips?.highlighted === n ? '' : undefined}
       onClick={(event) => {

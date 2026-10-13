@@ -15,7 +15,7 @@ ENV UV_PYTHON_DOWNLOADS=never \
     PATH=/app/.venv/bin:$PATH
 
 # alembic.ini 与 scripts.admin 按相对路径解析，工作目录必须是 server 根；
-# configs/、agents/ 不进镜像，由部署把两个目录挂到 /app 下。
+# configs/、agents/、skills/ 不进镜像，由部署把三个目录挂到 /app 下。
 WORKDIR /app
 
 # 先建运行用户、以它的身份装依赖和拷源码，文件生来就归它所有。不要在最后 chown -R /app：

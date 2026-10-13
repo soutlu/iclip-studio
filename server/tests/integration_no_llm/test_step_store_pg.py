@@ -29,9 +29,10 @@ from pydantic_ai_harness.step_persistence import (
 )
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.harness.step_store_pg import PgMediaStore, PgStepStore
+from iclip.platform.db.engine import build_engine
 from tests.helpers.pg import truncate_clean
 
 T0 = datetime(2026, 8, 21, 10, 0, 0, tzinfo=UTC)
@@ -39,7 +40,7 @@ T0 = datetime(2026, 8, 21, 10, 0, 0, tzinfo=UTC)
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await truncate_clean(
             conn,

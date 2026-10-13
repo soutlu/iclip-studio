@@ -1,4 +1,4 @@
-/** 文案列的列头与时长胶囊，分镜页与制作页共用。列头写镜头数与总长，带「收成摘要」开关和按时长切分的镜头条
+/** 文案列的列头与时长胶囊，分镜页与制作页共用。列头写镜头数与总长，带「收起为摘要」开关和按时长切分的镜头条
  * （色段与左轨短色签同取镜头的点缀色），点一段跳到那个镜头。版式见 storyboard.css 的「文案列」一节。 */
 
 import { Icon } from '@/shared/icons'
@@ -42,7 +42,7 @@ export function ScriptHead({
           size="md"
           variant="ghost"
         >
-          {compact ? '显示全文' : '收成摘要'}
+          {compact ? '显示全文' : '收起为摘要'}
         </Button>
       </div>
       <div aria-label="镜头时间条" className="storyboard-timeline" role="group">

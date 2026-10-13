@@ -18,13 +18,14 @@ from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
 from pydantic_ai import models as pydantic_ai_models
 from pydantic_ai.models.test import TestModel
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
 from iclip.app.bootstrap import build_app
 from iclip.config import ResolvedAgent
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.sso import SsoVerifier
+from iclip.platform.db.engine import build_engine
 from tests.helpers.app import TEST_MODEL_NAME, make_client, make_runtime_config
 from tests.helpers.pg import connected, reset_database
 
@@ -98,7 +99,7 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
     """清空测试表后给出引擎，供直接装配仓储、报表与运行时的测试使用。"""
 
     await _reset(migrated_pg)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     try:
         yield engine
     finally:
@@ -127,7 +128,7 @@ async def app(
     models: dict[str, TestModel],
 ) -> AsyncGenerator[FastAPI]:
     await _reset(migrated_pg)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     try:
         yield build_app(
             make_runtime_config(), agents=agent_declarations, engine=engine, models=models
@@ -157,7 +158,7 @@ def ws_agent_app(
     """
 
     asyncio.run(_reset(migrated_pg))
-    engine = create_async_engine(migrated_pg, poolclass=NullPool)
+    engine = build_engine(migrated_pg, poolclass=NullPool)
     yield build_app(
         make_runtime_config(cors_allow_origins=cors_allow_origins),
         agents=agent_declarations,
@@ -214,7 +215,7 @@ async def sso_app(
         else None
     )
     await _reset(migrated_pg)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     try:
         yield build_app(make_runtime_config(), engine=engine, sso_verifier=verifier, pms_client=pms)
     finally:

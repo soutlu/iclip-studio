@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
+from typing import Literal
 
+import pytest
+from pydantic_ai import Agent, Tool
 from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     CompactionPart,
+    ModelMessage,
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
+from iclip.harness.background import BackgroundOutcome, BackgroundTools
 from iclip.harness.job_status import JobStatus
 from iclip.harness.transcript.from_messages import (
     ORPHAN_TOOL_ERROR,
@@ -25,6 +33,8 @@ from iclip.harness.transcript.from_messages import (
     SteeredPrompt,
     TurnState,
     approvals_from_messages,
+    background_notice,
+    card_title,
     drop_last_turn,
     run_ids_from_messages,
     run_state_from_events,
@@ -34,12 +44,14 @@ from iclip.harness.transcript.from_messages import (
     turns_from_messages,
 )
 from iclip.harness.transcript.prompt_media import model_prompt
+from iclip.platform.transcript.display import FileIoDisplay, GenericDisplay, ToolDisplayRegistry
 from iclip.platform.transcript.ops import (
     AttachmentSource,
     ImageContent,
     StepUsage,
     TextContent,
     TextFrame,
+    ThinkingFrame,
     ToolFrame,
     TranscriptTurn,
     VideoContent,
@@ -100,6 +112,29 @@ def test_trailing_message_without_a_run_id_stays_in_the_same_turn() -> None:
     assert card.frame_id == "t1.1.c1"
     assert isinstance(card, ToolFrame)
     assert card.state == "error"
+
+
+@pytest.mark.parametrize(
+    ("part", "shown"),
+    [
+        (
+            ThinkingPart(content="思考摘要", provider_details={"raw_content": ["原始思维链"]}),
+            "思考摘要",
+        ),
+        (ThinkingPart(content="", signature="enc", provider_name="openai"), ""),
+    ],
+    ids=["content-over-raw-content", "signature-only"],
+)
+def test_thinking_frame_prefers_content_and_is_empty_without_any_text(
+    part: ThinkingPart, shown: str
+) -> None:
+    """content 有字就用 content；只有加密签名的思考块显示为空。"""
+
+    turns = turns_from_messages([_ask("想一想"), _reply(part)])
+
+    frame = turns[0].steps[0].frames[0]
+    assert isinstance(frame, ThinkingFrame)
+    assert frame.text == shown
 
 
 def test_two_runs_become_two_turns_in_time_order() -> None:
@@ -670,3 +705,182 @@ def test_a_boundary_merged_into_a_response_still_shows_its_notice() -> None:
     assert [step.step_id for step in turns[0].steps] == ["t1.1", "t1.2"]
     assert [frame.frame_id for frame in turns[0].steps[0].frames] == ["t1.1.f1"]
     assert [frame.frame_id for frame in turns[0].steps[1].frames] == ["t1.2.compaction", "t1.2.f1"]
+
+
+# --- 后台工具 -----------------------------------------------------------------
+
+BREAKDOWN_DISPLAY = ToolDisplayRegistry.merged(
+    {"breakdown_video": lambda _args: GenericDisplay(summary="拆解视频", detail="ugg-ref.mp4")}
+)
+
+
+def _background_card(display: object) -> ToolFrame:
+    return ToolFrame(
+        frame_id="t1.1.call_bg",
+        tool_call_id="call_bg",
+        name="breakdown_video",
+        state="done",
+        display=display,
+    )
+
+
+@pytest.mark.parametrize(
+    ("display", "title"),
+    [
+        (GenericDisplay(summary="拆解视频", detail="ugg-ref.mp4"), "拆解视频 ugg-ref.mp4"),
+        (GenericDisplay(summary="检查工程"), "检查工程"),
+        (FileIoDisplay(operation="read", path="brief.md"), "breakdown_video"),
+        (None, "breakdown_video"),
+    ],
+    ids=["summary-and-detail", "summary-only", "not-generic", "no-display"],
+)
+def test_the_card_title_joins_summary_and_detail_or_falls_back_to_the_tool_name(
+    display: object, title: str
+) -> None:
+    assert card_title(_background_card(display)) == title
+
+
+@pytest.mark.parametrize(
+    ("state", "text"),
+    [("done", "已拆解视频 ugg-ref.mp4"), ("error", "拆解视频 ugg-ref.mp4 失败")],
+)
+def test_a_background_notice_says_done_or_failed_and_points_at_its_task(
+    state: Literal["done", "error"], text: str
+) -> None:
+    card = _background_card(GenericDisplay(summary="拆解视频", detail="ugg-ref.mp4"))
+    outcome = BackgroundOutcome("call_bg", "breakdown_video", state, "工具原文")
+
+    notice = background_notice(card, outcome, frame_id="t1.2.f2")
+
+    assert notice == TextFrame(
+        frame_id="t1.2.f2",
+        role="user",
+        text=text,
+        content=(TextContent(text=text),),
+        task_id="call_bg",
+    )
+
+
+async def _background_run() -> list[ModelMessage]:
+    """真跑一次后台工具：回执后模型先答一句，结果递入后再答一句。消息形状与 harness 实际写的一致。"""
+
+    async def breakdown_video() -> str:
+        await asyncio.sleep(0.01)
+        return "拆好了"
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("breakdown_video", {}, tool_call_id="call_bg")]
+            )
+        return ModelResponse(parts=[TextPart("好")])
+
+    agent = Agent(
+        FunctionModel(script),
+        tools=[Tool(breakdown_video, name="breakdown_video", metadata={"background": True})],
+        capabilities=[BackgroundTools()],
+    )
+    return (await agent.run("拆一下", run_id=RUN)).all_messages()
+
+
+def _outcome_at(messages: list[ModelMessage]) -> int:
+    return next(
+        index
+        for index, message in enumerate(messages)
+        if isinstance(message, ModelRequest)
+        and any(isinstance(part, UserPromptPart) for part in message.parts)
+        and index > 0
+    )
+
+
+@pytest.mark.parametrize("steer_first", [True, False])
+async def test_a_steer_and_a_background_outcome_in_one_request_keep_their_part_order(
+    steer_first: bool,
+) -> None:
+    """同一次请求里递入的插话与后台结果各成一块，按 part 顺序挂在末步。"""
+
+    messages = await _background_run()
+    at = _outcome_at(messages)
+    request = messages[at]
+    assert isinstance(request, ModelRequest)
+    (outcome,) = request.parts
+    steer = UserPromptPart(content="插一句")
+    parts = [steer, outcome] if steer_first else [outcome, steer]
+    messages[at] = ModelRequest(parts=parts, run_id=RUN, timestamp=request.timestamp)
+
+    (turn,) = turns_from_messages(
+        messages, turn_states={RUN: "completed"}, display=BREAKDOWN_DISPLAY
+    )
+
+    users = [
+        (frame.frame_id, frame.text, frame.task_id)
+        for frame in turn.steps[1].frames
+        if isinstance(frame, TextFrame) and frame.role == "user"
+    ]
+    blocks = [("插一句", None), ("已拆解视频 ugg-ref.mp4", "call_bg")]
+    if not steer_first:
+        blocks.reverse()
+    assert users == [
+        (f"t1.2.f{ordinal}", text, task_id)
+        for ordinal, (text, task_id) in enumerate(blocks, start=2)
+    ]
+    card = turn.steps[0].frames[0]
+    assert isinstance(card, ToolFrame)
+    assert card.state == "done", "回执即结卡，结果不改原卡"
+
+
+@pytest.mark.parametrize(
+    ("run_state", "paused", "task_state"),
+    [
+        ("cancelled", False, "killed"),
+        ("completed", True, "killed"),
+        ("failed", False, "failed"),
+        ("completed", False, "failed"),
+    ],
+    ids=["stopped", "approval-pause", "failed-or-crashed", "ended-without-outcome"],
+)
+async def test_a_background_task_without_an_outcome_ends_by_how_its_run_ended(
+    run_state: TurnState, paused: bool, task_state: str
+) -> None:
+    """回执之后没有结果、运行已不在：被停与审批暂停是 killed，其余 failed；卡收成中断。"""
+
+    messages = await _background_run()
+    kept = messages[: _outcome_at(messages)]
+    if paused:
+        # 审批暂停的运行以一次没答复的调用收尾。
+        kept.append(_reply(ToolCallPart(tool_name="write_file", args={}, tool_call_id="c9")))
+
+    (task,) = tasks_from_messages(
+        kept,
+        subagent_of_call={},
+        child_runs=[],
+        run_states={RUN: run_state},
+        display=BREAKDOWN_DISPLAY,
+    )
+    (turn,) = turns_from_messages(kept, turn_states={RUN: run_state}, display=BREAKDOWN_DISPLAY)
+
+    assert (task.task_id, task.kind, task.detached, task.description) == (
+        "call_bg",
+        "tool",
+        True,
+        "拆解视频 ugg-ref.mp4",
+    )
+    assert (task.state, task.result_summary, task.error) == (task_state, None, None)
+    assert task.ended_at is not None
+    card = turn.steps[0].frames[0]
+    assert isinstance(card, ToolFrame)
+    assert (card.state, card.output, card.error) == ("error", None, ORPHAN_TOOL_ERROR)
+
+
+async def test_a_delivered_background_outcome_completes_its_task() -> None:
+    messages = await _background_run()
+
+    (task,) = tasks_from_messages(
+        messages,
+        subagent_of_call={},
+        child_runs=[],
+        run_states={RUN: "completed"},
+        display=BREAKDOWN_DISPLAY,
+    )
+
+    assert (task.state, task.result_summary, task.error) == ("completed", "拆好了", None)

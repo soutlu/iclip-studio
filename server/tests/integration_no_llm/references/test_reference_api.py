@@ -11,9 +11,9 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.app.bootstrap import build_app
+from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import register_and_login, set_roles_in_db
@@ -45,7 +45,7 @@ async def studio_app(
     for name, value in STUDIO_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
@@ -190,6 +190,24 @@ async def test_a_viewer_reads_but_cannot_upload_or_rerun(
     assert rerun.status_code == 403
 
 
+async def test_without_media_generation_there_is_no_test_video(
+    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+) -> None:
+    """媒体生成没开：试生成的入口不挂，详情里的 ``testVideo`` 为空。"""
+
+    await login_as(http, pg_url, "maya", "editor")
+    upload_id = await upload_video(http, bucket)
+    reference = (await http.post("/references", json={"uploadId": upload_id})).json()
+
+    detail = await http.get(f"/references/{reference['id']}")
+    submitted = await http.post(
+        f"/references/{reference['id']}/test-generations", json={"aspectRatio": "9:16"}
+    )
+
+    assert (detail.status_code, detail.json()["testVideo"]) == (200, None)
+    assert submitted.status_code in (404, 405)
+
+
 async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -199,7 +217,7 @@ async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
         if not name.startswith("OSS_"):
             monkeypatch.setenv(name, value)
     monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
@@ -234,7 +252,7 @@ async def test_without_breakdown_configured_only_reads_are_mounted(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("VIDEO_UNDERSTANDING_URL", raising=False)
-    engine = create_async_engine(migrated_pg)
+    engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     try:

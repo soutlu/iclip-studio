@@ -160,16 +160,16 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
         const problem = validateShotsDocument(mine)
         if (problem !== undefined) {
           clearTimer()
-          setState({ kind: 'error', message: problem })
+          setState({ kind: 'error', message: `分镜未保存，${problem}` })
           return null
         }
         setState({ kind: 'saving' })
         try {
-          const saved = await writeWorkspaceFile(conversationId, {
-            content: JSON.stringify(mine, null, 2),
-            expectedVersion: base.version,
-            path,
-          })
+          const saved = await writeWorkspaceFile(
+            conversationId,
+            { content: JSON.stringify(mine, null, 2), expectedVersion: base.version, path },
+            '分镜保存失败',
+          )
           book.base = { document: mine, version: saved.file.version }
           landed = mine
           // 请求中的快照已落盘。后续编辑仍以最新草稿为准，不能被这次响应清除。
@@ -181,7 +181,7 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
         } catch (error) {
           if (!(error instanceof ApiError) || error.status !== 409 || rebased) {
             clearTimer()
-            setState({ kind: 'error', message: errorMessageOf(error, '保存失败') })
+            setState({ kind: 'error', message: errorMessageOf(error, '分镜保存失败') })
             return null
           }
           const latestFile = await queryClient.fetchQuery({
@@ -221,7 +221,7 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     book.inFlight = run()
       .catch((error: unknown) => {
         clearTimer()
-        setState({ kind: 'error', message: errorMessageOf(error, '保存失败') })
+        setState({ kind: 'error', message: errorMessageOf(error, '分镜保存失败') })
         return null
       })
       .finally(() => {
@@ -315,7 +315,8 @@ export const useShotsDraft = ({ conversationId, file, path }: UseShotsDraftOptio
     async (index: number, frame: number, previousUrl: string, url: string) => {
       const book = ledgerRef.current
       if (book.inFlight !== null) throw new UserFacingError('当前修改正在保存，请稍后重试')
-      if (book.latest !== null) throw new UserFacingError('分镜存在版本冲突，请先处理冲突')
+      if (book.latest !== null)
+        throw new UserFacingError('分镜存在版本冲突，无法替换图片；请处理冲突')
       const current = book.edited ?? book.base?.document
       const target = current === undefined ? undefined : shotOf(current, index)
       const replaced = target?.image_urls[frame - 1] !== url

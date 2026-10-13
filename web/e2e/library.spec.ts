@@ -39,7 +39,7 @@ test('点卡片看详情，详情在地址里；Esc 与浏览器返回都关掉�
 
   await open.click()
   await expect(
-    viewer.getByRole('group', { name: '这个镜头组的版本' }).getByRole('button'),
+    viewer.getByRole('group', { name: '该镜头组的版本' }).getByRole('button'),
   ).toHaveCount(6)
   await expect(page).toHaveURL(/video=/)
   await page.keyboard.press('Escape')

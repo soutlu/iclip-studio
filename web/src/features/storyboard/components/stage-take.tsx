@@ -6,7 +6,7 @@ import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { VideoPlayer } from '@/shared/ui/video-player'
 import type { Take } from '../takes'
-import { useTakeElapsed } from './use-take-elapsed'
+import { useElapsed } from '@/shared/ui/media-preview'
 
 /** 舞台上的封面截帧宽度：宽屏舞台六七百像素，两倍屏也够。 */
 const POSTER_WIDTH = 1280
@@ -40,7 +40,7 @@ export function StageTake({ take }: { take: Take }) {
 }
 
 function RunningTake({ since }: { since: string }) {
-  const elapsed = useTakeElapsed(since)
+  const elapsed = useElapsed(since)
   return (
     <div aria-label={`生成中，已用 ${elapsed}`} className="storyboard-take-stage" role="status">
       <span className="storyboard-take-shine" />

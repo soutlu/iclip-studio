@@ -25,7 +25,7 @@ const Painted = ({ artifact }: ArtifactRendererProps) => <p>画着{artifact.titl
 const shotsEntry: ArtifactEntry = {
   autoOpen: true,
   component: Painted,
-  empty: 'agent 交付分镜后出现',
+  empty: '暂无分镜，agent 交付后显示',
   icon: 'grid',
   label: '分镜',
   match: { path: 'video_shot.json' },
@@ -230,7 +230,7 @@ describe('WorkbenchHost 收起态', () => {
     const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
     const shots = within(chooser).getByRole('button', { name: /分镜/ })
     expect(shots).toHaveAttribute('aria-disabled', 'true')
-    expect(shots).toHaveTextContent('agent 交付分镜后出现')
+    expect(shots).toHaveTextContent('暂无分镜，agent 交付后显示')
     const files = within(chooser).getByRole('button', { name: /文件/ })
     expect(files).toHaveAttribute('aria-disabled', 'true')
     expect(files).toHaveTextContent('还没有文件')
@@ -269,10 +269,10 @@ describe('WorkbenchHost 收起态', () => {
   })
 
   it.each([
-    { files: ['video/a.md'], rows: ['分镜agent 交付分镜后出现', '文件'] },
+    { files: ['video/a.md'], rows: ['分镜暂无分镜，agent 交付后显示', '文件'] },
     {
       files: ['video/a.md', 'script.md'],
-      rows: ['分镜agent 交付分镜后出现', '剧本', '文件'],
+      rows: ['分镜暂无分镜，agent 交付后显示', '剧本', '文件'],
     },
   ])('没登记灰着原因的常驻类型等有了文件才列出：$files', async ({ files, rows }) => {
     serveFiles(files)
@@ -318,7 +318,7 @@ describe('WorkbenchHost 收起态', () => {
           .getAllByRole('button')
           .map((row) => row.textContent),
       ).toEqual([
-        '分镜agent 交付分镜后出现',
+        '分镜暂无分镜，agent 交付后显示',
         '画布 canvas/a.canvas.json',
         '画布 canvas/b.canvas.json',
         '文件',

@@ -61,7 +61,7 @@ export const editFilmText = async (
 ): Promise<FilmView> => {
   const envelope = await apiFetch(`/conversations/${conversationId}/film/text`, zFilmViewEnvelope, {
     body: { edits, filmVersion },
-    fallbackErrorMessage: '保存失败',
+    fallbackErrorMessage: '分镜保存失败',
     method: 'PATCH',
   })
   return envelope.film

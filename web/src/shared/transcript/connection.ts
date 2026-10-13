@@ -27,7 +27,7 @@ const MAX_RECONNECT_DELAY_MS = 30_000
 /** 加入随机抖动，避免客户端集中重连。 */
 const RECONNECT_JITTER_MS = 250
 
-/** 一条实时流的续订水位：批次号与它所属的流（ADR-0004）；两者都对得上，服务端才接着补批。 */
+/** 一条实时流的续订水位：批次号与它所属的流；两者都对得上，服务端才接着补批。 */
 export interface StreamWatermark {
   seq: number
   epoch: string
@@ -515,7 +515,7 @@ export class TranscriptConnection {
     if (agent === undefined) return
     const accepted = agent.handlers.onOps(agent_id, ops, seq, epoch)
     // 仅已接受的批次推进水位。同一条流里只升不降：Kimi 把重复批次的号也写进水位，会把它写小，
-    // 只会让续订多补发或被迫重读（ADR-0004 第 8 条）。
+    // 只会让续订多补发或被迫重读。
     if (accepted === false || seq === undefined) return
     const current = subscription.watermarks.get(agent_id)
     if (current?.epoch === epoch && current.seq >= seq) return

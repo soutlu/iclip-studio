@@ -11,7 +11,9 @@ import {
 } from './handlers'
 import { seedDemoTasks } from './demo-tasks'
 import { seedMockFilm } from './film'
-import { markMockAwaitingApproval, markMockJustFinished, markMockToolShowcase } from './transcript'
+import { backgroundShowcase, multipleBackgroundShowcase } from './background-showcase'
+import { toolShowcase } from './tool-showcase'
+import { markMockAwaitingApproval, markMockJustFinished, markMockShowcase } from './transcript'
 import { seedMockReplicaWorkspace, seedMockWorkspace } from './workspace'
 
 // 演示数据仅在浏览器侧初始化，避免影响每例清空存储的单测。
@@ -75,9 +77,14 @@ const withoutImages = addMockConversation('无图分镜草稿')
 seedMockWorkspace(withoutImages.id, { withoutImages: true })
 
 // 工具过程展示：几轮历史摆出工具行的各种状态（失败、被拒绝、中断、整轮失败），带一份工作区可点开文件。
-const toolShowcase = addMockConversation('工具过程展示')
-seedMockWorkspace(toolShowcase.id, { httpFrames: true })
-markMockToolShowcase(toolShowcase.id)
+const toolShowcaseConversation = addMockConversation(toolShowcase.title)
+seedMockWorkspace(toolShowcaseConversation.id, { httpFrames: true })
+markMockShowcase(toolShowcaseConversation.id, toolShowcase)
+
+// 后台任务展示：完成与失败通知、「已转入后台」的原卡、被停下后中断的原卡，末轮一个拆解在跑；另一段同时跑两个。
+for (const showcase of [backgroundShowcase, multipleBackgroundShowcase]) {
+  markMockShowcase(addMockConversation(showcase.title).id, showcase)
+}
 
 // AI 导演的工程：制作页演示改字与读出镜头组。
 const film = addMockConversation('穿搭种草 · 12 秒')

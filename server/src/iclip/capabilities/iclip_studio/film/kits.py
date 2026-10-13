@@ -1,8 +1,7 @@
 """模板包 ``@iclip/film-kits``：生图和视频提示词的两份模板，放在后端代码里，不能自己写。
 
-模板文件（``kits/*.svs``）只写槽：名字、先后、必不必填、段名，视频的人物、产品、场景另写有图时
-冒号后那几个字。各段怎么排、图号写在哪是每份模板一套写法，写在 ``prompts`` 里；这里给出那套
-写法要认的几个槽。"""
+模板文件（``kits/*.svs``）只写槽：名字、先后、必不必填、段名。各段怎么排是每份模板一套写法，
+写在 ``prompts`` 里；这里给出那套写法要认的几个槽。"""
 
 from __future__ import annotations
 
@@ -15,22 +14,25 @@ from typing import Final
 FILM_KITS: Final = "@iclip/film-kits"
 """模板包的名字，工程文件里写 ``<import as="kit" source="@iclip/film-kits"/>``。"""
 
-PICTURE_KIT: Final = "画面-v1"
+PICTURE_KIT: Final = "picture-v1"
 """一张图的提示词。"""
 
-VIDEO_KIT: Final = "多镜头视频-v1"
+PICTURE_SLOTS: Final = ("capture", "subject", "framing", "setting")
+"""画面模板的槽，按拼的先后。"""
+
+VIDEO_KIT: Final = "multi-shot-video-v1"
 """一次视频请求的提示词。"""
 
-PICTURE_SCENE_SLOT: Final = "场景"
-"""画面模板里，用途图那几句接在这个槽的末尾。"""
-
-VIDEO_SHOOTING_SLOT: Final = "拍摄与剪辑"
-VIDEO_ELEMENT_SLOTS: Final = ("人物", "产品", "场景")
+VIDEO_CAPTURE_SLOT: Final = "capture"
+VIDEO_ELEMENT_SLOTS: Final = ("person", "product", "setting")
 """多镜头视频模板里放出场元素的槽，按拼的先后。"""
 
-VIDEO_VOICE_SLOT: Final = "声音"
-VIDEO_SHOTS_SLOT: Final = "镜头"
+VIDEO_AUDIO_SLOT: Final = "audio"
+VIDEO_SHOTS_SLOT: Final = "shots"
 """多镜头视频模板里放 ``film:Shots`` 的槽：只 ``Set`` 一个，不 ``Append``。"""
+
+VIDEO_SETTING_SLOTS: Final = (VIDEO_CAPTURE_SLOT, *VIDEO_ELEMENT_SLOTS, VIDEO_AUDIO_SLOT)
+"""多镜头视频模板里拼进全局设定的槽，按拼的先后。"""
 
 _HEADER: Final = '<?icml using="@iclip/text/svs@1"?>'
 _SHEET: Final = re.compile(r'<sheet version="1" id="([^"]+)">')
@@ -42,11 +44,14 @@ _DECLARATION: Final = re.compile(r'\s*([\w-]+)\s*:\s*("[^"]*"|[^;]*?)\s*;')
 class Slot:
     name: str
     required: bool
-    label: str | None
-    """拼提示词时这一段的段名，如「拍摄：」；不写段名的为 None。"""
+    label: str
+    """拼提示词时这一段的段名，如「capture:」「人物：」。"""
 
-    cite: str | None
-    """视频提示词里这个槽的元素有图时，冒号后只写这几个字再接图号，如「外观」；不写的为 None。"""
+    @property
+    def title(self) -> str:
+        """给人看的称呼：段名去掉末尾的冒号，如「人物」。"""
+
+        return self.label.rstrip(":：")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,31 +85,17 @@ def _read(name: str) -> Kit:
             continue
         if len(path) != 3 or path[0] != name or path[1] != "block" or declared["kind"] != "slot":
             raise RuntimeError(f"模板 {name} 里有读不懂的规则：{rule.group(0)}")
-        slot = Slot(
-            declared["slot"],
-            declared["optional"] == "false",
-            declared.get("label"),
-            declared.get("cite"),
-        )
+        slot = Slot(declared["slot"], declared["optional"] == "false", declared["label"])
         ordered.append((int(declared["order"]), slot))
     return Kit(name, tuple(slot for _, slot in sorted(ordered, key=lambda item: item[0])))
 
 
 def _kits() -> dict[str, Kit]:
     picture, video = _read(PICTURE_KIT), _read(VIDEO_KIT)
-    expected = {
-        picture: (PICTURE_SCENE_SLOT,),
-        video: (VIDEO_SHOOTING_SLOT, *VIDEO_ELEMENT_SLOTS, VIDEO_VOICE_SLOT, VIDEO_SHOTS_SLOT),
-    }
+    expected = {picture: PICTURE_SLOTS, video: (*VIDEO_SETTING_SLOTS, VIDEO_SHOTS_SLOT)}
     for kit, names in expected.items():
-        missing = [name for name in names if kit.slot(name) is None]
-        if missing:
-            raise RuntimeError(f"模板 {kit.name} 缺代码里要认的槽：{'、'.join(missing)}")
-    uncited = [
-        slot.name for slot in video.slots if slot.name in VIDEO_ELEMENT_SLOTS and slot.cite is None
-    ]
-    if uncited:
-        raise RuntimeError(f"模板 {video.name} 的槽没写 cite：{'、'.join(uncited)}")
+        if tuple(slot.name for slot in kit.slots) != names:
+            raise RuntimeError(f"模板 {kit.name} 的槽要是代码里认的 {'、'.join(names)}")
     return {picture.name: picture, video.name: video}
 
 
@@ -115,12 +106,13 @@ __all__ = [
     "FILM_KITS",
     "KITS",
     "PICTURE_KIT",
-    "PICTURE_SCENE_SLOT",
+    "PICTURE_SLOTS",
+    "VIDEO_AUDIO_SLOT",
+    "VIDEO_CAPTURE_SLOT",
     "VIDEO_ELEMENT_SLOTS",
     "VIDEO_KIT",
-    "VIDEO_SHOOTING_SLOT",
+    "VIDEO_SETTING_SLOTS",
     "VIDEO_SHOTS_SLOT",
-    "VIDEO_VOICE_SLOT",
     "Kit",
     "Slot",
 ]

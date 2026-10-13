@@ -55,7 +55,7 @@ describe('SubAgentPanel', () => {
       <SubAgentPanel artifact={artifactFor('not-a-run')} conversationId="c1" readOnly={false} />,
     )
 
-    expect(await screen.findByText('无法加载该子代理的对话')).toBeVisible()
+    expect(await screen.findByText('该子代理的对话加载失败')).toBeVisible()
     expect(screen.getByRole('button', { name: '重新加载' })).toBeVisible()
   })
 })

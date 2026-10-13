@@ -1,6 +1,7 @@
 export { formatDuration } from './attachment-format'
 export { MediaChipContent, mediaThumbnailUrl } from './media-chip-content'
 export { MediaPreviewCard } from './media-preview-card'
+export { useElapsed } from './use-elapsed'
 export { useHoverPreview } from './use-hover-preview'
 export { MEDIA_KIND_ICON, mediaDisplayName } from './media-descriptor'
 export type { MediaDescriptor, MediaUploadState } from './media-descriptor'

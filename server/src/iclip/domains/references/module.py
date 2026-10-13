@@ -7,12 +7,14 @@ from typing import Any
 
 import procrastinate
 
+from iclip.domains.identity.public import ActAs
 from iclip.domains.references.api import create_references_router
 from iclip.domains.references.queue import ReferenceQueue, ReferenceQueueSettings
 from iclip.domains.references.repository import (
     OwnVideoUpload,
     ReferenceStore,
     Tagger,
+    TestVideos,
     VideoBreakdowns,
 )
 from iclip.domains.references.service import ReferenceService
@@ -41,12 +43,16 @@ class ReferencesModule:
 def build_references_module(
     store: ReferenceStore,
     *,
+    act_as: ActAs,
     own_video_upload: OwnVideoUpload,
     breakdown: BreakdownSetup | None,
     uploads_available: bool,
+    test_videos: TestVideos,
+    testable: bool,
 ) -> ReferencesModule:
     """``breakdown`` 为 ``None`` 即拆解没配置：只挂读端点，列表的 ``canUpload`` 恒为假。
-    ``uploads_available`` 为假即上传模块没装配：不挂建行，``canUpload`` 同样恒为假，重拆照挂。"""
+    ``uploads_available`` 为假即上传模块没装配：不挂建行，``canUpload`` 同样恒为假，重拆照挂。
+    ``testable`` 为假即媒体生成没开、``test_videos`` 提交不了：不挂试生成，详情照样带最新的一次。"""
 
     queue = (
         ReferenceQueue(
@@ -64,11 +70,16 @@ def build_references_module(
         own_video_upload=own_video_upload,
         queue=queue,
         uploads_available=uploads_available,
+        test_videos=test_videos,
     )
     return ReferencesModule(
         routers=(
             create_references_router(
-                service, uploadable=service.accepts_uploads, rerunnable=queue is not None
+                service,
+                act_as=act_as,
+                uploadable=service.accepts_uploads,
+                rerunnable=queue is not None,
+                testable=testable,
             ),
         ),
         service=service,

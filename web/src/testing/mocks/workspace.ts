@@ -56,10 +56,9 @@ const PREAMBLE = ['参考锁定：模特的服装与发型跟住 @Image1。', '�
 /** 与服务端 shot_prompt.py 同一条拼装规则：受理时把结构化 shot 拼成正文，记录里两者都存。 */
 const assembleShotPrompt = (shot: VideoShotIn): string => {
   const lines = shot.timeline.map(
-    (item, position) =>
-      `[${item.timestamps[0]}–${item.timestamps[1]}秒｜镜头${position + 1}] ${item.prompt}`,
+    (item) => `${item.timestamps[0]}–${item.timestamps[1]}秒 ${item.prompt}`,
   )
-  return `${shot.global_settings}\n\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
+  return `${shot.global_settings}\n\n镜头：\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
 }
 
 /** 第 2 组那条成片当初提交的镜头组，形状与分镜文件里的 prompt 相同；带 shot 的记录才能回填。 */

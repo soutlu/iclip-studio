@@ -12,13 +12,13 @@ from fastapi import FastAPI
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from iclip.common.errors import NotFound
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.repository import AuditFilter
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
 from iclip.harness.step_store_pg import PgStepStore
+from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
@@ -140,7 +140,7 @@ async def test_deleted_client_minted_id_cannot_reassign_retained_history(
     assert opened.status_code == 201, opened.text
     run_id = f"storyboard-{uuid.uuid4().hex[:8]}"
     original_text = "原属主的私有创作要求"
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     try:
         store = PgStepStore(engine)
         await store.register_run(RunRecord(run_id=run_id, conversation_id=minted))
@@ -321,7 +321,7 @@ async def test_deleted_conversation_is_a_tombstone_only_governor_reads_see(
     assert (await client.delete(f"{URL}/{conversation_id}")).status_code == 204
     assert (await client.delete(f"{URL}/{conversation_id}")).status_code == 404
 
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     try:
         repo = SqlConversationRepository(engine)
         for viewer in (owner, None):
@@ -696,7 +696,7 @@ async def test_generated_title_is_written_once(client: httpx.AsyncClient, pg_url
     conversation_id = (await create(client)).json()["conversation"]["id"]
     assert await _title_row(pg_url, conversation_id) == (DEFAULT_TITLE, "default")
 
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     try:
         repo = SqlConversationRepository(engine)
         assert (
@@ -721,7 +721,7 @@ async def test_user_named_conversations_are_left_alone(
     await client.patch(f"{URL}/{conversation_id}", json={"title": "开场那段"})
     assert await _title_row(pg_url, conversation_id) == ("开场那段", "custom")
 
-    engine = create_async_engine(pg_url)
+    engine = build_engine(pg_url)
     try:
         repo = SqlConversationRepository(engine)
         assert (

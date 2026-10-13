@@ -265,6 +265,20 @@ async def test_模型只收到窗口那几条() -> None:
     assert len(sent) == 1 + (len(history) - history.index(boundary) - 1 - 1)
 
 
+async def test_没到线时模型也只收到上次边界之后那几条() -> None:
+    """两次压缩之间不触发压缩的请求同样要裁剪，否则会发出完整历史。"""
+
+    _, _, first, _ = await _run(max_tokens=1, keep_messages=2, history=_history(4))
+    _, seen, history, _ = await _run(max_tokens=1_000_000, keep_messages=2, history=list(first))
+
+    assert len(seen) == 1
+    sent = seen[0]
+    assert _only_part(sent[0]) == (UserPromptPart, f"{ANCHORED}\n\n{SUMMARY_FRAMING}")
+    # 末条是本次模型的回复，不在发出的请求里；边界已与相邻响应合并，按窗口函数比对。
+    assert sent[1:] == model_window(history[:-1])[1:]
+    assert first[0] in history
+
+
 async def test_快照存的是全量历史不是窗口() -> None:
     """持久化完整历史；模型窗口写回快照会导致旧轮内容丢失。"""
 

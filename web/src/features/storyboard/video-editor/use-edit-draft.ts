@@ -1,4 +1,4 @@
-/** 每一版各自的剪辑草稿与撤销栈（ADR-0010 第 1 条）。草稿存进浏览器，按（对话，那一版）各一份；
+/** 每一版各自的剪辑草稿与撤销栈。草稿存进浏览器，按（对话，那一版）各一份；
  * 等于初始分段时不存。占位与合成的结论由服务端记录推出来，每次渲染落定一次。 */
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
@@ -36,7 +36,7 @@ type Entry = {
 export const draftStorageKey = (conversationId: string, versionJobId: string) =>
   `video-editor-draft:${conversationId}:${versionJobId}`
 
-const UNREADABLE = '无法读取草稿，已根据 AI 生成结果重建'
+const UNREADABLE = '草稿读取失败，已根据 AI 生成结果重建'
 
 const readStored = (key: string): string | null => {
   try {

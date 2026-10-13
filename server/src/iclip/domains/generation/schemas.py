@@ -20,6 +20,7 @@ from pydantic import (
     Field,
     StringConstraints,
     TypeAdapter,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -234,6 +235,10 @@ def _check_image_references(shot: VideoShotIn, available: int) -> None:
             )
 
 
+_READ_BACK: Final = "read_back"
+"""校验上下文里的键：值为 True 表示在读回持久化记录，不是受理新请求。只有 ``request_from_payload`` 带它。"""
+
+
 class VideoGenerationIn(SnakeModel):
     """一次视频生成的输入。字段照上游异步接口，外加归属字段、坐标 ``metadata`` 与结构化的 ``shot``。
 
@@ -280,14 +285,21 @@ class VideoGenerationIn(SnakeModel):
     )(_http_only)
 
     @model_validator(mode="after")
-    def _assemble_prompt_from_shot(self) -> VideoGenerationIn:
-        """持久化的记录里两者都在，读回时也走这里，所以规则是「至少一个、都给就得一致」。"""
+    def _assemble_prompt_from_shot(self, info: ValidationInfo) -> VideoGenerationIn:
+        """受理时 prompt 与 shot 至少给一个，只给 shot 由服务端拼出 prompt，两个都给就得一字不差。
+
+        读回持久化记录（``request_from_payload`` 带上读回标记）时以存下来的 prompt 为准：它是当时
+        实际发出去的正文，拼法后来改过，按现行拼法重拼会与它对不上，所以不重拼、不比对。"""
 
         if self.shot is None:
             if self.prompt is None:
                 raise ValueError("prompt 与 shot 至少传一个")
             return self
         _check_image_references(self.shot, len(self.reference_image_urls))
+        if isinstance(info.context, dict) and info.context.get(_READ_BACK) is True:
+            if self.prompt is None:
+                raise ValueError("记录里有 shot 却没有 prompt")
+            return self
         assembled = format_shot_prompt(self.shot)
         if len(assembled) > MAX_PROMPT_CHARS:
             raise ValueError(
@@ -470,7 +482,8 @@ def request_from_payload(
 ) -> GenerationRequest | None:
     """按独立存列的 kind 与 operation 选择适配器并校验持久化请求，非法数据直接报错。
 
-    切图与上传必须没有请求，读回 ``None``；其余几种必须有。"""
+    切图与上传必须没有请求，读回 ``None``；其余几种必须有。校验带读回标记，视频请求里存下的
+    ``prompt`` 原样保留，不按 ``shot`` 重拼。"""
 
     if (kind, operation) in _WITHOUT_REQUEST:
         if payload is not None:
@@ -482,7 +495,7 @@ def request_from_payload(
     if payload is None:
         raise ValidationFailed(f"{kind} / {operation} 的生成请求缺失")
     try:
-        return adapter.validate_python(payload)
+        return adapter.validate_python(payload, context={_READ_BACK: True})
     except ValueError as exc:
         raise ValidationFailed(f"生成请求的形状不合法: {exc}") from exc
 

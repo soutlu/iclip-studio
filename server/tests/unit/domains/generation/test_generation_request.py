@@ -24,6 +24,7 @@ from iclip.domains.generation.schemas import (
     request_to_payload,
 )
 from tests.helpers.generation import (
+    LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
     compose_request,
@@ -271,6 +272,39 @@ def test_shot_is_assembled_into_the_prompt_and_both_are_stored() -> None:
     assert request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload) == original, (
         "读回时两者都在且一致"
     )
+
+
+def test_a_stored_prompt_assembled_by_an_older_rule_reads_back_as_stored() -> None:
+    """拼法改过之后，旧记录里的 prompt 与按现行拼法重拼的对不上；读回以存下的为准。"""
+
+    payload = request_to_payload(
+        video_request(prompt=None, shot=video_shot(), reference_image_urls=SHOT_IMAGE_URLS)
+    )
+    payload["prompt"] = LEGACY_SHOT_PROMPT
+
+    restored = request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload)
+
+    assert isinstance(restored, VideoGenerationIn)
+    assert restored.prompt == LEGACY_SHOT_PROMPT
+    assert restored.shot is not None
+    assert restored.shot.global_settings == video_shot()["global_settings"]
+
+
+def test_a_stored_shot_without_its_prompt_fails_loudly() -> None:
+    payload = request_to_payload(
+        video_request(prompt=None, shot=video_shot(), reference_image_urls=SHOT_IMAGE_URLS)
+    )
+    payload["prompt"] = None
+
+    with pytest.raises(ValidationFailed, match="没有 prompt"):
+        request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload)
+
+
+def test_a_new_request_must_send_the_prompt_the_current_rule_assembles() -> None:
+    with pytest.raises(ValueError, match="不一致，二者只传一个"):
+        video_request(
+            prompt=LEGACY_SHOT_PROMPT, shot=video_shot(), reference_image_urls=SHOT_IMAGE_URLS
+        )
 
 
 def test_image_indexes_follow_the_text_in_first_appearance_order() -> None:

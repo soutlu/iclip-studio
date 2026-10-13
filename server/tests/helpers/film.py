@@ -1,94 +1,84 @@
 """工程文件与运行文件的样例，供运行时、工具和制作页的测试共用。
 
-工程文件是规格里的完整示例（``film.icml``，原样）：一条 15 秒的跑鞋片，用户给了跑鞋正面、鞋底
-两张照片，人物和跑道各生成一张参考图，每镜一张机位图，一次视频请求。``film-prompts.md`` 是规格
-附带的、按规则手写的拼好的提示词，原样。运行文件登记了三张图，给「短发女生参考图」和
-「镜01机位图」各选用一张。"""
+样例是方案的统一示例（``film_example/``，原样）：一条 33 秒的鞋款片拆成 18 秒、15 秒两组视频，
+每组三镜。用户给了五张照片（模特A 半身、全身，鞋侧面、鞋头、鞋底），模特B 和街区各生成一张设定图，
+每镜一张机位图。四种选用状态各有一份运行文件：``both`` 全部选用；``no-view04`` 取消 view04，工程
+文件里 video02 的列表和镜头 1 开头跟着改；``no-personB`` 取消 personB，工程文件不变；``none`` 两张
+都取消。``no-personB`` 的工程文件与 ``both`` 逐字相同、``none`` 的与 ``no-view04`` 逐字相同，所以
+工程文件只存两份。``expected.json`` 是方案按规则拼好的预期请求：每张图的 ``prompt`` 与
+``input_str_list``，每种状态下每组视频的 ``shot`` 与按编号排的参考图，或它被缺图拦住、缺哪几张。"""
 
 from __future__ import annotations
 
-import re
+import json
 from pathlib import Path
-from typing import Final, NoReturn
+from typing import Any, Final, NoReturn
 
-_HERE: Final = Path(__file__).parent
+_EXAMPLE: Final = Path(__file__).parent / "film_example"
 
-FILM: Final = (_HERE / "film.icml").read_text(encoding="utf-8")
-PROMPTS: Final = (_HERE / "film-prompts.md").read_text(encoding="utf-8")
+STATES: Final = ("both", "no-view04", "no-personB", "none")
 
-SHOE_FRONT: Final = "https://…/uploads/1f0c2a9e-….jpg"
-SHOE_SOLE: Final = "https://…/uploads/7b3e5d10-….jpg"
-PERSON_FIRST: Final = "https://cdn.test/a.png"
-PERSON_FIXED: Final = "https://cdn.test/b-fixed.png"
-VIEW_ONE: Final = "https://cdn.test/view01.png"
+_PROJECTS: Final = {
+    "both": "film-both.icml",
+    "no-view04": "film-no-view04.icml",
+    "no-personB": "film-both.icml",
+    "none": "film-no-view04.icml",
+}
 
-GIVEN_IMAGES: Final = (SHOE_FRONT, SHOE_SOLE, PERSON_FIRST, PERSON_FIXED, VIEW_ONE)
-"""两个文件里写了地址的图，工具和制作页的测试把它们登记成对话素材。"""
+
+def project_of(state: str) -> str:
+    """这种选用状态下的工程文件。"""
+
+    return (_EXAMPLE / _PROJECTS[state]).read_text(encoding="utf-8")
+
+
+def run_of(state: str) -> str:
+    """这种选用状态下的运行文件。"""
+
+    return (_EXAMPLE / f"run-{state}.icrun").read_text(encoding="utf-8")
+
+
+FILM: Final = project_of("both")
+RUN: Final = run_of("both")
+FILM_NO_VIEW04: Final = project_of("no-view04")
+RUN_NO_VIEW04: Final = run_of("no-view04")
+
+EXPECTED: Final[dict[str, Any]] = json.loads(
+    (_EXAMPLE / "expected.json").read_text(encoding="utf-8")
+)
+
+PHOTOS: Final = {
+    "modelAPortraitPhoto": "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+    "modelAFullBodyPhoto": "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+    "shoeSidePhoto": "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+    "shoeFrontPhoto": "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+    "shoeSolePhoto": "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+}
+"""工程文件里用户给的照片：节点名 → 地址。"""
 
 IMAGE_NODES: Final = (
-    "短发女生参考图",
-    "公园跑道参考图",
-    "镜01机位图",
-    "镜02机位图",
-    "镜03机位图",
-    "镜04机位图",
+    "personB",
+    "scene",
+    "view01",
+    "view02",
+    "view03",
+    "view04",
+    "view05",
+    "view06",
 )
 """工程文件里的生图节点，按先后。"""
 
-RUN: Final = """<?icml using="@iclip/run-markup@1"?>
-<icrun version="1">
-  <film source="./film.icml"/>
-  <import as="media" from="@iclip/media@1"/>
+GENERATED: Final = {
+    node: f"https://preview.invalid/generated/{node}-v1.png" for node in IMAGE_NODES
+}
+"""运行文件里登记的图：每个生图节点一张，登记名是「节点名-v1」。"""
 
-  <media:Image id="短发女生第一版" src="https://cdn.test/a.png"/>
-  <media:Image id="短发女生修过手" src="https://cdn.test/b-fixed.png"/>
-  <media:Image id="镜01第一版" src="https://cdn.test/view01.png"/>
+GIVEN_IMAGES: Final = (*PHOTOS.values(), *GENERATED.values())
+"""两个文件里写了地址的图，工具和制作页的测试把它们登记成对话素材。"""
 
-  <use output="短发女生参考图.image" image={短发女生修过手}/>
-  <use output="镜01机位图.image" image={镜01第一版}/>
-</icrun>
-"""
+SHOE_FRONT: Final = PHOTOS["shoeFrontPhoto"]
 
-SECOND_REQUEST: Final = """  <film:Shots id="后半镜头">
-    <film:Shot start="0.0" end="16.0" view={镜01机位图.image}>硬切，固定机位，产品特写。网面跑鞋放在桌面上，缓慢转动一圈。音效：鞋底落在桌面上的一声轻响</film:Shot>
-  </film:Shots>
-  <text:Render id="后半提示词" template={kit.多镜头视频-v1}>
-    <text:Set name="拍摄与剪辑" text={拍摄与剪辑}/>
-    <text:Set name="产品" text={网面跑鞋}/>
-    <text:Set name="镜头" text={后半镜头}/>
-  </text:Render>
-  <seedance:ReferenceVideo id="后半" model="sd2.5" prompt={后半提示词} duration="16" aspect-ratio="9:16">
-    <seedance:Reference image={跑鞋正面} for={网面跑鞋}/>
-  </seedance:ReferenceVideo>
-</icml>
-"""
-"""接在工程文件末尾的第二次视频请求，时间从 0.0 开始，机位图借用第一组的镜01机位图。"""
-
-
-def two_requests() -> str:
-    """把样例改成 36 秒、拆成两次视频请求的工程文件。"""
-
-    first = FILM.replace(
-        '<film:Shot start="10.0" end="15.0"', '<film:Shot start="10.0" end="20.0"'
-    ).replace('duration="15"', 'duration="20"')
-    return first.replace("</icml>\n", SECOND_REQUEST)
-
-
-def expected_prompt(case: str, title: str) -> tuple[str, tuple[str, ...]]:
-    """``film-prompts.md`` 里一张图或一次视频拼好的全文，和按编号排的参考图节点名。
-
-    ``case`` 是「一」（所有图都已生成）或「二」（短发女生参考图、镜02机位图还没生成），
-    ``title`` 是小标题，如「生图：镜02机位图」。"""
-
-    section = PROMPTS.split(f"\n## {case}、", 1)[1].split("\n## ", 1)[0]
-    for block in section.split("\n### ")[1:]:
-        if block.splitlines()[0].startswith(title):
-            text = re.search(r"```\n(.*?)\n```", block, re.S)
-            listed = re.search(r"参考图：(.+)", block)
-            assert text is not None and listed is not None, title
-            names = () if listed.group(1) == "无" else listed.group(1).split("、")
-            return text.group(1), tuple(name.split(" ", 1)[1] for name in names)
-    raise AssertionError(f"film-prompts.md 里没有「{case}」的「{title}」")
+VIEW04: Final = GENERATED["view04"]
 
 
 class UnusedFilmPage:
@@ -111,18 +101,19 @@ class UnusedFilmPage:
 
 
 __all__ = [
+    "EXPECTED",
     "FILM",
+    "FILM_NO_VIEW04",
+    "GENERATED",
     "GIVEN_IMAGES",
     "IMAGE_NODES",
-    "PERSON_FIRST",
-    "PERSON_FIXED",
-    "PROMPTS",
+    "PHOTOS",
     "RUN",
-    "SECOND_REQUEST",
+    "RUN_NO_VIEW04",
     "SHOE_FRONT",
-    "SHOE_SOLE",
-    "VIEW_ONE",
+    "STATES",
+    "VIEW04",
     "UnusedFilmPage",
-    "expected_prompt",
-    "two_requests",
+    "project_of",
+    "run_of",
 ]

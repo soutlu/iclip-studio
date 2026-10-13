@@ -84,7 +84,7 @@ AnnounceTitle = Callable[[uuid.UUID, uuid.UUID, str], None]
 广播不依赖对话订阅，发给属主与治理者的连接；仅写入出站队列，不等待回执。"""
 
 EventWatermarkOf = Callable[[], EventWatermark]
-"""取一份会话事件水位，由组合根接到广播方的事件时钟上。读库、写库之前各取一份（ADR-0004）。"""
+"""取一份会话事件水位，由组合根接到广播方的事件时钟上。读库、写库之前各取一份。"""
 
 AnnounceConversationRow = Callable[
     [Literal["created", "updated"], uuid.UUID, uuid.UUID, Mapping[str, Any]], None
@@ -176,7 +176,7 @@ class CopyConversationWorkspace(Protocol):
 class CopySameStyle(Protocol):
     """做同款：把源对话的几份制作文件拷进新对话的工作区，连同整份素材台账。
 
-    拷哪几份、拷过去叫什么由实现定（ADR-0013）。源工作区里既没有工程文件也没有分镜文件时
+    拷哪几份、拷过去叫什么由实现定。源工作区里既没有工程文件也没有分镜文件时
     什么都不写、回 ``False``，做不做得了由用例判。台账整份跟着拷：运行文件里选用的图都登记
     在台账里，新对话靠它认得这些地址。"""
 
@@ -408,7 +408,7 @@ class ConversationService:
         self._document_validators = document_validators
         self._film = film
         # 同一段对话的「写库 → 读活动 → 广播」在本进程串行：帧序号在广播时才发，两次写入若在读活动处
-        # 交错，先提交的旧行会拿到更大的序号把新行盖回去。ADR-0004 的「提交后发号」以发号顺序等于提交
+        # 交错，先提交的旧行会拿到更大的序号把新行盖回去。「提交后发号」以发号顺序等于提交
         # 顺序为前提。锁只经 _row_lock 用在 async with 里，没人持有也没人等待时随即回收。
         self._row_locks: weakref.WeakValueDictionary[uuid.UUID, asyncio.Lock] = (
             weakref.WeakValueDictionary()
@@ -1001,7 +1001,7 @@ class ConversationService:
         """解析对话 id、核对属主与 Agent 后记录运行，再广播 ``updated``（照 Kimi 会话元数据一变就发）。
 
         这一帧带出新的 ``lastRunId`` 与被抹掉的收尾标记：开跑帧之后、这次写入之前读出的行晚到，
-        盖不掉它（ADR-0004）。"""
+        盖不掉它。"""
 
         parsed = _as_conversation_id(conversation_id)
         async with self._row_lock(parsed):

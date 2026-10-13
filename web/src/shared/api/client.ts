@@ -54,7 +54,7 @@ export interface ApiFetchResult<T> {
   response: Response
 }
 
-/** 只认合同的 `{ detail: string }` 信封；其余正文（网关 HTML、纯文本、别的 JSON 形状）不外露，只保留状态码。 */
+/** 只认合同的 `{ detail: string }` 信封；其余正文（网关 HTML、纯文本、别的 JSON 形状）与状态码都不外露，只给前缀。 */
 const readApiErrorMessage = async (response: Response, fallbackMessage: string) => {
   const responseText = await response.text().catch(() => '')
   let detail: unknown
@@ -64,7 +64,7 @@ const readApiErrorMessage = async (response: Response, fallbackMessage: string) 
     detail = undefined
   }
   const message = typeof detail === 'string' ? detail.trim() : ''
-  return message ? `${fallbackMessage}：${message}` : `${fallbackMessage}（${response.status}）`
+  return message ? `${fallbackMessage}：${message}` : fallbackMessage
 }
 
 /** 断网时拼在调用方前缀后的文案；OSS 直传沿用同一句。 */

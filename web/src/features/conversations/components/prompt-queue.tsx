@@ -80,7 +80,7 @@ function QueueRow({
     <div className="flex items-center justify-end gap-2">
       {first && canSteer ? (
         <button
-          aria-label="现在就发"
+          aria-label="立即发送"
           className="grid size-(--control-height-xs) shrink-0 cursor-pointer place-items-center rounded-full bg-inverse-surface text-inverse-on-surface shadow-[var(--shadow-xs)] ui-focus transition-[background-color,transform] ui-motion-s active:scale-90"
           onClick={() => onSteer(prompt.promptId)}
           type="button"

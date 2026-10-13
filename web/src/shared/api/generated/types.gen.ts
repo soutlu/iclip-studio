@@ -1128,11 +1128,14 @@ export type FaceOut = {
 /**
  * FilmFrameOut
  *
- * 一组用到的一张图。``node`` 是换图时传回的定位；``number`` 是 @N，没有图为 null。
+ * 镜头组里的一张图：先是这组视频参考图列表里的，按列表先后；再是这组镜头里还没进列表的机位图，
+ * 按镜头先后。``node`` 是换图时传回的定位；``number`` 是它在列表里的位置，即 @N，没进列表的为
+ * null；``url`` 没有图时为 null。
  *
- * ``prompt`` 是按描述生成时发给模型的描述，按参考图拆成几段；``aspectRatio`` 是文件里写的画幅。
- * 用户给的图这两个都是 null。``missing`` 是按描述生成它时挂着、现在没有图的参考图的称呼（叫法
- * 同 ``label``），按挂的先后、不重复，它们只用文字写；用户给的图为空列表。
+ * ``prompt`` 是按描述生成时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图
+ * 也拆出来；``aspectRatio`` 是文件里写的画幅。用户给的图这两个都是 null。``missing`` 是这张图
+ * 挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后；不为空时这张图不能生成。用户
+ * 给的图为空列表。
  */
 export type FilmFrameOut = {
   /**
@@ -1171,6 +1174,8 @@ export type FilmFrameOut = {
 
 /**
  * FilmGroupOut
+ *
+ * 一个镜头组。``prompt`` 是这组发给视频模型的正文，与出片时发的逐字相同；缺图时照样给出。
  */
 export type FilmGroupOut = {
   /**
@@ -1189,6 +1194,10 @@ export type FilmGroupOut = {
    * Model
    */
   model: string
+  /**
+   * Prompt
+   */
+  prompt: string
   /**
    * Seconds
    */
@@ -1321,7 +1330,8 @@ export type FilmLineOut = {
 /**
  * FilmPromptImageOut
  *
- * 描述里一张参考图所在的位置；``node`` 在这组的 ``frames`` 里时，用它的 ``number`` 当 @N。
+ * 描述里一张参考图所在的位置，即文件里写 ``@ImageN`` 的地方。``number`` 是它在这张图自己的
+ * 参考图列表里的位置（即 N），``url`` 还没有选用时为 null。
  */
 export type FilmPromptImageOut = {
   /**
@@ -1337,9 +1347,13 @@ export type FilmPromptImageOut = {
    */
   node: string
   /**
+   * Number
+   */
+  number: number
+  /**
    * Url
    */
-  url: string
+  url: string | null
 }
 
 /**
@@ -1359,8 +1373,9 @@ export type FilmPromptTextOut = {
 /**
  * FilmSettingOut
  *
- * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``images`` 是出场元素挂的图，
- * 可以几张，拍法和声音为空。
+ * 全局设定的一段。``target`` 为 null 的这段不能在页面上改；``label`` 是模板里这个槽的段名；
+ * ``images`` 恒为空列表，这组的图都在 ``frames`` 里；``shared`` 为 true 的这段还用在别的生成节点里，
+ * 字里不能有图号，页面上不给插入图片。
  */
 export type FilmSettingOut = {
   /**
@@ -1375,6 +1390,10 @@ export type FilmSettingOut = {
    * Label
    */
   label: string | null
+  /**
+   * Shared
+   */
+  shared: boolean
   /**
    * Target
    */
@@ -1425,6 +1444,10 @@ export type FilmShotOut = {
  * 多一段，台词只改字；其余给 ``text``。
  */
 export type FilmTextEditIn = {
+  /**
+   * Images
+   */
+  images?: Array<string>
   /**
    * Lines
    */
@@ -2702,7 +2725,7 @@ export type ReferenceVideoItemOut = {
 /**
  * ReferenceVideoOut
  *
- * 一条参考视频，连同当前拆解。
+ * 一条参考视频，连同当前拆解与最新的一次试生成。
  */
 export type ReferenceVideoOut = {
   /**
@@ -2790,6 +2813,7 @@ export type ReferenceVideoOut = {
    * Id
    */
   id: string
+  testVideo: TestVideoOut | null
   /**
    * Updatedat
    */
@@ -3519,6 +3543,50 @@ export type TasksPageOut = {
 }
 
 /**
+ * TestVideoIn
+ *
+ * 试生成的请求：画幅与归属标签由调用方定，其余参数服务端定。
+ */
+export type TestVideoIn = {
+  /**
+   * Aspectratio
+   */
+  aspectRatio: '9:16' | '16:9' | '1:1' | '3:4' | '4:3'
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * TestVideoOut
+ *
+ * 属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。
+ */
+export type TestVideoOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Errormessage
+   */
+  errorMessage: string | null
+  /**
+   * Stale
+   */
+  stale: boolean
+  /**
+   * Status
+   */
+  status: 'running' | 'completed' | 'failed'
+  /**
+   * Url
+   */
+  url: string | null
+}
+
+/**
  * TextContent
  */
 export type TextContent = {
@@ -3556,6 +3624,10 @@ export type TextFrame = {
    * Role
    */
   role: 'assistant' | 'user'
+  /**
+   * Taskid
+   */
+  taskId?: string | null
   /**
    * Text
    */
@@ -3829,7 +3901,8 @@ export type TranscriptStep = {
 /**
  * TranscriptTask
  *
- * 一件后台活儿。本系统只产出 ``subagent``：一次 delegate_task 一条。
+ * 一件后台活儿。本系统产出两种：``subagent`` 是一次 delegate_task 一条；``tool`` 是一次后台
+ * 工具调用一条（``detached`` 为真），``task_id`` 等于那次调用的 toolCallId。
  */
 export type TranscriptTask = {
   /**
@@ -7158,6 +7231,38 @@ export type RerunReferenceReferencesReferenceIdBreakdownsPostResponses = {
 
 export type RerunReferenceReferencesReferenceIdBreakdownsPostResponse =
   RerunReferenceReferencesReferenceIdBreakdownsPostResponses[keyof RerunReferenceReferencesReferenceIdBreakdownsPostResponses]
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData = {
+  body: TestVideoIn
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/{reference_id}/test-generations'
+}
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostError =
+  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors]
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceVideoOut
+}
+
+export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
+  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses]
 
 export type ListTasksTasksGetData = {
   body?: never

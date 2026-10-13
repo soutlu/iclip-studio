@@ -13,8 +13,9 @@ export type EditDraftPart =
   | { kind: 'text'; text: string }
   | { kind: 'image'; url: string; name: string }
   | { kind: 'annotation'; id: string; number: number }
-/** 输入卡里 `@` 与「+」能插的一张本组图片：地址，与菜单、芯片上叫它的名字。 */
-export type EditFrame = { url: string; name: string }
+/** 输入卡里 `@` 与「+」能插的一张本组图片：地址，与菜单、芯片上叫它的名字。`number` 是「+」里图块上写的编号，
+ * 不给时按它在列表里的先后（下标加一）；制作页列的图不一定连号，给的是图自己的编号。 */
+export type EditFrame = { url: string; name: string; number?: number }
 /** 编辑器开在哪一张图上：分镜页是第几组的第几帧，制作页是工程里的一张图（`node`，用 `isFilmTarget` 区分）。
  * 底图不在里面：它随选中的图变，应用之后这一格的图也会变。 */
 export type FrameEditTarget = StoryboardFrameTarget | { conversationId: string; node: string }

@@ -17,6 +17,7 @@ import {
   formatShotPrompt,
   updateTimelinePrompt,
   validateShot,
+  validateShotsDocument,
 } from './shot-document'
 
 const shot: Shot = {
@@ -175,6 +176,38 @@ describe('structured editing', () => {
     expect(extractImageIndexes('@Image02 @Image1 @Image2')).toEqual([2, 1])
   })
 
+  it.each([
+    [
+      '参考图片超过上限',
+      { ...shot, image_urls: Array.from({ length: 31 }, (_, index) => `${index}.png`) },
+      '镜头组 1：参考图片最多 30 张',
+    ],
+    ['时长超出范围', { ...shot, seconds: 31 }, '镜头组 1：时长须为 4–30 秒的整数'],
+    [
+      '没有镜头',
+      { ...shot, prompt: { ...shot.prompt, timeline: [] } },
+      '镜头组 1：请至少保留 1 个镜头',
+    ],
+    ['多出的字段', { ...shot, extra: true }, '镜头组 1：包含无法识别的内容'],
+    [
+      '没有专门文案的类型不符',
+      {
+        ...shot,
+        prompt: {
+          ...shot.prompt,
+          timeline: [{ ...shot.prompt.timeline[0], timestamps: [0, '3.5'] }],
+        },
+      },
+      '镜头组 1 的第 1 镜：格式不正确',
+    ],
+  ])('校验不过时（%s）给出中文原因，不出现 zod 的英文默认文案', (_case, input, message) => {
+    expect(validateShot(input as Shot)).toBe(message)
+  })
+
+  it('整份分镜没有镜头组时给出中文原因', () => {
+    expect(validateShotsDocument({ ...document, shots: [] })).toBe('请至少保留 1 个镜头组')
+  })
+
   it('上传追加新编号，并将引用插到指定的正文选区', () => {
     const body = shot.prompt.timeline[0]?.prompt ?? ''
     const next = appendContentImage(shot, 'scene:1', 'new.png', { text: body, start: 2, end: 4 })
@@ -210,18 +243,19 @@ describe('structured editing', () => {
     const exported = formatShotPrompt(original)
     expect(exported).toBe(
       `${original.prompt.global_settings}\n\n` +
-        '[0–3.5秒｜镜头1]   原文 @Image02。\n\n' +
-        '[4.25–8.5秒｜镜头2] 走近拍摄鞋面 @Image1。\n' +
-        '[8.5–9秒｜镜头3] 只有旁白，没有图片引用。\n' +
+        '镜头：\n' +
+        '0–3.5秒   原文 @Image02。\n\n' +
+        '4.25–8.5秒 走近拍摄鞋面 @Image1。\n' +
+        '8.5–9秒 只有旁白，没有图片引用。\n' +
         '不要生成字幕，不要生成背景音乐。',
     )
   })
 
   // 与服务端 test_format_seconds 同一组样例：保留到毫秒，整秒不带小数点。
   it.each([
-    [0, 4, '[0–4秒｜镜头1]'],
-    [3.5, 8.25, '[3.5–8.25秒｜镜头1]'],
-    [1.0004, 2.0006, '[1–2.001秒｜镜头1]'],
+    [0, 4, '0–4秒'],
+    [3.5, 8.25, '3.5–8.25秒'],
+    [1.0004, 2.0006, '1–2.001秒'],
   ])('起止秒 %d–%d 取整到毫秒并去掉末尾的零', (start, end, heading) => {
     const timed: Shot = {
       ...shot,

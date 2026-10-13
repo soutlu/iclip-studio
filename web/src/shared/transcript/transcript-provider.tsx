@@ -75,7 +75,11 @@ export function TranscriptProvider({
   const { connection, localPrompts, pools } = instances
 
   useEffect(() => {
-    connection.connect()
+    // StrictMode 开发态的清理与重跑在同一任务内同步完成，推迟到微任务后被清理掉的那次不建连；否则浏览器要中止一条握手中的连接，代理与后端白接受一次。
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) connection.connect()
+    })
 
     // 后台连接可能失活且不触发 close；visibilitychange、focus 和 online 共用检测，必要时立即重连。
     const reviveIfStale = () => {
@@ -87,6 +91,7 @@ export function TranscriptProvider({
     window.addEventListener('online', reviveIfStale)
 
     return () => {
+      cancelled = true
       document.removeEventListener('visibilitychange', reviveIfStale)
       window.removeEventListener('focus', reviveIfStale)
       window.removeEventListener('online', reviveIfStale)

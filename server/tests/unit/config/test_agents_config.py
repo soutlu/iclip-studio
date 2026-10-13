@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from iclip.config import load_agent_declarations
+from iclip.config import ResolvedAgent, load_agent_declarations
 
 SPEC = "# 模型在 agents.yaml 里指定\n"
 MODEL = "qwen"
@@ -27,19 +27,25 @@ def write_declaration(root: Path, content: str) -> Path:
     return path
 
 
+def load(path: Path) -> tuple[ResolvedAgent, ...]:
+    """不涉及 skill 的用例：skill 库指向不存在的目录，没人声明 skill 就不会去查它。"""
+
+    return load_agent_declarations(path, skills_dir=path.parent / "未建的技能库")
+
+
 def test_missing_file_fails_loudly(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match="agent 声明文件不存在"):
-        load_agent_declarations(tmp_path / "nope.yaml")
+        load(tmp_path / "nope.yaml")
 
 
 def test_empty_file_yields_empty_registry(tmp_path: Path) -> None:
 
-    assert load_agent_declarations(write_declaration(tmp_path, "")) == ()
+    assert load(write_declaration(tmp_path, "")) == ()
 
 
 def test_empty_agent_section_yields_empty_registry(tmp_path: Path) -> None:
-    assert load_agent_declarations(write_declaration(tmp_path, "agent: {}\n")) == ()
+    assert load(write_declaration(tmp_path, "agent: {}\n")) == ()
 
 
 def test_single_agent_resolves_spec_and_instructions(tmp_path: Path) -> None:
@@ -48,7 +54,7 @@ def test_single_agent_resolves_spec_and_instructions(tmp_path: Path) -> None:
         tmp_path, "agent:\n  storyboard:\n    spec: storyboard/agent.yaml\n    model: qwen\n"
     )
 
-    (declared,) = load_agent_declarations(path)
+    (declared,) = load(path)
 
     assert declared.agent_id == "storyboard"
     assert declared.name == "storyboard"
@@ -64,7 +70,7 @@ def test_declared_name_is_kept_for_display(tmp_path: Path) -> None:
         "agent:\n  storyboard:\n    spec: storyboard/agent.yaml\n    model: qwen\n    name: 分镜 Agent\n",
     )
 
-    (declared,) = load_agent_declarations(path)
+    (declared,) = load(path)
 
     assert (declared.agent_id, declared.name) == ("storyboard", "分镜 Agent")
 
@@ -77,7 +83,7 @@ def test_blank_name_is_refused(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValidationError):
-        load_agent_declarations(path)
+        load(path)
 
 
 def test_instructions_absent_is_none(tmp_path: Path) -> None:
@@ -86,7 +92,7 @@ def test_instructions_absent_is_none(tmp_path: Path) -> None:
         tmp_path, "agent:\n  storyboard:\n    spec: storyboard/agent.yaml\n    model: qwen\n"
     )
 
-    (declared,) = load_agent_declarations(path)
+    (declared,) = load(path)
 
     assert declared.instructions is None
 
@@ -108,7 +114,7 @@ def test_subagent_controls_parsed(tmp_path: Path) -> None:
         "        on_failure: 就此收手\n",
     )
 
-    (declared,) = load_agent_declarations(path)
+    (declared,) = load(path)
     (sub,) = declared.subagents
 
     assert sub.spec == (tmp_path / "shot-writer" / "agent.yaml").resolve()
@@ -116,13 +122,15 @@ def test_subagent_controls_parsed(tmp_path: Path) -> None:
     assert (sub.timeout_seconds, sub.max_calls, sub.on_failure) == (180.0, 3, "就此收手")
 
 
-def test_skills_and_capabilities_resolve_per_agent(tmp_path: Path) -> None:
+def test_skills_resolve_from_the_given_library(tmp_path: Path) -> None:
 
-    make_agent_dir(tmp_path, "producer")
-    make_agent_dir(tmp_path, "shot-writer")
-    (tmp_path / "skills" / "拆解素材").mkdir(parents=True)
+    agents = tmp_path / "agents"
+    library = tmp_path / "library"
+    make_agent_dir(agents, "producer")
+    make_agent_dir(agents, "shot-writer")
+    (library / "拆解素材").mkdir(parents=True)
     path = write_declaration(
-        tmp_path,
+        agents,
         "agent:\n"
         "  producer:\n"
         "    spec: producer/agent.yaml\n"
@@ -135,14 +143,16 @@ def test_skills_and_capabilities_resolve_per_agent(tmp_path: Path) -> None:
         "        skills: [拆解素材]\n",
     )
 
-    (declared,) = load_agent_declarations(path)
+    (declared,) = load_agent_declarations(path, skills_dir=library)
     (sub,) = declared.subagents
 
     assert declared.skills is not None
-    assert declared.skills.library == (tmp_path / "skills").resolve()
+    assert declared.skills.library == library.resolve()
     assert declared.skills.names == ("拆解素材",)
     assert declared.capabilities == ("video",)
-    assert sub.skills is not None and sub.skills.names == ("拆解素材",)
+    assert sub.skills is not None
+    assert sub.skills.library == library.resolve()
+    assert sub.skills.names == ("拆解素材",)
     assert sub.capabilities == ()
 
 
@@ -154,16 +164,20 @@ def test_no_skills_declared_mounts_nothing(tmp_path: Path) -> None:
         "agent:\n  storyboard:\n    spec: storyboard/agent.yaml\n    model: qwen\n    skills: []\n",
     )
 
-    (declared,) = load_agent_declarations(path)
+    (declared,) = load(path)
 
     assert declared.skills is None
 
 
 def test_declared_skills_without_library_fails_loudly(tmp_path: Path) -> None:
 
-    make_agent_dir(tmp_path, "storyboard")
+    agents = tmp_path / "agents"
+    make_agent_dir(agents, "storyboard")
+    # 声明文件旁边的 skills/ 不算 skill 库，只认传入的目录。
+    (agents / "skills" / "拆解素材").mkdir(parents=True)
+    missing = tmp_path / "skills"
     path = write_declaration(
-        tmp_path,
+        agents,
         "agent:\n"
         "  storyboard:\n"
         "    spec: storyboard/agent.yaml\n"
@@ -171,8 +185,11 @@ def test_declared_skills_without_library_fails_loudly(tmp_path: Path) -> None:
         "    skills: [拆解素材]\n",
     )
 
-    with pytest.raises(RuntimeError, match="skill 库不存在"):
-        load_agent_declarations(path)
+    with pytest.raises(RuntimeError, match="skill 库不存在") as raised:
+        load_agent_declarations(path, skills_dir=missing)
+
+    assert "agent.storyboard" in str(raised.value)
+    assert str(missing.resolve()) in str(raised.value)
 
 
 def test_unknown_key_rejected(tmp_path: Path) -> None:
@@ -182,13 +199,13 @@ def test_unknown_key_rejected(tmp_path: Path) -> None:
         "agent:\n  storyboard:\n    spec: storyboard/agent.yaml\n    model: qwen\n    retries: 3\n",
     )
     with pytest.raises(ValidationError):
-        load_agent_declarations(path)
+        load(path)
 
 
 def test_unknown_top_level_section_rejected(tmp_path: Path) -> None:
     path = write_declaration(tmp_path, "agent: {}\nrun_targets: {}\n")
     with pytest.raises(ValidationError):
-        load_agent_declarations(path)
+        load(path)
 
 
 def test_missing_spec_file_fails_fast(tmp_path: Path) -> None:
@@ -196,7 +213,7 @@ def test_missing_spec_file_fails_fast(tmp_path: Path) -> None:
         tmp_path, "agent:\n  storyboard:\n    spec: storyboard/agent.yaml\n    model: qwen\n"
     )
     with pytest.raises(RuntimeError, match="spec 文件不存在"):
-        load_agent_declarations(path)
+        load(path)
 
 
 def test_missing_subagent_spec_file_fails_fast(tmp_path: Path) -> None:
@@ -212,12 +229,12 @@ def test_missing_subagent_spec_file_fails_fast(tmp_path: Path) -> None:
         "        model: qwen\n",
     )
     with pytest.raises(RuntimeError, match="subagent 声明的 spec 文件不存在"):
-        load_agent_declarations(path)
+        load(path)
 
 
 def test_non_mapping_document_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="不是 mapping"):
-        load_agent_declarations(write_declaration(tmp_path, "- a\n- b\n"))
+        load(write_declaration(tmp_path, "- a\n- b\n"))
 
 
 def test_agent_without_model_rejected(tmp_path: Path) -> None:
@@ -225,4 +242,4 @@ def test_agent_without_model_rejected(tmp_path: Path) -> None:
     make_agent_dir(tmp_path, "storyboard")
     path = write_declaration(tmp_path, "agent:\n  storyboard:\n    spec: storyboard/agent.yaml\n")
     with pytest.raises(ValidationError):
-        load_agent_declarations(path)
+        load(path)
