@@ -438,6 +438,14 @@ class FilmImageChoiceIn(CamelModel):
         return value
 
 
+class FilmAspectRatioIn(CamelModel):
+    """把整份工程的画幅改成 ``aspectRatio``：所有视频与机位图一起改。``filmVersion`` 是读到的工程文件
+    版本号，对不上是 409；能写哪些画幅由后端按视频的档位查，不合规矩是 422。"""
+
+    aspect_ratio: Annotated[str, Field(min_length=1, max_length=20)]
+    film_version: int
+
+
 class FilmImagePromptIn(CamelModel):
     """编辑器里改过的描述与参考图，只用这一次。"""
 

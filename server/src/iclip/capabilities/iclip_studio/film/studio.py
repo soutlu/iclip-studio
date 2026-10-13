@@ -1,7 +1,7 @@
 """制作页：把检查通过的工程按视频请求排成镜头组，改一段字（连同字里插入、删除的图），给一张图换地址
-或选用。
+或选用，改整份工程的画幅。
 
-改字和换图只替换原文里对应的那几段，文件其余部分一个字不动；改字插入或删掉图时，这组视频的参考图
+改字、换图和改画幅只替换原文里对应的那几段，文件其余部分一个字不动；改字插入或删掉图时，这组视频的参考图
 列表、「素材」里的照片和这组文字里的图号跟着改。写之前按人保存文件时的同一套规则检查，有问题就
 不写，说明是给人看的一句话。
 
@@ -32,6 +32,7 @@ from iclip.capabilities.iclip_studio.film.packages import (
     RUN_MARKUP,
     RUN_ROOT,
     SEEDANCE_VARIANTS,
+    VIDEO_ASPECTS,
     VIDEO_MAX_REFERENCES,
 )
 from iclip.capabilities.iclip_studio.film.prompts import (
@@ -62,6 +63,7 @@ from iclip.common.shot_prompt import format_shot_prompt
 
 _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
 _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
+_ASPECT: Final = re.compile(r"""(\saspect-ratio\s*=\s*)(["'])(.*?)\2""", re.S)
 _UNWRITABLE: Final = ("<!--", "<![CDATA[")
 """正文里有注释或 CDATA 时只换那一段会把它们弄丢，这样的正文不让在页面上改。"""
 
@@ -306,6 +308,37 @@ def choose_image(
     if check_project_content(updated):
         raise RuntimeError(f"给 {image} 换图后工程文件没有通过检查")
     return [(FILM_PATH, updated)]
+
+
+def set_aspect_ratio(film: Film, project_source: str, aspect: str) -> str | None:
+    """把整份工程的画幅改成 ``aspect``，返回新的工程文件；所有目标本来就是它时返回 None。
+
+    改的是每个视频节点和每张机位图（某一镜 ``view`` 指着的生图节点）的 ``aspect-ratio``：保存检查要求
+    所有视频同画幅、机位图与视频同画幅。设定图等其余图片不动，``view`` 指着用户给的图时它没有画幅，
+    跳过。运行文件不写，已选用的图照旧选用。``aspect`` 只收视频能写的画幅。"""
+
+    if aspect not in VIDEO_ASPECTS:
+        raise FilmEditRejected(f"不支持 {aspect} 画幅，可选 {'、'.join(VIDEO_ASPECTS)}")
+    project = film.project
+    videos = project.find("ReferenceVideo")
+    views = [project.nodes[name] for name in _views(project, videos)]
+    splice = _Splice()
+    changed = False
+    for node in (*videos, *views):
+        current = node.attrs.get("aspect-ratio")
+        if current is None or current == aspect:
+            continue
+        found = None if node.opening is None else _ASPECT.search(project_source, *node.opening)
+        if found is None:
+            raise FilmEditRejected("画幅无法在页面上修改，请让 AI 导演修改")
+        splice.replace(found.span(3), aspect)
+        changed = True
+    if not changed:
+        return None
+    updated = splice.apply(project_source)
+    if check_project_content(updated):
+        raise RuntimeError(f"把画幅改成 {aspect} 后工程文件没有通过检查")
+    return updated
 
 
 def _views(project: Document, videos: list[Node]) -> dict[str, _View]:
@@ -1007,4 +1040,5 @@ __all__ = [
     "film_groups",
     "image_prompt",
     "missing_references",
+    "set_aspect_ratio",
 ]

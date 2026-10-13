@@ -16,6 +16,7 @@ from iclip.capabilities.iclip_studio.film.packages import (
     GPT_IMAGE_RESOLUTIONS,
     IMAGE_MAX_REFERENCES,
     PROMPT_MAX_CHARS,
+    VIDEO_ASPECTS,
     VIDEO_MAX_REFERENCES,
 )
 from iclip.capabilities.iclip_studio.film.prompts import (
@@ -1033,6 +1034,12 @@ def test_the_image_package_offers_exactly_what_the_image_model_declares() -> Non
     assert GPT_IMAGE_2_5.name == GPT_IMAGE_MODEL
     assert set(GPT_IMAGE_ASPECTS) == set(GPT_IMAGE_2_5.spec.aspect_ratios)
     assert GPT_IMAGE_2_5.spec.resolutions == GPT_IMAGE_RESOLUTIONS
+
+
+def test_every_video_aspect_ratio_is_one_the_image_package_can_write() -> None:
+    """制作页改画幅时机位图跟着视频改，视频能写的画幅生图节点都要能写。"""
+
+    assert set(VIDEO_ASPECTS) <= set(GPT_IMAGE_ASPECTS)
 
 
 def test_saving_the_project_file_checks_that_file_alone() -> None:

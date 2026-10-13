@@ -2,7 +2,8 @@
  *
  * 路由参数沿用分镜页的：`shot` 是第几组，`content` 是选中的段，`frame` 是舞台上那张图在这组 `frames` 里的位置，
  * `video` 是视频编辑器开在哪条出片上。两个文件检查出问题时整页只写问题数，等 AI 导演改好。
- * 出片、换图、生图都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅照文件，只显示。
+ * 出片、换图、生图、改画幅都先把改了的字存下，再按存好的那一版发，发出去的和文件里的一样；画幅改的是整份工程
+ * （所有组的视频与机位图），改完之前不出片。
  * 生成的图不会自动用上：生成卡或编辑器里点「选用这张」才写进运行文件。这组参考图列表里有没选用的就不能出片，
  * 出片栏的状态行写缺哪几张。顶栏「复制完整提示词」复制后端拼好的这组正文（`group.prompt`）。
  * 在用或生成过的那张能开图片编辑器（`FilmImageEdit`），编辑与重新生成的结果在舞台上挂「有新结果」，点开就是那条。 */
@@ -21,6 +22,7 @@ import {
   DialogSurface,
 } from '@/shared/ui/dialog'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
+import { toast } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { ReaderNotice, SaveStatus } from '../components/draft-status'
 import { StoryboardToolbar } from '../components/storyboard-toolbar'
@@ -42,6 +44,7 @@ import {
   filmQueryKey,
   generateFilmImage,
   generateFilmVideo,
+  setFilmAspectRatio,
   useFilmFileChanges,
   useFilmView,
   type FilmFrame,
@@ -73,6 +76,12 @@ const REPLACE_UPLOAD = 0
 
 /** 文案列里往字里插入的图在上传：同样不属于哪一组，用 -1。 */
 const TEXT_UPLOAD = -1
+
+/** 画幅在改：改的是整份工程、不属于哪一组，用 -2。 */
+const ASPECT_SAVE = -2
+
+/** 出片栏画幅按钮的悬停说明：制作页上改的是工程文件，所有组一起改。 */
+const FILM_ASPECT_DESCRIPTION = '画幅写回工程文件，所有镜头组与机位图一并修改'
 
 export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
@@ -184,6 +193,31 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
     reportTextUploading(textUploading)
     return () => reportTextUploading(false)
   }, [textUploading])
+  // 画幅在改时先别出片：出片按文件里的画幅发，要等新画幅写进文件。
+  const [aspectSaving, setAspectSaving] = useState(false)
+  const reportAspectSaving = useEffectEvent((busy: boolean) =>
+    gate.onUploadingChange(ASPECT_SAVE, busy),
+  )
+  useEffect(() => {
+    reportAspectSaving(aspectSaving)
+    return () => reportAspectSaving(false)
+  }, [aspectSaving])
+  /** 改整份工程的画幅：先存改了的字，按存好的那一版改，答复的整页直接放进缓存；失败时同换图一样提示原因。 */
+  const changeAspect = async (aspectRatio: string) => {
+    setAspectSaving(true)
+    try {
+      const saved = await savedFilm()
+      const changed = await setFilmAspectRatio(conversationId, {
+        aspectRatio,
+        filmVersion: saved.filmVersion,
+      })
+      queryClient.setQueryData(filmQueryKey(conversationId), { film: changed })
+    } catch (error) {
+      toast.error(errorMessageOf(error, '画幅修改失败'))
+    } finally {
+      setAspectSaving(false)
+    }
+  }
   const generateImage = async (target: FilmFrame) => {
     setCardAction({ kind: 'generate', node: target.node })
     try {
@@ -445,7 +479,12 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
           </section>
         </div>
         <VideoGenerationBar
-          aspect={{ kind: 'fixed', value: group.aspectRatio }}
+          aspect={{
+            description: FILM_ASPECT_DESCRIPTION,
+            disabled: readOnly || gate.preparing || aspectSaving,
+            onChange: (aspectRatio) => void changeAspect(aspectRatio),
+            value: group.aspectRatio,
+          }}
           blocker={generateBlocker}
           models={{ items: video.models, status: video.modelsStatus }}
           notice={generateNotice}

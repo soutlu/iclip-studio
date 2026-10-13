@@ -535,6 +535,17 @@ export const zFaceOut = z.object({
 })
 
 /**
+ * FilmAspectRatioIn
+ *
+ * 把整份工程的画幅改成 ``aspectRatio``：所有视频与机位图一起改。``filmVersion`` 是读到的工程文件
+ * 版本号，对不上是 409；能写哪些画幅由后端按视频的档位查，不合规矩是 422。
+ */
+export const zFilmAspectRatioIn = z.object({
+  aspectRatio: z.string().min(1).max(20),
+  filmVersion: z.int(),
+})
+
+/**
  * FilmImageChoiceIn
  *
  * 给 ``node`` 换成 ``url``；``url`` 为 null 是取消生成图的选用，这张图就没有图了。
@@ -2834,6 +2845,20 @@ export const zReadConversationFilmConversationsConversationIdFilmGetPath = z.obj
  * Successful Response
  */
 export const zReadConversationFilmConversationsConversationIdFilmGetResponse = zFilmViewEnvelope
+
+export const zSetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutBody =
+  zFilmAspectRatioIn
+
+export const zSetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zSetConversationFilmAspectRatioConversationsConversationIdFilmAspectRatioPutResponse =
+  zFilmViewEnvelope
 
 export const zChooseConversationFilmImageConversationsConversationIdFilmImagePutBody =
   zFilmImageChoiceIn

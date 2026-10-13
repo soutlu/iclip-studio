@@ -2032,6 +2032,28 @@
         "title": "FaceOut",
         "type": "object"
       },
+      "FilmAspectRatioIn": {
+        "additionalProperties": false,
+        "description": "把整份工程的画幅改成 ``aspectRatio``：所有视频与机位图一起改。``filmVersion`` 是读到的工程文件\n版本号，对不上是 409；能写哪些画幅由后端按视频的档位查，不合规矩是 422。",
+        "properties": {
+          "aspectRatio": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "filmVersion": {
+            "title": "Filmversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "aspectRatio",
+          "filmVersion"
+        ],
+        "title": "FilmAspectRatioIn",
+        "type": "object"
+      },
       "FilmFrameOut": {
         "additionalProperties": false,
         "description": "镜头组里的一张图：先是这组视频参考图列表里的，按列表先后；再是这组镜头里还没进列表的机位图，\n按镜头先后。``node`` 是换图时传回的定位；``number`` 是它在列表里的位置，即 @N，没进列表的为\nnull；``url`` 没有图时为 null。\n\n``prompt`` 是按描述生成时发给模型的描述，按 ``@ImageN`` 拆成文字段和图片段，没有图的参考图\n也拆出来；``aspectRatio`` 是文件里写的画幅。用户给的图这两个都是 null。``missing`` 是这张图\n挂着、现在没有图的参考图的称呼（叫法同 ``label``），按挂的先后；不为空时这张图不能生成。用户\n给的图为空列表。",
@@ -10996,6 +11018,72 @@
           }
         ],
         "summary": "Read Conversation Film",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/film/aspect-ratio": {
+      "put": {
+        "description": "改整份工程的画幅（所有视频与机位图），答复改完的制作页；本来就是它时不写文件。\n版本对不上 409，画幅不在视频的档位里 422。",
+        "operationId": "set_conversation_film_aspect_ratio_conversations__conversation_id__film_aspect_ratio_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilmAspectRatioIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilmViewEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Set Conversation Film Aspect Ratio",
         "tags": [
           "conversations"
         ]
