@@ -80,8 +80,8 @@ const TEXT_UPLOAD = -1
 /** 画幅在改：改的是整份工程、不属于哪一组，用 -2。 */
 const ASPECT_SAVE = -2
 
-/** 出片栏画幅按钮的悬停说明：制作页上改的是工程文件，所有组一起改。 */
-const FILM_ASPECT_DESCRIPTION = '画幅写回工程文件，所有镜头组与机位图一并修改'
+/** 出片栏画幅按钮的悬停说明：制作页上改的是整份工程，所有组一起改。 */
+const FILM_ASPECT_DESCRIPTION = '画幅写回分镜，所有镜头组与机位图一并修改'
 
 export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
