@@ -33,6 +33,10 @@ path = "iclip.platform.material_ledger"
 depends_on = []
 
 [[modules]]
+path = "iclip.platform.outbound"
+depends_on = []
+
+[[modules]]
 path = "iclip.config"
 depends_on = ["iclip.common"]
 
@@ -85,7 +89,9 @@ depends_on = ["iclip.common", "iclip.domains.identity"]
 path = "iclip.domains.uploads"
 depends_on = [
     "iclip.common",
+    "iclip.platform.media",
     "iclip.platform.object_store",
+    "iclip.platform.outbound",
     "iclip.domains.identity",
 ]
 
@@ -150,6 +156,7 @@ depends_on = [
     "iclip.platform.file_store",
     "iclip.platform.material_ledger",
     "iclip.platform.media",
+    "iclip.platform.outbound",
     "iclip.platform.transcript",
     "iclip.config",
     "iclip.domains.identity",

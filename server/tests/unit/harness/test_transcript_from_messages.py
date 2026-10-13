@@ -27,6 +27,7 @@ from pydantic_ai_harness.step_persistence import StepEvent
 
 from iclip.harness.background import BackgroundOutcome, BackgroundTools
 from iclip.harness.job_status import JobStatus
+from iclip.harness.media import media_tag
 from iclip.harness.transcript.from_messages import (
     ORPHAN_TOOL_ERROR,
     ChildRun,
@@ -521,21 +522,25 @@ def test_duration_is_only_reported_for_ended_turns() -> None:
 def test_attachments_survive_the_round_trip() -> None:
     """用户附件经过消息持久化后，须从 tag 恢复为原附件 part，图文保持原序。
 
-    三种编码都要还原：OSS 图片是开标签、像素、闭标签三项；非 OSS 图片与视频是单个完整标签。
+    三种编码都要还原：OSS 图片是开标签、像素、闭标签三项；视频是单个完整标签；受理规则收紧之前
+    存下的非 OSS 图片也是单个完整标签，历史里还有，照样还原。
     """
 
     # 使用可缩放地址以生成完整的开标签、图片和闭标签三项，覆盖独立闭标签的解析。
     url = "https://bkt.oss-ap-southeast-1.aliyuncs.com/u/shot.png"
+    legacy = "https://cdn.test/u/style.jpg"
     content = (
         TextContent(text="参考这张图："),
         ImageContent(source=AttachmentSource(kind="url", url=url)),
         TextContent(text="和这张："),
-        ImageContent(source=AttachmentSource(kind="url", url="https://cdn.test/u/style.jpg")),
+        ImageContent(source=AttachmentSource(kind="url", url=legacy)),
         TextContent(text="照这个视频"),
         VideoContent(source=AttachmentSource(kind="url", url="https://cdn.test/u/ref.mp4")),
         TextContent(text="做个 30 秒的"),
     )
-    turns = turns_from_messages([_ask(model_prompt(content)), _reply(TextPart(content="好"))])
+    # model_prompt 现在拒绝挂不上参数的图片，旧消息里那张按当时的写法手工拼。
+    stored = [*model_prompt(content[:3]), media_tag("image", legacy), *model_prompt(content[4:])]
+    turns = turns_from_messages([_ask(stored), _reply(TextPart(content="好"))])
 
     # 恢复 tag 中的原图地址，不能使用模型收到的缩略图地址。
     assert turns[0].content == content

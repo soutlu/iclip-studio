@@ -30,8 +30,18 @@ class ObjectStoreUnavailable(Exception):
 class PublicObjectStore(Protocol):
     """公开对象写入端口，供无需直传能力的调用方依赖。"""
 
-    async def put_public_object(self, *, object_key: str, content: bytes, content_type: str) -> str:
-        """写入公开对象，返回它的公网 URL；同 key 已存在即复用。"""
+    async def put_public_object(
+        self,
+        *,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: Mapping[str, str] | None = None,
+    ) -> str:
+        """写入公开对象，返回它的公网 URL；同 key 已存在即复用。
+
+        ``metadata`` 是随对象存进桶的 ``x-oss-meta-*`` 头（键写全名，值只能是 ASCII），审计用；
+        同 key 已存在时不改原有的。"""
         ...
 
 

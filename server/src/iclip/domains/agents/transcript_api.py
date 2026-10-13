@@ -179,6 +179,22 @@ class Transcripts(Protocol):
     def unpin(self, conversation_id: str) -> None: ...
 
 
+class ImportAttachments(Protocol):
+    """受理消息前处理附件：挂不上 OSS 处理参数的图片地址转存进本桶、记成 ``principal`` 的上传，
+    交回换过地址的 content，其余 part 原样。``prompt_id`` 让重发同一条消息时复用已转存的那份，
+    为 None（不带 id 的重新生成）时每次都重新转存。转存失败抛 ``ValidationFailed``，说明第几张
+    附件。实现由组合根接到 uploads。"""
+
+    async def __call__(
+        self,
+        principal: Principal,
+        *,
+        conversation_id: str,
+        prompt_id: str | None,
+        content: tuple[PromptContent, ...],
+    ) -> tuple[PromptContent, ...]: ...
+
+
 class ConversationHeader(Protocol):
     """会话页首屏要贴在信封顶层的几项，外加读这一页要用的 Agent id。"""
 
@@ -419,8 +435,10 @@ def create_transcript_router(
     act_as: ActAs,
     allowed_origins: tuple[str, ...],
     live: LiveConnections,
+    import_attachments: ImportAttachments | None = None,
 ) -> APIRouter:
-    """挂 transcript 的读写端点与订阅连接。"""
+    """挂 transcript 的读写端点与订阅连接。``import_attachments`` 在发消息与带新内容的重新生成
+    受理前转存图片附件；没配对象存储时为 None，不转存。"""
 
     # :abort 紧跟对话 id，无法复用带尾部斜杠的前缀；与 /ws 一起挂在外层路由。
     outer = APIRouter(tags=["transcript"])
@@ -432,6 +450,18 @@ def create_transcript_router(
     async def _readable(principal: Principal, conversation_id: str) -> str:
         return await conversations.agent_of(principal, conversation_id, writing=False)
 
+    async def _imported(
+        principal: Principal,
+        conversation_id: str,
+        prompt_id: str | None,
+        content: tuple[PromptContent, ...],
+    ) -> tuple[PromptContent, ...]:
+        if import_attachments is None:
+            return content
+        return await import_attachments(
+            principal, conversation_id=conversation_id, prompt_id=prompt_id, content=content
+        )
+
     @router.post("/prompts", response_model=Prompt)
     async def submit(
         conversation_id: ConversationId,
@@ -441,18 +471,22 @@ def create_transcript_router(
         """发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。
 
         ``user_name`` 是这条消息替谁发的：API key 调用方必须给，浏览器会话默认是登录用户名。
+
+        图片附件的地址挂不上 OSS 处理参数时，受理前先转存进本桶、记成发消息那个人的一条上传，
+        消息里存新地址；转存失败是 422，说明第几张附件。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         agent_id = await _writable(principal, conversation_id)
+        content = await _imported(principal, conversation_id, body.prompt_id, body.content)
         return await transcripts.submit(
             prompt_id=body.prompt_id,
             conversation_id=conversation_id,
             agent_id=agent_id,
             owner_user_id=principal.user_id,
             user_name=user_name,
-            content=body.content,
+            content=content,
         )
 
     @router.get("/prompts", response_model=PromptQueueOut)
@@ -494,15 +528,22 @@ def create_transcript_router(
         """重新生成最后一轮：把它从历史里抹掉重跑一次，答复是重跑那条的记录。
 
         ``turn_id`` 是协议里的轮 id（``t{N}``），客户端从轮头部直接拿得到。请求体可以不带：
-        带 ``content`` 就换成新内容重跑，带 ``prompt_id`` 就与发消息同一套幂等。
+        带 ``content`` 就换成新内容重跑，带 ``prompt_id`` 就与发消息同一套幂等；新内容里的图片附件
+        与发消息一样先转存。
         """
 
         await _writable(principal, conversation_id)
+        prompt_id = None if body is None else body.prompt_id
+        content = (
+            None
+            if body is None or body.content is None
+            else await _imported(principal, conversation_id, prompt_id, body.content)
+        )
         return await transcripts.regenerate(
             conversation_id=conversation_id,
             turn_id=turn_id,
-            prompt_id=None if body is None else body.prompt_id,
-            content=None if body is None else body.content,
+            prompt_id=prompt_id,
+            content=content,
         )
 
     @outer.post("/conversations/{conversation_id}:abort", status_code=204)
@@ -994,6 +1035,7 @@ __all__ = [
     "MAX_EVENT_BUFFER",
     "ConversationHeader",
     "Conversations",
+    "ImportAttachments",
     "LiveConnections",
     "Transcripts",
     "create_transcript_router",

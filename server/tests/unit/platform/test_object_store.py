@@ -91,6 +91,7 @@ class FakeBucket:
         self.listed = listed or []
         self.head = head
         self.writes: list[tuple[str, bytes, str]] = []
+        self.write_headers: list[dict[str, str]] = []
         self.signed: list[tuple[str, str, int, dict[str, str], bool]] = []
         self.deleted: list[str] = []
 
@@ -104,6 +105,7 @@ class FakeBucket:
 
     def put_object(self, object_key: str, content: bytes, headers: dict[str, str]) -> None:
         self.writes.append((object_key, content, headers["Content-Type"]))
+        self.write_headers.append(dict(headers))
 
     def sign_url(
         self,
@@ -143,6 +145,23 @@ async def test_write_returns_public_url_and_encodes_the_key() -> None:
 
     assert url == f"https://cdn.test/{OSS_ROOT}/generated-images/a%20b.png"
     assert bucket.writes == [(key, b"X", "image/png")]
+    assert bucket.write_headers == [{"Content-Type": "image/png"}]
+
+
+async def test_audit_metadata_goes_into_the_write_headers() -> None:
+    """服务端转存的对象要和直传一样带上传者与 key 的 x-oss-meta-* 头。"""
+
+    bucket = FakeBucket()
+    await store(bucket).put_public_object(
+        object_key=KEY,
+        content=b"X",
+        content_type="image/png",
+        metadata={"x-oss-meta-uploader": "u-1", "x-oss-meta-api-key": "k-1"},
+    )
+
+    assert bucket.write_headers == [
+        {"Content-Type": "image/png", "x-oss-meta-uploader": "u-1", "x-oss-meta-api-key": "k-1"}
+    ]
 
 
 async def test_existing_key_is_reused_not_rewritten() -> None:

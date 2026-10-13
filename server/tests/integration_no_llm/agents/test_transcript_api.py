@@ -186,7 +186,8 @@ async def test_second_prompt_queues_while_the_first_runs(app: FastAPI, pg_url: s
 async def test_attachments_land_in_the_material_ledger(app: FastAPI, pg_url: str) -> None:
     """消息受理时须登记附件及类型，使后续工具的素材校验认可用户输入。"""
 
-    image = "https://cdn.test/style.jpg"
+    # 图片要挂得上 OSS 处理参数；这个 app 没配对象存储，不转存，外部图片会被 422。
+    image = "https://bkt.oss-ap-southeast-1.aliyuncs.com/style.jpg"
     video = "https://cdn.test/ref.mp4"
     async with make_client(app) as client:
         user_id = await login_as_editor(client, pg_url)
@@ -206,8 +207,8 @@ async def test_attachments_land_in_the_material_ledger(app: FastAPI, pg_url: str
         await settled(client, conversation_id)
 
     assert await _materials(pg_url, f"{user_id}/{conversation_id}") == [
-        (video, "video"),
         (image, "image"),
+        (video, "video"),
     ]
 
 

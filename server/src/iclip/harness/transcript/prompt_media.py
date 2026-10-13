@@ -8,9 +8,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-import structlog
 from pydantic_ai.messages import ImageUrl, UserContent
 
+from iclip.common.errors import ValidationFailed
 from iclip.harness.media import (
     IMAGE_CONTEXT_MAX_EDGE,
     MediaKind,
@@ -29,11 +29,12 @@ from iclip.platform.transcript.ops import (
     VideoContent,
 )
 
-_logger = structlog.stdlib.get_logger(__name__)
-
 
 def model_prompt(content: Sequence[PromptContent]) -> list[UserContent]:
-    """构造模型输入：图片传入缩放像素且保留原图 tag，无法缩放时仅保留 tag；视频仅使用 tag。"""
+    """构造模型输入：图片传入缩放像素且保留原图 tag，视频仅使用 tag。
+
+    图片地址挂不上缩放参数时抛 ``ValidationFailed``（带地址），不让模型只拿到地址、看不到图。
+    受理消息时已经拦下这种地址，走到这里的只会是受理规则收紧之前排进队列的旧消息。"""
 
     out: list[UserContent] = []
     for part in content:
@@ -51,10 +52,9 @@ def model_prompt(content: Sequence[PromptContent]) -> list[UserContent]:
         try:
             view = resized_image_url(url, max_edge=IMAGE_CONTEXT_MAX_EDGE)
         except ValueError as exc:
-            # 挂不上缩放参数时模型只拿到地址、看不到像素，记一条便于发现上游给了非常规地址。
-            _logger.warning("附件图片未提供像素", url=url, reason=str(exc))
-            out.append(media_tag(kind, url))
-            continue
+            raise ValidationFailed(
+                f"图片附件的地址挂不上缩放参数，模型看不到这张图：{exc}"
+            ) from exc
         out.append(media_tag_open(kind, url))
         out.append(ImageUrl(url=view))
         out.append(media_tag_close(kind))
