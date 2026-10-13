@@ -599,7 +599,7 @@ def build_app(
         video=settings.video,
         shot_video=settings.shot_video if settings.shot_tools_enabled else None,
         iclip_studio=settings.iclip_studio,
-        # 拆解配好时才有队列；AI 导演拆视频走它，与资料库读写同一行。
+        # 拆解配好时才有队列；对话里拆视频走它，与资料库读写同一行。
         reference_service=references.service if references.queue is not None else None,
         media_codec=codec,
     )
@@ -761,7 +761,7 @@ def build_app(
         if generation is not None:
             generation.queue.start()
         if references.queue is not None:
-            # 导演的工具在本进程里等拆解结果，worker 必须和对话运行一起起停。
+            # 对话里的拆解工具在本进程里等拆解结果，worker 必须和对话运行一起起停。
             references.queue.start()
         try:
             yield

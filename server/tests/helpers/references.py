@@ -16,9 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.reference_breakdown import ArkTagger, ArkVideoBreakdowns
 from iclip.app.reference_test_video import TEST_VIDEO_MODEL
-from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
-from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
-from iclip.capabilities.iclip_studio.ports import SampledVideo
+from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
+from iclip.capabilities.video_breakdown.ports import SampledVideo
+from iclip.capabilities.video_breakdown.service import BreakdownRunner
 from iclip.config import RuntimeConfig, VideoGenerationSection
 from iclip.config.models import IclipStudioSection
 from iclip.domains.identity.public import Principal
@@ -185,7 +185,7 @@ def ark_pipeline(
         api_key="ark",
         model="seed-vision",
     )
-    breakdown = VideoBreakdown(model=model, sampler=sampler or FakeSampler())
+    breakdown = BreakdownRunner(model=model, sampler=sampler or FakeSampler())
     return ArkVideoBreakdowns(breakdown), ArkTagger(model)
 
 

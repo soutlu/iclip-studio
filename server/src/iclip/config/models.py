@@ -46,7 +46,7 @@ VIDEO_SUBMIT_URL_ENV: Final = "VIDEO_SUBMIT_URL"
 """媒体生成的总开关：这个地址为空即整项关闭。"""
 
 VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
-"""视频拆解的总开关：这个地址为空即 `video` 与 `iclip_studio` 都不登记。"""
+"""视频拆解的总开关：这个地址为空即 `video` 与 `video_breakdown` 都不登记。"""
 
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 """PDM 款目录的总开关：这个连接串为空即爆款视频的降级不可用。"""
@@ -296,7 +296,8 @@ class VideoSection(ConfigSection):
 
 
 class IclipStudioSection(ConfigSection):
-    """导演流程工具对方约定的取值。地址与 key 复用 ``VideoUnderstandingEnv``。"""
+    """视频拆解（``video_breakdown`` 与参考视频的后台拆解）对方约定的取值。地址与 key 复用
+    ``VideoUnderstandingEnv``。"""
 
     breakdown_model: str
     """拆解视频用对方哪个模型。"""
@@ -489,7 +490,7 @@ class ResolvedVideo:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedIclipStudio:
-    """导演流程工具的运行值。"""
+    """视频拆解（``video_breakdown`` 与参考视频的后台拆解）的运行值。"""
 
     breakdown_url: str
     breakdown_api_key: str

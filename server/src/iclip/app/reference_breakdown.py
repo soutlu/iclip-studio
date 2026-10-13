@@ -1,5 +1,6 @@
-"""参考视频的拆解与打标：把 references 声明的两个端口接到导演那一份拆解（``VideoBreakdown``）与方舟
-Responses 接口上；反过来把 AI 导演的 ``ReferenceBreakdowns`` 端口接到参考视频服务上。
+"""参考视频的拆解与打标：把 references 声明的两个端口接到 ``video_breakdown`` 的拆解
+（``BreakdownRunner``）与方舟 Responses 接口上；反过来把 ``video_breakdown`` 的 ``ReferenceBreakdowns``
+端口接到参考视频服务上。
 
 打标是一次纯文本调用：系统提示词固定，由两份标签清单拼成；用户消息只放拆解全文；输出用 Responses 的
 ``text.format``（``TAG_FORMAT``，json_schema、strict）约束，``parse_tags`` 是唯一的解析处。"""
@@ -12,10 +13,10 @@ from typing import Any, Final
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from iclip.capabilities.iclip_studio.breakdown.media import FfmpegVideoSampler
-from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
-from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
-from iclip.capabilities.iclip_studio.ports import BreakdownError, FailedBreakdown
+from iclip.capabilities.video_breakdown.media import FfmpegVideoSampler
+from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
+from iclip.capabilities.video_breakdown.ports import BreakdownError, FailedBreakdown
+from iclip.capabilities.video_breakdown.service import BreakdownRunner
 from iclip.config import ResolvedIclipStudio
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
@@ -109,9 +110,9 @@ def parse_tags(raw: str) -> Tags:
 
 
 class ArkVideoBreakdowns:
-    """``VideoBreakdowns`` 的实现：沿用导演那一份拆解，把它的两种失败换成落到行上的原因。"""
+    """``VideoBreakdowns`` 的实现：用 ``BreakdownRunner`` 拆，把它的两种失败换成落到行上的原因。"""
 
-    def __init__(self, breakdown: VideoBreakdown) -> None:
+    def __init__(self, breakdown: BreakdownRunner) -> None:
         self._breakdown = breakdown
 
     async def breakdown(self, video_url: str) -> str:
@@ -147,7 +148,7 @@ class ArkTagger:
 
 
 class ReferenceBreakdownsAdapter:
-    """AI 导演的 ``ReferenceBreakdowns``：接到参考视频服务的 ``ensure``，与资料库读写同一行。"""
+    """``video_breakdown`` 的 ``ReferenceBreakdowns``：接到参考视频服务的 ``ensure``，与资料库读写同一行。"""
 
     def __init__(self, service: ReferenceService) -> None:
         self._service = service
@@ -177,7 +178,7 @@ def build_reference_breakdown(
         api_key=settings.breakdown_api_key,
         model=settings.breakdown_model,
     )
-    breakdown = VideoBreakdown(
+    breakdown = BreakdownRunner(
         model=model, sampler=FfmpegVideoSampler(client, codec, fetch_url=fetch_url)
     )
     return ArkVideoBreakdowns(breakdown), ArkTagger(model)

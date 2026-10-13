@@ -8,10 +8,10 @@ from typing import Any
 import httpx
 import pytest
 
-from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
-from iclip.capabilities.iclip_studio.breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
-from iclip.capabilities.iclip_studio.breakdown.service import VideoBreakdown
-from iclip.capabilities.iclip_studio.ports import BreakdownError, SampledVideo
+from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
+from iclip.capabilities.video_breakdown.ports import BreakdownError, SampledVideo
+from iclip.capabilities.video_breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
+from iclip.capabilities.video_breakdown.service import BreakdownRunner
 from iclip.platform.media.ffmpeg import MediaError
 
 VIDEO = "https://cdn.test/ref.mp4"
@@ -69,14 +69,14 @@ def breakdown_with(
     upstream: Upstream | None = None,
     *,
     transport: httpx.MockTransport | None = None,
-) -> VideoBreakdown:
+) -> BreakdownRunner:
     model = ArkBreakdownModel(
         httpx.AsyncClient(transport=transport or httpx.MockTransport(upstream or Upstream())),
         url="https://vision.test/responses",
         api_key="ark",
         model="seed-vision",
     )
-    return VideoBreakdown(model=model, sampler=sampler)
+    return BreakdownRunner(model=model, sampler=sampler)
 
 
 def user_content(upstream: Upstream) -> list[dict[str, Any]]:
