@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from iclip.common.urls import is_http_url
+from iclip.common.urls import is_http_url, is_oss_processable
 
 
 @pytest.mark.parametrize(
@@ -39,3 +39,33 @@ def test_http_urls_with_a_host_are_accepted(url: str) -> None:
 )
 def test_everything_else_is_refused_without_raising(url: str) -> None:
     assert not is_http_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://bucket.oss-ap-southeast-1.aliyuncs.com/iclip/agent/uploads/a.jpg",
+        "http://bucket.oss-cn-hangzhou-internal.aliyuncs.com/a.png",
+    ],
+)
+def test_an_oss_address_without_a_query_can_carry_processing_parameters(url: str) -> None:
+    assert is_oss_processable(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param("https://cdn.test/a.jpg", id="非 OSS 域名"),
+        pytest.param("https://aliyuncs.com.evil.test/a.jpg", id="后缀不在末尾"),
+        pytest.param(
+            "https://bucket.oss-ap-southeast-1.aliyuncs.com/a.jpg?Signature=abc", id="带签名 query"
+        ),
+        pytest.param(
+            "https://bucket.oss-ap-southeast-1.aliyuncs.com/a.jpg?x-oss-process=image/info",
+            id="已经挂了处理参数",
+        ),
+        pytest.param("http://[::1", id="畸形地址"),
+    ],
+)
+def test_other_addresses_cannot_carry_processing_parameters(url: str) -> None:
+    assert not is_oss_processable(url)

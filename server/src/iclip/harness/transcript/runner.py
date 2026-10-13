@@ -389,10 +389,14 @@ class ConversationRunner:
             # 验证期间运行已收尾，它的 start_next 可能早于验证执行，须再次唤醒队列。
             await self._start_next(conversation_id)
             return
-        for row in picked:
-            if row.prompt_id in active.pending:
-                continue
-            enqueue_id = active.handle.deliver(model_prompt(row.content))
+        # 整批先拼好模型输入再递：有一条拼不出来（ValidationFailed）就整批不递，都留在队列里。
+        prompts = [
+            (row, model_prompt(row.content))
+            for row in picked
+            if row.prompt_id not in active.pending
+        ]
+        for row, prompt in prompts:
+            enqueue_id = active.handle.deliver(prompt)
             if enqueue_id is None:
                 continue
             active.steered[enqueue_id] = row.prompt_id

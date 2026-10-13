@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 import httpx
@@ -369,8 +369,15 @@ async def test_generations_adapter_carries_the_conversation_onto_the_job() -> No
 
 
 class _StoreDown(MemoryObjectStore):
-    async def put_public_object(self, *, object_key: str, content: bytes, content_type: str) -> str:
-        _ = (object_key, content, content_type)
+    async def put_public_object(
+        self,
+        *,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: Mapping[str, str] | None = None,
+    ) -> str:
+        _ = (object_key, content, content_type, metadata)
         raise ObjectStoreUnavailable("OSS 写入失败（试了 3 次）: Read timed out")
 
 

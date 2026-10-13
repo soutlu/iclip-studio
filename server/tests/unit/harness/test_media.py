@@ -54,5 +54,18 @@ def test_an_address_that_cannot_carry_the_parameter_is_refused(url: str) -> None
         image_info_url(url)
 
 
+@pytest.mark.parametrize(
+    ("url", "reason"),
+    [
+        pytest.param("https://cdn.test/style.jpg", "这个域名不支持", id="域名不对"),
+        pytest.param("https://cdn.test/style.jpg?v=1", "这个域名不支持", id="域名不对又带 query"),
+        pytest.param(f"{OSS}?Signature=abc", "已经带了 query", id="OSS 域名带 query"),
+    ],
+)
+def test_the_refusal_names_what_is_wrong(url: str, reason: str) -> None:
+    with pytest.raises(ValueError, match=reason):
+        resized_image_url(url, max_edge=1024)
+
+
 def test_image_info_is_asked_through_the_oss_process_parameter() -> None:
     assert image_info_url(OSS) == f"{OSS}?x-oss-process=image/info"

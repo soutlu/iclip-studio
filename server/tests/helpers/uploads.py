@@ -8,15 +8,32 @@ from iclip.platform.object_store.store import ObjectStoreUnavailable, StoredObje
 
 
 class FakeBucket:
-    """SignedUploadStore 内存替身；``put`` 模拟浏览器直传，测试负责填充对象。
+    """PublicBucket 内存替身；``put`` 模拟浏览器直传，测试负责填充对象。
 
-    ``delete_fails`` 为真时删除抛 ``ObjectStoreUnavailable``，对象留在桶里。"""
+    ``delete_fails`` 为真时删除抛 ``ObjectStoreUnavailable``，对象留在桶里；``put_fails`` 为真时
+    服务端写对象抛同一个错。服务端写入的字节与元数据按 key 记在 ``written``。"""
 
     def __init__(self, *, base: str = "https://cdn.test") -> None:
         self.base = base
         self.objects: dict[str, StoredObject] = {}
         self.signed: list[tuple[str, dict[str, str]]] = []
+        self.written: dict[str, tuple[bytes, dict[str, str]]] = {}
         self.delete_fails = False
+        self.put_fails = False
+
+    async def put_public_object(
+        self,
+        *,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: Mapping[str, str] | None = None,
+    ) -> str:
+        if self.put_fails:
+            raise ObjectStoreUnavailable("OSS 写入失败（试了 3 次）: Read timed out")
+        self.put(object_key, content_type=content_type, size_bytes=len(content))
+        self.written[object_key] = (content, dict(metadata or {}))
+        return self.public_url(object_key)
 
     def put(
         self,
