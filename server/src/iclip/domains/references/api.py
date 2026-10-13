@@ -107,7 +107,7 @@ def create_references_router(
         principal: Annotated[Principal, require_permission("generation:read")],
         reference_id: uuid.UUID,
     ) -> None:
-        """属主把它从资料库移除；AI 导演按地址仍能用它的拆解。别人的是 ``403``。"""
+        """属主把它从资料库移除；对话里按地址仍能用它的拆解。别人的是 ``403``。"""
 
         await service.remove(principal, reference_id)
 

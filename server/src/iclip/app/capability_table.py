@@ -20,6 +20,8 @@ from iclip.capabilities.shot_video.ports import (
     ObjectWriteFailed,
 )
 from iclip.capabilities.video.capability import Video
+from iclip.capabilities.video_breakdown.capability import VideoBreakdown
+from iclip.capabilities.video_shots.capability import VideoShots
 from iclip.capabilities.video_understanding import ArkVideoUnderstanding
 from iclip.capabilities.workspace.capability import workspace_capability
 from iclip.capabilities.workspace.ports import ImageInfo, MediaProbeFailed
@@ -195,7 +197,8 @@ def build_capability_table(
     ``fetch_url`` 是本服务下载本桶对象前的地址换算，交给查图片信息与取帧、出图的下载。
     ``shot_video`` 由组合根按 ``ResolvedSettings.shot_tools_enabled`` 决定是否传入；传了却缺
     媒体生成、切图记录、对象存储或取帧用的编解码（``media_codec``）是装配错误，直接报。
-    ``iclip_studio`` 传了却缺参考视频服务（拆解配好的那个）同样直接报。
+    ``iclip_studio`` 是拆解的配置段，传了就登记 ``video_breakdown``；传了却缺参考视频服务（拆解
+    配好的那个）同样直接报。
     """
 
     # 文件生产与读取共用 FileSpace，避免命名空间不一致。
@@ -208,6 +211,19 @@ def build_capability_table(
                 ledger=material_ledger,
             ),
         ),
+        "iclip_studio": (
+            IclipStudio[Any](
+                space=space,
+                ledger=material_ledger,
+                images=(
+                    FilmImagesAdapter(generation_service)
+                    if generation_service is not None
+                    else None
+                ),
+                # 现阶段生图由人自己做：生图工具保留，不登记给 agent。
+            ),
+        ),
+        "video_shots": (VideoShots[Any](space=space, ledger=material_ledger),),
     }
     if video is not None:
         table["video"] = (
@@ -227,20 +243,12 @@ def build_capability_table(
     if iclip_studio is not None:
         if reference_service is None:
             raise RuntimeError(
-                "装配 iclip_studio 要有参考视频服务：导演拆的视频与资料库共用一份拆解；"
+                "装配 video_breakdown 要有参考视频服务：对话里拆的视频与资料库共用一份拆解；"
                 "组合根应在配了 iclip_studio 时传入"
             )
-        table["iclip_studio"] = (
-            IclipStudio[Any](
-                space=space,
-                breakdowns=ReferenceBreakdownsAdapter(reference_service),
-                ledger=material_ledger,
-                images=(
-                    FilmImagesAdapter(generation_service)
-                    if generation_service is not None
-                    else None
-                ),
-                # 现阶段生图由人自己做：生图工具保留，不登记给 agent。
+        table["video_breakdown"] = (
+            VideoBreakdown[Any](
+                space=space, breakdowns=ReferenceBreakdownsAdapter(reference_service)
             ),
             # 让标了 background 的 breakdown_video 在后台跑，结果晚些作为消息送达。
             BackgroundTools[Any](),

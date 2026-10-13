@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.capabilities.iclip_studio.ports import FailedBreakdown
 from iclip.capabilities.workspace.scope import workspace_namespace
 from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.identity.models import Principal
@@ -34,11 +33,6 @@ from tests.helpers.film import FILM, GIVEN_IMAGES, RUN, SHOE_FRONT
 from tests.helpers.pg import truncate_clean
 
 USER = uuid.UUID("55555555-5555-5555-5555-555555555555")
-
-
-class NoBreakdowns:
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
-        raise AssertionError("不该拆视频")
 
 
 @pytest.fixture
@@ -94,7 +88,6 @@ def make_studio(engine: AsyncEngine) -> tuple[IclipStudio[object], PgFileStore, 
     ledger = PgMaterialLedger(engine)
     capability = IclipStudio[object](
         space=FileSpace(store=files, namespace=workspace_namespace),
-        breakdowns=NoBreakdowns(),
         ledger=ledger,
     )
     return capability, files, ledger

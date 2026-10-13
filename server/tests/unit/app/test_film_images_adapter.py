@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
@@ -14,11 +14,9 @@ from iclip.app.capability_table import build_capability_table
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
 from iclip.capabilities.iclip_studio.capability import IclipStudio
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
-from iclip.config import ResolvedIclipStudio
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob
 from iclip.domains.generation.schemas import KIND_IMAGE, OPERATION_UPLOAD
 from iclip.domains.identity.models import Principal
-from iclip.domains.references.service import ReferenceService
 from tests.helpers.fetch_url import as_is
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.generation import (
@@ -184,17 +182,10 @@ def test_the_generate_tool_is_not_offered_to_the_agent() -> None:
         fetch_url=as_is,
         generation_service=film_image_service(InMemoryGenerationRepository()),
         object_store=MemoryObjectStore(),
-        reference_service=cast("ReferenceService", object()),
-        iclip_studio=ResolvedIclipStudio(
-            breakdown_url="https://vision.test/responses",
-            breakdown_api_key="ark",
-            breakdown_model="seed-vision",
-            breakdown_concurrency=2,
-        ),
         image_models=frozenset({"nano_banana_pro", "gpt-image-2.5"}),
     )
 
-    capability, _background = built["iclip_studio"]
+    (capability,) = built["iclip_studio"]
     assert isinstance(capability, IclipStudio)
     tools = capability.get_toolset().tools
     assert "generate_images" not in tools

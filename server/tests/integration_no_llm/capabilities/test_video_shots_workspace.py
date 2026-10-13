@@ -1,0 +1,120 @@
+"""video_shots 能力经真实 Postgres 文件存储与素材台账的往返：镜头组表落库，写回校验认得它。"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import AsyncGenerator
+from typing import Any
+
+import pytest
+from pydantic_ai import Agent
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    RetryPromptPart,
+    TextPart,
+    ToolCallPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.capabilities.shot_document import SHOTS_PATH, validate_shots_document
+from iclip.capabilities.video_shots.capability import VideoShots
+from iclip.capabilities.workspace.scope import workspace_namespace
+from iclip.domains.agents.public import AgentRunDeps
+from iclip.domains.identity.models import Principal
+from iclip.platform.db.engine import build_engine
+from iclip.platform.file_store.pg import PgFileStore
+from iclip.platform.file_store.store import FileSpace
+from iclip.platform.material_ledger.pg import PgMaterialLedger
+from iclip.platform.material_ledger.store import Material
+from tests.helpers.pg import truncate_clean
+
+USER = uuid.UUID("44444444-4444-4444-4444-444444444444")
+FRAME = "https://cdn.test/frames/s1-1.jpg"
+SHOTS: dict[str, Any] = {
+    "aspect_ratio": "9:16",
+    "shots": [
+        {
+            "index": 1,
+            "prompt": {
+                "global_settings": "人物与门厅保持一致。",
+                "timeline": [
+                    {"timestamps": [0, 8], "prompt": "全景，平视，固定，她走进门厅 @Image1。"}
+                ],
+            },
+            "seconds": 8,
+            "image_urls": [FRAME],
+        }
+    ],
+}
+
+
+@pytest.fixture
+async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
+    engine = build_engine(migrated_pg)
+    async with engine.begin() as conn:
+        await truncate_clean(conn, ("agent_runtime.workspace_files", "agent_runtime.materials"))
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+def conversation_id() -> str:
+    return f"c-{uuid.uuid4().hex[:8]}"
+
+
+def make_deps(conversation_id: str) -> AgentRunDeps:
+    return AgentRunDeps(
+        principal=Principal(
+            kind="user",
+            user_id=USER,
+            permissions=frozenset({"agent:run"}),
+            audit_label="logan",
+            api_key_id=None,
+        ),
+        conversation_id=conversation_id,
+        user_name="logan",
+    )
+
+
+async def call_once(
+    capability: VideoShots[object], conversation_id: str, args: dict[str, Any]
+) -> list[RetryPromptPart]:
+    """模型只调一次交付工具，返回它收到的退回单。"""
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("write_video_shots", args, tool_call_id="c1")])
+        return ModelResponse(parts=[TextPart("好")])
+
+    result = await Agent(FunctionModel(script), capabilities=[capability]).run(
+        "提交镜头组。", deps=make_deps(conversation_id)
+    )
+    return [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, RetryPromptPart)
+    ]
+
+
+async def test_delivery_round_trips_through_postgres(
+    engine: AsyncEngine, conversation_id: str
+) -> None:
+    files = PgFileStore(engine)
+    ledger = PgMaterialLedger(engine)
+    capability = VideoShots[object](
+        space=FileSpace(store=files, namespace=workspace_namespace), ledger=ledger
+    )
+    namespace = f"{USER}/{conversation_id}"
+    await ledger.record(namespace, [Material(url=FRAME, kind="image")])
+
+    assert await call_once(capability, conversation_id, SHOTS) == []
+    stored = await files.read(namespace, SHOTS_PATH)
+    assert stored is not None
+    assert stored.version == 1
+    # 用户在面板写回走的是同一个校验入口，工具交付的文件必须原样通过。
+    document = validate_shots_document(stored.content)
+    assert document.shots[0].image_urls == [FRAME]
+    assert document.shots[0].prompt.timeline[0].image_indexes == [1]

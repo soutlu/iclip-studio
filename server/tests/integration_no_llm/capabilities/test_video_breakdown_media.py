@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from iclip.capabilities.iclip_studio.breakdown.media import (
+from iclip.capabilities.video_breakdown.media import (
     FRAME_MAX_PIXELS,
     FfmpegVideoSampler,
     sample_file,

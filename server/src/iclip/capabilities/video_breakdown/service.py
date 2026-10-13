@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Final
 
-from iclip.capabilities.iclip_studio.breakdown.model import ArkBreakdownModel
-from iclip.capabilities.iclip_studio.ports import VideoSampler
+from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
+from iclip.capabilities.video_breakdown.ports import VideoSampler
 
 SAMPLED_MAX_SECONDS: Final = 60.0
 """不超过这个时长的视频自己抽帧（每秒 10 帧，切点更准）；更长的把地址交给对方取帧。"""
 
 
-class VideoBreakdown:
+class BreakdownRunner:
     """拆解一条视频，返回 Markdown 文档原文。
 
     失败抛 ``MediaError``（取不到或解不开视频）或 ``BreakdownError``（模型没给出可用文档）。
@@ -27,4 +27,4 @@ class VideoBreakdown:
         return await self._model.from_url(video_url)
 
 
-__all__ = ["SAMPLED_MAX_SECONDS", "VideoBreakdown"]
+__all__ = ["SAMPLED_MAX_SECONDS", "BreakdownRunner"]

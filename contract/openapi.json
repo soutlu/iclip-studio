@@ -13545,7 +13545,7 @@
     },
     "/references/{reference_id}": {
       "delete": {
-        "description": "属主把它从资料库移除；AI 导演按地址仍能用它的拆解。别人的是 ``403``。",
+        "description": "属主把它从资料库移除；对话里按地址仍能用它的拆解。别人的是 ``403``。",
         "operationId": "remove_reference_references__reference_id__delete",
         "parameters": [
           {

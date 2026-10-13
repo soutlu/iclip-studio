@@ -1,4 +1,5 @@
-"""参考视频用例：建行与排拆解、列表与筛选、修改、重拆、移除、试生成，以及给 AI 导演用的 ``ensure``。
+"""参考视频用例：建行与排拆解、列表与筛选、修改、重拆、移除、试生成，以及给对话里的拆解工具用的
+``ensure``。
 
 端点权限由路由声明；这里管行级归属：谁都看得到，只有属主能改、能重拆、能移除；试生成只限属主本人。"""
 
@@ -57,7 +58,7 @@ _logger = structlog.stdlib.get_logger(__name__)
 UPLOAD_PERMISSION: Final = "uploads:write"
 
 ENSURE_POLL_SECONDS: Final = 3.0
-"""导演等一条拆解时隔多久查一次这一行。"""
+"""对话里等一条拆解时隔多久查一次这一行。"""
 
 _BUSY: Final = frozenset({STATUS_PENDING, STATUS_RUNNING})
 
@@ -327,9 +328,9 @@ class ReferenceService:
             raise NotFound("资料库里没有这条参考视频")
 
     async def ensure(self, principal: Principal, video_url: str) -> Outcome:
-        """AI 导演的入口：同一条视频只拆一次，别人在拆就等那一次。
+        """对话里拆解工具的入口：同一条视频只拆一次，别人在拆就等那一次。
 
-        有拆解就直接用，哪怕有人正在重拆；没有就建行并排队，已失败的重新排队（导演每调一次工具就是
+        有拆解就直接用，哪怕有人正在重拆；没有就建行并排队，已失败的重新排队（每调一次工具就是
         一次尝试，还拆不拆由工具的重试次数管）；然后每 ``poll_seconds`` 查一次，最多等
         ``wait_seconds``，交回文档或失败原因。不查上传记录：这条视频是对话素材，不一定是本人的上传；
         属主记第一次拆它的人。移除过的照样用。"""

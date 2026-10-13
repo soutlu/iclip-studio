@@ -29,6 +29,8 @@ from iclip.capabilities.shot_video.ports import (
     ObjectWriteFailed,
 )
 from iclip.capabilities.video.capability import Video
+from iclip.capabilities.video_breakdown.capability import VideoBreakdown
+from iclip.capabilities.video_shots.capability import VideoShots
 from iclip.capabilities.workspace.capability import Workspace
 from iclip.capabilities.workspace.ports import ImageInfo, MediaProbeFailed
 from iclip.common.errors import ValidationFailed
@@ -116,9 +118,31 @@ def test_shot_video_is_not_registered_unless_the_composition_root_passes_it() ->
         http_client=idle_client(),
         fetch_url=as_is,
     )
-    assert list(built) == ["workspace"]
+    assert set(built) == {"workspace", "iclip_studio", "video_shots"}
     with pytest.raises(RuntimeError, match="引用了未登记的 capability 'shot_video'"):
         resolve_capabilities(("shot_video",), table=built, declared_by="agent storyboard")
+
+
+def test_capabilities_without_their_own_config_are_always_registered() -> None:
+    """工程文件检查与镜头组交付只用工作区和素材台账：什么都没配也登记，挂时要一起挂 workspace。"""
+
+    built = build_capability_table(
+        workspace_store=FakeFileStore(),
+        material_ledger=FakeMaterialLedger(),
+        http_client=idle_client(),
+        fetch_url=as_is,
+    )
+
+    assert [type(capability) for capability in built["iclip_studio"]] == [IclipStudio]
+    resolved = resolve_capabilities(
+        ("workspace", "iclip_studio", "video_shots"), table=built, declared_by="agent director"
+    )
+    assert [type(capability) for capability in resolved] == [Workspace, IclipStudio, VideoShots]
+    shots = resolved[2]
+    assert isinstance(shots, VideoShots)
+    assert set(shots.get_toolset().tools) == {"write_video_shots"}
+    with pytest.raises(RuntimeError, match="没挂 'workspace'"):
+        resolve_capabilities(("video_shots",), table=built, declared_by="agent replica")
 
 
 STUDIO = ResolvedIclipStudio(
@@ -137,7 +161,7 @@ STUDIO_PRINCIPAL = Principal(
 
 
 class RecordingReferences:
-    """参考视频服务的替身：记下导演要了哪条视频，交回一份拆解。"""
+    """参考视频服务的替身：记下工具要了哪条视频，交回一份拆解。"""
 
     def __init__(self) -> None:
         self.asked: list[tuple[Principal, str]] = []
@@ -147,7 +171,7 @@ class RecordingReferences:
         return Outcome(document="# 出场元素")
 
 
-async def test_iclip_studio_breaks_videos_down_through_the_reference_service() -> None:
+async def test_video_breakdown_breaks_videos_down_through_the_reference_service() -> None:
     """不需要对象存储：拆解在参考视频那一行上，与资料库共用。"""
 
     references = RecordingReferences()
@@ -160,21 +184,24 @@ async def test_iclip_studio_breaks_videos_down_through_the_reference_service() -
         reference_service=cast("ReferenceService", references),
     )
 
-    capability, background = built["iclip_studio"]
-    assert isinstance(capability, IclipStudio)
+    capability, background = built["video_breakdown"]
+    assert isinstance(capability, VideoBreakdown)
     assert isinstance(background, BackgroundTools), "breakdown_video 要挂着后台工具才在后台跑"
+    assert not any(isinstance(mounted, BackgroundTools) for mounted in built["iclip_studio"]), (
+        "后台工具只跟着 video_breakdown 挂"
+    )
     assert isinstance(capability.breakdowns, ReferenceBreakdownsAdapter)
     assert await capability.breakdowns.ensure(STUDIO_PRINCIPAL, STUDIO_VIDEO) == "# 出场元素"
     assert references.asked == [(STUDIO_PRINCIPAL, STUDIO_VIDEO)]
     assert resolve_capabilities(
-        ("workspace", "iclip_studio"), table=built, declared_by="agent director"
+        ("workspace", "video_breakdown"), table=built, declared_by="agent replica"
     )
     with pytest.raises(RuntimeError, match="没挂 'workspace'"):
-        resolve_capabilities(("iclip_studio",), table=built, declared_by="agent director")
+        resolve_capabilities(("video_breakdown",), table=built, declared_by="agent replica")
 
 
-def test_iclip_studio_without_the_reference_service_is_an_assembly_error() -> None:
-    with pytest.raises(RuntimeError, match="iclip_studio 要有参考视频服务"):
+def test_video_breakdown_without_the_reference_service_is_an_assembly_error() -> None:
+    with pytest.raises(RuntimeError, match="video_breakdown 要有参考视频服务"):
         build_capability_table(
             workspace_store=FakeFileStore(),
             material_ledger=FakeMaterialLedger(),
@@ -269,10 +296,13 @@ def test_the_display_registry_merges_every_display_source(
 
     registry = build_display_registry(built)
 
-    # 每个来源各挑一件：workspace、video、shot_video、skill、派活；来源内的清单归各自的测试。
+    # 每个来源各挑一件：workspace、video、video_shots、iclip_studio、shot_video、skill、派活；
+    # 来源内的清单归各自的测试。
     assert {
         "read_file",
         "video_parser",
+        "write_video_shots",
+        "check_film",
         "generate_shot_frames",
         "load_capability",
         "delegate_task",
@@ -597,9 +627,9 @@ def test_video_mounts_without_generation_or_object_store(video_settings: Resolve
     assert "shot_video" not in built
     video = resolved[1]
     assert isinstance(video, Video)
-    assert set(video.get_toolset().tools) == {"video_parser", "write_video_shots"}
+    assert set(video.get_toolset().tools) == {"video_parser"}
     display = build_display_registry(built)
-    assert {"video_parser", "write_video_shots"} <= set(display.entries)
+    assert "video_parser" in display.entries
     assert "generate_shot_frames" not in display.entries
     with pytest.raises(RuntimeError, match=r"没挂 'workspace'"):
         resolve_capabilities(("video",), table=built, declared_by="agent video")

@@ -16,7 +16,7 @@ from iclip.app.reference_breakdown import (
     ReferenceBreakdownsAdapter,
     parse_tags,
 )
-from iclip.capabilities.iclip_studio.ports import FailedBreakdown
+from iclip.capabilities.video_breakdown.ports import FailedBreakdown
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
     CATEGORIES,

@@ -21,7 +21,6 @@ from iclip.capabilities.iclip_studio.film.checks import check
 from iclip.capabilities.iclip_studio.film.film import Film
 from iclip.capabilities.iclip_studio.film.prompts import render_video
 from iclip.capabilities.iclip_studio.ports import (
-    FailedBreakdown,
     InvalidNodeImageRequest,
     NodeImageJob,
     NodeImageRequest,
@@ -50,13 +49,6 @@ USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 PHOTO_URLS = tuple(PHOTOS.values())
 """用户给的五张照片。"""
 NAMESPACE = f"{USER}/thread-1"
-
-
-class NoBreakdowns:
-    """这组测试不拆视频。"""
-
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
-        raise AssertionError("不该拆视频")
 
 
 class FakeNodeImages:
@@ -140,7 +132,6 @@ def capability(
 ) -> IclipStudio[object]:
     return IclipStudio[object](
         space=FileSpace(store=files, namespace=workspace_namespace),
-        breakdowns=NoBreakdowns(),
         ledger=ledger,
         images=images,
         can_generate=can_generate,
