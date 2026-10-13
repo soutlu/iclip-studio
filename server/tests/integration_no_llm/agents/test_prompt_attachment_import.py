@@ -254,7 +254,8 @@ async def test_regenerating_with_new_content_imports_its_images(
     assert fetch.calls == [EXTERNAL]
     (stored,) = [key for key in bucket.objects if key.startswith("iclip/agent/uploads/")]
     new_url = f"{BUCKET_BASE}/{stored}"
-    assert edited.json()["content"] == [image(new_url)]
+    (part,) = edited.json()["content"]
+    assert (part["type"], part["source"]["url"]) == ("image", new_url)
     assert await queued_image_urls(pg_url, conversation_id) == [[], [new_url]]
 
 

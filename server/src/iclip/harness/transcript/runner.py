@@ -389,12 +389,10 @@ class ConversationRunner:
             # 验证期间运行已收尾，它的 start_next 可能早于验证执行，须再次唤醒队列。
             await self._start_next(conversation_id)
             return
+        # 同一批里重复的同一条只递一次，已在等递入的跳过；按先后去重。
+        fresh = {row.prompt_id: row for row in picked if row.prompt_id not in active.pending}
         # 整批先拼好模型输入再递：有一条拼不出来（ValidationFailed）就整批不递，都留在队列里。
-        prompts = [
-            (row, model_prompt(row.content))
-            for row in picked
-            if row.prompt_id not in active.pending
-        ]
+        prompts = [(row, model_prompt(row.content)) for row in fresh.values()]
         for row, prompt in prompts:
             enqueue_id = active.handle.deliver(prompt)
             if enqueue_id is None:

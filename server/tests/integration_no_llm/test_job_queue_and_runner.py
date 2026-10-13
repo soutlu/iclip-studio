@@ -2386,6 +2386,19 @@ LEGACY_IMAGE = (
 """直接写进队列，绕过受理时的检查，模拟上线那一刻已经排着的旧消息。"""
 
 
+def _prompt_texts(messages: list[ModelMessage]) -> list[str]:
+    """用户 part 里的文字，连同开跑时 ``model_prompt`` 交的列表形式（共用的 ``texts`` 只认字符串）。"""
+
+    found: list[str] = []
+    for message in messages:
+        for part in getattr(message, "parts", ()):
+            if not isinstance(part, UserPromptPart):
+                continue
+            items = [part.content] if isinstance(part.content, str) else list(part.content)
+            found.extend(item for item in items if isinstance(item, str))
+    return found
+
+
 async def test_a_queued_legacy_image_fails_its_run_and_the_queue_moves_on(
     engine: AsyncEngine,
 ) -> None:
@@ -2417,7 +2430,9 @@ async def test_a_queued_legacy_image_fails_its_run_and_the_queue_moves_on(
     done = await queue.get(following)
     assert done is not None
     assert done.status == "completed"
-    assert len(seen) == 1 and "接着做" in texts(seen[0]), "旧消息没有发给模型"
+    assert len(seen) == 1, "旧消息没有发给模型"
+    assert "接着做" in _prompt_texts(seen[0])
+    assert "照这张图" not in _prompt_texts(seen[0])
     # 原因随失败记进带栈的错误日志，异常里带着那个地址。
     assert [
         entry["log_level"]
