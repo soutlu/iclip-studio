@@ -579,8 +579,7 @@ describe('每次调用按自己的状态画', () => {
     expect(screen.queryByRole('button', { name: /详情/ })).toBeNull()
   })
 
-  it('同样的调用，审批没有被拒绝就是普通失败：红 ×，展开是错误原文', async () => {
-    const user = userEvent.setup()
+  it('同样的调用，审批没有被拒绝就是普通失败：红 ×，不能展开，错误原文不上页面', async () => {
     await renderTurn(
       turnWithFrames([
         fileTool('t1.1.f1', 'write', 'shots/cover.md', {
@@ -593,9 +592,9 @@ describe('每次调用按自己的状态画', () => {
 
     expect(screen.getByRole('img', { name: '失败' })).toBeInTheDocument()
     expect(screen.queryByText('已拒绝')).toBeNull()
-    await user.click(screen.getByRole('button', { name: '展开「写入文件 cover.md」的详情' }))
-    expect(screen.getByText('错误信息')).toBeInTheDocument()
-    expect(screen.getByText('运行中断，这次调用没有结果')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /详情/ })).toBeNull()
+    expect(screen.queryByText('错误信息')).toBeNull()
+    expect(screen.queryByText('运行中断，这次调用没有结果')).toBeNull()
   })
 
   it('成功的调用不画状态图标', async () => {
@@ -642,9 +641,7 @@ describe('活动组的开合', () => {
     )
     expect(screen.queryByRole('button', { name: '需求.md' })).toBeNull()
     expect(screen.getAllByRole('img', { name: '失败' })).toHaveLength(1)
-    expect(
-      screen.getByRole('button', { name: '展开「编辑文件 storyboard.md」的详情' }),
-    ).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'storyboard.md' })).toHaveLength(1)
   })
 
   it('运行中只在正在跑的工具行画转圈，卡头不另画；卡头的可访问名照旧标「进行中」', async () => {

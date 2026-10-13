@@ -219,15 +219,9 @@ function FileName({
   )
 }
 
-/** 面板头：标题（文件名或「错误信息」）加复制；检索没有头。 */
-function PanelView({ panel, title: fileTitle }: { panel: ToolPanel; title: ReactNode }) {
+/** 面板头：文件名加复制；检索没有头。 */
+function PanelView({ panel, title = null }: { panel: ToolPanel; title: ReactNode }) {
   const copy = panelCopyText(panel)
-  const title =
-    panel.kind === 'error' ? (
-      <span className="text-chat-secondary-text">错误信息</span>
-    ) : (
-      (fileTitle ?? null)
-    )
   return (
     <div className="flex min-w-0 flex-col overflow-clip rounded-sm bg-chat-inline-bg pb-2.5">
       {title === null && copy === undefined ? (
@@ -251,7 +245,6 @@ const panelCopyText = (panel: ToolPanel): string | undefined => {
       return panel.after
     case 'matches':
       return undefined
-    case 'error':
     case 'file':
     case 'text':
       return panel.text
@@ -275,7 +268,6 @@ function PanelBody({ panel }: { panel: ToolPanel }) {
       )
     case 'matches':
       return <MatchesBody matches={panel.matches} truncated={panel.truncated} />
-    case 'error':
     case 'text':
       return (
         <p className="text-body-sm leading-[18px] break-words whitespace-pre-wrap text-chat-secondary-text">

@@ -282,20 +282,18 @@ export const diffLinesOf = (before: string, after: string): DiffLine[] => {
 }
 
 /**
- * 展开后的面板，照 Kimi ToolPanel：失败给错误原文，读写给文件内容，编辑给改动行，检索给命中，
- * 其余多行结果给原文。被拒绝与运行中的调用没有面板；没有可看的东西也没有。
+ * 展开后的面板：读写给文件内容，编辑给改动行，检索给命中，其余多行结果给原文；没有可看的东西就没有面板。
+ * 只有成功的调用才有面板。运行中还没有结果，被拒绝的什么也没做；失败的 `error` 是写给模型的，
+ * 带技术原因和给模型的指令，不给用户看。失败的卡只留红 ×，向用户解释由模型在回复里说。
  */
 export type ToolPanel =
-  | { kind: 'error'; text: string }
   | { kind: 'file'; text: string; markdown: boolean }
   | { kind: 'diff'; before: string; after: string }
   | { kind: 'matches'; matches: readonly SearchMatch[]; truncated: boolean }
   | { kind: 'text'; text: string }
 
 export const toolPanel = (frame: ToolCallFrame, outcome: ToolOutcome): ToolPanel | undefined => {
-  if (outcome === 'running' || outcome === 'denied') return undefined
-  if (outcome === 'error')
-    return frame.error === undefined ? undefined : { kind: 'error', text: frame.error }
+  if (outcome !== 'done') return undefined
   const parsed = displaySchema.safeParse(frame.display)
   const display = parsed.success ? parsed.data : undefined
   if (display?.kind === 'file_io') {
