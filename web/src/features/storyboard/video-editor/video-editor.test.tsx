@@ -84,13 +84,13 @@ const EDITED_URL = 'https://example.com/edited.mp4'
 const ROOT_ID = '0f6a2c9e-8d4b-4c1e-9a7f-3b5d6e8f1a2b'
 const root = makeGenerationJob({ id: ROOT_ID, outputUrl: ROOT_URL, shotIndex: 1 })
 
-const renderEditor = () =>
+const renderEditor = (job = root) =>
   renderWithProviders(
     <VideoEditor
       conversationId={CONVERSATION}
       loading={false}
       onClose={() => {}}
-      root={root}
+      root={job}
       shotIndex={1}
     />,
   )
@@ -420,6 +420,125 @@ describe('AI 改段的弹出卡', () => {
     // 再选一段：要求已经清空。
     await user.click(segmentOf(track, 1))
     expect(requestBox().textContent).toBe('')
+  })
+
+  describe('按选中的段预填原作的镜头正文', () => {
+    const BOY_URL = 'https://example.com/refs/boy.png'
+    const BAKER_URL = 'https://example.com/refs/baker.png'
+    const BAKERY = '他停在面包店门口'
+    const BREAD = '@Image2 隔着柜台递出一袋面包'
+    // 原片 8 秒：0–2、2–5、5–8 秒三镜，第一镜与第三镜各引一张参考图。
+    const filmed = makeGenerationJob({
+      id: ROOT_ID,
+      outputUrl: ROOT_URL,
+      shotIndex: 1,
+      request: {
+        shot: {
+          global_settings: '写实，暖色调',
+          timeline: [
+            { timestamps: [0, 2], prompt: '清晨的街道，@Image1 推着单车走过', image_indexes: [1] },
+            { timestamps: [2, 5], prompt: BAKERY, image_indexes: [] },
+            { timestamps: [5, 8], prompt: BREAD, image_indexes: [2] },
+          ],
+        },
+        reference_image_urls: [BOY_URL, BAKER_URL],
+      },
+    })
+    const chip = (name: string) => within(requestBox()).queryByText(name)
+
+    it('选一段：卡里是与它重叠的镜头正文，引的图是参考图；全局设定不写进去', async () => {
+      serveChain([])
+      const user = userEvent.setup()
+      await renderEditor(filmed)
+      await user.click(segmentOf(await timeline(), 2))
+
+      // 第 2 段是 1–2 秒，只落在第一镜里；第二镜从 2 秒起，只碰端点不算。
+      expect(requestBox()).toHaveTextContent('清晨的街道，boy.png 推着单车走过')
+      expect(chip('boy.png')).toBeVisible()
+      expect(chip('baker.png')).toBeNull()
+      expect(requestBox()).not.toHaveTextContent(BAKERY)
+      expect(requestBox()).not.toHaveTextContent('写实')
+    })
+
+    it('没改过时换选区跟着换；跨两镜时两镜都填', async () => {
+      serveChain([])
+      const user = userEvent.setup()
+      await renderEditor(filmed)
+      const track = await timeline()
+      await user.click(segmentOf(track, 2))
+      expect(requestBox()).toHaveTextContent('清晨的街道')
+
+      await user.click(segmentOf(track, 7))
+      expect(requestBox()).toHaveTextContent('baker.png 隔着柜台递出一袋面包')
+      expect(requestBox()).not.toHaveTextContent('清晨的街道')
+      expect(chip('baker.png')).toBeVisible()
+      expect(chip('boy.png')).toBeNull()
+
+      // 第 2–3 段是 1–3 秒，跨第一、二镜。
+      await user.click(segmentOf(track, 2))
+      await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+      expect(requestBox().textContent).toBe(`清晨的街道，boy.png 推着单车走过\n${BAKERY}`)
+    })
+
+    it('改过以后换选区，卡里留着改过的要求', async () => {
+      serveChain([])
+      const user = userEvent.setup()
+      await renderEditor(filmed)
+      const track = await timeline()
+      await user.click(segmentOf(track, 2))
+      pasteTextIntoComposer(requestBox(), '，换成黄昏')
+
+      await user.click(segmentOf(track, 7))
+      expect(within(openCard()).getByText('第 7 段 · 视频生成')).toBeVisible()
+      expect(requestBox()).toHaveTextContent('推着单车走过，换成黄昏')
+      expect(requestBox()).not.toHaveTextContent('隔着柜台递出一袋面包')
+      expect(chip('boy.png')).toBeVisible()
+      expect(chip('baker.png')).toBeNull()
+    })
+
+    it('预填的参考图提交时编回 @Image1 与 reference_image_urls', async () => {
+      server.use(
+        http.get('*/api/generations/video-models', () =>
+          HttpResponse.json({ default: 'wan3.0-video', items: ['wan3.0-video'] }),
+        ),
+      )
+      let submitted: Record<string, unknown> | undefined
+      server.use(
+        http.get('*/api/generations', () => HttpResponse.json({ items: [] })),
+        http.post('*/api/generations/video-edits', async ({ request }) => {
+          submitted = (await request.json()) as Record<string, unknown>
+          return HttpResponse.json(
+            {
+              generation: editSegment({
+                status: 'submitted',
+                rangeStartMs: 6000,
+                rangeEndMs: 7000,
+              }),
+            },
+            { status: 202 },
+          )
+        }),
+      )
+      const user = userEvent.setup()
+      await renderEditor(filmed)
+      await user.click(segmentOf(await timeline(), 7))
+      await waitFor(() => expect(generateButton()).toBeEnabled())
+      await user.click(generateButton())
+
+      await waitFor(() => expect(submitted).toBeDefined())
+      expect(submitted?.['prompt']).toEqual(expect.stringContaining('@Image1 隔着柜台递出一袋面包'))
+      expect(submitted?.['reference_image_urls']).toEqual([BAKER_URL])
+    })
+
+    it('原作没有结构化镜头时卡里是空的', async () => {
+      serveChain([])
+      const user = userEvent.setup()
+      await renderEditor()
+      await user.click(segmentOf(await timeline(), 2))
+
+      expect(requestBox().textContent).toBe('')
+      expect(generateButton()).toBeDisabled()
+    })
   })
 })
 
