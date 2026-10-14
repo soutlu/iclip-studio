@@ -32,6 +32,7 @@ from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import ClipStage
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import (
+    BrandTemplates,
     ClearCompletion,
     ConversationLineage,
     GenerationService,
@@ -106,6 +107,7 @@ def build_generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
+    brand_templates: BrandTemplates,
     video: VideoProviderSettings,
     video_default_model: str,
     video_allowed_models: tuple[str, ...],
@@ -228,6 +230,7 @@ def build_generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         probe_duration_ms=probe_duration_ms,
+        brand_templates=brand_templates,
         subtitles=subtitle_target,
         music=music_target,
     )

@@ -55,7 +55,7 @@ from iclip.domains.generation.schemas import (
     WholeFilmRender,
     WholeFilmRequest,
 )
-from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.service import BrandTemplateFacts, GenerationService
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
@@ -300,9 +300,17 @@ def whole_film_request(
     *,
     subtitles: Sequence[Mapping[str, Any]] = (),
     music: Mapping[str, Any] | None = None,
+    intro: Mapping[str, Any] | None = None,
+    outro: Mapping[str, Any] | None = None,
 ) -> WholeFilmRequest:
     """整片落库的请求：各段 ``{url, startMs, endMs}``（没写出处按地址补一个固定的 ``sourceJobId``），
-    字幕与音乐照给，声音参数取受理时的默认值。音乐没写出处同样补一个。"""
+    字幕与音乐照给，声音参数取受理时的默认值。音乐没写出处同样补一个。片头片尾是模板快照
+    ``{url, durationMs, width, height, hasAudio}``，没写 ``templateId`` 也按地址补一个。"""
+
+    def snapshot(brand: Mapping[str, Any] | None) -> dict[str, Any] | None:
+        if brand is None:
+            return None
+        return {"templateId": uuid.uuid5(uuid.NAMESPACE_URL, brand["url"]), **brand}
 
     def with_source(item: Mapping[str, Any]) -> dict[str, Any]:
         if "sourceJobId" in item or "audioJobId" in item:
@@ -319,6 +327,8 @@ def whole_film_request(
             "subtitles": list(subtitles),
             "music": music_payload,
             "render": WholeFilmRender(),
+            "intro": snapshot(intro),
+            "outro": snapshot(outro),
         }
     )
 
@@ -754,6 +764,7 @@ def film_image_service(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
+        brand_templates=FixedBrandTemplates(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -793,6 +804,16 @@ class FixedLineage:
 
     async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool:
         return self._readable
+
+
+class FixedBrandTemplates:
+    """BrandTemplates 替身：品牌模板预先写死，按 id 读；没给的就是没有。"""
+
+    def __init__(self, *templates: BrandTemplateFacts) -> None:
+        self._templates = {template.id: template for template in templates}
+
+    async def __call__(self, template_id: uuid.UUID) -> BrandTemplateFacts | None:
+        return self._templates.get(template_id)
 
 
 class MemoryObjectStore:
@@ -848,6 +869,7 @@ __all__ = [
     "MEDIA_ENVS",
     "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
+    "FixedBrandTemplates",
     "FixedLineage",
     "InMemoryGenerationRepository",
     "MemoryObjectStore",

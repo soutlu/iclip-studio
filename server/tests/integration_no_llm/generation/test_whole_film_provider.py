@@ -45,6 +45,12 @@ SILENT_URL = "https://example.test/silent.mp4"
 """480×360、3 秒、没有音轨。"""
 MUSIC_URL = "https://example.test/music.wav"
 """10 秒：前 2 秒静音，后 8 秒是音。"""
+INTRO_URL = "https://example.test/brand/intro.mp4"
+"""片头模板：240×320 竖屏、2 秒、没有音轨。"""
+OUTRO_URL = "https://example.test/brand/outro.mp4"
+"""片尾模板：320×240、1 秒、没有音轨。"""
+JINGLE_URL = "https://example.test/brand/jingle.mp4"
+"""带声音的片头模板：320×240、1 秒、一条 440 Hz 的音轨。"""
 
 SILENCE_DB = -60.0
 """平均电平低于它就当静音：真静音量出来约 -91 dB。"""
@@ -62,7 +68,30 @@ def sources() -> dict[str, bytes]:
                 root / "silent.mp4", size="480x360", seconds=3, audio=False
             ),
             MUSIC_URL: synthesize_padded_music(root / "music.wav", lead=2, body=8, tail=0),
+            INTRO_URL: synthesize_video(root / "intro.mp4", size="240x320", seconds=2, audio=False),
+            OUTRO_URL: synthesize_video(root / "outro.mp4", size="320x240", seconds=1, audio=False),
+            JINGLE_URL: synthesize_video(
+                root / "jingle.mp4", size="320x240", seconds=1, audio=True
+            ),
         }
+
+
+def _brand(url: str, *, duration_ms: int, size: tuple[int, int], audio: bool) -> dict[str, Any]:
+    """受理时记下的模板快照。"""
+
+    width, height = size
+    return {
+        "url": url,
+        "durationMs": duration_ms,
+        "width": width,
+        "height": height,
+        "hasAudio": audio,
+    }
+
+
+SILENT_INTRO = _brand(INTRO_URL, duration_ms=2000, size=(240, 320), audio=False)
+SILENT_OUTRO = _brand(OUTRO_URL, duration_ms=1000, size=(320, 240), audio=False)
+JINGLE_INTRO = _brand(JINGLE_URL, duration_ms=1000, size=(320, 240), audio=True)
 
 
 def _transport(payloads: Mapping[str, bytes]) -> httpx.MockTransport:
@@ -88,6 +117,8 @@ async def _render(
     *,
     subtitles: Sequence[Mapping[str, Any]] = (),
     music: Mapping[str, Any] | None = None,
+    intro: Mapping[str, Any] | None = None,
+    outro: Mapping[str, Any] | None = None,
     stages: _Stages | None = None,
     codec: MediaCodec = SOFTWARE,
 ) -> bytes:
@@ -102,7 +133,7 @@ async def _render(
         transport=_transport(sources),
     )
     job = make_job(
-        whole_film_request(segments, subtitles=subtitles, music=music),
+        whole_film_request(segments, subtitles=subtitles, music=music, intro=intro, outro=outro),
         provider="ffmpeg",
         conversation_id=uuid.uuid4(),
     )
@@ -368,3 +399,112 @@ async def test_subtitles_are_burned_into_the_bottom_of_the_picture(
     assert changed(burned, plain, bottom) > 150, "字幕那一句的时段里，画面下方有字"
     assert changed(burned, plain, top) < 30, "上方不受影响"
     assert changed(before, plain_before, bottom) < 30, "字幕开始之前没有字"
+
+
+# --- 片头片尾 --------------------------------------------------------------------
+
+
+async def test_intro_and_outro_sit_at_both_ends_and_the_music_only_under_the_segments(
+    sources: dict[str, bytes],
+) -> None:
+    """片头 2 秒、段 3 秒、片尾 1 秒，都没有音轨：音乐的时刻从第一段开头算，只铺在段上；片头片尾
+    补的是静音。画幅仍取第一段，不取片头。"""
+
+    content = await _render(
+        sources,
+        [{"url": SILENT_URL, "startMs": 0, "endMs": 3000}],
+        music={"url": MUSIC_URL, "offsetMs": 2000, "gain": [{"atMs": 0, "gain": 1}]},
+        intro=SILENT_INTRO,
+        outro=SILENT_OUTRO,
+    )
+
+    with TemporaryDirectory(prefix="film-out-") as tmp:
+        film = _saved(content, Path(tmp))
+        profile = await probe_video(film)
+        assert abs(await duration_ms_of(content) - 6000) <= 100, "片头 + 各段 + 片尾"
+        assert (profile.width, profile.height) == (480, 360), "画幅取第一段，不取片头"
+        intro_level = _mean_volume(film, start=0.2, length=1.6)
+        segment_level = _mean_volume(film, start=2.2, length=0.6)
+        outro_level = _mean_volume(film, start=5.2, length=0.6)
+    assert intro_level < SILENCE_DB, f"片头上没有音乐：{intro_level} dB"
+    assert segment_level > SILENCE_DB, f"音乐从第一段开头起：{segment_level} dB"
+    assert outro_level < SILENCE_DB, f"片尾上没有音乐：{outro_level} dB"
+
+
+async def test_a_template_with_sound_keeps_it(sources: dict[str, bytes]) -> None:
+    content = await _render(
+        sources, [{"url": SILENT_URL, "startMs": 0, "endMs": 1000}], intro=JINGLE_INTRO
+    )
+
+    with TemporaryDirectory(prefix="film-out-") as tmp:
+        film = _saved(content, Path(tmp))
+        assert abs(await duration_ms_of(content) - 2000) <= 100
+        assert _mean_volume(film, start=0.2, length=0.6) > SILENCE_DB, "片头用模板自带的声音"
+        assert _mean_volume(film, start=1.2, length=0.6) < SILENCE_DB, "没有音轨的段补静音"
+
+
+async def test_the_intro_picture_comes_first_and_the_outro_last(sources: dict[str, bytes]) -> None:
+    """片头竖屏缩进横屏画幅，两边补黑；段本身铺满画面。"""
+
+    content = await _render(
+        sources,
+        [{"url": SILENT_URL, "startMs": 0, "endMs": 1000}],
+        intro=SILENT_INTRO,
+        outro=SILENT_OUTRO,
+    )
+
+    with TemporaryDirectory(prefix="film-out-") as tmp:
+        film = _saved(content, Path(tmp))
+        intro_frame = _gray_frame(film, at=1.0)
+        segment_frame = _gray_frame(film, at=2.5)
+    width, height = 480, 360
+
+    def left_edge_dark(frame: bytes) -> bool:
+        column = [frame[row * width + 5] for row in range(height)]
+        return max(column) < 30
+
+    assert left_edge_dark(intro_frame), "片头 240×320 缩进 480×360，左右补黑边"
+    assert not left_edge_dark(segment_frame), "段与画幅同大，铺满"
+
+
+@pytest.mark.skipif(
+    not has_subtitles_filter(),
+    reason="本机 ffmpeg 没有 libass 的 subtitles 滤镜（如 Homebrew 的精简版 ffmpeg），烧不了字幕",
+)
+async def test_subtitle_times_start_at_the_first_segment_and_skip_the_brand_clips(
+    sources: dict[str, bytes],
+) -> None:
+    """字幕时刻 [0, 1000) 落在第一段的头一秒（片头之后），片头片尾上没有字。"""
+
+    segments = [{"url": SILENT_URL, "startMs": 0, "endMs": 2000}]
+    brands: dict[str, Any] = {"intro": SILENT_INTRO, "outro": SILENT_OUTRO}
+    with_text = await _render(
+        sources,
+        segments,
+        subtitles=[{"startMs": 0, "endMs": 1000, "text": "字幕跟着第一段走"}],
+        **brands,
+    )
+    without = await _render(sources, segments, **brands)
+
+    width, height = 480, 360
+    bottom = range(height * 2 // 3, height)
+
+    def changed(left: bytes, right: bytes) -> int:
+        return sum(
+            1
+            for row in bottom
+            for column in range(width)
+            if abs(left[row * width + column] - right[row * width + column]) > 60
+        )
+
+    with TemporaryDirectory(prefix="film-out-") as tmp:
+        root = Path(tmp)
+        burned_film = _saved(with_text, root, "with.mp4")
+        plain_film = _saved(without, root, "without.mp4")
+        frames = {
+            at: (_gray_frame(burned_film, at=at), _gray_frame(plain_film, at=at))
+            for at in (1.0, 2.5, 4.5)
+        }
+    assert changed(*frames[1.0]) < 30, "片头上没有字"
+    assert changed(*frames[2.5]) > 150, "第一段的头一秒有字"
+    assert changed(*frames[4.5]) < 30, "片尾上没有字"

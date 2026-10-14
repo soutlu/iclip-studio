@@ -38,6 +38,7 @@ from tests.helpers.generation import (
     FAKE_VIDEO_PROVIDER,
     MUSIC_PROMPT,
     QUEUE_SETTINGS,
+    FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
     ScriptedProvider,
@@ -128,6 +129,7 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         probe_duration_ms=_no_probe,
+        brand_templates=FixedBrandTemplates(),
         subtitles=SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,
     )

@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final, Protocol
+from typing import Any, Final, Literal, Protocol
 
 import structlog
 
@@ -28,6 +28,7 @@ from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_IMAGE,
     KIND_VIDEO,
+    MAX_WHOLE_FILM_MS,
     OPERATION_COMPOSE,
     OPERATION_CUT,
     OPERATION_GENERATE,
@@ -45,6 +46,8 @@ from iclip.domains.generation.schemas import (
     VideoComposeRequest,
     VideoEditIn,
     VideoGenerationIn,
+    WholeFilmBrand,
+    WholeFilmBrandIn,
     WholeFilmIn,
     WholeFilmMusic,
     WholeFilmMusicIn,
@@ -93,6 +96,28 @@ class ConversationLineage(Protocol):
         ...
 
 
+BrandPosition = Literal["intro", "outro"]
+"""品牌模板放在整片的哪一头。"""
+
+
+@dataclass(frozen=True, slots=True)
+class BrandTemplateFacts:
+    """整片受理时要知道的一条品牌模板：在不在用、放哪一头，以及要快照进请求的视频参数。"""
+
+    id: uuid.UUID
+    position: BrandPosition
+    enabled: bool
+    video_url: str
+    duration_ms: int
+    width: int
+    height: int
+    has_audio: bool
+
+
+BrandTemplates = Callable[[uuid.UUID], Awaitable[BrandTemplateFacts | None]]
+"""按 id 读一条品牌模板，含停用的；没有给 ``None``。实现由组合根接到品牌模板表上，本域不认识它。"""
+
+
 class GenerationService:
     """生成请求受理与记录查询。"""
 
@@ -110,14 +135,16 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         probe_duration_ms: ProbeDuration,
+        brand_templates: BrandTemplates,
         subtitles: SubtitleTarget | None = None,
         music: MusicTarget | None = None,
     ) -> None:
         """收下装配期确定的模型集合；此层不持有或调用 Provider 实例。
 
         图片可选哪几家由装配表决定，本层只按它校验并把选中的那家写进记录。``probe_duration_ms``
-        只在受理编辑段时用：核对参考片段与基底的时长。``subtitles`` 为 None 即字幕识别没开通：
-        成片完成不建字幕记录，手动识别 422。``music`` 为 None 即生成背景音乐没开通，提交 422。"""
+        只在受理编辑段时用：核对参考片段与基底的时长。``brand_templates`` 只在受理整片时用：读片头
+        片尾的模板。``subtitles`` 为 None 即字幕识别没开通：成片完成不建字幕记录，手动识别 422。
+        ``music`` 为 None 即生成背景音乐没开通，提交 422。"""
 
         self._repo = repo
         self._queue = queue
@@ -130,6 +157,7 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._probe_duration_ms = probe_duration_ms
+        self._brand_templates = brand_templates
         self._subtitles = subtitles
         self._music = music
 
@@ -269,10 +297,13 @@ class GenerationService:
         主体读不到这段对话 404。每段的出处要是这段对话自己的或继承来的记录，读不到 404（不区分
         存在性）；读得到却不是出片或有基底的合成（整片、编辑段、上传、图片都不行）422；那条成片量过
         时长时段的结尾不能超出它。音乐要是一条已完成的音频记录：调用者自己的上传，或这段对话自己的、
-        继承来的生成音乐，读不到 404，不是音频 422；它量过时长时从起点往后要够整片那么长。
+        继承来的生成音乐，读不到 404，不是音频 422；它量过时长时从起点往后要够各段那么长（音乐不铺
+        在片头片尾上）。片头片尾要是一条在用、位置对得上的品牌模板，没有这条 404，停用或位置不对
+        422；连片头片尾的整片总长不能超过 ``MAX_WHOLE_FILM_MS``，422。
 
-        整片没有来源、原作与镜号，各段与音乐的出处换成产物地址记进请求，连同受理时的声音参数。属主
-        与钥匙取主体，对话、需求单与 ``metadata`` 取请求；和合成一样抹对话的收尾标记。"""
+        整片没有来源、原作与镜号，各段与音乐的出处换成产物地址记进请求，片头片尾记模板的快照，连同
+        受理时的声音参数。属主与钥匙取主体，对话、需求单与 ``metadata`` 取请求；和合成一样抹对话的
+        收尾标记。"""
 
         conversation_id = request.conversation_id
         if not await self._lineage.readable(principal, conversation_id):
@@ -302,10 +333,20 @@ class GenerationService:
                     end_ms=segment.end_ms,
                 )
             )
+        intro = await self._film_brand(request.intro, "intro")
+        outro = await self._film_brand(request.outro, "outro")
+        film_ms = request.segments_ms + sum(
+            brand.duration_ms for brand in (intro, outro) if brand is not None
+        )
+        if film_ms > MAX_WHOLE_FILM_MS:
+            raise ValidationFailed(
+                f"连片头片尾整片一共 {format_seconds(film_ms / 1000)} 秒，"
+                f"超过 {format_seconds(MAX_WHOLE_FILM_MS / 1000)} 秒上限"
+            )
         music = None
         if request.music is not None:
             music = await self._film_music(
-                principal, request.music, conversation_id, inheritance, request.duration_ms
+                principal, request.music, conversation_id, inheritance, request.segments_ms
             )
         return await self._accept(
             principal,
@@ -314,6 +355,8 @@ class GenerationService:
                 subtitles=request.subtitles,
                 music=music,
                 render=WholeFilmRender(),
+                intro=intro,
+                outro=outro,
             ),
             provider=self._compose_provider_name,
             conversation_id=conversation_id,
@@ -328,9 +371,9 @@ class GenerationService:
         music: WholeFilmMusicIn,
         conversation_id: uuid.UUID,
         inheritance: Inheritance,
-        film_ms: int,
+        segments_ms: int,
     ) -> WholeFilmMusic:
-        """整片的音乐换成落库的样子：核对它是哪条音频记录、够不够长，记下它的产物地址。
+        """整片的音乐换成落库的样子：核对它是哪条音频记录、够不够各段那么长，记下它的产物地址。
 
         上传不挂对话，只认调用者本人的；生成的音乐要是这段对话自己的或继承来的。"""
 
@@ -354,14 +397,40 @@ class GenerationService:
             and audio.output_url is not None
         ):
             raise ValidationFailed("音乐必须是一条已完成的音频记录：上传的音乐或生成的背景音乐")
-        if audio.duration_ms is not None and music.offset_ms + film_ms > audio.duration_ms:
+        if audio.duration_ms is not None and music.offset_ms + segments_ms > audio.duration_ms:
             raise ValidationFailed(
                 f"音乐从 {format_seconds(music.offset_ms / 1000)} 秒起只剩 "
                 f"{format_seconds(max(0, audio.duration_ms - music.offset_ms) / 1000)} 秒，"
-                f"不够整片的 {format_seconds(film_ms / 1000)} 秒"
+                f"不够整片的 {format_seconds(segments_ms / 1000)} 秒"
             )
         return WholeFilmMusic(
             audio_job_id=audio.id, url=audio.output_url, offset_ms=music.offset_ms, gain=music.gain
+        )
+
+    async def _film_brand(
+        self, brand: WholeFilmBrandIn | None, position: BrandPosition
+    ) -> WholeFilmBrand | None:
+        """整片的片头或片尾换成落库的快照：模板要在用、放在 ``position`` 这一头。
+
+        没有这条模板 ``NotFound``；停用了或位置不对 ``ValidationFailed``。"""
+
+        if brand is None:
+            return None
+        where = "片头" if position == "intro" else "片尾"
+        template = await self._brand_templates(brand.template_id)
+        if template is None:
+            raise NotFound(f"没有这个品牌模板: {brand.template_id}")
+        if not template.enabled:
+            raise ValidationFailed(f"{where}用的品牌模板已停用")
+        if template.position != position:
+            raise ValidationFailed(f"{where}只能用{where}模板")
+        return WholeFilmBrand(
+            template_id=template.id,
+            url=template.video_url,
+            duration_ms=template.duration_ms,
+            width=template.width,
+            height=template.height,
+            has_audio=template.has_audio,
         )
 
     async def _conversation_record(
@@ -1083,6 +1152,9 @@ def _settled_url(job: GenerationJob) -> str:
 
 
 __all__ = [
+    "BrandPosition",
+    "BrandTemplateFacts",
+    "BrandTemplates",
     "ConversationLineage",
     "GenerationService",
     "MusicTarget",
