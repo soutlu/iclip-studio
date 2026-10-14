@@ -680,6 +680,78 @@ describe('StoryboardReader', () => {
     })
   })
 
+  describe('视频编辑器的版本历史', () => {
+    // editableJob 合成过一次：V2 是挂在它名下的合成记录，服务端给齐字段。
+    const composite = makeGenerationJob({
+      id: '9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d',
+      operation: 'compose',
+      rootJobId: editableJob.id,
+      sourceJobId: editableJob.id,
+      shotIndex: 1,
+      createdAt: '2026-09-01T10:05:00Z',
+      finishedAt: '2026-09-01T10:06:00Z',
+      outputUrl: 'https://example.com/v2.mp4',
+      durationMs: 7000,
+      request: { segments: [] },
+    })
+    /** 按真实接口口径筛 kind / rootJobId、按创建时刻倒序、截 limit。 */
+    const serveRecords = () =>
+      server.use(
+        http.get('*/api/generations', ({ request }) => {
+          const params = new URL(request.url).searchParams
+          const kind = params.get('kind')
+          const rootJobId = params.get('rootJobId')
+          const items = [...jobs, editableJob, composite]
+            .filter(
+              (job) =>
+                (kind === null || job.kind === kind) &&
+                (rootJobId === null || job.rootJobId === rootJobId),
+            )
+            .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))
+            .slice(0, Number(params.get('limit') ?? '50'))
+          return HttpResponse.json({ items })
+        }),
+      )
+    const versionLabels = async () =>
+      within(await screen.findByRole('group', { name: '视频版本' }))
+        .getAllByRole('button')
+        .map((entry) => entry.getAttribute('aria-label'))
+    /** 舞台选中某条成片（按提交时刻认），再点舞台上的「编辑视频」。 */
+    const editFromStage = async (job: GenerationJob) => {
+      const page = await screen.findByRole('region', { name: '镜头组 1' })
+      const takes = await findTakes()
+      const take = takes[takeTimes(takes).indexOf(job.createdAt)]
+      if (take === undefined) throw new Error('成片区缺这条出片')
+      await userEvent.click(takeCard(take))
+      await userEvent.click(within(page).getByRole('button', { name: '编辑视频' }))
+    }
+
+    it('刷新后、导航去掉 ?video= 后，从舞台重选成片点编辑视频，打开的还是原来那条根，版本条有 V2、V1', async () => {
+      provide()
+      serveRecords()
+      const first = await renderReader(`/?shot=1&content=scene:1&video=${editableJob.id}`)
+      await screen.findByRole('dialog', { name: /^编辑视频/ })
+      await waitFor(async () => expect(await versionLabels()).toEqual(['V2', 'V1']))
+
+      // 刷新并且地址里没了 video：舞台选中重置，成片区只列出片、不列合成。
+      first.unmount()
+      const { router } = await renderReader('/?shot=1&content=scene:1')
+      expect(screen.queryByRole('dialog', { name: /^编辑视频/ })).toBeNull()
+      expect(takeTimes(await findTakes())).toEqual([editableJob.createdAt, jobs[0]?.createdAt])
+      await editFromStage(editableJob)
+      await waitFor(() =>
+        expect(router.state.location.search).toMatchObject({ video: editableJob.id }),
+      )
+      await waitFor(async () => expect(await versionLabels()).toEqual(['V2', 'V1']))
+
+      // 不刷新、从路由离开（去掉 video）再回来，同样重新从舞台打开。
+      await act(() => router.navigate({ href: '/?shot=1&content=scene:1' }))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /^编辑视频/ })).toBeNull())
+      await editFromStage(editableJob)
+      await waitFor(async () => expect(await versionLabels()).toEqual(['V2', 'V1']))
+    })
+  })
+
   it('只读时生成、正文编辑与历史回填的入口全部收起，不写工作区', async () => {
     const files = provide()
     let posts = 0

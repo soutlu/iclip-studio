@@ -4,10 +4,11 @@
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
 import type { VideoComposeIn, VideoEditIn } from '@/shared/api/generated/types.gen'
-import { zGenerationEnvelope, zGenerationsPageOut } from '@/shared/api/generated/zod.gen'
+import { zGenerationEnvelope } from '@/shared/api/generated/zod.gen'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import {
   generationsRefetchInterval,
+  readAllGenerations,
   storyboardQueryKeys,
   type GenerationJob,
   type GenerationsPage,
@@ -22,19 +23,16 @@ export const videoEditConversationKey = (conversationId: string) =>
 export const videoEditChainKey = (conversationId: string, rootJobId: string) =>
   [...videoEditConversationKey(conversationId), rootJobId] as const
 
-/** 一条根名下的衍生记录：编辑段与合成一次拿回，按原作号筛。
+/** 一条根名下的衍生记录：编辑段与合成按原作号筛，翻到底全部拿回。缓存照列表接口的 `{ items }` 形状存。
  *
+ * 只读第一页时更早的合成与草稿用着的编辑段会被挤掉：版本条少了那一版，草稿也会被当成读不出来而重建。
  * 根自己的原作号是空的，不在结果里，由打开编辑器的那条记录传进来。 */
 export const useVideoEditChain = (conversationId: string, rootJobId: string) =>
   useQuery({
     queryKey: videoEditChainKey(conversationId, rootJobId),
-    queryFn: ({ signal }) => {
-      const params = new URLSearchParams({ conversationId, rootJobId, limit: '100' })
-      return apiFetch(`/generations?${params}`, zGenerationsPageOut, {
-        signal,
-        fallbackErrorMessage: '读取编辑记录失败',
-      })
-    },
+    queryFn: async ({ signal }): Promise<GenerationsPage> => ({
+      items: await readAllGenerations({ conversationId, rootJobId }, signal, '读取编辑记录失败'),
+    }),
     // 编辑器按需打开，打开就重拉，不吃全局 30 秒的新鲜期。
     staleTime: 0,
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data?.items ?? []),
