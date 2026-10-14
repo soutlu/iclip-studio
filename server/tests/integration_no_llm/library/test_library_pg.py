@@ -28,7 +28,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_UPLOAD,
     request_to_payload,
 )
-from iclip.domains.library.models import Scope, VideoCursor
+from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
 from iclip.domains.library.reports_pg import PgLibraryReports
 from iclip.domains.library.schemas import ShotGroupOut
 from tests.helpers.fork_lineage import three_level_fork
@@ -832,45 +832,175 @@ async def test_audio_records_are_not_cards_or_versions(
     assert shape(await reports.groups_of(seed.c1)) == before_c1
 
 
-async def test_whole_films_are_not_cards_or_versions_yet(
+async def _whole_film(
+    conn: AsyncConnection,
+    film_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    *,
+    owner: uuid.UUID,
+    finished: float,
+    status: str = STATUS_COMPLETED,
+    duration_ms: int = 1000,
+) -> None:
+    """挂在 ``conversation_id`` 上的一条整片，只有一段（资料库不读请求，出处随手给）；失败的没有
+    地址。"""
+
+    request = whole_film_request(
+        [{"sourceJobId": uuid.uuid4(), "url": url("a"), "startMs": 0, "endMs": 1000}]
+    )
+    completed = status == STATUS_COMPLETED
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+            " operation, provider, request, status, output_url, duration_ms,"
+            " created_at, finished_at)"
+            " VALUES (:id, :owner, :conversation, :kind, :operation, 'ffmpeg',"
+            " CAST(:request AS jsonb), :status, :output_url, :duration_ms, :created_at, :at)"
+        ),
+        {
+            "id": film_id,
+            "owner": owner,
+            "conversation": conversation_id,
+            "kind": KIND_VIDEO,
+            "operation": OPERATION_COMPOSE,
+            "request": json.dumps(request_to_payload(request)),
+            "status": status,
+            "output_url": url(f"film-{film_id}") if completed else None,
+            "duration_ms": duration_ms if completed else None,
+            "created_at": at(finished - 1),
+            "at": at(finished),
+        },
+    )
+
+
+async def test_whole_films_are_not_cards_or_versions(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
-    """整片暂不进资料库：挂在有卡的对话上、完成得比卡面还晚，卡面、组与版都不变；挂在一段没有别的
-    成片的对话上，也不成卡。"""
+    """成片卡不收整片（整片另有一页）：挂在有卡的对话上、完成得比卡面还晚，卡面、组与版都不变；挂在
+    一段没有别的成片的对话上，也不成卡。"""
 
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
     in_c1, alone = uuid.uuid4(), uuid.uuid4()
-    request = json.dumps(
-        request_to_payload(
-            whole_film_request(
-                [{"sourceJobId": seed.a, "url": url("a"), "startMs": 0, "endMs": 1000}]
-            )
-        )
-    )
     async with engine.begin() as conn:
         for film, conversation in ((in_c1, seed.c1), (alone, uuid.uuid4())):
-            await conn.execute(
-                text(
-                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                    " operation, provider, request, status, output_url, duration_ms,"
-                    " created_at, finished_at)"
-                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'ffmpeg',"
-                    " CAST(:request AS jsonb), :status, :output_url, 1000, :at, :at)"
-                ),
-                {
-                    "id": film,
-                    "owner": seed.nora,
-                    "conversation": conversation,
-                    "kind": KIND_VIDEO,
-                    "operation": OPERATION_COMPOSE,
-                    "request": request,
-                    "status": STATUS_COMPLETED,
-                    "output_url": url(f"film-{film}"),
-                    "at": at(500),
-                },
-            )
+            await _whole_film(conn, film, conversation, owner=seed.nora, finished=500)
 
     assert await ids(reports, Scope()) == before
     assert await reports.card_of(alone) is None
     assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+class Films:
+    """在 ``Seed`` 上加的整片，时刻同样是距 BASE 的分钟数。
+
+    c1（Nora）：W0（45 完成，c4、c5 都继承得到）、W1（200）、Lena 替这段对话剪的 W2（300，卡面），
+    另有一条失败的。c4（Lena 的副本）：自己的 W4（250）。c2（Lena）：W5（150）。c5 只继承了 W0，
+    没有自己的整片。还有一条挂在不存在的对话上的整片。
+    """
+
+    def __init__(self) -> None:
+        self.w0, self.w1, self.w2, self.w4, self.w5 = (uuid.uuid4() for _ in range(5))
+        self.failed, self.dangling = uuid.uuid4(), uuid.uuid4()
+
+    async def plant(self, engine: AsyncEngine, seed: Seed) -> None:
+        async with engine.begin() as conn:
+            await _whole_film(conn, self.w0, seed.c1, owner=seed.nora, finished=45)
+            await _whole_film(conn, self.w1, seed.c1, owner=seed.nora, finished=200)
+            await _whole_film(
+                conn, self.w2, seed.c1, owner=seed.lena, finished=300, duration_ms=61_500
+            )
+            await _whole_film(
+                conn, self.failed, seed.c1, owner=seed.nora, finished=400, status=STATUS_FAILED
+            )
+            await _whole_film(conn, self.w4, seed.c4, owner=seed.lena, finished=250)
+            await _whole_film(conn, self.w5, seed.c2, owner=seed.lena, finished=150)
+            await _whole_film(conn, self.dangling, uuid.uuid4(), owner=seed.lena, finished=500)
+
+
+@pytest.fixture
+async def films(engine: AsyncEngine, seed: Seed) -> Films:
+    planted = Films()
+    await planted.plant(engine, seed)
+    return planted
+
+
+async def film_cards(
+    reports: PgLibraryReports, scope: WholeFilmScope, *, limit: int = 20
+) -> list[uuid.UUID]:
+    return [
+        row.card.conversation_id
+        for row in await reports.whole_films(scope, limit=limit, after=None)
+    ]
+
+
+async def test_a_whole_film_card_holds_its_conversations_own_films(
+    reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    """一段对话一张卡，只装自己完成的整片：c4、c5 继承来的 W0 不算，c5 因此没有卡；失败的、挂在不存在
+    的对话上的都不收。卡里按完成先后编版本，卡面是最后一版；作者是对话属主，每一版的归属人是它的属主。"""
+
+    rows = await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+
+    assert [
+        (row.card.conversation_id, [version.job_id for version in row.card.versions])
+        for row in rows
+    ] == [
+        (seed.c1, [films.w0, films.w1, films.w2]),
+        (seed.c4, [films.w4]),
+        (seed.c2, [films.w5]),
+    ]
+    assert await reports.count_whole_films(WholeFilmScope()) == 3
+
+    c1 = rows[0]
+    card = c1.card
+    assert card.face == card.versions[-1]
+    assert (card.title, card.user_name) == ("春夏凉鞋合集", NORA)
+    assert [version.user_name for version in card.versions] == [NORA, NORA, LENA]
+    assert [version.finished_at for version in card.versions] == [at(45), at(200), at(300)]
+    assert card.face.output_url == url(f"film-{films.w2}")
+    assert card.face.duration_ms == 61_500 and card.face.watermark_output_url is None
+    assert (c1.conversation_owner, c1.conversation_deleted) == (seed.nora, False)
+    assert (rows[1].card.title, rows[1].card.user_name) == ("凉鞋合集（分叉）", LENA)
+
+
+async def test_whole_film_filters_and_pages_follow_the_face(
+    reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    """作者、时间窗与关键词都只看卡本身：时间窗落在卡面的完成时刻上（c1 的 W1 在窗里也不算），关键词
+    只搜对话标题。翻页按卡面完成时刻倒序接着走。"""
+
+    assert await film_cards(reports, WholeFilmScope(user_name=LENA)) == [seed.c4, seed.c2]
+    assert await film_cards(reports, WholeFilmScope(user_name=NORA)) == [seed.c1]
+    assert await film_cards(reports, WholeFilmScope(since=at(100), until=at(210))) == [seed.c2]
+    assert await film_cards(reports, WholeFilmScope(since=at(250))) == [seed.c1, seed.c4]
+    assert await film_cards(reports, WholeFilmScope(until=at(250))) == [seed.c2]
+    assert await film_cards(reports, WholeFilmScope(q="凉鞋合集")) == [seed.c1, seed.c4]
+    assert await film_cards(reports, WholeFilmScope(q="滑板")) == [seed.c2]
+    assert await reports.count_whole_films(WholeFilmScope(user_name=LENA)) == 2
+
+    first = await reports.whole_films(WholeFilmScope(), limit=2, after=None)
+    last = first[-1].card
+    second = await reports.whole_films(
+        WholeFilmScope(),
+        limit=10,
+        after=VideoCursor(at=last.face.finished_at, video_id=last.conversation_id),
+    )
+    assert [row.card.conversation_id for row in first] == [seed.c1, seed.c4]
+    assert [row.card.conversation_id for row in second] == [seed.c2]
+
+
+async def test_deleting_a_conversation_keeps_its_whole_film_card(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE iclip.conversations SET deleted_at = :at WHERE id = :id"),
+            {"at": at(500), "id": seed.c1},
+        )
+
+    rows = await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+
+    assert [row.card.conversation_id for row in rows] == [seed.c1, seed.c4, seed.c2]
+    assert rows[0].conversation_deleted and rows[0].card.title == "春夏凉鞋合集"
+    assert len(rows[0].card.versions) == 3

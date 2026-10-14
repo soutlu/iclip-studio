@@ -12,8 +12,8 @@ import pytest
 from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.models import PrincipalKind
 from iclip.domains.identity.public import ACT_AS_PERMISSION, MANAGE_PERMISSION, Principal
-from iclip.domains.library.models import Scope, VideoCursor
-from iclip.domains.library.repository import CardRow
+from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.repository import CardRow, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     FaceOut,
     LibraryAuthorOut,
@@ -21,6 +21,8 @@ from iclip.domains.library.schemas import (
     ShotGroupOut,
     TakeOut,
     VersionOut,
+    WholeFilmCardOut,
+    WholeFilmVersionOut,
 )
 from iclip.domains.library.service import LibraryService
 
@@ -85,11 +87,39 @@ def card(
     )
 
 
+def film_card(at: datetime) -> WholeFilmCardRow:
+    """一张只有一版的整片卡，卡面在 ``at`` 完成。"""
+
+    version = WholeFilmVersionOut(
+        job_id=uuid.uuid4(),
+        output_url="https://oss.example.test/film.mp4",
+        watermark_output_url=None,
+        duration_ms=1000,
+        finished_at=at,
+        user_name="Nora.Ho",
+    )
+    return WholeFilmCardRow(
+        card=WholeFilmCardOut(
+            conversation_id=uuid.uuid4(),
+            can_open_conversation=False,
+            title="春夏凉鞋合集",
+            user_name="Nora.Ho",
+            face=version,
+            versions=[version],
+        ),
+        conversation_owner=OWNER,
+        conversation_deleted=False,
+    )
+
+
 @dataclass
 class FakeReports:
     cards: list[CardRow] = field(default_factory=list)
     counted: list[Scope] = field(default_factory=list)
     queried: list[tuple[Scope, VideoCursor | None]] = field(default_factory=list)
+    films: list[WholeFilmCardRow] = field(default_factory=list)
+    films_counted: list[WholeFilmScope] = field(default_factory=list)
+    films_queried: list[tuple[WholeFilmScope, VideoCursor | None]] = field(default_factory=list)
 
     async def videos(
         self, scope: Scope, *, limit: int, after: VideoCursor | None
@@ -122,6 +152,25 @@ class FakeReports:
 
     async def authors(self) -> Sequence[LibraryAuthorOut]:
         return [LibraryAuthorOut(user_name="Nora.Ho", count=len(self.cards))]
+
+    async def whole_films(
+        self, scope: WholeFilmScope, *, limit: int, after: VideoCursor | None
+    ) -> Sequence[WholeFilmCardRow]:
+        self.films_queried.append((scope, after))
+        rows = sorted(
+            self.films, key=lambda row: (row.card.face.finished_at, row.card.conversation_id)
+        )
+        rows.reverse()
+        if after is not None:
+            key = (after.at, after.video_id)
+            rows = [
+                row for row in rows if (row.card.face.finished_at, row.card.conversation_id) < key
+            ]
+        return rows[:limit]
+
+    async def count_whole_films(self, scope: WholeFilmScope) -> int:
+        self.films_counted.append(scope)
+        return len(self.films)
 
 
 def library(
@@ -203,3 +252,26 @@ async def test_limit_out_of_range_is_rejected() -> None:
 
     with pytest.raises(ValidationFailed):
         await service.videos(principal(OWNER), limit=0)
+    with pytest.raises(ValidationFailed):
+        await service.whole_films(principal(OWNER), limit=0)
+
+
+async def test_whole_film_cursor_keys_on_the_face_and_the_conversation() -> None:
+    """整片卡的游标是卡面完成时刻加对话 id，总数只在第一页；空白关键词等于不筛。"""
+
+    reports = FakeReports(films=[film_card(NOW - timedelta(minutes=minute)) for minute in range(3)])
+    service = library(reports)
+
+    first = await service.whole_films(principal(OWNER), limit=2, q="  ")
+    second = await service.whole_films(principal(OWNER), limit=2, cursor=first.next_cursor)
+
+    tail = first.items[-1]
+    assert reports.films_queried[1][1] == VideoCursor(
+        at=tail.face.finished_at, video_id=tail.conversation_id
+    )
+    assert reports.films_queried[0][0].q is None
+    assert first.total == 3 and second.total is None and len(reports.films_counted) == 1
+    seen = [item.conversation_id for page in (first, second) for item in page.items]
+    assert len(seen) == len(set(seen)) == 3
+    assert second.next_cursor is None
+    assert all(item.can_open_conversation for item in first.items), "属主打得开自己的对话"

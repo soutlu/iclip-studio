@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.domains.audit.models import Scope
 from iclip.domains.audit.reports_pg import PgAuditReports, audit_connection
@@ -978,8 +978,8 @@ async def test_subtitle_records_do_not_count_toward_any_metric(
 async def test_whole_films_do_not_count_toward_any_metric(
     reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
-    """整片没有镜号，不是出片：C1 里一条完成（还被下载过）、一条失败、一条还在跑，镜、生成次数、有效镜、
-    片长与任务执行都不变。"""
+    """整片没有镜号，不是出片：C1 里一条完成、一条失败、一条还在跑，镜、生成次数、有效镜、片长与任务
+    执行都不变。下载整片怎么算见下面两条。"""
 
     before = await reports.overall(Scope())
     before_users = await reports.by_user(Scope())
@@ -1027,22 +1027,237 @@ async def test_whole_films_do_not_count_toward_any_metric(
                     "finished_at": None if status == STATUS_SUBMITTED else at,
                 },
             )
-        await conn.execute(
-            text(
-                "INSERT INTO iclip.tracking_events (id, name, job_id, user_id, occurred_at)"
-                " VALUES (:id, :name, :job_id, :user_id, now())"
-            ),
-            {
-                "id": uuid.uuid4(),
-                "name": VIDEO_DOWNLOADED,
-                "job_id": films[STATUS_COMPLETED],
-                "user_id": seed.derek,
-            },
-        )
 
     assert await reports.overall(Scope()) == before
     assert await reports.by_user(Scope()) == before_users
     assert await executions_by_id(service) == before_executions
+
+
+async def plant_conversation(
+    conn: AsyncConnection,
+    *,
+    owner: uuid.UUID,
+    at: datetime,
+    forked_from: uuid.UUID | None = None,
+) -> uuid.UUID:
+    conversation_id = uuid.uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.conversations (id, owner_user_id, agent_id, title, created_at,"
+            " updated_at, forked_from, fork_turn)"
+            " VALUES (:id, :owner, 'agent', :title, :at, :at, :forked_from, :fork_turn)"
+        ),
+        {
+            "id": conversation_id,
+            "owner": owner,
+            "title": f"对话 {conversation_id}",
+            "at": at,
+            "forked_from": forked_from,
+            "fork_turn": None if forked_from is None else 1,
+        },
+    )
+    return conversation_id
+
+
+async def plant_take(
+    conn: AsyncConnection, conversation_id: uuid.UUID, *, owner: uuid.UUID, shot: int, at: datetime
+) -> uuid.UUID:
+    """一条成了的出片。"""
+
+    take = uuid.uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, shot_index,"
+            " kind, operation, provider, request, status, output_url, created_at, submitted_at,"
+            " finished_at)"
+            " VALUES (:id, :owner, :conversation_id, :shot, :kind, :operation, 'p',"
+            " CAST(:request AS jsonb), :status, :url, :at, :at, :at)"
+        ),
+        {
+            "id": take,
+            "owner": owner,
+            "conversation_id": conversation_id,
+            "shot": shot,
+            "kind": KIND_VIDEO,
+            "operation": OPERATION_GENERATE,
+            "request": json.dumps({"model": "m", "prompt": "p"}),
+            "status": STATUS_COMPLETED,
+            "url": f"https://example.test/{take}.mp4",
+            "at": at,
+        },
+    )
+    return take
+
+
+async def plant_composite(
+    conn: AsyncConnection,
+    conversation_id: uuid.UUID,
+    *,
+    owner: uuid.UUID,
+    base: uuid.UUID,
+    at: datetime,
+) -> uuid.UUID:
+    """在出片 ``base`` 上合成的一条成片：来源与原作都是它，镜号随它。"""
+
+    composite = uuid.uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, shot_index,"
+            " kind, operation, provider, request, status, source_job_id, root_job_id,"
+            " output_url, created_at, submitted_at, finished_at)"
+            " SELECT :id, :owner, CAST(:conversation_id AS uuid), shot_index, :kind, :operation,"
+            " 'ffmpeg', CAST(:request AS jsonb), :status, id, id, :url, :at, :at, :at"
+            " FROM iclip.generation_jobs WHERE id = :base"
+        ),
+        {
+            "id": composite,
+            "owner": owner,
+            "conversation_id": conversation_id,
+            "kind": KIND_VIDEO,
+            "operation": OPERATION_COMPOSE,
+            "request": json.dumps(
+                {
+                    "segments": [
+                        {
+                            "sourceJobId": str(base),
+                            "url": "https://example.test/b.mp4",
+                            "start": 0,
+                            "end": 3,
+                        }
+                    ]
+                }
+            ),
+            "status": STATUS_COMPLETED,
+            "base": base,
+            "url": f"https://example.test/{composite}.mp4",
+            "at": at,
+        },
+    )
+    return composite
+
+
+async def plant_whole_film(
+    conn: AsyncConnection,
+    conversation_id: uuid.UUID,
+    *,
+    owner: uuid.UUID,
+    sources: list[uuid.UUID],
+    at: datetime,
+) -> uuid.UUID:
+    """一条完成的整片，按顺序每个出处取一秒；同一个出处可以出现几次。"""
+
+    film = uuid.uuid4()
+    request = whole_film_request(
+        [
+            {
+                "sourceJobId": source,
+                "url": f"https://example.test/{source}.mp4",
+                "startMs": 1000 * position,
+                "endMs": 1000 * (position + 1),
+            }
+            for position, source in enumerate(sources)
+        ]
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+            " operation, provider, request, status, output_url, duration_ms, created_at,"
+            " submitted_at, finished_at)"
+            " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'ffmpeg',"
+            " CAST(:request AS jsonb), :status, :url, :duration_ms, :at, :at, :at)"
+        ),
+        {
+            "id": film,
+            "owner": owner,
+            "conversation_id": conversation_id,
+            "kind": KIND_VIDEO,
+            "operation": OPERATION_COMPOSE,
+            "request": json.dumps(request_to_payload(request)),
+            "status": STATUS_COMPLETED,
+            "url": f"https://example.test/{film}.mp4",
+            "duration_ms": request.duration_ms,
+            "at": at,
+        },
+    )
+    return film
+
+
+async def plant_download(conn: AsyncConnection, job_id: uuid.UUID, *, user_id: uuid.UUID) -> None:
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.tracking_events (id, name, job_id, user_id, occurred_at)"
+            " VALUES (:id, :name, :job_id, :user_id, now())"
+        ),
+        {"id": uuid.uuid4(), "name": VIDEO_DOWNLOADED, "job_id": job_id, "user_id": user_id},
+    )
+
+
+async def test_downloading_a_whole_film_counts_each_shot_its_segments_come_from(
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+) -> None:
+    """Derek 的新对话三镜各成一条，镜 2 上另有一条合成；整片两段取镜 1、一段取镜 2 的合成，镜 3
+    没用上。整片被下载两次：镜 1 只算一镜，合成按原作算到镜 2，镜 3 不算。与种子里 C1 下载出片、
+    下载合成得来的两镜合起来，有效镜共四镜；整片本身不加镜、不加生成次数。"""
+
+    before = await reports.overall(Scope())
+    at = ago(minutes=30)
+    async with engine.begin() as conn:
+        conversation = await plant_conversation(conn, owner=seed.derek, at=ago(hours=1))
+        one, two, _ = [
+            await plant_take(conn, conversation, owner=seed.derek, shot=shot, at=at)
+            for shot in (1, 2, 3)
+        ]
+        two_cut = await plant_composite(conn, conversation, owner=seed.derek, base=two, at=at)
+        film = await plant_whole_film(
+            conn, conversation, owner=seed.derek, sources=[one, two_cut, one], at=at
+        )
+        await plant_download(conn, film, user_id=seed.sara)
+        await plant_download(conn, film, user_id=seed.derek)
+
+    overall = await reports.overall(Scope())
+    assert (overall.shots, overall.attempts) == (before.shots + 3, before.attempts + 3)
+    assert (before.effective_shots, overall.effective_shots) == (2, 4)
+    assert (await reports.by_user(Scope()))[DEREK].effective_shots == 2
+    shots = (await executions_by_id(service))[conversation].shots
+    assert [(shot.shot, shot.effective) for shot in shots] == [(1, True), (2, True), (3, False)]
+
+
+async def test_a_whole_film_downloaded_in_a_fork_counts_like_a_composite(
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+) -> None:
+    """副本不进报表，但它里头下载的片照原作算回祖先：Sara 的源对话三镜各成一条，副本在继承来的
+    镜 1 上剪了合成，又用继承来的镜 2 和自己出的一条剪了整片。两条都被下载，源对话的镜 1、镜 2
+    成有效镜，镜 3 不算；副本自己出的那条不让任何一镜变有效，副本也不成任务执行。"""
+
+    before = await reports.overall(Scope())
+    at = ago(minutes=30)
+    async with engine.begin() as conn:
+        source = await plant_conversation(conn, owner=seed.sara, at=ago(hours=1))
+        one, two, _ = [
+            await plant_take(conn, source, owner=seed.sara, shot=shot, at=ago(minutes=50))
+            for shot in (1, 2, 3)
+        ]
+        fork = await plant_conversation(
+            conn, owner=seed.derek, at=ago(minutes=40), forked_from=source
+        )
+        own = await plant_take(conn, fork, owner=seed.derek, shot=4, at=at)
+        composite = await plant_composite(conn, fork, owner=seed.derek, base=one, at=at)
+        film = await plant_whole_film(conn, fork, owner=seed.derek, sources=[two, own], at=at)
+        await plant_download(conn, composite, user_id=seed.derek)
+        await plant_download(conn, film, user_id=seed.derek)
+
+    overall = await reports.overall(Scope())
+    assert (overall.shots, overall.effective_shots) == (
+        before.shots + 3,
+        before.effective_shots + 2,
+    )
+    executions = await executions_by_id(service)
+    assert fork not in executions
+    assert [(shot.shot, shot.effective) for shot in executions[source].shots] == [
+        (1, True),
+        (2, True),
+        (3, False),
+    ]
 
 
 async def test_audio_records_do_not_count_toward_any_metric(
