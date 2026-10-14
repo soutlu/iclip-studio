@@ -196,6 +196,17 @@ describe('VideoEditor', () => {
     expect(within(track).getAllByText('无声').length).toBeGreaterThan(0)
     expect(card()).toBeNull()
   })
+
+  it('原声下面有字幕轨与音乐轨，现在都是空的', async () => {
+    serveChain([])
+    await renderEditor()
+
+    const track = await timeline()
+    expect(within(track).getByText('字幕')).toBeInTheDocument()
+    expect(within(track).getByText('音乐')).toBeInTheDocument()
+    expect(within(track).getByTestId('timeline-captions')).toBeEmptyDOMElement()
+    expect(within(track).getByTestId('timeline-music')).toBeEmptyDOMElement()
+  })
 })
 
 describe('AI 改段的弹出卡', () => {
