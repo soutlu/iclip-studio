@@ -80,20 +80,20 @@ export const missingImageText = (label: string): string => `${beforeChinese(labe
 /** 生成过、还没选用的那张生成卡的标题：「镜头 2 尚未选用图片」。 */
 export const unselectedImageText = (label: string): string => `${beforeChinese(label)}尚未选用图片`
 
-/** 一张图的参考图里有没选用的就不能生成：「参考图尚未选用：涂鸦滑板场、镜头 2，无法生成图片；请先选用图片」，
+/** 一张图的参考图里有没选用的就不能生成：「参考图尚未选用：涂鸦滑板场、镜头 2，无法生成图片；请先生成并选用图片」，
  * 同名的只写一次；一张都不缺时为 undefined。 */
 export const missingReferencesText = (labels: readonly string[]): string | undefined => {
   const names = [...new Set(labels)]
   return names.length === 0
     ? undefined
-    : `参考图尚未选用：${names.join('、')}，无法生成图片；请先选用图片`
+    : `参考图尚未选用：${names.join('、')}，无法生成图片；请先生成并选用图片`
 }
 
-/** 这组参考图列表里有没图的就不能出片：只写张数，「2 张参考图尚未选用，无法生成视频；请先选用图片」，缺哪几张看
+/** 这组参考图列表里有没图的就不能出片：只写张数，「2 张参考图尚未选用，无法生成视频；请先生成并选用图片」，缺哪几张看
  * 参考图里画成空位的芯片（悬停写名字与「未选用」）；没进列表的机位图不发，不算。一张都不缺时为 undefined。 */
 export const missingFramesText = (group: FilmGroup): string | undefined => {
   const count = group.frames.filter((frame) => frame.number !== null && frame.url === null).length
-  return count === 0 ? undefined : `${count} 张参考图尚未选用，无法生成视频；请先选用图片`
+  return count === 0 ? undefined : `${count} 张参考图尚未选用，无法生成视频；请先生成并选用图片`
 }
 
 /** 舞台标签与悬停预览用的名字：有编号写 @N，没有就写它的名字。 */

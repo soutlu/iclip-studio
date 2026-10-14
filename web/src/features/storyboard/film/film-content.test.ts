@@ -160,13 +160,13 @@ describe('shotText', () => {
 describe('缺图原因', () => {
   it('生图：几张没选用的按先后用顿号连，同名的只写一次；一张都不缺就没有原因', () => {
     expect(missingReferencesText(['短发女生', '镜头 1', '短发女生'])).toBe(
-      '参考图尚未选用：短发女生、镜头 1，无法生成图片；请先选用图片',
+      '参考图尚未选用：短发女生、镜头 1，无法生成图片；请先生成并选用图片',
     )
     expect(missingReferencesText([])).toBeUndefined()
   })
 
   it('出片：只数列表里没图的，没进列表的机位图不算', () => {
-    expect(missingFramesText(group)).toBe('1 张参考图尚未选用，无法生成视频；请先选用图片')
+    expect(missingFramesText(group)).toBe('1 张参考图尚未选用，无法生成视频；请先生成并选用图片')
     expect(
       missingFramesText({ ...group, frames: group.frames.filter((item) => item.node !== 'c') }),
     ).toBeUndefined()
