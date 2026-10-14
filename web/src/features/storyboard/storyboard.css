@@ -657,6 +657,12 @@
   height: 100%;
   object-fit: cover;
 }
+/* 还没有图的（制作页没选用的机位图）：虚线空位，表示待补，与制作页芯片里的空位同一画法；选中的段里也不换成卡片底色。 */
+.storyboard-frame-stack > button:not(:has(img)),
+.storyboard-segment[aria-current='true'] .storyboard-frame-stack > button:not(:has(img)) {
+  border: 1px dashed var(--color-outline-variant);
+  background: none;
+}
 
 /* ===== 出片栏 =====
    参数始终一行、不换行：放不下时先截断模型 id（至少留 96px），再不够就横向滚、两端渐隐。
