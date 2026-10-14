@@ -11,6 +11,7 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import MetaData, inspect
 
+from iclip.domains.brand_templates.infra_sql import metadata_obj as brand_templates_metadata
 from iclip.domains.collections.infra_sql import metadata_obj as collections_metadata
 from iclip.domains.conversations.infra_sql import metadata_obj as conversations_metadata
 from iclip.domains.generation.infra_sql import metadata_obj as generation_metadata
@@ -30,6 +31,7 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     inspirations_metadata,
     tracking_metadata,
     references_metadata,
+    brand_templates_metadata,
 )
 
 

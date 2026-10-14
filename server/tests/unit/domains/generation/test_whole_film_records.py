@@ -27,13 +27,19 @@ from iclip.domains.generation.schemas import (
     MAX_MUSIC_GAIN_POINTS,
     MAX_WHOLE_FILM_MS,
     MAX_WHOLE_FILM_SUBTITLE_CHARS,
+    WholeFilmBrand,
     WholeFilmMusic,
     WholeFilmRender,
     WholeFilmRequest,
     WholeFilmSegment,
     WholeFilmSubtitle,
 )
-from iclip.domains.generation.service import GenerationService, MusicTarget, SubtitleTarget
+from iclip.domains.generation.service import (
+    BrandTemplateFacts,
+    GenerationService,
+    MusicTarget,
+    SubtitleTarget,
+)
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
@@ -44,6 +50,7 @@ from tests.helpers.generation import (
     FAKE_SUBTITLE_PROVIDER,
     FAKE_VIDEO_PROVIDER,
     QUEUE_SETTINGS,
+    FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
     ScriptedProvider,
@@ -101,6 +108,7 @@ def build_world(
     *,
     lineage: FixedLineage | None = None,
     compose_submission: ProviderSubmission | None = None,
+    brand_templates: FixedBrandTemplates | None = None,
 ) -> World:
     """真队列与真服务：字幕识别开着，完成回调接到服务上，与装配一致。"""
 
@@ -137,6 +145,7 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         probe_duration_ms=_no_probe,
+        brand_templates=brand_templates or FixedBrandTemplates(),
         subtitles=SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=MusicTarget(provider=FAKE_MUSIC_PROVIDER, model="qwen-audio-3.1-tts-next"),
     )
@@ -601,6 +610,167 @@ async def test_music_shorter_than_the_film_from_its_offset_is_refused_when_its_l
     assert short.status_code == 422, short.text
     assert "不够整片" in short.json()["detail"]
     assert unknown.status_code == 202, unknown.text
+
+
+# --- 片头片尾 -------------------------------------------------------------------
+
+
+def brand_template(
+    position: str = "intro",
+    *,
+    enabled: bool = True,
+    duration_ms: int = 3000,
+    url: str = "https://cdn.test/iclip/agent/uploads/brand.mp4",
+    has_audio: bool = True,
+) -> BrandTemplateFacts:
+    return BrandTemplateFacts(
+        id=uuid.uuid4(),
+        position="intro" if position == "intro" else "outro",
+        enabled=enabled,
+        video_url=url,
+        duration_ms=duration_ms,
+        width=1080,
+        height=1920,
+        has_audio=has_audio,
+    )
+
+
+async def test_intro_and_outro_are_snapshotted_and_the_music_only_spans_the_segments() -> None:
+    """模板的地址、时长、宽高与有没有音轨记进请求；音乐只要够各段那么长，不算片头片尾。"""
+
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    music = generated_music(owner_user_id=me, conversation_id=conversation, duration_ms=2000)
+    intro = brand_template("intro", url="https://cdn.test/intro.mp4")
+    outro = brand_template(
+        "outro", url="https://cdn.test/outro.mp4", duration_ms=1500, has_audio=False
+    )
+    world = build_world([take, music], brand_templates=FixedBrandTemplates(intro, outro))
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        response = await http.post(
+            "/generations/whole-films",
+            json=body(
+                conversation,
+                segment(take, 0, 2000),
+                music={
+                    "audioJobId": str(music.id),
+                    "offsetMs": 0,
+                    "gain": [{"atMs": 0, "gain": 1}],
+                },
+                intro={"templateId": str(intro.id)},
+                outro={"templateId": str(outro.id)},
+            ),
+        )
+
+    assert response.status_code == 202, response.text
+    (film,) = world.films()
+    assert isinstance(film.request, WholeFilmRequest)
+    assert film.request.intro == WholeFilmBrand(
+        template_id=intro.id,
+        url="https://cdn.test/intro.mp4",
+        duration_ms=3000,
+        width=1080,
+        height=1920,
+        has_audio=True,
+    )
+    assert film.request.outro == WholeFilmBrand(
+        template_id=outro.id,
+        url="https://cdn.test/outro.mp4",
+        duration_ms=1500,
+        width=1080,
+        height=1920,
+        has_audio=False,
+    )
+    assert film.request.duration_ms == 6500, "片头 + 各段 + 片尾"
+    assert response.json()["generation"]["request"]["outro"] == {
+        "templateId": str(outro.id),
+        "url": "https://cdn.test/outro.mp4",
+        "durationMs": 1500,
+        "width": 1080,
+        "height": 1920,
+        "hasAudio": False,
+    }
+
+
+async def test_a_film_without_brand_clips_records_none() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    world = build_world([take])
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        response = await http.post(
+            "/generations/whole-films", json=body(conversation, segment(take))
+        )
+
+    assert response.status_code == 202, response.text
+    (film,) = world.films()
+    assert isinstance(film.request, WholeFilmRequest)
+    assert (film.request.intro, film.request.outro) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("slot", "case", "status", "detail"),
+    [
+        ("intro", "不存在", 404, "没有这个品牌模板"),
+        ("intro", "停用", 422, "片头用的品牌模板已停用"),
+        ("intro", "片尾模板", 422, "片头只能用片头模板"),
+        ("outro", "停用", 422, "片尾用的品牌模板已停用"),
+        ("outro", "片头模板", 422, "片尾只能用片尾模板"),
+    ],
+)
+async def test_a_brand_template_that_is_missing_disabled_or_on_the_wrong_end_is_refused(
+    slot: str, case: str, status: int, detail: str
+) -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    other_end = "outro" if slot == "intro" else "intro"
+    template = brand_template(
+        other_end if case in ("片头模板", "片尾模板") else slot, enabled=case != "停用"
+    )
+    world = build_world([take], brand_templates=FixedBrandTemplates(template))
+    template_id = uuid.uuid4() if case == "不存在" else template.id
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        response = await http.post(
+            "/generations/whole-films",
+            json=body(conversation, segment(take), **{slot: {"templateId": str(template_id)}}),
+        )
+
+    assert response.status_code == status, response.text
+    assert detail in response.json()["detail"]
+    assert world.films() == []
+
+
+@pytest.mark.parametrize(
+    ("intro_ms", "segments_ms", "outro_ms", "accepted"),
+    [
+        (10_000, 110_000, None, True),
+        (10_000, 110_001, None, False),
+        (10_000, 100_000, 10_000, True),
+        (10_000, 100_000, 10_001, False),
+    ],
+    ids=["片头加段正好 120 秒", "片头加段多 1 毫秒", "三者正好 120 秒", "三者多 1 毫秒"],
+)
+async def test_the_120_second_limit_counts_the_intro_and_outro(
+    intro_ms: int, segments_ms: int, outro_ms: int | None, accepted: bool
+) -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    intro = brand_template("intro", duration_ms=intro_ms)
+    outro = brand_template("outro", duration_ms=outro_ms) if outro_ms is not None else None
+    templates = FixedBrandTemplates(*(one for one in (intro, outro) if one is not None))
+    world = build_world([take], brand_templates=templates)
+    brands: dict[str, Any] = {"intro": {"templateId": str(intro.id)}}
+    if outro is not None:
+        brands["outro"] = {"templateId": str(outro.id)}
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        response = await http.post(
+            "/generations/whole-films",
+            json=body(conversation, segment(take, 0, segments_ms), **brands),
+        )
+
+    assert response.status_code == (202 if accepted else 422), response.text
+    if not accepted:
+        assert "连片头片尾整片一共" in response.json()["detail"]
+    assert len(world.films()) == (1 if accepted else 0)
 
 
 # --- 代办与权限 ------------------------------------------------------------------

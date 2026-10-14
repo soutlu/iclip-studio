@@ -455,8 +455,8 @@ class VideoComposeRequest(CamelModel):
 
 
 MAX_WHOLE_FILM_MS: Final = 120_000
-"""整片最长多少毫秒（各段时长之和）。整片时间上的字段（字幕起止、音量曲线的时刻）都以它为上限，
-合同里能读到这个数。"""
+"""整片最长多少毫秒（片头、各段与片尾的时长之和）。整片时间上的字段（字幕起止、音量曲线的时刻）
+都以它为上限，合同里能读到这个数。"""
 MAX_WHOLE_FILM_SUBTITLES: Final = 500
 """一条整片最多几句字幕：120 秒里一句平均不到 0.25 秒，足够；字幕文件由服务端写，不设上限就能拿
 一个请求造出任意大的文件。"""
@@ -467,7 +467,7 @@ MAX_MUSIC_GAIN_POINTS: Final = 500
 约 30 KB；口播一句压低一次用四个点，120 秒够用。"""
 
 FilmMs = Annotated[int, Field(ge=0, le=MAX_WHOLE_FILM_MS)]
-"""整片时间上的一个时刻，毫秒，从整片开头算。"""
+"""整片时间上的一个时刻，毫秒，从第一段开头算，不含片头：片头片尾上没有字幕，也不铺音乐。"""
 
 
 class WholeFilmSegmentIn(CamelModel):
@@ -533,22 +533,33 @@ class WholeFilmMusicIn(CamelModel):
         return points
 
 
-def _film_duration_ms(segments: list[WholeFilmSegmentIn]) -> int:
+def _segments_ms(segments: list[WholeFilmSegmentIn]) -> int:
     return sum(segment.duration_ms for segment in segments)
 
 
-class WholeFilmIn(CamelModel):
-    """一条整片的受理输入：一份时间线。各段按顺序首尾相接，整片总长就是各段时长之和。
+class WholeFilmBrandIn(CamelModel):
+    """整片的片头或片尾：用哪条品牌模板。"""
 
-    字幕与音乐的时间都是整片时间，已由调用方算好，服务端照做。归属参数与别的提交端点一样，只是
-    对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进 ``request``。"""
+    template_id: uuid.UUID
+    """一条在用的品牌模板，位置要对得上（片头用片头模板，片尾用片尾模板）。"""
+
+
+class WholeFilmIn(CamelModel):
+    """一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
+    总长是三者之和，片头片尾的时长受理时按模板定。
+
+    字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
+    与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
+    ``request``。"""
 
     segments: Annotated[
         list[WholeFilmSegmentIn], Field(min_length=1, max_length=MAX_COMPOSE_SEGMENTS)
     ]
     subtitles: Annotated[list[WholeFilmSubtitle], Field(max_length=MAX_WHOLE_FILM_SUBTITLES)]
-    """按时间先后、互不重叠，都在整片之内；没有字幕给空数组。"""
+    """按时间先后、互不重叠，都在各段之内；没有字幕给空数组。"""
     music: WholeFilmMusicIn | None = None
+    intro: WholeFilmBrandIn | None = None
+    outro: WholeFilmBrandIn | None = None
     user_name: UserName | None = None
     """规则同出片的 ``user_name``。"""
 
@@ -558,7 +569,9 @@ class WholeFilmIn(CamelModel):
 
     @model_validator(mode="after")
     def _fits_the_film(self) -> WholeFilmIn:
-        total = _film_duration_ms(self.segments)
+        """各段先单独核一遍上限；连片头片尾一起的总长要等受理时读到模板才核得了。"""
+
+        total = _segments_ms(self.segments)
         if total > MAX_WHOLE_FILM_MS:
             raise ValueError(
                 f"整片一共 {format_seconds(total / 1000)} 秒，"
@@ -582,10 +595,10 @@ class WholeFilmIn(CamelModel):
         return self
 
     @property
-    def duration_ms(self) -> int:
-        """整片总长，毫秒：各段时长之和。"""
+    def segments_ms(self) -> int:
+        """各段时长之和，毫秒：字幕与音乐所在的那一段时间有多长。"""
 
-        return _film_duration_ms(self.segments)
+        return _segments_ms(self.segments)
 
 
 class WholeFilmSegment(WholeFilmSegmentIn):
@@ -605,6 +618,25 @@ class WholeFilmMusic(WholeFilmMusicIn):
     """落库的音乐：受理时由服务端把音频记录换成它的产物地址 ``url``，两者都存。"""
 
     url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+
+    @field_validator("url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
+class WholeFilmBrand(CamelModel):
+    """落库的片头或片尾：受理时那条品牌模板的快照。模板以后改名、停用都不影响这条整片。"""
+
+    template_id: uuid.UUID
+    url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+    duration_ms: Annotated[int, Field(gt=0)]
+    width: Annotated[int, Field(gt=0)]
+    height: Annotated[int, Field(gt=0)]
+    has_audio: bool
+    """建模板时量的；渲染时照样自己探一遍，没有音轨的补静音。"""
 
     @field_validator("url")
     @classmethod
@@ -649,7 +681,8 @@ class WholeFilmRequest(CamelModel):
     """一条整片交给本地执行方的输入：完整的时间线，加上怎么做声音。
 
     与合成同是 video / compose，没有来源、原作与镜号；各段与音乐的出处由调用方给，地址由服务端按
-    出处填。不记 ``userName``：它只用来替人办事。"""
+    出处填，片头片尾是受理时模板的快照。字幕与音乐的时刻从第一段开头算，渲染时按片头的时长往后挪。
+    不记 ``userName``：它只用来替人办事。"""
 
     kind: ClassVar[GenerationKind] = KIND_VIDEO
     operation: ClassVar[GenerationOperation] = OPERATION_COMPOSE
@@ -658,12 +691,22 @@ class WholeFilmRequest(CamelModel):
     subtitles: list[WholeFilmSubtitle]
     music: WholeFilmMusic | None
     render: WholeFilmRender
+    intro: WholeFilmBrand | None = None
+    outro: WholeFilmBrand | None = None
+    """片头片尾在加上它们之前落的整片里没有这两项，读回来就是没有。"""
+
+    @property
+    def segments_ms(self) -> int:
+        """各段时长之和，毫秒。"""
+
+        return sum(segment.duration_ms for segment in self.segments)
 
     @property
     def duration_ms(self) -> int:
-        """整片总长，毫秒：各段时长之和。"""
+        """整片总长，毫秒：片头、各段与片尾的时长之和。"""
 
-        return sum(segment.duration_ms for segment in self.segments)
+        brands = sum(brand.duration_ms for brand in (self.intro, self.outro) if brand is not None)
+        return self.segments_ms + brands
 
 
 def _compose_shape(value: Any) -> str:
@@ -1121,6 +1164,8 @@ __all__ = [
     "VideoTaskOut",
     "VideoTaskResult",
     "VideoTaskStatus",
+    "WholeFilmBrand",
+    "WholeFilmBrandIn",
     "WholeFilmIn",
     "WholeFilmMusic",
     "WholeFilmMusicIn",

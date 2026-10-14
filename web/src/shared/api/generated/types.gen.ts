@@ -316,6 +316,96 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
+ * BrandTemplateCreateIn
+ */
+export type BrandTemplateCreateIn = {
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Position
+   */
+  position: 'intro' | 'outro'
+  /**
+   * Uploadid
+   */
+  uploadId: string
+}
+
+/**
+ * BrandTemplateOut
+ */
+export type BrandTemplateOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Disabledat
+   */
+  disabledAt: string | null
+  /**
+   * Durationms
+   */
+  durationMs: number
+  /**
+   * Hasaudio
+   */
+  hasAudio: boolean
+  /**
+   * Height
+   */
+  height: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Position
+   */
+  position: 'intro' | 'outro'
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Width
+   */
+  width: number
+}
+
+/**
+ * BrandTemplateUpdateIn
+ *
+ * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
+ */
+export type BrandTemplateUpdateIn = {
+  /**
+   * Disabled
+   */
+  disabled?: boolean | null
+  /**
+   * Name
+   */
+  name?: string | null
+}
+
+/**
+ * BrandTemplatesOut
+ */
+export type BrandTemplatesOut = {
+  /**
+   * Items
+   */
+  items: Array<BrandTemplateOut>
+}
+
+/**
  * CategoryCountOut
  */
 export type CategoryCountOut = {
@@ -4985,6 +5075,18 @@ export type VideoTypeCountOut = {
 }
 
 /**
+ * WholeFilmBrandIn
+ *
+ * 整片的片头或片尾：用哪条品牌模板。
+ */
+export type WholeFilmBrandIn = {
+  /**
+   * Templateid
+   */
+  templateId: string
+}
+
+/**
  * WholeFilmCardOut
  *
  * 资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。
@@ -5034,16 +5136,19 @@ export type WholeFilmCardsOut = {
 /**
  * WholeFilmIn
  *
- * 一条整片的受理输入：一份时间线。各段按顺序首尾相接，整片总长就是各段时长之和。
+ * 一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
+ * 总长是三者之和，片头片尾的时长受理时按模板定。
  *
- * 字幕与音乐的时间都是整片时间，已由调用方算好，服务端照做。归属参数与别的提交端点一样，只是
- * 对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进 ``request``。
+ * 字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
+ * 与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
+ * ``request``。
  */
 export type WholeFilmIn = {
   /**
    * Conversationid
    */
   conversationId: string
+  intro?: WholeFilmBrandIn | null
   /**
    * Metadata
    */
@@ -5051,6 +5156,7 @@ export type WholeFilmIn = {
     [key: string]: unknown
   } | null
   music?: WholeFilmMusicIn | null
+  outro?: WholeFilmBrandIn | null
   /**
    * Segments
    */
@@ -5510,6 +5616,101 @@ export type CallbackAuthSsoCallbackGetResponses = {
    */
   200: unknown
 }
+
+export type ListBrandTemplatesBrandTemplatesGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Position
+     */
+    position?: 'intro' | 'outro' | null
+    /**
+     * Includedisabled
+     */
+    includeDisabled?: boolean
+  }
+  url: '/brand-templates'
+}
+
+export type ListBrandTemplatesBrandTemplatesGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListBrandTemplatesBrandTemplatesGetError =
+  ListBrandTemplatesBrandTemplatesGetErrors[keyof ListBrandTemplatesBrandTemplatesGetErrors]
+
+export type ListBrandTemplatesBrandTemplatesGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandTemplatesOut
+}
+
+export type ListBrandTemplatesBrandTemplatesGetResponse =
+  ListBrandTemplatesBrandTemplatesGetResponses[keyof ListBrandTemplatesBrandTemplatesGetResponses]
+
+export type CreateBrandTemplateBrandTemplatesPostData = {
+  body: BrandTemplateCreateIn
+  path?: never
+  query?: never
+  url: '/brand-templates'
+}
+
+export type CreateBrandTemplateBrandTemplatesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateBrandTemplateBrandTemplatesPostError =
+  CreateBrandTemplateBrandTemplatesPostErrors[keyof CreateBrandTemplateBrandTemplatesPostErrors]
+
+export type CreateBrandTemplateBrandTemplatesPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: BrandTemplateOut
+}
+
+export type CreateBrandTemplateBrandTemplatesPostResponse =
+  CreateBrandTemplateBrandTemplatesPostResponses[keyof CreateBrandTemplateBrandTemplatesPostResponses]
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchData = {
+  body: BrandTemplateUpdateIn
+  path: {
+    /**
+     * Template Id
+     */
+    template_id: string
+  }
+  query?: never
+  url: '/brand-templates/{template_id}'
+}
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchError =
+  UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors[keyof UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors]
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandTemplateOut
+}
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse =
+  UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses[keyof UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses]
 
 export type ListCollectionsCollectionsGetData = {
   body?: never

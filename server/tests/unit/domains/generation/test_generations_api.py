@@ -41,6 +41,7 @@ from tests.helpers.generation import (
     LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
+    FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
     build_queue,
@@ -176,6 +177,7 @@ def build_test_app(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         probe_duration_ms=probe,
+        brand_templates=FixedBrandTemplates(),
     )
     app.include_router(
         create_generations_router(service, act_as=ActAs(users or InMemoryUserRepository()))

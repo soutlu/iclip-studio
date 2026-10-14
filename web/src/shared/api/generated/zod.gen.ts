@@ -118,6 +118,48 @@ export const zBodyAuthCookieLoginAuthLoginPost = z.object({
 })
 
 /**
+ * BrandTemplateCreateIn
+ */
+export const zBrandTemplateCreateIn = z.object({
+  name: z.string().min(1).max(100),
+  position: z.enum(['intro', 'outro']),
+  uploadId: z.uuid(),
+})
+
+/**
+ * BrandTemplateOut
+ */
+export const zBrandTemplateOut = z.object({
+  createdAt: z.iso.datetime(),
+  disabledAt: z.iso.datetime().nullable(),
+  durationMs: z.int(),
+  hasAudio: z.boolean(),
+  height: z.int(),
+  id: z.uuid(),
+  name: z.string(),
+  position: z.enum(['intro', 'outro']),
+  url: z.string(),
+  width: z.int(),
+})
+
+/**
+ * BrandTemplateUpdateIn
+ *
+ * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
+ */
+export const zBrandTemplateUpdateIn = z.object({
+  disabled: z.boolean().nullish(),
+  name: z.string().min(1).max(100).nullish(),
+})
+
+/**
+ * BrandTemplatesOut
+ */
+export const zBrandTemplatesOut = z.object({
+  items: z.array(zBrandTemplateOut),
+})
+
+/**
  * CategoryCountOut
  */
 export const zCategoryCountOut = z.object({
@@ -2632,6 +2674,15 @@ export const zReferenceFiltersOut = z.object({
 })
 
 /**
+ * WholeFilmBrandIn
+ *
+ * 整片的片头或片尾：用哪条品牌模板。
+ */
+export const zWholeFilmBrandIn = z.object({
+  templateId: z.uuid(),
+})
+
+/**
  * WholeFilmMusicIn
  *
  * 整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。
@@ -2667,15 +2718,19 @@ export const zWholeFilmSubtitle = z.object({
 /**
  * WholeFilmIn
  *
- * 一条整片的受理输入：一份时间线。各段按顺序首尾相接，整片总长就是各段时长之和。
+ * 一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
+ * 总长是三者之和，片头片尾的时长受理时按模板定。
  *
- * 字幕与音乐的时间都是整片时间，已由调用方算好，服务端照做。归属参数与别的提交端点一样，只是
- * 对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进 ``request``。
+ * 字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
+ * 与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
+ * ``request``。
  */
 export const zWholeFilmIn = z.object({
   conversationId: z.uuid(),
+  intro: zWholeFilmBrandIn.nullish(),
   metadata: z.record(z.string(), z.unknown()).nullish(),
   music: zWholeFilmMusicIn.nullish(),
+  outro: zWholeFilmBrandIn.nullish(),
   segments: z.array(zWholeFilmSegmentIn).min(1).max(100),
   subtitles: z.array(zWholeFilmSubtitle).max(500),
   taskId: z.uuid().nullish(),
@@ -2798,6 +2853,34 @@ export const zAuthorizeAuthSsoAuthorizeGetResponse = zSsoAuthorizeOut
 export const zCallbackAuthSsoCallbackGetQuery = z.object({
   jwt: z.string(),
 })
+
+export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
+  position: z.enum(['intro', 'outro']).nullish(),
+  includeDisabled: z.boolean().optional().default(false),
+})
+
+/**
+ * Successful Response
+ */
+export const zListBrandTemplatesBrandTemplatesGetResponse = zBrandTemplatesOut
+
+export const zCreateBrandTemplateBrandTemplatesPostBody = zBrandTemplateCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateBrandTemplateBrandTemplatesPostResponse = zBrandTemplateOut
+
+export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchBody = zBrandTemplateUpdateIn
+
+export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchPath = z.object({
+  template_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse = zBrandTemplateOut
 
 export const zListCollectionsCollectionsGetQuery = z.object({
   scope: z.enum(['me', 'all']).optional().default('me'),

@@ -184,17 +184,21 @@ class FfmpegComposeProvider:
     async def _render_whole_film(
         self, request: WholeFilmRequest, report: _Report
     ) -> tuple[bytes, int]:
-        """取齐各段的成片与音乐，按时间线剪成整片；返回字节与实际时长（毫秒）。
+        """取齐各段的成片、片头片尾与音乐，按时间线剪成整片；返回字节与实际时长（毫秒）。
 
-        画幅与帧率取第一段那条成片，别的段缩放、补边去适配它；声音照请求里记的参数做。音乐不够长
-        是 ``MUSIC_TOO_SHORT``，别的加工失败是 ``MEDIA_PROCESS_FAILED``。临时目录在退出时清掉。"""
+        画幅与帧率取第一段那条成片，别的段与片头片尾缩放、补边去适配它；声音照请求里记的参数做。
+        音乐不够长是 ``MUSIC_TOO_SHORT``，别的加工失败是 ``MEDIA_PROCESS_FAILED``。临时目录在退出时
+        清掉。"""
 
         with TemporaryDirectory(prefix="iclip-film-") as tmp:
             root = Path(tmp)
             dest = root / f"out.{_EXT}"
             await report(CLIP_FETCHING)
+            brands = [brand for brand in (request.intro, request.outro) if brand is not None]
             sources = await self._fetch(
-                [segment.url for segment in request.segments], root, max_bytes=MAX_VIDEO_BYTES
+                [*(segment.url for segment in request.segments), *(brand.url for brand in brands)],
+                root,
+                max_bytes=MAX_VIDEO_BYTES,
             )
             music: FilmMusic | None = None
             if request.music is not None:
@@ -220,6 +224,8 @@ class FfmpegComposeProvider:
                 await report(CLIP_PROCESSING)
                 await render_film(
                     cuts,
+                    intro=None if request.intro is None else sources[request.intro.url],
+                    outro=None if request.outro is None else sources[request.outro.url],
                     profile=profile,
                     captions=[
                         FilmCaption(

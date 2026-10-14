@@ -112,6 +112,11 @@ depends_on = [
 path = "iclip.domains.references"
 depends_on = ["iclip.common", "iclip.platform.paging", "iclip.domains.identity"]
 
+# 品牌模板的上传记录与视频探测是端口，由组合根接上；整片受理经组合根的适配器读它，生成域不依赖它。
+[[modules]]
+path = "iclip.domains.brand_templates"
+depends_on = ["iclip.common", "iclip.platform.media", "iclip.domains.identity"]
+
 [[modules]]
 path = "iclip.domains.products"
 depends_on = ["iclip.common"]
@@ -171,6 +176,7 @@ depends_on = [
     "iclip.domains.audit",
     "iclip.domains.library",
     "iclip.domains.references",
+    "iclip.domains.brand_templates",
     "iclip.domains.tracking",
     "iclip.harness",
     "iclip.capabilities",

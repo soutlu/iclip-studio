@@ -604,6 +604,8 @@ _SAFE_FILTER_PATH: Final = re.compile(r"[A-Za-z0-9/._+-]+")
 async def render_film(
     cuts: Sequence[MediaCut],
     *,
+    intro: Path | None,
+    outro: Path | None,
     profile: VideoProfile,
     captions: Sequence[FilmCaption],
     music: FilmMusic | None,
@@ -613,18 +615,22 @@ async def render_film(
     workdir: Path,
     fonts_dir: Path = SUBTITLE_FONTS_DIR,
 ) -> None:
-    """把各段按顺序首尾相接剪成一条整片写到 ``dest``：画面对齐到 ``profile``、烧进字幕，声音是各段
-    原声与背景音乐的混音。中间文件（混好的声音、字幕文件）写在 ``workdir``。
+    """把各段按顺序首尾相接剪成一条整片写到 ``dest``，``intro`` 整条接在最前、``outro`` 整条接在
+    最后：画面对齐到 ``profile``、烧进字幕，声音是原声与背景音乐的混音。中间文件（混好的声音、字幕
+    文件）写在 ``workdir``。
 
-    画面：各段的裁剪、对齐与关键帧同 ``cut_concat``。字幕按统一样式写成 ASS，用 libass 的
-    ``subtitles`` 滤镜烧进画面，字体从 ``fonts_dir`` 找；有字幕而本机 ffmpeg 没有这个滤镜就失败，
+    ``captions`` 与 ``music`` 的时刻从第一段开头算，只覆盖各段：这里按片头的长度往后挪，片头片尾上
+    没有字幕、不铺音乐。
+
+    画面：各段与片头片尾的裁剪、对齐与关键帧同 ``cut_concat``。字幕按统一样式写成 ASS，用 libass
+    的 ``subtitles`` 滤镜烧进画面，字体从 ``fonts_dir`` 找；有字幕而本机 ffmpeg 没有这个滤镜就失败，
     不出没烧字幕的片。
 
-    声音分三遍：先量每条来源整段的响度，各段原声按差值统一到 ``sound.speech_lufs``、两端各淡入
-    淡出 ``sound.edge_fade``，没有音轨的段补静音，首尾相接；有音乐时量它整段的响度统一到
-    ``sound.music_lufs``，从 ``music.offset`` 起取整片那么长，按音量曲线调、结尾淡出，与原声相加
-    （不取平均），写成一个中间文件；再量混音的响度；最后编码时按差值统一到 ``sound.loudness_lufs``
-    并限幅到 ``sound.peak_dbfs``。
+    声音分三遍：先量每条来源整段的响度，各段与片头片尾的原声按差值统一到 ``sound.speech_lufs``、
+    两端各淡入淡出 ``sound.edge_fade``，没有音轨的补静音，首尾相接；有音乐时量它整段的响度统一到
+    ``sound.music_lufs``，从 ``music.offset`` 起取各段那么长，按音量曲线调、结尾淡出，对齐到第一段
+    开头与原声相加（不取平均），写成一个中间文件；再量混音的响度；最后编码时按差值统一到
+    ``sound.loudness_lufs`` 并限幅到 ``sound.peak_dbfs``。
 
     段的结尾超出素材的时长（容差 ``FILM_END_TOLERANCE``）、素材读不了、ffmpeg 失败抛 MediaError；
     音乐不够长抛 ``MusicTooShort``。"""
@@ -633,7 +639,11 @@ async def render_film(
         raise MediaError("没有要剪的段")
     for cut in cuts:
         _check_cut(cut)
-    sources = list(dict.fromkeys(cut.source for cut in cuts))
+    brands = [brand for brand in (intro, outro) if brand is not None]
+    for brand in brands:
+        if not brand.is_file():
+            raise MediaError(f"片头片尾的素材不在: {brand.name}")
+    sources = list(dict.fromkeys([*brands, *(cut.source for cut in cuts)]))
     lengths = {source: await probe_duration_ms(source) / 1000 for source in sources}
     for position, cut in enumerate(cuts, start=1):
         if cut.end > lengths[cut.source] + FILM_END_TOLERANCE:
@@ -641,28 +651,40 @@ async def render_film(
                 f"第 {position} 段的结尾 {cut.end:.3f} 秒超出了素材的时长 "
                 f"{lengths[cut.source]:.3f} 秒"
             )
+    # 片头片尾整条取用，长度按本地文件量，不按受理时记的时长：两者隔着一次容器时长的取整。
+    head = [MediaCut(source=intro, start=0.0, end=lengths[intro])] if intro is not None else []
+    tail = [MediaCut(source=outro, start=0.0, end=lengths[outro])] if outro is not None else []
+    clips = [*head, *cuts, *tail]
+    segments_start = head[0].duration if head else 0.0
     speech_gains: dict[Path, float | None] = {}
     for source in sources:
         audible = (await probe_video(source)).has_audio
         speech_gains[source] = (
             _gain_to(await integrated_loudness(source), sound.speech_lufs) if audible else None
         )
-    total = sum(cut.duration for cut in cuts)
+    segments_length = sum(cut.duration for cut in cuts)
     music_gain = 0.0
     if music is not None:
         if not await has_audio_stream(music.source):
             raise MediaError("音乐里没有音轨")
         music_length = await probe_duration_ms(music.source) / 1000
-        if music.offset + total > music_length + 0.001:
+        if music.offset + segments_length > music_length + 0.001:
             raise MusicTooShort(
                 f"音乐从 {music.offset:.3f} 秒起只剩 {max(0.0, music_length - music.offset):.3f} 秒，"
-                f"不够整片的 {total:.3f} 秒"
+                f"不够整片的 {segments_length:.3f} 秒"
             )
         music_gain = _gain_to(await integrated_loudness(music.source), sound.music_lufs)
 
     mixed = workdir / "film-audio.wav"
     await _mix_film_audio(
-        cuts, speech_gains, music=music, music_gain=music_gain, sound=sound, dest=mixed
+        clips,
+        speech_gains,
+        music=music,
+        music_gain=music_gain,
+        music_start=segments_start,
+        music_length=segments_length,
+        sound=sound,
+        dest=mixed,
     )
     film_gain = _gain_to(await integrated_loudness(mixed), sound.loudness_lufs)
 
@@ -670,19 +692,27 @@ async def render_film(
     if captions:
         await _require_subtitles_filter()
         subtitles = workdir / "film-captions.ass"
+        shifted = [
+            FilmCaption(
+                start=caption.start + segments_start,
+                end=caption.end + segments_start,
+                text=caption.text,
+            )
+            for caption in captions
+        ]
         subtitles.write_text(
-            ass_document(captions, width=profile.width, height=profile.height), encoding="utf-8"
+            ass_document(shifted, width=profile.width, height=profile.height), encoding="utf-8"
         )
     keyframes = _concat_keyframes(
-        cuts,
+        clips,
         {source: await probe_keyframes(source) for source in sources},
         frame_rate=Fraction(profile.frame_rate),
     )
     inputs: list[str] = []
     chains: list[str] = []
-    for index, cut in enumerate(cuts):
-        inputs += [*codec.decode, "-i", str(cut.source)]
-        chains.append(_video_chain(index, cut, profile))
+    for index, clip in enumerate(clips):
+        inputs += [*codec.decode, "-i", str(clip.source)]
+        chains.append(_video_chain(index, clip, profile))
     inputs += ["-i", str(mixed)]
     burn = (
         "null"
@@ -691,11 +721,11 @@ async def render_film(
         "format=yuv420p"
     )
     chains.append(
-        f"{''.join(f'[v{index}]' for index in range(len(cuts)))}"
-        f"concat=n={len(cuts)}:v=1:a=0,{burn}[outv]"
+        f"{''.join(f'[v{index}]' for index in range(len(clips)))}"
+        f"concat=n={len(clips)}:v=1:a=0,{burn}[outv]"
     )
     chains.append(
-        f"[{len(cuts)}:a]volume={film_gain:.2f}dB,"
+        f"[{len(clips)}:a]volume={film_gain:.2f}dB,"
         # level=0：不让限幅器自动把输出拉满；latency=1：抵掉它向前看的那几毫秒延迟。
         f"alimiter=limit={10 ** (sound.peak_dbfs / 20):.4f}:level=0:latency=1[outa]"
     )
@@ -709,35 +739,38 @@ async def render_film(
 
 
 async def _mix_film_audio(
-    cuts: Sequence[MediaCut],
+    clips: Sequence[MediaCut],
     speech_gains: Mapping[Path, float | None],
     *,
     music: FilmMusic | None,
     music_gain: float,
+    music_start: float,
+    music_length: float,
     sound: FilmSound,
     dest: Path,
 ) -> None:
-    """各段原声首尾相接、混上音乐，写成 48 kHz 双声道 32 位浮点 wav：混音可能超过满幅，浮点留着
-    给最后一遍限幅，不在这里削波。``speech_gains`` 是每条来源的增益（dB），没有音轨为 None。
+    """各段（含片头片尾）原声首尾相接、混上音乐，写成 48 kHz 双声道 32 位浮点 wav：混音可能超过
+    满幅，浮点留着给最后一遍限幅，不在这里削波。``speech_gains`` 是每条来源的增益（dB），没有音轨
+    为 None。音乐只取 ``music_length`` 秒，从整片的 ``music_start`` 秒处起铺（片头之后）。
 
     每段一路输入，同一条来源取几段就开几次：滤镜图里一路输入只能接一次。"""
 
     stereo = f"aformat=sample_rates={_AUDIO_RATE}:channel_layouts={_AUDIO_LAYOUT}"
     inputs: list[str] = []
     chains: list[str] = []
-    for index, cut in enumerate(cuts):
-        length = cut.duration
-        gain = speech_gains[cut.source]
+    for index, clip in enumerate(clips):
+        length = clip.duration
+        gain = speech_gains[clip.source]
         if gain is None:
             chains.append(
                 f"anullsrc=channel_layout={_AUDIO_LAYOUT}:sample_rate={_AUDIO_RATE},"
                 f"atrim=duration={length:.3f}[s{index}]"
             )
             continue
-        inputs += ["-i", str(cut.source)]
+        inputs += ["-i", str(clip.source)]
         fade = min(sound.edge_fade, length / 2)
         chain = (
-            f"[{len(inputs) // 2 - 1}:a]atrim=start={cut.start:.3f}:end={cut.end:.3f},"
+            f"[{len(inputs) // 2 - 1}:a]atrim=start={clip.start:.3f}:end={clip.end:.3f},"
             # 音轨比画面短时补静音，每段的声音正好是这段的长度，后面各段才对得上画面。
             f"asetpts=PTS-STARTPTS,{stereo},apad=whole_dur={length:.3f},"
             f"atrim=duration={length:.3f},volume={gain:.2f}dB"
@@ -746,22 +779,25 @@ async def _mix_film_audio(
             chain += f",afade=t=in:d={fade:.3f},afade=t=out:st={length - fade:.3f}:d={fade:.3f}"
         chains.append(f"{chain}[s{index}]")
     chains.append(
-        f"{''.join(f'[s{index}]' for index in range(len(cuts)))}"
-        f"concat=n={len(cuts)}:v=0:a=1[speech]"
+        f"{''.join(f'[s{index}]' for index in range(len(clips)))}"
+        f"concat=n={len(clips)}:v=0:a=1[speech]"
     )
     output = "[speech]"
     if music is not None:
-        total = sum(cut.duration for cut in cuts)
-        fade = min(sound.music_fade_out, total)
+        fade = min(sound.music_fade_out, music_length)
         inputs += ["-i", str(music.source)]
+        # 曲线与淡出都在音乐自己的时间上算（从第一段开头起），算完再整体往后挪过片头。
+        delay = round(music_start * 1000)
+        shift = f",adelay=delays={delay}|{delay}" if delay > 0 else ""
         chains.append(
-            f"[{len(inputs) // 2 - 1}:a]atrim=start={music.offset:.3f}:duration={total:.3f},"
+            f"[{len(inputs) // 2 - 1}:a]atrim=start={music.offset:.3f}:duration={music_length:.3f},"
             f"asetpts=PTS-STARTPTS,{stereo},volume={music_gain:.2f}dB,"
             # 曲线按帧求值：帧切成 10 毫秒一帧，音量的台阶小到听不出。
             f"asetnsamples=n={_AUDIO_RATE // 100}:p=0,"
             f"volume='{_gain_curve(music.gain)}':eval=frame,"
-            f"afade=t=out:st={total - fade:.3f}:d={fade:.3f}[music]"
+            f"afade=t=out:st={music_length - fade:.3f}:d={fade:.3f}{shift}[music]"
         )
+        # duration=first：混音跟原声一样长，音乐在片尾之前就完了，片尾那一段只剩原声。
         chains.append("[speech][music]amix=inputs=2:duration=first:normalize=0[mix]")
         output = "[mix]"
     await run(
