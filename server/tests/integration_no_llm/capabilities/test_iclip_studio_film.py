@@ -104,7 +104,7 @@ async def test_check_round_trips_through_postgres(
 
     retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
     assert retries == []
-    assert checked.startswith("检查通过：8 张图，2 段视频。")
+    assert checked.startswith("工程规范检查通过：8 个图片生成节点，2 个视频生成节点。")
 
 
 async def test_an_address_the_conversation_never_received_fails_the_check(
@@ -118,5 +118,5 @@ async def test_an_address_the_conversation_never_received_fails_the_check(
     retries, (checked,) = await call_once(capability, conversation_id, "check_film", {})
 
     assert retries == []
-    assert checked.startswith("检查没通过")
+    assert checked.startswith("工程规范检查未通过")
     assert "src 不在这段对话的素材里" in checked
