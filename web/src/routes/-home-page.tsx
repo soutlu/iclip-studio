@@ -7,7 +7,7 @@ import {
   useConversationAgents,
   useStartConversation,
 } from '@/features/conversations'
-import { HomeRoute } from '@/features/home'
+import { HomeRoute, useHomeDraft } from '@/features/home'
 import { useLibraryVideo } from '@/features/library'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
@@ -25,11 +25,14 @@ export function HomePage() {
   const requireLogin = useLoginPrompt()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [chosenAgentId, setChosenAgentId] = useState<string | null>(null)
-  const [chosenCollection, setChosenCollection] = useState<{
-    ownerUserId: string | null
-    id: string | null
-  } | null>(null)
+  // 输入内容、所选助手与合集都进本标签页的草稿，离开首页再回来照常恢复；只认当前登录人选的。
+  const draft = useHomeDraft(user?.id)
+  const {
+    agentId: chosenAgentId,
+    chooseAgent,
+    chooseCollection,
+    collectionId: chosenCollectionId,
+  } = draft
   const [newCollectionName, setNewCollectionName] = useState<string | null>(null)
   const canRun = hasPermission(user, PERMISSION.agentRun)
   const canReadCollections = hasPermission(user, PERMISSION.collectionsRead)
@@ -37,10 +40,6 @@ export function HomePage() {
   const agents = useConversationAgents(canRun)
   const collectionsQuery = useCollections(canReadCollections)
   const collections = collectionsQuery.data ?? []
-  const chosenCollectionId =
-    chosenCollection && chosenCollection.ownerUserId === user?.id ? chosenCollection.id : null
-  const chooseCollection = (id: string | null) =>
-    setChosenCollection({ ownerUserId: user?.id ?? null, id })
   // 侧栏合集行「在合集里新建任务」把合集带在查询串里：等登录身份就绪后预选一次，再从地址栏移除。
   // 输入框聚焦由侧栏经应用壳请求，这里不重复。不在自己合集里的 id 由下面的合集校验退回无关联。
   const requestedCollection = useSearch({
@@ -66,7 +65,7 @@ export function HomePage() {
     setAppliedSame(requestedSame)
     if (requestedSame !== undefined) {
       setSameStyle({ ownerUserId: user?.id ?? null, id: requestedSame })
-      setChosenAgentId(null)
+      chooseAgent(null)
     }
   }
   useEffect(() => {
@@ -143,6 +142,7 @@ export function HomePage() {
         parts,
         ...(sameAs === null ? {} : { sameAs }),
       })
+      draft.clear()
       setSameStyle(null)
       return true
     } catch (error) {
@@ -201,7 +201,7 @@ export function HomePage() {
                   </>
                 ) : agents.data?.items.length ? (
                   agents.data.items.map((item) => (
-                    <MenuItem key={item.id} onSelect={() => setChosenAgentId(item.id)}>
+                    <MenuItem key={item.id} onSelect={() => chooseAgent(item.id)}>
                       {item.name}
                     </MenuItem>
                   ))
@@ -233,10 +233,11 @@ export function HomePage() {
             value={collectionId}
           />
         }
+        draftParts={draft.initialParts}
         focusRequested={composerFocus?.pending}
         onFocusHandled={composerFocus?.consume}
+        onDraftChange={draft.saveParts}
         onSend={send}
-        preserveForLogin={!user}
         sameStyle={
           sameAs === null
             ? undefined
