@@ -9,6 +9,7 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -21,6 +22,7 @@ from iclip.domains.audit.schemas import ExecutionOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED
 from iclip.domains.generation.schemas import (
+    KIND_AUDIO,
     KIND_IMAGE,
     KIND_SUBTITLE,
     KIND_VIDEO,
@@ -964,6 +966,58 @@ async def test_subtitle_records_do_not_count_toward_any_metric(
                     "at": at,
                     "finished_at": None if status == STATUS_SUBMITTED else at,
                 },
+            )
+
+    assert await reports.overall(Scope()) == before
+    assert await reports.by_user(Scope()) == before_users
+    assert await executions_by_id(service) == before_executions
+
+
+async def test_audio_records_do_not_count_toward_any_metric(
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+) -> None:
+    """音频记录不是出片：挂在对话上的背景音乐一条完成、一条失败、一条还在跑，外加一条上传的音乐，
+    总览、分人与任务执行都不变。"""
+
+    before = await reports.overall(Scope())
+    before_users = await reports.by_user(Scope())
+    before_executions = await executions_by_id(service)
+    at = ago(hours=1)
+    rows: list[dict[str, Any]] = [
+        {
+            "conversation_id": seed.c1,
+            "operation": OPERATION_GENERATE,
+            "request": json.dumps({"model": "m", "prompt": "轻快"}),
+            "status": status,
+            "output_url": "https://example.test/m.m4a" if status == STATUS_COMPLETED else None,
+            "duration_ms": 30_000 if status == STATUS_COMPLETED else None,
+            "finished_at": None if status == STATUS_SUBMITTED else at,
+        }
+        for status in (STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED)
+    ]
+    rows.append(
+        {
+            "conversation_id": None,
+            "operation": OPERATION_UPLOAD,
+            "request": None,
+            "status": STATUS_COMPLETED,
+            "output_url": "https://example.test/u.mp3",
+            "duration_ms": None,
+            "finished_at": at,
+        }
+    )
+    async with engine.begin() as conn:
+        for row in rows:
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
+                    " kind, operation, provider, request, status, output_url, duration_ms,"
+                    " created_at, submitted_at, finished_at)"
+                    " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'qwen_music',"
+                    " CAST(:request AS jsonb), :status, :output_url, :duration_ms,"
+                    " :at, :at, :finished_at)"
+                ),
+                {"id": uuid.uuid4(), "owner": seed.sara, "kind": KIND_AUDIO, "at": at, **row},
             )
 
     assert await reports.overall(Scope()) == before

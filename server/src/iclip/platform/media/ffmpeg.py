@@ -1,4 +1,4 @@
-"""异步媒体下载与 ffmpeg/ffprobe 子进程封装，以及视频裁剪与拼接、给语音识别抽音频。
+"""异步媒体下载与 ffmpeg/ffprobe 子进程封装，以及视频裁剪与拼接、给语音识别抽音频、规整背景音乐。
 
 子进程设定超时，超时后先 kill 再 wait，避免阻塞事件循环或遗留僵尸进程。
 按格取帧、灰度检测那些只有分镜取帧用得上的操作留在 capabilities 里。"""
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import shutil
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -51,7 +52,8 @@ _REMOTE_INPUT: Final = (
 
 MAX_VIDEO_BYTES = 512 * 1024 * 1024
 MAX_IMAGE_BYTES = 64 * 1024 * 1024
-"""下载大小上限，限制 worker 的内存与临时文件占用。"""
+MAX_AUDIO_BYTES = 64 * 1024 * 1024
+"""下载大小上限，限制 worker 的内存与临时文件占用。音频按两分钟 48 kHz 双声道 wav（约 23 MB）留足余量。"""
 
 _AUDIO_CODEC = ("-c:a", "aac", "-b:a", "192k")
 _AUDIO_RATE = 48000
@@ -62,6 +64,33 @@ SPEECH_SAMPLE_RATE: Final = 16000
 
 SPEECH_BITRATE: Final = "64k"
 """抽给语音识别的 mp3 码率。固定下来，产物大小只随时长变：5 分钟约 2.4 MB。"""
+
+MUSIC_SILENCE_THRESHOLD_DB: Final = -50
+"""规整背景音乐时，电平低于它（dBFS）的开头与结尾算静音、去掉。-50 dB 已听不见，又高于底噪与
+淡出的尾巴，乐句里的弱音不会被当成静音；只去首尾，中间的停顿不动。"""
+
+MUSIC_LOUDNESS_LUFS: Final = -16.0
+"""背景音乐统一到的综合响度（LUFS，EBU R128 的测法）。-16 是移动端与网页节目常用的响度，留得出
+动态余量；整片合成时音乐还要按口播压低、最后统一限幅，这里只是让每首音乐从同一个响度起步，
+不是母带处理。"""
+
+MUSIC_TRUE_PEAK_DBTP: Final = -1.5
+"""规整后的真峰值上限（dBTP），给 AAC 编码后的峰值抬升留出余量，免得解码出来削波。"""
+
+MUSIC_LOUDNESS_RANGE: Final = 11.0
+"""loudnorm 的响度范围目标（LU）。按测量值线性缩放时不改动态，用不上它；只有线性缩放会超出真峰值、
+loudnorm 退回动态处理时才起作用，取它的默认值。"""
+
+_TRIM_MUSIC_SILENCE: Final = (
+    f"silenceremove=start_periods=1:start_threshold={MUSIC_SILENCE_THRESHOLD_DB}dB,"
+    "areverse,"
+    f"silenceremove=start_periods=1:start_threshold={MUSIC_SILENCE_THRESHOLD_DB}dB,"
+    "areverse"
+)
+"""去首尾静音：去掉开头的，倒过来再去一次开头（即原来的结尾），再倒回去。不用 ``stop_periods``：
+它会连乐曲中间的停顿一起删。倒序要整段进内存，两分钟的双声道音频几十 MB，承受得起。"""
+
+_LOUDNESS_KEYS: Final = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
 
 
 class MediaError(RuntimeError):
@@ -303,6 +332,72 @@ async def extract_speech_audio(source: Path, *, dest: Path) -> None:
     _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
 
 
+async def normalize_music(source: Path, *, dest: Path) -> int:
+    """把一段音乐规整成背景音乐：去掉首尾静音、统一响度，编成 48 kHz 双声道 AAC 的 m4a 写到 ``dest``，
+    返回产物量出来的时长（毫秒）。
+
+    响度分两遍：第一遍量去掉静音之后的响度，第二遍按量出来的值线性缩放到
+    ``MUSIC_LOUDNESS_LUFS``，不改乐曲本身的动态。两遍用同一段去静音的滤镜，量的就是缩放的那一段。
+    loudnorm 在内部升到 192 kHz 处理，之后重采样回 48 kHz：与合成里音轨的采样率一致，混音不用再转。
+
+    产物选 AAC：合成的音轨用的就是它，m4a 也是上传收的音频类型，浏览器都能解码；mp3 的编码器在
+    开头补的那段延迟没有标准的方式标出来，播放时会把音乐整体往后推几十毫秒，对拍点不利。
+
+    素材不在、没有音轨、去掉静音后什么都不剩、ffmpeg 失败或产物读不出时长都抛 MediaError。"""
+
+    if not source.is_file():
+        raise MediaError(f"要规整的音频不在: {source.name}")
+    if not await has_audio_stream(source):
+        raise NoAudioStream(f"这段素材里没有音轨: {source.name}")
+    measured = await _measure_music_loudness(source)
+    loudnorm = (
+        f"loudnorm=I={MUSIC_LOUDNESS_LUFS}:TP={MUSIC_TRUE_PEAK_DBTP}:LRA={MUSIC_LOUDNESS_RANGE}"
+        f":measured_I={measured['input_i']}:measured_TP={measured['input_tp']}"
+        f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
+        f":offset={measured['target_offset']}:linear=true"
+    )
+    await run(
+        [
+            "ffmpeg", "-v", "error", "-y", "-i", str(source), "-map", "0:a:0", "-vn",
+            "-af", f"{_TRIM_MUSIC_SILENCE},{loudnorm},aresample={_AUDIO_RATE}",
+            "-ac", "2", "-ar", str(_AUDIO_RATE), *_AUDIO_CODEC,
+            "-movflags", "+faststart", str(dest),
+        ],
+        timeout=ENCODE_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    _check_output(dest, max_bytes=MAX_AUDIO_BYTES)
+    return await probe_duration_ms(dest)
+
+
+async def _measure_music_loudness(source: Path) -> dict[str, float]:
+    """量去掉首尾静音之后的响度，交回 loudnorm 第二遍要的几个测量值。
+
+    loudnorm 只把测量结果以 JSON 写在 stderr 的末尾。整段都是静音时它量出 ``-inf``，没有可以缩放的
+    声音，抛 MediaError。"""
+
+    _, stderr = await _communicate(
+        [
+            "ffmpeg", "-hide_banner", "-nostats", "-i", str(source), "-map", "0:a:0", "-vn",
+            "-af", f"{_TRIM_MUSIC_SILENCE},loudnorm=I={MUSIC_LOUDNESS_LUFS}"
+            f":TP={MUSIC_TRUE_PEAK_DBTP}:LRA={MUSIC_LOUDNESS_RANGE}:print_format=json",
+            "-f", "null", "-",
+        ],
+        timeout=ENCODE_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    text = stderr.decode(errors="replace")
+    start, end = text.rfind("{"), text.rfind("}")
+    try:
+        report = json.loads(text[start : end + 1]) if 0 <= start < end else None
+        measured = {key: float(report[key]) for key in _LOUDNESS_KEYS} if report else None
+    except (ValueError, KeyError, TypeError) as exc:
+        raise MediaError("loudnorm 的测量结果看不懂") from exc
+    if measured is None:
+        raise MediaError("loudnorm 没有给出测量结果")
+    if not all(math.isfinite(value) for value in measured.values()):
+        raise MediaError("这段音频去掉首尾静音后没有声音")
+    return measured
+
+
 def _positive_fraction(value: str) -> bool:
     numerator, _, denominator = value.partition("/")
     try:
@@ -439,6 +534,15 @@ def _check_output(dest: Path, *, max_bytes: int) -> None:
 async def run(args: list[str], *, timeout: float) -> bytes:
     """执行子进程并返回 stdout；超时先 kill 再 wait。"""
 
+    stdout, _ = await _communicate(args, timeout=timeout)
+    return stdout
+
+
+async def _communicate(args: list[str], *, timeout: float) -> tuple[bytes, bytes]:
+    """执行子进程并返回 (stdout, stderr)；退出码非 0 抛 MediaError，超时先 kill 再 wait。
+
+    ffmpeg 有的滤镜只把测量结果写到 stderr（如 ``loudnorm`` 的 JSON），要读它的走这里。"""
+
     # 禁止读取终端输入，避免后台进程组收到 SIGTTIN 后连同后端一起暂停。
     try:
         process = await asyncio.create_subprocess_exec(
@@ -464,14 +568,19 @@ async def run(args: list[str], *, timeout: float) -> bytes:
     if process.returncode != 0:
         detail = stderr.decode(errors="replace")[:_STDERR_LIMIT]
         raise MediaError(f"{args[0]} 失败（退出码 {process.returncode}）: {detail}")
-    return stdout
+    return stdout, stderr
 
 
 __all__ = [
     "DOWNLOAD_TIMEOUT_SECONDS",
     "ENCODE_TIMEOUT_SECONDS",
+    "MAX_AUDIO_BYTES",
     "MAX_IMAGE_BYTES",
     "MAX_VIDEO_BYTES",
+    "MUSIC_LOUDNESS_LUFS",
+    "MUSIC_LOUDNESS_RANGE",
+    "MUSIC_SILENCE_THRESHOLD_DB",
+    "MUSIC_TRUE_PEAK_DBTP",
     "PROBE_TIMEOUT_SECONDS",
     "REMOTE_READ_TIMEOUT_SECONDS",
     "SPEECH_BITRATE",
@@ -486,6 +595,7 @@ __all__ = [
     "fetched",
     "ffmpeg_available",
     "has_audio_stream",
+    "normalize_music",
     "probe_duration_ms",
     "probe_keyframes",
     "probe_remote_duration_ms",

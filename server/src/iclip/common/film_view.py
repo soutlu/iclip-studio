@@ -149,6 +149,10 @@ class FilmView:
 
     groups: tuple[FilmGroup, ...]
 
+    music_description: str | None = None
+    """工程文件里「配乐」那段文字的正文，生成背景音乐时用作提示词；没有这一段、或 ``problems``
+    不为 0 时为空。"""
+
 
 @dataclass(frozen=True, slots=True)
 class FilmImagePrompt:

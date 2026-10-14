@@ -244,6 +244,58 @@ async def test_video_needs_no_size() -> None:
         assert (await sign(http, "video/mp4", width=None, height=None)).status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("content_type", "ext"),
+    [("audio/mpeg", "mp3"), ("audio/wav", "wav"), ("audio/mp4", "m4a")],
+    ids=["mp3", "wav", "m4a"],
+)
+async def test_music_is_signed_without_a_size_and_recorded_as_audio_without_dedupe(
+    content_type: str, ext: str
+) -> None:
+    """音乐与视频一样不报宽高；确认时记成一条音频上传。桶里是一次整传、ETag 正是 MD5 也不记：
+    只有视频去重。"""
+
+    bucket = FakeBucket()
+    recorded = RecordedUploads()
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        signed = await sign(http, content_type, width=None, height=None)
+        assert signed.status_code == 200, signed.text
+        upload_id = signed.json()["uploadId"]
+        key = f"iclip/agent/uploads/{upload_id}.{ext}"
+        assert bucket.signed[0][0] == key
+        bucket.put(key, content_type=content_type, etag=MD5_ETAG)
+        response = await confirm(http, upload_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "url": bucket.public_url(key),
+        "contentType": content_type,
+        "sizeBytes": 1024,
+    }
+    ((_, _, kind, url, content_md5),) = recorded.calls
+    assert (kind, url, content_md5) == ("audio", bucket.public_url(key), None)
+
+
+async def test_music_over_its_own_limit_is_refused() -> None:
+    bucket = FakeBucket()
+    recorded = RecordedUploads()
+    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    async with client(app) as http:
+        upload_id = (await sign(http, "audio/mpeg", width=None, height=None)).json()["uploadId"]
+        bucket.put(
+            f"iclip/agent/uploads/{upload_id}.mp3",
+            content_type="audio/mpeg",
+            size_bytes=MAX_BYTES["audio"] + 1,
+        )
+        response = await confirm(http, upload_id)
+
+    assert MAX_BYTES["audio"] == 50 * 1024 * 1024
+    assert response.status_code == 422
+    assert "50MB" in response.json()["detail"]
+    assert recorded.calls == [], "核对不过不记录"
+
+
 async def test_oversized_upload_is_refused() -> None:
     """预签名 PUT 无法限制长度，确认时须校验桶内实际大小。"""
 

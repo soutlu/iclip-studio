@@ -36,6 +36,8 @@ from iclip.domains.generation.schemas import (
     GenerationOperation,
     GenerationRequest,
     ImageGenerationIn,
+    MusicIn,
+    MusicRequest,
     SubtitleIn,
     SubtitleRequest,
     VideoComposeIn,
@@ -59,6 +61,14 @@ ProbeDuration = Callable[[str], Awaitable[int]]
 @dataclass(frozen=True, slots=True)
 class SubtitleTarget:
     """字幕识别开通时由装配给的两件事：排进哪家的队列、请求里记哪个模型。"""
+
+    provider: str
+    model: str
+
+
+@dataclass(frozen=True, slots=True)
+class MusicTarget:
+    """生成背景音乐开通时由装配给的两件事：排进哪家的队列、请求里记哪个模型。"""
 
     provider: str
     model: str
@@ -94,12 +104,13 @@ class GenerationService:
         lineage: ConversationLineage,
         probe_duration_ms: ProbeDuration,
         subtitles: SubtitleTarget | None = None,
+        music: MusicTarget | None = None,
     ) -> None:
         """收下装配期确定的模型集合；此层不持有或调用 Provider 实例。
 
         图片可选哪几家由装配表决定，本层只按它校验并把选中的那家写进记录。``probe_duration_ms``
         只在受理编辑段时用：核对参考片段与基底的时长。``subtitles`` 为 None 即字幕识别没开通：
-        成片完成不建字幕记录，手动识别 422。"""
+        成片完成不建字幕记录，手动识别 422。``music`` 为 None 即生成背景音乐没开通，提交 422。"""
 
         self._repo = repo
         self._queue = queue
@@ -113,6 +124,7 @@ class GenerationService:
         self._lineage = lineage
         self._probe_duration_ms = probe_duration_ms
         self._subtitles = subtitles
+        self._music = music
 
     async def _inheritance(
         self, principal: Principal, conversation_id: uuid.UUID | None
@@ -481,6 +493,30 @@ class GenerationService:
         if self._subtitles is None:
             raise ValidationFailed("字幕识别没有开通，暂时不能识别")
         return self._subtitles
+
+    async def submit_music(self, principal: Principal, request: MusicIn) -> GenerationJob:
+        """生成一段背景音乐，记一条音频记录（种类 ``audio``、操作 ``generate``）。
+
+        没开通先拒（422），不碰记录。背景音乐给这段对话的整片用：主体读不到这段对话一律 404，不区分
+        存在性。提示词原样记进请求、原样发给模型，服务端不补任何文字。属主与钥匙取主体，对话、需求单
+        与 ``metadata`` 取请求；不动对话的收尾标记：音频记录不是出片。"""
+
+        if self._music is None:
+            raise ValidationFailed("生成背景音乐没有开通，暂时不能生成")
+        if not await self._lineage.readable(principal, request.conversation_id):
+            raise NotFound(f"没有这段对话: {request.conversation_id}")
+        return await self._queue_new(
+            _pending_job(
+                MusicRequest(model=self._music.model, prompt=request.prompt),
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=self._music.provider,
+                conversation_id=request.conversation_id,
+                task_id=request.task_id,
+                metadata=request.metadata,
+                shot_index=None,
+            )
+        )
 
     async def _note_conversation_active(self, job: GenerationJob) -> None:
         """出片提交就是又在这段对话里开工了，收尾标记不该留着。
@@ -913,6 +949,7 @@ def _settled_url(job: GenerationJob) -> str:
 __all__ = [
     "ConversationLineage",
     "GenerationService",
+    "MusicTarget",
     "ProbeDuration",
     "SettledRecords",
     "SubtitleTarget",

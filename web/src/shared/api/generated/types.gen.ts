@@ -1553,6 +1553,10 @@ export type FilmViewOut = {
    */
   groups: Array<FilmGroupOut>
   /**
+   * Musicdescription
+   */
+  musicDescription: string | null
+  /**
    * Problems
    */
   problems: number
@@ -1661,7 +1665,7 @@ export type GenerationOut = {
   /**
    * Kind
    */
-  kind: 'video' | 'image' | 'subtitle'
+  kind: 'video' | 'image' | 'subtitle' | 'audio'
   /**
    * Metadata
    */
@@ -2204,6 +2208,40 @@ export type MovingAveragesOut = {
   tokensPerDelivery: MovingAverageOut
   totalTokens: MovingAverageOut | null
   upstreamSeconds: MovingAverageOut
+}
+
+/**
+ * MusicIn
+ *
+ * 生成一段背景音乐的受理输入。
+ *
+ * ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
+ * 一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+ * 它，不进 ``request``。
+ */
+export type MusicIn = {
+  /**
+   * Conversationid
+   */
+  conversationId: string
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Prompt
+   */
+  prompt: string
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
 }
 
 /**
@@ -6635,7 +6673,7 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Kind
      */
-    kind?: 'video' | 'image' | 'subtitle' | null
+    kind?: 'video' | 'image' | 'subtitle' | 'audio' | null
     /**
      * Operation
      */
@@ -6729,6 +6767,33 @@ export type ListImageModelsGenerationsImageModelsGetResponses = {
 
 export type ListImageModelsGenerationsImageModelsGetResponse =
   ListImageModelsGenerationsImageModelsGetResponses[keyof ListImageModelsGenerationsImageModelsGetResponses]
+
+export type SubmitMusicGenerationsMusicPostData = {
+  body: MusicIn
+  path?: never
+  query?: never
+  url: '/generations/music'
+}
+
+export type SubmitMusicGenerationsMusicPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitMusicGenerationsMusicPostError =
+  SubmitMusicGenerationsMusicPostErrors[keyof SubmitMusicGenerationsMusicPostErrors]
+
+export type SubmitMusicGenerationsMusicPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitMusicGenerationsMusicPostResponse =
+  SubmitMusicGenerationsMusicPostResponses[keyof SubmitMusicGenerationsMusicPostResponses]
 
 export type SubmitSubtitleGenerationsSubtitlesPostData = {
   body: SubtitleIn

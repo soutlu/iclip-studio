@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
 
@@ -31,15 +32,17 @@ def say(version: int, text: str) -> dict[str, object]:
     return {"filmVersion": version, "edits": [edit]}
 
 
-async def film_conversation(client: httpx.AsyncClient, pg_url: str, run: str = RUN) -> str:
-    """登录、开一段对话，放进样例工程与它用到的素材，返回对话 id。"""
+async def film_conversation(
+    client: httpx.AsyncClient, pg_url: str, run: str = RUN, *, film: str = FILM
+) -> str:
+    """登录、开一段对话，放进样例工程（默认 ``FILM``）与它用到的素材，返回对话 id。"""
 
     user_id = await login_as_editor(client, pg_url)
     created = await client.post(URL, json={"agentId": "director", "title": "鞋款"})
     conversation = created.json()["conversation"]["id"]
     namespace = f"{user_id}/{conversation}"
     async with connected(pg_url) as conn:
-        for path, content in (("film.icml", FILM), ("film.icrun", run)):
+        for path, content in (("film.icml", film), ("film.icrun", run)):
             await conn.execute(
                 text(
                     "INSERT INTO agent_runtime.workspace_files "
@@ -155,6 +158,37 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
     )
     assert foreign.status_code == 422
     assert "只能换成这段对话里的图" in foreign.json()["detail"]
+
+
+MUSIC_LINE = next(line for line in FILM.splitlines() if 'id="配乐"' in line)
+
+
+@pytest.mark.parametrize(
+    ("film", "expected", "broken"),
+    [
+        (
+            FILM,
+            "纯音乐，三十三秒，轻快的城市流行节拍，适合鞋款种草短视频的背景音乐，混音干净",
+            False,
+        ),
+        (FILM.replace(f"{MUSIC_LINE}\n", ""), None, False),
+        (FILM.replace("{personB.image}", "{nobody.image}", 1), None, True),
+    ],
+    ids=["有配乐", "没有配乐这一段", "工程有问题"],
+)
+async def test_the_page_hands_out_the_music_description_as_written(
+    client: httpx.AsyncClient, pg_url: str, film: str, expected: str | None, broken: bool
+) -> None:
+    """「配乐」那段的正文原样给出，前端拿它当生成背景音乐的提示词；没有这一段、或工程检查不通过
+    （这时连镜头组都不给）时为 null。没有工程文件整页是 404，见下一个用例。"""
+
+    mine = await film_conversation(client, pg_url, film=film)
+
+    read = await client.get(f"{URL}/{mine}/film")
+
+    assert read.status_code == 200, read.text
+    assert read.json()["film"]["musicDescription"] == expected
+    assert (read.json()["film"]["problems"] > 0) is broken
 
 
 async def test_the_page_follows_the_workspace_file_permissions(

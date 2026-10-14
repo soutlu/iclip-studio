@@ -23,6 +23,7 @@ from iclip.domains.generation.schemas import (
     ImageModelOut,
     ImageModelsOut,
     Metadata,
+    MusicIn,
     SubtitleIn,
     VideoComposeIn,
     VideoEditIn,
@@ -132,6 +133,24 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         job = await service.submit_subtitle(principal, body)
         return await envelope(job)
 
+    @router.post("/music", response_model=GenerationEnvelope, status_code=202)
+    async def submit_music(
+        body: MusicIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """生成一段背景音乐，记一条音频记录（种类 ``audio``、操作 ``generate``）；完成后
+        ``outputUrl`` 是去掉首尾静音、统一响度后转存的 m4a，``durationMs`` 是它的时长。
+
+        ``prompt`` 原样发给音乐模型，服务端不补任何文字，至多 3000 字。``conversationId`` 必填，
+        读不到这段对话 404；生成背景音乐没开通 422。``userName`` 的规则同出片，只用来替人办事，
+        不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_music(principal, body)
+        return await envelope(job)
+
     @router.post("/image", response_model=GenerationEnvelope, status_code=202)
     async def submit_image(
         body: ImageGenerationIn,
@@ -186,6 +205,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
 
         按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。
         成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
+        一段对话生成的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找；上传的音乐不挂对话，按属主列。
         """
 
         jobs = await service.list_recent(

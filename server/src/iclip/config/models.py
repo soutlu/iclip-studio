@@ -47,7 +47,8 @@ VIDEO_SUBMIT_URL_ENV: Final = "VIDEO_SUBMIT_URL"
 
 QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 """千问AI平台（DashScope）的 API Key，平台上的各项能力共用这一个。为空或空白即用不了平台上的能力；
-用到它的能力另有自己的开关（如字幕识别还要媒体生成开着、YAML 写了 ``media_generation.subtitle`` 段）。"""
+用到它的能力另有自己的开关（如字幕识别还要媒体生成开着、YAML 写了 ``media_generation.subtitle`` 段，
+生成背景音乐要写 ``media_generation.music`` 段）。"""
 
 VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
 """视频拆解的总开关：这个地址为空即 `video` 与 `video_breakdown` 都不登记。"""
@@ -281,6 +282,19 @@ class SubtitleSection(ConfigSection):
     """一次识别请求等结果的上限；超时记为结果未知、不重投。"""
 
 
+class MusicSection(ConfigSection):
+    """生成背景音乐。写出这一段、并设了千问AI平台的 API Key（``QWEN_API_KEY``）即开通；模型钉在
+    代码里，不在这里配。"""
+
+    url: str = Field(min_length=1)
+    """音频生成同步接口的完整地址，即千问AI平台的 ``…/api/v1/services/audio/tts/SpeechSynthesizer``。"""
+    concurrency: int = Field(default=2, gt=0)
+    """生成队列每个服务进程同时跑几条。每条要等模型、下载，再跑两遍 ffmpeg 规整。"""
+    timeout_seconds: float = Field(default=300.0, gt=0)
+    """一次生成请求等结果的上限：模型一次最长出两分钟音乐，同步等它生成完；超时记为结果未知、
+    不重投。"""
+
+
 class MediaGenerationSection(ConfigSection):
     """媒体生成的节奏与对方约定的取值。
 
@@ -300,6 +314,8 @@ class MediaGenerationSection(ConfigSection):
     """本地合成每个服务进程同时跑几条。不写时按启动时选定的编解码取：硬件 4，软件 2。"""
     subtitle: SubtitleSection | None = None
     """成片的字幕识别；不写即不识别。"""
+    music: MusicSection | None = None
+    """生成背景音乐；不写即不能生成。"""
 
 
 class VideoSection(ConfigSection):
@@ -501,11 +517,23 @@ class ResolvedMediaGeneration:
     """None 即没写，由组合根按选定的编解码取默认值。"""
     subtitle: ResolvedSubtitle | None
     """None 即字幕识别没开通：段没写，或 ``QWEN_API_KEY`` 为空。"""
+    music: ResolvedMusic | None
+    """None 即生成背景音乐没开通：段没写，或 ``QWEN_API_KEY`` 为空。"""
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedSubtitle:
     """字幕识别的运行值：YAML 里的地址与节奏 + env 里的 key。"""
+
+    url: str
+    api_key: str
+    concurrency: int
+    timeout_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedMusic:
+    """生成背景音乐的运行值：YAML 里的地址与节奏 + env 里的 key。"""
 
     url: str
     api_key: str
@@ -699,6 +727,7 @@ def _resolve_media_generation(
         job_timeout_seconds=section.job_timeout_seconds,
         compose_concurrency=section.compose_concurrency,
         subtitle=_resolve_subtitle(section.subtitle),
+        music=_resolve_music(section.music),
     )
 
 
@@ -709,6 +738,20 @@ def _resolve_subtitle(section: SubtitleSection | None) -> ResolvedSubtitle | Non
         return None
     env = _from_env(QwenEnv)
     return ResolvedSubtitle(
+        url=section.url,
+        api_key=env.api_key,
+        concurrency=section.concurrency,
+        timeout_seconds=section.timeout_seconds,
+    )
+
+
+def _resolve_music(section: MusicSection | None) -> ResolvedMusic | None:
+    """按声明与 key 开关解析生成背景音乐；两者缺一即不开通。"""
+
+    if section is None or not _switched_on(QWEN_API_KEY_ENV):
+        return None
+    env = _from_env(QwenEnv)
+    return ResolvedMusic(
         url=section.url,
         api_key=env.api_key,
         concurrency=section.concurrency,
