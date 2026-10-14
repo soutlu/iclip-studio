@@ -31,6 +31,7 @@ from iclip.domains.generation.schemas import (
     VideoModelsOut,
     VideoSubmitOut,
     VideoTaskOut,
+    WholeFilmIn,
     generation_out,
     video_task_out,
 )
@@ -113,6 +114,26 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         job = await service.submit_video_compose(
             principal, body.model_copy(update={"user_name": user_name})
         )
+        return await envelope(job)
+
+    @router.post("/whole-films", response_model=GenerationEnvelope, status_code=202)
+    async def submit_whole_film(
+        body: WholeFilmIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上
+        字幕与背景音乐，本地 ffmpeg 渲染，不经外部服务。
+
+        ``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs}`` 取那条成片自己媒体时间里
+        的一段；整片总长是各段时长之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间，
+        服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却
+        不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``userName`` 的规则
+        同出片，只用来替人办事，不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_whole_film(principal, body)
         return await envelope(job)
 
     @router.post("/subtitles", response_model=GenerationEnvelope, status_code=202)

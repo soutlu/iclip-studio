@@ -52,6 +52,8 @@ from iclip.domains.generation.schemas import (
     SubtitleSentence,
     VideoComposeRequest,
     VideoGenerationIn,
+    WholeFilmRender,
+    WholeFilmRequest,
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.generation.video import VideoProviderSettings
@@ -291,6 +293,55 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
         source_job_id=video.id,
         **fields,
     )
+
+
+def whole_film_request(
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    subtitles: Sequence[Mapping[str, Any]] = (),
+    music: Mapping[str, Any] | None = None,
+) -> WholeFilmRequest:
+    """整片落库的请求：各段 ``{url, startMs, endMs}``（没写出处按地址补一个固定的 ``sourceJobId``），
+    字幕与音乐照给，声音参数取受理时的默认值。音乐没写出处同样补一个。"""
+
+    def with_source(item: Mapping[str, Any]) -> dict[str, Any]:
+        if "sourceJobId" in item or "audioJobId" in item:
+            return dict(item)
+        return {"sourceJobId": uuid.uuid5(uuid.NAMESPACE_URL, item["url"]), **item}
+
+    music_payload = None
+    if music is not None:
+        music_payload = dict(music)
+        music_payload.setdefault("audioJobId", uuid.uuid5(uuid.NAMESPACE_URL, music["url"]))
+    return WholeFilmRequest.model_validate(
+        {
+            "segments": [with_source(segment) for segment in segments],
+            "subtitles": list(subtitles),
+            "music": music_payload,
+            "render": WholeFilmRender(),
+        }
+    )
+
+
+def make_whole_film(*masters: GenerationJob, **fields: Any) -> GenerationJob:
+    """把 ``masters`` 各取前一秒剪成的一条整片：没有来源、原作与镜号，挂第一条的对话（默认），执行方
+    是本地 ffmpeg，默认排队中。"""
+
+    fields.setdefault("provider", "ffmpeg")
+    fields.setdefault("conversation_id", masters[0].conversation_id or uuid.uuid4())
+    fields.setdefault("owner_user_id", masters[0].owner_user_id)
+    request = whole_film_request(
+        [
+            {
+                "sourceJobId": master.id,
+                "url": master.output_url or "https://example.com/take.mp4",
+                "startMs": 0,
+                "endMs": 1000,
+            }
+            for master in masters
+        ]
+    )
+    return make_job(request, **fields)
 
 
 MUSIC_PROMPT = "纯音乐，轻快的城市流行节拍，适合鞋款种草短视频的背景音乐"
@@ -814,6 +865,8 @@ __all__ = [
     "make_music",
     "make_subtitle",
     "make_upload",
+    "make_whole_film",
     "stored_request",
     "video_request",
+    "whole_film_request",
 ]

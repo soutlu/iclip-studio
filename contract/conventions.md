@@ -183,7 +183,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - **HTTP 行**：只盖过水位不大于它 `lastSeq` 的字段。写入之前读库的旧行，`lastSeq` 小于随后 `updated` 帧的信封 `seq`，晚到也盖不掉那一帧的事实；
     帧里可能稍旧的 `activity` 也盖不掉序号更大的 `work_changed`。
 - **都是易失通知**，客户端据此更新列表；断线期间的变化不补发，重连后须重拉列表，按上面的水位规则合并，从 `ConversationOut` 对齐当前事实。
-- `event.generation.changed` 不带结果地址，只说哪条任务跳到了哪个状态；收到就重拉 §11 的列表。`kind`、`operation` 与 `status` 的词汇同 `GenerationOut`，列表接口是事实源，客户端保留轮询兜底。对话行上的 `activity.videoGeneration` 也靠它推动：帧上没有汇总值，收到本对话的视频帧（出片、编辑段、合成都是）就重拉 §6 的列表。
+- `event.generation.changed` 不带结果地址，只说哪条任务跳到了哪个状态；收到就重拉 §11 的列表。`kind`、`operation` 与 `status` 的词汇同 `GenerationOut`，列表接口是事实源，客户端保留轮询兜底。对话行上的 `activity.videoGeneration` 也靠它推动：帧上没有汇总值，收到本对话的视频帧（出片、编辑段、合成、整片都是）就重拉 §6 的列表。
 - 一条跑完接着起下一条会先发 idle 再发 busy。
 
 #### 文件订阅
@@ -392,7 +392,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 11. 媒体生成 (Generations)
 
-六条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）、`POST /generations/video-composites`（合成，本地拼接，不经外部服务）、`POST /generations/subtitles`（手动识别一条成片的字幕，见下文「字幕记录」）与 `POST /generations/music`（生成背景音乐，见下文「音频记录」）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image` / `subtitle` / `audio`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传）与有没有来源决定：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image、video 或 audio / upload（§10）；字幕记录是 subtitle / generate，来源是被识别的成片；生成的背景音乐是 audio / generate。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
+七条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）、`POST /generations/video-composites`（合成，本地拼接，不经外部服务）、`POST /generations/whole-films`（整片，本地剪辑，见下文「整片」）、`POST /generations/subtitles`（手动识别一条成片的字幕，见下文「字幕记录」）与 `POST /generations/music`（生成背景音乐，见下文「音频记录」）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image` / `subtitle` / `audio`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传）与有没有来源决定：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是有来源的 video / compose，整片是没有来源的 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image、video 或 audio / upload（§10）；字幕记录是 subtitle / generate，来源是被识别的成片；生成的背景音乐是 audio / generate。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
 
 业务状态每跳一格，属主连着的每条 WebSocket 都收到一帧 `event.generation.changed`（见 §5 全局帧）；帧易失且不带结果，`GET /generations` 与任务查询接口仍是事实源，浏览器在有运行中任务时保留轮询兜底。
 
@@ -400,8 +400,8 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 归属标签 `user_name`
 
-- 六种提交都带 `user_name`（图片、合成、字幕与音乐端点按 camelCase 叫 `userName`），含义与取值规则同发消息（§5）。
-- 它只作发给上游对账的输入：记录的作者是属主的用户名，不看这个字段；持 `users:act_as` 的钥匙已按它换好属主（§2）。见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。识别服务与音乐模型不收它，字幕记录与音频记录的 `request` 里没有这一项。
+- 七种提交都带 `user_name`（图片、合成、整片、字幕与音乐端点按 camelCase 叫 `userName`），含义与取值规则同发消息（§5）。
+- 它只作发给上游对账的输入：记录的作者是属主的用户名，不看这个字段；持 `users:act_as` 的钥匙已按它换好属主（§2）。见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。识别服务与音乐模型不收它，整片只用它替人办事，整片、字幕记录与音频记录的 `request` 里没有这一项。
 
 ### 视频：镜像上游异步接口
 
@@ -411,7 +411,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `model` 必填，只接受运行配置 `config.yaml` 中 `media_generation.video.allowed_models` 声明的模型；其余字段原样转发，画幅、时长范围、分辨率、素材规格由上游按模型判，本系统不复制那套规则。不在允许范围内的模型返回 `422`，不创建任务、不入队。
 - `GET /generations/video-models` 给出默认模型与允许表，只有模型 id。哪个模型能做视频编辑、编辑时要给上游加什么（正文前缀或 `provider_options`）、哪些画幅某个模型不收，都由调用方按模型名自己认；服务端不替任何模型拼任何东西，也不声明画幅。
 - 上游会丢弃的 `session_id` 与废弃别名 `image_urls` 在这里是未知字段，返回 `422`。
-- `GET /generations/video/{task_id}` 照上游任务查询的形状：`task_id`、`type: "video"`、`status`、`result`、`error`、`created_at`。`status` 用上游的词：`queued`（已受理未提交）、`running`（提交中或等结果）、`succeeded`（带 `result.output_url` 与 `result.watermark_output_url`）、`failed`（带 `error.code` 与 `error.message`）。可见性与 `GET /generations/{id}` 相同，只答出片与编辑段；拿图片、合成或视频上传的 id 来查是 `404`（合成不经上游、没有水印版，套不进这个形状）。本系统去上游查状态时带的 `user_name` 查询参数（上游缺它报 400）由服务端从记录里取，调用方不用带。
+- `GET /generations/video/{task_id}` 照上游任务查询的形状：`task_id`、`type: "video"`、`status`、`result`、`error`、`created_at`。`status` 用上游的词：`queued`（已受理未提交）、`running`（提交中或等结果）、`succeeded`（带 `result.output_url` 与 `result.watermark_output_url`）、`failed`（带 `error.code` 与 `error.message`）。可见性与 `GET /generations/{id}` 相同，只答出片与编辑段；拿图片、合成、整片或视频上传的 id 来查是 `404`（合成与整片不经上游、没有水印版，套不进这个形状）。本系统去上游查状态时带的 `user_name` 查询参数（上游缺它报 400）由服务端从记录里取，调用方不用带。
 
 ### 视频编辑：编辑段与合成
 
@@ -425,14 +425,24 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 服务端不切片、不改写区间：记录上的 `rangeStartMs` / `rangeEndMs` 就是请求给的值，调用方要自己把区间对齐到基底的关键帧再切片。参考片段的地址记进编辑段的 `request.reference_video_urls`，提交时原样发给上游。编辑段没有本地加工，`clipStage` 恒为 `null`。
 - `POST /generations/video-composites` 收基底 `baseJobId` 与一串有序片段 `segments`（至少一段、至多 100 段，超出是 `422`），另有 `userName`、归属字段 `conversationId`、`taskId` 与坐标 `metadata`。每段是 `{ sourceJobId, start, end? }`：出自哪条记录、取它自己媒体时间里的 `[start, end)`（秒，`start` 不小于 0；`end` 省略就取到那条的结尾，给了就要大于 `start`）。服务端按出处把每段换成那条记录的产物地址，不收调用方给的地址；按顺序拼成一条新成片（来源记基底，原作与镜号随基底），存进本系统的桶、长期保留。记录的 `request.segments` 每段是 `{ sourceJobId, url, start, end }`，取到结尾的段 `end` 为 `null`，执行时按素材时长补齐，补出来为空的段跳过。一律重编码：画幅与帧率对齐到原片（按素材整条时长认），模型还回来的片段缩放去适配它，有一段带音轨就出音轨、没音轨的段补静音；产物的关键帧只放在每段的起点和每段内素材原有的关键帧处（按帧取最近的一帧），别处不放。
 - 合成取不到素材是 `MEDIA_SOURCE_UNREACHABLE`，ffmpeg 处理失败是 `MEDIA_PROCESS_FAILED`，存不进桶是 `OUTPUT_STORE_FAILED`。这些失败都是终态，不自动重试。
-- `durationMs` 是产物实际时长（毫秒），完成后才有：视频（出片与编辑段）取上游实测的时长，合成与生成的背景音乐是本系统量的，图片与上传为空；上游没给也为空。
-- `clipStage` 是合成在途时跑到哪一步（`fetching` / `processing` / `uploading`），只在提交中非空，有了结论后为空；别的记录恒为 `null`。阶段变化不发实时帧，调用方最多晚一轮轮询才看到。
+- `durationMs` 是产物实际时长（毫秒），完成后才有：视频（出片与编辑段）取上游实测的时长，合成、整片与生成的背景音乐是本系统量的，图片与上传为空；上游没给也为空。
+- `clipStage` 是合成与整片在途时跑到哪一步（`fetching` / `processing` / `uploading`），只在提交中非空，有了结论后为空；别的记录恒为 `null`。阶段变化不发实时帧，调用方最多晚一轮轮询才看到。
+
+### 整片
+
+- `POST /generations/whole-films` 收一份时间线：`segments`（1 到 100 段，按顺序首尾相接，每段 `{ sourceJobId, startMs, endMs }`，取那条成片自己媒体时间里的 `[startMs, endMs)`，`startMs` 不小于 0、`endMs` 大于 `startMs`）、`subtitles`（必填，可为空数组，至多 500 句，每句 `{ startMs, endMs, text }`）与可选的 `music`（`{ audioJobId, offsetMs, gain }`），另有 `userName`、归属字段 `conversationId`（必填）、`taskId` 与坐标 `metadata`；响应是 `GenerationEnvelope`。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
+- 整片总长是各段时长之和，至多 120000 毫秒；`subtitles` 与 `gain` 用整片时间，字段上限就是这个数（合同里 `maximum: 120000`）。字幕按时间先后、互不重叠（可以首尾相接）、结尾不超出整片，文字不能为空或全是空白、至多 200 字，服务端照原文烧进画面。`offsetMs` 是从音乐的第几毫秒起用；`gain` 是整片时间上的音量曲线，`{ atMs, gain }` 至少一个、至多 500 个点，`atMs` 严格递增、不超出整片，`gain` 在 0 到 1 之间（线性，1 是原样），点与点之间线性插值，第一个点之前取第一个点的值，最后一个点之后取最后一个点的值。不合格是 `422`。
+- 受理时核对出处，都不创建任务、不入队：调用方读不到 `conversationId` 那段对话是 `404`；段的 `sourceJobId` 要是调用方可见的、这段对话自己的或它继承的记录（同下文「来源与原作」的范围），读不到一律 `404`（上传不挂对话，也是这一句）；读得到却不是已完成、有地址的出片或合成（整片、编辑段、图片、没完成的）是 `422`；那条记录有 `durationMs` 时，段的 `endMs` 不能超出它（容差 50 毫秒）。`audioJobId` 要是调用者本人上传的音乐，或这段对话自己的、继承来的生成音乐，读不到 `404`；读得到却不是已完成的音频记录 `422`；它有 `durationMs` 时，`offsetMs` 加整片总长不能超出它，`422`。
+- 记录是 video / compose，没有 `sourceJobId`、`rootJobId`、`shotIndex` 与区间，执行方与合成同一条本地队列。`request` 是 `{ segments, subtitles, music, render }`：每段与音乐都多一个服务端按出处填的 `url`，字幕与曲线原样；`render` 是受理时定下的声音参数 `{ speechLoudnessLufs, musicLoudnessLufs, loudnessLufs, peakDbfs, segmentFadeMs, musicFadeOutMs }`（现为 -16、-16、-14、-1.5、50、2000）。和合成一样，带 `conversationId` 的提交会抹掉收尾标记。
+- 渲染：画幅与帧率取第一段那条成片，别的段等比缩放、补黑边去适配，关键帧放法同合成。每条来源先量一次整体响度，各段原声按差值统一到 `speechLoudnessLufs`，两端各淡入淡出 `segmentFadeMs`，没有音轨的段补静音；音乐先量整体响度统一到 `musicLoudnessLufs`，从 `offsetMs` 起取整片那么长，按 `gain` 调，结尾 `musicFadeOutMs` 淡出；两路相加（不取平均）后统一到 `loudnessLufs`，限幅到 `peakDbfs`（采样峰值）。统一响度时最多放大 20 dB，整段静音的不调。字幕写成 ASS 用 libass 烧进画面：白字、黑色描边、粗体、底部居中，字号是画面高度的 4.5%，底边留画面高度的 12%，按估算字宽在服务端均匀折行；文字里的 `{`、`}`、`\` 换成全角的同形字。产物是 H.264 + AAC 的 mp4，存进本系统的桶，没有水印版。
+- 失败是终态，不自动重试：取不到某段的成片或音乐 `MEDIA_SOURCE_UNREACHABLE`，音乐从起点往后不够整片那么长 `MUSIC_TOO_SHORT`（不循环补长），段的结尾超出素材实际时长（容差 50 毫秒）或别的渲染失败 `MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
+- 整片是成片：完成后照常自动排一条字幕记录，也能手动识别（见下文「字幕记录」），是 `video.downloaded` 的主语，算对话的 `activity.videoGeneration`。它不能当编辑段与合成的基底（`422`），也不能剪进另一条整片；不进任何镜头组，不计审计口径（§12），资料库暂不收（§13）。按 `GET /generations?conversationId=&kind=video&operation=compose` 列出对话的合成与整片，`sourceJobId` 为空的是整片。
 
 ### 来源与原作
 
 - 每条生成记录带来源 `sourceJobId` 与原作 `rootJobId`，术语见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。编辑段与合成的来源都是它的基底成片，合成的各段出自哪条记录记在 `request.segments` 每段的 `sourceJobId` 上；两者的原作都是最初那条出片（基底是出片就是它自己，是合成就随那次合成的原作），不管基于哪一版，链因此只有一层。编辑段另带区间 `rangeStartMs` / `rangeEndMs`。帧图编辑的来源是底图那一条，切图的来源是它的宫格；图片没有原作与区间。出片、图片生成与上传这几项都为空。它们都由服务端定，调用方不直接给（帧图编辑只给底图地址）。
 - **`sourceUrl` 是来源的地址**：`sourceJobId` 非空时是那条记录的 `outputUrl`，来源那条调用方单条读不读得到都照给；为空时只有帧图编辑可能有，是库里找不到的外部底图地址；都没有为 `null`。它是投影，不是表上那一列的镜像：底图在库里时，表上只记来源 id。
-- 受理时核对来源：必须是调用方可见的、这段对话自己的或它继承的记录（继承的只在调用方读得到这段对话时才算，§6）；合成的基底与每段的出处都这样核。不存在、不可见、别的对话、继承边界之外，都是同一句 `422`。可见、在范围内但不合格的另给一句 `422`：编辑段与合成的基底必须是一条已完成的成片（出片或合成）；合成的每段必须出自基底本身，或来源是该基底、已完成、有产物地址的一条编辑段；那条记录有 `durationMs` 时，段的 `end` 不能超出它（容差 50 毫秒），没有就不在受理时判。都不创建任务、不入队。
+- 受理时核对来源：必须是调用方可见的、这段对话自己的或它继承的记录（继承的只在调用方读得到这段对话时才算，§6）；合成的基底与每段的出处都这样核。不存在、不可见、别的对话、继承边界之外，都是同一句 `422`。可见、在范围内但不合格的另给一句 `422`：编辑段与合成的基底必须是一条已完成的出片或合成，整片不能当基底；合成的每段必须出自基底本身，或来源是该基底、已完成、有产物地址的一条编辑段；那条记录有 `durationMs` 时，段的 `end` 不能超出它（容差 50 毫秒），没有就不在受理时判。都不创建任务、不入队。
 - 编辑段与合成不计审计口径（§12）。`GET /generations?rootJobId=` 一次列出一条出片的整条编辑链，`?sourceJobId=` 列出直接基于某一行的记录；同时给 `conversationId` 时范围同那段对话的列表，分叉副本里连同继承的一起（§6）。
 
 ### 镜头组编号
@@ -443,7 +453,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 字幕记录
 
-- 成片（已完成的出片或合成）一完成，服务端自动为它排一条字幕记录，属主、API key、对话与需求单抄那条成片；编辑段、上传与图片不识别。字幕识别没开通时不建。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
+- 成片（已完成的出片、合成或整片）一完成，服务端自动为它排一条字幕记录，属主、API key、对话与需求单抄那条成片；编辑段、上传与图片不识别。字幕识别没开通时不建。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
 - `POST /generations/subtitles` 收 `sourceJobId`（要识别的成片）、`userName`、归属字段 `conversationId`、`taskId` 与坐标 `metadata`，另起一条字幕记录，响应是 `GenerationEnvelope`；用来补识别旧片，或识别失败后重来。成片要是调用方可见的、这段对话自己的或它继承的记录（继承的只在调用方读得到这段对话时才算，§6），读不到一律 `404`；读得到却不是成片是 `422`；字幕识别没开通是 `422`。新记录的对话、需求单与 `metadata` 取请求，属主是当前主体。
 - 记录的 `request` 是 `{ model, videoUrl, audioFormat, sampleRate, speakerDiarization }`：识别的是成片的原片地址（不是水印版），服务端抽成单声道 16 kHz mp3 发给识别服务，音频本身不落库。字幕记录没有 `outputUrl`、`watermarkOutputUrl`、`rootJobId`、镜号与区间，`sourceUrl` 是被识别那条成片的地址。
 - 结果在 `sentences`：完成后是 `[{ startMs, endMs, text, speaker }]`，按识别给的先后；`speaker` 是识别服务给的说话人编号，只在这条视频里区分谁在说，可以为 `null`。没有口播（视频没有音轨，或识别出来一句都没有）是正常结果，记为 `completed`、`sentences` 为 `[]`。别的记录与没完成的字幕记录 `sentences` 为 `null`。
@@ -470,7 +480,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 - 图片请求的 `prompt` 由调用方编译成最终文本，服务端原样存进 `request`，不解析也不改写。前端把引用写成 `@图片N` / `@标注N`，编号即图片在本次 `referenceImageUrls` 里的位置。
 - 帧图编辑在请求里带 `sourceUrl`：这次改的是哪张图。只收具有主机名的 HTTP(S) 地址，至多 2000 字，不合规 `422`。服务端先在这段对话自己的与它继承的已完成图片里按产物地址找（继承的只在调用方读得到这段对话时才算，§6），再在调用方可见的上传里找；找到记 `sourceJobId`，找不到记外部地址，不报错。给了就一定落一个来源，回来的 `sourceUrl` 就是给的那个地址。它不进 `request`、不发上游：底图要不要给模型看，由 `referenceImageUrls` 决定。
-- `metadata` 是调用方自己的标签：JSON 对象，六种提交都收，服务端原样存、原样回读（`GenerationOut.metadata`）、不读也不解释其中任何键，序列化后不超过 2000 字符，超了 `422`。它不进 `request`，也不发上游。这个形状归前端定义（`web/src/features/storyboard/generation-metadata.ts`）：分镜页给图片写 `{shot, frame}` 用来找格子，视频的镜号只在 `shot_index`；写进 `metadata` 的 `sourceUrl` 也不是底图。另有一个键 `{film_node: 节点名}` 标工程文件里的一张图：后端按描述生成这张图时写，制作页在图片编辑器里编辑它时也写，按它找这张图的结果。
+- `metadata` 是调用方自己的标签：JSON 对象，七种提交都收，服务端原样存、原样回读（`GenerationOut.metadata`）、不读也不解释其中任何键，序列化后不超过 2000 字符，超了 `422`。它不进 `request`，也不发上游。这个形状归前端定义（`web/src/features/storyboard/generation-metadata.ts`）：分镜页给图片写 `{shot, frame}` 用来找格子，视频的镜号只在 `shot_index`；写进 `metadata` 的 `sourceUrl` 也不是底图。另有一个键 `{film_node: 节点名}` 标工程文件里的一张图：后端按描述生成这张图时写，制作页在图片编辑器里编辑它时也写，按它找这张图的结果。
 - `GET /generations` 的类型（`kind`）、操作（`operation`）、对话、需求单、镜号（`shotIndex`）、原作（`rootJobId`）、来源（`sourceJobId`）与 `metadata` 筛选在分页截断前执行，归属范围不因筛选扩大，唯一的例外是按对话列分叉副本时连同它继承的记录（§6）。按属主列（不带 `conversationId`）会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 `operation=generate` 筛。`metadata` 在查询串里是一段 JSON 对象（如 `metadata={"frame":2}`），按 JSONB 包含匹配；不是 JSON 对象返回 `422`。使用上一页最后一项的 `id` 作为 `before` 继续读取；按创建时间与 ID 倒序，空列表表示读完。每条记录带 `operation`、`shotIndex`、`taskId`、`watermarkOutputUrl`（图片与合成恒为 `null`）与 `finishedAt`（到终态的时刻，数据库时钟，没到终态为 `null`；同一镜头组的成片按它排版本，见 [CONTEXT.md「镜头组」](../docs/CONTEXT.md#术语)）。
 - 生成完成只产生候选图片。应用到参考帧须由用户确认，再经现有工作区文件版本校验保存；既有视频任务和视频结果不随候选生成或采用而改写。
 

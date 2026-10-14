@@ -4131,6 +4131,30 @@
         "title": "MovingAveragesOut",
         "type": "object"
       },
+      "MusicGainPoint": {
+        "additionalProperties": false,
+        "description": "音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。",
+        "properties": {
+          "atMs": {
+            "maximum": 120000.0,
+            "minimum": 0.0,
+            "title": "Atms",
+            "type": "integer"
+          },
+          "gain": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Gain",
+            "type": "number"
+          }
+        },
+        "required": [
+          "atMs",
+          "gain"
+        ],
+        "title": "MusicGainPoint",
+        "type": "object"
+      },
       "MusicIn": {
         "additionalProperties": false,
         "description": "生成一段背景音乐的受理输入。\n\n``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点\n一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收\n它，不进 ``request``。",
@@ -9285,6 +9309,178 @@
         ],
         "title": "VideoTypeCountOut",
         "type": "object"
+      },
+      "WholeFilmIn": {
+        "additionalProperties": false,
+        "description": "一条整片的受理输入：一份时间线。各段按顺序首尾相接，整片总长就是各段时长之和。\n\n字幕与音乐的时间都是整片时间，已由调用方算好，服务端照做。归属参数与别的提交端点一样，只是\n对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进 ``request``。",
+        "properties": {
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "music": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmMusicIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmSegmentIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
+          },
+          "subtitles": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmSubtitle"
+            },
+            "maxItems": 500,
+            "title": "Subtitles",
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "segments",
+          "subtitles",
+          "conversationId"
+        ],
+        "title": "WholeFilmIn",
+        "type": "object"
+      },
+      "WholeFilmMusicIn": {
+        "additionalProperties": false,
+        "description": "整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。",
+        "properties": {
+          "audioJobId": {
+            "format": "uuid",
+            "title": "Audiojobid",
+            "type": "string"
+          },
+          "gain": {
+            "items": {
+              "$ref": "#/components/schemas/MusicGainPoint"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Gain",
+            "type": "array"
+          },
+          "offsetMs": {
+            "minimum": 0.0,
+            "title": "Offsetms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audioJobId",
+          "offsetMs",
+          "gain"
+        ],
+        "title": "WholeFilmMusicIn",
+        "type": "object"
+      },
+      "WholeFilmSegmentIn": {
+        "additionalProperties": false,
+        "description": "整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。",
+        "properties": {
+          "endMs": {
+            "title": "Endms",
+            "type": "integer"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sourceJobId",
+          "startMs",
+          "endMs"
+        ],
+        "title": "WholeFilmSegmentIn",
+        "type": "object"
+      },
+      "WholeFilmSubtitle": {
+        "additionalProperties": false,
+        "description": "整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。",
+        "properties": {
+          "endMs": {
+            "maximum": 120000.0,
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "startMs": {
+            "maximum": 120000.0,
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs",
+          "text"
+        ],
+        "title": "WholeFilmSubtitle",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -13213,6 +13409,57 @@
           }
         ],
         "summary": "Get Video Task"
+      }
+    },
+    "/generations/whole-films": {
+      "post": {
+        "description": "把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上\n字幕与背景音乐，本地 ffmpeg 渲染，不经外部服务。\n\n``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs}`` 取那条成片自己媒体时间里\n的一段；整片总长是各段时长之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间，\n服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却\n不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``userName`` 的规则\n同出片，只用来替人办事，不进 ``request``。",
+        "operationId": "submit_whole_film_generations_whole_films_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WholeFilmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Whole Film"
       }
     },
     "/generations/{job_id}": {

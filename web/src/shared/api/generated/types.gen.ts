@@ -2211,6 +2211,22 @@ export type MovingAveragesOut = {
 }
 
 /**
+ * MusicGainPoint
+ *
+ * 音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。
+ */
+export type MusicGainPoint = {
+  /**
+   * Atms
+   */
+  atMs: number
+  /**
+   * Gain
+   */
+  gain: number
+}
+
+/**
  * MusicIn
  *
  * 生成一段背景音乐的受理输入。
@@ -4968,6 +4984,104 @@ export type VideoTypeCountOut = {
     | 'product_showcase'
 }
 
+/**
+ * WholeFilmIn
+ *
+ * 一条整片的受理输入：一份时间线。各段按顺序首尾相接，整片总长就是各段时长之和。
+ *
+ * 字幕与音乐的时间都是整片时间，已由调用方算好，服务端照做。归属参数与别的提交端点一样，只是
+ * 对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进 ``request``。
+ */
+export type WholeFilmIn = {
+  /**
+   * Conversationid
+   */
+  conversationId: string
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  music?: WholeFilmMusicIn | null
+  /**
+   * Segments
+   */
+  segments: Array<WholeFilmSegmentIn>
+  /**
+   * Subtitles
+   */
+  subtitles: Array<WholeFilmSubtitle>
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * WholeFilmMusicIn
+ *
+ * 整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。
+ */
+export type WholeFilmMusicIn = {
+  /**
+   * Audiojobid
+   */
+  audioJobId: string
+  /**
+   * Gain
+   */
+  gain: Array<MusicGainPoint>
+  /**
+   * Offsetms
+   */
+  offsetMs: number
+}
+
+/**
+ * WholeFilmSegmentIn
+ *
+ * 整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。
+ */
+export type WholeFilmSegmentIn = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Startms
+   */
+  startMs: number
+}
+
+/**
+ * WholeFilmSubtitle
+ *
+ * 整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。
+ */
+export type WholeFilmSubtitle = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
+}
+
 export type ListKeysApiKeysGetData = {
   body?: never
   path?: never
@@ -6951,6 +7065,33 @@ export type GetVideoTaskGenerationsVideoTaskIdGetResponses = {
 
 export type GetVideoTaskGenerationsVideoTaskIdGetResponse =
   GetVideoTaskGenerationsVideoTaskIdGetResponses[keyof GetVideoTaskGenerationsVideoTaskIdGetResponses]
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostData = {
+  body: WholeFilmIn
+  path?: never
+  query?: never
+  url: '/generations/whole-films'
+}
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostError =
+  SubmitWholeFilmGenerationsWholeFilmsPostErrors[keyof SubmitWholeFilmGenerationsWholeFilmsPostErrors]
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostResponse =
+  SubmitWholeFilmGenerationsWholeFilmsPostResponses[keyof SubmitWholeFilmGenerationsWholeFilmsPostResponses]
 
 export type GetGenerationGenerationsJobIdGetData = {
   body?: never

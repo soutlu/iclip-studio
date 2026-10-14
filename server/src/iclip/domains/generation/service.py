@@ -25,6 +25,7 @@ from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
+    KIND_AUDIO,
     KIND_IMAGE,
     KIND_VIDEO,
     OPERATION_COMPOSE,
@@ -44,6 +45,12 @@ from iclip.domains.generation.schemas import (
     VideoComposeRequest,
     VideoEditIn,
     VideoGenerationIn,
+    WholeFilmIn,
+    WholeFilmMusic,
+    WholeFilmMusicIn,
+    WholeFilmRender,
+    WholeFilmRequest,
+    WholeFilmSegment,
 )
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.platform.media.ffmpeg import MediaError
@@ -162,8 +169,7 @@ class GenerationService:
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
         base = await self._check_source(principal, request.source_job_id, request.conversation_id)
-        if not _is_completed_master(base):
-            raise ValidationFailed("基底必须是一条已完成的成片")
+        _require_base(base)
         (clip_url,) = request.reference_video_urls
         # 先认上传行再去探：探的是我们桶里、本人传上来的那一条，不替调用方去读任意地址。
         clip = await self._repo.find_by_output(
@@ -221,8 +227,7 @@ class GenerationService:
 
         _require_user_name(request.user_name)
         base = await self._check_source(principal, request.base_job_id, request.conversation_id)
-        if not _is_completed_master(base):
-            raise ValidationFailed("基底必须是一条已完成的成片")
+        _require_base(base)
         sources = {base.id: base}
         for source_id in dict.fromkeys(segment.source_job_id for segment in request.segments):
             if source_id in sources:
@@ -257,6 +262,125 @@ class GenerationService:
             root_job_id=base.root_job_id or base.id,
             source_job_id=base.id,
         )
+
+    async def submit_whole_film(self, principal: Principal, request: WholeFilmIn) -> GenerationJob:
+        """受理一条整片：把这段对话读得到的几条成片按时间线剪成一条，配上字幕与音乐，不经外部服务。
+
+        主体读不到这段对话 404。每段的出处要是这段对话自己的或继承来的记录，读不到 404（不区分
+        存在性）；读得到却不是出片或有基底的合成（整片、编辑段、上传、图片都不行）422；那条成片量过
+        时长时段的结尾不能超出它。音乐要是一条已完成的音频记录：调用者自己的上传，或这段对话自己的、
+        继承来的生成音乐，读不到 404，不是音频 422；它量过时长时从起点往后要够整片那么长。
+
+        整片没有来源、原作与镜号，各段与音乐的出处换成产物地址记进请求，连同受理时的声音参数。属主
+        与钥匙取主体，对话、需求单与 ``metadata`` 取请求；和合成一样抹对话的收尾标记。"""
+
+        conversation_id = request.conversation_id
+        if not await self._lineage.readable(principal, conversation_id):
+            raise NotFound(f"没有这段对话: {conversation_id}")
+        inheritance = await self._lineage.ancestry(conversation_id)
+        sources: dict[uuid.UUID, GenerationJob] = {}
+        for source_id in dict.fromkeys(segment.source_job_id for segment in request.segments):
+            source = await self._conversation_record(
+                principal, source_id, conversation_id, inheritance
+            )
+            if not _is_base_master(source):
+                raise ValidationFailed(
+                    "整片的每段必须取自一条已完成的出片或合成；整片、编辑段与上传都不行"
+                )
+            sources[source_id] = source
+        segments: list[WholeFilmSegment] = []
+        for position, segment in enumerate(request.segments, start=1):
+            source = sources[segment.source_job_id]
+            if source.output_url is None:
+                raise RuntimeError(f"生成记录 {source.id} 核对过却没有产物地址")
+            _check_segment_end(position, segment.end_ms / 1000, source.duration_ms)
+            segments.append(
+                WholeFilmSegment(
+                    source_job_id=source.id,
+                    url=source.output_url,
+                    start_ms=segment.start_ms,
+                    end_ms=segment.end_ms,
+                )
+            )
+        music = None
+        if request.music is not None:
+            music = await self._film_music(
+                principal, request.music, conversation_id, inheritance, request.duration_ms
+            )
+        return await self._accept(
+            principal,
+            WholeFilmRequest(
+                segments=segments,
+                subtitles=request.subtitles,
+                music=music,
+                render=WholeFilmRender(),
+            ),
+            provider=self._compose_provider_name,
+            conversation_id=conversation_id,
+            task_id=request.task_id,
+            metadata=request.metadata,
+            shot_index=None,
+        )
+
+    async def _film_music(
+        self,
+        principal: Principal,
+        music: WholeFilmMusicIn,
+        conversation_id: uuid.UUID,
+        inheritance: Inheritance,
+        film_ms: int,
+    ) -> WholeFilmMusic:
+        """整片的音乐换成落库的样子：核对它是哪条音频记录、够不够长，记下它的产物地址。
+
+        上传不挂对话，只认调用者本人的；生成的音乐要是这段对话自己的或继承来的。"""
+
+        try:
+            audio = await self._repo.get(
+                music.audio_job_id,
+                owner=visible_owner_incl_act_as(principal),
+                inherited=inheritance,
+            )
+        except NotFound:
+            audio = None
+        if audio is None or not (
+            (audio.operation == OPERATION_UPLOAD and audio.owner_user_id == principal.user_id)
+            or audio.conversation_id == conversation_id
+            or inherited_through(audio, inheritance)
+        ):
+            raise NotFound(f"没有这次生成: {music.audio_job_id}")
+        if not (
+            audio.kind == KIND_AUDIO
+            and audio.status == STATUS_COMPLETED
+            and audio.output_url is not None
+        ):
+            raise ValidationFailed("音乐必须是一条已完成的音频记录：上传的音乐或生成的背景音乐")
+        if audio.duration_ms is not None and music.offset_ms + film_ms > audio.duration_ms:
+            raise ValidationFailed(
+                f"音乐从 {format_seconds(music.offset_ms / 1000)} 秒起只剩 "
+                f"{format_seconds(max(0, audio.duration_ms - music.offset_ms) / 1000)} 秒，"
+                f"不够整片的 {format_seconds(film_ms / 1000)} 秒"
+            )
+        return WholeFilmMusic(
+            audio_job_id=audio.id, url=audio.output_url, offset_ms=music.offset_ms, gain=music.gain
+        )
+
+    async def _conversation_record(
+        self,
+        principal: Principal,
+        job_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        inheritance: Inheritance,
+    ) -> GenerationJob:
+        """这段对话自己的或它经 ``inheritance`` 继承的一条记录，按主体可见范围读。
+
+        读不到、或读得到却不归这段对话，一律 ``NotFound``，不区分存在性；角色与状态由调用方判。"""
+
+        record = await self._repo.get(
+            job_id, owner=visible_owner_incl_act_as(principal), inherited=inheritance
+        )
+        if record.conversation_id != conversation_id and not inherited_through(record, inheritance):
+            raise NotFound(f"没有这次生成: {job_id}")
+        return record
 
     async def _check_source(
         self, principal: Principal, source_id: uuid.UUID, conversation_id: uuid.UUID | None
@@ -438,18 +562,14 @@ class GenerationService:
         与 ``metadata`` 取请求，和编辑段、合成一样；不动对话的收尾标记，识别不是人在对话里动手。"""
 
         subtitles = self._require_subtitles()
-        inheritance = await self._inheritance(principal, request.conversation_id)
-        video = await self._repo.get(
+        video = await self._conversation_record(
+            principal,
             request.source_job_id,
-            owner=visible_owner_incl_act_as(principal),
-            inherited=inheritance,
+            request.conversation_id,
+            await self._inheritance(principal, request.conversation_id),
         )
-        if video.conversation_id != request.conversation_id and not inherited_through(
-            video, inheritance
-        ):
-            raise NotFound(f"没有这次生成: {request.source_job_id}")
         if not _is_completed_master(video) or video.output_url is None:
-            raise ValidationFailed("只能识别成片：已完成的出片或合成")
+            raise ValidationFailed("只能识别成片：已完成的出片、合成或整片")
         return await self._queue_new(
             _pending_job(
                 SubtitleRequest(model=subtitles.model, video_url=video.output_url),
@@ -658,7 +778,8 @@ class GenerationService:
 
 
 def _is_completed_master(job: GenerationJob) -> bool:
-    """成片：一条已完成、有地址的视频，是出片（没有来源的 generate）或合成。"""
+    """成片：一条已完成、有地址的视频，是出片（没有来源的 generate）、合成或整片（两者都是
+    compose）。字幕识别认它。"""
 
     return (
         job.kind == KIND_VIDEO
@@ -669,6 +790,21 @@ def _is_completed_master(job: GenerationJob) -> bool:
             or (job.operation == OPERATION_GENERATE and job.source_job_id is None)
         )
     )
+
+
+def _is_base_master(job: GenerationJob) -> bool:
+    """能当基底、能剪进整片的成片：出片或有基底的合成。整片（没有来源的 compose）不行。"""
+
+    return _is_completed_master(job) and not (
+        job.operation == OPERATION_COMPOSE and job.source_job_id is None
+    )
+
+
+def _require_base(job: GenerationJob) -> None:
+    """编辑段与合成的基底必须是能当基底的成片。"""
+
+    if not _is_base_master(job):
+        raise ValidationFailed("基底必须是一条已完成的成片（出片或合成），整片不能当基底")
 
 
 def _is_finished_edit(job: GenerationJob) -> bool:

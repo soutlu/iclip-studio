@@ -1,4 +1,5 @@
-"""异步媒体下载与 ffmpeg/ffprobe 子进程封装，以及视频裁剪与拼接、给语音识别抽音频、规整背景音乐。
+"""异步媒体下载与 ffmpeg/ffprobe 子进程封装，以及视频裁剪与拼接、剪整片（混音、烧字幕）、给语音识别
+抽音频、规整背景音乐。
 
 子进程设定超时，超时后先 kill 再 wait，避免阻塞事件循环或遗留僵尸进程。
 按格取帧、灰度检测那些只有分镜取帧用得上的操作留在 capabilities 里。"""
@@ -6,9 +7,12 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import math
+import re
 import shutil
+import unicodedata
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -372,15 +376,28 @@ async def normalize_music(source: Path, *, dest: Path) -> int:
 async def _measure_music_loudness(source: Path) -> dict[str, float]:
     """量去掉首尾静音之后的响度，交回 loudnorm 第二遍要的几个测量值。
 
-    loudnorm 只把测量结果以 JSON 写在 stderr 的末尾。整段都是静音时它量出 ``-inf``，没有可以缩放的
-    声音，抛 MediaError。"""
+    整段都是静音时 loudnorm 量出 ``-inf``，没有可以缩放的声音，抛 MediaError。"""
+
+    measured = await _loudnorm_measure(
+        source,
+        f"{_TRIM_MUSIC_SILENCE},loudnorm=I={MUSIC_LOUDNESS_LUFS}"
+        f":TP={MUSIC_TRUE_PEAK_DBTP}:LRA={MUSIC_LOUDNESS_RANGE}:print_format=json",
+    )
+    if not all(math.isfinite(value) for value in measured.values()):
+        raise MediaError("这段音频去掉首尾静音后没有声音")
+    return measured
+
+
+async def _loudnorm_measure(source: Path, audio_filter: str) -> dict[str, float]:
+    """让 ``source`` 的第一条音轨过一遍 ``audio_filter``（末尾是带 ``print_format=json`` 的 loudnorm），
+    交回它量出的那几个值；静音量出来是 ``-inf``，原样交回。
+
+    loudnorm 只把测量结果以 JSON 写在 stderr 的末尾；没有或看不懂抛 MediaError。"""
 
     _, stderr = await _communicate(
         [
             "ffmpeg", "-hide_banner", "-nostats", "-i", str(source), "-map", "0:a:0", "-vn",
-            "-af", f"{_TRIM_MUSIC_SILENCE},loudnorm=I={MUSIC_LOUDNESS_LUFS}"
-            f":TP={MUSIC_TRUE_PEAK_DBTP}:LRA={MUSIC_LOUDNESS_RANGE}:print_format=json",
-            "-f", "null", "-",
+            "-af", audio_filter, "-f", "null", "-",
         ],
         timeout=ENCODE_TIMEOUT_SECONDS,
     )  # fmt: skip
@@ -393,9 +410,15 @@ async def _measure_music_loudness(source: Path) -> dict[str, float]:
         raise MediaError("loudnorm 的测量结果看不懂") from exc
     if measured is None:
         raise MediaError("loudnorm 没有给出测量结果")
-    if not all(math.isfinite(value) for value in measured.values()):
-        raise MediaError("这段音频去掉首尾静音后没有声音")
     return measured
+
+
+async def integrated_loudness(source: Path) -> float:
+    """``source`` 第一条音轨整段的综合响度（LUFS，EBU R128 的测法，带门限，停顿不拉低它）；整段静音是
+    ``-inf``。没有音轨或读不了抛 MediaError。"""
+
+    measured = await _loudnorm_measure(source, "loudnorm=print_format=json")
+    return measured["input_i"]
 
 
 def _positive_fraction(value: str) -> bool:
@@ -436,15 +459,7 @@ async def cut_concat(
     labels: list[str] = []
     for index, cut in enumerate(cuts):
         inputs += [*codec.decode, "-i", str(cut.source)]
-        chains.append(
-            f"[{index}:v]trim=start={cut.start:.3f}:end={cut.end:.3f},setpts=PTS-STARTPTS,"
-            # 模型还回来的片段分辨率档位比原片高，这一步多半在下采样，lanczos 比默认的
-            # bicubic 留得住细节，代价可以忽略。
-            f"scale={profile.width}:{profile.height}:force_original_aspect_ratio=decrease"
-            f":flags=lanczos,"
-            f"pad={profile.width}:{profile.height}:(ow-iw)/2:(oh-ih)/2,"
-            f"fps={profile.frame_rate},format=yuv420p,setsar=1[v{index}]"
-        )
+        chains.append(_video_chain(index, cut, profile))
         labels.append(f"[v{index}]")
 
     if profile.has_audio:
@@ -483,6 +498,21 @@ async def cut_concat(
     _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
 
 
+def _video_chain(index: int, cut: MediaCut, profile: VideoProfile) -> str:
+    """第 ``index`` 个输入的画面裁出 ``cut`` 这一段，对齐到 ``profile``，输出标签 ``[v{index}]``：
+    等比缩进画幅、不足处补黑边，统一帧率、像素格式与像素比。"""
+
+    return (
+        f"[{index}:v]trim=start={cut.start:.3f}:end={cut.end:.3f},setpts=PTS-STARTPTS,"
+        # 模型还回来的片段分辨率档位比原片高，这一步多半在下采样，lanczos 比默认的
+        # bicubic 留得住细节，代价可以忽略。
+        f"scale={profile.width}:{profile.height}:force_original_aspect_ratio=decrease"
+        f":flags=lanczos,"
+        f"pad={profile.width}:{profile.height}:(ow-iw)/2:(oh-ih)/2,"
+        f"fps={profile.frame_rate},format=yuv420p,setsar=1[v{index}]"
+    )
+
+
 def _concat_keyframes(
     cuts: Sequence[MediaCut], keyframes: Mapping[Path, Sequence[float]], *, frame_rate: Fraction
 ) -> str:
@@ -506,6 +536,371 @@ def _concat_keyframes(
     return ",".join(
         f"{max(Fraction(0), (frame - Fraction(1, 2)) / frame_rate):.6f}" for frame in sorted(frames)
     )
+
+
+@dataclass(frozen=True, slots=True)
+class FilmCaption:
+    """整片上的一句字幕：整片时间里的起止（秒）与烧进画面的文字。"""
+
+    start: float
+    end: float
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class FilmMusic:
+    """整片的背景音乐：本地文件、从第几秒起用，以及整片时间上的音量曲线。"""
+
+    source: Path
+    offset: float
+    gain: Sequence[tuple[float, float]]
+    """``(整片时刻秒, 线性音量)``，按时刻严格递增，至少一个点；点间线性插值，两端取端点的值。"""
+
+
+@dataclass(frozen=True, slots=True)
+class FilmSound:
+    """整片的声音怎么做：各段原声与音乐先各自统一到的响度、混好后整片的响度与峰值上限、每段原声
+    两端的淡入淡出与音乐结尾的淡出（秒）。"""
+
+    speech_lufs: float
+    music_lufs: float
+    loudness_lufs: float
+    peak_dbfs: float
+    edge_fade: float
+    music_fade_out: float
+
+
+class MusicTooShort(MediaError):
+    """音乐从起点往后不够整片那么长。不循环补长，这条整片失败。"""
+
+
+MAX_LOUDNESS_BOOST_DB: Final = 20.0
+"""统一响度时最多放大多少 dB。很轻的声音（几乎只有底噪）照差值放大会把噪声抬得很响，到这里为止；
+衰减不设限。"""
+
+FILM_END_TOLERANCE: Final = 0.05
+"""整片的段结尾最多比素材量出的时长多出几秒（50 毫秒，同受理时的容差）：调用方的时间来自浏览器，
+与 ffprobe 量的隔着一次容器时长的取整。再多就是段与素材对不上，整片失败。"""
+
+SUBTITLE_FONT: Final = "Noto Sans CJK SC"
+"""烧字幕用的字体：镜像里 apt 装的 ``fonts-noto-cjk``（SIL OFL 1.1）里的简体中文无衬线体。"""
+SUBTITLE_FONTS_DIR: Final = Path("/usr/share/fonts/opentype/noto")
+"""那个字体包装到的目录，交给 libass 的 ``fontsdir``。"""
+SUBTITLE_FONT_SIZE_RATIO: Final = 0.045
+"""ASS 字号是画面高度的几分之几。libass 的字号是行高，思源黑体一个汉字约宽字号的 0.69：竖屏 1920 高
+字号 86、一个字约 60 像素，一行放得下十五六个字；横屏 1080 高一个字约 34 像素。短视频以竖屏为主，
+按竖屏取值，横屏的字相对小些。"""
+SUBTITLE_OUTLINE_RATIO: Final = 0.08
+"""描边粗细是字号的几分之几。"""
+SUBTITLE_MARGIN_BOTTOM_RATIO: Final = 0.12
+"""字幕底边离画面底边多远（画面高度的比例）：避开短视频平台压在画面底部的文案与按钮。"""
+SUBTITLE_MARGIN_SIDE_RATIO: Final = 0.06
+"""字幕离左右两边至少多远（画面宽度的比例），按它算一行放得下多宽。"""
+
+_SAFE_FILTER_PATH: Final = re.compile(r"[A-Za-z0-9/._+-]+")
+"""能原样写进滤镜参数的路径：滤镜图要对冒号、引号、反斜杠、逗号等转义两层，只收不用转义的字符。"""
+
+
+async def render_film(
+    cuts: Sequence[MediaCut],
+    *,
+    profile: VideoProfile,
+    captions: Sequence[FilmCaption],
+    music: FilmMusic | None,
+    sound: FilmSound,
+    dest: Path,
+    codec: MediaCodec,
+    workdir: Path,
+    fonts_dir: Path = SUBTITLE_FONTS_DIR,
+) -> None:
+    """把各段按顺序首尾相接剪成一条整片写到 ``dest``：画面对齐到 ``profile``、烧进字幕，声音是各段
+    原声与背景音乐的混音。中间文件（混好的声音、字幕文件）写在 ``workdir``。
+
+    画面：各段的裁剪、对齐与关键帧同 ``cut_concat``。字幕按统一样式写成 ASS，用 libass 的
+    ``subtitles`` 滤镜烧进画面，字体从 ``fonts_dir`` 找；有字幕而本机 ffmpeg 没有这个滤镜就失败，
+    不出没烧字幕的片。
+
+    声音分三遍：先量每条来源整段的响度，各段原声按差值统一到 ``sound.speech_lufs``、两端各淡入
+    淡出 ``sound.edge_fade``，没有音轨的段补静音，首尾相接；有音乐时量它整段的响度统一到
+    ``sound.music_lufs``，从 ``music.offset`` 起取整片那么长，按音量曲线调、结尾淡出，与原声相加
+    （不取平均），写成一个中间文件；再量混音的响度；最后编码时按差值统一到 ``sound.loudness_lufs``
+    并限幅到 ``sound.peak_dbfs``。
+
+    段的结尾超出素材的时长（容差 ``FILM_END_TOLERANCE``）、素材读不了、ffmpeg 失败抛 MediaError；
+    音乐不够长抛 ``MusicTooShort``。"""
+
+    if not cuts:
+        raise MediaError("没有要剪的段")
+    for cut in cuts:
+        _check_cut(cut)
+    sources = list(dict.fromkeys(cut.source for cut in cuts))
+    lengths = {source: await probe_duration_ms(source) / 1000 for source in sources}
+    for position, cut in enumerate(cuts, start=1):
+        if cut.end > lengths[cut.source] + FILM_END_TOLERANCE:
+            raise MediaError(
+                f"第 {position} 段的结尾 {cut.end:.3f} 秒超出了素材的时长 "
+                f"{lengths[cut.source]:.3f} 秒"
+            )
+    speech_gains: dict[Path, float | None] = {}
+    for source in sources:
+        audible = (await probe_video(source)).has_audio
+        speech_gains[source] = (
+            _gain_to(await integrated_loudness(source), sound.speech_lufs) if audible else None
+        )
+    total = sum(cut.duration for cut in cuts)
+    music_gain = 0.0
+    if music is not None:
+        if not await has_audio_stream(music.source):
+            raise MediaError("音乐里没有音轨")
+        music_length = await probe_duration_ms(music.source) / 1000
+        if music.offset + total > music_length + 0.001:
+            raise MusicTooShort(
+                f"音乐从 {music.offset:.3f} 秒起只剩 {max(0.0, music_length - music.offset):.3f} 秒，"
+                f"不够整片的 {total:.3f} 秒"
+            )
+        music_gain = _gain_to(await integrated_loudness(music.source), sound.music_lufs)
+
+    mixed = workdir / "film-audio.wav"
+    await _mix_film_audio(
+        cuts, speech_gains, music=music, music_gain=music_gain, sound=sound, dest=mixed
+    )
+    film_gain = _gain_to(await integrated_loudness(mixed), sound.loudness_lufs)
+
+    subtitles = None
+    if captions:
+        await _require_subtitles_filter()
+        subtitles = workdir / "film-captions.ass"
+        subtitles.write_text(
+            ass_document(captions, width=profile.width, height=profile.height), encoding="utf-8"
+        )
+    keyframes = _concat_keyframes(
+        cuts,
+        {source: await probe_keyframes(source) for source in sources},
+        frame_rate=Fraction(profile.frame_rate),
+    )
+    inputs: list[str] = []
+    chains: list[str] = []
+    for index, cut in enumerate(cuts):
+        inputs += [*codec.decode, "-i", str(cut.source)]
+        chains.append(_video_chain(index, cut, profile))
+    inputs += ["-i", str(mixed)]
+    burn = (
+        "null"
+        if subtitles is None
+        else f"subtitles=filename={_filter_path(subtitles)}:fontsdir={_filter_path(fonts_dir)},"
+        "format=yuv420p"
+    )
+    chains.append(
+        f"{''.join(f'[v{index}]' for index in range(len(cuts)))}"
+        f"concat=n={len(cuts)}:v=1:a=0,{burn}[outv]"
+    )
+    chains.append(
+        f"[{len(cuts)}:a]volume={film_gain:.2f}dB,"
+        # level=0：不让限幅器自动把输出拉满；latency=1：抵掉它向前看的那几毫秒延迟。
+        f"alimiter=limit={10 ** (sound.peak_dbfs / 20):.4f}:level=0:latency=1[outa]"
+    )
+    args = ["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(chains)]
+    args += ["-map", "[outv]", "-map", "[outa]", *_AUDIO_CODEC]
+    args += ["-ar", str(_AUDIO_RATE), "-ac", "2"]
+    args += [*codec.encode, "-force_key_frames", keyframes]
+    args += ["-movflags", "+faststart", str(dest)]
+    await run(args, timeout=ENCODE_TIMEOUT_SECONDS)
+    _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
+
+
+async def _mix_film_audio(
+    cuts: Sequence[MediaCut],
+    speech_gains: Mapping[Path, float | None],
+    *,
+    music: FilmMusic | None,
+    music_gain: float,
+    sound: FilmSound,
+    dest: Path,
+) -> None:
+    """各段原声首尾相接、混上音乐，写成 48 kHz 双声道 32 位浮点 wav：混音可能超过满幅，浮点留着
+    给最后一遍限幅，不在这里削波。``speech_gains`` 是每条来源的增益（dB），没有音轨为 None。
+
+    每段一路输入，同一条来源取几段就开几次：滤镜图里一路输入只能接一次。"""
+
+    stereo = f"aformat=sample_rates={_AUDIO_RATE}:channel_layouts={_AUDIO_LAYOUT}"
+    inputs: list[str] = []
+    chains: list[str] = []
+    for index, cut in enumerate(cuts):
+        length = cut.duration
+        gain = speech_gains[cut.source]
+        if gain is None:
+            chains.append(
+                f"anullsrc=channel_layout={_AUDIO_LAYOUT}:sample_rate={_AUDIO_RATE},"
+                f"atrim=duration={length:.3f}[s{index}]"
+            )
+            continue
+        inputs += ["-i", str(cut.source)]
+        fade = min(sound.edge_fade, length / 2)
+        chain = (
+            f"[{len(inputs) // 2 - 1}:a]atrim=start={cut.start:.3f}:end={cut.end:.3f},"
+            # 音轨比画面短时补静音，每段的声音正好是这段的长度，后面各段才对得上画面。
+            f"asetpts=PTS-STARTPTS,{stereo},apad=whole_dur={length:.3f},"
+            f"atrim=duration={length:.3f},volume={gain:.2f}dB"
+        )
+        if fade > 0:
+            chain += f",afade=t=in:d={fade:.3f},afade=t=out:st={length - fade:.3f}:d={fade:.3f}"
+        chains.append(f"{chain}[s{index}]")
+    chains.append(
+        f"{''.join(f'[s{index}]' for index in range(len(cuts)))}"
+        f"concat=n={len(cuts)}:v=0:a=1[speech]"
+    )
+    output = "[speech]"
+    if music is not None:
+        total = sum(cut.duration for cut in cuts)
+        fade = min(sound.music_fade_out, total)
+        inputs += ["-i", str(music.source)]
+        chains.append(
+            f"[{len(inputs) // 2 - 1}:a]atrim=start={music.offset:.3f}:duration={total:.3f},"
+            f"asetpts=PTS-STARTPTS,{stereo},volume={music_gain:.2f}dB,"
+            # 曲线按帧求值：帧切成 10 毫秒一帧，音量的台阶小到听不出。
+            f"asetnsamples=n={_AUDIO_RATE // 100}:p=0,"
+            f"volume='{_gain_curve(music.gain)}':eval=frame,"
+            f"afade=t=out:st={total - fade:.3f}:d={fade:.3f}[music]"
+        )
+        chains.append("[speech][music]amix=inputs=2:duration=first:normalize=0[mix]")
+        output = "[mix]"
+    await run(
+        [
+            "ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(chains),
+            "-map", output, "-c:a", "pcm_f32le", "-ar", str(_AUDIO_RATE), "-ac", "2", str(dest),
+        ],
+        timeout=ENCODE_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
+
+
+def _gain_to(measured: float, target: float) -> float:
+    """把响度 ``measured`` 调到 ``target`` 要的增益（dB）。静音（``-inf``）不调；放大最多
+    ``MAX_LOUDNESS_BOOST_DB``。"""
+
+    if not math.isfinite(measured):
+        return 0.0
+    return min(target - measured, MAX_LOUDNESS_BOOST_DB)
+
+
+def _gain_curve(points: Sequence[tuple[float, float]]) -> str:
+    """音量曲线写成 ffmpeg 表达式（变量 ``t`` 是整片时刻秒）：第一个点的值，加上每一段的增量乘以
+    这一段走过的比例（夹在 0 到 1）。各段平铺相加、不嵌套，几百个点也不会让解析器递归过深。"""
+
+    (_, first), *_ = points
+    terms = [f"{first:.6g}"]
+    for (start, before), (end, after) in itertools.pairwise(points):
+        terms.append(f"({after - before:.6g})*clip((t-{start:.6g})/{end - start:.6g},0,1)")
+    return "+".join(terms)
+
+
+async def _require_subtitles_filter() -> None:
+    """本机 ffmpeg 有 libass 的 ``subtitles`` 滤镜；没有抛 MediaError（不出没烧字幕的片）。"""
+
+    listing = await run(["ffmpeg", "-hide_banner", "-filters"], timeout=PROBE_TIMEOUT_SECONDS)
+    if not any(line.split()[1:2] == ["subtitles"] for line in listing.decode().splitlines()):
+        raise MediaError("本机的 ffmpeg 没有 subtitles 滤镜（libass），烧不了字幕")
+
+
+def _filter_path(path: Path) -> str:
+    """路径原样写进滤镜参数；有要转义的字符就拒绝，不去猜转义。"""
+
+    text = str(path)
+    if not _SAFE_FILTER_PATH.fullmatch(text):
+        raise MediaError(f"路径里有滤镜参数要转义的字符: {text}")
+    return text
+
+
+def ass_document(captions: Sequence[FilmCaption], *, width: int, height: int) -> str:
+    """按统一样式把字幕写成一份 ASS：白字、深色描边、底部居中，字号随画面高度。
+
+    画布就是画面大小（``PlayResX/Y``），样式里的像素与画面一一对应。中文没有空格可断行，不靠
+    libass 自己折：按字宽估算，一句放不下就在这里均匀折成几行（``WrapStyle: 2`` 让 libass 只认
+    这些换行）。ASS 会把 ``{…}`` 当样式指令、把反斜杠当转义，文字里的这三个字符换成全角的同形字。"""
+
+    font_size = max(1, round(height * SUBTITLE_FONT_SIZE_RATIO))
+    outline = max(1, round(font_size * SUBTITLE_OUTLINE_RATIO))
+    margin_side = round(width * SUBTITLE_MARGIN_SIDE_RATIO)
+    margin_bottom = round(height * SUBTITLE_MARGIN_BOTTOM_RATIO)
+    line_width = max(font_size, width - 2 * margin_side)
+    header = "\n".join(
+        [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            f"PlayResX: {width}",
+            f"PlayResY: {height}",
+            "WrapStyle: 2",
+            "ScaledBorderAndShadow: yes",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,"
+            " BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle,"
+            " BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            # 颜色是 &HAABBGGRR：白字、黑色描边；Bold -1 用粗体，Alignment 2 是底部居中。
+            f"Style: Default,{SUBTITLE_FONT},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,"
+            f"&H00000000,-1,0,0,0,100,100,0,0,1,{outline},0,2,{margin_side},{margin_side},"
+            f"{margin_bottom},1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        ]
+    )
+    events = [
+        f"Dialogue: 0,{_ass_time(caption.start)},{_ass_time(caption.end)},Default,,0,0,0,,"
+        f"{_ass_text(caption.text, font_size=font_size, line_width=line_width)}"
+        for caption in captions
+    ]
+    return "\n".join([header, *events, ""])
+
+
+def _ass_time(seconds: float) -> str:
+    """ASS 的时刻写法 ``H:MM:SS.cc``（百分之一秒）。"""
+
+    centis = round(seconds * 100)
+    hours, rest = divmod(centis, 360_000)
+    minutes, rest = divmod(rest, 6_000)
+    whole, centi = divmod(rest, 100)
+    return f"{hours}:{minutes:02d}:{whole:02d}.{centi:02d}"
+
+
+def _ass_text(text: str, *, font_size: int, line_width: int) -> str:
+    """一句字幕的 ASS 文字：转掉 ASS 的特殊字符，按估算的字宽折行，行之间用 ``\\N``。"""
+
+    safe = text.replace("\\", "＼").replace("{", "｛").replace("}", "｝")
+    lines: list[str] = []
+    for paragraph in safe.splitlines():
+        lines += _wrap(paragraph.strip(), font_size=font_size, line_width=line_width)
+    return "\\N".join(line for line in lines if line)
+
+
+_WIDE_GLYPH: Final = 0.7
+_NARROW_GLYPH: Final = 0.45
+"""估算字宽用的系数（相对 ASS 的字号）。libass 让字体的行高等于字号，思源黑体（Noto Sans CJK）一个
+全角字的宽约是字号的 0.69；半角字母数字平均更窄，按 0.45 估，宁宽勿窄。"""
+
+
+def _wrap(paragraph: str, *, font_size: int, line_width: int) -> list[str]:
+    """把一段折成宽度相近的几行，每行不超过 ``line_width``。
+
+    先按估算的总宽定行数（每行留出一个字的余量），再按每个字的中点落在第几等分里分到那一行，
+    所以行数正好是算出来的那几行，各行一样宽，不会剩下孤零零的一个字。"""
+
+    widths = [
+        font_size
+        * (_WIDE_GLYPH if unicodedata.east_asian_width(char) in ("W", "F") else _NARROW_GLYPH)
+        for char in paragraph
+    ]
+    total = sum(widths)
+    if total <= line_width:
+        return [paragraph]
+    count = math.ceil(total / max(1.0, line_width - max(widths)))
+    share = total / count
+    lines = [""] * count
+    used = 0.0
+    for char, width in zip(paragraph, widths, strict=True):
+        lines[min(count - 1, int((used + width / 2) / share))] += char
+        used += width
+    return [line.strip() for line in lines]
 
 
 def _check_cut(cut: MediaCut) -> None:
@@ -574,8 +969,10 @@ async def _communicate(args: list[str], *, timeout: float) -> tuple[bytes, bytes
 __all__ = [
     "DOWNLOAD_TIMEOUT_SECONDS",
     "ENCODE_TIMEOUT_SECONDS",
+    "FILM_END_TOLERANCE",
     "MAX_AUDIO_BYTES",
     "MAX_IMAGE_BYTES",
+    "MAX_LOUDNESS_BOOST_DB",
     "MAX_VIDEO_BYTES",
     "MUSIC_LOUDNESS_LUFS",
     "MUSIC_LOUDNESS_RANGE",
@@ -585,20 +982,33 @@ __all__ = [
     "REMOTE_READ_TIMEOUT_SECONDS",
     "SPEECH_BITRATE",
     "SPEECH_SAMPLE_RATE",
+    "SUBTITLE_FONT",
+    "SUBTITLE_FONTS_DIR",
+    "SUBTITLE_FONT_SIZE_RATIO",
+    "SUBTITLE_MARGIN_BOTTOM_RATIO",
+    "SUBTITLE_MARGIN_SIDE_RATIO",
+    "SUBTITLE_OUTLINE_RATIO",
+    "FilmCaption",
+    "FilmMusic",
+    "FilmSound",
     "MediaCut",
     "MediaError",
+    "MusicTooShort",
     "NoAudioStream",
     "VideoProfile",
+    "ass_document",
     "cut_concat",
     "download",
     "extract_speech_audio",
     "fetched",
     "ffmpeg_available",
     "has_audio_stream",
+    "integrated_loudness",
     "normalize_music",
     "probe_duration_ms",
     "probe_keyframes",
     "probe_remote_duration_ms",
     "probe_video",
+    "render_film",
     "run",
 ]

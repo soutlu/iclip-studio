@@ -155,6 +155,20 @@ def synthesize_padded_music(
     return path.read_bytes()
 
 
+@functools.cache
+def has_subtitles_filter() -> bool:
+    """本机 ffmpeg 带 libass 的 ``subtitles`` 滤镜。Homebrew 的精简版 ffmpeg 没有它。"""
+
+    listing = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-filters"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+        timeout=TRIAL_TIMEOUT_SECONDS,
+    )
+    return any(line.split()[1:2] == ["subtitles"] for line in listing.stdout.decode().splitlines())
+
+
 async def duration_ms_of(content: bytes) -> int:
     """量一段视频字节的时长（毫秒），与服务端用的是同一个探测。"""
 
@@ -188,6 +202,7 @@ __all__ = [
     "decode_all",
     "duration_ms_of",
     "encodes_here",
+    "has_subtitles_filter",
     "keyframes_of",
     "local_codec",
     "multi_picture_jpeg",

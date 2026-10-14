@@ -26,11 +26,13 @@ from iclip.domains.generation.schemas import (
     OPERATION_COMPOSE,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
+    request_to_payload,
 )
 from iclip.domains.library.models import Scope, VideoCursor
 from iclip.domains.library.reports_pg import PgLibraryReports
 from iclip.domains.library.schemas import ShotGroupOut
 from tests.helpers.fork_lineage import three_level_fork
+from tests.helpers.generation import whole_film_request
 
 BASE = datetime(2026, 9, 20, 10, 0, tzinfo=UTC)
 NORA = "Nora.Ho"
@@ -827,4 +829,48 @@ async def test_audio_records_are_not_cards_or_versions(
     assert await ids(reports, Scope()) == before
     assert await reports.card_of(generated) is None
     assert await reports.card_of(uploaded) is None
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+async def test_whole_films_are_not_cards_or_versions_yet(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    """整片暂不进资料库：挂在有卡的对话上、完成得比卡面还晚，卡面、组与版都不变；挂在一段没有别的
+    成片的对话上，也不成卡。"""
+
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    in_c1, alone = uuid.uuid4(), uuid.uuid4()
+    request = json.dumps(
+        request_to_payload(
+            whole_film_request(
+                [{"sourceJobId": seed.a, "url": url("a"), "startMs": 0, "endMs": 1000}]
+            )
+        )
+    )
+    async with engine.begin() as conn:
+        for film, conversation in ((in_c1, seed.c1), (alone, uuid.uuid4())):
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                    " operation, provider, request, status, output_url, duration_ms,"
+                    " created_at, finished_at)"
+                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'ffmpeg',"
+                    " CAST(:request AS jsonb), :status, :output_url, 1000, :at, :at)"
+                ),
+                {
+                    "id": film,
+                    "owner": seed.nora,
+                    "conversation": conversation,
+                    "kind": KIND_VIDEO,
+                    "operation": OPERATION_COMPOSE,
+                    "request": request,
+                    "status": STATUS_COMPLETED,
+                    "output_url": url(f"film-{film}"),
+                    "at": at(500),
+                },
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert await reports.card_of(alone) is None
     assert shape(await reports.groups_of(seed.c1)) == before_c1
