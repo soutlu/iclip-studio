@@ -164,6 +164,7 @@ generation_jobs_table = Table(
     # 没有原作、区间、镜号、外部地址与产物地址；逐句结果只有它能有，完成了就必须有。
     # 种类与音频记录那条与迁移 0026 同名同式：音频是上传或生成的背景音乐，都没有来源、原作、区间、
     # 镜号、外部地址与水印地址；生成的挂对话，完成了必有产物地址与时长。
+    # 视频那条与迁移 0027 同名同式：多一种整片，是没有来源、原作、镜号与区间的 compose，必挂对话。
     CheckConstraint(
         "kind IN ('video', 'image', 'subtitle', 'audio')", name="ck_generation_jobs_kind"
     ),
@@ -186,6 +187,9 @@ generation_jobs_table = Table(
         " AND range_start_ms >= 0 AND range_end_ms > range_start_ms)"
         " OR (operation = 'compose' AND source_job_id IS NOT NULL AND root_job_id IS NOT NULL"
         " AND range_start_ms IS NULL AND range_end_ms IS NULL)"
+        " OR (operation = 'compose' AND source_job_id IS NULL AND root_job_id IS NULL"
+        " AND shot_index IS NULL AND range_start_ms IS NULL AND range_end_ms IS NULL"
+        " AND conversation_id IS NOT NULL)"
         " OR operation = 'upload'))",
         name="ck_generation_jobs_video_shape",
     ),
@@ -251,7 +255,7 @@ _MASTER: Final[ColumnElement[bool]] = and_(
         and_(_JOBS.operation == OPERATION_GENERATE, _JOBS.source_job_id.is_(None)),
     ),
 )
-"""成片：已完成、有地址的出片（没有来源的视频 generate）或合成；编辑段不是。"""
+"""成片：已完成、有地址的出片（没有来源的视频 generate）、合成或整片（都是 compose）；编辑段不是。"""
 
 
 class SqlGenerationRepository:

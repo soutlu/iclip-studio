@@ -53,9 +53,11 @@ _COMPOSE: Final = "compose"
 
 _MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND g.output_url IS NOT NULL
       AND (g.operation = 'compose' OR (g.operation = 'generate' AND g.source_job_id IS NULL))
+      AND NOT (g.operation = 'compose' AND g.source_job_id IS NULL)
       AND NOT (coalesce(g.metadata, '{}') ? 'referenceId')"""
-"""成片：已完成、有地址的出片（没有来源的视频 generate）或合成；按别名 ``g`` 拼进条件。参考视频的
-试生成（``metadata`` 带 ``referenceId``）只是拿来对照拆解的，不收。"""
+"""成片：已完成、有地址的出片（没有来源的视频 generate）或有基底的合成；按别名 ``g`` 拼进条件。
+整片（没有来源的 compose）暂不收：它不属于任何镜头组，也没有原作可取脚本。参考视频的试生成
+（``metadata`` 带 ``referenceId``）只是拿来对照拆解的，不收。"""
 
 _JOB_COLUMNS: Final = """g.id, g.operation, g.shot_index, g.root_job_id, g.output_url,
            g.watermark_output_url, g.duration_ms, g.finished_at, g.owner_user_id"""

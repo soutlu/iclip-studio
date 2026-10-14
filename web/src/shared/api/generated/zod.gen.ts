@@ -940,6 +940,16 @@ export const zMovingAveragesOut = z.object({
 })
 
 /**
+ * MusicGainPoint
+ *
+ * 音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。
+ */
+export const zMusicGainPoint = z.object({
+  atMs: z.int().gte(0).lte(120000),
+  gain: z.number().gte(0).lte(1),
+})
+
+/**
  * MusicIn
  *
  * 生成一段背景音乐的受理输入。
@@ -2622,6 +2632,57 @@ export const zReferenceFiltersOut = z.object({
 })
 
 /**
+ * WholeFilmMusicIn
+ *
+ * 整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。
+ */
+export const zWholeFilmMusicIn = z.object({
+  audioJobId: z.uuid(),
+  gain: z.array(zMusicGainPoint).min(1).max(500),
+  offsetMs: z.int().gte(0),
+})
+
+/**
+ * WholeFilmSegmentIn
+ *
+ * 整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。
+ */
+export const zWholeFilmSegmentIn = z.object({
+  endMs: z.int(),
+  sourceJobId: z.uuid(),
+  startMs: z.int().gte(0),
+})
+
+/**
+ * WholeFilmSubtitle
+ *
+ * 整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。
+ */
+export const zWholeFilmSubtitle = z.object({
+  endMs: z.int().gte(0).lte(120000),
+  startMs: z.int().gte(0).lte(120000),
+  text: z.string().min(1).max(200),
+})
+
+/**
+ * WholeFilmIn
+ *
+ * 一条整片的受理输入：一份时间线。各段按顺序首尾相接，整片总长就是各段时长之和。
+ *
+ * 字幕与音乐的时间都是整片时间，已由调用方算好，服务端照做。归属参数与别的提交端点一样，只是
+ * 对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进 ``request``。
+ */
+export const zWholeFilmIn = z.object({
+  conversationId: z.uuid(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  music: zWholeFilmMusicIn.nullish(),
+  segments: z.array(zWholeFilmSegmentIn).min(1).max(100),
+  subtitles: z.array(zWholeFilmSubtitle).max(500),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
  * Successful Response
  */
 export const zListKeysApiKeysGetResponse = zApiKeysEnvelope
@@ -3224,6 +3285,13 @@ export const zGetVideoTaskGenerationsVideoTaskIdGetPath = z.object({
  * Successful Response
  */
 export const zGetVideoTaskGenerationsVideoTaskIdGetResponse = zVideoTaskOut
+
+export const zSubmitWholeFilmGenerationsWholeFilmsPostBody = zWholeFilmIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitWholeFilmGenerationsWholeFilmsPostResponse = zGenerationEnvelope
 
 export const zGetGenerationGenerationsJobIdGetPath = z.object({
   job_id: z.uuid(),

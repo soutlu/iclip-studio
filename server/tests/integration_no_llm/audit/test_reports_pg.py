@@ -30,9 +30,11 @@ from iclip.domains.generation.schemas import (
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
+    request_to_payload,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
 from iclip.platform.db.engine import build_engine
+from tests.helpers.generation import whole_film_request
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 SARA = "Sara.Hong"
@@ -967,6 +969,76 @@ async def test_subtitle_records_do_not_count_toward_any_metric(
                     "finished_at": None if status == STATUS_SUBMITTED else at,
                 },
             )
+
+    assert await reports.overall(Scope()) == before
+    assert await reports.by_user(Scope()) == before_users
+    assert await executions_by_id(service) == before_executions
+
+
+async def test_whole_films_do_not_count_toward_any_metric(
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+) -> None:
+    """整片没有镜号，不是出片：C1 里一条完成（还被下载过）、一条失败、一条还在跑，镜、生成次数、有效镜、
+    片长与任务执行都不变。"""
+
+    before = await reports.overall(Scope())
+    before_users = await reports.by_user(Scope())
+    before_executions = await executions_by_id(service)
+    at = ago(minutes=30)
+    request = json.dumps(
+        request_to_payload(
+            whole_film_request(
+                [
+                    {
+                        "sourceJobId": seed.c1_shot1_video,
+                        "url": "https://example.test/c1-1.mp4",
+                        "startMs": 0,
+                        "endMs": 1000,
+                    }
+                ]
+            )
+        )
+    )
+    films = {status: uuid.uuid4() for status in (STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED)}
+    async with engine.begin() as conn:
+        for status, film in films.items():
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
+                    " kind, operation, provider, request, status, output_url, duration_ms,"
+                    " created_at, submitted_at, finished_at)"
+                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'ffmpeg',"
+                    " CAST(:request AS jsonb), :status, :output_url, :duration_ms,"
+                    " :at, :at, :finished_at)"
+                ),
+                {
+                    "id": film,
+                    "owner": seed.sara,
+                    "conversation": seed.c1,
+                    "kind": KIND_VIDEO,
+                    "operation": OPERATION_COMPOSE,
+                    "request": request,
+                    "status": status,
+                    "output_url": "https://example.test/film.mp4"
+                    if status == STATUS_COMPLETED
+                    else None,
+                    "duration_ms": 1000 if status == STATUS_COMPLETED else None,
+                    "at": at,
+                    "finished_at": None if status == STATUS_SUBMITTED else at,
+                },
+            )
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.tracking_events (id, name, job_id, user_id, occurred_at)"
+                " VALUES (:id, :name, :job_id, :user_id, now())"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "name": VIDEO_DOWNLOADED,
+                "job_id": films[STATUS_COMPLETED],
+                "user_id": seed.derek,
+            },
+        )
 
     assert await reports.overall(Scope()) == before
     assert await reports.by_user(Scope()) == before_users
