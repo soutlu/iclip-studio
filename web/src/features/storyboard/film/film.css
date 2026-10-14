@@ -75,15 +75,13 @@
   font-weight: 500;
   line-height: 1.75;
 }
-/* 没有图的出场元素：芯片里画一格空的缩略图位，和有图的一样高。 */
+/* 没有图的：芯片里画一格虚线空位，表示待补，和有图的一样高；与镜头头部没有图的机位图同一画法（storyboard.css「文案列」）。 */
 .film-chip .frame-chip-pill > .film-chip-empty {
   width: 18px;
   height: 18px;
   flex: none;
+  border: 1px dashed var(--color-outline-variant);
   border-radius: var(--radius-xs);
-  background: var(--color-surface-container);
-  outline: 0.5px solid var(--color-hairline);
-  outline-offset: -0.5px;
 }
 
 .film-line {
