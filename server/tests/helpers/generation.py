@@ -39,6 +39,7 @@ from iclip.domains.generation.provider import (
 )
 from iclip.domains.generation.queue import GenerationQueue, GenerationQueueSettings, ProviderLane
 from iclip.domains.generation.schemas import (
+    KIND_AUDIO,
     KIND_IMAGE,
     KIND_SUBTITLE,
     KIND_VIDEO,
@@ -46,6 +47,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_UPLOAD,
     GenerationRequest,
     ImageGenerationIn,
+    MusicRequest,
     SubtitleRequest,
     SubtitleSentence,
     VideoComposeRequest,
@@ -64,6 +66,7 @@ from tests.helpers.identity import InMemoryUserRepository
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
 FAKE_SUBTITLE_PROVIDER = "subtitle_fake"
+FAKE_MUSIC_PROVIDER = "music_fake"
 """替身 provider 的名字。队列按任务行上的 provider 列查表，替身与 make_job 得用同一套。"""
 
 
@@ -200,6 +203,8 @@ def make_job(
         if row_kind == KIND_VIDEO
         else FAKE_SUBTITLE_PROVIDER
         if row_kind == KIND_SUBTITLE
+        else FAKE_MUSIC_PROVIDER
+        if row_kind == KIND_AUDIO
         else FAKE_IMAGE_PROVIDER
     )
     return GenerationJob(
@@ -286,6 +291,16 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
         source_job_id=video.id,
         **fields,
     )
+
+
+MUSIC_PROMPT = "纯音乐，轻快的城市流行节拍，适合鞋款种草短视频的背景音乐"
+
+
+def make_music(**fields: Any) -> GenerationJob:
+    """生成背景音乐的一条音频记录：挂一段对话（默认新起一个 id），默认排队中。"""
+
+    fields.setdefault("conversation_id", uuid.uuid4())
+    return make_job(MusicRequest(model="qwen-audio-3.1-tts-next", prompt=MUSIC_PROMPT), **fields)
 
 
 def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
@@ -780,6 +795,7 @@ class MemoryObjectStore:
 
 __all__ = [
     "MEDIA_ENVS",
+    "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
     "FixedLineage",
     "InMemoryGenerationRepository",
@@ -795,6 +811,7 @@ __all__ = [
     "make_cut",
     "make_edit",
     "make_job",
+    "make_music",
     "make_subtitle",
     "make_upload",
     "stored_request",

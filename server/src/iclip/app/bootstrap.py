@@ -70,6 +70,7 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.module import (
     GenerationModule,
     ImageModelConfig,
+    MusicConfig,
     SubtitleConfig,
     build_generation_module,
 )
@@ -333,6 +334,14 @@ def _generation_module(
         )
         if settings.subtitle is not None
         else None,
+        music=MusicConfig(
+            url=settings.music.url,
+            api_key=settings.music.api_key,
+            concurrency=settings.music.concurrency,
+            timeout_seconds=settings.music.timeout_seconds,
+        )
+        if settings.music is not None
+        else None,
     )
 
 
@@ -428,6 +437,13 @@ def build_app(
             "字幕识别未启用",
             media_generation=settings.media_generation is not None,
             requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
+        )
+    if settings.media_generation is None or settings.media_generation.music is None:
+        # 同上：整片编辑器里生成背景音乐会被拒，上传音乐不受影响。
+        _logger.warning(
+            "音乐生成未启用",
+            media_generation=settings.media_generation is not None,
+            requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
         )
     # 图片信息查询、素材下载与拆解请求共用 HTTP 连接池。
     http_client = httpx.AsyncClient(follow_redirects=True)

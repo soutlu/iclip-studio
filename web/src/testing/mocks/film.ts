@@ -322,6 +322,8 @@ export const seedMockFilm = (
   films.set(conversationId, {
     filmVersion,
     groups: problems > 0 ? [] : placeViews([group], picks),
+    // 文件页看到的工程原文里没有「配乐」那段。
+    musicDescription: null,
     problems,
     runVersion,
   })

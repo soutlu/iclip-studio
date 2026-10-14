@@ -1,5 +1,5 @@
 """媒体生成模块装配。图片按配置里声明的那几家逐个装，视频固定一家（出片与编辑段都走它），本地
-合成一家，字幕识别开通时再加一家。"""
+合成一家，字幕识别与生成背景音乐开通时各再加一家。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageSettings,
 )
 from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
+from iclip.domains.generation.music import MUSIC_MODEL, MusicProviderSettings, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
@@ -34,6 +35,7 @@ from iclip.domains.generation.service import (
     ClearCompletion,
     ConversationLineage,
     GenerationService,
+    MusicTarget,
     SubtitleTarget,
 )
 from iclip.domains.generation.subtitles import (
@@ -75,6 +77,17 @@ class SubtitleConfig:
     timeout_seconds: float
 
 
+@dataclass(frozen=True, slots=True)
+class MusicConfig:
+    """生成背景音乐的装配输入；模型钉在适配器里，不在这里。"""
+
+    url: str
+    api_key: str
+    concurrency: int
+    """生成那条队列同时最多跑几条。"""
+    timeout_seconds: float
+
+
 @dataclass(frozen=True)
 class GenerationModule:
     routers: tuple[Any, ...]
@@ -107,9 +120,11 @@ def build_generation_module(
     fetch_url: Callable[[str], str],
     queue_settings: GenerationQueueSettings | None = None,
     subtitles: SubtitleConfig | None = None,
+    music: MusicConfig | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
     subtitle_transport: httpx.AsyncBaseTransport | None = None,
+    music_transport: httpx.AsyncBaseTransport | None = None,
 ) -> GenerationModule:
     """装配 Provider 与队列；transport 支持测试替身，queue_connector 由组合根选择数据库驱动。
 
@@ -119,7 +134,8 @@ def build_generation_module(
     下载素材的那一刻（本桶对象走内网），落库与交给上游的地址不经过它。
 
     ``subtitles`` 给了就开通字幕识别：多一条识别 lane，成片完成后自动排一条字幕记录；为 None 时
-    两者都没有，手动识别 422。"""
+    两者都没有，手动识别 422。``music`` 给了就开通生成背景音乐：多一条生成 lane，产物经对象存储
+    转存；为 None 时提交 422。"""
 
     if not image_models:
         raise RuntimeError("媒体生成开着却一家图片模型都没声明")
@@ -164,6 +180,19 @@ def build_generation_module(
         # 识别要下载成片、本地抽音轨再等接口，单开一条 lane，不占出片与合成的槽位。
         subtitle_lanes = (ProviderLane(subtitle_provider, subtitles.concurrency),)
         subtitle_target = SubtitleTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
+    music_lanes: tuple[ProviderLane, ...] = ()
+    music_target: MusicTarget | None = None
+    if music is not None:
+        music_provider = QwenMusicProvider(
+            MusicProviderSettings(
+                url=music.url, api_key=music.api_key, timeout_seconds=music.timeout_seconds
+            ),
+            object_store=object_store,
+            transport=music_transport,
+        )
+        # 一条要等模型生成、再下载、两遍 ffmpeg 规整，单开一条 lane，不占别家的槽位。
+        music_lanes = (ProviderLane(music_provider, music.concurrency),)
+        music_target = MusicTarget(provider=music_provider.name, model=MUSIC_MODEL)
 
     async def transcribe_completed(job: GenerationJob) -> None:
         # 队列先于服务建好，服务又要往队列里排；靠闭包在调用时才取服务。
@@ -181,6 +210,7 @@ def build_generation_module(
                 for provider, model in zip(image_providers, image_models, strict=True)
             ),
             *subtitle_lanes,
+            *music_lanes,
         ),
         connector=queue_connector,
         settings=queue_settings,
@@ -199,6 +229,7 @@ def build_generation_module(
         lineage=lineage,
         probe_duration_ms=probe_duration_ms,
         subtitles=subtitle_target,
+        music=music_target,
     )
     return GenerationModule(
         routers=(create_generations_router(service, act_as=act_as),),
@@ -266,6 +297,7 @@ __all__ = [
     "IMAGE_MODEL_SPECS",
     "GenerationModule",
     "ImageModelConfig",
+    "MusicConfig",
     "SubtitleConfig",
     "build_generation_module",
 ]

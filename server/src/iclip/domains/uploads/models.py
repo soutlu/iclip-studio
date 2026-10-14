@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, Literal
 
-MediaKind = Literal["image", "video"]
+MediaKind = Literal["image", "video", "audio"]
 
 UPLOAD_TYPES: Final[Mapping[str, tuple[MediaKind, str]]] = {
     "image/jpeg": ("image", "jpg"),
@@ -16,12 +16,16 @@ UPLOAD_TYPES: Final[Mapping[str, tuple[MediaKind, str]]] = {
     "image/webp": ("image", "webp"),
     "video/mp4": ("video", "mp4"),
     "video/quicktime": ("video", "mov"),
+    "audio/mpeg": ("audio", "mp3"),
+    "audio/wav": ("audio", "wav"),
+    "audio/mp4": ("audio", "m4a"),
 }
-"""MIME 类型、媒体种类与扩展名统一维护，确保支持的类型都有对应的对象后缀。"""
+"""MIME 类型、媒体种类与扩展名统一维护，确保支持的类型都有对应的对象后缀。音频是整片的背景音乐。"""
 
 MAX_BYTES: Final[Mapping[MediaKind, int]] = {
     "image": 16 * 1024 * 1024,
     "video": 512 * 1024 * 1024,
+    "audio": 50 * 1024 * 1024,
 }
 """确认时校验大小上限；预签名 PUT 不限制上传长度，超限对象不交回地址。"""
 

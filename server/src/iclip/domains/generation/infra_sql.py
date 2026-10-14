@@ -160,9 +160,13 @@ generation_jobs_table = Table(
     # 编辑段必有来源、原作与区间，合成必有来源与原作、没有区间；帧图编辑两种来源至多一个，
     # 切图必有库内来源，上传没有来源、不挂对话；切图与上传没有请求、创建即完成。
     # 请求那条的 IS NOT NULL 不能省：jsonb_typeof(NULL) 让 CHECK 直接放行。
-    # 种类与字幕记录的两条与迁移 0025 同名同式：字幕记录是调模型的 generate，来源是被识别的视频，
+    # 字幕记录的两条与迁移 0025 同名同式：字幕记录是调模型的 generate，来源是被识别的视频，
     # 没有原作、区间、镜号、外部地址与产物地址；逐句结果只有它能有，完成了就必须有。
-    CheckConstraint("kind IN ('video', 'image', 'subtitle')", name="ck_generation_jobs_kind"),
+    # 种类与音频记录那条与迁移 0026 同名同式：音频是上传或生成的背景音乐，都没有来源、原作、区间、
+    # 镜号、外部地址与水印地址；生成的挂对话，完成了必有产物地址与时长。
+    CheckConstraint(
+        "kind IN ('video', 'image', 'subtitle', 'audio')", name="ck_generation_jobs_kind"
+    ),
     CheckConstraint(
         "operation IN ('generate', 'compose', 'cut', 'upload')",
         name="ck_generation_jobs_operation",
@@ -224,6 +228,15 @@ generation_jobs_table = Table(
     CheckConstraint(
         "sentences IS NULL OR (kind = 'subtitle' AND jsonb_typeof(sentences) = 'array')",
         name="ck_generation_jobs_sentences",
+    ),
+    CheckConstraint(
+        "kind <> 'audio' OR (operation IN ('generate', 'upload')"
+        " AND source_job_id IS NULL AND source_url IS NULL AND root_job_id IS NULL"
+        " AND shot_index IS NULL AND range_start_ms IS NULL AND range_end_ms IS NULL"
+        " AND watermark_output_url IS NULL"
+        " AND (operation <> 'generate' OR (conversation_id IS NOT NULL"
+        " AND (status <> 'completed' OR (output_url IS NOT NULL AND duration_ms IS NOT NULL)))))",
+        name="ck_generation_jobs_audio_shape",
     ),
 )
 

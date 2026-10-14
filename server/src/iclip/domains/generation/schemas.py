@@ -1,9 +1,9 @@
 """生成请求的 HTTP 与持久化类型定义。
 
-落库的请求有四种形状：视频（出片与编辑段）照抄上游异步接口（snake_case），图片、合成与字幕识别
-是本系统自己的（camelCase）。持久化存的就是请求自己的字段名，读取时按 (kind, operation) 经
-request_from_payload 重新校验，非法数据直接报错。编辑段、合成与手动识别字幕的受理输入另有自己的
-类型，受理时换成落库的那一种。切图与上传没有请求。"""
+落库的请求有五种形状：视频（出片与编辑段）照抄上游异步接口（snake_case），图片、合成、字幕识别与
+生成背景音乐是本系统自己的（camelCase）。持久化存的就是请求自己的字段名，读取时按 (kind, operation)
+经 request_from_payload 重新校验，非法数据直接报错。编辑段、合成、手动识别字幕与生成背景音乐的
+受理输入另有自己的类型，受理时换成落库的那一种。切图与上传没有请求。"""
 
 from __future__ import annotations
 
@@ -55,6 +55,8 @@ KIND_VIDEO: Final = "video"
 KIND_IMAGE: Final = "image"
 KIND_SUBTITLE: Final = "subtitle"
 """字幕记录：识别一条成片的口播，结果是逐句文字与时间，不是媒体地址。"""
+KIND_AUDIO: Final = "audio"
+"""音频记录：用户上传的音乐（upload），或生成的背景音乐（generate）。"""
 
 OPERATION_GENERATE: Final = "generate"
 """调模型：出片、编辑段、图片生成都是它。"""
@@ -530,20 +532,70 @@ def sentences_from_payload(payload: Any) -> tuple[SubtitleSentence, ...] | None:
         raise ValidationFailed(f"字幕结果的形状不合法: {exc}") from exc
 
 
-GenerationRequest = VideoGenerationIn | ImageGenerationIn | VideoComposeRequest | SubtitleRequest
+MAX_MUSIC_PROMPT_CHARS: Final = 3000
+"""生成背景音乐的提示词上限：音乐模型 ``text_prompt`` 的长度上限，超了在受理时就拒。"""
+
+MusicPrompt = Annotated[str, Field(min_length=1, max_length=MAX_MUSIC_PROMPT_CHARS)]
+
+
+class MusicIn(CamelModel):
+    """生成一段背景音乐的受理输入。
+
+    ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
+    一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+    它，不进 ``request``。"""
+
+    prompt: MusicPrompt
+    """音乐的描述：工程文件里「配乐」的原文，或用户写的一句。"""
+    user_name: UserName | None = None
+    """规则同出片的 ``user_name``。"""
+
+    conversation_id: uuid.UUID
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+    _check_prompt = field_validator("prompt")(_nonblank)
+
+
+class MusicRequest(CamelModel):
+    """一次生成背景音乐交给执行方的输入：用哪个模型、发出的提示词，以及向模型要的音频格式。
+
+    执行方拿到模型给的 wav 后去掉首尾静音、统一响度，编成 m4a 存进本系统的桶；存下的格式看
+    ``outputUrl``，不在这里。"""
+
+    kind: ClassVar[GenerationKind] = KIND_AUDIO
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    model: ModelName
+    prompt: MusicPrompt
+    """原样发给模型的 ``text_prompt``，就是受理时收到的那一段。"""
+    format: Literal["wav"] = "wav"
+    sample_rate: Literal[48000] = 48000
+    channels: Literal[2] = 2
+
+
+GenerationRequest = (
+    VideoGenerationIn | ImageGenerationIn | VideoComposeRequest | SubtitleRequest | MusicRequest
+)
 
 _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_GENERATE): TypeAdapter(VideoGenerationIn),
     (KIND_IMAGE, OPERATION_GENERATE): TypeAdapter(ImageGenerationIn),
     (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
     (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
+    (KIND_AUDIO, OPERATION_GENERATE): TypeAdapter(MusicRequest),
 }
 """编辑段落库的仍是 ``VideoGenerationIn``：它与出片的区别在来源列上，不在请求形状上。"""
 
 _WITHOUT_REQUEST: Final = frozenset(
-    {(KIND_IMAGE, OPERATION_CUT), (KIND_IMAGE, OPERATION_UPLOAD), (KIND_VIDEO, OPERATION_UPLOAD)}
+    {
+        (KIND_IMAGE, OPERATION_CUT),
+        (KIND_IMAGE, OPERATION_UPLOAD),
+        (KIND_VIDEO, OPERATION_UPLOAD),
+        (KIND_AUDIO, OPERATION_UPLOAD),
+    }
 )
-"""创建即完成、没有请求的那几种行：切图只有图片，上传图片与视频都有。"""
+"""创建即完成、没有请求的那几种行：切图只有图片，上传图片、视频与音频都有。"""
 
 
 @overload
@@ -617,8 +669,8 @@ class GenerationOut(CamelModel):
     """视频的水印版地址；图片与合成没有这一份，恒为空。"""
     error_message: str | None
     duration_ms: int | None
-    """产物实际多长，毫秒，完成后才有：视频（出片与编辑段）取上游实测的时长，合成是本系统量的，
-    图片为空；上游没给也为空。"""
+    """产物实际多长，毫秒，完成后才有：视频（出片与编辑段）取上游实测的时长，合成与生成的背景音乐
+    是本系统量的，图片与上传为空；上游没给也为空。"""
     clip_stage: ClipStage | None
     """在途的本地加工跑到哪一步：合成的取素材、拼接、上传。排队中、已有结论都为空；编辑段与
     别的记录没有本地加工，恒为空。"""
@@ -768,12 +820,14 @@ __all__ = [
     "CLIP_PROCESSING",
     "CLIP_UPLOADING",
     "IMAGE_MAX_REFERENCES",
+    "KIND_AUDIO",
     "KIND_IMAGE",
     "KIND_SUBTITLE",
     "KIND_VIDEO",
     "MAX_COMPOSE_SEGMENTS",
     "MAX_METADATA_CHARS",
     "MAX_MODEL_CHARS",
+    "MAX_MUSIC_PROMPT_CHARS",
     "MAX_PROMPT_CHARS",
     "MAX_REFERENCE_URLS",
     "MAX_USER_NAME_CHARS",
@@ -802,6 +856,8 @@ __all__ = [
     "ImageModelOut",
     "ImageModelsOut",
     "Metadata",
+    "MusicIn",
+    "MusicRequest",
     "SubtitleIn",
     "SubtitleRequest",
     "SubtitleSentence",

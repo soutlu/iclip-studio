@@ -750,6 +750,7 @@ export const zFilmVideoGenerationIn = z.object({
 export const zFilmViewOut = z.object({
   filmVersion: z.int(),
   groups: z.array(zFilmGroupOut),
+  musicDescription: z.string().nullable(),
   problems: z.int(),
   runVersion: z.int().nullable(),
 })
@@ -936,6 +937,23 @@ export const zMovingAveragesOut = z.object({
   tokensPerDelivery: zMovingAverageOut,
   totalTokens: zMovingAverageOut.nullable(),
   upstreamSeconds: zMovingAverageOut,
+})
+
+/**
+ * MusicIn
+ *
+ * 生成一段背景音乐的受理输入。
+ *
+ * ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
+ * 一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+ * 它，不进 ``request``。
+ */
+export const zMusicIn = z.object({
+  conversationId: z.uuid(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  prompt: z.string().min(1).max(3000),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
 })
 
 /**
@@ -1373,7 +1391,7 @@ export const zGenerationOut = z.object({
   errorMessage: z.string().nullable(),
   finishedAt: z.iso.datetime().nullish(),
   id: z.uuid(),
-  kind: z.enum(['video', 'image', 'subtitle']),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
   operation: z.enum(['generate', 'compose', 'cut', 'upload']),
   outputUrl: z.string().nullable(),
@@ -3133,7 +3151,7 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image', 'subtitle']).nullish(),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio']).nullish(),
   operation: z.enum(['generate', 'compose', 'cut', 'upload']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
@@ -3157,6 +3175,13 @@ export const zSubmitImageGenerationsImagePostResponse = zGenerationEnvelope
  * Successful Response
  */
 export const zListImageModelsGenerationsImageModelsGetResponse = zImageModelsOut
+
+export const zSubmitMusicGenerationsMusicPostBody = zMusicIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitMusicGenerationsMusicPostResponse = zGenerationEnvelope
 
 export const zSubmitSubtitleGenerationsSubtitlesPostBody = zSubtitleIn
 
