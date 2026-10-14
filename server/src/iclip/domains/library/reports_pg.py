@@ -1,4 +1,5 @@
-"""资料库的 Postgres 查询：跨生成记录、对话、用户三张表只读，不建表、不写入。
+"""资料库的 Postgres 查询：跨生成记录、对话、用户三张表只读，不建表、不写入。成片卡与整片卡
+各一组查询，整片卡的在文件后部。
 
 SQL 与本模块里的 'video' / 'generate' / 'compose' / 'completed' 镜像生成域的 KIND_VIDEO /
 OPERATION_GENERATE / OPERATION_COMPOSE / STATUS_COMPLETED（按表名直接查，不 import 业务模块）；
@@ -25,8 +26,8 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.shot_prompt import parse_shot_prompt
-from iclip.domains.library.models import Scope, VideoCursor
-from iclip.domains.library.repository import CardRow
+from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.repository import CardRow, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     FaceOut,
     LibraryAuthorOut,
@@ -36,6 +37,8 @@ from iclip.domains.library.schemas import (
     ShotGroupOut,
     TakeOut,
     VersionOut,
+    WholeFilmCardOut,
+    WholeFilmVersionOut,
 )
 
 _COMPOSE: Final = "compose"
@@ -55,9 +58,9 @@ _MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND g.output_url
       AND (g.operation = 'compose' OR (g.operation = 'generate' AND g.source_job_id IS NULL))
       AND NOT (g.operation = 'compose' AND g.source_job_id IS NULL)
       AND NOT (coalesce(g.metadata, '{}') ? 'referenceId')"""
-"""成片：已完成、有地址的出片（没有来源的视频 generate）或有基底的合成；按别名 ``g`` 拼进条件。
-整片（没有来源的 compose）暂不收：它不属于任何镜头组，也没有原作可取脚本。参考视频的试生成
-（``metadata`` 带 ``referenceId``）只是拿来对照拆解的，不收。"""
+"""成片卡收的成片：已完成、有地址的出片（没有来源的视频 generate）或有基底的合成；按别名 ``g``
+拼进条件。整片（没有来源的 compose）不收：它不属于任何镜头组，也没有原作可取脚本，另有整片页。
+参考视频的试生成（``metadata`` 带 ``referenceId``）只是拿来对照拆解的，不收。"""
 
 _JOB_COLUMNS: Final = """g.id, g.operation, g.shot_index, g.root_job_id, g.output_url,
            g.watermark_output_url, g.duration_ms, g.finished_at, g.owner_user_id"""
@@ -214,6 +217,59 @@ GROUP BY c.user_name
 ORDER BY n DESC, c.user_name""",
 )
 
+# ---------------------------------------------------------------------------
+# 整片页：一段对话一张卡，只看对话自己的整片，不走血缘（继承来的整片不算）。整片必挂对话；
+# 对话 id 指向不存在的对话时没有卡可挂，不收。不看对话的删除标记。
+# ---------------------------------------------------------------------------
+
+_WHOLE_FILM: Final = """g.kind = 'video' AND g.operation = 'compose' AND g.source_job_id IS NULL
+      AND g.status = 'completed' AND g.output_url IS NOT NULL"""
+"""整片页收的整片：已完成、有地址、没有来源的视频 compose；按别名 ``g`` 拼进条件。"""
+
+_FILM_CARDS: Final = f"""
+WITH film_cards AS (
+    SELECT c.id, c.title, c.owner_user_id AS conversation_owner,
+           c.deleted_at IS NOT NULL AS conversation_deleted,
+           u.username AS user_name, max(g.finished_at) AS face_finished_at
+    FROM iclip.generation_jobs g
+    JOIN iclip.conversations c ON c.id = g.conversation_id
+    JOIN iclip.users u ON u.id = c.owner_user_id
+    WHERE {_WHOLE_FILM}
+    GROUP BY c.id, u.id
+)"""
+
+_FILM_FILTER: Final = r"""
+WHERE (CAST(:user_name AS text) IS NULL OR f.user_name = CAST(:user_name AS text))
+  AND (CAST(:since AS timestamptz) IS NULL OR f.face_finished_at >= CAST(:since AS timestamptz))
+  AND (CAST(:until AS timestamptz) IS NULL OR f.face_finished_at < CAST(:until AS timestamptz))
+  AND (CAST(:pattern AS text) IS NULL OR f.title ILIKE CAST(:pattern AS text) ESCAPE '\')"""
+
+_WHOLE_FILMS: Final = text(
+    _FILM_CARDS
+    + f""",
+page AS (
+    SELECT f.* FROM film_cards f{_FILM_FILTER}
+      AND (CAST(:after_at AS timestamptz) IS NULL
+           OR (f.face_finished_at, f.id)
+              < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
+    ORDER BY f.face_finished_at DESC, f.id DESC
+    LIMIT :limit
+)
+SELECT p.id AS conversation_id, p.title, p.conversation_owner, p.conversation_deleted,
+       p.user_name, g.id AS job_id, g.output_url, g.watermark_output_url, g.duration_ms,
+       g.finished_at, vu.username AS version_user_name
+FROM page p
+JOIN iclip.generation_jobs g ON g.conversation_id = p.id
+JOIN iclip.users vu ON vu.id = g.owner_user_id
+WHERE {_WHOLE_FILM}
+ORDER BY p.face_finished_at DESC, p.id DESC, g.finished_at, g.id"""
+)
+"""当页的卡连同各自的全部版本，一版一行：卡按卡面倒序，卡内按完成先后。"""
+
+_COUNT_WHOLE_FILMS: Final = text(
+    _FILM_CARDS + "\nSELECT count(*) AS n FROM film_cards f" + _FILM_FILTER
+)
+
 
 class _StoredCut(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
@@ -366,6 +422,46 @@ def _scope_params(scope: Scope) -> dict[str, Any]:
     }
 
 
+def _film_scope_params(scope: WholeFilmScope) -> dict[str, Any]:
+    return {
+        "user_name": scope.user_name,
+        "since": scope.since,
+        "until": scope.until,
+        "pattern": None if scope.q is None else _like_pattern(scope.q),
+    }
+
+
+def _film_cards_of(rows: Sequence[RowMapping]) -> list[WholeFilmCardRow]:
+    """把一版一行的结果按卡收拢；行已按卡、再按卡内完成先后排好，最后一版就是卡面。"""
+
+    cards: dict[uuid.UUID, tuple[RowMapping, list[WholeFilmVersionOut]]] = {}
+    for row in rows:
+        version = WholeFilmVersionOut(
+            job_id=row["job_id"],
+            output_url=row["output_url"],
+            watermark_output_url=row["watermark_output_url"],
+            duration_ms=row["duration_ms"],
+            finished_at=row["finished_at"],
+            user_name=row["version_user_name"],
+        )
+        cards.setdefault(row["conversation_id"], (row, []))[1].append(version)
+    return [
+        WholeFilmCardRow(
+            card=WholeFilmCardOut(
+                conversation_id=head["conversation_id"],
+                can_open_conversation=False,
+                title=head["title"],
+                user_name=head["user_name"],
+                face=versions[-1],
+                versions=versions,
+            ),
+            conversation_owner=head["conversation_owner"],
+            conversation_deleted=bool(head["conversation_deleted"]),
+        )
+        for head, versions in cards.values()
+    ]
+
+
 class PgLibraryReports:
     """``LibraryReports`` 的 Postgres 实现。"""
 
@@ -403,6 +499,24 @@ class PgLibraryReports:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(_AUTHORS)).mappings().all()
         return [LibraryAuthorOut(user_name=row["user_name"], count=int(row["n"])) for row in rows]
+
+    async def whole_films(
+        self, scope: WholeFilmScope, *, limit: int, after: VideoCursor | None
+    ) -> Sequence[WholeFilmCardRow]:
+        params = {
+            **_film_scope_params(scope),
+            "after_at": after.at if after else None,
+            "after_id": after.video_id if after else None,
+            "limit": limit,
+        }
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(_WHOLE_FILMS, params)).mappings().all()
+        return _film_cards_of(rows)
+
+    async def count_whole_films(self, scope: WholeFilmScope) -> int:
+        async with self._engine.connect() as conn:
+            result = await conn.execute(_COUNT_WHOLE_FILMS, _film_scope_params(scope))
+            return int(result.scalar_one())
 
 
 __all__ = ["PgLibraryReports"]

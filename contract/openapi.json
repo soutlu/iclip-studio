@@ -9310,6 +9310,104 @@
         "title": "VideoTypeCountOut",
         "type": "object"
       },
+      "WholeFilmCardOut": {
+        "additionalProperties": false,
+        "description": "资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。",
+        "properties": {
+          "canOpenConversation": {
+            "title": "Canopenconversation",
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "face": {
+            "$ref": "#/components/schemas/WholeFilmVersionOut"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmVersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversationId",
+          "canOpenConversation",
+          "title",
+          "userName",
+          "face",
+          "versions"
+        ],
+        "title": "WholeFilmCardOut",
+        "type": "object"
+      },
+      "WholeFilmCardsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmCardOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total"
+        ],
+        "title": "WholeFilmCardsOut",
+        "type": "object"
+      },
       "WholeFilmIn": {
         "additionalProperties": false,
         "description": "一条整片的受理输入：一份时间线。各段按顺序首尾相接，整片总长就是各段时长之和。\n\n字幕与音乐的时间都是整片时间，已由调用方算好，服务端照做。归属参数与别的提交端点一样，只是\n对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进 ``request``。",
@@ -9480,6 +9578,69 @@
           "text"
         ],
         "title": "WholeFilmSubtitle",
+        "type": "object"
+      },
+      "WholeFilmVersionOut": {
+        "additionalProperties": false,
+        "description": "整片卡里的一版：这段对话自己的一条已完成整片。",
+        "properties": {
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "title": "Finishedat",
+            "type": "string"
+          },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
+          "outputUrl": {
+            "title": "Outputurl",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "watermarkOutputUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watermarkoutputurl"
+          }
+        },
+        "required": [
+          "jobId",
+          "outputUrl",
+          "watermarkOutputUrl",
+          "durationMs",
+          "finishedAt",
+          "userName"
+        ],
+        "title": "WholeFilmVersionOut",
         "type": "object"
       }
     },
@@ -13835,6 +13996,148 @@
           }
         ],
         "summary": "Video",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/whole-films": {
+      "get": {
+        "description": "全站的整片，一段对话一张卡，只算这段对话自己的；卡面整片完成得晚的排前面。\n\n每张卡带齐全部版本，没有详情口。``userName`` 筛卡的作者（对话属主）；时间窗\n``[since, until)`` 作用在卡面整片的完成时刻上；``q`` 按字面包含匹配对话标题。\n``total`` 只在第一页给。",
+        "operationId": "whole_films_library_whole_films_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userName",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 150,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmCardsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Whole Films",
         "tags": [
           "library"
         ]

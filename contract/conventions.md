@@ -436,7 +436,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 记录是 video / compose，没有 `sourceJobId`、`rootJobId`、`shotIndex` 与区间，执行方与合成同一条本地队列。`request` 是 `{ segments, subtitles, music, render }`：每段与音乐都多一个服务端按出处填的 `url`，字幕与曲线原样；`render` 是受理时定下的声音参数 `{ speechLoudnessLufs, musicLoudnessLufs, loudnessLufs, peakDbfs, segmentFadeMs, musicFadeOutMs }`（现为 -16、-16、-14、-1.5、50、2000）。和合成一样，带 `conversationId` 的提交会抹掉收尾标记。
 - 渲染：画幅与帧率取第一段那条成片，别的段等比缩放、补黑边去适配，关键帧放法同合成。每条来源先量一次整体响度，各段原声按差值统一到 `speechLoudnessLufs`，两端各淡入淡出 `segmentFadeMs`，没有音轨的段补静音；音乐先量整体响度统一到 `musicLoudnessLufs`，从 `offsetMs` 起取整片那么长，按 `gain` 调，结尾 `musicFadeOutMs` 淡出；两路相加（不取平均）后统一到 `loudnessLufs`，限幅到 `peakDbfs`（采样峰值）。统一响度时最多放大 20 dB，整段静音的不调。字幕写成 ASS 用 libass 烧进画面：白字、黑色描边、粗体、底部居中，字号是画面高度的 4.5%，底边留画面高度的 12%，按估算字宽在服务端均匀折行；文字里的 `{`、`}`、`\` 换成全角的同形字。产物是 H.264 + AAC 的 mp4，存进本系统的桶，没有水印版。
 - 失败是终态，不自动重试：取不到某段的成片或音乐 `MEDIA_SOURCE_UNREACHABLE`，音乐从起点往后不够整片那么长 `MUSIC_TOO_SHORT`（不循环补长），段的结尾超出素材实际时长（容差 50 毫秒）或别的渲染失败 `MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
-- 整片是成片：完成后照常自动排一条字幕记录，也能手动识别（见下文「字幕记录」），是 `video.downloaded` 的主语，算对话的 `activity.videoGeneration`。它不能当编辑段与合成的基底（`422`），也不能剪进另一条整片；不进任何镜头组，不计审计口径（§12），资料库暂不收（§13）。按 `GET /generations?conversationId=&kind=video&operation=compose` 列出对话的合成与整片，`sourceJobId` 为空的是整片。
+- 整片是成片：完成后照常自动排一条字幕记录，也能手动识别（见下文「字幕记录」），是 `video.downloaded` 的主语，算对话的 `activity.videoGeneration`。它不能当编辑段与合成的基底（`422`），也不能剪进另一条整片；不进任何镜头组，本身不计审计口径，下载它按各段出处计镜（§12）；资料库的成片卡不收它，另在整片页列出（§13）。按 `GET /generations?conversationId=&kind=video&operation=compose` 列出对话的合成与整片，`sourceJobId` 为空的是整片。
 
 ### 来源与原作
 
@@ -530,14 +530,15 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 13. 资料库 (Library)
 
-全站成片连同出片时脚本的三个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张卡是一段对话的分镜，装着这段对话读得到的全部成片。
+全站成片连同出片时脚本、以及全站整片的四个只读端点，都要 `generation:read`。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张成片卡是一段对话的分镜，装着这段对话读得到的全部成片；一张整片卡装着一段对话自己的全部整片。
 
 - **可见范围**：任何持 `generation:read` 的人都能看到全部卡、脚本与来源对话。卡的 `id` 是对话 id，不挂对话（对话不存在也算）的卡是那条出片的 id。`conversationId` 对所有人都给，不挂对话为 `null`；`title`、`agentId`、`taskId` 取自来源对话，对话删了照给。`canOpenConversation` 是这位读者能不能打开那段对话，口径同 §6 的对话可读范围：谁读得到那段对话，谁就能打开；治理者含墓碑。不挂对话的卡恒为 `false`。
 - `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面成片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面成片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的成片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
 - **卡的字段**：`face` 是卡面那一版，即对话自己最新的成片；`take` 是它对应的出片（出片是它自己，合成沿原作取，原作可以在祖先对话里）；`userName` 是卡的作者，即对话属主的用户名，不挂对话的是出片属主的；`groupCount` / `versionCount` 是卡里有几个镜头组、一共几版，都含继承来的。
 - **版本的形状**（`face` 与详情里的每一版）：`kind` 是 `take`（出片）或 `composite`（合成）；`jobId` 是那条成片；`watermarkOutputUrl` 合成恒为 `null`；`durationMs` 是实际时长（毫秒），出片取上游实测的、合成是本系统量的，上游没给为 `null`；`finishedAt` 是完成时刻；`userName` 是那条成片属主的用户名。详情里的每一版另带 `take`，合成的 `take` 沿原作取。`take.prompt` 是发给模型的原文；`take.script` 是镜头组（`globalSettings` 加 `timeline[]`，每镜 `start`、`end`、`prompt`、`imageIndexes`），为 `null` 表示纯文本。`imageIndexes` 指向 `referenceImageUrls` 的第 N 张。画面尺寸不在数据里，占位比例按 `aspectRatio`。账号没有用户名时各处 `userName` 为 `null`。
 - `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、`canOpenConversation` 为真、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 三条都成立才是 `true`。列表的卡上没有这一项。
-- `GET /library/authors` 列作者与各自的卡数（`userName`、`count`），多的在前、同数按名字，不受筛选影响。
+- `GET /library/authors` 列作者与各自的卡数（`userName`、`count`），多的在前、同数按名字，不受筛选影响。只数成片卡。
+- `GET /library/whole-films` 列整片卡，一段对话一张，只算这段对话自己的整片。卡的 `conversationId` 就是卡 id，`title`、`canOpenConversation` 与 `userName`（卡的作者，即对话属主）口径同成片卡；没有详情端点，卡里直接带 `versions[]`：每版 `jobId`、`outputUrl`、`watermarkOutputUrl`（整片没有水印版，现为 `null`）、`durationMs`（渲染后量的）、`finishedAt` 与 `userName`（那条整片属主的用户名），早完成的在前，第 N 条就是第 N 版；`face` 是卡面，即最后一版。排序、翻页、`total` 与时间窗同 `GET /library/videos`，游标是卡面完成时刻加对话 id。筛选只有 `userName`、`since` / `until` 与 `q`，`q` 只匹配对话标题（整片没有正文）；没有 `orientation`（整片的画幅取第一段成片，请求里不记比例）。卡上不带脚本，也没有 `canMakeSame`。
 
 ## 14. 参考视频 (References)
 
