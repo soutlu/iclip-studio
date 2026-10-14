@@ -3,6 +3,7 @@
 import { http, HttpResponse } from 'msw'
 import type {
   ImageGenerationIn,
+  MusicIn,
   SubtitleIn,
   SubtitleSentence,
   VideoComposeIn,
@@ -14,6 +15,7 @@ import type {
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
+import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
 import { isMockVideoUpload } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
@@ -210,7 +212,7 @@ type MockJob = {
   createdAt: string
   errorMessage?: string
   id: string
-  kind?: 'video' | 'image' | 'subtitle'
+  kind?: 'video' | 'image' | 'subtitle' | 'audio'
   /** 字幕记录完成后的逐句结果；别的记录没有。 */
   sentences?: SubtitleSentence[]
   /** 省略即 generate；合成是 compose。 */
@@ -1044,11 +1046,36 @@ export const workspaceHandlers = [
     announceGeneration(conversationId, created)
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
+
+  // 生成背景音乐：提示词原样记进请求，过一会儿出一段 30 秒、每分钟 120 拍的鼓点。
+  http.post('*/api/generations/music', async ({ request }) => {
+    const body = (await request.json()) as MusicIn
+    if (body.prompt.trim() === '')
+      return HttpResponse.json({ detail: 'prompt: 不能为空' }, { status: 422 })
+    if (body.prompt.length > 3000)
+      return HttpResponse.json({ detail: 'prompt: 至多 3000 字' }, { status: 422 })
+    const created = acceptGeneration({
+      kind: 'audio',
+      prompt: body.prompt,
+      request: {
+        model: 'qwen-audio-3.1-tts-next',
+        prompt: body.prompt,
+        format: 'wav',
+        sampleRate: 48_000,
+        channels: 2,
+      },
+      conversationId: body.conversationId,
+      metadata: body.metadata ?? null,
+      outputUrl: MOCK_MUSIC_URL,
+      durationMs: MOCK_MUSIC_SECONDS * 1000,
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
 ]
 
 /** 受理一条生成记录并在固定延迟后把它标成完成，与真实后端的「先受理、后台出结果」同形。 */
 function acceptGeneration(spec: {
-  kind: 'image' | 'video'
+  kind: 'image' | 'video' | 'audio'
   operation?: 'generate' | 'compose'
   prompt: string
   request: Record<string, unknown>

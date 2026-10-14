@@ -57,8 +57,9 @@ export type FilmDraft = {
   lanes: readonly MaterialLane[]
   canUndo: boolean
   canRedo: boolean
-  /** 改了一步。`typing` 给出正在改字的那一处：同一处连续改并进同一步。 */
-  apply: (next: FilmState, typing?: string) => void
+  /** 改了一步。`typing` 给出正在改字的那一处：同一处连续改并进同一步。上传、提交完成后才落的改动给函数，
+   * 按那一刻的草稿算，不盖掉等待期间的剪辑。 */
+  apply: (next: FilmState | ((present: FilmState) => FilmState), typing?: string) => void
   setLanes: (lanes: readonly MaterialLane[]) => void
   undo: () => void
   redo: () => void
@@ -96,7 +97,12 @@ export function useFilmDraft({
   useEffect(() => {
     if (film === undefined || lanes === undefined) return
     try {
-      if (film.segments.length === 0 && film.manual.length === 0 && lanes.length === 0)
+      if (
+        film.segments.length === 0 &&
+        film.manual.length === 0 &&
+        film.music === null &&
+        lanes.length === 0
+      )
         window.localStorage.removeItem(key)
       else window.localStorage.setItem(key, serializeStoredFilm({ film, lanes }))
     } catch {
@@ -113,14 +119,17 @@ export function useFilmDraft({
     canUndo: current.history.past.length > 0,
     canRedo: current.history.future.length > 0,
     apply: (next, typing) =>
-      change((state) => ({
-        ...state,
-        history:
-          typing !== undefined && typing === state.typing
-            ? amend(state.history, next)
-            : commit(state.history, next),
-        typing,
-      })),
+      change((state) => {
+        const film = typeof next === 'function' ? next(state.history.present) : next
+        return {
+          ...state,
+          history:
+            typing !== undefined && typing === state.typing
+              ? amend(state.history, film)
+              : commit(state.history, film),
+          typing,
+        }
+      }),
     setLanes: (next) => change((state) => ({ ...state, lanes: next })),
     undo: () => change((state) => ({ ...state, history: undo(state.history), typing: undefined })),
     redo: () => change((state) => ({ ...state, history: redo(state.history), typing: undefined })),

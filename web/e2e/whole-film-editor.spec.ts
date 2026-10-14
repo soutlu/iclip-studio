@@ -218,6 +218,151 @@ test('整片放不下时不插入：插入线变虚、说明还差多少', async
   ).toBeVisible()
 })
 
+const MUSIC_SHOT_DIR = '../.artifacts/design-qa/whole-film-editor/impl-2'
+
+/** 一段 `seconds` 秒的静音 WAV（单声道 8 kHz、16 位），上传「太短」的音乐用。 */
+const silentWav = (seconds: number) => {
+  const rate = 8000
+  const bytes = Math.round(seconds * rate) * 2
+  const wav = Buffer.alloc(44 + bytes)
+  wav.write('RIFF', 0)
+  wav.writeUInt32LE(36 + bytes, 4)
+  wav.write('WAVEfmt ', 8)
+  wav.writeUInt32LE(16, 16)
+  wav.writeUInt16LE(1, 20)
+  wav.writeUInt16LE(1, 22)
+  wav.writeUInt32LE(rate, 24)
+  wav.writeUInt32LE(rate * 2, 28)
+  wav.writeUInt16LE(2, 32)
+  wav.writeUInt16LE(16, 34)
+  wav.write('data', 36)
+  wav.writeUInt32LE(bytes, 40)
+  return wav
+}
+
+/** 演示对话里第 2 组那条 6 秒成片剪成三段：0–2、2.5–4、0.5–3，共 6 秒，切点在 2.0 与 3.5 秒。 */
+const seedThreeSegments = async (page: Page) => {
+  const conversationId = new URL(page.url()).pathname.split('/').at(-1) ?? ''
+  await page.evaluate(
+    ({ key }) => {
+      const source = '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d'
+      const segment = (id: string, start: number, end: number) => ({
+        id,
+        sourceJobId: source,
+        start,
+        end,
+        origin: [start, end],
+      })
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({
+          version: 1,
+          segments: [segment('s1', 0, 2), segment('s2', 2.5, 4), segment('s3', 0.5, 3)],
+          texts: {},
+          manual: [],
+          lanes: [{ groupId: 'shot-2', jobId: source }],
+        }),
+      )
+    },
+    { key: `whole-film-draft:${conversationId}` },
+  )
+}
+
+test('整片音乐：没有工程文件时写一句生成，完成后自动对齐；拖动换段；上传太短的音乐；删除', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openConversation(page, '夜景延时素材生成')
+  await seedThreeSegments(page)
+  const dialog = await openWholeFilm(page)
+  const track = timelineOf(dialog)
+  await expect(segments(dialog)).toHaveCount(3)
+
+  // 生成：对话里没有工程文件，写一句。
+  await track.getByRole('button', { name: '添加音乐' }).click()
+  await page.getByRole('menuitem', { name: '生成音乐' }).click()
+  const panel = page.getByRole('dialog', { name: '生成音乐' })
+  const describe = panel.getByRole('textbox', { name: '音乐描述' })
+  await expect(describe).toBeVisible()
+  await describe.fill('夏天海边的轻快电子乐，鼓点清楚')
+  await screenshotBothThemes(page, `${MUSIC_SHOT_DIR}/music-generate-input`)
+  await panel.getByRole('button', { name: '生成' }).click()
+  await expect(track.getByText('音乐生成中，完成后自动对齐')).toBeVisible()
+
+  // 生成完成：读出拍子（每分钟 120 拍），自动选起点。
+  const clip = track.getByRole('button', { name: /^音乐：生成的音乐，使用 [\d.]+–[\d.]+ 秒$/ })
+  await expect(clip).toBeVisible({ timeout: STEP_TIMEOUT })
+  await clip.click()
+  const card = dialog.getByRole('region', { name: '选中的音乐' })
+  await expect(card.getByText(/^使用 [\d.]+–[\d.]+ 秒 · 整首 30\.0 秒$/)).toBeVisible()
+  await expect(card.getByText(/^每分钟 120 拍 · 2 个切点中 \d 个落在拍上$/)).toBeVisible()
+  await expect(dialog.getByText('音乐已自动对齐；拖动音乐可换用别的范围')).toBeVisible()
+  await page.mouse.move(0, 0)
+  await screenshotBothThemes(page, `${MUSIC_SHOT_DIR}/music-aligned`)
+  await page.keyboard.press('Escape')
+  await expect(card).toBeHidden()
+
+  // 拖动：整首在窗口下滑动，吸附到拍上，气泡说用哪一段、几个切点落在拍上。
+  const before = await clip.getAttribute('aria-label')
+  const box = await clip.boundingBox()
+  if (box === null) throw new Error('音乐片段尚未布局')
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 - 120, box.y + box.height / 2, { steps: 8 })
+  await expect(track.getByText(/^使用 [\d.]+–[\d.]+ 秒 · 落在拍上的切点 \d\/2$/)).toBeVisible()
+  await screenshotBothThemes(page, `${MUSIC_SHOT_DIR}/music-drag`)
+  await page.mouse.up()
+  await expect(clip).not.toHaveAttribute('aria-label', before ?? '')
+
+  // 上传一首 2 秒的：比视频段短 4 秒，后面接空位，「合成成片」说明原因。
+  await track.getByRole('button', { name: '添加音乐' }).click()
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('menuitem', { name: '上传音乐' }).click()
+  await (
+    await chooser
+  ).setFiles({ name: '夏日节拍.wav', mimeType: 'audio/wav', buffer: silentWav(2) })
+  await expect(track.getByText('音乐比成片短 4.0 秒')).toBeVisible({ timeout: STEP_TIMEOUT })
+  await expect(dialog.getByRole('button', { name: '合成成片' })).toHaveAttribute(
+    'title',
+    '音乐比成片短 4.0 秒，请重新生成或换一首',
+  )
+  await expect(
+    dialog.getByText('上传的音乐只有 2.0 秒，铺不满第一段开头到最后一段结尾，不循环补齐'),
+  ).toBeVisible()
+  await page.mouse.move(0, 0)
+  // 菜单收起后焦点回到「+」，截图前移开，免得焦点环盖在轨道头上。
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
+  await screenshotBothThemes(page, `${MUSIC_SHOT_DIR}/music-short`)
+
+  // 删除：键盘上按 Delete，撤销放回来。
+  const uploaded = track.getByRole('button', { name: /^音乐：夏日节拍\.wav/ })
+  await uploaded.focus()
+  await page.keyboard.press('Delete')
+  await expect(uploaded).toBeHidden()
+  await dialog.getByRole('button', { name: '撤销' }).click()
+  await expect(uploaded).toBeVisible()
+})
+
+test('整片音乐：工程文件里写了配乐，生成音乐引用那段原文', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '穿搭种草 · 12 秒')
+  await panel.getByRole('button', { name: '整片', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+  await expect(dialog).toBeVisible()
+
+  await timelineOf(dialog).getByRole('button', { name: '添加音乐' }).click()
+  await page.getByRole('menuitem', { name: '生成音乐' }).click()
+  const generate = page.getByRole('dialog', { name: '生成音乐' })
+  await expect(generate.getByText('使用工程文件里的配乐：')).toBeVisible()
+  await expect(
+    generate.getByText('轻快的电子乐，鼓点渐入，副歌推到高潮，整体明亮有活力'),
+  ).toBeVisible()
+  await expect(generate.getByRole('textbox')).toHaveCount(0)
+  await screenshotBothThemes(page, `${MUSIC_SHOT_DIR}/music-generate`)
+})
+
 test('整片移动布局：对话框内部自己滚，页面不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const dialog = await openWholeFilm(page, { mobile: true })

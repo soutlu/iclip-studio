@@ -9,9 +9,56 @@ const VIDEO_TYPES = ['video/mp4', 'video/quicktime']
 export const MEDIA_IMAGE_ACCEPT = IMAGE_TYPES.join(',')
 export const MEDIA_VIDEO_ACCEPT = VIDEO_TYPES.join(',')
 
+/** 后端收的三种音乐类型，按扩展名认。 */
+const AUDIO_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  m4a: 'audio/mp4',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+}
+/** 浏览器与系统给同一种音乐报的别名；扩展名认不出时按它们认。 */
+const AUDIO_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  'audio/mp4': 'audio/mp4',
+  'audio/x-m4a': 'audio/mp4',
+  'audio/m4a': 'audio/mp4',
+  'audio/mpeg': 'audio/mpeg',
+  'audio/mp3': 'audio/mpeg',
+  'audio/wav': 'audio/wav',
+  'audio/x-wav': 'audio/wav',
+  'audio/wave': 'audio/wav',
+}
+export const MEDIA_AUDIO_ACCEPT = [
+  ...Object.keys(AUDIO_TYPE_BY_EXTENSION).map((extension) => `.${extension}`),
+  ...Object.keys(AUDIO_TYPE_ALIASES),
+].join(',')
+
+const AUDIO_MAX_BYTES = 50 * 1024 * 1024
+
+/** 一个音乐文件按后端收的类型该报什么：先看扩展名，再看浏览器给的类型；都认不出时是 `undefined`。
+ * 同一种文件浏览器各报各的（m4a 常报 `audio/x-m4a`），签名与直传要用后端认的那一种。 */
+export const audioContentTypeOf = (file: Pick<File, 'name' | 'type'>): string | undefined => {
+  const extension = /\.([^./]+)$/.exec(file.name)?.[1]?.toLowerCase()
+  return (
+    (extension === undefined ? undefined : AUDIO_TYPE_BY_EXTENSION[extension]) ??
+    AUDIO_TYPE_ALIASES[file.type.toLowerCase()]
+  )
+}
+
 const UPLOAD_FAILED = '上传失败'
 
-/** 文件选择与拖放共用校验；图片尺寸须解码后才能用于签名。 */
+type MediaKind = 'image' | 'video' | 'audio'
+
+/** 文件选择与拖放共用校验，给出签名时报的类型与宽高；图片尺寸须解码后才能用于签名。 */
+const signedMediaOf = async (file: File, kind: MediaKind) => {
+  if (kind === 'audio') {
+    const contentType = audioContentTypeOf(file)
+    if (contentType === undefined)
+      throw new UserFacingError('文件格式不受支持，无法上传；请选择 MP3、WAV 或 M4A 音乐')
+    if (file.size > AUDIO_MAX_BYTES) throw new UserFacingError('音乐超过 50 MiB，无法上传')
+    return { contentType, height: null, width: null }
+  }
+  return { contentType: file.type, ...(await mediaDimensions(file, kind)) }
+}
+
 const mediaDimensions = async (file: File, kind: 'image' | 'video') => {
   if (kind === 'video') {
     if (!VIDEO_TYPES.includes(file.type))
@@ -87,12 +134,12 @@ export type UploadedMedia = { url: string; uploadId: string }
  */
 export const uploadMediaFile = async (
   file: File,
-  kind: 'image' | 'video',
+  kind: MediaKind,
   { onProgress }: UploadMediaOptions = {},
 ): Promise<UploadedMedia> => {
-  const dimensions = await mediaDimensions(file, kind)
+  const signed = await signedMediaOf(file, kind)
   const ticket = await apiFetch('/uploads/sign', zUploadTicketOut, {
-    body: { contentType: file.type, ...dimensions },
+    body: signed,
     fallbackErrorMessage: UPLOAD_FAILED,
     method: 'POST',
   })

@@ -22,6 +22,7 @@ import {
   resetMockConversations,
   type MockConversation,
 } from './conversations'
+import { audioHandlers } from './audio'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
@@ -465,6 +466,7 @@ export const handlers = [
   }),
 
   ...uploadHandlers,
+  ...audioHandlers,
 
   // 埋点只收不回；不校验主语，夹具里的记录 id 不都是 UUID。
   http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),

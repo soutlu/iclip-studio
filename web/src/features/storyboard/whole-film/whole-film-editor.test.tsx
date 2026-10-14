@@ -1,14 +1,21 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { guess } from 'web-audio-beat-detector'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { stubMediaDurations } from '@/testing/media'
+import { seedMockFilm } from '@/testing/mocks/film'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
-import type { GenerationJob } from '../storyboard.api'
+import { stubWebAudio } from '@/testing/web-audio'
+import { storyboardQueryKeys, type GenerationJob } from '../storyboard.api'
+import { automationFrom, musicGainCurve, withFadeOut } from './film-music'
 import { filmDraftStorageKey } from './use-film-draft'
 import { WholeFilmEditor } from './whole-film-editor'
+
+/** 拍点检测在 Web Worker 里跑，jsdom 没有：替身按用例给拍子。 */
+vi.mock('web-audio-beat-detector', () => ({ guess: vi.fn() }))
 
 /** mediabunny 的替身：都没有音轨，波形写「无声」。jsdom 读不了真文件。 */
 vi.mock('mediabunny', () => {
@@ -71,17 +78,27 @@ const VIDEOS = [
 const subtitle = (sourceJobId: string, overrides: Partial<GenerationJob> = {}) =>
   makeGenerationJob({ kind: 'subtitle', sourceJobId, ...overrides })
 
-/** 本对话的记录：视频与字幕记录按 `kind` 分开答。 */
-const serve = (videos: GenerationJob[], subtitles: GenerationJob[]) =>
+/** 本对话的记录：视频、字幕记录与生成的音乐按 `kind` 分开答。 */
+const serve = (videos: GenerationJob[], subtitles: GenerationJob[], music: GenerationJob[] = []) =>
   server.use(
     http.get('*/api/generations', ({ request }) => {
       const kind = new URL(request.url).searchParams.get('kind')
-      return HttpResponse.json({ items: kind === 'subtitle' ? subtitles : videos })
+      return HttpResponse.json({
+        items: kind === 'subtitle' ? subtitles : kind === 'audio' ? music : videos,
+      })
     }),
   )
 
-const renderEditor = () =>
-  renderWithProviders(<WholeFilmEditor conversationId={CONVERSATION} onClose={() => {}} />)
+/** 对话此刻挂的需求单：与成片记录上的不是同一张（对话后来换了单），提交时要用它。 */
+const CONVERSATION_TASK = '66666666-6666-4666-8666-666666666666'
+
+/** 打开编辑器；`taskId` 给 `{ taskId: undefined }` 就是需求单还没读到。 */
+const renderEditor = (
+  { taskId }: { taskId: string | null | undefined } = { taskId: CONVERSATION_TASK },
+) =>
+  renderWithProviders(
+    <WholeFilmEditor conversationId={CONVERSATION} onClose={() => {}} taskId={taskId} />,
+  )
 
 const timeline = () => screen.findByRole('region', { name: '整片时间线' })
 const filmSegments = () => screen.queryAllByRole('button', { name: /^第 \d+ 段/ })
@@ -289,7 +306,7 @@ describe('WholeFilmEditor', () => {
     expect(screen.getByRole('button', { name: '第 1 条字幕：今天带来一款新耳机' })).toBeVisible()
   })
 
-  it('没有字幕记录的段标「未识别 · 识别」，点了带本对话与需求单提交识别，随后显示「识别中」', async () => {
+  it('没有字幕记录的段标「未识别 · 识别」，点了带本对话与它此刻的需求单提交识别，随后显示「识别中」', async () => {
     let body: unknown
     // 受理后列表里就有这条在识别的记录。
     const subtitles: GenerationJob[] = []
@@ -311,9 +328,29 @@ describe('WholeFilmEditor', () => {
     await user.click(await screen.findByRole('button', { name: '镜头组 2 · V1 字幕未识别，识别' }))
 
     await waitFor(() =>
-      expect(body).toEqual({ conversationId: CONVERSATION, sourceJobId: TAKE_2, taskId: TASK }),
+      expect(body).toEqual({
+        conversationId: CONVERSATION,
+        sourceJobId: TAKE_2,
+        taskId: CONVERSATION_TASK,
+      }),
     )
     expect(await screen.findByText('识别中')).toBeVisible()
+  })
+
+  it('对话的需求单还没读到时不提交识别，说明原因', async () => {
+    const submitted = vi.fn()
+    serve(VIDEOS, [])
+    server.use(http.post('*/api/generations/subtitles', submitted))
+    const user = userEvent.setup()
+    await renderEditor({ taskId: undefined })
+    await addMaterial(user, '镜头组 2 V1')
+    lane('镜头组 2 · V1').focus()
+    await user.keyboard('{Enter}{Enter}')
+
+    await user.click(await screen.findByRole('button', { name: '镜头组 2 · V1 字幕未识别，识别' }))
+
+    expect(screen.getByText('任务信息读取中，请稍后重试')).toBeVisible()
+    expect(submitted).not.toHaveBeenCalled()
   })
 
   it('识别失败标「识别失败 · 重试」；没有口播什么也不标', async () => {
@@ -396,3 +433,358 @@ const addMaterialFromToolbar = async (user: ReturnType<typeof userEvent.setup>, 
   }
   await user.keyboard('{Enter}')
 }
+
+// ---------- 音乐 ----------
+
+const MUSIC_JOB = '77777777-7777-4777-8777-777777777777'
+const MUSIC_URL = 'https://example.com/music.m4a'
+
+/** 成片轨三段都取自镜头组 1 的 V1：0–1、1.5–3、0.5–2，共 4 秒，切点在 1.0 与 2.5 秒。 */
+const seedFilm = (music?: Record<string, unknown>) =>
+  window.localStorage.setItem(
+    filmDraftStorageKey(CONVERSATION),
+    JSON.stringify({
+      version: 1,
+      segments: [
+        { id: 's1', sourceJobId: TAKE_1, start: 0, end: 1, origin: [0, 1] },
+        { id: 's2', sourceJobId: TAKE_1, start: 1.5, end: 3, origin: [1.5, 3] },
+        { id: 's3', sourceJobId: TAKE_1, start: 0.5, end: 2, origin: [0.5, 2] },
+      ],
+      texts: {},
+      manual: [],
+      lanes: [],
+      ...(music === undefined ? {} : { music }),
+    }),
+  )
+
+const UPLOADED = {
+  kind: 'upload',
+  jobId: MUSIC_JOB,
+  name: '夏日节拍.mp3',
+  url: MUSIC_URL,
+  userStart: null,
+}
+
+/** 生成的音乐：一条音频记录。 */
+const musicJob = (overrides: Partial<GenerationJob> = {}) =>
+  makeGenerationJob({
+    id: MUSIC_JOB,
+    kind: 'audio',
+    outputUrl: MUSIC_URL,
+    durationMs: 20_000,
+    request: { prompt: '轻快的电子乐' },
+    ...overrides,
+  })
+
+const musicClip = () => screen.getByRole('button', { name: /^音乐：/ })
+
+const openGeneratePanel = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('button', { name: '添加音乐' }))
+  await user.click(await screen.findByRole('menuitem', { name: '生成音乐' }))
+  return screen.findByRole('dialog', { name: '生成音乐' })
+}
+
+describe('WholeFilmEditor 音乐', () => {
+  beforeEach(() => {
+    // 每分钟 120 拍（每拍 0.5 秒），第一拍在 0 秒。
+    vi.mocked(guess).mockResolvedValue({ bpm: 120, offset: 0 })
+    server.use(http.get(MUSIC_URL, () => HttpResponse.arrayBuffer(new ArrayBuffer(8))))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('生成：引用工程文件里的配乐原文原样提交，带本对话与它此刻的需求单；生成中，完成后自动对齐', async () => {
+    stubWebAudio({ duration: 20 })
+    seedFilm()
+    seedMockFilm(CONVERSATION, { musicDescription: '轻快的电子乐，鼓点渐入' })
+    const music: GenerationJob[] = []
+    serve(VIDEOS, [], music)
+    let body: unknown
+    server.use(
+      http.post('*/api/generations/music', async ({ request }) => {
+        body = await request.json()
+        const created = musicJob({ status: 'pending', outputUrl: null, durationMs: null })
+        music.push(created)
+        return HttpResponse.json({ generation: created }, { status: 202 })
+      }),
+    )
+    const user = userEvent.setup()
+    const { queryClient } = await renderEditor()
+    await timeline()
+
+    const panel = await openGeneratePanel(user)
+    expect(await within(panel).findByText('轻快的电子乐，鼓点渐入')).toBeVisible()
+    expect(within(panel).getByText('使用工程文件里的配乐：')).toBeVisible()
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+    await user.click(within(panel).getByRole('button', { name: '生成' }))
+
+    await waitFor(() =>
+      expect(body).toEqual({
+        conversationId: CONVERSATION,
+        prompt: '轻快的电子乐，鼓点渐入',
+        taskId: CONVERSATION_TASK,
+      }),
+    )
+    expect(await screen.findByText('音乐生成中，完成后自动对齐')).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: '生成音乐' })).toBeNull()
+
+    // 状态跳转帧到了：记录完成，重拉后放上并对齐。
+    Object.assign(music[0] ?? {}, { status: 'completed', outputUrl: MUSIC_URL, durationMs: 20_000 })
+    await act(() =>
+      queryClient.invalidateQueries({ queryKey: storyboardQueryKeys.conversation(CONVERSATION) }),
+    )
+    // 起点 1.0：切点 1.0 落在小节第一拍（2.0）、2.5 落在拍上（3.5），3 分；同分里最早。
+    expect(
+      await screen.findByRole('button', { name: '音乐：生成的音乐，使用 1.0–5.0 秒' }),
+    ).toBeVisible()
+
+    await user.click(musicClip())
+    const card = screen.getByRole('region', { name: '选中的音乐' })
+    expect(within(card).getByText('生成的音乐')).toBeVisible()
+    expect(within(card).getByText('使用 1.0–5.0 秒 · 整首 20.0 秒')).toBeVisible()
+    expect(within(card).getByText('每分钟 120 拍 · 2 个切点中 2 个落在拍上')).toBeVisible()
+    expect(within(card).getByRole('button', { name: '重新生成' })).toBeVisible()
+    expect(screen.getByText('音乐已自动对齐；拖动音乐可换用别的范围')).toBeVisible()
+  })
+
+  it('没有工程文件：让人写一句，写什么发什么，不加前后缀', async () => {
+    seedFilm()
+    serve(VIDEOS, [])
+    let body: { prompt?: string } | undefined
+    server.use(
+      http.post('*/api/generations/music', async ({ request }) => {
+        body = (await request.json()) as { prompt: string }
+        return HttpResponse.json(
+          { generation: musicJob({ status: 'pending', outputUrl: null }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await timeline()
+
+    const panel = await openGeneratePanel(user)
+    const text = await within(panel).findByRole('textbox', { name: '音乐描述' })
+    expect(within(panel).getByRole('button', { name: '生成' })).toBeDisabled()
+    await user.type(text, ' 夏天海边的轻快吉他 ')
+    await user.click(within(panel).getByRole('button', { name: '生成' }))
+
+    await waitFor(() => expect(body?.prompt).toBe(' 夏天海边的轻快吉他 '))
+  })
+
+  it('生成失败：音乐轨写明失败，重试按原来的提示词再发一次', async () => {
+    seedFilm({ kind: 'generate', jobId: MUSIC_JOB, userStart: null })
+    serve(VIDEOS, [], [musicJob({ status: 'failed', outputUrl: null })])
+    const prompts: string[] = []
+    server.use(
+      http.post('*/api/generations/music', async ({ request }) => {
+        prompts.push(((await request.json()) as { prompt: string }).prompt)
+        return HttpResponse.json(
+          { generation: musicJob({ id: crypto.randomUUID(), status: 'pending', outputUrl: null }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+
+    expect(await screen.findByText('音乐生成失败')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(prompts).toEqual(['轻快的电子乐']))
+  })
+
+  it('上传：浏览器报 audio/x-m4a 的 m4a 按 audio/mp4 签名，放上音乐轨，卡片标题是文件名', async () => {
+    stubWebAudio({ duration: 20 })
+    seedFilm()
+    serve(VIDEOS, [])
+    let signed: unknown
+    server.events.on('request:start', ({ request }) => {
+      if (request.url.endsWith('/uploads/sign'))
+        void request
+          .clone()
+          .json()
+          .then((value: unknown) => (signed = value))
+    })
+    const user = userEvent.setup()
+    await renderEditor()
+    await timeline()
+
+    await user.upload(
+      screen.getByLabelText('选择音乐文件'),
+      new File(['music'], '夏日节拍.m4a', { type: 'audio/x-m4a' }),
+    )
+
+    expect(await screen.findByRole('button', { name: /^音乐：夏日节拍\.m4a，使用/ })).toBeVisible()
+    expect(signed).toEqual({ contentType: 'audio/mp4', height: null, width: null })
+    await user.click(musicClip())
+    expect(
+      within(screen.getByRole('region', { name: '选中的音乐' })).getByText('夏日节拍.m4a'),
+    ).toBeVisible()
+    expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull()
+  })
+
+  it('上传认不出的类型：写明原因，不上传', async () => {
+    seedFilm()
+    serve(VIDEOS, [])
+    const requests: string[] = []
+    server.events.on('request:start', ({ request }) => requests.push(new URL(request.url).pathname))
+    const user = userEvent.setup({ applyAccept: false })
+    await renderEditor()
+    await timeline()
+
+    await user.upload(
+      screen.getByLabelText('选择音乐文件'),
+      new File(['music'], '夏日节拍.ogg', { type: 'audio/ogg' }),
+    )
+
+    expect(
+      await screen.findByText('文件格式不受支持，无法上传；请选择 MP3、WAV 或 M4A 音乐'),
+    ).toBeVisible()
+    expect(requests).not.toContain('/api/uploads/sign')
+    expect(screen.queryByRole('button', { name: /^音乐：/ })).toBeNull()
+  })
+
+  it('拖动音乐吸附到候选起点，气泡说用哪一段、几个切点落在拍上；松手后按人选的起点用；方向键一次一拍', async () => {
+    stubWebAudio({ duration: 20 })
+    seedFilm(UPLOADED)
+    serve(VIDEOS, [])
+    const user = userEvent.setup()
+    await renderEditor()
+    await screen.findByRole('button', { name: '音乐：夏日节拍.mp3，使用 1.0–5.0 秒' })
+    stubLayout()
+
+    // 比例按 20 秒排，200px 宽：每秒 10px。往左拖 1.4 秒，整首往左滑，换用更靠后的一截，吸附到 2.5 秒那一拍。
+    fireEvent.pointerDown(musicClip(), { pointerId: 1, button: 0, clientX: 20 })
+    fireEvent.pointerMove(musicClip(), { pointerId: 1, clientX: 6 })
+    expect(screen.getByText('使用 2.5–6.5 秒 · 落在拍上的切点 2/2')).toBeVisible()
+    fireEvent.pointerUp(musicClip(), { pointerId: 1, clientX: 6 })
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 2.5–6.5 秒')
+
+    musicClip().focus()
+    await user.keyboard('{ArrowRight}')
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 3.0–7.0 秒')
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 1.0–5.0 秒')
+
+    // 拖动是一步，能撤回。
+    await user.click(screen.getByRole('button', { name: '撤销' }))
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 3.0–7.0 秒')
+  })
+
+  it('音乐比视频段短：后面接空位写明短多少，「合成成片」说明原因，不循环补', async () => {
+    stubWebAudio({ duration: 2 })
+    seedFilm(UPLOADED)
+    serve(VIDEOS, [])
+    await renderEditor()
+
+    expect(await screen.findByText('音乐比成片短 2.0 秒')).toBeVisible()
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 0.0–2.0 秒')
+    expect(screen.getByRole('button', { name: '合成成片' })).toHaveAttribute(
+      'title',
+      '音乐比成片短 2.0 秒，请重新生成或换一首',
+    )
+    expect(
+      screen.getByText('上传的音乐只有 2.0 秒，铺不满第一段开头到最后一段结尾，不循环补齐'),
+    ).toBeVisible()
+  })
+
+  it('没检测到拍子：明确说出来，从 0 秒起用', async () => {
+    stubWebAudio({ duration: 20 })
+    vi.mocked(guess).mockRejectedValue(
+      new Error('The given channelData does not contain any detectable beats.'),
+    )
+    seedFilm(UPLOADED)
+    serve(VIDEOS, [])
+    await renderEditor()
+
+    expect(
+      await screen.findByText('这首音乐没有检测到拍子，从 0 秒起使用，未按切点对齐'),
+    ).toBeVisible()
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 0.0–4.0 秒')
+  })
+
+  it('卡片上删除音乐，撤销放回来', async () => {
+    stubWebAudio({ duration: 20 })
+    seedFilm(UPLOADED)
+    serve(VIDEOS, [])
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(await screen.findByRole('button', { name: /^音乐：/ }))
+
+    await user.click(
+      within(screen.getByRole('region', { name: '选中的音乐' })).getByRole('button', {
+        name: '删除',
+      }),
+    )
+    expect(screen.queryByRole('button', { name: /^音乐：/ })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '撤销' }))
+    expect(await screen.findByRole('button', { name: /^音乐：/ })).toBeVisible()
+  })
+
+  it('预览混音：按播放从播放头处起播整首的对应位置，按口播压低的曲线排增益；静音跟着播放器，暂停就停', async () => {
+    const audio = stubWebAudio({ duration: 20 })
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    // 三段同一个来源：播放器跳到哪，读回来就是哪（jsdom 不加载媒体）。
+    const times = new WeakMap<HTMLMediaElement, number>()
+    vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
+    vi.spyOn(HTMLMediaElement.prototype, 'currentTime', 'get').mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      return times.get(this) ?? 0
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'currentTime', 'set').mockImplementation(function (
+      this: HTMLMediaElement,
+      value: number,
+    ) {
+      times.set(this, value)
+    })
+    seedFilm(UPLOADED)
+    // 第 1 段（素材 0–1 秒）里有一句口播：素材 0.2–0.8 秒，即整片 0.2–0.8 秒。
+    serve(VIDEOS, [
+      subtitle(TAKE_1, { sentences: [{ startMs: 200, endMs: 800, text: '你好', speaker: 0 }] }),
+    ])
+    const user = userEvent.setup()
+    await renderEditor()
+    await screen.findByRole('button', { name: '音乐：夏日节拍.mp3，使用 1.0–5.0 秒' })
+    await screen.findByRole('button', { name: '第 1 条字幕：你好' })
+    const curve = withFadeOut(
+      musicGainCurve(
+        [
+          { at: 0.2, end: 0.8 },
+          // 第 3 段（素材 0.5–2 秒）也截到这句的尾巴：整片 2.5–2.8 秒。
+          { at: 2.5, end: 2.8 },
+        ],
+        4,
+      ),
+      4000,
+    )
+    const scheduled = (clockMs: number) =>
+      automationFrom(curve, clockMs).map((step, index) => ({
+        kind: index === 0 ? 'set' : 'ramp',
+        value: step.gain,
+        time: step.after,
+      }))
+
+    // 播放头拖到 2 秒，再播：从整首 1.0 + 2 = 3.0 秒起，放到视频段结尾（剩 2 秒）。
+    fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
+      target: { value: '2' },
+    })
+    await user.click(screen.getByRole('button', { name: '播放' }))
+    await waitFor(() => expect(audio.played).toHaveLength(1))
+    expect(audio.played[0]).toMatchObject({ when: 0, offset: 3, duration: 2 })
+    expect(audio.played[0]?.gain).toEqual(scheduled(2000))
+    // 播放器默认静音，音乐跟着静音；开声音后一起出声。
+    expect(audio.master.at(-1)?.value).toBe(0)
+    await user.click(screen.getByRole('button', { name: '开启声音' }))
+    expect(audio.master.at(-1)?.value).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: '暂停' }))
+    expect(audio.played[0]?.stopped).toBe(true)
+    expect(audio.played).toHaveLength(1)
+  })
+})

@@ -92,9 +92,11 @@ const chooserRows = (registry: ArtifactRegistry, artifacts: readonly Artifact[])
 
 type WorkbenchHostProps = {
   conversationId: string
+  /** 这段对话此刻挂的需求单，原样交给渲染器（见 ArtifactRendererProps）。 */
+  taskId: string | null | undefined
 }
 
-export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
+export function WorkbenchHost({ conversationId, taskId }: WorkbenchHostProps) {
   const registry = useWorkbenchRegistry()
   const chrome = useShellChrome()
   const queryClient = useQueryClient()
@@ -239,6 +241,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
               conversationId={conversationId}
               key={selected.id}
               readOnly={readOnly}
+              taskId={taskId}
             />
           </TabsContent>
         </TabsRoot>

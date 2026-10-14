@@ -46,6 +46,9 @@ export interface ArtifactRendererProps {
   artifact: Artifact
   /** 看别人的对话时为 true，渲染器要收起所有会写工作区或提交任务的入口。 */
   readOnly: boolean
+  /** 这段对话此刻挂的需求单：没挂是 null，还没读到（或宿主没给）是 undefined。在对话下另起生成记录时用它归属，
+   * 用不到的渲染器不必理会。 */
+  taskId?: string | null | undefined
 }
 
 export interface ArtifactEntry {

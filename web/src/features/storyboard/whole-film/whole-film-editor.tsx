@@ -1,5 +1,6 @@
 /** 整片编辑器：视频编辑器的整片模式。把这段对话读得到的成片（自己的与继承的）放进素材区，从各条素材上挑段、
- * 在成片轨上交叉剪辑成一条整片；字幕取各段来源的口播识别结果，跟着画面走，只能改字。
+ * 在成片轨上交叉剪辑成一条整片；字幕取各段来源的口播识别结果，跟着画面走，只能改字；背景音乐上传或生成，
+ * 自动对齐切点、口播处压低，预览时跟着画面放（见 use-film-music）。
  *
  * 编辑只存在浏览器里（ADR-0003），按对话一份。界面上不调声音；合成提交还没接上，「合成成片」先灰着。 */
 
@@ -41,7 +42,8 @@ import {
   trimSegment,
   type FilmState,
 } from './film-draft'
-import { SegmentCard, SubtitleCard } from './film-card'
+import { MusicCard, SegmentCard, SubtitleCard } from './film-card'
+import { MusicMenu } from './film-music-menu'
 import {
   materialCatalog,
   materialName,
@@ -58,6 +60,7 @@ import {
 } from './film-subtitles'
 import { FilmTimeline, type FilmSelection, type LaneView, type MaterialPick } from './film-timeline'
 import { useFilmDraft } from './use-film-draft'
+import { useFilmMusic } from './use-film-music'
 import { seedSubtitleJob, submitSubtitle, useConversationSubtitles } from './whole-film.api'
 import './whole-film.css'
 
@@ -79,16 +82,23 @@ const isTextEntry = (target: EventTarget) =>
 
 type Props = {
   conversationId: string
+  /** 本对话此刻挂的需求单：重新识别字幕、生成音乐都归属到它；还没读到时这两样先不能提交。 */
+  taskId: string | null | undefined
   onClose: () => void
 }
 
-export function WholeFilmEditor({ conversationId, onClose }: Props) {
+const NO_TASK_YET = '任务信息读取中，请稍后重试'
+
+export function WholeFilmEditor({ conversationId, taskId, onClose }: Props) {
   const queryClient = useQueryClient()
   const videos = useShotGenerations(conversationId)
   const subtitlesQuery = useConversationSubtitles(conversationId)
   const previewRef = useRef<EditorPreviewHandle>(null)
   const anchorRef = useRef<HTMLElement>(null)
   const [currentTime, setCurrentTime] = useState(0)
+  const [playback, setPlayback] = useState({ playing: false, muted: true })
+  // 生成面板挂在编辑器里（模态弹窗外的浮层拿不到焦点）。
+  const [editorElement, setEditorElement] = useState<HTMLElement | null>(null)
   const [selection, setSelection] = useState<FilmSelection>()
   const [pick, setPick] = useState<MaterialPick>()
   const [retrying, setRetrying] = useState<ReadonlySet<string>>(() => new Set())
@@ -190,16 +200,37 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
   const subtitleIndex =
     selection?.kind === 'subtitle' ? subtitles.findIndex((item) => item.key === selection.key) : -1
   const selectedSubtitle = subtitles[subtitleIndex]
-  const shownSelection: FilmSelection =
-    selectedSegment !== undefined || selectedSubtitle !== undefined ? selection : undefined
 
   // ---------- 操作 ----------
 
-  const apply = (next: FilmState | undefined, typing?: string) => {
+  const apply = (
+    next: FilmState | ((present: FilmState) => FilmState) | undefined,
+    typing?: string,
+  ) => {
     if (next === undefined || draft === undefined) return
     draft.apply(next, typing)
     if (typing === undefined) setNotice(null)
   }
+
+  // ---------- 音乐 ----------
+
+  const music = useFilmMusic({
+    conversationId,
+    taskId,
+    film,
+    total,
+    subtitles,
+    apply,
+    onNotice: setNotice,
+    playback,
+    currentTime,
+  })
+  // 音乐读出来了才选得中；拿掉、换了还在读的就当没选。
+  const musicSelected = selection?.kind === 'music' && music.card !== undefined
+  const shownSelection: FilmSelection =
+    selectedSegment !== undefined || selectedSubtitle !== undefined || musicSelected
+      ? selection
+      : undefined
 
   const insert = (target: MaterialPick, index: number) => {
     const duration = segmentDuration(target)
@@ -219,13 +250,13 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
 
   const retry = async (sourceJobId: string) => {
     if (retrying.has(sourceJobId)) return
+    if (taskId === undefined) {
+      setNotice(NO_TASK_YET)
+      return
+    }
     setRetrying((busy) => new Set(busy).add(sourceJobId))
     try {
-      const job = await submitSubtitle({
-        conversationId,
-        sourceJobId,
-        taskId: materialOf(sourceJobId)?.taskId ?? null,
-      })
+      const job = await submitSubtitle({ conversationId, sourceJobId, taskId })
       seedSubtitleJob(queryClient, conversationId, job)
     } catch (error) {
       toast.error(errorMessageOf(error, '字幕识别提交失败'))
@@ -291,6 +322,8 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
       return `选中第 ${selectedIndex + 1} 段：拖动两端可裁剪，按住中间拖动可调整顺序`
     if (selectedSubtitle !== undefined)
       return `选中第 ${subtitleIndex + 1} 条字幕：在卡片中改字，时间跟着画面走`
+    const aboutMusic = music.footnote(musicSelected)
+    if (aboutMusic !== undefined) return aboutMusic
     if (lanes.length === 0 && segments.length === 0) return '时间线为空，请从「添加」放入视频'
     if (segments.length === 0) return '在素材轨上拖选一段，拖到上面的成片轨'
     return '素材轨底部的细条是已用进成片轨的区间；声音在合成时统一处理'
@@ -381,11 +414,19 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
           if (next !== undefined) setSelection(undefined)
         }}
         onRetry={(sourceJobId) => void retry(sourceJobId)}
-        onScrub={() => setSelection((value) => (value?.kind === 'subtitle' ? undefined : value))}
+        // 拖动时收起字幕卡与音乐卡；选中的段留着（拖的可能就是它的两端）。
+        onScrub={() => setSelection((value) => (value?.kind === 'segment' ? value : undefined))}
         onSeek={(time) => previewRef.current?.previewAt(time)}
         onSelect={(next) => {
           setSelection(next)
           if (next !== undefined) setPick(undefined)
+        }}
+        music={music.view}
+        musicAdd={<MusicMenu container={editorElement} {...music.menu} />}
+        onMoveMusic={music.move}
+        onRemoveMusic={() => {
+          music.remove()
+          setSelection(undefined)
         }}
         onSwitchVersion={switchVersion}
         onTrim={(id, edge, value) => apply(trimSegment(film, id, edge, value))}
@@ -451,6 +492,19 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
         }
         text={selectedSubtitle.text}
       />
+    ) : musicSelected && music.card !== undefined ? (
+      <MusicCard
+        anchorRef={anchorRef}
+        detail={music.card.detail}
+        lines={music.card.lines}
+        onClose={() => setSelection(undefined)}
+        onRegenerate={music.card.onRegenerate}
+        onRemove={() => {
+          music.remove()
+          setSelection(undefined)
+        }}
+        title={music.card.title}
+      />
     ) : null
 
   const versions = (
@@ -489,7 +543,7 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
               disabled
               leadingIcon="video"
               size="md"
-              title="整片合成尚未开放"
+              title={music.composeBlocked ?? '整片合成尚未开放'}
             >
               合成成片
             </Button>
@@ -503,7 +557,11 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
             </span>
           }
         />
-        <div aria-label="整片编辑器" className="video-editor whole-film-editor">
+        <div
+          aria-label="整片编辑器"
+          className="video-editor whole-film-editor"
+          ref={setEditorElement}
+        >
           <EditorPreview
             backdrop={{ current: posterOf(firstUrl), original: undefined }}
             barEnd={
@@ -542,7 +600,11 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
                 </p>
               </>
             }
-            onPlay={() => setSelection(undefined)}
+            onPlay={() => {
+              setSelection(undefined)
+              music.prime()
+            }}
+            onPlaybackChange={setPlayback}
             onTime={setCurrentTime}
             original={undefined}
             overlay={card}

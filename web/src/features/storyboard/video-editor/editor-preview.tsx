@@ -55,8 +55,10 @@ type Props = {
   backdrop: { current: string | undefined; original: string | undefined }
   currentTime: number
   onTime: (clock: number) => void
-  /** 开始播放（控制条或放大层上的播放钮）。 */
+  /** 开始播放（控制条或放大层上的播放钮），在按下的那一下同步调用：要出声的另一路（整片的背景音乐）在这里取得手势。 */
   onPlay: () => void
+  /** 在不在放、静没静音变了就告诉一声：跟着画面放的另一路声音（整片的背景音乐）据此起停、静音。 */
+  onPlaybackChange?: ((playback: { playing: boolean; muted: boolean }) => void) | undefined
   /** 盖在舞台上的浮层（AI 改段的弹出卡），画面不为它让位。 */
   overlay: ReactNode
   /** 压在画面底部居中的字幕（白字、深色描边），放大时跟着画面走；没有就不显示。 */
@@ -87,6 +89,7 @@ export function EditorPreview({
   currentTime,
   onTime,
   onPlay,
+  onPlaybackChange,
   overlay,
   caption,
   emptyMessage,
@@ -171,6 +174,11 @@ export function EditorPreview({
   }
   const lastShowingRef = useRef(showing)
   const resumeClock = useEffectEvent(() => currentTime)
+
+  const emitPlayback = useEffectEvent((playback: { playing: boolean; muted: boolean }) =>
+    onPlaybackChange?.(playback),
+  )
+  useEffect(() => emitPlayback({ playing, muted }), [playing, muted])
 
   /** 把一段装进某个槽并跳到段内 `offset`；`reload` 是加载失败后重来。 */
   const load = useCallback(

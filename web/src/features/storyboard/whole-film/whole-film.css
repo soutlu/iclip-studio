@@ -1,4 +1,4 @@
-/* 整片编辑器自己的件：控制条上的「添加」、向上展开的选成片面板与版本菜单、舞台上的段卡与字幕卡。
+/* 整片编辑器自己的件：控制条上的「添加」、向上展开的选成片面板、版本菜单与生成音乐面板、舞台上的段卡、字幕卡与音乐卡。
    弹窗、舞台、控制条与时间线面板沿用 video-editor.css。 */
 
 /* 「添加 ▾」：与拆分、删除同一档的文字按钮，多一个小箭头。 */
@@ -276,4 +276,67 @@
   display: flex;
   justify-content: flex-end;
   margin: -4px -8px -6px 0;
+}
+
+/* 音乐卡的两个次要按钮靠左排。 */
+.film-card-actions.is-start {
+  justify-content: flex-start;
+  gap: 4px;
+  margin: -2px 0 -6px -12px;
+}
+
+.film-card-line {
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 生成音乐的面板（音乐轨「+」向上展开） ---------- */
+
+.film-music-panel {
+  width: min(340px, calc(100vw - 32px));
+}
+
+.film-music-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.film-music-panel-note {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+/* 引用工程文件里的配乐：只读，左边一道细线。 */
+.film-music-quote {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 8px 10px 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 2px 0 0 var(--color-outline-variant);
+  color: var(--color-on-surface);
+  font-size: var(--text-body-sm);
+  line-height: 20px;
+}
+
+.film-music-quote > span {
+  color: var(--color-on-surface-muted);
+}
+
+.film-music-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.film-music-panel-foot > p {
+  flex: 1;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
 }

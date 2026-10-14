@@ -11,7 +11,11 @@ import { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
 import { mintUuid } from '@/shared/lib/uuid'
-import { conversationRowsOf, type ConversationRowStore } from './conversation-rows'
+import {
+  conversationRowsOf,
+  useConversationRow,
+  type ConversationRowStore,
+} from './conversation-rows'
 import type { ComposerPart } from '@/shared/ui/composer'
 import {
   zApproveConversationsConversationIdInteractionsInteractionIdPostResponse,
@@ -281,6 +285,23 @@ export const refreshConversationRow = async (
   } finally {
     if (current()) reads.delete(conversationId)
   }
+}
+
+/** 这段对话此刻挂的需求单：没挂是 null，还没读到或读不到是 undefined。整行读一次放进行池，之后换需求单随全局帧进池，
+ * 这里取池里的当前值；在这段对话下另起的生成记录用它归属。 */
+export const useConversationTaskId = (conversationId: string): string | null | undefined => {
+  const { data } = useQuery({
+    queryKey: [...conversationsQueryKeys.all, 'row', conversationId],
+    queryFn: async ({ client, signal }) => {
+      const row = await apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
+        fallbackErrorMessage: '读取任务失败',
+        signal,
+      })
+      conversationRowsOf(client).mergeRows([row])
+      return row
+    },
+  })
+  return useConversationRow(data)?.taskId
 }
 
 /** 创建对话；调用方可提供幂等编号、需求单和合集归属。 */

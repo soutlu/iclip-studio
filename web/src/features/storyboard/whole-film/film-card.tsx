@@ -1,5 +1,5 @@
 /** 整片编辑器里选中东西时弹在舞台上的小卡：与 AI 改段卡同位置、同外观，水平对准时间线上的选中项，
- * 底边小尖角指向它。段卡只说来源与时长；字幕卡只能改字（手动加的还能删）。 */
+ * 底边小尖角指向它。段卡只说来源与时长；字幕卡只能改字（手动加的还能删）；音乐卡说用了哪一段与对齐结果。 */
 
 import {
   useEffect,
@@ -129,6 +129,60 @@ export function SegmentCard({
       title={`第 ${position} 段 · ${source}`}
     >
       <p className="film-card-note">声音在合成时统一处理</p>
+    </FilmCard>
+  )
+}
+
+/** 选中音乐轨上的音乐：用了整首的哪一段、拍子与对齐结果；生成的能重新生成，都能删。没有音量：界面上不调声音。 */
+export function MusicCard({
+  anchorRef,
+  title,
+  detail,
+  lines,
+  onRegenerate,
+  onRemove,
+  onClose,
+}: {
+  anchorRef: RefObject<HTMLElement | null>
+  /** 上传的文件名，或「生成的音乐」。 */
+  title: string
+  /** 使用 a–b 秒 · 整首 x 秒。 */
+  detail: string
+  /** 拍子与对齐，音乐太短时另起一行。 */
+  lines: readonly string[]
+  /** 生成的音乐才有；正在提交时不给。 */
+  onRegenerate: (() => void) | undefined
+  onRemove: () => void
+  onClose: () => void
+}) {
+  return (
+    <FilmCard
+      anchorRef={anchorRef}
+      detail={detail}
+      label="选中的音乐"
+      leading={
+        <span className="film-card-icon">
+          <Icon decorative name="music" size="sm" />
+        </span>
+      }
+      onClose={onClose}
+      title={title}
+    >
+      {lines.map((line) => (
+        <p className="film-card-line" key={line}>
+          {line}
+        </p>
+      ))}
+      <div className="film-card-actions is-start">
+        {onRegenerate === undefined ? null : (
+          <Button leadingIcon="refresh" onClick={onRegenerate} size="md" variant="ghost">
+            重新生成
+          </Button>
+        )}
+        <Button leadingIcon="delete" onClick={onRemove} size="md" variant="ghost">
+          删除
+        </Button>
+      </div>
     </FilmCard>
   )
 }

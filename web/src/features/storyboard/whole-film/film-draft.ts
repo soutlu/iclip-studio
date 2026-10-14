@@ -1,4 +1,4 @@
-/** 整片草稿：成片轨上首尾相接的一串段，每段取自一条成片（素材）的一截；另记改过的字幕文字与手动加的字幕。
+/** 整片草稿：成片轨上首尾相接的一串段，每段取自一条成片（素材）的一截；另记改过的字幕文字、手动加的字幕与背景音乐。
  * 段之间没有空隙，整片时间就是各段时长依次相加。纯函数，不持有状态；撤销栈与存放见 use-film-draft。 */
 
 import { z } from 'zod'
@@ -34,15 +34,22 @@ export type ManualSubtitle = {
   text: string
 }
 
+/** 整片的背景音乐，至多一首，是一条音频记录：上传的记着文件名与地址（上传记录不挂对话，列不出来），生成的地址与状态
+ * 从本对话的音频记录里读。`userStart` 是人拖到的起点（整首里的秒），没拖过是 null，起点按切点自动选。 */
+export type FilmMusic =
+  | { kind: 'upload'; jobId: string; name: string; url: string; userStart: number | null }
+  | { kind: 'generate'; jobId: string; userStart: number | null }
+
 /** 撤销栈里的一步。 */
 export type FilmState = {
   segments: readonly FilmSegment[]
   /** 改过的识别字幕文字，键见 {@link sentenceKey}。 */
   texts: Readonly<Record<string, string>>
   manual: readonly ManualSubtitle[]
+  music: FilmMusic | null
 }
 
-export const EMPTY_FILM: FilmState = { segments: [], texts: {}, manual: [] }
+export const EMPTY_FILM: FilmState = { segments: [], texts: {}, manual: [], music: null }
 
 /** 识别出的一句字幕的身份：哪条字幕记录的第几句（从 0 起）。同一句在几段里出现时共用一份改字。 */
 export const sentenceKey = (subtitleJobId: string, index: number): string =>
@@ -250,6 +257,22 @@ export const removeManualSubtitle = (state: FilmState, id: string): FilmState =>
   manual: state.manual.filter((item) => item.id !== id),
 })
 
+// ---------- 音乐 ----------
+
+/** 放上一首音乐（换掉原来那首），或拿掉（`null`）。 */
+export const setMusic = (state: FilmState, music: FilmMusic | null): FilmState => ({
+  ...state,
+  music,
+})
+
+/** 人把音乐拖到整首的 `start` 起；没有音乐或没挪动时返回 `undefined`。 */
+export const moveMusic = (state: FilmState, start: number): FilmState | undefined => {
+  if (state.music === null) return undefined
+  const userStart = roundToMs(start)
+  if (userStart === state.music.userStart) return undefined
+  return { ...state, music: { ...state.music, userStart } }
+}
+
 // ---------- 素材轨 ----------
 
 /** 素材区的一条轨：哪个版本组，此刻挑段用它的哪一版。同一组只有一条。 */
@@ -266,7 +289,8 @@ export const putLane = (
 
 // ---------- 存放 ----------
 
-/** 存进浏览器的格式版本；格式一改就加一，旧的读不出来按空草稿处理。 */
+/** 存进浏览器的格式版本。只加可省略的字段时不加一（旧草稿照样读得回，缺的按空处理，如没有 `music` 就是没有音乐）；
+ * 改了已有字段才加一，旧的读不出来按空草稿处理。 */
 const STORAGE_VERSION = 1
 
 const zSpan = z.tuple([z.number().nonnegative(), z.number().positive()])
@@ -299,6 +323,23 @@ const zStoredFilm = z.object({
     }),
   ),
   lanes: z.array(z.object({ groupId: z.string().min(1), jobId: z.string().min(1) })),
+  music: z
+    .discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('upload'),
+        jobId: z.string().min(1),
+        name: z.string(),
+        url: z.string().min(1),
+        userStart: z.number().nonnegative().nullable(),
+      }),
+      z.object({
+        kind: z.literal('generate'),
+        jobId: z.string().min(1),
+        userStart: z.number().nonnegative().nullable(),
+      }),
+    ])
+    .nullable()
+    .optional(),
 })
 
 /** 整片草稿在浏览器里存的那一份：此刻的草稿与素材轨。撤销栈不存。 */
@@ -314,7 +355,7 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
   }
   const parsed = zStoredFilm.safeParse(json)
   if (!parsed.success) return undefined
-  const { segments, texts, manual, lanes } = parsed.data
+  const { segments, texts, manual, lanes, music } = parsed.data
   return {
     film: {
       segments: segments.map(({ origin, ...segment }) => ({
@@ -323,6 +364,7 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
       })),
       texts,
       manual,
+      music: music ?? null,
     },
     lanes,
   }
@@ -338,6 +380,7 @@ export const serializeStoredFilm = ({ film, lanes }: StoredFilm): string =>
     texts: film.texts,
     manual: film.manual,
     lanes,
+    music: film.music,
   })
 
 /** 只留来源还读得到的段与素材轨：来源不在 `known` 里的段连同钉在它上面的手动字幕去掉，返回去掉了几段。 */

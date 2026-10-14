@@ -8,8 +8,6 @@ export type Material = {
   url: string
   /** 记录上的时长，秒；没记时是 `undefined`，由编辑器去探。 */
   knownDuration: number | undefined
-  /** 归属的需求单，手动识别字幕时跟着它。 */
-  taskId: string | null
   groupId: string
   /** 镜头组 N，或「视频 N」。 */
   groupLabel: string
@@ -31,7 +29,6 @@ const materialOf = (group: ConversationVideoGroup, video: ConversationVideo, at:
   jobId: video.id,
   url: video.outputUrl,
   knownDuration: video.durationMs === null ? undefined : video.durationMs / 1000,
-  taskId: video.taskId,
   groupId: group.id,
   groupLabel: group.label,
   version: `V${at + 1}`,

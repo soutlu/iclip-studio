@@ -1,5 +1,5 @@
-/** 整片时间线：上方成片区（成片轨、字幕轨）按整片时间排；分隔行「素材」下面每条素材轨放一条成片，
- * 从 0 秒起、与成片区同一比例。
+/** 整片时间线：上方成片区（成片轨、字幕轨、音乐轨）按整片时间排；分隔行「素材」下面每条素材轨放一条成片，
+ * 从 0 秒起、与成片区同一比例。音乐轨见 film-music-track。
  *
  * 素材轨上拖选任意一截（不按关键帧），按住选区拖到成片轨，松手处插入、后面的段顺延；键盘上选好后按回车，
  * 插到播放头所在的切点。成片轨上点段选中，拖两端掐头去尾，按住中间拖动换顺序。字幕跟着画面走，不能拖。 */
@@ -34,6 +34,8 @@ import {
 } from './film-draft'
 import { materialName, type Material, type MaterialDuration } from './film-materials'
 import { VersionPill } from './film-menus'
+import { internalCuts } from './film-music'
+import { MusicTrack, type MusicTrackView } from './film-music-track'
 import type { FilmSubtitle, FilmSubtitleStatus } from './film-subtitles'
 import './film-timeline.css'
 
@@ -52,16 +54,20 @@ export type LaneView = {
 /** 素材轨上的选区：哪一组的哪一版，取它的哪一截。 */
 export type MaterialPick = Pick & { groupId: string }
 
-/** 成片区里选中的东西：一段，或字幕轨上的一条。 */
+/** 成片区里选中的东西：一段、字幕轨上的一条，或音乐。 */
 export type FilmSelection =
-  { kind: 'segment'; id: string } | { kind: 'subtitle'; key: string } | undefined
+  | { kind: 'segment'; id: string }
+  | { kind: 'subtitle'; key: string }
+  | { kind: 'music' }
+  | undefined
 
-/** 时间线上下几行的位置，像素：标尺 18；成片轨 48、字幕轨 26，行间 4；分隔行 22；素材轨各 40，行间 4。 */
+/** 时间线上下几行的位置，像素：标尺 18；成片轨 48、字幕轨 26、音乐轨 32，行间 4；分隔行 22；素材轨各 40，行间 4。 */
 const ROW = {
   film: { top: 22, height: 48 },
   subtitles: { top: 74, height: 26 },
-  separator: 104,
-  materials: 130,
+  music: { top: 104, height: 32 },
+  separator: 140,
+  materials: 166,
   lane: 40,
   laneGap: 4,
 } as const
@@ -116,6 +122,13 @@ type FilmTimelineProps = {
   /** 播放头处没有段时加不了字幕，这是原因。 */
   addSubtitleBlocked: string | undefined
   onSwitchVersion: (lane: LaneView, material: Material) => void
+  /** 音乐轨此刻画什么。 */
+  music: MusicTrackView
+  /** 音乐轨轨道头上的「+」（上传或生成音乐）。 */
+  musicAdd: ReactNode
+  /** 人把音乐拖到整首的这一刻起。 */
+  onMoveMusic: (start: number) => void
+  onRemoveMusic: () => void
 }
 
 /** 按住素材选区往成片轨拖。 */
@@ -211,6 +224,10 @@ export function FilmTimeline({
   onAddSubtitle,
   addSubtitleBlocked,
   onSwitchVersion,
+  music,
+  musicAdd,
+  onMoveMusic,
+  onRemoveMusic,
 }: FilmTimelineProps) {
   const lanesRef = useRef<HTMLDivElement>(null)
   const filmRowRef = useRef<HTMLDivElement>(null)
@@ -254,6 +271,10 @@ export function FilmTimeline({
     const bounds = lanesRef.current?.getBoundingClientRect()
     if (bounds === undefined || bounds.width === 0) return 0
     return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
+  }
+  const secondsOf = (pixels: number) => {
+    const width = lanesRef.current?.getBoundingClientRect().width ?? 0
+    return width === 0 ? 0 : (pixels / width) * scale
   }
   const overFilm = (clientY: number) => {
     const bounds = filmRowRef.current?.getBoundingClientRect()
@@ -686,6 +707,14 @@ export function FilmTimeline({
             <Icon decorative name="add" size="xs" />
           </button>
         </span>
+        <span
+          className="film-timeline-head"
+          style={{ top: ROW.music.top, height: ROW.music.height }}
+        >
+          <Icon decorative name="music" size="xs" />
+          音乐
+          {musicAdd}
+        </span>
         {lanes.map((view, index) => (
           <span
             className="film-timeline-head"
@@ -844,6 +873,27 @@ export function FilmTimeline({
           })}
           {statuses.map(statusOf)}
 
+          {/* 音乐轨 */}
+          <div
+            className="film-timeline-lane"
+            style={{ top: ROW.music.top, height: ROW.music.height }}
+          />
+          <MusicTrack
+            anchorRef={anchorRef}
+            cuts={internalCuts(segments)}
+            filmTop={ROW.film.top}
+            onMove={onMoveMusic}
+            onRemove={onRemoveMusic}
+            onScrub={onScrub}
+            onSelect={(selected) => onSelect(selected ? { kind: 'music' } : undefined)}
+            row={ROW.music}
+            scale={scale}
+            secondsOf={secondsOf}
+            selected={selection?.kind === 'music'}
+            total={total}
+            view={music}
+          />
+
           {/* 成片轨的选中框、手柄与拖动 */}
           {box === undefined ? null : (
             <span
@@ -988,7 +1038,7 @@ export function FilmTimeline({
             style={{
               left: percent(boundedTime),
               top: ROW.film.top - 4,
-              height: ROW.subtitles.top + ROW.subtitles.height - ROW.film.top + 4,
+              height: ROW.music.top + ROW.music.height - ROW.film.top + 4,
             }}
           />
 

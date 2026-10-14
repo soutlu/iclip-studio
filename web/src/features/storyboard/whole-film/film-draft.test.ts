@@ -10,15 +10,18 @@ import {
   insertSegment,
   keepKnownSources,
   MAX_FILM_SECONDS,
+  moveMusic,
   moveSegment,
   parseStoredFilm,
   putLane,
   removeSegment,
   serializeStoredFilm,
+  setMusic,
   setSentenceText,
   splitAt,
   trimBounds,
   trimSegment,
+  type FilmMusic,
   type FilmState,
   type Pick,
 } from './film-draft'
@@ -181,6 +184,31 @@ describe('撤销重做', () => {
   })
 })
 
+describe('音乐', () => {
+  it('至多一首：放上新的换掉原来那首，拿掉就没有', () => {
+    const uploaded = setMusic(film(), {
+      kind: 'upload',
+      jobId: 'u1',
+      name: 'a.mp3',
+      url: 'https://oss/u1',
+      userStart: 3,
+    })
+    const generated = setMusic(uploaded, { kind: 'generate', jobId: 'g1', userStart: null })
+
+    expect(generated.music).toEqual({ kind: 'generate', jobId: 'g1', userStart: null })
+    expect(setMusic(generated, null).music).toBeNull()
+  })
+
+  it('拖音乐记下人选的起点（毫秒精度）；没挪动或没有音乐时不算一步', () => {
+    const state = setMusic(film(), { kind: 'generate', jobId: 'g1', userStart: null })
+    const moved = moveMusic(state, 4.00049)
+
+    expect(moved?.music?.userStart).toBe(4)
+    expect(moveMusic(moved ?? state, 4)).toBeUndefined()
+    expect(moveMusic(film(), 1)).toBeUndefined()
+  })
+})
+
 describe('素材轨', () => {
   it('同一组只有一条轨：放进同组的另一版就换掉它，新的组排在最后', () => {
     const lanes = putLane(putLane([], { groupId: 'g1', jobId: 'v1' }), {
@@ -205,6 +233,30 @@ describe('存放', () => {
     const stored = { film: state, lanes: [{ groupId: 'g1', jobId: 'A' }] }
 
     expect(parseStoredFilm(serializeStoredFilm(stored))).toEqual(stored)
+  })
+
+  it.each<FilmMusic>([
+    { kind: 'upload', jobId: 'u1', name: '夏日节拍.mp3', url: 'https://oss/u1', userStart: 2.5 },
+    { kind: 'generate', jobId: 'g1', userStart: null },
+  ])('音乐（$kind）连同人拖到的起点原样读回', (music) => {
+    const stored = { film: setMusic(film(), music), lanes: [] }
+
+    expect(parseStoredFilm(serializeStoredFilm(stored))).toEqual(stored)
+  })
+
+  it('只加了音乐、格式版本没变：之前存的草稿照样读回，没有音乐', () => {
+    const before = JSON.stringify({
+      version: 1,
+      segments: [{ id: 's1', sourceJobId: 'A', start: 0, end: 3, origin: [0, 3] }],
+      texts: {},
+      manual: [],
+      lanes: [{ groupId: 'g1', jobId: 'A' }],
+    })
+
+    expect(parseStoredFilm(before)?.film).toMatchObject({
+      segments: [{ id: 's1', start: 0, end: 3, origin: { start: 0, end: 3 } }],
+      music: null,
+    })
   })
 
   it.each([

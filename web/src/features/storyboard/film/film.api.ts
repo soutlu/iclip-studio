@@ -1,6 +1,6 @@
 /** 制作页读写 AI 导演的工程：读成镜头组、改字、换图、改画幅、按描述生图、给一组出片。端点语义见 contract/conventions.md 的「制作页」几条。 */
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
 import { use, useEffect } from 'react'
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'
@@ -31,16 +31,19 @@ export const FILM_RUN_PATH = 'film.icrun'
 export const filmQueryKey = (conversationId: string) =>
   [...storyboardQueryKeys.conversation(conversationId), 'film'] as const
 
-export const useFilmView = (conversationId: string) =>
-  useQuery({
+/** 读成制作页的工程；整片编辑器取配乐也用这一份缓存。没有工程文件时是 404。 */
+export const filmViewQuery = (conversationId: string) =>
+  queryOptions({
     queryFn: ({ signal }) =>
       apiFetch(`/conversations/${conversationId}/film`, zFilmViewEnvelope, {
         fallbackErrorMessage: '读取分镜失败',
         signal,
       }),
     queryKey: filmQueryKey(conversationId),
-    select: (envelope) => envelope.film,
   })
+
+export const useFilmView = (conversationId: string) =>
+  useQuery({ ...filmViewQuery(conversationId), select: (envelope) => envelope.film })
 
 /** 工程文件或运行文件一变就重读（AI 导演改了、人在文件页存了）；生成落定由 `useLiveGenerations` 失效前缀带上。 */
 export const useFilmFileChanges = (conversationId: string): void => {
