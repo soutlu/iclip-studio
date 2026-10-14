@@ -784,51 +784,6 @@ export const zAppendOp = z.object({
 })
 
 /**
- * GenerationOut
- *
- * 一次生成对外的样子。
- *
- * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、上游任务号
- * 与状态词、提交时刻都是排队与排障的内部机制；来源对话不写回去——查的时候本来就是按它查的。
- */
-export const zGenerationOut = z.object({
-  clipStage: z.enum(['fetching', 'processing', 'uploading']).nullable(),
-  createdAt: z.iso.datetime(),
-  durationMs: z.int().nullable(),
-  errorMessage: z.string().nullable(),
-  finishedAt: z.iso.datetime().nullish(),
-  id: z.uuid(),
-  kind: z.enum(['video', 'image']),
-  metadata: z.record(z.string(), z.unknown()).nullable(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload']),
-  outputUrl: z.string().nullable(),
-  rangeEndMs: z.int().nullish(),
-  rangeStartMs: z.int().nullish(),
-  request: z.record(z.string(), z.unknown()).nullable(),
-  rootJobId: z.uuid().nullable(),
-  shotIndex: z.int().nullish(),
-  sourceJobId: z.uuid().nullish(),
-  sourceUrl: z.string().nullish(),
-  status: z.enum(['pending', 'submitting', 'submitted', 'completed', 'failed']),
-  taskId: z.uuid().nullable(),
-  watermarkOutputUrl: z.string().nullable(),
-})
-
-/**
- * GenerationEnvelope
- */
-export const zGenerationEnvelope = z.object({
-  generation: zGenerationOut,
-})
-
-/**
- * GenerationsPageOut
- */
-export const zGenerationsPageOut = z.object({
-  items: z.array(zGenerationOut),
-})
-
-/**
  * HTTPValidationError
  *
  * 请求校验失败，与领域错误同一个信封。
@@ -1373,6 +1328,80 @@ export const zStepUpsertOp = z.object({
 export const zStyleMatchOut = z.object({
   matchLevel: z.enum(['exact', 'sameBrandCategory', 'sameCategory', 'none']),
   styleNo: z.string(),
+})
+
+/**
+ * SubtitleIn
+ *
+ * 手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+ *
+ * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
+ * 服务不收它，不进 ``request``。
+ */
+export const zSubtitleIn = z.object({
+  conversationId: z.uuid().nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  sourceJobId: z.uuid(),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
+ * SubtitleSentence
+ *
+ * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ */
+export const zSubtitleSentence = z.object({
+  endMs: z.int().gte(0),
+  speaker: z.int().nullable(),
+  startMs: z.int().gte(0),
+  text: z.string(),
+})
+
+/**
+ * GenerationOut
+ *
+ * 一次生成对外的样子。
+ *
+ * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、上游任务号
+ * 与状态词、提交时刻都是排队与排障的内部机制；来源对话不写回去——查的时候本来就是按它查的。
+ */
+export const zGenerationOut = z.object({
+  clipStage: z.enum(['fetching', 'processing', 'uploading']).nullable(),
+  createdAt: z.iso.datetime(),
+  durationMs: z.int().nullable(),
+  errorMessage: z.string().nullable(),
+  finishedAt: z.iso.datetime().nullish(),
+  id: z.uuid(),
+  kind: z.enum(['video', 'image', 'subtitle']),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload']),
+  outputUrl: z.string().nullable(),
+  rangeEndMs: z.int().nullish(),
+  rangeStartMs: z.int().nullish(),
+  request: z.record(z.string(), z.unknown()).nullable(),
+  rootJobId: z.uuid().nullable(),
+  sentences: z.array(zSubtitleSentence).nullish(),
+  shotIndex: z.int().nullish(),
+  sourceJobId: z.uuid().nullish(),
+  sourceUrl: z.string().nullish(),
+  status: z.enum(['pending', 'submitting', 'submitted', 'completed', 'failed']),
+  taskId: z.uuid().nullable(),
+  watermarkOutputUrl: z.string().nullable(),
+})
+
+/**
+ * GenerationEnvelope
+ */
+export const zGenerationEnvelope = z.object({
+  generation: zGenerationOut,
+})
+
+/**
+ * GenerationsPageOut
+ */
+export const zGenerationsPageOut = z.object({
+  items: z.array(zGenerationOut),
 })
 
 /**
@@ -3104,7 +3133,7 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image']).nullish(),
+  kind: z.enum(['video', 'image', 'subtitle']).nullish(),
   operation: z.enum(['generate', 'compose', 'cut', 'upload']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
@@ -3128,6 +3157,13 @@ export const zSubmitImageGenerationsImagePostResponse = zGenerationEnvelope
  * Successful Response
  */
 export const zListImageModelsGenerationsImageModelsGetResponse = zImageModelsOut
+
+export const zSubmitSubtitleGenerationsSubtitlesPostBody = zSubtitleIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitSubtitleGenerationsSubtitlesPostResponse = zGenerationEnvelope
 
 export const zSubmitVideoGenerationsVideoPostBody = zVideoGenerationIn
 

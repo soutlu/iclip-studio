@@ -23,6 +23,7 @@ from iclip.domains.generation.schemas import (
     ImageModelOut,
     ImageModelsOut,
     Metadata,
+    SubtitleIn,
     VideoComposeIn,
     VideoEditIn,
     VideoGenerationIn,
@@ -113,6 +114,24 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         )
         return await envelope(job)
 
+    @router.post("/subtitles", response_model=GenerationEnvelope, status_code=202)
+    async def submit_subtitle(
+        body: SubtitleIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """手动识别一条成片的口播，另起一条字幕记录（种类 ``subtitle``）；成片完成时后台已自动识别
+        一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。
+
+        ``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到
+        却不是成片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
+        取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_subtitle(principal, body)
+        return await envelope(job)
+
     @router.post("/image", response_model=GenerationEnvelope, status_code=202)
     async def submit_image(
         body: ImageGenerationIn,
@@ -166,6 +185,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         ``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。
 
         按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。
+        成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
         """
 
         jobs = await service.list_recent(

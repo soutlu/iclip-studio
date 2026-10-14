@@ -22,6 +22,7 @@ from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
+    KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_COMPOSE,
     OPERATION_CUT,
@@ -918,6 +919,50 @@ async def test_uploads_and_cuts_do_not_count_toward_any_metric(
                     "source": source,
                     "url": f"https://example.test/{job_id}",
                     "at": at,
+                },
+            )
+
+    assert await reports.overall(Scope()) == before
+    assert await reports.by_user(Scope()) == before_users
+    assert await executions_by_id(service) == before_executions
+
+
+async def test_subtitle_records_do_not_count_toward_any_metric(
+    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+) -> None:
+    """字幕记录不是出片：挂在对话上的一条完成、一条失败、一条还在跑，总览、分人与任务执行都不变。"""
+
+    before = await reports.overall(Scope())
+    before_users = await reports.by_user(Scope())
+    before_executions = await executions_by_id(service)
+    at = ago(hours=1)
+    async with engine.begin() as conn:
+        for status, sentences in (
+            (STATUS_COMPLETED, "[]"),
+            (STATUS_FAILED, None),
+            (STATUS_SUBMITTED, None),
+        ):
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id,"
+                    " kind, operation, provider, request, status, source_job_id, sentences,"
+                    " created_at, submitted_at, finished_at)"
+                    " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'qwen_asr',"
+                    " CAST(:request AS jsonb), :status, :source, CAST(:sentences AS jsonb),"
+                    " :at, :at, :finished_at)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "owner": seed.sara,
+                    "conversation_id": seed.c1,
+                    "kind": KIND_SUBTITLE,
+                    "operation": OPERATION_GENERATE,
+                    "request": json.dumps({"model": "m", "videoUrl": "https://example.test/v"}),
+                    "status": status,
+                    "source": seed.c1_shot1_video,
+                    "sentences": sentences,
+                    "at": at,
+                    "finished_at": None if status == STATUS_SUBMITTED else at,
                 },
             )
 

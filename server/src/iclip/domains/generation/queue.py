@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
@@ -51,6 +51,10 @@ def queue_dsn(database_url: str) -> str:
 
     scheme, _, rest = database_url.partition("://")
     return f"{scheme.split('+')[0]}://{rest}"
+
+
+OnCompleted = Callable[[GenerationJob], Awaitable[None]]
+"""一条记录带着产物地址转为完成之后的后续动作，收到的是刚写进去的那一行。"""
 
 
 class StillRunning(Exception):
@@ -134,8 +138,13 @@ class GenerationQueue:
         lanes: Sequence[ProviderLane],
         connector: procrastinate.BaseConnector,
         settings: GenerationQueueSettings | None = None,
+        on_completed: OnCompleted | None = None,
     ) -> None:
+        """``on_completed`` 在一条记录带着产物地址转为完成之后调一次（字幕记录完成不调），装配用它
+        给成片排字幕识别；它失败不影响那条记录。"""
+
         self._repo = repo
+        self._on_completed = on_completed
         # 键取自 provider 自己报的名字，与任务行上的 provider 列同源，装配期就撞出重名。
         self._lanes: Mapping[str, ProviderLane] = _by_name(lanes)
         self._settings = settings or GenerationQueueSettings()
@@ -224,9 +233,23 @@ class GenerationQueue:
             )
             return
 
+        if submission.sentences is not None:
+            # 字幕识别同步出结果：结果是逐句字幕，不是产物地址。
+            self._settled(
+                job,
+                await self._repo.mark_transcribed(
+                    job.id,
+                    sentences=submission.sentences,
+                    provider_status=submission.provider_status,
+                    provider_task_id=submission.provider_task_id,
+                    only_if_status=STATUS_SUBMITTING,
+                ),
+            )
+            return
+
         if submission.output_url is not None:
             # 同步接口没有轮询阶段，完成时同时保存回执任务 id。
-            self._settled(
+            await self._completed(
                 job,
                 await self._repo.mark_completed(
                     job.id,
@@ -297,7 +320,7 @@ class GenerationQueue:
             return
 
         if progress.outcome == "succeeded" and progress.output_url is not None:
-            self._settled(
+            await self._completed(
                 job,
                 await self._repo.mark_completed(
                     job.id,
@@ -431,6 +454,20 @@ class GenerationQueue:
             return
         _logger.warning("生成任务提交中断，已判失败", job_id=job.id)
 
+    async def _completed(self, job: GenerationJob, written: GenerationJob | None) -> None:
+        """产物写成完成之后交给 ``on_completed``；没写进去（别的执行已下了结论）就不交。
+
+        ``on_completed`` 出任何错都只记日志：这一条已经完成落库，后续动作失败不能改它的结论，
+        也不能逃进重试策略让这次执行重跑。"""
+
+        self._settled(job, written)
+        if written is None or self._on_completed is None:
+            return
+        try:
+            await self._on_completed(written)
+        except Exception:
+            _logger.exception("生成任务完成后的后续动作失败", job_id=written.id)
+
     def _settled(self, job: GenerationJob, written: GenerationJob | None) -> None:
         """终态写入没命中状态守卫就记一条：别的执行已经给它下了结论，这次不覆盖。
 
@@ -450,6 +487,7 @@ __all__ = [
     "QUEUE_POLL",
     "GenerationQueue",
     "GenerationQueueSettings",
+    "OnCompleted",
     "ProviderLane",
     "StillRunning",
     "queue_dsn",

@@ -1,9 +1,9 @@
 """生成请求的 HTTP 与持久化类型定义。
 
-落库的请求有三种形状：视频（出片与编辑段）照抄上游异步接口（snake_case），图片与合成是本系统
-自己的（camelCase）。持久化存的就是请求自己的字段名，读取时按 (kind, operation) 经
-request_from_payload 重新校验，非法数据直接报错。编辑段与合成的受理输入另有自己的类型，受理时
-换成落库的那一种。切图与上传没有请求。"""
+落库的请求有四种形状：视频（出片与编辑段）照抄上游异步接口（snake_case），图片、合成与字幕识别
+是本系统自己的（camelCase）。持久化存的就是请求自己的字段名，读取时按 (kind, operation) 经
+request_from_payload 重新校验，非法数据直接报错。编辑段、合成与手动识别字幕的受理输入另有自己的
+类型，受理时换成落库的那一种。切图与上传没有请求。"""
 
 from __future__ import annotations
 
@@ -53,6 +53,8 @@ STATUS_FAILED: Final = "failed"
 
 KIND_VIDEO: Final = "video"
 KIND_IMAGE: Final = "image"
+KIND_SUBTITLE: Final = "subtitle"
+"""字幕记录：识别一条成片的口播，结果是逐句文字与时间，不是媒体地址。"""
 
 OPERATION_GENERATE: Final = "generate"
 """调模型：出片、编辑段、图片生成都是它。"""
@@ -447,12 +449,94 @@ class VideoComposeRequest(CamelModel):
     user_name: UserName | None = None
 
 
-GenerationRequest = VideoGenerationIn | ImageGenerationIn | VideoComposeRequest
+class SubtitleIn(CamelModel):
+    """手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+
+    归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
+    服务不收它，不进 ``request``。"""
+
+    source_job_id: uuid.UUID
+    """要识别的那条成片（已完成的出片或合成），这段对话自己的或继承来的。"""
+    user_name: UserName | None = None
+    """规则同出片的 ``user_name``。"""
+
+    conversation_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+
+class SubtitleRequest(CamelModel):
+    """一次字幕识别交给执行方的输入：识别哪条视频、用哪个模型、按什么参数发。
+
+    执行方下载 ``videoUrl``、抽成单声道 16 kHz mp3，以 Base64 发给识别服务；音频字节不落库。
+    后三个字段记下随请求发出的固定参数：开说话人分离才拿得到全部句子的起止时间。"""
+
+    kind: ClassVar[GenerationKind] = KIND_SUBTITLE
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    model: ModelName
+    video_url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+    """成片的原片地址（``outputUrl``），不用水印版。"""
+    audio_format: Literal["mp3"] = "mp3"
+    sample_rate: Literal[16000] = 16000
+    speaker_diarization: Literal[True] = True
+
+    @field_validator("video_url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
+class SubtitleSentence(CamelModel):
+    """字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。"""
+
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    text: str
+    speaker: int | None
+    """识别服务给的说话人编号，只在这一条视频里区分谁在说：不同视频里的同一个编号不是同一个人。
+    服务没给就是空。"""
+
+    @model_validator(mode="after")
+    def _end_not_before_start(self) -> SubtitleSentence:
+        if self.end_ms < self.start_ms:
+            raise ValueError("end_ms 不能早于 start_ms")
+        return self
+
+
+def sentences_to_payload(
+    sentences: tuple[SubtitleSentence, ...] | None,
+) -> list[dict[str, Any]] | None:
+    """逐句结果的持久化 JSON：键照字段名（snake_case），没有结果原样是 ``None``。"""
+
+    if sentences is None:
+        return None
+    return [sentence.model_dump() for sentence in sentences]
+
+
+_SENTENCES: Final = TypeAdapter(tuple[SubtitleSentence, ...])
+
+
+def sentences_from_payload(payload: Any) -> tuple[SubtitleSentence, ...] | None:
+    """读回逐句结果；形状不对直接报错，不当成没有。"""
+
+    if payload is None:
+        return None
+    try:
+        return _SENTENCES.validate_python(payload)
+    except ValueError as exc:
+        raise ValidationFailed(f"字幕结果的形状不合法: {exc}") from exc
+
+
+GenerationRequest = VideoGenerationIn | ImageGenerationIn | VideoComposeRequest | SubtitleRequest
 
 _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_GENERATE): TypeAdapter(VideoGenerationIn),
     (KIND_IMAGE, OPERATION_GENERATE): TypeAdapter(ImageGenerationIn),
     (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
+    (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
 }
 """编辑段落库的仍是 ``VideoGenerationIn``：它与出片的区别在来源列上，不在请求形状上。"""
 
@@ -538,6 +622,9 @@ class GenerationOut(CamelModel):
     clip_stage: ClipStage | None
     """在途的本地加工跑到哪一步：合成的取素材、拼接、上传。排队中、已有结论都为空；编辑段与
     别的记录没有本地加工，恒为空。"""
+    sentences: list[SubtitleSentence] | None = None
+    """字幕记录的结果：逐句的起止（毫秒）、文字与说话人，按识别服务给的先后。只有完成的字幕记录有，
+    没有口播是空数组；别的记录与没完成的字幕记录为空。字幕记录没有 ``outputUrl``。"""
     created_at: datetime
     finished_at: datetime | None = None
     """到终态的时刻（数据库时钟）；同一镜头组的成片按它排版本。"""
@@ -565,6 +652,7 @@ def generation_out(job: GenerationJob, *, source_address: str | None) -> Generat
         error_message=job.error_message,
         duration_ms=job.duration_ms,
         clip_stage=_clip_stage(job),
+        sentences=None if job.sentences is None else list(job.sentences),
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
@@ -681,6 +769,7 @@ __all__ = [
     "CLIP_UPLOADING",
     "IMAGE_MAX_REFERENCES",
     "KIND_IMAGE",
+    "KIND_SUBTITLE",
     "KIND_VIDEO",
     "MAX_COMPOSE_SEGMENTS",
     "MAX_METADATA_CHARS",
@@ -713,6 +802,9 @@ __all__ = [
     "ImageModelOut",
     "ImageModelsOut",
     "Metadata",
+    "SubtitleIn",
+    "SubtitleRequest",
+    "SubtitleSentence",
     "VideoComposeIn",
     "VideoComposeRequest",
     "VideoEditIn",
@@ -728,5 +820,7 @@ __all__ = [
     "generation_out",
     "request_from_payload",
     "request_to_payload",
+    "sentences_from_payload",
+    "sentences_to_payload",
     "video_task_out",
 ]

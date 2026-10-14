@@ -36,6 +36,8 @@ from iclip.domains.generation.schemas import (
     GenerationOperation,
     GenerationRequest,
     ImageGenerationIn,
+    SubtitleIn,
+    SubtitleRequest,
     VideoComposeIn,
     VideoComposeRequest,
     VideoEditIn,
@@ -52,6 +54,14 @@ ClearCompletion = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
 
 ProbeDuration = Callable[[str], Awaitable[int]]
 """按地址探一条远程视频的时长（毫秒），读不到或看不懂抛 ``MediaError``；实现由装配注入。"""
+
+
+@dataclass(frozen=True, slots=True)
+class SubtitleTarget:
+    """字幕识别开通时由装配给的两件事：排进哪家的队列、请求里记哪个模型。"""
+
+    provider: str
+    model: str
 
 
 class ConversationLineage(Protocol):
@@ -83,11 +93,13 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         probe_duration_ms: ProbeDuration,
+        subtitles: SubtitleTarget | None = None,
     ) -> None:
         """收下装配期确定的模型集合；此层不持有或调用 Provider 实例。
 
         图片可选哪几家由装配表决定，本层只按它校验并把选中的那家写进记录。``probe_duration_ms``
-        只在受理编辑段时用：核对参考片段与基底的时长。"""
+        只在受理编辑段时用：核对参考片段与基底的时长。``subtitles`` 为 None 即字幕识别没开通：
+        成片完成不建字幕记录，手动识别 422。"""
 
         self._repo = repo
         self._queue = queue
@@ -100,6 +112,7 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._probe_duration_ms = probe_duration_ms
+        self._subtitles = subtitles
 
     async def _inheritance(
         self, principal: Principal, conversation_id: uuid.UUID | None
@@ -369,35 +382,29 @@ class GenerationService:
         镜号没有默认值：漏传就会静默落成一条没有镜号的记录。帧图编辑的两种来源恰好一个，由
         ``_resolve_base`` 保证。两步之间进程中断会留下未排队的 pending 记录，需要人工确认后重新发起。"""
 
-        now = datetime.now(UTC)
-        job = GenerationJob(
-            id=uuid.uuid4(),
-            owner_user_id=principal.user_id,
-            api_key_id=principal.api_key_id,
-            conversation_id=conversation_id,
-            metadata=metadata,
-            task_id=task_id,
-            shot_index=shot_index,
-            root_job_id=root_job_id,
-            source_job_id=source_job_id,
-            source_url=source_url,
-            range_start_ms=range_start_ms,
-            range_end_ms=range_end_ms,
-            kind=request.kind,
-            operation=request.operation,
-            provider=provider,
-            request=request,
-            status=STATUS_PENDING,
-            provider_task_id=None,
-            provider_status=None,
-            output_url=None,
-            error_code=None,
-            error_message=None,
-            # 仓储使用数据库 now() 覆盖时间占位值。
-            created_at=now,
-            submitted_at=None,
-            finished_at=None,
+        created = await self._queue_new(
+            _pending_job(
+                request,
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=provider,
+                conversation_id=conversation_id,
+                task_id=task_id,
+                metadata=metadata,
+                shot_index=shot_index,
+                root_job_id=root_job_id,
+                source_job_id=source_job_id,
+                source_url=source_url,
+                range_start_ms=range_start_ms,
+                range_end_ms=range_end_ms,
+            )
         )
+        await self._note_conversation_active(created)
+        return created
+
+    async def _queue_new(self, job: GenerationJob) -> GenerationJob:
+        """落一条 pending 记录并排进它那家的提交队列。排队失败时标记失败并抛出原错误。"""
+
         created = await self._repo.create(job)
         try:
             await self._queue.enqueue_submit(created)
@@ -409,8 +416,71 @@ class GenerationService:
             )
             _logger.exception("生成任务排队失败", job_id=created.id)
             raise
-        await self._note_conversation_active(created)
         return created
+
+    async def submit_subtitle(self, principal: Principal, request: SubtitleIn) -> GenerationJob:
+        """手动识别一条成片的口播，另起一条字幕记录：补识别旧视频，或识别失败后重来。
+
+        识别没开通先拒（422），不碰记录。视频要是这段对话自己的或它继承来的（按主体可见范围读），
+        读不到一律 404，不区分存在性；读得到却不是成片 422。新记录的属主与钥匙取主体，对话、需求单
+        与 ``metadata`` 取请求，和编辑段、合成一样；不动对话的收尾标记，识别不是人在对话里动手。"""
+
+        subtitles = self._require_subtitles()
+        inheritance = await self._inheritance(principal, request.conversation_id)
+        video = await self._repo.get(
+            request.source_job_id,
+            owner=visible_owner_incl_act_as(principal),
+            inherited=inheritance,
+        )
+        if video.conversation_id != request.conversation_id and not inherited_through(
+            video, inheritance
+        ):
+            raise NotFound(f"没有这次生成: {request.source_job_id}")
+        if not _is_completed_master(video) or video.output_url is None:
+            raise ValidationFailed("只能识别成片：已完成的出片或合成")
+        return await self._queue_new(
+            _pending_job(
+                SubtitleRequest(model=subtitles.model, video_url=video.output_url),
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=subtitles.provider,
+                conversation_id=request.conversation_id,
+                task_id=request.task_id,
+                metadata=request.metadata,
+                shot_index=None,
+                source_job_id=video.id,
+            )
+        )
+
+    async def transcribe_completed(self, job: GenerationJob) -> None:
+        """一条记录刚转为完成：是成片且识别开通了，就为它排一条字幕记录。
+
+        字幕记录的属主、钥匙、对话与需求单都抄那条视频的（保留归因）；不是成片、识别没开通都不建。
+        建或排队失败只用日志记下，不抛：那条视频已经完成，不能被它连累。"""
+
+        if self._subtitles is None or not _is_completed_master(job) or job.output_url is None:
+            return
+        try:
+            await self._queue_new(
+                _pending_job(
+                    SubtitleRequest(model=self._subtitles.model, video_url=job.output_url),
+                    owner_user_id=job.owner_user_id,
+                    api_key_id=job.api_key_id,
+                    provider=self._subtitles.provider,
+                    conversation_id=job.conversation_id,
+                    task_id=job.task_id,
+                    metadata=None,
+                    shot_index=None,
+                    source_job_id=job.id,
+                )
+            )
+        except Exception:
+            _logger.exception("成片完成后建字幕记录失败", video_job_id=job.id)
+
+    def _require_subtitles(self) -> SubtitleTarget:
+        if self._subtitles is None:
+            raise ValidationFailed("字幕识别没有开通，暂时不能识别")
+        return self._subtitles
 
     async def _note_conversation_active(self, job: GenerationJob) -> None:
         """出片提交就是又在这段对话里开工了，收尾标记不该留着。
@@ -623,6 +693,55 @@ def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
         )
 
 
+def _pending_job(
+    request: GenerationRequest,
+    *,
+    owner_user_id: uuid.UUID,
+    api_key_id: uuid.UUID | None,
+    provider: str,
+    conversation_id: uuid.UUID | None,
+    task_id: uuid.UUID | None,
+    metadata: dict[str, Any] | None,
+    shot_index: int | None,
+    root_job_id: uuid.UUID | None = None,
+    source_job_id: uuid.UUID | None = None,
+    source_url: str | None = None,
+    range_start_ms: int | None = None,
+    range_end_ms: int | None = None,
+) -> GenerationJob:
+    """一条待提交的记录：kind 与 operation 随请求的类型定，其余由调用方显式给；时刻由仓储改成
+    数据库时钟。"""
+
+    now = datetime.now(UTC)
+    return GenerationJob(
+        id=uuid.uuid4(),
+        owner_user_id=owner_user_id,
+        api_key_id=api_key_id,
+        conversation_id=conversation_id,
+        metadata=metadata,
+        task_id=task_id,
+        shot_index=shot_index,
+        root_job_id=root_job_id,
+        source_job_id=source_job_id,
+        source_url=source_url,
+        range_start_ms=range_start_ms,
+        range_end_ms=range_end_ms,
+        kind=request.kind,
+        operation=request.operation,
+        provider=provider,
+        request=request,
+        status=STATUS_PENDING,
+        provider_task_id=None,
+        provider_status=None,
+        output_url=None,
+        error_code=None,
+        error_message=None,
+        created_at=now,
+        submitted_at=None,
+        finished_at=None,
+    )
+
+
 def _require_user_name(user_name: str | None) -> None:
     """HTTP 边界与工具都先按主体定好了名字；到这儿还空着就是漏了一条路，照实拒绝。"""
 
@@ -796,5 +915,6 @@ __all__ = [
     "GenerationService",
     "ProbeDuration",
     "SettledRecords",
+    "SubtitleTarget",
     "UploadRecord",
 ]

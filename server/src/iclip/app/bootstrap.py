@@ -49,6 +49,7 @@ from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
 from iclip.common.errors import NotFound
 from iclip.config import (
+    QWEN_API_KEY_ENV,
     ObjectStoreEnv,
     ResolvedAgent,
     ResolvedMediaGeneration,
@@ -69,6 +70,7 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.module import (
     GenerationModule,
     ImageModelConfig,
+    SubtitleConfig,
     build_generation_module,
 )
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
@@ -323,6 +325,14 @@ def _generation_module(
             job_timeout_seconds=settings.job_timeout_seconds,
             compose_concurrency=compose_concurrency,
         ),
+        subtitles=SubtitleConfig(
+            url=settings.subtitle.url,
+            api_key=settings.subtitle.api_key,
+            concurrency=settings.subtitle.concurrency,
+            timeout_seconds=settings.subtitle.timeout_seconds,
+        )
+        if settings.subtitle is not None
+        else None,
     )
 
 
@@ -411,6 +421,13 @@ def build_app(
         # 声明了 shot_video 的 Agent 会在解析能力名时报错，这里先点名缺什么。
         _logger.warning(
             "配了 shot_video 段但取帧与出图装不起来", missing=list(settings.shot_tools_missing)
+        )
+    if settings.media_generation is None or settings.media_generation.subtitle is None:
+        # 字幕识别可以不开，但要让人看得出它没开：成片不会有字幕记录，手动识别会被拒。
+        _logger.warning(
+            "字幕识别未启用",
+            media_generation=settings.media_generation is not None,
+            requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
         )
     # 图片信息查询、素材下载与拆解请求共用 HTTP 连接池。
     http_client = httpx.AsyncClient(follow_redirects=True)
