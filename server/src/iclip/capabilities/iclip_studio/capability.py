@@ -104,13 +104,15 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
     async def check_film(
         self, ctx: RunContext[AgentDepsT], show: str | None = None
     ) -> ToolReturn[str]:
-        """检查工程文件 film.icml 和运行文件 film.icrun，返回全部问题，或检查通过。
+        """检查工程文件 film.icml 和运行文件 film.icrun 是否符合工程规范，包括文件结构、引用关系、
+        参数和素材来源。
 
-        每次改完这两个文件都调用一次，按返回的问题改到通过；问题带文件名和行号。重复调用不花钱。
+        检查分阶段进行，返回本次发现的问题及文件位置，每次最多列出 30 处。修正后重新检查。
+        图片尚未选用不影响工程规范检查；可用 show 查看指定节点的最终提示词、参考图和缺图情况。
 
         Args:
-            show: 要看某张图或某段视频最终发给模型的完整提示词和参考图时，填它在 film.icml 里的
-                id，如 "镜02机位图"、"全片"；检查通过才输出。
+            show: 填写 film.icml 中图片或视频生成节点的 id，如“镜02机位图”“全片”。工程规范
+                检查通过后，返回该节点的最终提示词、参考图地址及尚未选用的参考图。
         """
 
         film = await self._load(ctx)
@@ -118,7 +120,9 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
             return _problems(film)
         project = film.project
         videos = project.find("ReferenceVideo")
-        lines = [f"检查通过：{len(film.image_nodes())} 张图，{len(videos)} 段视频。"]
+        lines = [
+            f"工程规范检查通过：{len(film.image_nodes())} 个图片生成节点，{len(videos)} 个视频生成节点。"
+        ]
         if show is not None:
             node = project.nodes.get(show)
             tag = project.tags.get(node.tag) if node is not None else None
@@ -251,9 +255,9 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
 
 def _problems(problems: list[str]) -> ToolReturn[str]:
     listed = problems[:MAX_LISTED_PROBLEMS]
-    lines = [f"检查没通过，共 {len(problems)} 处问题：", *listed]
+    lines = [f"工程规范检查未通过，本次发现 {len(problems)} 处问题：", *listed]
     if len(problems) > len(listed):
-        lines.append(f"只列了前 {len(listed)} 处，改完再检查。")
+        lines.append(f"仅列出前 {len(listed)} 处，修正后重新检查。")
     return ToolReturn(
         return_value="\n".join(lines), metadata=tool_note(chip=f"{len(problems)} 处问题")
     )
@@ -273,7 +277,7 @@ def _assembled(film: Film, node: Node) -> list[str]:
         text, images = format_shot_prompt(group), group.images
     listed = (
         "、".join(
-            f"@Image{n} = {item.url or f'{item.image}（还没有选用图，不能生成）'}"
+            f"@Image{n} = {item.url or f'{item.image}（尚未选用图片）'}"
             for n, item in enumerate(images, start=1)
         )
         or "无"

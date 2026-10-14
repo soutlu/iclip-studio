@@ -102,7 +102,6 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 | 文档 | 何时读 | 内容与更新时机 |
 |---|---|---|
-| [README.md](README.md) | 了解项目时 | 项目背景与架构变化时更新 |
 | [AGENTS.md](AGENTS.md) | 任何改动前 | 全仓操作与开发规则变化时更新 |
 | [web/AGENTS.md](web/AGENTS.md) | 修改前端时 | 前端命令、目录职责、边界、验证要求变化时更新 |
 | [docs/CONTEXT.md](docs/CONTEXT.md) | 任何改动前 | 两端共用的领域术语、不变量和禁止逻辑变化时更新 |
