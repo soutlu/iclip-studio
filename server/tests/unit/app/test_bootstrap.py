@@ -24,6 +24,7 @@ from iclip.config import (
     RuntimeConfig,
     SecuritySection,
     SsoSection,
+    SubtitleSection,
     VideoGenerationSection,
     VideoSection,
 )
@@ -56,7 +57,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OSS_ACCESS_KEY_ID", "ak")
     monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "sk")
     monkeypatch.setenv("OSS_PUBLIC_URL_BASE", "https://cdn.test")
-    for name in (*MEDIA_ENVS, *STUDIO_ENVS):
+    for name in (*MEDIA_ENVS, *STUDIO_ENVS, "QWEN_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -202,6 +203,41 @@ def test_local_queues_take_the_written_concurrency_or_the_codec_default(
         (log["codec"], log["hardware"], log["compose_concurrency"], log["breakdown_concurrency"])
         for log in chosen
     ] == [(codec.name, codec.hardware, *expected)]
+
+
+@pytest.mark.parametrize("configured", [True, False], ids=["开通", "没开通"])
+async def test_startup_says_when_subtitles_are_off_and_the_route_is_mounted_either_way(
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
+    """识别可以不开，但启动日志要说出来；手动识别的入口照挂，没开通由它自己明确拒绝。"""
+
+    config = config_with_media()
+    assert config.media_generation is not None
+    if configured:
+        monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+        config = config.model_copy(
+            update={
+                "media_generation": config.media_generation.model_copy(
+                    update={"subtitle": SubtitleSection(url="https://asr.test/generation")}
+                )
+            }
+        )
+    with capture_logs() as logs:
+        app = build_app(
+            config,
+            engine=engine(),
+            models={},
+            object_store=MemoryObjectStore(),
+            media_codec=SOFTWARE,
+        )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/generations/subtitles", json={})
+
+    off = [log for log in logs if log["event"] == "字幕识别未启用"]
+    assert len(off) == (0 if configured else 1)
+    assert response.status_code == 401, "入口挂着，没登录先 401"
 
 
 def test_without_an_injected_codec_the_startup_probe_chooses(

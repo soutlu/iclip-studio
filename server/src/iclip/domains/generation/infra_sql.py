@@ -50,8 +50,11 @@ from iclip.domains.generation.schemas import (
     OPERATION_COMPOSE,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
+    SubtitleSentence,
     request_from_payload,
     request_to_payload,
+    sentences_from_payload,
+    sentences_to_payload,
 )
 from iclip.platform.db.ownership import owner_conditions
 
@@ -111,6 +114,8 @@ generation_jobs_table = Table(
     Column("duration_ms", Integer, nullable=True),
     # 文件的 MD5，只有视频上传有：桶里是一次整传的对象时取它的 ETag，确认时按它认出同一个文件。
     Column("content_md5", Text, nullable=True),
+    # 字幕记录的逐句结果 [{start_ms, end_ms, text, speaker}]，完成时写入。none_as_null 理由同 request。
+    Column("sentences", JSONB(none_as_null=True), nullable=True),
     Column("error_code", Text, nullable=True),
     Column("error_message", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -155,7 +160,9 @@ generation_jobs_table = Table(
     # 编辑段必有来源、原作与区间，合成必有来源与原作、没有区间；帧图编辑两种来源至多一个，
     # 切图必有库内来源，上传没有来源、不挂对话；切图与上传没有请求、创建即完成。
     # 请求那条的 IS NOT NULL 不能省：jsonb_typeof(NULL) 让 CHECK 直接放行。
-    CheckConstraint("kind IN ('video', 'image')", name="ck_generation_jobs_kind"),
+    # 种类与字幕记录的两条与迁移 0025 同名同式：字幕记录是调模型的 generate，来源是被识别的视频，
+    # 没有原作、区间、镜号、外部地址与产物地址；逐句结果只有它能有，完成了就必须有。
+    CheckConstraint("kind IN ('video', 'image', 'subtitle')", name="ck_generation_jobs_kind"),
     CheckConstraint(
         "operation IN ('generate', 'compose', 'cut', 'upload')",
         name="ck_generation_jobs_operation",
@@ -205,6 +212,18 @@ generation_jobs_table = Table(
     CheckConstraint(
         "content_md5 IS NULL OR (kind = 'video' AND operation = 'upload')",
         name="ck_generation_jobs_content_md5",
+    ),
+    CheckConstraint(
+        "kind <> 'subtitle' OR (operation = 'generate' AND source_job_id IS NOT NULL"
+        " AND source_url IS NULL AND root_job_id IS NULL AND shot_index IS NULL"
+        " AND range_start_ms IS NULL AND range_end_ms IS NULL"
+        " AND output_url IS NULL AND watermark_output_url IS NULL"
+        " AND (status <> 'completed' OR sentences IS NOT NULL))",
+        name="ck_generation_jobs_subtitle_shape",
+    ),
+    CheckConstraint(
+        "sentences IS NULL OR (kind = 'subtitle' AND jsonb_typeof(sentences) = 'array')",
+        name="ck_generation_jobs_sentences",
     ),
 )
 
@@ -257,6 +276,7 @@ class SqlGenerationRepository:
                             output_url=None,
                             watermark_output_url=None,
                             duration_ms=None,
+                            sentences=None,
                             error_code=None,
                             error_message=None,
                             created_at=func.now(),
@@ -480,6 +500,27 @@ class SqlGenerationRepository:
             return await self._update_if(job_id, only_if_status, **values)
         return await self._update(job_id, **values)
 
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        values: dict[str, Any] = {
+            "status": STATUS_COMPLETED,
+            "sentences": sentences_to_payload(sentences),
+            "provider_status": provider_status,
+            "provider_task_id": provider_task_id,
+            "submitted_at": func.coalesce(_JOBS.submitted_at, func.now()),
+            "finished_at": func.now(),
+        }
+        if only_if_status is not None:
+            return await self._update_if(job_id, only_if_status, **values)
+        return await self._update(job_id, **values)
+
     async def mark_failed(
         self,
         job_id: uuid.UUID,
@@ -604,6 +645,7 @@ def _settled_values(job: GenerationJob) -> dict[str, Any]:
         "watermark_output_url": None,
         "duration_ms": None,
         "content_md5": job.content_md5,
+        "sentences": None,
         "error_code": None,
         "error_message": None,
         "created_at": func.now(),
@@ -640,6 +682,7 @@ def _job_from_row(row: RowMapping) -> GenerationJob:
         watermark_output_url=row["watermark_output_url"],
         duration_ms=row["duration_ms"],
         content_md5=row["content_md5"],
+        sentences=sentences_from_payload(row["sentences"]),
         error_code=row["error_code"],
         error_message=row["error_message"],
         created_at=row["created_at"],

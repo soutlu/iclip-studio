@@ -1,4 +1,4 @@
-"""异步媒体下载与 ffmpeg/ffprobe 子进程封装，以及视频裁剪与拼接。
+"""异步媒体下载与 ffmpeg/ffprobe 子进程封装，以及视频裁剪与拼接、给语音识别抽音频。
 
 子进程设定超时，超时后先 kill 再 wait，避免阻塞事件循环或遗留僵尸进程。
 按格取帧、灰度检测那些只有分镜取帧用得上的操作留在 capabilities 里。"""
@@ -57,9 +57,19 @@ _AUDIO_CODEC = ("-c:a", "aac", "-b:a", "192k")
 _AUDIO_RATE = 48000
 _AUDIO_LAYOUT = "stereo"
 
+SPEECH_SAMPLE_RATE: Final = 16000
+"""抽给语音识别的音频采样率（Hz）。"""
+
+SPEECH_BITRATE: Final = "64k"
+"""抽给语音识别的 mp3 码率。固定下来，产物大小只随时长变：5 分钟约 2.4 MB。"""
+
 
 class MediaError(RuntimeError):
     """取素材或 ffmpeg 处理失败。"""
+
+
+class NoAudioStream(MediaError):
+    """素材里没有音轨，没有可抽的声音。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +257,52 @@ async def probe_keyframes(path: Path) -> list[float]:
     return keyframes
 
 
+async def has_audio_stream(path: Path) -> bool:
+    """素材里有没有音轨；读不了抛 MediaError。不要求有视频流，纯音频文件也认。"""
+
+    stdout = await run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "json",
+            str(path),
+        ],
+        timeout=PROBE_TIMEOUT_SECONDS,
+    )
+    try:
+        streams = json.loads(stdout)["streams"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise MediaError("ffprobe 的音轨信息看不懂") from exc
+    return isinstance(streams, list) and len(streams) > 0
+
+
+async def extract_speech_audio(source: Path, *, dest: Path) -> None:
+    """把素材的第一条音轨抽成单声道、16 kHz、固定码率的 mp3，写到 ``dest``，给语音识别用。
+
+    多声道混成单声道：说话人分离只收单声道。没有音轨抛 ``NoAudioStream``（调用方据此判断「没有
+    口播」，不当成处理失败）；素材不在、读不了或 ffmpeg 失败抛 MediaError，产物为空也算失败。"""
+
+    if not source.is_file():
+        raise MediaError(f"要抽音频的素材不在: {source.name}")
+    if not await has_audio_stream(source):
+        raise NoAudioStream(f"这条素材里没有音轨: {source.name}")
+    await run(
+        [
+            "ffmpeg", "-v", "error", "-y", "-i", str(source),
+            "-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SPEECH_SAMPLE_RATE),
+            "-c:a", "libmp3lame", "-b:a", SPEECH_BITRATE, "-f", "mp3", str(dest),
+        ],
+        timeout=ENCODE_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
+
+
 def _positive_fraction(value: str) -> bool:
     numerator, _, denominator = value.partition("/")
     try:
@@ -418,13 +474,18 @@ __all__ = [
     "MAX_VIDEO_BYTES",
     "PROBE_TIMEOUT_SECONDS",
     "REMOTE_READ_TIMEOUT_SECONDS",
+    "SPEECH_BITRATE",
+    "SPEECH_SAMPLE_RATE",
     "MediaCut",
     "MediaError",
+    "NoAudioStream",
     "VideoProfile",
     "cut_concat",
     "download",
+    "extract_speech_audio",
     "fetched",
     "ffmpeg_available",
+    "has_audio_stream",
     "probe_duration_ms",
     "probe_keyframes",
     "probe_remote_duration_ms",

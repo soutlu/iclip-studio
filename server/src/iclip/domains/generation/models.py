@@ -18,6 +18,7 @@ from iclip.domains.generation.schemas import (
     GenerationOperation,
     GenerationRequest,
     GenerationStatus,
+    SubtitleSentence,
 )
 
 TERMINAL_STATUSES: Final = frozenset({STATUS_COMPLETED, STATUS_FAILED})
@@ -67,8 +68,8 @@ class GenerationJob:
 
     原作用于血缘与没有镜号时的分组。在分叉副本里剪继承来的出片，原作照样指源对话里那条。"""
     source_job_id: uuid.UUID | None = None
-    """直接来源：编辑段与合成指它的基底成片，帧图编辑指底图那一条，切图指它的宫格；出片、图片
-    生成与上传为空。可以指继承来的记录。合成的各段出自哪条记录记在请求的 ``segments`` 里。"""
+    """直接来源：编辑段与合成指它的基底成片，帧图编辑指底图那一条，切图指它的宫格，字幕记录指被
+    识别的那条成片；出片、图片生成与上传为空。可以指继承来的记录。合成的各段出自哪条记录记在请求的 ``segments`` 里。"""
     source_url: str | None = None
     """帧图编辑的外部底图地址，与 ``source_job_id`` 恰好一个；其余行为空。"""
     range_start_ms: int | None = None
@@ -80,6 +81,8 @@ class GenerationJob:
     """产物实际多长，毫秒；只有本系统自己加工、量过的（合成）才有，完成时写入。"""
     content_md5: str | None = None
     """文件的 MD5（小写十六进制），只有视频上传有；同一个文件的上传按它共用最早那条的地址。"""
+    sentences: tuple[SubtitleSentence, ...] | None = None
+    """字幕记录的逐句结果，完成时写入；没有口播是空元组。只有字幕记录有，它没有 ``output_url``。"""
 
 
 def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:

@@ -20,6 +20,7 @@ from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
 from iclip.domains.generation.schemas import (
+    KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_COMPOSE,
     OPERATION_GENERATE,
@@ -738,4 +739,44 @@ async def test_a_video_upload_is_not_a_card_or_a_version(
 
     assert await ids(reports, Scope()) == before
     assert await reports.card_of(upload) is None
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+async def test_subtitle_records_are_not_cards_or_versions(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    """字幕记录是成片的附属结果，不是片：挂在对话上、完成得比卡面还晚，卡与版本都不变。"""
+
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    subtitles = [uuid.uuid4(), uuid.uuid4()]
+    async with engine.begin() as conn:
+        for subtitle, status, sentences in zip(
+            subtitles, (STATUS_COMPLETED, STATUS_FAILED), ("[]", None), strict=True
+        ):
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                    " operation, provider, request, status, source_job_id, sentences,"
+                    " created_at, finished_at)"
+                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'qwen_asr',"
+                    " CAST(:request AS jsonb), :status, :source, CAST(:sentences AS jsonb),"
+                    " :at, :at)"
+                ),
+                {
+                    "id": subtitle,
+                    "owner": seed.nora,
+                    "conversation": seed.c1,
+                    "kind": KIND_SUBTITLE,
+                    "operation": OPERATION_GENERATE,
+                    "request": json.dumps({"model": "m", "videoUrl": url("a")}),
+                    "status": status,
+                    "source": seed.a,
+                    "sentences": sentences,
+                    "at": at(500),
+                },
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert all([await reports.card_of(subtitle) is None for subtitle in subtitles])
     assert shape(await reports.groups_of(seed.c1)) == before_c1

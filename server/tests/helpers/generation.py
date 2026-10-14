@@ -40,11 +40,14 @@ from iclip.domains.generation.provider import (
 from iclip.domains.generation.queue import GenerationQueue, GenerationQueueSettings, ProviderLane
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
+    KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_CUT,
     OPERATION_UPLOAD,
     GenerationRequest,
     ImageGenerationIn,
+    SubtitleRequest,
+    SubtitleSentence,
     VideoComposeRequest,
     VideoGenerationIn,
 )
@@ -60,6 +63,7 @@ from tests.helpers.identity import InMemoryUserRepository
 
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
+FAKE_SUBTITLE_PROVIDER = "subtitle_fake"
 """替身 provider 的名字。队列按任务行上的 provider 列查表，替身与 make_job 得用同一套。"""
 
 
@@ -174,6 +178,7 @@ def make_job(
     watermark_output_url: str | None = None,
     duration_ms: int | None = None,
     content_md5: str | None = None,
+    sentences: tuple[SubtitleSentence, ...] | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> GenerationJob:
@@ -193,6 +198,8 @@ def make_job(
         if payload is None
         else FAKE_VIDEO_PROVIDER
         if row_kind == KIND_VIDEO
+        else FAKE_SUBTITLE_PROVIDER
+        if row_kind == KIND_SUBTITLE
         else FAKE_IMAGE_PROVIDER
     )
     return GenerationJob(
@@ -219,6 +226,7 @@ def make_job(
         watermark_output_url=watermark_output_url,
         duration_ms=duration_ms,
         content_md5=content_md5,
+        sentences=sentences,
         error_code=error_code,
         error_message=error_message,
         created_at=created_at or now,
@@ -264,6 +272,20 @@ def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
         ]
     )
     return make_job(request, source_job_id=base, root_job_id=edit.root_job_id, **fields)
+
+
+def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
+    """识别成片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
+
+    assert video.output_url is not None, "只识别有地址的成片"
+    fields.setdefault("owner_user_id", video.owner_user_id)
+    fields.setdefault("conversation_id", video.conversation_id)
+    fields.setdefault("task_id", video.task_id)
+    return make_job(
+        SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=video.output_url),
+        source_job_id=video.id,
+        **fields,
+    )
 
 
 def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
@@ -461,6 +483,28 @@ class InMemoryGenerationRepository:
             provider_status=provider_status,
             provider_task_id=provider_task_id or current.provider_task_id,
             duration_ms=current.duration_ms if duration_ms is None else duration_ms,
+            submitted_at=current.submitted_at or datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+        )
+
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        current = self.jobs[job_id]
+        if only_if_status is not None and current.status != only_if_status:
+            return None
+        return self._replace(
+            job_id,
+            status=STATUS_COMPLETED,
+            sentences=sentences,
+            provider_status=provider_status,
+            provider_task_id=provider_task_id,
             submitted_at=current.submitted_at or datetime.now(UTC),
             finished_at=datetime.now(UTC),
         )
@@ -751,6 +795,7 @@ __all__ = [
     "make_cut",
     "make_edit",
     "make_job",
+    "make_subtitle",
     "make_upload",
     "stored_request",
     "video_request",

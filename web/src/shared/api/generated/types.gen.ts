@@ -1661,7 +1661,7 @@ export type GenerationOut = {
   /**
    * Kind
    */
-  kind: 'video' | 'image'
+  kind: 'video' | 'image' | 'subtitle'
   /**
    * Metadata
    */
@@ -1694,6 +1694,10 @@ export type GenerationOut = {
    * Rootjobid
    */
   rootJobId: string | null
+  /**
+   * Sentences
+   */
+  sentences?: Array<SubtitleSentence> | null
   /**
    * Shotindex
    */
@@ -3162,6 +3166,63 @@ export type StyleMatchOut = {
    * Styleno
    */
   styleNo: string
+}
+
+/**
+ * SubtitleIn
+ *
+ * 手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+ *
+ * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
+ * 服务不收它，不进 ``request``。
+ */
+export type SubtitleIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * SubtitleSentence
+ *
+ * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ */
+export type SubtitleSentence = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Speaker
+   */
+  speaker: number | null
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
 }
 
 /**
@@ -6574,7 +6635,7 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Kind
      */
-    kind?: 'video' | 'image' | null
+    kind?: 'video' | 'image' | 'subtitle' | null
     /**
      * Operation
      */
@@ -6668,6 +6729,33 @@ export type ListImageModelsGenerationsImageModelsGetResponses = {
 
 export type ListImageModelsGenerationsImageModelsGetResponse =
   ListImageModelsGenerationsImageModelsGetResponses[keyof ListImageModelsGenerationsImageModelsGetResponses]
+
+export type SubmitSubtitleGenerationsSubtitlesPostData = {
+  body: SubtitleIn
+  path?: never
+  query?: never
+  url: '/generations/subtitles'
+}
+
+export type SubmitSubtitleGenerationsSubtitlesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitSubtitleGenerationsSubtitlesPostError =
+  SubmitSubtitleGenerationsSubtitlesPostErrors[keyof SubmitSubtitleGenerationsSubtitlesPostErrors]
+
+export type SubmitSubtitleGenerationsSubtitlesPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitSubtitleGenerationsSubtitlesPostResponse =
+  SubmitSubtitleGenerationsSubtitlesPostResponses[keyof SubmitSubtitleGenerationsSubtitlesPostResponses]
 
 export type SubmitVideoGenerationsVideoPostData = {
   body: VideoGenerationIn

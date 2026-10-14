@@ -10,6 +10,7 @@ from iclip.config.agents import (
 )
 from iclip.config.models import (
     OSS_BUCKET_ENV,
+    QWEN_API_KEY_ENV,
     VIDEO_SUBMIT_URL_ENV,
     AgentRunsSection,
     AppSection,
@@ -30,11 +31,13 @@ from iclip.config.models import (
     ResolvedSettings,
     ResolvedShotVideo,
     ResolvedSso,
+    ResolvedSubtitle,
     ResolvedVideo,
     RuntimeConfig,
     SecuritySection,
     ShotVideoSection,
     SsoSection,
+    SubtitleSection,
     VideoGenerationSection,
     VideoSection,
     load_runtime_config,
@@ -43,6 +46,7 @@ from iclip.config.models import (
 
 __all__ = [
     "OSS_BUCKET_ENV",
+    "QWEN_API_KEY_ENV",
     "VIDEO_SUBMIT_URL_ENV",
     "AgentRunsSection",
     "AgentSection",
@@ -68,6 +72,7 @@ __all__ = [
     "ResolvedShotVideo",
     "ResolvedSso",
     "ResolvedSubAgent",
+    "ResolvedSubtitle",
     "ResolvedVideo",
     "RuntimeConfig",
     "SecuritySection",
@@ -75,6 +80,7 @@ __all__ = [
     "SkillMount",
     "SsoSection",
     "SubAgentSection",
+    "SubtitleSection",
     "VideoGenerationSection",
     "VideoSection",
     "load_agent_declarations",

@@ -1,5 +1,5 @@
 """媒体生成模块装配。图片按配置里声明的那几家逐个装，视频固定一家（出片与编辑段都走它），本地
-合成一家。"""
+合成一家，字幕识别开通时再加一家。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageProvider,
     GatewayImageSettings,
 )
-from iclip.domains.generation.models import STATUS_SUBMITTING
+from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
@@ -34,6 +34,12 @@ from iclip.domains.generation.service import (
     ClearCompletion,
     ConversationLineage,
     GenerationService,
+    SubtitleTarget,
+)
+from iclip.domains.generation.subtitles import (
+    SUBTITLE_MODEL,
+    QwenSubtitleProvider,
+    SubtitleProviderSettings,
 )
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.domains.identity.public import ActAs
@@ -56,6 +62,17 @@ class ImageModelConfig:
     text_to_image_task: str | None = None
     image_edit_task: str | None = None
     """这家自己的两条任务路由；为 None 用各家共用的那两条。"""
+
+
+@dataclass(frozen=True, slots=True)
+class SubtitleConfig:
+    """字幕识别的装配输入；模型钉在适配器里，不在这里。"""
+
+    url: str
+    api_key: str
+    concurrency: int
+    """识别那条队列同时最多跑几条。"""
+    timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -89,15 +106,20 @@ def build_generation_module(
     media_codec: MediaCodec,
     fetch_url: Callable[[str], str],
     queue_settings: GenerationQueueSettings | None = None,
+    subtitles: SubtitleConfig | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
+    subtitle_transport: httpx.AsyncBaseTransport | None = None,
 ) -> GenerationModule:
     """装配 Provider 与队列；transport 支持测试替身，queue_connector 由组合根选择数据库驱动。
 
     编辑段受理时用 ffprobe 按需读远程视频探时长（基底与参考片段）。对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；合成的产物本来就是
     我们自己造的。视频上游给的是它自己发布好的稳定地址，不转存。``media_codec`` 是本地合成
-    用的那一档编解码，由组合根在启动时选定。``fetch_url`` 只用在受理时探时长与合成时下载素材
-    的那一刻（本桶对象走内网），落库与交给上游的地址不经过它。"""
+    用的那一档编解码，由组合根在启动时选定。``fetch_url`` 只用在受理时探时长、合成与字幕识别
+    下载素材的那一刻（本桶对象走内网），落库与交给上游的地址不经过它。
+
+    ``subtitles`` 给了就开通字幕识别：多一条识别 lane，成片完成后自动排一条字幕记录；为 None 时
+    两者都没有，手动识别 422。"""
 
     if not image_models:
         raise RuntimeError("媒体生成开着却一家图片模型都没声明")
@@ -127,6 +149,26 @@ def build_generation_module(
         )
         for model in image_models
     ]
+    subtitle_lanes: tuple[ProviderLane, ...] = ()
+    subtitle_target: SubtitleTarget | None = None
+    if subtitles is not None:
+        subtitle_provider = QwenSubtitleProvider(
+            SubtitleProviderSettings(
+                url=subtitles.url,
+                api_key=subtitles.api_key,
+                timeout_seconds=subtitles.timeout_seconds,
+            ),
+            fetch_url=fetch_url,
+            transport=subtitle_transport,
+        )
+        # 识别要下载成片、本地抽音轨再等接口，单开一条 lane，不占出片与合成的槽位。
+        subtitle_lanes = (ProviderLane(subtitle_provider, subtitles.concurrency),)
+        subtitle_target = SubtitleTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
+
+    async def transcribe_completed(job: GenerationJob) -> None:
+        # 队列先于服务建好，服务又要往队列里排；靠闭包在调用时才取服务。
+        await service.transcribe_completed(job)
+
     queue = GenerationQueue(
         repo,
         lanes=(
@@ -138,9 +180,11 @@ def build_generation_module(
                 ProviderLane(provider, model.concurrency)
                 for provider, model in zip(image_providers, image_models, strict=True)
             ),
+            *subtitle_lanes,
         ),
         connector=queue_connector,
         settings=queue_settings,
+        on_completed=transcribe_completed if subtitle_target is not None else None,
     )
     service = GenerationService(
         repo,
@@ -154,6 +198,7 @@ def build_generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         probe_duration_ms=probe_duration_ms,
+        subtitles=subtitle_target,
     )
     return GenerationModule(
         routers=(create_generations_router(service, act_as=act_as),),
@@ -221,5 +266,6 @@ __all__ = [
     "IMAGE_MODEL_SPECS",
     "GenerationModule",
     "ImageModelConfig",
+    "SubtitleConfig",
     "build_generation_module",
 ]

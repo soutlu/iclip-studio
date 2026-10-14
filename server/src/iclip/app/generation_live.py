@@ -16,6 +16,7 @@ from iclip.domains.generation.models import (
     Inheritance,
 )
 from iclip.domains.generation.repository import GenerationRepository
+from iclip.domains.generation.schemas import SubtitleSentence
 
 
 class AnnouncingGenerationRepository:
@@ -131,6 +132,24 @@ class AnnouncingGenerationRepository:
             provider_task_id=provider_task_id,
             watermark_output_url=watermark_output_url,
             duration_ms=duration_ms,
+            only_if_status=only_if_status,
+        )
+        return None if job is None else self._announce(job)
+
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        job = await self._inner.mark_transcribed(
+            job_id,
+            sentences=sentences,
+            provider_status=provider_status,
+            provider_task_id=provider_task_id,
             only_if_status=only_if_status,
         )
         return None if job is None else self._announce(job)

@@ -48,6 +48,11 @@ media_generation:
   job_timeout_seconds: 3600 # 提交后等待终态的上限
   # 本地合成每个进程的并发；不写时按启动探测选中的编解码取：硬件 4，软件 2
   # compose_concurrency: 4
+  subtitle:
+    # 写出这一段并设千问AI平台的 API Key（QWEN_API_KEY）即开通成片字幕识别；模型固定 qwen-audio-3.1-asr-flash，不在这里配。
+    url: https://placeholder.invalid/api/v1/services/aigc/multimodal-generation/generation
+    concurrency: 4 # 识别队列每个进程同时跑几条
+    timeout_seconds: 120 # 一次识别请求等结果的上限
 
 video:
   # VIDEO_UNDERSTANDING_URL 为空时不注册 video。
