@@ -1,20 +1,10 @@
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ComposerSubmission } from '@/shared/ui/composer'
-import { Toaster, toast } from '@/shared/ui/toast'
+import { describe, expect, it, vi } from 'vitest'
+import { readyAttachment, type ComposerPart, type ComposerSubmission } from '@/shared/ui/composer'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
 import { HomeRoute } from './home-route'
-
-beforeEach(() => {
-  window.sessionStorage.clear()
-})
-afterEach(() => {
-  vi.unstubAllGlobals()
-  window.sessionStorage.clear()
-  toast.dismiss()
-})
 
 describe('HomeRoute', () => {
   it('渲染标题、输入卡及路由传入的选择控件，默认没有附件入口', async () => {
@@ -96,51 +86,31 @@ describe('HomeRoute', () => {
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('正在发送的创作要求')
   })
 
-  it('游客发送仅暂存正文，整页登录返回后恢复一次并移除暂存', async () => {
-    const user = userEvent.setup()
-    const guest = await renderWithProviders(
-      <HomeRoute preserveForLogin onSend={async () => false} />,
-    )
-    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '登录后继续制作产品宣传片')
-    await user.click(screen.getByRole('button', { name: '发送' }))
-    expect(screen.getByLabelText('输入消息')).toHaveTextContent('登录后继续制作产品宣传片')
-    guest.unmount()
-
-    const returned = await renderWithProviders(<HomeRoute />)
-    expect(screen.getByLabelText('输入消息')).toHaveTextContent('登录后继续制作产品宣传片')
-    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled()
-    returned.unmount()
-
-    await renderWithProviders(<HomeRoute />)
-    expect(screen.getByLabelText('输入消息').textContent).toBe('')
-  })
-
-  it('暂存失败时提示复制正文，保留当前输入并停止登录跳转', async () => {
-    const user = userEvent.setup()
-    const sent: ComposerSubmission[] = []
-    vi.stubGlobal('sessionStorage', {
-      getItem: () => null,
-      removeItem: () => {},
-      setItem: () => {
-        throw new DOMException('storage unavailable', 'QuotaExceededError')
-      },
-    })
+  it('挂载时恢复草稿里的正文与附件，恢复不算改动；之后的输入照常通知', async () => {
+    const url = 'https://bkt.oss-ap-southeast-1.aliyuncs.com/u/草稿参考.png'
+    const onDraftChange = vi.fn()
     await renderWithProviders(
-      <>
-        <Toaster />
-        <HomeRoute
-          preserveForLogin
-          onSend={async (input) => {
-            sent.push(input)
-            return false
-          }}
-        />
-      </>,
+      <HomeRoute
+        attachmentsEnabled
+        draftParts={[
+          { kind: 'text', text: '参照这张图做宣传片' },
+          { kind: 'media', media: readyAttachment({ kind: 'image', name: '草稿参考.png', url }) },
+        ]}
+        onDraftChange={onDraftChange}
+      />,
     )
-    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '请保留这一段创作要求')
-    await user.click(screen.getByRole('button', { name: '发送' }))
-    expect(await screen.findByText('输入内容暂存失败，请复制内容后登录')).toBeVisible()
-    expect(screen.getByLabelText('输入消息')).toHaveTextContent('请保留这一段创作要求')
-    expect(sent).toHaveLength(0)
+    const editor = screen.getByLabelText('输入消息')
+    expect(editor).toHaveTextContent('参照这张图做宣传片')
+    expect(within(editor).getByText('草稿参考.png')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled()
+    expect(onDraftChange).not.toHaveBeenCalled()
+
+    pasteTextIntoComposer(editor, '，时长 15 秒')
+    await waitFor(() => expect(onDraftChange).toHaveBeenCalled())
+    const parts = onDraftChange.mock.lastCall?.[0] as ComposerPart[]
+    expect(parts.map((part) => part.kind)).toContain('media')
+    expect(parts.some((part) => part.kind === 'text' && part.text.includes('时长 15 秒'))).toBe(
+      true,
+    )
   })
 })
