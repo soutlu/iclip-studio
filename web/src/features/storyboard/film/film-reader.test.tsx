@@ -457,7 +457,7 @@ describe('制作页', () => {
     const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
 
     await waitFor(() =>
-      expect(bar).toHaveTextContent('1 张参考图尚未选用，无法生成视频；请先选用图片'),
+      expect(bar).toHaveTextContent('1 张参考图尚未选用，无法生成视频；请先生成并选用图片'),
     )
     expect(generate).toHaveAttribute('aria-disabled', 'true')
     await userEvent.click(generate)
@@ -633,7 +633,7 @@ describe('制作页的图', () => {
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
 
     const card = await screen.findByRole('region', { name: '镜头 1的生图描述' })
-    const blocker = '参考图尚未选用：涂鸦滑板场，无法生成图片；请先选用图片'
+    const blocker = '参考图尚未选用：涂鸦滑板场，无法生成图片；请先生成并选用图片'
     expect(card).toHaveTextContent(blocker)
     const button = within(card).getByRole('button', { name: '生成图片' })
     expect(button).toBeDisabled()
@@ -668,7 +668,7 @@ describe('制作页的图', () => {
     const card = await screen.findByRole('region', { name: '镜头 1的生成结果' })
     expect(card).toHaveTextContent('镜头 1 尚未选用图片')
     expect(card.querySelector('img')).toHaveAttribute('src', result)
-    expect(card).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先选用图片')
+    expect(card).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先生成并选用图片')
     expect(within(card).getByRole('button', { name: '再生成' })).toBeDisabled()
     // 生成过就能开编辑器，到版本里挑。
     expect(screen.getByRole('button', { name: '编辑图片' })).toBeInTheDocument()
@@ -794,7 +794,7 @@ describe('制作页的图片编辑器', () => {
     const strip = within(editor).getByRole('group', { name: '该图片的版本' })
     await userEvent.click(within(strip).getByRole('button', { name: '再生成' }))
 
-    expect(editor).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先选用图片')
+    expect(editor).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先生成并选用图片')
     const send = within(editor)
       .getAllByRole('button', { name: '再生成' })
       .find((button) => !strip.contains(button))

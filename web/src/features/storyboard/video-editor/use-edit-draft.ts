@@ -1,7 +1,7 @@
 /** 每一版各自的剪辑草稿与撤销栈。草稿存进浏览器，按（对话，那一版）各一份；
  * 等于初始分段时不存。占位与合成的结论由服务端记录推出来，每次渲染落定一次。 */
 
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import type { GenerationJob } from '../storyboard.api'
 import {
   commit,
@@ -54,21 +54,31 @@ const writeStored = (key: string, entry: Entry) => {
   else window.localStorage.setItem(key, serializeDraft({ draft, composite: entry.composite }))
 }
 
-/** 合成有了结论该怎么办：完成就清掉草稿，失败与找不到就留着草稿、去掉等待，并说一句为什么。 */
+/** 合成有了结论该怎么办：完成就清掉草稿，失败与找不到就留着草稿、去掉等待，并说一句为什么。
+ * 不是正看着的那一版时给 `label`（V1、V2……），那句话说出是哪一版。 */
 const compositeVerdict = (
   jobs: readonly GenerationJob[],
   compositeId: string,
+  label?: string,
 ): { kind: 'waiting' } | { kind: 'done'; jobId: string } | { kind: 'dropped'; message: string } => {
   const job = jobs.find((item) => item.id === compositeId)
-  if (job === undefined) return { kind: 'dropped', message: '未找到上次提交的合成，可重新合成' }
+  if (job === undefined)
+    return {
+      kind: 'dropped',
+      message: `未找到${label === undefined ? '' : ` ${label} `}上次提交的合成，可重新合成`,
+    }
   if (job.status === 'completed' && job.outputUrl !== null) return { kind: 'done', jobId: job.id }
   if (job.status === 'completed' || job.status === 'failed')
-    return { kind: 'dropped', message: `合成失败：${job.errorMessage ?? '未返回生成结果'}` }
+    return {
+      kind: 'dropped',
+      message: `${label === undefined ? '' : `${label} `}合成失败：${job.errorMessage ?? '未返回生成结果'}`,
+    }
   return { kind: 'waiting' }
 }
 
 /** 第一次看某一版时装进它的草稿：读存着的；没有就按服务端重建；读不出或引用了这一版不认识的
- * 记录，也重建并说一声。存着的合成已经完成，草稿当场作废。 */
+ * 记录，也重建并说一声。存着的合成照样带上，结论交给装载后的落定：关着编辑器时合成完成，
+ * 回来也像开着时一样清掉草稿、跳到新版本。 */
 const loadEntry = (
   key: string,
   version: ChainVersion,
@@ -97,17 +107,14 @@ const loadEntry = (
   const known = new Set([version.jobId, ...edits.map((edit) => edit.id)])
   if (stored === undefined || [...draftSources(stored.draft)].some((id) => !known.has(id)))
     return { entry: rebuilt(), notice: UNREADABLE }
-  if (stored.composite === undefined) return { entry: fresh(stored.draft), notice: undefined }
-  const verdict = compositeVerdict(jobs, stored.composite)
-  if (verdict.kind === 'done') return { entry: fresh(segments), notice: undefined }
-  return verdict.kind === 'waiting'
-    ? { entry: fresh(stored.draft, stored.composite), notice: undefined }
-    : { entry: fresh(stored.draft), notice: verdict.message }
+  return { entry: fresh(stored.draft, stored.composite), notice: undefined }
 }
 
 type Args = {
   conversationId: string
   version: ChainVersion
+  /** 全部版本：不在看的那一版合成有了结论时，提示里说出它是哪一版。 */
+  versions: readonly ChainVersion[]
   /** 这一版的关键帧分段；还没读到时没有。 */
   segments: readonly DraftClip[] | undefined
   /** 编辑链上的记录；还没读到时没有。 */
@@ -116,9 +123,11 @@ type Args = {
   edits: readonly EditSegment[]
   /** 一条编辑段此刻的结论；完成了却还不知道结果多长时仍算在跑。 */
   outcomeOf: (editJobId: string) => EditOutcome | undefined
-  /** 要让人看到的一句话：草稿重建、AI 修改失败、合成失败、浏览器无法保存草稿。 */
+  /** 要让人看到的一句话：草稿重建、AI 修改失败、合成失败。 */
   onNotice: (message: string) => void
-  /** 这一版的草稿合成完成，成了新的一版。 */
+  /** 浏览器拒绝写入草稿；每次写失败都调，说几次由调用方定。 */
+  onStorageFailure: () => void
+  /** 正看着的这一版的草稿合成完成，成了新的一版；不在看的那一版合成完成时不调。 */
   onComposed: (compositeJobId: string) => void
 }
 
@@ -146,16 +155,20 @@ export type EditDraft = {
 export function useEditDraft({
   conversationId,
   version,
+  versions,
   segments,
   jobs,
   edits,
   outcomeOf,
   onNotice,
+  onStorageFailure,
   onComposed,
 }: Args): EditDraft | undefined {
   const [entries, setEntries] = useState<Readonly<Record<string, Entry>>>({})
   const versionJobId = version.jobId
-  const put = (entry: Entry) => setEntries((current) => ({ ...current, [versionJobId]: entry }))
+  const putAt = (jobId: string, entry: Entry) =>
+    setEntries((current) => ({ ...current, [jobId]: entry }))
+  const put = (entry: Entry) => putAt(versionJobId, entry)
 
   // 装载与落定都在渲染里做：结论来自轮询的数据，就地对齐，不绕一轮 effect。
   let entry = entries[versionJobId]
@@ -178,37 +191,40 @@ export function useEditDraft({
       put(entry)
       for (const message of settled.failures) onNotice(`AI 修改失败：${message}，已恢复原来的段`)
     }
-    if (entry.composite !== undefined) {
-      const verdict = compositeVerdict(jobs, entry.composite)
-      if (verdict.kind === 'done') {
-        entry = {
-          segments: entry.segments,
-          history: startHistory(entry.segments),
-          composite: undefined,
-        }
-        put(entry)
-        onComposed(verdict.jobId)
-      } else if (verdict.kind === 'dropped') {
-        entry = { ...entry, composite: undefined }
-        put(entry)
-        onNotice(verdict.message)
-      }
+  }
+  // 等着合成的每一版都落定，不只是正看着的那版：刷新后合成才完成时，已经默认去看新的一版了，基底那份
+  // 也要清掉。只有正看着的那版合成完成才跳到新版本。
+  if (jobs !== undefined) {
+    const waiting = { ...entries, ...(entry === undefined ? {} : { [versionJobId]: entry }) }
+    for (const [jobId, waited] of Object.entries(waiting)) {
+      if (waited.composite === undefined) continue
+      const viewing = jobId === versionJobId
+      const label = viewing ? undefined : versions.find((item) => item.jobId === jobId)?.label
+      const verdict = compositeVerdict(jobs, waited.composite, label)
+      if (verdict.kind === 'waiting') continue
+      const next: Entry =
+        verdict.kind === 'done'
+          ? {
+              segments: waited.segments,
+              history: startHistory(waited.segments),
+              composite: undefined,
+            }
+          : { ...waited, composite: undefined }
+      putAt(jobId, next)
+      if (viewing) entry = next
+      if (verdict.kind === 'dropped') onNotice(verdict.message)
+      else if (viewing) onComposed(verdict.jobId)
     }
   }
 
   // 每一版的草稿都写回去，不只是正看着的那版：合成完成时已经换去看新的一版，基底那份要在这里清掉。
-  const storageFailedRef = useRef(false)
-  const noticeStorageFailure = useEffectEvent(() => {
-    if (storageFailedRef.current) return
-    storageFailedRef.current = true
-    onNotice('当前浏览器无法保存草稿，关闭编辑器后剪辑内容将丢失')
-  })
+  const reportStorageFailure = useEffectEvent(onStorageFailure)
   useEffect(() => {
     try {
       for (const [jobId, stored] of Object.entries(entries))
         writeStored(draftStorageKey(conversationId, jobId), stored)
     } catch {
-      noticeStorageFailure()
+      reportStorageFailure()
     }
   }, [entries, conversationId])
 

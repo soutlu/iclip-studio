@@ -1,4 +1,5 @@
-/** 时间线：视频轨铺按时间截的缩略图，原声轨画真实波形，两条轨一一对应（一段就是上下一对）。
+/** 时间线：视频轨铺按时间截的缩略图，原声轨画真实波形，这两条轨一一对应（一段就是上下一对）；
+ * 下面是字幕轨与音乐轨，现在还没有内容，只画空轨。
  * 点段选中、拖两端裁剪、按住中间拖动调序；比例按所看那一版的时长排，草稿短了右边留一个细框。 */
 
 import {
@@ -427,6 +428,14 @@ export function EditorTimeline({
           <Icon decorative name="waveform" size="sm" />
           原声
         </span>
+        <span className="video-editor-timeline-head is-captions">
+          <Icon decorative name="captions" size="sm" />
+          字幕
+        </span>
+        <span className="video-editor-timeline-head is-music">
+          <Icon decorative name="music" size="sm" />
+          音乐
+        </span>
       </div>
       <div
         aria-label="时间线轨道，窄屏可横向滚动"
@@ -471,6 +480,9 @@ export function EditorTimeline({
               value={boundedTime}
             />
           </div>
+
+          <div className="video-editor-timeline-lane is-captions" data-testid="timeline-captions" />
+          <div className="video-editor-timeline-lane is-music" data-testid="timeline-music" />
 
           {entries.map((entry, index) => {
             const isSelected = selected(entry.id)

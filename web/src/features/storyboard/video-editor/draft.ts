@@ -14,7 +14,7 @@ const MIN_TRIM_SECONDS = 0.2
 const MIN_SPLIT_SECONDS = 0.1
 
 /** 秒取整到毫秒：草稿里的时刻一律是毫秒精度，同一时刻处处相等。 */
-const roundToMs = (seconds: number): number => Math.round(seconds * 1000) / 1000
+export const roundToMs = (seconds: number): number => Math.round(seconds * 1000) / 1000
 
 /** 一段素材：出自哪条记录，取它自己媒体时间里的 `[start, end)`，秒。即合成请求里的一段。 */
 export type Clip = { sourceJobId: string; start: number; end: number }

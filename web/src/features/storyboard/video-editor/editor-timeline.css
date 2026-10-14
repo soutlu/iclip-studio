@@ -1,5 +1,6 @@
-/* 面板的底色、圆角与控制条在 video-editor.css；这里只排两条轨。
-   一段是上下一对：视频 46px、中间 8px 放「改过」的灰线、原声 30px，上面 18px 是刻度。 */
+/* 面板的底色、圆角与控制条在 video-editor.css；这里只排轨道。
+   上面 18px 是刻度；一段是上下一对：视频 46px、中间 8px 放「改过」的灰线、原声 30px；
+   再往下隔 8px 是字幕轨、音乐轨，各 30px、间隔 8px。 */
 .video-editor-timeline {
   --timeline-wave: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
 
@@ -17,7 +18,7 @@
   position: relative;
   flex: none;
   width: 76px;
-  height: 102px;
+  height: 178px;
 }
 
 .video-editor-timeline-head {
@@ -41,6 +42,16 @@
   height: 30px;
 }
 
+.video-editor-timeline-head.is-captions {
+  top: 110px;
+  height: 30px;
+}
+
+.video-editor-timeline-head.is-music {
+  top: 148px;
+  height: 30px;
+}
+
 /* 让出气泡、手柄与焦点环的位置；窄屏横向滚动。 */
 .video-editor-timeline-scroll {
   min-width: 0;
@@ -55,7 +66,7 @@
 .video-editor-timeline-lanes {
   position: relative;
   min-width: 520px;
-  height: 102px;
+  height: 178px;
   isolation: isolate;
 }
 
@@ -100,6 +111,25 @@
   margin: 0;
   opacity: 0;
   cursor: pointer;
+}
+
+/* 字幕轨、音乐轨：与原声同款的整条底，右端对齐各段之间留的 2px 缝。 */
+.video-editor-timeline-lane {
+  position: absolute;
+  right: 2px;
+  left: 0;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.video-editor-timeline-lane.is-captions {
+  top: 110px;
+}
+
+.video-editor-timeline-lane.is-music {
+  top: 148px;
 }
 
 /* 一段：视频、灰线位、原声上下一列，点哪里都是点这一段。 */

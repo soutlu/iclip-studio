@@ -1,10 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ComposerHandle, ComposerSubmission } from '@/shared/ui/composer'
+import type { ComposerHandle, ComposerPart, ComposerSubmission } from '@/shared/ui/composer'
 import { Composer } from '@/shared/ui/composer'
-import { toast } from '@/shared/ui/toast'
 
-const LOGIN_DRAFT_KEY = 'cue.home.login-draft'
 // 首页用一句完整的创作要求做占位，示范该写什么；对话页等其他输入框仍用默认占位。
 const PLACEHOLDER = '例如：给这双白色帆布鞋写一份 15 秒的产品分镜'
 // 换什么由下面的快捷词示范，占位只说一句，窄屏也放得下一行。
@@ -20,13 +18,15 @@ export type HomeComposerProps = {
   agentPicker?: ReactNode
   attachmentsEnabled?: boolean | undefined
   collectionPicker?: ReactNode
+  /** 草稿里的输入框内容，只在挂载时读。 */
+  draftParts?: readonly ComposerPart[] | undefined
+  /** 输入内容或附件状态变化时触发，用于暂存草稿；挂载恢复不触发，发送成功后清空输入会触发一次。 */
+  onDraftChange?: ((parts: readonly ComposerPart[]) => void) | undefined
   /** 为 true 时聚焦输入框并调用 onFocusHandled；挂载时已为 true 也会在挂载后聚焦。 */
   focusRequested?: boolean | undefined
   onFocusHandled?: (() => void) | undefined
-  /** 返回 true 后清空输入；失败提示与登录流程由路由负责。 */
+  /** 返回 true 后清空输入；失败提示、登录流程与草稿删除由路由负责。 */
   onSend?: ((submission: ComposerSubmission) => Promise<boolean>) | undefined
-  /** 游客发送前仅暂存正文，供整页登录返回后恢复。 */
-  preserveForLogin?: boolean | undefined
   /** 做同款：换成做同款的提示，工具行左侧放快捷词。 */
   sameStyle?: boolean | undefined
   sending?: boolean | undefined
@@ -37,26 +37,26 @@ export function HomeComposer({
   agentPicker,
   attachmentsEnabled = false,
   collectionPicker,
+  draftParts,
   focusRequested = false,
+  onDraftChange,
   onFocusHandled,
   onSend,
-  preserveForLogin = false,
   sameStyle = false,
   sending = false,
 }: HomeComposerProps) {
   const composerRef = useRef<ComposerHandle>(null)
   const submittingRef = useRef(false)
+  const [initialParts] = useState(draftParts)
 
   useEffect(() => {
-    try {
-      const text = window.sessionStorage.getItem(LOGIN_DRAFT_KEY)
-      if (text === null) return
-      composerRef.current?.restore({ media: [], parts: [{ kind: 'text', text }], text })
-      window.sessionStorage.removeItem(LOGIN_DRAFT_KEY)
-    } catch {
-      toast.error('登录前的草稿读取失败，请检查输入内容')
-    }
-  }, [])
+    if (initialParts === undefined || initialParts.length === 0) return
+    composerRef.current?.restore({
+      media: initialParts.flatMap((part) => (part.kind === 'media' ? [part.media] : [])),
+      parts: initialParts,
+      text: '',
+    })
+  }, [initialParts])
 
   useEffect(() => {
     if (!focusRequested) return
@@ -66,24 +66,9 @@ export function HomeComposer({
 
   const send = async (submission: ComposerSubmission) => {
     if (onSend === undefined || sending || submittingRef.current) return
-    if (preserveForLogin) {
-      try {
-        window.sessionStorage.setItem(LOGIN_DRAFT_KEY, submission.text)
-      } catch {
-        toast.error('输入内容暂存失败，请复制内容后登录')
-        return
-      }
-    }
     submittingRef.current = true
     try {
-      if (await onSend(submission)) {
-        composerRef.current?.clear()
-        try {
-          window.sessionStorage.removeItem(LOGIN_DRAFT_KEY)
-        } catch {
-          toast.error('消息已发送，但浏览器无法清理登录前的草稿')
-        }
-      }
+      if (await onSend(submission)) composerRef.current?.clear()
     } finally {
       submittingRef.current = false
     }
@@ -112,6 +97,7 @@ export function HomeComposer({
             </div>
           ) : undefined
         }
+        onChange={onDraftChange}
         onSubmit={(submission) => {
           void send(submission)
         }}

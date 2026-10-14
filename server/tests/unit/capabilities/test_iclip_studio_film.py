@@ -180,7 +180,9 @@ async def test_a_passing_check_reports_one_line_of_counts(
 
     result = await tools.check_film(ctx)
 
-    assert text_of(result).splitlines() == ["检查通过：8 张图，2 段视频。"]
+    assert text_of(result).splitlines() == [
+        "工程规范检查通过：8 个图片生成节点，2 个视频生成节点。"
+    ]
     assert result.metadata == {"chip": "通过"}
 
 
@@ -193,7 +195,7 @@ async def test_problems_come_back_with_file_and_line(
     result = await tools.check_film(ctx)
 
     head, *listed = text_of(result).splitlines()
-    assert head == "检查没通过，共 2 处问题："
+    assert head == "工程规范检查未通过，本次发现 2 处问题："
     assert listed[0].startswith("film.icml 第 ") and "gpt:Image 没有属性 size" in listed[0]
     assert "gpt:Image 缺属性 resolution" in listed[1]
     assert result.metadata == {"chip": "2 处问题"}
@@ -207,7 +209,7 @@ async def test_a_long_list_of_problems_is_cut(
 
     lines = text_of(await tools.check_film(ctx)).splitlines()
 
-    assert lines[0] == "检查没通过，共 80 处问题："
+    assert lines[0] == "工程规范检查未通过，本次发现 80 处问题："
     assert len(lines) == MAX_LISTED_PROBLEMS + 2
 
 
@@ -230,7 +232,7 @@ async def test_an_address_from_outside_the_conversation_is_refused_without_echoi
     result = await tools.check_film(ctx)
 
     lines = text_of(result).splitlines()
-    assert lines[0] == "检查没通过，共 2 处问题："
+    assert lines[0] == "工程规范检查未通过，本次发现 2 处问题："
     assert all(
         line.startswith("film.icrun 第 ") and "src 不在这段对话的素材里" in line
         for line in lines[1:]
@@ -250,7 +252,7 @@ async def test_an_image_known_only_from_the_generation_records_fails_the_check(
 
     lines = text_of(await tools.check_film(ctx)).splitlines()
 
-    assert lines[0] == "检查没通过，共 1 处问题："
+    assert lines[0] == "工程规范检查未通过，本次发现 1 处问题："
     assert lines[1] == "film.icrun 第 6 行：src 不在这段对话的素材里；只能写对话素材里的图片地址"
 
 
@@ -305,7 +307,7 @@ async def test_show_names_the_references_that_have_no_image(
 
     image = text_of(await tools.check_film(ctx, show="view01"))
 
-    assert "@Image3 = personB（还没有选用图，不能生成）" in image
+    assert "@Image3 = personB（尚未选用图片）" in image
 
 
 async def test_show_must_name_a_generation_node(
