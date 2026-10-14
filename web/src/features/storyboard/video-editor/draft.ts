@@ -3,6 +3,7 @@
  * 结果回来再换成那条编辑段。草稿的片段与合成请求的片段同形。纯函数，不持有状态。 */
 
 import { z } from 'zod'
+import { amend, startHistory, type History } from '../edit-history'
 
 /** AI 改选区的最短时长，秒。 */
 export const MIN_RANGE_SECONDS = 1
@@ -410,48 +411,15 @@ export const draftSources = (draft: Draft): Set<string> =>
 /** 撤销的一步：草稿连同当时的选中。 */
 export type Snapshot = { draft: Draft; selection: Selection }
 
-export type DraftHistory = {
-  past: readonly Snapshot[]
-  present: Snapshot
-  future: readonly Snapshot[]
-}
+export type DraftHistory = History<Snapshot>
 
-export const startHistory = (draft: Draft): DraftHistory => ({
-  past: [],
-  present: { draft, selection: [] },
-  future: [],
-})
-
-/** 一次编辑进栈，清掉重做。 */
-export const commit = (history: DraftHistory, next: Snapshot): DraftHistory => ({
-  past: [...history.past, history.present],
-  present: next,
-  future: [],
-})
+/** 从这份草稿起算的撤销栈，没有选中。 */
+export const startDraftHistory = (draft: Draft): DraftHistory =>
+  startHistory({ draft, selection: [] })
 
 /** 只改选中，不进栈。 */
-export const reselect = (history: DraftHistory, selection: Selection): DraftHistory => ({
-  ...history,
-  present: { ...history.present, selection },
-})
-
-export const undo = (history: DraftHistory): DraftHistory => {
-  const previous = history.past.at(-1)
-  return previous === undefined
-    ? history
-    : {
-        past: history.past.slice(0, -1),
-        present: previous,
-        future: [history.present, ...history.future],
-      }
-}
-
-export const redo = (history: DraftHistory): DraftHistory => {
-  const next = history.future[0]
-  return next === undefined
-    ? history
-    : { past: [...history.past, history.present], present: next, future: history.future.slice(1) }
-}
+export const reselect = (history: DraftHistory, selection: Selection): DraftHistory =>
+  amend(history, { ...history.present, selection })
 
 /** 栈里每一步都落定占位，各步的选中只留还在的段；失败原因只取当前这一步的，同一件事只说一次。 */
 export const resolveHistory = (

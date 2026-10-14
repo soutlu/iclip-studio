@@ -113,6 +113,33 @@
   pointer-events: none;
 }
 
+/* 预览字幕：统一样式，白字、深色描边，底部居中；合成时按同一样式烧进画面。 */
+.video-editor-preview-caption {
+  position: absolute;
+  right: 8%;
+  bottom: 8%;
+  left: 8%;
+  z-index: var(--z-local-1);
+  color: var(--color-on-scrim);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+  text-align: center;
+  text-shadow:
+    -1px -1px 0 var(--color-scrim),
+    1px -1px 0 var(--color-scrim),
+    -1px 1px 0 var(--color-scrim),
+    1px 1px 0 var(--color-scrim),
+    0 0 3px var(--color-scrim);
+  white-space: pre-line;
+  pointer-events: none;
+}
+
+.video-editor-preview.is-enlarged .video-editor-preview-caption {
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+}
+
 .video-editor-preview-message {
   position: absolute;
   inset: 0;

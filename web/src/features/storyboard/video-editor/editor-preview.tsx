@@ -59,6 +59,10 @@ type Props = {
   onPlay: () => void
   /** 盖在舞台上的浮层（AI 改段的弹出卡），画面不为它让位。 */
   overlay: ReactNode
+  /** 压在画面底部居中的字幕（白字、深色描边），放大时跟着画面走；没有就不显示。 */
+  caption?: string | undefined
+  /** 一段都没有时画面里那句话；不给就只留空画面。 */
+  emptyMessage?: string | undefined
   /** 贴在舞台右缘的版本条（窄屏排到舞台下方）。 */
   versions: ReactNode
   /** 控制条上时钟后面的剪辑操作：撤销、重做、拆分、删除。 */
@@ -84,6 +88,8 @@ export function EditorPreview({
   onTime,
   onPlay,
   overlay,
+  caption,
+  emptyMessage,
   versions,
   tools,
   readout,
@@ -305,7 +311,7 @@ export function EditorPreview({
   const playButton = (
     <IconButton
       className="video-editor-play"
-      disabled={segments === undefined || failed}
+      disabled={segments === undefined || segments.length === 0 || failed}
       label={playing ? '暂停' : '播放'}
       name={playing ? 'pause' : 'play'}
       onClick={togglePlay}
@@ -374,10 +380,18 @@ export function EditorPreview({
           key={switches}
         />
       )}
+      {caption === undefined || caption.trim() === '' || failed ? null : (
+        <p className="video-editor-preview-caption">{caption}</p>
+      )}
       {segments === undefined ? (
         <div className="video-editor-preview-message" role="status">
           <Icon decorative name="video" size="lg" />
           <span>正在读取视频信息…</span>
+        </div>
+      ) : segments.length === 0 && emptyMessage !== undefined ? (
+        <div className="video-editor-preview-message" role="status">
+          <Icon decorative name="video" size="lg" />
+          <span>{emptyMessage}</span>
         </div>
       ) : null}
       {failed ? (

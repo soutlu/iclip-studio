@@ -793,7 +793,24 @@ describe('StoryboardReader', () => {
     )
     expect(within(page).queryByRole('button', { name: '回填提示词' })).toBeNull()
     expect(within(page).queryByRole('button', { name: '编辑视频' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '整片' })).toBeNull()
     expect(files.writes).toEqual([])
+  })
+
+  it('顶栏「整片」打开整片编辑器，地址里记着它；关掉后从地址里去掉', async () => {
+    provide()
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: jobs })))
+    const { router } = await renderReader('/?shot=1')
+    await screen.findByRole('region', { name: '镜头组 1' })
+
+    await userEvent.click(screen.getByRole('button', { name: '整片' }))
+    const editor = await screen.findByRole('dialog', { name: /编辑视频\s*整片/ })
+    expect(within(editor).getByRole('region', { name: '整片时间线' })).toBeVisible()
+    expect(router.state.location.search).toEqual({ shot: 1, wholeFilm: true })
+
+    await userEvent.click(within(editor).getByRole('button', { name: '关闭视频编辑' }))
+    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('选中成片后点回填，把那次出片的镜头组写回当前组并保存', async () => {

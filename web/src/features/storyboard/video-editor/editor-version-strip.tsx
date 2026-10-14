@@ -26,7 +26,7 @@ type EditorVersionStripProps = {
 }
 
 /** 读不出截帧（或不是 OSS 地址、没有截帧）就只摆一个视频图标；地址换了由调用点重新挂载重置。 */
-function Thumbnail({ src }: { src: string | undefined }) {
+export function Thumbnail({ src }: { src: string | undefined }) {
   const [failed, setFailed] = useState(false)
   if (src === undefined || failed)
     return (

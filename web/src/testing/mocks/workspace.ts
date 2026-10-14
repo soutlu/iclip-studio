@@ -3,6 +3,8 @@
 import { http, HttpResponse } from 'msw'
 import type {
   ImageGenerationIn,
+  SubtitleIn,
+  SubtitleSentence,
   VideoComposeIn,
   VideoEditIn,
   VideoGenerationIn,
@@ -208,7 +210,9 @@ type MockJob = {
   createdAt: string
   errorMessage?: string
   id: string
-  kind?: 'video' | 'image'
+  kind?: 'video' | 'image' | 'subtitle'
+  /** 字幕记录完成后的逐句结果；别的记录没有。 */
+  sentences?: SubtitleSentence[]
   /** 省略即 generate；合成是 compose。 */
   operation?: 'generate' | 'compose'
   outputUrl?: string
@@ -252,6 +256,7 @@ const job = (spec: MockJob) => ({
   // 种子记录没有单独的完成时刻，到了终态就记在创建那一刻。
   finishedAt: spec.status === 'completed' || spec.status === 'failed' ? spec.createdAt : null,
   durationMs: spec.durationMs ?? null,
+  sentences: spec.sentences ?? null,
   // 这里的加工是瞬时的，没有在途阶段可报。
   clipStage: null,
   watermarkOutputUrl: spec.watermarkOutputUrl ?? null,
@@ -304,6 +309,15 @@ const announceGeneration = (conversationId: string | null, record: MockRecord) =
   for (const watcher of generationWatchers)
     watcher({ conversationId, id, kind, operation, ...shot, metadata, status })
 }
+
+/** 样片的口播：识别出的逐句字幕（毫秒）。 */
+const SAMPLE_SENTENCES: SubtitleSentence[] = [
+  { startMs: 300, endMs: 2100, text: '这只包今天第一次上身', speaker: 0 },
+  { startMs: 2500, endMs: 4200, text: '容量刚好放下日常用品', speaker: 0 },
+  { startMs: 4500, endMs: 5800, text: '通勤约会都合适', speaker: 0 },
+]
+
+const SUBTITLE_REQUEST = { model: 'qwen-audio-3.1-asr-flash' }
 
 export const seedMockWorkspace = (
   conversationId: string,
@@ -473,6 +487,27 @@ export const seedMockWorkspace = (
         ),
         `diagnostic_code=${'IMAGE_REFERENCE_VALIDATION_'.repeat(6)}`,
       ].join('\n'),
+    }),
+    // 成片完成后自动识别的口播字幕：第 2 组那条识别好了，第 3 组那条识别失败，整片编辑器按它们画字幕轨。
+    job({
+      createdAt: '2026-09-01T11:11:00Z',
+      id: 'e4b8cedb-a639-457f-9c84-90a1b2c3d4e5',
+      kind: 'subtitle',
+      prompt: '',
+      request: SUBTITLE_REQUEST,
+      sentences: SAMPLE_SENTENCES,
+      sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
+      status: 'completed',
+    }),
+    job({
+      createdAt: '2026-09-01T10:05:00Z',
+      errorMessage: '识别服务暂时不可用',
+      id: 'f5c9dfec-b74a-4680-8d95-a1b2c3d4e5f6',
+      kind: 'subtitle',
+      prompt: '',
+      request: SUBTITLE_REQUEST,
+      sourceJobId: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c',
+      status: 'failed',
     }),
   ])
 }
@@ -974,6 +1009,39 @@ export const workspaceHandlers = [
         return total + Math.max(0, (end === null ? length : end * 1000) - start * 1000)
       }, 0),
     })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
+  // 手动识别一条成片的字幕：成片要是这段对话里一条完成的出片或合成；识别出的就是样片那几句。
+  http.post('*/api/generations/subtitles', async ({ request }) => {
+    const body = (await request.json()) as SubtitleIn
+    const source = findJob(body.conversationId, body.sourceJobId)
+    if (source === undefined)
+      return HttpResponse.json({ detail: '未找到这条视频' }, { status: 404 })
+    if (!isFinishedTake(source))
+      return HttpResponse.json({ detail: '只能识别已完成的成片' }, { status: 422 })
+    const created = job({
+      createdAt: new Date().toISOString(),
+      id: crypto.randomUUID(),
+      kind: 'subtitle',
+      prompt: '',
+      request: SUBTITLE_REQUEST,
+      sourceJobId: source.id,
+      status: 'submitted',
+      ...(body.metadata == null ? {} : { metadata: body.metadata }),
+    })
+    const conversationId = body.conversationId ?? null
+    if (conversationId !== null)
+      generations.set(conversationId, [...(generations.get(conversationId) ?? []), created])
+    const timer = setTimeout(() => {
+      created.sentences = SAMPLE_SENTENCES
+      created.finishedAt = new Date().toISOString()
+      created.status = 'completed'
+      timers.delete(timer)
+      announceGeneration(conversationId, created)
+    }, VIDEO_DONE_MS)
+    timers.add(timer)
+    announceGeneration(conversationId, created)
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 ]

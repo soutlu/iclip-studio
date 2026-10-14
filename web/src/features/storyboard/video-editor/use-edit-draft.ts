@@ -2,20 +2,18 @@
  * 等于初始分段时不存。占位与合成的结论由服务端记录推出来，每次渲染落定一次。 */
 
 import { useEffect, useEffectEvent, useState } from 'react'
+import { commit, redo, undo } from '../edit-history'
 import type { GenerationJob } from '../storyboard.api'
 import {
-  commit,
   draftSources,
   isUnchanged,
   parseStoredDraft,
   rebuildDraft,
-  redo,
   replaceWithPending,
   reselect,
   resolveHistory,
   serializeDraft,
-  startHistory,
-  undo,
+  startDraftHistory,
   type Draft,
   type DraftClip,
   type DraftHistory,
@@ -88,7 +86,7 @@ const loadEntry = (
 ): { entry: Entry; notice: string | undefined } => {
   const fresh = (draft: Draft, composite?: string): Entry => ({
     segments,
-    history: startHistory(draft),
+    history: startDraftHistory(draft),
     composite,
   })
   const rebuilt = () =>
@@ -206,7 +204,7 @@ export function useEditDraft({
         verdict.kind === 'done'
           ? {
               segments: waited.segments,
-              history: startHistory(waited.segments),
+              history: startDraftHistory(waited.segments),
               composite: undefined,
             }
           : { ...waited, composite: undefined }
@@ -252,7 +250,7 @@ export function useEditDraft({
     redo: () => changeHistory(redo),
     submitted: (editJobId) =>
       changeHistory(({ present }) =>
-        startHistory(replaceWithPending(present.draft, present.selection, editJobId)),
+        startDraftHistory(replaceWithPending(present.draft, present.selection, editJobId)),
       ),
     composing: (compositeJobId) => change((current) => ({ ...current, composite: compositeJobId })),
   }
