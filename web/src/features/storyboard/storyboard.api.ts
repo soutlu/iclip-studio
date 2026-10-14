@@ -97,17 +97,19 @@ export const generationsRefetchInterval = (
   items: readonly { status: GenerationJob['status'] }[],
 ): number | false => (items.some((item) => isRunningStatus(item.status)) ? POLL_MS : false)
 
-const VIDEO_JOBS_ERROR = '读取视频记录失败'
-
-/** 读完本对话的全部视频记录（含编辑链的衍生记录），按创建时间倒序。
+/** 按筛选条件读完全部生成记录，按创建时间倒序；`errorMessage` 是读不出来时给人看的那句。
  *
- * 只读第一页会让更早的出片静默消失：在途、失败与编辑结果都占名额。任一页失败整体抛错。 */
-export const readConversationVideoJobs = (conversationId: string, signal: AbortSignal) =>
+ * 只读第一页会让更早的记录静默消失：在途、失败与编辑结果都占名额。任一页失败整体抛错。 */
+export const readAllGenerations = (
+  filter: Readonly<Record<string, string>>,
+  signal: AbortSignal,
+  errorMessage: string,
+) =>
   drainPages<GenerationJob, string>(async (before) => {
-    const params = new URLSearchParams({ conversationId, kind: 'video', limit: `${PAGE_LIMIT}` })
+    const params = new URLSearchParams({ ...filter, limit: `${PAGE_LIMIT}` })
     if (before !== undefined) params.set('before', before)
     const page = await apiFetch(`/generations?${params}`, zGenerationsPageOut, {
-      fallbackErrorMessage: VIDEO_JOBS_ERROR,
+      fallbackErrorMessage: errorMessage,
       signal,
     })
     // 筛选在分页截断前执行，不满一页就是读完了，省掉最后一次空页请求。
@@ -115,10 +117,14 @@ export const readConversationVideoJobs = (conversationId: string, signal: AbortS
     const last = page.items.at(-1)
     // 游标没往前走就说明分页坏了，再翻下去是死循环。
     if (last === undefined || last.id === before) {
-      throw new ApiError(0, `${VIDEO_JOBS_ERROR}：分页异常，请重试`)
+      throw new ApiError(0, `${errorMessage}：分页异常，请重试`)
     }
     return { items: page.items, next: last.id }
   })
+
+/** 读完本对话的全部视频记录（含编辑链的衍生记录），按创建时间倒序。 */
+export const readConversationVideoJobs = (conversationId: string, signal: AbortSignal) =>
+  readAllGenerations({ conversationId, kind: 'video' }, signal, '读取视频记录失败')
 
 /** 本对话视频记录的查询配置；消费方各自用 `select` 投影，同一份数据只请求一次。 */
 export const conversationVideoJobsQuery = (conversationId: string) =>

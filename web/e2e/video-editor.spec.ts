@@ -444,7 +444,11 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeEnabled()
   expect(
     await page.evaluate(
-      (key) => Object.keys(localStorage).filter((name) => name.endsWith(`:${key}`)),
+      // 只数草稿键：看哪一版的记录（video-editor-view:…:根）结尾也是基底 id。
+      (key) =>
+        Object.keys(localStorage).filter(
+          (name) => name.startsWith('video-editor-draft:') && name.endsWith(`:${key}`),
+        ),
       baseJobId ?? '',
     ),
   ).toEqual([])
