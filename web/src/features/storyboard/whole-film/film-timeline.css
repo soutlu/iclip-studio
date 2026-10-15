@@ -10,6 +10,8 @@
   min-width: 0;
   margin-top: 6px;
   color: var(--color-on-surface);
+  /* 拖选和搬运片段时不选中文字，避免后续拖动进入浏览器的原生文字拖拽。 */
+  user-select: none;
 }
 
 .dark .film-timeline {

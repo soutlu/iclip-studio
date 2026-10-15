@@ -104,22 +104,24 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   await screenshotBothThemes(page, `${SHOT_DIR}/pick-drag`)
   await drop()
   await expect(segments(dialog)).toHaveCount(1)
+  // 时间线拖拽不能留下浏览器文字选区，后续拖动会被原生文字拖拽截走。
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('')
 
   // 键盘：第 3 组整条选中后改成 0–2 秒，回车插到播放头处（第 1 段之后）。
   await shot3.focus()
   await page.keyboard.press('Enter')
   const end = dialog.getByRole('slider', { name: '选区结尾' })
   await end.focus()
-  for (let step = 0; step < 20; step += 1) {
-    if (Number(await end.getAttribute('aria-valuenow')) <= 2) break
-    await page.keyboard.press('ArrowLeft')
-  }
+  for (let step = 0; step < 4; step += 1) await page.keyboard.press('Shift+ArrowLeft')
+  await expect(end).toHaveAttribute('aria-valuenow', '2')
   await page.keyboard.press('Enter')
   await expect(segments(dialog)).toHaveCount(2)
 
   // 再从第 2 组挑 4–5.6 秒放到最后。
   await sweep(page, dialog, shot2, 4, 5.6)
+  await expect(timelineOf(dialog).getByText(/^素材 4\.\d\d–5\.\d\d 秒/)).toBeVisible()
   const last = await carryToFilm(page, dialog, shot2, 4.8, 20)
+  await expect(timelineOf(dialog).getByText(/^插入到 4\.\d\d 秒/)).toBeVisible()
   await last()
   await expect(segments(dialog)).toHaveCount(3)
   await expect(segments(dialog).nth(1)).toHaveAccessibleName(/^第 2 段 · 镜头组 3 · V1/)
