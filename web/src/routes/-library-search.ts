@@ -1,13 +1,15 @@
 /** 资料库的查询串：选中的页签、这个页签的筛选范围与打开着的那条详情。等于默认值的条件不落地址栏，非法取值退回默认。
  *
- * 两个页签各用各的筛选，换页签时筛选清空；人、时间与关键词两边同名。 */
+ * 各页签使用独立筛选，换页签时清空；人、时间与关键词沿用同名参数。 */
 
 import { z } from 'zod'
 import {
   DEFAULT_LIBRARY_SCOPE,
   DEFAULT_REFERENCE_SCOPE,
+  DEFAULT_WHOLE_FILM_SCOPE,
   type LibraryScope,
   type ReferenceScope,
+  type WholeFilmScope,
   zCategory,
   zVideoType,
 } from '@/features/library'
@@ -19,8 +21,8 @@ import {
 
 export const librarySearchSchema = z.object({
   ...dateRangeSearchFields,
-  /** 「参考视频」页签；成片是默认页签，不写进地址。 */
-  tab: z.enum(['references']).optional().catch(undefined),
+  /** 成片是默认页签，不写进地址。 */
+  tab: z.enum(['references', 'whole-films', 'brand-templates']).optional().catch(undefined),
   orientation: z.enum(['portrait', 'landscape']).optional().catch(undefined),
   q: z.string().max(100).optional().catch(undefined),
   userName: z.string().min(1).optional().catch(undefined),
@@ -31,6 +33,11 @@ export const librarySearchSchema = z.object({
   video: z.uuid().optional().catch(undefined),
   /** 打开着详情的那条参考视频。 */
   reference: z.uuid().optional().catch(undefined),
+  /** 打开着详情的整片卡（对话 id）。 */
+  film: z.uuid().optional().catch(undefined),
+  /** 品牌模板的筛选；普通读者不会向服务端请求停用模板。 */
+  position: z.enum(['intro', 'outro']).optional().catch(undefined),
+  includeDisabled: z.literal(true).optional().catch(undefined),
 })
 
 export type LibrarySearch = z.output<typeof librarySearchSchema>
@@ -75,5 +82,23 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
     tab: 'references',
     userName: scope.userName ?? undefined,
     videoTypes: scope.videoTypes.length === 0 ? undefined : [...scope.videoTypes],
+  }
+}
+
+export function wholeFilmScopeFromSearch(search: LibrarySearch): WholeFilmScope {
+  return {
+    ...dateRangeFromSearch(search, DEFAULT_WHOLE_FILM_SCOPE),
+    q: search.q ?? '',
+    userName: search.userName ?? null,
+  }
+}
+
+export function searchFromWholeFilmScope(scope: WholeFilmScope): LibrarySearch {
+  const q = scope.q.trim()
+  return {
+    ...dateRangeToSearch(scope, DEFAULT_WHOLE_FILM_SCOPE),
+    tab: 'whole-films',
+    q: q === '' ? undefined : q,
+    userName: scope.userName ?? undefined,
   }
 }

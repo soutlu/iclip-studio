@@ -11,6 +11,7 @@ import {
   type FilmState,
 } from './film-draft'
 import {
+  burnedSubtitles,
   captionAt,
   latestSubtitles,
   projectSubtitles,
@@ -150,16 +151,44 @@ describe('字幕跟着画面走', () => {
     expect(rows(trimSegment(withSubs, 's1', 'end', 1.5), none)).toEqual([[2, 2.5, '']])
   })
 
-  it('预览显示当前那一条：手动的盖过识别的，空字不显示', () => {
+  it('烧进画面的字幕互不重叠：后开始的盖过先开始的，前一条在那一刻收住；空字不烧；预览显示的就是这一份', () => {
+    // 0–3 秒一段：识别句 0.5–2、2.5–3（截到段尾），手动字幕钉在 1 秒（1–3 秒）。
     const film = setManualText(
       addManualSubtitle(build([['s1', 'A', 0, 3]]), 1, 'm') ?? EMPTY_FILM,
       'm',
+      ' 手动 ',
+    )
+    const burned = burnedSubtitles(projectSubtitles(film, () => READY_A).subtitles)
+
+    expect(burned).toEqual([
+      { at: 0.5, end: 1, text: '今天带来一款新耳机' },
+      { at: 1, end: 2.5, text: '手动' },
+      { at: 2.5, end: 3, text: '单耳只有四克' },
+    ])
+    expect(captionAt(burned, 0.6)).toBe('今天带来一款新耳机')
+    expect(captionAt(burned, 1.2)).toBe('手动')
+    expect(captionAt(burned, 2.6)).toBe('单耳只有四克')
+    expect(captionAt(burned, 3.1)).toBeUndefined()
+
+    // 改成只有空白的字不烧，也不再截别的字幕。
+    expect(
+      burnedSubtitles(projectSubtitles(setManualText(film, 'm', '  '), () => READY_A).subtitles),
+    ).toEqual([
+      { at: 0.5, end: 2, text: '今天带来一款新耳机' },
+      { at: 2.5, end: 3, text: '单耳只有四克' },
+    ])
+  })
+
+  it('起点相同时手动加的盖过识别出的，识别句收成零长不烧', () => {
+    const film = setManualText(
+      addManualSubtitle(build([['s1', 'A', 0, 3]]), 0.5, 'm') ?? EMPTY_FILM,
+      'm',
       '手动',
     )
-    const { subtitles } = projectSubtitles(film, () => READY_A)
 
-    expect(captionAt(subtitles, 0.6)).toBe('今天带来一款新耳机')
-    expect(captionAt(subtitles, 1.2)).toBe('手动')
-    expect(captionAt(subtitles, 3.1)).toBeUndefined()
+    expect(burnedSubtitles(projectSubtitles(film, () => READY_A).subtitles)).toEqual([
+      { at: 0.5, end: 2.5, text: '手动' },
+      { at: 2.5, end: 3, text: '单耳只有四克' },
+    ])
   })
 })

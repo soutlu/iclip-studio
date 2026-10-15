@@ -49,7 +49,7 @@ export const subtitleSourceOf = (record: GenerationJob | undefined): SubtitleSou
 export type FilmSubtitle = {
   /** 这一条在轨上的身份：识别出的是「段 id:句子键」，手动的是它自己的 id。 */
   key: string
-  kind: 'sentence' | 'manual'
+  kind: 'sentence' | 'manual' | 'snapshot'
   /** 改字时改哪一份：识别出的是句子键（几段共用），手动的是它自己的 id。 */
   textKey: string
   segmentId: string
@@ -68,17 +68,34 @@ export type FilmSubtitleStatus = {
 }
 
 /** 把草稿与各来源的字幕排成字幕轨：按起点先后。手动字幕从它钉住的那一刻起 {@link MANUAL_SUBTITLE_SECONDS} 秒，
- * 截到所在段内；钉住的那一刻被裁掉了就不显示。`sourceOf` 给 `undefined` 是字幕记录还没读到：这段先什么也不标。 */
+ * 截到所在段内；钉住的那一刻被裁掉了就不显示。`sourceOf` 给 `undefined` 是字幕记录还没读到：这段先什么也不标。
+ * `snapshots=false` 时只按来源识别投影，供音乐获取真实口播时段，不把恢复的画面字幕当作口播依据。 */
 export const projectSubtitles = (
   film: FilmState,
   sourceOf: (sourceJobId: string) => SubtitleSource | undefined,
+  snapshots = true,
 ): { subtitles: FilmSubtitle[]; statuses: FilmSubtitleStatus[] } => {
   const subtitles: FilmSubtitle[] = []
   const statuses: FilmSubtitleStatus[] = []
   for (const { segment, at, duration } of layoutFilm(film.segments)) {
     const toFilm = (time: number) => roundToMs(at + (time - segment.start))
     const source = sourceOf(segment.sourceJobId)
-    if (source !== undefined && source.kind !== 'ready') {
+    if (snapshots && segment.subtitles !== undefined) {
+      for (const caption of segment.subtitles) {
+        const from = Math.max(caption.start, segment.start)
+        const to = Math.min(caption.end, segment.end)
+        if (to <= from) continue
+        subtitles.push({
+          key: `${segment.id}:${caption.id}`,
+          kind: 'snapshot',
+          textKey: caption.id,
+          segmentId: segment.id,
+          at: toFilm(from),
+          end: toFilm(to),
+          text: film.texts[caption.id] ?? caption.text,
+        })
+      }
+    } else if (source !== undefined && source.kind !== 'ready') {
       statuses.push({
         kind: source.kind,
         segmentId: segment.id,
@@ -121,13 +138,34 @@ export const projectSubtitles = (
   return { subtitles, statuses }
 }
 
-/** 整片时刻 `clock` 该显示哪一条字幕：手动加的盖过识别出的；空字不显示。 */
-export const captionAt = (
-  subtitles: readonly FilmSubtitle[],
-  clock: number,
-): string | undefined => {
-  const showing = subtitles.filter(
-    (item) => clock >= item.at && clock < item.end && item.text.trim() !== '',
-  )
-  return (showing.find((item) => item.kind === 'manual') ?? showing[0])?.text
+/** 烧进画面的一条字幕，整片时间，秒。 */
+export type BurnedSubtitle = { at: number; end: number; text: string }
+
+/** 起点相同时谁排在后面（排在后面的盖过前面的）：手动加的盖过识别出的。 */
+const kindOrder = (item: FilmSubtitle): number => (item.kind === 'manual' ? 1 : 0)
+
+/** 字幕轨上最终烧进画面的字幕，预览显示的与合成提交的都是这一份：空字（含只有空白）不烧，文字去掉首尾空白；
+ * 按起点先后排，一条还没结束下一条就开始时，前一条在那一刻收住（后开始的盖过先开始的；起点相同时手动加的盖过识别出的，
+ * 再按结尾先后），收住后不剩时长的不烧。起点从不改动，只截结尾：从一版重建草稿时按起点认回识别出的句子。 */
+export const burnedSubtitles = (subtitles: readonly FilmSubtitle[]): BurnedSubtitle[] => {
+  const ordered = subtitles
+    .filter((item) => item.text.trim() !== '')
+    .toSorted(
+      (left, right) =>
+        left.at - right.at || kindOrder(left) - kindOrder(right) || left.end - right.end,
+    )
+  const burned: BurnedSubtitle[] = []
+  for (const item of ordered) {
+    const last = burned.at(-1)
+    if (last !== undefined && item.at < last.end) {
+      last.end = item.at
+      if (last.end <= last.at) burned.pop()
+    }
+    burned.push({ at: item.at, end: item.end, text: item.text.trim() })
+  }
+  return burned
 }
+
+/** 整片时刻 `clock` 该显示哪一条字幕（烧进画面的那一份，互不重叠）。 */
+export const captionAt = (burned: readonly BurnedSubtitle[], clock: number): string | undefined =>
+  burned.find((item) => clock >= item.at && clock < item.end)?.text

@@ -121,7 +121,7 @@ export function MusicMenu({
             ) : description.text === null ? (
               <textarea
                 aria-label="音乐描述"
-                className="film-card-text ui-focus"
+                className="film-card-text ui-focus ui-focus-inline"
                 maxLength={MAX_PROMPT}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="用一句话描述想要的音乐"

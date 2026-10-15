@@ -340,3 +340,47 @@
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
 }
+
+/* ---------- 看着合成好的某一版 ---------- */
+
+/* 草稿时间线在下面淡着、不能动（inert），点「未合成」回来接着剪；外壳不占布局。 */
+.whole-film-timeline-locked {
+  display: contents;
+}
+
+.whole-film-timeline-locked > * {
+  opacity: var(--state-disabled-content);
+}
+
+.film-template-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+}
+.film-template-option > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.film-template-option strong {
+  font-size: var(--text-body);
+}
+.film-template-option > span > span {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+.film-template-poster {
+  display: block;
+  width: 3rem;
+  height: 2rem;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+}
+.film-template-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

@@ -3,6 +3,7 @@
 
 import { guess } from 'web-audio-beat-detector'
 import { beatGridOf, type Song } from './film-music'
+import { FILM_AUDIO_RATE } from './film-audio'
 
 /** 波形每秒取几个峰值：音乐轨上一秒十几像素，够画包络。 */
 const PEAK_RATE = 50
@@ -43,7 +44,7 @@ export const analyzeMusic = async (url: string, signal?: AbortSignal): Promise<M
   if (!response.ok) throw new Error(`音乐下载失败：${response.status}`)
   const bytes = await response.arrayBuffer()
   // 解码不需要出声，离线上下文不受浏览器「先有手势才能出声」的限制。
-  const buffer = await new OfflineAudioContext(1, 1, 44_100).decodeAudioData(bytes)
+  const buffer = await new OfflineAudioContext(1, 1, FILM_AUDIO_RATE).decodeAudioData(bytes)
   let grid: Song['grid'] = null
   try {
     // 类型里只写了 bpm 与 offset，运行时还带未取整的 tempo（GuessedBeat 里是可选的）。

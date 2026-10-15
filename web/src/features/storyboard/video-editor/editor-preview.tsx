@@ -59,6 +59,10 @@ type Props = {
   onPlay: () => void
   /** 在不在放、静没静音变了就告诉一声：跟着画面放的另一路声音（整片的背景音乐）据此起停、静音。 */
   onPlaybackChange?: ((playback: { playing: boolean; muted: boolean }) => void) | undefined
+  /** 整片草稿使用独立的完整混音时，视频自身的原声始终关闭；控件仍控制独立混音的静音。 */
+  muteMediaAudio?: boolean
+  /** 独立混音未准备好或读取失败时，播放暂停，并在播放按钮上说明原因。 */
+  playBlocked?: string | undefined
   /** 盖在舞台上的浮层（AI 改段的弹出卡），画面不为它让位。 */
   overlay: ReactNode
   /** 压在画面底部居中的字幕（白字、深色描边），放大时跟着画面走；没有就不显示。 */
@@ -90,6 +94,8 @@ export function EditorPreview({
   onTime,
   onPlay,
   onPlaybackChange,
+  muteMediaAudio = false,
+  playBlocked,
   overlay,
   caption,
   emptyMessage,
@@ -118,6 +124,8 @@ export function EditorPreview({
   const [active, setActive] = useState<Slot>(0)
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
+  // 保留人的播放意图，但画面等数据/等 seek 时外部混音必须停在同一时刻。
+  const [buffering, setBuffering] = useState(false)
   const [muted, setMuted] = useState(true)
   const [failed, setFailed] = useState(false)
   // 换过几次所看的内容：画面上那层淡出的遮片按它重挂，第一次打开不遮。
@@ -178,7 +186,12 @@ export function EditorPreview({
   const emitPlayback = useEffectEvent((playback: { playing: boolean; muted: boolean }) =>
     onPlaybackChange?.(playback),
   )
-  useEffect(() => emitPlayback({ playing, muted }), [playing, muted])
+  useEffect(
+    () => emitPlayback({ playing: playing && !buffering, muted }),
+    [playing, buffering, muted],
+  )
+  const blocked = playBlocked !== undefined
+  if (blocked && playing) setPlaying(false)
 
   /** 把一段装进某个槽并跳到段内 `offset`；`reload` 是加载失败后重来。 */
   const load = useCallback(
@@ -270,12 +283,17 @@ export function EditorPreview({
       if (stopPlaybackRef.current === stop) stopPlaybackRef.current = null
     }
     stopPlaybackRef.current = stop
-    void element.play().catch(() => {
-      if (cancelled) return
-      stop()
-      setPlaying(false)
-      setFailed(true)
-    })
+    void element.play().then(
+      () => {
+        if (!cancelled) setBuffering(false)
+      },
+      () => {
+        if (cancelled) return
+        stop()
+        setPlaying(false)
+        setFailed(true)
+      },
+    )
 
     const tick = () => {
       if (cancelled) return
@@ -291,6 +309,8 @@ export function EditorPreview({
       emitTime(clock)
       if (segmentEnd < duration && (element.ended || now >= segment.end - SWITCH_AHEAD)) {
         stop()
+        emitTime(segmentEnd)
+        setBuffering(true)
         setActive(active === 0 ? 1 : 0)
         setIndex(index + 1)
         return
@@ -307,6 +327,7 @@ export function EditorPreview({
       return
     }
     if (currentTime >= duration) seek(0)
+    setBuffering(true)
     setPlaying(true)
     onPlay()
   }
@@ -319,7 +340,8 @@ export function EditorPreview({
   const playButton = (
     <IconButton
       className="video-editor-play"
-      disabled={segments === undefined || segments.length === 0 || failed}
+      disabled={segments === undefined || segments.length === 0 || failed || blocked}
+      tooltip={playBlocked}
       label={playing ? '暂停' : '播放'}
       name={playing ? 'pause' : 'play'}
       onClick={togglePlay}
@@ -355,7 +377,33 @@ export function EditorPreview({
           aria-label={slot === active ? '视频播放器' : undefined}
           className={cn('video-editor-video', slot !== active && 'invisible')}
           key={id}
-          muted={muted}
+          muted={muted || muteMediaAudio}
+          onWaiting={(event) => {
+            if (slot !== active) return
+            const segment = segments?.[index]
+            if (segment !== undefined)
+              onTime(
+                segment.at +
+                  Math.min(
+                    segment.duration,
+                    Math.max(0, event.currentTarget.currentTime - segment.start),
+                  ),
+              )
+            setBuffering(true)
+          }}
+          onSeeking={() => {
+            if (slot === active) setBuffering(true)
+          }}
+          onSeeked={(event) => {
+            if (
+              slot === active &&
+              event.currentTarget.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+            )
+              setBuffering(false)
+          }}
+          onPlaying={() => {
+            if (slot === active) setBuffering(false)
+          }}
           onError={() => {
             if (slot === active) {
               setFailed(true)

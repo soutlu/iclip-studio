@@ -21,6 +21,9 @@ export type WebAudioRecord = {
   master: GainEvent[]
   /** 让上下文时钟走到某一刻，模拟播放了一段时间。 */
   advance: (seconds: number) => void
+  /** 预览混音 worker 的生命周期；计算本身由 PCM 定量测试覆盖。 */
+  workers: { terminated: boolean }[]
+  closed: number
 }
 
 class FakeParam {
@@ -52,20 +55,26 @@ class FakeGain extends FakeNode {
 }
 
 /** 解码出 `duration` 秒、每秒 100 个样本的单声道声音：样本是一列起伏的数，让波形不是一条直线。 */
-const fakeBuffer = (duration: number) => {
-  const sampleRate = 100
+const fakeBuffer = (duration: number, sampleRate = 100, numberOfChannels = 1) => {
   const length = Math.round(duration * sampleRate)
-  const data = Float32Array.from(
-    { length },
-    (_, index) => 0.2 + 0.6 * Math.abs(Math.sin(index / 7)),
+  const channels = Array.from({ length: numberOfChannels }, () =>
+    Float32Array.from({ length }, (_, index) => 0.2 + 0.6 * Math.abs(Math.sin(index / 7))),
   )
-  return { duration, sampleRate, length, numberOfChannels: 1, getChannelData: () => data }
+  return {
+    duration,
+    sampleRate,
+    length,
+    numberOfChannels,
+    getChannelData: (index: number) => channels[index],
+  }
 }
 
 /** 装上替身：解码出 `duration` 秒的声音，返回出声记录。 */
 export const stubWebAudio = ({ duration }: { duration: number }): WebAudioRecord => {
   const played: PlayedSource[] = []
   const master: GainEvent[] = []
+  const workers: { terminated: boolean }[] = []
+  let closed = 0
   let clock = 0
 
   class FakeAudioContext {
@@ -113,21 +122,58 @@ export const stubWebAudio = ({ duration }: { duration: number }): WebAudioRecord
       return Promise.resolve()
     }
     close() {
+      closed += 1
       return Promise.resolve()
     }
   }
 
   class FakeOfflineAudioContext {
+    createBuffer(channels: number, length: number, rate: number) {
+      return fakeBuffer(length / rate, rate, channels)
+    }
     decodeAudioData() {
       return Promise.resolve(fakeBuffer(duration))
     }
   }
 
+  class FakeWorker {
+    onmessage: ((event: { data: unknown }) => void) | null = null
+    onerror: (() => void) | null = null
+    private record = { terminated: false }
+    constructor() {
+      workers.push(this.record)
+    }
+    postMessage(data: { segments: { start: number; end: number }[] }) {
+      const length = Math.round(
+        data.segments.reduce((sum, segment) => sum + segment.end - segment.start, 0) * 48_000,
+      )
+      queueMicrotask(() => {
+        if (!this.record.terminated)
+          this.onmessage?.({
+            data: {
+              pcm: {
+                sampleRate: 48_000,
+                channels: [new Float32Array(length), new Float32Array(length)],
+              },
+            },
+          })
+      })
+    }
+    terminate() {
+      this.record.terminated = true
+    }
+  }
+
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext)
+  vi.stubGlobal('Worker', FakeWorker)
   return {
     played,
     master,
+    workers,
+    get closed() {
+      return closed
+    },
     advance: (seconds) => {
       clock += seconds
     },

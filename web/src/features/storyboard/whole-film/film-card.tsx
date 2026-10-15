@@ -13,6 +13,9 @@ import {
 import { Icon } from '@/shared/icons'
 import { Button, IconButton } from '@/shared/ui/button'
 import { placeCard } from '../video-editor/card-placement'
+import type { BrandPosition, FilmBrand } from './film-draft'
+import { BrandMenu, type BrandMenuProps } from './film-menus'
+import { MAX_SUBTITLE_CHARS } from './film-submit'
 
 type FilmCardProps = {
   /** 时间线上选中的那一项，卡对准它的中线；不在时卡留在原处。 */
@@ -192,6 +195,7 @@ export function SubtitleCard({
   anchorRef,
   position,
   source,
+  restored = false,
   text,
   onText,
   onRemove,
@@ -202,6 +206,7 @@ export function SubtitleCard({
   position: number
   /** 识别出的：来自哪一版（镜头组 1 · V2）；手动加的没有。 */
   source: string | undefined
+  restored?: boolean
   text: string
   onText: (text: string) => void
   /** 手动加的才能删。 */
@@ -211,7 +216,9 @@ export function SubtitleCard({
   return (
     <FilmCard
       anchorRef={anchorRef}
-      detail={source === undefined ? '手动添加' : `来自${source} 的口播`}
+      detail={
+        restored ? '从已合成版本恢复' : source === undefined ? '手动添加' : `来自${source} 的口播`
+      }
       label="选中的字幕"
       leading={
         <span className="film-card-icon">
@@ -223,7 +230,8 @@ export function SubtitleCard({
     >
       <textarea
         aria-label="字幕文字"
-        className="film-card-text ui-focus"
+        className="film-card-text ui-focus ui-focus-inline"
+        maxLength={MAX_SUBTITLE_CHARS}
         onChange={(event) => onText(event.target.value)}
         placeholder="输入字幕文字"
         rows={2}
@@ -236,6 +244,44 @@ export function SubtitleCard({
           </Button>
         </div>
       )}
+    </FilmCard>
+  )
+}
+
+export function BrandCard({
+  anchorRef,
+  position,
+  template,
+  brands,
+  onClose,
+}: {
+  anchorRef: RefObject<HTMLElement | null>
+  position: BrandPosition
+  template: FilmBrand
+  brands: BrandMenuProps
+  onClose: () => void
+}) {
+  const label = position === 'intro' ? '片头' : '片尾'
+  return (
+    <FilmCard
+      anchorRef={anchorRef}
+      label={`选中的${label}`}
+      leading={<Icon decorative name="video" size="md" />}
+      title={template.name}
+      detail={`${label} · ${(template.durationMs / 1000).toFixed(1)} 秒 · 位置固定`}
+      onClose={onClose}
+    >
+      <div className="film-card-actions">
+        <BrandMenu brands={brands} position={position} />
+        <Button
+          leadingIcon="delete"
+          onClick={() => brands.onRemove(position)}
+          size="md"
+          variant="ghost"
+        >
+          删除{label}
+        </Button>
+      </div>
     </FilmCard>
   )
 }

@@ -209,12 +209,14 @@ test('整片放不下时不插入：插入线变虚、说明还差多少', async
   const shot2 = laneOf(dialog, '镜头组 2 · V1')
   await sweep(page, dialog, shot2, 0, 5)
   const drop = await carryToFilm(page, dialog, shot2, 2.5, 30)
-  await expect(timelineOf(dialog).getByText(/^整片最长 120 秒，放不下这 \d\.\d 秒$/)).toBeVisible()
+  await expect(
+    timelineOf(dialog).getByText(/^整片含片头片尾最长 120 秒，放不下这 \d\.\d 秒$/),
+  ).toBeVisible()
   await screenshotBothThemes(page, `${SHOT_DIR}/pick-limit`)
   await drop()
   await expect(segments(dialog)).toHaveCount(30)
   await expect(
-    dialog.getByText(/^整片已有 117\.0 秒，放不下这 \d\.\d 秒；请先删减成片轨上的段$/),
+    dialog.getByText(/已有 117\.0 秒，放不下这 \d\.\d 秒；请先删减成片轨上的段$/),
   ).toBeVisible()
 })
 
@@ -322,9 +324,11 @@ test('整片音乐：没有工程文件时写一句生成，完成后自动对�
     await chooser
   ).setFiles({ name: '夏日节拍.wav', mimeType: 'audio/wav', buffer: silentWav(2) })
   await expect(track.getByText('音乐比成片短 4.0 秒')).toBeVisible({ timeout: STEP_TIMEOUT })
-  await expect(dialog.getByRole('button', { name: '合成成片' })).toHaveAttribute(
-    'title',
-    '音乐比成片短 4.0 秒，请重新生成或换一首',
+  const compose = dialog.getByRole('button', { name: '合成成片' })
+  await expect(compose).toHaveAttribute('aria-disabled', 'true')
+  await compose.hover()
+  await expect(page.getByRole('tooltip')).toHaveText(
+    '音乐比成片短 4.0 秒，无法合成；请重新生成或换一首',
   )
   await expect(
     dialog.getByText('上传的音乐只有 2.0 秒，铺不满第一段开头到最后一段结尾，不循环补齐'),
@@ -377,4 +381,132 @@ test('整片移动布局：对话框内部自己滚，页面不横向溢出', as
   expect(overflow).toBeLessThanOrEqual(0)
   await page.mouse.move(0, 0)
   await screenshotBothThemes(page, `${SHOT_DIR}/mobile`)
+})
+
+test('整片合成：剪辑后提交，完成版本可预览下载，关闭并清除草稿后恢复最新版本', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
+  await addMaterial(page, dialog, '镜头组 2 V1')
+  await laneOf(dialog, '镜头组 2 · V1').focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await expect(segments(dialog)).toHaveCount(1)
+
+  const accepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/generations/whole-films') &&
+      response.request().method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: '合成成片' }).click()
+  const response = await accepted
+  expect(response.status()).toBe(202)
+  const submitted = response.request().postDataJSON() as {
+    segments: { sourceJobId: string; startMs: number; endMs: number }[]
+    subtitles: { startMs: number; endMs: number; text: string }[]
+  }
+  expect(submitted.segments).toEqual([
+    { sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d', startMs: 0, endMs: 6000 },
+  ])
+  expect(submitted.subtitles.length).toBeGreaterThan(0)
+  const { generation } = (await response.json()) as { generation: { id: string } }
+  await expect(dialog.getByRole('button', { name: '整片合成中' })).toBeVisible()
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/composing')
+  await dialog.getByRole('button', { name: '整片 V1' }).click({ timeout: STEP_TIMEOUT })
+  await expect(dialog.getByRole('button', { name: '下载视频' })).toBeEnabled()
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/completed')
+
+  const downloaded = page.waitForEvent('download')
+  const tracking = page.waitForRequest(
+    (request) => request.url().endsWith('/api/tracking/events') && request.method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: '下载视频' }).click()
+  expect((await tracking).postDataJSON()).toEqual({
+    name: 'video.downloaded',
+    jobId: generation.id,
+  })
+  expect(await (await downloaded).failure()).toBeNull()
+
+  await dialog.getByRole('button', { name: '关闭视频编辑' }).click()
+  await page.evaluate(() => {
+    const conversationId = window.location.pathname.split('/').at(-1)
+    window.localStorage.removeItem(`whole-film-draft:${conversationId}`)
+  })
+  await page
+    .getByRole('complementary', { name: '工作台' })
+    .getByRole('button', { name: '整片', exact: true })
+    .click()
+  await expect(dialog.getByText('已按 V1 恢复剪辑')).toBeVisible()
+  await expect(segments(dialog)).toHaveCount(1)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/restored')
+})
+
+test('整片片头片尾：按正文画幅选择固定模板，字幕只在正文出现，合成请求使用正文时钟', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
+  await addMaterial(page, dialog, '镜头组 2 V1')
+  await laneOf(dialog, '镜头组 2 · V1').focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await dialog.getByRole('button', { name: '添加', exact: true }).click()
+  await page.getByRole('menuitem', { name: '片头', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: /^品牌片头 · 竖版/ })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: /^品牌片头 · 横版/ })).toHaveCount(0)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/intro-picker')
+  await page.getByRole('menuitem', { name: /^品牌片头 · 竖版/ }).click()
+  await dialog.getByRole('button', { name: '添加', exact: true }).click()
+  await page.getByRole('menuitem', { name: '片尾', exact: true }).click()
+  await page.getByRole('menuitem', { name: /^品牌片尾 · 竖版/ }).click()
+  await expect(
+    dialog.getByRole('button', { name: '片头：品牌片头 · 竖版，位置固定' }),
+  ).toBeVisible()
+  await expect(
+    dialog.getByRole('button', { name: '片尾：品牌片尾 · 竖版，位置固定' }),
+  ).toBeVisible()
+  await expect(segments(dialog).first()).toHaveAccessibleName(/6–12 秒$/)
+  const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
+  await page.mouse.click(await xAt(dialog, 1), await middleY(ruler))
+  await expect(dialog.getByLabel('视频预览').getByText('这只包今天第一次上身')).toHaveCount(0)
+  await page.mouse.click(await xAt(dialog, 7), await middleY(ruler))
+  await expect(dialog.getByLabel('视频预览').getByText('这只包今天第一次上身')).toBeVisible()
+  await page.mouse.move(0, 0)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/brands')
+  const accepted = page.waitForResponse((response) =>
+    response.url().endsWith('/api/generations/whole-films'),
+  )
+  await dialog.getByRole('button', { name: '合成成片' }).click()
+  const response = await accepted
+  expect(response.status()).toBe(202)
+  const submitted = response.request().postDataJSON() as {
+    intro: { templateId: string }
+    outro: { templateId: string }
+    subtitles: { startMs: number }[]
+  }
+  expect(submitted.intro.templateId).toBe('ba000001-0000-4000-8000-000000000001')
+  expect(submitted.outro.templateId).toBe('ba000001-0000-4000-8000-000000000002')
+  expect(submitted.subtitles[0]?.startMs).toBe(300)
+  await expect(dialog.getByRole('button', { name: '整片 V1' })).toBeVisible({
+    timeout: STEP_TIMEOUT,
+  })
+  await dialog.getByRole('button', { name: '关闭视频编辑' }).click()
+  await page.evaluate(() => {
+    const conversationId = window.location.pathname.split('/').at(-1)
+    window.localStorage.removeItem(`whole-film-draft:${conversationId}`)
+  })
+  await page
+    .getByRole('complementary', { name: '工作台' })
+    .getByRole('button', { name: '整片', exact: true })
+    .click()
+  await expect(dialog.getByText('已按 V1 恢复剪辑')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: /^片头：/ })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: /^片尾：/ })).toBeVisible()
+  await expect(segments(dialog).first()).toHaveAccessibleName(/6–12 秒$/)
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/brands-mobile')
 })

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EMPTY_FILM, insertSegment, type FilmState } from './film-draft'
 import {
-  automationFrom,
   beatGridOf,
   beatsOf,
   chooseStart,
@@ -209,16 +208,5 @@ describe('音量曲线', () => {
     expect(gainAt(faded, 2000)).toBe(MUSIC_BED_GAIN)
     expect(gainAt(faded, 3000)).toBeCloseTo(MUSIC_BED_GAIN / 2, 2)
     expect(gainAt(faded, 4000)).toBe(0)
-  })
-
-  it('从播放头处起播：先定到那一刻的值，之后的点按距起播多少秒排', () => {
-    const curve = musicGainCurve([{ at: 1, end: 2 }], 4)
-    expect(automationFrom(curve, 850)).toEqual([
-      { after: 0, gain: Math.round(((MUSIC_BED_GAIN + MUSIC_DUCKED_GAIN) / 2) * 1000) / 1000 },
-      { after: 0.15, gain: MUSIC_DUCKED_GAIN },
-      { after: 1.15, gain: MUSIC_DUCKED_GAIN },
-      { after: 1.45, gain: MUSIC_BED_GAIN },
-      { after: 3.15, gain: MUSIC_BED_GAIN },
-    ])
   })
 })

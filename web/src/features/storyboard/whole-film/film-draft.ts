@@ -3,8 +3,11 @@
 
 import { z } from 'zod'
 
-/** 整片最长多少秒（ADR-0003：连同片头片尾最长 120 秒；现在还没有片头片尾）。 */
+/** 整片连同片头片尾最长 120 秒（ADR-0003）。 */
 export const MAX_FILM_SECONDS = 120
+export const MAX_FILM_SEGMENTS = 100
+export const MAX_FILM_SUBTITLES = 500
+export const MAX_MUSIC_GAIN_POINTS = 500
 
 /** 素材上挑段、成片轨上裁剪，一段至少多长：再短只剩几帧，看不清也剪不动。 */
 export const MIN_SEGMENT_SECONDS = 0.2
@@ -23,6 +26,8 @@ export type FilmSegment = Pick & {
   id: string
   /** 挑进来时的那一截（拆分后各自以拆点为界）：裁剪只能在里面收缩、再放回。 */
   origin: { start: number; end: number }
+  /** 从已合成版本恢复的最终字幕，按来源视频时间保存；空数组表示这一段没有字幕，不再从识别记录派生。 */
+  subtitles?: readonly { id: string; start: number; end: number; text: string }[] | undefined
 }
 
 /** 手动加的字幕：钉在一段素材的某一刻上，跟着这段画面走；不能拖，只能改字和删。 */
@@ -37,8 +42,28 @@ export type ManualSubtitle = {
 /** 整片的背景音乐，至多一首，是一条音频记录：上传的记着文件名与地址（上传记录不挂对话，列不出来），生成的地址与状态
  * 从本对话的音频记录里读。`userStart` 是人拖到的起点（整首里的秒），没拖过是 null，起点按切点自动选。 */
 export type FilmMusic =
-  | { kind: 'upload'; jobId: string; name: string; url: string; userStart: number | null }
+  | {
+      kind: 'upload'
+      jobId: string
+      name: string
+      url: string
+      userStart: number | null
+      /** 从版本恢复后先确认媒体可读；是否允许再次合成由提交端点检查。 */
+      verifyAccess?: boolean | undefined
+    }
   | { kind: 'generate'; jobId: string; userStart: number | null }
+
+/** 选中的品牌模板快照：停用后仍能预览，提交前再核对当前可用模板。 */
+export type FilmBrand = {
+  templateId: string
+  name: string
+  url: string
+  durationMs: number
+  width: number
+  height: number
+  hasAudio: boolean
+}
+export type BrandPosition = 'intro' | 'outro'
 
 /** 撤销栈里的一步。 */
 export type FilmState = {
@@ -47,6 +72,8 @@ export type FilmState = {
   texts: Readonly<Record<string, string>>
   manual: readonly ManualSubtitle[]
   music: FilmMusic | null
+  intro?: FilmBrand | null
+  outro?: FilmBrand | null
 }
 
 export const EMPTY_FILM: FilmState = { segments: [], texts: {}, manual: [], music: null }
@@ -73,6 +100,17 @@ export const layoutFilm = (segments: readonly FilmSegment[]): PlacedSegment[] =>
 export const filmDuration = (segments: readonly FilmSegment[]): number =>
   roundToMs(segments.reduce((sum, segment) => sum + segmentDuration(segment), 0))
 
+/** 模板所占时长，不计入正文字幕和音乐的时钟。 */
+export const brandDuration = (film: FilmState): number =>
+  ((film.intro?.durationMs ?? 0) + (film.outro?.durationMs ?? 0)) / 1000
+export const wholeFilmDuration = (film: FilmState): number =>
+  roundToMs(filmDuration(film.segments) + brandDuration(film))
+export const setBrand = (
+  film: FilmState,
+  position: BrandPosition,
+  template: FilmBrand | null,
+): FilmState => ({ ...film, [position]: template })
+
 /** 整片时刻 `clock` 落在哪一段里（右开）；不在任何一段里（空轨、末尾）时没有。 */
 export const segmentAt = (
   segments: readonly FilmSegment[],
@@ -93,8 +131,11 @@ export const insertClockOf = (segments: readonly FilmSegment[], index: number): 
   layoutFilm(segments)[index]?.at ?? filmDuration(segments)
 
 /** 再放进 `duration` 秒会不会超过整片上限。 */
-export const fitsInFilm = (segments: readonly FilmSegment[], duration: number): boolean =>
-  filmDuration(segments) + roundToMs(duration) <= MAX_FILM_SECONDS + 1e-9
+export const fitsInFilm = (
+  segments: readonly FilmSegment[],
+  duration: number,
+  reserved = 0,
+): boolean => filmDuration(segments) + roundToMs(duration) + reserved <= MAX_FILM_SECONDS + 1e-9
 
 /** 把素材上的一截插在第 `index` 段之前，后面的段顺延；放不下（超过整片上限）或太短时不插，返回 `undefined`。 */
 export const insertSegment = (
@@ -105,7 +146,11 @@ export const insertSegment = (
 ): FilmState | undefined => {
   const start = roundToMs(pick.start)
   const end = roundToMs(pick.end)
-  if (end - start < MIN_SEGMENT_SECONDS - 1e-9 || !fitsInFilm(state.segments, end - start))
+  if (
+    state.segments.length >= MAX_FILM_SEGMENTS ||
+    end - start < MIN_SEGMENT_SECONDS - 1e-9 ||
+    !fitsInFilm(state.segments, end - start, brandDuration(state))
+  )
     return undefined
   const segment: FilmSegment = {
     id,
@@ -140,8 +185,9 @@ export const trimBounds = (
   segments: readonly FilmSegment[],
   segment: FilmSegment,
   edge: 'start' | 'end',
+  reserved = 0,
 ): { min: number; max: number } => {
-  const slack = Math.max(0, MAX_FILM_SECONDS - filmDuration(segments))
+  const slack = Math.max(0, MAX_FILM_SECONDS - reserved - filmDuration(segments))
   return edge === 'start'
     ? {
         min: roundToMs(Math.max(segment.origin.start, segment.start - slack)),
@@ -163,7 +209,7 @@ export const trimSegment = (
   const at = state.segments.findIndex((segment) => segment.id === id)
   const segment = state.segments[at]
   if (segment === undefined) return state
-  const { min, max } = trimBounds(state.segments, segment, edge)
+  const { min, max } = trimBounds(state.segments, segment, edge, brandDuration(state))
   const bounded = roundToMs(Math.min(max, Math.max(min, value)))
   if (bounded === segment[edge]) return state
   return { ...state, segments: state.segments.with(at, { ...segment, [edge]: bounded }) }
@@ -184,7 +230,7 @@ const splitPoint = (segments: readonly FilmSegment[], clock: number) => {
 }
 
 export const canSplitAt = (segments: readonly FilmSegment[], clock: number): boolean =>
-  splitPoint(segments, clock) !== undefined
+  segments.length < MAX_FILM_SEGMENTS && splitPoint(segments, clock) !== undefined
 
 /** 在整片时刻 `clock` 处把所在的那段一分为二：前一半留原来的 id，后一半用 `rightId`；两半各自以拆点为界。
  * 钉在后一半上的手动字幕跟过去。拆不了时返回 `undefined`。 */
@@ -193,6 +239,7 @@ export const splitAt = (
   clock: number,
   rightId: string,
 ): FilmState | undefined => {
+  if (state.segments.length >= MAX_FILM_SEGMENTS) return undefined
   const point = splitPoint(state.segments, clock)
   if (point === undefined) return undefined
   const { segment, time } = point
@@ -302,6 +349,16 @@ const zStoredSegment = z
     start: z.number().nonnegative(),
     end: z.number().positive(),
     origin: zSpan,
+    subtitles: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          start: z.number().nonnegative(),
+          end: z.number().positive(),
+          text: z.string(),
+        }),
+      )
+      .optional(),
   })
   .refine(
     (segment) =>
@@ -310,8 +367,20 @@ const zStoredSegment = z
       segment.end <= segment.origin[1],
   )
 
+export const zFilmBrand = z.object({
+  templateId: z.string().min(1),
+  name: z.string(),
+  url: z.string().min(1),
+  durationMs: z.number().int().positive(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  hasAudio: z.boolean(),
+})
+
 const zStoredFilm = z.object({
   version: z.literal(STORAGE_VERSION),
+  intro: zFilmBrand.nullish(),
+  outro: zFilmBrand.nullish(),
   segments: z.array(zStoredSegment),
   texts: z.record(z.string(), z.string()),
   manual: z.array(
@@ -329,6 +398,7 @@ const zStoredFilm = z.object({
         kind: z.literal('upload'),
         jobId: z.string().min(1),
         name: z.string(),
+        verifyAccess: z.boolean().optional(),
         url: z.string().min(1),
         userStart: z.number().nonnegative().nullable(),
       }),
@@ -355,7 +425,7 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
   }
   const parsed = zStoredFilm.safeParse(json)
   if (!parsed.success) return undefined
-  const { segments, texts, manual, lanes, music } = parsed.data
+  const { segments, texts, manual, lanes, music, intro, outro } = parsed.data
   return {
     film: {
       segments: segments.map(({ origin, ...segment }) => ({
@@ -365,6 +435,8 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
       texts,
       manual,
       music: music ?? null,
+      ...(intro === undefined ? {} : { intro }),
+      ...(outro === undefined ? {} : { outro }),
     },
     lanes,
   }
@@ -381,6 +453,8 @@ export const serializeStoredFilm = ({ film, lanes }: StoredFilm): string =>
     manual: film.manual,
     lanes,
     music: film.music,
+    intro: film.intro,
+    outro: film.outro,
   })
 
 /** 只留来源还读得到的段与素材轨：来源不在 `known` 里的段连同钉在它上面的手动字幕去掉，返回去掉了几段。 */

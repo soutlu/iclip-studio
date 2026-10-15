@@ -34,6 +34,14 @@
   font-size: var(--text-body);
 }
 
+/* 不能合成时照设计系统的禁用样式：中性的禁用底色配禁用文字色（ui-state 只改文字色，留着主色底就看不清），去掉投影与按压缩放。 */
+.video-editor-compose:disabled,
+.video-editor-compose[aria-disabled='true'] {
+  background-color: var(--color-disabled-container);
+  box-shadow: none;
+  scale: 1;
+}
+
 /* 舞台在上、时间线面板在下，都铺满弹窗整宽；AI 改段的卡弹在舞台上，不占列。 */
 .video-editor {
   display: grid;
@@ -208,6 +216,11 @@
   padding: 24px 20px;
   overflow-y: auto;
   scrollbar-width: none;
+}
+
+/* 合成失败那一格的警示图标：与图片编辑版本条的失败格同色，只作点缀。 */
+.video-editor-version-failed {
+  color: color-mix(in srgb, var(--color-error) 60%, var(--color-on-scrim));
 }
 
 /* 放大预览：与灯箱同款的应用内遮罩，盖满视口、舞台居中 */

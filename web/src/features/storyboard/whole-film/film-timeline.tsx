@@ -24,11 +24,13 @@ import {
   insertIndexAt,
   layoutFilm,
   MAX_FILM_SECONDS,
+  MAX_FILM_SEGMENTS,
   MIN_SEGMENT_SECONDS,
   roundToMs,
   segmentDuration,
   trimBounds,
   type FilmSegment,
+  type FilmBrand,
   type MaterialLane,
   type Pick,
 } from './film-draft'
@@ -59,6 +61,7 @@ export type FilmSelection =
   | { kind: 'segment'; id: string }
   | { kind: 'subtitle'; key: string }
   | { kind: 'music' }
+  | { kind: 'brand'; position: 'intro' | 'outro' }
   | undefined
 
 /** 时间线上下几行的位置，像素：标尺 18；成片轨 48、字幕轨 26、音乐轨 32，行间 4；分隔行 22；素材轨各 40，行间 4。 */
@@ -95,6 +98,9 @@ type FilmTimelineProps = {
   scale: number
   /** 整片总长。 */
   total: number
+  bodyTotal: number
+  intro: FilmBrand | null | undefined
+  outro: FilmBrand | null | undefined
   currentTime: number
   selection: FilmSelection
   pick: MaterialPick | undefined
@@ -203,6 +209,9 @@ export function FilmTimeline({
   lanes,
   scale: baseScale,
   total,
+  bodyTotal,
+  intro,
+  outro,
   currentTime,
   selection,
   pick,
@@ -242,13 +251,19 @@ export function FilmTimeline({
   const [trim, setTrim] = useState<Trim | null>(null)
   const [seekByPointer, setSeekByPointer] = useState(false)
 
-  const layout = layoutFilm(segments)
+  const bodyStart = (intro?.durationMs ?? 0) / 1000
+  const reserved = bodyStart + (outro?.durationMs ?? 0) / 1000
+  const layout = layoutFilm(segments).map((placed) => ({ ...placed, at: placed.at + bodyStart }))
   const carried = carry?.moved === true ? carry.pick : undefined
   const carriedDuration = carried === undefined ? 0 : segmentDuration(carried)
   const dropping = carry?.moved === true && carry.over
-  const dropFits = carried !== undefined && fitsInFilm(segments, carriedDuration)
-  const dropIndex = dropping ? insertIndexAt(segments, carry.clock) : undefined
-  const dropClock = dropIndex === undefined ? undefined : insertClockOf(segments, dropIndex)
+  const dropFits =
+    carried !== undefined &&
+    segments.length < MAX_FILM_SEGMENTS &&
+    fitsInFilm(segments, carriedDuration, reserved)
+  const dropIndex = dropping ? insertIndexAt(segments, carry.clock - bodyStart) : undefined
+  const dropClock =
+    dropIndex === undefined ? undefined : bodyStart + insertClockOf(segments, dropIndex)
   // 放得下时插入点之后的段先往后让出位置；比例跟着放宽，让出去的段不出界。
   const shift = dropping && dropFits && dropIndex !== undefined ? carriedDuration : 0
   const scale = Math.max(baseScale, total + shift)
@@ -374,13 +389,13 @@ export function FilmTimeline({
     setLift(null)
     if (!lift.moved) return
     swallowClickRef.current = true
-    onMove(lift.id, insertIndexAt(segments, lift.clock))
+    onMove(lift.id, insertIndexAt(segments, lift.clock - bodyStart))
   }
 
   // ---------- 成片轨：裁剪 ----------
 
   const trimValue = (at: number, segment: FilmSegment, edge: Edge, clock: number) => {
-    const { min, max } = trimBounds(segments, segment, edge)
+    const { min, max } = trimBounds(segments, segment, edge, reserved)
     return Math.min(max, Math.max(min, segment.start + (clock - at)))
   }
 
@@ -433,7 +448,7 @@ export function FilmTimeline({
   // ---------- 素材轨：框选、调两端、拖到成片轨 ----------
 
   const insertAtPlayhead = (current: MaterialPick) =>
-    onInsert(current, insertIndexAt(segments, currentTime))
+    onInsert(current, insertIndexAt(segments, currentTime - bodyStart))
 
   const pressLane = (event: PointerEvent<HTMLDivElement>, view: LaneView) => {
     if (event.button !== 0 || view.duration == null) return
@@ -500,7 +515,7 @@ export function FilmTimeline({
     if (carry === null || carry.pointerId !== event.pointerId) return
     setCarry(null)
     if (!carry.moved || !overFilm(event.clientY)) return
-    onInsert(carry.pick, insertIndexAt(segments, clockAt(event.clientX)))
+    onInsert(carry.pick, insertIndexAt(segments, clockAt(event.clientX) - bodyStart))
   }
 
   const keyLane = (event: KeyboardEvent<HTMLDivElement>, view: LaneView) => {
@@ -562,6 +577,7 @@ export function FilmTimeline({
     if (pick === undefined) return
     if (event.key === 'Enter') {
       event.preventDefault()
+      event.stopPropagation()
       insertAtPlayhead(pick)
       return
     }
@@ -592,7 +608,8 @@ export function FilmTimeline({
   const lifted =
     lift?.moved === true ? layout.find((item) => item.segment.id === lift.id) : undefined
   const liftIndex = lifted === undefined ? undefined : segments.indexOf(lifted.segment)
-  const liftInsert = lift?.moved === true ? insertIndexAt(segments, lift.clock) : undefined
+  const liftInsert =
+    lift?.moved === true ? insertIndexAt(segments, lift.clock - bodyStart) : undefined
   const showLiftInsert =
     liftInsert !== undefined &&
     liftIndex !== undefined &&
@@ -628,6 +645,11 @@ export function FilmTimeline({
   }
 
   const statusOf = (status: FilmSubtitleStatus) => {
+    // 已恢复的画面字幕仍可编辑；口播识别状态贴在对应视频段上，不盖住字幕轨。
+    const overSnapshot = subtitles.some(
+      (item) => item.kind === 'snapshot' && item.segmentId === status.segmentId,
+    )
+    const className = cn('film-subtitle-status', overSnapshot && 'is-over-snapshot')
     const style = {
       ...span(
         shifted(
@@ -636,12 +658,12 @@ export function FilmTimeline({
         ),
         status.end - status.at,
       ),
-      top: ROW.subtitles.top + 2,
-      height: ROW.subtitles.height - 4,
+      top: overSnapshot ? ROW.film.top + 3 : ROW.subtitles.top + 2,
+      height: overSnapshot ? 18 : ROW.subtitles.height - 4,
     }
     if (status.kind === 'running')
       return (
-        <span className="film-subtitle-status" key={status.segmentId} role="status" style={style}>
+        <span className={className} key={status.segmentId} role="status" style={style}>
           <span className="film-subtitle-status-text">
             <Icon className="motion-safe:animate-spin" decorative name="loading" size="xs" />
             识别中
@@ -653,7 +675,7 @@ export function FilmTimeline({
     const action = status.kind === 'failed' ? '重试' : '识别'
     const source = materialOf(status.sourceJobId)
     return (
-      <span className="film-subtitle-status" key={status.segmentId} style={style}>
+      <span className={className} key={status.segmentId} style={style}>
         <button
           aria-label={`${source === undefined ? '' : `${materialName(source)} `}字幕${label}，${action}`}
           className="film-subtitle-status-text is-action ui-focus"
@@ -792,6 +814,36 @@ export function FilmTimeline({
               从下方素材轨拖选片段放到这里
             </span>
           ) : null}
+          {(['intro', 'outro'] as const).map((position) => {
+            const template = position === 'intro' ? intro : outro
+            if (template == null) return null
+            const label = position === 'intro' ? '片头' : '片尾'
+            const selected = selection?.kind === 'brand' && selection.position === position
+            return (
+              <button
+                aria-label={`${label}：${template.name}，位置固定`}
+                aria-pressed={selected}
+                className="film-brand-block ui-focus"
+                key={position}
+                onClick={() => onSelect(selected ? undefined : { kind: 'brand', position })}
+                ref={selected ? (anchorRef as Ref<HTMLButtonElement>) : undefined}
+                style={{
+                  ...span(
+                    position === 'intro' ? 0 : bodyStart + bodyTotal + shift,
+                    template.durationMs / 1000,
+                  ),
+                  top: ROW.film.top + 2,
+                  height: ROW.film.height - 4,
+                }}
+                type="button"
+              >
+                <Icon decorative name="locked" size="xs" />
+                <span>
+                  {label} · {seconds(template.durationMs / 1000)}
+                </span>
+              </button>
+            )
+          })}
           {layout.map(({ segment, at, duration }, index) => {
             const material = materialOf(segment.sourceJobId)
             const isSelected = selectedSegment === segment.id
@@ -878,21 +930,26 @@ export function FilmTimeline({
             className="film-timeline-lane"
             style={{ top: ROW.music.top, height: ROW.music.height }}
           />
-          <MusicTrack
-            anchorRef={anchorRef}
-            cuts={internalCuts(segments)}
-            filmTop={ROW.film.top}
-            onMove={onMoveMusic}
-            onRemove={onRemoveMusic}
-            onScrub={onScrub}
-            onSelect={(selected) => onSelect(selected ? { kind: 'music' } : undefined)}
-            row={ROW.music}
-            scale={scale}
-            secondsOf={secondsOf}
-            selected={selection?.kind === 'music'}
-            total={total}
-            view={music}
-          />
+          <div
+            className="film-music-offset"
+            style={{ left: percent(bodyStart), width: percent(scale - bodyStart) }}
+          >
+            <MusicTrack
+              anchorRef={anchorRef}
+              cuts={internalCuts(segments)}
+              filmTop={ROW.film.top}
+              onMove={onMoveMusic}
+              onRemove={onRemoveMusic}
+              onScrub={onScrub}
+              onSelect={(selected) => onSelect(selected ? { kind: 'music' } : undefined)}
+              row={ROW.music}
+              scale={scale - bodyStart}
+              secondsOf={secondsOf}
+              selected={selection?.kind === 'music'}
+              total={bodyTotal}
+              view={music}
+            />
+          </div>
 
           {/* 成片轨的选中框、手柄与拖动 */}
           {box === undefined ? null : (
@@ -913,7 +970,7 @@ export function FilmTimeline({
             : (['start', 'end'] as const).map((edge) => {
                 const { segment, at } = handleOwner
                 const value = trim !== null && trim.edge === edge ? trim.value : segment[edge]
-                const bounds = trimBounds(segments, segment, edge)
+                const bounds = trimBounds(segments, segment, edge, reserved)
                 return (
                   <button
                     aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
@@ -978,7 +1035,7 @@ export function FilmTimeline({
             <span
               aria-hidden="true"
               className="film-timeline-insert"
-              style={{ left: percent(insertClockOf(segments, liftInsert)) }}
+              style={{ left: percent(bodyStart + insertClockOf(segments, liftInsert)) }}
             />
           ) : null}
 
@@ -1001,7 +1058,9 @@ export function FilmTimeline({
                     <Icon decorative name={dropFits ? 'insert' : 'blocked'} size="xs" />
                     {dropFits
                       ? `插入到 ${dropClock.toFixed(2)} 秒`
-                      : `整片最长 ${MAX_FILM_SECONDS} 秒，放不下这 ${carriedDuration.toFixed(1)} 秒`}
+                      : segments.length >= MAX_FILM_SEGMENTS
+                        ? `片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入`
+                        : `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒，放不下这 ${carriedDuration.toFixed(1)} 秒`}
                   </span>
                 </>
               ) : null}

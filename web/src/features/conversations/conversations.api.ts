@@ -10,6 +10,7 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 import { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
+import type { ConversationTask } from '@/shared/workbench'
 import { mintUuid } from '@/shared/lib/uuid'
 import {
   conversationRowsOf,
@@ -287,10 +288,10 @@ export const refreshConversationRow = async (
   }
 }
 
-/** 这段对话此刻挂的需求单：没挂是 null，还没读到或读不到是 undefined。整行读一次放进行池，之后换需求单随全局帧进池，
- * 这里取池里的当前值；在这段对话下另起的生成记录用它归属。 */
-export const useConversationTaskId = (conversationId: string): string | null | undefined => {
-  const { data } = useQuery({
+/** 这段对话此刻挂的需求单。整行读一次放进行池，之后换需求单随全局帧进池，这里取池里的当前值（对话已删时取读到的那一行）；
+ * 在这段对话下另起的生成记录用它归属。读失败时交出重读的入口，由用到它的界面说明并给重试。 */
+export const useConversationTask = (conversationId: string): ConversationTask => {
+  const query = useQuery({
     queryKey: [...conversationsQueryKeys.all, 'row', conversationId],
     queryFn: async ({ client, signal }) => {
       const row = await apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
@@ -301,7 +302,10 @@ export const useConversationTaskId = (conversationId: string): string | null | u
       return row
     },
   })
-  return useConversationRow(data)?.taskId
+  const row = useConversationRow(query.data)
+  if (query.data !== undefined) return { kind: 'ready', taskId: (row ?? query.data).taskId }
+  if (query.isError) return { kind: 'failed', retry: () => void query.refetch() }
+  return { kind: 'loading' }
 }
 
 /** 创建对话；调用方可提供幂等编号、需求单和合集归属。 */

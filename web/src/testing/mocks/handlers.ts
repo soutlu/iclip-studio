@@ -9,6 +9,7 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
 import { auditHandlers } from './audit'
+import { brandTemplateHandlers, resetMockBrandTemplates } from './brand-templates'
 import { filmHandlers } from './film'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
@@ -62,6 +63,7 @@ const activeUserId = () => (currentUser ?? mockAuthUser).id
 export const resetMockSession = () => {
   currentUser = null
   resetMockUploads()
+  resetMockBrandTemplates()
 }
 
 const SIDEBAR_PER_COLLECTION = 10
@@ -479,6 +481,8 @@ export const handlers = [
   ...auditHandlers((taskId) => mockTasks.find((task) => task.id === taskId)?.title ?? null),
 
   ...libraryHandlers,
+
+  ...brandTemplateHandlers(() => (currentUser ?? mockAuthUser).permissions),
 
   ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
 ]

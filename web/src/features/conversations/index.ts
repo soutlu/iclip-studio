@@ -22,7 +22,7 @@ export {
   refreshConversationLists,
   useStartConversation,
   useConversationAgents,
-  useConversationTaskId,
+  useConversationTask,
   useSetConversationMembership,
   useSidebarPages,
   useSidebarTopology,

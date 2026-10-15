@@ -1,7 +1,7 @@
 /** 整片的背景音乐怎么铺：拍点、自动选起点（音乐对齐视频，切点不动）、拖动吸附、太短判断，以及口播处压低的
  * 音量曲线。纯函数，不持有状态；时间是秒，只有音量曲线用毫秒（原样发给后端的形状）。
  *
- * 音乐铺在成片轨的视频段上：现在没有片头片尾，就是整片 0 秒到总长；整首里从「起点」那一刻起对着整片 0 秒。 */
+ * 音乐只铺正文的视频段；这里的时钟从正文第一段开头算，不含片头片尾。整首的「起点」对着正文 0 秒。 */
 
 import { layoutFilm, roundToMs, type FilmSegment } from './film-draft'
 import type { FilmSubtitle } from './film-subtitles'
@@ -265,7 +265,7 @@ const FADE_SAMPLE_MS = 100
 /** 预览用：在曲线上叠结尾 {@link MUSIC_FADE_OUT_SECONDS} 秒的线性淡出（到总长处为 0）。 */
 export const withFadeOut = (curve: readonly GainPoint[], totalMs: number): GainPoint[] => {
   if (curve.length === 0 || totalMs <= 0) return []
-  const fadeMs = MUSIC_FADE_OUT_SECONDS * 1000
+  const fadeMs = Math.min(MUSIC_FADE_OUT_SECONDS * 1000, totalMs)
   const fadeFrom = Math.max(0, totalMs - fadeMs)
   const samples = Array.from(
     { length: Math.floor((totalMs - fadeFrom) / FADE_SAMPLE_MS) },
@@ -279,14 +279,3 @@ export const withFadeOut = (curve: readonly GainPoint[], totalMs: number): GainP
     gain: round3(gainAt(curve, atMs) * Math.min(1, Math.max(0, (totalMs - atMs) / fadeMs))),
   }))
 }
-
-/** 从整片 `clockMs` 处起播时怎么排增益：先在 0 秒处定到那一刻的值，之后每个点按距起播多少秒线性过去。 */
-export const automationFrom = (
-  curve: readonly GainPoint[],
-  clockMs: number,
-): { after: number; gain: number }[] => [
-  { after: 0, gain: round3(gainAt(curve, clockMs)) },
-  ...curve
-    .filter((point) => point.atMs > clockMs)
-    .map((point) => ({ after: (point.atMs - clockMs) / 1000, gain: point.gain })),
-]

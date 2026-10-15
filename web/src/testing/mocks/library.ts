@@ -8,12 +8,15 @@ import type {
   zLibraryVideoDetailOut,
   zLibraryVideoOut,
   zScriptOut,
+  zWholeFilmCardOut,
 } from '@/shared/api/generated/zod.gen'
 // no-inline：地址要进 <video src>，不能被构建内联成 data URI。
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
-import { mockAuthUser } from './auth-user'
+import { mockAuthUser, mockGovernor } from './auth-user'
+import { mockConversations } from './conversations'
 import { pageBy } from './paging'
+import { mockWholeFilms } from './workspace'
 
 type LibraryVideo = z.output<typeof zLibraryVideoOut>
 type LibraryCard = z.output<typeof zLibraryVideoDetailOut>
@@ -297,6 +300,30 @@ const matches = (video: LibraryVideo, query: URLSearchParams): boolean => {
 }
 
 export const libraryHandlers = [
+  http.get('*/api/library/whole-films', ({ request }) => {
+    const query = new URL(request.url).searchParams
+    const cursor = query.get('cursor')
+    const rows = mockLibraryWholeFilms().filter((film) => {
+      const at = Date.parse(film.face.finishedAt)
+      const user = query.get('userName')
+      const since = query.get('since')
+      const until = query.get('until')
+      const q = query.get('q')?.toLowerCase()
+      return (
+        (user === null || film.userName === user) &&
+        (since === null || at >= Date.parse(since)) &&
+        (until === null || at < Date.parse(until)) &&
+        (q === undefined || (film.title ?? '').toLowerCase().includes(q))
+      )
+    })
+    const page = pageBy(
+      rows,
+      (film) => [film.face.finishedAt, film.conversationId],
+      cursor,
+      Number(query.get('limit') ?? 24),
+    )
+    return HttpResponse.json({ ...page, total: cursor === null ? rows.length : null })
+  }),
   http.get('*/api/library/videos', ({ request }) => {
     const query = new URL(request.url).searchParams
     const cursor = query.get('cursor')
@@ -330,3 +357,66 @@ export const libraryHandlers = [
     return HttpResponse.json({ items })
   }),
 ]
+
+type WholeFilmCard = z.output<typeof zWholeFilmCardOut>
+
+/** 整片演示卡加上当前会话里实际合成的记录，让编辑与资料库共用结果。 */
+export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] => {
+  const cards: WholeFilmCard[] = ['春夏品牌整片', '城市漫步整片'].map((title, index) => {
+    const versions = Array.from({ length: index === 0 ? 2 : 1 }, (_, version) => ({
+      jobId: `fa000001-0000-4000-8000-${String(index * 10 + version + 1).padStart(12, '0')}`,
+      outputUrl: version === 0 ? sampleVideoUrl : sampleWideUrl,
+      watermarkOutputUrl: null,
+      durationMs: 4000 + version * 1000,
+      finishedAt: new Date(now - (index * 12 + 3 - version) * HOUR_MS).toISOString(),
+      userName: index === 0 ? 'tester' : 'Nora.Ho',
+    }))
+    const face = versions.at(-1)
+    if (face === undefined) throw new Error('整片夹具必须有版本')
+    return {
+      conversationId: `fa000002-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      title,
+      canOpenConversation: index === 0,
+      userName: face.userName,
+      face,
+      versions,
+    }
+  })
+  const byConversation = new Map<string, WholeFilmCard>()
+  for (const { conversationId, record } of mockWholeFilms()) {
+    const conversation = mockConversations.find((item) => item.id === conversationId)
+    if (conversation === undefined || record.outputUrl === null || record.finishedAt === null)
+      continue
+    const userName =
+      conversation.ownerUserId === mockGovernor.id ? mockGovernor.username : mockAuthUser.username
+    const version = {
+      jobId: record.id,
+      outputUrl: record.outputUrl,
+      watermarkOutputUrl: record.watermarkOutputUrl,
+      durationMs: record.durationMs,
+      finishedAt: record.finishedAt,
+      userName,
+    }
+    const card = byConversation.get(conversationId)
+    if (card === undefined)
+      byConversation.set(conversationId, {
+        conversationId,
+        title: conversation.title,
+        canOpenConversation: true,
+        userName,
+        face: version,
+        versions: [version],
+      })
+    else card.versions.push(version)
+  }
+  for (const card of byConversation.values()) {
+    card.versions.sort(
+      (left, right) =>
+        Date.parse(left.finishedAt) - Date.parse(right.finishedAt) ||
+        left.jobId.localeCompare(right.jobId),
+    )
+    card.face = card.versions.at(-1) ?? card.face
+    cards.push(card)
+  }
+  return cards
+}

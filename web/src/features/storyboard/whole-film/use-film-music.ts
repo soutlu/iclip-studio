@@ -8,6 +8,7 @@ import { uploadMediaFile } from '@/shared/api/media-upload'
 import { toast } from '@/shared/ui/toast'
 import { isRunningStatus } from '../shots'
 import { useStableValue } from '../video-editor/use-stable-value'
+import type { PlaySegment } from '../video-editor/play-layout'
 import { moveMusic, setMusic, type FilmMusic, type FilmState } from './film-draft'
 import {
   internalCuts,
@@ -19,8 +20,9 @@ import {
   type Song,
 } from './film-music'
 import type { MusicTrackView } from './film-music-track'
+import type { MusicReadiness } from './film-submit'
 import type { FilmSubtitle } from './film-subtitles'
-import { useMusicPlayback } from './use-music-playback'
+import { useFilmPreviewAudio, type PreviewAudioState } from './use-film-preview-audio'
 import {
   musicPromptOf,
   seedMusicJob,
@@ -28,6 +30,7 @@ import {
   useConversationMusic,
   useMusicAnalysis,
   useMusicDescription,
+  useUploadedMusicAccess,
   type MusicDescription,
 } from './whole-film.api'
 
@@ -43,8 +46,10 @@ export type MusicCardView = {
 
 type Options = {
   conversationId: string
-  /** 本对话此刻挂的需求单；还没读到时不能生成。 */
+  /** 本对话此刻挂的需求单；还没读到（或读失败）时没有，不能生成。 */
   taskId: string | null | undefined
+  /** 需求单还没读到时不能生成的原因。 */
+  taskBlocked: string | undefined
   film: FilmState
   total: number
   subtitles: readonly FilmSubtitle[]
@@ -54,6 +59,9 @@ type Options = {
   onNotice: (message: string) => void
   playback: { playing: boolean; muted: boolean }
   currentTime: number
+  /** 含片头片尾的完整画面时间线；音乐仍只铺 total 秒的正文。 */
+  previewSegments: readonly PlaySegment[]
+  bodyStartSeconds: number
 }
 
 export type FilmMusicState = {
@@ -62,8 +70,9 @@ export type FilmMusicState = {
   card: MusicCardView | undefined
   /** 脚注：选中音乐时的说明，或音乐太短、没检测到拍子这类要一直看得到的情况。 */
   footnote: (selected: boolean) => string | undefined
-  /** 「合成成片」因音乐不可用的原因。 */
-  composeBlocked: string | undefined
+  /** 音乐此刻能不能用来合成，能用时带上怎么用。 */
+  readiness: MusicReadiness
+  previewAudio: PreviewAudioState
   menu: {
     description: MusicDescription
     onOpenGenerate: () => void
@@ -81,6 +90,7 @@ export type FilmMusicState = {
 export function useFilmMusic({
   conversationId,
   taskId,
+  taskBlocked,
   film,
   total,
   subtitles,
@@ -88,6 +98,8 @@ export function useFilmMusic({
   onNotice,
   playback,
   currentTime,
+  previewSegments,
+  bodyStartSeconds,
 }: Options): FilmMusicState {
   const queryClient = useQueryClient()
   const records = useConversationMusic(conversationId)
@@ -97,13 +109,18 @@ export function useFilmMusic({
   const description = useMusicDescription(conversationId, describing)
 
   const music = film.music
+  const access = useUploadedMusicAccess(
+    music?.kind === 'upload' && music.verifyAccess === true ? music.jobId : undefined,
+  )
   const record =
     music?.kind === 'generate' ? records.data?.find((job) => job.id === music.jobId) : undefined
   const url =
     music === null
       ? undefined
       : music.kind === 'upload'
-        ? music.url
+        ? music.verifyAccess === true && access.data === undefined
+          ? undefined
+          : music.url
         : record?.status === 'completed'
           ? (record.outputUrl ?? undefined)
           : undefined
@@ -121,7 +138,7 @@ export function useFilmMusic({
       ? undefined
       : placeMusic(song, total, internalCuts(film.segments), music.userStart)
 
-  const generateBlocked = taskId === undefined ? '任务信息读取中，暂时无法生成' : undefined
+  const generateBlocked = taskId === undefined ? taskBlocked : undefined
   const generate = async (prompt: string): Promise<boolean> => {
     if (taskId === undefined || submitting) return false
     setSubmitting(true)
@@ -163,29 +180,47 @@ export function useFilmMusic({
     }
   }
 
-  const view = ((): MusicTrackView => {
-    if (uploading) return { kind: 'busy', label: '正在上传音乐…' }
-    if (music === null) return { kind: 'empty' }
+  /** 音乐轨上画什么，连同它能不能用来合成（不在 `ready` 时不能）。 */
+  const [view, readiness] = ((): [MusicTrackView, MusicReadiness] => {
+    const reading: [MusicTrackView, MusicReadiness] = [
+      { kind: 'busy', label: '正在读取音乐…' },
+      { kind: 'reading' },
+    ]
+    const failed = (label: string, onRetry: (() => void) | undefined) =>
+      [{ kind: 'failed', label, onRetry }, { kind: 'failed' }] as [MusicTrackView, MusicReadiness]
+    if (uploading) return [{ kind: 'busy', label: '正在上传音乐…' }, { kind: 'uploading' }]
+    if (submitting) return [{ kind: 'busy', label: '音乐生成提交中…' }, { kind: 'generating' }]
+    if (music === null) return [{ kind: 'empty' }, { kind: 'none' }]
+    if (music.kind === 'upload' && music.verifyAccess === true) {
+      if (access.isError)
+        return failed(
+          errorMessageOf(access.error, '上传音乐权限读取失败'),
+          () => void access.refetch(),
+        )
+      if (access.data === undefined) return reading
+      if (
+        access.data.kind !== 'audio' ||
+        access.data.operation !== 'upload' ||
+        access.data.status !== 'completed'
+      )
+        return failed('这条上传音乐无法复用，请替换或删除', undefined)
+    }
     if (music.kind === 'generate') {
       if (records.data === undefined)
-        return records.isError
-          ? {
-              kind: 'failed',
-              label: '音乐记录读取失败',
-              onRetry: () => void records.refetch(),
-            }
-          : { kind: 'busy', label: '正在读取音乐…' }
-      if (record === undefined)
-        return { kind: 'failed', label: '找不到这首生成的音乐', onRetry: undefined }
+        return records.isError ? failed('音乐记录读取失败', () => void records.refetch()) : reading
+      if (record === undefined) return failed('找不到这首生成的音乐', undefined)
       if (isRunningStatus(record.status))
-        return { kind: 'busy', label: '音乐生成中，完成后自动对齐' }
-      if (url === undefined) return { kind: 'failed', label: '音乐生成失败', onRetry: regenerate }
+        return [{ kind: 'busy', label: '音乐生成中，完成后自动对齐' }, { kind: 'generating' }]
+      if (url === undefined) return failed('音乐生成失败', regenerate)
     }
-    if (analysis.isError)
-      return { kind: 'failed', label: '音乐读取失败', onRetry: () => void analysis.refetch() }
-    if (analysis.data === undefined || song === undefined || placement === undefined)
-      return { kind: 'busy', label: '正在读取音乐…' }
-    return { kind: 'ready', name, song, peaks: analysis.data.peaks, placement, curve: previewCurve }
+    if (analysis.isError) return failed('音乐读取失败', () => void analysis.refetch())
+    if (analysis.data === undefined || song === undefined || placement === undefined) return reading
+    return [
+      { kind: 'ready', name, song, peaks: analysis.data.peaks, placement, curve: previewCurve },
+      placement.shortBy > 0
+        ? { kind: 'short', shortBy: placement.shortBy }
+        : { kind: 'ready', plan: { audioJobId: music.jobId, start: placement.start, curve } },
+    ]
   })()
 
   const ready = view.kind === 'ready' ? view : undefined
@@ -223,22 +258,31 @@ export function useFilmMusic({
       : '音乐已自动对齐；拖动音乐可换用别的范围'
   }
 
-  const { prime } = useMusicPlayback({
-    buffer: ready === undefined ? undefined : analysis.data?.buffer,
-    songStart: ready?.placement.start ?? 0,
-    curve: previewCurve,
-    total,
-    playing: playback.playing,
-    muted: playback.muted,
+  const { prime, state: mixedAudio } = useFilmPreviewAudio({
+    segments: previewSegments,
+    music:
+      ready === undefined || analysis.data === undefined || url === undefined
+        ? undefined
+        : {
+            url,
+            buffer: analysis.data.buffer,
+            start: ready.placement.start,
+            curve,
+          },
+    bodyStartSeconds,
+    bodyDuration: total,
+    playback,
     clock: currentTime,
   })
+  // 音乐还在换新或读取时，等它就绪再播放完整混音。
+  const previewAudio: PreviewAudioState = view.kind === 'busy' ? { kind: 'loading' } : mixedAudio
 
   return {
     view,
     card,
     footnote,
-    composeBlocked:
-      shortBy > 0 ? `音乐比成片短 ${seconds(shortBy)} 秒，请重新生成或换一首` : undefined,
+    readiness,
+    previewAudio,
     menu: {
       description,
       onOpenGenerate: () => setDescribing(true),

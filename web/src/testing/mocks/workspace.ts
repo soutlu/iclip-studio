@@ -1,6 +1,7 @@
 /** REST 读取与 WebSocket 模拟写入共用内存文件表，确保通知后重读得到新内容。 */
 
 import { http, HttpResponse } from 'msw'
+import { zWholeFilmIn } from '@/shared/api/generated/zod.gen'
 import type {
   ImageGenerationIn,
   MusicIn,
@@ -16,6 +17,7 @@ import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
+import { findMockBrandTemplate } from './brand-templates'
 import { isMockVideoUpload } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
@@ -270,6 +272,21 @@ type MockRecord = ReturnType<typeof job>
 
 const generations = new Map<string, MockRecord[]>()
 
+/** 资料库与编辑器共用已完成的整片记录，合成后的版本在两处都能读到。 */
+export const mockWholeFilms = () =>
+  [...generations].flatMap(([conversationId, records]) =>
+    records
+      .filter(
+        (record) =>
+          record.kind === 'video' &&
+          record.operation === 'compose' &&
+          record.sourceJobId === null &&
+          record.status === 'completed' &&
+          record.outputUrl !== null,
+      )
+      .map((record) => ({ conversationId, record })),
+  )
+
 const findJob = (conversationId: string | null | undefined, id: string): MockRecord | undefined =>
   generations.get(conversationId ?? '')?.find((item) => item.id === id)
 
@@ -278,7 +295,8 @@ const isFinishedTake = (record: MockRecord): boolean =>
   record.kind === 'video' &&
   record.status === 'completed' &&
   record.outputUrl !== null &&
-  (record.operation === 'compose' || record.sourceJobId === null)
+  ((record.operation === 'compose' && record.sourceJobId !== null) ||
+    (record.operation === 'generate' && record.sourceJobId === null))
 
 const VIDEO_DONE_MS = 3000
 
@@ -1014,13 +1032,77 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 手动识别一条成片的字幕：成片要是这段对话里一条完成的出片或合成；识别出的就是样片那几句。
+  // 整片与现有合成共用受理与完成通知，媒体字节仍用测试卡，不在浏览器里模拟 ffmpeg。
+  http.post('*/api/generations/whole-films', async ({ request }) => {
+    const parsed = zWholeFilmIn.safeParse(await request.json())
+    if (!parsed.success) return HttpResponse.json({ detail: '整片参数不合法' }, { status: 422 })
+    const body = parsed.data
+    const segments = []
+    for (const segment of body.segments) {
+      const source = findJob(body.conversationId, segment.sourceJobId)
+      if (source === undefined || !isFinishedTake(source) || source.outputUrl === null)
+        return HttpResponse.json({ detail: '素材不存在或不可使用' }, { status: 422 })
+      segments.push({ ...segment, url: source.outputUrl })
+    }
+    const brands: Record<string, unknown> = {}
+    let brandMs = 0
+    for (const position of ['intro', 'outro'] as const) {
+      const selected = body[position]
+      if (selected == null) continue
+      const template = findMockBrandTemplate(selected.templateId)
+      if (template === undefined || template.disabledAt !== null || template.position !== position)
+        return HttpResponse.json({ detail: '片头片尾模板不可用' }, { status: 422 })
+      brands[position] = {
+        templateId: template.id,
+        url: template.url,
+        width: template.width,
+        height: template.height,
+        durationMs: template.durationMs,
+        hasAudio: template.hasAudio,
+      }
+      brandMs += template.durationMs
+    }
+    const durationMs =
+      brandMs + segments.reduce((sum, segment) => sum + segment.endMs - segment.startMs, 0)
+    if (durationMs > 120_000)
+      return HttpResponse.json({ detail: '整片最长 120 秒' }, { status: 422 })
+    const created = acceptGeneration({
+      kind: 'video',
+      operation: 'compose',
+      prompt: '',
+      conversationId: body.conversationId,
+      metadata: body.metadata ?? null,
+      request: {
+        ...brands,
+        segments,
+        subtitles: body.subtitles,
+        music:
+          body.music == null
+            ? null
+            : {
+                ...body.music,
+                url:
+                  findJob(body.conversationId, body.music.audioJobId)?.outputUrl ?? MOCK_MUSIC_URL,
+              },
+      },
+      outputUrl: VIDEO_URL,
+      durationMs,
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
+  // 出片、合成与整片都可以识别字幕；编辑段不可识别。
   http.post('*/api/generations/subtitles', async ({ request }) => {
     const body = (await request.json()) as SubtitleIn
     const source = findJob(body.conversationId, body.sourceJobId)
     if (source === undefined)
       return HttpResponse.json({ detail: '未找到这条视频' }, { status: 404 })
-    if (!isFinishedTake(source))
+    if (
+      source.kind !== 'video' ||
+      source.status !== 'completed' ||
+      source.outputUrl === null ||
+      (source.operation === 'generate' && source.sourceJobId !== null)
+    )
       return HttpResponse.json({ detail: '只能识别已完成的成片' }, { status: 422 })
     const created = job({
       createdAt: new Date().toISOString(),

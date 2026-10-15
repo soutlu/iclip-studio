@@ -90,7 +90,7 @@ export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
 
-function FilmWorkspace({ conversationId, readOnly, taskId }: ArtifactRendererProps) {
+function FilmWorkspace({ conversationId, readOnly, task }: ArtifactRendererProps) {
   const film = useFilmView(conversationId)
   useFilmFileChanges(conversationId)
   useLiveGenerations(conversationId)
@@ -538,7 +538,7 @@ function FilmWorkspace({ conversationId, readOnly, taskId }: ArtifactRendererPro
         <WholeFilmEditor
           conversationId={conversationId}
           onClose={() => go({ wholeFilm: undefined })}
-          taskId={taskId}
+          task={task}
         />
       ) : null}
       <FilmConflictDialog resolve={draft.resolveConflict} state={draft.state} />

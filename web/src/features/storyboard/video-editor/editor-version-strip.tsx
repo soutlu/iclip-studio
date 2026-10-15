@@ -7,13 +7,15 @@ import { VersionThumb } from '../components/version-thumb'
 
 export type VersionStripEntry = {
   key: string
-  /** 压在缩略图底部的名字：V1、V2……，有改动的草稿叫「未合成」。 */
-  label: string
+  /** 压在缩略图底部的名字：V1、V2……，有改动的草稿叫「未合成」；状态遮罩自己说明时不给。 */
+  label: string | undefined
   /** 可访问名，带上「合成中」与「新结果」。 */
   name: string
   poster: string | undefined
   /** 合成中挂细圆环加走表，从 `since` 算起。 */
   running: { since: string } | undefined
+  /** 合成失败：挂警示图标与「失败」。 */
+  failed?: boolean | undefined
   /** AI 结果回来时没在看草稿、之后也还没看：挂小绿点。 */
   unseen: boolean
 }
@@ -23,6 +25,8 @@ type EditorVersionStripProps = {
   entries: readonly VersionStripEntry[]
   selectedKey: string
   onSelect: (key: string) => void
+  /** 只有一条时也显示（整片编辑器总摆着「未合成」）；默认只有一条时没得切，不显示。 */
+  showSingle?: boolean | undefined
 }
 
 /** 读不出截帧（或不是 OSS 地址、没有截帧）就只摆一个视频图标；地址换了由调用点重新挂载重置。 */
@@ -37,9 +41,24 @@ export function Thumbnail({ src }: { src: string | undefined }) {
   return <img alt="" draggable={false} onError={() => setFailed(true)} src={src} />
 }
 
-/** 只有一条时没得切，不显示。 */
-export function EditorVersionStrip({ entries, selectedKey, onSelect }: EditorVersionStripProps) {
-  if (entries.length < 2) return null
+const stateOf = (entry: VersionStripEntry) => {
+  if (entry.failed === true)
+    return (
+      <>
+        <Icon className="video-editor-version-failed" decorative name="alert" size="sm" />
+        失败
+      </>
+    )
+  return entry.running === undefined ? undefined : <RunningElapsed since={entry.running.since} />
+}
+
+export function EditorVersionStrip({
+  entries,
+  selectedKey,
+  onSelect,
+  showSingle = false,
+}: EditorVersionStripProps) {
+  if (entries.length < (showSingle ? 1 : 2)) return null
   return (
     <div aria-label="视频版本" className="video-editor-versions" role="group">
       {entries.map((entry) => (
@@ -49,9 +68,7 @@ export function EditorVersionStrip({ entries, selectedKey, onSelect }: EditorVer
           name={entry.name}
           onClick={() => onSelect(entry.key)}
           selected={entry.key === selectedKey}
-          state={
-            entry.running === undefined ? undefined : <RunningElapsed since={entry.running.since} />
-          }
+          state={stateOf(entry)}
           unseen={entry.unseen}
         >
           <Thumbnail key={entry.poster} src={entry.poster} />
