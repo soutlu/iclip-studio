@@ -83,7 +83,7 @@ const DRAG_THRESHOLD = 4
 const KEY_TRIM_STEP = 0.1
 
 /** 一截素材的缩略图：按时间均匀截几张；地址截不了帧（不是 OSS）或截失败时露出中性底色。 */
-function Frames({ part }: { part: PlaySegment }) {
+export function Frames({ part }: { part: PlaySegment }) {
   const length = part.end - part.start
   const count = Math.max(1, Math.min(24, Math.round(length * 2)))
   const shots = Array.from({ length: count }).flatMap((_, at) => {
@@ -114,7 +114,7 @@ function Frame({ src }: { src: string }) {
 const partKey = (part: PlaySegment) => `${part.mediaUrl}@${part.start}-${part.end}`
 
 /** 一截素材的原声：读中一条低调的占位线，没有音轨写「无声」，读不出写明，读到画波形。 */
-function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
+export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
   const length = part.end - part.start
   const body = (() => {
     switch (state.kind) {

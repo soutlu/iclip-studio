@@ -1,4 +1,4 @@
-/** 资料库两个页签共用的页头：标题与一句说明、搜索框、可选的主动作，下面一行是「成片｜参考视频」页签。 */
+/** 资料库各页签共用的页头：标题、说明、搜索框与可选主动作。 */
 
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react'
 import { Input } from '@/shared/ui/field'
@@ -7,16 +7,21 @@ import { TabsList, TabsTrigger } from '@/shared/ui/tabs'
 /** 停止输入这么久才按关键词重查。 */
 const SEARCH_DEBOUNCE_MS = 300
 
-/** 资料库的两个页签；成片是默认页签。取值与路由查询串里的 `tab` 对应。 */
+/** 成片是默认页签；取值与路由查询串里的 `tab` 对应。 */
 const LIBRARY_TABS = [
   { label: '成片', value: 'videos' },
+  { label: '整片', value: 'whole-films' },
   { label: '参考视频', value: 'references' },
+  { label: '品牌模板', value: 'brand-templates' },
 ] as const
 
 /** 页签行：放在路由的 TabsRoot 里，选中哪个由路由记在地址上。 */
 export function LibraryTabsList() {
   return (
-    <TabsList aria-label="资料库内容" className="h-10 gap-6 border-b border-hairline">
+    <TabsList
+      aria-label="资料库内容"
+      className="h-10 shrink-0 gap-4 overflow-x-auto border-b border-hairline sm:gap-6"
+    >
       {LIBRARY_TABS.map((tab) => (
         <TabsTrigger className="px-0 after:inset-x-0" key={tab.value} value={tab.value}>
           {tab.label}

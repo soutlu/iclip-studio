@@ -20,6 +20,7 @@ import { useLiveGenerations } from '../use-live-generations'
 import { useStageSelection } from '../use-stage-selection'
 import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
+import { WholeFilmEditor } from '../whole-film/whole-film-editor'
 import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
 import { ReaderImageEdit, type FrameEditSession } from './reader-image-edit'
 import { ReaderPage } from './reader-page'
@@ -33,6 +34,8 @@ type ReaderSearch = {
   shot?: number | undefined
   /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
   video?: string | undefined
+  /** 整片编辑器开着；属于整段对话，换组不关。 */
+  wholeFilm?: true | undefined
 }
 
 export function StoryboardReader(props: ArtifactRendererProps) {
@@ -40,7 +43,7 @@ export function StoryboardReader(props: ArtifactRendererProps) {
   return <StoryboardWorkspace key={`${props.conversationId}:${path}`} {...props} />
 }
 
-function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRendererProps) {
+function StoryboardWorkspace({ artifact, conversationId, readOnly, task }: ArtifactRendererProps) {
   const path = artifact.source.kind === 'file' ? artifact.source.path : SHOTS_PATH
   const gate = useGenerationGate()
   const file = useWorkspaceFile(conversationId, path)
@@ -160,6 +163,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
           copy={{ done: '已复制完整提示词', label: '复制完整提示词', text: formatShotPrompt(shot) }}
           groups={shots.map((item) => shotGroupSummary(item, document.aspect_ratio))}
           onGoShot={goShot}
+          onWholeFilm={readOnly ? undefined : () => go({ wholeFilm: true })}
           position={position}
           status={
             <SaveStatus
@@ -259,6 +263,13 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
           shotIndex={videoEditRoot?.shotIndex ?? undefined}
         />
       )}
+      {search.wholeFilm === true && !readOnly ? (
+        <WholeFilmEditor
+          conversationId={conversationId}
+          onClose={() => go({ wholeFilm: undefined })}
+          task={task}
+        />
+      ) : null}
       {imageEdit === null ? null : (
         <ReaderImageEdit
           aspectRatio={document.aspect_ratio}

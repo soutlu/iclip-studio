@@ -14,6 +14,11 @@ test('资料库切到参考视频，页签与两组标签筛选都在地址里�
   await expect(videosTab).toHaveAttribute('aria-selected', 'true')
   await videosTab.focus()
   await page.keyboard.press('ArrowRight')
+  const wholeFilmsTab = page.getByRole('tab', { name: '整片', exact: true })
+  await expect(wholeFilmsTab).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/tab=whole-films/)
+  await wholeFilmsTab.focus()
+  await page.keyboard.press('ArrowRight')
   await expect(page.getByRole('tab', { name: '参考视频' })).toHaveAttribute('aria-selected', 'true')
   await expect(page).toHaveURL(/tab=references/)
 

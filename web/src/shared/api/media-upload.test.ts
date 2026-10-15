@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server } from '@/testing/mocks/server'
 import { errorMessageOf, UserFacingError } from './client'
-import { uploadMediaFile } from './media-upload'
+import { audioContentTypeOf, uploadMediaFile } from './media-upload'
 
 const FALLBACK = '兜底文案'
 
@@ -228,5 +228,94 @@ describe('uploadMediaFile 图片', () => {
       `PUT /mock-oss/${uploadId}`,
       `POST /api/uploads/${uploadId}/confirm`,
     ])
+  })
+})
+
+describe('音乐的类型', () => {
+  it.each([
+    ['夏日.m4a', 'audio/x-m4a', 'audio/mp4'],
+    ['夏日.M4A', '', 'audio/mp4'],
+    ['夏日.m4a', 'audio/mp4', 'audio/mp4'],
+    ['夏日.wav', 'audio/x-wav', 'audio/wav'],
+    ['夏日.wav', 'audio/wave', 'audio/wav'],
+    ['夏日.mp3', 'audio/mp3', 'audio/mpeg'],
+    ['夏日.mp3', '', 'audio/mpeg'],
+    // 扩展名认不出时按浏览器给的类型认。
+    ['夏日', 'audio/x-m4a', 'audio/mp4'],
+    ['夏日.audio', 'audio/x-wav', 'audio/wav'],
+    // 扩展名优先：浏览器给的类型与扩展名对不上时以扩展名为准。
+    ['夏日.mp3', 'audio/x-wav', 'audio/mpeg'],
+  ])('%s（浏览器报 %s）按 %s 签名', (name, type, expected) => {
+    expect(audioContentTypeOf({ name, type })).toBe(expected)
+  })
+
+  it.each([
+    ['夏日.ogg', 'audio/ogg'],
+    ['夏日.flac', ''],
+    ['夏日', ''],
+  ])('%s（%s）认不出', (name, type) => {
+    expect(audioContentTypeOf({ name, type })).toBeUndefined()
+  })
+})
+
+describe('uploadMediaFile 音乐', () => {
+  const uploadId = 'b3c2b0a1-4a0e-4b8e-9a43-2a1f7c0d9e11'
+  const uploadUrl = `http://localhost/mock-oss/${uploadId}`
+  const requests: string[] = []
+  let signedBody: unknown
+  let putType: string | null
+
+  const audioFile = (name: string, type: string, size = 5) => {
+    const file = new File(['music'], name, { type })
+    Object.defineProperty(file, 'size', { value: size })
+    return file
+  }
+
+  beforeEach(() => {
+    requests.length = 0
+    signedBody = undefined
+    putType = null
+    server.events.on('request:start', ({ request }) => {
+      requests.push(`${request.method} ${new URL(request.url).pathname}`)
+    })
+    server.use(
+      http.post('*/api/uploads/sign', async ({ request }) => {
+        signedBody = await request.json()
+        return HttpResponse.json({
+          uploadId,
+          upload: {
+            expiresAt: '2026-09-06T12:00:00Z',
+            headers: { 'Content-Type': (signedBody as { contentType: string }).contentType },
+            url: uploadUrl,
+          },
+        })
+      }),
+      http.put(uploadUrl, ({ request }) => {
+        putType = request.headers.get('Content-Type')
+        return new HttpResponse(null, { status: 200 })
+      }),
+      http.post('*/api/uploads/:uploadId/confirm', () =>
+        HttpResponse.json({ contentType: 'audio/mp4', sizeBytes: 5, url: uploadUrl }),
+      ),
+    )
+  })
+
+  it('浏览器报 audio/x-m4a 的 m4a 按 audio/mp4 签名与直传，不报宽高', async () => {
+    await expect(uploadMediaFile(audioFile('夏日.m4a', 'audio/x-m4a'), 'audio')).resolves.toEqual({
+      uploadId,
+      url: uploadUrl,
+    })
+    expect(signedBody).toEqual({ contentType: 'audio/mp4', height: null, width: null })
+    expect(putType).toBe('audio/mp4')
+  })
+
+  it.each([
+    ['认不出的类型', audioFile('夏日.ogg', 'audio/ogg'), 'MP3、WAV 或 M4A'],
+    ['超过 50 MiB', audioFile('夏日.mp3', 'audio/mpeg', 50 * 1024 * 1024 + 1), '50 MiB'],
+  ])('%s：给出可展示的原因，不上传', async (_, file, reason) => {
+    const error = await rejectionOf(uploadMediaFile(file, 'audio'))
+    expect(error).toBeInstanceOf(UserFacingError)
+    expect(errorMessageOf(error, FALLBACK)).toContain(reason)
+    expect(requests).toEqual([])
   })
 })

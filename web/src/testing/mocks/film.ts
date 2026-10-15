@@ -301,6 +301,8 @@ export const seedMockFilm = (
     model?: string | undefined
     complete?: boolean
     sharedBody?: boolean
+    /** 读好的工程里「配乐」那段正文；不给就是没写配乐。工程原文是节选，不跟着改。 */
+    musicDescription?: string
   } = {},
 ) => {
   const filmVersion = putMockWorkspaceFile(conversationId, FILM_PATH, FILM_SOURCE)
@@ -322,8 +324,7 @@ export const seedMockFilm = (
   films.set(conversationId, {
     filmVersion,
     groups: problems > 0 ? [] : placeViews([group], picks),
-    // 文件页看到的工程原文里没有「配乐」那段。
-    musicDescription: null,
+    musicDescription: problems > 0 ? null : (options.musicDescription ?? null),
     problems,
     runVersion,
   })

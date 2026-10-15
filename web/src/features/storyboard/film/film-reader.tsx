@@ -39,6 +39,7 @@ import { useShotArrowKeys } from '../use-shot-arrow-keys'
 import { useStageSelection } from '../use-stage-selection'
 import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
+import { WholeFilmEditor } from '../whole-film/whole-film-editor'
 import {
   chooseFilmImage,
   filmQueryKey,
@@ -69,6 +70,8 @@ type ReaderSearch = {
   shot?: number | undefined
   /** 视频编辑器开在哪条出片记录上；换组就关掉。 */
   video?: string | undefined
+  /** 整片编辑器开着；属于整段对话，换组不关。 */
+  wholeFilm?: true | undefined
 }
 
 /** 出片闸门按组号记上传；换图不属于哪一组，用组号从 1 起之外的 0。 */
@@ -87,7 +90,7 @@ export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
 
-function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
+function FilmWorkspace({ conversationId, readOnly, task }: ArtifactRendererProps) {
   const film = useFilmView(conversationId)
   useFilmFileChanges(conversationId)
   useLiveGenerations(conversationId)
@@ -372,6 +375,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
           }}
           groups={groups.map(filmGroupSummary)}
           onGoShot={goShot}
+          onWholeFilm={readOnly ? undefined : () => go({ wholeFilm: true })}
           position={position}
           status={
             <SaveStatus
@@ -530,6 +534,13 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
           shotIndex={videoEditRoot?.shotIndex ?? undefined}
         />
       )}
+      {search.wholeFilm === true && !readOnly ? (
+        <WholeFilmEditor
+          conversationId={conversationId}
+          onClose={() => go({ wholeFilm: undefined })}
+          task={task}
+        />
+      ) : null}
       <FilmConflictDialog resolve={draft.resolveConflict} state={draft.state} />
     </>
   )
