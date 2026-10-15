@@ -360,20 +360,21 @@ class ImageGenerationIn(CamelModel):
 
 
 class VideoEditIn(SnakeModel):
-    """一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
+    """一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
 
-    转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+    转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的
+    参考片段，时长不必等于基底替换区间。
     ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
     记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
     ``VideoGenerationIn``，来源、原作与区间落列。"""
 
     source_job_id: uuid.UUID
-    """基底：一条已完成的成片（出片或合成），这段对话自己的或继承来的。"""
+    """替换基底：一条已完成的成片（出片或合成），这段对话自己的或继承来的。"""
     range_start_ms: Annotated[int, Field(ge=0)]
     range_end_ms: int
-    """参考片段在基底上的那一段，毫秒，原样记下；要在基底时长之内，并与片段时长对得上。"""
+    """产物将替换基底上的那一段，毫秒，原样记下；要在基底时长内，独立于实际参考片段时长。"""
     reference_video_urls: Annotated[list[str], Field(min_length=1, max_length=1)]
-    """参考片段的地址：调用者本人的一条视频上传。"""
+    """实际模型参考的地址：调用者本人上传的一条可读、有正时长的视频。"""
     model: ModelName
     prompt: Prompt
     user_name: UserName | None = None
@@ -958,14 +959,15 @@ class GenerationOut(CamelModel):
     root_job_id: uuid.UUID | None
     """原作：编辑段与合成指最初那条出片，出片、整片与图片为空。按它筛（``rootJobId``）拿到整条编辑链。"""
     source_job_id: uuid.UUID | None = None
-    """直接来源：编辑段与合成指它的基底成片，帧图编辑指底图那一条，切图指它的宫格；别的为空，整片
-    也没有。合成与整片的各段出自哪条记录记在 ``request.segments`` 里。"""
+    """直接来源：编辑段指待替换区间所属的基底成片，合成指基底成片，帧图编辑指底图，切图指宫格；
+    别的为空，整片也没有。编辑段的实际参考记在 ``request.reference_video_urls``，合成与整片的
+    各段出处记在 ``request.segments`` 里。"""
     source_url: str | None = None
     """来源的地址：``sourceJobId`` 非空时是那条记录的 ``outputUrl``；为空时只有帧图编辑可能有，是
     库里找不到的外部底图地址；都没有就是空。它是投影，不是列的镜像，来源那条读不读得到都照给。"""
     range_start_ms: int | None = None
     range_end_ms: int | None = None
-    """编辑段在基底上改的那一段，毫秒，就是受理时请求给的区间。只有编辑段有。"""
+    """编辑产物替换基底上的那一段，毫秒，就是受理时请求给的区间。只有编辑段有。"""
     output_url: str | None
     watermark_output_url: str | None
     """视频的水印版地址；图片与合成没有这一份，恒为空。"""

@@ -44,6 +44,26 @@ const SWITCH_AHEAD = 0.03
 /** 右开区间的定位偏移，仅避免跳进下一段，不代表素材的帧时长。 */
 const END_PREVIEW_OFFSET = 0.001
 
+/** 查询刷新可能重建相同分段；媒体内容未变时保留正在播放的槽与时钟。 */
+const sameSegments = (
+  left: readonly LaidOutSegment[] | undefined,
+  right: readonly LaidOutSegment[] | undefined,
+) =>
+  left === right ||
+  (left !== undefined &&
+    right !== undefined &&
+    left.length === right.length &&
+    left.every((segment, index) => {
+      const other = right[index]
+      return (
+        segment.mediaUrl === other?.mediaUrl &&
+        segment.start === other.start &&
+        segment.end === other.end &&
+        segment.at === other.at &&
+        segment.duration === other.duration
+      )
+    }))
+
 type Props = {
   /** 当前看的这一版或剪辑草稿；`undefined` 是还没读到分段。 */
   current: readonly LaidOutSegment[] | undefined
@@ -58,6 +78,8 @@ type Props = {
   onTime: (clock: number) => void
   /** 开始播放（控制条或放大层上的播放钮），在按下的那一下同步调用：要出声的另一路（整片的背景音乐）在这里取得手势。 */
   onPlay: () => void
+  /** 选中片段后从整条时间线的 start 播放到 end；同一 id 不会因查询刷新而重播。 */
+  playbackRequest?: { id: number; start: number; end: number } | undefined
   /** 在不在放、静没静音变了就告诉一声：跟着画面放的另一路声音（整片的背景音乐）据此起停、静音。 */
   onPlaybackChange?: ((playback: { playing: boolean; muted: boolean }) => void) | undefined
   /** 整片草稿使用独立的完整混音时，视频自身的原声始终关闭；控件仍控制独立混音的静音。 */
@@ -74,6 +96,8 @@ type Props = {
   emptyMessage?: string | undefined
   /** 贴在舞台右缘的版本条（窄屏排到舞台下方）。 */
   versions: ReactNode
+  /** 替换原片 / 改后开关，保留现有位置与布局。 */
+  viewControl?: ReactNode
   /** 控制条上时钟后面的剪辑操作：撤销、重做、拆分、删除。 */
   tools: ReactNode
   /** 控制条右侧的总长读数。 */
@@ -96,6 +120,7 @@ export function EditorPreview({
   currentTime,
   onTime,
   onPlay,
+  playbackRequest,
   onPlaybackChange,
   muteMediaAudio = false,
   playBlocked,
@@ -104,6 +129,7 @@ export function EditorPreview({
   captionPresentation,
   emptyMessage,
   versions,
+  viewControl,
   tools,
   readout,
   timeline,
@@ -122,6 +148,14 @@ export function EditorPreview({
   } | null>(null)
   // 拖动开始时同步撤销播放，不必等下一次 render 的 effect 清理。
   const stopPlaybackRef = useRef<(() => void) | null>(null)
+  const playbackRangeRef = useRef<{ showing: string; start: number; end: number } | null>(null)
+  const [appliedPlayback, setAppliedPlayback] = useState<{
+    id: number
+    showing: string
+    start: number
+    end: number
+  } | null>(null)
+  const startedPlaybackRef = useRef(appliedPlayback)
   // 效果里报时钟走的是它，拿到的永远是最新的 onTime；事件处理器里直接调 onTime。
   const emitTime = useEffectEvent((clock: number) => onTime(clock))
   const [showOriginal, setShowOriginal] = useState(false)
@@ -168,13 +202,14 @@ export function EditorPreview({
     [stageHost],
   )
   const onOriginal = showOriginal && original !== undefined
-  const segments = onOriginal ? original : current
-  const duration = segments === undefined ? 0 : totalDuration(segments)
+  const nextSegments = onOriginal ? original : current
   // 所看的是哪一条：换版本、在草稿与这一版之间切、在原片与改后之间切，都算换了内容。
   const showing = `${contentKey}:${onOriginal ? 'original' : 'current'}`
   // 段列表变了就停下、重新装段：播放位置是跟着段列表走的派生状态，在渲染里对齐，不等一帧。
   // 换了内容回到开头、遮一下；同一条草稿剪了一刀只是重排，播放头留在原处。
-  const [shown, setShown] = useState({ segments, showing })
+  const [shown, setShown] = useState({ segments: nextSegments, showing })
+  const segments = sameSegments(shown.segments, nextSegments) ? shown.segments : nextSegments
+  const duration = segments === undefined ? 0 : totalDuration(segments)
   if (shown.segments !== segments || shown.showing !== showing) {
     setShown({ segments, showing })
     setPlaying(false)
@@ -196,6 +231,19 @@ export function EditorPreview({
   )
   const blocked = playBlocked !== undefined
   if (blocked && playing) setPlaying(false)
+  if (playbackRequest !== undefined && appliedPlayback?.id !== playbackRequest.id) {
+    if (onOriginal) setShowOriginal(false)
+    // 分段或独立音轨尚未准备好时保留请求；元数据由 pendingSeek 等待。
+    else if (segments !== undefined && segments.length > 0 && !blocked) {
+      const start = Math.min(duration, Math.max(0, playbackRequest.start))
+      const end = Math.min(duration, Math.max(start, playbackRequest.end))
+      setAppliedPlayback({ id: playbackRequest.id, showing, start, end })
+      setFailed(false)
+      setBuffering(end > start)
+      setPlaying(end > start)
+      setIndex(locateClock(segments, start)?.index ?? 0)
+    }
+  }
 
   /** 把一段装进某个槽并跳到段内 `offset`；`reload` 是加载失败后重来。 */
   const load = useCallback(
@@ -242,6 +290,7 @@ export function EditorPreview({
   useImperativeHandle(ref, () => ({
     previewAt(clock, boundary) {
       pause()
+      playbackRangeRef.current = null
       if (current === undefined) return
       if (onOriginal) {
         pendingPreviewRef.current = { segments: current, clock, boundary }
@@ -252,22 +301,39 @@ export function EditorPreview({
     },
   }))
 
+  const hasPendingPlayback = useEffectEvent(
+    () => appliedPlayback !== null && startedPlaybackRef.current !== appliedPlayback,
+  )
   // 换了内容回到开头，同一条剪过一刀留在原处；从原片切回编辑版本时，先应用最后一次边界定位。
   useEffect(() => {
     const pending = pendingPreviewRef.current
     pendingPreviewRef.current = null
+    playbackRangeRef.current = null
     const switched = lastShowingRef.current !== showing
     lastShowingRef.current = showing
     if (segments === undefined) {
       emitTime(0)
       return
     }
+    if (hasPendingPlayback()) return
     if (pending !== null && pending.segments === segments) {
       seekFromEffect(pending.clock, pending.boundary)
     } else {
       seekFromEffect(switched ? 0 : resumeClock())
     }
   }, [segments, showing])
+
+  const requestPlayback = useEffectEvent(() => {
+    if (appliedPlayback === null || segments === undefined) return
+    const located = locateClock(segments, appliedPlayback.start)
+    const segment = located === undefined ? undefined : segments[located.index]
+    if (located === undefined || segment === undefined) return
+    startedPlaybackRef.current = appliedPlayback
+    playbackRangeRef.current = appliedPlayback
+    load(active, segment, located.offset)
+    emitTime(appliedPlayback.start)
+  })
+  useEffect(() => requestPlayback(), [appliedPlayback])
 
   // 主槽换段之后，把再下一段预载进腾出来的那个槽。
   useEffect(() => {
@@ -303,17 +369,23 @@ export function EditorPreview({
 
     const tick = () => {
       if (cancelled) return
+      if (pendingSeekRef.current[active] !== null) {
+        frame = requestAnimationFrame(tick)
+        return
+      }
       const now = element.currentTime
       const clock = segment.at + Math.min(segment.duration, Math.max(0, now - segment.start))
       const segmentEnd = segment.at + segment.duration
-      if (clock >= duration || (element.ended && index === segments.length - 1)) {
+      const range = playbackRangeRef.current
+      const playbackEnd = range?.showing === showing ? range.end : duration
+      if (clock >= playbackEnd || (element.ended && segmentEnd >= playbackEnd)) {
         stop()
         setPlaying(false)
-        seekFromEffect(duration, 'end')
+        seekFromEffect(playbackEnd, 'end')
         return
       }
       emitTime(clock)
-      if (segmentEnd < duration && (element.ended || now >= segment.end - SWITCH_AHEAD)) {
+      if (segmentEnd < playbackEnd && (element.ended || now >= segment.end - SWITCH_AHEAD)) {
         stop()
         emitTime(segmentEnd)
         setBuffering(true)
@@ -325,14 +397,17 @@ export function EditorPreview({
     }
     frame = requestAnimationFrame(tick)
     return stop
-  }, [playing, index, active, segments, duration])
+  }, [playing, index, active, segments, duration, showing, appliedPlayback])
 
   const togglePlay = () => {
     if (playing) {
       pause()
       return
     }
-    if (currentTime >= duration) seek(0)
+    const range = playbackRangeRef.current
+    if (range?.showing === showing) {
+      if (currentTime < range.start || currentTime >= range.end) seek(range.start)
+    } else if (currentTime >= duration) seek(0)
     setBuffering(true)
     setPlaying(true)
     onPlay()
@@ -521,7 +596,9 @@ export function EditorPreview({
       <div className="video-editor-stage-area">
         <section aria-label="预览舞台" className="video-editor-stage">
           <StageBackdrop url={onOriginal ? backdrop.original : backdrop.current} />
-          {original === undefined ? null : (
+          {viewControl !== undefined ? (
+            viewControl
+          ) : original === undefined ? null : (
             <div aria-label="预览版本" className="video-editor-compare" role="group">
               <button
                 aria-pressed={onOriginal}

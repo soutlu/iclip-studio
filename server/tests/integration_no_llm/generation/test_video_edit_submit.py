@@ -17,7 +17,6 @@ import pytest
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_SUBMITTED, GenerationJob
 from iclip.domains.generation.module import (
@@ -253,10 +252,25 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
     assert body["reference_video_urls"] == [mine.url]
 
 
-async def test_a_clip_that_does_not_match_the_range_is_refused_before_anything_is_queued() -> None:
+@pytest.mark.parametrize("clip_seconds", [1, 3], ids=["参考短于替换区间", "参考长于替换区间"])
+async def test_a_reference_with_a_different_duration_is_submitted_without_rewriting_the_range(
+    clip_seconds: int,
+) -> None:
+    """真实探测的参考长短不限制基底替换区间；受理后入队并将实际参考地址原样提交上游。"""
+
     repo = InMemoryGenerationRepository()
+    edit, sent, clip_url = await _run_edit(
+        repo, clip_seconds=clip_seconds, start_ms=1000, end_ms=3000
+    )
 
-    with pytest.raises(ValidationFailed, match="对不上"):
-        await _run_edit(repo, clip_seconds=3, start_ms=1000, end_ms=2000)
-
-    assert len(repo.jobs) == 2, "只有种进去的基底与上传，没有编辑段落库"
+    assert len(repo.jobs) == 3, "基底、上传与编辑段均已落库"
+    assert edit.status == STATUS_SUBMITTED, edit.error_message
+    assert edit.provider_task_id == "upstream-1", "编辑段经过队列提交并保存了上游任务"
+    assert edit.source_job_id is not None
+    assert edit.root_job_id == edit.source_job_id
+    assert repo.jobs[edit.source_job_id].source_job_id is None, "替换基底仍是原始出片"
+    assert (edit.range_start_ms, edit.range_end_ms) == (1000, 3000), "替换区间不按参考时长改写"
+    (body,) = sent
+    assert body["reference_video_urls"] == [clip_url]
+    assert body["seconds"] == -1, "实际生成时长跟随参考"
+    assert stored_request(edit).model_dump()["reference_video_urls"] == [clip_url]

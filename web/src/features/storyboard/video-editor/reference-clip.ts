@@ -1,21 +1,27 @@
-/** 编辑器读视频文件的地方：读关键帧表给时间线分段，解码原声轨给波形，在关键帧处把
- * AI 改的那一段重封装成参考片段（不重编码）。只认成片的容器：MP4 与同族的 MOV。
+/** 编辑器读视频文件的地方：读关键帧表给时间线分段，解码原声轨给波形，按选用素材裁剪、
+ * 拼接 AI 编辑所需的参考片段。只认成片的容器：MP4 与同族的 MOV。
  *
  * 本模块静态引入 mediabunny，只经动态 `import()` 加载，打包时与 mediabunny 用到的部分一起摇成一个
  * 懒加载块，不进首屏包。mediabunny 按 MPL-2.0 发布，许可全文与源码地址见
  * public/licenses/mediabunny.txt（随产物发布）。 */
 
 import {
+  AudioSample,
   AudioSampleSink,
+  AudioSampleSource,
   BufferTarget,
-  Conversion,
+  canEncodeAudio,
+  canEncodeVideo,
   EncodedPacketSink,
   Input,
   MP4,
   Mp4OutputFormat,
   Output,
   QTFF,
+  Quality,
   UrlSource,
+  VideoSampleSink,
+  VideoSampleSource,
 } from 'mediabunny'
 import { UserFacingError } from '@/shared/api/client'
 
@@ -113,48 +119,158 @@ export const readAudioPeaks = async (url: string): Promise<AudioPeaks | null> =>
   }
 }
 
-export type ReferenceClip = {
-  /** 切好的片段，MP4 容器。 */
-  file: File
-  /** 区间，毫秒；编辑请求的 `range_start_ms` / `range_end_ms` 就填它。 */
-  startMs: number
-  endMs: number
-}
-
 /**
- * 从基底 `baseUrl` 上切出 `range` 那一段。`range` 的两端必须正好是基底的关键帧（或片尾），取自
- * {@link readKeyframes}：只在关键帧处下刀，才不用重编码，切出来的长度也正好是区间长。
+ * 按顺序裁剪、拼接当前选用的素材；起止是各素材自己的秒数，输出从 0 开始，长度为各选区之和。
+ * 解码后按精确边界重新编码，允许非关键帧裁剪、不同片长与不同源编码。画幅沿第一段，其他段等比
+ * 缩放并补黑边；各段原声保留到对应时刻，无音轨的段保持无声。输出为 MP4，视频优先 AVC、浏览器
+ * 不支持时用 VP9，原声用 Opus。
  *
- * 只拷贝不转码：有哪条轨拷不进 MP4 就报错，不静默转码、不丢轨。
+ * 有音轨却无法解码或编码时明确失败，不丢掉声音继续提交。
  */
-export const cutReferenceClip = async (
-  baseUrl: string,
-  range: SecondsRange,
-): Promise<ReferenceClip> => {
-  const input = openInput(baseUrl)
+export const concatenateReferenceClips = async (
+  clips: readonly (SecondsRange & { mediaUrl: string })[],
+): Promise<File> => {
+  if (
+    clips.length === 0 ||
+    clips.some(
+      ({ start, end }) =>
+        !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start,
+    )
+  ) {
+    throw new UserFacingError('参考片段区间无效，请重新选择片段')
+  }
+
+  const inputs: Input[] = []
+  const target = new BufferTarget()
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target })
   try {
-    const target = new BufferTarget()
-    const conversion = await Conversion.init({
-      input,
-      output: new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target }),
-      trim: range,
-      copy: { mode: 'forced' },
-      showWarnings: false,
+    const sources = []
+    let numberOfChannels = 0
+    for (const clip of clips) {
+      const input = openInput(clip.mediaUrl)
+      inputs.push(input)
+      const [video, audio] = await Promise.all([
+        input.getPrimaryVideoTrack(),
+        input.getPrimaryAudioTrack(),
+      ])
+      if (video === null) throw new UserFacingError('所选片段没有画面，无法制作参考视频')
+      if (!(await video.canDecode())) {
+        throw new UserFacingError('当前浏览器无法解码所选片段的画面')
+      }
+      // 分段时长来自整个容器；原声音轨可能比画面略长，这段合法尾音也必须保留。
+      if (clip.end > roundToMs(await input.computeDuration())) {
+        throw new UserFacingError('所选区间超出视频时长，请重新选择片段')
+      }
+      if (audio !== null) {
+        if (!(await audio.canDecode())) {
+          throw new UserFacingError('当前浏览器无法解码所选片段的原声')
+        }
+        numberOfChannels = Math.max(numberOfChannels, await audio.getNumberOfChannels())
+      }
+      sources.push({ ...clip, video, audio })
+    }
+
+    const first = sources[0]
+    if (first === undefined) throw new UserFacingError('请先选择参考片段')
+    // AVC 要求偶数尺寸；保留首段画幅，不裁掉其他片段的内容。
+    const width = Math.ceil((await first.video.getDisplayWidth()) / 2) * 2
+    const height = Math.ceil((await first.video.getDisplayHeight()) / 2) * 2
+    const quality = new Quality('high')
+    const codec = (await canEncodeVideo('avc', { width, height, quality }))
+      ? 'avc'
+      : (await canEncodeVideo('vp9', { width, height, quality }))
+        ? 'vp9'
+        : null
+    if (codec === null) {
+      throw new UserFacingError('当前浏览器无法编码参考视频，请使用支持视频编码的浏览器')
+    }
+    const videoSource = new VideoSampleSource({
+      codec,
+      quality,
+      sizeChangeBehavior: 'contain',
+      transform: { width, height },
     })
-    if (!conversion.isValid || conversion.discardedTracks.length > 0) {
-      const reasons = conversion.discardedTracks.map((discarded) => discarded.reason)
-      throw new Error(`这条视频有轨道没法原样拷进 MP4：${reasons.join('、')}`)
+    output.addVideoTrack(videoSource)
+
+    const duration = clips.reduce((total, clip) => total + clip.end - clip.start, 0)
+    const sampleRate = 48000
+    let audioContext: OfflineAudioContext | undefined
+    let audioSource: AudioSampleSource | undefined
+    if (numberOfChannels > 0) {
+      if (
+        typeof OfflineAudioContext === 'undefined' ||
+        !(await canEncodeAudio('opus', { numberOfChannels, sampleRate }))
+      ) {
+        throw new UserFacingError('当前浏览器无法编码参考视频的原声，请使用支持音频编码的浏览器')
+      }
+      // 不同素材的采样率与声道数可能不同，交给 Web Audio 统一；时间戳保留原声的延迟与无声区间。
+      audioContext = new OfflineAudioContext(
+        numberOfChannels,
+        Math.ceil(duration * sampleRate),
+        sampleRate,
+      )
+      // WebCodecs 的 AAC 编码不提供 priming 信息，会把声音推迟；Opus 保持声音起点准确。
+      audioSource = new AudioSampleSource({ codec: 'opus', quality: new Quality('high') })
+      output.addAudioTrack(audioSource)
     }
-    await conversion.execute()
-    if (target.buffer === null) throw new Error('切片完成了却没有产物')
-    return {
-      file: new File([target.buffer], 'reference-clip.mp4', { type: 'video/mp4' }),
-      startMs: Math.round(range.start * 1000),
-      endMs: Math.round(range.end * 1000),
+
+    await output.start()
+    let offset = 0
+    for (const clip of sources) {
+      let hasVideo = false
+      for await (const sample of new VideoSampleSink(clip.video).samples(clip.start, clip.end)) {
+        try {
+          const start = Math.max(clip.start, sample.timestamp)
+          const end = Math.min(clip.end, sample.timestamp + sample.duration)
+          if (end <= start) continue
+          sample.setTimestamp(offset + start - clip.start)
+          sample.setDuration(end - start)
+          await videoSource.add(sample, { keyFrame: !hasVideo })
+          hasVideo = true
+        } finally {
+          sample.close()
+        }
+      }
+      if (!hasVideo) throw new UserFacingError('所选区间没有可播放的画面，请重新选择片段')
+      if (audioContext !== undefined && clip.audio !== null) {
+        for await (const sample of new AudioSampleSink(clip.audio).samples(clip.start, clip.end)) {
+          try {
+            const start = Math.max(clip.start, sample.timestamp)
+            const end = Math.min(clip.end, sample.timestamp + sample.duration)
+            if (end <= start) continue
+            const source = audioContext.createBufferSource()
+            source.buffer = sample.toAudioBuffer()
+            source.connect(audioContext.destination)
+            source.start(offset + start - clip.start, start - sample.timestamp, end - start)
+          } finally {
+            sample.close()
+          }
+        }
+      }
+      offset += clip.end - clip.start
     }
+    videoSource.close()
+    if (audioContext !== undefined && audioSource !== undefined) {
+      const audio = await audioContext.startRendering()
+      for (const sample of AudioSample.fromAudioBuffer(audio, 0)) {
+        try {
+          await audioSource.add(sample)
+        } finally {
+          sample.close()
+        }
+      }
+      audioSource.close()
+    }
+    await output.finalize()
+    if (target.buffer === null) throw new Error('参考片段制作完成却没有产物')
+    return new File([target.buffer], 'reference-clip.mp4', { type: 'video/mp4' })
   } catch (cause) {
-    throw asUserFacing(cause, '参考片段截取失败，请稍后重试')
+    throw asUserFacing(cause, '参考片段制作失败，请稍后重试')
   } finally {
-    input.dispose()
+    try {
+      if (output.state !== 'finalized') await output.cancel()
+    } finally {
+      for (const input of inputs) input.dispose()
+    }
   }
 }

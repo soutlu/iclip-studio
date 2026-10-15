@@ -415,14 +415,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 视频编辑：编辑段与合成
 
-- `POST /generations/video-edits` 在一条成片上改一段，请求就是一次上游视频请求：`reference_video_urls` 恰好一条，是调用方从基底上切好、走 §10 上传协议传上来的参考片段地址；`model`、`prompt`、`user_name`、`reference_image_urls`、`seconds`、`provider_options` 与出片同义，原样转发上游。另带两项只记账、不参与处理的字段：`source_job_id`（基底，基于哪一版成片）与 `range_start_ms` / `range_end_ms`（片段在基底上的那一段，毫秒；起点不小于 0、终点晚于起点）；有了它们，这条记录才是编辑段。另收归属字段 `conversation_id`、`task_id` 与坐标 `metadata`。不收 `shot` 与 `root_job_id`；参考视频缺了、多于一条、不是 http(s) 地址、给了这两个字段都是 `422`。模型规则同出片。响应是 `GenerationEnvelope`。
+- `POST /generations/video-edits` 在一条成片上改一段，请求就是一次上游视频请求：`reference_video_urls` 恰好一条，是调用方按当前选用素材裁剪、拼接后，走 §10 上传协议传上来的实际参考片段地址；`model`、`prompt`、`user_name`、`reference_image_urls`、`seconds`、`provider_options` 与出片同义，原样转发上游。另带两项只记账、不参与处理的字段：`source_job_id`（替换基底，哪一版成片）与 `range_start_ms` / `range_end_ms`（产物将替换基底上的哪一段，毫秒；起点不小于 0、终点晚于起点）；有了它们，这条记录才是编辑段。另收归属字段 `conversation_id`、`task_id` 与坐标 `metadata`。不收 `shot` 与 `root_job_id`；参考视频缺了、多于一条、不是 http(s) 地址、给了这两个字段都是 `422`。模型规则同出片。响应是 `GenerationEnvelope`。
 - 受理时同步核对三件事，不合格是 `422`，不创建任务、不入队：
   - 片段地址对应一条**调用者本人**的视频上传记录（`kind=video`、`operation=upload`，属主是当前主体；持 `users:act_as` 的钥匙替人办事时是那个人）。别人的上传、图片上传、库里找不到的地址同一句。
-  - 片段时长与区间长度一致，容差 100 毫秒：片段是浏览器重封装的，容器时长会被音轨尾巴拉长一点。片段时长由服务端按地址探测。
+  - 参考片段按地址能探出大于 0 的时长。参考可以由选区内当前选用的多个片段版本拼接而成，时长不必等于基底替换区间。
   - 基底按下文「来源与原作」核对，区间在基底时长之内：起点要落在基底里，终点最多超出基底时长 50 毫秒（同合成各段的结尾）。基底没有 `durationMs` 时按地址探测。
 
-  片段或基底的时长探不出来也是 `422`，措辞说的是读不出时长，不是对不上。
-- 服务端不切片、不改写区间：记录上的 `rangeStartMs` / `rangeEndMs` 就是请求给的值，调用方要自己把区间对齐到基底的关键帧再切片。参考片段的地址记进编辑段的 `request.reference_video_urls`，提交时原样发给上游。编辑段没有本地加工，`clipStage` 恒为 `null`。
+  片段或基底的时长探不出来也是 `422`，明确说明读不出时长。
+- 服务端不切片、不改写区间：记录上的 `rangeStartMs` / `rangeEndMs` 就是请求给的基底替换区间，不是实际参考视频的播放区间。调用方负责按当前选用素材制作参考，并把选区映射回基底坐标。实际参考地址记进编辑段的 `request.reference_video_urls`，提交时原样发给上游。编辑段没有本地加工，`clipStage` 恒为 `null`。
 - `POST /generations/video-composites` 收基底 `baseJobId` 与一串有序片段 `segments`（至少一段、至多 100 段，超出是 `422`），另有 `userName`、归属字段 `conversationId`、`taskId` 与坐标 `metadata`。每段是 `{ sourceJobId, start, end? }`：出自哪条记录、取它自己媒体时间里的 `[start, end)`（秒，`start` 不小于 0；`end` 省略就取到那条的结尾，给了就要大于 `start`）。服务端按出处把每段换成那条记录的产物地址，不收调用方给的地址；按顺序拼成一条新成片（来源记基底，原作与镜号随基底），存进本系统的桶、长期保留。记录的 `request.segments` 每段是 `{ sourceJobId, url, start, end }`，取到结尾的段 `end` 为 `null`，执行时按素材时长补齐，补出来为空的段跳过。一律重编码：画幅与帧率对齐到原片（按素材整条时长认），模型还回来的片段缩放去适配它，有一段带音轨就出音轨、没音轨的段补静音；产物的关键帧只放在每段的起点和每段内素材原有的关键帧处（按帧取最近的一帧），别处不放。
 - 合成取不到素材是 `MEDIA_SOURCE_UNREACHABLE`，ffmpeg 处理失败是 `MEDIA_PROCESS_FAILED`，存不进桶是 `OUTPUT_STORE_FAILED`。这些失败都是终态，不自动重试。
 - `durationMs` 是产物实际时长（毫秒），完成后才有：视频（出片与编辑段）取上游实测的时长，合成、整片与生成的背景音乐是本系统量的，图片与上传为空；上游没给也为空。
@@ -440,7 +440,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 来源与原作
 
-- 每条生成记录带来源 `sourceJobId` 与原作 `rootJobId`，术语见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。编辑段与合成的来源都是它的基底成片，合成的各段出自哪条记录记在 `request.segments` 每段的 `sourceJobId` 上；两者的原作都是最初那条出片（基底是出片就是它自己，是合成就随那次合成的原作），不管基于哪一版，链因此只有一层。编辑段另带区间 `rangeStartMs` / `rangeEndMs`。帧图编辑的来源是底图那一条，切图的来源是它的宫格；图片没有原作与区间。出片、图片生成与上传这几项都为空。它们都由服务端定，调用方不直接给（帧图编辑只给底图地址）。
+- 每条生成记录带来源 `sourceJobId` 与原作 `rootJobId`，术语见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。编辑段的来源指待替换区间所属的基底成片，实际模型参考独立记在 `request.reference_video_urls`；合成的来源也是基底成片，各段出自哪条记录记在 `request.segments` 每段的 `sourceJobId` 上；两者的原作都是最初那条出片（基底是出片就是它自己，是合成就随那次合成的原作），不管基于哪一版，链因此只有一层。编辑段另带区间 `rangeStartMs` / `rangeEndMs`。帧图编辑的来源是底图那一条，切图的来源是它的宫格；图片没有原作与区间。出片、图片生成与上传这几项都为空。它们都由服务端定，调用方不直接给（帧图编辑只给底图地址）。
 - **`sourceUrl` 是来源的地址**：`sourceJobId` 非空时是那条记录的 `outputUrl`，来源那条调用方单条读不读得到都照给；为空时只有帧图编辑可能有，是库里找不到的外部底图地址；都没有为 `null`。它是投影，不是表上那一列的镜像：底图在库里时，表上只记来源 id。
 - 受理时核对来源：必须是调用方可见的、这段对话自己的或它继承的记录（继承的只在调用方读得到这段对话时才算，§6）；合成的基底与每段的出处都这样核。不存在、不可见、别的对话、继承边界之外，都是同一句 `422`。可见、在范围内但不合格的另给一句 `422`：编辑段与合成的基底必须是一条已完成的出片或合成，整片不能当基底；合成的每段必须出自基底本身，或来源是该基底、已完成、有产物地址的一条编辑段；那条记录有 `durationMs` 时，段的 `end` 不能超出它（容差 50 毫秒），没有就不在受理时判。都不创建任务、不入队。
 - 编辑段与合成不计审计口径（§12）。`GET /generations?rootJobId=` 一次列出一条出片的整条编辑链，`?sourceJobId=` 列出直接基于某一行的记录；同时给 `conversationId` 时范围同那段对话的列表，分叉副本里连同继承的一起（§6）。

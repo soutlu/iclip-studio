@@ -27,12 +27,14 @@ const openEditor = async (page: Page, mobile = false, group = 2) => {
 
 const timelineOf = (dialog: Locator) =>
   dialog.getByRole('region', { name: '视频编辑时间线', exact: true })
-/** 时间线上能点的段（AI 正在改的占位不是按钮）。 */
+/** 时间线上可编辑的片段；生成中的结果只在侧栏显示。 */
 const segments = (dialog: Locator) => timelineOf(dialog).getByRole('button', { name: /^第 \d+ 段/ })
 const segment = (dialog: Locator, position: number) =>
   timelineOf(dialog).getByRole('button', { name: new RegExp(`^第 ${position} 段`) })
 const controls = (dialog: Locator) => dialog.getByRole('group', { name: '播放控件' })
 const versions = (dialog: Locator) => dialog.getByRole('group', { name: '视频版本' })
+const scope = (dialog: Locator, name: '整片' | '片段') =>
+  dialog.getByRole('group', { name: '视频预览范围' }).getByRole('button', { name, exact: true })
 /** 选中段时盖在舞台上的弹出卡。 */
 const card = (dialog: Locator) => dialog.getByRole('region', { name: 'AI 改段' })
 /** 卡收起后的小胶囊。 */
@@ -89,7 +91,7 @@ const expectCard = async (dialog: Locator, title: string, detail: string) => {
   await expect(card(dialog).getByText(detail, { exact: true })).toBeVisible()
 }
 
-test('选中：点段选中、点相邻连选、点两端去掉、点别处重选；键盘左右与 Shift 扩展，卡跟着选区走', async ({
+test('选中：普通点击只选当前片段，Shift 点击扩选；键盘左右与 Shift 扩展，卡跟着选区走', async ({
   page,
 }) => {
   const dialog = await openEditor(page)
@@ -99,15 +101,15 @@ test('选中：点段选中、点相邻连选、点两端去掉、点别处重�
   await segment(dialog, 2).click()
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
   await expectCard(dialog, '第 2 段 · 视频生成', '1.0 – 2.0 秒 · 视频和原声一起重做')
-  await segment(dialog, 3).click()
+  await segment(dialog, 3).click({ modifiers: ['Shift'] })
   await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
-  await segment(dialog, 1).click()
+  await segment(dialog, 1).click({ modifiers: ['Shift'] })
   await expectCard(dialog, '第 1–3 段 · 视频生成', '0.0 – 3.0 秒 · 视频和原声一起重做')
-  // 点两端的段把它去掉。
-  await segment(dialog, 1).click()
+  // Shift 点两端的段把它去掉。
+  await segment(dialog, 1).click({ modifiers: ['Shift'] })
   await expect(segment(dialog, 1)).toHaveAttribute('aria-pressed', 'false')
   await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
-  // 点不相邻的段从那段重新选。
+  // 普通点击从该段重新选，不会自动扩成多选。
   await segment(dialog, 5).click()
   await expectCard(dialog, '第 5 段 · 视频生成', '4.0 – 5.0 秒 · 视频和原声一起重做')
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'false')
@@ -139,26 +141,68 @@ test('选中：点段选中、点相邻连选、点两端去掉、点别处重�
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height)
 })
 
-test('删除、拆分、撤销与重做：总长跟着变，多出「未合成」；刷新后草稿还在', async ({ page }) => {
+test('点击片段从该段起点自动播放并在末尾停止，普通点击相邻段不会扩选', async ({ page }) => {
   const dialog = await openEditor(page)
   await waitForSegments(dialog)
-  await expect(versions(dialog)).toHaveCount(0)
+  const seek = dialog.getByRole('slider', { name: '时间线播放位置' })
+  await segment(dialog, 2).click()
+  await expect(dialog.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+  await expect.poll(async () => Number(await seek.inputValue())).toBeGreaterThanOrEqual(1)
+  await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+  await expect(seek).toHaveValue('2')
+  await segment(dialog, 3).click()
+  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'false')
+  await expect(segment(dialog, 3)).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+  await expectCard(dialog, '第 3 段 · 视频生成', '2.0 – 3.0 秒 · 视频和原声一起重做')
+})
+
+test('标尺下边缘可拖动播放头，不触发相邻裁剪手柄、片段选中或调序', async ({ page }) => {
+  const dialog = await openEditor(page)
+  await waitForSegments(dialog)
+  await segment(dialog, 2).click()
+  const names = await segments(dialog).evaluateAll((items) =>
+    items.map((item) => item.getAttribute('aria-label')),
+  )
+  const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
+  const box = await ruler.boundingBox()
+  if (box === null) throw new Error('标尺尚未布局')
+  expect(box.height).toBeGreaterThanOrEqual(32)
+  await page.mouse.move(await xAt(dialog, 2), box.y + box.height - 1)
+  await page.mouse.down()
+  await page.mouse.move(await xAt(dialog, 4.5), box.y + box.height - 1, { steps: 8 })
+  await page.mouse.up()
+  expect(Number(await ruler.inputValue())).toBeCloseTo(4.5, 1)
+  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
+  expect(
+    await segments(dialog).evaluateAll((items) =>
+      items.map((item) => item.getAttribute('aria-label')),
+    ),
+  ).toEqual(names)
+  await expect(controls(dialog)).toContainText('共 6.0 秒')
+  await ruler.press('ArrowLeft')
+  expect(Number(await ruler.inputValue())).toBeCloseTo(4.49, 1)
+})
+
+test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示实际版本；刷新后剪辑选择还在', async ({
+  page,
+}) => {
+  const dialog = await openEditor(page)
+  await waitForSegments(dialog)
+  await expect(versions(dialog).getByRole('button', { name: 'V1', exact: true })).toBeVisible()
 
   await segment(dialog, 2).click()
   await controls(dialog).getByRole('button', { name: '删除', exact: true }).click()
   await waitForSegments(dialog, 5)
   await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 V1 短 1.0 秒')
-  await expect(versions(dialog).getByRole('button', { name: '未合成' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
   // 有改动时下的是这一版本身，看着草稿时灰着。
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeDisabled()
 
   // 撤销按钮与 Cmd/Ctrl+Z、Shift+Cmd/Ctrl+Z。
   await controls(dialog).getByRole('button', { name: '撤销', exact: true }).click()
   await waitForSegments(dialog, 6)
-  await expect(versions(dialog)).toHaveCount(0)
+  await expect(versions(dialog).getByRole('button', { name: 'V1', exact: true })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+Shift+z')
   await waitForSegments(dialog, 5)
   await page.keyboard.press('ControlOrMeta+z')
@@ -180,25 +224,21 @@ test('删除、拆分、撤销与重做：总长跟着变，多出「未合成�
   await waitForSegments(dialog, 5)
   await expect(segment(dialog, 1)).toHaveAccessibleName('第 1 段 · 0–0.5 秒')
   await expect(controls(dialog)).toContainText('共 4.0 秒')
-  // 拆过的段不能直接让 AI 改：卡头写原因，写了要求也生成不了。拆完选中的是右边那半，点左边那半连上它。
-  await segment(dialog, 1).click()
-  await expectCard(
-    dialog,
-    '第 1–2 段 · 视频生成',
-    '含已剪辑的段，无法生成视频；请先点击「合成成片」',
-  )
+  // 拆完选中右半，Shift 点左半连成原来的 1 秒区间，仍可以继续编辑。
+  await segment(dialog, 1).click({ modifiers: ['Shift'] })
+  await expectCard(dialog, '第 1–2 段 · 视频生成', '2.0 – 3.0 秒 · 视频和原声一起重做')
   await requestBox(dialog).fill('换成黄昏的暖光')
-  await expect(generateButton(dialog)).toBeDisabled()
+  await expect(generateButton(dialog)).toBeEnabled()
 
   // 草稿只存在浏览器：刷新后（mock 的登录随页面清掉，重新登录）重开，还是这份。
   await page.reload()
   const reopened = await openEditor(page)
   await waitForSegments(reopened, 5)
   await expect(controls(reopened)).toContainText('共 4.0 秒 · 比 V1 短 2.0 秒')
-  await expect(versions(reopened).getByRole('button', { name: '未合成' })).toBeVisible()
+  await expect(versions(reopened).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 })
 
-test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变短，裁过的段不能再让 AI 改', async ({
+test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变短；不足 1 秒时提示合并选择', async ({
   page,
 }) => {
   const dialog = await openEditor(page)
@@ -219,7 +259,11 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.4 秒')
   await expect(controls(dialog)).toContainText('共 5.4 秒 · 比 V1 短 0.6 秒')
   await capsule(dialog).click()
-  await expectCard(dialog, '第 2 段 · 视频生成', '含已剪辑的段，无法生成视频；请先点击「合成成片」')
+  await expectCard(
+    dialog,
+    '第 2 段 · 视频生成',
+    '时长不足 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
+  )
 
   // 拖过头停在最短的 0.2 秒。
   const tooFar = await holdDrag(
@@ -246,7 +290,7 @@ test('拖动调序：插入处一条墨线，原声跟着走；合成请求就�
   await expect(card(dialog)).toHaveCount(0)
   await release()
   await expect(controls(dialog)).toContainText('共 6.0 秒')
-  await expect(versions(dialog).getByRole('button', { name: '未合成' })).toBeVisible()
+  await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
   // 挪过去的那段仍选中，胶囊跟到它上方（夹在舞台内）。
   await expect(segment(dialog, 1)).toHaveAttribute('aria-pressed', 'true')
   const pillOffset = async () => {
@@ -262,13 +306,9 @@ test('拖动调序：插入处一条墨线，原声跟着走；合成请求就�
   }
   // 选区外框比段宽出两三像素，只要求对准到几像素以内。
   await expect.poll(pillOffset).toBeLessThan(4)
-  // 连上后面那段，按基底时间不连续，不能交给 AI。
-  await segment(dialog, 2).click()
-  await expectCard(
-    dialog,
-    '第 1–2 段 · 视频生成',
-    '含已剪辑的段，无法生成视频；请先点击「合成成片」',
-  )
+  // Shift 连上后面那段，按基底时间不连续，不能交给 AI。
+  await segment(dialog, 2).click({ modifiers: ['Shift'] })
+  await expectCard(dialog, '第 1–2 段 · 视频生成', '请选择原片时间连续的片段，再生成新版本')
 
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
@@ -287,7 +327,7 @@ test('拖动调序：插入处一条墨线，原声跟着走；合成请求就�
   })
 })
 
-test('AI 改两段：参考片段与区间对上段边界，占位锁住，结果换进草稿；裁短后合成成新的一版', async ({
+test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁短后按选用版本合成并保留时间线', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -305,7 +345,7 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
   await expect(dialog.getByRole('slider', { name: '裁剪该段结尾' })).toBeVisible()
   await expect(card(dialog)).toBeVisible()
 
-  await segment(dialog, 3).click()
+  await segment(dialog, 3).click({ modifiers: ['Shift'] })
   await expect(dialog.getByRole('slider', { name: '裁剪该段结尾' })).toHaveCount(0)
   await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
   // 模型菜单向上展开（菜单开着时别处对读屏隐藏，按钮位置先量好）。
@@ -362,33 +402,35 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
   }, clipUrl)
   expect(clip).toEqual({ box: 'ftyp', duration: expect.closeTo(2, 1) })
 
-  // 这两段换成锁定的占位：盖着「生成中」，点不了；合成灰着；选区没了，卡也收走。
-  const running = timelineOf(dialog).getByRole('img', { name: /AI 生成中/ })
-  await expect(running).toBeVisible()
-  await expect(card(dialog)).toHaveCount(0)
-  await expect(capsule(dialog)).toHaveCount(0)
-  await expect(timelineOf(dialog).getByRole('status')).toHaveText(/生成中 \d+:\d{2}/)
-  await expect(segments(dialog)).toHaveCount(4)
-  await expect(dialog.getByRole('button', { name: '合成成片', exact: true })).toBeDisabled()
-  await expect(versions(dialog).getByRole('button', { name: '未合成' })).toHaveAttribute(
+  // 多段选区归成一段，仍用原素材；生成状态只在侧栏，不遮住时间线。
+  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toBeVisible()
+  await expect(timelineOf(dialog).getByRole('img', { name: /AI 生成中/ })).toHaveCount(0)
+  await expect(timelineOf(dialog).getByRole('status')).toHaveCount(0)
+  await waitForSegments(dialog, 5)
+  await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
+  await expect(versions(dialog).getByRole('button', { name: 'V1', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
+  await expect(controls(dialog)).toContainText('共 6.0 秒')
   await screenshotBothThemes(page, `${SHOT_DIR}/running`)
 
-  // 结果回来：占位换成 AI 结果整条（3 秒），总长跟着变，底下一道「改过」的灰线。
-  await expect(running).toHaveCount(0, { timeout: STEP_TIMEOUT })
-  await waitForSegments(dialog, 5)
+  // 结果回来只新增候选，不覆盖已选的 V1；点击 V2 才替换为 3 秒结果。
+  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toHaveCount(0, {
+    timeout: STEP_TIMEOUT,
+  })
+  const candidate = versions(dialog).getByRole('button', { name: /^V2(?: · 新结果)?$/ })
+  await expect(candidate).toBeVisible()
+  await expect(controls(dialog)).toContainText('共 6.0 秒')
+  await candidate.click()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–4 秒')
+  await expect(segment(dialog, 2).getByText('V2', { exact: true })).toBeVisible()
+  await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(1)
   await expect(controls(dialog)).toContainText('共 7.0 秒 · 比 V1 长 1.0 秒')
-  await expect(timelineOf(dialog).getByTestId('timeline-mark')).toHaveCount(1)
-  await expect(dialog.getByRole('group', { name: '预览版本' })).toBeVisible()
 
-  // 整条没动过的 AI 结果可以在它当初那一段上再改。
+  // 再编辑预览当前结果，候选仍归属基底区间；可继续裁剪，不要求先合成。
   await segment(dialog, 2).click()
   await expectCard(dialog, '第 2 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
-
-  // 裁短 AI 结果：拖结尾手柄，卡收成胶囊；气泡说裁剪后多长、缩短多少；松手后后面的段跟上。
   const release = await holdDrag(
     page,
     dialog,
@@ -400,13 +442,12 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
   await release()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–3 秒')
   await expect(controls(dialog)).toContainText('共 6.0 秒')
-  // 裁过的段不能再让 AI 改：展开卡，卡头写原因，写了要求也生成不了。
   await capsule(dialog).click()
-  await expectCard(dialog, '第 2 段 · 视频生成', '含已剪辑的段，无法生成视频；请先点击「合成成片」')
+  await expectCard(dialog, '第 2 段 · 视频生成', '1.0 – 2.3 秒 · 视频和原声一起重做')
   await expect(requestBox(dialog)).toBeFocused()
   await page.keyboard.type('再暖一点')
-  await expect(generateButton(dialog)).toBeDisabled()
-  await screenshotBothThemes(page, `${SHOT_DIR}/blocked`)
+  await expect(generateButton(dialog)).toBeEnabled()
+  await screenshotBothThemes(page, `${SHOT_DIR}/selected`)
 
   // 删一段：后面的跟上，右边留细框。
   await segment(dialog, 5).click()
@@ -431,33 +472,95 @@ test('AI 改两段：参考片段与区间对上段边界，占位锁住，结�
       { sourceJobId: baseJobId, start: 4, end: 5 },
     ],
   })
-  await expect(versions(dialog).getByRole('button', { name: '未合成 · 合成中' })).toBeVisible()
+  await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 
-  // 合成完成：选中新的一版，基底那份草稿清掉。
+  // 新整片可直接查看，仍保留原先的片段选择与裁剪，不重新按新文件切分。
+  await scope(dialog, '整片').click()
   await expect(versions(dialog).getByRole('button', { name: 'V2', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
     { timeout: STEP_TIMEOUT },
   )
-  await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
-  await expect(dialog.getByRole('button', { name: '合成成片', exact: true })).toHaveCount(0)
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeEnabled()
-  expect(
-    await page.evaluate(
-      // 只数草稿键：看哪一版的记录（video-editor-view:…:根）结尾也是基底 id。
-      (key) =>
-        Object.keys(localStorage).filter(
-          (name) => name.startsWith('video-editor-draft:') && name.endsWith(`:${key}`),
-        ),
-      baseJobId ?? '',
-    ),
-  ).toEqual([])
-  await waitForSegments(dialog)
+  await waitForSegments(dialog, 4)
+  await expect(segment(dialog, 2).getByText('V2', { exact: true })).toBeVisible()
+  const retained = await page.evaluate(
+    (key) =>
+      Object.keys(localStorage).filter(
+        (name) => name.startsWith('video-editor-draft:') && name.endsWith(`:${key}`),
+      ),
+    baseJobId ?? '',
+  )
+  expect(retained).toHaveLength(1)
   await screenshotBothThemes(page, `${SHOT_DIR}/composed`)
-  // V1 还在，点回去看到的是原片本身。
   await versions(dialog).getByRole('button', { name: 'V1', exact: true }).click()
-  await expect(controls(dialog)).toContainText('共 6.0 秒')
+  await waitForSegments(dialog, 4)
+  await expect(segment(dialog, 2).getByText('V2', { exact: true })).toBeVisible()
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
+})
+
+test('扩大已编辑区间：参考包含当前版本和相邻原片，新版本按基底时间替换一次', async ({ page }) => {
+  const dialog = await openEditor(page)
+  await waitForSegments(dialog)
+  const baseJobId = new URL(page.url()).searchParams.get('video')
+  await segment(dialog, 3).click()
+  await segment(dialog, 4).click({ modifiers: ['Shift'] })
+  await requestBox(dialog).fill('把这段背景换成海边')
+  const first = await submitEdit(page, dialog)
+  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toHaveCount(0, {
+    timeout: STEP_TIMEOUT,
+  })
+  await versions(dialog)
+    .getByRole('button', { name: /^V2(?: · 新结果)?$/ })
+    .click()
+  await expect(segment(dialog, 3)).toHaveAccessibleName('第 3 段 · 2–5 秒')
+  await expect(controls(dialog)).toContainText('共 7.0 秒')
+
+  await segment(dialog, 4).click({ modifiers: ['Shift'] })
+  await segment(dialog, 5).click({ modifiers: ['Shift'] })
+  await expectCard(dialog, '第 3–5 段 · 视频生成', '2.0 – 6.0 秒 · 视频和原声一起重做')
+  await expect(
+    versions(dialog).getByRole('button', { name: '当前选用', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true')
+  await requestBox(dialog).fill('相邻两段光线保持一致')
+  const second = await submitEdit(page, dialog)
+  expect(second.body).toMatchObject({
+    source_job_id: baseJobId,
+    range_start_ms: 2000,
+    range_end_ms: 6000,
+  })
+  expect(second.editId).not.toBe(first.editId)
+  const [referenceUrl] = second.body['reference_video_urls'] as string[]
+  const duration = await page.evaluate(async (url) => {
+    const video = document.createElement('video')
+    video.src = url
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = resolve
+      video.onerror = reject
+    })
+    return video.duration
+  }, referenceUrl)
+  expect(duration).toBeCloseTo(5, 1)
+  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toHaveCount(0, {
+    timeout: STEP_TIMEOUT,
+  })
+  await versions(dialog)
+    .getByRole('button', { name: /^V2(?: · 新结果)?$/ })
+    .click()
+  await waitForSegments(dialog, 3)
+  await expect(segment(dialog, 3)).toHaveAccessibleName('第 3 段 · 2–5 秒')
+  const request = page.waitForRequest(
+    (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  expect((await request).postDataJSON()).toMatchObject({
+    baseJobId,
+    segments: [
+      { sourceJobId: baseJobId, start: 0, end: 1 },
+      { sourceJobId: baseJobId, start: 1, end: 2 },
+      { sourceJobId: second.editId, start: 0, end: 3 },
+    ],
+  })
 })
 
 test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊展开字还在；Escape 先收卡再关编辑器', async ({
@@ -467,7 +570,7 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   const dialog = await openEditor(page)
   await waitForSegments(dialog)
   await segment(dialog, 2).click()
-  await segment(dialog, 3).click()
+  await segment(dialog, 3).click({ modifiers: ['Shift'] })
   await requestBox(dialog).fill('换成黄昏的暖光')
 
   // 按住播放头拖：卡收成画面底部的小胶囊，标着未提交。
@@ -511,7 +614,7 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await expect(capsule(dialog)).toBeVisible()
   await dialog.getByRole('button', { name: '暂停', exact: true }).click()
   await segment(dialog, 3).click()
-  await expectCard(dialog, '第 2–3 段 · 视频生成', '1.0 – 3.0 秒 · 视频和原声一起重做')
+  await expectCard(dialog, '第 3 段 · 视频生成', '2.0 – 3.0 秒 · 视频和原声一起重做')
   await expect(requestBox(dialog)).toHaveText('换成黄昏的暖光')
 
   // Escape：第一下收卡，编辑器还在；第二下关编辑器。

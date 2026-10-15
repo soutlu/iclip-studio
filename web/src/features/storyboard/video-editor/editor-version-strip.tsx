@@ -1,4 +1,4 @@
-/** 版本条：各版与未合成的草稿，竖版小画面贴在舞台右缘（窄屏横排在舞台下方）。只画调用方给的条目，不查数据。 */
+/** 当前对象的版本：竖版小画面贴在舞台右缘（窄屏横排在舞台下方），生成状态留在对应版本卡中。 */
 
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
@@ -7,7 +7,7 @@ import { VersionThumb } from '../components/version-thumb'
 
 export type VersionStripEntry = {
   key: string
-  /** 压在缩略图底部的名字：V1、V2……，有改动的草稿叫「未合成」；状态遮罩自己说明时不给。 */
+  /** 压在缩略图底部的版本名；不给时由状态遮罩自己说明。 */
   label: string | undefined
   /** 可访问名，带上「合成中」与「新结果」。 */
   name: string
@@ -16,7 +16,8 @@ export type VersionStripEntry = {
   running: { since: string } | undefined
   /** 合成失败：挂警示图标与「失败」。 */
   failed?: boolean | undefined
-  /** AI 结果回来时没在看草稿、之后也还没看：挂小绿点。 */
+  disabled?: boolean | undefined
+  /** 还没看过的新结果：挂小绿点。 */
   unseen: boolean
 }
 
@@ -25,8 +26,9 @@ type EditorVersionStripProps = {
   entries: readonly VersionStripEntry[]
   selectedKey: string
   onSelect: (key: string) => void
-  /** 只有一条时也显示（整片编辑器总摆着「未合成」）；默认只有一条时没得切，不显示。 */
+  /** 只有一条时也显示；默认只有一条时没有切换需求，不显示。 */
   showSingle?: boolean | undefined
+  title?: string | undefined
 }
 
 /** 读不出截帧（或不是 OSS 地址、没有截帧）就只摆一个视频图标；地址换了由调用点重新挂载重置。 */
@@ -57,13 +59,16 @@ export function EditorVersionStrip({
   selectedKey,
   onSelect,
   showSingle = false,
+  title,
 }: EditorVersionStripProps) {
   if (entries.length < (showSingle ? 1 : 2)) return null
   return (
     <div aria-label="视频版本" className="video-editor-versions" role="group">
+      {title === undefined ? null : <span className="video-editor-versions-title">{title}</span>}
       {entries.map((entry) => (
         <VersionThumb
           key={entry.key}
+          disabled={entry.disabled}
           label={entry.label}
           name={entry.name}
           onClick={() => onSelect(entry.key)}

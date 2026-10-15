@@ -17,6 +17,7 @@ import { VideoEditor } from './video-editor'
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 /** 按地址挡住读文件：放进一个没兑现的 Promise，读关键帧就停在那里，兑现了才读完。默认不挡。 */
 const fileGates = vi.hoisted(() => new Map<string, Promise<void>>())
+const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
 
 vi.mock('mediabunny', () => {
   class BufferTarget {
@@ -25,20 +26,39 @@ vi.mock('mediabunny', () => {
   class Mp4OutputFormat {}
   class Output {
     readonly target: BufferTarget
+    state = 'pending'
     constructor(options: { target: BufferTarget }) {
       this.target = options.target
     }
+    addVideoTrack = () => {}
+    start = () => Promise.resolve()
+    finalize = () => {
+      this.target.buffer = new ArrayBuffer(8)
+      this.state = 'finalized'
+      return Promise.resolve()
+    }
+    cancel = () => Promise.resolve()
   }
-  const Conversion = {
-    init: ({ output }: { output: Output }) =>
-      Promise.resolve({
-        isValid: true,
-        discardedTracks: [],
-        execute: () => {
-          output.target.buffer = new ArrayBuffer(8)
-          return Promise.resolve()
-        },
-      }),
+  class Quality {}
+  class VideoSampleSource {
+    add = () => Promise.resolve()
+    close = () => {}
+  }
+  class VideoSampleSink {
+    private readonly url: string
+    constructor(track: { url: string }) {
+      this.url = track.url
+    }
+    async *samples(start: number, end: number) {
+      referenceSamples.push({ url: this.url, start, end })
+      yield {
+        timestamp: start,
+        duration: end - start,
+        setTimestamp: () => {},
+        setDuration: () => {},
+        close: () => {},
+      }
+    }
   }
   class UrlSource {
     readonly url: string
@@ -53,7 +73,13 @@ vi.mock('mediabunny', () => {
     }
     getPrimaryVideoTrack = async () => {
       await fileGates.get(this.url)
-      return { url: this.url }
+      return {
+        url: this.url,
+        canDecode: () => Promise.resolve(true),
+        computeDuration: () => Promise.resolve(files.get(this.url)?.duration ?? 0),
+        getDisplayWidth: () => Promise.resolve(720),
+        getDisplayHeight: () => Promise.resolve(1280),
+      }
     }
     getPrimaryAudioTrack = () => Promise.resolve(null)
     computeDuration = () => Promise.resolve(files.get(this.url)?.duration ?? 0)
@@ -74,7 +100,10 @@ vi.mock('mediabunny', () => {
   }
   return {
     BufferTarget,
-    Conversion,
+    Quality,
+    VideoSampleSink,
+    VideoSampleSource,
+    canEncodeVideo: () => Promise.resolve(true),
     EncodedPacketSink,
     Input,
     Mp4OutputFormat,
@@ -142,6 +171,13 @@ const card = () => screen.queryByRole('region', { name: 'AI 改段' })
 const openCard = () => screen.getByRole('region', { name: 'AI 改段' })
 const requestBox = () => within(openCard()).getByLabelText('修改要求')
 const generateButton = () => within(openCard()).getByRole('button', { name: '生成视频' })
+const versionStrip = () => screen.getByRole('group', { name: '视频版本' })
+const versionButton = (label: string) =>
+  within(versionStrip()).getByRole('button', { name: new RegExp(`^${label}(?: ·|$)`) })
+const scopeButton = (name: '整片' | '片段') =>
+  within(screen.getByRole('group', { name: '视频预览范围' })).getByRole('button', {
+    name,
+  })
 
 let restoreMedia = () => {}
 
@@ -149,6 +185,8 @@ beforeEach(() => {
   // 原片 8 秒，每秒一个关键帧。
   files.set(ROOT_URL, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
   window.localStorage.clear()
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
 })
 
 afterEach(() => {
@@ -156,6 +194,7 @@ afterEach(() => {
   restoreMedia = () => {}
   vi.restoreAllMocks()
   files.clear()
+  referenceSamples.length = 0
   fileGates.clear()
 })
 
@@ -327,6 +366,7 @@ describe('AI 改段的弹出卡', () => {
     expect(openCard()).toBeVisible()
     expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
 
+    await user.click(screen.getByRole('button', { name: '暂停' }))
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
     )
@@ -341,19 +381,20 @@ describe('AI 改段的弹出卡', () => {
       keyframes: [0, 0.5, 1, 2, 3, 4, 5, 6, 7],
       prepare: async () => {},
       position: 1,
-      reason: '时长不足 1 秒，无法生成视频；请点击相邻的段一并选中',
+      reason: '时长不足 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
     },
     {
       name: '拆过',
       keyframes: [0, 1, 2, 3, 4, 5, 6, 7],
       prepare: async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.click(scopeButton('片段'))
         fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
           target: { value: '0.5' },
         })
         await user.click(screen.getByRole('button', { name: '拆分' }))
       },
       position: 1,
-      reason: '含已剪辑的段，无法生成视频；请先点击「合成成片」',
+      reason: '时长不足 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
     },
   ])(
     '选区不能交给 AI（$name）：卡头写原因，写了要求也生成不了',
@@ -383,7 +424,7 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(generateButton()).toBeEnabled())
   })
 
-  it('提交：参考图按出现的先后编成 @Image1、@Image2 与 reference_image_urls；成功后卡收走、要求清空', async () => {
+  it('提交：参考图按出现的先后编成 @Image1、@Image2 与 reference_image_urls；成功后要求清空', async () => {
     server.use(
       http.get('*/api/generations/video-models', () =>
         HttpResponse.json({ default: 'wan3.0-video', items: ['wan3.0-video'] }),
@@ -412,7 +453,9 @@ describe('AI 改段的弹出卡', () => {
     await renderEditor()
     const track = await timeline()
     await user.click(segmentOf(track, 2))
+    await user.keyboard('{Shift>}')
     await user.click(segmentOf(track, 3))
+    await user.keyboard('{/Shift}')
     await waitFor(() =>
       expect(within(openCard()).getByRole('button', { name: '编辑模型' })).toHaveTextContent(
         'wan3.0-video',
@@ -441,12 +484,12 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(confirmedImages).toHaveLength(2))
     expect(submitted?.['reference_image_urls']).toEqual(confirmedImages)
 
-    // 选中的两段换成锁定的占位，选区没了，卡也收走；点占位不弹卡。
-    const running = await within(track).findByRole('img', { name: /AI 生成中/ })
-    expect(card()).toBeNull()
-    expect(screen.queryByRole('button', { name: /^展开第 \d/ })).toBeNull()
-    await user.click(running)
-    expect(card()).toBeNull()
+    // 在侧栏显示生成状态，保留当前选用的原片，其他段照常可选。
+    expect(await within(versionStrip()).findByRole('button', { name: /V2 · 生成中/ })).toBeVisible()
+    expect(within(track).queryByRole('img', { name: /AI 生成中/ })).toBeNull()
+    expect(within(track).queryByRole('status')).toBeNull()
+    expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
 
     // 再选一段：要求已经清空。
     await user.click(segmentOf(track, 1))
@@ -566,91 +609,101 @@ describe('AI 改段的弹出卡', () => {
   })
 })
 
-describe('版本条与草稿', () => {
-  it('只有原片一版、没有改动时没得切，不显示版本条', async () => {
+describe('整片版本与片段选用', () => {
+  it('整片与片段共用现有版本栏，只有原片时显示 V1，没有未合成入口', async () => {
     serveChain([])
-    await renderEditor()
-
-    await timeline()
-    expect(screen.queryByRole('group', { name: '视频版本' })).toBeNull()
-    expect(screen.queryByRole('group', { name: '预览版本' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '合成成片' })).toBeNull()
-  })
-
-  it('没有存着的草稿时按服务端重建：完成的 AI 结果放回原位，多出「未合成」一格并选中', async () => {
-    restoreMedia = stubMediaDurations({ [EDITED_URL]: 2.5 })
-    serveChain([editSegment({ outputUrl: EDITED_URL })])
     const user = userEvent.setup()
     await renderEditor()
 
-    const strip = await screen.findByRole('group', { name: '视频版本' })
-    await waitFor(() =>
-      expect(
-        within(strip)
-          .getAllByRole('button')
-          .map((entry) => entry.getAttribute('aria-label')),
-      ).toEqual(['未合成', 'V1']),
-    )
-    expect(within(strip).getByRole('button', { name: '未合成' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    // 第 3–4 段换成了 2.5 秒的 AI 结果：共 7 段，比 V1 长 0.5 秒。
     const track = await timeline()
-    expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(7)
-    expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent(
-      '共 8.5 秒 · 比 V1 长 0.5 秒',
-    )
-    expect(screen.getByRole('group', { name: '预览版本' })).toBeVisible()
-    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '下载' })).toBeDisabled()
-
-    // 点 V1 看这一版本身：时间线只读，下载可用，草稿还在。
-    await user.click(within(strip).getByRole('button', { name: 'V1' }))
-    expect(within(strip).getByRole('button', { name: 'V1' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    expect(screen.queryByRole('group', { name: '预览版本' })).toBeNull()
-    expect(screen.getByRole('button', { name: '下载' })).toBeEnabled()
-    expect(screen.getByText(/正在查看 V1 原片/)).toBeVisible()
+    expect(versionButton('V1')).toBeVisible()
+    expect(screen.getByRole('group', { name: '视频预览范围' })).toBeVisible()
+    expect(within(versionStrip()).queryByRole('button', { name: /未合成/ })).toBeNull()
+    expect(within(track).queryByText('V1')).toBeNull()
+    expect(screen.queryByRole('button', { name: '合成成片' })).toBeNull()
+    await user.click(segmentOf(track, 2))
+    expect(scopeButton('片段')).toHaveAttribute('aria-pressed', 'true')
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(within(track).queryByText('V1')).toBeNull()
   })
 
-  it('还在生成的编辑段放成锁定的占位，盖着「生成中」，合成灰着', async () => {
-    serveChain([editSegment({ status: 'submitted' })])
+  it('已有编辑结果只列为候选；点击 V2 才选用，查看整片不会清掉片段选择，V1 可恢复原片', async () => {
+    restoreMedia = stubMediaDurations({ [EDITED_URL]: 2.5 })
+    serveChain([editSegment({ outputUrl: EDITED_URL, durationMs: 2500 })])
+    const user = userEvent.setup()
     await renderEditor()
-
     const track = await timeline()
-    expect(await within(track).findByRole('img', { name: /AI 生成中/ })).toBeVisible()
-    expect(within(track).getByRole('status')).toHaveTextContent(/生成中 \d+:\d{2}/)
-    expect(screen.getByRole('button', { name: '合成成片' })).toBeDisabled()
+    // 已编辑区间归成一段，但仍然使用原来的 2 秒素材。
+    expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(7)
+    expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 8.0 秒')
+    await user.click(segmentOf(track, 3))
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
+    await user.click(versionButton('V2'))
+    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'true')
+    expect(within(segmentOf(track, 3)).getByText('V2')).toBeVisible()
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', EDITED_URL)
+    expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 8.5 秒')
+    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
+
+    await user.click(scopeButton('整片'))
+    expect(within(versionStrip()).getAllByRole('button')).toHaveLength(1)
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
+    expect(within(segmentOf(track, 3)).getByText('V2')).toBeVisible()
+    await user.click(segmentOf(track, 3))
+    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'true')
+    await user.click(versionButton('V1'))
+    expect(within(segmentOf(track, 3)).getByText('V1')).toBeVisible()
+    expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 8.0 秒')
+    expect(within(track).getAllByText(/^V\d+$/)).toHaveLength(1)
   })
 
-  it('结果的时长读不出来：占位换回原来的段，并说出原因', async () => {
+  it('生成状态只在侧边版本栏，保留当前素材和片段高亮，其他片段可以继续剪辑', async () => {
+    serveChain([editSegment({ status: 'submitted' })])
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+    await user.click(segmentOf(track, 3))
+    expect(versionButton('V2')).toHaveAccessibleName(/生成中/)
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(segmentOf(track, 3)).toHaveAttribute('aria-pressed', 'true')
+    expect(within(track).queryByRole('img', { name: /AI 生成中/ })).toBeNull()
+    expect(within(track).queryByRole('status')).toBeNull()
+    await user.click(segmentOf(track, 1))
+    await user.keyboard('{Delete}')
+    expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(6)
+    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
+  })
+
+  it('结果时长读不出来时不能选用，保留当前素材并说明失败', async () => {
     restoreMedia = stubMediaDurations({ [EDITED_URL]: null })
     serveChain([editSegment({ outputUrl: EDITED_URL })])
+    const user = userEvent.setup()
     await renderEditor()
-
-    expect(await screen.findByText('AI 修改失败：结果时长读取失败，已恢复原来的段')).toBeVisible()
     const track = await timeline()
-    expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(8)
-    expect(screen.queryByRole('group', { name: '视频版本' })).toBeNull()
+    await user.click(segmentOf(track, 3))
+    await user.click(versionButton('V2'))
+    expect(await screen.findByText(/结果时长读取失败/)).toBeVisible()
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 8.0 秒')
   })
 
-  it('存着的草稿读不出来：按服务端重建，并说一声', async () => {
+  it('存着的剪辑选择读不出来：恢复原片并说明，已有候选仍能选择', async () => {
     window.localStorage.setItem(draftStorageKey(CONVERSATION, ROOT_ID), '{"version":1')
     serveChain([])
     await renderEditor()
-
-    expect(await screen.findByText('草稿读取失败，已根据 AI 生成结果重建')).toBeVisible()
-    expect(window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID))).toBeNull()
+    expect(
+      await screen.findByText('剪辑选择读取失败，已恢复原片；生成结果仍可在片段版本中选择'),
+    ).toBeVisible()
+    expect(await timeline()).toBeVisible()
   })
 
-  it('剪了就存进浏览器：删掉一段后重开，草稿还在', async () => {
+  it('剪了就存进浏览器：删掉一段后重开，选择和时长仍然保留', async () => {
     serveChain([])
     const user = userEvent.setup()
     const { unmount } = await renderEditor()
-
     const track = await timeline()
     await user.click(segmentOf(track, 2))
     await user.keyboard('{Delete}')
@@ -659,13 +712,156 @@ describe('版本条与草稿', () => {
       expect(window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID))).not.toBeNull(),
     )
     unmount()
-
     await renderEditor()
-    const reopened = await timeline()
-    expect(within(reopened).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(7)
+    expect(within(await timeline()).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(7)
     expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent(
       '共 7.0 秒 · 比 V1 短 1.0 秒',
     )
+  })
+})
+
+describe('片段版本的提交来源', () => {
+  it('在已选 V2 上继续编辑，参考使用当前结果，版本仍绑定原片替换区间', async () => {
+    loginAs(mockAuthUser)
+    files.set(EDITED_URL, { keyframes: [0], duration: 2.5 })
+    const used = editSegment({ outputUrl: EDITED_URL, durationMs: 2500 })
+    serveChain([used])
+    let submitted: Record<string, unknown> | undefined
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(
+          {
+            generation: editSegment({
+              status: 'submitted',
+              sourceJobId: ROOT_ID,
+              rangeStartMs: 2000,
+              rangeEndMs: 4000,
+            }),
+          },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 3))
+    await user.click(versionButton('V2'))
+    pasteTextIntoComposer(requestBox(), '鞋底再厚一点')
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toBeDefined())
+    expect(submitted).toMatchObject({
+      source_job_id: ROOT_ID,
+      range_start_ms: 2000,
+      range_end_ms: 4000,
+      prompt: '鞋底再厚一点',
+    })
+    expect(referenceSamples).toEqual([{ url: EDITED_URL, start: 0, end: 2.5 }])
+  })
+
+  it('选中已编辑区间及相邻原片，用当前内容生成更大范围，采用后只替换这个范围', async () => {
+    loginAs(mockAuthUser)
+    files.set(EDITED_URL, { keyframes: [0], duration: 3 })
+    const used = editSegment({ outputUrl: EDITED_URL, durationMs: 3000 })
+    const wideUrl = 'https://example.com/wide.mp4'
+    files.set(wideUrl, { keyframes: [0], duration: 5 })
+    const wide = editSegment({ outputUrl: wideUrl, durationMs: 5000, rangeEndMs: 6000 })
+    const chain = [used]
+    let submitted: Record<string, unknown> | undefined
+    server.use(
+      http.get('*/api/generations', () => HttpResponse.json({ items: chain })),
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted = (await request.json()) as Record<string, unknown>
+        chain.push(wide)
+        return HttpResponse.json({ generation: wide }, { status: 202 })
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+    await user.click(segmentOf(track, 3))
+    await user.click(versionButton('V2'))
+    await user.keyboard('{Shift>}')
+    await user.click(segmentOf(track, 4))
+    await user.click(segmentOf(track, 5))
+    await user.keyboard('{/Shift}')
+    expect(within(openCard()).getByText('2.0 – 6.0 秒 · 视频和原声一起重做')).toBeVisible()
+    pasteTextIntoComposer(requestBox(), '相邻两段光线保持一致')
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toBeDefined())
+    expect(submitted).toMatchObject({
+      source_job_id: ROOT_ID,
+      range_start_ms: 2000,
+      range_end_ms: 6000,
+    })
+    expect(referenceSamples).toEqual([
+      { url: EDITED_URL, start: 0, end: 3 },
+      { url: ROOT_URL, start: 4, end: 5 },
+      { url: ROOT_URL, start: 5, end: 6 },
+    ])
+    await user.click(
+      await within(versionStrip()).findByRole('button', { name: /^V2(?: · 新结果)?$/ }),
+    )
+    expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(5)
+    expect(segmentOf(track, 3)).toHaveAccessibleName('第 3 段 · 2–7 秒')
+    expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 9.0 秒')
+    await user.click(versionButton('V1'))
+    expect(segmentOf(track, 3)).toHaveAccessibleName('第 3 段 · 2–6 秒')
+    expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 8.0 秒')
+  })
+
+  it('合成使用各段最终选用的版本与顺序，没有采用的候选不进入请求', async () => {
+    const first = editSegment({
+      rangeStartMs: 1000,
+      rangeEndMs: 2000,
+      outputUrl: EDITED_URL,
+      durationMs: 1500,
+    })
+    const second = editSegment({
+      rangeStartMs: 4000,
+      rangeEndMs: 5000,
+      outputUrl: 'https://example.com/other-edit.mp4',
+      durationMs: 800,
+    })
+    serveChain([first, second])
+    let submitted: Record<string, unknown> | undefined
+    server.use(
+      http.post('*/api/generations/video-composites', async ({ request }) => {
+        submitted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(
+          {
+            generation: makeGenerationJob({
+              operation: 'compose',
+              status: 'submitted',
+              rootJobId: ROOT_ID,
+              sourceJobId: ROOT_ID,
+            }),
+          },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+    await user.click(segmentOf(track, 2))
+    await user.click(versionButton('V2'))
+    await user.click(segmentOf(track, 5))
+    await user.click(versionButton('V2'))
+    await user.click(versionButton('V1'))
+    await user.click(screen.getByRole('button', { name: '合成成片' }))
+    await waitFor(() => expect(submitted).toBeDefined())
+    expect(submitted).toMatchObject({
+      baseJobId: ROOT_ID,
+      segments: [
+        { sourceJobId: ROOT_ID, start: 0, end: 1 },
+        { sourceJobId: first.id, start: 0, end: 1.5 },
+        ...[2, 3, 4, 5, 6, 7].map((start) => ({ sourceJobId: ROOT_ID, start, end: start + 1 })),
+      ],
+    })
+    expect(JSON.stringify(submitted)).not.toContain(second.id)
   })
 })
 
@@ -771,9 +967,7 @@ describe('刷新与切换页面后的编辑历史', () => {
       .map((entry) => entry.getAttribute('aria-label'))
   /** 控制条上的总长与比原版长短（不含播放头时刻）。 */
   const readout = () =>
-    screen
-      .getByRole('group', { name: '播放控件' })
-      .textContent.match(/共 [\d.]+ 秒( · 比 V\d+ [短长] [\d.]+ 秒)?/)?.[0]
+    screen.getByRole('group', { name: '播放控件' }).textContent.match(/共 [\d.]+ 秒/)?.[0]
   const stored = (versionJobId: string) =>
     window.localStorage.getItem(draftStorageKey(CONVERSATION, versionJobId))
 
@@ -783,7 +977,7 @@ describe('刷新与切换页面后的编辑历史', () => {
     records = []
   })
 
-  it('情形 1：在 V1 上剪辑并合成出 V2 后刷新、再切换页面，版本条仍是 V2、V1，看的是新的 V2', async () => {
+  it('合成完成后查看新整片，刷新与切换页面仍保留原基底上的剪辑选择', async () => {
     serveRecords()
     serveComposeSubmit()
     const user = userEvent.setup()
@@ -792,33 +986,34 @@ describe('刷新与切换页面后的编辑历史', () => {
     await user.click(segmentOf(track, 2))
     await user.keyboard('{Delete}')
     await user.click(screen.getByRole('button', { name: '合成成片' }))
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成 · 合成中', 'V1']))
-
+    await waitFor(() => expect(stored(ROOT_ID)).toContain(COMPOSITE_ID))
     finishComposite()
     await act(() => view.queryClient.invalidateQueries())
+    await user.click(scopeButton('整片'))
     await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
-    // 合成完成，基底那份草稿按设计清掉。
-    await waitFor(() => expect(stored(ROOT_ID)).toBeNull())
+    expect(segmentNames(track)).toHaveLength(7)
+    await waitFor(() => expect(stored(ROOT_ID)).not.toContain(COMPOSITE_ID))
+    expect(stored(ROOT_ID)).not.toBeNull()
+    const saved = stored(ROOT_ID)
 
     const refreshed = await refresh(view)
     await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
     expect(pickedLabel()).toBe('V2')
     expect(segmentNames(await timeline())).toHaveLength(7)
-
+    expect(stored(ROOT_ID)).toBe(saved)
     switchAway(refreshed)
     await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
-    expect(pickedLabel()).toBe('V2')
+    expect(segmentNames(await timeline())).toHaveLength(7)
+    expect(stored(ROOT_ID)).toBe(saved)
   })
 
-  it('情形 2：最新版上裁剪、删段、调序后刷新、切换页面，未合成草稿原样还在', async () => {
+  it('最新版上裁剪、删段、调序后刷新或切换页面，顺序、时长和基底都保留', async () => {
     records = [composite()]
     serveRecords()
     const user = userEvent.setup()
     const view = await renderEditor()
     const track = await timeline()
     await waitFor(() => expect(segmentNames(track)).toHaveLength(7))
-
-    // 裁剪第 3 段结尾两下，再删第 6 段，再把第 1 段往后挪一格。
     await user.click(segmentOf(track, 3))
     const trimEnd = screen.getByRole('slider', { name: '裁剪该段结尾' })
     fireEvent.keyDown(trimEnd, { key: 'ArrowLeft' })
@@ -831,275 +1026,241 @@ describe('刷新与切换页面后的编辑历史', () => {
     const names = segmentNames(track)
     const total = readout()
     expect(names).toHaveLength(6)
-
+    await user.click(scopeButton('整片'))
     const refreshed = await refresh(view)
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成', 'V2', 'V1']))
-    expect(pickedLabel()).toBe('未合成')
+    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
     expect(segmentNames(await timeline())).toEqual(names)
+    expect(readout()).toBe('共 7.0 秒')
+    expect(screen.getByRole('button', { name: '拆分' })).toBeDisabled()
+    await user.click(scopeButton('片段'))
     expect(readout()).toBe(total)
-
     switchAway(refreshed)
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成', 'V2', 'V1']))
-    expect(segmentNames(await timeline())).toEqual(names)
+    await waitFor(() =>
+      expect(segmentNames(screen.getByRole('region', { name: '视频编辑时间线' }))).toEqual(names),
+    )
   })
 
-  it('情形 3：最新版上已完成的 AI 改段（未合成）加一次删段，刷新后两者都在，不提示重建', async () => {
+  it('用户选用的 AI 片段与删段一起保存，刷新后不会退回原片或改选其他候选', async () => {
     records = [composite(), editOnV2({ outputUrl: EDITED_URL, durationMs: 2500 })]
     serveRecords()
     const user = userEvent.setup()
     const view = await renderEditor()
     const track = await timeline()
-    // V2 的第 3–4 段换成 2.5 秒的 AI 结果：6 段。
     await waitFor(() => expect(segmentNames(track)).toHaveLength(6))
+    await user.click(segmentOf(track, 3))
+    await user.click(versionButton('V2'))
     await user.click(segmentOf(track, 6))
     await user.keyboard('{Delete}')
-    await waitFor(() => expect(stored(COMPOSITE_ID)).not.toBeNull())
+    await waitFor(() => expect(stored(COMPOSITE_ID)).toContain(EDIT_ON_V2_ID))
     const names = segmentNames(track)
     const total = readout()
-
     await refresh(view)
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成', 'V2', 'V1']))
-    expect(segmentNames(await timeline())).toEqual(names)
+    const reopened = await timeline()
+    expect(segmentNames(reopened)).toEqual(names)
     expect(readout()).toBe(total)
-    expect(screen.queryByText(/草稿读取失败/)).toBeNull()
+    expect(within(segmentOf(reopened, 3)).getByText('V2')).toBeVisible()
+    expect(screen.queryByText(/剪辑选择读取失败/)).toBeNull()
   })
 
-  it('情形 4a：AI 改段还在跑时刷新，占位与其他剪辑都在；跑完后落成结果', async () => {
+  it('生成期间刷新仍保留原片和其他剪辑；完成只新增候选，用户点击后才替换', async () => {
     records = [composite(), editOnV2({ status: 'submitted' })]
     serveRecords()
     const user = userEvent.setup()
     const view = await renderEditor()
     const track = await timeline()
-    expect(await within(track).findByRole('img', { name: /AI 生成中/ })).toBeVisible()
     await user.click(segmentOf(track, 1))
     await user.keyboard('{Delete}')
     await waitFor(() => expect(stored(COMPOSITE_ID)).not.toBeNull())
-
     const refreshed = await refresh(view)
     const reopened = await timeline()
-    expect(await within(reopened).findByRole('img', { name: /AI 生成中/ })).toBeVisible()
-    expect(segmentNames(reopened)).toHaveLength(4)
-    expect(stripLabels()).toEqual(['未合成', 'V2', 'V1'])
-
+    expect(segmentNames(reopened)).toHaveLength(5)
+    await user.click(segmentOf(reopened, 2))
+    expect(versionButton('V2')).toHaveAccessibleName(/生成中/)
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
     records = records.map((job) =>
       job.id === EDIT_ON_V2_ID ? editOnV2({ outputUrl: EDITED_URL, durationMs: 2500 }) : job,
     )
     await act(() => refreshed.queryClient.invalidateQueries())
-    await waitFor(() =>
-      expect(within(reopened).queryByRole('img', { name: /AI 生成中/ })).toBeNull(),
-    )
-    expect(segmentNames(reopened)).toHaveLength(5)
+    await waitFor(() => expect(versionButton('V2')).not.toHaveAccessibleName(/生成中/))
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(readout()).toContain('共 6.0 秒')
+    await user.click(versionButton('V2'))
+    expect(versionButton('V2')).toHaveAttribute('aria-pressed', 'true')
+    expect(readout()).toContain('共 6.5 秒')
   })
 
-  /** 情形 4b：合成跑着时刷新，草稿挂着「合成中」、剪辑都在；刷新后合成才完成，到 V2。 */
-  const composeThenRefreshThenFinish = async () => {
-    serveRecords()
-    serveComposeSubmit()
-    const user = userEvent.setup()
-    const view = await renderEditor()
-    await user.click(segmentOf(await timeline(), 2))
-    await user.keyboard('{Delete}')
-    await user.click(screen.getByRole('button', { name: '合成成片' }))
-    await waitFor(() => expect(stored(ROOT_ID)).toContain(COMPOSITE_ID))
+  it.each([false, true])(
+    '合成期间关闭，回来时已完成=%s：等待会落定，剪辑选择保留，整片可切回 V1',
+    async (finishBeforeReopen) => {
+      serveRecords()
+      serveComposeSubmit()
+      const user = userEvent.setup()
+      const view = await renderEditor()
+      await user.click(segmentOf(await timeline(), 2))
+      await user.keyboard('{Delete}')
+      await user.click(screen.getByRole('button', { name: '合成成片' }))
+      await waitFor(() => expect(stored(ROOT_ID)).toContain(COMPOSITE_ID))
+      view.unmount()
+      if (finishBeforeReopen) finishComposite()
+      const reopened = await renderEditor()
+      expect(segmentNames(await timeline())).toHaveLength(7)
+      if (!finishBeforeReopen) {
+        finishComposite()
+        await act(() => reopened.queryClient.invalidateQueries())
+      }
+      await user.click(scopeButton('整片'))
+      await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
+      await waitFor(() => expect(stored(ROOT_ID)).not.toContain(COMPOSITE_ID))
+      expect(stored(ROOT_ID)).not.toBeNull()
+      await user.click(versionButton('V1'))
+      expect(pickedLabel()).toBe('V1')
+      expect(segmentNames(await timeline())).toHaveLength(7)
+    },
+  )
 
-    const refreshed = await refresh(view)
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成 · 合成中', 'V1']))
-    expect(segmentNames(await timeline())).toHaveLength(7)
-    finishComposite()
-    await act(() => refreshed.queryClient.invalidateQueries())
-    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
-    expect(pickedLabel()).toBe('V2')
-    return user
-  }
-
-  it('情形 4b：刷新后合成才完成，基底 V1 那份草稿清掉（与不刷新时一样，见情形 1）', async () => {
-    await composeThenRefreshThenFinish()
-
-    await waitFor(() => expect(stored(ROOT_ID)).toBeNull())
-  })
-
-  it('合成期间关掉编辑器，回来时合成已完成：打开的是新的 V2，基底草稿清掉', async () => {
-    serveRecords()
-    serveComposeSubmit()
-    const user = userEvent.setup()
-    const view = await renderEditor()
-    await user.click(segmentOf(await timeline(), 2))
-    await user.keyboard('{Delete}')
-    await user.click(screen.getByRole('button', { name: '合成成片' }))
-    await waitFor(() => expect(stored(ROOT_ID)).toContain(COMPOSITE_ID))
-
-    view.unmount()
-    finishComposite()
-    await renderEditor()
-    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
-    await waitFor(() => expect(pickedLabel()).toBe('V2'))
-    expect(stored(ROOT_ID)).toBeNull()
-  })
-
-  it('合成期间去看别的版本后关掉，回来再点那一版：停在它本身，不被带去新版本', async () => {
-    const SECOND_ID = '4c5d6e7f-8091-4b2c-9d3e-4f5a6b7c8d9e'
-    const second = (overrides: Parameters<typeof makeGenerationJob>[0]) =>
-      composite({
-        id: SECOND_ID,
-        createdAt: '2026-09-16T10:20:00Z',
-        finishedAt: null,
-        ...overrides,
-      })
+  it('合成期间查看其他整片，关闭再回来：新整片仍可查看，当前剪辑不会被旧成片覆盖', async () => {
+    const NEXT_ID = '4c5d6e7f-8091-4b2c-9d3e-4f5a6b7c8d9e'
     records = [composite()]
     serveRecords()
     server.use(
       http.post('*/api/generations/video-composites', () => {
-        const created = second({ status: 'submitted', outputUrl: null })
+        const created = composite({
+          id: NEXT_ID,
+          sourceJobId: COMPOSITE_ID,
+          status: 'submitted',
+          outputUrl: null,
+          finishedAt: null,
+          createdAt: '2026-09-16T10:20:00Z',
+        })
         records = [...records, created]
         return HttpResponse.json({ generation: created }, { status: 202 })
       }),
     )
     const user = userEvent.setup()
     const view = await renderEditor()
-    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
-    await user.click(within(strip()).getByRole('button', { name: 'V1' }))
-    const track = await timeline()
-    await waitFor(() => expect(segmentNames(track)).toHaveLength(8))
-    await user.click(segmentOf(track, 2))
+    await user.click(segmentOf(await timeline(), 2))
     await user.keyboard('{Delete}')
     await user.click(screen.getByRole('button', { name: '合成成片' }))
-    await waitFor(() => expect(stored(ROOT_ID)).toContain(SECOND_ID))
-    await user.click(within(strip()).getByRole('button', { name: 'V2' }))
-
+    await waitFor(() => expect(stored(COMPOSITE_ID)).toContain(NEXT_ID))
+    await user.click(scopeButton('整片'))
+    await user.click(versionButton('V1'))
     view.unmount()
     records = records.map((job) =>
-      job.id === SECOND_ID
-        ? second({ finishedAt: '2026-09-16T10:21:00Z', outputUrl: 'https://example.com/v3.mp4' })
+      job.id === NEXT_ID
+        ? {
+            ...job,
+            status: 'completed',
+            finishedAt: '2026-09-16T10:21:00Z',
+            outputUrl: 'https://example.com/v3.mp4',
+          }
         : job,
     )
-    files.set('https://example.com/v3.mp4', { keyframes: [0, 1, 2, 3, 4, 5, 6], duration: 7 })
+    files.set('https://example.com/v3.mp4', { keyframes: [0, 1, 2, 3, 4, 5], duration: 6 })
     await renderEditor()
     await waitFor(() => expect(stripLabels()).toEqual(['V3', 'V2', 'V1']))
-    expect(pickedLabel()).toBe('V2')
-
-    await user.click(within(strip()).getByRole('button', { name: 'V1' }))
-    await waitFor(() => expect(stored(ROOT_ID)).toBeNull())
+    expect(segmentNames(await timeline())).toHaveLength(6)
+    expect(stored(COMPOSITE_ID)).not.toBeNull()
+    await user.click(versionButton('V1'))
     expect(pickedLabel()).toBe('V1')
+    expect(segmentNames(await timeline())).toHaveLength(6)
   })
 
-  it('不在看的那一版合成失败：提示说出是哪一版，那份草稿留着、不再等合成', async () => {
-    const SECOND_ID = '3b4c5d6e-7f80-4a1b-8c2d-3e4f5a6b7c8d'
-    const second = (overrides: Parameters<typeof makeGenerationJob>[0]) =>
-      composite({ id: SECOND_ID, createdAt: '2026-09-16T10:20:00Z', ...overrides })
+  it('查看原片时合成失败：说明失败原因，保留当前剪辑并可重新合成', async () => {
+    const NEXT_ID = '3b4c5d6e-7f80-4a1b-8c2d-3e4f5a6b7c8d'
     records = [composite()]
     serveRecords()
     server.use(
       http.post('*/api/generations/video-composites', () => {
-        const created = second({ status: 'submitted', finishedAt: null, outputUrl: null })
+        const created = composite({
+          id: NEXT_ID,
+          sourceJobId: COMPOSITE_ID,
+          status: 'submitted',
+          finishedAt: null,
+          outputUrl: null,
+          createdAt: '2026-09-16T10:20:00Z',
+        })
         records = [...records, created]
         return HttpResponse.json({ generation: created }, { status: 202 })
       }),
     )
     const user = userEvent.setup()
     const view = await renderEditor()
-    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
-    await user.click(within(strip()).getByRole('button', { name: 'V1' }))
-    const track = await timeline()
-    await waitFor(() => expect(segmentNames(track)).toHaveLength(8))
-    await user.click(segmentOf(track, 2))
+    await user.click(segmentOf(await timeline(), 2))
     await user.keyboard('{Delete}')
     await user.click(screen.getByRole('button', { name: '合成成片' }))
-    await waitFor(() => expect(stored(ROOT_ID)).toContain(SECOND_ID))
-
-    // 合成跑着时去看 V2，之后那次合成失败。
-    await user.click(within(strip()).getByRole('button', { name: 'V2' }))
+    await waitFor(() => expect(stored(COMPOSITE_ID)).toContain(NEXT_ID))
+    await user.click(scopeButton('整片'))
+    await user.click(versionButton('V1'))
     records = records.map((job) =>
-      job.id === SECOND_ID
-        ? second({ status: 'failed', outputUrl: null, errorMessage: '素材下载失败' })
-        : job,
+      job.id === NEXT_ID ? { ...job, status: 'failed', errorMessage: '素材下载失败' } : job,
     )
     await act(() => view.queryClient.invalidateQueries())
-
-    expect(await screen.findByText('V1 合成失败：素材下载失败')).toBeVisible()
-    expect(pickedLabel()).toBe('V2')
-    await waitFor(() => expect(stored(ROOT_ID)).not.toContain(SECOND_ID))
-    expect(stored(ROOT_ID)).not.toBeNull()
-  })
-
-  it('情形 4b：刷新后合成才完成，再点 V1 停在 V1', async () => {
-    const user = await composeThenRefreshThenFinish()
-
-    await user.click(within(strip()).getByRole('button', { name: 'V1' }))
+    expect(await screen.findByText(/合成失败：素材下载失败/)).toBeVisible()
     expect(pickedLabel()).toBe('V1')
+    await waitFor(() => expect(stored(COMPOSITE_ID)).not.toContain(NEXT_ID))
+    expect(stored(COMPOSITE_ID)).not.toBeNull()
+    expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
   })
 
-  it('情形 5：已有 V2 时回到 V1 剪辑，刷新后仍在 V1 的「未合成」、剪辑都在；链读到前的暂态不动 V2 的草稿', async () => {
+  it('切换整片 V1/V2 与刷新仅改变查看对象，不改当前片段顺序和保存的编辑基底', async () => {
     records = [composite()]
     serveRecords()
     const user = userEvent.setup()
     const view = await renderEditor()
-    // V2 上先删一段，留一份 V2 的草稿；再回到 V1 删一段。
     const track = await timeline()
-    await waitFor(() => expect(segmentNames(track)).toHaveLength(7))
-    await user.click(segmentOf(track, 7))
-    await user.keyboard('{Delete}')
-    await waitFor(() => expect(stored(COMPOSITE_ID)).not.toBeNull())
-    const v2Draft = stored(COMPOSITE_ID)
-    await user.click(within(strip()).getByRole('button', { name: 'V1' }))
-    await waitFor(() => expect(segmentNames(track)).toHaveLength(8))
     await user.click(segmentOf(track, 2))
     await user.keyboard('{Delete}')
-    await waitFor(() => expect(stripLabels()).toEqual(['V2', '未合成', 'V1']))
-    await waitFor(() => expect(stored(ROOT_ID)).not.toBeNull())
     const names = segmentNames(track)
-
-    // 刷新：链先挡着，这段时间版本里只有 V1。
+    await user.click(scopeButton('整片'))
+    await user.click(versionButton('V1'))
+    expect(segmentNames(track)).toEqual(names)
+    await waitFor(() => expect(stored(COMPOSITE_ID)).not.toBeNull())
+    const saved = stored(COMPOSITE_ID)
     let releaseChain = () => {}
     serveRecords(new Promise<void>((resolve) => (releaseChain = resolve)))
     await refresh(view)
     expect(await screen.findByText('正在读取分段…')).toBeVisible()
     await act(async () => releaseChain())
-    await waitFor(() => expect(stripLabels()).toEqual(['V2', '未合成', 'V1']))
-    expect(pickedLabel()).toBe('未合成')
+    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
+    expect(pickedLabel()).toBe('V1')
     expect(segmentNames(await timeline())).toEqual(names)
-    expect(stored(COMPOSITE_ID)).toBe(v2Draft)
-
-    await user.click(within(strip()).getByRole('button', { name: 'V2' }))
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成', 'V2', 'V1']))
-    await user.click(within(strip()).getByRole('button', { name: '未合成' }))
-    expect(segmentNames(await timeline())).toHaveLength(6)
+    expect(stored(COMPOSITE_ID)).toBe(saved)
+    await user.click(versionButton('V2'))
+    expect(segmentNames(await timeline())).toEqual(names)
   })
 
   it.each([
-    { name: '记着的那一版已不在', value: JSON.stringify({ jobId: 'gone', view: 'version' }) },
+    {
+      name: '记着的那一版已不在',
+      value: JSON.stringify({ jobId: 'gone', baseJobId: 'gone', view: 'whole' }),
+    },
     { name: '记着的读不出来', value: '{"jobId":' },
-  ])('$name：看最新版，它的草稿照常显示', async ({ value }) => {
+  ])('$name：恢复最新版，已保存的片段选择照常显示', async ({ value }) => {
     records = [composite()]
     serveRecords()
     const user = userEvent.setup()
     const view = await renderEditor()
-    const track = await timeline()
-    await waitFor(() => expect(segmentNames(track)).toHaveLength(7))
-    await user.click(segmentOf(track, 2))
+    await user.click(segmentOf(await timeline(), 2))
     await user.keyboard('{Delete}')
     await waitFor(() => expect(stored(COMPOSITE_ID)).not.toBeNull())
-
     view.unmount()
     window.localStorage.setItem(viewStorageKey(CONVERSATION, ROOT_ID), value)
     await renderEditor()
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成', 'V2', 'V1']))
-    expect(pickedLabel()).toBe('未合成')
     expect(segmentNames(await timeline())).toHaveLength(6)
+    await user.click(scopeButton('整片'))
+    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
+    expect(pickedLabel()).toBe('V2')
   })
 
-  it('情形 7：刷新后链比 V1 关键帧先到、V2 关键帧最后到，不用 V1 的分段装载，也不误删 V2 草稿', async () => {
+  it('链与关键帧分批到达时，不用 V1 分段装载或覆盖 V2 上保存的选择', async () => {
     records = [composite()]
     serveRecords()
     const user = userEvent.setup()
     const view = await renderEditor()
-    const track = await timeline()
-    await waitFor(() => expect(segmentNames(track)).toHaveLength(7))
-    await user.click(segmentOf(track, 2))
+    await user.click(segmentOf(await timeline(), 2))
     await user.keyboard('{Delete}')
     await waitFor(() => expect(stored(COMPOSITE_ID)).not.toBeNull())
-    const names = segmentNames(track)
-
-    // 刷新：先挡住链与 V2 的关键帧，V1 的关键帧先读完。
+    const names = segmentNames(await timeline())
     let releaseChain = () => {}
     serveRecords(new Promise<void>((resolve) => (releaseChain = resolve)))
     let releaseV2 = () => {}
@@ -1107,47 +1268,46 @@ describe('刷新与切换页面后的编辑历史', () => {
     await refresh(view)
     expect(await screen.findByText('正在读取分段…')).toBeVisible()
     await act(async () => releaseChain())
-    await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
     expect(stored(COMPOSITE_ID)).not.toBeNull()
-
     await act(async () => releaseV2())
-    await waitFor(() => expect(stripLabels()).toEqual(['未合成', 'V2', 'V1']))
-    expect(segmentNames(await timeline())).toEqual(names)
+    await waitFor(() =>
+      expect(segmentNames(screen.getByRole('region', { name: '视频编辑时间线' }))).toEqual(names),
+    )
   })
 
-  it('链上记录超过 100 条：更早的合成被挤出那一页，刷新后 V2 仍应在版本条上', async () => {
-    // V2 之后又在 V2 上提交了 100 次 AI 改段（失败的也占名额）。
-    const laterEdits = Array.from({ length: 100 }, (_, at) =>
-      editOnV2({
-        id: crypto.randomUUID(),
-        status: 'failed',
-        errorMessage: '上游超时',
-        createdAt: new Date(Date.parse('2026-09-16T11:00:00Z') + at * 1000).toISOString(),
-      }),
-    )
-    records = [composite(), ...laterEdits]
+  it('链上超过 100 条编辑记录，较早的合成仍出现在整片版本栏', async () => {
+    records = [
+      composite(),
+      ...Array.from({ length: 100 }, (_, at) =>
+        editOnV2({
+          id: crypto.randomUUID(),
+          status: 'failed',
+          errorMessage: '上游超时',
+          createdAt: new Date(Date.parse('2026-09-16T11:00:00Z') + at * 1000).toISOString(),
+        }),
+      ),
+    ]
     serveRecords()
+    const user = userEvent.setup()
     await renderEditor()
-
     await timeline()
+    await user.click(scopeButton('整片'))
     await waitFor(() => expect(stripLabels()).toEqual(['V2', 'V1']))
   })
 
-  it('链上记录超过 100 条：草稿里用着的那条 AI 结果被挤出那一页，刷新后草稿应原样还在、不被重建', async () => {
+  it('超过 100 条记录时，已选用的早期 AI 结果仍可恢复，不会按较新失败结果重建', async () => {
     const used = editSegment({ outputUrl: EDITED_URL, durationMs: 2500 })
     records = [used]
     serveRecords()
     const user = userEvent.setup()
     const view = await renderEditor()
     const track = await timeline()
-    // V1 第 3–4 段换成 AI 结果后共 7 段，再删最后一段。
-    await waitFor(() => expect(segmentNames(track)).toHaveLength(7))
+    await user.click(segmentOf(track, 3))
+    await user.click(versionButton('V2'))
     await user.click(segmentOf(track, 7))
     await user.keyboard('{Delete}')
-    await waitFor(() => expect(stored(ROOT_ID)).not.toBeNull())
+    await waitFor(() => expect(stored(ROOT_ID)).toContain(used.id))
     const names = segmentNames(track)
-
-    // 之后又在 V1 上提交了 100 次都失败的 AI 改段。
     records = [
       used,
       ...Array.from({ length: 100 }, (_, at) =>
@@ -1159,9 +1319,8 @@ describe('刷新与切换页面后的编辑历史', () => {
       ),
     ]
     await refresh(view)
-    const reopened = await timeline()
-    await waitFor(() => expect(segmentNames(reopened)).toEqual(names))
-    expect(screen.queryByText(/草稿读取失败/)).toBeNull()
+    expect(segmentNames(await timeline())).toEqual(names)
+    expect(screen.queryByText(/剪辑选择读取失败/)).toBeNull()
   })
 })
 

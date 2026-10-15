@@ -223,6 +223,14 @@
   scrollbar-width: none;
 }
 
+.video-editor-versions-title {
+  align-self: center;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
 /* 合成失败那一格的警示图标：与图片编辑版本条的失败格同色，只作点缀。 */
 .video-editor-version-failed {
   color: color-mix(in srgb, var(--color-error) 60%, var(--color-on-scrim));

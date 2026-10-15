@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { commit, redo, undo } from '../edit-history'
 import {
-  aiTarget,
   canRemove,
   canSplitAt,
   clickSelect,
@@ -11,10 +10,10 @@ import {
   isUnchanged,
   keyframeSegments,
   moveItems,
+  mergeSelection,
   parseStoredDraft,
   rebuildDraft,
   removeItems,
-  replaceWithPending,
   resolveHistory,
   serializeDraft,
   splitAt,
@@ -41,6 +40,17 @@ const clips = (draft: Draft) =>
       ? [item.sourceJobId, item.start, item.end]
       : ['pending', item.editJobId, item.replaced.length],
   )
+
+/** 上一版已保存的占位，继续保留它绑定的编辑任务。 */
+const storedPending = (draft: Draft, selection: readonly string[], editJobId: string): Draft => {
+  const from = draft.findIndex((item) => item.id === selection[0])
+  const replaced = draft.slice(from, from + selection.length).filter((item) => item.kind === 'clip')
+  return [
+    ...draft.slice(0, from),
+    { kind: 'pending', id: `pending@${editJobId}`, editJobId, replaced },
+    ...draft.slice(from + selection.length),
+  ]
+}
 
 describe('keyframeSegments', () => {
   it('按关键帧切成 [k_i, k_i+1)，最后一段到片尾；第一个关键帧不在 0 上时片头也算一段', () => {
@@ -89,7 +99,7 @@ describe('选中', () => {
   })
 
   it('占位点不动，也连不进选区', () => {
-    const draft = replaceWithPending(segments, [second, third], 'e1')
+    const draft = storedPending(segments, [second, third], 'e1')
     const pending = draft[1]?.id ?? ''
     expect(clickSelect(draft, [first], pending)).toEqual([first])
   })
@@ -148,7 +158,7 @@ describe('调序、拆分、删除', () => {
   })
 
   it('占位挪不动', () => {
-    const draft = replaceWithPending(segments, [seg(1).id], 'e1')
+    const draft = storedPending(segments, [seg(1).id], 'e1')
     expect(moveItems(draft, [draft[1]?.id ?? ''], 0).draft).toBe(draft)
   })
 
@@ -173,7 +183,7 @@ describe('调序、拆分、删除', () => {
   it('播放头在段的边上、贴着边或落在占位上时不拆', () => {
     expect(canSplitAt(segments, 2)).toBe(false)
     expect(canSplitAt(segments, 2.05)).toBe(false)
-    expect(canSplitAt(replaceWithPending(segments, [seg(2).id], 'e1'), 2.5)).toBe(false)
+    expect(canSplitAt(storedPending(segments, [seg(2).id], 'e1'), 2.5)).toBe(false)
   })
 
   it('删掉选中的段，后面的跟上，总长变短；删光不行', () => {
@@ -184,65 +194,36 @@ describe('调序、拆分、删除', () => {
   })
 })
 
-describe('AI 改', () => {
-  const editRanges = [{ id: 'e1', rangeStartMs: 1000, rangeEndMs: 3000, duration: 2.5 }]
-
-  it('一串连续的未改动基底段可以改，区间正好是它们的关键帧', () => {
-    expect(aiTarget(segments, [seg(1).id, seg(2).id], segments, [])).toEqual({
-      kind: 'ready',
-      range: { start: 1, end: 3 },
-      first: 2,
-      last: 3,
-    })
+describe('提交后的选区分组', () => {
+  it('连续同来源的多段归成一段，保留原片画面与选中', () => {
+    const grouped = mergeSelection(segments, [seg(1).id, seg(2).id])
+    expect(clips(grouped.draft)).toEqual([
+      [V, 0, 1],
+      [V, 1, 3],
+      [V, 3, 4],
+      [V, 4, 5],
+      [V, 5, 6],
+    ])
+    expect(grouped.selection).toEqual([`${V}@1-3`])
+    expect(isUnchanged(grouped.draft, segments)).toBe(true)
+    expect(compositeSegments(grouped.draft)).toHaveLength(5)
   })
 
-  it('删掉前面的段后，第几段按草稿里的位置数，区间仍按基底', () => {
-    const draft = removeItems(segments, [seg(0).id]).draft
-    expect(aiTarget(draft, [seg(1).id], segments, [])).toMatchObject({
-      range: { start: 1, end: 2 },
-      first: 1,
-    })
-  })
-
-  const coarse = keyframeSegments(V, { keyframes: [0, 2, 4], duration: 6 })
-  it.each([
-    { name: '裁过的段', draft: trimClip(coarse, coarse[1]?.id ?? '', 'end', 3.5).draft, pick: [1] },
-    { name: '拆过的段', draft: splitAt(coarse, 2.5)?.draft ?? [], pick: [1] },
-    { name: '调过序的段', draft: moveItems(coarse, [coarse[2]?.id ?? ''], 1).draft, pick: [0, 1] },
-  ])('选区里有 $name 就不能改', ({ draft, pick }) => {
-    const selection = pick.map((at) => draft[at]?.id ?? '')
-    expect(aiTarget(draft, selection, coarse, [])).toEqual({ kind: 'modified' })
-  })
-
-  it('不足 1 秒不能改，没选也不能改', () => {
-    const fine = keyframeSegments(V, { keyframes: [0, 0.5, 1], duration: 2 })
-    expect(aiTarget(fine, [fine[0]?.id ?? ''], fine, [])).toEqual({ kind: 'short' })
-    expect(aiTarget(fine, [fine[0]?.id ?? '', fine[1]?.id ?? ''], fine, [])).toMatchObject({
-      kind: 'ready',
-    })
-    expect(aiTarget(segments, [], segments, [])).toEqual({ kind: 'empty' })
-  })
-
-  it('单独选中一整条 AI 结果，可在它当初那一段上再生成；裁过的不行', () => {
-    const result = clipItem({ sourceJobId: 'e1', start: 0, end: 2.5 })
-    const draft = [seg(0), result, ...segments.slice(3)]
-    expect(aiTarget(draft, [result.id], segments, editRanges)).toEqual({
-      kind: 'ready',
-      range: { start: 1, end: 3 },
-      first: 2,
-      last: 2,
-    })
-    const trimmed = trimClip(draft, result.id, 'end', 2)
-    expect(aiTarget(trimmed.draft, trimmed.selection, segments, editRanges)).toEqual({
-      kind: 'modified',
-    })
+  it('只选一段不改内容或选区，非连续与不同来源的段不合并', () => {
+    const single = [seg(1).id]
+    expect(mergeSelection(segments, single)).toEqual({ draft: segments, selection: single })
+    const reordered = [seg(1), seg(0)]
+    expect(mergeSelection(reordered, ids(reordered)).draft).toBe(reordered)
+    const mixed = [seg(0), clipItem({ sourceJobId: 'edit', start: 1, end: 2 })]
+    expect(mergeSelection(mixed, ids(mixed)).draft).toBe(mixed)
+    expect(isUnchanged(reordered, segments.slice(0, 2))).toBe(false)
   })
 })
 
-describe('占位', () => {
-  const draft = replaceWithPending(segments, [seg(1).id, seg(2).id], 'e1')
+describe('已有存储中的占位', () => {
+  const draft = storedPending(segments, [seg(1).id, seg(2).id], 'e1')
 
-  it('提交后几段换成一个锁定的占位，记着被换下的段', () => {
+  it('保存过的占位保留被换下的段，继续等待结果', () => {
     expect(clips(draft)).toEqual([
       [V, 0, 1],
       ['pending', 'e1', 2],
@@ -296,7 +277,7 @@ describe('撤销栈', () => {
   })
 })
 
-describe('草稿丢了按服务端重建', () => {
+describe('初次打开时组织原片区间', () => {
   const edit = (id: string, startMs: number, endMs: number, createdAt: string, failed = false) => ({
     id,
     rangeStartMs: startMs,
@@ -305,7 +286,7 @@ describe('草稿丢了按服务端重建', () => {
     failed,
   })
 
-  it('每个位置放最新的编辑段，重叠时新的优先；失败的与对不上关键帧的不算', () => {
+  it('重叠时最新成功或在途区间优先，只组织原片，不自动采用生成结果', () => {
     const draft = rebuildDraft(segments, [
       edit('old', 1000, 3000, '10:00:00'),
       edit('new', 2000, 4000, '10:05:00'),
@@ -314,27 +295,55 @@ describe('草稿丢了按服务端重建', () => {
       edit('off-grid', 0, 1500, '10:07:00'),
     ])
     expect(clips(draft)).toEqual([
-      [V, 0, 1],
-      [V, 1, 2],
-      ['pending', 'new', 2],
+      [V, 0, 1.5],
+      [V, 1.5, 2],
+      [V, 2, 4],
       [V, 4, 5],
-      ['pending', 'apart', 1],
+      [V, 5, 6],
     ])
+    expect(isUnchanged(draft, segments)).toBe(true)
   })
 
-  it('同一段再生成过，新的替掉旧的', () => {
+  it('同一段再生成过，仍使用原片 V1', () => {
     const draft = rebuildDraft(segments, [
       edit('first', 1000, 2000, '10:00:00'),
       edit('again', 1000, 2000, '10:03:00'),
     ])
-    expect(clips(draft)[1]).toEqual(['pending', 'again', 1])
+    expect(clips(draft)[1]).toEqual([V, 1, 2])
+  })
+
+  it('仅失败的重叠区间不覆盖已经成功的区间', () => {
+    const draft = rebuildDraft(segments, [
+      edit('done', 1000, 3000, '10:00:00'),
+      edit('failed-later', 2000, 4000, '10:05:00', true),
+    ])
+    expect(clips(draft)[1]).toEqual([V, 1, 3])
+    expect(isUnchanged(draft, segments)).toBe(true)
+  })
+
+  it('区间不必命中关键帧，扩大区间覆盖旧分组但原片只出现一次', () => {
+    const draft = rebuildDraft(segments, [
+      edit('small', 1250, 2500, '10:00:00'),
+      edit('wide', 1250, 4250, '10:05:00'),
+      edit('adjacent', 4250, 5500, '10:06:00'),
+      edit('outside', 5500, 6500, '10:07:00'),
+    ])
+    expect(clips(draft)).toEqual([
+      [V, 0, 1],
+      [V, 1, 1.25],
+      [V, 1.25, 4.25],
+      [V, 4.25, 5.5],
+      [V, 5.5, 6],
+    ])
+    expect(draftDuration(draft)).toBe(6)
+    expect(isUnchanged(draft, segments)).toBe(true)
   })
 })
 
 describe('存放', () => {
   it('写进去再读出来是同一份：拆过的段带着原有范围，占位带着被换下的段与等的那次合成', () => {
     const split = splitAt(segments, 0.6)?.draft ?? []
-    const draft = replaceWithPending(split, [seg(2).id], 'e1')
+    const draft = storedPending(split, [seg(2).id], 'e1')
     expect(draft[0]?.kind === 'clip' ? draft[0].origin : undefined).toEqual({ start: 0, end: 0.6 })
     const raw = serializeDraft({ draft, composite: 'm1' })
     expect(parseStoredDraft(raw)).toEqual({ draft, composite: 'm1' })

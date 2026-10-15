@@ -1,15 +1,19 @@
-/** 编辑器看哪一版、看它的草稿还是它本身：按（对话，根）记在浏览器里，刷新或重开后接着看那一版。 */
+/** 整片浏览与当前编辑基底分别保存，查看历史不改变各片段的选用。 */
 
 import { useEffect, useEffectEvent, useState } from 'react'
 import { z } from 'zod'
 
-/** 看哪一版、看它的草稿还是它本身。只有草稿有改动时两者才不同。 */
-export type Picked = { jobId: string; view: 'draft' | 'version' }
+/** 当前查看的整片、编辑基底，以及整片或片段视图。 */
+export type Picked = { jobId: string; baseJobId: string; view: 'whole' | 'clips' }
 
 export const viewStorageKey = (conversationId: string, rootJobId: string) =>
   `video-editor-view:${conversationId}:${rootJobId}`
 
-const zPicked = z.object({ jobId: z.string().min(1), view: z.enum(['draft', 'version']) })
+const zPicked = z.object({
+  jobId: z.string().min(1),
+  baseJobId: z.string().min(1),
+  view: z.enum(['whole', 'clips']),
+})
 
 /** 读不出、解析不了都当没记过：这只是浏览偏好，调用方按默认看最新版。 */
 const readPicked = (key: string): Picked | undefined => {
