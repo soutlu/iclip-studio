@@ -4,9 +4,11 @@
 /* 「添加 ▾」：与拆分、删除同一档的文字按钮，多一个小箭头。 */
 .video-editor-bar .film-add-button {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   font-size: var(--text-body-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 
