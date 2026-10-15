@@ -194,9 +194,10 @@ class GenerationService:
     async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
         """受理一次编辑段：一次上游视频请求，参考片段由调用方切好、上传好。
 
-        同步核对三件事，不合格不入队：基底是这段对话看得到的一条已完成成片，区间在它的时长之内；
-        参考片段是调用者本人的一条视频上传；片段时长与区间长度一致。原作与镜号随基底，基底是出片
-        就是它自己。区间原样记，不改写；片段地址记进落库的请求，原样转发上游。"""
+        同步核对三件事，不合格不入队：基底是这段对话看得到的一条已完成成片，替换区间在它的时长
+        之内；参考片段是调用者本人的一条视频上传；参考片段可读且有正时长。参考可由当前选用的
+        多段素材拼成，时长不必等于基底替换区间。原作与镜号随基底，基底是出片就是它自己。区间
+        原样记，不改写；实际参考地址记进落库的请求，原样转发上游。"""
 
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
@@ -218,12 +219,8 @@ class GenerationService:
             base_ms = await self._probe(base.output_url, what="基底", job_id=base.id)
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
         clip_ms = await self._probe(clip_url, what="参考片段", job_id=clip.id)
-        range_ms = request.range_end_ms - request.range_start_ms
-        if abs(clip_ms - range_ms) > EDIT_CLIP_TOLERANCE_MS:
-            raise ValidationFailed(
-                f"参考片段长 {format_seconds(clip_ms / 1000)} 秒，"
-                f"与区间长度 {format_seconds(range_ms / 1000)} 秒对不上"
-            )
+        if clip_ms <= 0:
+            raise ValidationFailed("参考片段时长必须大于 0")
         forwarded = VideoGenerationIn(
             model=request.model,
             prompt=request.prompt,
@@ -515,7 +512,7 @@ class GenerationService:
     async def _probe(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
         """探 ``what``（那条记录 ``job_id`` 的产物 ``url``）有多长，毫秒。
 
-        探不出来也是不受理，但措辞与「时长对不上」分开：多半是取不到，不是调用方给错了。"""
+        探不出来也是不受理，但措辞与「区间越界」分开：多半是取不到，不是调用方给错了。"""
 
         if url is None:
             # 两处调用方都先核过这条有产物地址，这里只为收窄类型。
@@ -944,14 +941,6 @@ def _check_segment_end(position: int, end: float | None, duration_ms: int | None
             f"第 {position} 段的结尾 {format_seconds(end)} 秒超出了那条记录的时长 "
             f"{format_seconds(duration_ms / 1000)} 秒"
         )
-
-
-EDIT_CLIP_TOLERANCE_MS: Final = 100
-"""参考片段的时长最多与区间长度差这么多毫秒。
-
-片段是浏览器从基底上按关键帧重封装出来的，容器时长取各轨结尾里最晚的那个，会被音轨尾巴拉长：
-技术验证里比视频轨长约 16 毫秒。再留出一帧以上的余量（24fps 一帧约 42 毫秒），严格相等会把
-正常切出的片段拒掉，差得更多才说明片段与区间不是同一段。"""
 
 
 def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:

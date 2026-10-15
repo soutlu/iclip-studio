@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ComponentProps } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { renderWithTooltip } from '@/testing/render'
 import { EditorPreview } from './editor-preview'
@@ -109,6 +110,7 @@ it('切段先停在准确的整片切点，下一段实际开播后才恢复混�
   await user.click(screen.getByRole('button', { name: '播放' }))
   await waitFor(() => expect(playback).toHaveBeenLastCalledWith({ playing: true, muted: true }))
   const first = screen.getByLabelText<HTMLVideoElement>('视频播放器')
+  fireEvent.loadedMetadata(first)
   first.currentTime = 6.99
   act(() => frames.at(-1)?.(100))
   expect(time).toHaveBeenLastCalledWith(2)
@@ -117,4 +119,77 @@ it('切段先停在准确的整片切点，下一段实际开播后才恢复混�
   await act(async () => resume())
   expect(time).toHaveBeenLastCalledWith(2)
   expect(playback).toHaveBeenLastCalledWith({ playing: true, muted: true })
+})
+
+it('片段播放请求等待分段与媒体加载，播放到选区末尾停止；同一请求和相同内容刷新不重播', async () => {
+  const frames: FrameRequestCallback[] = []
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback)
+    return frames.length
+  })
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
+  const time = vi.fn()
+  const manualPlay = vi.fn()
+  const props: ComponentProps<typeof EditorPreview> = {
+    current: undefined,
+    currentTime: 0,
+    contentKey: 'current',
+    original: undefined,
+    poster: undefined,
+    backdrop: { current: undefined, original: undefined },
+    onTime: time,
+    onPlay: manualPlay,
+    playbackRequest: { id: 1, start: 2, end: 4 },
+    overlay: null,
+    versions: null,
+    tools: null,
+    readout: null,
+    timeline: null,
+    barEnd: null,
+    footnote: null,
+    ref: null,
+  }
+  const current = () =>
+    layoutPlay([{ mediaUrl: 'https://example.com/clip.mp4', start: 5, end: 11 }])
+  const { rerender } = renderWithTooltip(<EditorPreview {...props} />)
+  expect(play).not.toHaveBeenCalled()
+  rerender(<EditorPreview {...props} current={current()} />)
+  await waitFor(() => expect(screen.getByRole('button', { name: '暂停' })).toBeVisible())
+  const active = screen.getByLabelText<HTMLVideoElement>('视频播放器')
+  act(() => frames.at(-1)?.(100))
+  expect(time).toHaveBeenLastCalledWith(2)
+  fireEvent.loadedMetadata(active)
+  expect(active.currentTime).toBe(7)
+  active.currentTime = 8.5
+  act(() => frames.at(-1)?.(200))
+  expect(time).toHaveBeenLastCalledWith(3.5)
+
+  rerender(<EditorPreview {...props} current={current()} currentTime={3.5} />)
+  expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
+  expect(active.currentTime).toBe(8.5)
+  expect(play).toHaveBeenCalledTimes(1)
+  active.currentTime = 9.1
+  act(() => frames.at(-1)?.(300))
+  expect(time).toHaveBeenLastCalledWith(4)
+  expect(active.currentTime).toBeCloseTo(8.999)
+  expect(screen.getByRole('button', { name: '播放' })).toBeVisible()
+
+  rerender(<EditorPreview {...props} current={current()} currentTime={4} />)
+  expect(play).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('button', { name: '播放' })).toBeVisible()
+  rerender(
+    <EditorPreview
+      {...props}
+      current={current()}
+      currentTime={4}
+      playbackRequest={{ id: 2, start: 1, end: 2 }}
+    />,
+  )
+  await waitFor(() => expect(play).toHaveBeenCalledTimes(2))
+  expect(active.currentTime).toBe(6)
+  expect(time).toHaveBeenLastCalledWith(1)
+  expect(manualPlay).not.toHaveBeenCalled()
 })

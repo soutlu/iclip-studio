@@ -1422,13 +1422,13 @@ async def test_the_clip_must_be_the_callers_own_video_upload(flaw: str) -> None:
 
 @pytest.mark.parametrize(
     ("clip_ms", "accepted"),
-    [(3000, True), (3100, True), (2900, True), (3101, False), (2850, False)],
-    ids=["正好", "长出容差", "短出容差", "长过容差", "短过容差"],
+    [(3000, True), (5000, True), (1500, True), (0, False), (-1, False)],
+    ids=["等于替换区间", "长于替换区间", "短于替换区间", "零时长", "负时长"],
 )
-async def test_the_clip_length_matches_the_range_within_a_tolerance(
+async def test_the_reference_clip_has_positive_duration_independent_of_the_replacement_range(
     clip_ms: int, accepted: bool
 ) -> None:
-    """区间 1–4 秒，片段要 3 秒上下 100 毫秒以内：浏览器重封装的产物容器时长比视频轨略长。"""
+    """基底替换区间 1–4 秒；参考按当前选用素材拼接，可以更长或更短，原区间照常记账。"""
 
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
@@ -1449,8 +1449,10 @@ async def test_the_clip_length_matches_the_range_within_a_tolerance(
     if accepted:
         stored = only_new(repo, seeded)
         assert (stored.range_start_ms, stored.range_end_ms) == (1000, 4000), "区间原样记"
+        assert (stored.source_job_id, stored.root_job_id) == (take.id, take.id)
+        assert stored_request(stored).model_dump()["reference_video_urls"] == [CLIP_URL]
     else:
-        assert "对不上" in response.json()["detail"]
+        assert "时长必须大于 0" in response.json()["detail"]
         assert set(repo.jobs) == seeded
 
 
