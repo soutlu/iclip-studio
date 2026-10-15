@@ -136,12 +136,12 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   ).toBeVisible()
   await page.mouse.move(0, 0)
 
-  await screenshotBothThemes(page, '../.artifacts/design-qa/subtitle-auto-only/subtitles')
+  await screenshotBothThemes(page, '../.artifacts/design-qa/editor-copy/subtitles')
 
   // 选中一段：卡只说来源与时长。
   await segments(dialog).nth(1).click()
   const segmentCard = dialog.getByRole('region', { name: '选中的段' })
-  await expect(segmentCard.getByText('声音在合成时统一处理')).toBeVisible()
+  await expect(segmentCard).toBeVisible()
 
   // 换版本菜单向上展开。
   await timelineOf(dialog).getByRole('button', { name: '镜头组 2 当前用 V1，换版本' }).click()

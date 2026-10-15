@@ -82,10 +82,6 @@ function TakesPanel({ catalog, durationOf, onAdd }: PanelProps) {
           </div>
         ))}
       </div>
-      <p className="film-menu-foot">
-        <Icon decorative name="info" size="xs" />
-        <span>选一条成片，添加为一条素材轨；同一镜头组只有一条素材轨，换版本在轨道头切换</span>
-      </p>
     </>
   )
 }
@@ -136,7 +132,6 @@ export function AddVideoRow({ disabled = false, ...props }: PanelProps & { disab
           <TakesPanel {...props} />
         </MenuSurface>
       </MenuRoot>
-      <span>选一条本对话的成片，作为一条素材轨</span>
     </div>
   )
 }
