@@ -583,7 +583,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     const first = referenceClips?.[0]
     clipEntries.push({
       key: CURRENT_SELECTION_KEY,
-      label: '当前选用',
+      label: '当前',
       name: '当前选用',
       poster: first === undefined ? undefined : videoSnapshotUrl(first.mediaUrl, 320, first.start),
       running: undefined,
