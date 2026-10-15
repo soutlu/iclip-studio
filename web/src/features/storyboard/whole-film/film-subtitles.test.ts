@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import {
-  addManualSubtitle,
   EMPTY_FILM,
   insertSegment,
   sentenceKey,
@@ -136,11 +135,13 @@ describe('字幕跟着画面走', () => {
       ['s1', 'B', 0, 3],
       ['s2', 'B', 5, 6],
     ])
-    const withSubs = setManualText(
-      addManualSubtitle(addManualSubtitle(base, 2, 'm1') ?? base, 3.5, 'm2') ?? base,
-      'm1',
-      '手动的字',
-    )
+    const withSubs: FilmState = {
+      ...base,
+      manual: [
+        { id: 'm1', segmentId: 's1', at: 2, text: '手动的字' },
+        { id: 'm2', segmentId: 's2', at: 5.5, text: '' },
+      ],
+    }
     const none = () => ({ kind: 'ready', jobId: 'x', sentences: [] }) as const
 
     expect(rows(withSubs, none)).toEqual([
@@ -153,11 +154,10 @@ describe('字幕跟着画面走', () => {
 
   it('烧进画面的字幕互不重叠：后开始的盖过先开始的，前一条在那一刻收住；空字不烧；预览显示的就是这一份', () => {
     // 0–3 秒一段：识别句 0.5–2、2.5–3（截到段尾），手动字幕钉在 1 秒（1–3 秒）。
-    const film = setManualText(
-      addManualSubtitle(build([['s1', 'A', 0, 3]]), 1, 'm') ?? EMPTY_FILM,
-      'm',
-      ' 手动 ',
-    )
+    const film: FilmState = {
+      ...build([['s1', 'A', 0, 3]]),
+      manual: [{ id: 'm', segmentId: 's1', at: 1, text: ' 手动 ' }],
+    }
     const burned = burnedSubtitles(projectSubtitles(film, () => READY_A).subtitles)
 
     expect(burned).toEqual([
@@ -180,11 +180,10 @@ describe('字幕跟着画面走', () => {
   })
 
   it('起点相同时手动加的盖过识别出的，识别句收成零长不烧', () => {
-    const film = setManualText(
-      addManualSubtitle(build([['s1', 'A', 0, 3]]), 0.5, 'm') ?? EMPTY_FILM,
-      'm',
-      '手动',
-    )
+    const film: FilmState = {
+      ...build([['s1', 'A', 0, 3]]),
+      manual: [{ id: 'm', segmentId: 's1', at: 0.5, text: '手动' }],
+    }
 
     expect(burnedSubtitles(projectSubtitles(film, () => READY_A).subtitles)).toEqual([
       { at: 0.5, end: 2.5, text: '手动' },

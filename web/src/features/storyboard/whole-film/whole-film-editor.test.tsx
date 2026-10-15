@@ -472,7 +472,7 @@ describe('WholeFilmEditor', () => {
     ])
   })
 
-  it('字幕跟着段走，改字存在草稿里；撤销退回改字之前', async () => {
+  it('字幕仅来自自动识别，没有手动新增入口；可改字保存草稿并撤销', async () => {
     serve(VIDEOS, [
       subtitle(TAKE_2, {
         sentences: [{ startMs: 500, endMs: 2500, text: '今天带来一款新耳机', speaker: 0 }],
@@ -480,11 +480,14 @@ describe('WholeFilmEditor', () => {
     ])
     const user = userEvent.setup()
     await renderEditor()
+    await timeline()
+    expect(screen.queryByRole('button', { name: '在播放头处添加字幕' })).toBeNull()
     await addMaterial(user, '镜头组 2 V1')
     lane('镜头组 2 · V1').focus()
     await user.keyboard('{Enter}{Enter}')
 
     await user.click(await screen.findByRole('button', { name: '第 1 条字幕：今天带来一款新耳机' }))
+    expect(screen.queryByRole('button', { name: '在播放头处添加字幕' })).toBeNull()
     const card = screen.getByRole('region', { name: '选中的字幕' })
     expect(within(card).getByText('来自镜头组 2 · V1 的口播')).toBeVisible()
     const box = within(card).getByRole('textbox', { name: '字幕文字' })
@@ -603,32 +606,6 @@ describe('WholeFilmEditor', () => {
     } finally {
       restore()
     }
-  })
-
-  it('字幕轨的「+」在播放头处加一条手动字幕，只能改字和删除', async () => {
-    serve(VIDEOS, [subtitle(TAKE_2, { sentences: [] })])
-    const user = userEvent.setup()
-    await renderEditor()
-    await addMaterial(user, '镜头组 2 V1')
-    lane('镜头组 2 · V1').focus()
-    await user.keyboard('{Enter}{Enter}')
-    // 插入后播放头先到新段的结尾，那里没有画面、加不了；拖回 1 秒处。
-    const seek = screen.getByRole('slider', { name: '时间线播放位置' })
-    await waitFor(() => expect(seek).toHaveAttribute('aria-valuetext', '00:04.00'))
-    expect(screen.getByRole('button', { name: '在播放头处添加字幕' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
-    fireEvent.change(seek, { target: { value: '1' } })
-
-    await user.click(screen.getByRole('button', { name: '在播放头处添加字幕' }))
-    const card = screen.getByRole('region', { name: '选中的字幕' })
-    expect(within(card).getByText('手动添加')).toBeVisible()
-    await user.type(within(card).getByRole('textbox', { name: '字幕文字' }), '限时优惠')
-    expect(screen.getByRole('button', { name: '第 1 条字幕：限时优惠' })).toBeVisible()
-
-    await user.click(within(card).getByRole('button', { name: '删除' }))
-    expect(screen.queryByRole('button', { name: /^第 1 条字幕/ })).toBeNull()
   })
 })
 
