@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Final, Literal
 
 import uharfbuzz as hb
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
-from PIL import ImageFont
 
 from iclip.platform.media.errors import MediaError
 
@@ -98,8 +98,11 @@ def inspect_font(path: Path) -> FontInfo:
             raise FontError(f"字体必须非空且不超过 {MAX_FONT_BYTES // 1024 // 1024} MiB")
         with TTFont(path, lazy=False) as font:
             info = _info(font)
-            # 字体表能读并不代表轮廓能被 FreeType 使用。
-            ImageFont.truetype(str(path), 32)
+            font.ensureDecompiled(recurse=True)
+            # CFF 的 CharStrings 仍按需读取；逐字形解码，不能只验证名称和 cmap。
+            glyphs = font.getGlyphSet()
+            for name in font.getGlyphOrder():
+                glyphs[name].draw(BoundsPen(glyphs))
             return info
     except FontError:
         raise
@@ -166,7 +169,7 @@ def _info(font: TTFont) -> FontInfo:
 
 def _ass_size_scale(font: TTFont) -> float:
     # libass ass_font.c/set_font_metrics 用 Win ascent+descent；ass_face_set_size 使用
-    # FT_SIZE_REQUEST_TYPE_REAL_DIM。浏览器和 Pillow 的 size 是 em，按文件度量换算。
+    # FT_SIZE_REQUEST_TYPE_REAL_DIM。浏览器 size 是 em，按文件度量换算。
     em = _integer(font, "head", "unitsPerEm")
     ascent = _integer(font, "OS/2", "usWinAscent")
     descent = _integer(font, "OS/2", "usWinDescent")

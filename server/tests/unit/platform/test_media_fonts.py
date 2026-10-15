@@ -74,6 +74,32 @@ def test_large_or_empty_fonts_are_rejected_before_parsing(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize("otf", [False, True], ids=["ttf", "otf"])
+def test_readable_metadata_does_not_hide_a_broken_glyph_outline(tmp_path: Path, otf: bool) -> None:
+    path = make_font(tmp_path / "broken.font", characters="A", otf=otf)
+    if otf:
+        with TTFont(path, recalcBBoxes=False) as font:
+            # rmoveto 缺少两个坐标操作数，随后直接 endchar。
+            font["CFF "].cff.topDictIndex[0].CharStrings["uni0041"].setBytecode(b"\x15\x0e")
+            font.save(path)
+    else:
+        with TTFont(path) as font:
+            glyph_data = font.getTableData("glyf")
+            glyph_offset = font["loca"].locations[font.getGlyphID("uni0041")]
+        data = bytearray(path.read_bytes())
+        assert data.count(glyph_data) == 1
+        offset = data.index(glyph_data) + glyph_offset
+        # 轮廓记录声称有 32767 条 contour，但字节仍只是原先的一个矩形。
+        data[offset : offset + 2] = b"\x7f\xff"
+        path.write_bytes(data)
+
+    with TTFont(path) as font:
+        assert font["name"].getBestFamilyName() == "Iclip Test"
+        assert font.getBestCmap() == {ord("A"): "uni0041"}
+    with pytest.raises(FontError, match="字体文件"):
+        inspect_font(path)
+
+
+@pytest.mark.parametrize("otf", [False, True], ids=["ttf", "otf"])
 def test_the_selected_face_has_a_private_family_without_changing_its_glyphs(
     tmp_path: Path, otf: bool
 ) -> None:
