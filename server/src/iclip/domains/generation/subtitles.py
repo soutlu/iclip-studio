@@ -97,7 +97,7 @@ class QwenSubtitleProvider:
                 code="SUBTITLE_AUDIO_TOO_LARGE",
                 retryable=False,
             )
-        return await self._recognize(_payload(request, data), fallback_task_id=str(job.id))
+        return await self._recognize(_payload(request, data))
 
     async def poll(self, job: GenerationJob) -> ProviderProgress:
         raise ProviderError(
@@ -134,9 +134,7 @@ class QwenSubtitleProvider:
                 ) from exc
             return dest.read_bytes()
 
-    async def _recognize(
-        self, payload: dict[str, Any], *, fallback_task_id: str
-    ) -> ProviderSubmission:
+    async def _recognize(self, payload: dict[str, Any]) -> ProviderSubmission:
         """发一次识别请求，交回同步识别回执。
 
         连不上是 ``PROVIDER_UNREACHABLE``；连上了却没拿到结果（读超时之类）是
@@ -182,11 +180,8 @@ class QwenSubtitleProvider:
                 and body.get("code") == "CLIENT_ERROR"
                 and body.get("message") == "ASR_RESPONSE_HAVE_NO_WORDS"
             ):
-                request_id = body.get("request_id")
                 return ProviderSubmission(
-                    provider_task_id=request_id
-                    if isinstance(request_id, str) and request_id
-                    else fallback_task_id,
+                    provider_task_id=_request_id(body),
                     provider_status="ASR_RESPONSE_HAVE_NO_WORDS",
                     sentences=(),
                 )
@@ -206,14 +201,18 @@ class QwenSubtitleProvider:
             raise ProviderError(
                 "字幕识别接口的响应根不是 object", code="PROVIDER_MALFORMED", retryable=False
             )
-        request_id = body.get("request_id")
         return ProviderSubmission(
-            provider_task_id=request_id
-            if isinstance(request_id, str) and request_id
-            else fallback_task_id,
+            provider_task_id=_request_id(body),
             provider_status="succeeded",
             sentences=sentences_from_response(body),
         )
+
+
+def _request_id(body: Mapping[str, Any]) -> str:
+    request_id = body.get("request_id")
+    if not isinstance(request_id, str) or not request_id.strip():
+        raise _malformed("识别响应里的 request_id 必须是非空字符串")
+    return request_id
 
 
 def _payload(request: SubtitleRequest, data: str) -> dict[str, Any]:
