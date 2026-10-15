@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import uuid
 from collections.abc import Callable
 
@@ -73,21 +72,11 @@ def brand_template_facts(store: BrandTemplateStore, *, probe_font: ProbeFont) ->
 
 
 def template_font_prober(client: httpx.AsyncClient, fetch_url: Callable[[str], str]) -> ProbeFont:
-    """下载指定字体并读取内部信息；解析结果按内容缓存，不把家族名猜成文件名。"""
-
-    cache: dict[str, FontInfo] = {}
+    """下载指定字体并读取文件内部信息，不把家族名猜成文件名。"""
 
     async def probe(url: str) -> FontInfo:
         async with fetched(client, fetch_url(url), max_bytes=MAX_FONT_BYTES, suffix="") as path:
-            digest = await asyncio.to_thread(lambda: hashlib.sha256(path.read_bytes()).hexdigest())
-            known = cache.get(digest)
-            if known is not None:
-                return known
-            info = await asyncio.to_thread(inspect_font, path)
-            if len(cache) >= 32:
-                del cache[next(iter(cache))]
-            cache[digest] = info
-            return info
+            return await asyncio.to_thread(inspect_font, path)
 
     return probe
 
