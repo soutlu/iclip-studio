@@ -541,14 +541,14 @@
   line-height: var(--text-caption--line-height);
 }
 
-/* 素材区为空：一行内联「添加视频」，横跨轨道名与轨道。 */
-.film-timeline-materials-empty {
+/* 素材区末尾的添加行，横跨轨道名与轨道；有素材时也保留。 */
+.film-timeline-materials-add {
   position: absolute;
   right: 0;
   left: 0;
 }
 
-.film-materials-empty {
+.film-materials-add-row {
   display: flex;
   height: 40px;
   align-items: center;
@@ -558,7 +558,7 @@
   border-radius: var(--radius-sm);
 }
 
-.film-materials-empty > span {
+.film-materials-add-row > span {
   min-width: 0;
   overflow: hidden;
   color: var(--color-on-surface-faint);
@@ -873,4 +873,13 @@
 .film-subtitle-status.is-over-snapshot .film-subtitle-status-text {
   background: var(--color-surface-container-lowest);
   pointer-events: auto;
+}
+
+/* 纵向滚动统一由整片轨道窗口承担；轨道名与各轨一起移动，原横滚层继续只管时间轴。 */
+.whole-film-track-scroll .film-timeline {
+  margin-top: 0;
+}
+
+.whole-film-track-scroll .film-timeline-scroll {
+  overscroll-behavior-x: contain;
 }

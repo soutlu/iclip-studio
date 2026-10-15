@@ -1,11 +1,17 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import type {
+  GenerationsPageOut,
+  VideoGenerationIn,
+  VideoSubmitOut,
+} from '../src/shared/api/generated/types.gen'
 import { openConversation, screenshotBothThemes } from './helpers'
 
 const SHOT_DIR = '../.artifacts/design-qa/whole-film-editor/impl-1'
 /** mock 受理识别后 3 秒出结果。 */
 const STEP_TIMEOUT = 15_000
+const INTERACTION_SHOT_DIR = '../.artifacts/design-qa/whole-film-interaction'
 
 /** 演示对话里：第 2 组一条竖版 6 秒成片（识别出三句口播），第 3 组一条横版成片（识别失败）。 */
 const openWholeFilm = async (page: Page, { mobile = false } = {}) => {
@@ -63,15 +69,9 @@ const carryToFilm = async (
   return () => page.mouse.up()
 }
 
-/** 从「添加视频」或控制条的「添加」→「视频」选一版放进素材区。 */
+/** 从素材区末尾的加号选一版放进素材区。 */
 const addMaterial = async (page: Page, dialog: Locator, name: string) => {
-  const inline = dialog.getByRole('button', { name: '添加视频', exact: true })
-  if (await inline.isVisible()) {
-    await inline.click()
-  } else {
-    await dialog.getByRole('button', { name: '添加', exact: true }).click()
-    await page.getByRole('menuitem', { name: '视频', exact: true }).click()
-  }
+  await dialog.getByRole('button', { name: '添加镜头组', exact: true }).click()
   await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click()
 }
 
@@ -83,11 +83,9 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   await expect(timelineOf(dialog).getByText('从下方素材轨拖选片段放到这里')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '合成成片' })).toBeDisabled()
   await page.mouse.move(0, 0)
-  await screenshotBothThemes(page, `${SHOT_DIR}/new`)
 
-  await dialog.getByRole('button', { name: '添加视频', exact: true }).click()
+  await dialog.getByRole('button', { name: '添加镜头组', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: /^镜头组 2 V1/ })).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/new-add-video`)
   await page.getByRole('menuitem', { name: /^镜头组 2 V1/ }).click()
   await addMaterial(page, dialog, '镜头组 3 V1')
   const shot2 = laneOf(dialog, '镜头组 2 · V1')
@@ -98,10 +96,8 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   // 在第 2 组素材上框出 1–3 秒，拖到成片轨。
   await sweep(page, dialog, shot2, 1, 3)
   await expect(timelineOf(dialog).getByText(/^素材 1\.\d\d–3\.\d\d 秒/)).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/pick`)
   const drop = await carryToFilm(page, dialog, shot2, 2, 0)
   await expect(timelineOf(dialog).getByText(/^插入到 0\.00 秒/)).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/pick-drag`)
   await drop()
   await expect(segments(dialog)).toHaveCount(1)
   // 时间线拖拽不能留下浏览器文字选区，后续拖动会被原生文字拖拽截走。
@@ -139,18 +135,15 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
     dialog.getByLabel('视频预览').getByText('这只包今天第一次上身', { exact: true }),
   ).toBeVisible()
   await page.mouse.move(0, 0)
-  await screenshotBothThemes(page, `${SHOT_DIR}/subtitle`)
 
   // 选中一段：卡只说来源与时长。
   await segments(dialog).nth(1).click()
   const segmentCard = dialog.getByRole('region', { name: '选中的段' })
   await expect(segmentCard.getByText('声音在合成时统一处理')).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/cross-selected`)
 
   // 换版本菜单向上展开。
   await timelineOf(dialog).getByRole('button', { name: '镜头组 2 当前用 V1，换版本' }).click()
   await expect(page.getByRole('menuitemradio', { name: /V1/ })).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/cross-version`)
   await page.keyboard.press('Escape')
 
   // 改字：只能改字，存在草稿里。
@@ -160,14 +153,12 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   const text = subtitleCard.getByRole('textbox', { name: '字幕文字' })
   await text.fill('今天第一次背这只包')
   await expect(subtitles.first()).toHaveAccessibleName('第 1 条字幕：今天第一次背这只包')
-  await screenshotBothThemes(page, `${SHOT_DIR}/subtitle-edit`)
   await page.keyboard.press('Escape')
 
   // 重新识别：先「识别中」，结果回来后字幕出现。
   await retry.click()
   await expect(timelineOf(dialog).getByText('识别中')).toBeVisible()
   await page.mouse.move(0, 0)
-  await screenshotBothThemes(page, `${SHOT_DIR}/subtitle-pending`)
   await expect(timelineOf(dialog).getByText('识别中')).toBeHidden({ timeout: STEP_TIMEOUT })
 
   // 草稿只存在浏览器：刷新后（mock 的登录随页面清掉，重新登录）重开，还是这份。
@@ -369,7 +360,7 @@ test('整片音乐：工程文件里写了配乐，生成音乐引用那段原�
   await screenshotBothThemes(page, `${MUSIC_SHOT_DIR}/music-generate`)
 })
 
-test('整片移动布局：对话框内部自己滚，页面不横向溢出', async ({ page }) => {
+test('整片移动布局：素材区可操作，页面不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const dialog = await openWholeFilm(page, { mobile: true })
   await addMaterial(page, dialog, '镜头组 2 V1')
@@ -512,3 +503,214 @@ test('整片片头片尾：按正文画幅选择固定模板，字幕只在正�
   ).toBeLessThanOrEqual(0)
   await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/brands-mobile')
 })
+
+test('素材预览：拖选中显示边界画面，播放仅限选区，返回整片保留播放头', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
+  await addMaterial(page, dialog, '镜头组 2 V1')
+  await addMaterial(page, dialog, '镜头组 3 V1')
+  const lane = laneOf(dialog, '镜头组 2 · V1')
+  const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
+  const video = dialog.getByLabel('视频播放器', { exact: true })
+  const videoTime = () => video.evaluate((element) => (element as HTMLVideoElement).currentTime)
+
+  // 拖动尚未结束时就能看见指针所在的画面，不能等插入成片轨后才预览。
+  await page.mouse.move(await xAt(dialog, 1), await middleY(lane))
+  await page.mouse.down()
+  await page.mouse.move(await xAt(dialog, 3), await middleY(lane), { steps: 6 })
+  await expect(video).toHaveAttribute('src', /sample-video/)
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState))
+    .toBeGreaterThanOrEqual(2)
+  await expect.poll(videoTime).toBeCloseTo(3, 1)
+  await page.mouse.up()
+  await expect(segments(dialog)).toHaveCount(0)
+  await expect(ruler).toHaveValue('0')
+
+  const end = dialog.getByRole('slider', { name: '选区结尾' })
+  await end.focus()
+  await page.keyboard.press('Shift+ArrowLeft')
+  await expect.poll(videoTime).toBeCloseTo(2, 1)
+  await dialog.getByRole('button', { name: '播放', exact: true }).click()
+  await expect.poll(videoTime).toBeGreaterThan(1.1)
+  await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+  await expect.poll(videoTime).toBeCloseTo(2, 1)
+  expect(await video.evaluate((element) => (element as HTMLVideoElement).paused)).toBe(true)
+  await expect(ruler).toHaveValue('0')
+  await screenshotBothThemes(page, `${INTERACTION_SHOT_DIR}/material-preview`)
+
+  // 插入后回到整片；随后预览另一条横版素材，不污染整片第 0.5 秒的播放头。
+  await end.focus()
+  await page.keyboard.press('Enter')
+  await expect(segments(dialog)).toHaveCount(1)
+  await ruler.fill('0.5')
+  await laneOf(dialog, '镜头组 3 · V1').focus()
+  await page.keyboard.press('Enter')
+  await expect(video).toHaveAttribute('src', /sample-video-wide/)
+  await expect(ruler).toHaveValue('0.5')
+  await expect(
+    dialog.getByLabel('视频预览').getByText('这只包今天第一次上身', { exact: true }),
+  ).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(video).toHaveAttribute('src', /sample-video/)
+  await expect.poll(videoTime).toBeCloseTo(1.5, 1)
+  await expect(ruler).toHaveValue('0.5')
+})
+
+test('添加镜头组：底部加号持续可用，工具栏只添加片头片尾', async ({ page }) => {
+  const dialog = await openWholeFilm(page)
+  const add = dialog.getByRole('button', { name: '添加镜头组', exact: true })
+  await expect(add).toHaveCount(1)
+  await addMaterial(page, dialog, '镜头组 2 V1')
+  await expect(add).toHaveCount(1)
+  await addMaterial(page, dialog, '镜头组 3 V1')
+  await expect(laneOf(dialog, '镜头组 2 · V1')).toBeVisible()
+  await expect(laneOf(dialog, '镜头组 3 · V1')).toBeVisible()
+
+  await dialog.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: '片头', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '片尾', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '视频', exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+
+  await add.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menu', { name: '添加镜头组', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(add).toBeFocused()
+})
+
+/** 通过已有 mock 生成接口准备多组素材，等待记录完成后再进入编辑器。 */
+const createMaterialGroups = async (page: Page) => {
+  const ids = await page.evaluate(async () => {
+    const conversationId = window.location.pathname.split('/').at(-1)
+    if (conversationId === undefined) throw new Error('尚未打开对话')
+    return Promise.all(
+      Array.from({ length: 8 }, async (_, index) => {
+        const body: VideoGenerationIn = {
+          conversation_id: conversationId,
+          shot_index: index + 10,
+          model: 'vendor-a-seedance-2-5',
+          prompt: '滚动验收素材',
+          seconds: 6,
+          aspect_ratio: '9:16',
+          resolution: '720p',
+        }
+        const response = await fetch('/api/generations/video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (!response.ok) throw new Error('准备验收素材失败')
+        return ((await response.json()) as VideoSubmitOut).task_id
+      }),
+    )
+  })
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async (ids) => {
+          const conversationId = window.location.pathname.split('/').at(-1) ?? ''
+          const query = new URLSearchParams({ conversationId, kind: 'video' })
+          const response = await fetch(`/api/generations?${query}`)
+          const result = (await response.json()) as GenerationsPageOut
+          return ids.every((id) =>
+            result.items.some((item) => item.id === id && item.status === 'completed'),
+          )
+        }, ids),
+      { timeout: STEP_TIMEOUT },
+    )
+    .toBe(true)
+}
+
+for (const viewport of [
+  { name: 'desktop', width: 1440, height: 900 },
+  { name: 'laptop', width: 1280, height: 720 },
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'landscape', width: 844, height: 390 },
+]) {
+  test(`多素材布局 ${viewport.name}：轨道高度固定、独立滚动，预览保持可见`, async ({ page }) => {
+    test.setTimeout(60_000)
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    const panel = await openConversation(page, '夜景延时素材生成', {
+      mobile: viewport.width < 600,
+    })
+    await createMaterialGroups(page)
+    await panel.getByRole('button', { name: '整片', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+    await addMaterial(page, dialog, '镜头组 10 V1')
+    const stage = dialog.getByRole('region', { name: '预览舞台', exact: true })
+    const tracks = dialog.getByRole('region', { name: '轨道列表', exact: true })
+    const stageBefore = await stage.boundingBox()
+    const tracksBefore = await tracks.boundingBox()
+    if (stageBefore === null || tracksBefore === null) throw new Error('编辑器尚未布局')
+
+    for (let group = 11; group <= 17; group += 1)
+      await addMaterial(page, dialog, `镜头组 ${group} V1`)
+    const stageAfter = await stage.boundingBox()
+    const tracksAfter = await tracks.boundingBox()
+    if (stageAfter === null || tracksAfter === null) throw new Error('编辑器尚未布局')
+    expect(Math.abs(stageAfter.height - stageBefore.height)).toBeLessThan(1)
+    expect(Math.abs(tracksAfter.height - tracksBefore.height)).toBeLessThan(1)
+    expect(stageAfter.height).toBeGreaterThan(viewport.height * 0.25)
+    expect(stageAfter.y).toBeGreaterThanOrEqual(0)
+    expect(tracksAfter.y + tracksAfter.height).toBeLessThan(viewport.height)
+
+    // 滚轮只滚轨道区域；左侧组名和右侧素材轨保持在同一行。
+    await tracks.evaluate((element) => element.scrollTo({ top: 0 }))
+    await tracks.hover()
+    await page.mouse.wheel(0, 900)
+    await expect.poll(() => tracks.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+    const last = laneOf(dialog, '镜头组 17 · V1')
+    await expect(last).toBeInViewport()
+    const label = timelineOf(dialog).getByText('镜头组 17', { exact: true })
+    const labelBox = await label.boundingBox()
+    const laneBox = await last.boundingBox()
+    if (labelBox === null || laneBox === null) throw new Error('最后一组素材尚未布局')
+    expect(
+      Math.abs(labelBox.y + labelBox.height / 2 - laneBox.y - laneBox.height / 2),
+    ).toBeLessThan(1)
+    await expect(dialog.getByRole('button', { name: '添加镜头组', exact: true })).toBeInViewport()
+    expect(
+      await dialog.getByLabel('整片编辑器', { exact: true }).evaluate((el) => el.scrollTop),
+    ).toBe(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      viewport.width,
+    )
+
+    await last.focus()
+    await page.keyboard.press('Enter')
+    const video = dialog.getByLabel('视频播放器', { exact: true })
+    await expect
+      .poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState))
+      .toBeGreaterThanOrEqual(2)
+    await page.mouse.move(0, 0)
+    await screenshotBothThemes(page, `${INTERACTION_SHOT_DIR}/many-materials-${viewport.name}`)
+
+    if (viewport.name === 'desktop') {
+      // 滚走的成片轨不能在舞台上留下不可见的落点。
+      await page.mouse.move(await xAt(dialog, 3), await middleY(last))
+      await page.mouse.down()
+      await page.mouse.move(await xAt(dialog, 3), stageAfter.y + stageAfter.height / 2, {
+        steps: 8,
+      })
+      await expect(dialog.getByTestId('film-insert')).toHaveCount(0)
+      await page.mouse.up()
+      await expect(segments(dialog)).toHaveCount(0)
+
+      // 携带末行素材停在滚动窗口上缘，轨道自动向上滚，再放入可见的成片轨。
+      await last.scrollIntoViewIfNeeded()
+      await page.mouse.move(await xAt(dialog, 3), await middleY(last))
+      await page.mouse.down()
+      await page.mouse.move(await xAt(dialog, 3), tracksAfter.y + 12, { steps: 8 })
+      await expect.poll(() => tracks.evaluate((element) => element.scrollTop)).toBe(0)
+      await page.mouse.move(await xAt(dialog, 0), await middleY(dialog.getByTestId('film-lane')), {
+        steps: 4,
+      })
+      await expect(dialog.getByTestId('film-insert')).toBeVisible()
+      await page.mouse.up()
+      await expect(segments(dialog)).toHaveCount(1)
+      await expect(segments(dialog).first()).toHaveAccessibleName(/镜头组 17/)
+    }
+  })
+}

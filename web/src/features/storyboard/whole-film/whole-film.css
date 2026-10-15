@@ -4,9 +4,11 @@
 /* 「添加 ▾」：与拆分、删除同一档的文字按钮，多一个小箭头。 */
 .video-editor-bar .film-add-button {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   font-size: var(--text-body-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -383,4 +385,93 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* 整片的素材轨可以很多：舞台占剩余空间，轨道在自己的固定窗口内滚动，播放控件留在窗口外。
+   组合选择器保证整片布局不受生产构建中共用样式加载顺序影响。 */
+.video-editor.whole-film-editor {
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.whole-film-editor .video-editor-timeline-area,
+.whole-film-editor .video-editor-timeline-panel {
+  min-height: 0;
+}
+
+.whole-film-editor .video-editor-bar {
+  flex: none;
+}
+
+.whole-film-track-scroll {
+  height: clamp(224px, 34dvh, 320px);
+  min-height: 0;
+  flex: none;
+  margin: 6px -8px -6px;
+  padding: 10px 8px 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 999px) {
+  .video-editor.whole-film-editor {
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .whole-film-editor .video-editor-stage {
+    height: auto;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .whole-film-editor .video-editor-versions {
+    flex: none;
+  }
+}
+
+@media (max-width: 599px) {
+  .whole-film-track-scroll {
+    height: clamp(208px, 30dvh, 272px);
+  }
+
+  .whole-film-editor .video-editor-stage-area {
+    gap: 8px;
+  }
+}
+
+/* 横屏手机与短窗口：版本条放回右侧，缩短轨道窗口，把有限高度留给预览与播放控件。 */
+@media (max-height: 560px) {
+  .whole-film-track-scroll {
+    height: clamp(96px, 26dvh, 144px);
+  }
+
+  .whole-film-editor .video-editor-stage-area {
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .whole-film-editor .video-editor-stage {
+    height: auto;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .whole-film-editor .video-editor-hero-wrap {
+    inset: 8px;
+  }
+
+  .whole-film-editor .video-editor-versions {
+    position: static;
+    max-height: 100%;
+    flex: none;
+    flex-direction: column;
+    translate: none;
+    padding: 6px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
 }

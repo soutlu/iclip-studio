@@ -5,6 +5,8 @@
  * 插到播放头所在的切点。成片轨上点段选中，拖两端掐头去尾，按住中间拖动换顺序。字幕跟着画面走，不能拖。 */
 
 import {
+  useEffect,
+  useEffectEvent,
   useRef,
   useState,
   type CSSProperties,
@@ -12,6 +14,7 @@ import {
   type PointerEvent,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -83,6 +86,9 @@ const DRAG_THRESHOLD = 4
 const KEY_STEP = 0.1
 /** 指针离成片轨上下多远以内松手也算放在成片轨上，像素。 */
 const DROP_SLOP = 16
+/** 携带素材靠近纵向视口边缘时滚动，让下面的素材能拖到上面的成片轨。 */
+const SCROLL_EDGE = 40
+const SCROLL_SPEED = 420
 /** 气泡对准的时刻落在整条两头这么大的比例以内时，贴着那一头摆。 */
 const BUBBLE_EDGE = 0.12
 
@@ -110,7 +116,8 @@ type FilmTimelineProps = {
   durationOf: (material: Material) => MaterialDuration
   /** 选中的那一段或那一条字幕，弹出卡对准它。 */
   anchorRef: Ref<HTMLElement>
-  /** 素材区为空时那一行「添加视频」。 */
+  scrollRef: RefObject<HTMLElement | null>
+  /** 素材区末尾常驻的添加镜头组入口。 */
   addVideo: ReactNode
   onSeek: (clock: number) => void
   /** 开始拖动：播放头、手柄、段或选区。 */
@@ -121,6 +128,8 @@ type FilmTimelineProps = {
   onMove: (id: string, before: number) => void
   onDelete: (id: string) => void
   onPick: (pick: MaterialPick | undefined) => void
+  /** 素材预览：原片区间及要显示的原片时刻；右边界显示区间内侧。 */
+  onPreviewMaterial: (pick: MaterialPick, clock: number, edge?: Edge) => void
   /** 把选区插在第 `index` 段之前。 */
   onInsert: (pick: MaterialPick, index: number) => void
   onRetry: (sourceJobId: string) => void
@@ -143,6 +152,8 @@ type Carry = {
   pick: MaterialPick
   originX: number
   originY: number
+  clientX: number
+  clientY: number
   /** 按下处离选区起点多少秒，浮起的那截跟着指针保持这个距离。 */
   grab: number
   clock: number
@@ -219,6 +230,7 @@ export function FilmTimeline({
   peaksOf,
   durationOf,
   anchorRef,
+  scrollRef,
   addVideo,
   onSeek,
   onScrub,
@@ -228,6 +240,7 @@ export function FilmTimeline({
   onMove,
   onDelete,
   onPick,
+  onPreviewMaterial,
   onInsert,
   onRetry,
   onAddSubtitle,
@@ -293,13 +306,58 @@ export function FilmTimeline({
   }
   const overFilm = (clientY: number) => {
     const bounds = filmRowRef.current?.getBoundingClientRect()
+    const viewport = scrollRef.current?.getBoundingClientRect()
     return (
       bounds !== undefined &&
+      viewport !== undefined &&
       bounds.height > 0 &&
-      clientY >= bounds.top - DROP_SLOP &&
-      clientY <= bounds.bottom + DROP_SLOP
+      bounds.bottom > viewport.top &&
+      bounds.top < viewport.bottom &&
+      clientY >= Math.max(viewport.top, bounds.top - DROP_SLOP) &&
+      clientY <= Math.min(viewport.bottom, bounds.bottom + DROP_SLOP)
     )
   }
+
+  const carrying = carry?.moved === true
+  const scrollCarry = useEffectEvent((elapsed: number) => {
+    const viewport = scrollRef.current
+    if (viewport === null || carry === null) return
+    const bounds = viewport.getBoundingClientRect()
+    const { clientX, clientY } = carry
+    if (
+      clientX < bounds.left ||
+      clientX > bounds.right ||
+      clientY < bounds.top - SCROLL_EDGE ||
+      clientY > bounds.bottom + SCROLL_EDGE
+    )
+      return
+    const direction =
+      clientY < bounds.top + SCROLL_EDGE ? -1 : clientY > bounds.bottom - SCROLL_EDGE ? 1 : 0
+    if (direction !== 0)
+      viewport.scrollTop = Math.max(
+        0,
+        Math.min(
+          viewport.scrollHeight - viewport.clientHeight,
+          viewport.scrollTop + (direction * SCROLL_SPEED * elapsed) / 1000,
+        ),
+      )
+    // 滚动改变轨道的可见区域，即使指针没动也要按实时位置重新判断落点。
+    const over = overFilm(clientY)
+    const clock = clockAt(clientX)
+    if (over !== carry.over || clock !== carry.clock) setCarry({ ...carry, over, clock })
+  })
+  useEffect(() => {
+    if (!carrying) return
+    let last: number | undefined
+    let frame = 0
+    const tick = (now: number) => {
+      scrollCarry(last === undefined ? 16 : Math.min(32, now - last))
+      last = now
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [carrying])
 
   /** 一截素材的画面与原声；来源不认识时什么也不画。 */
   const stripOf = (part: Pick) => {
@@ -364,6 +422,7 @@ export function FilmTimeline({
   const pressSegment = (event: PointerEvent<HTMLButtonElement>, at: number, id: string) => {
     swallowClickRef.current = false
     if (event.button !== 0) return
+    onScrub()
     capture(event)
     const clock = clockAt(event.clientX)
     setLift({
@@ -461,11 +520,14 @@ export function FilmTimeline({
       clock >= pick.start &&
       clock <= pick.end
     ) {
+      onPreviewMaterial(pick, clock)
       setCarry({
         pointerId: event.pointerId,
         pick,
         originX: event.clientX,
         originY: event.clientY,
+        clientX: event.clientX,
+        clientY: event.clientY,
         grab: clock - pick.start,
         clock: clockAt(event.clientX),
         over: false,
@@ -473,6 +535,15 @@ export function FilmTimeline({
       })
       return
     }
+    onPreviewMaterial(
+      {
+        groupId: view.lane.groupId,
+        sourceJobId: view.material.jobId,
+        start: 0,
+        end: view.duration,
+      },
+      clock,
+    )
     setSweep({
       pointerId: event.pointerId,
       groupId: view.lane.groupId,
@@ -486,16 +557,33 @@ export function FilmTimeline({
     if (sweep !== null && sweep.pointerId === event.pointerId && view.duration != null) {
       const clock = Math.min(view.duration, clockAt(event.clientX))
       if (sweep.clock === clock) return
-      if (sweep.clock === sweep.anchor) onScrub()
       setSweep({ ...sweep, clock })
+      const start = roundToMs(Math.min(sweep.anchor, clock))
+      const end = roundToMs(Math.max(sweep.anchor, clock))
+      onPreviewMaterial(
+        {
+          groupId: sweep.groupId,
+          sourceJobId: sweep.jobId,
+          start: end - start < MIN_SEGMENT_SECONDS ? 0 : start,
+          end: end - start < MIN_SEGMENT_SECONDS ? view.duration : end,
+        },
+        clock,
+        clock >= sweep.anchor ? 'end' : 'start',
+      )
       return
     }
     if (carry === null || carry.pointerId !== event.pointerId) return
     const moved =
       carry.moved ||
       Math.hypot(event.clientX - carry.originX, event.clientY - carry.originY) > DRAG_THRESHOLD
-    if (moved && !carry.moved) onScrub()
-    setCarry({ ...carry, clock: clockAt(event.clientX), over: overFilm(event.clientY), moved })
+    setCarry({
+      ...carry,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      clock: clockAt(event.clientX),
+      over: overFilm(event.clientY),
+      moved,
+    })
   }
 
   const releaseLane = (event: PointerEvent<HTMLDivElement>) => {
@@ -526,12 +614,14 @@ export function FilmTimeline({
       insertAtPlayhead(pick)
       return
     }
-    onPick({
+    const next = {
       groupId: view.lane.groupId,
       sourceJobId: view.material.jobId,
       start: 0,
       end: roundToMs(view.duration),
-    })
+    }
+    onPick(next)
+    onPreviewMaterial(next, 0, 'start')
   }
 
   const pickBounds = (view: LaneView, edge: Edge) =>
@@ -544,7 +634,9 @@ export function FilmTimeline({
   const setPickEdge = (view: LaneView, edge: Edge, value: number) => {
     if (pick === undefined) return
     const { min, max } = pickBounds(view, edge)
-    onPick({ ...pick, [edge]: roundToMs(Math.min(max, Math.max(min, value))) })
+    const next = { ...pick, [edge]: roundToMs(Math.min(max, Math.max(min, value))) }
+    onPick(next)
+    onPreviewMaterial(next, next[edge], edge)
   }
 
   const pressPickHandle = (event: PointerEvent<HTMLButtonElement>, edge: Edge) => {
@@ -553,17 +645,20 @@ export function FilmTimeline({
     event.stopPropagation()
     event.currentTarget.focus()
     capture(event)
-    onScrub()
+    onPreviewMaterial(pick, pick[edge], edge)
     setPickHandle({ pointerId: event.pointerId, edge, value: pick[edge] })
   }
 
   const dragPickHandle = (event: PointerEvent<HTMLButtonElement>, view: LaneView) => {
     if (pickHandle === null || pickHandle.pointerId !== event.pointerId) return
     const { min, max } = pickBounds(view, pickHandle.edge)
+    const value = roundToMs(Math.min(max, Math.max(min, clockAt(event.clientX))))
     setPickHandle({
       ...pickHandle,
-      value: roundToMs(Math.min(max, Math.max(min, clockAt(event.clientX)))),
+      value,
     })
+    if (pick !== undefined)
+      onPreviewMaterial({ ...pick, [pickHandle.edge]: value }, value, pickHandle.edge)
   }
 
   const releasePickHandle = (event: PointerEvent<HTMLButtonElement>, view: LaneView) => {
@@ -700,7 +795,7 @@ export function FilmTimeline({
     )
   }
 
-  const rows = Math.max(1, lanes.length)
+  const rows = lanes.length + 1
   const height = laneTop(rows) - ROW.laneGap
 
   return (
@@ -1223,11 +1318,9 @@ export function FilmTimeline({
         <i />
         <span>拖选一段，拖到上面的成片轨</span>
       </div>
-      {lanes.length === 0 ? (
-        <div className="film-timeline-materials-empty" style={{ top: ROW.materials }}>
-          {addVideo}
-        </div>
-      ) : null}
+      <div className="film-timeline-materials-add" style={{ top: laneTop(lanes.length) }}>
+        {addVideo}
+      </div>
     </section>
   )
 }

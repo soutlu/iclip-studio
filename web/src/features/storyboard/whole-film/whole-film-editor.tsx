@@ -6,7 +6,7 @@
  * 编辑只存在浏览器里（ADR-0003），按对话一份；浏览器里没有草稿而已经合成过时，按最新一版重建。界面上不调声音。 */
 
 import { useQueryClient } from '@tanstack/react-query'
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useBrandTemplates } from '@/shared/api/brand-templates'
 import { errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
@@ -122,12 +122,28 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const templatesQuery = useBrandTemplates()
   const previewRef = useRef<EditorPreviewHandle>(null)
   const anchorRef = useRef<HTMLElement>(null)
+  const trackScrollRef = useRef<HTMLDivElement>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [playback, setPlayback] = useState({ playing: false, muted: true })
   // 生成面板挂在编辑器里（模态弹窗外的浮层拿不到焦点）。
   const [editorElement, setEditorElement] = useState<HTMLElement | null>(null)
   const [selection, setSelection] = useState<FilmSelection>()
   const [pick, setPick] = useState<MaterialPick>()
+  /** 素材预览不写进草稿，也不占用整片播放头。range 没给时预览所选版本的整条素材。 */
+  const [materialPreview, setMaterialPreview] = useState<{
+    jobId: string
+    range?: { start: number; end: number }
+  }>()
+  const [materialTime, setMaterialTime] = useState(0)
+  const [previewSeek, setPreviewSeek] = useState<{
+    clock: number
+    boundary?: 'start' | 'end' | undefined
+  }>()
+  // 子播放器先按 current 切源；再用它已有的定位入口显示正在拖动的边界。
+  useEffect(() => {
+    if (previewSeek !== undefined)
+      previewRef.current?.previewAt(previewSeek.clock, previewSeek.boundary)
+  }, [previewSeek])
   const [retrying, setRetrying] = useState<ReadonlySet<string>>(() => new Set())
   /** 版本条上选中的那一格：草稿，或某一条整片。 */
   const [viewingKey, setViewingKey] = useState(DRAFT_KEY)
@@ -272,29 +288,44 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       : viewedDone.job.durationMs === null
         ? durations[viewedDone.url]
         : viewedDone.job.durationMs / 1000
+  const previewMaterial =
+    materialPreview === undefined ? undefined : materialOf(materialPreview.jobId)
+  const previewingMaterial = viewingDraft && previewMaterial !== undefined
+  const materialDuration = previewMaterial === undefined ? undefined : durationOf(previewMaterial)
+  const materialRange =
+    materialPreview?.range ??
+    (materialDuration == null ? undefined : { start: 0, end: materialDuration })
   const current = useStableValue(
-    viewingDraft
-      ? draft === undefined
-        ? undefined
-        : draftPlay
-      : viewedDone === undefined || viewedDuration === null
-        ? []
-        : viewedDuration === undefined
+    previewingMaterial
+      ? materialRange === undefined
+        ? materialDuration === null
+          ? []
+          : undefined
+        : layoutPlay([{ mediaUrl: previewMaterial.url, ...materialRange }])
+      : viewingDraft
+        ? draft === undefined
           ? undefined
-          : layoutPlay([{ mediaUrl: viewedDone.url, start: 0, end: viewedDuration }]),
+          : draftPlay
+        : viewedDone === undefined || viewedDuration === null
+          ? []
+          : viewedDuration === undefined
+            ? undefined
+            : layoutPlay([{ mediaUrl: viewedDone.url, start: 0, end: viewedDuration }]),
   )
   const firstUrl = draftPlay[0]?.mediaUrl
   const pendingPoster = (jobId: string | undefined) =>
     posterOf(jobId === undefined ? undefined : materialOf(jobId)?.url)
   const viewedPending = viewedRunning ?? viewedFailed
-  const stagePoster =
-    viewedDone !== undefined
+  const stagePoster = previewingMaterial
+    ? posterOf(previewMaterial.url, materialRange?.start)
+    : viewedDone !== undefined
       ? posterOf(viewedDone.url)
       : viewedPending !== undefined
         ? pendingPoster(firstSourceOf(viewedPending))
         : posterOf(firstUrl)
-  const stageMessage =
-    viewedRunning !== undefined
+  const stageMessage = previewingMaterial
+    ? '素材时长读取失败，暂时无法预览'
+    : viewedRunning !== undefined
       ? '整片合成中'
       : viewedFailed !== undefined
         ? '整片合成失败'
@@ -318,11 +349,26 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const editable = draft !== undefined && viewingDraft
 
+  const previewFilm = (clock = currentTime, boundary?: 'start' | 'end') => {
+    setMaterialPreview(undefined)
+    setPreviewSeek({ clock, boundary })
+  }
+  const showMaterial = (target: MaterialPick, clock: number, boundary?: 'start' | 'end') => {
+    setMaterialPreview({
+      jobId: target.sourceJobId,
+      range: { start: target.start, end: target.end },
+    })
+    setMaterialTime(clock - target.start)
+    setPreviewSeek({ clock: clock - target.start, boundary })
+    setSelection(undefined)
+  }
+
   const apply = (
     next: FilmState | ((present: FilmState) => FilmState) | undefined,
     typing?: string,
   ) => {
     if (next === undefined || draft === undefined) return
+    if (materialPreview !== undefined) previewFilm()
     draft.apply(next, typing)
     if (typing === undefined) setNotice(null)
   }
@@ -341,7 +387,8 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     apply,
     onNotice: setNotice,
     // 看着合成好的一版时，那一版自带混好的声音，草稿的音乐不跟着放。
-    playback: viewingDraft ? playback : { playing: false, muted: playback.muted },
+    playback:
+      viewingDraft && !previewingMaterial ? playback : { playing: false, muted: playback.muted },
     currentTime,
   })
   // 音乐读出来了才选得中；拿掉、换了还在读的就当没选。
@@ -400,8 +447,11 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const addMaterial = (material: Material) => {
     if (draft === undefined) return
     draft.setLanes(putLane(draft.lanes, { groupId: material.groupId, jobId: material.jobId }))
-    if (pick?.groupId === material.groupId && pick.sourceJobId !== material.jobId)
-      setPick(undefined)
+    setPick(undefined)
+    setSelection(undefined)
+    setMaterialPreview({ jobId: material.jobId })
+    setMaterialTime(0)
+    setPreviewSeek({ clock: 0 })
   }
 
   const switchVersion = (view: LaneView, material: Material) => {
@@ -445,12 +495,15 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     if (isTextEntry(event.target) || !(event.metaKey || event.ctrlKey)) return
     if (event.key.toLowerCase() !== 'z' || draft === undefined || !viewingDraft) return
     event.preventDefault()
+    previewFilm()
     if (event.shiftKey) {
       if (draft.canRedo) draft.redo()
     } else if (draft.canUndo) draft.undo()
   }
 
   const view = (key: string) => {
+    setMaterialPreview(undefined)
+    setPreviewSeek({ clock: key === DRAFT_KEY ? currentTime : 0 })
     setViewingKey(key)
     setSelection(undefined)
     setPick(undefined)
@@ -550,6 +603,8 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       return `正在查看 ${viewedDone.label}；点击「${UNCOMPOSED_LABEL}」可返回草稿继续剪辑`
     if (viewedRunning !== undefined) return '整片合成中，关闭窗口不影响合成；完成后可预览与下载'
     if (viewedFailed !== undefined) return '整片合成失败，请检查剪辑后重新点击「合成成片」'
+    if (previewingMaterial)
+      return `正在预览${materialName(previewMaterial)}${materialRange === undefined ? '' : ` ${seconds(materialRange.start)}–${seconds(materialRange.end)} 秒`}；播放只播放所选区间，操作成片轨可返回整片`
     if (pick !== undefined)
       return '拖动两端调整选区，按住选区拖到上面的成片轨；也可按回车插入到播放头处'
     if (selectedBrand != null) return '片头片尾位置固定，不能拖动或裁剪；可在卡片中更换或删除模板'
@@ -573,14 +628,20 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         disabled={!editable || draft?.canUndo !== true}
         label="撤销"
         name="undo"
-        onClick={() => draft?.undo()}
+        onClick={() => {
+          previewFilm()
+          draft?.undo()
+        }}
         size="sm"
       />
       <IconButton
         disabled={!editable || draft?.canRedo !== true}
         label="重做"
         name="redo"
-        onClick={() => draft?.redo()}
+        onClick={() => {
+          previewFilm()
+          draft?.redo()
+        }}
         size="sm"
       />
       <span aria-hidden="true" className="video-editor-bar-divider" />
@@ -614,21 +675,27 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         <span className="video-editor-tool-label">删除</span>
       </Button>
       {catalog === undefined || draft === undefined ? null : (
-        <AddMenu
-          catalog={catalog}
-          brands={brands}
-          disabled={!viewingDraft}
-          durationOf={durationOf}
-          onAdd={addMaterial}
-        />
+        <AddMenu brands={brands} disabled={!viewingDraft} />
       )}
     </>
   )
 
   const readout = (
     <span className="video-editor-readout">
-      共 <b>{seconds(viewingDraft ? fullTotal : (viewedDuration ?? 0))}</b> 秒 · 上限{' '}
-      {MAX_FILM_SECONDS} 秒
+      {previewingMaterial ? (
+        <>
+          素材选区 ·{' '}
+          <b>
+            {seconds(materialRange === undefined ? 0 : materialRange.end - materialRange.start)}
+          </b>{' '}
+          秒
+        </>
+      ) : (
+        <>
+          共 <b>{seconds(viewingDraft ? fullTotal : (viewedDuration ?? 0))}</b> 秒 · 上限{' '}
+          {MAX_FILM_SECONDS} 秒
+        </>
+      )}
     </span>
   )
 
@@ -666,8 +733,16 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       </p>
     ) : (
       <FilmTimeline
+        scrollRef={trackScrollRef}
         addSubtitleBlocked={addSubtitleBlocked}
-        addVideo={<AddVideoRow catalog={catalog} durationOf={durationOf} onAdd={addMaterial} />}
+        addVideo={
+          <AddVideoRow
+            catalog={catalog}
+            disabled={!viewingDraft}
+            durationOf={durationOf}
+            onAdd={addMaterial}
+          />
+        }
         anchorRef={anchorRef}
         currentTime={currentTime}
         durationOf={durationOf}
@@ -684,11 +759,16 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           setPick(next)
           if (next !== undefined) setSelection(undefined)
         }}
+        onPreviewMaterial={showMaterial}
         onRetry={(sourceJobId) => void retry(sourceJobId)}
         // 拖动时收起字幕卡与音乐卡；选中的段留着（拖的可能就是它的两端）。
-        onScrub={() => setSelection((value) => (value?.kind === 'segment' ? value : undefined))}
-        onSeek={(time) => previewRef.current?.previewAt(time)}
+        onScrub={() => {
+          previewFilm()
+          setSelection((value) => (value?.kind === 'segment' ? value : undefined))
+        }}
+        onSeek={(time) => previewFilm(time)}
         onSelect={(next) => {
+          previewFilm()
           setSelection(next)
           if (next !== undefined) setPick(undefined)
         }}
@@ -701,7 +781,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         }}
         onSwitchVersion={switchVersion}
         onTrim={(id, edge, value) => apply(trimSegment(film, id, edge, value))}
-        onTrimPreview={(clock, edge) => previewRef.current?.previewAt(clock, edge)}
+        onTrimPreview={(clock, edge) => previewFilm(clock, edge)}
         peaksOf={(url) => peaks.get(url) ?? LOADING_PEAKS}
         pick={viewingDraft ? pick : undefined}
         retrying={retrying}
@@ -886,10 +966,11 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         className="video-editor-dialog"
         onEscapeKeyDown={(event) => {
           // 有选中或选区时 Escape 先收起它们，再按一次才关编辑器。
-          if (shownSelection === undefined && pick === undefined) return
+          if (shownSelection === undefined && pick === undefined && !previewingMaterial) return
           event.preventDefault()
           setSelection(undefined)
           setPick(undefined)
+          previewFilm()
         }}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={keyDown}
@@ -913,13 +994,19 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           <EditorPreview
             backdrop={{ current: stagePoster, original: undefined }}
             barEnd={downloadButton}
-            caption={viewingDraft ? captionAt(burned, bodyTime) : undefined}
-            contentKey={viewingDraft ? 'whole-film' : `version:${viewingKey}`}
+            caption={viewingDraft && !previewingMaterial ? captionAt(burned, bodyTime) : undefined}
+            contentKey={
+              previewingMaterial
+                ? `material:${previewMaterial.jobId}`
+                : viewingDraft
+                  ? 'whole-film'
+                  : `version:${viewingKey}`
+            }
             current={current}
-            currentTime={currentTime}
-            muteMediaAudio={viewingDraft}
+            currentTime={previewingMaterial ? materialTime : currentTime}
+            muteMediaAudio={viewingDraft && !previewingMaterial}
             playBlocked={
-              viewingDraft && music.previewAudio.kind !== 'ready'
+              viewingDraft && !previewingMaterial && music.previewAudio.kind !== 'ready'
                 ? music.previewAudio.kind === 'loading'
                   ? '正在准备预览声音…'
                   : music.previewAudio.message
@@ -968,24 +1055,31 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
             }
             onPlay={() => {
               setSelection(undefined)
-              if (viewingDraft) music.prime()
+              if (viewingDraft && !previewingMaterial) music.prime()
             }}
             onPlaybackChange={setPlayback}
-            onTime={setCurrentTime}
+            onTime={previewingMaterial ? setMaterialTime : setCurrentTime}
             original={undefined}
             overlay={card}
             poster={stagePoster}
             readout={readout}
             ref={previewRef}
             timeline={
-              viewingDraft ? (
-                timeline
-              ) : (
-                // 看着某一版时草稿在下面淡着、不能动，点「未合成」回来接着剪。
-                <div className="whole-film-timeline-locked" inert>
-                  {timeline}
-                </div>
-              )
+              <div
+                className="whole-film-track-scroll"
+                ref={trackScrollRef}
+                role="region"
+                aria-label="轨道列表"
+              >
+                {viewingDraft ? (
+                  timeline
+                ) : (
+                  // 看着某一版时草稿在下面淡着、不能动，点「未合成」回来接着剪。
+                  <div className="whole-film-timeline-locked" inert>
+                    {timeline}
+                  </div>
+                )}
+              </div>
             }
             tools={toolButtons}
             versions={

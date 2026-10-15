@@ -112,9 +112,9 @@ const composeBlockedBy = async (user: ReturnType<typeof userEvent.setup>) => {
 const timeline = () => screen.findByRole('region', { name: '整片时间线' })
 const filmSegments = () => screen.queryAllByRole('button', { name: /^第 \d+ 段/ })
 
-/** 从「添加视频」选一版放进素材区。 */
+/** 从素材区末尾的「添加镜头组」选一版放进素材区。 */
 const addMaterial = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-  await user.click(await screen.findByRole('button', { name: '添加视频' }))
+  await user.click(await screen.findByRole('button', { name: '添加镜头组' }))
   await user.click(await screen.findByRole('menuitem', { name: new RegExp(`^${name}`) }))
 }
 
@@ -140,6 +140,10 @@ const stubLayout = () => {
   vi.spyOn(screen.getByTestId('film-lane'), 'getBoundingClientRect').mockReturnValue(
     rect(0, 22, 200, 48),
   )
+  vi.spyOn(
+    screen.getByRole('region', { name: '轨道列表' }),
+    'getBoundingClientRect',
+  ).mockReturnValue(rect(0, 0, 200, 300))
 }
 
 beforeEach(() => {
@@ -339,7 +343,7 @@ describe('WholeFilmEditor', () => {
     expect(screen.getByRole('button', { name: '整片 V1' })).toBeVisible()
   })
 
-  it('开局为空：成片轨是占位，素材区只有一行「添加视频」；选成片面板按版本组列出各版', async () => {
+  it('开局为空：成片轨是占位，素材区末尾常驻「添加镜头组」；选成片面板按版本组列出各版', async () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
@@ -349,7 +353,7 @@ describe('WholeFilmEditor', () => {
     expect(screen.getByText('成片轨还是空的')).toBeVisible()
     expect(await composeBlockedBy(user)).toBe('成片轨为空，无法合成；请先从素材轨挑段放入成片轨')
 
-    await user.click(screen.getByRole('button', { name: '添加视频' }))
+    await user.click(screen.getByRole('button', { name: '添加镜头组' }))
     const tiles = (await screen.findAllByRole('menuitem')).map((item) =>
       item.getAttribute('aria-label'),
     )
@@ -362,7 +366,7 @@ describe('WholeFilmEditor', () => {
 
     await user.click(screen.getByRole('menuitem', { name: /^镜头组 1 V2/ }))
     expect(lane('镜头组 1 · V2')).toBeVisible()
-    expect(screen.queryByRole('button', { name: '添加视频' })).toBeNull()
+    expect(screen.getByRole('button', { name: '添加镜头组' })).toBeVisible()
   })
 
   it('键盘：回车选中整条素材，调整结尾后回车插入到播放头处，后面的段接着排', async () => {
@@ -568,7 +572,7 @@ describe('WholeFilmEditor', () => {
     await addMaterial(user, '镜头组 1 V1')
     lane('镜头组 1 · V1').focus()
     await user.keyboard('{Enter}{Enter}')
-    await addMaterialFromToolbar(user, '镜头组 2 V1')
+    await addMaterialWithKeyboard(user, '镜头组 2 V1')
     lane('镜头组 2 · V1').focus()
     await user.keyboard('{Enter}{Enter}')
 
@@ -628,12 +632,11 @@ describe('WholeFilmEditor', () => {
   })
 })
 
-/** 素材区已有轨时用键盘从控制条的「添加」→「视频」选一版：方向键移到那一格，回车。 */
-const addMaterialFromToolbar = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-  screen.getByRole('button', { name: '添加' }).focus()
+/** 素材区已有轨时仍可从末尾入口添加：方向键移到那一格，回车。 */
+const addMaterialWithKeyboard = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+  screen.getByRole('button', { name: '添加镜头组' }).focus()
   await user.keyboard('{Enter}')
-  await screen.findByRole('menuitem', { name: '视频' })
-  await user.keyboard('{Home}{ArrowRight}')
+  await user.keyboard('{Home}')
   await screen.findByRole('menuitem', { name: new RegExp(`^${name}`) })
   for (let step = 0; step < 10; step += 1) {
     if (document.activeElement?.getAttribute('aria-label')?.startsWith(name) === true) break
@@ -672,6 +675,153 @@ const UPLOADED = {
   url: MUSIC_URL,
   userStart: null,
 }
+
+describe('素材区预览与整片播放头', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const media = () => screen.getByLabelText<HTMLVideoElement>('视频播放器')
+  const preparePlayback = () => {
+    const audio = stubWebAudio({ duration: 20 })
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
+    const frames = new Map<number, FrameRequestCallback>()
+    let id = 0
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.set(++id, callback)
+      return id
+    })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((frame) => frames.delete(frame))
+    return {
+      audio,
+      tick: () =>
+        act(() => {
+          const pending = [...frames]
+          frames.clear()
+          for (const [, callback] of pending) callback(0)
+        }),
+    }
+  }
+
+  it('拖选未松手时就显示素材边界，播放限定在选区，整片字幕、混音与播放头保持独立', async () => {
+    const { audio, tick } = preparePlayback()
+    seedFilm(UPLOADED)
+    vi.mocked(guess).mockResolvedValue({ bpm: 120, offset: 0 })
+    server.use(http.get(MUSIC_URL, () => HttpResponse.arrayBuffer(new ArrayBuffer(8))))
+    serve(VIDEOS, [
+      subtitle(TAKE_1, { sentences: [{ startMs: 0, endMs: 4000, text: '整片口播', speaker: 0 }] }),
+    ])
+    const user = userEvent.setup()
+    await renderEditor()
+    await timeline()
+    await addMaterial(user, '镜头组 2 V1')
+    stubLayout()
+    const filmClock = screen.getByRole('slider', { name: '时间线播放位置' })
+    fireEvent.change(filmClock, { target: { value: '1.75' } })
+    fireEvent.loadedMetadata(media())
+    expect(within(screen.getByLabelText('视频预览')).getByText('整片口播')).toBeVisible()
+    await waitFor(() => expect(screen.getByRole('button', { name: '播放' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: '播放' }))
+    await waitFor(() => expect(audio.played).toHaveLength(1))
+    const before = window.localStorage.getItem(filmDraftStorageKey(CONVERSATION))
+    const material = lane('镜头组 2 · V1')
+    fireEvent.pointerDown(material, { pointerId: 1, button: 0, clientX: 10, clientY: 150 })
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_2}.mp4`)
+    expect(media().currentTime).toBe(1)
+    fireEvent.pointerMove(material, { pointerId: 1, clientX: 30, clientY: 150 })
+    expect(media().currentTime).toBeCloseTo(2.999)
+    expect(within(screen.getByLabelText('视频预览')).queryByText('整片口播')).toBeNull()
+    expect(filmClock).toHaveValue('1.75')
+    fireEvent.pointerUp(material, { pointerId: 1, clientX: 30, clientY: 150 })
+    await user.click(screen.getByRole('button', { name: '开启声音' }))
+    await user.click(screen.getByRole('button', { name: '播放' }))
+    expect(media().currentTime).toBe(1)
+    expect(media().muted).toBe(false)
+    media().currentTime = 2
+    tick()
+    expect(filmClock).toHaveValue('1.75')
+    expect(audio.played).toHaveLength(1)
+    expect(audio.played[0]?.stopped).toBe(true)
+    media().currentTime = 3
+    tick()
+    expect(screen.getByRole('button', { name: '播放' })).toBeVisible()
+    expect(media().currentTime).toBeCloseTo(2.999)
+    expect(window.localStorage.getItem(filmDraftStorageKey(CONVERSATION))).toBe(before)
+    await user.keyboard('{Escape}')
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
+    expect(filmClock).toHaveValue('1.75')
+    expect(within(screen.getByLabelText('视频预览')).getByText('整片口播')).toBeVisible()
+  })
+
+  it('键盘选区与边界跟随素材；操作成片轨恢复原播放头，再次点素材可重新预览', async () => {
+    preparePlayback()
+    seedFilm()
+    serve(VIDEOS, [])
+    const user = userEvent.setup()
+    await renderEditor()
+    await timeline()
+    await addMaterial(user, '镜头组 2 V1')
+    stubLayout()
+    fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
+      target: { value: '0.5' },
+    })
+    const material = lane('镜头组 2 · V1')
+    material.focus()
+    await user.keyboard('{Enter}')
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_2}.mp4`)
+    screen.getByRole('slider', { name: '选区结尾' }).focus()
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    expect(media().currentTime).toBeCloseTo(2.999)
+    const end = screen.getByRole('slider', { name: '选区结尾' })
+    fireEvent.pointerDown(end, { pointerId: 2, button: 0, clientX: 30 })
+    fireEvent.pointerMove(end, { pointerId: 2, clientX: 25 })
+    expect(media().currentTime).toBeCloseTo(2.499)
+    fireEvent.pointerUp(end, { pointerId: 2, clientX: 25 })
+    await user.click(screen.getByRole('button', { name: /^第 1 段/ }))
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
+    expect(screen.getByRole('slider', { name: '时间线播放位置' })).toHaveValue('0.5')
+    fireEvent.pointerDown(material, { pointerId: 3, button: 0, clientX: 15, clientY: 150 })
+    fireEvent.pointerUp(material, { pointerId: 3, clientX: 15, clientY: 150 })
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_2}.mp4`)
+    expect(media().currentTime).toBe(1.5)
+  })
+
+  it('切素材版本立即预览新版本并清掉旧选区，切整片版本退出素材模式', async () => {
+    preparePlayback()
+    seedFilm()
+    const finished = video('88888888-8888-4888-8888-888888888888', {
+      operation: 'compose',
+      outputUrl: 'https://example.com/whole-film.mp4',
+      finishedAt: '2026-10-14T10:00:00Z',
+    })
+    serve([...VIDEOS, finished], [])
+    const user = userEvent.setup()
+    await renderEditor()
+    await timeline()
+    await addMaterial(user, '镜头组 1 V1')
+    lane('镜头组 1 · V1').focus()
+    await user.keyboard('{Enter}')
+    await user.click(screen.getByRole('button', { name: '镜头组 1 当前用 V1，换版本' }))
+    await user.click(screen.getByRole('menuitemradio', { name: /V2/ }))
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${COMPOSITE_1}.mp4`)
+    expect(screen.queryByRole('slider', { name: '选区结尾' })).toBeNull()
+    // 素材区末尾的入口与轨道头换版走同一条选择逻辑，不会留下上一个版本的预览。
+    await addMaterial(user, '镜头组 1 V1')
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
+    expect(lane('镜头组 1 · V1')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '整片 V1' }))
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', 'https://example.com/whole-film.mp4')
+    expect(screen.queryByText(/正在预览镜头组/)).toBeNull()
+  })
+})
 
 /** 生成的音乐：一条音频记录。 */
 const musicJob = (overrides: Partial<GenerationJob> = {}) =>

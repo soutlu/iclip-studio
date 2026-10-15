@@ -204,6 +204,8 @@ export function EditorPreview({
         pendingSeekRef.current[slot] = target
         element.src = segment.mediaUrl
       } else if (element.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        // 元数据已可用时以这次定位为准，稍后到达的 loadedmetadata 不能再应用旧目标。
+        pendingSeekRef.current[slot] = null
         element.currentTime = target
       } else {
         pendingSeekRef.current[slot] = target

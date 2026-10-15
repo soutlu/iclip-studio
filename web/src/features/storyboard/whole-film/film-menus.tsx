@@ -1,5 +1,4 @@
-/** 整片编辑器底部的几个菜单，一律向上展开：控制条上的「添加」（选成片放进素材区）、素材区为空时那一行「添加视频」、
- * 素材轨轨道头上的版本胶囊。 */
+/** 整片编辑器的菜单：控制条添加片头片尾，素材区末尾的加号选镜头组，轨道头上的版本胶囊换版本。 */
 
 import { useState } from 'react'
 import type { BrandTemplate } from '@/shared/api/brand-templates'
@@ -91,12 +90,14 @@ function TakesPanel({ catalog, durationOf, onAdd }: PanelProps) {
   )
 }
 
-/** 控制条上的「添加」：视频、片头、片尾各自展开对应候选。 */
+/** 控制条上的「添加」：片头、片尾各自展开对应候选。 */
 export function AddMenu({
   disabled = false,
   brands,
-  ...props
-}: PanelProps & { disabled?: boolean; brands?: BrandMenuProps }) {
+}: {
+  disabled?: boolean
+  brands: BrandMenuProps
+}) {
   return (
     <MenuRoot>
       <MenuTrigger asChild disabled={disabled}>
@@ -107,38 +108,28 @@ export function AddMenu({
         </button>
       </MenuTrigger>
       <MenuSurface align="start" className="film-menu-small" side="top">
-        <MenuSub>
-          <MenuSubTrigger icon="video">视频</MenuSubTrigger>
-          <MenuSubSurface alignOffset={-5} className="film-menu-panel">
-            <TakesPanel {...props} />
-          </MenuSubSurface>
-        </MenuSub>
-        {brands === undefined
-          ? null
-          : (['intro', 'outro'] as const).map((position) => (
-              <MenuSub key={position}>
-                <MenuSubTrigger icon="video">
-                  {position === 'intro' ? '片头' : '片尾'}
-                </MenuSubTrigger>
-                <MenuSubSurface alignOffset={-5} className="film-menu-panel">
-                  <TemplatePanel brands={brands} position={position} />
-                </MenuSubSurface>
-              </MenuSub>
-            ))}
+        {(['intro', 'outro'] as const).map((position) => (
+          <MenuSub key={position}>
+            <MenuSubTrigger icon="video">{position === 'intro' ? '片头' : '片尾'}</MenuSubTrigger>
+            <MenuSubSurface alignOffset={-5} className="film-menu-panel">
+              <TemplatePanel brands={brands} position={position} />
+            </MenuSubSurface>
+          </MenuSub>
+        ))}
       </MenuSurface>
     </MenuRoot>
   )
 }
 
-/** 素材区为空时的那一行：「添加视频」直接展开选成片的面板。 */
-export function AddVideoRow(props: PanelProps) {
+/** 素材区末尾常驻的加号：直接展开本对话镜头组的成片版本。 */
+export function AddVideoRow({ disabled = false, ...props }: PanelProps & { disabled?: boolean }) {
   return (
-    <div className="film-materials-empty">
+    <div className="film-materials-add-row">
       <MenuRoot>
-        <MenuTrigger asChild>
+        <MenuTrigger asChild disabled={disabled}>
           <button className="film-materials-add ui-state ui-focus" type="button">
             <Icon decorative name="add" size="xs" />
-            添加视频
+            添加镜头组
           </button>
         </MenuTrigger>
         <MenuSurface align="start" className="film-menu-panel" side="top">
