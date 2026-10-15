@@ -578,13 +578,14 @@ async def test_manual_transcription_needs_the_submit_permission() -> None:
 # --- 读取 -----------------------------------------------------------------------
 
 
-async def test_a_finished_subtitle_record_reads_back_its_sentences_by_kind_source_and_conversation() -> (
-    None
-):
+@pytest.mark.parametrize("sentences", [SENTENCES, ()], ids=["有口播", "没有口播"])
+async def test_a_finished_subtitle_record_reads_back_its_sentences_by_kind_source_and_conversation(
+    sentences: tuple[SubtitleSentence, ...],
+) -> None:
     me, conversation = uuid.uuid4(), uuid.uuid4()
     take = completed_take(owner_user_id=me, conversation_id=conversation)
     subtitle = make_subtitle(
-        take, status=STATUS_COMPLETED, sentences=SENTENCES, finished_at=datetime.now(UTC)
+        take, status=STATUS_COMPLETED, sentences=sentences, finished_at=datetime.now(UTC)
     )
     world = build_world([take, subtitle])
     async with client(build_app(world, principal("generation:read", user_id=me))) as http:
@@ -595,16 +596,24 @@ async def test_a_finished_subtitle_record_reads_back_its_sentences_by_kind_sourc
 
     assert single.status_code == 200, single.text
     generation = single.json()["generation"]
-    assert generation["sentences"] == [
-        {"startMs": 100, "endMs": 1800, "text": "第一句。", "speaker": 0},
-        {"startMs": 2000, "endMs": 3000, "text": "第二句。", "speaker": None},
-    ]
+    expected = (
+        [
+            {"startMs": 100, "endMs": 1800, "text": "第一句。", "speaker": 0},
+            {"startMs": 2000, "endMs": 3000, "text": "第二句。", "speaker": None},
+        ]
+        if sentences
+        else []
+    )
+    assert generation["status"] == STATUS_COMPLETED
+    assert generation["sentences"] == expected
     assert (generation["outputUrl"], generation["sourceJobId"], generation["sourceUrl"]) == (
         None,
         str(take.id),
         TAKE_URL,
     )
     assert [item["id"] for item in by_kind.json()["items"]] == [str(subtitle.id)]
+    assert by_kind.json()["items"][0]["sentences"] == expected
+    assert by_kind.json()["items"][0]["status"] == STATUS_COMPLETED
     assert {item["id"] for item in by_conversation.json()["items"]} == {
         str(take.id),
         str(subtitle.id),

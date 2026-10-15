@@ -46,6 +46,11 @@ RECOGNIZED: dict[str, Any] = {
     "usage": {"duration": 3},
     "request_id": "req-42",
 }
+NO_WORDS = {
+    "request_id": "req-no-words",
+    "code": "CLIENT_ERROR",
+    "message": "ASR_RESPONSE_HAVE_NO_WORDS",
+}
 
 
 class FakeServices:
@@ -148,6 +153,21 @@ async def test_audio_without_speech_is_a_normal_empty_result(output: dict[str, A
     assert len(services.recognitions) == 1
 
 
+async def test_no_words_response_is_an_empty_result_with_upstream_diagnostics() -> None:
+    services = FakeServices(
+        _video(audio=True),
+        httpx.Response(400, json=NO_WORDS),
+    )
+
+    submission = await _provider(services).submit(_subtitle_job())
+
+    assert submission.sentences == ()
+    assert submission.provider_task_id == "req-no-words"
+    assert submission.provider_status == "ASR_RESPONSE_HAVE_NO_WORDS"
+    assert submission.output_url is None
+    assert len(services.recognitions) == 1, "空口播已是最终结果，不重试识别"
+
+
 async def test_an_unreachable_video_is_an_explicit_failure() -> None:
     services = FakeServices(None, httpx.Response(200, json=RECOGNIZED))
 
@@ -173,7 +193,52 @@ async def test_a_broken_video_is_a_processing_failure() -> None:
             httpx.Response(400, json={"code": "InvalidParameter", "message": "坏了"}),
             "PROVIDER_REJECTED",
         ),
+        pytest.param(
+            httpx.Response(400, json=NO_WORDS | {"message": "INVALID_AUDIO"}),
+            "PROVIDER_REJECTED",
+            id="other-client-error",
+        ),
+        pytest.param(
+            httpx.Response(400, json=NO_WORDS | {"message": "ASR_RESPONSE_HAVE_NO_WORDS: detail"}),
+            "PROVIDER_REJECTED",
+            id="no-words-substring",
+        ),
+        pytest.param(
+            httpx.Response(400, json=NO_WORDS | {"code": "ASR_RESPONSE_HAVE_NO_WORDS"}),
+            "PROVIDER_REJECTED",
+            id="different-error-shape",
+        ),
+        pytest.param(
+            httpx.Response(
+                400, json=NO_WORDS | {"message": {"code": "ASR_RESPONSE_HAVE_NO_WORDS"}}
+            ),
+            "PROVIDER_REJECTED",
+            id="malformed-error-message",
+        ),
+        pytest.param(
+            httpx.Response(400, json=[NO_WORDS]),
+            "PROVIDER_REJECTED",
+            id="malformed-error-root",
+        ),
+        pytest.param(
+            httpx.Response(400, text="ASR_RESPONSE_HAVE_NO_WORDS"),
+            "PROVIDER_REJECTED",
+            id="non-json-error",
+        ),
+        pytest.param(httpx.Response(401, json=NO_WORDS), "PROVIDER_REJECTED", id="unauthenticated"),
+        pytest.param(httpx.Response(403, json=NO_WORDS), "PROVIDER_REJECTED", id="forbidden"),
+        pytest.param(
+            httpx.Response(500, json=NO_WORDS), "PROVIDER_SERVER_ERROR", id="server-error"
+        ),
         (httpx.Response(503, text="busy"), "PROVIDER_SERVER_ERROR"),
+        pytest.param(
+            httpx.Response(200, json=NO_WORDS), "PROVIDER_MALFORMED", id="success-without-output"
+        ),
+        pytest.param(
+            httpx.Response(200, json=[RECOGNIZED]),
+            "PROVIDER_MALFORMED",
+            id="malformed-success-root",
+        ),
         (httpx.Response(200, text="not json"), "PROVIDER_MALFORMED"),
         (httpx.ReadTimeout("等不到"), "PROVIDER_RESULT_UNKNOWN"),
         (httpx.ConnectError("连不上"), "PROVIDER_UNREACHABLE"),
@@ -187,6 +252,7 @@ async def test_service_failures_carry_a_code_that_tells_whether_it_was_received(
     with pytest.raises(ProviderError) as raised:
         await _provider(services).submit(_subtitle_job())
     assert raised.value.code == code
+    assert raised.value.retryable is (code in {"PROVIDER_UNREACHABLE", "PROVIDER_SERVER_ERROR"})
     assert len(services.recognitions) == 1, "只发一次，不自己重试"
 
 
