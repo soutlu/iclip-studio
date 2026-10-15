@@ -107,7 +107,7 @@ class BrandTemplateFacts:
     id: uuid.UUID
     position: BrandPosition
     enabled: bool
-    video_url: str
+    url: str
     duration_ms: int
     width: int
     height: int
@@ -426,7 +426,7 @@ class GenerationService:
             raise ValidationFailed(f"{where}只能用{where}模板")
         return WholeFilmBrand(
             template_id=template.id,
-            url=template.video_url,
+            url=template.url,
             duration_ms=template.duration_ms,
             width=template.width,
             height=template.height,

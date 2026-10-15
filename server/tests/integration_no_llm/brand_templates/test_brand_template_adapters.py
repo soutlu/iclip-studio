@@ -54,7 +54,7 @@ async def test_the_whole_film_side_reads_any_template_and_whether_it_is_in_use(
     template = await store.create(
         position="outro",
         name="片尾",
-        video_url=VIDEO_URL,
+        url=VIDEO_URL,
         video=ProbedVideo(width=1080, height=1920, duration_ms=2500, has_audio=False),
         created_by=creator,
         api_key_id=None,
@@ -69,7 +69,7 @@ async def test_the_whole_film_side_reads_any_template_and_whether_it_is_in_use(
         id=template.id,
         position="outro",
         enabled=True,
-        video_url=VIDEO_URL,
+        url=VIDEO_URL,
         duration_ms=2500,
         width=1080,
         height=1920,

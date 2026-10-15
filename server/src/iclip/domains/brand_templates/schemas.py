@@ -69,7 +69,7 @@ class BrandTemplateOut(CamelModel):
             id=template.id,
             position=template.position,
             name=template.name,
-            url=template.video_url,
+            url=template.url,
             width=template.width,
             height=template.height,
             duration_ms=template.duration_ms,
