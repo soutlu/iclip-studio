@@ -627,7 +627,7 @@ def brand_template(
         id=uuid.uuid4(),
         position="intro" if position == "intro" else "outro",
         enabled=enabled,
-        video_url=url,
+        url=url,
         duration_ms=duration_ms,
         width=1080,
         height=1920,

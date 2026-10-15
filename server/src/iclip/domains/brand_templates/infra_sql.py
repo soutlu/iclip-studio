@@ -35,7 +35,7 @@ brand_templates_table = Table(
     Column("position", Text, nullable=False),
     Column("name", Text, nullable=False),
     # 建模板时那条视频上传的地址；画幅、时长与音轨是当时从它量出来的。
-    Column("video_url", Text, nullable=False),
+    Column("url", Text, nullable=False),
     Column("width", Integer, nullable=False),
     Column("height", Integer, nullable=False),
     Column("duration_ms", Integer, nullable=False),
@@ -58,7 +58,7 @@ brand_templates_table = Table(
 )
 
 _ROW: Final = """
-SELECT id, position, name, video_url, width, height, duration_ms, has_audio, created_by,
+SELECT id, position, name, url, width, height, duration_ms, has_audio, created_by,
        created_at, disabled_at
 FROM iclip.brand_templates"""
 
@@ -70,13 +70,13 @@ WHERE (CAST(:position AS text) IS NULL OR position = CAST(:position AS text))
 ORDER BY created_at DESC, id DESC""")
 
 _RETURNING: Final = """
-RETURNING id, position, name, video_url, width, height, duration_ms, has_audio, created_by,
+RETURNING id, position, name, url, width, height, duration_ms, has_audio, created_by,
           created_at, disabled_at"""
 
 _INSERT: Final = text(f"""
 INSERT INTO iclip.brand_templates
-    (id, position, name, video_url, width, height, duration_ms, has_audio, created_by, api_key_id)
-VALUES (:id, :position, :name, :video_url, :width, :height, :duration_ms, :has_audio,
+    (id, position, name, url, width, height, duration_ms, has_audio, created_by, api_key_id)
+VALUES (:id, :position, :name, :url, :width, :height, :duration_ms, :has_audio,
         :created_by, :api_key_id){_RETURNING}""")
 
 # 停用时已停用的保留原来的停用时刻；不给的那一项不动。
@@ -96,7 +96,7 @@ def _row_of(row: RowMapping) -> BrandTemplate:
         id=row["id"],
         position=row["position"],
         name=row["name"],
-        video_url=row["video_url"],
+        url=row["url"],
         width=row["width"],
         height=row["height"],
         duration_ms=row["duration_ms"],
@@ -118,7 +118,7 @@ class SqlBrandTemplateStore:
         *,
         position: Position,
         name: str,
-        video_url: str,
+        url: str,
         video: ProbedVideo,
         created_by: uuid.UUID,
         api_key_id: uuid.UUID | None,
@@ -132,7 +132,7 @@ class SqlBrandTemplateStore:
                             "id": uuid.uuid4(),
                             "position": position,
                             "name": name,
-                            "video_url": video_url,
+                            "url": url,
                             "width": video.width,
                             "height": video.height,
                             "duration_ms": video.duration_ms,

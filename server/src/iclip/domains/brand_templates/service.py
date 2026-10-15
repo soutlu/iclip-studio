@@ -36,11 +36,11 @@ class BrandTemplateService:
         别人的上传、不是视频的上传、不存在的都是 ``NotFound``；量不出来、或超过
         ``MAX_TEMPLATE_MS`` 是 ``ValidationFailed``。"""
 
-        video_url = await self._own_video_upload(principal, body.upload_id)
-        if video_url is None:
+        url = await self._own_video_upload(principal, body.upload_id)
+        if url is None:
             raise NotFound("没有这条视频上传")
         try:
-            video = await self._probe(video_url)
+            video = await self._probe(url)
         except MediaError as exc:
             _logger.warning("品牌模板的视频量不出来", upload_id=body.upload_id, error=str(exc))
             raise ValidationFailed("读不出这条视频的画面与时长，请换一条或稍后重试") from exc
@@ -52,7 +52,7 @@ class BrandTemplateService:
         created = await self._store.create(
             position=body.position,
             name=body.name,
-            video_url=video_url,
+            url=url,
             video=video,
             created_by=principal.user_id,
             api_key_id=principal.api_key_id,

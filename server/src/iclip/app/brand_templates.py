@@ -44,7 +44,7 @@ def brand_template_facts(store: BrandTemplateStore) -> BrandTemplates:
             id=template.id,
             position=template.position,
             enabled=template.disabled_at is None,
-            video_url=template.video_url,
+            url=template.url,
             duration_ms=template.duration_ms,
             width=template.width,
             height=template.height,

@@ -18,7 +18,7 @@ class BrandTemplateStore(Protocol):
         *,
         position: Position,
         name: str,
-        video_url: str,
+        url: str,
         video: ProbedVideo,
         created_by: uuid.UUID,
         api_key_id: uuid.UUID | None,

@@ -1,4 +1,4 @@
-"""迁移 0028：品牌模板表的约束，以及降级删表、再升级建回来。
+"""品牌模板迁移：现行表的约束、0028 建表与 0029 地址列改名的数据保留。
 
 降级在一个临时库上做，不动会话共用的测试库。"""
 
@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Generator, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +25,13 @@ from tests.helpers.fork_lineage import make_user
 BEFORE_BRAND_TEMPLATES = "3c8e5a1f9d40"
 """0027，品牌模板表之前的那一版。"""
 
+BEFORE_URL_RENAME = "476ee9b3b464"
+"""0028，地址列仍叫 video_url。"""
+
 _INSERT = text(
     "INSERT INTO iclip.brand_templates"
-    " (id, position, name, video_url, width, height, duration_ms, has_audio, created_by)"
-    " VALUES (:id, :position, :name, :video_url, :width, :height, :duration_ms, :has_audio,"
+    " (id, position, name, url, width, height, duration_ms, has_audio, created_by)"
+    " VALUES (:id, :position, :name, :url, :width, :height, :duration_ms, :has_audio,"
     " :created_by)"
 )
 
@@ -37,7 +41,7 @@ def _row(created_by: uuid.UUID) -> dict[str, Any]:
         "id": uuid.uuid4(),
         "position": "intro",
         "name": "片头",
-        "video_url": "https://cdn.example.test/brand.mp4",
+        "url": "https://cdn.example.test/brand.mp4",
         "width": 1080,
         "height": 1920,
         "duration_ms": 3000,
@@ -124,3 +128,55 @@ def test_downgrade_drops_the_table_and_upgrade_brings_it_back(scratch_db: str) -
     assert not asyncio.run(_has_table(scratch_db))
     command.upgrade(cfg, "head")
     assert asyncio.run(_has_table(scratch_db))
+
+
+async def _existing_template(url: str) -> dict[str, Any]:
+    """在 0028 表里写一条每列都有值的模板，返回改名后应保留的完整数据。"""
+
+    engine = build_engine(url, poolclass=NullPool)
+    try:
+        row = {
+            **_row(await make_user(engine)),
+            "api_key_id": uuid.uuid4(),
+            "created_at": datetime(2026, 10, 14, 10, 0, tzinfo=UTC),
+            "disabled_at": datetime(2026, 10, 14, 11, 0, tzinfo=UTC),
+        }
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.brand_templates"
+                    " (id, position, name, video_url, width, height, duration_ms, has_audio,"
+                    " created_by, api_key_id, created_at, disabled_at)"
+                    " VALUES (:id, :position, :name, :url, :width, :height, :duration_ms,"
+                    " :has_audio, :created_by, :api_key_id, :created_at, :disabled_at)"
+                ),
+                row,
+            )
+        return row
+    finally:
+        await engine.dispose()
+
+
+async def _stored_template(url: str) -> dict[str, Any]:
+    engine = build_engine(url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT * FROM iclip.brand_templates"))
+            return dict(result.mappings().one())
+    finally:
+        await engine.dispose()
+
+
+def test_url_rename_preserves_existing_data_in_both_directions(scratch_db: str) -> None:
+    cfg = _alembic(scratch_db)
+    command.upgrade(cfg, BEFORE_URL_RENAME)
+    row = asyncio.run(_existing_template(scratch_db))
+    previous = {**row, "video_url": row["url"]}
+    del previous["url"]
+
+    command.upgrade(cfg, "head")
+    assert asyncio.run(_stored_template(scratch_db)) == row
+    command.downgrade(cfg, BEFORE_URL_RENAME)
+    assert asyncio.run(_stored_template(scratch_db)) == previous
+    command.upgrade(cfg, "head")
+    assert asyncio.run(_stored_template(scratch_db)) == row

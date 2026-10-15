@@ -31,7 +31,7 @@ class BrandTemplate:
     id: uuid.UUID
     position: Position
     name: str
-    video_url: str
+    url: str
     width: int
     height: int
     duration_ms: int
