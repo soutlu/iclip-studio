@@ -1,4 +1,4 @@
-"""品牌模板迁移：现行表的约束、0028 建表与 0029 地址列改名的数据保留。
+"""品牌资源迁移：现行表约束、历史升级的数据保留，以及有扩展数据时拒绝降级。
 
 降级在一个临时库上做，不动会话共用的测试库。"""
 
@@ -28,10 +28,16 @@ BEFORE_BRAND_TEMPLATES = "3c8e5a1f9d40"
 BEFORE_URL_RENAME = "476ee9b3b464"
 """0028，地址列仍叫 video_url。"""
 
+URL_RENAMED = "a7d8c31f42e9"
+"""0029，只有视频模板，地址列已叫 url。"""
+
+BRAND_RESOURCES = "0f74c2a89d31"
+"""0030，kind 为自由文本，brand 与媒体参数独立可空。"""
+
 _INSERT = text(
     "INSERT INTO iclip.brand_templates"
-    " (id, position, name, url, width, height, duration_ms, has_audio, created_by)"
-    " VALUES (:id, :position, :name, :url, :width, :height, :duration_ms, :has_audio,"
+    " (id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by)"
+    " VALUES (:id, :kind, :brand, :name, :url, :width, :height, :duration_ms, :has_audio,"
     " :created_by)"
 )
 
@@ -39,7 +45,6 @@ _INSERT = text(
 def _row(created_by: uuid.UUID) -> dict[str, Any]:
     return {
         "id": uuid.uuid4(),
-        "position": "intro",
         "name": "片头",
         "url": "https://cdn.example.test/brand.mp4",
         "width": 1080,
@@ -50,25 +55,37 @@ def _row(created_by: uuid.UUID) -> dict[str, Any]:
     }
 
 
+_NO_VIDEO_PARAMETERS = {"width": None, "height": None, "duration_ms": None, "has_audio": None}
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("overrides", "accepted"),
     [
         ({}, True),
-        ({"position": "outro"}, True),
-        ({"position": "middle"}, False),
+        ({"kind": "outro", "has_audio": False}, True),
+        ({"kind": "font", **_NO_VIDEO_PARAMETERS}, True),
+        ({"kind": "sound_effect", **_NO_VIDEO_PARAMETERS}, True),
+        ({"kind": "sound_effect", "width": None, "height": None, "has_audio": False}, True),
+        ({"brand": "品牌 A"}, True),
+        ({"kind": None}, False),
+        ({"kind": ""}, False),
+        ({"kind": " \t\n"}, False),
         ({"duration_ms": 0}, False),
         ({"width": 0}, False),
         ({"height": -1}, False),
+        ({"brand": ""}, False),
+        ({"brand": "  "}, False),
+        ({"brand": " \t\n"}, False),
         ({"name": "  "}, False),
         ({"created_by": uuid.uuid4()}, False),
+        *[({field: None}, True) for field in _NO_VIDEO_PARAMETERS],
     ],
-    ids=["片头", "片尾", "位置取值外", "时长为 0", "宽为 0", "高为负", "名称空白", "创建人不存在"],
 )
 async def test_the_table_constraints(
     engine: AsyncEngine, overrides: Mapping[str, Any], accepted: bool
 ) -> None:
-    row = {**_row(await make_user(engine)), **overrides}
+    row = {"kind": "intro", "brand": None, **_row(await make_user(engine)), **overrides}
     if accepted:
         async with engine.begin() as conn:
             await conn.execute(_INSERT, row)
@@ -136,6 +153,7 @@ async def _existing_template(url: str) -> dict[str, Any]:
     engine = build_engine(url, poolclass=NullPool)
     try:
         row = {
+            "position": "intro",
             **_row(await make_user(engine)),
             "api_key_id": uuid.uuid4(),
             "created_at": datetime(2026, 10, 14, 10, 0, tzinfo=UTC),
@@ -174,9 +192,71 @@ def test_url_rename_preserves_existing_data_in_both_directions(scratch_db: str) 
     previous = {**row, "video_url": row["url"]}
     del previous["url"]
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, URL_RENAMED)
     assert asyncio.run(_stored_template(scratch_db)) == row
     command.downgrade(cfg, BEFORE_URL_RENAME)
     assert asyncio.run(_stored_template(scratch_db)) == previous
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, URL_RENAMED)
+    assert asyncio.run(_stored_template(scratch_db)) == row
+
+
+async def _extend_template(url: str, changes: Mapping[str, Any]) -> dict[str, Any]:
+    engine = build_engine(url, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text("SELECT * FROM iclip.brand_templates"))
+            row = {**result.mappings().one(), **changes}
+            await conn.execute(
+                text(
+                    "UPDATE iclip.brand_templates SET kind = :kind, brand = :brand, url = :url,"
+                    " width = :width, height = :height, duration_ms = :duration_ms,"
+                    " has_audio = :has_audio WHERE id = :id"
+                ),
+                row,
+            )
+            return row
+    finally:
+        await engine.dispose()
+
+
+def test_resource_upgrade_and_safe_downgrade_preserve_existing_data(scratch_db: str) -> None:
+    cfg = _alembic(scratch_db)
+    command.upgrade(cfg, BEFORE_URL_RENAME)
+    previous = asyncio.run(_existing_template(scratch_db))
+    command.upgrade(cfg, URL_RENAMED)
+    assert asyncio.run(_stored_template(scratch_db)) == previous
+    expanded = {**previous, "kind": previous["position"], "brand": None}
+    del expanded["position"]
+
+    command.upgrade(cfg, BRAND_RESOURCES)
+    assert asyncio.run(_stored_template(scratch_db)) == expanded
+    command.downgrade(cfg, URL_RENAMED)
+    assert asyncio.run(_stored_template(scratch_db)) == previous
+    command.upgrade(cfg, BRAND_RESOURCES)
+    assert asyncio.run(_stored_template(scratch_db)) == expanded
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"kind": "sound_effect"},
+        {"brand": "品牌 A"},
+        *[{field: None} for field in _NO_VIDEO_PARAMETERS],
+    ],
+    ids=["旧版没有的类型", "品牌信息", "缺宽", "缺高", "缺时长", "缺音轨信息"],
+)
+def test_downgrade_refuses_extended_data_without_losing_it(
+    scratch_db: str, changes: Mapping[str, Any]
+) -> None:
+    cfg = _alembic(scratch_db)
+    command.upgrade(cfg, BEFORE_URL_RENAME)
+    asyncio.run(_existing_template(scratch_db))
+    command.upgrade(cfg, BRAND_RESOURCES)
+    row = asyncio.run(_extend_template(scratch_db, changes))
+
+    with pytest.raises(RuntimeError, match="无法无损降级"):
+        command.downgrade(cfg, URL_RENAMED)
+
+    assert asyncio.run(_stored_template(scratch_db)) == row
+    command.upgrade(cfg, BRAND_RESOURCES)
     assert asyncio.run(_stored_template(scratch_db)) == row

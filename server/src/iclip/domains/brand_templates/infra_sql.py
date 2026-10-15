@@ -1,4 +1,4 @@
-"""品牌模板表与它的 Postgres 仓储。时间统一用数据库时钟；外部输入一律走绑定参数。"""
+"""品牌资源表与片头片尾的 Postgres 仓储。时间统一用数据库时钟；外部输入一律走绑定参数。"""
 
 from __future__ import annotations
 
@@ -32,14 +32,16 @@ brand_templates_table = Table(
     "brand_templates",
     metadata_obj,
     Column("id", Uuid, primary_key=True),
-    Column("position", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    # 未指定所属品牌时为空，不从名称或地址推断。
+    Column("brand", Text, nullable=True),
     Column("name", Text, nullable=False),
-    # 建模板时那条视频上传的地址；画幅、时长与音轨是当时从它量出来的。
+    # 资源文件地址；以下媒体参数在不适用时为空。
     Column("url", Text, nullable=False),
-    Column("width", Integer, nullable=False),
-    Column("height", Integer, nullable=False),
-    Column("duration_ms", Integer, nullable=False),
-    Column("has_audio", Boolean, nullable=False),
+    Column("width", Integer, nullable=True),
+    Column("height", Integer, nullable=True),
+    Column("duration_ms", Integer, nullable=True),
+    Column("has_audio", Boolean, nullable=True),
     Column(
         "created_by",
         Uuid,
@@ -51,31 +53,36 @@ brand_templates_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
     # 为空表示在用；停用不删，已有整片的请求里记着快照。
     Column("disabled_at", DateTime(timezone=True), nullable=True),
-    CheckConstraint("position IN ('intro', 'outro')", name="ck_brand_templates_position"),
+    CheckConstraint("kind ~ '[^[:space:]]'", name="ck_brand_templates_kind"),
+    CheckConstraint("brand IS NULL OR brand ~ '[^[:space:]]'", name="ck_brand_templates_brand"),
     CheckConstraint("btrim(name) <> ''", name="ck_brand_templates_name"),
-    CheckConstraint("width > 0 AND height > 0", name="ck_brand_templates_size"),
-    CheckConstraint("duration_ms > 0", name="ck_brand_templates_duration"),
+    CheckConstraint(
+        "(width IS NULL OR width > 0) AND (height IS NULL OR height > 0)",
+        name="ck_brand_templates_size",
+    ),
+    CheckConstraint("duration_ms IS NULL OR duration_ms > 0", name="ck_brand_templates_duration"),
 )
 
 _ROW: Final = """
-SELECT id, position, name, url, width, height, duration_ms, has_audio, created_by,
+SELECT id, kind AS position, name, url, width, height, duration_ms, has_audio, created_by,
        created_at, disabled_at
 FROM iclip.brand_templates"""
 
-_BY_ID: Final = text(f"{_ROW}\nWHERE id = :id")
+_BY_ID: Final = text(f"{_ROW}\nWHERE id = :id AND kind IN ('intro', 'outro')")
 
 _LIST: Final = text(f"""{_ROW}
-WHERE (CAST(:position AS text) IS NULL OR position = CAST(:position AS text))
+WHERE kind IN ('intro', 'outro')
+  AND (CAST(:position AS text) IS NULL OR kind = CAST(:position AS text))
   AND (CAST(:include_disabled AS boolean) OR disabled_at IS NULL)
 ORDER BY created_at DESC, id DESC""")
 
 _RETURNING: Final = """
-RETURNING id, position, name, url, width, height, duration_ms, has_audio, created_by,
+RETURNING id, kind AS position, name, url, width, height, duration_ms, has_audio, created_by,
           created_at, disabled_at"""
 
 _INSERT: Final = text(f"""
 INSERT INTO iclip.brand_templates
-    (id, position, name, url, width, height, duration_ms, has_audio, created_by, api_key_id)
+    (id, kind, name, url, width, height, duration_ms, has_audio, created_by, api_key_id)
 VALUES (:id, :position, :name, :url, :width, :height, :duration_ms, :has_audio,
         :created_by, :api_key_id){_RETURNING}""")
 
@@ -88,7 +95,7 @@ SET name = coalesce(CAST(:name AS text), name),
         WHEN CAST(:disabled AS boolean) THEN coalesce(disabled_at, now())
         ELSE NULL
     END
-WHERE id = :id{_RETURNING}""")
+WHERE id = :id AND kind IN ('intro', 'outro'){_RETURNING}""")
 
 
 def _row_of(row: RowMapping) -> BrandTemplate:
@@ -108,7 +115,7 @@ def _row_of(row: RowMapping) -> BrandTemplate:
 
 
 class SqlBrandTemplateStore:
-    """``BrandTemplateStore`` 的 Postgres 实现。"""
+    """片头片尾视频的存取；表中的其他资源不进入视频模板接口。"""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine

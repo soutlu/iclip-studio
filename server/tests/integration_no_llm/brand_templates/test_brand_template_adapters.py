@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import httpx
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.brand_templates import brand_template_facts, template_video_prober
@@ -46,7 +48,7 @@ async def test_the_prober_downloads_through_the_internal_address_and_measures_th
     assert abs(measured.duration_ms - 2000) <= 100
 
 
-async def test_the_whole_film_side_reads_any_template_and_whether_it_is_in_use(
+async def test_the_whole_film_side_reads_video_templates_and_whether_they_are_in_use(
     engine: AsyncEngine,
 ) -> None:
     store = SqlBrandTemplateStore(engine)
@@ -77,3 +79,14 @@ async def test_the_whole_film_side_reads_any_template_and_whether_it_is_in_use(
     )
     assert disabled is not None and disabled.enabled is False
     assert await facts(creator) is None, "没有这条模板"
+
+    font_id = uuid.uuid4()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.brand_templates (id, kind, name, url, created_by)"
+                " VALUES (:id, 'font', '品牌字体', :url, :creator)"
+            ),
+            {"id": font_id, "url": "https://cdn.example.test/font.ttf", "creator": creator},
+        )
+    assert await facts(font_id) is None, "字体不能作为整片的片头片尾视频"
