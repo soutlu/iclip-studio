@@ -26,7 +26,7 @@ class ProbedVideo:
 
 @dataclass(frozen=True, slots=True)
 class BrandTemplate:
-    """一条品牌模板。``disabled_at`` 为空表示在用；停用不删，已有整片里的快照不受影响。"""
+    """一条片头片尾视频模板。``disabled_at`` 为空表示在用；停用不删，已有整片里的快照不受影响。"""
 
     id: uuid.UUID
     position: Position

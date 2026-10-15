@@ -11,7 +11,7 @@ from iclip.domains.identity.public import Principal
 
 
 class BrandTemplateStore(Protocol):
-    """``brand_templates`` 的数据访问；时刻都用数据库时钟。"""
+    """``brand_templates`` 中片头片尾视频的数据访问；时刻都用数据库时钟。"""
 
     async def create(
         self,

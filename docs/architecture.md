@@ -80,7 +80,7 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 | PDM 款目录外部库 | `domains/products/catalog_pg.py`，独立连接池设置会话级只读 |
 | 审计报表（跨 `iclip` 与 `agent_runtime` 九张表的只读聚合，含运行事件 `events` 与运行关联 `agent_job_runs`） | `domains/audit/reports_pg.py`；不建表、不写入，列、状态词或运行事件名被改动时由它的集成测试先红；总览与按人的时间窗、粒度、分期与均线补窗是 `domains/audit/overview.py` 里的纯函数，任务执行的异常门槛与翻页游标在 `domains/audit/executions.py` |
 | `iclip` 参考视频 | `domains/references/infra_sql.py`；一条视频一行，拆解、标签与状态都在行上，状态跳转都是带条件的更新 |
-| `iclip` 品牌模板 | `domains/brand_templates/infra_sql.py`；只停用不删。建模板时下载视频量参数、受理整片时生成域读模板，都经组合根的 [app/brand_templates.py](../server/src/iclip/app/brand_templates.py)，两个域互不引用；生成记录对它没有外键，整片的请求里存快照 |
+| `iclip` 品牌资源 | `domains/brand_templates/infra_sql.py`；资源种类为开放文本，品牌未指定时为空，不从名称推断；只停用不删。当前仓储与接口只读写媒体参数完整的片头片尾视频，其他资源不进入视频模板列表或合成。建模板时下载视频量参数、受理整片时生成域读模板，都经组合根的 [app/brand_templates.py](../server/src/iclip/app/brand_templates.py)，两个域互不引用；生成记录对它没有外键，整片的请求里存快照 |
 | 资料库（跨生成记录、对话、用户三张表的只读聚合） | `domains/library/reports_pg.py`；同上，每次请求现算卡面与副本的血缘装填，数据到十万级再换成随出片完成更新的读表 |
 
 对话分叉横跨上表前四行：对话领域服务的分叉用例按顺序调两个端口写工作区与素材、种子快照，最后自己落对话行；端口由 [app/conversation_fork.py](../server/src/iclip/app/conversation_fork.py) 接到文件存储与 agent 引擎上，只回报事实，冲突与否由用例判。四处写入各开各的事务，没有统一回滚，靠这个顺序保证中途失败只留下寻址不到的孤儿数据。出片记录不拷，副本按血缘继承：生成域按对话读记录时经同一文件里的适配器问对话域要祖先与边界、主体读不读得到这段对话，递归查询只在对话的 Postgres 仓储上，不进对话仓储协议。做同款走建对话用例里的另一个端口，同样先拷后落行：[app/conversation_same_style.py](../server/src/iclip/app/conversation_same_style.py) 只拷固定几份制作文件（两份改名）与素材台账，同一份文件表也给资料库判断一段对话做不做得了同款。

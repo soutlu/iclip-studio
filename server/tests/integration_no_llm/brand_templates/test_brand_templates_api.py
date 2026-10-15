@@ -13,6 +13,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
+from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
 from iclip.domains.brand_templates.models import MAX_TEMPLATE_MS, ProbedVideo
@@ -282,6 +283,82 @@ async def test_an_update_needs_something_to_change_and_an_existing_template(
     missing = await http.patch(f"/brand-templates/{uuid.uuid4()}", json={"name": "x"})
 
     assert (empty.status_code, blank.status_code, missing.status_code) == (422, 422, 404)
+
+
+@pytest.mark.parametrize(
+    ("kind", "missing"),
+    [
+        ("font", None),
+        ("sound_effect", None),
+        *[
+            (kind, field)
+            for kind in ("intro", "outro")
+            for field in ("width", "height", "duration_ms", "has_audio")
+        ],
+    ],
+)
+async def test_video_template_endpoints_do_not_list_or_modify_other_resources(
+    http: httpx.AsyncClient,
+    pg_url: str,
+    bucket: MemoryObjectStore,
+    kind: str,
+    missing: str | None,
+) -> None:
+    await login_as(http, pg_url, "root", "root")
+    upload_id, _ = await upload(http, bucket)
+    video = (await create(http, upload_id)).json()
+    resource_id = uuid.uuid4()
+    media = {"width": 1080, "height": 1920, "duration_ms": 3000, "has_audio": False}
+    parameters = {
+        field: None if missing is None or field == missing else value
+        for field, value in media.items()
+    }
+    engine = build_engine(pg_url)
+    try:
+        async with engine.begin() as conn:
+            before = (
+                (
+                    await conn.execute(
+                        text(
+                            "INSERT INTO iclip.brand_templates"
+                            " (id, kind, brand, name, url, created_by, width, height, duration_ms, has_audio)"
+                            " SELECT :id, :kind, 'DP', '品牌资源', :url, created_by,"
+                            " :width, :height, :duration_ms, :has_audio"
+                            " FROM iclip.brand_templates WHERE id = :video_id RETURNING *"
+                        ),
+                        {
+                            "id": resource_id,
+                            "kind": kind,
+                            "url": f"https://cdn.example.test/{kind}",
+                            "video_id": uuid.UUID(video["id"]),
+                            **parameters,
+                        },
+                    )
+                )
+                .mappings()
+                .one()
+            )
+
+        assert await listed(http) == [video]
+        assert await listed(http, includeDisabled="true") == [video]
+        changed = await http.patch(
+            f"/brand-templates/{resource_id}", json={"name": "不应修改", "disabled": True}
+        )
+        assert changed.status_code == 404, changed.text
+        async with engine.connect() as conn:
+            after = (
+                (
+                    await conn.execute(
+                        text("SELECT * FROM iclip.brand_templates WHERE id = :id"),
+                        {"id": resource_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        assert after == before
+    finally:
+        await engine.dispose()
 
 
 async def test_without_media_generation_the_endpoints_are_not_mounted(app: FastAPI) -> None:
