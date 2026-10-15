@@ -196,7 +196,7 @@ export function BrandTemplatesRoute({ tabs, canManage, canUpload, scope, onScope
                       kind: 'video',
                       name: item.name,
                       url: item.url,
-                      poster: videoSnapshotUrl(item.url, 720),
+                      poster: videoSnapshotUrl(item.url, 720, 0.5),
                     })
                 }}
                 onEdit={() => setEditor({ kind: 'edit', template: item })}
@@ -245,7 +245,8 @@ function TemplateCard({
 }) {
   const [failed, setFailed] = useState(false)
   const font = usePreviewFont(item.kind === 'font' ? item : null, 'Aa')
-  const poster = isVideo(item) ? videoSnapshotUrl(item.url, 480) : undefined
+  // 片头片尾的首帧常是淡入底色，与编辑器模板列表一样取 0.5 秒处的画面。
+  const poster = isVideo(item) ? videoSnapshotUrl(item.url, 480, 0.5) : undefined
   return (
     <article aria-label={item.name} className="flex min-w-0 flex-col">
       <button

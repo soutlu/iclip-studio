@@ -22,8 +22,16 @@ import { videoTemplateReason } from './film-brand'
 const seconds = (value: number) => `${value.toFixed(1)} 秒`
 
 /** 一版的小画面：截不了帧（不是 OSS 地址、截失败）时露出中性底与视频图标。 */
-function Poster({ url, className }: { url: string; className: string }) {
-  const src = videoSnapshotUrl(url, 96)
+function Poster({
+  url,
+  className,
+  atSeconds = 0,
+}: {
+  url: string
+  className: string
+  atSeconds?: number
+}) {
+  const src = videoSnapshotUrl(url, 96, atSeconds)
   const [failed, setFailed] = useState(false)
   return (
     <span className={cn('film-poster', className)}>
@@ -235,7 +243,8 @@ function TemplatePanel({ brands, position }: { brands: BrandMenuProps; position:
               key={template.id}
               onSelect={() => brands.onSelect(position, template)}
             >
-              <Poster className="film-template-poster" url={template.url} />
+              {/* 片头片尾的首帧常是淡入底色，封面取 Logo 已出现的画面。 */}
+              <Poster className="film-template-poster" url={template.url} atSeconds={0.5} />
               <span>
                 <strong>{template.name}</strong>
                 <span>
