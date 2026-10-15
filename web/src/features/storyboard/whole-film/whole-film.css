@@ -28,10 +28,14 @@
   min-width: 132px;
 }
 
-.film-menu-panel {
-  width: min(392px, calc(100vw - 32px));
+.film-menu-panel,
+.film-menu-versions {
   max-height: min(60dvh, 520px);
   overflow-y: auto;
+}
+
+.film-menu-panel {
+  width: min(392px, calc(100vw - 32px));
 }
 
 .film-menu-versions {
@@ -409,11 +413,7 @@
   flex: none;
   margin: 6px -8px -6px;
   padding: 10px 8px 6px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
+  overflow: hidden;
 }
 
 @media (max-width: 999px) {
@@ -445,8 +445,14 @@
 
 /* 横屏手机与短窗口：版本条放回右侧，缩短轨道窗口，把有限高度留给预览与播放控件。 */
 @media (max-height: 560px) {
+  .video-editor.whole-film-editor {
+    gap: 6px;
+  }
+
   .whole-film-track-scroll {
-    height: clamp(96px, 26dvh, 144px);
+    height: clamp(120px, 30dvh, 144px);
+    padding-top: 4px;
+    padding-bottom: 2px;
   }
 
   .whole-film-editor .video-editor-stage-area {

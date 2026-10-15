@@ -1,5 +1,5 @@
 /* 整片时间线。面板底色、圆角与控制条在 video-editor.css；这里只排轨道。
-   位置由脚本按行给（见 film-timeline.tsx 的 ROW）：标尺 18；成片轨 48、字幕轨 26、音乐轨 32；分隔行 22；素材轨各 40，行间 4。 */
+   标尺与成片轨固定，字幕、音乐和素材在下方独立滚动；两个横滚窗口共享刻度位置。 */
 .film-timeline {
   --film-wave: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
   --film-music-fill: color-mix(in srgb, var(--color-on-surface) 24%, transparent);
@@ -8,10 +8,44 @@
   position: relative;
   display: flex;
   min-width: 0;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
   margin-top: 6px;
   color: var(--color-on-surface);
   /* 拖选和搬运片段时不选中文字，避免后续拖动进入浏览器的原生文字拖拽。 */
   user-select: none;
+}
+
+.film-timeline-output,
+.film-timeline-secondary {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.film-timeline-output {
+  flex: none;
+  overflow: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.film-timeline-candidates {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.film-timeline-ghost.film-timeline-carry {
+  --film-wave: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
+
+  position: fixed;
+  z-index: var(--z-popup);
 }
 
 .dark .film-timeline {
@@ -90,7 +124,7 @@
 .film-timeline-scroll {
   min-width: 0;
   flex: 1;
-  margin: -10px -8px -6px;
+  margin: -10px 0 -6px;
   padding: 10px 8px 6px;
   overflow-x: auto;
   overflow-y: hidden;
