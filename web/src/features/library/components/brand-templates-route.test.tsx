@@ -71,6 +71,24 @@ afterEach(() => {
 })
 
 describe('BrandTemplatesRoute', () => {
+  it.each([
+    ['intro', '片头'],
+    ['outro', '片尾'],
+  ] as const)('%s 卡片使用淡入之后的精确截帧', async (kind, label) => {
+    const template = {
+      ...findMockBrandTemplate('ba000001-0000-4000-8000-000000000001'),
+      name: `品牌${label}`,
+      kind,
+      url: 'https://media.oss-cn-shenzhen.aliyuncs.com/brand.mp4',
+    }
+    server.use(http.get('*/api/brand-templates', () => HttpResponse.json({ items: [template] })))
+    await renderWithProviders(<Harness />)
+    const card = await screen.findByRole('article', { name: template.name })
+    const poster = within(card).getByRole('presentation')
+    expect(poster).toHaveAttribute('src', expect.stringContaining('video/snapshot,t_500,'))
+    expect(poster).not.toHaveAttribute('src', expect.stringContaining('m_fast'))
+  })
+
   it('没有上传权限的治理者仍可维护已有模板，上传入口不出现', async () => {
     await renderWithProviders(<Harness canUpload={false} />)
     const card = await screen.findByRole('article', { name: '品牌片头 · 竖版' })
