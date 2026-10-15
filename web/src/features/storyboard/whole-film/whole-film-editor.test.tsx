@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -1213,5 +1213,191 @@ describe('WholeFilmEditor 音乐', () => {
       for (const key of ['music-analysis', 'preview-source', 'preview-mix'])
         expect(queryClient.getQueriesData({ queryKey: ['whole-film', key] })).toEqual([])
     })
+  })
+})
+
+describe('整片字幕字体', () => {
+  const font = {
+    id: 'ab000001-0000-4000-8000-000000000001',
+    kind: 'font',
+    brand: '品牌',
+    name: '品牌黑体',
+    url: 'https://example.com/brand.ttf',
+    width: null,
+    height: null,
+    durationMs: null,
+    hasAudio: null,
+    createdAt: '2026-10-14T00:00:00Z',
+    disabledAt: null,
+  }
+  const serveFont = (end = 0x10ffff) => {
+    seedFilm()
+    serve(VIDEOS, [
+      subtitle(TAKE_1, { sentences: [{ startMs: 0, endMs: 1000, text: '你好', speaker: 0 }] }),
+    ])
+    server.use(
+      http.get('*/api/brand-templates', () => HttpResponse.json({ items: [font] })),
+      http.get('*/api/brand-templates/:id/font-info', () =>
+        HttpResponse.json({
+          family: 'Brand',
+          weight: 500,
+          style: 'normal',
+          unicodeRanges: [{ start: 0, end }],
+        }),
+      ),
+    )
+  }
+  const stubFont = (deferred = false) => {
+    const restoreMedia = stubMediaDurations({ [`https://example.com/${TAKE_1}.mp4`]: 4 })
+    vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(720)
+    vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1280)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      font: '',
+      measureText: (text: string) => ({
+        width: text.length * 20,
+        fontBoundingBoxAscent: 48,
+        fontBoundingBoxDescent: 12,
+      }),
+    } as unknown as CanvasRenderingContext2D)
+    let finish = () => {}
+    const loaded = vi.fn()
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
+    Object.defineProperty(document, 'fonts', { configurable: true, value: new Set<FontFace>() })
+    vi.stubGlobal(
+      'FontFace',
+      class {
+        constructor(family: string, source: string) {
+          loaded(family, source)
+        }
+        load() {
+          return deferred
+            ? new Promise((resolve) => {
+                finish = () => resolve(this)
+              })
+            : Promise.resolve(this)
+        }
+      },
+    )
+    return {
+      loaded,
+      finish: () => finish(),
+      restore: () => {
+        cleanup()
+        restoreMedia()
+        vi.unstubAllGlobals()
+        if (descriptor === undefined) Reflect.deleteProperty(document, 'fonts')
+        else Object.defineProperty(document, 'fonts', descriptor)
+      },
+    }
+  }
+
+  it('轨道字体选择等待实际文件，撤销重做和合成都使用所选字体', async () => {
+    serveFont()
+    const fontFile = stubFont(true)
+    let body: unknown
+    server.use(
+      http.post('*/api/generations/whole-films', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(
+          {
+            generation: video('ab000002-0000-4000-8000-000000000001', {
+              operation: 'compose',
+              status: 'submitted',
+              outputUrl: null,
+            }),
+          },
+          { status: 202 },
+        )
+      }),
+    )
+    try {
+      const user = userEvent.setup()
+      await renderEditor()
+      await timeline()
+      await user.click(screen.getByRole('button', { name: '字幕字体：系统默认' }))
+      await user.click(await screen.findByRole('menuitemradio', { name: '品牌黑体 · 品牌' }))
+      await waitFor(() =>
+        expect(fontFile.loaded).toHaveBeenCalledWith(
+          `iclip-brand-font-${font.id}`,
+          `url("${font.url}")`,
+        ),
+      )
+      expect(screen.getByRole('button', { name: '合成成片' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+      expect(within(screen.getByLabelText('视频预览')).queryByText('你好')).toBeNull()
+      await act(async () => fontFile.finish())
+      expect(await within(screen.getByLabelText('视频预览')).findByText('你好')).toBeVisible()
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '合成成片' })).not.toHaveAttribute(
+          'aria-disabled',
+        ),
+      )
+      await waitFor(() =>
+        expect(window.localStorage.getItem(filmDraftStorageKey(CONVERSATION))).toContain(font.id),
+      )
+      await user.click(screen.getByRole('button', { name: '撤销' }))
+      expect(screen.getByRole('button', { name: '字幕字体：系统默认' })).toBeVisible()
+      await user.click(screen.getByRole('button', { name: '重做' }))
+      expect(screen.getByRole('button', { name: '字幕字体：品牌黑体' })).toBeVisible()
+      await user.click(screen.getByRole('button', { name: '合成成片' }))
+      await waitFor(() => expect(body).toMatchObject({ fontId: font.id }))
+    } finally {
+      fontFile.restore()
+    }
+  })
+
+  it('草稿中的停用字体仍可按原文件预览，新合成需要更换字体', async () => {
+    serveFont()
+    const saved = JSON.parse(
+      window.localStorage.getItem(filmDraftStorageKey(CONVERSATION)) ?? '{}',
+    ) as Record<string, unknown>
+    window.localStorage.setItem(
+      filmDraftStorageKey(CONVERSATION),
+      JSON.stringify({ ...saved, font: { fontId: font.id, name: font.name, url: font.url } }),
+    )
+    server.use(http.get('*/api/brand-templates', () => HttpResponse.json({ items: [] })))
+    const fontFile = stubFont()
+    try {
+      const user = userEvent.setup()
+      await renderEditor()
+      await timeline()
+      expect(screen.getByRole('button', { name: '字幕字体：品牌黑体' })).toBeVisible()
+      expect(await within(screen.getByLabelText('视频预览')).findByText('你好')).toBeVisible()
+      expect(await composeBlockedBy(user)).toContain('所选字体已停用或不可用')
+    } finally {
+      fontFile.restore()
+    }
+  })
+
+  it('字体缺字时不显示替代字幕并阻止合成，切回系统默认即可继续', async () => {
+    serveFont(127)
+    const fontFile = stubFont()
+    try {
+      const user = userEvent.setup()
+      await renderEditor()
+      await timeline()
+      await user.click(screen.getByRole('button', { name: '字幕字体：系统默认' }))
+      await user.click(await screen.findByRole('menuitemradio', { name: '品牌黑体 · 品牌' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        '所选字体不包含部分文字，请选择其他字体',
+      )
+      expect(screen.getByRole('button', { name: '合成成片' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+      expect(within(screen.getByLabelText('视频预览')).queryByText('你好')).toBeNull()
+      await user.click(screen.getByRole('button', { name: '字幕字体：品牌黑体' }))
+      await user.click(await screen.findByRole('menuitemradio', { name: '系统默认' }))
+      expect(await within(screen.getByLabelText('视频预览')).findByText('你好')).toBeVisible()
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '合成成片' })).not.toHaveAttribute(
+          'aria-disabled',
+        ),
+      )
+    } finally {
+      fontFile.restore()
+    }
   })
 })

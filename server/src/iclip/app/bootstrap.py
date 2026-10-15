@@ -28,7 +28,11 @@ from iclip.app.agent_layer import (
     live_title_generator,
     watch_and_reload,
 )
-from iclip.app.brand_templates import brand_template_facts, template_video_prober
+from iclip.app.brand_templates import (
+    brand_template_facts,
+    template_font_prober,
+    template_video_prober,
+)
 from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
@@ -64,7 +68,7 @@ from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
-from iclip.domains.brand_templates.repository import ProbeVideo
+from iclip.domains.brand_templates.repository import ProbeFont, ProbeVideo
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -371,6 +375,7 @@ def build_app(
     reference_breakdowns: VideoBreakdowns | None = None,
     reference_tagger: Tagger | None = None,
     brand_template_probe: ProbeVideo | None = None,
+    brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     reload_source: ReloadSource | None = None,
     watch_paths: Sequence[Path] = (),
@@ -512,8 +517,9 @@ def build_app(
             else procrastinate.PsycopgConnector(conninfo=queue_dsn(settings.database_url))
         )
 
-    # 整片受理时读片头片尾的模板，与品牌模板的端点共用这一个仓储。
+    # 整片受理时读片头片尾与字体，与品牌资源端点共用一个仓储。
     brand_template_store = SqlBrandTemplateStore(active_engine)
+    font_probe = brand_font_probe or template_font_prober(http_client, fetch_url)
 
     # 镜头能力依赖生成服务，须先于 Agent 装配。
     generation: GenerationModule | None = None
@@ -532,7 +538,7 @@ def build_app(
             lineage=ForkLineageAdapter(
                 conversations=conversation_repo, readable=conversation_readable
             ),
-            brand_templates=brand_template_facts(brand_template_store),
+            brand_templates=brand_template_facts(brand_template_store, probe_font=font_probe),
             object_store=public_objects,
             queue_connector=connector,
             media_codec=codec,
@@ -554,10 +560,14 @@ def build_app(
     # 品牌模板只给整片用，跟着媒体生成挂；建模板要下载视频用 ffmpeg 量，媒体生成开着才有 ffmpeg。
     brand_templates: BrandTemplatesModule | None = None
     if generation is not None:
+        if public_objects is None:
+            raise RuntimeError("品牌资源已启用却没有对象存储")
         brand_templates = build_brand_templates_module(
             brand_template_store,
             own_video_upload=own_video_upload,
             probe=brand_template_probe or template_video_prober(http_client, fetch_url),
+            objects=public_objects,
+            probe_font=font_probe,
         )
 
     breakdown_setup: BreakdownSetup | None = None

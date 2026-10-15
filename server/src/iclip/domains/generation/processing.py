@@ -44,6 +44,7 @@ from iclip.platform.media.ffmpeg import (
     probe_video,
     render_film,
 )
+from iclip.platform.media.fonts import MAX_FONT_BYTES, FontError, inspect_font
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicObjectStore
 
@@ -218,8 +219,22 @@ class FfmpegComposeProvider:
                 )
                 for segment in request.segments
             ]
+            font: Path | None = None
+            if request.font is not None and request.subtitles:
+                fetched_font = await self._fetch(
+                    [request.font.url], root, max_bytes=MAX_FONT_BYTES, suffix=""
+                )
+                font = fetched_font[request.font.url]
             render = request.render
             try:
+                if font is not None and request.font is not None:
+                    actual = inspect_font(font)
+                    if (actual.family, actual.weight, actual.style) != (
+                        request.font.family,
+                        request.font.weight,
+                        request.font.style,
+                    ):
+                        raise FontError("字体文件属性与受理时的快照不一致，请重新选择字体")
                 profile = await probe_video(cuts[0].source)
                 await report(CLIP_PROCESSING)
                 await render_film(
@@ -245,6 +260,7 @@ class FfmpegComposeProvider:
                     dest=dest,
                     codec=self._codec,
                     workdir=root,
+                    font=font,
                 )
                 duration_ms = await probe_duration_ms(dest)
             except MusicTooShort as exc:

@@ -131,6 +131,13 @@
   scrollbar-width: thin;
 }
 
+/* 空片头片尾只预留像素，两区的真实时间轴仍等宽、同起点。 */
+.film-timeline-coordinate-space {
+  min-width: calc(520px + var(--film-leading-slot) + var(--film-trailing-slot));
+  padding-left: var(--film-leading-slot);
+  padding-right: var(--film-trailing-slot);
+}
+
 .film-timeline-lanes {
   position: relative;
   min-width: 520px;
@@ -341,7 +348,8 @@
 
 .film-subtitle[aria-pressed='true'] {
   z-index: var(--z-local-2);
-  box-shadow: 0 0 0 2px var(--color-on-surface);
+  background: var(--color-state-active);
+  box-shadow: none;
   color: var(--color-on-surface);
 }
 
@@ -391,11 +399,11 @@
   cursor: default;
 }
 
-/* 选中框、手柄、插入线、播放头与气泡：与剪辑时间线同款。 */
+/* 选中画面用轻蒙层，裁剪手柄独立可用，不增加选中描边。 */
 .film-timeline-box {
   position: absolute;
   z-index: var(--z-local-2);
-  border: 2px solid var(--color-on-surface);
+  background: color-mix(in srgb, var(--color-surface-container-lowest) 22%, transparent);
   border-radius: var(--radius-md);
   pointer-events: none;
 }
@@ -447,9 +455,7 @@
 .film-timeline-ghost {
   z-index: var(--z-local-3);
   opacity: 0.72;
-  box-shadow:
-    var(--shadow-3),
-    0 0 0 1.5px var(--color-on-surface);
+  box-shadow: var(--shadow-3);
   pointer-events: none;
 }
 
@@ -657,7 +663,6 @@
 .film-material-pick {
   position: absolute;
   z-index: var(--z-local-2);
-  border: 1.5px solid var(--color-on-surface);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-on-surface) 6%, transparent);
   pointer-events: none;
@@ -710,7 +715,8 @@
 /* 拖动时音乐是一扇固定的窗，整首在下面滑。 */
 .film-music-clip.is-window {
   z-index: var(--z-local-2);
-  box-shadow: 0 0 0 1.5px var(--color-on-surface);
+  background: var(--color-state-active);
+  box-shadow: none;
   cursor: grabbing;
 }
 
@@ -889,7 +895,9 @@
   cursor: pointer;
 }
 .film-brand-block[aria-pressed='true'] {
-  outline: 2px solid var(--color-primary);
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+  border-color: transparent;
 }
 .film-music-offset {
   position: absolute;
@@ -916,4 +924,38 @@
 
 .whole-film-track-scroll .film-timeline-scroll {
   overscroll-behavior-x: contain;
+}
+
+.film-brand-placeholder {
+  position: absolute;
+  display: flex;
+  width: 64px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  border: 1px dashed var(--color-outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+
+.film-brand-placeholder-picture {
+  display: grid;
+  width: 36px;
+  height: 18px;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-faint);
+  opacity: 0.6;
+}
+
+.film-brand-placeholder > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }

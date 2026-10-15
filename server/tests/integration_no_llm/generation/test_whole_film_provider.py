@@ -21,7 +21,9 @@ from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import FILM_LOUDNESS_LUFS, ClipStage
 from iclip.platform.media.codec import SOFTWARE, MediaCodec
 from iclip.platform.media.ffmpeg import ffmpeg_available, probe_video
+from iclip.platform.media.fonts import inspect_font, prepare_font
 from tests.helpers.fetch_url import as_is
+from tests.helpers.fonts import make_font
 from tests.helpers.generation import MemoryObjectStore, make_job, whole_film_request
 from tests.helpers.media import (
     BROKEN_DECODE,
@@ -51,6 +53,7 @@ OUTRO_URL = "https://example.test/brand/outro.mp4"
 """片尾模板：320×240、1 秒、没有音轨。"""
 JINGLE_URL = "https://example.test/brand/jingle.mp4"
 """带声音的片头模板：320×240、1 秒、一条 440 Hz 的音轨。"""
+FONT_URL = "https://example.test/brand/selected-font"
 
 SILENCE_DB = -60.0
 """平均电平低于它就当静音：真静音量出来约 -91 dB。"""
@@ -119,6 +122,7 @@ async def _render(
     music: Mapping[str, Any] | None = None,
     intro: Mapping[str, Any] | None = None,
     outro: Mapping[str, Any] | None = None,
+    font: Mapping[str, Any] | None = None,
     stages: _Stages | None = None,
     codec: MediaCodec = SOFTWARE,
 ) -> bytes:
@@ -133,7 +137,9 @@ async def _render(
         transport=_transport(sources),
     )
     job = make_job(
-        whole_film_request(segments, subtitles=subtitles, music=music, intro=intro, outro=outro),
+        whole_film_request(
+            segments, subtitles=subtitles, music=music, intro=intro, outro=outro, font=font
+        ),
         provider="ffmpeg",
         conversation_id=uuid.uuid4(),
     )
@@ -144,6 +150,17 @@ async def _render(
     assert submission.output_url == store.public_url(key)
     assert submission.duration_ms == await duration_ms_of(content)
     return content
+
+
+def _font_snapshot(path: Path) -> dict[str, Any]:
+    info = inspect_font(path)
+    return {
+        "url": FONT_URL,
+        "name": "选定字体",
+        "family": info.family,
+        "weight": info.weight,
+        "style": info.style,
+    }
 
 
 def _saved(content: bytes, root: Path, name: str = "film.mp4") -> Path:
@@ -399,6 +416,112 @@ async def test_subtitles_are_burned_into_the_bottom_of_the_picture(
     assert changed(burned, plain, bottom) > 150, "字幕那一句的时段里，画面下方有字"
     assert changed(burned, plain, top) < 30, "上方不受影响"
     assert changed(before, plain_before, bottom) < 30, "字幕开始之前没有字"
+
+
+@pytest.mark.skipif(not has_subtitles_filter(), reason="本机 ffmpeg 没有 libass")
+@pytest.mark.parametrize("otf", [False, True], ids=["ttf", "otf"])
+async def test_the_selected_file_changes_rendered_glyphs_even_with_the_same_family(
+    sources: dict[str, bytes], tmp_path: Path, otf: bool
+) -> None:
+    """同字族两种文件必须分别命中；默认字体、伪粗体或系统同名字体会让宽度断言失败。"""
+
+    narrow = make_font(
+        tmp_path / "narrow.font", characters="W", weight=300, advances={"W": 300}, otf=otf
+    )
+    wide = make_font(
+        tmp_path / "wide.font", characters="W", weight=700, advances={"W": 1000}, otf=otf
+    )
+    plain_content = await _render(sources, [{"url": SILENT_URL, "startMs": 0, "endMs": 1000}])
+    plain = _gray_frame(_saved(plain_content, tmp_path, "plain.mp4"), at=0.5)
+    widths = []
+    for index, path in enumerate((narrow, wide)):
+        content = await _render(
+            {**sources, FONT_URL: path.read_bytes()},
+            [{"url": SILENT_URL, "startMs": 0, "endMs": 1000}],
+            subtitles=[{"startMs": 0, "endMs": 1000, "text": "WWWWW"}],
+            font=_font_snapshot(path),
+        )
+        frame = _gray_frame(_saved(content, tmp_path, f"font-{index}.mp4"), at=0.5)
+        columns = [
+            column
+            for row in range(240, 360)
+            for column in range(480)
+            if frame[row * 480 + column] - plain[row * 480 + column] > 60
+        ]
+        assert columns, "真实所选字形已烧进画面"
+        widths.append(max(columns) - min(columns) + 1)
+    assert widths[1] > widths[0] * 2, widths
+
+
+@pytest.mark.skipif(not has_subtitles_filter(), reason="本机 ffmpeg 没有 libass")
+async def test_a_real_cjk_font_is_burned_at_the_measured_em_size(
+    sources: dict[str, bytes], tmp_path: Path
+) -> None:
+    """与浏览器共用的 OFL Noto 子集，实际像素宽度应接近同一文件的 HarfBuzz 推进量。"""
+
+    path = Path(__file__).resolve().parents[4] / "web/src/testing/fixtures/sample-font.otf"
+    text = "字幕字幕"
+    font = prepare_font(path, texts=[text], directory=tmp_path / "measured")
+    black = tmp_path / "black.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+            "color=c=black:s=480x360:r=10", "-t", "1", "-c:v", "libx264",
+            "-pix_fmt", "yuv420p", str(black),
+        ],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    segments = [{"url": SILENT_URL, "startMs": 0, "endMs": 1000}]
+    burned = await _render(
+        {**sources, SILENT_URL: black.read_bytes(), FONT_URL: path.read_bytes()},
+        segments,
+        subtitles=[{"startMs": 0, "endMs": 1000, "text": text}],
+        font=_font_snapshot(path),
+    )
+    burned_frame = _gray_frame(_saved(burned, tmp_path, "burned.mp4"), at=0.5)
+    columns = [
+        column
+        for row in range(240, 360)
+        for column in range(480)
+        if burned_frame[row * 480 + column] > 200
+    ]
+    assert columns
+    rendered_width = max(columns) - min(columns) + 1
+    expected_width = font.measure(text, size=round(360 * 0.045))
+    assert abs(rendered_width - expected_width) <= 5, (rendered_width, expected_width)
+
+
+@pytest.mark.parametrize("failure", ["unreachable", "invalid", "missing-glyph", "changed"])
+async def test_a_selected_font_failure_never_exports_with_a_default_font(
+    sources: dict[str, bytes], tmp_path: Path, failure: str
+) -> None:
+    path = make_font(tmp_path / "selected.ttf", characters="W")
+    font = _font_snapshot(path)
+    payloads = {**sources, FONT_URL: path.read_bytes()}
+    subtitle = "W"
+    expected = "MEDIA_PROCESS_FAILED"
+    message = "取不到"
+    if failure == "unreachable":
+        del payloads[FONT_URL]
+        expected = "MEDIA_SOURCE_UNREACHABLE"
+    elif failure == "invalid":
+        payloads[FONT_URL] = b"not a font"
+        message = "字体"
+    elif failure == "missing-glyph":
+        subtitle = "汉"
+        message = "U\\+6C49"
+    else:
+        font["weight"] = 700
+        message = "快照不一致"
+
+    with pytest.raises(ProviderError, match=message) as raised:
+        await _render(
+            payloads,
+            [{"url": SILENT_URL, "startMs": 0, "endMs": 1000}],
+            subtitles=[{"startMs": 0, "endMs": 1000, "text": subtitle}],
+            font=font,
+        )
+    assert raised.value.code == expected
 
 
 # --- 片头片尾 --------------------------------------------------------------------

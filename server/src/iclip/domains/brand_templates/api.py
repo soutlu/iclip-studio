@@ -9,8 +9,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from iclip.domains.brand_templates.models import Position
 from iclip.domains.brand_templates.schemas import (
+    BrandFontConfirmIn,
+    BrandFontInfoOut,
+    BrandFontSignIn,
+    BrandFontUploadTicketOut,
     BrandTemplateCreateIn,
     BrandTemplateOut,
     BrandTemplatesOut,
@@ -26,15 +29,18 @@ def create_brand_templates_router(service: BrandTemplateService) -> APIRouter:
     @router.get("", response_model=BrandTemplatesOut)
     async def list_brand_templates(
         principal: Annotated[Principal, require_permission("generation:read")],
-        position: Position | None = None,
+        kind: str | None = None,
+        brand: str | None = None,
         include_disabled: Annotated[bool, Query(alias="includeDisabled")] = False,
     ) -> BrandTemplatesOut:
-        """品牌模板，建立晚的排前面；默认只列在用的，``position`` 筛片头或片尾。
+        """品牌资源，建立晚的排前面；默认只列在用的，按 ``kind`` 与 ``brand`` 筛选。
 
-        ``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。每条带画面宽高，前端按
-        整片的画面比例自己挑比例相近的。"""
+        ``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。媒体参数按资源实际情况
+        返回，不完整的资源也照实列出，由使用它的功能明确校验。"""
 
-        return await service.list(principal, position=position, include_disabled=include_disabled)
+        return await service.list(
+            principal, kind=kind, brand=brand, include_disabled=include_disabled
+        )
 
     @router.post("", response_model=BrandTemplateOut, status_code=status.HTTP_201_CREATED)
     async def create_brand_template(
@@ -47,6 +53,28 @@ def create_brand_templates_router(service: BrandTemplateService) -> APIRouter:
         是 ``422``。"""
 
         return await service.create(principal, body)
+
+    @router.post("/fonts/sign", response_model=BrandFontUploadTicketOut)
+    async def sign_font(
+        body: BrandFontSignIn,
+        principal: Annotated[Principal, require_permission(MANAGE_PERMISSION, "uploads:write")],
+    ) -> BrandFontUploadTicketOut:
+        return BrandFontUploadTicketOut.of(service.sign_font(principal, body))
+
+    @router.post("/fonts/{upload_id}/confirm", response_model=BrandTemplateOut, status_code=201)
+    async def confirm_font(
+        upload_id: uuid.UUID,
+        body: BrandFontConfirmIn,
+        principal: Annotated[Principal, require_permission(MANAGE_PERMISSION, "uploads:write")],
+    ) -> BrandTemplateOut:
+        return await service.confirm_font(principal, upload_id, body)
+
+    @router.get("/{template_id}/font-info", response_model=BrandFontInfoOut)
+    async def font_info(
+        template_id: uuid.UUID,
+        _: Annotated[Principal, require_permission("generation:read")],
+    ) -> BrandFontInfoOut:
+        return await service.font_info(template_id)
 
     @router.patch("/{template_id}", response_model=BrandTemplateOut)
     async def update_brand_template(

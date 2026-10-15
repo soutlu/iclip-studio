@@ -25,6 +25,8 @@ dependencies = [
     "psycopg[binary,pool]>=3.2",
     # ImageFont.load_default(size=...) 需要 Pillow 10.1 及以上版本。
     "pillow>=10.1",
+    "fonttools>=4.67.0",
+    "uharfbuzz>=0.56.3",
 ]
 
 [dependency-groups]

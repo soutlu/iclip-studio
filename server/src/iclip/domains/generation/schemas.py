@@ -558,6 +558,8 @@ class WholeFilmIn(CamelModel):
     subtitles: Annotated[list[WholeFilmSubtitle], Field(max_length=MAX_WHOLE_FILM_SUBTITLES)]
     """按时间先后、互不重叠，都在各段之内；没有字幕给空数组。"""
     music: WholeFilmMusicIn | None = None
+    font_id: uuid.UUID | None = None
+    """字幕字体资源；不指定时使用系统字体。"""
     intro: WholeFilmBrandIn | None = None
     outro: WholeFilmBrandIn | None = None
     user_name: UserName | None = None
@@ -646,6 +648,24 @@ class WholeFilmBrand(CamelModel):
         return url
 
 
+class WholeFilmFont(CamelModel):
+    """受理时选中的字幕字体及文件内属性快照；改名、停用不改变已受理的整片。"""
+
+    font_id: uuid.UUID
+    url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+    name: Annotated[str, Field(min_length=1)]
+    family: Annotated[str, Field(min_length=1)]
+    weight: Annotated[int, Field(ge=1, le=1000)]
+    style: Literal["normal", "italic", "oblique"]
+
+    @field_validator("url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
 SPEECH_LOUDNESS_LUFS: Final = -16.0
 """整片里每段原声统一到的响度（LUFS）：口播与移动端节目常用的 -16，与生成背景音乐规整到的响度
 相同，音乐的音量曲线从同一个起点压。"""
@@ -691,6 +711,8 @@ class WholeFilmRequest(CamelModel):
     subtitles: list[WholeFilmSubtitle]
     music: WholeFilmMusic | None
     render: WholeFilmRender
+    font: WholeFilmFont | None = None
+    """为空时使用系统字体。"""
     intro: WholeFilmBrand | None = None
     outro: WholeFilmBrand | None = None
     """片头片尾在加上它们之前落的整片里没有这两项，读回来就是没有。"""
@@ -1166,6 +1188,7 @@ __all__ = [
     "VideoTaskStatus",
     "WholeFilmBrand",
     "WholeFilmBrandIn",
+    "WholeFilmFont",
     "WholeFilmIn",
     "WholeFilmMusic",
     "WholeFilmMusicIn",

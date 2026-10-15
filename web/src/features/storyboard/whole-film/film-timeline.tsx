@@ -38,7 +38,7 @@ import {
   type Pick,
 } from './film-draft'
 import { materialName, type Material, type MaterialDuration } from './film-materials'
-import { VersionPill } from './film-menus'
+import { BrandPlaceholder, VersionPill, type BrandMenuProps } from './film-menus'
 import { internalCuts } from './film-music'
 import { MusicTrack, type MusicTrackView } from './film-music-track'
 import type { FilmSubtitle, FilmSubtitleStatus } from './film-subtitles'
@@ -118,6 +118,8 @@ type FilmTimelineProps = {
   anchorRef: Ref<HTMLElement>
   /** 素材区末尾常驻的添加镜头组入口。 */
   addVideo: ReactNode
+  brands: BrandMenuProps
+  subtitleSettings: ReactNode
   onSeek: (clock: number) => void
   /** 开始拖动：播放头、手柄、段或选区。 */
   onScrub: () => void
@@ -228,6 +230,8 @@ export function FilmTimeline({
   durationOf,
   anchorRef,
   addVideo,
+  brands,
+  subtitleSettings,
   onSeek,
   onScrub,
   onSelect,
@@ -824,7 +828,16 @@ export function FilmTimeline({
   const height = laneTop(rows) - ROW.laneGap
 
   return (
-    <section aria-label="整片时间线" className="film-timeline">
+    <section
+      aria-label="整片时间线"
+      className="film-timeline"
+      style={
+        {
+          '--film-leading-slot': intro == null ? '72px' : '0px',
+          '--film-trailing-slot': outro == null ? '72px' : '0px',
+        } as CSSProperties
+      }
+    >
       <div className="film-timeline-output">
         <div className="film-timeline-heads" style={{ height: ROW.film.top + ROW.film.height }}>
           <span
@@ -842,289 +855,302 @@ export function FilmTimeline({
           ref={filmScrollRef}
           onScroll={(event) => syncHorizontalScroll(event.currentTarget)}
         >
-          <div
-            className="film-timeline-lanes"
-            data-testid="film-lanes"
-            ref={lanesRef}
-            style={{ height: ROW.film.top + ROW.film.height }}
-          >
-            <div className="film-timeline-ruler">
-              {ticks.map((time) => (
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'film-timeline-tick',
-                    time === 0 && 'is-first',
-                    time + tickStep > scale && time > 0 && 'is-last',
-                  )}
-                  key={time}
-                  style={{ left: percent(time) }}
-                >
-                  {roundSeconds(time)}s
-                </span>
-              ))}
-              <input
-                aria-label="时间线播放位置"
-                aria-valuetext={timeLabel(boundedTime)}
-                className="film-timeline-seek"
-                data-pointer={seekByPointer ? '' : undefined}
-                disabled={total === 0}
-                max={scale}
-                min={0}
-                onBlur={() => setSeekByPointer(false)}
-                onChange={(event) => {
-                  onScrub()
-                  onSeek(Math.min(total, Number(event.target.value)))
-                }}
-                onKeyDown={() => setSeekByPointer(false)}
-                onPointerDown={() => setSeekByPointer(true)}
-                step={0.01}
-                type="range"
-                value={boundedTime}
-              />
-            </div>
-
-            {/* 成片轨 */}
+          <div className="film-timeline-coordinate-space">
             <div
-              className="film-timeline-lane is-film"
-              data-testid="film-lane"
-              ref={filmRowRef}
-              style={{ top: ROW.film.top, height: ROW.film.height }}
-            />
-            {segments.length === 0 && !dropping ? (
-              <span
-                className="film-timeline-empty"
-                style={{ top: ROW.film.top, height: ROW.film.height }}
-              >
-                <Icon decorative name="to-bottom" size="xs" />
-                从下方素材轨拖选片段放到这里
-              </span>
-            ) : null}
-            {(['intro', 'outro'] as const).map((position) => {
-              const template = position === 'intro' ? intro : outro
-              if (template == null) return null
-              const label = position === 'intro' ? '片头' : '片尾'
-              const selected = selection?.kind === 'brand' && selection.position === position
-              return (
-                <button
-                  aria-label={`${label}：${template.name}，位置固定`}
-                  aria-pressed={selected}
-                  className="film-brand-block ui-focus"
-                  key={position}
-                  onClick={() => onSelect(selected ? undefined : { kind: 'brand', position })}
-                  ref={selected ? (anchorRef as Ref<HTMLButtonElement>) : undefined}
-                  style={{
-                    ...span(
-                      position === 'intro' ? 0 : bodyStart + bodyTotal + shift,
-                      template.durationMs / 1000,
-                    ),
-                    top: ROW.film.top + 2,
-                    height: ROW.film.height - 4,
-                  }}
-                  type="button"
-                >
-                  <Icon decorative name="locked" size="xs" />
-                  <span>
-                    {label} · {seconds(template.durationMs / 1000)}
-                  </span>
-                </button>
-              )
-            })}
-            {layout.map(({ segment, at, duration }, index) => {
-              const material = materialOf(segment.sourceJobId)
-              const isSelected = selectedSegment === segment.id
-              const isLifted = lifted?.segment.id === segment.id
-              const name = `第 ${index + 1} 段 · ${material === undefined ? '' : `${materialName(material)} · `}${roundSeconds(at)}–${roundSeconds(at + duration)} 秒`
-              return (
-                <button
-                  aria-label={name}
-                  aria-pressed={isSelected}
-                  className={cn('film-segment ui-focus', isLifted && 'is-slot')}
-                  key={segment.id}
-                  onClick={() => clickSegment(segment.id)}
-                  onFocus={() => setFocusId(segment.id)}
-                  onKeyDown={(event) => keySegment(event, index, segment.id)}
-                  onPointerCancel={releaseSegment}
-                  onPointerDown={(event) => pressSegment(event, at, segment.id)}
-                  onPointerMove={dragSegment}
-                  onPointerUp={releaseSegment}
-                  ref={(element) => {
-                    if (element === null) segmentButtonsRef.current.delete(segment.id)
-                    else segmentButtonsRef.current.set(segment.id, element)
-                  }}
-                  style={{
-                    ...span(shifted(index, at), duration),
-                    top: ROW.film.top + 2,
-                    height: ROW.film.height - 4,
-                  }}
-                  tabIndex={segment.id === tabStop ? 0 : -1}
-                  type="button"
-                >
-                  {stripOf(segment)}
-                  {material === undefined ? null : (
-                    <span className="film-segment-tag">{material.version}</span>
-                  )}
-                </button>
-              )
-            })}
-            {shift > 0 && dropClock !== undefined ? (
-              <span
-                aria-hidden="true"
-                className="film-timeline-slot"
-                style={{
-                  ...span(dropClock, shift),
-                  top: ROW.film.top + 2,
-                  height: ROW.film.height - 4,
-                }}
-              />
-            ) : null}
-
-            {statuses.filter(overSnapshot).map(statusOf)}
-            {/* 成片轨的选中框、手柄与拖动 */}
-            {box === undefined ? null : (
-              <span
-                aria-hidden="true"
-                className="film-timeline-box"
-                ref={anchorRef}
-                style={{
-                  left: `calc(${percent(box.from)} - 3px)`,
-                  width: `calc(${percent(box.to - box.from)} + 4px)`,
-                  top: ROW.film.top - 1,
-                  height: ROW.film.height + 2,
-                }}
-              />
-            )}
-            {handleOwner === undefined
-              ? null
-              : (['start', 'end'] as const).map((edge) => {
-                  const { segment, at } = handleOwner
-                  const value = trim !== null && trim.edge === edge ? trim.value : segment[edge]
-                  const bounds = trimBounds(segments, segment, edge, reserved)
-                  return (
-                    <button
-                      aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
-                      aria-valuemax={roundSeconds(bounds.max)}
-                      aria-valuemin={roundSeconds(bounds.min)}
-                      aria-valuenow={roundSeconds(value)}
-                      aria-valuetext={`素材 ${roundSeconds(value)} 秒`}
-                      className={cn(
-                        'film-timeline-handle ui-focus',
-                        `is-${edge}`,
-                        trim?.edge === edge && 'is-pressed',
-                      )}
-                      key={edge}
-                      onKeyDown={(event) => keyTrim(event, segment, at, edge)}
-                      onPointerCancel={releaseTrim}
-                      onPointerDown={(event) => pressTrim(event, segment, at, edge)}
-                      onPointerMove={dragTrim}
-                      onPointerUp={releaseTrim}
-                      role="slider"
-                      style={{
-                        left: percent(at + (value - segment.start)),
-                        top: ROW.film.top - 1,
-                        height: ROW.film.height + 2,
-                      }}
-                      title="拖动可裁剪，按方向键可微调，按住 Shift 每次调整 1 秒"
-                      type="button"
-                    />
-                  )
-                })}
-            {trimmed === undefined ? null : (
-              <span
-                className="film-timeline-bubble"
-                role="status"
-                style={bubbleAt(trim?.edge === 'start' ? trimmed.from : trimmed.to)}
-              >
-                裁剪后 {(trimmed.to - trimmed.from).toFixed(1)} 秒 ·{' '}
-                {trimmed.shorter >= 0
-                  ? `缩短 ${trimmed.shorter.toFixed(1)} 秒`
-                  : `延长 ${(-trimmed.shorter).toFixed(1)} 秒`}
-              </span>
-            )}
-            {lifted === undefined || lift === null ? null : (
-              <span
-                aria-hidden="true"
-                className="film-timeline-ghost"
-                style={{
-                  ...span(
-                    Math.min(
-                      Math.max(0, lift.clock - lift.grab),
-                      Math.max(0, scale - lifted.duration),
-                    ),
-                    lifted.duration,
-                  ),
-                  top: ROW.film.top - 4,
-                  height: ROW.film.height - 4,
-                }}
-              >
-                {stripOf(lifted.segment)}
-              </span>
-            )}
-            {showLiftInsert ? (
-              <span
-                aria-hidden="true"
-                className="film-timeline-insert"
-                style={{ left: percent(bodyStart + insertClockOf(segments, liftInsert)) }}
-              />
-            ) : null}
-
-            {/* 从素材轨拖来的选区 */}
-            {carried === undefined || carry === null ? null : (
-              <>
-                {dropping && dropClock !== undefined ? (
-                  <>
-                    <span
-                      aria-hidden="true"
-                      className={cn('film-timeline-insert', !dropFits && 'is-blocked')}
-                      data-testid="film-insert"
-                      style={{ left: percent(dropClock) }}
-                    />
-                    <span
-                      className="film-timeline-bubble is-top"
-                      role="status"
-                      style={bubbleAt(dropClock)}
-                    >
-                      <Icon decorative name={dropFits ? 'insert' : 'blocked'} size="xs" />
-                      {dropFits
-                        ? `插入到 ${dropClock.toFixed(2)} 秒`
-                        : segments.length >= MAX_FILM_SEGMENTS
-                          ? `片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入`
-                          : `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒，放不下这 ${carriedDuration.toFixed(1)} 秒`}
-                    </span>
-                  </>
-                ) : null}
-                {dropping && dropClock !== undefined ? (
+              className="film-timeline-lanes"
+              data-testid="film-lanes"
+              ref={lanesRef}
+              style={{ height: ROW.film.top + ROW.film.height }}
+            >
+              <div className="film-timeline-ruler">
+                {ticks.map((time) => (
                   <span
                     aria-hidden="true"
-                    className="film-timeline-ghost"
-                    data-testid="film-carry"
+                    className={cn(
+                      'film-timeline-tick',
+                      time === 0 && 'is-first',
+                      time + tickStep > scale && time > 0 && 'is-last',
+                    )}
+                    key={time}
+                    style={{ left: percent(time) }}
+                  >
+                    {roundSeconds(time)}s
+                  </span>
+                ))}
+                <input
+                  aria-label="时间线播放位置"
+                  aria-valuetext={timeLabel(boundedTime)}
+                  className="film-timeline-seek"
+                  data-pointer={seekByPointer ? '' : undefined}
+                  disabled={total === 0}
+                  max={scale}
+                  min={0}
+                  onBlur={() => setSeekByPointer(false)}
+                  onChange={(event) => {
+                    onScrub()
+                    onSeek(Math.min(total, Number(event.target.value)))
+                  }}
+                  onKeyDown={() => setSeekByPointer(false)}
+                  onPointerDown={() => setSeekByPointer(true)}
+                  step={0.01}
+                  type="range"
+                  value={boundedTime}
+                />
+              </div>
+
+              {/* 成片轨 */}
+              <div
+                className="film-timeline-lane is-film"
+                data-testid="film-lane"
+                ref={filmRowRef}
+                style={{ top: ROW.film.top, height: ROW.film.height }}
+              />
+              {segments.length === 0 && !dropping ? (
+                <span
+                  className="film-timeline-empty"
+                  style={{ top: ROW.film.top, height: ROW.film.height }}
+                >
+                  <Icon decorative name="to-bottom" size="xs" />
+                  从下方素材轨拖选片段放到这里
+                </span>
+              ) : null}
+              {(['intro', 'outro'] as const).map((position) => {
+                const template = position === 'intro' ? intro : outro
+                if (template == null)
+                  return (
+                    <BrandPlaceholder
+                      brands={brands}
+                      key={position}
+                      position={position}
+                      style={{
+                        left: position === 'intro' ? -72 : `calc(${percent(total + shift)} + 8px)`,
+                        top: ROW.film.top + 2,
+                        height: ROW.film.height - 4,
+                      }}
+                    />
+                  )
+                const label = position === 'intro' ? '片头' : '片尾'
+                const selected = selection?.kind === 'brand' && selection.position === position
+                return (
+                  <button
+                    aria-label={`${label}：${template.name}，位置固定`}
+                    aria-pressed={selected}
+                    className="film-brand-block ui-focus"
+                    key={position}
+                    onClick={() => onSelect(selected ? undefined : { kind: 'brand', position })}
+                    ref={selected ? (anchorRef as Ref<HTMLButtonElement>) : undefined}
                     style={{
-                      ...span(dropClock, carriedDuration),
+                      ...span(
+                        position === 'intro' ? 0 : bodyStart + bodyTotal + shift,
+                        template.durationMs / 1000,
+                      ),
                       top: ROW.film.top + 2,
                       height: ROW.film.height - 4,
                     }}
+                    type="button"
                   >
-                    {stripOf(carried)}
-                  </span>
-                ) : null}
-              </>
-            )}
+                    <Icon decorative name="locked" size="xs" />
+                    <span>
+                      {label} · {seconds(template.durationMs / 1000)}
+                    </span>
+                  </button>
+                )
+              })}
+              {layout.map(({ segment, at, duration }, index) => {
+                const material = materialOf(segment.sourceJobId)
+                const isSelected = selectedSegment === segment.id
+                const isLifted = lifted?.segment.id === segment.id
+                const name = `第 ${index + 1} 段 · ${material === undefined ? '' : `${materialName(material)} · `}${roundSeconds(at)}–${roundSeconds(at + duration)} 秒`
+                return (
+                  <button
+                    aria-label={name}
+                    aria-pressed={isSelected}
+                    className={cn('film-segment ui-focus', isLifted && 'is-slot')}
+                    key={segment.id}
+                    onClick={() => clickSegment(segment.id)}
+                    onFocus={() => setFocusId(segment.id)}
+                    onKeyDown={(event) => keySegment(event, index, segment.id)}
+                    onPointerCancel={releaseSegment}
+                    onPointerDown={(event) => pressSegment(event, at, segment.id)}
+                    onPointerMove={dragSegment}
+                    onPointerUp={releaseSegment}
+                    ref={(element) => {
+                      if (element === null) segmentButtonsRef.current.delete(segment.id)
+                      else segmentButtonsRef.current.set(segment.id, element)
+                    }}
+                    style={{
+                      ...span(shifted(index, at), duration),
+                      top: ROW.film.top + 2,
+                      height: ROW.film.height - 4,
+                    }}
+                    tabIndex={segment.id === tabStop ? 0 : -1}
+                    type="button"
+                  >
+                    {stripOf(segment)}
+                    {material === undefined ? null : (
+                      <span className="film-segment-tag">{material.version}</span>
+                    )}
+                  </button>
+                )
+              })}
+              {shift > 0 && dropClock !== undefined ? (
+                <span
+                  aria-hidden="true"
+                  className="film-timeline-slot"
+                  style={{
+                    ...span(dropClock, shift),
+                    top: ROW.film.top + 2,
+                    height: ROW.film.height - 4,
+                  }}
+                />
+              ) : null}
 
-            <span
-              aria-hidden="true"
-              className="film-timeline-playhead"
-              style={{
-                left: percent(boundedTime),
-                top: ROW.film.top - 4,
-                height: ROW.film.height + 4,
-              }}
-            />
+              {statuses.filter(overSnapshot).map(statusOf)}
+              {/* 成片轨的选中蒙层、手柄与拖动 */}
+              {box === undefined ? null : (
+                <span
+                  aria-hidden="true"
+                  className="film-timeline-box"
+                  ref={anchorRef}
+                  style={{
+                    ...span(box.from, box.to - box.from),
+                    top: ROW.film.top + 2,
+                    height: ROW.film.height - 4,
+                  }}
+                />
+              )}
+              {handleOwner === undefined
+                ? null
+                : (['start', 'end'] as const).map((edge) => {
+                    const { segment, at } = handleOwner
+                    const value = trim !== null && trim.edge === edge ? trim.value : segment[edge]
+                    const bounds = trimBounds(segments, segment, edge, reserved)
+                    return (
+                      <button
+                        aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
+                        aria-valuemax={roundSeconds(bounds.max)}
+                        aria-valuemin={roundSeconds(bounds.min)}
+                        aria-valuenow={roundSeconds(value)}
+                        aria-valuetext={`素材 ${roundSeconds(value)} 秒`}
+                        className={cn(
+                          'film-timeline-handle ui-focus',
+                          `is-${edge}`,
+                          trim?.edge === edge && 'is-pressed',
+                        )}
+                        key={edge}
+                        onKeyDown={(event) => keyTrim(event, segment, at, edge)}
+                        onPointerCancel={releaseTrim}
+                        onPointerDown={(event) => pressTrim(event, segment, at, edge)}
+                        onPointerMove={dragTrim}
+                        onPointerUp={releaseTrim}
+                        role="slider"
+                        style={{
+                          left: percent(at + (value - segment.start)),
+                          top: ROW.film.top - 1,
+                          height: ROW.film.height + 2,
+                        }}
+                        title="拖动可裁剪，按方向键可微调，按住 Shift 每次调整 1 秒"
+                        type="button"
+                      />
+                    )
+                  })}
+              {trimmed === undefined ? null : (
+                <span
+                  className="film-timeline-bubble"
+                  role="status"
+                  style={bubbleAt(trim?.edge === 'start' ? trimmed.from : trimmed.to)}
+                >
+                  裁剪后 {(trimmed.to - trimmed.from).toFixed(1)} 秒 ·{' '}
+                  {trimmed.shorter >= 0
+                    ? `缩短 ${trimmed.shorter.toFixed(1)} 秒`
+                    : `延长 ${(-trimmed.shorter).toFixed(1)} 秒`}
+                </span>
+              )}
+              {lifted === undefined || lift === null ? null : (
+                <span
+                  aria-hidden="true"
+                  className="film-timeline-ghost"
+                  style={{
+                    ...span(
+                      Math.min(
+                        Math.max(0, lift.clock - lift.grab),
+                        Math.max(0, scale - lifted.duration),
+                      ),
+                      lifted.duration,
+                    ),
+                    top: ROW.film.top - 4,
+                    height: ROW.film.height - 4,
+                  }}
+                >
+                  {stripOf(lifted.segment)}
+                </span>
+              )}
+              {showLiftInsert ? (
+                <span
+                  aria-hidden="true"
+                  className="film-timeline-insert"
+                  style={{ left: percent(bodyStart + insertClockOf(segments, liftInsert)) }}
+                />
+              ) : null}
 
-            <div
-              className="film-music-offset"
-              ref={setCutMarkerContainer}
-              style={{ left: percent(bodyStart), width: percent(scale - bodyStart) }}
-            />
+              {/* 从素材轨拖来的选区 */}
+              {carried === undefined || carry === null ? null : (
+                <>
+                  {dropping && dropClock !== undefined ? (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className={cn('film-timeline-insert', !dropFits && 'is-blocked')}
+                        data-testid="film-insert"
+                        style={{ left: percent(dropClock) }}
+                      />
+                      <span
+                        className="film-timeline-bubble is-top"
+                        role="status"
+                        style={bubbleAt(dropClock)}
+                      >
+                        <Icon decorative name={dropFits ? 'insert' : 'blocked'} size="xs" />
+                        {dropFits
+                          ? `插入到 ${dropClock.toFixed(2)} 秒`
+                          : segments.length >= MAX_FILM_SEGMENTS
+                            ? `片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入`
+                            : `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒，放不下这 ${carriedDuration.toFixed(1)} 秒`}
+                      </span>
+                    </>
+                  ) : null}
+                  {dropping && dropClock !== undefined ? (
+                    <span
+                      aria-hidden="true"
+                      className="film-timeline-ghost"
+                      data-testid="film-carry"
+                      style={{
+                        ...span(dropClock, carriedDuration),
+                        top: ROW.film.top + 2,
+                        height: ROW.film.height - 4,
+                      }}
+                    >
+                      {stripOf(carried)}
+                    </span>
+                  ) : null}
+                </>
+              )}
+
+              <span
+                aria-hidden="true"
+                className="film-timeline-playhead"
+                style={{
+                  left: percent(boundedTime),
+                  top: ROW.film.top - 4,
+                  height: ROW.film.height + 4,
+                }}
+              />
+
+              <div
+                className="film-music-offset"
+                ref={setCutMarkerContainer}
+                style={{ left: percent(bodyStart), width: percent(scale - bodyStart) }}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1142,6 +1168,7 @@ export function FilmTimeline({
             >
               <Icon decorative name="captions" size="xs" />
               字幕
+              {subtitleSettings}
             </span>
             <span
               className="film-timeline-head"
@@ -1173,195 +1200,200 @@ export function FilmTimeline({
             ref={candidateScrollRef}
             onScroll={(event) => syncHorizontalScroll(event.currentTarget)}
           >
-            <div className="film-timeline-lanes" style={{ height }}>
-              {/* 字幕轨 */}
-              <div
-                className="film-timeline-lane"
-                style={{ top: ROW.subtitles.top, height: ROW.subtitles.height }}
-              />
-              {subtitles.map((item, order) => {
-                const index = segments.findIndex((segment) => segment.id === item.segmentId)
-                const isSelected = selectedSubtitle === item.key
-                return (
-                  <button
-                    aria-label={`第 ${order + 1} 条字幕：${item.text.trim() === '' ? '未填写' : item.text}`}
-                    aria-pressed={isSelected}
-                    className={cn('film-subtitle ui-focus', item.text.trim() === '' && 'is-empty')}
-                    key={item.key}
-                    onClick={() =>
-                      onSelect(isSelected ? undefined : { kind: 'subtitle', key: item.key })
-                    }
-                    ref={isSelected ? (anchorRef as Ref<HTMLButtonElement>) : undefined}
-                    style={{
-                      ...span(shifted(index, item.at), item.end - item.at),
-                      top: ROW.subtitles.top + 2,
-                      height: ROW.subtitles.height - 4,
-                    }}
-                    title={item.text}
-                    type="button"
-                  >
-                    {item.text.trim() === '' ? '未填写' : item.text}
-                  </button>
-                )
-              })}
-              {statuses.filter((status) => !overSnapshot(status)).map(statusOf)}
-
-              {/* 音乐轨 */}
-              <div
-                className="film-timeline-lane"
-                style={{ top: ROW.music.top, height: ROW.music.height }}
-              />
-              <div
-                className="film-music-offset"
-                style={{ left: percent(bodyStart), width: percent(scale - bodyStart) }}
-              >
-                <MusicTrack
-                  anchorRef={anchorRef}
-                  cuts={internalCuts(segments)}
-                  filmTop={ROW.film.top}
-                  cutMarkerContainer={cutMarkerContainer}
-                  onMove={onMoveMusic}
-                  onRemove={onRemoveMusic}
-                  onScrub={onScrub}
-                  onSelect={(selected) => onSelect(selected ? { kind: 'music' } : undefined)}
-                  row={ROW.music}
-                  scale={scale - bodyStart}
-                  secondsOf={secondsOf}
-                  selected={selection?.kind === 'music'}
-                  total={bodyTotal}
-                  view={music}
+            <div className="film-timeline-coordinate-space">
+              <div className="film-timeline-lanes" style={{ height }}>
+                {/* 字幕轨 */}
+                <div
+                  className="film-timeline-lane"
+                  style={{ top: ROW.subtitles.top, height: ROW.subtitles.height }}
                 />
-              </div>
-
-              <span
-                aria-hidden="true"
-                className="film-timeline-playhead"
-                style={{
-                  left: percent(boundedTime),
-                  top: ROW.subtitles.top,
-                  height: ROW.music.top + ROW.music.height - ROW.subtitles.top,
-                }}
-              />
-              {/* 素材区 */}
-              {lanes.map((view, index) => {
-                const top = laneTop(index)
-                const shown = shownPick(view.lane.groupId)
-                const used = segments.filter(
-                  (segment) => segment.sourceJobId === view.material.jobId,
-                )
-                const hintId = `film-lane-hint-${view.lane.groupId}`
-                return (
-                  <div key={view.lane.groupId}>
-                    <div
-                      aria-describedby={hintId}
-                      aria-label={`${view.label} · ${view.material.version} 素材${view.duration == null ? '' : `，共 ${seconds(view.duration)}`}`}
-                      className="film-material-lane ui-focus"
-                      onKeyDown={(event) => keyLane(event, view)}
-                      onPointerCancel={cancelLane}
-                      onPointerDown={(event) => pressLane(event, view)}
-                      onPointerMove={(event) => dragLane(event, view)}
-                      onPointerUp={releaseLane}
-                      role="button"
-                      style={{ top, height: ROW.lane }}
-                      tabIndex={0}
-                    >
-                      <span className="sr-only" id={hintId}>
-                        按回车选中整条素材；选好后再按回车，插入到播放头所在的位置
-                      </span>
-                      {view.duration === undefined ? (
-                        <span className="film-material-loading" role="status">
-                          正在读取视频时长…
-                        </span>
-                      ) : view.duration === null ? (
-                        <span className="film-material-loading" role="alert">
-                          视频时长读取失败，无法从这条素材挑段；请换一个版本
-                        </span>
-                      ) : (
-                        <span
-                          className="film-material-clip"
-                          style={{ width: `calc(${percent(view.duration)} - 2px)` }}
-                        >
-                          <Strip
-                            end={view.duration}
-                            peaks={peaksOf(view.material.url)}
-                            start={0}
-                            url={view.material.url}
-                          />
-                          <span className="film-material-length">{seconds(view.duration)}</span>
-                        </span>
+                {subtitles.map((item, order) => {
+                  const index = segments.findIndex((segment) => segment.id === item.segmentId)
+                  const isSelected = selectedSubtitle === item.key
+                  return (
+                    <button
+                      aria-label={`第 ${order + 1} 条字幕：${item.text.trim() === '' ? '未填写' : item.text}`}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        'film-subtitle ui-focus',
+                        item.text.trim() === '' && 'is-empty',
                       )}
-                      {used.map((segment) => (
-                        <span
-                          aria-hidden="true"
-                          className="film-material-used"
-                          key={segment.id}
-                          style={{
-                            left: `calc(${percent(segment.start)} + 1px)`,
-                            width: `max(3px, calc(${percent(segment.end - segment.start)} - 2px))`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                    {shown === undefined ? null : (
-                      <>
-                        <span
-                          aria-hidden="true"
-                          className="film-material-pick"
-                          data-testid="material-pick"
-                          style={{
-                            left: `calc(${percent(shown.start)} - 1px)`,
-                            width: `calc(${percent(shown.end - shown.start)} + 2px)`,
-                            top: top + 1,
-                            height: ROW.lane - 2,
-                          }}
-                        />
-                        {sweep !== null || carry?.moved === true ? null : (
-                          <>
-                            {(['start', 'end'] as const).map((edge) => {
-                              const value = shown[edge]
-                              const bounds = pickBounds(view, edge)
-                              return (
-                                <button
-                                  aria-label={edge === 'start' ? '选区开头' : '选区结尾'}
-                                  aria-valuemax={roundSeconds(bounds.max)}
-                                  aria-valuemin={roundSeconds(bounds.min)}
-                                  aria-valuenow={roundSeconds(value)}
-                                  aria-valuetext={`素材 ${roundSeconds(value)} 秒`}
-                                  className={cn(
-                                    'film-material-handle ui-focus',
-                                    pickHandle?.edge === edge && 'is-pressed',
-                                  )}
-                                  key={edge}
-                                  onKeyDown={(event) => keyPickHandle(event, view, edge)}
-                                  onPointerCancel={(event) => releasePickHandle(event, view)}
-                                  onPointerDown={(event) => pressPickHandle(event, edge)}
-                                  onPointerMove={(event) => dragPickHandle(event, view)}
-                                  onPointerUp={(event) => releasePickHandle(event, view)}
-                                  role="slider"
-                                  style={{
-                                    left: percent(value),
-                                    top: top + 9,
-                                    height: ROW.lane - 18,
-                                  }}
-                                  title="拖动可调整选区，按方向键可微调，按回车插入到播放头处"
-                                  type="button"
-                                />
-                              )
-                            })}
-                          </>
-                        )}
-                        <span
-                          className="film-timeline-bubble"
-                          style={{ ...bubbleAt((shown.start + shown.end) / 2), top: top - 22 }}
-                        >
-                          素材 {shown.start.toFixed(2)}–{shown.end.toFixed(2)} 秒 ·{' '}
-                          {seconds(shown.end - shown.start)}
+                      key={item.key}
+                      onClick={() =>
+                        onSelect(isSelected ? undefined : { kind: 'subtitle', key: item.key })
+                      }
+                      ref={isSelected ? (anchorRef as Ref<HTMLButtonElement>) : undefined}
+                      style={{
+                        ...span(shifted(index, item.at), item.end - item.at),
+                        top: ROW.subtitles.top + 2,
+                        height: ROW.subtitles.height - 4,
+                      }}
+                      title={item.text}
+                      type="button"
+                    >
+                      {item.text.trim() === '' ? '未填写' : item.text}
+                    </button>
+                  )
+                })}
+                {statuses.filter((status) => !overSnapshot(status)).map(statusOf)}
+
+                {/* 音乐轨 */}
+                <div
+                  className="film-timeline-lane"
+                  style={{ top: ROW.music.top, height: ROW.music.height }}
+                />
+                <div
+                  className="film-music-offset"
+                  style={{ left: percent(bodyStart), width: percent(scale - bodyStart) }}
+                >
+                  <MusicTrack
+                    anchorRef={anchorRef}
+                    cuts={internalCuts(segments)}
+                    filmTop={ROW.film.top}
+                    cutMarkerContainer={cutMarkerContainer}
+                    onMove={onMoveMusic}
+                    onRemove={onRemoveMusic}
+                    onScrub={onScrub}
+                    onSelect={(selected) => onSelect(selected ? { kind: 'music' } : undefined)}
+                    row={ROW.music}
+                    scale={scale - bodyStart}
+                    secondsOf={secondsOf}
+                    selected={selection?.kind === 'music'}
+                    total={bodyTotal}
+                    view={music}
+                  />
+                </div>
+
+                <span
+                  aria-hidden="true"
+                  className="film-timeline-playhead"
+                  style={{
+                    left: percent(boundedTime),
+                    top: ROW.subtitles.top,
+                    height: ROW.music.top + ROW.music.height - ROW.subtitles.top,
+                  }}
+                />
+                {/* 素材区 */}
+                {lanes.map((view, index) => {
+                  const top = laneTop(index)
+                  const shown = shownPick(view.lane.groupId)
+                  const used = segments.filter(
+                    (segment) => segment.sourceJobId === view.material.jobId,
+                  )
+                  const hintId = `film-lane-hint-${view.lane.groupId}`
+                  return (
+                    <div key={view.lane.groupId}>
+                      <div
+                        aria-describedby={hintId}
+                        aria-label={`${view.label} · ${view.material.version} 素材${view.duration == null ? '' : `，共 ${seconds(view.duration)}`}`}
+                        className="film-material-lane ui-focus"
+                        onKeyDown={(event) => keyLane(event, view)}
+                        onPointerCancel={cancelLane}
+                        onPointerDown={(event) => pressLane(event, view)}
+                        onPointerMove={(event) => dragLane(event, view)}
+                        onPointerUp={releaseLane}
+                        role="button"
+                        style={{ top, height: ROW.lane }}
+                        tabIndex={0}
+                      >
+                        <span className="sr-only" id={hintId}>
+                          按回车选中整条素材；选好后再按回车，插入到播放头所在的位置
                         </span>
-                      </>
-                    )}
-                  </div>
-                )
-              })}
+                        {view.duration === undefined ? (
+                          <span className="film-material-loading" role="status">
+                            正在读取视频时长…
+                          </span>
+                        ) : view.duration === null ? (
+                          <span className="film-material-loading" role="alert">
+                            视频时长读取失败，无法从这条素材挑段；请换一个版本
+                          </span>
+                        ) : (
+                          <span
+                            className="film-material-clip"
+                            style={{ width: `calc(${percent(view.duration)} - 2px)` }}
+                          >
+                            <Strip
+                              end={view.duration}
+                              peaks={peaksOf(view.material.url)}
+                              start={0}
+                              url={view.material.url}
+                            />
+                            <span className="film-material-length">{seconds(view.duration)}</span>
+                          </span>
+                        )}
+                        {used.map((segment) => (
+                          <span
+                            aria-hidden="true"
+                            className="film-material-used"
+                            key={segment.id}
+                            style={{
+                              left: `calc(${percent(segment.start)} + 1px)`,
+                              width: `max(3px, calc(${percent(segment.end - segment.start)} - 2px))`,
+                            }}
+                          />
+                        ))}
+                      </div>
+                      {shown === undefined ? null : (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="film-material-pick"
+                            data-testid="material-pick"
+                            style={{
+                              left: `calc(${percent(shown.start)} - 1px)`,
+                              width: `calc(${percent(shown.end - shown.start)} + 2px)`,
+                              top: top + 1,
+                              height: ROW.lane - 2,
+                            }}
+                          />
+                          {sweep !== null || carry?.moved === true ? null : (
+                            <>
+                              {(['start', 'end'] as const).map((edge) => {
+                                const value = shown[edge]
+                                const bounds = pickBounds(view, edge)
+                                return (
+                                  <button
+                                    aria-label={edge === 'start' ? '选区开头' : '选区结尾'}
+                                    aria-valuemax={roundSeconds(bounds.max)}
+                                    aria-valuemin={roundSeconds(bounds.min)}
+                                    aria-valuenow={roundSeconds(value)}
+                                    aria-valuetext={`素材 ${roundSeconds(value)} 秒`}
+                                    className={cn(
+                                      'film-material-handle ui-focus',
+                                      pickHandle?.edge === edge && 'is-pressed',
+                                    )}
+                                    key={edge}
+                                    onKeyDown={(event) => keyPickHandle(event, view, edge)}
+                                    onPointerCancel={(event) => releasePickHandle(event, view)}
+                                    onPointerDown={(event) => pressPickHandle(event, edge)}
+                                    onPointerMove={(event) => dragPickHandle(event, view)}
+                                    onPointerUp={(event) => releasePickHandle(event, view)}
+                                    role="slider"
+                                    style={{
+                                      left: percent(value),
+                                      top: top + 9,
+                                      height: ROW.lane - 18,
+                                    }}
+                                    title="拖动可调整选区，按方向键可微调，按回车插入到播放头处"
+                                    type="button"
+                                  />
+                                )
+                              })}
+                            </>
+                          )}
+                          <span
+                            className="film-timeline-bubble"
+                            style={{ ...bubbleAt((shown.start + shown.end) / 2), top: top - 22 }}
+                          >
+                            素材 {shown.start.toFixed(2)}–{shown.end.toFixed(2)} 秒 ·{' '}
+                            {seconds(shown.end - shown.start)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
           <div className="film-timeline-separator" style={{ top: ROW.separator }}>

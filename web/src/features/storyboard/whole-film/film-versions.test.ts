@@ -54,6 +54,14 @@ describe('从已合成版本恢复字幕', () => {
     const request = {
       segments: [{ sourceJobId: 'A', startMs: 0, endMs: 5000 }],
       subtitles: [],
+      font: {
+        fontId: 'font',
+        url: 'https://example.com/brand.ttf',
+        name: '品牌字体',
+        family: 'Brand',
+        weight: 500,
+        style: 'normal',
+      },
       intro: {
         templateId: 'intro',
         url: 'https://example.com/intro.mp4',
@@ -72,6 +80,11 @@ describe('从已合成版本恢复字幕', () => {
     assert(stored !== undefined)
     const reloaded = parseStoredFilm(serializeStoredFilm(stored))
     assert(reloaded !== undefined)
+    expect(reloaded.film.font).toEqual({
+      fontId: 'font',
+      url: 'https://example.com/brand.ttf',
+      name: '品牌字体',
+    })
     expect(reloaded.film.intro).toEqual({ ...request.intro, name: '片头' })
     expect(captions(reloaded.film)).toEqual([])
   })

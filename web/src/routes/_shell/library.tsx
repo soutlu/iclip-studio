@@ -109,7 +109,8 @@ function LibraryPage() {
           canUpload={hasPermission(user, PERMISSION.uploadsWrite)}
           scope={{
             q: search.q ?? '',
-            position: search.position,
+            kind: search.kind,
+            brand: search.brand,
             includeDisabled: search.includeDisabled === true,
           }}
           onScopeChange={(scope) =>
@@ -118,7 +119,8 @@ function LibraryPage() {
               search: {
                 tab: 'brand-templates',
                 q: scope.q.trim() || undefined,
-                position: scope.position,
+                kind: scope.kind,
+                brand: scope.brand,
                 includeDisabled: scope.includeDisabled ? true : undefined,
               },
             })

@@ -88,7 +88,7 @@ const mediaDimensions = async (file: File, kind: 'image' | 'video') => {
 type UploadInstruction = z.infer<typeof zUploadTicketOut>['upload']
 
 /** 用 XHR 直传以便取进度；签名里的 headers 必须原样发送。失败文案与 apiFetch 同格式：断网时带原因，其余只给前缀、不外露状态码。 */
-const putToStorage = (
+export const putToStorage = (
   upload: UploadInstruction,
   file: File,
   onProgress: ((ratio: number) => void) | undefined,

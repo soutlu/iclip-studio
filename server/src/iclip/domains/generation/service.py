@@ -48,6 +48,7 @@ from iclip.domains.generation.schemas import (
     VideoGenerationIn,
     WholeFilmBrand,
     WholeFilmBrandIn,
+    WholeFilmFont,
     WholeFilmIn,
     WholeFilmMusic,
     WholeFilmMusicIn,
@@ -57,6 +58,7 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.fonts import FontInfo
 from iclip.platform.paging import check_limit
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -102,16 +104,18 @@ BrandPosition = Literal["intro", "outro"]
 
 @dataclass(frozen=True, slots=True)
 class BrandTemplateFacts:
-    """整片受理时要知道的一条品牌模板：在不在用、放哪一头，以及要快照进请求的视频参数。"""
+    """整片受理所需的品牌资源事实：类型、可用性、媒体参数与字体内部信息。"""
 
     id: uuid.UUID
-    position: BrandPosition
+    kind: str
+    name: str
     enabled: bool
     url: str
-    duration_ms: int
-    width: int
-    height: int
-    has_audio: bool
+    duration_ms: int | None
+    width: int | None
+    height: int | None
+    has_audio: bool | None
+    font_info: FontInfo | None = None
 
 
 BrandTemplates = Callable[[uuid.UUID], Awaitable[BrandTemplateFacts | None]]
@@ -335,6 +339,7 @@ class GenerationService:
             )
         intro = await self._film_brand(request.intro, "intro")
         outro = await self._film_brand(request.outro, "outro")
+        font = await self._film_font(request.font_id)
         film_ms = request.segments_ms + sum(
             brand.duration_ms for brand in (intro, outro) if brand is not None
         )
@@ -355,6 +360,7 @@ class GenerationService:
                 subtitles=request.subtitles,
                 music=music,
                 render=WholeFilmRender(),
+                font=font,
                 intro=intro,
                 outro=outro,
             ),
@@ -422,8 +428,18 @@ class GenerationService:
             raise NotFound(f"没有这个品牌模板: {brand.template_id}")
         if not template.enabled:
             raise ValidationFailed(f"{where}用的品牌模板已停用")
-        if template.position != position:
+        if template.kind != position:
             raise ValidationFailed(f"{where}只能用{where}模板")
+        if (
+            template.width is None
+            or template.height is None
+            or template.duration_ms is None
+            or template.has_audio is None
+            or template.width <= 0
+            or template.height <= 0
+            or template.duration_ms <= 0
+        ):
+            raise ValidationFailed(f"{where}视频参数不完整，无法合成；请重新上传模板")
         return WholeFilmBrand(
             template_id=template.id,
             url=template.url,
@@ -431,6 +447,28 @@ class GenerationService:
             width=template.width,
             height=template.height,
             has_audio=template.has_audio,
+        )
+
+    async def _film_font(self, font_id: uuid.UUID | None) -> WholeFilmFont | None:
+        if font_id is None:
+            return None
+        font = await self._brand_templates(font_id)
+        if font is None:
+            raise NotFound("没有这个字幕字体")
+        if font.kind != "font":
+            raise ValidationFailed("字幕字体必须选择字体资源")
+        if not font.enabled:
+            raise ValidationFailed("字幕字体已停用，请选择其他字体")
+        info = font.font_info
+        if info is None:
+            raise RuntimeError("字体资源适配器未提供字体信息")
+        return WholeFilmFont(
+            font_id=font.id,
+            url=font.url,
+            name=font.name,
+            family=info.family,
+            weight=info.weight,
+            style=info.style,
         )
 
     async def _conversation_record(

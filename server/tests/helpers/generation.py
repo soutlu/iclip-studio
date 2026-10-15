@@ -302,6 +302,7 @@ def whole_film_request(
     music: Mapping[str, Any] | None = None,
     intro: Mapping[str, Any] | None = None,
     outro: Mapping[str, Any] | None = None,
+    font: Mapping[str, Any] | None = None,
 ) -> WholeFilmRequest:
     """整片落库的请求：各段 ``{url, startMs, endMs}``（没写出处按地址补一个固定的 ``sourceJobId``），
     字幕与音乐照给，声音参数取受理时的默认值。音乐没写出处同样补一个。片头片尾是模板快照
@@ -329,6 +330,9 @@ def whole_film_request(
             "render": WholeFilmRender(),
             "intro": snapshot(intro),
             "outro": snapshot(outro),
+            "font": None
+            if font is None
+            else {"fontId": uuid.uuid5(uuid.NAMESPACE_URL, str(font["url"])), **font},
         }
     )
 

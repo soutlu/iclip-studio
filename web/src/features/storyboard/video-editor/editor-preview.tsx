@@ -22,6 +22,7 @@ import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { locateClock, totalDuration, type LaidOutSegment } from './play-layout'
+import type { CaptionPresentation } from './caption-layout'
 import { timeLabel } from './time-label'
 
 /** 定位到的是一段的哪一端：结尾那端显示段内最后一刻的画面，不跳进下一段。 */
@@ -67,6 +68,8 @@ type Props = {
   overlay: ReactNode
   /** 压在画面底部居中的字幕（白字、深色描边），放大时跟着画面走；没有就不显示。 */
   caption?: string | undefined
+  /** 自定义字体先在源画布上排好行，再随实际预览画面等比缩放。 */
+  captionPresentation?: CaptionPresentation | undefined
   /** 一段都没有时画面里那句话；不给就只留空画面。 */
   emptyMessage?: string | undefined
   /** 贴在舞台右缘的版本条（窄屏排到舞台下方）。 */
@@ -98,6 +101,7 @@ export function EditorPreview({
   playBlocked,
   overlay,
   caption,
+  captionPresentation,
   emptyMessage,
   versions,
   tools,
@@ -366,11 +370,49 @@ export function EditorPreview({
     />
   )
 
+  // cqw 相对实际画面宽度，内嵌、放大与窗口缩放共用一份源像素度量。
+  const captionStyle: CSSProperties | undefined =
+    captionPresentation === undefined
+      ? undefined
+      : (() => {
+          const font = captionPresentation
+          const scaled = (value: number) => `${(value / font.frame.width) * 100}cqw`
+          return {
+            fontFamily: font.fontFamily,
+            fontWeight: font.fontWeight,
+            fontStyle: font.fontStyle,
+            fontSynthesis: 'none',
+            fontKerning: 'normal',
+            fontSize: scaled(font.fontSize),
+            lineHeight: scaled(font.lineHeight),
+            left: scaled(font.marginSide),
+            right: scaled(font.marginSide),
+            bottom: scaled(font.marginBottom),
+            WebkitTextStroke: `${scaled(font.outline * 2)} var(--color-scrim)`,
+            paintOrder: 'stroke fill',
+            textShadow: 'none',
+            whiteSpace: 'pre',
+            letterSpacing: 0,
+            wordSpacing: 0,
+          }
+        })()
+
   const stage = (
     <div
       aria-label="视频预览"
-      className={cn('video-editor-preview stage-picture', enlarged && 'is-enlarged')}
-      style={{ '--preview-ratio': aspect } as CSSProperties}
+      className={cn(
+        'video-editor-preview stage-picture',
+        enlarged && 'is-enlarged',
+        captionPresentation !== undefined && 'has-custom-caption',
+      )}
+      style={
+        {
+          '--preview-ratio':
+            captionPresentation === undefined
+              ? aspect
+              : captionPresentation.frame.width / captionPresentation.frame.height,
+        } as CSSProperties
+      }
     >
       {SLOTS.map(({ id, slot }) => (
         // eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成的视频没有字幕轨，不装样子
@@ -439,7 +481,13 @@ export function EditorPreview({
         />
       )}
       {caption === undefined || caption.trim() === '' || failed ? null : (
-        <p className="video-editor-preview-caption">{caption}</p>
+        <p
+          className="video-editor-preview-caption"
+          data-testid="preview-caption"
+          style={captionStyle}
+        >
+          {caption}
+        </p>
       )}
       {segments === undefined ? (
         <div className="video-editor-preview-message" role="status">

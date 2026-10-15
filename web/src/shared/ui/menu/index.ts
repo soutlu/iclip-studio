@@ -6,9 +6,6 @@ export {
   MenuRadioItem,
   MenuRoot,
   MenuSeparator,
-  MenuSub,
-  MenuSubSurface,
-  MenuSubTrigger,
   MenuSurface,
   MenuTrigger,
 } from './menu'

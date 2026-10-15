@@ -4,6 +4,7 @@ import {
   insertSegment,
   sentenceKey,
   setSentenceText,
+  setFont,
   type FilmState,
 } from './film-draft'
 import { MUSIC_BED_GAIN, MUSIC_DUCKED_GAIN, musicGainCurve, speechSpansOf } from './film-music'
@@ -77,6 +78,27 @@ describe('合成提交体', () => {
     })
   })
 
+  it('品牌字体提交资源 ID，恢复系统字体时不带字体字段', () => {
+    const input = {
+      conversationId: CONVERSATION,
+      taskId: TASK,
+      film: cut,
+      subtitles: burnedOf(cut),
+      music: null,
+    }
+    expect(
+      wholeFilmBody({
+        ...input,
+        film: setFont(cut, {
+          fontId: 'font',
+          name: '品牌字体',
+          url: 'https://example.com/font.ttf',
+        }),
+      }).fontId,
+    ).toBe('font')
+    expect(wholeFilmBody({ ...input, film: setFont(cut, null) })).not.toHaveProperty('fontId')
+  })
+
   it('有音乐时带音频记录、起点（毫秒）与口播处压低的曲线，曲线不含结尾淡出', () => {
     const subtitles = projectSubtitles(cut, (id) => SOURCES[id]).subtitles
     const curve = musicGainCurve(speechSpansOf(subtitles), 5.5)
@@ -125,6 +147,7 @@ describe('「合成成片」不能点的原因', () => {
     ['成片轨为空', { segmentCount: 0 }, '成片轨为空，无法合成；请先从素材轨挑段放入成片轨'],
     ['需求单在读', { task: 'loading' }, '任务信息读取中，暂时无法合成'],
     ['需求单读失败', { task: 'failed' }, '任务信息读取失败，无法合成；请点击「重试」'],
+    ['字体不可用', { fontBlocked: '字体缺字' }, '字体缺字'],
     ['字幕记录在读', { subtitleRecords: 'loading' }, '字幕读取中，暂时无法合成'],
     ['字幕记录读失败', { subtitleRecords: 'failed' }, '字幕读取失败，无法合成；请点击「重试」'],
     ['有段在识别', { recognizing: 2 }, '有 2 段的字幕正在识别，暂时无法合成；识别完成后即可合成'],

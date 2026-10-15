@@ -1,4 +1,4 @@
-"""品牌资源表与片头片尾的 Postgres 仓储。时间统一用数据库时钟；外部输入一律走绑定参数。"""
+"""品牌资源表与 Postgres 仓储。时间统一用数据库时钟；外部输入一律走绑定参数。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.brand_templates.models import BrandTemplate, Position, ProbedVideo
+from iclip.domains.brand_templates.models import BrandTemplate, ProbedVideo
 
 DB_SCHEMA: Final = "iclip"
 
@@ -64,48 +64,46 @@ brand_templates_table = Table(
 )
 
 _ROW: Final = """
-SELECT id, kind AS position, name, url, width, height, duration_ms, has_audio, created_by,
+SELECT id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by,
        created_at, disabled_at
 FROM iclip.brand_templates"""
 
-# 现有接口服务的是可用于合成的完整视频，不暴露其它资源或未提供完整媒体参数的记录。
-_VIDEO: Final = """kind IN ('intro', 'outro') AND width IS NOT NULL AND height IS NOT NULL
-AND duration_ms IS NOT NULL AND has_audio IS NOT NULL"""
-
-_BY_ID: Final = text(f"{_ROW}\nWHERE id = :id AND {_VIDEO}")
+_BY_ID: Final = text(f"{_ROW}\nWHERE id = :id")
 
 _LIST: Final = text(f"""{_ROW}
-WHERE {_VIDEO}
-  AND (CAST(:position AS text) IS NULL OR kind = CAST(:position AS text))
+WHERE (CAST(:kind AS text) IS NULL OR kind = CAST(:kind AS text))
+  AND (CAST(:brand AS text) IS NULL OR brand = CAST(:brand AS text))
   AND (CAST(:include_disabled AS boolean) OR disabled_at IS NULL)
 ORDER BY created_at DESC, id DESC""")
 
 _RETURNING: Final = """
-RETURNING id, kind AS position, name, url, width, height, duration_ms, has_audio, created_by,
+RETURNING id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by,
           created_at, disabled_at"""
 
 _INSERT: Final = text(f"""
 INSERT INTO iclip.brand_templates
-    (id, kind, name, url, width, height, duration_ms, has_audio, created_by, api_key_id)
-VALUES (:id, :position, :name, :url, :width, :height, :duration_ms, :has_audio,
-        :created_by, :api_key_id){_RETURNING}""")
+    (id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by, api_key_id)
+VALUES (:id, :kind, :brand, :name, :url, :width, :height, :duration_ms, :has_audio,
+        :created_by, :api_key_id) ON CONFLICT (id) DO NOTHING {_RETURNING}""")
 
 # 停用时已停用的保留原来的停用时刻；不给的那一项不动。
 _UPDATE: Final = text(f"""
 UPDATE iclip.brand_templates
 SET name = coalesce(CAST(:name AS text), name),
+    brand = CASE WHEN :update_brand THEN CAST(:brand AS text) ELSE brand END,
     disabled_at = CASE
         WHEN CAST(:disabled AS boolean) IS NULL THEN disabled_at
         WHEN CAST(:disabled AS boolean) THEN coalesce(disabled_at, now())
         ELSE NULL
     END
-WHERE id = :id AND {_VIDEO}{_RETURNING}""")
+WHERE id = :id{_RETURNING}""")
 
 
 def _row_of(row: RowMapping) -> BrandTemplate:
     return BrandTemplate(
         id=row["id"],
-        position=row["position"],
+        kind=row["kind"],
+        brand=row["brand"],
         name=row["name"],
         url=row["url"],
         width=row["width"],
@@ -119,7 +117,7 @@ def _row_of(row: RowMapping) -> BrandTemplate:
 
 
 class SqlBrandTemplateStore:
-    """片头片尾视频的存取；表中的其他资源不进入视频模板接口。"""
+    """品牌资源存取；是否可用于某项操作由消费它的用例明确校验。"""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -127,10 +125,12 @@ class SqlBrandTemplateStore:
     async def create(
         self,
         *,
-        position: Position,
+        resource_id: uuid.UUID,
+        kind: str,
+        brand: str | None,
         name: str,
         url: str,
-        video: ProbedVideo,
+        video: ProbedVideo | None,
         created_by: uuid.UUID,
         api_key_id: uuid.UUID | None,
     ) -> BrandTemplate:
@@ -140,22 +140,25 @@ class SqlBrandTemplateStore:
                     await conn.execute(
                         _INSERT,
                         {
-                            "id": uuid.uuid4(),
-                            "position": position,
+                            "id": resource_id,
+                            "kind": kind,
+                            "brand": brand,
                             "name": name,
                             "url": url,
-                            "width": video.width,
-                            "height": video.height,
-                            "duration_ms": video.duration_ms,
-                            "has_audio": video.has_audio,
+                            "width": None if video is None else video.width,
+                            "height": None if video is None else video.height,
+                            "duration_ms": None if video is None else video.duration_ms,
+                            "has_audio": None if video is None else video.has_audio,
                             "created_by": created_by,
                             "api_key_id": api_key_id,
                         },
                     )
                 )
                 .mappings()
-                .one()
+                .first()
             )
+            if row is None:
+                row = (await conn.execute(_BY_ID, {"id": resource_id})).mappings().one()
         return _row_of(row)
 
     async def get(self, template_id: uuid.UUID) -> BrandTemplate | None:
@@ -164,13 +167,13 @@ class SqlBrandTemplateStore:
         return None if row is None else _row_of(row)
 
     async def list(
-        self, *, position: Position | None, include_disabled: bool
+        self, *, kind: str | None, brand: str | None, include_disabled: bool
     ) -> Sequence[BrandTemplate]:
         async with self._engine.connect() as conn:
             rows = (
                 (
                     await conn.execute(
-                        _LIST, {"position": position, "include_disabled": include_disabled}
+                        _LIST, {"kind": kind, "brand": brand, "include_disabled": include_disabled}
                     )
                 )
                 .mappings()
@@ -179,13 +182,26 @@ class SqlBrandTemplateStore:
         return [_row_of(row) for row in rows]
 
     async def update(
-        self, template_id: uuid.UUID, *, name: str | None, disabled: bool | None
+        self,
+        template_id: uuid.UUID,
+        *,
+        name: str | None,
+        disabled: bool | None,
+        brand: str | None = None,
+        update_brand: bool = False,
     ) -> BrandTemplate | None:
         async with self._engine.begin() as conn:
             row = (
                 (
                     await conn.execute(
-                        _UPDATE, {"id": template_id, "name": name, "disabled": disabled}
+                        _UPDATE,
+                        {
+                            "id": template_id,
+                            "name": name,
+                            "disabled": disabled,
+                            "brand": brand,
+                            "update_brand": update_brand,
+                        },
                     )
                 )
                 .mappings()

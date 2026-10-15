@@ -9,7 +9,33 @@ export type FilmDimensions = { width: number; height: number }
 export const matchesFilmRatio = (template: FilmDimensions, frame: FilmDimensions): boolean =>
   Math.abs(template.width / template.height / (frame.width / frame.height) - 1) <= 0.02 + 1e-9
 
-export const brandOf = (template: BrandTemplate): FilmBrand => ({
+export type VideoBrandTemplate = BrandTemplate & {
+  kind: 'intro' | 'outro'
+  width: number
+  height: number
+  durationMs: number
+  hasAudio: boolean
+}
+
+/** 资源表允许扩展类型与空参数，只有完整的视频资源可进入时间线。 */
+export const isVideoTemplate = (template: BrandTemplate): template is VideoBrandTemplate =>
+  (template.kind === 'intro' || template.kind === 'outro') &&
+  template.width !== null &&
+  template.width > 0 &&
+  template.height !== null &&
+  template.height > 0 &&
+  template.durationMs !== null &&
+  template.durationMs > 0 &&
+  template.hasAudio !== null
+
+export const videoTemplateReason = (template: BrandTemplate): string | undefined =>
+  template.disabledAt !== null
+    ? '模板已停用'
+    : !isVideoTemplate(template)
+      ? '视频参数不完整，无法使用；请联系管理员补充'
+      : undefined
+
+export const brandOf = (template: VideoBrandTemplate): FilmBrand => ({
   templateId: template.id,
   name: template.name,
   url: template.url,
@@ -30,8 +56,9 @@ export const templateBlockedReason = (
     const label = position === 'intro' ? '片头' : '片尾'
     if (templates === undefined) return '模板信息尚未读取，暂时无法合成；请等待或重试读取'
     const current = templates.find((template) => template.id === selected.templateId)
-    if (current === undefined || current.disabledAt !== null || current.position !== position)
+    if (current === undefined || current.disabledAt !== null || current.kind !== position)
       return `${label}模板已停用或不可用，无法合成；请更换或删除${label}`
+    if (!isVideoTemplate(current)) return `${label}视频参数不完整，无法合成；请更换或删除${label}`
     if (frame === undefined) return '正文画幅尚未读取，暂时无法核对片头片尾；请等待或重试读取'
     if (!matchesFilmRatio(current, frame))
       return `${label}与正文画幅不匹配，无法合成；请更换或删除${label}`
