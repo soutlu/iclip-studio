@@ -316,17 +316,116 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
- * BrandTemplateCreateIn
+ * BrandFontConfirmIn
  */
-export type BrandTemplateCreateIn = {
+export type BrandFontConfirmIn = {
+  /**
+   * Brand
+   */
+  brand?: string | null
   /**
    * Name
    */
   name: string
+}
+
+/**
+ * BrandFontInfoOut
+ */
+export type BrandFontInfoOut = {
   /**
-   * Position
+   * Family
    */
-  position: 'intro' | 'outro'
+  family: string
+  /**
+   * Style
+   */
+  style: 'normal' | 'italic' | 'oblique'
+  /**
+   * Unicoderanges
+   */
+  unicodeRanges: Array<BrandFontUnicodeRange>
+  /**
+   * Weight
+   */
+  weight: number
+}
+
+/**
+ * BrandFontSignIn
+ */
+export type BrandFontSignIn = {
+  /**
+   * Contenttype
+   */
+  contentType: 'font/ttf' | 'font/otf'
+}
+
+/**
+ * BrandFontUnicodeRange
+ */
+export type BrandFontUnicodeRange = {
+  /**
+   * End
+   */
+  end: number
+  /**
+   * Start
+   */
+  start: number
+}
+
+/**
+ * BrandFontUploadInstruction
+ */
+export type BrandFontUploadInstruction = {
+  /**
+   * Expiresat
+   */
+  expiresAt: string
+  /**
+   * Headers
+   */
+  headers: {
+    [key: string]: string
+  }
+  /**
+   * Method
+   */
+  method?: 'PUT'
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * BrandFontUploadTicketOut
+ */
+export type BrandFontUploadTicketOut = {
+  upload: BrandFontUploadInstruction
+  /**
+   * Uploadid
+   */
+  uploadId: string
+}
+
+/**
+ * BrandTemplateCreateIn
+ */
+export type BrandTemplateCreateIn = {
+  /**
+   * Brand
+   */
+  brand?: string | null
+  /**
+   * Kind
+   */
+  kind: 'intro' | 'outro'
+  /**
+   * Name
+   */
+  name: string
   /**
    * Uploadid
    */
@@ -338,6 +437,10 @@ export type BrandTemplateCreateIn = {
  */
 export type BrandTemplateOut = {
   /**
+   * Brand
+   */
+  brand: string | null
+  /**
    * Createdat
    */
   createdAt: string
@@ -348,27 +451,27 @@ export type BrandTemplateOut = {
   /**
    * Durationms
    */
-  durationMs: number
+  durationMs: number | null
   /**
    * Hasaudio
    */
-  hasAudio: boolean
+  hasAudio: boolean | null
   /**
    * Height
    */
-  height: number
+  height: number | null
   /**
    * Id
    */
   id: string
   /**
+   * Kind
+   */
+  kind: string
+  /**
    * Name
    */
   name: string
-  /**
-   * Position
-   */
-  position: 'intro' | 'outro'
   /**
    * Url
    */
@@ -376,7 +479,7 @@ export type BrandTemplateOut = {
   /**
    * Width
    */
-  width: number
+  width: number | null
 }
 
 /**
@@ -385,6 +488,10 @@ export type BrandTemplateOut = {
  * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
  */
 export type BrandTemplateUpdateIn = {
+  /**
+   * Brand
+   */
+  brand?: string | null
   /**
    * Disabled
    */
@@ -5148,6 +5255,10 @@ export type WholeFilmIn = {
    * Conversationid
    */
   conversationId: string
+  /**
+   * Fontid
+   */
+  fontId?: string | null
   intro?: WholeFilmBrandIn | null
   /**
    * Metadata
@@ -5622,9 +5733,13 @@ export type ListBrandTemplatesBrandTemplatesGetData = {
   path?: never
   query?: {
     /**
-     * Position
+     * Kind
      */
-    position?: 'intro' | 'outro' | null
+    kind?: string | null
+    /**
+     * Brand
+     */
+    brand?: string | null
     /**
      * Includedisabled
      */
@@ -5680,6 +5795,65 @@ export type CreateBrandTemplateBrandTemplatesPostResponses = {
 export type CreateBrandTemplateBrandTemplatesPostResponse =
   CreateBrandTemplateBrandTemplatesPostResponses[keyof CreateBrandTemplateBrandTemplatesPostResponses]
 
+export type SignFontBrandTemplatesFontsSignPostData = {
+  body: BrandFontSignIn
+  path?: never
+  query?: never
+  url: '/brand-templates/fonts/sign'
+}
+
+export type SignFontBrandTemplatesFontsSignPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SignFontBrandTemplatesFontsSignPostError =
+  SignFontBrandTemplatesFontsSignPostErrors[keyof SignFontBrandTemplatesFontsSignPostErrors]
+
+export type SignFontBrandTemplatesFontsSignPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandFontUploadTicketOut
+}
+
+export type SignFontBrandTemplatesFontsSignPostResponse =
+  SignFontBrandTemplatesFontsSignPostResponses[keyof SignFontBrandTemplatesFontsSignPostResponses]
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostData = {
+  body: BrandFontConfirmIn
+  path: {
+    /**
+     * Upload Id
+     */
+    upload_id: string
+  }
+  query?: never
+  url: '/brand-templates/fonts/{upload_id}/confirm'
+}
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostError =
+  ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors[keyof ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors]
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: BrandTemplateOut
+}
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponse =
+  ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses[keyof ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses]
+
 export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchData = {
   body: BrandTemplateUpdateIn
   path: {
@@ -5711,6 +5885,38 @@ export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses = {
 
 export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse =
   UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses[keyof UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses]
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetData = {
+  body?: never
+  path: {
+    /**
+     * Template Id
+     */
+    template_id: string
+  }
+  query?: never
+  url: '/brand-templates/{template_id}/font-info'
+}
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetError =
+  FontInfoBrandTemplatesTemplateIdFontInfoGetErrors[keyof FontInfoBrandTemplatesTemplateIdFontInfoGetErrors]
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandFontInfoOut
+}
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetResponse =
+  FontInfoBrandTemplatesTemplateIdFontInfoGetResponses[keyof FontInfoBrandTemplatesTemplateIdFontInfoGetResponses]
 
 export type ListCollectionsCollectionsGetData = {
   body?: never

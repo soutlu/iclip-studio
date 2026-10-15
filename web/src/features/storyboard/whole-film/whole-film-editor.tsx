@@ -11,6 +11,7 @@ import { useBrandTemplates } from '@/shared/api/brand-templates'
 import { errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import { normalizeCaptionText, usePreviewFont } from '@/shared/lib/use-preview-font'
 import { Button, IconButton } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
@@ -20,6 +21,7 @@ import type { ConversationTask } from '@/shared/workbench'
 import { BlockedReason } from '../components/blocked-reason'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { useShotGenerations } from '../storyboard.api'
+import { measureCaptionLayout } from '../video-editor/caption-layout'
 import { EditorPreview, type EditorPreviewHandle } from '../video-editor/editor-preview'
 import { EditorVersionStrip, type VersionStripEntry } from '../video-editor/editor-version-strip'
 import { layoutPlay } from '../video-editor/play-layout'
@@ -30,6 +32,7 @@ import {
   brandDuration,
   wholeFilmDuration,
   setBrand,
+  setFont,
   MAX_FILM_SEGMENTS,
   canSplitAt,
   EMPTY_FILM,
@@ -57,8 +60,15 @@ import {
   type Material,
   type MaterialDuration,
 } from './film-materials'
-import { AddMenu, AddVideoRow, type BrandMenuProps } from './film-menus'
-import { brandOf, matchesFilmRatio, templateBlockedReason, useFilmDimensions } from './film-brand'
+import { AddVideoRow, type BrandMenuProps } from './film-menus'
+import {
+  brandOf,
+  isVideoTemplate,
+  matchesFilmRatio,
+  templateBlockedReason,
+  useFilmDimensions,
+} from './film-brand'
+import { FilmFontMenu } from './film-font-menu'
 import { composeBlockedReason, wholeFilmBody } from './film-submit'
 import {
   burnedSubtitles,
@@ -263,6 +273,55 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const speechProjection = projectSubtitles(film, sourceOf, false)
   const subtitleStatuses = film.music === null ? statuses : speechProjection.statuses
   const burned = burnedSubtitles(subtitles)
+  const previewFont = usePreviewFont(
+    film.font == null ? null : { id: film.font.fontId, url: film.font.url },
+    burned.map((item) => item.text).join('\n'),
+  )
+  const captionTexts = useStableValue(burned.map((item) => item.text))
+  const captionFont = useStableValue(
+    previewFont.kind === 'ready'
+      ? {
+          fontFamily: previewFont.fontFamily,
+          fontWeight: previewFont.fontWeight,
+          fontStyle: previewFont.fontStyle,
+        }
+      : undefined,
+  )
+  const customCaptionLayout = useMemo(
+    () =>
+      captionFont === undefined || frame.data === undefined
+        ? undefined
+        : measureCaptionLayout(captionTexts, frame.data, captionFont),
+    [captionTexts, frame.data, captionFont],
+  )
+  const rawCaption = captionAt(burned, bodyTime)
+  const caption =
+    customCaptionLayout?.kind === 'ready' && rawCaption !== undefined
+      ? customCaptionLayout.texts.get(rawCaption)
+      : rawCaption
+  const fontBlocked =
+    film.font == null
+      ? undefined
+      : templatesQuery.data === undefined
+        ? templatesQuery.isError
+          ? '字体信息读取失败，请重试'
+          : '正在读取字体信息…'
+        : !templatesQuery.data.items.some(
+              (item) =>
+                item.id === film.font?.fontId && item.kind === 'font' && item.disabledAt === null,
+            )
+          ? '所选字体已停用或不可用，无法合成；请更换字幕字体'
+          : previewFont.kind === 'loading'
+            ? '正在加载字幕字体…'
+            : previewFont.kind === 'failed'
+              ? previewFont.message
+              : frame.isError
+                ? '正文画幅读取失败，无法排版字幕；请重试'
+                : frame.data === undefined
+                  ? '正在读取正文画幅以排版字幕…'
+                  : customCaptionLayout?.kind === 'failed'
+                    ? customCaptionLayout.message
+                    : undefined
 
   // ---------- 预览 ----------
 
@@ -495,7 +554,10 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       frame.data === undefined
         ? []
         : (templatesQuery.data?.items ?? []).filter(
-            (template) => frame.data !== undefined && matchesFilmRatio(template, frame.data),
+            (template) =>
+              (template.kind === 'intro' || template.kind === 'outro') &&
+              (!isVideoTemplate(template) ||
+                (frame.data !== undefined && matchesFilmRatio(template, frame.data))),
           ),
     reason:
       segments.length === 0
@@ -517,6 +579,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     intro: film.intro,
     outro: film.outro,
     onSelect: (position, template) => {
+      if (!isVideoTemplate(template)) return
       const next = setBrand(film, position, brandOf(template))
       if (wholeFilmDuration(next) > MAX_FILM_SECONDS) {
         setNotice(
@@ -541,6 +604,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     totalSeconds: fullTotal,
     submittedSubtitleCount: burned.length,
     templateBlocked,
+    fontBlocked,
     task: taskState,
     subtitleRecords:
       subtitlesQuery.data !== undefined ? 'ready' : subtitlesQuery.isError ? 'failed' : 'loading',
@@ -643,9 +707,6 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       >
         <span className="video-editor-tool-label">删除</span>
       </Button>
-      {catalog === undefined || draft === undefined ? null : (
-        <AddMenu brands={brands} disabled={!viewingDraft} />
-      )}
     </>
   )
 
@@ -708,6 +769,22 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
             disabled={!viewingDraft}
             durationOf={durationOf}
             onAdd={addMaterial}
+          />
+        }
+        brands={brands}
+        subtitleSettings={
+          <FilmFontMenu
+            font={film.font}
+            fonts={(templatesQuery.data?.items ?? []).filter((item) => item.kind === 'font')}
+            reason={
+              templatesQuery.isError
+                ? '字体读取失败，请重试'
+                : templatesQuery.data === undefined
+                  ? '正在读取字体…'
+                  : undefined
+            }
+            retry={templatesQuery.isError ? () => void templatesQuery.refetch() : undefined}
+            onSelect={(font) => apply(setFont(film, font))}
           />
         }
         anchorRef={anchorRef}
@@ -960,7 +1037,20 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           <EditorPreview
             backdrop={{ current: stageBackdrop, original: undefined }}
             barEnd={downloadButton}
-            caption={viewingDraft && !previewingMaterial ? captionAt(burned, bodyTime) : undefined}
+            caption={
+              viewingDraft &&
+              !previewingMaterial &&
+              (previewFont.kind === 'system' || customCaptionLayout?.kind === 'ready')
+                ? caption === undefined
+                  ? undefined
+                  : normalizeCaptionText(caption)
+                : undefined
+            }
+            captionPresentation={
+              viewingDraft && !previewingMaterial && customCaptionLayout?.kind === 'ready'
+                ? customCaptionLayout.presentation
+                : undefined
+            }
             contentKey={
               previewingMaterial
                 ? `material:${previewMaterial.jobId}`
@@ -992,6 +1082,23 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                   <InlineAlert
                     message={music.previewAudio.message}
                     action={{ label: '重试', onClick: music.previewAudio.retry }}
+                  />
+                ) : null}
+                {viewingDraft && fontBlocked !== undefined ? (
+                  <InlineAlert
+                    message={fontBlocked}
+                    {...(previewFont.kind === 'failed'
+                      ? { action: { label: '重试', onClick: previewFont.retry } }
+                      : frame.isError
+                        ? { action: { label: '重试', onClick: () => void frame.refetch() } }
+                        : templatesQuery.isError
+                          ? {
+                              action: {
+                                label: '重试',
+                                onClick: () => void templatesQuery.refetch(),
+                              },
+                            }
+                          : {})}
                   />
                 ) : null}
                 {templateBlocked === undefined ? null : (

@@ -1,4 +1,4 @@
-"""品牌模板的领域形状：位置、时长上限、一行记录与探出来的视频参数。术语见 docs/CONTEXT.md「资料库」。"""
+"""品牌资源的领域形状、视频参数与字体直传回执。术语见 docs/CONTEXT.md「资料库」。"""
 
 from __future__ import annotations
 
@@ -26,19 +26,28 @@ class ProbedVideo:
 
 @dataclass(frozen=True, slots=True)
 class BrandTemplate:
-    """一条片头片尾视频模板。``disabled_at`` 为空表示在用；停用不删，已有整片里的快照不受影响。"""
+    """一条品牌资源。类型开放，媒体参数按资源实际情况填写；停用不影响已有整片快照。"""
 
     id: uuid.UUID
-    position: Position
+    kind: str
+    brand: str | None
     name: str
     url: str
-    width: int
-    height: int
-    duration_ms: int
-    has_audio: bool
+    width: int | None
+    height: int | None
+    duration_ms: int | None
+    has_audio: bool | None
     created_by: uuid.UUID
     created_at: datetime
     disabled_at: datetime | None
 
 
-__all__ = ["MAX_TEMPLATE_MS", "BrandTemplate", "Position", "ProbedVideo"]
+@dataclass(frozen=True, slots=True)
+class FontUploadTicket:
+    upload_id: uuid.UUID
+    upload_url: str
+    headers: dict[str, str]
+    expires_at: datetime
+
+
+__all__ = ["MAX_TEMPLATE_MS", "BrandTemplate", "FontUploadTicket", "Position", "ProbedVideo"]

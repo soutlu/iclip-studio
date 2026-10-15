@@ -65,6 +65,9 @@ export type FilmBrand = {
 }
 export type BrandPosition = 'intro' | 'outro'
 
+/** 全部字幕共用的字体快照；旧版本即使停用仍按原文件预览。 */
+export type FilmFont = { fontId: string; name: string; url: string }
+
 /** 撤销栈里的一步。 */
 export type FilmState = {
   segments: readonly FilmSegment[]
@@ -74,9 +77,12 @@ export type FilmState = {
   music: FilmMusic | null
   intro?: FilmBrand | null
   outro?: FilmBrand | null
+  font?: FilmFont | null
 }
 
 export const EMPTY_FILM: FilmState = { segments: [], texts: {}, manual: [], music: null }
+
+export const setFont = (state: FilmState, font: FilmFont | null): FilmState => ({ ...state, font })
 
 /** 识别出的一句字幕的身份：哪条字幕记录的第几句（从 0 起）。同一句在几段里出现时共用一份改字。 */
 export const sentenceKey = (subtitleJobId: string, index: number): string =>
@@ -359,10 +365,17 @@ export const zFilmBrand = z.object({
   hasAudio: z.boolean(),
 })
 
+export const zFilmFont = z.object({
+  fontId: z.string().min(1),
+  name: z.string(),
+  url: z.string().min(1),
+})
+
 const zStoredFilm = z.object({
   version: z.literal(STORAGE_VERSION),
   intro: zFilmBrand.nullish(),
   outro: zFilmBrand.nullish(),
+  font: zFilmFont.nullish(),
   segments: z.array(zStoredSegment),
   texts: z.record(z.string(), z.string()),
   manual: z.array(
@@ -407,7 +420,7 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
   }
   const parsed = zStoredFilm.safeParse(json)
   if (!parsed.success) return undefined
-  const { segments, texts, manual, lanes, music, intro, outro } = parsed.data
+  const { segments, texts, manual, lanes, music, intro, outro, font } = parsed.data
   return {
     film: {
       segments: segments.map(({ origin, ...segment }) => ({
@@ -419,6 +432,7 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
       music: music ?? null,
       ...(intro === undefined ? {} : { intro }),
       ...(outro === undefined ? {} : { outro }),
+      ...(font === undefined ? {} : { font }),
     },
     lanes,
   }
@@ -437,6 +451,7 @@ export const serializeStoredFilm = ({ film, lanes }: StoredFilm): string =>
     music: film.music,
     intro: film.intro,
     outro: film.outro,
+    font: film.font,
   })
 
 /** 只留来源还读得到的段与素材轨：来源不在 `known` 里的段连同钉在它上面的手动字幕去掉，返回去掉了几段。 */

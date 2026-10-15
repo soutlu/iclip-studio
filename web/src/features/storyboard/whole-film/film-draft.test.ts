@@ -16,6 +16,7 @@ import {
   removeSegment,
   serializeStoredFilm,
   setMusic,
+  setFont,
   setSentenceText,
   splitAt,
   trimBounds,
@@ -301,5 +302,20 @@ describe('存放', () => {
     expect(order(stored.film).map(([id]) => id)).toEqual(['s1', 's3'])
     expect(stored.film.manual).toEqual([])
     expect(stored.lanes).toEqual([{ groupId: 'g1', jobId: 'A' }])
+  })
+})
+
+describe('统一字幕字体', () => {
+  const font = { fontId: 'brand-font', name: '品牌字体', url: 'https://example.com/brand.ttf' }
+  it('字体选择经过草稿存取和撤销重做后保留，恢复系统字体显式保存空值', () => {
+    const history = commit(startHistory(film()), setFont(film(), font))
+    expect(undo(history).present.font).toBeUndefined()
+    expect(redo(undo(history)).present.font).toEqual(font)
+    const stored = parseStoredFilm(serializeStoredFilm({ film: history.present, lanes: [] }))
+    expect(stored?.film.font).toEqual(font)
+    expect(
+      parseStoredFilm(serializeStoredFilm({ film: setFont(history.present, null), lanes: [] }))
+        ?.film.font,
+    ).toBeNull()
   })
 })

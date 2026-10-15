@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
+
+import pytest
 
 from iclip.platform.media.ffmpeg import (
     SUBTITLE_FONT,
@@ -10,6 +13,8 @@ from iclip.platform.media.ffmpeg import (
     FilmCaption,
     ass_document,
 )
+from iclip.platform.media.fonts import prepare_font
+from tests.helpers.fonts import make_font
 
 
 def _style(document: str) -> list[str]:
@@ -68,3 +73,34 @@ def test_explicit_line_breaks_are_kept() -> None:
     (text,) = _texts(ass_document([FilmCaption(0, 1, "上一行\n下一行")], width=720, height=1280))
 
     assert text == "上一行\\N下一行"
+
+
+def test_selected_fonts_use_real_proportional_advances_and_the_same_em_size(tmp_path: Path) -> None:
+    source = make_font(
+        tmp_path / "proportional.ttf", characters="Wi", advances={"W": 1000, "i": 100}
+    )
+    font = prepare_font(source, texts=["W" * 20, "i" * 20], directory=tmp_path / "render")
+    document = ass_document(
+        [FilmCaption(0, 1, "W" * 20), FilmCaption(1, 2, "i" * 20)],
+        width=240,
+        height=400,
+        font=font,
+    )
+    wide, narrow = _texts(document)
+
+    assert "\\N" in wide and "\\N" not in narrow
+    assert wide.replace("\\N", "") == "W" * 20
+    assert all(font.measure(line, size=18) <= 208 for line in wide.split("\\N"))
+    style = _style(document)
+    assert style[1] == font.family
+    assert float(style[2]) == pytest.approx(18 * 1.2)
+    assert style[7] == "0", "自定义字体不再强制合成粗体"
+
+
+def test_custom_size_rounds_half_up_like_browser_math_round(tmp_path: Path) -> None:
+    source = make_font(tmp_path / "small.ttf", characters="W")
+    font = prepare_font(source, texts=["W"], directory=tmp_path / "render")
+    style = _style(ass_document([FilmCaption(0, 1, "W")], width=75, height=100, font=font))
+
+    assert float(style[2]) == pytest.approx(5 * 1.2)
+    assert style[19] == "5", "4.5 像素的侧边距与 Math.round 一样向上取整"

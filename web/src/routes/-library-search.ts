@@ -36,7 +36,8 @@ export const librarySearchSchema = z.object({
   /** 打开着详情的整片卡（对话 id）。 */
   film: z.uuid().optional().catch(undefined),
   /** 品牌模板的筛选；普通读者不会向服务端请求停用模板。 */
-  position: z.enum(['intro', 'outro']).optional().catch(undefined),
+  kind: z.enum(['font', 'intro', 'outro']).optional().catch(undefined),
+  brand: z.string().trim().min(1).max(100).optional().catch(undefined),
   includeDisabled: z.literal(true).optional().catch(undefined),
 })
 

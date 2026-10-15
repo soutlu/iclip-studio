@@ -58,6 +58,14 @@ class MediaPaths:
 
         return f"{OSS_ROOT}/uploads/{upload_id}."
 
+    def font_upload(self, *, user_id: uuid.UUID, upload_id: uuid.UUID, ext: str) -> str:
+        """字体直传按主体隔离；确认时只查询当前主体下的对象。"""
+
+        return f"{self.font_upload_prefix(user_id=user_id, upload_id=upload_id)}{ext}"
+
+    def font_upload_prefix(self, *, user_id: uuid.UUID, upload_id: uuid.UUID) -> str:
+        return f"{OSS_ROOT}/brand-fonts/{user_id}/{upload_id}."
+
 
 MEDIA_PATHS: Final = MediaPaths()
 """共享布局实例；harness 与 capability 通过组合根注入。"""

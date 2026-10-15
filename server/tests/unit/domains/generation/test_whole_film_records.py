@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -43,6 +43,7 @@ from iclip.domains.generation.service import (
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
+from iclip.platform.media.fonts import FontInfo
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     FAKE_IMAGE_PROVIDER,
@@ -625,7 +626,8 @@ def brand_template(
 ) -> BrandTemplateFacts:
     return BrandTemplateFacts(
         id=uuid.uuid4(),
-        position="intro" if position == "intro" else "outro",
+        kind=position,
+        name="品牌视频",
         enabled=enabled,
         url=url,
         duration_ms=duration_ms,
@@ -879,3 +881,70 @@ async def test_a_finished_whole_film_is_transcribed_like_any_master() -> None:
         film.conversation_id,
         film.task_id,
     )
+
+
+async def test_selected_font_is_snapshotted_with_its_actual_face() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    font = replace(
+        brand_template("font"),
+        name="品牌字体",
+        url="https://cdn.test/font.otf",
+        width=None,
+        height=None,
+        duration_ms=None,
+        has_audio=None,
+        font_info=FontInfo(
+            family="Brand Family", weight=600, style="italic", unicode_ranges=((32, 126),)
+        ),
+    )
+    world = build_world([take], brand_templates=FixedBrandTemplates(font))
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        result = await http.post(
+            "/generations/whole-films", json=body(conversation, segment(take), fontId=str(font.id))
+        )
+    assert result.status_code == 202, result.text
+    assert result.json()["generation"]["request"]["font"] == {
+        "fontId": str(font.id),
+        "url": font.url,
+        "name": "品牌字体",
+        "family": "Brand Family",
+        "weight": 600,
+        "style": "italic",
+    }
+
+
+@pytest.mark.parametrize(("case", "status"), [("missing", 404), ("disabled", 422), ("video", 422)])
+async def test_missing_disabled_or_wrong_kind_font_is_rejected(case: str, status: int) -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    font = replace(
+        brand_template("intro" if case == "video" else "font"), enabled=case != "disabled"
+    )
+    world = build_world(
+        [take],
+        brand_templates=FixedBrandTemplates() if case == "missing" else FixedBrandTemplates(font),
+    )
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        result = await http.post(
+            "/generations/whole-films", json=body(conversation, segment(take), fontId=str(font.id))
+        )
+    assert result.status_code == status, result.text
+    assert world.films() == []
+
+
+@pytest.mark.parametrize("field", ["width", "height", "duration_ms", "has_audio"])
+async def test_a_video_template_with_incomplete_parameters_is_explicitly_rejected(
+    field: str,
+) -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    template = replace(brand_template(), **{field: None})
+    world = build_world([take], brand_templates=FixedBrandTemplates(template))
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        result = await http.post(
+            "/generations/whole-films",
+            json=body(conversation, segment(take), intro={"templateId": str(template.id)}),
+        )
+    assert result.status_code == 422 and "参数不完整" in result.json()["detail"]
+    assert world.films() == []

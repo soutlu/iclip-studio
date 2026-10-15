@@ -104,6 +104,11 @@
   isolation: isolate;
 }
 
+/* 自定义字幕的 cqw 以实际画面为参照，窗口缩放与放大预览无需重新计算秒轴或字号。 */
+.video-editor-preview.has-custom-caption {
+  container-type: inline-size;
+}
+
 .video-editor-video {
   position: absolute;
   inset: 0;

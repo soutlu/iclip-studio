@@ -1,6 +1,6 @@
-/** 整片编辑器的菜单：控制条添加片头片尾，素材区末尾的加号选镜头组，轨道头上的版本胶囊换版本。 */
+/** 整片编辑器的菜单：轨道两端选择片头片尾，素材区末尾的加号选镜头组，轨道头上的版本胶囊换版本。 */
 
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import type { BrandTemplate } from '@/shared/api/brand-templates'
 import type { BrandPosition, FilmBrand } from './film-draft'
 import { Icon } from '@/shared/icons'
@@ -12,13 +12,12 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuRoot,
-  MenuSub,
-  MenuSubSurface,
-  MenuSubTrigger,
   MenuSurface,
   MenuTrigger,
 } from '@/shared/ui/menu'
 import type { Material, MaterialCatalog, MaterialDuration } from './film-materials'
+
+import { videoTemplateReason } from './film-brand'
 
 const seconds = (value: number) => `${value.toFixed(1)} 秒`
 
@@ -86,32 +85,37 @@ function TakesPanel({ catalog, durationOf, onAdd }: PanelProps) {
   )
 }
 
-/** 控制条上的「添加」：片头、片尾各自展开对应候选。 */
-export function AddMenu({
-  disabled = false,
+/** 空模板只占固定像素，不进入视频时钟。 */
+export function BrandPlaceholder({
   brands,
+  position,
+  style,
 }: {
-  disabled?: boolean
   brands: BrandMenuProps
+  position: BrandPosition
+  style: CSSProperties
 }) {
+  const label = position === 'intro' ? '片头' : '片尾'
   return (
     <MenuRoot>
-      <MenuTrigger asChild disabled={disabled}>
-        <button className="video-editor-bar-button film-add-button ui-state ui-focus" type="button">
-          <Icon decorative name="add" size="md" />
-          <span className="video-editor-tool-label">添加</span>
-          <Icon className="film-add-caret" decorative name="expand" size="xs" />
+      <MenuTrigger asChild>
+        <button
+          aria-label={`添加${label}`}
+          className="film-brand-placeholder ui-state ui-focus"
+          style={style}
+          type="button"
+        >
+          <span className="film-brand-placeholder-picture">
+            <Icon decorative name="video" size="sm" />
+          </span>
+          <span>
+            <Icon decorative name="add" size="xs" />
+            {label}
+          </span>
         </button>
       </MenuTrigger>
-      <MenuSurface align="start" className="film-menu-small" side="top">
-        {(['intro', 'outro'] as const).map((position) => (
-          <MenuSub key={position}>
-            <MenuSubTrigger icon="video">{position === 'intro' ? '片头' : '片尾'}</MenuSubTrigger>
-            <MenuSubSurface alignOffset={-5} className="film-menu-panel">
-              <TemplatePanel brands={brands} position={position} />
-            </MenuSubSurface>
-          </MenuSub>
-        ))}
+      <MenuSurface align="start" className="film-menu-panel" side="top">
+        <TemplatePanel brands={brands} position={position} />
       </MenuSurface>
     </MenuRoot>
   )
@@ -212,7 +216,7 @@ export type BrandMenuProps = {
 function TemplatePanel({ brands, position }: { brands: BrandMenuProps; position: BrandPosition }) {
   const label = position === 'intro' ? '片头' : '片尾'
   const selected = brands[position]
-  const candidates = brands.templates.filter((template) => template.position === position)
+  const candidates = brands.templates.filter((template) => template.kind === position)
   return (
     <>
       <p className="film-menu-head">{label}模板</p>
@@ -221,23 +225,32 @@ function TemplatePanel({ brands, position }: { brands: BrandMenuProps; position:
       ) : candidates.length === 0 ? (
         <p className="film-menu-empty">暂无与正文画幅相近的{label}模板</p>
       ) : (
-        candidates.map((template) => (
-          <MenuBareItem
-            aria-label={`${template.name}，${seconds(template.durationMs / 1000)}`}
-            className="film-template-option"
-            key={template.id}
-            onSelect={() => brands.onSelect(position, template)}
-          >
-            <Poster className="film-template-poster" url={template.url} />
-            <span>
-              <strong>{template.name}</strong>
-              <span>{seconds(template.durationMs / 1000)}</span>
-            </span>
-            {selected?.templateId === template.id ? (
-              <Icon decorative name="check" size="sm" />
-            ) : null}
-          </MenuBareItem>
-        ))
+        candidates.map((template) => {
+          const reason = videoTemplateReason(template)
+          return (
+            <MenuBareItem
+              aria-label={`${template.name}${reason === undefined && template.durationMs !== null ? `，${seconds(template.durationMs / 1000)}` : `，${reason}`}`}
+              disabled={reason !== undefined}
+              className="film-template-option"
+              key={template.id}
+              onSelect={() => brands.onSelect(position, template)}
+            >
+              <Poster className="film-template-poster" url={template.url} />
+              <span>
+                <strong>{template.name}</strong>
+                <span>
+                  {reason ??
+                    (template.durationMs === null
+                      ? undefined
+                      : seconds(template.durationMs / 1000))}
+                </span>
+              </span>
+              {selected?.templateId === template.id ? (
+                <Icon decorative name="check" size="sm" />
+              ) : null}
+            </MenuBareItem>
+          )
+        })
       )}
       {brands.retry === undefined ? null : (
         <MenuItem onSelect={brands.retry}>重试读取模板</MenuItem>
@@ -252,7 +265,7 @@ function TemplatePanel({ brands, position }: { brands: BrandMenuProps; position:
   )
 }
 
-/** 已选模板卡上的更换入口，与「添加」共用候选与校验。 */
+/** 已选模板卡上的更换入口，与空位共用候选与校验。 */
 export function BrandMenu({
   brands,
   position,

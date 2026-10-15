@@ -623,21 +623,190 @@
         "title": "Body_auth_cookie_login_auth_login_post",
         "type": "object"
       },
-      "BrandTemplateCreateIn": {
+      "BrandFontConfirmIn": {
         "additionalProperties": false,
         "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "BrandFontConfirmIn",
+        "type": "object"
+      },
+      "BrandFontInfoOut": {
+        "additionalProperties": false,
+        "properties": {
+          "family": {
+            "title": "Family",
+            "type": "string"
           },
-          "position": {
+          "style": {
+            "enum": [
+              "normal",
+              "italic",
+              "oblique"
+            ],
+            "title": "Style",
+            "type": "string"
+          },
+          "unicodeRanges": {
+            "items": {
+              "$ref": "#/components/schemas/BrandFontUnicodeRange"
+            },
+            "title": "Unicoderanges",
+            "type": "array"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "family",
+          "weight",
+          "style",
+          "unicodeRanges"
+        ],
+        "title": "BrandFontInfoOut",
+        "type": "object"
+      },
+      "BrandFontSignIn": {
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "enum": [
+              "font/ttf",
+              "font/otf"
+            ],
+            "title": "Contenttype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentType"
+        ],
+        "title": "BrandFontSignIn",
+        "type": "object"
+      },
+      "BrandFontUnicodeRange": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "BrandFontUnicodeRange",
+        "type": "object"
+      },
+      "BrandFontUploadInstruction": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "const": "PUT",
+            "default": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "headers",
+          "expiresAt"
+        ],
+        "title": "BrandFontUploadInstruction",
+        "type": "object"
+      },
+      "BrandFontUploadTicketOut": {
+        "additionalProperties": false,
+        "properties": {
+          "upload": {
+            "$ref": "#/components/schemas/BrandFontUploadInstruction"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "title": "Uploadid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadId",
+          "upload"
+        ],
+        "title": "BrandFontUploadTicketOut",
+        "type": "object"
+      },
+      "BrandTemplateCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "kind": {
             "enum": [
               "intro",
               "outro"
             ],
-            "title": "Position",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
             "type": "string"
           },
           "uploadId": {
@@ -647,7 +816,7 @@
           }
         },
         "required": [
-          "position",
+          "kind",
           "name",
           "uploadId"
         ],
@@ -657,6 +826,17 @@
       "BrandTemplateOut": {
         "additionalProperties": false,
         "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -675,32 +855,49 @@
             "title": "Disabledat"
           },
           "durationMs": {
-            "title": "Durationms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
           },
           "hasAudio": {
-            "title": "Hasaudio",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hasaudio"
           },
           "height": {
-            "title": "Height",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
           },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
-          "name": {
-            "title": "Name",
+          "kind": {
+            "title": "Kind",
             "type": "string"
           },
-          "position": {
-            "enum": [
-              "intro",
-              "outro"
-            ],
-            "title": "Position",
+          "name": {
+            "title": "Name",
             "type": "string"
           },
           "url": {
@@ -708,13 +905,21 @@
             "type": "string"
           },
           "width": {
-            "title": "Width",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
           }
         },
         "required": [
           "id",
-          "position",
+          "kind",
+          "brand",
           "name",
           "url",
           "width",
@@ -731,6 +936,19 @@
         "additionalProperties": false,
         "description": "改名、停用或恢复使用；不给的那一项不动，至少给一项。",
         "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
           "disabled": {
             "anyOf": [
               {
@@ -9586,6 +9804,18 @@
             "title": "Conversationid",
             "type": "string"
           },
+          "fontId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fontid"
+          },
           "intro": {
             "anyOf": [
               {
@@ -10494,27 +10724,39 @@
     },
     "/brand-templates": {
       "get": {
-        "description": "品牌模板，建立晚的排前面；默认只列在用的，``position`` 筛片头或片尾。\n\n``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。每条带画面宽高，前端按\n整片的画面比例自己挑比例相近的。",
+        "description": "品牌资源，建立晚的排前面；默认只列在用的，按 ``kind`` 与 ``brand`` 筛选。\n\n``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。媒体参数按资源实际情况\n返回，不完整的资源也照实列出，由使用它的功能明确校验。",
         "operationId": "list_brand_templates_brand_templates_get",
         "parameters": [
           {
             "in": "query",
-            "name": "position",
+            "name": "kind",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "enum": [
-                    "intro",
-                    "outro"
-                  ],
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Position"
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "brand",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Brand"
             }
           },
           {
@@ -10620,6 +10862,128 @@
         ]
       }
     },
+    "/brand-templates/fonts/sign": {
+      "post": {
+        "operationId": "sign_font_brand_templates_fonts_sign_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandFontSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandFontUploadTicketOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage",
+              "uploads:write"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage",
+              "uploads:write"
+            ]
+          }
+        ],
+        "summary": "Sign Font",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
+    "/brand-templates/fonts/{upload_id}/confirm": {
+      "post": {
+        "operationId": "confirm_font_brand_templates_fonts__upload_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandFontConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage",
+              "uploads:write"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage",
+              "uploads:write"
+            ]
+          }
+        ],
+        "summary": "Confirm Font",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
     "/brand-templates/{template_id}": {
       "patch": {
         "description": "改名、停用或恢复使用；不删。已有整片里记的是快照，不受影响。没有这条是 ``404``。",
@@ -10681,6 +11045,61 @@
           }
         ],
         "summary": "Update Brand Template",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
+    "/brand-templates/{template_id}/font-info": {
+      "get": {
+        "operationId": "font_info_brand_templates__template_id__font_info_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandFontInfoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Font Info",
         "tags": [
           "brand-templates"
         ]

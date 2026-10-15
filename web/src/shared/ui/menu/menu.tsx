@@ -78,45 +78,6 @@ export function MenuItem({
   )
 }
 
-export const MenuSub = DropdownMenu.Sub
-
-type MenuSubTriggerProps = ComponentPropsWithoutRef<typeof DropdownMenu.SubTrigger> & {
-  icon?: IconName
-}
-
-/** 展开子面板的菜单项：外观同 {@link MenuItem}，行尾一个向右的箭头；子面板打开时保持高亮。 */
-export function MenuSubTrigger({ children, className, icon, ...props }: MenuSubTriggerProps) {
-  return (
-    <DropdownMenu.SubTrigger
-      className={cn(ITEM_CLASS, 'text-on-surface data-[state=open]:bg-state-active', className)}
-      {...props}
-    >
-      {icon ? (
-        <Icon className="shrink-0 text-on-surface-variant" decorative name={icon} size="sm" />
-      ) : null}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
-      <Icon className="shrink-0 text-on-surface-faint" decorative name="disclosure" size="xs" />
-    </DropdownMenu.SubTrigger>
-  )
-}
-
-/** 子面板：外观同 {@link MenuSurface}，内容由调用方排。 */
-export function MenuSubSurface({
-  className,
-  sideOffset = 6,
-  ...props
-}: ComponentPropsWithoutRef<typeof DropdownMenu.SubContent>) {
-  return (
-    <DropdownMenu.Portal>
-      <DropdownMenu.SubContent
-        className={cn(POPUP_SURFACE_CLASS, 'flex flex-col', className)}
-        sideOffset={sideOffset}
-        {...props}
-      />
-    </DropdownMenu.Portal>
-  )
-}
-
 const BARE_ITEM_CLASS =
   // design-allow -- Radix 用 .focus() 移动高亮，浏览器默认框会和 ui-focus 的焦点环叠一起
   'ui-focus cursor-pointer rounded-sm outline-none select-none'

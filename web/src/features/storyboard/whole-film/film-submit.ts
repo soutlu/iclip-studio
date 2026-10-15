@@ -39,6 +39,7 @@ export const wholeFilmBody = ({
 }): WholeFilmIn => ({
   conversationId,
   taskId,
+  ...(film.font == null ? {} : { fontId: film.font.fontId }),
   ...(film.intro == null ? {} : { intro: { templateId: film.intro.templateId } }),
   ...(film.outro == null ? {} : { outro: { templateId: film.outro.templateId } }),
   segments: film.segments.map((segment) => ({
@@ -79,6 +80,7 @@ export type ComposeReadiness = {
   totalSeconds: number
   submittedSubtitleCount?: number
   templateBlocked?: string | undefined
+  fontBlocked?: string | undefined
   /** 本对话挂的需求单读到了没有。 */
   task: 'ready' | 'loading' | 'failed'
   /** 各段来源的字幕记录读到了没有。 */
@@ -100,6 +102,7 @@ export const composeBlockedReason = (state: ComposeReadiness): string | undefine
   if (state.totalSeconds > MAX_FILM_SECONDS)
     return `整片含片头片尾超过 ${MAX_FILM_SECONDS} 秒，无法合成；请删减内容`
   if (state.templateBlocked !== undefined) return state.templateBlocked
+  if (state.fontBlocked !== undefined) return state.fontBlocked
   if ((state.submittedSubtitleCount ?? state.subtitles.length) > MAX_FILM_SUBTITLES)
     return `字幕超过 ${MAX_FILM_SUBTITLES} 条，无法合成；请删减字幕`
   if (state.music.kind === 'ready' && state.music.plan.curve.length > MAX_MUSIC_GAIN_POINTS)

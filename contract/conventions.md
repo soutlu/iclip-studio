@@ -430,12 +430,12 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 整片
 
-- `POST /generations/whole-films` 收一份时间线：`segments`（1 到 100 段，按顺序首尾相接，每段 `{ sourceJobId, startMs, endMs }`，取那条成片自己媒体时间里的 `[startMs, endMs)`，`startMs` 不小于 0、`endMs` 大于 `startMs`）、`subtitles`（必填，可为空数组，至多 500 句，每句 `{ startMs, endMs, text }`）与可选的 `music`（`{ audioJobId, offsetMs, gain }`）、`intro` 与 `outro`（各是 `{ templateId }`，一条品牌模板，见 §13），另有 `userName`、归属字段 `conversationId`（必填）、`taskId` 与坐标 `metadata`；响应是 `GenerationEnvelope`。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
+- `POST /generations/whole-films` 收一份时间线：`segments`（1 到 100 段，按顺序首尾相接，每段 `{ sourceJobId, startMs, endMs }`，取那条成片自己媒体时间里的 `[startMs, endMs)`，`startMs` 不小于 0、`endMs` 大于 `startMs`）、`subtitles`（必填，可为空数组，至多 500 句，每句 `{ startMs, endMs, text }`）与可选的 `music`（`{ audioJobId, offsetMs, gain }`）、`intro` 与 `outro`（各是 `{ templateId }`，一条品牌模板，见 §13）与 `fontId`（全局字幕字体资源，省略或 `null` 为系统默认），另有 `userName`、归属字段 `conversationId`（必填）、`taskId` 与坐标 `metadata`；响应是 `GenerationEnvelope`。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
 - 整片总长是片头、各段与片尾的时长之和，至多 120000 毫秒（片头片尾按模板的 `durationMs` 算）。`subtitles` 与 `gain` 的时刻从第一段开头算、不含片头，只落在各段上，字段上限是 120000（合同里 `maximum: 120000`）；不加片头时就是整片时间。字幕按时间先后、互不重叠（可以首尾相接）、结尾不超出各段之和，文字不能为空或全是空白、至多 200 字，服务端照原文烧进画面。`offsetMs` 是从音乐的第几毫秒起用；`gain` 是音乐的音量曲线，`{ atMs, gain }` 至少一个、至多 500 个点，`atMs` 严格递增、不超出各段之和，`gain` 在 0 到 1 之间（线性，1 是原样），点与点之间线性插值，第一个点之前取第一个点的值，最后一个点之后取最后一个点的值。不合格是 `422`。
-- 受理时核对出处，都不创建任务、不入队：调用方读不到 `conversationId` 那段对话是 `404`；段的 `sourceJobId` 要是调用方可见的、这段对话自己的或它继承的记录（同下文「来源与原作」的范围），读不到一律 `404`（上传不挂对话，也是这一句）；读得到却不是已完成、有地址的出片或合成（整片、编辑段、图片、没完成的）是 `422`；那条记录有 `durationMs` 时，段的 `endMs` 不能超出它（容差 50 毫秒）。`audioJobId` 要是调用者本人上传的音乐，或这段对话自己的、继承来的生成音乐，读不到 `404`；读得到却不是已完成的音频记录 `422`；它有 `durationMs` 时，`offsetMs` 加各段之和不能超出它，`422`。`intro` / `outro` 的 `templateId` 没有这条模板是 `404`；模板停用了、或位置不对（片头用了片尾模板，反之亦然）是 `422`；连片头片尾的总长超过 120000 毫秒是 `422`。
-- 记录是 video / compose，没有 `sourceJobId`、`rootJobId`、`shotIndex` 与区间，执行方与合成同一条本地队列。`request` 是 `{ segments, subtitles, music, render, intro, outro }`：每段与音乐都多一个服务端按出处填的 `url`，字幕与曲线原样；`intro` / `outro` 是受理时模板的快照 `{ templateId, url, durationMs, width, height, hasAudio }`，没加为 `null`（加片头片尾之前的整片没有这两项），模板以后改名、停用都不影响它；`render` 是受理时定下的声音参数 `{ speechLoudnessLufs, musicLoudnessLufs, loudnessLufs, peakDbfs, segmentFadeMs, musicFadeOutMs }`（现为 -16、-16、-14、-1.5、50、2000）。和合成一样，带 `conversationId` 的提交会抹掉收尾标记。
-- 渲染：画幅与帧率取第一段那条成片，别的段与片头片尾等比缩放、补黑边去适配，关键帧放法同合成。片头整条接在最前、片尾整条接在最后，长度按下载下来的模板视频量。每条来源先量一次整体响度，各段与片头片尾的原声（片头片尾用模板自带的声音）按差值统一到 `speechLoudnessLufs`，两端各淡入淡出 `segmentFadeMs`，没有音轨的补静音；音乐先量整体响度统一到 `musicLoudnessLufs`，从 `offsetMs` 起取各段之和那么长，按 `gain` 调，在最后一段结尾处 `musicFadeOutMs` 淡出完，从第一段开头铺起，不铺在片头片尾上；两路相加（不取平均）后统一到 `loudnessLufs`，限幅到 `peakDbfs`（采样峰值）。统一响度时最多放大 20 dB，整段静音的不调。字幕按片头的时长往后挪，片头片尾上没有字幕；写成 ASS 用 libass 烧进画面：白字、黑色描边、粗体、底部居中，字号是画面高度的 4.5%，底边留画面高度的 12%，按估算字宽在服务端均匀折行；文字里的 `{`、`}`、`\` 换成全角的同形字。产物是 H.264 + AAC 的 mp4，存进本系统的桶，没有水印版。
-- 失败是终态，不自动重试：取不到某段的成片、片头片尾或音乐 `MEDIA_SOURCE_UNREACHABLE`，音乐从起点往后不够各段之和那么长 `MUSIC_TOO_SHORT`（不循环补长），段的结尾超出素材实际时长（容差 50 毫秒）或别的渲染失败 `MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
+- 受理时核对出处，都不创建任务、不入队：调用方读不到 `conversationId` 那段对话是 `404`；段的 `sourceJobId` 要是调用方可见的、这段对话自己的或它继承的记录（同下文「来源与原作」的范围），读不到一律 `404`（上传不挂对话，也是这一句）；读得到却不是已完成、有地址的出片或合成（整片、编辑段、图片、没完成的）是 `422`；那条记录有 `durationMs` 时，段的 `endMs` 不能超出它（容差 50 毫秒）。`audioJobId` 要是调用者本人上传的音乐，或这段对话自己的、继承来的生成音乐，读不到 `404`；读得到却不是已完成的音频记录 `422`；它有 `durationMs` 时，`offsetMs` 加各段之和不能超出它，`422`。`intro` / `outro` 的 `templateId` 没有这条模板是 `404`；模板停用了、种类不对（片头用了片尾模板，反之亦然）、或媒体参数不完整是 `422`；`fontId` 不存在是 `404`，不是字体或已停用是 `422`，字体不可读取或损坏也拒绝受理，字形覆盖在预览与渲染阶段核对；连片头片尾的总长超过 120000 毫秒是 `422`。
+- 记录是 video / compose，没有 `sourceJobId`、`rootJobId`、`shotIndex` 与区间，执行方与合成同一条本地队列。`request` 是 `{ segments, subtitles, music, render, intro, outro, font }`：每段与音乐都多一个服务端按出处填的 `url`，字幕与曲线原样；`intro` / `outro` 是受理时模板的快照 `{ templateId, url, durationMs, width, height, hasAudio }`，没加为 `null`（加片头片尾之前的整片没有这两项），模板以后改名、停用都不影响它；`font` 是字体快照 `{ fontId, url, name, family, weight, style }`，未选择为 `null`；历史请求缺少字体时同系统默认。预览已有版本可读取已停用的字体，但再次提交必须选择在用资源；`render` 是受理时定下的声音参数 `{ speechLoudnessLufs, musicLoudnessLufs, loudnessLufs, peakDbfs, segmentFadeMs, musicFadeOutMs }`（现为 -16、-16、-14、-1.5、50、2000）。和合成一样，带 `conversationId` 的提交会抹掉收尾标记。
+- 渲染：画幅与帧率取第一段那条成片，别的段与片头片尾等比缩放、补黑边去适配，关键帧放法同合成。片头整条接在最前、片尾整条接在最后，长度按下载下来的模板视频量。每条来源先量一次整体响度，各段与片头片尾的原声（片头片尾用模板自带的声音）按差值统一到 `speechLoudnessLufs`，两端各淡入淡出 `segmentFadeMs`，没有音轨的补静音；音乐先量整体响度统一到 `musicLoudnessLufs`，从 `offsetMs` 起取各段之和那么长，按 `gain` 调，在最后一段结尾处 `musicFadeOutMs` 淡出完，从第一段开头铺起，不铺在片头片尾上；两路相加（不取平均）后统一到 `loudnessLufs`，限幅到 `peakDbfs`（采样峰值）。统一响度时最多放大 20 dB，整段静音的不调。字幕按片头的时长往后挪，片头片尾上没有字幕；写成 ASS 用 libass 烧进画面：白字、黑色描边、底部居中，字号是画面高度的 4.5%，底边留画面高度的 12%。系统默认用既有粗体与估算字宽均匀折行；自定义字体使用文件的真实字重与样式，以 HarfBuzz 测量整行宽度贪心分行，并换算字体行高以保持字号比例。预览使用同一文件与布局尺度，由浏览器 Canvas 测量；复杂脚本的塑形仍由各自渲染引擎处理。两端规整换行及每行首尾空白，文字里的 `{`、`}`、`\` 换成全角的同形字。产物是 H.264 + AAC 的 mp4，存进本系统的桶，没有水印版。
+- 失败是终态，不自动重试：取不到某段的成片、片头片尾、音乐或字体 `MEDIA_SOURCE_UNREACHABLE`，音乐从起点往后不够各段之和那么长 `MUSIC_TOO_SHORT`（不循环补长），段的结尾超出素材实际时长（容差 50 毫秒）、自定义字体损坏、属性与快照不符、缺字、被其他字体替代或别的渲染失败 `MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
 - 整片是成片：完成后照常自动排一条字幕记录，也能手动识别（见下文「字幕记录」），是 `video.downloaded` 的主语，算对话的 `activity.videoGeneration`。它不能当编辑段与合成的基底（`422`），也不能剪进另一条整片；不进任何镜头组，本身不计审计口径，下载它按各段出处计镜（§12）；资料库的成片卡不收它，另在整片页列出（§13）。按 `GET /generations?conversationId=&kind=video&operation=compose` 列出对话的合成与整片，`sourceJobId` 为空的是整片。
 
 ### 来源与原作
@@ -542,13 +542,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 品牌模板
 
-整片两端用的片头片尾视频，是资料库的一部分，端点在 `/brand-templates`；这些端点只读写媒体参数完整的片头片尾视频，不读取或修改同表的其他资源。语义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)；端点权限看 `openapi.json`。媒体生成没配置时这组端点都不在（模板只给整片用，量视频要 ffmpeg）。
+字体与片头片尾共用 `/brand-templates` 的资源列表与管理接口。语义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)；字段、校验范围及端点权限以 `openapi.json` 为准。媒体生成没配置时不挂载这组端点。
 
-- **模板的形状**：`id`、`position`（`intro` 片头 / `outro` 片尾）、`name`、`url`（模板视频的地址）、`width` / `height`（像素）、`durationMs`、`hasAudio`、`createdAt` 与 `disabledAt`（为空表示在用）。宽高、时长与有没有音轨都是新建时服务端从视频本身量出来的。
-- `GET /brand-templates` 按建立时间倒序列出全部，不翻页；默认只列在用的，`position` 筛片头或片尾；`includeDisabled=true` 连停用的一起列，只限治理者（`users:manage`），别人带上是 `403`。后端不给模板分画幅：前端按整片第一段那条成片的宽高，挑宽高比相差不超过 2% 的模板。
-- `POST /brand-templates` 体是 `{ position, name, uploadId }`，`201` 交回新建的模板：只收调用者本人确认过的视频上传（§10），别人的、不是视频的、不存在的 `uploadId` 一律 `404`；服务端下载视频量参数，量不出来是 `422`，时长超过 10000 毫秒是 `422`。`name` 去掉首尾空白后不能为空，至多 100 字。
-- `PATCH /brand-templates/{id}` 体是 `{ name?, disabled? }`，至少给一项，`disabled` 为 `true` 停用、`false` 恢复使用（已停用的再停用不改 `disabledAt`），交回改完的模板；没有这条是 `404`。模板不删。整片请求里记的是受理时的快照（§11「整片」），改名、停用都不影响已有的整片。
-- 模板不是生成记录，不进 `GET /generations` 与审计口径；资料库的成片卡与整片页不受影响。
+- 列表的 `kind` 是开放文本，当前合成消费 `font`、`intro`、`outro`；`brand` 可空，不从名称推断。`url` 是资源地址，媒体参数可空；管理列表不隐藏参数不完整的视频或其他种类。`GET /brand-templates` 按建立时间倒序列出全部，不翻页，可按 `kind`、`brand` 筛选；默认只列在用的，治理者可带 `includeDisabled=true`。片头片尾选择器按正文第一段的画幅筛选宽高比相差不超过 2% 的资源，参数不完整的显示为不可选。
+- `POST /brand-templates` 从调用者本人确认过的视频上传（§10）建立片头或片尾；别人的、不是视频的、不存在的 `uploadId` 一律 `404`。服务端下载视频量参数，量不出来或时长超过 10000 毫秒是 `422`。
+- 字体使用独立的签名上传与确认：`POST /brand-templates/fonts/sign` 获取 PUT 凭据，文件上传后用 `POST /brand-templates/fonts/{uploadId}/confirm` 写入名称与可选品牌。只接受至多 32 MiB 的静态 TTF、OTF；集合、可变字体、WOFF、损坏文件或缺少有效字形会被拒绝。上传对象按主体隔离，确认可重试且不会重复建行，不建立视频或生成任务。字体元数据来自文件，不新增字体专用数据库字段。
+- `GET /brand-templates/{id}/font-info` 返回实际字族、字重、样式与 Unicode 覆盖范围，供浏览器加载同一文件与检查缺字；已停用字体仍可用于已有版本预览。加载失败、缺字必须显示失败，不能切换成系统字体后假装成功。
+- `PATCH /brand-templates/{id}` 修改名称、品牌或启停，至少给一项；`brand=null` 清空品牌。资源不删除；停用不影响已受理整片中的资源快照，新的合成必须选择在用且种类正确的资源。资源管理与合成消费的校验边界不同，空媒体参数不妨碍改名、改品牌或启停。
+- 品牌资源不是生成记录，不进 `GET /generations` 与审计口径；资料库的成片卡与整片页不受影响。
 
 ## 14. 参考视频 (References)
 

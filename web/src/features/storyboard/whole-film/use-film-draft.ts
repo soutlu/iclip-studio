@@ -132,6 +132,7 @@ export function useFilmDraft({
         film.music === null &&
         film.intro == null &&
         film.outro == null &&
+        film.font == null &&
         lanes.length === 0
       )
         window.localStorage.removeItem(key)

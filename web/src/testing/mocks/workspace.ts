@@ -17,7 +17,7 @@ import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
-import { findMockBrandTemplate } from './brand-templates'
+import { findMockBrandTemplate, mockBrandFontInfo } from './brand-templates'
 import { isMockVideoUpload } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
@@ -1050,7 +1050,15 @@ export const workspaceHandlers = [
       const selected = body[position]
       if (selected == null) continue
       const template = findMockBrandTemplate(selected.templateId)
-      if (template === undefined || template.disabledAt !== null || template.position !== position)
+      if (
+        template === undefined ||
+        template.disabledAt !== null ||
+        template.kind !== position ||
+        template.width === null ||
+        template.height === null ||
+        template.durationMs === null ||
+        template.hasAudio === null
+      )
         return HttpResponse.json({ detail: '片头片尾模板不可用' }, { status: 422 })
       brands[position] = {
         templateId: template.id,
@@ -1061,6 +1069,24 @@ export const workspaceHandlers = [
         hasAudio: template.hasAudio,
       }
       brandMs += template.durationMs
+    }
+    let font = null
+    if (body.fontId != null) {
+      const selectedFont = findMockBrandTemplate(body.fontId)
+      if (
+        selectedFont === undefined ||
+        selectedFont.kind !== 'font' ||
+        selectedFont.disabledAt !== null
+      )
+        return HttpResponse.json({ detail: '所选字体不可用' }, { status: 422 })
+      font = {
+        fontId: selectedFont.id,
+        name: selectedFont.name,
+        url: selectedFont.url,
+        family: mockBrandFontInfo.family,
+        weight: mockBrandFontInfo.weight,
+        style: mockBrandFontInfo.style,
+      }
     }
     const durationMs =
       brandMs + segments.reduce((sum, segment) => sum + segment.endMs - segment.startMs, 0)
@@ -1074,6 +1100,7 @@ export const workspaceHandlers = [
       metadata: body.metadata ?? null,
       request: {
         ...brands,
+        font,
         segments,
         subtitles: body.subtitles,
         music:

@@ -118,11 +118,63 @@ export const zBodyAuthCookieLoginAuthLoginPost = z.object({
 })
 
 /**
+ * BrandFontConfirmIn
+ */
+export const zBrandFontConfirmIn = z.object({
+  brand: z.string().min(1).max(100).nullish(),
+  name: z.string().min(1).max(100),
+})
+
+/**
+ * BrandFontSignIn
+ */
+export const zBrandFontSignIn = z.object({
+  contentType: z.enum(['font/ttf', 'font/otf']),
+})
+
+/**
+ * BrandFontUnicodeRange
+ */
+export const zBrandFontUnicodeRange = z.object({
+  end: z.int(),
+  start: z.int(),
+})
+
+/**
+ * BrandFontInfoOut
+ */
+export const zBrandFontInfoOut = z.object({
+  family: z.string(),
+  style: z.enum(['normal', 'italic', 'oblique']),
+  unicodeRanges: z.array(zBrandFontUnicodeRange),
+  weight: z.int(),
+})
+
+/**
+ * BrandFontUploadInstruction
+ */
+export const zBrandFontUploadInstruction = z.object({
+  expiresAt: z.iso.datetime(),
+  headers: z.record(z.string(), z.string()),
+  method: z.literal('PUT').optional().default('PUT'),
+  url: z.string(),
+})
+
+/**
+ * BrandFontUploadTicketOut
+ */
+export const zBrandFontUploadTicketOut = z.object({
+  upload: zBrandFontUploadInstruction,
+  uploadId: z.uuid(),
+})
+
+/**
  * BrandTemplateCreateIn
  */
 export const zBrandTemplateCreateIn = z.object({
+  brand: z.string().min(1).max(100).nullish(),
+  kind: z.enum(['intro', 'outro']),
   name: z.string().min(1).max(100),
-  position: z.enum(['intro', 'outro']),
   uploadId: z.uuid(),
 })
 
@@ -130,16 +182,17 @@ export const zBrandTemplateCreateIn = z.object({
  * BrandTemplateOut
  */
 export const zBrandTemplateOut = z.object({
+  brand: z.string().nullable(),
   createdAt: z.iso.datetime(),
   disabledAt: z.iso.datetime().nullable(),
-  durationMs: z.int(),
-  hasAudio: z.boolean(),
-  height: z.int(),
+  durationMs: z.int().nullable(),
+  hasAudio: z.boolean().nullable(),
+  height: z.int().nullable(),
   id: z.uuid(),
+  kind: z.string(),
   name: z.string(),
-  position: z.enum(['intro', 'outro']),
   url: z.string(),
-  width: z.int(),
+  width: z.int().nullable(),
 })
 
 /**
@@ -148,6 +201,7 @@ export const zBrandTemplateOut = z.object({
  * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
  */
 export const zBrandTemplateUpdateIn = z.object({
+  brand: z.string().min(1).max(100).nullish(),
   disabled: z.boolean().nullish(),
   name: z.string().min(1).max(100).nullish(),
 })
@@ -2727,6 +2781,7 @@ export const zWholeFilmSubtitle = z.object({
  */
 export const zWholeFilmIn = z.object({
   conversationId: z.uuid(),
+  fontId: z.uuid().nullish(),
   intro: zWholeFilmBrandIn.nullish(),
   metadata: z.record(z.string(), z.unknown()).nullish(),
   music: zWholeFilmMusicIn.nullish(),
@@ -2855,7 +2910,8 @@ export const zCallbackAuthSsoCallbackGetQuery = z.object({
 })
 
 export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
-  position: z.enum(['intro', 'outro']).nullish(),
+  kind: z.string().nullish(),
+  brand: z.string().nullish(),
   includeDisabled: z.boolean().optional().default(false),
 })
 
@@ -2871,6 +2927,24 @@ export const zCreateBrandTemplateBrandTemplatesPostBody = zBrandTemplateCreateIn
  */
 export const zCreateBrandTemplateBrandTemplatesPostResponse = zBrandTemplateOut
 
+export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
+
+/**
+ * Successful Response
+ */
+export const zSignFontBrandTemplatesFontsSignPostResponse = zBrandFontUploadTicketOut
+
+export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostBody = zBrandFontConfirmIn
+
+export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostPath = z.object({
+  upload_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponse = zBrandTemplateOut
+
 export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchBody = zBrandTemplateUpdateIn
 
 export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchPath = z.object({
@@ -2881,6 +2955,15 @@ export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchPath = z.object({
  * Successful Response
  */
 export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse = zBrandTemplateOut
+
+export const zFontInfoBrandTemplatesTemplateIdFontInfoGetPath = z.object({
+  template_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zFontInfoBrandTemplatesTemplateIdFontInfoGetResponse = zBrandFontInfoOut
 
 export const zListCollectionsCollectionsGetQuery = z.object({
   scope: z.enum(['me', 'all']).optional().default('me'),

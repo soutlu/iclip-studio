@@ -12,7 +12,7 @@ import {
   type MaterialLane,
   type StoredFilm,
 } from './film-draft'
-import { zFilmBrand } from './film-draft'
+import { zFilmBrand, zFilmFont } from './film-draft'
 
 /** 整片：没有来源的视频合成。 */
 export const isWholeFilm = (job: GenerationJob): boolean =>
@@ -81,6 +81,7 @@ const zVersionRequest = z.object({
     .min(1),
   intro: zFilmBrand.omit({ name: true }).nullish(),
   outro: zFilmBrand.omit({ name: true }).nullish(),
+  font: zFilmFont.nullish(),
   subtitles: z.array(
     z.object({ startMs: z.number().int(), endMs: z.number().int(), text: z.string() }),
   ),
@@ -113,7 +114,7 @@ export const draftFromVersion = (
 ): StoredFilm | undefined => {
   const parsed = zVersionRequest.safeParse(job.request)
   if (!parsed.success) return undefined
-  const { segments: spans, subtitles, music, intro, outro } = parsed.data
+  const { segments: spans, subtitles, music, intro, outro, font } = parsed.data
 
   let clockMs = 0
   const segments: FilmSegment[] = spans.map((span) => {
@@ -178,6 +179,7 @@ export const draftFromVersion = (
       music: filmMusic,
       ...(intro == null ? {} : { intro: { ...intro, name: '片头' } }),
       ...(outro == null ? {} : { outro: { ...outro, name: '片尾' } }),
+      ...(font === undefined ? {} : { font }),
     },
     lanes,
   }

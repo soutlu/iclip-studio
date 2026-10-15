@@ -11,6 +11,7 @@ import { openConversation, screenshotBothThemes } from './helpers'
 const SHOT_DIR = '../.artifacts/design-qa/whole-film-editor/impl-1'
 /** mock 受理识别后 3 秒出结果。 */
 const STEP_TIMEOUT = 15_000
+const BRAND_SHOT_DIR = '../.artifacts/design-qa/brand-font-editor'
 const INTERACTION_SHOT_DIR = '../.artifacts/design-qa/whole-film-preview-drag'
 
 /** 演示对话里：第 2 组一条竖版 6 秒成片（识别出三句口播），第 3 组一条横版成片（识别失败）。 */
@@ -444,15 +445,20 @@ test('整片片头片尾：按正文画幅选择固定模板，字幕只在正�
   await laneOf(dialog, '镜头组 2 · V1').focus()
   await page.keyboard.press('Enter')
   await page.keyboard.press('Enter')
-  await dialog.getByRole('button', { name: '添加', exact: true }).click()
-  await page.getByRole('menuitem', { name: '片头', exact: true }).click()
+  const introSlot = dialog.getByRole('button', { name: '添加片头', exact: true })
+  const outroSlot = dialog.getByRole('button', { name: '添加片尾', exact: true })
+  expect((await introSlot.boundingBox())?.width).toBe(64)
+  expect((await outroSlot.boundingBox())?.width).toBe(64)
+  await expect(segments(dialog).first()).toHaveAccessibleName(/0–6 秒$/)
+  await screenshotBothThemes(page, `${BRAND_SHOT_DIR}/placeholders`)
+  await introSlot.click()
   await expect(page.getByRole('menuitem', { name: /^品牌片头 · 竖版/ })).toBeVisible()
   await expect(page.getByRole('menuitem', { name: /^品牌片头 · 横版/ })).toHaveCount(0)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/intro-picker')
   await page.getByRole('menuitem', { name: /^品牌片头 · 竖版/ }).click()
-  await dialog.getByRole('button', { name: '添加', exact: true }).click()
-  await page.getByRole('menuitem', { name: '片尾', exact: true }).click()
+  await expect(introSlot).toHaveCount(0)
+  await dialog.getByRole('button', { name: '添加片尾', exact: true }).click()
   await page.getByRole('menuitem', { name: /^品牌片尾 · 竖版/ }).click()
+  await expect(outroSlot).toHaveCount(0)
   await expect(
     dialog.getByRole('button', { name: '片头：品牌片头 · 竖版，位置固定' }),
   ).toBeVisible()
@@ -466,7 +472,13 @@ test('整片片头片尾：按正文画幅选择固定模板，字幕只在正�
   await page.mouse.click(await xAt(dialog, 7), await middleY(ruler))
   await expect(dialog.getByLabel('视频预览').getByText('这只包今天第一次上身')).toBeVisible()
   await page.mouse.move(0, 0)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/brands')
+  await dialog.getByRole('button', { name: '字幕字体：系统默认' }).click()
+  await page.getByRole('menuitemradio', { name: '示例字体 · 通用' }).click()
+  await expect(dialog.getByRole('button', { name: '合成成片' })).not.toHaveAttribute(
+    'aria-disabled',
+  )
+  await expect(dialog.getByLabel('视频预览').getByText('这只包今天第一次上身')).toBeVisible()
+  await screenshotBothThemes(page, `${BRAND_SHOT_DIR}/custom-font`)
   const accepted = page.waitForResponse((response) =>
     response.url().endsWith('/api/generations/whole-films'),
   )
@@ -475,9 +487,11 @@ test('整片片头片尾：按正文画幅选择固定模板，字幕只在正�
   expect(response.status()).toBe(202)
   const submitted = response.request().postDataJSON() as {
     intro: { templateId: string }
+    fontId: string
     outro: { templateId: string }
     subtitles: { startMs: number }[]
   }
+  expect(submitted.fontId).toBe('ba000001-0000-4000-8000-000000000005')
   expect(submitted.intro.templateId).toBe('ba000001-0000-4000-8000-000000000001')
   expect(submitted.outro.templateId).toBe('ba000001-0000-4000-8000-000000000002')
   expect(submitted.subtitles[0]?.startMs).toBe(300)
@@ -496,6 +510,7 @@ test('整片片头片尾：按正文画幅选择固定模板，字幕只在正�
   await expect(dialog.getByText('已按 V1 恢复剪辑')).toBeVisible()
   await expect(dialog.getByRole('button', { name: /^片头：/ })).toBeVisible()
   await expect(dialog.getByRole('button', { name: /^片尾：/ })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '字幕字体：示例字体' })).toBeVisible()
   await expect(segments(dialog).first()).toHaveAccessibleName(/6–12 秒$/)
   await page.setViewportSize({ width: 390, height: 844 })
   expect(
@@ -504,6 +519,97 @@ test('整片片头片尾：按正文画幅选择固定模板，字幕只在正�
     ),
   ).toBeLessThanOrEqual(0)
   await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-editor/impl-3/brands-mobile')
+  await dialog.getByRole('button', { name: /^片头：/ }).click()
+  await dialog
+    .getByRole('region', { name: '选中的片头' })
+    .getByRole('button', { name: '删除片头' })
+    .click()
+  await expect(introSlot).toBeVisible()
+  await expect(segments(dialog).first()).toHaveAccessibleName(/0–6 秒$/)
+})
+
+test('字幕字体排版：长英文、中文和显式换行按原画幅排版，放大和窗口缩放保持比例', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
+  await addMaterial(page, dialog, '镜头组 2 V1')
+  await laneOf(dialog, '镜头组 2 · V1').focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  const text =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ\n这只包今天第一次上身这只包今天第一次上身'
+  await dialog.getByRole('button', { name: '第 1 条字幕：这只包今天第一次上身' }).click()
+  await dialog.getByRole('textbox', { name: '字幕文字' }).fill(text)
+  await page.mouse.click(
+    await xAt(dialog, 1),
+    await middleY(dialog.getByRole('slider', { name: '时间线播放位置' })),
+  )
+  await dialog.getByRole('button', { name: '字幕字体：系统默认' }).click()
+  await page.getByRole('menuitemradio', { name: '示例字体 · 通用' }).click()
+  const caption = page.getByTestId('preview-caption')
+  await expect(caption).toBeVisible()
+  const wrapped = await caption.textContent()
+  // 同一 sample-font.otf 经服务端 HarfBuzz 在 180×320 画布上的真实分行。
+  expect(wrapped?.split('\n')).toEqual([
+    'ABCDEFGHIJKLMNOPQ',
+    'RSTUVWXYZABCDEFGHI',
+    'JKLMNOPQRSTUVWXYZ',
+    '这只包今天第一次上身这',
+    '只包今天第一次上身',
+  ])
+  expect(wrapped?.replaceAll('\n', '')).toBe(text.replaceAll('\n', ''))
+  const geometry = () =>
+    caption.evaluate((element) => {
+      const frame = element.parentElement?.getBoundingClientRect()
+      if (frame === undefined) throw new Error('字幕画面尚未布局')
+      const box = element.getBoundingClientRect()
+      return {
+        fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+        height: frame.height,
+        bottom: frame.bottom - box.bottom,
+        left: box.left - frame.left,
+        width: frame.width,
+      }
+    })
+  const desktop = await geometry()
+  expect(desktop.fontSize / desktop.height).toBeCloseTo(14 / 320, 3)
+  expect(desktop.bottom / desktop.height).toBeCloseTo(38 / 320, 3)
+  expect(desktop.left / desktop.width).toBeCloseTo(11 / 180, 3)
+  await page.mouse.move(0, 0)
+  await screenshotBothThemes(page, `${BRAND_SHOT_DIR}/multiline-font`)
+  await dialog.getByRole('button', { name: '放大', exact: true }).click()
+  await expect(caption).toBeVisible()
+  await expect.poll(async () => (await geometry()).height).toBeGreaterThan(desktop.height)
+  await expect
+    .poll(async () => {
+      const box = await geometry()
+      return box.fontSize / box.height
+    })
+    .toBeCloseTo(14 / 320, 3)
+  const enlarged = await geometry()
+  expect(await caption.textContent()).toBe(wrapped)
+  await page.keyboard.press('Escape')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect
+    .poll(async () => {
+      const box = await geometry()
+      return box.fontSize / box.height
+    })
+    .toBeCloseTo(14 / 320, 3)
+  const mobile = await geometry()
+  await test.info().attach('caption-layout-geometry', {
+    body: JSON.stringify({ desktop, enlarged, mobile, wrapped }, null, 2),
+    contentType: 'application/json',
+  })
+  expect(await caption.textContent()).toBe(wrapped)
+  await screenshotBothThemes(page, `${BRAND_SHOT_DIR}/multiline-font-mobile`)
+  await dialog.getByRole('button', { name: '字幕字体：示例字体' }).click()
+  await page.getByRole('menuitemradio', { name: '系统默认' }).click()
+  await expect(caption).toHaveText(text)
+  await dialog.getByRole('button', { name: '字幕字体：系统默认' }).click()
+  await page.getByRole('menuitemradio', { name: '示例字体 · 通用' }).click()
+  await expect(caption).toHaveText(wrapped ?? '')
 })
 
 test('素材预览：拖选中显示边界画面，播放仅限选区，返回整片保留播放头', async ({ page }) => {
@@ -559,7 +665,7 @@ test('素材预览：拖选中显示边界画面，播放仅限选区，返回�
   await expect(ruler).toHaveValue('0.5')
 })
 
-test('添加镜头组：底部加号持续可用，工具栏只添加片头片尾', async ({ page }) => {
+test('添加镜头组：底部加号持续可用，片头片尾直接从轨道空位选择', async ({ page }) => {
   const dialog = await openWholeFilm(page)
   const add = dialog.getByRole('button', { name: '添加镜头组', exact: true })
   await expect(add).toHaveCount(1)
@@ -569,11 +675,10 @@ test('添加镜头组：底部加号持续可用，工具栏只添加片头片�
   await expect(laneOf(dialog, '镜头组 2 · V1')).toBeVisible()
   await expect(laneOf(dialog, '镜头组 3 · V1')).toBeVisible()
 
-  await dialog.getByRole('button', { name: '添加', exact: true }).click()
-  await expect(page.getByRole('menuitem', { name: '片头', exact: true })).toBeVisible()
-  await expect(page.getByRole('menuitem', { name: '片尾', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '添加', exact: true })).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: '添加片头', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '添加片尾', exact: true })).toBeVisible()
   await expect(page.getByRole('menuitem', { name: '视频', exact: true })).toHaveCount(0)
-  await page.keyboard.press('Escape')
 
   await add.focus()
   await page.keyboard.press('Enter')

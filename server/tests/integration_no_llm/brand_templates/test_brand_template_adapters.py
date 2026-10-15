@@ -12,11 +12,17 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.brand_templates import brand_template_facts, template_video_prober
+from iclip.app.brand_templates import (
+    brand_template_facts,
+    template_font_prober,
+    template_video_prober,
+)
 from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.models import ProbedVideo
 from iclip.domains.generation.service import BrandTemplateFacts
 from iclip.platform.media.ffmpeg import MediaError, ffmpeg_available
+from iclip.platform.media.fonts import FontInfo
+from tests.helpers.fonts import make_font
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.media import synthesize_video
 
@@ -48,20 +54,52 @@ async def test_the_prober_downloads_through_the_internal_address_and_measures_th
     assert abs(measured.duration_ms - 2000) <= 100
 
 
+@pytest.mark.parametrize("otf", [False, True], ids=["ttf", "otf"])
+async def test_font_metadata_comes_from_the_downloaded_file(tmp_path: Path, otf: bool) -> None:
+    font = make_font(
+        tmp_path / ("face.otf" if otf else "face.ttf"),
+        family="Brand Caption",
+        weight=600,
+        style="italic",
+        characters=" AB中",
+        otf=otf,
+    )
+    async with httpx.AsyncClient(
+        transport=_transport(
+            {INTERNAL_URL: font.read_bytes(), "https://internal.example.test/bad": b"broken"}
+        )
+    ) as client:
+        probe = template_font_prober(client, lambda url: url.replace("cdn.", "internal."))
+        info = await probe(VIDEO_URL)
+        assert info.family == "Brand Caption"
+        assert info.weight == 600 and info.style == "italic"
+        assert info.unicode_ranges == ((32, 32), (65, 66), (20013, 20013))
+        with pytest.raises(MediaError):
+            await probe("https://cdn.example.test/bad")
+        with pytest.raises(MediaError):
+            await probe("https://cdn.example.test/missing")
+
+
 async def test_the_whole_film_side_reads_video_templates_and_whether_they_are_in_use(
     engine: AsyncEngine,
 ) -> None:
     store = SqlBrandTemplateStore(engine)
     creator = await make_user(engine)
     template = await store.create(
-        position="outro",
+        resource_id=uuid.uuid4(),
+        brand=None,
+        kind="outro",
         name="片尾",
         url=VIDEO_URL,
         video=ProbedVideo(width=1080, height=1920, duration_ms=2500, has_audio=False),
         created_by=creator,
         api_key_id=None,
     )
-    facts = brand_template_facts(store)
+
+    async def probe_font(url: str) -> FontInfo:
+        return FontInfo(family="Test", weight=400, style="normal", unicode_ranges=((32, 126),))
+
+    facts = brand_template_facts(store, probe_font=probe_font)
 
     in_use = await facts(template.id)
     await store.update(template.id, name=None, disabled=True)
@@ -69,7 +107,8 @@ async def test_the_whole_film_side_reads_video_templates_and_whether_they_are_in
 
     assert in_use == BrandTemplateFacts(
         id=template.id,
-        position="outro",
+        kind="outro",
+        name="片尾",
         enabled=True,
         url=VIDEO_URL,
         duration_ms=2500,
@@ -89,10 +128,13 @@ async def test_the_whole_film_side_reads_video_templates_and_whether_they_are_in
             ),
             {"id": font_id, "url": "https://cdn.example.test/font.ttf", "creator": creator},
         )
-    assert await facts(font_id) is None, "字体不能作为整片的片头片尾视频"
+    font = await facts(font_id)
+    assert font is not None and font.kind == "font"
+    assert font.font_info is not None and font.font_info.family == "Test"
     async with engine.begin() as conn:
         await conn.execute(
             text("UPDATE iclip.brand_templates SET duration_ms = NULL WHERE id = :id"),
             {"id": template.id},
         )
-    assert await facts(template.id) is None, "缺少时长的资源不能用于视频合成"
+    incomplete = await facts(template.id)
+    assert incomplete is not None and incomplete.duration_ms is None, "消费端显式核对媒体参数"

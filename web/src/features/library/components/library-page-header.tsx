@@ -32,7 +32,7 @@ export function LibraryTabsList() {
 }
 
 type LibraryPageHeaderProps = {
-  description: string
+  description?: string
   search: { label: string; placeholder: string; value: string; onSearch: (q: string) => void }
   /** 搜索框右边的主动作，如「上传视频」。 */
   action?: ReactNode
@@ -46,7 +46,9 @@ export function LibraryPageHeader({ description, search, action, tabs }: Library
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pb-4">
         <div className="min-w-0">
           <h1 className="text-headline font-semibold text-on-surface">资料库</h1>
-          <p className="mt-2 text-body text-on-surface-variant">{description}</p>
+          {description === undefined ? null : (
+            <p className="mt-2 text-body text-on-surface-variant">{description}</p>
+          )}
         </div>
         <div className="flex w-full items-center gap-3 sm:w-auto">
           {/* 旁边有主动作时让出宽度。 */}

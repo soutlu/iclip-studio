@@ -1,6 +1,11 @@
 import { assert, describe, expect, it } from 'vitest'
-import type { BrandTemplate } from '@/shared/api/brand-templates'
-import { brandOf, matchesFilmRatio, templateBlockedReason } from './film-brand'
+import {
+  brandOf,
+  isVideoTemplate,
+  matchesFilmRatio,
+  templateBlockedReason,
+  type VideoBrandTemplate,
+} from './film-brand'
 import {
   brandDuration,
   EMPTY_FILM,
@@ -13,10 +18,11 @@ import {
 } from './film-draft'
 import { wholeFilmBody } from './film-submit'
 
-const template: BrandTemplate = {
+const template: VideoBrandTemplate = {
   id: 'intro',
   name: '品牌片头',
-  position: 'intro',
+  kind: 'intro',
+  brand: null,
   url: 'https://media.example/intro.mp4',
   width: 1080,
   height: 1920,
@@ -40,6 +46,18 @@ describe('片头片尾与合成上限', () => {
     expect(matchesFilmRatio({ width: 102, height: 100 }, { width: 1, height: 1 })).toBe(true)
     expect(matchesFilmRatio({ width: 102.1, height: 100 }, { width: 1, height: 1 })).toBe(false)
     expect(matchesFilmRatio({ width: 1920, height: 1080 }, frame)).toBe(false)
+  })
+  it('空参数视频不可用，扩展资源类型不会被当作视频', () => {
+    expect(isVideoTemplate({ ...template, width: null })).toBe(false)
+    expect(isVideoTemplate({ ...template, hasAudio: null })).toBe(false)
+    expect(isVideoTemplate({ ...template, kind: 'font' })).toBe(false)
+    expect(
+      templateBlockedReason(
+        setBrand(base, 'intro', brandOf(template)),
+        [{ ...template, durationMs: null }],
+        frame,
+      ),
+    ).toContain('参数不完整')
   })
   it('停用或画幅改变时禁止新合成，但保留旧模板快照', () => {
     const film = setBrand(base, 'intro', brandOf(template))

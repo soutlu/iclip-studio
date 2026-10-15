@@ -25,6 +25,13 @@ import httpx
 
 from iclip.common.urls import is_http_url
 from iclip.platform.media.codec import MediaCodec
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fonts import (
+    FontError,
+    SubtitleFont,
+    caption_text,
+    prepare_font,
+)
 
 _STDERR_LIMIT = 400
 _DOWNLOAD_CHUNK = 256 * 1024
@@ -95,10 +102,6 @@ _TRIM_MUSIC_SILENCE: Final = (
 它会连乐曲中间的停顿一起删。倒序要整段进内存，两分钟的双声道音频几十 MB，承受得起。"""
 
 _LOUDNESS_KEYS: Final = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
-
-
-class MediaError(RuntimeError):
-    """取素材或 ffmpeg 处理失败。"""
 
 
 class NoAudioStream(MediaError):
@@ -583,13 +586,10 @@ FILM_END_TOLERANCE: Final = 0.05
 与 ffprobe 量的隔着一次容器时长的取整。再多就是段与素材对不上，整片失败。"""
 
 SUBTITLE_FONT: Final = "Noto Sans CJK SC"
-"""烧字幕用的字体：镜像里 apt 装的 ``fonts-noto-cjk``（SIL OFL 1.1）里的简体中文无衬线体。"""
+"""未选择自定义字体时的系统默认；由既有部署的 fonts-noto-cjk 与 libass 字体发现负责。"""
 SUBTITLE_FONTS_DIR: Final = Path("/usr/share/fonts/opentype/noto")
-"""那个字体包装到的目录，交给 libass 的 ``fontsdir``。"""
 SUBTITLE_FONT_SIZE_RATIO: Final = 0.045
-"""ASS 字号是画面高度的几分之几。libass 的字号是行高，思源黑体一个汉字约宽字号的 0.69：竖屏 1920 高
-字号 86、一个字约 60 像素，一行放得下十五六个字；横屏 1080 高一个字约 34 像素。短视频以竖屏为主，
-按竖屏取值，横屏的字相对小些。"""
+"""系统默认的 ASS 字号比例；自定义字体用同一比例作为 em，再按字体度量换成 ASS 行高。"""
 SUBTITLE_OUTLINE_RATIO: Final = 0.08
 """描边粗细是字号的几分之几。"""
 SUBTITLE_MARGIN_BOTTOM_RATIO: Final = 0.12
@@ -613,7 +613,7 @@ async def render_film(
     dest: Path,
     codec: MediaCodec,
     workdir: Path,
-    fonts_dir: Path = SUBTITLE_FONTS_DIR,
+    font: Path | None = None,
 ) -> None:
     """把各段按顺序首尾相接剪成一条整片写到 ``dest``，``intro`` 整条接在最前、``outro`` 整条接在
     最后：画面对齐到 ``profile``、烧进字幕，声音是原声与背景音乐的混音。中间文件（混好的声音、字幕
@@ -623,8 +623,8 @@ async def render_film(
     没有字幕、不铺音乐。
 
     画面：各段与片头片尾的裁剪、对齐与关键帧同 ``cut_concat``。字幕按统一样式写成 ASS，用 libass
-    的 ``subtitles`` 滤镜烧进画面，字体从 ``fonts_dir`` 找；有字幕而本机 ffmpeg 没有这个滤镜就失败，
-    不出没烧字幕的片。
+    的 ``subtitles`` 滤镜烧进画面；``font`` 是下载的静态字体文件，为 None 时明确选择系统 Noto。
+    自定义字体缺字或不可用时失败，不改用默认字体；本机没有 subtitles 滤镜时不出无字幕的片。
 
     声音分三遍：先量每条来源整段的响度，各段与片头片尾的原声按差值统一到 ``sound.speech_lufs``、
     两端各淡入淡出 ``sound.edge_fade``，没有音轨的补静音，首尾相接；有音乐时量它整段的响度统一到
@@ -637,6 +637,15 @@ async def render_film(
 
     if not cuts:
         raise MediaError("没有要剪的段")
+    prepared_font: SubtitleFont | None = None
+    if captions:
+        await _require_subtitles_filter()
+        if font is not None:
+            prepared_font = prepare_font(
+                font,
+                texts=[caption.text for caption in captions],
+                directory=workdir / "subtitle-font",
+            )
     for cut in cuts:
         _check_cut(cut)
     brands = [brand for brand in (intro, outro) if brand is not None]
@@ -690,7 +699,6 @@ async def render_film(
 
     subtitles = None
     if captions:
-        await _require_subtitles_filter()
         subtitles = workdir / "film-captions.ass"
         shifted = [
             FilmCaption(
@@ -701,7 +709,8 @@ async def render_film(
             for caption in captions
         ]
         subtitles.write_text(
-            ass_document(shifted, width=profile.width, height=profile.height), encoding="utf-8"
+            ass_document(shifted, width=profile.width, height=profile.height, font=prepared_font),
+            encoding="utf-8",
         )
     keyframes = _concat_keyframes(
         clips,
@@ -714,12 +723,13 @@ async def render_film(
         inputs += [*codec.decode, "-i", str(clip.source)]
         chains.append(_video_chain(index, clip, profile))
     inputs += ["-i", str(mixed)]
-    burn = (
-        "null"
-        if subtitles is None
-        else f"subtitles=filename={_filter_path(subtitles)}:fontsdir={_filter_path(fonts_dir)},"
-        "format=yuv420p"
-    )
+    burn = "null"
+    if subtitles is not None:
+        fonts_dir = SUBTITLE_FONTS_DIR if prepared_font is None else prepared_font.path.parent
+        burn = f"subtitles=filename={_filter_path(subtitles)}:fontsdir={_filter_path(fonts_dir)}"
+        if prepared_font is not None:
+            burn += f":force_style='Bold={prepared_font.ass_weight},Italic={int(prepared_font.ass_italic)}'"
+        burn += ",format=yuv420p"
     chains.append(
         f"{''.join(f'[v{index}]' for index in range(len(clips)))}"
         f"concat=n={len(clips)}:v=1:a=0,{burn}[outv]"
@@ -729,12 +739,23 @@ async def render_film(
         # level=0：不让限幅器自动把输出拉满；latency=1：抵掉它向前看的那几毫秒延迟。
         f"alimiter=limit={10 ** (sound.peak_dbfs / 20):.4f}:level=0:latency=1[outa]"
     )
-    args = ["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(chains)]
+    args = [
+        "ffmpeg",
+        "-v",
+        "info" if prepared_font else "error",
+        "-nostats",
+        "-y",
+        *inputs,
+        "-filter_complex",
+        ";".join(chains),
+    ]
     args += ["-map", "[outv]", "-map", "[outa]", *_AUDIO_CODEC]
     args += ["-ar", str(_AUDIO_RATE), "-ac", "2"]
     args += [*codec.encode, "-force_key_frames", keyframes]
     args += ["-movflags", "+faststart", str(dest)]
-    await run(args, timeout=ENCODE_TIMEOUT_SECONDS)
+    _, diagnostic = await _communicate(args, timeout=ENCODE_TIMEOUT_SECONDS)
+    if prepared_font is not None:
+        _check_selected_font(diagnostic.decode(errors="replace"), prepared_font)
     _check_output(dest, max_bytes=MAX_VIDEO_BYTES)
 
 
@@ -847,18 +868,28 @@ def _filter_path(path: Path) -> str:
     return text
 
 
-def ass_document(captions: Sequence[FilmCaption], *, width: int, height: int) -> str:
+def ass_document(
+    captions: Sequence[FilmCaption], *, width: int, height: int, font: SubtitleFont | None = None
+) -> str:
     """按统一样式把字幕写成一份 ASS：白字、深色描边、底部居中，字号随画面高度。
 
     画布就是画面大小（``PlayResX/Y``），样式里的像素与画面一一对应。中文没有空格可断行，不靠
-    libass 自己折：按字宽估算，一句放不下就在这里均匀折成几行（``WrapStyle: 2`` 让 libass 只认
-    这些换行）。ASS 会把 ``{…}`` 当样式指令、把反斜杠当转义，文字里的这三个字符换成全角的同形字。"""
+    libass 自己折：自定义字体用 HarfBuzz 字形度量折行、按字体行高换算字号；系统默认保持原先的
+    Noto 估宽（``WrapStyle: 2`` 只认显式换行）。自定义字体与浏览器采用相同的 em 字号和字符转义。"""
 
-    font_size = max(1, round(height * SUBTITLE_FONT_SIZE_RATIO))
-    outline = max(1, round(font_size * SUBTITLE_OUTLINE_RATIO))
-    margin_side = round(width * SUBTITLE_MARGIN_SIDE_RATIO)
-    margin_bottom = round(height * SUBTITLE_MARGIN_BOTTOM_RATIO)
-    line_width = max(font_size, width - 2 * margin_side)
+    # 自定义字体与浏览器 Math.round 一致；系统默认保留现有取整行为。
+    def nearest(value: float) -> int:
+        return round(value) if font is None else math.floor(value + 0.5)
+
+    font_size = max(1, nearest(height * SUBTITLE_FONT_SIZE_RATIO))
+    ass_size = font_size if font is None else font_size * font.ass_size_scale
+    outline = max(1, nearest(font_size * SUBTITLE_OUTLINE_RATIO))
+    margin_side = nearest(width * SUBTITLE_MARGIN_SIDE_RATIO)
+    margin_bottom = nearest(height * SUBTITLE_MARGIN_BOTTOM_RATIO)
+    line_width = max(font_size, width - 2 * margin_side - (2 * outline if font else 0))
+    family = SUBTITLE_FONT if font is None else font.family
+    bold = -1 if font is None else 0
+    italic = 0 if font is None else int(font.ass_italic)
     header = "\n".join(
         [
             "[Script Info]",
@@ -872,9 +903,9 @@ def ass_document(captions: Sequence[FilmCaption], *, width: int, height: int) ->
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,"
             " BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle,"
             " BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            # 颜色是 &HAABBGGRR：白字、黑色描边；Bold -1 用粗体，Alignment 2 是底部居中。
-            f"Style: Default,{SUBTITLE_FONT},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,"
-            f"&H00000000,-1,0,0,0,100,100,0,0,1,{outline},0,2,{margin_side},{margin_side},"
+            # Bold 的精确字重由 subtitles.force_style 设置；ASS 样式字段会被 libass 布尔化。
+            f"Style: Default,{family},{ass_size:g},&H00FFFFFF,&H00FFFFFF,&H00000000,"
+            f"&H00000000,{bold},{italic},0,0,100,100,0,0,1,{outline},0,2,{margin_side},{margin_side},"
             f"{margin_bottom},1",
             "",
             "[Events]",
@@ -883,7 +914,7 @@ def ass_document(captions: Sequence[FilmCaption], *, width: int, height: int) ->
     )
     events = [
         f"Dialogue: 0,{_ass_time(caption.start)},{_ass_time(caption.end)},Default,,0,0,0,,"
-        f"{_ass_text(caption.text, font_size=font_size, line_width=line_width)}"
+        f"{_ass_text(caption.text, font=font, font_size=font_size, line_width=line_width)}"
         for caption in captions
     ]
     return "\n".join([header, *events, ""])
@@ -899,31 +930,63 @@ def _ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{whole:02d}.{centi:02d}"
 
 
-def _ass_text(text: str, *, font_size: int, line_width: int) -> str:
-    """一句字幕的 ASS 文字：转掉 ASS 的特殊字符，按估算的字宽折行，行之间用 ``\\N``。"""
+def _ass_text(text: str, *, font: SubtitleFont | None, font_size: int, line_width: int) -> str:
+    """按选定字体的实际字形度量折行，行之间用 ``\\N``。"""
 
-    safe = text.replace("\\", "＼").replace("{", "｛").replace("}", "｝")
     lines: list[str] = []
-    for paragraph in safe.splitlines():
-        lines += _wrap(paragraph.strip(), font_size=font_size, line_width=line_width)
+    paragraphs = (
+        text.replace("\\", "＼").replace("{", "｛").replace("}", "｝").splitlines()
+        if font is None
+        else caption_text(text).split("\n")
+    )
+    for paragraph in paragraphs:
+        lines += (
+            _wrap_default(paragraph.strip(), font_size=font_size, line_width=line_width)
+            if font is None
+            else _wrap(paragraph, font=font, font_size=font_size, line_width=line_width)
+        )
     return "\\N".join(line for line in lines if line)
 
 
-_WIDE_GLYPH: Final = 0.7
-_NARROW_GLYPH: Final = 0.45
-"""估算字宽用的系数（相对 ASS 的字号）。libass 让字体的行高等于字号，思源黑体（Noto Sans CJK）一个
-全角字的宽约是字号的 0.69；半角字母数字平均更窄，按 0.45 估，宁宽勿窄。"""
+def _wrap(paragraph: str, *, font: SubtitleFont, font_size: int, line_width: int) -> list[str]:
+    """按字形簇逐行放置；整行重新 shaping，保留 kerning 和上下文字形的实际推进量。"""
+
+    lines: list[str] = []
+    line = ""
+    for cluster in font.clusters(paragraph):
+        candidate = line + cluster
+        if font.measure(candidate, size=font_size) > line_width:
+            if not line or font.measure(cluster, size=font_size) > line_width:
+                raise FontError("字幕字形超过可用画面宽度，请调整字幕或字体")
+            lines.append(caption_text(line))
+            line = caption_text(cluster)
+        else:
+            line = candidate
+    if line:
+        lines.append(caption_text(line))
+    return lines
 
 
-def _wrap(paragraph: str, *, font_size: int, line_width: int) -> list[str]:
-    """把一段折成宽度相近的几行，每行不超过 ``line_width``。
+def _check_selected_font(diagnostic: str, font: SubtitleFont) -> None:
+    """libass 的真实选择必须全指向专属字体，缺字或系统替代不能作为成功产物上传。"""
 
-    先按估算的总宽定行数（每行留出一个字的余量），再按每个字的中点落在第几等分里分到那一行，
-    所以行数正好是算出来的那几行，各行一样宽，不会剩下孤零零的一个字。"""
+    selections = [line for line in diagnostic.splitlines() if "fontselect:" in line]
+    if (
+        not selections
+        or any(
+            "->" not in line or not line.rstrip().endswith(f", {font.family}")
+            for line in selections
+        )
+        or "Glyph 0x" in diagnostic
+    ):
+        raise FontError("字幕渲染未使用完整的选定字体，已停止导出")
+
+
+def _wrap_default(paragraph: str, *, font_size: int, line_width: int) -> list[str]:
+    """系统默认保持既有的 Noto 字宽估算；自定义字体只走实际文件度量。"""
 
     widths = [
-        font_size
-        * (_WIDE_GLYPH if unicodedata.east_asian_width(char) in ("W", "F") else _NARROW_GLYPH)
+        font_size * (0.7 if unicodedata.east_asian_width(char) in ("W", "F") else 0.45)
         for char in paragraph
     ]
     total = sum(widths)
