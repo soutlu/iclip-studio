@@ -122,7 +122,6 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const templatesQuery = useBrandTemplates()
   const previewRef = useRef<EditorPreviewHandle>(null)
   const anchorRef = useRef<HTMLElement>(null)
-  const trackScrollRef = useRef<HTMLDivElement>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [playback, setPlayback] = useState({ playing: false, muted: true })
   // 生成面板挂在编辑器里（模态弹窗外的浮层拿不到焦点）。
@@ -323,6 +322,8 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       : viewedPending !== undefined
         ? pendingPoster(firstSourceOf(viewedPending))
         : posterOf(firstUrl)
+  // 素材边界用前景视频精确定位；装饰背景固定首帧，拖动不反复请求、切换远端截图。
+  const stageBackdrop = previewingMaterial ? posterOf(previewMaterial.url) : stagePoster
   const stageMessage = previewingMaterial
     ? '素材时长读取失败，暂时无法预览'
     : viewedRunning !== undefined
@@ -733,7 +734,6 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       </p>
     ) : (
       <FilmTimeline
-        scrollRef={trackScrollRef}
         addSubtitleBlocked={addSubtitleBlocked}
         addVideo={
           <AddVideoRow
@@ -992,7 +992,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           ref={setEditorElement}
         >
           <EditorPreview
-            backdrop={{ current: stagePoster, original: undefined }}
+            backdrop={{ current: stageBackdrop, original: undefined }}
             barEnd={downloadButton}
             caption={viewingDraft && !previewingMaterial ? captionAt(burned, bodyTime) : undefined}
             contentKey={
@@ -1065,12 +1065,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
             readout={readout}
             ref={previewRef}
             timeline={
-              <div
-                className="whole-film-track-scroll"
-                ref={trackScrollRef}
-                role="region"
-                aria-label="轨道列表"
-              >
+              <div className="whole-film-track-scroll" role="region" aria-label="轨道列表">
                 {viewingDraft ? (
                   timeline
                 ) : (

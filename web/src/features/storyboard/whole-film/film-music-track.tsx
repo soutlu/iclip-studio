@@ -3,6 +3,7 @@
  * 吸附到候选起点；比视频段短时后面接斜纹空位。 */
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import {
@@ -48,6 +49,8 @@ type MusicTrackProps = {
   /** 音乐轨与成片轨的位置，像素（见 film-timeline 的 ROW）。 */
   row: { top: number; height: number }
   filmTop: number
+  /** 固定成片轨的落拍标记容器；音乐轨在下方独立滚动。 */
+  cutMarkerContainer: HTMLElement | null
   selected: boolean
   /** 选中时弹出卡对准它。 */
   anchorRef: Ref<HTMLElement>
@@ -136,6 +139,7 @@ export function MusicTrack({
   scale,
   row,
   filmTop,
+  cutMarkerContainer,
   selected,
   anchorRef,
   secondsOf,
@@ -324,16 +328,19 @@ export function MusicTrack({
           }}
         />
       ) : null}
-      {song.grid === null
+      {song.grid === null || cutMarkerContainer === null
         ? null
-        : placement.onBeat.map((cut) => (
-            <span
-              aria-hidden="true"
-              className="film-music-cut-dot"
-              key={cut}
-              style={{ left: percent(cut), top: filmTop }}
-            />
-          ))}
+        : createPortal(
+            placement.onBeat.map((cut) => (
+              <span
+                aria-hidden="true"
+                className="film-music-cut-dot"
+                key={cut}
+                style={{ left: percent(cut), top: filmTop }}
+              />
+            )),
+            cutMarkerContainer,
+          )}
       {dragging ? (
         <span
           className="film-timeline-bubble"

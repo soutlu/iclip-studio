@@ -11,7 +11,7 @@ import { openConversation, screenshotBothThemes } from './helpers'
 const SHOT_DIR = '../.artifacts/design-qa/whole-film-editor/impl-1'
 /** mock 受理识别后 3 秒出结果。 */
 const STEP_TIMEOUT = 15_000
-const INTERACTION_SHOT_DIR = '../.artifacts/design-qa/whole-film-interaction'
+const INTERACTION_SHOT_DIR = '../.artifacts/design-qa/whole-film-preview-drag'
 
 /** 演示对话里：第 2 组一条竖版 6 秒成片（识别出三句口播），第 3 组一条横版成片（识别失败）。 */
 const openWholeFilm = async (page: Page, { mobile = false } = {}) => {
@@ -580,16 +580,16 @@ test('添加镜头组：底部加号持续可用，工具栏只添加片头片�
   await expect(add).toBeFocused()
 })
 
-/** 通过已有 mock 生成接口准备多组素材，等待记录完成后再进入编辑器。 */
-const createMaterialGroups = async (page: Page) => {
-  const ids = await page.evaluate(async () => {
+/** 通过已有 mock 生成接口准备素材，镜号可重复以生成同组多版；等待记录完成再编辑。 */
+const createMaterials = async (page: Page, shotIndices: number[]) => {
+  const ids = await page.evaluate(async (indices) => {
     const conversationId = window.location.pathname.split('/').at(-1)
     if (conversationId === undefined) throw new Error('尚未打开对话')
     return Promise.all(
-      Array.from({ length: 8 }, async (_, index) => {
+      indices.map(async (shotIndex) => {
         const body: VideoGenerationIn = {
           conversation_id: conversationId,
-          shot_index: index + 10,
+          shot_index: shotIndex,
           model: 'vendor-a-seedance-2-5',
           prompt: '滚动验收素材',
           seconds: 6,
@@ -605,7 +605,7 @@ const createMaterialGroups = async (page: Page) => {
         return ((await response.json()) as VideoSubmitOut).task_id
       }),
     )
-  })
+  }, shotIndices)
   await expect
     .poll(
       () =>
@@ -635,17 +635,23 @@ for (const viewport of [
     const panel = await openConversation(page, '夜景延时素材生成', {
       mobile: viewport.width < 600,
     })
-    await createMaterialGroups(page)
+    await createMaterials(
+      page,
+      Array.from({ length: 10 }, (_, index) => index + 10),
+    )
     await panel.getByRole('button', { name: '整片', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
     await addMaterial(page, dialog, '镜头组 10 V1')
     const stage = dialog.getByRole('region', { name: '预览舞台', exact: true })
     const tracks = dialog.getByRole('region', { name: '轨道列表', exact: true })
+    const candidates = dialog.getByRole('region', { name: '候选素材', exact: true })
+    const filmLane = dialog.getByTestId('film-lane')
+    const filmBefore = await filmLane.boundingBox()
     const stageBefore = await stage.boundingBox()
     const tracksBefore = await tracks.boundingBox()
     if (stageBefore === null || tracksBefore === null) throw new Error('编辑器尚未布局')
 
-    for (let group = 11; group <= 17; group += 1)
+    for (let group = 11; group <= 19; group += 1)
       await addMaterial(page, dialog, `镜头组 ${group} V1`)
     const stageAfter = await stage.boundingBox()
     const tracksAfter = await tracks.boundingBox()
@@ -656,21 +662,31 @@ for (const viewport of [
     expect(stageAfter.y).toBeGreaterThanOrEqual(0)
     expect(tracksAfter.y + tracksAfter.height).toBeLessThan(viewport.height)
 
-    // 滚轮只滚轨道区域；左侧组名和右侧素材轨保持在同一行。
-    await tracks.evaluate((element) => element.scrollTo({ top: 0 }))
-    await tracks.hover()
+    // 候选独立滚动，成片轨保持可见；左侧组名和右侧素材轨保持在同一行。
+    await candidates.evaluate((element) => element.scrollTo({ top: 0 }))
+    await candidates.hover()
     await page.mouse.wheel(0, 900)
-    await expect.poll(() => tracks.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
-    const last = laneOf(dialog, '镜头组 17 · V1')
+    await expect.poll(() => candidates.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+    await expect(filmLane).toBeInViewport()
+    const filmAfter = await filmLane.boundingBox()
+    if (filmBefore === null || filmAfter === null) throw new Error('成片轨尚未布局')
+    expect(Math.abs(filmAfter.y - filmBefore.y)).toBeLessThan(1)
+    expect(Math.abs(filmAfter.height - filmBefore.height)).toBeLessThan(1)
+    await expect(dialog.getByRole('button', { name: '添加镜头组', exact: true })).toBeInViewport()
+    const last = laneOf(dialog, '镜头组 19 · V1')
+    await last.scrollIntoViewIfNeeded()
     await expect(last).toBeInViewport()
-    const label = timelineOf(dialog).getByText('镜头组 17', { exact: true })
+    const label = timelineOf(dialog).getByText('镜头组 19', { exact: true })
     const labelBox = await label.boundingBox()
     const laneBox = await last.boundingBox()
-    if (labelBox === null || laneBox === null) throw new Error('最后一组素材尚未布局')
+    const candidateBox = await candidates.boundingBox()
+    if (labelBox === null || laneBox === null || candidateBox === null)
+      throw new Error('最后一组素材尚未布局')
+    expect(laneBox.y).toBeGreaterThanOrEqual(candidateBox.y)
+    expect(laneBox.y + laneBox.height).toBeLessThanOrEqual(candidateBox.y + candidateBox.height)
     expect(
       Math.abs(labelBox.y + labelBox.height / 2 - laneBox.y - laneBox.height / 2),
     ).toBeLessThan(1)
-    await expect(dialog.getByRole('button', { name: '添加镜头组', exact: true })).toBeInViewport()
     expect(
       await dialog.getByLabel('整片编辑器', { exact: true }).evaluate((el) => el.scrollTop),
     ).toBe(0)
@@ -688,29 +704,88 @@ for (const viewport of [
     await screenshotBothThemes(page, `${INTERACTION_SHOT_DIR}/many-materials-${viewport.name}`)
 
     if (viewport.name === 'desktop') {
-      // 滚走的成片轨不能在舞台上留下不可见的落点。
-      await page.mouse.move(await xAt(dialog, 3), await middleY(last))
-      await page.mouse.down()
-      await page.mouse.move(await xAt(dialog, 3), stageAfter.y + stageAfter.height / 2, {
-        steps: 8,
-      })
-      await expect(dialog.getByTestId('film-insert')).toHaveCount(0)
-      await page.mouse.up()
-      await expect(segments(dialog)).toHaveCount(0)
-
-      // 携带末行素材停在滚动窗口上缘，轨道自动向上滚，再放入可见的成片轨。
-      await last.scrollIntoViewIfNeeded()
-      await page.mouse.move(await xAt(dialog, 3), await middleY(last))
-      await page.mouse.down()
-      await page.mouse.move(await xAt(dialog, 3), tracksAfter.y + 12, { steps: 8 })
-      await expect.poll(() => tracks.evaluate((element) => element.scrollTop)).toBe(0)
-      await page.mouse.move(await xAt(dialog, 0), await middleY(dialog.getByTestId('film-lane')), {
-        steps: 4,
-      })
+      // 系统取消拖动时，即使指针已经进入成片轨也不能提交片段。
+      const cancelled = await carryToFilm(page, dialog, last, 3, 0)
       await expect(dialog.getByTestId('film-insert')).toBeVisible()
-      await page.mouse.up()
+      await last.dispatchEvent('pointercancel', { pointerId: 1 })
+      await cancelled()
+      await expect(segments(dialog)).toHaveCount(0)
+      await expect(dialog.getByTestId('film-carry')).toHaveCount(0)
+
+      // 末行素材直接拖入常驻成片轨，不必先滚回顶部。
+      const drop = await carryToFilm(page, dialog, last, 3, 0)
+      await expect(dialog.getByTestId('film-insert')).toBeVisible()
+      expect(await candidates.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+      await expect(last).toBeInViewport()
+      const floating = await dialog.getByTestId('film-carry').boundingBox()
+      const target = await filmLane.boundingBox()
+      if (floating === null || target === null) throw new Error('拖动浮影尚未显示')
+      expect(
+        Math.abs(floating.y + floating.height / 2 - target.y - target.height / 2),
+      ).toBeLessThan(1)
+      await drop()
       await expect(segments(dialog)).toHaveCount(1)
-      await expect(segments(dialog).first()).toHaveAccessibleName(/镜头组 17/)
+      await expect(segments(dialog).first()).toHaveAccessibleName(/镜头组 19 · V1 · 0–6 秒$/)
+
+      // 已有 A、B 两段时，候选 C 仍能直接落到切点，插入线与最终顺序一致。
+      await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('6')
+      const second = laneOf(dialog, '镜头组 18 · V1')
+      await second.focus()
+      await page.keyboard.press('Enter')
+      await page.keyboard.press('Enter')
+      await expect(segments(dialog)).toHaveCount(2)
+      const third = laneOf(dialog, '镜头组 17 · V1')
+      await third.focus()
+      await page.keyboard.press('Enter')
+      const insert = await carryToFilm(page, dialog, third, 3, 6)
+      await expect(timelineOf(dialog).getByText('插入到 6.00 秒', { exact: true })).toBeVisible()
+      const marker = await dialog.getByTestId('film-insert').boundingBox()
+      const first = await segments(dialog).first().boundingBox()
+      if (marker === null || first === null) throw new Error('成片插入位置尚未布局')
+      expect(Math.abs(marker.x + marker.width / 2 - first.x - first.width)).toBeLessThan(3)
+      await insert()
+      await expect(segments(dialog)).toHaveCount(3)
+      await expect(segments(dialog).nth(0)).toHaveAccessibleName(/镜头组 19 · V1 · 0–6 秒$/)
+      await expect(segments(dialog).nth(1)).toHaveAccessibleName(/镜头组 17 · V1 · 6–12 秒$/)
+      await expect(segments(dialog).nth(2)).toHaveAccessibleName(/镜头组 18 · V1 · 12–18 秒$/)
     }
   })
 }
+
+test('同组多版本：菜单在窗口内滚动，换版只影响之后加入成片的片段', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
+  await createMaterials(
+    page,
+    Array.from({ length: 21 }, () => 10),
+  )
+  await panel.getByRole('button', { name: '整片', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+  await addMaterial(page, dialog, '镜头组 10 V21')
+  await laneOf(dialog, '镜头组 10 · V21').focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await expect(segments(dialog)).toHaveCount(1)
+  await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('6')
+
+  await dialog.getByRole('button', { name: '镜头组 10 当前用 V21，换版本' }).click()
+  const menu = page.getByRole('menu', { name: '镜头组 10 当前用 V21，换版本' })
+  const bounds = await menu.boundingBox()
+  if (bounds === null) throw new Error('版本菜单尚未布局')
+  expect(bounds.y).toBeGreaterThanOrEqual(0)
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(844)
+  const earliest = menu.getByRole('menuitemradio', { name: /^V1\s/ })
+  await earliest.scrollIntoViewIfNeeded()
+  await expect(earliest).toBeInViewport()
+  await earliest.click()
+  await expect(dialog.getByRole('button', { name: '镜头组 10 当前用 V1，换版本' })).toBeVisible()
+  await expect(
+    timelineOf(dialog).getByRole('button', { name: /^镜头组 10 · V\d+ 素材/ }),
+  ).toHaveCount(1)
+  await laneOf(dialog, '镜头组 10 · V1').focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await expect(segments(dialog)).toHaveCount(2)
+  await expect(segments(dialog).nth(0)).toHaveAccessibleName(/镜头组 10 · V21 · 0–6 秒$/)
+  await expect(segments(dialog).nth(1)).toHaveAccessibleName(/镜头组 10 · V1 · 6–12 秒$/)
+})

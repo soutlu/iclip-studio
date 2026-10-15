@@ -141,9 +141,9 @@ const stubLayout = () => {
     rect(0, 22, 200, 48),
   )
   vi.spyOn(
-    screen.getByRole('region', { name: '轨道列表' }),
+    screen.getByRole('region', { name: '时间线轨道，窄屏可横向滚动' }),
     'getBoundingClientRect',
-  ).mockReturnValue(rect(0, 0, 200, 300))
+  ).mockReturnValue(rect(0, 0, 200, 70))
 }
 
 beforeEach(() => {
@@ -702,6 +702,39 @@ describe('素材区预览与整片播放头', () => {
         }),
     }
   }
+
+  it('同一OSS素材反向拖选和改边界时背景保持首帧，前景仍显示准确边界', async () => {
+    preparePlayback()
+    const url = 'https://fixture.oss-cn-hangzhou.aliyuncs.com/material.mp4'
+    serve(
+      VIDEOS.map((item) => (item.id === TAKE_2 ? { ...item, outputUrl: url } : item)),
+      [],
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await addMaterial(user, '镜头组 2 V1')
+    stubLayout()
+    fireEvent.loadedMetadata(media())
+    const stage = screen.getByRole('region', { name: '预览舞台' })
+    const image = stage.querySelector('img')
+    if (image === null) throw new Error('OSS素材应提供舞台背景')
+    const firstFrame = `${url}?x-oss-process=video/snapshot,t_0,f_jpg,w_320,h_0,m_fast`
+    expect(image.src).toBe(firstFrame)
+    fireEvent.load(image)
+    const material = lane('镜头组 2 · V1')
+    fireEvent.pointerDown(material, { pointerId: 1, button: 0, clientX: 35, clientY: 150 })
+    for (const clientX of [30, 20, 10])
+      fireEvent.pointerMove(material, { pointerId: 1, clientX, clientY: 150 })
+    fireEvent.pointerUp(material, { pointerId: 1, clientX: 10, clientY: 150 })
+    expect([...stage.querySelectorAll('img')].map((item) => item.src)).toEqual([firstFrame])
+    expect(image).toBeVisible()
+    expect(media().currentTime).toBe(1)
+    screen.getByRole('slider', { name: '选区开头' }).focus()
+    await user.keyboard('{ArrowRight}')
+    expect([...stage.querySelectorAll('img')].map((item) => item.src)).toEqual([firstFrame])
+    expect(stage.querySelector('img')).toBe(image)
+    expect(media().currentTime).toBe(1.1)
+  })
 
   it('拖选未松手时就显示素材边界，播放限定在选区，整片字幕、混音与播放头保持独立', async () => {
     const { audio, tick } = preparePlayback()
