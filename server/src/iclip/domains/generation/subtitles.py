@@ -97,15 +97,7 @@ class QwenSubtitleProvider:
                 code="SUBTITLE_AUDIO_TOO_LARGE",
                 retryable=False,
             )
-        body = await self._recognize(_payload(request, data))
-        request_id = body.get("request_id")
-        return ProviderSubmission(
-            provider_task_id=request_id
-            if isinstance(request_id, str) and request_id
-            else str(job.id),
-            provider_status="succeeded",
-            sentences=sentences_from_response(body),
-        )
+        return await self._recognize(_payload(request, data))
 
     async def poll(self, job: GenerationJob) -> ProviderProgress:
         raise ProviderError(
@@ -142,12 +134,12 @@ class QwenSubtitleProvider:
                 ) from exc
             return dest.read_bytes()
 
-    async def _recognize(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """发一次识别请求，交回 JSON 对象。
+    async def _recognize(self, payload: dict[str, Any]) -> ProviderSubmission:
+        """发一次识别请求，交回同步识别回执。
 
         连不上是 ``PROVIDER_UNREACHABLE``；连上了却没拿到结果（读超时之类）是
-        ``PROVIDER_RESULT_UNKNOWN``：请求可能已被收下、已计费。5xx、4xx、响应不是 JSON 对象各有
-        错误码；都发生在提交阶段，一律不重投。"""
+        ``PROVIDER_RESULT_UNKNOWN``：请求可能已被收下、已计费。明确的空口播返回空结果；其余
+        5xx、4xx、响应不是 JSON 对象各有错误码；都发生在提交阶段，一律不重投。"""
 
         try:
             async with httpx.AsyncClient(
@@ -178,6 +170,21 @@ class QwenSubtitleProvider:
                 code="PROVIDER_SERVER_ERROR",
                 retryable=True,
             )
+        if response.status_code == 400:
+            try:
+                body = response.json()
+            except ValueError:
+                body = None
+            if (
+                isinstance(body, dict)
+                and body.get("code") == "CLIENT_ERROR"
+                and body.get("message") == "ASR_RESPONSE_HAVE_NO_WORDS"
+            ):
+                return ProviderSubmission(
+                    provider_task_id=_request_id(body),
+                    provider_status="ASR_RESPONSE_HAVE_NO_WORDS",
+                    sentences=(),
+                )
         if response.status_code >= 400:
             raise ProviderError(
                 f"字幕识别接口拒绝了这次请求（{response.status_code}）: {response.text[:500]}",
@@ -194,7 +201,18 @@ class QwenSubtitleProvider:
             raise ProviderError(
                 "字幕识别接口的响应根不是 object", code="PROVIDER_MALFORMED", retryable=False
             )
-        return body
+        return ProviderSubmission(
+            provider_task_id=_request_id(body),
+            provider_status="succeeded",
+            sentences=sentences_from_response(body),
+        )
+
+
+def _request_id(body: Mapping[str, Any]) -> str:
+    request_id = body.get("request_id")
+    if not isinstance(request_id, str) or not request_id.strip():
+        raise _malformed("识别响应里的 request_id 必须是非空字符串")
+    return request_id
 
 
 def _payload(request: SubtitleRequest, data: str) -> dict[str, Any]:
@@ -221,16 +239,14 @@ def _payload(request: SubtitleRequest, data: str) -> dict[str, Any]:
 def sentences_from_response(body: Mapping[str, Any]) -> tuple[SubtitleSentence, ...]:
     """把识别响应的 ``output.sentences`` 映射成逐句字幕，按响应里的先后。
 
-    ``sentences`` 不在或为空就是没有口播，给空元组。每句取 ``begin_time`` / ``end_time``（毫秒）、
-    ``text`` 与 ``speaker_id``（可以是 null）；没有 ``output``、``sentences`` 不是数组、哪一句的字段
-    缺了或类型不对，抛 ``PROVIDER_MALFORMED``，不猜。"""
+    ``sentences`` 是空数组就是没有口播，给空元组。每句取 ``begin_time`` / ``end_time``（毫秒）、
+    ``text`` 与 ``speaker_id``（可以是 null）；没有 ``output``、``sentences`` 缺失或不是数组、哪一句
+    的字段缺了或类型不对，抛 ``PROVIDER_MALFORMED``，不猜。"""
 
     output = body.get("output")
     if not isinstance(output, dict):
         raise _malformed("识别响应里没有 output 对象")
     raw = output.get("sentences")
-    if raw is None:
-        return ()
     if not isinstance(raw, list):
         raise _malformed("识别响应的 output.sentences 不是数组")
     sentences: list[SubtitleSentence] = []
