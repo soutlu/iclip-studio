@@ -112,10 +112,7 @@ export const setBrand = (
 ): FilmState => ({ ...film, [position]: template })
 
 /** 整片时刻 `clock` 落在哪一段里（右开）；不在任何一段里（空轨、末尾）时没有。 */
-export const segmentAt = (
-  segments: readonly FilmSegment[],
-  clock: number,
-): PlacedSegment | undefined =>
+const segmentAt = (segments: readonly FilmSegment[], clock: number): PlacedSegment | undefined =>
   layoutFilm(segments).find((placed) => clock >= placed.at && clock < placed.at + placed.duration)
 
 // ---------- 插入 ----------
@@ -278,21 +275,6 @@ export const setSentenceText = (state: FilmState, key: string, text: string): Fi
   ...state,
   texts: { ...state.texts, [key]: text },
 })
-
-/** 在整片时刻 `clock` 处加一条空的手动字幕，钉在那一刻所在的段上；那里没有段时加不了，返回 `undefined`。 */
-export const addManualSubtitle = (
-  state: FilmState,
-  clock: number,
-  id: string,
-): FilmState | undefined => {
-  const placed = segmentAt(state.segments, clock)
-  if (placed === undefined) return undefined
-  const at = roundToMs(placed.segment.start + (clock - placed.at))
-  return {
-    ...state,
-    manual: [...state.manual, { id, segmentId: placed.segment.id, at, text: '' }],
-  }
-}
 
 export const setManualText = (state: FilmState, id: string, text: string): FilmState => ({
   ...state,

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addManualSubtitle,
   EMPTY_FILM,
   insertSegment,
   sentenceKey,
-  setManualText,
   setSentenceText,
   type FilmState,
 } from './film-draft'
@@ -46,16 +44,14 @@ describe('合成提交体', () => {
   ])
 
   it('段取各自来源的原片起止；字幕是最终文字，时刻以第一段开头为 0，按时间排、不重叠', () => {
-    // 改第一句的字，在整片 3 秒处（第 2 段里）加一条手动字幕，再加一条空的手动字幕。
-    const film = setManualText(
-      addManualSubtitle(
-        addManualSubtitle(setSentenceText(cut, sentenceKey('sub-a', 0), '新耳机'), 3, 'm1') ?? cut,
-        0.4,
-        'm2',
-      ) ?? cut,
-      'm1',
-      '手动加的',
-    )
+    // 草稿已有两条手动字幕：A 的 1.5 秒是整片 3 秒，B 的 3.4 秒是整片 0.4 秒。
+    const film: FilmState = {
+      ...setSentenceText(cut, sentenceKey('sub-a', 0), '新耳机'),
+      manual: [
+        { id: 'm1', segmentId: 's2', at: 1.5, text: '手动加的' },
+        { id: 'm2', segmentId: 's1', at: 3.4, text: '' },
+      ],
+    }
 
     expect(
       wholeFilmBody({

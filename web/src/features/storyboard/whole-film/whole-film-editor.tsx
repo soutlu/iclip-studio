@@ -27,12 +27,10 @@ import { useAudioPeaks, type PeaksState } from '../video-editor/use-media-analys
 import { useMediaDurations } from '../video-editor/use-media-durations'
 import { useStableValue } from '../video-editor/use-stable-value'
 import {
-  addManualSubtitle,
   brandDuration,
   wholeFilmDuration,
   setBrand,
   MAX_FILM_SEGMENTS,
-  MAX_FILM_SUBTITLES,
   canSplitAt,
   EMPTY_FILM,
   filmDuration,
@@ -44,7 +42,6 @@ import {
   putLane,
   removeManualSubtitle,
   removeSegment,
-  segmentAt,
   segmentDuration,
   setManualText,
   setSentenceText,
@@ -463,24 +460,6 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     )
   }
 
-  const addSubtitleBlocked =
-    subtitles.length >= MAX_FILM_SUBTITLES
-      ? `字幕最多 ${MAX_FILM_SUBTITLES} 条，无法继续添加；请先删减字幕`
-      : draft === undefined || segmentAt(segments, bodyTime) !== undefined
-        ? undefined
-        : '播放头处没有正文画面，无法添加字幕；请把播放头移到成片轨的正文段上'
-  const addSubtitle = () => {
-    if (subtitles.length >= MAX_FILM_SUBTITLES) {
-      setNotice(`字幕最多 ${MAX_FILM_SUBTITLES} 条，无法继续添加；请先删减字幕`)
-      return
-    }
-    const id = crypto.randomUUID()
-    const next = addManualSubtitle(film, bodyTime, id)
-    if (next === undefined) return
-    apply(next)
-    setSelection({ kind: 'subtitle', key: id })
-  }
-
   const removeSelected = () => {
     if (selection?.kind === 'brand') {
       apply(setBrand(film, selection.position, null))
@@ -734,7 +713,6 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       </p>
     ) : (
       <FilmTimeline
-        addSubtitleBlocked={addSubtitleBlocked}
         addVideo={
           <AddVideoRow
             catalog={catalog}
@@ -748,7 +726,6 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         durationOf={durationOf}
         lanes={lanes}
         materialOf={materialOf}
-        onAddSubtitle={addSubtitle}
         onDelete={(id) => {
           apply(removeSegment(film, id))
           setSelection(undefined)

@@ -132,9 +132,6 @@ type FilmTimelineProps = {
   /** 把选区插在第 `index` 段之前。 */
   onInsert: (pick: MaterialPick, index: number) => void
   onRetry: (sourceJobId: string) => void
-  onAddSubtitle: () => void
-  /** 播放头处没有段时加不了字幕，这是原因。 */
-  addSubtitleBlocked: string | undefined
   onSwitchVersion: (lane: LaneView, material: Material) => void
   /** 音乐轨此刻画什么。 */
   music: MusicTrackView
@@ -242,8 +239,6 @@ export function FilmTimeline({
   onPreviewMaterial,
   onInsert,
   onRetry,
-  onAddSubtitle,
-  addSubtitleBlocked,
   onSwitchVersion,
   music,
   musicAdd,
@@ -1147,18 +1142,6 @@ export function FilmTimeline({
             >
               <Icon decorative name="captions" size="xs" />
               字幕
-              <button
-                aria-disabled={addSubtitleBlocked === undefined ? undefined : true}
-                aria-label="在播放头处添加字幕"
-                className="film-timeline-head-add ui-state ui-focus"
-                onClick={() => {
-                  if (addSubtitleBlocked === undefined) onAddSubtitle()
-                }}
-                title={addSubtitleBlocked ?? '在播放头处添加一条字幕'}
-                type="button"
-              >
-                <Icon decorative name="add" size="xs" />
-              </button>
             </span>
             <span
               className="film-timeline-head"

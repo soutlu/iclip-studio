@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { commit, redo, startHistory, undo } from '../edit-history'
 import {
-  addManualSubtitle,
   canSplitAt,
   EMPTY_FILM,
   filmDuration,
@@ -142,12 +141,14 @@ describe('成片轨上的剪辑', () => {
   })
 
   it('拆分后钉在后一半的手动字幕跟过去，钉在前一半的留着', () => {
-    const withSubs = addManualSubtitle(
-      addManualSubtitle(film(), 0.5, 'early') ?? EMPTY_FILM,
-      2.5,
-      'late',
-    )
-    const split = splitAt(withSubs ?? EMPTY_FILM, 1.5, 'right')
+    const withSubs: FilmState = {
+      ...film(),
+      manual: [
+        { id: 'early', segmentId: 's1', at: 0.5, text: '' },
+        { id: 'late', segmentId: 's1', at: 2.5, text: '' },
+      ],
+    }
+    const split = splitAt(withSubs, 1.5, 'right')
 
     expect(split?.manual.map((item) => [item.id, item.segmentId, item.at])).toEqual([
       ['early', 's1', 0.5],
@@ -156,17 +157,15 @@ describe('成片轨上的剪辑', () => {
   })
 
   it('删掉一段，后面的前移，钉在它上面的手动字幕一起删', () => {
-    const withSub = addManualSubtitle(film(), 3.5, 'on-b') ?? EMPTY_FILM
+    const withSub: FilmState = {
+      ...film(),
+      manual: [{ id: 'on-b', segmentId: 's2', at: 1.5, text: '' }],
+    }
     const removed = removeSegment(withSub, 's2')
 
     expect(order(removed).map(([id]) => id)).toEqual(['s1', 's3'])
     expect(filmDuration(removed.segments)).toBe(4)
     expect(removed.manual).toEqual([])
-  })
-
-  it('播放头处没有段时加不了手动字幕', () => {
-    expect(addManualSubtitle(film(), 6, 'x')).toBeUndefined()
-    expect(addManualSubtitle(EMPTY_FILM, 0, 'x')).toBeUndefined()
   })
 })
 
@@ -226,7 +225,10 @@ describe('素材轨', () => {
 describe('存放', () => {
   it('草稿与素材轨序列化后原样读回', () => {
     const state = setSentenceText(
-      addManualSubtitle(trimSegment(film(), 's1', 'start', 1), 1.5, 'm') ?? EMPTY_FILM,
+      {
+        ...trimSegment(film(), 's1', 'start', 1),
+        manual: [{ id: 'm', segmentId: 's1', at: 2.5, text: '' }],
+      },
       'sub#2',
       '新的字',
     )
@@ -280,7 +282,10 @@ describe('存放', () => {
   })
 
   it('来源读不到的段连同它的手动字幕与素材轨去掉，并说去掉了几段', () => {
-    const state = addManualSubtitle(film(), 3.5, 'on-b') ?? EMPTY_FILM
+    const state: FilmState = {
+      ...film(),
+      manual: [{ id: 'on-b', segmentId: 's2', at: 1.5, text: '' }],
+    }
     const { stored, dropped } = keepKnownSources(
       {
         film: state,
