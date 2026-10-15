@@ -362,6 +362,50 @@ describe('Composer', () => {
     })
   })
 
+  it('文末追加不覆盖选中的正文与附件，连续追加逐次撤销且保留原内容', async () => {
+    const ref = createRef<ComposerHandle>()
+    const onChange = vi.fn()
+    const onSubmit = vi.fn()
+    await renderWithProviders(
+      <Composer attachmentsEnabled onChange={onChange} onSubmit={onSubmit} ref={ref} />,
+    )
+
+    editor().focus()
+    pasteTextIntoComposer(editor(), '保留暖光')
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+    await userEvent.keyboard('{Control>}a{/Control}')
+    expect(window.getSelection()?.toString()).toContain('保留暖光')
+
+    act(() => ref.current?.append([{ kind: 'text', text: '\n模特转身' }]))
+    act(() => ref.current?.append([{ kind: 'text', text: '\n模特转身' }]))
+    const originalParts = [
+      { kind: 'text', text: '保留暖光' },
+      { kind: 'media', media: expect.objectContaining({ name: '截图.png', status: 'ready' }) },
+    ]
+    expect(onChange).toHaveBeenLastCalledWith([
+      ...originalParts,
+      { kind: 'text', text: '\n模特转身\n模特转身' },
+    ])
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media: [expect.objectContaining({ name: '截图.png' })],
+        text: '保留暖光\n模特转身\n模特转身',
+      }),
+    )
+
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(onChange).toHaveBeenLastCalledWith([
+      ...originalParts,
+      { kind: 'text', text: '\n模特转身' },
+    ])
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(onChange).toHaveBeenLastCalledWith(originalParts)
+    expect(within(editor()).getByText('截图.png')).toBeInTheDocument()
+    expect(sendButton()).toBeEnabled()
+  })
+
   it('打完字立刻发送再撤销：清空单独一步，正文连最后几个字与 pill 一起回来；重做回到清空', async () => {
     const ref = createRef<ComposerHandle>()
     const onSubmit = vi.fn<(submission: ComposerSubmission) => void>(() => ref.current?.clear())

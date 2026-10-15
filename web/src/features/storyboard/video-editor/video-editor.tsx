@@ -9,6 +9,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
+import type { ComposerHandle } from '@/shared/ui/composer'
 import { useMediaDownload } from '@/shared/api/media-download'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -23,6 +24,7 @@ import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
 import { isRunningStatus } from '../shots'
 import { useVideoModels, type GenerationJob } from '../storyboard.api'
 import { AiEditCard } from './ai-edit-card'
+import { ShotPrompts } from './shot-prompts'
 import {
   aiTarget,
   canRemove,
@@ -157,6 +159,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const versions = useMemo(() => projectVersions(root, jobs), [root, jobs])
   const previewRef = useRef<EditorPreviewHandle>(null)
   const selectionBoxRef = useRef<HTMLSpanElement>(null)
+  const requestComposerRef = useRef<ComposerHandle>(null)
   const [currentTime, setCurrentTime] = useState(0)
   /** 卡里没提交的要求：文字与传好的参考图。 */
   const [request, setRequest] = useState(NO_REQUEST)
@@ -655,6 +658,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           </>
         }
         anchorRef={selectionBoxRef}
+        composerRef={requestComposerRef}
         canGenerate={target.kind === 'ready' && model !== undefined && !busy}
         detail={cardDetail}
         draft={request}
@@ -761,7 +765,26 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
             onPlay={collapseCard}
             onTime={setCurrentTime}
             original={original}
-            overlay={card}
+            overlay={
+              <>
+                {card}
+                <ShotPrompts
+                  canAppend={card !== null && !busy}
+                  onAppend={(text) => {
+                    const parts = [
+                      { kind: 'text' as const, text: `${request.length > 0 ? '\n' : ''}${text}` },
+                    ]
+                    if (cardOpen) requestComposerRef.current?.append(parts)
+                    else {
+                      setRequest([...request, ...parts])
+                      setCardOpen(true)
+                    }
+                  }}
+                  root={root}
+                  shotIndex={shotIndex}
+                />
+              </>
+            }
             poster={posterOf(current?.[0]?.mediaUrl ?? version.mediaUrl)}
             readout={readout}
             ref={previewRef}

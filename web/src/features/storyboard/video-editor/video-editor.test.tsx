@@ -90,6 +90,18 @@ const ROOT_URL = 'https://example.com/root.mp4'
 const EDITED_URL = 'https://example.com/edited.mp4'
 const ROOT_ID = '0f6a2c9e-8d4b-4c1e-9a7f-3b5d6e8f1a2b'
 const root = makeGenerationJob({ id: ROOT_ID, outputUrl: ROOT_URL, shotIndex: 1 })
+const rootWithShotPrompts = makeGenerationJob({
+  ...root,
+  request: {
+    shot: {
+      global_settings: '写实',
+      timeline: [
+        { timestamps: [0, 2], prompt: '推着单车走过', image_indexes: [] },
+        { timestamps: [2, 8], prompt: '停在面包店门口', image_indexes: [] },
+      ],
+    },
+  },
+})
 
 const renderEditor = (job = root) =>
   renderWithProviders(
@@ -472,6 +484,85 @@ describe('AI 改段的弹出卡', () => {
     await user.click(segmentOf(track, 7))
     expect(requestBox()).toHaveTextContent('换成黄昏')
     await waitFor(() => expect(generateButton()).toBeEnabled())
+  })
+
+  it('打开镜头提示词显示完整列表，选区变化不筛选也不自动填入', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor(rootWithShotPrompts)
+    const track = await timeline()
+    await user.click(screen.getByRole('button', { name: '镜头提示词' }))
+
+    const panel = screen.getByRole('dialog', { name: '镜头提示词' })
+    expect(within(panel).getByText('推着单车走过')).toBeVisible()
+    expect(within(panel).getByText('停在面包店门口')).toBeVisible()
+    expect(within(panel).getByRole('button', { name: '复制镜头 1 到输入框' })).toBeDisabled()
+    expect(card()).toBeNull()
+
+    await user.click(segmentOf(track, 2))
+    expect(requestBox().textContent).toBe('')
+    expect(within(panel).getByRole('button', { name: '复制镜头 1 到输入框' })).toBeEnabled()
+    await user.click(segmentOf(track, 7))
+    expect(requestBox().textContent).toBe('')
+    expect(within(panel).getByText('推着单车走过')).toBeVisible()
+    expect(within(panel).getByText('停在面包店门口')).toBeVisible()
+  })
+
+  it('多次复制镜头提示词依次追加，保留已有文字和参考图，浮窗保持打开', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor(rootWithShotPrompts)
+    await user.click(segmentOf(await timeline(), 2))
+    pasteTextIntoComposer(requestBox(), '换成黄昏')
+    pasteFilesIntoComposer(requestBox(), [
+      new File(['png-bytes'], '参考光线.png', { type: 'image/png' }),
+    ])
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: '镜头提示词' }))
+    const panel = screen.getByRole('dialog', { name: '镜头提示词' })
+
+    await user.click(within(panel).getByRole('button', { name: '复制镜头 1 到输入框' }))
+    await user.click(within(panel).getByRole('button', { name: '复制镜头 2 到输入框' }))
+    await user.click(within(panel).getByRole('button', { name: '复制镜头 1 到输入框' }))
+
+    expect(requestBox()).toHaveTextContent(/换成黄昏.*推着单车走过\s*停在面包店门口\s*推着单车走过/)
+    expect(requestBox().textContent?.match(/推着单车走过/g)).toHaveLength(2)
+    expect(within(requestBox()).getByText('参考光线.png')).toBeVisible()
+    expect(panel).toBeVisible()
+  })
+
+  it('输入卡收起后复制会展开并追加，Escape 只关闭镜头提示词浮窗', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor(rootWithShotPrompts)
+    await user.click(segmentOf(await timeline(), 2))
+    pasteTextIntoComposer(requestBox(), '换成黄昏')
+    await user.keyboard('{Escape}')
+    expect(card()).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '镜头提示词' }))
+    await user.click(screen.getByRole('button', { name: '复制镜头 2 到输入框' }))
+    expect(requestBox()).toHaveTextContent(/换成黄昏\s*停在面包店门口/)
+    expect(screen.getByRole('dialog', { name: '镜头提示词' })).toBeVisible()
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: '镜头提示词' })).toBeNull()
+    expect(openCard()).toBeVisible()
+    expect(requestBox()).toHaveTextContent(/换成黄昏\s*停在面包店门口/)
+    expect(screen.getByRole('dialog', { name: /编辑视频/ })).toBeVisible()
+  })
+
+  it('没有结构化镜头时显示空状态，不从整段提示词解析镜头', async () => {
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor(makeGenerationJob({ ...root, request: { prompt: '0–2 秒：推着单车走过' } }))
+    await user.click(segmentOf(await timeline(), 2))
+    await user.click(screen.getByRole('button', { name: '镜头提示词' }))
+
+    const panel = screen.getByRole('dialog', { name: '镜头提示词' })
+    expect(within(panel).getByText('暂无镜头提示词')).toBeVisible()
+    expect(within(panel).queryByRole('button', { name: /复制镜头/ })).toBeNull()
+    expect(requestBox().textContent).toBe('')
   })
 })
 
