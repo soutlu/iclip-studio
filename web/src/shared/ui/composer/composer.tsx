@@ -41,6 +41,8 @@ export type ComposerHandle<N extends ComposerNode = never> = {
   restore: (submission: ComposerSubmission<N>) => void
   /** 在光标处插入 parts，替换选区。不受附件上限约束，使用方自己把关。 */
   insert: (parts: readonly ComposerPart<N>[]) => void
+  /** 在文末追加 parts，不替换当前选区；每次追加可单独撤销。不受附件上限约束。 */
+  append: (parts: readonly ComposerPart<N>[]) => void
   focus: () => void
 }
 
@@ -244,6 +246,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   useImperativeHandle(
     ref,
     () => ({
+      append: (parts) => editorRef.current.insertParts(parts, 'end'),
       clear: () => {
         setNotice(null)
         editorRef.current.clearDoc()
