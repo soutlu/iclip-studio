@@ -83,11 +83,9 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   await expect(timelineOf(dialog).getByText('从下方素材轨拖选片段放到这里')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '合成成片' })).toBeDisabled()
   await page.mouse.move(0, 0)
-  await screenshotBothThemes(page, `${SHOT_DIR}/new`)
 
   await dialog.getByRole('button', { name: '添加镜头组', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: /^镜头组 2 V1/ })).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/new-add-video`)
   await page.getByRole('menuitem', { name: /^镜头组 2 V1/ }).click()
   await addMaterial(page, dialog, '镜头组 3 V1')
   const shot2 = laneOf(dialog, '镜头组 2 · V1')
@@ -98,10 +96,8 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   // 在第 2 组素材上框出 1–3 秒，拖到成片轨。
   await sweep(page, dialog, shot2, 1, 3)
   await expect(timelineOf(dialog).getByText(/^素材 1\.\d\d–3\.\d\d 秒/)).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/pick`)
   const drop = await carryToFilm(page, dialog, shot2, 2, 0)
   await expect(timelineOf(dialog).getByText(/^插入到 0\.00 秒/)).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/pick-drag`)
   await drop()
   await expect(segments(dialog)).toHaveCount(1)
   // 时间线拖拽不能留下浏览器文字选区，后续拖动会被原生文字拖拽截走。
@@ -139,18 +135,15 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
     dialog.getByLabel('视频预览').getByText('这只包今天第一次上身', { exact: true }),
   ).toBeVisible()
   await page.mouse.move(0, 0)
-  await screenshotBothThemes(page, `${SHOT_DIR}/subtitle`)
 
   // 选中一段：卡只说来源与时长。
   await segments(dialog).nth(1).click()
   const segmentCard = dialog.getByRole('region', { name: '选中的段' })
   await expect(segmentCard.getByText('声音在合成时统一处理')).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/cross-selected`)
 
   // 换版本菜单向上展开。
   await timelineOf(dialog).getByRole('button', { name: '镜头组 2 当前用 V1，换版本' }).click()
   await expect(page.getByRole('menuitemradio', { name: /V1/ })).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/cross-version`)
   await page.keyboard.press('Escape')
 
   // 改字：只能改字，存在草稿里。
@@ -160,14 +153,12 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   const text = subtitleCard.getByRole('textbox', { name: '字幕文字' })
   await text.fill('今天第一次背这只包')
   await expect(subtitles.first()).toHaveAccessibleName('第 1 条字幕：今天第一次背这只包')
-  await screenshotBothThemes(page, `${SHOT_DIR}/subtitle-edit`)
   await page.keyboard.press('Escape')
 
   // 重新识别：先「识别中」，结果回来后字幕出现。
   await retry.click()
   await expect(timelineOf(dialog).getByText('识别中')).toBeVisible()
   await page.mouse.move(0, 0)
-  await screenshotBothThemes(page, `${SHOT_DIR}/subtitle-pending`)
   await expect(timelineOf(dialog).getByText('识别中')).toBeHidden({ timeout: STEP_TIMEOUT })
 
   // 草稿只存在浏览器：刷新后（mock 的登录随页面清掉，重新登录）重开，还是这份。

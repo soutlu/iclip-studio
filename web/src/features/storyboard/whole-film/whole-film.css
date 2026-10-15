@@ -387,8 +387,9 @@
   object-fit: cover;
 }
 
-/* 整片的素材轨可以很多：舞台占剩余空间，轨道在自己的固定窗口内滚动，播放控件留在窗口外。 */
-.whole-film-editor {
+/* 整片的素材轨可以很多：舞台占剩余空间，轨道在自己的固定窗口内滚动，播放控件留在窗口外。
+   组合选择器保证整片布局不受生产构建中共用样式加载顺序影响。 */
+.video-editor.whole-film-editor {
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
 }
@@ -416,7 +417,7 @@
 }
 
 @media (max-width: 999px) {
-  .whole-film-editor {
+  .video-editor.whole-film-editor {
     grid-template-rows: minmax(0, 1fr) auto;
     gap: 10px;
   }
