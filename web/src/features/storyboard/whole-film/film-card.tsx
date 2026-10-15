@@ -27,7 +27,7 @@ type FilmCardProps = {
   title: string
   detail: string
   onClose: () => void
-  children: ReactNode
+  children?: ReactNode
 }
 
 function FilmCard({ anchorRef, label, leading, title, detail, onClose, children }: FilmCardProps) {
@@ -81,7 +81,7 @@ function FilmCard({ anchorRef, label, leading, title, detail, onClose, children 
         </div>
         <IconButton label="关闭" name="close" onClick={onClose} size="sm" />
       </div>
-      <div className="film-card-body">{children}</div>
+      {children === undefined ? null : <div className="film-card-body">{children}</div>}
     </section>
   )
 }
@@ -130,9 +130,7 @@ export function SegmentCard({
       leading={<Frame src={frame} />}
       onClose={onClose}
       title={`第 ${position} 段 · ${source}`}
-    >
-      <p className="film-card-note">声音在合成时统一处理</p>
-    </FilmCard>
+    />
   )
 }
 

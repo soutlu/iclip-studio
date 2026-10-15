@@ -578,25 +578,14 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const footnote = (() => {
     if (notice !== null) return notice
-    if (draft === undefined) return ''
+    if (draft === undefined) return undefined
     if (viewedDone !== undefined)
-      return `正在查看 ${viewedDone.label}；点击「${UNCOMPOSED_LABEL}」可返回草稿继续剪辑`
-    if (viewedRunning !== undefined) return '整片合成中，关闭窗口不影响合成；完成后可预览与下载'
+      return `正在查看 ${viewedDone.label}，点击「${UNCOMPOSED_LABEL}」可继续剪辑`
+    if (viewedRunning !== undefined) return '正在合成，关闭窗口不影响合成'
     if (viewedFailed !== undefined) return '整片合成失败，请检查剪辑后重新点击「合成成片」'
     if (previewingMaterial)
-      return `正在预览${materialName(previewMaterial)}${materialRange === undefined ? '' : ` ${seconds(materialRange.start)}–${seconds(materialRange.end)} 秒`}；播放只播放所选区间，操作成片轨可返回整片`
-    if (pick !== undefined)
-      return '拖动两端调整选区，按住选区拖到上面的成片轨；也可按回车插入到播放头处'
-    if (selectedBrand != null) return '片头片尾位置固定，不能拖动或裁剪；可在卡片中更换或删除模板'
-    if (selectedSegment !== undefined)
-      return `选中第 ${selectedIndex + 1} 段：拖动两端可裁剪，按住中间拖动可调整顺序`
-    if (selectedSubtitle !== undefined)
-      return `选中第 ${subtitleIndex + 1} 条字幕：在卡片中改字，时间跟着画面走`
-    const aboutMusic = music.footnote(musicSelected)
-    if (aboutMusic !== undefined) return aboutMusic
-    if (lanes.length === 0 && segments.length === 0) return '时间线为空，请从「添加」放入视频'
-    if (segments.length === 0) return '在素材轨上拖选一段，拖到上面的成片轨'
-    return '素材轨底部的细条是已用进成片轨的区间；声音在合成时统一处理'
+      return `正在预览${materialName(previewMaterial)}${materialRange === undefined ? '' : ` · ${seconds(materialRange.start)}–${seconds(materialRange.end)} 秒`}`
+    return music.footnote(musicSelected)
   })()
 
   // ---------- 渲染 ----------
@@ -1025,9 +1014,14 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                     message={errorMessageOf(videos.error, '读取视频记录失败')}
                   />
                 ) : null}
-                <p className="video-editor-footnote" role={notice === null ? undefined : 'status'}>
-                  {footnote}
-                </p>
+                {footnote === undefined ? null : (
+                  <p
+                    className="video-editor-footnote"
+                    role={notice === null ? undefined : 'status'}
+                  >
+                    {footnote}
+                  </p>
+                )}
               </>
             }
             onPlay={() => {
