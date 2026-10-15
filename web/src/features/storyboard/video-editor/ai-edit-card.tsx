@@ -48,8 +48,8 @@ function Thumb({ src, className }: { src: string | undefined; className: string 
   )
 }
 
-/** 用户改了要求：`parts` 只含文字与传好的参考图；`blank` 是输入框里什么也没有了（上传中的图也算有）。 */
-type DraftChange = (parts: readonly ComposerPart[], blank: boolean) => void
+/** 用户改了要求：`parts` 只含文字与传好的参考图。 */
+type DraftChange = (parts: readonly ComposerPart[]) => void
 
 type CardComposerProps = {
   draft: readonly ComposerPart[]
@@ -72,8 +72,7 @@ const restoreInto = (composer: ComposerHandle, parts: readonly ComposerPart[]) =
     text: '',
   })
 
-/** 卡里的输入框：挂载时装回没提交的要求，之后每次变化把就绪的部分交回去。调用方换了要求（预填）时
- * 整篇换进来；它交回去的那份原样传回来不算换。 */
+/** 卡里的输入框：挂载时装回没提交的要求，之后每次变化把就绪的部分交回去。 */
 function CardComposer({
   draft,
   onDraftChange,
@@ -89,11 +88,8 @@ function CardComposer({
   const { data: user } = useUser()
   const [initial] = useState(draft)
   const [focusOnMount] = useState(focusInput)
-  // 正文里此刻的全部内容（含上传中的图）：算参考图还能加几张，卸载时清点没传好的。整篇换进来时
-  // 输入框不报变化，这里跟着一起换。
+  // 正文里此刻的全部内容（含上传中的图）：算参考图还能加几张，卸载时清点没传好的。
   const partsRef = useRef<readonly ComposerPart[]>(draft)
-  // 输入框里装的是哪一份要求：挂载时装回的，或最近交回去的。
-  const shownDraftRef = useRef(draft)
   const focused = useEffectEvent(onInputFocused)
   const dropped = useEffectEvent(onUploadsDropped)
 
@@ -117,14 +113,6 @@ function CardComposer({
     }
   }, [initial, focusOnMount])
 
-  useEffect(() => {
-    const composer = composerRef.current
-    if (composer === null || draft === shownDraftRef.current) return
-    shownDraftRef.current = draft
-    partsRef.current = draft
-    restoreInto(composer, draft)
-  }, [draft])
-
   const remaining = () =>
     MAX_EDIT_REFERENCES - new Set(imageSlotsOf(partsRef.current).map((slot) => slot.key)).size
 
@@ -142,11 +130,7 @@ function CardComposer({
       onChange={(next) => {
         partsRef.current = next
         const ready = next.filter((part) => part.kind !== 'media' || part.media.status === 'ready')
-        shownDraftRef.current = ready
-        onDraftChange(
-          ready,
-          next.every((part) => part.kind === 'text' && part.text.trim() === ''),
-        )
+        onDraftChange(ready)
       }}
       onSubmit={onSubmit}
       placeholder="描述该段的修改要求，可粘贴或拖入参考图"

@@ -3,8 +3,7 @@
  * 版本、编辑段与合成都从服务端记录推出来，关掉重开、刷新都还在；剪辑草稿与上次看的那一版只存在浏览器。
  * 参考片段在提交时从基底上切好、上传，拼接在服务端。
  *
- * AI 改段的要求写在选中段时弹出的卡里。卡里没提交的要求只有一份，跟着当前选区走：选区能交给 AI、
- * 要求不是用户写的（空的，或是上次的预填）时，换成这几段对应的原作镜头正文；用户改过就不再覆盖，
+ * AI 改段的要求由用户在选中段时弹出的卡里填写。卡里没提交的要求只有一份，
  * 换了选区也不清空，提交成功才清空。 */
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -22,7 +21,7 @@ import { GenerationPicker } from '../components/generation-picker'
 import { useUnseenResults } from '../components/use-unseen-results'
 import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
 import { isRunningStatus } from '../shots'
-import { historyShotOf, useVideoModels, type GenerationJob } from '../storyboard.api'
+import { useVideoModels, type GenerationJob } from '../storyboard.api'
 import { AiEditCard } from './ai-edit-card'
 import {
   aiTarget,
@@ -55,7 +54,6 @@ import { layoutPlay, type PlaySegment } from './play-layout'
 import { useEditDraft } from './use-edit-draft'
 import { usePickedView } from './use-picked-view'
 import { useAudioPeaks, useKeyframes, type PeaksState } from './use-media-analysis'
-import { promptPartsOf, referenceImageUrlsOf, rootRangesOf, shotPromptOf } from './shot-prefill'
 import { useMediaDurations } from './use-media-durations'
 import { useStableValue } from './use-stable-value'
 import {
@@ -162,12 +160,6 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const [currentTime, setCurrentTime] = useState(0)
   /** 卡里没提交的要求：文字与传好的参考图。 */
   const [request, setRequest] = useState(NO_REQUEST)
-  /** 要求是用户写的：改过、且输入框里还有东西。删空了就又能预填。 */
-  const [requestEdited, setRequestEdited] = useState(false)
-  /** 上次按哪个选区、哪段正文预填过（或用户在哪个选区上改过）；同一个不再填，删空后不会立刻填回去。 */
-  const [prefilledFor, setPrefilledFor] = useState<string>()
-  const rootShot = useMemo(() => historyShotOf(root), [root])
-  const rootImageUrls = useMemo(() => referenceImageUrlsOf(root), [root])
   /** 上次收起卡时有几张参考图还没传好、没留下；下次改要求时收起这句提示。 */
   const [droppedUploads, setDroppedUploads] = useState(0)
   /** 卡展开着；一拖、一播、按 Escape 就收成胶囊。 */
@@ -396,8 +388,6 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       // 选中的段换成占位，选区没了，卡随之收走；要求清空。
       editor.submitted(job.id)
       setRequest(NO_REQUEST)
-      setRequestEdited(false)
-      setPrefilledFor(undefined)
       setDroppedUploads(0)
     } catch (error) {
       setGenerateError(errorMessageOf(error, '视频编辑提交失败'))
@@ -635,17 +625,6 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     const item = draft.find((candidate) => candidate.id === id)
     return item?.kind === 'clip' ? [item] : []
   })
-  // 卡里预填这几段对应的原作镜头正文。只在选区能交给 AI 时算；用户写着要求（改过且没删空）时不覆盖。
-  const prefillText =
-    target.kind !== 'ready' || rootShot === undefined
-      ? undefined
-      : shotPromptOf(rootShot, rootRangesOf(selectedClips, root.id, jobs))
-  const prefillSignature =
-    target.kind === 'ready' ? `${selection.join(',')}\n${prefillText ?? ''}` : undefined
-  if (prefillSignature !== undefined && !requestEdited && prefillSignature !== prefilledFor) {
-    setPrefilledFor(prefillSignature)
-    setRequest(prefillText === undefined ? NO_REQUEST : promptPartsOf(prefillText, rootImageUrls))
-  }
   const frameOf = (clip: DraftClip | undefined, at: (clip: DraftClip) => number) => {
     const url = clip === undefined ? undefined : urlOf(clip.sourceJobId)
     return clip === undefined || url === undefined
@@ -699,10 +678,8 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           />
         }
         onCollapse={collapseCard}
-        onDraftChange={(parts, blank) => {
+        onDraftChange={(parts) => {
           setRequest(parts)
-          setRequestEdited(!blank)
-          setPrefilledFor(prefillSignature)
           setGenerateError(null)
           setDroppedUploads(0)
         }}
