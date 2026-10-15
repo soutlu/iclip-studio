@@ -542,7 +542,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 品牌模板
 
-整片两端用的片头片尾视频，是资料库的一部分，端点在 `/brand-templates`；这些端点只读写视频模板，不读取或修改同表的其他资源。语义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)；端点权限看 `openapi.json`。媒体生成没配置时这组端点都不在（模板只给整片用，量视频要 ffmpeg）。
+整片两端用的片头片尾视频，是资料库的一部分，端点在 `/brand-templates`；这些端点只读写媒体参数完整的片头片尾视频，不读取或修改同表的其他资源。语义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)；端点权限看 `openapi.json`。媒体生成没配置时这组端点都不在（模板只给整片用，量视频要 ffmpeg）。
 
 - **模板的形状**：`id`、`position`（`intro` 片头 / `outro` 片尾）、`name`、`url`（模板视频的地址）、`width` / `height`（像素）、`durationMs`、`hasAudio`、`createdAt` 与 `disabledAt`（为空表示在用）。宽高、时长与有没有音轨都是新建时服务端从视频本身量出来的。
 - `GET /brand-templates` 按建立时间倒序列出全部，不翻页；默认只列在用的，`position` 筛片头或片尾；`includeDisabled=true` 连停用的一起列，只限治理者（`users:manage`），别人带上是 `403`。后端不给模板分画幅：前端按整片第一段那条成片的宽高，挑宽高比相差不超过 2% 的模板。

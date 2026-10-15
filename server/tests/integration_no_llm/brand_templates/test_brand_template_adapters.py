@@ -90,3 +90,9 @@ async def test_the_whole_film_side_reads_video_templates_and_whether_they_are_in
             {"id": font_id, "url": "https://cdn.example.test/font.ttf", "creator": creator},
         )
     assert await facts(font_id) is None, "字体不能作为整片的片头片尾视频"
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE iclip.brand_templates SET duration_ms = NULL WHERE id = :id"),
+            {"id": template.id},
+        )
+    assert await facts(template.id) is None, "缺少时长的资源不能用于视频合成"

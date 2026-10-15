@@ -68,10 +68,14 @@ SELECT id, kind AS position, name, url, width, height, duration_ms, has_audio, c
        created_at, disabled_at
 FROM iclip.brand_templates"""
 
-_BY_ID: Final = text(f"{_ROW}\nWHERE id = :id AND kind IN ('intro', 'outro')")
+# 现有接口服务的是可用于合成的完整视频，不暴露其它资源或未提供完整媒体参数的记录。
+_VIDEO: Final = """kind IN ('intro', 'outro') AND width IS NOT NULL AND height IS NOT NULL
+AND duration_ms IS NOT NULL AND has_audio IS NOT NULL"""
+
+_BY_ID: Final = text(f"{_ROW}\nWHERE id = :id AND {_VIDEO}")
 
 _LIST: Final = text(f"""{_ROW}
-WHERE kind IN ('intro', 'outro')
+WHERE {_VIDEO}
   AND (CAST(:position AS text) IS NULL OR kind = CAST(:position AS text))
   AND (CAST(:include_disabled AS boolean) OR disabled_at IS NULL)
 ORDER BY created_at DESC, id DESC""")
@@ -95,7 +99,7 @@ SET name = coalesce(CAST(:name AS text), name),
         WHEN CAST(:disabled AS boolean) THEN coalesce(disabled_at, now())
         ELSE NULL
     END
-WHERE id = :id AND kind IN ('intro', 'outro'){_RETURNING}""")
+WHERE id = :id AND {_VIDEO}{_RETURNING}""")
 
 
 def _row_of(row: RowMapping) -> BrandTemplate:
