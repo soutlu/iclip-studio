@@ -239,16 +239,14 @@ def _payload(request: SubtitleRequest, data: str) -> dict[str, Any]:
 def sentences_from_response(body: Mapping[str, Any]) -> tuple[SubtitleSentence, ...]:
     """把识别响应的 ``output.sentences`` 映射成逐句字幕，按响应里的先后。
 
-    ``sentences`` 不在或为空就是没有口播，给空元组。每句取 ``begin_time`` / ``end_time``（毫秒）、
-    ``text`` 与 ``speaker_id``（可以是 null）；没有 ``output``、``sentences`` 不是数组、哪一句的字段
-    缺了或类型不对，抛 ``PROVIDER_MALFORMED``，不猜。"""
+    ``sentences`` 是空数组就是没有口播，给空元组。每句取 ``begin_time`` / ``end_time``（毫秒）、
+    ``text`` 与 ``speaker_id``（可以是 null）；没有 ``output``、``sentences`` 缺失或不是数组、哪一句
+    的字段缺了或类型不对，抛 ``PROVIDER_MALFORMED``，不猜。"""
 
     output = body.get("output")
     if not isinstance(output, dict):
         raise _malformed("识别响应里没有 output 对象")
     raw = output.get("sentences")
-    if raw is None:
-        return ()
     if not isinstance(raw, list):
         raise _malformed("识别响应的 output.sentences 不是数组")
     sentences: list[SubtitleSentence] = []

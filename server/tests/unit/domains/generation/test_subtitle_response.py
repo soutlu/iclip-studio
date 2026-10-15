@@ -65,9 +65,8 @@ def test_a_sentence_that_omits_the_speaker_key_keeps_null() -> None:
     assert sentence.speaker is None
 
 
-@pytest.mark.parametrize("body", [_body([]), _body(None), _body(omit=True)])
-def test_no_sentences_means_no_voice_over(body: dict[str, Any]) -> None:
-    assert sentences_from_response(body) == ()
+def test_an_empty_sentences_array_means_no_voice_over() -> None:
+    assert sentences_from_response(_body([])) == ()
 
 
 def test_sentences_are_stored_with_snake_case_keys_and_read_out_in_camel_case() -> None:
@@ -86,6 +85,8 @@ def test_sentences_are_stored_with_snake_case_keys_and_read_out_in_camel_case() 
     ("body", "fragment"),
     [
         ({"request_id": "req-1"}, "没有 output"),
+        (_body(None), "不是数组"),
+        (_body(omit=True), "不是数组"),
         (_body("不是数组"), "不是数组"),
         (_body(["不是对象"]), "不是对象"),
         (_body([{"begin_time": 0, "text": "缺结尾"}]), "begin_time / end_time / text"),

@@ -138,16 +138,12 @@ async def test_a_video_without_audio_is_no_voice_over_and_the_service_is_not_cal
     assert services.recognitions == [], "没有声音就不付费调接口"
 
 
-@pytest.mark.parametrize(
-    "output",
-    [{"text": "", "sentences": []}, {"text": ""}],
-    ids=["空数组", "没有 sentences"],
-)
-async def test_audio_without_speech_is_a_normal_empty_result(output: dict[str, Any]) -> None:
-    """有声音却没人说话（只有音乐）：识别服务不给句子，这是正常结果，不是失败。"""
+async def test_audio_without_speech_is_a_normal_empty_result() -> None:
+    """有声音却没人说话（只有音乐）：识别服务明确返回空数组，这是正常结果。"""
 
     services = FakeServices(
-        _video(audio=True), httpx.Response(200, json={"output": output, "request_id": "req-0"})
+        _video(audio=True),
+        httpx.Response(200, json={"output": {"text": "", "sentences": []}, "request_id": "req-0"}),
     )
 
     submission = await _provider(services).submit(_subtitle_job())
@@ -262,6 +258,11 @@ async def test_a_broken_video_is_a_processing_failure() -> None:
         (httpx.Response(503, text="busy"), "PROVIDER_SERVER_ERROR"),
         pytest.param(
             httpx.Response(200, json=NO_WORDS), "PROVIDER_MALFORMED", id="success-without-output"
+        ),
+        pytest.param(
+            httpx.Response(200, json={"output": {"text": ""}, "request_id": "req-0"}),
+            "PROVIDER_MALFORMED",
+            id="success-without-sentences",
         ),
         pytest.param(
             httpx.Response(200, json=[RECOGNIZED]),
