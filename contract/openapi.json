@@ -623,6 +623,377 @@
         "title": "Body_auth_cookie_login_auth_login_post",
         "type": "object"
       },
+      "BrandFontConfirmIn": {
+        "additionalProperties": false,
+        "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "BrandFontConfirmIn",
+        "type": "object"
+      },
+      "BrandFontInfoOut": {
+        "additionalProperties": false,
+        "properties": {
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "style": {
+            "enum": [
+              "normal",
+              "italic",
+              "oblique"
+            ],
+            "title": "Style",
+            "type": "string"
+          },
+          "unicodeRanges": {
+            "items": {
+              "$ref": "#/components/schemas/BrandFontUnicodeRange"
+            },
+            "title": "Unicoderanges",
+            "type": "array"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "family",
+          "weight",
+          "style",
+          "unicodeRanges"
+        ],
+        "title": "BrandFontInfoOut",
+        "type": "object"
+      },
+      "BrandFontSignIn": {
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "enum": [
+              "font/ttf",
+              "font/otf"
+            ],
+            "title": "Contenttype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentType"
+        ],
+        "title": "BrandFontSignIn",
+        "type": "object"
+      },
+      "BrandFontUnicodeRange": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "BrandFontUnicodeRange",
+        "type": "object"
+      },
+      "BrandFontUploadInstruction": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "const": "PUT",
+            "default": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "headers",
+          "expiresAt"
+        ],
+        "title": "BrandFontUploadInstruction",
+        "type": "object"
+      },
+      "BrandFontUploadTicketOut": {
+        "additionalProperties": false,
+        "properties": {
+          "upload": {
+            "$ref": "#/components/schemas/BrandFontUploadInstruction"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "title": "Uploadid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadId",
+          "upload"
+        ],
+        "title": "BrandFontUploadTicketOut",
+        "type": "object"
+      },
+      "BrandTemplateCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "kind": {
+            "enum": [
+              "intro",
+              "outro"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "title": "Uploadid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "uploadId"
+        ],
+        "title": "BrandTemplateCreateIn",
+        "type": "object"
+      },
+      "BrandTemplateOut": {
+        "additionalProperties": false,
+        "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "disabledAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabledat"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "hasAudio": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hasaudio"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "brand",
+          "name",
+          "url",
+          "width",
+          "height",
+          "durationMs",
+          "hasAudio",
+          "createdAt",
+          "disabledAt"
+        ],
+        "title": "BrandTemplateOut",
+        "type": "object"
+      },
+      "BrandTemplateUpdateIn": {
+        "additionalProperties": false,
+        "description": "改名、停用或恢复使用；不给的那一项不动，至少给一项。",
+        "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "disabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "BrandTemplateUpdateIn",
+        "type": "object"
+      },
+      "BrandTemplatesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BrandTemplateOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BrandTemplatesOut",
+        "type": "object"
+      },
       "CategoryCountOut": {
         "additionalProperties": false,
         "properties": {
@@ -2747,6 +3118,17 @@
             "title": "Groups",
             "type": "array"
           },
+          "musicDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Musicdescription"
+          },
           "problems": {
             "title": "Problems",
             "type": "integer"
@@ -2767,7 +3149,8 @@
           "filmVersion",
           "runVersion",
           "problems",
-          "groups"
+          "groups",
+          "musicDescription"
         ],
         "title": "FilmViewOut",
         "type": "object"
@@ -2934,7 +3317,9 @@
           "kind": {
             "enum": [
               "video",
-              "image"
+              "image",
+              "subtitle",
+              "audio"
             ],
             "title": "Kind",
             "type": "string"
@@ -3017,6 +3402,20 @@
               }
             ],
             "title": "Rootjobid"
+          },
+          "sentences": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SubtitleSentence"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentences"
           },
           "shotIndex": {
             "anyOf": [
@@ -4101,6 +4500,90 @@
           "cacheReadTokensPerDelivery"
         ],
         "title": "MovingAveragesOut",
+        "type": "object"
+      },
+      "MusicGainPoint": {
+        "additionalProperties": false,
+        "description": "音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。",
+        "properties": {
+          "atMs": {
+            "maximum": 120000.0,
+            "minimum": 0.0,
+            "title": "Atms",
+            "type": "integer"
+          },
+          "gain": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Gain",
+            "type": "number"
+          }
+        },
+        "required": [
+          "atMs",
+          "gain"
+        ],
+        "title": "MusicGainPoint",
+        "type": "object"
+      },
+      "MusicIn": {
+        "additionalProperties": false,
+        "description": "生成一段背景音乐的受理输入。\n\n``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点\n一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收\n它，不进 ``request``。",
+        "properties": {
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "prompt": {
+            "maxLength": 3000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "prompt",
+          "conversationId"
+        ],
+        "title": "MusicIn",
         "type": "object"
       },
       "NoticeFrame": {
@@ -5694,6 +6177,110 @@
           "matchLevel"
         ],
         "title": "StyleMatchOut",
+        "type": "object"
+      },
+      "SubtitleIn": {
+        "additionalProperties": false,
+        "description": "手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。\n\n归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别\n服务不收它，不进 ``request``。",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "sourceJobId"
+        ],
+        "title": "SubtitleIn",
+        "type": "object"
+      },
+      "SubtitleSentence": {
+        "additionalProperties": false,
+        "description": "字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。",
+        "properties": {
+          "endMs": {
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs",
+          "text",
+          "speaker"
+        ],
+        "title": "SubtitleSentence",
         "type": "object"
       },
       "TakeOut": {
@@ -8461,7 +9048,7 @@
       },
       "VideoEditIn": {
         "additionalProperties": false,
-        "description": "一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。\n\n转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。\n``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条\n记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoGenerationIn``，来源、原作与区间落列。",
+        "description": "一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。\n\n转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的\n参考片段，时长不必等于基底替换区间。\n``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条\n记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoGenerationIn``，来源、原作与区间落列。",
         "properties": {
           "conversation_id": {
             "anyOf": [
@@ -9092,6 +9679,387 @@
           "count"
         ],
         "title": "VideoTypeCountOut",
+        "type": "object"
+      },
+      "WholeFilmBrandIn": {
+        "additionalProperties": false,
+        "description": "整片的片头或片尾：用哪条品牌模板。",
+        "properties": {
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "templateId"
+        ],
+        "title": "WholeFilmBrandIn",
+        "type": "object"
+      },
+      "WholeFilmCardOut": {
+        "additionalProperties": false,
+        "description": "资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。",
+        "properties": {
+          "canOpenConversation": {
+            "title": "Canopenconversation",
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "face": {
+            "$ref": "#/components/schemas/WholeFilmVersionOut"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmVersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversationId",
+          "canOpenConversation",
+          "title",
+          "userName",
+          "face",
+          "versions"
+        ],
+        "title": "WholeFilmCardOut",
+        "type": "object"
+      },
+      "WholeFilmCardsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmCardOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total"
+        ],
+        "title": "WholeFilmCardsOut",
+        "type": "object"
+      },
+      "WholeFilmIn": {
+        "additionalProperties": false,
+        "description": "一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片\n总长是三者之和，片头片尾的时长受理时按模板定。\n\n字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数\n与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进\n``request``。",
+        "properties": {
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "fontId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fontid"
+          },
+          "intro": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmBrandIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "music": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmMusicIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outro": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmBrandIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmSegmentIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
+          },
+          "subtitles": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmSubtitle"
+            },
+            "maxItems": 500,
+            "title": "Subtitles",
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "segments",
+          "subtitles",
+          "conversationId"
+        ],
+        "title": "WholeFilmIn",
+        "type": "object"
+      },
+      "WholeFilmMusicIn": {
+        "additionalProperties": false,
+        "description": "整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。",
+        "properties": {
+          "audioJobId": {
+            "format": "uuid",
+            "title": "Audiojobid",
+            "type": "string"
+          },
+          "gain": {
+            "items": {
+              "$ref": "#/components/schemas/MusicGainPoint"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Gain",
+            "type": "array"
+          },
+          "offsetMs": {
+            "minimum": 0.0,
+            "title": "Offsetms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audioJobId",
+          "offsetMs",
+          "gain"
+        ],
+        "title": "WholeFilmMusicIn",
+        "type": "object"
+      },
+      "WholeFilmSegmentIn": {
+        "additionalProperties": false,
+        "description": "整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。",
+        "properties": {
+          "endMs": {
+            "title": "Endms",
+            "type": "integer"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sourceJobId",
+          "startMs",
+          "endMs"
+        ],
+        "title": "WholeFilmSegmentIn",
+        "type": "object"
+      },
+      "WholeFilmSubtitle": {
+        "additionalProperties": false,
+        "description": "整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。",
+        "properties": {
+          "endMs": {
+            "maximum": 120000.0,
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "startMs": {
+            "maximum": 120000.0,
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs",
+          "text"
+        ],
+        "title": "WholeFilmSubtitle",
+        "type": "object"
+      },
+      "WholeFilmVersionOut": {
+        "additionalProperties": false,
+        "description": "整片卡里的一版：这段对话自己的一条已完成整片。",
+        "properties": {
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "title": "Finishedat",
+            "type": "string"
+          },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
+          "outputUrl": {
+            "title": "Outputurl",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "watermarkOutputUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watermarkoutputurl"
+          }
+        },
+        "required": [
+          "jobId",
+          "outputUrl",
+          "watermarkOutputUrl",
+          "durationMs",
+          "finishedAt",
+          "userName"
+        ],
+        "title": "WholeFilmVersionOut",
         "type": "object"
       }
     },
@@ -9752,6 +10720,389 @@
           }
         },
         "summary": "Callback"
+      }
+    },
+    "/brand-templates": {
+      "get": {
+        "description": "品牌资源，建立晚的排前面；默认只列在用的，按 ``kind`` 与 ``brand`` 筛选。\n\n``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。媒体参数按资源实际情况\n返回，不完整的资源也照实列出，由使用它的功能明确校验。",
+        "operationId": "list_brand_templates_brand_templates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "brand",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Brand"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeDisabled",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Includedisabled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandTemplatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List Brand Templates",
+        "tags": [
+          "brand-templates"
+        ]
+      },
+      "post": {
+        "description": "拿调用者自己的一条视频上传建一条在用的模板（``201``），画幅、时长与音轨由服务端量。\n\n别人的上传、不是视频的上传、不存在的 ``uploadId`` 都是 ``404``；量不出来或超过时长上限\n是 ``422``。",
+        "operationId": "create_brand_template_brand_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandTemplateCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Create Brand Template",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
+    "/brand-templates/fonts/sign": {
+      "post": {
+        "operationId": "sign_font_brand_templates_fonts_sign_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandFontSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandFontUploadTicketOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage",
+              "uploads:write"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage",
+              "uploads:write"
+            ]
+          }
+        ],
+        "summary": "Sign Font",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
+    "/brand-templates/fonts/{upload_id}/confirm": {
+      "post": {
+        "operationId": "confirm_font_brand_templates_fonts__upload_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandFontConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage",
+              "uploads:write"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage",
+              "uploads:write"
+            ]
+          }
+        ],
+        "summary": "Confirm Font",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
+    "/brand-templates/{template_id}": {
+      "patch": {
+        "description": "改名、停用或恢复使用；不删。已有整片里记的是快照，不受影响。没有这条是 ``404``。",
+        "operationId": "update_brand_template_brand_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandTemplateUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "users:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "users:manage"
+            ]
+          }
+        ],
+        "summary": "Update Brand Template",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
+    "/brand-templates/{template_id}/font-info": {
+      "get": {
+        "operationId": "font_info_brand_templates__template_id__font_info_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandFontInfoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Font Info",
+        "tags": [
+          "brand-templates"
+        ]
       }
     },
     "/collections": {
@@ -12379,7 +13730,7 @@
     },
     "/generations": {
       "get": {
-        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。",
+        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。\n成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。\n一段对话生成的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找；上传的音乐不挂对话，按属主列。",
         "operationId": "list_generations_generations_get",
         "parameters": [
           {
@@ -12456,7 +13807,9 @@
                 {
                   "enum": [
                     "video",
-                    "image"
+                    "image",
+                    "subtitle",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -12682,6 +14035,108 @@
         "summary": "List Image Models"
       }
     },
+    "/generations/music": {
+      "post": {
+        "description": "生成一段背景音乐，记一条音频记录（种类 ``audio``、操作 ``generate``）；完成后\n``outputUrl`` 是去掉首尾静音、统一响度后转存的 m4a，``durationMs`` 是它的时长。\n\n``prompt`` 原样发给音乐模型，服务端不补任何文字，至多 3000 字。``conversationId`` 必填，\n读不到这段对话 404；生成背景音乐没开通 422。``userName`` 的规则同出片，只用来替人办事，\n不进 ``request``。",
+        "operationId": "submit_music_generations_music_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MusicIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Music"
+      }
+    },
+    "/generations/subtitles": {
+      "post": {
+        "description": "手动识别一条成片的口播，另起一条字幕记录（种类 ``subtitle``）；成片完成时后台已自动识别\n一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。\n\n``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到\n却不是成片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``\n取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
+        "operationId": "submit_subtitle_generations_subtitles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubtitleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Subtitle"
+      }
+    },
     "/generations/video": {
       "post": {
         "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。",
@@ -12786,7 +14241,7 @@
     },
     "/generations/video-edits": {
       "post": {
-        "description": "在一条成片上改一段：请求就是一次上游视频请求，``reference_video_urls`` 恰好一条，是调用方\n从基底上切好、自己上传的参考片段；``source_job_id`` 与 ``range_start_ms`` /\n``range_end_ms`` 只记账，记下基于哪一版、改的哪一段。\n\n受理时核对：基底是这段对话自己的或继承来的一条已完成成片，区间在它的时长之内；片段是\n调用者本人的一条视频上传，时长与区间长度一致。不合格 422、不入队。``user_name`` 的规则\n同出片。",
+        "description": "在一条成片上改一段：请求就是一次上游视频请求，``reference_video_urls`` 恰好一条，是调用方\n按当前选用素材裁剪、拼接后上传的实际参考；``source_job_id`` 与 ``range_start_ms`` /\n``range_end_ms`` 只记账，记下产物将替换哪一版成片的哪一段，使用基底媒体时间。\n\n受理时核对：基底是这段对话自己的或继承来的一条已完成成片，区间在它的时长之内；片段是\n调用者本人的一条可读、有正时长的视频上传，不要求与替换区间等长。不合格 422、不入队。\n``user_name`` 的规则同出片。",
         "operationId": "submit_video_edit_generations_video_edits_post",
         "requestBody": {
           "content": {
@@ -12917,6 +14372,57 @@
           }
         ],
         "summary": "Get Video Task"
+      }
+    },
+    "/generations/whole-films": {
+      "post": {
+        "description": "把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上\n字幕与背景音乐，本地 ffmpeg 渲染，不经外部服务。\n\n``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs}`` 取那条成片自己媒体时间里\n的一段；整片总长是各段时长之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间，\n服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却\n不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``userName`` 的规则\n同出片，只用来替人办事，不进 ``request``。",
+        "operationId": "submit_whole_film_generations_whole_films_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WholeFilmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Whole Film"
       }
     },
     "/generations/{job_id}": {
@@ -13292,6 +14798,148 @@
           }
         ],
         "summary": "Video",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/whole-films": {
+      "get": {
+        "description": "全站的整片，一段对话一张卡，只算这段对话自己的；卡面整片完成得晚的排前面。\n\n每张卡带齐全部版本，没有详情口。``userName`` 筛卡的作者（对话属主）；时间窗\n``[since, until)`` 作用在卡面整片的完成时刻上；``q`` 按字面包含匹配对话标题。\n``total`` 只在第一页给。",
+        "operationId": "whole_films_library_whole_films_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userName",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 150,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmCardsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Whole Films",
         "tags": [
           "library"
         ]

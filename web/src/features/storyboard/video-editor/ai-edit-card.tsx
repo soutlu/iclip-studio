@@ -48,10 +48,11 @@ function Thumb({ src, className }: { src: string | undefined; className: string 
   )
 }
 
-/** 用户改了要求：`parts` 只含文字与传好的参考图；`blank` 是输入框里什么也没有了（上传中的图也算有）。 */
-type DraftChange = (parts: readonly ComposerPart[], blank: boolean) => void
+/** 用户改了要求：`parts` 只含文字与传好的参考图。 */
+type DraftChange = (parts: readonly ComposerPart[]) => void
 
 type CardComposerProps = {
+  composerRef: RefObject<ComposerHandle | null>
   draft: readonly ComposerPart[]
   onDraftChange: DraftChange
   /** 卸载（卡收起或收走）时正文里还有几张图没传好，没有留进草稿；没有就不调。 */
@@ -72,9 +73,9 @@ const restoreInto = (composer: ComposerHandle, parts: readonly ComposerPart[]) =
     text: '',
   })
 
-/** 卡里的输入框：挂载时装回没提交的要求，之后每次变化把就绪的部分交回去。调用方换了要求（预填）时
- * 整篇换进来；它交回去的那份原样传回来不算换。 */
+/** 卡里的输入框：挂载时装回没提交的要求，之后每次变化把就绪的部分交回去。 */
 function CardComposer({
+  composerRef,
   draft,
   onDraftChange,
   onUploadsDropped,
@@ -85,15 +86,11 @@ function CardComposer({
   onSubmit,
   modelPicker,
 }: CardComposerProps) {
-  const composerRef = useRef<ComposerHandle>(null)
   const { data: user } = useUser()
   const [initial] = useState(draft)
   const [focusOnMount] = useState(focusInput)
-  // 正文里此刻的全部内容（含上传中的图）：算参考图还能加几张，卸载时清点没传好的。整篇换进来时
-  // 输入框不报变化，这里跟着一起换。
+  // 正文里此刻的全部内容（含上传中的图）：算参考图还能加几张，卸载时清点没传好的。
   const partsRef = useRef<readonly ComposerPart[]>(draft)
-  // 输入框里装的是哪一份要求：挂载时装回的，或最近交回去的。
-  const shownDraftRef = useRef(draft)
   const focused = useEffectEvent(onInputFocused)
   const dropped = useEffectEvent(onUploadsDropped)
 
@@ -115,15 +112,7 @@ function CardComposer({
       composer.focus()
       focused()
     }
-  }, [initial, focusOnMount])
-
-  useEffect(() => {
-    const composer = composerRef.current
-    if (composer === null || draft === shownDraftRef.current) return
-    shownDraftRef.current = draft
-    partsRef.current = draft
-    restoreInto(composer, draft)
-  }, [draft])
+  }, [initial, focusOnMount, composerRef])
 
   const remaining = () =>
     MAX_EDIT_REFERENCES - new Set(imageSlotsOf(partsRef.current).map((slot) => slot.key)).size
@@ -142,11 +131,7 @@ function CardComposer({
       onChange={(next) => {
         partsRef.current = next
         const ready = next.filter((part) => part.kind !== 'media' || part.media.status === 'ready')
-        shownDraftRef.current = ready
-        onDraftChange(
-          ready,
-          next.every((part) => part.kind === 'text' && part.text.trim() === ''),
-        )
+        onDraftChange(ready)
       }}
       onSubmit={onSubmit}
       placeholder="描述该段的修改要求，可粘贴或拖入参考图"
@@ -165,6 +150,7 @@ function CardComposer({
 }
 
 type AiEditCardProps = {
+  composerRef: RefObject<ComposerHandle | null>
   /** 展开成卡；否则收成胶囊。 */
   open: boolean
   onExpand: () => void
@@ -177,7 +163,7 @@ type AiEditCardProps = {
   detail: string
   /** 这几段的首帧与末帧截图；截不了帧时没有。 */
   frames: { first: string | undefined; last: string | undefined }
-  /** 没提交的要求，只含文字与传好的参考图。换成别的一份（不是 `onDraftChange` 交出的那份）时整篇换进输入框。 */
+  /** 没提交的要求，只含文字与传好的参考图；展开时恢复。 */
   draft: readonly ComposerPart[]
   onDraftChange: DraftChange
   /** 收起或收走时有几张参考图还没传好、没能留下。 */
@@ -193,6 +179,7 @@ type AiEditCardProps = {
 }
 
 export function AiEditCard({
+  composerRef,
   open,
   onExpand,
   onCollapse,
@@ -329,6 +316,7 @@ export function AiEditCard({
             <IconButton label="收起" name="close" onClick={onCollapse} size="sm" />
           </div>
           <CardComposer
+            composerRef={composerRef}
             draft={draft}
             focusInput={focusInput}
             modelPicker={modelPicker}

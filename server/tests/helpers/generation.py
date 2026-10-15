@@ -39,16 +39,23 @@ from iclip.domains.generation.provider import (
 )
 from iclip.domains.generation.queue import GenerationQueue, GenerationQueueSettings, ProviderLane
 from iclip.domains.generation.schemas import (
+    KIND_AUDIO,
     KIND_IMAGE,
+    KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_CUT,
     OPERATION_UPLOAD,
     GenerationRequest,
     ImageGenerationIn,
+    MusicRequest,
+    SubtitleRequest,
+    SubtitleSentence,
     VideoComposeRequest,
     VideoGenerationIn,
+    WholeFilmRender,
+    WholeFilmRequest,
 )
-from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.service import BrandTemplateFacts, GenerationService
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
@@ -60,6 +67,8 @@ from tests.helpers.identity import InMemoryUserRepository
 
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
+FAKE_SUBTITLE_PROVIDER = "subtitle_fake"
+FAKE_MUSIC_PROVIDER = "music_fake"
 """替身 provider 的名字。队列按任务行上的 provider 列查表，替身与 make_job 得用同一套。"""
 
 
@@ -174,6 +183,7 @@ def make_job(
     watermark_output_url: str | None = None,
     duration_ms: int | None = None,
     content_md5: str | None = None,
+    sentences: tuple[SubtitleSentence, ...] | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> GenerationJob:
@@ -193,6 +203,10 @@ def make_job(
         if payload is None
         else FAKE_VIDEO_PROVIDER
         if row_kind == KIND_VIDEO
+        else FAKE_SUBTITLE_PROVIDER
+        if row_kind == KIND_SUBTITLE
+        else FAKE_MUSIC_PROVIDER
+        if row_kind == KIND_AUDIO
         else FAKE_IMAGE_PROVIDER
     )
     return GenerationJob(
@@ -219,6 +233,7 @@ def make_job(
         watermark_output_url=watermark_output_url,
         duration_ms=duration_ms,
         content_md5=content_md5,
+        sentences=sentences,
         error_code=error_code,
         error_message=error_message,
         created_at=created_at or now,
@@ -264,6 +279,93 @@ def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
         ]
     )
     return make_job(request, source_job_id=base, root_job_id=edit.root_job_id, **fields)
+
+
+def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
+    """识别成片 ``video`` 的一条字幕记录：来源是那条视频，属主、对话与需求单默认随它，默认排队中。"""
+
+    assert video.output_url is not None, "只识别有地址的成片"
+    fields.setdefault("owner_user_id", video.owner_user_id)
+    fields.setdefault("conversation_id", video.conversation_id)
+    fields.setdefault("task_id", video.task_id)
+    return make_job(
+        SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=video.output_url),
+        source_job_id=video.id,
+        **fields,
+    )
+
+
+def whole_film_request(
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    subtitles: Sequence[Mapping[str, Any]] = (),
+    music: Mapping[str, Any] | None = None,
+    intro: Mapping[str, Any] | None = None,
+    outro: Mapping[str, Any] | None = None,
+    font: Mapping[str, Any] | None = None,
+) -> WholeFilmRequest:
+    """整片落库的请求：各段 ``{url, startMs, endMs}``（没写出处按地址补一个固定的 ``sourceJobId``），
+    字幕与音乐照给，声音参数取受理时的默认值。音乐没写出处同样补一个。片头片尾是模板快照
+    ``{url, durationMs, width, height, hasAudio}``，没写 ``templateId`` 也按地址补一个。"""
+
+    def snapshot(brand: Mapping[str, Any] | None) -> dict[str, Any] | None:
+        if brand is None:
+            return None
+        return {"templateId": uuid.uuid5(uuid.NAMESPACE_URL, brand["url"]), **brand}
+
+    def with_source(item: Mapping[str, Any]) -> dict[str, Any]:
+        if "sourceJobId" in item or "audioJobId" in item:
+            return dict(item)
+        return {"sourceJobId": uuid.uuid5(uuid.NAMESPACE_URL, item["url"]), **item}
+
+    music_payload = None
+    if music is not None:
+        music_payload = dict(music)
+        music_payload.setdefault("audioJobId", uuid.uuid5(uuid.NAMESPACE_URL, music["url"]))
+    return WholeFilmRequest.model_validate(
+        {
+            "segments": [with_source(segment) for segment in segments],
+            "subtitles": list(subtitles),
+            "music": music_payload,
+            "render": WholeFilmRender(),
+            "intro": snapshot(intro),
+            "outro": snapshot(outro),
+            "font": None
+            if font is None
+            else {"fontId": uuid.uuid5(uuid.NAMESPACE_URL, str(font["url"])), **font},
+        }
+    )
+
+
+def make_whole_film(*masters: GenerationJob, **fields: Any) -> GenerationJob:
+    """把 ``masters`` 各取前一秒剪成的一条整片：没有来源、原作与镜号，挂第一条的对话（默认），执行方
+    是本地 ffmpeg，默认排队中。"""
+
+    fields.setdefault("provider", "ffmpeg")
+    fields.setdefault("conversation_id", masters[0].conversation_id or uuid.uuid4())
+    fields.setdefault("owner_user_id", masters[0].owner_user_id)
+    request = whole_film_request(
+        [
+            {
+                "sourceJobId": master.id,
+                "url": master.output_url or "https://example.com/take.mp4",
+                "startMs": 0,
+                "endMs": 1000,
+            }
+            for master in masters
+        ]
+    )
+    return make_job(request, **fields)
+
+
+MUSIC_PROMPT = "纯音乐，轻快的城市流行节拍，适合鞋款种草短视频的背景音乐"
+
+
+def make_music(**fields: Any) -> GenerationJob:
+    """生成背景音乐的一条音频记录：挂一段对话（默认新起一个 id），默认排队中。"""
+
+    fields.setdefault("conversation_id", uuid.uuid4())
+    return make_job(MusicRequest(model="qwen-audio-3.1-tts-next", prompt=MUSIC_PROMPT), **fields)
 
 
 def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
@@ -465,6 +567,28 @@ class InMemoryGenerationRepository:
             finished_at=datetime.now(UTC),
         )
 
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        current = self.jobs[job_id]
+        if only_if_status is not None and current.status != only_if_status:
+            return None
+        return self._replace(
+            job_id,
+            status=STATUS_COMPLETED,
+            sentences=sentences,
+            provider_status=provider_status,
+            provider_task_id=provider_task_id,
+            submitted_at=current.submitted_at or datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+        )
+
     async def mark_failed(
         self,
         job_id: uuid.UUID,
@@ -644,6 +768,7 @@ def film_image_service(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
+        brand_templates=FixedBrandTemplates(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -683,6 +808,16 @@ class FixedLineage:
 
     async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool:
         return self._readable
+
+
+class FixedBrandTemplates:
+    """BrandTemplates 替身：品牌模板预先写死，按 id 读；没给的就是没有。"""
+
+    def __init__(self, *templates: BrandTemplateFacts) -> None:
+        self._templates = {template.id: template for template in templates}
+
+    async def __call__(self, template_id: uuid.UUID) -> BrandTemplateFacts | None:
+        return self._templates.get(template_id)
 
 
 class MemoryObjectStore:
@@ -736,7 +871,9 @@ class MemoryObjectStore:
 
 __all__ = [
     "MEDIA_ENVS",
+    "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
+    "FixedBrandTemplates",
     "FixedLineage",
     "InMemoryGenerationRepository",
     "MemoryObjectStore",
@@ -751,7 +888,11 @@ __all__ = [
     "make_cut",
     "make_edit",
     "make_job",
+    "make_music",
+    "make_subtitle",
     "make_upload",
+    "make_whole_film",
     "stored_request",
     "video_request",
+    "whole_film_request",
 ]

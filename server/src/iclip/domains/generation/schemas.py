@@ -1,9 +1,10 @@
 """生成请求的 HTTP 与持久化类型定义。
 
-落库的请求有三种形状：视频（出片与编辑段）照抄上游异步接口（snake_case），图片与合成是本系统
-自己的（camelCase）。持久化存的就是请求自己的字段名，读取时按 (kind, operation) 经
-request_from_payload 重新校验，非法数据直接报错。编辑段与合成的受理输入另有自己的类型，受理时
-换成落库的那一种。切图与上传没有请求。"""
+落库的请求有六种形状：视频（出片与编辑段）照抄上游异步接口（snake_case），图片、合成、整片、字幕
+识别与生成背景音乐是本系统自己的（camelCase）。持久化存的就是请求自己的字段名，读取时按
+(kind, operation) 经 request_from_payload 重新校验，非法数据直接报错；合成与整片同是 video /
+compose，按请求里有没有 ``subtitles`` 分开。编辑段、合成、整片、手动识别字幕与生成背景音乐的受理
+输入另有自己的类型，受理时换成落库的那一种。切图与上传没有请求。"""
 
 from __future__ import annotations
 
@@ -17,8 +18,10 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
+    Discriminator,
     Field,
     StringConstraints,
+    Tag,
     TypeAdapter,
     ValidationInfo,
     field_validator,
@@ -53,6 +56,10 @@ STATUS_FAILED: Final = "failed"
 
 KIND_VIDEO: Final = "video"
 KIND_IMAGE: Final = "image"
+KIND_SUBTITLE: Final = "subtitle"
+"""字幕记录：识别一条成片的口播，结果是逐句文字与时间，不是媒体地址。"""
+KIND_AUDIO: Final = "audio"
+"""音频记录：用户上传的音乐（upload），或生成的背景音乐（generate）。"""
 
 OPERATION_GENERATE: Final = "generate"
 """调模型：出片、编辑段、图片生成都是它。"""
@@ -353,20 +360,21 @@ class ImageGenerationIn(CamelModel):
 
 
 class VideoEditIn(SnakeModel):
-    """一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
+    """一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
 
-    转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+    转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的
+    参考片段，时长不必等于基底替换区间。
     ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
     记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
     ``VideoGenerationIn``，来源、原作与区间落列。"""
 
     source_job_id: uuid.UUID
-    """基底：一条已完成的成片（出片或合成），这段对话自己的或继承来的。"""
+    """替换基底：一条已完成的成片（出片或合成），这段对话自己的或继承来的。"""
     range_start_ms: Annotated[int, Field(ge=0)]
     range_end_ms: int
-    """参考片段在基底上的那一段，毫秒，原样记下；要在基底时长之内，并与片段时长对得上。"""
+    """产物将替换基底上的那一段，毫秒，原样记下；要在基底时长内，独立于实际参考片段时长。"""
     reference_video_urls: Annotated[list[str], Field(min_length=1, max_length=1)]
-    """参考片段的地址：调用者本人的一条视频上传。"""
+    """实际模型参考的地址：调用者本人上传的一条可读、有正时长的视频。"""
     model: ModelName
     prompt: Prompt
     user_name: UserName | None = None
@@ -447,19 +455,450 @@ class VideoComposeRequest(CamelModel):
     user_name: UserName | None = None
 
 
-GenerationRequest = VideoGenerationIn | ImageGenerationIn | VideoComposeRequest
+MAX_WHOLE_FILM_MS: Final = 120_000
+"""整片最长多少毫秒（片头、各段与片尾的时长之和）。整片时间上的字段（字幕起止、音量曲线的时刻）
+都以它为上限，合同里能读到这个数。"""
+MAX_WHOLE_FILM_SUBTITLES: Final = 500
+"""一条整片最多几句字幕：120 秒里一句平均不到 0.25 秒，足够；字幕文件由服务端写，不设上限就能拿
+一个请求造出任意大的文件。"""
+MAX_WHOLE_FILM_SUBTITLE_CHARS: Final = 200
+"""一句字幕最多几个字。烧进画面的一句话，两三行已经很满。"""
+MAX_MUSIC_GAIN_POINTS: Final = 500
+"""音量曲线最多几个点。曲线要写进一条 ffmpeg 命令的参数里（Linux 单个参数上限 128 KB），500 个点
+约 30 KB；口播一句压低一次用四个点，120 秒够用。"""
+
+FilmMs = Annotated[int, Field(ge=0, le=MAX_WHOLE_FILM_MS)]
+"""整片时间上的一个时刻，毫秒，从第一段开头算，不含片头：片头片尾上没有字幕，也不铺音乐。"""
+
+
+class WholeFilmSegmentIn(CamelModel):
+    """整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。"""
+
+    source_job_id: uuid.UUID
+    """这一段出自哪条成片：这段对话读得到的出片或有基底的合成，不能是整片、编辑段或上传。"""
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: int
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> WholeFilmSegmentIn:
+        if self.end_ms <= self.start_ms:
+            raise ValueError("endMs 必须大于 startMs")
+        return self
+
+    @property
+    def duration_ms(self) -> int:
+        return self.end_ms - self.start_ms
+
+
+class WholeFilmSubtitle(CamelModel):
+    """整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。"""
+
+    start_ms: FilmMs
+    end_ms: FilmMs
+    text: Annotated[str, Field(min_length=1, max_length=MAX_WHOLE_FILM_SUBTITLE_CHARS)]
+
+    _check_text = field_validator("text")(_nonblank)
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> WholeFilmSubtitle:
+        if self.end_ms <= self.start_ms:
+            raise ValueError("endMs 必须大于 startMs")
+        return self
+
+
+class MusicGainPoint(CamelModel):
+    """音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。"""
+
+    at_ms: FilmMs
+    gain: Annotated[float, Field(ge=0, le=1)]
+
+
+class WholeFilmMusicIn(CamelModel):
+    """整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。"""
+
+    audio_job_id: uuid.UUID
+    """一条已完成的音频记录：调用者自己上传的音乐，或这段对话读得到的生成音乐。"""
+    offset_ms: Annotated[int, Field(ge=0)]
+    """从音乐的第几毫秒开始用；从这里起要够整片那么长。"""
+    gain: Annotated[list[MusicGainPoint], Field(min_length=1, max_length=MAX_MUSIC_GAIN_POINTS)]
+    """按时刻严格递增；点与点之间线性插值，第一个点之前取第一个点的音量，最后一个点之后取最后一个。"""
+
+    @field_validator("gain")
+    @classmethod
+    def _strictly_increasing(cls, points: list[MusicGainPoint]) -> list[MusicGainPoint]:
+        for position in range(1, len(points)):
+            if points[position].at_ms <= points[position - 1].at_ms:
+                raise ValueError(
+                    f"第 {position + 1} 个点的 atMs {points[position].at_ms} 不晚于前一个点"
+                )
+        return points
+
+
+def _segments_ms(segments: list[WholeFilmSegmentIn]) -> int:
+    return sum(segment.duration_ms for segment in segments)
+
+
+class WholeFilmBrandIn(CamelModel):
+    """整片的片头或片尾：用哪条品牌模板。"""
+
+    template_id: uuid.UUID
+    """一条在用的品牌模板，位置要对得上（片头用片头模板，片尾用片尾模板）。"""
+
+
+class WholeFilmIn(CamelModel):
+    """一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
+    总长是三者之和，片头片尾的时长受理时按模板定。
+
+    字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
+    与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
+    ``request``。"""
+
+    segments: Annotated[
+        list[WholeFilmSegmentIn], Field(min_length=1, max_length=MAX_COMPOSE_SEGMENTS)
+    ]
+    subtitles: Annotated[list[WholeFilmSubtitle], Field(max_length=MAX_WHOLE_FILM_SUBTITLES)]
+    """按时间先后、互不重叠，都在各段之内；没有字幕给空数组。"""
+    music: WholeFilmMusicIn | None = None
+    font_id: uuid.UUID | None = None
+    """字幕字体资源；不指定时使用系统字体。"""
+    intro: WholeFilmBrandIn | None = None
+    outro: WholeFilmBrandIn | None = None
+    user_name: UserName | None = None
+    """规则同出片的 ``user_name``。"""
+
+    conversation_id: uuid.UUID
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+    @model_validator(mode="after")
+    def _fits_the_film(self) -> WholeFilmIn:
+        """各段先单独核一遍上限；连片头片尾一起的总长要等受理时读到模板才核得了。"""
+
+        total = _segments_ms(self.segments)
+        if total > MAX_WHOLE_FILM_MS:
+            raise ValueError(
+                f"整片一共 {format_seconds(total / 1000)} 秒，"
+                f"超过 {format_seconds(MAX_WHOLE_FILM_MS / 1000)} 秒上限"
+            )
+        previous_end = 0
+        for position, subtitle in enumerate(self.subtitles, start=1):
+            if subtitle.start_ms < previous_end:
+                raise ValueError(f"第 {position} 句字幕与上一句重叠，或没有按时间先后排")
+            if subtitle.end_ms > total:
+                raise ValueError(
+                    f"第 {position} 句字幕结束在 {format_seconds(subtitle.end_ms / 1000)} 秒，"
+                    f"超出了整片的 {format_seconds(total / 1000)} 秒"
+                )
+            previous_end = subtitle.end_ms
+        if self.music is not None and self.music.gain[-1].at_ms > total:
+            raise ValueError(
+                f"音量曲线的最后一个点在 {format_seconds(self.music.gain[-1].at_ms / 1000)} 秒，"
+                f"超出了整片的 {format_seconds(total / 1000)} 秒"
+            )
+        return self
+
+    @property
+    def segments_ms(self) -> int:
+        """各段时长之和，毫秒：字幕与音乐所在的那一段时间有多长。"""
+
+        return _segments_ms(self.segments)
+
+
+class WholeFilmSegment(WholeFilmSegmentIn):
+    """落库的一段：受理时由服务端把出处换成那条成片的产物地址 ``url``，两者都存。"""
+
+    url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+
+    @field_validator("url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
+class WholeFilmMusic(WholeFilmMusicIn):
+    """落库的音乐：受理时由服务端把音频记录换成它的产物地址 ``url``，两者都存。"""
+
+    url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+
+    @field_validator("url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
+class WholeFilmBrand(CamelModel):
+    """落库的片头或片尾：受理时那条品牌模板的快照。模板以后改名、停用都不影响这条整片。"""
+
+    template_id: uuid.UUID
+    url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+    duration_ms: Annotated[int, Field(gt=0)]
+    width: Annotated[int, Field(gt=0)]
+    height: Annotated[int, Field(gt=0)]
+    has_audio: bool
+    """建模板时量的；渲染时照样自己探一遍，没有音轨的补静音。"""
+
+    @field_validator("url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
+class WholeFilmFont(CamelModel):
+    """受理时选中的字幕字体及文件内属性快照；改名、停用不改变已受理的整片。"""
+
+    font_id: uuid.UUID
+    url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+    name: Annotated[str, Field(min_length=1)]
+    family: Annotated[str, Field(min_length=1)]
+    weight: Annotated[int, Field(ge=1, le=1000)]
+    style: Literal["normal", "italic", "oblique"]
+
+    @field_validator("url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
+SPEECH_LOUDNESS_LUFS: Final = -16.0
+"""整片里每段原声统一到的响度（LUFS）：口播与移动端节目常用的 -16，与生成背景音乐规整到的响度
+相同，音乐的音量曲线从同一个起点压。"""
+FILM_LOUDNESS_LUFS: Final = -14.0
+"""整片最后统一到的响度（LUFS）：抖音、YouTube 等短视频平台按 -14 左右做响度归一，交付就落在它
+附近，上传后不会被平台再压低或拉高太多。"""
+FILM_PEAK_DBFS: Final = -1.5
+"""整片最后限幅的采样峰值上限（dBFS）。限幅器按采样峰值限，比常用的 -1 dBTP 再多留 0.5 dB，给
+AAC 编码后的峰值抬升留余量。"""
+SEGMENT_FADE_MS: Final = 50
+"""每段原声两端各做多长的淡入淡出：短到听不出，足以消掉切点上的爆音。"""
+MUSIC_FADE_OUT_MS: Final = 2000
+"""音乐在整片结尾淡出多长。"""
+
+
+class WholeFilmRender(CamelModel):
+    """整片怎么做声音：受理时按当时的常量记下，执行方照记录做，常量以后改了也不影响已有的记录。
+
+    画面不在这里：画幅与帧率取第一段那条成片，执行时才量得到；字幕的样式随执行方固定。"""
+
+    speech_loudness_lufs: float = SPEECH_LOUDNESS_LUFS
+    """每条来源先量一次整体响度，按差值把它的原声统一到这个响度。"""
+    music_loudness_lufs: float = SPEECH_LOUDNESS_LUFS
+    """音乐先量一次整体响度统一到这个响度，再按音量曲线调：上传的音乐没规整过，响度各不相同。"""
+    loudness_lufs: float = FILM_LOUDNESS_LUFS
+    """原声与音乐混好之后整片统一到的响度。"""
+    peak_dbfs: float = FILM_PEAK_DBFS
+    segment_fade_ms: Annotated[int, Field(ge=0)] = SEGMENT_FADE_MS
+    music_fade_out_ms: Annotated[int, Field(ge=0)] = MUSIC_FADE_OUT_MS
+
+
+class WholeFilmRequest(CamelModel):
+    """一条整片交给本地执行方的输入：完整的时间线，加上怎么做声音。
+
+    与合成同是 video / compose，没有来源、原作与镜号；各段与音乐的出处由调用方给，地址由服务端按
+    出处填，片头片尾是受理时模板的快照。字幕与音乐的时刻从第一段开头算，渲染时按片头的时长往后挪。
+    不记 ``userName``：它只用来替人办事。"""
+
+    kind: ClassVar[GenerationKind] = KIND_VIDEO
+    operation: ClassVar[GenerationOperation] = OPERATION_COMPOSE
+
+    segments: Annotated[list[WholeFilmSegment], Field(min_length=1)]
+    subtitles: list[WholeFilmSubtitle]
+    music: WholeFilmMusic | None
+    render: WholeFilmRender
+    font: WholeFilmFont | None = None
+    """为空时使用系统字体。"""
+    intro: WholeFilmBrand | None = None
+    outro: WholeFilmBrand | None = None
+    """片头片尾在加上它们之前落的整片里没有这两项，读回来就是没有。"""
+
+    @property
+    def segments_ms(self) -> int:
+        """各段时长之和，毫秒。"""
+
+        return sum(segment.duration_ms for segment in self.segments)
+
+    @property
+    def duration_ms(self) -> int:
+        """整片总长，毫秒：片头、各段与片尾的时长之和。"""
+
+        brands = sum(brand.duration_ms for brand in (self.intro, self.outro) if brand is not None)
+        return self.segments_ms + brands
+
+
+def _compose_shape(value: Any) -> str:
+    """video / compose 的两种请求：整片一定带 ``subtitles``（可以是空数组），合成没有这一项。"""
+
+    if isinstance(value, WholeFilmRequest) or (isinstance(value, dict) and "subtitles" in value):
+        return "whole_film"
+    return "composite"
+
+
+ComposeRequest = Annotated[
+    Annotated[VideoComposeRequest, Tag("composite")]
+    | Annotated[WholeFilmRequest, Tag("whole_film")],
+    Discriminator(_compose_shape),
+]
+"""video / compose 落库的请求：合成或整片。"""
+
+
+class SubtitleIn(CamelModel):
+    """手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+
+    归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
+    服务不收它，不进 ``request``。"""
+
+    source_job_id: uuid.UUID
+    """要识别的那条成片（已完成的出片或合成），这段对话自己的或继承来的。"""
+    user_name: UserName | None = None
+    """规则同出片的 ``user_name``。"""
+
+    conversation_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+
+class SubtitleRequest(CamelModel):
+    """一次字幕识别交给执行方的输入：识别哪条视频、用哪个模型、按什么参数发。
+
+    执行方下载 ``videoUrl``、抽成单声道 16 kHz mp3，以 Base64 发给识别服务；音频字节不落库。
+    后三个字段记下随请求发出的固定参数：开说话人分离才拿得到全部句子的起止时间。"""
+
+    kind: ClassVar[GenerationKind] = KIND_SUBTITLE
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    model: ModelName
+    video_url: Annotated[str, Field(min_length=1, max_length=MAX_URL_CHARS)]
+    """成片的原片地址（``outputUrl``），不用水印版。"""
+    audio_format: Literal["mp3"] = "mp3"
+    sample_rate: Literal[16000] = 16000
+    speaker_diarization: Literal[True] = True
+
+    @field_validator("video_url")
+    @classmethod
+    def _downloadable(cls, url: str) -> str:
+        if not is_http_url(url):
+            raise ValueError("必须是 http:// 或 https:// 地址")
+        return url
+
+
+class SubtitleSentence(CamelModel):
+    """字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。"""
+
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    text: str
+    speaker: int | None
+    """识别服务给的说话人编号，只在这一条视频里区分谁在说：不同视频里的同一个编号不是同一个人。
+    服务没给就是空。"""
+
+    @model_validator(mode="after")
+    def _end_not_before_start(self) -> SubtitleSentence:
+        if self.end_ms < self.start_ms:
+            raise ValueError("end_ms 不能早于 start_ms")
+        return self
+
+
+def sentences_to_payload(
+    sentences: tuple[SubtitleSentence, ...] | None,
+) -> list[dict[str, Any]] | None:
+    """逐句结果的持久化 JSON：键照字段名（snake_case），没有结果原样是 ``None``。"""
+
+    if sentences is None:
+        return None
+    return [sentence.model_dump() for sentence in sentences]
+
+
+_SENTENCES: Final = TypeAdapter(tuple[SubtitleSentence, ...])
+
+
+def sentences_from_payload(payload: Any) -> tuple[SubtitleSentence, ...] | None:
+    """读回逐句结果；形状不对直接报错，不当成没有。"""
+
+    if payload is None:
+        return None
+    try:
+        return _SENTENCES.validate_python(payload)
+    except ValueError as exc:
+        raise ValidationFailed(f"字幕结果的形状不合法: {exc}") from exc
+
+
+MAX_MUSIC_PROMPT_CHARS: Final = 3000
+"""生成背景音乐的提示词上限：音乐模型 ``text_prompt`` 的长度上限，超了在受理时就拒。"""
+
+MusicPrompt = Annotated[str, Field(min_length=1, max_length=MAX_MUSIC_PROMPT_CHARS)]
+
+
+class MusicIn(CamelModel):
+    """生成一段背景音乐的受理输入。
+
+    ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
+    一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+    它，不进 ``request``。"""
+
+    prompt: MusicPrompt
+    """音乐的描述：工程文件里「配乐」的原文，或用户写的一句。"""
+    user_name: UserName | None = None
+    """规则同出片的 ``user_name``。"""
+
+    conversation_id: uuid.UUID
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+    _check_prompt = field_validator("prompt")(_nonblank)
+
+
+class MusicRequest(CamelModel):
+    """一次生成背景音乐交给执行方的输入：用哪个模型、发出的提示词，以及向模型要的音频格式。
+
+    执行方拿到模型给的 wav 后去掉首尾静音、统一响度，编成 m4a 存进本系统的桶；存下的格式看
+    ``outputUrl``，不在这里。"""
+
+    kind: ClassVar[GenerationKind] = KIND_AUDIO
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    model: ModelName
+    prompt: MusicPrompt
+    """原样发给模型的 ``text_prompt``，就是受理时收到的那一段。"""
+    format: Literal["wav"] = "wav"
+    sample_rate: Literal[48000] = 48000
+    channels: Literal[2] = 2
+
+
+GenerationRequest = (
+    VideoGenerationIn
+    | ImageGenerationIn
+    | VideoComposeRequest
+    | WholeFilmRequest
+    | SubtitleRequest
+    | MusicRequest
+)
 
 _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_GENERATE): TypeAdapter(VideoGenerationIn),
     (KIND_IMAGE, OPERATION_GENERATE): TypeAdapter(ImageGenerationIn),
-    (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
+    (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(ComposeRequest),
+    (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
+    (KIND_AUDIO, OPERATION_GENERATE): TypeAdapter(MusicRequest),
 }
-"""编辑段落库的仍是 ``VideoGenerationIn``：它与出片的区别在来源列上，不在请求形状上。"""
+"""编辑段落库的仍是 ``VideoGenerationIn``：它与出片的区别在来源列上，不在请求形状上。合成与整片
+共用 video / compose，按 ``_compose_shape`` 分。"""
 
 _WITHOUT_REQUEST: Final = frozenset(
-    {(KIND_IMAGE, OPERATION_CUT), (KIND_IMAGE, OPERATION_UPLOAD), (KIND_VIDEO, OPERATION_UPLOAD)}
+    {
+        (KIND_IMAGE, OPERATION_CUT),
+        (KIND_IMAGE, OPERATION_UPLOAD),
+        (KIND_VIDEO, OPERATION_UPLOAD),
+        (KIND_AUDIO, OPERATION_UPLOAD),
+    }
 )
-"""创建即完成、没有请求的那几种行：切图只有图片，上传图片与视频都有。"""
+"""创建即完成、没有请求的那几种行：切图只有图片，上传图片、视频与音频都有。"""
 
 
 @overload
@@ -518,26 +957,30 @@ class GenerationOut(CamelModel):
     shot_index: int | None = None
     """镜头组编号，只有视频有：出片由调用方给，编辑段与合成抄原作的；图片恒为空。"""
     root_job_id: uuid.UUID | None
-    """原作：编辑段与合成指最初那条出片，出片与图片为空。按它筛（``rootJobId``）拿到整条编辑链。"""
+    """原作：编辑段与合成指最初那条出片，出片、整片与图片为空。按它筛（``rootJobId``）拿到整条编辑链。"""
     source_job_id: uuid.UUID | None = None
-    """直接来源：编辑段与合成指它的基底成片，帧图编辑指底图那一条，切图指它的宫格；别的为空。
-    合成的各段出自哪条记录记在 ``request.segments`` 里。"""
+    """直接来源：编辑段指待替换区间所属的基底成片，合成指基底成片，帧图编辑指底图，切图指宫格；
+    别的为空，整片也没有。编辑段的实际参考记在 ``request.reference_video_urls``，合成与整片的
+    各段出处记在 ``request.segments`` 里。"""
     source_url: str | None = None
     """来源的地址：``sourceJobId`` 非空时是那条记录的 ``outputUrl``；为空时只有帧图编辑可能有，是
     库里找不到的外部底图地址；都没有就是空。它是投影，不是列的镜像，来源那条读不读得到都照给。"""
     range_start_ms: int | None = None
     range_end_ms: int | None = None
-    """编辑段在基底上改的那一段，毫秒，就是受理时请求给的区间。只有编辑段有。"""
+    """编辑产物替换基底上的那一段，毫秒，就是受理时请求给的区间。只有编辑段有。"""
     output_url: str | None
     watermark_output_url: str | None
     """视频的水印版地址；图片与合成没有这一份，恒为空。"""
     error_message: str | None
     duration_ms: int | None
-    """产物实际多长，毫秒，完成后才有：视频（出片与编辑段）取上游实测的时长，合成是本系统量的，
-    图片为空；上游没给也为空。"""
+    """产物实际多长，毫秒，完成后才有：视频（出片与编辑段）取上游实测的时长，合成、整片与生成的
+    背景音乐是本系统量的，图片与上传为空；上游没给也为空。"""
     clip_stage: ClipStage | None
-    """在途的本地加工跑到哪一步：合成的取素材、拼接、上传。排队中、已有结论都为空；编辑段与
+    """在途的本地加工跑到哪一步：合成与整片的取素材、加工、上传。排队中、已有结论都为空；编辑段与
     别的记录没有本地加工，恒为空。"""
+    sentences: list[SubtitleSentence] | None = None
+    """字幕记录的结果：逐句的起止（毫秒）、文字与说话人，按识别服务给的先后。只有完成的字幕记录有，
+    没有口播是空数组；别的记录与没完成的字幕记录为空。字幕记录没有 ``outputUrl``。"""
     created_at: datetime
     finished_at: datetime | None = None
     """到终态的时刻（数据库时钟）；同一镜头组的成片按它排版本。"""
@@ -565,6 +1008,7 @@ def generation_out(job: GenerationJob, *, source_address: str | None) -> Generat
         error_message=job.error_message,
         duration_ms=job.duration_ms,
         clip_stage=_clip_stage(job),
+        sentences=None if job.sentences is None else list(job.sentences),
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
@@ -679,27 +1123,40 @@ __all__ = [
     "CLIP_FETCHING",
     "CLIP_PROCESSING",
     "CLIP_UPLOADING",
+    "FILM_LOUDNESS_LUFS",
+    "FILM_PEAK_DBFS",
     "IMAGE_MAX_REFERENCES",
+    "KIND_AUDIO",
     "KIND_IMAGE",
+    "KIND_SUBTITLE",
     "KIND_VIDEO",
     "MAX_COMPOSE_SEGMENTS",
     "MAX_METADATA_CHARS",
     "MAX_MODEL_CHARS",
+    "MAX_MUSIC_GAIN_POINTS",
+    "MAX_MUSIC_PROMPT_CHARS",
     "MAX_PROMPT_CHARS",
     "MAX_REFERENCE_URLS",
     "MAX_USER_NAME_CHARS",
+    "MAX_WHOLE_FILM_MS",
+    "MAX_WHOLE_FILM_SUBTITLES",
+    "MAX_WHOLE_FILM_SUBTITLE_CHARS",
+    "MUSIC_FADE_OUT_MS",
     "NOT_FORWARDED_FIELDS",
     "OPERATION_COMPOSE",
     "OPERATION_CUT",
     "OPERATION_GENERATE",
     "OPERATION_UPLOAD",
     "ORIGIN_FIELDS",
+    "SEGMENT_FADE_MS",
+    "SPEECH_LOUDNESS_LUFS",
     "STATUS_COMPLETED",
     "STATUS_FAILED",
     "STATUS_PENDING",
     "STATUS_SUBMITTED",
     "STATUS_SUBMITTING",
     "ClipStage",
+    "ComposeRequest",
     "ComposeSegment",
     "ComposeSegmentIn",
     "GenerationEnvelope",
@@ -713,6 +1170,12 @@ __all__ = [
     "ImageModelOut",
     "ImageModelsOut",
     "Metadata",
+    "MusicGainPoint",
+    "MusicIn",
+    "MusicRequest",
+    "SubtitleIn",
+    "SubtitleRequest",
+    "SubtitleSentence",
     "VideoComposeIn",
     "VideoComposeRequest",
     "VideoEditIn",
@@ -725,8 +1188,21 @@ __all__ = [
     "VideoTaskOut",
     "VideoTaskResult",
     "VideoTaskStatus",
+    "WholeFilmBrand",
+    "WholeFilmBrandIn",
+    "WholeFilmFont",
+    "WholeFilmIn",
+    "WholeFilmMusic",
+    "WholeFilmMusicIn",
+    "WholeFilmRender",
+    "WholeFilmRequest",
+    "WholeFilmSegment",
+    "WholeFilmSegmentIn",
+    "WholeFilmSubtitle",
     "generation_out",
     "request_from_payload",
     "request_to_payload",
+    "sentences_from_payload",
+    "sentences_to_payload",
     "video_task_out",
 ]

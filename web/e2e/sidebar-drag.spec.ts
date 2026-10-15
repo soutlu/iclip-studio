@@ -19,6 +19,8 @@ const dragOnto = async (page: Page, source: string, to: Locator) => {
   await page.mouse.down()
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 + 12, { steps: 4 })
   await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 10 })
+  // 自动滚动会改变目标位置，松手前按定位器重新对准。
+  await to.hover()
   await page.mouse.up()
 }
 

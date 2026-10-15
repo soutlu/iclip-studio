@@ -57,7 +57,7 @@ tracking_events_table = Table(
     Index("ix_tracking_events_name", "name", "occurred_at"),
 )
 
-# 可下载的视频就是成片：成功、有地址，且是出片（没有来源的 generate）或合成。按表名直接查，
+# 可下载的视频就是成片：成功、有地址，且是出片（没有来源的 generate）或合成、整片（compose）。按表名直接查，
 # 不 import 生成域；'video' / 'generate' / 'compose' / 'completed' 镜像 KIND_VIDEO /
 # OPERATION_GENERATE / OPERATION_COMPOSE / STATUS_COMPLETED，集成测试的种子取自那些常量，
 # 生成域改词这里的用例就红。

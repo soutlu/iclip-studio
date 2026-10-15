@@ -316,6 +316,203 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
+ * BrandFontConfirmIn
+ */
+export type BrandFontConfirmIn = {
+  /**
+   * Brand
+   */
+  brand?: string | null
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * BrandFontInfoOut
+ */
+export type BrandFontInfoOut = {
+  /**
+   * Family
+   */
+  family: string
+  /**
+   * Style
+   */
+  style: 'normal' | 'italic' | 'oblique'
+  /**
+   * Unicoderanges
+   */
+  unicodeRanges: Array<BrandFontUnicodeRange>
+  /**
+   * Weight
+   */
+  weight: number
+}
+
+/**
+ * BrandFontSignIn
+ */
+export type BrandFontSignIn = {
+  /**
+   * Contenttype
+   */
+  contentType: 'font/ttf' | 'font/otf'
+}
+
+/**
+ * BrandFontUnicodeRange
+ */
+export type BrandFontUnicodeRange = {
+  /**
+   * End
+   */
+  end: number
+  /**
+   * Start
+   */
+  start: number
+}
+
+/**
+ * BrandFontUploadInstruction
+ */
+export type BrandFontUploadInstruction = {
+  /**
+   * Expiresat
+   */
+  expiresAt: string
+  /**
+   * Headers
+   */
+  headers: {
+    [key: string]: string
+  }
+  /**
+   * Method
+   */
+  method?: 'PUT'
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * BrandFontUploadTicketOut
+ */
+export type BrandFontUploadTicketOut = {
+  upload: BrandFontUploadInstruction
+  /**
+   * Uploadid
+   */
+  uploadId: string
+}
+
+/**
+ * BrandTemplateCreateIn
+ */
+export type BrandTemplateCreateIn = {
+  /**
+   * Brand
+   */
+  brand?: string | null
+  /**
+   * Kind
+   */
+  kind: 'intro' | 'outro'
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Uploadid
+   */
+  uploadId: string
+}
+
+/**
+ * BrandTemplateOut
+ */
+export type BrandTemplateOut = {
+  /**
+   * Brand
+   */
+  brand: string | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Disabledat
+   */
+  disabledAt: string | null
+  /**
+   * Durationms
+   */
+  durationMs: number | null
+  /**
+   * Hasaudio
+   */
+  hasAudio: boolean | null
+  /**
+   * Height
+   */
+  height: number | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Kind
+   */
+  kind: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Width
+   */
+  width: number | null
+}
+
+/**
+ * BrandTemplateUpdateIn
+ *
+ * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
+ */
+export type BrandTemplateUpdateIn = {
+  /**
+   * Brand
+   */
+  brand?: string | null
+  /**
+   * Disabled
+   */
+  disabled?: boolean | null
+  /**
+   * Name
+   */
+  name?: string | null
+}
+
+/**
+ * BrandTemplatesOut
+ */
+export type BrandTemplatesOut = {
+  /**
+   * Items
+   */
+  items: Array<BrandTemplateOut>
+}
+
+/**
  * CategoryCountOut
  */
 export type CategoryCountOut = {
@@ -1553,6 +1750,10 @@ export type FilmViewOut = {
    */
   groups: Array<FilmGroupOut>
   /**
+   * Musicdescription
+   */
+  musicDescription: string | null
+  /**
    * Problems
    */
   problems: number
@@ -1661,7 +1862,7 @@ export type GenerationOut = {
   /**
    * Kind
    */
-  kind: 'video' | 'image'
+  kind: 'video' | 'image' | 'subtitle' | 'audio'
   /**
    * Metadata
    */
@@ -1694,6 +1895,10 @@ export type GenerationOut = {
    * Rootjobid
    */
   rootJobId: string | null
+  /**
+   * Sentences
+   */
+  sentences?: Array<SubtitleSentence> | null
   /**
    * Shotindex
    */
@@ -2200,6 +2405,56 @@ export type MovingAveragesOut = {
   tokensPerDelivery: MovingAverageOut
   totalTokens: MovingAverageOut | null
   upstreamSeconds: MovingAverageOut
+}
+
+/**
+ * MusicGainPoint
+ *
+ * 音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。
+ */
+export type MusicGainPoint = {
+  /**
+   * Atms
+   */
+  atMs: number
+  /**
+   * Gain
+   */
+  gain: number
+}
+
+/**
+ * MusicIn
+ *
+ * 生成一段背景音乐的受理输入。
+ *
+ * ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
+ * 一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+ * 它，不进 ``request``。
+ */
+export type MusicIn = {
+  /**
+   * Conversationid
+   */
+  conversationId: string
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Prompt
+   */
+  prompt: string
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
 }
 
 /**
@@ -3162,6 +3417,63 @@ export type StyleMatchOut = {
    * Styleno
    */
   styleNo: string
+}
+
+/**
+ * SubtitleIn
+ *
+ * 手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+ *
+ * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
+ * 服务不收它，不进 ``request``。
+ */
+export type SubtitleIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * SubtitleSentence
+ *
+ * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ */
+export type SubtitleSentence = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Speaker
+   */
+  speaker: number | null
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
 }
 
 /**
@@ -4538,9 +4850,10 @@ export type VideoContent = {
 /**
  * VideoEditIn
  *
- * 一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
+ * 一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
  *
- * 转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+ * 转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的
+ * 参考片段，时长不必等于基底替换区间。
  * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
  * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
  * ``VideoGenerationIn``，来源、原作与区间落列。
@@ -4867,6 +5180,203 @@ export type VideoTypeCountOut = {
     | 'try_on'
     | 'lifestyle'
     | 'product_showcase'
+}
+
+/**
+ * WholeFilmBrandIn
+ *
+ * 整片的片头或片尾：用哪条品牌模板。
+ */
+export type WholeFilmBrandIn = {
+  /**
+   * Templateid
+   */
+  templateId: string
+}
+
+/**
+ * WholeFilmCardOut
+ *
+ * 资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。
+ */
+export type WholeFilmCardOut = {
+  /**
+   * Canopenconversation
+   */
+  canOpenConversation: boolean
+  /**
+   * Conversationid
+   */
+  conversationId: string
+  face: WholeFilmVersionOut
+  /**
+   * Title
+   */
+  title: string | null
+  /**
+   * Username
+   */
+  userName: string | null
+  /**
+   * Versions
+   */
+  versions: Array<WholeFilmVersionOut>
+}
+
+/**
+ * WholeFilmCardsOut
+ */
+export type WholeFilmCardsOut = {
+  /**
+   * Items
+   */
+  items: Array<WholeFilmCardOut>
+  /**
+   * Nextcursor
+   */
+  nextCursor: string | null
+  /**
+   * Total
+   */
+  total: number | null
+}
+
+/**
+ * WholeFilmIn
+ *
+ * 一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
+ * 总长是三者之和，片头片尾的时长受理时按模板定。
+ *
+ * 字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
+ * 与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
+ * ``request``。
+ */
+export type WholeFilmIn = {
+  /**
+   * Conversationid
+   */
+  conversationId: string
+  /**
+   * Fontid
+   */
+  fontId?: string | null
+  intro?: WholeFilmBrandIn | null
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  music?: WholeFilmMusicIn | null
+  outro?: WholeFilmBrandIn | null
+  /**
+   * Segments
+   */
+  segments: Array<WholeFilmSegmentIn>
+  /**
+   * Subtitles
+   */
+  subtitles: Array<WholeFilmSubtitle>
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * WholeFilmMusicIn
+ *
+ * 整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。
+ */
+export type WholeFilmMusicIn = {
+  /**
+   * Audiojobid
+   */
+  audioJobId: string
+  /**
+   * Gain
+   */
+  gain: Array<MusicGainPoint>
+  /**
+   * Offsetms
+   */
+  offsetMs: number
+}
+
+/**
+ * WholeFilmSegmentIn
+ *
+ * 整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。
+ */
+export type WholeFilmSegmentIn = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Startms
+   */
+  startMs: number
+}
+
+/**
+ * WholeFilmSubtitle
+ *
+ * 整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。
+ */
+export type WholeFilmSubtitle = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * WholeFilmVersionOut
+ *
+ * 整片卡里的一版：这段对话自己的一条已完成整片。
+ */
+export type WholeFilmVersionOut = {
+  /**
+   * Durationms
+   */
+  durationMs: number | null
+  /**
+   * Finishedat
+   */
+  finishedAt: string
+  /**
+   * Jobid
+   */
+  jobId: string
+  /**
+   * Outputurl
+   */
+  outputUrl: string
+  /**
+   * Username
+   */
+  userName: string | null
+  /**
+   * Watermarkoutputurl
+   */
+  watermarkOutputUrl: string | null
 }
 
 export type ListKeysApiKeysGetData = {
@@ -5218,6 +5728,196 @@ export type CallbackAuthSsoCallbackGetResponses = {
    */
   200: unknown
 }
+
+export type ListBrandTemplatesBrandTemplatesGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Kind
+     */
+    kind?: string | null
+    /**
+     * Brand
+     */
+    brand?: string | null
+    /**
+     * Includedisabled
+     */
+    includeDisabled?: boolean
+  }
+  url: '/brand-templates'
+}
+
+export type ListBrandTemplatesBrandTemplatesGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListBrandTemplatesBrandTemplatesGetError =
+  ListBrandTemplatesBrandTemplatesGetErrors[keyof ListBrandTemplatesBrandTemplatesGetErrors]
+
+export type ListBrandTemplatesBrandTemplatesGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandTemplatesOut
+}
+
+export type ListBrandTemplatesBrandTemplatesGetResponse =
+  ListBrandTemplatesBrandTemplatesGetResponses[keyof ListBrandTemplatesBrandTemplatesGetResponses]
+
+export type CreateBrandTemplateBrandTemplatesPostData = {
+  body: BrandTemplateCreateIn
+  path?: never
+  query?: never
+  url: '/brand-templates'
+}
+
+export type CreateBrandTemplateBrandTemplatesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateBrandTemplateBrandTemplatesPostError =
+  CreateBrandTemplateBrandTemplatesPostErrors[keyof CreateBrandTemplateBrandTemplatesPostErrors]
+
+export type CreateBrandTemplateBrandTemplatesPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: BrandTemplateOut
+}
+
+export type CreateBrandTemplateBrandTemplatesPostResponse =
+  CreateBrandTemplateBrandTemplatesPostResponses[keyof CreateBrandTemplateBrandTemplatesPostResponses]
+
+export type SignFontBrandTemplatesFontsSignPostData = {
+  body: BrandFontSignIn
+  path?: never
+  query?: never
+  url: '/brand-templates/fonts/sign'
+}
+
+export type SignFontBrandTemplatesFontsSignPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SignFontBrandTemplatesFontsSignPostError =
+  SignFontBrandTemplatesFontsSignPostErrors[keyof SignFontBrandTemplatesFontsSignPostErrors]
+
+export type SignFontBrandTemplatesFontsSignPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandFontUploadTicketOut
+}
+
+export type SignFontBrandTemplatesFontsSignPostResponse =
+  SignFontBrandTemplatesFontsSignPostResponses[keyof SignFontBrandTemplatesFontsSignPostResponses]
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostData = {
+  body: BrandFontConfirmIn
+  path: {
+    /**
+     * Upload Id
+     */
+    upload_id: string
+  }
+  query?: never
+  url: '/brand-templates/fonts/{upload_id}/confirm'
+}
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostError =
+  ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors[keyof ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors]
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: BrandTemplateOut
+}
+
+export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponse =
+  ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses[keyof ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses]
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchData = {
+  body: BrandTemplateUpdateIn
+  path: {
+    /**
+     * Template Id
+     */
+    template_id: string
+  }
+  query?: never
+  url: '/brand-templates/{template_id}'
+}
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchError =
+  UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors[keyof UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors]
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandTemplateOut
+}
+
+export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse =
+  UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses[keyof UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses]
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetData = {
+  body?: never
+  path: {
+    /**
+     * Template Id
+     */
+    template_id: string
+  }
+  query?: never
+  url: '/brand-templates/{template_id}/font-info'
+}
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetError =
+  FontInfoBrandTemplatesTemplateIdFontInfoGetErrors[keyof FontInfoBrandTemplatesTemplateIdFontInfoGetErrors]
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandFontInfoOut
+}
+
+export type FontInfoBrandTemplatesTemplateIdFontInfoGetResponse =
+  FontInfoBrandTemplatesTemplateIdFontInfoGetResponses[keyof FontInfoBrandTemplatesTemplateIdFontInfoGetResponses]
 
 export type ListCollectionsCollectionsGetData = {
   body?: never
@@ -6574,7 +7274,7 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Kind
      */
-    kind?: 'video' | 'image' | null
+    kind?: 'video' | 'image' | 'subtitle' | 'audio' | null
     /**
      * Operation
      */
@@ -6668,6 +7368,60 @@ export type ListImageModelsGenerationsImageModelsGetResponses = {
 
 export type ListImageModelsGenerationsImageModelsGetResponse =
   ListImageModelsGenerationsImageModelsGetResponses[keyof ListImageModelsGenerationsImageModelsGetResponses]
+
+export type SubmitMusicGenerationsMusicPostData = {
+  body: MusicIn
+  path?: never
+  query?: never
+  url: '/generations/music'
+}
+
+export type SubmitMusicGenerationsMusicPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitMusicGenerationsMusicPostError =
+  SubmitMusicGenerationsMusicPostErrors[keyof SubmitMusicGenerationsMusicPostErrors]
+
+export type SubmitMusicGenerationsMusicPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitMusicGenerationsMusicPostResponse =
+  SubmitMusicGenerationsMusicPostResponses[keyof SubmitMusicGenerationsMusicPostResponses]
+
+export type SubmitSubtitleGenerationsSubtitlesPostData = {
+  body: SubtitleIn
+  path?: never
+  query?: never
+  url: '/generations/subtitles'
+}
+
+export type SubmitSubtitleGenerationsSubtitlesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitSubtitleGenerationsSubtitlesPostError =
+  SubmitSubtitleGenerationsSubtitlesPostErrors[keyof SubmitSubtitleGenerationsSubtitlesPostErrors]
+
+export type SubmitSubtitleGenerationsSubtitlesPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitSubtitleGenerationsSubtitlesPostResponse =
+  SubmitSubtitleGenerationsSubtitlesPostResponses[keyof SubmitSubtitleGenerationsSubtitlesPostResponses]
 
 export type SubmitVideoGenerationsVideoPostData = {
   body: VideoGenerationIn
@@ -6798,6 +7552,33 @@ export type GetVideoTaskGenerationsVideoTaskIdGetResponses = {
 
 export type GetVideoTaskGenerationsVideoTaskIdGetResponse =
   GetVideoTaskGenerationsVideoTaskIdGetResponses[keyof GetVideoTaskGenerationsVideoTaskIdGetResponses]
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostData = {
+  body: WholeFilmIn
+  path?: never
+  query?: never
+  url: '/generations/whole-films'
+}
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostError =
+  SubmitWholeFilmGenerationsWholeFilmsPostErrors[keyof SubmitWholeFilmGenerationsWholeFilmsPostErrors]
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitWholeFilmGenerationsWholeFilmsPostResponse =
+  SubmitWholeFilmGenerationsWholeFilmsPostResponses[keyof SubmitWholeFilmGenerationsWholeFilmsPostResponses]
 
 export type GetGenerationGenerationsJobIdGetData = {
   body?: never
@@ -6982,6 +7763,58 @@ export type VideoLibraryVideosVideoIdGetResponses = {
 
 export type VideoLibraryVideosVideoIdGetResponse =
   VideoLibraryVideosVideoIdGetResponses[keyof VideoLibraryVideosVideoIdGetResponses]
+
+export type WholeFilmsLibraryWholeFilmsGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Username
+     */
+    userName?: string | null
+    /**
+     * Since
+     */
+    since?: string | null
+    /**
+     * Until
+     */
+    until?: string | null
+    /**
+     * Q
+     */
+    q?: string | null
+    /**
+     * Limit
+     */
+    limit?: number
+    /**
+     * Cursor
+     */
+    cursor?: string | null
+  }
+  url: '/library/whole-films'
+}
+
+export type WholeFilmsLibraryWholeFilmsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type WholeFilmsLibraryWholeFilmsGetError =
+  WholeFilmsLibraryWholeFilmsGetErrors[keyof WholeFilmsLibraryWholeFilmsGetErrors]
+
+export type WholeFilmsLibraryWholeFilmsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmCardsOut
+}
+
+export type WholeFilmsLibraryWholeFilmsGetResponse =
+  WholeFilmsLibraryWholeFilmsGetResponses[keyof WholeFilmsLibraryWholeFilmsGetResponses]
 
 export type ListReferencesReferencesGetData = {
   body?: never

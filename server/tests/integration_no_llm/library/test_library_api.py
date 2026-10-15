@@ -1,4 +1,5 @@
-"""资料库端点：持 ``generation:read`` 就能看全站连同来源对话，打不打得开对话按对话自己的可读范围。"""
+"""资料库端点：持 ``generation:read`` 就能看全站的成片卡与整片卡连同来源对话，打不打得开对话按对话
+自己的可读范围。"""
 
 from __future__ import annotations
 
@@ -12,16 +13,19 @@ from iclip.common.shot_prompt import format_shot_prompt
 from iclip.domains.generation.models import STATUS_COMPLETED
 from iclip.domains.generation.schemas import (
     KIND_VIDEO,
+    OPERATION_COMPOSE,
     OPERATION_GENERATE,
     VideoGenerationIn,
     VideoShotIn,
     request_to_payload,
 )
 from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.generation import whole_film_request
 from tests.helpers.pg import connected
 
 VIDEOS = "/library/videos"
 AUTHORS = "/library/authors"
+WHOLE_FILMS = "/library/whole-films"
 PASSWORD = "password-123"
 
 SHOT = VideoShotIn.model_validate(
@@ -113,9 +117,107 @@ async def plant_file(pg_url: str, owner: uuid.UUID, conversation_id: uuid.UUID, 
         )
 
 
+async def plant_whole_film(
+    pg_url: str, *, owner: uuid.UUID, conversation_id: uuid.UUID, source: uuid.UUID
+) -> uuid.UUID:
+    """``conversation_id`` 上一条完成的整片，只有一段，取 ``source`` 的第一秒；返回整片 id。"""
+
+    film = uuid.uuid4()
+    request = whole_film_request(
+        [
+            {
+                "sourceJobId": source,
+                "url": "https://oss.example.test/v.mp4",
+                "startMs": 0,
+                "endMs": 1000,
+            }
+        ]
+    )
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                " operation, provider, request, status, output_url, duration_ms, created_at,"
+                " finished_at)"
+                " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'ffmpeg',"
+                " CAST(:request AS jsonb), :status, :output_url, 1000, now(), now())"
+            ),
+            {
+                "id": film,
+                "owner": owner,
+                "conversation_id": conversation_id,
+                "kind": KIND_VIDEO,
+                "operation": OPERATION_COMPOSE,
+                "request": json.dumps(request_to_payload(request)),
+                "status": STATUS_COMPLETED,
+                "output_url": f"https://oss.example.test/{film}.mp4",
+            },
+        )
+    return film
+
+
 async def test_anonymous_is_401(client: httpx.AsyncClient) -> None:
-    for path in (VIDEOS, f"{VIDEOS}/{uuid.uuid4()}", AUTHORS):
+    for path in (VIDEOS, f"{VIDEOS}/{uuid.uuid4()}", AUTHORS, WHOLE_FILMS):
         assert (await client.get(path)).status_code == 401
+
+
+async def test_whole_films_need_generation_read(client: httpx.AsyncClient, pg_url: str) -> None:
+    await login_as(client, pg_url, "nobody", "viewer")
+    await set_roles_in_db(pg_url, "nobody@example.com", [])
+
+    assert (await client.get(WHOLE_FILMS)).status_code == 403
+
+
+async def test_whole_film_cards_carry_every_version_and_the_conversation(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    """属主看到自己的整片卡、打得开对话；同事看到同一张卡，打不开对话。卡面是最后一版，不带脚本。"""
+
+    owner = await login_as(client, pg_url, "nora", "editor")
+    conversation_id, video_id = await plant_video(pg_url, owner=owner, user_name="nora")
+    first = await plant_whole_film(
+        pg_url, owner=owner, conversation_id=conversation_id, source=video_id
+    )
+    second = await plant_whole_film(
+        pg_url, owner=owner, conversation_id=conversation_id, source=video_id
+    )
+
+    as_owner = await client.get(WHOLE_FILMS)
+    await login_as(client, pg_url, "lena", "editor")
+    as_colleague = await client.get(WHOLE_FILMS)
+
+    assert as_owner.status_code == 200, as_owner.text
+    body = as_owner.json()
+    assert body["total"] == 1 and body["nextCursor"] is None
+    card = body["items"][0]
+    assert set(card) == {
+        "conversationId",
+        "canOpenConversation",
+        "title",
+        "userName",
+        "face",
+        "versions",
+    }
+    assert (card["conversationId"], card["title"], card["userName"]) == (
+        str(conversation_id),
+        "凉鞋合集",
+        "nora",
+    )
+    assert card["canOpenConversation"] is True
+    assert [version["jobId"] for version in card["versions"]] == [str(first), str(second)]
+    assert card["face"] == card["versions"][-1]
+    assert card["face"] == {
+        "jobId": str(second),
+        "outputUrl": f"https://oss.example.test/{second}.mp4",
+        "watermarkOutputUrl": None,
+        "durationMs": 1000,
+        "finishedAt": card["face"]["finishedAt"],
+        "userName": "nora",
+    }
+
+    colleague = as_colleague.json()["items"][0]
+    assert colleague["canOpenConversation"] is False
+    assert {**colleague, "canOpenConversation": True} == card
 
 
 async def test_viewer_reads_the_empty_library(client: httpx.AsyncClient, pg_url: str) -> None:
@@ -228,3 +330,10 @@ async def test_bad_parameters_are_422(client: httpx.AsyncClient, pg_url: str) ->
     assert inverted.status_code == 422 and "since" in inverted.json()["detail"]
     assert bad_cursor.status_code == 422 and "cursor" in bad_cursor.json()["detail"]
     assert bad_orientation.status_code == 422
+
+    film_inverted = await client.get(
+        WHOLE_FILMS, params={"since": "2026-09-02T00:00:00Z", "until": "2026-09-01T00:00:00Z"}
+    )
+    film_bad_cursor = await client.get(WHOLE_FILMS, params={"cursor": "not-a-cursor"})
+    assert film_inverted.status_code == 422 and "since" in film_inverted.json()["detail"]
+    assert film_bad_cursor.status_code == 422 and "cursor" in film_bad_cursor.json()["detail"]

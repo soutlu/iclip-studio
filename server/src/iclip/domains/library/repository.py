@@ -7,8 +7,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from iclip.domains.library.models import Scope, VideoCursor
-from iclip.domains.library.schemas import LibraryAuthorOut, LibraryVideoOut, ShotGroupOut
+from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.schemas import (
+    LibraryAuthorOut,
+    LibraryVideoOut,
+    ShotGroupOut,
+    WholeFilmCardOut,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +22,15 @@ class CardRow:
 
     video: LibraryVideoOut
     conversation_owner: uuid.UUID | None
+    conversation_deleted: bool
+
+
+@dataclass(frozen=True, slots=True)
+class WholeFilmCardRow:
+    """一张整片卡连同来源对话的属主与删除标记；``card.can_open_conversation`` 尚未按读者算。"""
+
+    card: WholeFilmCardOut
+    conversation_owner: uuid.UUID
     conversation_deleted: bool
 
 
@@ -43,5 +57,15 @@ class LibraryReports(Protocol):
         """每个作者一行，卡多的排前面。"""
         ...
 
+    async def whole_films(
+        self, scope: WholeFilmScope, *, limit: int, after: VideoCursor | None
+    ) -> Sequence[WholeFilmCardRow]:
+        """整片卡，卡面完成时刻晚的排前面，同一时刻按对话 id 倒序；每张卡带齐全部版本。"""
+        ...
 
-__all__ = ["CardRow", "LibraryReports"]
+    async def count_whole_films(self, scope: WholeFilmScope) -> int:
+        """筛选范围里一共几张整片卡。"""
+        ...
+
+
+__all__ = ["CardRow", "LibraryReports", "WholeFilmCardRow"]

@@ -65,12 +65,6 @@ export const projectVersions = (
   ]
 }
 
-/** 基于这一版的编辑段，不论状态，按提交先后。 */
-export const editsOf = (jobs: readonly GenerationJob[], versionJobId: string): EditSegment[] =>
-  jobs
-    .filter((job): job is EditSegment => isEditSegment(job) && job.sourceJobId === versionJobId)
-    .sort(byCreation)
-
 /** 这一版正在跑的合成，最近提交的那条；没有就是 `undefined`。 */
 export const composingOf = (
   jobs: readonly GenerationJob[],
@@ -82,23 +76,6 @@ export const composingOf = (
     )
     .sort(byCreation)
     .at(-1)
-
-/** 草稿丢了按服务端重建时还算数的编辑段：这一版最近一次完成的合成之后提交的。在那之前提交的
- * 已经拼进那次合成或被放弃了，合成完成时草稿清掉，重建时也不再放回来。 */
-export const rebuildCandidates = (
-  jobs: readonly GenerationJob[],
-  versionJobId: string,
-): EditSegment[] => {
-  const lastComposite = jobs
-    .filter(
-      (job) => isComposite(job) && job.sourceJobId === versionJobId && job.status === 'completed',
-    )
-    .sort(byCreation)
-    .at(-1)
-  return editsOf(jobs, versionJobId).filter(
-    (edit) => lastComposite === undefined || byCreation(edit, lastComposite) > 0,
-  )
-}
 
 /** 每条根被成功编辑过几次，给成片卡显示：数它名下已完成的编辑段。合成只是拼接，不另算。 */
 export const editCountsByRoot = (jobs: readonly GenerationJob[]): ReadonlyMap<string, number> => {

@@ -9,6 +9,7 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
 import { auditHandlers } from './audit'
+import { brandTemplateHandlers, resetMockBrandTemplates } from './brand-templates'
 import { filmHandlers } from './film'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
@@ -22,6 +23,7 @@ import {
   resetMockConversations,
   type MockConversation,
 } from './conversations'
+import { audioHandlers } from './audio'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
@@ -61,6 +63,7 @@ const activeUserId = () => (currentUser ?? mockAuthUser).id
 export const resetMockSession = () => {
   currentUser = null
   resetMockUploads()
+  resetMockBrandTemplates()
 }
 
 const SIDEBAR_PER_COLLECTION = 10
@@ -465,6 +468,7 @@ export const handlers = [
   }),
 
   ...uploadHandlers,
+  ...audioHandlers,
 
   // 埋点只收不回；不校验主语，夹具里的记录 id 不都是 UUID。
   http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
@@ -477,6 +481,8 @@ export const handlers = [
   ...auditHandlers((taskId) => mockTasks.find((task) => task.id === taskId)?.title ?? null),
 
   ...libraryHandlers,
+
+  ...brandTemplateHandlers(() => (currentUser ?? mockAuthUser).permissions),
 
   ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
 ]

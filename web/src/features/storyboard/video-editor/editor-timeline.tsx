@@ -2,18 +2,10 @@
  * 下面是字幕轨与音乐轨，现在还没有内容，只画空轨。
  * 点段选中、拖两端裁剪、按住中间拖动调序；比例按所看那一版的时长排，草稿短了右边留一个细框。 */
 
-import {
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
-  type Ref,
-} from 'react'
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
-import { useElapsed } from '@/shared/ui/media-preview'
 import {
   selectedRange,
   stepSelect,
@@ -43,6 +35,8 @@ export type TimelineEntry = {
   changed: boolean
   /** 占位：AI 从这一刻起在改。 */
   runningSince: string | undefined
+  /** 有编辑记录的片段当前选用哪一版；未编辑过时不显示版本小标。 */
+  versionLabel?: string | undefined
 }
 
 type EditorTimelineProps = {
@@ -59,7 +53,7 @@ type EditorTimelineProps = {
   peaksOf: (url: string) => PeaksState
   onSeek: (clock: number) => void
   /** 点了能剪的一段（鼠标点、或聚焦时回车与空格）：选中怎么变由调用方定。 */
-  onClickSegment: (id: string) => void
+  onClickSegment: (id: string, extend?: boolean) => void
   /** 键盘左右键改了选中。 */
   onSelect: (selection: Selection) => void
   /** 开始拖动：播放头、裁剪手柄，或按住段挪过了阈值。 */
@@ -83,7 +77,7 @@ const DRAG_THRESHOLD = 4
 const KEY_TRIM_STEP = 0.1
 
 /** 一截素材的缩略图：按时间均匀截几张；地址截不了帧（不是 OSS）或截失败时露出中性底色。 */
-function Frames({ part }: { part: PlaySegment }) {
+export function Frames({ part }: { part: PlaySegment }) {
   const length = part.end - part.start
   const count = Math.max(1, Math.min(24, Math.round(length * 2)))
   const shots = Array.from({ length: count }).flatMap((_, at) => {
@@ -114,7 +108,7 @@ function Frame({ src }: { src: string }) {
 const partKey = (part: PlaySegment) => `${part.mediaUrl}@${part.start}-${part.end}`
 
 /** 一截素材的原声：读中一条低调的占位线，没有音轨写「无声」，读不出写明，读到画波形。 */
-function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
+export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
   const length = part.end - part.start
   const body = (() => {
     switch (state.kind) {
@@ -144,17 +138,6 @@ function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
   return (
     <span className="video-editor-timeline-wave" style={{ flexGrow: length }}>
       {body}
-    </span>
-  )
-}
-
-/** 占位上那层「生成中 0:42」，盖住视频与原声。 */
-function RunningCover({ since, style }: { since: string; style: CSSProperties }) {
-  const elapsed = useElapsed(since)
-  return (
-    <span className="video-editor-timeline-running" role="status" style={style}>
-      <Icon className="motion-safe:animate-spin" decorative name="loading" size="sm" />
-      生成中 {elapsed}
     </span>
   )
 }
@@ -200,6 +183,7 @@ export function EditorTimeline({
   // 播放位置滑块是被指针按住拿到的焦点：Chrome 对 range 点一下也算 :focus-visible，刻度区的焦点环
   // 只留给键盘，按下键盘或失焦时清掉这个记号。
   const [seekByPointer, setSeekByPointer] = useState(false)
+  const seekPointerRef = useRef<number | null>(null)
 
   const percent = (time: number) => `${(time / scale) * 100}%`
   const span = (at: number, duration: number) => ({
@@ -230,13 +214,13 @@ export function EditorTimeline({
 
   // ---------- 点选与键盘 ----------
 
-  const click = (entry: TimelineEntry) => {
+  const click = (entry: TimelineEntry, extend: boolean) => {
     if (swallowClickRef.current) {
       swallowClickRef.current = false
       return
     }
     setFocusId(entry.id)
-    if (editable) onClickSegment(entry.id)
+    if (editable) onClickSegment(entry.id, extend)
     else onSeek(entry.at)
   }
 
@@ -374,6 +358,15 @@ export function EditorTimeline({
   const tickStep = TICK_STEPS.find((step) => step >= scale / 8) ?? Math.ceil(scale / 8 / 60) * 60
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
+  const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
+    onSeek(Math.min(total, clockAt(event.clientX)))
+  }
+  const finishSeek = (event: PointerEvent<HTMLInputElement>) => {
+    if (seekPointerRef.current !== event.pointerId) return
+    seekPointerRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId)
+  }
 
   // ---------- 拖动中的画法 ----------
 
@@ -474,7 +467,22 @@ export function EditorTimeline({
                 onSeek(Math.min(total, Number(event.target.value)))
               }}
               onKeyDown={() => setSeekByPointer(false)}
-              onPointerDown={() => setSeekByPointer(true)}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                event.preventDefault()
+                event.stopPropagation()
+                setSeekByPointer(true)
+                event.currentTarget.focus()
+                event.currentTarget.setPointerCapture(event.pointerId)
+                seekPointerRef.current = event.pointerId
+                onScrub()
+                seekPointer(event)
+              }}
+              onPointerMove={(event) => {
+                if (seekPointerRef.current === event.pointerId) seekPointer(event)
+              }}
+              onPointerUp={finishSeek}
+              onPointerCancel={finishSeek}
               step={0.01}
               type="range"
               value={boundedTime}
@@ -494,6 +502,9 @@ export function EditorTimeline({
                   {entry.parts.map((part) => (
                     <Frames key={partKey(part)} part={part} />
                   ))}
+                  {entry.versionLabel === undefined ? null : (
+                    <span className="video-editor-timeline-version">{entry.versionLabel}</span>
+                  )}
                 </span>
                 <span className="video-editor-timeline-face is-gap">
                   {entry.changed ? (
@@ -530,7 +541,7 @@ export function EditorTimeline({
                   isLifted && 'is-slot',
                 )}
                 key={entry.id}
-                onClick={() => click(entry)}
+                onClick={(event) => click(entry, event.shiftKey)}
                 onFocus={() => setFocusId(entry.id)}
                 onKeyDown={(event) => keyDown(event, entry)}
                 onPointerCancel={releaseClip}
@@ -639,16 +650,6 @@ export function EditorTimeline({
                 ? `缩短 ${trimmed.shorter.toFixed(1)} 秒`
                 : `延长 ${(-trimmed.shorter).toFixed(1)} 秒`}
             </span>
-          )}
-
-          {entries.map((entry) =>
-            entry.runningSince === undefined ? null : (
-              <RunningCover
-                key={entry.id}
-                since={entry.runningSince}
-                style={span(entry.at, entry.duration)}
-              />
-            ),
           )}
 
           {lifted === undefined || lift === null ? null : (

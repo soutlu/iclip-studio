@@ -137,7 +137,14 @@ async def upload_rows(pg_url: str) -> int:
 
 
 @pytest.mark.parametrize(
-    ("content_type", "ext", "kind"), [("image/png", "png", "image"), ("video/mp4", "mp4", "video")]
+    ("content_type", "ext", "kind"),
+    [
+        ("image/png", "png", "image"),
+        ("video/mp4", "mp4", "video"),
+        ("audio/mpeg", "mp3", "audio"),
+        ("audio/wav", "wav", "audio"),
+        ("audio/mp4", "m4a", "audio"),
+    ],
 )
 async def test_confirming_records_an_upload_even_without_media_generation(
     client: httpx.AsyncClient,
@@ -283,16 +290,19 @@ async def test_the_same_video_uploaded_again_shares_the_first_address(
     )
 
 
-async def test_the_same_image_uploaded_twice_keeps_two_addresses(
-    client: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+@pytest.mark.parametrize(
+    ("content_type", "ext"), [("image/png", "png"), ("audio/mpeg", "mp3")], ids=["图片", "音乐"]
+)
+async def test_the_same_image_or_music_uploaded_twice_keeps_two_addresses(
+    client: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, content_type: str, ext: str
 ) -> None:
-    """图片不去重：同样的字节传两次，各留各的地址与对象，不记 MD5。"""
+    """图片与音乐不去重：同样的字节传两次，各留各的地址与对象，不记 MD5。"""
 
     await login_as_editor(client, pg_url)
-    content = b"PNGDATA" * 10
-    first_id, first_key, first = await confirmed_upload(client, bucket, content, "image/png", "png")
+    content = b"MEDIADATA" * 10
+    first_id, first_key, first = await confirmed_upload(client, bucket, content, content_type, ext)
     second_id, second_key, second = await confirmed_upload(
-        client, bucket, content, "image/png", "png"
+        client, bucket, content, content_type, ext
     )
 
     assert (first["url"], second["url"]) == (
@@ -327,14 +337,24 @@ async def media_app(
         await engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("content_type", "ext", "kind"),
+    [("image/png", "png", "image"), ("audio/mp4", "m4a", "audio")],
+    ids=["图片", "音乐"],
+)
 async def test_an_upload_reads_back_through_the_generation_records(
-    media_app: FastAPI, pg_url: str, bucket: MemoryObjectStore
+    media_app: FastAPI,
+    pg_url: str,
+    bucket: MemoryObjectStore,
+    content_type: str,
+    ext: str,
+    kind: str,
 ) -> None:
     """GET /generations/{uploadId} 读得到那条上传；按属主列会看到它，按 operation=generate 筛掉。"""
 
     async with make_client(media_app) as http:
         await login_as_editor(http, pg_url)
-        upload_id, _ = await uploaded(http, bucket, "image/png", "png")
+        upload_id, _ = await uploaded(http, bucket, content_type, ext)
         confirmed = (await http.post(f"/uploads/{upload_id}/confirm")).json()
         record = await http.get(f"/generations/{upload_id}")
         listed = await http.get("/generations")
@@ -349,7 +369,8 @@ async def test_an_upload_reads_back_through_the_generation_records(
         generation["outputUrl"],
         generation["request"],
         generation["sourceUrl"],
-    ) == ("image", "upload", "completed", confirmed["url"], None, None)
+    ) == (kind, "upload", "completed", confirmed["url"], None, None)
+    assert generation["durationMs"] is None, "上传不量时长"
     assert generation["finishedAt"] is not None
     assert [item["id"] for item in listed.json()["items"]] == [upload_id]
     assert generated.json()["items"] == []

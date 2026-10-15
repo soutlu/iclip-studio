@@ -28,6 +28,11 @@ from iclip.app.agent_layer import (
     live_title_generator,
     watch_and_reload,
 )
+from iclip.app.brand_templates import (
+    brand_template_facts,
+    template_font_prober,
+    template_video_prober,
+)
 from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
@@ -49,6 +54,7 @@ from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
 from iclip.common.errors import NotFound
 from iclip.config import (
+    QWEN_API_KEY_ENV,
     ObjectStoreEnv,
     ResolvedAgent,
     ResolvedMediaGeneration,
@@ -60,6 +66,9 @@ from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
+from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
+from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
+from iclip.domains.brand_templates.repository import ProbeFont, ProbeVideo
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -69,12 +78,19 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.module import (
     GenerationModule,
     ImageModelConfig,
+    MusicConfig,
+    SubtitleConfig,
     build_generation_module,
 )
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
-from iclip.domains.generation.service import ClearCompletion, ConversationLineage, SettledRecords
+from iclip.domains.generation.service import (
+    BrandTemplates,
+    ClearCompletion,
+    ConversationLineage,
+    SettledRecords,
+)
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.accounts import CookieAuthSettings
 from iclip.domains.identity.infra_sql import DB_SCHEMA
@@ -275,6 +291,7 @@ def _generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
+    brand_templates: BrandTemplates,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
@@ -293,6 +310,7 @@ def _generation_module(
         act_as=act_as,
         clear_completion=clear_completion,
         lineage=lineage,
+        brand_templates=brand_templates,
         video=VideoProviderSettings(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
@@ -323,6 +341,22 @@ def _generation_module(
             job_timeout_seconds=settings.job_timeout_seconds,
             compose_concurrency=compose_concurrency,
         ),
+        subtitles=SubtitleConfig(
+            url=settings.subtitle.url,
+            api_key=settings.subtitle.api_key,
+            concurrency=settings.subtitle.concurrency,
+            timeout_seconds=settings.subtitle.timeout_seconds,
+        )
+        if settings.subtitle is not None
+        else None,
+        music=MusicConfig(
+            url=settings.music.url,
+            api_key=settings.music.api_key,
+            concurrency=settings.music.concurrency,
+            timeout_seconds=settings.music.timeout_seconds,
+        )
+        if settings.music is not None
+        else None,
     )
 
 
@@ -340,6 +374,8 @@ def build_app(
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
     reference_tagger: Tagger | None = None,
+    brand_template_probe: ProbeVideo | None = None,
+    brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     reload_source: ReloadSource | None = None,
     watch_paths: Sequence[Path] = (),
@@ -348,7 +384,8 @@ def build_app(
 
     ``image_fetcher`` 替换转存附件图片用的出网下载（测试替身）；不给且有对象存储时建一个
     ``PublicFetcher``，lifespan 里关掉。``reference_breakdowns`` / ``reference_tagger`` 替换参考视频的拆解与打标（测试替身）；只在
-    拆解已配置时用得上。``media_codec`` 指定本地视频加工的编解码（测试替身）；不给且要用
+    拆解已配置时用得上。``brand_template_probe`` 替换建品牌模板时下载视频量参数的那一步（测试替身）；
+    只在媒体生成开着时用得上。``media_codec`` 指定本地视频加工的编解码（测试替身）；不给且要用
     ffmpeg 时，这里同步跑一次探测（几条短 ffmpeg 子进程）选出来。``reload_source`` 重读配置与
     agent 声明，不给就沿用传入的 ``config`` 与 ``agents``；``watch_paths`` 下的文件一变就用它
     热换 agent 层，SIGHUP 也触发同一次重载。
@@ -412,6 +449,20 @@ def build_app(
         _logger.warning(
             "配了 shot_video 段但取帧与出图装不起来", missing=list(settings.shot_tools_missing)
         )
+    if settings.media_generation is None or settings.media_generation.subtitle is None:
+        # 字幕识别可以不开，但要让人看得出它没开：成片不会有字幕记录，手动识别会被拒。
+        _logger.warning(
+            "字幕识别未启用",
+            media_generation=settings.media_generation is not None,
+            requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
+        )
+    if settings.media_generation is None or settings.media_generation.music is None:
+        # 同上：整片编辑器里生成背景音乐会被拒，上传音乐不受影响。
+        _logger.warning(
+            "音乐生成未启用",
+            media_generation=settings.media_generation is not None,
+            requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
+        )
     # 图片信息查询、素材下载与拆解请求共用 HTTP 连接池。
     http_client = httpx.AsyncClient(follow_redirects=True)
     catalog_engine = _product_catalog_engine(settings.product_catalog, product_catalog_engine)
@@ -466,6 +517,10 @@ def build_app(
             else procrastinate.PsycopgConnector(conninfo=queue_dsn(settings.database_url))
         )
 
+    # 整片受理时读片头片尾与字体，与品牌资源端点共用一个仓储。
+    brand_template_store = SqlBrandTemplateStore(active_engine)
+    font_probe = brand_font_probe or template_font_prober(http_client, fetch_url)
+
     # 镜头能力依赖生成服务，须先于 Agent 装配。
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
@@ -483,6 +538,7 @@ def build_app(
             lineage=ForkLineageAdapter(
                 conversations=conversation_repo, readable=conversation_readable
             ),
+            brand_templates=brand_template_facts(brand_template_store, probe_font=font_probe),
             object_store=public_objects,
             queue_connector=connector,
             media_codec=codec,
@@ -500,6 +556,19 @@ def build_app(
         if job.kind != KIND_VIDEO or job.operation != OPERATION_UPLOAD:
             return None
         return job.output_url
+
+    # 品牌模板只给整片用，跟着媒体生成挂；建模板要下载视频用 ffmpeg 量，媒体生成开着才有 ffmpeg。
+    brand_templates: BrandTemplatesModule | None = None
+    if generation is not None:
+        if public_objects is None:
+            raise RuntimeError("品牌资源已启用却没有对象存储")
+        brand_templates = build_brand_templates_module(
+            brand_template_store,
+            own_video_upload=own_video_upload,
+            probe=brand_template_probe or template_video_prober(http_client, fetch_url),
+            objects=public_objects,
+            probe_font=font_probe,
+        )
 
     breakdown_setup: BreakdownSetup | None = None
     if settings.iclip_studio is not None and connector is not None:
@@ -826,6 +895,9 @@ def build_app(
         app.include_router(router)
     for router in references.routers:
         app.include_router(router)
+    if brand_templates is not None:
+        for router in brand_templates.routers:
+            app.include_router(router)
     for router in tracking.routers:
         app.include_router(router)
     app.include_router(

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect, useNavigate, useParams } from '@tanstack/react-router'
 import { z } from 'zod'
-import { ConversationRoute } from '@/features/conversations'
+import { ConversationRoute, useConversationTask } from '@/features/conversations'
 import { shotContentIdSchema } from '@/features/storyboard'
 import { ensureSessionUser } from '@/shared/auth'
 import { canonicalUuid } from '@/shared/lib/uuid'
@@ -19,6 +19,8 @@ const ConversationSearchSchema = z.object({
   take: z.string().optional().catch(undefined),
   /** 视频编辑器开在哪条出片记录上（编辑链的根）。 */
   video: z.string().min(1).optional().catch(undefined),
+  /** 整片编辑器开着（视频编辑器的整片模式）。 */
+  wholeFilm: z.literal(true).optional().catch(undefined),
 })
 
 // 会话为私有内容，未登录或会话失效时由路由守卫返回首页。
@@ -76,5 +78,11 @@ function ConversationIndexRoute() {
 function ConversationWorkbenchPanel() {
   const { conversationId } = useParams({ strict: false })
   if (conversationId === undefined) return null
-  return <WorkbenchHost conversationId={conversationId} key={conversationId} />
+  return <ConversationWorkbench conversationId={conversationId} key={conversationId} />
+}
+
+/** 工作台要知道对话挂的需求单（整片编辑器里另起的识别与生成归属到它），由路由从对话行读来交给它。 */
+function ConversationWorkbench({ conversationId }: { conversationId: string }) {
+  const task = useConversationTask(conversationId)
+  return <WorkbenchHost conversationId={conversationId} task={task} />
 }

@@ -23,12 +23,15 @@ from iclip.domains.generation.schemas import (
     ImageModelOut,
     ImageModelsOut,
     Metadata,
+    MusicIn,
+    SubtitleIn,
     VideoComposeIn,
     VideoEditIn,
     VideoGenerationIn,
     VideoModelsOut,
     VideoSubmitOut,
     VideoTaskOut,
+    WholeFilmIn,
     generation_out,
     video_task_out,
 )
@@ -78,12 +81,12 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
         """在一条成片上改一段：请求就是一次上游视频请求，``reference_video_urls`` 恰好一条，是调用方
-        从基底上切好、自己上传的参考片段；``source_job_id`` 与 ``range_start_ms`` /
-        ``range_end_ms`` 只记账，记下基于哪一版、改的哪一段。
+        按当前选用素材裁剪、拼接后上传的实际参考；``source_job_id`` 与 ``range_start_ms`` /
+        ``range_end_ms`` 只记账，记下产物将替换哪一版成片的哪一段，使用基底媒体时间。
 
         受理时核对：基底是这段对话自己的或继承来的一条已完成成片，区间在它的时长之内；片段是
-        调用者本人的一条视频上传，时长与区间长度一致。不合格 422、不入队。``user_name`` 的规则
-        同出片。
+        调用者本人的一条可读、有正时长的视频上传，不要求与替换区间等长。不合格 422、不入队。
+        ``user_name`` 的规则同出片。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -111,6 +114,62 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         job = await service.submit_video_compose(
             principal, body.model_copy(update={"user_name": user_name})
         )
+        return await envelope(job)
+
+    @router.post("/whole-films", response_model=GenerationEnvelope, status_code=202)
+    async def submit_whole_film(
+        body: WholeFilmIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上
+        字幕与背景音乐，本地 ffmpeg 渲染，不经外部服务。
+
+        ``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs}`` 取那条成片自己媒体时间里
+        的一段；整片总长是各段时长之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间，
+        服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却
+        不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``userName`` 的规则
+        同出片，只用来替人办事，不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_whole_film(principal, body)
+        return await envelope(job)
+
+    @router.post("/subtitles", response_model=GenerationEnvelope, status_code=202)
+    async def submit_subtitle(
+        body: SubtitleIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """手动识别一条成片的口播，另起一条字幕记录（种类 ``subtitle``）；成片完成时后台已自动识别
+        一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。
+
+        ``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到
+        却不是成片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
+        取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_subtitle(principal, body)
+        return await envelope(job)
+
+    @router.post("/music", response_model=GenerationEnvelope, status_code=202)
+    async def submit_music(
+        body: MusicIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """生成一段背景音乐，记一条音频记录（种类 ``audio``、操作 ``generate``）；完成后
+        ``outputUrl`` 是去掉首尾静音、统一响度后转存的 m4a，``durationMs`` 是它的时长。
+
+        ``prompt`` 原样发给音乐模型，服务端不补任何文字，至多 3000 字。``conversationId`` 必填，
+        读不到这段对话 404；生成背景音乐没开通 422。``userName`` 的规则同出片，只用来替人办事，
+        不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_music(principal, body)
         return await envelope(job)
 
     @router.post("/image", response_model=GenerationEnvelope, status_code=202)
@@ -166,6 +225,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         ``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。
 
         按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。
+        成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
+        一段对话生成的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找；上传的音乐不挂对话，按属主列。
         """
 
         jobs = await service.list_recent(

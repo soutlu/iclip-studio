@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
-import {
-  composingOf,
-  editCountsByRoot,
-  editsOf,
-  projectVersions,
-  rebuildCandidates,
-} from './edit-chain'
+import { composingOf, editCountsByRoot, projectVersions } from './edit-chain'
 
 const at = (time: string) => `2026-09-15T${time}Z`
 
@@ -102,19 +96,9 @@ describe('一版名下的编辑段与合成', () => {
     composite('m2', 'root', { createdAt: at('10:06:00'), status: 'submitting', outputUrl: null }),
   ]
 
-  it('编辑段只认来源是这一版的，按提交先后', () => {
-    expect(editsOf(jobs, 'root').map((item) => item.id)).toEqual(['e1', 'e2'])
-    expect(editsOf(jobs, 'm1').map((item) => item.id)).toEqual(['other'])
-  })
-
   it('在跑的合成取这一版最近提交的那条', () => {
     expect(composingOf(jobs, 'root')?.id).toBe('m2')
     expect(composingOf(jobs, 'm1')).toBeUndefined()
-  })
-
-  it('重建只认这一版最近一次完成的合成之后提交的编辑段，之前的已经拼进去了', () => {
-    expect(rebuildCandidates(jobs, 'root').map((item) => item.id)).toEqual(['e2'])
-    expect(rebuildCandidates(jobs, 'm1').map((item) => item.id)).toEqual(['other'])
   })
 })
 

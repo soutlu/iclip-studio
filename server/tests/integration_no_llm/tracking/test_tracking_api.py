@@ -13,6 +13,7 @@ from sqlalchemy.engine import RowMapping
 
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
 from iclip.domains.generation.schemas import (
+    KIND_AUDIO,
     KIND_IMAGE,
     KIND_VIDEO,
     OPERATION_COMPOSE,
@@ -34,6 +35,7 @@ _JOBS: tuple[tuple[str, str, str, str, str | None, bool], ...] = (
     ("no_url", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, None, False),
     ("image", KIND_IMAGE, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
     ("upload", KIND_VIDEO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
+    ("music_upload", KIND_AUDIO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
 )
 DOWNLOADABLE = ("video", "composite")
 
@@ -47,7 +49,7 @@ async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: 
 
 async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
     """一段对话里一条成了的出片，它上面的一段编辑与那次合成，外加没成的、没地址的出片与一张图；
-    另有一条不挂对话、没有请求的视频上传。"""
+    另有不挂对话、没有请求的一条视频上传与一条音乐上传。"""
 
     conversation_id = uuid.uuid4()
     ids = {label: uuid.uuid4() for label, *_ in _JOBS}
@@ -153,7 +155,7 @@ async def test_anyone_who_reads_generations_records_a_download_of_any_take_or_co
 async def test_anything_but_a_downloadable_video_is_the_same_404(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """编辑段、没成的、没地址的、图片、视频上传与根本不存在的，状态码与报错一字不差。"""
+    """编辑段、没成的、没地址的、图片、视频与音乐上传、根本不存在的，状态码与报错一字不差。"""
 
     owner = await login_as(client, pg_url, "nora", "editor")
     jobs = await plant_jobs(pg_url, owner=owner)

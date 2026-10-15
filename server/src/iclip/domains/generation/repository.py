@@ -15,6 +15,7 @@ from iclip.domains.generation.models import (
     InFlightPhase,
     Inheritance,
 )
+from iclip.domains.generation.schemas import SubtitleSentence
 
 
 class GenerationRepository(Protocol):
@@ -115,6 +116,19 @@ class GenerationRepository(Protocol):
         就记下产物时长。
 
         指定 only_if_status 时原子校验状态，不匹配返回 None，避免覆盖并发写入的结果。"""
+        ...
+
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        """字幕记录的成功终态：写下逐句结果（没有口播是空元组）、回执 id，补齐 submitted_at；没有
+        产物地址。指定 only_if_status 时原子校验状态，不匹配返回 None。"""
         ...
 
     async def mark_failed(

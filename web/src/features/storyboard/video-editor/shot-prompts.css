@@ -1,0 +1,97 @@
+.video-editor-prompts {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: var(--z-local-3);
+}
+
+.video-editor-prompts > button {
+  border-radius: var(--radius-sm);
+  background: var(--color-top-layer);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+}
+
+.video-editor-prompts-panel {
+  display: flex;
+  width: min(340px, calc(100vw - 48px));
+  max-height: min(480px, var(--radix-popover-content-available-height));
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-top-layer);
+  color: var(--color-on-surface);
+}
+
+.video-editor-prompts-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 0.5px solid var(--color-hairline);
+}
+
+.video-editor-prompts-head h3 {
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: var(--text-title--line-height);
+}
+
+.video-editor-prompts-head p {
+  margin-top: 4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.video-editor-prompts-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px;
+  scrollbar-width: thin;
+}
+
+.video-editor-prompts-body li {
+  padding: 16px 0;
+}
+
+.video-editor-prompts-body li + li {
+  border-top: 0.5px solid var(--color-hairline);
+}
+
+.video-editor-prompt-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.video-editor-prompt-heading h4 {
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--text-body--line-height);
+}
+
+.video-editor-prompt-heading span {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+.video-editor-prompt-text,
+.video-editor-prompts-empty {
+  padding: 12px 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.video-editor-prompts-body li > button {
+  margin-left: -8px;
+  padding-inline: 8px;
+}

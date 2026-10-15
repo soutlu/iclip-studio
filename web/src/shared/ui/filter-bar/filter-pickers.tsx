@@ -21,6 +21,7 @@ type PickerFilterProps = {
   className?: string | undefined
   withAvatars?: boolean | undefined
   disabledTitle?: string | undefined
+  customValueLabel?: string | undefined
 }
 
 export function PickerFilter({
@@ -35,6 +36,7 @@ export function PickerFilter({
   className,
   withAvatars,
   disabledTitle,
+  customValueLabel,
 }: PickerFilterProps) {
   const label =
     value === null
@@ -61,6 +63,7 @@ export function PickerFilter({
           source={source}
           value={value}
           withAvatars={withAvatars ?? false}
+          customValueLabel={customValueLabel}
         />
       )}
     </FilterPopup>

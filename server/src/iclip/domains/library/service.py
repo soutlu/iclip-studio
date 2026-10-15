@@ -1,4 +1,5 @@
-"""资料库用例：整理筛选范围与游标，并按读者算能不能打开来源对话。端点权限由路由声明。"""
+"""资料库用例：成片卡与整片卡各自整理筛选范围与游标，并按读者算能不能打开来源对话。端点权限由
+路由声明。"""
 
 from __future__ import annotations
 
@@ -8,13 +9,15 @@ from datetime import UTC, datetime
 
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, visible_owner_incl_act_as
-from iclip.domains.library.models import Orientation, Scope, VideoCursor
-from iclip.domains.library.repository import CardRow, LibraryReports
+from iclip.domains.library.models import Orientation, Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.repository import CardRow, LibraryReports, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     LibraryAuthorsOut,
     LibraryVideoDetailOut,
     LibraryVideoOut,
     LibraryVideosOut,
+    WholeFilmCardOut,
+    WholeFilmCardsOut,
 )
 from iclip.platform.paging import check_limit, decode_cursor, encode_cursor
 
@@ -27,6 +30,22 @@ def _as_utc(moment: datetime | None) -> datetime | None:
     return moment.replace(tzinfo=UTC)
 
 
+def _window(
+    since: datetime | None, until: datetime | None
+) -> tuple[datetime | None, datetime | None]:
+    since, until = _as_utc(since), _as_utc(until)
+    if since is not None and until is not None and since >= until:
+        raise ValidationFailed("since 必须早于 until")
+    return since, until
+
+
+def _keyword(q: str | None) -> str | None:
+    """首尾空白去掉后为空就是不筛。"""
+
+    keyword = q.strip() if q is not None else ""
+    return keyword or None
+
+
 def _scope(
     *,
     user_name: str | None,
@@ -35,16 +54,13 @@ def _scope(
     orientation: Orientation | None,
     q: str | None,
 ) -> Scope:
-    since, until = _as_utc(since), _as_utc(until)
-    if since is not None and until is not None and since >= until:
-        raise ValidationFailed("since 必须早于 until")
-    keyword = q.strip() if q is not None else ""
+    since, until = _window(since, until)
     return Scope(
         user_name=user_name,
         since=since,
         until=until,
         orientation=orientation,
-        q=keyword or None,
+        q=_keyword(q),
     )
 
 
@@ -55,20 +71,28 @@ def _after(cursor: str | None) -> VideoCursor | None:
     return VideoCursor(at=parsed.at, video_id=parsed.uuid_key())
 
 
-def _can_open(principal: Principal, row: CardRow) -> bool:
+def _can_open(
+    principal: Principal, conversation_owner: uuid.UUID | None, conversation_deleted: bool
+) -> bool:
     """口径同对话的读路径：治理者读得到任何对话，含墓碑；其余人要对话没删，且是属主或持
-    ``users:act_as`` 的钥匙。不挂对话的卡没有对话可开。"""
+    ``users:act_as`` 的钥匙。没有属主即不挂对话，没有对话可开。"""
 
-    if row.video.conversation_id is None:
+    if conversation_owner is None:
         return False
     if principal.has(MANAGE_PERMISSION):
         return True
     owner = visible_owner_incl_act_as(principal)
-    return not row.conversation_deleted and (owner is None or owner == row.conversation_owner)
+    return not conversation_deleted and (owner is None or owner == conversation_owner)
 
 
 def _for_reader(principal: Principal, row: CardRow) -> LibraryVideoOut:
-    return row.video.model_copy(update={"can_open_conversation": _can_open(principal, row)})
+    can_open = _can_open(principal, row.conversation_owner, row.conversation_deleted)
+    return row.video.model_copy(update={"can_open_conversation": can_open})
+
+
+def _film_for_reader(principal: Principal, row: WholeFilmCardRow) -> WholeFilmCardOut:
+    can_open = _can_open(principal, row.conversation_owner, row.conversation_deleted)
+    return row.card.model_copy(update={"can_open_conversation": can_open})
 
 
 HasProductionFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[bool]]
@@ -139,6 +163,35 @@ class LibraryService:
 
     async def authors(self) -> LibraryAuthorsOut:
         return LibraryAuthorsOut(items=list(await self._reports.authors()))
+
+    async def whole_films(
+        self,
+        principal: Principal,
+        *,
+        user_name: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        q: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> WholeFilmCardsOut:
+        """整片卡，卡面完成时刻晚的排前面；满页才给下一页游标，总数只在第一页给。"""
+
+        check_limit(limit)
+        since, until = _window(since, until)
+        scope = WholeFilmScope(user_name=user_name, since=since, until=until, q=_keyword(q))
+        after = _after(cursor)
+        rows = await self._reports.whole_films(scope, limit=limit, after=after)
+        next_cursor = None
+        if len(rows) == limit:
+            last = rows[-1].card
+            next_cursor = encode_cursor(last.face.finished_at, last.conversation_id)
+        total = await self._reports.count_whole_films(scope) if after is None else None
+        return WholeFilmCardsOut(
+            items=[_film_for_reader(principal, row) for row in rows],
+            next_cursor=next_cursor,
+            total=total,
+        )
 
 
 __all__ = ["HasProductionFiles", "LibraryService"]

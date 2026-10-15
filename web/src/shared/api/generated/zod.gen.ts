@@ -118,6 +118,102 @@ export const zBodyAuthCookieLoginAuthLoginPost = z.object({
 })
 
 /**
+ * BrandFontConfirmIn
+ */
+export const zBrandFontConfirmIn = z.object({
+  brand: z.string().min(1).max(100).nullish(),
+  name: z.string().min(1).max(100),
+})
+
+/**
+ * BrandFontSignIn
+ */
+export const zBrandFontSignIn = z.object({
+  contentType: z.enum(['font/ttf', 'font/otf']),
+})
+
+/**
+ * BrandFontUnicodeRange
+ */
+export const zBrandFontUnicodeRange = z.object({
+  end: z.int(),
+  start: z.int(),
+})
+
+/**
+ * BrandFontInfoOut
+ */
+export const zBrandFontInfoOut = z.object({
+  family: z.string(),
+  style: z.enum(['normal', 'italic', 'oblique']),
+  unicodeRanges: z.array(zBrandFontUnicodeRange),
+  weight: z.int(),
+})
+
+/**
+ * BrandFontUploadInstruction
+ */
+export const zBrandFontUploadInstruction = z.object({
+  expiresAt: z.iso.datetime(),
+  headers: z.record(z.string(), z.string()),
+  method: z.literal('PUT').optional().default('PUT'),
+  url: z.string(),
+})
+
+/**
+ * BrandFontUploadTicketOut
+ */
+export const zBrandFontUploadTicketOut = z.object({
+  upload: zBrandFontUploadInstruction,
+  uploadId: z.uuid(),
+})
+
+/**
+ * BrandTemplateCreateIn
+ */
+export const zBrandTemplateCreateIn = z.object({
+  brand: z.string().min(1).max(100).nullish(),
+  kind: z.enum(['intro', 'outro']),
+  name: z.string().min(1).max(100),
+  uploadId: z.uuid(),
+})
+
+/**
+ * BrandTemplateOut
+ */
+export const zBrandTemplateOut = z.object({
+  brand: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  disabledAt: z.iso.datetime().nullable(),
+  durationMs: z.int().nullable(),
+  hasAudio: z.boolean().nullable(),
+  height: z.int().nullable(),
+  id: z.uuid(),
+  kind: z.string(),
+  name: z.string(),
+  url: z.string(),
+  width: z.int().nullable(),
+})
+
+/**
+ * BrandTemplateUpdateIn
+ *
+ * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
+ */
+export const zBrandTemplateUpdateIn = z.object({
+  brand: z.string().min(1).max(100).nullish(),
+  disabled: z.boolean().nullish(),
+  name: z.string().min(1).max(100).nullish(),
+})
+
+/**
+ * BrandTemplatesOut
+ */
+export const zBrandTemplatesOut = z.object({
+  items: z.array(zBrandTemplateOut),
+})
+
+/**
  * CategoryCountOut
  */
 export const zCategoryCountOut = z.object({
@@ -750,6 +846,7 @@ export const zFilmVideoGenerationIn = z.object({
 export const zFilmViewOut = z.object({
   filmVersion: z.int(),
   groups: z.array(zFilmGroupOut),
+  musicDescription: z.string().nullable(),
   problems: z.int(),
   runVersion: z.int().nullable(),
 })
@@ -781,51 +878,6 @@ export const zAppendOp = z.object({
   op: z.literal('append').optional().default('append'),
   target: zFrameTarget,
   text: z.string(),
-})
-
-/**
- * GenerationOut
- *
- * 一次生成对外的样子。
- *
- * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、上游任务号
- * 与状态词、提交时刻都是排队与排障的内部机制；来源对话不写回去——查的时候本来就是按它查的。
- */
-export const zGenerationOut = z.object({
-  clipStage: z.enum(['fetching', 'processing', 'uploading']).nullable(),
-  createdAt: z.iso.datetime(),
-  durationMs: z.int().nullable(),
-  errorMessage: z.string().nullable(),
-  finishedAt: z.iso.datetime().nullish(),
-  id: z.uuid(),
-  kind: z.enum(['video', 'image']),
-  metadata: z.record(z.string(), z.unknown()).nullable(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload']),
-  outputUrl: z.string().nullable(),
-  rangeEndMs: z.int().nullish(),
-  rangeStartMs: z.int().nullish(),
-  request: z.record(z.string(), z.unknown()).nullable(),
-  rootJobId: z.uuid().nullable(),
-  shotIndex: z.int().nullish(),
-  sourceJobId: z.uuid().nullish(),
-  sourceUrl: z.string().nullish(),
-  status: z.enum(['pending', 'submitting', 'submitted', 'completed', 'failed']),
-  taskId: z.uuid().nullable(),
-  watermarkOutputUrl: z.string().nullable(),
-})
-
-/**
- * GenerationEnvelope
- */
-export const zGenerationEnvelope = z.object({
-  generation: zGenerationOut,
-})
-
-/**
- * GenerationsPageOut
- */
-export const zGenerationsPageOut = z.object({
-  items: z.array(zGenerationOut),
 })
 
 /**
@@ -981,6 +1033,33 @@ export const zMovingAveragesOut = z.object({
   tokensPerDelivery: zMovingAverageOut,
   totalTokens: zMovingAverageOut.nullable(),
   upstreamSeconds: zMovingAverageOut,
+})
+
+/**
+ * MusicGainPoint
+ *
+ * 音量曲线上的一个点：整片时间 ``atMs`` 处音乐的线性音量（0 静音，1 原样）。
+ */
+export const zMusicGainPoint = z.object({
+  atMs: z.int().gte(0).lte(120000),
+  gain: z.number().gte(0).lte(1),
+})
+
+/**
+ * MusicIn
+ *
+ * 生成一段背景音乐的受理输入。
+ *
+ * ``prompt`` 原样发给音乐模型，服务端不补任何文字；音乐多长由模型决定。归属参数与别的提交端点
+ * 一样，只是对话必填：背景音乐是给这段对话的整片用的。``userName`` 只用来替人办事，音乐模型不收
+ * 它，不进 ``request``。
+ */
+export const zMusicIn = z.object({
+  conversationId: z.uuid(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  prompt: z.string().min(1).max(3000),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
 })
 
 /**
@@ -1373,6 +1452,80 @@ export const zStepUpsertOp = z.object({
 export const zStyleMatchOut = z.object({
   matchLevel: z.enum(['exact', 'sameBrandCategory', 'sameCategory', 'none']),
   styleNo: z.string(),
+})
+
+/**
+ * SubtitleIn
+ *
+ * 手动识别一条成片的受理输入：补识别旧视频，或识别失败后另起一次。
+ *
+ * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
+ * 服务不收它，不进 ``request``。
+ */
+export const zSubtitleIn = z.object({
+  conversationId: z.uuid().nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  sourceJobId: z.uuid(),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
+ * SubtitleSentence
+ *
+ * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ */
+export const zSubtitleSentence = z.object({
+  endMs: z.int().gte(0),
+  speaker: z.int().nullable(),
+  startMs: z.int().gte(0),
+  text: z.string(),
+})
+
+/**
+ * GenerationOut
+ *
+ * 一次生成对外的样子。
+ *
+ * 只给调用方用得上的：图在哪、跑到哪一步、失败了给人看什么。provider 名称、上游任务号
+ * 与状态词、提交时刻都是排队与排障的内部机制；来源对话不写回去——查的时候本来就是按它查的。
+ */
+export const zGenerationOut = z.object({
+  clipStage: z.enum(['fetching', 'processing', 'uploading']).nullable(),
+  createdAt: z.iso.datetime(),
+  durationMs: z.int().nullable(),
+  errorMessage: z.string().nullable(),
+  finishedAt: z.iso.datetime().nullish(),
+  id: z.uuid(),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio']),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload']),
+  outputUrl: z.string().nullable(),
+  rangeEndMs: z.int().nullish(),
+  rangeStartMs: z.int().nullish(),
+  request: z.record(z.string(), z.unknown()).nullable(),
+  rootJobId: z.uuid().nullable(),
+  sentences: z.array(zSubtitleSentence).nullish(),
+  shotIndex: z.int().nullish(),
+  sourceJobId: z.uuid().nullish(),
+  sourceUrl: z.string().nullish(),
+  status: z.enum(['pending', 'submitting', 'submitted', 'completed', 'failed']),
+  taskId: z.uuid().nullable(),
+  watermarkOutputUrl: z.string().nullable(),
+})
+
+/**
+ * GenerationEnvelope
+ */
+export const zGenerationEnvelope = z.object({
+  generation: zGenerationOut,
+})
+
+/**
+ * GenerationsPageOut
+ */
+export const zGenerationsPageOut = z.object({
+  items: z.array(zGenerationOut),
 })
 
 /**
@@ -2397,9 +2550,10 @@ export const zOpsCatchup = z.object({
 /**
  * VideoEditIn
  *
- * 一次编辑段的受理输入：一次上游视频请求，外加只记账的基底与区间。
+ * 一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
  *
- * 转发给上游的字段照上游命名，参考视频恰好一条：调用方从基底上切好、自己上传的参考片段。
+ * 转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的
+ * 参考片段，时长不必等于基底替换区间。
  * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
  * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
  * ``VideoGenerationIn``，来源、原作与区间落列。
@@ -2575,6 +2729,108 @@ export const zReferenceFiltersOut = z.object({
 })
 
 /**
+ * WholeFilmBrandIn
+ *
+ * 整片的片头或片尾：用哪条品牌模板。
+ */
+export const zWholeFilmBrandIn = z.object({
+  templateId: z.uuid(),
+})
+
+/**
+ * WholeFilmMusicIn
+ *
+ * 整片的背景音乐：用哪条音频记录、从它第几毫秒起用，以及整片时间上的音量曲线。
+ */
+export const zWholeFilmMusicIn = z.object({
+  audioJobId: z.uuid(),
+  gain: z.array(zMusicGainPoint).min(1).max(500),
+  offsetMs: z.int().gte(0),
+})
+
+/**
+ * WholeFilmSegmentIn
+ *
+ * 整片里的一段：从 ``sourceJobId`` 那条成片上取 ``[startMs, endMs)``，按那条成片自己的媒体时间。
+ */
+export const zWholeFilmSegmentIn = z.object({
+  endMs: z.int(),
+  sourceJobId: z.uuid(),
+  startMs: z.int().gte(0),
+})
+
+/**
+ * WholeFilmSubtitle
+ *
+ * 整片上的一句字幕：整片时间里的起止（毫秒）与烧进画面的文字，原样照用。
+ */
+export const zWholeFilmSubtitle = z.object({
+  endMs: z.int().gte(0).lte(120000),
+  startMs: z.int().gte(0).lte(120000),
+  text: z.string().min(1).max(200),
+})
+
+/**
+ * WholeFilmIn
+ *
+ * 一条整片的受理输入：一份时间线。可选的片头在最前、片尾在最后，中间各段按顺序首尾相接；整片
+ * 总长是三者之和，片头片尾的时长受理时按模板定。
+ *
+ * 字幕与音乐的时间都从第一段开头算（不含片头），只覆盖各段，已由调用方算好，服务端照做。归属参数
+ * 与别的提交端点一样，只是对话必填：整片是一段对话的。``userName`` 只用来替人办事，不进
+ * ``request``。
+ */
+export const zWholeFilmIn = z.object({
+  conversationId: z.uuid(),
+  fontId: z.uuid().nullish(),
+  intro: zWholeFilmBrandIn.nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  music: zWholeFilmMusicIn.nullish(),
+  outro: zWholeFilmBrandIn.nullish(),
+  segments: z.array(zWholeFilmSegmentIn).min(1).max(100),
+  subtitles: z.array(zWholeFilmSubtitle).max(500),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
+ * WholeFilmVersionOut
+ *
+ * 整片卡里的一版：这段对话自己的一条已完成整片。
+ */
+export const zWholeFilmVersionOut = z.object({
+  durationMs: z.int().nullable(),
+  finishedAt: z.iso.datetime(),
+  jobId: z.uuid(),
+  outputUrl: z.string(),
+  userName: z.string().nullable(),
+  watermarkOutputUrl: z.string().nullable(),
+})
+
+/**
+ * WholeFilmCardOut
+ *
+ * 资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。
+ */
+export const zWholeFilmCardOut = z.object({
+  canOpenConversation: z.boolean(),
+  conversationId: z.uuid(),
+  face: zWholeFilmVersionOut,
+  title: z.string().nullable(),
+  userName: z.string().nullable(),
+  versions: z.array(zWholeFilmVersionOut),
+})
+
+/**
+ * WholeFilmCardsOut
+ */
+export const zWholeFilmCardsOut = z.object({
+  items: z.array(zWholeFilmCardOut),
+  nextCursor: z.string().nullable(),
+  total: z.int().nullable(),
+})
+
+/**
  * Successful Response
  */
 export const zListKeysApiKeysGetResponse = zApiKeysEnvelope
@@ -2653,6 +2909,62 @@ export const zAuthorizeAuthSsoAuthorizeGetResponse = zSsoAuthorizeOut
 export const zCallbackAuthSsoCallbackGetQuery = z.object({
   jwt: z.string(),
 })
+
+export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
+  kind: z.string().nullish(),
+  brand: z.string().nullish(),
+  includeDisabled: z.boolean().optional().default(false),
+})
+
+/**
+ * Successful Response
+ */
+export const zListBrandTemplatesBrandTemplatesGetResponse = zBrandTemplatesOut
+
+export const zCreateBrandTemplateBrandTemplatesPostBody = zBrandTemplateCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateBrandTemplateBrandTemplatesPostResponse = zBrandTemplateOut
+
+export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
+
+/**
+ * Successful Response
+ */
+export const zSignFontBrandTemplatesFontsSignPostResponse = zBrandFontUploadTicketOut
+
+export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostBody = zBrandFontConfirmIn
+
+export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostPath = z.object({
+  upload_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponse = zBrandTemplateOut
+
+export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchBody = zBrandTemplateUpdateIn
+
+export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchPath = z.object({
+  template_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse = zBrandTemplateOut
+
+export const zFontInfoBrandTemplatesTemplateIdFontInfoGetPath = z.object({
+  template_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zFontInfoBrandTemplatesTemplateIdFontInfoGetResponse = zBrandFontInfoOut
 
 export const zListCollectionsCollectionsGetQuery = z.object({
   scope: z.enum(['me', 'all']).optional().default('me'),
@@ -3104,7 +3416,7 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image']).nullish(),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio']).nullish(),
   operation: z.enum(['generate', 'compose', 'cut', 'upload']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
@@ -3128,6 +3440,20 @@ export const zSubmitImageGenerationsImagePostResponse = zGenerationEnvelope
  * Successful Response
  */
 export const zListImageModelsGenerationsImageModelsGetResponse = zImageModelsOut
+
+export const zSubmitMusicGenerationsMusicPostBody = zMusicIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitMusicGenerationsMusicPostResponse = zGenerationEnvelope
+
+export const zSubmitSubtitleGenerationsSubtitlesPostBody = zSubtitleIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitSubtitleGenerationsSubtitlesPostResponse = zGenerationEnvelope
 
 export const zSubmitVideoGenerationsVideoPostBody = zVideoGenerationIn
 
@@ -3163,6 +3489,13 @@ export const zGetVideoTaskGenerationsVideoTaskIdGetPath = z.object({
  * Successful Response
  */
 export const zGetVideoTaskGenerationsVideoTaskIdGetResponse = zVideoTaskOut
+
+export const zSubmitWholeFilmGenerationsWholeFilmsPostBody = zWholeFilmIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitWholeFilmGenerationsWholeFilmsPostResponse = zGenerationEnvelope
 
 export const zGetGenerationGenerationsJobIdGetPath = z.object({
   job_id: z.uuid(),
@@ -3215,6 +3548,20 @@ export const zVideoLibraryVideosVideoIdGetPath = z.object({
  * Successful Response
  */
 export const zVideoLibraryVideosVideoIdGetResponse = zLibraryVideoDetailOut
+
+export const zWholeFilmsLibraryWholeFilmsGetQuery = z.object({
+  userName: z.string().max(150).nullish(),
+  since: z.iso.datetime().nullish(),
+  until: z.iso.datetime().nullish(),
+  q: z.string().max(100).nullish(),
+  limit: z.int().gte(1).lte(100).optional().default(20),
+  cursor: z.string().nullish(),
+})
+
+/**
+ * Successful Response
+ */
+export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
 
 export const zListReferencesReferencesGetQuery = z.object({
   videoTypes: z

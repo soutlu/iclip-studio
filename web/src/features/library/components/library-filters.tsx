@@ -14,6 +14,10 @@ type LibraryFiltersProps = {
   authors: PickerSource
   /** 右侧的计数，如「共 286 条」。 */
   trailing?: React.ReactNode
+  /** 整片没有画幅筛选。 */
+  showOrientation?: boolean
+  /** 整片作者名单可能不在成片候选里，允许按明确输入的用户名筛选。 */
+  allowUsernameInput?: boolean
 }
 
 const orientationOf = (value: string): Orientation | null =>
@@ -36,7 +40,15 @@ export function LibraryFilters(props: LibraryFiltersProps) {
   )
 }
 
-function Filters({ scope, onChange, myUserName, authors, trailing }: LibraryFiltersProps) {
+function Filters({
+  scope,
+  onChange,
+  myUserName,
+  authors,
+  trailing,
+  showOrientation = true,
+  allowUsernameInput = false,
+}: LibraryFiltersProps) {
   const { close } = useFilterBar()
   const apply = (patch: Partial<LibraryScope>) => {
     close()
@@ -74,6 +86,7 @@ function Filters({ scope, onChange, myUserName, authors, trailing }: LibraryFilt
         value={mine ? null : scope.userName}
         width="w-60"
         withAvatars
+        customValueLabel={allowUsernameInput ? '按用户名筛选' : undefined}
       />
 
       <Divider />
@@ -87,17 +100,20 @@ function Filters({ scope, onChange, myUserName, authors, trailing }: LibraryFilt
         value={scope}
       />
 
-      <Divider />
-
-      <ChipGroup
-        aria-label="画幅"
-        onValueChange={(value) => apply({ orientation: orientationOf(value) })}
-        type="single"
-        value={scope.orientation ?? ''}
-      >
-        <FilterChip value="portrait">竖版</FilterChip>
-        <FilterChip value="landscape">横版</FilterChip>
-      </ChipGroup>
+      {showOrientation ? (
+        <>
+          <Divider />
+          <ChipGroup
+            aria-label="画幅"
+            onValueChange={(value) => apply({ orientation: orientationOf(value) })}
+            type="single"
+            value={scope.orientation ?? ''}
+          >
+            <FilterChip value="portrait">竖版</FilterChip>
+            <FilterChip value="landscape">横版</FilterChip>
+          </ChipGroup>
+        </>
+      ) : null}
 
       {trailing === undefined ? null : (
         <span className="ml-auto pl-2 text-body-sm text-on-surface-faint">{trailing}</span>

@@ -34,6 +34,7 @@ MANIFEST = (
     "VIDEO_UNDERSTANDING_URL",
     "VIDEO_UNDERSTANDING_API_KEY",
     "PRODUCT_CATALOG_DATABASE_URL",
+    "QWEN_API_KEY",
     "T_QWEN_KEY",
 )
 
@@ -333,6 +334,123 @@ def test_media_generation_half_configured_fails_loudly(
     monkeypatch.delenv(missing)
     with pytest.raises(ValidationError, match=missing):
         resolve_settings(config)
+
+
+SUBTITLE = """  subtitle:
+    url: https://asr.test/api/v1/services/aigc/multimodal-generation/generation
+"""
+
+
+def test_subtitle_resolves_from_its_section_and_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("QWEN_API_KEY", " sk-qwen ")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.subtitle is not None
+    assert (
+        media.subtitle.url,
+        media.subtitle.api_key,
+        media.subtitle.concurrency,
+        media.subtitle.timeout_seconds,
+    ) == (
+        "https://asr.test/api/v1/services/aigc/multimodal-generation/generation",
+        "sk-qwen",
+        4,
+        120.0,
+    ), "并发与超时不写取默认值；key 去掉首尾空白"
+
+
+@pytest.mark.parametrize("key", [None, "", "   "], ids=["unset", "empty", "blank"])
+def test_subtitle_off_without_a_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str | None
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE))
+    _media_env(monkeypatch)
+    if key is not None:
+        monkeypatch.setenv("QWEN_API_KEY", key)
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.subtitle is None
+
+
+def test_subtitle_off_without_its_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.subtitle is None
+
+
+@pytest.mark.parametrize(
+    ("line", "field"),
+    [("    concurrency: 0\n", "concurrency"), ("    timeout_seconds: 0\n", "timeout_seconds")],
+)
+def test_subtitle_pacing_must_be_positive(tmp_path: Path, line: str, field: str) -> None:
+    with pytest.raises(ValidationError, match=field):
+        load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + line))
+
+
+MUSIC = """  music:
+    url: https://music.test/api/v1/services/audio/tts/SpeechSynthesizer
+"""
+
+
+def test_music_resolves_from_its_section_and_the_shared_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("QWEN_API_KEY", " sk-qwen ")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.music is not None and media.subtitle is not None
+    assert (
+        media.music.url,
+        media.music.api_key,
+        media.music.concurrency,
+        media.music.timeout_seconds,
+    ) == (
+        "https://music.test/api/v1/services/audio/tts/SpeechSynthesizer",
+        "sk-qwen",
+        2,
+        300.0,
+    ), "并发与超时不写取默认值；key 与字幕识别共用、去掉首尾空白"
+    assert media.subtitle.api_key == media.music.api_key
+
+
+@pytest.mark.parametrize("key", [None, "", "   "], ids=["unset", "empty", "blank"])
+def test_music_off_without_a_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str | None
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + MUSIC))
+    _media_env(monkeypatch)
+    if key is not None:
+        monkeypatch.setenv("QWEN_API_KEY", key)
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.music is None
+
+
+def test_music_off_without_its_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.music is None and media.subtitle is not None
+
+
+@pytest.mark.parametrize(
+    ("line", "field"),
+    [("    concurrency: 0\n", "concurrency"), ("    timeout_seconds: 0\n", "timeout_seconds")],
+)
+def test_music_pacing_must_be_positive(tmp_path: Path, line: str, field: str) -> None:
+    with pytest.raises(ValidationError, match=field):
+        load_runtime_config(write(tmp_path, VALID + MEDIA + MUSIC + line))
 
 
 def test_object_store_is_its_own_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

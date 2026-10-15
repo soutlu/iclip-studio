@@ -21,6 +21,7 @@ from iclip.capabilities.iclip_studio.film.studio import (
     film_groups,
     image_prompt,
     missing_references,
+    music_description,
     set_aspect_ratio,
 )
 from iclip.capabilities.iclip_studio.ports import InvalidNodeImageRequest, NodeImageRequest
@@ -82,7 +83,7 @@ class ConversationFilmAdapter:
         if isinstance(film, list):
             return FilmView(files.project.version, run_version, len(film), ())
         groups = film_groups(film, files.project.content)
-        return FilmView(files.project.version, run_version, 0, groups)
+        return FilmView(files.project.version, run_version, 0, groups, music_description(film))
 
     async def edit_text(
         self,

@@ -223,8 +223,8 @@ export const useComposerEditor = ({
     view.focus()
   }
 
-  /** 在光标处按 parts 顺序插入正文、附件与使用方节点，替换选区。 */
-  const insertParts = (parts: readonly AnyPart[]) => {
+  /** 按 parts 顺序插入正文、附件与使用方节点；默认替换选区，end 追加文末并单独成一步撤销。 */
+  const insertParts = (parts: readonly AnyPart[], position: 'selection' | 'end' = 'selection') => {
     const view = viewRef.current
     if (view === null) return
     const content = nodesOf(parts)
@@ -234,14 +234,19 @@ export const useComposerEditor = ({
       const tr = view.state.tr.replaceWith(from, to, content)
       // 映射选区的终点：替换掉一段选区（如 `@查询词`）时起点会映射到插入内容之前，终点才落在它之后。
       tr.setSelection(Selection.near(tr.doc.resolve(tr.mapping.map(to)))).scrollIntoView()
-      view.dispatch(tr)
+      view.dispatch(position === 'end' ? closeHistory(tr) : tr)
     }
-    const { from, to } = view.state.selection
-    try {
-      insert(from, to)
-    } catch {
-      const end = Math.max(1, view.state.doc.content.size - 1)
+    const end = Math.max(1, view.state.doc.content.size - 1)
+    if (position === 'end') {
       insert(end, end)
+      view.dispatch(closeHistory(view.state.tr))
+    } else {
+      const { from, to } = view.state.selection
+      try {
+        insert(from, to)
+      } catch {
+        insert(end, end)
+      }
     }
     view.focus()
   }

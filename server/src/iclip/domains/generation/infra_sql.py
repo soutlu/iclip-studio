@@ -50,8 +50,11 @@ from iclip.domains.generation.schemas import (
     OPERATION_COMPOSE,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
+    SubtitleSentence,
     request_from_payload,
     request_to_payload,
+    sentences_from_payload,
+    sentences_to_payload,
 )
 from iclip.platform.db.ownership import owner_conditions
 
@@ -111,6 +114,8 @@ generation_jobs_table = Table(
     Column("duration_ms", Integer, nullable=True),
     # 文件的 MD5，只有视频上传有：桶里是一次整传的对象时取它的 ETag，确认时按它认出同一个文件。
     Column("content_md5", Text, nullable=True),
+    # 字幕记录的逐句结果 [{start_ms, end_ms, text, speaker}]，完成时写入。none_as_null 理由同 request。
+    Column("sentences", JSONB(none_as_null=True), nullable=True),
     Column("error_code", Text, nullable=True),
     Column("error_message", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -155,7 +160,14 @@ generation_jobs_table = Table(
     # 编辑段必有来源、原作与区间，合成必有来源与原作、没有区间；帧图编辑两种来源至多一个，
     # 切图必有库内来源，上传没有来源、不挂对话；切图与上传没有请求、创建即完成。
     # 请求那条的 IS NOT NULL 不能省：jsonb_typeof(NULL) 让 CHECK 直接放行。
-    CheckConstraint("kind IN ('video', 'image')", name="ck_generation_jobs_kind"),
+    # 字幕记录的两条与迁移 0025 同名同式：字幕记录是调模型的 generate，来源是被识别的视频，
+    # 没有原作、区间、镜号、外部地址与产物地址；逐句结果只有它能有，完成了就必须有。
+    # 种类与音频记录那条与迁移 0026 同名同式：音频是上传或生成的背景音乐，都没有来源、原作、区间、
+    # 镜号、外部地址与水印地址；生成的挂对话，完成了必有产物地址与时长。
+    # 视频那条与迁移 0027 同名同式：多一种整片，是没有来源、原作、镜号与区间的 compose，必挂对话。
+    CheckConstraint(
+        "kind IN ('video', 'image', 'subtitle', 'audio')", name="ck_generation_jobs_kind"
+    ),
     CheckConstraint(
         "operation IN ('generate', 'compose', 'cut', 'upload')",
         name="ck_generation_jobs_operation",
@@ -175,6 +187,9 @@ generation_jobs_table = Table(
         " AND range_start_ms >= 0 AND range_end_ms > range_start_ms)"
         " OR (operation = 'compose' AND source_job_id IS NOT NULL AND root_job_id IS NOT NULL"
         " AND range_start_ms IS NULL AND range_end_ms IS NULL)"
+        " OR (operation = 'compose' AND source_job_id IS NULL AND root_job_id IS NULL"
+        " AND shot_index IS NULL AND range_start_ms IS NULL AND range_end_ms IS NULL"
+        " AND conversation_id IS NOT NULL)"
         " OR operation = 'upload'))",
         name="ck_generation_jobs_video_shape",
     ),
@@ -206,6 +221,27 @@ generation_jobs_table = Table(
         "content_md5 IS NULL OR (kind = 'video' AND operation = 'upload')",
         name="ck_generation_jobs_content_md5",
     ),
+    CheckConstraint(
+        "kind <> 'subtitle' OR (operation = 'generate' AND source_job_id IS NOT NULL"
+        " AND source_url IS NULL AND root_job_id IS NULL AND shot_index IS NULL"
+        " AND range_start_ms IS NULL AND range_end_ms IS NULL"
+        " AND output_url IS NULL AND watermark_output_url IS NULL"
+        " AND (status <> 'completed' OR sentences IS NOT NULL))",
+        name="ck_generation_jobs_subtitle_shape",
+    ),
+    CheckConstraint(
+        "sentences IS NULL OR (kind = 'subtitle' AND jsonb_typeof(sentences) = 'array')",
+        name="ck_generation_jobs_sentences",
+    ),
+    CheckConstraint(
+        "kind <> 'audio' OR (operation IN ('generate', 'upload')"
+        " AND source_job_id IS NULL AND source_url IS NULL AND root_job_id IS NULL"
+        " AND shot_index IS NULL AND range_start_ms IS NULL AND range_end_ms IS NULL"
+        " AND watermark_output_url IS NULL"
+        " AND (operation <> 'generate' OR (conversation_id IS NOT NULL"
+        " AND (status <> 'completed' OR (output_url IS NOT NULL AND duration_ms IS NOT NULL)))))",
+        name="ck_generation_jobs_audio_shape",
+    ),
 )
 
 _JOBS = generation_jobs_table.c
@@ -219,7 +255,7 @@ _MASTER: Final[ColumnElement[bool]] = and_(
         and_(_JOBS.operation == OPERATION_GENERATE, _JOBS.source_job_id.is_(None)),
     ),
 )
-"""成片：已完成、有地址的出片（没有来源的视频 generate）或合成；编辑段不是。"""
+"""成片：已完成、有地址的出片（没有来源的视频 generate）、合成或整片（都是 compose）；编辑段不是。"""
 
 
 class SqlGenerationRepository:
@@ -257,6 +293,7 @@ class SqlGenerationRepository:
                             output_url=None,
                             watermark_output_url=None,
                             duration_ms=None,
+                            sentences=None,
                             error_code=None,
                             error_message=None,
                             created_at=func.now(),
@@ -480,6 +517,27 @@ class SqlGenerationRepository:
             return await self._update_if(job_id, only_if_status, **values)
         return await self._update(job_id, **values)
 
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        values: dict[str, Any] = {
+            "status": STATUS_COMPLETED,
+            "sentences": sentences_to_payload(sentences),
+            "provider_status": provider_status,
+            "provider_task_id": provider_task_id,
+            "submitted_at": func.coalesce(_JOBS.submitted_at, func.now()),
+            "finished_at": func.now(),
+        }
+        if only_if_status is not None:
+            return await self._update_if(job_id, only_if_status, **values)
+        return await self._update(job_id, **values)
+
     async def mark_failed(
         self,
         job_id: uuid.UUID,
@@ -604,6 +662,7 @@ def _settled_values(job: GenerationJob) -> dict[str, Any]:
         "watermark_output_url": None,
         "duration_ms": None,
         "content_md5": job.content_md5,
+        "sentences": None,
         "error_code": None,
         "error_message": None,
         "created_at": func.now(),
@@ -640,6 +699,7 @@ def _job_from_row(row: RowMapping) -> GenerationJob:
         watermark_output_url=row["watermark_output_url"],
         duration_ms=row["duration_ms"],
         content_md5=row["content_md5"],
+        sentences=sentences_from_payload(row["sentences"]),
         error_code=row["error_code"],
         error_message=row["error_message"],
         created_at=row["created_at"],

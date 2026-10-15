@@ -31,7 +31,7 @@ class UploadSignIn(CamelModel):
     content_type: str = Field(min_length=1, max_length=100)
     width: int | None = Field(default=None, ge=1)
     height: int | None = Field(default=None, ge=1)
-    """图片的像素尺寸，传图必填、传视频不用给。区间见 ``models`` 里那两个常量。
+    """图片的像素尺寸，传图必填、传视频与音频不用给。区间见 ``models`` 里那两个常量。
 
     尺寸在这一步就卡掉，是为了让确认那条口子不收任何文件的事实；也为了不合格的图压根
     不用先传上来。

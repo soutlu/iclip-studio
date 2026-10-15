@@ -132,6 +132,43 @@ def synthesize_noise(path: Path, *, seconds: int) -> bytes:
     return path.read_bytes()
 
 
+def synthesize_padded_music(
+    path: Path, *, lead: float, body: float, tail: float, volume: float = 0.3
+) -> bytes:
+    """合成一段前后带静音的 48 kHz 双声道 wav：``lead`` 秒静音、``body`` 秒 440 Hz 的音、``tail``
+    秒静音，像音乐模型给回来的那种。``volume`` 是那段音的线性音量，用来造一段偏轻的音乐。"""
+
+    subprocess.run(
+        [
+            "ffmpeg", "-v", "error", "-y",
+            "-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo:d={lead}",
+            "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={body}",
+            "-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo:d={tail}",
+            "-filter_complex",
+            f"[1:a]aformat=channel_layouts=stereo,volume={volume}[tone];"
+            "[0:a][tone][2:a]concat=n=3:v=0:a=1",
+            "-c:a", "pcm_s16le", str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )  # fmt: skip
+    return path.read_bytes()
+
+
+@functools.cache
+def has_subtitles_filter() -> bool:
+    """本机 ffmpeg 带 libass 的 ``subtitles`` 滤镜。Homebrew 的精简版 ffmpeg 没有它。"""
+
+    listing = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-filters"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+        timeout=TRIAL_TIMEOUT_SECONDS,
+    )
+    return any(line.split()[1:2] == ["subtitles"] for line in listing.stdout.decode().splitlines())
+
+
 async def duration_ms_of(content: bytes) -> int:
     """量一段视频字节的时长（毫秒），与服务端用的是同一个探测。"""
 
@@ -165,9 +202,11 @@ __all__ = [
     "decode_all",
     "duration_ms_of",
     "encodes_here",
+    "has_subtitles_filter",
     "keyframes_of",
     "local_codec",
     "multi_picture_jpeg",
     "synthesize_noise",
+    "synthesize_padded_music",
     "synthesize_video",
 ]

@@ -15,6 +15,7 @@ import {
 } from '../storyboard.api'
 import type { Clip } from './draft'
 import type { SecondsRange } from './reference-clip'
+import type { PlaySegment } from './play-layout'
 
 /** 本对话全部编辑链的查询前缀，挂在本对话生成记录的前缀下；按根的键挂在它下面，一次失效全部。 */
 export const videoEditConversationKey = (conversationId: string) =>
@@ -90,8 +91,8 @@ type Origin = {
   taskId: string | null
 }
 
-/** 在一版成片上改一段，依次三步：从基底上切参考片段 → 走上传协议拿到片段地址 → 提交编辑段，
- * 区间填切出来的那一段。任一步失败就停下抛出，后面的不做。怎么触发编辑照模型名认：
+/** 在一版成片上改一段，依次三步：拼出当前选用的参考片段 → 上传 → 提交编辑段，
+ * 区间始终填写被替换的基底时间，参考视频可有不同的时长。任一步失败就停下抛出，后面的不做。怎么触发编辑照模型名认：
  * 前缀拼进正文、选项并进 provider_options。
  *
  * `seconds: -1` 让结果跟着参考片段的时长走；不显式给，网关按默认 5 秒截断。不带 user_name：
@@ -100,9 +101,9 @@ export const submitVideoEdit = async (
   input: Origin & {
     /** 基底那一版的记录 id。 */
     sourceJobId: string
-    /** 基底那一版的视频地址，从它上面切参考片段。 */
-    baseMediaUrl: string
-    /** 要改的那一段，秒；两端正好是基底的关键帧（或片尾）。 */
+    /** 当前选用的真实画面与原声，按时间线顺序拼出模型参考。 */
+    referenceClips: readonly PlaySegment[]
+    /** 被替换的基底区间，秒。 */
     range: SecondsRange
     model: string
     prompt: string
@@ -112,15 +113,15 @@ export const submitVideoEdit = async (
   const edit = editTriggerOf(input.model)
   if (edit === undefined) throw new Error(`模型 ${input.model} 不支持视频编辑`)
   // 切片模块连同 mediabunny 只在提交时加载，不进首屏包。
-  const { cutReferenceClip } = await import('./reference-clip')
-  const clip = await cutReferenceClip(input.baseMediaUrl, input.range)
-  const { url: clipUrl } = await uploadMediaFile(clip.file, 'video')
+  const { concatenateReferenceClips } = await import('./reference-clip')
+  const file = await concatenateReferenceClips(input.referenceClips)
+  const { url: clipUrl } = await uploadMediaFile(file, 'video')
   const body: VideoEditIn = {
     conversation_id: input.conversationId,
     task_id: input.taskId,
     source_job_id: input.sourceJobId,
-    range_start_ms: clip.startMs,
-    range_end_ms: clip.endMs,
+    range_start_ms: Math.round(input.range.start * 1000),
+    range_end_ms: Math.round(input.range.end * 1000),
     reference_video_urls: [clipUrl],
     model: input.model,
     prompt: `${edit.promptPrefix ?? ''}${input.prompt}`,

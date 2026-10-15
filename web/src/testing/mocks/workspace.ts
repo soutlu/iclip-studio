@@ -1,8 +1,12 @@
 /** REST 读取与 WebSocket 模拟写入共用内存文件表，确保通知后重读得到新内容。 */
 
 import { http, HttpResponse } from 'msw'
+import { zWholeFilmIn } from '@/shared/api/generated/zod.gen'
 import type {
   ImageGenerationIn,
+  MusicIn,
+  SubtitleIn,
+  SubtitleSentence,
   VideoComposeIn,
   VideoEditIn,
   VideoGenerationIn,
@@ -12,6 +16,8 @@ import type {
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
+import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
+import { findMockBrandTemplate, mockBrandFontInfo } from './brand-templates'
 import { isMockVideoUpload } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
@@ -208,7 +214,9 @@ type MockJob = {
   createdAt: string
   errorMessage?: string
   id: string
-  kind?: 'video' | 'image'
+  kind?: 'video' | 'image' | 'subtitle' | 'audio'
+  /** 字幕记录完成后的逐句结果；别的记录没有。 */
+  sentences?: SubtitleSentence[]
   /** 省略即 generate；合成是 compose。 */
   operation?: 'generate' | 'compose'
   outputUrl?: string
@@ -252,6 +260,7 @@ const job = (spec: MockJob) => ({
   // 种子记录没有单独的完成时刻，到了终态就记在创建那一刻。
   finishedAt: spec.status === 'completed' || spec.status === 'failed' ? spec.createdAt : null,
   durationMs: spec.durationMs ?? null,
+  sentences: spec.sentences ?? null,
   // 这里的加工是瞬时的，没有在途阶段可报。
   clipStage: null,
   watermarkOutputUrl: spec.watermarkOutputUrl ?? null,
@@ -263,6 +272,21 @@ type MockRecord = ReturnType<typeof job>
 
 const generations = new Map<string, MockRecord[]>()
 
+/** 资料库与编辑器共用已完成的整片记录，合成后的版本在两处都能读到。 */
+export const mockWholeFilms = () =>
+  [...generations].flatMap(([conversationId, records]) =>
+    records
+      .filter(
+        (record) =>
+          record.kind === 'video' &&
+          record.operation === 'compose' &&
+          record.sourceJobId === null &&
+          record.status === 'completed' &&
+          record.outputUrl !== null,
+      )
+      .map((record) => ({ conversationId, record })),
+  )
+
 const findJob = (conversationId: string | null | undefined, id: string): MockRecord | undefined =>
   generations.get(conversationId ?? '')?.find((item) => item.id === id)
 
@@ -271,7 +295,8 @@ const isFinishedTake = (record: MockRecord): boolean =>
   record.kind === 'video' &&
   record.status === 'completed' &&
   record.outputUrl !== null &&
-  (record.operation === 'compose' || record.sourceJobId === null)
+  ((record.operation === 'compose' && record.sourceJobId !== null) ||
+    (record.operation === 'generate' && record.sourceJobId === null))
 
 const VIDEO_DONE_MS = 3000
 
@@ -304,6 +329,15 @@ const announceGeneration = (conversationId: string | null, record: MockRecord) =
   for (const watcher of generationWatchers)
     watcher({ conversationId, id, kind, operation, ...shot, metadata, status })
 }
+
+/** 样片的口播：识别出的逐句字幕（毫秒）。 */
+const SAMPLE_SENTENCES: SubtitleSentence[] = [
+  { startMs: 300, endMs: 2100, text: '这只包今天第一次上身', speaker: 0 },
+  { startMs: 2500, endMs: 4200, text: '容量刚好放下日常用品', speaker: 0 },
+  { startMs: 4500, endMs: 5800, text: '通勤约会都合适', speaker: 0 },
+]
+
+const SUBTITLE_REQUEST = { model: 'qwen-audio-3.1-asr-flash' }
 
 export const seedMockWorkspace = (
   conversationId: string,
@@ -473,6 +507,27 @@ export const seedMockWorkspace = (
         ),
         `diagnostic_code=${'IMAGE_REFERENCE_VALIDATION_'.repeat(6)}`,
       ].join('\n'),
+    }),
+    // 成片完成后自动识别的口播字幕：第 2 组那条识别好了，第 3 组那条识别失败，整片编辑器按它们画字幕轨。
+    job({
+      createdAt: '2026-09-01T11:11:00Z',
+      id: 'e4b8cedb-a639-457f-9c84-90a1b2c3d4e5',
+      kind: 'subtitle',
+      prompt: '',
+      request: SUBTITLE_REQUEST,
+      sentences: SAMPLE_SENTENCES,
+      sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
+      status: 'completed',
+    }),
+    job({
+      createdAt: '2026-09-01T10:05:00Z',
+      errorMessage: '识别服务暂时不可用',
+      id: 'f5c9dfec-b74a-4680-8d95-a1b2c3d4e5f6',
+      kind: 'subtitle',
+      prompt: '',
+      request: SUBTITLE_REQUEST,
+      sourceJobId: '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c',
+      status: 'failed',
     }),
   ])
 }
@@ -976,11 +1031,160 @@ export const workspaceHandlers = [
     })
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
+
+  // 整片与现有合成共用受理与完成通知，媒体字节仍用测试卡，不在浏览器里模拟 ffmpeg。
+  http.post('*/api/generations/whole-films', async ({ request }) => {
+    const parsed = zWholeFilmIn.safeParse(await request.json())
+    if (!parsed.success) return HttpResponse.json({ detail: '整片参数不合法' }, { status: 422 })
+    const body = parsed.data
+    const segments = []
+    for (const segment of body.segments) {
+      const source = findJob(body.conversationId, segment.sourceJobId)
+      if (source === undefined || !isFinishedTake(source) || source.outputUrl === null)
+        return HttpResponse.json({ detail: '素材不存在或不可使用' }, { status: 422 })
+      segments.push({ ...segment, url: source.outputUrl })
+    }
+    const brands: Record<string, unknown> = {}
+    let brandMs = 0
+    for (const position of ['intro', 'outro'] as const) {
+      const selected = body[position]
+      if (selected == null) continue
+      const template = findMockBrandTemplate(selected.templateId)
+      if (
+        template === undefined ||
+        template.disabledAt !== null ||
+        template.kind !== position ||
+        template.width === null ||
+        template.height === null ||
+        template.durationMs === null ||
+        template.hasAudio === null
+      )
+        return HttpResponse.json({ detail: '片头片尾模板不可用' }, { status: 422 })
+      brands[position] = {
+        templateId: template.id,
+        url: template.url,
+        width: template.width,
+        height: template.height,
+        durationMs: template.durationMs,
+        hasAudio: template.hasAudio,
+      }
+      brandMs += template.durationMs
+    }
+    let font = null
+    if (body.fontId != null) {
+      const selectedFont = findMockBrandTemplate(body.fontId)
+      if (
+        selectedFont === undefined ||
+        selectedFont.kind !== 'font' ||
+        selectedFont.disabledAt !== null
+      )
+        return HttpResponse.json({ detail: '所选字体不可用' }, { status: 422 })
+      font = {
+        fontId: selectedFont.id,
+        name: selectedFont.name,
+        url: selectedFont.url,
+        family: mockBrandFontInfo.family,
+        weight: mockBrandFontInfo.weight,
+        style: mockBrandFontInfo.style,
+      }
+    }
+    const durationMs =
+      brandMs + segments.reduce((sum, segment) => sum + segment.endMs - segment.startMs, 0)
+    if (durationMs > 120_000)
+      return HttpResponse.json({ detail: '整片最长 120 秒' }, { status: 422 })
+    const created = acceptGeneration({
+      kind: 'video',
+      operation: 'compose',
+      prompt: '',
+      conversationId: body.conversationId,
+      metadata: body.metadata ?? null,
+      request: {
+        ...brands,
+        font,
+        segments,
+        subtitles: body.subtitles,
+        music:
+          body.music == null
+            ? null
+            : {
+                ...body.music,
+                url:
+                  findJob(body.conversationId, body.music.audioJobId)?.outputUrl ?? MOCK_MUSIC_URL,
+              },
+      },
+      outputUrl: VIDEO_URL,
+      durationMs,
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
+  // 出片、合成与整片都可以识别字幕；编辑段不可识别。
+  http.post('*/api/generations/subtitles', async ({ request }) => {
+    const body = (await request.json()) as SubtitleIn
+    const source = findJob(body.conversationId, body.sourceJobId)
+    if (source === undefined)
+      return HttpResponse.json({ detail: '未找到这条视频' }, { status: 404 })
+    if (
+      source.kind !== 'video' ||
+      source.status !== 'completed' ||
+      source.outputUrl === null ||
+      (source.operation === 'generate' && source.sourceJobId !== null)
+    )
+      return HttpResponse.json({ detail: '只能识别已完成的成片' }, { status: 422 })
+    const created = job({
+      createdAt: new Date().toISOString(),
+      id: crypto.randomUUID(),
+      kind: 'subtitle',
+      prompt: '',
+      request: SUBTITLE_REQUEST,
+      sourceJobId: source.id,
+      status: 'submitted',
+      ...(body.metadata == null ? {} : { metadata: body.metadata }),
+    })
+    const conversationId = body.conversationId ?? null
+    if (conversationId !== null)
+      generations.set(conversationId, [...(generations.get(conversationId) ?? []), created])
+    const timer = setTimeout(() => {
+      created.sentences = SAMPLE_SENTENCES
+      created.finishedAt = new Date().toISOString()
+      created.status = 'completed'
+      timers.delete(timer)
+      announceGeneration(conversationId, created)
+    }, VIDEO_DONE_MS)
+    timers.add(timer)
+    announceGeneration(conversationId, created)
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
+  // 生成背景音乐：提示词原样记进请求，过一会儿出一段 30 秒、每分钟 120 拍的鼓点。
+  http.post('*/api/generations/music', async ({ request }) => {
+    const body = (await request.json()) as MusicIn
+    if (body.prompt.trim() === '')
+      return HttpResponse.json({ detail: 'prompt: 不能为空' }, { status: 422 })
+    if (body.prompt.length > 3000)
+      return HttpResponse.json({ detail: 'prompt: 至多 3000 字' }, { status: 422 })
+    const created = acceptGeneration({
+      kind: 'audio',
+      prompt: body.prompt,
+      request: {
+        model: 'qwen-audio-3.1-tts-next',
+        prompt: body.prompt,
+        format: 'wav',
+        sampleRate: 48_000,
+        channels: 2,
+      },
+      conversationId: body.conversationId,
+      metadata: body.metadata ?? null,
+      outputUrl: MOCK_MUSIC_URL,
+      durationMs: MOCK_MUSIC_SECONDS * 1000,
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
 ]
 
 /** 受理一条生成记录并在固定延迟后把它标成完成，与真实后端的「先受理、后台出结果」同形。 */
 function acceptGeneration(spec: {
-  kind: 'image' | 'video'
+  kind: 'image' | 'video' | 'audio'
   operation?: 'generate' | 'compose'
   prompt: string
   request: Record<string, unknown>

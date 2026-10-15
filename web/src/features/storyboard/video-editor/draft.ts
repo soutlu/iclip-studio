@@ -1,8 +1,8 @@
-/** 剪辑草稿：一版成片上的一串有序片段，每段记出自哪条记录、取它自己媒体
- * 时间里的哪一截。初始是这一版按关键帧分的段；裁剪、调序、拆分、删除改它，AI 改把几段换成占位、
- * 结果回来再换成那条编辑段。草稿的片段与合成请求的片段同形。纯函数，不持有状态。 */
+/** 剪辑草稿：一版成片上的一串有序片段，每段记出自哪条记录、取它自己媒体时间里的哪一截。
+ * 裁剪、调序、拆分、删除与选用版本改变它；AI 生成只增加候选。片段与合成请求同形。 */
 
 import { z } from 'zod'
+import { amend, startHistory, type History } from '../edit-history'
 
 /** AI 改选区的最短时长，秒。 */
 export const MIN_RANGE_SECONDS = 1
@@ -28,7 +28,7 @@ export type DraftClip = Clip & {
   origin: { start: number; end: number }
 }
 
-/** 交给 AI 改、结果还没回来的那几段：锁着，不能裁、拖、删、选。 */
+/** 先前已提交的占位：保留浏览器里仍在等待结果的剪辑，新提交不再创建占位。 */
 export type DraftPending = {
   kind: 'pending'
   id: string
@@ -72,13 +72,32 @@ export const keyframeSegments = (
   )
 }
 
-/** 草稿等于这一版的分段：没有改动。 */
-export const isUnchanged = (draft: Draft, segments: readonly DraftClip[]): boolean =>
-  draft.length === segments.length && draft.every((item, at) => item.id === segments[at]?.id)
+const joinedClips = (clips: readonly Clip[]): Clip[] => {
+  const joined: Clip[] = []
+  for (const clip of clips) {
+    const previous = joined.at(-1)
+    if (previous?.sourceJobId === clip.sourceJobId && previous.end === clip.start)
+      previous.end = clip.end
+    else joined.push({ sourceJobId: clip.sourceJobId, start: clip.start, end: clip.end })
+  }
+  return joined
+}
 
-/** 这一项是这一版没动过的一个关键帧段（顺序不论）。 */
-export const isBaseSegment = (item: DraftItem, segments: readonly DraftClip[]): boolean =>
-  item.kind === 'clip' && segments.some((segment) => segment.id === item.id)
+/** 比较实际播放内容；仅拆分或合并同来源的连续片段不算内容修改。 */
+export const isUnchanged = (draft: Draft, segments: readonly DraftClip[]): boolean => {
+  if (!draft.every((item) => item.kind === 'clip')) return false
+  const current = joinedClips(draft)
+  const original = joinedClips(segments)
+  return (
+    current.length === original.length &&
+    current.every(
+      (clip, at) =>
+        clip.sourceJobId === original[at]?.sourceJobId &&
+        clip.start === original[at]?.start &&
+        clip.end === original[at]?.end,
+    )
+  )
+}
 
 export const itemDuration = (item: DraftItem): number =>
   item.kind === 'clip'
@@ -170,6 +189,22 @@ export const stepSelect = (
 
 export type Edit = { draft: Draft; selection: Selection }
 
+/** 为同一次 AI 编辑把连续同来源的选区归成一段；保留当前画面与选中，不代选生成结果。 */
+export const mergeSelection = (draft: Draft, selection: Selection): Edit => {
+  const range = selectedRange(draft, selection)
+  if (range === undefined || range.from === range.to) return { draft, selection }
+  const items = draft.slice(range.from, range.to + 1)
+  if (!items.every((item) => item.kind === 'clip')) return { draft, selection }
+  const joined = joinedClips(items)
+  const clip = joined[0]
+  if (joined.length !== 1 || clip === undefined) return { draft, selection }
+  const merged = clipItem(clip)
+  return {
+    draft: [...draft.slice(0, range.from), merged, ...draft.slice(range.to + 1)],
+    selection: [merged.id],
+  }
+}
+
 /** 这段的一端最远能拖到哪：不超过它原有的范围，也不短于 {@link MIN_TRIM_SECONDS}（本来就更短的
  * 只能拉长、不能再缩）。 */
 export const trimBounds = (clip: DraftClip, edge: 'start' | 'end'): { min: number; max: number } =>
@@ -245,24 +280,6 @@ export const removeItems = (draft: Draft, selection: Selection): Edit =>
     ? { draft: draft.filter((item) => !selection.includes(item.id)), selection: [] }
     : { draft, selection }
 
-/** 把选中的几段换成一个占位，记着编辑段与被换下的段。 */
-export const replaceWithPending = (
-  draft: Draft,
-  selection: Selection,
-  editJobId: string,
-): Draft => {
-  const range = selectedRange(draft, selection)
-  if (range === undefined) return draft
-  const replaced = draft
-    .slice(range.from, range.to + 1)
-    .filter((item): item is DraftClip => item.kind === 'clip')
-  return [
-    ...draft.slice(0, range.from),
-    pendingItem(editJobId, replaced),
-    ...draft.slice(range.to + 1),
-  ]
-}
-
 /** 一条编辑段此刻的结论：还在跑、完成了（结果多长）、失败了（为什么）。 */
 export type EditOutcome =
   { kind: 'running' } | { kind: 'done'; duration: number } | { kind: 'failed'; message: string }
@@ -296,103 +313,55 @@ export const resolvePending = (
 
 // ---------- AI 改 ----------
 
-/** 编辑段在基底上改的那一段，毫秒，记在编辑段上；`duration` 是结果多长（秒），还不知道时没有。 */
+/** 编辑段在基底上改的那一段，毫秒，记在编辑段上。 */
 export type EditRange = {
   id: string
   rangeStartMs: number
   rangeEndMs: number
-  duration?: number | undefined
 }
 
-export type AiTarget =
-  /** 能交给 AI：基底上的区间（秒，正好落在关键帧上），以及它们在草稿里是第几段（从 1 起）。 */
-  | { kind: 'ready'; range: { start: number; end: number }; first: number; last: number }
-  | { kind: 'empty' }
-  /** 选区里有裁过、拆过、调过序或来自 AI 结果的段。 */
-  | { kind: 'modified' }
-  /** 不足最短时长。 */
-  | { kind: 'short' }
-
-const toSeconds = (ms: number): number => ms / 1000
+// ---------- 初次进入：根据已有编辑区间组织原片 ----------
 
 /**
- * 选区能不能交给 AI 改。能改的是一串未改动的基底关键帧段：来源是这一版、起止正好是它的关键帧、
- * 按基底时间连续相邻。另外，单独选中一整条没动过的 AI 结果，可以在它当初那一段上再生成一次。
- */
-export const aiTarget = (
-  draft: Draft,
-  selection: Selection,
-  segments: readonly DraftClip[],
-  edits: readonly EditRange[],
-): AiTarget => {
-  const range = selectedRange(draft, selection)
-  if (range === undefined) return { kind: 'empty' }
-  const items = draft.slice(range.from, range.to + 1)
-  const position = { first: range.from + 1, last: range.to + 1 }
-  const order = items.map((item) => segments.findIndex((segment) => segment.id === item.id))
-  const contiguous = order.every((at, offset) => at >= 0 && at === (order[0] ?? -1) + offset)
-  if (contiguous) {
-    const start = segments[order[0] ?? 0]?.start ?? 0
-    const end = segments[order.at(-1) ?? 0]?.end ?? 0
-    return end - start < MIN_RANGE_SECONDS
-      ? { kind: 'short' }
-      : { kind: 'ready', range: { start, end }, ...position }
-  }
-  const only = items.length === 1 ? items[0] : undefined
-  const edit =
-    only?.kind === 'clip' ? edits.find((item) => item.id === only.sourceJobId) : undefined
-  if (
-    only?.kind === 'clip' &&
-    edit?.duration !== undefined &&
-    only.start === 0 &&
-    only.end === roundToMs(edit.duration)
-  ) {
-    return {
-      kind: 'ready',
-      range: { start: toSeconds(edit.rangeStartMs), end: toSeconds(edit.rangeEndMs) },
-      ...position,
-    }
-  }
-  return { kind: 'modified' }
-}
-
-// ---------- 草稿丢了：按服务端重建 ----------
-
-/**
- * 按基底分段重建草稿：每个（这一版，区间）位置放最新提交的那条编辑段，区间要正好落在这一版的
- * 关键帧上，位置重叠时新的优先；失败的不算。这里一律先放成占位，完成的由 {@link resolvePending}
- * 换成结果，与提交后结果回来走同一条路。
+ * 将已有编辑的区间组织为一段，仍选用基底 V1；按精确区间切分，重叠时较新的区间优先。
+ * 成功或在途区间优先于仅有失败的区间，不根据生成状态自动选择结果。
  */
 export const rebuildDraft = (
   segments: readonly DraftClip[],
   edits: readonly (EditRange & { createdAt: string; failed: boolean })[],
 ): Draft => {
-  const accepted: { from: number; to: number; editJobId: string }[] = []
-  const newestFirst = edits
-    .filter((edit) => !edit.failed)
-    .sort(
-      (left, right) =>
-        Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id),
-    )
+  const first = segments[0]
+  const last = segments.at(-1)
+  if (first === undefined || last === undefined) return segments
+  const accepted: { start: number; end: number }[] = []
+  const newestFirst = edits.toSorted(
+    (left, right) =>
+      Number(left.failed) - Number(right.failed) ||
+      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+      right.id.localeCompare(left.id),
+  )
   for (const edit of newestFirst) {
-    const from = segments.findIndex((segment) => segment.start === toSeconds(edit.rangeStartMs))
-    const to = segments.findIndex((segment) => segment.end === toSeconds(edit.rangeEndMs))
-    if (from < 0 || to < from) continue
-    if (accepted.some((taken) => from <= taken.to && to >= taken.from)) continue
-    accepted.push({ from, to, editJobId: edit.id })
+    const start = edit.rangeStartMs / 1000
+    const end = edit.rangeEndMs / 1000
+    if (start < first.start || end > last.end || end <= start) continue
+    if (accepted.some((taken) => start < taken.end && end > taken.start)) continue
+    accepted.push({ start, end })
   }
-  const draft: DraftItem[] = []
-  for (let at = 0; at < segments.length; at += 1) {
-    const taken = accepted.find((entry) => entry.from === at)
-    const segment = segments[at]
-    if (taken !== undefined) {
-      draft.push(pendingItem(taken.editJobId, segments.slice(taken.from, taken.to + 1)))
-      at = taken.to
-    } else if (segment !== undefined) {
-      draft.push(segment)
-    }
-  }
-  return draft
+  if (accepted.length === 0) return segments
+  const cuts = [
+    ...new Set([
+      ...segments.map((segment) => segment.start),
+      last.end,
+      ...accepted.flatMap((range) => [range.start, range.end]),
+    ]),
+  ]
+    .filter((time) => !accepted.some((range) => time > range.start && time < range.end))
+    .sort((left, right) => left - right)
+  return cuts
+    .slice(0, -1)
+    .map((start, at) =>
+      clipItem({ sourceJobId: first.sourceJobId, start, end: cuts[at + 1] ?? last.end }),
+    )
 }
 
 /** 草稿引用的所有记录：各段的出处与占位的编辑段。 */
@@ -410,48 +379,15 @@ export const draftSources = (draft: Draft): Set<string> =>
 /** 撤销的一步：草稿连同当时的选中。 */
 export type Snapshot = { draft: Draft; selection: Selection }
 
-export type DraftHistory = {
-  past: readonly Snapshot[]
-  present: Snapshot
-  future: readonly Snapshot[]
-}
+export type DraftHistory = History<Snapshot>
 
-export const startHistory = (draft: Draft): DraftHistory => ({
-  past: [],
-  present: { draft, selection: [] },
-  future: [],
-})
-
-/** 一次编辑进栈，清掉重做。 */
-export const commit = (history: DraftHistory, next: Snapshot): DraftHistory => ({
-  past: [...history.past, history.present],
-  present: next,
-  future: [],
-})
+/** 从这份草稿起算的撤销栈，没有选中。 */
+export const startDraftHistory = (draft: Draft): DraftHistory =>
+  startHistory({ draft, selection: [] })
 
 /** 只改选中，不进栈。 */
-export const reselect = (history: DraftHistory, selection: Selection): DraftHistory => ({
-  ...history,
-  present: { ...history.present, selection },
-})
-
-export const undo = (history: DraftHistory): DraftHistory => {
-  const previous = history.past.at(-1)
-  return previous === undefined
-    ? history
-    : {
-        past: history.past.slice(0, -1),
-        present: previous,
-        future: [history.present, ...history.future],
-      }
-}
-
-export const redo = (history: DraftHistory): DraftHistory => {
-  const next = history.future[0]
-  return next === undefined
-    ? history
-    : { past: [...history.past, history.present], present: next, future: history.future.slice(1) }
-}
+export const reselect = (history: DraftHistory, selection: Selection): DraftHistory =>
+  amend(history, { ...history.present, selection })
 
 /** 栈里每一步都落定占位，各步的选中只留还在的段；失败原因只取当前这一步的，同一件事只说一次。 */
 export const resolveHistory = (

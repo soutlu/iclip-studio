@@ -1,21 +1,20 @@
-/** 每一版各自的剪辑草稿与撤销栈。草稿存进浏览器，按（对话，那一版）各一份；
- * 等于初始分段时不存。占位与合成的结论由服务端记录推出来，每次渲染落定一次。 */
+/** 基底上的剪辑选择与撤销栈，按（对话，基底）存进浏览器。
+ * 生成结果只作为候选；已有占位与合成的结论由服务端记录推出来。 */
 
 import { useEffect, useEffectEvent, useState } from 'react'
+import { commit, redo, undo } from '../edit-history'
 import type { GenerationJob } from '../storyboard.api'
+import { groupsForBase } from './clip-versions'
 import {
-  commit,
   draftSources,
   isUnchanged,
+  mergeSelection,
   parseStoredDraft,
   rebuildDraft,
-  redo,
-  replaceWithPending,
   reselect,
   resolveHistory,
   serializeDraft,
-  startHistory,
-  undo,
+  startDraftHistory,
   type Draft,
   type DraftClip,
   type DraftHistory,
@@ -23,7 +22,7 @@ import {
   type EditOutcome,
   type Selection,
 } from './draft'
-import { rebuildCandidates, type ChainVersion, type EditSegment } from './edit-chain'
+import type { ChainVersion, EditSegment } from './edit-chain'
 
 type Entry = {
   /** 这一版的关键帧分段：草稿等于它就是没改动。 */
@@ -36,7 +35,7 @@ type Entry = {
 export const draftStorageKey = (conversationId: string, versionJobId: string) =>
   `video-editor-draft:${conversationId}:${versionJobId}`
 
-const UNREADABLE = '草稿读取失败，已根据 AI 生成结果重建'
+const UNREADABLE = '剪辑选择读取失败，已恢复原片；生成结果仍可在片段版本中选择'
 
 const readStored = (key: string): string | null => {
   try {
@@ -46,15 +45,13 @@ const readStored = (key: string): string | null => {
   }
 }
 
-/** 没改动且没在等合成就不存（存过的删掉）；读写都可能被浏览器拒绝，由调用方说出来。 */
+/** 显式选回 V1 也要存，不能根据内容与原片相同就丢掉用户的选择。 */
 const writeStored = (key: string, entry: Entry) => {
   const { draft } = entry.history.present
-  if (isUnchanged(draft, entry.segments) && entry.composite === undefined)
-    window.localStorage.removeItem(key)
-  else window.localStorage.setItem(key, serializeDraft({ draft, composite: entry.composite }))
+  window.localStorage.setItem(key, serializeDraft({ draft, composite: entry.composite }))
 }
 
-/** 合成有了结论该怎么办：完成就清掉草稿，失败与找不到就留着草稿、去掉等待，并说一句为什么。
+/** 合成有了结论就去掉等待，保留剪辑选择；失败与找不到时说出原因。
  * 不是正看着的那一版时给 `label`（V1、V2……），那句话说出是哪一版。 */
 const compositeVerdict = (
   jobs: readonly GenerationJob[],
@@ -76,9 +73,8 @@ const compositeVerdict = (
   return { kind: 'waiting' }
 }
 
-/** 第一次看某一版时装进它的草稿：读存着的；没有就按服务端重建；读不出或引用了这一版不认识的
- * 记录，也重建并说一声。存着的合成照样带上，结论交给装载后的落定：关着编辑器时合成完成，
- * 回来也像开着时一样清掉草稿、跳到新版本。 */
+/** 优先恢复已保存的选择；没有时根据已有编辑区间组织原片，所有区间仍使用 V1。
+ * 引用了基底编辑链之外的记录时恢复原片并提示；存着的合成等待交给装载后的落定。 */
 const loadEntry = (
   key: string,
   version: ChainVersion,
@@ -88,17 +84,28 @@ const loadEntry = (
 ): { entry: Entry; notice: string | undefined } => {
   const fresh = (draft: Draft, composite?: string): Entry => ({
     segments,
-    history: startHistory(draft),
+    history: startDraftHistory(draft),
     composite,
   })
   const rebuilt = () =>
     fresh(
       rebuildDraft(
         segments,
-        rebuildCandidates(jobs, version.jobId).map((edit) => ({
-          ...edit,
-          failed: edit.status === 'failed',
-        })),
+        groupsForBase(version.jobId, jobs).flatMap((group) => {
+          const latest =
+            group.edits.filter((edit) => edit.status !== 'failed').at(-1) ?? group.edits.at(-1)
+          return latest === undefined
+            ? []
+            : [
+                {
+                  id: latest.id,
+                  rangeStartMs: Math.round(group.start * 1000),
+                  rangeEndMs: Math.round(group.end * 1000),
+                  createdAt: latest.createdAt,
+                  failed: latest.status === 'failed',
+                },
+              ]
+        }),
       ),
     )
   const raw = readStored(key)
@@ -119,11 +126,11 @@ type Args = {
   segments: readonly DraftClip[] | undefined
   /** 编辑链上的记录；还没读到时没有。 */
   jobs: readonly GenerationJob[] | undefined
-  /** 基于这一版的编辑段。 */
+  /** 直接基于这一版的编辑段，包括使用先前结果作为参考生成的新候选。 */
   edits: readonly EditSegment[]
   /** 一条编辑段此刻的结论；完成了却还不知道结果多长时仍算在跑。 */
   outcomeOf: (editJobId: string) => EditOutcome | undefined
-  /** 要让人看到的一句话：草稿重建、AI 修改失败、合成失败。 */
+  /** 要让人看到的一句话：剪辑选择恢复、AI 修改失败、合成失败。 */
   onNotice: (message: string) => void
   /** 浏览器拒绝写入草稿；每次写失败都调，说几次由调用方定。 */
   onStorageFailure: () => void
@@ -145,8 +152,8 @@ export type EditDraft = {
   select: (selection: Selection) => void
   undo: () => void
   redo: () => void
-  /** 选中的段交给了 AI：换成占位，撤销栈从这里重新起算（提交不能撤销）。 */
-  submitted: (editJobId: string) => void
+  /** AI 已受理：同来源连续选区可归成一段；混合来源保留多段与选中，不代选结果。 */
+  submitted: () => void
   /** 草稿提交了合成。 */
   composing: (compositeJobId: string) => void
 }
@@ -192,8 +199,7 @@ export function useEditDraft({
       for (const message of settled.failures) onNotice(`AI 修改失败：${message}，已恢复原来的段`)
     }
   }
-  // 等着合成的每一版都落定，不只是正看着的那版：刷新后合成才完成时，已经默认去看新的一版了，基底那份
-  // 也要清掉。只有正看着的那版合成完成才跳到新版本。
+  // 等待中的合成逐一落定，保留时间线和选区；预览哪版由主组件决定。
   if (jobs !== undefined) {
     const waiting = { ...entries, ...(entry === undefined ? {} : { [versionJobId]: entry }) }
     for (const [jobId, waited] of Object.entries(waiting)) {
@@ -202,14 +208,7 @@ export function useEditDraft({
       const label = viewing ? undefined : versions.find((item) => item.jobId === jobId)?.label
       const verdict = compositeVerdict(jobs, waited.composite, label)
       if (verdict.kind === 'waiting') continue
-      const next: Entry =
-        verdict.kind === 'done'
-          ? {
-              segments: waited.segments,
-              history: startHistory(waited.segments),
-              composite: undefined,
-            }
-          : { ...waited, composite: undefined }
+      const next: Entry = { ...waited, composite: undefined }
       putAt(jobId, next)
       if (viewing) entry = next
       if (verdict.kind === 'dropped') onNotice(verdict.message)
@@ -217,7 +216,7 @@ export function useEditDraft({
     }
   }
 
-  // 每一版的草稿都写回去，不只是正看着的那版：合成完成时已经换去看新的一版，基底那份要在这里清掉。
+  // 合成完成后仍写回原有选择，查看历史成片不会改变它。
   const reportStorageFailure = useEffectEvent(onStorageFailure)
   useEffect(() => {
     try {
@@ -250,10 +249,11 @@ export function useEditDraft({
     select: (selection) => changeHistory((current) => reselect(current, selection)),
     undo: () => changeHistory(undo),
     redo: () => changeHistory(redo),
-    submitted: (editJobId) =>
-      changeHistory(({ present }) =>
-        startHistory(replaceWithPending(present.draft, present.selection, editJobId)),
-      ),
+    submitted: () =>
+      changeHistory((current) => {
+        const grouped = mergeSelection(current.present.draft, current.present.selection)
+        return grouped.draft === current.present.draft ? current : commit(current, grouped)
+      }),
     composing: (compositeJobId) => change((current) => ({ ...current, composite: compositeJobId })),
   }
 }
