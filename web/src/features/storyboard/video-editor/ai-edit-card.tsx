@@ -132,6 +132,7 @@ function CardComposer({
     referenceLimit - new Set(imageSlotsOf(partsRef.current).map((slot) => slot.key)).size
   const referenceCount = new Set(imageSlotsOf(parts).map((slot) => slot.key)).size
   const exceedsReferenceLimit = referenceCount > referenceLimit
+  const hasText = parts.some((part) => part.kind === 'text' && part.text.trim() !== '')
 
   const images = parts.flatMap((part) =>
     part.kind === 'media' && part.media.status === 'ready' && part.media.url !== undefined
@@ -222,7 +223,9 @@ function CardComposer({
         sending={sending}
         submitAction={{
           disabled:
-            submitDisabled || exceedsReferenceLimit || (mode === 'image' && images.length === 0),
+            submitDisabled ||
+            exceedsReferenceLimit ||
+            (mode === 'image' ? images.length === 0 : !hasText),
           emphasis: 'primary',
           icon: 'video',
           label: '生成视频',

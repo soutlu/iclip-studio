@@ -124,7 +124,7 @@ const holdReferenceUpload = async (page: Page) => {
   return () => page.evaluate(() => window.dispatchEvent(new Event('release-reference-upload')))
 }
 
-test('图生和编辑按模型分别校验时长，上传自动引用并生成同一选区的新版本', async ({ page }) => {
+test('图生和编辑按模型分别校验时长，仅上传图片也能生成同一选区的新版本', async ({ page }) => {
   const dialog = await openEditor(page, false, 2, false)
   await waitForSegments(dialog)
   await segment(dialog, 2).click()
@@ -138,6 +138,7 @@ test('图生和编辑按模型分别校验时长，上传自动引用并生成�
   await card(dialog).getByRole('radio', { name: '图生', exact: true }).click()
   await expect(requestBox(dialog)).toHaveText('人物缓慢转身')
   await expect(generateButton(dialog)).toBeDisabled()
+  await requestBox(dialog).fill('')
   const fileChooser = page.waitForEvent('filechooser')
   await card(dialog).getByRole('button', { name: '添加附件', exact: true }).click()
   await (
@@ -169,6 +170,7 @@ test('图生和编辑按模型分别校验时长，上传自动引用并生成�
 
   const { body } = await submitEdit(page, dialog)
   expect(body).toMatchObject({
+    prompt: '@Image1',
     range_start_ms: 1000,
     range_end_ms: 2000,
     seconds: 15,

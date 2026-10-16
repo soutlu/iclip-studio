@@ -462,7 +462,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       referenceClips === undefined
     )
       return
-    if (input.text.trim() === '') {
+    if (mode === 'edit' && input.text.trim() === '') {
       setGenerateError('请填写修改要求')
       return
     }

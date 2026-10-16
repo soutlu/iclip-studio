@@ -2401,6 +2401,46 @@ async def test_wan_edit_trigger_is_saved_once_with_the_normalized_request(prompt
 
 
 @pytest.mark.parametrize(
+    ("prompt", "status"),
+    [
+        ("改" * 3995, 202),
+        ("改" * 3996, 422),
+        ("改" * 4000, 422),
+        ("编辑视频，" + "改" * 3995, 202),
+    ],
+    ids=["max-unprefixed", "over-unprefixed", "max-input", "max-prefixed"],
+)
+async def test_wan_edit_prompt_limit_includes_the_added_prefix(prompt: str, status: int) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    clip = seed_clip(repo, owner=owner)
+    seeded = {take.id, clip.id}
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://testserver",
+    ) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "model": "wan3.0-video",
+                "prompt": prompt,
+            },
+        )
+    assert response.status_code == status, response.text
+    if status == 422:
+        assert isinstance(response.json()["detail"], str)
+        assert set(repo.jobs) == seeded, "超长输入不创建生成记录"
+    else:
+        sent = stored_request(only_new(repo, seeded)).model_dump()["prompt"]
+        assert len(sent) == 4000
+        assert sent == (prompt if prompt.startswith("编辑视频，") else "编辑视频，" + prompt)
+
+
+@pytest.mark.parametrize(
     ("model", "limit", "editing"),
     [
         ("vendor-a-seedance-2-0", 9, False),
