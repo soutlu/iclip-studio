@@ -3,8 +3,8 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { z } from 'zod'
 
-/** 当前查看的整片、编辑基底，以及整片或片段视图。 */
-export type Picked = { jobId: string; baseJobId: string; view: 'whole' | 'clips' }
+/** 整片与片段预览当前剪辑；version 仅用于明确查看某条历史成片。 */
+export type Picked = { jobId: string; baseJobId: string; view: 'whole' | 'clips' | 'version' }
 
 export const viewStorageKey = (conversationId: string, rootJobId: string) =>
   `video-editor-view:${conversationId}:${rootJobId}`
@@ -12,7 +12,7 @@ export const viewStorageKey = (conversationId: string, rootJobId: string) =>
 const zPicked = z.object({
   jobId: z.string().min(1),
   baseJobId: z.string().min(1),
-  view: z.enum(['whole', 'clips']),
+  view: z.enum(['whole', 'clips', 'version']),
 })
 
 /** 读不出、解析不了都当没记过：这只是浏览偏好，调用方按默认看最新版。 */

@@ -68,6 +68,7 @@ import { usePickedView } from './use-picked-view'
 import { useAudioPeaks, useKeyframes, type PeaksState } from './use-media-analysis'
 import { useMediaDurations } from './use-media-durations'
 import { useStableValue } from './use-stable-value'
+import { useSubmissionGuard } from './use-submission-guard'
 import {
   editableModels,
   pickEditModel,
@@ -82,6 +83,7 @@ const LOADING_PEAKS: PeaksState = { kind: 'loading' }
 const seconds = (value: number) => value.toFixed(1)
 const NO_REQUEST: readonly ComposerPart[] = []
 const CURRENT_SELECTION_KEY = 'current-selection'
+const SUBMISSION_KEY = 'submitting'
 const STORAGE_FAILURE = '当前浏览器无法保存剪辑选择，关闭编辑器后剪辑内容将丢失'
 
 type Props = {
@@ -169,7 +171,12 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const [cardOpen, setCardOpen] = useState(true)
   const [wantedModel, setWantedModel] = useState<string>()
   // 两次互斥的提交；任一在跑时整个编辑器一起锁。
-  const [operation, setOperation] = useState<'idle' | 'generating' | 'composing'>('idle')
+  const [submission, setSubmission] = useState<{
+    kind: 'edit' | 'compose'
+    targetKey: string
+    since: string
+    label: string
+  }>()
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [composeError, setComposeError] = useState<string | null>(null)
   /** 脚注位置上要让人看到的一句话，下一次剪辑时收起。 */
@@ -181,18 +188,20 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     storageFailedRef.current = true
     setNotice(STORAGE_FAILURE)
   }
-  // 上次看的那一版；链还没读到时版本里只有 V1，先看最新版，读到后找得到它就回到它。
+  // 编辑基底与明确点开的历史成片分别记；默认整片预览当前剪辑。
   const [picked, setPicked] = usePickedView(conversationId, root.id, noticeStorageFailure)
   const { downloading, download } = useMediaDownload()
-  const busy = operation !== 'idle'
+  const busy = submission !== undefined
+  useSubmissionGuard(busy)
   const model = pickEditModel(models, wantedModel, modelsQuery.data?.default)
 
   // 整片浏览与编辑基底分别记。查看历史不会替换已选片段，合成完成也不清空选择。
   const version: ChainVersion = versions.find((item) => item.jobId === picked?.baseJobId) ??
-    versions.at(-1) ?? { jobId: root.id, label: 'V1', mediaUrl, sourceJobId: undefined }
+    versions.at(-1) ?? { jobId: root.id, label: '原片', mediaUrl, sourceJobId: undefined }
   const wholeVersion =
     versions.find((item) => item.jobId === picked?.jobId) ?? versions.at(-1) ?? version
   const viewingClips = picked?.view === 'clips'
+  const viewingVersion = picked?.view === 'version'
   const keyframes = useKeyframes(version.mediaUrl)
   const segments = useMemo(
     () =>
@@ -253,12 +262,12 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     onNotice: setNotice,
     onStorageFailure: noticeStorageFailure,
     onComposed: (jobId) => {
-      setPicked({ jobId, baseJobId: version.jobId, view: 'whole' })
+      setPicked({ jobId, baseJobId: version.jobId, view: 'version' })
     },
   })
   const changed = editor?.changed ?? false
   const waitingComposite = composingJob !== undefined || editor?.composite !== undefined
-  const editable = editor !== undefined && !waitingComposite && !busy
+  const editable = editor !== undefined && !viewingVersion && !waitingComposite && !busy
   const draft = editor?.draft ?? []
   const selection = viewingClips && editor !== undefined ? editor.selection : []
   const pendingItems = draft.filter((item) => item.kind === 'pending')
@@ -312,17 +321,21 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           { mediaUrl: wholeVersion.mediaUrl, start: 0, end: wholeKeyframes.data.duration },
         ])
   const draftPlay = editor === undefined ? undefined : layoutPlay(draft.flatMap(partsOf))
-  const current = viewingClips ? draftPlay : versionPlay
+  const current = viewingVersion ? versionPlay : draftPlay
   const total = editor === undefined ? (versionDuration ?? 0) : draftDuration(draft)
-  const previewDuration = viewingClips ? total : (wholeKeyframes.data?.duration ?? 0)
-  const scale = Math.max(versionDuration ?? 0, total, previewDuration)
+  const previewDuration = viewingVersion ? (wholeKeyframes.data?.duration ?? 0) : total
+  const scale = viewingVersion ? previewDuration : Math.max(versionDuration ?? 0, total)
 
   // ---------- 时间线 ----------
 
-  const shownItems = draft
+  const shownItems = viewingVersion
+    ? wholeKeyframes.data === undefined
+      ? []
+      : keyframeSegments(wholeVersion.jobId, wholeKeyframes.data)
+    : draft
   const entries: TimelineEntry[] = layoutDraft(shownItems).map(({ item, at, duration }) => {
     const group =
-      item.kind === 'clip'
+      !viewingVersion && item.kind === 'clip'
         ? (groups.find((group) => group.edits.some((edit) => edit.id === item.sourceJobId)) ??
           groupForClip(item, version.jobId, jobs, resultDuration))
         : undefined
@@ -334,11 +347,14 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       id: item.id,
       at,
       duration,
-      parts: partsOf(item),
+      parts:
+        viewingVersion && item.kind === 'clip'
+          ? [{ mediaUrl: wholeVersion.mediaUrl, start: item.start, end: item.end }]
+          : partsOf(item),
       clip: item.kind === 'clip' ? item : undefined,
       changed: group !== undefined,
       runningSince: undefined,
-      versionLabel: group === undefined ? undefined : `V${editedVersion + 2}`,
+      versionLabel: editedVersion < 0 ? undefined : `V${editedVersion + 1}`,
     }
   })
   const audioUrls = useStableValue([
@@ -382,7 +398,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     setNotice(null)
     if (!viewingClips) {
       if (!versions.some((item) => item.jobId === key)) return
-      setPicked({ jobId: key, baseJobId: version.jobId, view: 'whole' })
+      setPicked({ jobId: key, baseJobId: version.jobId, view: 'version' })
       return
     }
     if (editor === undefined || candidateGroup === undefined || !editable) return
@@ -424,16 +440,17 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const collapseCard = () => setCardOpen(false)
 
   /** 卡里点「生成视频」：要求里的参考图按出现的先后排成 `reference_image_urls`，正文里写 `@ImageN`。 */
-  const generate = async (submission: ComposerSubmission) => {
+  const generate = async (input: ComposerSubmission) => {
     if (
       busy ||
       editor === undefined ||
       !canGenerate ||
       target === undefined ||
+      candidateGroup === undefined ||
       referenceClips === undefined
     )
       return
-    if (submission.text.trim() === '') {
+    if (input.text.trim() === '') {
       setGenerateError('请填写修改要求')
       return
     }
@@ -441,9 +458,14 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       setGenerateError('暂无可用的编辑模型')
       return
     }
-    const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(submission.parts))
-    // 「生成中」的锁覆盖切参考片段、上传与提交三步，任一步失败都照 generateError 显示。
-    setOperation('generating')
+    const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(input.parts))
+    // 制作参考、上传和等待受理都属于提交中；只有服务端任务才显示生成中。
+    setSubmission({
+      kind: 'edit',
+      targetKey: candidateGroup.key,
+      since: new Date().toISOString(),
+      label: `V${candidateGroup.edits.length + 1}`,
+    })
     setGenerateError(null)
     setNotice(null)
     try {
@@ -467,16 +489,22 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     } catch (error) {
       setGenerateError(errorMessageOf(error, '视频编辑提交失败'))
     } finally {
-      setOperation('idle')
+      setSubmission(undefined)
     }
   }
 
   const segmentsToCompose = compositeSegments(draft)
-  const canCompose = changed && segmentsToCompose !== undefined && !waitingComposite && !busy
+  const canCompose =
+    !viewingVersion && changed && segmentsToCompose !== undefined && !waitingComposite && !busy
   const compose = async () => {
     if (!canCompose || editor === undefined || segmentsToCompose === undefined) return
     setPicked({ jobId: wholeVersion.jobId, baseJobId: version.jobId, view: 'whole' })
-    setOperation('composing')
+    setSubmission({
+      kind: 'compose',
+      targetKey: version.jobId,
+      since: new Date().toISOString(),
+      label: `V${versions.length + jobs.filter((job) => isComposite(job) && job.status !== 'completed').length}`,
+    })
     setComposeError(null)
     setNotice(null)
     try {
@@ -492,7 +520,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     } catch (error) {
       setComposeError(errorMessageOf(error, '合成任务提交失败'))
     } finally {
-      setOperation('idle')
+      setSubmission(undefined)
     }
   }
 
@@ -520,10 +548,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
     .map((job, at): VersionStripEntry => ({
       key: job.id,
-      label: `V${versions.length + at + 1}`,
-      name: `V${versions.length + at + 1} · ${job.status === 'failed' ? '合成失败' : '合成中'}`,
+      label: `V${versions.length + at}`,
+      name: `V${versions.length + at} · ${job.status === 'failed' ? '合成失败' : '合成中'}`,
       poster: posterOf(version.mediaUrl),
-      running: isRunningStatus(job.status) ? { since: job.createdAt } : undefined,
+      running: isRunningStatus(job.status) ? { since: job.createdAt, label: '合成中' } : undefined,
       failed: job.status === 'failed',
       disabled: true,
       unseen: false,
@@ -534,18 +562,20 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       : [
           {
             key: candidateGroup.key,
-            label: 'V1',
-            name: 'V1',
+            label: '原片',
+            name: '原片',
             poster: videoSnapshotUrl(version.mediaUrl, 320, candidateGroup.start),
             running: undefined,
             unseen: false,
           },
           ...candidateGroup.edits.map((edit, at): VersionStripEntry => {
-            const label = `V${at + 2}`
+            const label = `V${at + 1}`
             const failed = edit.status === 'failed'
             const running = isRunningStatus(edit.status)
             const duration = resultDuration(edit)
             const unreadable = edit.outputUrl !== null && durations[edit.outputUrl] === null
+            const isNewResult =
+              edit.status === 'completed' && duration !== undefined && unseen.isUnseen(edit.id)
             return {
               key: edit.id,
               label,
@@ -557,20 +587,20 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                     ? '失败'
                     : unreadable
                       ? '结果时长读取失败'
-                      : unseen.isUnseen(edit.id)
+                      : isNewResult
                         ? '新结果'
                         : undefined,
               ]
                 .filter(Boolean)
                 .join(' · '),
               poster: posterOf(edit.outputUrl ?? edit.sourceUrl ?? version.mediaUrl),
-              running: running ? { since: edit.createdAt } : undefined,
+              running: running ? { since: edit.createdAt, label: '生成中' } : undefined,
               failed: failed || unreadable,
               disabled:
                 edit.status !== 'completed' ||
                 edit.outputUrl === null ||
                 (duration === undefined && !unreadable),
-              unseen: unseen.isUnseen(edit.id),
+              unseen: isNewResult,
             }
           }),
         ]
@@ -592,14 +622,35 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   }
   const stripEntries = [
     ...(viewingClips ? clipEntries : [...completedWholeEntries, ...wholeInFlight]),
-  ].reverse()
+  ]
+  if (
+    submission !== undefined &&
+    (viewingClips
+      ? submission.kind === 'edit' && submission.targetKey === candidateGroup?.key
+      : submission.kind === 'compose')
+  ) {
+    stripEntries.push({
+      key: SUBMISSION_KEY,
+      label: submission.label,
+      name: `${submission.label} · 提交中`,
+      poster: posterOf(referenceClips?.[0]?.mediaUrl ?? version.mediaUrl),
+      running: { since: submission.since, label: '提交中' },
+      disabled: true,
+      unseen: false,
+    })
+  }
+  stripEntries.reverse()
   const selectedKey = viewingClips
     ? !hasCurrentCandidate
       ? CURRENT_SELECTION_KEY
       : source?.sourceJobId === version.jobId
         ? (candidateGroup?.key ?? '')
         : (source?.sourceJobId ?? '')
-    : wholeVersion.jobId
+    : viewingVersion
+      ? wholeVersion.jobId
+      : changed
+        ? ''
+        : version.jobId
 
   // ---------- 脚注 ----------
 
@@ -614,10 +665,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const footnote = (() => {
     if (notice !== null) return notice
     if (editor === undefined) return ''
-    if (!viewingClips)
-      return `正在查看整片 ${wholeVersion.label}；点击片段可查看该段版本，已选用版本保持不变`
+    if (viewingVersion) return `正在查看 ${wholeVersion.label}；点击「整片」可返回当前选用内容`
+    if (submission !== undefined) return '正在提交，请等待提交完成后再离开'
     if (waitingComposite) return '正在合成，完成后将生成新版本；合成期间无法剪辑'
-    if (operation === 'generating') return '正在截取参考片段并提交给 AI…'
+    if (!viewingClips) return '正在预览时间线当前选用内容；点击片段可查看和切换版本'
     if (range !== undefined) {
       const which = positions(range.first, range.last)
       const reason = blockReason
@@ -668,7 +719,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       <span aria-hidden="true" className="video-editor-bar-divider" />
       <Button
         className="video-editor-bar-button video-editor-tool"
-        disabled={!viewingClips || !editable || !canSplitAt(draft, currentTime)}
+        disabled={!editable || !canSplitAt(draft, currentTime)}
         leadingIcon="split"
         onClick={() => apply(splitAt(draft, currentTime))}
         size="md"
@@ -692,7 +743,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const readout = (
     <span className="video-editor-readout">
       共 <b>{seconds(previewDuration)}</b> 秒
-      {viewingClips && changed && Math.abs(shorter) >= 0.05
+      {!viewingVersion && changed && Math.abs(shorter) >= 0.05
         ? ` · 比 ${version.label} ${shorter > 0 ? '短' : '长'} ${seconds(Math.abs(shorter))} 秒`
         : null}
     </span>
@@ -704,7 +755,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       className="video-editor-compose"
       disabled={!canCompose}
       leadingIcon="video"
-      loading={operation === 'composing' || waitingComposite}
+      loading={submission?.kind === 'compose' || waitingComposite}
       onClick={() => void compose()}
       size="md"
       title={pendingItems.length > 0 ? 'AI 生成尚未完成，无法合成' : undefined}
@@ -717,10 +768,12 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const downloadButton = (
     <Button
       className="video-editor-bar-button"
-      disabled={viewingClips}
+      disabled={viewingClips || (!viewingVersion && changed)}
       leadingIcon="download"
       loading={downloading}
-      onClick={() => void download(wholeVersion.mediaUrl, '生成的视频')}
+      onClick={() =>
+        void download(viewingVersion ? wholeVersion.mediaUrl : version.mediaUrl, '生成的视频')
+      }
       size="md"
       variant="ghost"
     >
@@ -728,14 +781,15 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     </Button>
   )
 
-  const timeline = keyframes.isError ? (
+  const timelineKeyframes = viewingVersion ? wholeKeyframes : keyframes
+  const timeline = timelineKeyframes.isError ? (
     <p className="video-editor-timeline-loading" role="alert">
-      {errorMessageOf(keyframes.error, '该视频的关键帧读取失败')}
-      <Button onClick={() => void keyframes.refetch()} size="md" variant="ghost">
+      {errorMessageOf(timelineKeyframes.error, '该视频的关键帧读取失败')}
+      <Button onClick={() => void timelineKeyframes.refetch()} size="md" variant="ghost">
         重试
       </Button>
     </p>
-  ) : editor === undefined || versionDuration === undefined ? (
+  ) : editor === undefined || timelineKeyframes.data === undefined ? (
     <p className="video-editor-timeline-loading" role="status">
       正在读取分段…
     </p>
@@ -812,7 +866,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
             Math.max(clip.start, clip.end - LAST_FRAME_LEAD),
           ),
         }}
-        generating={operation === 'generating'}
+        generating={submission?.kind === 'edit'}
         modelPicker={
           <GenerationPicker
             className="video-editor-model-picker"
@@ -844,7 +898,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       open
       onOpenChange={(open) => {
         if (open) return
-        if (busy) toast.info('请等待提交完成')
+        if (busy) toast.info('正在提交，请等待提交完成后再离开')
         else onClose()
       }}
     >
@@ -882,7 +936,11 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
               original: posterOf(version.mediaUrl),
             }}
             barEnd={downloadButton}
-            contentKey={viewingClips ? `${version.jobId}:clips` : `${wholeVersion.jobId}:whole`}
+            contentKey={
+              viewingVersion
+                ? `${wholeVersion.jobId}:version`
+                : `${version.jobId}:${viewingClips ? 'clips' : 'whole'}`
+            }
             current={current}
             currentTime={currentTime}
             footnote={
@@ -914,6 +972,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
               <div aria-label="视频预览范围" className="video-editor-compare" role="group">
                 <button
                   aria-pressed={!viewingClips}
+                  disabled={busy}
                   onClick={() => chooseScope('whole')}
                   type="button"
                 >
@@ -921,6 +980,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                 </button>
                 <button
                   aria-pressed={viewingClips}
+                  disabled={busy}
                   onClick={() => chooseScope('clips')}
                   type="button"
                 >

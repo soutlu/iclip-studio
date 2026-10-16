@@ -8,10 +8,10 @@ import type { GenerationJob } from '../storyboard.api'
 export type ChainVersion = {
   /** 这一版自己的记录 id。AI 改与合成都以它为基底。 */
   jobId: string
-  /** V1、V2……按完成时刻编。 */
+  /** 原作标「原片」，合成从 V1 起按完成时刻编。 */
   label: string
   mediaUrl: string
-  /** 基于哪一版；原作没有。来源可以分叉，V3 也可以基于 V1。 */
+  /** 基于哪一版；原作没有。来源可以分叉，V2 也可以基于原片。 */
   sourceJobId: string | undefined
 }
 
@@ -41,7 +41,7 @@ const byFinish = (left: GenerationJob, right: GenerationJob): number =>
   Date.parse(left.finishedAt ?? left.createdAt) - Date.parse(right.finishedAt ?? right.createdAt) ||
   left.id.localeCompare(right.id)
 
-/** 各版本：原作是 V1，链上完成的合成（任何形状）按完成时刻接着编。`jobs` 是链查询拿回来的
+/** 各版本：原作单独标「原片」，链上完成的合成（任何形状）从 V1 起按完成时刻编。`jobs` 是链查询拿回来的
  * （这条出片名下的编辑段与合成），原作自己不在里面，单独传；原作没出片就没有版本。 */
 export const projectVersions = (
   root: GenerationJob,
@@ -55,10 +55,10 @@ export const projectVersions = (
     )
     .sort(byFinish)
   return [
-    { jobId: root.id, label: 'V1', mediaUrl: root.outputUrl, sourceJobId: undefined },
+    { jobId: root.id, label: '原片', mediaUrl: root.outputUrl, sourceJobId: undefined },
     ...composites.map((job, at) => ({
       jobId: job.id,
-      label: `V${at + 2}`,
+      label: `V${at + 1}`,
       mediaUrl: job.outputUrl,
       sourceJobId: job.sourceJobId,
     })),

@@ -52,7 +52,7 @@ export function VersionThumb({
     >
       {children}
       {state === undefined ? null : <span className="version-thumb-state">{state}</span>}
-      {unseen ? <span className="version-thumb-dot" /> : null}
+      {unseen ? <span aria-label="新结果" className="version-thumb-dot" role="img" /> : null}
       {label === undefined ? null : <span className="version-thumb-label">{label}</span>}
     </button>
   )
