@@ -250,12 +250,24 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
     reference_video_urls: [],
   })
   expect(body['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+  await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
+  await expect(card(dialog).getByRole('alert')).toHaveCount(0)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/retain-generation-input/submitted')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
+  await expect(generateButton(dialog)).toBeVisible()
+  await screenshotBothThemes(
+    page,
+    '../.artifacts/design-qa/retain-generation-input/submitted-mobile',
+  )
+  await page.setViewportSize({ width: 1280, height: 844 })
   await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   const candidate = versions(dialog).getByRole('button', { name: 'V1 · 新结果', exact: true })
   await expect(candidate).toBeEnabled({ timeout: STEP_TIMEOUT })
+  await expect(generateButton(dialog)).toBeEnabled()
   await candidate.click()
   await scope(dialog, '整片').click()
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
