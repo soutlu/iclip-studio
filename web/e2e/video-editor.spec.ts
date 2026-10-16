@@ -5,7 +5,7 @@ import { canvasPng, openConversation, openStoryboardShot, screenshotBothThemes }
 
 /** mock 受理后 3 秒出结果；编辑段与合成各等一轮。 */
 const STEP_TIMEOUT = 15_000
-const SHOT_DIR = '../.artifacts/design-qa/video-editor-redesign/impl-c'
+const SHOT_DIR = '../.artifacts/design-qa/video-editor-version-state'
 
 /** 第 2 组那条成片是竖版、6 秒、每秒一个关键帧、带一条原声；第 3 组是横版、无声。 */
 const openEditor = async (page: Page, mobile = false, group = 2) => {
@@ -84,6 +84,142 @@ const submitEdit = async (page: Page, dialog: Locator) => {
   const accepted = (await (await sent.response())?.json()) as { generation: { id: string } }
   return { body: sent.postDataJSON() as Record<string, unknown>, editId: accepted.generation.id }
 }
+
+/** 延迟真实直传，不伪造 HTTP 结果；MSW Service Worker 会先于 Playwright route 接收上传。 */
+const holdReferenceUpload = async (page: Page) => {
+  await page.evaluate(() => {
+    const OriginalRequest = XMLHttpRequest
+    const pending: (() => void)[] = []
+    class GatedRequest extends OriginalRequest {
+      private storagePut = false
+
+      override open(method: string, url: string | URL) {
+        this.storagePut = method === 'PUT' && String(url).includes('/mock-oss/')
+        super.open(method, url)
+      }
+
+      override send(body?: Document | XMLHttpRequestBodyInit | null) {
+        if (this.storagePut) pending.push(() => super.send(body))
+        else super.send(body)
+      }
+    }
+    window.XMLHttpRequest = GatedRequest
+    window.addEventListener(
+      'release-reference-upload',
+      () => {
+        window.XMLHttpRequest = OriginalRequest
+        pending.forEach((send) => send())
+      },
+      { once: true },
+    )
+  })
+  return () => page.evaluate(() => window.dispatchEvent(new Event('release-reference-upload')))
+}
+
+test('整片预览使用时间线选用的版本，历史原片与当前剪辑分别显示对应画面和时长', async ({ page }) => {
+  const dialog = await openEditor(page)
+  await waitForSegments(dialog)
+  const video = dialog.getByLabel('视频播放器', { exact: true })
+  const originalUrl = await video.getAttribute('src')
+  if (originalUrl === null) throw new Error('原片尚未加载')
+  await segment(dialog, 2).click()
+  await requestBox(dialog).fill('把这一秒改成暖色')
+  await submitEdit(page, dialog)
+  const candidate = versions(dialog).getByRole('button', { name: / · 新结果$/ })
+  await expect(candidate).toBeEnabled({ timeout: STEP_TIMEOUT })
+  await candidate.click()
+  await expect(video).not.toHaveAttribute('src', originalUrl)
+  const editedUrl = await video.getAttribute('src')
+  if (editedUrl === null) throw new Error('编辑结果尚未加载')
+
+  // 一秒原片换成三秒结果，总长八秒；切整片后该位置仍播放被选用的文件。
+  await scope(dialog, '整片').click()
+  await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('1.5')
+  await expect(video).toHaveAttribute('src', editedUrl)
+  await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
+  await expect(controls(dialog)).toContainText('共 8.0 秒')
+  await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('4.5')
+  await expect(video).toHaveAttribute('src', originalUrl)
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).currentTime))
+    .toBeCloseTo(2.5, 1)
+
+  await versions(dialog).getByRole('button', { name: '原片', exact: true }).click()
+  await expect(video).toHaveAttribute('src', originalUrl)
+  await waitForSegments(dialog, 6)
+  await expect(controls(dialog)).toContainText('共 6.0 秒')
+  await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(0)
+  await scope(dialog, '整片').click()
+  await expect(controls(dialog)).toContainText('共 8.0 秒')
+  await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
+  await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('1.5')
+  await expect(video).toHaveAttribute('src', editedUrl)
+  await screenshotBothThemes(page, `${SHOT_DIR}/whole-current`)
+})
+
+test('提交立即显示提交中且保护关闭与站内离开，受理后显示生成中并允许退出，完成未看才有绿点', async ({
+  page,
+}) => {
+  const dialog = await openEditor(page)
+  await waitForSegments(dialog)
+  await segment(dialog, 2).click()
+  await requestBox(dialog).fill('换成暖色光线')
+  const release = await holdReferenceUpload(page)
+  await generateButton(dialog).click()
+  const submitting = versions(dialog).getByRole('button', { name: 'V1 · 提交中', exact: true })
+  await expect(submitting).toBeVisible()
+  await expect(submitting).toBeDisabled()
+  await expect(versions(dialog).getByRole('img', { name: '新结果', exact: true })).toHaveCount(0)
+  const editingUrl = page.url()
+  await page.evaluate(() => window.history.back())
+  await expect(dialog.getByText('正在提交，请等待提交完成后再离开', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(editingUrl)
+  await expect(submitting).toBeVisible()
+  await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
+  await expect(dialog).toBeVisible()
+
+  await screenshotBothThemes(page, `${SHOT_DIR}/submitting`)
+
+  await release()
+  const generating = versions(dialog).getByRole('button', { name: 'V1 · 生成中', exact: true })
+  await expect(generating).toBeVisible({ timeout: STEP_TIMEOUT })
+  await expect(submitting).toHaveCount(0)
+  await expect(generating.getByRole('img', { name: '新结果', exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await page.getByRole('button', { name: '编辑视频', exact: true }).click()
+  await expect(dialog).toBeVisible()
+  await waitForSegments(dialog)
+  await segment(dialog, 2).click()
+  const completed = versions(dialog).getByRole('button', { name: 'V1 · 新结果', exact: true })
+  await expect(completed).toBeEnabled({ timeout: STEP_TIMEOUT })
+  await expect(completed.getByRole('img', { name: '新结果', exact: true })).toBeVisible()
+  await completed.click()
+  await expect(versions(dialog).getByRole('button', { name: 'V1', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(versions(dialog).getByRole('img', { name: '新结果', exact: true })).toHaveCount(0)
+})
+
+test('提交尚未受理时刷新会出现浏览器原生离开提示', async ({ page }) => {
+  const dialog = await openEditor(page)
+  await waitForSegments(dialog)
+  await segment(dialog, 2).click()
+  await requestBox(dialog).fill('等待上传期间刷新')
+  await holdReferenceUpload(page)
+  await generateButton(dialog).click()
+  await expect(
+    versions(dialog).getByRole('button', { name: 'V1 · 提交中', exact: true }),
+  ).toBeVisible()
+  const leave = page.waitForEvent('dialog')
+  const reload = page.reload()
+  const warning = await leave
+  expect(warning.type()).toBe('beforeunload')
+  // MSW 在 beforeunload 时停用 mock；在独立页面接受离开，不让此行为影响提交状态用例。
+  await warning.accept()
+  await reload
+})
 
 /** 卡头：第一行要改哪几段，第二行区间与做法，或为什么还不能改。 */
 const expectCard = async (dialog: Locator, title: string, detail: string) => {
@@ -189,12 +325,12 @@ test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示�
 }) => {
   const dialog = await openEditor(page)
   await waitForSegments(dialog)
-  await expect(versions(dialog).getByRole('button', { name: 'V1', exact: true })).toBeVisible()
+  await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toBeVisible()
 
   await segment(dialog, 2).click()
   await controls(dialog).getByRole('button', { name: '删除', exact: true }).click()
   await waitForSegments(dialog, 5)
-  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 V1 短 1.0 秒')
+  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 原片 短 1.0 秒')
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
   // 有改动时下的是这一版本身，看着草稿时灰着。
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeDisabled()
@@ -202,7 +338,7 @@ test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示�
   // 撤销按钮与 Cmd/Ctrl+Z、Shift+Cmd/Ctrl+Z。
   await controls(dialog).getByRole('button', { name: '撤销', exact: true }).click()
   await waitForSegments(dialog, 6)
-  await expect(versions(dialog).getByRole('button', { name: 'V1', exact: true })).toBeVisible()
+  await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+Shift+z')
   await waitForSegments(dialog, 5)
   await page.keyboard.press('ControlOrMeta+z')
@@ -214,7 +350,7 @@ test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示�
   await segment(dialog, 1).click()
   await page.keyboard.press('Delete')
   await waitForSegments(dialog, 4)
-  await expect(controls(dialog)).toContainText('共 4.0 秒 · 比 V1 短 2.0 秒')
+  await expect(controls(dialog)).toContainText('共 4.0 秒 · 比 原片 短 2.0 秒')
 
   // 拆分：在播放头处把所在的段一分为二，总长不变。
   const split = controls(dialog).getByRole('button', { name: '拆分', exact: true })
@@ -234,7 +370,7 @@ test('删除、拆分、撤销与重做：总长跟着变，版本栏只显示�
   await page.reload()
   const reopened = await openEditor(page)
   await waitForSegments(reopened, 5)
-  await expect(controls(reopened)).toContainText('共 4.0 秒 · 比 V1 短 2.0 秒')
+  await expect(controls(reopened)).toContainText('共 4.0 秒 · 比 原片 短 2.0 秒')
   await expect(versions(reopened).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 })
 
@@ -257,7 +393,7 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   await expect(capsule(dialog)).toBeVisible()
   await release()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–1.4 秒')
-  await expect(controls(dialog)).toContainText('共 5.4 秒 · 比 V1 短 0.6 秒')
+  await expect(controls(dialog)).toContainText('共 5.4 秒 · 比 原片 短 0.6 秒')
   await capsule(dialog).click()
   await expectCard(
     dialog,
@@ -403,30 +539,30 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   expect(clip).toEqual({ box: 'ftyp', duration: expect.closeTo(2, 1) })
 
   // 多段选区归成一段，仍用原素材；生成状态只在侧栏，不遮住时间线。
-  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toBeVisible()
+  await expect(versions(dialog).getByRole('button', { name: /V1 · 生成中/ })).toBeVisible()
   await expect(timelineOf(dialog).getByRole('img', { name: /AI 生成中/ })).toHaveCount(0)
   await expect(timelineOf(dialog).getByRole('status')).toHaveCount(0)
   await waitForSegments(dialog, 5)
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
-  await expect(versions(dialog).getByRole('button', { name: 'V1', exact: true })).toHaveAttribute(
+  await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   await expect(controls(dialog)).toContainText('共 6.0 秒')
   await screenshotBothThemes(page, `${SHOT_DIR}/running`)
 
-  // 结果回来只新增候选，不覆盖已选的 V1；点击 V2 才替换为 3 秒结果。
-  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toHaveCount(0, {
+  // 结果回来只新增候选，不覆盖已选的 原片；点击 V1 才替换为 3 秒结果。
+  await expect(versions(dialog).getByRole('button', { name: /V1 · 生成中/ })).toHaveCount(0, {
     timeout: STEP_TIMEOUT,
   })
-  const candidate = versions(dialog).getByRole('button', { name: /^V2(?: · 新结果)?$/ })
+  const candidate = versions(dialog).getByRole('button', { name: /^V1(?: · 新结果)?$/ })
   await expect(candidate).toBeVisible()
   await expect(controls(dialog)).toContainText('共 6.0 秒')
   await candidate.click()
   await expect(segment(dialog, 2)).toHaveAccessibleName('第 2 段 · 1–4 秒')
-  await expect(segment(dialog, 2).getByText('V2', { exact: true })).toBeVisible()
+  await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(1)
-  await expect(controls(dialog)).toContainText('共 7.0 秒 · 比 V1 长 1.0 秒')
+  await expect(controls(dialog)).toContainText('共 7.0 秒 · 比 原片 长 1.0 秒')
 
   // 再编辑预览当前结果，候选仍归属基底区间；可继续裁剪，不要求先合成。
   await segment(dialog, 2).click()
@@ -453,7 +589,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await segment(dialog, 5).click()
   await page.keyboard.press('Delete')
   await waitForSegments(dialog, 4)
-  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 V1 短 1.0 秒')
+  await expect(controls(dialog)).toContainText('共 5.0 秒 · 比 原片 短 1.0 秒')
   await expect(timelineOf(dialog).getByTestId('timeline-tail')).toBeVisible()
 
   // 合成：请求体就是草稿。
@@ -474,16 +610,13 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   })
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 
-  // 新整片可直接查看，仍保留原先的片段选择与裁剪，不重新按新文件切分。
+  // 整片按钮预览当前时间线；明确点击合成版本才查看历史文件。
   await scope(dialog, '整片').click()
-  await expect(versions(dialog).getByRole('button', { name: 'V2', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-    { timeout: STEP_TIMEOUT },
-  )
-  await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeEnabled()
+  const composite = versions(dialog).getByRole('button', { name: 'V1', exact: true })
+  await expect(composite).toBeEnabled({ timeout: STEP_TIMEOUT })
+  await scope(dialog, '整片').click()
   await waitForSegments(dialog, 4)
-  await expect(segment(dialog, 2).getByText('V2', { exact: true })).toBeVisible()
+  await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   const retained = await page.evaluate(
     (key) =>
       Object.keys(localStorage).filter(
@@ -493,9 +626,16 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   )
   expect(retained).toHaveLength(1)
   await screenshotBothThemes(page, `${SHOT_DIR}/composed`)
-  await versions(dialog).getByRole('button', { name: 'V1', exact: true }).click()
+  await composite.click()
+  await expect(composite).toHaveAttribute('aria-pressed', 'true')
+  await waitForSegments(dialog, 6)
+  await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeEnabled()
+  await versions(dialog).getByRole('button', { name: '原片', exact: true }).click()
+  await waitForSegments(dialog, 6)
+  await expect(timelineOf(dialog).getByText(/^V\d+$/)).toHaveCount(0)
+  await scope(dialog, '整片').click()
   await waitForSegments(dialog, 4)
-  await expect(segment(dialog, 2).getByText('V2', { exact: true })).toBeVisible()
+  await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await expect(versions(dialog).getByRole('button', { name: /^未合成/ })).toHaveCount(0)
 })
 
@@ -507,11 +647,11 @@ test('扩大已编辑区间：参考包含当前版本和相邻原片，新版�
   await segment(dialog, 4).click({ modifiers: ['Shift'] })
   await requestBox(dialog).fill('把这段背景换成海边')
   const first = await submitEdit(page, dialog)
-  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toHaveCount(0, {
+  await expect(versions(dialog).getByRole('button', { name: /V1 · 生成中/ })).toHaveCount(0, {
     timeout: STEP_TIMEOUT,
   })
   await versions(dialog)
-    .getByRole('button', { name: /^V2(?: · 新结果)?$/ })
+    .getByRole('button', { name: /^V1(?: · 新结果)?$/ })
     .click()
   await expect(segment(dialog, 3)).toHaveAccessibleName('第 3 段 · 2–5 秒')
   await expect(controls(dialog)).toContainText('共 7.0 秒')
@@ -541,11 +681,11 @@ test('扩大已编辑区间：参考包含当前版本和相邻原片，新版�
     return video.duration
   }, referenceUrl)
   expect(duration).toBeCloseTo(5, 1)
-  await expect(versions(dialog).getByRole('button', { name: /V2 · 生成中/ })).toHaveCount(0, {
+  await expect(versions(dialog).getByRole('button', { name: /V1 · 生成中/ })).toHaveCount(0, {
     timeout: STEP_TIMEOUT,
   })
   await versions(dialog)
-    .getByRole('button', { name: /^V2(?: · 新结果)?$/ })
+    .getByRole('button', { name: /^V1(?: · 新结果)?$/ })
     .click()
   await waitForSegments(dialog, 3)
   await expect(segment(dialog, 3)).toHaveAccessibleName('第 3 段 · 2–5 秒')

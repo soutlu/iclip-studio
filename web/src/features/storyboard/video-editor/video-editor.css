@@ -199,6 +199,11 @@
   color: var(--color-on-surface);
 }
 
+.video-editor-compare button:disabled {
+  opacity: var(--state-disabled-content);
+  cursor: default;
+}
+
 .video-editor-compare button[aria-pressed='true'] {
   background: var(--color-state-active);
   color: var(--color-on-surface);
