@@ -164,7 +164,9 @@ describe('视频编辑卡的生成方式与图片引用', () => {
         `参考图${index + 1}`,
       ),
     )
-    await renderWithProviders(<Card initialDraft={initialDraft} onGenerate={onGenerate} />)
+    await renderWithProviders(
+      <Card initialDraft={initialDraft} initialMode="image" onGenerate={onGenerate} />,
+    )
     act(() => editor().focus())
     await user.keyboard('@')
 

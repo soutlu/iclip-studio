@@ -498,7 +498,7 @@ describe('AI 改段的弹出卡', () => {
     expect(generateButton()).toBeEnabled()
   })
 
-  it('图生只提交正文引用：粘贴自动上传并引用，删除的图与未插入首帧不发送，插入首帧后保持原地址', async () => {
+  it('图生仅有图片也能提交：粘贴自动上传并引用，删除的图不发送，插入首帧后保持原地址', async () => {
     const sourceUrl = 'https://test.oss-cn-hangzhou.aliyuncs.com/source.mp4'
     files.set(sourceUrl, { keyframes: [0, 1, 2, 3, 4], duration: 5 })
     serveChain([])
@@ -517,9 +517,11 @@ describe('AI 改段的弹出卡', () => {
     const track = await timeline()
     await user.click(segmentOf(track, 2))
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
-    pasteTextIntoComposer(requestBox(), '人物转身，保持造型')
     const image = (name: string) => new File(['png'], name, { type: 'image/png' })
     pasteFilesIntoComposer(requestBox(), [image('保留.png')])
+    expect(generateButton()).toBeDisabled()
+    fireEvent.keyDown(requestBox(), { key: 'Enter' })
+    expect(submitted).toHaveLength(0)
     await waitFor(() => expect(generateButton()).toBeEnabled())
     pasteFilesIntoComposer(requestBox(), [image('删除.png')])
     await waitFor(() => expect(generateButton()).toBeEnabled())
@@ -530,11 +532,11 @@ describe('AI 改段的弹出卡', () => {
     await user.click(generateButton())
     await waitFor(() => expect(submitted).toHaveLength(1))
     expect(submitted[0]?.['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
-    expect(submitted[0]?.['prompt']).toBe('人物转身，保持造型@Image1')
+    expect(submitted[0]?.['prompt']).toBe('@Image1')
+    expect(submitted[0]?.['reference_video_urls']).toEqual([])
     expect(referenceSamples).toEqual([])
 
     await user.click(segmentOf(track, 3))
-    pasteTextIntoComposer(requestBox(), '继续转身，参考')
     act(() => requestBox().focus())
     await user.keyboard('@选区首帧{Enter}')
     expect(within(requestBox()).getByText('选区首帧')).toBeVisible()
@@ -544,6 +546,43 @@ describe('AI 改段的弹出卡', () => {
     expect(submitted[1]?.['reference_image_urls']).toEqual([
       `${sourceUrl}?x-oss-process=video/snapshot,t_2000,f_jpg,w_1280,h_0`,
     ])
+    expect(submitted[1]?.['prompt']).toBe('@Image1')
+    expect(submitted[1]?.['reference_video_urls']).toEqual([])
+  })
+
+  it('图生只有图片可用，切回编辑必须补充修改文字，按钮与 Enter 都遵循同一条件', async () => {
+    serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 2))
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    pasteFilesIntoComposer(requestBox(), [new File(['png'], '参考.png', { type: 'image/png' })])
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+
+    await user.click(within(openCard()).getByRole('radio', { name: '编辑' }))
+    expect(generateButton()).toBeDisabled()
+    pasteTextIntoComposer(requestBox(), '   ')
+    fireEvent.keyDown(requestBox(), { key: 'Enter' })
+    expect(generateButton()).toBeDisabled()
+    expect(submitted).toHaveLength(0)
+
+    pasteTextIntoComposer(requestBox(), '调整灯光')
+    expect(generateButton()).toBeEnabled()
+    fireEvent.keyDown(requestBox(), { key: 'Enter' })
+    await waitFor(() => expect(submitted).toHaveLength(1))
+    expect(submitted[0]?.['prompt']).toMatch(/^@Image1\s+调整灯光$/)
+    expect(submitted[0]?.['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+    expect(submitted[0]?.['reference_video_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
   })
 
   it('提交：参考图按出现的先后编成 @Image1、@Image2 与 reference_image_urls；成功后要求清空', async () => {

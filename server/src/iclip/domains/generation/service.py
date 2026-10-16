@@ -29,6 +29,7 @@ from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_IMAGE,
     KIND_VIDEO,
+    MAX_PROMPT_CHARS,
     MAX_WHOLE_FILM_MS,
     OPERATION_COMPOSE,
     OPERATION_CUT,
@@ -255,6 +256,10 @@ class GenerationService:
             prefix = "编辑视频，"
             if not prompt.startswith(prefix):
                 prompt = prefix + prompt
+            if len(prompt) > MAX_PROMPT_CHARS:
+                raise ValidationFailed(
+                    f"Wan 编辑修改要求最多 {MAX_PROMPT_CHARS - len(prefix)} 字，请缩短后重试"
+                )
         forwarded = VideoGenerationIn(
             model=request.model,
             prompt=prompt,
