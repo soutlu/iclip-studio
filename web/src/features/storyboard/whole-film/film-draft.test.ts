@@ -11,7 +11,7 @@ import {
   MAX_FILM_SECONDS,
   moveMusic,
   moveSegment,
-  parseStoredFilm,
+  parseStoredFilm as parseDraft,
   putLane,
   removeSegment,
   serializeStoredFilm,
@@ -28,6 +28,8 @@ import {
   type FilmState,
   type Pick,
 } from './film-draft'
+
+const parseStoredFilm = (raw: string) => parseDraft(raw, (jobId) => jobId)
 
 const pick = (sourceJobId: string, start: number, end: number): Pick => ({
   sourceJobId,
@@ -112,13 +114,13 @@ describe('成片轨上的剪辑', () => {
     expect(moveSegment(film(), 's2', 2)).toBeUndefined()
   })
 
-  it('掐头去尾只能在挑进来的那一截里收缩、再放回，不短于最短时长', () => {
+  it('已知来源时长时可跨过初始选区扩展，不短于最短时长', () => {
     const trimmed = trimSegment(film(), 's1', 'start', 1)
     expect(order(trimmed)[0]).toEqual(['s1', 'A', 1, 3])
 
-    // 往回拉不超过挑进来时的起点。
+    // 可回到视频起点，结尾以真实视频时长为界。
     expect(order(trimSegment(trimmed, 's1', 'start', -5))[0]).toEqual(['s1', 'A', 0, 3])
-    expect(order(trimSegment(trimmed, 's1', 'end', 9))[0]).toEqual(['s1', 'A', 1, 3])
+    expect(order(trimSegment(trimmed, 's1', 'end', 9, 8))[0]).toEqual(['s1', 'A', 1, 8])
     expect(order(trimSegment(trimmed, 's1', 'end', 1))[0]).toEqual(['s1', 'A', 1, 1.2])
   })
 
@@ -130,8 +132,64 @@ describe('成片轨上的剪辑', () => {
 
     expect(filmDuration(plus.segments)).toBe(115)
     // 挑进来时到 100 秒，但整片只剩 5 秒的余量。
-    expect(big === undefined ? undefined : trimBounds(plus.segments, big, 'end').max).toBe(95)
+    expect(big === undefined ? undefined : trimBounds(plus.segments, big, 'end', 0, 100)?.max).toBe(
+      95,
+    )
   })
+
+  it('初始关键帧选区及拆分片段都可独立向前后扩展，精确到毫秒', () => {
+    const initial = insertSegment(EMPTY_FILM, pick('A', 2, 5), 0, 'shot') ?? EMPTY_FILM
+    const extended = trimSegment(
+      trimSegment(initial, 'shot', 'start', 1.6004, 8),
+      'shot',
+      'end',
+      5.4004,
+      8,
+    )
+    expect(order(extended)).toEqual([['shot', 'A', 1.6, 5.4]])
+    const split = splitAt(initial, 1, 'right') ?? EMPTY_FILM
+    const changed = trimSegment(split, 'shot', 'end', 4, 8)
+    expect(order(changed)).toEqual([
+      ['shot', 'A', 2, 4],
+      ['right', 'A', 3, 5],
+    ])
+    expect(order(trimSegment(changed, 'right', 'start', 0, 8))).toEqual([
+      ['shot', 'A', 2, 4],
+      ['right', 'A', 0, 5],
+    ])
+  })
+
+  it('未读取来源时长时不允许猜测可扩展的结尾', () => {
+    const initial = insertSegment(EMPTY_FILM, pick('A', 2, 5), 0, 'shot') ?? EMPTY_FILM
+    expect(trimSegment(initial, 'shot', 'end', 7)).toBe(initial)
+    expect(order(trimSegment(initial, 'shot', 'start', 1))).toEqual([['shot', 'A', 1, 5]])
+  })
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -1, 1, 4.999])(
+    '来源时长 %s 无效或短于当前选区时拒绝裁剪，保留可恢复草稿',
+    (sourceDuration) => {
+      const initial = insertSegment(EMPTY_FILM, pick('A', 2, 5), 0, 'shot') ?? EMPTY_FILM
+      const segment = initial.segments[0]
+      expect(segment).toBeDefined()
+      if (segment === undefined) return
+      for (const edge of ['start', 'end'] as const) {
+        expect(trimBounds(initial.segments, segment, edge, 0, sourceDuration)).toBeUndefined()
+        const next = trimSegment(initial, 'shot', edge, 3, sourceDuration)
+        expect(next).toBe(initial)
+        expect(parseStoredFilm(serializeStoredFilm({ film: next, lanes: [] }))?.film).toEqual(
+          initial,
+        )
+      }
+    },
+  )
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    '非有限的调整数值 %s 不写入草稿',
+    (value) => {
+      const initial = film()
+      expect(trimSegment(initial, 's1', 'end', value, 8)).toBe(initial)
+    },
+  )
 
   it('在播放头处拆成两段，前一半留原 id；太靠边拆不了', () => {
     const split = splitAt(film(), 1.5, 'right')
@@ -267,15 +325,15 @@ describe('音乐', () => {
 })
 
 describe('素材轨', () => {
-  it('同一组只有一条轨：放进同组的另一版就换掉它，新的组排在最后', () => {
-    const lanes = putLane(putLane([], { groupId: 'g1', jobId: 'v1' }), {
-      groupId: 'g2',
+  it('同一原作切换编辑版本，不同次生成同时保留各自轨道', () => {
+    const lanes = putLane(putLane([], { takeId: 'A', jobId: 'v1' }), {
+      takeId: 'B',
       jobId: 'w1',
     })
 
-    expect(putLane(lanes, { groupId: 'g1', jobId: 'v2' })).toEqual([
-      { groupId: 'g1', jobId: 'v2' },
-      { groupId: 'g2', jobId: 'w1' },
+    expect(putLane(lanes, { takeId: 'A', jobId: 'v2' })).toEqual([
+      { takeId: 'A', jobId: 'v2' },
+      { takeId: 'B', jobId: 'w1' },
     ])
   })
 })
@@ -290,7 +348,7 @@ describe('存放', () => {
       'sub#2',
       '新的字',
     )
-    const stored = { film: state, lanes: [{ groupId: 'g1', jobId: 'A' }] }
+    const stored = { film: state, lanes: [{ takeId: 'A', jobId: 'A' }] }
 
     expect(parseStoredFilm(serializeStoredFilm(stored))).toEqual(stored)
   })
@@ -304,32 +362,63 @@ describe('存放', () => {
     expect(parseStoredFilm(serializeStoredFilm(stored))).toEqual(stored)
   })
 
-  it('只加了音乐、格式版本没变：之前存的草稿照样读回，没有音乐', () => {
+  it('迁移旧草稿，保留剪辑并移除已废弃的选区约束', () => {
     const before = JSON.stringify({
       version: 1,
       segments: [{ id: 's1', sourceJobId: 'A', start: 0, end: 3, origin: [0, 3] }],
       texts: {},
       manual: [],
-      lanes: [{ groupId: 'g1', jobId: 'A' }],
+      lanes: [{ takeId: 'A', jobId: 'A' }],
     })
 
     expect(parseStoredFilm(before)?.film).toMatchObject({
-      segments: [{ id: 's1', start: 0, end: 3, origin: { start: 0, end: 3 } }],
+      segments: [{ id: 's1', start: 0, end: 3 }],
       music: null,
     })
+  })
+
+  it('旧草稿按来源归到生成轨，保留没有 origin 的片段及同组不同生成', () => {
+    const raw = JSON.stringify({
+      version: 1,
+      segments: [{ id: 'shot', sourceJobId: 'A-edit', start: 2, end: 5, volume: 0.65 }],
+      texts: { 'sub#1': '字幕' },
+      manual: [],
+      lanes: [
+        { groupId: 'group', jobId: 'A-edit' },
+        { groupId: 'group', jobId: 'B' },
+      ],
+    })
+    const restored = parseDraft(raw, (id) => (id === 'A-edit' ? 'A' : id))
+    expect(restored?.lanes).toEqual([
+      { takeId: 'A', jobId: 'A-edit' },
+      { takeId: 'B', jobId: 'B' },
+    ])
+    expect(restored?.film.segments[0]).toEqual({
+      id: 'shot',
+      sourceJobId: 'A-edit',
+      start: 2,
+      end: 5,
+      volume: 0.65,
+    })
+    const extended = trimSegment(restored?.film ?? EMPTY_FILM, 'shot', 'end', 6, 8)
+    expect(extended.segments[0]?.end).toBe(6)
+    expect(extended.texts).toEqual({ 'sub#1': '字幕' })
+    const saved = serializeStoredFilm({ film: extended, lanes: restored?.lanes ?? [] })
+    expect(JSON.parse(saved)).toMatchObject({ version: 2 })
+    expect(parseDraft(saved, (id) => (id === 'A-edit' ? 'A' : id))?.film).toEqual(extended)
   })
 
   it.each([
     ['不是 JSON', '{'],
     [
       '格式版本不对',
-      JSON.stringify({ version: 2, segments: [], texts: {}, manual: [], lanes: [] }),
+      JSON.stringify({ version: 3, segments: [], texts: {}, manual: [], lanes: [] }),
     ],
     [
-      '段落在挑进来的那一截外面',
+      '片段结尾早于起点',
       JSON.stringify({
         version: 1,
-        segments: [{ id: 'x', sourceJobId: 'A', start: 0, end: 5, origin: [1, 5] }],
+        segments: [{ id: 'x', sourceJobId: 'A', start: 5, end: 1, origin: [1, 5] }],
         texts: {},
         manual: [],
         lanes: [],
@@ -354,8 +443,8 @@ describe('存放', () => {
       {
         film: state,
         lanes: [
-          { groupId: 'g1', jobId: 'A' },
-          { groupId: 'g2', jobId: 'B' },
+          { takeId: 'A', jobId: 'A' },
+          { takeId: 'B', jobId: 'B' },
         ],
       },
       new Set(['A']),
@@ -366,7 +455,7 @@ describe('存放', () => {
     expect(stored.film.manual).toEqual([])
     expect(stored.film.music?.gain).toBeUndefined()
     expect(stored.film.music).toMatchObject({ userStart: 1.25, volume: 0.4 })
-    expect(stored.lanes).toEqual([{ groupId: 'g1', jobId: 'A' }])
+    expect(stored.lanes).toEqual([{ takeId: 'A', jobId: 'A' }])
   })
 })
 

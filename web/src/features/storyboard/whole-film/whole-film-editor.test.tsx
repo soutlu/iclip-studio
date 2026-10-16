@@ -17,7 +17,11 @@ import { WholeFilmEditor } from './whole-film-editor'
 /** 拍点检测在 Web Worker 里跑，jsdom 没有：替身按用例给拍子。 */
 vi.mock('web-audio-beat-detector', () => ({ guess: vi.fn() }))
 
-/** mediabunny 的替身：都没有音轨，波形写「无声」。jsdom 读不了真文件。 */
+const mediaFiles = vi.hoisted(
+  () => new Map<string, { keyframes: number[]; duration: number; fail?: boolean }>(),
+)
+
+/** jsdom 不读取真实视频；仅替代媒体索引读取，组件和分段逻辑保持真实。 */
 vi.mock('mediabunny', () => {
   class UrlSource {
     readonly url: string
@@ -26,6 +30,15 @@ vi.mock('mediabunny', () => {
     }
   }
   class Input {
+    readonly url: string
+    constructor({ source }: { source: UrlSource }) {
+      this.url = source.url
+    }
+    getPrimaryVideoTrack = async () => {
+      if (mediaFiles.get(this.url)?.fail) throw new Error('媒体索引读取失败')
+      return { url: this.url }
+    }
+    computeDuration = async () => mediaFiles.get(this.url)?.duration ?? 4
     getPrimaryAudioTrack = () => Promise.resolve(null)
     dispose = () => {}
   }
@@ -33,7 +46,18 @@ vi.mock('mediabunny', () => {
     AudioSampleSink: class {},
     BufferTarget: class {},
     Conversion: {},
-    EncodedPacketSink: class {},
+    EncodedPacketSink: class {
+      readonly frames: number[]
+      constructor(track: { url: string }) {
+        this.frames = mediaFiles.get(track.url)?.keyframes ?? [0]
+      }
+      getFirstKeyPacket = async () =>
+        this.frames[0] === undefined ? null : { timestamp: this.frames[0] }
+      getNextKeyPacket = async (packet: { timestamp: number }) => {
+        const next = this.frames[this.frames.indexOf(packet.timestamp) + 1]
+        return next === undefined ? null : { timestamp: next }
+      }
+    },
     Input,
     Mp4OutputFormat: class {},
     Output: class {},
@@ -116,9 +140,11 @@ const filmSegments = () => screen.queryAllByRole('button', { name: /^第 \d+ 段
 const addMaterial = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
   await user.click(await screen.findByRole('button', { name: '添加镜头组' }))
   await user.click(await screen.findByRole('menuitem', { name: new RegExp(`^${name}`) }))
+  await waitFor(() => expect(screen.queryByText('正在读取镜头分段…')).toBeNull())
 }
 
-const lane = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name} 素材`) })
+const lane = (name: string, index = 1) =>
+  screen.getByRole('button', { name: new RegExp(`^${name} 镜头 ${index}，`) })
 
 /** jsdom 没有布局与指针捕获：时间线 200px 宽，成片轨在 22–70px。 */
 const stubLayout = () => {
@@ -134,6 +160,11 @@ const stubLayout = () => {
       y: top,
       toJSON: () => ({}),
     }) as DOMRect
+  for (const group of screen.queryAllByRole('group', { name: / 素材$/ })) {
+    vi.spyOn(group, 'getBoundingClientRect').mockReturnValue(rect(0, 140, 200, 64))
+    if (group.parentElement !== null)
+      vi.spyOn(group.parentElement, 'getBoundingClientRect').mockReturnValue(rect(0, 140, 200, 64))
+  }
   vi.spyOn(screen.getByTestId('film-lanes'), 'getBoundingClientRect').mockReturnValue(
     rect(0, 0, 200, 300),
   )
@@ -148,6 +179,7 @@ const stubLayout = () => {
 
 beforeEach(() => {
   window.localStorage.clear()
+  mediaFiles.clear()
   Object.assign(HTMLElement.prototype, {
     setPointerCapture: () => undefined,
     hasPointerCapture: () => false,
@@ -349,7 +381,7 @@ describe('WholeFilmEditor', () => {
     await renderEditor()
 
     const track = await timeline()
-    expect(within(track).getByText('从下方素材轨拖选片段放到这里')).toBeVisible()
+    expect(within(track).getByText('从下方素材轨选择镜头加入成片')).toBeVisible()
     expect(screen.getByText('成片轨还是空的')).toBeVisible()
     expect(await composeBlockedBy(user)).toBe('成片轨为空，无法合成；请先从素材轨挑段放入成片轨')
 
@@ -358,14 +390,16 @@ describe('WholeFilmEditor', () => {
       item.getAttribute('aria-label'),
     )
     expect(tiles).toEqual([
-      '镜头组 1 V2，4.0 秒',
-      '镜头组 1 V1，4.0 秒',
-      '镜头组 2 V1，4.0 秒',
-      '视频 1 V1，4.0 秒',
+      '镜头组 1 生成 A 编辑版 1，4.0 秒',
+      '镜头组 1 生成 A 原版，4.0 秒',
+      '镜头组 2 生成 A 原版，4.0 秒',
+      '视频 1 生成 A 原版，4.0 秒',
     ])
 
-    await user.click(screen.getByRole('menuitem', { name: /^镜头组 1 V2/ }))
-    expect(lane('镜头组 1 · V2')).toBeVisible()
+    await user.click(screen.getByRole('menuitem', { name: /^镜头组 1 生成 A 编辑版 1/ }))
+    expect(
+      await screen.findByRole('button', { name: /^镜头组 1 · 生成 A · 编辑版 1 镜头 1/ }),
+    ).toBeVisible()
     expect(screen.getByRole('button', { name: '添加镜头组' })).toBeVisible()
   })
 
@@ -373,14 +407,14 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 2 V1')
+    await addMaterial(user, '镜头组 2 生成 A 原版')
 
-    lane('镜头组 2 · V1').focus()
+    lane('镜头组 2 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}')
-    expect(screen.getByText('素材 0.00–4.00 秒 · 4.0 秒')).toBeVisible()
+    expect(screen.getByRole('slider', { name: '选区结尾' })).toHaveAttribute('aria-valuenow', '4')
     await user.keyboard('{Enter}')
     expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-      '第 1 段 · 镜头组 2 · V1 · 0–4 秒',
+      '第 1 段 · 镜头组 2 · 生成 A · 原版 · 0–4 秒',
     ])
 
     // 选区结尾往前收 1 秒（Shift 一步一秒），再插一次：播放头已在第 1 段结尾，排在它后面。
@@ -390,35 +424,33 @@ describe('WholeFilmEditor', () => {
 
     await waitFor(() =>
       expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-        '第 1 段 · 镜头组 2 · V1 · 0–4 秒',
-        '第 2 段 · 镜头组 2 · V1 · 4–7 秒',
+        '第 1 段 · 镜头组 2 · 生成 A · 原版 · 0–4 秒',
+        '第 2 段 · 镜头组 2 · 生成 A · 原版 · 4–7 秒',
       ]),
     )
     expect(screen.getByText('7.0')).toBeVisible()
   })
 
-  it('指针：在素材轨上拖选一截，按住选区拖到成片轨，松手处插入', async () => {
+  it('指针：点击关键帧镜头，拖到成片轨后插入对应区间', async () => {
+    mediaFiles.set(`https://example.com/${TAKE_1}.mp4`, { keyframes: [0, 1, 3], duration: 4 })
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 1 V1')
+    await addMaterial(user, '镜头组 1 生成 A 原版')
     stubLayout()
-    const material = lane('镜头组 1 · V1')
-
-    // 比例按 20 秒排，200px 宽：每秒 10px。拖选 1–3 秒。
-    fireEvent.pointerDown(material, { pointerId: 1, button: 0, clientX: 10, clientY: 150 })
-    fireEvent.pointerMove(material, { pointerId: 1, clientX: 30, clientY: 150 })
-    fireEvent.pointerUp(material, { pointerId: 1, clientX: 30, clientY: 150 })
-    expect(screen.getByText('素材 1.00–3.00 秒 · 2.0 秒')).toBeVisible()
+    const material = lane('镜头组 1 · 生成 A · 原版', 2)
+    await user.click(material)
+    expect(screen.getByRole('slider', { name: '选区开头' })).toHaveAttribute('aria-valuenow', '1')
+    expect(screen.getByRole('slider', { name: '选区结尾' })).toHaveAttribute('aria-valuenow', '3')
 
     // 按住选区拖到成片轨上：出现插入点与提示，松手插入。
-    fireEvent.pointerDown(material, { pointerId: 2, button: 0, clientX: 20, clientY: 150 })
+    fireEvent.pointerDown(material, { pointerId: 2, button: 0, clientX: 100, clientY: 150 })
     fireEvent.pointerMove(material, { pointerId: 2, clientX: 20, clientY: 40 })
     expect(screen.getByText('插入到 0.00 秒')).toBeVisible()
     fireEvent.pointerUp(material, { pointerId: 2, clientX: 20, clientY: 40 })
 
     expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-      '第 1 段 · 镜头组 1 · V1 · 0–2 秒',
+      '第 1 段 · 镜头组 1 · 生成 A · 原版 · 0–2 秒',
     ])
   })
 
@@ -444,7 +476,7 @@ describe('WholeFilmEditor', () => {
     await renderEditor()
     await timeline()
 
-    lane('镜头组 2 · V1').focus()
+    lane('镜头组 2 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(filmSegments()).toHaveLength(30)
@@ -457,18 +489,20 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 1 V2')
-    lane('镜头组 1 · V2').focus()
+    await addMaterial(user, '镜头组 1 生成 A 编辑版 1')
+    lane('镜头组 1 · 生成 A · 编辑版 1').focus()
     await user.keyboard('{Enter}{Enter}')
 
-    await user.click(screen.getByRole('button', { name: '镜头组 1 当前用 V2，换版本' }))
-    await user.click(await screen.findByRole('menuitemradio', { name: /V1/ }))
-    lane('镜头组 1 · V1').focus()
+    await user.click(
+      screen.getByRole('button', { name: '镜头组 1 生成 A 当前用 编辑版 1，换版本' }),
+    )
+    await user.click(await screen.findByRole('menuitemradio', { name: /原版/ }))
+    lane('镜头组 1 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-      '第 1 段 · 镜头组 1 · V2 · 0–4 秒',
-      '第 2 段 · 镜头组 1 · V1 · 4–8 秒',
+      '第 1 段 · 镜头组 1 · 生成 A · 编辑版 1 · 0–4 秒',
+      '第 2 段 · 镜头组 1 · 生成 A · 原版 · 4–8 秒',
     ])
   })
 
@@ -482,14 +516,14 @@ describe('WholeFilmEditor', () => {
     await renderEditor()
     await timeline()
     expect(screen.queryByRole('button', { name: '在播放头处添加字幕' })).toBeNull()
-    await addMaterial(user, '镜头组 2 V1')
-    lane('镜头组 2 · V1').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原版')
+    lane('镜头组 2 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
 
     await user.click(await screen.findByRole('button', { name: '第 1 条字幕：今天带来一款新耳机' }))
     expect(screen.queryByRole('button', { name: '在播放头处添加字幕' })).toBeNull()
     const card = screen.getByRole('region', { name: '选中的字幕' })
-    expect(within(card).getByText('来自镜头组 2 · V1 的口播')).toBeVisible()
+    expect(within(card).getByText('来自镜头组 2 · 生成 A · 原版 的口播')).toBeVisible()
     const box = within(card).getByRole('textbox', { name: '字幕文字' })
     await user.clear(box)
     await user.type(box, '新耳机来了')
@@ -520,11 +554,13 @@ describe('WholeFilmEditor', () => {
     )
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 2 V1')
-    lane('镜头组 2 · V1').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原版')
+    lane('镜头组 2 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
 
-    await user.click(await screen.findByRole('button', { name: '镜头组 2 · V1 字幕未识别，识别' }))
+    await user.click(
+      await screen.findByRole('button', { name: '镜头组 2 · 生成 A · 原版 字幕未识别，识别' }),
+    )
 
     await waitFor(() =>
       expect(body).toEqual({
@@ -542,11 +578,13 @@ describe('WholeFilmEditor', () => {
     server.use(http.post('*/api/generations/subtitles', submitted))
     const user = userEvent.setup()
     await renderEditor({ task: { kind: 'loading' } })
-    await addMaterial(user, '镜头组 2 V1')
-    lane('镜头组 2 · V1').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原版')
+    lane('镜头组 2 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
 
-    await user.click(await screen.findByRole('button', { name: '镜头组 2 · V1 字幕未识别，识别' }))
+    await user.click(
+      await screen.findByRole('button', { name: '镜头组 2 · 生成 A · 原版 字幕未识别，识别' }),
+    )
 
     expect(screen.getByText('任务信息读取中，暂时无法提交')).toBeVisible()
     expect(submitted).not.toHaveBeenCalled()
@@ -558,8 +596,8 @@ describe('WholeFilmEditor', () => {
     const retry = vi.fn()
     const user = userEvent.setup()
     await renderEditor({ task: { kind: 'failed', retry } })
-    await addMaterial(user, '镜头组 2 V1')
-    lane('镜头组 2 · V1').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原版')
+    lane('镜头组 2 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(screen.getByText('任务信息读取失败，识别字幕、生成音乐与合成暂时无法提交')).toBeVisible()
@@ -572,40 +610,33 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [subtitle(TAKE_1, { status: 'failed' }), subtitle(TAKE_2, { sentences: [] })])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 1 V1')
-    lane('镜头组 1 · V1').focus()
+    await addMaterial(user, '镜头组 1 生成 A 原版')
+    lane('镜头组 1 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
-    await addMaterialWithKeyboard(user, '镜头组 2 V1')
-    lane('镜头组 2 · V1').focus()
+    await addMaterialWithKeyboard(user, '镜头组 2 生成 A 原版')
+    lane('镜头组 2 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(
-      await screen.findByRole('button', { name: '镜头组 1 · V1 字幕识别失败，重试' }),
+      await screen.findByRole('button', { name: '镜头组 1 · 生成 A · 原版 字幕识别失败，重试' }),
     ).toBeVisible()
-    expect(screen.queryByRole('button', { name: /镜头组 2 · V1 字幕/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /镜头组 2 · 生成 A · 原版 字幕/ })).toBeNull()
     expect(screen.queryByText('识别中')).toBeNull()
   })
 
-  it('素材时长读不出来时轨上写明原因，不能挑段', async () => {
-    const restore = stubMediaDurations({ [`https://example.com/${LOOSE}.mp4`]: null })
-    try {
-      serve(
-        VIDEOS.map((item) => (item.id === LOOSE ? { ...item, durationMs: null } : item)),
-        [],
-      )
-      const user = userEvent.setup()
-      await renderEditor()
-      await addMaterial(user, '视频 1 V1')
-
-      expect(
-        await screen.findByText('视频时长读取失败，无法从这条素材挑段；请换一个版本'),
-      ).toBeVisible()
-      lane('视频 1 · V1').focus()
-      await user.keyboard('{Enter}')
-      expect(screen.queryByText(/^素材 \d/)).toBeNull()
-    } finally {
-      restore()
-    }
+  it('关键帧读取失败时不伪造分段，重试后可以选镜头', async () => {
+    const url = `https://example.com/${LOOSE}.mp4`
+    mediaFiles.set(url, { keyframes: [0, 1, 3], duration: 4, fail: true })
+    serve(VIDEOS, [])
+    const user = userEvent.setup()
+    await renderEditor()
+    await addMaterial(user, '视频 1 生成 A 原版')
+    const group = screen.getByRole('group', { name: '视频 1 · 生成 A · 原版 素材' })
+    expect(within(group).getByRole('alert')).toHaveTextContent('镜头分段读取失败')
+    expect(within(group).queryByRole('button', { name: /镜头/ })).toBeNull()
+    mediaFiles.set(url, { keyframes: [0, 1, 3], duration: 4 })
+    await user.click(within(group).getByRole('button', { name: '重试' }))
+    expect(await within(group).findByRole('button', { name: /镜头 2，1.0–3.0 秒/ })).toBeVisible()
   })
 })
 
@@ -680,16 +711,64 @@ describe('素材区预览与整片播放头', () => {
     }
   }
 
-  it('同一OSS素材反向拖选和改边界时背景保持首帧，前景仍显示准确边界', async () => {
+  it('成片第一段可向前后扩展，拖动时始终预览该来源而非邻段', async () => {
+    preparePlayback()
+    serve(VIDEOS, [])
+    window.localStorage.setItem(
+      filmDraftStorageKey(CONVERSATION),
+      JSON.stringify({
+        version: 2,
+        segments: [
+          { id: 'first', sourceJobId: TAKE_1, start: 2, end: 3 },
+          { id: 'next', sourceJobId: TAKE_2, start: 0, end: 1 },
+        ],
+        texts: {},
+        manual: [],
+        lanes: [],
+        music: null,
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await timeline()
+    stubLayout()
+    await user.click(screen.getByRole('button', { name: /^第 1 段/ }))
+    const start = screen.getByRole('slider', { name: '裁剪该段开头' })
+    fireEvent.pointerDown(start, { pointerId: 1, button: 0, clientX: 0 })
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: -4 })
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
+    expect(media().currentTime).toBeCloseTo(1.6)
+    fireEvent.pointerUp(start, { pointerId: 1, clientX: -4 })
+    const end = screen.getByRole('slider', { name: '裁剪该段结尾' })
+    fireEvent.pointerDown(end, { pointerId: 2, button: 0, clientX: 14 })
+    fireEvent.pointerMove(end, { pointerId: 2, clientX: 18 })
+    fireEvent.loadedMetadata(media())
+    expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
+    expect(media().currentTime).toBeCloseTo(3.399)
+    fireEvent.pointerUp(end, { pointerId: 2, clientX: 18 })
+    const saved: unknown = JSON.parse(
+      window.localStorage.getItem(filmDraftStorageKey(CONVERSATION)) ?? '{}',
+    )
+    expect(saved).toMatchObject({
+      segments: [
+        { id: 'first', sourceJobId: TAKE_1, start: 1.6, end: 3.4 },
+        { id: 'next', sourceJobId: TAKE_2, start: 0, end: 1 },
+      ],
+    })
+  })
+
+  it('选择关键帧镜头和改边界时背景保持首帧，前景仍显示准确边界', async () => {
     preparePlayback()
     const url = 'https://fixture.oss-cn-hangzhou.aliyuncs.com/material.mp4'
+    mediaFiles.set(url, { keyframes: [0, 1, 3.5], duration: 4 })
     serve(
       VIDEOS.map((item) => (item.id === TAKE_2 ? { ...item, outputUrl: url } : item)),
       [],
     )
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 2 V1')
+    await addMaterial(user, '镜头组 2 生成 A 原版')
     stubLayout()
     fireEvent.loadedMetadata(media())
     const stage = screen.getByRole('region', { name: '预览舞台' })
@@ -698,11 +777,7 @@ describe('素材区预览与整片播放头', () => {
     const firstFrame = `${url}?x-oss-process=video/snapshot,t_0,f_jpg,w_320,h_0,m_fast`
     expect(image.src).toBe(firstFrame)
     fireEvent.load(image)
-    const material = lane('镜头组 2 · V1')
-    fireEvent.pointerDown(material, { pointerId: 1, button: 0, clientX: 35, clientY: 150 })
-    for (const clientX of [30, 20, 10])
-      fireEvent.pointerMove(material, { pointerId: 1, clientX, clientY: 150 })
-    fireEvent.pointerUp(material, { pointerId: 1, clientX: 10, clientY: 150 })
+    await user.click(lane('镜头组 2 · 生成 A · 原版', 2))
     expect([...stage.querySelectorAll('img')].map((item) => item.src)).toEqual([firstFrame])
     expect(image).toBeVisible()
     expect(media().currentTime).toBe(1)
@@ -713,7 +788,8 @@ describe('素材区预览与整片播放头', () => {
     expect(media().currentTime).toBe(1.1)
   })
 
-  it('拖选未松手时就显示素材边界，播放限定在选区，整片字幕、混音与播放头保持独立', async () => {
+  it('调整镜头边界时即时预览，播放限定选区，整片字幕、混音与播放头保持独立', async () => {
+    mediaFiles.set(`https://example.com/${TAKE_2}.mp4`, { keyframes: [0, 1, 2], duration: 4 })
     const { audio, tick } = preparePlayback()
     seedFilm(UPLOADED)
     vi.mocked(guess).mockResolvedValue({ bpm: 120, offset: 0 })
@@ -724,7 +800,7 @@ describe('素材区预览与整片播放头', () => {
     const user = userEvent.setup()
     await renderEditor()
     await timeline()
-    await addMaterial(user, '镜头组 2 V1')
+    await addMaterial(user, '镜头组 2 生成 A 原版')
     stubLayout()
     const filmClock = screen.getByRole('slider', { name: '时间线播放位置' })
     fireEvent.change(filmClock, { target: { value: '1.75' } })
@@ -734,16 +810,23 @@ describe('素材区预览与整片播放头', () => {
     await user.click(screen.getByRole('button', { name: '播放' }))
     await waitFor(() => expect(audio.played).toHaveLength(1))
     const before = window.localStorage.getItem(filmDraftStorageKey(CONVERSATION))
-    const material = lane('镜头组 2 · V1')
-    fireEvent.pointerDown(material, { pointerId: 1, button: 0, clientX: 10, clientY: 150 })
+    await user.click(lane('镜头组 2 · 生成 A · 原版', 2))
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_2}.mp4`)
     expect(media().currentTime).toBe(1)
-    fireEvent.pointerMove(material, { pointerId: 1, clientX: 30, clientY: 150 })
+    const handle = screen.getByRole('slider', { name: '选区结尾' })
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100 })
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 150 })
     expect(media().currentTime).toBeCloseTo(2.999)
     expect(within(screen.getByLabelText('视频预览')).queryByText('整片口播')).toBeNull()
     expect(filmClock).toHaveValue('1.75')
-    fireEvent.pointerUp(material, { pointerId: 1, clientX: 30, clientY: 150 })
+    fireEvent.pointerCancel(handle, { pointerId: 1 })
+    expect(media().currentTime).toBeCloseTo(1.999)
+    expect(handle).toHaveAttribute('aria-valuenow', '2')
+    expect(window.localStorage.getItem(filmDraftStorageKey(CONVERSATION))).toBe(before)
+    fireEvent.pointerDown(handle, { pointerId: 2, button: 0, clientX: 100 })
+    fireEvent.pointerMove(handle, { pointerId: 2, clientX: 150 })
+    fireEvent.pointerUp(handle, { pointerId: 2, clientX: 150 })
     await user.click(screen.getByRole('button', { name: '开启声音' }))
     await user.click(screen.getByRole('button', { name: '播放' }))
     expect(media().currentTime).toBe(1)
@@ -772,12 +855,12 @@ describe('素材区预览与整片播放头', () => {
     const user = userEvent.setup()
     await renderEditor()
     await timeline()
-    await addMaterial(user, '镜头组 2 V1')
+    await addMaterial(user, '镜头组 2 生成 A 原版')
     stubLayout()
     fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
       target: { value: '0.5' },
     })
-    const material = lane('镜头组 2 · V1')
+    const material = lane('镜头组 2 · 生成 A · 原版')
     material.focus()
     await user.keyboard('{Enter}')
     fireEvent.loadedMetadata(media())
@@ -786,16 +869,16 @@ describe('素材区预览与整片播放头', () => {
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
     expect(media().currentTime).toBeCloseTo(2.999)
     const end = screen.getByRole('slider', { name: '选区结尾' })
-    fireEvent.pointerDown(end, { pointerId: 2, button: 0, clientX: 30 })
-    fireEvent.pointerMove(end, { pointerId: 2, clientX: 25 })
+    fireEvent.pointerDown(end, { pointerId: 2, button: 0, clientX: 150 })
+    fireEvent.pointerMove(end, { pointerId: 2, clientX: 125 })
     expect(media().currentTime).toBeCloseTo(2.499)
-    fireEvent.pointerUp(end, { pointerId: 2, clientX: 25 })
+    fireEvent.pointerUp(end, { pointerId: 2, clientX: 125 })
     await user.click(screen.getByRole('button', { name: /^第 1 段/ }))
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
     expect(screen.getByRole('slider', { name: '时间线播放位置' })).toHaveValue('0.5')
-    fireEvent.pointerDown(material, { pointerId: 3, button: 0, clientX: 15, clientY: 150 })
-    fireEvent.pointerUp(material, { pointerId: 3, clientX: 15, clientY: 150 })
+    fireEvent.pointerDown(material, { pointerId: 3, button: 0, clientX: 75, clientY: 150 })
+    fireEvent.pointerUp(material, { pointerId: 3, clientX: 75, clientY: 150 })
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_2}.mp4`)
     expect(media().currentTime).toBe(1.5)
@@ -813,19 +896,19 @@ describe('素材区预览与整片播放头', () => {
     const user = userEvent.setup()
     await renderEditor()
     await timeline()
-    await addMaterial(user, '镜头组 1 V1')
-    lane('镜头组 1 · V1').focus()
+    await addMaterial(user, '镜头组 1 生成 A 原版')
+    lane('镜头组 1 · 生成 A · 原版').focus()
     await user.keyboard('{Enter}')
-    await user.click(screen.getByRole('button', { name: '镜头组 1 当前用 V1，换版本' }))
-    await user.click(screen.getByRole('menuitemradio', { name: /V2/ }))
+    await user.click(screen.getByRole('button', { name: '镜头组 1 生成 A 当前用 原版，换版本' }))
+    await user.click(screen.getByRole('menuitemradio', { name: /编辑版 1/ }))
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${COMPOSITE_1}.mp4`)
     expect(screen.queryByRole('slider', { name: '选区结尾' })).toBeNull()
     // 素材区末尾的入口与轨道头换版走同一条选择逻辑，不会留下上一个版本的预览。
-    await addMaterial(user, '镜头组 1 V1')
+    await addMaterial(user, '镜头组 1 生成 A 原版')
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
-    expect(lane('镜头组 1 · V1')).toBeVisible()
+    expect(lane('镜头组 1 · 生成 A · 原版')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '整片 V1' }))
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', 'https://example.com/whole-film.mp4')
@@ -919,8 +1002,8 @@ describe('WholeFilmEditor 音乐', () => {
         screen.getByRole('button', {
           name:
             status === 'failed'
-              ? '镜头组 1 · V1 字幕识别失败，重试'
-              : '镜头组 1 · V1 字幕未识别，识别',
+              ? '镜头组 1 · 生成 A · 原版 字幕识别失败，重试'
+              : '镜头组 1 · 生成 A · 原版 字幕未识别，识别',
         }),
       ).toBeVisible()
       await user.click(screen.getByRole('button', { name: '第 1 条字幕：原版字幕' }))

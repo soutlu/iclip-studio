@@ -28,8 +28,6 @@ export type FilmSegment = Pick & {
   id: string
   /** 相对自动响度基准的线性音量，0–2；省略为 1。 */
   volume?: number | undefined
-  /** 挑进来时的那一截（拆分后各自以拆点为界）：裁剪只能在里面收缩、再放回。 */
-  origin: { start: number; end: number }
   /** 从已合成版本恢复的最终字幕，按来源视频时间保存；空数组表示这一段没有字幕，不再从识别记录派生。 */
   subtitles?: readonly { id: string; start: number; end: number; text: string }[] | undefined
 }
@@ -189,7 +187,6 @@ export const insertSegment = (
     sourceJobId: pick.sourceJobId,
     start,
     end,
-    origin: { start, end },
   }
   const at = Math.max(0, Math.min(state.segments.length, index))
   return { ...clearMusicGain(state), segments: state.segments.toSpliced(at, 0, segment) }
@@ -211,38 +208,56 @@ export const moveSegment = (
   return { ...clearMusicGain(state), segments: rest.toSpliced(at, 0, moving) }
 }
 
-/** 一段的一端最远能拖到哪：不超出挑进来时的那一截，不短于 {@link MIN_SEGMENT_SECONDS}（本来就更短的只能拉长），
- * 拉长也不让整片超过上限。 */
+/** 一段的一端最远能拖到哪：允许跨过初始分段，限制在来源视频内，且不让整片超过上限。
+ * 来源时长未读到时只允许使用已选区间以内的结尾；起点始终可回到来源视频开头。
+ * 区间或已知来源时长无效、当前区间超出来源时返回 `undefined`，由界面禁用调整并说明原因。 */
 export const trimBounds = (
   segments: readonly FilmSegment[],
   segment: FilmSegment,
   edge: 'start' | 'end',
   reserved = 0,
-): { min: number; max: number } => {
+  sourceDuration?: number,
+): { min: number; max: number } | undefined => {
+  if (
+    !Number.isFinite(segment.start) ||
+    !Number.isFinite(segment.end) ||
+    segment.start < 0 ||
+    segment.end <= segment.start ||
+    (sourceDuration !== undefined &&
+      (!Number.isFinite(sourceDuration) || sourceDuration <= 0 || segment.end > sourceDuration))
+  )
+    return undefined
   const slack = Math.max(0, MAX_FILM_SECONDS - reserved - filmDuration(segments))
-  return edge === 'start'
-    ? {
-        min: roundToMs(Math.max(segment.origin.start, segment.start - slack)),
-        max: Math.max(segment.start, roundToMs(segment.end - MIN_SEGMENT_SECONDS)),
-      }
-    : {
-        min: Math.min(segment.end, roundToMs(segment.start + MIN_SEGMENT_SECONDS)),
-        max: roundToMs(Math.min(segment.origin.end, segment.end + slack)),
-      }
+  const bounds =
+    edge === 'start'
+      ? {
+          min: roundToMs(Math.max(0, segment.start - slack)),
+          max: Math.max(segment.start, roundToMs(segment.end - MIN_SEGMENT_SECONDS)),
+        }
+      : {
+          min: Math.min(segment.end, roundToMs(segment.start + MIN_SEGMENT_SECONDS)),
+          max: roundToMs(Math.min(sourceDuration ?? segment.end, segment.end + slack)),
+        }
+  return Number.isFinite(bounds.min) && Number.isFinite(bounds.max) && bounds.min <= bounds.max
+    ? bounds
+    : undefined
 }
 
-/** 把一段的一端拖到 `value`（这段素材自己的时间，秒），夹在 {@link trimBounds} 里；后面的段跟着前后移。 */
+/** 把一段的一端拖到 `value`（这段素材自己的时间，秒），夹在 {@link trimBounds} 里；后面的段跟着前后移。
+ * 数值或边界无效时保留原状态，不能将不可恢复的区间写进草稿。 */
 export const trimSegment = (
   state: FilmState,
   id: string,
   edge: 'start' | 'end',
   value: number,
+  sourceDuration?: number,
 ): FilmState => {
   const at = state.segments.findIndex((segment) => segment.id === id)
   const segment = state.segments[at]
-  if (segment === undefined) return state
-  const { min, max } = trimBounds(state.segments, segment, edge, brandDuration(state))
-  const bounded = roundToMs(Math.min(max, Math.max(min, value)))
+  if (segment === undefined || !Number.isFinite(value)) return state
+  const bounds = trimBounds(state.segments, segment, edge, brandDuration(state), sourceDuration)
+  if (bounds === undefined) return state
+  const bounded = roundToMs(Math.min(bounds.max, Math.max(bounds.min, value)))
   if (bounded === segment[edge]) return state
   return {
     ...clearMusicGain(state),
@@ -267,7 +282,7 @@ const splitPoint = (segments: readonly FilmSegment[], clock: number) => {
 export const canSplitAt = (segments: readonly FilmSegment[], clock: number): boolean =>
   segments.length < MAX_FILM_SEGMENTS && splitPoint(segments, clock) !== undefined
 
-/** 在整片时刻 `clock` 处把所在的那段一分为二：前一半留原来的 id，后一半用 `rightId`；两半各自以拆点为界。
+/** 在整片时刻 `clock` 处把所在的那段一分为二：前一半留原来的 id，后一半用 `rightId`；两半仍可独立扩展至来源视频边界。
  * 钉在后一半上的手动字幕跟过去。拆不了时返回 `undefined`。 */
 export const splitAt = (
   state: FilmState,
@@ -281,13 +296,11 @@ export const splitAt = (
   const left: FilmSegment = {
     ...segment,
     end: time,
-    origin: { start: segment.origin.start, end: time },
   }
   const right: FilmSegment = {
     ...segment,
     id: rightId,
     start: time,
-    origin: { start: time, end: segment.origin.end },
   }
   const at = state.segments.indexOf(segment)
   return {
@@ -359,25 +372,23 @@ export const resetMusicStart = (state: FilmState): FilmState =>
 
 // ---------- 素材轨 ----------
 
-/** 素材区的一条轨：哪个版本组，此刻挑段用它的哪一版。同一组只有一条。 */
-export type MaterialLane = { groupId: string; jobId: string }
+/** 素材区的一条轨：独立生成的原作，以及此刻挑段用的原版或编辑版。 */
+export type MaterialLane = { takeId: string; jobId: string }
 
-/** 放进一条成片：这一组已有轨就换成这一版，没有就在最后加一条。 */
+/** 同一原作已有轨就切换编辑版本，不同次生成各占一条轨。 */
 export const putLane = (
   lanes: readonly MaterialLane[],
   lane: MaterialLane,
 ): readonly MaterialLane[] => {
-  const at = lanes.findIndex((item) => item.groupId === lane.groupId)
+  const at = lanes.findIndex((item) => item.takeId === lane.takeId)
   return at < 0 ? [...lanes, lane] : lanes.with(at, lane)
 }
 
 // ---------- 存放 ----------
 
-/** 存进浏览器的格式版本。只加可省略的字段时不加一（旧草稿照样读得回，缺的按空处理，如没有 `music` 就是没有音乐）；
- * 改了已有字段才加一，旧的读不出来按空草稿处理。 */
-const STORAGE_VERSION = 1
+/** v2 按原作存素材轨，不再保存初始选区作为裁剪边界；v1 在读取时按素材身份迁移。 */
+const STORAGE_VERSION = 2
 
-const zSpan = z.tuple([z.number().nonnegative(), z.number().positive()])
 const zVolume = z.number().min(0).max(2).optional()
 
 /** 本地与历史快照共用的音量曲线；不包含结尾淡出。 */
@@ -396,7 +407,6 @@ const zStoredSegment = z
     volume: zVolume,
     start: z.number().nonnegative(),
     end: z.number().positive(),
-    origin: zSpan,
     subtitles: z
       .array(
         z.object({
@@ -408,12 +418,7 @@ const zStoredSegment = z
       )
       .optional(),
   })
-  .refine(
-    (segment) =>
-      segment.end > segment.start &&
-      segment.origin[0] <= segment.start &&
-      segment.end <= segment.origin[1],
-  )
+  .refine((segment) => segment.end > segment.start)
 
 export const zFilmBrand = z.object({
   templateId: z.string().min(1),
@@ -432,7 +437,7 @@ export const zFilmFont = z.object({
 })
 
 const zStoredFilm = z.object({
-  version: z.literal(STORAGE_VERSION),
+  version: z.union([z.literal(1), z.literal(STORAGE_VERSION)]),
   intro: zFilmBrand.nullish(),
   outro: zFilmBrand.nullish(),
   font: zFilmFont.nullish(),
@@ -446,7 +451,7 @@ const zStoredFilm = z.object({
       text: z.string(),
     }),
   ),
-  lanes: z.array(z.object({ groupId: z.string().min(1), jobId: z.string().min(1) })),
+  lanes: z.array(z.object({ jobId: z.string().min(1) })),
   music: z
     .discriminatedUnion('kind', [
       z.object({
@@ -474,8 +479,12 @@ const zStoredFilm = z.object({
 /** 整片草稿在浏览器里存的那一份：此刻的草稿与素材轨。撤销栈不存。 */
 export type StoredFilm = { film: FilmState; lanes: readonly MaterialLane[] }
 
-/** 读存着的整片草稿；不是 JSON、格式版本不对、形状不对都返回 `undefined`。 */
-export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
+/** 读存着的整片草稿；不是 JSON、格式版本不对、形状不对都返回 `undefined`。
+ * 素材轨以当前目录的原作关系重建，迁移 v1 的分组身份，并去掉已经无法读取的轨。 */
+export const parseStoredFilm = (
+  raw: string,
+  takeOf: (jobId: string) => string | undefined,
+): StoredFilm | undefined => {
   let json: unknown
   try {
     json = JSON.parse(raw)
@@ -487,10 +496,7 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
   const { segments, texts, manual, lanes, music, intro, outro, font } = parsed.data
   return {
     film: {
-      segments: segments.map(({ origin, ...segment }) => ({
-        ...segment,
-        origin: { start: origin[0], end: origin[1] },
-      })),
+      segments,
       texts,
       manual,
       music: music ?? null,
@@ -498,17 +504,17 @@ export const parseStoredFilm = (raw: string): StoredFilm | undefined => {
       ...(outro === undefined ? {} : { outro }),
       ...(font === undefined ? {} : { font }),
     },
-    lanes,
+    lanes: lanes.reduce<readonly MaterialLane[]>((result, lane) => {
+      const takeId = takeOf(lane.jobId)
+      return takeId === undefined ? result : putLane(result, { takeId, jobId: lane.jobId })
+    }, []),
   }
 }
 
 export const serializeStoredFilm = ({ film, lanes }: StoredFilm): string =>
   JSON.stringify({
     version: STORAGE_VERSION,
-    segments: film.segments.map(({ origin, ...segment }) => ({
-      ...segment,
-      origin: [origin.start, origin.end],
-    })),
+    segments: film.segments,
     texts: film.texts,
     manual: film.manual,
     lanes,

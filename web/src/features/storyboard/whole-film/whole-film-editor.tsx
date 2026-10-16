@@ -24,8 +24,13 @@ import { useShotGenerations } from '../storyboard.api'
 import { measureCaptionLayout } from '../video-editor/caption-layout'
 import { EditorPreview, type EditorPreviewHandle } from '../video-editor/editor-preview'
 import { EditorVersionStrip, type VersionStripEntry } from '../video-editor/editor-version-strip'
+import { keyframeSegments } from '../video-editor/draft'
 import { layoutPlay } from '../video-editor/play-layout'
-import { useAudioPeaks, type PeaksState } from '../video-editor/use-media-analysis'
+import {
+  useAudioPeaks,
+  useKeyframeIndexes,
+  type PeaksState,
+} from '../video-editor/use-media-analysis'
 import { useMediaDurations } from '../video-editor/use-media-durations'
 import { useStableValue } from '../video-editor/use-stable-value'
 import {
@@ -37,6 +42,7 @@ import {
   setMusicVolume,
   resetMusicStart,
   MAX_FILM_SEGMENTS,
+  MIN_SEGMENT_SECONDS,
   canSplitAt,
   EMPTY_FILM,
   filmDuration,
@@ -180,10 +186,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       videos.data === undefined ? undefined : materialCatalog(groupConversationVideos(videos.data)),
     [videos.data],
   )
-  const known = useMemo(
-    () => (catalog === undefined ? undefined : new Set(catalog.byJob.keys())),
-    [catalog],
-  )
+  const known = catalog?.byJob
   const versions = useMemo(() => wholeFilmVersions(videos.data ?? []), [videos.data])
   const materialOf = (jobId: string) => catalog?.byJob.get(jobId)
 
@@ -202,7 +205,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     return {
       label: newestVersion.label,
       stored: draftFromVersion(newestVersion.job, {
-        groupOf: (jobId) => materialOf(jobId)?.groupId,
+        takeOf: (jobId) => materialOf(jobId)?.takeId,
         generatedMusic: new Set(musicRecords.data.map((job) => job.id)),
         newId: () => crypto.randomUUID(),
       }),
@@ -243,20 +246,36 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     ...(viewedDone !== undefined && viewedDone.job.durationMs === null ? [viewedDone.url] : []),
   ])
   const durations = useMediaDurations(probeUrls)
-  const durationOf = (material: Material): MaterialDuration =>
-    material.knownDuration ?? durations[material.url]
+  const sourceUrls = useStableValue([
+    ...new Set((draft?.lanes ?? []).flatMap((lane) => materialOf(lane.jobId)?.url ?? [])),
+  ])
+  const keyframes = useKeyframeIndexes(sourceUrls)
+  const durationOf = (material: Material): MaterialDuration => {
+    const frames = keyframes.get(material.url)
+    return frames?.kind === 'ready'
+      ? frames.index.duration
+      : (material.knownDuration ?? durations[material.url])
+  }
 
   const lanes: LaneView[] = (draft?.lanes ?? []).flatMap((lane) => {
     const material = materialOf(lane.jobId)
-    const group = catalog?.groups.find((item) => item.id === lane.groupId)
-    if (material === undefined || group === undefined) return []
+    const group = catalog?.groups.find((item) => item.id === material?.groupId)
+    const take = group?.takes.find((item) => item.id === lane.takeId)
+    if (material === undefined || group === undefined || take === undefined) return []
+    const frames = keyframes.get(material.url)
     return [
       {
         lane,
         label: group.label,
         material,
-        versions: group.versions,
-        duration: durationOf(material),
+        versions: take.versions,
+        duration: frames?.kind === 'ready' ? frames.index.duration : undefined,
+        shots: frames?.kind === 'ready' ? keyframeSegments(material.jobId, frames.index) : [],
+        shotState:
+          frames?.kind === 'failed' ? 'error' : frames?.kind === 'ready' ? 'ready' : 'loading',
+        onRetryShots: () => {
+          if (frames?.kind === 'failed') frames.retry()
+        },
       },
     ]
   })
@@ -475,6 +494,10 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const insert = (target: MaterialPick, index: number) => {
     const duration = segmentDuration(target)
+    if (duration < MIN_SEGMENT_SECONDS) {
+      setNotice(`镜头不足 ${MIN_SEGMENT_SECONDS} 秒，无法加入成片；请拖动两端扩大范围`)
+      return
+    }
     if (segments.length >= MAX_FILM_SEGMENTS) {
       setNotice(`片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入；请先删减片段`)
       return
@@ -516,7 +539,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const addMaterial = (material: Material) => {
     if (draft === undefined) return
-    draft.setLanes(putLane(draft.lanes, { groupId: material.groupId, jobId: material.jobId }))
+    draft.setLanes(putLane(draft.lanes, { takeId: material.takeId, jobId: material.jobId }))
     setPick(undefined)
     setSelection(undefined)
     setMaterialPreview({ jobId: material.jobId })
@@ -836,8 +859,20 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           setSelection(undefined)
         }}
         onSwitchVersion={switchVersion}
-        onTrim={(id, edge, value) => apply(trimSegment(film, id, edge, value))}
-        onTrimPreview={(clock, edge) => previewFilm(clock, edge)}
+        onTrim={(id, edge, value) => {
+          const segment = segments.find((item) => item.id === id)
+          const material = segment === undefined ? undefined : materialOf(segment.sourceJobId)
+          const duration = material === undefined ? undefined : durationOf(material)
+          apply(trimSegment(film, id, edge, value, duration ?? undefined))
+        }}
+        onTrimPreview={(target, clock, edge) => {
+          setMaterialPreview({
+            jobId: target.sourceJobId,
+            range: { start: target.start, end: target.end },
+          })
+          setMaterialTime(clock - target.start)
+          setPreviewSeek({ clock: clock - target.start, boundary: edge })
+        }}
         peaksOf={(url) => peaks.get(url) ?? LOADING_PEAKS}
         pick={viewingDraft ? pick : undefined}
         retrying={retrying}

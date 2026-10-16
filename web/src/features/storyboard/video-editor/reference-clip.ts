@@ -68,9 +68,12 @@ export const readKeyframes = async (url: string): Promise<KeyframeIndex> => {
     ) {
       keyframes.add(roundToMs(packet.timestamp))
     }
+    const duration = roundToMs(await input.computeDuration())
+    if (!Number.isFinite(duration) || duration <= 0)
+      throw new UserFacingError('视频时长无效，无法分段')
     return {
       keyframes: [...keyframes].sort((left, right) => left - right),
-      duration: roundToMs(await input.computeDuration()),
+      duration,
     }
   } catch (cause) {
     throw asUserFacing(cause, '该视频的关键帧读取失败，请稍后重试')

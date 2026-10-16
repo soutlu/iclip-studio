@@ -508,6 +508,12 @@ describe('readKeyframes', () => {
     })
     expect(media.disposed).toBe(1)
   })
+
+  it.each([0, -1, Infinity, NaN])('拒绝无效时长 %s 并释放媒体', async (duration) => {
+    media.duration = duration
+    await expect(readKeyframes('https://oss.example.com/take.mp4')).rejects.toThrow('视频时长无效')
+    expect(media.disposed).toBe(1)
+  })
 })
 
 describe('readAudioPeaks', () => {

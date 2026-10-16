@@ -1,7 +1,7 @@
-/** 整片时间线：上方成片区（成片轨、字幕轨、音乐轨）按整片时间排；分隔行「素材」下面每条素材轨放一条成片，
- * 从 0 秒起、与成片区同一比例。音乐轨见 film-music-track。
+/** 整片时间线：成片、字幕与音乐按整片时间排列；素材按镜头组归类，每次生成单独一轨。
+ * 素材区从 0 秒起，以最长来源视频独立缩放；音乐轨见 film-music-track。
  *
- * 素材轨上拖选任意一截（不按关键帧），按住选区拖到成片轨，松手处插入、后面的段顺延；键盘上选好后按回车，
+ * 素材按关键帧显示镜头，选中后可跨关键帧调整两端，再拖到成片轨，松手处插入、后面的段顺延；键盘上选好后按回车，
  * 插到播放头所在的切点。成片轨上点段选中，拖两端掐头去尾，按住中间拖动换顺序。字幕跟着画面走，不能拖。 */
 
 import {
@@ -18,6 +18,7 @@ import {
 import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { BlockedReason } from '../components/blocked-reason'
 import { Frames, Wave } from '../video-editor/editor-timeline'
 import { roundSeconds, timeLabel } from '../video-editor/time-label'
 import type { PeaksState } from '../video-editor/use-media-analysis'
@@ -54,10 +55,13 @@ export type LaneView = {
   versions: readonly Material[]
   /** 这一版多长：还没读到或读不出来时轨上不画素材、不能挑段，只写一句状态。 */
   duration: MaterialDuration
+  shots: readonly { start: number; end: number }[]
+  shotState: 'loading' | 'ready' | 'error'
+  onRetryShots: () => void
 }
 
-/** 素材轨上的选区：哪一组的哪一版，取它的哪一截。 */
-export type MaterialPick = Pick & { groupId: string }
+/** 素材轨上的临时选区：保留最初选中的镜头身份，调整边界后仍可区分再次点选。 */
+export type MaterialPick = Pick & { takeId: string; shotIndex: number }
 
 /** 成片区里选中的东西：一段、字幕轨上的一条，或音乐。 */
 export type FilmSelection =
@@ -72,12 +76,11 @@ const ROW = {
   film: { top: 22, height: 48 },
   subtitles: { top: 4, height: 26 },
   music: { top: 34, height: 32 },
-  separator: 70,
-  materials: 96,
-  lane: 40,
-  laneGap: 4,
+  materials: 76,
+  group: 34,
+  lane: 52,
+  laneGap: 24,
 } as const
-const laneTop = (index: number) => ROW.materials + index * (ROW.lane + ROW.laneGap)
 
 const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60]
 /** 按下后挪过这么多像素才算拖动，不然是点。 */
@@ -125,7 +128,7 @@ type FilmTimelineProps = {
   onScrub: () => void
   onSelect: (selection: FilmSelection) => void
   onTrim: (id: string, edge: Edge, value: number) => void
-  onTrimPreview: (clock: number, edge: Edge) => void
+  onTrimPreview: (pick: Pick, clock: number, edge: Edge) => void
   onMove: (id: string, before: number) => void
   onDelete: (id: string) => void
   onPick: (pick: MaterialPick | undefined) => void
@@ -161,9 +164,6 @@ type Carry = {
   moved: boolean
 }
 
-/** 在素材轨上框选。 */
-type Sweep = { pointerId: number; groupId: string; jobId: string; anchor: number; clock: number }
-
 /** 拖选区的一端。 */
 type PickHandle = { pointerId: number; edge: Edge; value: number }
 
@@ -177,7 +177,15 @@ type Lift = {
   moved: boolean
 }
 
-type Trim = { pointerId: number; id: string; edge: Edge; value: number }
+type Trim = {
+  pointerId: number
+  id: string
+  edge: Edge
+  value: number
+  initialValue: number
+  originX: number
+  pixelsPerSecond: number
+}
 
 /** 一截画面：缩略图在上、原声波形在下。 */
 function Strip({
@@ -266,7 +274,6 @@ export function FilmTimeline({
   const swallowClickRef = useRef(false)
   const [focusId, setFocusId] = useState<string>()
   const [carry, setCarry] = useState<Carry | null>(null)
-  const [sweep, setSweep] = useState<Sweep | null>(null)
   const [pickHandle, setPickHandle] = useState<PickHandle | null>(null)
   const [lift, setLift] = useState<Lift | null>(null)
   const [trim, setTrim] = useState<Trim | null>(null)
@@ -280,6 +287,7 @@ export function FilmTimeline({
   const dropping = carry?.moved === true && carry.over
   const dropFits =
     carried !== undefined &&
+    carriedDuration >= MIN_SEGMENT_SECONDS &&
     segments.length < MAX_FILM_SEGMENTS &&
     fitsInFilm(segments, carriedDuration, reserved)
   const dropIndex = dropping ? insertIndexAt(segments, carry.clock - bodyStart) : undefined
@@ -289,6 +297,12 @@ export function FilmTimeline({
   const shift = dropping && dropFits && dropIndex !== undefined ? carriedDuration : 0
   const scale = Math.max(baseScale, total + shift)
 
+  const materialScale = Math.max(1, ...lanes.map((view) => view.duration ?? 0))
+  const materialPercent = (time: number) => `${(time / materialScale) * 100}%`
+  const materialSpan = (start: number, duration: number) => ({
+    left: materialPercent(start),
+    width: `max(1px, calc(${materialPercent(duration)} - 2px))`,
+  })
   const percent = (time: number) => `${(time / scale) * 100}%`
   const span = (at: number, duration: number) => ({
     left: percent(at),
@@ -475,33 +489,49 @@ export function FilmTimeline({
 
   // ---------- 成片轨：裁剪 ----------
 
-  const trimValue = (at: number, segment: FilmSegment, edge: Edge, clock: number) => {
-    const { min, max } = trimBounds(segments, segment, edge, reserved)
-    return Math.min(max, Math.max(min, segment.start + (clock - at)))
+  const sourceDurationOf = (segment: FilmSegment) => {
+    const material = materialOf(segment.sourceJobId)
+    return material === undefined ? undefined : (durationOf(material) ?? undefined)
   }
 
-  const pressTrim = (
-    event: PointerEvent<HTMLButtonElement>,
-    segment: FilmSegment,
-    at: number,
-    edge: Edge,
-  ) => {
+  const trimValue = (segment: FilmSegment, edge: Edge, value: number) => {
+    const bounds = trimBounds(segments, segment, edge, reserved, sourceDurationOf(segment))
+    if (bounds === undefined) return undefined
+    return Math.min(bounds.max, Math.max(bounds.min, value))
+  }
+
+  const pressTrim = (event: PointerEvent<HTMLButtonElement>, segment: FilmSegment, edge: Edge) => {
     event.preventDefault()
     event.currentTarget.focus()
     capture(event)
     onScrub()
     const value = segment[edge]
-    setTrim({ pointerId: event.pointerId, id: segment.id, edge, value })
-    onTrimPreview(at + (value - segment.start), edge)
+    const trackWidth = event.currentTarget.parentElement?.getBoundingClientRect().width ?? 0
+    setTrim({
+      pointerId: event.pointerId,
+      id: segment.id,
+      edge,
+      value,
+      initialValue: value,
+      originX: event.clientX,
+      pixelsPerSecond: trackWidth / scale,
+    })
+    onTrimPreview({ ...segment, [edge]: value }, value, edge)
   }
 
   const dragTrim = (event: PointerEvent<HTMLButtonElement>) => {
     if (trim === null || trim.pointerId !== event.pointerId) return
     const placed = layout.find((item) => item.segment.id === trim.id)
     if (placed === undefined) return
-    const value = trimValue(placed.at, placed.segment, trim.edge, clockAt(event.clientX))
+    if (trim.pixelsPerSecond === 0) return
+    const value = trimValue(
+      placed.segment,
+      trim.edge,
+      trim.initialValue + (event.clientX - trim.originX) / trim.pixelsPerSecond,
+    )
+    if (value === undefined) return
     setTrim({ ...trim, value })
-    onTrimPreview(placed.at + (value - placed.segment.start), trim.edge)
+    onTrimPreview({ ...placed.segment, [trim.edge]: value }, value, trim.edge)
   }
 
   const releaseTrim = (event: PointerEvent<HTMLButtonElement>) => {
@@ -511,90 +541,86 @@ export function FilmTimeline({
     onTrim(trim.id, trim.edge, trim.value)
   }
 
-  const keyTrim = (
-    event: KeyboardEvent<HTMLButtonElement>,
-    segment: FilmSegment,
-    at: number,
-    edge: Edge,
-  ) => {
+  const cancelTrim = (event: PointerEvent<HTMLButtonElement>) => {
+    if (trim === null || trim.pointerId !== event.pointerId) return
+    release(event)
+    const segment = segments.find((item) => item.id === trim.id)
+    if (segment !== undefined) onTrimPreview(segment, segment[trim.edge], trim.edge)
+    setTrim(null)
+  }
+
+  const keyTrim = (event: KeyboardEvent<HTMLButtonElement>, segment: FilmSegment, edge: Edge) => {
     const step = event.shiftKey ? 1 : KEY_STEP
     const delta = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : undefined
     if (delta === undefined) return
     event.preventDefault()
-    const value = segment[edge] + delta
+    const value = trimValue(segment, edge, segment[edge] + delta)
+    if (value === undefined) return
     onTrim(segment.id, edge, value)
-    onTrimPreview(at + (value - segment.start), edge)
+    onTrimPreview({ ...segment, [edge]: value }, value, edge)
   }
 
-  // ---------- 素材轨：框选、调两端、拖到成片轨 ----------
+  // ---------- 素材轨：选镜头、调两端、拖到成片轨 ----------
 
   const insertAtPlayhead = (current: MaterialPick) =>
     onInsert(current, insertIndexAt(segments, currentTime - bodyStart))
 
-  const pressLane = (event: PointerEvent<HTMLDivElement>, view: LaneView) => {
+  const selectShot = (view: LaneView, shotIndex: number) => {
+    const shot = view.shots[shotIndex]
+    if (shot === undefined) return undefined
+    const next: MaterialPick = {
+      takeId: view.lane.takeId,
+      sourceJobId: view.material.jobId,
+      shotIndex,
+      start: shot.start,
+      end: shot.end,
+    }
+    onPick(next)
+    onPreviewMaterial(next, next.start, 'start')
+    return next
+  }
+
+  const isPickedShot = (view: LaneView, index: number) =>
+    pick?.takeId === view.lane.takeId &&
+    pick.sourceJobId === view.material.jobId &&
+    pick.shotIndex === index
+
+  const pressShot = (event: PointerEvent<HTMLButtonElement>, view: LaneView, index: number) => {
     if (event.button !== 0 || view.duration == null) return
-    const clock = Math.min(view.duration, clockAt(event.clientX))
+    swallowClickRef.current = false
     capture(event)
     event.currentTarget.focus()
-    if (
-      pick !== undefined &&
-      pick.groupId === view.lane.groupId &&
-      clock >= pick.start &&
-      clock <= pick.end
-    ) {
-      onPreviewMaterial(pick, clock)
-      setCarry({
-        pointerId: event.pointerId,
-        pick,
-        originX: event.clientX,
-        originY: event.clientY,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        grab: clock - pick.start,
-        pixelsPerSecond: (lanesRef.current?.getBoundingClientRect().width ?? 0) / scale,
-        clock: clockAt(event.clientX),
-        over: false,
-        moved: false,
-      })
-      return
-    }
-    onPreviewMaterial(
-      {
-        groupId: view.lane.groupId,
-        sourceJobId: view.material.jobId,
-        start: 0,
-        end: view.duration,
-      },
-      clock,
+    const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
+    if (bounds === undefined || bounds.width === 0) return
+    const pointerClock = Math.max(
+      0,
+      Math.min(materialScale, ((event.clientX - bounds.left) / bounds.width) * materialScale),
     )
-    setSweep({
+    const withinPick =
+      pick?.sourceJobId === view.material.jobId &&
+      pick.takeId === view.lane.takeId &&
+      pointerClock >= pick.start &&
+      pointerClock <= pick.end
+    const current = withinPick ? pick : selectShot(view, index)
+    if (current === undefined) return
+    const clock = Math.min(current.end, Math.max(current.start, pointerClock))
+    onPreviewMaterial(current, clock)
+    setCarry({
       pointerId: event.pointerId,
-      groupId: view.lane.groupId,
-      jobId: view.material.jobId,
-      anchor: clock,
-      clock,
+      pick: current,
+      originX: event.clientX,
+      originY: event.clientY,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      grab: clock - current.start,
+      pixelsPerSecond: bounds.width / materialScale,
+      clock: (pointerClock / materialScale) * scale,
+      over: false,
+      moved: false,
     })
   }
 
-  const dragLane = (event: PointerEvent<HTMLDivElement>, view: LaneView) => {
-    if (sweep !== null && sweep.pointerId === event.pointerId && view.duration != null) {
-      const clock = Math.min(view.duration, clockAt(event.clientX))
-      if (sweep.clock === clock) return
-      setSweep({ ...sweep, clock })
-      const start = roundToMs(Math.min(sweep.anchor, clock))
-      const end = roundToMs(Math.max(sweep.anchor, clock))
-      onPreviewMaterial(
-        {
-          groupId: sweep.groupId,
-          sourceJobId: sweep.jobId,
-          start: end - start < MIN_SEGMENT_SECONDS ? 0 : start,
-          end: end - start < MIN_SEGMENT_SECONDS ? view.duration : end,
-        },
-        clock,
-        clock >= sweep.anchor ? 'end' : 'start',
-      )
-      return
-    }
+  const dragShot = (event: PointerEvent<HTMLButtonElement>) => {
     if (carry === null || carry.pointerId !== event.pointerId) return
     const moved =
       carry.moved ||
@@ -609,56 +635,51 @@ export function FilmTimeline({
     })
   }
 
-  const cancelLane = (event: PointerEvent<HTMLDivElement>) => {
+  const cancelShot = (event: PointerEvent<HTMLButtonElement>) => {
     release(event)
-    setSweep(null)
     setCarry(null)
   }
 
-  const releaseLane = (event: PointerEvent<HTMLDivElement>) => {
+  const releaseShot = (event: PointerEvent<HTMLButtonElement>, view: LaneView, index: number) => {
     release(event)
-    if (sweep !== null && sweep.pointerId === event.pointerId) {
-      setSweep(null)
-      const start = roundToMs(Math.min(sweep.anchor, sweep.clock))
-      const end = roundToMs(Math.max(sweep.anchor, sweep.clock))
-      // 点一下没拖开（或拖得太短）：收起选区。
-      onPick(
-        end - start < MIN_SEGMENT_SECONDS
-          ? undefined
-          : { groupId: sweep.groupId, sourceJobId: sweep.jobId, start, end },
-      )
-      return
-    }
     if (carry === null || carry.pointerId !== event.pointerId) return
     setCarry(null)
-    if (!carry.moved || !overFilm(event.clientX, event.clientY)) return
+    swallowClickRef.current = true
+    if (!carry.moved) {
+      if (!isPickedShot(view, index)) selectShot(view, index)
+      return
+    }
+    if (!overFilm(event.clientX, event.clientY)) return
     onInsert(carry.pick, insertIndexAt(segments, clockAt(event.clientX) - bodyStart))
   }
 
-  const keyLane = (event: KeyboardEvent<HTMLDivElement>, view: LaneView) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    if (view.duration == null) return
-    if (pick !== undefined && pick.groupId === view.lane.groupId) {
-      insertAtPlayhead(pick)
+  const clickShot = (view: LaneView, index: number) => {
+    if (swallowClickRef.current) {
+      swallowClickRef.current = false
       return
     }
-    const next = {
-      groupId: view.lane.groupId,
-      sourceJobId: view.material.jobId,
-      start: 0,
-      end: roundToMs(view.duration),
+    selectShot(view, index)
+  }
+
+  const keyShot = (event: KeyboardEvent<HTMLButtonElement>, view: LaneView, index: number) => {
+    if (event.key === 'Enter' && isPickedShot(view, index) && pick !== undefined) {
+      event.preventDefault()
+      insertAtPlayhead(pick)
     }
-    onPick(next)
-    onPreviewMaterial(next, 0, 'start')
   }
 
   const pickBounds = (view: LaneView, edge: Edge) =>
     pick === undefined || view.duration == null
       ? { min: 0, max: 0 }
       : edge === 'start'
-        ? { min: 0, max: roundToMs(pick.end - MIN_SEGMENT_SECONDS) }
-        : { min: roundToMs(pick.start + MIN_SEGMENT_SECONDS), max: roundToMs(view.duration) }
+        ? {
+            min: 0,
+            max: roundToMs(pick.end - Math.min(MIN_SEGMENT_SECONDS, segmentDuration(pick))),
+          }
+        : {
+            min: roundToMs(pick.start + Math.min(MIN_SEGMENT_SECONDS, segmentDuration(pick))),
+            max: roundToMs(view.duration),
+          }
 
   const setPickEdge = (view: LaneView, edge: Edge, value: number) => {
     if (pick === undefined) return
@@ -681,7 +702,10 @@ export function FilmTimeline({
   const dragPickHandle = (event: PointerEvent<HTMLButtonElement>, view: LaneView) => {
     if (pickHandle === null || pickHandle.pointerId !== event.pointerId) return
     const { min, max } = pickBounds(view, pickHandle.edge)
-    const value = roundToMs(Math.min(max, Math.max(min, clockAt(event.clientX))))
+    const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
+    if (bounds === undefined || bounds.width === 0) return
+    const clock = ((event.clientX - bounds.left) / bounds.width) * materialScale
+    const value = roundToMs(Math.min(max, Math.max(min, clock)))
     setPickHandle({
       ...pickHandle,
       value,
@@ -695,6 +719,13 @@ export function FilmTimeline({
     release(event)
     setPickHandle(null)
     setPickEdge(view, pickHandle.edge, pickHandle.value)
+  }
+
+  const cancelPickHandle = (event: PointerEvent<HTMLButtonElement>) => {
+    if (pickHandle === null || pickHandle.pointerId !== event.pointerId) return
+    release(event)
+    if (pick !== undefined) onPreviewMaterial(pick, pick[pickHandle.edge], pickHandle.edge)
+    setPickHandle(null)
   }
 
   const keyPickHandle = (event: KeyboardEvent<HTMLButtonElement>, view: LaneView, edge: Edge) => {
@@ -754,17 +785,9 @@ export function FilmTimeline({
   const shifted = (index: number, at: number) =>
     shift > 0 && dropIndex !== undefined && index >= dropIndex ? at + shift : at
 
-  const sweepRange =
-    sweep === null
-      ? undefined
-      : {
-          groupId: sweep.groupId,
-          start: Math.min(sweep.anchor, sweep.clock),
-          end: Math.max(sweep.anchor, sweep.clock),
-        }
-  const shownPick = (groupId: string) => {
-    if (sweepRange !== undefined) return sweepRange.groupId === groupId ? sweepRange : undefined
-    if (pick === undefined || pick.groupId !== groupId) return undefined
+  const shownPick = (view: LaneView) => {
+    if (pick?.takeId !== view.lane.takeId || pick.sourceJobId !== view.material.jobId)
+      return undefined
     return pickHandle === null ? pick : { ...pick, [pickHandle.edge]: pickHandle.value }
   }
 
@@ -824,8 +847,31 @@ export function FilmTimeline({
     )
   }
 
-  const rows = lanes.length + 1
-  const height = laneTop(rows) - ROW.laneGap
+  const groups = new Map<string, LaneView[]>()
+  for (const view of lanes) {
+    const group = groups.get(view.material.groupId)
+    if (group === undefined) groups.set(view.material.groupId, [view])
+    else group.push(view)
+  }
+  const materialGroups = Array.from(groups).map(([id, views], groupIndex, entries) => {
+    const top =
+      ROW.materials +
+      entries
+        .slice(0, groupIndex)
+        .reduce(
+          (sum, [, earlier]) => sum + ROW.group + earlier.length * (ROW.lane + ROW.laneGap),
+          0,
+        )
+    const rows = views.map((view, index) => ({
+      view,
+      top: top + ROW.group + index * (ROW.lane + ROW.laneGap),
+    }))
+    return { id, label: views[0]?.label ?? id, top, rows }
+  })
+  const nextTop =
+    ROW.materials + materialGroups.length * ROW.group + lanes.length * (ROW.lane + ROW.laneGap)
+  const materialRows = materialGroups.flatMap((group) => group.rows)
+  const height = nextTop + 44
 
   return (
     <section
@@ -911,7 +957,7 @@ export function FilmTimeline({
                   style={{ top: ROW.film.top, height: ROW.film.height }}
                 >
                   <Icon decorative name="to-bottom" size="xs" />
-                  从下方素材轨拖选片段放到这里
+                  从下方素材轨选择镜头加入成片
                 </span>
               ) : null}
               {(['intro', 'outro'] as const).map((position) => {
@@ -988,7 +1034,9 @@ export function FilmTimeline({
                   >
                     {stripOf(segment)}
                     {material === undefined ? null : (
-                      <span className="film-segment-tag">{material.version}</span>
+                      <span className="film-segment-tag">
+                        {material.takeLabel} · {material.version}
+                      </span>
                     )}
                   </button>
                 )
@@ -1019,12 +1067,35 @@ export function FilmTimeline({
                   }}
                 />
               )}
+              {handleOwner !== undefined &&
+              trimBounds(
+                segments,
+                handleOwner.segment,
+                'end',
+                reserved,
+                sourceDurationOf(handleOwner.segment),
+              ) === undefined ? (
+                <span
+                  className="film-timeline-bubble"
+                  role="status"
+                  style={bubbleAt(handleOwner.at)}
+                >
+                  来源视频时长与当前片段范围不一致，无法调整；请重新选择镜头
+                </span>
+              ) : null}
               {handleOwner === undefined
                 ? null
                 : (['start', 'end'] as const).map((edge) => {
                     const { segment, at } = handleOwner
                     const value = trim !== null && trim.edge === edge ? trim.value : segment[edge]
-                    const bounds = trimBounds(segments, segment, edge, reserved)
+                    const bounds = trimBounds(
+                      segments,
+                      segment,
+                      edge,
+                      reserved,
+                      sourceDurationOf(segment),
+                    )
+                    if (bounds === undefined) return null
                     return (
                       <button
                         aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
@@ -1038,9 +1109,9 @@ export function FilmTimeline({
                           trim?.edge === edge && 'is-pressed',
                         )}
                         key={edge}
-                        onKeyDown={(event) => keyTrim(event, segment, at, edge)}
-                        onPointerCancel={releaseTrim}
-                        onPointerDown={(event) => pressTrim(event, segment, at, edge)}
+                        onKeyDown={(event) => keyTrim(event, segment, edge)}
+                        onPointerCancel={cancelTrim}
+                        onPointerDown={(event) => pressTrim(event, segment, edge)}
                         onPointerMove={dragTrim}
                         onPointerUp={releaseTrim}
                         role="slider"
@@ -1112,9 +1183,11 @@ export function FilmTimeline({
                         <Icon decorative name={dropFits ? 'insert' : 'blocked'} size="xs" />
                         {dropFits
                           ? `插入到 ${dropClock.toFixed(2)} 秒`
-                          : segments.length >= MAX_FILM_SEGMENTS
-                            ? `片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入`
-                            : `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒，放不下这 ${carriedDuration.toFixed(1)} 秒`}
+                          : carriedDuration < MIN_SEGMENT_SECONDS
+                            ? `镜头不足 ${MIN_SEGMENT_SECONDS} 秒，请拖动两端扩展范围`
+                            : segments.length >= MAX_FILM_SEGMENTS
+                              ? `片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入`
+                              : `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒，放不下这 ${carriedDuration.toFixed(1)} 秒`}
                       </span>
                     </>
                   ) : null}
@@ -1178,17 +1251,17 @@ export function FilmTimeline({
               音乐
               {musicAdd}
             </span>
-            {lanes.map((view, index) => (
+            {materialRows.map(({ view, top }) => (
               <span
-                className="film-timeline-head"
-                key={view.lane.groupId}
-                style={{ top: laneTop(index), height: ROW.lane }}
+                className="film-timeline-head is-material"
+                key={view.lane.takeId}
+                style={{ top, height: ROW.lane }}
               >
-                <b title={view.label}>{view.label}</b>
+                <b>{view.material.takeLabel}</b>
                 <VersionPill
                   current={view.material}
                   durationOf={durationOf}
-                  groupLabel={view.label}
+                  groupLabel={`${view.label} ${view.material.takeLabel}`}
                   onSwitch={(material) => onSwitchVersion(view, material)}
                   versions={view.versions}
                 />
@@ -1274,52 +1347,77 @@ export function FilmTimeline({
                   }}
                 />
                 {/* 素材区 */}
-                {lanes.map((view, index) => {
-                  const top = laneTop(index)
-                  const shown = shownPick(view.lane.groupId)
+                {materialRows.map(({ view, top }) => {
+                  const shown = shownPick(view)
                   const used = segments.filter(
                     (segment) => segment.sourceJobId === view.material.jobId,
                   )
-                  const hintId = `film-lane-hint-${view.lane.groupId}`
+                  const hintId = `film-lane-hint-${view.lane.takeId}`
                   return (
-                    <div key={view.lane.groupId}>
+                    <div key={view.lane.takeId}>
                       <div
                         aria-describedby={hintId}
-                        aria-label={`${view.label} · ${view.material.version} 素材${view.duration == null ? '' : `，共 ${seconds(view.duration)}`}`}
-                        className="film-material-lane ui-focus"
-                        onKeyDown={(event) => keyLane(event, view)}
-                        onPointerCancel={cancelLane}
-                        onPointerDown={(event) => pressLane(event, view)}
-                        onPointerMove={(event) => dragLane(event, view)}
-                        onPointerUp={releaseLane}
-                        role="button"
+                        aria-label={`${materialName(view.material)} 素材`}
+                        className="film-material-lane"
+                        role="group"
                         style={{ top, height: ROW.lane }}
-                        tabIndex={0}
                       >
                         <span className="sr-only" id={hintId}>
-                          按回车选中整条素材；选好后再按回车，插入到播放头所在的位置
+                          点击镜头可选中，拖动两端可调整范围；选中后按回车，插入到播放头所在的位置
                         </span>
-                        {view.duration === undefined ? (
+                        {view.shotState === 'loading' ? (
                           <span className="film-material-loading" role="status">
-                            正在读取视频时长…
+                            正在读取镜头分段…
                           </span>
-                        ) : view.duration === null ? (
+                        ) : view.shotState === 'error' ? (
                           <span className="film-material-loading" role="alert">
-                            视频时长读取失败，无法从这条素材挑段；请换一个版本
+                            镜头分段读取失败，请重试
+                            <button
+                              className="film-music-status-action ui-focus"
+                              onClick={() => view.onRetryShots()}
+                              type="button"
+                            >
+                              重试
+                            </button>
                           </span>
                         ) : (
-                          <span
-                            className="film-material-clip"
-                            style={{ width: `calc(${percent(view.duration)} - 2px)` }}
-                          >
-                            <Strip
-                              end={view.duration}
-                              peaks={peaksOf(view.material.url)}
-                              start={0}
-                              url={view.material.url}
-                            />
-                            <span className="film-material-length">{seconds(view.duration)}</span>
-                          </span>
+                          view.shots.map((shot, index) => (
+                            <button
+                              aria-label={`${materialName(view.material)} 镜头 ${index + 1}，${shot.start.toFixed(1)}–${shot.end.toFixed(1)} 秒`}
+                              aria-pressed={
+                                pick?.takeId === view.lane.takeId &&
+                                pick.sourceJobId === view.material.jobId &&
+                                pick.shotIndex === index
+                              }
+                              className="film-material-shot ui-focus"
+                              key={shot.start}
+                              onClick={() => clickShot(view, index)}
+                              onKeyDown={(event) => keyShot(event, view, index)}
+                              onPointerCancel={cancelShot}
+                              onPointerDown={(event) => pressShot(event, view, index)}
+                              onPointerMove={dragShot}
+                              onPointerUp={(event) => releaseShot(event, view, index)}
+                              style={{
+                                ...materialSpan(shot.start, shot.end - shot.start),
+                                height: ROW.lane - 4,
+                              }}
+                              type="button"
+                            >
+                              <Frames
+                                part={{
+                                  mediaUrl: view.material.url,
+                                  start: shot.start,
+                                  end: shot.end,
+                                }}
+                              />
+                              <span className="film-material-shot-label">
+                                <b>镜头 {index + 1}</b>
+                                <span>
+                                  {shot.start.toFixed(1)}–{shot.end.toFixed(1)} 秒
+                                </span>
+                              </span>
+                            </button>
+                          ))
                         )}
                         {used.map((segment) => (
                           <span
@@ -1327,8 +1425,8 @@ export function FilmTimeline({
                             className="film-material-used"
                             key={segment.id}
                             style={{
-                              left: `calc(${percent(segment.start)} + 1px)`,
-                              width: `max(3px, calc(${percent(segment.end - segment.start)} - 2px))`,
+                              left: `calc(${materialPercent(segment.start)} + 1px)`,
+                              width: `max(3px, calc(${materialPercent(segment.end - segment.start)} - 2px))`,
                             }}
                           />
                         ))}
@@ -1340,15 +1438,15 @@ export function FilmTimeline({
                             className="film-material-pick"
                             data-testid="material-pick"
                             style={{
-                              left: `calc(${percent(shown.start)} - 1px)`,
-                              width: `calc(${percent(shown.end - shown.start)} + 2px)`,
-                              top: top + 1,
-                              height: ROW.lane - 2,
+                              left: `calc(${materialPercent(shown.start)} - 3px)`,
+                              width: `calc(${materialPercent(shown.end - shown.start)} + 4px)`,
+                              top: top - 1,
+                              height: ROW.lane + 2,
                             }}
                           />
-                          {sweep !== null || carry?.moved === true ? null : (
-                            <>
-                              {(['start', 'end'] as const).map((edge) => {
+                          {carry?.moved === true
+                            ? null
+                            : (['start', 'end'] as const).map((edge) => {
                                 const value = shown[edge]
                                 const bounds = pickBounds(view, edge)
                                 return (
@@ -1360,33 +1458,34 @@ export function FilmTimeline({
                                     aria-valuetext={`素材 ${roundSeconds(value)} 秒`}
                                     className={cn(
                                       'film-material-handle ui-focus',
+                                      `is-${edge}`,
                                       pickHandle?.edge === edge && 'is-pressed',
                                     )}
                                     key={edge}
                                     onKeyDown={(event) => keyPickHandle(event, view, edge)}
-                                    onPointerCancel={(event) => releasePickHandle(event, view)}
+                                    onPointerCancel={cancelPickHandle}
                                     onPointerDown={(event) => pressPickHandle(event, edge)}
                                     onPointerMove={(event) => dragPickHandle(event, view)}
                                     onPointerUp={(event) => releasePickHandle(event, view)}
                                     role="slider"
                                     style={{
-                                      left: percent(value),
-                                      top: top + 9,
-                                      height: ROW.lane - 18,
+                                      left: materialPercent(value),
+                                      top: top - 1,
+                                      height: ROW.lane + 2,
                                     }}
                                     title="拖动可调整选区，按方向键可微调，按回车插入到播放头处"
                                     type="button"
                                   />
                                 )
                               })}
-                            </>
-                          )}
                           <span
-                            className="film-timeline-bubble"
-                            style={{ ...bubbleAt((shown.start + shown.end) / 2), top: top - 22 }}
+                            className="film-material-range"
+                            style={{
+                              ...bubbleAt(((shown.start + shown.end) / 2 / materialScale) * scale),
+                              top: top - 22,
+                            }}
                           >
-                            素材 {shown.start.toFixed(2)}–{shown.end.toFixed(2)} 秒 ·{' '}
-                            {seconds(shown.end - shown.start)}
+                            {shown.start.toFixed(2)}–{shown.end.toFixed(2)} 秒
                           </span>
                         </>
                       )}
@@ -1396,12 +1495,40 @@ export function FilmTimeline({
               </div>
             </div>
           </div>
-          <div className="film-timeline-separator" style={{ top: ROW.separator }}>
-            <b>素材</b>
-            <i />
-            <span>拖选一段，拖到上面的成片轨</span>
-          </div>
-          <div className="film-timeline-materials-add" style={{ top: laneTop(lanes.length) }}>
+          {materialGroups.map((group) => {
+            const selected = group.rows.find(({ view }) => shownPick(view) !== undefined)
+            const current = selected === undefined ? undefined : shownPick(selected.view)
+            const reason =
+              current === undefined
+                ? '请先选择一个镜头'
+                : segmentDuration(current) < MIN_SEGMENT_SECONDS
+                  ? `镜头不足 ${MIN_SEGMENT_SECONDS} 秒，请拖动两端扩展范围`
+                  : segments.length >= MAX_FILM_SEGMENTS
+                    ? `片段最多 ${MAX_FILM_SEGMENTS} 段`
+                    : !fitsInFilm(segments, segmentDuration(current), reserved)
+                      ? `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒`
+                      : undefined
+            return (
+              <div className="film-material-group" key={group.id} style={{ top: group.top }}>
+                <b>{group.label}</b>
+                <BlockedReason reason={reason}>
+                  <button
+                    aria-label={`${group.label} 加入成片`}
+                    className="film-material-add ui-state ui-focus"
+                    aria-disabled={reason !== undefined}
+                    onClick={() => {
+                      if (current !== undefined && reason === undefined) insertAtPlayhead(current)
+                    }}
+                    type="button"
+                  >
+                    <Icon decorative name="add" size="xs" />
+                    加入成片
+                  </button>
+                </BlockedReason>
+              </div>
+            )
+          })}
+          <div className="film-timeline-materials-add" style={{ top: nextTop }}>
             {addVideo}
           </div>
         </div>
