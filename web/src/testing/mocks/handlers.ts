@@ -29,6 +29,7 @@ import { referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
 import { workspaceHandlers } from './workspace'
+import { waitForSidebarHistoryPage } from './sidebar-history'
 
 // MSW handlers 由单测与 dev:mock 共用；普通 dev 不注册。响应字段以 contract/openapi.json 为准。
 
@@ -288,7 +289,8 @@ export const handlers = [
     return HttpResponse.json(pageByCreated(rows, query.get('cursor'), SIDEBAR_UNGROUPED))
   }),
 
-  http.get('*/api/conversations/by-collection/:collectionId', ({ params, request }) => {
+  http.get('*/api/conversations/by-collection/:collectionId', async ({ params, request }) => {
+    await waitForSidebarHistoryPage(String(params['collectionId']))
     const query = new URL(request.url).searchParams
     const rows = mine().filter(
       (item) => item.collectionId === params['collectionId'] && inState(item, query.get('state')),

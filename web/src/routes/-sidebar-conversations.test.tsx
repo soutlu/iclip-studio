@@ -1,7 +1,7 @@
 import { act, cleanup, render as renderDom, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   addMockCollection,
   addMockConversation,
@@ -18,6 +18,9 @@ import { SidebarConversations } from './-sidebar-conversations'
 import { mockConversations } from '@/testing/mocks/conversations'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
+import { stubSidebarViewport } from '@/testing/sidebar-viewport'
+
+beforeEach(stubSidebarViewport)
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -133,7 +136,8 @@ const renderWithAllPagesLoaded = async () => {
   const rows = seedConversations(50)
   stubIntersectionObserver({ inRange: true })
   const rendered = await render()
-  await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50))
+  await screen.findByText('第0段')
+  expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50)
   return { ...rendered, rows }
 }
 
