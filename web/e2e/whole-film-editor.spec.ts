@@ -11,6 +11,7 @@ import type {
   WholeFilmIn,
 } from '../src/shared/api/generated/types.gen'
 import { openConversation, screenshotBothThemes } from './helpers'
+import { login } from './login'
 
 const SHOT_DIR = '../.artifacts/design-qa/whole-film-editor/impl-1'
 /** mock 受理识别后 3 秒出结果。 */
@@ -130,9 +131,7 @@ const addMaterial = async (page: Page, dialog: Locator, name: string) => {
   await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click()
 }
 
-test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕跟着段走，改字、重新识别', async ({
-  page,
-}) => {
+test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕跟着段走', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
   await expect(timelineOf(dialog).getByText('从下方素材轨选择镜头加入成片')).toBeVisible()
@@ -205,6 +204,42 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
     .click()
   await expect(page.getByRole('menuitemradio', { name: /原版/ })).toBeVisible()
   await page.keyboard.press('Escape')
+})
+
+test('整片字幕：已剪草稿改字、重新识别，刷新恢复片段与字幕', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  // 从已经剪好的三段开始，本用例专门验证字幕编辑和真实页面刷新后的恢复。
+  await page.evaluate(() => {
+    const conversationId = window.location.pathname.split('/').at(-1) ?? ''
+    const original = '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d'
+    const wide = '4a1e2f60-9a1e-4c2f-9c8b-1d2e3f4a5b6c'
+    window.localStorage.setItem(
+      `whole-film-draft:${conversationId}`,
+      JSON.stringify({
+        version: 2,
+        segments: [
+          { id: 'subtitle-a', sourceJobId: original, start: 1, end: 3 },
+          { id: 'subtitle-b', sourceJobId: wide, start: 0, end: 2 },
+          { id: 'subtitle-c', sourceJobId: original, start: 4, end: 5.6 },
+        ],
+        texts: {},
+        manual: [],
+        music: null,
+        lanes: [
+          { takeId: original, jobId: original },
+          { takeId: wide, jobId: wide },
+        ],
+      }),
+    )
+  })
+  const dialog = await openWholeFilmPanel(page, panel)
+  await expect(segments(dialog)).toHaveCount(3)
+  const subtitles = timelineOf(dialog).getByRole('button', { name: /^第 \d+ 条字幕/ })
+  const retry = timelineOf(dialog).getByRole('button', {
+    name: '镜头组 3 · 生成 A · 原版 字幕识别失败，重试',
+  })
+  await expect(retry).toBeVisible()
 
   // 改字：只能改字，存在草稿里。
   await subtitles.first().click()
@@ -223,7 +258,12 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
 
   // 草稿只存在浏览器：刷新后（mock 的登录随页面清掉，重新登录）重开，还是这份。
   await page.reload()
-  const reopened = await openWholeFilm(page)
+  await login(page)
+  await page.getByRole('link', { name: '夜景延时素材生成', exact: true }).click()
+  const reopened = await openWholeFilmPanel(
+    page,
+    page.getByRole('complementary', { name: '工作台' }),
+  )
   await expect(segments(reopened)).toHaveCount(3)
   await expect(
     timelineOf(reopened).getByRole('button', { name: '第 1 条字幕：今天第一次背这只包' }),
