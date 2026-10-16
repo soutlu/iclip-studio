@@ -2,7 +2,7 @@ import type { GenerationJob } from '../storyboard.api'
 import { roundToMs, type Clip } from './draft'
 import { isEditSegment } from './edit-chain'
 
-/** 基底上的一个精确编辑区间。V1 是基底原区间，edits 按提交先后对应 V2、V3…… */
+/** 基底上的一个精确编辑区间。基底原区间标「原片」，edits 按提交先后对应 V1、V2…… */
 export type ClipVersionGroup = {
   readonly key: string
   readonly baseJobId: string

@@ -39,11 +39,11 @@ const composite = (id: string, base: string, spec: Partial<GenerationJob> = {}):
 const root = job({ id: 'root', outputUrl: 'https://oss.example/root.mp4', shotIndex: 2 })
 
 describe('projectVersions', () => {
-  it('原作是 V1；完成的合成不论片段什么形状，都按完成时刻接着编号，记着基于哪一版', () => {
+  it('原作单独标原片；完成的合成从 V1 起按完成时刻编号，记着基于哪一版', () => {
     const versions = projectVersions(root, [
       composite('late', 'root', { createdAt: at('10:01:00'), finishedAt: at('10:09:00') }),
       composite('early', 'root', { createdAt: at('10:02:00'), finishedAt: at('10:03:00') }),
-      // 来源可以分叉：基于 V2 再合成一版。
+      // 来源可以分叉：基于 V1 再合成一版。
       composite('branch', 'early', { createdAt: at('10:04:00'), finishedAt: at('10:05:00') }),
       edit('e1', 'root', [1, 2], { outputUrl: 'https://oss.example/e1.mp4' }),
     ])
@@ -51,23 +51,23 @@ describe('projectVersions', () => {
     expect(versions).toEqual([
       {
         jobId: 'root',
-        label: 'V1',
+        label: '原片',
         mediaUrl: 'https://oss.example/root.mp4',
         sourceJobId: undefined,
       },
       {
         jobId: 'early',
-        label: 'V2',
+        label: 'V1',
         mediaUrl: 'https://oss.example/early.mp4',
         sourceJobId: 'root',
       },
       {
         jobId: 'branch',
-        label: 'V3',
+        label: 'V2',
         mediaUrl: 'https://oss.example/branch.mp4',
         sourceJobId: 'early',
       },
-      { jobId: 'late', label: 'V4', mediaUrl: 'https://oss.example/late.mp4', sourceJobId: 'root' },
+      { jobId: 'late', label: 'V3', mediaUrl: 'https://oss.example/late.mp4', sourceJobId: 'root' },
     ])
   })
 

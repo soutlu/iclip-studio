@@ -13,7 +13,7 @@ export type VersionStripEntry = {
   name: string
   poster: string | undefined
   /** 合成中挂细圆环加走表，从 `since` 算起。 */
-  running: { since: string } | undefined
+  running: { since: string; label?: string } | undefined
   /** 合成失败：挂警示图标与「失败」。 */
   failed?: boolean | undefined
   disabled?: boolean | undefined
@@ -51,7 +51,9 @@ const stateOf = (entry: VersionStripEntry) => {
         失败
       </>
     )
-  return entry.running === undefined ? undefined : <RunningElapsed since={entry.running.since} />
+  return entry.running === undefined ? undefined : (
+    <RunningElapsed since={entry.running.since} label={entry.running.label} />
+  )
 }
 
 export function EditorVersionStrip({
