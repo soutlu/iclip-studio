@@ -24,6 +24,7 @@ import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
 import { isRunningStatus } from '../shots'
 import { useVideoModels, type GenerationJob } from '../storyboard.api'
 import { AiEditCard } from './ai-edit-card'
+import { clipDurationError, type ClipGenerationMode } from './clip-generation'
 import { ShotPrompts } from './shot-prompts'
 import {
   canRemove,
@@ -33,7 +34,6 @@ import {
   draftDuration,
   keyframeSegments,
   layoutDraft,
-  MIN_RANGE_SECONDS,
   moveItems,
   removeItems,
   splitAt,
@@ -70,11 +70,10 @@ import { useMediaDurations } from './use-media-durations'
 import { useStableValue } from './use-stable-value'
 import { useSubmissionGuard } from './use-submission-guard'
 import {
-  editableModels,
-  pickEditModel,
+  pickGenerationModel,
   seedVideoEditJob,
   submitVideoComposite,
-  submitVideoEdit,
+  submitClipGeneration,
   useVideoEditChain,
 } from './video-editor.api'
 
@@ -150,7 +149,13 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const queryClient = useQueryClient()
   const chainQuery = useVideoEditChain(conversationId, root.id)
   const modelsQuery = useVideoModels()
-  const models = useMemo(() => editableModels(modelsQuery.data?.items ?? []), [modelsQuery.data])
+  const [mode, setMode] = useState<ClipGenerationMode>('edit')
+  const [wantedSeconds, setWantedSeconds] = useState<number>()
+  const models = useMemo(
+    () =>
+      (modelsQuery.data?.clipModels ?? []).filter((item) => mode === 'image' || item.edit !== null),
+    [modelsQuery.data, mode],
+  )
   const chainJobs = chainQuery.data?.items
   const jobs = useMemo(() => chainJobs ?? [], [chainJobs])
   const versions = useMemo(() => projectVersions(root, jobs), [root, jobs])
@@ -193,7 +198,13 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const { downloading, download } = useMediaDownload()
   const busy = submission !== undefined
   useSubmissionGuard(busy)
-  const model = pickEditModel(models, wantedModel, modelsQuery.data?.default)
+  const modelId = pickGenerationModel(
+    models.map((item) => item.id),
+    wantedModel,
+    modelsQuery.data?.default,
+  )
+  const model = models.find((item) => item.id === modelId)
+  const imageSeconds = wantedSeconds ?? model?.image.defaultSeconds ?? 0
 
   // 整片浏览与编辑基底分别记。查看历史不会替换已选片段，合成完成也不清空选择。
   const version: ChainVersion = versions.find((item) => item.jobId === picked?.baseJobId) ??
@@ -290,9 +301,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
         ? '该区间正在生成新版本，请等待生成完成'
         : candidateGroup === undefined
           ? '请选择原片时间连续的片段，再生成新版本'
-          : selectedDuration < MIN_RANGE_SECONDS
-            ? `时长不足 ${MIN_RANGE_SECONDS} 秒，无法生成视频；请按住 Shift 选择相邻片段`
-            : undefined
+          : model === undefined
+            ? '暂无可用的视频模型'
+            : clipDurationError(model, mode, mode === 'image' ? imageSeconds : selectedDuration)
 
   // ---------- 预览 ----------
 
@@ -455,10 +466,14 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       return
     }
     if (model === undefined) {
-      setGenerateError('暂无可用的编辑模型')
+      setGenerateError('暂无可用的视频模型')
       return
     }
     const { text, referenceImageUrls } = compileReferencePrompt(draftPartsOf(input.parts))
+    if (mode === 'image' && referenceImageUrls.length === 0) {
+      setGenerateError('请在描述中引用至少一张图片')
+      return
+    }
     // 制作参考、上传和等待受理都属于提交中；只有服务端任务才显示生成中。
     setSubmission({
       kind: 'edit',
@@ -469,11 +484,11 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     setGenerateError(null)
     setNotice(null)
     try {
-      const job = await submitVideoEdit({
+      const job = await submitClipGeneration({
         conversationId,
         taskId: root.taskId,
         sourceJobId: version.jobId,
-        referenceClips,
+        generation: mode === 'image' ? { mode, seconds: imageSeconds } : { mode, referenceClips },
         range: target.range,
         model,
         prompt: text.trim(),
@@ -487,7 +502,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       requestComposerRef.current?.clear()
       setDroppedUploads(0)
     } catch (error) {
-      setGenerateError(errorMessageOf(error, '视频编辑提交失败'))
+      setGenerateError(errorMessageOf(error, '片段生成提交失败'))
     } finally {
       setSubmission(undefined)
     }
@@ -825,17 +840,21 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     const item = draft.find((candidate) => candidate.id === id)
     return item?.kind === 'clip' ? [item] : []
   })
-  const frameOf = (clip: DraftClip | undefined, at: (clip: DraftClip) => number) => {
+  const frameOf = (
+    clip: DraftClip | undefined,
+    at: (clip: DraftClip) => number,
+    width = CARD_FRAME_WIDTH,
+  ) => {
     const url = clip === undefined ? undefined : urlOf(clip.sourceJobId)
     return clip === undefined || url === undefined
       ? undefined
-      : videoSnapshotUrl(url, CARD_FRAME_WIDTH, at(clip))
+      : videoSnapshotUrl(url, width, at(clip))
   }
   const cardDetail =
     blockReason ??
     (target === undefined
       ? undefined
-      : `${seconds(target.range.start)} – ${seconds(target.range.end)} 秒 · 视频和原声一起重做`)
+      : `${seconds(target.range.start)} – ${seconds(target.range.end)} 秒 · ${mode === 'image' ? '根据引用图片生成新版本' : '视频和原声一起重做'}`)
   const card =
     range === undefined || cardDetail === undefined ? null : (
       <AiEditCard
@@ -867,17 +886,45 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           ),
         }}
         generating={submission?.kind === 'edit'}
+        mode={mode}
+        onModeChange={(next) => {
+          if (busy) return
+          setMode(next)
+          setGenerateError(null)
+        }}
+        firstFrameReferenceUrl={frameOf(selectedClips[0], (clip) => clip.start, 1280)}
         modelPicker={
-          <GenerationPicker
-            className="video-editor-model-picker"
-            disabled={busy || models.length === 0}
-            label="编辑模型"
-            leading={<Icon decorative name="video" size="sm" />}
-            onChange={setWantedModel}
-            options={models.map((value) => ({ value }))}
-            text={model ?? '暂无可用的编辑模型'}
-            value={model ?? ''}
-          />
+          <>
+            {mode === 'image' && model !== undefined ? (
+              <GenerationPicker
+                disabled={busy}
+                label="生成时长"
+                onChange={(value) => setWantedSeconds(Number(value))}
+                options={Array.from(
+                  { length: model.image.maxSeconds - model.image.minSeconds + 1 },
+                  (_, i) => {
+                    const value = model.image.minSeconds + i
+                    return { value: String(value), label: `${value} 秒` }
+                  },
+                )}
+                text={`${imageSeconds} 秒`}
+                value={String(imageSeconds)}
+              />
+            ) : null}
+            <GenerationPicker
+              className="video-editor-model-picker"
+              disabled={busy || models.length === 0}
+              label={mode === 'edit' ? '编辑模型' : '图生模型'}
+              leading={<Icon decorative name="video" size="sm" />}
+              onChange={(value) => {
+                setWantedModel(value)
+                setGenerateError(null)
+              }}
+              options={models.map(({ id }) => ({ value: id }))}
+              text={model?.id ?? '暂无可用的视频模型'}
+              value={model?.id ?? ''}
+            />
+          </>
         }
         onCollapse={collapseCard}
         onDraftChange={(parts) => {

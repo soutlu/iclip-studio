@@ -1,9 +1,13 @@
-/** 视频编辑的两次提交与链查询。编辑段在浏览器里切好参考片段、走上传协议拿到地址，再交给服务端；
+/** 视频编辑页的片段生成、合成与链查询。编辑模式在浏览器里准备参考视频，图生直接提交引用图片；
  * 合成给基底与片段列表，地址由服务端按各段出处填。 */
 
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
-import type { VideoComposeIn, VideoEditIn } from '@/shared/api/generated/types.gen'
+import type {
+  VideoClipModelOut,
+  VideoComposeIn,
+  VideoEditIn,
+} from '@/shared/api/generated/types.gen'
 import { zGenerationEnvelope } from '@/shared/api/generated/zod.gen'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import {
@@ -14,6 +18,7 @@ import {
   type GenerationsPage,
 } from '../storyboard.api'
 import type { Clip } from './draft'
+import { clipDurationError } from './clip-generation'
 import type { SecondsRange } from './reference-clip'
 import type { PlaySegment } from './play-layout'
 
@@ -56,29 +61,8 @@ export const seedVideoEditJob = (
 }
 
 /** 编辑时请求里要多带的东西：正文前缀，或并进 `provider_options` 的键值。 */
-export type EditTrigger = {
-  promptPrefix?: string
-  providerOptions?: Record<string, string>
-}
-
-/** 哪个模型能做视频编辑、怎么触发。上游没有接口交代这件事，服务端也不管，按模型名认。
- * 按片段匹配：同一个模型在网关上可能带不同的供应商前缀。 */
-const EDIT_TRIGGERS: readonly { matches: RegExp; trigger: EditTrigger }[] = [
-  // Seedance 2.5 靠 provider_options 显式声明编辑子任务，不认正文里的意图词。
-  { matches: /seedance-2-5/, trigger: { providerOptions: { omni_reference_task_type: 'edit' } } },
-  // 万相 3.0 没有开关参数，靠正文开头的意图词路由到编辑。
-  { matches: /wan3/, trigger: { promptPrefix: '编辑视频，' } },
-]
-
-export const editTriggerOf = (model: string): EditTrigger | undefined =>
-  EDIT_TRIGGERS.find((entry) => entry.matches.test(model))?.trigger
-
-/** 允许表里前端认得怎么触发编辑的那几个；别的做不了编辑，下拉里不列。 */
-export const editableModels = (models: readonly string[]): string[] =>
-  models.filter((model) => editTriggerOf(model) !== undefined)
-
-/** 编辑器用哪个模型：选过的不在允许表里（配置改了）就退回默认；默认模型不支持编辑就取第一个支持的。 */
-export const pickEditModel = (
+export /** 编辑器用哪个模型：选过的不在允许表里（配置改了）就退回默认；默认模型不支持编辑就取第一个支持的。 */
+const pickGenerationModel = (
   models: readonly string[],
   wanted: string | undefined,
   fallback: string | undefined,
@@ -91,48 +75,50 @@ type Origin = {
   taskId: string | null
 }
 
-/** 在一版成片上改一段，依次三步：拼出当前选用的参考片段 → 上传 → 提交编辑段，
- * 区间始终填写被替换的基底时间，参考视频可有不同的时长。任一步失败就停下抛出，后面的不做。怎么触发编辑照模型名认：
- * 前缀拼进正文、选项并进 provider_options。
- *
- * `seconds: -1` 让结果跟着参考片段的时长走；不显式给，网关按默认 5 秒截断。不带 user_name：
- * 浏览器会话由服务端填登录用户名。 */
-export const submitVideoEdit = async (
+/** 图生直接提交正文图片；编辑先将当前选用素材拼接、上传。两者都绑定同一基底时间区间。 */
+export const submitClipGeneration = async (
   input: Origin & {
-    /** 基底那一版的记录 id。 */
     sourceJobId: string
-    /** 当前选用的真实画面与原声，按时间线顺序拼出模型参考。 */
-    referenceClips: readonly PlaySegment[]
-    /** 被替换的基底区间，秒。 */
     range: SecondsRange
-    model: string
+    model: VideoClipModelOut
     prompt: string
     referenceImageUrls: readonly string[]
+    generation:
+      { mode: 'image'; seconds: number } | { mode: 'edit'; referenceClips: readonly PlaySegment[] }
   },
 ): Promise<GenerationJob> => {
-  const edit = editTriggerOf(input.model)
-  if (edit === undefined) throw new Error(`模型 ${input.model} 不支持视频编辑`)
-  // 切片模块连同 mediabunny 只在提交时加载，不进首屏包。
-  const { concatenateReferenceClips } = await import('./reference-clip')
-  const file = await concatenateReferenceClips(input.referenceClips)
-  const { url: clipUrl } = await uploadMediaFile(file, 'video')
+  const { generation, model } = input
+  const seconds =
+    generation.mode === 'image'
+      ? generation.seconds
+      : generation.referenceClips.reduce((sum, clip) => sum + clip.end - clip.start, 0)
+  const durationError = clipDurationError(model, generation.mode, seconds)
+  if (durationError !== undefined) throw new Error(durationError)
+  let referenceVideoUrls: string[] = []
+  if (generation.mode === 'edit') {
+    const { concatenateReferenceClips } = await import('./reference-clip')
+    const file = await concatenateReferenceClips(generation.referenceClips)
+    const { url } = await uploadMediaFile(file, 'video')
+    referenceVideoUrls = [url]
+  } else {
+    if (input.referenceImageUrls.length === 0) throw new Error('请在描述中引用至少一张图片')
+  }
   const body: VideoEditIn = {
     conversation_id: input.conversationId,
     task_id: input.taskId,
     source_job_id: input.sourceJobId,
     range_start_ms: Math.round(input.range.start * 1000),
     range_end_ms: Math.round(input.range.end * 1000),
-    reference_video_urls: [clipUrl],
-    model: input.model,
-    prompt: `${edit.promptPrefix ?? ''}${input.prompt}`,
+    reference_video_urls: referenceVideoUrls,
+    model: model.id,
+    prompt: input.prompt,
     reference_image_urls: [...input.referenceImageUrls],
-    seconds: -1,
-    ...(edit.providerOptions === undefined ? {} : { provider_options: edit.providerOptions }),
+    seconds: generation.mode === 'image' ? generation.seconds : -1,
   }
   const result = await apiFetch('/generations/video-edits', zGenerationEnvelope, {
     method: 'POST',
     body,
-    fallbackErrorMessage: '视频编辑提交失败',
+    fallbackErrorMessage: '片段生成提交失败',
   })
   return result.generation
 }

@@ -13,6 +13,7 @@ import structlog
 
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.common.shot_prompt import format_seconds
+from iclip.domains.generation.clip_models import clip_model
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_PENDING,
@@ -46,6 +47,7 @@ from iclip.domains.generation.schemas import (
     VideoComposeRequest,
     VideoEditIn,
     VideoGenerationIn,
+    VideoModelsOut,
     WholeFilmBrand,
     WholeFilmBrandIn,
     WholeFilmFont,
@@ -192,43 +194,71 @@ class GenerationService:
         )
 
     async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
-        """受理一次编辑段：一次上游视频请求，参考片段由调用方切好、上传好。
+        """为基底区间受理图生或编辑片段，校验模型能力后保存同一种编辑段记录。
 
-        同步核对三件事，不合格不入队：基底是这段对话看得到的一条已完成成片，替换区间在它的时长
-        之内；参考片段是调用者本人的一条视频上传；参考片段可读且有正时长。参考可由当前选用的
-        多段素材拼成，时长不必等于基底替换区间。原作与镜号随基底，基底是出片就是它自己。区间
-        原样记，不改写；实际参考地址记进落库的请求，原样转发上游。"""
+        两种模式都核对基底可见性与替换区间。编辑模式另外核对参考是本人的上传，探测它的实际
+        时长后按模型校验；图生只核对显式时长与引用图片，不要求准备参考视频。"""
 
         self._require_video_model(request.model)
+        spec = clip_model(request.model)
+        if spec is None:
+            raise ValidationFailed(f"{request.model} 尚未接入片段生成")
         _require_user_name(request.user_name)
+        if request.reference_video_urls:
+            if spec.edit is None:
+                raise ValidationFailed(f"{request.model} 不支持片段编辑")
+            if request.seconds != -1:
+                raise ValidationFailed("片段编辑的 seconds 必须为 -1，跟随实际参考时长")
+        else:
+            if not request.reference_image_urls:
+                raise ValidationFailed("图生视频至少需要引用一张图片")
+            if not spec.image.min_seconds <= request.seconds <= spec.image.max_seconds:
+                raise ValidationFailed(
+                    f"{request.model} 图生时长必须为 "
+                    f"{spec.image.min_seconds}–{spec.image.max_seconds} 秒的整数"
+                )
+        options = _clip_provider_options(
+            request.model, request.provider_options, editing=bool(request.reference_video_urls)
+        )
         base = await self._check_source(principal, request.source_job_id, request.conversation_id)
         _require_base(base)
-        (clip_url,) = request.reference_video_urls
-        # 先认上传行再去探：探的是我们桶里、本人传上来的那一条，不替调用方去读任意地址。
-        clip = await self._repo.find_by_output(
-            clip_url,
-            kind=KIND_VIDEO,
-            owner=principal.user_id,
-            conversation_id=None,
-            operation=OPERATION_UPLOAD,
-        )
-        if clip is None:
-            raise ValidationFailed("reference_video_urls 必须是调用者本人上传的一段视频")
+        clip = None
+        if request.reference_video_urls:
+            (clip_url,) = request.reference_video_urls
+            # 先认上传行再去探：只探本桶里调用方本人传上来的视频。
+            clip = await self._repo.find_by_output(
+                clip_url,
+                kind=KIND_VIDEO,
+                owner=principal.user_id,
+                conversation_id=None,
+                operation=OPERATION_UPLOAD,
+            )
+            if clip is None:
+                raise ValidationFailed("reference_video_urls 必须是调用者本人上传的一段视频")
         base_ms = base.duration_ms
         if base_ms is None:
             base_ms = await self._probe(base.output_url, what="基底", job_id=base.id)
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
-        clip_ms = await self._probe(clip_url, what="参考片段", job_id=clip.id)
-        if clip_ms <= 0:
-            raise ValidationFailed("参考片段时长必须大于 0")
+        if clip is not None and spec.edit is not None:
+            clip_ms = await self._probe(clip.output_url, what="参考片段", job_id=clip.id)
+            if not spec.edit.min_seconds * 1000 <= clip_ms <= spec.edit.max_seconds * 1000:
+                raise ValidationFailed(
+                    f"{request.model} 编辑参考时长必须为 "
+                    f"{spec.edit.min_seconds}–{spec.edit.max_seconds} 秒"
+                )
+        prompt = request.prompt
+        if request.reference_video_urls and "wan3" in request.model.lower():
+            prefix = "编辑视频，"
+            if not prompt.startswith(prefix):
+                prompt = prefix + prompt
         forwarded = VideoGenerationIn(
             model=request.model,
-            prompt=request.prompt,
+            prompt=prompt,
             user_name=request.user_name,
             reference_image_urls=request.reference_image_urls,
             reference_video_urls=request.reference_video_urls,
             seconds=request.seconds,
-            provider_options=request.provider_options,
+            provider_options=options,
         )
         return await self._accept(
             principal,
@@ -793,10 +823,16 @@ class GenerationService:
         channel = request.channel or (spec.channels[0] if spec.channels else None)
         return request.model_copy(update={"model": model, "channel": channel}), model
 
-    def video_models(self) -> tuple[str, tuple[str, ...]]:
-        """默认视频模型与允许表，按配置声明顺序。"""
+    def video_models(self) -> VideoModelsOut:
+        """默认模型、允许表与片段能力，均按配置声明顺序。"""
 
-        return self._video_default_model, self._video_allowed_models
+        return VideoModelsOut(
+            default=self._video_default_model,
+            items=list(self._video_allowed_models),
+            clip_models=[
+                spec for model in self._video_allowed_models if (spec := clip_model(model))
+            ],
+        )
 
     def image_models(self) -> tuple[str, tuple[tuple[str, ImageModelSpec], ...]]:
         """默认模型与装配表里那几家的声明，按声明顺序。"""
@@ -1181,6 +1217,27 @@ def _settled_url(job: GenerationJob) -> str:
     if job.output_url is None:
         raise RuntimeError(f"记录 {job.id} 创建即完成却没有产物地址")
     return job.output_url
+
+
+def _clip_provider_options(
+    model: str, options: dict[str, Any] | None, *, editing: bool
+) -> dict[str, Any] | None:
+    """固定当前模式的上游任务语义，不能被透传参数改成首尾帧或续写。"""
+
+    name = model.lower()
+    if "seedance-2-5" in name:
+        key, expected = "omni_reference_task_type", "edit" if editing else "reference"
+    elif "wan3" in name:
+        if editing:
+            if options is not None and "image_mode" in options:
+                raise ValidationFailed("视频编辑不能传仅用于图生的 image_mode")
+            return options
+        key, expected = "image_mode", "reference"
+    else:
+        return options
+    if options is not None and key in options and options[key] != expected:
+        raise ValidationFailed(f"当前模式的 {key} 必须为 {expected}")
+    return {**(options or {}), key: expected}
 
 
 __all__ = [

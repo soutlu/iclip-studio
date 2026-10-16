@@ -362,8 +362,8 @@ class ImageGenerationIn(CamelModel):
 class VideoEditIn(SnakeModel):
     """一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
 
-    转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的
-    参考片段，时长不必等于基底替换区间。
+    转发给上游的字段照上游命名。有参考视频时编辑调用方按当前选用素材裁剪、拼接后上传的
+    片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。
     ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
     记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
     ``VideoGenerationIn``，来源、原作与区间落列。"""
@@ -373,14 +373,15 @@ class VideoEditIn(SnakeModel):
     range_start_ms: Annotated[int, Field(ge=0)]
     range_end_ms: int
     """产物将替换基底上的那一段，毫秒，原样记下；要在基底时长内，独立于实际参考片段时长。"""
-    reference_video_urls: Annotated[list[str], Field(min_length=1, max_length=1)]
-    """实际模型参考的地址：调用者本人上传的一条可读、有正时长的视频。"""
+    reference_video_urls: Annotated[list[str], Field(max_length=1)] = []
+    """编辑时是调用者本人上传的视频；图生时为空。受理时按模型核对实际参考时长。"""
     model: ModelName
     prompt: Prompt
     user_name: UserName | None = None
     """规则同出片的 ``user_name``。"""
     reference_image_urls: MediaUrls = []
-    seconds: Annotated[int, Field(ge=-1)] | None = None
+    seconds: Annotated[int, Field(ge=-1, strict=True)]
+    """编辑固定为 -1，跟随实际参考时长；图生必须是模型支持的整秒时长。"""
     provider_options: dict[str, Any] | None = None
 
     conversation_id: uuid.UUID | None = None
@@ -1090,11 +1091,35 @@ def video_task_out(job: GenerationJob) -> VideoTaskOut:
     )
 
 
+class ClipEditDurationOut(CamelModel):
+    """片段编辑接受的实际参考视频时长范围，单位秒。"""
+
+    min_seconds: int
+    max_seconds: int
+
+
+class ClipImageDurationOut(CamelModel):
+    """图生片段的输出时长范围，按整秒选择。"""
+
+    min_seconds: int
+    max_seconds: int
+    default_seconds: int
+
+
+class VideoClipModelOut(CamelModel):
+    """视频编辑页可以使用的模型；edit 为空表示只支持图生。"""
+
+    id: str
+    image: ClipImageDurationOut
+    edit: ClipEditDurationOut | None
+
+
 class VideoModelsOut(CamelModel):
-    """接入了哪几个视频模型。只有模型 id，下拉直接显示它。"""
+    """配置允许的视频模型，以及片段入口已接入的模型能力。"""
 
     default: str
     items: list[str]
+    clip_models: list[VideoClipModelOut]
 
 
 class ImageModelOut(CamelModel):
@@ -1159,6 +1184,8 @@ __all__ = [
     "STATUS_PENDING",
     "STATUS_SUBMITTED",
     "STATUS_SUBMITTING",
+    "ClipEditDurationOut",
+    "ClipImageDurationOut",
     "ClipStage",
     "ComposeRequest",
     "ComposeSegment",
@@ -1180,6 +1207,7 @@ __all__ = [
     "SubtitleIn",
     "SubtitleRequest",
     "SubtitleSentence",
+    "VideoClipModelOut",
     "VideoComposeIn",
     "VideoComposeRequest",
     "VideoEditIn",

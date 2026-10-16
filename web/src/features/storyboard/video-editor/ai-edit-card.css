@@ -111,6 +111,19 @@
   top: 10px;
 }
 
+/* 桌面保持单行参数；窄屏按原型换行，控件与图片 chip 外观不变。 */
+@media (max-width: 599px) {
+  .video-editor-card-composer > .flex {
+    flex-wrap: wrap;
+  }
+
+  .video-editor-card-composer > .flex > .flex:last-child {
+    flex: 0 0 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
 /* 卡底的模型选择：与生成钮同高，只有模型名可收缩。 */
 .video-editor-card .video-editor-model-picker {
   min-width: 96px;

@@ -221,7 +221,7 @@ ArkReasoningEffort = Literal["minimal", "low", "medium", "high"]
 class VideoGenerationSection(ConfigSection):
     """新视频生成允许选择的模型与默认模型。归属标签 user_name 随每次请求来，不在配置里。
 
-    只是允许表。哪个模型能做视频编辑、怎么触发，是调用方（前端）按模型名自己认的，不在这里声明。"""
+    这里只声明允许表；生成域从允许表派生片段图生、编辑的能力，模型列表与受理共用。"""
 
     model: str
     allowed_models: tuple[

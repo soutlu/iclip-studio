@@ -126,13 +126,13 @@ def _edit_in(source_job_id: uuid.UUID, clip_url: str, *, start_ms: int, end_ms: 
 async def _run_edit(
     repo: InMemoryGenerationRepository, *, clip_seconds: int, start_ms: int, end_ms: int
 ) -> tuple[GenerationJob, list[dict[str, Any]], str]:
-    """4 秒的出片作基底（没量过时长，受理时去探），本人上传一条 ``clip_seconds`` 秒的片段，
+    """6 秒的出片作基底（没量过时长，受理时去探），本人上传一条 ``clip_seconds`` 秒的片段，
     受理一次编辑段并跑提交；返回落库的编辑段、上游收到的请求与片段地址。受理不通过就抛出。"""
 
     sent: list[dict[str, Any]] = []
     module = _edit_module(repo, sent)
     with TemporaryDirectory(prefix="edit-fixture-") as tmp:
-        base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
+        base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=6, audio=True)
         clip = synthesize_video(
             Path(tmp) / "clip.mp4", size="320x240", seconds=clip_seconds, audio=True
         )
@@ -157,7 +157,7 @@ async def _run_edit(
 
 async def test_an_edit_goes_upstream_as_is_with_its_clip_recorded() -> None:
     edit, sent, clip_url = await _run_edit(
-        InMemoryGenerationRepository(), clip_seconds=2, start_ms=1000, end_ms=3000
+        InMemoryGenerationRepository(), clip_seconds=4, start_ms=1000, end_ms=3000
     )
 
     assert edit.status == STATUS_SUBMITTED, edit.error_message
@@ -181,7 +181,7 @@ async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets
     sent: list[dict[str, Any]] = []
     with TemporaryDirectory(prefix="edit-fixture-") as tmp:
         base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
-        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=2, audio=True)
+        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=4, audio=True)
     async with serving({"iclip/agent/base.mp4": base, "iclip/agent/clip.mp4": clip}) as server:
         module = _edit_module(repo, sent, fetch_url=rewriting(public, server.base_url))
         take = make_job(
@@ -220,7 +220,7 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
     module = _edit_module(repo, sent)
     with TemporaryDirectory(prefix="edit-fixture-") as tmp:
         base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
-        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=2, audio=True)
+        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=4, audio=True)
     async with serving({"base.mp4": base, "clip.mp4": clip}) as server:
         take = await repo.create(make_job(video_request(), owner_user_id=me.user_id))
         await repo.mark_completed(
@@ -252,7 +252,7 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
     assert body["reference_video_urls"] == [mine.url]
 
 
-@pytest.mark.parametrize("clip_seconds", [1, 3], ids=["参考短于替换区间", "参考长于替换区间"])
+@pytest.mark.parametrize("clip_seconds", [4, 6], ids=["参考短于替换区间", "参考长于替换区间"])
 async def test_a_reference_with_a_different_duration_is_submitted_without_rewriting_the_range(
     clip_seconds: int,
 ) -> None:
@@ -260,7 +260,7 @@ async def test_a_reference_with_a_different_duration_is_submitted_without_rewrit
 
     repo = InMemoryGenerationRepository()
     edit, sent, clip_url = await _run_edit(
-        repo, clip_seconds=clip_seconds, start_ms=1000, end_ms=3000
+        repo, clip_seconds=clip_seconds, start_ms=1000, end_ms=6000
     )
 
     assert len(repo.jobs) == 3, "基底、上传与编辑段均已落库"
@@ -269,8 +269,45 @@ async def test_a_reference_with_a_different_duration_is_submitted_without_rewrit
     assert edit.source_job_id is not None
     assert edit.root_job_id == edit.source_job_id
     assert repo.jobs[edit.source_job_id].source_job_id is None, "替换基底仍是原始出片"
-    assert (edit.range_start_ms, edit.range_end_ms) == (1000, 3000), "替换区间不按参考时长改写"
+    assert (edit.range_start_ms, edit.range_end_ms) == (1000, 6000), "替换区间不按参考时长改写"
     (body,) = sent
     assert body["reference_video_urls"] == [clip_url]
     assert body["seconds"] == -1, "实际生成时长跟随参考"
     assert stored_request(edit).model_dump()["reference_video_urls"] == [clip_url]
+
+
+async def test_an_image_clip_goes_through_the_same_queue_with_reference_image_semantics() -> None:
+    repo = InMemoryGenerationRepository()
+    take = make_job(
+        video_request(),
+        status=STATUS_COMPLETED,
+        owner_user_id=PRINCIPAL.user_id,
+        output_url="https://cdn.test/base.mp4",
+        duration_ms=6000,
+        shot_index=2,
+    )
+    repo.jobs[take.id] = take
+    sent: list[dict[str, Any]] = []
+    module = _edit_module(repo, sent)
+    job = await module.service.submit_video_edit(
+        PRINCIPAL,
+        VideoEditIn(
+            source_job_id=take.id,
+            range_start_ms=1000,
+            range_end_ms=2000,
+            model=MODEL,
+            prompt="参考 @Image1，人物转身",
+            user_name="tester",
+            seconds=5,
+            reference_image_urls=["https://cdn.test/outfit.png"],
+        ),
+    )
+    await module.queue.run_submit(str(job.id))
+    edit = repo.jobs[job.id]
+    assert edit.status == STATUS_SUBMITTED, edit.error_message
+    assert (edit.source_job_id, edit.root_job_id, edit.shot_index) == (take.id, take.id, 2)
+    (body,) = sent
+    assert body["reference_video_urls"] == []
+    assert body["reference_image_urls"] == ["https://cdn.test/outfit.png"]
+    assert body["seconds"] == 5
+    assert body["provider_options"] == {"omni_reference_task_type": "reference"}

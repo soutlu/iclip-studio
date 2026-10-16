@@ -16,6 +16,7 @@ import type {
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
+import { VIDEO_MODELS } from '../video-models'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
 import { findMockBrandTemplate, mockBrandFontInfo } from './brand-templates'
 import { isMockVideoUpload } from './uploads'
@@ -841,13 +842,8 @@ export const workspaceHandlers = [
     }),
   ),
 
-  // 视频模型只有 id，允许表照服务端配置；哪个能编辑由前端按名字认。
-  http.get('*/api/generations/video-models', () =>
-    HttpResponse.json({
-      default: 'vendor-a-seedance-2-5',
-      items: ['vendor-a-seedance-2-0', 'vendor-a-seedance-2-5', 'wan3.0-video'],
-    }),
-  ),
+  // 模型输出时长与编辑输入边界由服务端合同声明。
+  http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)),
 
   http.get('*/api/generations', ({ request }) => {
     const params = new URL(request.url).searchParams
@@ -926,8 +922,8 @@ export const workspaceHandlers = [
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),
 
-  // 编辑段：基底要是这段对话里一条完成的成片，参考片段恰好一条、是登录人确认过的视频上传。
-  // 这里不探时长；编辑结果用现成的彩条代替，区间照请求记。
+  // 两种片段生成共用版本链；编辑校验一条本人视频上传，图生至少引用一张图片。
+  // 这里不探时长；生成结果用现成的彩条代替，区间照请求记。
   http.post('*/api/generations/video-edits', async ({ request }) => {
     const body = (await request.json()) as VideoEditIn
     const base = findJob(body.conversation_id, body.source_job_id)
@@ -937,12 +933,17 @@ export const workspaceHandlers = [
     if (!isFinishedTake(base)) {
       return HttpResponse.json({ detail: '基底必须是一条已完成的成片' }, { status: 422 })
     }
-    const clips = body.reference_video_urls
-    const clip = clips.length === 1 ? clips[0] : undefined
-    if (clip === undefined) {
-      return HttpResponse.json({ detail: 'reference_video_urls 必须恰好一条' }, { status: 422 })
+    const clips = body.reference_video_urls ?? []
+    if (
+      clips.length > 1 ||
+      (clips.length === 0 && (body.reference_image_urls?.length ?? 0) === 0)
+    ) {
+      return HttpResponse.json(
+        { detail: '请提供一条编辑视频，或至少一张图生参考图' },
+        { status: 422 },
+      )
     }
-    if (!isMockVideoUpload(clip)) {
+    if (clips[0] !== undefined && !isMockVideoUpload(clips[0])) {
       return HttpResponse.json(
         { detail: 'reference_video_urls 必须是调用者本人上传的一段视频' },
         { status: 422 },
@@ -955,7 +956,7 @@ export const workspaceHandlers = [
         model: body.model,
         prompt: body.prompt,
         reference_image_urls: body.reference_image_urls ?? [],
-        reference_video_urls: [clip],
+        reference_video_urls: clips,
         seconds: body.seconds ?? null,
         provider_options: body.provider_options ?? null,
       },

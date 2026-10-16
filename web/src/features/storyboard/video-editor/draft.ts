@@ -4,9 +4,6 @@
 import { z } from 'zod'
 import { amend, startHistory, type History } from '../edit-history'
 
-/** AI 改选区的最短时长，秒。 */
-export const MIN_RANGE_SECONDS = 1
-
 /** 裁剪后一段的最短时长，秒。裁剪只是剪掉画面，没有模型那样的时长下限；留几帧，免得裁成零长。 */
 const MIN_TRIM_SECONDS = 0.2
 
