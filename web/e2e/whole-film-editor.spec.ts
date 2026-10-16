@@ -2,7 +2,9 @@
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type {
+  GenerationEnvelope,
   GenerationsPageOut,
+  MusicIn,
   VideoGenerationIn,
   VideoSubmitOut,
   WholeFilmIn,
@@ -18,6 +20,11 @@ const INTERACTION_SHOT_DIR = '../.artifacts/design-qa/whole-film-preview-drag'
 /** 演示对话里：第 2 组一条竖版 6 秒成片（识别出三句口播），第 3 组一条横版成片（识别失败）。 */
 const openWholeFilm = async (page: Page, { mobile = false } = {}) => {
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
+  return openWholeFilmPanel(page, panel)
+}
+
+/** 已打开对话时直接进编辑器，保留 HTTP fixture 与登录会话。 */
+const openWholeFilmPanel = async (page: Page, panel: Locator) => {
   await panel.getByRole('button', { name: '整片', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
   await expect(dialog).toBeVisible()
@@ -346,11 +353,11 @@ test('整片音乐：没有工程文件时写一句生成，完成后自动对�
   await expect(uploaded).toBeVisible()
 })
 
-test('整片调音：按段调整原声，配乐与对齐可撤销，保存恢复与合成保持一致', async ({ page }) => {
+test('整片调音：按段调整原声，配乐与对齐可撤销，合成提交当前设置', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await openConversation(page, '夜景延时素材生成')
+  const panel = await openConversation(page, '夜景延时素材生成')
   await seedThreeSegments(page)
-  const dialog = await openWholeFilm(page)
+  const dialog = await openWholeFilmPanel(page, panel)
   const originalVolume = dialog.getByRole('slider', { name: '原声音量', exact: true })
   const musicVolume = dialog.getByRole('slider', { name: '配乐音量', exact: true })
   const autoAlign = dialog.getByRole('button', { name: '自动对齐', exact: true })
@@ -404,18 +411,24 @@ test('整片调音：按段调整原声，配乐与对齐可撤销，保存恢�
   await expect(originalVolume).toBeVisible()
   await expect(musicVolume).toBeVisible()
   await expect(autoAlign).toBeVisible()
-  await expect
-    .poll(async () => {
-      const card = await dialog.getByRole('region', { name: '选中的段' }).boundingBox()
-      return card === null ? Number.POSITIVE_INFINITY : card.x + card.width
-    })
-    .toBeLessThanOrEqual(390)
+  await expect(dialog.getByRole('region', { name: '选中的段' })).toBeInViewport({ ratio: 1 })
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     ),
   ).toBeLessThanOrEqual(0)
   await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-audio-controls/mobile')
+  await page.setViewportSize({ width: 844, height: 390 })
+  await expect(dialog.getByRole('region', { name: '选中的段' })).toBeInViewport({ ratio: 1 })
+  await expect(originalVolume).toBeInViewport({ ratio: 1 })
+  await expect(musicVolume).toBeInViewport({ ratio: 1 })
+  await expect(autoAlign).toBeInViewport({ ratio: 1 })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-audio-controls/landscape')
   await page.setViewportSize({ width: 1440, height: 900 })
 
   const accepted = page.waitForResponse(
@@ -430,31 +443,106 @@ test('整片调音：按段调整原声，配乐与对齐可撤销，保存恢�
   expect(submitted.segments.map((segment) => segment.volume)).toEqual([0, 1, 1])
   expect(submitted.music?.volume).toBe(2)
   expect(submitted.music?.gain.length).toBeGreaterThan(0)
-  await expect(dialog.getByRole('button', { name: '整片 V1', exact: true })).toBeVisible({
-    timeout: STEP_TIMEOUT,
-  })
+})
 
-  // 清除本地草稿，从成片版本恢复声音设置。
-  await dialog.getByRole('button', { name: '关闭视频编辑' }).click()
-  await page.evaluate(() => {
-    const conversationId = window.location.pathname.split('/').at(-1)
-    window.localStorage.removeItem(`whole-film-draft:${conversationId}`)
+/** 用现有 HTTP mock 准备一版已调音成片，不替换应用的读取或恢复逻辑。 */
+const createAudioVersion = async (page: Page): Promise<WholeFilmIn> => {
+  const waitForCompleted = async (id: string, kind: 'audio' | 'video') => {
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            async ({ id, kind }) => {
+              const conversationId = window.location.pathname.split('/').at(-1) ?? ''
+              const query = new URLSearchParams({ conversationId, kind })
+              const response = await fetch(`/api/generations?${query}`)
+              if (!response.ok) throw new Error('读取声音恢复验收记录失败')
+              const result = (await response.json()) as GenerationsPageOut
+              return result.items.some((job) => job.id === id && job.status === 'completed')
+            },
+            { id, kind },
+          ),
+        { timeout: STEP_TIMEOUT },
+      )
+      .toBe(true)
+  }
+  const audioId = await page.evaluate(async () => {
+    const body: MusicIn = {
+      conversationId: window.location.pathname.split('/').at(-1) ?? '',
+      prompt: '声音恢复验收配乐',
+    }
+    const response = await fetch('/api/generations/music', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!response.ok) throw new Error('准备声音恢复验收配乐失败')
+    return ((await response.json()) as GenerationEnvelope).generation.id
   })
-  await page
-    .getByRole('complementary', { name: '工作台' })
-    .getByRole('button', { name: '整片', exact: true })
-    .click()
+  await waitForCompleted(audioId, 'audio')
+  const { id, body } = await page.evaluate(async (audioJobId) => {
+    const body: WholeFilmIn = {
+      conversationId: window.location.pathname.split('/').at(-1) ?? '',
+      segments: [
+        {
+          sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
+          startMs: 0,
+          endMs: 6000,
+          volume: 0.65,
+        },
+      ],
+      subtitles: [],
+      music: {
+        audioJobId,
+        offsetMs: 1300,
+        volume: 0.4,
+        gain: [
+          { atMs: 0, gain: 0.2 },
+          { atMs: 3000, gain: 0.1 },
+          { atMs: 6000, gain: 0.2 },
+        ],
+      },
+    }
+    const response = await fetch('/api/generations/whole-films', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!response.ok) throw new Error('准备声音恢复验收成片失败')
+    return { id: ((await response.json()) as GenerationEnvelope).generation.id, body }
+  }, audioId)
+  await waitForCompleted(id, 'video')
+  return body
+}
+
+test('整片调音恢复：成片音量、音乐起点与曲线读回，刷新后草稿保持设置', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const saved = await createAudioVersion(page)
+  const dialog = await openWholeFilmPanel(page, panel)
   await expect(dialog.getByText('已按 V1 恢复剪辑')).toBeVisible()
   await segments(dialog).first().click()
-  await expect(originalVolume).toHaveValue('0')
-  await expect(musicVolume).toHaveValue('200')
+  await expect(dialog.getByRole('slider', { name: '原声音量', exact: true })).toHaveValue('65')
+  await expect(dialog.getByRole('slider', { name: '配乐音量', exact: true })).toHaveValue('40')
 
-  // 刷新再打开，浏览器草稿保留相同的音量。
+  // 再提交读取后的版本，验证恢复的是保存的曲线，而非按当前字幕重算。
+  const accepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/generations/whole-films') &&
+      response.request().method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  const response = await accepted
+  expect(response.status()).toBe(202)
+  const submitted = response.request().postDataJSON() as WholeFilmIn
+  expect(submitted.segments).toEqual(saved.segments)
+  expect(submitted.music).toEqual(saved.music)
+
   await page.reload()
   const reopened = await openWholeFilm(page)
   await segments(reopened).first().click()
-  await expect(reopened.getByRole('slider', { name: '原声音量', exact: true })).toHaveValue('0')
-  await expect(reopened.getByRole('slider', { name: '配乐音量', exact: true })).toHaveValue('200')
+  await expect(reopened.getByRole('slider', { name: '原声音量', exact: true })).toHaveValue('65')
+  await expect(reopened.getByRole('slider', { name: '配乐音量', exact: true })).toHaveValue('40')
 })
 
 test('整片音乐：工程文件里写了配乐，生成音乐引用那段原文', async ({ page }) => {
