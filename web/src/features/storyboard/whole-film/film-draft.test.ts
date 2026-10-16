@@ -16,6 +16,9 @@ import {
   removeSegment,
   serializeStoredFilm,
   setMusic,
+  setMusicVolume,
+  setSegmentVolume,
+  resetMusicStart,
   setFont,
   setSentenceText,
   splitAt,
@@ -185,6 +188,60 @@ describe('撤销重做', () => {
 })
 
 describe('音乐', () => {
+  const gain = [
+    { atMs: 0, gain: 0.25 },
+    { atMs: 6000, gain: 0.5 },
+  ]
+  const restored = () =>
+    setMusic(film(), {
+      kind: 'generate',
+      jobId: 'g1',
+      userStart: 2.25,
+      gain,
+    })
+
+  it('原声与音乐音量分别保留，存取与撤销重做后仍一致', () => {
+    const before = restored()
+    const adjusted = setMusicVolume(setSegmentVolume(before, 's1', 0), 1.5)
+    const history = commit(startHistory(before), adjusted)
+    expect(undo(history).present).toEqual(before)
+    expect(redo(undo(history)).present).toEqual(adjusted)
+    const reloaded = parseStoredFilm(serializeStoredFilm({ film: adjusted, lanes: [] }))
+    expect(reloaded?.film).toEqual(adjusted)
+    expect(adjusted.segments[0]?.volume).toBe(0)
+    expect(adjusted.music?.volume).toBe(1.5)
+    expect(adjusted.music?.gain).toEqual(gain)
+  })
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -0.1, 2.1])('拒绝非法音量 %s', (volume) => {
+    expect(() => setSegmentVolume(film(), 's1', volume)).toThrow(RangeError)
+    expect(() => setMusicVolume(restored(), volume)).toThrow(RangeError)
+  })
+
+  it('移动起点和恢复自动对齐保留混音快照，默认音量不产生新状态', () => {
+    const state = restored()
+    expect(setSegmentVolume(state, 's1', 1)).toBe(state)
+    expect(setMusicVolume(state, 1)).toBe(state)
+    const moved = moveMusic(state, 3.125) ?? state
+    expect(moved.music?.gain).toEqual(gain)
+    expect(resetMusicStart(moved).music).toMatchObject({ userStart: null, gain })
+  })
+
+  it('拆分、裁剪、换序保留段音量，并使旧正文曲线失效', () => {
+    const state = setSegmentVolume(restored(), 's1', 0.4)
+    const split = splitAt(state, 1, 'right')
+    expect(split?.segments.slice(0, 2).map((segment) => segment.volume)).toEqual([0.4, 0.4])
+    expect(split?.music?.gain).toBeUndefined()
+    const trimmed = trimSegment(state, 's1', 'start', 0.5)
+    expect(trimmed.segments[0]?.volume).toBe(0.4)
+    expect(trimmed.music?.gain).toBeUndefined()
+    const moved = moveSegment(state, 's1', 3)
+    expect(moved?.segments.at(-1)?.volume).toBe(0.4)
+    expect(moved?.music?.gain).toBeUndefined()
+    expect(removeSegment(state, 's2').music?.gain).toBeUndefined()
+    expect(insertSegment(state, pick('B', 0, 1), 0, 'new')?.music?.gain).toBeUndefined()
+  })
+
   it('至多一首：放上新的换掉原来那首，拿掉就没有', () => {
     const uploaded = setMusic(film(), {
       kind: 'upload',
@@ -283,10 +340,16 @@ describe('存放', () => {
   })
 
   it('来源读不到的段连同它的手动字幕与素材轨去掉，并说去掉了几段', () => {
+    const gain = [
+      { atMs: 0, gain: 0.2 },
+      { atMs: 6000, gain: 0.5 },
+    ]
     const state: FilmState = {
-      ...film(),
+      ...setMusic(film(), { kind: 'generate', jobId: 'music', userStart: 1.25, volume: 0.4, gain }),
       manual: [{ id: 'on-b', segmentId: 's2', at: 1.5, text: '' }],
     }
+    const allKnown = keepKnownSources({ film: state, lanes: [] }, new Set(['A', 'B']))
+    expect(allKnown.stored.film.music?.gain).toEqual(gain)
     const { stored, dropped } = keepKnownSources(
       {
         film: state,
@@ -301,6 +364,8 @@ describe('存放', () => {
     expect(dropped).toBe(1)
     expect(order(stored.film).map(([id]) => id)).toEqual(['s1', 's3'])
     expect(stored.film.manual).toEqual([])
+    expect(stored.film.music?.gain).toBeUndefined()
+    expect(stored.film.music).toMatchObject({ userStart: 1.25, volume: 0.4 })
     expect(stored.lanes).toEqual([{ groupId: 'g1', jobId: 'A' }])
   })
 })

@@ -1,6 +1,6 @@
 /** 音乐轨：成片区第三行。音乐铺在视频段上（整片 0 秒到总长），片段上画音量包络（口播处压低、结尾淡出）与拍点刻度
  * （小节第一拍略高）；成片轨上落在拍上的切点在切线顶端标小实心点。左右拖音乐换用整首的另一部分（整首在固定的窗口下滑动），
- * 吸附到候选起点；比视频段短时后面接斜纹空位。 */
+ * 可自由微调起点；比视频段短时后面接斜纹空位。 */
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,7 +11,7 @@ import {
   gainAt,
   MUSIC_BED_GAIN,
   placeMusic,
-  snapStart,
+  clampStart,
   stepStart,
   type GainPoint,
   type MusicPlacement,
@@ -69,8 +69,8 @@ const ENVELOPE_MIN = 48
 const ENVELOPE_MAX = 720
 /** 按下后挪过这么多像素才算拖动，不然是点。 */
 const DRAG_THRESHOLD = 4
-/** 按住 Shift 时方向键一次挪几拍：一小节。 */
-const BAR_STEPS = 4
+/** 按住 Shift 一次挪 1 秒，普通方向键微调 0.1 秒。 */
+const FAST_STEPS = 10
 
 const seconds = (value: number) => value.toFixed(1)
 
@@ -206,7 +206,7 @@ export function MusicTrack({
   }
 
   const { song, peaks, curve, name } = view
-  // 拖动中按吸附到的起点重新铺；不拖时就是编辑器给的铺法。
+  // 拖动中按指针的起点重新铺；不拖时就是编辑器给的铺法。
   const placement =
     drag?.moved === true ? placeMusic(song, total, cuts, drag.start) : view.placement
   const { start } = placement
@@ -233,7 +233,7 @@ export function MusicTrack({
     if (!drag.moved) onScrub()
     // 指针往右，整首跟着往右滑，窗口里换成更早的一截。
     const raw = drag.origin - secondsOf(event.clientX - drag.originX)
-    setDrag({ ...drag, moved, start: snapStart(song, total, raw) })
+    setDrag({ ...drag, moved, start: clampStart(song, total, raw) })
   }
   const release = (event: PointerEvent<HTMLButtonElement>) => {
     if (drag === null || drag.pointerId !== event.pointerId) return
@@ -260,7 +260,7 @@ export function MusicTrack({
     const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : undefined
     if (direction === undefined) return
     event.preventDefault()
-    onMove(stepStart(song, total, start, direction * (event.shiftKey ? BAR_STEPS : 1)))
+    onMove(stepStart(song, total, start, direction * (event.shiftKey ? FAST_STEPS : 1)))
   }
 
   const dragging = drag?.moved === true

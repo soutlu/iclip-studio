@@ -3,7 +3,7 @@
  * 自动对齐切点、口播处压低，预览时跟着画面放（见 use-film-music）。「合成成片」把草稿排成时间线交给服务端，
  * 合成出的每一版进版本条，点开预览、下载。
  *
- * 编辑只存在浏览器里（ADR-0003），按对话一份；浏览器里没有草稿而已经合成过时，按最新一版重建。界面上不调声音。 */
+ * 编辑只存在浏览器里（ADR-0003），按对话一份；浏览器里没有草稿而已经合成过时，按最新一版重建。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -33,6 +33,9 @@ import {
   wholeFilmDuration,
   setBrand,
   setFont,
+  setSegmentVolume,
+  setMusicVolume,
+  resetMusicStart,
   MAX_FILM_SEGMENTS,
   canSplitAt,
   EMPTY_FILM,
@@ -82,6 +85,7 @@ import { FilmTimeline, type FilmSelection, type LaneView, type MaterialPick } fr
 import { draftFromVersion, firstSourceOf, wholeFilmVersions } from './film-versions'
 import { useFilmDraft, type DraftSeed } from './use-film-draft'
 import { useFilmMusic } from './use-film-music'
+import { FilmSoundControls } from './film-sound-controls'
 import {
   seedSubtitleJob,
   seedWholeFilmJob,
@@ -272,6 +276,12 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   // 恢复的字幕有自己的快照，音乐压低仍依赖来源识别；识别中的口播不能被快照掩盖。
   const speechProjection = projectSubtitles(film, sourceOf, false)
   const subtitleStatuses = film.music === null ? statuses : speechProjection.statuses
+  const unduckedCount =
+    film.music !== null && film.music.gain === undefined
+      ? speechProjection.statuses.filter(
+          (item) => item.kind === 'failed' || item.kind === 'missing',
+        ).length
+      : 0
   const burned = burnedSubtitles(subtitles)
   const previewFont = usePreviewFont(
     film.font == null ? null : { id: film.font.fontId, url: film.font.url },
@@ -325,18 +335,21 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   // ---------- 预览 ----------
 
-  const draftPlay = layoutPlay([
+  const draftAudioSegments = [
     ...(film.intro == null
       ? []
       : [{ mediaUrl: film.intro.url, start: 0, end: film.intro.durationMs / 1000 }]),
     ...segments.flatMap((segment) => {
       const url = materialOf(segment.sourceJobId)?.url
-      return url === undefined ? [] : [{ mediaUrl: url, start: segment.start, end: segment.end }]
+      return url === undefined
+        ? []
+        : [{ mediaUrl: url, start: segment.start, end: segment.end, volume: segment.volume ?? 1 }]
     }),
     ...(film.outro == null
       ? []
       : [{ mediaUrl: film.outro.url, start: 0, end: film.outro.durationMs / 1000 }]),
-  ])
+  ]
+  const draftPlay = layoutPlay(draftAudioSegments)
   const viewedDuration =
     viewedDone === undefined
       ? undefined
@@ -439,7 +452,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     film,
     total,
     subtitles: speechProjection.subtitles,
-    previewSegments: draftPlay,
+    previewSegments: draftAudioSegments,
     bodyStartSeconds: bodyStart,
     apply,
     onNotice: setNotice,
@@ -1121,6 +1134,11 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                     message={errorMessageOf(videos.error, '读取视频记录失败')}
                   />
                 ) : null}
+                {viewingDraft && !previewingMaterial && unduckedCount > 0 ? (
+                  <p className="video-editor-footnote" role="status">
+                    有 {unduckedCount} 段缺少口播识别，配乐未自动避让；请在字幕轨重新识别
+                  </p>
+                ) : null}
                 {footnote === undefined ? null : (
                   <p
                     className="video-editor-footnote"
@@ -1132,7 +1150,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
               </>
             }
             onPlay={() => {
-              setSelection(undefined)
+              setSelection((value) => (value?.kind === 'segment' ? value : undefined))
               if (viewingDraft && !previewingMaterial) music.prime()
             }}
             onPlaybackChange={setPlayback}
@@ -1143,16 +1161,52 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
             readout={readout}
             ref={previewRef}
             timeline={
-              <div className="whole-film-track-scroll" role="region" aria-label="轨道列表">
-                {viewingDraft ? (
-                  timeline
-                ) : (
-                  // 看着某一版时草稿在下面淡着、不能动，点「未合成」回来接着剪。
-                  <div className="whole-film-timeline-locked" inert>
-                    {timeline}
-                  </div>
-                )}
-              </div>
+              <>
+                <FilmSoundControls
+                  segmentLabel={
+                    selectedSegment === undefined ? undefined : `第 ${selectedIndex + 1} 段`
+                  }
+                  sourceVolume={selectedSegment?.volume ?? 1}
+                  musicVolume={film.music?.volume ?? 1}
+                  sourceDisabled={!editable || selectedSegment === undefined}
+                  musicDisabled={!editable || music.view.kind !== 'ready'}
+                  alignmentBlocked={
+                    !editable
+                      ? '请返回「未合成」调整配乐'
+                      : music.view.kind !== 'ready'
+                        ? '请先添加可用的配乐'
+                        : music.view.placement.shortBy > 0
+                          ? '配乐时长不足，请更换配乐'
+                          : music.view.song.grid === null
+                            ? '未检测到拍点，请拖动音乐调整起点'
+                            : undefined
+                  }
+                  onSourceVolume={(volume, edit) => {
+                    if (selectedSegment !== undefined)
+                      apply(
+                        (present) => setSegmentVolume(present, selectedSegment.id, volume),
+                        edit,
+                      )
+                  }}
+                  onMusicVolume={(volume, edit) =>
+                    apply((present) => setMusicVolume(present, volume), edit)
+                  }
+                  onAlign={() => {
+                    apply(resetMusicStart(film))
+                    setNotice('已按当前剪辑自动对齐配乐')
+                  }}
+                />
+                <div className="whole-film-track-scroll" role="region" aria-label="轨道列表">
+                  {viewingDraft ? (
+                    timeline
+                  ) : (
+                    // 看着某一版时草稿在下面淡着、不能动，点「未合成」回来接着剪。
+                    <div className="whole-film-timeline-locked" inert>
+                      {timeline}
+                    </div>
+                  )}
+                </div>
+              </>
             }
             tools={toolButtons}
             versions={

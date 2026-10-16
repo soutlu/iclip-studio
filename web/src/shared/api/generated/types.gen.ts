@@ -5305,6 +5305,10 @@ export type WholeFilmMusicIn = {
    * Offsetms
    */
   offsetMs: number
+  /**
+   * Volume
+   */
+  volume?: number
 }
 
 /**
@@ -5325,6 +5329,10 @@ export type WholeFilmSegmentIn = {
    * Startms
    */
   startMs: number
+  /**
+   * Volume
+   */
+  volume?: number
 }
 
 /**

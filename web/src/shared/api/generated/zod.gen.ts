@@ -2746,6 +2746,7 @@ export const zWholeFilmMusicIn = z.object({
   audioJobId: z.uuid(),
   gain: z.array(zMusicGainPoint).min(1).max(500),
   offsetMs: z.int().gte(0),
+  volume: z.number().gte(0).lte(2).optional().default(1),
 })
 
 /**
@@ -2757,6 +2758,7 @@ export const zWholeFilmSegmentIn = z.object({
   endMs: z.int(),
   sourceJobId: z.uuid(),
   startMs: z.int().gte(0),
+  volume: z.number().gte(0).lte(2).optional().default(1),
 })
 
 /**

@@ -297,6 +297,57 @@ async def test_the_film_lands_on_the_film_loudness(sources: dict[str, bytes]) ->
     assert abs(loudness - FILM_LOUDNESS_LUFS) <= 1.0, loudness
 
 
+@pytest.mark.parametrize("track", ["speech", "music"])
+async def test_user_volume_survives_master_normalization(
+    sources: dict[str, bytes], tmp_path: Path, track: str
+) -> None:
+    """单独一条有声轨也能调低、调高或静音，母线不能抵消用户音量。"""
+
+    levels: dict[float, float] = {}
+    for volume in (1.0, 0.5, 2.0, 0.0):
+        segments = [
+            {
+                "url": SPEECH_URL if track == "speech" else SILENT_URL,
+                "startMs": 0,
+                "endMs": 3000,
+                "volume": volume if track == "speech" else 1,
+            }
+        ]
+        music = (
+            None
+            if track == "speech"
+            else {
+                "url": MUSIC_URL,
+                "offsetMs": 2000,
+                "gain": [{"atMs": 0, "gain": 0.3}],
+                "volume": volume,
+            }
+        )
+        content = await _render(sources, segments, music=music)
+        film = _saved(content, tmp_path, f"{track}-{volume}.mp4")
+        levels[volume] = _mean_volume(film, start=0.2, length=0.6)
+    assert levels[0.5] - levels[1] == pytest.approx(-6.02, abs=0.3), levels
+    assert levels[2] - levels[1] == pytest.approx(6.02, abs=0.3), levels
+    assert levels[0] < SILENCE_DB, levels
+
+
+async def test_each_cut_keeps_its_own_volume_when_the_source_is_shared(
+    sources: dict[str, bytes], tmp_path: Path
+) -> None:
+    content = await _render(
+        sources,
+        [
+            {"url": SPEECH_URL, "startMs": 0, "endMs": 1000},
+            {"url": SPEECH_URL, "startMs": 1000, "endMs": 2000, "volume": 0},
+            {"url": SPEECH_URL, "startMs": 2000, "endMs": 3000, "volume": 0.5},
+        ],
+    )
+    film = _saved(content, tmp_path)
+    first = _mean_volume(film, start=0.2, length=0.6)
+    assert _mean_volume(film, start=1.2, length=0.6) < SILENCE_DB
+    assert _mean_volume(film, start=2.2, length=0.6) - first == pytest.approx(-6.02, abs=0.3)
+
+
 async def test_music_starts_at_its_offset_and_fades_out_at_the_end(
     sources: dict[str, bytes],
 ) -> None:

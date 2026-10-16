@@ -478,6 +478,8 @@ class WholeFilmSegmentIn(CamelModel):
     """这一段出自哪条成片：这段对话读得到的出片或有基底的合成，不能是整片、编辑段或上传。"""
     start_ms: Annotated[int, Field(ge=0)]
     end_ms: int
+    volume: Annotated[float, Field(ge=0, le=2)] = 1.0
+    """原声相对自动响度基准的线性音量；0 静音，1 保持基准。"""
 
     @model_validator(mode="after")
     def _end_after_start(self) -> WholeFilmSegmentIn:
@@ -520,6 +522,8 @@ class WholeFilmMusicIn(CamelModel):
     """一条已完成的音频记录：调用者自己上传的音乐，或这段对话读得到的生成音乐。"""
     offset_ms: Annotated[int, Field(ge=0)]
     """从音乐的第几毫秒开始用；从这里起要够整片那么长。"""
+    volume: Annotated[float, Field(ge=0, le=2)] = 1.0
+    """配乐相对自动响度与避让曲线基准的线性音量；0 静音，1 保持基准。"""
     gain: Annotated[list[MusicGainPoint], Field(min_length=1, max_length=MAX_MUSIC_GAIN_POINTS)]
     """按时刻严格递增；点与点之间线性插值，第一个点之前取第一个点的音量，最后一个点之后取最后一个。"""
 

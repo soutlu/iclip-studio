@@ -1,4 +1,4 @@
-/** 整片的背景音乐怎么铺：拍点、自动选起点（音乐对齐视频，切点不动）、拖动吸附、太短判断，以及口播处压低的
+/** 整片的背景音乐怎么铺：拍点、自动选起点（音乐对齐视频，切点不动）、手动起点、太短判断，以及口播处压低的
  * 音量曲线。纯函数，不持有状态；时间是秒，只有音量曲线用毫秒（原样发给后端的形状）。
  *
  * 音乐只铺正文的视频段；这里的时钟从正文第一段开头算，不含片头片尾。整首的「起点」对着正文 0 秒。 */
@@ -117,18 +117,35 @@ export const alignmentOf = (
 const fits = (song: Song, total: number, start: number): boolean =>
   start >= -EPSILON && start + total <= song.duration + EPSILON
 
-/** 能当起点的时刻：整首的每一拍（成片第一帧总在拍上），且从它起放得下整段视频。没有拍子或一拍都放不下时为空。 */
-export const candidateStarts = (song: Song, total: number): number[] =>
-  beatsOf(song)
-    .filter((beat) => fits(song, total, beat.at))
-    .map((beat) => beat.at)
+/** 让开头或任一内部切点落到拍上的音乐起点；允许非整数拍相位，且整段正文必须放得下。 */
+export const candidateStarts = (
+  song: Song,
+  total: number,
+  cuts: readonly number[] = [],
+): number[] =>
+  [...new Set(beatsOf(song).flatMap((beat) => [0, ...cuts].map((cut) => roundToMs(beat.at - cut))))]
+    .filter((start) => fits(song, total, start))
+    .toSorted((left, right) => left - right)
 
-/** 自动选的起点：候选里得分最高的，同分取最早的；没有候选（没检测到拍子、太短、第一拍之后放不下）时从 0 秒起。 */
+/** 先最大化内部切点命中数，再最小化命中误差；同样准确时偏好强拍和开头踩拍，最后取最早起点。 */
 export const chooseStart = (song: Song, total: number, cuts: readonly number[]): number => {
-  let best: { start: number; score: number } | undefined
-  for (const start of candidateStarts(song, total)) {
-    const { score } = alignmentOf(song, start, cuts)
-    if (best === undefined || score > best.score) best = { start, score }
+  let best: { start: number; count: number; error: number; score: number } | undefined
+  for (const start of candidateStarts(song, total, cuts)) {
+    const { onBeat, score } = alignmentOf(song, start, cuts)
+    const error = onBeat.reduce((sum, cut) => {
+      const beat = nearestBeat(song, start + cut)
+      return sum + (beat === undefined ? 0 : Math.abs(beat.at - (start + cut)))
+    }, 0)
+    const opening = alignmentOf(song, start, [0]).onBeat.length * 0.25
+    const next = { start, count: onBeat.length, error, score: score + opening }
+    if (
+      best === undefined ||
+      next.count > best.count ||
+      (next.count === best.count &&
+        (next.error < best.error - EPSILON ||
+          (Math.abs(next.error - best.error) <= EPSILON && next.score > best.score)))
+    )
+      best = next
   }
   return best?.start ?? 0
 }
@@ -171,26 +188,16 @@ export const placeMusic = (
   }
 }
 
-/** 拖动时吸附：落到离 `raw` 最近的候选起点；没有候选时夹在放得下的范围里（太短时只能从 0 秒起）。 */
-export const snapStart = (song: Song, total: number, raw: number): number => {
-  const candidates = candidateStarts(song, total)
-  if (candidates.length > 0)
-    return candidates.reduce((best, start) =>
-      Math.abs(start - raw) < Math.abs(best - raw) ? start : best,
-    )
-  return roundToMs(Math.min(Math.max(0, song.duration - total), Math.max(0, raw)))
+/** 手动起点只限制在放得下的范围内，不吸附拍点；保留毫秒精度。 */
+export const clampStart = (song: Song, total: number, raw: number): number => {
+  if (!Number.isFinite(raw)) throw new RangeError('音乐起点必须是有限数值')
+  const latest = Math.floor(Math.max(0, song.duration - total) * 1000 + EPSILON) / 1000
+  return Math.min(latest, Math.max(0, roundToMs(raw)))
 }
 
-/** 键盘上挪起点：往后（`steps` 为正）或往前挪几个候选；没有候选时按 0.1 秒一步，夹在放得下的范围里。 */
-export const stepStart = (song: Song, total: number, current: number, steps: number): number => {
-  const candidates = candidateStarts(song, total)
-  if (candidates.length === 0)
-    return roundToMs(
-      Math.min(Math.max(0, song.duration - total), Math.max(0, current + steps * 0.1)),
-    )
-  const at = candidates.indexOf(snapStart(song, total, current))
-  return candidates[Math.min(candidates.length - 1, Math.max(0, at + steps))] ?? current
-}
+/** 键盘微调：每步 0.1 秒；按住 Shift 的调用方传入 10 步。 */
+export const stepStart = (song: Song, total: number, current: number, steps: number): number =>
+  clampStart(song, total, current + steps * 0.1)
 
 // ---------- 音量 ----------
 

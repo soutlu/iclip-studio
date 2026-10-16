@@ -380,6 +380,85 @@
   flex: none;
 }
 
+/* 两个音量控制与对齐按钮在播放条下就地调整，不挤进浮卡或覆盖画面。 */
+.film-sound-controls {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 6px 4px;
+  border-top: 0.5px solid var(--color-hairline);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.film-sound-selection {
+  min-width: 136px;
+  color: var(--color-on-surface-muted);
+}
+
+.film-volume-control {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.film-volume-control label {
+  flex: none;
+  white-space: nowrap;
+}
+
+.film-volume-control:has(input:disabled) {
+  color: var(--color-disabled-text);
+}
+
+.film-volume-slider {
+  width: 128px;
+  min-width: 40px;
+  height: var(--control-height-sm);
+  margin: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.film-volume-slider:disabled {
+  cursor: default;
+}
+
+.film-volume-value {
+  width: 38px;
+  flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.film-sound-align {
+  width: max-content;
+  flex: none;
+  padding-inline: 12px;
+}
+
+@media (max-width: 599px) {
+  .film-sound-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+  }
+
+  .film-sound-selection,
+  .film-sound-controls > .film-volume-control:first-of-type {
+    grid-column: 1 / -1;
+  }
+
+  .film-volume-slider {
+    width: 0;
+    flex: 1;
+  }
+}
+
 .whole-film-track-scroll {
   height: clamp(224px, 34dvh, 320px);
   min-height: 0;

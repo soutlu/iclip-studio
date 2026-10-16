@@ -1,6 +1,7 @@
 # ADR-0003：整片在视频编辑器里交叉剪辑，声音、字幕与音乐由系统处理
 
 - 状态：已接受（2026-10-14）
+- 修订（2026-10-15，[ADR-0004](0004-whole-film-audio-controls.md)）：第 5 条及「界面上不能调声音」的取舍被取代。
 - 影响：[CONTEXT.md](../CONTEXT.md)「生成任务」「生成结果」「镜头组」「审计口径」「资料库」「埋点事件」词条；[contract/openapi.json](../../contract/openapi.json) 的生成端点。
 
 ## 背景

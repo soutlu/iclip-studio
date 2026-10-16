@@ -11,14 +11,23 @@ export type PreviewAudioState =
   { kind: 'ready' } | { kind: 'loading' } | { kind: 'failed'; message: string; retry: () => void }
 
 type Options = {
-  segments: readonly PlaySegment[]
+  segments: readonly PreviewAudioSegment[]
   music:
-    { url: string; buffer: AudioBuffer; start: number; curve: readonly GainPoint[] } | undefined
+    | {
+        url: string
+        buffer: AudioBuffer
+        start: number
+        curve: readonly GainPoint[]
+        volume: number
+      }
+    | undefined
   bodyStartSeconds: number
   bodyDuration: number
   playback: { playing: boolean; muted: boolean }
   clock: number
 }
+
+export type PreviewAudioSegment = PlaySegment & { volume?: number }
 
 /** Worker 使用 structured clone，避免转移并清空仍被查询缓存/音乐轨使用的来源 PCM。 */
 const renderMix = (
@@ -93,10 +102,20 @@ export function useFilmPreviewAudio({
     })),
   })
   const ready = sources.every((source) => source.isSuccess)
+  // 仅音量变化时继续播放上一份混音，Worker 完成后在当前播放头换入新声音。
+  // 素材、起点、剪辑或自动曲线变化时必须等新混音，不能沿用时间线不同的声音。
+  const contentKey = JSON.stringify({
+    segments: segments.map(({ mediaUrl, start, end }) => ({ mediaUrl, start, end })),
+    music: music === undefined ? null : { url: music.url, start: music.start, curve: music.curve },
+    bodyStartSeconds,
+    bodyDuration,
+    sources: sources.map((source) => source.dataUpdatedAt),
+  })
   const mix = useQuery({
     queryKey: [
       'whole-film',
       'preview-mix',
+      contentKey,
       segments,
       music === undefined
         ? null
@@ -104,6 +123,7 @@ export function useFilmPreviewAudio({
             url: music.url,
             start: music.start,
             curve: music.curve,
+            volume: music.volume,
           },
       bodyStartSeconds,
       bodyDuration,
@@ -115,6 +135,7 @@ export function useFilmPreviewAudio({
         segments.map((segment) => ({
           start: segment.start,
           end: segment.end,
+          volume: segment.volume ?? 1,
           source:
             queryClient.getQueryData<FilmPcm | null>([
               'whole-film',
@@ -128,6 +149,7 @@ export function useFilmPreviewAudio({
               source: pcmOf(music.buffer),
               start: music.start,
               curve: music.curve,
+              volume: music.volume,
               bodyStart: bodyStartSeconds,
               bodyDuration,
             },
@@ -137,6 +159,8 @@ export function useFilmPreviewAudio({
       return mixed ?? null
     },
     enabled: ready && segments.length > 0,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === contentKey ? previous : undefined,
     staleTime: Infinity,
     gcTime: 0,
     retry: false,

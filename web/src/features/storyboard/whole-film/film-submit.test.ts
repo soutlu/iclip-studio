@@ -5,6 +5,7 @@ import {
   sentenceKey,
   setSentenceText,
   setFont,
+  setSegmentVolume,
   type FilmState,
 } from './film-draft'
 import { MUSIC_BED_GAIN, MUSIC_DUCKED_GAIN, musicGainCurve, speechSpansOf } from './film-music'
@@ -66,8 +67,8 @@ describe('合成提交体', () => {
       conversationId: CONVERSATION,
       taskId: TASK,
       segments: [
-        { sourceJobId: 'B', startMs: 3000, endMs: 5500 },
-        { sourceJobId: 'A', startMs: 1000, endMs: 4000 },
+        { sourceJobId: 'B', startMs: 3000, endMs: 5500, volume: 1 },
+        { sourceJobId: 'A', startMs: 1000, endMs: 4000, volume: 1 },
       ],
       // 第一句从段头 1 秒起（整片 2.5 秒），被 3 秒处的手动字幕截住；手动字幕被第二句（A 的 2.5 秒，整片 4 秒）截住。
       subtitles: [
@@ -114,9 +115,23 @@ describe('合成提交体', () => {
     expect(body.music?.audioJobId).toBe('music-1')
     expect(body.music?.offsetMs).toBe(12_001)
     expect(body.music?.gain).toEqual(curve)
+    expect(body.music?.volume).toBe(1)
     // 整片时间上：口播 2.5–5.5 秒压低，到结尾仍是压低的音量，没有淡到 0。
     expect(body.music?.gain[0]).toEqual({ atMs: 0, gain: MUSIC_BED_GAIN })
     expect(body.music?.gain.at(-1)).toEqual({ atMs: 5500, gain: MUSIC_DUCKED_GAIN })
+  })
+
+  it('段音量与音乐音量分别提交，不乘进自动压低曲线', () => {
+    const curve = [{ atMs: 0, gain: MUSIC_DUCKED_GAIN }]
+    const body = wholeFilmBody({
+      conversationId: CONVERSATION,
+      taskId: TASK,
+      film: setSegmentVolume(cut, 's1', 0),
+      subtitles: [],
+      music: { audioJobId: 'music', start: 0.25, curve, volume: 2 },
+    })
+    expect(body.segments.map((segment) => segment.volume)).toEqual([0, 1])
+    expect(body.music).toMatchObject({ offsetMs: 250, volume: 2, gain: curve })
   })
 })
 

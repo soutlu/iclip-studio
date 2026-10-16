@@ -5,6 +5,7 @@ import type {
   GenerationsPageOut,
   VideoGenerationIn,
   VideoSubmitOut,
+  WholeFilmIn,
 } from '../src/shared/api/generated/types.gen'
 import { openConversation, screenshotBothThemes } from './helpers'
 
@@ -300,7 +301,7 @@ test('整片音乐：没有工程文件时写一句生成，完成后自动对�
   await page.keyboard.press('Escape')
   await expect(card).toBeHidden()
 
-  // 拖动：整首在窗口下滑动，吸附到拍上，气泡说用哪一段、几个切点落在拍上。
+  // 拖动：整首在窗口下滑动，自由移动，气泡说用哪一段、几个切点落在拍上。
   const before = await clip.getAttribute('aria-label')
   const box = await clip.boundingBox()
   if (box === null) throw new Error('音乐片段尚未布局')
@@ -343,6 +344,117 @@ test('整片音乐：没有工程文件时写一句生成，完成后自动对�
   await expect(uploaded).toBeHidden()
   await dialog.getByRole('button', { name: '撤销' }).click()
   await expect(uploaded).toBeVisible()
+})
+
+test('整片调音：按段调整原声，配乐与对齐可撤销，保存恢复与合成保持一致', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openConversation(page, '夜景延时素材生成')
+  await seedThreeSegments(page)
+  const dialog = await openWholeFilm(page)
+  const originalVolume = dialog.getByRole('slider', { name: '原声音量', exact: true })
+  const musicVolume = dialog.getByRole('slider', { name: '配乐音量', exact: true })
+  const autoAlign = dialog.getByRole('button', { name: '自动对齐', exact: true })
+  await expect(originalVolume).toBeDisabled()
+  await expect(musicVolume).toBeDisabled()
+  await expect(autoAlign).toBeDisabled()
+
+  await timelineOf(dialog).getByRole('button', { name: '添加音乐' }).click()
+  await page.getByRole('menuitem', { name: '生成音乐' }).click()
+  const generate = page.getByRole('dialog', { name: '生成音乐' })
+  await generate.getByRole('textbox', { name: '音乐描述' }).fill('轻快的电子乐，鼓点清楚')
+  await generate.getByRole('button', { name: '生成' }).click()
+  const clip = timelineOf(dialog).getByRole('button', {
+    name: /^音乐：生成的音乐，使用 [\d.]+–[\d.]+ 秒$/,
+  })
+  await expect(clip).toBeVisible({ timeout: STEP_TIMEOUT })
+  await expect(musicVolume).toHaveValue('100')
+
+  // 调整只影响当前段，键盘静音可以撤销和重做。
+  await segments(dialog).first().click()
+  await expect(originalVolume).toHaveValue('100')
+  await originalVolume.press('Home')
+  await expect(originalVolume).toHaveValue('0')
+  await dialog.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(originalVolume).toHaveValue('100')
+  await dialog.getByRole('button', { name: '重做', exact: true }).click()
+  await expect(originalVolume).toHaveValue('0')
+  await segments(dialog).nth(1).click()
+  await expect(originalVolume).toHaveValue('100')
+  await segments(dialog).first().click()
+  await expect(originalVolume).toHaveValue('0')
+
+  await musicVolume.press('End')
+  await expect(musicVolume).toHaveValue('200')
+  await dialog.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(musicVolume).toHaveValue('100')
+  await dialog.getByRole('button', { name: '重做', exact: true }).click()
+  await expect(musicVolume).toHaveValue('200')
+
+  // 自由微调起点后可以重新自动对齐，音量不变。
+  const aligned = await clip.getAttribute('aria-label')
+  await clip.press('ArrowRight')
+  await expect(clip).not.toHaveAttribute('aria-label', aligned ?? '')
+  await autoAlign.click()
+  await expect(clip).toHaveAttribute('aria-label', aligned ?? '')
+  await expect(musicVolume).toHaveValue('200')
+  await expect(originalVolume).toHaveValue('0')
+  await page.mouse.move(0, 0)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-audio-controls/desktop')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(originalVolume).toBeVisible()
+  await expect(musicVolume).toBeVisible()
+  await expect(autoAlign).toBeVisible()
+  await expect
+    .poll(async () => {
+      const card = await dialog.getByRole('region', { name: '选中的段' }).boundingBox()
+      return card === null ? Number.POSITIVE_INFINITY : card.x + card.width
+    })
+    .toBeLessThanOrEqual(390)
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/whole-film-audio-controls/mobile')
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  const accepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/generations/whole-films') &&
+      response.request().method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: '合成成片', exact: true }).click()
+  const response = await accepted
+  expect(response.status()).toBe(202)
+  const submitted = response.request().postDataJSON() as WholeFilmIn
+  expect(submitted.segments.map((segment) => segment.volume)).toEqual([0, 1, 1])
+  expect(submitted.music?.volume).toBe(2)
+  expect(submitted.music?.gain.length).toBeGreaterThan(0)
+  await expect(dialog.getByRole('button', { name: '整片 V1', exact: true })).toBeVisible({
+    timeout: STEP_TIMEOUT,
+  })
+
+  // 清除本地草稿，从成片版本恢复声音设置。
+  await dialog.getByRole('button', { name: '关闭视频编辑' }).click()
+  await page.evaluate(() => {
+    const conversationId = window.location.pathname.split('/').at(-1)
+    window.localStorage.removeItem(`whole-film-draft:${conversationId}`)
+  })
+  await page
+    .getByRole('complementary', { name: '工作台' })
+    .getByRole('button', { name: '整片', exact: true })
+    .click()
+  await expect(dialog.getByText('已按 V1 恢复剪辑')).toBeVisible()
+  await segments(dialog).first().click()
+  await expect(originalVolume).toHaveValue('0')
+  await expect(musicVolume).toHaveValue('200')
+
+  // 刷新再打开，浏览器草稿保留相同的音量。
+  await page.reload()
+  const reopened = await openWholeFilm(page)
+  await segments(reopened).first().click()
+  await expect(reopened.getByRole('slider', { name: '原声音量', exact: true })).toHaveValue('0')
+  await expect(reopened.getByRole('slider', { name: '配乐音量', exact: true })).toHaveValue('200')
 })
 
 test('整片音乐：工程文件里写了配乐，生成音乐引用那段原文', async ({ page }) => {
@@ -401,7 +513,7 @@ test('整片合成：剪辑后提交，完成版本可预览下载，关闭并�
     subtitles: { startMs: number; endMs: number; text: string }[]
   }
   expect(submitted.segments).toEqual([
-    { sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d', startMs: 0, endMs: 6000 },
+    { sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d', startMs: 0, endMs: 6000, volume: 1 },
   ])
   expect(submitted.subtitles.length).toBeGreaterThan(0)
   const { generation } = (await response.json()) as { generation: { id: string } }

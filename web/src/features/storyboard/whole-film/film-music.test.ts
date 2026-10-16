@@ -3,14 +3,15 @@ import { EMPTY_FILM, insertSegment, type FilmState } from './film-draft'
 import {
   beatGridOf,
   beatsOf,
+  alignmentOf,
   chooseStart,
+  clampStart,
   gainAt,
   internalCuts,
   musicGainCurve,
   MUSIC_BED_GAIN,
   MUSIC_DUCKED_GAIN,
   placeMusic,
-  snapStart,
   speechSpansOf,
   stepStart,
   withFadeOut,
@@ -68,15 +69,40 @@ describe('对齐', () => {
     expect(internalCuts(filmOf(3).segments)).toEqual([])
   })
 
-  it('候选起点是每一拍；切点落在小节第一拍 2 分、其他拍 1 分，同分取最早的', () => {
-    // 切点 1.0 落在拍上，起点 1.0、3.0、5.0…… 时落在小节第一拍（2 分）；切点 2.25 离拍 0.25 秒，从不算。
+  it('命中数与误差相同，偏好小节第一拍和开头踩拍，再取最早的', () => {
     expect(chooseStart(song(20), 4, [1, 2.25])).toBe(1)
   })
 
   it(`离最近的拍不超过 60 毫秒才算落在拍上`, () => {
-    const placed = (cut: number) => placeMusic(song(20), 4, [cut], null)
+    const placed = (cut: number) => alignmentOf(song(20), 0, [cut])
     expect(placed(1.05).onBeat).toEqual([1.05])
     expect(placed(1.07).onBeat).toEqual([])
+  })
+
+  it('选择非整数拍起点，把原先错开的内部切点真正移到拍上', () => {
+    const cuts = [1.25, 2.25]
+    expect(alignmentOf(song(20), 0, cuts).onBeat).toEqual([])
+    const start = chooseStart(song(20), 4, cuts)
+    expect(start % 0.5).toBe(0.25)
+    expect(alignmentOf(song(20), start, cuts).onBeat).toEqual(cuts)
+  })
+
+  it('内部切点命中数优先于第一帧踩拍', () => {
+    const cuts = [0.5, 1.25, 2.25]
+    const start = chooseStart(song(20), 4, cuts)
+    expect(alignmentOf(song(20), start, cuts).onBeat).toEqual([1.25, 2.25])
+  })
+
+  it('命中数相同时选择误差更小的相位', () => {
+    const cuts = [1.01, 1.5, 2]
+    const start = chooseStart(song(20), 4, cuts)
+    const errorAt = (offset: number) =>
+      cuts.reduce((sum, cut) => {
+        const time = offset + cut
+        return sum + Math.abs(time - Math.round(time / 0.5) * 0.5)
+      }, 0)
+    expect(errorAt(start)).toBeCloseTo(0.01)
+    expect(errorAt(start)).toBeLessThan(errorAt(0.49))
   })
 
   it('起点加视频段总长要放得下：最好的起点超出整首时只在放得下的里面选', () => {
@@ -104,18 +130,20 @@ describe('对齐', () => {
     expect(placeMusic(song(4), 4, [1], null).shortBy).toBe(0)
   })
 
-  it('拖动吸附到最近的候选起点；没有拍子时夹在放得下的范围里', () => {
-    expect(snapStart(song(20), 4, 2.2)).toBe(2)
-    expect(snapStart(song(20), 4, 2.3)).toBe(2.5)
-    expect(snapStart(song(20), 4, 30)).toBe(16)
-    expect(snapStart({ duration: 10, grid: null }, 4, 7.25)).toBe(6)
-    expect(snapStart({ duration: 3, grid: null }, 4, 1)).toBe(0)
+  it('手动起点保留非拍相位和毫秒精度，只限制在可用范围里', () => {
+    expect(clampStart(song(20), 4, 2.2)).toBe(2.2)
+    expect(clampStart(song(20), 4, 2.5014)).toBe(2.501)
+    expect(clampStart(song(20), 4, 30)).toBe(16)
+    expect(clampStart(song(20.0006), 4, 30)).toBe(16)
+    expect(clampStart(song(20), 4, -1)).toBe(0)
+    expect(clampStart({ duration: 10, grid: null }, 4, 7.25)).toBe(6)
+    expect(clampStart({ duration: 3, grid: null }, 4, 1)).toBe(0)
   })
 
-  it('键盘一次挪一个候选，按住 Shift 一小节，到头为止', () => {
-    expect(stepStart(song(20), 4, 2, 1)).toBe(2.5)
-    expect(stepStart(song(20), 4, 2, -4)).toBe(0)
-    expect(stepStart(song(20), 4, 15.5, 4)).toBe(16)
+  it('键盘每步微调 0.1 秒，十步为 1 秒，到头为止', () => {
+    expect(stepStart(song(20), 4, 2.25, 1)).toBe(2.35)
+    expect(stepStart(song(20), 4, 2, -10)).toBe(1)
+    expect(stepStart(song(20), 4, 15.5, 10)).toBe(16)
   })
 })
 
