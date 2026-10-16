@@ -136,7 +136,8 @@ const renderWithAllPagesLoaded = async () => {
   const rows = seedConversations(50)
   stubIntersectionObserver({ inRange: true })
   const rendered = await render()
-  await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50))
+  await screen.findByText('第0段')
+  expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50)
   return { ...rendered, rows }
 }
 
