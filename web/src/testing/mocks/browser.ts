@@ -15,6 +15,7 @@ import { backgroundShowcase, multipleBackgroundShowcase } from './background-sho
 import { toolShowcase } from './tool-showcase'
 import { markMockAwaitingApproval, markMockJustFinished, markMockShowcase } from './transcript'
 import { seedMockReplicaWorkspace, seedMockWorkspace } from './workspace'
+import { seedSidebarHistory } from './sidebar-history'
 
 // 演示数据仅在浏览器侧初始化，避免影响每例清空存储的单测。
 const DEMO_CONVERSATIONS = [
@@ -155,5 +156,9 @@ seedDemoTasks([
   wangRunning,
   wangDone,
 ])
+
+if (window.localStorage.getItem('cue.mock.sidebar-large-collection') === 'true') {
+  seedSidebarHistory()
+}
 
 export const worker = setupWorker(...handlers)
