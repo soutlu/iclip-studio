@@ -129,7 +129,7 @@ function Envelope({ path }: { path: string }) {
   )
 }
 
-/** 拖动音乐：按下时的指针与起点，此刻吸附到的起点。 */
+/** 拖动音乐：按下时的指针与起点，此刻拖到的起点。 */
 type Drag = { pointerId: number; originX: number; origin: number; start: number; moved: boolean }
 
 export function MusicTrack({
@@ -300,7 +300,7 @@ export function MusicTrack({
         </span>
       </button>
       <span className="sr-only" id="film-music-hint">
-        按左右方向键换用整首里前后一拍，按住 Shift 一次一小节；按 Delete 移除音乐
+        按左右方向键微调 0.1 秒，按住 Shift 每次调整 1 秒；按 Delete 移除音乐
       </span>
       {placement.shortBy > 0 ? (
         <span
