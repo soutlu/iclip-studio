@@ -885,6 +885,7 @@ async def test_a_whole_film_cannot_be_the_base_of_an_edit_or_a_composite() -> No
                 "range_end_ms": 1000,
                 "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
                 "model": "vendor-a-seedance-2-5",
+                "seconds": -1,
                 "prompt": "换个颜色",
                 "conversation_id": str(conversation),
             },

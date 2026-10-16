@@ -3,16 +3,19 @@ import type { VideoClipModelOut, VideoModelsOut } from '@/shared/api/generated/t
 export const VIDEO_CLIP_MODELS: VideoClipModelOut[] = [
   {
     id: 'vendor-a-seedance-2-0',
+    maxReferenceImages: 9,
     image: { minSeconds: 4, maxSeconds: 15, defaultSeconds: 5 },
     edit: null,
   },
   {
     id: 'vendor-a-seedance-2-5',
+    maxReferenceImages: 30,
     image: { minSeconds: 4, maxSeconds: 30, defaultSeconds: 5 },
     edit: { minSeconds: 4, maxSeconds: 30 },
   },
   {
     id: 'wan3.0-video',
+    maxReferenceImages: 10,
     image: { minSeconds: 2, maxSeconds: 30, defaultSeconds: 5 },
     edit: { minSeconds: 1, maxSeconds: 15 },
   },

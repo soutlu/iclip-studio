@@ -27,8 +27,8 @@ import {
   type ComposerPart,
   type ComposerSubmission,
 } from '@/shared/ui/composer'
+import { InlineAlert } from '@/shared/ui/inline-alert'
 import { imageSlotsOf } from '../edit-prompt'
-import { MAX_EDIT_REFERENCES } from '../generation-limits'
 import { editMentionItems, type EditMentionItem } from '../image-edit/edit-mention-items'
 import { EditMentionMenu } from '../image-edit/edit-mention-menu'
 import { placeCard } from './card-placement'
@@ -72,6 +72,7 @@ type CardComposerProps = {
   mode: 'image' | 'edit'
   onModeChange: (mode: 'image' | 'edit') => void
   firstFrameReferenceUrl: string | undefined
+  referenceLimit: number
 }
 
 const restoreInto = (composer: ComposerHandle, parts: readonly ComposerPart[]) =>
@@ -96,6 +97,7 @@ function CardComposer({
   mode,
   onModeChange,
   firstFrameReferenceUrl,
+  referenceLimit,
 }: CardComposerProps) {
   const { data: user } = useUser()
   const [initial] = useState(draft)
@@ -127,7 +129,9 @@ function CardComposer({
   }, [initial, focusOnMount, composerRef])
 
   const remaining = () =>
-    MAX_EDIT_REFERENCES - new Set(imageSlotsOf(partsRef.current).map((slot) => slot.key)).size
+    referenceLimit - new Set(imageSlotsOf(partsRef.current).map((slot) => slot.key)).size
+  const referenceCount = new Set(imageSlotsOf(parts).map((slot) => slot.key)).size
+  const exceedsReferenceLimit = referenceCount > referenceLimit
 
   const images = parts.flatMap((part) =>
     part.kind === 'media' && part.media.status === 'ready' && part.media.url !== undefined
@@ -150,7 +154,7 @@ function CardComposer({
   const blockedReason = (item: EditMentionItem) =>
     item.kind !== 'frame' || images.some((image) => image.url === item.url) || remaining() > 0
       ? undefined
-      : `最多引用 ${MAX_EDIT_REFERENCES} 张图片`
+      : `最多引用 ${referenceLimit} 张图片`
   const mention: ComposerMention<EditMentionItem> = {
     items: (query) => editMentionItems({ annotations: [], baseUrl: undefined, frames, query }),
     partsOf: (item) =>
@@ -168,60 +172,72 @@ function CardComposer({
   }
 
   return (
-    <Composer<never, EditMentionItem>
-      accept="image"
-      ariaLabel="修改要求"
-      attachmentLimit={{
-        notice: (dropped) => `参考图最多 ${MAX_EDIT_REFERENCES} 张，本次有 ${dropped} 张未添加`,
-        remaining,
-      }}
-      attachmentsEnabled={hasPermission(user, PERMISSION.uploadsWrite)}
-      className="video-editor-card-composer"
-      dropScope="card"
-      leading={
-        <ChipGroup
-          aria-label="生成方式"
-          className="storyboard-bar-segmented"
-          disabled={sending}
-          onValueChange={(next) => {
-            if (next === 'image' || next === 'edit') onModeChange(next)
-          }}
-          type="single"
-          value={mode}
-          variant="segmented"
-        >
-          <FilterChip className="storyboard-bar-segment" value="image" variant="segmented">
-            图生
-          </FilterChip>
-          <FilterChip className="storyboard-bar-segment" value="edit" variant="segmented">
-            编辑
-          </FilterChip>
-        </ChipGroup>
-      }
-      mention={mention}
-      onChange={(next) => {
-        partsRef.current = next
-        setParts(next)
-        const ready = next.filter((part) => part.kind !== 'media' || part.media.status === 'ready')
-        onDraftChange(ready)
-      }}
-      onSubmit={onSubmit}
-      placeholder={
-        mode === 'image'
-          ? '描述画面与动作，输入 @ 引用首帧，也可粘贴或拖入参考图'
-          : '描述该段的修改要求，输入 @ 引用图片，也可粘贴或拖入参考图'
-      }
-      ref={composerRef}
-      sending={sending}
-      submitAction={{
-        disabled: submitDisabled || (mode === 'image' && images.length === 0),
-        emphasis: 'primary',
-        icon: 'video',
-        label: '生成视频',
-        pendingLabel: '提交中…',
-      }}
-      trailing={modelPicker}
-    />
+    <>
+      <Composer<never, EditMentionItem>
+        accept="image"
+        ariaLabel="修改要求"
+        attachmentLimit={{
+          notice: (dropped) => `参考图最多 ${referenceLimit} 张，本次有 ${dropped} 张未添加`,
+          remaining,
+        }}
+        attachmentsEnabled={hasPermission(user, PERMISSION.uploadsWrite)}
+        className="video-editor-card-composer"
+        dropScope="card"
+        leading={
+          <ChipGroup
+            aria-label="生成方式"
+            className="storyboard-bar-segmented"
+            disabled={sending}
+            onValueChange={(next) => {
+              if (next === 'image' || next === 'edit') onModeChange(next)
+            }}
+            type="single"
+            value={mode}
+            variant="segmented"
+          >
+            <FilterChip className="storyboard-bar-segment" value="image" variant="segmented">
+              图生
+            </FilterChip>
+            <FilterChip className="storyboard-bar-segment" value="edit" variant="segmented">
+              编辑
+            </FilterChip>
+          </ChipGroup>
+        }
+        mention={mention}
+        onChange={(next) => {
+          partsRef.current = next
+          setParts(next)
+          const ready = next.filter(
+            (part) => part.kind !== 'media' || part.media.status === 'ready',
+          )
+          onDraftChange(ready)
+        }}
+        onSubmit={onSubmit}
+        placeholder={
+          mode === 'image'
+            ? '描述画面与动作，输入 @ 引用首帧，也可粘贴或拖入参考图'
+            : '描述该段的修改要求，输入 @ 引用图片，也可粘贴或拖入参考图'
+        }
+        ref={composerRef}
+        sending={sending}
+        submitAction={{
+          disabled:
+            submitDisabled || exceedsReferenceLimit || (mode === 'image' && images.length === 0),
+          emphasis: 'primary',
+          icon: 'video',
+          label: '生成视频',
+          pendingLabel: '提交中…',
+        }}
+        trailing={modelPicker}
+      />
+      {exceedsReferenceLimit ? (
+        <InlineAlert
+          message={`当前模型最多支持 ${referenceLimit} 张参考图，已引用 ${referenceCount} 张；请删除多出的图片后再生成`}
+        />
+      ) : mode === 'image' && referenceCount === 0 ? (
+        <InlineAlert message="请在描述中引用至少一张图片" />
+      ) : null}
+    </>
   )
 }
 
@@ -255,6 +271,8 @@ type AiEditCardProps = {
   onModeChange: (mode: 'image' | 'edit') => void
   /** 选区当前首帧的引用候选；只有插入正文后才随生成请求提交。 */
   firstFrameReferenceUrl: string | undefined
+  /** 当前模型与产品共同允许的正文参考图张数上限。 */
+  referenceLimit: number
   /** 卡里要让人看到的错误：提交失败、模型清单读不到。 */
   alerts: ReactNode
 }
@@ -278,6 +296,7 @@ export function AiEditCard({
   mode,
   onModeChange,
   firstFrameReferenceUrl,
+  referenceLimit,
   alerts,
 }: AiEditCardProps) {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -406,6 +425,7 @@ export function AiEditCard({
             firstFrameReferenceUrl={firstFrameReferenceUrl}
             modelPicker={modelPicker}
             mode={mode}
+            referenceLimit={referenceLimit}
             onModeChange={onModeChange}
             onInputFocused={() => setFocusInput(false)}
             onDraftChange={onDraftChange}

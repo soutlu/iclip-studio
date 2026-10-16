@@ -204,6 +204,10 @@ class GenerationService:
         if spec is None:
             raise ValidationFailed(f"{request.model} 尚未接入片段生成")
         _require_user_name(request.user_name)
+        if len(request.reference_image_urls) > spec.max_reference_images:
+            raise ValidationFailed(
+                f"{request.model} 最多支持 {spec.max_reference_images} 张参考图片"
+            )
         if request.reference_video_urls:
             if spec.edit is None:
                 raise ValidationFailed(f"{request.model} 不支持片段编辑")

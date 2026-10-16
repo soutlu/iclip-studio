@@ -22,6 +22,7 @@ import { GenerationPicker } from '../components/generation-picker'
 import { useUnseenResults } from '../components/use-unseen-results'
 import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
 import { isRunningStatus } from '../shots'
+import { MAX_EDIT_REFERENCES } from '../generation-limits'
 import { useVideoModels, type GenerationJob } from '../storyboard.api'
 import { AiEditCard } from './ai-edit-card'
 import { clipDurationError, type ClipGenerationMode } from './clip-generation'
@@ -886,6 +887,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           ),
         }}
         generating={submission?.kind === 'edit'}
+        referenceLimit={Math.min(
+          MAX_EDIT_REFERENCES,
+          model?.maxReferenceImages ?? MAX_EDIT_REFERENCES,
+        )}
         mode={mode}
         onModeChange={(next) => {
           if (busy) return

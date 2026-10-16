@@ -2321,6 +2321,7 @@ export const zVideoClipModelOut = z.object({
   edit: zClipEditDurationOut.nullable(),
   id: z.string(),
   image: zClipImageDurationOut,
+  maxReferenceImages: z.int(),
 })
 
 /**

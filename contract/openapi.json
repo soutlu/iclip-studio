@@ -9017,10 +9017,15 @@
           },
           "image": {
             "$ref": "#/components/schemas/ClipImageDurationOut"
+          },
+          "maxReferenceImages": {
+            "title": "Maxreferenceimages",
+            "type": "integer"
           }
         },
         "required": [
           "id",
+          "maxReferenceImages",
           "image",
           "edit"
         ],

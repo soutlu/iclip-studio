@@ -81,6 +81,7 @@ const provide = (document = fixture) => {
       HttpResponse.json({
         items: ['seedance_2.0'],
         default: 'seedance_2.0',
+        clipModels: [],
       }),
     ),
     http.post('*/api/generations/video', async ({ request }) => {

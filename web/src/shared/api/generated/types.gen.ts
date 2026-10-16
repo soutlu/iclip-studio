@@ -4850,6 +4850,10 @@ export type VideoClipModelOut = {
    */
   id: string
   image: ClipImageDurationOut
+  /**
+   * Maxreferenceimages
+   */
+  maxReferenceImages: number
 }
 
 /**

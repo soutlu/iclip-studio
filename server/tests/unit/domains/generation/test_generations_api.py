@@ -979,16 +979,19 @@ async def test_video_models_endpoint_lists_the_configured_models() -> None:
         "clipModels": [
             {
                 "id": "vendor-a-seedance-2-0",
+                "maxReferenceImages": 9,
                 "image": {"minSeconds": 4, "maxSeconds": 15, "defaultSeconds": 5},
                 "edit": None,
             },
             {
                 "id": "vendor-a-seedance-2-5",
+                "maxReferenceImages": 30,
                 "image": {"minSeconds": 4, "maxSeconds": 30, "defaultSeconds": 5},
                 "edit": {"minSeconds": 4, "maxSeconds": 30},
             },
             {
                 "id": "wan3.0-video",
+                "maxReferenceImages": 10,
                 "image": {"minSeconds": 2, "maxSeconds": 30, "defaultSeconds": 5},
                 "edit": {"minSeconds": 1, "maxSeconds": 15},
             },
@@ -2397,3 +2400,45 @@ async def test_wan_edit_trigger_is_saved_once_with_the_normalized_request(prompt
     payload = stored_request(only_new(repo, {take.id, clip.id})).model_dump()
     assert payload["prompt"] == "编辑视频，换成编织凉鞋"
     assert payload["provider_options"] is None
+
+
+@pytest.mark.parametrize(
+    ("model", "limit", "editing"),
+    [
+        ("vendor-a-seedance-2-0", 9, False),
+        ("vendor-a-seedance-2-5", 30, False),
+        ("vendor-a-seedance-2-5", 30, True),
+        ("wan3.0-video", 10, False),
+        ("wan3.0-video", 10, True),
+    ],
+)
+@pytest.mark.parametrize("over_limit", [False, True])
+async def test_clip_reference_images_follow_the_selected_model_limit(
+    model: str, limit: int, editing: bool, over_limit: bool
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    seed_clip(repo, owner=owner)
+    seeded = set(repo.jobs)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    urls = [f"https://cdn.test/reference-{index}.png" for index in range(limit + over_limit)]
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "model": model,
+                "reference_image_urls": urls,
+                "reference_video_urls": [CLIP_URL] if editing else [],
+                "seconds": -1 if editing else 5,
+            },
+        )
+    assert response.status_code == (422 if over_limit else 202), response.text
+    if over_limit:
+        assert set(repo.jobs) == seeded
+        assert app.state.probe.probed == [], "图片超限时受理前拒绝，不下载参考视频"
+    else:
+        payload = stored_request(only_new(repo, seeded)).model_dump()
+        assert payload["reference_image_urls"] == urls

@@ -9,16 +9,19 @@ from iclip.domains.generation.schemas import (
 _MODELS = (
     VideoClipModelOut(
         id="seedance-2-0",
+        max_reference_images=9,
         image=ClipImageDurationOut(min_seconds=4, max_seconds=15, default_seconds=5),
         edit=None,
     ),
     VideoClipModelOut(
         id="seedance-2-5",
+        max_reference_images=30,
         image=ClipImageDurationOut(min_seconds=4, max_seconds=30, default_seconds=5),
         edit=ClipEditDurationOut(min_seconds=4, max_seconds=30),
     ),
     VideoClipModelOut(
         id="wan3",
+        max_reference_images=10,
         image=ClipImageDurationOut(min_seconds=2, max_seconds=30, default_seconds=5),
         edit=ClipEditDurationOut(min_seconds=1, max_seconds=15),
     ),

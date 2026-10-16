@@ -26,6 +26,7 @@ type CardProps = {
   firstFrame?: string
   initialDraft?: readonly ComposerPart[]
   initialMode?: 'image' | 'edit'
+  referenceLimit?: number
   onGenerate: (submission: ComposerSubmission) => void
 }
 
@@ -34,6 +35,7 @@ function Card({
   firstFrame = FIRST_FRAME,
   initialDraft = [],
   initialMode = 'edit',
+  referenceLimit = MAX_EDIT_REFERENCES,
   onGenerate,
 }: CardProps) {
   const composerRef = useRef<ComposerHandle>(null)
@@ -64,6 +66,7 @@ function Card({
         onUploadsDropped={() => undefined}
         open={open}
         positions="第 1 段"
+        referenceLimit={referenceLimit}
       />
     </div>
   )
@@ -173,12 +176,43 @@ describe('视频编辑卡的生成方式与图片引用', () => {
     expect(reusable).not.toHaveAttribute('aria-disabled')
     await user.click(reusable)
     expect(within(editor()).getAllByText('参考图1')).toHaveLength(2)
+    expect(generate()).toBeEnabled()
 
     await user.keyboard('@')
     expect(screen.getAllByRole('option', { name: '参考图1' })).toHaveLength(1)
     expect(screen.getByRole('option', { name: /选区首帧/ })).toHaveAttribute(
       'aria-disabled',
       'true',
+    )
+  })
+
+  it('切到最多 9 图的模型保留已有 10 张图片并阻止生成，删除到 9 张后可提交', async () => {
+    const user = userEvent.setup()
+    const onGenerate = vi.fn<(submission: ComposerSubmission) => void>()
+    const initialDraft = Array.from({ length: 10 }, (_, index) =>
+      imagePart(`https://example.com/ref-${index}.jpg`, `参考图${index + 1}`),
+    )
+    const view = await renderWithProviders(
+      <Card initialDraft={initialDraft} initialMode="image" onGenerate={onGenerate} />,
+    )
+    expect(generate()).toBeEnabled()
+
+    view.rerender(<Card initialMode="image" onGenerate={onGenerate} referenceLimit={9} />)
+    expect(within(editor()).getAllByText(/^参考图\d+$/)).toHaveLength(10)
+    expect(screen.getByRole('alert')).toHaveTextContent('最多支持 9 张参考图，已引用 10 张')
+    expect(generate()).toBeDisabled()
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    expect(onGenerate).not.toHaveBeenCalled()
+
+    act(() => editor().focus())
+    fireEvent.keyDown(editor(), { key: 'Backspace', keyCode: 8 })
+    await waitFor(() => expect(within(editor()).getAllByText(/^参考图\d+$/)).toHaveLength(9))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(generate()).toBeEnabled()
+    await user.click(generate())
+    expect(onGenerate).toHaveBeenCalledTimes(1)
+    expect(onGenerate.mock.calls[0]?.[0].media.map((image) => image.url)).toEqual(
+      Array.from({ length: 9 }, (_, index) => `https://example.com/ref-${index}.jpg`),
     )
   })
 })

@@ -1110,6 +1110,7 @@ class VideoClipModelOut(CamelModel):
     """视频编辑页可以使用的模型；edit 为空表示只支持图生。"""
 
     id: str
+    max_reference_images: int
     image: ClipImageDurationOut
     edit: ClipEditDurationOut | None
 
