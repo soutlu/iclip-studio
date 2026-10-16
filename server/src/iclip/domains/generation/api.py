@@ -80,13 +80,13 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoEditIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """在一条成片上改一段：请求就是一次上游视频请求，``reference_video_urls`` 恰好一条，是调用方
-        按当前选用素材裁剪、拼接后上传的实际参考；``source_job_id`` 与 ``range_start_ms`` /
-        ``range_end_ms`` 只记账，记下产物将替换哪一版成片的哪一段，使用基底媒体时间。
+        """为成片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长
+        能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频，
+        实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。
 
-        受理时核对：基底是这段对话自己的或继承来的一条已完成成片，区间在它的时长之内；片段是
-        调用者本人的一条可读、有正时长的视频上传，不要求与替换区间等长。不合格 422、不入队。
-        ``user_name`` 的规则同出片。
+        source_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，
+        独立于生成时长。基底须为本对话自己的或继承来的已完成成片，区间须在其时长之内。
+        user_name 的规则同出片。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -252,12 +252,9 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
     async def list_video_models(
         principal: Annotated[Principal, require_permission("generation:read")],
     ) -> VideoModelsOut:
-        """接入了哪几个视频模型与默认那个，来自运行配置。
+        """返回允许的视频模型与默认模型；clipModels 另外声明片段图生、编辑的支持和时长范围。"""
 
-        哪个模型能做视频编辑、怎么触发，由调用方按模型名自己认；服务端不替它拼任何东西。"""
-
-        default, models = service.video_models()
-        return VideoModelsOut(default=default, items=list(models))
+        return service.video_models()
 
     @router.get("/image-models", response_model=ImageModelsOut)
     async def list_image_models(

@@ -8,7 +8,7 @@ const STEP_TIMEOUT = 15_000
 const SHOT_DIR = '../.artifacts/design-qa/video-editor-version-state'
 
 /** 第 2 组那条成片是竖版、6 秒、每秒一个关键帧、带一条原声；第 3 组是横版、无声。 */
-const openEditor = async (page: Page, mobile = false, group = 2) => {
+const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) => {
   // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
   await openStoryboardShot(panel, group)
@@ -22,6 +22,14 @@ const openEditor = async (page: Page, mobile = false, group = 2) => {
   const dialog = page.getByRole('dialog', { name: /^编辑视频/ })
   await expect(dialog).toBeVisible()
   await expect(page).toHaveURL(/[?&]video=/)
+  if (useWan) {
+    // 既有一秒剪辑旅程显式选 Wan，保留服务端默认 Seedance 2.5 的真实限制。
+    await expect(segments(dialog).first()).toBeVisible({ timeout: STEP_TIMEOUT })
+    await segment(dialog, 1).click()
+    await card(dialog).getByRole('button', { name: '编辑模型', exact: true }).click()
+    await page.getByRole('menuitemradio', { name: 'wan3.0-video', exact: true }).click()
+    await scope(dialog, '整片').click()
+  }
   return dialog
 }
 
@@ -42,7 +50,7 @@ const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开
 const requestBox = (dialog: Locator) =>
   card(dialog).getByRole('textbox', { name: '修改要求', exact: true })
 const generateButton = (dialog: Locator) =>
-  card(dialog).getByRole('button', { name: '生成视频', exact: true })
+  card(dialog).getByRole('button', { name: '生成', exact: true })
 
 /** 等分段读好：第 2 组 6 段，原声读到波形。 */
 const waitForSegments = async (dialog: Locator, count = 6) => {
@@ -74,7 +82,7 @@ const holdDrag = async (page: Page, dialog: Locator, from: Locator, clock: numbe
   return () => page.mouse.up()
 }
 
-/** 卡里写着要求，点「生成视频」：返回编辑请求体与受理的记录 id。 */
+/** 卡里写着要求，点「生成」：返回编辑请求体与受理的记录 id。 */
 const submitEdit = async (page: Page, dialog: Locator) => {
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-edits') && sent.method() === 'POST',
@@ -115,6 +123,143 @@ const holdReferenceUpload = async (page: Page) => {
   })
   return () => page.evaluate(() => window.dispatchEvent(new Event('release-reference-upload')))
 }
+
+test('图生和编辑按模型分别校验时长，仅上传图片也能生成同一选区的新版本', async ({ page }) => {
+  const dialog = await openEditor(page, false, 2, false)
+  await waitForSegments(dialog)
+  await segment(dialog, 2).click()
+  await requestBox(dialog).fill('人物缓慢转身')
+  await expect(card(dialog).getByText(/编辑至少需要 4 秒/)).toBeVisible()
+  await expect(generateButton(dialog)).toBeDisabled()
+  for (const position of [3, 4, 5]) await segment(dialog, position).click({ modifiers: ['Shift'] })
+  await expect(generateButton(dialog)).toBeEnabled()
+
+  await segment(dialog, 2).click()
+  await card(dialog).getByRole('radio', { name: '图生', exact: true }).click()
+  await expect(requestBox(dialog)).toHaveText('人物缓慢转身')
+  await expect(generateButton(dialog)).toBeDisabled()
+  await requestBox(dialog).press('ControlOrMeta+A')
+  await requestBox(dialog).press('Backspace')
+  await expect(requestBox(dialog)).toHaveText('')
+  const fileChooser = page.waitForEvent('filechooser')
+  await card(dialog).getByRole('button', { name: '添加附件', exact: true }).click()
+  await (
+    await fileChooser
+  ).setFiles({
+    name: '人物造型.png',
+    mimeType: 'image/png',
+    buffer: await canvasPng(page, { fill: '#556b88', label: 'Reference' }),
+  })
+  await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
+  await expect(generateButton(dialog)).toBeEnabled()
+
+  const duration = card(dialog).getByRole('slider', { name: '生成时长（秒）', exact: true })
+  await duration.press('End')
+  await card(dialog).getByRole('button', { name: '图生模型', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'vendor-a-seedance-2-0', exact: true }).click()
+  await expect(card(dialog).getByLabel('当前生成时长', { exact: true })).toHaveText(/^30\s*秒$/)
+  await expect(card(dialog).getByText(/图生时长须为 4–15 秒/)).toBeVisible()
+  await expect(generateButton(dialog)).toBeDisabled()
+  await duration.press('Home')
+  const thumb = await centerOf(duration)
+  await page.mouse.move(thumb.x, thumb.y)
+  await page.mouse.down()
+  await page.mouse.move(thumb.x + 50, thumb.y, { steps: 6 })
+  await page.mouse.up()
+  expect(Number(await duration.getAttribute('aria-valuenow'))).toBeGreaterThan(4)
+  await duration.press('End')
+  await expect(generateButton(dialog)).toBeEnabled()
+  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-card')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(card(dialog).getByRole('radio', { name: '图生', exact: true })).toBeVisible()
+  await expect(generateButton(dialog)).toBeVisible()
+  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-mobile')
+
+  const expectToolbarInsideCard = async (width: number, state: string) => {
+    await expect
+      .configure({ soft: true })
+      .poll(
+        () =>
+          card(dialog).evaluate((element) => {
+            const bounds = element.getBoundingClientRect()
+            return Array.from(
+              element.querySelectorAll('button, [role="slider"], [role="radio"], output'),
+            )
+              .map((control) => {
+                const box = control.getBoundingClientRect()
+                return {
+                  name: control.getAttribute('aria-label') ?? control.textContent,
+                  left: Math.max(0, bounds.left - box.left),
+                  right: Math.max(0, box.right - bounds.right),
+                  top: Math.max(0, bounds.top - box.top),
+                  bottom: Math.max(0, box.bottom - bounds.bottom),
+                }
+              })
+              .filter(({ left, right, top, bottom }) => left + right + top + bottom > 0)
+          }),
+        { message: `${width}px ${state}时所有工具栏控件应在卡片内`, timeout: 1500 },
+      )
+      .toEqual([])
+  }
+  for (const width of [600, 640]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expectToolbarInsideCard(width, '可提交')
+  }
+
+  // 在 HTTP 系统边界暂停发送，检查提交中状态；释放后仍交给真实 MSW 接口。
+  await page.evaluate(() => {
+    const originalFetch = window.fetch.bind(window)
+    const gate = new Promise<void>((resolve) =>
+      window.addEventListener('release-clip-submission', () => resolve(), { once: true }),
+    )
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const input = args[0]
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith('/api/generations/video-edits')) {
+        await gate
+        window.fetch = originalFetch
+      }
+      return originalFetch(...args)
+    }
+  })
+  const submitted = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/generations/video-edits') && request.method() === 'POST',
+  )
+  await generateButton(dialog).click()
+  await expect(card(dialog).getByRole('button', { name: '提交', exact: true })).toBeDisabled()
+  for (const width of [390, 600, 640, 1280]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expectToolbarInsideCard(width, '提交中')
+    if (width === 600)
+      await screenshotBothThemes(
+        page,
+        '../.artifacts/design-qa/video-duration-slider/submitting-600',
+      )
+  }
+  await page.evaluate(() => window.dispatchEvent(new Event('release-clip-submission')))
+  const sent = await submitted
+  await sent.response()
+  const body = sent.postDataJSON() as Record<string, unknown>
+  expect(body).toMatchObject({
+    model: 'vendor-a-seedance-2-0',
+    prompt: '@Image1',
+    range_start_ms: 1000,
+    range_end_ms: 2000,
+    seconds: 15,
+    reference_video_urls: [],
+  })
+  expect(body['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+  await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  const candidate = versions(dialog).getByRole('button', { name: 'V1 · 新结果', exact: true })
+  await expect(candidate).toBeEnabled({ timeout: STEP_TIMEOUT })
+  await candidate.click()
+  await scope(dialog, '整片').click()
+  await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
+})
 
 test('整片预览使用时间线选用的版本，历史原片与当前剪辑分别显示对应画面和时长', async ({ page }) => {
   const dialog = await openEditor(page)
@@ -398,7 +543,7 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   await expectCard(
     dialog,
     '第 2 段 · 视频生成',
-    '时长不足 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
+    '该模型编辑至少需要 1 秒；请按住 Shift 选择相邻片段',
   )
 
   // 拖过头停在最短的 0.2 秒。
@@ -488,7 +633,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   const modelPicker = card(dialog).getByRole('button', { name: '编辑模型', exact: true })
   const pickerBox = await modelPicker.boundingBox()
   await modelPicker.click()
-  await expect(page.getByRole('menuitemradio', { name: 'vendor-a-seedance-2-5' })).toBeChecked()
+  await expect(page.getByRole('menuitemradio', { name: 'wan3.0-video' })).toBeChecked()
   const menu = await page.getByRole('menu', { name: '编辑模型' }).boundingBox()
   if (menu === null || pickerBox === null) throw new Error('模型菜单尚未布局')
   expect(menu.y + menu.height).toBeLessThanOrEqual(pickerBox.y)
@@ -520,7 +665,7 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
     range_end_ms: 3000,
     reference_video_urls: [expect.stringMatching(/\/mock-oss\//)],
     model: 'wan3.0-video',
-    prompt: '编辑视频，换成黄昏的暖光，逆光打在人和滑板上，动作和机位不变，色调参考@Image1',
+    prompt: '换成黄昏的暖光，逆光打在人和滑板上，动作和机位不变，色调参考@Image1',
     seconds: -1,
     reference_image_urls: [expect.stringMatching(/\/mock-oss\//)],
   })

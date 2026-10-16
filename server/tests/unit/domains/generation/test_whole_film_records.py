@@ -247,11 +247,11 @@ async def test_a_whole_film_is_recorded_as_a_sourceless_compose_with_its_whole_t
             "/generations/whole-films",
             json=body(
                 conversation,
-                segment(take, 0, 1000),
+                {**segment(take, 0, 1000), "volume": 0.5},
                 segment(composite, 2000, 4000),
                 segment(take, 3000, 3500),
                 subtitles=subtitles,
-                music={"audioJobId": str(music.id), "offsetMs": 1500, "gain": gain},
+                music={"audioJobId": str(music.id), "offsetMs": 1500, "gain": gain, "volume": 0},
                 taskId=str(task),
                 metadata={"film": "整片"},
             ),
@@ -279,7 +279,9 @@ async def test_a_whole_film_is_recorded_as_a_sourceless_compose_with_its_whole_t
     )
     assert film.request == WholeFilmRequest(
         segments=[
-            WholeFilmSegment(source_job_id=take.id, url=TAKE_URL, start_ms=0, end_ms=1000),
+            WholeFilmSegment(
+                source_job_id=take.id, url=TAKE_URL, start_ms=0, end_ms=1000, volume=0.5
+            ),
             WholeFilmSegment(
                 source_job_id=composite.id,
                 url="https://cdn.test/composite.mp4",
@@ -290,7 +292,7 @@ async def test_a_whole_film_is_recorded_as_a_sourceless_compose_with_its_whole_t
         ],
         subtitles=[WholeFilmSubtitle.model_validate(item) for item in subtitles],
         music=WholeFilmMusic.model_validate(
-            {"audioJobId": music.id, "url": MUSIC_URL, "offsetMs": 1500, "gain": gain}
+            {"audioJobId": music.id, "url": MUSIC_URL, "offsetMs": 1500, "gain": gain, "volume": 0}
         ),
         render=WholeFilmRender(),
     ), "出处换成产物地址，字幕与曲线原样，声音参数是受理时的常量"
@@ -304,6 +306,57 @@ async def test_a_whole_film_is_recorded_as_a_sourceless_compose_with_its_whole_t
     }
     assert len(world.submits_to("ffmpeg")) == 1, "走合成那条 lane"
     assert world.cleared.calls == [(conversation, me)], "和合成一样抹收尾标记"
+
+
+@pytest.mark.parametrize("target", ["segment", "music"])
+@pytest.mark.parametrize("volume", [-0.01, 0, 0.5, 1, 2, 2.01])
+async def test_user_volume_is_validated_and_saved(target: str, volume: float) -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    music = generated_music(owner_user_id=me, conversation_id=conversation)
+    world = build_world([take, music])
+    cut = segment(take)
+    track: dict[str, Any] = {
+        "audioJobId": str(music.id),
+        "offsetMs": 0,
+        "gain": [{"atMs": 0, "gain": 0.3}],
+    }
+    if target == "segment":
+        cut["volume"] = volume
+    else:
+        track["volume"] = volume
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        response = await http.post(
+            "/generations/whole-films", json=body(conversation, cut, music=track)
+        )
+    if not 0 <= volume <= 2:
+        assert response.status_code == 422, response.text
+        assert not world.films()
+        return
+    assert response.status_code == 202, response.text
+    request = response.json()["generation"]["request"]
+    assert request["segments"][0]["volume"] == (volume if target == "segment" else 1)
+    assert request["music"]["volume"] == (volume if target == "music" else 1)
+
+
+def test_existing_film_requests_keep_the_automatic_volume_baseline() -> None:
+    request = WholeFilmRequest.model_validate(
+        {
+            "segments": [
+                {"sourceJobId": str(uuid.uuid4()), "url": TAKE_URL, "startMs": 0, "endMs": 1000}
+            ],
+            "music": {
+                "audioJobId": str(uuid.uuid4()),
+                "url": MUSIC_URL,
+                "offsetMs": 0,
+                "gain": [{"atMs": 0, "gain": 0.3}],
+            },
+            "subtitles": [],
+            "render": WholeFilmRender().model_dump(by_alias=True),
+        }
+    )
+    assert request.segments[0].volume == 1
+    assert request.music is not None and request.music.volume == 1
 
 
 @pytest.mark.parametrize(
@@ -832,6 +885,7 @@ async def test_a_whole_film_cannot_be_the_base_of_an_edit_or_a_composite() -> No
                 "range_end_ms": 1000,
                 "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
                 "model": "vendor-a-seedance-2-5",
+                "seconds": -1,
                 "prompt": "换个颜色",
                 "conversation_id": str(conversation),
             },

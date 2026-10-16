@@ -3,7 +3,7 @@ import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/rea
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { workbenchRegistry } from '@/app/workbench-registry'
 import { routeTree } from '@/routeTree.gen'
 import { queryClient } from '@/shared/api/query-client'
@@ -12,6 +12,7 @@ import { WorkbenchOpenRequestProvider, WorkbenchRegistryProvider } from '@/share
 import { addMockCollection, addMockConversation, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithTooltip } from '@/testing/render'
+import { stubSidebarViewport } from '@/testing/sidebar-viewport'
 import { FakeSocket, SERVER_HELLO } from '@/testing/ws'
 import { probeSsoLoginEnabled, refreshSessionUser } from './session'
 
@@ -148,6 +149,8 @@ afterEach(() => {
 })
 
 describe('已确认身份变化时的业务缓存', () => {
+  beforeEach(stubSidebarViewport)
+
   it('退出甲后登录乙，乙的数据返回前也不显示甲的新鲜缓存', async () => {
     const accounts = serveAccounts()
     const releaseB = accounts.holdSidebar(accountB)

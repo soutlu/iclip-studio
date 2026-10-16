@@ -15,7 +15,7 @@ import shutil
 import unicodedata
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -542,6 +542,13 @@ def _concat_keyframes(
 
 
 @dataclass(frozen=True, slots=True)
+class FilmCut(MediaCut):
+    """整片的一段，原声按自动响度基准乘以用户音量。"""
+
+    volume: float = 1.0
+
+
+@dataclass(frozen=True, slots=True)
 class FilmCaption:
     """整片上的一句字幕：整片时间里的起止（秒）与烧进画面的文字。"""
 
@@ -558,6 +565,7 @@ class FilmMusic:
     offset: float
     gain: Sequence[tuple[float, float]]
     """``(整片时刻秒, 线性音量)``，按时刻严格递增，至少一个点；点间线性插值，两端取端点的值。"""
+    volume: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -602,7 +610,7 @@ _SAFE_FILTER_PATH: Final = re.compile(r"[A-Za-z0-9/._+-]+")
 
 
 async def render_film(
-    cuts: Sequence[MediaCut],
+    cuts: Sequence[FilmCut],
     *,
     intro: Path | None,
     outro: Path | None,
@@ -630,7 +638,8 @@ async def render_film(
     两端各淡入淡出 ``sound.edge_fade``，没有音轨的补静音，首尾相接；有音乐时量它整段的响度统一到
     ``sound.music_lufs``，从 ``music.offset`` 起取各段那么长，按音量曲线调、结尾淡出，对齐到第一段
     开头与原声相加（不取平均），写成一个中间文件；再量混音的响度；最后编码时按差值统一到
-    ``sound.loudness_lufs`` 并限幅到 ``sound.peak_dbfs``。
+    ``sound.loudness_lufs`` 并限幅到 ``sound.peak_dbfs``。用户音量乘在各路自动基准上；有手动调节时，
+    最终增益量的是所有用户音量为 1 的参考混音，再用于实际混音，避免抵消手动调节。
 
     段的结尾超出素材的时长（容差 ``FILM_END_TOLERANCE``）、素材读不了、ffmpeg 失败抛 MediaError；
     音乐不够长抛 ``MusicTooShort``。"""
@@ -661,8 +670,8 @@ async def render_film(
                 f"{lengths[cut.source]:.3f} 秒"
             )
     # 片头片尾整条取用，长度按本地文件量，不按受理时记的时长：两者隔着一次容器时长的取整。
-    head = [MediaCut(source=intro, start=0.0, end=lengths[intro])] if intro is not None else []
-    tail = [MediaCut(source=outro, start=0.0, end=lengths[outro])] if outro is not None else []
+    head = [FilmCut(source=intro, start=0.0, end=lengths[intro])] if intro is not None else []
+    tail = [FilmCut(source=outro, start=0.0, end=lengths[outro])] if outro is not None else []
     clips = [*head, *cuts, *tail]
     segments_start = head[0].duration if head else 0.0
     speech_gains: dict[Path, float | None] = {}
@@ -695,7 +704,21 @@ async def render_film(
         sound=sound,
         dest=mixed,
     )
-    film_gain = _gain_to(await integrated_loudness(mixed), sound.loudness_lufs)
+    reference = mixed
+    if any(clip.volume != 1.0 for clip in clips) or (music is not None and music.volume != 1.0):
+        # 母线增益只量自动基准，不能把用户主动调低的音量重新拉高。
+        reference = workdir / "film-audio-reference.wav"
+        await _mix_film_audio(
+            [replace(clip, volume=1.0) for clip in clips],
+            speech_gains,
+            music=None if music is None else replace(music, volume=1.0),
+            music_gain=music_gain,
+            music_start=segments_start,
+            music_length=segments_length,
+            sound=sound,
+            dest=reference,
+        )
+    film_gain = _gain_to(await integrated_loudness(reference), sound.loudness_lufs)
 
     subtitles = None
     if captions:
@@ -760,7 +783,7 @@ async def render_film(
 
 
 async def _mix_film_audio(
-    clips: Sequence[MediaCut],
+    clips: Sequence[FilmCut],
     speech_gains: Mapping[Path, float | None],
     *,
     music: FilmMusic | None,
@@ -794,7 +817,7 @@ async def _mix_film_audio(
             f"[{len(inputs) // 2 - 1}:a]atrim=start={clip.start:.3f}:end={clip.end:.3f},"
             # 音轨比画面短时补静音，每段的声音正好是这段的长度，后面各段才对得上画面。
             f"asetpts=PTS-STARTPTS,{stereo},apad=whole_dur={length:.3f},"
-            f"atrim=duration={length:.3f},volume={gain:.2f}dB"
+            f"atrim=duration={length:.3f},volume={gain:.2f}dB,volume={clip.volume:.6g}"
         )
         if fade > 0:
             chain += f",afade=t=in:d={fade:.3f},afade=t=out:st={length - fade:.3f}:d={fade:.3f}"
@@ -812,7 +835,7 @@ async def _mix_film_audio(
         shift = f",adelay=delays={delay}|{delay}" if delay > 0 else ""
         chains.append(
             f"[{len(inputs) // 2 - 1}:a]atrim=start={music.offset:.3f}:duration={music_length:.3f},"
-            f"asetpts=PTS-STARTPTS,{stereo},volume={music_gain:.2f}dB,"
+            f"asetpts=PTS-STARTPTS,{stereo},volume={music_gain:.2f}dB,volume={music.volume:.6g},"
             # 曲线按帧求值：帧切成 10 毫秒一帧，音量的台阶小到听不出。
             f"asetnsamples=n={_AUDIO_RATE // 100}:p=0,"
             f"volume='{_gain_curve(music.gain)}':eval=frame,"
@@ -1088,6 +1111,7 @@ __all__ = [
     "SUBTITLE_MARGIN_SIDE_RATIO",
     "SUBTITLE_OUTLINE_RATIO",
     "FilmCaption",
+    "FilmCut",
     "FilmMusic",
     "FilmSound",
     "MediaCut",

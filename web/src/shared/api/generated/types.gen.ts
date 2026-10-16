@@ -583,6 +583,42 @@ export type CategoryCountOut = {
 }
 
 /**
+ * ClipEditDurationOut
+ *
+ * 片段编辑接受的实际参考视频时长范围，单位秒。
+ */
+export type ClipEditDurationOut = {
+  /**
+   * Maxseconds
+   */
+  maxSeconds: number
+  /**
+   * Minseconds
+   */
+  minSeconds: number
+}
+
+/**
+ * ClipImageDurationOut
+ *
+ * 图生片段的输出时长范围，按整秒选择。
+ */
+export type ClipImageDurationOut = {
+  /**
+   * Defaultseconds
+   */
+  defaultSeconds: number
+  /**
+   * Maxseconds
+   */
+  maxSeconds: number
+  /**
+   * Minseconds
+   */
+  minSeconds: number
+}
+
+/**
  * CollectionEnvelope
  */
 export type CollectionEnvelope = {
@@ -4803,6 +4839,24 @@ export type VersionOut = {
 }
 
 /**
+ * VideoClipModelOut
+ *
+ * 视频编辑页可以使用的模型；edit 为空表示只支持图生。
+ */
+export type VideoClipModelOut = {
+  edit: ClipEditDurationOut | null
+  /**
+   * Id
+   */
+  id: string
+  image: ClipImageDurationOut
+  /**
+   * Maxreferenceimages
+   */
+  maxReferenceImages: number
+}
+
+/**
  * VideoComposeIn
  *
  * 一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。
@@ -4852,8 +4906,8 @@ export type VideoContent = {
  *
  * 一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
  *
- * 转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的
- * 参考片段，时长不必等于基底替换区间。
+ * 转发给上游的字段照上游命名。有参考视频时编辑调用方按当前选用素材裁剪、拼接后上传的
+ * 片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。
  * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
  * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
  * ``VideoGenerationIn``，来源、原作与区间落列。
@@ -4898,11 +4952,11 @@ export type VideoEditIn = {
   /**
    * Reference Video Urls
    */
-  reference_video_urls: [string]
+  reference_video_urls?: Array<string>
   /**
    * Seconds
    */
-  seconds?: number | null
+  seconds: number
   /**
    * Source Job Id
    */
@@ -4997,9 +5051,13 @@ export type VideoGenerationIn = {
 /**
  * VideoModelsOut
  *
- * 接入了哪几个视频模型。只有模型 id，下拉直接显示它。
+ * 配置允许的视频模型，以及片段入口已接入的模型能力。
  */
 export type VideoModelsOut = {
+  /**
+   * Clipmodels
+   */
+  clipModels: Array<VideoClipModelOut>
   /**
    * Default
    */
@@ -5305,6 +5363,10 @@ export type WholeFilmMusicIn = {
    * Offsetms
    */
   offsetMs: number
+  /**
+   * Volume
+   */
+  volume?: number
 }
 
 /**
@@ -5325,6 +5387,10 @@ export type WholeFilmSegmentIn = {
    * Startms
    */
   startMs: number
+  /**
+   * Volume
+   */
+  volume?: number
 }
 
 /**

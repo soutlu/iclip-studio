@@ -3,7 +3,7 @@
  * 自动对齐切点、口播处压低，预览时跟着画面放（见 use-film-music）。「合成成片」把草稿排成时间线交给服务端，
  * 合成出的每一版进版本条，点开预览、下载。
  *
- * 编辑只存在浏览器里（ADR-0003），按对话一份；浏览器里没有草稿而已经合成过时，按最新一版重建。界面上不调声音。 */
+ * 编辑只存在浏览器里（ADR-0003），按对话一份；浏览器里没有草稿而已经合成过时，按最新一版重建。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -24,8 +24,13 @@ import { useShotGenerations } from '../storyboard.api'
 import { measureCaptionLayout } from '../video-editor/caption-layout'
 import { EditorPreview, type EditorPreviewHandle } from '../video-editor/editor-preview'
 import { EditorVersionStrip, type VersionStripEntry } from '../video-editor/editor-version-strip'
+import { keyframeSegments } from '../video-editor/draft'
 import { layoutPlay } from '../video-editor/play-layout'
-import { useAudioPeaks, type PeaksState } from '../video-editor/use-media-analysis'
+import {
+  useAudioPeaks,
+  useKeyframeIndexes,
+  type PeaksState,
+} from '../video-editor/use-media-analysis'
 import { useMediaDurations } from '../video-editor/use-media-durations'
 import { useStableValue } from '../video-editor/use-stable-value'
 import {
@@ -33,7 +38,11 @@ import {
   wholeFilmDuration,
   setBrand,
   setFont,
+  setSegmentVolume,
+  setMusicVolume,
+  resetMusicStart,
   MAX_FILM_SEGMENTS,
+  MIN_SEGMENT_SECONDS,
   canSplitAt,
   EMPTY_FILM,
   filmDuration,
@@ -82,6 +91,7 @@ import { FilmTimeline, type FilmSelection, type LaneView, type MaterialPick } fr
 import { draftFromVersion, firstSourceOf, wholeFilmVersions } from './film-versions'
 import { useFilmDraft, type DraftSeed } from './use-film-draft'
 import { useFilmMusic } from './use-film-music'
+import { FilmSoundControls } from './film-sound-controls'
 import {
   seedSubtitleJob,
   seedWholeFilmJob,
@@ -176,10 +186,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       videos.data === undefined ? undefined : materialCatalog(groupConversationVideos(videos.data)),
     [videos.data],
   )
-  const known = useMemo(
-    () => (catalog === undefined ? undefined : new Set(catalog.byJob.keys())),
-    [catalog],
-  )
+  const known = catalog?.byJob
   const versions = useMemo(() => wholeFilmVersions(videos.data ?? []), [videos.data])
   const materialOf = (jobId: string) => catalog?.byJob.get(jobId)
 
@@ -198,7 +205,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     return {
       label: newestVersion.label,
       stored: draftFromVersion(newestVersion.job, {
-        groupOf: (jobId) => materialOf(jobId)?.groupId,
+        takeOf: (jobId) => materialOf(jobId)?.takeId,
         generatedMusic: new Set(musicRecords.data.map((job) => job.id)),
         newId: () => crypto.randomUUID(),
       }),
@@ -239,20 +246,36 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     ...(viewedDone !== undefined && viewedDone.job.durationMs === null ? [viewedDone.url] : []),
   ])
   const durations = useMediaDurations(probeUrls)
-  const durationOf = (material: Material): MaterialDuration =>
-    material.knownDuration ?? durations[material.url]
+  const sourceUrls = useStableValue([
+    ...new Set((draft?.lanes ?? []).flatMap((lane) => materialOf(lane.jobId)?.url ?? [])),
+  ])
+  const keyframes = useKeyframeIndexes(sourceUrls)
+  const durationOf = (material: Material): MaterialDuration => {
+    const frames = keyframes.get(material.url)
+    return frames?.kind === 'ready'
+      ? frames.index.duration
+      : (material.knownDuration ?? durations[material.url])
+  }
 
   const lanes: LaneView[] = (draft?.lanes ?? []).flatMap((lane) => {
     const material = materialOf(lane.jobId)
-    const group = catalog?.groups.find((item) => item.id === lane.groupId)
-    if (material === undefined || group === undefined) return []
+    const group = catalog?.groups.find((item) => item.id === material?.groupId)
+    const take = group?.takes.find((item) => item.id === lane.takeId)
+    if (material === undefined || group === undefined || take === undefined) return []
+    const frames = keyframes.get(material.url)
     return [
       {
         lane,
         label: group.label,
         material,
-        versions: group.versions,
-        duration: durationOf(material),
+        versions: take.versions,
+        duration: frames?.kind === 'ready' ? frames.index.duration : undefined,
+        shots: frames?.kind === 'ready' ? keyframeSegments(material.jobId, frames.index) : [],
+        shotState:
+          frames?.kind === 'failed' ? 'error' : frames?.kind === 'ready' ? 'ready' : 'loading',
+        onRetryShots: () => {
+          if (frames?.kind === 'failed') frames.retry()
+        },
       },
     ]
   })
@@ -272,6 +295,12 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   // 恢复的字幕有自己的快照，音乐压低仍依赖来源识别；识别中的口播不能被快照掩盖。
   const speechProjection = projectSubtitles(film, sourceOf, false)
   const subtitleStatuses = film.music === null ? statuses : speechProjection.statuses
+  const unduckedCount =
+    film.music !== null && film.music.gain === undefined
+      ? speechProjection.statuses.filter(
+          (item) => item.kind === 'failed' || item.kind === 'missing',
+        ).length
+      : 0
   const burned = burnedSubtitles(subtitles)
   const previewFont = usePreviewFont(
     film.font == null ? null : { id: film.font.fontId, url: film.font.url },
@@ -325,18 +354,21 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   // ---------- 预览 ----------
 
-  const draftPlay = layoutPlay([
+  const draftAudioSegments = [
     ...(film.intro == null
       ? []
       : [{ mediaUrl: film.intro.url, start: 0, end: film.intro.durationMs / 1000 }]),
     ...segments.flatMap((segment) => {
       const url = materialOf(segment.sourceJobId)?.url
-      return url === undefined ? [] : [{ mediaUrl: url, start: segment.start, end: segment.end }]
+      return url === undefined
+        ? []
+        : [{ mediaUrl: url, start: segment.start, end: segment.end, volume: segment.volume ?? 1 }]
     }),
     ...(film.outro == null
       ? []
       : [{ mediaUrl: film.outro.url, start: 0, end: film.outro.durationMs / 1000 }]),
-  ])
+  ]
+  const draftPlay = layoutPlay(draftAudioSegments)
   const viewedDuration =
     viewedDone === undefined
       ? undefined
@@ -439,7 +471,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     film,
     total,
     subtitles: speechProjection.subtitles,
-    previewSegments: draftPlay,
+    previewSegments: draftAudioSegments,
     bodyStartSeconds: bodyStart,
     apply,
     onNotice: setNotice,
@@ -462,6 +494,10 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const insert = (target: MaterialPick, index: number) => {
     const duration = segmentDuration(target)
+    if (duration < MIN_SEGMENT_SECONDS) {
+      setNotice(`镜头不足 ${MIN_SEGMENT_SECONDS} 秒，无法加入成片；请拖动两端扩大范围`)
+      return
+    }
     if (segments.length >= MAX_FILM_SEGMENTS) {
       setNotice(`片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入；请先删减片段`)
       return
@@ -503,7 +539,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const addMaterial = (material: Material) => {
     if (draft === undefined) return
-    draft.setLanes(putLane(draft.lanes, { groupId: material.groupId, jobId: material.jobId }))
+    draft.setLanes(putLane(draft.lanes, { takeId: material.takeId, jobId: material.jobId }))
     setPick(undefined)
     setSelection(undefined)
     setMaterialPreview({ jobId: material.jobId })
@@ -823,8 +859,20 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           setSelection(undefined)
         }}
         onSwitchVersion={switchVersion}
-        onTrim={(id, edge, value) => apply(trimSegment(film, id, edge, value))}
-        onTrimPreview={(clock, edge) => previewFilm(clock, edge)}
+        onTrim={(id, edge, value) => {
+          const segment = segments.find((item) => item.id === id)
+          const material = segment === undefined ? undefined : materialOf(segment.sourceJobId)
+          const duration = material === undefined ? undefined : durationOf(material)
+          apply(trimSegment(film, id, edge, value, duration ?? undefined))
+        }}
+        onTrimPreview={(target, clock, edge) => {
+          setMaterialPreview({
+            jobId: target.sourceJobId,
+            range: { start: target.start, end: target.end },
+          })
+          setMaterialTime(clock - target.start)
+          setPreviewSeek({ clock: clock - target.start, boundary: edge })
+        }}
         peaksOf={(url) => peaks.get(url) ?? LOADING_PEAKS}
         pick={viewingDraft ? pick : undefined}
         retrying={retrying}
@@ -1121,6 +1169,11 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                     message={errorMessageOf(videos.error, '读取视频记录失败')}
                   />
                 ) : null}
+                {viewingDraft && !previewingMaterial && unduckedCount > 0 ? (
+                  <p className="video-editor-footnote" role="status">
+                    有 {unduckedCount} 段缺少口播识别，配乐未自动避让；请在字幕轨重新识别
+                  </p>
+                ) : null}
                 {footnote === undefined ? null : (
                   <p
                     className="video-editor-footnote"
@@ -1132,7 +1185,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
               </>
             }
             onPlay={() => {
-              setSelection(undefined)
+              setSelection((value) => (value?.kind === 'segment' ? value : undefined))
               if (viewingDraft && !previewingMaterial) music.prime()
             }}
             onPlaybackChange={setPlayback}
@@ -1143,16 +1196,52 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
             readout={readout}
             ref={previewRef}
             timeline={
-              <div className="whole-film-track-scroll" role="region" aria-label="轨道列表">
-                {viewingDraft ? (
-                  timeline
-                ) : (
-                  // 看着某一版时草稿在下面淡着、不能动，点「未合成」回来接着剪。
-                  <div className="whole-film-timeline-locked" inert>
-                    {timeline}
-                  </div>
-                )}
-              </div>
+              <>
+                <FilmSoundControls
+                  segmentLabel={
+                    selectedSegment === undefined ? undefined : `第 ${selectedIndex + 1} 段`
+                  }
+                  sourceVolume={selectedSegment?.volume ?? 1}
+                  musicVolume={film.music?.volume ?? 1}
+                  sourceDisabled={!editable || selectedSegment === undefined}
+                  musicDisabled={!editable || music.view.kind !== 'ready'}
+                  alignmentBlocked={
+                    !editable
+                      ? '请返回「未合成」调整配乐'
+                      : music.view.kind !== 'ready'
+                        ? '请先添加可用的配乐'
+                        : music.view.placement.shortBy > 0
+                          ? '配乐时长不足，请更换配乐'
+                          : music.view.song.grid === null
+                            ? '未检测到拍点，请拖动音乐调整起点'
+                            : undefined
+                  }
+                  onSourceVolume={(volume, edit) => {
+                    if (selectedSegment !== undefined)
+                      apply(
+                        (present) => setSegmentVolume(present, selectedSegment.id, volume),
+                        edit,
+                      )
+                  }}
+                  onMusicVolume={(volume, edit) =>
+                    apply((present) => setMusicVolume(present, volume), edit)
+                  }
+                  onAlign={() => {
+                    apply(resetMusicStart(film))
+                    setNotice('已按当前剪辑自动对齐配乐')
+                  }}
+                />
+                <div className="whole-film-track-scroll" role="region" aria-label="轨道列表">
+                  {viewingDraft ? (
+                    timeline
+                  ) : (
+                    // 看着某一版时草稿在下面淡着、不能动，点「未合成」回来接着剪。
+                    <div className="whole-film-timeline-locked" inert>
+                      {timeline}
+                    </div>
+                  )}
+                </div>
+              </>
             }
             tools={toolButtons}
             versions={

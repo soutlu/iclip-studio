@@ -1,7 +1,7 @@
 import { useDraggable } from '@dnd-kit/core'
 import { useParams } from '@tanstack/react-router'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
@@ -40,16 +40,19 @@ type SidebarConversationRowProps = {
   conversation: Conversation
   dragging: boolean
   /** 请调用方打开删除确认；删除本身由确认弹窗执行。 */
-  onDelete: () => void
-  onOpenMembership: () => void
+  onDelete: (conversation: Conversation) => void
+  onOpenMembership: (conversation: Conversation) => void
+  /** 编辑或菜单打开期间保留虚拟行，避免滚动卸载交互状态。 */
+  onInteractionChange: (active: boolean) => void
 }
 
 /** 侧栏一行对话：打开、改名、移到合集、标记完成与删除；改对话要有 agent:run，改完各 mutation 自己刷新列表。 */
-export function SidebarConversationRow({
+export const SidebarConversationRow = memo(function SidebarConversationRow({
   conversation,
   dragging,
   onDelete,
   onOpenMembership,
+  onInteractionChange,
 }: SidebarConversationRowProps) {
   const canWrite = hasPermission(useUser().data, PERMISSION.agentRun)
   const { listeners, setNodeRef, transform } = useDraggable({
@@ -57,12 +60,20 @@ export function SidebarConversationRow({
     data: { collectionId: conversation.collectionId },
     id: conversation.id,
   })
-  const openedId = useParams({ select: (params) => params.conversationId, strict: false })
-  const active = openedId === conversation.id
+  const active = useParams({
+    select: (params) => params.conversationId === conversation.id,
+    strict: false,
+  })
   const { close, editing, returnRef, start } = useSidebarRowEditing<HTMLAnchorElement>()
   const rename = useRenameConversation()
   const completion = useSetConversationCompletion()
   const [tipOpen, setTipOpen] = useState(false)
+  const [menuRetained, setMenuRetained] = useState(false)
+  useEffect(
+    () => onInteractionChange(editing || menuRetained),
+    [editing, menuRetained, onInteractionChange],
+  )
+  useEffect(() => () => onInteractionChange(false), [onInteractionChange])
   const completed = conversation.completedAt !== null
   const unread = useUnread(conversation, active)
   const status = conversationStatus(conversation.activity)
@@ -164,15 +175,19 @@ export function SidebarConversationRow({
           </span>
           {canWrite && (
             <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
-              <MenuRoot>
+              <MenuRoot
+                onOpenChange={(isOpen) => {
+                  if (isOpen) setMenuRetained(true)
+                }}
+              >
                 <MenuTrigger asChild>
                   <IconButton label={`${conversation.title} 的更多操作`} name="more" size="xs" />
                 </MenuTrigger>
-                <MenuSurface align="end">
+                <MenuSurface align="end" onCloseAutoFocus={() => setMenuRetained(false)}>
                   <MenuItem icon="edit" onSelect={start}>
                     重命名
                   </MenuItem>
-                  <MenuItem icon="folder" onSelect={onOpenMembership}>
+                  <MenuItem icon="folder" onSelect={() => onOpenMembership(conversation)}>
                     移到合集…
                   </MenuItem>
                   <MenuItem
@@ -187,7 +202,7 @@ export function SidebarConversationRow({
                     {completed ? '取消完成' : '标记完成'}
                   </MenuItem>
                   <MenuSeparator />
-                  <MenuItem destructive icon="delete" onSelect={onDelete}>
+                  <MenuItem destructive icon="delete" onSelect={() => onDelete(conversation)}>
                     删除
                   </MenuItem>
                 </MenuSurface>
@@ -201,7 +216,7 @@ export function SidebarConversationRow({
       )}
     </TooltipRoot>
   )
-}
+})
 
 /**
  * 轮次状态。等人（审批、回答）与失败要用户动手，橙点、红色感叹号后面直接写短词，字用中性色；

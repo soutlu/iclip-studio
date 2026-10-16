@@ -2,7 +2,7 @@ import { useRouterState } from '@tanstack/react-router'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useCallback, useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ShellChromeContext } from '@/shared/shell'
 import {
   addMockCollection,
@@ -13,9 +13,12 @@ import {
   mockCollections,
 } from '@/testing/mocks/handlers'
 import { renderWithProviders } from '@/testing/render'
+import { stubSidebarViewport } from '@/testing/sidebar-viewport'
 import { AppSidebar } from './-app-sidebar'
 import { HomePage } from './-home-page'
 import { LoginPromptProvider } from './-login-prompt'
+
+beforeEach(stubSidebarViewport)
 
 /** 测试壳持有折叠状态，与应用壳的状态归属一致。 */
 function SidebarHarness({ compact = false }: { compact?: boolean }) {

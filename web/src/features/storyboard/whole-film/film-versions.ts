@@ -12,7 +12,7 @@ import {
   type MaterialLane,
   type StoredFilm,
 } from './film-draft'
-import { zFilmBrand, zFilmFont } from './film-draft'
+import { zFilmBrand, zFilmFont, zFilmMusicGain } from './film-draft'
 
 /** 整片：没有来源的视频合成。 */
 export const isWholeFilm = (job: GenerationJob): boolean =>
@@ -75,6 +75,7 @@ const zVersionRequest = z.object({
           sourceJobId: z.string().min(1),
           startMs: z.number().int().nonnegative(),
           endMs: z.number().int().positive(),
+          volume: z.number().min(0).max(2).optional(),
         })
         .refine((segment) => segment.endMs > segment.startMs),
     )
@@ -90,6 +91,8 @@ const zVersionRequest = z.object({
       audioJobId: z.string().min(1),
       url: z.string().min(1),
       offsetMs: z.number().int().nonnegative(),
+      volume: z.number().min(0).max(2).optional(),
+      gain: zFilmMusicGain.optional(),
     })
     .nullish(),
 })
@@ -98,8 +101,8 @@ const zVersionRequest = z.object({
 export const REBUILT_UPLOAD_NAME = '上传的音乐'
 
 type RebuildContext = {
-  /** 一条成片属于哪个版本组；不在素材里时没有。 */
-  groupOf: (jobId: string) => string | undefined
+  /** 一条成片属于哪次独立生成；不在素材里时没有。 */
+  takeOf: (jobId: string) => string | undefined
   /** 本对话生成的音乐（音频记录 id）；不在里面的音乐当作上传的。 */
   generatedMusic: ReadonlySet<string>
   /** 发一个新的段或手动字幕 id。 */
@@ -110,7 +113,7 @@ type RebuildContext = {
  * 字幕固定在来源视频时间上，裁剪、拆分与换序后仍跟随画面；新插入的段照常使用最新识别结果。 */
 export const draftFromVersion = (
   job: GenerationJob,
-  { groupOf, generatedMusic, newId }: RebuildContext,
+  { takeOf, generatedMusic, newId }: RebuildContext,
 ): StoredFilm | undefined => {
   const parsed = zVersionRequest.safeParse(job.request)
   if (!parsed.success) return undefined
@@ -141,7 +144,7 @@ export const draftFromVersion = (
       sourceJobId: span.sourceJobId,
       start,
       end,
-      origin: { start, end },
+      volume: span.volume,
       subtitles: captions,
     }
   })
@@ -153,6 +156,8 @@ export const draftFromVersion = (
             kind: 'generate',
             jobId: music.audioJobId,
             userStart: roundToMs(music.offsetMs / 1000),
+            volume: music.volume,
+            gain: music.gain,
           }
         : {
             // 上传记录不挂对话、列不出来，地址只在请求里。
@@ -162,13 +167,15 @@ export const draftFromVersion = (
             verifyAccess: true,
             url: music.url,
             userStart: roundToMs(music.offsetMs / 1000),
+            volume: music.volume,
+            gain: music.gain,
           }
 
   let lanes: readonly MaterialLane[] = []
   for (const segment of segments) {
-    const groupId = groupOf(segment.sourceJobId)
-    if (groupId === undefined || lanes.some((lane) => lane.groupId === groupId)) continue
-    lanes = putLane(lanes, { groupId, jobId: segment.sourceJobId })
+    const takeId = takeOf(segment.sourceJobId)
+    if (takeId === undefined || lanes.some((lane) => lane.takeId === takeId)) continue
+    lanes = putLane(lanes, { takeId, jobId: segment.sourceJobId })
   }
 
   return {

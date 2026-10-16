@@ -1,15 +1,7 @@
 import { DndContext, PointerSensor, useDroppable, useSensor } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useId,
-  useRef,
-  useState,
-  type RefObject,
-} from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react'
 import { CollectionDeleteDialog, useCollections, useSaveCollection } from '@/features/collections'
 import {
   ConversationDeleteDialog,
@@ -22,7 +14,6 @@ import {
   SIDEBAR_ROW_TITLE_CLASS,
   SIDEBAR_ROW_TRAILING_SHOWN,
   SidebarRowEditor,
-  useSidebarPages,
   useSidebarRowEditing,
   useRecordOpenedConversation,
   useSetConversationMembership,
@@ -30,7 +21,6 @@ import {
   useConversationRows,
   type Conversation,
   type ConversationListState,
-  type ConversationPage,
   type SidebarCollection,
 } from '@/features/conversations'
 import { tasksQueryKeys, useTaskOptions } from '@/features/tasks'
@@ -43,6 +33,8 @@ import { IconButton } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
+import { SidebarPageSource, type SidebarPageState } from './-sidebar-page-source'
+import { SidebarVirtualList, type SidebarVirtualRow } from './-sidebar-virtual-list'
 
 // 合集默认只露前几个，其余收在「全部合集」里；后端最多返回 100 个合集。
 const COLLECTIONS_PREVIEW = 3
@@ -143,6 +135,19 @@ export function SidebarConversations({
   const [dragging, setDragging] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const getScrollElement = useCallback(() => scrollRef.current, [])
+  const [pageStates, setPageStates] = useState<ReadonlyMap<string, SidebarPageState>>(
+    () => new Map(),
+  )
+  const receivePage = useCallback((bucket: string, page: SidebarPageState | null) => {
+    setPageStates((previous) => {
+      if (page === null && !previous.has(bucket)) return previous
+      const next = new Map(previous)
+      if (page === null) next.delete(bucket)
+      else next.set(bucket, page)
+      return next
+    })
+  }, [])
+  const now = useNowByDay()
 
   // 新建合集在合集区顶部插入一行原位编辑行。
   const [creatingCollection, setCreatingCollection] = useState(false)
@@ -163,9 +168,14 @@ export function SidebarConversations({
     conversation?: Conversation
     open: boolean
   }>({ open: false })
-  const openMembership = (conversation: Conversation) => setMembership({ conversation, open: true })
-  const confirmDelete = (conversation: Conversation) =>
-    setConversationDelete({ conversation, open: true })
+  const openMembership = useCallback(
+    (conversation: Conversation) => setMembership({ conversation, open: true }),
+    [setMembership],
+  )
+  const confirmDelete = useCallback(
+    (conversation: Conversation) => setConversationDelete({ conversation, open: true }),
+    [setConversationDelete],
+  )
 
   const collections = useCollections(membership.open && canReadCollections)
   const tasks = useTaskOptions(membership.open && canReadTasks)
@@ -235,17 +245,236 @@ export function SidebarConversations({
   ])
   const anyBusy = firstPageRows.some((row) => row.activity.busy)
 
+  const rows: SidebarVirtualRow[] = []
+  const addConversation = (
+    conversation: Conversation,
+    section: SidebarVirtualRow['section'],
+    group?: string,
+    collectionId?: string,
+  ) => {
+    rows.push({
+      key: `conversation:${collectionId ?? UNGROUPED}:${conversation.id}`,
+      section,
+      ...(group === undefined ? {} : { group }),
+      height: 36,
+      focusable: true,
+      retain: dragging === conversation.id,
+      render: (onInteractionChange) => (
+        <div className={section === 'collections' ? 'relative pl-6.5' : undefined}>
+          {section === 'collections' && (
+            <span
+              aria-hidden
+              className="absolute inset-y-0 left-4.5 w-px -translate-x-1/2 bg-hairline"
+            />
+          )}
+          <SidebarConversationRow
+            conversation={conversation}
+            dragging={dragging === conversation.id}
+            onDelete={confirmDelete}
+            onOpenMembership={openMembership}
+            onInteractionChange={onInteractionChange}
+          />
+        </div>
+      ),
+    })
+  }
+  rows.push({
+    key: 'collections-heading',
+    section: 'collections',
+    height: 32,
+    sticky: true,
+    focusable: canManageCollections,
+    render: () => (
+      <SidebarHeading
+        title="合集"
+        action={
+          canManageCollections
+            ? { icon: 'add', label: '新建合集', onClick: startCreatingCollection }
+            : undefined
+        }
+        actionRef={addCollectionRef}
+      />
+    ),
+  })
+  if (creatingCollection)
+    rows.push({
+      key: 'create-collection',
+      section: 'collections',
+      height: 36,
+      focusable: true,
+      retain: true,
+      render: () => (
+        <SidebarRowEditor
+          failureMessage="新建合集失败"
+          initialValue=""
+          label="新合集名称"
+          leading={<CollectionIcon />}
+          onClose={closeCollectionDraft}
+          onSubmit={async (name) => {
+            createdCollectionRef.current = (await saveCollection.mutateAsync({ name })).id
+          }}
+          placeholder="新合集名称"
+        />
+      ),
+    })
+  for (const collection of visibleCollections) {
+    rows.push({
+      key: `collection:${collection.id}`,
+      section: 'collections',
+      height: 36,
+      focusable: true,
+      retain: dragging !== null || focusCollectionId === collection.id,
+      render: (onInteractionChange) => (
+        <CollectionHeader
+          canManage={canManageCollections}
+          collection={collection}
+          onDelete={() =>
+            setCollectionDelete({
+              collection: { id: collection.id, name: collection.name },
+              open: true,
+            })
+          }
+          onFocusHandled={() => setFocusCollectionId(null)}
+          focusRequested={focusCollectionId === collection.id}
+          onRename={(name) => saveCollection.mutateAsync({ collectionId: collection.id, name })}
+          onStartConversation={() => onStartInCollection(collection.id)}
+          onToggle={() => openCollections.toggle(collection.id)}
+          open={openCollections.open.has(collection.id)}
+          onInteractionChange={onInteractionChange}
+        />
+      ),
+    })
+    if (!openCollections.open.has(collection.id)) continue
+    const page = pageStates.get(`${state}:${collection.id}`)
+    const items = page?.items ?? collection.page.items
+    for (const item of items) addConversation(item, 'collections', undefined, collection.id)
+    if (items.length === 0)
+      rows.push({
+        key: `empty:${collection.id}`,
+        section: 'collections',
+        height: 28,
+        render: () => (
+          <div className="pl-6.5">
+            <EmptyHint>{state === 'all' ? '该合集暂无任务' : emptyConversations(state)}</EmptyHint>
+          </div>
+        ),
+      })
+    if (page?.isError)
+      rows.push({
+        key: `retry:${collection.id}`,
+        section: 'collections',
+        height: 64,
+        focusable: true,
+        render: () => (
+          <div className="pl-6.5">
+            <RetryRow
+              error={page.error}
+              loading={page.isFetching}
+              onRetry={() => retryPages(page)}
+              retryLabel={`重新加载 ${collection.name} 里更多任务`}
+            />
+          </div>
+        ),
+      })
+  }
+  if (allCollections.length === 0 && !creatingCollection)
+    rows.push({
+      key: 'collections-empty',
+      section: 'collections',
+      height: 28,
+      render: () => <EmptyHint>暂无合集</EmptyHint>,
+    })
+  if (allCollections.length > COLLECTIONS_PREVIEW)
+    rows.push({
+      key: 'collections-more',
+      section: 'collections',
+      height: 36,
+      focusable: true,
+      render: () => (
+        <button
+          aria-expanded={allCollectionsShown}
+          className={cn(SIDEBAR_ROW_CLASS, 'w-full text-body-sm text-on-surface-faint ui-focus')}
+          onClick={() => setAllCollectionsShown((shown) => !shown)}
+          type="button"
+        >
+          <span aria-hidden className="w-(--icon-md) shrink-0" />
+          {allCollectionsShown ? '收起合集' : '全部合集'}
+        </button>
+      ),
+    })
+  rows.push({
+    key: 'sections-gap',
+    section: 'collections',
+    height: 15,
+    render: () => <div className="h-3.75" />,
+  })
+  rows.push({
+    key: 'ungrouped-heading',
+    section: 'ungrouped',
+    height: 32,
+    sticky: true,
+    render: () => <SidebarHeading title="任务" />,
+  })
+  const ungrouped = pageStates.get(`${state}:${UNGROUPED}`)
+  const ungroupedItems = ungrouped?.items ?? topology.data?.ungrouped.items ?? []
+  for (const { bucket, items } of groupByRecency(ungroupedItems, (item) => item.createdAt, now)) {
+    const group = RECENCY_LABEL[bucket]
+    rows.push({
+      key: `date:${bucket}`,
+      section: 'ungrouped',
+      group,
+      height: 32,
+      render: () => (
+        <p className="flex h-8 items-end px-2.5 pb-1 text-caption text-on-surface-faint">{group}</p>
+      ),
+    })
+    for (const item of items) addConversation(item, 'ungrouped', group)
+  }
+  if (ungroupedItems.length === 0)
+    rows.push({
+      key: 'ungrouped-empty',
+      section: 'ungrouped',
+      height: 28,
+      render: () => <EmptyHint>{emptyConversations(state)}</EmptyHint>,
+    })
+  if (ungrouped?.isError)
+    rows.push({
+      key: 'ungrouped-retry',
+      section: 'ungrouped',
+      height: 64,
+      focusable: true,
+      render: () => (
+        <RetryRow
+          error={ungrouped.error}
+          loading={ungrouped.isFetching}
+          onRetry={() => retryPages(ungrouped)}
+          retryLabel="重新加载更多任务"
+        />
+      ),
+    })
+  else if (ungrouped?.hasNextPage)
+    rows.push({
+      key: 'ungrouped-next',
+      section: 'ungrouped',
+      height: ungrouped.isFetchingNextPage ? 36 : 1,
+      retain: true,
+      render: () => <NextPageRow getScrollElement={getScrollElement} query={ungrouped} />,
+    })
+
   if (!canRead) return <SidebarFeedback>当前账号没有查看任务权限</SidebarFeedback>
 
   return (
     <DndContext
       onDragEnd={onDragEnd}
+      onDragCancel={() => setDragging(null)}
       onDragStart={({ active }) => setDragging(String(active.id))}
       sensors={[pointer]}
     >
       {/* 吸顶标题用 local 层级压住合集引导线，isolate 把这组层级限定在滚动区内。 */}
       <div
-        className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 pb-2"
+        aria-label="任务列表"
+        role="region"
+        className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-2 pb-2 [overflow-anchor:none]"
         ref={scrollRef}
       >
         {/* 筛选始终挂在这一位置：换档时拓扑按新档位读取，加载与失败只替换下方内容，选中项与键盘焦点留在原处。 */}
@@ -265,84 +494,27 @@ export function SidebarConversations({
           </SidebarFeedback>
         ) : (
           <>
-            <SidebarSection
-              action={
-                canManageCollections
-                  ? {
-                      icon: 'add',
-                      label: '新建合集',
-                      onClick: startCreatingCollection,
-                    }
-                  : undefined
-              }
-              actionRef={addCollectionRef}
-              title="合集"
-            >
-              {creatingCollection && (
-                <SidebarRowEditor
-                  failureMessage="新建合集失败"
-                  initialValue=""
-                  label="新合集名称"
-                  leading={<CollectionIcon />}
-                  onClose={closeCollectionDraft}
-                  onSubmit={async (name) => {
-                    createdCollectionRef.current = (await saveCollection.mutateAsync({ name })).id
-                  }}
-                  placeholder="新合集名称"
-                />
-              )}
-              {visibleCollections.map((collection) => (
-                <CollectionGroup
-                  key={collection.id}
-                  canManage={canManageCollections}
-                  collection={collection}
-                  dragging={dragging}
-                  onDelete={() =>
-                    setCollectionDelete({
-                      collection: { id: collection.id, name: collection.name },
-                      open: true,
-                    })
-                  }
-                  onDeleteConversation={confirmDelete}
-                  onFocusHandled={() => setFocusCollectionId(null)}
-                  onOpenMembership={openMembership}
-                  focusRequested={focusCollectionId === collection.id}
-                  onRename={(name) =>
-                    saveCollection.mutateAsync({ collectionId: collection.id, name })
-                  }
-                  onStartConversation={() => onStartInCollection(collection.id)}
-                  onToggle={() => openCollections.toggle(collection.id)}
-                  open={openCollections.open.has(collection.id)}
-                  state={state}
-                />
-              ))}
-              {allCollections.length === 0 && !creatingCollection && (
-                <EmptyHint>暂无合集</EmptyHint>
-              )}
-              {allCollections.length > COLLECTIONS_PREVIEW && (
-                <button
-                  aria-expanded={allCollectionsShown}
-                  className={cn(
-                    SIDEBAR_ROW_CLASS,
-                    'w-full text-body-sm text-on-surface-faint ui-focus',
-                  )}
-                  onClick={() => setAllCollectionsShown((shown) => !shown)}
-                  type="button"
-                >
-                  {/* 空出图标位，文字与合集名对齐。 */}
-                  <span aria-hidden className="w-(--icon-md) shrink-0" />
-                  {allCollectionsShown ? '收起合集' : '全部合集'}
-                </button>
-              )}
-            </SidebarSection>
-
-            <UngroupedSection
-              dragging={dragging}
-              firstPage={topology.data?.ungrouped ?? { items: [], nextCursor: null }}
-              getScrollElement={getScrollElement}
-              onDeleteConversation={confirmDelete}
-              onOpenMembership={openMembership}
+            {visibleCollections.map((collection) => (
+              <SidebarPageSource
+                key={`${state}:${collection.id}`}
+                collectionId={collection.id}
+                enabled={openCollections.open.has(collection.id)}
+                firstPage={collection.page}
+                onChange={receivePage}
+                state={state}
+              />
+            ))}
+            <SidebarPageSource
+              key={`${state}:${UNGROUPED}`}
+              enabled
+              firstPage={topology.data.ungrouped}
+              onChange={receivePage}
               state={state}
+            />
+            <SidebarVirtualList
+              rows={rows}
+              getScrollElement={getScrollElement}
+              canDrop={canWrite}
             />
           </>
         )}
@@ -396,78 +568,7 @@ export function SidebarConversations({
   )
 }
 
-function UngroupedSection({
-  dragging,
-  firstPage,
-  getScrollElement,
-  onDeleteConversation,
-  onOpenMembership,
-  state,
-}: {
-  dragging: string | null
-  /** 拓扑里任务区的第一页，作分页列表的首页。 */
-  firstPage: ConversationPage
-  /** 侧栏的滚动容器，列表末尾进入它下方一屏以内就读下一页。 */
-  getScrollElement: () => HTMLElement | null
-  onDeleteConversation: (conversation: Conversation) => void
-  onOpenMembership: (conversation: Conversation) => void
-  state: SidebarFilter
-}) {
-  const canWrite = useCanWrite()
-  const groupId = useId()
-  const now = useNowByDay()
-  const { isOver, setNodeRef } = useDroppable({ id: UNGROUPED, disabled: !canWrite })
-  const pages = useSidebarPages({ state }, { firstPage })
-  const items = useConversationRows(
-    uniqueConversations(pages.data.pages.flatMap((one) => one.items)),
-  )
-  // 服务端按建立时间倒序给，每个时间分组只连成一段，组名可以当 key。
-  const groups = groupByRecency(items, (item) => item.createdAt, now)
-
-  return (
-    <div className={cn('rounded-sm', isOver && 'bg-surface-container-high')} ref={setNodeRef}>
-      <SidebarSection title="任务">
-        {groups.map(({ bucket, items: rows }) => (
-          <div
-            aria-labelledby={`${groupId}-${bucket}`}
-            className="flex flex-col gap-px"
-            key={bucket}
-            role="group"
-          >
-            <p
-              className="mt-2 flex h-6 items-center px-2.5 text-caption text-on-surface-faint"
-              id={`${groupId}-${bucket}`}
-            >
-              {RECENCY_LABEL[bucket]}
-            </p>
-            {rows.map((conversation) => (
-              <SidebarConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                dragging={dragging === conversation.id}
-                onDelete={() => onDeleteConversation(conversation)}
-                onOpenMembership={() => onOpenMembership(conversation)}
-              />
-            ))}
-          </div>
-        ))}
-        {items.length === 0 && <EmptyHint>{emptyConversations(state)}</EmptyHint>}
-        {pages.isError ? (
-          <RetryRow
-            error={pages.error}
-            loading={pages.isFetching}
-            onRetry={() => retryPages(pages)}
-            retryLabel="重新加载更多任务"
-          />
-        ) : (
-          pages.hasNextPage && <NextPageRow getScrollElement={getScrollElement} query={pages} />
-        )}
-      </SidebarSection>
-    </div>
-  )
-}
-
-type SidebarSectionProps = {
+type SidebarHeadingProps = {
   action?:
     | {
         icon: IconName
@@ -477,39 +578,27 @@ type SidebarSectionProps = {
     | undefined
   /** 尾部动作按钮的引用，供编辑结束后把焦点还给它。 */
   actionRef?: RefObject<HTMLButtonElement | null>
-  children: React.ReactNode
   title: string
 }
 
-/** 侧栏分区常驻展开，标题只作标签；收起只发生在单个合集上。 */
-function SidebarSection({ action, actionRef, children, title }: SidebarSectionProps) {
-  const headingId = useId()
+/** 两个分区标题由虚拟列表的 section 容器保持吸顶。 */
+function SidebarHeading({ action, actionRef, title }: SidebarHeadingProps) {
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-px">
-      {/* 吸顶标题底色与侧栏同色，滚过的行不会从标题下透出来。左右内距与行相同：标题字与行首图标同一左缘，
-          尾部控件靠负右距让图形右缘落在行内容右缘，与合集计数、任务状态图形同一列。 */}
-      <div className="layer-local-1 sticky top-0 flex h-8 items-center gap-1 bg-surface-container-low px-2.5">
-        <h2
-          className="min-w-0 truncate text-label font-semibold text-on-surface-variant"
-          id={headingId}
-        >
-          {title}
-        </h2>
-        {action && (
-          <div className="ml-auto flex shrink-0 items-center">
-            <IconButton
-              className="-mr-1.25"
-              label={action.label}
-              name={action.icon}
-              onClick={action.onClick}
-              ref={actionRef}
-              size="xs"
-            />
-          </div>
-        )}
-      </div>
-      <div className="flex flex-col gap-px">{children}</div>
-    </section>
+    <div className="flex h-8 items-center gap-1 bg-surface-container-low px-2.5">
+      <h2 className="min-w-0 truncate text-label font-semibold text-on-surface-variant">{title}</h2>
+      {action && (
+        <div className="ml-auto flex shrink-0 items-center">
+          <IconButton
+            className="-mr-1.25"
+            label={action.label}
+            name={action.icon}
+            onClick={action.onClick}
+            ref={actionRef}
+            size="xs"
+          />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -600,30 +689,8 @@ function SidebarFeedback({
 const emptyConversations = (state: SidebarFilter) =>
   state === 'done' ? '暂无标记完成的任务' : state === 'running' ? '暂无运行中的任务' : '暂无任务'
 
-/** 页边界可因活动时间变化重叠，保留首页优先的第一条记录。 */
-const uniqueConversations = (items: readonly Conversation[]): Conversation[] => {
-  const seen = new Set<string>()
-  return items.filter((item) => {
-    if (seen.has(item.id)) return false
-    seen.add(item.id)
-    return true
-  })
-}
-
-/** 分页列表的查询状态；直接传 useSidebarPages 的返回值。 */
-type SidebarPagesQuery = {
-  /** 最近一次读到数据的时刻；每变一次都按当下位置重新判断。 */
-  dataUpdatedAt: number
-  isError: boolean
-  isFetching: boolean
-  isFetchingNextPage: boolean
-  isFetchNextPageError: boolean
-  fetchNextPage: (options?: { cancelRefetch?: boolean }) => Promise<unknown>
-  refetch: () => Promise<unknown>
-}
-
 /** 翻下一页失败就重读那一页；从头重拉失败就整份再重拉。 */
-const retryPages = (query: SidebarPagesQuery): void => {
+const retryPages = (query: SidebarPageState): void => {
   void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())
 }
 
@@ -637,7 +704,7 @@ function NextPageRow({
   query,
 }: {
   getScrollElement: () => HTMLElement | null
-  query: SidebarPagesQuery
+  query: SidebarPageState
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const { dataUpdatedAt, isFetchingNextPage } = query
@@ -707,13 +774,10 @@ function RetryRow({
   )
 }
 
-type CollectionGroupProps = {
+type CollectionHeaderProps = {
   canManage: boolean
   collection: SidebarCollection
-  dragging: string | null
   onDelete: () => void
-  onDeleteConversation: (conversation: Conversation) => void
-  onOpenMembership: (conversation: Conversation) => void
   /** 刚用键盘建成这个合集：挂上后把焦点交给它的行按钮，再调 onFocusHandled 清掉请求。 */
   focusRequested: boolean
   onFocusHandled: () => void
@@ -724,25 +788,22 @@ type CollectionGroupProps = {
   /** 展开与否由侧栏持有，合集行卸载重挂（换筛选、收起合集列表）后照旧。 */
   open: boolean
   onToggle: () => void
-  state: SidebarFilter
+  onInteractionChange: (active: boolean) => void
 }
 
-/** 合集展开时读全它的对话，收着不发请求。 */
-function CollectionGroup({
+/** 合集行只持有界面状态，离屏时由虚拟列表保留正在编辑或打开菜单的行。 */
+function CollectionHeader({
   canManage,
   collection,
-  dragging,
   focusRequested,
   onDelete,
-  onDeleteConversation,
   onFocusHandled,
-  onOpenMembership,
   onRename,
   onStartConversation,
   onToggle,
   open,
-  state,
-}: CollectionGroupProps) {
+  onInteractionChange,
+}: CollectionHeaderProps) {
   const { close, editing, returnRef, start } = useSidebarRowEditing<HTMLButtonElement>()
   const canWrite = useCanWrite()
 
@@ -752,20 +813,12 @@ function CollectionGroup({
     onFocusHandled()
   }, [focusRequested, onFocusHandled, returnRef])
   const { isOver, setNodeRef } = useDroppable({ id: collection.id, disabled: !canWrite })
-  const pages = useSidebarPages(
-    { collectionId: collection.id, state },
-    { enabled: open, firstPage: collection.page },
+  const [menuRetained, setMenuRetained] = useState(false)
+  useEffect(
+    () => onInteractionChange(editing || menuRetained),
+    [editing, menuRetained, onInteractionChange],
   )
-  const items = useConversationRows(
-    uniqueConversations(pages.data.pages.flatMap((one) => one.items)),
-  )
-  const { fetchNextPage, hasNextPage, isError, isFetching } = pages
-  // 展开着就一页接一页读到底；失败后停下，只由重试按钮再读。
-  useEffect(() => {
-    if (open && hasNextPage && !isFetching && !isError) {
-      void fetchNextPage({ cancelRefetch: false })
-    }
-  }, [fetchNextPage, hasNextPage, isError, isFetching, open])
+  useEffect(() => () => onInteractionChange(false), [onInteractionChange])
 
   return (
     <div className="flex flex-col gap-px">
@@ -814,11 +867,15 @@ function CollectionGroup({
                 />
               )}
               {canManage && (
-                <MenuRoot>
+                <MenuRoot
+                  onOpenChange={(isOpen) => {
+                    if (isOpen) setMenuRetained(true)
+                  }}
+                >
                   <MenuTrigger asChild>
                     <IconButton label={`${collection.name} 的操作`} name="more" size="xs" />
                   </MenuTrigger>
-                  <MenuSurface align="end">
+                  <MenuSurface align="end" onCloseAutoFocus={() => setMenuRetained(false)}>
                     <MenuItem icon="edit" onSelect={start}>
                       重命名
                     </MenuItem>
@@ -830,35 +887,6 @@ function CollectionGroup({
                 </MenuRoot>
               )}
             </div>
-          )}
-        </div>
-      )}
-      {open && (
-        <div className="relative flex flex-col gap-px pl-6.5">
-          {/* 引导线对齐合集行文件夹图标的中心；缩进让对话标题与合集名左缘对齐。 */}
-          <span
-            aria-hidden
-            className="absolute inset-y-1 left-4.5 w-px -translate-x-1/2 bg-hairline"
-          />
-          {items.map((conversation) => (
-            <SidebarConversationRow
-              key={conversation.id}
-              conversation={conversation}
-              dragging={dragging === conversation.id}
-              onDelete={() => onDeleteConversation(conversation)}
-              onOpenMembership={() => onOpenMembership(conversation)}
-            />
-          ))}
-          {items.length === 0 && (
-            <EmptyHint>{state === 'all' ? '该合集暂无任务' : emptyConversations(state)}</EmptyHint>
-          )}
-          {isError && (
-            <RetryRow
-              error={pages.error}
-              loading={isFetching}
-              onRetry={() => retryPages(pages)}
-              retryLabel={`重新加载 ${collection.name} 里更多任务`}
-            />
           )}
         </div>
       )}

@@ -8,6 +8,7 @@ import { stubMediaDurations } from '@/testing/media'
 import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { VIDEO_MODELS } from '@/testing/video-models'
 import type { GenerationJob } from '../storyboard.api'
 import { draftStorageKey } from './use-edit-draft'
 import { viewStorageKey } from './use-picked-view'
@@ -171,7 +172,7 @@ const segmentOf = (track: HTMLElement, position: number) =>
 const card = () => screen.queryByRole('region', { name: 'AI 改段' })
 const openCard = () => screen.getByRole('region', { name: 'AI 改段' })
 const requestBox = () => within(openCard()).getByLabelText('修改要求')
-const generateButton = () => within(openCard()).getByRole('button', { name: '生成视频' })
+const generateButton = () => within(openCard()).getByRole('button', { name: '生成' })
 const versionStrip = () => screen.getByRole('group', { name: '视频版本' })
 const versionButton = (label: string) =>
   within(versionStrip()).getByRole('button', { name: new RegExp(`^${label}(?: ·|$)`) })
@@ -183,6 +184,12 @@ const scopeButton = (name: '整片' | '片段') =>
 let restoreMedia = () => {}
 
 beforeEach(() => {
+  // 既有剪辑交互使用支持 1 秒编辑的 Wan；Seedance 边界用例显式选择自己的模型。
+  server.use(
+    http.get('*/api/generations/video-models', () =>
+      HttpResponse.json({ ...VIDEO_MODELS, default: 'wan3.0-video' }),
+    ),
+  )
   // 原片 8 秒，每秒一个关键帧。
   files.set(ROOT_URL, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
   window.localStorage.clear()
@@ -215,7 +222,17 @@ describe('VideoEditor', () => {
       expected: 'wan3.0-video',
     },
   ])('编辑模型：$name', async ({ models, expected }) => {
-    server.use(http.get('*/api/generations/video-models', () => HttpResponse.json(models)))
+    server.use(
+      http.get('*/api/generations/video-models', () =>
+        HttpResponse.json({
+          ...VIDEO_MODELS,
+          ...models,
+          clipModels: models.items.flatMap((id) =>
+            VIDEO_MODELS.clipModels.filter((model) => model.id === id),
+          ),
+        }),
+      ),
+    )
     serveChain([])
     const user = userEvent.setup()
     await renderEditor()
@@ -382,7 +399,7 @@ describe('AI 改段的弹出卡', () => {
       keyframes: [0, 0.5, 1, 2, 3, 4, 5, 6, 7],
       prepare: async () => {},
       position: 1,
-      reason: '时长不足 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
+      reason: '该模型编辑至少需要 1 秒；请按住 Shift 选择相邻片段',
     },
     {
       name: '拆过',
@@ -395,7 +412,7 @@ describe('AI 改段的弹出卡', () => {
         await user.click(screen.getByRole('button', { name: '拆分' }))
       },
       position: 1,
-      reason: '时长不足 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
+      reason: '该模型编辑至少需要 1 秒；请按住 Shift 选择相邻片段',
     },
   ])(
     '选区不能交给 AI（$name）：卡头写原因，写了要求也生成不了',
@@ -425,10 +442,205 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(generateButton()).toBeEnabled())
   })
 
+  it('Seedance 编辑不足 4 秒时禁用，相邻选区合计 4 秒后才可提交', async () => {
+    server.use(http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)))
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+    await user.click(segmentOf(track, 2))
+    pasteTextIntoComposer(requestBox(), '保留动作，调整灯光')
+
+    expect(await within(openCard()).findByText(/编辑至少需要 4 秒/)).toBeVisible()
+    expect(generateButton()).toBeDisabled()
+    await user.keyboard('{Shift>}')
+    await user.click(segmentOf(track, 3))
+    await user.click(segmentOf(track, 4))
+    await user.click(segmentOf(track, 5))
+    await user.keyboard('{/Shift}')
+    expect(within(openCard()).getByText('1.0 – 5.0 秒 · 视频和原声一起重做')).toBeVisible()
+    expect(generateButton()).toBeEnabled()
+  })
+
+  it('Seedance 编辑超过 30 秒时禁止提交并显示上限', async () => {
+    server.use(http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)))
+    files.set(ROOT_URL, { keyframes: [0], duration: 31 })
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 1))
+    pasteTextIntoComposer(requestBox(), '调整灯光')
+    expect(await within(openCard()).findByText(/编辑最多支持 30 秒/)).toBeVisible()
+    expect(generateButton()).toBeDisabled()
+  })
+
+  it('图生滑杆逐秒调整并遵循模型边界，切换模式保留时长，提交期间禁止调节', async () => {
+    server.use(http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)))
+    serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    let accept = () => {}
+    const acceptance = new Promise<void>((resolve) => (accept = resolve))
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        await acceptance
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 2))
+    expect(within(openCard()).queryByRole('slider', { name: '生成时长（秒）' })).toBeNull()
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    pasteTextIntoComposer(requestBox(), '人物转身')
+    pasteFilesIntoComposer(requestBox(), [new File(['png'], '人物.png', { type: 'image/png' })])
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    const duration = () => within(openCard()).getByRole('slider', { name: '生成时长（秒）' })
+    const currentDuration = () => within(openCard()).getByLabelText('当前生成时长')
+    expect(duration()).toHaveAttribute('aria-valuemin', '4')
+    expect(duration()).toHaveAttribute('aria-valuemax', '30')
+    act(() => duration().focus())
+    await user.keyboard('{Home}{ArrowLeft}')
+    expect(currentDuration()).toHaveTextContent(/^4\s*秒$/)
+    await user.keyboard('{ArrowRight}')
+    expect(currentDuration()).toHaveTextContent(/^5\s*秒$/)
+    await user.keyboard('{End}{ArrowRight}')
+    expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
+
+    await user.click(within(openCard()).getByRole('radio', { name: '编辑' }))
+    expect(within(openCard()).queryByRole('slider', { name: '生成时长（秒）' })).toBeNull()
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
+    await user.click(within(openCard()).getByRole('button', { name: '图生模型' }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'vendor-a-seedance-2-0' }))
+
+    expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
+    expect(duration()).toHaveAttribute('aria-valuemin', '4')
+    expect(duration()).toHaveAttribute('aria-valuemax', '15')
+    expect(within(openCard()).getByText(/图生时长须为 4–15 秒/)).toBeVisible()
+    expect(generateButton()).toBeDisabled()
+    act(() => duration().focus())
+    await user.keyboard('{End}')
+    expect(currentDuration()).toHaveTextContent(/^15\s*秒$/)
+    expect(generateButton()).toBeEnabled()
+    await user.click(generateButton())
+    try {
+      await waitFor(() => expect(submitted).toHaveLength(1))
+      expect(submitted[0]).toMatchObject({
+        model: 'vendor-a-seedance-2-0',
+        seconds: 15,
+        reference_video_urls: [],
+      })
+      expect(duration().closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.keyDown(duration(), { key: 'Home' })
+      expect(currentDuration()).toHaveTextContent(/^15\s*秒$/)
+    } finally {
+      await act(async () => accept())
+    }
+    await waitFor(() =>
+      expect(duration().closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'false'),
+    )
+  })
+
+  it('图生仅有图片也能提交：粘贴自动上传并引用，删除的图不发送，插入首帧后保持原地址', async () => {
+    const sourceUrl = 'https://test.oss-cn-hangzhou.aliyuncs.com/source.mp4'
+    files.set(sourceUrl, { keyframes: [0, 1, 2, 3, 4], duration: 5 })
+    serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor(makeGenerationJob({ ...root, outputUrl: sourceUrl }))
+    const track = await timeline()
+    await user.click(segmentOf(track, 2))
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    const image = (name: string) => new File(['png'], name, { type: 'image/png' })
+    pasteFilesIntoComposer(requestBox(), [image('保留.png')])
+    expect(generateButton()).toBeDisabled()
+    fireEvent.keyDown(requestBox(), { key: 'Enter' })
+    expect(submitted).toHaveLength(0)
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    pasteFilesIntoComposer(requestBox(), [image('删除.png')])
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    fireEvent.keyDown(requestBox(), { key: 'Backspace', keyCode: 8 })
+    expect(within(requestBox()).queryByText('删除.png')).toBeNull()
+    expect(within(requestBox()).getByText('保留.png')).toBeVisible()
+    expect(within(requestBox()).queryByText('选区首帧')).toBeNull()
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toHaveLength(1))
+    expect(submitted[0]?.['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+    expect(submitted[0]?.['prompt']).toBe('@Image1')
+    expect(submitted[0]?.['reference_video_urls']).toEqual([])
+    expect(referenceSamples).toEqual([])
+
+    await user.click(segmentOf(track, 3))
+    act(() => requestBox().focus())
+    await user.keyboard('@选区首帧{Enter}')
+    expect(within(requestBox()).getByText('选区首帧')).toBeVisible()
+    await user.click(segmentOf(track, 4))
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toHaveLength(2))
+    expect(submitted[1]?.['reference_image_urls']).toEqual([
+      `${sourceUrl}?x-oss-process=video/snapshot,t_2000,f_jpg,w_1280,h_0`,
+    ])
+    expect(submitted[1]?.['prompt']).toBe('@Image1')
+    expect(submitted[1]?.['reference_video_urls']).toEqual([])
+  })
+
+  it('图生只有图片可用，切回编辑必须补充修改文字，按钮与 Enter 都遵循同一条件', async () => {
+    serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 2))
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    pasteFilesIntoComposer(requestBox(), [new File(['png'], '参考.png', { type: 'image/png' })])
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+
+    await user.click(within(openCard()).getByRole('radio', { name: '编辑' }))
+    expect(generateButton()).toBeDisabled()
+    pasteTextIntoComposer(requestBox(), '   ')
+    fireEvent.keyDown(requestBox(), { key: 'Enter' })
+    expect(generateButton()).toBeDisabled()
+    expect(submitted).toHaveLength(0)
+
+    pasteTextIntoComposer(requestBox(), '调整灯光')
+    expect(generateButton()).toBeEnabled()
+    fireEvent.keyDown(requestBox(), { key: 'Enter' })
+    await waitFor(() => expect(submitted).toHaveLength(1))
+    expect(submitted[0]?.['prompt']).toMatch(/^@Image1\s+调整灯光$/)
+    expect(submitted[0]?.['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+    expect(submitted[0]?.['reference_video_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+  })
+
   it('提交：参考图按出现的先后编成 @Image1、@Image2 与 reference_image_urls；成功后要求清空', async () => {
     server.use(
       http.get('*/api/generations/video-models', () =>
-        HttpResponse.json({ default: 'wan3.0-video', items: ['wan3.0-video'] }),
+        HttpResponse.json({
+          ...VIDEO_MODELS,
+          default: 'wan3.0-video',
+          items: ['wan3.0-video'],
+          clipModels: VIDEO_MODELS.clipModels.filter((model) => model.id === 'wan3.0-video'),
+        }),
       ),
     )
     // 受理的编辑段进链里，轮询照样看得到它在跑。
@@ -480,7 +692,7 @@ describe('AI 改段的弹出卡', () => {
       range_start_ms: 1000,
       range_end_ms: 3000,
       model: 'wan3.0-video',
-      prompt: '编辑视频，光线参考@Image1，构图参考@Image2',
+      prompt: '光线参考@Image1，构图参考@Image2',
     })
     await waitFor(() => expect(confirmedImages).toHaveLength(2))
     expect(submitted?.['reference_image_urls']).toEqual(confirmedImages)

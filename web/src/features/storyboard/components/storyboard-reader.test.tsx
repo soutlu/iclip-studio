@@ -11,6 +11,7 @@ import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { openAddImage } from '@/testing/storyboard'
+import { VIDEO_CLIP_MODELS } from '@/testing/video-models'
 import type { ShotsDocument } from '../shot-document'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
@@ -1247,6 +1248,7 @@ describe('StoryboardReader', () => {
         return HttpResponse.json({
           default: 'vendor-a-seedance-2-5',
           items: ['vendor-a-seedance-2-5'],
+          clipModels: VIDEO_CLIP_MODELS.filter((model) => model.id === 'vendor-a-seedance-2-5'),
         })
       }),
     )

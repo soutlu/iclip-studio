@@ -4,16 +4,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
+import { VIDEO_CLIP_MODELS } from '@/testing/video-models'
 import { readAudioPeaks, readKeyframes } from './reference-clip'
 import {
-  editTriggerOf,
-  editableModels,
-  pickEditModel,
+  pickGenerationModel,
   seedVideoEditJob,
   submitVideoComposite,
-  submitVideoEdit,
+  submitClipGeneration,
   videoEditChainKey,
 } from './video-editor.api'
+
+const modelById = (id: string) => {
+  const model = VIDEO_CLIP_MODELS.find((item) => item.id === id)
+  if (model === undefined) throw new Error(`缺少测试模型 ${id}`)
+  return model
+}
 
 /** 一块解出来的音频：从 `timestamp` 秒起，各声道的样本。 */
 type FakeAudio = { timestamp: number; sampleRate: number; channels: number[][] }
@@ -169,7 +174,7 @@ vi.mock('mediabunny', () => {
   }
 })
 
-describe('submitVideoEdit', () => {
+describe('submitClipGeneration', () => {
   const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
   const sourceJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
   const baseMediaUrl = 'https://oss.example.com/take.mp4'
@@ -225,14 +230,17 @@ describe('submitVideoEdit', () => {
   })
 
   const submit = () =>
-    submitVideoEdit({
+    submitClipGeneration({
       conversationId,
       taskId: null,
       sourceJobId,
-      referenceClips: [{ mediaUrl: baseMediaUrl, start: 1.917, end: 6.5 }],
+      generation: {
+        mode: 'edit',
+        referenceClips: [{ mediaUrl: baseMediaUrl, start: 1.917, end: 6.5 }],
+      },
       // 两端正好是基底的关键帧（取整到毫秒的读数）。
       range: { start: 1.917, end: 6.5 },
-      model: 'wan3.0-video',
+      model: modelById('wan3.0-video'),
       prompt: '换成浅灰背景',
       referenceImageUrls: ['https://cdn.example.com/ref.png'],
     })
@@ -258,7 +266,7 @@ describe('submitVideoEdit', () => {
       range_end_ms: 6500,
       reference_video_urls: [clipUrl],
       model: 'wan3.0-video',
-      prompt: '编辑视频，换成浅灰背景',
+      prompt: '换成浅灰背景',
       reference_image_urls: ['https://cdn.example.com/ref.png'],
       seconds: -1,
     })
@@ -272,13 +280,13 @@ describe('submitVideoEdit', () => {
       { mediaUrl: baseMediaUrl, start: 4, end: 6 },
     ]
 
-    await submitVideoEdit({
+    await submitClipGeneration({
       conversationId,
       taskId: null,
       sourceJobId,
-      referenceClips,
+      generation: { mode: 'edit', referenceClips },
       range: { start: 2, end: 6 },
-      model: 'wan3.0-video',
+      model: modelById('wan3.0-video'),
       prompt: '继续修改选中的内容',
       referenceImageUrls: [],
     })
@@ -312,6 +320,180 @@ describe('submitVideoEdit', () => {
     expect(media.events).toEqual([])
     expect(media.disposed).toBe(1)
   })
+
+  it.each(['vendor-a-seedance-2-0', 'vendor-a-seedance-2-5', 'wan3.0-video'])(
+    '%s 图生仅提交正文图片与生成时长，不编码或上传参考视频',
+    async (id) => {
+      await submitClipGeneration({
+        conversationId,
+        taskId: null,
+        sourceJobId,
+        range: { start: 2, end: 3 },
+        model: modelById(id),
+        prompt: '人物向前走两步',
+        referenceImageUrls: ['https://cdn.example.com/ref.png'],
+        generation: { mode: 'image', seconds: 5 },
+      })
+
+      expect(media.events).toEqual(['POST /api/generations/video-edits'])
+      expect(media.sources).toEqual([])
+      expect(media.trims).toEqual([])
+      expect(signed).toBeUndefined()
+      expect(edited).toEqual({
+        conversation_id: conversationId,
+        task_id: null,
+        source_job_id: sourceJobId,
+        range_start_ms: 2000,
+        range_end_ms: 3000,
+        model: id,
+        prompt: '人物向前走两步',
+        reference_image_urls: ['https://cdn.example.com/ref.png'],
+        reference_video_urls: [],
+        seconds: 5,
+      })
+    },
+  )
+
+  it.each([
+    ['vendor-a-seedance-2-0', 3],
+    ['vendor-a-seedance-2-0', 16],
+    ['vendor-a-seedance-2-0', 5.5],
+    ['vendor-a-seedance-2-5', 3],
+    ['vendor-a-seedance-2-5', 31],
+    ['vendor-a-seedance-2-5', 5.5],
+    ['wan3.0-video', 1],
+    ['wan3.0-video', 31],
+    ['wan3.0-video', 5.5],
+  ])('%s 图生时长 %s 秒越界或不是整数时不发送请求', async (id, seconds) => {
+    await expect(
+      submitClipGeneration({
+        conversationId,
+        taskId: null,
+        sourceJobId,
+        range: { start: 2, end: 3 },
+        model: modelById(id),
+        prompt: '人物向前走两步',
+        referenceImageUrls: ['https://cdn.example.com/ref.png'],
+        generation: { mode: 'image', seconds },
+      }),
+    ).rejects.toThrow(/时长/)
+
+    expect(media.events).toEqual([])
+    expect(media.sources).toEqual([])
+    expect(edited).toBeUndefined()
+  })
+
+  it('图生没有正文图片时不发送请求', async () => {
+    await expect(
+      submitClipGeneration({
+        conversationId,
+        taskId: null,
+        sourceJobId,
+        range: { start: 2, end: 3 },
+        model: modelById('vendor-a-seedance-2-5'),
+        prompt: '人物向前走两步',
+        referenceImageUrls: [],
+        generation: { mode: 'image', seconds: 5 },
+      }),
+    ).rejects.toThrow('请在描述中引用至少一张图片')
+
+    expect(media.events).toEqual([])
+    expect(media.sources).toEqual([])
+    expect(edited).toBeUndefined()
+  })
+
+  it.each([
+    ['vendor-a-seedance-2-5', 3.999],
+    ['vendor-a-seedance-2-5', 30.001],
+    ['wan3.0-video', 0.999],
+    ['wan3.0-video', 15.001],
+  ])('%s 编辑参考时长 %s 秒越界时，在读取或编码视频前拦截', async (id, seconds) => {
+    await expect(
+      submitClipGeneration({
+        conversationId,
+        taskId: null,
+        sourceJobId,
+        range: { start: 2, end: 7 },
+        model: modelById(id),
+        prompt: '人物向前走两步',
+        referenceImageUrls: [],
+        generation: {
+          mode: 'edit',
+          referenceClips: [{ mediaUrl: baseMediaUrl, start: 0, end: seconds }],
+        },
+      }),
+    ).rejects.toThrow(/至少|最多/)
+
+    expect(media.events).toEqual([])
+    expect(media.sources).toEqual([])
+    expect(media.trims).toEqual([])
+    expect(edited).toBeUndefined()
+  })
+
+  it('两个相邻的 2 秒结果按参考总长 4 秒交给 Seedance 编辑，基底替换区间仍可为 1 秒', async () => {
+    const referenceClips = [
+      { mediaUrl: baseMediaUrl, start: 0, end: 2 },
+      { mediaUrl: baseMediaUrl, start: 2, end: 4 },
+    ]
+    await submitClipGeneration({
+      conversationId,
+      taskId: null,
+      sourceJobId,
+      range: { start: 6, end: 7 },
+      model: modelById('vendor-a-seedance-2-5'),
+      prompt: '人物向前走两步',
+      referenceImageUrls: [],
+      generation: { mode: 'edit', referenceClips },
+    })
+
+    expect(media.trims).toEqual(referenceClips)
+    expect(media.videoSamples).toEqual([
+      { timestamp: 0, duration: 2 },
+      { timestamp: 2, duration: 2 },
+    ])
+    expect(edited).toMatchObject({
+      range_start_ms: 6000,
+      range_end_ms: 7000,
+      reference_video_urls: [clipUrl],
+      prompt: '人物向前走两步',
+      seconds: -1,
+    })
+  })
+
+  it.each([
+    { id: 'vendor-a-seedance-2-5', start: 0.1, end: 4.1 },
+    { id: 'wan3.0-video', start: 1.1, end: 16.1 },
+  ])('$id 的毫秒精度合法边界 $start–$end 秒不会被浮点误差拒绝', async ({ id, start, end }) => {
+    media.duration = end
+    const referenceClips = [{ mediaUrl: baseMediaUrl, start, end }]
+
+    await submitClipGeneration({
+      conversationId,
+      taskId: null,
+      sourceJobId,
+      range: { start, end },
+      model: modelById(id),
+      prompt: '保持人物造型',
+      referenceImageUrls: [],
+      generation: { mode: 'edit', referenceClips },
+    })
+
+    expect(media.trims).toEqual(referenceClips)
+    expect(media.events).toEqual([
+      'encode',
+      'POST /api/uploads/sign',
+      `PUT /mock-oss/${uploadId}`,
+      `POST /api/uploads/${uploadId}/confirm`,
+      'POST /api/generations/video-edits',
+    ])
+    expect(edited).toMatchObject({
+      model: id,
+      range_start_ms: Math.round(start * 1000),
+      range_end_ms: Math.round(end * 1000),
+      reference_video_urls: [clipUrl],
+      seconds: -1,
+    })
+  })
 })
 
 describe('readKeyframes', () => {
@@ -324,6 +506,12 @@ describe('readKeyframes', () => {
       keyframes: [0, 1.917, 4.208, 6.5],
       duration: 8.042,
     })
+    expect(media.disposed).toBe(1)
+  })
+
+  it.each([0, -1, Infinity, NaN])('拒绝无效时长 %s 并释放媒体', async (duration) => {
+    media.duration = duration
+    await expect(readKeyframes('https://oss.example.com/take.mp4')).rejects.toThrow('视频时长无效')
     expect(media.disposed).toBe(1)
   })
 })
@@ -449,37 +637,12 @@ describe('编辑器用哪个模型', () => {
   it.each([
     ['选过的还在允许表里就用它', 'wan3.0-video', 'vendor-a-seedance-2-5', 'wan3.0-video'],
     ['选过的不在了退回默认', 'gone-model', 'vendor-a-seedance-2-5', 'vendor-a-seedance-2-5'],
-    [
-      '默认模型不支持编辑就取第一个支持的',
-      undefined,
-      'vendor-a-seedance-2-0',
-      'vendor-a-seedance-2-5',
-    ],
+    ['默认模型不在允许列表就取第一个', undefined, 'vendor-a-seedance-2-0', 'vendor-a-seedance-2-5'],
   ])('%s', (_name, wanted, fallback, expected) => {
-    expect(pickEditModel(models, wanted, fallback)).toBe(expected)
+    expect(pickGenerationModel(models, wanted, fallback)).toBe(expected)
   })
 
   it('一个都没有就没有模型', () => {
-    expect(pickEditModel([], 'x', 'y')).toBeUndefined()
-  })
-})
-
-describe('模型怎么触发编辑，按名字认', () => {
-  it('Seedance 2.5 走 provider_options 开关，网关的两种前缀都认', () => {
-    expect(editTriggerOf('vendor-a-seedance-2-5')).toEqual({
-      providerOptions: { omni_reference_task_type: 'edit' },
-    })
-    expect(editTriggerOf('vendor-b-seedance-2-5')).toEqual(editTriggerOf('vendor-a-seedance-2-5'))
-  })
-
-  it('万相 3.0 靠正文前缀', () => {
-    expect(editTriggerOf('wan3.0-video-prime')).toEqual({ promptPrefix: '编辑视频，' })
-  })
-
-  it('不认识的模型做不了编辑，下拉里不列', () => {
-    expect(editTriggerOf('vendor-a-seedance-2-0')).toBeUndefined()
-    expect(
-      editableModels(['vendor-a-seedance-2-0', 'vendor-a-seedance-2-5', 'wan3.0-video']),
-    ).toEqual(['vendor-a-seedance-2-5', 'wan3.0-video'])
+    expect(pickGenerationModel([], 'x', 'y')).toBeUndefined()
   })
 })

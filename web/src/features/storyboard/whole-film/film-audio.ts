@@ -10,13 +10,19 @@ const PEAK = 10 ** (-1.5 / 20)
 const EDGE_SECONDS = 0.05
 
 export type FilmPcm = { sampleRate: number; channels: readonly Float32Array[] }
-export type FilmAudioSegment = { source: FilmPcm | null; start: number; end: number }
+export type FilmAudioSegment = {
+  source: FilmPcm | null
+  start: number
+  end: number
+  volume?: number
+}
 export type FilmAudioMusic = {
   source: FilmPcm
   start: number
   bodyStart: number
   bodyDuration: number
   curve: readonly GainPoint[]
+  volume?: number
 }
 
 /** BS.1770 的 K 加权两级滤波器；系数生成与 libebur128 的 ebur128_init_filter 对账：
@@ -131,7 +137,8 @@ const limitPeak = (channels: readonly Float32Array[]) => {
 }
 
 /** 原声按整条来源测响度再裁段；模板也是普通段。音乐只铺正文，先归一再 duck / 淡出，两路相加后
- * 整体归一并限幅。返回全新的 48 kHz stereo PCM，不修改调用方或查询缓存中的声音。 */
+ * 母线增益按未手调的参考混音计算，避免把用户调低的音量再次拉高；最后限幅。
+ * 返回全新的 48 kHz stereo PCM，不修改调用方或查询缓存中的声音。 */
 export const mixFilmAudio = (
   segments: readonly FilmAudioSegment[],
   music: FilmAudioMusic | null,
@@ -140,6 +147,10 @@ export const mixFilmAudio = (
     segments.reduce((sum, segment) => sum + segment.end - segment.start, 0) * FILM_AUDIO_RATE,
   )
   const channels = [new Float32Array(count), new Float32Array(count)]
+  const adjusted =
+    segments.some((segment) => (segment.volume ?? 1) !== 1) ||
+    (music !== null && (music.volume ?? 1) !== 1)
+  const reference = adjusted ? [new Float32Array(count), new Float32Array(count)] : channels
   const gains = new Map<FilmPcm, number>()
   const sourceGain = (source: FilmPcm) => {
     const known = gains.get(source)
@@ -158,8 +169,12 @@ export const mixFilmAudio = (
       for (let frame = 0; frame < length; frame += 1) {
         const clock = frame / FILM_AUDIO_RATE
         const level = gain * Math.min(1, clock / fade, (duration - clock) / fade)
-        for (const [index, channel] of channels.entries())
-          channel[at + frame] = sampleAt(segment.source, index, segment.start + clock) * level
+        for (const [index, channel] of channels.entries()) {
+          const sample = sampleAt(segment.source, index, segment.start + clock) * level
+          channel[at + frame] = sample * (segment.volume ?? 1)
+          const referenceChannel = reference[index]
+          if (adjusted && referenceChannel !== undefined) referenceChannel[at + frame] = sample
+        }
       }
     }
     at += length
@@ -178,13 +193,17 @@ export const mixFilmAudio = (
       // 后端 asetnsamples 的 10 ms 帧求值，结尾淡出按采样线性处理。
       const duck = duckFrames[Math.floor(frame / (FILM_AUDIO_RATE / 100))] ?? 0
       const level = gain * duck * Math.min(1, (music.bodyDuration - clock) / fade)
-      for (const [index, channel] of channels.entries())
-        channel[start + frame] =
-          (channel[start + frame] ?? 0) + sampleAt(music.source, index, music.start + clock) * level
+      for (const [index, channel] of channels.entries()) {
+        const sample = sampleAt(music.source, index, music.start + clock) * level
+        channel[start + frame] = (channel[start + frame] ?? 0) + sample * (music.volume ?? 1)
+        const referenceChannel = reference[index]
+        if (adjusted && referenceChannel !== undefined)
+          referenceChannel[start + frame] = (referenceChannel[start + frame] ?? 0) + sample
+      }
     }
   }
   const result = { sampleRate: FILM_AUDIO_RATE, channels }
-  const gain = normalizationGain(result, FILM_LUFS)
+  const gain = normalizationGain({ sampleRate: FILM_AUDIO_RATE, channels: reference }, FILM_LUFS)
   for (const channel of channels)
     for (let frame = 0; frame < channel.length; frame += 1)
       channel[frame] = (channel[frame] ?? 0) * gain

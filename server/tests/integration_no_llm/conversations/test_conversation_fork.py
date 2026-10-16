@@ -23,7 +23,7 @@ from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
 from iclip.common.errors import Conflict, NotFound
-from iclip.config import ResolvedAgent
+from iclip.config import ResolvedAgent, VideoGenerationSection
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
@@ -490,10 +490,25 @@ async def media_app(
         monkeypatch.setenv(name, value)
     async with connected(migrated_pg) as conn:
         await reset_database(conn)
+    config = config_with_media()
+    media_generation = config.media_generation
+    assert media_generation is not None
+    config = config.model_copy(
+        update={
+            "media_generation": media_generation.model_copy(
+                update={
+                    "video": VideoGenerationSection(
+                        model="vendor-a-seedance-2-5",
+                        allowed_models=("vendor-a-seedance-2-5",),
+                    )
+                }
+            )
+        }
+    )
     engine = build_engine(migrated_pg)
     try:
         yield build_app(
-            config_with_media(),
+            config,
             engine=engine,
             object_store=MemoryObjectStore(),
             queue_connector=InMemoryConnector(),
@@ -541,7 +556,7 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
     repo = SqlGenerationRepository(engine)
     with TemporaryDirectory(prefix="fork-clip-") as tmp:
         clip_bytes = synthesize_video(
-            Path(tmp) / "clip.mp4", size="160x120", seconds=2, audio=False
+            Path(tmp) / "clip.mp4", size="160x120", seconds=4, audio=False
         )
     try:
         async with make_client(media_app) as client, serving({"clip.mp4": clip_bytes}) as media:
@@ -591,7 +606,8 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
                         "range_start_ms": 1000,
                         "range_end_ms": 3000,
                         "reference_video_urls": [clip_url],
-                        "model": "seedance",
+                        "model": "vendor-a-seedance-2-5",
+                        "seconds": -1,
                         "prompt": "换一双鞋",
                         "conversation_id": copy,
                     },

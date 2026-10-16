@@ -32,6 +32,7 @@ from iclip.platform.media.ffmpeg import (
     MAX_AUDIO_BYTES,
     MAX_VIDEO_BYTES,
     FilmCaption,
+    FilmCut,
     FilmMusic,
     FilmSound,
     MediaCut,
@@ -210,12 +211,14 @@ class FfmpegComposeProvider:
                     source=fetched_music[request.music.url],
                     offset=request.music.offset_ms / 1000,
                     gain=[(point.at_ms / 1000, point.gain) for point in request.music.gain],
+                    volume=request.music.volume,
                 )
             cuts = [
-                MediaCut(
+                FilmCut(
                     source=sources[segment.url],
                     start=segment.start_ms / 1000,
                     end=segment.end_ms / 1000,
+                    volume=segment.volume,
                 )
                 for segment in request.segments
             ]

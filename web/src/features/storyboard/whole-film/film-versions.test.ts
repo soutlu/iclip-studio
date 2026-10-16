@@ -1,8 +1,15 @@
 import { assert, describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
-import { parseStoredFilm, serializeStoredFilm, splitAt, trimSegment } from './film-draft'
+import {
+  parseStoredFilm as parseDraft,
+  serializeStoredFilm,
+  splitAt,
+  trimSegment,
+} from './film-draft'
 import { burnedSubtitles, projectSubtitles, type SubtitleSource } from './film-subtitles'
 import { draftFromVersion } from './film-versions'
+
+const parseStoredFilm = (raw: string) => parseDraft(raw, () => 'group')
 
 const source: SubtitleSource = {
   kind: 'ready',
@@ -17,7 +24,7 @@ const restore = (subtitles: { startMs: number; endMs: number; text: string }[]) 
       request: { segments: [{ sourceJobId: 'A', startMs: 0, endMs: 5000 }], subtitles },
     }),
     {
-      groupOf: () => 'group',
+      takeOf: () => 'group',
       generatedMusic: new Set(),
       newId: () => `id-${++id}`,
     },
@@ -29,6 +36,68 @@ const captions = (film: ReturnType<typeof restore>) =>
   burnedSubtitles(projectSubtitles(film, () => source).subtitles)
 
 describe('从已合成版本恢复字幕', () => {
+  it('恢复各段音量、音乐音量及原始压低曲线，浏览器存取后不丢失', () => {
+    const gain = [
+      { atMs: 0, gain: 0.2 },
+      { atMs: 5000, gain: 0.45 },
+    ]
+    const request = {
+      segments: [{ sourceJobId: 'A', startMs: 0, endMs: 5000, volume: 0.4 }],
+      subtitles: [],
+      music: {
+        audioJobId: 'music',
+        url: 'https://example.com/music.mp3',
+        offsetMs: 1250,
+        volume: 1.5,
+        gain,
+      },
+    }
+    const stored = draftFromVersion(makeGenerationJob({ operation: 'compose', request }), {
+      takeOf: () => 'group',
+      generatedMusic: new Set(['music']),
+      newId: () => 'segment',
+    })
+    assert(stored !== undefined)
+    const reloaded = parseStoredFilm(serializeStoredFilm(stored))
+    expect(reloaded?.film.segments[0]?.volume).toBe(0.4)
+    expect(reloaded?.film.music).toEqual({
+      kind: 'generate',
+      jobId: 'music',
+      userStart: 1.25,
+      volume: 1.5,
+      gain,
+    })
+  })
+  it('恢复同组不同生成的素材轨，剪辑保留来源身份且可扩展原选区', () => {
+    let id = 0
+    const stored = draftFromVersion(
+      makeGenerationJob({
+        operation: 'compose',
+        request: {
+          segments: [
+            { sourceJobId: 'A-edit', startMs: 2000, endMs: 5000 },
+            { sourceJobId: 'B', startMs: 1000, endMs: 3000 },
+            { sourceJobId: 'A', startMs: 0, endMs: 1000 },
+          ],
+          subtitles: [],
+        },
+      }),
+      {
+        takeOf: (sourceId) => (sourceId === 'A-edit' ? 'A' : sourceId),
+        generatedMusic: new Set(),
+        newId: () => `s${++id}`,
+      },
+    )
+    assert(stored !== undefined)
+    expect(stored.lanes).toEqual([
+      { takeId: 'A', jobId: 'A-edit' },
+      { takeId: 'B', jobId: 'B' },
+    ])
+    const expanded = trimSegment(stored.film, 's1', 'start', 1.6, 8)
+    expect(expanded.segments[0]).toMatchObject({ sourceJobId: 'A-edit', start: 1.6, end: 5 })
+    expect(expanded.segments.slice(1)).toEqual(stored.film.segments.slice(1))
+  })
+
   it('清空的识别字幕不会重新出现', () => {
     expect(captions(restore([]))).toEqual([])
   })
@@ -73,7 +142,7 @@ describe('从已合成版本恢复字幕', () => {
     }
     let id = 0
     const stored = draftFromVersion(makeGenerationJob({ operation: 'compose', request }), {
-      groupOf: () => 'group',
+      takeOf: () => 'group',
       generatedMusic: new Set(),
       newId: () => `id-${++id}`,
     })

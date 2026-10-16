@@ -35,6 +35,12 @@ function FilmCard({ anchorRef, label, leading, title, detail, onClose, children 
 
   const place = useEffectEvent(() => {
     const card = cardRef.current
+    // 短横屏的舞台很窄，卡固定在对话框右下角，不能继续套用舞台内的横坐标。
+    if (card !== null && getComputedStyle(card).position === 'fixed') {
+      card.style.removeProperty('left')
+      card.style.removeProperty('--card-notch')
+      return
+    }
     const stage = card?.offsetParent
     const anchor = anchorRef.current
     if (card === null || !(stage instanceof HTMLElement) || anchor === null) return
@@ -102,7 +108,7 @@ function Frame({ src }: { src: string | undefined }) {
   )
 }
 
-/** 选中成片轨上的一段：第几段、出自哪一版、取了素材的哪一截。界面上不调声音。 */
+/** 选中成片轨上的一段：第几段、出自哪一版、取了素材的哪一截。声音在播放条下调整。 */
 export function SegmentCard({
   anchorRef,
   position,
@@ -134,7 +140,7 @@ export function SegmentCard({
   )
 }
 
-/** 选中音乐轨上的音乐：用了整首的哪一段、拍子与对齐结果；生成的能重新生成，都能删。没有音量：界面上不调声音。 */
+/** 选中音乐轨上的音乐：用了整首的哪一段、拍子与对齐结果；生成的能重新生成，都能删。 */
 export function MusicCard({
   anchorRef,
   title,
