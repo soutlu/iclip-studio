@@ -279,6 +279,27 @@ export const zCategoryCountOut = z.object({
 })
 
 /**
+ * ClipEditDurationOut
+ *
+ * 片段编辑接受的实际参考视频时长范围，单位秒。
+ */
+export const zClipEditDurationOut = z.object({
+  maxSeconds: z.int(),
+  minSeconds: z.int(),
+})
+
+/**
+ * ClipImageDurationOut
+ *
+ * 图生片段的输出时长范围，按整秒选择。
+ */
+export const zClipImageDurationOut = z.object({
+  defaultSeconds: z.int(),
+  maxSeconds: z.int(),
+  minSeconds: z.int(),
+})
+
+/**
  * CollectionIn
  *
  * 新建或改名。名字必填——没名字的口袋没法认。
@@ -2292,6 +2313,18 @@ export const zLibraryVideoDetailOut = z.object({
 })
 
 /**
+ * VideoClipModelOut
+ *
+ * 视频编辑页可以使用的模型；edit 为空表示只支持图生。
+ */
+export const zVideoClipModelOut = z.object({
+  edit: zClipEditDurationOut.nullable(),
+  id: z.string(),
+  image: zClipImageDurationOut,
+  maxReferenceImages: z.int(),
+})
+
+/**
  * VideoComposeIn
  *
  * 一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。
@@ -2552,8 +2585,8 @@ export const zOpsCatchup = z.object({
  *
  * 一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
  *
- * 转发给上游的字段照上游命名，参考视频恰好一条：调用方按当前选用素材裁剪、拼接后上传的
- * 参考片段，时长不必等于基底替换区间。
+ * 转发给上游的字段照上游命名。有参考视频时编辑调用方按当前选用素材裁剪、拼接后上传的
+ * 片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。
  * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
  * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
  * ``VideoGenerationIn``，来源、原作与区间落列。
@@ -2567,8 +2600,8 @@ export const zVideoEditIn = z.object({
   range_end_ms: z.int(),
   range_start_ms: z.int().gte(0),
   reference_image_urls: z.array(z.string()).max(30).optional().default([]),
-  reference_video_urls: z.tuple([z.string()]),
-  seconds: z.int().gte(-1).nullish(),
+  reference_video_urls: z.array(z.string()).max(1).optional().default([]),
+  seconds: z.int().gte(-1),
   source_job_id: z.uuid(),
   task_id: z.uuid().nullish(),
   user_name: z.string().min(1).max(200).nullish(),
@@ -2577,9 +2610,10 @@ export const zVideoEditIn = z.object({
 /**
  * VideoModelsOut
  *
- * 接入了哪几个视频模型。只有模型 id，下拉直接显示它。
+ * 配置允许的视频模型，以及片段入口已接入的模型能力。
  */
 export const zVideoModelsOut = z.object({
+  clipModels: z.array(zVideoClipModelOut),
   default: z.string(),
   items: z.array(z.string()),
 })

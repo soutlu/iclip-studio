@@ -85,9 +85,9 @@ EDIT_BODY = {
 DURATIONS_MS = {
     "https://example.com/base.mp4": 6000,
     "https://example.com/source.mp4": 6000,
-    CLIP_URL: 3000,
+    CLIP_URL: 5000,
 }
-"""远程探测替身认得的地址与时长：基底 6 秒，片段 3 秒，正好是 ``EDIT_BODY`` 的区间。"""
+"""远程探测替身认得的地址与时长：基底 6 秒，片段 5 秒；参考时长独立于基底替换区间。"""
 
 
 class FakeProbe:
@@ -148,6 +148,7 @@ def build_test_app(
     lineage: FixedLineage | None = None,
     durations: Mapping[str, int] = DURATIONS_MS,
     users: InMemoryUserRepository | None = None,
+    video_models: tuple[str, ...] = VIDEO_MODELS,
 ) -> FastAPI:
     """``durations`` 是远程探测替身认得的地址与时长，替身挂在 ``app.state.probe`` 上；``users``
     是替人办事查的账号表。"""
@@ -171,7 +172,7 @@ def build_test_app(
         video_provider_name="video_api",
         compose_provider_name="ffmpeg",
         video_default_model="vendor-a-seedance-2-5",
-        video_allowed_models=VIDEO_MODELS,
+        video_allowed_models=video_models,
         image_models=image_models if image_models is not None else IMAGE_MODELS,
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
@@ -972,9 +973,30 @@ async def test_video_models_endpoint_lists_the_configured_models() -> None:
         response = await http.get("/generations/video-models")
 
     assert response.status_code == 200
-    assert response.json() == {"default": "vendor-a-seedance-2-5", "items": list(VIDEO_MODELS)}, (
-        "只有模型 id；哪个能编辑、怎么触发由前端按名字认"
-    )
+    assert response.json() == {
+        "default": "vendor-a-seedance-2-5",
+        "items": list(VIDEO_MODELS),
+        "clipModels": [
+            {
+                "id": "vendor-a-seedance-2-0",
+                "maxReferenceImages": 9,
+                "image": {"minSeconds": 4, "maxSeconds": 15, "defaultSeconds": 5},
+                "edit": None,
+            },
+            {
+                "id": "vendor-a-seedance-2-5",
+                "maxReferenceImages": 30,
+                "image": {"minSeconds": 4, "maxSeconds": 30, "defaultSeconds": 5},
+                "edit": {"minSeconds": 4, "maxSeconds": 30},
+            },
+            {
+                "id": "wan3.0-video",
+                "maxReferenceImages": 10,
+                "image": {"minSeconds": 2, "maxSeconds": 30, "defaultSeconds": 5},
+                "edit": {"minSeconds": 1, "maxSeconds": 15},
+            },
+        ],
+    }
     async with client(build_test_app(InMemoryGenerationRepository(), granted=principal())) as http:
         assert (await http.get("/generations/video-models")).status_code == 403
 
@@ -1193,6 +1215,7 @@ async def test_an_edit_on_a_take_is_accepted_as_a_video_generate_with_source_and
     )
     request = stored_request(stored).model_dump()
     assert request["reference_video_urls"] == [CLIP_URL], "片段地址记进请求，原样转发上游"
+    assert request["provider_options"] == {"omni_reference_task_type": "edit"}
     assert (request["user_name"], request["seconds"], request["reference_image_urls"]) == (
         "tester",
         -1,
@@ -1375,7 +1398,7 @@ async def test_an_edit_with_a_bad_range_clip_list_or_model_is_rejected(
     assert list(repo.jobs) == [take.id, clip.id]
 
 
-async def test_an_edit_without_a_clip_is_rejected() -> None:
+async def test_image_generation_cannot_use_automatic_duration() -> None:
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     take = seed_take(repo, owner=owner)
@@ -1387,7 +1410,7 @@ async def test_an_edit_without_a_clip_is_rejected() -> None:
         )
 
     assert response.status_code == 422, response.text
-    assert "reference_video_urls" in response.json()["detail"]
+    assert "时长" in response.json()["detail"]
     assert list(repo.jobs) == [take.id]
 
 
@@ -1422,10 +1445,9 @@ async def test_the_clip_must_be_the_callers_own_video_upload(flaw: str) -> None:
 
 @pytest.mark.parametrize(
     ("clip_ms", "accepted"),
-    [(3000, True), (5000, True), (1500, True), (0, False), (-1, False)],
-    ids=["等于替换区间", "长于替换区间", "短于替换区间", "零时长", "负时长"],
+    [(4000, True), (5000, True), (30000, True), (3999, False), (30001, False), (0, False)],
 )
-async def test_the_reference_clip_has_positive_duration_independent_of_the_replacement_range(
+async def test_seedance_edit_checks_actual_clip_duration_independent_of_the_replacement_range(
     clip_ms: int, accepted: bool
 ) -> None:
     """基底替换区间 1–4 秒；参考按当前选用素材拼接，可以更长或更短，原区间照常记账。"""
@@ -1452,7 +1474,7 @@ async def test_the_reference_clip_has_positive_duration_independent_of_the_repla
         assert (stored.source_job_id, stored.root_job_id) == (take.id, take.id)
         assert stored_request(stored).model_dump()["reference_video_urls"] == [CLIP_URL]
     else:
-        assert "时长必须大于 0" in response.json()["detail"]
+        assert "4–30 秒" in response.json()["detail"]
         assert set(repo.jobs) == seeded
 
 
@@ -1479,7 +1501,7 @@ async def test_the_range_stays_within_the_base(
     app = build_test_app(
         repo,
         granted=principal("generation:submit", user_id=owner),
-        durations={**DURATIONS_MS, CLIP_URL: end_ms - start_ms},
+        durations=DURATIONS_MS,
     )
     async with client(app) as http:
         response = await http.post(
@@ -2168,3 +2190,255 @@ async def test_settled_records_read_back_without_a_request(kind: GenerationKind)
         ("upload", None),
         ("cut", None),
     ]
+
+
+@pytest.mark.parametrize(
+    ("model", "seconds", "accepted"),
+    [
+        ("vendor-a-seedance-2-0", 4, True),
+        ("vendor-a-seedance-2-0", 15, True),
+        ("vendor-a-seedance-2-0", 3, False),
+        ("vendor-a-seedance-2-0", 16, False),
+        ("vendor-a-seedance-2-5", 4, True),
+        ("vendor-a-seedance-2-5", 30, True),
+        ("vendor-a-seedance-2-5", 3, False),
+        ("vendor-a-seedance-2-5", 31, False),
+        ("wan3.0-video", 2, True),
+        ("wan3.0-video", 30, True),
+        ("wan3.0-video", 1, False),
+        ("wan3.0-video", 31, False),
+        ("wan3.0-video", 2.5, False),
+    ],
+)
+async def test_image_clip_duration_is_explicit_and_model_specific(
+    model: str, seconds: float, accepted: bool
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner, shot_index=3)
+    take = replace(take, duration_ms=6000)
+    repo.jobs[take.id] = take
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "reference_video_urls": [],
+                "model": model,
+                "seconds": seconds,
+                "range_end_ms": 2000,
+            },
+        )
+    assert response.status_code == (202 if accepted else 422), response.text
+    assert app.state.probe.probed == [], "图生不下载或探测参考视频；已量过的基底也不重复探测"
+    if accepted:
+        job = only_new(repo, {take.id})
+        assert (job.source_job_id, job.root_job_id, job.shot_index) == (take.id, take.id, 3)
+        assert (job.range_start_ms, job.range_end_ms) == (1000, 2000)
+        payload = stored_request(job).model_dump()
+        assert payload["seconds"] == seconds
+        assert payload["reference_video_urls"] == []
+        assert payload["reference_image_urls"] == EDIT_BODY["reference_image_urls"]
+        assert payload["prompt"] == EDIT_BODY["prompt"], "图生不带编辑指令"
+        if "seedance-2-5" in model:
+            assert payload["provider_options"] == {"omni_reference_task_type": "reference"}
+        elif "wan3" in model:
+            assert payload["provider_options"] == {"image_mode": "reference"}
+    else:
+        assert list(repo.jobs) == [take.id]
+
+
+@pytest.mark.parametrize(
+    "flaw",
+    [
+        {"reference_image_urls": []},
+        {"seconds": None},
+        {"seconds": 0},
+        {"provider_options": {"omni_reference_task_type": "edit"}},
+        {"provider_options": {"omni_reference_task_type": "extend"}},
+        {"model": "wan3.0-video", "provider_options": {"image_mode": "first_last_frame"}},
+        {"range_end_ms": 7000},
+    ],
+)
+async def test_image_clip_rejects_missing_images_invalid_duration_mode_or_range(
+    flaw: dict[str, object],
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "reference_video_urls": [],
+                "seconds": 5,
+                **flaw,
+            },
+        )
+    assert response.status_code == 422, response.text
+    assert list(repo.jobs) == [take.id]
+
+
+@pytest.mark.parametrize(
+    ("model", "clip_ms", "seconds", "accepted"),
+    [
+        ("wan3.0-video", 1000, -1, True),
+        ("wan3.0-video", 15000, -1, True),
+        ("wan3.0-video", 999, -1, False),
+        ("wan3.0-video", 15001, -1, False),
+        ("wan3.0-video", 5000, 5, False),
+        ("vendor-a-seedance-2-5", 5000, 5, False),
+        ("vendor-a-seedance-2-0", 5000, -1, False),
+    ],
+)
+async def test_edit_clips_follow_model_duration_and_mode_support(
+    model: str, clip_ms: int, seconds: int, accepted: bool
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    clip = seed_clip(repo, owner=owner)
+    app = build_test_app(
+        repo,
+        granted=principal("generation:submit", user_id=owner),
+        durations={**DURATIONS_MS, CLIP_URL: clip_ms},
+    )
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={**EDIT_BODY, "source_job_id": str(take.id), "model": model, "seconds": seconds},
+        )
+    assert response.status_code == (202 if accepted else 422), response.text
+    if not accepted:
+        assert list(repo.jobs) == [take.id, clip.id]
+
+
+async def test_unknown_allowed_models_remain_available_for_normal_generation_only() -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    app = build_test_app(
+        repo,
+        granted=principal("generation:submit", "generation:read", user_id=owner),
+        video_models=("other-model", "atlas-seedance-2-5", "wan3.0-video-prime"),
+    )
+    async with client(app) as http:
+        models = (await http.get("/generations/video-models")).json()
+        assert models["items"] == ["other-model", "atlas-seedance-2-5", "wan3.0-video-prime"]
+        assert [item["id"] for item in models["clipModels"]] == [
+            "atlas-seedance-2-5",
+            "wan3.0-video-prime",
+        ]
+        image = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "reference_video_urls": [],
+                "seconds": 5,
+                "model": "other-model",
+            },
+        )
+        normal = await http.post("/generations/video", json={**VIDEO_BODY, "model": "other-model"})
+    assert image.status_code == 422, image.text
+    assert normal.status_code == 202, normal.text
+
+
+@pytest.mark.parametrize(
+    ("model", "options"),
+    [
+        ("vendor-a-seedance-2-5", {"omni_reference_task_type": "reference"}),
+        ("vendor-a-seedance-2-5", {"omni_reference_task_type": "extend"}),
+        ("wan3.0-video", {"image_mode": "reference"}),
+    ],
+)
+async def test_edit_mode_cannot_be_changed_by_provider_options(
+    model: str, options: dict[str, str]
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    clip = seed_clip(repo, owner=owner)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "model": model,
+                "provider_options": options,
+            },
+        )
+    assert response.status_code == 422, response.text
+    assert list(repo.jobs) == [take.id, clip.id]
+
+
+@pytest.mark.parametrize("prompt", ["换成编织凉鞋", "编辑视频，换成编织凉鞋"])
+async def test_wan_edit_trigger_is_saved_once_with_the_normalized_request(prompt: str) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    clip = seed_clip(repo, owner=owner)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "model": "wan3.0-video",
+                "prompt": prompt,
+            },
+        )
+    assert response.status_code == 202, response.text
+    payload = stored_request(only_new(repo, {take.id, clip.id})).model_dump()
+    assert payload["prompt"] == "编辑视频，换成编织凉鞋"
+    assert payload["provider_options"] is None
+
+
+@pytest.mark.parametrize(
+    ("model", "limit", "editing"),
+    [
+        ("vendor-a-seedance-2-0", 9, False),
+        ("vendor-a-seedance-2-5", 30, False),
+        ("vendor-a-seedance-2-5", 30, True),
+        ("wan3.0-video", 10, False),
+        ("wan3.0-video", 10, True),
+    ],
+)
+@pytest.mark.parametrize("over_limit", [False, True])
+async def test_clip_reference_images_follow_the_selected_model_limit(
+    model: str, limit: int, editing: bool, over_limit: bool
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    take = seed_take(repo, owner=owner)
+    seed_clip(repo, owner=owner)
+    seeded = set(repo.jobs)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    urls = [f"https://cdn.test/reference-{index}.png" for index in range(limit + over_limit)]
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-edits",
+            json={
+                **EDIT_BODY,
+                "source_job_id": str(take.id),
+                "model": model,
+                "reference_image_urls": urls,
+                "reference_video_urls": [CLIP_URL] if editing else [],
+                "seconds": -1 if editing else 5,
+            },
+        )
+    assert response.status_code == (422 if over_limit else 202), response.text
+    if over_limit:
+        assert set(repo.jobs) == seeded
+        assert app.state.probe.probed == [], "图片超限时受理前拒绝，不下载参考视频"
+    else:
+        payload = stored_request(only_new(repo, seeded)).model_dump()
+        assert payload["reference_image_urls"] == urls
