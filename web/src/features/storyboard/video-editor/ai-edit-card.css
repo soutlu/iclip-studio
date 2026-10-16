@@ -124,11 +124,111 @@
   }
 }
 
-/* 卡底的模型选择：与生成钮同高，只有模型名可收缩。 */
+/* 模型按钮尺寸固定，长名称省略显示，展开菜单仍显示完整名称。 */
 .video-editor-card .video-editor-model-picker {
-  min-width: 96px;
+  width: 148px;
+  min-width: 148px;
   height: var(--control-height-md);
-  flex: 0 1 auto;
+  flex: 0 0 148px;
+}
+
+.video-editor-card-composer > .flex > .flex:first-child {
+  min-width: 0;
+}
+
+.video-editor-card-composer > .flex > .flex:last-child {
+  flex-shrink: 0;
+}
+
+.video-editor-duration {
+  display: flex;
+  width: 156px;
+  min-width: 80px;
+  max-width: calc(100vw - 234px);
+  flex: 0 1 156px;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-editor-duration-slider {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: var(--control-height-md);
+  flex: 1;
+  align-items: center;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.video-editor-duration-slider[data-disabled] {
+  cursor: default;
+  opacity: var(--state-disabled-content);
+}
+
+.video-editor-duration-track {
+  position: relative;
+  height: 4px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-highest);
+}
+
+.video-editor-duration-range {
+  position: absolute;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.video-editor-duration-thumb {
+  position: relative;
+  display: block;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  border: 2px solid var(--color-surface-container-lowest);
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  box-shadow: var(--shadow-1);
+}
+
+/* 仅扩大垂直热区，避免覆盖相邻的模式切换按钮。 */
+.video-editor-duration-thumb::before {
+  position: absolute;
+  inset: -12px 0;
+  content: '';
+}
+
+.video-editor-duration-value {
+  display: flex;
+  width: 32px;
+  flex: none;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 3px;
+  font-size: var(--text-label);
+  font-weight: 500;
+}
+
+.video-editor-duration-value span {
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--color-on-surface-muted);
+}
+
+.video-editor-card-composer > .flex > .flex:last-child > button:last-child {
+  height: var(--control-height-sm);
+  gap: 6px;
+  padding-inline: 10px;
+  font-size: var(--text-label);
+}
+
+.video-editor-card-composer > .flex > .flex:last-child > button:last-child > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .video-editor-card-body > [role='alert'] {

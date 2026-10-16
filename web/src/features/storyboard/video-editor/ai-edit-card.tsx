@@ -69,6 +69,7 @@ type CardComposerProps = {
   sending: boolean
   onSubmit: (submission: ComposerSubmission) => void
   modelPicker: ReactNode
+  durationControl?: ReactNode
   mode: 'image' | 'edit'
   onModeChange: (mode: 'image' | 'edit') => void
   firstFrameReferenceUrl: string | undefined
@@ -94,6 +95,7 @@ function CardComposer({
   sending,
   onSubmit,
   modelPicker,
+  durationControl,
   mode,
   onModeChange,
   firstFrameReferenceUrl,
@@ -185,24 +187,27 @@ function CardComposer({
         className="video-editor-card-composer"
         dropScope="card"
         leading={
-          <ChipGroup
-            aria-label="生成方式"
-            className="storyboard-bar-segmented"
-            disabled={sending}
-            onValueChange={(next) => {
-              if (next === 'image' || next === 'edit') onModeChange(next)
-            }}
-            type="single"
-            value={mode}
-            variant="segmented"
-          >
-            <FilterChip className="storyboard-bar-segment" value="image" variant="segmented">
-              图生
-            </FilterChip>
-            <FilterChip className="storyboard-bar-segment" value="edit" variant="segmented">
-              编辑
-            </FilterChip>
-          </ChipGroup>
+          <>
+            <ChipGroup
+              aria-label="生成方式"
+              className="storyboard-bar-segmented"
+              disabled={sending}
+              onValueChange={(next) => {
+                if (next === 'image' || next === 'edit') onModeChange(next)
+              }}
+              type="single"
+              value={mode}
+              variant="segmented"
+            >
+              <FilterChip className="storyboard-bar-segment" value="image" variant="segmented">
+                图生
+              </FilterChip>
+              <FilterChip className="storyboard-bar-segment" value="edit" variant="segmented">
+                编辑
+              </FilterChip>
+            </ChipGroup>
+            {durationControl}
+          </>
         }
         mention={mention}
         onChange={(next) => {
@@ -228,8 +233,8 @@ function CardComposer({
             (mode === 'image' ? images.length === 0 : !hasText),
           emphasis: 'primary',
           icon: 'video',
-          label: '生成视频',
-          pendingLabel: '提交中…',
+          label: '生成',
+          pendingLabel: '提交',
         }}
         trailing={modelPicker}
       />
@@ -269,6 +274,8 @@ type AiEditCardProps = {
   onGenerate: (submission: ComposerSubmission) => void
   /** 卡底的模型选择。 */
   modelPicker: ReactNode
+  /** 图生时长控件，紧跟生成方式；实际时长仍由编辑器持有。 */
+  durationControl?: ReactNode
   /** 两种方式共用正文与版本列表；切换时保留未提交的要求。 */
   mode: 'image' | 'edit'
   onModeChange: (mode: 'image' | 'edit') => void
@@ -296,6 +303,7 @@ export function AiEditCard({
   generating,
   onGenerate,
   modelPicker,
+  durationControl,
   mode,
   onModeChange,
   firstFrameReferenceUrl,
@@ -427,6 +435,7 @@ export function AiEditCard({
             focusInput={focusInput}
             firstFrameReferenceUrl={firstFrameReferenceUrl}
             modelPicker={modelPicker}
+            durationControl={durationControl}
             mode={mode}
             referenceLimit={referenceLimit}
             onModeChange={onModeChange}
