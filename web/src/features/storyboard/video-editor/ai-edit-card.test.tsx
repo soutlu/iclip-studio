@@ -73,7 +73,7 @@ function Card({
 }
 
 const editor = () => screen.getByRole('textbox', { name: '修改要求' })
-const generate = () => screen.getByRole('button', { name: '生成视频' })
+const generate = () => screen.getByRole('button', { name: '生成' })
 
 describe('视频编辑卡的生成方式与图片引用', () => {
   it('首帧只出现在 @ 候选，编辑模式的纯文字提交不隐式带图', async () => {

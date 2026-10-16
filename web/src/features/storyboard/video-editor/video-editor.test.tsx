@@ -172,7 +172,7 @@ const segmentOf = (track: HTMLElement, position: number) =>
 const card = () => screen.queryByRole('region', { name: 'AI 改段' })
 const openCard = () => screen.getByRole('region', { name: 'AI 改段' })
 const requestBox = () => within(openCard()).getByLabelText('修改要求')
-const generateButton = () => within(openCard()).getByRole('button', { name: '生成视频' })
+const generateButton = () => within(openCard()).getByRole('button', { name: '生成' })
 const versionStrip = () => screen.getByRole('group', { name: '视频版本' })
 const versionButton = (label: string) =>
   within(versionStrip()).getByRole('button', { name: new RegExp(`^${label}(?: ·|$)`) })
@@ -474,28 +474,75 @@ describe('AI 改段的弹出卡', () => {
     expect(generateButton()).toBeDisabled()
   })
 
-  it('不足 4 秒的选区仍可图生；切换模型不静默改掉超出范围的输出时长', async () => {
+  it('图生滑杆逐秒调整并遵循模型边界，切换模式保留时长，提交期间禁止调节', async () => {
     server.use(http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)))
     serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    let accept = () => {}
+    const acceptance = new Promise<void>((resolve) => (accept = resolve))
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        await acceptance
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
     const user = userEvent.setup()
     await renderEditor()
     await user.click(segmentOf(await timeline(), 2))
+    expect(within(openCard()).queryByRole('slider', { name: '生成时长（秒）' })).toBeNull()
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
     pasteTextIntoComposer(requestBox(), '人物转身')
     pasteFilesIntoComposer(requestBox(), [new File(['png'], '人物.png', { type: 'image/png' })])
     await waitFor(() => expect(generateButton()).toBeEnabled())
-    await user.click(within(openCard()).getByRole('button', { name: '生成时长' }))
-    await user.click(screen.getByRole('menuitemradio', { name: '30 秒' }))
+    const duration = () => within(openCard()).getByRole('slider', { name: '生成时长（秒）' })
+    const currentDuration = () => within(openCard()).getByLabelText('当前生成时长')
+    expect(duration()).toHaveAttribute('aria-valuemin', '4')
+    expect(duration()).toHaveAttribute('aria-valuemax', '30')
+    act(() => duration().focus())
+    await user.keyboard('{Home}{ArrowLeft}')
+    expect(currentDuration()).toHaveTextContent(/^4\s*秒$/)
+    await user.keyboard('{ArrowRight}')
+    expect(currentDuration()).toHaveTextContent(/^5\s*秒$/)
+    await user.keyboard('{End}{ArrowRight}')
+    expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
+
+    await user.click(within(openCard()).getByRole('radio', { name: '编辑' }))
+    expect(within(openCard()).queryByRole('slider', { name: '生成时长（秒）' })).toBeNull()
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
     await user.click(within(openCard()).getByRole('button', { name: '图生模型' }))
     await user.click(screen.getByRole('menuitemradio', { name: 'vendor-a-seedance-2-0' }))
 
-    expect(within(openCard()).getByRole('button', { name: '生成时长' })).toHaveTextContent('30 秒')
+    expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
+    expect(duration()).toHaveAttribute('aria-valuemin', '4')
+    expect(duration()).toHaveAttribute('aria-valuemax', '15')
     expect(within(openCard()).getByText(/图生时长须为 4–15 秒/)).toBeVisible()
     expect(generateButton()).toBeDisabled()
-    await user.click(within(openCard()).getByRole('button', { name: '生成时长' }))
-    expect(screen.queryByRole('menuitemradio', { name: '16 秒' })).toBeNull()
-    await user.click(screen.getByRole('menuitemradio', { name: '15 秒' }))
+    act(() => duration().focus())
+    await user.keyboard('{End}')
+    expect(currentDuration()).toHaveTextContent(/^15\s*秒$/)
     expect(generateButton()).toBeEnabled()
+    await user.click(generateButton())
+    try {
+      await waitFor(() => expect(submitted).toHaveLength(1))
+      expect(submitted[0]).toMatchObject({
+        model: 'vendor-a-seedance-2-0',
+        seconds: 15,
+        reference_video_urls: [],
+      })
+      expect(duration().closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.keyDown(duration(), { key: 'Home' })
+      expect(currentDuration()).toHaveTextContent(/^15\s*秒$/)
+    } finally {
+      await act(async () => accept())
+    }
+    await waitFor(() =>
+      expect(duration().closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'false'),
+    )
   })
 
   it('图生仅有图片也能提交：粘贴自动上传并引用，删除的图不发送，插入首帧后保持原地址', async () => {

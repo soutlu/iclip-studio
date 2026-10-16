@@ -8,6 +8,7 @@
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { Slider } from 'radix-ui'
 import { errorMessageOf } from '@/shared/api/client'
 import type { ComposerHandle } from '@/shared/ui/composer'
 import { useMediaDownload } from '@/shared/api/media-download'
@@ -898,38 +899,50 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           setGenerateError(null)
         }}
         firstFrameReferenceUrl={frameOf(selectedClips[0], (clip) => clip.start, 1280)}
-        modelPicker={
-          <>
-            {mode === 'image' && model !== undefined ? (
-              <GenerationPicker
+        durationControl={
+          mode === 'image' && model !== undefined ? (
+            <div className="video-editor-duration">
+              <Slider.Root
+                className="video-editor-duration-slider"
                 disabled={busy}
-                label="生成时长"
-                onChange={(value) => setWantedSeconds(Number(value))}
-                options={Array.from(
-                  { length: model.image.maxSeconds - model.image.minSeconds + 1 },
-                  (_, i) => {
-                    const value = model.image.minSeconds + i
-                    return { value: String(value), label: `${value} 秒` }
-                  },
-                )}
-                text={`${imageSeconds} 秒`}
-                value={String(imageSeconds)}
-              />
-            ) : null}
-            <GenerationPicker
-              className="video-editor-model-picker"
-              disabled={busy || models.length === 0}
-              label={mode === 'edit' ? '编辑模型' : '图生模型'}
-              leading={<Icon decorative name="video" size="sm" />}
-              onChange={(value) => {
-                setWantedModel(value)
-                setGenerateError(null)
-              }}
-              options={models.map(({ id }) => ({ value: id }))}
-              text={model?.id ?? '暂无可用的视频模型'}
-              value={model?.id ?? ''}
-            />
-          </>
+                min={model.image.minSeconds}
+                max={model.image.maxSeconds}
+                step={1}
+                value={[imageSeconds]}
+                onValueChange={([value]) => {
+                  if (value !== undefined) setWantedSeconds(value)
+                }}
+              >
+                <Slider.Track className="video-editor-duration-track">
+                  <Slider.Range className="video-editor-duration-range" />
+                </Slider.Track>
+                <Slider.Thumb
+                  aria-label="生成时长（秒）"
+                  aria-valuetext={`${imageSeconds} 秒`}
+                  className="video-editor-duration-thumb ui-focus"
+                />
+              </Slider.Root>
+              <output aria-label="当前生成时长" className="video-editor-duration-value">
+                {imageSeconds}
+                <span>秒</span>
+              </output>
+            </div>
+          ) : null
+        }
+        modelPicker={
+          <GenerationPicker
+            className="video-editor-model-picker"
+            disabled={busy || models.length === 0}
+            label={mode === 'edit' ? '编辑模型' : '图生模型'}
+            leading={<Icon decorative name="video" size="sm" />}
+            onChange={(value) => {
+              setWantedModel(value)
+              setGenerateError(null)
+            }}
+            options={models.map(({ id }) => ({ value: id }))}
+            text={model?.id ?? '暂无可用的视频模型'}
+            value={model?.id ?? ''}
+          />
         }
         onCollapse={collapseCard}
         onDraftChange={(parts) => {

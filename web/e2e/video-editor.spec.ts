@@ -50,7 +50,7 @@ const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开
 const requestBox = (dialog: Locator) =>
   card(dialog).getByRole('textbox', { name: '修改要求', exact: true })
 const generateButton = (dialog: Locator) =>
-  card(dialog).getByRole('button', { name: '生成视频', exact: true })
+  card(dialog).getByRole('button', { name: '生成', exact: true })
 
 /** 等分段读好：第 2 组 6 段，原声读到波形。 */
 const waitForSegments = async (dialog: Locator, count = 6) => {
@@ -82,7 +82,7 @@ const holdDrag = async (page: Page, dialog: Locator, from: Locator, clock: numbe
   return () => page.mouse.up()
 }
 
-/** 卡里写着要求，点「生成视频」：返回编辑请求体与受理的记录 id。 */
+/** 卡里写着要求，点「生成」：返回编辑请求体与受理的记录 id。 */
 const submitEdit = async (page: Page, dialog: Locator) => {
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-edits') && sent.method() === 'POST',
@@ -138,7 +138,9 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   await card(dialog).getByRole('radio', { name: '图生', exact: true }).click()
   await expect(requestBox(dialog)).toHaveText('人物缓慢转身')
   await expect(generateButton(dialog)).toBeDisabled()
-  await requestBox(dialog).fill('')
+  await requestBox(dialog).press('ControlOrMeta+A')
+  await requestBox(dialog).press('Backspace')
+  await expect(requestBox(dialog)).toHaveText('')
   const fileChooser = page.waitForEvent('filechooser')
   await card(dialog).getByRole('button', { name: '添加附件', exact: true }).click()
   await (
@@ -151,25 +153,96 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
   await expect(generateButton(dialog)).toBeEnabled()
 
-  await card(dialog).getByRole('button', { name: '生成时长', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: '30 秒', exact: true }).click()
+  const duration = card(dialog).getByRole('slider', { name: '生成时长（秒）', exact: true })
+  await duration.press('End')
   await card(dialog).getByRole('button', { name: '图生模型', exact: true }).click()
   await page.getByRole('menuitemradio', { name: 'vendor-a-seedance-2-0', exact: true }).click()
-  await expect(card(dialog).getByRole('button', { name: '生成时长' })).toHaveText('30 秒')
+  await expect(card(dialog).getByLabel('当前生成时长', { exact: true })).toHaveText(/^30\s*秒$/)
   await expect(card(dialog).getByText(/图生时长须为 4–15 秒/)).toBeVisible()
   await expect(generateButton(dialog)).toBeDisabled()
-  await card(dialog).getByRole('button', { name: '生成时长', exact: true }).click()
-  await expect(page.getByRole('menuitemradio', { name: '16 秒', exact: true })).toHaveCount(0)
-  await page.getByRole('menuitemradio', { name: '15 秒', exact: true }).click()
+  await duration.press('Home')
+  const thumb = await centerOf(duration)
+  await page.mouse.move(thumb.x, thumb.y)
+  await page.mouse.down()
+  await page.mouse.move(thumb.x + 50, thumb.y, { steps: 6 })
+  await page.mouse.up()
+  expect(Number(await duration.getAttribute('aria-valuenow'))).toBeGreaterThan(4)
+  await duration.press('End')
   await expect(generateButton(dialog)).toBeEnabled()
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-generation-modes/image-card')
+  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-card')
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(card(dialog).getByRole('radio', { name: '图生', exact: true })).toBeVisible()
   await expect(generateButton(dialog)).toBeVisible()
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-generation-modes/image-mobile')
+  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-mobile')
 
-  const { body } = await submitEdit(page, dialog)
+  const expectToolbarInsideCard = async (width: number, state: string) => {
+    await expect
+      .configure({ soft: true })
+      .poll(
+        () =>
+          card(dialog).evaluate((element) => {
+            const bounds = element.getBoundingClientRect()
+            return Array.from(
+              element.querySelectorAll('button, [role="slider"], [role="radio"], output'),
+            )
+              .map((control) => {
+                const box = control.getBoundingClientRect()
+                return {
+                  name: control.getAttribute('aria-label') ?? control.textContent,
+                  left: Math.max(0, bounds.left - box.left),
+                  right: Math.max(0, box.right - bounds.right),
+                  top: Math.max(0, bounds.top - box.top),
+                  bottom: Math.max(0, box.bottom - bounds.bottom),
+                }
+              })
+              .filter(({ left, right, top, bottom }) => left + right + top + bottom > 0)
+          }),
+        { message: `${width}px ${state}时所有工具栏控件应在卡片内`, timeout: 1500 },
+      )
+      .toEqual([])
+  }
+  for (const width of [600, 640]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expectToolbarInsideCard(width, '可提交')
+  }
+
+  // 在 HTTP 系统边界暂停发送，检查提交中状态；释放后仍交给真实 MSW 接口。
+  await page.evaluate(() => {
+    const originalFetch = window.fetch.bind(window)
+    const gate = new Promise<void>((resolve) =>
+      window.addEventListener('release-clip-submission', () => resolve(), { once: true }),
+    )
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const input = args[0]
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith('/api/generations/video-edits')) {
+        await gate
+        window.fetch = originalFetch
+      }
+      return originalFetch(...args)
+    }
+  })
+  const submitted = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/generations/video-edits') && request.method() === 'POST',
+  )
+  await generateButton(dialog).click()
+  await expect(card(dialog).getByRole('button', { name: '提交', exact: true })).toBeDisabled()
+  for (const width of [390, 600, 640, 1280]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expectToolbarInsideCard(width, '提交中')
+    if (width === 600)
+      await screenshotBothThemes(
+        page,
+        '../.artifacts/design-qa/video-duration-slider/submitting-600',
+      )
+  }
+  await page.evaluate(() => window.dispatchEvent(new Event('release-clip-submission')))
+  const sent = await submitted
+  await sent.response()
+  const body = sent.postDataJSON() as Record<string, unknown>
   expect(body).toMatchObject({
+    model: 'vendor-a-seedance-2-0',
     prompt: '@Image1',
     range_start_ms: 1000,
     range_end_ms: 2000,
