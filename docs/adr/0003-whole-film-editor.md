@@ -2,6 +2,7 @@
 
 - 状态：已接受（2026-10-14）
 - 修订（2026-10-15，[ADR-0004](0004-whole-film-audio-controls.md)）：第 5 条及「界面上不能调声音」的取舍被取代。
+- 修订（2026-10-15，[ADR-0005](0005-whole-film-material-takes.md)）：第 4 条的素材轨组织与选段方式被取代；草稿仍只保存在浏览器。
 - 影响：[CONTEXT.md](../CONTEXT.md)「生成任务」「生成结果」「镜头组」「审计口径」「资料库」「埋点事件」词条；[contract/openapi.json](../../contract/openapi.json) 的生成端点。
 
 ## 背景

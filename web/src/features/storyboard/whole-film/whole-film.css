@@ -460,7 +460,7 @@
 }
 
 .whole-film-track-scroll {
-  height: clamp(224px, 34dvh, 320px);
+  height: clamp(280px, 41dvh, 384px);
   min-height: 0;
   flex: none;
   margin: 6px -8px -6px;
@@ -487,7 +487,7 @@
 
 @media (max-width: 599px) {
   .whole-film-track-scroll {
-    height: clamp(176px, 25dvh, 224px);
+    height: clamp(208px, 26dvh, 232px);
   }
 
   .whole-film-editor .video-editor-stage-area {

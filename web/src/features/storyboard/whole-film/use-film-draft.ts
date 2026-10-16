@@ -1,5 +1,5 @@
 /** 整片草稿与它的撤销栈：按对话一份，存在浏览器里（ADR-0003：没有合成的编辑只存在浏览器里）。
- * 素材轨（哪几组、各用哪一版）跟着草稿存，但不进撤销栈：换版本只影响之后挑的段，不是对成片的改动。 */
+ * 素材轨（哪几次生成、各用哪一编辑版）跟着草稿存，但不进撤销栈：换版本只影响之后挑的段，不是对成片的改动。 */
 
 import { useEffect, useEffectEvent, useState } from 'react'
 import { commit, amend, redo, startHistory, undo, type History } from '../edit-history'
@@ -42,7 +42,7 @@ const droppedNotice = (dropped: number) => `有 ${dropped} 段的来源视频已
  * 它还没准备好时返回 `undefined`。 */
 const load = (
   key: string,
-  known: ReadonlySet<string>,
+  known: ReadonlyMap<string, { takeId: string }>,
   seed: () => DraftSeed,
 ): { loaded: Loaded; notice: string | undefined } | undefined => {
   const fresh = (film: FilmState, lanes: readonly MaterialLane[]): Loaded => ({
@@ -51,7 +51,7 @@ const load = (
     typing: undefined,
   })
   const kept = (parsed: StoredFilm, notice: (dropped: number) => string | undefined) => {
-    const { stored, dropped } = keepKnownSources(parsed, known)
+    const { stored, dropped } = keepKnownSources(parsed, new Set(known.keys()))
     return { loaded: fresh(stored.film, stored.lanes), notice: notice(dropped) }
   }
   const raw = readStored(key)
@@ -70,7 +70,7 @@ const load = (
         : `已按 ${seeded.label} 恢复剪辑；${droppedNotice(dropped)}`,
     )
   }
-  const parsed = parseStoredFilm(raw)
+  const parsed = parseStoredFilm(raw, (jobId) => known.get(jobId)?.takeId)
   if (parsed === undefined) return { loaded: fresh(EMPTY_FILM, []), notice: UNREADABLE }
   return kept(parsed, (dropped) => (dropped === 0 ? undefined : droppedNotice(dropped)))
 }
@@ -98,8 +98,8 @@ export function useFilmDraft({
   onStorageFailure,
 }: {
   conversationId: string
-  /** 读得到的成片 id；还没读到时没有。 */
-  known: ReadonlySet<string> | undefined
+  /** 读得到的成片及其原作身份；还没读到时没有。 */
+  known: ReadonlyMap<string, { takeId: string }> | undefined
   /** 浏览器里没有草稿时从哪起步；只在那时调用。 */
   seed: () => DraftSeed
   /** 要让人看到的一句话：草稿读不出、有段被去掉。 */

@@ -227,7 +227,7 @@
 
 /* 一截画面：上面缩略胶片条，下面这截自带原声的波形。 */
 .film-segment,
-.film-material-clip,
+.film-material-shot,
 .film-timeline-ghost {
   position: absolute;
   display: flex;
@@ -249,10 +249,6 @@
   height: 26px;
   flex: none;
   overflow: hidden;
-}
-
-.film-material-clip .film-strip-frames {
-  height: 18px;
 }
 
 .film-strip-wave {
@@ -279,8 +275,7 @@
 }
 
 /* 段左上角的版本号、素材右上角的时长：半透明浮层小签。 */
-.film-segment-tag,
-.film-material-length {
+.film-segment-tag {
   position: absolute;
   top: 4px;
   left: 4px;
@@ -296,12 +291,6 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-}
-
-.film-material-length {
-  top: 1px;
-  right: 4px;
-  left: auto;
 }
 
 /* 拖走的那段在原处只留一个空框。 */
@@ -432,8 +421,7 @@
 }
 
 /* 手柄只有 8px 宽，热区向两侧放宽。 */
-.film-timeline-handle::before,
-.film-material-handle::before {
+.film-timeline-handle::before {
   content: '';
   position: absolute;
   inset: -4px -10px;
@@ -547,38 +535,39 @@
   box-shadow: 0 0 0 2px var(--color-surface-container-low);
 }
 
-/* 成片区与素材区之间的分隔行：横跨轨道名与轨道。 */
-.film-timeline-separator {
+/* 镜头组标题与加入入口横跨轨道头，生成视频各自占一行。 */
+.film-material-group {
   position: absolute;
   right: 0;
   left: 0;
   display: flex;
-  height: 22px;
+  height: 30px;
   align-items: center;
-  gap: 10px;
-  pointer-events: none;
-}
-
-.film-timeline-separator b {
-  width: 110px;
-  flex: none;
-  color: var(--color-on-surface-variant);
+  gap: 16px;
+  border-top: 1px solid var(--color-hairline);
   font-size: var(--text-label);
-  font-weight: 500;
-  line-height: var(--text-label--line-height);
 }
-
-.film-timeline-separator i {
-  height: 1px;
-  flex: 1;
-  background: var(--color-hairline);
-}
-
-.film-timeline-separator span {
-  flex: none;
-  color: var(--color-on-surface-faint);
+.film-material-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface);
   font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
+  cursor: pointer;
+}
+.film-material-add[aria-disabled='true'] {
+  color: var(--color-on-surface-faint);
+  cursor: default;
+}
+.film-timeline-head.is-material {
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 4px;
 }
 
 /* 素材区末尾的添加行，横跨轨道名与轨道；有素材时也保留。 */
@@ -624,21 +613,52 @@
   cursor: pointer;
 }
 
-/* 素材轨：整条可框选，素材从 0 秒起画；底部细墨条是已用进成片轨的区间。 */
+/* 素材轨按关键帧划分镜头；底部细墨条标记已经选入成片的区间。 */
 .film-material-lane {
   position: absolute;
   right: 0;
   left: 0;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
-  cursor: crosshair;
-  touch-action: none;
 }
 
-.film-material-clip {
+.film-material-shot {
   top: 2px;
-  left: 0;
-  height: 32px;
+  padding: 0;
+  border: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.film-material-shot .video-editor-timeline-frames {
+  height: 100%;
+}
+.film-material-shot-label {
+  position: absolute;
+  inset: auto auto 3px 4px;
+  display: flex;
+  max-width: calc(100% - 8px);
+  flex-direction: column;
+  overflow: hidden;
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-top-layer) 88%, transparent);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-align: left;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.film-material-shot-label b {
+  font-weight: 500;
+}
+.film-material-range {
+  position: absolute;
+  z-index: var(--z-local-3);
+  translate: -50% 0;
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   pointer-events: none;
 }
 
@@ -653,7 +673,7 @@
 
 .film-material-used {
   position: absolute;
-  top: 36px;
+  bottom: 0;
   height: 3px;
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--color-on-surface) 62%, transparent);
@@ -663,8 +683,8 @@
 .film-material-pick {
   position: absolute;
   z-index: var(--z-local-2);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-on-surface) 6%, transparent);
+  border: 2px solid var(--color-on-surface);
+  border-radius: var(--radius-md);
   pointer-events: none;
 }
 
@@ -672,21 +692,42 @@
   position: absolute;
   z-index: var(--z-local-3);
   display: grid;
-  width: 6px;
-  translate: -3px 0;
+  width: 8px;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-full);
   background: var(--color-on-surface);
   cursor: ew-resize;
   touch-action: none;
 }
 
+.film-material-handle.is-start {
+  translate: -7px 0;
+  border-radius: var(--radius-md) var(--radius-xs) var(--radius-xs) var(--radius-md);
+}
+.film-material-handle.is-end {
+  translate: -1px 0;
+  border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
+}
+/* 关键帧间隔很短时，两端热区只向外延伸，避免右端遮住左端。 */
+.film-material-handle::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+}
+.film-material-handle.is-start::before {
+  left: -12px;
+  right: 0;
+}
+.film-material-handle.is-end::before {
+  left: 0;
+  right: -12px;
+}
+
 .film-material-handle::after {
   content: '';
-  width: 1.5px;
-  height: 10px;
+  width: 2px;
+  height: 14px;
   border-radius: var(--radius-full);
   background: var(--color-surface-container-lowest);
 }
@@ -861,14 +902,6 @@
   }
 
   .film-timeline-head > svg {
-    display: none;
-  }
-
-  .film-timeline-separator b {
-    width: 94px;
-  }
-
-  .film-timeline-separator span {
     display: none;
   }
 }

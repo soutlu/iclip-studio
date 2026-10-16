@@ -70,14 +70,16 @@ function TakesPanel({ catalog, durationOf, onAdd }: PanelProps) {
                 const duration = durationOf(material)
                 return (
                   <MenuBareItem
-                    aria-label={`${group.label} ${material.version}${duration == null ? '' : `，${seconds(duration)}`}`}
+                    aria-label={`${group.label} ${material.takeLabel} ${material.version}${duration == null ? '' : `，${seconds(duration)}`}`}
                     className="film-menu-tile"
                     key={material.jobId}
                     onSelect={() => onAdd(material)}
                   >
                     <span className="film-menu-tile-picture">
                       <Poster className="film-menu-tile-poster" url={material.url} />
-                      <span className="film-menu-tile-version">{material.version}</span>
+                      <span className="film-menu-tile-version">
+                        {material.takeLabel} · {material.version}
+                      </span>
                     </span>
                     <span className="film-menu-tile-duration">
                       {duration == null ? '' : seconds(duration)}
@@ -156,7 +158,7 @@ type VersionPillProps = {
   onSwitch: (material: Material) => void
 }
 
-/** 素材轨轨道头上的版本胶囊：当前用的那一版，点开向上列出这一组的各版，换了只影响之后挑的段。 */
+/** 素材轨轨道头上的版本胶囊：当前用的那一版，点开向上列出这次生成视频的原版与编辑版，换了只影响之后挑的段。 */
 export function VersionPill({
   groupLabel,
   versions,

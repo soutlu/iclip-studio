@@ -94,7 +94,7 @@ describe('片头片尾与合成上限', () => {
     )
     expect(insertSegment(film, { ...part, end: 0.2 }, 1, 'extra')).toBeUndefined()
     const trimmed = trimSegment(film, 'long', 'end', 117)
-    expect(wholeFilmDuration(trimSegment(trimmed, 'long', 'end', 120))).toBe(120)
+    expect(wholeFilmDuration(trimSegment(trimmed, 'long', 'end', 120, 120))).toBe(120)
   })
   it('100 段后不能再插入或拆分', () => {
     const film = Array.from({ length: MAX_FILM_SEGMENTS }).reduce<typeof base>(
