@@ -2245,7 +2245,7 @@ async def test_image_clip_duration_is_explicit_and_model_specific(
         if "seedance-2-5" in model:
             assert payload["provider_options"] == {"omni_reference_task_type": "reference"}
         elif "wan3" in model:
-            assert payload["provider_options"] == {"image_mode": "reference"}
+            assert payload["provider_options"] is None, "Wan 图生沿用网关原生映射，不加模式开关"
     else:
         assert list(repo.jobs) == [take.id]
 
@@ -2258,7 +2258,6 @@ async def test_image_clip_duration_is_explicit_and_model_specific(
         {"seconds": 0},
         {"provider_options": {"omni_reference_task_type": "edit"}},
         {"provider_options": {"omni_reference_task_type": "extend"}},
-        {"model": "wan3.0-video", "provider_options": {"image_mode": "first_last_frame"}},
         {"range_end_ms": 7000},
     ],
 )
@@ -2354,7 +2353,6 @@ async def test_unknown_allowed_models_remain_available_for_normal_generation_onl
     [
         ("vendor-a-seedance-2-5", {"omni_reference_task_type": "reference"}),
         ("vendor-a-seedance-2-5", {"omni_reference_task_type": "extend"}),
-        ("wan3.0-video", {"image_mode": "reference"}),
     ],
 )
 async def test_edit_mode_cannot_be_changed_by_provider_options(

@@ -1226,19 +1226,11 @@ def _settled_url(job: GenerationJob) -> str:
 def _clip_provider_options(
     model: str, options: dict[str, Any] | None, *, editing: bool
 ) -> dict[str, Any] | None:
-    """固定当前模式的上游任务语义，不能被透传参数改成首尾帧或续写。"""
+    """Seedance 2.5 显式指定原生子任务，其他模型沿用网关协议。"""
 
-    name = model.lower()
-    if "seedance-2-5" in name:
-        key, expected = "omni_reference_task_type", "edit" if editing else "reference"
-    elif "wan3" in name:
-        if editing:
-            if options is not None and "image_mode" in options:
-                raise ValidationFailed("视频编辑不能传仅用于图生的 image_mode")
-            return options
-        key, expected = "image_mode", "reference"
-    else:
+    if "seedance-2-5" not in model.lower():
         return options
+    key, expected = "omni_reference_task_type", "edit" if editing else "reference"
     if options is not None and key in options and options[key] != expected:
         raise ValidationFailed(f"当前模式的 {key} 必须为 {expected}")
     return {**(options or {}), key: expected}
