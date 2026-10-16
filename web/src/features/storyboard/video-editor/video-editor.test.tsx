@@ -582,9 +582,12 @@ describe('AI 改段的弹出卡', () => {
     expect(submitted[0]?.['prompt']).toBe('@Image1')
     expect(submitted[0]?.['reference_video_urls']).toEqual([])
     expect(referenceSamples).toEqual([])
+    await waitFor(() => expect(generateButton()).toBeEnabled())
 
     await user.click(segmentOf(track, 3))
     act(() => requestBox().focus())
+    await user.keyboard('{Control>}a{/Control}{Backspace}')
+    expect(requestBox().textContent).toBe('')
     await user.keyboard('@选区首帧{Enter}')
     expect(within(requestBox()).getByText('选区首帧')).toBeVisible()
     await user.click(segmentOf(track, 4))
@@ -632,7 +635,7 @@ describe('AI 改段的弹出卡', () => {
     expect(submitted[0]?.['reference_video_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
   })
 
-  it('提交：参考图按出现的先后编成 @Image1、@Image2 与 reference_image_urls；成功后要求清空', async () => {
+  it.each(['图生', '编辑'] as const)('%s 提交后保留输入，可修改并再次提交', async (mode) => {
     server.use(
       http.get('*/api/generations/video-models', () =>
         HttpResponse.json({
@@ -652,18 +655,23 @@ describe('AI 改段的弹出卡', () => {
       const body = (await response.clone().json()) as { contentType: string; url: string }
       if (body.contentType.startsWith('image/')) confirmedImages.push(body.url)
     })
-    let submitted: Record<string, unknown> | undefined
+    const submitted: Record<string, unknown>[] = []
     server.use(
       http.get('*/api/generations', () => HttpResponse.json({ items: chain })),
       http.post('*/api/generations/video-edits', async ({ request }) => {
-        submitted = (await request.json()) as Record<string, unknown>
-        const created = editSegment({ status: 'submitted', rangeStartMs: 1000, rangeEndMs: 3000 })
+        submitted.push((await request.json()) as Record<string, unknown>)
+        const created = editSegment({
+          status: 'submitted',
+          rangeStartMs: 1000,
+          rangeEndMs: 3000,
+          createdAt: new Date(Date.UTC(2026, 8, 16, 10, 2, chain.length)).toISOString(),
+        })
         chain.push(created)
         return HttpResponse.json({ generation: created }, { status: 202 })
       }),
     )
     const user = userEvent.setup()
-    await renderEditor()
+    const view = await renderEditor()
     const track = await timeline()
     await user.click(segmentOf(track, 2))
     await user.keyboard('{Shift>}')
@@ -674,6 +682,7 @@ describe('AI 改段的弹出卡', () => {
         'wan3.0-video',
       ),
     )
+    await user.click(within(openCard()).getByRole('radio', { name: mode }))
 
     const image = (name: string) => new File(['png-bytes'], `${name}.png`, { type: 'image/png' })
     pasteTextIntoComposer(requestBox(), '光线参考')
@@ -687,15 +696,15 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(generateButton()).toBeEnabled())
     await user.click(generateButton())
 
-    await waitFor(() => expect(submitted).toBeDefined())
-    expect(submitted).toMatchObject({
+    await waitFor(() => expect(submitted).toHaveLength(1))
+    expect(submitted[0]).toMatchObject({
       range_start_ms: 1000,
       range_end_ms: 3000,
       model: 'wan3.0-video',
       prompt: '光线参考@Image1，构图参考@Image2',
     })
     await waitFor(() => expect(confirmedImages).toHaveLength(2))
-    expect(submitted?.['reference_image_urls']).toEqual(confirmedImages)
+    expect(submitted[0]?.['reference_image_urls']).toEqual(confirmedImages)
 
     // 在侧栏显示生成状态，保留当前选用的原片，其他段照常可选。
     expect(await within(versionStrip()).findByRole('button', { name: /V1 · 生成中/ })).toBeVisible()
@@ -704,9 +713,41 @@ describe('AI 改段的弹出卡', () => {
     expect(segmentOf(track, 2)).toHaveAttribute('aria-pressed', 'true')
     expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'true')
 
-    // 再选一段：要求已经清空。
+    expect(requestBox()).toHaveTextContent('光线参考光线.png，构图参考构图.png')
+    expect(within(requestBox()).getByText('光线.png')).toBeVisible()
+    expect(within(requestBox()).getByText('构图.png')).toBeVisible()
+    expect(within(openCard()).queryByRole('alert')).toBeNull()
+    expect(generateButton()).toBeDisabled()
+
+    act(() => requestBox().focus())
+    pasteTextIntoComposer(requestBox(), '，镜头缓慢推进')
+    fireEvent.keyDown(requestBox(), { key: 'Enter' })
+    expect(submitted).toHaveLength(1)
+
+    files.set(EDITED_URL, { keyframes: [0, 1], duration: 2 })
+    chain.splice(
+      0,
+      chain.length,
+      ...chain.map((job) => ({
+        ...job,
+        status: 'completed' as const,
+        outputUrl: EDITED_URL,
+        durationMs: 2000,
+      })),
+    )
+    await act(() => view.queryClient.invalidateQueries())
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toHaveLength(2))
+    expect(submitted[1]).toMatchObject({
+      prompt: '光线参考@Image1，构图参考@Image2，镜头缓慢推进',
+      reference_image_urls: confirmedImages,
+    })
+    expect(await within(versionStrip()).findByRole('button', { name: /V2 · 生成中/ })).toBeVisible()
+
+    // 再选一段，继续保留用户刚编辑的内容。
     await user.click(segmentOf(track, 1))
-    expect(requestBox().textContent).toBe('')
+    expect(requestBox()).toHaveTextContent('光线参考光线.png，构图参考构图.png，镜头缓慢推进')
   })
 
   it('有原作镜头和参考图时仍由用户填写要求，换选区保留手动输入', async () => {

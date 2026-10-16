@@ -497,11 +497,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
         referenceImageUrls,
       })
       seedJob(job)
-      // 新结果只作为候选出现。当前素材和已选版本保持不动。
+      // 新结果只作为候选出现，保留输入供继续调整；当前素材和已选版本保持不动。
       editor.submitted()
       chooseScope('clips')
-      setRequest(NO_REQUEST)
-      requestComposerRef.current?.clear()
       setDroppedUploads(0)
     } catch (error) {
       setGenerateError(errorMessageOf(error, '片段生成提交失败'))
