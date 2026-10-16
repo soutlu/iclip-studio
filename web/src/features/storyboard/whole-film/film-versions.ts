@@ -12,7 +12,7 @@ import {
   type MaterialLane,
   type StoredFilm,
 } from './film-draft'
-import { zFilmBrand, zFilmFont } from './film-draft'
+import { zFilmBrand, zFilmFont, zFilmMusicGain } from './film-draft'
 
 /** 整片：没有来源的视频合成。 */
 export const isWholeFilm = (job: GenerationJob): boolean =>
@@ -75,6 +75,7 @@ const zVersionRequest = z.object({
           sourceJobId: z.string().min(1),
           startMs: z.number().int().nonnegative(),
           endMs: z.number().int().positive(),
+          volume: z.number().min(0).max(2).optional(),
         })
         .refine((segment) => segment.endMs > segment.startMs),
     )
@@ -90,6 +91,8 @@ const zVersionRequest = z.object({
       audioJobId: z.string().min(1),
       url: z.string().min(1),
       offsetMs: z.number().int().nonnegative(),
+      volume: z.number().min(0).max(2).optional(),
+      gain: zFilmMusicGain.optional(),
     })
     .nullish(),
 })
@@ -141,6 +144,7 @@ export const draftFromVersion = (
       sourceJobId: span.sourceJobId,
       start,
       end,
+      volume: span.volume,
       origin: { start, end },
       subtitles: captions,
     }
@@ -153,6 +157,8 @@ export const draftFromVersion = (
             kind: 'generate',
             jobId: music.audioJobId,
             userStart: roundToMs(music.offsetMs / 1000),
+            volume: music.volume,
+            gain: music.gain,
           }
         : {
             // 上传记录不挂对话、列不出来，地址只在请求里。
@@ -162,6 +168,8 @@ export const draftFromVersion = (
             verifyAccess: true,
             url: music.url,
             userStart: roundToMs(music.offsetMs / 1000),
+            volume: music.volume,
+            gain: music.gain,
           }
 
   let lanes: readonly MaterialLane[] = []

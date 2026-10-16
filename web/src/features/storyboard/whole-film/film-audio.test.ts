@@ -22,6 +22,48 @@ const peakOf = (pcm: FilmPcm) =>
   )
 
 describe('预览音频定量校验', () => {
+  it.each([0, 0.5, 2])('原声音量 %s 在母线归一后仍生效', (volume) => {
+    const source = tone(1000)
+    const baseline = mixFilmAudio([{ source, start: 0, end: 4 }], null)
+    const adjusted = mixFilmAudio([{ source, start: 0, end: 4, volume }], null)
+    expect(peakOf(adjusted) / peakOf(baseline)).toBeCloseTo(volume, 4)
+  })
+
+  it.each([0, 0.5, 2])('只有配乐时，音量 %s 不会被自动拉回', (volume) => {
+    const music = {
+      source: tone(1000),
+      start: 0,
+      bodyStart: 0,
+      bodyDuration: 4,
+      curve: [{ atMs: 0, gain: 0.5 }],
+    }
+    const segments = [{ source: null, start: 0, end: 4 }]
+    const baseline = mixFilmAudio(segments, music)
+    const adjusted = mixFilmAudio(segments, { ...music, volume })
+    expect(peakOf(adjusted) / peakOf(baseline)).toBeCloseTo(volume, 4)
+  })
+
+  it('同一来源不同段独立调音，原声静音后仍保留配乐', () => {
+    const source = tone(1000)
+    const mixed = mixFilmAudio(
+      [
+        { source, start: 0, end: 2, volume: 0.5 },
+        { source, start: 0, end: 2, volume: 1 },
+      ],
+      null,
+    )
+    const left = mixed.channels[0]
+    expect((left?.[4812] ?? 0) / (left?.[2 * FILM_AUDIO_RATE + 4812] ?? 1)).toBeCloseTo(0.5, 4)
+    const withMusic = mixFilmAudio([{ source, start: 0, end: 4, volume: 0 }], {
+      source: tone(500),
+      start: 0,
+      bodyStart: 0,
+      bodyDuration: 4,
+      curve: [{ atMs: 0, gain: 0.5 }],
+    })
+    expect(peakOf(withMusic)).toBeGreaterThan(0)
+  })
+
   // 同样 Float32 PCM 送本机 FFmpeg loudnorm=print_format=json 得到 input_i。
   // 命令：ffmpeg -f f32le -ar <rate> -ac <channels> -i input.f32 -af loudnorm=print_format=json -f null -
   // FFmpeg 输出使用响度直方图取整；容许 0.15 LU，不把双方量化差当作精确相等。

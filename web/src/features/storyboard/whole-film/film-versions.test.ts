@@ -29,6 +29,38 @@ const captions = (film: ReturnType<typeof restore>) =>
   burnedSubtitles(projectSubtitles(film, () => source).subtitles)
 
 describe('从已合成版本恢复字幕', () => {
+  it('恢复各段音量、音乐音量及原始压低曲线，浏览器存取后不丢失', () => {
+    const gain = [
+      { atMs: 0, gain: 0.2 },
+      { atMs: 5000, gain: 0.45 },
+    ]
+    const request = {
+      segments: [{ sourceJobId: 'A', startMs: 0, endMs: 5000, volume: 0.4 }],
+      subtitles: [],
+      music: {
+        audioJobId: 'music',
+        url: 'https://example.com/music.mp3',
+        offsetMs: 1250,
+        volume: 1.5,
+        gain,
+      },
+    }
+    const stored = draftFromVersion(makeGenerationJob({ operation: 'compose', request }), {
+      groupOf: () => 'group',
+      generatedMusic: new Set(['music']),
+      newId: () => 'segment',
+    })
+    assert(stored !== undefined)
+    const reloaded = parseStoredFilm(serializeStoredFilm(stored))
+    expect(reloaded?.film.segments[0]?.volume).toBe(0.4)
+    expect(reloaded?.film.music).toEqual({
+      kind: 'generate',
+      jobId: 'music',
+      userStart: 1.25,
+      volume: 1.5,
+      gain,
+    })
+  })
   it('清空的识别字幕不会重新出现', () => {
     expect(captions(restore([]))).toEqual([])
   })

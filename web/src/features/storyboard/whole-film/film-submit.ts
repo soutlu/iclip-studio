@@ -19,7 +19,12 @@ export const MAX_SUBTITLE_CHARS = 200
 const toMs = (seconds: number): number => Math.round(seconds * 1000)
 
 /** 音乐怎么用：哪条音频记录、整首里对着整片 0 秒的那一刻（秒）、整片上的音量曲线（不含结尾淡出，淡出由后端做）。 */
-export type MusicPlan = { audioJobId: string; start: number; curve: readonly GainPoint[] }
+export type MusicPlan = {
+  audioJobId: string
+  start: number
+  curve: readonly GainPoint[]
+  volume?: number | undefined
+}
 
 /** 草稿排成的提交体：段取各自来源的原片起止；字幕是烧进画面的那一份（已去掉空字、互不重叠）；有音乐才带 `music`。
  * 不带 userName：浏览器会话由服务端认人。 */
@@ -46,6 +51,7 @@ export const wholeFilmBody = ({
     sourceJobId: segment.sourceJobId,
     startMs: toMs(segment.start),
     endMs: toMs(segment.end),
+    volume: segment.volume ?? 1,
   })),
   subtitles: subtitles.flatMap((item) => {
     const startMs = toMs(item.at)
@@ -59,6 +65,7 @@ export const wholeFilmBody = ({
           audioJobId: music.audioJobId,
           offsetMs: toMs(music.start),
           gain: music.curve.map((point) => ({ ...point })),
+          volume: music.volume ?? 1,
         },
       }),
 })

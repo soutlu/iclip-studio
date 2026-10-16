@@ -332,6 +332,7 @@ class GenerationService:
                     url=source.output_url,
                     start_ms=segment.start_ms,
                     end_ms=segment.end_ms,
+                    volume=segment.volume,
                 )
             )
         intro = await self._film_brand(request.intro, "intro")
@@ -407,7 +408,11 @@ class GenerationService:
                 f"不够整片的 {format_seconds(segments_ms / 1000)} 秒"
             )
         return WholeFilmMusic(
-            audio_job_id=audio.id, url=audio.output_url, offset_ms=music.offset_ms, gain=music.gain
+            audio_job_id=audio.id,
+            url=audio.output_url,
+            offset_ms=music.offset_ms,
+            gain=music.gain,
+            volume=music.volume,
         )
 
     async def _film_brand(

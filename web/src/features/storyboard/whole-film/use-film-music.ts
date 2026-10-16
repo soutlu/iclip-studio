@@ -1,14 +1,13 @@
 /** 整片编辑器里的音乐：上传、生成、读出来、按剪辑对齐、预览混音，连同音乐轨、卡片与提示要显示的东西。
- * 草稿里只记是哪条音频记录与人拖到的起点；铺法每次按此刻的剪辑与字幕重新算，不存。 */
+ * 草稿保留音乐、起点与音量；恢复版本时沿用提交的压低曲线，重新剪辑后再按口播计算。 */
 
 import { useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import { toast } from '@/shared/ui/toast'
 import { isRunningStatus } from '../shots'
 import { useStableValue } from '../video-editor/use-stable-value'
-import type { PlaySegment } from '../video-editor/play-layout'
 import { moveMusic, setMusic, type FilmMusic, type FilmState } from './film-draft'
 import {
   internalCuts,
@@ -22,7 +21,11 @@ import {
 import type { MusicTrackView } from './film-music-track'
 import type { MusicReadiness } from './film-submit'
 import type { FilmSubtitle } from './film-subtitles'
-import { useFilmPreviewAudio, type PreviewAudioState } from './use-film-preview-audio'
+import {
+  useFilmPreviewAudio,
+  type PreviewAudioState,
+  type PreviewAudioSegment,
+} from './use-film-preview-audio'
 import {
   musicPromptOf,
   seedMusicJob,
@@ -60,7 +63,7 @@ type Options = {
   playback: { playing: boolean; muted: boolean }
   currentTime: number
   /** 含片头片尾的完整画面时间线；音乐仍只铺 total 秒的正文。 */
-  previewSegments: readonly PlaySegment[]
+  previewSegments: readonly PreviewAudioSegment[]
   bodyStartSeconds: number
 }
 
@@ -127,16 +130,24 @@ export function useFilmMusic({
   const analysis = useMusicAnalysis(url)
   const name = music?.kind === 'upload' ? music.name : '生成的音乐'
 
-  const curve = musicGainCurve(speechSpansOf(subtitles), total)
+  const curve = music?.gain ?? musicGainCurve(speechSpansOf(subtitles), total)
   const previewCurve = useStableValue(withFadeOut(curve, Math.round(total * 1000)))
-  const song: Song | undefined =
-    analysis.data === undefined
-      ? undefined
-      : { duration: analysis.data.duration, grid: analysis.data.grid }
-  const placement: MusicPlacement | undefined =
-    song === undefined || music === null
-      ? undefined
-      : placeMusic(song, total, internalCuts(film.segments), music.userStart)
+  const song: Song | undefined = useMemo(
+    () =>
+      analysis.data === undefined
+        ? undefined
+        : { duration: analysis.data.duration, grid: analysis.data.grid },
+    [analysis.data],
+  )
+  const cuts = useStableValue(internalCuts(film.segments))
+  const userStart = music?.userStart
+  const placement: MusicPlacement | undefined = useMemo(
+    () =>
+      song === undefined || userStart === undefined
+        ? undefined
+        : placeMusic(song, total, cuts, userStart),
+    [song, total, cuts, userStart],
+  )
 
   const generateBlocked = taskId === undefined ? taskBlocked : undefined
   const generate = async (prompt: string): Promise<boolean> => {
@@ -219,7 +230,15 @@ export function useFilmMusic({
       { kind: 'ready', name, song, peaks: analysis.data.peaks, placement, curve: previewCurve },
       placement.shortBy > 0
         ? { kind: 'short', shortBy: placement.shortBy }
-        : { kind: 'ready', plan: { audioJobId: music.jobId, start: placement.start, curve } },
+        : {
+            kind: 'ready',
+            plan: {
+              audioJobId: music.jobId,
+              start: placement.start,
+              curve,
+              volume: music.volume ?? 1,
+            },
+          },
     ]
   })()
 
@@ -268,6 +287,7 @@ export function useFilmMusic({
             buffer: analysis.data.buffer,
             start: ready.placement.start,
             curve,
+            volume: music?.volume ?? 1,
           },
     bodyStartSeconds,
     bodyDuration: total,

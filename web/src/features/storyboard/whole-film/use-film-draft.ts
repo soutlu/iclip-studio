@@ -153,6 +153,7 @@ export function useFilmDraft({
     apply: (next, typing) =>
       change((state) => {
         const film = typeof next === 'function' ? next(state.history.present) : next
+        if (film === state.history.present) return state
         return {
           ...state,
           history:

@@ -211,9 +211,9 @@ describe('WholeFilmEditor', () => {
           conversationId: CONVERSATION,
           taskId: CONVERSATION_TASK,
           segments: [
-            { sourceJobId: TAKE_1, startMs: 0, endMs: 1000 },
-            { sourceJobId: TAKE_1, startMs: 1500, endMs: 3000 },
-            { sourceJobId: TAKE_1, startMs: 500, endMs: 2000 },
+            { sourceJobId: TAKE_1, startMs: 0, endMs: 1000, volume: 1 },
+            { sourceJobId: TAKE_1, startMs: 1500, endMs: 3000, volume: 1 },
+            { sourceJobId: TAKE_1, startMs: 500, endMs: 2000, volume: 1 },
           ],
           subtitles: [
             { startMs: 200, endMs: 800, text: '你好' },
@@ -1084,7 +1084,7 @@ describe('WholeFilmEditor 音乐', () => {
     expect(screen.queryByRole('button', { name: /^音乐：/ })).toBeNull()
   })
 
-  it('拖动音乐吸附到候选起点，气泡说用哪一段、几个切点落在拍上；松手后按人选的起点用；方向键一次一拍', async () => {
+  it('拖动音乐保留自由起点，气泡显示命中数；方向键微调，自动对齐恢复推荐起点', async () => {
     stubWebAudio({ duration: 20 })
     seedFilm(UPLOADED)
     serve(VIDEOS, [])
@@ -1093,22 +1093,24 @@ describe('WholeFilmEditor 音乐', () => {
     await screen.findByRole('button', { name: '音乐：夏日节拍.mp3，使用 1.0–5.0 秒' })
     stubLayout()
 
-    // 比例按 20 秒排，200px 宽：每秒 10px。往左拖 1.4 秒，整首往左滑，换用更靠后的一截，吸附到 2.5 秒那一拍。
+    // 比例按 20 秒排，200px 宽：每秒 10px。往左拖 1.4 秒，整首往左滑，换用更靠后的一截，保留 2.4 秒，不强制吸附。
     fireEvent.pointerDown(musicClip(), { pointerId: 1, button: 0, clientX: 20 })
     fireEvent.pointerMove(musicClip(), { pointerId: 1, clientX: 6 })
-    expect(screen.getByText('使用 2.5–6.5 秒 · 落在拍上的切点 2/2')).toBeVisible()
+    expect(screen.getByText('使用 2.4–6.4 秒 · 落在拍上的切点 0/2')).toBeVisible()
     fireEvent.pointerUp(musicClip(), { pointerId: 1, clientX: 6 })
-    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 2.5–6.5 秒')
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 2.4–6.4 秒')
 
     musicClip().focus()
     await user.keyboard('{ArrowRight}')
-    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 3.0–7.0 秒')
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 2.5–6.5 秒')
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
-    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 1.0–5.0 秒')
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 1.5–5.5 秒')
 
     // 拖动是一步，能撤回。
     await user.click(screen.getByRole('button', { name: '撤销' }))
-    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 3.0–7.0 秒')
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 2.5–6.5 秒')
+    await user.click(screen.getByRole('button', { name: '自动对齐' }))
+    expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 1.0–5.0 秒')
   })
 
   it('音乐比视频段短：后面接空位写明短多少，「合成成片」说明原因，不循环补', async () => {
@@ -1160,6 +1162,24 @@ describe('WholeFilmEditor 音乐', () => {
     expect(await screen.findByRole('button', { name: /^音乐：/ })).toBeVisible()
   })
 
+  it('已自动对齐时重复点击保留音量调整的重做，并提示缺少口播避让', async () => {
+    stubWebAudio({ duration: 20 })
+    seedFilm(UPLOADED)
+    serve(VIDEOS, [])
+    const user = userEvent.setup()
+    await renderEditor()
+    await screen.findByRole('button', { name: /^音乐：/ })
+    expect(
+      screen.getByText('有 3 段缺少口播识别，配乐未自动避让；请在字幕轨重新识别'),
+    ).toBeVisible()
+    fireEvent.change(screen.getByRole('slider', { name: '配乐音量' }), { target: { value: '35' } })
+    await user.click(screen.getByRole('button', { name: '撤销' }))
+    expect(screen.getByRole('slider', { name: '配乐音量' })).toHaveValue('100')
+    await user.click(screen.getByRole('button', { name: '自动对齐' }))
+    await user.click(screen.getByRole('button', { name: '重做' }))
+    expect(screen.getByRole('slider', { name: '配乐音量' })).toHaveValue('35')
+  })
+
   it('预览播放完整混音，从播放头处起播，静音和暂停同步，关闭后释放音频资源', async () => {
     const audio = stubWebAudio({ duration: 20 })
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
@@ -1203,9 +1223,15 @@ describe('WholeFilmEditor 音乐', () => {
     // 原视频始终静音，防止原声和预混音重复播放。
     expect(screen.getByLabelText('视频播放器')).toHaveProperty('muted', true)
 
+    // 调音后仍在播放，新混音从当前播放头换入，无需再按播放。
+    fireEvent.change(screen.getByRole('slider', { name: '配乐音量' }), { target: { value: '35' } })
+    expect(screen.getByRole('button', { name: '暂停' })).toBeEnabled()
+    await waitFor(() => expect(audio.played).toHaveLength(2))
+    expect(audio.played[1]).toMatchObject({ offset: 2, duration: 2 })
+
     await user.click(screen.getByRole('button', { name: '暂停' }))
-    expect(audio.played[0]?.stopped).toBe(true)
-    expect(audio.played).toHaveLength(1)
+    expect(audio.played[1]?.stopped).toBe(true)
+    expect(audio.played).toHaveLength(2)
     unmount()
     expect(audio.closed).toBe(1)
     expect(audio.workers.every((worker) => worker.terminated)).toBe(true)

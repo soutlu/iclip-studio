@@ -9931,6 +9931,13 @@
             "minimum": 0.0,
             "title": "Offsetms",
             "type": "integer"
+          },
+          "volume": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
           }
         },
         "required": [
@@ -9958,6 +9965,13 @@
             "minimum": 0.0,
             "title": "Startms",
             "type": "integer"
+          },
+          "volume": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
           }
         },
         "required": [

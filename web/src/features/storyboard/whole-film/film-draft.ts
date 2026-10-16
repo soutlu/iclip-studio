@@ -2,6 +2,8 @@
  * 段之间没有空隙，整片时间就是各段时长依次相加。纯函数，不持有状态；撤销栈与存放见 use-film-draft。 */
 
 import { z } from 'zod'
+import { zMusicGainPoint } from '@/shared/api/generated/zod.gen'
+import type { GainPoint } from './film-music'
 
 /** 整片连同片头片尾最长 120 秒（ADR-0003）。 */
 export const MAX_FILM_SECONDS = 120
@@ -24,6 +26,8 @@ export type Pick = { sourceJobId: string; start: number; end: number }
 /** 成片轨上的一段。同一截素材可以放进来几次，所以身份是另发的 id，不由内容定。 */
 export type FilmSegment = Pick & {
   id: string
+  /** 相对自动响度基准的线性音量，0–2；省略为 1。 */
+  volume?: number | undefined
   /** 挑进来时的那一截（拆分后各自以拆点为界）：裁剪只能在里面收缩、再放回。 */
   origin: { start: number; end: number }
   /** 从已合成版本恢复的最终字幕，按来源视频时间保存；空数组表示这一段没有字幕，不再从识别记录派生。 */
@@ -41,7 +45,7 @@ export type ManualSubtitle = {
 
 /** 整片的背景音乐，至多一首，是一条音频记录：上传的记着文件名与地址（上传记录不挂对话，列不出来），生成的地址与状态
  * 从本对话的音频记录里读。`userStart` 是人拖到的起点（整首里的秒），没拖过是 null，起点按切点自动选。 */
-export type FilmMusic =
+export type FilmMusic = (
   | {
       kind: 'upload'
       jobId: string
@@ -52,6 +56,12 @@ export type FilmMusic =
       verifyAccess?: boolean | undefined
     }
   | { kind: 'generate'; jobId: string; userStart: number | null }
+) & {
+  /** 相对自动混音的线性音量，0–2；省略为 1。 */
+  volume?: number | undefined
+  /** 历史版本的正文音量曲线；正文剪辑变化后清除并重新计算。 */
+  gain?: readonly GainPoint[] | undefined
+}
 
 /** 选中的品牌模板快照：停用后仍能预览，提交前再核对当前可用模板。 */
 export type FilmBrand = {
@@ -81,6 +91,25 @@ export type FilmState = {
 }
 
 export const EMPTY_FILM: FilmState = { segments: [], texts: {}, manual: [], music: null }
+
+/** 正文结构改变会使恢复的曲线时刻失效；音量与音乐起点调整不影响正文时钟。 */
+const clearMusicGain = (state: FilmState): FilmState =>
+  state.music?.gain === undefined ? state : { ...state, music: { ...state.music, gain: undefined } }
+
+const checkedVolume = (volume: number): number => {
+  if (!Number.isFinite(volume) || volume < 0 || volume > 2)
+    throw new RangeError('音量必须是 0 到 2 之间的有限数值')
+  return volume
+}
+
+/** 修改某段原声的音量；找不到该段或音量未变时保留原状态。 */
+export const setSegmentVolume = (state: FilmState, id: string, volume: number): FilmState => {
+  checkedVolume(volume)
+  const at = state.segments.findIndex((segment) => segment.id === id)
+  const segment = state.segments[at]
+  if (segment === undefined || (segment.volume ?? 1) === volume) return state
+  return { ...state, segments: state.segments.with(at, { ...segment, volume }) }
+}
 
 export const setFont = (state: FilmState, font: FilmFont | null): FilmState => ({ ...state, font })
 
@@ -163,7 +192,7 @@ export const insertSegment = (
     origin: { start, end },
   }
   const at = Math.max(0, Math.min(state.segments.length, index))
-  return { ...state, segments: state.segments.toSpliced(at, 0, segment) }
+  return { ...clearMusicGain(state), segments: state.segments.toSpliced(at, 0, segment) }
 }
 
 // ---------- 成片轨上的剪辑 ----------
@@ -179,7 +208,7 @@ export const moveSegment = (
   if (moving === undefined || before === from || before === from + 1) return undefined
   const rest = state.segments.toSpliced(from, 1)
   const at = before > from ? before - 1 : before
-  return { ...state, segments: rest.toSpliced(at, 0, moving) }
+  return { ...clearMusicGain(state), segments: rest.toSpliced(at, 0, moving) }
 }
 
 /** 一段的一端最远能拖到哪：不超出挑进来时的那一截，不短于 {@link MIN_SEGMENT_SECONDS}（本来就更短的只能拉长），
@@ -215,7 +244,10 @@ export const trimSegment = (
   const { min, max } = trimBounds(state.segments, segment, edge, brandDuration(state))
   const bounded = roundToMs(Math.min(max, Math.max(min, value)))
   if (bounded === segment[edge]) return state
-  return { ...state, segments: state.segments.with(at, { ...segment, [edge]: bounded }) }
+  return {
+    ...clearMusicGain(state),
+    segments: state.segments.with(at, { ...segment, [edge]: bounded }),
+  }
 }
 
 /** 整片时刻 `clock` 处能不能拆：落在一段里面，两边都不短于 {@link MIN_SEGMENT_SECONDS}。 */
@@ -259,7 +291,7 @@ export const splitAt = (
   }
   const at = state.segments.indexOf(segment)
   return {
-    ...state,
+    ...clearMusicGain(state),
     segments: state.segments.toSpliced(at, 1, left, right),
     manual: state.manual.map((item) =>
       item.segmentId === segment.id && item.at >= time ? { ...item, segmentId: rightId } : item,
@@ -268,11 +300,14 @@ export const splitAt = (
 }
 
 /** 删掉一段，后面的段前移；钉在它上面的手动字幕一起删。 */
-export const removeSegment = (state: FilmState, id: string): FilmState => ({
-  ...state,
-  segments: state.segments.filter((segment) => segment.id !== id),
-  manual: state.manual.filter((item) => item.segmentId !== id),
-})
+export const removeSegment = (state: FilmState, id: string): FilmState => {
+  if (!state.segments.some((segment) => segment.id === id)) return state
+  return {
+    ...clearMusicGain(state),
+    segments: state.segments.filter((segment) => segment.id !== id),
+    manual: state.manual.filter((item) => item.segmentId !== id),
+  }
+}
 
 // ---------- 字幕 ----------
 
@@ -302,11 +337,25 @@ export const setMusic = (state: FilmState, music: FilmMusic | null): FilmState =
 
 /** 人把音乐拖到整首的 `start` 起；没有音乐或没挪动时返回 `undefined`。 */
 export const moveMusic = (state: FilmState, start: number): FilmState | undefined => {
+  if (!Number.isFinite(start) || start < 0) throw new RangeError('音乐起点必须是非负有限数值')
   if (state.music === null) return undefined
   const userStart = roundToMs(start)
   if (userStart === state.music.userStart) return undefined
   return { ...state, music: { ...state.music, userStart } }
 }
+
+/** 修改整首背景音乐的音量，保留自动压低曲线与截取起点。 */
+export const setMusicVolume = (state: FilmState, volume: number): FilmState => {
+  checkedVolume(volume)
+  if (state.music === null || (state.music.volume ?? 1) === volume) return state
+  return { ...state, music: { ...state.music, volume } }
+}
+
+/** 回到按当前正文切点自动选音乐起点。 */
+export const resetMusicStart = (state: FilmState): FilmState =>
+  state.music === null || state.music.userStart === null
+    ? state
+    : { ...state, music: { ...state.music, userStart: null } }
 
 // ---------- 素材轨 ----------
 
@@ -329,11 +378,22 @@ export const putLane = (
 const STORAGE_VERSION = 1
 
 const zSpan = z.tuple([z.number().nonnegative(), z.number().positive()])
+const zVolume = z.number().min(0).max(2).optional()
+
+/** 本地与历史快照共用的音量曲线；不包含结尾淡出。 */
+export const zFilmMusicGain = z
+  .array(zMusicGainPoint)
+  .min(1)
+  .max(MAX_MUSIC_GAIN_POINTS)
+  .refine((points) =>
+    points.every((point, index) => index === 0 || point.atMs > (points[index - 1]?.atMs ?? 0)),
+  )
 
 const zStoredSegment = z
   .object({
     id: z.string().min(1),
     sourceJobId: z.string().min(1),
+    volume: zVolume,
     start: z.number().nonnegative(),
     end: z.number().positive(),
     origin: zSpan,
@@ -396,11 +456,15 @@ const zStoredFilm = z.object({
         verifyAccess: z.boolean().optional(),
         url: z.string().min(1),
         userStart: z.number().nonnegative().nullable(),
+        volume: zVolume,
+        gain: zFilmMusicGain.optional(),
       }),
       z.object({
         kind: z.literal('generate'),
         jobId: z.string().min(1),
         userStart: z.number().nonnegative().nullable(),
+        volume: zVolume,
+        gain: zFilmMusicGain.optional(),
       }),
     ])
     .nullable()
