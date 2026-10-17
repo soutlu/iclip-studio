@@ -169,9 +169,9 @@ def test_downgrade_brings_back_only_the_constraint_branch(scratch_db: str) -> No
     """空库上降级再升级照常；降级后约束重新收整片那种行。"""
 
     cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, RECORDS_DROPPED)
     command.downgrade(cfg, BEFORE)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, RECORDS_DROPPED)
     assert asyncio.run(_rows(scratch_db, "SELECT version_num FROM iclip.alembic_version")) == {
         RECORDS_DROPPED
     }

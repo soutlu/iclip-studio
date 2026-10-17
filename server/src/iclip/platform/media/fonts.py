@@ -87,19 +87,7 @@ def _info(font: TTFont) -> FontInfo:
             ranges.append((start, end))
             start = end = point
     ranges.append((start, end))
-    _ass_size_scale(font)
     return FontInfo(family.strip(), weight, style, tuple(ranges))
-
-
-def _ass_size_scale(font: TTFont) -> float:
-    # libass ass_font.c/set_font_metrics 用 Win ascent+descent；ass_face_set_size 使用
-    # FT_SIZE_REQUEST_TYPE_REAL_DIM。浏览器 size 是 em，按文件度量换算。
-    em = _integer(font, "head", "unitsPerEm")
-    ascent = _integer(font, "OS/2", "usWinAscent")
-    descent = _integer(font, "OS/2", "usWinDescent")
-    if em <= 0 or not 0 <= ascent < 32768 or not 0 <= descent < 32768 or ascent + descent <= 0:
-        raise FontError("字体缺少有效的 em 或行高度量")
-    return (ascent + descent) / em
 
 
 __all__ = [

@@ -21,10 +21,12 @@ def make_font(
     weight: int = 400,
     style: FontStyle = "normal",
     otf: bool = False,
+    win_metrics: tuple[int, int] = (900, 300),
 ) -> Path:
     """创建一份可被 fontTools 完整解析的字体，每个字符画一个矩形轮廓。
 
-    em 为 1000，Win 行高为 1200，每个字符推进 1000。这些轮廓由测试代码绘制，不包含任何外部字体数据。
+    em 为 1000，Win 行高默认 1200（``win_metrics`` 是 Win ascent 与 descent），每个字符推进 1000。
+    这些轮廓由测试代码绘制，不包含任何外部字体数据。
     """
 
     points = sorted(set(characters))
@@ -86,8 +88,8 @@ def make_font(
         version=4,
         sTypoAscender=900,
         sTypoDescender=-300,
-        usWinAscent=900,
-        usWinDescent=300,
+        usWinAscent=win_metrics[0],
+        usWinDescent=win_metrics[1],
         usWeightClass=weight,
         fsSelection=flags,
     )

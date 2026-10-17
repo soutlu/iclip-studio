@@ -3,11 +3,13 @@ import type { z } from 'zod'
 import { apiFetch } from './client'
 import type {
   BrandFontConfirmIn,
-  BrandTemplateCreateIn,
+  BrandProfileIn,
   BrandTemplateUpdateIn,
 } from './generated/types.gen'
 import {
   zBrandFontInfoOut,
+  zBrandProfileOut,
+  zBrandProfilesOut,
   zBrandTemplateOut,
   zBrandTemplatesOut,
   type zListBrandTemplatesBrandTemplatesGetQuery,
@@ -17,6 +19,7 @@ import { uploadFontFile } from './media-upload'
 
 export type BrandTemplate = z.output<typeof zBrandTemplateOut>
 export type BrandFontInfo = z.output<typeof zBrandFontInfoOut>
+export type BrandProfile = z.output<typeof zBrandProfileOut>
 type TemplateScope = Pick<
   z.input<typeof zListBrandTemplatesBrandTemplatesGetQuery>,
   'includeDisabled'
@@ -25,6 +28,7 @@ type TemplateScope = Pick<
 export const brandTemplateQueryKeys = {
   all: ['brand-templates'] as const,
   list: (scope: TemplateScope) => ['brand-templates', scope] as const,
+  brands: ['brand-templates', 'brands'] as const,
 }
 
 export const useBrandTemplates = (scope: TemplateScope = {}) =>
@@ -41,11 +45,23 @@ export const useBrandTemplates = (scope: TemplateScope = {}) =>
       ),
   })
 
-export const createBrandTemplate = (body: BrandTemplateCreateIn): Promise<BrandTemplate> =>
-  apiFetch('/brand-templates', zBrandTemplateOut, {
-    method: 'POST',
+/** 全部品牌连同标语与强调色，按品牌名排；没设过的两项为 null。 */
+export const useBrandProfiles = () =>
+  useQuery({
+    queryKey: brandTemplateQueryKeys.brands,
+    queryFn: ({ signal }) =>
+      apiFetch('/brand-templates/brands', zBrandProfilesOut, {
+        signal,
+        fallbackErrorMessage: '读取品牌失败',
+      }),
+  })
+
+/** 整份写入一个品牌的标语与强调色，null 清空那一项。 */
+export const saveBrandProfile = (brand: string, body: BrandProfileIn): Promise<BrandProfile> =>
+  apiFetch(`/brand-templates/brands/${encodeURIComponent(brand)}`, zBrandProfileOut, {
+    method: 'PUT',
     body,
-    fallbackErrorMessage: '创建品牌模板失败',
+    fallbackErrorMessage: '保存品牌设置失败',
   })
 
 export const updateBrandTemplate = (

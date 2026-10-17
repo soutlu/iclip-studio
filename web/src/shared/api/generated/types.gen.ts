@@ -376,25 +376,47 @@ export type BrandFontUnicodeRange = {
 }
 
 /**
- * BrandTemplateCreateIn
+ * BrandProfileIn
+ *
+ * 整份写入一个品牌的标语与强调色；两项都要给，``null`` 清空。
  */
-export type BrandTemplateCreateIn = {
+export type BrandProfileIn = {
+  /**
+   * Accentcolor
+   */
+  accentColor: string | null
+  /**
+   * Slogan
+   */
+  slogan: string | null
+}
+
+/**
+ * BrandProfileOut
+ */
+export type BrandProfileOut = {
+  /**
+   * Accentcolor
+   */
+  accentColor: string | null
   /**
    * Brand
    */
-  brand?: string | null
+  brand: string
   /**
-   * Kind
+   * Slogan
    */
-  kind: 'intro' | 'outro'
+  slogan: string | null
+}
+
+/**
+ * BrandProfilesOut
+ */
+export type BrandProfilesOut = {
   /**
-   * Name
+   * Items
    */
-  name: string
-  /**
-   * Uploadid
-   */
-  uploadId: string
+  items: Array<BrandProfileOut>
 }
 
 /**
@@ -414,18 +436,6 @@ export type BrandTemplateOut = {
    */
   disabledAt: string | null
   /**
-   * Durationms
-   */
-  durationMs: number | null
-  /**
-   * Hasaudio
-   */
-  hasAudio: boolean | null
-  /**
-   * Height
-   */
-  height: number | null
-  /**
    * Id
    */
   id: string
@@ -441,10 +451,6 @@ export type BrandTemplateOut = {
    * Url
    */
   url: string
-  /**
-   * Width
-   */
-  width: number | null
 }
 
 /**
@@ -5955,32 +5961,54 @@ export type ListBrandTemplatesBrandTemplatesGetResponses = {
 export type ListBrandTemplatesBrandTemplatesGetResponse =
   ListBrandTemplatesBrandTemplatesGetResponses[keyof ListBrandTemplatesBrandTemplatesGetResponses]
 
-export type CreateBrandTemplateBrandTemplatesPostData = {
-  body: BrandTemplateCreateIn
+export type ListBrandsBrandTemplatesBrandsGetData = {
+  body?: never
   path?: never
   query?: never
-  url: '/brand-templates'
+  url: '/brand-templates/brands'
 }
 
-export type CreateBrandTemplateBrandTemplatesPostErrors = {
+export type ListBrandsBrandTemplatesBrandsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: BrandProfilesOut
+}
+
+export type ListBrandsBrandTemplatesBrandsGetResponse =
+  ListBrandsBrandTemplatesBrandsGetResponses[keyof ListBrandsBrandTemplatesBrandsGetResponses]
+
+export type SaveBrandBrandTemplatesBrandsBrandPutData = {
+  body: BrandProfileIn
+  path: {
+    /**
+     * Brand
+     */
+    brand: string
+  }
+  query?: never
+  url: '/brand-templates/brands/{brand}'
+}
+
+export type SaveBrandBrandTemplatesBrandsBrandPutErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type CreateBrandTemplateBrandTemplatesPostError =
-  CreateBrandTemplateBrandTemplatesPostErrors[keyof CreateBrandTemplateBrandTemplatesPostErrors]
+export type SaveBrandBrandTemplatesBrandsBrandPutError =
+  SaveBrandBrandTemplatesBrandsBrandPutErrors[keyof SaveBrandBrandTemplatesBrandsBrandPutErrors]
 
-export type CreateBrandTemplateBrandTemplatesPostResponses = {
+export type SaveBrandBrandTemplatesBrandsBrandPutResponses = {
   /**
    * Successful Response
    */
-  201: BrandTemplateOut
+  200: BrandProfileOut
 }
 
-export type CreateBrandTemplateBrandTemplatesPostResponse =
-  CreateBrandTemplateBrandTemplatesPostResponses[keyof CreateBrandTemplateBrandTemplatesPostResponses]
+export type SaveBrandBrandTemplatesBrandsBrandPutResponse =
+  SaveBrandBrandTemplatesBrandsBrandPutResponses[keyof SaveBrandBrandTemplatesBrandsBrandPutResponses]
 
 export type SignFontBrandTemplatesFontsSignPostData = {
   body: BrandFontSignIn

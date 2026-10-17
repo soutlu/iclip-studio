@@ -1,16 +1,13 @@
-/** 品牌资源演示记录；字体直传独立于生成记录，启停与类型校验同合同。 */
+/** 品牌资源与品牌设置的演示记录；字体直传独立于生成记录，启停、品牌列表与校验同合同。 */
 import { http, HttpResponse } from 'msw'
-import type { BrandTemplateOut } from '@/shared/api/generated/types.gen'
+import type { BrandProfileOut, BrandTemplateOut } from '@/shared/api/generated/types.gen'
 import {
   zBrandFontConfirmIn,
   zBrandFontInfoOut,
   zBrandFontSignIn,
-  zBrandTemplateCreateIn,
+  zBrandProfileIn,
   zBrandTemplateUpdateIn,
 } from '@/shared/api/generated/zod.gen'
-import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
-import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
-import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleFontUrl from '../fixtures/sample-font.otf?no-inline'
 import fontInfo from '../fixtures/sample-font-info.json'
 
@@ -18,53 +15,19 @@ export const mockBrandFontInfo = zBrandFontInfoOut.parse(fontInfo)
 const seedTemplates = (): BrandTemplateOut[] => [
   {
     id: 'ba000001-0000-4000-8000-000000000001',
-    name: '品牌片头 · 竖版',
-    kind: 'intro',
+    name: '品牌标题字体',
+    kind: 'font',
     brand: '示例品牌',
-    url: sampleVideoUrl,
-    width: 180,
-    height: 320,
-    durationMs: 6000,
-    hasAudio: true,
+    url: sampleFontUrl,
     createdAt: '2026-10-14T10:00:00Z',
     disabledAt: null,
   },
   {
-    id: 'ba000001-0000-4000-8000-000000000002',
-    name: '品牌片尾 · 竖版',
-    kind: 'outro',
-    brand: '示例品牌',
-    url: sampleEditedUrl,
-    width: 180,
-    height: 320,
-    durationMs: 3000,
-    hasAudio: false,
-    createdAt: '2026-10-14T09:00:00Z',
-    disabledAt: null,
-  },
-  {
-    id: 'ba000001-0000-4000-8000-000000000003',
-    name: '品牌片头 · 横版',
-    kind: 'intro',
-    brand: null,
-    url: sampleWideUrl,
-    width: 320,
-    height: 180,
-    durationMs: 6000,
-    hasAudio: false,
-    createdAt: '2026-10-14T08:00:00Z',
-    disabledAt: null,
-  },
-  {
     id: 'ba000001-0000-4000-8000-000000000004',
-    name: '旧版片尾',
-    kind: 'outro',
+    name: '旧版标题字体',
+    kind: 'font',
     brand: '示例品牌',
-    url: sampleEditedUrl,
-    width: 180,
-    height: 320,
-    durationMs: 3000,
-    hasAudio: false,
+    url: sampleFontUrl,
     createdAt: '2026-10-14T07:00:00Z',
     disabledAt: '2026-10-14T11:00:00Z',
   },
@@ -74,23 +37,36 @@ const seedTemplates = (): BrandTemplateOut[] => [
     kind: 'font',
     brand: '通用',
     url: sampleFontUrl,
-    width: null,
-    height: null,
-    durationMs: null,
-    hasAudio: null,
     createdAt: '2026-10-14T06:00:00Z',
     disabledAt: null,
   },
 ]
 
+const seedProfiles = (): Map<string, BrandProfileOut> =>
+  new Map([['示例品牌', { brand: '示例品牌', slogan: '一步一风景', accentColor: '#e4002b' }]])
+
 let templates = seedTemplates()
+let profiles = seedProfiles()
 const fontUploads = new Map<string, { contentType: string; body?: ArrayBuffer }>()
 const fontUrlOf = (id: string) => `http://localhost/mock-font-oss/${id}`
 export const resetMockBrandTemplates = () => {
   templates = seedTemplates()
+  profiles = seedProfiles()
   fontUploads.clear()
 }
 export const findMockBrandTemplate = (id: string) => templates.find((item) => item.id === id)
+
+const brandsInUse = (): BrandProfileOut[] =>
+  [
+    ...new Set([
+      ...profiles.keys(),
+      ...templates.flatMap((item) =>
+        item.disabledAt === null && item.brand !== null ? [item.brand] : [],
+      ),
+    ]),
+  ]
+    .sort((left, right) => left.localeCompare(right))
+    .map((brand) => profiles.get(brand) ?? { brand, slogan: null, accentColor: null })
 
 export const brandTemplateHandlers = (permissions: () => readonly string[]) => {
   const denied = () => HttpResponse.json({ detail: '没有维护品牌资源的权限' }, { status: 403 })
@@ -112,6 +88,26 @@ export const brandTemplateHandlers = (permissions: () => readonly string[]) => {
             (brand === null || item.brand === brand),
         ),
       })
+    }),
+    http.get('*/api/brand-templates/brands', () => {
+      if (!permissions().includes('generation:read')) return denied()
+      return HttpResponse.json({ items: brandsInUse() })
+    }),
+    http.put('*/api/brand-templates/brands/:brand', async ({ params, request }) => {
+      if (!permissions().includes('users:manage')) return denied()
+      const brand = String(params['brand']).trim()
+      const parsed = zBrandProfileIn.safeParse(await request.json())
+      if (brand === '' || brand.length > 100 || !parsed.success)
+        return HttpResponse.json({ detail: '品牌设置不正确' }, { status: 422 })
+      const slogan = parsed.data.slogan?.trim() ?? null
+      if (slogan === '') return HttpResponse.json({ detail: '标语不能为空白' }, { status: 422 })
+      const saved: BrandProfileOut = {
+        brand,
+        slogan,
+        accentColor: parsed.data.accentColor?.toLowerCase() ?? null,
+      }
+      profiles.set(brand, saved)
+      return HttpResponse.json(saved)
     }),
     http.get('*/api/brand-templates/:id/font-info', ({ params }) => {
       if (!permissions().includes('generation:read')) return denied()
@@ -167,35 +163,11 @@ export const brandTemplateHandlers = (permissions: () => readonly string[]) => {
         brand: parsed.data.brand ?? null,
         name: parsed.data.name.trim(),
         url: fontUrlOf(id),
-        width: null,
-        height: null,
-        durationMs: null,
-        hasAudio: null,
         createdAt: new Date().toISOString(),
         disabledAt: null,
       }
       templates.unshift(created)
       return HttpResponse.json(created, { status: 201 })
-    }),
-    http.post('*/api/brand-templates', async ({ request }) => {
-      if (!permissions().includes('users:manage')) return denied()
-      const parsed = zBrandTemplateCreateIn.safeParse(await request.json())
-      if (!parsed.success) return HttpResponse.json({ detail: '模板参数不正确' }, { status: 422 })
-      const template: BrandTemplateOut = {
-        id: crypto.randomUUID(),
-        name: parsed.data.name.trim(),
-        kind: parsed.data.kind,
-        brand: parsed.data.brand ?? null,
-        url: sampleVideoUrl,
-        width: 180,
-        height: 320,
-        durationMs: 6000,
-        hasAudio: true,
-        createdAt: new Date().toISOString(),
-        disabledAt: null,
-      }
-      templates.unshift(template)
-      return HttpResponse.json(template, { status: 201 })
     }),
     http.patch('*/api/brand-templates/:id', async ({ params, request }) => {
       if (!permissions().includes('users:manage')) return denied()

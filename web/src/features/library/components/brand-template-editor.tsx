@@ -1,13 +1,12 @@
 import { useId, useRef, useState, type FormEvent } from 'react'
 import {
   confirmBrandFont,
-  createBrandTemplate,
   updateBrandTemplate,
   uploadBrandFontFile,
   type BrandTemplate,
 } from '@/shared/api/brand-templates'
 import { errorMessageOf } from '@/shared/api/client'
-import { uploadMediaFile } from '@/shared/api/media-upload'
+import { FONT_ACCEPT } from '@/shared/api/media-upload'
 import { Button } from '@/shared/ui/button'
 import {
   DialogBody,
@@ -16,13 +15,8 @@ import {
   DialogRoot,
   DialogSurface,
 } from '@/shared/ui/dialog'
-import { Input, Select } from '@/shared/ui/field'
+import { Input } from '@/shared/ui/field'
 import { toast } from '@/shared/ui/toast'
-import {
-  BRAND_TEMPLATE_KINDS,
-  brandTemplateKindOf,
-  type BrandTemplateKind,
-} from '../brand-templates'
 
 export type BrandTemplateEditing = { kind: 'create' } | { kind: 'edit'; template: BrandTemplate }
 
@@ -32,21 +26,11 @@ type Props = {
   onSaved: () => Promise<void>
 }
 
-const uploadOf = async (
-  file: File,
-  kind: BrandTemplateKind,
-  onProgress: (ratio: number) => void,
-): Promise<string> =>
-  kind.media === 'font'
-    ? uploadBrandFontFile(file, onProgress)
-    : (await uploadMediaFile(file, 'video', { onProgress })).uploadId
-
 export function BrandTemplateEditor({ editing, onClose, onSaved }: Props) {
   const formId = useId()
   const fileRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(editing.kind === 'edit' ? editing.template.name : '')
   const [brand, setBrand] = useState(editing.kind === 'edit' ? (editing.template.brand ?? '') : '')
-  const [kind, setKind] = useState<BrandTemplateKind>(BRAND_TEMPLATE_KINDS[0])
   const [media, setMedia] = useState<{ file: File; uploadId: string | null } | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
@@ -59,7 +43,7 @@ export function BrandTemplateEditor({ editing, onClose, onSaved }: Props) {
       return
     }
     if (editing.kind === 'create' && media === null) {
-      setError('尚未选择文件，无法保存；请选择资源文件')
+      setError('尚未选择文件，无法保存；请选择字体文件')
       return
     }
     setBusy(true)
@@ -68,15 +52,14 @@ export function BrandTemplateEditor({ editing, onClose, onSaved }: Props) {
       const metadata = { name: name.trim(), brand: brand.trim() || null }
       if (editing.kind === 'edit') await updateBrandTemplate(editing.template.id, metadata)
       else if (media !== null) {
-        const uploadId = media.uploadId ?? (await uploadOf(media.file, kind, setProgress))
+        const uploadId = media.uploadId ?? (await uploadBrandFontFile(media.file, setProgress))
         setMedia({ file: media.file, uploadId })
-        if (kind.media === 'font') await confirmBrandFont(uploadId, metadata)
-        else await createBrandTemplate({ ...metadata, kind: kind.value, uploadId })
+        await confirmBrandFont(uploadId, metadata)
       }
-      toast.success(editing.kind === 'edit' ? '品牌资源已更新' : '品牌资源已创建')
+      toast.success(editing.kind === 'edit' ? '字体已更新' : '字体已上传')
       await onSaved()
     } catch (cause) {
-      setError(errorMessageOf(cause, '保存品牌资源失败，请重试'))
+      setError(errorMessageOf(cause, '保存字体失败，请重试'))
     } finally {
       setBusy(false)
       setProgress(null)
@@ -100,35 +83,11 @@ export function BrandTemplateEditor({ editing, onClose, onSaved }: Props) {
         }}
       >
         <DialogHeader
-          closeLabel="关闭资源编辑"
-          title={editing.kind === 'edit' ? '编辑品牌资源' : '上传品牌资源'}
+          closeLabel="关闭字体编辑"
+          title={editing.kind === 'edit' ? '编辑字体' : '上传字体'}
         />
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void submit(event)}>
           <DialogBody className="flex flex-col gap-4">
-            {editing.kind === 'edit' ? null : (
-              <label className="flex flex-col gap-2 text-body-sm" htmlFor={`${formId}-kind`}>
-                类型
-                <Select
-                  id={`${formId}-kind`}
-                  disabled={busy}
-                  value={kind.value}
-                  onChange={(event) => {
-                    const next = brandTemplateKindOf(event.currentTarget.value)
-                    if (next === undefined) return
-                    setKind(next)
-                    setMedia(null)
-                    setError(null)
-                    if (fileRef.current !== null) fileRef.current.value = ''
-                  }}
-                >
-                  {BRAND_TEMPLATE_KINDS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            )}
             <label className="flex flex-col gap-2 text-body-sm" htmlFor={`${formId}-name`}>
               名称
               <Input
@@ -153,12 +112,12 @@ export function BrandTemplateEditor({ editing, onClose, onSaved }: Props) {
             </label>
             {editing.kind === 'edit' ? null : (
               <div className="flex flex-col gap-2 text-body-sm">
-                <label htmlFor={`${formId}-file`}>资源文件</label>
+                <label htmlFor={`${formId}-file`}>字体文件</label>
                 <input
                   id={`${formId}-file`}
                   ref={fileRef}
                   className="sr-only"
-                  accept={kind.accept}
+                  accept={FONT_ACCEPT}
                   disabled={busy}
                   type="file"
                   onChange={(event) => {
@@ -179,14 +138,14 @@ export function BrandTemplateEditor({ editing, onClose, onSaved }: Props) {
                     选择文件
                   </Button>
                   <span className="min-w-0 truncate text-on-surface-variant">
-                    {media?.file.name ?? kind.fileHint}
+                    {media?.file.name ?? 'TTF / OTF'}
                   </span>
                 </div>
               </div>
             )}
             {progress === null ? null : (
               <p role="status" className="text-body-sm text-on-surface-variant">
-                {progress < 1 ? `正在上传 ${Math.round(progress * 100)}%` : '正在校验资源…'}
+                {progress < 1 ? `正在上传 ${Math.round(progress * 100)}%` : '正在校验字体…'}
               </p>
             )}
             {error === null ? null : (
@@ -200,7 +159,7 @@ export function BrandTemplateEditor({ editing, onClose, onSaved }: Props) {
               取消
             </Button>
             <Button loading={busy} type="submit">
-              {busy ? '正在保存…' : '保存资源'}
+              {busy ? '正在保存…' : '保存字体'}
             </Button>
           </DialogFooter>
         </form>

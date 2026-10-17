@@ -3,16 +3,19 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Path, Query
 
 from iclip.domains.brand_templates.schemas import (
     BrandFontConfirmIn,
     BrandFontInfoOut,
     BrandFontSignIn,
-    BrandTemplateCreateIn,
+    BrandProfileIn,
+    BrandProfileOut,
+    BrandProfilesOut,
     BrandTemplateOut,
     BrandTemplatesOut,
     BrandTemplateUpdateIn,
+    TemplateName,
 )
 from iclip.domains.brand_templates.service import BrandTemplateService
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, require_permission
@@ -31,24 +34,34 @@ def create_brand_templates_router(service: BrandTemplateService) -> APIRouter:
     ) -> BrandTemplatesOut:
         """品牌资源，建立晚的排前面；默认只列在用的，按 ``kind`` 与 ``brand`` 筛选。
 
-        ``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。媒体参数按资源实际情况
-        返回，不完整的资源也照实列出，由使用它的功能明确校验。"""
+        ``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。"""
 
         return await service.list(
             principal, kind=kind, brand=brand, include_disabled=include_disabled
         )
 
-    @router.post("", response_model=BrandTemplateOut, status_code=status.HTTP_201_CREATED)
-    async def create_brand_template(
+    @router.get("/brands", response_model=BrandProfilesOut)
+    async def list_brands(
+        _: Annotated[Principal, require_permission("generation:read")],
+    ) -> BrandProfilesOut:
+        """全部品牌连同标语与强调色，按品牌名排。
+
+        品牌取设过标语或强调色的，并上在用资源里出现过的；没设过的两项为 ``null``。"""
+
+        return await service.brands()
+
+    @router.put("/brands/{brand}", response_model=BrandProfileOut)
+    async def save_brand(
         principal: Annotated[Principal, require_permission(MANAGE_PERMISSION)],
-        body: BrandTemplateCreateIn,
-    ) -> BrandTemplateOut:
-        """拿调用者自己的一条视频上传建一条在用的模板（``201``），画幅、时长与音轨由服务端量。
+        brand: Annotated[TemplateName, Path()],
+        body: BrandProfileIn,
+    ) -> BrandProfileOut:
+        """整份写入这个品牌的标语与强调色，没有就新建；``null`` 清空那一项。
 
-        别人的上传、不是视频的上传、不存在的 ``uploadId`` 都是 ``404``；量不出来或超过时长上限
-        是 ``422``。"""
+        品牌名去掉首尾空白后为 1 到 100 字，答复里是去掉空白后的名字。标语至多 100 字，
+        强调色是 ``#RRGGBB``，存成小写。"""
 
-        return await service.create(principal, body)
+        return await service.save_brand(principal, brand, body)
 
     @router.post("/fonts/sign", response_model=UploadTicketOut)
     async def sign_font(

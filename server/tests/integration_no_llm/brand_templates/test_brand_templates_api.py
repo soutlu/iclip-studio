@@ -1,13 +1,15 @@
-"""品牌模板端点：权限（治理者才能管，读要登录）、只收本人的视频上传、量出来的参数落库、时长上限、
-改名与停用恢复、列表默认只列在用的；媒体生成没开时不挂。
+"""品牌模板端点：权限（治理者才能管，读要 ``generation:read``）、字体上传与读取、改名与停用恢复、
+列表默认只列在用的；品牌的标语与强调色整份写入、列表并上资源里的品牌；媒体生成没开时不挂。
 
-媒体生成开着、对象存储与队列连接器是替身；量视频那一步换成替身，真 ffmpeg 的那一步另见
+媒体生成开着、对象存储与队列连接器是替身；读字体那一步换成替身，真解析另见
 test_brand_template_adapters.py。"""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Any
+from urllib.parse import quote, urlsplit
 
 import httpx
 import pytest
@@ -16,12 +18,11 @@ from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
-from iclip.domains.brand_templates.models import MAX_TEMPLATE_MS, ProbedVideo
 from iclip.domains.brand_templates.service import UNREADABLE_FONT
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import FontError, FontInfo
+from iclip.platform.media.fonts import MAX_FONT_BYTES, FontError, FontInfo
 from tests.helpers.app import make_client
 from tests.helpers.auth import set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
@@ -50,27 +51,9 @@ def font_probe() -> FakeFontProbe:
     return FakeFontProbe()
 
 
-class FakeProbe:
-    """量视频的替身：交回预先写好的参数；``failure`` 给了就抛它。"""
-
-    def __init__(self) -> None:
-        self.video = ProbedVideo(width=1080, height=1920, duration_ms=3000, has_audio=True)
-        self.failure: MediaError | None = None
-
-    async def __call__(self, url: str) -> ProbedVideo:
-        if self.failure is not None:
-            raise self.failure
-        return self.video
-
-
 @pytest.fixture
 def bucket() -> MemoryObjectStore:
     return MemoryObjectStore()
-
-
-@pytest.fixture
-def probe() -> FakeProbe:
-    return FakeProbe()
 
 
 @pytest.fixture
@@ -79,7 +62,6 @@ async def media_app(
     migrated_pg: str,
     monkeypatch: pytest.MonkeyPatch,
     bucket: MemoryObjectStore,
-    probe: FakeProbe,
     font_probe: FakeFontProbe,
 ) -> AsyncGenerator[FastAPI]:
     for name, value in MEDIA_ENVS.items():
@@ -93,7 +75,6 @@ async def media_app(
             engine=engine,
             object_store=bucket,
             queue_connector=InMemoryConnector(),
-            brand_template_probe=probe,
             brand_font_probe=font_probe,
             media_codec=SOFTWARE,
         )
@@ -120,34 +101,33 @@ async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: 
     assert logged_in.status_code == 204, logged_in.text
 
 
-async def upload(
+async def font_upload(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> str:
+    signed = await client.post("/brand-templates/fonts/sign", json={"contentType": "font/ttf"})
+    assert signed.status_code == 200, signed.text
+    ticket = signed.json()
+    await bucket.put_public_object(
+        object_key=urlsplit(ticket["upload"]["url"]).path.lstrip("/"),
+        content=b"font bytes checked by the probe",
+        content_type="font/ttf",
+    )
+    return ticket["uploadId"]
+
+
+async def add_font(
     client: httpx.AsyncClient,
     bucket: MemoryObjectStore,
     *,
-    content_type: str = "video/mp4",
-    ext: str = "mp4",
-) -> tuple[str, str]:
-    """走一遍直传：签名、把字节放进桶、确认；交回 ``(uploadId, url)``。"""
+    name: str = "品牌字体",
+    brand: str | None = None,
+) -> dict[str, Any]:
+    """传一份字体并确认，交回资源。"""
 
-    signed = await client.post("/uploads/sign", json={"contentType": content_type})
-    assert signed.status_code == 200, signed.text
-    upload_id = signed.json()["uploadId"]
-    await bucket.put_public_object(
-        object_key=f"iclip/agent/uploads/{upload_id}.{ext}",
-        content=uuid.uuid4().bytes * 4,
-        content_type=content_type,
+    upload_id = await font_upload(client, bucket)
+    confirmed = await client.post(
+        f"/brand-templates/fonts/{upload_id}/confirm", json={"name": name, "brand": brand}
     )
-    confirmed = await client.post(f"/uploads/{upload_id}/confirm")
-    assert confirmed.status_code == 200, confirmed.text
-    return upload_id, confirmed.json()["url"]
-
-
-async def create(
-    client: httpx.AsyncClient, upload_id: str, *, kind: str = "intro", name: str = "品牌片头"
-) -> httpx.Response:
-    return await client.post(
-        "/brand-templates", json={"kind": kind, "name": name, "uploadId": upload_id}
-    )
+    assert confirmed.status_code == 201, confirmed.text
+    return confirmed.json()
 
 
 async def listed(client: httpx.AsyncClient, **params: str) -> list[dict[str, object]]:
@@ -156,148 +136,85 @@ async def listed(client: httpx.AsyncClient, **params: str) -> list[dict[str, obj
     return response.json()["items"]
 
 
+async def brands(client: httpx.AsyncClient) -> list[dict[str, object]]:
+    response = await client.get("/brand-templates/brands")
+    assert response.status_code == 200, response.text
+    return response.json()["items"]
+
+
+def brand_path(brand: str) -> str:
+    return f"/brand-templates/brands/{quote(brand, safe='')}"
+
+
 async def test_anonymous_is_401(http: httpx.AsyncClient) -> None:
     template = uuid.uuid4()
     assert (await http.get("/brand-templates")).status_code == 401
-    assert (await create(http, str(uuid.uuid4()))).status_code == 401
     assert (await http.patch(f"/brand-templates/{template}", json={"name": "x"})).status_code == 401
+    assert (await http.get("/brand-templates/brands")).status_code == 401
+    assert (
+        await http.put(brand_path("N8"), json={"slogan": None, "accentColor": None})
+    ).status_code == 401
 
 
-async def test_only_a_governor_manages_templates(
+async def test_only_a_governor_manages_templates_and_brands(
     http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
 ) -> None:
     await login_as(http, pg_url, "root", "root")
-    upload_id, _ = await upload(http, bucket)
-    created = await create(http, upload_id)
-    assert created.status_code == 201, created.text
-    template = created.json()["id"]
+    template = (await add_font(http, bucket, brand="N8"))["id"]
 
     await login_as(http, pg_url, "maya", "editor")
-    own_upload, _ = await upload(http, bucket)
 
-    assert (await create(http, own_upload)).status_code == 403
     assert (
         await http.patch(f"/brand-templates/{template}", json={"disabled": True})
     ).status_code == 403
     assert (
         await http.get("/brand-templates", params={"includeDisabled": "true"})
     ).status_code == 403
+    assert (
+        await http.put(brand_path("N8"), json={"slogan": "一步一风景", "accentColor": None})
+    ).status_code == 403
     assert [item["id"] for item in await listed(http)] == [template], "读得到在用的"
-
-
-async def test_a_template_records_what_was_measured_from_the_callers_own_video(
-    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, probe: FakeProbe
-) -> None:
-    await login_as(http, pg_url, "root", "root")
-    upload_id, url = await upload(http, bucket)
-    probe.video = ProbedVideo(width=720, height=1280, duration_ms=4200, has_audio=False)
-
-    created = await create(http, upload_id, kind="outro", name="  夏季片尾  ")
-
-    assert created.status_code == 201, created.text
-    body = created.json()
-    assert {key: body[key] for key in body if key not in ("id", "createdAt")} == {
-        "kind": "outro",
-        "brand": None,
-        "name": "夏季片尾",
-        "url": url,
-        "width": 720,
-        "height": 1280,
-        "durationMs": 4200,
-        "hasAudio": False,
-        "disabledAt": None,
-    }
-    assert await listed(http) == [body], "读回来与新建时交回的一样"
-
-
-@pytest.mark.parametrize("case", ["别人的", "音乐", "不存在"])
-async def test_only_the_callers_own_video_upload_is_accepted(
-    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, case: str
-) -> None:
-    if case == "别人的":
-        await login_as(http, pg_url, "maya", "editor")
-        upload_id, _ = await upload(http, bucket)
-        await login_as(http, pg_url, "root", "root")
-    else:
-        await login_as(http, pg_url, "root", "root")
-        upload_id = (
-            (await upload(http, bucket, content_type="audio/mpeg", ext="mp3"))[0]
-            if case == "音乐"
-            else str(uuid.uuid4())
-        )
-
-    response = await create(http, upload_id)
-
-    assert response.status_code == 404, response.text
-    assert await listed(http, includeDisabled="true") == []
-
-
-async def test_a_video_longer_than_the_limit_or_unreadable_is_422(
-    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, probe: FakeProbe
-) -> None:
-    await login_as(http, pg_url, "root", "root")
-    upload_id, _ = await upload(http, bucket)
-
-    probe.video = ProbedVideo(width=1080, height=1920, duration_ms=MAX_TEMPLATE_MS, has_audio=True)
-    at_limit = await create(http, upload_id)
-    probe.video = ProbedVideo(
-        width=1080, height=1920, duration_ms=MAX_TEMPLATE_MS + 1, has_audio=True
-    )
-    too_long = await create(http, upload_id)
-    probe.failure = MediaError("ffprobe 读不了")
-    unreadable = await create(http, upload_id)
-
-    assert at_limit.status_code == 201, at_limit.text
-    assert too_long.status_code == 422, too_long.text
-    assert "片头片尾最长 10 秒" in too_long.json()["detail"]
-    assert unreadable.status_code == 422, unreadable.text
-    assert len(await listed(http, includeDisabled="true")) == 1
+    assert await brands(http) == [{"brand": "N8", "slogan": None, "accentColor": None}]
 
 
 async def test_rename_disable_and_restore(
     http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
 ) -> None:
     await login_as(http, pg_url, "root", "root")
-    upload_id, _ = await upload(http, bucket)
-    intro = (await create(http, upload_id, kind="intro")).json()
-    outro = (await create(http, upload_id, kind="outro", name="品牌片尾")).json()
+    first = await add_font(http, bucket, name="正文字体")
+    second = await add_font(http, bucket, name="标题字体")
 
-    renamed = await http.patch(f"/brand-templates/{intro['id']}", json={"name": "新片头"})
-    disabled = await http.patch(f"/brand-templates/{intro['id']}", json={"disabled": True})
-    again = await http.patch(f"/brand-templates/{intro['id']}", json={"disabled": True})
+    renamed = await http.patch(f"/brand-templates/{first['id']}", json={"name": "新正文"})
+    disabled = await http.patch(f"/brand-templates/{first['id']}", json={"disabled": True})
+    again = await http.patch(f"/brand-templates/{first['id']}", json={"disabled": True})
 
     assert renamed.status_code == 200, renamed.text
-    assert (renamed.json()["name"], renamed.json()["disabledAt"]) == ("新片头", None)
+    assert (renamed.json()["name"], renamed.json()["disabledAt"]) == ("新正文", None)
     assert disabled.status_code == 200, disabled.text
     assert disabled.json()["disabledAt"] is not None
     assert again.json()["disabledAt"] == disabled.json()["disabledAt"], "再停用不改停用时刻"
-    assert [item["id"] for item in await listed(http)] == [outro["id"]], "默认只列在用的"
+    assert [item["id"] for item in await listed(http)] == [second["id"]], "默认只列在用的"
     assert [item["id"] for item in await listed(http, includeDisabled="true")] == [
-        outro["id"],
-        intro["id"],
+        second["id"],
+        first["id"],
     ], "治理者连停用的一起列，建立晚的在前"
-    assert [item["id"] for item in await listed(http, kind="intro")] == []
-    assert [item["id"] for item in await listed(http, kind="intro", includeDisabled="true")] == [
-        intro["id"]
-    ]
 
     await login_as(http, pg_url, "maya", "editor")
-    assert [item["id"] for item in await listed(http)] == [outro["id"]], "别人看不到停用的"
+    assert [item["id"] for item in await listed(http)] == [second["id"]], "别人看不到停用的"
 
     await login_as(http, pg_url, "root", "root")
-    restored = await http.patch(f"/brand-templates/{intro['id']}", json={"disabled": False})
+    restored = await http.patch(f"/brand-templates/{first['id']}", json={"disabled": False})
 
     assert restored.status_code == 200, restored.text
-    assert (restored.json()["name"], restored.json()["disabledAt"]) == ("新片头", None)
-    assert {item["id"] for item in await listed(http)} == {intro["id"], outro["id"]}
+    assert (restored.json()["name"], restored.json()["disabledAt"]) == ("新正文", None)
+    assert {item["id"] for item in await listed(http)} == {first["id"], second["id"]}
 
 
 async def test_an_update_needs_something_to_change_and_an_existing_template(
     http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
 ) -> None:
     await login_as(http, pg_url, "root", "root")
-    upload_id, _ = await upload(http, bucket)
-    template = (await create(http, upload_id)).json()["id"]
+    template = (await add_font(http, bucket))["id"]
 
     empty = await http.patch(f"/brand-templates/{template}", json={})
     blank = await http.patch(f"/brand-templates/{template}", json={"name": "   "})
@@ -306,110 +223,91 @@ async def test_an_update_needs_something_to_change_and_an_existing_template(
     assert (empty.status_code, blank.status_code, missing.status_code) == (422, 422, 404)
 
 
-@pytest.mark.parametrize(
-    ("kind", "missing"),
-    [
-        ("font", None),
-        ("sound_effect", None),
-        *[
-            (kind, field)
-            for kind in ("intro", "outro")
-            for field in ("width", "height", "duration_ms", "has_audio")
-        ],
-    ],
-)
-async def test_resources_remain_visible_and_manageable_without_video_parameters(
-    http: httpx.AsyncClient,
-    pg_url: str,
-    bucket: MemoryObjectStore,
-    kind: str,
-    missing: str | None,
-) -> None:
-    await login_as(http, pg_url, "root", "root")
-    upload_id, _ = await upload(http, bucket)
-    video = (await create(http, upload_id)).json()
-    resource_id = uuid.uuid4()
-    media = {"width": 1080, "height": 1920, "duration_ms": 3000, "has_audio": False}
-    parameters = {
-        field: None if missing is None or field == missing else value
-        for field, value in media.items()
-    }
-    engine = build_engine(pg_url)
-    try:
-        async with engine.begin() as conn:
-            before = (
-                (
-                    await conn.execute(
-                        text(
-                            "INSERT INTO iclip.brand_templates"
-                            " (id, kind, brand, name, url, created_by, width, height, duration_ms, has_audio)"
-                            " SELECT :id, :kind, 'DP', '品牌资源', :url, created_by,"
-                            " :width, :height, :duration_ms, :has_audio"
-                            " FROM iclip.brand_templates WHERE id = :video_id RETURNING *"
-                        ),
-                        {
-                            "id": resource_id,
-                            "kind": kind,
-                            "url": f"https://cdn.example.test/{kind}",
-                            "video_id": uuid.UUID(video["id"]),
-                            **parameters,
-                        },
-                    )
-                )
-                .mappings()
-                .one()
-            )
-
-        items = await listed(http)
-        assert {item["id"] for item in items} == {video["id"], str(resource_id)}
-        resource = next(item for item in items if item["id"] == str(resource_id))
-        assert resource["kind"] == kind
-        assert resource["brand"] == "DP"
-        assert resource["width"] == parameters["width"]
-        assert resource["height"] == parameters["height"]
-        assert resource["durationMs"] == parameters["duration_ms"]
-        assert resource["hasAudio"] == parameters["has_audio"]
-        assert await listed(http, kind=kind, brand="DP") == [resource]
-        changed = await http.patch(
-            f"/brand-templates/{resource_id}", json={"name": "新资源名称", "disabled": True}
-        )
-        assert changed.status_code == 200, changed.text
-        async with engine.connect() as conn:
-            after = (
-                (
-                    await conn.execute(
-                        text("SELECT * FROM iclip.brand_templates WHERE id = :id"),
-                        {"id": resource_id},
-                    )
-                )
-                .mappings()
-                .one()
-            )
-        assert after["name"] == "新资源名称"
-        assert after["disabled_at"] is not None
-        assert after["kind"] == before["kind"]
-        assert after["url"] == before["url"]
-    finally:
-        await engine.dispose()
-
-
 async def test_without_media_generation_the_endpoints_are_not_mounted(app: FastAPI) -> None:
     async with make_client(app) as client:
         assert (await client.get("/brand-templates")).status_code == 404
+        assert (await client.get("/brand-templates/brands")).status_code == 404
+        assert (
+            await client.put(brand_path("N8"), json={"slogan": None, "accentColor": None})
+        ).status_code == 404
 
 
-async def font_upload(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> str:
-    signed = await client.post("/brand-templates/fonts/sign", json={"contentType": "font/ttf"})
-    assert signed.status_code == 200, signed.text
-    ticket = signed.json()
-    from urllib.parse import urlsplit
+async def test_brands_join_profiles_with_the_brands_of_resources_in_use(
+    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+) -> None:
+    """在用资源的品牌没设过就是两项为空；只在停用资源上的品牌不算；只设过标语的品牌也列出，按名排。"""
 
-    await bucket.put_public_object(
-        object_key=urlsplit(ticket["upload"]["url"]).path.lstrip("/"),
-        content=b"font bytes checked by the probe",
-        content_type="font/ttf",
+    await login_as(http, pg_url, "root", "root")
+    await add_font(http, bucket, brand="N8")
+    await add_font(http, bucket, brand="N8", name="第二份")
+    await add_font(http, bucket, brand=None, name="无品牌")
+    retired = await add_font(http, bucket, brand="DP", name="旧字体")
+    await http.patch(f"/brand-templates/{retired['id']}", json={"disabled": True})
+    saved = await http.put(brand_path("Asics"), json={"slogan": "动起来", "accentColor": "#0055A4"})
+    assert saved.status_code == 200, saved.text
+
+    assert await brands(http) == [
+        {"brand": "Asics", "slogan": "动起来", "accentColor": "#0055a4"},
+        {"brand": "N8", "slogan": None, "accentColor": None},
+    ]
+
+
+async def test_a_brand_profile_is_written_whole_and_null_clears(
+    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+) -> None:
+    await login_as(http, pg_url, "root", "root")
+    await add_font(http, bucket, brand="N8")
+
+    created = await http.put(
+        brand_path(" N8 "), json={"slogan": "  一步一风景 ", "accentColor": "#E4002B"}
     )
-    return ticket["uploadId"]
+    cleared = await http.put(brand_path("N8"), json={"slogan": None, "accentColor": "#00ff00"})
+
+    assert created.status_code == 200, created.text
+    assert created.json() == {"brand": "N8", "slogan": "一步一风景", "accentColor": "#e4002b"}
+    assert cleared.json() == {"brand": "N8", "slogan": None, "accentColor": "#00ff00"}
+    assert await brands(http) == [cleared.json()]
+    nothing = await http.put(brand_path("N8"), json={"slogan": None, "accentColor": None})
+    assert nothing.json() == {"brand": "N8", "slogan": None, "accentColor": None}
+    assert await brands(http) == [nothing.json()]
+
+
+@pytest.mark.parametrize(
+    ("brand", "body"),
+    [
+        ("N8", {"slogan": "一步一风景"}),
+        ("N8", {"accentColor": "#e4002b"}),
+        ("N8", {"slogan": "   ", "accentColor": None}),
+        ("N8", {"slogan": "字" * 101, "accentColor": None}),
+        ("N8", {"slogan": None, "accentColor": "e4002b"}),
+        ("N8", {"slogan": None, "accentColor": "#e4002"}),
+        ("N8", {"slogan": None, "accentColor": "red"}),
+        ("N8", {"slogan": None, "accentColor": None, "extra": 1}),
+        ("   ", {"slogan": None, "accentColor": None}),
+        ("字" * 101, {"slogan": None, "accentColor": None}),
+    ],
+    ids=[
+        "缺强调色",
+        "缺标语",
+        "空白标语",
+        "标语超长",
+        "缺井号",
+        "少一位",
+        "颜色名",
+        "多余字段",
+        "空白品牌",
+        "品牌超长",
+    ],
+)
+async def test_a_bad_brand_profile_is_422_and_writes_nothing(
+    http: httpx.AsyncClient, pg_url: str, brand: str, body: dict[str, object]
+) -> None:
+    await login_as(http, pg_url, "root", "root")
+
+    response = await http.put(brand_path(brand), json=body)
+
+    assert response.status_code == 422, response.text
+    assert await brands(http) == []
 
 
 async def test_font_upload_is_idempotent_and_never_creates_a_generation(
@@ -425,13 +323,12 @@ async def test_font_upload_is_idempotent_and_never_creates_a_generation(
     assert resource["id"] == upload_id
     assert resource["kind"] == "font"
     assert resource["brand"] == "N8"
-    assert all(resource[field] is None for field in ("width", "height", "durationMs", "hasAudio"))
+    assert set(resource) == {"id", "kind", "brand", "name", "url", "createdAt", "disabledAt"}
     repeated = await http.post(
         f"/brand-templates/fonts/{upload_id}/confirm", json={"name": "不应覆盖", "brand": "DP"}
     )
     assert repeated.json() == resource
     assert await listed(http, kind="font", brand="N8") == [resource]
-    assert await listed(http, kind="intro") == []
     engine = build_engine(pg_url)
     try:
         async with engine.connect() as conn:
@@ -497,14 +394,26 @@ async def test_font_info_rejects_a_non_font_missing_or_unreadable_resource(
     http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, font_probe: FakeFontProbe
 ) -> None:
     await login_as(http, pg_url, "root", "root")
-    upload_id, _ = await upload(http, bucket)
-    video = (await create(http, upload_id)).json()
-    assert (await http.get(f"/brand-templates/{video['id']}/font-info")).status_code == 422
+    font = await add_font(http, bucket)
+    other = uuid.uuid4()
+    engine = build_engine(pg_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.brand_templates (id, kind, name, url, created_by)"
+                    " SELECT :id, 'sound_effect', '音效', 'https://cdn.example.test/s.mp3',"
+                    " created_by FROM iclip.brand_templates WHERE id = :font"
+                ),
+                {"id": other, "font": uuid.UUID(font["id"])},
+            )
+    finally:
+        await engine.dispose()
+
+    assert (await http.get(f"/brand-templates/{other}/font-info")).status_code == 422
     assert (await http.get(f"/brand-templates/{uuid.uuid4()}/font-info")).status_code == 404
-    font_id = await font_upload(http, bucket)
-    await http.post(f"/brand-templates/fonts/{font_id}/confirm", json={"name": "字体"})
     font_probe.failure = MediaError("取不到素材（ConnectError）: https://internal.example.test/f")
-    failed = await http.get(f"/brand-templates/{font_id}/font-info")
+    failed = await http.get(f"/brand-templates/{font['id']}/font-info")
     assert failed.status_code == 422
     assert failed.json()["detail"] == UNREADABLE_FONT
     assert "internal.example.test" not in failed.text
@@ -517,10 +426,6 @@ async def test_font_confirmation_checks_object_metadata_before_parsing(
     bucket: MemoryObjectStore,
     invalid_type: bool,
 ) -> None:
-    from urllib.parse import urlsplit
-
-    from iclip.platform.media.fonts import MAX_FONT_BYTES
-
     await login_as(http, pg_url, "root", "root")
     signed = await http.post("/brand-templates/fonts/sign", json={"contentType": "font/ttf"})
     ticket = signed.json()

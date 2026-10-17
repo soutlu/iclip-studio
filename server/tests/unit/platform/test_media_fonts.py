@@ -37,6 +37,14 @@ def test_properties_come_from_the_font_not_the_file_name(
     assert info.unicode_ranges == ((32, 32), (65, 67), (ord("汉"), ord("汉")))
 
 
+def test_win_line_metrics_do_not_decide_whether_a_font_is_usable(tmp_path: Path) -> None:
+    """Win 行高度量为 0 的字体照样读得出：只看字族、字重、样式、字形与轮廓。"""
+
+    path = make_font(tmp_path / "no-win-metrics.ttf", characters="A", win_metrics=(0, 0))
+
+    assert inspect_font(path).unicode_ranges == ((ord("A"), ord("A")),)
+
+
 @pytest.mark.parametrize("kind", ["corrupt", "collection", "variable", "woff"])
 def test_non_static_single_fonts_are_rejected(tmp_path: Path, kind: str) -> None:
     source = make_font(tmp_path / "source.ttf")
