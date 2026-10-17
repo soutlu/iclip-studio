@@ -31,7 +31,7 @@ class UploadTicket:
     expires_at: datetime
 
 
-def sign_upload(
+def signed_upload_ticket(
     objects: SignedUploadStore,
     *,
     upload_id: uuid.UUID,
@@ -98,5 +98,5 @@ __all__ = [
     "UploadTicket",
     "UploadTicketOut",
     "audit_metadata",
-    "sign_upload",
+    "signed_upload_ticket",
 ]

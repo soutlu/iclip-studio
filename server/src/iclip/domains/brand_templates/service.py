@@ -21,8 +21,8 @@ from iclip.domains.brand_templates.schemas import (
 )
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import MAX_FONT_BYTES, ProbeFont
-from iclip.platform.object_store.direct_upload import UploadTicket, sign_upload
+from iclip.platform.media.fonts import MAX_FONT_BYTES, FontError, ProbeFont
+from iclip.platform.object_store.direct_upload import UploadTicket, signed_upload_ticket
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import SignedUploadStore
 
@@ -95,7 +95,7 @@ class BrandTemplateService:
 
     def sign_font(self, principal: Principal, body: BrandFontSignIn) -> UploadTicket:
         upload_id = uuid.uuid4()
-        return sign_upload(
+        return signed_upload_ticket(
             self._objects,
             upload_id=upload_id,
             object_key=MEDIA_PATHS.font_upload(
@@ -152,6 +152,9 @@ class BrandTemplateService:
     async def _read_font(self, url: str, *, resource_id: uuid.UUID) -> BrandFontInfoOut:
         try:
             return BrandFontInfoOut.of(await self._probe_font(url))
+        except FontError as exc:
+            _logger.warning("字体文件读取失败", template_id=resource_id, error=str(exc))
+            raise ValidationFailed(str(exc)) from exc
         except MediaError as exc:
             _logger.warning("字体文件读取失败", template_id=resource_id, error=str(exc))
             raise ValidationFailed(UNREADABLE_FONT) from exc

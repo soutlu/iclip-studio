@@ -851,12 +851,20 @@ class FixedBrandTemplates:
 
 
 class FakeFontProbe:
-    """ProbeFont 替身：按地址给字体信息，不认得的地址像取不到一样抛 ``MediaError``。"""
+    """ProbeFont 替身：按地址给字体信息或抛预先写好的错误，不认得的地址像取不到一样抛
+    ``MediaError``。"""
 
-    def __init__(self, fonts: Mapping[str, FontInfo] | None = None) -> None:
+    def __init__(
+        self,
+        fonts: Mapping[str, FontInfo] | None = None,
+        errors: Mapping[str, MediaError] | None = None,
+    ) -> None:
         self._fonts = dict(fonts or {})
+        self._errors = dict(errors or {})
 
     async def __call__(self, url: str) -> FontInfo:
+        if url in self._errors:
+            raise self._errors[url]
         if url not in self._fonts:
             raise MediaError(f"取不到素材（ConnectError）: {url}")
         return self._fonts[url]

@@ -34,7 +34,7 @@ from iclip.domains.generation.schemas import KIND_AUDIO
 from iclip.domains.generation.segment_end import check_segment_end
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import ProbeFont
+from iclip.platform.media.fonts import FontError, ProbeFont
 from iclip.platform.media.probe import VideoProfile
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -224,6 +224,9 @@ class WholeFilmAcceptance:
             raise ValidationFailed("字幕字体已停用，请选择其他字体")
         try:
             info = await self._probe_font(font.url)
+        except FontError as exc:
+            _logger.warning("字体文件读取失败", template_id=font.id, error=str(exc))
+            raise ValidationFailed(str(exc)) from exc
         except MediaError as exc:
             _logger.warning("字体文件读取失败", template_id=font.id, error=str(exc))
             raise ValidationFailed(UNREADABLE_FONT) from exc

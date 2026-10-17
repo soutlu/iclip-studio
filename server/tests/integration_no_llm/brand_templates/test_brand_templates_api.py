@@ -21,7 +21,7 @@ from iclip.domains.brand_templates.service import UNREADABLE_FONT
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import FontInfo
+from iclip.platform.media.fonts import FontError, FontInfo
 from tests.helpers.app import make_client
 from tests.helpers.auth import set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
@@ -212,7 +212,7 @@ async def test_a_template_records_what_was_measured_from_the_callers_own_video(
 
 @pytest.mark.parametrize("case", ["别人的", "音乐", "不存在"])
 async def test_only_the_callers_own_video_upload_is_accepted(
-    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, probe: FakeProbe, case: str
+    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore, case: str
 ) -> None:
     if case == "别人的":
         await login_as(http, pg_url, "maya", "editor")
@@ -473,10 +473,9 @@ async def test_font_upload_checks_authority_ownership_and_actual_font(
         await http.post("/brand-templates/fonts/sign", json={"contentType": "font/woff"})
     ).status_code == 422
     upload_id = await font_upload(http, bucket)
-    font_probe.failure = MediaError("暂不支持可变字体，请选择静态 TTF/OTF")
+    font_probe.failure = FontError("暂不支持可变字体，请选择静态 TTF/OTF")
     rejected = await http.post(f"/brand-templates/fonts/{upload_id}/confirm", json={"name": "字体"})
-    assert rejected.status_code == 422
-    assert rejected.json()["detail"] == UNREADABLE_FONT
+    assert rejected.status_code == 422 and "不支持可变字体" in rejected.json()["detail"]
     assert await listed(http) == []
     font_probe.failure = None
     await login_as(http, pg_url, "other-root", "root")
@@ -508,6 +507,7 @@ async def test_font_info_rejects_a_non_font_missing_or_unreadable_resource(
     failed = await http.get(f"/brand-templates/{font_id}/font-info")
     assert failed.status_code == 422
     assert failed.json()["detail"] == UNREADABLE_FONT
+    assert "internal.example.test" not in failed.text
 
 
 @pytest.mark.parametrize("invalid_type", [False, True], ids=["oversize", "wrong-mime"])
@@ -515,7 +515,6 @@ async def test_font_confirmation_checks_object_metadata_before_parsing(
     http: httpx.AsyncClient,
     pg_url: str,
     bucket: MemoryObjectStore,
-    font_probe: FakeFontProbe,
     invalid_type: bool,
 ) -> None:
     from urllib.parse import urlsplit

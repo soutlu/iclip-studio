@@ -39,7 +39,7 @@ from iclip.domains.generation.service import GenerationService, ProviderTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
-from iclip.platform.media.fonts import FontInfo
+from iclip.platform.media.fonts import FontError, FontInfo
 from iclip.platform.media.probe import VideoProfile
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
@@ -1101,6 +1101,26 @@ async def test_an_unreadable_font_is_rejected_without_the_raw_error() -> None:
     assert warning["log_level"] == "warning"
     assert warning["template_id"] == font.id
     assert font.url in warning["error"]
+
+
+async def test_a_font_the_parser_rejects_returns_its_reason() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    font = replace(brand_template("font"), url="https://cdn.test/variable.ttf")
+    world = build_world(
+        [take],
+        brand_templates=FixedBrandTemplates(font),
+        probe_font=FakeFontProbe(
+            errors={font.url: FontError("暂不支持可变字体，请选择静态 TTF/OTF")}
+        ),
+    )
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        result = await http.post(
+            "/generations/whole-films", json=body(conversation, segment(take), fontId=str(font.id))
+        )
+    assert result.status_code == 422, result.text
+    assert result.json()["detail"] == "暂不支持可变字体，请选择静态 TTF/OTF"
+    assert world.films() == []
 
 
 @pytest.mark.parametrize("field", ["width", "height", "duration_ms", "has_audio"])

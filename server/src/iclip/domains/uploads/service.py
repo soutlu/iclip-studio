@@ -18,7 +18,11 @@ from iclip.domains.uploads.models import (
 )
 from iclip.domains.uploads.schemas import UploadSignIn
 from iclip.platform.media.image import read_image_header
-from iclip.platform.object_store.direct_upload import UploadTicket, audit_metadata, sign_upload
+from iclip.platform.object_store.direct_upload import (
+    UploadTicket,
+    audit_metadata,
+    signed_upload_ticket,
+)
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket, StoredObject
 from iclip.platform.outbound.fetch import FetchTooLarge
@@ -81,7 +85,7 @@ class UploadService:
                 raise ValidationFailed("传图要报宽高")
             _check_dimensions(body.width, body.height)
         upload_id = uuid.uuid4()
-        return sign_upload(
+        return signed_upload_ticket(
             self._objects,
             upload_id=upload_id,
             object_key=MEDIA_PATHS.upload(upload_id=upload_id, ext=ext),
