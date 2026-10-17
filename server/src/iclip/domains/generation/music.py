@@ -25,7 +25,9 @@ from iclip.domains.generation.provider import (
     request_of,
 )
 from iclip.domains.generation.schemas import MusicRequest
-from iclip.platform.media.ffmpeg import MAX_AUDIO_BYTES, MediaError, download, normalize_music
+from iclip.platform.media.audio import normalize_music
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MAX_AUDIO_BYTES, download
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicObjectStore
 

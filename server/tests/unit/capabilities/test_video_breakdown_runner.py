@@ -12,7 +12,7 @@ from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
 from iclip.capabilities.video_breakdown.ports import BreakdownError, SampledVideo
 from iclip.capabilities.video_breakdown.prompt import SYSTEM_PROMPT, USER_MESSAGE
 from iclip.capabilities.video_breakdown.service import BreakdownRunner
-from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.errors import MediaError
 
 VIDEO = "https://cdn.test/ref.mp4"
 DOCUMENT = "# 出场元素\n……\n# 时间线\n……\n# 整片分析\n……"

@@ -1,9 +1,3 @@
-"""静态字幕字体：读取文件本身的属性、校验字符覆盖，为 libass 准备独立字族。
-
-同名的不同字重不能交给系统字体匹配器猜。每次渲染使用只含选定字形的临时副本，
-仅重命名字族与 PostScript 名；原文件、轮廓、字重、字形度量均保持不变。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -20,22 +14,23 @@ from fontTools.ttLib import TTFont
 from iclip.platform.media.errors import MediaError
 
 MAX_FONT_BYTES: Final = 32 * 1024 * 1024
-_TRIM_SPACE: Final = "\t\v\f \u00a0\u1680\u2028\u2029\u202f\u205f\u3000\ufeff" + "".join(
-    chr(code) for code in range(0x2000, 0x200B)
+# 浏览器 String.prototype.trim 的空白集合，去掉 CR/LF（分行前已统一处理）。
+_BROWSER_TRIM_SPACE: Final = "\t\v\f " + "".join(
+    map(
+        chr,
+        (0x00A0, 0x1680, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF, *range(0x2000, 0x200B)),
+    )
 )
-"""浏览器 String.trim 的空白集合；CR/LF 在分行前统一处理。"""
 
 FontStyle = Literal["normal", "italic", "oblique"]
 
 
 class FontError(MediaError):
-    """字体文件无效、不受支持、缺字或未被渲染器实际采用。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
 class FontInfo:
-    """从文件读取的字族、字重、样式与 Unicode 覆盖；范围是递增的不相交闭区间。"""
-
     family: str
     weight: int
     style: FontStyle
@@ -44,8 +39,6 @@ class FontInfo:
 
 @dataclass(frozen=True, slots=True)
 class SubtitleFont:
-    """一条整片专用的字体副本，以及浏览器 em 到 ASS 行高字号的换算。"""
-
     path: Path
     family: str
     info: FontInfo
@@ -55,8 +48,6 @@ class SubtitleFont:
     metrics: hb.Font
 
     def measure(self, text: str, *, size: float) -> float:
-        """按浏览器 em 像素大小，用同一文件的 HarfBuzz 字形推进量测量整行。"""
-
         if not text:
             return 0.0
         buffer = hb.Buffer()
@@ -70,8 +61,6 @@ class SubtitleFont:
         )
 
     def clusters(self, text: str) -> tuple[str, ...]:
-        """按 HarfBuzz 字形簇分割，折行不拆开组合字符和连字。"""
-
         if not text:
             return ()
         buffer = hb.Buffer()
@@ -82,24 +71,24 @@ class SubtitleFont:
         return tuple(text[start:end] for start, end in pairwise(boundaries))
 
 
-def caption_text(text: str) -> str:
-    """与 ASS 输出一致的文字；特殊字符转全角，换行保留，首尾空白不参与排版。"""
+def escape_ass(text: str) -> str:
+    # ASS 把反斜杠与花括号当作覆盖标签，换成全角才会照字面显示。
+    return text.replace("\\", "＼").replace("{", "｛").replace("}", "｝")
 
-    safe = text.replace("\\", "＼").replace("{", "｛").replace("}", "｝")
-    safe = safe.replace("\r\n", "\n").replace("\r", "\n")
-    return "\n".join(paragraph.strip(_TRIM_SPACE) for paragraph in safe.split("\n"))
+
+def caption_text(text: str) -> str:
+    safe = escape_ass(text).replace("\r\n", "\n").replace("\r", "\n")
+    return "\n".join(paragraph.strip(_BROWSER_TRIM_SPACE) for paragraph in safe.split("\n"))
 
 
 def inspect_font(path: Path) -> FontInfo:
-    """读取一份静态 TTF/OTF；拒绝集合、可变字体与网页封装，失败抛 FontError。"""
-
     try:
         if not 0 < path.stat().st_size <= MAX_FONT_BYTES:
             raise FontError(f"字体必须非空且不超过 {MAX_FONT_BYTES // 1024 // 1024} MiB")
         with TTFont(path, lazy=False) as font:
             info = _info(font)
             font.ensureDecompiled(recurse=True)
-            # CFF 的 CharStrings 仍按需读取；逐字形解码，不能只验证名称和 cmap。
+            # CFF 的 CharStrings 在 ensureDecompiled 之后仍按需解码，要逐字形画一遍才验得出坏轮廓。
             glyphs = font.getGlyphSet()
             for name in font.getGlyphOrder():
                 glyphs[name].draw(BoundsPen(glyphs))
@@ -111,8 +100,6 @@ def inspect_font(path: Path) -> FontInfo:
 
 
 def prepare_font(path: Path, *, texts: Sequence[str], directory: Path) -> SubtitleFont:
-    """验证选定文件和全部字幕，写入独立字族副本；调用方负责清理 directory。"""
-
     inspect_font(path)
     try:
         with TTFont(path, lazy=False) as font:
@@ -193,7 +180,7 @@ def _prepare(font: TTFont, *, texts: Sequence[str], directory: Path, family: str
     if missing:
         samples = "、".join(f"{chr(code)}（U+{code:04X}）" for code in missing[:12])
         raise FontError(f"所选字体缺少字幕字符：{samples}，请更换字体或修改字幕")
-    # 字族来自原文件哈希；仅更改名称表，保留轮廓和度量。
+    # libass 按字族名找字体，同字族的其它字重或系统里的同名字体都可能被选中，所以副本换成独有的字族名。
     names = font["name"]
     for record in names.names:
         if record.nameID in (1, 3, 4, 6, 16, 18, 21):
@@ -212,7 +199,7 @@ def _prepare(font: TTFont, *, texts: Sequence[str], directory: Path, family: str
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / (family + (".otf" if font.sfntVersion == "OTTO" else ".ttf"))
     font.save(target)
-    # libass 对旧式 OS/2 1..9 字重的解释；force_style 避免 ASS 样式把字重布尔化。
+    # libass 把 OS/2 里 1..9 的旧式字重当作这几档。
     weight = (
         (100, 200, 300, 350, 400, 600, 700, 800, 900)[info.weight - 1]
         if info.weight <= 9
@@ -236,6 +223,7 @@ __all__ = [
     "FontStyle",
     "SubtitleFont",
     "caption_text",
+    "escape_ass",
     "inspect_font",
     "prepare_font",
 ]

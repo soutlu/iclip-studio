@@ -8,12 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from iclip.platform.media.ffmpeg import (
-    MediaError,
-    NoAudioStream,
-    extract_speech_audio,
-    ffmpeg_available,
-)
+from iclip.platform.media.audio import extract_speech_audio
+from iclip.platform.media.errors import MediaError, NoAudioStream
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.media import synthesize_video
 
 pytestmark = [

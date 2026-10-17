@@ -31,7 +31,8 @@ from iclip.capabilities.shot_video.ports import (
 )
 from iclip.capabilities.shot_video.prompt import GRID_CELLS, GRID_COLS, GRID_ROWS
 from iclip.domains.identity.public import Principal
-from iclip.platform.media.ffmpeg import MAX_IMAGE_BYTES, MediaError, fetched
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MAX_IMAGE_BYTES, fetched
 
 _logger = structlog.stdlib.get_logger(__name__)
 

@@ -21,7 +21,7 @@ from iclip.domains.generation.subtitles import (
     QwenSubtitleProvider,
     SubtitleProviderSettings,
 )
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import make_job, make_subtitle
 from tests.helpers.media import synthesize_video

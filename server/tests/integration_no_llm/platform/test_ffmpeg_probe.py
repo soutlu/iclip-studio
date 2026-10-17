@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from iclip.platform.media.ffmpeg import MediaError, ffmpeg_available, probe_keyframes
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.probe import probe_keyframes
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.media import synthesize_video
 
 pytestmark = [

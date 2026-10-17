@@ -27,14 +27,9 @@ from iclip.domains.generation.provider import (
     request_of,
 )
 from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence
-from iclip.platform.media.ffmpeg import (
-    MAX_VIDEO_BYTES,
-    SPEECH_SAMPLE_RATE,
-    MediaError,
-    NoAudioStream,
-    download,
-    extract_speech_audio,
-)
+from iclip.platform.media.audio import SPEECH_SAMPLE_RATE, extract_speech_audio
+from iclip.platform.media.errors import MediaError, NoAudioStream
+from iclip.platform.media.fetch import MAX_VIDEO_BYTES, download
 
 _logger = structlog.stdlib.get_logger(__name__)
 

@@ -47,7 +47,7 @@ from iclip.domains.generation.subtitles import (
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.domains.identity.public import ActAs
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.ffmpeg import probe_remote_duration_ms
+from iclip.platform.media.probe import probe_remote_duration_ms
 from iclip.platform.object_store.store import PublicObjectStore
 
 

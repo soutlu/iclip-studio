@@ -11,15 +11,10 @@ import httpx
 
 from iclip.capabilities.video_breakdown.ports import SampledVideo
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.ffmpeg import (
-    ENCODE_TIMEOUT_SECONDS,
-    MAX_VIDEO_BYTES,
-    PROBE_TIMEOUT_SECONDS,
-    MediaError,
-    fetched,
-    probe_remote_duration_ms,
-    run,
-)
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched
+from iclip.platform.media.probe import has_audio_stream, probe_remote_duration_ms
+from iclip.platform.media.process import ENCODE_TIMEOUT_SECONDS, run
 
 FRAME_FPS: Final = 10
 """每秒抽几帧。时间戳带一位小数，正好一帧一个。"""
@@ -76,31 +71,12 @@ async def sample_file(source: Path, *, codec: MediaCodec) -> SampledVideo:
         "image2",
         str(out_dir / "f%06d.jpg"),
     ]
-    has_audio = await _has_audio(source)
+    has_audio = await has_audio_stream(source)
     if has_audio:
         # 没有音轨时再要一路音频输出，ffmpeg 会整条命令失败。
         args += ["-vn", "-c:a", "libmp3lame", "-b:a", "64k", str(audio_path)]
     await run(args, timeout=ENCODE_TIMEOUT_SECONDS)
     return await asyncio.to_thread(_read, out_dir, audio_path if has_audio else None)
-
-
-async def _has_audio(source: Path) -> bool:
-    stdout = await run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "a",
-            "-show_entries",
-            "stream=index",
-            "-of",
-            "csv=p=0",
-            str(source),
-        ],
-        timeout=PROBE_TIMEOUT_SECONDS,
-    )
-    return bool(stdout.strip())
 
 
 def _read(out_dir: Path, audio_path: Path | None) -> SampledVideo:

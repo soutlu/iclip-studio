@@ -26,7 +26,7 @@ from iclip.domains.brand_templates.schemas import (
     BrandTemplateUpdateIn,
 )
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal
-from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fonts import MAX_FONT_BYTES
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import SIGNED_PUT_EXPIRES_SECONDS, SignedUploadStore

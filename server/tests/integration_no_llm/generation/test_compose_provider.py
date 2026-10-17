@@ -18,7 +18,8 @@ from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import ClipStage
 from iclip.platform.media.codec import SOFTWARE, MediaCodec
-from iclip.platform.media.ffmpeg import ffmpeg_available, probe_video
+from iclip.platform.media.probe import probe_video
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.generation import MemoryObjectStore, compose_request, make_job
 from tests.helpers.media import (
