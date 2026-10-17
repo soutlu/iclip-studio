@@ -1,9 +1,7 @@
-/** 整片浏览与当前编辑基底分别保存，查看历史不改变各片段的选用。 */
-
 import { useEffect, useEffectEvent, useState } from 'react'
 import { z } from 'zod'
+import { readStored } from '../editing/browser-storage'
 
-/** 整片与片段预览当前剪辑；version 仅用于明确查看某条历史成片。 */
 export type Picked = { jobId: string; baseJobId: string; view: 'whole' | 'clips' | 'version' }
 
 export const viewStorageKey = (conversationId: string, rootJobId: string) =>
@@ -15,11 +13,10 @@ const zPicked = z.object({
   view: z.enum(['whole', 'clips', 'version']),
 })
 
-/** 读不出、解析不了都当没记过：这只是浏览偏好，调用方按默认看最新版。 */
 const readPicked = (key: string): Picked | undefined => {
+  const raw = readStored(key)
+  if (raw === null) return undefined
   try {
-    const raw = window.localStorage.getItem(key)
-    if (raw === null) return undefined
     const parsed = zPicked.safeParse(JSON.parse(raw))
     return parsed.success ? parsed.data : undefined
   } catch {
@@ -27,8 +24,6 @@ const readPicked = (key: string): Picked | undefined => {
   }
 }
 
-/** 挂载时读出上次看的那一版作初值，之后每次改都写回去；没选过时是 `undefined`。
- * 浏览器拒绝写入时调 `onStorageFailure`，由调用方决定怎么说。 */
 export const usePickedView = (
   conversationId: string,
   rootJobId: string,

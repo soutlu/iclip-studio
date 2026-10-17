@@ -17,10 +17,9 @@ import {
   type GenerationJob,
   type GenerationsPage,
 } from '../storyboard.api'
-import type { Clip } from './draft'
+import type { Clip, SecondsRange } from '../editing/clip'
+import type { PlaySegment } from '../editing/play-layout'
 import { clipDurationError } from './clip-generation'
-import type { SecondsRange } from './reference-clip'
-import type { PlaySegment } from './play-layout'
 
 /** 本对话全部编辑链的查询前缀，挂在本对话生成记录的前缀下；按根的键挂在它下面，一次失效全部。 */
 export const videoEditConversationKey = (conversationId: string) =>

@@ -1,8 +1,7 @@
-/** 基底上的剪辑选择与撤销栈，按（对话，基底）存进浏览器。
- * 生成结果只作为候选；已有占位与合成的结论由服务端记录推出来。 */
-
 import { useEffect, useEffectEvent, useState } from 'react'
-import { commit, redo, undo } from '../edit-history'
+import { readStored } from '../editing/browser-storage'
+import { commit, redo, undo } from '../editing/edit-history'
+import type { EditSegment } from '../editing/version-lineage'
 import type { GenerationJob } from '../storyboard.api'
 import { groupsForBase } from './clip-versions'
 import {
@@ -22,13 +21,11 @@ import {
   type EditOutcome,
   type Selection,
 } from './draft'
-import type { ChainVersion, EditSegment } from './edit-chain'
+import type { ChainVersion } from './edit-chain'
 
 type Entry = {
-  /** 这一版的关键帧分段：草稿等于它就是没改动。 */
   segments: readonly DraftClip[]
   history: DraftHistory
-  /** 草稿已提交合成，等的是哪条；等着的时候不能再剪。 */
   composite: string | undefined
 }
 
@@ -37,22 +34,11 @@ export const draftStorageKey = (conversationId: string, versionJobId: string) =>
 
 const UNREADABLE = '剪辑选择读取失败，已恢复原片；生成结果仍可在片段版本中选择'
 
-const readStored = (key: string): string | null => {
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-/** 显式选回 V1 也要存，不能根据内容与原片相同就丢掉用户的选择。 */
 const writeStored = (key: string, entry: Entry) => {
   const { draft } = entry.history.present
   window.localStorage.setItem(key, serializeDraft({ draft, composite: entry.composite }))
 }
 
-/** 合成有了结论就去掉等待，保留剪辑选择；失败与找不到时说出原因。
- * 不是正看着的那一版时给 `label`（V1、V2……），那句话说出是哪一版。 */
 const compositeVerdict = (
   jobs: readonly GenerationJob[],
   compositeId: string,
@@ -73,8 +59,6 @@ const compositeVerdict = (
   return { kind: 'waiting' }
 }
 
-/** 优先恢复已保存的选择；没有时根据已有编辑区间组织原片，所有区间仍使用 V1。
- * 引用了基底编辑链之外的记录时恢复原片并提示；存着的合成等待交给装载后的落定。 */
 const loadEntry = (
   key: string,
   version: ChainVersion,
@@ -120,21 +104,13 @@ const loadEntry = (
 type Args = {
   conversationId: string
   version: ChainVersion
-  /** 全部版本：不在看的那一版合成有了结论时，提示里说出它是哪一版。 */
   versions: readonly ChainVersion[]
-  /** 这一版的关键帧分段；还没读到时没有。 */
   segments: readonly DraftClip[] | undefined
-  /** 编辑链上的记录；还没读到时没有。 */
   jobs: readonly GenerationJob[] | undefined
-  /** 直接基于这一版的编辑段，包括使用先前结果作为参考生成的新候选。 */
   edits: readonly EditSegment[]
-  /** 一条编辑段此刻的结论；完成了却还不知道结果多长时仍算在跑。 */
   outcomeOf: (editJobId: string) => EditOutcome | undefined
-  /** 要让人看到的一句话：剪辑选择恢复、AI 修改失败、合成失败。 */
   onNotice: (message: string) => void
-  /** 浏览器拒绝写入草稿；每次写失败都调，说几次由调用方定。 */
   onStorageFailure: () => void
-  /** 正看着的这一版的草稿合成完成，成了新的一版；不在看的那一版合成完成时不调。 */
   onComposed: (compositeJobId: string) => void
 }
 
@@ -142,23 +118,18 @@ export type EditDraft = {
   draft: Draft
   selection: Selection
   segments: readonly DraftClip[]
-  /** 草稿与这一版不同。 */
   changed: boolean
   canUndo: boolean
   canRedo: boolean
-  /** 等着的那次合成。 */
   composite: string | undefined
   apply: (edit: Edit) => void
   select: (selection: Selection) => void
   undo: () => void
   redo: () => void
-  /** AI 已受理：同来源连续选区可归成一段；混合来源保留多段与选中，不代选结果。 */
   submitted: () => void
-  /** 草稿提交了合成。 */
   composing: (compositeJobId: string) => void
 }
 
-/** 所看那一版的草稿；分段或编辑链还没读到时返回 `undefined`。 */
 export function useEditDraft({
   conversationId,
   version,
@@ -177,7 +148,6 @@ export function useEditDraft({
     setEntries((current) => ({ ...current, [jobId]: entry }))
   const put = (entry: Entry) => putAt(versionJobId, entry)
 
-  // 装载与落定都在渲染里做：结论来自轮询的数据，就地对齐，不绕一轮 effect。
   let entry = entries[versionJobId]
   if (entry === undefined && segments !== undefined && jobs !== undefined) {
     const loaded = loadEntry(
@@ -199,7 +169,6 @@ export function useEditDraft({
       for (const message of settled.failures) onNotice(`AI 修改失败：${message}，已恢复原来的段`)
     }
   }
-  // 等待中的合成逐一落定，保留时间线和选区；预览哪版由主组件决定。
   if (jobs !== undefined) {
     const waiting = { ...entries, ...(entry === undefined ? {} : { [versionJobId]: entry }) }
     for (const [jobId, waited] of Object.entries(waiting)) {
@@ -216,7 +185,6 @@ export function useEditDraft({
     }
   }
 
-  // 合成完成后仍写回原有选择，查看历史成片不会改变它。
   const reportStorageFailure = useEffectEvent(onStorageFailure)
   useEffect(() => {
     try {
@@ -229,7 +197,6 @@ export function useEditDraft({
 
   if (entry === undefined) return undefined
   const { history, composite } = entry
-  // 都按提交那一刻的最新状态改：提交 AI 改或合成要等网络，其间占位可能已经落定。
   const change = (next: (current: Entry) => Entry) =>
     setEntries((current) => {
       const found = current[versionJobId]

@@ -6,8 +6,8 @@ import { useMemo, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import { toast } from '@/shared/ui/toast'
+import { useStableValue } from '../editing/use-stable-value'
 import { isRunningStatus } from '../shots'
-import { useStableValue } from '../video-editor/use-stable-value'
 import { moveMusic, setMusic, type FilmMusic, type FilmState } from './film-draft'
 import {
   internalCuts,

@@ -1,0 +1,409 @@
+.video-editor-dialog {
+  width: min(1480px, calc(100vw - 32px));
+  max-width: 1480px;
+  height: min(1000px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  border-radius: var(--radius-2xl);
+  background: var(--color-surface-container-lowest);
+}
+
+.video-editor-header {
+  align-items: center;
+  min-height: 60px;
+  border: 0;
+  padding: 0 20px 0 24px;
+}
+
+.video-editor-header h2 {
+  overflow: visible;
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  white-space: normal;
+}
+
+.video-editor-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.video-editor-compose {
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-body);
+}
+
+.video-editor-compose:disabled,
+.video-editor-compose[aria-disabled='true'] {
+  background-color: var(--color-disabled-container);
+  box-shadow: none;
+  scale: 1;
+}
+
+.video-editor {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-areas:
+    'stage'
+    'timeline';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(300px, 1fr) auto;
+  gap: 12px;
+  padding: 0 24px 16px;
+  overflow-y: auto;
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  scrollbar-width: thin;
+}
+
+.video-editor-stage-area {
+  position: relative;
+  display: flex;
+  grid-area: stage;
+  min-width: 0;
+  min-height: 0;
+}
+
+.video-editor-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.video-editor-hero-wrap {
+  position: absolute;
+  inset: 20px 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+
+.video-editor-stage-host {
+  display: contents;
+}
+
+/* 画面内的 cqw 以实际画面宽为参照，内嵌、放大与窗口缩放共用一份度量。
+   画面里的文字随放大换字号：--preview-text-size、--preview-text-line-height。 */
+.video-editor-preview {
+  --preview-text-size: var(--text-body);
+  --preview-text-line-height: var(--text-body--line-height);
+
+  position: relative;
+  width: min(100cqw, 100cqh * var(--preview-ratio));
+  aspect-ratio: var(--preview-ratio);
+  overflow: hidden;
+  background: var(--color-surface-container);
+  isolation: isolate;
+  container-type: inline-size;
+}
+
+.video-editor-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.video-editor-preview-fade {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-1);
+  background: var(--color-surface-container);
+  pointer-events: none;
+}
+
+.video-editor-preview-message {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  background: var(--color-surface-container);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  text-align: center;
+}
+
+/* 滚动容器按自己的内边距框裁切子元素阴影；内边距放宽到格子阴影的扩散范围（横向约 14px、纵向约 24px）。 */
+.video-editor-versions {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  z-index: var(--z-local-2);
+  display: flex;
+  max-height: 100%;
+  flex-direction: column;
+  gap: 12px;
+  translate: 0 -50%;
+  padding: 24px 20px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.video-editor-versions-title {
+  align-self: center;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+.video-editor-version-failed {
+  color: color-mix(in srgb, var(--color-error) 60%, var(--color-on-scrim));
+}
+
+.video-editor-enlarge-scrim {
+  z-index: var(--z-popup);
+  background: color-mix(in srgb, var(--color-scrim) 60%, transparent);
+}
+
+.video-editor-enlarge {
+  inset: 0;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  translate: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.video-editor-preview.is-enlarged {
+  --preview-text-size: var(--text-title);
+  --preview-text-line-height: var(--text-title--line-height);
+
+  width: min(960px, 90vw, calc(80vh * var(--preview-ratio)));
+  height: auto;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.video-editor-enlarge-transport {
+  --color-focus-ring: var(--color-on-scrim);
+
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: var(--z-local-2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  translate: -50% 0;
+  padding: 4px 6px 4px 4px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 72%, transparent);
+  color: var(--color-on-scrim);
+  white-space: nowrap;
+}
+
+.video-editor-enlarge-transport button {
+  color: inherit;
+}
+
+.video-editor-enlarge-transport .video-editor-play {
+  background: var(--color-on-scrim);
+  color: var(--color-scrim);
+}
+
+.video-editor-enlarge-transport .video-editor-clock span {
+  color: inherit;
+  opacity: 0.65;
+}
+
+.video-editor-timeline-area {
+  display: flex;
+  grid-area: timeline;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.video-editor-timeline-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 8px 12px 12px;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.video-editor-footnote {
+  min-height: var(--text-caption--line-height);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-align: center;
+}
+
+.video-editor-bar {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.video-editor-bar-group {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.video-editor-bar button,
+.video-editor-enlarge-transport button {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-full);
+}
+
+.video-editor-bar .video-editor-bar-button {
+  width: auto;
+  padding: 0 10px;
+  color: var(--color-on-surface-variant);
+}
+
+.video-editor-bar .video-editor-bar-button:disabled {
+  opacity: var(--state-disabled-content);
+  cursor: default;
+}
+
+.video-editor-clock {
+  padding: 0 6px 0 10px;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.video-editor-clock span {
+  color: var(--color-on-surface-muted);
+}
+
+.video-editor-readout {
+  margin-right: 4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.video-editor-readout b {
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.video-editor-bar-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 8px;
+  background: var(--color-hairline);
+}
+
+.video-editor-timeline-loading {
+  padding: 32px 16px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  text-align: center;
+}
+
+@media (max-width: 999px) {
+  .video-editor-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .video-editor-header {
+    padding: 8px 12px 8px 16px;
+  }
+
+  .video-editor {
+    grid-template-rows: repeat(2, max-content);
+    padding: 0 16px 16px;
+  }
+
+  .video-editor-stage-area {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .video-editor-stage {
+    height: min(58dvh, 560px);
+    min-height: 300px;
+    flex: none;
+  }
+
+  .video-editor-hero-wrap {
+    inset: 12px;
+  }
+
+  .video-editor-versions {
+    position: static;
+    max-height: none;
+    flex-direction: row;
+    translate: none;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-container-low);
+  }
+
+  .video-editor-versions .version-thumb {
+    box-shadow: none;
+  }
+
+  .video-editor-versions .version-thumb[aria-pressed='true'] {
+    box-shadow: 0 0 0 1.5px var(--color-on-surface);
+  }
+}
+
+@media (max-width: 599px) {
+  .video-editor-readout,
+  .video-editor-bar-divider {
+    display: none;
+  }
+
+  .video-editor-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .video-editor-bar .video-editor-tool {
+    width: 30px;
+    padding: 0;
+  }
+
+  .video-editor-tool-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .video-editor-clock {
+    padding: 0 4px 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-editor * {
+    scroll-behavior: auto;
+  }
+}

@@ -1,0 +1,206 @@
+/* 两个编辑器时间线的共用件。各编辑器通过下列自定义属性给出自己的尺寸，不改这里的类：
+   --timeline-ruler-height、--timeline-first-tick-shift、--timeline-wave-inset、--timeline-wave-stroke、
+   --timeline-handle-top、--timeline-handle-height、--timeline-handle-end-shift、--timeline-handle-reach、
+   --timeline-handle-grip、--timeline-bubble-height、--timeline-playhead-top、--timeline-playhead-bottom、
+   --timeline-knob-top、--timeline-knob-width、--timeline-knob-height、--timeline-knob-radius。 */
+
+.timeline-ruler {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--timeline-ruler-height);
+}
+
+/* 滑块本身透明，键盘焦点环画在刻度区上。 */
+.timeline-ruler:has(> .timeline-seek:focus-visible:not([data-pointer])) {
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: var(--state-focus-offset);
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  translate: -50% 0;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-tick.is-first {
+  translate: var(--timeline-first-tick-shift, 0) 0;
+}
+
+.timeline-tick.is-last {
+  translate: -100% 0;
+}
+
+.timeline-seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.timeline-seek:disabled {
+  cursor: default;
+}
+
+.timeline-frames {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-basis: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-surface-faint);
+}
+
+.timeline-frames img,
+.timeline-frame-empty {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 0;
+  object-fit: cover;
+}
+
+.timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
+
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-basis: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface) 52%, transparent);
+}
+
+.timeline-wave svg {
+  position: absolute;
+  inset: var(--timeline-wave-inset, 3px) 0;
+  width: 100%;
+  height: calc(100% - 2 * var(--timeline-wave-inset, 3px));
+}
+
+.timeline-wave path {
+  fill: none;
+  stroke: var(--timeline-wave-color);
+  stroke-width: var(--timeline-wave-stroke, 1.4);
+  vector-effect: non-scaling-stroke;
+}
+
+.timeline-wave-loading {
+  width: calc(100% - 16px);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-hairline);
+}
+
+.timeline-wave-note {
+  overflow: hidden;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+.timeline-handle {
+  position: absolute;
+  top: var(--timeline-handle-top);
+  z-index: var(--z-local-3);
+  display: grid;
+  width: 8px;
+  height: var(--timeline-handle-height);
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: var(--color-on-surface);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.timeline-handle.is-start {
+  translate: -3px 0;
+  border-radius: var(--radius-md) var(--radius-xs) var(--radius-xs) var(--radius-md);
+}
+
+.timeline-handle.is-end {
+  translate: var(--timeline-handle-end-shift, -7px) 0;
+  border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
+}
+
+/* 手柄只有 8px 宽，热区横向放宽。 */
+.timeline-handle::before {
+  content: '';
+  position: absolute;
+  inset: var(--timeline-handle-reach, 0) -10px;
+}
+
+.timeline-handle::after {
+  content: '';
+  width: 2px;
+  height: var(--timeline-handle-grip, 14px);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+}
+
+.timeline-handle.is-pressed {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+}
+
+.timeline-bubble {
+  position: absolute;
+  top: -8px;
+  z-index: var(--z-local-3);
+  display: flex;
+  height: var(--timeline-bubble-height, 22px);
+  align-items: center;
+  gap: 4px;
+  translate: -50% 0;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-playhead {
+  position: absolute;
+  top: var(--timeline-playhead-top, auto);
+  bottom: var(--timeline-playhead-bottom, auto);
+  z-index: var(--z-local-3);
+  width: 2px;
+  translate: -1px 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-surface-container-lowest) 70%, transparent);
+  pointer-events: none;
+}
+
+.timeline-playhead::before {
+  content: '';
+  position: absolute;
+  top: var(--timeline-knob-top, -24px);
+  left: 50%;
+  width: var(--timeline-knob-width, 14px);
+  height: var(--timeline-knob-height, 18px);
+  translate: -50% 0;
+  border-radius: var(--timeline-knob-radius, var(--radius-sm));
+  background: var(--color-on-surface);
+  box-shadow: 0 0 0 2px var(--color-surface-container-low);
+}

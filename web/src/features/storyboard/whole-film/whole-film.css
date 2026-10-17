@@ -1,8 +1,3 @@
-/* 整片编辑器自己的件：轨道两端占位、向上展开的选成片面板、版本菜单与生成音乐面板、舞台上的段卡、字幕卡与音乐卡。
-   弹窗、舞台、控制条与时间线面板沿用 video-editor.css。 */
-
-/* ---------- 向上展开的菜单 ---------- */
-
 .film-menu-small {
   min-width: 132px;
 }
@@ -144,7 +139,6 @@
   margin-top: 3px;
 }
 
-/* 小画面：截帧铺满，截不到时中性底加图标。 */
 .film-poster {
   display: grid;
   width: 100%;
@@ -160,7 +154,6 @@
   object-fit: cover;
 }
 
-/* 版本菜单的一行：小画面、版本号、时长，选中的打勾。 */
 .film-menu-versions [role='group'] {
   display: flex;
   flex-direction: column;
@@ -204,7 +197,26 @@
   box-shadow: 0 0 0 0.5px var(--color-hairline);
 }
 
-/* ---------- 舞台上的段卡与字幕卡（外形同 AI 改段卡） ---------- */
+.film-preview-caption {
+  position: absolute;
+  right: 8%;
+  bottom: 8%;
+  left: 8%;
+  z-index: var(--z-local-1);
+  color: var(--color-on-scrim);
+  font-size: var(--preview-text-size);
+  font-weight: 600;
+  line-height: var(--preview-text-line-height);
+  text-align: center;
+  text-shadow:
+    -1px -1px 0 var(--color-scrim),
+    1px -1px 0 var(--color-scrim),
+    -1px 1px 0 var(--color-scrim),
+    1px 1px 0 var(--color-scrim),
+    0 0 3px var(--color-scrim);
+  white-space: pre-line;
+  pointer-events: none;
+}
 
 .video-editor-card.film-card {
   width: min(360px, calc(100% - 24px));
@@ -257,7 +269,6 @@
   margin: -4px -8px -6px 0;
 }
 
-/* 音乐卡的两个次要按钮靠左排。 */
 .film-card-actions.is-start {
   justify-content: flex-start;
   gap: 4px;
@@ -270,8 +281,6 @@
   line-height: var(--text-label--line-height);
   font-variant-numeric: tabular-nums;
 }
-
-/* ---------- 生成音乐的面板（音乐轨「+」向上展开） ---------- */
 
 .film-music-panel {
   width: min(340px, calc(100vw - 32px));
@@ -290,7 +299,6 @@
   line-height: var(--text-label--line-height);
 }
 
-/* 引用工程文件里的配乐：只读，左边一道细线。 */
 .film-music-quote {
   max-height: 160px;
   overflow-y: auto;
@@ -320,9 +328,6 @@
   line-height: var(--text-label--line-height);
 }
 
-/* ---------- 看着合成好的某一版 ---------- */
-
-/* 草稿时间线在下面淡着、不能动（inert），点「未合成」回来接着剪；外壳不占布局。 */
 .whole-film-timeline-locked {
   display: contents;
 }
@@ -364,8 +369,7 @@
   object-fit: cover;
 }
 
-/* 整片的素材轨可以很多：舞台占剩余空间，轨道在自己的固定窗口内滚动，播放控件留在窗口外。
-   组合选择器保证整片布局不受生产构建中共用样式加载顺序影响。 */
+/* 生产构建里共用样式的加载顺序不固定，组合选择器保证这些覆盖生效。 */
 .video-editor.whole-film-editor {
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
@@ -380,7 +384,6 @@
   flex: none;
 }
 
-/* 两个音量控制与对齐按钮在播放条下就地调整，不挤进浮卡或覆盖画面。 */
 .film-sound-controls {
   display: flex;
   flex: none;
@@ -495,7 +498,6 @@
   }
 }
 
-/* 短窗口让舞台与时间线并排，避免新增调音条把预览挤没；候选素材仍在自己的窗口滚动。 */
 @media (max-height: 560px) {
   .video-editor.whole-film-editor {
     grid-template-areas: 'stage timeline';
@@ -586,7 +588,6 @@
   }
 }
 
-/* 鼠标选中使用画面与文字反馈；键盘焦点保留中性色。 */
 .whole-film-editor,
 .film-menu-panel,
 .film-menu-versions {

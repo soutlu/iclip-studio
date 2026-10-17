@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { commit, redo, startHistory, undo } from '../edit-history'
+import type { Clip } from '../editing/clip'
+import { commit, redo, startHistory, undo } from '../editing/edit-history'
 import {
   canSplitAt,
   EMPTY_FILM,
@@ -26,12 +27,11 @@ import {
   trimSegment,
   type FilmMusic,
   type FilmState,
-  type Pick,
 } from './film-draft'
 
 const parseStoredFilm = (raw: string) => parseDraft(raw, (jobId) => jobId)
 
-const pick = (sourceJobId: string, start: number, end: number): Pick => ({
+const pick = (sourceJobId: string, start: number, end: number): Clip => ({
   sourceJobId,
   start,
   end,

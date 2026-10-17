@@ -1,48 +1,31 @@
-/** 整片草稿：成片轨上首尾相接的一串段，每段取自一条成片（素材）的一截；另记改过的字幕文字、手动加的字幕与背景音乐。
- * 段之间没有空隙，整片时间就是各段时长依次相加。纯函数，不持有状态；撤销栈与存放见 use-film-draft。 */
-
 import { z } from 'zod'
 import { zMusicGainPoint } from '@/shared/api/generated/zod.gen'
+import { roundToMs, type Clip } from '../editing/clip'
 import type { GainPoint } from './film-music'
 
-/** 整片连同片头片尾最长 120 秒（ADR-0003）。 */
+// 上限见 ADR-0003。
 export const MAX_FILM_SECONDS = 120
 export const MAX_FILM_SEGMENTS = 100
 export const MAX_FILM_SUBTITLES = 500
 export const MAX_MUSIC_GAIN_POINTS = 500
 
-/** 素材上挑段、成片轨上裁剪，一段至少多长：再短只剩几帧，看不清也剪不动。 */
 export const MIN_SEGMENT_SECONDS = 0.2
 
-/** 手动加的一条字幕多长，秒。 */
 export const MANUAL_SUBTITLE_SECONDS = 2
 
-/** 秒取整到毫秒：草稿里的时刻一律是毫秒精度，同一时刻处处相等。 */
-export const roundToMs = (seconds: number): number => Math.round(seconds * 1000) / 1000
-
-/** 素材上的一截：出自哪条成片，取它自己时间里的 `[start, end)`，秒。 */
-export type Pick = { sourceJobId: string; start: number; end: number }
-
-/** 成片轨上的一段。同一截素材可以放进来几次，所以身份是另发的 id，不由内容定。 */
-export type FilmSegment = Pick & {
+export type FilmSegment = Clip & {
   id: string
-  /** 相对自动响度基准的线性音量，0–2；省略为 1。 */
   volume?: number | undefined
-  /** 从已合成版本恢复的最终字幕，按来源视频时间保存；空数组表示这一段没有字幕，不再从识别记录派生。 */
   subtitles?: readonly { id: string; start: number; end: number; text: string }[] | undefined
 }
 
-/** 手动加的字幕：钉在一段素材的某一刻上，跟着这段画面走；不能拖，只能改字和删。 */
 export type ManualSubtitle = {
   id: string
   segmentId: string
-  /** 在这段素材自己时间里从哪一刻起，秒。 */
   at: number
   text: string
 }
 
-/** 整片的背景音乐，至多一首，是一条音频记录：上传的记着文件名与地址（上传记录不挂对话，列不出来），生成的地址与状态
- * 从本对话的音频记录里读。`userStart` 是人拖到的起点（整首里的秒），没拖过是 null，起点按切点自动选。 */
 export type FilmMusic = (
   | {
       kind: 'upload'
@@ -50,18 +33,14 @@ export type FilmMusic = (
       name: string
       url: string
       userStart: number | null
-      /** 从版本恢复后先确认媒体可读；是否允许再次合成由提交端点检查。 */
       verifyAccess?: boolean | undefined
     }
   | { kind: 'generate'; jobId: string; userStart: number | null }
 ) & {
-  /** 相对自动混音的线性音量，0–2；省略为 1。 */
   volume?: number | undefined
-  /** 历史版本的正文音量曲线；正文剪辑变化后清除并重新计算。 */
   gain?: readonly GainPoint[] | undefined
 }
 
-/** 选中的品牌模板快照：停用后仍能预览，提交前再核对当前可用模板。 */
 export type FilmBrand = {
   templateId: string
   name: string
@@ -73,13 +52,10 @@ export type FilmBrand = {
 }
 export type BrandPosition = 'intro' | 'outro'
 
-/** 全部字幕共用的字体快照；旧版本即使停用仍按原文件预览。 */
 export type FilmFont = { fontId: string; name: string; url: string }
 
-/** 撤销栈里的一步。 */
 export type FilmState = {
   segments: readonly FilmSegment[]
-  /** 改过的识别字幕文字，键见 {@link sentenceKey}。 */
   texts: Readonly<Record<string, string>>
   manual: readonly ManualSubtitle[]
   music: FilmMusic | null
@@ -90,7 +66,6 @@ export type FilmState = {
 
 export const EMPTY_FILM: FilmState = { segments: [], texts: {}, manual: [], music: null }
 
-/** 正文结构改变会使恢复的曲线时刻失效；音量与音乐起点调整不影响正文时钟。 */
 const clearMusicGain = (state: FilmState): FilmState =>
   state.music?.gain === undefined ? state : { ...state, music: { ...state.music, gain: undefined } }
 
@@ -100,7 +75,6 @@ const checkedVolume = (volume: number): number => {
   return volume
 }
 
-/** 修改某段原声的音量；找不到该段或音量未变时保留原状态。 */
 export const setSegmentVolume = (state: FilmState, id: string, volume: number): FilmState => {
   checkedVolume(volume)
   const at = state.segments.findIndex((segment) => segment.id === id)
@@ -111,13 +85,11 @@ export const setSegmentVolume = (state: FilmState, id: string, volume: number): 
 
 export const setFont = (state: FilmState, font: FilmFont | null): FilmState => ({ ...state, font })
 
-/** 识别出的一句字幕的身份：哪条字幕记录的第几句（从 0 起）。同一句在几段里出现时共用一份改字。 */
 export const sentenceKey = (subtitleJobId: string, index: number): string =>
   `${subtitleJobId}#${index}`
 
-export const segmentDuration = (segment: Pick): number => roundToMs(segment.end - segment.start)
+export const segmentDuration = (segment: Clip): number => roundToMs(segment.end - segment.start)
 
-/** 排在整片时间上的一段：`at` 是它的起点。 */
 export type PlacedSegment = { segment: FilmSegment; at: number; duration: number }
 
 export const layoutFilm = (segments: readonly FilmSegment[]): PlacedSegment[] => {
@@ -133,7 +105,6 @@ export const layoutFilm = (segments: readonly FilmSegment[]): PlacedSegment[] =>
 export const filmDuration = (segments: readonly FilmSegment[]): number =>
   roundToMs(segments.reduce((sum, segment) => sum + segmentDuration(segment), 0))
 
-/** 模板所占时长，不计入正文字幕和音乐的时钟。 */
 export const brandDuration = (film: FilmState): number =>
   ((film.intro?.durationMs ?? 0) + (film.outro?.durationMs ?? 0)) / 1000
 export const wholeFilmDuration = (film: FilmState): number =>
@@ -144,38 +115,31 @@ export const setBrand = (
   template: FilmBrand | null,
 ): FilmState => ({ ...film, [position]: template })
 
-/** 整片时刻 `clock` 落在哪一段里（右开）；不在任何一段里（空轨、末尾）时没有。 */
 const segmentAt = (segments: readonly FilmSegment[], clock: number): PlacedSegment | undefined =>
   layoutFilm(segments).find((placed) => clock >= placed.at && clock < placed.at + placed.duration)
 
-// ---------- 插入 ----------
-
-/** 在整片时刻 `clock` 附近插入时插在第几段之前：落在哪段的前一半就插在它前面，后一半就插在它后面。 */
 export const insertIndexAt = (segments: readonly FilmSegment[], clock: number): number => {
   const index = layoutFilm(segments).findIndex((placed) => placed.at + placed.duration / 2 > clock)
   return index < 0 ? segments.length : index
 }
 
-/** 插在第 `index` 段之前时，插入点在整片的哪一刻。 */
 export const insertClockOf = (segments: readonly FilmSegment[], index: number): number =>
   layoutFilm(segments)[index]?.at ?? filmDuration(segments)
 
-/** 再放进 `duration` 秒会不会超过整片上限。 */
 export const fitsInFilm = (
   segments: readonly FilmSegment[],
   duration: number,
   reserved = 0,
 ): boolean => filmDuration(segments) + roundToMs(duration) + reserved <= MAX_FILM_SECONDS + 1e-9
 
-/** 把素材上的一截插在第 `index` 段之前，后面的段顺延；放不下（超过整片上限）或太短时不插，返回 `undefined`。 */
 export const insertSegment = (
   state: FilmState,
-  pick: Pick,
+  clip: Clip,
   index: number,
   id: string,
 ): FilmState | undefined => {
-  const start = roundToMs(pick.start)
-  const end = roundToMs(pick.end)
+  const start = roundToMs(clip.start)
+  const end = roundToMs(clip.end)
   if (
     state.segments.length >= MAX_FILM_SEGMENTS ||
     end - start < MIN_SEGMENT_SECONDS - 1e-9 ||
@@ -184,7 +148,7 @@ export const insertSegment = (
     return undefined
   const segment: FilmSegment = {
     id,
-    sourceJobId: pick.sourceJobId,
+    sourceJobId: clip.sourceJobId,
     start,
     end,
   }
@@ -192,9 +156,6 @@ export const insertSegment = (
   return { ...clearMusicGain(state), segments: state.segments.toSpliced(at, 0, segment) }
 }
 
-// ---------- 成片轨上的剪辑 ----------
-
-/** 把一段挪到第 `before` 段之前（`before` 是挪之前的位置，等于段数就是挪到最后）；挪回原处等于没挪，返回 `undefined`。 */
 export const moveSegment = (
   state: FilmState,
   id: string,
@@ -208,9 +169,6 @@ export const moveSegment = (
   return { ...clearMusicGain(state), segments: rest.toSpliced(at, 0, moving) }
 }
 
-/** 一段的一端最远能拖到哪：允许跨过初始分段，限制在来源视频内，且不让整片超过上限。
- * 来源时长未读到时只允许使用已选区间以内的结尾；起点始终可回到来源视频开头。
- * 区间或已知来源时长无效、当前区间超出来源时返回 `undefined`，由界面禁用调整并说明原因。 */
 export const trimBounds = (
   segments: readonly FilmSegment[],
   segment: FilmSegment,
@@ -243,8 +201,6 @@ export const trimBounds = (
     : undefined
 }
 
-/** 把一段的一端拖到 `value`（这段素材自己的时间，秒），夹在 {@link trimBounds} 里；后面的段跟着前后移。
- * 数值或边界无效时保留原状态，不能将不可恢复的区间写进草稿。 */
 export const trimSegment = (
   state: FilmState,
   id: string,
@@ -265,7 +221,6 @@ export const trimSegment = (
   }
 }
 
-/** 整片时刻 `clock` 处能不能拆：落在一段里面，两边都不短于 {@link MIN_SEGMENT_SECONDS}。 */
 const splitPoint = (segments: readonly FilmSegment[], clock: number) => {
   const placed = segmentAt(segments, clock)
   if (placed === undefined) return undefined
@@ -282,8 +237,6 @@ const splitPoint = (segments: readonly FilmSegment[], clock: number) => {
 export const canSplitAt = (segments: readonly FilmSegment[], clock: number): boolean =>
   segments.length < MAX_FILM_SEGMENTS && splitPoint(segments, clock) !== undefined
 
-/** 在整片时刻 `clock` 处把所在的那段一分为二：前一半留原来的 id，后一半用 `rightId`；两半仍可独立扩展至来源视频边界。
- * 钉在后一半上的手动字幕跟过去。拆不了时返回 `undefined`。 */
 export const splitAt = (
   state: FilmState,
   clock: number,
@@ -312,7 +265,6 @@ export const splitAt = (
   }
 }
 
-/** 删掉一段，后面的段前移；钉在它上面的手动字幕一起删。 */
 export const removeSegment = (state: FilmState, id: string): FilmState => {
   if (!state.segments.some((segment) => segment.id === id)) return state
   return {
@@ -322,9 +274,6 @@ export const removeSegment = (state: FilmState, id: string): FilmState => {
   }
 }
 
-// ---------- 字幕 ----------
-
-/** 改一句识别字幕的字。 */
 export const setSentenceText = (state: FilmState, key: string, text: string): FilmState => ({
   ...state,
   texts: { ...state.texts, [key]: text },
@@ -340,15 +289,11 @@ export const removeManualSubtitle = (state: FilmState, id: string): FilmState =>
   manual: state.manual.filter((item) => item.id !== id),
 })
 
-// ---------- 音乐 ----------
-
-/** 放上一首音乐（换掉原来那首），或拿掉（`null`）。 */
 export const setMusic = (state: FilmState, music: FilmMusic | null): FilmState => ({
   ...state,
   music,
 })
 
-/** 人把音乐拖到整首的 `start` 起；没有音乐或没挪动时返回 `undefined`。 */
 export const moveMusic = (state: FilmState, start: number): FilmState | undefined => {
   if (!Number.isFinite(start) || start < 0) throw new RangeError('音乐起点必须是非负有限数值')
   if (state.music === null) return undefined
@@ -357,25 +302,19 @@ export const moveMusic = (state: FilmState, start: number): FilmState | undefine
   return { ...state, music: { ...state.music, userStart } }
 }
 
-/** 修改整首背景音乐的音量，保留自动压低曲线与截取起点。 */
 export const setMusicVolume = (state: FilmState, volume: number): FilmState => {
   checkedVolume(volume)
   if (state.music === null || (state.music.volume ?? 1) === volume) return state
   return { ...state, music: { ...state.music, volume } }
 }
 
-/** 回到按当前正文切点自动选音乐起点。 */
 export const resetMusicStart = (state: FilmState): FilmState =>
   state.music === null || state.music.userStart === null
     ? state
     : { ...state, music: { ...state.music, userStart: null } }
 
-// ---------- 素材轨 ----------
-
-/** 素材区的一条轨：独立生成的原作，以及此刻挑段用的原版或编辑版。 */
 export type MaterialLane = { takeId: string; jobId: string }
 
-/** 同一原作已有轨就切换编辑版本，不同次生成各占一条轨。 */
 export const putLane = (
   lanes: readonly MaterialLane[],
   lane: MaterialLane,
@@ -384,14 +323,10 @@ export const putLane = (
   return at < 0 ? [...lanes, lane] : lanes.with(at, lane)
 }
 
-// ---------- 存放 ----------
-
-/** v2 按原作存素材轨，不再保存初始选区作为裁剪边界；v1 在读取时按素材身份迁移。 */
 const STORAGE_VERSION = 2
 
 const zVolume = z.number().min(0).max(2).optional()
 
-/** 本地与历史快照共用的音量曲线；不包含结尾淡出。 */
 export const zFilmMusicGain = z
   .array(zMusicGainPoint)
   .min(1)
@@ -476,11 +411,8 @@ const zStoredFilm = z.object({
     .optional(),
 })
 
-/** 整片草稿在浏览器里存的那一份：此刻的草稿与素材轨。撤销栈不存。 */
 export type StoredFilm = { film: FilmState; lanes: readonly MaterialLane[] }
 
-/** 读存着的整片草稿；不是 JSON、格式版本不对、形状不对都返回 `undefined`。
- * 素材轨以当前目录的原作关系重建，迁移 v1 的分组身份，并去掉已经无法读取的轨。 */
 export const parseStoredFilm = (
   raw: string,
   takeOf: (jobId: string) => string | undefined,
@@ -524,7 +456,6 @@ export const serializeStoredFilm = ({ film, lanes }: StoredFilm): string =>
     font: film.font,
   })
 
-/** 只留来源还读得到的段与素材轨：来源不在 `known` 里的段连同钉在它上面的手动字幕去掉，返回去掉了几段。 */
 export const keepKnownSources = (
   stored: StoredFilm,
   known: ReadonlySet<string>,

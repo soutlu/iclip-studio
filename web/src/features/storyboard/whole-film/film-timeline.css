@@ -1,9 +1,18 @@
-/* 整片时间线。面板底色、圆角与控制条在 video-editor.css；这里只排轨道。
-   标尺与成片轨固定，字幕、音乐和素材在下方独立滚动；两个横滚窗口共享刻度位置。 */
 .film-timeline {
-  --film-wave: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
   --film-music-fill: color-mix(in srgb, var(--color-on-surface) 24%, transparent);
   --film-music-beat: color-mix(in srgb, var(--color-on-surface) 40%, transparent);
+  --timeline-ruler-height: 18px;
+  --timeline-first-tick-shift: 7px;
+  --timeline-wave-inset: 2px;
+  --timeline-wave-stroke: 1.2;
+  --timeline-handle-end-shift: -5px;
+  --timeline-handle-reach: -4px;
+  --timeline-handle-grip: 12px;
+  --timeline-bubble-height: 20px;
+  --timeline-knob-top: -5px;
+  --timeline-knob-width: 10px;
+  --timeline-knob-height: 10px;
+  --timeline-knob-radius: var(--radius-full);
 
   position: relative;
   display: flex;
@@ -13,7 +22,7 @@
   flex-direction: column;
   margin-top: 6px;
   color: var(--color-on-surface);
-  /* 拖选和搬运片段时不选中文字，避免后续拖动进入浏览器的原生文字拖拽。 */
+  /* 选中的文字会让后续拖动进入浏览器的原生文字拖拽。 */
   user-select: none;
 }
 
@@ -42,14 +51,11 @@
 }
 
 .film-timeline-ghost.film-timeline-carry {
-  --film-wave: color-mix(in srgb, var(--color-on-surface) 46%, transparent);
-
   position: fixed;
   z-index: var(--z-popup);
 }
 
 .dark .film-timeline {
-  --film-wave: color-mix(in srgb, var(--color-on-surface) 52%, transparent);
   --film-music-fill: color-mix(in srgb, var(--color-on-surface) 30%, transparent);
 }
 
@@ -80,7 +86,6 @@
   text-overflow: ellipsis;
 }
 
-/* 轨道头上的圆形「+」与版本胶囊：白底细边，打开时墨色淡底。 */
 .film-timeline-head-add,
 .film-version-pill {
   display: inline-flex;
@@ -120,7 +125,6 @@
   font-weight: 500;
 }
 
-/* 让出气泡、手柄与焦点环的位置；窄屏横向滚动。 */
 .film-timeline-scroll {
   min-width: 0;
   flex: 1;
@@ -131,7 +135,6 @@
   scrollbar-width: thin;
 }
 
-/* 空片头片尾只预留像素，两区的真实时间轴仍等宽、同起点。 */
 .film-timeline-coordinate-space {
   min-width: calc(520px + var(--film-leading-slot) + var(--film-trailing-slot));
   padding-left: var(--film-leading-slot);
@@ -142,54 +145,6 @@
   position: relative;
   min-width: 520px;
   isolation: isolate;
-}
-
-.film-timeline-ruler {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 18px;
-}
-
-/* 滑块本身透明，键盘焦点环画在刻度区上；指针按住拿到的焦点不画。 */
-.film-timeline-ruler:has(> .film-timeline-seek:focus-visible:not([data-pointer])) {
-  outline: var(--state-focus-ring) solid var(--color-focus-ring);
-  outline-offset: var(--state-focus-offset);
-}
-
-.film-timeline-tick {
-  position: absolute;
-  top: 0;
-  translate: -50% 0;
-  color: var(--color-on-surface-faint);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* 播放头停在 0 秒时圆点会压住「0s」，首个刻度字往右让一点。 */
-.film-timeline-tick.is-first {
-  translate: 7px 0;
-}
-
-.film-timeline-tick.is-last {
-  translate: -100% 0;
-}
-
-.film-timeline-seek {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.film-timeline-seek:disabled {
-  cursor: default;
 }
 
 .film-timeline-lane {
@@ -204,7 +159,6 @@
   background: color-mix(in srgb, var(--color-on-surface) 4.5%, transparent);
 }
 
-/* 成片轨为空：虚线占位。 */
 .film-timeline-empty {
   position: absolute;
   right: 0;
@@ -225,7 +179,6 @@
   color: var(--color-on-surface-faint);
 }
 
-/* 一截画面：上面缩略胶片条，下面这截自带原声的波形。 */
 .film-segment,
 .film-material-shot,
 .film-timeline-ghost {
@@ -259,22 +212,6 @@
   background: var(--color-surface-container);
 }
 
-.film-strip-frames .video-editor-timeline-frames,
-.film-strip-wave .video-editor-timeline-wave {
-  flex: 1 1 0;
-}
-
-.film-timeline .video-editor-timeline-wave svg {
-  inset: 2px 0;
-  height: calc(100% - 4px);
-}
-
-.film-timeline .video-editor-timeline-wave path {
-  stroke: var(--film-wave);
-  stroke-width: 1.2;
-}
-
-/* 段左上角的版本号、素材右上角的时长：半透明浮层小签。 */
 .film-segment-tag {
   position: absolute;
   top: 4px;
@@ -293,7 +230,6 @@
   pointer-events: none;
 }
 
-/* 拖走的那段在原处只留一个空框。 */
 .film-segment.is-slot {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--color-hairline);
@@ -303,7 +239,6 @@
   visibility: hidden;
 }
 
-/* 拖进来时插入点之后的段让出的空位。 */
 .film-timeline-slot {
   position: absolute;
   z-index: var(--z-local-1);
@@ -312,7 +247,6 @@
   pointer-events: none;
 }
 
-/* 字幕块：白底细边的小条；某段在识别或识别失败时在它的范围里放一个中性小标签。 */
 .film-subtitle {
   position: absolute;
   display: block;
@@ -388,7 +322,6 @@
   cursor: default;
 }
 
-/* 选中画面用轻蒙层，裁剪手柄独立可用，不增加选中描边。 */
 .film-timeline-box {
   position: absolute;
   z-index: var(--z-local-2);
@@ -397,45 +330,6 @@
   pointer-events: none;
 }
 
-.film-timeline-handle {
-  position: absolute;
-  z-index: var(--z-local-3);
-  display: grid;
-  width: 8px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: var(--color-on-surface);
-  cursor: ew-resize;
-  touch-action: none;
-}
-
-.film-timeline-handle.is-start {
-  translate: -3px 0;
-  border-radius: var(--radius-md) var(--radius-xs) var(--radius-xs) var(--radius-md);
-}
-
-.film-timeline-handle.is-end {
-  translate: -5px 0;
-  border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
-}
-
-/* 手柄只有 8px 宽，热区向两侧放宽。 */
-.film-timeline-handle::before {
-  content: '';
-  position: absolute;
-  inset: -4px -10px;
-}
-
-.film-timeline-handle::after {
-  content: '';
-  width: 2px;
-  height: 12px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-lowest);
-}
-
-.film-timeline-handle.is-pressed,
 .film-material-handle.is-pressed {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-on-surface) 16%, transparent);
 }
@@ -487,55 +381,6 @@
   );
 }
 
-.film-timeline-bubble {
-  position: absolute;
-  top: -8px;
-  z-index: var(--z-local-3);
-  display: flex;
-  height: 20px;
-  align-items: center;
-  gap: 4px;
-  translate: -50% 0;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.film-timeline-bubble.is-top {
-  top: -1px;
-}
-
-.film-timeline-playhead {
-  position: absolute;
-  z-index: var(--z-local-3);
-  width: 2px;
-  translate: -1px 0;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-surface-container-lowest) 70%, transparent);
-  pointer-events: none;
-}
-
-.film-timeline-playhead::before {
-  content: '';
-  position: absolute;
-  top: -5px;
-  left: 50%;
-  width: 10px;
-  height: 10px;
-  translate: -50% 0;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-  box-shadow: 0 0 0 2px var(--color-surface-container-low);
-}
-
-/* 镜头组标题与加入入口横跨轨道头，生成视频各自占一行。 */
 .film-material-group {
   position: absolute;
   right: 0;
@@ -570,7 +415,6 @@
   gap: 4px;
 }
 
-/* 素材区末尾的添加行，横跨轨道名与轨道；有素材时也保留。 */
 .film-timeline-materials-add {
   position: absolute;
   right: 0;
@@ -613,7 +457,6 @@
   cursor: pointer;
 }
 
-/* 素材轨按关键帧划分镜头；底部细墨条标记已经选入成片的区间。 */
 .film-material-lane {
   position: absolute;
   right: 0;
@@ -628,9 +471,6 @@
   border: 0;
   cursor: grab;
   touch-action: none;
-}
-.film-material-shot .video-editor-timeline-frames {
-  height: 100%;
 }
 .film-material-shot-label {
   position: absolute;
@@ -709,7 +549,6 @@
   translate: -1px 0;
   border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
 }
-/* 关键帧间隔很短时，两端热区只向外延伸，避免右端遮住左端。 */
 .film-material-handle::before {
   content: '';
   position: absolute;
@@ -732,7 +571,6 @@
   background: var(--color-surface-container-lowest);
 }
 
-/* 音乐：上部包络（口播处压低、结尾淡出），底部一条拍点刻度，小节第一拍略高。 */
 .film-music-clip,
 .film-music-song {
   position: absolute;
@@ -753,7 +591,6 @@
   z-index: var(--z-local-2);
 }
 
-/* 拖动时音乐是一扇固定的窗，整首在下面滑。 */
 .film-music-clip.is-window {
   z-index: var(--z-local-2);
   background: var(--color-state-active);
@@ -828,7 +665,6 @@
   white-space: nowrap;
 }
 
-/* 音乐比成片短：后面接斜纹空位。 */
 .film-music-gap {
   position: absolute;
   display: flex;
@@ -857,7 +693,6 @@
   white-space: nowrap;
 }
 
-/* 在上传、生成、读取或失败：轨上一个虚线框里一句话。 */
 .film-music-status {
   position: absolute;
   display: flex;
@@ -883,7 +718,6 @@
   cursor: pointer;
 }
 
-/* 落在拍上的切点：切线顶端一个小实心点。 */
 .film-music-cut-dot {
   position: absolute;
   z-index: var(--z-local-3);
@@ -938,7 +772,6 @@
   height: 0;
 }
 
-/* 恢复字幕与口播识别状态共存：状态缩成视频段上的角标，不阻挡画面或字幕的选中。 */
 .film-subtitle-status.is-over-snapshot {
   justify-content: flex-end;
   padding: 0 3px;
@@ -950,7 +783,6 @@
   pointer-events: auto;
 }
 
-/* 纵向滚动统一由整片轨道窗口承担；轨道名与各轨一起移动，原横滚层继续只管时间轴。 */
 .whole-film-track-scroll .film-timeline {
   margin-top: 0;
 }

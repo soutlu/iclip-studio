@@ -19,14 +19,14 @@ it('当前视频缓冲/seek时停外部混音，恢复时从同一完整时钟�
       current={layoutPlay([{ mediaUrl: 'https://example.com/a.mp4', start: 5, end: 9 }])}
       currentTime={0}
       contentKey="draft"
-      original={undefined}
       poster={undefined}
-      backdrop={{ current: undefined, original: undefined }}
+      backdrop={undefined}
       onTime={time}
       onPlay={() => {}}
       onPlaybackChange={playback}
-      muteMediaAudio
+      externalAudio={{ blocked: undefined }}
       overlay={null}
+      viewControl={null}
       versions={null}
       tools={null}
       readout={null}
@@ -89,14 +89,14 @@ it('切段先停在准确的整片切点，下一段实际开播后才恢复混�
       ])}
       currentTime={0}
       contentKey="draft"
-      original={undefined}
       poster={undefined}
-      backdrop={{ current: undefined, original: undefined }}
+      backdrop={undefined}
       onTime={time}
       onPlay={() => {}}
       onPlaybackChange={playback}
-      muteMediaAudio
+      externalAudio={{ blocked: undefined }}
       overlay={null}
+      viewControl={null}
       versions={null}
       tools={null}
       readout={null}
@@ -137,13 +137,13 @@ it('片段播放请求等待分段与媒体加载，播放到选区末尾停止�
     current: undefined,
     currentTime: 0,
     contentKey: 'current',
-    original: undefined,
     poster: undefined,
-    backdrop: { current: undefined, original: undefined },
+    backdrop: undefined,
     onTime: time,
     onPlay: manualPlay,
     playbackRequest: { id: 1, start: 2, end: 4 },
     overlay: null,
+    viewControl: null,
     versions: null,
     tools: null,
     readout: null,

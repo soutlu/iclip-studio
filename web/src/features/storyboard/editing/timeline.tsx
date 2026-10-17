@@ -1,0 +1,239 @@
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react'
+import { Icon } from '@/shared/icons'
+import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import { cn } from '@/shared/lib/utils'
+import type { PeaksState } from './media-analysis'
+import type { PlaySegment } from './play-layout'
+import { roundSeconds, timeLabel } from './time-label'
+import { releasePointer, type Edge } from './timeline-drag'
+import './timeline.css'
+
+const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60]
+
+type TimelineRulerProps = {
+  scale: number
+  total: number
+  currentTime: number
+  disabled?: boolean | undefined
+  clockAt: (clientX: number) => number
+  onSeek: (clock: number) => void
+  onScrub: () => void
+}
+
+export function TimelineRuler({
+  scale,
+  total,
+  currentTime,
+  disabled = false,
+  clockAt,
+  onSeek,
+  onScrub,
+}: TimelineRulerProps) {
+  // Chrome 对指针按住 range 拿到的焦点也算 :focus-visible；焦点环只留给键盘。
+  const [seekByPointer, setSeekByPointer] = useState(false)
+  const seekPointerRef = useRef<number | null>(null)
+  const tickStep = TICK_STEPS.find((step) => step >= scale / 8) ?? Math.ceil(scale / 8 / 60) * 60
+  const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
+  const boundedTime = Math.max(0, Math.min(total, currentTime))
+  const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
+    onSeek(Math.min(total, clockAt(event.clientX)))
+  }
+  const finishSeek = (event: PointerEvent<HTMLInputElement>) => {
+    if (seekPointerRef.current !== event.pointerId) return
+    seekPointerRef.current = null
+    releasePointer(event)
+  }
+  return (
+    <div className="timeline-ruler">
+      {ticks.map((time) => (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'timeline-tick',
+            time === 0 && 'is-first',
+            time + tickStep > scale && time > 0 && 'is-last',
+          )}
+          key={time}
+          style={{ left: `${(time / scale) * 100}%` }}
+        >
+          {roundSeconds(time)}s
+        </span>
+      ))}
+      <input
+        aria-label="时间线播放位置"
+        aria-valuetext={timeLabel(boundedTime)}
+        className="timeline-seek"
+        data-pointer={seekByPointer ? '' : undefined}
+        disabled={disabled}
+        max={scale}
+        min={0}
+        onBlur={() => setSeekByPointer(false)}
+        onChange={(event) => {
+          onScrub()
+          onSeek(Math.min(total, Number(event.target.value)))
+        }}
+        onKeyDown={() => setSeekByPointer(false)}
+        onPointerDown={(event) => {
+          if (disabled || event.button !== 0) return
+          event.preventDefault()
+          event.stopPropagation()
+          setSeekByPointer(true)
+          event.currentTarget.focus()
+          event.currentTarget.setPointerCapture(event.pointerId)
+          seekPointerRef.current = event.pointerId
+          onScrub()
+          seekPointer(event)
+        }}
+        onPointerMove={(event) => {
+          if (seekPointerRef.current === event.pointerId) seekPointer(event)
+        }}
+        onPointerUp={finishSeek}
+        onPointerCancel={finishSeek}
+        step={0.01}
+        type="range"
+        value={boundedTime}
+      />
+    </div>
+  )
+}
+
+export function Frames({ part }: { part: PlaySegment }) {
+  const length = part.end - part.start
+  const count = Math.max(1, Math.min(24, Math.round(length * 2)))
+  const shots = Array.from({ length: count }).flatMap((_, at) => {
+    const url = videoSnapshotUrl(part.mediaUrl, 96, part.start + ((at + 0.5) * length) / count)
+    return url === undefined ? [] : [url]
+  })
+  return (
+    <span className="timeline-frames" style={{ flexGrow: length }}>
+      {shots.length === 0 ? (
+        <Icon decorative name="video" size="sm" />
+      ) : (
+        shots.map((src) => <Frame key={src} src={src} />)
+      )}
+    </span>
+  )
+}
+
+function Frame({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false)
+  return failed ? (
+    <span className="timeline-frame-empty" />
+  ) : (
+    <img alt="" draggable={false} onError={() => setFailed(true)} src={src} />
+  )
+}
+
+export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
+  const length = part.end - part.start
+  const body = (() => {
+    switch (state.kind) {
+      case 'loading':
+        return <span className="timeline-wave-loading" />
+      case 'silent':
+        return <span className="timeline-wave-note">无声</span>
+      case 'failed':
+        return <span className="timeline-wave-note">原声读取失败</span>
+      case 'ready': {
+        const { rate, peaks } = state.peaks
+        const from = Math.floor(part.start * rate)
+        const count = Math.max(1, Math.ceil(part.end * rate) - from)
+        let path = ''
+        for (let at = 0; at < count; at += 1) {
+          const height = Math.max(4, (peaks[from + at] ?? 0) * 92)
+          path += `M${at + 0.5} ${50 - height / 2}v${height}`
+        }
+        return (
+          <svg data-testid="timeline-wave" preserveAspectRatio="none" viewBox={`0 0 ${count} 100`}>
+            <path d={path} />
+          </svg>
+        )
+      }
+    }
+  })()
+  return (
+    <span className="timeline-wave" style={{ flexGrow: length }}>
+      {body}
+    </span>
+  )
+}
+
+type TrimHandleProps = {
+  edge: Edge
+  value: number
+  bounds: { min: number; max: number }
+  valueText: string
+  pressed: boolean
+  style: CSSProperties
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => void
+}
+
+export function TrimHandle({
+  edge,
+  value,
+  bounds,
+  valueText,
+  pressed,
+  style,
+  onKeyDown,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+}: TrimHandleProps) {
+  return (
+    <button
+      aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
+      aria-valuemax={roundSeconds(bounds.max)}
+      aria-valuemin={roundSeconds(bounds.min)}
+      aria-valuenow={roundSeconds(value)}
+      aria-valuetext={valueText}
+      className={cn('timeline-handle ui-focus', `is-${edge}`, pressed && 'is-pressed')}
+      onKeyDown={onKeyDown}
+      onPointerCancel={onPointerCancel}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      role="slider"
+      style={style}
+      title="拖动可裁剪，按方向键可微调，按住 Shift 每次调整 1 秒"
+      type="button"
+    />
+  )
+}
+
+export function TimelineBubble({ style, children }: { style: CSSProperties; children: ReactNode }) {
+  return (
+    <span className="timeline-bubble" role="status" style={style}>
+      {children}
+    </span>
+  )
+}
+
+export function TrimBubble({
+  length,
+  shorter,
+  style,
+}: {
+  length: number
+  shorter: number
+  style: CSSProperties
+}) {
+  return (
+    <TimelineBubble style={style}>
+      裁剪后 {length.toFixed(1)} 秒 ·{' '}
+      {shorter >= 0 ? `缩短 ${shorter.toFixed(1)} 秒` : `延长 ${(-shorter).toFixed(1)} 秒`}
+    </TimelineBubble>
+  )
+}

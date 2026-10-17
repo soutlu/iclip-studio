@@ -1,15 +1,10 @@
 /** 整片的字幕：各段取它来源成片最新一条字幕记录的逐句结果，与段区间重叠的句子截到段内、换算到整片时间，
  * 跟着画面走；再叠上改过的字与手动加的字幕。纯函数，不持有状态。 */
 
+import { roundToMs } from '../editing/clip'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
-import {
-  layoutFilm,
-  MANUAL_SUBTITLE_SECONDS,
-  roundToMs,
-  sentenceKey,
-  type FilmState,
-} from './film-draft'
+import { layoutFilm, MANUAL_SUBTITLE_SECONDS, sentenceKey, type FilmState } from './film-draft'
 
 /** 一条成片此刻的字幕：识别好了（逐句，可以一句都没有）、在识别、识别失败，或根本没有字幕记录（旧视频）。 */
 export type SubtitleSource =
