@@ -6,21 +6,20 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Generator, Mapping
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
 from alembic import command
-from alembic.config import Config as AlembicConfig
-from sqlalchemy import make_url, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
 from iclip.platform.db.engine import build_engine
 from tests.helpers.fork_lineage import make_user
+from tests.helpers.migrations import alembic_config
 
 BEFORE_BRAND_TEMPLATES = "3c8e5a1f9d40"
 """0027，品牌模板表之前的那一版。"""
@@ -95,25 +94,6 @@ async def test_the_table_constraints(
             await conn.execute(_INSERT, row)
 
 
-def _alembic(url: str) -> AlembicConfig:
-    server_dir = Path(__file__).resolve().parents[3]
-    cfg = AlembicConfig(str(server_dir / "alembic.ini"))
-    cfg.set_main_option("script_location", str(server_dir / "migrations"))
-    cfg.attributes["sqlalchemy_url"] = url
-    return cfg
-
-
-async def _admin(url: str, statement: str) -> None:
-    """CREATE / DROP DATABASE 不能在事务里跑，走自动提交。"""
-
-    engine = build_engine(url, poolclass=NullPool, isolation_level="AUTOCOMMIT")
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text(statement))
-    finally:
-        await engine.dispose()
-
-
 async def _has_table(url: str) -> bool:
     engine = build_engine(url, poolclass=NullPool)
     try:
@@ -124,20 +104,8 @@ async def _has_table(url: str) -> bool:
         await engine.dispose()
 
 
-@pytest.fixture
-def scratch_db(pg_url: str) -> Generator[str]:
-    """同一台 Postgres 上的一个一次性库，用完删掉。"""
-
-    name = f"migration_{uuid.uuid4().hex[:12]}"
-    asyncio.run(_admin(pg_url, f'CREATE DATABASE "{name}"'))
-    try:
-        yield make_url(pg_url).set(database=name).render_as_string(hide_password=False)
-    finally:
-        asyncio.run(_admin(pg_url, f'DROP DATABASE "{name}" WITH (FORCE)'))
-
-
 def test_downgrade_drops_the_table_and_upgrade_brings_it_back(scratch_db: str) -> None:
-    cfg = _alembic(scratch_db)
+    cfg = alembic_config(scratch_db)
 
     command.upgrade(cfg, "head")
     assert asyncio.run(_has_table(scratch_db))
@@ -186,7 +154,7 @@ async def _stored_template(url: str) -> dict[str, Any]:
 
 
 def test_url_rename_preserves_existing_data_in_both_directions(scratch_db: str) -> None:
-    cfg = _alembic(scratch_db)
+    cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE_URL_RENAME)
     row = asyncio.run(_existing_template(scratch_db))
     previous = {**row, "video_url": row["url"]}
@@ -220,7 +188,7 @@ async def _extend_template(url: str, changes: Mapping[str, Any]) -> dict[str, An
 
 
 def test_resource_upgrade_and_safe_downgrade_preserve_existing_data(scratch_db: str) -> None:
-    cfg = _alembic(scratch_db)
+    cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE_URL_RENAME)
     previous = asyncio.run(_existing_template(scratch_db))
     command.upgrade(cfg, URL_RENAMED)
@@ -248,7 +216,7 @@ def test_resource_upgrade_and_safe_downgrade_preserve_existing_data(scratch_db: 
 def test_downgrade_refuses_extended_data_without_losing_it(
     scratch_db: str, changes: Mapping[str, Any]
 ) -> None:
-    cfg = _alembic(scratch_db)
+    cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE_URL_RENAME)
     asyncio.run(_existing_template(scratch_db))
     command.upgrade(cfg, BRAND_RESOURCES)

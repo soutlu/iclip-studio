@@ -19,6 +19,7 @@ from iclip.domains.conversations.models import (
     Conversation,
     ConversationActivity,
     EventWatermark,
+    WholeFilmDraft,
 )
 from iclip.domains.conversations.repository import (
     AuditFilter,
@@ -26,8 +27,10 @@ from iclip.domains.conversations.repository import (
     DeletedFilter,
     PageCursor,
     StateFilter,
+    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, conversation_out
+from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
     Principal,
@@ -279,6 +282,18 @@ class ConversationFilm(Protocol):
         ...
 
 
+class WholeFilmDraftReferences(Protocol):
+    """保存整片草稿前核对它引用的生成记录，由组合根接到生成记录上。
+
+    画面轨的每段要出自这段对话自己的或继承来的一条成片，音乐要是这段对话的一条已完成的音频记录，
+    改字的字幕记录要是画面轨某段出处的字幕。不合格抛 ValidationFailed，消息是给人看的一句话，
+    不区分「没有这条」与「不是这段对话的」。"""
+
+    async def __call__(
+        self, principal: Principal, conversation_id: uuid.UUID, document: WholeFilmDocument
+    ) -> None: ...
+
+
 class WorkspaceDocumentValidator(Protocol):
     """工作区文件写入前的校验协议，由组合根按路径注入。
 
@@ -388,6 +403,8 @@ class ConversationService:
         write_derived_file: WriteDerivedFile,
         document_validators: Mapping[str, WorkspaceDocumentValidator],
         film: ConversationFilm,
+        drafts: WholeFilmDraftStore,
+        draft_references: WholeFilmDraftReferences,
         generate_title: GenerateTitle,
         announce_title: AnnounceTitle,
         activities_of: ActivitiesOf,
@@ -401,6 +418,8 @@ class ConversationService:
         announce_deleted: AnnounceConversationDeleted,
     ) -> None:
         self._repo = repo
+        self._drafts = drafts
+        self._draft_references = draft_references
         self._copy_same_style = copy_same_style
         self._event_watermark = event_watermark
         self._announce_row = announce_row
@@ -637,6 +656,48 @@ class ConversationService:
             run_version=run_version,
         )
 
+    async def whole_film_draft(
+        self, principal: Principal, conversation_id: uuid.UUID
+    ) -> tuple[WholeFilmDraft, WholeFilmDocument] | None:
+        """读这段对话的整片草稿与解析好的文档；可见范围同读工作区文件，还没存过返回 None。"""
+
+        conversation = await self._readable(principal, conversation_id)
+        found = await self._drafts.get(conversation.id)
+        if found is None:
+            return None
+        return found, WholeFilmDocument.model_validate(found.document)
+
+    async def save_whole_film_draft(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        revision: int,
+        document: WholeFilmDocument,
+    ) -> WholeFilmDraft:
+        """整份覆盖整片草稿；只有属主能存，口径同覆盖工作区文件。
+
+        ``revision`` 是读到的那一版（还没有草稿是 0），对不上是 409；引用的记录不合格是 422。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        await self._draft_references(principal, conversation.id, document)
+        saved = await self._drafts.save(
+            conversation.id,
+            document=document.model_dump(mode="json", by_alias=True),
+            revision=revision,
+            updated_by=principal.user_id,
+        )
+        if saved is None:
+            raise Conflict("整片草稿已经有更新的一版，重新读取后再改")
+        return saved
+
+    async def workspace_writable(
+        self, principal: Principal, conversation_id: uuid.UUID
+    ) -> Conversation:
+        """主体能不能改这段对话，口径同改工作区文件；给别的域判「属主才能挂到这段对话」用。"""
+
+        return await self._workspace_writable(principal, conversation_id)
+
     async def _workspace_writable(
         self, principal: Principal, conversation_id: uuid.UUID
     ) -> Conversation:
@@ -644,7 +705,7 @@ class ConversationService:
 
         conversation = await self._readable(principal, conversation_id)
         if conversation.owner_user_id != principal.user_id:
-            raise PermissionDenied("只有属主能改这段对话的工作区文件")
+            raise PermissionDenied("只有属主能改这段对话")
         # 治理者读得到自己删掉的对话，但墓碑对谁都是只读的。
         if conversation.deleted_at is not None:
             raise PermissionDenied("已删除的对话不能再改")
@@ -1092,6 +1153,7 @@ __all__ = [
     "ReadDerivedFile",
     "Sidebar",
     "SidebarGroup",
+    "WholeFilmDraftReferences",
     "WorkspaceDocumentValidator",
     "WriteDerivedFile",
 ]

@@ -53,6 +53,11 @@ from iclip.domains.conversations.service import (
     ListAgents,
     ListState,
 )
+from iclip.domains.conversations.whole_film_schemas import (
+    WholeFilmDraftIn,
+    WholeFilmDraftOut,
+    WholeFilmDraftSavedOut,
+)
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
     ActAs,
@@ -441,6 +446,36 @@ def create_conversations_router(
             run_version=body.run_version,
         )
         return FilmJobOut(job_id=job_id)
+
+    @router.get("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftOut)
+    async def read_whole_film_draft(
+        conversation_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> WholeFilmDraftOut:
+        """读这段对话的整片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、
+        ``document`` 与 ``updatedAt`` 为 null。"""
+
+        found = await service.whole_film_draft(principal, conversation_id)
+        if found is None:
+            return WholeFilmDraftOut(revision=0, document=None, updated_at=None)
+        draft, document = found
+        return WholeFilmDraftOut(
+            revision=draft.revision, document=document, updated_at=draft.updated_at
+        )
+
+    @router.put("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftSavedOut)
+    async def save_whole_film_draft(
+        conversation_id: uuid.UUID,
+        body: WholeFilmDraftIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> WholeFilmDraftSavedOut:
+        """整份保存整片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有
+        草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。"""
+
+        saved = await service.save_whole_film_draft(
+            principal, conversation_id, revision=body.revision, document=body.document
+        )
+        return WholeFilmDraftSavedOut(revision=saved.revision, updated_at=saved.updated_at)
 
     @router.patch("/{conversation_id}", response_model=ConversationEnvelope)
     async def rename_conversation(

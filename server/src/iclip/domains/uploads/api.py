@@ -37,12 +37,17 @@ def create_uploads_router(service: UploadService, *, act_as: ActAs) -> APIRouter
         """按桶里的对象核对类型与大小，通过后记一条上传记录（id 就是 ``uploadId``），交回地址。
         同一个视频文件已经传过，交回最早那份的地址。
 
-        请求体可选，只有 ``userName``：给了按替人办事换主体（浏览器只能写自己），不给就记在当前
-        主体名下。可重复调：记过就交回记录上的地址，返回同一条记录，第二次的 ``userName`` 不改属主。
+        请求体可选。``userName`` 给了按替人办事换主体（浏览器只能写自己），不给就记在当前主体名下。
+        ``conversationId`` 把音乐挂到那段对话：别的类型 422，对话看不见 404，不是属主或已删除 403。
+        可重复调：记过就交回记录上的地址，返回同一条记录，第二次的 ``userName`` 与
+        ``conversationId`` 都不改记录。
         """
 
         principal = await act_as(principal, body.user_name if body is not None else None)
-        return confirmed_out(await service.confirm(principal, upload_id))
+        confirmed = await service.confirm(
+            principal, upload_id, conversation_id=body.conversation_id if body is not None else None
+        )
+        return confirmed_out(confirmed)
 
     return router
 

@@ -230,6 +230,7 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
             kind=KIND_VIDEO,
             url=server.url("clip.mp4"),
             content_md5=CLIP_MD5,
+            conversation_id=None,
         )
         mine = await records.record_upload(
             me,
@@ -237,6 +238,7 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
             kind=KIND_VIDEO,
             url=server.url("my-copy.mp4"),
             content_md5=CLIP_MD5,
+            conversation_id=None,
         )
         job = await module.service.submit_video_edit(
             me, _edit_in(take.id, mine.url, start_ms=1000, end_ms=3000)

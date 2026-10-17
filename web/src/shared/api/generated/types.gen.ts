@@ -4476,9 +4476,13 @@ export type TurnUsage = {
 /**
  * UploadConfirmIn
  *
- * 确认上传时可选的请求体：替谁确认。
+ * 确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。
  */
 export type UploadConfirmIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
   /**
    * Username
    */
@@ -5219,6 +5223,54 @@ export type VideoTypeCountOut = {
 }
 
 /**
+ * WholeFilmCanvas
+ */
+export type WholeFilmCanvas = {
+  /**
+   * Height
+   */
+  height: number
+  /**
+   * Width
+   */
+  width: number
+}
+
+/**
+ * WholeFilmCaptionEdit
+ *
+ * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
+ */
+export type WholeFilmCaptionEdit = {
+  /**
+   * Sentenceindex
+   */
+  sentenceIndex: number
+  /**
+   * Subtitlejobid
+   */
+  subtitleJobId: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * WholeFilmCaptions
+ */
+export type WholeFilmCaptions = {
+  /**
+   * Component
+   */
+  component: string
+  /**
+   * Edits
+   */
+  edits: Array<WholeFilmCaptionEdit>
+}
+
+/**
  * WholeFilmCardOut
  *
  * 资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。
@@ -5266,6 +5318,193 @@ export type WholeFilmCardsOut = {
 }
 
 /**
+ * WholeFilmComponentClip
+ *
+ * 画面轨上的片头或片尾，是组件库里的一个组件。
+ */
+export type WholeFilmComponentClip = {
+  /**
+   * Component
+   */
+  component: string
+  /**
+   * Duration
+   */
+  duration: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Role
+   */
+  role: 'intro' | 'outro'
+  /**
+   * Start
+   */
+  start: number
+  /**
+   * Type
+   */
+  type: 'component'
+  /**
+   * Variables
+   */
+  variables: {
+    [key: string]: boolean | number | number | string
+  }
+}
+
+/**
+ * WholeFilmDocument
+ *
+ * 一段对话的整片草稿。
+ */
+export type WholeFilmDocument = {
+  canvas: WholeFilmCanvas | null
+  captions: WholeFilmCaptions
+  /**
+   * Layer0
+   */
+  layer0: Array<WholeFilmVideoClip | WholeFilmComponentClip>
+  music: WholeFilmMusic | null
+  /**
+   * Overlays
+   */
+  overlays: Array<WholeFilmOverlay>
+  /**
+   * Transitions
+   */
+  transitions: Array<WholeFilmTransition>
+}
+
+/**
+ * WholeFilmDraftIn
+ *
+ * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
+ */
+export type WholeFilmDraftIn = {
+  document: WholeFilmDocument
+  /**
+   * Revision
+   */
+  revision: number
+}
+
+/**
+ * WholeFilmDraftOut
+ *
+ * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
+ */
+export type WholeFilmDraftOut = {
+  document: WholeFilmDocument | null
+  /**
+   * Revision
+   */
+  revision: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string | null
+}
+
+/**
+ * WholeFilmDraftSavedOut
+ *
+ * 保存后的新版本号与保存时刻。
+ */
+export type WholeFilmDraftSavedOut = {
+  /**
+   * Revision
+   */
+  revision: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * WholeFilmMusic
+ *
+ * 背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。
+ */
+export type WholeFilmMusic = {
+  /**
+   * Jobid
+   */
+  jobId: string
+  /**
+   * Offset
+   */
+  offset: number
+  /**
+   * Volume
+   */
+  volume: number
+}
+
+/**
+ * WholeFilmOverlay
+ *
+ * 包装层上的一个组件，按整片时间放在 ``[start, start + duration)``。
+ */
+export type WholeFilmOverlay = {
+  /**
+   * Component
+   */
+  component: string
+  /**
+   * Duration
+   */
+  duration: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Start
+   */
+  start: number
+  /**
+   * Variables
+   */
+  variables: {
+    [key: string]: boolean | number | number | string
+  }
+}
+
+/**
+ * WholeFilmTransition
+ *
+ * ``afterClipId`` 那一段与下一段之间的转场。
+ */
+export type WholeFilmTransition = {
+  /**
+   * Afterclipid
+   */
+  afterClipId: string
+  /**
+   * Component
+   */
+  component: string
+  /**
+   * Duration
+   */
+  duration: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Variables
+   */
+  variables: {
+    [key: string]: boolean | number | number | string
+  }
+}
+
+/**
  * WholeFilmVersionOut
  *
  * 整片卡里的一版：这段对话自己的一条已完成整片。
@@ -5295,6 +5534,42 @@ export type WholeFilmVersionOut = {
    * Watermarkoutputurl
    */
   watermarkOutputUrl: string | null
+}
+
+/**
+ * WholeFilmVideoClip
+ *
+ * 画面轨上的一段成片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
+ */
+export type WholeFilmVideoClip = {
+  /**
+   * Duration
+   */
+  duration: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Playbackstart
+   */
+  playbackStart: number
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Start
+   */
+  start: number
+  /**
+   * Type
+   */
+  type: 'video'
+  /**
+   * Volume
+   */
+  volume: number
 }
 
 export type ListKeysApiKeysGetData = {
@@ -7001,6 +7276,70 @@ export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostRespon
 
 export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse =
   RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses[keyof RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses]
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/draft'
+}
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetError =
+  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors]
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmDraftOut
+}
+
+export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
+  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses]
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutData = {
+  body: WholeFilmDraftIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/draft'
+}
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutError =
+  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors]
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmDraftSavedOut
+}
+
+export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
+  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses]
 
 export type ReadConversationFileConversationsConversationIdWorkspaceFileGetData = {
   body?: never

@@ -43,6 +43,7 @@ from iclip.app.logging import configure_logging
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
+from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
@@ -66,7 +67,10 @@ from iclip.domains.brand_templates.module import BrandTemplatesModule, build_bra
 from iclip.domains.brand_templates.repository import ProbeVideo
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
-from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.conversations.infra_sql import (
+    SqlConversationRepository,
+    SqlWholeFilmDraftStore,
+)
 from iclip.domains.conversations.module import build_conversations_module
 from iclip.domains.conversations.service import CollectionInfo, ConversationActivity
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
@@ -624,6 +628,10 @@ def build_app(
             ledger=material_ledger,
             generation=generation.service if generation is not None else None,
         ),
+        drafts=SqlWholeFilmDraftStore(active_engine),
+        draft_references=GenerationDraftReferences(
+            generations=generation_repo, conversations=conversation_repo
+        ),
         generate_title=live_title_generator(agent_layer),
         announce_title=live_connections.announce_title,
         event_watermark=live_connections.clock.snapshot,
@@ -648,6 +656,7 @@ def build_app(
             record=settled_records.record_upload,
             find_recorded=settled_records.recorded_upload,
             fetch=image_fetcher,
+            conversation_writable=conversations.service.workspace_writable,
         )
     context_limits = live_context_limits(agent_layer)
 

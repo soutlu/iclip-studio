@@ -200,7 +200,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
 
         按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。
         成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
-        一段对话生成的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找；上传的音乐不挂对话，按属主列。
+        一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传
+        都在里面；没挂对话的上传按属主列。
         """
 
         jobs = await service.list_recent(

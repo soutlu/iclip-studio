@@ -624,6 +624,7 @@ class SettledRecords:
         kind: GenerationKind,
         url: str,
         content_md5: str | None,
+        conversation_id: uuid.UUID | None,
     ) -> UploadRecord:
         first = (
             None if content_md5 is None else await self._repo.find_video_upload_by_md5(content_md5)
@@ -636,6 +637,7 @@ class SettledRecords:
                     kind=kind,
                     operation=OPERATION_UPLOAD,
                     url=url if first is None else _settled_url(first),
+                    conversation_id=conversation_id,
                     content_md5=content_md5,
                 )
             ]

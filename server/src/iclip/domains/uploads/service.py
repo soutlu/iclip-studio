@@ -53,7 +53,15 @@ class RecordUpload(Protocol):
         kind: MediaKind,
         url: str,
         content_md5: str | None,
+        conversation_id: uuid.UUID | None,
     ) -> RecordedUpload: ...
+
+
+class ConversationWritable(Protocol):
+    """主体能不能改这段对话：看不见抛 ``NotFound``，看得见却不是属主（或已删除）抛
+    ``PermissionDenied``。由组合根接到对话域。"""
+
+    async def __call__(self, principal: Principal, conversation_id: uuid.UUID, /) -> object: ...
 
 
 class FindRecordedUpload(Protocol):
@@ -72,11 +80,13 @@ class UploadService:
         record: RecordUpload,
         find_recorded: FindRecordedUpload,
         fetch: FetchBytes,
+        conversation_writable: ConversationWritable,
     ) -> None:
         self._objects = objects
         self._record = record
         self._find_recorded = find_recorded
         self._fetch = fetch
+        self._conversation_writable = conversation_writable
 
     def sign_upload(self, principal: Principal, body: UploadSignIn) -> UploadTicket:
         kind, ext, normalized = _accepted_type(body.content_type)
@@ -94,7 +104,15 @@ class UploadService:
             api_key_id=principal.api_key_id,
         )
 
-    async def confirm(self, principal: Principal, upload_id: uuid.UUID) -> ConfirmedUpload:
+    async def confirm(
+        self,
+        principal: Principal,
+        upload_id: uuid.UUID,
+        *,
+        conversation_id: uuid.UUID | None = None,
+    ) -> ConfirmedUpload:
+        """``conversation_id`` 只收音乐，主体要是那段对话的属主；记过的上传照旧交回，不再看它。"""
+
         recorded = await self._find_recorded(upload_id)
         if recorded is None:
             found = await self._objects.find_object(
@@ -103,12 +121,17 @@ class UploadService:
             if found is None:
                 raise Conflict("这个文件还没传上来，传完再确认")
             kind = _checked_kind(found)
+            if conversation_id is not None:
+                if kind != "audio":
+                    raise ValidationFailed("只有音乐能挂到对话上")
+                await self._conversation_writable(principal, conversation_id)
             recorded = await self._record(
                 principal,
                 upload_id=upload_id,
                 kind=kind,
                 url=self._objects.public_url(found.object_key),
                 content_md5=_content_md5(kind, found),
+                conversation_id=conversation_id,
             )
             if recorded.object_upload_id == upload_id:
                 return ConfirmedUpload(
@@ -151,7 +174,12 @@ class UploadService:
             metadata=audit_metadata(user_id=principal.user_id, api_key_id=principal.api_key_id),
         )
         recorded = await self._record(
-            principal, upload_id=upload_id, kind="image", url=stored, content_md5=None
+            principal,
+            upload_id=upload_id,
+            kind="image",
+            url=stored,
+            content_md5=None,
+            conversation_id=None,
         )
         return recorded.url
 
@@ -217,6 +245,7 @@ def _check_dimensions(width: int, height: int) -> None:
 
 
 __all__ = [
+    "ConversationWritable",
     "FetchBytes",
     "FindRecordedUpload",
     "RecordUpload",

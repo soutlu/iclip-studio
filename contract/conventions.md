@@ -167,7 +167,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 | `event.session.created` | `session_id` 在信封上，payload 是整行 `ConversationOut` | 新出现一段对话：新建（含替人办事）、分叉出的副本；带同一个 id 重发建对话不发 |
 | `event.session.updated` | 同上 | 行变了：改名、换合集、换需求单、标或取消收尾（含提交出片抹掉收尾标记）、开跑记录运行（新的 `lastRunId`，同时抹掉收尾标记） |
 | `event.session.deleted` | `session_id` 在信封上，payload `{session_id}` | 属主删掉了这段对话 |
-| `event.generation.changed` | `session_id` 在信封上（任务没有来源对话时省略），payload `{id, kind, operation, status, shot_index, metadata}`；`shot_index` 是视频的镜头组编号（同 `GenerationOut.shotIndex`），`metadata` 是调用方自带的标签原样带出，两者为空时省略 | 生成任务的业务状态每跳一格：`pending` / `submitting` / `submitted` / `completed` / `failed`；切图与上传落库即完成，只发一帧 `completed`，上传不挂对话，帧上没有 `session_id` |
+| `event.generation.changed` | `session_id` 在信封上（任务没有来源对话时省略），payload `{id, kind, operation, status, shot_index, metadata}`；`shot_index` 是视频的镜头组编号（同 `GenerationOut.shotIndex`），`metadata` 是调用方自带的标签原样带出，两者为空时省略 | 生成任务的业务状态每跳一格：`pending` / `submitting` / `submitted` / `completed` / `failed`；切图与上传落库即完成，只发一帧 `completed`；上传只有挂了对话的音乐带 `session_id` |
 
 - **发给属主和治理者**，不是见者有份：连接归谁由它握手时的主体定；持 `users:manage` 的连接收全平台的帧。权限按握手时快照，吊销后要重连才生效。
 - `event.session.work_changed` 的 `last_turn_reason` 只在 `busy: false` 的那几帧上有：帧一律
@@ -241,6 +241,15 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
   - `POST .../film/image-generations` 体是 `{ node, prompt?, filmVersion, runVersion }`，按描述给一张图出一张新的，答复 `202` 与 `{ jobId }`。模型按文件里写的，不收；`prompt` 是编辑器里改过的 `{ text, referenceImageUrls }`（最多 10 张），只用这一次，不给就用文件里的描述；参考图按在描述里第一次出现的先后排进 `referenceImageUrls`，`text` 里写成 `@ImageN`，N 是它在列表里的位置。这张图的参考图列表里有没图的，不论给不给 `prompt` 都是 `422`，`detail` 列出缺哪几张。生成不写运行文件：结果只是这张图多一个版本，不自动用上，要人用 `PUT .../film/image` 选用。用户给的图、没接生图模型、没开媒体生成都是 `422`。生成记录的 `metadata.film_node` 是节点名，编辑器版本条按它列。
   - `POST .../film/video-generations` 体是 `{ video, model, resolution, generateAudio, filmVersion, runVersion }`，给一组出片，答复 `202` 与 `{ jobId }`。镜头组与参考图按文件拼，这组参考图列表里有没图的是 `422`，`detail` 列出缺哪几张；镜号是组号，`metadata.film_node` 是视频节点名；模型、清晰度、声音是出片栏这次选的，不写回文件，模型的规则同 §11；出片栏默认选这组的 `model`（文件里写的），它不在可选模型里时用服务端的默认。
   - 这几个写端点都只有属主能用，口径同 `PUT .../workspace/file`；版本对不上是 `409`，分镜有问题时是 `422`；改字、换图与改画幅答复改完的整页，形状同 `GET`。写文件照常发文件变更帧，生成照常发 `generation.changed`。
+
+### 整片草稿
+
+语义见 [CONTEXT.md「整片草稿」](../docs/CONTEXT.md#术语)，文档的字段与边界以合同里的 `WholeFilmDocument` 为准。
+
+- `GET /conversations/{id}/whole-film/draft` 答复 `{ revision, document, updatedAt }`，可见范围同读工作区文件，读不到这段对话是 `404`。还没存过是正常状态，答复 `{ revision: 0, document: null, updatedAt: null }`。
+- `PUT` 同一地址整份保存，体是 `{ revision, document }`，答复 `{ revision, updatedAt }`。`revision` 是读到的那一版，还没有草稿时给 `0`；对不上是 `409`，`detail` 是「整片草稿已经有更新的一版，重新读取后再改」，草稿不变。存成功版本号加一，第一次存是 `1`。只有属主能存，口径同 `PUT .../workspace/file`；存草稿不发实时帧。
+- 文档不合规矩是 `422`，`detail` 是 `document: <原因>`（字段自身的边界是 `document.<字段路径>: <原因>`）：画面轨不从 0 起或没有首尾相接，片头不在第一段、片尾不在最后一段，总长超过上限，片段 id 在画面、转场与包装里重复，转场接的不是画面轨里不在末尾的一段、或一段后面接了两个，包装超出整片或彼此重叠，同一句字幕改了两次。
+- 引用的记录不合格也是 `422`，不区分「没有这条」与「不是这段对话的」：画面轨每段的 `sourceJobId` 要是这段对话自己的或继承来的一条已完成的出片或合成；`music.jobId` 要是这段对话的一条已完成的音频记录（生成的，或确认时挂到这段对话的上传，§10）；`captions.edits[].subtitleJobId` 要是一条字幕记录，来源是画面轨某段的 `sourceJobId`。组件名与 `variables` 不对照组件库。
 
 ### 分叉
 
@@ -383,10 +392,11 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 类型、大小和图片尺寸边界以 [上传规则](../server/src/iclip/domains/uploads/models.py) 为准。直传图片在 `sign` 时校验客户端声明的宽高；`confirm` 按桶中对象校验类型和大小，不合格返回 `422`，字节仍留在桶里，不落记录。
 - 桶内没有对应对象时 `confirm` 返回 `409`，不落记录；签名成功本身不代表上传完成。
 - 音乐与视频一样，`sign` 时不报宽高。
-- **上传记录**：`kind` 按桶里的类型定（`image` / `video` / `audio`），`operation` 是 `upload`，状态 `completed`，`outputUrl` 就是交回的 `url`；不挂对话，没有请求（`request` 为 `null`）与来源。记录 id 就是 `uploadId`，开了媒体生成时 `GET /generations/{uploadId}` 读得到（§11）；没开时那组接口不挂，记录照落。视频编辑的参考片段也走这条协议，落一条视频上传记录（§11「视频编辑：编辑段与合成」）。
+- **上传记录**：`kind` 按桶里的类型定（`image` / `video` / `audio`），`operation` 是 `upload`，状态 `completed`，`outputUrl` 就是交回的 `url`；没有请求（`request` 为 `null`）与来源，只有音乐可以挂对话（见下文「挂到对话」），其余不挂。记录 id 就是 `uploadId`，开了媒体生成时 `GET /generations/{uploadId}` 读得到（§11）；没开时那组接口不挂，记录照落。视频编辑的参考片段也走这条协议，落一条视频上传记录（§11「视频编辑：编辑段与合成」）。
 - **同一个视频文件只留一个地址**：确认视频时按桶里对象的 MD5 认出传过的文件，不论谁传的，交回最早那份的 `url`，`contentType`、`sizeBytes` 也是那份对象的；这次传上来的字节删掉，这条记录的 `outputUrl` 就是那个共用的地址。图片、音乐、不是一次整传的视频照旧交回这次的地址。两个人同时首次确认同一个文件时可能各留一个地址。
-- **替谁确认**：请求体可选，只有 `userName`。给了按替人办事换主体（§2），浏览器只能写自己的用户名；不给就记在当前主体名下，钥匙调用方不带也不报错，这一点与生成接口不同。
-- **`confirm` 可以重复调**：记过就交回记录上的地址，`contentType`、`sizeBytes` 按那个地址上的对象读，不再核对这次的对象；交回同一份结果、对应同一条记录，第二次的 `userName` 不改属主。那个地址上的对象不在桶里了返回 `409`。
+- **替谁确认**：请求体可选，`userName` 与 `conversationId` 都可以不给。`userName` 给了按替人办事换主体（§2），浏览器只能写自己的用户名；不给就记在当前主体名下，钥匙调用方不带也不报错，这一点与生成接口不同。
+- **挂到对话**：`conversationId` 把音乐记到那段对话上，之后按对话列音频读得到它（§11「音频记录」），整片草稿能拿它当背景音乐（§6「整片草稿」）。只收音乐，图片、视频给了是 `422`；主体（替人办事时是指名的人）要是那段对话的属主，口径同 `PUT .../workspace/file`：看不见的对话 `404`，看得见却不是属主或对话已删是 `403`。这些都不落记录。
+- **`confirm` 可以重复调**：记过就交回记录上的地址，`contentType`、`sizeBytes` 按那个地址上的对象读，不再核对这次的对象；交回同一份结果、对应同一条记录，第二次的 `userName` 不改属主，`conversationId` 不改挂的对话、也不核对。那个地址上的对象不在桶里了返回 `409`。
 - **转存是上传记录的第二个来源**：发消息时挂不上 OSS 处理参数的图片附件由服务端下载、存进桶（§6「附件」），同样落一条图片上传记录，`outputUrl` 是转存后的地址。属主是发消息的主体，对象带同样的 `x-oss-meta-*`；类型按文件内容认、不看对方报的类型，类型、大小与宽高按直传同一套规则核对。转存不经过 `sign` 与 `confirm`，记录 id 由服务端按（主体、对话、`prompt_id`、原地址）算出，同一条消息重发得到同一条记录。
 - 上传本身不会登记对话素材；把地址作为附件提交后，agent 才能按对话素材规则引用（§6）。转存出来的地址随那条消息登记成那段对话的素材，此外不登记别的。
 
@@ -460,7 +470,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 前端拿制作页（§6）的 `musicDescription` 原样当 `prompt`；它为 `null` 或对话没有工程文件时，由用户写一句。
 - 记录的 `request` 是 `{ model, prompt, format, sampleRate, channels }`：`model` 是 `qwen-audio-3.1-tts-next`，`prompt` 就是发出的那段，后三项是向模型要的音频（`wav`、48000、2）。完成后 `outputUrl` 是本系统桶里的 m4a：服务端下载模型给的音频，去掉首尾静音、统一响度、编成 48 kHz 双声道 AAC 后转存；`durationMs` 是规整后量出的时长。上传的音乐没有 `durationMs`。
 - 失败是终态，不自动重试：音乐模型连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂、没有 `request_id` 或没有音频地址 `PROVIDER_MALFORMED`；生成之后取不到模型给的音频 `OUTPUT_DOWNLOAD_FAILED`，规整失败（包括整段都是静音）`MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
-- 按 `GET /generations?kind=audio&conversationId=` 列一段对话生成的背景音乐，上传的音乐不挂对话，按属主列（`kind=audio&operation=upload`）；单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答音频记录。音频记录不计审计口径（§12）、不进资料库、不算对话的 `activity.videoGeneration`，也不是 `video.downloaded` 的主语。
+- 按 `GET /generations?kind=audio&conversationId=` 列一段对话的背景音乐，生成的与确认时挂到这段对话的上传（§10）都在里面；没挂对话的上传按属主列（`kind=audio&operation=upload`）；单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答音频记录。音频记录不计审计口径（§12）、不进资料库、不算对话的 `activity.videoGeneration`，也不是 `video.downloaded` 的主语。
 
 ### 图片
 

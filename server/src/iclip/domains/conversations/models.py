@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 TitleKind = Literal["default", "generated", "custom"]
 """标题来源，取值须与数据库检查约束同步。"""
@@ -56,6 +57,18 @@ IDLE_ACTIVITY = ConversationActivity()
 """无运行记录或活动信息时使用的空闲状态。"""
 
 
+@dataclass(frozen=True, slots=True)
+class WholeFilmDraft:
+    """一段对话的整片草稿：只有当前一份，每存一次版本号加一，第一次存是 1。"""
+
+    conversation_id: uuid.UUID
+    document: Mapping[str, Any]
+    """前端编辑器与渲染服务读写的那份 JSON，原样存取；形状见 ``whole_film_schemas``。"""
+    revision: int
+    updated_by: uuid.UUID
+    updated_at: datetime
+
+
 class EventWatermark(Protocol):
     """某一刻各段对话的会话事件水位，由组合根从广播方取来。
 
@@ -71,4 +84,11 @@ class EventWatermark(Protocol):
         ...
 
 
-__all__ = ["IDLE_ACTIVITY", "Conversation", "ConversationActivity", "EventWatermark", "TitleKind"]
+__all__ = [
+    "IDLE_ACTIVITY",
+    "Conversation",
+    "ConversationActivity",
+    "EventWatermark",
+    "TitleKind",
+    "WholeFilmDraft",
+]

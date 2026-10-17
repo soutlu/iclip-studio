@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, Final
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -25,7 +26,7 @@ class UploadSignIn(CamelModel):
 
 
 class UploadConfirmIn(CamelModel):
-    """确认上传时可选的请求体：替谁确认。"""
+    """确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。"""
 
     user_name: (
         Annotated[
@@ -34,6 +35,8 @@ class UploadConfirmIn(CamelModel):
         ]
         | None
     ) = None
+    conversation_id: uuid.UUID | None = None
+    """只收音乐，要是自己的对话；记过的上传再确认时不看它。"""
 
 
 class UploadConfirmedOut(CamelModel):
