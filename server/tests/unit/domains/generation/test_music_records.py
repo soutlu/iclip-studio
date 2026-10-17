@@ -26,7 +26,7 @@ from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.provider import ProviderError, ProviderSubmission
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
 from iclip.domains.generation.schemas import MAX_MUSIC_PROMPT_CHARS, MusicRequest
-from iclip.domains.generation.service import GenerationService, MusicTarget, SubtitleTarget
+from iclip.domains.generation.service import GenerationService, ProviderTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
@@ -48,7 +48,7 @@ from tests.helpers.generation import (
 from tests.helpers.identity import InMemoryUserRepository
 
 MODEL = "qwen-audio-3.1-tts-next"
-MUSIC = MusicTarget(provider=FAKE_MUSIC_PROVIDER, model=MODEL)
+MUSIC = ProviderTarget(provider=FAKE_MUSIC_PROVIDER, model=MODEL)
 MUSIC_URL = "https://cdn.test/iclip/agent/generated-music/m.m4a"
 
 
@@ -84,7 +84,7 @@ class World:
 def build_world(
     jobs: list[GenerationJob],
     *,
-    music: MusicTarget | None = MUSIC,
+    music: ProviderTarget | None = MUSIC,
     music_submission: ProviderSubmission | Exception | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
@@ -127,7 +127,7 @@ def build_world(
         lineage=lineage or FixedLineage(),
         media_probe=FakeMediaProbe(),
         brand_templates=FixedBrandTemplates(),
-        subtitles=SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
+        subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,
     )
     holder["service"] = service

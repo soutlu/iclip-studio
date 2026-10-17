@@ -1,5 +1,3 @@
-"""唯一组合根：读配置、建引擎、装配模块、组 FastAPI app。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -59,6 +57,7 @@ from iclip.config import (
     ResolvedAgent,
     ResolvedMediaGeneration,
     ResolvedProductCatalog,
+    ResolvedQwenService,
     RuntimeConfig,
     resolve_settings,
 )
@@ -78,12 +77,12 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.module import (
     GenerationModule,
     ImageModelConfig,
-    MusicConfig,
-    SubtitleConfig,
+    QwenServiceConfig,
     build_generation_module,
 )
 from iclip.domains.generation.ports import BrandTemplates, ConversationLineage
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
+from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
 from iclip.domains.generation.service import ClearCompletion, SettledRecords
@@ -148,11 +147,6 @@ _logger = structlog.stdlib.get_logger(__name__)
 def _object_store(
     settings: ObjectStoreEnv | None, injected: PublicBucket | None
 ) -> tuple[PublicBucket | None, Callable[[str], str]]:
-    """公开对象存储：素材上传、生成结果转存、镜头帧共用这一个（测试可注入替身）。
-
-    第二项是本服务下载本桶对象前的地址换算：配了内网 endpoint 时把本桶地址换成内网地址；没有
-    对象存储或注入了替身时原样返回。"""
-
     if injected is not None:
         return injected, _as_is
     if settings is None:
@@ -173,8 +167,6 @@ def _as_is(url: str) -> str:
 
 
 def _namespace_owner(namespace: str) -> tuple[uuid.UUID, uuid.UUID] | None:
-    """从工作区命名空间解析属主与对话；非对话命名空间返回 None。"""
-
     try:
         return parse_namespace(namespace)
     except ValueError:
@@ -182,10 +174,6 @@ def _namespace_owner(namespace: str) -> tuple[uuid.UUID, uuid.UUID] | None:
 
 
 class AnnouncingFileStore:
-    """工作区写入后发送 event.fs.changed，存储实现与连接管理通过组合根适配。
-
-    所有写入共用 FileStore 入口；非对话命名空间不发送通知，通知投影不影响存储结果。"""
-
     def __init__(self, inner: FileStore, live: LiveConnections) -> None:
         self._inner = inner
         self._live = live
@@ -222,14 +210,10 @@ class AnnouncingFileStore:
 
 
 def _conversation_of(deps: object) -> str | None:
-    """用量记到运行依赖里继承的对话上；不是本系统的运行依赖就不记。"""
-
     return deps.conversation_id if isinstance(deps, AgentRunDeps) else None
 
 
 def _install_hup_reload(agent_layer: CurrentAgentLayer) -> bool:
-    """SIGHUP 触发热重载。装不上（非主线程、Windows）只告警，进程照常起，只是不能热重载。"""
-
     try:
         asyncio.get_running_loop().add_signal_handler(signal.SIGHUP, agent_layer.reload)
     except (AttributeError, NotImplementedError, RuntimeError, ValueError) as exc:
@@ -239,8 +223,6 @@ def _install_hup_reload(agent_layer: CurrentAgentLayer) -> bool:
 
 
 def _require_ffmpeg(required: bool) -> None:
-    """启动时验证 ffmpeg 与 ffprobe，避免用得上它的功能在调用时才暴露部署缺失。"""
-
     if required and not ffmpeg_available():
         raise RuntimeError(
             "PATH 上找不到 ffmpeg/ffprobe：取帧与出图要用它抽帧切格，视频裁剪拼接要用它切段合成，"
@@ -258,8 +240,6 @@ def _product_catalog_engine(
 
 
 def _read_only_engine(database_url: str) -> AsyncEngine:
-    """为外部库设置会话级只读，独立于上游账号可能拥有的写权限。"""
-
     return build_engine(
         database_url,
         connect_args={"server_settings": {"default_transaction_read_only": "on"}},
@@ -267,17 +247,24 @@ def _read_only_engine(database_url: str) -> AsyncEngine:
 
 
 def _media_codec(required: bool, injected: MediaCodec | None) -> MediaCodec | None:
-    """本地视频加工用的编解码：注入的优先（测试替身）；要用 ffmpeg 时启动探测一次；用不上为 None。"""
-
     if injected is not None:
         return injected
     return detect_codec() if required else None
 
 
 def _local_concurrency(configured: int | None, codec: MediaCodec) -> int:
-    """本地加工队列的并发：部署配置写了用写的，没写取编解码的默认值。"""
-
     return configured if configured is not None else codec.concurrency
+
+
+def _qwen_service(resolved: ResolvedQwenService | None) -> QwenServiceConfig | None:
+    if resolved is None:
+        return None
+    return QwenServiceConfig(
+        endpoint=QwenEndpoint(
+            url=resolved.url, api_key=resolved.api_key, timeout_seconds=resolved.timeout_seconds
+        ),
+        concurrency=resolved.concurrency,
+    )
 
 
 def _generation_module(
@@ -294,13 +281,6 @@ def _generation_module(
     compose_concurrency: int,
     fetch_url: Callable[[str], str],
 ) -> GenerationModule:
-    """将配置解析结果转换为生成域的运行设置，保持业务域与配置层隔离。
-
-    ``repo`` 是组合根建的那一个带状态广播的仓储，受理、队列与创建即完成的记录共用它；
-    ``queue_connector`` 是组合根建的那一个队列连接器，与参考视频的队列共用；
-    ``compose_concurrency`` 已按配置与 ``media_codec`` 取好；``fetch_url`` 是下载本桶对象前的
-    地址换算。"""
-
     return build_generation_module(
         repo,
         act_as=act_as,
@@ -337,22 +317,8 @@ def _generation_module(
             job_timeout_seconds=settings.job_timeout_seconds,
             compose_concurrency=compose_concurrency,
         ),
-        subtitles=SubtitleConfig(
-            url=settings.subtitle.url,
-            api_key=settings.subtitle.api_key,
-            concurrency=settings.subtitle.concurrency,
-            timeout_seconds=settings.subtitle.timeout_seconds,
-        )
-        if settings.subtitle is not None
-        else None,
-        music=MusicConfig(
-            url=settings.music.url,
-            api_key=settings.music.api_key,
-            concurrency=settings.music.concurrency,
-            timeout_seconds=settings.music.timeout_seconds,
-        )
-        if settings.music is not None
-        else None,
+        subtitles=_qwen_service(settings.subtitle),
+        music=_qwen_service(settings.music),
     )
 
 
@@ -376,17 +342,6 @@ def build_app(
     reload_source: ReloadSource | None = None,
     watch_paths: Sequence[Path] = (),
 ) -> FastAPI:
-    """装配 FastAPI 应用与资源生命周期，支持注入基础设施替身。
-
-    ``image_fetcher`` 替换转存附件图片用的出网下载（测试替身）；不给且有对象存储时建一个
-    ``PublicFetcher``，lifespan 里关掉。``reference_breakdowns`` / ``reference_tagger`` 替换参考视频的拆解与打标（测试替身）；只在
-    拆解已配置时用得上。``brand_template_probe`` 替换建品牌模板时下载视频量参数的那一步（测试替身）；
-    只在媒体生成开着时用得上。``media_codec`` 指定本地视频加工的编解码（测试替身）；不给且要用
-    ffmpeg 时，这里同步跑一次探测（几条短 ffmpeg 子进程）选出来。``reload_source`` 重读配置与
-    agent 声明，不给就沿用传入的 ``config`` 与 ``agents``；``watch_paths`` 下的文件一变就用它
-    热换 agent 层，SIGHUP 也触发同一次重载。
-    """
-
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
@@ -416,11 +371,8 @@ def build_app(
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
-    # 素材、生成与镜头能力依赖同一对象存储，先完成装配。服务端下载本桶对象的几处（查图片信息、
-    # 取帧与出图、拆解探时长与抽帧、编辑段探时长、合成）共用这一个地址换算。
     public_objects, fetch_url = _object_store(settings.object_store, object_store)
     _require_ffmpeg(settings.ffmpeg_required)
-    # 合成、拆解抽帧与分镜取帧共用这一档；三者都只在 ffmpeg_required 时装配。
     codec = _media_codec(settings.ffmpeg_required, media_codec)
     compose_concurrency = (
         _local_concurrency(settings.media_generation.compose_concurrency, codec)
@@ -441,30 +393,24 @@ def build_app(
             breakdown_concurrency=breakdown_concurrency,
         )
     if settings.shot_tools_missing:
-        # 声明了 shot_video 的 Agent 会在解析能力名时报错，这里先点名缺什么。
         _logger.warning(
             "配了 shot_video 段但取帧与出图装不起来", missing=list(settings.shot_tools_missing)
         )
     if settings.media_generation is None or settings.media_generation.subtitle is None:
-        # 字幕识别可以不开，但要让人看得出它没开：成片不会有字幕记录，手动识别会被拒。
         _logger.warning(
             "字幕识别未启用",
             media_generation=settings.media_generation is not None,
             requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
         )
     if settings.media_generation is None or settings.media_generation.music is None:
-        # 同上：整片编辑器里生成背景音乐会被拒，上传音乐不受影响。
         _logger.warning(
             "音乐生成未启用",
             media_generation=settings.media_generation is not None,
             requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
         )
-    # 图片信息查询、素材下载与拆解请求共用 HTTP 连接池。
     http_client = httpx.AsyncClient(follow_redirects=True)
     catalog_engine = _product_catalog_engine(settings.product_catalog, product_catalog_engine)
     owns_catalog_engine = catalog_engine is not None and product_catalog_engine is None
-    # 爆款视频读本库的爆款视频表，无条件提供。降级要按品类与品牌圈选同类款，需要 PDM 款目录；
-    # 缺它时降级整级失效，此处显式告警，不让调用方把「能力没开」误当成「查不到」。
     if catalog_engine is None:
         _logger.warning("未配置产品资料库，爆款视频降级不可用，未命中的款一律返回 none")
     inspirations = build_inspirations_module(
@@ -472,39 +418,27 @@ def build_app(
         PgStyleDirectory(catalog_engine) if catalog_engine is not None else NoStyleDirectory(),
     )
     workspace_store = PgFileStore(active_engine)
-    # 工作区写入通知依赖连接注册表。
     live_connections = LiveConnections()
     announcing_workspace_store = AnnouncingFileStore(workspace_store, live_connections)
 
-    # 附件接收与工具能力共用素材台账，保证登记和查询一致。
     material_ledger = PgMaterialLedger(active_engine)
     conversation_workspace = ConversationWorkspace(
         workspace_store, announcing_workspace_store, material_ledger
     )
 
     async def clear_conversation_completion(conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
-        """出片提交即在这段对话里又开工了，收尾标记不再成立。
-
-        对话模块在下面才装配好，这里靠闭包在调用时才取；两个域仍互不引用。"""
-
         await conversations.service.clear_completed(conversation_id, owner)
 
     async def conversation_readable(principal: Principal, conversation_id: uuid.UUID) -> bool:
-        """生成域按对话列副本继承的出片前，先问主体读不读得到这段对话；同样靠闭包晚取。"""
-
         return await conversations.service.readable(principal, conversation_id)
 
     conversation_repo = SqlConversationRepository(active_engine)
 
-    # 生成记录的仓储无条件建：上传确认要落上传行，媒体生成没开也一样。包一层状态广播，
-    # 受理、队列、上传与切图共用这一个实例，每一跳都经它落库。
     generation_repo = AnnouncingGenerationRepository(
         SqlGenerationRepository(active_engine), live_connections
     )
     settled_records = SettledRecords(generation_repo)
 
-    # 生成队列与参考视频的拆解队列共用一个连接器，lifespan 里由这里打开、关闭各一次。参考视频的
-    # worker 只看拆解配没配，不以媒体生成开没开为前提。
     connector: procrastinate.BaseConnector | None = None
     if settings.media_generation is not None or settings.iclip_studio is not None:
         connector = (
@@ -513,11 +447,9 @@ def build_app(
             else procrastinate.PsycopgConnector(conninfo=queue_dsn(settings.database_url))
         )
 
-    # 整片受理时读片头片尾与字体，与品牌资源端点共用一个仓储。
     brand_template_store = SqlBrandTemplateStore(active_engine)
     font_probe = brand_font_probe or template_font_prober(http_client, fetch_url)
 
-    # 镜头能力依赖生成服务，须先于 Agent 装配。
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
@@ -543,8 +475,6 @@ def build_app(
         )
 
     async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
-        """参考视频只收主体本人的视频上传；上传记录在生成域，媒体生成没开也在。"""
-
         try:
             job = await generation_repo.get(upload_id, owner=principal.user_id)
         except NotFound:
@@ -553,7 +483,6 @@ def build_app(
             return None
         return job.output_url
 
-    # 品牌模板只给整片用，跟着媒体生成挂；建模板要下载视频用 ffmpeg 量，媒体生成开着才有 ffmpeg。
     brand_templates: BrandTemplatesModule | None = None
     if generation is not None:
         if public_objects is None:
@@ -584,16 +513,13 @@ def build_app(
         act_as=identity.act_as,
         own_video_upload=own_video_upload,
         breakdown=breakdown_setup,
-        # 上传模块只在有对象存储时装配（见下面的 uploads）；没有它，资料库就不收上传。
         uploads_available=public_objects is not None,
-        # 读最新一次试生成只要生成仓储；提交要生成服务，媒体生成没开就不挂试生成。
         test_videos=GenerationTestVideos(
             generation_repo, generation.service if generation is not None else None
         ),
         testable=generation is not None,
     )
 
-    # step store、工作区与 identity 共用同一个 engine（表在 agent_runtime schema）。
     step_store = PgStepStore(
         active_engine, max_snapshots_per_run=settings.agent_runs.max_snapshots_per_run
     )
@@ -604,16 +530,12 @@ def build_app(
     collections = build_collections_module(collection_repo)
 
     async def list_owner_collections(owner: uuid.UUID, *, limit: int) -> tuple[CollectionInfo, ...]:
-        """将合集元信息适配到对话侧栏，保持两个领域独立。"""
-
         found = await collection_repo.list_recent(owner=owner, limit=limit)
         return tuple(
             CollectionInfo(id=item.id, name=item.name, updated_at=item.updated_at) for item in found
         )
 
     def on_activity(conversation_id: str, owner: uuid.UUID, state: ActivityState) -> None:
-        """同步向属主连接广播活动变化，避免 await 使连续状态通知乱序。"""
-
         live_connections.announce_activity(
             owner,
             uuid.UUID(conversation_id),
@@ -627,8 +549,6 @@ def build_app(
     async def activities_of(
         conversation_ids: Sequence[uuid.UUID],
     ) -> Mapping[uuid.UUID, ConversationActivity]:
-        """引擎的运行活动加上生成域的在途出片，拼成对话活动模型；两个域在这里才见面。"""
-
         states = await job_queue.activities([str(one) for one in conversation_ids])
         videos = (
             await generation.service.in_flight_by_conversation(conversation_ids, kind=KIND_VIDEO)
@@ -646,13 +566,9 @@ def build_app(
         }
 
     async def busy_conversation_ids(owner: uuid.UUID | None) -> frozenset[uuid.UUID]:
-        """票据表里的对话 id 是文本，转回对话域的 uuid；None 是全平台。"""
-
         return frozenset(uuid.UUID(one) for one in await job_queue.busy_conversation_ids(owner))
 
     async def latest_master_urls(conversation_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str]:
-        """生成域的成片接到对话审计列表上；媒体生成没开时与在途出片一样按没有算。"""
-
         if generation is None:
             return {}
         return await generation.service.latest_master_by_conversation(conversation_ids)
@@ -669,14 +585,11 @@ def build_app(
         video=settings.video,
         shot_video=settings.shot_video if settings.shot_tools_enabled else None,
         iclip_studio=settings.iclip_studio,
-        # 拆解配好时才有队列；对话里拆视频走它，与资料库读写同一行。
         reference_service=references.service if references.queue is not None else None,
         media_codec=codec,
     )
-    # 实时与历史共用显示注册表，保证工具卡渲染一致。
     tool_displays = build_display_registry(capability_table)
     transcript_store = TranscriptStore()
-    # 模型表与 agent 注册表是运行期可整体替换的一层；下面各处拿的都是读当前层的视图。
     layer_deps = LayerDeps(
         table=capability_table,
         step_store=step_store,
@@ -690,14 +603,11 @@ def build_app(
         source=reload_source if reload_source is not None else (lambda: (config, agents)),
     )
 
-    # 显示、续跑与分叉共用历史投影。
     transcript_history = TranscriptHistory(step_store, job_queue, tool_displays, DELEGATE_TOOL)
 
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
-    # 审计报表与资料库跨模块只读聚合，直接查表。
     audit = build_audit_module(PgAuditReports(active_engine))
-    # 做同款的拷贝与资料库的「做得了同款」共用一份文件表。
     same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
     library = build_library_module(
         PgLibraryReports(active_engine), has_production_files=same_style.has_production_files
@@ -734,8 +644,6 @@ def build_app(
         copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
         copy_same_style=same_style,
     )
-    # 确认上传经 uploads 声明的端口查、落上传记录；绑定方法与端口的签名结构一致，不另写适配器。
-    # 转存附件图片要写桶，出网下载器也只在有对象存储时建。
     uploads: UploadsModule | None = None
     owned_fetcher: PublicFetcher | None = None
     if public_objects is not None:
@@ -751,20 +659,13 @@ def build_app(
         )
     context_limits = live_context_limits(agent_layer)
 
-    # 删除不中止在跑或排队的轮，删掉之后才开跑的 run 碰到的对话已是墓碑：
-    # 这是预期内的常态，记一条 info 就够，不让 runner 的兜底打成带栈的 exception。
-
     async def name_conversation(row: JobRow) -> None:
-        """一轮开始时由 runner 在后台调用对话命名用例，连接引擎模型与对话条件更新。"""
-
         try:
             await conversations.service.name_at_turn_start(uuid.UUID(row.conversation_id), row.text)
         except NotFound:
             _logger.info("对话已删除，跳过自动起名", conversation_id=row.conversation_id)
 
     async def note_run_started(row: JobRow, run_id: str) -> None:
-        """run 开始时记到对话上：最近一次 run 与最近活动时间。"""
-
         try:
             await conversations.service.begin_run(
                 owner=row.owner_user_id,
@@ -780,10 +681,6 @@ def build_app(
             )
 
     async def deps_for_prompt(row: JobRow) -> AgentRunDeps:
-        """按队列记录的属主重建运行主体，以开跑时的账号状态和权限执行。
-
-        替人办事的消息，属主就是 ``user_name`` 指名的人；不带发消息那把 key 的身份与权限。"""
-
         account = await identity.service.get_account(row.owner_user_id)
         return AgentRunDeps(
             principal=identity.service.principal_for_user(account),
@@ -830,24 +727,20 @@ def build_app(
         )
         await transcripts.runner.start()
         if connector is not None:
-            # 接收 HTTP 请求前打开队列连接；两个队列共用它，只开一次。
             await connector.open_async()
         if generation is not None:
             generation.queue.start()
         if references.queue is not None:
-            # 对话里的拆解工具在本进程里等拆解结果，worker 必须和对话运行一起起停。
             references.queue.start()
         try:
             yield
         finally:
-            # 后台运行收尾需要落库，须先于 engine 关闭；两个 worker 都停了才关连接器。
             if references.queue is not None:
                 await references.queue.stop()
             if generation is not None:
                 await generation.queue.stop()
             if connector is not None:
                 await connector.close_async()
-            # 通过框架取消运行，等待终态落库后再关闭 engine。
             await transcripts.runner.shutdown()
             await http_client.aclose()
             if owned_fetcher is not None:
@@ -868,7 +761,6 @@ def build_app(
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
-        # status 恒为 ok（探活只看进程活着）；config 一段给配置发布脚本看热重载结果。
         return {"status": "ok", "config": agent_layer.status()}
 
     for router in identity.routers:
@@ -903,7 +795,6 @@ def build_app(
             act_as=identity.act_as,
             allowed_origins=settings.security.cors_allow_origins,
             live=live_connections,
-            # 发消息的附件经 uploads 转存；没有对象存储就不转，挂不上处理参数的图片受理时 422。
             import_attachments=(
                 PromptAttachmentImporter(uploads.service.import_image)
                 if uploads is not None
@@ -912,8 +803,7 @@ def build_app(
         )
     )
 
-    # 中间件顺序（先加的在内层）：Principal 解析在内，CORS 在外
-    # （preflight 无凭证也必须被 CORS 应答）。
+    # Starlette 里后加的中间件在外层；CORS 要在最外层，preflight 不带凭证也得被它应答。
     app.add_middleware(PrincipalMiddleware, resolver=identity.resolver)
     if settings.security.cors_allow_origins:
         app.add_middleware(

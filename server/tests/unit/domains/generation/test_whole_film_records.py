@@ -33,7 +33,7 @@ from iclip.domains.generation.ports import BrandTemplateFacts
 from iclip.domains.generation.provider import ProviderSubmission
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
 from iclip.domains.generation.schemas import KIND_AUDIO, KIND_VIDEO, MAX_COMPOSE_SEGMENTS
-from iclip.domains.generation.service import GenerationService, MusicTarget, SubtitleTarget
+from iclip.domains.generation.service import GenerationService, ProviderTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
@@ -144,8 +144,8 @@ def build_world(
         lineage=lineage or FixedLineage(),
         media_probe=media_probe or FakeMediaProbe(profiles={TAKE_URL: PORTRAIT}),
         brand_templates=brand_templates or FixedBrandTemplates(),
-        subtitles=SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
-        music=MusicTarget(provider=FAKE_MUSIC_PROVIDER, model="qwen-audio-3.1-tts-next"),
+        subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
+        music=ProviderTarget(provider=FAKE_MUSIC_PROVIDER, model="qwen-audio-3.1-tts-next"),
     )
     holder["service"] = service
     return World(store, queue, connector, service, cleared)

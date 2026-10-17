@@ -31,7 +31,7 @@ from iclip.domains.generation.provider import (
 )
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
 from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence
-from iclip.domains.generation.service import GenerationService, SubtitleTarget
+from iclip.domains.generation.service import GenerationService, ProviderTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
@@ -59,7 +59,7 @@ TAKE_URL = "https://cdn.test/video/take.mp4"
 TAKE_WATERMARK_URL = "https://cdn.test/video/take-wm.mp4"
 COMPOSITE_URL = "https://cdn.test/video/composite.mp4"
 MODEL = "qwen-audio-3.1-asr-flash"
-SUBTITLES = SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model=MODEL)
+SUBTITLES = ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model=MODEL)
 
 SENTENCES = (
     SubtitleSentence(start_ms=100, end_ms=1800, text="第一句。", speaker=0),
@@ -108,7 +108,7 @@ class World:
 def build_world(
     jobs: list[GenerationJob],
     *,
-    subtitles: SubtitleTarget | None = SUBTITLES,
+    subtitles: ProviderTarget | None = SUBTITLES,
     repo: InMemoryGenerationRepository | None = None,
     video_progress: ProviderProgress | None = None,
     compose_submission: ProviderSubmission | None = None,
@@ -307,9 +307,9 @@ async def test_failing_to_create_the_subtitle_record_leaves_the_take_completed()
     assert world.repo.jobs[take.id].status == STATUS_COMPLETED
     assert world.subtitles() == []
     errors = [entry for entry in logs if entry["log_level"] == "error"]
-    assert [(entry["event"], entry["video_job_id"]) for entry in errors] == [
-        ("成片完成后建字幕记录失败", take.id)
-    ]
+    assert [(entry["event"], entry["job_id"]) for entry in errors] == [
+        ("生成任务完成后的后续动作失败", take.id)
+    ], "只由队列记一条，不重复记"
 
 
 # --- 识别结果与失败 ---------------------------------------------------------------

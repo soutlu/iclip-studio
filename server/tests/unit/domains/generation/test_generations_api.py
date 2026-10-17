@@ -1733,9 +1733,11 @@ async def test_a_segment_from_an_edit_in_another_conversation_is_out_of_scope() 
     [
         (7000, 7.04, True),
         (7000, 7.06, False),
+        (1957, 2.007, True),
+        (1957, 2.008, False),
         (None, 30, True),
     ],
-    ids=["容差之内", "超出时长", "没量过时长不判"],
+    ids=["容差之内", "超出时长", "恰好多出容差", "多出容差加一毫秒", "没量过时长不判"],
 )
 async def test_a_segment_end_stays_within_its_sources_duration(
     duration_ms: int | None, end: float, accepted: bool
