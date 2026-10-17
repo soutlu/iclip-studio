@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
@@ -20,6 +20,7 @@ import { CardByline } from './card-byline'
 import { focusCardOpener } from './card-focus'
 import { LibraryFilters } from './library-filters'
 import { LibraryList } from './library-list'
+import { useLoadNextPageWhen } from './library-next-page'
 import { LibraryPageHeader } from './library-page-header'
 import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
@@ -54,12 +55,8 @@ export function WholeFilmsRoute({
   const selected = loaded.find((film) => film.conversationId === filmId)
   const filtered = !isDefaultScope(scope)
   const index = selected === undefined ? -1 : loaded.indexOf(selected)
-  const { fetchNextPage, hasNextPage, isFetching, isError } = query
   const needsPage = filmId !== null && (selected === undefined || index === loaded.length - 1)
-  useEffect(() => {
-    if (needsPage && hasNextPage && !isFetching && !isError)
-      void fetchNextPage({ cancelRefetch: false })
-  }, [needsPage, hasNextPage, isFetching, isError, fetchNextPage])
+  useLoadNextPageWhen(query, needsPage)
 
   const close = () => onFilmChange(null, true)
   return (
