@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Locator, type Page, type Response } from '@playwright/test'
+import { pauseMockResponses, releaseMockResponses } from './helpers'
 import { login } from './login'
 
 const COLLECTION_NAME = '千条历史任务'
@@ -197,7 +198,6 @@ test('Tab 与 Shift+Tab 连续走过未挂载的历史行，Enter 可打开聚�
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/c\/10000000-0000-4000-8000-000000000045$/)
 
-  // 从底栏反向进入，需接回整个已加载列表的末行，不能跳到当前虚拟窗口最后一个节点。
   await list.evaluate((element) => {
     element.scrollTop = 0
   })
@@ -257,11 +257,8 @@ test('连续追加剩余分页和切换会话不改变侧栏的阅读位置', as
 
 test('上方合集继续追加时，下方正在阅读的未分组会话留在原来的屏幕位置', async ({ page }) => {
   await prepareHistory(page)
-  // 未分组演示数据只有九行；较矮视口让滚到底后整个阅读区域都处于未分组列表内。
   await page.setViewportSize({ width: 1440, height: 600 })
-  await page.evaluate(() => {
-    window.localStorage.setItem('cue.mock.sidebar-pause-history', 'true')
-  })
+  await pauseMockResponses(page, paginationPath)
   const complete = page.waitForResponse(pageEnded)
   const firstContinuation = page.waitForRequest(
     (request) => new URL(request.url()).pathname === paginationPath,
@@ -287,9 +284,7 @@ test('上方合集继续追加时，下方正在阅读的未分组会话留在�
   })
   expect(firstVisibleTitle).toBeDefined()
   expect(firstVisibleTitle).not.toMatch(/^历史任务 /)
-  await page.evaluate(() => {
-    window.localStorage.removeItem('cue.mock.sidebar-pause-history')
-  })
+  await releaseMockResponses(page, paginationPath)
 
   await complete
   await expect

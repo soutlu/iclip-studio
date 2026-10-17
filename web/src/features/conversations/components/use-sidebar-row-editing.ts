@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 
 /**
- * 行的编辑开关：编辑结束且 refocus 时，把焦点还给 returnRef 指向的主控件（标题链接、合集按钮）。
- * 主控件在编辑期间卸载，等它重新挂上后再聚焦。
+ * 侧栏一行的原位编辑与行菜单状态。
+ *
+ * 编辑中或菜单打开期间以 `onInteractionChange(true)` 请虚拟列表保留这一行，结束或卸载时放开。
+ * 编辑结束且 `close({ refocus: true })` 时，等主控件重新挂上后把焦点还给 `returnRef`。
+ * `onMenuOpenChange` 交给行菜单的 MenuRoot，`onMenuCloseAutoFocus` 交给它的 MenuSurface。
  */
-export function useSidebarRowEditing<T extends HTMLElement>() {
+export function useSidebarRowEditing<T extends HTMLElement>(
+  onInteractionChange: (active: boolean) => void,
+) {
   const [editing, setEditing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const returnRef = useRef<T>(null)
   const refocusRef = useRef(false)
 
@@ -14,6 +20,11 @@ export function useSidebarRowEditing<T extends HTMLElement>() {
     refocusRef.current = false
     returnRef.current?.focus()
   }, [editing])
+  useEffect(
+    () => onInteractionChange(editing || menuOpen),
+    [editing, menuOpen, onInteractionChange],
+  )
+  useEffect(() => () => onInteractionChange(false), [onInteractionChange])
 
   return {
     editing,
@@ -23,5 +34,10 @@ export function useSidebarRowEditing<T extends HTMLElement>() {
       refocusRef.current = refocus
       setEditing(false)
     },
+    onMenuOpenChange: (open: boolean) => {
+      if (open) setMenuOpen(true)
+    },
+    // Radix 在 onCloseAutoFocus 时才把焦点还给触发按钮，行要保留到这之后。
+    onMenuCloseAutoFocus: () => setMenuOpen(false),
   }
 }

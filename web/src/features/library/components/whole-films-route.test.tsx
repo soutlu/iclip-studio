@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { stubScrollViewport } from '@/testing/scroll-viewport'
 import { DEFAULT_WHOLE_FILM_SCOPE, type WholeFilmCard } from '../whole-films.api'
 import { WholeFilmsRoute } from './whole-films-route'
 
@@ -45,16 +46,7 @@ function Harness({ initialFilm = null }: { initialFilm?: string | null }) {
 }
 
 beforeEach(() => {
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    return this.tagName === 'MAIN' ? 900 : 0
-  })
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    return this.tagName === 'MAIN' ? 1200 : 0
-  })
+  stubScrollViewport({ role: 'main', name: '整片资料库' }, { width: 1200, height: 900 })
   server.use(
     http.get('*/api/library/whole-films', () =>
       HttpResponse.json({ items: [film], nextCursor: null, total: 1 }),

@@ -12,7 +12,7 @@ import { WorkbenchOpenRequestProvider, WorkbenchRegistryProvider } from '@/share
 import { addMockCollection, addMockConversation, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithTooltip } from '@/testing/render'
-import { stubSidebarViewport } from '@/testing/sidebar-viewport'
+import { stubSidebarViewport } from '@/testing/scroll-viewport'
 import { FakeSocket, SERVER_HELLO } from '@/testing/ws'
 import { probeSsoLoginEnabled, refreshSessionUser } from './session'
 
@@ -24,7 +24,6 @@ const accountB = {
   displayName: '账号乙',
 }
 
-/** MSW 持有服务端会话；查询可延迟，验证旧响应不会回填新账号的数据。 */
 const serveAccounts = () => {
   let current: typeof accountA | null = accountA
   let failLogout = false
@@ -101,7 +100,6 @@ const serveAccounts = () => {
   }
 }
 
-/** 使用真实应用路由、登录弹窗、用户菜单和同一 QueryClient，避免替身缓存掩盖账号边界。 */
 const renderWorkspace = async () => {
   const socket = new FakeSocket()
   const router = createRouter({
@@ -120,7 +118,6 @@ const renderWorkspace = async () => {
       </TranscriptProvider>
     </QueryClientProvider>,
   )
-  // Provider 在微任务里建连，等它建好再握手。
   await act(async () => {})
   act(() => socket.deliver(SERVER_HELLO))
   const user = userEvent.setup()

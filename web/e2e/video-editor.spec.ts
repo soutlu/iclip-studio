@@ -1,7 +1,14 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { canvasPng, openConversation, openStoryboardShot, screenshotBothThemes } from './helpers'
+import {
+  canvasPng,
+  openConversation,
+  openStoryboardShot,
+  pauseMockResponses,
+  releaseMockResponses,
+  screenshotBothThemes,
+} from './helpers'
 
 /** mock 受理后 3 秒出结果；编辑段与合成各等一轮。 */
 const STEP_TIMEOUT = 15_000
@@ -206,22 +213,7 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
     await expectToolbarInsideCard(width, '可提交')
   }
 
-  // 在 HTTP 系统边界暂停发送，检查提交中状态；释放后仍交给真实 MSW 接口。
-  await page.evaluate(() => {
-    const originalFetch = window.fetch.bind(window)
-    const gate = new Promise<void>((resolve) =>
-      window.addEventListener('release-clip-submission', () => resolve(), { once: true }),
-    )
-    window.fetch = async (...args: Parameters<typeof fetch>) => {
-      const input = args[0]
-      const url = input instanceof Request ? input.url : String(input)
-      if (url.endsWith('/api/generations/video-edits')) {
-        await gate
-        window.fetch = originalFetch
-      }
-      return originalFetch(...args)
-    }
-  })
+  await pauseMockResponses(page, '/api/generations/video-edits')
   const submitted = page.waitForRequest(
     (request) =>
       request.url().endsWith('/api/generations/video-edits') && request.method() === 'POST',
@@ -237,7 +229,7 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
         '../.artifacts/design-qa/video-duration-slider/submitting-600',
       )
   }
-  await page.evaluate(() => window.dispatchEvent(new Event('release-clip-submission')))
+  await releaseMockResponses(page, '/api/generations/video-edits')
   const sent = await submitted
   await sent.response()
   const body = sent.postDataJSON() as Record<string, unknown>

@@ -31,7 +31,6 @@ export const screenshotBothThemes = async (page: Page, pathPrefix: string) => {
   }
   for (const colorScheme of ['light', 'dark'] as const) {
     await apply(colorScheme)
-    // 冻结动画，切主题引起的颜色过渡不会拍在中途。
     await page.screenshot({ animations: 'disabled', path: `${pathPrefix}-${colorScheme}.png` })
   }
   await apply('light')
@@ -72,6 +71,27 @@ export const canvasPng = async (
   )
   return Buffer.from(base64, 'base64')
 }
+
+type MockResponseGate = {
+  pause: (pathname: string) => void
+  release: (pathname: string) => void
+}
+
+/** 暂停这个路径的 mock 响应：请求照常发出，响应等 {@link releaseMockResponses} 后才回来。 */
+export const pauseMockResponses = (page: Page, pathname: string) =>
+  page.evaluate(
+    (path) =>
+      (window as unknown as { cueMockResponses: MockResponseGate }).cueMockResponses.pause(path),
+    pathname,
+  )
+
+/** 放行 {@link pauseMockResponses} 暂停的响应。 */
+export const releaseMockResponses = (page: Page, pathname: string) =>
+  page.evaluate(
+    (path) =>
+      (window as unknown as { cueMockResponses: MockResponseGate }).cueMockResponses.release(path),
+    pathname,
+  )
 
 /** video_shot.json 的一组镜头；分镜与复刻共用这份形状。 */
 export type VideoShot = {
