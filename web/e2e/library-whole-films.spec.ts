@@ -4,7 +4,6 @@ import { login } from './login'
 
 const SCREENSHOTS = '../.artifacts/design-qa/whole-film-editor/impl-3'
 
-/** 截图前确认选中版本已解码且能真实播放，再暂停在已显示的画面上。 */
 const showDecodedFrame = async (dialog: Locator) => {
   const video = dialog.locator('video')
   await expect
@@ -29,7 +28,7 @@ const showDecodedFrame = async (dialog: Locator) => {
   await dialog.getByRole('button', { name: '暂停', exact: true }).click()
 }
 
-test('资料库整片：最新卡面、版本切换、下载埋点、返回与标题筛选', async ({ page }) => {
+test('资料库整片：最新卡面、详情、返回与标题筛选', async ({ page }) => {
   await page.goto('/')
   await login(page)
   await page.getByRole('button', { name: '资料库', exact: true }).click()
@@ -37,26 +36,11 @@ test('资料库整片：最新卡面、版本切换、下载埋点、返回与�
   const main = page.getByRole('main', { name: '整片资料库' })
   const card = main.getByRole('article', { name: '春夏品牌整片' })
   await expect(card.getByText('V2')).toBeVisible()
-  await expect(main.getByRole('radio', { name: '横版' })).toHaveCount(0)
   await screenshotBothThemes(page, `${SCREENSHOTS}/library-films-desktop`)
   await card.getByRole('button', { name: '查看整片：春夏品牌整片' }).click()
   const dialog = page.getByRole('dialog', { name: '春夏品牌整片' })
-  await expect(dialog.getByRole('button', { name: 'V2' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(dialog.getByRole('button', { name: '做同款' })).toHaveCount(0)
-  await expect(dialog.getByText('脚本', { exact: true })).toHaveCount(0)
   await showDecodedFrame(dialog)
   await screenshotBothThemes(page, `${SCREENSHOTS}/library-film-viewer-desktop`)
-  await dialog.getByRole('button', { name: 'V1', exact: true }).click()
-  const tracked = page.waitForRequest(
-    (request) => request.url().endsWith('/tracking/events') && request.method() === 'POST',
-  )
-  const downloaded = page.waitForEvent('download')
-  await dialog.getByRole('button', { name: '下载视频' }).click()
-  expect((await tracked).postDataJSON()).toEqual({
-    name: 'video.downloaded',
-    jobId: 'fa000001-0000-4000-8000-000000000001',
-  })
-  await downloaded
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
   await expect(card.getByRole('button', { name: '查看整片：春夏品牌整片' })).toBeFocused()

@@ -3,27 +3,30 @@ import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { refuseFileDropProps } from '@/shared/ui/file-drop'
+import { useOpenerFocus } from './use-opener-focus'
 
 export const DialogRoot = DialogPrimitive.Root
-/** 自己排版表头的弹窗（不用 DialogHeader）拿它当可访问标题。 */
 export const DialogTitle = DialogPrimitive.Title
 
 type DialogSurfaceProps = ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   children: ReactNode
-  /** 不画圆角、底色与阴影：整块交给内部各面板自己承载表面。 */
   bare?: boolean
-  /** 画布弹层通过遮罩类名声明 nodrag / nopan。 */
+  /** 画布弹层通过遮罩类名声明 React Flow 的 nodrag / nopan。 */
   overlayClassName?: string
+  returnFocus?: boolean
 }
 
-/** 视口小于 600px 时使用底部 sheet，其余居中；层级与外观遵循设计契约。本体与遮罩是文件拖放的拒收面，协议见 file-drop。 */
 export function DialogSurface({
   bare = false,
   children,
   className,
   overlayClassName,
+  returnFocus = false,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: DialogSurfaceProps) {
+  const opener = useOpenerFocus()
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
@@ -42,6 +45,14 @@ export function DialogSurface({
           'max-sm:data-[state=closed]:zoom-out-100 max-sm:data-[state=closed]:slide-out-to-bottom max-sm:data-[state=open]:zoom-in-100 max-sm:data-[state=open]:slide-in-from-bottom',
           className,
         )}
+        onOpenAutoFocus={(event) => {
+          if (returnFocus) opener.remember()
+          onOpenAutoFocus?.(event)
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          if (returnFocus) opener.restore(event)
+        }}
         {...props}
         {...refuseFileDropProps}
       >

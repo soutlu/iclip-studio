@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubFontLoading } from '@/testing/font-loading'
 import { brandTemplateHandlers, findMockBrandTemplate } from '@/testing/mocks/brand-templates'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
-import { BrandTemplatesRoute, type BrandTemplateScope } from './brand-templates-route'
+import type { BrandTemplateScope } from '../brand-templates'
+import { BrandTemplatesRoute } from './brand-templates-route'
 
 function Harness({
   canManage = true,
@@ -32,42 +34,17 @@ function Harness({
   )
 }
 
-let loadFont: () => Promise<void>
-let previousFonts: PropertyDescriptor | undefined
-const installedFaces: object[] = []
+let fonts: ReturnType<typeof stubFontLoading>
 
 beforeEach(() => {
   server.use(...brandTemplateHandlers(() => ['generation:read', 'users:manage', 'uploads:write']))
-  loadFont = async () => {}
-  installedFaces.length = 0
-  vi.stubGlobal(
-    'FontFace',
-    class {
-      load() {
-        return loadFont().then(() => this)
-      }
-    },
-  )
-  previousFonts = Object.getOwnPropertyDescriptor(document, 'fonts')
-  Object.defineProperty(document, 'fonts', {
-    configurable: true,
-    value: {
-      add: (face: object) => installedFaces.push(face),
-      delete: (face: object) => {
-        const index = installedFaces.indexOf(face)
-        if (index < 0) return false
-        installedFaces.splice(index, 1)
-        return true
-      },
-    },
-  })
+  fonts = stubFontLoading()
 })
 
 afterEach(() => {
   cleanup()
-  if (previousFonts === undefined) Reflect.deleteProperty(document, 'fonts')
-  else Object.defineProperty(document, 'fonts', previousFonts)
   vi.unstubAllGlobals()
+  fonts.restore()
 })
 
 describe('BrandTemplatesRoute', () => {
@@ -293,7 +270,7 @@ describe('品牌资源与字体预览', () => {
       const user = userEvent.setup()
       await renderWithProviders(<Harness />)
       const card = await screen.findByRole('article', { name: '品牌片头 · 竖版' })
-      expect(within(card).getByText('视频参数不完整，无法用于合成')).toBeVisible()
+      expect(within(card).getByText(/视频参数不完整，无法用于合成/)).toBeVisible()
       expect(within(card).getByRole('button', { name: '编辑' })).toBeEnabled()
       await user.click(within(card).getByRole('button', { name: '预览资源：品牌片头 · 竖版' }))
       expect(screen.getByRole('dialog', { name: '品牌片头 · 竖版' })).toBeVisible()
@@ -301,24 +278,21 @@ describe('品牌资源与字体预览', () => {
   )
 
   it('实际字体加载完成之前显示加载状态，不展示替代字体预览', async () => {
-    let finish = () => {}
-    loadFont = () => new Promise<void>((resolve) => (finish = resolve))
+    fonts.setMode('deferred')
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await user.click(await screen.findByRole('button', { name: '预览资源：示例字体' }))
     const dialog = screen.getByRole('dialog', { name: '示例字体' })
     expect(within(dialog).getByText('正在加载字体…')).toBeVisible()
     expect(within(dialog).queryByText('Made for your next adventure.')).toBeNull()
-    expect(installedFaces).toHaveLength(0)
-    await act(async () => finish())
+    expect(fonts.installed.size).toBe(0)
+    await act(async () => fonts.finish())
     expect(await within(dialog).findByText('Made for your next adventure.')).toBeVisible()
-    expect(installedFaces).toHaveLength(1)
+    expect(fonts.installed.size).toBe(1)
   })
 
   it('字体加载失败显式报错，重试成功才恢复预览', async () => {
-    loadFont = async () => {
-      throw new Error('字体文件读取失败')
-    }
+    fonts.setMode({ error: new Error('字体文件读取失败') })
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await screen.findByText('字体预览不可用')
@@ -326,13 +300,13 @@ describe('品牌资源与字体预览', () => {
     const dialog = screen.getByRole('dialog', { name: '示例字体' })
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('字体加载失败')
     expect(within(dialog).queryByText('Made for your next adventure.')).toBeNull()
-    loadFont = async () => {}
+    fonts.setMode('immediate')
     await user.click(within(dialog).getByRole('button', { name: '重试' }))
     expect(await within(dialog).findByText('Made for your next adventure.')).toBeVisible()
-    expect(installedFaces).toHaveLength(1)
+    expect(fonts.installed.size).toBe(1)
   })
 
-  it('缺字时阻止预览，改回字体覆盖的文字后恢复', async () => {
+  it('缺字时阻止预览且不给重试，改回字体覆盖的文字后恢复', async () => {
     server.use(
       http.get('*/api/brand-templates/:id/font-info', () =>
         HttpResponse.json({
@@ -352,6 +326,7 @@ describe('品牌资源与字体预览', () => {
     await user.clear(input)
     await user.type(input, '缺字')
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('所选字体不包含部分文字')
+    expect(within(dialog).queryByRole('button', { name: '重试' })).toBeNull()
     expect(within(dialog).queryByText('缺字')).toBeNull()
     await user.clear(input)
     await user.type(input, 'Available')

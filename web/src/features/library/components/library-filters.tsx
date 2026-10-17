@@ -1,38 +1,28 @@
-/** 资料库的筛选条：全部 / 我生成的、按人、时间、竖版 / 横版。人的候选是名下有卡的归属用户名。 */
-
 import { dateRangeLabel } from '@/shared/lib/date-range'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { DateRangeFilter, FilterBarRoot, PickerFilter, useFilterBar } from '@/shared/ui/filter-bar'
 import type { PickerSource } from '@/shared/ui/search-picker'
-import { isDefaultScope, type LibraryScope, type Orientation } from '../library.api'
+import { isDefaultScope, type FilterScope, type Orientation } from '../library.api'
 
-type LibraryFiltersProps = {
-  scope: LibraryScope
-  onChange: (next: LibraryScope) => void
-  /** 当前登录账号的用户名；没有用户名的账号不显示「我生成的」。 */
+type LibraryFiltersProps<S extends FilterScope> = {
+  scope: S
+  onChange: (next: S) => void
   myUserName: string | null
   authors: PickerSource
-  /** 右侧的计数，如「共 286 条」。 */
   trailing?: React.ReactNode
-  /** 整片没有画幅筛选。 */
-  showOrientation?: boolean
-  /** 整片作者名单可能不在成片候选里，允许按明确输入的用户名筛选。 */
-  allowUsernameInput?: boolean
 }
 
 const orientationOf = (value: string): Orientation | null =>
   value === 'portrait' || value === 'landscape' ? value : null
 
-// 弹层触发器照 chip 的外形，与左右两组 chip 排在一条线上。
 const TRIGGER_CLASS =
   'h-(--control-height-sm) rounded-full border border-chip-border bg-chip-bg px-3.5 text-body-sm'
 
-/** 组与组之间的竖线；窄屏会折行，折到行首的竖线没有意义，直接不显示。 */
 function Divider() {
   return <span aria-hidden className="mx-1 h-4.5 w-px bg-border max-sm:hidden" />
 }
 
-export function LibraryFilters(props: LibraryFiltersProps) {
+export function LibraryFilters<S extends FilterScope>(props: LibraryFiltersProps<S>) {
   return (
     <FilterBarRoot className="gap-2">
       <Filters {...props} />
@@ -40,30 +30,34 @@ export function LibraryFilters(props: LibraryFiltersProps) {
   )
 }
 
-function Filters({
+function Filters<S extends FilterScope>({
   scope,
   onChange,
   myUserName,
   authors,
   trailing,
-  showOrientation = true,
-  allowUsernameInput = false,
-}: LibraryFiltersProps) {
+}: LibraryFiltersProps<S>) {
   const { close } = useFilterBar()
-  const apply = (patch: Partial<LibraryScope>) => {
+  const apply = (patch: Partial<FilterScope>) => {
     close()
     onChange({ ...scope, ...patch })
   }
   const mine = myUserName !== null && scope.userName === myUserName
+  const hasOrientation = scope.orientation !== undefined
 
   return (
     <>
       <ChipGroup
         aria-label="范围"
         onValueChange={(value) => {
-          // 「全部」清掉人、时间与画幅，关键词另由搜索框管；再点一次已选的 chip 等于取消。
           if (value === 'all')
-            apply({ orientation: null, range: 'all', since: null, until: null, userName: null })
+            apply({
+              range: 'all',
+              since: null,
+              until: null,
+              userName: null,
+              ...(hasOrientation ? { orientation: null } : {}),
+            })
           else if (value === 'mine') apply({ userName: myUserName })
           else if (mine) apply({ userName: null })
         }}
@@ -74,7 +68,6 @@ function Filters({
         {myUserName === null ? null : <FilterChip value="mine">我生成的</FilterChip>}
       </ChipGroup>
 
-      {/* 选了自己就算「我生成的」，这里不重复显示。 */}
       <PickerFilter
         className={TRIGGER_CLASS}
         fallbackLabel={scope.userName ?? '人'}
@@ -86,7 +79,6 @@ function Filters({
         value={mine ? null : scope.userName}
         width="w-60"
         withAvatars
-        customValueLabel={allowUsernameInput ? '按用户名筛选' : undefined}
       />
 
       <Divider />
@@ -100,7 +92,7 @@ function Filters({
         value={scope}
       />
 
-      {showOrientation ? (
+      {hasOrientation ? (
         <>
           <Divider />
           <ChipGroup

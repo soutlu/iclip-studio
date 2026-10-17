@@ -107,7 +107,7 @@ describe('WholeFilmsRoute', () => {
     expect(within(dialog).getByRole('group', { name: '整片版本' })).toBeVisible()
   })
 
-  it('按标题与作者筛选，不向端点发送画幅', async () => {
+  it('按标题与作者筛选，没有画幅筛选', async () => {
     const queries: URLSearchParams[] = []
     server.use(
       http.get('*/api/library/whole-films', ({ request }) => {
@@ -123,31 +123,56 @@ describe('WholeFilmsRoute', () => {
     await user.type(screen.getByRole('textbox', { name: '搜索整片标题' }), '秋日')
     await waitFor(() => expect(queries.at(-1)?.get('q')).toBe('秋日'))
     expect(queries.at(-1)?.get('userName')).toBe('tester')
-    expect(queries.every((query) => !query.has('orientation'))).toBe(true)
   })
 
-  it('作者不在已加载卡片或成片作者候选中时，可以直接按用户名筛选', async () => {
+  it('按人筛选的候选取自整片作者名单，不随翻到的卡片变化', async () => {
+    const viewport = stubIntersectionObserver()
     const queries: URLSearchParams[] = []
     server.use(
+      http.get('*/api/library/whole-films/authors', () =>
+        HttpResponse.json({ items: [{ userName: 'OnlyFilm.Owner', count: 1 }] }),
+      ),
       http.get('*/api/library/whole-films', ({ request }) => {
         const query = new URL(request.url).searchParams
         queries.push(query)
+        if (query.get('userName') === 'OnlyFilm.Owner')
+          return HttpResponse.json({
+            items: [{ ...film, title: '未加载作者的整片', userName: 'OnlyFilm.Owner' }],
+            nextCursor: null,
+            total: 1,
+          })
+        if (!query.has('cursor'))
+          return HttpResponse.json({ items: [film], nextCursor: 'next', total: 2 })
         return HttpResponse.json({
-          items:
-            query.get('userName') === 'OnlyFilm.Owner'
-              ? [{ ...film, title: '未加载作者的整片', userName: 'OnlyFilm.Owner' }]
-              : [film],
+          items: [
+            {
+              ...film,
+              conversationId: 'fa010002-0000-4000-8000-000000000002',
+              title: '第二页整片',
+              userName: 'Paged.Owner',
+            },
+          ],
           nextCursor: null,
-          total: 1,
+          total: null,
         })
       }),
     )
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    await screen.findByRole('article')
+    await screen.findByRole('article', { name: '秋日整片' })
+    await viewport.scroll(true)
+    expect(await screen.findByRole('article', { name: '第二页整片' })).toBeVisible()
+
     await user.click(screen.getByRole('button', { name: '人：人' }))
-    await user.type(screen.getByRole('combobox', { name: '搜索人' }), 'OnlyFilm.Owner')
-    await user.click(screen.getByRole('button', { name: '按用户名筛选：OnlyFilm.Owner' }))
+    const popup = await screen.findByRole('dialog', { name: '选择人' })
+    await waitFor(() =>
+      expect(
+        within(popup)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['OOnlyFilm.Owner']),
+    )
+    await user.click(within(popup).getByRole('option', { name: /OnlyFilm\.Owner/ }))
     expect(await screen.findByRole('article', { name: '未加载作者的整片' })).toBeVisible()
     expect(queries.at(-1)?.get('userName')).toBe('OnlyFilm.Owner')
   })

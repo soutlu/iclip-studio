@@ -4,13 +4,10 @@ import {
   SearchListOptions,
   SearchListRoot,
   SearchListStatus,
-  useSearchList,
   type SearchListOption,
   type SearchListOptionState,
 } from '@/shared/ui/search-list'
-import { Button } from '@/shared/ui/button'
 
-/** 一份候选及其读取状态：候选、加载中、失败原因与重试入口由查询方成套组装。 */
 export type PickerSource = {
   options: readonly SearchListOption[]
   isPending: boolean
@@ -21,17 +18,12 @@ export type PickerSource = {
 type SearchPickerProps = {
   source: PickerSource
   value: string | null
-  /** 当前已选项移出候选时继续显示的名称。 */
   selectedLabel?: string | undefined
   onChange: (value: string | null) => void
-  /** 候选的名词，用于搜索框、列表与状态文案。 */
   label: string
   withAvatars?: boolean
-  /** 候选不完整时允许按输入的值筛选，给出明确动作名称，例如「按用户名筛选」。 */
-  customValueLabel?: string | undefined
 }
 
-/** 筛选用的单选搜索列表：再次选择当前项即清除条件，弹层开关由外层管理。 */
 export function SearchPicker({
   source,
   value,
@@ -39,10 +31,8 @@ export function SearchPicker({
   onChange,
   label,
   withAvatars = false,
-  customValueLabel,
 }: SearchPickerProps) {
   const { options, isPending, error, onRetry } = source
-  // 候选刷新或移除后，已生效的条件仍需有一个可再次选择的清除入口。
   const choices =
     value !== null && !options.some((option) => option.id === value)
       ? [{ id: value, label: selectedLabel?.trim() || `已选${label}` }, ...options]
@@ -63,34 +53,7 @@ export function SearchPicker({
         renderOption={withAvatars ? renderOptionWithAvatar : undefined}
       />
       <SearchListStatus label={label} onRetry={onRetry} />
-      {customValueLabel === undefined ? null : (
-        <TypedValueChoice label={customValueLabel} options={choices} onChoose={onChange} />
-      )}
     </SearchListRoot>
-  )
-}
-
-function TypedValueChoice({
-  label,
-  options,
-  onChoose,
-}: {
-  label: string
-  options: readonly SearchListOption[]
-  onChoose: (value: string) => void
-}) {
-  const { query } = useSearchList()
-  const value = query.trim()
-  if (value === '' || options.some((option) => option.id === value)) return null
-  return (
-    <Button
-      className="h-auto min-h-10 justify-start text-left break-all whitespace-normal"
-      size="md"
-      variant="ghost"
-      onClick={() => onChoose(value)}
-    >
-      {label}：{value}
-    </Button>
   )
 }
 

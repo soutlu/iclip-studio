@@ -1,5 +1,5 @@
 /** 自定义字体在原视频画布上排版，预览只等比缩放；与服务端 ASS 的字号、边距和贪心换行一致。 */
-import { normalizeCaptionText } from '@/shared/lib/use-preview-font'
+import { normalizeCaptionText } from '@/shared/lib/caption-text'
 
 export type CaptionFrame = { width: number; height: number }
 export type CaptionFont = {

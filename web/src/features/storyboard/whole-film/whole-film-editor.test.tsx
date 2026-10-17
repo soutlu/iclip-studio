@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { guess } from 'web-audio-beat-detector'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { stubFontLoading } from '@/testing/font-loading'
 import { stubMediaDurations } from '@/testing/media'
 import { seedMockFilm } from '@/testing/mocks/film'
 import { server } from '@/testing/mocks/server'
@@ -1366,34 +1367,15 @@ describe('整片字幕字体', () => {
         fontBoundingBoxDescent: 12,
       }),
     } as unknown as CanvasRenderingContext2D)
-    let finish = () => {}
-    const loaded = vi.fn()
-    const descriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
-    Object.defineProperty(document, 'fonts', { configurable: true, value: new Set<FontFace>() })
-    vi.stubGlobal(
-      'FontFace',
-      class {
-        constructor(family: string, source: string) {
-          loaded(family, source)
-        }
-        load() {
-          return deferred
-            ? new Promise((resolve) => {
-                finish = () => resolve(this)
-              })
-            : Promise.resolve(this)
-        }
-      },
-    )
+    const fonts = stubFontLoading(deferred ? 'deferred' : 'immediate')
     return {
-      loaded,
-      finish: () => finish(),
+      created: fonts.created,
+      finish: fonts.finish,
       restore: () => {
         cleanup()
         restoreMedia()
         vi.unstubAllGlobals()
-        if (descriptor === undefined) Reflect.deleteProperty(document, 'fonts')
-        else Object.defineProperty(document, 'fonts', descriptor)
+        fonts.restore()
       },
     }
   }
@@ -1424,10 +1406,10 @@ describe('整片字幕字体', () => {
       await user.click(screen.getByRole('button', { name: '字幕字体：系统默认' }))
       await user.click(await screen.findByRole('menuitemradio', { name: '品牌黑体 · 品牌' }))
       await waitFor(() =>
-        expect(fontFile.loaded).toHaveBeenCalledWith(
-          `iclip-brand-font-${font.id}`,
-          `url("${font.url}")`,
-        ),
+        expect(fontFile.created).toContainEqual({
+          family: `iclip-brand-font-${font.id}`,
+          source: `url("${font.url}")`,
+        }),
       )
       expect(screen.getByRole('button', { name: '合成成片' })).toHaveAttribute(
         'aria-disabled',
@@ -1487,9 +1469,9 @@ describe('整片字幕字体', () => {
       await timeline()
       await user.click(screen.getByRole('button', { name: '字幕字体：系统默认' }))
       await user.click(await screen.findByRole('menuitemradio', { name: '品牌黑体 · 品牌' }))
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        '所选字体不包含部分文字，请选择其他字体',
-      )
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('所选字体不包含部分文字')
+      expect(within(alert).queryByRole('button', { name: '重试' })).toBeNull()
       expect(screen.getByRole('button', { name: '合成成片' })).toHaveAttribute(
         'aria-disabled',
         'true',

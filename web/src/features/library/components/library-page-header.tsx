@@ -1,21 +1,10 @@
-/** 资料库各页签共用的页头：标题、说明、搜索框与可选主动作。 */
-
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react'
 import { Input } from '@/shared/ui/field'
 import { TabsList, TabsTrigger } from '@/shared/ui/tabs'
+import { LIBRARY_TABS } from '../library-tabs'
 
-/** 停止输入这么久才按关键词重查。 */
 const SEARCH_DEBOUNCE_MS = 300
 
-/** 成片是默认页签；取值与路由查询串里的 `tab` 对应。 */
-const LIBRARY_TABS = [
-  { label: '成片', value: 'videos' },
-  { label: '整片', value: 'whole-films' },
-  { label: '参考视频', value: 'references' },
-  { label: '品牌模板', value: 'brand-templates' },
-] as const
-
-/** 页签行：放在路由的 TabsRoot 里，选中哪个由路由记在地址上。 */
 export function LibraryTabsList() {
   return (
     <TabsList
@@ -34,9 +23,7 @@ export function LibraryTabsList() {
 type LibraryPageHeaderProps = {
   description?: string
   search: { label: string; placeholder: string; value: string; onSearch: (q: string) => void }
-  /** 搜索框右边的主动作，如「上传视频」。 */
   action?: ReactNode
-  /** 页签行；由路由给。 */
   tabs: ReactNode
 }
 
@@ -51,7 +38,6 @@ export function LibraryPageHeader({ description, search, action, tabs }: Library
           )}
         </div>
         <div className="flex w-full items-center gap-3 sm:w-auto">
-          {/* 旁边有主动作时让出宽度。 */}
           <div className={action === undefined ? 'w-full sm:w-100' : 'min-w-0 flex-1 sm:w-80'}>
             <SearchBox {...search} />
           </div>
@@ -63,7 +49,6 @@ export function LibraryPageHeader({ description, search, action, tabs }: Library
   )
 }
 
-/** 搜索框：输入即时显示，停顿后才改筛选；外部把关键词清掉时跟着清。 */
 function SearchBox({
   label,
   placeholder,

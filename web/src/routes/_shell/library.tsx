@@ -6,6 +6,7 @@ import {
   BrandTemplatesRoute,
   LibraryTabsList,
   ReferencesRoute,
+  type BrandTemplateScope,
   type LibraryScope,
   type ReferenceScope,
   type WholeFilmScope,
@@ -13,16 +14,19 @@ import {
 import { ensureSessionUser, hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
 import {
+  brandTemplateScopeFromSearch,
   librarySearchSchema,
   referenceScopeFromSearch,
   scopeFromSearch,
+  searchFromBrandTemplateScope,
   searchFromReferenceScope,
   searchFromScope,
+  searchFromTab,
   searchFromWholeFilmScope,
+  tabFromSearch,
   wholeFilmScopeFromSearch,
 } from '../-library-search'
 
-// 资料库要登录且能看出片记录；页签、筛选范围与打开着的详情存在查询参数里，退回、刷新与分享链接都还原同一屏。
 export const Route = createFileRoute('/_shell/library')({
   beforeLoad: async () => {
     if (!hasPermission(await ensureSessionUser(), PERMISSION.generationRead)) {
@@ -40,8 +44,6 @@ function LibraryPage() {
   const navigate = Route.useNavigate()
   const router = useRouter()
   const { data: user } = useUser()
-  const tab = search.tab ?? 'videos'
-  // 从列表点开详情时压了一条历史，关掉就退回那条，手机上的返回手势也就是关详情。
   const pushedRef = useRef(false)
   const setScope = (next: LibraryScope) =>
     void navigate({ replace: true, search: searchFromScope(next) })
@@ -49,16 +51,11 @@ function LibraryPage() {
     void navigate({ replace: true, search: searchFromReferenceScope(next) })
   const setWholeFilmScope = (next: WholeFilmScope) =>
     void navigate({ replace: true, search: searchFromWholeFilmScope(next) })
-  // 换页签时两边的筛选不通用，一并清掉；与审计页的页签一样不新增历史记录。
+  const setBrandTemplateScope = (next: BrandTemplateScope) =>
+    void navigate({ replace: true, search: searchFromBrandTemplateScope(next) })
   const setTab = (value: string) => {
     pushedRef.current = false
-    void navigate({
-      replace: true,
-      search:
-        value === 'references' || value === 'whole-films' || value === 'brand-templates'
-          ? { tab: value }
-          : {},
-    })
+    void navigate({ replace: true, search: searchFromTab(value) })
   }
   const setDetail =
     (key: 'video' | 'reference' | 'film') => (id: string | null, replace: boolean) => {
@@ -81,7 +78,7 @@ function LibraryPage() {
   const myUserName = user?.username ?? null
 
   return (
-    <TabsRoot className={TAB_CONTENT_CLASS} onValueChange={setTab} value={tab}>
+    <TabsRoot className={TAB_CONTENT_CLASS} onValueChange={setTab} value={tabFromSearch(search)}>
       <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="videos">
         <LibraryRoute
           myUserName={myUserName}
@@ -107,24 +104,8 @@ function LibraryPage() {
         <BrandTemplatesRoute
           canManage={hasPermission(user, PERMISSION.usersManage)}
           canUpload={hasPermission(user, PERMISSION.uploadsWrite)}
-          scope={{
-            q: search.q ?? '',
-            kind: search.kind,
-            brand: search.brand,
-            includeDisabled: search.includeDisabled === true,
-          }}
-          onScopeChange={(scope) =>
-            void navigate({
-              replace: true,
-              search: {
-                tab: 'brand-templates',
-                q: scope.q.trim() || undefined,
-                kind: scope.kind,
-                brand: scope.brand,
-                includeDisabled: scope.includeDisabled ? true : undefined,
-              },
-            })
-          }
+          scope={brandTemplateScopeFromSearch(search)}
+          onScopeChange={setBrandTemplateScope}
           tabs={<LibraryTabsList />}
         />
       </TabsContent>

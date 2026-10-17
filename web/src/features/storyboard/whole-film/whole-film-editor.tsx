@@ -4,7 +4,8 @@ import { useBrandTemplates } from '@/shared/api/brand-templates'
 import { errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
-import { normalizeCaptionText, usePreviewFont } from '@/shared/lib/use-preview-font'
+import { normalizeCaptionText } from '@/shared/lib/caption-text'
+import { usePreviewFont } from '@/shared/lib/use-preview-font'
 import { Button, IconButton } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
@@ -308,7 +309,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           ? '所选字体已停用或不可用，无法合成；请更换字幕字体'
           : previewFont.kind === 'loading'
             ? '正在加载字幕字体…'
-            : previewFont.kind === 'failed'
+            : previewFont.kind === 'failed' || previewFont.kind === 'unsupported'
               ? previewFont.message
               : frame.isError
                 ? '正文画幅读取失败，无法排版字幕；请重试'
@@ -1077,16 +1078,18 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                     message={fontBlocked}
                     {...(previewFont.kind === 'failed'
                       ? { action: { label: '重试', onClick: previewFont.retry } }
-                      : frame.isError
-                        ? { action: { label: '重试', onClick: () => void frame.refetch() } }
-                        : templatesQuery.isError
-                          ? {
-                              action: {
-                                label: '重试',
-                                onClick: () => void templatesQuery.refetch(),
-                              },
-                            }
-                          : {})}
+                      : previewFont.kind === 'unsupported'
+                        ? {}
+                        : frame.isError
+                          ? { action: { label: '重试', onClick: () => void frame.refetch() } }
+                          : templatesQuery.isError
+                            ? {
+                                action: {
+                                  label: '重试',
+                                  onClick: () => void templatesQuery.refetch(),
+                                },
+                              }
+                            : {})}
                   />
                 ) : null}
                 {templateBlocked === undefined ? null : (

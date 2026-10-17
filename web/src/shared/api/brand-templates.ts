@@ -1,7 +1,6 @@
-/** 资料库与整片编辑器共用的品牌资源。参数与响应以生成合同为准。 */
 import { useQuery } from '@tanstack/react-query'
 import type { z } from 'zod'
-import { apiFetch, UserFacingError } from './client'
+import { apiFetch } from './client'
 import type {
   BrandFontConfirmIn,
   BrandTemplateCreateIn,
@@ -11,13 +10,17 @@ import {
   zBrandFontInfoOut,
   zBrandTemplateOut,
   zBrandTemplatesOut,
+  type zListBrandTemplatesBrandTemplatesGetQuery,
   zUploadTicketOut,
 } from './generated/zod.gen'
-import { putToStorage } from './media-upload'
+import { uploadFontFile } from './media-upload'
 
 export type BrandTemplate = z.output<typeof zBrandTemplateOut>
 export type BrandFontInfo = z.output<typeof zBrandFontInfoOut>
-type TemplateScope = { kind?: string; brand?: string; includeDisabled?: boolean }
+type TemplateScope = Pick<
+  z.input<typeof zListBrandTemplatesBrandTemplatesGetQuery>,
+  'includeDisabled'
+>
 
 export const brandTemplateQueryKeys = {
   all: ['brand-templates'] as const,
@@ -27,20 +30,15 @@ export const brandTemplateQueryKeys = {
 export const useBrandTemplates = (scope: TemplateScope = {}) =>
   useQuery({
     queryKey: brandTemplateQueryKeys.list(scope),
-    queryFn: ({ signal }) => {
-      const query = new URLSearchParams()
-      if (scope.kind !== undefined) query.set('kind', scope.kind)
-      if (scope.brand !== undefined) query.set('brand', scope.brand)
-      if (scope.includeDisabled === true) query.set('includeDisabled', 'true')
-      return apiFetch(
-        `/brand-templates${query.size === 0 ? '' : `?${query.toString()}`}`,
+    queryFn: ({ signal }) =>
+      apiFetch(
+        `/brand-templates${scope.includeDisabled === true ? '?includeDisabled=true' : ''}`,
         zBrandTemplatesOut,
         {
           signal,
           fallbackErrorMessage: '读取品牌模板失败',
         },
-      )
-    },
+      ),
   })
 
 export const createBrandTemplate = (body: BrandTemplateCreateIn): Promise<BrandTemplate> =>
@@ -66,25 +64,20 @@ export const getBrandFontInfo = (id: string, signal?: AbortSignal): Promise<Bran
     fallbackErrorMessage: '读取字体信息失败',
   })
 
-export const BRAND_FONT_ACCEPT = '.ttf,.otf'
-
-/** 字体直传与登记分开；登记失败时重用 uploadId，不重复上传同一文件。 */
-export const uploadBrandFontFile = async (
+export const uploadBrandFontFile = (
   file: File,
   onProgress?: (ratio: number) => void,
-): Promise<string> => {
-  const extension = /\.([^./]+)$/.exec(file.name)?.[1]?.toLowerCase()
-  if (extension !== 'ttf' && extension !== 'otf')
-    throw new UserFacingError('字体格式不受支持，请选择 TTF 或 OTF 文件')
-  if (file.size > 32 * 1024 * 1024) throw new UserFacingError('字体文件不能超过 32 MiB')
-  const ticket = await apiFetch('/brand-templates/fonts/sign', zUploadTicketOut, {
-    method: 'POST',
-    body: { contentType: extension === 'ttf' ? 'font/ttf' : 'font/otf' },
-    fallbackErrorMessage: '上传字体失败',
-  })
-  await putToStorage(ticket.upload, file, onProgress)
-  return ticket.uploadId
-}
+): Promise<string> =>
+  uploadFontFile(
+    file,
+    (contentType) =>
+      apiFetch('/brand-templates/fonts/sign', zUploadTicketOut, {
+        method: 'POST',
+        body: { contentType },
+        fallbackErrorMessage: '上传字体失败',
+      }),
+    onProgress,
+  )
 
 export const confirmBrandFont = (
   uploadId: string,
