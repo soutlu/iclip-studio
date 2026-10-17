@@ -54,7 +54,6 @@ def queue_dsn(database_url: str) -> str:
 
 
 OnCompleted = Callable[[GenerationJob], Awaitable[None]]
-"""一条记录带着产物地址转为完成之后的后续动作，收到的是刚写进去的那一行。"""
 
 
 class StillRunning(Exception):
@@ -140,8 +139,6 @@ class GenerationQueue:
         settings: GenerationQueueSettings | None = None,
         on_completed: OnCompleted | None = None,
     ) -> None:
-        """``on_completed`` 在一条记录带着产物地址转为完成之后调一次（字幕记录完成不调），装配用它
-        给成片排字幕识别；它失败不影响那条记录。"""
 
         self._repo = repo
         self._on_completed = on_completed
@@ -234,7 +231,6 @@ class GenerationQueue:
             return
 
         if submission.sentences is not None:
-            # 字幕识别同步出结果：结果是逐句字幕，不是产物地址。
             self._settled(
                 job,
                 await self._repo.mark_transcribed(
@@ -455,10 +451,6 @@ class GenerationQueue:
         _logger.warning("生成任务提交中断，已判失败", job_id=job.id)
 
     async def _completed(self, job: GenerationJob, written: GenerationJob | None) -> None:
-        """产物写成完成之后交给 ``on_completed``；没写进去（别的执行已下了结论）就不交。
-
-        ``on_completed`` 出任何错都只记日志：这一条已经完成落库，后续动作失败不能改它的结论，
-        也不能逃进重试策略让这次执行重跑。"""
 
         self._settled(job, written)
         if written is None or self._on_completed is None:

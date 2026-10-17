@@ -1,5 +1,3 @@
-"""品牌资源表与 Postgres 仓储。时间统一用数据库时钟；外部输入一律走绑定参数。"""
-
 from __future__ import annotations
 
 import uuid
@@ -33,10 +31,8 @@ brand_templates_table = Table(
     metadata_obj,
     Column("id", Uuid, primary_key=True),
     Column("kind", Text, nullable=False),
-    # 未指定所属品牌时为空，不从名称或地址推断。
     Column("brand", Text, nullable=True),
     Column("name", Text, nullable=False),
-    # 资源文件地址；以下媒体参数在不适用时为空。
     Column("url", Text, nullable=False),
     Column("width", Integer, nullable=True),
     Column("height", Integer, nullable=True),
@@ -48,10 +44,8 @@ brand_templates_table = Table(
         ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_brand_templates_created_by"),
         nullable=False,
     ),
-    # 不关联外键，与生成记录的 api_key_id 同一做法。
     Column("api_key_id", Uuid, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
-    # 为空表示在用；停用不删，已有整片的请求里记着快照。
     Column("disabled_at", DateTime(timezone=True), nullable=True),
     CheckConstraint("kind ~ '[^[:space:]]'", name="ck_brand_templates_kind"),
     CheckConstraint("brand IS NULL OR brand ~ '[^[:space:]]'", name="ck_brand_templates_brand"),
@@ -86,7 +80,6 @@ INSERT INTO iclip.brand_templates
 VALUES (:id, :kind, :brand, :name, :url, :width, :height, :duration_ms, :has_audio,
         :created_by, :api_key_id) ON CONFLICT (id) DO NOTHING {_RETURNING}""")
 
-# 停用时已停用的保留原来的停用时刻；不给的那一项不动。
 _UPDATE: Final = text(f"""
 UPDATE iclip.brand_templates
 SET name = coalesce(CAST(:name AS text), name),
@@ -117,8 +110,6 @@ def _row_of(row: RowMapping) -> BrandTemplate:
 
 
 class SqlBrandTemplateStore:
-    """品牌资源存取；是否可用于某项操作由消费它的用例明确校验。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 

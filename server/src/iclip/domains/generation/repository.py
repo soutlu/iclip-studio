@@ -129,10 +129,7 @@ class GenerationRepository(Protocol):
         provider_status: str,
         provider_task_id: str,
         only_if_status: GenerationStatus | None = None,
-    ) -> GenerationJob | None:
-        """字幕记录的成功终态：写下逐句结果（没有口播是空元组）、回执 id，补齐 submitted_at；没有
-        产物地址。指定 only_if_status 时原子校验状态，不匹配返回 None。"""
-        ...
+    ) -> GenerationJob | None: ...
 
     async def mark_failed(
         self,

@@ -114,7 +114,6 @@ generation_jobs_table = Table(
     Column("duration_ms", Integer, nullable=True),
     # 文件的 MD5，只有视频上传有：桶里是一次整传的对象时取它的 ETag，确认时按它认出同一个文件。
     Column("content_md5", Text, nullable=True),
-    # 字幕记录的逐句结果 [{start_ms, end_ms, text, speaker}]，完成时写入。none_as_null 理由同 request。
     Column("sentences", JSONB(none_as_null=True), nullable=True),
     Column("error_code", Text, nullable=True),
     Column("error_message", Text, nullable=True),
@@ -160,11 +159,6 @@ generation_jobs_table = Table(
     # 编辑段必有来源、原作与区间，合成必有来源与原作、没有区间；帧图编辑两种来源至多一个，
     # 切图必有库内来源，上传没有来源、不挂对话；切图与上传没有请求、创建即完成。
     # 请求那条的 IS NOT NULL 不能省：jsonb_typeof(NULL) 让 CHECK 直接放行。
-    # 字幕记录的两条与迁移 0025 同名同式：字幕记录是调模型的 generate，来源是被识别的视频，
-    # 没有原作、区间、镜号、外部地址与产物地址；逐句结果只有它能有，完成了就必须有。
-    # 种类与音频记录那条与迁移 0026 同名同式：音频是上传或生成的背景音乐，都没有来源、原作、区间、
-    # 镜号、外部地址与水印地址；生成的挂对话，完成了必有产物地址与时长。
-    # 视频那条与迁移 0027 同名同式：多一种整片，是没有来源、原作、镜号与区间的 compose，必挂对话。
     CheckConstraint(
         "kind IN ('video', 'image', 'subtitle', 'audio')", name="ck_generation_jobs_kind"
     ),
@@ -255,7 +249,6 @@ _MASTER: Final[ColumnElement[bool]] = and_(
         and_(_JOBS.operation == OPERATION_GENERATE, _JOBS.source_job_id.is_(None)),
     ),
 )
-"""成片：已完成、有地址的出片（没有来源的视频 generate）、合成或整片（都是 compose）；编辑段不是。"""
 
 
 class SqlGenerationRepository:

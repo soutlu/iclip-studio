@@ -110,10 +110,7 @@ def _positive_fraction(value: str) -> bool:
 
 
 async def probe_keyframes(path: Path) -> list[float]:
-    """第一条视频流的关键帧时刻（秒），升序。
-
-    时刻减去了容器的 ``start_time``：ffmpeg 的 ``trim`` 与 ``-ss`` 也从那里算起。"""
-
+    # 时刻减去了容器的 start_time：ffmpeg 的 trim 与 -ss 也从那里算起。
     stdout = await run(
         [
             "ffprobe",

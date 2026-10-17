@@ -79,8 +79,6 @@ class ProviderSubmission:
     duration_ms: int | None = None
     """产物量出来的时长（毫秒）；只有本地加工知道，完成时落进记录的时长列。"""
     sentences: tuple[SubtitleSentence, ...] | None = None
-    """同步识别出的逐句字幕；只有字幕识别给，给了就是这次的结果（空元组即没有口播），不再看
-    ``output_url``。"""
 
 
 @dataclass(frozen=True, slots=True)
