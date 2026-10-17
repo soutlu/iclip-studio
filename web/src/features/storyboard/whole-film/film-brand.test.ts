@@ -10,12 +10,12 @@ import {
   brandDuration,
   EMPTY_FILM,
   insertSegment,
-  MAX_FILM_SEGMENTS,
   setBrand,
   splitAt,
   trimSegment,
   wholeFilmDuration,
 } from './film-draft'
+import { MAX_FILM_SEGMENTS } from './film-limits'
 import { wholeFilmBody } from './film-submit'
 
 const template: VideoBrandTemplate = {

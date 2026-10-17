@@ -11,12 +11,15 @@ import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 import {
   putLane,
+  zFilmBrand,
+  zFilmFont,
+  zFilmMusicGain,
+  zVolume,
   type FilmMusic,
   type FilmSegment,
   type MaterialLane,
   type StoredFilm,
 } from './film-draft'
-import { zFilmBrand, zFilmFont, zFilmMusicGain } from './film-draft'
 
 export type DoneVersion = { job: GenerationJob; label: string; url: string }
 
@@ -60,7 +63,7 @@ const zVersionRequest = z.object({
           sourceJobId: z.string().min(1),
           startMs: z.number().int().nonnegative(),
           endMs: z.number().int().positive(),
-          volume: z.number().min(0).max(2).optional(),
+          volume: zVolume,
         })
         .refine((segment) => segment.endMs > segment.startMs),
     )
@@ -76,23 +79,22 @@ const zVersionRequest = z.object({
       audioJobId: z.string().min(1),
       url: z.string().min(1),
       offsetMs: z.number().int().nonnegative(),
-      volume: z.number().min(0).max(2).optional(),
+      volume: zVolume,
       gain: zFilmMusicGain.optional(),
     })
     .nullish(),
 })
 
-export const REBUILT_UPLOAD_NAME = '上传的音乐'
-
 type RebuildContext = {
   takeOf: (jobId: string) => string | undefined
+  templateName: (templateId: string) => string | undefined
   generatedMusic: ReadonlySet<string>
   newId: () => string
 }
 
 export const draftFromVersion = (
   job: GenerationJob,
-  { takeOf, generatedMusic, newId }: RebuildContext,
+  { takeOf, templateName, generatedMusic, newId }: RebuildContext,
 ): StoredFilm | undefined => {
   const parsed = zVersionRequest.safeParse(job.request)
   if (!parsed.success) return undefined
@@ -141,7 +143,7 @@ export const draftFromVersion = (
         : {
             kind: 'upload',
             jobId: music.audioJobId,
-            name: REBUILT_UPLOAD_NAME,
+            name: null,
             verifyAccess: true,
             url: music.url,
             userStart: roundToMs(music.offsetMs / 1000),
@@ -160,10 +162,13 @@ export const draftFromVersion = (
     film: {
       segments,
       texts: {},
-      manual: [],
       music: filmMusic,
-      ...(intro == null ? {} : { intro: { ...intro, name: '片头' } }),
-      ...(outro == null ? {} : { outro: { ...outro, name: '片尾' } }),
+      ...(intro == null
+        ? {}
+        : { intro: { ...intro, name: templateName(intro.templateId) ?? null } }),
+      ...(outro == null
+        ? {}
+        : { outro: { ...outro, name: templateName(outro.templateId) ?? null } }),
       ...(font === undefined ? {} : { font }),
     },
     lanes,

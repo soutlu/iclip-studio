@@ -1,13 +1,14 @@
-/** 整片预览的 PCM 混音。处理顺序与 contract/conventions §12 一致；浏览器重采样与限幅包络不承诺和
- * FFmpeg 逐采样相同。所有时间取视频时间线，只有音乐曲线取正文时间。 */
-
 import { gainAt, MUSIC_FADE_OUT_SECONDS, type GainPoint } from './film-music'
 
 export const FILM_AUDIO_RATE = 48_000
-const SOURCE_LUFS = -16
-const FILM_LUFS = -14
-const PEAK = 10 ** (-1.5 / 20)
-const EDGE_SECONDS = 0.05
+export const SPEECH_LOUDNESS_LUFS = -16
+export const MUSIC_LOUDNESS_LUFS = -16
+export const FILM_LOUDNESS_LUFS = -14
+export const PEAK_DBFS = -1.5
+export const SEGMENT_FADE_SECONDS = 0.05
+export const MAX_LOUDNESS_BOOST_DB = 20
+
+const PEAK = 10 ** (PEAK_DBFS / 20)
 
 export type FilmPcm = { sampleRate: number; channels: readonly Float32Array[] }
 export type FilmAudioSegment = {
@@ -25,8 +26,8 @@ export type FilmAudioMusic = {
   volume?: number
 }
 
-/** BS.1770 的 K 加权两级滤波器；系数生成与 libebur128 的 ebur128_init_filter 对账：
- * https://github.com/jiixyj/libebur128/blob/master/ebur128/ebur128.c 。只量声道能量，不处理真峰值。 */
+// 系数与 libebur128 的 ebur128_init_filter 一致：
+// https://github.com/jiixyj/libebur128/blob/master/ebur128/ebur128.c
 const kFilters = (rate: number) => {
   const shelf = Math.tan((Math.PI * 1681.974450955533) / rate)
   const q = 0.7071752369554196
@@ -53,8 +54,6 @@ const kFilters = (rate: number) => {
   ] as const
 }
 
-/** EBU R128 综合响度：400 ms 窗、100 ms 步长，先 -70 LUFS 绝对门限，再 -10 LU 相对门限。
- * 不足 400 ms、或没有超过门限的声音时为 -Infinity，和服务端一样不放大。输入是 mono / stereo。 */
 export const integratedLoudness = ({ sampleRate, channels }: FilmPcm): number => {
   const length = channels[0]?.length ?? 0
   const step = Math.round(sampleRate / 10)
@@ -98,15 +97,13 @@ export const integratedLoudness = ({ sampleRate, channels }: FilmPcm): number =>
   return -0.691 + 10 * Math.log10(mean(energies.filter((energy) => energy >= relativeGate)))
 }
 
-/** 服务端以两位小数 dB 施加增益，静音不调，最多放大 20 dB。 */
 const normalizationGain = (source: FilmPcm, target: number) => {
   const loudness = integratedLoudness(source)
   return Number.isFinite(loudness)
-    ? 10 ** (Number(Math.min(20, target - loudness).toFixed(2)) / 20)
+    ? 10 ** (Number(Math.min(MAX_LOUDNESS_BOOST_DB, target - loudness).toFixed(2)) / 20)
     : 1
 }
 
-/** 在任意采样率的 mono / stereo 上取样；mono 等功率铺到双声道，维持来源综合响度。 */
 const sampleAt = (source: FilmPcm, channel: number, seconds: number) => {
   const plane = source.channels[channel] ?? source.channels[0]
   if (plane === undefined || seconds < 0) return 0
@@ -116,8 +113,6 @@ const sampleAt = (source: FilmPcm, channel: number, seconds: number) => {
   return value * (source.channels.length === 1 ? Math.SQRT1_2 : 1)
 }
 
-/** 双声道联动的采样峰值限幅：提前 5 ms 收住突峰、50 ms 放开。包络与 FFmpeg alimiter 不同，
- * 但同样不自动拉满、不引入播放延迟，且每个输出采样均不超过 -1.5 dBFS。 */
 const limitPeak = (channels: readonly Float32Array[]) => {
   const length = channels[0]?.length ?? 0
   const envelope = new Float32Array(length)
@@ -136,9 +131,6 @@ const limitPeak = (channels: readonly Float32Array[]) => {
   }
 }
 
-/** 原声按整条来源测响度再裁段；模板也是普通段。音乐只铺正文，先归一再 duck / 淡出，两路相加后
- * 母线增益按未手调的参考混音计算，避免把用户调低的音量再次拉高；最后限幅。
- * 返回全新的 48 kHz stereo PCM，不修改调用方或查询缓存中的声音。 */
 export const mixFilmAudio = (
   segments: readonly FilmAudioSegment[],
   music: FilmAudioMusic | null,
@@ -151,21 +143,21 @@ export const mixFilmAudio = (
     segments.some((segment) => (segment.volume ?? 1) !== 1) ||
     (music !== null && (music.volume ?? 1) !== 1)
   const reference = adjusted ? [new Float32Array(count), new Float32Array(count)] : channels
-  const gains = new Map<FilmPcm, number>()
-  const sourceGain = (source: FilmPcm) => {
-    const known = gains.get(source)
+  const speechGains = new Map<FilmPcm, number>()
+  const speechGain = (source: FilmPcm) => {
+    const known = speechGains.get(source)
     if (known !== undefined) return known
-    const gain = normalizationGain(source, SOURCE_LUFS)
-    gains.set(source, gain)
+    const gain = normalizationGain(source, SPEECH_LOUDNESS_LUFS)
+    speechGains.set(source, gain)
     return gain
   }
   let at = 0
   for (const segment of segments) {
     const duration = segment.end - segment.start
     const length = Math.round(duration * FILM_AUDIO_RATE)
-    const fade = Math.min(EDGE_SECONDS, duration / 2)
+    const fade = Math.min(SEGMENT_FADE_SECONDS, duration / 2)
     if (segment.source !== null) {
-      const gain = sourceGain(segment.source)
+      const gain = speechGain(segment.source)
       for (let frame = 0; frame < length; frame += 1) {
         const clock = frame / FILM_AUDIO_RATE
         const level = gain * Math.min(1, clock / fade, (duration - clock) / fade)
@@ -180,17 +172,16 @@ export const mixFilmAudio = (
     at += length
   }
   if (music !== null) {
-    const gain = sourceGain(music.source)
+    const gain = normalizationGain(music.source, MUSIC_LOUDNESS_LUFS)
     const start = Math.round(music.bodyStart * FILM_AUDIO_RATE)
     const length = Math.round(music.bodyDuration * FILM_AUDIO_RATE)
     const fade = Math.min(MUSIC_FADE_OUT_SECONDS, music.bodyDuration)
-    // 后端按 10 ms 帧求值，同一帧 480 个采样复用一次曲线结果，避免逐采样扫描几百个曲线点。
+    // FFmpeg 渲染用 asetnsamples 按 10 ms 一帧求音量曲线，预览按同样的帧取值。
     const duckFrames = Array.from({ length: Math.ceil(music.bodyDuration * 100) }, (_, frame) =>
       gainAt(music.curve, frame * 10),
     )
     for (let frame = 0; frame < length && start + frame < count; frame += 1) {
       const clock = frame / FILM_AUDIO_RATE
-      // 后端 asetnsamples 的 10 ms 帧求值，结尾淡出按采样线性处理。
       const duck = duckFrames[Math.floor(frame / (FILM_AUDIO_RATE / 100))] ?? 0
       const level = gain * duck * Math.min(1, (music.bodyDuration - clock) / fade)
       for (const [index, channel] of channels.entries()) {
@@ -203,7 +194,10 @@ export const mixFilmAudio = (
     }
   }
   const result = { sampleRate: FILM_AUDIO_RATE, channels }
-  const gain = normalizationGain({ sampleRate: FILM_AUDIO_RATE, channels: reference }, FILM_LUFS)
+  const gain = normalizationGain(
+    { sampleRate: FILM_AUDIO_RATE, channels: reference },
+    FILM_LOUDNESS_LUFS,
+  )
   for (const channel of channels)
     for (let frame = 0; frame < channel.length; frame += 1)
       channel[frame] = (channel[frame] ?? 0) * gain

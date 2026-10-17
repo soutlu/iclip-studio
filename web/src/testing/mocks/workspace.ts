@@ -1033,7 +1033,6 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 整片与现有合成共用受理与完成通知，媒体字节仍用测试卡，不在浏览器里模拟 ffmpeg。
   http.post('*/api/generations/whole-films', async ({ request }) => {
     const parsed = zWholeFilmIn.safeParse(await request.json())
     if (!parsed.success) return HttpResponse.json({ detail: '整片参数不合法' }, { status: 422 })
@@ -1041,8 +1040,8 @@ export const workspaceHandlers = [
     const segments = []
     for (const segment of body.segments) {
       const source = findJob(body.conversationId, segment.sourceJobId)
-      if (source === undefined || !isFinishedTake(source) || source.outputUrl === null)
-        return HttpResponse.json({ detail: '素材不存在或不可使用' }, { status: 422 })
+      if (source?.outputUrl == null)
+        return HttpResponse.json({ detail: '素材不存在' }, { status: 404 })
       segments.push({ ...segment, url: source.outputUrl })
     }
     const brands: Record<string, unknown> = {}
@@ -1051,16 +1050,8 @@ export const workspaceHandlers = [
       const selected = body[position]
       if (selected == null) continue
       const template = findMockBrandTemplate(selected.templateId)
-      if (
-        template === undefined ||
-        template.disabledAt !== null ||
-        template.kind !== position ||
-        template.width === null ||
-        template.height === null ||
-        template.durationMs === null ||
-        template.hasAudio === null
-      )
-        return HttpResponse.json({ detail: '片头片尾模板不可用' }, { status: 422 })
+      if (template === undefined)
+        return HttpResponse.json({ detail: '片头片尾模板不存在' }, { status: 404 })
       brands[position] = {
         templateId: template.id,
         url: template.url,
@@ -1069,17 +1060,13 @@ export const workspaceHandlers = [
         durationMs: template.durationMs,
         hasAudio: template.hasAudio,
       }
-      brandMs += template.durationMs
+      brandMs += template.durationMs ?? 0
     }
     let font = null
     if (body.fontId != null) {
       const selectedFont = findMockBrandTemplate(body.fontId)
-      if (
-        selectedFont === undefined ||
-        selectedFont.kind !== 'font' ||
-        selectedFont.disabledAt !== null
-      )
-        return HttpResponse.json({ detail: '所选字体不可用' }, { status: 422 })
+      if (selectedFont === undefined)
+        return HttpResponse.json({ detail: '字体不存在' }, { status: 404 })
       font = {
         fontId: selectedFont.id,
         name: selectedFont.name,
@@ -1091,8 +1078,6 @@ export const workspaceHandlers = [
     }
     const durationMs =
       brandMs + segments.reduce((sum, segment) => sum + segment.endMs - segment.startMs, 0)
-    if (durationMs > 120_000)
-      return HttpResponse.json({ detail: '整片最长 120 秒' }, { status: 422 })
     const created = acceptGeneration({
       kind: 'video',
       operation: 'compose',
@@ -1157,13 +1142,8 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
-  // 生成背景音乐：提示词原样记进请求，过一会儿出一段 30 秒、每分钟 120 拍的鼓点。
   http.post('*/api/generations/music', async ({ request }) => {
     const body = (await request.json()) as MusicIn
-    if (body.prompt.trim() === '')
-      return HttpResponse.json({ detail: 'prompt: 不能为空' }, { status: 422 })
-    if (body.prompt.length > 3000)
-      return HttpResponse.json({ detail: 'prompt: 至多 3000 字' }, { status: 422 })
     const created = acceptGeneration({
       kind: 'audio',
       prompt: body.prompt,

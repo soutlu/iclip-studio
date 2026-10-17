@@ -1,10 +1,9 @@
-/** 与字幕渲染端相同：规整换行与行首尾空白，把 ASS 控制字符换成可见的全角字形。 */
+// ASS 把反斜杠与花括号当作覆盖标签，换成全角才会照字面显示。
+export const escapeAssControls = (text: string): string =>
+  text.replaceAll('\\', '＼').replaceAll('{', '｛').replaceAll('}', '｝')
+
 export const normalizeCaptionText = (text: string): string =>
-  text
-    .replace(/\r\n?/g, '\n')
-    .replaceAll('\\', '＼')
-    .replaceAll('{', '｛')
-    .replaceAll('}', '｝')
+  escapeAssControls(text.replace(/\r\n?/g, '\n'))
     .split('\n')
     .map((line) => line.trim())
     .join('\n')

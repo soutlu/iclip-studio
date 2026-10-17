@@ -195,7 +195,12 @@ const delayedUpload = (status = 200) => {
 const renderReader = async (initialPath = '/?shot=1&content=scene:1', readOnly = false) => {
   const rendered = await renderWithProviders(
     <>
-      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
+      <StoryboardReader
+        artifact={artifact}
+        conversationId={CONVERSATION_ID}
+        readOnly={readOnly}
+        task={{ kind: 'loading' }}
+      />
       <Toaster />
     </>,
     {
@@ -1338,7 +1343,12 @@ describe('StoryboardReader', () => {
     provide('{ invalid JSON')
     // 读不出镜头组就没有正文编辑器，不用等上传权限。
     await renderWithProviders(
-      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />,
+      <StoryboardReader
+        artifact={artifact}
+        conversationId={CONVERSATION_ID}
+        readOnly={false}
+        task={{ kind: 'loading' }}
+      />,
       { initialPath: '/?shot=1&content=scene:1' },
     )
     expect(await screen.findByText('文件格式不正确，镜头组读取失败')).toBeVisible()

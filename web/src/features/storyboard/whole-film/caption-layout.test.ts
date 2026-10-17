@@ -3,14 +3,14 @@ import { captionMetrics, wrapCaption } from './caption-layout'
 
 describe('自定义字幕在源画布上的排版', () => {
   it('字号、描边与边距按源尺寸取整；半像素与服务端相同向上取整', () => {
-    expect(captionMetrics({ width: 1080, height: 1920 })).toEqual({
+    expect(captionMetrics({ width: 1080, height: 1920 }, 'custom')).toEqual({
       fontSize: 86,
       outline: 7,
       marginSide: 65,
       marginBottom: 230,
       lineWidth: 936,
     })
-    expect(captionMetrics({ width: 75, height: 100 })).toEqual({
+    expect(captionMetrics({ width: 75, height: 100 }, 'custom')).toEqual({
       fontSize: 5,
       outline: 1,
       marginSide: 5,

@@ -109,7 +109,6 @@ export function useFilmDraft({
     try {
       if (
         film.segments.length === 0 &&
-        film.manual.length === 0 &&
         film.music === null &&
         film.intro == null &&
         film.outro == null &&

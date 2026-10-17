@@ -40,6 +40,7 @@ describe('SubAgentPanel', () => {
         artifact={artifactFor(MOCK_HISTORY_CHILD)}
         conversationId="c1"
         readOnly={false}
+        task={{ kind: 'loading' }}
       />,
     )
 
@@ -52,7 +53,12 @@ describe('SubAgentPanel', () => {
 
   it('子代理不属于这段对话（404）：说明读不到，给重试钮', async () => {
     await renderWithProviders(
-      <SubAgentPanel artifact={artifactFor('not-a-run')} conversationId="c1" readOnly={false} />,
+      <SubAgentPanel
+        artifact={artifactFor('not-a-run')}
+        conversationId="c1"
+        readOnly={false}
+        task={{ kind: 'loading' }}
+      />,
     )
 
     expect(await screen.findByText('该子代理的对话加载失败')).toBeVisible()

@@ -5,11 +5,12 @@ import {
   canSplitAt,
   EMPTY_FILM,
   filmDuration,
+  insertBlockedReason,
   insertClockOf,
   insertIndexAt,
   insertSegment,
   keepKnownSources,
-  MAX_FILM_SECONDS,
+  MIN_SEGMENT_SECONDS,
   moveMusic,
   moveSegment,
   parseStoredFilm as parseDraft,
@@ -26,8 +27,10 @@ import {
   trimBounds,
   trimSegment,
   type FilmMusic,
+  type FilmSegment,
   type FilmState,
 } from './film-draft'
+import { MAX_FILM_SECONDS, MAX_FILM_SEGMENTS } from './film-limits'
 
 const parseStoredFilm = (raw: string) => parseDraft(raw, (jobId) => jobId)
 
@@ -37,7 +40,6 @@ const pick = (sourceJobId: string, start: number, end: number): Clip => ({
   end,
 })
 
-/** 依次插在最后：A 0–3、B 1–3、A 5–6，共 6 秒。 */
 const film = (): FilmState => {
   let state = EMPTY_FILM
   for (const [id, part] of [
@@ -98,6 +100,42 @@ describe('插入', () => {
   })
 })
 
+describe('插入校验', () => {
+  const segments = (count: number, seconds = 1): FilmSegment[] =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `s${index}`,
+      sourceJobId: 'A',
+      start: 0,
+      end: seconds,
+    }))
+
+  it('正好最短时长可以加入，短 1 毫秒就被阻止并说明原因', () => {
+    expect(insertBlockedReason([], MIN_SEGMENT_SECONDS, 0)).toBeUndefined()
+    expect(insertBlockedReason([], MIN_SEGMENT_SECONDS - 0.001, 0)).toMatch(
+      /^镜头不足 0\.2 秒，无法加入成片；请/,
+    )
+  })
+
+  it('段数到上限时阻止，少一段时可以加入', () => {
+    expect(insertBlockedReason(segments(MAX_FILM_SEGMENTS - 1), 0.2, 0)).toBeUndefined()
+    expect(insertBlockedReason(segments(MAX_FILM_SEGMENTS), 0.2, 0)).toMatch(
+      /^片段已达 100 段，无法加入成片；请/,
+    )
+  })
+
+  it('整片含片头片尾正好放满可以加入，多 1 毫秒就被阻止并说出已有时长', () => {
+    expect(insertBlockedReason(segments(1, 100), 15, 5)).toBeUndefined()
+    expect(insertBlockedReason(segments(1, 100), 15.001, 5)).toMatch(
+      /^整片含片头片尾已有 105\.0 秒，.*无法加入成片；请/,
+    )
+  })
+
+  it('与插入本身判定一致：被阻止时 insertSegment 不插', () => {
+    const film = { ...EMPTY_FILM, segments: segments(MAX_FILM_SEGMENTS) }
+    expect(insertSegment(film, pick('A', 0, 1), 0, 'extra')).toBeUndefined()
+  })
+})
+
 describe('成片轨上的剪辑', () => {
   it('挪到第几段之前；挪回原处等于没挪', () => {
     expect(order(moveSegment(film(), 's3', 0) ?? EMPTY_FILM).map(([id]) => id)).toEqual([
@@ -118,7 +156,6 @@ describe('成片轨上的剪辑', () => {
     const trimmed = trimSegment(film(), 's1', 'start', 1)
     expect(order(trimmed)[0]).toEqual(['s1', 'A', 1, 3])
 
-    // 可回到视频起点，结尾以真实视频时长为界。
     expect(order(trimSegment(trimmed, 's1', 'start', -5))[0]).toEqual(['s1', 'A', 0, 3])
     expect(order(trimSegment(trimmed, 's1', 'end', 9, 8))[0]).toEqual(['s1', 'A', 1, 8])
     expect(order(trimSegment(trimmed, 's1', 'end', 1))[0]).toEqual(['s1', 'A', 1, 1.2])
@@ -131,7 +168,6 @@ describe('成片轨上的剪辑', () => {
     const big = plus.segments[0]
 
     expect(filmDuration(plus.segments)).toBe(115)
-    // 挑进来时到 100 秒，但整片只剩 5 秒的余量。
     expect(big === undefined ? undefined : trimBounds(plus.segments, big, 'end', 0, 100)?.max).toBe(
       95,
     )
@@ -202,32 +238,11 @@ describe('成片轨上的剪辑', () => {
     expect(canSplitAt(film().segments, 3)).toBe(false)
   })
 
-  it('拆分后钉在后一半的手动字幕跟过去，钉在前一半的留着', () => {
-    const withSubs: FilmState = {
-      ...film(),
-      manual: [
-        { id: 'early', segmentId: 's1', at: 0.5, text: '' },
-        { id: 'late', segmentId: 's1', at: 2.5, text: '' },
-      ],
-    }
-    const split = splitAt(withSubs, 1.5, 'right')
-
-    expect(split?.manual.map((item) => [item.id, item.segmentId, item.at])).toEqual([
-      ['early', 's1', 0.5],
-      ['late', 'right', 2.5],
-    ])
-  })
-
-  it('删掉一段，后面的前移，钉在它上面的手动字幕一起删', () => {
-    const withSub: FilmState = {
-      ...film(),
-      manual: [{ id: 'on-b', segmentId: 's2', at: 1.5, text: '' }],
-    }
-    const removed = removeSegment(withSub, 's2')
+  it('删掉一段，后面的前移', () => {
+    const removed = removeSegment(film(), 's2')
 
     expect(order(removed).map(([id]) => id)).toEqual(['s1', 's3'])
     expect(filmDuration(removed.segments)).toBe(4)
-    expect(removed.manual).toEqual([])
   })
 })
 
@@ -340,14 +355,7 @@ describe('素材轨', () => {
 
 describe('存放', () => {
   it('草稿与素材轨序列化后原样读回', () => {
-    const state = setSentenceText(
-      {
-        ...trimSegment(film(), 's1', 'start', 1),
-        manual: [{ id: 'm', segmentId: 's1', at: 2.5, text: '' }],
-      },
-      'sub#2',
-      '新的字',
-    )
+    const state = setSentenceText(trimSegment(film(), 's1', 'start', 1), 'sub#2', '新的字')
     const stored = { film: state, lanes: [{ takeId: 'A', jobId: 'A' }] }
 
     expect(parseStoredFilm(serializeStoredFilm(stored))).toEqual(stored)
@@ -428,15 +436,18 @@ describe('存放', () => {
     expect(parseStoredFilm(raw)).toBeUndefined()
   })
 
-  it('来源读不到的段连同它的手动字幕与素材轨去掉，并说去掉了几段', () => {
+  it('来源读不到的段连同它的素材轨去掉，并说去掉了几段', () => {
     const gain = [
       { atMs: 0, gain: 0.2 },
       { atMs: 6000, gain: 0.5 },
     ]
-    const state: FilmState = {
-      ...setMusic(film(), { kind: 'generate', jobId: 'music', userStart: 1.25, volume: 0.4, gain }),
-      manual: [{ id: 'on-b', segmentId: 's2', at: 1.5, text: '' }],
-    }
+    const state = setMusic(film(), {
+      kind: 'generate',
+      jobId: 'music',
+      userStart: 1.25,
+      volume: 0.4,
+      gain,
+    })
     const allKnown = keepKnownSources({ film: state, lanes: [] }, new Set(['A', 'B']))
     expect(allKnown.stored.film.music?.gain).toEqual(gain)
     const { stored, dropped } = keepKnownSources(
@@ -452,7 +463,6 @@ describe('存放', () => {
 
     expect(dropped).toBe(1)
     expect(order(stored.film).map(([id]) => id)).toEqual(['s1', 's3'])
-    expect(stored.film.manual).toEqual([])
     expect(stored.film.music?.gain).toBeUndefined()
     expect(stored.film.music).toMatchObject({ userStart: 1.25, volume: 0.4 })
     expect(stored.lanes).toEqual([{ takeId: 'A', jobId: 'A' }])
