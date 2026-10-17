@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import {
-  BRAND_TEMPLATE_KIND_VALUES,
   DEFAULT_LIBRARY_SCOPE,
   DEFAULT_LIBRARY_TAB,
   DEFAULT_REFERENCE_SCOPE,
@@ -30,7 +29,6 @@ export const librarySearchSchema = z.object({
   categories: z.array(zCategory).min(1).optional().catch(undefined),
   video: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
-  kind: z.enum(BRAND_TEMPLATE_KIND_VALUES).optional().catch(undefined),
   brand: z.string().trim().min(1).max(100).optional().catch(undefined),
   includeDisabled: z.literal(true).optional().catch(undefined),
 })
@@ -89,7 +87,6 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
 export function brandTemplateScopeFromSearch(search: LibrarySearch): BrandTemplateScope {
   return {
     q: search.q ?? '',
-    kind: search.kind,
     brand: search.brand,
     includeDisabled: search.includeDisabled === true,
   }
@@ -99,7 +96,6 @@ export function searchFromBrandTemplateScope(scope: BrandTemplateScope): Library
   return {
     tab: 'brand-templates',
     q: scope.q.trim() || undefined,
-    kind: scope.kind,
     brand: scope.brand,
     includeDisabled: scope.includeDisabled ? true : undefined,
   }

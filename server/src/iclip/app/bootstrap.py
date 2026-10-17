@@ -26,7 +26,7 @@ from iclip.app.agent_layer import (
     live_title_generator,
     watch_and_reload,
 )
-from iclip.app.brand_templates import template_font_prober, template_video_prober
+from iclip.app.brand_templates import template_font_prober
 from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
@@ -63,9 +63,8 @@ from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
-from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
+from iclip.domains.brand_templates.infra_sql import SqlBrandProfileStore, SqlBrandTemplateStore
 from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
-from iclip.domains.brand_templates.repository import ProbeVideo
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
 from iclip.domains.conversations.infra_sql import (
@@ -348,7 +347,6 @@ def build_app(
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
     reference_tagger: Tagger | None = None,
-    brand_template_probe: ProbeVideo | None = None,
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     reload_source: ReloadSource | None = None,
@@ -506,8 +504,7 @@ def build_app(
             raise RuntimeError("品牌资源已启用却没有对象存储")
         brand_templates = build_brand_templates_module(
             SqlBrandTemplateStore(active_engine),
-            own_video_upload=own_video_upload,
-            probe=brand_template_probe or template_video_prober(http_client, fetch_url),
+            profiles=SqlBrandProfileStore(active_engine),
             objects=public_objects,
             probe_font=brand_font_probe or template_font_prober(http_client, fetch_url),
         )

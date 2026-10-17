@@ -6,19 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, Literal
 
-MAX_TEMPLATE_MS: Final = 10_000
-
 FontContentType = Literal["font/ttf", "font/otf"]
 
 FONT_EXTENSIONS: Final[Mapping[FontContentType, str]] = {"font/ttf": "ttf", "font/otf": "otf"}
-
-
-@dataclass(frozen=True, slots=True)
-class ProbedVideo:
-    width: int
-    height: int
-    duration_ms: int
-    has_audio: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,19 +18,23 @@ class BrandTemplate:
     brand: str | None
     name: str
     url: str
-    width: int | None
-    height: int | None
-    duration_ms: int | None
-    has_audio: bool | None
     created_by: uuid.UUID
     created_at: datetime
     disabled_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class BrandProfile:
+    """一个品牌的标语与强调色；没有设过的品牌两项都为空。"""
+
+    brand: str
+    slogan: str | None
+    accent_color: str | None
+
+
 __all__ = [
     "FONT_EXTENSIONS",
-    "MAX_TEMPLATE_MS",
+    "BrandProfile",
     "BrandTemplate",
     "FontContentType",
-    "ProbedVideo",
 ]

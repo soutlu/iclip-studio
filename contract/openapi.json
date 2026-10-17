@@ -726,10 +726,23 @@
         "title": "BrandFontUnicodeRange",
         "type": "object"
       },
-      "BrandTemplateCreateIn": {
+      "BrandProfileIn": {
         "additionalProperties": false,
+        "description": "整份写入一个品牌的标语与强调色；两项都要给，``null`` 清空。",
         "properties": {
-          "brand": {
+          "accentColor": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accentcolor"
+          },
+          "slogan": {
             "anyOf": [
               {
                 "maxLength": 100,
@@ -740,34 +753,69 @@
                 "type": "null"
               }
             ],
-            "title": "Brand"
-          },
-          "kind": {
-            "enum": [
-              "intro",
-              "outro"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "uploadId": {
-            "format": "uuid",
-            "title": "Uploadid",
-            "type": "string"
+            "title": "Slogan"
           }
         },
         "required": [
-          "kind",
-          "name",
-          "uploadId"
+          "slogan",
+          "accentColor"
         ],
-        "title": "BrandTemplateCreateIn",
+        "title": "BrandProfileIn",
+        "type": "object"
+      },
+      "BrandProfileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "accentColor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accentcolor"
+          },
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "slogan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slogan"
+          }
+        },
+        "required": [
+          "brand",
+          "slogan",
+          "accentColor"
+        ],
+        "title": "BrandProfileOut",
+        "type": "object"
+      },
+      "BrandProfilesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BrandProfileOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BrandProfilesOut",
         "type": "object"
       },
       "BrandTemplateOut": {
@@ -801,39 +849,6 @@
             ],
             "title": "Disabledat"
           },
-          "durationMs": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Durationms"
-          },
-          "hasAudio": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hasaudio"
-          },
-          "height": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Height"
-          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -850,17 +865,6 @@
           "url": {
             "title": "Url",
             "type": "string"
-          },
-          "width": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Width"
           }
         },
         "required": [
@@ -869,10 +873,6 @@
           "brand",
           "name",
           "url",
-          "width",
-          "height",
-          "durationMs",
-          "hasAudio",
           "createdAt",
           "disabledAt"
         ],
@@ -11057,7 +11057,7 @@
     },
     "/brand-templates": {
       "get": {
-        "description": "品牌资源，建立晚的排前面；默认只列在用的，按 ``kind`` 与 ``brand`` 筛选。\n\n``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。媒体参数按资源实际情况\n返回，不完整的资源也照实列出，由使用它的功能明确校验。",
+        "description": "品牌资源，建立晚的排前面；默认只列在用的，按 ``kind`` 与 ``brand`` 筛选。\n\n``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。",
         "operationId": "list_brand_templates_brand_templates_get",
         "parameters": [
           {
@@ -11141,26 +11141,75 @@
         "tags": [
           "brand-templates"
         ]
-      },
-      "post": {
-        "description": "拿调用者自己的一条视频上传建一条在用的模板（``201``），画幅、时长与音轨由服务端量。\n\n别人的上传、不是视频的上传、不存在的 ``uploadId`` 都是 ``404``；量不出来或超过时长上限\n是 ``422``。",
-        "operationId": "create_brand_template_brand_templates_post",
+      }
+    },
+    "/brand-templates/brands": {
+      "get": {
+        "description": "全部品牌连同标语与强调色，按品牌名排。\n\n品牌取设过标语或强调色的，并上在用资源里出现过的；没设过的两项为 ``null``。",
+        "operationId": "list_brands_brand_templates_brands_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandProfilesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List Brands",
+        "tags": [
+          "brand-templates"
+        ]
+      }
+    },
+    "/brand-templates/brands/{brand}": {
+      "put": {
+        "description": "整份写入这个品牌的标语与强调色，没有就新建；``null`` 清空那一项。\n\n品牌名去掉首尾空白后为 1 到 100 字，答复里是去掉空白后的名字。标语至多 100 字，\n强调色是 ``#RRGGBB``，存成小写。",
+        "operationId": "save_brand_brand_templates_brands__brand__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "brand",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Brand",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BrandTemplateCreateIn"
+                "$ref": "#/components/schemas/BrandProfileIn"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BrandTemplateOut"
+                  "$ref": "#/components/schemas/BrandProfileOut"
                 }
               }
             },
@@ -11189,7 +11238,7 @@
             ]
           }
         ],
-        "summary": "Create Brand Template",
+        "summary": "Save Brand",
         "tags": [
           "brand-templates"
         ]

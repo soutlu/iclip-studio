@@ -4,31 +4,35 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Final
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, model_validator
 from pydantic.alias_generators import to_camel
 
-from iclip.common.brand_vocab import BrandPosition
-from iclip.domains.brand_templates.models import BrandTemplate, FontContentType
+from iclip.domains.brand_templates.models import BrandProfile, BrandTemplate, FontContentType
 from iclip.platform.media.fonts import FontInfo, FontStyle
 
 MAX_NAME_CHARS: Final = 100
+MAX_SLOGAN_CHARS: Final = 100
 
 TemplateName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NAME_CHARS)
 ]
+
+Slogan = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_SLOGAN_CHARS)
+]
+
+AccentColor = Annotated[
+    str,
+    StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$"),
+    AfterValidator(str.lower),
+]
+"""``#RRGGBB``，大小写都收，存小写。"""
 
 
 class CamelModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel, populate_by_name=True, extra="forbid", frozen=True
     )
-
-
-class BrandTemplateCreateIn(CamelModel):
-    kind: BrandPosition
-    brand: TemplateName | None = None
-    name: TemplateName
-    upload_id: uuid.UUID
 
 
 class BrandTemplateUpdateIn(CamelModel):
@@ -51,10 +55,6 @@ class BrandTemplateOut(CamelModel):
     brand: str | None
     name: str
     url: str
-    width: int | None
-    height: int | None
-    duration_ms: int | None
-    has_audio: bool | None
     created_at: datetime
     disabled_at: datetime | None
 
@@ -66,10 +66,6 @@ class BrandTemplateOut(CamelModel):
             brand=template.brand,
             name=template.name,
             url=template.url,
-            width=template.width,
-            height=template.height,
-            duration_ms=template.duration_ms,
-            has_audio=template.has_audio,
             created_at=template.created_at,
             disabled_at=template.disabled_at,
         )
@@ -77,6 +73,27 @@ class BrandTemplateOut(CamelModel):
 
 class BrandTemplatesOut(CamelModel):
     items: list[BrandTemplateOut]
+
+
+class BrandProfileIn(CamelModel):
+    """整份写入一个品牌的标语与强调色；两项都要给，``null`` 清空。"""
+
+    slogan: Slogan | None
+    accent_color: AccentColor | None
+
+
+class BrandProfileOut(CamelModel):
+    brand: str
+    slogan: str | None
+    accent_color: str | None
+
+    @classmethod
+    def of(cls, profile: BrandProfile) -> BrandProfileOut:
+        return cls(brand=profile.brand, slogan=profile.slogan, accent_color=profile.accent_color)
+
+
+class BrandProfilesOut(CamelModel):
+    items: list[BrandProfileOut]
 
 
 class BrandFontSignIn(CamelModel):
@@ -113,11 +130,15 @@ class BrandFontInfoOut(CamelModel):
 
 __all__ = [
     "MAX_NAME_CHARS",
+    "MAX_SLOGAN_CHARS",
     "BrandFontConfirmIn",
     "BrandFontInfoOut",
     "BrandFontSignIn",
-    "BrandTemplateCreateIn",
+    "BrandProfileIn",
+    "BrandProfileOut",
+    "BrandProfilesOut",
     "BrandTemplateOut",
     "BrandTemplateUpdateIn",
     "BrandTemplatesOut",
+    "TemplateName",
 ]

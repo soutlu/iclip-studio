@@ -31,6 +31,7 @@ APP_TABLES = (
     "iclip.inspiration_videos",
     "iclip.reference_videos",
     "iclip.brand_templates",
+    "iclip.brand_profiles",
 )
 """iclip 里每个用例自己造数据的表。"""
 

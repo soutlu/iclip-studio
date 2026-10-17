@@ -33,11 +33,26 @@ URL_RENAMED = "a7d8c31f42e9"
 BRAND_RESOURCES = "0f74c2a89d31"
 """0030，kind 为自由文本，brand 与媒体参数独立可空。"""
 
+BEFORE_PROFILES = "e82dd7339835"
+"""0033，还有片头片尾与视频四列，没有品牌表。"""
+
 _INSERT = text(
+    "INSERT INTO iclip.brand_templates (id, kind, brand, name, url, created_by)"
+    " VALUES (:id, :kind, :brand, :name, :url, :created_by)"
+)
+"""现行表的一行资源。"""
+
+_INSERT_WITH_VIDEO = text(
     "INSERT INTO iclip.brand_templates"
     " (id, kind, brand, name, url, width, height, duration_ms, has_audio, created_by)"
     " VALUES (:id, :kind, :brand, :name, :url, :width, :height, :duration_ms, :has_audio,"
     " :created_by)"
+)
+"""0030–0033 的表，还有视频四列。"""
+
+_INSERT_PROFILE = text(
+    "INSERT INTO iclip.brand_profiles (brand, slogan, accent_color, updated_by, updated_at)"
+    " VALUES (:brand, :slogan, :accent_color, :updated_by, now())"
 )
 
 
@@ -62,29 +77,30 @@ _NO_VIDEO_PARAMETERS = {"width": None, "height": None, "duration_ms": None, "has
     ("overrides", "accepted"),
     [
         ({}, True),
-        ({"kind": "outro", "has_audio": False}, True),
-        ({"kind": "font", **_NO_VIDEO_PARAMETERS}, True),
-        ({"kind": "sound_effect", **_NO_VIDEO_PARAMETERS}, True),
-        ({"kind": "sound_effect", "width": None, "height": None, "has_audio": False}, True),
+        ({"kind": "sound_effect"}, True),
         ({"brand": "品牌 A"}, True),
         ({"kind": None}, False),
         ({"kind": ""}, False),
         ({"kind": " \t\n"}, False),
-        ({"duration_ms": 0}, False),
-        ({"width": 0}, False),
-        ({"height": -1}, False),
         ({"brand": ""}, False),
         ({"brand": "  "}, False),
         ({"brand": " \t\n"}, False),
         ({"name": "  "}, False),
         ({"created_by": uuid.uuid4()}, False),
-        *[({field: None}, True) for field in _NO_VIDEO_PARAMETERS],
     ],
 )
 async def test_the_table_constraints(
     engine: AsyncEngine, overrides: Mapping[str, Any], accepted: bool
 ) -> None:
-    row = {"kind": "intro", "brand": None, **_row(await make_user(engine)), **overrides}
+    row = {
+        "id": uuid.uuid4(),
+        "kind": "font",
+        "brand": None,
+        "name": "字体",
+        "url": "https://cdn.example.test/brand.otf",
+        "created_by": await make_user(engine),
+        **overrides,
+    }
     if accepted:
         async with engine.begin() as conn:
             await conn.execute(_INSERT, row)
@@ -92,6 +108,122 @@ async def test_the_table_constraints(
     with pytest.raises(IntegrityError):
         async with engine.begin() as conn:
             await conn.execute(_INSERT, row)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("overrides", "accepted"),
+    [
+        ({}, True),
+        ({"slogan": None, "accent_color": None}, True),
+        ({"slogan": "字" * 100}, True),
+        ({"brand": "  "}, False),
+        ({"slogan": "  "}, False),
+        ({"slogan": "字" * 101}, False),
+        ({"accent_color": "#E4002B"}, False),
+        ({"accent_color": "e4002b"}, False),
+        ({"accent_color": "#e4002"}, False),
+        ({"updated_by": uuid.uuid4()}, False),
+    ],
+    ids=[
+        "合规矩",
+        "两项都空",
+        "标语 100 字",
+        "空白品牌",
+        "空白标语",
+        "标语超长",
+        "大写色值",
+        "缺井号",
+        "少一位",
+        "没有这个人",
+    ],
+)
+async def test_the_profile_table_constraints(
+    engine: AsyncEngine, overrides: Mapping[str, Any], accepted: bool
+) -> None:
+    row = {
+        "brand": f"品牌 {uuid.uuid4().hex[:6]}",
+        "slogan": "一步一风景",
+        "accent_color": "#e4002b",
+        "updated_by": await make_user(engine),
+        **overrides,
+    }
+    if accepted:
+        async with engine.begin() as conn:
+            await conn.execute(_INSERT_PROFILE, row)
+        return
+    with pytest.raises(IntegrityError):
+        async with engine.begin() as conn:
+            await conn.execute(_INSERT_PROFILE, row)
+
+
+async def _seed_resources(url: str) -> dict[str, uuid.UUID]:
+    """在 0033 的表里各写一条片头、片尾与字体，返回种类到 id。"""
+
+    engine = build_engine(url, poolclass=NullPool)
+    try:
+        creator = await make_user(engine)
+        ids = {kind: uuid.uuid4() for kind in ("intro", "outro", "font")}
+        async with engine.begin() as conn:
+            for kind, resource_id in ids.items():
+                await conn.execute(
+                    _INSERT_WITH_VIDEO,
+                    {
+                        **_row(creator),
+                        **(_NO_VIDEO_PARAMETERS if kind == "font" else {}),
+                        "id": resource_id,
+                        "kind": kind,
+                        "brand": "示例品牌",
+                    },
+                )
+        return ids
+    finally:
+        await engine.dispose()
+
+
+async def _query(url: str, statement: str) -> list[tuple[Any, ...]]:
+    engine = build_engine(url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            return [tuple(row) for row in (await conn.execute(text(statement))).all()]
+    finally:
+        await engine.dispose()
+
+
+_TEMPLATE_COLUMNS = (
+    "SELECT column_name FROM information_schema.columns"
+    " WHERE table_schema = 'iclip' AND table_name = 'brand_templates'"
+)
+_PROFILE_TABLE = "SELECT to_regclass('iclip.brand_profiles') IS NOT NULL"
+
+
+def test_upgrade_keeps_only_fonts_and_drops_the_video_columns(scratch_db: str) -> None:
+    cfg = alembic_config(scratch_db)
+    command.upgrade(cfg, BEFORE_PROFILES)
+    ids = asyncio.run(_seed_resources(scratch_db))
+
+    command.upgrade(cfg, "head")
+
+    remaining = asyncio.run(_query(scratch_db, "SELECT id, kind FROM iclip.brand_templates"))
+    assert remaining == [(ids["font"], "font")]
+    columns = {name for (name,) in asyncio.run(_query(scratch_db, _TEMPLATE_COLUMNS))}
+    assert columns.isdisjoint(_NO_VIDEO_PARAMETERS)
+    assert asyncio.run(_query(scratch_db, _PROFILE_TABLE)) == [(True,)]
+
+
+def test_downgrade_restores_the_columns_and_drops_the_profiles(scratch_db: str) -> None:
+    """空库上降级再升级照常；降级后四列回来，品牌表没了；再升级仍只留字体。"""
+
+    cfg = alembic_config(scratch_db)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, BEFORE_PROFILES)
+
+    columns = {name for (name,) in asyncio.run(_query(scratch_db, _TEMPLATE_COLUMNS))}
+    assert set(_NO_VIDEO_PARAMETERS) <= columns
+    assert asyncio.run(_query(scratch_db, _PROFILE_TABLE)) == [(False,)]
+    asyncio.run(_seed_resources(scratch_db))
+    command.upgrade(cfg, "head")
+    assert asyncio.run(_query(scratch_db, "SELECT kind FROM iclip.brand_templates")) == [("font",)]
 
 
 async def _has_table(url: str) -> bool:

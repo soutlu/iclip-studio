@@ -2,7 +2,7 @@ export { LibraryRoute } from './components/library-route'
 export { LibraryTabsList } from './components/library-page-header'
 export { ReferencesRoute } from './components/references-route'
 export { BrandTemplatesRoute } from './components/brand-templates-route'
-export { BRAND_TEMPLATE_KIND_VALUES, type BrandTemplateScope } from './brand-templates'
+export type { BrandTemplateScope } from './brand-templates'
 export { DEFAULT_LIBRARY_TAB, LIBRARY_TAB_VALUES, type LibraryTab } from './library-tabs'
 export { DEFAULT_LIBRARY_SCOPE, type LibraryScope, useLibraryVideo } from './library.api'
 export {

@@ -151,13 +151,32 @@ export const zBrandFontInfoOut = z.object({
 })
 
 /**
- * BrandTemplateCreateIn
+ * BrandProfileIn
+ *
+ * 整份写入一个品牌的标语与强调色；两项都要给，``null`` 清空。
  */
-export const zBrandTemplateCreateIn = z.object({
-  brand: z.string().min(1).max(100).nullish(),
-  kind: z.enum(['intro', 'outro']),
-  name: z.string().min(1).max(100),
-  uploadId: z.uuid(),
+export const zBrandProfileIn = z.object({
+  accentColor: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .nullable(),
+  slogan: z.string().min(1).max(100).nullable(),
+})
+
+/**
+ * BrandProfileOut
+ */
+export const zBrandProfileOut = z.object({
+  accentColor: z.string().nullable(),
+  brand: z.string(),
+  slogan: z.string().nullable(),
+})
+
+/**
+ * BrandProfilesOut
+ */
+export const zBrandProfilesOut = z.object({
+  items: z.array(zBrandProfileOut),
 })
 
 /**
@@ -167,14 +186,10 @@ export const zBrandTemplateOut = z.object({
   brand: z.string().nullable(),
   createdAt: z.iso.datetime(),
   disabledAt: z.iso.datetime().nullable(),
-  durationMs: z.int().nullable(),
-  hasAudio: z.boolean().nullable(),
-  height: z.int().nullable(),
   id: z.uuid(),
   kind: z.string(),
   name: z.string(),
   url: z.string(),
-  width: z.int().nullable(),
 })
 
 /**
@@ -3021,12 +3036,21 @@ export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
  */
 export const zListBrandTemplatesBrandTemplatesGetResponse = zBrandTemplatesOut
 
-export const zCreateBrandTemplateBrandTemplatesPostBody = zBrandTemplateCreateIn
+/**
+ * Successful Response
+ */
+export const zListBrandsBrandTemplatesBrandsGetResponse = zBrandProfilesOut
+
+export const zSaveBrandBrandTemplatesBrandsBrandPutBody = zBrandProfileIn
+
+export const zSaveBrandBrandTemplatesBrandsBrandPutPath = z.object({
+  brand: z.string().min(1).max(100),
+})
 
 /**
  * Successful Response
  */
-export const zCreateBrandTemplateBrandTemplatesPostResponse = zBrandTemplateOut
+export const zSaveBrandBrandTemplatesBrandsBrandPutResponse = zBrandProfileOut
 
 export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
 

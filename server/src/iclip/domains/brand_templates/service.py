@@ -7,14 +7,15 @@ import structlog
 
 from iclip.common.brand_vocab import BRAND_FONT
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
-from iclip.common.shot_prompt import format_seconds
-from iclip.domains.brand_templates.models import FONT_EXTENSIONS, MAX_TEMPLATE_MS
-from iclip.domains.brand_templates.repository import BrandTemplateStore, OwnVideoUpload, ProbeVideo
+from iclip.domains.brand_templates.models import FONT_EXTENSIONS
+from iclip.domains.brand_templates.repository import BrandProfileStore, BrandTemplateStore
 from iclip.domains.brand_templates.schemas import (
     BrandFontConfirmIn,
     BrandFontInfoOut,
     BrandFontSignIn,
-    BrandTemplateCreateIn,
+    BrandProfileIn,
+    BrandProfileOut,
+    BrandProfilesOut,
     BrandTemplateOut,
     BrandTemplatesOut,
     BrandTemplateUpdateIn,
@@ -36,42 +37,30 @@ class BrandTemplateService:
         self,
         store: BrandTemplateStore,
         *,
-        own_video_upload: OwnVideoUpload,
-        probe: ProbeVideo,
+        profiles: BrandProfileStore,
         objects: SignedUploadStore,
         probe_font: ProbeFont,
     ) -> None:
         self._store = store
-        self._own_video_upload = own_video_upload
-        self._probe = probe
+        self._profiles = profiles
         self._objects = objects
         self._probe_font = probe_font
 
-    async def create(self, principal: Principal, body: BrandTemplateCreateIn) -> BrandTemplateOut:
-        url = await self._own_video_upload(principal, body.upload_id)
-        if url is None:
-            raise NotFound("没有这条视频上传")
-        try:
-            video = await self._probe(url)
-        except MediaError as exc:
-            _logger.warning("品牌模板的视频量不出来", upload_id=body.upload_id, error=str(exc))
-            raise ValidationFailed("读不出这条视频的画面与时长，请换一条或稍后重试") from exc
-        if video.duration_ms > MAX_TEMPLATE_MS:
-            raise ValidationFailed(
-                f"这条视频长 {format_seconds(video.duration_ms / 1000)} 秒，"
-                f"片头片尾最长 {format_seconds(MAX_TEMPLATE_MS / 1000)} 秒"
-            )
-        created = await self._store.create(
-            resource_id=uuid.uuid4(),
-            kind=body.kind,
-            brand=body.brand,
-            name=body.name,
-            url=url,
-            video=video,
-            created_by=principal.user_id,
-            api_key_id=principal.api_key_id,
+    async def brands(self) -> BrandProfilesOut:
+        return BrandProfilesOut(
+            items=[BrandProfileOut.of(profile) for profile in await self._profiles.brands()]
         )
-        return BrandTemplateOut.of(created)
+
+    async def save_brand(
+        self, principal: Principal, brand: str, body: BrandProfileIn
+    ) -> BrandProfileOut:
+        saved = await self._profiles.save(
+            brand,
+            slogan=body.slogan,
+            accent_color=body.accent_color,
+            updated_by=principal.user_id,
+        )
+        return BrandProfileOut.of(saved)
 
     async def list(
         self, principal: Principal, *, kind: str | None, brand: str | None, include_disabled: bool
@@ -133,7 +122,6 @@ class BrandTemplateService:
             brand=body.brand,
             name=body.name,
             url=url,
-            video=None,
             created_by=principal.user_id,
             api_key_id=principal.api_key_id,
         )

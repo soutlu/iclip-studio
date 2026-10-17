@@ -1,4 +1,4 @@
-import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
@@ -19,7 +19,6 @@ function Harness({
 }) {
   const [scope, setScope] = useState<BrandTemplateScope>({
     q: '',
-    kind: undefined,
     brand: undefined,
     includeDisabled: false,
   })
@@ -34,10 +33,12 @@ function Harness({
   )
 }
 
+const MANAGER = ['generation:read', 'users:manage', 'uploads:write']
+
 let fonts: ReturnType<typeof stubFontLoading>
 
 beforeEach(() => {
-  server.use(...brandTemplateHandlers(() => ['generation:read', 'users:manage', 'uploads:write']))
+  server.use(...brandTemplateHandlers(() => MANAGER))
   fonts = stubFontLoading()
 })
 
@@ -47,33 +48,184 @@ afterEach(() => {
   fonts.restore()
 })
 
-describe('BrandTemplatesRoute', () => {
-  it.each([
-    ['intro', '片头'],
-    ['outro', '片尾'],
-  ] as const)('%s 卡片使用淡入之后的精确截帧', async (kind, label) => {
-    const template = {
-      ...findMockBrandTemplate('ba000001-0000-4000-8000-000000000001'),
-      name: `品牌${label}`,
-      kind,
-      url: 'https://media.oss-cn-shenzhen.aliyuncs.com/brand.mp4',
-    }
-    server.use(http.get('*/api/brand-templates', () => HttpResponse.json({ items: [template] })))
-    await renderWithProviders(<Harness />)
-    const card = await screen.findByRole('article', { name: template.name })
-    const poster = within(card).getByRole('presentation')
-    expect(poster).toHaveAttribute('src', expect.stringContaining('video/snapshot,t_500,'))
-    expect(poster).not.toHaveAttribute('src', expect.stringContaining('m_fast'))
+const putBodies = () => {
+  const bodies: unknown[] = []
+  server.events.on('request:start', ({ request }) => {
+    if (request.method === 'PUT' && new URL(request.url).pathname.includes('/brands/'))
+      void request
+        .clone()
+        .json()
+        .then((body: unknown) => bodies.push(body))
+  })
+  return bodies
+}
+
+describe('品牌设置', () => {
+  it('普通读者看到各品牌的标语与强调色，没有设过的明确显示暂无，不能编辑', async () => {
+    server.use(...brandTemplateHandlers(() => ['generation:read']))
+    await renderWithProviders(<Harness canManage={false} />)
+    const brand = await screen.findByRole('article', { name: '品牌：示例品牌' })
+    expect(within(brand).getByText('一步一风景')).toBeVisible()
+    expect(within(brand).getByText('#e4002b')).toBeVisible()
+    const plain = screen.getByRole('article', { name: '品牌：通用' })
+    expect(within(plain).getByText('暂无标语')).toBeVisible()
+    expect(within(plain).getByText('暂无强调色')).toBeVisible()
+    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '添加品牌' })).toBeNull()
   })
 
-  it('没有上传权限的治理者仍可维护已有模板，上传入口不出现', async () => {
+  it('治理者添加没有字体的新品牌，保存后出现在品牌列表里', async () => {
+    const paths: string[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (request.method === 'PUT') paths.push(decodeURIComponent(new URL(request.url).pathname))
+    })
+    const bodies = putBodies()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await screen.findByRole('article', { name: '品牌：示例品牌' })
+    await user.click(screen.getByRole('button', { name: '添加品牌' }))
+    const card = screen.getByRole('article', { name: '添加品牌' })
+    expect(screen.queryByRole('button', { name: '添加品牌' })).toBeNull()
+    expect(within(card).getByLabelText('品牌名')).toHaveFocus()
+    await user.type(within(card).getByLabelText('品牌名'), ' 新锐 ')
+    await user.type(within(card).getByLabelText('标语'), '轻装出发')
+    await user.type(within(card).getByLabelText('强调色'), '#112233')
+    await user.click(within(card).getByRole('button', { name: '保存品牌设置' }))
+    const created = await screen.findByRole('article', { name: '品牌：新锐' })
+    expect(within(created).getByText('轻装出发')).toBeVisible()
+    expect(screen.queryByRole('article', { name: '添加品牌' })).toBeNull()
+    expect(paths).toEqual(['/api/brand-templates/brands/新锐'])
+    expect(bodies).toEqual([{ slogan: '轻装出发', accentColor: '#112233' }])
+  })
+
+  it('添加时品牌名已存在则提示并更新该品牌，不重复列出', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await screen.findByRole('article', { name: '品牌：示例品牌' })
+    await user.click(screen.getByRole('button', { name: '添加品牌' }))
+    const card = screen.getByRole('article', { name: '添加品牌' })
+    await user.type(within(card).getByLabelText('品牌名'), '示例品牌')
+    expect(within(card).getByRole('status')).toHaveTextContent(
+      '该品牌已存在，保存后将覆盖其标语与强调色',
+    )
+    await user.type(within(card).getByLabelText('标语'), '新标语')
+    await user.click(within(card).getByRole('button', { name: '保存品牌设置' }))
+    await waitFor(() => expect(screen.queryByRole('article', { name: '添加品牌' })).toBeNull())
+    expect(screen.getAllByRole('article', { name: '品牌：示例品牌' })).toHaveLength(1)
+    expect(
+      within(screen.getByRole('article', { name: '品牌：示例品牌' })).getByText('新标语'),
+    ).toBeVisible()
+  })
+
+  it('品牌名为空时阻止保存，取消后收起添加卡片', async () => {
+    const bodies = putBodies()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await screen.findByRole('article', { name: '品牌：示例品牌' })
+    await user.click(screen.getByRole('button', { name: '添加品牌' }))
+    const card = screen.getByRole('article', { name: '添加品牌' })
+    await user.type(within(card).getByLabelText('品牌名'), '   ')
+    await user.click(within(card).getByRole('button', { name: '保存品牌设置' }))
+    expect(within(card).getByRole('alert')).toHaveTextContent('品牌名为空，无法保存；请填写品牌名')
+    expect(bodies).toEqual([])
+    await user.click(within(card).getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('article', { name: '添加品牌' })).toBeNull()
+    expect(screen.getByRole('button', { name: '添加品牌' })).toHaveFocus()
+  })
+
+  it('治理者在卡片里修改标语与强调色，色值统一小写保存，清空发送 null', async () => {
+    const bodies = putBodies()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    let brand = await screen.findByRole('article', { name: '品牌：通用' })
+    await user.click(within(brand).getByRole('button', { name: '编辑' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await user.type(within(brand).getByLabelText('标语'), ' 好穿不累 ')
+    await user.type(within(brand).getByLabelText('强调色'), '#0055A4')
+    expect(within(brand).getByLabelText('选择强调色')).toHaveValue('#0055a4')
+    await user.click(within(brand).getByRole('button', { name: '保存品牌设置' }))
+    brand = await screen.findByRole('article', { name: '品牌：通用' })
+    expect(await within(brand).findByText('好穿不累')).toBeVisible()
+    expect(within(brand).getByText('#0055a4')).toBeVisible()
+    expect(bodies[0]).toEqual({ slogan: '好穿不累', accentColor: '#0055A4' })
+
+    await user.click(within(brand).getByRole('button', { name: '编辑' }))
+    await user.clear(within(brand).getByLabelText('标语'))
+    await user.clear(within(brand).getByLabelText('强调色'))
+    await user.click(within(brand).getByRole('button', { name: '保存品牌设置' }))
+    expect(await within(brand).findByText('暂无标语')).toBeVisible()
+    expect(within(brand).getByText('暂无强调色')).toBeVisible()
+    expect(bodies[1]).toEqual({ slogan: null, accentColor: null })
+  })
+
+  it('取色器选择的颜色写入色值', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    const brand = await screen.findByRole('article', { name: '品牌：示例品牌' })
+    await user.click(within(brand).getByRole('button', { name: '编辑' }))
+    fireEvent.change(within(brand).getByLabelText('选择强调色'), {
+      target: { value: '#112233' },
+    })
+    expect(within(brand).getByLabelText('强调色')).toHaveValue('#112233')
+  })
+
+  it('色值格式不正确时阻止保存且不发请求', async () => {
+    const bodies = putBodies()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    const brand = await screen.findByRole('article', { name: '品牌：示例品牌' })
+    await user.click(within(brand).getByRole('button', { name: '编辑' }))
+    const accent = within(brand).getByLabelText('强调色')
+    await user.clear(accent)
+    await user.type(accent, 'e4002b')
+    expect(accent).toHaveAttribute('aria-invalid', 'true')
+    await user.click(within(brand).getByRole('button', { name: '保存品牌设置' }))
+    expect(within(brand).getByRole('alert')).toHaveTextContent(
+      '强调色格式不正确，无法保存；请填写 #RRGGBB 格式的色值',
+    )
+    expect(bodies).toEqual([])
+  })
+
+  it('保存失败显式提示，保留正在编辑的内容', async () => {
+    server.use(
+      http.put('*/api/brand-templates/brands/:brand', () =>
+        HttpResponse.json({ detail: '没有维护权限' }, { status: 403 }),
+      ),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    const brand = await screen.findByRole('article', { name: '品牌：示例品牌' })
+    await user.click(within(brand).getByRole('button', { name: '编辑' }))
+    const slogan = within(brand).getByLabelText('标语')
+    await user.clear(slogan)
+    await user.type(slogan, '新标语')
+    await user.click(within(brand).getByRole('button', { name: '保存品牌设置' }))
+    expect(await within(brand).findByRole('alert')).toHaveTextContent('没有维护权限')
+    expect(slogan).toHaveValue('新标语')
+  })
+
+  it('按品牌筛选同时作用于品牌与字体', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await screen.findByRole('article', { name: '品牌：示例品牌' })
+    await user.selectOptions(screen.getByRole('combobox', { name: '筛选品牌' }), '通用')
+    expect(screen.queryByRole('article', { name: '品牌：示例品牌' })).toBeNull()
+    expect(screen.getByRole('article', { name: '品牌：通用' })).toBeVisible()
+    expect(screen.getByRole('article', { name: '示例字体' })).toBeVisible()
+    expect(screen.queryByRole('article', { name: '品牌标题字体' })).toBeNull()
+  })
+})
+
+describe('字体资源', () => {
+  it('没有上传权限的治理者仍可维护已有字体，上传入口不出现', async () => {
     await renderWithProviders(<Harness canUpload={false} />)
-    const card = await screen.findByRole('article', { name: '品牌片头 · 竖版' })
-    expect(screen.queryByRole('button', { name: '上传资源' })).toBeNull()
+    const card = await screen.findByRole('article', { name: '品牌标题字体' })
+    expect(screen.queryByRole('button', { name: '上传字体' })).toBeNull()
     expect(within(card).getByRole('button', { name: '编辑' })).toBeVisible()
     expect(within(card).getByRole('button', { name: '停用' })).toBeVisible()
   })
-  it('普通读者只看到在用模板，可预览，不能维护或查看已停用', async () => {
+
+  it('普通读者只看到在用字体，可预览，不能维护或查看已停用', async () => {
     server.use(...brandTemplateHandlers(() => ['generation:read']))
     const queries: URLSearchParams[] = []
     server.events.on('request:start', ({ request }) => {
@@ -82,71 +234,32 @@ describe('BrandTemplatesRoute', () => {
     })
     const user = userEvent.setup()
     await renderWithProviders(<Harness canManage={false} />)
-    await screen.findByRole('article', { name: '品牌片头 · 竖版' })
-    expect(screen.queryByRole('article', { name: '旧版片尾' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '上传资源' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
-    expect(screen.queryByRole('checkbox', { name: '显示已停用' })).toBeNull()
+    await screen.findByRole('article', { name: '品牌标题字体' })
+    expect(screen.queryByRole('article', { name: '旧版标题字体' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '上传字体' })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: '显示已停用字体' })).toBeNull()
     expect(queries.every((query) => !query.has('includeDisabled'))).toBe(true)
-    await user.click(screen.getByRole('button', { name: '预览资源：品牌片头 · 竖版' }))
-    expect(screen.getByRole('dialog', { name: '品牌片头 · 竖版' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '预览字体：品牌标题字体' }))
+    expect(screen.getByRole('dialog', { name: '品牌标题字体' })).toBeVisible()
   })
 
   it('治理者编辑、停用与恢复，更新后列表同步', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    let card = await screen.findByRole('article', { name: '品牌片头 · 竖版' })
+    let card = await screen.findByRole('article', { name: '品牌标题字体' })
     await user.click(within(card).getByRole('button', { name: '编辑' }))
-    const dialog = screen.getByRole('dialog', { name: '编辑品牌资源' })
+    const dialog = screen.getByRole('dialog', { name: '编辑字体' })
     await user.clear(within(dialog).getByLabelText('名称'))
-    await user.type(within(dialog).getByLabelText('名称'), '新品片头')
-    await user.click(within(dialog).getByRole('button', { name: '保存资源' }))
-    card = await screen.findByRole('article', { name: '新品片头' })
+    await user.type(within(dialog).getByLabelText('名称'), '新品标题字体')
+    await user.click(within(dialog).getByRole('button', { name: '保存字体' }))
+    card = await screen.findByRole('article', { name: '新品标题字体' })
     await user.click(within(card).getByRole('button', { name: '停用' }))
-    await waitFor(() => expect(screen.queryByRole('article', { name: '新品片头' })).toBeNull())
-    await user.click(screen.getByRole('checkbox', { name: '显示已停用' }))
-    card = await screen.findByRole('article', { name: '新品片头' })
+    await waitFor(() => expect(screen.queryByRole('article', { name: '新品标题字体' })).toBeNull())
+    await user.click(screen.getByRole('checkbox', { name: '显示已停用字体' }))
+    card = await screen.findByRole('article', { name: '新品标题字体' })
     expect(within(card).getByText('已停用')).toBeVisible()
     await user.click(within(card).getByRole('button', { name: '恢复使用' }))
     await waitFor(() => expect(within(card).queryByText('已停用')).toBeNull())
-  })
-
-  it('创建按视频直传协议确认后提交，服务端拒绝后重试不重复上传', async () => {
-    const submitted: unknown[] = []
-    let signs = 0
-    let reject = true
-    server.events.on('request:start', ({ request }) => {
-      if (new URL(request.url).pathname.endsWith('/uploads/sign')) signs += 1
-    })
-    server.use(
-      http.post('*/api/brand-templates', async ({ request }) => {
-        const body: unknown = await request.json()
-        submitted.push(body)
-        if (reject) return HttpResponse.json({ detail: '模板视频超过 10 秒' }, { status: 422 })
-        return HttpResponse.json(findMockBrandTemplate('ba000001-0000-4000-8000-000000000001'), {
-          status: 201,
-        })
-      }),
-    )
-    const user = userEvent.setup()
-    await renderWithProviders(<Harness />)
-    await user.click(screen.getByRole('button', { name: '上传资源' }))
-    const dialog = screen.getByRole('dialog', { name: '上传品牌资源' })
-    await user.selectOptions(within(dialog).getByLabelText('类型'), 'outro')
-    await user.upload(
-      within(dialog).getByLabelText('资源文件'),
-      new File(['video'], '新品.mp4', { type: 'video/mp4' }),
-    )
-    await user.click(within(dialog).getByRole('button', { name: '保存资源' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('模板视频超过 10 秒')
-    expect(submitted).toEqual([
-      { name: '新品', brand: null, kind: 'outro', uploadId: expect.any(String) },
-    ])
-    reject = false
-    await user.click(within(dialog).getByRole('button', { name: '保存资源' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(signs).toBe(1)
-    expect(submitted[1]).toEqual(submitted[0])
   })
 
   it('维护失败显式提示，列表保留原状态', async () => {
@@ -157,29 +270,11 @@ describe('BrandTemplatesRoute', () => {
     )
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    const card = await screen.findByRole('article', { name: '品牌片头 · 竖版' })
+    const card = await screen.findByRole('article', { name: '品牌标题字体' })
     await user.click(within(card).getByRole('button', { name: '停用' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('没有维护权限')
     expect(card).toBeVisible()
     expect(within(card).queryByText('已停用')).toBeNull()
-  })
-})
-
-describe('品牌资源与字体预览', () => {
-  it('按类型与品牌组合筛选，品牌选项保留其他资源的品牌', async () => {
-    const user = userEvent.setup()
-    await renderWithProviders(<Harness />)
-    await screen.findByRole('article', { name: '示例字体' })
-    await user.selectOptions(screen.getByRole('combobox', { name: '筛选品牌' }), '通用')
-    expect(screen.getAllByRole('article')).toHaveLength(1)
-    expect(screen.getByRole('article', { name: '示例字体' })).toBeVisible()
-    expect(screen.getByRole('option', { name: '示例品牌' })).toBeInTheDocument()
-    await user.selectOptions(screen.getByRole('combobox', { name: '筛选品牌' }), '示例品牌')
-    await user.click(screen.getByRole('radio', { name: '片尾' }))
-    expect(screen.getAllByRole('article')).toHaveLength(1)
-    expect(screen.getByRole('article', { name: '品牌片尾 · 竖版' })).toBeVisible()
-    await user.click(screen.getByRole('checkbox', { name: '显示已停用' }))
-    expect(await screen.findByRole('article', { name: '旧版片尾' })).toBeVisible()
   })
 
   it('品牌可修改与清空，清空时发送 null', async () => {
@@ -193,21 +288,21 @@ describe('品牌资源与字体预览', () => {
     })
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    const card = await screen.findByRole('article', { name: '品牌片头 · 竖版' })
+    const card = await screen.findByRole('article', { name: '品牌标题字体' })
     await user.click(within(card).getByRole('button', { name: '编辑' }))
-    let dialog = screen.getByRole('dialog', { name: '编辑品牌资源' })
+    let dialog = screen.getByRole('dialog', { name: '编辑字体' })
     await user.clear(within(dialog).getByLabelText('品牌'))
     await user.type(within(dialog).getByLabelText('品牌'), ' 新品牌 ')
-    await user.click(within(dialog).getByRole('button', { name: '保存资源' }))
+    await user.click(within(dialog).getByRole('button', { name: '保存字体' }))
     expect(await within(card).findByText('新品牌')).toBeVisible()
-    expect(patches[0]).toEqual({ name: '品牌片头 · 竖版', brand: '新品牌' })
+    expect(patches[0]).toEqual({ name: '品牌标题字体', brand: '新品牌' })
     await user.click(within(card).getByRole('button', { name: '编辑' }))
-    dialog = screen.getByRole('dialog', { name: '编辑品牌资源' })
+    dialog = screen.getByRole('dialog', { name: '编辑字体' })
     await user.clear(within(dialog).getByLabelText('品牌'))
-    await user.click(within(dialog).getByRole('button', { name: '保存资源' }))
+    await user.click(within(dialog).getByRole('button', { name: '保存字体' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(within(card).queryByText('新品牌')).toBeNull()
-    expect(patches[1]).toEqual({ name: '品牌片头 · 竖版', brand: null })
+    expect(patches[1]).toEqual({ name: '品牌标题字体', brand: null })
   })
 
   it('字体使用独立签名、PUT与确认，确认失败重试复用已传文件', async () => {
@@ -234,17 +329,16 @@ describe('品牌资源与字体预览', () => {
     )
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    await user.click(screen.getByRole('button', { name: '上传资源' }))
-    const dialog = screen.getByRole('dialog', { name: '上传品牌资源' })
-    expect(within(dialog).getByLabelText('类型')).toHaveValue('font')
+    await user.click(screen.getByRole('button', { name: '上传字体' }))
+    const dialog = screen.getByRole('dialog', { name: '上传字体' })
     await user.type(within(dialog).getByLabelText('品牌'), '秋日品牌')
     await user.upload(
-      within(dialog).getByLabelText('资源文件'),
+      within(dialog).getByLabelText('字体文件'),
       new File(['font'], '新品.otf', { type: 'font/otf' }),
     )
-    await user.click(within(dialog).getByRole('button', { name: '保存资源' }))
+    await user.click(within(dialog).getByRole('button', { name: '保存字体' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('资源登记失败')
-    await user.click(within(dialog).getByRole('button', { name: '保存资源' }))
+    await user.click(within(dialog).getByRole('button', { name: '保存字体' }))
     expect(await screen.findByRole('article', { name: '新品' })).toBeVisible()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
@@ -256,32 +350,16 @@ describe('品牌资源与字体预览', () => {
     expect(requests[2]?.path).toBe(requests[3]?.path)
     expect(requests[2]?.body).toEqual({ name: '新品', brand: '秋日品牌' })
     expect(requests[3]?.body).toEqual(requests[2]?.body)
+    expect(await screen.findByRole('article', { name: '品牌：秋日品牌' })).toBeVisible()
   })
 
-  it.each(['width', 'height', 'durationMs', 'hasAudio'] as const)(
-    '视频缺少 %s 仍可维护和预览，并明确不可合成',
-    async (field) => {
-      const template = findMockBrandTemplate('ba000001-0000-4000-8000-000000000001')
-      server.use(
-        http.get('*/api/brand-templates', () =>
-          HttpResponse.json({ items: [{ ...template, [field]: null }] }),
-        ),
-      )
-      const user = userEvent.setup()
-      await renderWithProviders(<Harness />)
-      const card = await screen.findByRole('article', { name: '品牌片头 · 竖版' })
-      expect(within(card).getByText(/视频参数不完整，无法用于合成/)).toBeVisible()
-      expect(within(card).getByRole('button', { name: '编辑' })).toBeEnabled()
-      await user.click(within(card).getByRole('button', { name: '预览资源：品牌片头 · 竖版' }))
-      expect(screen.getByRole('dialog', { name: '品牌片头 · 竖版' })).toBeVisible()
-    },
-  )
-
   it('实际字体加载完成之前显示加载状态，不展示替代字体预览', async () => {
+    const only = findMockBrandTemplate('ba000001-0000-4000-8000-000000000005')
+    server.use(http.get('*/api/brand-templates', () => HttpResponse.json({ items: [only] })))
     fonts.setMode('deferred')
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    await user.click(await screen.findByRole('button', { name: '预览资源：示例字体' }))
+    await user.click(await screen.findByRole('button', { name: '预览字体：示例字体' }))
     const dialog = screen.getByRole('dialog', { name: '示例字体' })
     expect(within(dialog).getByText('正在加载字体…')).toBeVisible()
     expect(within(dialog).queryByText('Made for your next adventure.')).toBeNull()
@@ -295,15 +373,14 @@ describe('品牌资源与字体预览', () => {
     fonts.setMode({ error: new Error('字体文件读取失败') })
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    await screen.findByText('字体预览不可用')
-    await user.click(screen.getByRole('button', { name: '预览资源：示例字体' }))
+    expect((await screen.findAllByText('字体预览不可用')).length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: '预览字体：示例字体' }))
     const dialog = screen.getByRole('dialog', { name: '示例字体' })
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('字体加载失败')
     expect(within(dialog).queryByText('Made for your next adventure.')).toBeNull()
     fonts.setMode('immediate')
     await user.click(within(dialog).getByRole('button', { name: '重试' }))
     expect(await within(dialog).findByText('Made for your next adventure.')).toBeVisible()
-    expect(fonts.installed.size).toBe(1)
   })
 
   it('缺字时阻止预览且不给重试，改回字体覆盖的文字后恢复', async () => {
@@ -319,7 +396,7 @@ describe('品牌资源与字体预览', () => {
     )
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
-    await user.click(await screen.findByRole('button', { name: '预览资源：示例字体' }))
+    await user.click(await screen.findByRole('button', { name: '预览字体：示例字体' }))
     const dialog = screen.getByRole('dialog', { name: '示例字体' })
     expect(await within(dialog).findByText('Made for your next adventure.')).toBeVisible()
     const input = within(dialog).getByRole('textbox', { name: '预览文字' })
