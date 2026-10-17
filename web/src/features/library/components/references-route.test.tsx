@@ -9,10 +9,10 @@ import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { addMockReference, resetMockReferences } from '@/testing/mocks/references'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { stubScrollViewport } from '@/testing/scroll-viewport'
 import { DEFAULT_REFERENCE_SCOPE, type ReferenceScope } from '../references.api'
 import { ReferencesRoute } from './references-route'
 
-/** 测试壳持有筛选范围与打开着的详情，与路由把两者存在查询参数里的归属一致：改筛选时详情随之关掉。 */
 function Harness({
   onScope,
   onReference,
@@ -46,7 +46,6 @@ function Harness({
   )
 }
 
-/** 记下每次列表请求的查询串。 */
 const recordListQueries = () => {
   const queries: URLSearchParams[] = []
   server.events.on('request:start', ({ request }) => {
@@ -56,7 +55,6 @@ const recordListQueries = () => {
   return queries
 }
 
-/** 记下发给参考视频的写请求：方法、路径与请求体。 */
 const recordWrites = () => {
   const writes: { method: string; path: string; body: unknown }[] = []
   server.events.on('request:start', ({ request }) => {
@@ -95,23 +93,8 @@ const MINE_TAGGED = {
   videoTypes: ['try_on'] as const,
 }
 
-/** jsdom 没有排版，元素尺寸都是 0；给页面滚动容器一个视口大小，虚拟列表才会渲染视口里的卡片。 */
-const stubScrollViewport = () => {
-  const sizeOf = (element: HTMLElement, size: number) => (element.tagName === 'MAIN' ? size : 0)
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    return sizeOf(this, 900)
-  })
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    return sizeOf(this, 1200)
-  })
-}
-
 beforeEach(() => {
-  stubScrollViewport()
+  stubScrollViewport({ role: 'main', name: '资料库' }, { width: 1200, height: 900 })
   resetMockReferences([])
 })
 
@@ -230,7 +213,6 @@ describe('参考视频列表', () => {
   })
 
   it('按人筛：点卡片上的属主；候选取自后端的属主名单，还没翻到的属主也能选', async () => {
-    // 第一页 24 条都是 Maya 的，tester 那条排在第二页。
     resetMockReferences([
       ...Array.from({ length: 24 }, (_, index) => ({
         createdAt: new Date(Date.UTC(2026, 8, 23, 11, index)).toISOString(),
@@ -238,7 +220,6 @@ describe('参考视频列表', () => {
       })),
       { createdAt: '2026-09-22T10:00:00Z', userName: 'tester' },
     ])
-    // 页脚不进视口，不自动翻到第二页。
     stubIntersectionObserver()
     const queries = recordListQueries()
     const onScope = vi.fn()
@@ -367,7 +348,6 @@ describe('上传参考视频', () => {
 })
 
 describe('参考视频详情', () => {
-  /** 打开一条：先放好这一行，再以它为详情渲染，等拆解正文出来。 */
   const openDetail = async (
     overrides: Parameters<typeof addMockReference>[0] = {},
     onReference?: (id: string | null) => void,
@@ -457,7 +437,6 @@ describe('参考视频详情', () => {
     expect(refresh).toHaveFocus()
     expect(within(dialog).queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
 
-    // 「取消」只收起提示，回到编辑，内容还在。
     await user.click(within(dialog).getByRole('button', { name: '取消' }))
     expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
     expect(editor).toHaveValue('# 出场元素\n\n第一版拆解，补一句')

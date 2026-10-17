@@ -18,7 +18,7 @@ import { SidebarConversations } from './-sidebar-conversations'
 import { mockConversations } from '@/testing/mocks/conversations'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
-import { stubSidebarViewport } from '@/testing/sidebar-viewport'
+import { stubSidebarViewport } from '@/testing/scroll-viewport'
 
 beforeEach(stubSidebarViewport)
 
@@ -26,13 +26,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-/** 全局帧订阅在应用里挂在 AppSidebar 顶层；这里照样在对话区外面挂一次，帧才进得了缓存。 */
 function LiveFrames() {
   useLiveConversations()
   return null
 }
 
-/** 按分钟递增建立时间，验证列表倒序。 */
 const seedConversations = (count: number, collectionId: string | null = null) =>
   Array.from({ length: count }, (_, index) => {
     const conversation = addMockConversation(
@@ -43,10 +41,6 @@ const seedConversations = (count: number, collectionId: string | null = null) =>
     return conversation
   })
 
-/**
- * session_id 位于信封；运行帧省略 last_turn_reason。
- * 服务端提交之后才发帧，单行补读读到的就是帧说的事实：这里同步改 mock 里那一行（开跑时照 touch_run 抹掉收尾标记）。
- */
 const workChanged = (
   conversationId: string,
   payload: {
@@ -68,7 +62,6 @@ const workChanged = (
   return workFrame(conversationId, payload)
 }
 
-/** 开跑记录运行：服务端写下新的 lastRunId、抹掉收尾标记，再发一帧 updated 带出整行。 */
 const runStarted = (conversationId: string, runId: string) => {
   const row = mockConversations.find((one) => one.id === conversationId)
   if (row === undefined) throw new Error('没有这段对话')
@@ -111,7 +104,6 @@ const render = async (initialPath = '/', permissions = mockAuthUser.permissions)
   return { onStartInCollection, router, socket, user }
 }
 
-/** 服务端改了一行之后发的 updated 帧，带出整行；行内 lastSeq 是写入之前的水位。 */
 const rowUpdated = (row: (typeof mockConversations)[number]) => {
   const before = row.lastSeq
   return {
@@ -122,7 +114,6 @@ const rowUpdated = (row: (typeof mockConversations)[number]) => {
   }
 }
 
-/** 记下某个路径的 GET 次数。 */
 const countReads = (pathname: string) => {
   const reads = { count: 0 }
   server.events.on('request:start', ({ request }) => {
@@ -131,7 +122,6 @@ const countReads = (pathname: string) => {
   return reads
 }
 
-/** 种 50 段未归类对话（三页：20、20、10），列表末尾常在视野里，挂上后自动读完三页。 */
 const renderWithAllPagesLoaded = async () => {
   const rows = seedConversations(50)
   stubIntersectionObserver({ inRange: true })
@@ -141,13 +131,11 @@ const renderWithAllPagesLoaded = async () => {
   return { ...rendered, rows }
 }
 
-/** 合集上方的三档筛选：点一档。「运行中」有任务在跑时可访问名带后缀，按前缀找。 */
 const pickFilter = async (user: ReturnType<typeof userEvent.setup>, option: string) => {
   const filter = await screen.findByRole('radiogroup', { name: '任务筛选' })
   await user.click(within(filter).getByRole('radio', { name: new RegExp(`^${option}`) }))
 }
 
-/** 把对话标成此刻在跑：服务端的「运行中」档按它筛。 */
 const markBusy = (conversation: (typeof mockConversations)[number]) => {
   conversation.activity = { ...conversation.activity, busy: true }
 }
@@ -228,7 +216,6 @@ describe('SidebarConversations', () => {
 
     expect(onStartInCollection).toHaveBeenCalledTimes(1)
     expect(onStartInCollection).toHaveBeenCalledWith(collection.id)
-    // 只有这一个入口，⋯ 菜单里不另放。
     await user.click(more)
     expect(await screen.findByRole('menu')).not.toHaveTextContent('新建任务')
   })
@@ -312,7 +299,6 @@ describe('SidebarConversations', () => {
       new Date(Date.UTC(2026, 7, 29, 0, 2)).toISOString(),
     )
     finished.completedAt = new Date(Date.UTC(2026, 7, 29, 1, 0)).toISOString()
-    // 记录实际请求，验证筛选参数传递到服务端。
     const listed: string[] = []
     server.events.on('request:start', ({ request }) => {
       if (request.url.includes('/api/conversations?')) listed.push(request.url)
@@ -349,7 +335,6 @@ describe('SidebarConversations', () => {
         .getAllByRole('radio')
         .map((item) => item.textContent),
     ).toEqual(['全部', '运行中', '已完成'])
-    // 筛选同时管合集与任务区，排在合集之前；任务标题行里不再有筛选。
     const collections = screen.getByRole('heading', { name: '合集' })
     expect(
       filter.compareDocumentPosition(collections) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -357,13 +342,11 @@ describe('SidebarConversations', () => {
     expect(screen.queryByRole('button', { name: /^任务筛选/ })).not.toBeInTheDocument()
     expect(within(filter).getByRole('radio', { name: '全部' })).toBeChecked()
 
-    // 再点已选中的一档不会清空筛选；方向键在三档间移动，空格选中。
     await user.click(within(filter).getByRole('radio', { name: '全部' }))
     expect(within(filter).getByRole('radio', { name: '全部' })).toBeChecked()
     await user.keyboard('{ArrowRight}')
     expect(within(filter).getByRole('radio', { name: '运行中' })).toHaveFocus()
     await user.keyboard(' ')
-    // 换档后列表按新档位重读，筛选不重挂：选中当场切换，焦点留在选中项上，方向键接着可用。
     const radio = (name: string) => within(filter).getByRole('radio', { name })
     expect(radio('运行中')).toBeChecked()
     expect(radio('全部')).not.toBeChecked()
@@ -500,7 +483,6 @@ describe('SidebarConversations', () => {
         HttpResponse.json({ detail: '对话服务暂不可用' }, { status: 503 }),
       ),
     )
-    // 应用里 Toaster 挂在根上；这里单独挂一个接住失败提示。
     renderDom(<Toaster />)
     const { user } = await render()
 
@@ -525,7 +507,6 @@ describe('SidebarConversations', () => {
     await user.click(await screen.findByRole('menuitem', { name: '标记完成' }))
     expect(await screen.findByLabelText('已完成')).toBeVisible()
 
-    // 后端 touch_run 抹掉标记但不发帧，行上要照开跑与收尾互斥自己收掉。
     socket.deliver(workChanged(conversation?.id ?? '', { busy: true }))
 
     expect(await screen.findByLabelText('进行中')).toBeVisible()
@@ -543,7 +524,6 @@ describe('SidebarConversations', () => {
     await viewport.scroll(true)
 
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21))
-    // 种子都在一个月前：后一页不另起一个「更早」标题。
     expect(screen.getAllByRole('group', { name: '更早' })).toHaveLength(1)
     expect(
       within(screen.getByRole('group', { name: '更早' })).getAllByRole('link', {
@@ -554,7 +534,6 @@ describe('SidebarConversations', () => {
 
   it('任务区按建立时间插时间分组标题，顺序照服务端，空组不出现', async () => {
     const now = new Date()
-    // 用本地日历日构造，避开跨零点与夏令时。
     const daysAgo = (days: number) =>
       new Date(now.getFullYear(), now.getMonth(), now.getDate() - days, 12).toISOString()
     addMockConversation('上个月的', daysAgo(40))
@@ -594,7 +573,6 @@ describe('SidebarConversations', () => {
     expect(pageReads.count).toBe(0)
     await user.click(toggle)
 
-    // 第一页取自拓扑，后面两页各读一次。
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25))
     expect(pageReads.count).toBe(2)
     expect(screen.queryByRole('button', { name: /更多任务/ })).not.toBeInTheDocument()
@@ -640,7 +618,6 @@ describe('SidebarConversations', () => {
       session_id: created.id,
       payload: { ...created },
     })
-    // 拓扑重拉后计数跟上；合集收着，分页不重拉。
     const toggle = await screen.findByRole('button', { name: '夏季亚麻系列 (12)' })
     expect(cursors).toHaveLength(1)
     await user.click(toggle)
@@ -657,7 +634,6 @@ describe('SidebarConversations', () => {
       setItem: (key: string, value: string) => void entries.set(key, value),
     })
     const collections = Array.from({ length: 4 }, (_, index) => addMockCollection(`合集${index}`))
-    // 合集按建立时间倒序，最早建的那个排第四，默认收在「全部合集」里。
     const oldest = collections[0]
     if (oldest === undefined) throw new Error('没有合集')
     seedConversations(1, oldest.id)
@@ -798,9 +774,7 @@ describe('SidebarConversations', () => {
 
     await waitFor(() => expect(conversation?.collectionId).toBe(collection.id))
     expect(await screen.findByRole('button', { name: '夏季亚麻系列 (1)' })).toBeVisible()
-    // 合集收着，那一行离开任务区后侧栏上就看不到了。
     expect(screen.queryByRole('link', { name: '第0段' })).not.toBeInTheDocument()
-    // 刷新只由归属 mutation 做一遍；路由的保存回调再刷一遍会取消在途重拉、多发一次请求。
     expect(topologyReads - readsBeforeSave).toBe(1)
   })
 
@@ -834,7 +808,6 @@ describe('SidebarConversations', () => {
     expect(await screen.findByLabelText('视频排队中')).toBeVisible()
     expect(screen.getByLabelText('进行中')).toBeVisible()
 
-    // 轮次帧只改轮次那几项，不把行上的出片状态冲掉；收场后的重拉也返回同一事实。
     if (conversation !== undefined) {
       conversation.activity = { ...conversation.activity, busy: false, lastTurnReason: 'completed' }
     }
@@ -931,7 +904,6 @@ describe('SidebarConversations', () => {
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'failed' }))
     expect(await screen.findByText('上次失败')).toBeVisible()
 
-    // 同步更新 MSW 列表状态，使推送后的重拉返回一致事实。
     if (conversation !== undefined) {
       conversation.activity = {
         busy: false,
@@ -972,7 +944,6 @@ describe('SidebarConversations', () => {
     expect(screen.queryByLabelText('有新回复')).not.toBeInTheDocument()
 
     await act(() => router.navigate({ to: '/' }))
-    // 离开后它又跑了一轮：开跑帧、带新 lastRunId 的 updated 帧，再是收场帧。
     socket.deliver(workChanged(id, { busy: true }))
     socket.deliver(runStarted(id, 'run-2'))
     socket.deliver(workChanged(id, { busy: false, last_turn_reason: 'completed' }))
@@ -1014,7 +985,6 @@ describe('SidebarConversations', () => {
     })
     expect(await screen.findByRole('link', { name: '另一个窗口建的' })).toBeVisible()
 
-    // 服务端已落墓碑；帧一到行就从视图里消失，不等重拉。
     created.deletedAt = new Date().toISOString()
     socket.deliver({
       ...sessionEnvelope(created.id),
@@ -1065,7 +1035,6 @@ describe('SidebarConversations', () => {
 
     await waitFor(() => expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(21))
 
-    // 最旧对话位于滚动接上的第二页。
     socket.deliver(workChanged(rows[0]?.id ?? '', { busy: true }))
 
     expect(await screen.findByLabelText('进行中')).toBeVisible()
@@ -1130,7 +1099,6 @@ describe('SidebarConversations', () => {
       })
 
       await waitFor(() => expect(cursors).toHaveLength(1))
-      // 从头读：第一页不带游标。
       expect(cursors[0]).toBeNull()
       expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(50)
       expect(screen.getByRole('link', { name: '第30段' })).toBeVisible()
@@ -1164,7 +1132,6 @@ describe('SidebarConversations', () => {
       const handshake = socket.onmessage
 
       socket.onclose?.()
-      // 断开时摘掉旧回调，退避约一秒后重新连上、换上新的消息回调，再回服务端招呼。
       await waitFor(
         () => {
           expect(socket.onmessage).not.toBeNull()
@@ -1195,9 +1162,7 @@ describe('SidebarConversations', () => {
       await waitFor(() =>
         expect(screen.getAllByRole('link', { name: /^第\d+段$/ })).toHaveLength(25),
       )
-      // 任务区第二页按当前档位读。
       expect(ungroupedStates.at(-1)).toBe('running')
-      // 滚离列表末尾：之后列表只能靠重拉保住第二页，不会再自动接上。
       await viewport.scroll(false)
       const tail = rows[0]
       if (tail === undefined) throw new Error('没有对话')
@@ -1215,7 +1180,6 @@ describe('SidebarConversations', () => {
 describe('侧栏原位编辑', () => {
   type User = ReturnType<typeof userEvent.setup>
 
-  /** 记下改名与新建合集的请求，断言发了什么、有没有发。 */
   const recordWrites = () => {
     const writes: { body: unknown; method: string; path: string }[] = []
     server.events.on('request:start', async ({ request }) => {
@@ -1267,7 +1231,6 @@ describe('侧栏原位编辑', () => {
     await user.keyboard('秋季短靴')
     await user.click(screen.getByRole('heading', { name: '任务' }))
 
-    // 焦点是用户自己移走的，保存完不抢回标题链接。
     expect(await screen.findByRole('link', { name: '秋季短靴' })).toBeVisible()
     expect(screen.getByRole('link', { name: '秋季短靴' })).not.toHaveFocus()
     expect(writes).toHaveLength(1)
@@ -1280,7 +1243,6 @@ describe('侧栏原位编辑', () => {
 
     const input = await startRename(user, '春季鞋款分镜')
     await user.keyboard('秋季短靴')
-    // 输入框只有一行字高，编辑行的上下留白属于同一块输入面。
     const surface = input.parentElement
     if (!surface) throw new Error('编辑行缺少外层输入面')
     await user.click(surface)
@@ -1329,7 +1291,6 @@ describe('侧栏原位编辑', () => {
     expect(input).toHaveValue('秋季短靴')
     expect(input).toHaveFocus()
     expect(input).toHaveAccessibleDescription(/对话服务暂不可用/)
-    // 行下说明之外，toast 也报出原因。
     expect(screen.getAllByText(/对话服务暂不可用/).length).toBeGreaterThan(1)
 
     await user.keyboard('{Enter}')
