@@ -286,7 +286,7 @@ export function BrandMenu({
   return (
     <MenuRoot>
       <MenuTrigger asChild>
-        <button className="video-editor-bar-button ui-state ui-focus" type="button">
+        <button className="editor-bar-button ui-state ui-focus" type="button">
           更换模板
         </button>
       </MenuTrigger>

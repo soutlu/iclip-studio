@@ -105,7 +105,7 @@ const posterOf = (url: string | undefined, at = 0) =>
   url === undefined ? undefined : videoSnapshotUrl(url, 320, at)
 
 const DOWNLOAD_CLASS =
-  'video-editor-bar-button relative inline-flex h-(--control-height-md) cursor-pointer items-center justify-center gap-2 rounded-sm text-body-sm font-medium whitespace-nowrap ui-state ui-focus'
+  'editor-bar-button relative inline-flex h-(--control-height-md) cursor-pointer items-center justify-center gap-2 rounded-sm text-body-sm font-medium whitespace-nowrap ui-state ui-focus'
 
 type Props = {
   conversationId: string
@@ -629,7 +629,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const toolButtons = (
     <>
-      <span aria-hidden="true" className="video-editor-bar-divider" />
+      <span aria-hidden="true" className="editor-bar-divider" />
       <IconButton
         disabled={!editable || draft?.canUndo !== true}
         label="撤销"
@@ -650,7 +650,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         }}
         size="sm"
       />
-      <span aria-hidden="true" className="video-editor-bar-divider" />
+      <span aria-hidden="true" className="editor-bar-divider" />
       <BlockedReason
         reason={
           segments.length >= MAX_FILM_SEGMENTS
@@ -660,31 +660,31 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         side="bottom"
       >
         <Button
-          className="video-editor-bar-button video-editor-tool"
+          className="editor-bar-button editor-tool"
           disabled={!editable || !canSplitAt(segments, bodyTime)}
           leadingIcon="split"
           onClick={() => apply(splitAt(film, bodyTime, crypto.randomUUID()))}
           size="md"
           variant="ghost"
         >
-          <span className="video-editor-tool-label">拆分</span>
+          <span className="editor-tool-label">拆分</span>
         </Button>
       </BlockedReason>
       <Button
-        className="video-editor-bar-button video-editor-tool"
+        className="editor-bar-button editor-tool"
         disabled={!editable || (selectedSegment === undefined && selectedBrand == null)}
         leadingIcon="delete"
         onClick={removeSelected}
         size="md"
         variant="ghost"
       >
-        <span className="video-editor-tool-label">删除</span>
+        <span className="editor-tool-label">删除</span>
       </Button>
     </>
   )
 
   const readout = (
-    <span className="video-editor-readout">
+    <span className="editor-readout">
       {previewingMaterial ? (
         <>
           素材选区 ·{' '}
@@ -712,25 +712,25 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const timeline =
     videos.isError && catalog === undefined ? (
-      <p className="video-editor-timeline-loading" role="alert">
+      <p className="editor-timeline-loading" role="alert">
         {errorMessageOf(videos.error, '读取视频记录失败')}
         <Button onClick={() => void videos.refetch()} size="md" variant="ghost">
           重试
         </Button>
       </p>
     ) : seedFailure !== undefined ? (
-      <p className="video-editor-timeline-loading" role="alert">
+      <p className="editor-timeline-loading" role="alert">
         {`${seedFailure.message}，暂时无法恢复上次合成的剪辑`}
         <Button onClick={seedFailure.retry} size="md" variant="ghost">
           重试
         </Button>
       </p>
     ) : catalog === undefined ? (
-      <p className="video-editor-timeline-loading" role="status">
+      <p className="editor-timeline-loading" role="status">
         正在读取成片…
       </p>
     ) : draft === undefined ? (
-      <p className="video-editor-timeline-loading" role="status">
+      <p className="editor-timeline-loading" role="status">
         正在恢复上次合成的剪辑…
       </p>
     ) : (
@@ -943,7 +943,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     <BlockedReason reason={composeBlocked} side="bottom">
       <Button
         aria-disabled={composeBlocked === undefined ? undefined : true}
-        className="video-editor-compose"
+        className="editor-compose"
         onClick={() => {
           if (composeBlocked === undefined) void compose()
         }}
@@ -963,7 +963,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const downloadButton =
     viewedDone === undefined ? (
       <Button
-        className="video-editor-bar-button"
+        className="editor-bar-button"
         disabled
         leadingIcon="download"
         size="md"
@@ -999,7 +999,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     <DialogRoot open onOpenChange={(open) => !open && onClose()}>
       <DialogSurface
         aria-describedby={undefined}
-        className="video-editor-dialog"
+        className="editor-dialog"
         onEscapeKeyDown={(event) => {
           if (shownSelection === undefined && pick === undefined && !previewingMaterial) return
           event.preventDefault()
@@ -1014,10 +1014,10 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       >
         <DialogHeader
           actions={composeButton}
-          className="video-editor-header border-0"
+          className="editor-header border-0"
           closeLabel="关闭视频编辑"
           title={
-            <span className="video-editor-title">
+            <span className="editor-title">
               <span>编辑视频</span>
               <span className="text-body-sm font-normal text-on-surface-muted">整片</span>
             </span>
@@ -1025,7 +1025,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         />
         <div
           aria-label="整片编辑器"
-          className="video-editor whole-film-editor"
+          className="editor-workspace whole-film-editor"
           ref={setEditorElement}
         >
           <EditorPreview
@@ -1110,15 +1110,12 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                   />
                 ) : null}
                 {viewingDraft && !previewingMaterial && unduckedCount > 0 ? (
-                  <p className="video-editor-footnote" role="status">
+                  <p className="editor-footnote" role="status">
                     有 {unduckedCount} 段缺少口播识别，配乐未自动避让；请在字幕轨重新识别
                   </p>
                 ) : null}
                 {footnote === undefined ? null : (
-                  <p
-                    className="video-editor-footnote"
-                    role={notice === null ? undefined : 'status'}
-                  >
+                  <p className="editor-footnote" role={notice === null ? undefined : 'status'}>
                     {footnote}
                   </p>
                 )}

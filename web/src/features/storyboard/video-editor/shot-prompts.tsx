@@ -1,4 +1,3 @@
-/** 原作的镜头正文只供主动查看、复制到修改要求；不随时间线选区筛选，也不推导其他来源。 */
 import { useState } from 'react'
 import { Button, IconButton } from '@/shared/ui/button'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
@@ -67,7 +66,11 @@ export function ShotPrompts({ root, shotIndex, canAppend, onAppend }: ShotPrompt
                       leadingIcon="copy"
                       onClick={() => onAppend(item.prompt)}
                       size="md"
-                      title={canAppend ? '追加到修改要求末尾' : '请先选中视频段，提交期间无法添加'}
+                      title={
+                        canAppend
+                          ? '追加到修改要求末尾'
+                          : '未选中视频段或正在提交，无法复制到输入框；请选中视频段并等待提交完成'
+                      }
                       variant="ghost"
                     >
                       复制到输入框

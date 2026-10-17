@@ -1,4 +1,4 @@
-.video-editor-dialog {
+.editor-dialog {
   width: min(1480px, calc(100vw - 32px));
   max-width: 1480px;
   height: min(1000px, calc(100dvh - 32px));
@@ -7,41 +7,41 @@
   background: var(--color-surface-container-lowest);
 }
 
-.video-editor-header {
+.editor-header {
   align-items: center;
   min-height: 60px;
   border: 0;
   padding: 0 20px 0 24px;
 }
 
-.video-editor-header h2 {
+.editor-header h2 {
   overflow: visible;
   font-size: var(--text-title);
   line-height: var(--text-title--line-height);
   white-space: normal;
 }
 
-.video-editor-title {
+.editor-title {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 12px;
 }
 
-.video-editor-compose {
+.editor-compose {
   padding: 0 14px;
   border-radius: var(--radius-full);
   font-size: var(--text-body);
 }
 
-.video-editor-compose:disabled,
-.video-editor-compose[aria-disabled='true'] {
+.editor-compose:disabled,
+.editor-compose[aria-disabled='true'] {
   background-color: var(--color-disabled-container);
   box-shadow: none;
   scale: 1;
 }
 
-.video-editor {
+.editor-workspace {
   display: grid;
   min-height: 0;
   flex: 1;
@@ -58,7 +58,7 @@
   scrollbar-width: thin;
 }
 
-.video-editor-stage-area {
+.editor-stage-area {
   position: relative;
   display: flex;
   grid-area: stage;
@@ -66,7 +66,7 @@
   min-height: 0;
 }
 
-.video-editor-stage {
+.editor-stage {
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -76,7 +76,7 @@
   background: var(--color-surface-container-low);
 }
 
-.video-editor-hero-wrap {
+.editor-hero-wrap {
   position: absolute;
   inset: 20px 96px;
   display: flex;
@@ -85,13 +85,13 @@
   container-type: size;
 }
 
-.video-editor-stage-host {
+.editor-stage-host {
   display: contents;
 }
 
 /* 画面内的 cqw 以实际画面宽为参照，内嵌、放大与窗口缩放共用一份度量。
    画面里的文字随放大换字号：--preview-text-size、--preview-text-line-height。 */
-.video-editor-preview {
+.editor-preview {
   --preview-text-size: var(--text-body);
   --preview-text-line-height: var(--text-body--line-height);
 
@@ -104,7 +104,7 @@
   container-type: inline-size;
 }
 
-.video-editor-video {
+.editor-video {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -112,7 +112,7 @@
   object-fit: contain;
 }
 
-.video-editor-preview-fade {
+.editor-preview-fade {
   position: absolute;
   inset: 0;
   z-index: var(--z-local-1);
@@ -120,7 +120,7 @@
   pointer-events: none;
 }
 
-.video-editor-preview-message {
+.editor-preview-message {
   position: absolute;
   inset: 0;
   z-index: var(--z-local-2);
@@ -137,7 +137,7 @@
 }
 
 /* 滚动容器按自己的内边距框裁切子元素阴影；内边距放宽到格子阴影的扩散范围（横向约 14px、纵向约 24px）。 */
-.video-editor-versions {
+.editor-versions {
   position: absolute;
   top: 50%;
   right: 2px;
@@ -152,7 +152,7 @@
   scrollbar-width: none;
 }
 
-.video-editor-versions-title {
+.editor-versions-title {
   align-self: center;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
@@ -160,16 +160,16 @@
   white-space: nowrap;
 }
 
-.video-editor-version-failed {
+.editor-version-failed {
   color: color-mix(in srgb, var(--color-error) 60%, var(--color-on-scrim));
 }
 
-.video-editor-enlarge-scrim {
+.editor-enlarge-scrim {
   z-index: var(--z-popup);
   background: color-mix(in srgb, var(--color-scrim) 60%, transparent);
 }
 
-.video-editor-enlarge {
+.editor-enlarge {
   inset: 0;
   width: auto;
   max-width: none;
@@ -180,7 +180,7 @@
   padding: 24px;
 }
 
-.video-editor-preview.is-enlarged {
+.editor-preview.is-enlarged {
   --preview-text-size: var(--text-title);
   --preview-text-line-height: var(--text-title--line-height);
 
@@ -190,7 +190,7 @@
   box-shadow: none;
 }
 
-.video-editor-enlarge-transport {
+.editor-enlarge-transport {
   --color-focus-ring: var(--color-on-scrim);
 
   position: absolute;
@@ -208,21 +208,21 @@
   white-space: nowrap;
 }
 
-.video-editor-enlarge-transport button {
+.editor-enlarge-transport button {
   color: inherit;
 }
 
-.video-editor-enlarge-transport .video-editor-play {
+.editor-enlarge-transport .editor-play {
   background: var(--color-on-scrim);
   color: var(--color-scrim);
 }
 
-.video-editor-enlarge-transport .video-editor-clock span {
+.editor-enlarge-transport .editor-clock span {
   color: inherit;
   opacity: 0.65;
 }
 
-.video-editor-timeline-area {
+.editor-timeline-area {
   display: flex;
   grid-area: timeline;
   min-width: 0;
@@ -230,7 +230,7 @@
   gap: 6px;
 }
 
-.video-editor-timeline-panel {
+.editor-timeline-panel {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -239,7 +239,7 @@
   background: var(--color-surface-container-low);
 }
 
-.video-editor-footnote {
+.editor-footnote {
   min-height: var(--text-caption--line-height);
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
@@ -247,7 +247,7 @@
   text-align: center;
 }
 
-.video-editor-bar {
+.editor-bar {
   display: flex;
   min-height: 32px;
   align-items: center;
@@ -255,32 +255,32 @@
   gap: 8px;
 }
 
-.video-editor-bar-group {
+.editor-bar-group {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 2px;
 }
 
-.video-editor-bar button,
-.video-editor-enlarge-transport button {
+.editor-bar button,
+.editor-enlarge-transport button {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-full);
 }
 
-.video-editor-bar .video-editor-bar-button {
+.editor-bar .editor-bar-button {
   width: auto;
   padding: 0 10px;
   color: var(--color-on-surface-variant);
 }
 
-.video-editor-bar .video-editor-bar-button:disabled {
+.editor-bar .editor-bar-button:disabled {
   opacity: var(--state-disabled-content);
   cursor: default;
 }
 
-.video-editor-clock {
+.editor-clock {
   padding: 0 6px 0 10px;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
@@ -288,11 +288,11 @@
   white-space: nowrap;
 }
 
-.video-editor-clock span {
+.editor-clock span {
   color: var(--color-on-surface-muted);
 }
 
-.video-editor-readout {
+.editor-readout {
   margin-right: 4px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
@@ -301,19 +301,19 @@
   white-space: nowrap;
 }
 
-.video-editor-readout b {
+.editor-readout b {
   color: var(--color-on-surface);
   font-weight: 500;
 }
 
-.video-editor-bar-divider {
+.editor-bar-divider {
   width: 1px;
   height: 16px;
   margin: 0 8px;
   background: var(--color-hairline);
 }
 
-.video-editor-timeline-loading {
+.editor-timeline-loading {
   padding: 32px 16px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-body-sm);
@@ -321,37 +321,37 @@
 }
 
 @media (max-width: 999px) {
-  .video-editor-dialog {
+  .editor-dialog {
     width: calc(100vw - 16px);
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
   }
 
-  .video-editor-header {
+  .editor-header {
     padding: 8px 12px 8px 16px;
   }
 
-  .video-editor {
+  .editor-workspace {
     grid-template-rows: repeat(2, max-content);
     padding: 0 16px 16px;
   }
 
-  .video-editor-stage-area {
+  .editor-stage-area {
     flex-direction: column;
     gap: 10px;
   }
 
-  .video-editor-stage {
+  .editor-stage {
     height: min(58dvh, 560px);
     min-height: 300px;
     flex: none;
   }
 
-  .video-editor-hero-wrap {
+  .editor-hero-wrap {
     inset: 12px;
   }
 
-  .video-editor-versions {
+  .editor-versions {
     position: static;
     max-height: none;
     flex-direction: row;
@@ -363,32 +363,32 @@
     background: var(--color-surface-container-low);
   }
 
-  .video-editor-versions .version-thumb {
+  .editor-versions .version-thumb {
     box-shadow: none;
   }
 
-  .video-editor-versions .version-thumb[aria-pressed='true'] {
+  .editor-versions .version-thumb[aria-pressed='true'] {
     box-shadow: 0 0 0 1.5px var(--color-on-surface);
   }
 }
 
 @media (max-width: 599px) {
-  .video-editor-readout,
-  .video-editor-bar-divider {
+  .editor-readout,
+  .editor-bar-divider {
     display: none;
   }
 
-  .video-editor-bar {
+  .editor-bar {
     flex-wrap: wrap;
     row-gap: 4px;
   }
 
-  .video-editor-bar .video-editor-tool {
+  .editor-bar .editor-tool {
     width: 30px;
     padding: 0;
   }
 
-  .video-editor-tool-label {
+  .editor-tool-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -397,13 +397,13 @@
     white-space: nowrap;
   }
 
-  .video-editor-clock {
+  .editor-clock {
     padding: 0 4px 0 6px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .video-editor * {
+  .editor-workspace * {
     scroll-behavior: auto;
   }
 }

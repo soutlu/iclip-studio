@@ -58,7 +58,7 @@ const sameSegments = (
 
 export function PreviewMessage({ children }: { children: ReactNode }) {
   return (
-    <div className="video-editor-preview-message" role="status">
+    <div className="editor-preview-message" role="status">
       <Icon decorative name="video" size="lg" />
       <span>{children}</span>
     </div>
@@ -138,7 +138,7 @@ export function EditorPreview({
   // 放大与还原只把这个节点挪到另一个槽：两个 <video> 一旦重挂，播放、静音与预载就会中断。
   const [stageHost] = useState(() => {
     const host = document.createElement('div')
-    host.className = 'video-editor-stage-host'
+    host.className = 'editor-stage-host'
     return host
   })
   const inlineSlotRef = useRef<HTMLDivElement | null>(null)
@@ -357,7 +357,7 @@ export function EditorPreview({
 
   const playButton = (
     <IconButton
-      className="video-editor-play"
+      className="editor-play"
       disabled={segments === undefined || segments.length === 0 || failed || blocked}
       tooltip={blockedReason}
       label={playing ? '暂停' : '播放'}
@@ -368,7 +368,7 @@ export function EditorPreview({
     />
   )
   const clock = (
-    <span className="video-editor-clock">
+    <span className="editor-clock">
       {timeLabel(currentTime)}
       <span> / {timeLabel(duration)}</span>
     </span>
@@ -385,7 +385,7 @@ export function EditorPreview({
   const stage = (
     <div
       aria-label="视频预览"
-      className={cn('video-editor-preview stage-picture', enlarged && 'is-enlarged')}
+      className={cn('editor-preview stage-picture', enlarged && 'is-enlarged')}
       style={{ '--preview-ratio': aspectRatio ?? aspect } as CSSProperties}
     >
       {SLOTS.map(({ id, slot }) => (
@@ -393,7 +393,7 @@ export function EditorPreview({
         <video
           aria-hidden={slot !== active}
           aria-label={slot === active ? '视频播放器' : undefined}
-          className={cn('video-editor-video', slot !== active && 'invisible')}
+          className={cn('editor-video', slot !== active && 'invisible')}
           key={id}
           muted={muted || externalAudio !== undefined}
           onWaiting={(event) => {
@@ -449,14 +449,14 @@ export function EditorPreview({
       {switches === 0 ? null : (
         <span
           aria-hidden="true"
-          className="video-editor-preview-fade animate-out duration-(--dur-m) ease-(--ease-decel) fill-mode-forwards fade-out motion-reduce:hidden"
+          className="editor-preview-fade animate-out duration-(--dur-m) ease-(--ease-decel) fill-mode-forwards fade-out motion-reduce:hidden"
           key={switches}
         />
       )}
       {failed ? null : picture}
       {segments === undefined ? <PreviewMessage>正在读取视频信息…</PreviewMessage> : null}
       {failed ? (
-        <div className="video-editor-preview-message" role="alert">
+        <div className="editor-preview-message" role="alert">
           <MediaFallback
             kind="video"
             onRetry={() => {
@@ -473,11 +473,11 @@ export function EditorPreview({
   // 子节点的顺序固定：portal 换了位置或容器，舞台就会重挂。
   return (
     <>
-      <div className="video-editor-stage-area">
-        <section aria-label="预览舞台" className="video-editor-stage">
+      <div className="editor-stage-area">
+        <section aria-label="预览舞台" className="editor-stage">
           <StageBackdrop url={backdrop} />
           {viewControl}
-          <div className="video-editor-hero-wrap" ref={placeInline} />
+          <div className="editor-hero-wrap" ref={placeInline} />
           {overlay}
         </section>
         {versions}
@@ -488,7 +488,7 @@ export function EditorPreview({
           <DialogSurface
             aria-describedby={undefined}
             bare
-            className="video-editor-enlarge"
+            className="editor-enlarge"
             onCloseAutoFocus={(event) => {
               // Radix 默认把焦点还给打开前的元素。
               event.preventDefault()
@@ -500,7 +500,7 @@ export function EditorPreview({
               event.preventDefault()
               closeEnlargedRef.current?.focus()
             }}
-            overlayClassName="video-editor-enlarge-scrim"
+            overlayClassName="editor-enlarge-scrim"
           >
             <DialogTitle className="sr-only">放大预览</DialogTitle>
             <button
@@ -511,7 +511,7 @@ export function EditorPreview({
             />
             <div className="relative">
               <div ref={placeEnlarged} />
-              <div aria-label="播放控件" className="video-editor-enlarge-transport" role="group">
+              <div aria-label="播放控件" className="editor-enlarge-transport" role="group">
                 {playButton}
                 {clock}
                 {muteButton}
@@ -529,17 +529,17 @@ export function EditorPreview({
           </DialogSurface>
         ) : null}
       </DialogRoot>
-      <div className="video-editor-timeline-area">
-        <div className="video-editor-timeline-panel">
-          <div aria-label="播放控件" className="video-editor-bar" role="group">
-            <div className="video-editor-bar-group">
+      <div className="editor-timeline-area">
+        <div className="editor-timeline-panel">
+          <div aria-label="播放控件" className="editor-bar" role="group">
+            <div className="editor-bar-group">
               {playButton}
               {clock}
               {tools}
             </div>
-            <div className="video-editor-bar-group">
+            <div className="editor-bar-group">
               {readout}
-              <span aria-hidden="true" className="video-editor-bar-divider" />
+              <span aria-hidden="true" className="editor-bar-divider" />
               {muteButton}
               <IconButton
                 label="放大"

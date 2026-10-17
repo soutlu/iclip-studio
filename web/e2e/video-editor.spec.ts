@@ -57,7 +57,7 @@ const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开
 const requestBox = (dialog: Locator) =>
   card(dialog).getByRole('textbox', { name: '修改要求', exact: true })
 const generateButton = (dialog: Locator) =>
-  card(dialog).getByRole('button', { name: '生成', exact: true })
+  card(dialog).getByRole('button', { name: '生成视频', exact: true })
 
 /** 等分段读好：第 2 组 6 段，原声读到波形。 */
 const waitForSegments = async (dialog: Locator, count = 6) => {
@@ -219,7 +219,7 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
       request.url().endsWith('/api/generations/video-edits') && request.method() === 'POST',
   )
   await generateButton(dialog).click()
-  await expect(card(dialog).getByRole('button', { name: '提交', exact: true })).toBeDisabled()
+  await expect(card(dialog).getByRole('button', { name: '正在提交', exact: true })).toBeDisabled()
   for (const width of [390, 600, 640, 1280]) {
     await page.setViewportSize({ width, height: 844 })
     await expectToolbarInsideCard(width, '提交中')
@@ -547,7 +547,7 @@ test('裁剪 1 秒的原片段：气泡说裁剪后多长，松手后总长变�
   await expectCard(
     dialog,
     '第 2 段 · 视频生成',
-    '该模型编辑至少需要 1 秒；请按住 Shift 选择相邻片段',
+    '该模型编辑至少需要 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
   )
 
   // 拖过头停在最短的 0.2 秒。
@@ -593,7 +593,11 @@ test('拖动调序：插入处一条墨线，原声跟着走；合成请求就�
   await expect.poll(pillOffset).toBeLessThan(4)
   // Shift 连上后面那段，按基底时间不连续，不能交给 AI。
   await segment(dialog, 2).click({ modifiers: ['Shift'] })
-  await expectCard(dialog, '第 1–2 段 · 视频生成', '请选择原片时间连续的片段，再生成新版本')
+  await expectCard(
+    dialog,
+    '第 1–2 段 · 视频生成',
+    '所选片段在原片中不连续，无法生成新版本；请选择原片时间连续的片段',
+  )
 
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',

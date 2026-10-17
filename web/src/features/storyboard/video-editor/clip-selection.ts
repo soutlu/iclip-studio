@@ -13,6 +13,13 @@ export const selectedClips = (draft: Draft, selection: Selection): readonly Clip
     : undefined
 }
 
+export const selectionPositions = (draft: Draft, selection: Selection): string | undefined => {
+  if (selection.length === 0) return undefined
+  const first = draft.findIndex((item) => item.id === selection[0]) + 1
+  const last = draft.findIndex((item) => item.id === selection.at(-1)) + 1
+  return first === last ? `第 ${first} 段` : `第 ${first}–${last} 段`
+}
+
 export const selectedSource = (draft: Draft, selection: Selection): Clip | undefined => {
   const clips = selectedClips(draft, selection)
   const first = clips?.[0]

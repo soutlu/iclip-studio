@@ -18,51 +18,51 @@ import { UserFacingError } from '@/shared/api/client'
 import { roundToMs, type SecondsRange } from '../editing/clip'
 import { asUserFacing, openInput } from '../editing/media-file'
 
-export const concatenateReferenceClips = async (
-  clips: readonly (SecondsRange & { mediaUrl: string })[],
-): Promise<File> => {
-  if (
-    clips.length === 0 ||
-    clips.some(
-      ({ start, end }) =>
-        !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start,
+type ReferenceClip = SecondsRange & { mediaUrl: string }
+
+const isNonEmpty = <T>(items: readonly T[]): items is readonly [T, ...T[]] => items.length > 0
+
+const isValidRange = ({ start, end }: SecondsRange) =>
+  Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end > start
+
+const openSource = async (clip: ReferenceClip, inputs: Input[]) => {
+  const input = openInput(clip.mediaUrl)
+  inputs.push(input)
+  const [video, audio] = await Promise.all([
+    input.getPrimaryVideoTrack(),
+    input.getPrimaryAudioTrack(),
+  ])
+  if (video === null)
+    throw new UserFacingError('所选片段没有画面，无法制作参考视频；请重新选择片段')
+  if (!(await video.canDecode()))
+    throw new UserFacingError(
+      '当前浏览器不支持解码所选片段的画面，无法制作参考视频；请使用其他浏览器',
     )
-  ) {
-    throw new UserFacingError('参考片段区间无效，请重新选择片段')
-  }
+  // 容器时长可能长于画面：原声音轨比画面略长时，这段尾音也属于素材。
+  if (clip.end > roundToMs(await input.computeDuration()))
+    throw new UserFacingError('所选区间超出视频时长，无法制作参考视频；请重新选择片段')
+  if (audio !== null && !(await audio.canDecode()))
+    throw new UserFacingError(
+      '当前浏览器不支持解码所选片段的原声，无法制作参考视频；请使用其他浏览器',
+    )
+  const channels = audio === null ? 0 : await audio.getNumberOfChannels()
+  return { ...clip, video, audio, channels }
+}
+
+export const concatenateReferenceClips = async (clips: readonly ReferenceClip[]): Promise<File> => {
+  if (!isNonEmpty(clips) || !clips.every(isValidRange))
+    throw new UserFacingError('参考片段区间无效，无法制作参考视频；请重新选择片段')
 
   const inputs: Input[] = []
   const target = new BufferTarget()
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target })
   try {
-    const sources = []
-    let numberOfChannels = 0
-    for (const clip of clips) {
-      const input = openInput(clip.mediaUrl)
-      inputs.push(input)
-      const [video, audio] = await Promise.all([
-        input.getPrimaryVideoTrack(),
-        input.getPrimaryAudioTrack(),
-      ])
-      if (video === null) throw new UserFacingError('所选片段没有画面，无法制作参考视频')
-      if (!(await video.canDecode())) {
-        throw new UserFacingError('当前浏览器无法解码所选片段的画面')
-      }
-      // 容器时长可能长于画面：原声音轨比画面略长时，这段尾音也属于素材。
-      if (clip.end > roundToMs(await input.computeDuration())) {
-        throw new UserFacingError('所选区间超出视频时长，请重新选择片段')
-      }
-      if (audio !== null) {
-        if (!(await audio.canDecode())) {
-          throw new UserFacingError('当前浏览器无法解码所选片段的原声')
-        }
-        numberOfChannels = Math.max(numberOfChannels, await audio.getNumberOfChannels())
-      }
-      sources.push({ ...clip, video, audio })
-    }
+    const [head, ...rest] = clips
+    const first = await openSource(head, inputs)
+    const sources = [first]
+    for (const clip of rest) sources.push(await openSource(clip, inputs))
+    const numberOfChannels = Math.max(...sources.map((source) => source.channels))
 
-    const first = sources[0]
-    if (first === undefined) throw new UserFacingError('请先选择参考片段')
     // AVC 要求偶数尺寸。
     const width = Math.ceil((await first.video.getDisplayWidth()) / 2) * 2
     const height = Math.ceil((await first.video.getDisplayHeight()) / 2) * 2
@@ -73,7 +73,9 @@ export const concatenateReferenceClips = async (
         ? 'vp9'
         : null
     if (codec === null) {
-      throw new UserFacingError('当前浏览器无法编码参考视频，请使用支持视频编码的浏览器')
+      throw new UserFacingError(
+        '当前浏览器不支持视频编码，无法制作参考视频；请使用支持视频编码的浏览器',
+      )
     }
     const videoSource = new VideoSampleSource({
       codec,
@@ -92,7 +94,9 @@ export const concatenateReferenceClips = async (
         typeof OfflineAudioContext === 'undefined' ||
         !(await canEncodeAudio('opus', { numberOfChannels, sampleRate }))
       ) {
-        throw new UserFacingError('当前浏览器无法编码参考视频的原声，请使用支持音频编码的浏览器')
+        throw new UserFacingError(
+          '当前浏览器不支持音频编码，无法制作参考视频的原声；请使用支持音频编码的浏览器',
+        )
       }
       audioContext = new OfflineAudioContext(
         numberOfChannels,
@@ -121,7 +125,8 @@ export const concatenateReferenceClips = async (
           sample.close()
         }
       }
-      if (!hasVideo) throw new UserFacingError('所选区间没有可播放的画面，请重新选择片段')
+      if (!hasVideo)
+        throw new UserFacingError('所选区间没有可播放的画面，无法制作参考视频；请重新选择片段')
       if (audioContext !== undefined && clip.audio !== null) {
         for await (const sample of new AudioSampleSink(clip.audio).samples(clip.start, clip.end)) {
           try {

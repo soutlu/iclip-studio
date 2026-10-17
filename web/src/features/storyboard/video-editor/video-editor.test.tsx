@@ -14,9 +14,8 @@ import { draftStorageKey } from './use-edit-draft'
 import { viewStorageKey } from './use-picked-view'
 import { VideoEditor } from './video-editor'
 
-/** mediabunny 的替身：按地址给关键帧表与时长，都没有音轨；切参考片段时直接给几个字节。jsdom 读不了真文件。 */
+// jsdom 读不了真文件：mediabunny 换成按地址给关键帧表与时长的替身。
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
-/** 按地址挡住读文件：放进一个没兑现的 Promise，读关键帧就停在那里，兑现了才读完。默认不挡。 */
 const fileGates = vi.hoisted(() => new Map<string, Promise<void>>())
 const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
 
@@ -145,7 +144,6 @@ const renderEditor = (job = root, onClose = () => {}) =>
     { initialPath: '/c/test' },
   )
 
-/** 基于原片改第 3–4 段（2–4 秒）的编辑段。 */
 const editSegment = (overrides: Parameters<typeof makeGenerationJob>[0]) =>
   makeGenerationJob({
     rootJobId: ROOT_ID,
@@ -161,7 +159,7 @@ const serveChain = (items: ReturnType<typeof makeGenerationJob>[]) =>
 
 const timeline = () => screen.findByRole('region', { name: '视频编辑时间线' })
 
-/** 时间线上第 n 段。jsdom 没有指针捕获，按下段时会捕获指针（好分辨是点还是拖），这里补上。 */
+// jsdom 没有指针捕获，按下段时组件会捕获指针，这里补上。
 const segmentOf = (track: HTMLElement, position: number) =>
   Object.assign(within(track).getByRole('button', { name: new RegExp(`^第 ${position} 段`) }), {
     setPointerCapture: () => undefined,
@@ -172,7 +170,7 @@ const segmentOf = (track: HTMLElement, position: number) =>
 const card = () => screen.queryByRole('region', { name: 'AI 改段' })
 const openCard = () => screen.getByRole('region', { name: 'AI 改段' })
 const requestBox = () => within(openCard()).getByLabelText('修改要求')
-const generateButton = () => within(openCard()).getByRole('button', { name: '生成' })
+const generateButton = () => within(openCard()).getByRole('button', { name: '生成视频' })
 const versionStrip = () => screen.getByRole('group', { name: '视频版本' })
 const versionButton = (label: string) =>
   within(versionStrip()).getByRole('button', { name: new RegExp(`^${label}(?: ·|$)`) })
@@ -184,13 +182,11 @@ const scopeButton = (name: '整片' | '片段') =>
 let restoreMedia = () => {}
 
 beforeEach(() => {
-  // 既有剪辑交互使用支持 1 秒编辑的 Wan；Seedance 边界用例显式选择自己的模型。
   server.use(
     http.get('*/api/generations/video-models', () =>
       HttpResponse.json({ ...VIDEO_MODELS, default: 'wan3.0-video' }),
     ),
   )
-  // 原片 8 秒，每秒一个关键帧。
   files.set(ROOT_URL, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7], duration: 8 })
   window.localStorage.clear()
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
@@ -287,7 +283,7 @@ describe('VideoEditor', () => {
 })
 
 describe('AI 改段的弹出卡', () => {
-  // 加参考图要有上传权限；jsdom 不解码图片，上传前的尺寸校验读这个桩。
+  // jsdom 不解码图片，上传前的尺寸校验读这个桩。
   beforeEach(() => {
     loginAs(mockAuthUser)
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
@@ -318,7 +314,7 @@ describe('AI 改段的弹出卡', () => {
     const track = await timeline()
     await user.click(segmentOf(track, 2))
 
-    // 点进卡里才聚焦输入框（jsdom 里 ProseMirror 量不了点击位置，直接给焦点）。
+    // jsdom 里 ProseMirror 量不了点击位置，直接给焦点。
     act(() => requestBox().focus())
     pasteTextIntoComposer(requestBox(), '换成黄昏的暖光')
     await user.keyboard('{Escape}')
@@ -332,14 +328,12 @@ describe('AI 改段的弹出卡', () => {
     expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
     expect(requestBox()).toHaveFocus()
 
-    // 换一段：卡跟着换，要求留着。
     await user.click(segmentOf(track, 5))
     expect(within(openCard()).getByText('第 5 段 · 视频生成')).toBeVisible()
     expect(requestBox()).toHaveTextContent('换成黄昏的暖光')
   })
 
   it('收起时还在上传的参考图留不下来：展开后卡里说出几张要重新添加，写好的字照旧；再改要求提示收起', async () => {
-    // 签名一直不回：图片停在上传中。
     server.use(http.post('*/api/uploads/sign', () => delay('infinite')))
     serveChain([])
     const user = userEvent.setup()
@@ -399,7 +393,7 @@ describe('AI 改段的弹出卡', () => {
       keyframes: [0, 0.5, 1, 2, 3, 4, 5, 6, 7],
       prepare: async () => {},
       position: 1,
-      reason: '该模型编辑至少需要 1 秒；请按住 Shift 选择相邻片段',
+      reason: '该模型编辑至少需要 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
     },
     {
       name: '拆过',
@@ -412,7 +406,7 @@ describe('AI 改段的弹出卡', () => {
         await user.click(screen.getByRole('button', { name: '拆分' }))
       },
       position: 1,
-      reason: '该模型编辑至少需要 1 秒；请按住 Shift 选择相邻片段',
+      reason: '该模型编辑至少需要 1 秒，无法生成视频；请按住 Shift 选择相邻片段',
     },
   ])(
     '选区不能交给 AI（$name）：卡头写原因，写了要求也生成不了',
@@ -600,6 +594,68 @@ describe('AI 改段的弹出卡', () => {
     expect(submitted[1]?.['reference_video_urls']).toEqual([])
   })
 
+  it('参考图上限取模型返回的张数：Seedance 2.5 图生可引用 11 张并全部提交', async () => {
+    server.use(http.get('*/api/generations/video-models', () => HttpResponse.json(VIDEO_MODELS)))
+    serveChain([])
+    const submitted: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/video-edits', async ({ request }) => {
+        submitted.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { generation: editSegment({ status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 2))
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    pasteFilesIntoComposer(
+      requestBox(),
+      Array.from(
+        { length: 11 },
+        (_, index) => new File(['png'], `参考${index + 1}.png`, { type: 'image/png' }),
+      ),
+    )
+
+    await waitFor(() => expect(generateButton()).toBeEnabled())
+    expect(within(requestBox()).getAllByText(/^参考\d+\.png$/)).toHaveLength(11)
+    expect(within(openCard()).queryByText(/最多/)).toBeNull()
+    await user.click(generateButton())
+    await waitFor(() => expect(submitted).toHaveLength(1))
+    expect(submitted[0]?.['model']).toBe('vendor-a-seedance-2-5')
+    expect(submitted[0]?.['reference_image_urls']).toHaveLength(11)
+  })
+
+  it('模型清单读不到时不套用参考图上限，也不能生成', async () => {
+    server.use(
+      http.get('*/api/generations/video-models', () =>
+        HttpResponse.json({ detail: '模型清单读不到' }, { status: 500 }),
+      ),
+    )
+    serveChain([])
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 2))
+    await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
+    expect(await within(openCard()).findByText(/模型清单读不到/)).toBeVisible()
+    pasteFilesIntoComposer(
+      requestBox(),
+      Array.from(
+        { length: 11 },
+        (_, index) => new File(['png'], `参考${index + 1}.png`, { type: 'image/png' }),
+      ),
+    )
+
+    await waitFor(() =>
+      expect(within(requestBox()).getAllByText(/^参考\d+\.png$/)).toHaveLength(11),
+    )
+    expect(within(openCard()).queryByText(/最多/)).toBeNull()
+    expect(within(openCard()).getByText('暂无可用的视频模型', { selector: 'p' })).toBeVisible()
+    expect(generateButton()).toBeDisabled()
+  })
+
   it('图生只有图片可用，切回编辑必须补充修改文字，按钮与 Enter 都遵循同一条件', async () => {
     serveChain([])
     const submitted: Record<string, unknown>[] = []
@@ -646,9 +702,7 @@ describe('AI 改段的弹出卡', () => {
         }),
       ),
     )
-    // 受理的编辑段进链里，轮询照样看得到它在跑。
     const chain: ReturnType<typeof makeGenerationJob>[] = []
-    // 图片按上传确认的先后记下地址；两张图一张传完再加下一张，先后就是正文里的先后。
     const confirmedImages: string[] = []
     server.events.on('response:mocked', async ({ request, response }) => {
       if (!/\/api\/uploads\/[^/]+\/confirm$/.test(request.url)) return
@@ -691,7 +745,6 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(confirmedImages).toHaveLength(1))
     pasteTextIntoComposer(requestBox(), '，构图参考')
     pasteFilesIntoComposer(requestBox(), [image('构图')])
-    // 第二张传着时生成钮灰着，传完才亮。
     expect(generateButton()).toBeDisabled()
     await waitFor(() => expect(generateButton()).toBeEnabled())
     await user.click(generateButton())
@@ -706,7 +759,6 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(confirmedImages).toHaveLength(2))
     expect(submitted[0]?.['reference_image_urls']).toEqual(confirmedImages)
 
-    // 在侧栏显示生成状态，保留当前选用的原片，其他段照常可选。
     expect(await within(versionStrip()).findByRole('button', { name: /V1 · 生成中/ })).toBeVisible()
     expect(within(track).queryByRole('img', { name: /AI 生成中/ })).toBeNull()
     expect(within(track).queryByRole('status')).toBeNull()
@@ -745,7 +797,6 @@ describe('AI 改段的弹出卡', () => {
     })
     expect(await within(versionStrip()).findByRole('button', { name: /V2 · 生成中/ })).toBeVisible()
 
-    // 再选一段，继续保留用户刚编辑的内容。
     await user.click(segmentOf(track, 1))
     expect(requestBox()).toHaveTextContent('光线参考光线.png，构图参考构图.png，镜头缓慢推进')
   })
@@ -1021,7 +1072,6 @@ describe('整片版本与片段选用', () => {
     const user = userEvent.setup()
     await renderEditor()
     const track = await timeline()
-    // 已编辑区间归成一段，但仍然使用原来的 2 秒素材。
     expect(within(track).getAllByRole('button', { name: /^第 \d 段/ })).toHaveLength(7)
     expect(screen.getByRole('group', { name: '播放控件' })).toHaveTextContent('共 8.0 秒')
     await user.click(segmentOf(track, 3))
@@ -1258,7 +1308,6 @@ describe('刷新与切换页面后的编辑历史', () => {
   const COMPOSITE_ID = '7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f'
   const EDIT_ON_COMPOSITE_ID = '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b'
 
-  /** V1：在原片上删掉一段拼成的 7 秒成片，服务端给齐合成记录的字段。 */
   const composite = (overrides: Parameters<typeof makeGenerationJob>[0] = {}) =>
     makeGenerationJob({
       id: COMPOSITE_ID,
@@ -1276,7 +1325,6 @@ describe('刷新与切换页面后的编辑历史', () => {
   const runningComposite = () =>
     composite({ status: 'submitted', finishedAt: null, outputUrl: null, durationMs: null })
 
-  /** 基于 V1 改 2–4 秒（V1 的第 3–4 段）的编辑段。 */
   const editOnComposite = (overrides: Parameters<typeof makeGenerationJob>[0] = {}) =>
     editSegment({
       id: EDIT_ON_COMPOSITE_ID,
@@ -1286,7 +1334,6 @@ describe('刷新与切换页面后的编辑历史', () => {
       ...overrides,
     })
 
-  /** 服务端上的记录：按真实接口口径筛 rootJobId、按创建时刻倒序、从 before 之后截 limit。 */
   let records: GenerationJob[] = []
   const serveRecords = (gate?: Promise<void>) =>
     server.use(
@@ -1328,12 +1375,10 @@ describe('刷新与切换页面后的编辑历史', () => {
     />
   )
   type View = Awaited<ReturnType<typeof renderEditor>>
-  /** 刷新：新的 QueryClient（空缓存）、组件状态全丢，localStorage 留着。 */
   const refresh = async (view: View) => {
     view.unmount()
     return renderEditor()
   }
-  /** 切换页面再回来：卸载再挂载，查询缓存留着。 */
   const switchAway = (view: View) => {
     view.rerender(null)
     view.rerender(editorElement())
@@ -1353,14 +1398,12 @@ describe('刷新与切换页面后的编辑历史', () => {
     within(track)
       .getAllByRole('button', { name: /^第 \d+ 段/ })
       .map((entry) => entry.getAttribute('aria-label'))
-  /** 控制条上的总长与比原版长短（不含播放头时刻）。 */
   const readout = () =>
     screen.getByRole('group', { name: '播放控件' }).textContent.match(/共 [\d.]+ 秒/)?.[0]
   const stored = (versionJobId: string) =>
     window.localStorage.getItem(draftStorageKey(CONVERSATION, versionJobId))
 
   beforeEach(() => {
-    // V1 7 秒，每秒一个关键帧。
     files.set(V1_URL, { keyframes: [0, 1, 2, 3, 4, 5, 6], duration: 7 })
     records = []
   })
@@ -1772,7 +1815,6 @@ describe('放大预览', () => {
       expect(overlay).toContainElement(stage)
       expectSameVideos(stage, videos)
       expect(within(overlay).queryByRole('button', { name: '放大' })).toBeNull()
-      // 遮罩里操作舞台不会被当成点了外面而关掉。
       await user.click(within(overlay).getByRole('button', { name: '静音' }))
       expect(within(overlay).getByRole('button', { name: '开启声音' })).toBeVisible()
       await user.click(within(overlay).getByRole('button', { name: '开启声音' }))
@@ -1801,7 +1843,6 @@ describe('放大预览', () => {
     await user.click(screen.getByRole('button', { name: '放大' }))
     const overlay = screen.getByRole('dialog', { name: '放大预览' })
     expect(within(overlay).getByRole('button', { name: '关闭' })).toHaveFocus()
-    // 从 × 往后 Tab 会绕回遮罩开头、再进舞台，不跑出放大层。
     const unmute = within(overlay).getByRole('button', { name: '开启声音' })
     for (let step = 0; step < 8 && document.activeElement !== unmute; step += 1) {
       await user.tab()
