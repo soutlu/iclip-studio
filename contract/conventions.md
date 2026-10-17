@@ -409,13 +409,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 正文二选一：直接给 `prompt`，或给 `shot`（与分镜文件 `video_shot.json` 里 `shots[].prompt` 同形：`global_settings` 加 `timeline[]`，每镜 `timestamps: [起, 止]`、`prompt`、`image_indexes`）由服务端拼成 `prompt`。时间线规则与分镜交付相同：结束晚于开始、第一镜从 0 起、各镜按先后排不重叠。拼法：全局设定、空一行、一行 `镜头：`、每镜一行 `起–止秒 正文`（起止照给的，保留到毫秒），末尾一行 `不要生成字幕，不要生成背景音乐。`。两者都不给、都给但不一致、`@ImageN` 超出 `reference_image_urls` 的张数、`image_indexes` 与正文里 `@Image` 的出现顺序不一致、拼出的正文超过 4000 字，都是 `422`。记录的 `request` 里 `shot` 与拼好的 `prompt` 都在；发给上游的只有 `prompt`，`shot` 不转发。
 - 三类参考素材地址各自最多 30 个，与分镜文件里一组镜头的帧图上限同一个数；只收具有主机名的 HTTP(S) 地址，超出或地址不合规是 `422`。
 - `model` 必填，只接受运行配置 `config.yaml` 中 `media_generation.video.allowed_models` 声明的模型；其余字段原样转发，画幅、时长范围、分辨率、素材规格由上游按模型判，本系统不复制那套规则。不在允许范围内的模型返回 `422`，不创建任务、不入队。
-- `GET /generations/video-models` 给出默认模型与允许表，只有模型 id。哪个模型能做视频编辑、编辑时要给上游加什么（正文前缀或 `provider_options`）、哪些画幅某个模型不收，都由调用方按模型名自己认；服务端不替任何模型拼任何东西，也不声明画幅。
+- `GET /generations/video-models` 给出默认模型、允许表与片段入口已接入模型的能力（`clipModels`，见下文「视频编辑」）。`POST /generations/video` 原样转发正文与 `provider_options`，服务端不替任何模型拼东西；哪些画幅某个模型不收由调用方按模型名自己认，服务端不声明画幅。
 - 上游会丢弃的 `session_id` 与废弃别名 `image_urls` 在这里是未知字段，返回 `422`。
 - `GET /generations/video/{task_id}` 照上游任务查询的形状：`task_id`、`type: "video"`、`status`、`result`、`error`、`created_at`。`status` 用上游的词：`queued`（已受理未提交）、`running`（提交中或等结果）、`succeeded`（带 `result.output_url` 与 `result.watermark_output_url`）、`failed`（带 `error.code` 与 `error.message`）。可见性与 `GET /generations/{id}` 相同，只答出片与编辑段；拿图片、合成、整片或视频上传的 id 来查是 `404`（合成与整片不经上游、没有水印版，套不进这个形状）。本系统去上游查状态时带的 `user_name` 查询参数（上游缺它报 400）由服务端从记录里取，调用方不用带。
 
 ### 视频编辑：编辑段与合成
 
 - 编辑段可由图生或视频编辑产生，两者复用同一受理入口和记录：参考视频为空时图生，提供一条时编辑。模型能力来自 `GET /generations/video-models` 的 `clipModels`，它只列出允许表中已接入片段入口的模型；普通出片仍使用 `items`。
+- 编辑段的上游任务语义由服务端按 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 的声明补上，调用方不必自己加：Wan 视频编辑时正文开头补「编辑视频，」（已带的不重复补，补上后超过 4000 字是 `422`）；Seedance 2.5 的 `provider_options.omni_reference_task_type` 图生时为 `reference`、视频编辑时为 `edit`，调用方传了别的值是 `422`。补好的正文与 `provider_options` 记进编辑段的 `request`。
 - 图生仅提交正文实际引用的图片，至少一张，输出时长必须显式选择模型支持的整秒值。Wan 沿用网关原有图片映射，单图走 I2V，不额外指定图片模式。上传、粘贴或拖入图片后直接在正文插入上传中的 chip，上传成功后原地更新；正文里仍有上传中或失败的图片时不提交，删除引用才不随请求发送。
 - 视频编辑的参考须为**调用者本人**的视频上传记录（替人办事时是被指定的人），由调用方按当前选用素材裁剪、拼接后，走 §10 上传协议传入。服务端确认上传归属后探测实际时长，按该模型的编辑范围校验，`seconds` 固定为 `-1` 跟随参考；参考时长不必等于基底替换区间。
 - 两种模式都核对下文「来源与原作」定义的基底资格，以及替换区间在基底时长之内：起点须在基底里，终点最多超出基底时长 50 毫秒（同合成各段的结尾）。基底没有 `durationMs` 时按地址探测。任一受理条件不合格或时长无法探测时返回 `422`，不创建任务、不入队。
@@ -455,7 +456,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `POST /generations/subtitles` 收 `sourceJobId`（要识别的成片）、`userName`、归属字段 `conversationId`、`taskId` 与坐标 `metadata`，另起一条字幕记录，响应是 `GenerationEnvelope`；用来补识别旧片，或识别失败后重来。成片要是调用方可见的、这段对话自己的或它继承的记录（继承的只在调用方读得到这段对话时才算，§6），读不到一律 `404`；读得到却不是成片是 `422`；字幕识别没开通是 `422`。新记录的对话、需求单与 `metadata` 取请求，属主是当前主体。
 - 记录的 `request` 是 `{ model, videoUrl, audioFormat, sampleRate, speakerDiarization }`：识别的是成片的原片地址（不是水印版），服务端抽成单声道 16 kHz mp3 发给识别服务，音频本身不落库。字幕记录没有 `outputUrl`、`watermarkOutputUrl`、`rootJobId`、镜号与区间，`sourceUrl` 是被识别那条成片的地址。
 - 结果在 `sentences`：完成后是 `[{ startMs, endMs, text, speaker }]`，按识别给的先后；`speaker` 是识别服务给的说话人编号，只在这条视频里区分谁在说，可以为 `null`。没有口播（视频没有音轨，或识别出来一句都没有）是正常结果，记为 `completed`、`sentences` 为 `[]`。别的记录与没完成的字幕记录 `sentences` 为 `null`。
-- 失败是终态，不自动重试：取不到成片 `MEDIA_SOURCE_UNREACHABLE`，抽音频失败 `MEDIA_PROCESS_FAILED`，抽出的音频超过识别接口的 Base64 上限 `SUBTITLE_AUDIO_TOO_LARGE`；识别服务连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂 `PROVIDER_MALFORMED`。
+- 失败是终态，不自动重试：取不到成片 `MEDIA_SOURCE_UNREACHABLE`，抽音频失败 `MEDIA_PROCESS_FAILED`，抽出的音频超过识别接口的 Base64 上限 `SUBTITLE_AUDIO_TOO_LARGE`；识别服务连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂或没有 `request_id` `PROVIDER_MALFORMED`。
 - 按 `GET /generations?kind=subtitle&sourceJobId=` 找一条成片的字幕记录，单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答字幕记录。字幕记录不计审计口径（§12）、不进资料库，也不算对话的 `activity.videoGeneration`。
 
 ### 音频记录
@@ -464,7 +465,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `POST /generations/music` 收 `prompt`、`userName`、归属字段 `conversationId`（必填）、`taskId` 与坐标 `metadata`，响应是 `GenerationEnvelope`。`prompt` 原样发给音乐模型，服务端不补任何文字，音乐多长由模型决定；它不能为空或全是空白，至多 3000 字（模型的上限），不合格是 `422`。调用方读不到 `conversationId` 那段对话是 `404`；生成背景音乐没开通是 `422`。属主是当前主体，对话、需求单与 `metadata` 取请求。
 - 前端拿制作页（§6）的 `musicDescription` 原样当 `prompt`；它为 `null` 或对话没有工程文件时，由用户写一句。
 - 记录的 `request` 是 `{ model, prompt, format, sampleRate, channels }`：`model` 是 `qwen-audio-3.1-tts-next`，`prompt` 就是发出的那段，后三项是向模型要的音频（`wav`、48000、2）。完成后 `outputUrl` 是本系统桶里的 m4a：服务端下载模型给的音频，去掉首尾静音、统一响度、编成 48 kHz 双声道 AAC 后转存；`durationMs` 是规整后量出的时长。上传的音乐没有 `durationMs`。
-- 失败是终态，不自动重试：音乐模型连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂或没有音频地址 `PROVIDER_MALFORMED`；生成之后取不到模型给的音频 `OUTPUT_DOWNLOAD_FAILED`，规整失败（包括整段都是静音）`MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
+- 失败是终态，不自动重试：音乐模型连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂、没有 `request_id` 或没有音频地址 `PROVIDER_MALFORMED`；生成之后取不到模型给的音频 `OUTPUT_DOWNLOAD_FAILED`，规整失败（包括整段都是静音）`MEDIA_PROCESS_FAILED`，存不进桶 `OUTPUT_STORE_FAILED`。
 - 按 `GET /generations?kind=audio&conversationId=` 列一段对话生成的背景音乐，上传的音乐不挂对话，按属主列（`kind=audio&operation=upload`）；单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答音频记录。音频记录不计审计口径（§12）、不进资料库、不算对话的 `activity.videoGeneration`，也不是 `video.downloaded` 的主语。
 
 ### 图片

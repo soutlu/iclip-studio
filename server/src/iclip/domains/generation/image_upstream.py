@@ -1,9 +1,4 @@
-"""网关图片 provider：各家图片模型挂在同一个网关上，同步出图后把结果转存成自家公开对象。
-
-提交、读结果地址、转存三段各家一模一样，错误码与是否可重试的判定只在这里定一次；每家只在
-``GatewayImageModel`` 里给出名字、能力声明、超时和它专有的那几个 payload 键。无参考图打文生图，
-有参考图打图像编辑；不支持轮询。生成接口没有幂等键，不自动重试或切换渠道，避免重复计费或
-改变调用方选择的价格。"""
+"""网关的生成接口没有幂等键：提交阶段不自动重试、不切换渠道，以免重复计费或改变调用方选择的价格。"""
 
 from __future__ import annotations
 
@@ -26,14 +21,15 @@ from iclip.domains.generation.provider import (
     user_name_of,
 )
 from iclip.domains.generation.schemas import ImageGenerationIn
+from iclip.domains.generation.upstream import post_json
 from iclip.platform.media.fetch import MAX_IMAGE_BYTES
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicObjectStore
 
 _DOWNLOAD_TIMEOUT_SECONDS: Final = 60.0
 
+# 网关按它认调用方，取值须在它的来源白名单里。
 TASK_SOURCE: Final = "iclip_agent"
-"""网关按它认调用方，取值须在它的来源白名单里。"""
 
 _MIME_BY_SUFFIX: Final = {
     "png": "image/png",
@@ -49,44 +45,25 @@ _SUFFIX_BY_MIME: Final = {
 _DEFAULT_MIME: Final = "image/png"
 
 ImageFields = Callable[[ImageGenerationIn], dict[str, Any]]
-"""把领域请求翻成这家专有的 payload 键；翻不了（受理层本该拦下）就抛 ``ProviderError``。"""
 
 
 @dataclass(frozen=True, slots=True)
 class GatewayImageModel:
-    """一家网关图片模型与别家不同的全部东西。"""
-
     name: str
-    """落库的 provider 名，也是它那条队列的名字。"""
-
     spec: ImageModelSpec
-
     timeout_seconds: float
-    """一次同步出图最多等多久。"""
-
     fields: ImageFields
 
 
 @dataclass(frozen=True, slots=True)
 class GatewayImageSettings:
-    """由组合根从环境变量与运行配置拼好后传入的运行值。"""
-
     api_base: str
-    """这家在网关上的地址，两条任务路由拼在它后面。"""
-
     env: str
-    """网关要求的调用环境。它按 task_source 与这一项一起判这次调用合不合法。"""
-
     text_to_image_task: str
-    """文生图的任务路由。"""
-
     image_edit_task: str
-    """图像编辑的任务路由。"""
 
 
 class GatewayImageProvider:
-    """``GenerationProvider`` 的网关图片实现，一家模型一个实例。"""
-
     def __init__(
         self,
         model: GatewayImageModel,
@@ -119,9 +96,10 @@ class GatewayImageProvider:
         }
         if references:
             payload["input_str_list"] = references
-        body = await _post_generation(
+        body = await post_json(
             task_url(self._settings, editing=bool(references)),
             payload,
+            label="图像生成",
             timeout=self._model.timeout_seconds,
             transport=self._transport,
         )
@@ -148,68 +126,11 @@ class GatewayImageProvider:
 
 
 def task_url(settings: GatewayImageSettings, *, editing: bool) -> str:
-    """拼出这次要打的地址。每个模型在网关上都是两条路由：文生图与图像编辑各一条。"""
-
     task = settings.image_edit_task if editing else settings.text_to_image_task
     return f"{settings.api_base.rstrip('/')}/{task}"
 
 
-async def _post_generation(
-    url: str,
-    payload: dict[str, Any],
-    *,
-    timeout: float,
-    transport: httpx.AsyncBaseTransport | None,
-) -> dict[str, Any]:
-    """提交一次生成；连接失败与请求结果未知使用不同错误码，不触发自动重试。"""
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout, transport=transport) as client:
-            response = await client.post(url, json=payload)
-    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-        raise ProviderError(
-            f"图像 provider 连不上: {exc}",
-            code="PROVIDER_UNREACHABLE",
-            retryable=True,
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise ProviderError(
-            f"图像生成请求已发出但没拿到结果，不重试以免重复计费: {exc}",
-            code="PROVIDER_RESULT_UNKNOWN",
-            retryable=False,
-        ) from exc
-    if response.status_code >= 500:
-        raise ProviderError(
-            f"图像 provider 返回 {response.status_code}",
-            code="PROVIDER_SERVER_ERROR",
-            retryable=True,
-        )
-    if response.status_code >= 400:
-        raise ProviderError(
-            f"图像 provider 拒绝了这次请求（{response.status_code}）: {response.text[:500]}",
-            code="PROVIDER_REJECTED",
-            retryable=False,
-        )
-    try:
-        body = response.json()
-    except ValueError as exc:
-        raise ProviderError(
-            "图像 provider 的响应不是 JSON",
-            code="PROVIDER_MALFORMED",
-            retryable=False,
-        ) from exc
-    if not isinstance(body, dict):
-        raise ProviderError(
-            "图像 provider 的响应根不是 object",
-            code="PROVIDER_MALFORMED",
-            retryable=False,
-        )
-    return body
-
-
 def _read_output_url(body: dict[str, Any]) -> str:
-    """从响应里取可下载的结果 URL；优先签名地址。"""
-
     if body.get("success") is False:
         message = body.get("message")
         detail = message.strip() if isinstance(message, str) and message.strip() else "无说明"
@@ -236,8 +157,6 @@ async def _store_result(
     object_store: PublicObjectStore,
     transport: httpx.AsyncBaseTransport | None,
 ) -> str:
-    """下载结果图并转存成本系统的公开对象，返回永久地址。"""
-
     content, mime = await _download(source_url, transport=transport)
     try:
         return await object_store.put_public_object(
@@ -246,7 +165,6 @@ async def _store_result(
             content_type=mime,
         )
     except ObjectStoreUnavailable as exc:
-        # 生成已计费，转存失败不得触发重新生成。
         raise ProviderError(
             f"图像已生成但转存失败: {exc}",
             code="OUTPUT_STORE_FAILED",
@@ -255,8 +173,6 @@ async def _store_result(
 
 
 async def _download(url: str, *, transport: httpx.AsyncBaseTransport | None) -> tuple[bytes, str]:
-    """流式下载结果图并限制总字节数，返回内容与标准 MIME 类型。"""
-
     try:
         async with (
             httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT_SECONDS, transport=transport) as client,
@@ -297,8 +213,6 @@ async def _download(url: str, *, transport: httpx.AsyncBaseTransport | None) -> 
 
 
 def _normalize_mime(content_type: str, url: str) -> str:
-    """从响应头或 URL 后缀选择支持的 MIME 类型，无法识别时使用 PNG。"""
-
     mime = content_type.split(";", maxsplit=1)[0].strip().lower()
     if mime in _SUFFIX_BY_MIME:
         return mime

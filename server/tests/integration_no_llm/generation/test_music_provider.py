@@ -13,13 +13,9 @@ import httpx
 import pytest
 
 from iclip.domains.generation.models import GenerationJob
-from iclip.domains.generation.music import (
-    MUSIC_MODEL,
-    PROVIDER_NAME,
-    MusicProviderSettings,
-    QwenMusicProvider,
-)
+from iclip.domains.generation.music import MUSIC_MODEL, PROVIDER_NAME, QwenMusicProvider
 from iclip.domains.generation.provider import ProviderError
+from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.generation import MUSIC_PROMPT, make_music
 from tests.helpers.media import duration_ms_of, synthesize_padded_music
@@ -53,6 +49,7 @@ class FakeServices:
         self.response = response
         self.audio = audio
         self.generations: list[httpx.Request] = []
+        self.downloads: list[httpx.Request] = []
 
     def transport(self) -> httpx.MockTransport:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -62,6 +59,7 @@ class FakeServices:
                     raise self.response
                 return self.response
             if str(request.url) == GENERATED_URL:
+                self.downloads.append(request)
                 if self.audio is None:
                     return httpx.Response(403)
                 return httpx.Response(200, content=self.audio)
@@ -77,7 +75,7 @@ def _padded_music() -> bytes:
 
 def _provider(services: FakeServices, bucket: FakeBucket) -> QwenMusicProvider:
     return QwenMusicProvider(
-        MusicProviderSettings(url=MUSIC_URL, api_key="sk-test", timeout_seconds=30),
+        QwenEndpoint(url=MUSIC_URL, api_key="sk-test", timeout_seconds=30),
         object_store=bucket,
         transport=services.transport(),
     )
@@ -161,6 +159,25 @@ async def test_service_failures_carry_a_code_that_tells_whether_it_was_received(
 
     assert failure.code == code
     assert len(services.generations) == 1, "只发一次，不自己重试"
+
+
+@pytest.mark.parametrize(
+    "request_id_fields",
+    [{}, {"request_id": ""}, {"request_id": " \t\n"}, {"request_id": None}, {"request_id": 42}],
+    ids=["missing", "empty", "whitespace", "null", "number"],
+)
+async def test_an_invalid_request_id_fails_before_the_result_is_fetched_or_stored(
+    request_id_fields: dict[str, Any],
+) -> None:
+    body = {key: value for key, value in _generated().items() if key != "request_id"}
+    services = FakeServices(httpx.Response(200, json=body | request_id_fields), _padded_music())
+
+    failure = await _submit_and_fail(services, FakeBucket())
+
+    assert failure.code == "PROVIDER_MALFORMED"
+    assert "request_id" in str(failure)
+    assert services.downloads == [], "回执不合格就不去取模型给的音频"
+    assert len(services.generations) == 1, "缺少有效回执也不能重投生成"
 
 
 async def test_a_result_that_cannot_be_downloaded_fails_without_its_address() -> None:

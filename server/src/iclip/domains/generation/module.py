@@ -1,6 +1,3 @@
-"""媒体生成模块装配。图片按配置里声明的那几家逐个装，视频固定一家（出片与编辑段都走它），本地
-合成一家，字幕识别与生成背景音乐开通时各再加一家。"""
-
 from __future__ import annotations
 
 import uuid
@@ -19,7 +16,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageSettings,
 )
 from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
-from iclip.domains.generation.music import MUSIC_MODEL, MusicProviderSettings, QwenMusicProvider
+from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.ports import BrandTemplates, ConversationLineage
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
@@ -29,20 +26,16 @@ from iclip.domains.generation.queue import (
     GenerationQueueSettings,
     ProviderLane,
 )
+from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import ClipStage
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import (
     ClearCompletion,
     GenerationService,
-    MusicTarget,
-    SubtitleTarget,
+    ProviderTarget,
 )
-from iclip.domains.generation.subtitles import (
-    SUBTITLE_MODEL,
-    QwenSubtitleProvider,
-    SubtitleProviderSettings,
-)
+from iclip.domains.generation.subtitles import SUBTITLE_MODEL, QwenSubtitleProvider
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.domains.identity.public import ActAs
 from iclip.platform.media.codec import MediaCodec
@@ -56,52 +49,25 @@ from iclip.platform.object_store.store import PublicObjectStore
 
 @dataclass(frozen=True, slots=True)
 class ImageModelConfig:
-    """一家图片模型的装配输入。``name`` 就是落库的 provider 名，也是它那条队列的名字。"""
-
     name: str
     api_base: str
-    """这家在网关上的地址，两条任务路由由适配器拼在它后面。"""
-
     concurrency: int
-    """这家同时最多挂几个提交。"""
-
     text_to_image_task: str | None = None
     image_edit_task: str | None = None
-    """这家自己的两条任务路由；为 None 用各家共用的那两条。"""
 
 
 @dataclass(frozen=True, slots=True)
-class SubtitleConfig:
-    """字幕识别的装配输入；模型钉在适配器里，不在这里。"""
-
-    url: str
-    api_key: str
+class QwenServiceConfig:
+    endpoint: QwenEndpoint
     concurrency: int
-    """识别那条队列同时最多跑几条。"""
-    timeout_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
-class MusicConfig:
-    """生成背景音乐的装配输入；模型钉在适配器里，不在这里。"""
-
-    url: str
-    api_key: str
-    concurrency: int
-    """生成那条队列同时最多跑几条。"""
-    timeout_seconds: float
 
 
 @dataclass(frozen=True)
 class GenerationModule:
     routers: tuple[Any, ...]
-    """使用 Any 隔离 Web 框架类型。"""
-
     service: GenerationService
     queue: GenerationQueue
-
     image_models: frozenset[str]
-    """装配好的图片模型名，供组合根校验别处钉死的那家在不在里面。"""
 
 
 def build_generation_module(
@@ -124,25 +90,13 @@ def build_generation_module(
     media_codec: MediaCodec,
     fetch_url: Callable[[str], str],
     queue_settings: GenerationQueueSettings | None = None,
-    subtitles: SubtitleConfig | None = None,
-    music: MusicConfig | None = None,
+    subtitles: QwenServiceConfig | None = None,
+    music: QwenServiceConfig | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
     subtitle_transport: httpx.AsyncBaseTransport | None = None,
     music_transport: httpx.AsyncBaseTransport | None = None,
 ) -> GenerationModule:
-    """装配 Provider 与队列；transport 支持测试替身，queue_connector 由组合根选择数据库驱动。
-
-    编辑段受理时用 ffprobe 按需读远程视频探时长（基底与参考片段），整片带片头片尾时探第一段成片的
-    画幅。对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；合成的产物本来就是
-    我们自己造的。视频上游给的是它自己发布好的稳定地址，不转存。``media_codec`` 是本地合成
-    用的那一档编解码，由组合根在启动时选定。``fetch_url`` 只用在受理时探时长与画幅、合成与字幕识别
-    下载素材的那一刻（本桶对象走内网），落库与交给上游的地址不经过它。
-
-    ``subtitles`` 给了就开通字幕识别：多一条识别 lane，成片完成后自动排一条字幕记录；为 None 时
-    两者都没有，手动识别 422。``music`` 给了就开通生成背景音乐：多一条生成 lane，产物经对象存储
-    转存；为 None 时提交 422。"""
-
     if not image_models:
         raise RuntimeError("媒体生成开着却一家图片模型都没声明")
     declared = [model.name for model in image_models]
@@ -169,44 +123,29 @@ def build_generation_module(
         for model in image_models
     ]
     subtitle_lanes: tuple[ProviderLane, ...] = ()
-    subtitle_target: SubtitleTarget | None = None
+    subtitle_target: ProviderTarget | None = None
     if subtitles is not None:
         subtitle_provider = QwenSubtitleProvider(
-            SubtitleProviderSettings(
-                url=subtitles.url,
-                api_key=subtitles.api_key,
-                timeout_seconds=subtitles.timeout_seconds,
-            ),
-            fetch_url=fetch_url,
-            transport=subtitle_transport,
+            subtitles.endpoint, fetch_url=fetch_url, transport=subtitle_transport
         )
-        # 识别要下载成片、本地抽音轨再等接口，单开一条 lane，不占出片与合成的槽位。
         subtitle_lanes = (ProviderLane(subtitle_provider, subtitles.concurrency),)
-        subtitle_target = SubtitleTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
+        subtitle_target = ProviderTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
     music_lanes: tuple[ProviderLane, ...] = ()
-    music_target: MusicTarget | None = None
+    music_target: ProviderTarget | None = None
     if music is not None:
         music_provider = QwenMusicProvider(
-            MusicProviderSettings(
-                url=music.url, api_key=music.api_key, timeout_seconds=music.timeout_seconds
-            ),
-            object_store=object_store,
-            transport=music_transport,
+            music.endpoint, object_store=object_store, transport=music_transport
         )
-        # 一条要等模型生成、再下载、两遍 ffmpeg 规整，单开一条 lane，不占别家的槽位。
         music_lanes = (ProviderLane(music_provider, music.concurrency),)
-        music_target = MusicTarget(provider=music_provider.name, model=MUSIC_MODEL)
+        music_target = ProviderTarget(provider=music_provider.name, model=MUSIC_MODEL)
 
     async def transcribe_completed(job: GenerationJob) -> None:
-        # 队列先于服务建好，服务又要往队列里排；靠闭包在调用时才取服务。
         await service.transcribe_completed(job)
 
     queue = GenerationQueue(
         repo,
         lanes=(
-            # 出片与编辑段都只调上游，共用视频这条 lane。
             ProviderLane(video_provider, settings.video_submit_concurrency),
-            # 合成要整条重编码，是 CPU 活，和只等网络的提交分开排，免得它把别人的槽位占满。
             ProviderLane(compose_provider, settings.compose_concurrency),
             *(
                 ProviderLane(provider, model.concurrency)
@@ -246,12 +185,10 @@ def build_generation_module(
 _IMAGE_MODELS: Final[Mapping[str, GatewayImageModel]] = {
     model.name: model for model in (NANO_BANANA_PRO, SEEDREAM_V5_PRO, GPT_IMAGE_2_5)
 }
-"""有适配器的那几家图片模型，适配器与能力声明都从这张表出。加一家＝这里加一项。"""
 
 IMAGE_MODEL_SPECS: Final[Mapping[str, ImageModelSpec]] = {
     name: model.spec for name, model in _IMAGE_MODELS.items()
 }
-"""各家图片模型的能力声明。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,10 +203,6 @@ class _FetchingProbe:
 
 
 def _clip_stage_reporter(repo: GenerationRepository) -> ReportStage:
-    """把 provider 报的阶段落到 provider_status 上，provider 自己不碰数据库。
-
-    只在提交中更新，返回这条是不是还在提交中。"""
-
     async def report(job_id: uuid.UUID, stage: ClipStage) -> bool:
         updated = await repo.record_progress(
             job_id, provider_status=stage, only_if_status=STATUS_SUBMITTING
@@ -288,8 +221,6 @@ def _image_provider(
     object_store: PublicObjectStore,
     transport: httpx.AsyncBaseTransport | None,
 ) -> GenerationProvider:
-    """按声明的名字查表建这家的适配器；名字没有对应实现就在装配期报错。"""
-
     model = _IMAGE_MODELS.get(config.name)
     if model is None:
         raise RuntimeError(
@@ -312,7 +243,6 @@ __all__ = [
     "IMAGE_MODEL_SPECS",
     "GenerationModule",
     "ImageModelConfig",
-    "MusicConfig",
-    "SubtitleConfig",
+    "QwenServiceConfig",
     "build_generation_module",
 ]

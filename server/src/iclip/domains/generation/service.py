@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -31,7 +30,6 @@ from iclip.domains.generation.repository import GenerationRepository, conversati
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
     KIND_VIDEO,
-    MAX_PROMPT_CHARS,
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
@@ -61,13 +59,7 @@ ClearCompletion = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)
-class SubtitleTarget:
-    provider: str
-    model: str
-
-
-@dataclass(frozen=True, slots=True)
-class MusicTarget:
+class ProviderTarget:
     provider: str
     model: str
 
@@ -88,8 +80,8 @@ class GenerationService:
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
         brand_templates: BrandTemplates,
-        subtitles: SubtitleTarget | None = None,
-        music: MusicTarget | None = None,
+        subtitles: ProviderTarget | None = None,
+        music: ProviderTarget | None = None,
     ) -> None:
         self._repo = repo
         self._queue = queue
@@ -130,9 +122,11 @@ class GenerationService:
 
     async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
         self._require_video_model(request.model)
-        spec = clip_model(request.model)
-        if spec is None:
+        clip_spec = clip_model(request.model)
+        if clip_spec is None:
             raise ValidationFailed(f"{request.model} 尚未接入片段生成")
+        spec = clip_spec.spec
+        upstream = clip_spec.mode(editing=bool(request.reference_video_urls))
         _require_user_name(request.user_name)
         if len(request.reference_image_urls) > spec.max_reference_images:
             raise ValidationFailed(
@@ -151,9 +145,7 @@ class GenerationService:
                     f"{request.model} 图生时长必须为 "
                     f"{spec.image.min_seconds}–{spec.image.max_seconds} 秒的整数"
                 )
-        options = _clip_provider_options(
-            request.model, request.provider_options, editing=bool(request.reference_video_urls)
-        )
+        options = upstream.options(request.provider_options)
         base = await self._check_source(principal, request.source_job_id, request.conversation_id)
         _require_base(base)
         clip = None
@@ -179,18 +171,9 @@ class GenerationService:
                     f"{request.model} 编辑参考时长必须为 "
                     f"{spec.edit.min_seconds}–{spec.edit.max_seconds} 秒"
                 )
-        prompt = request.prompt
-        if request.reference_video_urls and "wan3" in request.model.lower():
-            prefix = "编辑视频，"
-            if not prompt.startswith(prefix):
-                prompt = prefix + prompt
-            if len(prompt) > MAX_PROMPT_CHARS:
-                raise ValidationFailed(
-                    f"Wan 编辑修改要求最多 {MAX_PROMPT_CHARS - len(prefix)} 字，请缩短后重试"
-                )
         forwarded = VideoGenerationIn(
             model=request.model,
-            prompt=prompt,
+            prompt=upstream.prompt(request.prompt),
             user_name=request.user_name,
             reference_image_urls=request.reference_image_urls,
             reference_video_urls=request.reference_video_urls,
@@ -231,7 +214,7 @@ class GenerationService:
             if source.output_url is None:
                 raise RuntimeError(f"生成记录 {source.id} 核对过却没有产物地址")
             if segment.end is not None:
-                check_segment_end(position, math.ceil(segment.end * 1000), source.duration_ms)
+                check_segment_end(position, round(segment.end * 1000), source.duration_ms)
             segments.append(
                 ComposeSegment(
                     source_job_id=source.id,
@@ -391,7 +374,6 @@ class GenerationService:
                 error_code="QUEUE_DEFER_FAILED",
                 error_message=f"受理了但没能排进队列，请重新发起：{exc}",
             )
-            _logger.exception("生成任务排队失败", job_id=created.id)
             raise
         return created
 
@@ -425,24 +407,21 @@ class GenerationService:
     async def transcribe_completed(self, job: GenerationJob) -> None:
         if self._subtitles is None or not is_completed_master(job) or job.output_url is None:
             return
-        try:
-            await self._queue_new(
-                _pending_job(
-                    SubtitleRequest(model=self._subtitles.model, video_url=job.output_url),
-                    owner_user_id=job.owner_user_id,
-                    api_key_id=job.api_key_id,
-                    provider=self._subtitles.provider,
-                    conversation_id=job.conversation_id,
-                    task_id=job.task_id,
-                    metadata=None,
-                    shot_index=None,
-                    source_job_id=job.id,
-                )
+        await self._queue_new(
+            _pending_job(
+                SubtitleRequest(model=self._subtitles.model, video_url=job.output_url),
+                owner_user_id=job.owner_user_id,
+                api_key_id=job.api_key_id,
+                provider=self._subtitles.provider,
+                conversation_id=job.conversation_id,
+                task_id=job.task_id,
+                metadata=None,
+                shot_index=None,
+                source_job_id=job.id,
             )
-        except Exception:
-            _logger.exception("成片完成后建字幕记录失败", video_job_id=job.id)
+        )
 
-    def _require_subtitles(self) -> SubtitleTarget:
+    def _require_subtitles(self) -> ProviderTarget:
         if self._subtitles is None:
             raise ValidationFailed("字幕识别没有开通，暂时不能识别")
         return self._subtitles
@@ -505,7 +484,7 @@ class GenerationService:
             default=self._video_default_model,
             items=list(self._video_allowed_models),
             clip_models=[
-                spec for model in self._video_allowed_models if (spec := clip_model(model))
+                clip.spec for model in self._video_allowed_models if (clip := clip_model(model))
             ],
         )
 
@@ -774,23 +753,10 @@ def _settled_url(job: GenerationJob) -> str:
     return job.output_url
 
 
-def _clip_provider_options(
-    model: str, options: dict[str, Any] | None, *, editing: bool
-) -> dict[str, Any] | None:
-    # Seedance 2.5 要显式指定原生子任务，其他模型沿用网关协议。
-    if "seedance-2-5" not in model.lower():
-        return options
-    key, expected = "omni_reference_task_type", "edit" if editing else "reference"
-    if options is not None and key in options and options[key] != expected:
-        raise ValidationFailed(f"当前模式的 {key} 必须为 {expected}")
-    return {**(options or {}), key: expected}
-
-
 __all__ = [
     "ClearCompletion",
     "GenerationService",
-    "MusicTarget",
+    "ProviderTarget",
     "SettledRecords",
-    "SubtitleTarget",
     "UploadRecord",
 ]

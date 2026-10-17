@@ -14,12 +14,12 @@ import httpx
 import pytest
 
 from iclip.domains.generation.provider import ProviderError
+from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.schemas import SubtitleSentence
 from iclip.domains.generation.subtitles import (
     PROVIDER_NAME,
     SUBTITLE_MODEL,
     QwenSubtitleProvider,
-    SubtitleProviderSettings,
 )
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is
@@ -84,7 +84,7 @@ def _video(*, audio: bool) -> bytes:
 
 def _provider(services: FakeServices) -> QwenSubtitleProvider:
     return QwenSubtitleProvider(
-        SubtitleProviderSettings(url=ASR_URL, api_key="sk-test", timeout_seconds=30),
+        QwenEndpoint(url=ASR_URL, api_key="sk-test", timeout_seconds=30),
         fetch_url=as_is,
         transport=services.transport(),
     )
