@@ -4,13 +4,11 @@ import {
   DEFAULT_LIBRARY_SCOPE,
   DEFAULT_LIBRARY_TAB,
   DEFAULT_REFERENCE_SCOPE,
-  DEFAULT_WHOLE_FILM_SCOPE,
   LIBRARY_TAB_VALUES,
   type BrandTemplateScope,
   type LibraryScope,
   type LibraryTab,
   type ReferenceScope,
-  type WholeFilmScope,
   zCategory,
   zVideoType,
 } from '@/features/library'
@@ -32,7 +30,6 @@ export const librarySearchSchema = z.object({
   categories: z.array(zCategory).min(1).optional().catch(undefined),
   video: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
-  film: z.uuid().optional().catch(undefined),
   kind: z.enum(BRAND_TEMPLATE_KIND_VALUES).optional().catch(undefined),
   brand: z.string().trim().min(1).max(100).optional().catch(undefined),
   includeDisabled: z.literal(true).optional().catch(undefined),
@@ -86,24 +83,6 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
     tab: 'references',
     userName: scope.userName ?? undefined,
     videoTypes: scope.videoTypes.length === 0 ? undefined : [...scope.videoTypes],
-  }
-}
-
-export function wholeFilmScopeFromSearch(search: LibrarySearch): WholeFilmScope {
-  return {
-    ...dateRangeFromSearch(search, DEFAULT_WHOLE_FILM_SCOPE),
-    q: search.q ?? '',
-    userName: search.userName ?? null,
-  }
-}
-
-export function searchFromWholeFilmScope(scope: WholeFilmScope): LibrarySearch {
-  const q = scope.q.trim()
-  return {
-    ...dateRangeToSearch(scope, DEFAULT_WHOLE_FILM_SCOPE),
-    tab: 'whole-films',
-    q: q === '' ? undefined : q,
-    userName: scope.userName ?? undefined,
   }
 }
 

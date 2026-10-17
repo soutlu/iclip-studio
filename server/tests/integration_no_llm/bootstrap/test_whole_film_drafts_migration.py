@@ -158,7 +158,7 @@ def test_downgrade_refuses_music_uploads_attached_to_a_conversation(scratch_db: 
     """有挂了对话的音乐上传时拒绝降级，那条记录与它挂的对话原样留着。"""
 
     cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, AUDIO_UPLOADS_ATTACHED)
     upload_id = asyncio.run(_attached_music_upload(scratch_db))
 
     with pytest.raises(RuntimeError, match="无法无损降级"):

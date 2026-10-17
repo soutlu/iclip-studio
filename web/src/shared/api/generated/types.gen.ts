@@ -5271,53 +5271,6 @@ export type WholeFilmCaptions = {
 }
 
 /**
- * WholeFilmCardOut
- *
- * 资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。
- */
-export type WholeFilmCardOut = {
-  /**
-   * Canopenconversation
-   */
-  canOpenConversation: boolean
-  /**
-   * Conversationid
-   */
-  conversationId: string
-  face: WholeFilmVersionOut
-  /**
-   * Title
-   */
-  title: string | null
-  /**
-   * Username
-   */
-  userName: string | null
-  /**
-   * Versions
-   */
-  versions: Array<WholeFilmVersionOut>
-}
-
-/**
- * WholeFilmCardsOut
- */
-export type WholeFilmCardsOut = {
-  /**
-   * Items
-   */
-  items: Array<WholeFilmCardOut>
-  /**
-   * Nextcursor
-   */
-  nextCursor: string | null
-  /**
-   * Total
-   */
-  total: number | null
-}
-
-/**
  * WholeFilmComponentClip
  *
  * 画面轨上的片头或片尾，是组件库里的一个组件。
@@ -5502,38 +5455,6 @@ export type WholeFilmTransition = {
   variables: {
     [key: string]: boolean | number | number | string
   }
-}
-
-/**
- * WholeFilmVersionOut
- *
- * 整片卡里的一版：这段对话自己的一条已完成整片。
- */
-export type WholeFilmVersionOut = {
-  /**
-   * Durationms
-   */
-  durationMs: number | null
-  /**
-   * Finishedat
-   */
-  finishedAt: string
-  /**
-   * Jobid
-   */
-  jobId: string
-  /**
-   * Outputurl
-   */
-  outputUrl: string
-  /**
-   * Username
-   */
-  userName: string | null
-  /**
-   * Watermarkoutputurl
-   */
-  watermarkOutputUrl: string | null
 }
 
 /**
@@ -7993,75 +7914,6 @@ export type VideoLibraryVideosVideoIdGetResponses = {
 
 export type VideoLibraryVideosVideoIdGetResponse =
   VideoLibraryVideosVideoIdGetResponses[keyof VideoLibraryVideosVideoIdGetResponses]
-
-export type WholeFilmsLibraryWholeFilmsGetData = {
-  body?: never
-  path?: never
-  query?: {
-    /**
-     * Username
-     */
-    userName?: string | null
-    /**
-     * Since
-     */
-    since?: string | null
-    /**
-     * Until
-     */
-    until?: string | null
-    /**
-     * Q
-     */
-    q?: string | null
-    /**
-     * Limit
-     */
-    limit?: number
-    /**
-     * Cursor
-     */
-    cursor?: string | null
-  }
-  url: '/library/whole-films'
-}
-
-export type WholeFilmsLibraryWholeFilmsGetErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type WholeFilmsLibraryWholeFilmsGetError =
-  WholeFilmsLibraryWholeFilmsGetErrors[keyof WholeFilmsLibraryWholeFilmsGetErrors]
-
-export type WholeFilmsLibraryWholeFilmsGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: WholeFilmCardsOut
-}
-
-export type WholeFilmsLibraryWholeFilmsGetResponse =
-  WholeFilmsLibraryWholeFilmsGetResponses[keyof WholeFilmsLibraryWholeFilmsGetResponses]
-
-export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetData = {
-  body?: never
-  path?: never
-  query?: never
-  url: '/library/whole-films/authors'
-}
-
-export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: LibraryAuthorsOut
-}
-
-export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse =
-  WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses[keyof WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses]
 
 export type ListReferencesReferencesGetData = {
   body?: never

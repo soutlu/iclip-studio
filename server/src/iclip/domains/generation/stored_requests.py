@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Final
+from typing import Any, Final
 
-from pydantic import Discriminator, Tag, TypeAdapter
+from pydantic import TypeAdapter
 
 from iclip.common.errors import ValidationFailed
-from iclip.domains.generation.film_schemas import WholeFilmRequest
 from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_IMAGE,
@@ -25,31 +24,13 @@ from iclip.domains.generation.schemas import (
 )
 
 GenerationRequest = (
-    VideoGenerationIn
-    | ImageGenerationIn
-    | VideoComposeRequest
-    | WholeFilmRequest
-    | SubtitleRequest
-    | MusicRequest
+    VideoGenerationIn | ImageGenerationIn | VideoComposeRequest | SubtitleRequest | MusicRequest
 )
-
-
-def _compose_shape(value: Any) -> str:
-    if isinstance(value, WholeFilmRequest) or (isinstance(value, dict) and "render" in value):
-        return "whole_film"
-    return "composite"
-
-
-ComposeRequest = Annotated[
-    Annotated[VideoComposeRequest, Tag("composite")]
-    | Annotated[WholeFilmRequest, Tag("whole_film")],
-    Discriminator(_compose_shape),
-]
 
 _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_GENERATE): TypeAdapter(VideoGenerationIn),
     (KIND_IMAGE, OPERATION_GENERATE): TypeAdapter(ImageGenerationIn),
-    (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(ComposeRequest),
+    (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
     (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
     (KIND_AUDIO, OPERATION_GENERATE): TypeAdapter(MusicRequest),
 }
@@ -82,4 +63,4 @@ def request_from_payload(
         raise ValidationFailed(f"生成请求的形状不合法: {exc}") from exc
 
 
-__all__ = ["ComposeRequest", "GenerationRequest", "request_from_payload"]
+__all__ = ["GenerationRequest", "request_from_payload"]

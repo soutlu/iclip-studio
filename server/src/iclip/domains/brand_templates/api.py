@@ -78,7 +78,7 @@ def create_brand_templates_router(service: BrandTemplateService) -> APIRouter:
         template_id: uuid.UUID,
         body: BrandTemplateUpdateIn,
     ) -> BrandTemplateOut:
-        """改名、停用或恢复使用；不删。已有整片里记的是快照，不受影响。没有这条是 ``404``。"""
+        """改名、停用或恢复使用；不删。没有这条是 ``404``。"""
 
         return await service.update(template_id, body)
 
