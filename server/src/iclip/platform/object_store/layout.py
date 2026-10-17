@@ -27,7 +27,6 @@ class MediaPaths:
         return f"{OSS_ROOT}/generated-images/{job_id}.{ext}"
 
     def generated_music(self, *, job_id: uuid.UUID, ext: str) -> str:
-        """生成并规整过的背景音乐：模型给的是 24 小时后失效的地址，规整后转存到这里。"""
 
         return f"{OSS_ROOT}/generated-music/{job_id}.{ext}"
 
@@ -59,7 +58,6 @@ class MediaPaths:
         return f"{OSS_ROOT}/uploads/{upload_id}."
 
     def font_upload(self, *, user_id: uuid.UUID, upload_id: uuid.UUID, ext: str) -> str:
-        """字体直传按主体隔离；确认时只查询当前主体下的对象。"""
 
         return f"{self.font_upload_prefix(user_id=user_id, upload_id=upload_id)}{ext}"
 

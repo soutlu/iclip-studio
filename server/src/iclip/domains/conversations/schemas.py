@@ -371,8 +371,6 @@ class FilmViewOut(CamelModel):
     problems: int
     groups: list[FilmGroupOut]
     music_description: str | None
-    """工程文件里「配乐」那段文字的正文，生成背景音乐时原样当提示词；没有这一段、或 ``problems``
-    不为 0 时为 null。"""
 
 
 class FilmViewEnvelope(CamelModel):

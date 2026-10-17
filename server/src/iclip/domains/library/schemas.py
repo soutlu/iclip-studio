@@ -1,8 +1,3 @@
-"""资料库的读模型：成片卡是一段对话的分镜，脚本取自出片那一刻的请求；整片卡是一段对话自己的
-整片。直接就是各端点的响应，camelCase 别名。
-
-术语与收录口径见 docs/CONTEXT.md「资料库」。"""
-
 from __future__ import annotations
 
 import uuid
@@ -130,37 +125,26 @@ class WholeFilmVersionOut(CamelModel):
     job_id: uuid.UUID
     output_url: str
     watermark_output_url: str | None
-    """整片是本系统渲染的，没有水印版，现为 ``None``。"""
     duration_ms: int | None
-    """渲染后量出的时长，毫秒。"""
     finished_at: datetime
-    """完成时刻；卡面的完成时刻决定列表顺序与时间筛选，卡里按它编版本。"""
     user_name: str | None
-    """这一版属主的用户名；账号没有用户名时为 ``None``。"""
 
 
 class WholeFilmCardOut(CamelModel):
     """资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。"""
 
     conversation_id: uuid.UUID
-    """来源对话，即卡 id；对所有读者都给。"""
     can_open_conversation: bool
-    """这位读者能不能打开来源对话，口径同成片卡。"""
     title: str | None
-    """来源对话的标题，对话删了照给。"""
     user_name: str | None
-    """卡的作者：对话属主的用户名；账号没有用户名时为 ``None``。"""
     face: WholeFilmVersionOut
-    """卡面：这段对话最新完成的一版，即 ``versions`` 的最后一项。"""
     versions: list[WholeFilmVersionOut]
-    """全部版本，早完成的在前，第 N 条就是第 N 版。"""
 
 
 class WholeFilmCardsOut(CamelModel):
     items: list[WholeFilmCardOut]
     next_cursor: str | None
     total: int | None
-    """当前筛选下一共几张卡；只有第一页（不带 ``cursor``）给，翻页时为 ``None``。"""
 
 
 class LibraryAuthorOut(CamelModel):

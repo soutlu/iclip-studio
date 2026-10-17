@@ -5,14 +5,9 @@ from __future__ import annotations
 from typing import Literal
 
 GenerationKind = Literal["video", "image", "subtitle", "audio"]
-"""产出的是什么：视频、图片、一条成片的口播字幕（逐句文字与时间，不是媒体地址），或音频（上传或
-生成的背景音乐）；谁执行看 provider，不另立种类。"""
 
 GenerationOperation = Literal["generate", "compose", "cut", "upload"]
-"""一行记录怎么执行：调模型（generate）、本地拼接（compose）、本地切图（cut）、用户上传（upload）。
-后两种创建即完成，没有发给执行方的请求。"""
 
 GenerationStatus = Literal["pending", "submitting", "submitted", "completed", "failed"]
-"""生成记录的业务状态，各词含义见 ``iclip.domains.generation.schemas`` 的 ``STATUS_*``。"""
 
 __all__ = ["GenerationKind", "GenerationOperation", "GenerationStatus"]

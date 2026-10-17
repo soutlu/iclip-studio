@@ -1,5 +1,3 @@
-"""分镜取帧专用的 ffmpeg 操作：整片抽帧、灰度检测与按格裁剪。"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence

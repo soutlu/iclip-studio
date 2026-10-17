@@ -1,5 +1,3 @@
-"""本地加工：合成时把各段拼接成片，整片按时间线剪辑、混音、烧字幕。在本机 ffmpeg 完成，不经外部服务。"""
-
 from __future__ import annotations
 
 import uuid
@@ -97,9 +95,6 @@ async def _store(object_store: PublicObjectStore, key: str, content: bytes) -> s
 
 
 class FfmpegComposeProvider:
-    """按 ``VideoComposeRequest`` 合成成片，按 ``WholeFilmRequest`` 剪整片：两者同是 video /
-    compose，共用这条 lane。同步出结果，``submit`` 直接带回 output_url。"""
-
     def __init__(
         self,
         *,
@@ -219,12 +214,7 @@ class FfmpegComposeProvider:
     async def _fetch(
         self, urls: Sequence[str], root: Path, *, max_bytes: int, suffix: str = f".{_EXT}"
     ) -> dict[str, Path]:
-        """把这些地址下到 ``root`` 里，按地址交回本地文件；同一个地址只下一遍（合成里基底的前后两段
-        来自同一条视频）。取不到是 ``MEDIA_SOURCE_UNREACHABLE``。
-
-        ffmpeg 按内容认格式；``suffix`` 只在格式确定时给（视频都是 mp4），音乐可能是 mp3、wav 或
-        m4a，给空串，不拿一个错的扩展名去误导探测。"""
-
+        # ffmpeg 按内容认格式；音乐可能是 mp3、wav 或 m4a，不给扩展名以免误导探测。
         fetched: dict[str, Path] = {}
         async with httpx.AsyncClient(transport=self._transport) as client:
             for url in urls:
