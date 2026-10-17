@@ -370,17 +370,17 @@
 }
 
 /* 生产构建里共用样式的加载顺序不固定，组合选择器保证这些覆盖生效。 */
-.video-editor.whole-film-editor {
+.editor-workspace.whole-film-editor {
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
-.whole-film-editor .video-editor-timeline-area,
-.whole-film-editor .video-editor-timeline-panel {
+.whole-film-editor .editor-timeline-area,
+.whole-film-editor .editor-timeline-panel {
   min-height: 0;
 }
 
-.whole-film-editor .video-editor-bar {
+.whole-film-editor .editor-bar {
   flex: none;
 }
 
@@ -472,18 +472,18 @@
 }
 
 @media (max-width: 999px) {
-  .video-editor.whole-film-editor {
+  .editor-workspace.whole-film-editor {
     grid-template-rows: minmax(0, 1fr) auto;
     gap: 10px;
   }
 
-  .whole-film-editor .video-editor-stage {
+  .whole-film-editor .editor-stage {
     height: auto;
     min-height: 0;
     flex: 1;
   }
 
-  .whole-film-editor .video-editor-versions {
+  .whole-film-editor .editor-versions {
     flex: none;
   }
 }
@@ -493,20 +493,20 @@
     height: clamp(208px, 26dvh, 232px);
   }
 
-  .whole-film-editor .video-editor-stage-area {
+  .whole-film-editor .editor-stage-area {
     gap: 8px;
   }
 }
 
 @media (max-height: 560px) {
-  .video-editor.whole-film-editor {
+  .editor-workspace.whole-film-editor {
     grid-template-areas: 'stage timeline';
     grid-template-columns: minmax(140px, 28%) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     gap: 6px;
   }
 
-  .whole-film-editor .video-editor-timeline-panel {
+  .whole-film-editor .editor-timeline-panel {
     flex: 1;
   }
 
@@ -553,30 +553,30 @@
     flex: 1;
   }
 
-  .whole-film-editor .video-editor-bar {
+  .whole-film-editor .editor-bar {
     flex-wrap: wrap;
   }
 
-  .whole-film-editor .video-editor-readout {
+  .whole-film-editor .editor-readout {
     display: none;
   }
 
-  .whole-film-editor .video-editor-stage-area {
+  .whole-film-editor .editor-stage-area {
     flex-direction: row;
     gap: 8px;
   }
 
-  .whole-film-editor .video-editor-stage {
+  .whole-film-editor .editor-stage {
     height: auto;
     min-height: 0;
     flex: 1;
   }
 
-  .whole-film-editor .video-editor-hero-wrap {
+  .whole-film-editor .editor-hero-wrap {
     inset: 8px;
   }
 
-  .whole-film-editor .video-editor-versions {
+  .whole-film-editor .editor-versions {
     position: static;
     max-height: 100%;
     flex: none;
@@ -594,11 +594,11 @@
   --color-focus-ring: var(--color-on-surface);
 }
 
-.whole-film-editor .video-editor-versions .version-thumb[aria-pressed='true'] {
+.whole-film-editor .editor-versions .version-thumb[aria-pressed='true'] {
   box-shadow: none;
   background: var(--color-state-active);
 }
 
-.whole-film-editor .video-editor-versions .version-thumb[aria-pressed='true'] img {
+.whole-film-editor .editor-versions .version-thumb[aria-pressed='true'] img {
   opacity: 0.7;
 }

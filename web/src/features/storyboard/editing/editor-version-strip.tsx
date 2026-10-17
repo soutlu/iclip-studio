@@ -36,7 +36,7 @@ const stateOf = (entry: VersionStripEntry) => {
   if (entry.failed === true)
     return (
       <>
-        <Icon className="video-editor-version-failed" decorative name="alert" size="sm" />
+        <Icon className="editor-version-failed" decorative name="alert" size="sm" />
         失败
       </>
     )
@@ -53,8 +53,8 @@ export function EditorVersionStrip({
 }: EditorVersionStripProps) {
   if (entries.length === 0) return null
   return (
-    <div aria-label="视频版本" className="video-editor-versions" role="group">
-      {title === undefined ? null : <span className="video-editor-versions-title">{title}</span>}
+    <div aria-label="视频版本" className="editor-versions" role="group">
+      {title === undefined ? null : <span className="editor-versions-title">{title}</span>}
       {entries.map((entry) => (
         <VersionThumb
           key={entry.key}

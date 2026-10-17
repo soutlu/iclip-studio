@@ -2,20 +2,22 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  readyAttachment,
-  type ComposerHandle,
-  type ComposerPart,
-  type ComposerSubmission,
-} from '@/shared/ui/composer'
+import { readyAttachment, type ComposerPart, type ComposerSubmission } from '@/shared/ui/composer'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
-import { MAX_EDIT_REFERENCES } from '../generation-limits'
+import { VIDEO_CLIP_MODELS } from '@/testing/video-models'
 import { AiEditCard } from './ai-edit-card'
+import { clipGenerationBlock } from './clip-generation'
 
 const FIRST_FRAME = 'https://example.com/first-frame.jpg'
 const NEXT_FRAME = 'https://example.com/next-frame.jpg'
 const REFERENCE = 'https://example.com/reference.jpg'
+const wanModel = () => {
+  const model = VIDEO_CLIP_MODELS.find((item) => item.id === 'wan3.0-video')
+  if (model === undefined) throw new Error('测试模型缺失')
+  return model
+}
+const MODEL = wanModel()
 
 const imagePart = (url: string, name: string): ComposerPart => ({
   kind: 'media',
@@ -30,15 +32,13 @@ type CardProps = {
   onGenerate: (submission: ComposerSubmission) => void
 }
 
-/** 与真实调用方一样持有模式和草稿；选区变化只替换首帧候选。 */
 function Card({
   firstFrame = FIRST_FRAME,
   initialDraft = [],
   initialMode = 'edit',
-  referenceLimit = MAX_EDIT_REFERENCES,
+  referenceLimit = MODEL.maxReferenceImages,
   onGenerate,
 }: CardProps) {
-  const composerRef = useRef<ComposerHandle>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const [draft, setDraft] = useState(initialDraft)
   const [mode, setMode] = useState(initialMode)
@@ -50,12 +50,15 @@ function Card({
         alerts={null}
         anchorRef={anchorRef}
         canGenerate
-        composerRef={composerRef}
         detail="00:00.00–00:05.00 · 5 秒"
         draft={draft}
+        durationControl={null}
         firstFrameReferenceUrl={firstFrame}
         frames={{ first: firstFrame, last: firstFrame }}
         generating={false}
+        generationBlockOf={(referenceImageCount) =>
+          clipGenerationBlock(MODEL, { mode, seconds: 5, referenceImageCount })
+        }
         mode={mode}
         modelPicker={null}
         onCollapse={() => setOpen(false)}
@@ -73,7 +76,7 @@ function Card({
 }
 
 const editor = () => screen.getByRole('textbox', { name: '修改要求' })
-const generate = () => screen.getByRole('button', { name: '生成' })
+const generate = () => screen.getByRole('button', { name: '生成视频' })
 
 describe('视频编辑卡的生成方式与图片引用', () => {
   it('首帧只出现在 @ 候选，编辑模式的纯文字提交不隐式带图', async () => {
@@ -158,7 +161,7 @@ describe('视频编辑卡的生成方式与图片引用', () => {
   it('已上传的参考图可从 @ 重引用，达到上限时相同图片不再占用名额', async () => {
     const user = userEvent.setup()
     const onGenerate = vi.fn()
-    const initialDraft = Array.from({ length: MAX_EDIT_REFERENCES }, (_, index) =>
+    const initialDraft = Array.from({ length: MODEL.maxReferenceImages }, (_, index) =>
       imagePart(
         index === 0 ? REFERENCE : `https://example.com/ref-${index}.jpg`,
         `参考图${index + 1}`,

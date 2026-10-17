@@ -36,12 +36,14 @@ export const ORIGINAL_LABEL = '原片'
 
 export const versionLabel = (ordinal: number): string => `V${ordinal}`
 
+export const versionLabelAt = (index: number): string => versionLabel(index + 1)
+
 export const labelLineage = <T extends GenerationJob>(
   jobs: readonly T[],
 ): { job: T; label: string }[] => {
   let composites = 0
   return jobs.map((job) => ({
     job,
-    label: isComposite(job) ? versionLabel(++composites) : ORIGINAL_LABEL,
+    label: isComposite(job) ? versionLabelAt(composites++) : ORIGINAL_LABEL,
   }))
 }

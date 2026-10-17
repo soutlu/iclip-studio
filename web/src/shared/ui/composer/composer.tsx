@@ -76,6 +76,13 @@ export type ComposerSubmitAction = {
   readonly emphasis: 'primary' | 'neutral'
   /** 使用方此刻不让提交（如所选的东西还不能交给 AI）：按钮灰着，回车也不提交；原因由使用方在别处说明。 */
   readonly disabled?: boolean
+  readonly size?: 'md' | 'sm'
+}
+
+type ComposerToolbarClassNames = {
+  readonly row?: string
+  readonly leading?: string
+  readonly trailing?: string
 }
 
 type ComposerProps<N extends ComposerNode, Item> = {
@@ -105,6 +112,7 @@ type ComposerProps<N extends ComposerNode, Item> = {
   /** 代替默认的「添加附件」按钮；附件不可用时 `openFilePicker` 什么也不做。 */
   addControl?: ((openFilePicker: () => void) => ReactNode) | undefined
   submitAction?: ComposerSubmitAction | undefined
+  toolbarClassNames?: ComposerToolbarClassNames | undefined
   /** 使用方自定义的行内节点；须是模块级常量，只在挂载时读。 */
   nodes?: readonly ComposerNodeSpec<N>[]
   mention?: ComposerMention<Item, N> | undefined
@@ -170,6 +178,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
   ref,
   sending = false,
   submitAction,
+  toolbarClassNames,
   trailing,
 }: ComposerProps<N, Item>) {
   const attachments = useComposerAttachments(accept)
@@ -330,8 +339,13 @@ export function Composer<N extends ComposerNode = never, Item = never>({
         {attachmentLimit !== undefined || dropScope === 'card' ? (
           <ComposerNotice notice={admission.notice} />
         ) : null}
-        <div className="flex items-center justify-between gap-2 px-2 pt-1 pb-2">
-          <div className="flex items-center gap-1">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-2 px-2 pt-1 pb-2',
+            toolbarClassNames?.row,
+          )}
+        >
+          <div className={cn('flex items-center gap-1', toolbarClassNames?.leading)}>
             {addControl !== undefined ? (
               addControl(openFilePicker)
             ) : attachmentsEnabled ? (
@@ -339,7 +353,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
             ) : null}
             {leading}
           </div>
-          <div className="flex min-w-0 items-center gap-2">
+          <div className={cn('flex min-w-0 items-center gap-2', toolbarClassNames?.trailing)}>
             {trailing}
             {busy && onStop !== undefined ? (
               <button
@@ -357,7 +371,11 @@ export function Composer<N extends ComposerNode = never, Item = never>({
             ) : null}
             {submitAction !== undefined ? (
               <Button
-                className="shrink-0 rounded-full"
+                className={cn(
+                  'shrink-0 rounded-full',
+                  submitAction.size === 'sm' &&
+                    'h-(--control-height-sm) gap-1.5 px-2.5 text-label [&>svg]:size-(--icon-sm)',
+                )}
                 disabled={!canSend}
                 leadingIcon={submitAction.icon}
                 loading={sending}
