@@ -32,6 +32,7 @@ from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import rewriting
 from tests.helpers.generation import (
+    FakeFontProbe,
     FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
@@ -72,6 +73,7 @@ def _module(
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
         brand_templates=FixedBrandTemplates(template),
+        probe_font=FakeFontProbe(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",

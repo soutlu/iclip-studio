@@ -1,5 +1,3 @@
-"""直传的 HTTP 端点：签许可、按桶确认。两步都需要 ``uploads:write``。"""
-
 from __future__ import annotations
 
 import uuid
@@ -12,11 +10,10 @@ from iclip.domains.uploads.schemas import (
     UploadConfirmedOut,
     UploadConfirmIn,
     UploadSignIn,
-    UploadTicketOut,
     confirmed_out,
-    ticket_out,
 )
 from iclip.domains.uploads.service import UploadService
+from iclip.platform.object_store.direct_upload import UploadTicketOut
 
 
 def create_uploads_router(service: UploadService, *, act_as: ActAs) -> APIRouter:
@@ -29,7 +26,7 @@ def create_uploads_router(service: UploadService, *, act_as: ActAs) -> APIRouter
     ) -> UploadTicketOut:
         """发一条限时直传地址；上传者与 key 一起签进请求头，随对象存进桶。"""
 
-        return ticket_out(service.sign_upload(principal, body))
+        return UploadTicketOut.of(service.sign_upload(principal, body))
 
     @router.post("/{upload_id}/confirm", response_model=UploadConfirmedOut)
     async def confirm_upload(

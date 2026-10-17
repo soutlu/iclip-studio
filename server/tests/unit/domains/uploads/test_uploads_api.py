@@ -24,7 +24,8 @@ from iclip.domains.uploads.models import (
     MIN_SHORT_EDGE_PIXELS,
     MediaKind,
 )
-from iclip.domains.uploads.service import API_KEY_HEADER, UPLOADER_HEADER, UploadService
+from iclip.domains.uploads.service import UploadService
+from iclip.platform.object_store.direct_upload import API_KEY_HEADER, UPLOADER_HEADER
 from iclip.platform.object_store.store import ObjectStoreUnavailable
 from iclip.platform.outbound.fetch import FetchTooLarge
 from iclip.platform.outbound.guard import FetchFailed, FetchRefused

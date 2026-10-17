@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -35,6 +35,9 @@ class FontInfo:
     weight: int
     style: FontStyle
     unicode_ranges: tuple[tuple[int, int], ...]
+
+
+ProbeFont = Callable[[str], Awaitable[FontInfo]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +224,7 @@ __all__ = [
     "FontError",
     "FontInfo",
     "FontStyle",
+    "ProbeFont",
     "SubtitleFont",
     "caption_text",
     "escape_ass",

@@ -990,6 +990,17 @@ async def test_whole_film_filters_and_pages_follow_the_face(
     assert [row.card.conversation_id for row in second] == [seed.c2]
 
 
+async def test_whole_film_authors_count_cards_by_conversation_owner(
+    reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    """c1 的卡算 Nora 的（Lena 剪的 W2 也在里面）；Lena 有 c4 与 c2 两张。c5 只继承了整片、没有卡，
+    失败的与挂在不存在的对话上的不算。"""
+
+    authors = [(author.user_name, author.count) for author in await reports.whole_film_authors()]
+
+    assert authors == [(LENA, 2), (NORA, 1)]
+
+
 async def test_deleting_a_conversation_keeps_its_whole_film_card(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
 ) -> None:

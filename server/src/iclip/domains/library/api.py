@@ -1,5 +1,3 @@
-"""资料库 HTTP 端点。四个只读口都要 ``generation:read``，收录口径与可见范围见合同 §13。"""
-
 from __future__ import annotations
 
 import uuid
@@ -69,9 +67,17 @@ def create_library_router(service: LibraryService) -> APIRouter:
     async def authors(
         _: Annotated[Principal, require_permission("generation:read")],
     ) -> LibraryAuthorsOut:
-        """卡的作者与各自的卡数，多的排前面；给按人筛选用。"""
+        """成片卡的作者与各自的卡数，多的排前面、同数按名字，不受筛选影响；给按人筛选用。"""
 
         return await service.authors()
+
+    @router.get("/whole-films/authors", response_model=LibraryAuthorsOut)
+    async def whole_film_authors(
+        _: Annotated[Principal, require_permission("generation:read")],
+    ) -> LibraryAuthorsOut:
+        """整片卡的作者与各自的卡数，多的排前面、同数按名字，不受筛选影响；给整片页按人筛选用。"""
+
+        return await service.whole_film_authors()
 
     @router.get("/whole-films", response_model=WholeFilmCardsOut)
     async def whole_films(

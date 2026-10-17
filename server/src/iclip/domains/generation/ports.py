@@ -7,7 +7,6 @@ from typing import Protocol
 
 from iclip.domains.generation.models import Inheritance
 from iclip.domains.identity.public import Principal
-from iclip.platform.media.fonts import FontInfo
 from iclip.platform.media.probe import VideoProfile
 
 
@@ -34,7 +33,6 @@ class BrandTemplateFacts:
     width: int | None
     height: int | None
     has_audio: bool | None
-    font_info: FontInfo | None = None
 
 
 BrandTemplates = Callable[[uuid.UUID], Awaitable[BrandTemplateFacts | None]]

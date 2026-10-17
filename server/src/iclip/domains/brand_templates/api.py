@@ -1,7 +1,3 @@
-"""品牌模板 HTTP 端点，约定见合同「资料库」一节。
-
-列表要 ``generation:read``；新建、改名、停用与恢复只限治理者（``users:manage``）。"""
-
 from __future__ import annotations
 
 import uuid
@@ -13,7 +9,6 @@ from iclip.domains.brand_templates.schemas import (
     BrandFontConfirmIn,
     BrandFontInfoOut,
     BrandFontSignIn,
-    BrandFontUploadTicketOut,
     BrandTemplateCreateIn,
     BrandTemplateOut,
     BrandTemplatesOut,
@@ -21,6 +16,7 @@ from iclip.domains.brand_templates.schemas import (
 )
 from iclip.domains.brand_templates.service import BrandTemplateService
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, require_permission
+from iclip.platform.object_store.direct_upload import UploadTicketOut
 
 
 def create_brand_templates_router(service: BrandTemplateService) -> APIRouter:
@@ -54,12 +50,12 @@ def create_brand_templates_router(service: BrandTemplateService) -> APIRouter:
 
         return await service.create(principal, body)
 
-    @router.post("/fonts/sign", response_model=BrandFontUploadTicketOut)
+    @router.post("/fonts/sign", response_model=UploadTicketOut)
     async def sign_font(
         body: BrandFontSignIn,
         principal: Annotated[Principal, require_permission(MANAGE_PERMISSION, "uploads:write")],
-    ) -> BrandFontUploadTicketOut:
-        return BrandFontUploadTicketOut.of(service.sign_font(principal, body))
+    ) -> UploadTicketOut:
+        return UploadTicketOut.of(service.sign_font(principal, body))
 
     @router.post("/fonts/{upload_id}/confirm", response_model=BrandTemplateOut, status_code=201)
     async def confirm_font(

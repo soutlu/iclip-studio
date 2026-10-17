@@ -39,6 +39,7 @@ from iclip.domains.generation.subtitles import SUBTITLE_MODEL, QwenSubtitleProvi
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.domains.identity.public import ActAs
 from iclip.platform.media.codec import MediaCodec
+from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.media.probe import (
     VideoProfile,
     probe_remote_duration_ms,
@@ -77,6 +78,7 @@ def build_generation_module(
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
     brand_templates: BrandTemplates,
+    probe_font: ProbeFont,
     video: VideoProviderSettings,
     video_default_model: str,
     video_allowed_models: tuple[str, ...],
@@ -171,6 +173,7 @@ def build_generation_module(
         lineage=lineage,
         media_probe=_FetchingProbe(fetch_url),
         brand_templates=brand_templates,
+        probe_font=probe_font,
         subtitles=subtitle_target,
         music=music_target,
     )

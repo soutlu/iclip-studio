@@ -26,6 +26,7 @@ from tests.helpers.pg import connected
 VIDEOS = "/library/videos"
 AUTHORS = "/library/authors"
 WHOLE_FILMS = "/library/whole-films"
+WHOLE_FILM_AUTHORS = "/library/whole-films/authors"
 PASSWORD = "password-123"
 
 SHOT = VideoShotIn.model_validate(
@@ -157,7 +158,7 @@ async def plant_whole_film(
 
 
 async def test_anonymous_is_401(client: httpx.AsyncClient) -> None:
-    for path in (VIDEOS, f"{VIDEOS}/{uuid.uuid4()}", AUTHORS, WHOLE_FILMS):
+    for path in (VIDEOS, f"{VIDEOS}/{uuid.uuid4()}", AUTHORS, WHOLE_FILMS, WHOLE_FILM_AUTHORS):
         assert (await client.get(path)).status_code == 401
 
 
@@ -166,6 +167,34 @@ async def test_whole_films_need_generation_read(client: httpx.AsyncClient, pg_ur
     await set_roles_in_db(pg_url, "nobody@example.com", [])
 
     assert (await client.get(WHOLE_FILMS)).status_code == 403
+    assert (await client.get(WHOLE_FILM_AUTHORS)).status_code == 403
+
+
+async def test_whole_film_authors_count_whole_film_cards_by_conversation_owner(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    """整片卡的作者是对话属主：Lena 替 Nora 的对话剪的整片仍算 Nora 的卡；只有成片没有整片的对话
+    不算。"""
+
+    nora = await login_as(client, pg_url, "nora", "editor")
+    nora_conversation, nora_video = await plant_video(pg_url, owner=nora, user_name="nora")
+    await plant_video(pg_url, owner=nora, user_name="nora")
+    lena = await login_as(client, pg_url, "lena", "editor")
+    for _ in range(2):
+        conversation, video = await plant_video(pg_url, owner=lena, user_name="lena")
+        await plant_whole_film(pg_url, owner=lena, conversation_id=conversation, source=video)
+    await plant_whole_film(pg_url, owner=lena, conversation_id=nora_conversation, source=nora_video)
+
+    film_authors = await client.get(WHOLE_FILM_AUTHORS)
+    card_authors = await client.get(AUTHORS)
+
+    assert film_authors.status_code == 200, film_authors.text
+    assert film_authors.json() == {
+        "items": [{"userName": "lena", "count": 2}, {"userName": "nora", "count": 1}]
+    }
+    assert card_authors.json() == {
+        "items": [{"userName": "lena", "count": 2}, {"userName": "nora", "count": 2}]
+    }
 
 
 async def test_whole_film_cards_carry_every_version_and_the_conversation(
@@ -225,11 +254,13 @@ async def test_viewer_reads_the_empty_library(client: httpx.AsyncClient, pg_url:
 
     videos = await client.get(VIDEOS)
     authors = await client.get(AUTHORS)
+    film_authors = await client.get(WHOLE_FILM_AUTHORS)
     missing = await client.get(f"{VIDEOS}/{uuid.uuid4()}")
 
     assert videos.status_code == 200, videos.text
     assert videos.json() == {"items": [], "nextCursor": None, "total": 0}
     assert authors.json() == {"items": []}
+    assert film_authors.json() == {"items": []}
     assert missing.status_code == 404
 
 
