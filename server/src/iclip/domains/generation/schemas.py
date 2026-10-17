@@ -376,13 +376,30 @@ class SubtitleRequest(CamelModel):
     speaker_diarization: Literal[True] = True
 
 
+class SubtitleWord(CamelModel):
+    """一句里的一个词：在视频里的起止（毫秒）、文字与紧跟其后的标点（没有就是空串）。"""
+
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    text: str
+    punctuation: str = ""
+
+    @model_validator(mode="after")
+    def _end_not_before_start(self) -> SubtitleWord:
+        if self.end_ms < self.start_ms:
+            raise ValueError("end_ms 不能早于 start_ms")
+        return self
+
+
 class SubtitleSentence(CamelModel):
-    """字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。"""
+    """字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外
+    camelCase；早先的记录没有逐词时间，读出来是空。"""
 
     start_ms: Annotated[int, Field(ge=0)]
     end_ms: Annotated[int, Field(ge=0)]
     text: str
     speaker: int | None
+    words: tuple[SubtitleWord, ...] = ()
 
     @model_validator(mode="after")
     def _end_not_before_start(self) -> SubtitleSentence:
@@ -396,7 +413,7 @@ def sentences_to_payload(
 ) -> list[dict[str, Any]] | None:
     if sentences is None:
         return None
-    return [sentence.model_dump() for sentence in sentences]
+    return [sentence.model_dump(mode="json") for sentence in sentences]
 
 
 _SENTENCES: Final = TypeAdapter(tuple[SubtitleSentence, ...])
@@ -680,6 +697,7 @@ __all__ = [
     "SubtitleIn",
     "SubtitleRequest",
     "SubtitleSentence",
+    "SubtitleWord",
     "UserName",
     "VideoClipModelOut",
     "VideoComposeIn",

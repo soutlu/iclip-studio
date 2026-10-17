@@ -1464,15 +1464,29 @@ export const zSubtitleIn = z.object({
 })
 
 /**
+ * SubtitleWord
+ *
+ * 一句里的一个词：在视频里的起止（毫秒）、文字与紧跟其后的标点（没有就是空串）。
+ */
+export const zSubtitleWord = z.object({
+  endMs: z.int().gte(0),
+  punctuation: z.string().optional().default(''),
+  startMs: z.int().gte(0),
+  text: z.string(),
+})
+
+/**
  * SubtitleSentence
  *
- * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ * 字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外
+ * camelCase；早先的记录没有逐词时间，读出来是空。
  */
 export const zSubtitleSentence = z.object({
   endMs: z.int().gte(0),
   speaker: z.int().nullable(),
   startMs: z.int().gte(0),
   text: z.string(),
+  words: z.array(zSubtitleWord).optional().default([]),
 })
 
 /**

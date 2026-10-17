@@ -30,7 +30,7 @@ from iclip.domains.generation.provider import (
     ProviderSubmission,
 )
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
-from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence
+from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence, SubtitleWord
 from iclip.domains.generation.service import GenerationService, ProviderTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
@@ -61,7 +61,16 @@ MODEL = "qwen-audio-3.1-asr-flash"
 SUBTITLES = ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model=MODEL)
 
 SENTENCES = (
-    SubtitleSentence(start_ms=100, end_ms=1800, text="第一句。", speaker=0),
+    SubtitleSentence(
+        start_ms=100,
+        end_ms=1800,
+        text="第一句。",
+        speaker=0,
+        words=(
+            SubtitleWord(start_ms=100, end_ms=900, text="第一"),
+            SubtitleWord(start_ms=900, end_ms=1800, text="句", punctuation="。"),
+        ),
+    ),
     SubtitleSentence(start_ms=2000, end_ms=3000, text="第二句。", speaker=None),
 )
 
@@ -593,8 +602,17 @@ async def test_a_finished_subtitle_record_reads_back_its_sentences_by_kind_sourc
     generation = single.json()["generation"]
     expected = (
         [
-            {"startMs": 100, "endMs": 1800, "text": "第一句。", "speaker": 0},
-            {"startMs": 2000, "endMs": 3000, "text": "第二句。", "speaker": None},
+            {
+                "startMs": 100,
+                "endMs": 1800,
+                "text": "第一句。",
+                "speaker": 0,
+                "words": [
+                    {"startMs": 100, "endMs": 900, "text": "第一", "punctuation": ""},
+                    {"startMs": 900, "endMs": 1800, "text": "句", "punctuation": "。"},
+                ],
+            },
+            {"startMs": 2000, "endMs": 3000, "text": "第二句。", "speaker": None, "words": []},
         ]
         if sentences
         else []

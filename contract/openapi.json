@@ -6214,7 +6214,7 @@
       },
       "SubtitleSentence": {
         "additionalProperties": false,
-        "description": "字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。",
+        "description": "字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外\ncamelCase；早先的记录没有逐词时间，读出来是空。",
         "properties": {
           "endMs": {
             "minimum": 0.0,
@@ -6240,6 +6240,14 @@
           "text": {
             "title": "Text",
             "type": "string"
+          },
+          "words": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SubtitleWord"
+            },
+            "title": "Words",
+            "type": "array"
           }
         },
         "required": [
@@ -6249,6 +6257,38 @@
           "speaker"
         ],
         "title": "SubtitleSentence",
+        "type": "object"
+      },
+      "SubtitleWord": {
+        "additionalProperties": false,
+        "description": "一句里的一个词：在视频里的起止（毫秒）、文字与紧跟其后的标点（没有就是空串）。",
+        "properties": {
+          "endMs": {
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "punctuation": {
+            "default": "",
+            "title": "Punctuation",
+            "type": "string"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs",
+          "text"
+        ],
+        "title": "SubtitleWord",
         "type": "object"
       },
       "TakeOut": {
