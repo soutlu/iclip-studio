@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from iclip.domains.conversations.models import Conversation, ConversationActivity, EventWatermark
 from iclip.domains.conversations.schemas import (
@@ -52,11 +53,16 @@ from iclip.domains.conversations.service import (
     DeletedFilter,
     ListAgents,
     ListState,
+    WholeFilmRenderUnavailable,
 )
 from iclip.domains.conversations.whole_film_schemas import (
     WholeFilmDraftIn,
     WholeFilmDraftOut,
     WholeFilmDraftSavedOut,
+    WholeFilmExportIn,
+    WholeFilmExportOut,
+    WholeFilmExportStartedOut,
+    whole_film_export_out,
 )
 from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
@@ -65,6 +71,16 @@ from iclip.domains.identity.public import (
     require_permission,
 )
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
+
+
+@contextmanager
+def _render_unavailable_as_502() -> Generator[None]:
+    """渲染服务不可用不是调用方的错，照 SSO / PMS 不可达的先例答 502，``detail`` 是原因。"""
+
+    try:
+        yield
+    except WholeFilmRenderUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def create_conversations_router(
@@ -476,6 +492,53 @@ def create_conversations_router(
             principal, conversation_id, revision=body.revision, document=body.document
         )
         return WholeFilmDraftSavedOut(revision=saved.revision, updated_at=saved.updated_at)
+
+    @router.post(
+        "/{conversation_id}/whole-film/exports",
+        response_model=WholeFilmExportStartedOut,
+        status_code=202,
+    )
+    async def export_whole_film(
+        conversation_id: uuid.UUID,
+        body: WholeFilmExportIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> WholeFilmExportStartedOut:
+        """按当前草稿导出一条整片，交给渲染服务排队，答复导出 id 与用到的成片。只有属主能导；
+        ``revision`` 不是存着的那一版 409；画面轨没有视频、渲染服务不认这份草稿、没开通都是 422；
+        渲染服务不可用 502。"""
+
+        with _render_unavailable_as_502():
+            export_id, sources = await service.export_whole_film(
+                principal, conversation_id, revision=body.revision
+            )
+        return WholeFilmExportStartedOut(export_id=export_id, source_job_ids=list(sources))
+
+    @router.get(
+        "/{conversation_id}/whole-film/exports/{export_id}", response_model=WholeFilmExportOut
+    )
+    async def read_whole_film_export(
+        conversation_id: uuid.UUID,
+        export_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> WholeFilmExportOut:
+        """读一次导出走到哪一步，``done`` 时带 1 小时有效的下载地址。只有属主能看；查不到（过期、
+        渲染服务重启过）或不是这段对话的 404，要重新导出。"""
+
+        with _render_unavailable_as_502():
+            found = await service.whole_film_export(principal, conversation_id, export_id)
+        return whole_film_export_out(found)
+
+    @router.delete("/{conversation_id}/whole-film/exports/{export_id}", status_code=204)
+    async def cancel_whole_film_export(
+        conversation_id: uuid.UUID,
+        export_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> Response:
+        """取消排队中或渲染中的导出；已结束的也答 204、不改状态。只有属主能取消。"""
+
+        with _render_unavailable_as_502():
+            await service.cancel_whole_film_export(principal, conversation_id, export_id)
+        return Response(status_code=204)
 
     @router.patch("/{conversation_id}", response_model=ConversationEnvelope)
     async def rename_conversation(

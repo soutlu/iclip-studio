@@ -12,6 +12,7 @@ from typing import Annotated, Final, Literal
 
 from pydantic import AfterValidator, Field, FiniteFloat, StringConstraints, model_validator
 
+from iclip.domains.conversations.models import WholeFilmExport, WholeFilmExportStatus
 from iclip.domains.conversations.schemas import CamelModel
 
 MIN_CLIP_MS: Final = 100
@@ -165,11 +166,13 @@ class WholeFilmDocument(CamelModel):
 
         return sum(clip.duration for clip in self.layer0)
 
-    def video_sources(self) -> frozenset[uuid.UUID]:
-        """画面轨里各段视频出自的成片，去重。"""
+    def video_sources(self) -> tuple[uuid.UUID, ...]:
+        """画面轨里各段视频出自的成片，去重，按在画面轨里第一次出现的先后。"""
 
-        return frozenset(
-            clip.source_job_id for clip in self.layer0 if isinstance(clip, WholeFilmVideoClip)
+        return tuple(
+            dict.fromkeys(
+                clip.source_job_id for clip in self.layer0 if isinstance(clip, WholeFilmVideoClip)
+            )
         )
 
 
@@ -270,6 +273,49 @@ class WholeFilmDraftSavedOut(CamelModel):
     updated_at: datetime
 
 
+class WholeFilmExportIn(CamelModel):
+    """按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。"""
+
+    revision: Index
+
+
+class WholeFilmExportStartedOut(CamelModel):
+    """已交给渲染服务排队。``sourceJobIds`` 是这次导出用到的成片，去重、按在画面轨里第一次出现的
+    先后；下载时按它们各记一次下载。"""
+
+    export_id: uuid.UUID
+    source_job_ids: list[uuid.UUID]
+
+
+class WholeFilmExportErrorOut(CamelModel):
+    code: str
+    message: str
+
+
+class WholeFilmExportOut(CamelModel):
+    """一次导出现在的样子。``downloadUrl`` 与 ``expiresAt`` 只在 ``done`` 时有。"""
+
+    status: WholeFilmExportStatus
+    progress: float
+    queue_position: int | None
+    error: WholeFilmExportErrorOut | None
+    download_url: str | None
+    expires_at: datetime | None
+
+
+def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
+    return WholeFilmExportOut(
+        status=export.status,
+        progress=export.progress,
+        queue_position=export.queue_position,
+        error=None
+        if export.error is None
+        else WholeFilmExportErrorOut(code=export.error.code, message=export.error.message),
+        download_url=export.download_url,
+        expires_at=export.expires_at,
+    )
+
+
 __all__ = [
     "MAX_CANVAS_EDGE",
     "MAX_CAPTION_EDITS",
@@ -295,8 +341,13 @@ __all__ = [
     "WholeFilmDraftIn",
     "WholeFilmDraftOut",
     "WholeFilmDraftSavedOut",
+    "WholeFilmExportErrorOut",
+    "WholeFilmExportIn",
+    "WholeFilmExportOut",
+    "WholeFilmExportStartedOut",
     "WholeFilmMusic",
     "WholeFilmOverlay",
     "WholeFilmTransition",
     "WholeFilmVideoClip",
+    "whole_film_export_out",
 ]

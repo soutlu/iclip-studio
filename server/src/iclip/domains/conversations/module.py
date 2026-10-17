@@ -28,6 +28,7 @@ from iclip.domains.conversations.service import (
     ListDerivedFiles,
     ReadDerivedFile,
     WholeFilmDraftReferences,
+    WholeFilmExports,
     WorkspaceDocumentValidator,
     WriteDerivedFile,
 )
@@ -56,6 +57,7 @@ def build_conversations_module(
     film: ConversationFilm,
     drafts: WholeFilmDraftStore,
     draft_references: WholeFilmDraftReferences,
+    exports: WholeFilmExports | None,
     generate_title: GenerateTitle,
     announce_title: AnnounceTitle,
     activities_of: ActivitiesOf,
@@ -81,6 +83,7 @@ def build_conversations_module(
         film=film,
         drafts=drafts,
         draft_references=draft_references,
+        exports=exports,
         generate_title=generate_title,
         announce_title=announce_title,
         activities_of=activities_of,

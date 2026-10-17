@@ -84,6 +84,35 @@ class EventWatermark(Protocol):
         ...
 
 
+WholeFilmExportStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
+"""一次导出走到哪一步，取值照渲染服务。"""
+
+
+@dataclass(frozen=True, slots=True)
+class WholeFilmExportError:
+    """导出失败的原因：``code`` 照渲染服务（render-failed、upload-failed、media-unreachable、
+    timeout），``message`` 是它给的一句话。"""
+
+    code: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class WholeFilmExport:
+    """渲染服务里的一次导出，本系统不落库：状态只在渲染服务内存里。"""
+
+    conversation_id: uuid.UUID
+    status: WholeFilmExportStatus
+    progress: float
+    """0–1，只在 rendering 时变化。"""
+    queue_position: int | None
+    """排队时前面还有几个；不在排队为 None。"""
+    error: WholeFilmExportError | None
+    download_url: str | None
+    """只在 done 时有：限时的下载地址。"""
+    expires_at: datetime | None
+
+
 __all__ = [
     "IDLE_ACTIVITY",
     "Conversation",
@@ -91,4 +120,7 @@ __all__ = [
     "EventWatermark",
     "TitleKind",
     "WholeFilmDraft",
+    "WholeFilmExport",
+    "WholeFilmExportError",
+    "WholeFilmExportStatus",
 ]

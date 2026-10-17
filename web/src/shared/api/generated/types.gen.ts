@@ -5378,6 +5378,78 @@ export type WholeFilmDraftSavedOut = {
 }
 
 /**
+ * WholeFilmExportErrorOut
+ */
+export type WholeFilmExportErrorOut = {
+  /**
+   * Code
+   */
+  code: string
+  /**
+   * Message
+   */
+  message: string
+}
+
+/**
+ * WholeFilmExportIn
+ *
+ * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
+ */
+export type WholeFilmExportIn = {
+  /**
+   * Revision
+   */
+  revision: number
+}
+
+/**
+ * WholeFilmExportOut
+ *
+ * 一次导出现在的样子。``downloadUrl`` 与 ``expiresAt`` 只在 ``done`` 时有。
+ */
+export type WholeFilmExportOut = {
+  /**
+   * Downloadurl
+   */
+  downloadUrl: string | null
+  error: WholeFilmExportErrorOut | null
+  /**
+   * Expiresat
+   */
+  expiresAt: string | null
+  /**
+   * Progress
+   */
+  progress: number
+  /**
+   * Queueposition
+   */
+  queuePosition: number | null
+  /**
+   * Status
+   */
+  status: 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
+}
+
+/**
+ * WholeFilmExportStartedOut
+ *
+ * 已交给渲染服务排队。``sourceJobIds`` 是这次导出用到的成片，去重、按在画面轨里第一次出现的
+ * 先后；下载时按它们各记一次下载。
+ */
+export type WholeFilmExportStartedOut = {
+  /**
+   * Exportid
+   */
+  exportId: string
+  /**
+   * Sourcejobids
+   */
+  sourceJobIds: Array<string>
+}
+
+/**
  * WholeFilmMusic
  *
  * 背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。
@@ -7261,6 +7333,111 @@ export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutRespon
 
 export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
   SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses]
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostData = {
+  body: WholeFilmExportIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/exports'
+}
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostError =
+  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors]
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: WholeFilmExportStartedOut
+}
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
+  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses]
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+    /**
+     * Export Id
+     */
+    export_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/exports/{export_id}'
+}
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteError =
+  CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteErrors[keyof CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteErrors]
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses =
+  {
+    /**
+     * Successful Response
+     */
+    204: void
+  }
+
+export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
+  CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses[keyof CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses]
+
+export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+    /**
+     * Export Id
+     */
+    export_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/exports/{export_id}'
+}
+
+export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetError =
+  ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetErrors[keyof ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetErrors]
+
+export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmExportOut
+}
+
+export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponse =
+  ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponses[keyof ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponses]
 
 export type ReadConversationFileConversationsConversationIdWorkspaceFileGetData = {
   body?: never

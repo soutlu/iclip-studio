@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
-from urllib.parse import urlsplit
+from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlsplit
 
 import oss2
 import pytest
@@ -15,6 +17,7 @@ from iclip.platform.object_store.oss import (
     RETRY_ATTEMPTS,
     OssObjectStore,
     OssSettings,
+    attachment_disposition,
     oss_fetch_url,
     validate_internal_endpoint,
     validate_public_url_base,
@@ -462,3 +465,101 @@ def test_signed_put_uses_the_public_endpoint_even_with_an_internal_one() -> None
     url = OssObjectStore(settings).sign_put(object_key=KEY, headers={"Content-Type": "image/png"})
 
     assert urlsplit(url).netloc == "iclip.oss-cn-shenzhen.aliyuncs.com"
+
+
+EXPORT_KEY = f"{OSS_ROOT}/whole-film-exports/e.mp4"
+PUBLIC_AND_INTERNAL = replace(INTERNAL, endpoint="https://oss-cn-shenzhen.aliyuncs.com")
+
+
+def _query(url: str) -> dict[str, str]:
+    return {key: values[0] for key, values in parse_qs(urlsplit(url).query).items()}
+
+
+NOW = 1_800_000_000
+"""钉住时钟：签名随过期时刻变，同一刻签出来的才能比。"""
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(time, "time", lambda: float(NOW))
+
+
+def _same_key_signed(method: str, endpoint: str, **kwargs: object) -> str:
+    """同一把凭证、同一刻、直接用 SDK 签的对照地址。"""
+
+    bucket = oss2.Bucket(oss2.Auth("ak", "sk"), endpoint, "iclip")
+    return str(bucket.sign_url(method, EXPORT_KEY, 3600, slash_safe=True, **kwargs))
+
+
+@pytest.mark.usefixtures("frozen_clock")
+def test_a_private_put_goes_to_the_internal_host_and_binds_type_and_acl() -> None:
+    """签名本地算：服务端上传走内网 host，过期时刻是现在加给的秒数，Content-Type 与私有读都签进去。"""
+
+    signed = OssObjectStore(PUBLIC_AND_INTERNAL).sign_private_put(
+        object_key=EXPORT_KEY, content_type="video/mp4", expires_seconds=3600
+    )
+
+    parts = urlsplit(signed.url)
+    assert parts.netloc == "iclip.oss-cn-shenzhen-internal.aliyuncs.com"
+    assert parts.path == f"/{EXPORT_KEY}"
+    assert _query(signed.url)["Expires"] == str(NOW + 3600)
+    assert dict(signed.headers) == {"Content-Type": "video/mp4", "x-oss-object-acl": "private"}
+    assert (
+        timedelta(seconds=3590) < signed.expires_at - datetime.now(UTC) <= timedelta(seconds=3600)
+    )
+    internal = "https://oss-cn-shenzhen-internal.aliyuncs.com"
+    with_acl = _same_key_signed("PUT", internal, headers=dict(signed.headers))
+    without_acl = _same_key_signed("PUT", internal, headers={"Content-Type": "video/mp4"})
+    assert _query(signed.url)["Signature"] == _query(with_acl)["Signature"]
+    assert _query(without_acl)["Signature"] != _query(signed.url)["Signature"], "私有读签进了签名"
+
+
+def test_a_private_put_without_an_internal_endpoint_uses_the_public_one() -> None:
+    signed = OssObjectStore(SETTINGS).sign_private_put(
+        object_key=EXPORT_KEY, content_type="video/mp4", expires_seconds=3600
+    )
+
+    assert urlsplit(signed.url).netloc == "iclip.oss.test"
+
+
+def test_a_private_put_refuses_keys_outside_the_namespace() -> None:
+    with pytest.raises(ValueError):
+        OssObjectStore(SETTINGS).sign_private_put(
+            object_key="other/e.mp4", content_type="video/mp4", expires_seconds=3600
+        )
+
+
+@pytest.mark.usefixtures("frozen_clock")
+def test_a_download_goes_to_the_public_host_and_signs_the_attachment_name() -> None:
+    store = OssObjectStore(PUBLIC_AND_INTERNAL)
+
+    url = store.sign_download(
+        object_key=EXPORT_KEY, filename="整片-20261017-1230.mp4", expires_seconds=3600
+    )
+    renamed = store.sign_download(
+        object_key=EXPORT_KEY, filename="整片-20261017-1231.mp4", expires_seconds=3600
+    )
+
+    query = _query(url)
+    assert urlsplit(url).netloc == "iclip.oss-cn-shenzhen.aliyuncs.com"
+    assert query["Expires"] == str(NOW + 3600)
+    assert query["response-content-disposition"] == (
+        'attachment; filename="__-20261017-1230.mp4"; '
+        "filename*=UTF-8''%E6%95%B4%E7%89%87-20261017-1230.mp4"
+    )
+    assert _query(renamed)["Signature"] != query["Signature"], "文件名签进了签名，改不了"
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("film.mp4", "attachment; filename=\"film.mp4\"; filename*=UTF-8''film.mp4"),
+        (
+            '整 "片".mp4',
+            "attachment; filename=\"_ ___.mp4\"; filename*=UTF-8''%E6%95%B4%20%22%E7%89%87%22.mp4",
+        ),
+    ],
+    ids=["ASCII", "中文、空格与引号"],
+)
+def test_attachment_disposition_follows_rfc_5987(filename: str, expected: str) -> None:
+    assert attachment_disposition(filename) == expected

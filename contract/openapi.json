@@ -10049,6 +10049,142 @@
         "title": "WholeFilmDraftSavedOut",
         "type": "object"
       },
+      "WholeFilmExportErrorOut": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "WholeFilmExportErrorOut",
+        "type": "object"
+      },
+      "WholeFilmExportIn": {
+        "additionalProperties": false,
+        "description": "按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。",
+        "properties": {
+          "revision": {
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "WholeFilmExportIn",
+        "type": "object"
+      },
+      "WholeFilmExportOut": {
+        "additionalProperties": false,
+        "description": "一次导出现在的样子。``downloadUrl`` 与 ``expiresAt`` 只在 ``done`` 时有。",
+        "properties": {
+          "downloadUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downloadurl"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmExportErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "queuePosition": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queueposition"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "rendering",
+              "uploading",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "progress",
+          "queuePosition",
+          "error",
+          "downloadUrl",
+          "expiresAt"
+        ],
+        "title": "WholeFilmExportOut",
+        "type": "object"
+      },
+      "WholeFilmExportStartedOut": {
+        "additionalProperties": false,
+        "description": "已交给渲染服务排队。``sourceJobIds`` 是这次导出用到的成片，去重、按在画面轨里第一次出现的\n先后；下载时按它们各记一次下载。",
+        "properties": {
+          "exportId": {
+            "format": "uuid",
+            "title": "Exportid",
+            "type": "string"
+          },
+          "sourceJobIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Sourcejobids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "exportId",
+          "sourceJobIds"
+        ],
+        "title": "WholeFilmExportStartedOut",
+        "type": "object"
+      },
       "WholeFilmMusic": {
         "additionalProperties": false,
         "description": "背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。",
@@ -13740,6 +13876,195 @@
           }
         ],
         "summary": "Save Whole Film Draft",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/whole-film/exports": {
+      "post": {
+        "description": "按当前草稿导出一条整片，交给渲染服务排队，答复导出 id 与用到的成片。只有属主能导；\n``revision`` 不是存着的那一版 409；画面轨没有视频、渲染服务不认这份草稿、没开通都是 422；\n渲染服务不可用 502。",
+        "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WholeFilmExportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmExportStartedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Export Whole Film",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/whole-film/exports/{export_id}": {
+      "delete": {
+        "description": "取消排队中或渲染中的导出；已结束的也答 204、不改状态。只有属主能取消。",
+        "operationId": "cancel_whole_film_export_conversations__conversation_id__whole_film_exports__export_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Export Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Cancel Whole Film Export",
+        "tags": [
+          "conversations"
+        ]
+      },
+      "get": {
+        "description": "读一次导出走到哪一步，``done`` 时带 1 小时有效的下载地址。只有属主能看；查不到（过期、\n渲染服务重启过）或不是这段对话的 404，要重新导出。",
+        "operationId": "read_whole_film_export_conversations__conversation_id__whole_film_exports__export_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Export Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmExportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Whole Film Export",
         "tags": [
           "conversations"
         ]

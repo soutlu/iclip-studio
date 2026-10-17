@@ -65,6 +65,8 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 
 跨模块协作在组合根适配。例如：合集元信息接入对话侧栏，工作区文件和素材台账接入对话的派生数据端口，生成任务仓库包一层状态广播把每次状态跳转发成 WebSocket 全局帧；上传确认经 uploads 声明的三个端口：两个由组合根接到生成域，一个查这次上传记过没有，一个落一条上传记录并交回最终地址，这一步只要生成仓储，媒体生成没开也照落；第三个判音乐要挂的对话是不是主体自己的，接到对话域。发消息（含带新内容的重新生成）的附件经 agents 域声明的端口，由组合根的 [app/prompt_attachments.py](../server/src/iclip/app/prompt_attachments.py) 接到 uploads：挂不上 OSS 处理参数的图片先转存成一条上传、换成新地址再交给 harness；uploads 下载经它声明的端口接到组合根建的出网下载器（lifespan 里关闭）；没有对象存储就不接，这类图片由 harness 受理时拒绝。需求单直接持有调用方确认的创作输入，创建时不依赖产品目录装配。模块只使用自身声明的协议，不自行创建其他模块的客户端或仓库。
 
+整片导出（[conventions §6](../contract/conventions.md#整片导出)）的端点与权限在对话域，经对话域声明的端口由组合根的 [app/whole_film_exports.py](../server/src/iclip/app/whole_film_exports.py) 接到渲染服务：后端只用内网 HTTP 调渲染服务的 `/exports`（`WHOLE_FILM_RENDER_URL`，不鉴权），自己不渲染、不存导出状态，读进度、取消都转问渲染服务并核对导出属于这段对话。交给渲染服务的是草稿原样、各成片的原片地址与音乐地址（本桶对象换成内网地址，上游发布的出片地址原样）、每条成片最新一条已完成的字幕记录，以及签给内网的私有对象上传地址（`iclip/agent/whole-film-exports/`，6 小时有效）；渲染完由渲染服务直接上传进桶，下载地址由后端按公网 endpoint 现签。渲染服务连不上或答复不对时端点答 502，不重试。
+
 ## 4. 持久化与迁移
 
 | 数据 | 实现位置 |

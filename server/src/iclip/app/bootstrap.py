@@ -44,6 +44,7 @@ from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.whole_film_drafts import GenerationDraftReferences
+from iclip.app.whole_film_exports import WholeFilmExportAdapter, WholeFilmRenderClient
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
@@ -139,19 +140,27 @@ from iclip.platform.object_store.oss import (
     validate_internal_endpoint,
     validate_public_url_base,
 )
-from iclip.platform.object_store.store import PublicBucket, PublicObjectStore
+from iclip.platform.object_store.store import (
+    PrivateObjectSigner,
+    PublicBucket,
+    PublicObjectStore,
+)
 from iclip.platform.outbound.fetch import PublicFetcher
 
 _logger = structlog.stdlib.get_logger(__name__)
 
 
 def _object_store(
-    settings: ObjectStoreEnv | None, injected: PublicBucket | None
-) -> tuple[PublicBucket | None, Callable[[str], str]]:
+    settings: ObjectStoreEnv | None,
+    injected: PublicBucket | None,
+    injected_signer: PrivateObjectSigner | None,
+) -> tuple[PublicBucket | None, Callable[[str], str], PrivateObjectSigner | None]:
+    """桶、服务端下载用的地址换算与私有临时对象的签名。注入了桶（测试）时签名也用注入的。"""
+
     if injected is not None:
-        return injected, _as_is
+        return injected, _as_is, injected_signer
     if settings is None:
-        return None, _as_is
+        return None, _as_is, None
     oss = OssSettings(
         bucket=settings.bucket,
         endpoint=settings.endpoint,
@@ -160,7 +169,8 @@ def _object_store(
         public_url_base=validate_public_url_base(settings.public_url_base),
         internal_endpoint=validate_internal_endpoint(settings.internal_endpoint),
     )
-    return OssObjectStore(oss), oss_fetch_url(oss)
+    store = OssObjectStore(oss)
+    return store, oss_fetch_url(oss), store
 
 
 def _as_is(url: str) -> str:
@@ -331,6 +341,8 @@ def build_app(
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
     object_store: PublicBucket | None = None,
+    export_objects: PrivateObjectSigner | None = None,
+    whole_film_render_transport: httpx.AsyncBaseTransport | None = None,
     image_fetcher: FetchBytes | None = None,
     queue_connector: procrastinate.BaseConnector | None = None,
     product_catalog_engine: AsyncEngine | None = None,
@@ -371,8 +383,17 @@ def build_app(
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
-    public_objects, fetch_url = _object_store(settings.object_store, object_store)
+    public_objects, fetch_url, export_signer = _object_store(
+        settings.object_store, object_store, export_objects
+    )
     _require_ffmpeg(settings.ffmpeg_required)
+    render_client = (
+        None
+        if settings.whole_film_render is None
+        else WholeFilmRenderClient(
+            settings.whole_film_render.url, transport=whole_film_render_transport
+        )
+    )
     codec = _media_codec(settings.ffmpeg_required, media_codec)
     compose_concurrency = (
         _local_concurrency(settings.media_generation.compose_concurrency, codec)
@@ -632,6 +653,14 @@ def build_app(
         draft_references=GenerationDraftReferences(
             generations=generation_repo, conversations=conversation_repo
         ),
+        exports=None
+        if render_client is None or export_signer is None
+        else WholeFilmExportAdapter(
+            render=render_client,
+            generations=generation_repo,
+            signer=export_signer,
+            fetch_url=fetch_url,
+        ),
         generate_title=live_title_generator(agent_layer),
         announce_title=live_connections.announce_title,
         event_watermark=live_connections.clock.snapshot,
@@ -744,6 +773,8 @@ def build_app(
                 await connector.close_async()
             await transcripts.runner.shutdown()
             await http_client.aclose()
+            if render_client is not None:
+                await render_client.aclose()
             if owned_fetcher is not None:
                 await owned_fetcher.aclose()
             if hup_installed:

@@ -45,8 +45,10 @@
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
    - `configs/`、`agents/`、`skills/`：后端只读挂载，镜像里没有
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
-4. 用有 DDL 权限的账号执行目标版本的数据库迁移。部署和服务启动都不会自动迁移。
-5. 登录镜像仓库，拉取并启动：
+   - 整片导出：在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为渲染服务在 compose 网络里的地址（如 `http://render:8080`），要求同时配了 OSS；不设则导出端点答「整片导出没有开通」。渲染服务的 `RENDER_ALLOWED_MEDIA_HOSTS` 要列出它会取素材的主机：本桶的内网 host `<OSS_BUCKET>.<OSS_INTERNAL_ENDPOINT 的 host>`（没配内网 endpoint 时是 `<OSS_BUCKET>.<OSS_ENDPOINT 的 host>`），以及上游视频服务发布出片的主机。
+4. 在 OSS 控制台给桶加一条生命周期规则，清掉导出的临时整片：进入这个 Bucket →「数据管理」→「生命周期」→「创建规则」，状态选启用，策略选按前缀匹配，前缀填 `iclip/agent/whole-film-exports/`，文件过期策略选按天数、1 天后删除，保存。只对这个前缀生效，桶里别的对象不受影响。
+5. 用有 DDL 权限的账号执行目标版本的数据库迁移。部署和服务启动都不会自动迁移。
+6. 登录镜像仓库，拉取并启动：
 
    ```bash
    docker login <ACR_REGISTRY>   # 与 .env 的 ACR_REGISTRY 相同
@@ -54,7 +56,7 @@
    curl http://localhost/api/healthz
    ```
 
-6. 设置首个管理员：
+7. 设置首个管理员：
    - 用 SSO 登录：在 `.env` 设置 `ROOT_EMAIL`，这个邮箱首次登录即为 root。
    - 用密码注册：执行 `docker compose run --rm server python -m scripts.admin set-roles <账号> root,editor`。
 
