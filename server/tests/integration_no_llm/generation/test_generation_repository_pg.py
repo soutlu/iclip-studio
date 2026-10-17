@@ -27,7 +27,7 @@ from iclip.domains.generation.models import (
     GenerationKind,
     GenerationOperation,
 )
-from iclip.domains.generation.schemas import GenerationRequest
+from iclip.domains.generation.stored_requests import GenerationRequest
 from tests.helpers.fork_lineage import (
     complete,
     finished,

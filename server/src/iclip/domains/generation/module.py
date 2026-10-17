@@ -21,6 +21,7 @@ from iclip.domains.generation.image_upstream import (
 from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
 from iclip.domains.generation.music import MUSIC_MODEL, MusicProviderSettings, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
+from iclip.domains.generation.ports import BrandTemplates, ConversationLineage
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
 from iclip.domains.generation.queue import (
@@ -32,9 +33,7 @@ from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import ClipStage
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import (
-    BrandTemplates,
     ClearCompletion,
-    ConversationLineage,
     GenerationService,
     MusicTarget,
     SubtitleTarget,
@@ -47,7 +46,11 @@ from iclip.domains.generation.subtitles import (
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.domains.identity.public import ActAs
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.probe import probe_remote_duration_ms
+from iclip.platform.media.probe import (
+    VideoProfile,
+    probe_remote_duration_ms,
+    probe_remote_video,
+)
 from iclip.platform.object_store.store import PublicObjectStore
 
 
@@ -130,9 +133,10 @@ def build_generation_module(
 ) -> GenerationModule:
     """装配 Provider 与队列；transport 支持测试替身，queue_connector 由组合根选择数据库驱动。
 
-    编辑段受理时用 ffprobe 按需读远程视频探时长（基底与参考片段）。对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；合成的产物本来就是
+    编辑段受理时用 ffprobe 按需读远程视频探时长（基底与参考片段），整片带片头片尾时探第一段成片的
+    画幅。对象存储给图片与本地视频加工用：图片网关给的是会过期的签名地址，要转存；合成的产物本来就是
     我们自己造的。视频上游给的是它自己发布好的稳定地址，不转存。``media_codec`` 是本地合成
-    用的那一档编解码，由组合根在启动时选定。``fetch_url`` 只用在受理时探时长、合成与字幕识别
+    用的那一档编解码，由组合根在启动时选定。``fetch_url`` 只用在受理时探时长与画幅、合成与字幕识别
     下载素材的那一刻（本桶对象走内网），落库与交给上游的地址不经过它。
 
     ``subtitles`` 给了就开通字幕识别：多一条识别 lane，成片完成后自动排一条字幕记录；为 None 时
@@ -152,9 +156,6 @@ def build_generation_module(
     compose_provider = FfmpegComposeProvider(
         object_store=object_store, report_stage=report_stage, codec=media_codec, fetch_url=fetch_url
     )
-
-    async def probe_duration_ms(url: str) -> int:
-        return await probe_remote_duration_ms(fetch_url(url))
 
     image_providers = [
         _image_provider(
@@ -229,7 +230,7 @@ def build_generation_module(
         image_default_model=image_default_model,
         clear_completion=clear_completion,
         lineage=lineage,
-        probe_duration_ms=probe_duration_ms,
+        media_probe=_FetchingProbe(fetch_url),
         brand_templates=brand_templates,
         subtitles=subtitle_target,
         music=music_target,
@@ -251,6 +252,17 @@ IMAGE_MODEL_SPECS: Final[Mapping[str, ImageModelSpec]] = {
     name: model.spec for name, model in _IMAGE_MODELS.items()
 }
 """各家图片模型的能力声明。"""
+
+
+@dataclass(frozen=True, slots=True)
+class _FetchingProbe:
+    fetch_url: Callable[[str], str]
+
+    async def duration_ms(self, url: str) -> int:
+        return await probe_remote_duration_ms(self.fetch_url(url))
+
+    async def video_profile(self, url: str) -> VideoProfile:
+        return await probe_remote_video(self.fetch_url(url))
 
 
 def _clip_stage_reporter(repo: GenerationRepository) -> ReportStage:

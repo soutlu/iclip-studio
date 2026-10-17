@@ -1,44 +1,43 @@
-"""媒体生成用例。受理请求时校验、保存 pending 记录并排队，Provider 调用由后台执行；创建即完成的
-上传与切图记录另由 ``SettledRecords`` 直接落库。"""
-
 from __future__ import annotations
 
+import math
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol
+from typing import Any
 
 import structlog
 
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.clip_models import clip_model
+from iclip.domains.generation.film_acceptance import WholeFilmAcceptance
+from iclip.domains.generation.film_schemas import WholeFilmIn
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_PENDING,
     GenerationJob,
     InFlightPhase,
     Inheritance,
-    inherited_through,
+    is_base_master,
+    is_completed_master,
+    is_finished_edit,
 )
+from iclip.domains.generation.ports import BrandTemplates, ConversationLineage, RemoteMediaProbe
 from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
-from iclip.domains.generation.repository import GenerationRepository
+from iclip.domains.generation.repository import GenerationRepository, conversation_record
 from iclip.domains.generation.schemas import (
-    KIND_AUDIO,
     KIND_IMAGE,
     KIND_VIDEO,
     MAX_PROMPT_CHARS,
-    MAX_WHOLE_FILM_MS,
-    OPERATION_COMPOSE,
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
     ComposeSegment,
     GenerationKind,
     GenerationOperation,
-    GenerationRequest,
     ImageGenerationIn,
     MusicIn,
     MusicRequest,
@@ -49,86 +48,31 @@ from iclip.domains.generation.schemas import (
     VideoEditIn,
     VideoGenerationIn,
     VideoModelsOut,
-    WholeFilmBrand,
-    WholeFilmBrandIn,
-    WholeFilmFont,
-    WholeFilmIn,
-    WholeFilmMusic,
-    WholeFilmMusicIn,
-    WholeFilmRender,
-    WholeFilmRequest,
-    WholeFilmSegment,
 )
-from iclip.domains.generation.segment_end import SEGMENT_END_TOLERANCE_MS
+from iclip.domains.generation.segment_end import check_segment_end, exceeds_source
+from iclip.domains.generation.stored_requests import GenerationRequest
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import FontInfo
 from iclip.platform.paging import check_limit
 
 _logger = structlog.stdlib.get_logger(__name__)
 
 ClearCompletion = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
-"""按 (对话 id, 属主) 取消那段对话的收尾标记；实现由组合根注入，本域不认识对话表。"""
-
-ProbeDuration = Callable[[str], Awaitable[int]]
-"""按地址探一条远程视频的时长（毫秒），读不到或看不懂抛 ``MediaError``；实现由装配注入。"""
 
 
 @dataclass(frozen=True, slots=True)
 class SubtitleTarget:
-    """字幕识别开通时由装配给的两件事：排进哪家的队列、请求里记哪个模型。"""
-
     provider: str
     model: str
 
 
 @dataclass(frozen=True, slots=True)
 class MusicTarget:
-    """生成背景音乐开通时由装配给的两件事：排进哪家的队列、请求里记哪个模型。"""
-
     provider: str
     model: str
 
 
-class ConversationLineage(Protocol):
-    """按对话读记录时要知道的两件对话事实；实现由组合根接到对话域上，本域不认识对话表。"""
-
-    async def ancestry(self, conversation_id: uuid.UUID) -> Inheritance:
-        """这段对话的继承边界对，近的祖先在前；不是分叉来的给空。祖先删没删都照走。"""
-        ...
-
-    async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool:
-        """主体读不读得到这段对话，与对话域读路径同一口径。"""
-        ...
-
-
-BrandPosition = Literal["intro", "outro"]
-"""品牌模板放在整片的哪一头。"""
-
-
-@dataclass(frozen=True, slots=True)
-class BrandTemplateFacts:
-    """整片受理所需的品牌资源事实：类型、可用性、媒体参数与字体内部信息。"""
-
-    id: uuid.UUID
-    kind: str
-    name: str
-    enabled: bool
-    url: str
-    duration_ms: int | None
-    width: int | None
-    height: int | None
-    has_audio: bool | None
-    font_info: FontInfo | None = None
-
-
-BrandTemplates = Callable[[uuid.UUID], Awaitable[BrandTemplateFacts | None]]
-"""按 id 读一条品牌模板，含停用的；没有给 ``None``。实现由组合根接到品牌模板表上，本域不认识它。"""
-
-
 class GenerationService:
-    """生成请求受理与记录查询。"""
-
     def __init__(
         self,
         repo: GenerationRepository,
@@ -142,18 +86,11 @@ class GenerationService:
         image_default_model: str,
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
-        probe_duration_ms: ProbeDuration,
+        media_probe: RemoteMediaProbe,
         brand_templates: BrandTemplates,
         subtitles: SubtitleTarget | None = None,
         music: MusicTarget | None = None,
     ) -> None:
-        """收下装配期确定的模型集合；此层不持有或调用 Provider 实例。
-
-        图片可选哪几家由装配表决定，本层只按它校验并把选中的那家写进记录。``probe_duration_ms``
-        只在受理编辑段时用：核对参考片段与基底的时长。``brand_templates`` 只在受理整片时用：读片头
-        片尾的模板。``subtitles`` 为 None 即字幕识别没开通：成片完成不建字幕记录，手动识别 422。
-        ``music`` 为 None 即生成背景音乐没开通，提交 422。"""
-
         self._repo = repo
         self._queue = queue
         self._video_provider_name = video_provider_name
@@ -164,25 +101,21 @@ class GenerationService:
         self._image_default_model = image_default_model
         self._clear_completion = clear_completion
         self._lineage = lineage
-        self._probe_duration_ms = probe_duration_ms
-        self._brand_templates = brand_templates
+        self._media_probe = media_probe
+        self._films = WholeFilmAcceptance(
+            repo, lineage=lineage, brand_templates=brand_templates, media_probe=media_probe
+        )
         self._subtitles = subtitles
         self._music = music
 
     async def _inheritance(
         self, principal: Principal, conversation_id: uuid.UUID | None
     ) -> Inheritance:
-        """主体读得到这段对话时，它经分叉继承的边界对；没给对话或读不到就是空，只剩属主口径。
-
-        读不到不报错：生成记录的对话归属只是标签，按对话列记录从来不要求读得到那段对话。"""
-
         if conversation_id is None or not await self._lineage.readable(principal, conversation_id):
             return ()
         return await self._lineage.ancestry(conversation_id)
 
     async def submit_video(self, principal: Principal, request: VideoGenerationIn) -> GenerationJob:
-        """受理一次视频生成。模型必须在允许表里；其余字段原样转发给上游，由它按模型判。"""
-
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
         return await self._accept(
@@ -196,11 +129,6 @@ class GenerationService:
         )
 
     async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
-        """为基底区间受理图生或编辑片段，校验模型能力后保存同一种编辑段记录。
-
-        两种模式都核对基底可见性与替换区间。编辑模式另外核对参考是本人的上传，探测它的实际
-        时长后按模型校验；图生只核对显式时长与引用图片，不要求准备参考视频。"""
-
         self._require_video_model(request.model)
         spec = clip_model(request.model)
         if spec is None:
@@ -231,7 +159,6 @@ class GenerationService:
         clip = None
         if request.reference_video_urls:
             (clip_url,) = request.reference_video_urls
-            # 先认上传行再去探：只探本桶里调用方本人传上来的视频。
             clip = await self._repo.find_by_output(
                 clip_url,
                 kind=KIND_VIDEO,
@@ -243,10 +170,10 @@ class GenerationService:
                 raise ValidationFailed("reference_video_urls 必须是调用者本人上传的一段视频")
         base_ms = base.duration_ms
         if base_ms is None:
-            base_ms = await self._probe(base.output_url, what="基底", job_id=base.id)
+            base_ms = await self._probe_duration(base.output_url, what="基底", job_id=base.id)
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
         if clip is not None and spec.edit is not None:
-            clip_ms = await self._probe(clip.output_url, what="参考片段", job_id=clip.id)
+            clip_ms = await self._probe_duration(clip.output_url, what="参考片段", job_id=clip.id)
             if not spec.edit.min_seconds * 1000 <= clip_ms <= spec.edit.max_seconds * 1000:
                 raise ValidationFailed(
                     f"{request.model} 编辑参考时长必须为 "
@@ -287,13 +214,6 @@ class GenerationService:
     async def submit_video_compose(
         self, principal: Principal, request: VideoComposeIn
     ) -> GenerationJob:
-        """受理一次合成：在基底那一版上按调用方给的片段列表拼成一条新成片，不经外部服务。
-
-        来源记基底，原作与镜号随基底（基底是出片就是它自己）。每段出自基底本身，或来源是该基底的
-        一条已完成编辑段，都要是这段对话自己的或继承来的；服务端把出处换成那条记录的产物地址，
-        不收调用方给的地址。那条记录量过时长时，段的结尾不能超出它；没量过就交给执行方按下载
-        下来的素材判。"""
-
         _require_user_name(request.user_name)
         base = await self._check_source(principal, request.base_job_id, request.conversation_id)
         _require_base(base)
@@ -302,16 +222,16 @@ class GenerationService:
             if source_id in sources:
                 continue
             edit = await self._check_source(principal, source_id, request.conversation_id)
-            if not _is_finished_edit(edit) or edit.source_job_id != base.id:
+            if not is_finished_edit(edit) or edit.source_job_id != base.id:
                 raise ValidationFailed("每段必须出自基底本身，或基于这个基底的一条已完成编辑段")
             sources[source_id] = edit
         segments: list[ComposeSegment] = []
         for position, segment in enumerate(request.segments, start=1):
             source = sources[segment.source_job_id]
-            # 两种来源都在上面核过产物地址，这里只为收窄类型。
             if source.output_url is None:
                 raise RuntimeError(f"生成记录 {source.id} 核对过却没有产物地址")
-            _check_segment_end(position, segment.end, source.duration_ms)
+            if segment.end is not None:
+                check_segment_end(position, math.ceil(segment.end * 1000), source.duration_ms)
             segments.append(
                 ComposeSegment(
                     source_job_id=source.id,
@@ -333,237 +253,35 @@ class GenerationService:
         )
 
     async def submit_whole_film(self, principal: Principal, request: WholeFilmIn) -> GenerationJob:
-        """受理一条整片：把这段对话读得到的几条成片按时间线剪成一条，配上字幕与音乐，不经外部服务。
-
-        主体读不到这段对话 404。每段的出处要是这段对话自己的或继承来的记录，读不到 404（不区分
-        存在性）；读得到却不是出片或有基底的合成（整片、编辑段、上传、图片都不行）422；那条成片量过
-        时长时段的结尾不能超出它。音乐要是一条已完成的音频记录：调用者自己的上传，或这段对话自己的、
-        继承来的生成音乐，读不到 404，不是音频 422；它量过时长时从起点往后要够各段那么长（音乐不铺
-        在片头片尾上）。片头片尾要是一条在用、位置对得上的品牌模板，没有这条 404，停用或位置不对
-        422；连片头片尾的整片总长不能超过 ``MAX_WHOLE_FILM_MS``，422。
-
-        整片没有来源、原作与镜号，各段与音乐的出处换成产物地址记进请求，片头片尾记模板的快照，连同
-        受理时的声音参数。属主与钥匙取主体，对话、需求单与 ``metadata`` 取请求；和合成一样抹对话的
-        收尾标记。"""
-
-        conversation_id = request.conversation_id
-        if not await self._lineage.readable(principal, conversation_id):
-            raise NotFound(f"没有这段对话: {conversation_id}")
-        inheritance = await self._lineage.ancestry(conversation_id)
-        sources: dict[uuid.UUID, GenerationJob] = {}
-        for source_id in dict.fromkeys(segment.source_job_id for segment in request.segments):
-            source = await self._conversation_record(
-                principal, source_id, conversation_id, inheritance
-            )
-            if not _is_base_master(source):
-                raise ValidationFailed(
-                    "整片的每段必须取自一条已完成的出片或合成；整片、编辑段与上传都不行"
-                )
-            sources[source_id] = source
-        segments: list[WholeFilmSegment] = []
-        for position, segment in enumerate(request.segments, start=1):
-            source = sources[segment.source_job_id]
-            if source.output_url is None:
-                raise RuntimeError(f"生成记录 {source.id} 核对过却没有产物地址")
-            _check_segment_end(position, segment.end_ms / 1000, source.duration_ms)
-            segments.append(
-                WholeFilmSegment(
-                    source_job_id=source.id,
-                    url=source.output_url,
-                    start_ms=segment.start_ms,
-                    end_ms=segment.end_ms,
-                    volume=segment.volume,
-                )
-            )
-        intro = await self._film_brand(request.intro, "intro")
-        outro = await self._film_brand(request.outro, "outro")
-        font = await self._film_font(request.font_id)
-        film_ms = request.segments_ms + sum(
-            brand.duration_ms for brand in (intro, outro) if brand is not None
-        )
-        if film_ms > MAX_WHOLE_FILM_MS:
-            raise ValidationFailed(
-                f"连片头片尾整片一共 {format_seconds(film_ms / 1000)} 秒，"
-                f"超过 {format_seconds(MAX_WHOLE_FILM_MS / 1000)} 秒上限"
-            )
-        music = None
-        if request.music is not None:
-            music = await self._film_music(
-                principal, request.music, conversation_id, inheritance, request.segments_ms
-            )
         return await self._accept(
             principal,
-            WholeFilmRequest(
-                segments=segments,
-                subtitles=request.subtitles,
-                music=music,
-                render=WholeFilmRender(),
-                font=font,
-                intro=intro,
-                outro=outro,
-            ),
+            await self._films.settle(principal, request),
             provider=self._compose_provider_name,
-            conversation_id=conversation_id,
+            conversation_id=request.conversation_id,
             task_id=request.task_id,
             metadata=request.metadata,
             shot_index=None,
         )
 
-    async def _film_music(
-        self,
-        principal: Principal,
-        music: WholeFilmMusicIn,
-        conversation_id: uuid.UUID,
-        inheritance: Inheritance,
-        segments_ms: int,
-    ) -> WholeFilmMusic:
-        """整片的音乐换成落库的样子：核对它是哪条音频记录、够不够各段那么长，记下它的产物地址。
-
-        上传不挂对话，只认调用者本人的；生成的音乐要是这段对话自己的或继承来的。"""
-
-        try:
-            audio = await self._repo.get(
-                music.audio_job_id,
-                owner=visible_owner_incl_act_as(principal),
-                inherited=inheritance,
-            )
-        except NotFound:
-            audio = None
-        if audio is None or not (
-            (audio.operation == OPERATION_UPLOAD and audio.owner_user_id == principal.user_id)
-            or audio.conversation_id == conversation_id
-            or inherited_through(audio, inheritance)
-        ):
-            raise NotFound(f"没有这次生成: {music.audio_job_id}")
-        if not (
-            audio.kind == KIND_AUDIO
-            and audio.status == STATUS_COMPLETED
-            and audio.output_url is not None
-        ):
-            raise ValidationFailed("音乐必须是一条已完成的音频记录：上传的音乐或生成的背景音乐")
-        if audio.duration_ms is not None and music.offset_ms + segments_ms > audio.duration_ms:
-            raise ValidationFailed(
-                f"音乐从 {format_seconds(music.offset_ms / 1000)} 秒起只剩 "
-                f"{format_seconds(max(0, audio.duration_ms - music.offset_ms) / 1000)} 秒，"
-                f"不够整片的 {format_seconds(segments_ms / 1000)} 秒"
-            )
-        return WholeFilmMusic(
-            audio_job_id=audio.id,
-            url=audio.output_url,
-            offset_ms=music.offset_ms,
-            gain=music.gain,
-            volume=music.volume,
-        )
-
-    async def _film_brand(
-        self, brand: WholeFilmBrandIn | None, position: BrandPosition
-    ) -> WholeFilmBrand | None:
-        """整片的片头或片尾换成落库的快照：模板要在用、放在 ``position`` 这一头。
-
-        没有这条模板 ``NotFound``；停用了或位置不对 ``ValidationFailed``。"""
-
-        if brand is None:
-            return None
-        where = "片头" if position == "intro" else "片尾"
-        template = await self._brand_templates(brand.template_id)
-        if template is None:
-            raise NotFound(f"没有这个品牌模板: {brand.template_id}")
-        if not template.enabled:
-            raise ValidationFailed(f"{where}用的品牌模板已停用")
-        if template.kind != position:
-            raise ValidationFailed(f"{where}只能用{where}模板")
-        if (
-            template.width is None
-            or template.height is None
-            or template.duration_ms is None
-            or template.has_audio is None
-            or template.width <= 0
-            or template.height <= 0
-            or template.duration_ms <= 0
-        ):
-            raise ValidationFailed(f"{where}视频参数不完整，无法合成；请重新上传模板")
-        return WholeFilmBrand(
-            template_id=template.id,
-            url=template.url,
-            duration_ms=template.duration_ms,
-            width=template.width,
-            height=template.height,
-            has_audio=template.has_audio,
-        )
-
-    async def _film_font(self, font_id: uuid.UUID | None) -> WholeFilmFont | None:
-        if font_id is None:
-            return None
-        font = await self._brand_templates(font_id)
-        if font is None:
-            raise NotFound("没有这个字幕字体")
-        if font.kind != "font":
-            raise ValidationFailed("字幕字体必须选择字体资源")
-        if not font.enabled:
-            raise ValidationFailed("字幕字体已停用，请选择其他字体")
-        info = font.font_info
-        if info is None:
-            raise RuntimeError("字体资源适配器未提供字体信息")
-        return WholeFilmFont(
-            font_id=font.id,
-            url=font.url,
-            name=font.name,
-            family=info.family,
-            weight=info.weight,
-            style=info.style,
-        )
-
-    async def _conversation_record(
-        self,
-        principal: Principal,
-        job_id: uuid.UUID,
-        conversation_id: uuid.UUID | None,
-        inheritance: Inheritance,
-    ) -> GenerationJob:
-        """这段对话自己的或它经 ``inheritance`` 继承的一条记录，按主体可见范围读。
-
-        读不到、或读得到却不归这段对话，一律 ``NotFound``，不区分存在性；角色与状态由调用方判。"""
-
-        record = await self._repo.get(
-            job_id, owner=visible_owner_incl_act_as(principal), inherited=inheritance
-        )
-        if record.conversation_id != conversation_id and not inherited_through(record, inheritance):
-            raise NotFound(f"没有这次生成: {job_id}")
-        return record
-
     async def _check_source(
         self, principal: Principal, source_id: uuid.UUID, conversation_id: uuid.UUID | None
     ) -> GenerationJob:
-        """来源必须是这段对话自己的或它继承的一条记录，返回那条记录。
-
-        先按主体可见范围读：生成记录的 ``conversation_id`` 只是标签、不按对话验属主，直接按
-        id 查会让人在别人的片上接着剪；继承的那部分只在主体读得到这段对话时才算。按属主读得到
-        的也可能是祖先对话里分叉之后才完成的，那不归这段对话，要再判一次。不存在、不可见、
-        不在范围内给同一句，不区分存在性；角色与状态对不对由调用方判。"""
-
-        inheritance = await self._inheritance(principal, conversation_id)
-        try:
-            source = await self._repo.get(
-                source_id, owner=visible_owner_incl_act_as(principal), inherited=inheritance
-            )
-        except NotFound:
-            source = None
-        if source is None or (
-            source.conversation_id != conversation_id and not inherited_through(source, inheritance)
-        ):
+        source = await conversation_record(
+            self._repo,
+            principal,
+            source_id,
+            conversation_id=conversation_id,
+            inheritance=await self._inheritance(principal, conversation_id),
+        )
+        if source is None:
             raise ValidationFailed("来源不是这段对话自己的或继承来的一条记录")
         return source
 
-    async def _probe(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
-        """探 ``what``（那条记录 ``job_id`` 的产物 ``url``）有多长，毫秒。
-
-        探不出来也是不受理，但措辞与「区间越界」分开：多半是取不到，不是调用方给错了。"""
-
+    async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
         if url is None:
-            # 两处调用方都先核过这条有产物地址，这里只为收窄类型。
             raise RuntimeError(f"生成记录 {job_id} 核对过却没有产物地址")
         try:
-            return await self._probe_duration_ms(url)
+            return await self._media_probe.duration_ms(url)
         except MediaError as exc:
             _logger.warning("编辑段受理时探不出时长", what=what, job_id=job_id, error=str(exc))
             raise ValidationFailed(f"读不出{what}的时长，请稍后重试") from exc
@@ -573,10 +291,6 @@ class GenerationService:
             raise ValidationFailed(f"视频生成仅支持模型 {'、'.join(self._video_allowed_models)}")
 
     async def submit_image(self, principal: Principal, request: ImageGenerationIn) -> GenerationJob:
-        """受理一次图片生成。选定哪家、哪个渠道在这里定死，队列等待期间的配置变化不影响它。
-
-        帧图编辑带着底图地址 ``source_url``，来源在这里定下（见 ``_resolve_base``）。"""
-
         _require_user_name(request.user_name)
         settled, model = self._settle_image_model(request)
         base_id, external = await self._resolve_base(
@@ -589,7 +303,6 @@ class GenerationService:
             conversation_id=request.conversation_id,
             task_id=request.task_id,
             metadata=request.metadata,
-            # 图片的镜与帧只有分镜页自己用来找格子，是调用方的 metadata，不落镜号列。
             shot_index=None,
             source_job_id=base_id,
             source_url=external,
@@ -598,10 +311,6 @@ class GenerationService:
     async def find_conversation_image(
         self, principal: Principal, url: str, conversation_id: uuid.UUID
     ) -> GenerationJob | None:
-        """这个地址是不是这段对话里一张已完成的图片：对话自己的，或它经分叉继承来的。
-
-        生成、帧图编辑与切图都算；上传不属于任何对话，不在这里认。找不到返回 None。"""
-
         return await self._repo.find_by_output(
             url,
             kind=KIND_IMAGE,
@@ -611,10 +320,6 @@ class GenerationService:
         )
 
     async def find_upload(self, principal: Principal, url: str) -> GenerationJob | None:
-        """主体看得见的一条图片上传记录，产物就是这个地址；找不到返回 None。
-
-        上传不属于任何对话，只按主体可见范围认。"""
-
         return await self._repo.find_by_output(
             url,
             kind=KIND_IMAGE,
@@ -626,11 +331,6 @@ class GenerationService:
     async def _resolve_base(
         self, principal: Principal, url: str | None, conversation_id: uuid.UUID | None
     ) -> tuple[uuid.UUID | None, str | None]:
-        """帧图编辑的底图是库里哪一行：先找这段对话自己的与它继承来的图片，再找主体可见的上传。
-
-        找到返回 ``(那一行的 id, None)``；找不到就是外部底图 ``(None, 地址)``，不报错。没给地址两者
-        都空。上传不属于任何对话，不受对话范围限制，只按主体可见范围认。"""
-
         if url is None:
             return None, None
         owner = visible_owner_incl_act_as(principal)
@@ -661,12 +361,6 @@ class GenerationService:
         range_start_ms: int | None = None,
         range_end_ms: int | None = None,
     ) -> GenerationJob:
-        """保存 pending 记录并排队。入库与排队分属不同事务，排队失败时标记失败并抛出错误。
-
-        kind 与 operation 随落库请求的类型定；归属、镜号、来源与区间由各入口显式给，不从请求上抄。
-        镜号没有默认值：漏传就会静默落成一条没有镜号的记录。帧图编辑的两种来源恰好一个，由
-        ``_resolve_base`` 保证。两步之间进程中断会留下未排队的 pending 记录，需要人工确认后重新发起。"""
-
         created = await self._queue_new(
             _pending_job(
                 request,
@@ -688,8 +382,6 @@ class GenerationService:
         return created
 
     async def _queue_new(self, job: GenerationJob) -> GenerationJob:
-        """落一条 pending 记录并排进它那家的提交队列。排队失败时标记失败并抛出原错误。"""
-
         created = await self._repo.create(job)
         try:
             await self._queue.enqueue_submit(created)
@@ -704,20 +396,17 @@ class GenerationService:
         return created
 
     async def submit_subtitle(self, principal: Principal, request: SubtitleIn) -> GenerationJob:
-        """手动识别一条成片的口播，另起一条字幕记录：补识别旧视频，或识别失败后重来。
-
-        识别没开通先拒（422），不碰记录。视频要是这段对话自己的或它继承来的（按主体可见范围读），
-        读不到一律 404，不区分存在性；读得到却不是成片 422。新记录的属主与钥匙取主体，对话、需求单
-        与 ``metadata`` 取请求，和编辑段、合成一样；不动对话的收尾标记，识别不是人在对话里动手。"""
-
         subtitles = self._require_subtitles()
-        video = await self._conversation_record(
+        video = await conversation_record(
+            self._repo,
             principal,
             request.source_job_id,
-            request.conversation_id,
-            await self._inheritance(principal, request.conversation_id),
+            conversation_id=request.conversation_id,
+            inheritance=await self._inheritance(principal, request.conversation_id),
         )
-        if not _is_completed_master(video) or video.output_url is None:
+        if video is None:
+            raise NotFound(f"没有这次生成: {request.source_job_id}")
+        if not is_completed_master(video) or video.output_url is None:
             raise ValidationFailed("只能识别成片：已完成的出片、合成或整片")
         return await self._queue_new(
             _pending_job(
@@ -734,12 +423,7 @@ class GenerationService:
         )
 
     async def transcribe_completed(self, job: GenerationJob) -> None:
-        """一条记录刚转为完成：是成片且识别开通了，就为它排一条字幕记录。
-
-        字幕记录的属主、钥匙、对话与需求单都抄那条视频的（保留归因）；不是成片、识别没开通都不建。
-        建或排队失败只用日志记下，不抛：那条视频已经完成，不能被它连累。"""
-
-        if self._subtitles is None or not _is_completed_master(job) or job.output_url is None:
+        if self._subtitles is None or not is_completed_master(job) or job.output_url is None:
             return
         try:
             await self._queue_new(
@@ -764,12 +448,6 @@ class GenerationService:
         return self._subtitles
 
     async def submit_music(self, principal: Principal, request: MusicIn) -> GenerationJob:
-        """生成一段背景音乐，记一条音频记录（种类 ``audio``、操作 ``generate``）。
-
-        没开通先拒（422），不碰记录。背景音乐给这段对话的整片用：主体读不到这段对话一律 404，不区分
-        存在性。提示词原样记进请求、原样发给模型，服务端不补任何文字。属主与钥匙取主体，对话、需求单
-        与 ``metadata`` 取请求；不动对话的收尾标记：音频记录不是出片。"""
-
         if self._music is None:
             raise ValidationFailed("生成背景音乐没有开通，暂时不能生成")
         if not await self._lineage.readable(principal, request.conversation_id):
@@ -788,11 +466,6 @@ class GenerationService:
         )
 
     async def _note_conversation_active(self, job: GenerationJob) -> None:
-        """出片提交就是又在这段对话里开工了，收尾标记不该留着。
-
-        归档标签指向的对话不校验，对话域按属主自己判；这一步失败只记日志——受理已经成立，
-        不能因为一个标记回滚。"""
-
         if job.conversation_id is None:
             return
         try:
@@ -806,11 +479,6 @@ class GenerationService:
             )
 
     def _settle_image_model(self, request: ImageGenerationIn) -> tuple[ImageGenerationIn, str]:
-        """把这次要用哪家、哪个渠道定下来写进请求，并把选定的那家单独交回去当 provider 列。
-
-        画幅与分辨率的全局枚举是各家的并集，各家真正支持的范围由它自己声明；在这里拦，
-        才不会变成一次已排队、已付费的失败。"""
-
         model = request.model or self._image_default_model
         spec = self._image_models.get(model)
         if spec is None:
@@ -829,13 +497,10 @@ class GenerationService:
             raise ValidationFailed(
                 f"{model} 不支持渠道 {request.channel}，可选 {'、'.join(spec.channels)}"
             )
-        # 受理时固定，队列等待期间的配置变化不能改变这次请求的选择。
         channel = request.channel or (spec.channels[0] if spec.channels else None)
         return request.model_copy(update={"model": model, "channel": channel}), model
 
     def video_models(self) -> VideoModelsOut:
-        """默认模型、允许表与片段能力，均按配置声明顺序。"""
-
         return VideoModelsOut(
             default=self._video_default_model,
             items=list(self._video_allowed_models),
@@ -845,22 +510,12 @@ class GenerationService:
         )
 
     def image_models(self) -> tuple[str, tuple[tuple[str, ImageModelSpec], ...]]:
-        """默认模型与装配表里那几家的声明，按声明顺序。"""
-
         return self._image_default_model, tuple(self._image_models.items())
 
     async def get(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
-        """读取可见生成记录，不可见时返回 NotFound。"""
-
         return await self._repo.get(job_id, owner=visible_owner_incl_act_as(principal))
 
     async def source_addresses(self, jobs: Sequence[GenerationJob]) -> Mapping[uuid.UUID, str]:
-        """每条记录来源的地址，按记录 id 给：库内来源取那一条的产物地址，外部底图就是记下的地址；
-        没有来源的不在结果里。
-
-        来源那一条不再按主体判可见：记录本身可见，它记着的来源地址就照给（继承来的帧图编辑，底图
-        可能是祖先属主的上传，按 id 单条读不到）。"""
-
         outputs = await self._repo.output_urls(
             {job.source_job_id for job in jobs if job.source_job_id is not None}
         )
@@ -873,10 +528,6 @@ class GenerationService:
         return addresses
 
     async def get_video(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
-        """视频任务查询只认调上游的视频记录（出片与编辑段）：图片、合成与视频上传的 id 与不存在同样是 404。
-
-        合成不经上游、没有水印版地址，套不进上游任务查询的形状。"""
-
         job = await self.get(principal, job_id)
         if job.kind != KIND_VIDEO or job.operation != OPERATION_GENERATE:
             raise NotFound(f"没有这个视频任务: {job_id}")
@@ -885,15 +536,11 @@ class GenerationService:
     async def in_flight_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
-        """给对话侧栏用：这些对话下还没跑完的某类任务各到哪一步。可见性由对话那边判过，这里不再按属主筛。"""
-
         return await self._repo.in_flight_by_conversation(conversation_ids, kind=kind)
 
     async def latest_master_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID]
     ) -> Mapping[uuid.UUID, str]:
-        """给对话审计列表用：这些对话各自名下最新一条成片的地址，不含继承来的。可见性同上。"""
-
         return await self._repo.latest_master_by_conversation(conversation_ids)
 
     async def list_recent(
@@ -911,10 +558,6 @@ class GenerationService:
         source_job_id: uuid.UUID | None = None,
         before: uuid.UUID | None = None,
     ) -> tuple[GenerationJob, ...]:
-        """按时间倒序返回可见记录；归属筛选只收窄，不扩大属主可见范围。
-
-        唯一的例外是按对话列：主体读得到那段对话时，连它经分叉继承的记录一起列出，不看属主。"""
-
         check_limit(limit)
         return await self._repo.list_for_owner(
             owner=visible_owner_incl_act_as(principal),
@@ -932,56 +575,9 @@ class GenerationService:
         )
 
 
-def _is_completed_master(job: GenerationJob) -> bool:
-    """成片：一条已完成、有地址的视频，是出片（没有来源的 generate）、合成或整片（两者都是
-    compose）。字幕识别认它。"""
-
-    return (
-        job.kind == KIND_VIDEO
-        and job.status == STATUS_COMPLETED
-        and job.output_url is not None
-        and (
-            job.operation == OPERATION_COMPOSE
-            or (job.operation == OPERATION_GENERATE and job.source_job_id is None)
-        )
-    )
-
-
-def _is_base_master(job: GenerationJob) -> bool:
-    """能当基底、能剪进整片的成片：出片或有基底的合成。整片（没有来源的 compose）不行。"""
-
-    return _is_completed_master(job) and not (
-        job.operation == OPERATION_COMPOSE and job.source_job_id is None
-    )
-
-
 def _require_base(job: GenerationJob) -> None:
-    """编辑段与合成的基底必须是能当基底的成片。"""
-
-    if not _is_base_master(job):
+    if not is_base_master(job):
         raise ValidationFailed("基底必须是一条已完成的成片（出片或合成），整片不能当基底")
-
-
-def _is_finished_edit(job: GenerationJob) -> bool:
-    """已完成、有产物地址的编辑段：有来源的视频 generate。"""
-
-    return (
-        job.kind == KIND_VIDEO
-        and job.operation == OPERATION_GENERATE
-        and job.source_job_id is not None
-        and job.status == STATUS_COMPLETED
-        and job.output_url is not None
-    )
-
-
-def _check_segment_end(position: int, end: float | None, duration_ms: int | None) -> None:
-    if end is None or duration_ms is None:
-        return
-    if end * 1000 > duration_ms + SEGMENT_END_TOLERANCE_MS:
-        raise ValidationFailed(
-            f"第 {position} 段的结尾 {format_seconds(end)} 秒超出了那条记录的时长 "
-            f"{format_seconds(duration_ms / 1000)} 秒"
-        )
 
 
 def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
@@ -990,7 +586,7 @@ def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
             f"区间起点 {format_seconds(start_ms / 1000)} 秒不在基底之内，"
             f"基底只有 {format_seconds(base_ms / 1000)} 秒"
         )
-    if end_ms > base_ms + SEGMENT_END_TOLERANCE_MS:
+    if exceeds_source(end_ms, base_ms):
         raise ValidationFailed(
             f"区间终点 {format_seconds(end_ms / 1000)} 秒超出了基底的时长 "
             f"{format_seconds(base_ms / 1000)} 秒"
@@ -1013,9 +609,6 @@ def _pending_job(
     range_start_ms: int | None = None,
     range_end_ms: int | None = None,
 ) -> GenerationJob:
-    """一条待提交的记录：kind 与 operation 随请求的类型定，其余由调用方显式给；时刻由仓储改成
-    数据库时钟。"""
-
     now = datetime.now(UTC)
     return GenerationJob(
         id=uuid.uuid4(),
@@ -1047,25 +640,17 @@ def _pending_job(
 
 
 def _require_user_name(user_name: str | None) -> None:
-    """HTTP 边界与工具都先按主体定好了名字；到这儿还空着就是漏了一条路，照实拒绝。"""
-
     if user_name is None:
         raise ValidationFailed("user_name 必填")
 
 
 @dataclass(frozen=True, slots=True)
 class UploadRecord:
-    """一条上传记录交回的地址，以及这个地址上的对象是哪一次上传传上来的。"""
-
     url: str
     object_upload_id: uuid.UUID
-    """对象 key 里的 uploadId：记了 MD5 的是同一个 MD5 最早那条视频上传的 id（去重后是先传的那一次），
-    没记的就是这一行自己的 id。"""
 
 
 class SettledRecords:
-    """创建即完成的两种记录：上传与切图。只要仓储，不经队列，媒体生成没开也能落上传行。"""
-
     def __init__(self, repo: GenerationRepository) -> None:
         self._repo = repo
 
@@ -1078,14 +663,6 @@ class SettledRecords:
         url: str,
         content_md5: str | None,
     ) -> UploadRecord:
-        """记一条上传：行 id 就是 ``upload_id``，属主与钥匙取 ``principal``，不挂对话，没有来源与请求。
-
-        给了 ``content_md5``（只有视频）就照记，并且同一个 MD5 已有视频上传时，这一行的地址落最早
-        那条的地址，不落 ``url``。交回这一行最终的地址。
-
-        按 ``upload_id`` 幂等：已经记过就不动它，第二次确认换了主体属主也照旧，交回已有那行的地址；
-        同一个 id 却不是上传，说明 id 撞了，抛 ``RuntimeError``。"""
-
         first = (
             None if content_md5 is None else await self._repo.find_video_upload_by_md5(content_md5)
         )
@@ -1109,9 +686,6 @@ class SettledRecords:
         return await self._upload_record(await self._repo.get(upload_id, owner=None))
 
     async def recorded_upload(self, upload_id: uuid.UUID) -> UploadRecord | None:
-        """这次上传记过没有：记过交回那一行的地址，没记过给 ``None``。不按属主过滤，同确认本身；
-        同一个 id 却不是上传，抛 ``RuntimeError``。"""
-
         try:
             job = await self._repo.get(upload_id, owner=None)
         except NotFound:
@@ -1119,9 +693,6 @@ class SettledRecords:
         return await self._upload_record(job)
 
     async def _upload_record(self, job: GenerationJob) -> UploadRecord:
-        """已落库的一行上传：记了 MD5 的，对象归同一个 MD5 最早那条视频上传（去重时抄的就是它的
-        地址）；没记 MD5 的地址就是它自己传上来的对象。"""
-
         if job.operation != OPERATION_UPLOAD:
             raise RuntimeError(f"上传 {job.id} 撞上了一条 {job.kind} / {job.operation} 记录")
         url = _settled_url(job)
@@ -1135,12 +706,6 @@ class SettledRecords:
     async def record_cuts(
         self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
     ) -> tuple[GenerationJob, ...]:
-        """从这张宫格切出、已转存的几格各记一条切图，与 ``urls`` 同序、一个事务落：来源是宫格，
-        对话与需求单抄宫格，属主与钥匙取 ``principal``（与宫格同一个运行主体）。
-
-        宫格必须是主体读得到的、已完成、有产物的图片生成。工具刚等到它完成，对不上是装配或状态
-        坏了，抛 ``RuntimeError``，不当成模型能改的输入。"""
-
         grid = await self._repo.get(grid_job_id, owner=visible_owner_incl_act_as(principal))
         if not (
             grid.kind == KIND_IMAGE
@@ -1178,9 +743,6 @@ def _settled_job(
     source_job_id: uuid.UUID | None = None,
     content_md5: str | None = None,
 ) -> GenerationJob:
-    """一条创建即完成的记录。它们不进队列，``provider`` 只是标签，就写操作名；时刻由仓储改成
-    数据库时钟。"""
-
     now = datetime.now(UTC)
     return GenerationJob(
         id=job_id,
@@ -1207,8 +769,6 @@ def _settled_job(
 
 
 def _settled_url(job: GenerationJob) -> str:
-    """创建即完成的行必有产物地址（库里由 ``ck_generation_jobs_settled`` 兜底）。"""
-
     if job.output_url is None:
         raise RuntimeError(f"记录 {job.id} 创建即完成却没有产物地址")
     return job.output_url
@@ -1217,8 +777,7 @@ def _settled_url(job: GenerationJob) -> str:
 def _clip_provider_options(
     model: str, options: dict[str, Any] | None, *, editing: bool
 ) -> dict[str, Any] | None:
-    """Seedance 2.5 显式指定原生子任务，其他模型沿用网关协议。"""
-
+    # Seedance 2.5 要显式指定原生子任务，其他模型沿用网关协议。
     if "seedance-2-5" not in model.lower():
         return options
     key, expected = "omni_reference_task_type", "edit" if editing else "reference"
@@ -1228,13 +787,9 @@ def _clip_provider_options(
 
 
 __all__ = [
-    "BrandPosition",
-    "BrandTemplateFacts",
-    "BrandTemplates",
-    "ConversationLineage",
+    "ClearCompletion",
     "GenerationService",
     "MusicTarget",
-    "ProbeDuration",
     "SettledRecords",
     "SubtitleTarget",
     "UploadRecord",

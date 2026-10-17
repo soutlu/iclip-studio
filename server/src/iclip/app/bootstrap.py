@@ -82,15 +82,11 @@ from iclip.domains.generation.module import (
     SubtitleConfig,
     build_generation_module,
 )
+from iclip.domains.generation.ports import BrandTemplates, ConversationLineage
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
-from iclip.domains.generation.service import (
-    BrandTemplates,
-    ClearCompletion,
-    ConversationLineage,
-    SettledRecords,
-)
+from iclip.domains.generation.service import ClearCompletion, SettledRecords
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.accounts import CookieAuthSettings
 from iclip.domains.identity.infra_sql import DB_SCHEMA

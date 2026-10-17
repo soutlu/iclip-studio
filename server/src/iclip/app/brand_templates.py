@@ -11,7 +11,7 @@ import httpx
 from iclip.common.errors import ValidationFailed
 from iclip.domains.brand_templates.models import ProbedVideo
 from iclip.domains.brand_templates.repository import BrandTemplateStore, ProbeFont, ProbeVideo
-from iclip.domains.generation.service import BrandTemplateFacts, BrandTemplates
+from iclip.domains.generation.ports import BrandTemplateFacts, BrandTemplates
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched
 from iclip.platform.media.fonts import MAX_FONT_BYTES, FontInfo, inspect_font

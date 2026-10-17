@@ -14183,7 +14183,7 @@
     },
     "/generations/subtitles": {
       "post": {
-        "description": "手动识别一条成片的口播，另起一条字幕记录（种类 ``subtitle``）；成片完成时后台已自动识别\n一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。\n\n``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到\n却不是成片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``\n取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
+        "description": "手动识别一条成片的口播，另起一条字幕记录（种类 ``subtitle``）；成片完成时后台已自动识别\n一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。\n\n``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到\n却不是成片（已完成的出片、合成或整片）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``\n取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
         "operationId": "submit_subtitle_generations_subtitles_post",
         "requestBody": {
           "content": {
@@ -14471,7 +14471,7 @@
     },
     "/generations/whole-films": {
       "post": {
-        "description": "把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上\n字幕与背景音乐，本地 ffmpeg 渲染，不经外部服务。\n\n``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs}`` 取那条成片自己媒体时间里\n的一段；整片总长是各段时长之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间，\n服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却\n不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``userName`` 的规则\n同出片，只用来替人办事，不进 ``request``。",
+        "description": "把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上\n字幕、背景音乐与可选的片头片尾，本地 ffmpeg 渲染，不经外部服务。\n\n``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs, volume?}`` 取那条成片自己\n媒体时间里的一段，``volume`` 是原声音量（0 到 2，默认 1）；整片总长是片头、各段与片尾的时长\n之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间（从第一段开头算，不含片头），\n服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却\n不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``intro`` / ``outro``\n的模板不存在 404，停用、位置不对、参数不完整或画面比例与第一段成片相差超过 2% 422；\n``fontId`` 不存在 404，不是字体或已停用 422。``userName`` 的规则同出片，只用来替人办事，\n不进 ``request``。",
         "operationId": "submit_whole_film_generations_whole_films_post",
         "requestBody": {
           "content": {

@@ -9,6 +9,9 @@ from datetime import datetime
 from typing import Any, Final, Literal
 
 from iclip.domains.generation.schemas import (
+    KIND_VIDEO,
+    OPERATION_COMPOSE,
+    OPERATION_GENERATE,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -16,10 +19,10 @@ from iclip.domains.generation.schemas import (
     STATUS_SUBMITTING,
     GenerationKind,
     GenerationOperation,
-    GenerationRequest,
     GenerationStatus,
     SubtitleSentence,
 )
+from iclip.domains.generation.stored_requests import GenerationRequest
 
 TERMINAL_STATUSES: Final = frozenset({STATUS_COMPLETED, STATUS_FAILED})
 
@@ -100,6 +103,34 @@ def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:
     )
 
 
+def is_completed_master(job: GenerationJob) -> bool:
+    return (
+        job.kind == KIND_VIDEO
+        and job.status == STATUS_COMPLETED
+        and job.output_url is not None
+        and (
+            job.operation == OPERATION_COMPOSE
+            or (job.operation == OPERATION_GENERATE and job.source_job_id is None)
+        )
+    )
+
+
+def is_base_master(job: GenerationJob) -> bool:
+    return is_completed_master(job) and not (
+        job.operation == OPERATION_COMPOSE and job.source_job_id is None
+    )
+
+
+def is_finished_edit(job: GenerationJob) -> bool:
+    return (
+        job.kind == KIND_VIDEO
+        and job.operation == OPERATION_GENERATE
+        and job.source_job_id is not None
+        and job.status == STATUS_COMPLETED
+        and job.output_url is not None
+    )
+
+
 __all__ = [
     "STATUS_COMPLETED",
     "STATUS_FAILED",
@@ -114,4 +145,7 @@ __all__ = [
     "InFlightPhase",
     "Inheritance",
     "inherited_through",
+    "is_base_master",
+    "is_completed_master",
+    "is_finished_edit",
 ]

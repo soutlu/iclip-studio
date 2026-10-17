@@ -38,6 +38,7 @@ from tests.helpers.generation import (
     FAKE_VIDEO_PROVIDER,
     MUSIC_PROMPT,
     QUEUE_SETTINGS,
+    FakeMediaProbe,
     FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
@@ -57,10 +58,6 @@ class _ClearedCompletions:
 
     async def record(self, conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
         self.calls.append((conversation_id, owner))
-
-
-async def _no_probe(url: str) -> int:
-    raise AssertionError("生成背景音乐不在受理时探时长")
 
 
 @dataclass
@@ -128,7 +125,7 @@ def build_world(
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
-        probe_duration_ms=_no_probe,
+        media_probe=FakeMediaProbe(),
         brand_templates=FixedBrandTemplates(),
         subtitles=SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,

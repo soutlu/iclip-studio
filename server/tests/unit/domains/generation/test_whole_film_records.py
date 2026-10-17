@@ -16,14 +16,7 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 
 from iclip.domains.generation.api import create_generations_router
-from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_PENDING, GenerationJob
-from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.provider import ProviderSubmission
-from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
-from iclip.domains.generation.schemas import (
-    KIND_AUDIO,
-    KIND_VIDEO,
-    MAX_COMPOSE_SEGMENTS,
+from iclip.domains.generation.film_schemas import (
     MAX_MUSIC_GAIN_POINTS,
     MAX_WHOLE_FILM_MS,
     MAX_WHOLE_FILM_SUBTITLE_CHARS,
@@ -34,16 +27,18 @@ from iclip.domains.generation.schemas import (
     WholeFilmSegment,
     WholeFilmSubtitle,
 )
-from iclip.domains.generation.service import (
-    BrandTemplateFacts,
-    GenerationService,
-    MusicTarget,
-    SubtitleTarget,
-)
+from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_PENDING, GenerationJob
+from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
+from iclip.domains.generation.ports import BrandTemplateFacts
+from iclip.domains.generation.provider import ProviderSubmission
+from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
+from iclip.domains.generation.schemas import KIND_AUDIO, KIND_VIDEO, MAX_COMPOSE_SEGMENTS
+from iclip.domains.generation.service import GenerationService, MusicTarget, SubtitleTarget
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
 from iclip.platform.media.fonts import FontInfo
+from iclip.platform.media.probe import VideoProfile
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     FAKE_IMAGE_PROVIDER,
@@ -51,6 +46,7 @@ from tests.helpers.generation import (
     FAKE_SUBTITLE_PROVIDER,
     FAKE_VIDEO_PROVIDER,
     QUEUE_SETTINGS,
+    FakeMediaProbe,
     FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
@@ -80,8 +76,7 @@ class _ClearedCompletions:
         self.calls.append((conversation_id, owner))
 
 
-async def _no_probe(url: str) -> int:
-    raise AssertionError("整片受理时不探时长")
+PORTRAIT = VideoProfile(width=1080, height=1920, frame_rate="30/1", has_audio=True)
 
 
 @dataclass
@@ -110,8 +105,10 @@ def build_world(
     lineage: FixedLineage | None = None,
     compose_submission: ProviderSubmission | None = None,
     brand_templates: FixedBrandTemplates | None = None,
+    media_probe: FakeMediaProbe | None = None,
 ) -> World:
-    """真队列与真服务：字幕识别开着，完成回调接到服务上，与装配一致。"""
+    """真队列与真服务：字幕识别开着，完成回调接到服务上，与装配一致。成片 ``TAKE_URL`` 默认是竖屏
+    1080×1920，与 ``brand_template`` 的比例相同。"""
 
     store = InMemoryGenerationRepository(jobs)
     lanes = tuple(
@@ -145,7 +142,7 @@ def build_world(
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
-        probe_duration_ms=_no_probe,
+        media_probe=media_probe or FakeMediaProbe(profiles={TAKE_URL: PORTRAIT}),
         brand_templates=brand_templates or FixedBrandTemplates(),
         subtitles=SubtitleTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=MusicTarget(provider=FAKE_MUSIC_PROVIDER, model="qwen-audio-3.1-tts-next"),
@@ -295,6 +292,9 @@ async def test_a_whole_film_is_recorded_as_a_sourceless_compose_with_its_whole_t
             {"audioJobId": music.id, "url": MUSIC_URL, "offsetMs": 1500, "gain": gain, "volume": 0}
         ),
         render=WholeFilmRender(),
+        font=None,
+        intro=None,
+        outro=None,
     ), "出处换成产物地址，字幕与曲线原样，声音参数是受理时的常量"
     assert generation["request"]["render"] == {
         "speechLoudnessLufs": -16.0,
@@ -353,6 +353,9 @@ def test_existing_film_requests_keep_the_automatic_volume_baseline() -> None:
             },
             "subtitles": [],
             "render": WholeFilmRender().model_dump(by_alias=True),
+            "font": None,
+            "intro": None,
+            "outro": None,
         }
     )
     assert request.segments[0].volume == 1
@@ -529,16 +532,21 @@ async def test_a_segment_source_that_is_not_a_take_or_composite_is_422(case: str
     assert len(world.repo.jobs) == 2, "不建记录"
 
 
-async def test_a_segment_ending_past_its_measured_source_is_422() -> None:
+@pytest.mark.parametrize("duration_ms", [5000, 1957])
+async def test_a_segment_ending_past_its_measured_source_is_422(duration_ms: int) -> None:
+    """1957 毫秒的段尾按秒算会在恰好 +50 毫秒处被误拒，受理按整数毫秒比。"""
+
     me, conversation = uuid.uuid4(), uuid.uuid4()
-    take = completed_take(owner_user_id=me, conversation_id=conversation, duration_ms=5000)
+    take = completed_take(owner_user_id=me, conversation_id=conversation, duration_ms=duration_ms)
     world = build_world([take])
     async with client(world, principal("generation:submit", user_id=me)) as http:
         within = await http.post(
-            "/generations/whole-films", json=body(conversation, segment(take, 4000, 5050))
+            "/generations/whole-films",
+            json=body(conversation, segment(take, 1000, duration_ms + 50)),
         )
         past = await http.post(
-            "/generations/whole-films", json=body(conversation, segment(take, 4000, 5051))
+            "/generations/whole-films",
+            json=body(conversation, segment(take, 1000, duration_ms + 51)),
         )
 
     assert within.status_code == 202, "容差 50 毫秒，同合成"
@@ -676,6 +684,8 @@ def brand_template(
     duration_ms: int = 3000,
     url: str = "https://cdn.test/iclip/agent/uploads/brand.mp4",
     has_audio: bool = True,
+    width: int = 1080,
+    height: int = 1920,
 ) -> BrandTemplateFacts:
     return BrandTemplateFacts(
         id=uuid.uuid4(),
@@ -684,8 +694,8 @@ def brand_template(
         enabled=enabled,
         url=url,
         duration_ms=duration_ms,
-        width=1080,
-        height=1920,
+        width=width,
+        height=height,
         has_audio=has_audio,
     )
 
@@ -748,9 +758,11 @@ async def test_intro_and_outro_are_snapshotted_and_the_music_only_spans_the_segm
 
 
 async def test_a_film_without_brand_clips_records_none() -> None:
+    """没有片头片尾就不核画幅：第一段读不出画幅也照常受理。"""
+
     me, conversation = uuid.uuid4(), uuid.uuid4()
     take = completed_take(owner_user_id=me, conversation_id=conversation)
-    world = build_world([take])
+    world = build_world([take], media_probe=FakeMediaProbe())
     async with client(world, principal("generation:submit", user_id=me)) as http:
         response = await http.post(
             "/generations/whole-films", json=body(conversation, segment(take))
@@ -826,6 +838,76 @@ async def test_the_120_second_limit_counts_the_intro_and_outro(
     if not accepted:
         assert "连片头片尾整片一共" in response.json()["detail"]
     assert len(world.films()) == (1 if accepted else 0)
+
+
+SQUARE = VideoProfile(width=1000, height=1000, frame_rate="25/1", has_audio=False)
+
+
+@pytest.mark.parametrize(
+    ("slot", "width", "height", "accepted"),
+    [
+        ("intro", 1020, 1000, True),
+        ("intro", 1021, 1000, False),
+        ("outro", 980, 1000, True),
+        ("outro", 979, 1000, False),
+        ("intro", 1000, 1000, True),
+    ],
+    ids=["宽 2%", "宽超 2%", "窄 2%", "窄超 2%", "同比例"],
+)
+async def test_a_brand_template_must_match_the_ratio_of_the_first_segment(
+    slot: str, width: int, height: int, accepted: bool
+) -> None:
+    """与前端筛模板的规则相同：模板宽高比与第一段成片实测宽高比相差不超过 2%。"""
+
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    first = completed_take(owner_user_id=me, conversation_id=conversation)
+    second = completed_take(
+        owner_user_id=me, conversation_id=conversation, output_url="https://cdn.test/second.mp4"
+    )
+    template = brand_template(slot, width=width, height=height)
+    world = build_world(
+        [first, second],
+        brand_templates=FixedBrandTemplates(template),
+        media_probe=FakeMediaProbe(
+            profiles={TAKE_URL: SQUARE, "https://cdn.test/second.mp4": PORTRAIT}
+        ),
+    )
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        response = await http.post(
+            "/generations/whole-films",
+            json=body(
+                conversation,
+                segment(first),
+                segment(second),
+                **{slot: {"templateId": str(template.id)}},
+            ),
+        )
+
+    assert response.status_code == (202 if accepted else 422), response.text
+    if not accepted:
+        label = "片头" if slot == "intro" else "片尾"
+        assert response.json()["detail"] == (
+            f"{label}模板的画面比例与正文不一致，无法合成；请选择比例相近的模板"
+        )
+    assert len(world.films()) == (1 if accepted else 0)
+
+
+async def test_a_brand_template_is_refused_when_the_first_segment_cannot_be_measured() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    template = brand_template("outro")
+    world = build_world(
+        [take], brand_templates=FixedBrandTemplates(template), media_probe=FakeMediaProbe()
+    )
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        response = await http.post(
+            "/generations/whole-films",
+            json=body(conversation, segment(take), outro={"templateId": str(template.id)}),
+        )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "正文的画面比例读取失败，请稍后重试"
+    assert world.films() == []
 
 
 # --- 代办与权限 ------------------------------------------------------------------

@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Protocol
 
+from iclip.common.errors import NotFound
 from iclip.domains.generation.models import (
     GenerationJob,
     GenerationKind,
@@ -14,8 +15,10 @@ from iclip.domains.generation.models import (
     GenerationStatus,
     InFlightPhase,
     Inheritance,
+    inherited_through,
 )
-from iclip.domains.generation.schemas import SubtitleSentence
+from iclip.domains.generation.schemas import OPERATION_UPLOAD, SubtitleSentence
+from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 
 
 class GenerationRepository(Protocol):
@@ -170,4 +173,30 @@ class GenerationRepository(Protocol):
         ...
 
 
-__all__ = ["GenerationRepository"]
+async def conversation_record(
+    repo: GenerationRepository,
+    principal: Principal,
+    job_id: uuid.UUID,
+    *,
+    conversation_id: uuid.UUID | None,
+    inheritance: Inheritance,
+    own_uploads: bool = False,
+) -> GenerationJob | None:
+    try:
+        record = await repo.get(
+            job_id, owner=visible_owner_incl_act_as(principal), inherited=inheritance
+        )
+    except NotFound:
+        return None
+    if record.conversation_id == conversation_id or inherited_through(record, inheritance):
+        return record
+    if (
+        own_uploads
+        and record.operation == OPERATION_UPLOAD
+        and record.owner_user_id == principal.user_id
+    ):
+        return record
+    return None
+
+
+__all__ = ["GenerationRepository", "conversation_record"]

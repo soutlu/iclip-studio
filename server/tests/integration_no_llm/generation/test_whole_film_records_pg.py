@@ -12,13 +12,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.domains.generation.film_schemas import WholeFilmRequest
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import STATUS_COMPLETED
-from iclip.domains.generation.schemas import (
-    VideoComposeRequest,
-    WholeFilmRequest,
-    request_to_payload,
-)
+from iclip.domains.generation.schemas import VideoComposeRequest, request_to_payload
 from iclip.domains.tracking.infra_sql import SqlTrackingRepository
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import (

@@ -1,8 +1,3 @@
-"""媒体生成 HTTP 端点。提交返回 202，此时 pending 记录已落库，Provider 调用由后台执行。
-
-视频那一对端点（提交、查状态）是上游异步接口的镜像，编辑段转发上游字段、与它们同族，字段都是
-snake_case；其余端点是本系统自己的，camelCase。"""
-
 from __future__ import annotations
 
 import json
@@ -13,6 +8,7 @@ from fastapi import APIRouter, Query
 from pydantic import TypeAdapter, ValidationError
 
 from iclip.common.errors import ValidationFailed
+from iclip.domains.generation.film_schemas import WholeFilmIn
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
     GenerationEnvelope,
@@ -31,7 +27,6 @@ from iclip.domains.generation.schemas import (
     VideoModelsOut,
     VideoSubmitOut,
     VideoTaskOut,
-    WholeFilmIn,
     generation_out,
     video_task_out,
 )
@@ -122,13 +117,16 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
         """把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上
-        字幕与背景音乐，本地 ffmpeg 渲染，不经外部服务。
+        字幕、背景音乐与可选的片头片尾，本地 ffmpeg 渲染，不经外部服务。
 
-        ``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs}`` 取那条成片自己媒体时间里
-        的一段；整片总长是各段时长之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间，
+        ``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs, volume?}`` 取那条成片自己
+        媒体时间里的一段，``volume`` 是原声音量（0 到 2，默认 1）；整片总长是片头、各段与片尾的时长
+        之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间（从第一段开头算，不含片头），
         服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却
-        不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``userName`` 的规则
-        同出片，只用来替人办事，不进 ``request``。
+        不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``intro`` / ``outro``
+        的模板不存在 404，停用、位置不对、参数不完整或画面比例与第一段成片相差超过 2% 422；
+        ``fontId`` 不存在 404，不是字体或已停用 422。``userName`` 的规则同出片，只用来替人办事，
+        不进 ``request``。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -145,7 +143,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。
 
         ``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到
-        却不是成片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
+        却不是成片（已完成的出片、合成或整片）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
         取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。
         """
 
@@ -303,8 +301,6 @@ _METADATA_FILTER = TypeAdapter(Metadata)
 
 
 def _metadata_filter(raw: str | None) -> dict[str, Any] | None:
-    """查询串里的 ``metadata`` 必须是 JSON 对象，长度与请求体里的同一上限；否则按请求形状错误拒绝。"""
-
     if raw is None:
         return None
     try:

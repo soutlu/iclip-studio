@@ -35,12 +35,12 @@ from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
-from iclip.platform.media.errors import MediaError
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
+    FakeMediaProbe,
     FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
@@ -88,20 +88,6 @@ DURATIONS_MS = {
     CLIP_URL: 5000,
 }
 """远程探测替身认得的地址与时长：基底 6 秒，片段 5 秒；参考时长独立于基底替换区间。"""
-
-
-class FakeProbe:
-    """远程探测替身：按地址给时长，不认得的地址像取不到一样抛 ``MediaError``；记下探过哪些。"""
-
-    def __init__(self, durations: Mapping[str, int]) -> None:
-        self._durations = dict(durations)
-        self.probed: list[str] = []
-
-    async def __call__(self, url: str) -> int:
-        self.probed.append(url)
-        if url not in self._durations:
-            raise MediaError(f"取不到素材: {url}")
-        return self._durations[url]
 
 
 IMAGE_MODELS = {"nano_banana_pro": NANO_BANANA_PRO.spec, "seedream_v5_pro": SEEDREAM_V5_PRO.spec}
@@ -156,7 +142,7 @@ def build_test_app(
     app = app_with_principal(granted)
     cleared = ClearedCompletions()
     app.state.cleared_completions = cleared
-    probe = FakeProbe(durations)
+    probe = FakeMediaProbe(durations)
     app.state.probe = probe
 
     queue, _ = build_queue(repo)
@@ -177,7 +163,7 @@ def build_test_app(
         image_default_model="nano_banana_pro",
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
-        probe_duration_ms=probe,
+        media_probe=probe,
         brand_templates=FixedBrandTemplates(),
     )
     app.include_router(
