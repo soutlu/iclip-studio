@@ -18,7 +18,6 @@ from iclip.domains.generation.models import (
     InFlightPhase,
     Inheritance,
     is_base_master,
-    is_completed_master,
     is_finished_edit,
 )
 from iclip.domains.generation.ports import ConversationLineage, RemoteMediaProbe
@@ -371,8 +370,8 @@ class GenerationService:
         )
         if video is None:
             raise NotFound(f"没有这次生成: {request.source_job_id}")
-        if not is_completed_master(video) or video.output_url is None:
-            raise ValidationFailed("只能识别成片：已完成的出片、合成或整片")
+        if not is_base_master(video) or video.output_url is None:
+            raise ValidationFailed("只能识别成片：已完成的出片或合成")
         return await self._queue_new(
             _pending_job(
                 SubtitleRequest(model=subtitles.model, video_url=video.output_url),
@@ -388,7 +387,7 @@ class GenerationService:
         )
 
     async def transcribe_completed(self, job: GenerationJob) -> None:
-        if self._subtitles is None or not is_completed_master(job) or job.output_url is None:
+        if self._subtitles is None or not is_base_master(job) or job.output_url is None:
             return
         await self._queue_new(
             _pending_job(
@@ -539,7 +538,7 @@ class GenerationService:
 
 def _require_base(job: GenerationJob) -> None:
     if not is_base_master(job):
-        raise ValidationFailed("基底必须是一条已完成的成片（出片或合成），整片不能当基底")
+        raise ValidationFailed("基底必须是一条已完成的成片（出片或合成）")
 
 
 def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:

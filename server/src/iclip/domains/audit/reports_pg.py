@@ -61,23 +61,13 @@ videos AS (
            g.duration_ms,
            -- 成片：出成了且有完成时刻；各口径只引用这一列。
            (g.status = 'completed' AND g.finished_at IS NOT NULL) AS delivered,
-           -- 有人下载过它、以它为原作的合成，或用到它的整片：下载的那条沿原作折回出片；
-           -- 整片（没有来源的 compose）按请求里各段的出处折，出处是合成的再沿原作折。出处可以
-           -- 在祖先对话里，折回的就是祖先那条出片。子查询不相关，整个集合只算一遍，逐行只做
-           -- 成员判断。
+           -- 有人下载过它，或以它为原作的合成：下载的那条沿原作折回出片，原作可以在祖先对话里，
+           -- 折回的就是祖先那条出片。子查询不相关，整个集合只算一遍，逐行只做成员判断。
            g.id IN (
                SELECT COALESCE(d.root_job_id, d.id)
                FROM iclip.tracking_events t
                JOIN iclip.generation_jobs d ON d.id = t.job_id
                WHERE t.name = 'video.downloaded'
-               UNION
-               SELECT COALESCE(s.root_job_id, s.id)
-               FROM iclip.tracking_events t
-               JOIN iclip.generation_jobs d ON d.id = t.job_id
-               CROSS JOIN LATERAL jsonb_array_elements(d.request -> 'segments') AS seg(item)
-               JOIN iclip.generation_jobs s ON s.id = CAST(seg.item ->> 'sourceJobId' AS uuid)
-               WHERE t.name = 'video.downloaded'
-                 AND d.kind = 'video' AND d.operation = 'compose' AND d.source_job_id IS NULL
            ) AS downloaded,
            g.shot_index AS shot,
            u.username AS user_name,

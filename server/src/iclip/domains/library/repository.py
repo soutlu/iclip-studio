@@ -5,12 +5,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.models import Scope, VideoCursor
 from iclip.domains.library.schemas import (
     LibraryAuthorOut,
     LibraryVideoOut,
     ShotGroupOut,
-    WholeFilmCardOut,
 )
 
 
@@ -18,13 +17,6 @@ from iclip.domains.library.schemas import (
 class CardRow:
     video: LibraryVideoOut
     conversation_owner: uuid.UUID | None
-    conversation_deleted: bool
-
-
-@dataclass(frozen=True, slots=True)
-class WholeFilmCardRow:
-    card: WholeFilmCardOut
-    conversation_owner: uuid.UUID
     conversation_deleted: bool
 
 
@@ -41,13 +33,5 @@ class LibraryReports(Protocol):
 
     async def authors(self) -> Sequence[LibraryAuthorOut]: ...
 
-    async def whole_films(
-        self, scope: WholeFilmScope, *, limit: int, after: VideoCursor | None
-    ) -> Sequence[WholeFilmCardRow]: ...
 
-    async def count_whole_films(self, scope: WholeFilmScope) -> int: ...
-
-    async def whole_film_authors(self) -> Sequence[LibraryAuthorOut]: ...
-
-
-__all__ = ["CardRow", "LibraryReports", "WholeFilmCardRow"]
+__all__ = ["CardRow", "LibraryReports"]

@@ -31,7 +31,6 @@ from tests.helpers.generation import (
     image_request,
     video_request,
     video_shot,
-    whole_film_request,
 )
 
 
@@ -145,20 +144,6 @@ def test_a_composite_stored_before_user_names_reads_back_without_one() -> None:
     assert isinstance(restored, VideoComposeRequest)
     assert [segment.source_job_id for segment in restored.segments] == [base, edit]
     assert restored.user_name is None
-
-
-def test_a_whole_film_round_trips_as_a_whole_film_beside_composites() -> None:
-    """合成与整片同是 video / compose，读回时按整片必有的 ``render`` 分开。"""
-
-    original = whole_film_request(
-        [{"url": "https://example.com/take.mp4", "startMs": 0, "endMs": 1000}]
-    )
-    payload = request_to_payload(original)
-
-    assert request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, payload) == original
-    without_render = {key: value for key, value in payload.items() if key != "render"}
-    with pytest.raises(ValidationFailed, match="形状不合法"):
-        request_from_payload(KIND_VIDEO, OPERATION_COMPOSE, without_render)
 
 
 def test_the_stored_shape_is_chosen_by_kind_and_operation() -> None:

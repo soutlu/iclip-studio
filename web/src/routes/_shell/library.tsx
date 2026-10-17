@@ -2,14 +2,12 @@ import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { useRef } from 'react'
 import {
   LibraryRoute,
-  WholeFilmsRoute,
   BrandTemplatesRoute,
   LibraryTabsList,
   ReferencesRoute,
   type BrandTemplateScope,
   type LibraryScope,
   type ReferenceScope,
-  type WholeFilmScope,
 } from '@/features/library'
 import { ensureSessionUser, hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
@@ -22,9 +20,7 @@ import {
   searchFromReferenceScope,
   searchFromScope,
   searchFromTab,
-  searchFromWholeFilmScope,
   tabFromSearch,
-  wholeFilmScopeFromSearch,
 } from '../-library-search'
 
 export const Route = createFileRoute('/_shell/library')({
@@ -49,27 +45,24 @@ function LibraryPage() {
     void navigate({ replace: true, search: searchFromScope(next) })
   const setReferenceScope = (next: ReferenceScope) =>
     void navigate({ replace: true, search: searchFromReferenceScope(next) })
-  const setWholeFilmScope = (next: WholeFilmScope) =>
-    void navigate({ replace: true, search: searchFromWholeFilmScope(next) })
   const setBrandTemplateScope = (next: BrandTemplateScope) =>
     void navigate({ replace: true, search: searchFromBrandTemplateScope(next) })
   const setTab = (value: string) => {
     pushedRef.current = false
     void navigate({ replace: true, search: searchFromTab(value) })
   }
-  const setDetail =
-    (key: 'video' | 'reference' | 'film') => (id: string | null, replace: boolean) => {
-      if (id === null && pushedRef.current) {
-        pushedRef.current = false
-        router.history.back()
-        return
-      }
-      if (id !== null && !replace) pushedRef.current = true
-      void navigate({
-        replace: id === null || replace,
-        search: (prev) => ({ ...prev, [key]: id ?? undefined }),
-      })
+  const setDetail = (key: 'video' | 'reference') => (id: string | null, replace: boolean) => {
+    if (id === null && pushedRef.current) {
+      pushedRef.current = false
+      router.history.back()
+      return
     }
+    if (id !== null && !replace) pushedRef.current = true
+    void navigate({
+      replace: id === null || replace,
+      search: (prev) => ({ ...prev, [key]: id ?? undefined }),
+    })
+  }
   const shareLinkOf = (id: string) =>
     new URL(
       router.buildLocation({ search: { video: id }, to: '/library' }).href,
@@ -88,16 +81,6 @@ function LibraryPage() {
           shareLinkOf={shareLinkOf}
           tabs={<LibraryTabsList />}
           videoId={search.video ?? null}
-        />
-      </TabsContent>
-      <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="whole-films">
-        <WholeFilmsRoute
-          myUserName={myUserName}
-          onScopeChange={setWholeFilmScope}
-          scope={wholeFilmScopeFromSearch(search)}
-          filmId={search.film ?? null}
-          onFilmChange={setDetail('film')}
-          tabs={<LibraryTabsList />}
         />
       </TabsContent>
       <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="brand-templates">

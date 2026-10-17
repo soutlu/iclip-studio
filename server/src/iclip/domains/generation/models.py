@@ -98,7 +98,7 @@ def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:
     )
 
 
-def is_completed_master(job: GenerationJob) -> bool:
+def is_base_master(job: GenerationJob) -> bool:
     return (
         job.kind == KIND_VIDEO
         and job.status == STATUS_COMPLETED
@@ -107,12 +107,6 @@ def is_completed_master(job: GenerationJob) -> bool:
             job.operation == OPERATION_COMPOSE
             or (job.operation == OPERATION_GENERATE and job.source_job_id is None)
         )
-    )
-
-
-def is_base_master(job: GenerationJob) -> bool:
-    return is_completed_master(job) and not (
-        job.operation == OPERATION_COMPOSE and job.source_job_id is None
     )
 
 
@@ -141,6 +135,5 @@ __all__ = [
     "Inheritance",
     "inherited_through",
     "is_base_master",
-    "is_completed_master",
     "is_finished_edit",
 ]

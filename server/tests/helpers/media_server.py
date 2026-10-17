@@ -39,7 +39,7 @@ class MediaServer:
 
     @property
     def sent(self) -> int:
-        """一共送出去多少字节；按需读只有索引加选区，整片顺序读是全量。"""
+        """一共送出去多少字节；按需读只有索引加选区，从头到尾顺序读是全量。"""
 
         return sum(item.sent for item in self.deliveries)
 

@@ -178,7 +178,7 @@ async def test_the_prompt_is_recorded_and_queued_exactly_as_sent() -> None:
                 "prompt": prompt,
                 "conversationId": str(conversation),
                 "taskId": str(task),
-                "metadata": {"film": "整片"},
+                "metadata": {"film": "春季上新"},
             },
         )
 
@@ -207,7 +207,7 @@ async def test_the_prompt_is_recorded_and_queued_exactly_as_sent() -> None:
         me,
         conversation,
         task,
-        {"film": "整片"},
+        {"film": "春季上新"},
     )
     assert (music.source_job_id, music.root_job_id, music.shot_index) == (None, None, None)
     assert len(world.tasks("generation.submit", FAKE_MUSIC_PROVIDER)) == 1

@@ -6,15 +6,13 @@ from datetime import UTC, datetime
 
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, visible_owner_incl_act_as
-from iclip.domains.library.models import Orientation, Scope, VideoCursor, WholeFilmScope
-from iclip.domains.library.repository import CardRow, LibraryReports, WholeFilmCardRow
+from iclip.domains.library.models import Orientation, Scope, VideoCursor
+from iclip.domains.library.repository import CardRow, LibraryReports
 from iclip.domains.library.schemas import (
     LibraryAuthorsOut,
     LibraryVideoDetailOut,
     LibraryVideoOut,
     LibraryVideosOut,
-    WholeFilmCardOut,
-    WholeFilmCardsOut,
 )
 from iclip.platform.paging import check_limit, decode_cursor, encode_cursor
 
@@ -25,20 +23,6 @@ def _as_utc(moment: datetime | None) -> datetime | None:
     return moment.replace(tzinfo=UTC)
 
 
-def _window(
-    since: datetime | None, until: datetime | None
-) -> tuple[datetime | None, datetime | None]:
-    since, until = _as_utc(since), _as_utc(until)
-    if since is not None and until is not None and since >= until:
-        raise ValidationFailed("since 必须早于 until")
-    return since, until
-
-
-def _keyword(q: str | None) -> str | None:
-    keyword = q.strip() if q is not None else ""
-    return keyword or None
-
-
 def _scope(
     *,
     user_name: str | None,
@@ -47,13 +31,16 @@ def _scope(
     orientation: Orientation | None,
     q: str | None,
 ) -> Scope:
-    since, until = _window(since, until)
+    since, until = _as_utc(since), _as_utc(until)
+    if since is not None and until is not None and since >= until:
+        raise ValidationFailed("since 必须早于 until")
+    keyword = q.strip() if q is not None else ""
     return Scope(
         user_name=user_name,
         since=since,
         until=until,
         orientation=orientation,
-        q=_keyword(q),
+        q=keyword or None,
     )
 
 
@@ -64,25 +51,17 @@ def _after(cursor: str | None) -> VideoCursor | None:
     return VideoCursor(at=parsed.at, video_id=parsed.uuid_key())
 
 
-def _can_open(
-    principal: Principal, conversation_owner: uuid.UUID | None, conversation_deleted: bool
-) -> bool:
-    if conversation_owner is None:
+def _can_open(principal: Principal, row: CardRow) -> bool:
+    if row.conversation_owner is None:
         return False
     if principal.has(MANAGE_PERMISSION):
         return True
     owner = visible_owner_incl_act_as(principal)
-    return not conversation_deleted and (owner is None or owner == conversation_owner)
+    return not row.conversation_deleted and (owner is None or owner == row.conversation_owner)
 
 
 def _for_reader(principal: Principal, row: CardRow) -> LibraryVideoOut:
-    can_open = _can_open(principal, row.conversation_owner, row.conversation_deleted)
-    return row.video.model_copy(update={"can_open_conversation": can_open})
-
-
-def _film_for_reader(principal: Principal, row: WholeFilmCardRow) -> WholeFilmCardOut:
-    can_open = _can_open(principal, row.conversation_owner, row.conversation_deleted)
-    return row.card.model_copy(update={"can_open_conversation": can_open})
+    return row.video.model_copy(update={"can_open_conversation": _can_open(principal, row)})
 
 
 HasProductionFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[bool]]
@@ -143,36 +122,6 @@ class LibraryService:
 
     async def authors(self) -> LibraryAuthorsOut:
         return LibraryAuthorsOut(items=list(await self._reports.authors()))
-
-    async def whole_film_authors(self) -> LibraryAuthorsOut:
-        return LibraryAuthorsOut(items=list(await self._reports.whole_film_authors()))
-
-    async def whole_films(
-        self,
-        principal: Principal,
-        *,
-        user_name: str | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        q: str | None = None,
-        limit: int = 20,
-        cursor: str | None = None,
-    ) -> WholeFilmCardsOut:
-        check_limit(limit)
-        since, until = _window(since, until)
-        scope = WholeFilmScope(user_name=user_name, since=since, until=until, q=_keyword(q))
-        after = _after(cursor)
-        rows = await self._reports.whole_films(scope, limit=limit, after=after)
-        next_cursor = None
-        if len(rows) == limit:
-            last = rows[-1].card
-            next_cursor = encode_cursor(last.face.finished_at, last.conversation_id)
-        total = await self._reports.count_whole_films(scope) if after is None else None
-        return WholeFilmCardsOut(
-            items=[_film_for_reader(principal, row) for row in rows],
-            next_cursor=next_cursor,
-            total=total,
-        )
 
 
 __all__ = ["HasProductionFiles", "LibraryService"]

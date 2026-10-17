@@ -436,7 +436,7 @@ async def test_transcribing_ones_own_take_takes_attribution_from_the_request() -
                 "sourceJobId": str(take.id),
                 "conversationId": str(conversation),
                 "taskId": str(task),
-                "metadata": {"film": "整片"},
+                "metadata": {"film": "春季上新"},
             },
         )
 
@@ -455,7 +455,7 @@ async def test_transcribing_ones_own_take_takes_attribution_from_the_request() -
         conversation,
         task,
     )
-    assert subtitle.metadata == {"film": "整片"}
+    assert subtitle.metadata == {"film": "春季上新"}
     assert subtitle.request == SubtitleRequest(model=MODEL, video_url=TAKE_URL)
     assert len(world.submits_to(FAKE_SUBTITLE_PROVIDER)) == 1
     assert world.cleared.calls == [], "识别不是在对话里动手，不动收尾标记"

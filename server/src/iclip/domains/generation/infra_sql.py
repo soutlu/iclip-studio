@@ -182,9 +182,6 @@ generation_jobs_table = Table(
         " AND range_start_ms >= 0 AND range_end_ms > range_start_ms)"
         " OR (operation = 'compose' AND source_job_id IS NOT NULL AND root_job_id IS NOT NULL"
         " AND range_start_ms IS NULL AND range_end_ms IS NULL)"
-        " OR (operation = 'compose' AND source_job_id IS NULL AND root_job_id IS NULL"
-        " AND shot_index IS NULL AND range_start_ms IS NULL AND range_end_ms IS NULL"
-        " AND conversation_id IS NOT NULL)"
         " OR operation = 'upload'))",
         name="ck_generation_jobs_video_shape",
     ),

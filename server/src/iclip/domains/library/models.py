@@ -23,17 +23,9 @@ class Scope:
 
 
 @dataclass(frozen=True, slots=True)
-class WholeFilmScope:
-    user_name: str | None = None
-    since: datetime | None = None
-    until: datetime | None = None
-    q: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class VideoCursor:
     at: datetime
     video_id: uuid.UUID
 
 
-__all__ = ["Orientation", "Scope", "VideoCursor", "WholeFilmScope"]
+__all__ = ["Orientation", "Scope", "VideoCursor"]

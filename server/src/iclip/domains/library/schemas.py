@@ -119,34 +119,6 @@ class LibraryVideoDetailOut(CamelModel):
     且那段对话的工作区里有 ``film.icml`` 或 ``video_shot.json``。只在详情里给。"""
 
 
-class WholeFilmVersionOut(CamelModel):
-    """整片卡里的一版：这段对话自己的一条已完成整片。"""
-
-    job_id: uuid.UUID
-    output_url: str
-    watermark_output_url: str | None
-    duration_ms: int | None
-    finished_at: datetime
-    user_name: str | None
-
-
-class WholeFilmCardOut(CamelModel):
-    """资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。"""
-
-    conversation_id: uuid.UUID
-    can_open_conversation: bool
-    title: str | None
-    user_name: str | None
-    face: WholeFilmVersionOut
-    versions: list[WholeFilmVersionOut]
-
-
-class WholeFilmCardsOut(CamelModel):
-    items: list[WholeFilmCardOut]
-    next_cursor: str | None
-    total: int | None
-
-
 class LibraryAuthorOut(CamelModel):
     user_name: str
     count: int
@@ -169,7 +141,4 @@ __all__ = [
     "ShotGroupOut",
     "TakeOut",
     "VersionOut",
-    "WholeFilmCardOut",
-    "WholeFilmCardsOut",
-    "WholeFilmVersionOut",
 ]
