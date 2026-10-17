@@ -3,22 +3,29 @@ import { defaultRangeExtractor, useVirtualizer, type VirtualItem } from '@tansta
 import { useCallback, useState, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 
+/** 一个命名区段；给了 `dropId` 时整个区段是这个 id 的拖放落点。 */
+export type SidebarSection = {
+  key: string
+  label: string
+  dropId?: string
+}
+
 export type SidebarVirtualRow = {
   key: string
-  section: 'collections' | 'ungrouped'
-  /** 日期分组的可访问名称，组内的标题与会话保持同一语义容器。 */
-  group?: string
+  section: SidebarSection
+  /** 连续的同组行包进一个以 `label` 命名的 group。 */
+  group?: { key: string; label: string }
   height: number
   focusable?: boolean
   retain?: boolean
   sticky?: boolean
+  /** `retain(true)` 让这一行滚出视口也保持挂载，直到 `retain(false)`。 */
   render: (retain: (active: boolean) => void) => ReactNode
 }
 
-type Bounds = { first: number; last: number }
+type SectionBounds = { section: SidebarSection; first: number; last: number }
 const INITIAL_RECT = { width: 248, height: 900 }
 
-/** 一个侧栏滚动窗口；分页来源在外部常驻，这里只控制行的挂载与交互保留。 */
 export function SidebarVirtualList({
   rows,
   getScrollElement,
@@ -41,11 +48,15 @@ export function SidebarVirtualList({
     })
   }, [])
   const retained = new Set<number>()
-  const sections = new Map<SidebarVirtualRow['section'], Bounds>()
+  const sections = new Map<string, SectionBounds>()
   const focusable: number[] = []
   rows.forEach((row, index) => {
-    const section = sections.get(row.section)
-    sections.set(row.section, { first: section?.first ?? index, last: index })
+    const bounds = sections.get(row.section.key)
+    sections.set(row.section.key, {
+      section: row.section,
+      first: bounds?.first ?? index,
+      last: index,
+    })
     if (row.sticky || row.retain || held.has(row.key)) retained.add(index)
     if (row.focusable) focusable.push(index)
   })
@@ -139,32 +150,33 @@ export function SidebarVirtualList({
           setFocused(null)
       }}
     >
-      {[...sections].map(([section, bounds]) => {
-        const first = measurements[bounds.first]
-        const last = measurements[bounds.last]
+      {[...sections.values()].map(({ section, first: firstIndex, last: lastIndex }) => {
+        const first = measurements[firstIndex]
+        const last = measurements[lastIndex]
         if (first === undefined || last === undefined) return null
-        const items = visible.filter((item) => rows[item.index]?.section === section)
-        const groups: { label: string | undefined; items: VirtualItem[] }[] = []
+        const items = visible.filter((item) => rows[item.index]?.section.key === section.key)
+        const groups: { group: SidebarVirtualRow['group']; items: VirtualItem[] }[] = []
         for (const item of items) {
-          const label = rows[item.index]?.group
+          const group = rows[item.index]?.group
           const previous = groups.at(-1)
-          if (previous !== undefined && previous.label === label) previous.items.push(item)
-          else groups.push({ label, items: [item] })
+          if (previous !== undefined && previous.group?.key === group?.key)
+            previous.items.push(item)
+          else groups.push({ group, items: [item] })
         }
         return (
           <VirtualSection
-            key={section}
+            key={section.key}
             section={section}
             top={first.start - scrollMargin}
             height={last.end - first.start + 1}
             canDrop={canDrop}
           >
-            {groups.flatMap(({ label, items: groupItems }) => {
+            {groups.flatMap(({ group, items: groupItems }) => {
               const children = groupItems.map((item) => renderRow(item, first.start))
-              return label === undefined ? (
+              return group === undefined ? (
                 children
               ) : (
-                <div key={label} role="group" aria-label={label}>
+                <div key={group.key} role="group" aria-label={group.label}>
                   {children}
                 </div>
               )
@@ -203,7 +215,6 @@ function VirtualRow({
   )
 }
 
-/** 未分组的整个区域仍是拖放目标，保持原有标题和空白处都能接住拖动的行为。 */
 function VirtualSection({
   section,
   top,
@@ -211,19 +222,19 @@ function VirtualSection({
   canDrop,
   children,
 }: {
-  section: SidebarVirtualRow['section']
+  section: SidebarSection
   top: number
   height: number
   canDrop: boolean
   children: ReactNode
 }) {
   const { isOver, setNodeRef } = useDroppable({
-    id: section,
-    disabled: section !== 'ungrouped' || !canDrop,
+    id: section.dropId ?? section.key,
+    disabled: section.dropId === undefined || !canDrop,
   })
   return (
     <section
-      aria-label={section === 'collections' ? '合集' : '任务'}
+      aria-label={section.label}
       className={cn('absolute inset-x-0 rounded-sm', isOver && 'bg-surface-container-high')}
       ref={setNodeRef}
       style={{ top, height }}

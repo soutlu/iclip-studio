@@ -1,7 +1,7 @@
 import { useDraggable } from '@dnd-kit/core'
 import { useParams } from '@tanstack/react-router'
 import { Link } from '@tanstack/react-router'
-import { memo, useEffect, useState } from 'react'
+import { memo, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon } from '@/shared/icons'
@@ -30,7 +30,6 @@ import { useSidebarRowEditing } from './use-sidebar-row-editing'
 
 const UNREAD_LABEL = '有新回复'
 
-/** 仅对本浏览器已查看过且 lastRunId 变化的完成对话显示未读；当前打开的对话不显示。 */
 const useUnread = (conversation: Conversation, active: boolean): boolean => {
   const seenRun = useSeenRun(conversation.id)
   return !active && seenRun !== undefined && seenRun !== conversation.lastRunId
@@ -64,24 +63,17 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
     select: (params) => params.conversationId === conversation.id,
     strict: false,
   })
-  const { close, editing, returnRef, start } = useSidebarRowEditing<HTMLAnchorElement>()
+  const { close, editing, onMenuCloseAutoFocus, onMenuOpenChange, returnRef, start } =
+    useSidebarRowEditing<HTMLAnchorElement>(onInteractionChange)
   const rename = useRenameConversation()
   const completion = useSetConversationCompletion()
   const [tipOpen, setTipOpen] = useState(false)
-  const [menuRetained, setMenuRetained] = useState(false)
-  useEffect(
-    () => onInteractionChange(editing || menuRetained),
-    [editing, menuRetained, onInteractionChange],
-  )
-  useEffect(() => () => onInteractionChange(false), [onInteractionChange])
   const completed = conversation.completedAt !== null
   const unread = useUnread(conversation, active)
   const status = conversationStatus(conversation.activity)
-  // 行尾只画还需要人看一眼的状态；跑完没看过的用小点，其余什么都不画。
   const showUnread = unread && status === 'completed'
   const video = conversation.activity.videoGeneration
   const videoLabel = video === 'none' ? undefined : `视频${mediaStatusLabel(video)}`
-  // 整行的提示条按行尾顺序把这一行的状态全列出来，看图形的人不用猜。
   const statusLabels = [
     ...(needsAttention(status) ? [conversationStatusLabel(status)] : []),
     ...(videoLabel === undefined ? [] : [videoLabel]),
@@ -92,7 +84,6 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
   if (editing)
     return (
       <SidebarRowEditor
-        // 正打开的那一行保持加粗，进出编辑字形不变。
         className={cn(active && 'font-semibold')}
         failureMessage="重命名失败"
         initialValue={conversation.title}
@@ -103,15 +94,12 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
     )
 
   return (
-    // 提示始终挂着、只在有状态时弹：状态来去时行不重建，键盘焦点不丢。
-    // 键盘移进标题链接时聚焦冒泡上来也弹；⋯ 按钮自己拦下了聚焦打开，焦点还给它时这里也不弹。
     <TooltipRoot onOpenChange={setTipOpen} open={tipOpen && statusLabels.length > 0 && !dragging}>
       <TooltipTrigger asChild>
-        {/* 拖拽绑定整行，避免链接原生拖动吞掉指针事件；改名时整行换成编辑行，不挂拖拽。 */}
+        {/* 拖拽绑在整行而不是链接上：链接的原生拖动会吞掉指针事件。 */}
         <div
           className={cn(
             SIDEBAR_ROW_CLASS,
-            // 拖动中的行压在侧栏吸顶标题（layer-local-1）之上。
             dragging && 'layer-local-2 opacity-50',
             active ? SIDEBAR_ROW_ACTIVE : SIDEBAR_ROW_MENU_OPEN,
           )}
@@ -131,7 +119,6 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
             params={{ conversationId: conversation.id }}
             to="/c/$conversationId"
           >
-            {/* 标了收尾的对话标题降为辅助色；正打开的那一行保持常规强调。 */}
             <span
               className={cn(
                 'min-w-0 flex-1 truncate text-left',
@@ -141,7 +128,6 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
               {conversation.title}
             </span>
           </Link>
-          {/* 每件事实一个带名字的图形：出片在跑与轮次在跑互不蕴含，可以同时出现。 */}
           <span className="flex shrink-0 items-center gap-1.5 empty:hidden">
             {needsAttention(status) && <ConversationGlyph status={status} />}
             {videoLabel !== undefined && (
@@ -157,7 +143,6 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
               />
             )}
             {showUnread && (
-              // 未读用墨色，绿色只留给生成。
               <span
                 aria-label={UNREAD_LABEL}
                 className="size-2 shrink-0 rounded-full bg-on-surface"
@@ -175,15 +160,11 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
           </span>
           {canWrite && (
             <div className={cn(SIDEBAR_ROW_TRAILING_SHOWN, 'shrink-0 items-center')}>
-              <MenuRoot
-                onOpenChange={(isOpen) => {
-                  if (isOpen) setMenuRetained(true)
-                }}
-              >
+              <MenuRoot onOpenChange={onMenuOpenChange}>
                 <MenuTrigger asChild>
                   <IconButton label={`${conversation.title} 的更多操作`} name="more" size="xs" />
                 </MenuTrigger>
-                <MenuSurface align="end" onCloseAutoFocus={() => setMenuRetained(false)}>
+                <MenuSurface align="end" onCloseAutoFocus={onMenuCloseAutoFocus}>
                   <MenuItem icon="edit" onSelect={start}>
                     重命名
                   </MenuItem>
@@ -218,10 +199,6 @@ export const SidebarConversationRow = memo(function SidebarConversationRow({
   )
 })
 
-/**
- * 轮次状态。等人（审批、回答）与失败要用户动手，橙点、红色感叹号后面直接写短词，字用中性色；
- * 在跑只画转圈，减少动效时停住。
- */
 function ConversationGlyph({ status }: { status: AttentionStatus }) {
   if (status === 'running')
     return (
@@ -233,7 +210,6 @@ function ConversationGlyph({ status }: { status: AttentionStatus }) {
       />
     )
   return (
-    // 橙点外有一圈 3px 光晕，字与图形隔 6px 才不贴着光晕。
     <span className="flex shrink-0 items-center gap-1.5 text-label whitespace-nowrap text-on-surface-variant">
       {status === 'failed' ? (
         <Icon className="shrink-0 text-error" decorative name="alert" size="sm" />
