@@ -25,6 +25,7 @@ const restore = (subtitles: { startMs: number; endMs: number; text: string }[]) 
     }),
     {
       takeOf: () => 'group',
+      templateName: () => undefined,
       generatedMusic: new Set(),
       newId: () => `id-${++id}`,
     },
@@ -54,6 +55,7 @@ describe('从已合成版本恢复字幕', () => {
     }
     const stored = draftFromVersion(makeGenerationJob({ operation: 'compose', request }), {
       takeOf: () => 'group',
+      templateName: () => undefined,
       generatedMusic: new Set(['music']),
       newId: () => 'segment',
     })
@@ -84,6 +86,7 @@ describe('从已合成版本恢复字幕', () => {
       }),
       {
         takeOf: (sourceId) => (sourceId === 'A-edit' ? 'A' : sourceId),
+        templateName: () => undefined,
         generatedMusic: new Set(),
         newId: () => `s${++id}`,
       },
@@ -101,7 +104,7 @@ describe('从已合成版本恢复字幕', () => {
   it('清空的识别字幕不会重新出现', () => {
     expect(captions(restore([]))).toEqual([])
   })
-  it('与识别句起点相同的手动字幕保留自己的结尾', () => {
+  it('与识别句起点相同的恢复字幕保留自己的结尾', () => {
     expect(captions(restore([{ startMs: 0, endMs: 2000, text: '标题' }]))).toEqual([
       { at: 0, end: 2, text: '标题' },
     ])
@@ -143,6 +146,7 @@ describe('从已合成版本恢复字幕', () => {
     let id = 0
     const stored = draftFromVersion(makeGenerationJob({ operation: 'compose', request }), {
       takeOf: () => 'group',
+      templateName: (templateId) => (templateId === 'intro' ? '品牌片头 · 竖版' : undefined),
       generatedMusic: new Set(),
       newId: () => `id-${++id}`,
     })
@@ -154,7 +158,41 @@ describe('从已合成版本恢复字幕', () => {
       url: 'https://example.com/brand.ttf',
       name: '品牌字体',
     })
-    expect(reloaded.film.intro).toEqual({ ...request.intro, name: '片头' })
+    expect(reloaded.film.intro).toEqual({ ...request.intro, name: '品牌片头 · 竖版' })
     expect(captions(reloaded.film)).toEqual([])
+  })
+
+  it('片头片尾名按模板列表查回，查不到时为空；上传音乐不补名称', () => {
+    const brand = (templateId: string) => ({
+      templateId,
+      url: `https://example.com/${templateId}.mp4`,
+      durationMs: 2000,
+      width: 720,
+      height: 1280,
+      hasAudio: true,
+    })
+    const stored = draftFromVersion(
+      makeGenerationJob({
+        operation: 'compose',
+        request: {
+          segments: [{ sourceJobId: 'A', startMs: 0, endMs: 5000 }],
+          subtitles: [],
+          intro: brand('intro'),
+          outro: brand('disabled-outro'),
+          music: { audioJobId: 'upload', url: 'https://example.com/a.mp3', offsetMs: 0 },
+        },
+      }),
+      {
+        takeOf: () => 'group',
+        templateName: (templateId) => (templateId === 'intro' ? '品牌片头' : undefined),
+        generatedMusic: new Set(),
+        newId: () => 'id',
+      },
+    )
+    assert(stored !== undefined)
+    expect(stored.film.intro?.name).toBe('品牌片头')
+    expect(stored.film.outro?.name).toBeNull()
+    expect(stored.film.music).toMatchObject({ kind: 'upload', name: null, verifyAccess: true })
+    expect(parseStoredFilm(serializeStoredFilm(stored))?.film).toEqual(stored.film)
   })
 })

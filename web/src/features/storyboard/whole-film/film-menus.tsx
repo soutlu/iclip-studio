@@ -1,5 +1,3 @@
-/** 整片编辑器的菜单：轨道两端选择片头片尾，素材区末尾的加号选镜头组，轨道头上的版本胶囊换版本。 */
-
 import { useState, type CSSProperties } from 'react'
 import type { BrandTemplate } from '@/shared/api/brand-templates'
 import type { BrandPosition, FilmBrand } from './film-draft'
@@ -21,7 +19,6 @@ import { videoTemplateReason } from './film-brand'
 
 const seconds = (value: number) => `${value.toFixed(1)} 秒`
 
-/** 一版的小画面：截不了帧（不是 OSS 地址、截失败）时露出中性底与视频图标。 */
 function Poster({
   url,
   className,
@@ -46,15 +43,13 @@ function Poster({
 
 type PanelProps = {
   catalog: MaterialCatalog
-  /** 一版多长；没读到或读不出时格子下面不写时长。 */
   durationOf: (material: Material) => MaterialDuration
   onAdd: (material: Material) => void
 }
 
-/** 选成片的面板：按组一行，列出各版小画面与时长；点一格放进素材区。 */
 function TakesPanel({ catalog, durationOf, onAdd }: PanelProps) {
   if (catalog.groups.length === 0)
-    return <p className="film-menu-empty">本对话还没有成片，请先在镜头组中生成视频</p>
+    return <p className="film-menu-empty">本对话暂无成片，请先在镜头组中生成视频</p>
   return (
     <>
       <p className="film-menu-head">本对话的成片 · {catalog.groups.length} 组</p>
@@ -95,7 +90,6 @@ function TakesPanel({ catalog, durationOf, onAdd }: PanelProps) {
   )
 }
 
-/** 空模板只占固定像素，不进入视频时钟。 */
 export function BrandPlaceholder({
   brands,
   position,
@@ -131,7 +125,6 @@ export function BrandPlaceholder({
   )
 }
 
-/** 素材区末尾常驻的加号：直接展开本对话镜头组的成片版本。 */
 export function AddVideoRow({ disabled = false, ...props }: PanelProps & { disabled?: boolean }) {
   return (
     <div className="film-materials-add-row">
@@ -139,7 +132,7 @@ export function AddVideoRow({ disabled = false, ...props }: PanelProps & { disab
         <MenuTrigger asChild disabled={disabled}>
           <button className="film-materials-add ui-state ui-focus" type="button">
             <Icon decorative name="add" size="xs" />
-            添加镜头组
+            添加原作
           </button>
         </MenuTrigger>
         <MenuSurface align="start" className="film-menu-panel" side="top">
@@ -244,7 +237,6 @@ function TemplatePanel({ brands, position }: { brands: BrandMenuProps; position:
               key={template.id}
               onSelect={() => brands.onSelect(position, template)}
             >
-              {/* 片头片尾的首帧常是淡入底色，封面取 Logo 已出现的画面。 */}
               <Poster className="film-template-poster" url={template.url} atSeconds={0.5} />
               <span>
                 <strong>{template.name}</strong>
@@ -275,7 +267,6 @@ function TemplatePanel({ brands, position }: { brands: BrandMenuProps; position:
   )
 }
 
-/** 已选模板卡上的更换入口，与空位共用候选与校验。 */
 export function BrandMenu({
   brands,
   position,

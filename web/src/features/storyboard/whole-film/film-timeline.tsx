@@ -34,12 +34,10 @@ import {
   type Edge,
 } from '../editing/timeline-drag'
 import {
-  fitsInFilm,
+  insertBlockedReason,
   insertClockOf,
   insertIndexAt,
   layoutFilm,
-  MAX_FILM_SECONDS,
-  MAX_FILM_SEGMENTS,
   MIN_SEGMENT_SECONDS,
   segmentDuration,
   trimBounds,
@@ -50,7 +48,8 @@ import {
 import { materialName, type Material, type MaterialDuration } from './film-materials'
 import { BrandPlaceholder, VersionPill, type BrandMenuProps } from './film-menus'
 import { internalCuts } from './film-music'
-import { MusicTrack, type MusicTrackView } from './film-music-track'
+import type { MusicStatus } from './film-music-status'
+import { MusicTrack } from './film-music-track'
 import type { FilmSubtitle, FilmSubtitleStatus } from './film-subtitles'
 import './film-timeline.css'
 
@@ -124,7 +123,7 @@ type FilmTimelineProps = {
   onInsert: (pick: MaterialPick, index: number) => void
   onRetry: (sourceJobId: string) => void
   onSwitchVersion: (lane: LaneView, material: Material) => void
-  music: MusicTrackView
+  music: MusicStatus
   musicAdd: ReactNode
   onMoveMusic: (start: number) => void
   onRemoveMusic: () => void
@@ -240,11 +239,9 @@ export function FilmTimeline({
   const carried = carry?.moved === true ? carry.pick : undefined
   const carriedDuration = carried === undefined ? 0 : segmentDuration(carried)
   const dropping = carry?.moved === true && carry.over
-  const dropFits =
-    carried !== undefined &&
-    carriedDuration >= MIN_SEGMENT_SECONDS &&
-    segments.length < MAX_FILM_SEGMENTS &&
-    fitsInFilm(segments, carriedDuration, reserved)
+  const dropBlocked =
+    carried === undefined ? undefined : insertBlockedReason(segments, carriedDuration, reserved)
+  const dropFits = carried !== undefined && dropBlocked === undefined
   const dropIndex = dropping ? insertIndexAt(segments, carry.clock - bodyStart) : undefined
   const dropClock =
     dropIndex === undefined ? undefined : bodyStart + insertClockOf(segments, dropIndex)
@@ -862,7 +859,7 @@ export function FilmTimeline({
                 const selected = selection?.kind === 'brand' && selection.position === position
                 return (
                   <button
-                    aria-label={`${label}：${template.name}，位置固定`}
+                    aria-label={`${template.name === null ? label : `${label}：${template.name}`}，位置固定`}
                     aria-pressed={selected}
                     className="film-brand-block ui-focus"
                     key={position}
@@ -1038,13 +1035,7 @@ export function FilmTimeline({
                       />
                       <TimelineBubble style={{ ...bubbleAt(dropClock), top: -1 }}>
                         <Icon decorative name={dropFits ? 'insert' : 'blocked'} size="xs" />
-                        {dropFits
-                          ? `插入到 ${dropClock.toFixed(2)} 秒`
-                          : carriedDuration < MIN_SEGMENT_SECONDS
-                            ? `镜头不足 ${MIN_SEGMENT_SECONDS} 秒，请拖动两端扩展范围`
-                            : segments.length >= MAX_FILM_SEGMENTS
-                              ? `片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入`
-                              : `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒，放不下这 ${carriedDuration.toFixed(1)} 秒`}
+                        {dropBlocked ?? `插入到 ${dropClock.toFixed(2)} 秒`}
                       </TimelineBubble>
                     </>
                   ) : null}
@@ -1187,8 +1178,8 @@ export function FilmTimeline({
                     scale={scale - bodyStart}
                     secondsOf={secondsOf}
                     selected={selection?.kind === 'music'}
+                    status={music}
                     total={bodyTotal}
-                    view={music}
                   />
                 </div>
 
@@ -1354,14 +1345,8 @@ export function FilmTimeline({
             const current = selected === undefined ? undefined : shownPick(selected.view)
             const reason =
               current === undefined
-                ? '请先选择一个镜头'
-                : segmentDuration(current) < MIN_SEGMENT_SECONDS
-                  ? `镜头不足 ${MIN_SEGMENT_SECONDS} 秒，请拖动两端扩展范围`
-                  : segments.length >= MAX_FILM_SEGMENTS
-                    ? `片段最多 ${MAX_FILM_SEGMENTS} 段`
-                    : !fitsInFilm(segments, segmentDuration(current), reserved)
-                      ? `整片含片头片尾最长 ${MAX_FILM_SECONDS} 秒`
-                      : undefined
+                ? '尚未选择镜头，无法加入成片；请先在素材轨选择镜头'
+                : insertBlockedReason(segments, segmentDuration(current), reserved)
             return (
               <div className="film-material-group" key={group.id} style={{ top: group.top }}>
                 <b>{group.label}</b>

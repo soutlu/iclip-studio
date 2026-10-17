@@ -127,7 +127,7 @@ const carryToFilm = async (
 
 /** 从素材区末尾的加号选一版放进素材区。 */
 const addMaterial = async (page: Page, dialog: Locator, name: string) => {
-  await dialog.getByRole('button', { name: '添加镜头组', exact: true }).click()
+  await dialog.getByRole('button', { name: '添加原作', exact: true }).click()
   await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click()
 }
 
@@ -138,7 +138,7 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   await expect(dialog.getByRole('button', { name: '合成成片' })).toBeDisabled()
   await page.mouse.move(0, 0)
 
-  await dialog.getByRole('button', { name: '添加镜头组', exact: true }).click()
+  await dialog.getByRole('button', { name: '添加原作', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: /^镜头组 2 生成 A 原片/ })).toBeVisible()
   await page.getByRole('menuitem', { name: /^镜头组 2 生成 A 原片/ }).click()
   await addMaterial(page, dialog, '镜头组 3 生成 A 原片')
@@ -303,13 +303,13 @@ test('整片放不下时不插入：插入线变虚、说明还差多少', async
   await selectRange(page, dialog, shot2, 0, 5)
   const drop = await carryToFilm(page, dialog, shot2, 2.5, 30)
   await expect(
-    timelineOf(dialog).getByText(/^整片含片头片尾最长 120 秒，放不下这 \d\.\d 秒$/),
+    timelineOf(dialog).getByText(/^整片含片头片尾已有 117\.0 秒，再加 \d\.\d 秒将超过 120 秒，/),
   ).toBeVisible()
   await screenshotBothThemes(page, `${SHOT_DIR}/pick-limit`)
   await drop()
   await expect(segments(dialog)).toHaveCount(30)
   await expect(
-    dialog.getByText(/已有 117\.0 秒，放不下这 \d\.\d 秒；请先删减成片轨上的段$/),
+    dialog.getByRole('status').getByText(/^整片含片头片尾已有 117\.0 秒，.*无法加入成片；/),
   ).toBeVisible()
 })
 
@@ -420,9 +420,7 @@ test('整片音乐：没有工程文件时写一句生成，完成后自动对�
   const compose = dialog.getByRole('button', { name: '合成成片' })
   await expect(compose).toHaveAttribute('aria-disabled', 'true')
   await compose.hover()
-  await expect(page.getByRole('tooltip')).toHaveText(
-    '音乐比成片短 4.0 秒，无法合成；请重新生成或换一首',
-  )
+  await expect(page.getByRole('tooltip')).toHaveText(/^音乐比成片短 4\.0 秒，无法合成；/)
   await expect(
     dialog.getByText('上传的音乐只有 2.0 秒，铺不满第一段开头到最后一段结尾，不循环补齐'),
   ).toBeVisible()
@@ -891,7 +889,15 @@ test('字幕字体排版：长英文、中文和显式换行按原画幅排版�
   await screenshotBothThemes(page, `${BRAND_SHOT_DIR}/multiline-font-mobile`)
   await dialog.getByRole('button', { name: '字幕字体：示例字体' }).click()
   await page.getByRole('menuitemradio', { name: '系统默认' }).click()
-  await expect(caption).toHaveText(text)
+  await expect(caption).toHaveText(
+    [
+      'ABCDEFGHIJKLMNOPQ',
+      'RSTUVWXYZABCDEFGHI',
+      'JKLMNOPQRSTUVWXYZ',
+      '这只包今天第一次上身',
+      '这只包今天第一次上身',
+    ].join('\n'),
+  )
   await dialog.getByRole('button', { name: '字幕字体：系统默认' }).click()
   await page.getByRole('menuitemradio', { name: '示例字体 · 通用' }).click()
   await expect(caption).toHaveText(wrapped ?? '')
@@ -954,9 +960,9 @@ test('素材预览：拖动手柄显示边界画面，播放仅限选区，返�
   await expect(ruler).toHaveValue('0.5')
 })
 
-test('添加镜头组：底部加号持续可用，片头片尾直接从轨道空位选择', async ({ page }) => {
+test('添加原作：底部加号持续可用，片头片尾直接从轨道空位选择', async ({ page }) => {
   const dialog = await openWholeFilm(page)
-  const add = dialog.getByRole('button', { name: '添加镜头组', exact: true })
+  const add = dialog.getByRole('button', { name: '添加原作', exact: true })
   await expect(add).toHaveCount(1)
   await addMaterial(page, dialog, '镜头组 2 生成 A 原片')
   await expect(add).toHaveCount(1)
@@ -971,7 +977,7 @@ test('添加镜头组：底部加号持续可用，片头片尾直接从轨道�
 
   await add.focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('menu', { name: '添加镜头组', exact: true })).toBeVisible()
+  await expect(page.getByRole('menu', { name: '添加原作', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(add).toBeFocused()
 })
@@ -1069,7 +1075,7 @@ for (const viewport of [
     if (filmBefore === null || filmAfter === null) throw new Error('成片轨尚未布局')
     expect(Math.abs(filmAfter.y - filmBefore.y)).toBeLessThan(1)
     expect(Math.abs(filmAfter.height - filmBefore.height)).toBeLessThan(1)
-    await expect(dialog.getByRole('button', { name: '添加镜头组', exact: true })).toBeInViewport()
+    await expect(dialog.getByRole('button', { name: '添加原作', exact: true })).toBeInViewport()
     const last = laneOf(dialog, '镜头组 19 生成 A')
     await last.scrollIntoViewIfNeeded()
     await expect(last).toBeInViewport()

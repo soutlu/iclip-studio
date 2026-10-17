@@ -1,6 +1,3 @@
-/** 音乐轨轨道头上的「+」：向上展开「上传音乐」「生成音乐」。生成音乐另开一块面板（输入框放在菜单里会被菜单的
- * 键盘导航抢走焦点）：工程文件里写了配乐就只读引用那段原文，原样当提示词；没有工程文件或没写配乐时让人写一句。 */
-
 import { useRef, useState } from 'react'
 import { MEDIA_AUDIO_ACCEPT } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
@@ -8,25 +5,26 @@ import { Button } from '@/shared/ui/button'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
+import { BlockedReason } from '../components/blocked-reason'
+import { MAX_MUSIC_PROMPT_CHARS } from './film-limits'
 import type { MusicDescription } from './whole-film.api'
 
 type MusicMenuProps = {
-  /** 面板挂在编辑器里：编辑器是模态弹窗，挂到外面就收不到焦点。 */
   container: HTMLElement | null
   description: MusicDescription
-  /** 生成面板打开了：这时才去读工程文件。 */
   onOpenGenerate: () => void
-  /** 提交生成；成功才收起面板，失败由调用方提示。 */
   onGenerate: (prompt: string) => Promise<boolean>
   onUpload: (file: File) => void
-  /** 正在上传或提交时不能再加。 */
   busy: boolean
-  /** 现在不能生成的原因（如还没读到对话的需求单）；能生成时没有。 */
   generateBlocked: string | undefined
 }
 
-/** 提示词至多多少字（音乐模型的上限，后端同样拦）。 */
-const MAX_PROMPT = 3000
+const promptBlockedReason = (description: MusicDescription, prompt: string): string | undefined => {
+  if (description.kind === 'loading') return '正在读取工程文件，暂时无法生成'
+  if (description.kind === 'failed') return '工程文件读取失败，无法生成；请重试'
+  if (prompt.trim() === '') return '尚未填写音乐描述，无法生成；请用一句话描述想要的音乐'
+  return undefined
+}
 
 export function MusicMenu({
   container,
@@ -38,23 +36,19 @@ export function MusicMenu({
   generateBlocked,
 }: MusicMenuProps) {
   const fileRef = useRef<HTMLInputElement>(null)
-  // 选了「生成音乐」：菜单收起时别把焦点还给「+」，否则面板一打开就因焦点落在外面而关掉。
+  // Radix 菜单收起时会把焦点还给触发按钮，生成面板会因焦点落在外面立刻关掉，选「生成音乐」时要拦下。
   const openingPanelRef = useRef(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [draft, setDraft] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
-  const prompt = description.kind === 'ready' ? (description.text ?? draft) : undefined
+  const prompt = description.kind === 'ready' ? (description.text ?? draft) : ''
   const reason =
     generateBlocked ??
-    (prompt !== undefined && prompt.trim() === '' ? '请先用一句话描述想要的音乐' : undefined)
+    (busy ? '正在处理音乐，暂时无法生成' : promptBlockedReason(description, prompt))
 
   const generate = async () => {
-    if (prompt === undefined || reason !== undefined || submitting) return
-    setSubmitting(true)
-    const done = await onGenerate(prompt)
-    setSubmitting(false)
-    if (done) setPanelOpen(false)
+    if (reason !== undefined) return
+    if (await onGenerate(prompt)) setPanelOpen(false)
   }
 
   return (
@@ -122,7 +116,7 @@ export function MusicMenu({
               <textarea
                 aria-label="音乐描述"
                 className="film-card-text ui-focus ui-focus-inline"
-                maxLength={MAX_PROMPT}
+                maxLength={MAX_MUSIC_PROMPT_CHARS}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="用一句话描述想要的音乐"
                 rows={3}
@@ -136,16 +130,25 @@ export function MusicMenu({
             )}
             <div className="film-music-panel-foot">
               <p>{generateBlocked ?? '生成后放到音乐轨，自动对齐切点'}</p>
-              <Button
-                disabled={prompt === undefined || reason !== undefined}
-                leadingIcon="music"
-                loading={submitting}
-                onClick={() => void generate()}
-                size="md"
-                title={reason}
-              >
-                生成
-              </Button>
+              <BlockedReason reason={reason}>
+                <Button
+                  aria-disabled={reason === undefined ? undefined : true}
+                  onClick={() => void generate()}
+                  size="md"
+                >
+                  {busy ? (
+                    <Icon
+                      className="motion-safe:animate-spin"
+                      decorative
+                      name="loading"
+                      size="md"
+                    />
+                  ) : (
+                    <Icon decorative name="music" size="md" />
+                  )}
+                  生成
+                </Button>
+              </BlockedReason>
             </div>
           </div>
         </PopupSurface>

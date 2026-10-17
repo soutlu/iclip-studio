@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals())
 it('完整混音按画面时钟定位，微小抖动不重启；seek、静音、暂停和卸载释放各自资源', () => {
   const audio = stubWebAudio({ duration: 10 })
   const buffer = new OfflineAudioContext(2, 1, 48_000).createBuffer(2, 480_000, 48_000)
-  const initial = { buffer, total: 10, playing: false, muted: true, clock: 2 }
+  const initial = { buffer, duration: 10, playing: false, muted: true, clock: 2 }
   const { result, rerender, unmount } = renderHook((options) => useMusicPlayback(options), {
     initialProps: initial,
   })
@@ -37,7 +37,7 @@ it('无音轨和超出结尾不创建播放源', () => {
   const audio = stubWebAudio({ duration: 4 })
   const { rerender, unmount } = renderHook(
     (clock) =>
-      useMusicPlayback({ buffer: undefined, total: 4, playing: true, muted: false, clock }),
+      useMusicPlayback({ buffer: undefined, duration: 4, playing: true, muted: false, clock }),
     { initialProps: 0 },
   )
   rerender(4)

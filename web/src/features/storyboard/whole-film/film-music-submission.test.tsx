@@ -122,7 +122,7 @@ it('恢复的上传音乐当前账号不能读取时明确阻止复用，不提�
   seed({
     kind: 'upload',
     jobId: AUDIO,
-    name: '上传的音乐',
+    name: null,
     url: 'https://example.com/music.mp3',
     userStart: 0,
     verifyAccess: true,
@@ -147,6 +147,8 @@ it('恢复的上传音乐当前账号不能读取时明确阻止复用，不提�
     ),
   )
   await openEditor()
-  expect(await screen.findByText('当前账号不能复用这首上传音乐，请替换或删除')).toBeVisible()
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    /^当前账号无权使用该上传音乐，无法复用；/,
+  )
   expect(screen.getByRole('button', { name: '合成成片' })).toHaveAttribute('aria-disabled', 'true')
 })

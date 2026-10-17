@@ -4,7 +4,6 @@ import {
   EMPTY_FILM,
   insertSegment,
   sentenceKey,
-  setManualText,
   setSentenceText,
   trimSegment,
   type FilmState,
@@ -18,7 +17,6 @@ import {
   type SubtitleSource,
 } from './film-subtitles'
 
-/** 成片 A 的口播：0.5–2 秒、2.5–4 秒、6–8 秒三句。 */
 const A_SENTENCES = [
   { startMs: 500, endMs: 2000, text: '今天带来一款新耳机', speaker: 0 },
   { startMs: 2500, endMs: 4000, text: '单耳只有四克', speaker: 0 },
@@ -72,7 +70,6 @@ describe('字幕记录', () => {
 
 describe('字幕跟着画面走', () => {
   it('与段区间重叠的句子截到段内，换算到整片时间', () => {
-    // 第一段取 A 的 1–3 秒，第二段取 A 的 6–7 秒。
     const film = build([
       ['s1', 'A', 1, 3],
       ['s2', 'A', 6, 7],
@@ -130,63 +127,32 @@ describe('字幕跟着画面走', () => {
     ])
   })
 
-  it('手动字幕从钉住的那一刻起 2 秒，截到所在段内；钉住处被裁掉就不显示', () => {
-    const base = build([
-      ['s1', 'B', 0, 3],
-      ['s2', 'B', 5, 6],
-    ])
-    const withSubs: FilmState = {
-      ...base,
-      manual: [
-        { id: 'm1', segmentId: 's1', at: 2, text: '手动的字' },
-        { id: 'm2', segmentId: 's2', at: 5.5, text: '' },
+  it('烧进画面的字幕互不重叠：后开始的盖过先开始的，前一条在那一刻收住；空字不烧；预览显示的就是这一份', () => {
+    const overlapping: SubtitleSource = {
+      kind: 'ready',
+      jobId: 'sub-c',
+      sentences: [
+        { startMs: 500, endMs: 2000, text: '今天带来一款新耳机' },
+        { startMs: 1000, endMs: 2500, text: ' 插话 ' },
+        { startMs: 2500, endMs: 4000, text: '单耳只有四克' },
       ],
     }
-    const none = () => ({ kind: 'ready', jobId: 'x', sentences: [] }) as const
-
-    expect(rows(withSubs, none)).toEqual([
-      [2, 3, '手动的字'],
-      [3.5, 4, ''],
-    ])
-    // 第一段裁到 1.5 秒：钉在 2 秒的那条没了，第二段前移，它的那条跟着到 2 秒。
-    expect(rows(trimSegment(withSubs, 's1', 'end', 1.5), none)).toEqual([[2, 2.5, '']])
-  })
-
-  it('烧进画面的字幕互不重叠：后开始的盖过先开始的，前一条在那一刻收住；空字不烧；预览显示的就是这一份', () => {
-    // 0–3 秒一段：识别句 0.5–2、2.5–3（截到段尾），手动字幕钉在 1 秒（1–3 秒）。
-    const film: FilmState = {
-      ...build([['s1', 'A', 0, 3]]),
-      manual: [{ id: 'm', segmentId: 's1', at: 1, text: ' 手动 ' }],
-    }
-    const burned = burnedSubtitles(projectSubtitles(film, () => READY_A).subtitles)
+    const film = build([['s1', 'C', 0, 3]])
+    const burned = burnedSubtitles(projectSubtitles(film, () => overlapping).subtitles)
 
     expect(burned).toEqual([
       { at: 0.5, end: 1, text: '今天带来一款新耳机' },
-      { at: 1, end: 2.5, text: '手动' },
+      { at: 1, end: 2.5, text: '插话' },
       { at: 2.5, end: 3, text: '单耳只有四克' },
     ])
     expect(captionAt(burned, 0.6)).toBe('今天带来一款新耳机')
-    expect(captionAt(burned, 1.2)).toBe('手动')
+    expect(captionAt(burned, 1.2)).toBe('插话')
     expect(captionAt(burned, 2.6)).toBe('单耳只有四克')
     expect(captionAt(burned, 3.1)).toBeUndefined()
 
-    // 改成只有空白的字不烧，也不再截别的字幕。
-    expect(
-      burnedSubtitles(projectSubtitles(setManualText(film, 'm', '  '), () => READY_A).subtitles),
-    ).toEqual([
+    const blanked = setSentenceText(film, sentenceKey('sub-c', 1), '  ')
+    expect(burnedSubtitles(projectSubtitles(blanked, () => overlapping).subtitles)).toEqual([
       { at: 0.5, end: 2, text: '今天带来一款新耳机' },
-      { at: 2.5, end: 3, text: '单耳只有四克' },
-    ])
-  })
-
-  it('起点相同时手动加的盖过识别出的，识别句收成零长不烧', () => {
-    const film: FilmState = {
-      ...build([['s1', 'A', 0, 3]]),
-      manual: [{ id: 'm', segmentId: 's1', at: 0.5, text: '手动' }],
-    }
-
-    expect(burnedSubtitles(projectSubtitles(film, () => READY_A).subtitles)).toEqual([
-      { at: 0.5, end: 2.5, text: '手动' },
       { at: 2.5, end: 3, text: '单耳只有四克' },
     ])
   })

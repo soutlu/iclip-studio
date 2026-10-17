@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { guess } from 'web-audio-beat-detector'
+import golden from '../../../../../contract/whole-film/render-golden.json'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { stubFontLoading } from '@/testing/font-loading'
 import { stubMediaDurations } from '@/testing/media'
@@ -75,7 +76,6 @@ const TAKE_2 = '33333333-3333-4333-8333-333333333333'
 const LOOSE = '44444444-4444-4444-8444-444444444444'
 const TASK = '55555555-5555-4555-8555-555555555555'
 
-/** 一条成片：4 秒、完成时刻依次往后。 */
 const video = (id: string, overrides: Partial<GenerationJob> = {}) =>
   makeGenerationJob({
     id,
@@ -87,7 +87,6 @@ const video = (id: string, overrides: Partial<GenerationJob> = {}) =>
 
 const VIDEOS = [
   video(TAKE_1, { shotIndex: 1, finishedAt: '2026-09-01T10:00:00Z' }),
-  // 镜头组 1 的 V2：基于 V1 的合成。
   video(COMPOSITE_1, {
     shotIndex: 1,
     operation: 'compose',
@@ -96,14 +95,12 @@ const VIDEOS = [
     finishedAt: '2026-09-01T11:00:00Z',
   }),
   video(TAKE_2, { shotIndex: 2, finishedAt: '2026-09-01T10:30:00Z' }),
-  // 没有镜号的出片自成一组。
   video(LOOSE, { finishedAt: '2026-09-01T12:00:00Z' }),
 ]
 
 const subtitle = (sourceJobId: string, overrides: Partial<GenerationJob> = {}) =>
   makeGenerationJob({ kind: 'subtitle', sourceJobId, ...overrides })
 
-/** 本对话的记录：视频、字幕记录与生成的音乐按 `kind` 分开答。 */
 const serve = (videos: GenerationJob[], subtitles: GenerationJob[], music: GenerationJob[] = []) =>
   server.use(
     http.get('*/api/brand-templates', () => HttpResponse.json({ items: [] })),
@@ -115,18 +112,15 @@ const serve = (videos: GenerationJob[], subtitles: GenerationJob[], music: Gener
     }),
   )
 
-/** 对话此刻挂的需求单：与成片记录上的不是同一张（对话后来换了单），提交时要用它。 */
 const CONVERSATION_TASK = '66666666-6666-4666-8666-666666666666'
 
 const READY_TASK: ConversationTask = { kind: 'ready', taskId: CONVERSATION_TASK }
 
-/** 打开编辑器；`task` 默认是读到了对话此刻的需求单。 */
 const renderEditor = ({ task }: { task: ConversationTask } = { task: READY_TASK }) =>
   renderWithProviders(
     <WholeFilmEditor conversationId={CONVERSATION} onClose={() => {}} task={task} />,
   )
 
-/** 「合成成片」现在不能点的原因：灰着，悬停亮出原因。 */
 const composeBlockedBy = async (user: ReturnType<typeof userEvent.setup>) => {
   const compose = screen.getByRole('button', { name: '合成成片' })
   expect(compose).toHaveAttribute('aria-disabled', 'true')
@@ -137,9 +131,8 @@ const composeBlockedBy = async (user: ReturnType<typeof userEvent.setup>) => {
 const timeline = () => screen.findByRole('region', { name: '整片时间线' })
 const filmSegments = () => screen.queryAllByRole('button', { name: /^第 \d+ 段/ })
 
-/** 从素材区末尾的「添加镜头组」选一版放进素材区。 */
 const addMaterial = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-  await user.click(await screen.findByRole('button', { name: '添加镜头组' }))
+  await user.click(await screen.findByRole('button', { name: '添加原作' }))
   await user.click(await screen.findByRole('menuitem', { name: new RegExp(`^${name}`) }))
   await waitFor(() => expect(screen.queryByText('正在读取镜头分段…')).toBeNull())
 }
@@ -376,17 +369,17 @@ describe('WholeFilmEditor', () => {
     expect(screen.getByRole('button', { name: '整片 V1' })).toBeVisible()
   })
 
-  it('开局为空：成片轨是占位，素材区末尾常驻「添加镜头组」；选成片面板按版本组列出各版', async () => {
+  it('开局为空：成片轨是占位，素材区末尾常驻「添加原作」；选成片面板按版本组列出各版', async () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
 
     const track = await timeline()
     expect(within(track).getByText('从下方素材轨选择镜头加入成片')).toBeVisible()
-    expect(screen.getByText('成片轨还是空的')).toBeVisible()
-    expect(await composeBlockedBy(user)).toBe('成片轨为空，无法合成；请先从素材轨挑段放入成片轨')
+    expect(screen.getByText('成片轨暂无片段')).toBeVisible()
+    expect(await composeBlockedBy(user)).toMatch(/^成片轨为空，无法合成；/)
 
-    await user.click(screen.getByRole('button', { name: '添加镜头组' }))
+    await user.click(screen.getByRole('button', { name: '添加原作' }))
     const tiles = (await screen.findAllByRole('menuitem')).map((item) =>
       item.getAttribute('aria-label'),
     )
@@ -401,7 +394,7 @@ describe('WholeFilmEditor', () => {
     expect(
       await screen.findByRole('button', { name: /^镜头组 1 · 生成 A · V1 镜头 1/ }),
     ).toBeVisible()
-    expect(screen.getByRole('button', { name: '添加镜头组' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '添加原作' })).toBeVisible()
   })
 
   it('键盘：回车选中整条素材，调整结尾后回车插入到播放头处，后面的段接着排', async () => {
@@ -418,7 +411,6 @@ describe('WholeFilmEditor', () => {
       '第 1 段 · 镜头组 2 · 生成 A · 原片 · 0–4 秒',
     ])
 
-    // 选区结尾往前收 1 秒（Shift 一步一秒），再插一次：播放头已在第 1 段结尾，排在它后面。
     screen.getByRole('slider', { name: '选区结尾' }).focus()
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
     await user.keyboard('{Enter}')
@@ -444,7 +436,6 @@ describe('WholeFilmEditor', () => {
     expect(screen.getByRole('slider', { name: '选区开头' })).toHaveAttribute('aria-valuenow', '1')
     expect(screen.getByRole('slider', { name: '选区结尾' })).toHaveAttribute('aria-valuenow', '3')
 
-    // 按住选区拖到成片轨上：出现插入点与提示，松手插入。
     fireEvent.pointerDown(material, { pointerId: 2, button: 0, clientX: 100, clientY: 150 })
     fireEvent.pointerMove(material, { pointerId: 2, clientX: 20, clientY: 40 })
     expect(screen.getByText('插入到 0.00 秒')).toBeVisible()
@@ -481,9 +472,7 @@ describe('WholeFilmEditor', () => {
     await user.keyboard('{Enter}{Enter}')
 
     expect(filmSegments()).toHaveLength(30)
-    expect(
-      screen.getByText(/已有 117\.0 秒，放不下这 4\.0 秒；请先删减成片轨上的段$/),
-    ).toBeVisible()
+    expect(screen.getByText(/^整片含片头片尾已有 117\.0 秒，.*无法加入成片；/)).toBeVisible()
   })
 
   it('换版本只影响之后挑的段，已在成片轨上的段不变', async () => {
@@ -540,7 +529,6 @@ describe('WholeFilmEditor', () => {
 
   it('没有字幕记录的段标「未识别 · 识别」，点了带本对话与它此刻的需求单提交识别，随后显示「识别中」', async () => {
     let body: unknown
-    // 受理后列表里就有这条在识别的记录。
     const subtitles: GenerationJob[] = []
     serve(VIDEOS, subtitles)
     server.use(
@@ -587,7 +575,7 @@ describe('WholeFilmEditor', () => {
 
     expect(screen.getByText('任务信息读取中，暂时无法提交')).toBeVisible()
     expect(submitted).not.toHaveBeenCalled()
-    expect(await composeBlockedBy(user)).toBe('任务信息读取中，暂时无法合成')
+    expect(await composeBlockedBy(user)).toMatch(/^任务信息读取中，暂时无法合成/)
   })
 
   it('对话的需求单读取失败：写明原因并给重试，合成说明要先重试', async () => {
@@ -600,7 +588,7 @@ describe('WholeFilmEditor', () => {
     await user.keyboard('{Enter}{Enter}')
 
     expect(screen.getByText('任务信息读取失败，识别字幕、生成音乐与合成暂时无法提交')).toBeVisible()
-    expect(await composeBlockedBy(user)).toBe('任务信息读取失败，无法合成；请点击「重试」')
+    expect(await composeBlockedBy(user)).toMatch(/^任务信息读取失败，无法合成；/)
     await user.click(screen.getByRole('button', { name: '重试' }))
     expect(retry).toHaveBeenCalledTimes(1)
   })
@@ -639,9 +627,8 @@ describe('WholeFilmEditor', () => {
   })
 })
 
-/** 素材区已有轨时仍可从末尾入口添加：方向键移到那一格，回车。 */
 const addMaterialWithKeyboard = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-  screen.getByRole('button', { name: '添加镜头组' }).focus()
+  screen.getByRole('button', { name: '添加原作' }).focus()
   await user.keyboard('{Enter}')
   await user.keyboard('{Home}')
   await screen.findByRole('menuitem', { name: new RegExp(`^${name}`) })
@@ -652,12 +639,9 @@ const addMaterialWithKeyboard = async (user: ReturnType<typeof userEvent.setup>,
   await user.keyboard('{Enter}')
 }
 
-// ---------- 音乐 ----------
-
 const MUSIC_JOB = '77777777-7777-4777-8777-777777777777'
 const MUSIC_URL = 'https://example.com/music.m4a'
 
-/** 成片轨三段都取自镜头组 1 的 V1：0–1、1.5–3、0.5–2，共 4 秒，切点在 1.0 与 2.5 秒。 */
 const seedFilm = (music?: Record<string, unknown>) =>
   window.localStorage.setItem(
     filmDraftStorageKey(CONVERSATION),
@@ -903,7 +887,6 @@ describe('素材区预览与整片播放头', () => {
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${COMPOSITE_1}.mp4`)
     expect(screen.queryByRole('slider', { name: '选区结尾' })).toBeNull()
-    // 素材区末尾的入口与轨道头换版走同一条选择逻辑，不会留下上一个版本的预览。
     await addMaterial(user, '镜头组 1 生成 A 原片')
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
@@ -915,7 +898,6 @@ describe('素材区预览与整片播放头', () => {
   })
 })
 
-/** 生成的音乐：一条音频记录。 */
 const musicJob = (overrides: Partial<GenerationJob> = {}) =>
   makeGenerationJob({
     id: MUSIC_JOB,
@@ -936,7 +918,6 @@ const openGeneratePanel = async (user: ReturnType<typeof userEvent.setup>) => {
 
 describe('WholeFilmEditor 音乐', () => {
   beforeEach(() => {
-    // 每分钟 120 拍（每拍 0.5 秒），第一拍在 0 秒。
     vi.mocked(guess).mockResolvedValue({ bpm: 120, offset: 0 })
     server.use(http.get(MUSIC_URL, () => HttpResponse.arrayBuffer(new ArrayBuffer(8))))
   })
@@ -1049,12 +1030,10 @@ describe('WholeFilmEditor 音乐', () => {
     expect(await screen.findByText('音乐生成中，完成后自动对齐')).toBeVisible()
     expect(screen.queryByRole('dialog', { name: '生成音乐' })).toBeNull()
 
-    // 状态跳转帧到了：记录完成，重拉后放上并对齐。
     Object.assign(music[0] ?? {}, { status: 'completed', outputUrl: MUSIC_URL, durationMs: 20_000 })
     await act(() =>
       queryClient.invalidateQueries({ queryKey: storyboardQueryKeys.conversation(CONVERSATION) }),
     )
-    // 起点 1.0：切点 1.0 落在小节第一拍（2.0）、2.5 落在拍上（3.5），3 分；同分里最早。
     expect(
       await screen.findByRole('button', { name: '音乐：生成的音乐，使用 1.0–5.0 秒' }),
     ).toBeVisible()
@@ -1087,8 +1066,16 @@ describe('WholeFilmEditor 音乐', () => {
 
     const panel = await openGeneratePanel(user)
     const text = await within(panel).findByRole('textbox', { name: '音乐描述' })
-    expect(within(panel).getByRole('button', { name: '生成' })).toBeDisabled()
+    const generate = within(panel).getByRole('button', { name: '生成' })
+    expect(generate).toHaveAttribute('aria-disabled', 'true')
+    text.focus()
+    await user.tab()
+    expect(generate).toHaveFocus()
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/^尚未填写音乐描述，无法生成；/)
+    await user.keyboard('{Enter}')
+    expect(body).toBeUndefined()
     await user.type(text, ' 夏天海边的轻快吉他 ')
+    expect(generate).not.toHaveAttribute('aria-disabled')
     await user.click(within(panel).getByRole('button', { name: '生成' }))
 
     await waitFor(() => expect(body?.prompt).toBe(' 夏天海边的轻快吉他 '))
@@ -1175,7 +1162,6 @@ describe('WholeFilmEditor 音乐', () => {
     await screen.findByRole('button', { name: '音乐：夏日节拍.mp3，使用 1.0–5.0 秒' })
     stubLayout()
 
-    // 比例按 20 秒排，200px 宽：每秒 10px。往左拖 1.4 秒，整首往左滑，换用更靠后的一截，保留 2.4 秒，不强制吸附。
     fireEvent.pointerDown(musicClip(), { pointerId: 1, button: 0, clientX: 20 })
     fireEvent.pointerMove(musicClip(), { pointerId: 1, clientX: 6 })
     expect(screen.getByText('使用 2.4–6.4 秒 · 落在拍上的切点 0/2')).toBeVisible()
@@ -1188,7 +1174,6 @@ describe('WholeFilmEditor 音乐', () => {
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
     expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 1.5–5.5 秒')
 
-    // 拖动是一步，能撤回。
     await user.click(screen.getByRole('button', { name: '撤销' }))
     expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 2.5–6.5 秒')
     await user.click(screen.getByRole('button', { name: '自动对齐' }))
@@ -1204,7 +1189,7 @@ describe('WholeFilmEditor 音乐', () => {
 
     expect(await screen.findByText('音乐比成片短 2.0 秒')).toBeVisible()
     expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 0.0–2.0 秒')
-    expect(await composeBlockedBy(user)).toBe('音乐比成片短 2.0 秒，无法合成；请重新生成或换一首')
+    expect(await composeBlockedBy(user)).toMatch(/^音乐比成片短 2\.0 秒，无法合成；/)
     expect(
       screen.getByText('上传的音乐只有 2.0 秒，铺不满第一段开头到最后一段结尾，不循环补齐'),
     ).toBeVisible()
@@ -1219,9 +1204,7 @@ describe('WholeFilmEditor 音乐', () => {
     serve(VIDEOS, [])
     await renderEditor()
 
-    expect(
-      await screen.findByText('这首音乐没有检测到拍子，从 0 秒起使用，未按切点对齐'),
-    ).toBeVisible()
+    expect(await screen.findByText('该音乐未检测到拍子，从 0 秒起使用，未按切点对齐')).toBeVisible()
     expect(musicClip()).toHaveAccessibleName('音乐：夏日节拍.mp3，使用 0.0–4.0 秒')
   })
 
@@ -1266,7 +1249,7 @@ describe('WholeFilmEditor 音乐', () => {
     const audio = stubWebAudio({ duration: 20 })
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-    // 三段同一个来源：播放器跳到哪，读回来就是哪（jsdom 不加载媒体）。
+    // jsdom 不加载媒体：播放器的 currentTime 写入什么就读回什么。
     const times = new WeakMap<HTMLMediaElement, number>()
     vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
     vi.spyOn(HTMLMediaElement.prototype, 'currentTime', 'get').mockImplementation(function (
@@ -1281,7 +1264,6 @@ describe('WholeFilmEditor 音乐', () => {
       times.set(this, value)
     })
     seedFilm(UPLOADED)
-    // 第 1 段（素材 0–1 秒）里有一句口播：素材 0.2–0.8 秒，即整片 0.2–0.8 秒。
     serve(VIDEOS, [
       subtitle(TAKE_1, { sentences: [{ startMs: 200, endMs: 800, text: '你好', speaker: 0 }] }),
     ])
@@ -1290,7 +1272,6 @@ describe('WholeFilmEditor 音乐', () => {
     await screen.findByRole('button', { name: '音乐：夏日节拍.mp3，使用 1.0–5.0 秒' })
     await screen.findByRole('button', { name: '第 1 条字幕：你好' })
 
-    // 混音已经包含音乐起点与口播压低；播放器只按整片的 2 秒处起播，剩 2 秒。
     fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
       target: { value: '2' },
     })
@@ -1298,14 +1279,11 @@ describe('WholeFilmEditor 音乐', () => {
     await user.click(screen.getByRole('button', { name: '播放' }))
     await waitFor(() => expect(audio.played).toHaveLength(1))
     expect(audio.played[0]).toMatchObject({ when: 0, offset: 2, duration: 2 })
-    // 播放器默认静音，音乐跟着静音；开声音后一起出声。
     expect(audio.master.at(-1)?.value).toBe(0)
     await user.click(screen.getByRole('button', { name: '开启声音' }))
     expect(audio.master.at(-1)?.value).toBe(1)
-    // 原视频始终静音，防止原声和预混音重复播放。
     expect(screen.getByLabelText('视频播放器')).toHaveProperty('muted', true)
 
-    // 调音后仍在播放，新混音从当前播放头换入，无需再按播放。
     fireEvent.change(screen.getByRole('slider', { name: '配乐音量' }), { target: { value: '35' } })
     expect(screen.getByRole('button', { name: '暂停' })).toBeEnabled()
     await waitFor(() => expect(audio.played).toHaveLength(2))
@@ -1434,6 +1412,34 @@ describe('整片字幕字体', () => {
       await waitFor(() => expect(body).toMatchObject({ fontId: font.id }))
     } finally {
       fontFile.restore()
+    }
+  })
+
+  it('系统默认字体在正文原画幅上按烧录的估宽折行与定位', async () => {
+    const sample = golden.captions.find((item) => item.width === 720 && item.height === 1280)
+    if (sample === undefined) throw new Error('金样缺少 720×1280 的字幕')
+    seedFilm()
+    serve(VIDEOS, [
+      subtitle(TAKE_1, { sentences: [{ startMs: 0, endMs: 1000, text: sample.text, speaker: 0 }] }),
+    ])
+    const restoreMedia = stubMediaDurations({ [`https://example.com/${TAKE_1}.mp4`]: 4 })
+    vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(sample.width)
+    vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(sample.height)
+    try {
+      await renderEditor()
+      await timeline()
+      const preview = screen.getByLabelText('视频预览')
+      await waitFor(() =>
+        expect(within(preview).getByTestId('preview-caption').textContent).toBe(
+          sample.lines.join('\n'),
+        ),
+      )
+      expect(within(preview).getByTestId('preview-caption')).toHaveStyle({
+        bottom: `${(sample.marginBottom / sample.width) * 100}cqw`,
+        left: `${(sample.marginSide / sample.width) * 100}cqw`,
+      })
+    } finally {
+      restoreMedia()
     }
   })
 

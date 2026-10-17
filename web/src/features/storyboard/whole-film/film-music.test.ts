@@ -19,7 +19,6 @@ import {
 } from './film-music'
 import type { FilmSubtitle } from './film-subtitles'
 
-/** 每分钟 120 拍（每拍 0.5 秒），第一拍在 `offset`。 */
 const song = (duration: number, offset = 0): Song => ({
   duration,
   grid: { bpm: 120, interval: 0.5, offset },
@@ -55,7 +54,6 @@ describe('拍点', () => {
   })
 })
 
-/** 依次放进几段，各段长 `lengths` 秒。 */
 const filmOf = (...lengths: number[]): FilmState =>
   lengths.reduce(
     (state, length, at) =>
@@ -106,7 +104,6 @@ describe('对齐', () => {
   })
 
   it('起点加视频段总长要放得下：最好的起点超出整首时只在放得下的里面选', () => {
-    // 切点 3.0：起点 1.0 能让它落在小节第一拍（4.0），但 1.0 + 4 > 4.8；放得下的 0 与 0.5 都只得 1 分，取最早的。
     expect(chooseStart(song(4.8), 4, [3])).toBe(0)
     expect(chooseStart(song(20), 4, [3])).toBe(1)
   })
@@ -147,7 +144,6 @@ describe('对齐', () => {
   })
 })
 
-/** 字幕轨上的一条。 */
 const subtitle = (kind: FilmSubtitle['kind'], at: number, end: number): FilmSubtitle => ({
   key: `${kind}${at}`,
   kind,
@@ -159,11 +155,11 @@ const subtitle = (kind: FilmSubtitle['kind'], at: number, end: number): FilmSubt
 })
 
 describe('音量曲线', () => {
-  it('口播时段只取识别出的句子，手动加的字幕不算', () => {
+  it('口播时段只取识别出的句子，从已合成版本恢复的字幕不算', () => {
     expect(
       speechSpansOf([
         subtitle('sentence', 1, 2),
-        subtitle('manual', 3, 4),
+        subtitle('snapshot', 3, 4),
         subtitle('sentence', 5, 6),
       ]),
     ).toEqual([
@@ -221,7 +217,6 @@ describe('音量曲线', () => {
       ],
       4,
     )
-    // 开头渐变从 -0.2 秒起，0 秒处已走完三分之二。
     expect(curve[0]).toEqual({
       atMs: 0,
       gain:

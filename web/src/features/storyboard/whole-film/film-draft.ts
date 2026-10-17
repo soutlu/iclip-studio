@@ -2,16 +2,14 @@ import { z } from 'zod'
 import { zMusicGainPoint } from '@/shared/api/generated/zod.gen'
 import { roundToMs, type Clip } from '../editing/clip'
 import type { GainPoint } from './film-music'
-
-// 上限见 ADR-0003。
-export const MAX_FILM_SECONDS = 120
-export const MAX_FILM_SEGMENTS = 100
-export const MAX_FILM_SUBTITLES = 500
-export const MAX_MUSIC_GAIN_POINTS = 500
+import {
+  MAX_FILM_SECONDS,
+  MAX_FILM_SEGMENTS,
+  MAX_MUSIC_GAIN_POINTS,
+  MAX_VOLUME,
+} from './film-limits'
 
 export const MIN_SEGMENT_SECONDS = 0.2
-
-export const MANUAL_SUBTITLE_SECONDS = 2
 
 export type FilmSegment = Clip & {
   id: string
@@ -19,18 +17,11 @@ export type FilmSegment = Clip & {
   subtitles?: readonly { id: string; start: number; end: number; text: string }[] | undefined
 }
 
-export type ManualSubtitle = {
-  id: string
-  segmentId: string
-  at: number
-  text: string
-}
-
 export type FilmMusic = (
   | {
       kind: 'upload'
       jobId: string
-      name: string
+      name: string | null
       url: string
       userStart: number | null
       verifyAccess?: boolean | undefined
@@ -43,7 +34,7 @@ export type FilmMusic = (
 
 export type FilmBrand = {
   templateId: string
-  name: string
+  name: string | null
   url: string
   durationMs: number
   width: number
@@ -57,21 +48,20 @@ export type FilmFont = { fontId: string; name: string; url: string }
 export type FilmState = {
   segments: readonly FilmSegment[]
   texts: Readonly<Record<string, string>>
-  manual: readonly ManualSubtitle[]
   music: FilmMusic | null
   intro?: FilmBrand | null
   outro?: FilmBrand | null
   font?: FilmFont | null
 }
 
-export const EMPTY_FILM: FilmState = { segments: [], texts: {}, manual: [], music: null }
+export const EMPTY_FILM: FilmState = { segments: [], texts: {}, music: null }
 
 const clearMusicGain = (state: FilmState): FilmState =>
   state.music?.gain === undefined ? state : { ...state, music: { ...state.music, gain: undefined } }
 
 const checkedVolume = (volume: number): number => {
-  if (!Number.isFinite(volume) || volume < 0 || volume > 2)
-    throw new RangeError('音量必须是 0 到 2 之间的有限数值')
+  if (!Number.isFinite(volume) || volume < 0 || volume > MAX_VOLUME)
+    throw new RangeError(`音量必须是 0 到 ${MAX_VOLUME} 之间的有限数值`)
   return volume
 }
 
@@ -126,11 +116,24 @@ export const insertIndexAt = (segments: readonly FilmSegment[], clock: number): 
 export const insertClockOf = (segments: readonly FilmSegment[], index: number): number =>
   layoutFilm(segments)[index]?.at ?? filmDuration(segments)
 
-export const fitsInFilm = (
+const fitsInFilm = (segments: readonly FilmSegment[], duration: number, reserved: number) =>
+  filmDuration(segments) + roundToMs(duration) + reserved <= MAX_FILM_SECONDS + 1e-9
+
+const seconds = (value: number) => value.toFixed(1)
+
+export const insertBlockedReason = (
   segments: readonly FilmSegment[],
   duration: number,
-  reserved = 0,
-): boolean => filmDuration(segments) + roundToMs(duration) + reserved <= MAX_FILM_SECONDS + 1e-9
+  reserved: number,
+): string | undefined => {
+  if (roundToMs(duration) < MIN_SEGMENT_SECONDS - 1e-9)
+    return `镜头不足 ${MIN_SEGMENT_SECONDS} 秒，无法加入成片；请拖动两端扩大范围`
+  if (segments.length >= MAX_FILM_SEGMENTS)
+    return `片段已达 ${MAX_FILM_SEGMENTS} 段，无法加入成片；请先删减片段`
+  if (!fitsInFilm(segments, duration, reserved))
+    return `整片含片头片尾已有 ${seconds(roundToMs(filmDuration(segments) + reserved))} 秒，再加 ${seconds(duration)} 秒将超过 ${MAX_FILM_SECONDS} 秒，无法加入成片；请先删减成片轨上的片段`
+  return undefined
+}
 
 export const insertSegment = (
   state: FilmState,
@@ -140,11 +143,7 @@ export const insertSegment = (
 ): FilmState | undefined => {
   const start = roundToMs(clip.start)
   const end = roundToMs(clip.end)
-  if (
-    state.segments.length >= MAX_FILM_SEGMENTS ||
-    end - start < MIN_SEGMENT_SECONDS - 1e-9 ||
-    !fitsInFilm(state.segments, end - start, brandDuration(state))
-  )
+  if (insertBlockedReason(state.segments, end - start, brandDuration(state)) !== undefined)
     return undefined
   const segment: FilmSegment = {
     id,
@@ -259,9 +258,6 @@ export const splitAt = (
   return {
     ...clearMusicGain(state),
     segments: state.segments.toSpliced(at, 1, left, right),
-    manual: state.manual.map((item) =>
-      item.segmentId === segment.id && item.at >= time ? { ...item, segmentId: rightId } : item,
-    ),
   }
 }
 
@@ -270,23 +266,12 @@ export const removeSegment = (state: FilmState, id: string): FilmState => {
   return {
     ...clearMusicGain(state),
     segments: state.segments.filter((segment) => segment.id !== id),
-    manual: state.manual.filter((item) => item.segmentId !== id),
   }
 }
 
 export const setSentenceText = (state: FilmState, key: string, text: string): FilmState => ({
   ...state,
   texts: { ...state.texts, [key]: text },
-})
-
-export const setManualText = (state: FilmState, id: string, text: string): FilmState => ({
-  ...state,
-  manual: state.manual.map((item) => (item.id === id ? { ...item, text } : item)),
-})
-
-export const removeManualSubtitle = (state: FilmState, id: string): FilmState => ({
-  ...state,
-  manual: state.manual.filter((item) => item.id !== id),
 })
 
 export const setMusic = (state: FilmState, music: FilmMusic | null): FilmState => ({
@@ -325,7 +310,7 @@ export const putLane = (
 
 const STORAGE_VERSION = 2
 
-const zVolume = z.number().min(0).max(2).optional()
+export const zVolume = z.number().min(0).max(MAX_VOLUME).optional()
 
 export const zFilmMusicGain = z
   .array(zMusicGainPoint)
@@ -357,7 +342,7 @@ const zStoredSegment = z
 
 export const zFilmBrand = z.object({
   templateId: z.string().min(1),
-  name: z.string(),
+  name: z.string().nullable(),
   url: z.string().min(1),
   durationMs: z.number().int().positive(),
   width: z.number().positive(),
@@ -378,21 +363,13 @@ const zStoredFilm = z.object({
   font: zFilmFont.nullish(),
   segments: z.array(zStoredSegment),
   texts: z.record(z.string(), z.string()),
-  manual: z.array(
-    z.object({
-      id: z.string().min(1),
-      segmentId: z.string().min(1),
-      at: z.number().nonnegative(),
-      text: z.string(),
-    }),
-  ),
   lanes: z.array(z.object({ jobId: z.string().min(1) })),
   music: z
     .discriminatedUnion('kind', [
       z.object({
         kind: z.literal('upload'),
         jobId: z.string().min(1),
-        name: z.string(),
+        name: z.string().nullable(),
         verifyAccess: z.boolean().optional(),
         url: z.string().min(1),
         userStart: z.number().nonnegative().nullable(),
@@ -425,12 +402,11 @@ export const parseStoredFilm = (
   }
   const parsed = zStoredFilm.safeParse(json)
   if (!parsed.success) return undefined
-  const { segments, texts, manual, lanes, music, intro, outro, font } = parsed.data
+  const { segments, texts, lanes, music, intro, outro, font } = parsed.data
   return {
     film: {
       segments,
       texts,
-      manual,
       music: music ?? null,
       ...(intro === undefined ? {} : { intro }),
       ...(outro === undefined ? {} : { outro }),
@@ -448,7 +424,6 @@ export const serializeStoredFilm = ({ film, lanes }: StoredFilm): string =>
     version: STORAGE_VERSION,
     segments: film.segments,
     texts: film.texts,
-    manual: film.manual,
     lanes,
     music: film.music,
     intro: film.intro,

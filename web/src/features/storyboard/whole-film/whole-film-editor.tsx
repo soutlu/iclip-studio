@@ -24,7 +24,7 @@ import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useMediaDurations } from '../editing/use-media-durations'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
-import { measureCaptionLayout } from './caption-layout'
+import { defaultCaptionLayout, measureCaptionLayout, type CaptionLayout } from './caption-layout'
 import { FilmCaption } from './film-caption'
 import {
   brandDuration,
@@ -34,28 +34,25 @@ import {
   setSegmentVolume,
   setMusicVolume,
   resetMusicStart,
-  MAX_FILM_SEGMENTS,
-  MIN_SEGMENT_SECONDS,
   canSplitAt,
   EMPTY_FILM,
   filmDuration,
-  fitsInFilm,
+  insertBlockedReason,
   insertClockOf,
   insertSegment,
-  MAX_FILM_SECONDS,
   moveSegment,
   putLane,
-  removeManualSubtitle,
   removeSegment,
   segmentDuration,
-  setManualText,
   setSentenceText,
   splitAt,
   trimSegment,
   type FilmState,
 } from './film-draft'
 import { BrandCard, MusicCard, SegmentCard, SubtitleCard } from './film-card'
+import { MAX_FILM_SECONDS, MAX_FILM_SEGMENTS } from './film-limits'
 import { MusicMenu } from './film-music-menu'
+import { composableMusic, isMusicPending } from './film-music-status'
 import {
   materialCatalog,
   materialName,
@@ -84,6 +81,7 @@ import { FilmTimeline, type FilmSelection, type LaneView, type MaterialPick } fr
 import { draftFromVersion, firstSourceOf, wholeFilmVersions } from './film-versions'
 import { useFilmDraft, type DraftSeed } from './use-film-draft'
 import { useFilmMusic } from './use-film-music'
+import { useFilmPreviewAudio } from './use-film-preview-audio'
 import { useKeyframeIndexes } from './use-keyframe-indexes'
 import { FilmSoundControls } from './film-sound-controls'
 import {
@@ -110,7 +108,7 @@ const DOWNLOAD_CLASS =
 
 type Props = {
   conversationId: string
-  task: ConversationTask | undefined
+  task: ConversationTask
   onClose: () => void
 }
 
@@ -124,7 +122,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const anchorRef = useRef<HTMLElement>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [playback, setPlayback] = useState({ playing: false, muted: true })
-  // 模态弹窗之外的浮层拿不到焦点，生成面板挂在编辑器里。
+  // Radix 模态弹窗把焦点锁在弹窗内，挂到弹窗外的浮层拿不到焦点，生成面板要挂在编辑器里。
   const [editorElement, setEditorElement] = useState<HTMLElement | null>(null)
   const [selection, setSelection] = useState<FilmSelection>()
   const [pick, setPick] = useState<MaterialPick>()
@@ -148,11 +146,10 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const [notice, setNotice] = useState<string | null>(null)
   const noticeStorageFailure = useStorageFailureNotice(STORAGE_FAILURE, setNotice)
 
-  const taskId = task?.kind === 'ready' ? task.taskId : undefined
-  const taskState = task?.kind ?? 'loading'
+  const taskId = task.kind === 'ready' ? task.taskId : undefined
   const taskBlocked =
-    taskState === 'failed'
-      ? '任务信息读取失败，暂时无法提交；请点击「重试」'
+    task.kind === 'failed'
+      ? '任务信息读取失败，无法提交；请点击「重试」'
       : '任务信息读取中，暂时无法提交'
 
   const catalog = useMemo(
@@ -175,11 +172,14 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
   const seed = (): DraftSeed => {
     if (newestVersion === undefined) return { kind: 'blank' }
     if (musicRecords.data === undefined) return { kind: 'records-loading' }
+    if (templatesQuery.isPending) return { kind: 'records-loading' }
+    const templates = templatesQuery.data?.items ?? []
     return {
       kind: 'version',
       label: newestVersion.label,
       stored: draftFromVersion(newestVersion.job, {
         takeOf: (jobId) => materialOf(jobId)?.takeId,
+        templateName: (templateId) => templates.find((item) => item.id === templateId)?.name,
         generatedMusic: new Set(musicRecords.data.map((job) => job.id)),
         newId: () => crypto.randomUUID(),
       }),
@@ -283,17 +283,17 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         }
       : undefined,
   )
-  const customCaptionLayout = useMemo(
-    () =>
-      captionFont === undefined || frame.data === undefined
-        ? undefined
-        : measureCaptionLayout(captionTexts, frame.data, captionFont),
-    [captionTexts, frame.data, captionFont],
-  )
+  const systemFont = previewFont.kind === 'system'
+  const captionLayout = useMemo((): CaptionLayout | undefined => {
+    if (frame.data === undefined) return undefined
+    if (captionFont !== undefined)
+      return measureCaptionLayout(captionTexts, frame.data, captionFont)
+    return systemFont ? defaultCaptionLayout(captionTexts, frame.data) : undefined
+  }, [captionTexts, frame.data, captionFont, systemFont])
   const rawCaption = captionAt(burned, bodyTime)
   const caption =
-    customCaptionLayout?.kind === 'ready' && rawCaption !== undefined
-      ? customCaptionLayout.texts.get(rawCaption)
+    captionLayout?.kind === 'ready' && rawCaption !== undefined
+      ? captionLayout.texts.get(rawCaption)
       : rawCaption
   const fontBlocked =
     film.font == null
@@ -315,8 +315,8 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                 ? '正文画幅读取失败，无法排版字幕；请重试'
                 : frame.data === undefined
                   ? '正在读取正文画幅以排版字幕…'
-                  : customCaptionLayout?.kind === 'failed'
-                    ? customCaptionLayout.message
+                  : captionLayout?.kind === 'failed'
+                    ? captionLayout.message
                     : undefined
 
   const draftAudioSegments = [
@@ -383,8 +383,8 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       : viewedFailed !== undefined
         ? '整片合成失败'
         : viewedDone !== undefined
-          ? '这一版的时长读取失败，暂时无法预览'
-          : '成片轨还是空的'
+          ? '该版本时长读取失败，暂时无法预览'
+          : '成片轨暂无片段'
 
   const selectedIndex =
     selection?.kind === 'segment'
@@ -428,13 +428,18 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     film,
     total,
     subtitles: speechProjection.subtitles,
-    previewSegments: draftAudioSegments,
-    bodyStartSeconds: bodyStart,
     apply,
     onNotice: setNotice,
+  })
+  const previewAudio = useFilmPreviewAudio({
+    segments: draftAudioSegments,
+    music: music.previewMusic,
+    waiting: isMusicPending(music.status),
+    bodyStartSeconds: bodyStart,
+    bodyDuration: total,
     playback:
       viewingDraft && !previewingMaterial ? playback : { playing: false, muted: playback.muted },
-    currentTime,
+    clock: currentTime,
   })
   const musicSelected = selection?.kind === 'music' && music.card !== undefined
   const selectedBrand = selection?.kind === 'brand' ? film[selection.position] : undefined
@@ -449,18 +454,9 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const insert = (target: MaterialPick, index: number) => {
     const duration = segmentDuration(target)
-    if (duration < MIN_SEGMENT_SECONDS) {
-      setNotice(`镜头不足 ${MIN_SEGMENT_SECONDS} 秒，无法加入成片；请拖动两端扩大范围`)
-      return
-    }
-    if (segments.length >= MAX_FILM_SEGMENTS) {
-      setNotice(`片段最多 ${MAX_FILM_SEGMENTS} 段，无法继续插入；请先删减片段`)
-      return
-    }
-    if (!fitsInFilm(segments, duration, brandDuration(film))) {
-      setNotice(
-        `整片含片头片尾已有 ${seconds(fullTotal)} 秒，放不下这 ${seconds(duration)} 秒；请先删减成片轨上的段`,
-      )
+    const blocked = insertBlockedReason(segments, duration, brandDuration(film))
+    if (blocked !== undefined) {
+      setNotice(blocked)
       return
     }
     const next = insertSegment(film, target, index, crypto.randomUUID())
@@ -505,7 +501,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     if (material.jobId === view.material.jobId) return
     addMaterial(material)
     setNotice(
-      `已换成 ${material.version}，之后从这条素材轨挑的段用 ${material.version}；成片轨上已有的段不变`,
+      `已换成 ${material.version}，之后从该素材轨选取的片段使用 ${material.version}；成片轨上已有的片段不变`,
     )
   }
 
@@ -541,7 +537,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           ),
     reason:
       segments.length === 0
-        ? '请先在成片轨放入正文视频，再选择片头片尾'
+        ? '成片轨暂无正文视频，无法选择片头片尾；请先放入正文视频'
         : frame.isError
           ? '正文画幅读取失败，请重试'
           : frame.data === undefined
@@ -563,7 +559,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       const next = setBrand(film, position, brandOf(template))
       if (wholeFilmDuration(next) > MAX_FILM_SECONDS) {
         setNotice(
-          `加入${position === 'intro' ? '片头' : '片尾'}后整片超过 ${MAX_FILM_SECONDS} 秒；请先删减内容`,
+          `加入${position === 'intro' ? '片头' : '片尾'}后整片超过 ${MAX_FILM_SECONDS} 秒，无法加入；请先删减内容`,
         )
         return
       }
@@ -583,17 +579,17 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
     submittedSubtitleCount: burned.length,
     templateBlocked,
     fontBlocked,
-    task: taskState,
+    task: task.kind,
     subtitleRecords:
       subtitlesQuery.data !== undefined ? 'ready' : subtitlesQuery.isError ? 'failed' : 'loading',
     recognizing: subtitleStatuses.filter((status) => status.kind === 'running').length,
-    music: music.readiness,
+    music: music.status,
     subtitles,
   })
 
   const compose = async () => {
     if (composeBlocked !== undefined || taskId === undefined) return
-    const { readiness } = music
+    const plan = composableMusic(music.status)
     setSubmitting(true)
     setComposeError(null)
     setNotice(null)
@@ -604,7 +600,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           taskId,
           film,
           subtitles: burned,
-          music: readiness.kind === 'ready' ? readiness.plan : null,
+          music: plan,
         }),
       )
       seedWholeFilmJob(queryClient, conversationId, job)
@@ -787,7 +783,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
           setSelection(next)
           if (next !== undefined) setPick(undefined)
         }}
-        music={music.view}
+        music={music.status}
         musicAdd={<MusicMenu container={editorElement} {...music.menu} />}
         onMoveMusic={music.move}
         onRemoveMusic={() => {
@@ -864,29 +860,17 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
       anchorRef={anchorRef}
       key={selectedSubtitle.key}
       onClose={() => setSelection(undefined)}
-      onRemove={
-        selectedSubtitle.kind === 'manual'
-          ? () => {
-              apply(removeManualSubtitle(film, selectedSubtitle.textKey))
-              setSelection(undefined)
-            }
-          : undefined
-      }
       onText={(text) =>
-        apply(
-          selectedSubtitle.kind === 'manual'
-            ? setManualText(film, selectedSubtitle.textKey, text)
-            : setSentenceText(film, selectedSubtitle.textKey, text),
-          selectedSubtitle.textKey,
-        )
+        apply(setSentenceText(film, selectedSubtitle.textKey, text), selectedSubtitle.textKey)
+      }
+      origin={
+        selectedSubtitle.kind === 'snapshot'
+          ? '从已合成版本恢复'
+          : subtitleMaterial === undefined
+            ? '自动识别的口播'
+            : `来自${materialName(subtitleMaterial)} 的口播`
       }
       position={subtitleIndex + 1}
-      restored={selectedSubtitle.kind === 'snapshot'}
-      source={
-        selectedSubtitle.kind !== 'sentence' || subtitleMaterial === undefined
-          ? undefined
-          : materialName(subtitleMaterial)
-      }
       text={selectedSubtitle.text}
     />
   ) : musicSelected && music.card !== undefined ? (
@@ -950,7 +934,6 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
         }}
         size="md"
       >
-        {/* 提交中不用 `loading`：它落原生 disabled，悬停就说不出原因了。 */}
         {submitting ? (
           <Icon className="motion-safe:animate-spin" decorative name="loading" size="md" />
         ) : (
@@ -986,13 +969,9 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
 
   const showingDraftFilm = viewingDraft && !previewingMaterial
   const captionPresentation =
-    showingDraftFilm && customCaptionLayout?.kind === 'ready'
-      ? customCaptionLayout.presentation
-      : undefined
+    showingDraftFilm && captionLayout?.kind === 'ready' ? captionLayout.presentation : undefined
   const captionText =
-    showingDraftFilm &&
-    caption !== undefined &&
-    (previewFont.kind === 'system' || customCaptionLayout?.kind === 'ready')
+    showingDraftFilm && caption !== undefined && (systemFont || captionLayout?.kind === 'ready')
       ? normalizeCaptionText(caption)
       : undefined
 
@@ -1050,27 +1029,27 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
               showingDraftFilm
                 ? {
                     blocked:
-                      music.previewAudio.kind === 'ready'
+                      previewAudio.state.kind === 'ready'
                         ? undefined
-                        : music.previewAudio.kind === 'loading'
+                        : previewAudio.state.kind === 'loading'
                           ? '正在准备预览声音…'
-                          : music.previewAudio.message,
+                          : previewAudio.state.message,
                   }
                 : undefined
             }
             footnote={
               <>
-                {task?.kind === 'failed' ? (
+                {task.kind === 'failed' ? (
                   <InlineAlert
                     action={{ label: '重试', onClick: task.retry }}
                     message="任务信息读取失败，识别字幕、生成音乐与合成暂时无法提交"
                   />
                 ) : null}
                 {composeError === null ? null : <InlineAlert message={composeError} />}
-                {viewingDraft && music.previewAudio.kind === 'failed' ? (
+                {viewingDraft && previewAudio.state.kind === 'failed' ? (
                   <InlineAlert
-                    message={music.previewAudio.message}
-                    action={{ label: '重试', onClick: music.previewAudio.retry }}
+                    message={previewAudio.state.message}
+                    action={{ label: '重试', onClick: previewAudio.state.retry }}
                   />
                 ) : null}
                 {viewingDraft && fontBlocked !== undefined ? (
@@ -1126,7 +1105,7 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
             }
             onPlay={() => {
               setSelection((value) => (value?.kind === 'segment' ? value : undefined))
-              if (showingDraftFilm) music.prime()
+              if (showingDraftFilm) previewAudio.prime()
             }}
             onPlaybackChange={setPlayback}
             onTime={previewingMaterial ? setMaterialTime : setCurrentTime}
@@ -1151,16 +1130,16 @@ export function WholeFilmEditor({ conversationId, task, onClose }: Props) {
                   sourceVolume={selectedSegment?.volume ?? 1}
                   musicVolume={film.music?.volume ?? 1}
                   sourceDisabled={!editable || selectedSegment === undefined}
-                  musicDisabled={!editable || music.view.kind !== 'ready'}
+                  musicDisabled={!editable || music.status.kind !== 'ready'}
                   alignmentBlocked={
                     !editable
-                      ? '请返回「未合成」调整配乐'
-                      : music.view.kind !== 'ready'
-                        ? '请先添加可用的配乐'
-                        : music.view.placement.shortBy > 0
-                          ? '配乐时长不足，请更换配乐'
-                          : music.view.song.grid === null
-                            ? '未检测到拍点，请拖动音乐调整起点'
+                      ? '正在查看已合成版本，无法调整配乐；请返回「未合成」'
+                      : music.status.kind !== 'ready'
+                        ? '暂无可用配乐，无法自动对齐；请先添加配乐'
+                        : music.status.placement.shortBy > 0
+                          ? '配乐时长不足，无法自动对齐；请更换配乐'
+                          : music.status.song.grid === null
+                            ? '未检测到拍点，无法自动对齐；请拖动音乐调整起点'
                             : undefined
                   }
                   onSourceVolume={(volume, edit) => {

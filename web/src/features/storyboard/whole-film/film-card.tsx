@@ -1,6 +1,3 @@
-/** 整片编辑器里选中东西时弹在舞台上的小卡：与 AI 改段卡同位置、同外观，水平对准时间线上的选中项，
- * 底边小尖角指向它。段卡只说来源与时长；字幕卡只能改字（手动加的还能删）；音乐卡说用了哪一段与对齐结果。 */
-
 import {
   useEffect,
   useEffectEvent,
@@ -14,15 +11,12 @@ import { Icon } from '@/shared/icons'
 import { Button, IconButton } from '@/shared/ui/button'
 import { placeCard } from '../editing/card-placement'
 import type { BrandPosition, FilmBrand } from './film-draft'
+import { MAX_SUBTITLE_CHARS } from './film-limits'
 import { BrandMenu, type BrandMenuProps } from './film-menus'
-import { MAX_SUBTITLE_CHARS } from './film-submit'
 
 type FilmCardProps = {
-  /** 时间线上选中的那一项，卡对准它的中线；不在时卡留在原处。 */
   anchorRef: RefObject<HTMLElement | null>
-  /** 可访问名，也是卡的区域名。 */
   label: string
-  /** 卡头左边的小画面或图标。 */
   leading: ReactNode
   title: string
   detail: string
@@ -35,7 +29,6 @@ function FilmCard({ anchorRef, label, leading, title, detail, onClose, children 
 
   const place = useEffectEvent(() => {
     const card = cardRef.current
-    // 短横屏的舞台很窄，卡固定在对话框右下角，不能继续套用舞台内的横坐标。
     if (card !== null && getComputedStyle(card).position === 'fixed') {
       card.style.removeProperty('left')
       card.style.removeProperty('--card-notch')
@@ -55,10 +48,8 @@ function FilmCard({ anchorRef, label, leading, title, detail, onClose, children 
     card.style.setProperty('--card-notch', `${notch}px`)
   })
 
-  // 每次渲染后重摆：选中项挪了（裁剪、换序、播放头带着走）都要跟上。
   useLayoutEffect(() => place())
 
-  // 舞台变大小、时间线横向滚动（窄屏）时重摆。
   useEffect(() => {
     const card = cardRef.current
     const stage = card?.offsetParent
@@ -92,7 +83,6 @@ function FilmCard({ anchorRef, label, leading, title, detail, onClose, children 
   )
 }
 
-/** 卡头那一帧；截不到图时露出中性底色。 */
 function Frame({ src }: { src: string | undefined }) {
   const [failed, setFailed] = useState<string>()
   return src === undefined || failed === src ? (
@@ -108,7 +98,6 @@ function Frame({ src }: { src: string | undefined }) {
   )
 }
 
-/** 选中成片轨上的一段：第几段、出自哪一版、取了素材的哪一截。声音在播放条下调整。 */
 export function SegmentCard({
   anchorRef,
   position,
@@ -119,9 +108,7 @@ export function SegmentCard({
   onClose,
 }: {
   anchorRef: RefObject<HTMLElement | null>
-  /** 第几段，从 1 起。 */
   position: number
-  /** 出处：镜头组 2 · V3。 */
   source: string
   start: number
   end: number
@@ -140,7 +127,6 @@ export function SegmentCard({
   )
 }
 
-/** 选中音乐轨上的音乐：用了整首的哪一段、拍子与对齐结果；生成的能重新生成，都能删。 */
 export function MusicCard({
   anchorRef,
   title,
@@ -151,13 +137,9 @@ export function MusicCard({
   onClose,
 }: {
   anchorRef: RefObject<HTMLElement | null>
-  /** 上传的文件名，或「生成的音乐」。 */
   title: string
-  /** 使用 a–b 秒 · 整首 x 秒。 */
   detail: string
-  /** 拍子与对齐，音乐太短时另起一行。 */
   lines: readonly string[]
-  /** 生成的音乐才有；正在提交时不给。 */
   onRegenerate: (() => void) | undefined
   onRemove: () => void
   onClose: () => void
@@ -194,35 +176,25 @@ export function MusicCard({
   )
 }
 
-/** 选中字幕轨上的一条：只能改字；识别出的说来自哪一版的口播，手动加的另能删。 */
 export function SubtitleCard({
   anchorRef,
   position,
-  source,
-  restored = false,
+  origin,
   text,
   onText,
-  onRemove,
   onClose,
 }: {
   anchorRef: RefObject<HTMLElement | null>
-  /** 第几条，从 1 起。 */
   position: number
-  /** 识别出的：来自哪一版（镜头组 1 · V2）；手动加的没有。 */
-  source: string | undefined
-  restored?: boolean
+  origin: string
   text: string
   onText: (text: string) => void
-  /** 手动加的才能删。 */
-  onRemove: (() => void) | undefined
   onClose: () => void
 }) {
   return (
     <FilmCard
       anchorRef={anchorRef}
-      detail={
-        restored ? '从已合成版本恢复' : source === undefined ? '手动添加' : `来自${source} 的口播`
-      }
+      detail={origin}
       label="选中的字幕"
       leading={
         <span className="film-card-icon">
@@ -241,13 +213,6 @@ export function SubtitleCard({
         rows={2}
         value={text}
       />
-      {onRemove === undefined ? null : (
-        <div className="film-card-actions">
-          <Button leadingIcon="delete" onClick={onRemove} size="md" variant="ghost">
-            删除
-          </Button>
-        </div>
-      )}
     </FilmCard>
   )
 }
@@ -271,7 +236,7 @@ export function BrandCard({
       anchorRef={anchorRef}
       label={`选中的${label}`}
       leading={<Icon decorative name="video" size="md" />}
-      title={template.name}
+      title={template.name ?? `${label}模板`}
       detail={`${label} · ${(template.durationMs / 1000).toFixed(1)} 秒 · 位置固定`}
       onClose={onClose}
     >

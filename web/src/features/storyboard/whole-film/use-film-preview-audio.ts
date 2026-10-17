@@ -1,6 +1,4 @@
-/** 原声和音乐先渲染成一条预览音轨。来源和渲染结果仅在使用时缓存，改动取消旧 worker，关闭释放 PCM。 */
-
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import type { PlaySegment } from '../editing/play-layout'
 import type { FilmAudioMusic, FilmAudioSegment, FilmPcm } from './film-audio'
@@ -10,26 +8,27 @@ import { useMusicPlayback } from './use-music-playback'
 export type PreviewAudioState =
   { kind: 'ready' } | { kind: 'loading' } | { kind: 'failed'; message: string; retry: () => void }
 
+export type PreviewAudioSegment = PlaySegment & { volume?: number }
+
+export type PreviewMusic = {
+  url: string
+  buffer: AudioBuffer
+  start: number
+  curve: readonly GainPoint[]
+  volume: number
+}
+
 type Options = {
   segments: readonly PreviewAudioSegment[]
-  music:
-    | {
-        url: string
-        buffer: AudioBuffer
-        start: number
-        curve: readonly GainPoint[]
-        volume: number
-      }
-    | undefined
+  music: PreviewMusic | undefined
+  waiting: boolean
   bodyStartSeconds: number
   bodyDuration: number
   playback: { playing: boolean; muted: boolean }
   clock: number
 }
 
-export type PreviewAudioSegment = PlaySegment & { volume?: number }
-
-/** Worker 使用 structured clone，避免转移并清空仍被查询缓存/音乐轨使用的来源 PCM。 */
+// Worker 消息用结构化克隆而不转移来源 PCM：查询缓存与音乐轨还在用它们。
 const renderMix = (
   segments: FilmAudioSegment[],
   music: FilmAudioMusic | null,
@@ -81,15 +80,12 @@ const renderMix = (
 export function useFilmPreviewAudio({
   segments,
   music,
+  waiting,
   bodyStartSeconds,
   bodyDuration,
   playback,
   clock,
-}: Options): {
-  state: PreviewAudioState
-  prime: () => void
-} {
-  const queryClient = useQueryClient()
+}: Options): { state: PreviewAudioState; prime: () => void } {
   const urls = [...new Set(segments.map((segment) => segment.mediaUrl))]
   const sources = useQueries({
     queries: urls.map((url) => ({
@@ -101,9 +97,8 @@ export function useFilmPreviewAudio({
       retry: false,
     })),
   })
+  const sourcePcm = new Map(urls.map((url, index) => [url, sources[index]?.data ?? null]))
   const ready = sources.every((source) => source.isSuccess)
-  // 仅音量变化时继续播放上一份混音，Worker 完成后在当前播放头换入新声音。
-  // 素材、起点、剪辑或自动曲线变化时必须等新混音，不能沿用时间线不同的声音。
   const contentKey = JSON.stringify({
     segments: segments.map(({ mediaUrl, start, end }) => ({ mediaUrl, start, end })),
     music: music === undefined ? null : { url: music.url, start: music.start, curve: music.curve },
@@ -111,62 +106,44 @@ export function useFilmPreviewAudio({
     bodyDuration,
     sources: sources.map((source) => source.dataUpdatedAt),
   })
-  const mix = useQuery({
-    queryKey: [
-      'whole-film',
-      'preview-mix',
-      contentKey,
-      segments,
+  const volumes = {
+    segments: segments.map((segment) => segment.volume ?? 1),
+    music: music?.volume ?? null,
+  }
+  const mixCurrent = async (signal: AbortSignal) => {
+    const { pcmOf } = await import('./film-audio-source')
+    const buffer = await renderMix(
+      segments.map((segment) => ({
+        start: segment.start,
+        end: segment.end,
+        volume: segment.volume ?? 1,
+        source: sourcePcm.get(segment.mediaUrl) ?? null,
+      })),
       music === undefined
         ? null
         : {
-            url: music.url,
+            source: pcmOf(music.buffer),
             start: music.start,
             curve: music.curve,
             volume: music.volume,
+            bodyStart: bodyStartSeconds,
+            bodyDuration,
           },
-      bodyStartSeconds,
-      bodyDuration,
-      sources.map((source) => source.dataUpdatedAt),
-    ],
-    queryFn: async ({ signal }) => {
-      const { pcmOf } = await import('./film-audio-source')
-      const mixed = await renderMix(
-        segments.map((segment) => ({
-          start: segment.start,
-          end: segment.end,
-          volume: segment.volume ?? 1,
-          source:
-            queryClient.getQueryData<FilmPcm | null>([
-              'whole-film',
-              'preview-source',
-              segment.mediaUrl,
-            ]) ?? null,
-        })),
-        music === undefined
-          ? null
-          : {
-              source: pcmOf(music.buffer),
-              start: music.start,
-              curve: music.curve,
-              volume: music.volume,
-              bodyStart: bodyStartSeconds,
-              bodyDuration,
-            },
-        signal,
-      )
-      // React Query 禁止 undefined；null 表示各来源都没有音轨，不需要 AudioContext。
-      return mixed ?? null
-    },
+      signal,
+    )
+    return { contentKey, buffer: buffer ?? null }
+  }
+  const mix = useQuery({
+    queryKey: ['whole-film', 'preview-mix', contentKey, volumes],
+    queryFn: ({ signal }) => mixCurrent(signal),
     enabled: ready && segments.length > 0,
-    placeholderData: (previous, previousQuery) =>
-      previousQuery?.queryKey[2] === contentKey ? previous : undefined,
+    placeholderData: (previous) => (previous?.contentKey === contentKey ? previous : undefined),
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
   })
   const failed = sources.find((source) => source.isError)
-  const state: PreviewAudioState =
+  const mixState: PreviewAudioState =
     failed !== undefined
       ? {
           kind: 'failed',
@@ -183,11 +160,11 @@ export function useFilmPreviewAudio({
           ? { kind: 'ready' }
           : { kind: 'loading' }
   const { prime } = useMusicPlayback({
-    buffer: state.kind === 'ready' ? (mix.data ?? undefined) : undefined,
-    total: segments.reduce((sum, segment) => sum + segment.end - segment.start, 0),
+    buffer: mixState.kind === 'ready' ? (mix.data?.buffer ?? undefined) : undefined,
+    duration: segments.reduce((sum, segment) => sum + segment.end - segment.start, 0),
     playing: playback.playing,
     muted: playback.muted,
     clock,
   })
-  return { state, prime }
+  return { state: waiting ? { kind: 'loading' } : mixState, prime }
 }

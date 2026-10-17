@@ -12,26 +12,12 @@ import {
   placeMusic,
   clampStart,
   stepStart,
-  type GainPoint,
-  type MusicPlacement,
   type Song,
 } from './film-music'
-
-export type MusicTrackView =
-  | { kind: 'empty' }
-  | { kind: 'busy'; label: string }
-  | { kind: 'failed'; label: string; onRetry: (() => void) | undefined }
-  | {
-      kind: 'ready'
-      name: string
-      song: Song
-      peaks: AudioPeaks
-      placement: MusicPlacement
-      curve: readonly GainPoint[]
-    }
+import { isMusicPending, musicTrackLabel, type MusicStatus } from './film-music-status'
 
 type MusicTrackProps = {
-  view: MusicTrackView
+  status: MusicStatus
   total: number
   cuts: readonly number[]
   scale: number
@@ -110,7 +96,7 @@ function Envelope({ path }: { path: string }) {
 type Drag = { pointerId: number; originX: number; origin: number; start: number; moved: boolean }
 
 export function MusicTrack({
-  view,
+  status,
   total,
   cuts,
   scale,
@@ -131,13 +117,16 @@ export function MusicTrack({
   const top = row.top + 2
   const height = row.height - 4
 
-  if (view.kind === 'empty') return null
-  if (view.kind === 'busy' || view.kind === 'failed' || total === 0) {
-    const label = view.kind === 'ready' ? `${view.name} · 成片轨上放入视频后自动对齐` : view.label
+  if (status.kind === 'none') return null
+  if (status.kind !== 'ready' || total === 0) {
+    const label =
+      status.kind === 'ready'
+        ? `${status.title} · 成片轨上放入视频后自动对齐`
+        : musicTrackLabel(status)
     return (
       <span
         className="film-music-status"
-        role={view.kind === 'failed' ? 'alert' : 'status'}
+        role={status.kind === 'failed' ? 'alert' : 'status'}
         style={{
           left: 0,
           width: total === 0 ? undefined : `calc(${percent(total)} - 2px)`,
@@ -146,25 +135,25 @@ export function MusicTrack({
         }}
       >
         <span className="film-subtitle-status-text">
-          {view.kind === 'busy' ? (
+          {isMusicPending(status) ? (
             <Icon className="motion-safe:animate-spin" decorative name="loading" size="xs" />
           ) : (
             <Icon decorative name="music" size="xs" />
           )}
           {label}
-          {view.kind === 'failed' && view.onRetry !== undefined ? (
+          {status.kind === 'failed' && status.onRetry !== undefined ? (
             <>
               <i>·</i>
               <button
                 className="film-music-status-action ui-focus"
-                onClick={view.onRetry}
+                onClick={status.onRetry}
                 type="button"
               >
                 重试
               </button>
             </>
           ) : null}
-          {view.kind === 'failed' || view.kind === 'ready' ? (
+          {status.kind === 'failed' || status.kind === 'ready' ? (
             <>
               <i>·</i>
               <button
@@ -181,9 +170,9 @@ export function MusicTrack({
     )
   }
 
-  const { song, peaks, curve, name } = view
+  const { song, peaks, previewCurve: curve, title } = status
   const placement =
-    drag?.moved === true ? placeMusic(song, total, cuts, drag.start) : view.placement
+    drag?.moved === true ? placeMusic(song, total, cuts, drag.start) : status.placement
   const { start } = placement
   const covered = Math.min(total, placement.available)
   const used = `使用 ${seconds(start)}–${seconds(start + covered)} 秒`
@@ -249,7 +238,7 @@ export function MusicTrack({
       ) : null}
       <button
         aria-describedby="film-music-hint"
-        aria-label={`音乐：${name}，${used}`}
+        aria-label={`音乐：${title}，${used}`}
         aria-pressed={selected}
         className={cn('film-music-clip ui-focus', dragging && 'is-window')}
         onClick={click}
@@ -265,7 +254,7 @@ export function MusicTrack({
         <BeatTicks from={start} length={covered} song={song} />
         <span className="film-music-name">
           <Icon decorative name="music" size="xs" />
-          {name}
+          {title}
         </span>
       </button>
       <span className="sr-only" id="film-music-hint">

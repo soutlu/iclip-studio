@@ -1,7 +1,7 @@
-/** 整片的轻量调音条：当前段原声、全片配乐，以及恢复自动选起点。 */
 import { useId, useRef } from 'react'
 import { Button, IconButton } from '@/shared/ui/button'
 import { BlockedReason } from '../components/blocked-reason'
+import { MAX_VOLUME } from './film-limits'
 
 type VolumeControlProps = {
   label: string
@@ -38,7 +38,7 @@ function VolumeControl({ label, volume, disabled, onChange }: VolumeControlProps
         className="film-volume-slider ui-focus"
         disabled={disabled}
         id={id}
-        max={200}
+        max={MAX_VOLUME * 100}
         min={0}
         onChange={(event) => change(Number(event.currentTarget.value) / 100)}
         onKeyDown={(event) => {
