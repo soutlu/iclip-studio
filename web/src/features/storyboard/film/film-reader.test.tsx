@@ -68,12 +68,7 @@ const mount = async ({
   seedMockFilm(CONVERSATION_ID, { complete, model, problems, sharedBody })
   await renderWithProviders(
     <>
-      <FilmReader
-        artifact={artifact}
-        conversationId={CONVERSATION_ID}
-        readOnly={readOnly}
-        task={{ kind: 'loading' }}
-      />
+      <FilmReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
       <Toaster />
     </>,
     { initialPath: '/?shot=1' },

@@ -17,9 +17,6 @@ export const isEditSegment = (job: GenerationJob): job is EditSegment =>
 export const isComposite = (job: GenerationJob): job is GenerationJob & { sourceJobId: string } =>
   job.kind === 'video' && job.operation === 'compose' && job.sourceJobId != null
 
-export const isWholeFilm = (job: GenerationJob): boolean =>
-  job.kind === 'video' && job.operation === 'compose' && job.sourceJobId == null
-
 export const byCreation = (left: GenerationJob, right: GenerationJob): number =>
   Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id)
 
@@ -37,13 +34,3 @@ export const ORIGINAL_LABEL = '原片'
 export const versionLabel = (ordinal: number): string => `V${ordinal}`
 
 export const versionLabelAt = (index: number): string => versionLabel(index + 1)
-
-export const labelLineage = <T extends GenerationJob>(
-  jobs: readonly T[],
-): { job: T; label: string }[] => {
-  let composites = 0
-  return jobs.map((job) => ({
-    job,
-    label: isComposite(job) ? versionLabelAt(composites++) : ORIGINAL_LABEL,
-  }))
-}

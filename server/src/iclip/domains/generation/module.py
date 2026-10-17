@@ -18,7 +18,7 @@ from iclip.domains.generation.image_upstream import (
 from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.ports import BrandTemplates, ConversationLineage
+from iclip.domains.generation.ports import ConversationLineage
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
 from iclip.domains.generation.queue import (
@@ -39,12 +39,7 @@ from iclip.domains.generation.subtitles import SUBTITLE_MODEL, QwenSubtitleProvi
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
 from iclip.domains.identity.public import ActAs
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.fonts import ProbeFont
-from iclip.platform.media.probe import (
-    VideoProfile,
-    probe_remote_duration_ms,
-    probe_remote_video,
-)
+from iclip.platform.media.probe import probe_remote_duration_ms
 from iclip.platform.object_store.store import PublicObjectStore
 
 
@@ -77,8 +72,6 @@ def build_generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
-    brand_templates: BrandTemplates,
-    probe_font: ProbeFont,
     video: VideoProviderSettings,
     video_default_model: str,
     video_allowed_models: tuple[str, ...],
@@ -172,8 +165,6 @@ def build_generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         media_probe=_FetchingProbe(fetch_url),
-        brand_templates=brand_templates,
-        probe_font=probe_font,
         subtitles=subtitle_target,
         music=music_target,
     )
@@ -200,9 +191,6 @@ class _FetchingProbe:
 
     async def duration_ms(self, url: str) -> int:
         return await probe_remote_duration_ms(self.fetch_url(url))
-
-    async def video_profile(self, url: str) -> VideoProfile:
-        return await probe_remote_video(self.fetch_url(url))
 
 
 def _clip_stage_reporter(repo: GenerationRepository) -> ReportStage:

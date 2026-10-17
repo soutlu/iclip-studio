@@ -31,7 +31,7 @@ export const FILM_RUN_PATH = 'film.icrun'
 export const filmQueryKey = (conversationId: string) =>
   [...storyboardQueryKeys.conversation(conversationId), 'film'] as const
 
-/** 读成制作页的工程；整片编辑器取配乐也用这一份缓存。没有工程文件时是 404。 */
+/** 读成制作页的工程。没有工程文件时是 404。 */
 export const filmViewQuery = (conversationId: string) =>
   queryOptions({
     queryFn: ({ signal }) =>

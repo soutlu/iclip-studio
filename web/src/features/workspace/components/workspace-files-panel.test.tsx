@@ -30,12 +30,7 @@ const renderPanel = (initialPath = `/c/${CONVERSATION_ID}`) => {
   })
   return renderWithProviders(
     <WorkbenchRegistryProvider registry={registry}>
-      <WorkspaceFilesPanel
-        artifact={artifact}
-        conversationId={CONVERSATION_ID}
-        readOnly={false}
-        task={{ kind: 'loading' }}
-      />
+      <WorkspaceFilesPanel artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />
     </WorkbenchRegistryProvider>,
     { initialPath },
   )

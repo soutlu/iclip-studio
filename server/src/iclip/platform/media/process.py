@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import shutil
 from pathlib import Path
 from typing import Final
@@ -12,9 +11,6 @@ _STDERR_LIMIT: Final = 400
 
 PROBE_TIMEOUT_SECONDS: Final = 30.0
 ENCODE_TIMEOUT_SECONDS: Final = 900.0
-
-# 滤镜图对冒号、引号、反斜杠、逗号等要转义两层；只收不用转义的字符。
-_SAFE_FILTER_PATH: Final = re.compile(r"[A-Za-z0-9/._+-]+")
 
 
 def ffmpeg_available() -> bool:
@@ -62,26 +58,11 @@ def check_output(dest: Path, *, max_bytes: int) -> None:
         raise MediaError(f"产物 {size} 字节，超过 {max_bytes} 字节的上限: {dest.name}")
 
 
-def filter_path(path: Path) -> str:
-    text = str(path)
-    if not _SAFE_FILTER_PATH.fullmatch(text):
-        raise MediaError(f"路径里有滤镜参数要转义的字符: {text}")
-    return text
-
-
-async def require_subtitles_filter() -> None:
-    listing = await run(["ffmpeg", "-hide_banner", "-filters"], timeout=PROBE_TIMEOUT_SECONDS)
-    if not any(line.split()[1:2] == ["subtitles"] for line in listing.decode().splitlines()):
-        raise MediaError("本机的 ffmpeg 没有 subtitles 滤镜（libass），烧不了字幕")
-
-
 __all__ = [
     "ENCODE_TIMEOUT_SECONDS",
     "PROBE_TIMEOUT_SECONDS",
     "check_output",
     "communicate",
     "ffmpeg_available",
-    "filter_path",
-    "require_subtitles_filter",
     "run",
 ]

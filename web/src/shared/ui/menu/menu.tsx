@@ -78,18 +78,6 @@ export function MenuItem({
   )
 }
 
-const BARE_ITEM_CLASS =
-  // design-allow -- Radix 用 .focus() 移动高亮，浏览器默认框会和 ui-focus 的焦点环叠一起
-  'ui-focus cursor-pointer rounded-sm outline-none select-none'
-
-/** 内容自排的菜单项（如一格缩略图）：只带焦点环与指针，键盘高亮与选中行为同 {@link MenuItem}。 */
-export function MenuBareItem({
-  className,
-  ...props
-}: ComponentPropsWithoutRef<typeof DropdownMenu.Item>) {
-  return <DropdownMenu.Item className={cn(BARE_ITEM_CLASS, className)} {...props} />
-}
-
 /** `ref` 透传到菜单项，调用方可在打开后把焦点放到指定项上。 */
 export function MenuRadioItem({
   children,

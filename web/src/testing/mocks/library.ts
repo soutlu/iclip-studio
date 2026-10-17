@@ -11,10 +11,8 @@ import type {
 // no-inline：地址要进 <video src>，不能被构建内联成 data URI。
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
-import { mockAuthUser, mockGovernor } from './auth-user'
-import { mockConversations } from './conversations'
+import { mockAuthUser } from './auth-user'
 import { pageBy } from './paging'
-import { mockWholeFilms } from './workspace'
 
 type LibraryVideo = z.output<typeof zLibraryVideoOut>
 type LibraryCard = z.output<typeof zLibraryVideoDetailOut>
@@ -352,8 +350,8 @@ function authorsOf(cards: readonly { userName: string | null }[]) {
 
 type WholeFilmCard = z.output<typeof zWholeFilmCardOut>
 
-export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] => {
-  const cards: WholeFilmCard[] = ['春夏品牌整片', '城市漫步整片'].map((title, index) => {
+export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] =>
+  ['春夏品牌整片', '城市漫步整片'].map((title, index) => {
     const versions = Array.from({ length: index === 0 ? 2 : 1 }, (_, version) => ({
       jobId: `fa000001-0000-4000-8000-${String(index * 10 + version + 1).padStart(12, '0')}`,
       outputUrl: version === 0 ? sampleVideoUrl : sampleWideUrl,
@@ -373,41 +371,3 @@ export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[]
       versions,
     }
   })
-  const byConversation = new Map<string, WholeFilmCard>()
-  for (const { conversationId, record } of mockWholeFilms()) {
-    const conversation = mockConversations.find((item) => item.id === conversationId)
-    if (conversation === undefined || record.outputUrl === null || record.finishedAt === null)
-      continue
-    const userName =
-      conversation.ownerUserId === mockGovernor.id ? mockGovernor.username : mockAuthUser.username
-    const version = {
-      jobId: record.id,
-      outputUrl: record.outputUrl,
-      watermarkOutputUrl: record.watermarkOutputUrl,
-      durationMs: record.durationMs,
-      finishedAt: record.finishedAt,
-      userName,
-    }
-    const card = byConversation.get(conversationId)
-    if (card === undefined)
-      byConversation.set(conversationId, {
-        conversationId,
-        title: conversation.title,
-        canOpenConversation: true,
-        userName,
-        face: version,
-        versions: [version],
-      })
-    else card.versions.push(version)
-  }
-  for (const card of byConversation.values()) {
-    card.versions.sort(
-      (left, right) =>
-        Date.parse(left.finishedAt) - Date.parse(right.finishedAt) ||
-        left.jobId.localeCompare(right.jobId),
-    )
-    card.face = card.versions.at(-1) ?? card.face
-    cards.push(card)
-  }
-  return cards
-}

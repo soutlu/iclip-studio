@@ -33,7 +33,6 @@ from iclip.domains.generation.models import (
     inherited_through,
 )
 from iclip.domains.generation.module import ImageModelConfig, build_generation_module
-from iclip.domains.generation.ports import BrandTemplateFacts
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -61,8 +60,6 @@ from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import FontInfo
-from iclip.platform.media.probe import VideoProfile
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
 from tests.helpers.fetch_url import as_is
@@ -298,44 +295,24 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
     )
 
 
-def whole_film_request(
-    segments: Sequence[Mapping[str, Any]],
-    *,
-    subtitles: Sequence[Mapping[str, Any]] = (),
-    music: Mapping[str, Any] | None = None,
-    intro: Mapping[str, Any] | None = None,
-    outro: Mapping[str, Any] | None = None,
-    font: Mapping[str, Any] | None = None,
-) -> WholeFilmRequest:
-    """整片落库的请求：各段 ``{url, startMs, endMs}``（没写出处按地址补一个固定的 ``sourceJobId``），
-    字幕与音乐照给，声音参数取受理时的默认值。音乐没写出处同样补一个。片头片尾是模板快照
-    ``{url, durationMs, width, height, hasAudio}``，没写 ``templateId`` 也按地址补一个。"""
-
-    def snapshot(brand: Mapping[str, Any] | None) -> dict[str, Any] | None:
-        if brand is None:
-            return None
-        return {"templateId": uuid.uuid5(uuid.NAMESPACE_URL, brand["url"]), **brand}
+def whole_film_request(segments: Sequence[Mapping[str, Any]]) -> WholeFilmRequest:
+    """已有整片落库的请求：各段 ``{url, startMs, endMs}``（没写出处按地址补一个固定的
+    ``sourceJobId``），没有字幕、音乐、片头片尾与字体，声音参数取默认值。"""
 
     def with_source(item: Mapping[str, Any]) -> dict[str, Any]:
-        if "sourceJobId" in item or "audioJobId" in item:
+        if "sourceJobId" in item:
             return dict(item)
         return {"sourceJobId": uuid.uuid5(uuid.NAMESPACE_URL, item["url"]), **item}
 
-    music_payload = None
-    if music is not None:
-        music_payload = dict(music)
-        music_payload.setdefault("audioJobId", uuid.uuid5(uuid.NAMESPACE_URL, music["url"]))
     return WholeFilmRequest.model_validate(
         {
             "segments": [with_source(segment) for segment in segments],
-            "subtitles": list(subtitles),
-            "music": music_payload,
+            "subtitles": [],
+            "music": None,
             "render": WholeFilmRender(),
-            "intro": snapshot(intro),
-            "outro": snapshot(outro),
-            "font": None
-            if font is None
-            else {"fontId": uuid.uuid5(uuid.NAMESPACE_URL, str(font["url"])), **font},
+            "intro": None,
+            "outro": None,
+            "font": None,
         }
     )
 
@@ -771,8 +748,6 @@ def film_image_service(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
-        brand_templates=FixedBrandTemplates(),
-        probe_font=FakeFontProbe(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -815,16 +790,10 @@ class FixedLineage:
 
 
 class FakeMediaProbe:
-    """RemoteMediaProbe 替身：按地址给时长或画幅，不认得的地址像取不到一样抛 ``MediaError``；记下探过
-    哪些。"""
+    """RemoteMediaProbe 替身：按地址给时长，不认得的地址像取不到一样抛 ``MediaError``；记下探过哪些。"""
 
-    def __init__(
-        self,
-        durations: Mapping[str, int] | None = None,
-        profiles: Mapping[str, VideoProfile] | None = None,
-    ) -> None:
+    def __init__(self, durations: Mapping[str, int] | None = None) -> None:
         self._durations = dict(durations or {})
-        self._profiles = dict(profiles or {})
         self.probed: list[str] = []
 
     async def duration_ms(self, url: str) -> int:
@@ -832,42 +801,6 @@ class FakeMediaProbe:
         if url not in self._durations:
             raise MediaError(f"取不到素材: {url}")
         return self._durations[url]
-
-    async def video_profile(self, url: str) -> VideoProfile:
-        self.probed.append(url)
-        if url not in self._profiles:
-            raise MediaError(f"取不到素材: {url}")
-        return self._profiles[url]
-
-
-class FixedBrandTemplates:
-    """BrandTemplates 替身：品牌模板预先写死，按 id 读；没给的就是没有。"""
-
-    def __init__(self, *templates: BrandTemplateFacts) -> None:
-        self._templates = {template.id: template for template in templates}
-
-    async def __call__(self, template_id: uuid.UUID) -> BrandTemplateFacts | None:
-        return self._templates.get(template_id)
-
-
-class FakeFontProbe:
-    """ProbeFont 替身：按地址给字体信息或抛预先写好的错误，不认得的地址像取不到一样抛
-    ``MediaError``。"""
-
-    def __init__(
-        self,
-        fonts: Mapping[str, FontInfo] | None = None,
-        errors: Mapping[str, MediaError] | None = None,
-    ) -> None:
-        self._fonts = dict(fonts or {})
-        self._errors = dict(errors or {})
-
-    async def __call__(self, url: str) -> FontInfo:
-        if url in self._errors:
-            raise self._errors[url]
-        if url not in self._fonts:
-            raise MediaError(f"取不到素材（ConnectError）: {url}")
-        return self._fonts[url]
 
 
 class MemoryObjectStore:
@@ -924,7 +857,6 @@ __all__ = [
     "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
     "FakeMediaProbe",
-    "FixedBrandTemplates",
     "FixedLineage",
     "InMemoryGenerationRepository",
     "MemoryObjectStore",

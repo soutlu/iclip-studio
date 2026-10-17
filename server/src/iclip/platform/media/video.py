@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -10,13 +10,7 @@ from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import MAX_VIDEO_BYTES
 from iclip.platform.media.probe import VideoProfile, probe_keyframes, probe_video
-from iclip.platform.media.process import (
-    ENCODE_TIMEOUT_SECONDS,
-    check_output,
-    communicate,
-    filter_path,
-    run,
-)
+from iclip.platform.media.process import ENCODE_TIMEOUT_SECONDS, check_output, run
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,14 +22,6 @@ class MediaCut:
     @property
     def duration(self) -> float:
         return self.end - self.start
-
-
-@dataclass(frozen=True, slots=True)
-class SubtitleBurn:
-    document: Path
-    fonts_dir: Path
-    force_style: str | None
-    verify_log: Callable[[str], None] | None
 
 
 def check_cut(cut: MediaCut) -> None:
@@ -99,63 +85,6 @@ async def cut_concat(
     check_output(dest, max_bytes=MAX_VIDEO_BYTES)
 
 
-async def encode_timeline(
-    clips: Sequence[MediaCut],
-    *,
-    audio: Path,
-    gain_db: float,
-    peak_dbfs: float,
-    subtitles: SubtitleBurn | None,
-    profile: VideoProfile,
-    dest: Path,
-    codec: MediaCodec,
-) -> None:
-    keyframes = await _keyframe_plan(clips, profile=profile)
-    inputs: list[str] = []
-    chains: list[str] = []
-    for index, clip in enumerate(clips):
-        inputs += [*codec.decode, "-i", str(clip.source)]
-        chains.append(_video_chain(index, clip, profile))
-    inputs += ["-i", str(audio)]
-    burn = "null"
-    if subtitles is not None:
-        burn = (
-            f"subtitles=filename={filter_path(subtitles.document)}"
-            f":fontsdir={filter_path(subtitles.fonts_dir)}"
-        )
-        if subtitles.force_style is not None:
-            burn += f":force_style='{subtitles.force_style}'"
-        burn += ",format=yuv420p"
-    chains.append(
-        f"{''.join(f'[v{index}]' for index in range(len(clips)))}"
-        f"concat=n={len(clips)}:v=1:a=0,{burn}[outv]"
-    )
-    chains.append(
-        f"[{len(clips)}:a]volume={gain_db:.2f}dB,"
-        # level=0：不让限幅器自动把输出拉满；latency=1：抵掉它向前看的那几毫秒延迟。
-        f"alimiter=limit={10 ** (peak_dbfs / 20):.4f}:level=0:latency=1[outa]"
-    )
-    verify_log = subtitles.verify_log if subtitles is not None else None
-    args = [
-        "ffmpeg",
-        "-v",
-        "info" if verify_log is not None else "error",
-        "-nostats",
-        "-y",
-        *inputs,
-        "-filter_complex",
-        ";".join(chains),
-    ]
-    args += ["-map", "[outv]", "-map", "[outa]", *AUDIO_CODEC]
-    args += ["-ar", str(AUDIO_RATE), "-ac", "2"]
-    args += [*codec.encode, "-force_key_frames", keyframes]
-    args += ["-movflags", "+faststart", str(dest)]
-    _, log = await communicate(args, timeout=ENCODE_TIMEOUT_SECONDS)
-    if verify_log is not None:
-        verify_log(log.decode(errors="replace"))
-    check_output(dest, max_bytes=MAX_VIDEO_BYTES)
-
-
 def _video_chain(index: int, cut: MediaCut, profile: VideoProfile) -> str:
     return (
         f"[{index}:v]trim=start={cut.start:.3f}:end={cut.end:.3f},setpts=PTS-STARTPTS,"
@@ -194,8 +123,6 @@ def _concat_keyframes(
 
 __all__ = [
     "MediaCut",
-    "SubtitleBurn",
     "check_cut",
     "cut_concat",
-    "encode_timeline",
 ]

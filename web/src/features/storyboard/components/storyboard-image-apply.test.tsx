@@ -75,12 +75,7 @@ async function resultSlot(strip: HTMLElement, position: number): Promise<HTMLEle
 const renderReader = () =>
   renderWithProviders(
     <>
-      <StoryboardReader
-        artifact={artifact}
-        conversationId={CONVERSATION_ID}
-        readOnly={false}
-        task={{ kind: 'loading' }}
-      />
+      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />
       <Toaster />
     </>,
     { initialPath: '/?content=scene:1' },

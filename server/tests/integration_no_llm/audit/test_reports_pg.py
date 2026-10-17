@@ -1175,7 +1175,7 @@ async def plant_whole_film(
             "request": json.dumps(request_to_payload(request)),
             "status": STATUS_COMPLETED,
             "url": f"https://example.test/{film}.mp4",
-            "duration_ms": request.duration_ms,
+            "duration_ms": 1000 * len(sources),
             "at": at,
         },
     )

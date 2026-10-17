@@ -23,7 +23,6 @@ import {
   resetMockConversations,
   type MockConversation,
 } from './conversations'
-import { audioHandlers } from './audio'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
@@ -454,7 +453,6 @@ export const handlers = [
   }),
 
   ...uploadHandlers,
-  ...audioHandlers,
 
   http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
 

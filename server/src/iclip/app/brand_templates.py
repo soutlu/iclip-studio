@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections.abc import Callable
 
 import httpx
 
 from iclip.domains.brand_templates.models import ProbedVideo
-from iclip.domains.brand_templates.repository import BrandTemplateStore, ProbeVideo
-from iclip.domains.generation.ports import BrandTemplateFacts, BrandTemplates
+from iclip.domains.brand_templates.repository import ProbeVideo
 from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched
 from iclip.platform.media.fonts import MAX_FONT_BYTES, FontInfo, ProbeFont, inspect_font
 from iclip.platform.media.probe import probe_duration_ms, probe_video
@@ -31,26 +29,6 @@ def template_video_prober(client: httpx.AsyncClient, fetch_url: Callable[[str], 
     return probe
 
 
-def brand_template_facts(store: BrandTemplateStore) -> BrandTemplates:
-    async def facts(template_id: uuid.UUID) -> BrandTemplateFacts | None:
-        template = await store.get(template_id)
-        if template is None:
-            return None
-        return BrandTemplateFacts(
-            id=template.id,
-            kind=template.kind,
-            name=template.name,
-            enabled=template.disabled_at is None,
-            url=template.url,
-            duration_ms=template.duration_ms,
-            width=template.width,
-            height=template.height,
-            has_audio=template.has_audio,
-        )
-
-    return facts
-
-
 def template_font_prober(client: httpx.AsyncClient, fetch_url: Callable[[str], str]) -> ProbeFont:
     async def probe(url: str) -> FontInfo:
         async with fetched(client, fetch_url(url), max_bytes=MAX_FONT_BYTES, suffix="") as path:
@@ -59,4 +37,4 @@ def template_font_prober(client: httpx.AsyncClient, fetch_url: Callable[[str], s
     return probe
 
 
-__all__ = ["brand_template_facts", "template_font_prober", "template_video_prober"]
+__all__ = ["template_font_prober", "template_video_prober"]

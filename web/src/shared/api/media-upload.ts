@@ -66,7 +66,6 @@ const acceptOf = ({ byExtension, byType }: UploadRule): string =>
 
 export const MEDIA_IMAGE_ACCEPT = acceptOf(UPLOAD_RULES.image)
 export const MEDIA_VIDEO_ACCEPT = acceptOf(UPLOAD_RULES.video)
-export const MEDIA_AUDIO_ACCEPT = acceptOf(UPLOAD_RULES.audio)
 export const FONT_ACCEPT = acceptOf(UPLOAD_RULES.font)
 
 export const uploadContentTypeOf = (

@@ -46,14 +46,7 @@ export interface ArtifactRendererProps {
   artifact: Artifact
   /** 看别人的对话时为 true，渲染器要收起所有会写工作区或提交任务的入口。 */
   readOnly: boolean
-  task: ConversationTask
 }
-
-/** 这段对话此刻挂的需求单：读到了（没挂是 `taskId: null`）、还在读，或读失败（`retry` 重读）。 */
-export type ConversationTask =
-  | { kind: 'ready'; taskId: string | null }
-  | { kind: 'loading' }
-  | { kind: 'failed'; retry: () => void }
 
 export interface ArtifactEntry {
   type: string
