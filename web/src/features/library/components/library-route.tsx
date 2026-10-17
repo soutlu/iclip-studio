@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ListEmpty } from '@/shared/ui/list-state'
 import {
   isDefaultScope,
@@ -11,6 +11,7 @@ import { focusCardOpener } from './card-focus'
 import { LibraryCard } from './library-card'
 import { LibraryFilters } from './library-filters'
 import { LibraryList } from './library-list'
+import { useLoadNextPageWhen } from './library-next-page'
 import { LibraryPageHeader } from './library-page-header'
 import { useLibraryPageScroll } from './library-page-scroll'
 import { LibraryPageShell } from './library-page-shell'
@@ -53,16 +54,8 @@ export function LibraryRoute({
   const prevId = index > 0 ? (loaded[index - 1]?.id ?? null) : null
   const nextId = index >= 0 ? (loaded[index + 1]?.id ?? null) : null
 
-  const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = videos
-  const loadNextPage = useCallback(
-    () => void fetchNextPage({ cancelRefetch: false }),
-    [fetchNextPage],
-  )
-
   const atLoadedEnd = index >= 0 && index === loaded.length - 1
-  useEffect(() => {
-    if (atLoadedEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) loadNextPage()
-  }, [atLoadedEnd, hasNextPage, isFetchNextPageError, isFetchingNextPage, loadNextPage])
+  useLoadNextPageWhen(videos, atLoadedEnd)
 
   return (
     <LibraryPageShell

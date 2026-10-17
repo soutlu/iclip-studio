@@ -8,7 +8,7 @@ import { mockLibraryVideos } from '@/testing/mocks/library'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { stubScrollViewport } from '@/testing/scroll-viewport'
-import { DEFAULT_LIBRARY_SCOPE, type LibraryScope } from '../library.api'
+import { DEFAULT_LIBRARY_SCOPE, libraryQueryKeys, type LibraryScope } from '../library.api'
 import { LibraryRoute } from './library-route'
 
 function Harness({
@@ -254,6 +254,45 @@ describe('library paging', () => {
     await settle()
     expect(queries).toHaveLength(3)
     await user.keyboard('{ArrowRight}')
+    expect(await screen.findByRole('dialog', { name: SKATE })).toBeVisible()
+  })
+
+  it('reads the next page once a background refresh ends while the viewer sits on the loaded end', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    const queries = recordListQueries()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let firstPageReads = 0
+    const [first, second] = mockLibraryVideos()
+    server.use(
+      http.get('*/api/library/videos', async ({ request }) => {
+        if (new URL(request.url).searchParams.has('cursor'))
+          return HttpResponse.json({ items: [second], nextCursor: null, total: null })
+        firstPageReads += 1
+        if (firstPageReads > 1) await held
+        return HttpResponse.json({ items: [first], nextCursor: 'p2', total: 2 })
+      }),
+    )
+    stubIntersectionObserver()
+    const user = userEvent.setup()
+    const { queryClient } = await renderWithProviders(<Harness />)
+    await screen.findByRole('article', { name: '跑鞋手持展示' })
+
+    void queryClient.invalidateQueries({ queryKey: libraryQueryKeys.videos(DEFAULT_LIBRARY_SCOPE) })
+    await waitFor(() => expect(cursorsOf(queries)).toEqual([null, null]))
+    const viewer = await openCard(user, '跑鞋手持展示')
+    const next = within(viewer).getByRole('button', { name: '下一条' })
+    await settle()
+    expect(cursorsOf(queries)).toEqual([null, null])
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+
+    release()
+    await waitFor(() => expect(cursorsOf(queries)).toEqual([null, null, 'p2']))
+    await waitFor(() => expect(next).not.toHaveAttribute('aria-disabled'))
+    await user.click(next)
     expect(await screen.findByRole('dialog', { name: SKATE })).toBeVisible()
   })
 })
