@@ -558,6 +558,7 @@ export type {
   SubmitVideoGenerationsVideoPostResponses,
   SubtitleIn,
   SubtitleSentence,
+  SubtitleWord,
   TakeOut,
   TaskCreateIn,
   TaskEnvelope,

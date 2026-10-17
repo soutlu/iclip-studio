@@ -3440,7 +3440,8 @@ export type SubtitleIn = {
 /**
  * SubtitleSentence
  *
- * 字幕里的一句：在视频里的起止（毫秒）、文字与说话人。落库是 snake_case 的键，对外 camelCase。
+ * 字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外
+ * camelCase；早先的记录没有逐词时间，读出来是空。
  */
 export type SubtitleSentence = {
   /**
@@ -3451,6 +3452,34 @@ export type SubtitleSentence = {
    * Speaker
    */
   speaker: number | null
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
+  /**
+   * Words
+   */
+  words?: Array<SubtitleWord>
+}
+
+/**
+ * SubtitleWord
+ *
+ * 一句里的一个词：在视频里的起止（毫秒）、文字与紧跟其后的标点（没有就是空串）。
+ */
+export type SubtitleWord = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Punctuation
+   */
+  punctuation?: string
   /**
    * Startms
    */

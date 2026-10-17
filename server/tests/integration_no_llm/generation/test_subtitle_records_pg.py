@@ -19,14 +19,23 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTING,
     GenerationJob,
 )
-from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence
+from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence, SubtitleWord
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import make_job, make_subtitle, video_request
 
 TAKE_URL = "https://cdn.example.test/take.mp4"
 
 SENTENCES = (
-    SubtitleSentence(start_ms=0, end_ms=1500, text="这双鞋很轻。", speaker=0),
+    SubtitleSentence(
+        start_ms=0,
+        end_ms=1500,
+        text="这双鞋很轻。",
+        speaker=0,
+        words=(
+            SubtitleWord(start_ms=0, end_ms=700, text="这双鞋"),
+            SubtitleWord(start_ms=700, end_ms=1500, text="很轻", punctuation="。"),
+        ),
+    ),
     SubtitleSentence(start_ms=1600, end_ms=2400, text="Light.", speaker=None),
 )
 

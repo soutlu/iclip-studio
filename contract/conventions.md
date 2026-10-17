@@ -449,7 +449,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - 成片（已完成的出片、合成或整片）一完成，服务端自动为它排一条字幕记录，属主、API key、对话与需求单抄那条成片；编辑段、上传与图片不识别。字幕识别没开通时不建。术语见 [CONTEXT.md「生成任务」「生成结果」](../docs/CONTEXT.md#术语)。
 - `POST /generations/subtitles` 收 `sourceJobId`（要识别的成片）、`userName`、归属字段 `conversationId`、`taskId` 与坐标 `metadata`，另起一条字幕记录，响应是 `GenerationEnvelope`；用来补识别旧片，或识别失败后重来。成片要是调用方可见的、这段对话自己的或它继承的记录（继承的只在调用方读得到这段对话时才算，§6），读不到一律 `404`；读得到却不是成片是 `422`；字幕识别没开通是 `422`。新记录的对话、需求单与 `metadata` 取请求，属主是当前主体。
 - 记录的 `request` 是 `{ model, videoUrl, audioFormat, sampleRate, speakerDiarization }`：识别的是成片的原片地址（不是水印版），服务端抽成单声道 16 kHz mp3 发给识别服务，音频本身不落库。字幕记录没有 `outputUrl`、`watermarkOutputUrl`、`rootJobId`、镜号与区间，`sourceUrl` 是被识别那条成片的地址。
-- 结果在 `sentences`：完成后是 `[{ startMs, endMs, text, speaker }]`，按识别给的先后；`speaker` 是识别服务给的说话人编号，只在这条视频里区分谁在说，可以为 `null`。没有口播（视频没有音轨，或识别出来一句都没有）是正常结果，记为 `completed`、`sentences` 为 `[]`。别的记录与没完成的字幕记录 `sentences` 为 `null`。
+- 结果在 `sentences`：完成后是 `[{ startMs, endMs, text, speaker, words }]`，按识别给的先后；`speaker` 是识别服务给的说话人编号，只在这条视频里区分谁在说，可以为 `null`。`words` 是这句的逐词时间 `[{ startMs, endMs, text, punctuation }]`，按识别给的先后，`punctuation` 是紧跟这个词的标点，没有就是 `""`；识别没给逐词时间的句子与早先的记录 `words` 为 `[]`。没有口播（视频没有音轨，或识别出来一句都没有）是正常结果，记为 `completed`、`sentences` 为 `[]`。别的记录与没完成的字幕记录 `sentences` 为 `null`。
 - 失败是终态，不自动重试：取不到成片 `MEDIA_SOURCE_UNREACHABLE`，抽音频失败 `MEDIA_PROCESS_FAILED`，抽出的音频超过识别接口的 Base64 上限 `SUBTITLE_AUDIO_TOO_LARGE`；识别服务连不上 `PROVIDER_UNREACHABLE`，请求发出后没拿到结果 `PROVIDER_RESULT_UNKNOWN`（可能已计费），拒绝 `PROVIDER_REJECTED`，5xx `PROVIDER_SERVER_ERROR`，答复看不懂或没有 `request_id` `PROVIDER_MALFORMED`。
 - 按 `GET /generations?kind=subtitle&sourceJobId=` 找一条成片的字幕记录，单条读同 `GET /generations/{id}`；`GET /generations/video/{task_id}` 不答字幕记录。字幕记录不计审计口径（§12）、不进资料库，也不算对话的 `activity.videoGeneration`。
 

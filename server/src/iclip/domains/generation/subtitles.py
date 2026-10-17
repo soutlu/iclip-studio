@@ -20,7 +20,7 @@ from iclip.domains.generation.provider import (
     request_of,
 )
 from iclip.domains.generation.qwen import QwenEndpoint, post_to_qwen, request_id_of
-from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence
+from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence, SubtitleWord
 from iclip.domains.generation.upstream import UpstreamRejected
 from iclip.platform.media.audio import SPEECH_SAMPLE_RATE, extract_speech_audio
 from iclip.platform.media.errors import MediaError, NoAudioStream
@@ -178,13 +178,43 @@ def sentences_from_response(body: Mapping[str, Any]) -> tuple[SubtitleSentence, 
             raise _malformed(f"output.sentences[{index}] 缺 begin_time / end_time / text")
         if speaker is not None and not _is_int(speaker):
             raise _malformed(f"output.sentences[{index}].speaker_id 不是整数")
+        words = _words_of(item.get("words"), where=f"output.sentences[{index}].words")
         try:
             sentences.append(
-                SubtitleSentence(start_ms=start, end_ms=end, text=text, speaker=speaker)
+                SubtitleSentence(
+                    start_ms=start, end_ms=end, text=text, speaker=speaker, words=words
+                )
             )
         except ValueError as exc:
             raise _malformed(f"output.sentences[{index}] 的时间不合法: {exc}") from exc
     return tuple(sentences)
+
+
+def _words_of(raw: object, *, where: str) -> tuple[SubtitleWord, ...]:
+    # 接口可能不给 words，那就没有逐词时间。
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise _malformed(f"{where} 不是数组")
+    words: list[SubtitleWord] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise _malformed(f"{where}[{index}] 不是对象")
+        start: object = item.get("begin_time")
+        end: object = item.get("end_time")
+        text: object = item.get("text")
+        punctuation: object = item.get("punctuation", "")
+        if not _is_int(start) or not _is_int(end) or not isinstance(text, str):
+            raise _malformed(f"{where}[{index}] 缺 begin_time / end_time / text")
+        if not isinstance(punctuation, str):
+            raise _malformed(f"{where}[{index}].punctuation 不是字符串")
+        try:
+            words.append(
+                SubtitleWord(start_ms=start, end_ms=end, text=text, punctuation=punctuation)
+            )
+        except ValueError as exc:
+            raise _malformed(f"{where}[{index}] 的时间不合法: {exc}") from exc
+    return tuple(words)
 
 
 def _is_int(value: object) -> TypeIs[int]:
