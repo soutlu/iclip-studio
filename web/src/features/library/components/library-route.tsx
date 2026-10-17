@@ -1,5 +1,3 @@
-/** 资料库「成片」页：页头与搜索、吸顶筛选条、瀑布流与翻页，加上盖在列表上的详情。筛选范围与打开着的详情由路由存在查询参数里。 */
-
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { ListEmpty, ListError, NextPageFooter } from '@/shared/ui/list-state'
@@ -10,6 +8,7 @@ import {
   type LibraryScope,
 } from '../library.api'
 import { cardHeightFor } from '../library-layout'
+import { focusCardOpener } from './card-focus'
 import { LibraryCard } from './library-card'
 import { LibraryFilters } from './library-filters'
 import { LibraryGrid, LibraryGridSkeleton } from './library-grid'
@@ -17,16 +16,12 @@ import { LibraryPageHeader } from './library-page-header'
 import { LibraryViewer } from './library-viewer'
 
 type LibraryRouteProps = {
-  /** 「成片｜参考视频」页签行，由路由给。 */
   tabs: ReactNode
   scope: LibraryScope
   onScopeChange: (next: LibraryScope) => void
   myUserName: string | null
-  /** 打开着详情的那张卡。 */
   videoId: string | null
-  /** 打开、换一条或关掉（null）详情；`replace` 是在详情里翻条，不新增历史记录。 */
   onVideoChange: (id: string | null, replace: boolean) => void
-  /** 一张卡的分享地址。 */
   shareLinkOf: (id: string) => string
 }
 
@@ -49,7 +44,6 @@ export function LibraryRoute({
   const filtered = !isDefaultScope(scope)
   const counter = total === undefined ? undefined : filtered ? `找到 ${total} 条` : `共 ${total} 条`
 
-  // 从故事板点帧进来的起播秒数，只对那一条有效。
   const [startAt, setStartAt] = useState<{ id: string; at: number } | null>(null)
   const openVideo = (id: string, at: number | null) => {
     setStartAt(at === null ? null : { at, id })
@@ -59,25 +53,16 @@ export function LibraryRoute({
   const prevId = index > 0 ? (loaded[index - 1]?.id ?? null) : null
   const nextId = index >= 0 ? (loaded[index + 1]?.id ?? null) : null
 
-  // 自动翻页的两个入口（详情翻到末尾、页脚进入一屏内）可能前后脚触发；不取消在途请求，第二次直接复用它。
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = videos
   const loadNextPage = useCallback(
     () => void fetchNextPage({ cancelRefetch: false }),
     [fetchNextPage],
   )
 
-  // 翻到已读的最后一条时接着读下一页，「下一条」不会停在页尾；翻页失败就停下，由页脚重试。
   const atLoadedEnd = index >= 0 && index === loaded.length - 1
   useEffect(() => {
     if (atLoadedEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) loadNextPage()
   }, [atLoadedEnd, hasNextPage, isFetchNextPageError, isFetchingNextPage, loadNextPage])
-
-  // 关掉详情后焦点回到那张卡；卡已被虚拟列表回收就交给弹窗的默认去处。
-  const focusCard = (id: string): boolean => {
-    const button = mainRef.current?.querySelector<HTMLElement>(`[data-open-video="${id}"]`)
-    button?.focus()
-    return button != null
-  }
 
   return (
     <main
@@ -85,7 +70,6 @@ export function LibraryRoute({
       className="flex min-h-0 flex-1 flex-col overflow-y-auto"
       ref={mainRef}
     >
-      {/* 页头预留侧栏展开按钮的覆盖空间。 */}
       <div className="flex w-full flex-col px-4 pt-12 pb-10 sm:px-(--layout-list-page-gutter) sm:pt-14">
         <LibraryPageHeader
           description="收录团队生成的每一条视频及其生成脚本。选择任一视频，可直接基于它再创作。"
@@ -98,7 +82,6 @@ export function LibraryRoute({
           tabs={tabs}
         />
 
-        {/* 页内吸顶只需压住卡片；应用壳的侧栏抽屉在更高一层。 */}
         <div className="layer-content sticky top-0 -mx-1 bg-background px-1 py-3">
           <LibraryFilters
             authors={authors}
@@ -138,7 +121,6 @@ export function LibraryRoute({
             />
           )}
 
-          {/* 翻页失败只落在页脚，已读取的卡片照常显示。 */}
           {videos.hasNextPage ? (
             videos.isFetchNextPageError && !videos.isFetchingNextPage ? (
               <ListError
@@ -167,7 +149,7 @@ export function LibraryRoute({
             setStartAt(null)
             onVideoChange(id, true)
           }}
-          onRestoreFocus={() => focusCard(videoId)}
+          onRestoreFocus={() => focusCardOpener(mainRef.current, videoId)}
           prevId={prevId}
           shareLink={shareLinkOf(videoId)}
           startAt={startAt?.id === videoId ? startAt.at : null}

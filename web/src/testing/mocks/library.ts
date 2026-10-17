@@ -1,6 +1,4 @@
-/** 资料库的 mock：几张画幅、作者、脚本形态各异的卡，筛选与翻页照合同 §13 在内存里做。
-
-单测与 dev:mock 共用；测试要断言具体内容就用 `server.use` 喂自己的数据，不拿这里的演示数据当预期值。 */
+/** 筛选与翻页照 contract/conventions.md §13。 */
 
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
@@ -25,11 +23,9 @@ type Script = z.output<typeof zScriptOut>
 
 const HOUR_MS = 60 * 60_000
 
-/** 脚本里 `@Image1` 指的商品图。 */
 const REFERENCE_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='320'%3E%3Crect width='240' height='320' fill='%23ece6dc'/%3E%3Cpath d='M40 210 Q60 150 120 160 L200 190 Q210 230 190 240 L50 240 Q36 232 40 210Z' fill='%23f7f3ea' stroke='%23a8742a' stroke-width='6'/%3E%3C/svg%3E"
 
-/** 一个镜头组：最后那次出片在 `hoursAgo` 完成，之前每隔一小时出过一次；给了 `compositeMs` 就在最后那次出片上合成过一条。 */
 type GroupSpec = {
   shot: number | null
   hoursAgo: number
@@ -39,7 +35,6 @@ type GroupSpec = {
   compositeMs?: number
 }
 
-/** 一张卡：`title` 为 null 是不挂对话的接口提交。 */
 type Spec = {
   title: string | null
   author: string
@@ -187,7 +182,6 @@ const SPECS: readonly Spec[] = [
 const idOf = (prefix: string, index: number) =>
   `${prefix}-0000-4000-8000-${String(index).padStart(12, '0')}`
 
-/** 一个镜头组的全部版本，早完成的在前：出片依次隔一小时，合成在最后那次出片之后一分钟。`key` 让各组的 id 不相撞。 */
 const versionsOf = (spec: Spec, group: GroupSpec, key: number, now: number): Version[] => {
   const [w = 9, h = 16] = spec.aspectRatio.split(':').map(Number)
   const url = w > h ? sampleWideUrl : sampleVideoUrl
@@ -227,16 +221,13 @@ const versionsOf = (spec: Spec, group: GroupSpec, key: number, now: number): Ver
       jobId: idOf('7a1d0000', key),
       kind: 'composite',
       outputUrl: url,
-      // 合成的脚本与参数沿它剪的那次出片。
       take: last.take,
       userName: spec.author,
-      // 合成是本系统拼的，没有水印版。
       watermarkOutputUrl: null,
     },
   ]
 }
 
-/** 一张卡连同详情：卡面是全卡最新完成的一版；有对话的卡 id 是对话 id，不挂对话的是那条出片的 id。 */
 const cardOf = (spec: Spec, index: number, now: number): LibraryCard => {
   const groups = spec.groups.map((group, order) => ({
     shotIndex: group.shot,
@@ -247,10 +238,8 @@ const cardOf = (spec: Spec, index: number, now: number): LibraryCard => {
     Date.parse(version.finishedAt) > Date.parse(newest.finishedAt) ? version : newest,
   )
   const conversationId = spec.title === null ? null : idOf('7a1e0000', index)
-  // mock 不分读者：登录的测试用户是属主时才打得开。
   const canOpenConversation = conversationId !== null && spec.author === mockAuthUser.username
   return {
-    // mock 不建工作区，当作打得开的对话里都有制作文件：能打开就能做同款。
     canMakeSame: canOpenConversation,
     groups,
     video: {
@@ -272,7 +261,6 @@ const cardOf = (spec: Spec, index: number, now: number): LibraryCard => {
 const mockLibraryCards = (now: number): LibraryCard[] =>
   SPECS.map((spec, index) => cardOf(spec, index, now))
 
-/** 演示用的全部卡片，时刻相对此刻往前排。 */
 export const mockLibraryVideos = (now: number = Date.now()): LibraryVideo[] =>
   mockLibraryCards(now).map((card) => card.video)
 
@@ -337,7 +325,6 @@ export const libraryHandlers = [
     return HttpResponse.json({ ...page, total: cursor === null ? rows.length : null })
   }),
 
-  // 只认卡 id，出片 id 打不开。
   http.get('*/api/library/videos/:id', ({ params }) => {
     const card = mockLibraryCards(Date.now()).find(({ video }) => video.id === params['id'])
     if (card === undefined)
@@ -345,22 +332,26 @@ export const libraryHandlers = [
     return HttpResponse.json(card)
   }),
 
-  http.get('*/api/library/authors', () => {
-    const counts = new Map<string, number>()
-    for (const video of mockLibraryVideos()) {
-      const name = video.userName
-      if (name !== null) counts.set(name, (counts.get(name) ?? 0) + 1)
-    }
-    const items = [...counts]
-      .map(([userName, count]) => ({ count, userName }))
-      .sort((a, b) => b.count - a.count || a.userName.localeCompare(b.userName))
-    return HttpResponse.json({ items })
-  }),
+  http.get('*/api/library/authors', () =>
+    HttpResponse.json({ items: authorsOf(mockLibraryVideos()) }),
+  ),
+  http.get('*/api/library/whole-films/authors', () =>
+    HttpResponse.json({ items: authorsOf(mockLibraryWholeFilms()) }),
+  ),
 ]
+
+function authorsOf(cards: readonly { userName: string | null }[]) {
+  const counts = new Map<string, number>()
+  for (const { userName } of cards) {
+    if (userName !== null) counts.set(userName, (counts.get(userName) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([userName, count]) => ({ count, userName }))
+    .sort((a, b) => b.count - a.count || a.userName.localeCompare(b.userName))
+}
 
 type WholeFilmCard = z.output<typeof zWholeFilmCardOut>
 
-/** 整片演示卡加上当前会话里实际合成的记录，让编辑与资料库共用结果。 */
 export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] => {
   const cards: WholeFilmCard[] = ['春夏品牌整片', '城市漫步整片'].map((title, index) => {
     const versions = Array.from({ length: index === 0 ? 2 : 1 }, (_, version) => ({

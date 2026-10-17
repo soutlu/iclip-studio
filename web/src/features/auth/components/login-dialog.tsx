@@ -12,7 +12,6 @@ type LoginDialogProps = {
   ssoErrorCode?: string | undefined
 }
 
-/** 账号密码区展开时是用户名输入框，SSO 开启、账号密码区收起时是飞书登录按钮。 */
 function entryFocusTarget(
   usernameRef: RefObject<HTMLInputElement | null>,
   ssoButtonRef: RefObject<HTMLButtonElement | null>,
@@ -22,13 +21,10 @@ function entryFocusTarget(
   return ssoButtonRef.current
 }
 
-/** 登录成功后就地关闭弹窗；onOpenChange 也用于遮罩、Esc 与关闭按钮。 */
 export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogProps) {
   const usernameRef = useRef<HTMLInputElement>(null)
   const ssoButtonRef = useRef<HTMLButtonElement>(null)
-  const openerRef = useRef<HTMLElement | null>(null)
   const ssoErrorMessage = ssoErrorCode ? ssoErrorMessageOf(ssoErrorCode) : undefined
-  // 只缓存「开 / 关」这类确定答案；探测出错时没有数据，下次打开弹窗会重新探测。
   const ssoProbe = useQuery({
     enabled: open,
     queryFn: probeSsoLoginEnabled,
@@ -37,8 +33,7 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
   })
   const ssoEnabled = ssoProbe.data ?? false
 
-  // 首次打开时探测晚于自动聚焦返回：账号密码区随之收起，焦点若留在区内或已被浏览器退回 body，
-  // 就交给飞书登录按钮。要在浏览器重绘前处理，所以用 layout effect；手动收起时焦点在切换按钮上，不受影响。
+  // 区域收起（hidden）后，其中的焦点会留在原处或被浏览器退回 body；要在重绘前改交飞书登录按钮，所以用 layout effect。
   useLayoutEffect(() => {
     if (!open || !ssoEnabled) return
     const active = document.activeElement
@@ -52,26 +47,14 @@ export function LoginDialog({ open, onOpenChange, ssoErrorCode }: LoginDialogPro
       <DialogSurface
         aria-label="登录 Cue"
         className="max-w-[420px]"
-        // 打开时焦点交给登录入口，而不是标题栏的关闭按钮。
+        // Radix 默认聚焦第一个可聚焦元素，即标题栏的关闭按钮。
         onOpenAutoFocus={(event) => {
-          // 焦点移入弹窗前记下打开它的元素，关闭时还给它。
-          const opener = document.activeElement
-          openerRef.current =
-            opener instanceof HTMLElement && opener !== document.body ? opener : null
           const target = entryFocusTarget(usernameRef, ssoButtonRef)
           if (target === null) return
           event.preventDefault()
           target.focus()
         }}
-        // 弹窗由应用壳的状态打开，没有 Dialog.Trigger，Radix 关闭时找不到触发器、焦点落回 body。
-        // 打开者已不在页面（如登录成功后侧栏的登录按钮换成头像）或本无打开者（SSO 回调出错自动打开）时，沿用 Radix 默认处理。
-        onCloseAutoFocus={(event) => {
-          const opener = openerRef.current
-          openerRef.current = null
-          if (opener === null || !opener.isConnected) return
-          event.preventDefault()
-          opener.focus()
-        }}
+        returnFocus
       >
         <DialogHeader closeLabel="关闭登录" title="欢迎登录 Cue" />
         <DialogBody>

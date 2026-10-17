@@ -1,13 +1,12 @@
-/** 品牌字体的实际文件预览；加载或缺字失败显式返回，不让浏览器改用系统字体。 */
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { getBrandFontInfo, type BrandFontInfo } from '@/shared/api/brand-templates'
 import { errorMessageOf } from '@/shared/api/client'
+import { normalizeCaptionText } from './caption-text'
 
 type FontSource = { id: string; url: string }
 const fontReferences = new WeakMap<FontFace, number>()
 
-/** 字体文件可被多个预览共享；最后一个使用者离开时移出浏览器字体集。 */
 const retainFont = (face: FontFace): (() => void) => {
   const count = fontReferences.get(face) ?? 0
   if (count === 0) document.fonts.add(face)
@@ -31,17 +30,7 @@ export type PreviewFont =
       fontStyle: BrandFontInfo['style']
     }
   | { kind: 'failed'; message: string; retry: () => void }
-
-/** 与字幕渲染端相同：规整换行与行首尾空白，把 ASS 控制字符换成可见的全角字形。 */
-export const normalizeCaptionText = (text: string): string =>
-  text
-    .replace(/\r\n?/g, '\n')
-    .replaceAll('\\', '＼')
-    .replaceAll('{', '｛')
-    .replaceAll('}', '｝')
-    .split('\n')
-    .map((line) => line.trim())
-    .join('\n')
+  | { kind: 'unsupported'; message: string }
 
 const supportsText = (text: string, ranges: BrandFontInfo['unicodeRanges']): boolean => {
   for (const character of normalizeCaptionText(text)) {
@@ -78,7 +67,7 @@ export function usePreviewFont(font: FontSource | null, text: string): PreviewFo
     queryFn: async ({ signal }) => {
       if (fontId === undefined || fontUrl === undefined) throw new Error('系统字体不读取品牌资源')
       const info = await getBrandFontInfo(fontId, signal)
-      // 每条资源独享 CSS family；同名、不同字重的文件不会被其他字体或系统字体替换。
+      // 每条资源独享 CSS family：浏览器按 family 与字重匹配，同名、不同字重的文件会互相替换。
       const family = `iclip-brand-font-${fontId}`
       const face = new FontFace(family, `url(${JSON.stringify(fontUrl)})`, {
         weight: String(info.weight),
@@ -90,8 +79,7 @@ export function usePreviewFont(font: FontSource | null, text: string): PreviewFo
     },
   })
   const face = query.data?.face
-  // 注册属于真实使用者的生命周期，不放在会缓存或重试的 queryFn 中。
-  // useSyncExternalStore 在订阅后复核 snapshot，注册完成才返回 ready 供 Canvas 测字。
+  // useSyncExternalStore 在订阅后复核 snapshot，注册完成才返回 ready，Canvas 测字时字体已在字体集里。
   const registered = useSyncExternalStore(
     useCallback(() => (face === undefined ? () => {} : retainFont(face)), [face]),
     useCallback(() => face !== undefined && fontReferences.has(face), [face]),
@@ -101,20 +89,18 @@ export function usePreviewFont(font: FontSource | null, text: string): PreviewFo
     () => query.data === undefined || supportsText(text, query.data.info.unicodeRanges),
     [query.data, text],
   )
-  const retry = () => void query.refetch()
   if (font === null) return { kind: 'system' }
   if (query.isError)
     return {
       kind: 'failed',
       message: errorMessageOf(query.error, '字体加载失败，请重试或选择其他字体'),
-      retry,
+      retry: () => void query.refetch(),
     }
   if (query.data === undefined || !registered) return { kind: 'loading' }
   if (!supported)
     return {
-      kind: 'failed',
-      message: '所选字体不包含部分文字，请选择其他字体',
-      retry,
+      kind: 'unsupported',
+      message: '所选字体不包含部分文字，无法显示；请更换文字或字体',
     }
   return {
     kind: 'ready',
