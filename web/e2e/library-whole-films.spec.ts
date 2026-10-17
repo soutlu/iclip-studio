@@ -2,7 +2,7 @@ import { expect, test, type Locator } from '@playwright/test'
 import { screenshotBothThemes } from './helpers'
 import { login } from './login'
 
-const SCREENSHOTS = '../.artifacts/design-qa/whole-film-editor/impl-3'
+const SCREENSHOTS = '../.artifacts/design-qa/library-whole-films'
 
 const showDecodedFrame = async (dialog: Locator) => {
   const video = dialog.locator('video')

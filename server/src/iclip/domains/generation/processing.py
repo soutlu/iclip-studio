@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -10,12 +9,6 @@ from typing import Final
 import httpx
 import structlog
 
-from iclip.domains.generation.film_render import (
-    MusicTooShort,
-    render_whole_film,
-    subtitle_font,
-)
-from iclip.domains.generation.film_schemas import WholeFilmRequest
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -33,8 +26,7 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fetch import MAX_AUDIO_BYTES, MAX_VIDEO_BYTES, download
-from iclip.platform.media.fonts import MAX_FONT_BYTES
+from iclip.platform.media.fetch import MAX_VIDEO_BYTES, download
 from iclip.platform.media.probe import VideoProfile, probe_duration_ms, probe_video
 from iclip.platform.media.video import MediaCut, cut_concat
 from iclip.platform.object_store.layout import MEDIA_PATHS
@@ -120,11 +112,8 @@ class FfmpegComposeProvider:
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         report = _stage_reporter(self._report_stage, job.id)
-        if isinstance(job.request, WholeFilmRequest):
-            content, duration_ms = await self._render_whole_film(job.request, report)
-        else:
-            request = request_of(job, VideoComposeRequest, provider=PROVIDER_NAME)
-            content, duration_ms = await self._render_composite(request, report)
+        request = request_of(job, VideoComposeRequest, provider=PROVIDER_NAME)
+        content, duration_ms = await self._render_composite(request, report)
         await report(CLIP_UPLOADING)
         url = await _store(
             self._object_store, MEDIA_PATHS.video_master(job_id=job.id, ext=_EXT), content
@@ -155,9 +144,7 @@ class FfmpegComposeProvider:
             root = Path(tmp)
             dest = root / f"out.{_EXT}"
             await report(CLIP_FETCHING)
-            sources = await self._fetch(
-                [segment.url for segment in request.segments], root, max_bytes=MAX_VIDEO_BYTES
-            )
+            sources = await self._fetch([segment.url for segment in request.segments], root)
             try:
                 cuts = await _cuts(request.segments, sources)
                 # 探规格也算取素材：它读的是刚下来的那几条源，还没开始编码。
@@ -171,58 +158,15 @@ class FfmpegComposeProvider:
                 ) from exc
             return dest.read_bytes(), duration_ms
 
-    async def _render_whole_film(
-        self, request: WholeFilmRequest, report: _Report
-    ) -> tuple[bytes, int]:
-        with TemporaryDirectory(prefix="iclip-film-") as tmp:
-            root = Path(tmp)
-            dest = root / f"out.{_EXT}"
-            await report(CLIP_FETCHING)
-            brands = [brand for brand in (request.intro, request.outro) if brand is not None]
-            files = await self._fetch(
-                [*(segment.url for segment in request.segments), *(brand.url for brand in brands)],
-                root,
-                max_bytes=MAX_VIDEO_BYTES,
-            )
-            if request.music is not None:
-                files |= await self._fetch(
-                    [request.music.url], root, max_bytes=MAX_AUDIO_BYTES, suffix=""
-                )
-            font = subtitle_font(request)
-            if font is not None:
-                files |= await self._fetch([font.url], root, max_bytes=MAX_FONT_BYTES, suffix="")
-            try:
-                await render_whole_film(
-                    request,
-                    files=files,
-                    dest=dest,
-                    codec=self._codec,
-                    workdir=root,
-                    report_processing=partial(report, CLIP_PROCESSING),
-                )
-                duration_ms = await probe_duration_ms(dest)
-            except MusicTooShort as exc:
-                raise ProviderError(
-                    f"整片失败: {exc}", code="MUSIC_TOO_SHORT", retryable=False
-                ) from exc
-            except MediaError as exc:
-                raise ProviderError(
-                    f"视频加工失败: {exc}", code="MEDIA_PROCESS_FAILED", retryable=False
-                ) from exc
-            return dest.read_bytes(), duration_ms
-
-    async def _fetch(
-        self, urls: Sequence[str], root: Path, *, max_bytes: int, suffix: str = f".{_EXT}"
-    ) -> dict[str, Path]:
-        # ffmpeg 按内容认格式；音乐可能是 mp3、wav 或 m4a，不给扩展名以免误导探测。
+    async def _fetch(self, urls: Sequence[str], root: Path) -> dict[str, Path]:
         fetched: dict[str, Path] = {}
         async with httpx.AsyncClient(transport=self._transport) as client:
             for url in urls:
                 if url in fetched:
                     continue
-                target = root / f"src-{uuid.uuid4().hex}{suffix}"
+                target = root / f"src-{uuid.uuid4().hex}.{_EXT}"
                 try:
-                    await download(client, self._fetch_url(url), target, max_bytes=max_bytes)
+                    await download(client, self._fetch_url(url), target, max_bytes=MAX_VIDEO_BYTES)
                 except MediaError as exc:
                     raise ProviderError(
                         f"取不到要加工的素材: {exc}",

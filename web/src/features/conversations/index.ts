@@ -17,7 +17,6 @@ export {
   refreshConversationLists,
   useStartConversation,
   useConversationAgents,
-  useConversationTask,
   useSetConversationMembership,
   useSidebarTopology,
 } from './conversations.api'

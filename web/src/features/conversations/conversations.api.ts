@@ -9,13 +9,8 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 import { z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type { PromptContentPart } from '@/shared/transcript/vendor'
-import type { ConversationTask } from '@/shared/workbench'
 import { mintUuid } from '@/shared/lib/uuid'
-import {
-  conversationRowsOf,
-  useConversationRow,
-  type ConversationRowStore,
-} from './conversation-rows'
+import { conversationRowsOf, type ConversationRowStore } from './conversation-rows'
 import type { ComposerPart } from '@/shared/ui/composer'
 import {
   zApproveConversationsConversationIdInteractionsInteractionIdPostResponse,
@@ -246,26 +241,6 @@ export const refreshConversationRow = async (
   } finally {
     if (current()) reads.delete(conversationId)
   }
-}
-
-/** 这段对话此刻挂的需求单。整行只读一次，之后取行池里的当前值（对话已删时取读到的那一行）；
- * 在这段对话下另起的生成记录用它归属。读失败时交出重读的入口，由用到它的界面说明并给重试。 */
-export const useConversationTask = (conversationId: string): ConversationTask => {
-  const query = useQuery({
-    queryKey: conversationsQueryKeys.row(conversationId),
-    queryFn: async ({ client, signal }) => {
-      const row = await apiFetch(`/conversations/${conversationId}`, conversationEnvelopeSchema, {
-        fallbackErrorMessage: '读取任务失败',
-        signal,
-      })
-      conversationRowsOf(client).mergeRows([row])
-      return row
-    },
-  })
-  const row = useConversationRow(query.data)
-  if (query.data !== undefined) return { kind: 'ready', taskId: (row ?? query.data).taskId }
-  if (query.isError) return { kind: 'failed', retry: () => void query.refetch() }
-  return { kind: 'loading' }
 }
 
 /** 创建对话；调用方可提供幂等编号、需求单和合集归属。 */

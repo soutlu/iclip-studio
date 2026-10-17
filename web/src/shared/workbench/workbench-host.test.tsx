@@ -147,7 +147,7 @@ function ControlledHost({
         </button>
       ) : null}
       <div hidden={collapsed}>
-        <WorkbenchHost conversationId={CONVERSATION_ID} task={{ kind: 'ready', taskId: null }} />
+        <WorkbenchHost conversationId={CONVERSATION_ID} />
       </div>
     </WorkbenchLayoutProvider>
   )

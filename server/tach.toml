@@ -112,7 +112,7 @@ depends_on = [
 path = "iclip.domains.references"
 depends_on = ["iclip.common", "iclip.platform.paging", "iclip.domains.identity"]
 
-# 品牌资源的视频上传记录、视频与字体探测是端口，由组合根接上；整片经适配器读取，生成域不依赖它。
+# 品牌资源的视频上传记录、视频与字体探测是端口，由组合根接上；生成域不依赖它。
 [[modules]]
 path = "iclip.domains.brand_templates"
 depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]

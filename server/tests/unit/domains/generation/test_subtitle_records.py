@@ -41,9 +41,7 @@ from tests.helpers.generation import (
     FAKE_SUBTITLE_PROVIDER,
     FAKE_VIDEO_PROVIDER,
     QUEUE_SETTINGS,
-    FakeFontProbe,
     FakeMediaProbe,
-    FixedBrandTemplates,
     FixedLineage,
     InMemoryGenerationRepository,
     ScriptedProvider,
@@ -152,8 +150,6 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=FakeMediaProbe(),
-        brand_templates=FixedBrandTemplates(),
-        probe_font=FakeFontProbe(),
         subtitles=subtitles,
     )
     holder["service"] = service

@@ -11,8 +11,6 @@ import structlog
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.clip_models import clip_model
-from iclip.domains.generation.film_acceptance import WholeFilmAcceptance
-from iclip.domains.generation.film_schemas import WholeFilmIn
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_PENDING,
@@ -23,7 +21,7 @@ from iclip.domains.generation.models import (
     is_completed_master,
     is_finished_edit,
 )
-from iclip.domains.generation.ports import BrandTemplates, ConversationLineage, RemoteMediaProbe
+from iclip.domains.generation.ports import ConversationLineage, RemoteMediaProbe
 from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
 from iclip.domains.generation.repository import GenerationRepository, conversation_record
@@ -51,7 +49,6 @@ from iclip.domains.generation.segment_end import check_segment_end, exceeds_sour
 from iclip.domains.generation.stored_requests import GenerationRequest
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.paging import check_limit
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -80,8 +77,6 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
-        brand_templates: BrandTemplates,
-        probe_font: ProbeFont,
         subtitles: ProviderTarget | None = None,
         music: ProviderTarget | None = None,
     ) -> None:
@@ -96,13 +91,6 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._media_probe = media_probe
-        self._films = WholeFilmAcceptance(
-            repo,
-            lineage=lineage,
-            brand_templates=brand_templates,
-            media_probe=media_probe,
-            probe_font=probe_font,
-        )
         self._subtitles = subtitles
         self._music = music
 
@@ -239,17 +227,6 @@ class GenerationService:
             shot_index=base.shot_index,
             root_job_id=base.root_job_id or base.id,
             source_job_id=base.id,
-        )
-
-    async def submit_whole_film(self, principal: Principal, request: WholeFilmIn) -> GenerationJob:
-        return await self._accept(
-            principal,
-            await self._films.settle(principal, request),
-            provider=self._compose_provider_name,
-            conversation_id=request.conversation_id,
-            task_id=request.task_id,
-            metadata=request.metadata,
-            shot_index=None,
         )
 
     async def _check_source(

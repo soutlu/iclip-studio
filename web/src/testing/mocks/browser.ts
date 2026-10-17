@@ -80,9 +80,7 @@ for (const showcase of [backgroundShowcase, multipleBackgroundShowcase]) {
 }
 
 const film = addMockConversation('穿搭种草 · 12 秒')
-seedMockFilm(film.id, {
-  musicDescription: '轻快的电子乐，鼓点渐入，副歌推到高潮，整体明亮有活力',
-})
+seedMockFilm(film.id)
 
 const replica = addMockConversation('乐福鞋 · 完全复刻')
 seedMockReplicaWorkspace(replica.id)

@@ -195,12 +195,7 @@ const delayedUpload = (status = 200) => {
 const renderReader = async (initialPath = '/?shot=1&content=scene:1', readOnly = false) => {
   const rendered = await renderWithProviders(
     <>
-      <StoryboardReader
-        artifact={artifact}
-        conversationId={CONVERSATION_ID}
-        readOnly={readOnly}
-        task={{ kind: 'loading' }}
-      />
+      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
       <Toaster />
     </>,
     {
@@ -799,24 +794,7 @@ describe('StoryboardReader', () => {
     )
     expect(within(page).queryByRole('button', { name: '回填提示词' })).toBeNull()
     expect(within(page).queryByRole('button', { name: '编辑视频' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '整片' })).toBeNull()
     expect(files.writes).toEqual([])
-  })
-
-  it('顶栏「整片」打开整片编辑器，地址里记着它；关掉后从地址里去掉', async () => {
-    provide()
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: jobs })))
-    const { router } = await renderReader('/?shot=1')
-    await screen.findByRole('region', { name: '镜头组 1' })
-
-    await userEvent.click(screen.getByRole('button', { name: '整片' }))
-    const editor = await screen.findByRole('dialog', { name: /编辑视频\s*整片/ })
-    expect(within(editor).getByRole('region', { name: '整片时间线' })).toBeVisible()
-    expect(router.state.location.search).toEqual({ shot: 1, wholeFilm: true })
-
-    await userEvent.click(within(editor).getByRole('button', { name: '关闭视频编辑' }))
-    await waitFor(() => expect(router.state.location.search).toEqual({ shot: 1 }))
-    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('选中成片后点回填，把那次出片的镜头组写回当前组并保存', async () => {
@@ -1343,12 +1321,7 @@ describe('StoryboardReader', () => {
     provide('{ invalid JSON')
     // 读不出镜头组就没有正文编辑器，不用等上传权限。
     await renderWithProviders(
-      <StoryboardReader
-        artifact={artifact}
-        conversationId={CONVERSATION_ID}
-        readOnly={false}
-        task={{ kind: 'loading' }}
-      />,
+      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />,
       { initialPath: '/?shot=1&content=scene:1' },
     )
     expect(await screen.findByText('文件格式不正确，镜头组读取失败')).toBeVisible()

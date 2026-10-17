@@ -1,11 +1,8 @@
-/** 分镜工作台顶栏：保存状态，「整片」入口，镜头组切换（上一组、下一组，点中间展开镜头组列表），以及复制整组的字。
+/** 分镜工作台顶栏：保存状态，镜头组切换（上一组、下一组，点中间展开镜头组列表），以及复制整组的字。
  * 分镜页与制作页共用，各自给镜头组摘要和要复制的字。 */
 
 import type { ReactNode } from 'react'
-import { Icon } from '@/shared/icons'
-import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
-import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { copyWithToast } from './copy-with-toast'
 import { ShotGroupSwitcher, type ShotGroupSummary } from './shot-group-switcher'
 import { workbenchControl } from './workbench-control'
@@ -20,36 +17,18 @@ type StoryboardToolbarProps = {
   onGoShot: (shot: number) => void
   /** 复制按钮：按钮名、拷走的字与拷好后的提示；`blocked` 是此刻不能复制的原因，给了就置灰、悬停说原因。 */
   copy: { label: string; text: string; done: string; blocked?: string | undefined }
-  /** 打开整片编辑器；只读时不给，按钮不出现。 */
-  onWholeFilm: (() => void) | undefined
 }
 
 export function StoryboardToolbar({
   copy,
   groups,
   onGoShot,
-  onWholeFilm,
   position,
   status,
 }: StoryboardToolbarProps) {
   return (
     <div aria-label="分镜工具栏" className="storyboard-toolbar" role="group">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{status}</div>
-      {onWholeFilm === undefined ? null : (
-        <TooltipRoot>
-          <TooltipTrigger asChild>
-            <button
-              className={cn(workbenchControl({ shape: 'label' }), 'gap-1.5')}
-              onClick={onWholeFilm}
-              type="button"
-            >
-              <Icon decorative name="video-type" size="sm" />
-              整片
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>把各镜头组的成片拼成整片</TooltipContent>
-        </TooltipRoot>
-      )}
       <ShotGroupSwitcher groups={groups} onGo={onGoShot} position={position} />
       <IconButton
         className={workbenchControl({ shape: 'icon' })}

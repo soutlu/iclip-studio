@@ -75,10 +75,6 @@ async def probe_video(path: Path) -> VideoProfile:
     return _video_profile(stdout, path.name)
 
 
-async def probe_remote_video(url: str) -> VideoProfile:
-    return _video_profile(await _run_remote(_PROBE_STREAMS, url), without_query(url))
-
-
 def _video_profile(stdout: bytes, name: str) -> VideoProfile:
     try:
         streams = json.loads(stdout)["streams"]
@@ -174,6 +170,5 @@ __all__ = [
     "probe_duration_ms",
     "probe_keyframes",
     "probe_remote_duration_ms",
-    "probe_remote_video",
     "probe_video",
 ]

@@ -26,11 +26,7 @@ from iclip.app.agent_layer import (
     live_title_generator,
     watch_and_reload,
 )
-from iclip.app.brand_templates import (
-    brand_template_facts,
-    template_font_prober,
-    template_video_prober,
-)
+from iclip.app.brand_templates import template_font_prober, template_video_prober
 from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
@@ -80,7 +76,7 @@ from iclip.domains.generation.module import (
     QwenServiceConfig,
     build_generation_module,
 )
-from iclip.domains.generation.ports import BrandTemplates, ConversationLineage
+from iclip.domains.generation.ports import ConversationLineage
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.repository import GenerationRepository
@@ -276,8 +272,6 @@ def _generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
-    brand_templates: BrandTemplates,
-    probe_font: ProbeFont,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
@@ -289,8 +283,6 @@ def _generation_module(
         act_as=act_as,
         clear_completion=clear_completion,
         lineage=lineage,
-        brand_templates=brand_templates,
-        probe_font=probe_font,
         video=VideoProviderSettings(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
@@ -451,9 +443,6 @@ def build_app(
             else procrastinate.PsycopgConnector(conninfo=queue_dsn(settings.database_url))
         )
 
-    brand_template_store = SqlBrandTemplateStore(active_engine)
-    font_probe = brand_font_probe or template_font_prober(http_client, fetch_url)
-
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
@@ -470,8 +459,6 @@ def build_app(
             lineage=ForkLineageAdapter(
                 conversations=conversation_repo, readable=conversation_readable
             ),
-            brand_templates=brand_template_facts(brand_template_store),
-            probe_font=font_probe,
             object_store=public_objects,
             queue_connector=connector,
             media_codec=codec,
@@ -493,11 +480,11 @@ def build_app(
         if public_objects is None:
             raise RuntimeError("品牌资源已启用却没有对象存储")
         brand_templates = build_brand_templates_module(
-            brand_template_store,
+            SqlBrandTemplateStore(active_engine),
             own_video_upload=own_video_upload,
             probe=brand_template_probe or template_video_prober(http_client, fetch_url),
             objects=public_objects,
-            probe_font=font_probe,
+            probe_font=brand_font_probe or template_font_prober(http_client, fetch_url),
         )
 
     breakdown_setup: BreakdownSetup | None = None

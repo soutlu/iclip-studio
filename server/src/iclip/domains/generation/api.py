@@ -8,7 +8,6 @@ from fastapi import APIRouter, Query
 from pydantic import TypeAdapter, ValidationError
 
 from iclip.common.errors import ValidationFailed
-from iclip.domains.generation.film_schemas import WholeFilmIn
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
     GenerationEnvelope,
@@ -109,29 +108,6 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         job = await service.submit_video_compose(
             principal, body.model_copy(update={"user_name": user_name})
         )
-        return await envelope(job)
-
-    @router.post("/whole-films", response_model=GenerationEnvelope, status_code=202)
-    async def submit_whole_film(
-        body: WholeFilmIn,
-        principal: Annotated[Principal, require_permission("generation:submit")],
-    ) -> GenerationEnvelope:
-        """把一段对话里的几条成片按时间线剪成一条整片（video / compose，没有来源、原作与镜号），配上
-        字幕、背景音乐与可选的片头片尾，本地 ffmpeg 渲染，不经外部服务。
-
-        ``segments`` 按顺序首尾相接，每段 ``{sourceJobId, startMs, endMs, volume?}`` 取那条成片自己
-        媒体时间里的一段，``volume`` 是原声音量（0 到 2，默认 1）；整片总长是片头、各段与片尾的时长
-        之和，至多 120 秒。``subtitles`` 与 ``music.gain`` 用整片时间（从第一段开头算，不含片头），
-        服务端照做。``conversationId`` 必填，读不到这段对话 404；段的出处或音乐读不到 404，读得到却
-        不合格 422（段只能是出片或有基底的合成，音乐只能是已完成的音频记录）。``intro`` / ``outro``
-        的模板不存在 404，停用、位置不对、参数不完整或画面比例与第一段成片相差超过 2% 422；
-        ``fontId`` 不存在 404，不是字体或已停用 422。``userName`` 的规则同出片，只用来替人办事，
-        不进 ``request``。
-        """
-
-        user_name = resolve_user_name(principal, body.user_name)
-        principal = await act_as(principal, user_name)
-        job = await service.submit_whole_film(principal, body)
         return await envelope(job)
 
     @router.post("/subtitles", response_model=GenerationEnvelope, status_code=202)

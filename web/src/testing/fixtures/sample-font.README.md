@@ -1,6 +1,6 @@
 # 测试字体
 
-`sample-font.otf` 是 Noto Sans CJK SC Regular 的子集，改了名，只用于测试与 mock 预览；线上品牌字体由用户上传。前端单测、浏览器用例与后端集成测试 `server/tests/integration_no_llm/generation/test_whole_film_provider.py` 都按相对路径读它，文件位置不要改。
+`sample-font.otf` 是 Noto Sans CJK SC Regular 的子集，改了名，只用于测试与 mock 预览；线上品牌字体由用户上传。mock 与浏览器用例按相对路径读它，文件位置不要改。
 
 ## 来源与许可
 
