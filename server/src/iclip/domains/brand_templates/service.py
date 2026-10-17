@@ -1,21 +1,15 @@
-"""品牌资源用例：治理者登记视频或字体、改名、停用与恢复，读者按种类与品牌筛选。"""
-
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from typing import Final
 
 import structlog
 
+from iclip.common.brand_vocab import BRAND_FONT
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from iclip.common.shot_prompt import format_seconds
-from iclip.domains.brand_templates.models import MAX_TEMPLATE_MS, FontUploadTicket
-from iclip.domains.brand_templates.repository import (
-    BrandTemplateStore,
-    OwnVideoUpload,
-    ProbeFont,
-    ProbeVideo,
-)
+from iclip.domains.brand_templates.models import FONT_EXTENSIONS, MAX_TEMPLATE_MS
+from iclip.domains.brand_templates.repository import BrandTemplateStore, OwnVideoUpload, ProbeVideo
 from iclip.domains.brand_templates.schemas import (
     BrandFontConfirmIn,
     BrandFontInfoOut,
@@ -27,11 +21,14 @@ from iclip.domains.brand_templates.schemas import (
 )
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import MAX_FONT_BYTES
+from iclip.platform.media.fonts import MAX_FONT_BYTES, ProbeFont
+from iclip.platform.object_store.direct_upload import UploadTicket, sign_upload
 from iclip.platform.object_store.layout import MEDIA_PATHS
-from iclip.platform.object_store.store import SIGNED_PUT_EXPIRES_SECONDS, SignedUploadStore
+from iclip.platform.object_store.store import SignedUploadStore
 
 _logger = structlog.stdlib.get_logger(__name__)
+
+UNREADABLE_FONT: Final = "字体文件无法读取，无法使用；请上传静态 TTF 或 OTF 字体"
 
 
 class BrandTemplateService:
@@ -51,11 +48,6 @@ class BrandTemplateService:
         self._probe_font = probe_font
 
     async def create(self, principal: Principal, body: BrandTemplateCreateIn) -> BrandTemplateOut:
-        """拿调用者自己的一条视频上传建一条在用的模板，画幅、时长与音轨从视频本身量出来记下。
-
-        别人的上传、不是视频的上传、不存在的都是 ``NotFound``；量不出来、或超过
-        ``MAX_TEMPLATE_MS`` 是 ``ValidationFailed``。"""
-
         url = await self._own_video_upload(principal, body.upload_id)
         if url is None:
             raise NotFound("没有这条视频上传")
@@ -84,16 +76,12 @@ class BrandTemplateService:
     async def list(
         self, principal: Principal, *, kind: str | None, brand: str | None, include_disabled: bool
     ) -> BrandTemplatesOut:
-        """建立晚的排前面；默认只列在用的，连停用的一起列只限治理者，别人要是 ``PermissionDenied``。"""
-
         if include_disabled and not principal.has(MANAGE_PERMISSION):
             raise PermissionDenied("只有管理员能看停用的模板")
         found = await self._store.list(kind=kind, brand=brand, include_disabled=include_disabled)
         return BrandTemplatesOut(items=[BrandTemplateOut.of(one) for one in found])
 
     async def update(self, template_id: uuid.UUID, body: BrandTemplateUpdateIn) -> BrandTemplateOut:
-        """改名、停用或恢复使用；没有这条模板是 ``NotFound``。"""
-
         updated = await self._store.update(
             template_id,
             name=body.name,
@@ -105,33 +93,27 @@ class BrandTemplateService:
             raise NotFound("没有这个品牌模板")
         return BrandTemplateOut.of(updated)
 
-    def sign_font(self, principal: Principal, body: BrandFontSignIn) -> FontUploadTicket:
+    def sign_font(self, principal: Principal, body: BrandFontSignIn) -> UploadTicket:
         upload_id = uuid.uuid4()
-        ext = "ttf" if body.content_type == "font/ttf" else "otf"
-        headers = {"Content-Type": body.content_type, "x-oss-meta-uploader": str(principal.user_id)}
-        if principal.api_key_id is not None:
-            headers["x-oss-meta-api-key"] = str(principal.api_key_id)
-        url = self._objects.sign_put(
-            object_key=MEDIA_PATHS.font_upload(
-                user_id=principal.user_id, upload_id=upload_id, ext=ext
-            ),
-            headers=headers,
-        )
-        return FontUploadTicket(
+        return sign_upload(
+            self._objects,
             upload_id=upload_id,
-            upload_url=url,
-            headers=headers,
-            expires_at=datetime.now(UTC) + timedelta(seconds=SIGNED_PUT_EXPIRES_SECONDS),
+            object_key=MEDIA_PATHS.font_upload(
+                user_id=principal.user_id,
+                upload_id=upload_id,
+                ext=FONT_EXTENSIONS[body.content_type],
+            ),
+            content_type=body.content_type,
+            user_id=principal.user_id,
+            api_key_id=principal.api_key_id,
         )
 
     async def confirm_font(
         self, principal: Principal, upload_id: uuid.UUID, body: BrandFontConfirmIn
     ) -> BrandTemplateOut:
-        """确认字体文件并幂等登记品牌资源；不创建生成记录。"""
-
         previous = await self._store.get(upload_id)
         if previous is not None:
-            if previous.kind != "font" or previous.created_by != principal.user_id:
+            if previous.kind != BRAND_FONT or previous.created_by != principal.user_id:
                 raise NotFound("没有这次字体上传")
             return BrandTemplateOut.of(previous)
         found = await self._objects.find_object(
@@ -139,15 +121,15 @@ class BrandTemplateService:
         )
         if found is None:
             raise Conflict("字体文件尚未上传，请上传完成后重试")
-        if found.content_type not in ("font/ttf", "font/otf"):
+        if found.content_type not in FONT_EXTENSIONS:
             raise ValidationFailed("只接受静态 TTF 或 OTF 字体")
         if found.size_bytes > MAX_FONT_BYTES:
             raise ValidationFailed(f"字体文件不能超过 {MAX_FONT_BYTES // (1024 * 1024)} MB")
         url = self._objects.public_url(found.object_key)
-        await self._font_info(url)
+        await self._read_font(url, resource_id=upload_id)
         created = await self._store.create(
             resource_id=upload_id,
-            kind="font",
+            kind=BRAND_FONT,
             brand=body.brand,
             name=body.name,
             url=url,
@@ -155,25 +137,24 @@ class BrandTemplateService:
             created_by=principal.user_id,
             api_key_id=principal.api_key_id,
         )
-        if created.kind != "font" or created.created_by != principal.user_id:
+        if created.kind != BRAND_FONT or created.created_by != principal.user_id:
             raise NotFound("没有这次字体上传")
         return BrandTemplateOut.of(created)
 
     async def font_info(self, template_id: uuid.UUID) -> BrandFontInfoOut:
-        """按文件读取内部字体信息；停用资源的已有整片仍可以预览。"""
-
         resource = await self._store.get(template_id)
         if resource is None:
             raise NotFound("没有这个字体资源")
-        if resource.kind != "font":
+        if resource.kind != BRAND_FONT:
             raise ValidationFailed("所选资源不是字体")
-        return await self._font_info(resource.url)
+        return await self._read_font(resource.url, resource_id=template_id)
 
-    async def _font_info(self, url: str) -> BrandFontInfoOut:
+    async def _read_font(self, url: str, *, resource_id: uuid.UUID) -> BrandFontInfoOut:
         try:
             return BrandFontInfoOut.of(await self._probe_font(url))
         except MediaError as exc:
-            raise ValidationFailed(f"字体无法使用：{exc}") from exc
+            _logger.warning("字体文件读取失败", template_id=resource_id, error=str(exc))
+            raise ValidationFailed(UNREADABLE_FONT) from exc
 
 
-__all__ = ["BrandTemplateService"]
+__all__ = ["UNREADABLE_FONT", "BrandTemplateService"]

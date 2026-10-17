@@ -55,8 +55,6 @@ export type {
   BrandFontInfoOut,
   BrandFontSignIn,
   BrandFontUnicodeRange,
-  BrandFontUploadInstruction,
-  BrandFontUploadTicketOut,
   BrandTemplateCreateIn,
   BrandTemplateOut,
   BrandTemplatesOut,

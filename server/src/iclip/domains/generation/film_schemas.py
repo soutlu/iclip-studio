@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, ClassVar, Final, Literal
+from typing import Annotated, ClassVar, Final
 
 from pydantic import Field, field_validator, model_validator
 
@@ -18,6 +18,7 @@ from iclip.domains.generation.schemas import (
     UserName,
     nonblank,
 )
+from iclip.platform.media.fonts import FontStyle
 
 MAX_WHOLE_FILM_MS: Final = 120_000
 MAX_WHOLE_FILM_SUBTITLES: Final = 500
@@ -175,7 +176,7 @@ class WholeFilmFont(CamelModel):
     name: Annotated[str, Field(min_length=1)]
     family: Annotated[str, Field(min_length=1)]
     weight: Annotated[int, Field(ge=1, le=1000)]
-    style: Literal["normal", "italic", "oblique"]
+    style: FontStyle
 
 
 class WholeFilmRender(CamelModel):

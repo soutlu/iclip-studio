@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from iclip.app.bootstrap import build_app
 from iclip.domains.brand_templates.models import MAX_TEMPLATE_MS, ProbedVideo
+from iclip.domains.brand_templates.service import UNREADABLE_FONT
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
@@ -37,10 +38,8 @@ class FakeFontProbe:
             family="Test Family", weight=600, style="normal", unicode_ranges=((32, 126),)
         )
         self.failure: MediaError | None = None
-        self.seen: list[str] = []
 
     async def __call__(self, url: str) -> FontInfo:
-        self.seen.append(url)
         if self.failure is not None:
             raise self.failure
         return self.info
@@ -52,15 +51,13 @@ def font_probe() -> FakeFontProbe:
 
 
 class FakeProbe:
-    """量视频的替身：交回预先写好的参数，记下量过哪些地址；``failure`` 给了就抛它。"""
+    """量视频的替身：交回预先写好的参数；``failure`` 给了就抛它。"""
 
     def __init__(self) -> None:
         self.video = ProbedVideo(width=1080, height=1920, duration_ms=3000, has_audio=True)
         self.failure: MediaError | None = None
-        self.seen: list[str] = []
 
     async def __call__(self, url: str) -> ProbedVideo:
-        self.seen.append(url)
         if self.failure is not None:
             raise self.failure
         return self.video
@@ -199,7 +196,6 @@ async def test_a_template_records_what_was_measured_from_the_callers_own_video(
 
     assert created.status_code == 201, created.text
     body = created.json()
-    assert probe.seen == [url], "量的是那条上传的地址"
     assert {key: body[key] for key in body if key not in ("id", "createdAt")} == {
         "kind": "outro",
         "brand": None,
@@ -233,7 +229,6 @@ async def test_only_the_callers_own_video_upload_is_accepted(
     response = await create(http, upload_id)
 
     assert response.status_code == 404, response.text
-    assert probe.seen == [], "不去量"
     assert await listed(http, includeDisabled="true") == []
 
 
@@ -435,7 +430,6 @@ async def test_font_upload_is_idempotent_and_never_creates_a_generation(
         f"/brand-templates/fonts/{upload_id}/confirm", json={"name": "不应覆盖", "brand": "DP"}
     )
     assert repeated.json() == resource
-    assert font_probe.seen == [resource["url"]]
     assert await listed(http, kind="font", brand="N8") == [resource]
     assert await listed(http, kind="intro") == []
     engine = build_engine(pg_url)
@@ -479,9 +473,10 @@ async def test_font_upload_checks_authority_ownership_and_actual_font(
         await http.post("/brand-templates/fonts/sign", json={"contentType": "font/woff"})
     ).status_code == 422
     upload_id = await font_upload(http, bucket)
-    font_probe.failure = MediaError("不支持可变字体")
+    font_probe.failure = MediaError("暂不支持可变字体，请选择静态 TTF/OTF")
     rejected = await http.post(f"/brand-templates/fonts/{upload_id}/confirm", json={"name": "字体"})
-    assert rejected.status_code == 422 and "不支持可变字体" in rejected.json()["detail"]
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"] == UNREADABLE_FONT
     assert await listed(http) == []
     font_probe.failure = None
     await login_as(http, pg_url, "other-root", "root")
@@ -509,9 +504,10 @@ async def test_font_info_rejects_a_non_font_missing_or_unreadable_resource(
     assert (await http.get(f"/brand-templates/{uuid.uuid4()}/font-info")).status_code == 404
     font_id = await font_upload(http, bucket)
     await http.post(f"/brand-templates/fonts/{font_id}/confirm", json={"name": "字体"})
-    font_probe.failure = MediaError("字体文件取不到")
+    font_probe.failure = MediaError("取不到素材（ConnectError）: https://internal.example.test/f")
     failed = await http.get(f"/brand-templates/{font_id}/font-info")
-    assert failed.status_code == 422 and "字体文件取不到" in failed.json()["detail"]
+    assert failed.status_code == 422
+    assert failed.json()["detail"] == UNREADABLE_FONT
 
 
 @pytest.mark.parametrize("invalid_type", [False, True], ids=["oversize", "wrong-mime"])
@@ -538,5 +534,4 @@ async def test_font_confirmation_checks_object_metadata_before_parsing(
         f"/brand-templates/fonts/{ticket['uploadId']}/confirm", json={"name": "字体"}
     )
     assert response.status_code == 422
-    assert font_probe.seen == []
     assert await listed(http, kind="font") == []

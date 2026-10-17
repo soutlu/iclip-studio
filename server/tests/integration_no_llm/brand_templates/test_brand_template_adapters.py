@@ -21,7 +21,6 @@ from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.models import ProbedVideo
 from iclip.domains.generation.ports import BrandTemplateFacts
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.fonts import FontInfo
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fonts import make_font
 from tests.helpers.fork_lineage import make_user
@@ -97,10 +96,7 @@ async def test_the_whole_film_side_reads_video_templates_and_whether_they_are_in
         api_key_id=None,
     )
 
-    async def probe_font(url: str) -> FontInfo:
-        return FontInfo(family="Test", weight=400, style="normal", unicode_ranges=((32, 126),))
-
-    facts = brand_template_facts(store, probe_font=probe_font)
+    facts = brand_template_facts(store)
 
     in_use = await facts(template.id)
     await store.update(template.id, name=None, disabled=True)
@@ -130,8 +126,12 @@ async def test_the_whole_film_side_reads_video_templates_and_whether_they_are_in
             {"id": font_id, "url": "https://cdn.example.test/font.ttf", "creator": creator},
         )
     font = await facts(font_id)
-    assert font is not None and font.kind == "font"
-    assert font.font_info is not None and font.font_info.family == "Test"
+    assert font is not None
+    assert (font.kind, font.url, font.enabled) == (
+        "font",
+        "https://cdn.example.test/font.ttf",
+        True,
+    )
     async with engine.begin() as conn:
         await conn.execute(
             text("UPDATE iclip.brand_templates SET duration_ms = NULL WHERE id = :id"),

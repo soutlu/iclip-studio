@@ -14,8 +14,10 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
+from structlog.testing import capture_logs
 
 from iclip.domains.generation.api import create_generations_router
+from iclip.domains.generation.film_acceptance import UNREADABLE_FONT
 from iclip.domains.generation.film_schemas import (
     MAX_MUSIC_GAIN_POINTS,
     MAX_WHOLE_FILM_MS,
@@ -46,6 +48,7 @@ from tests.helpers.generation import (
     FAKE_SUBTITLE_PROVIDER,
     FAKE_VIDEO_PROVIDER,
     QUEUE_SETTINGS,
+    FakeFontProbe,
     FakeMediaProbe,
     FixedBrandTemplates,
     FixedLineage,
@@ -106,6 +109,7 @@ def build_world(
     compose_submission: ProviderSubmission | None = None,
     brand_templates: FixedBrandTemplates | None = None,
     media_probe: FakeMediaProbe | None = None,
+    probe_font: FakeFontProbe | None = None,
 ) -> World:
     """真队列与真服务：字幕识别开着，完成回调接到服务上，与装配一致。成片 ``TAKE_URL`` 默认是竖屏
     1080×1920，与 ``brand_template`` 的比例相同。"""
@@ -144,6 +148,7 @@ def build_world(
         lineage=lineage or FixedLineage(),
         media_probe=media_probe or FakeMediaProbe(profiles={TAKE_URL: PORTRAIT}),
         brand_templates=brand_templates or FixedBrandTemplates(),
+        probe_font=probe_font or FakeFontProbe(),
         subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=ProviderTarget(provider=FAKE_MUSIC_PROVIDER, model="qwen-audio-3.1-tts-next"),
     )
@@ -1030,11 +1035,18 @@ async def test_selected_font_is_snapshotted_with_its_actual_face() -> None:
         height=None,
         duration_ms=None,
         has_audio=None,
-        font_info=FontInfo(
-            family="Brand Family", weight=600, style="italic", unicode_ranges=((32, 126),)
+    )
+    world = build_world(
+        [take],
+        brand_templates=FixedBrandTemplates(font),
+        probe_font=FakeFontProbe(
+            {
+                font.url: FontInfo(
+                    family="Brand Family", weight=600, style="italic", unicode_ranges=((32, 126),)
+                )
+            }
         ),
     )
-    world = build_world([take], brand_templates=FixedBrandTemplates(font))
     async with client(world, principal("generation:submit", user_id=me)) as http:
         result = await http.post(
             "/generations/whole-films", json=body(conversation, segment(take), fontId=str(font.id))
@@ -1067,6 +1079,28 @@ async def test_missing_disabled_or_wrong_kind_font_is_rejected(case: str, status
         )
     assert result.status_code == status, result.text
     assert world.films() == []
+
+
+async def test_an_unreadable_font_is_rejected_without_the_raw_error() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    font = replace(brand_template("font"), url="https://cdn.test/broken.ttf")
+    world = build_world(
+        [take], brand_templates=FixedBrandTemplates(font), probe_font=FakeFontProbe()
+    )
+    with capture_logs() as logs:
+        async with client(world, principal("generation:submit", user_id=me)) as http:
+            result = await http.post(
+                "/generations/whole-films",
+                json=body(conversation, segment(take), fontId=str(font.id)),
+            )
+    assert result.status_code == 422, result.text
+    assert result.json()["detail"] == UNREADABLE_FONT
+    assert world.films() == []
+    (warning,) = [log for log in logs if log["event"] == "字体文件读取失败"]
+    assert warning["log_level"] == "warning"
+    assert warning["template_id"] == font.id
+    assert font.url in warning["error"]
 
 
 @pytest.mark.parametrize("field", ["width", "height", "duration_ms", "has_audio"])

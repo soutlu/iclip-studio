@@ -51,6 +51,7 @@ from iclip.domains.generation.segment_end import check_segment_end, exceeds_sour
 from iclip.domains.generation.stored_requests import GenerationRequest
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.paging import check_limit
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -80,6 +81,7 @@ class GenerationService:
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
         brand_templates: BrandTemplates,
+        probe_font: ProbeFont,
         subtitles: ProviderTarget | None = None,
         music: ProviderTarget | None = None,
     ) -> None:
@@ -95,7 +97,11 @@ class GenerationService:
         self._lineage = lineage
         self._media_probe = media_probe
         self._films = WholeFilmAcceptance(
-            repo, lineage=lineage, brand_templates=brand_templates, media_probe=media_probe
+            repo,
+            lineage=lineage,
+            brand_templates=brand_templates,
+            media_probe=media_probe,
+            probe_font=probe_font,
         )
         self._subtitles = subtitles
         self._music = music

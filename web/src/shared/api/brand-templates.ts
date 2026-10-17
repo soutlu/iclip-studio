@@ -9,9 +9,9 @@ import type {
 } from './generated/types.gen'
 import {
   zBrandFontInfoOut,
-  zBrandFontUploadTicketOut,
   zBrandTemplateOut,
   zBrandTemplatesOut,
+  zUploadTicketOut,
 } from './generated/zod.gen'
 import { putToStorage } from './media-upload'
 
@@ -77,7 +77,7 @@ export const uploadBrandFontFile = async (
   if (extension !== 'ttf' && extension !== 'otf')
     throw new UserFacingError('字体格式不受支持，请选择 TTF 或 OTF 文件')
   if (file.size > 32 * 1024 * 1024) throw new UserFacingError('字体文件不能超过 32 MiB')
-  const ticket = await apiFetch('/brand-templates/fonts/sign', zBrandFontUploadTicketOut, {
+  const ticket = await apiFetch('/brand-templates/fonts/sign', zUploadTicketOut, {
     method: 'POST',
     body: { contentType: extension === 'ttf' ? 'font/ttf' : 'font/otf' },
     fallbackErrorMessage: '上传字体失败',

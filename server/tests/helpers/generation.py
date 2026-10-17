@@ -61,6 +61,7 @@ from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fonts import FontInfo
 from iclip.platform.media.probe import VideoProfile
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
@@ -771,6 +772,7 @@ def film_image_service(
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
         brand_templates=FixedBrandTemplates(),
+        probe_font=FakeFontProbe(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -846,6 +848,18 @@ class FixedBrandTemplates:
 
     async def __call__(self, template_id: uuid.UUID) -> BrandTemplateFacts | None:
         return self._templates.get(template_id)
+
+
+class FakeFontProbe:
+    """ProbeFont 替身：按地址给字体信息，不认得的地址像取不到一样抛 ``MediaError``。"""
+
+    def __init__(self, fonts: Mapping[str, FontInfo] | None = None) -> None:
+        self._fonts = dict(fonts or {})
+
+    async def __call__(self, url: str) -> FontInfo:
+        if url not in self._fonts:
+            raise MediaError(f"取不到素材（ConnectError）: {url}")
+        return self._fonts[url]
 
 
 class MemoryObjectStore:

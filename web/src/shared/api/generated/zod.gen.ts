@@ -151,24 +151,6 @@ export const zBrandFontInfoOut = z.object({
 })
 
 /**
- * BrandFontUploadInstruction
- */
-export const zBrandFontUploadInstruction = z.object({
-  expiresAt: z.iso.datetime(),
-  headers: z.record(z.string(), z.string()),
-  method: z.literal('PUT').optional().default('PUT'),
-  url: z.string(),
-})
-
-/**
- * BrandFontUploadTicketOut
- */
-export const zBrandFontUploadTicketOut = z.object({
-  upload: zBrandFontUploadInstruction,
-  uploadId: z.uuid(),
-})
-
-/**
  * BrandTemplateCreateIn
  */
 export const zBrandTemplateCreateIn = z.object({
@@ -2060,7 +2042,7 @@ export const zUploadSignIn = z.object({
  * 一次直传的许可：先拿到名字，再去传。
  *
  * ``uploadId`` 在字节落地之前就发下来，因为传这个副作用发生之前，双方必须先就「它
- * 叫什么」达成一致。确认时用它指这一次上传，确认后它就是那条上传记录的 id。
+ * 叫什么」达成一致。确认时用它指这一次上传。
  */
 export const zUploadTicketOut = z.object({
   upload: zUploadInstruction,
@@ -2969,7 +2951,7 @@ export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
 /**
  * Successful Response
  */
-export const zSignFontBrandTemplatesFontsSignPostResponse = zBrandFontUploadTicketOut
+export const zSignFontBrandTemplatesFontsSignPostResponse = zUploadTicketOut
 
 export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostBody = zBrandFontConfirmIn
 

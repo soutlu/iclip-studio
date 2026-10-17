@@ -40,6 +40,7 @@ from tests.helpers.generation import (
     LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
+    FakeFontProbe,
     FakeMediaProbe,
     FixedBrandTemplates,
     FixedLineage,
@@ -165,6 +166,7 @@ def build_test_app(
         lineage=lineage or FixedLineage(),
         media_probe=probe,
         brand_templates=FixedBrandTemplates(),
+        probe_font=FakeFontProbe(),
     )
     app.include_router(
         create_generations_router(service, act_as=ActAs(users or InMemoryUserRepository()))

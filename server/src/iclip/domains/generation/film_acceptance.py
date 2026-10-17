@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from typing import Final, Literal
+from typing import Final
 
 import structlog
 
+from iclip.common.brand_vocab import BRAND_FONT, BrandPosition
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.film_schemas import (
@@ -33,11 +34,12 @@ from iclip.domains.generation.schemas import KIND_AUDIO
 from iclip.domains.generation.segment_end import check_segment_end
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.media.probe import VideoProfile
 
 _logger = structlog.stdlib.get_logger(__name__)
 
-BrandPosition = Literal["intro", "outro"]
+UNREADABLE_FONT: Final = "字体文件无法读取，无法合成；请重新上传字体"
 
 _BRAND_LABELS: Final[Mapping[BrandPosition, str]] = {"intro": "片头", "outro": "片尾"}
 
@@ -59,11 +61,13 @@ class WholeFilmAcceptance:
         lineage: ConversationLineage,
         brand_templates: BrandTemplates,
         media_probe: RemoteMediaProbe,
+        probe_font: ProbeFont,
     ) -> None:
         self._repo = repo
         self._lineage = lineage
         self._brand_templates = brand_templates
         self._media_probe = media_probe
+        self._probe_font = probe_font
 
     async def settle(self, principal: Principal, request: WholeFilmIn) -> WholeFilmRequest:
         conversation_id = request.conversation_id
@@ -214,13 +218,15 @@ class WholeFilmAcceptance:
         font = await self._brand_templates(font_id)
         if font is None:
             raise NotFound("没有这个字幕字体")
-        if font.kind != "font":
+        if font.kind != BRAND_FONT:
             raise ValidationFailed("字幕字体必须选择字体资源")
         if not font.enabled:
             raise ValidationFailed("字幕字体已停用，请选择其他字体")
-        info = font.font_info
-        if info is None:
-            raise RuntimeError("字体资源适配器未提供字体信息")
+        try:
+            info = await self._probe_font(font.url)
+        except MediaError as exc:
+            _logger.warning("字体文件读取失败", template_id=font.id, error=str(exc))
+            raise ValidationFailed(UNREADABLE_FONT) from exc
         return WholeFilmFont(
             font_id=font.id,
             url=font.url,
@@ -256,7 +262,7 @@ class WholeFilmAcceptance:
 
 __all__ = [
     "MAX_BRAND_RATIO_DEVIATION",
-    "BrandPosition",
+    "UNREADABLE_FONT",
     "WholeFilmAcceptance",
     "matches_film_ratio",
 ]

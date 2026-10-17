@@ -67,7 +67,7 @@ from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
-from iclip.domains.brand_templates.repository import ProbeFont, ProbeVideo
+from iclip.domains.brand_templates.repository import ProbeVideo
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -130,6 +130,7 @@ from iclip.platform.file_store.store import (
 )
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 from iclip.platform.media.codec import MediaCodec, detect_codec
+from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
@@ -214,6 +215,7 @@ def _conversation_of(deps: object) -> str | None:
 
 
 def _install_hup_reload(agent_layer: CurrentAgentLayer) -> bool:
+    # 非主线程与 Windows 的事件循环不支持 add_signal_handler。
     try:
         asyncio.get_running_loop().add_signal_handler(signal.SIGHUP, agent_layer.reload)
     except (AttributeError, NotImplementedError, RuntimeError, ValueError) as exc:
@@ -275,6 +277,7 @@ def _generation_module(
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
     brand_templates: BrandTemplates,
+    probe_font: ProbeFont,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
@@ -287,6 +290,7 @@ def _generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         brand_templates=brand_templates,
+        probe_font=probe_font,
         video=VideoProviderSettings(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
@@ -466,7 +470,8 @@ def build_app(
             lineage=ForkLineageAdapter(
                 conversations=conversation_repo, readable=conversation_readable
             ),
-            brand_templates=brand_template_facts(brand_template_store, probe_font=font_probe),
+            brand_templates=brand_template_facts(brand_template_store),
+            probe_font=font_probe,
             object_store=public_objects,
             queue_connector=connector,
             media_codec=codec,
