@@ -529,7 +529,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 13. 资料库 (Library)
 
-全站成片连同出片时脚本、以及全站整片的四个只读端点，都要 `generation:read`；品牌模板另见下文「品牌模板」。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张成片卡是一段对话的分镜，装着这段对话读得到的全部成片；一张整片卡装着一段对话自己的全部整片。
+全站成片连同出片时脚本、以及全站整片的五个只读端点，都要 `generation:read`；品牌模板另见下文「品牌模板」。收录口径、卡与卡面的定义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)：一张成片卡是一段对话的分镜，装着这段对话读得到的全部成片；一张整片卡装着一段对话自己的全部整片。
 
 - **可见范围**：任何持 `generation:read` 的人都能看到全部卡、脚本与来源对话。卡的 `id` 是对话 id，不挂对话（对话不存在也算）的卡是那条出片的 id。`conversationId` 对所有人都给，不挂对话为 `null`；`title`、`agentId`、`taskId` 取自来源对话，对话删了照给。`canOpenConversation` 是这位读者能不能打开那段对话，口径同 §6 的对话可读范围：谁读得到那段对话，谁就能打开；治理者含墓碑。不挂对话的卡恒为 `false`。
 - `GET /library/videos` 按卡面完成时刻（`face.finishedAt`）倒序，是 §3 按建立时间排的例外；翻页 `limit` 与 `cursor`，规则同 §6，游标是卡面完成时刻加卡 `id`。筛选：`userName`（卡的作者）、`since` / `until`（左闭右开，作用在卡面完成时刻上）、`orientation`（`portrait` / `landscape`，按卡面成片对应那条出片请求里的 `aspectRatio` 判，认不出比例的两边都不算）、`q`（按字面包含匹配卡面成片对应那条出片的正文与对话标题，不区分大小写；首尾空白去掉后为空即不筛）。有没有卡、卡面、排序与筛选只看对话自己的成片。`total` 是当前筛选下的卡数，只在第一页（不带 `cursor`）给，翻页时为 `null`。
@@ -538,6 +538,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /library/videos/{id}` 返回一张卡：`video`（卡本身）与 `groups[]`（每组 `shotIndex` 加 `versions[]`）。有镜号的组按镜号从小到大在前；没镜号的组是一条出片连同同原作的合成，排在后面、按出片完成先后。组内早完成的在前，第 N 条就是第 N 版。`id` 只认卡 id，出片 id、不存在的 id 一律 `404`；对话删了照常返回。顶层另带 `canMakeSame`：这位读者能不能拿这张卡做同款（§6），卡挂着对话、`canOpenConversation` 为真、那段对话的工作区里有 `film.icml` 或 `video_shot.json` 三条都成立才是 `true`。列表的卡上没有这一项。
 - `GET /library/authors` 列作者与各自的卡数（`userName`、`count`），多的在前、同数按名字，不受筛选影响。只数成片卡。
 - `GET /library/whole-films` 列整片卡，一段对话一张，只算这段对话自己的整片。卡的 `conversationId` 就是卡 id，`title`、`canOpenConversation` 与 `userName`（卡的作者，即对话属主）口径同成片卡；没有详情端点，卡里直接带 `versions[]`：每版 `jobId`、`outputUrl`、`watermarkOutputUrl`（整片没有水印版，现为 `null`）、`durationMs`（渲染后量的）、`finishedAt` 与 `userName`（那条整片属主的用户名），早完成的在前，第 N 条就是第 N 版；`face` 是卡面，即最后一版。排序、翻页、`total` 与时间窗同 `GET /library/videos`，游标是卡面完成时刻加对话 id。筛选只有 `userName`、`since` / `until` 与 `q`，`q` 只匹配对话标题（整片没有正文）；没有 `orientation`（整片的画幅取第一段成片，请求里不记比例）。卡上不带脚本，也没有 `canMakeSame`。
+- `GET /library/whole-films/authors` 列整片卡的作者（对话属主）与各自的整片卡数，形状与排序同 `GET /library/authors`，不受筛选影响。
 
 ### 品牌模板
 

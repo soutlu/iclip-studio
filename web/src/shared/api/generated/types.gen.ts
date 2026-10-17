@@ -7847,6 +7847,23 @@ export type WholeFilmsLibraryWholeFilmsGetResponses = {
 export type WholeFilmsLibraryWholeFilmsGetResponse =
   WholeFilmsLibraryWholeFilmsGetResponses[keyof WholeFilmsLibraryWholeFilmsGetResponses]
 
+export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/library/whole-films/authors'
+}
+
+export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: LibraryAuthorsOut
+}
+
+export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse =
+  WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses[keyof WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses]
+
 export type ListReferencesReferencesGetData = {
   body?: never
   path?: never

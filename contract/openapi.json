@@ -14595,7 +14595,7 @@
     },
     "/library/authors": {
       "get": {
-        "description": "卡的作者与各自的卡数，多的排前面；给按人筛选用。",
+        "description": "成片卡的作者与各自的卡数，多的排前面、同数按名字，不受筛选影响；给按人筛选用。",
         "operationId": "authors_library_authors_get",
         "responses": {
           "200": {
@@ -14982,6 +14982,40 @@
           }
         ],
         "summary": "Whole Films",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/library/whole-films/authors": {
+      "get": {
+        "description": "整片卡的作者与各自的卡数，多的排前面、同数按名字，不受筛选影响；给整片页按人筛选用。",
+        "operationId": "whole_film_authors_library_whole_films_authors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryAuthorsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Whole Film Authors",
         "tags": [
           "library"
         ]

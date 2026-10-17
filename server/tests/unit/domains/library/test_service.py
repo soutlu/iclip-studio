@@ -172,6 +172,9 @@ class FakeReports:
         self.films_counted.append(scope)
         return len(self.films)
 
+    async def whole_film_authors(self) -> Sequence[LibraryAuthorOut]:
+        return [LibraryAuthorOut(user_name="Nora.Ho", count=len(self.films))]
+
 
 def library(
     reports: FakeReports, *, with_files: frozenset[tuple[uuid.UUID, uuid.UUID]] = frozenset()

@@ -3581,6 +3581,11 @@ export const zWholeFilmsLibraryWholeFilmsGetQuery = z.object({
  */
 export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
 
+/**
+ * Successful Response
+ */
+export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
+
 export const zListReferencesReferencesGetQuery = z.object({
   videoTypes: z
     .array(
