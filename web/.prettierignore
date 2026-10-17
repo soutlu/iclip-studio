@@ -5,5 +5,7 @@ pnpm-lock.yaml
 src/routeTree.gen.ts
 docs/
 public/lottie/
+# 构建时由 pnpm hf:registry 同步的 HyperFrames 组件库，不入库。
+public/hyperframes/
 # 外部合同保持原文，见该目录 README。
 src/shared/transcript/vendor/

@@ -4,7 +4,7 @@
 
 setup:
 	cd server && uv sync
-	cd web && pnpm install
+	cd web && pnpm install && pnpm hf:registry
 
 dev:
 	cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload
