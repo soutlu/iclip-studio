@@ -19,12 +19,8 @@ from iclip.platform.media.codec import (
     TRIAL_TIMEOUT_SECONDS,
     MediaCodec,
 )
-from iclip.platform.media.ffmpeg import (
-    PROBE_TIMEOUT_SECONDS,
-    probe_duration_ms,
-    probe_keyframes,
-    run,
-)
+from iclip.platform.media.probe import probe_duration_ms, probe_keyframes
+from iclip.platform.media.process import PROBE_TIMEOUT_SECONDS, run
 
 BROKEN_DECODE = MediaCodec(
     name="broken-decode",

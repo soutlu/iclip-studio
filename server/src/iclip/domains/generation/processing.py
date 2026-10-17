@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -11,6 +12,11 @@ from typing import Final
 import httpx
 import structlog
 
+from iclip.domains.generation.film_render import (
+    MusicTooShort,
+    render_whole_film,
+    subtitle_font,
+)
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -28,24 +34,11 @@ from iclip.domains.generation.schemas import (
     WholeFilmRequest,
 )
 from iclip.platform.media.codec import MediaCodec
-from iclip.platform.media.ffmpeg import (
-    MAX_AUDIO_BYTES,
-    MAX_VIDEO_BYTES,
-    FilmCaption,
-    FilmCut,
-    FilmMusic,
-    FilmSound,
-    MediaCut,
-    MediaError,
-    MusicTooShort,
-    VideoProfile,
-    cut_concat,
-    download,
-    probe_duration_ms,
-    probe_video,
-    render_film,
-)
-from iclip.platform.media.fonts import MAX_FONT_BYTES, FontError, inspect_font
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MAX_AUDIO_BYTES, MAX_VIDEO_BYTES, download
+from iclip.platform.media.fonts import MAX_FONT_BYTES
+from iclip.platform.media.probe import VideoProfile, probe_duration_ms, probe_video
+from iclip.platform.media.video import MediaCut, cut_concat
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicObjectStore
 
@@ -186,84 +179,31 @@ class FfmpegComposeProvider:
     async def _render_whole_film(
         self, request: WholeFilmRequest, report: _Report
     ) -> tuple[bytes, int]:
-        """取齐各段的成片、片头片尾与音乐，按时间线剪成整片；返回字节与实际时长（毫秒）。
-
-        画幅与帧率取第一段那条成片，别的段与片头片尾缩放、补边去适配它；声音照请求里记的参数做。
-        音乐不够长是 ``MUSIC_TOO_SHORT``，别的加工失败是 ``MEDIA_PROCESS_FAILED``。临时目录在退出时
-        清掉。"""
-
         with TemporaryDirectory(prefix="iclip-film-") as tmp:
             root = Path(tmp)
             dest = root / f"out.{_EXT}"
             await report(CLIP_FETCHING)
             brands = [brand for brand in (request.intro, request.outro) if brand is not None]
-            sources = await self._fetch(
+            files = await self._fetch(
                 [*(segment.url for segment in request.segments), *(brand.url for brand in brands)],
                 root,
                 max_bytes=MAX_VIDEO_BYTES,
             )
-            music: FilmMusic | None = None
             if request.music is not None:
-                fetched_music = await self._fetch(
+                files |= await self._fetch(
                     [request.music.url], root, max_bytes=MAX_AUDIO_BYTES, suffix=""
                 )
-                music = FilmMusic(
-                    source=fetched_music[request.music.url],
-                    offset=request.music.offset_ms / 1000,
-                    gain=[(point.at_ms / 1000, point.gain) for point in request.music.gain],
-                    volume=request.music.volume,
-                )
-            cuts = [
-                FilmCut(
-                    source=sources[segment.url],
-                    start=segment.start_ms / 1000,
-                    end=segment.end_ms / 1000,
-                    volume=segment.volume,
-                )
-                for segment in request.segments
-            ]
-            font: Path | None = None
-            if request.font is not None and request.subtitles:
-                fetched_font = await self._fetch(
-                    [request.font.url], root, max_bytes=MAX_FONT_BYTES, suffix=""
-                )
-                font = fetched_font[request.font.url]
-            render = request.render
+            font = subtitle_font(request)
+            if font is not None:
+                files |= await self._fetch([font.url], root, max_bytes=MAX_FONT_BYTES, suffix="")
             try:
-                if font is not None and request.font is not None:
-                    actual = inspect_font(font)
-                    if (actual.family, actual.weight, actual.style) != (
-                        request.font.family,
-                        request.font.weight,
-                        request.font.style,
-                    ):
-                        raise FontError("字体文件属性与受理时的快照不一致，请重新选择字体")
-                profile = await probe_video(cuts[0].source)
-                await report(CLIP_PROCESSING)
-                await render_film(
-                    cuts,
-                    intro=None if request.intro is None else sources[request.intro.url],
-                    outro=None if request.outro is None else sources[request.outro.url],
-                    profile=profile,
-                    captions=[
-                        FilmCaption(
-                            start=line.start_ms / 1000, end=line.end_ms / 1000, text=line.text
-                        )
-                        for line in request.subtitles
-                    ],
-                    music=music,
-                    sound=FilmSound(
-                        speech_lufs=render.speech_loudness_lufs,
-                        music_lufs=render.music_loudness_lufs,
-                        loudness_lufs=render.loudness_lufs,
-                        peak_dbfs=render.peak_dbfs,
-                        edge_fade=render.segment_fade_ms / 1000,
-                        music_fade_out=render.music_fade_out_ms / 1000,
-                    ),
+                await render_whole_film(
+                    request,
+                    files=files,
                     dest=dest,
                     codec=self._codec,
                     workdir=root,
-                    font=font,
+                    report_processing=partial(report, CLIP_PROCESSING),
                 )
                 duration_ms = await probe_duration_ms(dest)
             except MusicTooShort as exc:

@@ -24,7 +24,7 @@ from iclip.config.models import IclipStudioSection
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import TestVideoJob
 from iclip.domains.references.test_prompt import TestPrompt
-from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.errors import MediaError
 from tests.helpers.app import make_runtime_config
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
 

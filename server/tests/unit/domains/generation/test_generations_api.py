@@ -35,7 +35,7 @@ from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
-from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.errors import MediaError
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     LEGACY_SHOT_PROMPT,

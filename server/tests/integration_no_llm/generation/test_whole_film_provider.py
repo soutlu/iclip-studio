@@ -20,8 +20,9 @@ from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import FILM_LOUDNESS_LUFS, ClipStage
 from iclip.platform.media.codec import SOFTWARE, MediaCodec
-from iclip.platform.media.ffmpeg import ffmpeg_available, probe_video
 from iclip.platform.media.fonts import inspect_font, prepare_font
+from iclip.platform.media.probe import probe_video
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is
 from tests.helpers.fonts import make_font
 from tests.helpers.generation import MemoryObjectStore, make_job, whole_film_request

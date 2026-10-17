@@ -12,14 +12,10 @@ from iclip.common.errors import ValidationFailed
 from iclip.domains.brand_templates.models import ProbedVideo
 from iclip.domains.brand_templates.repository import BrandTemplateStore, ProbeFont, ProbeVideo
 from iclip.domains.generation.service import BrandTemplateFacts, BrandTemplates
-from iclip.platform.media.ffmpeg import (
-    MAX_VIDEO_BYTES,
-    MediaError,
-    fetched,
-    probe_duration_ms,
-    probe_video,
-)
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MAX_VIDEO_BYTES, fetched
 from iclip.platform.media.fonts import MAX_FONT_BYTES, FontInfo, inspect_font
+from iclip.platform.media.probe import probe_duration_ms, probe_video
 
 
 def template_video_prober(client: httpx.AsyncClient, fetch_url: Callable[[str], str]) -> ProbeVideo:

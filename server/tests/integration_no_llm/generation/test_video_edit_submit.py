@@ -31,7 +31,7 @@ from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import (

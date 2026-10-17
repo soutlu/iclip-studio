@@ -135,7 +135,7 @@ from iclip.platform.file_store.store import (
 )
 from iclip.platform.material_ledger.pg import PgMaterialLedger
 from iclip.platform.media.codec import MediaCodec, detect_codec
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
     OssSettings,

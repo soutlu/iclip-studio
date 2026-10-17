@@ -26,7 +26,7 @@ from iclip.domains.generation.provider import (
     user_name_of,
 )
 from iclip.domains.generation.schemas import ImageGenerationIn
-from iclip.platform.media.ffmpeg import MAX_IMAGE_BYTES
+from iclip.platform.media.fetch import MAX_IMAGE_BYTES
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicObjectStore
 

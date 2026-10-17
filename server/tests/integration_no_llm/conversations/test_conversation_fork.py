@@ -33,7 +33,7 @@ from iclip.domains.identity.public import Principal
 from iclip.harness.step_store_pg import PgStepStore
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.transcript.session_events import SessionEventClock
 from tests.helpers.agents import declared_agent
 from tests.helpers.app import make_client, settled

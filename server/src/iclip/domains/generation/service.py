@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final, Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import structlog
 
@@ -59,8 +59,9 @@ from iclip.domains.generation.schemas import (
     WholeFilmRequest,
     WholeFilmSegment,
 )
+from iclip.domains.generation.segment_end import SEGMENT_END_TOLERANCE_MS
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
-from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fonts import FontInfo
 from iclip.platform.paging import check_limit
 
@@ -973,20 +974,10 @@ def _is_finished_edit(job: GenerationJob) -> bool:
     )
 
 
-COMPOSE_END_TOLERANCE_MS: Final = 50
-"""合成里段的结尾、编辑段区间的终点，最多比那条记录（基底）量出来的时长多出这么多毫秒。
-
-调用方的起止是浏览器里读到的媒体时间（播放器时长、关键帧时刻），与上游或 ffprobe 量出的
-``duration_ms`` 隔着一次容器时长的取整，差不到一帧（24fps 约 42 毫秒）；严格相等会把正常的
-「取到最后一帧」拒掉。"""
-
-
 def _check_segment_end(position: int, end: float | None, duration_ms: int | None) -> None:
-    """第 ``position`` 段（从 1 数）的结尾不能超出那条记录的时长；开放的结尾或没量过时长的不判。"""
-
     if end is None or duration_ms is None:
         return
-    if end * 1000 > duration_ms + COMPOSE_END_TOLERANCE_MS:
+    if end * 1000 > duration_ms + SEGMENT_END_TOLERANCE_MS:
         raise ValidationFailed(
             f"第 {position} 段的结尾 {format_seconds(end)} 秒超出了那条记录的时长 "
             f"{format_seconds(duration_ms / 1000)} 秒"
@@ -994,17 +985,12 @@ def _check_segment_end(position: int, end: float | None, duration_ms: int | None
 
 
 def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
-    """编辑区间要在基底之内：起点严格落在基底里，终点不超过基底时长。
-
-    终点取到片尾时是浏览器读到的媒体时长，与上游或 ffprobe 量出的隔着一次容器时长的取整，容差
-    与合成各段的结尾同一个（``COMPOSE_END_TOLERANCE_MS``）。"""
-
     if start_ms >= base_ms:
         raise ValidationFailed(
             f"区间起点 {format_seconds(start_ms / 1000)} 秒不在基底之内，"
             f"基底只有 {format_seconds(base_ms / 1000)} 秒"
         )
-    if end_ms > base_ms + COMPOSE_END_TOLERANCE_MS:
+    if end_ms > base_ms + SEGMENT_END_TOLERANCE_MS:
         raise ValidationFailed(
             f"区间终点 {format_seconds(end_ms / 1000)} 秒超出了基底的时长 "
             f"{format_seconds(base_ms / 1000)} 秒"

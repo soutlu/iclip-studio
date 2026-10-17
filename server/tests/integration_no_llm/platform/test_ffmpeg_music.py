@@ -10,12 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from iclip.platform.media.ffmpeg import (
-    MUSIC_LOUDNESS_LUFS,
-    MediaError,
-    ffmpeg_available,
-    normalize_music,
-)
+from iclip.platform.media.audio import MUSIC_LOUDNESS_LUFS, normalize_music
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.media import synthesize_padded_music, synthesize_video
 
 pytestmark = [

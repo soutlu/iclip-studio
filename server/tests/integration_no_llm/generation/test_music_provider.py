@@ -20,7 +20,7 @@ from iclip.domains.generation.music import (
     QwenMusicProvider,
 )
 from iclip.domains.generation.provider import ProviderError
-from iclip.platform.media.ffmpeg import ffmpeg_available
+from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.generation import MUSIC_PROMPT, make_music
 from tests.helpers.media import duration_ms_of, synthesize_padded_music
 from tests.helpers.uploads import FakeBucket

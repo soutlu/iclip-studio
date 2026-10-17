@@ -19,7 +19,7 @@ from iclip.app.bootstrap import build_app
 from iclip.domains.brand_templates.models import MAX_TEMPLATE_MS, ProbedVideo
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.ffmpeg import MediaError
+from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fonts import FontInfo
 from tests.helpers.app import make_client
 from tests.helpers.auth import set_roles_in_db
