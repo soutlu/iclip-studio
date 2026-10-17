@@ -1,0 +1,121 @@
+{
+  "audio": {
+    "speechLoudnessLufs": -16.0,
+    "musicLoudnessLufs": -16.0,
+    "loudnessLufs": -14.0,
+    "peakDbfs": -1.5,
+    "segmentFadeMs": 50,
+    "musicFadeOutMs": 2000,
+    "maxLoudnessBoostDb": 20.0
+  },
+  "captionStyle": {
+    "fontSizeOfHeight": 0.045,
+    "outlineOfFontSize": 0.08,
+    "bottomMarginOfHeight": 0.12,
+    "sideMarginOfWidth": 0.06
+  },
+  "defaultFont": {
+    "wideGlyphEm": 0.7,
+    "narrowGlyphEm": 0.45
+  },
+  "captions": [
+    {
+      "width": 1080,
+      "height": 1920,
+      "text": "大家好，欢迎来到今天的直播间",
+      "fontSize": 86,
+      "outline": 7,
+      "marginSide": 65,
+      "marginBottom": 230,
+      "lineWidth": 950,
+      "lines": [
+        "大家好，欢迎来到今天的直播间"
+      ]
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "text": "大家好，欢迎来到今天的直播间",
+      "fontSize": 49,
+      "outline": 4,
+      "marginSide": 115,
+      "marginBottom": 130,
+      "lineWidth": 1690,
+      "lines": [
+        "大家好，欢迎来到今天的直播间"
+      ]
+    },
+    {
+      "width": 1080,
+      "height": 1920,
+      "text": "这款 iPhone 15 Pro 的 A17 芯片真的很快",
+      "fontSize": 86,
+      "outline": 7,
+      "marginSide": 65,
+      "marginBottom": 230,
+      "lineWidth": 950,
+      "lines": [
+        "这款 iPhone 15 Pro",
+        "的 A17 芯片真的很快"
+      ]
+    },
+    {
+      "width": 1080,
+      "height": 1920,
+      "text": "第一行说产品\n第二行说价格",
+      "fontSize": 86,
+      "outline": 7,
+      "marginSide": 65,
+      "marginBottom": 230,
+      "lineWidth": 950,
+      "lines": [
+        "第一行说产品",
+        "第二行说价格"
+      ]
+    },
+    {
+      "width": 1080,
+      "height": 1920,
+      "text": "这双鞋的鞋底用了新一代的缓震材料，走一整天也不累脚，鞋面是透气的网布，夏天穿也不闷，颜色有黑白灰三种可以选",
+      "fontSize": 86,
+      "outline": 7,
+      "marginSide": 65,
+      "marginBottom": 230,
+      "lineWidth": 950,
+      "lines": [
+        "这双鞋的鞋底用了新一代的缓",
+        "震材料，走一整天也不累脚，",
+        "鞋面是透气的网布，夏天穿也不",
+        "闷，颜色有黑白灰三种可以选"
+      ]
+    },
+    {
+      "width": 720,
+      "height": 1280,
+      "text": "Lightweight running shoes with breathable mesh for everyday training",
+      "fontSize": 58,
+      "outline": 5,
+      "marginSide": 43,
+      "marginBottom": 154,
+      "lineWidth": 634,
+      "lines": [
+        "Lightweight running sho",
+        "es with breathable mes",
+        "h for everyday training"
+      ]
+    },
+    {
+      "width": 975,
+      "height": 1300,
+      "text": "画面高度乘字号比例恰好落在半像素上",
+      "fontSize": 58,
+      "outline": 5,
+      "marginSide": 58,
+      "marginBottom": 156,
+      "lineWidth": 859,
+      "lines": [
+        "画面高度乘字号比例恰好落在半像素上"
+      ]
+    }
+  ]
+}

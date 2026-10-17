@@ -17,6 +17,7 @@ from iclip.config import (
     RuntimeConfig,
     VideoGenerationSection,
 )
+from iclip.domains.generation.film_schemas import WholeFilmRender, WholeFilmRequest
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -32,6 +33,7 @@ from iclip.domains.generation.models import (
     inherited_through,
 )
 from iclip.domains.generation.module import ImageModelConfig, build_generation_module
+from iclip.domains.generation.ports import BrandTemplateFacts
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -45,21 +47,21 @@ from iclip.domains.generation.schemas import (
     KIND_VIDEO,
     OPERATION_CUT,
     OPERATION_UPLOAD,
-    GenerationRequest,
     ImageGenerationIn,
     MusicRequest,
     SubtitleRequest,
     SubtitleSentence,
     VideoComposeRequest,
     VideoGenerationIn,
-    WholeFilmRender,
-    WholeFilmRequest,
 )
-from iclip.domains.generation.service import BrandTemplateFacts, GenerationService
+from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.stored_requests import GenerationRequest
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.media.errors import MediaError
+from iclip.platform.media.probe import VideoProfile
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
 from tests.helpers.fetch_url import as_is
@@ -810,6 +812,32 @@ class FixedLineage:
         return self._readable
 
 
+class FakeMediaProbe:
+    """RemoteMediaProbe 替身：按地址给时长或画幅，不认得的地址像取不到一样抛 ``MediaError``；记下探过
+    哪些。"""
+
+    def __init__(
+        self,
+        durations: Mapping[str, int] | None = None,
+        profiles: Mapping[str, VideoProfile] | None = None,
+    ) -> None:
+        self._durations = dict(durations or {})
+        self._profiles = dict(profiles or {})
+        self.probed: list[str] = []
+
+    async def duration_ms(self, url: str) -> int:
+        self.probed.append(url)
+        if url not in self._durations:
+            raise MediaError(f"取不到素材: {url}")
+        return self._durations[url]
+
+    async def video_profile(self, url: str) -> VideoProfile:
+        self.probed.append(url)
+        if url not in self._profiles:
+            raise MediaError(f"取不到素材: {url}")
+        return self._profiles[url]
+
+
 class FixedBrandTemplates:
     """BrandTemplates 替身：品牌模板预先写死，按 id 读；没给的就是没有。"""
 
@@ -873,6 +901,7 @@ __all__ = [
     "MEDIA_ENVS",
     "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
+    "FakeMediaProbe",
     "FixedBrandTemplates",
     "FixedLineage",
     "InMemoryGenerationRepository",

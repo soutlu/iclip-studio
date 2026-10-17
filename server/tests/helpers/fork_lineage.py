@@ -18,7 +18,7 @@ from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.models import Conversation
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
-from iclip.domains.generation.schemas import GenerationRequest
+from iclip.domains.generation.stored_requests import GenerationRequest
 from tests.helpers.generation import edit_request, make_job, video_request
 
 

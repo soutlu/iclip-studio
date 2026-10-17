@@ -17,6 +17,7 @@ from iclip.domains.generation.film_render import (
     render_whole_film,
     subtitle_font,
 )
+from iclip.domains.generation.film_schemas import WholeFilmRequest
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -31,7 +32,6 @@ from iclip.domains.generation.schemas import (
     ClipStage,
     ComposeSegment,
     VideoComposeRequest,
-    WholeFilmRequest,
 )
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError

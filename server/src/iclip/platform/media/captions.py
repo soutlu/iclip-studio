@@ -10,8 +10,8 @@ from typing import Final, Protocol
 from iclip.platform.media.fonts import FontError, SubtitleFont, caption_text, escape_ass
 from iclip.platform.media.video import SubtitleBurn
 
-_WIDE_GLYPH_EM: Final = 0.7
-_NARROW_GLYPH_EM: Final = 0.45
+ESTIMATED_WIDE_GLYPH_EM: Final = 0.7
+ESTIMATED_NARROW_GLYPH_EM: Final = 0.45
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +155,30 @@ class ShapedCaptionFont:
             raise FontError("字幕渲染未使用完整的选定字体，已停止导出")
 
 
+@dataclass(frozen=True, slots=True)
+class CaptionLayout:
+    font_size: int
+    outline: int
+    margin_side: int
+    margin_bottom: int
+    line_width: int
+
+
+def caption_layout(
+    *, width: int, height: int, style: CaptionStyle, font: CaptionFont
+) -> CaptionLayout:
+    font_size = max(1, font.to_pixels(height * style.font_size_of_height))
+    outline = max(1, font.to_pixels(font_size * style.outline_of_font_size))
+    margin_side = font.to_pixels(width * style.side_margin_of_width)
+    return CaptionLayout(
+        font_size=font_size,
+        outline=outline,
+        margin_side=margin_side,
+        margin_bottom=font.to_pixels(height * style.bottom_margin_of_height),
+        line_width=max(font_size, font.line_width(width - 2 * margin_side, outline=outline)),
+    )
+
+
 def ass_document(
     captions: Sequence[Caption],
     *,
@@ -163,11 +187,8 @@ def ass_document(
     style: CaptionStyle,
     font: CaptionFont,
 ) -> str:
-    font_size = max(1, font.to_pixels(height * style.font_size_of_height))
-    outline = max(1, font.to_pixels(font_size * style.outline_of_font_size))
-    margin_side = font.to_pixels(width * style.side_margin_of_width)
-    margin_bottom = font.to_pixels(height * style.bottom_margin_of_height)
-    line_width = max(font_size, font.line_width(width - 2 * margin_side, outline=outline))
+    layout = caption_layout(width=width, height=height, style=style, font=font)
+    side, bottom = layout.margin_side, layout.margin_bottom
     header = "\n".join(
         [
             "[Script Info]",
@@ -182,9 +203,9 @@ def ass_document(
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,"
             " BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle,"
             " BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            f"Style: Default,{font.family},{font.ass_font_size(font_size):g},&H00FFFFFF,"
+            f"Style: Default,{font.family},{font.ass_font_size(layout.font_size):g},&H00FFFFFF,"
             f"&H00FFFFFF,&H00000000,&H00000000,{font.ass_bold},{font.ass_italic},0,0,100,100,0,0,"
-            f"1,{outline},0,2,{margin_side},{margin_side},{margin_bottom},1",
+            f"1,{layout.outline},0,2,{side},{side},{bottom},1",
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -194,7 +215,9 @@ def ass_document(
         f"Dialogue: 0,{_ass_time(caption.start)},{_ass_time(caption.end)},Default,,0,0,0,,"
         + "\\N".join(
             line
-            for line in font.lines(caption.text, font_size=font_size, line_width=line_width)
+            for line in font.lines(
+                caption.text, font_size=layout.font_size, line_width=layout.line_width
+            )
             if line
         )
         for caption in captions
@@ -213,7 +236,11 @@ def _ass_time(seconds: float) -> str:
 def _estimated_wrap(paragraph: str, *, font_size: int, line_width: int) -> list[str]:
     widths = [
         font_size
-        * (_WIDE_GLYPH_EM if unicodedata.east_asian_width(char) in ("W", "F") else _NARROW_GLYPH_EM)
+        * (
+            ESTIMATED_WIDE_GLYPH_EM
+            if unicodedata.east_asian_width(char) in ("W", "F")
+            else ESTIMATED_NARROW_GLYPH_EM
+        )
         for char in paragraph
     ]
     total = sum(widths)
@@ -230,10 +257,14 @@ def _estimated_wrap(paragraph: str, *, font_size: int, line_width: int) -> list[
 
 
 __all__ = [
+    "ESTIMATED_NARROW_GLYPH_EM",
+    "ESTIMATED_WIDE_GLYPH_EM",
     "Caption",
     "CaptionFont",
+    "CaptionLayout",
     "CaptionStyle",
     "EstimatedCaptionFont",
     "ShapedCaptionFont",
     "ass_document",
+    "caption_layout",
 ]

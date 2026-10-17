@@ -16,6 +16,12 @@ _PROBE_DURATION: Final = (
     "-of",
     "default=noprint_wrappers=1:nokey=1",
 )
+_PROBE_STREAMS: Final = (
+    "-show_entries",
+    "stream=codec_type,width,height,r_frame_rate",
+    "-of",
+    "json",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,16 +42,19 @@ async def probe_duration_ms(path: Path) -> int:
 
 
 async def probe_remote_duration_ms(url: str) -> int:
+    return _duration_ms(await _run_remote(_PROBE_DURATION, url))
+
+
+async def _run_remote(entries: tuple[str, ...], url: str) -> bytes:
     if not is_http_url(url):
         raise MediaError(f"要探的地址不是 http(s): {without_query(url)}")
     try:
-        stdout = await run(
-            ["ffprobe", "-v", "error", *REMOTE_INPUT, *_PROBE_DURATION, url],
+        return await run(
+            ["ffprobe", "-v", "error", *REMOTE_INPUT, *entries, url],
             timeout=PROBE_TIMEOUT_SECONDS,
         )
     except MediaError as exc:
         raise MediaError(str(exc).replace(url, without_query(url))) from exc
-    return _duration_ms(stdout)
 
 
 def _duration_ms(stdout: bytes) -> int:
@@ -61,25 +70,23 @@ def _duration_ms(stdout: bytes) -> int:
 
 async def probe_video(path: Path) -> VideoProfile:
     stdout = await run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_type,width,height,r_frame_rate",
-            "-of",
-            "json",
-            str(path),
-        ],
-        timeout=PROBE_TIMEOUT_SECONDS,
+        ["ffprobe", "-v", "error", *_PROBE_STREAMS, str(path)], timeout=PROBE_TIMEOUT_SECONDS
     )
+    return _video_profile(stdout, path.name)
+
+
+async def probe_remote_video(url: str) -> VideoProfile:
+    return _video_profile(await _run_remote(_PROBE_STREAMS, url), without_query(url))
+
+
+def _video_profile(stdout: bytes, name: str) -> VideoProfile:
     try:
         streams = json.loads(stdout)["streams"]
     except (ValueError, KeyError, TypeError) as exc:
         raise MediaError("ffprobe 的流信息看不懂") from exc
     video = next((item for item in streams if item.get("codec_type") == "video"), None)
     if video is None:
-        raise MediaError(f"这条素材里没有视频流: {path.name}")
+        raise MediaError(f"这条素材里没有视频流: {name}")
     width, height = video.get("width"), video.get("height")
     if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
         raise MediaError(f"ffprobe 报的画幅看不懂: {width!r}×{height!r}")
@@ -170,5 +177,6 @@ __all__ = [
     "probe_duration_ms",
     "probe_keyframes",
     "probe_remote_duration_ms",
+    "probe_remote_video",
     "probe_video",
 ]

@@ -6,8 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Final
 
-from iclip.domains.generation.schemas import WholeFilmFont, WholeFilmRequest
-from iclip.domains.generation.segment_end import SEGMENT_END_TOLERANCE_MS
+from iclip.domains.generation.film_schemas import WholeFilmFont, WholeFilmRequest
+from iclip.domains.generation.segment_end import exceeds_source
 from iclip.platform.media.audio import (
     AudioBed,
     AudioClip,
@@ -99,9 +99,10 @@ async def render_whole_film(
         if not brand.is_file():
             raise MediaError(f"片头片尾的素材不在: {brand.name}")
     sources = list(dict.fromkeys([*brands, *(cut.source for cut in segments)]))
-    lengths = {source: await probe_duration_ms(source) / 1000 for source in sources}
-    for position, cut in enumerate(segments, start=1):
-        if cut.end > lengths[cut.source] + SEGMENT_END_TOLERANCE_MS / 1000:
+    lengths_ms = {source: await probe_duration_ms(source) for source in sources}
+    lengths = {source: length_ms / 1000 for source, length_ms in lengths_ms.items()}
+    for position, (segment, cut) in enumerate(zip(request.segments, segments, strict=True), 1):
+        if exceeds_source(segment.end_ms, lengths_ms[cut.source]):
             raise MediaError(
                 f"第 {position} 段的结尾 {cut.end:.3f} 秒超出了素材的时长 "
                 f"{lengths[cut.source]:.3f} 秒"

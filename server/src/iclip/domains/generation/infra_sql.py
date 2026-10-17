@@ -51,11 +51,11 @@ from iclip.domains.generation.schemas import (
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
     SubtitleSentence,
-    request_from_payload,
     request_to_payload,
     sentences_from_payload,
     sentences_to_payload,
 )
+from iclip.domains.generation.stored_requests import request_from_payload
 from iclip.platform.db.ownership import owner_conditions
 
 DB_SCHEMA: Final = "iclip"

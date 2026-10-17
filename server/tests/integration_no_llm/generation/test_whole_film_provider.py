@@ -16,9 +16,10 @@ from typing import Any
 import httpx
 import pytest
 
+from iclip.domains.generation.film_schemas import FILM_LOUDNESS_LUFS
 from iclip.domains.generation.processing import FfmpegComposeProvider
 from iclip.domains.generation.provider import ProviderError
-from iclip.domains.generation.schemas import FILM_LOUDNESS_LUFS, ClipStage
+from iclip.domains.generation.schemas import ClipStage
 from iclip.platform.media.codec import SOFTWARE, MediaCodec
 from iclip.platform.media.fonts import inspect_font, prepare_font
 from iclip.platform.media.probe import probe_video

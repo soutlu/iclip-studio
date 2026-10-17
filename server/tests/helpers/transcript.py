@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import difflib
-import json
-import os
 import re
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -28,9 +24,9 @@ from iclip.harness.transcript.subscription import subscribe_frames
 from iclip.platform.transcript.display import ToolDisplayRegistry
 from iclip.platform.transcript.ops import MAIN_AGENT_ID
 from iclip.platform.transcript.wire import TranscriptPage
+from tests.helpers.golden import CONTRACT_DIR, check_golden_file
 
-GOLDEN_DIR = Path(__file__).resolve().parents[3] / "contract" / "transcript"
-"""金样放在跨端合同目录，前端测试读同一份。"""
+GOLDEN_DIR = CONTRACT_DIR / "transcript"
 
 
 class PerRunBatchReads:
@@ -258,23 +254,7 @@ def ws_frames(
 def check_golden(name: str, sample: Any) -> None:
     """与 contract/transcript/<name>.json 比对；UPDATE_GOLDEN=1 时改写文件。"""
 
-    path = GOLDEN_DIR / f"{name}.json"
-    rendered = json.dumps(sample, ensure_ascii=False, indent=2, sort_keys=False) + "\n"
-    if os.environ.get("UPDATE_GOLDEN") == "1":
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(rendered, encoding="utf-8")
-        return
-    expected = path.read_text(encoding="utf-8")
-    if expected != rendered:
-        diff = "".join(
-            difflib.unified_diff(
-                expected.splitlines(keepends=True),
-                rendered.splitlines(keepends=True),
-                fromfile=str(path),
-                tofile="现在跑出来的",
-            )
-        )
-        raise AssertionError(f"金样 {name} 变了，确认是有意为之再用 UPDATE_GOLDEN=1 更新：\n{diff}")
+    check_golden_file(GOLDEN_DIR / f"{name}.json", sample)
 
 
 def frames_of(page: TranscriptPage, turn_id: str, step_id: str) -> Sequence[Any]:

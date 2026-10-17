@@ -19,7 +19,7 @@ from iclip.app.brand_templates import (
 )
 from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.models import ProbedVideo
-from iclip.domains.generation.service import BrandTemplateFacts
+from iclip.domains.generation.ports import BrandTemplateFacts
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fonts import FontInfo
 from iclip.platform.media.process import ffmpeg_available
