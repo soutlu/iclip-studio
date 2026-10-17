@@ -14,6 +14,9 @@
 /coverage
 /playwright-report/
 
+# HyperFrames 组件库：pnpm hf:registry 按版本同步
+/public/hyperframes/
+
 # vite
 /dist/
 /dist-mock/

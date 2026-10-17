@@ -1,0 +1,89 @@
+<!--
+  Fade Through - scene transition primitive.
+
+  来源：HyperFrames 组件库 fade-through，https://github.com/heygen-com/hyperframes （v0.8.168），
+  Apache License 2.0（http://www.apache.org/licenses/LICENSE-2.0），Copyright HeyGen。
+
+  本文件对原组件的改动（原组件是要自己写时间线的代码片段）：
+  1. 改成 <template> 子合成，只负责中间那层底色（wash）；前后两段画面的淡出、淡入
+     （原写法里 hf-fade-through-out / -in 两层的动画）由整片合成挂到这个切点的两段上。
+  2. 按原文件末尾的时间线写法自带底色的时间线（原写法总长 0.9 秒），挂在整片的一个切点上：
+     切点在正中，前一半底色升起、后一半落下。整片里的时长由宿主的播放速率换算。
+  wash / strength / shape 三个变量与原组件相同。
+-->
+<template id="fade-through-template">
+  <div
+    id="fade-through-root"
+    data-composition-id="fade-through"
+    data-composition-variables='[
+      { "id": "wash", "type": "enum", "role": "style", "label": "Wash", "description": "Colour of the mid-transition frame. Paper resolves through --hf-fade-through-wash, accent rides --accent.", "default": "paper", "options": [{ "value": "paper", "label": "Paper" }, { "value": "white", "label": "White" }, { "value": "ink", "label": "Ink" }, { "value": "accent", "label": "Accent" }] },
+      { "id": "strength", "type": "number", "role": "style", "label": "Strength", "description": "How far the wash covers at its peak. 1 is a full flash, 0.3 a light veil.", "default": 1, "min": 0.1, "max": 1, "step": 0.05 },
+      { "id": "shape", "type": "enum", "role": "style", "label": "Shape", "description": "Flat fills the frame evenly, bloom concentrates the wash in the centre.", "default": "flat", "options": [{ "value": "flat", "label": "Flat" }, { "value": "bloom", "label": "Bloom" }] }
+    ]'
+  >
+    <div class="hf-fade-through-wash" aria-hidden="true"></div>
+    <style>
+      #fade-through-root {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      #fade-through-root .hf-fade-through-wash {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        background: var(--hf-fade-through-paint, var(--hf-fade-through-wash, #f8f5ec));
+        filter: opacity(var(--hf-fade-through-strength, 1));
+      }
+    </style>
+    <script>
+      ;(function () {
+        'use strict'
+
+        var vars =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {}
+
+        // Unrecognised overrides return to their declared defaults.
+        var washes = {
+          paper: 'var(--hf-fade-through-wash, #f8f5ec)',
+          white: '#ffffff',
+          ink: '#0b0b0f',
+          accent: 'var(--accent, #38bdf8)',
+        }
+
+        var wash = Object.prototype.hasOwnProperty.call(washes, vars.wash) ? vars.wash : 'paper'
+        var shape = vars.shape === 'bloom' ? 'bloom' : 'flat'
+
+        var strength = parseFloat(vars.strength)
+        if (!isFinite(strength)) strength = 1
+        strength = Math.min(1, Math.max(0.1, strength))
+
+        var colour = washes[wash]
+        var paint =
+          shape === 'bloom'
+            ? 'radial-gradient(circle at 50% 50%, ' + colour + ' 0%, transparent 72%)'
+            : colour
+
+        var root = document.getElementById('fade-through-root')
+        var overlay = root.querySelector('.hf-fade-through-wash')
+        overlay.style.setProperty('--hf-fade-through-paint', paint)
+        overlay.style.setProperty('--hf-fade-through-strength', String(strength))
+
+        var DURATION = 0.9
+        var half = DURATION / 2
+
+        var tl = gsap.timeline({ paused: true })
+        tl.to(overlay, { opacity: 1, duration: half, ease: 'power2.inOut' }, 0)
+        tl.to(overlay, { opacity: 0, duration: half, ease: 'power2.inOut' }, half)
+        tl.set({}, {}, DURATION)
+
+        window.__timelines = window.__timelines || {}
+        window.__timelines['fade-through'] = tl
+      })()
+    </script>
+  </div>
+</template>
