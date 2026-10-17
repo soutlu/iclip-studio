@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { errorMessageOf } from '@/shared/api/client'
-import { ListEmpty, ListError, NextPageFooter } from '@/shared/ui/list-state'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { ListEmpty } from '@/shared/ui/list-state'
 import {
   isDefaultScope,
   useLibraryAuthorSource,
@@ -11,8 +10,10 @@ import { cardHeightFor } from '../library-layout'
 import { focusCardOpener } from './card-focus'
 import { LibraryCard } from './library-card'
 import { LibraryFilters } from './library-filters'
-import { LibraryGrid, LibraryGridSkeleton } from './library-grid'
+import { LibraryList } from './library-list'
 import { LibraryPageHeader } from './library-page-header'
+import { useLibraryPageScroll } from './library-page-scroll'
+import { LibraryPageShell } from './library-page-shell'
 import { LibraryViewer } from './library-viewer'
 
 type LibraryRouteProps = {
@@ -34,8 +35,7 @@ export function LibraryRoute({
   onVideoChange,
   shareLinkOf,
 }: LibraryRouteProps) {
-  const mainRef = useRef<HTMLElement>(null)
-  const getScrollElement = useCallback(() => mainRef.current, [])
+  const { mainRef, getScrollElement } = useLibraryPageScroll()
   const videos = useLibraryVideos(scope)
   const authors = useLibraryAuthorSource()
   const loaded = videos.data?.pages.flatMap((page) => page.items) ?? []
@@ -65,12 +65,36 @@ export function LibraryRoute({
   }, [atLoadedEnd, hasNextPage, isFetchNextPageError, isFetchingNextPage, loadNextPage])
 
   return (
-    <main
-      aria-label="资料库"
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-      ref={mainRef}
-    >
-      <div className="flex w-full flex-col px-4 pt-12 pb-10 sm:px-(--layout-list-page-gutter) sm:pt-14">
+    <LibraryPageShell
+      attachments={
+        videoId === null ? null : (
+          <LibraryViewer
+            listed={index >= 0 ? loaded[index] : undefined}
+            nextId={nextId}
+            onAuthor={(userName) => onScopeChange({ ...scope, userName })}
+            onClose={() => onVideoChange(null, true)}
+            onNavigate={(id) => {
+              setStartAt(null)
+              onVideoChange(id, true)
+            }}
+            onRestoreFocus={() => focusCardOpener(mainRef.current, videoId)}
+            prevId={prevId}
+            shareLink={shareLinkOf(videoId)}
+            startAt={startAt?.id === videoId ? startAt.at : null}
+            videoId={videoId}
+          />
+        )
+      }
+      filters={
+        <LibraryFilters
+          authors={authors}
+          myUserName={myUserName}
+          onChange={onScopeChange}
+          scope={scope}
+          trailing={counter}
+        />
+      }
+      header={
         <LibraryPageHeader
           description="收录团队生成的每一条视频及其生成脚本。选择任一视频，可直接基于它再创作。"
           search={{
@@ -81,81 +105,34 @@ export function LibraryRoute({
           }}
           tabs={tabs}
         />
-
-        <div className="layer-content sticky top-0 -mx-1 bg-background px-1 py-3">
-          <LibraryFilters
-            authors={authors}
-            myUserName={myUserName}
-            onChange={onScopeChange}
-            scope={scope}
-            trailing={counter}
+      }
+      label="资料库"
+      mainRef={mainRef}
+    >
+      <LibraryList
+        empty={
+          <ListEmpty>
+            {filtered ? '暂无匹配的视频，请更换关键词或清除筛选' : '暂无成功生成的视频'}
+          </ListEmpty>
+        }
+        errorMessage="读取资料库失败"
+        estimateHeight={cardHeightFor}
+        getScrollElement={getScrollElement}
+        items={loaded}
+        keyOf={(video) => video.id}
+        query={videos}
+        renderItem={(video, width) => (
+          <LibraryCard
+            onAuthor={(userName) => onScopeChange({ ...scope, userName })}
+            onOpen={openVideo}
+            video={video}
+            width={width}
           />
-        </div>
-
-        <div className="pt-3">
-          {videos.isPending ? (
-            <LibraryGridSkeleton label="正在读取资料库" />
-          ) : videos.isError && !videos.isFetchNextPageError ? (
-            <ListError
-              message={errorMessageOf(videos.error, '读取资料库失败')}
-              onRetry={() => void videos.refetch()}
-            />
-          ) : loaded.length === 0 ? (
-            <ListEmpty>
-              {filtered ? '暂无匹配的视频，请更换关键词或清除筛选' : '暂无成功生成的视频'}
-            </ListEmpty>
-          ) : (
-            <LibraryGrid
-              estimateHeight={cardHeightFor}
-              getScrollElement={getScrollElement}
-              items={loaded}
-              keyOf={(video) => video.id}
-              renderItem={(video, width) => (
-                <LibraryCard
-                  onAuthor={(userName) => onScopeChange({ ...scope, userName })}
-                  onOpen={openVideo}
-                  video={video}
-                  width={width}
-                />
-              )}
-            />
-          )}
-
-          {videos.hasNextPage ? (
-            videos.isFetchNextPageError && !videos.isFetchingNextPage ? (
-              <ListError
-                message={errorMessageOf(videos.error, '读取资料库失败')}
-                onRetry={() => void videos.fetchNextPage()}
-              />
-            ) : (
-              <NextPageFooter
-                getScrollElement={getScrollElement}
-                query={videos}
-                shown={loaded.length}
-                total={total}
-              />
-            )
-          ) : null}
-        </div>
-      </div>
-
-      {videoId === null ? null : (
-        <LibraryViewer
-          listed={index >= 0 ? loaded[index] : undefined}
-          nextId={nextId}
-          onAuthor={(userName) => onScopeChange({ ...scope, userName })}
-          onClose={() => onVideoChange(null, true)}
-          onNavigate={(id) => {
-            setStartAt(null)
-            onVideoChange(id, true)
-          }}
-          onRestoreFocus={() => focusCardOpener(mainRef.current, videoId)}
-          prevId={prevId}
-          shareLink={shareLinkOf(videoId)}
-          startAt={startAt?.id === videoId ? startAt.at : null}
-          videoId={videoId}
-        />
-      )}
-    </main>
+        )}
+        shown={loaded.length}
+        skeletonLabel="正在读取资料库"
+        total={total}
+      />
+    </LibraryPageShell>
   )
 }
