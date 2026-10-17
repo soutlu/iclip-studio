@@ -31,7 +31,7 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 import { imageSlotsOf } from '../edit-prompt'
 import { editMentionItems, type EditMentionItem } from '../image-edit/edit-mention-items'
 import { EditMentionMenu } from '../image-edit/edit-mention-menu'
-import { placeCard } from './card-placement'
+import { placeCard } from '../editing/card-placement'
 import './ai-edit-card.css'
 
 /** 卡此刻的位置与大小，切换外形时从它变过去。编辑器播放时每帧都重渲染，这里只读几何、不读样式。 */

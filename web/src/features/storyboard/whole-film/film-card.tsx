@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { Icon } from '@/shared/icons'
 import { Button, IconButton } from '@/shared/ui/button'
-import { placeCard } from '../video-editor/card-placement'
+import { placeCard } from '../editing/card-placement'
 import type { BrandPosition, FilmBrand } from './film-draft'
 import { BrandMenu, type BrandMenuProps } from './film-menus'
 import { MAX_SUBTITLE_CHARS } from './film-submit'

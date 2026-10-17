@@ -3,7 +3,8 @@
  *
  * 音乐只铺正文的视频段；这里的时钟从正文第一段开头算，不含片头片尾。整首的「起点」对着正文 0 秒。 */
 
-import { layoutFilm, roundToMs, type FilmSegment } from './film-draft'
+import { roundToMs } from '../editing/clip'
+import { layoutFilm, type FilmSegment } from './film-draft'
 import type { FilmSubtitle } from './film-subtitles'
 
 /** 切点离最近的拍不超过这么多秒就算落在拍上：约 30 帧下的两帧，也在人察觉不到音画错位的范围里（约 ±45 ms 起才可感），

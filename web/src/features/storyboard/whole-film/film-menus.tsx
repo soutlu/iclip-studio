@@ -158,7 +158,6 @@ type VersionPillProps = {
   onSwitch: (material: Material) => void
 }
 
-/** 素材轨轨道头上的版本胶囊：当前用的那一版，点开向上列出这次生成视频的原版与编辑版，换了只影响之后挑的段。 */
 export function VersionPill({
   groupLabel,
   versions,

@@ -1,10 +1,10 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { isEditSegment } from '../editing/version-lineage'
 import type { GenerationJob } from '../storyboard.api'
 import { selectedGroup } from './clip-selection'
 import { clipItem, keyframeSegments, parseStoredDraft, serializeDraft, type Draft } from './draft'
-import { isEditSegment } from './edit-chain'
 import { draftStorageKey, useEditDraft } from './use-edit-draft'
 
 const version = {

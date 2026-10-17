@@ -2,7 +2,7 @@
 
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
-import type { PlaySegment } from '../video-editor/play-layout'
+import type { PlaySegment } from '../editing/play-layout'
 import type { FilmAudioMusic, FilmAudioSegment, FilmPcm } from './film-audio'
 import type { GainPoint } from './film-music'
 import { useMusicPlayback } from './use-music-playback'

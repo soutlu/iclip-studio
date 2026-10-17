@@ -39,15 +39,13 @@ describe('整片素材目录', () => {
       ['B', 'B-edit1'],
     ])
     expect(catalog.groups[0]?.takes[0]?.versions.map((item) => item.version)).toEqual([
-      '原版',
-      '编辑版 1',
-      '编辑版 2',
+      '原片',
+      'V1',
+      'V2',
     ])
     const edited = catalog.byJob.get('A-edit2')
     expect(edited).toMatchObject({ takeId: 'A', knownDuration: 8 })
-    expect(edited === undefined ? undefined : materialName(edited)).toBe(
-      '镜头组 2 · 生成 A · 编辑版 2',
-    )
+    expect(edited === undefined ? undefined : materialName(edited)).toBe('镜头组 2 · 生成 A · V2')
     // 对话的全局版本组保持完成时间顺序，局部分轨不改其公共合同。
     expect(groups[0]?.videos.map((item) => item.id)).toEqual([
       'A',
@@ -64,7 +62,7 @@ describe('整片素材目录', () => {
     )
     expect(catalog.groups[0]?.takes[0]).toMatchObject({
       id: 'missing-root',
-      versions: [{ jobId: 'edited', version: '编辑版 1', knownDuration: undefined }],
+      versions: [{ jobId: 'edited', version: 'V1', knownDuration: undefined }],
     })
   })
 })

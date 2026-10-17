@@ -139,9 +139,9 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   await page.mouse.move(0, 0)
 
   await dialog.getByRole('button', { name: '添加镜头组', exact: true }).click()
-  await expect(page.getByRole('menuitem', { name: /^镜头组 2 生成 A 原版/ })).toBeVisible()
-  await page.getByRole('menuitem', { name: /^镜头组 2 生成 A 原版/ }).click()
-  await addMaterial(page, dialog, '镜头组 3 生成 A 原版')
+  await expect(page.getByRole('menuitem', { name: /^镜头组 2 生成 A 原片/ })).toBeVisible()
+  await page.getByRole('menuitem', { name: /^镜头组 2 生成 A 原片/ }).click()
+  await addMaterial(page, dialog, '镜头组 3 生成 A 原片')
   const shot2 = laneOf(dialog, '镜头组 2 生成 A')
   const shot3 = laneOf(dialog, '镜头组 3 生成 A')
   await expect(shot2).toBeVisible()
@@ -173,13 +173,13 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
   await expect(timelineOf(dialog).getByText(/^插入到 4\.\d\d 秒/)).toBeVisible()
   await last()
   await expect(segments(dialog)).toHaveCount(3)
-  await expect(segments(dialog).nth(1)).toHaveAccessibleName(/^第 2 段 · 镜头组 3 · 生成 A · 原版/)
+  await expect(segments(dialog).nth(1)).toHaveAccessibleName(/^第 2 段 · 镜头组 3 · 生成 A · 原片/)
 
   // 字幕：第 2 组的段带着口播，第 3 组那段识别失败、可重试。
   const subtitles = timelineOf(dialog).getByRole('button', { name: /^第 \d+ 条字幕/ })
   await expect(subtitles.first()).toBeVisible()
   const retry = timelineOf(dialog).getByRole('button', {
-    name: '镜头组 3 · 生成 A · 原版 字幕识别失败，重试',
+    name: '镜头组 3 · 生成 A · 原片 字幕识别失败，重试',
   })
   await expect(retry).toBeVisible()
   await page.keyboard.press('Escape')
@@ -200,9 +200,9 @@ test('整片：空时间线起步，从两条素材挑段交叉剪辑，字幕�
 
   // 换版本菜单向上展开。
   await timelineOf(dialog)
-    .getByRole('button', { name: '镜头组 2 生成 A 当前用 原版，换版本' })
+    .getByRole('button', { name: '镜头组 2 生成 A 当前用 原片，换版本' })
     .click()
-  await expect(page.getByRole('menuitemradio', { name: /原版/ })).toBeVisible()
+  await expect(page.getByRole('menuitemradio', { name: /原片/ })).toBeVisible()
   await page.keyboard.press('Escape')
 })
 
@@ -237,14 +237,14 @@ test('整片字幕：已剪草稿改字、重新识别，刷新恢复片段与�
   await expect(segments(dialog)).toHaveCount(3)
   const subtitles = timelineOf(dialog).getByRole('button', { name: /^第 \d+ 条字幕/ })
   const retry = timelineOf(dialog).getByRole('button', {
-    name: '镜头组 3 · 生成 A · 原版 字幕识别失败，重试',
+    name: '镜头组 3 · 生成 A · 原片 字幕识别失败，重试',
   })
   await expect(retry).toBeVisible()
 
   // 改字：只能改字，存在草稿里。
   await subtitles.first().click()
   const subtitleCard = dialog.getByRole('region', { name: '选中的字幕' })
-  await expect(subtitleCard.getByText('来自镜头组 2 · 生成 A · 原版 的口播')).toBeVisible()
+  await expect(subtitleCard.getByText('来自镜头组 2 · 生成 A · 原片 的口播')).toBeVisible()
   const text = subtitleCard.getByRole('textbox', { name: '字幕文字' })
   await text.fill('今天第一次背这只包')
   await expect(subtitles.first()).toHaveAccessibleName('第 1 条字幕：今天第一次背这只包')
@@ -655,7 +655,7 @@ test('整片音乐：工程文件里写了配乐，生成音乐引用那段原�
 test('整片移动布局：素材区可操作，页面不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const dialog = await openWholeFilm(page, { mobile: true })
-  await addMaterial(page, dialog, '镜头组 2 生成 A 原版')
+  await addMaterial(page, dialog, '镜头组 2 生成 A 原片')
   await selectWhole(page, dialog, laneOf(dialog, '镜头组 2 生成 A'))
   await page.keyboard.press('Enter')
   await expect(segments(dialog)).toHaveCount(1)
@@ -670,7 +670,7 @@ test('整片移动布局：素材区可操作，页面不横向溢出', async ({
 test('整片合成：剪辑后提交，完成版本可预览下载，关闭并清除草稿后恢复最新版本', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-  await addMaterial(page, dialog, '镜头组 2 生成 A 原版')
+  await addMaterial(page, dialog, '镜头组 2 生成 A 原片')
   await selectWhole(page, dialog, laneOf(dialog, '镜头组 2 生成 A'))
   await page.keyboard.press('Enter')
   await expect(segments(dialog)).toHaveCount(1)
@@ -728,7 +728,7 @@ test('整片片头片尾：按正文画幅选择固定模板，字幕只在正�
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-  await addMaterial(page, dialog, '镜头组 2 生成 A 原版')
+  await addMaterial(page, dialog, '镜头组 2 生成 A 原片')
   await selectWhole(page, dialog, laneOf(dialog, '镜头组 2 生成 A'))
   await page.keyboard.press('Enter')
   const introSlot = dialog.getByRole('button', { name: '添加片头', exact: true })
@@ -819,7 +819,7 @@ test('字幕字体排版：长英文、中文和显式换行按原画幅排版�
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-  await addMaterial(page, dialog, '镜头组 2 生成 A 原版')
+  await addMaterial(page, dialog, '镜头组 2 生成 A 原片')
   await selectWhole(page, dialog, laneOf(dialog, '镜头组 2 生成 A'))
   await page.keyboard.press('Enter')
   const text =
@@ -900,8 +900,8 @@ test('字幕字体排版：长英文、中文和显式换行按原画幅排版�
 test('素材预览：拖动手柄显示边界画面，播放仅限选区，返回整片保留播放头', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-  await addMaterial(page, dialog, '镜头组 2 生成 A 原版')
-  await addMaterial(page, dialog, '镜头组 3 生成 A 原版')
+  await addMaterial(page, dialog, '镜头组 2 生成 A 原片')
+  await addMaterial(page, dialog, '镜头组 3 生成 A 原片')
   const lane = laneOf(dialog, '镜头组 2 生成 A')
   const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
   const video = dialog.getByLabel('视频播放器', { exact: true })
@@ -958,9 +958,9 @@ test('添加镜头组：底部加号持续可用，片头片尾直接从轨道�
   const dialog = await openWholeFilm(page)
   const add = dialog.getByRole('button', { name: '添加镜头组', exact: true })
   await expect(add).toHaveCount(1)
-  await addMaterial(page, dialog, '镜头组 2 生成 A 原版')
+  await addMaterial(page, dialog, '镜头组 2 生成 A 原片')
   await expect(add).toHaveCount(1)
-  await addMaterial(page, dialog, '镜头组 3 生成 A 原版')
+  await addMaterial(page, dialog, '镜头组 3 生成 A 原片')
   await expect(laneOf(dialog, '镜头组 2 生成 A')).toBeVisible()
   await expect(laneOf(dialog, '镜头组 3 生成 A')).toBeVisible()
 
@@ -1038,7 +1038,7 @@ for (const viewport of [
     )
     await panel.getByRole('button', { name: '整片', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
-    await addMaterial(page, dialog, '镜头组 10 生成 A 原版')
+    await addMaterial(page, dialog, '镜头组 10 生成 A 原片')
     const stage = dialog.getByRole('region', { name: '预览舞台', exact: true })
     const tracks = dialog.getByRole('region', { name: '轨道列表', exact: true })
     const candidates = dialog.getByRole('region', { name: '候选素材', exact: true })
@@ -1049,7 +1049,7 @@ for (const viewport of [
     if (stageBefore === null || tracksBefore === null) throw new Error('编辑器尚未布局')
 
     for (let group = 11; group <= 19; group += 1)
-      await addMaterial(page, dialog, `镜头组 ${group} 生成 A 原版`)
+      await addMaterial(page, dialog, `镜头组 ${group} 生成 A 原片`)
     const stageAfter = await stage.boundingBox()
     const tracksAfter = await tracks.boundingBox()
     if (stageAfter === null || tracksAfter === null) throw new Error('编辑器尚未布局')
@@ -1074,7 +1074,7 @@ for (const viewport of [
     await last.scrollIntoViewIfNeeded()
     await expect(last).toBeInViewport()
     const label = timelineOf(dialog).getByRole('button', {
-      name: '镜头组 19 生成 A 当前用 原版，换版本',
+      name: '镜头组 19 生成 A 当前用 原片，换版本',
       exact: true,
     })
     const labelBox = await label.boundingBox()
@@ -1125,7 +1125,7 @@ for (const viewport of [
       await drop()
       await expect(segments(dialog)).toHaveCount(1)
       await expect(segments(dialog).first()).toHaveAccessibleName(
-        /镜头组 19 · 生成 A · 原版 · 0–6 秒$/,
+        /镜头组 19 · 生成 A · 原片 · 0–6 秒$/,
       )
 
       // 已有 A、B 两段时，候选 C 仍能直接落到切点，插入线与最终顺序一致。
@@ -1145,13 +1145,13 @@ for (const viewport of [
       await insert()
       await expect(segments(dialog)).toHaveCount(3)
       await expect(segments(dialog).nth(0)).toHaveAccessibleName(
-        /镜头组 19 · 生成 A · 原版 · 0–6 秒$/,
+        /镜头组 19 · 生成 A · 原片 · 0–6 秒$/,
       )
       await expect(segments(dialog).nth(1)).toHaveAccessibleName(
-        /镜头组 17 · 生成 A · 原版 · 6–12 秒$/,
+        /镜头组 17 · 生成 A · 原片 · 6–12 秒$/,
       )
       await expect(segments(dialog).nth(2)).toHaveAccessibleName(
-        /镜头组 18 · 生成 A · 原版 · 12–18 秒$/,
+        /镜头组 18 · 生成 A · 原片 · 12–18 秒$/,
       )
     }
   })
@@ -1199,17 +1199,17 @@ test('同组独立生成：同时选用两条素材，版本只在原作内切�
   if (rootA === undefined || rootB === undefined) throw new Error('验收素材未创建')
   const edited = await createEditedMaterial(page, rootA)
   const dialog = await openWholeFilmPanel(page, panel)
-  await addMaterial(page, dialog, '镜头组 10 生成 A 编辑版 1')
-  await addMaterial(page, dialog, '镜头组 10 生成 B 原版')
+  await addMaterial(page, dialog, '镜头组 10 生成 A V1')
+  await addMaterial(page, dialog, '镜头组 10 生成 B 原片')
   const laneA = laneOf(dialog, '镜头组 10 生成 A')
   const laneB = laneOf(dialog, '镜头组 10 生成 B')
   await expect(laneA).toBeVisible()
   await expect(laneB).toBeVisible()
-  await dialog.getByRole('button', { name: '镜头组 10 生成 A 当前用 编辑版 1，换版本' }).click()
-  const menu = page.getByRole('menu', { name: '镜头组 10 生成 A 当前用 编辑版 1，换版本' })
+  await dialog.getByRole('button', { name: '镜头组 10 生成 A 当前用 V1，换版本' }).click()
+  const menu = page.getByRole('menu', { name: '镜头组 10 生成 A 当前用 V1，换版本' })
   await expect(menu.getByRole('menuitemradio')).toHaveCount(2)
-  await expect(menu.getByRole('menuitemradio', { name: /^原版/ })).toBeVisible()
-  await expect(menu.getByRole('menuitemradio', { name: /^编辑版 1/ })).toBeVisible()
+  await expect(menu.getByRole('menuitemradio', { name: /^原片/ })).toBeVisible()
+  await expect(menu.getByRole('menuitemradio', { name: /^V1/ })).toBeVisible()
   await page.keyboard.press('Escape')
 
   // 真实样片的镜头 2 为 1–2 秒，两端均可扩展越过初始关键帧。
@@ -1232,15 +1232,15 @@ test('同组独立生成：同时选用两条素材，版本只在原作内切�
   const drop = await carryToFilm(page, dialog, laneA, 2.05, 0)
   await drop()
   await expect(segments(dialog)).toHaveCount(1)
-  await dialog.getByRole('button', { name: '镜头组 10 生成 A 当前用 编辑版 1，换版本' }).click()
-  await page.getByRole('menuitemradio', { name: /^原版/ }).click()
-  await expect(segments(dialog).first()).toHaveAccessibleName(/生成 A · 编辑版 1/)
+  await dialog.getByRole('button', { name: '镜头组 10 生成 A 当前用 V1，换版本' }).click()
+  await page.getByRole('menuitemradio', { name: /^原片/ }).click()
+  await expect(segments(dialog).first()).toHaveAccessibleName(/生成 A · V1/)
   await selectWhole(page, dialog, laneB)
   await page.keyboard.press('Enter')
   await expect(segments(dialog)).toHaveCount(2)
-  await expect(segments(dialog).nth(1)).toHaveAccessibleName(/生成 B · 原版/)
-  await dialog.getByRole('button', { name: '镜头组 10 生成 A 当前用 原版，换版本' }).click()
-  await page.getByRole('menuitemradio', { name: /^编辑版 1/ }).click()
+  await expect(segments(dialog).nth(1)).toHaveAccessibleName(/生成 B · 原片/)
+  await dialog.getByRole('button', { name: '镜头组 10 生成 A 当前用 原片，换版本' }).click()
+  await page.getByRole('menuitemradio', { name: /^V1/ }).click()
   await laneA.getByRole('button', { name: /镜头 2，/ }).click()
   await start.focus()
   await page.keyboard.press('ArrowLeft')
@@ -1294,7 +1294,7 @@ test('同组独立生成：同时选用两条素材，版本只在原作内切�
   await expect(laneA).toBeVisible()
   await expect(laneB).toBeVisible()
   await expect(segments(dialog)).toHaveCount(2)
-  await expect(segments(dialog).first()).toHaveAccessibleName(/生成 A · 编辑版 1/)
+  await expect(segments(dialog).first()).toHaveAccessibleName(/生成 A · V1/)
   const accepted = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/generations/whole-films') &&

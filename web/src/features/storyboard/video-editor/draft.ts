@@ -1,43 +1,28 @@
-/** 剪辑草稿：一版成片上的一串有序片段，每段记出自哪条记录、取它自己媒体时间里的哪一截。
- * 裁剪、调序、拆分、删除与选用版本改变它；AI 生成只增加候选。片段与合成请求同形。 */
-
 import { z } from 'zod'
-import { amend, startHistory, type History } from '../edit-history'
+import { roundToMs, type Clip } from '../editing/clip'
+import { amend, startHistory, type History } from '../editing/edit-history'
+import { keyframeRanges } from '../editing/keyframe-segments'
 
-/** 裁剪后一段的最短时长，秒。裁剪只是剪掉画面，没有模型那样的时长下限；留几帧，免得裁成零长。 */
 const MIN_TRIM_SECONDS = 0.2
 
-/** 拆分后每一半至少多长：再短只剩一两帧，看不清也剪不动。 */
 const MIN_SPLIT_SECONDS = 0.1
 
-/** 秒取整到毫秒：草稿里的时刻一律是毫秒精度，同一时刻处处相等。 */
-export const roundToMs = (seconds: number): number => Math.round(seconds * 1000) / 1000
-
-/** 一段素材：出自哪条记录，取它自己媒体时间里的 `[start, end)`，秒。即合成请求里的一段。 */
-export type Clip = { sourceJobId: string; start: number; end: number }
-
-/** 草稿里的一段素材。 */
 export type DraftClip = Clip & {
   kind: 'clip'
-  /** 由内容定：出处与起止。草稿里不会有两段一样的素材，选中跟着它走。 */
   id: string
-  /** 这段原有的范围：关键帧段、拆出来的那一半，或 AI 结果整条。裁剪只能在里面收缩。 */
   origin: { start: number; end: number }
 }
 
-/** 先前已提交的占位：保留浏览器里仍在等待结果的剪辑，新提交不再创建占位。 */
 export type DraftPending = {
   kind: 'pending'
   id: string
   editJobId: string
-  /** 被换下来的段；失败时原样放回去。 */
   replaced: readonly DraftClip[]
 }
 
 export type DraftItem = DraftClip | DraftPending
 export type Draft = readonly DraftItem[]
 
-/** 选中的段：草稿里相邻的一串，按先后排的 id。 */
 export type Selection = readonly string[]
 
 export const clipItem = (clip: Clip, origin = { start: clip.start, end: clip.end }): DraftClip => ({
@@ -56,18 +41,11 @@ const pendingItem = (editJobId: string, replaced: readonly DraftClip[]): DraftPe
   replaced,
 })
 
-/** 一版按关键帧分的段：`[k_i, k_{i+1})`，最后一段到片尾；第一个关键帧不在 0 上时片头那截也算一段。 */
 export const keyframeSegments = (
   versionJobId: string,
   index: { keyframes: readonly number[]; duration: number },
-): DraftClip[] => {
-  const cuts = [
-    ...new Set([0, ...index.keyframes.filter((time) => time > 0 && time < index.duration)]),
-  ].sort((left, right) => left - right)
-  return cuts.map((start, at) =>
-    clipItem({ sourceJobId: versionJobId, start, end: cuts[at + 1] ?? index.duration }),
-  )
-}
+): DraftClip[] =>
+  keyframeRanges(index).map((range) => clipItem({ sourceJobId: versionJobId, ...range }))
 
 const joinedClips = (clips: readonly Clip[]): Clip[] => {
   const joined: Clip[] = []
@@ -80,7 +58,6 @@ const joinedClips = (clips: readonly Clip[]): Clip[] => {
   return joined
 }
 
-/** 比较实际播放内容；仅拆分或合并同来源的连续片段不算内容修改。 */
 export const isUnchanged = (draft: Draft, segments: readonly DraftClip[]): boolean => {
   if (!draft.every((item) => item.kind === 'clip')) return false
   const current = joinedClips(draft)
@@ -101,7 +78,6 @@ export const itemDuration = (item: DraftItem): number =>
     ? item.end - item.start
     : item.replaced.reduce((sum, clip) => sum + clip.end - clip.start, 0)
 
-/** 排在时间线上的一项：`at` 是它在草稿里的起点。占位按被换下的段占位置。 */
 export type PlacedItem = { item: DraftItem; at: number; duration: number }
 
 export const layoutDraft = (draft: Draft): PlacedItem[] => {
@@ -117,15 +93,11 @@ export const layoutDraft = (draft: Draft): PlacedItem[] => {
 export const draftDuration = (draft: Draft): number =>
   roundToMs(draft.reduce((sum, item) => sum + itemDuration(item), 0))
 
-/** 合成请求的片段列表，就是草稿本身；有占位时还合成不了，返回 `undefined`。 */
 export const compositeSegments = (draft: Draft): Clip[] | undefined =>
   draft.every((item) => item.kind === 'clip')
     ? draft.map(({ sourceJobId, start, end }) => ({ sourceJobId, start, end }))
     : undefined
 
-// ---------- 选中 ----------
-
-/** 选中的那一串在草稿里的位置；选中为空、有段不在了或不相邻都算没选。 */
 export const selectedRange = (
   draft: Draft,
   selection: Selection,
@@ -139,10 +111,6 @@ export const selectedRange = (
 const idsBetween = (draft: Draft, from: number, to: number): Selection =>
   draft.slice(Math.min(from, to), Math.max(from, to) + 1).map((item) => item.id)
 
-/**
- * 点一段：没选时选中它；点紧挨着选区的段把它连进来；点选区两端的段把它去掉；点别处从那段重新选。
- * 占位点不动。
- */
 export const clickSelect = (draft: Draft, selection: Selection, id: string): Selection => {
   const index = draft.findIndex((item) => item.id === id)
   if (index < 0 || draft[index]?.kind !== 'clip') return selection
@@ -155,10 +123,6 @@ export const clickSelect = (draft: Draft, selection: Selection, id: string): Sel
   return [id]
 }
 
-/**
- * 键盘：左右键把焦点挪到相邻的段并只选它；加 Shift 时以选区另一端为锚点扩展或收缩选区。
- * 碰到占位或到头就不动。返回新的焦点与选区。
- */
 export const stepSelect = (
   draft: Draft,
   selection: Selection,
@@ -172,7 +136,6 @@ export const stepSelect = (
     return { focus: focusId, selection }
   if (!extend) return { focus: target.id, selection: [target.id] }
   const range = selectedRange(draft, selection)
-  // 焦点在选区一端时，另一端是锚点；焦点不在选区里，就从焦点那段起。
   const anchor =
     range === undefined || (focus !== range.from && focus !== range.to)
       ? focus
@@ -182,11 +145,8 @@ export const stepSelect = (
   return { focus: target.id, selection: idsBetween(draft, anchor, focus + direction) }
 }
 
-// ---------- 编辑操作：都返回新的草稿与选区 ----------
-
 export type Edit = { draft: Draft; selection: Selection }
 
-/** 为同一次 AI 编辑把连续同来源的选区归成一段；保留当前画面与选中，不代选生成结果。 */
 export const mergeSelection = (draft: Draft, selection: Selection): Edit => {
   const range = selectedRange(draft, selection)
   if (range === undefined || range.from === range.to) return { draft, selection }
@@ -202,14 +162,11 @@ export const mergeSelection = (draft: Draft, selection: Selection): Edit => {
   }
 }
 
-/** 这段的一端最远能拖到哪：不超过它原有的范围，也不短于 {@link MIN_TRIM_SECONDS}（本来就更短的
- * 只能拉长、不能再缩）。 */
 export const trimBounds = (clip: DraftClip, edge: 'start' | 'end'): { min: number; max: number } =>
   edge === 'start'
     ? { min: clip.origin.start, max: Math.max(clip.start, roundToMs(clip.end - MIN_TRIM_SECONDS)) }
     : { min: Math.min(clip.end, roundToMs(clip.start + MIN_TRIM_SECONDS)), max: clip.origin.end }
 
-/** 把一段的一端拖到 `value`（这段素材自己的时间，秒），夹在 {@link trimBounds} 里。 */
 export const trimClip = (draft: Draft, id: string, edge: 'start' | 'end', value: number): Edit => {
   const at = draft.findIndex((item) => item.id === id)
   const clip = draft[at]
@@ -220,7 +177,6 @@ export const trimClip = (draft: Draft, id: string, edge: 'start' | 'end', value:
   return { draft: draft.with(at, trimmed), selection: [trimmed.id] }
 }
 
-/** 把相邻的几段挪到 `before` 之前（`before` 是挪之前草稿里的位置，等于长度就是挪到最后）。 */
 export const moveItems = (draft: Draft, ids: Selection, before: number): Edit => {
   const moving = draft.filter((item) => ids.includes(item.id))
   if (moving.length === 0 || moving.some((item) => item.kind !== 'clip'))
@@ -233,7 +189,6 @@ export const moveItems = (draft: Draft, ids: Selection, before: number): Edit =>
   }
 }
 
-/** 草稿时钟 `clock` 处能不能拆：落在一段素材里面，两边都不短于 {@link MIN_SPLIT_SECONDS}。 */
 const splitPoint = (draft: Draft, clock: number) => {
   const placed = layoutDraft(draft).find(
     (entry) => clock > entry.at && clock < entry.at + entry.duration,
@@ -248,7 +203,6 @@ const splitPoint = (draft: Draft, clock: number) => {
 export const canSplitAt = (draft: Draft, clock: number): boolean =>
   splitPoint(draft, clock) !== undefined
 
-/** 在草稿时钟 `clock` 处把所在的那段一分为二；两半各自的原有范围以拆点为界，选中后一半。 */
 export const splitAt = (draft: Draft, clock: number): Edit | undefined => {
   const point = splitPoint(draft, clock)
   if (point === undefined) return undefined
@@ -262,7 +216,6 @@ export const splitAt = (draft: Draft, clock: number): Edit | undefined => {
   }
 }
 
-/** 删选中的段，后面的跟上。要删光或选中里有占位时不删。 */
 export const canRemove = (draft: Draft, selection: Selection): boolean => {
   const range = selectedRange(draft, selection)
   return (
@@ -277,14 +230,9 @@ export const removeItems = (draft: Draft, selection: Selection): Edit =>
     ? { draft: draft.filter((item) => !selection.includes(item.id)), selection: [] }
     : { draft, selection }
 
-/** 一条编辑段此刻的结论：还在跑、完成了（结果多长）、失败了（为什么）。 */
 export type EditOutcome =
   { kind: 'running' } | { kind: 'done'; duration: number } | { kind: 'failed'; message: string }
 
-/**
- * 有结论的占位落定：完成的换成那条编辑段整条，失败的换回原来的段。还在跑、或一时找不到那条记录
- * （刚提交、还没进列表）的照旧锁着。没有可落定的就原样返回同一个草稿。
- */
 export const resolvePending = (
   draft: Draft,
   outcomeOf: (editJobId: string) => EditOutcome | undefined,
@@ -308,21 +256,12 @@ export const resolvePending = (
   return { draft: changed ? next : draft, failures }
 }
 
-// ---------- AI 改 ----------
-
-/** 编辑段在基底上改的那一段，毫秒，记在编辑段上。 */
 export type EditRange = {
   id: string
   rangeStartMs: number
   rangeEndMs: number
 }
 
-// ---------- 初次进入：根据已有编辑区间组织原片 ----------
-
-/**
- * 将已有编辑的区间组织为一段，仍选用基底 V1；按精确区间切分，重叠时较新的区间优先。
- * 成功或在途区间优先于仅有失败的区间，不根据生成状态自动选择结果。
- */
 export const rebuildDraft = (
   segments: readonly DraftClip[],
   edits: readonly (EditRange & { createdAt: string; failed: boolean })[],
@@ -361,7 +300,6 @@ export const rebuildDraft = (
     )
 }
 
-/** 草稿引用的所有记录：各段的出处与占位的编辑段。 */
 export const draftSources = (draft: Draft): Set<string> =>
   new Set(
     draft.flatMap((item) =>
@@ -371,22 +309,16 @@ export const draftSources = (draft: Draft): Set<string> =>
     ),
   )
 
-// ---------- 撤销栈 ----------
-
-/** 撤销的一步：草稿连同当时的选中。 */
 export type Snapshot = { draft: Draft; selection: Selection }
 
 export type DraftHistory = History<Snapshot>
 
-/** 从这份草稿起算的撤销栈，没有选中。 */
 export const startDraftHistory = (draft: Draft): DraftHistory =>
   startHistory({ draft, selection: [] })
 
-/** 只改选中，不进栈。 */
 export const reselect = (history: DraftHistory, selection: Selection): DraftHistory =>
   amend(history, { ...history.present, selection })
 
-/** 栈里每一步都落定占位，各步的选中只留还在的段；失败原因只取当前这一步的，同一件事只说一次。 */
 export const resolveHistory = (
   history: DraftHistory,
   outcomeOf: (editJobId: string) => EditOutcome | undefined,
@@ -408,9 +340,6 @@ export const resolveHistory = (
   return { history: changed ? next : history, failures: present.failures }
 }
 
-// ---------- 存放 ----------
-
-/** 存进浏览器的格式版本；格式一改就加一，旧的读不出来按重建处理。 */
 const STORAGE_VERSION = 1
 
 const zStoredClip = z
@@ -434,7 +363,6 @@ const zStoredDraft = z.object({
       ]),
     )
     .min(1),
-  /** 草稿已提交合成，等的是哪条合成。 */
   composite: z.string().min(1).optional(),
 })
 
@@ -452,7 +380,6 @@ const toStored = (clip: DraftClip): StoredClip => ({
 
 export type StoredDraft = { draft: Draft; composite: string | undefined }
 
-/** 读存着的草稿；不是 JSON、格式版本不对、形状不对都返回 `undefined`。 */
 export const parseStoredDraft = (raw: string): StoredDraft | undefined => {
   let json: unknown
   try {

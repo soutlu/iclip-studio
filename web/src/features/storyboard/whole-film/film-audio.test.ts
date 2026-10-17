@@ -96,6 +96,26 @@ describe('预览音频定量校验', () => {
     expect(source.channels[0]).toEqual(before)
   })
 
+  it('单声道来源等功率铺到双声道，与同响度的双声道来源一样响', () => {
+    const mono = tone(1000)
+    const stereo: FilmPcm = {
+      sampleRate: FILM_AUDIO_RATE,
+      channels: [0, 1].map(() =>
+        (mono.channels[0] ?? new Float32Array()).map((sample) => sample * Math.SQRT1_2),
+      ),
+    }
+    const mixed = mixFilmAudio(
+      [
+        { source: mono, start: 0, end: 2 },
+        { source: stereo, start: 0, end: 2 },
+      ],
+      null,
+    )
+    const left = mixed.channels[0]
+    expect((left?.[4812] ?? 0) / (left?.[2 * FILM_AUDIO_RATE + 4812] ?? 1)).toBeCloseTo(1, 4)
+    expect(mixed.channels[1]).toEqual(left)
+  })
+
   it('各来源先统一响度，每段两端 50 ms 线性淡入淡出，切点归零', () => {
     const mixed = mixFilmAudio(
       [

@@ -1,11 +1,18 @@
-/** 时间线：视频轨铺按时间截的缩略图，原声轨画真实波形，这两条轨一一对应（一段就是上下一对）；
- * 下面是字幕轨与音乐轨，现在还没有内容，只画空轨。
- * 点段选中、拖两端裁剪、按住中间拖动调序；比例按所看那一版的时长排，草稿短了右边留一个细框。 */
-
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from 'react'
 import { Icon } from '@/shared/icons'
-import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
+import type { PeaksState } from '../editing/media-analysis'
+import type { PlaySegment } from '../editing/play-layout'
+import { roundSeconds } from '../editing/time-label'
+import { Frames, TimelineRuler, TrimBubble, TrimHandle, Wave } from '../editing/timeline'
+import {
+  arrowStep,
+  releasePointer,
+  useClickAfterDrag,
+  useLiftDrag,
+  useRovingFocus,
+  type Edge,
+} from '../editing/timeline-drag'
 import {
   selectedRange,
   stepSelect,
@@ -14,143 +21,40 @@ import {
   type DraftClip,
   type Selection,
 } from './draft'
-import type { PlaySegment } from './play-layout'
-import { roundSeconds, timeLabel } from './time-label'
-import type { PeaksState } from './use-media-analysis'
 import './editor-timeline.css'
 
-type Edge = 'start' | 'end'
-
-/** 时间线上的一项：一段素材，或一个 AI 正在改的占位（画被换下的那几段）。 */
 export type TimelineEntry = {
   id: string
-  /** 在草稿时钟上的起点与长度，秒。 */
   at: number
   duration: number
-  /** 画面与原声取自哪几截素材。 */
   parts: readonly PlaySegment[]
-  /** 能剪的素材段；占位没有。 */
   clip: DraftClip | undefined
-  /** 不是这一版没动过的关键帧段，底下画一道灰线。 */
   changed: boolean
-  /** 占位：AI 从这一刻起在改。 */
   runningSince: string | undefined
-  /** 有编辑记录的片段当前选用哪一版；未编辑过时不显示版本小标。 */
   versionLabel?: string | undefined
 }
 
 type EditorTimelineProps = {
   draft: Draft
   entries: readonly TimelineEntry[]
-  /** 整条宽度代表多少秒：所看那一版的时长，草稿更长时取草稿的。 */
   scale: number
-  /** 草稿总长。 */
   total: number
   currentTime: number
   selection: Selection
-  /** 能剪：看的是草稿，没在提交、没在等合成。 */
   editable: boolean
   peaksOf: (url: string) => PeaksState
   onSeek: (clock: number) => void
-  /** 点了能剪的一段（鼠标点、或聚焦时回车与空格）：选中怎么变由调用方定。 */
   onClickSegment: (id: string, extend?: boolean) => void
-  /** 键盘左右键改了选中。 */
   onSelect: (selection: Selection) => void
-  /** 开始拖动：播放头、裁剪手柄，或按住段挪过了阈值。 */
   onScrub: () => void
-  /** 选区外框（视频轨那一圈），弹出卡按它对准；没有选区或拖着段时不在。 */
   selectionBoxRef: Ref<HTMLSpanElement>
-
-  /** 拖完一端：把这段的这一端定在 `value`（这段素材自己的时间，秒）。 */
   onTrim: (id: string, edge: Edge, value: number) => void
-  /** 拖动中：预览停到裁剪边界那一刻的画面。 */
   onTrimPreview: (clock: number, edge: Edge) => void
-  /** 把这几段挪到草稿第 `before` 项之前。 */
   onMove: (ids: Selection, before: number) => void
   onDelete: () => void
 }
 
-const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60]
-/** 按下后挪过这么多像素才算拖动，不然是点。 */
-const DRAG_THRESHOLD = 4
-/** 键盘裁剪一步多少秒；按住 Shift 一步一秒。 */
-const KEY_TRIM_STEP = 0.1
-
-/** 一截素材的缩略图：按时间均匀截几张；地址截不了帧（不是 OSS）或截失败时露出中性底色。 */
-export function Frames({ part }: { part: PlaySegment }) {
-  const length = part.end - part.start
-  const count = Math.max(1, Math.min(24, Math.round(length * 2)))
-  const shots = Array.from({ length: count }).flatMap((_, at) => {
-    const url = videoSnapshotUrl(part.mediaUrl, 96, part.start + ((at + 0.5) * length) / count)
-    return url === undefined ? [] : [url]
-  })
-  return (
-    <span className="video-editor-timeline-frames" style={{ flexGrow: length }}>
-      {shots.length === 0 ? (
-        <Icon decorative name="video" size="sm" />
-      ) : (
-        shots.map((src) => <Frame key={src} src={src} />)
-      )}
-    </span>
-  )
-}
-
-function Frame({ src }: { src: string }) {
-  const [failed, setFailed] = useState(false)
-  return failed ? (
-    <span className="video-editor-timeline-frame-empty" />
-  ) : (
-    <img alt="" draggable={false} onError={() => setFailed(true)} src={src} />
-  )
-}
-
-/** 一截素材在一段里的标识：同一段里不会有两截一样的。 */
 const partKey = (part: PlaySegment) => `${part.mediaUrl}@${part.start}-${part.end}`
-
-/** 一截素材的原声：读中一条低调的占位线，没有音轨写「无声」，读不出写明，读到画波形。 */
-export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
-  const length = part.end - part.start
-  const body = (() => {
-    switch (state.kind) {
-      case 'loading':
-        return <span className="video-editor-timeline-wave-loading" />
-      case 'silent':
-        return <span className="video-editor-timeline-wave-note">无声</span>
-      case 'failed':
-        return <span className="video-editor-timeline-wave-note">原声读取失败</span>
-      case 'ready': {
-        const { rate, peaks } = state.peaks
-        const from = Math.floor(part.start * rate)
-        const count = Math.max(1, Math.ceil(part.end * rate) - from)
-        let path = ''
-        for (let at = 0; at < count; at += 1) {
-          const height = Math.max(4, (peaks[from + at] ?? 0) * 92)
-          path += `M${at + 0.5} ${50 - height / 2}v${height}`
-        }
-        return (
-          <svg data-testid="timeline-wave" preserveAspectRatio="none" viewBox={`0 0 ${count} 100`}>
-            <path d={path} />
-          </svg>
-        )
-      }
-    }
-  })()
-  return (
-    <span className="video-editor-timeline-wave" style={{ flexGrow: length }}>
-      {body}
-    </span>
-  )
-}
-
-type Lift = {
-  pointerId: number
-  ids: Selection
-  originX: number
-  /** 按下处离被拖那一串起点多少秒，浮起的那串跟着指针保持这个距离。 */
-  grab: number
-  clock: number
-  moved: boolean
-}
 
 type Trim = { pointerId: number; id: string; edge: Edge; value: number }
 
@@ -174,16 +78,7 @@ export function EditorTimeline({
   onDelete,
 }: EditorTimelineProps) {
   const lanesRef = useRef<HTMLDivElement>(null)
-  const buttonsRef = useRef(new Map<string, HTMLButtonElement>())
-  // 拖完松手时浏览器还会补一个 click，那一下不算点选。
-  const swallowClickRef = useRef(false)
-  const [focusId, setFocusId] = useState<string>()
-  const [lift, setLift] = useState<Lift | null>(null)
   const [trim, setTrim] = useState<Trim | null>(null)
-  // 播放位置滑块是被指针按住拿到的焦点：Chrome 对 range 点一下也算 :focus-visible，刻度区的焦点环
-  // 只留给键盘，按下键盘或失焦时清掉这个记号。
-  const [seekByPointer, setSeekByPointer] = useState(false)
-  const seekPointerRef = useRef<number | null>(null)
 
   const percent = (time: number) => `${(time / scale) * 100}%`
   const span = (at: number, duration: number) => ({
@@ -196,30 +91,24 @@ export function EditorTimeline({
     return Math.min(scale, Math.max(0, ((clientX - bounds.left) / bounds.width) * scale))
   }
 
+  const clickAfterDrag = useClickAfterDrag()
+  const reorder = useLiftDrag<Selection>({ clockAt, onScrub })
+  const lift = reorder.lift
+  const roving = useRovingFocus(
+    entries.flatMap((entry) => (entry.clip === undefined ? [] : [entry.id])),
+    selection[0],
+  )
+
   const range = selectedRange(draft, selection)
   const selected = (id: string) => selection.includes(id)
   const single =
     editable && selection.length === 1 && trim === null && lift === null
       ? entries.find((entry) => entry.id === selection[0] && entry.clip !== undefined)
       : undefined
-  const tabStop =
-    entries.find((entry) => entry.id === focusId && entry.clip !== undefined)?.id ??
-    selection[0] ??
-    entries.find((entry) => entry.clip !== undefined)?.id
-
-  const focusEntry = (id: string) => {
-    setFocusId(id)
-    buttonsRef.current.get(id)?.focus()
-  }
-
-  // ---------- 点选与键盘 ----------
 
   const click = (entry: TimelineEntry, extend: boolean) => {
-    if (swallowClickRef.current) {
-      swallowClickRef.current = false
-      return
-    }
-    setFocusId(entry.id)
+    if (clickAfterDrag.take()) return
+    roving.remember(entry.id)
     if (editable) onClickSegment(entry.id, extend)
     else onSeek(entry.at)
   }
@@ -227,7 +116,6 @@ export function EditorTimeline({
   const keyDown = (event: KeyboardEvent<HTMLButtonElement>, entry: TimelineEntry) => {
     const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : undefined
     if (direction !== undefined && event.altKey) {
-      // Alt + 左右：把选中的那串往前后挪一格。
       event.preventDefault()
       if (!editable || range === undefined) return
       const before = direction < 0 ? range.from - 1 : range.to + 2
@@ -238,17 +126,17 @@ export function EditorTimeline({
       event.preventDefault()
       if (!editable) {
         const next = entries[entries.indexOf(entry) + direction]
-        if (next?.clip !== undefined) focusEntry(next.id)
+        if (next?.clip !== undefined) roving.focus(next.id)
         return
       }
       const next = stepSelect(draft, selection, entry.id, direction, event.shiftKey)
       onSelect(next.selection)
-      focusEntry(next.focus)
+      roving.focus(next.focus)
       return
     }
     if ((event.key === 'Delete' || event.key === 'Backspace') && editable) {
       event.preventDefault()
-      // 焦点所在的段被删掉后落回对话框，键盘就断了：交给后面（没有就前面）留下来的那段。
+      // 焦点所在的段被删掉后焦点落回对话框，交给后面（没有就前面）留下来的那段。
       const neighbor =
         range === undefined
           ? undefined
@@ -257,29 +145,16 @@ export function EditorTimeline({
               .concat(entries.slice(0, range.from).reverse())
               .find((item) => item.clip !== undefined)?.id ?? undefined)
       onDelete()
-      if (neighbor !== undefined) requestAnimationFrame(() => focusEntry(neighbor))
+      if (neighbor !== undefined) requestAnimationFrame(() => roving.focus(neighbor))
     }
   }
 
-  // ---------- 拖动调序 ----------
-
   const pressClip = (event: PointerEvent<HTMLButtonElement>, entry: TimelineEntry) => {
-    // 拖完松手后浏览器不一定补那个 click（段已经挪走了），记号留到下一次按下就作废。
-    swallowClickRef.current = false
+    clickAfterDrag.reset()
     if (!editable || event.button !== 0) return
-    event.currentTarget.setPointerCapture(event.pointerId)
-    // 按在选区里拖整串，按在选区外只拖这一段。
     const ids = selected(entry.id) && range !== undefined ? selection : [entry.id]
     const first = entries.find((item) => item.id === ids[0])
-    const clock = clockAt(event.clientX)
-    setLift({
-      pointerId: event.pointerId,
-      ids,
-      originX: event.clientX,
-      grab: clock - (first?.at ?? entry.at),
-      clock,
-      moved: false,
-    })
+    reorder.press(event, ids, first?.at ?? entry.at)
   }
 
   const insertBefore = (clock: number) => {
@@ -287,24 +162,12 @@ export function EditorTimeline({
     return index < 0 ? entries.length : index
   }
 
-  const dragClip = (event: PointerEvent<HTMLButtonElement>) => {
-    if (lift === null || lift.pointerId !== event.pointerId) return
-    const moved = lift.moved || Math.abs(event.clientX - lift.originX) > DRAG_THRESHOLD
-    if (moved && !lift.moved) onScrub()
-    setLift({ ...lift, clock: clockAt(event.clientX), moved })
-  }
-
   const releaseClip = (event: PointerEvent<HTMLButtonElement>) => {
-    if (lift === null || lift.pointerId !== event.pointerId) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    setLift(null)
-    if (!lift.moved) return
-    swallowClickRef.current = true
-    onMove(lift.ids, insertBefore(lift.clock))
+    const dropped = reorder.release(event)
+    if (dropped === undefined) return
+    clickAfterDrag.swallow()
+    onMove(dropped.payload, insertBefore(dropped.clock))
   }
-
-  // ---------- 裁剪 ----------
 
   const trimValue = (entry: TimelineEntry, clip: DraftClip, edge: Edge, clock: number) => {
     const { min, max } = trimBounds(clip, edge)
@@ -337,15 +200,13 @@ export function EditorTimeline({
 
   const releaseHandle = (event: PointerEvent<HTMLButtonElement>) => {
     if (trim === null || trim.pointerId !== event.pointerId) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId)
+    releasePointer(event)
     setTrim(null)
     onTrim(trim.id, trim.edge, trim.value)
   }
 
   const keyHandle = (event: KeyboardEvent<HTMLButtonElement>, entry: TimelineEntry, edge: Edge) => {
-    const step = event.shiftKey ? 1 : KEY_TRIM_STEP
-    const delta = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : undefined
+    const delta = arrowStep(event)
     if (delta === undefined || entry.clip === undefined) return
     event.preventDefault()
     const value = entry.clip[edge] + delta
@@ -353,22 +214,7 @@ export function EditorTimeline({
     onTrimPreview(entry.at + (value - entry.clip.start), edge)
   }
 
-  // ---------- 刻度 ----------
-
-  const tickStep = TICK_STEPS.find((step) => step >= scale / 8) ?? Math.ceil(scale / 8 / 60) * 60
-  const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
-  const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
-    onSeek(Math.min(total, clockAt(event.clientX)))
-  }
-  const finishSeek = (event: PointerEvent<HTMLInputElement>) => {
-    if (seekPointerRef.current !== event.pointerId) return
-    seekPointerRef.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId)
-  }
-
-  // ---------- 拖动中的画法 ----------
 
   const trimmed = (() => {
     if (trim === null) return undefined
@@ -381,18 +227,16 @@ export function EditorTimeline({
     return { entry, from, to, shorter }
   })()
   const lifted =
-    lift?.moved === true ? entries.filter((entry) => lift.ids.includes(entry.id)) : undefined
+    lift?.moved === true ? entries.filter((entry) => lift.payload.includes(entry.id)) : undefined
   const liftedDuration = lifted?.reduce((sum, entry) => sum + entry.duration, 0) ?? 0
-  const liftRange = lifted === undefined ? undefined : selectedRange(draft, lift?.ids ?? [])
+  const liftRange = lifted === undefined ? undefined : selectedRange(draft, lift?.payload ?? [])
   const insertAt = lift?.moved === true ? insertBefore(lift.clock) : undefined
-  // 插回原处（选中那串之内或紧挨着它）等于没挪，不画墨线。
   const showInsert =
     insertAt !== undefined &&
     liftRange !== undefined &&
     (insertAt < liftRange.from || insertAt > liftRange.to + 1)
   const insertClock = insertAt === undefined ? 0 : (entries[insertAt]?.at ?? total)
 
-  // 只选中一段、能剪时两端有手柄；拖着的时候跟着被拖的那段。
   const handleOwner = single ?? trimmed?.entry
   const handleEntry =
     handleOwner?.clip === undefined ? undefined : { entry: handleOwner, clip: handleOwner.clip }
@@ -439,55 +283,14 @@ export function EditorTimeline({
           className={cn('video-editor-timeline-lanes', !editable && 'is-readonly')}
           ref={lanesRef}
         >
-          <div className="video-editor-timeline-ruler">
-            {ticks.map((time) => (
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'video-editor-timeline-tick',
-                  time === 0 && 'is-first',
-                  time + tickStep > scale && time > 0 && 'is-last',
-                )}
-                key={time}
-                style={{ left: percent(time) }}
-              >
-                {roundSeconds(time)}s
-              </span>
-            ))}
-            <input
-              aria-label="时间线播放位置"
-              aria-valuetext={timeLabel(boundedTime)}
-              className="video-editor-timeline-seek"
-              data-pointer={seekByPointer ? '' : undefined}
-              max={scale}
-              min={0}
-              onBlur={() => setSeekByPointer(false)}
-              onChange={(event) => {
-                onScrub()
-                onSeek(Math.min(total, Number(event.target.value)))
-              }}
-              onKeyDown={() => setSeekByPointer(false)}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return
-                event.preventDefault()
-                event.stopPropagation()
-                setSeekByPointer(true)
-                event.currentTarget.focus()
-                event.currentTarget.setPointerCapture(event.pointerId)
-                seekPointerRef.current = event.pointerId
-                onScrub()
-                seekPointer(event)
-              }}
-              onPointerMove={(event) => {
-                if (seekPointerRef.current === event.pointerId) seekPointer(event)
-              }}
-              onPointerUp={finishSeek}
-              onPointerCancel={finishSeek}
-              step={0.01}
-              type="range"
-              value={boundedTime}
-            />
-          </div>
+          <TimelineRuler
+            clockAt={clockAt}
+            currentTime={currentTime}
+            onScrub={onScrub}
+            onSeek={onSeek}
+            scale={scale}
+            total={total}
+          />
 
           <div className="video-editor-timeline-lane is-captions" data-testid="timeline-captions" />
           <div className="video-editor-timeline-lane is-music" data-testid="timeline-music" />
@@ -542,18 +345,15 @@ export function EditorTimeline({
                 )}
                 key={entry.id}
                 onClick={(event) => click(entry, event.shiftKey)}
-                onFocus={() => setFocusId(entry.id)}
+                onFocus={() => roving.remember(entry.id)}
                 onKeyDown={(event) => keyDown(event, entry)}
                 onPointerCancel={releaseClip}
                 onPointerDown={(event) => pressClip(event, entry)}
-                onPointerMove={dragClip}
+                onPointerMove={reorder.move}
                 onPointerUp={releaseClip}
-                ref={(element) => {
-                  if (element === null) buttonsRef.current.delete(entry.id)
-                  else buttonsRef.current.set(entry.id, element)
-                }}
+                ref={roving.register(entry.id)}
                 style={span(entry.at, entry.duration)}
-                tabIndex={entry.id === tabStop ? 0 : -1}
+                tabIndex={roving.tabIndexOf(entry.id)}
                 type="button"
               >
                 {faces}
@@ -612,44 +412,30 @@ export function EditorTimeline({
             : (['start', 'end'] as const).map((edge) => {
                 const { entry, clip } = handleEntry
                 const value = trim !== null && trim.edge === edge ? trim.value : clip[edge]
-                const bounds = trimBounds(clip, edge)
                 return (
-                  <button
-                    aria-label={edge === 'start' ? '裁剪该段开头' : '裁剪该段结尾'}
-                    aria-valuemax={roundSeconds(bounds.max)}
-                    aria-valuemin={roundSeconds(bounds.min)}
-                    aria-valuenow={roundSeconds(value)}
-                    aria-valuetext={`${roundSeconds(value)} 秒`}
-                    className={cn(
-                      'video-editor-timeline-handle ui-focus',
-                      `is-${edge}`,
-                      trim?.edge === edge && 'is-pressed',
-                    )}
+                  <TrimHandle
+                    bounds={trimBounds(clip, edge)}
+                    edge={edge}
                     key={edge}
                     onKeyDown={(event) => keyHandle(event, entry, edge)}
                     onPointerCancel={releaseHandle}
                     onPointerDown={(event) => pressHandle(event, entry, edge)}
                     onPointerMove={dragHandle}
                     onPointerUp={releaseHandle}
-                    role="slider"
+                    pressed={trim?.edge === edge}
                     style={{ left: percent(entry.at + (value - clip.start)) }}
-                    title="拖动可裁剪，按方向键可微调，按住 Shift 每次调整 1 秒"
-                    type="button"
+                    value={value}
+                    valueText={`${roundSeconds(value)} 秒`}
                   />
                 )
               })}
 
           {trimmed === undefined ? null : (
-            <span
-              className="video-editor-timeline-bubble"
-              role="status"
+            <TrimBubble
+              length={trimmed.to - trimmed.from}
+              shorter={trimmed.shorter}
               style={{ left: percent(trim?.edge === 'start' ? trimmed.from : trimmed.to) }}
-            >
-              裁剪后 {(trimmed.to - trimmed.from).toFixed(1)} 秒 ·{' '}
-              {trimmed.shorter >= 0
-                ? `缩短 ${trimmed.shorter.toFixed(1)} 秒`
-                : `延长 ${(-trimmed.shorter).toFixed(1)} 秒`}
-            </span>
+            />
           )}
 
           {lifted === undefined || lift === null ? null : (
@@ -679,7 +465,7 @@ export function EditorTimeline({
 
           <span
             aria-hidden="true"
-            className="video-editor-timeline-playhead"
+            className="timeline-playhead"
             style={{ left: percent(boundedTime) }}
           />
         </div>

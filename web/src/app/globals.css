@@ -373,4 +373,5 @@
 @import '../features/conversations/conversations.css';
 @import '../features/storyboard/storyboard.css';
 @import '../features/storyboard/film/film.css';
+@import '../features/storyboard/editing/editor.css';
 @import '../features/storyboard/video-editor/video-editor.css';

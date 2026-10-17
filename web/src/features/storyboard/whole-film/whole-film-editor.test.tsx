@@ -390,15 +390,15 @@ describe('WholeFilmEditor', () => {
       item.getAttribute('aria-label'),
     )
     expect(tiles).toEqual([
-      '镜头组 1 生成 A 编辑版 1，4.0 秒',
-      '镜头组 1 生成 A 原版，4.0 秒',
-      '镜头组 2 生成 A 原版，4.0 秒',
-      '视频 1 生成 A 原版，4.0 秒',
+      '镜头组 1 生成 A V1，4.0 秒',
+      '镜头组 1 生成 A 原片，4.0 秒',
+      '镜头组 2 生成 A 原片，4.0 秒',
+      '视频 1 生成 A 原片，4.0 秒',
     ])
 
-    await user.click(screen.getByRole('menuitem', { name: /^镜头组 1 生成 A 编辑版 1/ }))
+    await user.click(screen.getByRole('menuitem', { name: /^镜头组 1 生成 A V1/ }))
     expect(
-      await screen.findByRole('button', { name: /^镜头组 1 · 生成 A · 编辑版 1 镜头 1/ }),
+      await screen.findByRole('button', { name: /^镜头组 1 · 生成 A · V1 镜头 1/ }),
     ).toBeVisible()
     expect(screen.getByRole('button', { name: '添加镜头组' })).toBeVisible()
   })
@@ -407,14 +407,14 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 2 生成 A 原版')
+    await addMaterial(user, '镜头组 2 生成 A 原片')
 
-    lane('镜头组 2 · 生成 A · 原版').focus()
+    lane('镜头组 2 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}')
     expect(screen.getByRole('slider', { name: '选区结尾' })).toHaveAttribute('aria-valuenow', '4')
     await user.keyboard('{Enter}')
     expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-      '第 1 段 · 镜头组 2 · 生成 A · 原版 · 0–4 秒',
+      '第 1 段 · 镜头组 2 · 生成 A · 原片 · 0–4 秒',
     ])
 
     // 选区结尾往前收 1 秒（Shift 一步一秒），再插一次：播放头已在第 1 段结尾，排在它后面。
@@ -424,8 +424,8 @@ describe('WholeFilmEditor', () => {
 
     await waitFor(() =>
       expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-        '第 1 段 · 镜头组 2 · 生成 A · 原版 · 0–4 秒',
-        '第 2 段 · 镜头组 2 · 生成 A · 原版 · 4–7 秒',
+        '第 1 段 · 镜头组 2 · 生成 A · 原片 · 0–4 秒',
+        '第 2 段 · 镜头组 2 · 生成 A · 原片 · 4–7 秒',
       ]),
     )
     expect(screen.getByText('7.0')).toBeVisible()
@@ -436,9 +436,9 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 1 生成 A 原版')
+    await addMaterial(user, '镜头组 1 生成 A 原片')
     stubLayout()
-    const material = lane('镜头组 1 · 生成 A · 原版', 2)
+    const material = lane('镜头组 1 · 生成 A · 原片', 2)
     await user.click(material)
     expect(screen.getByRole('slider', { name: '选区开头' })).toHaveAttribute('aria-valuenow', '1')
     expect(screen.getByRole('slider', { name: '选区结尾' })).toHaveAttribute('aria-valuenow', '3')
@@ -450,7 +450,7 @@ describe('WholeFilmEditor', () => {
     fireEvent.pointerUp(material, { pointerId: 2, clientX: 20, clientY: 40 })
 
     expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-      '第 1 段 · 镜头组 1 · 生成 A · 原版 · 0–2 秒',
+      '第 1 段 · 镜头组 1 · 生成 A · 原片 · 0–2 秒',
     ])
   })
 
@@ -476,7 +476,7 @@ describe('WholeFilmEditor', () => {
     await renderEditor()
     await timeline()
 
-    lane('镜头组 2 · 生成 A · 原版').focus()
+    lane('镜头组 2 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(filmSegments()).toHaveLength(30)
@@ -489,20 +489,18 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 1 生成 A 编辑版 1')
-    lane('镜头组 1 · 生成 A · 编辑版 1').focus()
+    await addMaterial(user, '镜头组 1 生成 A V1')
+    lane('镜头组 1 · 生成 A · V1').focus()
     await user.keyboard('{Enter}{Enter}')
 
-    await user.click(
-      screen.getByRole('button', { name: '镜头组 1 生成 A 当前用 编辑版 1，换版本' }),
-    )
-    await user.click(await screen.findByRole('menuitemradio', { name: /原版/ }))
-    lane('镜头组 1 · 生成 A · 原版').focus()
+    await user.click(screen.getByRole('button', { name: '镜头组 1 生成 A 当前用 V1，换版本' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: /原片/ }))
+    lane('镜头组 1 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(filmSegments().map((item) => item.getAttribute('aria-label'))).toEqual([
-      '第 1 段 · 镜头组 1 · 生成 A · 编辑版 1 · 0–4 秒',
-      '第 2 段 · 镜头组 1 · 生成 A · 原版 · 4–8 秒',
+      '第 1 段 · 镜头组 1 · 生成 A · V1 · 0–4 秒',
+      '第 2 段 · 镜头组 1 · 生成 A · 原片 · 4–8 秒',
     ])
   })
 
@@ -516,14 +514,14 @@ describe('WholeFilmEditor', () => {
     await renderEditor()
     await timeline()
     expect(screen.queryByRole('button', { name: '在播放头处添加字幕' })).toBeNull()
-    await addMaterial(user, '镜头组 2 生成 A 原版')
-    lane('镜头组 2 · 生成 A · 原版').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原片')
+    lane('镜头组 2 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
 
     await user.click(await screen.findByRole('button', { name: '第 1 条字幕：今天带来一款新耳机' }))
     expect(screen.queryByRole('button', { name: '在播放头处添加字幕' })).toBeNull()
     const card = screen.getByRole('region', { name: '选中的字幕' })
-    expect(within(card).getByText('来自镜头组 2 · 生成 A · 原版 的口播')).toBeVisible()
+    expect(within(card).getByText('来自镜头组 2 · 生成 A · 原片 的口播')).toBeVisible()
     const box = within(card).getByRole('textbox', { name: '字幕文字' })
     await user.clear(box)
     await user.type(box, '新耳机来了')
@@ -554,12 +552,12 @@ describe('WholeFilmEditor', () => {
     )
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 2 生成 A 原版')
-    lane('镜头组 2 · 生成 A · 原版').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原片')
+    lane('镜头组 2 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
 
     await user.click(
-      await screen.findByRole('button', { name: '镜头组 2 · 生成 A · 原版 字幕未识别，识别' }),
+      await screen.findByRole('button', { name: '镜头组 2 · 生成 A · 原片 字幕未识别，识别' }),
     )
 
     await waitFor(() =>
@@ -578,12 +576,12 @@ describe('WholeFilmEditor', () => {
     server.use(http.post('*/api/generations/subtitles', submitted))
     const user = userEvent.setup()
     await renderEditor({ task: { kind: 'loading' } })
-    await addMaterial(user, '镜头组 2 生成 A 原版')
-    lane('镜头组 2 · 生成 A · 原版').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原片')
+    lane('镜头组 2 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
 
     await user.click(
-      await screen.findByRole('button', { name: '镜头组 2 · 生成 A · 原版 字幕未识别，识别' }),
+      await screen.findByRole('button', { name: '镜头组 2 · 生成 A · 原片 字幕未识别，识别' }),
     )
 
     expect(screen.getByText('任务信息读取中，暂时无法提交')).toBeVisible()
@@ -596,8 +594,8 @@ describe('WholeFilmEditor', () => {
     const retry = vi.fn()
     const user = userEvent.setup()
     await renderEditor({ task: { kind: 'failed', retry } })
-    await addMaterial(user, '镜头组 2 生成 A 原版')
-    lane('镜头组 2 · 生成 A · 原版').focus()
+    await addMaterial(user, '镜头组 2 生成 A 原片')
+    lane('镜头组 2 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(screen.getByText('任务信息读取失败，识别字幕、生成音乐与合成暂时无法提交')).toBeVisible()
@@ -610,17 +608,17 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [subtitle(TAKE_1, { status: 'failed' }), subtitle(TAKE_2, { sentences: [] })])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 1 生成 A 原版')
-    lane('镜头组 1 · 生成 A · 原版').focus()
+    await addMaterial(user, '镜头组 1 生成 A 原片')
+    lane('镜头组 1 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
-    await addMaterialWithKeyboard(user, '镜头组 2 生成 A 原版')
-    lane('镜头组 2 · 生成 A · 原版').focus()
+    await addMaterialWithKeyboard(user, '镜头组 2 生成 A 原片')
+    lane('镜头组 2 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}{Enter}')
 
     expect(
-      await screen.findByRole('button', { name: '镜头组 1 · 生成 A · 原版 字幕识别失败，重试' }),
+      await screen.findByRole('button', { name: '镜头组 1 · 生成 A · 原片 字幕识别失败，重试' }),
     ).toBeVisible()
-    expect(screen.queryByRole('button', { name: /镜头组 2 · 生成 A · 原版 字幕/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /镜头组 2 · 生成 A · 原片 字幕/ })).toBeNull()
     expect(screen.queryByText('识别中')).toBeNull()
   })
 
@@ -630,8 +628,8 @@ describe('WholeFilmEditor', () => {
     serve(VIDEOS, [])
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '视频 1 生成 A 原版')
-    const group = screen.getByRole('group', { name: '视频 1 · 生成 A · 原版 素材' })
+    await addMaterial(user, '视频 1 生成 A 原片')
+    const group = screen.getByRole('group', { name: '视频 1 · 生成 A · 原片 素材' })
     expect(within(group).getByRole('alert')).toHaveTextContent('镜头分段读取失败')
     expect(within(group).queryByRole('button', { name: /镜头/ })).toBeNull()
     mediaFiles.set(url, { keyframes: [0, 1, 3], duration: 4 })
@@ -768,7 +766,7 @@ describe('素材区预览与整片播放头', () => {
     )
     const user = userEvent.setup()
     await renderEditor()
-    await addMaterial(user, '镜头组 2 生成 A 原版')
+    await addMaterial(user, '镜头组 2 生成 A 原片')
     stubLayout()
     fireEvent.loadedMetadata(media())
     const stage = screen.getByRole('region', { name: '预览舞台' })
@@ -777,7 +775,7 @@ describe('素材区预览与整片播放头', () => {
     const firstFrame = `${url}?x-oss-process=video/snapshot,t_0,f_jpg,w_320,h_0,m_fast`
     expect(image.src).toBe(firstFrame)
     fireEvent.load(image)
-    await user.click(lane('镜头组 2 · 生成 A · 原版', 2))
+    await user.click(lane('镜头组 2 · 生成 A · 原片', 2))
     expect([...stage.querySelectorAll('img')].map((item) => item.src)).toEqual([firstFrame])
     expect(image).toBeVisible()
     expect(media().currentTime).toBe(1)
@@ -800,7 +798,7 @@ describe('素材区预览与整片播放头', () => {
     const user = userEvent.setup()
     await renderEditor()
     await timeline()
-    await addMaterial(user, '镜头组 2 生成 A 原版')
+    await addMaterial(user, '镜头组 2 生成 A 原片')
     stubLayout()
     const filmClock = screen.getByRole('slider', { name: '时间线播放位置' })
     fireEvent.change(filmClock, { target: { value: '1.75' } })
@@ -810,7 +808,7 @@ describe('素材区预览与整片播放头', () => {
     await user.click(screen.getByRole('button', { name: '播放' }))
     await waitFor(() => expect(audio.played).toHaveLength(1))
     const before = window.localStorage.getItem(filmDraftStorageKey(CONVERSATION))
-    await user.click(lane('镜头组 2 · 生成 A · 原版', 2))
+    await user.click(lane('镜头组 2 · 生成 A · 原片', 2))
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_2}.mp4`)
     expect(media().currentTime).toBe(1)
@@ -855,12 +853,12 @@ describe('素材区预览与整片播放头', () => {
     const user = userEvent.setup()
     await renderEditor()
     await timeline()
-    await addMaterial(user, '镜头组 2 生成 A 原版')
+    await addMaterial(user, '镜头组 2 生成 A 原片')
     stubLayout()
     fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
       target: { value: '0.5' },
     })
-    const material = lane('镜头组 2 · 生成 A · 原版')
+    const material = lane('镜头组 2 · 生成 A · 原片')
     material.focus()
     await user.keyboard('{Enter}')
     fireEvent.loadedMetadata(media())
@@ -896,19 +894,19 @@ describe('素材区预览与整片播放头', () => {
     const user = userEvent.setup()
     await renderEditor()
     await timeline()
-    await addMaterial(user, '镜头组 1 生成 A 原版')
-    lane('镜头组 1 · 生成 A · 原版').focus()
+    await addMaterial(user, '镜头组 1 生成 A 原片')
+    lane('镜头组 1 · 生成 A · 原片').focus()
     await user.keyboard('{Enter}')
-    await user.click(screen.getByRole('button', { name: '镜头组 1 生成 A 当前用 原版，换版本' }))
-    await user.click(screen.getByRole('menuitemradio', { name: /编辑版 1/ }))
+    await user.click(screen.getByRole('button', { name: '镜头组 1 生成 A 当前用 原片，换版本' }))
+    await user.click(screen.getByRole('menuitemradio', { name: /V1/ }))
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${COMPOSITE_1}.mp4`)
     expect(screen.queryByRole('slider', { name: '选区结尾' })).toBeNull()
     // 素材区末尾的入口与轨道头换版走同一条选择逻辑，不会留下上一个版本的预览。
-    await addMaterial(user, '镜头组 1 生成 A 原版')
+    await addMaterial(user, '镜头组 1 生成 A 原片')
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', `https://example.com/${TAKE_1}.mp4`)
-    expect(lane('镜头组 1 · 生成 A · 原版')).toBeVisible()
+    expect(lane('镜头组 1 · 生成 A · 原片')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '整片 V1' }))
     fireEvent.loadedMetadata(media())
     expect(media()).toHaveAttribute('src', 'https://example.com/whole-film.mp4')
@@ -1002,8 +1000,8 @@ describe('WholeFilmEditor 音乐', () => {
         screen.getByRole('button', {
           name:
             status === 'failed'
-              ? '镜头组 1 · 生成 A · 原版 字幕识别失败，重试'
-              : '镜头组 1 · 生成 A · 原版 字幕未识别，识别',
+              ? '镜头组 1 · 生成 A · 原片 字幕识别失败，重试'
+              : '镜头组 1 · 生成 A · 原片 字幕未识别，识别',
         }),
       ).toBeVisible()
       await user.click(screen.getByRole('button', { name: '第 1 条字幕：原版字幕' }))
