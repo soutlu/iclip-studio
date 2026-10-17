@@ -10,7 +10,8 @@ import asyncio
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Final
 from urllib.parse import quote, urlsplit
 
 import oss2
@@ -19,8 +20,12 @@ from iclip.platform.object_store.layout import OSS_ROOT
 from iclip.platform.object_store.store import (
     SIGNED_PUT_EXPIRES_SECONDS,
     ObjectStoreUnavailable,
+    SignedPrivatePut,
     StoredObject,
 )
+
+PRIVATE_ACL_HEADER: Final = "x-oss-object-acl"
+"""上传时把这个对象设成私有读；桶本身是公共读。"""
 
 RETRY_ATTEMPTS = 3
 """网络错误与 5xx 的最大尝试次数；4xx 不重试。"""
@@ -112,6 +117,41 @@ class OssObjectStore:
         except oss2.exceptions.OssError as exc:  # pragma: no cover - 本地计算，理论上不会走到
             raise ObjectStoreUnavailable(f"OSS 签名失败: {exc}") from exc
 
+    def sign_private_put(
+        self, *, object_key: str, content_type: str, expires_seconds: int
+    ) -> SignedPrivatePut:
+        """用读写客户端签：配了内网 endpoint 时地址是内网的，给同机房的服务端上传。"""
+
+        key = _validate_object_key(object_key)
+        if not content_type.strip():
+            raise ValueError("预签名 PUT 必须指定内容类型")
+        headers = {"Content-Type": content_type, PRIVATE_ACL_HEADER: "private"}
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_seconds)
+        try:
+            url = self._bucket.sign_url(
+                "PUT", key, expires_seconds, headers=dict(headers), slash_safe=True
+            )
+        except oss2.exceptions.OssError as exc:  # pragma: no cover - 本地计算，理论上不会走到
+            raise ObjectStoreUnavailable(f"OSS 签名失败: {exc}") from exc
+        return SignedPrivatePut(url=str(url), headers=headers, expires_at=expires_at)
+
+    def sign_download(self, *, object_key: str, filename: str, expires_seconds: int) -> str:
+        """用签名客户端签：地址走公网 endpoint，浏览器才连得上。响应头的下载文件名签进了地址。"""
+
+        key = _validate_object_key(object_key)
+        try:
+            return str(
+                self._signing_bucket.sign_url(
+                    "GET",
+                    key,
+                    expires_seconds,
+                    params={"response-content-disposition": attachment_disposition(filename)},
+                    slash_safe=True,
+                )
+            )
+        except oss2.exceptions.OssError as exc:  # pragma: no cover - 本地计算，理论上不会走到
+            raise ObjectStoreUnavailable(f"OSS 签名失败: {exc}") from exc
+
     async def find_object(self, *, prefix: str) -> StoredObject | None:
         """在线程中执行对象列举及元信息查询。"""
 
@@ -182,6 +222,17 @@ def _is_transient(exc: oss2.exceptions.OssError) -> bool:
     return isinstance(exc, oss2.exceptions.RequestError) or exc.status >= 500
 
 
+def attachment_disposition(filename: str) -> str:
+    """按 RFC 6266 / RFC 5987 写附件下载头：``filename*`` 带 UTF-8 编码的原名，``filename`` 是
+    把非 ASCII 字符换成 ``_`` 的兜底名（引号里只能放 ASCII）。"""
+
+    fallback = "".join(
+        char if char.isascii() and char.isprintable() and char not in '"\\' else "_"
+        for char in filename
+    )
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
 def _validate_object_key(object_key: str) -> str:
     """校验 key 的路径与命名空间，避免写入共享桶中本服务范围之外。"""
 
@@ -247,10 +298,12 @@ def _as_is(url: str) -> str:
 
 
 __all__ = [
+    "PRIVATE_ACL_HEADER",
     "RETRY_ATTEMPTS",
     "RETRY_BACKOFF_SECONDS",
     "OssObjectStore",
     "OssSettings",
+    "attachment_disposition",
     "oss_fetch_url",
     "validate_internal_endpoint",
     "validate_public_url_base",

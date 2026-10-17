@@ -38,7 +38,7 @@
 | **Conflict** | `409`：请求与资源**当前状态**冲突——乐观锁并发冲突、不合法的状态机转换、当前状态下不许改的字段 |
 | **ValidationFailed** | `422` |
 
-上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`。
+上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`；整片导出的渲染服务不可用返回 `502`（§6「整片导出」）。
 
 请求结构校验失败（`422`）用同一个字符串信封：`detail` 是一句 `<字段路径>: <原因>`，字段路径形如 `shot.timeline[0].image_indexes`，报在请求体自身的只有原因。一次请求只给第一条，后面几条通常是同一处问题的连带结果。生成任务的业务失败通过任务状态与 `errorCode` / `errorMessage` 表达，HTTP 受理成功不代表生成成功。
 
@@ -250,6 +250,14 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `PUT` 同一地址整份保存，体是 `{ revision, document }`，答复 `{ revision, updatedAt }`。`revision` 是读到的那一版，还没有草稿时给 `0`；对不上是 `409`，`detail` 是「整片草稿已经有更新的一版，重新读取后再改」，草稿不变。存成功版本号加一，第一次存是 `1`。只有属主能存，口径同 `PUT .../workspace/file`；存草稿不发实时帧。
 - 文档不合规矩是 `422`，`detail` 是 `document: <原因>`（字段自身的边界是 `document.<字段路径>: <原因>`）：画面轨不从 0 起或没有首尾相接，片头不在第一段、片尾不在最后一段，总长超过上限，片段 id 在画面、转场与包装里重复，转场接的不是画面轨里不在末尾的一段、或一段后面接了两个，包装超出整片或彼此重叠，同一句字幕改了两次。
 - 引用的记录不合格也是 `422`，不区分「没有这条」与「不是这段对话的」：画面轨每段的 `sourceJobId` 要是这段对话自己的或继承来的一条已完成的出片或合成；`music.jobId` 要是这段对话的一条已完成的音频记录（生成的，或确认时挂到这段对话的上传，§10）；`captions.edits[].subtitleJobId` 要是一条字幕记录，来源是画面轨某段的 `sourceJobId`。组件名与 `variables` 不对照组件库。
+
+### 整片导出
+
+语义见 [CONTEXT.md「导出」](../docs/CONTEXT.md#术语)。三个端点都只有属主能用，口径同 `PUT .../workspace/file`：读不到这段对话 `404`，读得到却不是属主或对话已删 `403`。服务器没配渲染服务时三个都是 `422`，`detail` 是「整片导出没有开通」。渲染服务连不上、出错或答复看不懂是 `502`，`detail` 是原因。
+
+- `POST /conversations/{id}/whole-film/exports` 体是 `{ revision }`，按服务端存着的那份草稿导出，受理即 `202`，答复 `{ exportId, sourceJobIds }`。`revision` 不是存着的那一版（还没有草稿是 `0`）是 `409`，`detail` 是「整片草稿已经有更新的一版，重新读取后再导出」；画面轨里没有视频是 `422`。渲染服务不收这份草稿（组件不认识、位置不对、素材缺了等）也是 `422`，`detail` 是它给的那句话。每条成片的字幕取它最新建立的那条已完成字幕记录，草稿里按别的字幕记录改过的字不生效；编辑器预览按同一条取。`sourceJobIds` 是这次用到的成片，去重、按在画面轨里第一次出现的先后；下载时对每条各发一次 `video.downloaded`（§5），同一条只发一次。
+- `GET /conversations/{id}/whole-film/exports/{exportId}` 答复 `{ status, progress, queuePosition, error, downloadUrl, expiresAt }`，客户端轮询它。`status` 取 `queued`（排队）、`rendering`（渲染中）、`uploading`（上传中）、`done`、`failed`、`cancelled`。`progress` 0–1，只在 `rendering` 时变化；`queuePosition` 只在 `queued` 时有值，是前面还有几个；`error` 只在 `failed` 时有值，`{ code, message }`，`code` 取 `render-failed`、`upload-failed`、`media-unreachable`、`timeout`。`downloadUrl` 与 `expiresAt` 只在 `done` 时有：每次读都新签一个 1 小时有效的地址，按附件下载，文件名是 `整片-<年月日-时分>.mp4`（北京时间，签地址那一刻）。导出查不到（渲染服务重启过，或结束满 1 小时被清掉），或这个 `exportId` 不是这段对话的，都是 `404`，`detail` 是「导出已中断，请重新导出」。
+- `DELETE` 同一地址取消排队中或渲染中的导出，答 `204`；已经结束的也答 `204`、状态不变。查不到或不是这段对话的是 `404`。
 
 ### 分叉
 

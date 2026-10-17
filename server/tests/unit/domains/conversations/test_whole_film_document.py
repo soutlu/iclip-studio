@@ -80,7 +80,7 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
 
     assert parsed.model_dump(mode="json", by_alias=True) == document
     assert parsed.total_ms() == 9000
-    assert parsed.video_sources() == {SOURCE}
+    assert parsed.video_sources() == (SOURCE,)
 
 
 def test_an_empty_timeline_is_a_valid_draft() -> None:

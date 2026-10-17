@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Final, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -39,6 +40,8 @@ QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
 
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
+
+WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
 
 
 class ConfigSection(BaseModel):
@@ -104,6 +107,19 @@ class VideoUnderstandingEnv(EnvSettings):
 
 class ProductCatalogEnv(EnvSettings):
     database_url: RequiredEnv = Field(validation_alias=PRODUCT_CATALOG_DATABASE_URL_ENV)
+
+
+class WholeFilmRenderEnv(EnvSettings):
+    url: RequiredEnv = Field(validation_alias=WHOLE_FILM_RENDER_URL_ENV)
+    """整片渲染服务的内网根地址（compose 里的服务名），只给服务端用。"""
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            raise ValueError(f"{WHOLE_FILM_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
+        return value.rstrip("/")
 
 
 class AppSection(ConfigSection):
@@ -390,6 +406,11 @@ class ResolvedProductCatalog:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedWholeFilmRender:
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedAgentRuns:
     heartbeat_seconds: int
     lease_seconds: int
@@ -429,6 +450,8 @@ class ResolvedSettings:
     shot_video: ResolvedShotVideo | None
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
+    whole_film_render: ResolvedWholeFilmRender | None
+    """整片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
     models: tuple[ResolvedModel, ...]
     title_model: str | None
     compaction: ResolvedCompaction
@@ -572,6 +595,17 @@ def _resolve_product_catalog() -> ResolvedProductCatalog | None:
     return ResolvedProductCatalog(database_url=env.database_url)
 
 
+def _resolve_whole_film_render(*, object_store_on: bool) -> ResolvedWholeFilmRender | None:
+    if not _switched_on(WHOLE_FILM_RENDER_URL_ENV):
+        return None
+    if not object_store_on:
+        raise RuntimeError(
+            f"配了 {WHOLE_FILM_RENDER_URL_ENV} 但对象存储没开：导出的整片要上传到桶里的临时对象，"
+            f"再给浏览器签下载地址。补上 {OSS_BUCKET_ENV} 那一组"
+        )
+    return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
+
+
 def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
     core = _from_env(CoreEnv)
 
@@ -608,6 +642,7 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         shot_video=_resolve_shot_video(config.shot_video),
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),
+        whole_film_render=_resolve_whole_film_render(object_store_on=object_store is not None),
         models=tuple(
             ResolvedModel(
                 name=name,

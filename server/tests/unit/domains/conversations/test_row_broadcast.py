@@ -220,6 +220,7 @@ def build(
         film=UnusedFilmPage(),
         drafts=cast("WholeFilmDraftStore", object()),
         draft_references=_untouched,
+        exports=None,
         generate_title=generate_title,
         announce_title=announced.title,
         activities_of=activities_of,

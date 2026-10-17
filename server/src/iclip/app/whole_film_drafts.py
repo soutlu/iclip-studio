@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -79,7 +80,7 @@ class GenerationDraftReferences:
                 "不是这段对话自己的或继承来的一条成片（出片或合成）"
             )
 
-    async def _check_subtitle(self, subtitle_id: uuid.UUID, sources: frozenset[uuid.UUID]) -> None:
+    async def _check_subtitle(self, subtitle_id: uuid.UUID, sources: Sequence[uuid.UUID]) -> None:
         try:
             subtitle = await self._generations.get(subtitle_id, owner=None)
         except NotFound:

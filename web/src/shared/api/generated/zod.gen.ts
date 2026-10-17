@@ -2802,6 +2802,48 @@ export const zWholeFilmDraftSavedOut = z.object({
 })
 
 /**
+ * WholeFilmExportErrorOut
+ */
+export const zWholeFilmExportErrorOut = z.object({
+  code: z.string(),
+  message: z.string(),
+})
+
+/**
+ * WholeFilmExportIn
+ *
+ * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
+ */
+export const zWholeFilmExportIn = z.object({
+  revision: z.int().gte(0),
+})
+
+/**
+ * WholeFilmExportOut
+ *
+ * 一次导出现在的样子。``downloadUrl`` 与 ``expiresAt`` 只在 ``done`` 时有。
+ */
+export const zWholeFilmExportOut = z.object({
+  downloadUrl: z.string().nullable(),
+  error: zWholeFilmExportErrorOut.nullable(),
+  expiresAt: z.iso.datetime().nullable(),
+  progress: z.number(),
+  queuePosition: z.int().nullable(),
+  status: z.enum(['queued', 'rendering', 'uploading', 'done', 'failed', 'cancelled']),
+})
+
+/**
+ * WholeFilmExportStartedOut
+ *
+ * 已交给渲染服务排队。``sourceJobIds`` 是这次导出用到的成片，去重、按在画面轨里第一次出现的
+ * 先后；下载时按它们各记一次下载。
+ */
+export const zWholeFilmExportStartedOut = z.object({
+  exportId: z.uuid(),
+  sourceJobIds: z.array(z.uuid()),
+})
+
+/**
  * WholeFilmMusic
  *
  * 背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。
@@ -3433,6 +3475,43 @@ export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutPath
  */
 export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
   zWholeFilmDraftSavedOut
+
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostBody =
+  zWholeFilmExportIn
+
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
+  zWholeFilmExportStartedOut
+
+export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeletePath =
+  z.object({
+    conversation_id: z.uuid(),
+    export_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
+  z.void()
+
+export const zReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetPath =
+  z.object({
+    conversation_id: z.uuid(),
+    export_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponse =
+  zWholeFilmExportOut
 
 export const zReadConversationFileConversationsConversationIdWorkspaceFileGetPath = z.object({
   conversation_id: z.uuid(),

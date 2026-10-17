@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 SIGNED_PUT_EXPIRES_SECONDS = 3600
@@ -70,11 +71,38 @@ class PublicBucket(PublicObjectStore, SignedUploadStore, Protocol):
     """完整公开桶端口；消费者可依赖所需的较小接口。"""
 
 
+@dataclass(frozen=True, slots=True)
+class SignedPrivatePut:
+    """服务端之间传私有对象用的限时 PUT：往 ``url`` 发 PUT，``headers`` 原样带上（都签进了签名）。"""
+
+    url: str
+    headers: Mapping[str, str]
+    expires_at: datetime
+
+
+class PrivateObjectSigner(Protocol):
+    """私有临时对象的签名端口：本地计算，不发网络请求。"""
+
+    def sign_private_put(
+        self, *, object_key: str, content_type: str, expires_seconds: int
+    ) -> SignedPrivatePut:
+        """签一个限时 PUT，上传的对象是私有读。签名覆盖 ``Content-Type`` 与
+        ``x-oss-object-acl: private``；地址给服务端用（配了内网 endpoint 就是内网地址）。"""
+        ...
+
+    def sign_download(self, *, object_key: str, filename: str, expires_seconds: int) -> str:
+        """签一个限时 GET，给浏览器下载：地址走公网 endpoint，响应按附件下载、文件名是
+        ``filename``（可以是中文）。"""
+        ...
+
+
 __all__ = [
     "SIGNED_PUT_EXPIRES_SECONDS",
     "ObjectStoreUnavailable",
+    "PrivateObjectSigner",
     "PublicBucket",
     "PublicObjectStore",
+    "SignedPrivatePut",
     "SignedUploadStore",
     "StoredObject",
 ]

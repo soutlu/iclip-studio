@@ -20,6 +20,7 @@ from iclip.domains.conversations.models import (
     ConversationActivity,
     EventWatermark,
     WholeFilmDraft,
+    WholeFilmExport,
 )
 from iclip.domains.conversations.repository import (
     AuditFilter,
@@ -294,6 +295,35 @@ class WholeFilmDraftReferences(Protocol):
     ) -> None: ...
 
 
+class WholeFilmRenderUnavailable(Exception):
+    """渲染服务连不上、答 5xx 或答复看不懂；入口按上游不可用答 502。"""
+
+
+class WholeFilmExports(Protocol):
+    """整片导出，由组合根接到渲染服务、生成记录与对象存储上。导出状态只在渲染服务内存里。
+
+    渲染服务不认这份草稿抛 ValidationFailed（消息是它给的那句话），连不上或答复不对抛
+    ``WholeFilmRenderUnavailable``。"""
+
+    async def start(
+        self, *, export_id: uuid.UUID, conversation_id: uuid.UUID, document: WholeFilmDocument
+    ) -> None:
+        """把草稿用到的成片、音乐与字幕换成渲染服务取得到的地址，签好上传地址，交给渲染服务排队。"""
+        ...
+
+    async def get(self, export_id: uuid.UUID) -> WholeFilmExport | None:
+        """读这次导出；渲染服务里查不到（过期、重启过或从没有过）给 None。``done`` 时带下载地址。"""
+        ...
+
+    async def cancel(self, export_id: uuid.UUID) -> bool:
+        """取消排队中或渲染中的这次导出，已是终态也算成；查不到给 False。"""
+        ...
+
+
+_EXPORTS_OFF = "整片导出没有开通"
+_EXPORT_GONE = "导出已中断，请重新导出"
+
+
 class WorkspaceDocumentValidator(Protocol):
     """工作区文件写入前的校验协议，由组合根按路径注入。
 
@@ -405,6 +435,7 @@ class ConversationService:
         film: ConversationFilm,
         drafts: WholeFilmDraftStore,
         draft_references: WholeFilmDraftReferences,
+        exports: WholeFilmExports | None,
         generate_title: GenerateTitle,
         announce_title: AnnounceTitle,
         activities_of: ActivitiesOf,
@@ -420,6 +451,7 @@ class ConversationService:
         self._repo = repo
         self._drafts = drafts
         self._draft_references = draft_references
+        self._exports = exports
         self._copy_same_style = copy_same_style
         self._event_watermark = event_watermark
         self._announce_row = announce_row
@@ -690,6 +722,59 @@ class ConversationService:
         if saved is None:
             raise Conflict("整片草稿已经有更新的一版，重新读取后再改")
         return saved
+
+    async def export_whole_film(
+        self, principal: Principal, conversation_id: uuid.UUID, *, revision: int
+    ) -> tuple[uuid.UUID, tuple[uuid.UUID, ...]]:
+        """按当前草稿导出一条整片，返回导出 id 与用到的成片（去重，按第一次出现的先后）。
+
+        只有属主能导，口径同存草稿；``revision`` 不是存着的那一版是 409，画面轨没有视频是 422。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        exports = self._require_exports()
+        found = await self._drafts.get(conversation.id)
+        if (found.revision if found is not None else 0) != revision:
+            raise Conflict("整片草稿已经有更新的一版，重新读取后再导出")
+        document = None if found is None else WholeFilmDocument.model_validate(found.document)
+        sources = () if document is None else document.video_sources()
+        if document is None or not sources:
+            raise ValidationFailed("画面轨里还没有视频，导不出整片")
+        export_id = uuid.uuid4()
+        await exports.start(export_id=export_id, conversation_id=conversation.id, document=document)
+        return export_id, sources
+
+    async def whole_film_export(
+        self, principal: Principal, conversation_id: uuid.UUID, export_id: uuid.UUID
+    ) -> WholeFilmExport:
+        """读一次导出；导出归导出的人，只有属主能看。查不到或不是这段对话的都是 404。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        return await self._own_export(self._require_exports(), conversation.id, export_id)
+
+    async def cancel_whole_film_export(
+        self, principal: Principal, conversation_id: uuid.UUID, export_id: uuid.UUID
+    ) -> None:
+        """取消一次导出；先核对它是这段对话的，别的对话的导出 id 取消不了。"""
+
+        conversation = await self._workspace_writable(principal, conversation_id)
+        exports = self._require_exports()
+        await self._own_export(exports, conversation.id, export_id)
+        if not await exports.cancel(export_id):
+            raise NotFound(_EXPORT_GONE)
+
+    def _require_exports(self) -> WholeFilmExports:
+        if self._exports is None:
+            raise ValidationFailed(_EXPORTS_OFF)
+        return self._exports
+
+    @staticmethod
+    async def _own_export(
+        exports: WholeFilmExports, conversation_id: uuid.UUID, export_id: uuid.UUID
+    ) -> WholeFilmExport:
+        found = await exports.get(export_id)
+        if found is None or found.conversation_id != conversation_id:
+            raise NotFound(_EXPORT_GONE)
+        return found
 
     async def workspace_writable(
         self, principal: Principal, conversation_id: uuid.UUID
@@ -1154,6 +1239,8 @@ __all__ = [
     "Sidebar",
     "SidebarGroup",
     "WholeFilmDraftReferences",
+    "WholeFilmExports",
+    "WholeFilmRenderUnavailable",
     "WorkspaceDocumentValidator",
     "WriteDerivedFile",
 ]
