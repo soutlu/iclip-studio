@@ -1,11 +1,11 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
 import { Button } from '@/shared/ui/button'
 import { DialogTitle } from '@/shared/ui/dialog'
-import { ListEmpty, ListError, ListPending, NextPageFooter } from '@/shared/ui/list-state'
+import { ListEmpty, ListError, ListPending } from '@/shared/ui/list-state'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { VideoDownload } from '@/shared/ui/video-download'
 import { isDefaultScope } from '../library.api'
@@ -19,8 +19,10 @@ import {
 import { CardByline } from './card-byline'
 import { focusCardOpener } from './card-focus'
 import { LibraryFilters } from './library-filters'
-import { LibraryGrid, LibraryGridSkeleton } from './library-grid'
+import { LibraryList } from './library-list'
 import { LibraryPageHeader } from './library-page-header'
+import { useLibraryPageScroll } from './library-page-scroll'
+import { LibraryPageShell } from './library-page-shell'
 import { LibraryViewerFrame } from './library-viewer-frame'
 import { ViewerStage, ViewerVideo } from './library-viewer-stage'
 import { PlaceholderRatioCard } from './placeholder-ratio-card'
@@ -44,8 +46,7 @@ export function WholeFilmsRoute({
   filmId,
   onFilmChange,
 }: Props) {
-  const mainRef = useRef<HTMLElement>(null)
-  const getScrollElement = useCallback(() => mainRef.current, [])
+  const { mainRef, getScrollElement } = useLibraryPageScroll()
   const query = useLibraryWholeFilms(scope)
   const authors = useWholeFilmAuthorSource()
   const loaded = query.data?.pages.flatMap((page) => page.items) ?? []
@@ -62,12 +63,10 @@ export function WholeFilmsRoute({
 
   const close = () => onFilmChange(null, true)
   return (
-    <main
-      aria-label="整片资料库"
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-      ref={mainRef}
-    >
-      <div className="flex w-full flex-col px-4 pt-12 pb-10 sm:px-(--layout-list-page-gutter) sm:pt-14">
+    <LibraryPageShell
+      label="整片资料库"
+      mainRef={mainRef}
+      header={
         <LibraryPageHeader
           description="收录团队合成的整片，每段任务保留全部成片版本。"
           search={{
@@ -78,97 +77,80 @@ export function WholeFilmsRoute({
           }}
           tabs={tabs}
         />
-        <div className="layer-content sticky top-0 -mx-1 bg-background px-1 py-3">
-          <LibraryFilters
-            authors={authors}
-            myUserName={myUserName}
-            scope={scope}
-            onChange={onScopeChange}
-            trailing={total === undefined ? undefined : `${filtered ? '找到' : '共'} ${total} 条`}
-          />
-        </div>
-        <div className="pt-3">
-          {query.isPending ? (
-            <LibraryGridSkeleton label="正在读取整片资料库" />
-          ) : query.isError && !query.isFetchNextPageError ? (
-            <ListError
-              message={errorMessageOf(query.error, '读取整片资料库失败')}
-              onRetry={() => void query.refetch()}
-            />
-          ) : loaded.length === 0 ? (
-            <ListEmpty>
-              {filtered
-                ? '暂无匹配的整片，请更换关键词或清除筛选'
-                : '暂无已合成的整片，请在任务中完成整片合成'}
-            </ListEmpty>
-          ) : (
-            <LibraryGrid
-              items={loaded}
-              keyOf={(film) => film.conversationId}
-              estimateHeight={(_, width) => placeholderCardHeightFor(width)}
-              getScrollElement={getScrollElement}
-              renderItem={(film, width) => (
-                <FilmCard
-                  film={film}
-                  width={width}
-                  onOpen={() => onFilmChange(film.conversationId, false)}
-                  onAuthor={(userName) => onScopeChange({ ...scope, userName })}
-                />
-              )}
-            />
-          )}
-          {query.hasNextPage ? (
-            query.isFetchNextPageError ? (
-              <ListError
-                message={errorMessageOf(query.error, '读取下一页失败')}
-                onRetry={() => void query.fetchNextPage()}
-              />
+      }
+      filters={
+        <LibraryFilters
+          authors={authors}
+          myUserName={myUserName}
+          scope={scope}
+          onChange={onScopeChange}
+          trailing={total === undefined ? undefined : `${filtered ? '找到' : '共'} ${total} 条`}
+        />
+      }
+      attachments={
+        filmId === null ? null : (
+          <LibraryViewerFrame
+            onClose={close}
+            onRestoreFocus={() => focusCardOpener(mainRef.current, filmId)}
+          >
+            {selected === undefined ? (
+              <div className="flex flex-1 flex-col items-center justify-center p-6">
+                <DialogTitle className="sr-only">整片详情</DialogTitle>
+                {query.isError ? (
+                  <ListError
+                    message={errorMessageOf(query.error, '读取整片失败')}
+                    onRetry={() => void query.refetch()}
+                  />
+                ) : query.isPending || query.hasNextPage ? (
+                  <ListPending label="正在读取整片…" />
+                ) : (
+                  <ListEmpty>该整片不在当前筛选范围内，无法显示；请关闭详情后清除筛选</ListEmpty>
+                )}
+                <Button onClick={close} variant="ghost">
+                  关闭
+                </Button>
+              </div>
             ) : (
-              <NextPageFooter
-                query={query}
-                getScrollElement={getScrollElement}
-                shown={loaded.length}
-                total={total}
+              <FilmViewer
+                key={selected.conversationId}
+                film={selected}
+                onClose={close}
+                previous={loaded[index - 1]?.conversationId}
+                next={loaded[index + 1]?.conversationId}
+                onNavigate={(id) => onFilmChange(id, true)}
               />
-            )
-          ) : null}
-        </div>
-      </div>
-      {filmId === null ? null : (
-        <LibraryViewerFrame
-          onClose={close}
-          onRestoreFocus={() => focusCardOpener(mainRef.current, filmId)}
-        >
-          {selected === undefined ? (
-            <div className="flex flex-1 flex-col items-center justify-center p-6">
-              <DialogTitle className="sr-only">整片详情</DialogTitle>
-              {query.isError ? (
-                <ListError
-                  message={errorMessageOf(query.error, '读取整片失败')}
-                  onRetry={() => void query.refetch()}
-                />
-              ) : query.isPending || query.hasNextPage ? (
-                <ListPending label="正在读取整片…" />
-              ) : (
-                <ListEmpty>该整片不在当前筛选范围内，无法显示；请关闭详情后清除筛选</ListEmpty>
-              )}
-              <Button onClick={close} variant="ghost">
-                关闭
-              </Button>
-            </div>
-          ) : (
-            <FilmViewer
-              key={selected.conversationId}
-              film={selected}
-              onClose={close}
-              previous={loaded[index - 1]?.conversationId}
-              next={loaded[index + 1]?.conversationId}
-              onNavigate={(id) => onFilmChange(id, true)}
-            />
-          )}
-        </LibraryViewerFrame>
-      )}
-    </main>
+            )}
+          </LibraryViewerFrame>
+        )
+      }
+    >
+      <LibraryList
+        query={query}
+        getScrollElement={getScrollElement}
+        skeletonLabel="正在读取整片资料库"
+        errorMessage="读取整片资料库失败"
+        empty={
+          <ListEmpty>
+            {filtered
+              ? '暂无匹配的整片，请更换关键词或清除筛选'
+              : '暂无已合成的整片，请在任务中完成整片合成'}
+          </ListEmpty>
+        }
+        items={loaded}
+        keyOf={(film) => film.conversationId}
+        estimateHeight={(_, width) => placeholderCardHeightFor(width)}
+        renderItem={(film, width) => (
+          <FilmCard
+            film={film}
+            width={width}
+            onOpen={() => onFilmChange(film.conversationId, false)}
+            onAuthor={(userName) => onScopeChange({ ...scope, userName })}
+          />
+        )}
+        shown={loaded.length}
+        total={total}
+      />
+    </LibraryPageShell>
   )
 }
 

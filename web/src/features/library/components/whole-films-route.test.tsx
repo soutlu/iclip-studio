@@ -202,6 +202,41 @@ describe('WholeFilmsRoute', () => {
     expect(await screen.findByRole('dialog', { name: '第二条整片' })).toBeVisible()
   })
 
+  it('翻页失败后重试，读取期间不再显示错误', async () => {
+    stubIntersectionObserver({ inRange: true })
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let attempts = 0
+    const second = {
+      ...film,
+      conversationId: 'fa010002-0000-4000-8000-000000000002',
+      title: '第二条整片',
+    }
+    server.use(
+      http.get('*/api/library/whole-films', async ({ request }) => {
+        if (!new URL(request.url).searchParams.has('cursor'))
+          return HttpResponse.json({ items: [film], nextCursor: 'next', total: 2 })
+        attempts += 1
+        if (attempts === 1) return HttpResponse.json({ detail: '下一页暂不可用' }, { status: 503 })
+        await held
+        return HttpResponse.json({ items: [second], nextCursor: null, total: null })
+      }),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('下一页暂不可用')
+
+    await user.click(screen.getByRole('button', { name: '重新加载' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('正在读取…'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    release()
+    expect(await screen.findByRole('article', { name: '第二条整片' })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('不合法的响应显示读取错误，而不是空成功列表', async () => {
     server.use(
       http.get('*/api/library/whole-films', () =>
