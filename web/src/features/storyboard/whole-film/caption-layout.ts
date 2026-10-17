@@ -1,4 +1,4 @@
-import { normalizeCaptionText } from '@/shared/lib/caption-text'
+import { escapeAssControls, normalizeCaptionText } from '@/shared/lib/caption-text'
 import { isWideCodePoint } from './east-asian-width'
 
 export const CAPTION_STYLE = {
@@ -107,9 +107,6 @@ const pythonSum = (values: readonly number[]): number => {
   return compensation !== 0 && Number.isFinite(compensation) ? sum + compensation : sum
 }
 
-const escapeAss = (text: string) =>
-  text.replaceAll('\\', '＼').replaceAll('{', '｛').replaceAll('}', '｝')
-
 const estimatedWrap = (paragraph: string, fontSize: number, lineWidth: number): string[] => {
   const chars = [...paragraph]
   const widths = chars.map(
@@ -135,7 +132,7 @@ const estimatedWrap = (paragraph: string, fontSize: number, lineWidth: number): 
 }
 
 export const defaultCaptionLines = (text: string, fontSize: number, lineWidth: number): string[] =>
-  pythonSplitLines(escapeAss(text)).flatMap((paragraph) =>
+  pythonSplitLines(escapeAssControls(text)).flatMap((paragraph) =>
     estimatedWrap(pythonStrip(paragraph), fontSize, lineWidth),
   )
 
