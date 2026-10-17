@@ -157,7 +157,8 @@ generation_jobs_table = Table(
     ),
     # 每种行的必填与留空由组合约束兜底，与迁移 0020 同名同式：出片与图片生成没有来源和区间，
     # 编辑段必有来源、原作与区间，合成必有来源与原作、没有区间；帧图编辑两种来源至多一个，
-    # 切图必有库内来源，上传没有来源、不挂对话；切图与上传没有请求、创建即完成。
+    # 切图必有库内来源，上传没有来源、只有音乐能挂对话（与迁移 0032 同式）；切图与上传没有请求、
+    # 创建即完成。
     # 请求那条的 IS NOT NULL 不能省：jsonb_typeof(NULL) 让 CHECK 直接放行。
     CheckConstraint(
         "kind IN ('video', 'image', 'subtitle', 'audio')", name="ck_generation_jobs_kind"
@@ -200,7 +201,8 @@ generation_jobs_table = Table(
         name="ck_generation_jobs_cut_shape",
     ),
     CheckConstraint(
-        "operation <> 'upload' OR (conversation_id IS NULL AND source_job_id IS NULL"
+        "operation <> 'upload' OR ((conversation_id IS NULL OR kind = 'audio')"
+        " AND source_job_id IS NULL"
         " AND source_url IS NULL AND root_job_id IS NULL"
         " AND range_start_ms IS NULL AND range_end_ms IS NULL)",
         name="ck_generation_jobs_upload_shape",

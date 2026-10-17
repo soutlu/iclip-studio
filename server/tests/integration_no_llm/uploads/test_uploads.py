@@ -20,7 +20,7 @@ from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
-from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
+from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media, make_music
 from tests.helpers.pg import connected, reset_database
 
 OSS_ENVS = {
@@ -374,6 +374,93 @@ async def test_an_upload_reads_back_through_the_generation_records(
     assert generation["finishedAt"] is not None
     assert [item["id"] for item in listed.json()["items"]] == [upload_id]
     assert generated.json()["items"] == []
+
+
+async def open_conversation(http: httpx.AsyncClient) -> str:
+    created = await http.post("/conversations", json={"agentId": "director"})
+    assert created.status_code == 201, created.text
+    return str(created.json()["conversation"]["id"])
+
+
+async def test_music_attached_to_a_conversation_is_listed_with_its_generated_music(
+    media_app: FastAPI, pg_url: str, bucket: MemoryObjectStore
+) -> None:
+    """属主确认音乐时给了自己的对话：记录挂上它，按对话列音频连同生成的背景音乐一起列出。
+    再确认一次换了对话也还是第一次那条，不改挂的对话。"""
+
+    async with make_client(media_app) as http:
+        owner = await login_as_editor(http, pg_url)
+        mine, another = await open_conversation(http), await open_conversation(http)
+        engine = build_engine(pg_url)
+        try:
+            repo = SqlGenerationRepository(engine)
+            generated = await repo.create(
+                make_music(owner_user_id=uuid.UUID(owner), conversation_id=uuid.UUID(mine))
+            )
+            await repo.mark_completed(
+                generated.id,
+                output_url="https://example.test/music.m4a",
+                provider_status="succeeded",
+                duration_ms=30_000,
+            )
+        finally:
+            await engine.dispose()
+        upload_id, _ = await uploaded(http, bucket, "audio/mpeg", "mp3")
+
+        confirmed = await http.post(f"/uploads/{upload_id}/confirm", json={"conversationId": mine})
+        again = await http.post(f"/uploads/{upload_id}/confirm", json={"conversationId": another})
+        listed = await http.get("/generations", params={"kind": "audio", "conversationId": mine})
+        elsewhere = await http.get(
+            "/generations", params={"kind": "audio", "conversationId": another}
+        )
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert again.json() == confirmed.json()
+    assert (await stored(pg_url, upload_id)).conversation_id == uuid.UUID(mine)
+    assert {item["id"] for item in listed.json()["items"]} == {upload_id, str(generated.id)}
+    assert elsewhere.json()["items"] == []
+
+
+@pytest.mark.parametrize(
+    ("content_type", "ext", "whose", "status"),
+    [
+        pytest.param("image/png", "png", "own", 422, id="图片"),
+        pytest.param("video/mp4", "mp4", "own", 422, id="视频"),
+        pytest.param("audio/mpeg", "mp3", "stranger", 404, id="看不见的对话"),
+        pytest.param("audio/mpeg", "mp3", "governor", 403, id="治理者挂别人的对话"),
+    ],
+)
+async def test_only_music_can_be_attached_and_only_to_ones_own_conversation(
+    uploads_app: FastAPI,
+    pg_url: str,
+    bucket: MemoryObjectStore,
+    content_type: str,
+    ext: str,
+    whose: str,
+    status: int,
+) -> None:
+    """挂对话只收音乐，只能挂自己的对话：看不见的对话 404，看得见却不是自己的 403；都不落记录。"""
+
+    async with make_client(uploads_app) as owner, make_client(uploads_app) as other:
+        await login_as_editor(owner, pg_url)
+        conversation = await open_conversation(owner)
+        if whose == "own":
+            uploader = owner
+        elif whose == "stranger":
+            await login_as_editor(other, pg_url, username="mallory")
+            uploader = other
+        else:
+            await register_and_login(other, username="gov", email="gov@example.com")
+            await set_roles_in_db(pg_url, "gov@example.com", ["root"])
+            uploader = other
+        upload_id, _ = await uploaded(uploader, bucket, content_type, ext)
+
+        rejected = await uploader.post(
+            f"/uploads/{upload_id}/confirm", json={"conversationId": conversation}
+        )
+
+    assert rejected.status_code == status, rejected.text
+    assert await upload_rows(pg_url) == 0
 
 
 async def test_viewer_cannot_sign(client: httpx.AsyncClient) -> None:

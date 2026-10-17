@@ -8,6 +8,7 @@ from typing import Any
 from iclip.domains.identity.public import ActAs
 from iclip.domains.uploads.api import create_uploads_router
 from iclip.domains.uploads.service import (
+    ConversationWritable,
     FetchBytes,
     FindRecordedUpload,
     RecordUpload,
@@ -31,11 +32,19 @@ def build_uploads_module(
     record: RecordUpload,
     find_recorded: FindRecordedUpload,
     fetch: FetchBytes,
+    conversation_writable: ConversationWritable,
 ) -> UploadsModule:
     """``record`` 把确认过的上传记成一条记录，``find_recorded`` 查这次上传记过没有；两者都由
-    组合根接到生成域。``fetch`` 是转存图片用的出网下载，组合根接到出网下载器。"""
+    组合根接到生成域。``fetch`` 是转存图片用的出网下载，组合根接到出网下载器。
+    ``conversation_writable`` 判音乐能不能挂到那段对话，组合根接到对话域。"""
 
-    service = UploadService(objects, record=record, find_recorded=find_recorded, fetch=fetch)
+    service = UploadService(
+        objects,
+        record=record,
+        find_recorded=find_recorded,
+        fetch=fetch,
+        conversation_writable=conversation_writable,
+    )
     return UploadsModule(routers=(create_uploads_router(service, act_as=act_as),), service=service)
 
 

@@ -124,7 +124,6 @@ _REFUSED: dict[str, dict[str, Any]] = {
     "生成没有请求": {"request": None},
     "本地拼接": {"operation": "compose"},
     "切图": {"operation": "cut", "request": None, "status": "completed", "output_url": MUSIC_URL},
-    "上传挂对话": {**_UPLOAD, "conversation": True},
     "上传带请求": {**_UPLOAD, "request": json.dumps({"model": "m", "prompt": "轻快"})},
     "上传没有地址": {**_UPLOAD, "output_url": None},
     "上传带 MD5": {**_UPLOAD, "content_md5": "0123456789abcdef0123456789abcdef"},
@@ -136,6 +135,7 @@ _ACCEPTED: dict[str, dict[str, Any]] = {
     "生成完成": {"status": "completed", "output_url": MUSIC_URL, "duration_ms": 31_500},
     "生成失败": {"status": "failed"},
     "上传": _UPLOAD,
+    "上传挂对话": {**_UPLOAD, "conversation": True},
 }
 
 

@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from io import BytesIO
+from typing import NoReturn
 
 import httpx
 import pytest
@@ -74,7 +75,9 @@ class RecordedUploads:
         kind: MediaKind,
         url: str,
         content_md5: str | None,
+        conversation_id: uuid.UUID | None,
     ) -> Recorded:
+        assert conversation_id is None, "挂对话的确认在集成测试里覆盖"
         self.calls.append((principal, upload_id, kind, url, content_md5))
         return self.rows.setdefault(upload_id, self.earlier or Recorded(url, upload_id))
 
@@ -97,13 +100,21 @@ class FakeFetch:
         return self.body
 
 
+async def no_conversation(_principal: Principal, _conversation_id: uuid.UUID) -> NoReturn:
+    raise AssertionError("挂对话的确认在集成测试里覆盖")
+
+
 def build_test_app(
     bucket: FakeBucket, *, granted: Principal | None, recorded: RecordedUploads | None = None
 ) -> FastAPI:
     app = app_with_principal(granted)
     records = recorded or RecordedUploads()
     service = UploadService(
-        bucket, record=records.record, find_recorded=records.find, fetch=FakeFetch()
+        bucket,
+        record=records.record,
+        find_recorded=records.find,
+        fetch=FakeFetch(),
+        conversation_writable=no_conversation,
     )
     app.include_router(create_uploads_router(service, act_as=ActAs(InMemoryUserRepository())))
     return app
@@ -538,7 +549,13 @@ def importer(
 ) -> tuple[UploadService, FakeBucket, RecordedUploads]:
     bucket = bucket or FakeBucket()
     records = records or RecordedUploads()
-    service = UploadService(bucket, record=records.record, find_recorded=records.find, fetch=fetch)
+    service = UploadService(
+        bucket,
+        record=records.record,
+        find_recorded=records.find,
+        fetch=fetch,
+        conversation_writable=no_conversation,
+    )
     return service, bucket, records
 
 

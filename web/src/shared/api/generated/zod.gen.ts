@@ -1997,9 +1997,10 @@ export const zTurnUsage = z.object({
 /**
  * UploadConfirmIn
  *
- * 确认上传时可选的请求体：替谁确认。
+ * 确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。
  */
 export const zUploadConfirmIn = z.object({
+  conversationId: z.uuid().nullish(),
   userName: z.string().min(1).max(200).nullish(),
 })
 
@@ -2749,6 +2750,95 @@ export const zReferenceFiltersOut = z.object({
 })
 
 /**
+ * WholeFilmCanvas
+ */
+export const zWholeFilmCanvas = z.object({
+  height: z.int().gte(1).lte(4096),
+  width: z.int().gte(1).lte(4096),
+})
+
+/**
+ * WholeFilmCaptionEdit
+ *
+ * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
+ */
+export const zWholeFilmCaptionEdit = z.object({
+  sentenceIndex: z.int().gte(0),
+  subtitleJobId: z.uuid(),
+  text: z.string().min(1).max(500),
+})
+
+/**
+ * WholeFilmCaptions
+ */
+export const zWholeFilmCaptions = z.object({
+  component: z.string().min(1).max(200),
+  edits: z.array(zWholeFilmCaptionEdit).max(1000),
+})
+
+/**
+ * WholeFilmComponentClip
+ *
+ * 画面轨上的片头或片尾，是组件库里的一个组件。
+ */
+export const zWholeFilmComponentClip = z.object({
+  component: z.string().min(1).max(200),
+  duration: z.int().gte(100),
+  id: z.string().min(1).max(64),
+  role: z.enum(['intro', 'outro']),
+  start: z.int().gte(0),
+  type: z.literal('component'),
+  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
+})
+
+/**
+ * WholeFilmDraftSavedOut
+ *
+ * 保存后的新版本号与保存时刻。
+ */
+export const zWholeFilmDraftSavedOut = z.object({
+  revision: z.int(),
+  updatedAt: z.iso.datetime(),
+})
+
+/**
+ * WholeFilmMusic
+ *
+ * 背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。
+ */
+export const zWholeFilmMusic = z.object({
+  jobId: z.uuid(),
+  offset: z.int().gte(0),
+  volume: z.number().gte(0).lte(2),
+})
+
+/**
+ * WholeFilmOverlay
+ *
+ * 包装层上的一个组件，按整片时间放在 ``[start, start + duration)``。
+ */
+export const zWholeFilmOverlay = z.object({
+  component: z.string().min(1).max(200),
+  duration: z.int().gte(100),
+  id: z.string().min(1).max(64),
+  start: z.int().gte(0),
+  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
+})
+
+/**
+ * WholeFilmTransition
+ *
+ * ``afterClipId`` 那一段与下一段之间的转场。
+ */
+export const zWholeFilmTransition = z.object({
+  afterClipId: z.string().min(1).max(64),
+  component: z.string().min(1).max(200),
+  duration: z.int().gte(100),
+  id: z.string().min(1).max(64),
+  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
+})
+
+/**
  * WholeFilmVersionOut
  *
  * 整片卡里的一版：这段对话自己的一条已完成整片。
@@ -2783,6 +2873,56 @@ export const zWholeFilmCardsOut = z.object({
   items: z.array(zWholeFilmCardOut),
   nextCursor: z.string().nullable(),
   total: z.int().nullable(),
+})
+
+/**
+ * WholeFilmVideoClip
+ *
+ * 画面轨上的一段成片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
+ */
+export const zWholeFilmVideoClip = z.object({
+  duration: z.int().gte(100),
+  id: z.string().min(1).max(64),
+  playbackStart: z.int().gte(0),
+  sourceJobId: z.uuid(),
+  start: z.int().gte(0),
+  type: z.literal('video'),
+  volume: z.number().gte(0).lte(2),
+})
+
+/**
+ * WholeFilmDocument
+ *
+ * 一段对话的整片草稿。
+ */
+export const zWholeFilmDocument = z.object({
+  canvas: zWholeFilmCanvas.nullable(),
+  captions: zWholeFilmCaptions,
+  layer0: z.array(z.union([zWholeFilmVideoClip, zWholeFilmComponentClip])).max(102),
+  music: zWholeFilmMusic.nullable(),
+  overlays: z.array(zWholeFilmOverlay).max(50),
+  transitions: z.array(zWholeFilmTransition).max(101),
+})
+
+/**
+ * WholeFilmDraftIn
+ *
+ * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
+ */
+export const zWholeFilmDraftIn = z.object({
+  document: zWholeFilmDocument,
+  revision: z.int().gte(0),
+})
+
+/**
+ * WholeFilmDraftOut
+ *
+ * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
+ */
+export const zWholeFilmDraftOut = z.object({
+  document: zWholeFilmDocument.nullable(),
+  revision: z.int(),
+  updatedAt: z.iso.datetime().nullable(),
 })
 
 /**
@@ -3308,6 +3448,28 @@ export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostPath
  * Successful Response
  */
 export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse = zPrompt
+
+export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
+  zWholeFilmDraftOut
+
+export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutBody = zWholeFilmDraftIn
+
+export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
+  zWholeFilmDraftSavedOut
 
 export const zReadConversationFileConversationsConversationIdWorkspaceFileGetPath = z.object({
   conversation_id: z.uuid(),

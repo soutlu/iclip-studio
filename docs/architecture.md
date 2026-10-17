@@ -63,13 +63,14 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 
 运行通过 `AgentRunDeps` 向工具传递可信主体与对话 ID，业务含义和权限约束见 [CONTEXT.md](CONTEXT.md)。harness 只传递 deps，不解包业务字段；工具所需服务由组合根闭包注入，不放进 deps。客户端 state 不作为运行身份或服务来源。
 
-跨模块协作在组合根适配。例如：合集元信息接入对话侧栏，工作区文件和素材台账接入对话的派生数据端口，生成任务仓库包一层状态广播把每次状态跳转发成 WebSocket 全局帧；上传确认经 uploads 声明的两个端口，由组合根接到生成域：一个查这次上传记过没有，一个落一条上传记录并交回最终地址；这一步只要生成仓储，媒体生成没开也照落。发消息（含带新内容的重新生成）的附件经 agents 域声明的端口，由组合根的 [app/prompt_attachments.py](../server/src/iclip/app/prompt_attachments.py) 接到 uploads：挂不上 OSS 处理参数的图片先转存成一条上传、换成新地址再交给 harness；uploads 下载经它声明的端口接到组合根建的出网下载器（lifespan 里关闭）；没有对象存储就不接，这类图片由 harness 受理时拒绝。需求单直接持有调用方确认的创作输入，创建时不依赖产品目录装配。模块只使用自身声明的协议，不自行创建其他模块的客户端或仓库。
+跨模块协作在组合根适配。例如：合集元信息接入对话侧栏，工作区文件和素材台账接入对话的派生数据端口，生成任务仓库包一层状态广播把每次状态跳转发成 WebSocket 全局帧；上传确认经 uploads 声明的三个端口：两个由组合根接到生成域，一个查这次上传记过没有，一个落一条上传记录并交回最终地址，这一步只要生成仓储，媒体生成没开也照落；第三个判音乐要挂的对话是不是主体自己的，接到对话域。发消息（含带新内容的重新生成）的附件经 agents 域声明的端口，由组合根的 [app/prompt_attachments.py](../server/src/iclip/app/prompt_attachments.py) 接到 uploads：挂不上 OSS 处理参数的图片先转存成一条上传、换成新地址再交给 harness；uploads 下载经它声明的端口接到组合根建的出网下载器（lifespan 里关闭）；没有对象存储就不接，这类图片由 harness 受理时拒绝。需求单直接持有调用方确认的创作输入，创建时不依赖产品目录装配。模块只使用自身声明的协议，不自行创建其他模块的客户端或仓库。
 
 ## 4. 持久化与迁移
 
 | 数据 | 实现位置 |
 |---|---|
 | `iclip` 业务表 | 各领域模块的 `infra_sql.py` |
+| `iclip` 整片草稿 | `domains/conversations/infra_sql.py`；一段对话一行，保存按版本号带条件写。端点与权限在对话域，引用的生成记录由对话域声明的端口经组合根的 [app/whole_film_drafts.py](../server/src/iclip/app/whole_film_drafts.py) 接到生成仓储核对，媒体生成没开也照样核对 |
 | `agent_runtime` 运行历史与快照 | `harness/step_store_pg.py`，实现官方 StepStore 协议 |
 | `agent_runtime` prompt 队列、运行关联与审批记录 | `harness/jobs.py` |
 | `agent_runtime` 工作区与对话素材台账 | `platform/file_store/pg.py`、`platform/material_ledger/pg.py` |

@@ -18,7 +18,7 @@ import pytest
 
 from iclip.common.errors import NotFound
 from iclip.domains.conversations.models import Conversation, ConversationActivity, TitleKind
-from iclip.domains.conversations.repository import ConversationRepository
+from iclip.domains.conversations.repository import ConversationRepository, WholeFilmDraftStore
 from iclip.domains.conversations.service import (
     ActivitiesOf,
     ClaimTask,
@@ -218,6 +218,8 @@ def build(
         write_derived_file=_untouched,
         document_validators={},
         film=UnusedFilmPage(),
+        drafts=cast("WholeFilmDraftStore", object()),
+        draft_references=_untouched,
         generate_title=generate_title,
         announce_title=announced.title,
         activities_of=activities_of,

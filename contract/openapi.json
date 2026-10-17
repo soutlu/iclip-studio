@@ -8362,8 +8362,20 @@
       },
       "UploadConfirmIn": {
         "additionalProperties": false,
-        "description": "确认上传时可选的请求体：替谁确认。",
+        "description": "确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。",
         "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
           "userName": {
             "anyOf": [
               {
@@ -9725,6 +9737,83 @@
         "title": "VideoTypeCountOut",
         "type": "object"
       },
+      "WholeFilmCanvas": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "width": {
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ],
+        "title": "WholeFilmCanvas",
+        "type": "object"
+      },
+      "WholeFilmCaptionEdit": {
+        "additionalProperties": false,
+        "description": "用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。",
+        "properties": {
+          "sentenceIndex": {
+            "minimum": 0.0,
+            "title": "Sentenceindex",
+            "type": "integer"
+          },
+          "subtitleJobId": {
+            "format": "uuid",
+            "title": "Subtitlejobid",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subtitleJobId",
+          "sentenceIndex",
+          "text"
+        ],
+        "title": "WholeFilmCaptionEdit",
+        "type": "object"
+      },
+      "WholeFilmCaptions": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Component",
+            "type": "string"
+          },
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmCaptionEdit"
+            },
+            "maxItems": 1000,
+            "title": "Edits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "component",
+          "edits"
+        ],
+        "title": "WholeFilmCaptions",
+        "type": "object"
+      },
       "WholeFilmCardOut": {
         "additionalProperties": false,
         "description": "资料库整片页的一张卡：一段对话自己的全部整片，不含继承来的。整片没有脚本，不能做同款。",
@@ -9823,6 +9912,397 @@
         "title": "WholeFilmCardsOut",
         "type": "object"
       },
+      "WholeFilmComponentClip": {
+        "additionalProperties": false,
+        "description": "画面轨上的片头或片尾，是组件库里的一个组件。",
+        "properties": {
+          "component": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Component",
+            "type": "string"
+          },
+          "duration": {
+            "minimum": 100.0,
+            "title": "Duration",
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "intro",
+              "outro"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "type": {
+            "const": "component",
+            "title": "Type",
+            "type": "string"
+          },
+          "variables": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                }
+              ]
+            },
+            "maxProperties": 50,
+            "propertyNames": {
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "title": "Variables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "role",
+          "start",
+          "duration",
+          "component",
+          "variables"
+        ],
+        "title": "WholeFilmComponentClip",
+        "type": "object"
+      },
+      "WholeFilmDocument": {
+        "additionalProperties": false,
+        "description": "一段对话的整片草稿。",
+        "properties": {
+          "canvas": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmCanvas"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "captions": {
+            "$ref": "#/components/schemas/WholeFilmCaptions"
+          },
+          "layer0": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "component": "#/components/schemas/WholeFilmComponentClip",
+                  "video": "#/components/schemas/WholeFilmVideoClip"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/WholeFilmVideoClip"
+                },
+                {
+                  "$ref": "#/components/schemas/WholeFilmComponentClip"
+                }
+              ]
+            },
+            "maxItems": 102,
+            "title": "Layer0",
+            "type": "array"
+          },
+          "music": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmMusic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overlays": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmOverlay"
+            },
+            "maxItems": 50,
+            "title": "Overlays",
+            "type": "array"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/WholeFilmTransition"
+            },
+            "maxItems": 101,
+            "title": "Transitions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "canvas",
+          "layer0",
+          "transitions",
+          "captions",
+          "music",
+          "overlays"
+        ],
+        "title": "WholeFilmDocument",
+        "type": "object"
+      },
+      "WholeFilmDraftIn": {
+        "additionalProperties": false,
+        "description": "整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/WholeFilmDocument"
+          },
+          "revision": {
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "document"
+        ],
+        "title": "WholeFilmDraftIn",
+        "type": "object"
+      },
+      "WholeFilmDraftOut": {
+        "additionalProperties": false,
+        "description": "当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。",
+        "properties": {
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WholeFilmDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "revision",
+          "document",
+          "updatedAt"
+        ],
+        "title": "WholeFilmDraftOut",
+        "type": "object"
+      },
+      "WholeFilmDraftSavedOut": {
+        "additionalProperties": false,
+        "description": "保存后的新版本号与保存时刻。",
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "updatedAt"
+        ],
+        "title": "WholeFilmDraftSavedOut",
+        "type": "object"
+      },
+      "WholeFilmMusic": {
+        "additionalProperties": false,
+        "description": "背景音乐铺满整片：``offset`` 是音乐文件里与整片 0 毫秒对齐的那一刻。",
+        "properties": {
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
+          "offset": {
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "volume": {
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "jobId",
+          "offset",
+          "volume"
+        ],
+        "title": "WholeFilmMusic",
+        "type": "object"
+      },
+      "WholeFilmOverlay": {
+        "additionalProperties": false,
+        "description": "包装层上的一个组件，按整片时间放在 ``[start, start + duration)``。",
+        "properties": {
+          "component": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Component",
+            "type": "string"
+          },
+          "duration": {
+            "minimum": 100.0,
+            "title": "Duration",
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "variables": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                }
+              ]
+            },
+            "maxProperties": 50,
+            "propertyNames": {
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "title": "Variables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "start",
+          "duration",
+          "variables"
+        ],
+        "title": "WholeFilmOverlay",
+        "type": "object"
+      },
+      "WholeFilmTransition": {
+        "additionalProperties": false,
+        "description": "``afterClipId`` 那一段与下一段之间的转场。",
+        "properties": {
+          "afterClipId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Afterclipid",
+            "type": "string"
+          },
+          "component": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Component",
+            "type": "string"
+          },
+          "duration": {
+            "minimum": 100.0,
+            "title": "Duration",
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "variables": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                }
+              ]
+            },
+            "maxProperties": 50,
+            "propertyNames": {
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "title": "Variables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "afterClipId",
+          "component",
+          "duration",
+          "variables"
+        ],
+        "title": "WholeFilmTransition",
+        "type": "object"
+      },
       "WholeFilmVersionOut": {
         "additionalProperties": false,
         "description": "整片卡里的一版：这段对话自己的一条已完成整片。",
@@ -9884,6 +10364,60 @@
           "userName"
         ],
         "title": "WholeFilmVersionOut",
+        "type": "object"
+      },
+      "WholeFilmVideoClip": {
+        "additionalProperties": false,
+        "description": "画面轨上的一段成片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。",
+        "properties": {
+          "duration": {
+            "minimum": 100.0,
+            "title": "Duration",
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "playbackStart": {
+            "minimum": 0.0,
+            "title": "Playbackstart",
+            "type": "integer"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "type": {
+            "const": "video",
+            "title": "Type",
+            "type": "string"
+          },
+          "volume": {
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "start",
+          "duration",
+          "playbackStart",
+          "sourceJobId",
+          "volume"
+        ],
+        "title": "WholeFilmVideoClip",
         "type": "object"
       }
     },
@@ -13252,6 +13786,126 @@
         ]
       }
     },
+    "/conversations/{conversation_id}/whole-film/draft": {
+      "get": {
+        "description": "读这段对话的整片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、\n``document`` 与 ``updatedAt`` 为 null。",
+        "operationId": "read_whole_film_draft_conversations__conversation_id__whole_film_draft_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmDraftOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Whole Film Draft",
+        "tags": [
+          "conversations"
+        ]
+      },
+      "put": {
+        "description": "整份保存整片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有\n草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。",
+        "operationId": "save_whole_film_draft_conversations__conversation_id__whole_film_draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WholeFilmDraftIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmDraftSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Save Whole Film Draft",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
     "/conversations/{conversation_id}/workspace/file": {
       "get": {
         "description": "路径放在查询串里而不是路径段里：文件路径自己就带 ``/``。",
@@ -13554,7 +14208,7 @@
     },
     "/generations": {
       "get": {
-        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。\n成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。\n一段对话生成的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找；上传的音乐不挂对话，按属主列。",
+        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。\n成片的字幕记录是种类 ``subtitle``、来源是那条成片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。\n一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传\n都在里面；没挂对话的上传按属主列。",
         "operationId": "list_generations_generations_get",
         "parameters": [
           {
@@ -15996,7 +16650,7 @@
     },
     "/uploads/{upload_id}/confirm": {
       "post": {
-        "description": "按桶里的对象核对类型与大小，通过后记一条上传记录（id 就是 ``uploadId``），交回地址。\n同一个视频文件已经传过，交回最早那份的地址。\n\n请求体可选，只有 ``userName``：给了按替人办事换主体（浏览器只能写自己），不给就记在当前\n主体名下。可重复调：记过就交回记录上的地址，返回同一条记录，第二次的 ``userName`` 不改属主。",
+        "description": "按桶里的对象核对类型与大小，通过后记一条上传记录（id 就是 ``uploadId``），交回地址。\n同一个视频文件已经传过，交回最早那份的地址。\n\n请求体可选。``userName`` 给了按替人办事换主体（浏览器只能写自己），不给就记在当前主体名下。\n``conversationId`` 把音乐挂到那段对话：别的类型 422，对话看不见 404，不是属主或已删除 403。\n可重复调：记过就交回记录上的地址，返回同一条记录，第二次的 ``userName`` 与\n``conversationId`` 都不改记录。",
         "operationId": "confirm_upload_uploads__upload_id__confirm_post",
         "parameters": [
           {

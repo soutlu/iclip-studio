@@ -24,7 +24,10 @@ from sqlalchemy import text
 from iclip.app.bootstrap import build_app
 from iclip.common.errors import Conflict, NotFound
 from iclip.config import ResolvedAgent, VideoGenerationSection
-from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.conversations.infra_sql import (
+    SqlConversationRepository,
+    SqlWholeFilmDraftStore,
+)
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob
@@ -413,6 +416,8 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             write_derived_file=_untouched,
             document_validators={},
             film=UnusedFilmPage(),
+            drafts=SqlWholeFilmDraftStore(engine),
+            draft_references=_untouched,
             generate_title=_untouched,
             announce_title=_untouched,
             activities_of=_untouched,

@@ -22,6 +22,7 @@ APP_TABLES = (
     "iclip.oauth_accounts",
     "iclip.api_keys",
     "iclip.conversations",
+    "iclip.whole_film_drafts",
     "iclip.collections",
     "iclip.tasks",
     "iclip.task_assignees",
