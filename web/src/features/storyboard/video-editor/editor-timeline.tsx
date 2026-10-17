@@ -265,14 +265,6 @@ export function EditorTimeline({
           <Icon decorative name="waveform" size="sm" />
           原声
         </span>
-        <span className="video-editor-timeline-head is-captions">
-          <Icon decorative name="captions" size="sm" />
-          字幕
-        </span>
-        <span className="video-editor-timeline-head is-music">
-          <Icon decorative name="music" size="sm" />
-          音乐
-        </span>
       </div>
       <div
         aria-label="时间线轨道，窄屏可横向滚动"
@@ -291,9 +283,6 @@ export function EditorTimeline({
             scale={scale}
             total={total}
           />
-
-          <div className="video-editor-timeline-lane is-captions" data-testid="timeline-captions" />
-          <div className="video-editor-timeline-lane is-music" data-testid="timeline-music" />
 
           {entries.map((entry, index) => {
             const isSelected = selected(entry.id)
