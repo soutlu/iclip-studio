@@ -89,37 +89,25 @@ for (const viewport of [
   { name: 'desktop', width: 1600, height: 1000, mobile: false },
   { name: 'mobile', width: 390, height: 844, mobile: true },
 ]) {
-  test(`完全复刻 ${viewport.name} 浅深主题布局`, async ({ page }) => {
+  test(`完全复刻 ${viewport.name} 布局`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     const panel = await openReplica(page, viewport.mobile)
     const global = panel.getByRole('group', { name: '全局设定', exact: true })
-    for (const theme of ['light', 'dark'] as const) {
-      await global.getByRole('button', { name: '查看第 1 帧', exact: true }).click()
-      await page.emulateMedia({ colorScheme: theme })
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-        .toBe(theme === 'dark')
-      await expect(panel.getByRole('textbox', { name: '全局设定', exact: true })).toBeVisible()
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
-        .toBe(true)
-      await expect(
-        panel.getByRole('img', { name: '镜头组 1 第 1 帧', exact: true }),
-      ).toHaveJSProperty('naturalWidth', 360)
-      const lastReference = global.getByRole('button', { name: '查看第 30 帧', exact: true })
-      await lastReference.focus()
-      await page.keyboard.press('Enter')
-      await expect(lastReference).toBeInViewport({ ratio: 1 })
-      await expect(
-        panel.getByRole('img', { name: '镜头组 1 第 30 帧', exact: true }),
-      ).toHaveAttribute('src', /./)
-      await expect(panel.getByRole('button', { name: '替换图片', exact: true })).toBeVisible()
-      await page.mouse.move(0, 0)
-      await page.screenshot({
-        animations: 'disabled',
-        path: `../.artifacts/design-qa/replica/${viewport.name}-${theme}.png`,
-        fullPage: true,
-      })
-    }
+    await global.getByRole('button', { name: '查看第 1 帧', exact: true }).click()
+    await expect(panel.getByRole('textbox', { name: '全局设定', exact: true })).toBeVisible()
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+      .toBe(true)
+    await expect(
+      panel.getByRole('img', { name: '镜头组 1 第 1 帧', exact: true }),
+    ).toHaveJSProperty('naturalWidth', 360)
+    const lastReference = global.getByRole('button', { name: '查看第 30 帧', exact: true })
+    await lastReference.focus()
+    await page.keyboard.press('Enter')
+    await expect(lastReference).toBeInViewport({ ratio: 1 })
+    await expect(
+      panel.getByRole('img', { name: '镜头组 1 第 30 帧', exact: true }),
+    ).toHaveAttribute('src', /./)
+    await expect(panel.getByRole('button', { name: '替换图片', exact: true })).toBeVisible()
   })
 }

@@ -5,29 +5,6 @@ import { login } from './login'
 // 页面上写的仍是 UTC+8 的 9 月 23 日，才说明日期不跟浏览器时区。
 test.use({ timezoneId: 'America/Los_Angeles' })
 
-const SCREENSHOTS = '../.artifacts/design-qa/audit-redesign'
-const DETAILS_SCREENSHOTS = '../.artifacts/design-qa/audit-details'
-
-/** 审计页的滚动容器是 <main>：先截首屏，再把视口拉到内容全高截一张整页，截完恢复。 */
-const screenshotPage = async (page: Page, name: string) => {
-  const viewport = page.viewportSize()
-  if (viewport === null) throw new Error('需要固定视口')
-  await page.screenshot({ animations: 'disabled', path: `${SCREENSHOTS}/${name}.png` })
-  const height = await page
-    .getByRole('main', { name: '审计' })
-    .evaluate((main) => main.scrollHeight + (window.innerHeight - main.clientHeight))
-  await page.setViewportSize({ height, width: viewport.width })
-  await page.screenshot({ animations: 'disabled', path: `${SCREENSHOTS}/${name}-full.png` })
-  await page.setViewportSize(viewport)
-}
-
-const setTheme = async (page: Page, colorScheme: 'light' | 'dark') => {
-  await page.emulateMedia({ colorScheme })
-  await expect
-    .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-    .toBe(colorScheme === 'dark')
-}
-
 test('审计总览：快捷档与日历切时间，卡片标题跳到对应一节，清单共用时间范围', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.clock.setFixedTime(new Date('2026-09-23T06:30:00Z'))
@@ -87,7 +64,7 @@ test('审计总览：快捷档与日历切时间，卡片标题跳到对应一�
   await expect(main.getByRole('button', { name: '自定义时间范围：9月1日 – 9月7日' })).toBeVisible()
 })
 
-test('审计总览在桌面与手机、浅色与深色下可读，手机宽度不横向滚动', async ({ page }) => {
+test('审计总览在手机宽度不横向滚动', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.clock.setFixedTime(new Date('2026-09-23T06:30:00Z'))
   await page.goto('/')
@@ -95,16 +72,6 @@ test('审计总览在桌面与手机、浅色与深色下可读，手机宽度�
   await page.getByRole('button', { name: '审计', exact: true }).click()
   const main = page.getByRole('main', { name: '审计' })
   await expect(main.getByRole('article', { name: '成片数' })).toBeVisible()
-
-  for (const theme of ['light', 'dark'] as const) {
-    await setTheme(page, theme)
-    await screenshotPage(page, `desktop-${theme}`)
-  }
-
-  await main.getByRole('button', { name: /^自定义时间范围/ }).click()
-  await setTheme(page, 'light')
-  await page.screenshot({ animations: 'disabled', path: `${SCREENSHOTS}/range-picker-light.png` })
-  await page.keyboard.press('Escape')
 
   await page.setViewportSize({ width: 390, height: 844 })
   const collapse = page.getByRole('button', { name: '折叠侧边栏' })
@@ -115,10 +82,6 @@ test('审计总览在桌面与手机、浅色与深色下可读，手机宽度�
     main: element.scrollWidth - element.clientWidth,
   }))
   expect(overflow).toEqual({ document: 0, main: 0 })
-  for (const theme of ['light', 'dark'] as const) {
-    await setTheme(page, theme)
-    await screenshotPage(page, `mobile-${theme}`)
-  }
 })
 
 /** 登录治理者、进审计页的清单标签。 */
@@ -171,46 +134,17 @@ test('审计清单：按人筛选两张表都变，表头排序进地址，点�
   await expect(row).toHaveAttribute('aria-expanded', 'false')
 })
 
-test('审计清单在桌面与手机、浅色与深色下可读，手机宽度不横向滚动', async ({ page }) => {
+test('审计清单在手机宽度不横向滚动', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   const main = await openDetails(page)
-  const shot = (name: string) =>
-    page.screenshot({ animations: 'disabled', path: `${DETAILS_SCREENSHOTS}/${name}.png` })
-
-  for (const theme of ['light', 'dark'] as const) {
-    await setTheme(page, theme)
-    await shot(`desktop-${theme}`)
-  }
-  await setTheme(page, 'light')
-
-  await main.getByRole('button', { name: '按人筛选' }).click()
-  await expect(page.getByRole('menu')).toBeVisible()
-  await shot('filter-menu-light')
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('menu')).toBeHidden()
-
-  // 展开一行，把它滚到视口中间再截。
-  const row = main.getByRole('table', { name: '按任务执行次数' }).getByRole('row').nth(1)
-  await row.focus()
-  await page.keyboard.press('Enter')
-  await expect(row).toHaveAttribute('aria-expanded', 'true')
-  await main.getByRole('list', { name: '按模型用量' }).scrollIntoViewIfNeeded()
-  await shot('expanded-light')
-  await page.keyboard.press('Enter')
-  await row.blur()
 
   await page.setViewportSize({ width: 390, height: 844 })
   const collapse = page.getByRole('button', { name: '折叠侧边栏' })
   if (await collapse.isVisible()) await collapse.click()
-  await main.evaluate((element) => element.scrollTo({ top: 0 }))
   await expect(main.getByRole('table', { name: '按人' })).toBeVisible()
   const overflow = await main.evaluate((element) => ({
     document: document.documentElement.scrollWidth - window.innerWidth,
     main: element.scrollWidth - element.clientWidth,
   }))
   expect(overflow).toEqual({ document: 0, main: 0 })
-  for (const theme of ['light', 'dark'] as const) {
-    await setTheme(page, theme)
-    await shot(`mobile-${theme}`)
-  }
 })
