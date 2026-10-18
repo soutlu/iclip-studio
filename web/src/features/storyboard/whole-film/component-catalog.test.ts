@@ -39,7 +39,7 @@ describe('组件目录', () => {
   it.each([
     ['片头先放 2 秒，不论组件多长', 'yt-logo-intro', 2_000],
     ['没有固定时长的片尾也是 2 秒', 'logo-brand-close', 2_000],
-    ['包装取组件原定的时长', 'star-rating-fill', 4_000],
+    ['包装取组件原定的时长', 'hw-arrow', 4_000],
     ['没有固定时长的包装 3 秒', 'count-up', 3_000],
     ['转场取原定时长', 'fade-through', 900],
   ])('放进成片的时长：%s', (_, name, ms) => {
@@ -54,7 +54,7 @@ describe('组件目录', () => {
     })
     expect(brandVariables(outro, PLAIN)).toEqual({ wordmark: '通用' })
     expect(brandVariables(outro, undefined)).toEqual({})
-    expect(brandVariables(item('star-rating-fill'), SHIBU)).toEqual({})
+    expect(brandVariables(item('hw-arrow'), SHIBU)).toEqual({})
   })
 
   it('换品牌只改品牌项：没有标语的品牌去掉标语，其余已填的项不动', () => {
@@ -68,7 +68,7 @@ describe('组件目录', () => {
     const brands = [SHIBU, PLAIN]
     expect(brandOf(outro, { wordmark: '通用' }, brands)).toBe(PLAIN)
     expect(brandOf(outro, { wordmark: '改过的名字' }, brands)).toBeUndefined()
-    expect(brandOf(item('star-rating-fill'), {}, brands)).toBeUndefined()
+    expect(brandOf(item('hw-arrow'), {}, brands)).toBeUndefined()
   })
 
   it('组件栏按 Studio 的分类排，同一分类里字幕、片头片尾、转场、包装依次排；缩略图按文件名取地址', () => {

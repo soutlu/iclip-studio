@@ -445,11 +445,11 @@ describe('整片编辑器 · 组件', () => {
     fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
       target: { value: '0.5' },
     })
-    await user.click(within(list).getByRole('button', { name: /^星级评分，包装轨/ }))
-    expect(screen.getByRole('group', { name: '包装 · 星级评分，0.5–4.5 秒' })).toBeInTheDocument()
+    await user.click(within(list).getByRole('button', { name: /^手绘箭头，包装轨/ }))
+    expect(screen.getByRole('group', { name: '包装 · 手绘箭头，0.5–4.5 秒' })).toBeInTheDocument()
     await waitSaved((document) =>
       expect(document?.overlays).toEqual([
-        { id: 'o1', component: 'star-rating-fill', start: 500, duration: 4_000, variables: {} },
+        { id: 'o1', component: 'hw-arrow', start: 500, duration: 4_000, variables: {} },
       ]),
     )
   })
