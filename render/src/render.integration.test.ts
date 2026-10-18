@@ -1,7 +1,7 @@
 /**
- * 用真实的 @hyperframes/producer 渲染一份 2 秒的草稿（画面、字幕、配乐），经本机上传目标收下，
- * 核对成片的时长、画面尺寸与音轨。需要 chrome-headless-shell、ffmpeg 与同步好的组件库；
- * 缺任何一样时整组跳过，跳过原因写在用例名里。
+ * 用真实的 @hyperframes/producer 渲染：一份 2 秒的草稿（画面、字幕、配乐）经本机上传目标收下，
+ * 核对成片的时长、画面尺寸与音轨；另把组件可填项的取值与目录默认值各渲染一遍，比较画面。
+ * 需要 chrome-headless-shell、ffmpeg 与同步好的组件库；缺任何一样时整组跳过，跳过原因写在用例名里。
  */
 import { execFile, spawnSync } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync } from 'node:fs'
@@ -14,6 +14,7 @@ import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { resolveHeadlessShellPath } from '@hyperframes/engine'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { buildComposition } from '../../web/src/features/storyboard/whole-film/composition/build'
 import { ExportQueue } from './jobs'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
@@ -43,6 +44,66 @@ function skipReason(): string | null {
 }
 
 const reason = skipReason()
+
+const FRAME = { width: 640, height: 360 }
+
+/** 成片在 `at` 秒处的一帧，逐像素 RGB。 */
+async function frameAt(file: string, at: number): Promise<Buffer> {
+  const { stdout } = await run(
+    'ffmpeg',
+    [
+      '-v',
+      'error',
+      '-ss',
+      String(at),
+      '-i',
+      file,
+      '-frames:v',
+      '1',
+      '-f',
+      'rawvideo',
+      '-pix_fmt',
+      'rgb24',
+      '-',
+    ],
+    { encoding: 'buffer', maxBuffer: FRAME.width * FRAME.height * 3 * 2 },
+  )
+  return stdout
+}
+
+interface Region {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function eachPixel(region: Region, visit: (offset: number) => void) {
+  for (let y = region.y; y < region.y + region.height; y += 1) {
+    for (let x = region.x; x < region.x + region.width; x += 1) visit((y * FRAME.width + x) * 3)
+  }
+}
+
+/** 两帧在区域内的平均逐通道差（0–255）。 */
+function meanDifference(a: Buffer, b: Buffer, region: Region): number {
+  let sum = 0
+  eachPixel(region, (offset) => {
+    for (let channel = 0; channel < 3; channel += 1) {
+      sum += Math.abs((a[offset + channel] ?? 0) - (b[offset + channel] ?? 0))
+    }
+  })
+  return sum / (region.width * region.height * 3)
+}
+
+/** 整帧里明显偏蓝的像素数。 */
+function bluePixels(frame: Buffer): number {
+  let count = 0
+  eachPixel({ x: 0, y: 0, ...FRAME }, (offset) => {
+    const [r, g, b] = [frame[offset] ?? 0, frame[offset + 1] ?? 0, frame[offset + 2] ?? 0]
+    if (b > 150 && b - r > 80 && b - g > 40) count += 1
+  })
+  return count
+}
 
 /** 本机素材与上传目标：GET 带 Range 读 dir 下的文件，PUT 存进 dir/received.mp4。 */
 async function startServer(dir: string): Promise<{ server: Server; origin: string }> {
@@ -114,6 +175,27 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       '-i',
       'sine=frequency=550:duration=4',
       join(dir, 'music.mp3'),
+    ])
+    await run('ffmpeg', [
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=0x202020:s=640x360:r=30:d=7',
+      '-f',
+      'lavfi',
+      '-i',
+      'anullsrc=r=44100:cl=stereo',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-shortest',
+      join(dir, 'gray.mp4'),
     ])
     ;({ server, origin } = await startServer(dir))
   })
@@ -228,4 +310,94 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(video).toMatchObject({ width: 640, height: 360 })
     expect(probe.streams.some((stream) => stream.codec_type === 'audio')).toBe(true)
   }, 300_000)
+
+  it('组件可填项在画面上生效：同一组件两处各显示自己的文字，强调色经 CSS 变量生效', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({
+      registryDir: REGISTRY,
+      workDir: join(dir, 'work'),
+      gpuEncode: false,
+      logger,
+    })
+    const gray = `${origin}/gray.mp4`
+    // 姓名条只改文字：它的强调色走脚本，不改就只剩文字一处不同。
+    const film = (values: boolean, video: string) =>
+      buildComposition({
+        draft: {
+          canvas: FRAME,
+          layer0: [
+            {
+              id: 'g',
+              type: 'video',
+              start: 0,
+              duration: 6000,
+              playbackStart: 0,
+              sourceJobId: SOURCE_JOB,
+              volume: 1,
+            },
+          ],
+          transitions: [],
+          captions: { component: 'default-caption', edits: [] },
+          music: null,
+          overlays: [
+            {
+              id: 'h',
+              component: 'headline-slam',
+              start: 0,
+              duration: 2000,
+              variables: values ? { text: 'Ship it today', accent: 'blue' } : {},
+            },
+            {
+              id: 'n1',
+              component: 'lt-neon-border',
+              start: 2000,
+              duration: 2000,
+              variables: values ? { name: '拾步 · 秋冬新款', role: '品牌主理人' } : {},
+            },
+            {
+              id: 'n2',
+              component: 'lt-neon-border',
+              start: 4000,
+              duration: 2000,
+              variables: values ? { name: '第二条姓名', role: '第二个职位' } : {},
+            },
+          ],
+        },
+        media: { videos: { [SOURCE_JOB]: { url: video } }, music: null, subtitles: {} },
+        catalog,
+      }).html
+    // 取帧：标题在 1 秒；两处姓名条在各自时段里的同一进度（开始后 1.3 秒）。
+    const frames = async (values: boolean) => {
+      const rendered = await worker.render(
+        {
+          id: values ? 'values' : 'defaults',
+          mediaUrls: [gray],
+          compose: (paths) => film(values, paths[gray] ?? gray),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        return {
+          headline: await frameAt(rendered.file, 1),
+          first: await frameAt(rendered.file, 3.3),
+          second: await frameAt(rendered.file, 5.3),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const withValues = await frames(true)
+    const withDefaults = await frames(false)
+
+    // 姓名条的文字区：1920×1080 的设计稿缩到 640×360 后在左下。
+    const nameArea = { x: 70, y: 225, width: 260, height: 60 }
+    // 默认值的两处姓名条一模一样，差别只是编码噪声；填了取值的两处与默认值、彼此都不同。
+    expect(meanDifference(withDefaults.first, withDefaults.second, nameArea)).toBeLessThan(3)
+    expect(meanDifference(withValues.first, withDefaults.first, nameArea)).toBeGreaterThan(6)
+    expect(meanDifference(withValues.second, withDefaults.second, nameArea)).toBeGreaterThan(6)
+    expect(meanDifference(withValues.first, withValues.second, nameArea)).toBeGreaterThan(6)
+    // 标题的强调色选蓝色（默认绿色）。
+    expect(bluePixels(withValues.headline)).toBeGreaterThan(100)
+    expect(bluePixels(withDefaults.headline)).toBeLessThan(10)
+  }, 600_000)
 })
