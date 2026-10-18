@@ -157,9 +157,11 @@ const clipLefts = (film: Locator) =>
     .locator('.wf-clip')
     .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().left))
 
-/** 在素材区点一个镜头选中它，按住它的范围拿起来 */
+/** 在素材区「镜头组 2」里点一个镜头选中它，按住它的范围拿起来 */
 const liftShot = async (page: Page, dialog: Locator, shotNumber: number) => {
-  const materials = dialog.getByRole('region', { name: '视频素材区' })
+  const materials = dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
   await materials.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shotNumber}，`) }).click()
   const range = await boxOf(materials.getByRole('group', { name: /^选中的范围/ }))
   await page.mouse.move(range.cx, range.cy)

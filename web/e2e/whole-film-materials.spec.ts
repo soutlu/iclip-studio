@@ -253,7 +253,7 @@ for (const viewport of VIEWPORTS)
     const components = dialog.getByRole('list', { name: '组件' })
     await components.getByRole('button', { name: /^字标定格，包装轨/ }).click()
     await components.getByRole('button', { name: /^手绘箭头，包装轨/ }).click()
-    await expect(dialog.getByRole('group', { name: /^包装 · 手绘箭头/ })).toBeVisible()
+    await expect(dialog.getByRole('group', { name: /^特效 · 手绘箭头/ })).toBeVisible()
     const after = await layout()
     expect(after).toMatchObject({ materials: 118, pageScrolls: false })
     expect(after.below).toBeLessThanOrEqual(12)
@@ -428,8 +428,9 @@ test('成片轨上用了的段在素材轨底边画一道', async ({ page }) => 
   const bar = await laneOf('A').locator('.wf-used').boundingBox()
   if (strip === null || bar === null) throw new Error('素材轨尚未布局')
   expect(bar.height).toBe(3)
-  expect(Math.round(bar.x - strip.x)).toBe(Math.round(strip.width / 6 + 2))
-  expect(Math.round(bar.width)).toBe(Math.round(strip.width / 6 - 4))
+  // 轨道宽按窗口来，换算成像素允许 1px 取整误差
+  expect(Math.abs(bar.x - strip.x - (strip.width / 6 + 2))).toBeLessThanOrEqual(1)
+  expect(Math.abs(bar.width - (strip.width / 6 - 4))).toBeLessThanOrEqual(1)
   expect(Math.round(strip.y + strip.height - (bar.y + bar.height))).toBe(1)
 
   // 同一段再放一次就再画一道；撤销后跟着少一道

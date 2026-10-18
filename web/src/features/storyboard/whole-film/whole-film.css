@@ -1578,7 +1578,7 @@
   height: 32px;
   flex: none;
   align-items: center;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 120px minmax(0, 1fr);
 }
 
 .wf-take + .wf-take {
@@ -1617,13 +1617,13 @@
   padding-right: 4px;
 }
 
-/* 素材轨左端与成片轨对齐（成片区时间区左边留 72px），按原作自身时长铺满一行；
+/* 素材轨左端与成片轨对齐（轨名列同宽、时间区左边同样留 8px），按原作自身时长铺满一行；
    右边留 8px，选区结尾的手柄不撑出横向滚动 */
 .wf-take-strip {
   position: relative;
   height: 32px;
   min-width: 0;
-  margin: 0 8px 0 72px;
+  margin: 0 8px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
 }
