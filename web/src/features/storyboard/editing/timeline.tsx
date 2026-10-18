@@ -95,81 +95,91 @@ export function TimelineRuler({
     releasePointer(event)
   }
   return (
-    <div className="timeline-ruler">
-      {ticks.map((time) => (
+    <>
+      <div className="timeline-ruler">
+        {ticks.map((time) => (
+          <span
+            aria-hidden="true"
+            className={cn(
+              'timeline-tick',
+              time === 0 && 'is-first',
+              time + tickStep > scale && time > 0 && 'is-last',
+            )}
+            key={time}
+            style={{ left: `${(time / scale) * 100}%` }}
+          >
+            {roundSeconds(time)}s
+          </span>
+        ))}
+        <input
+          aria-label="时间线播放位置"
+          aria-valuetext={timeLabel(boundedTime)}
+          className="timeline-seek"
+          data-pointer={seekByPointer ? '' : undefined}
+          data-seeking={seeking ? '' : undefined}
+          disabled={disabled}
+          max={scale}
+          min={0}
+          onBlur={() => {
+            setSeekByPointer(false)
+            setPreview(null)
+          }}
+          onChange={(event) => {
+            onScrub()
+            onSeek(Math.min(total, Number(event.target.value)))
+          }}
+          onKeyDown={() => {
+            setSeekByPointer(false)
+            setPreview(null)
+          }}
+          onPointerDown={(event) => {
+            if (disabled || event.button !== 0) return
+            event.preventDefault()
+            event.stopPropagation()
+            setSeekByPointer(true)
+            setSeeking(true)
+            event.currentTarget.focus()
+            event.currentTarget.setPointerCapture(event.pointerId)
+            seekPointerRef.current = event.pointerId
+            onScrub()
+            seekPointer(event)
+          }}
+          onPointerMove={(event) => {
+            if (seekPointerRef.current === event.pointerId) seekPointer(event)
+            else if (!disabled && event.pointerType !== 'touch') previewAt(event)
+          }}
+          onPointerLeave={() => {
+            if (seekPointerRef.current === null) setPreview(null)
+          }}
+          onPointerUp={finishSeek}
+          onPointerCancel={finishSeek}
+          step={0.01}
+          type="range"
+          value={boundedTime}
+        />
+        {preview === null
+          ? null
+          : createPortal(
+              <span
+                aria-hidden="true"
+                className="timeline-time-preview"
+                style={{ left: preview.left, top: preview.top }}
+              >
+                <span>{seeking ? '定位' : '预览'}</span>
+                <b>{timeLabel(preview.time)}</b>
+              </span>,
+              document.body,
+            )}
+      </div>
+      {preview !== null && !seeking ? (
         <span
           aria-hidden="true"
-          className={cn(
-            'timeline-tick',
-            time === 0 && 'is-first',
-            time + tickStep > scale && time > 0 && 'is-last',
-          )}
-          key={time}
-          style={{ left: `${(time / scale) * 100}%` }}
-        >
-          {roundSeconds(time)}s
-        </span>
-      ))}
-      <input
-        aria-label="时间线播放位置"
-        aria-valuetext={timeLabel(boundedTime)}
-        className="timeline-seek"
-        data-pointer={seekByPointer ? '' : undefined}
-        data-seeking={seeking ? '' : undefined}
-        disabled={disabled}
-        max={scale}
-        min={0}
-        onBlur={() => {
-          setSeekByPointer(false)
-          setPreview(null)
-        }}
-        onChange={(event) => {
-          onScrub()
-          onSeek(Math.min(total, Number(event.target.value)))
-        }}
-        onKeyDown={() => {
-          setSeekByPointer(false)
-          setPreview(null)
-        }}
-        onPointerDown={(event) => {
-          if (disabled || event.button !== 0) return
-          event.preventDefault()
-          event.stopPropagation()
-          setSeekByPointer(true)
-          setSeeking(true)
-          event.currentTarget.focus()
-          event.currentTarget.setPointerCapture(event.pointerId)
-          seekPointerRef.current = event.pointerId
-          onScrub()
-          seekPointer(event)
-        }}
-        onPointerMove={(event) => {
-          if (seekPointerRef.current === event.pointerId) seekPointer(event)
-          else if (!disabled && event.pointerType !== 'touch') previewAt(event)
-        }}
-        onPointerLeave={() => {
-          if (seekPointerRef.current === null) setPreview(null)
-        }}
-        onPointerUp={finishSeek}
-        onPointerCancel={finishSeek}
-        step={0.01}
-        type="range"
-        value={boundedTime}
-      />
-      {preview === null
-        ? null
-        : createPortal(
-            <span
-              aria-hidden="true"
-              className="timeline-time-preview"
-              style={{ left: preview.left, top: preview.top }}
-            >
-              <span>{seeking ? '定位' : '预览'}</span>
-              <b>{timeLabel(preview.time)}</b>
-            </span>,
-            document.body,
-          )}
-    </div>
+          className="timeline-hover-guide"
+          data-testid="timeline-hover-guide"
+          style={{ left: `${(preview.time / scale) * 100}%` }}
+        />
+      ) : null}
+    </>
   )
 }
 

@@ -7,12 +7,10 @@ import {
   openStoryboardShot,
   pauseMockResponses,
   releaseMockResponses,
-  screenshotBothThemes,
 } from './helpers'
 
 /** mock 受理后 3 秒出结果；编辑段与合成各等一轮。 */
 const STEP_TIMEOUT = 15_000
-const SHOT_DIR = '../.artifacts/design-qa/video-editor-version-state'
 
 /** 第 2 组那条成片是竖版、6 秒、每秒一个关键帧、带一条原声；第 3 组是横版、无声。 */
 const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) => {
@@ -176,11 +174,9 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   expect(Number(await duration.getAttribute('aria-valuenow'))).toBeGreaterThan(4)
   await duration.press('End')
   await expect(generateButton(dialog)).toBeEnabled()
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-card')
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(card(dialog).getByRole('radio', { name: '图生', exact: true })).toBeVisible()
   await expect(generateButton(dialog)).toBeVisible()
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-duration-slider/image-mobile')
 
   const expectToolbarInsideCard = async (width: number, state: string) => {
     await expect
@@ -223,11 +219,6 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   for (const width of [390, 600, 640, 1280]) {
     await page.setViewportSize({ width, height: 844 })
     await expectToolbarInsideCard(width, '提交中')
-    if (width === 600)
-      await screenshotBothThemes(
-        page,
-        '../.artifacts/design-qa/video-duration-slider/submitting-600',
-      )
   }
   await releaseMockResponses(page, '/api/generations/video-edits')
   const sent = await submitted
@@ -244,14 +235,9 @@ test('图生和编辑按模型分别校验时长，仅上传图片也能生成�
   expect(body['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
   await expect(card(dialog).getByRole('alert')).toHaveCount(0)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/retain-generation-input/submitted')
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
   await expect(generateButton(dialog)).toBeVisible()
-  await screenshotBothThemes(
-    page,
-    '../.artifacts/design-qa/retain-generation-input/submitted-mobile',
-  )
   await page.setViewportSize({ width: 1280, height: 844 })
   await expect(versions(dialog).getByRole('button', { name: '原片', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -303,7 +289,6 @@ test('整片预览使用时间线选用的版本，历史原片与当前剪辑�
   await expect(segment(dialog, 2).getByText('V1', { exact: true })).toBeVisible()
   await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('1.5')
   await expect(video).toHaveAttribute('src', editedUrl)
-  await screenshotBothThemes(page, `${SHOT_DIR}/whole-current`)
 })
 
 test('提交立即显示提交中且保护关闭与站内离开，受理后显示生成中并允许退出，完成未看才有绿点', async ({
@@ -326,8 +311,6 @@ test('提交立即显示提交中且保护关闭与站内离开，受理后显�
   await expect(submitting).toBeVisible()
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeVisible()
-
-  await screenshotBothThemes(page, `${SHOT_DIR}/submitting`)
 
   await release()
   const generating = versions(dialog).getByRole('button', { name: 'V1 · 生成中', exact: true })
@@ -450,6 +433,7 @@ test('标尺下边缘可拖动播放头，不触发相邻裁剪手柄、片段�
     items.map((item) => item.getAttribute('aria-label')),
   )
   const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
+  await ruler.press('Home')
   const box = await ruler.boundingBox()
   if (box === null) throw new Error('标尺尚未布局')
   expect(box.height).toBeGreaterThanOrEqual(32)
@@ -457,6 +441,14 @@ test('标尺下边缘可拖动播放头，不触发相邻裁剪手柄、片段�
   const timePreview = page.locator('.timeline-time-preview')
   await expect(timePreview).toContainText('预览')
   await expect(timePreview).toContainText('00:02.00')
+  const hoverGuide = dialog.getByTestId('timeline-hover-guide')
+  await expect(hoverGuide).toBeVisible()
+  const guideBox = await hoverGuide.boundingBox()
+  const clipBox = await segment(dialog, 2).boundingBox()
+  if (guideBox === null || clipBox === null) throw new Error('悬停引导线尚未布局')
+  expect(Math.abs(guideBox.x + guideBox.width / 2 - (await xAt(dialog, 2)))).toBeLessThan(1)
+  expect(guideBox.y).toBeLessThan(clipBox.y)
+  expect(guideBox.y + guideBox.height).toBeGreaterThanOrEqual(clipBox.y + clipBox.height)
   // 编辑器背后的会话仍可能自动滚动，不应清掉时间线上的预览。
   await page.getByTestId('chat-scroller').evaluate(
     (element) =>
@@ -468,13 +460,15 @@ test('标尺下边缘可拖动播放头，不触发相邻裁剪手柄、片段�
       }),
   )
   await expect(timePreview).toBeVisible()
+  await expect(hoverGuide).toBeVisible()
   const previewBox = await timePreview.boundingBox()
   if (previewBox === null) throw new Error('时间预览尚未布局')
   expect(previewBox.y + previewBox.height).toBeLessThan(box.y)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/timeline-controls/preview')
   await page.mouse.down()
+  await expect(hoverGuide).toHaveCount(0)
   await page.mouse.move(await xAt(dialog, 4.5), box.y + box.height - 1, { steps: 8 })
   await page.mouse.up()
+  await expect(hoverGuide).toHaveCount(0)
   expect(Number(await ruler.inputValue())).toBeCloseTo(4.5, 1)
   await expect(segment(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
   expect(
@@ -679,7 +673,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   })
   await expect(requestBox(dialog).getByText('黄昏.png')).toBeVisible()
   await expect(generateButton(dialog)).toBeEnabled({ timeout: STEP_TIMEOUT })
-  await screenshotBothThemes(page, `${SHOT_DIR}/card`)
 
   const { body, editId } = await submitEdit(page, dialog)
   // 基底是正在编辑的那一版，区间正好是第 2–3 段的关键帧；参考片段由浏览器在关键帧处切好、传上去；
@@ -720,7 +713,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
     'true',
   )
   await expect(controls(dialog)).toContainText('共 6.0 秒')
-  await screenshotBothThemes(page, `${SHOT_DIR}/running`)
 
   // 结果回来只新增候选，不覆盖已选的 原片；点击 V1 才替换为 3 秒结果。
   await expect(versions(dialog).getByRole('button', { name: /V1 · 生成中/ })).toHaveCount(0, {
@@ -754,7 +746,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
   await expect(requestBox(dialog)).toBeFocused()
   await page.keyboard.type('再暖一点')
   await expect(generateButton(dialog)).toBeEnabled()
-  await screenshotBothThemes(page, `${SHOT_DIR}/selected`)
 
   // 删一段：后面的跟上，右边留细框。
   await segment(dialog, 5).click()
@@ -796,7 +787,6 @@ test('AI 改两段：参考片段与区间对齐，结果由用户选用；裁�
     baseJobId ?? '',
   )
   expect(retained).toHaveLength(1)
-  await screenshotBothThemes(page, `${SHOT_DIR}/composed`)
   await composite.click()
   await expect(composite).toHaveAttribute('aria-pressed', 'true')
   await waitForSegments(dialog, 6)
@@ -916,7 +906,6 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await page.setViewportSize({ width: 1335, height: 881 })
   await expect(page.locator('.timeline-time-preview')).toHaveCount(0)
   await expect.poll(playheadFill).toBe(activeFill)
-  await screenshotBothThemes(page, `${SHOT_DIR}/scrub`)
   await release()
   expect(await rulerOutline()).toBe('none')
   await expect.poll(playheadFill).not.toBe(activeFill)
@@ -965,7 +954,6 @@ test('移动布局：对话框内部自己滚，页面不横向溢出；卡与�
   expect(box.width).toBeCloseTo(stage.width - 24, 0)
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height)
   await dialog.getByRole('region', { name: '预览舞台' }).scrollIntoViewIfNeeded()
-  await page.screenshot({ path: `${SHOT_DIR}/mobile-card-light.png`, animations: 'disabled' })
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
@@ -978,7 +966,6 @@ test('移动布局：对话框内部自己滚，页面不横向溢出；卡与�
   expect(pill.x).toBeGreaterThanOrEqual(stageNow.x + 12)
   expect(pill.x + pill.width).toBeLessThanOrEqual(stageNow.x + stageNow.width - 12)
   await dialog.getByRole('region', { name: '预览舞台' }).scrollIntoViewIfNeeded()
-  await page.screenshot({ path: `${SHOT_DIR}/mobile-capsule-light.png`, animations: 'disabled' })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
   // 手机上放大：宽度到 90vw 的上限为止，比例不变，页面仍不横向溢出。
@@ -1107,7 +1094,6 @@ test('镜头提示词：可连续追加到修改要求，浮窗保持打开且�
   const prompts = page.getByRole('dialog', { name: '镜头提示词', exact: true })
   await expect(prompts).toBeVisible()
   await expect(requestBox(dialog)).toHaveText('')
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-prompt-viewer/empty')
   const text = await prompts.locator('ol > li').first().locator('p').innerText()
   await requestBox(dialog).fill('保留手动要求')
   const append = prompts.getByRole('button', { name: '复制镜头 1 到输入框' })
@@ -1116,7 +1102,6 @@ test('镜头提示词：可连续追加到修改要求，浮窗保持打开且�
   await expect(requestBox(dialog)).toHaveText(`保留手动要求\n${text}\n${text}`)
   await expect(prompts).toBeVisible()
   expect(await preview.boundingBox()).toEqual(before)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-prompt-viewer/desktop')
   await prompts.getByRole('button', { name: '关闭镜头提示词' }).click()
   await expect(prompts).toBeHidden()
   await expect(card(dialog)).toBeVisible()
@@ -1134,5 +1119,4 @@ test('镜头提示词：窄屏浮窗可以滚动且不溢出视口', async ({ pa
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(390)
   expect(box.y + box.height).toBeLessThanOrEqual(844)
-  await screenshotBothThemes(page, '../.artifacts/design-qa/video-prompt-viewer/mobile')
 })

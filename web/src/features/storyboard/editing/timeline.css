@@ -187,6 +187,31 @@
   font-weight: 500;
 }
 
+.timeline-hover-guide {
+  position: absolute;
+  top: var(--timeline-playhead-top);
+  bottom: var(--timeline-playhead-bottom);
+  z-index: var(--z-local-3);
+  width: 1px;
+  translate: -50% 0;
+  background: repeating-linear-gradient(to bottom, var(--color-outline) 0 3px, transparent 3px 6px);
+  pointer-events: none;
+}
+
+.timeline-hover-guide::before {
+  content: '';
+  position: absolute;
+  box-sizing: border-box;
+  top: -7px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  translate: -50% 0;
+  border: 1px solid var(--color-outline);
+  border-radius: calc(var(--radius-xs) / 2);
+  background: var(--color-surface-container-lowest);
+}
+
 .timeline-bubble {
   position: absolute;
   top: -8px;

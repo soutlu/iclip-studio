@@ -490,6 +490,82 @@ test.describe('整片编辑器 · 成片区', () => {
     }
   })
 
+  test('标尺悬停同时显示时间和贯穿轨道的预览线，缩放滚动后仍对齐，离开或滚动时清理', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, { layer0: BASE, music: true })
+    const music = dialog.getByRole('group', { name: '音乐轨' })
+    await expect(music.getByRole('button', { name: /^选中：音乐/ })).toBeVisible()
+    await film.getByRole('button', { name: /^选中：第 3 段/ }).click()
+
+    const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
+    const guide = dialog.getByTestId('timeline-hover-guide')
+    const preview = page.locator('.timeline-time-preview')
+    // 点段会自动播放到段尾；停下之后再验证悬停不会改变实际播放时间。
+    await expect.poll(async () => Number(await ruler.inputValue())).toBeGreaterThanOrEqual(5.2)
+    await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+    await settledClockMs(dialog.locator('.wf-clock'))
+    const before = await ruler.inputValue()
+    const rulerBox = await boxOf(ruler)
+    const initial = await pixelsPerSecond(dialog)
+    const hoverX = initial.left + initial.pps * 4
+    await page.mouse.move(hoverX, rulerBox.cy)
+    await expect(preview).toContainText('预览')
+    await expect(preview).toContainText('00:04.00')
+    await expect(guide).toBeVisible()
+    const guideBox = await boxOf(guide)
+    const filmBox = await boxOf(film)
+    const musicBox = await boxOf(music)
+    expect(Math.abs(guideBox.cx - hoverX)).toBeLessThan(1)
+    expect(guideBox.y).toBeLessThanOrEqual(filmBox.y)
+    expect(guideBox.y + guideBox.height).toBeGreaterThanOrEqual(musicBox.y + musicBox.height)
+    await expect(ruler).toHaveValue(before)
+
+    await page.mouse.move(filmBox.cx, filmBox.cy)
+    await expect(guide).toHaveCount(0)
+    await expect(preview).toHaveCount(0)
+
+    for (let i = 0; i < 2; i += 1) await dialog.getByRole('button', { name: '放大时间线' }).click()
+    await expect
+      .poll(async () => (await pixelsPerSecond(dialog)).pps)
+      .toBeGreaterThan(initial.pps * 3)
+    const viewport = dialog.locator('.wf-track-scroll')
+    const viewportBox = await boxOf(viewport)
+    const zoomed = await pixelsPerSecond(dialog)
+    // 原生滚动结束后把同一个 4 秒位置放在可见时间区中间，再核对预览位置。
+    await viewport.evaluate(
+      (element, delta) =>
+        new Promise<void>((resolve) => {
+          element.addEventListener('scroll', () => requestAnimationFrame(() => resolve()), {
+            once: true,
+          })
+          element.scrollLeft += delta
+        }),
+      zoomed.left + zoomed.pps * 4 - viewportBox.cx,
+    )
+    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+    const scrolled = await pixelsPerSecond(dialog)
+    const scrolledX = scrolled.left + scrolled.pps * 4
+    await page.mouse.move(scrolledX, (await boxOf(ruler)).cy)
+    await expect(preview).toContainText('00:04.00')
+    await expect(guide).toBeVisible()
+    expect(Math.abs((await boxOf(guide)).cx - scrolledX)).toBeLessThan(1)
+    await expect(ruler).toHaveValue(before)
+
+    await viewport.evaluate(
+      (element) =>
+        new Promise<void>((resolve) => {
+          element.addEventListener('scroll', () => requestAnimationFrame(() => resolve()), {
+            once: true,
+          })
+          element.scrollLeft += 40
+        }),
+    )
+    await expect(guide).toHaveCount(0)
+    await expect(preview).toHaveCount(0)
+    await expect(ruler).toHaveValue(before)
+  })
+
   test('刻度至少 20 秒；工具栏没有总长读数，提示写明快捷键，自动卡点在吸附旁边；轨名叫特效', async ({
     page,
   }) => {
