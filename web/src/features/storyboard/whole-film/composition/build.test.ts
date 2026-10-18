@@ -283,7 +283,7 @@ describe('buildComposition', () => {
     expect(parse(silent.html).querySelector('#captions')).toBeNull()
   })
 
-  it('盖满画面的转场以切点为准放置，按固定尺寸设计的铺满画面', () => {
+  it('盖满画面的转场以切点为准放置，按固定尺寸设计的同样完整放进画面', () => {
     const doc = parse(
       build({
         transitions: [
@@ -295,8 +295,58 @@ describe('buildComposition', () => {
     // 原定 2 秒、一半处盖满：切点 3 秒前 1 秒开始。
     expect(host?.getAttribute('data-start')).toBe('2')
     expect(host?.getAttribute('data-duration')).toBe('2')
-    // 1920×1080 铺满 720×1280：按高放大到 1280/1080。
-    expect(host?.parentElement?.getAttribute('style')).toContain('scale(1.1852)')
+    // 1920×1080 放进 720×1280：按宽缩到 0.375，与其他组件一样。
+    expect(host?.parentElement?.getAttribute('style')).toContain('scale(0.375)')
+  })
+
+  it('叠放：画面 < 特效（转场也算，按草稿里的先后，后加的在上）< 字幕', () => {
+    const { html } = build({
+      layer0: [
+        {
+          id: 'a',
+          type: 'video',
+          start: 0,
+          duration: 3000,
+          playbackStart: 0,
+          sourceJobId: 'job-a',
+          volume: 1,
+        },
+        {
+          id: 'outro',
+          type: 'component',
+          role: 'outro',
+          start: 3000,
+          duration: 2000,
+          component: 'end-card',
+          variables: {},
+        },
+      ],
+      transitions: [
+        { id: 't1', afterClipId: 'a', component: 'scribble', duration: 2000, variables: {} },
+      ],
+      // 后加的先开始：叠放跟草稿里的先后走，不跟开始时间走。
+      overlays: [
+        { id: 'first', component: 'lower-third', start: 3000, duration: 1000, variables: {} },
+        { id: 'second', component: 'stat-card', start: 500, duration: 1000, variables: {} },
+      ],
+    })
+    const doc = parse(html)
+    // 按固定尺寸设计的组件 z-index 写在外层盒子上，铺满的写在宿主上。
+    const z = (selector: string) => {
+      const host = doc.querySelector(selector)
+      const style = host?.getAttribute('style') ?? host?.parentElement?.getAttribute('style') ?? ''
+      return Number(/z-index:(\d+)/.exec(style)?.[1])
+    }
+    const videoZ = Number(/\.layer0\{[^}]*z-index:(\d+)/.exec(html)?.[1])
+    expect(new Set(['#tr-0', '#ov-0', '#ov-1'].map(z)).size).toBe(1)
+    expect(z('#clip-1')).toBe(videoZ)
+    expect(z('#ov-0')).toBeGreaterThan(videoZ)
+    expect(z('#captions')).toBeGreaterThan(z('#ov-0'))
+    // 同一层里页面上后写的在上：转场在前，特效按草稿里的先后。
+    const order = [...doc.querySelectorAll('#tr-0, #ov-0, #ov-1')].map((host) =>
+      host.getAttribute('data-composition-id'),
+    )
+    expect(order).toEqual(['scribble', 'lower-third', 'stat-card'])
   })
 
   it('要挂前后两段的转场：前一段在切点前做 out，后一段在切点后做 in，只作用于这一个切点', () => {

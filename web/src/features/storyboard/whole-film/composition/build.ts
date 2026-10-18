@@ -53,8 +53,9 @@ export class CompositionError extends Error {
   }
 }
 
-// 画面叠放次序（HyperFrames 的 data-track-index 只用于显示，叠放靠 z-index）。
-const Z = { layer0: 1, overlay: 2, captions: 3, transition: 4 } as const
+// 画面叠放次序（HyperFrames 的 data-track-index 只用于显示，叠放靠 z-index）：画面 < 特效 < 字幕。
+// 转场也算特效；同一层里按页面上的先后，后写的在上，特效按草稿里的先后（后加的在上）。
+const Z = { layer0: 1, overlay: 2, captions: 3 } as const
 const TRACK = { layer0: 0, transition: 1, captions: 2, overlay: 3, music: 4 } as const
 
 interface LayerTweenCall {
@@ -98,14 +99,12 @@ interface HostOptions {
   z: number
   variables: Record<string, unknown>
   canvas: { width: number; height: number }
-  /** 按固定尺寸设计的组件放进画面的方式：contain 完整放下，cover 铺满。 */
-  fit: 'contain' | 'cover'
 }
 
 const round4 = (value: number) => String(Math.round(value * 10000) / 10000)
 
 /**
- * 子合成宿主；按固定尺寸设计的组件外面套一层等比缩放、居中的盒子。
+ * 子合成宿主；按固定尺寸设计的组件外面套一层等比缩放、居中的盒子，整个组件完整放进画面（contain）。
  *
  * 宿主的 data-composition-id 用组件名（组件库文档里的挂载写法）：HyperFrames 只在它与组件根节点的
  * id 一致时把根节点展平进宿主，声明式绑定（data-var-*、--变量）才按宿主取到这一处的取值；
@@ -122,8 +121,7 @@ function componentHost(options: HostOptions): string {
   // 铺满的宿主由页面样式（.fill）定成画面大小：根节点写了 data-width/height 时，HyperFrames 展平时
   // 会把它写到宿主的行内样式上。
   if (!size) return host(` class="fill" style="z-index:${options.z}"`)
-  const pick = options.fit === 'cover' ? Math.max : Math.min
-  const scale = pick(canvas.width / size.width, canvas.height / size.height)
+  const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
   return (
     `<div class="fit" style="width:${size.width}px;height:${size.height}px;` +
     `transform:translate(-50%,-50%) scale(${round4(scale)});z-index:${options.z}">${host('')}</div>`
@@ -194,10 +192,9 @@ function transitionParts(
     startMs,
     durationMs: transition.duration,
     track: TRACK.transition,
-    z: Z.transition,
+    z: Z.overlay,
     variables: variableValues(item, transition.variables),
     canvas,
-    fit: 'cover',
   })
   if (spec.kind === 'overlay') return { host, tweens: [], item }
   const tweens: LayerTweenCall[] = [
@@ -251,7 +248,6 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
         z: Z.layer0,
         variables: variableValues(item, clip.variables),
         canvas,
-        fit: 'contain',
       })
     }
     const source = media.videos[clip.sourceJobId]
@@ -281,7 +277,6 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       z: Z.overlay,
       variables: variableValues(item, overlay.variables),
       canvas,
-      fit: 'contain',
     })
   })
 
@@ -300,7 +295,6 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
           z: Z.captions,
           variables: { ...variableValues(captionItem, {}), words },
           canvas,
-          fit: 'contain',
         })
 
   let music = ''
