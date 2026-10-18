@@ -2,9 +2,7 @@ import { readFileSync } from 'node:fs'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { ComponentCatalog } from '../src/features/storyboard/whole-film/composition/catalog'
 import { withBrandFixtures } from '../src/testing/whole-film'
-import { openConversation, screenshotBothThemes } from './helpers'
-
-const SHOT_DIR = '../.artifacts/design-qa/whole-film-pr18'
+import { openConversation } from './helpers'
 
 const catalog = JSON.parse(
   readFileSync(
@@ -79,11 +77,13 @@ const clipLefts = (film: Locator) =>
     .getByRole('group', { name: /^第 \d+ 段/ })
     .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().left))
 
-/** 在素材区选一个镜头加入成片，让截图里成片轨上有画面 */
+/** 在素材区「镜头组 2」选一个镜头，按 Enter 插到播放头处，让成片轨上有画面 */
 const addShot = async (dialog: Locator, shot: number) => {
-  const materials = dialog.getByRole('region', { name: '视频素材区' })
+  const materials = dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
   await materials.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shot}，`) }).click()
-  await materials.getByRole('button', { name: '加入成片' }).click()
+  await dialog.page().keyboard.press('Enter')
 }
 
 const variableDefault = (component: string, label: string) =>
@@ -363,6 +363,9 @@ test('素材页：列表下的空处是上传区，拖音频文件进来即上�
   await expect(dialog.getByRole('button', { name: '生成', exact: true })).toHaveCount(0)
   const drop = dialog.getByRole('button', { name: '把音频文件拖到这里上传' })
   await expect(drop).toContainText('生成音乐在下方音乐轨的「+」')
+  await dialog.getByRole('button', { name: '生成音乐', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '生成音乐' })).toHaveAttribute('data-side', 'top')
+  await page.keyboard.press('Escape')
   const box = await drop.boundingBox()
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(64)
 
@@ -379,79 +382,3 @@ test('素材页：列表下的空处是上传区，拖音频文件进来即上�
   await expect(songs.getByRole('listitem')).toHaveCount(3)
   await expect(songs.getByText(/^上传的音乐 · /)).toHaveCount(2)
 })
-
-for (const viewport of [
-  { width: 1440, height: 900 },
-  { width: 1449, height: 982 },
-]) {
-  test(`侧栏与调整浮层验收截图 ${viewport.width}×${viewport.height}`, async ({ page }) => {
-    // 一条用例里依次截 8 个状态、各两种主题，CI 分片下超过默认的 30 秒
-    test.setTimeout(90_000)
-    await page.setViewportSize(viewport)
-    await serveBrandFixtures(page)
-    const dialog = await openWholeFilm(page)
-    const shot = (name: string) =>
-      screenshotBothThemes(page, `${SHOT_DIR}/${name}-${viewport.width}`)
-    await addShot(dialog, 1)
-    await addShot(dialog, 2)
-    await dialog
-      .getByRole('list', { name: '这段对话的音乐' })
-      .getByRole('button', { name: /^用这首：轻快原声吉他/ })
-      .click()
-
-    // 4：素材页
-    await page.mouse.move(viewport.width / 2, 30)
-    await shot('4-media-tab')
-
-    // 5：音乐轨头「+」的生成音乐浮层，向上弹
-    await dialog.getByRole('button', { name: '生成音乐', exact: true }).click()
-    await expect(page.getByRole('dialog', { name: '生成音乐' })).toHaveAttribute('data-side', 'top')
-    await shot('5-gen-music')
-    await page.keyboard.press('Escape')
-
-    // 1d：拖品牌卡到成片中间，只有插入标记与缩影，轨道不动
-    await dialog.getByRole('tab', { name: '品牌' }).click()
-    const film = dialog.getByRole('group', { name: '成片画面轨' })
-    await liftCard(page, dialog.getByRole('button', { name: /^拾步 片头，/ }))
-    const second = await boxOf(film.getByRole('group', { name: /^第 2 段/ }))
-    await page.mouse.move(second.x + 4, second.y + second.height / 2, { steps: 8 })
-    await expect(dialog.locator('.wf-drop-marker')).toBeVisible()
-    await shot('1d-comp-drag-mid')
-    // 拖回侧栏松手：不放下
-    await page.mouse.move(80, 300, { steps: 4 })
-    await page.mouse.up()
-
-    // 1f：拖卡片到特效轨，虚线块标出落点
-    await openCategory(dialog, '场景')
-    await liftCard(page, dialog.getByRole('button', { name: /^逐词居中，/ }))
-    const lane = await boxOf(dialog.getByRole('group', { name: '特效轨' }))
-    await page.mouse.move(lane.x + 300, lane.y + lane.height / 2, { steps: 8 })
-    await expect(dialog.locator('.wf-overlay.is-ghost')).toBeVisible()
-    await shot('1f-ov-card-ghost')
-    await page.mouse.move(80, 300, { steps: 4 })
-    await page.mouse.up()
-    await expect(page.locator('.wf-ghost')).toHaveCount(0)
-
-    // 1c：品牌栏（暖屿）、通用栏（场景）
-    await dialog.getByRole('tab', { name: '品牌' }).click()
-    await chips(dialog, '品牌').getByRole('radio', { name: /^暖屿/ }).click()
-    await page.mouse.move(viewport.width / 2, 30)
-    await shot('1c-side-brand')
-    await openCategory(dialog, '场景')
-    await page.mouse.move(viewport.width / 2, 30)
-    await shot('1c-side-general')
-
-    // 1e：有可填项的组件放进成片轨，随即打开浮层
-    await openCategory(dialog, '视觉特效')
-    await dialog.getByRole('button', { name: /^宇宙星球，成片轨/ }).click()
-    await expect(page.getByRole('dialog', { name: /宇宙星球/ })).toBeVisible()
-    await shot('1e-segment-pop')
-    await page.keyboard.press('Escape')
-
-    // 1f：特效块的浮层（逐词居中）
-    await openCategory(dialog, '场景')
-    await dialog.getByRole('button', { name: /^逐词居中，/ }).click()
-    await expect(page.getByRole('dialog', { name: /逐词居中/ })).toBeVisible()
-    await shot('1f-pop')
-  })
-}

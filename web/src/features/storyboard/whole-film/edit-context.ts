@@ -10,7 +10,7 @@ import type { Material } from './materials'
 const loadReader = () => import('../editing/media-file')
 
 /** 一段视频的画面尺寸；第一段加入成片时用它定画布。 */
-const videoSizeQuery = (url: string | undefined) =>
+export const videoSizeQuery = (url: string | undefined) =>
   queryOptions({
     queryKey: ['whole-film', 'video-size', url],
     queryFn:

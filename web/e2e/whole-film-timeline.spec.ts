@@ -1,15 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { WholeFilmDocument } from '../src/shared/api/generated/types.gen'
-import { openConversation, screenshotBothThemes } from './helpers'
+import { openConversation } from './helpers'
 
 // 整片编辑器的成片区：拖放、排序、特效轨、刻度、工具栏与声音行。草稿直接存进 mock 再打开编辑器。
-// 验收截图：WF_SHOTS=1 时按 WF_VIEWPORT（默认 1440x900）浅色、深色各截一张。
 
-const [WIDTH = 1440, HEIGHT = 900] = (process.env['WF_VIEWPORT'] ?? '1440x900')
-  .split('x')
-  .map(Number)
-const SHOTS = process.env['WF_SHOTS'] === '1'
-const SHOT_DIR = '../.artifacts/design-qa/whole-film-pr17'
+const WIDTH = 1440
+const HEIGHT = 900
 
 const CONVERSATION = '0d3e5a10-7c4b-4e2f-9a61-000000000001'
 /** 演示对话第 2 组那条 6 秒的竖版成片，每秒一个镜头 */
@@ -56,10 +52,6 @@ const BASE = [
   video('v4', 4_000, 5_100),
   video('v5', 5_100, 6_000),
 ]
-
-const shot = async (page: Page, name: string) => {
-  if (SHOTS) await screenshotBothThemes(page, `${SHOT_DIR}/${WIDTH}-${name}`)
-}
 
 /** 登录后把草稿直接存进 mock（片段按顺序首尾相接），再打开整片编辑器 */
 const openWith = async (
@@ -151,15 +143,44 @@ const pixelsPerSecond = async (dialog: Locator) => {
   return { pps: box.width / Number(await ruler.getAttribute('max')), left: box.x }
 }
 
+/** 播放器按 30 帧报时刻，读数与播放头最多差一帧 */
+const FRAME_MS = 34
+
+/** 播放时间读数「00:02.60 / 00:07.50」里当前时刻的毫秒数 */
+const clockMs = (text: string | null) => {
+  const match = /^(\d+):(\d+)\.(\d+)/.exec(text ?? '')
+  if (match === null) throw new Error(`读不出播放时间：${text}`)
+  return Number(match[1]) * 60_000 + Number(match[2]) * 1_000 + Number(match[3]) * 10
+}
+
+/** 播放器暂停后还会补报时刻：等读数两次一样再读 */
+const settledClockMs = async (clock: Locator) => {
+  let last = ''
+  await expect
+    .poll(
+      async () => {
+        const now = (await clock.textContent()) ?? ''
+        const settled = now === last
+        last = now
+        return settled
+      },
+      { intervals: [250] },
+    )
+    .toBe(true)
+  return clockMs(last)
+}
+
 /** 成片轨上各段左边缘的位置：拖动中确认轨道上的段没动 */
 const clipLefts = (film: Locator) =>
   film
     .locator('.wf-clip')
     .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().left))
 
-/** 在素材区点一个镜头选中它，按住它的范围拿起来 */
+/** 在素材区「镜头组 2」里点一个镜头选中它，按住它的范围拿起来 */
 const liftShot = async (page: Page, dialog: Locator, shotNumber: number) => {
-  const materials = dialog.getByRole('region', { name: '视频素材区' })
+  const materials = dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
   await materials.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shotNumber}，`) }).click()
   const range = await boxOf(materials.getByRole('group', { name: /^选中的范围/ }))
   await page.mouse.move(range.cx, range.cy)
@@ -190,7 +211,6 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(dialog.locator('.wf-drop-marker')).not.toHaveClass(/is-blocked/)
     await expect(dialog.locator('.wf-drop-bubble')).toHaveText('插入到 3.5 秒 · 第 3 段')
     expect(await clipLefts(film)).toEqual(before)
-    await shot(page, '6-carry-mid')
 
     // 字幕轨不收镜头：不提示
     const captions = await boxOf(dialog.getByRole('group', { name: '字幕轨' }))
@@ -201,7 +221,6 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(film.getByRole('group')).toHaveCount(7)
     await expect(film.getByRole('group', { name: /^第 3 段 · A · 镜头 4，1\.0 秒/ })).toBeVisible()
     await expect(ghost).toHaveCount(0)
-    await shot(page, '6b-carry-dropped')
 
     // 在字幕轨上松手：不放下，缩影退回
     await liftShot(page, dialog, 5)
@@ -243,7 +262,6 @@ test.describe('整片编辑器 · 成片区', () => {
       '加入后整片超过 120 秒，无法加入；请先缩短或删除其他片段',
     )
     await expect(page.locator('.wf-ghost')).toHaveClass(/is-blocked/)
-    await shot(page, '8-blocked')
     await page.mouse.up()
     await expect(film.getByRole('group')).toHaveCount(20)
     await expect(
@@ -284,7 +302,6 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(film.getByRole('group', { name: /^第 2 段/ })).toHaveClass(/is-lifted/)
     await expect(dialog.locator('.wf-drop-bubble')).toHaveText('挪到第 5 段')
     expect(await clipLefts(film)).toEqual(before)
-    await shot(page, '7-reorder-mid')
     await page.mouse.up()
     await expect
       .poll(async () => (await readDraft(page))?.layer0.map((clip) => clip.id))
@@ -320,13 +337,19 @@ test.describe('整片编辑器 · 成片区', () => {
     await film.getByRole('button', { name: /^选中：第 3 段 · 组件 · 手写标题/ }).click()
     await expect(clock).toContainText('00:03.20 /')
     await expect(dialog.getByText('当前片段 · 第 3 段 · 没有原声')).toBeVisible()
-    await shot(page, '1d-comp-mid-selected')
 
     await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
     await expect(clock).toContainText('00:01.50 /')
+    // 点段会把这一段播一遍：先暂停，再看方向键挪播放头（→ 0.1 秒、⇧→ 1 秒）。
+    // 读数是播放器按帧报的时刻，与播放头可差一帧（30 帧约 34 毫秒）
+    await dialog.getByRole('button', { name: '暂停' }).click()
+    await expect(dialog.getByRole('button', { name: '播放' })).toBeVisible()
+    const pausedAt = await settledClockMs(clock)
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('Shift+ArrowRight')
-    await expect(clock).toContainText('00:02.60 /')
+    await expect
+      .poll(async () => Math.abs(clockMs(await clock.textContent()) - pausedAt - 1_100))
+      .toBeLessThanOrEqual(FRAME_MS)
 
     // 修剪：拖结尾手柄，再用 ← 微调 0.1 秒
     const segment = film.getByRole('group', { name: /^第 2 段/ })
@@ -353,7 +376,6 @@ test.describe('整片编辑器 · 成片区', () => {
     await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
     await page.keyboard.press('Delete')
     await expect(film.getByRole('group')).toHaveCount(5)
-    await shot(page, '9-after-delete')
     await page.keyboard.press('ControlOrMeta+z')
     await expect(film.getByRole('group')).toHaveCount(6)
   })
@@ -371,7 +393,6 @@ test.describe('整片编辑器 · 成片区', () => {
     const lane = dialog.getByRole('group', { name: '特效轨' })
     const arrow = lane.getByRole('button', { name: /^选中：特效 · 手绘箭头/ })
     await expect(arrow.locator('img')).toBeVisible()
-    await shot(page, 'ov-stack')
 
     // 按住中部往右拖 1 秒多一点：开头吸到第 1 段结尾（2 秒处的切点），块上方写起止秒数
     const { pps } = await pixelsPerSecond(dialog)
@@ -381,7 +402,6 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.move(block.cx + pps * 1.03, block.cy, { steps: 6 })
     await expect(lane.locator('.wf-time-bubble')).toHaveText('2.0–5.0 秒')
     await expect(dialog.locator('.wf-snap-guide')).toBeVisible()
-    await shot(page, 'ov-drag-mid')
     await page.mouse.up()
     await expect(
       lane.getByRole('group', { name: '特效 · 手绘箭头，第 1 行，2.0–5.0 秒' }),
@@ -409,7 +429,6 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.move(arrowNow.cx, rowsBottom + 8, { steps: 4 })
     await expect(lane.locator('.wf-overlay-insert')).toBeVisible()
     expect((await boxOf(lane)).height).toBe(laneBox.height)
-    await shot(page, 'ov-new-row')
     await page.mouse.up()
     await expect(lane.getByRole('group', { name: /^特效 · 闪光叠加，第 1 行/ })).toBeVisible()
     await expect(lane.getByRole('group', { name: /^特效 · 手绘箭头，第 2 行/ })).toBeVisible()
@@ -469,7 +488,6 @@ test.describe('整片编辑器 · 成片区', () => {
       await button.click()
       await expect(button).toHaveAttribute('aria-pressed', 'true')
     }
-    await shot(page, 'ov-rows-4')
   })
 
   test('刻度至少 20 秒；工具栏没有总长读数，提示写明快捷键，自动卡点在吸附旁边；轨名叫特效', async ({
@@ -481,7 +499,6 @@ test.describe('整片编辑器 · 成片区', () => {
     const rulerBox = await boxOf(ruler)
     const clip = await boxOf(film.getByRole('group', { name: /^第 1 段/ }))
     expect(clip.width / rulerBox.width).toBeCloseTo(1 / 20, 2)
-    await shot(page, '3-one-second-film')
 
     await expect(dialog.getByText(/上限/)).toHaveCount(0)
     await expect(dialog.locator('.wf-track-heads')).toContainText('特效')
@@ -528,7 +545,6 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(page.getByRole('tooltip').filter({ hasText: '删除选中的片段' })).toHaveText(
       '删除选中的片段⌫',
     )
-    await shot(page, '10-tooltip')
     // 指针离开按钮后要再动一下，提示才知道指针不在去往它的路上
     await page.mouse.move(WIDTH / 2, 30, { steps: 5 })
     await expect(page.getByRole('tooltip')).toHaveCount(0)
@@ -564,6 +580,5 @@ test.describe('整片编辑器 · 成片区', () => {
       '静音',
     )
     await dialog.getByRole('button', { name: '取消静音配乐' }).click()
-    await shot(page, '13-sound-row')
   })
 })

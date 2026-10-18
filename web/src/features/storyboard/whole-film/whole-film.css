@@ -16,7 +16,7 @@
     'side preview'
     'timeline timeline';
   grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
-  grid-template-rows: minmax(220px, 300px) auto;
+  grid-template-rows: minmax(220px, 1fr) auto;
   gap: 12px;
   padding: 0 24px 16px;
   overflow-y: auto;
@@ -1535,11 +1535,20 @@
 /* ---- 视频素材区 ---- */
 
 .wf-materials {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--color-hairline);
+}
+
+/* 定高：放下第一个镜头组的两条原作并露出下一组的组名；镜头组多时在区域里上下滚动 */
+.wf-materials-body {
+  display: flex;
+  height: 118px;
+  flex-direction: column;
+  gap: 8px;
+  /* 结尾手柄看得见的部分在轨道右边留的 8px 里；只裁掉它透明的加宽点按区 */
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .wf-materials-empty {
@@ -1548,116 +1557,110 @@
   font-size: var(--text-body-sm);
 }
 
-.wf-materials-head {
+.wf-material-group {
   display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.wf-group-label,
-.wf-group-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-body);
-  font-weight: 600;
-}
-
-.wf-group-switch {
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-}
-
-.wf-materials-hint {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-}
-
-.wf-takes {
-  display: flex;
+  flex: none;
   flex-direction: column;
-  gap: 8px;
+}
+
+/* 组名、原作名与成片区轨名同字号 */
+.wf-group-label {
+  height: 20px;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
 .wf-take {
   display: grid;
+  height: 32px;
+  flex: none;
   align-items: center;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 120px minmax(0, 1fr);
+}
+
+.wf-take + .wf-take {
+  margin-top: 6px;
 }
 
 .wf-take-head {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
 }
 
 .wf-take-label {
-  font-size: var(--text-body-sm);
-  font-weight: 600;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  white-space: nowrap;
 }
 
 .wf-version-label,
 .wf-version-switch {
   display: inline-flex;
+  height: 20px;
   align-items: center;
   gap: 2px;
-  padding: 1px 8px;
+  padding: 0 8px;
   border-radius: var(--radius-full);
-  background: var(--color-surface-container-highest);
+  background: var(--color-surface-container-lowest);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
   color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
+  white-space: nowrap;
 }
 
+.wf-version-switch {
+  padding-right: 4px;
+}
+
+/* 素材轨左端与成片轨对齐（轨名列同宽、时间区左边同样留 8px），按原作自身时长铺满一行；
+   右边留 8px，选区结尾的手柄不撑出横向滚动 */
 .wf-take-strip {
   position: relative;
-  display: flex;
-  height: 64px;
+  height: 32px;
   min-width: 0;
-  gap: 2px;
+  margin: 0 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
 }
 
 .wf-take-note {
-  align-self: center;
+  padding-left: 8px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
+  line-height: 32px;
 }
 
+/* 镜头只放画面，不写镜头号和起止 */
 .wf-shot {
-  position: relative;
-  min-width: 0;
-  flex-basis: 0;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-  background: var(--color-thumb-fallback);
-  cursor: pointer;
-}
-
-.wf-shot img {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.wf-shot-text {
-  position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 0;
   display: flex;
-  max-width: calc(100% - 8px);
-  flex-direction: column;
-  align-items: flex-start;
+  height: 32px;
   overflow: hidden;
-  padding: 1px 5px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-scrim) 56%, transparent);
-  color: var(--color-on-scrim);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  text-align: left;
-  white-space: nowrap;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.wf-shot > .timeline-frames {
+  width: 100%;
+}
+
+/* 成片轨上已经用了的段：轨道底边一道 */
+.wf-used {
+  position: absolute;
+  bottom: 1px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-surface) 62%, transparent);
+  pointer-events: none;
 }
 
 .wf-range {
@@ -1665,9 +1668,67 @@
   top: 0;
   bottom: 0;
   z-index: var(--z-local-2);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   cursor: grab;
   touch-action: none;
+}
+
+/* 预览在放选区时，选区里走的播放头 */
+.wf-material-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: var(--z-local-3);
+  width: 2px;
+  translate: -1px 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-scrim);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+  pointer-events: none;
+}
+
+/* 预览切到素材：盖在成片预览上，回到成片时卸掉 */
+.wf-material-preview {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-area: preview;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.wf-material-video {
+  max-width: 100%;
+  height: 100%;
+  border-radius: var(--radius-lg);
+  object-fit: contain;
+}
+
+/* 舞台左上角注明放的是哪条素材的哪个镜头 */
+.wf-stage-label {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: var(--z-local-2);
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-top-layer);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
+.wf-stage-label > span {
+  color: var(--color-on-surface-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .wf-range.is-lifting {
