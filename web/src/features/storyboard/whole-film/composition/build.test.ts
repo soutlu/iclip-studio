@@ -478,7 +478,7 @@ describe('buildComposition', () => {
     ).toThrow('组件目录缺少字体「Inter」的 CSS')
   })
 
-  it('页面里的 id 与子合成 id 各不相同，与草稿里的 id 无关', () => {
+  it('页面里的 id 各不相同，与草稿里的 id 无关', () => {
     const { html } = build({
       layer0: [
         {
@@ -516,12 +516,74 @@ describe('buildComposition', () => {
     })
     const doc = parse(html)
     const ids = [...doc.querySelectorAll('[id]')].map((node) => node.id)
-    const compositionIds = [...doc.querySelectorAll('[data-composition-id]')].map((node) =>
-      node.getAttribute('data-composition-id'),
-    )
     expect(new Set(ids).size).toBe(ids.length)
-    expect(new Set(compositionIds).size).toBe(compositionIds.length)
     expect(ids).toEqual(['stage', 'clip-0', 'clip-1', 'tr-0', 'ov-0', 'ov-1', 'captions'])
+  })
+
+  it('子合成宿主的 data-composition-id 是组件名，同一组件挂多处时各带各的可填项', () => {
+    const { html } = build({
+      layer0: [
+        {
+          id: 'intro',
+          type: 'component',
+          role: 'intro',
+          start: 0,
+          duration: 2000,
+          component: 'logo-intro',
+          variables: { wordmark: '拾步' },
+        },
+        {
+          id: 'a',
+          type: 'video',
+          start: 2000,
+          duration: 3000,
+          playbackStart: 0,
+          sourceJobId: 'job-a',
+          volume: 1,
+        },
+        {
+          id: 'b',
+          type: 'video',
+          start: 5000,
+          duration: 2000,
+          playbackStart: 0,
+          sourceJobId: 'job-b',
+          volume: 1,
+        },
+      ],
+      transitions: [
+        { id: 't', afterClipId: 'a', component: 'fade-through', duration: 900, variables: {} },
+      ],
+      overlays: [
+        {
+          id: 'o1',
+          component: 'lower-third',
+          start: 2000,
+          duration: 1000,
+          variables: { title: '第一条' },
+        },
+        {
+          id: 'o2',
+          component: 'lower-third',
+          start: 4000,
+          duration: 1000,
+          variables: { title: '第二条' },
+        },
+      ],
+    })
+    const doc = parse(html)
+    const hosts = [...doc.querySelectorAll('[data-composition-src]')].map((host) => ({
+      id: host.id,
+      compositionId: host.getAttribute('data-composition-id'),
+      values: variablesOf(host),
+    }))
+    expect(hosts).toEqual([
+      { id: 'clip-0', compositionId: 'logo-intro', values: { wordmark: '拾步', tone: 'warm' } },
+      { id: 'tr-0', compositionId: 'fade-through', values: { wash: 'paper' } },
+      { id: 'ov-0', compositionId: 'lower-third', values: { title: '第一条' } },
+      { id: 'ov-1', compositionId: 'lower-third', values: { title: '第二条' } },
+      { id: 'captions', compositionId: 'default-caption', values: expect.any(Object) },
+    ])
   })
 
   it.each<[string, Partial<WholeFilmDraft>, CompositionMedia, string]>([

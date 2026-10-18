@@ -104,15 +104,23 @@ interface HostOptions {
 
 const round4 = (value: number) => String(Math.round(value * 10000) / 10000)
 
-/** 子合成宿主；按固定尺寸设计的组件外面套一层等比缩放、居中的盒子。 */
+/**
+ * 子合成宿主；按固定尺寸设计的组件外面套一层等比缩放、居中的盒子。
+ *
+ * 宿主的 data-composition-id 用组件名（组件库文档里的挂载写法）：HyperFrames 只在它与组件根节点的
+ * id 一致时把根节点展平进宿主，声明式绑定（data-var-*、--变量）才按宿主取到这一处的取值；
+ * 同一组件挂多处时由 HyperFrames 改成各自的 `名称__hfN`。
+ */
 function componentHost(options: HostOptions): string {
   const { id, item, canvas, size } = { ...options, size: options.item.size }
   const host = (extra: string) =>
-    `<div id="${id}" data-composition-id="${id}"${extra}` +
+    `<div id="${id}" data-composition-id="${escapeAttribute(item.name)}"${extra}` +
     ` data-composition-src="${escapeAttribute(item.src)}"` +
     ` data-start="${seconds(options.startMs)}" data-duration="${seconds(options.durationMs)}"` +
     ` data-playback-start="0" data-track-index="${options.track}"` +
     ` data-variable-values="${jsonAttribute(options.variables)}"></div>`
+  // 铺满的宿主由页面样式（.fill）定成画面大小：根节点写了 data-width/height 时，HyperFrames 展平时
+  // 会把它写到宿主的行内样式上。
   if (!size) return host(` class="fill" style="z-index:${options.z}"`)
   const pick = options.fit === 'cover' ? Math.max : Math.min
   const scale = pick(canvas.width / size.width, canvas.height / size.height)
@@ -324,7 +332,7 @@ ${fontLinks}
 html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;font-family:'Noto Sans SC',sans-serif}
 #stage{position:relative;width:${width}px;height:${height}px;overflow:hidden;background:black}
 #stage .layer0{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:${Z.layer0}}
-#stage .fill{position:absolute;inset:0}
+#stage .fill{position:absolute;inset:0;width:100%!important;height:100%!important}
 #stage .fit{position:absolute;left:50%;top:50%}
 </style>
 </head>
