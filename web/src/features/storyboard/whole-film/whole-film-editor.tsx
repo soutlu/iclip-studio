@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
@@ -64,6 +65,7 @@ import {
   buildEditContext,
   useKeyframeIndexes,
   useVideoSize,
+  videoSizeQuery,
   withSourceSize,
   type KeyframeStates,
 } from './edit-context'
@@ -78,8 +80,16 @@ import {
   type Selection,
   type TracksHandle,
 } from './film-tracks'
-import { MaterialArea, type MaterialCarry, type MaterialRange } from './material-area'
-import { materialCatalog, type Material, type MaterialTake } from './materials'
+import { MaterialArea, type MaterialCarry } from './material-area'
+import { MaterialPreview, type MaterialView } from './material-preview'
+import {
+  materialCatalog,
+  shotAt,
+  usedSpans,
+  type Material,
+  type MaterialRange,
+  type MaterialTake,
+} from './materials'
 import { useMeasuredMusicDurations, useMusicAnalysis, useMusicBeats } from './music-analysis'
 import { GenerateMusic, MusicPanel } from './music-panel'
 import { musicTitleOf, peaksStateOf } from './music-view'
@@ -181,15 +191,10 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
 
 const takeLetterOf = (material: Material) => material.takeLabel.replace(/^生成\s*/, '')
 
-/** 素材里 atMs 处是第几个镜头；关键帧表还没读到时为 undefined */
-const shotNumberAt = (url: string, atMs: number, keyframes: KeyframeStates) => {
+/** 素材里 ms 这一刻是第几个镜头；镜头表还没读到时 undefined */
+const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   const state = keyframes.get(url)
-  if (state?.kind !== 'ready') return undefined
-  const at = atMs / 1000
-  const index = keyframeRanges(state.index).findIndex(
-    (shot) => at >= shot.start - 0.001 && at < shot.end,
-  )
-  return index < 0 ? undefined : index + 1
+  return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
@@ -225,15 +230,25 @@ function EditorBody({
 }) {
   const notice = useCallback((message: string) => toast.info(message), [])
   const session = useDraftSession(conversationId, initial, { onNotice: notice })
-  const { draft, apply } = session
+  const { draft } = session
+  const [materialView, setMaterialView] = useState<MaterialView | null>(null)
+  const [materialMs, setMaterialMs] = useState(0)
+  const [materialPlaying, setMaterialPlaying] = useState(false)
+  // 预览在放素材时，点播放、拖播放头、点成片轨或做任何成片编辑都回到成片
+  const leaveMaterial = () => {
+    setMaterialView(null)
+    setMaterialPlaying(false)
+  }
+  const apply = (result: EditResult) => {
+    leaveMaterial()
+    return session.apply(result)
+  }
 
   const videos = useShotGenerations(conversationId)
   const materials = useMemo(
     () => materialCatalog(groupConversationVideos(videos.data ?? [])),
     [videos.data],
   )
-  const [groupId, setGroupId] = useState<string>()
-  const group = materials.groups.find((item) => item.id === groupId) ?? materials.groups[0]
   const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
   const versionOf = (take: MaterialTake): Material =>
     take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
@@ -249,7 +264,10 @@ function EditorBody({
   )
   const shownUrls = useStableValue(
     [
-      ...new Set([...sourceUrls, ...(group?.takes.map((take) => versionOf(take).url) ?? [])]),
+      ...new Set([
+        ...sourceUrls,
+        ...materials.groups.flatMap((group) => group.takes.map((take) => versionOf(take).url)),
+      ]),
     ].sort(),
   )
   const keyframes = useKeyframeIndexes(shownUrls)
@@ -306,6 +324,7 @@ function EditorBody({
   const playhead = Math.min(playheadMs, total)
   const seek = (ms: number) => {
     stopAtRef.current = null
+    leaveMaterial()
     setPlayheadMs(ms)
     previewRef.current?.seek(ms)
   }
@@ -319,7 +338,9 @@ function EditorBody({
   }
   const togglePlay = () => {
     stopAtRef.current = null
-    if (playing) previewRef.current?.pause()
+    // 播放只管成片：在放素材时先回到成片再放
+    if (materialView !== null) leaveMaterial()
+    if (playing && materialView === null) previewRef.current?.pause()
     else previewRef.current?.play()
   }
   /** 点成片段：选中，播放头移到段首并把这一段播一遍 */
@@ -331,21 +352,27 @@ function EditorBody({
   }
 
   const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
-  const size = useVideoSize(draft.canvas === null ? rangeMaterial?.url : undefined)
+  // 画布还没定时，第一段视频的画面尺寸定画布：选中镜头就开始读
+  const sizeUrl = draft.canvas === null ? rangeMaterial?.url : undefined
+  const size = useVideoSize(sizeUrl)
+  const queryClient = useQueryClient()
+
+  // 拖动中能不能放：素材时长没读到、画面尺寸读取失败时写原因；尺寸还在读不拦，插入时等它读到
   const addBlocked =
     range === null
       ? '先在下方点一个镜头选中范围'
       : context.sources[range.jobId] === undefined
         ? '正在读取素材时长，稍后再试'
-        : draft.canvas !== null
-          ? undefined
-          : size.isError
-            ? errorMessageOf(size.error, '画面尺寸读取失败，无法加入成片')
-            : size.data === undefined
-              ? '正在读取画面尺寸，稍后再试'
-              : undefined
+        : draft.canvas === null && size.isError
+          ? errorMessageOf(size.error, '画面尺寸读取失败，无法加入成片')
+          : undefined
 
-  const insertResult = (picked: MaterialRange, at: InsertAt) =>
+  /** 把 picked 插到 at；画布还没定时 sourceSize 是这条素材的画面尺寸 */
+  const insertResult = (
+    picked: MaterialRange,
+    at: InsertAt,
+    sourceSize: { width: number; height: number } | undefined = size.data,
+  ) =>
     insertMaterial(
       draft,
       {
@@ -354,25 +381,42 @@ function EditorBody({
         duration: picked.endMs - picked.startMs,
         at,
       },
-      draft.canvas === null && size.data !== undefined
-        ? withSourceSize(context, picked.jobId, size.data)
+      draft.canvas === null && sourceSize !== undefined
+        ? withSourceSize(context, picked.jobId, sourceSize)
         : context,
     )
+  // 画面尺寸读到时已经过了几次渲染：用那时的草稿插
+  const insertResultRef = useRef(insertResult)
+  useEffect(() => {
+    insertResultRef.current = insertResult
+  })
+
   const insert = (at: InsertAt): boolean => {
-    if (range === null) return false
-    if (addBlocked !== undefined) {
-      notice(addBlocked)
+    if (addBlocked !== undefined || range === null) {
+      notice(addBlocked ?? '先在下方点一个镜头选中范围')
       return false
     }
-    return apply(insertResult(range, at))
+    if (draft.canvas !== null || size.data !== undefined) return apply(insertResult(range, at))
+    // 画面尺寸还在读：等读到再插，不让人重按
+    const picked = range
+    void queryClient.fetchQuery(videoSizeQuery(sizeUrl)).then(
+      (read) => apply(insertResultRef.current(picked, at, read)),
+      (error: unknown) => notice(errorMessageOf(error, '画面尺寸读取失败，无法加入成片')),
+    )
+    return true
   }
 
-  /** 拖着素材区选中的范围：落在成片轨上插到最近的切点 */
-  const materialPayload = (origin?: MaterialCarry['origin']): CarryPayload | undefined => {
-    if (range === null || rangeMaterial === undefined) return undefined
-    const picked = range
+  /** 拖着素材区选中的范围 picked：落在成片轨上插到最近的切点 */
+  const materialPayload = (
+    picked: MaterialRange,
+    origin?: MaterialCarry['origin'],
+  ): CarryPayload | undefined => {
+    const material = materials.byJob.get(picked.jobId)
+    if (material === undefined) return undefined
     const duration = picked.endMs - picked.startMs
-    const shot = shotNumberAt(rangeMaterial.url, (picked.startMs + picked.endMs) / 2, keyframes)
+    const shot = shotNumberOf((picked.startMs + picked.endMs) / 2, material.url, keyframes)
+    const blocked =
+      context.sources[picked.jobId] === undefined ? '正在读取素材时长，稍后再试' : undefined
     return {
       durationMs: duration,
       ghost:
@@ -385,14 +429,14 @@ function EditorBody({
                   <span className="wf-ghost-frames">
                     <Frames
                       part={{
-                        mediaUrl: rangeMaterial.url,
+                        mediaUrl: material.url,
                         start: picked.startMs / 1000,
                         end: picked.endMs / 1000,
                       }}
                     />
                   </span>
                   <span className="wf-clip-label">
-                    {takeLetterOf(rangeMaterial)}
+                    {takeLetterOf(material)}
                     {shot === undefined ? '' : ` · 镜头 ${shot}`} · {seconds(duration)} 秒
                   </span>
                 </>
@@ -400,11 +444,21 @@ function EditorBody({
             },
       attempt: (point) => {
         if (point.lane !== 'film') return undefined
-        if (addBlocked !== undefined) return { ok: false, reason: addBlocked }
+        if (blocked !== undefined) return { ok: false, reason: blocked }
         return attemptOf(insertResult(picked, { timeMs: point.timeMs }))
       },
       drop: (point) => point.lane === 'film' && insert({ timeMs: point.timeMs }),
     }
+  }
+
+  // 撤销、重做也是成片编辑：预览回到成片
+  const undo = () => {
+    leaveMaterial()
+    session.undo()
+  }
+  const redo = () => {
+    leaveMaterial()
+    session.redo()
   }
 
   const selectedId = selection !== null && 'id' in selection ? selection.id : undefined
@@ -473,7 +527,13 @@ function EditorBody({
   }
   useEffect(() => {
     keysRef.current = (event) => {
-      handleUndoShortcut(event, session)
+      handleUndoShortcut(event, session, leaveMaterial)
+      // 焦点不在任何控件上时（落在弹窗本身），Enter 把选区插到播放头处
+      if (event.key === 'Enter' && event.target === event.currentTarget) {
+        event.preventDefault()
+        insert({ timeMs: playhead })
+        return
+      }
       shortcut(event)
     }
     return () => {
@@ -650,7 +710,7 @@ function EditorBody({
   const clipLabel = (clip: VideoClip) => {
     const material = materials.byJob.get(clip.sourceJobId)
     if (material === undefined) return '素材不在了'
-    const shot = shotNumberAt(material.url, clip.playbackStart, keyframes)
+    const shot = shotNumberOf(clip.playbackStart, material.url, keyframes)
     return shot === undefined
       ? `${takeLetterOf(material)} · ${material.version}`
       : `${takeLetterOf(material)} · 镜头 ${shot}`
@@ -666,6 +726,19 @@ function EditorBody({
         {selectedVideo === undefined ? ' · 没有原声' : ''}
       </>
     )
+
+  // ---- 素材预览 ----
+  const viewedMaterial =
+    materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
+  const materialLabel = (material: Material, shown: MaterialRange) => {
+    const shot = shotNumberOf((shown.startMs + shown.endMs) / 2, material.url, keyframes)
+    return `素材 · ${material.groupLabel} · ${material.takeLabel}${shot === undefined ? '' : ` · 镜头 ${shot}`}`
+  }
+  const showMaterial = (shown: MaterialRange, show: MaterialView['show']) => {
+    previewRef.current?.pause()
+    setRange(shown)
+    setMaterialView({ range: shown, show })
+  }
 
   return (
     <>
@@ -736,6 +809,17 @@ function EditorBody({
           srcdoc={preview.kind === 'ready' ? preview.html : undefined}
           width={(draft.canvas ?? DEFAULT_CANVAS).width}
         />
+        {viewedMaterial === undefined || materialView === null ? null : (
+          <MaterialPreview
+            label={materialLabel(viewedMaterial, materialView.range)}
+            onNotice={notice}
+            onPlaying={setMaterialPlaying}
+            onTime={setMaterialMs}
+            timeMs={materialMs}
+            url={viewedMaterial.url}
+            view={materialView}
+          />
+        )}
         <div className="wf-timeline">
           <EditorToolbar
             beatBlocked={beatBlocked}
@@ -746,16 +830,16 @@ function EditorBody({
             onDelete={() => remove(selection)}
             onFit={() => setZoom(FIT_ZOOM)}
             onPlay={togglePlay}
-            onRedo={session.redo}
+            onRedo={redo}
             onSnap={() => setSnap((value) => !value)}
             onSplit={() => {
               if (apply(split) && split.ok) setSelection(null)
             }}
-            onUndo={session.undo}
+            onUndo={undo}
             onZoom={(direction) => setZoom(nextZoom(direction, zoom, scale.fitPps))}
             playBlocked={playBlocked}
             playheadMs={playhead}
-            playing={playing}
+            playing={playing || materialPlaying}
             snap={snap}
             splitBlocked={split.ok ? undefined : REFUSAL_TEXT[split.refusal]}
             totalMs={total}
@@ -808,6 +892,7 @@ function EditorBody({
             onClipClick={playClip}
             onSeek={seek}
             onSelect={(next) => {
+              leaveMaterial()
               setSelection(next)
               if (next === null) setPopoverId(null)
             }}
@@ -827,47 +912,49 @@ function EditorBody({
             tracksRef={tracksRef}
             urlOf={(sourceJobId) => materials.byJob.get(sourceJobId)?.url}
           />
-          {videos.isError ? (
-            <InlineAlert
-              action={{ label: '重试', onClick: () => void videos.refetch() }}
-              message={errorMessageOf(videos.error, '读取成片失败')}
-            />
-          ) : videos.isPending ? (
-            <p className="wf-panel-note" role="status">
-              正在读取成片…
-            </p>
-          ) : (
-            <MaterialArea
-              addBlocked={addBlocked}
-              group={group}
-              groups={materials.groups}
-              keyframes={keyframes}
-              onAdd={() => insert({ index: draft.layer0.length })}
-              onCarry={(carry) => {
-                const payload = carry === null ? undefined : materialPayload(carry.origin)
-                if (carry === null || payload === undefined) tracksRef.current?.cancel()
-                else tracksRef.current?.carry(carry.clientX, carry.clientY, payload)
-              }}
-              onDrop={(clientX, clientY) => {
-                const payload = materialPayload()
-                return (
-                  payload !== undefined &&
-                  (tracksRef.current?.release(clientX, clientY, payload) ?? false)
-                )
-              }}
-              onGroup={(id) => {
-                setGroupId(id)
-                setRange(null)
-              }}
-              onRange={setRange}
-              onVersion={(takeId, jobId) => {
-                setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
-                if (range?.takeId === takeId) setRange(null)
-              }}
-              range={range}
-              versionOf={versionOf}
-            />
-          )}
+          <MaterialArea
+            groups={materials.groups}
+            keyframes={keyframes}
+            onCarry={(carry) => {
+              const payload =
+                carry === null ? undefined : materialPayload(carry.range, carry.origin)
+              if (carry === null || payload === undefined) tracksRef.current?.cancel()
+              else tracksRef.current?.carry(carry.clientX, carry.clientY, payload)
+            }}
+            onDrop={(clientX, clientY, picked) => {
+              const payload = materialPayload(picked)
+              return (
+                payload !== undefined &&
+                (tracksRef.current?.release(clientX, clientY, payload) ?? false)
+              )
+            }}
+            onInsert={() => insert({ timeMs: playhead })}
+            onPick={(picked) => showMaterial(picked, 'play')}
+            onSelect={setRange}
+            onTrim={showMaterial}
+            onVersion={(takeId, jobId) => {
+              setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
+              if (range?.takeId !== takeId) return
+              setRange(null)
+              leaveMaterial()
+            }}
+            placeholder={
+              videos.isError ? (
+                <InlineAlert
+                  action={{ label: '重试', onClick: () => void videos.refetch() }}
+                  message={errorMessageOf(videos.error, '读取成片失败')}
+                />
+              ) : videos.isPending ? (
+                <p className="wf-panel-note" role="status">
+                  正在读取成片…
+                </p>
+              ) : undefined
+            }
+            previewMs={materialView === null ? undefined : materialMs}
+            range={range}
+            used={usedSpans(draft.layer0)}
+            versionOf={versionOf}
+          />
         </div>
       </div>
     </>

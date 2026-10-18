@@ -163,15 +163,18 @@ describe('整片编辑器', () => {
     expect(within(materials).getByText('生成 B')).toBeInTheDocument()
   })
 
-  it('点一个镜头再「加入成片」，成片轨多一段并自动保存', async () => {
+  it('点一个镜头预览放这个镜头，按 Enter 插到播放头处，成片轨多一段并自动保存', async () => {
     const user = userEvent.setup()
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
     await openEditor()
     const materials = await screen.findByRole('region', { name: '视频素材区' })
     await user.click(
       await within(materials).findByRole('button', { name: /生成 A 镜头 2，2\.0–4\.5 秒/ }),
     )
-    expect(within(materials).getByText('拖动两端调整范围 2.0–4.5 秒')).toBeInTheDocument()
-    await user.click(within(materials).getByRole('button', { name: '加入成片' }))
+    expect(screen.getByText('素材 · 镜头组 1 · 生成 A · 镜头 2')).toBeInTheDocument()
+    expect(play).toHaveBeenCalled()
+    await user.keyboard('{Enter}')
 
     expect(
       await within(filmLane()).findByRole('group', { name: '第 1 段 · A · 镜头 2，2.5 秒' }),
@@ -190,10 +193,14 @@ describe('整片编辑器', () => {
     expect(savedDraft()?.canvas).toEqual({ width: 720, height: 1280 })
   })
 
-  it('没选范围时「加入成片」说明原因', async () => {
+  it('没选范围时按 Enter 说明原因', async () => {
+    const user = userEvent.setup()
     await openEditor()
-    const add = await screen.findByRole('button', { name: '加入成片' })
-    expect(add).toHaveAttribute('aria-disabled', 'true')
+    const materials = await screen.findByRole('region', { name: '视频素材区' })
+    ;(await within(materials).findByRole('button', { name: /^生成 A 镜头 1，/ })).focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('先在下方点一个镜头选中范围')).toBeInTheDocument()
+    expect(within(filmLane()).queryByRole('group', { name: /^第 1 段/ })).toBeNull()
   })
 
   it('修剪、拆分、删除各记一步，可以逐步撤销', async () => {

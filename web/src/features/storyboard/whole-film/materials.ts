@@ -1,5 +1,8 @@
 import type { ConversationVideoGroup } from '../conversation-videos/video-groups'
+import type { SecondsRange } from '../editing/clip'
+import type { Edge } from '../editing/timeline-drag'
 import { labelLineage } from '../editing/version-lineage'
+import { MIN_CLIP_MS, type Layer0Clip } from './editing/draft'
 
 /** 视频素材区里的一版成片：出自哪个镜头组、哪条原作，叫什么版本。 */
 export type Material = {
@@ -28,6 +31,52 @@ export type MaterialGroup = {
   id: string
   label: string
   takes: readonly MaterialTake[]
+}
+
+/** 素材区里选中的一段：哪一版成片的哪个范围（素材时间，毫秒） */
+export type MaterialRange = { jobId: string; takeId: string; startMs: number; endMs: number }
+
+/** 把选区的一端挪 deltaMs：不出素材的头尾，选区至少留 MIN_CLIP_MS */
+export const trimRange = (
+  range: MaterialRange,
+  edge: Edge,
+  deltaMs: number,
+  durationMs: number,
+): MaterialRange =>
+  edge === 'start'
+    ? {
+        ...range,
+        startMs: Math.min(Math.max(0, range.startMs + deltaMs), range.endMs - MIN_CLIP_MS),
+      }
+    : {
+        ...range,
+        endMs: Math.max(Math.min(durationMs, range.endMs + deltaMs), range.startMs + MIN_CLIP_MS),
+      }
+
+/** 成片轨上的一段视频用了素材里的哪一段（毫秒） */
+export type UsedSpan = { clipId: string; startMs: number; endMs: number }
+
+/** 成片轨上每版成片已经用了哪些段，按成片轨上的先后，以 jobId 分 */
+export const usedSpans = (
+  layer0: readonly Layer0Clip[],
+): ReadonlyMap<string, readonly UsedSpan[]> => {
+  const used = new Map<string, UsedSpan[]>()
+  for (const clip of layer0) {
+    if (clip.type !== 'video') continue
+    const span = {
+      clipId: clip.id,
+      startMs: clip.playbackStart,
+      endMs: clip.playbackStart + clip.duration,
+    }
+    used.set(clip.sourceJobId, [...(used.get(clip.sourceJobId) ?? []), span])
+  }
+  return used
+}
+
+/** 素材里 seconds 这一刻落在第几个镜头（从 1 数）；不在任何镜头里时 undefined */
+export const shotAt = (shots: readonly SecondsRange[], seconds: number): number | undefined => {
+  const index = shots.findIndex((shot) => seconds >= shot.start - 0.001 && seconds < shot.end)
+  return index < 0 ? undefined : index + 1
 }
 
 export type MaterialCatalog = {

@@ -36,9 +36,11 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openWholeFilm(page, panel)
 
-  const materials = dialog.getByRole('region', { name: '视频素材区' })
+  const materials = dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  await materials.getByRole('button', { name: '加入成片' }).click()
+  await page.keyboard.press('Enter')
   const film = dialog.getByRole('group', { name: '成片画面轨' })
   const first = film.getByRole('group', { name: /^第 1 段/ })
   await expect(first).toBeVisible()
@@ -64,7 +66,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await saved
   for (const shot of [3, 4]) {
     await materials.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shot}，`) }).click()
-    await materials.getByRole('button', { name: '加入成片' }).click()
+    await page.keyboard.press('Enter')
   }
   await expect(film.getByRole('group', { name: /^第 4 段/ })).toBeVisible()
 
