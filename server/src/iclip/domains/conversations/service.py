@@ -728,7 +728,7 @@ class ConversationService:
     ) -> tuple[uuid.UUID, tuple[uuid.UUID, ...]]:
         """按当前草稿导出一条整片，返回导出 id 与用到的成片（去重，按第一次出现的先后）。
 
-        只有属主能导，口径同存草稿；``revision`` 不是存着的那一版是 409，画面轨没有视频是 422。"""
+        只有属主能导，口径同存草稿；``revision`` 不是存着的那一版是 409，画面轨是空的是 422。"""
 
         conversation = await self._workspace_writable(principal, conversation_id)
         exports = self._require_exports()
@@ -736,9 +736,9 @@ class ConversationService:
         if (found.revision if found is not None else 0) != revision:
             raise Conflict("整片草稿已经有更新的一版，重新读取后再导出")
         document = None if found is None else WholeFilmDocument.model_validate(found.document)
-        sources = () if document is None else document.video_sources()
-        if document is None or not sources:
-            raise ValidationFailed("画面轨里还没有视频，导不出整片")
+        if document is None or not document.layer0:
+            raise ValidationFailed("画面轨里还没有内容，导不出整片")
+        sources = document.video_sources()
         export_id = uuid.uuid4()
         await exports.start(export_id=export_id, conversation_id=conversation.id, document=document)
         return export_id, sources

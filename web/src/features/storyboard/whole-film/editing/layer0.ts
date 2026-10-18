@@ -1,77 +1,49 @@
 import type { EditContext } from './context'
 import {
   MAX_FILM_MS,
-  MAX_VIDEO_CLIPS,
   MAX_VOLUME,
   MIN_CLIP_MS,
+  type ComponentClip,
+  type ComponentVariables,
   type Layer0Clip,
   type VideoClip,
   type WholeFilmDraft,
 } from './draft'
 import { done, refuse, type EditResult } from './result'
 import {
-  checkTransitions,
   clamp,
-  endCard,
-  filmDuration,
   insertAt,
+  insertIndexAt,
+  layer0End,
   moveStartMs,
   nextId,
   normalize,
   resizeMs,
   sourceOf,
-  videoClips,
 } from './timeline'
 
-/** 视频段在第 0 层里可放的下标范围：片头之后、片尾之前 */
-const videoSlots = (draft: WholeFilmDraft) => {
-  const first = endCard(draft, 'intro') ? 1 : 0
-  const last = draft.layer0.length - (endCard(draft, 'outro') ? 1 : 0)
-  return { first, last }
-}
+// 第 0 层（成片轨）是视频段与组件段的同一个列表，先后不限，始终从 0 起首尾相接。
 
 const replaceClip = (draft: WholeFilmDraft, clip: Layer0Clip): WholeFilmDraft => ({
   ...draft,
   layer0: draft.layer0.map((c) => (c.id === clip.id ? clip : c)),
 })
 
-const splitInDraft = (draft: WholeFilmDraft, clip: VideoClip, offsetMs: number) => {
-  const tail: VideoClip = {
-    ...clip,
-    id: nextId(draft, 'v'),
-    start: clip.start + offsetMs,
-    duration: clip.duration - offsetMs,
-    playbackStart: clip.playbackStart + offsetMs,
-  }
-  const index = draft.layer0.indexOf(clip)
-  return {
-    tailIndex: index + 1,
-    draft: {
-      ...draft,
-      layer0: [
-        ...draft.layer0.slice(0, index),
-        { ...clip, duration: offsetMs },
-        tail,
-        ...draft.layer0.slice(index + 1),
-      ],
-      // 原段后面的切点现在在后半段后面
-      transitions: draft.transitions.map((t) =>
-        t.afterClipId === clip.id ? { ...t, afterClipId: tail.id } : t,
-      ),
-    },
-  }
+/** 插到第 index 段之前（等于段数时插到最后），或插到离 timeMs 最近的切点 */
+export type InsertAt = { index: number } | { timeMs: number }
+
+const indexAt = (draft: WholeFilmDraft, at: InsertAt) =>
+  'index' in at ? clamp(at.index, 0, draft.layer0.length) : insertIndexAt(draft.layer0, at.timeMs)
+
+/** 放进第 0 层，后面的段整体后移；整片超过总长上限时拒绝，不缩短 */
+const insertClip = (draft: WholeFilmDraft, clip: Layer0Clip, at: InsertAt): EditResult => {
+  if (clip.duration < MIN_CLIP_MS) return refuse('too-short')
+  // 特效块本来就不晚于上限结束，成片轨不超过上限，整片也就不超过
+  if (layer0End(draft) + clip.duration > MAX_FILM_MS) return refuse('film-too-long')
+  return done(normalize({ ...draft, layer0: insertAt(draft.layer0, indexAt(draft, at), clip) }))
 }
 
-/** 拆开后两段都不短于最短时长 */
-const canSplitAt = (clip: VideoClip, timeMs: number) =>
-  timeMs >= clip.start + MIN_CLIP_MS && timeMs <= clip.start + clip.duration - MIN_CLIP_MS
-
-export type InsertAt = { videoIndex: number } | { timeMs: number }
-
-/**
- * 把一段素材加入成片：按视频段序号插入，或插到播放头处（播放头在段中间时先拆开这段）。
- * 插入点总在片头之后、片尾之前。
- */
+/** 把一段素材加入成片；第一段视频定下画布尺寸 */
 export const insertMaterial = (
   draft: WholeFilmDraft,
   args: { sourceJobId: string; playbackStart: number; duration: number; at: InsertAt },
@@ -79,35 +51,11 @@ export const insertMaterial = (
 ): EditResult => {
   const source = context.sources[args.sourceJobId]
   if (!source) return refuse('unknown-source')
-  if (args.duration < MIN_CLIP_MS) return refuse('too-short')
   if (args.playbackStart < 0 || args.playbackStart + args.duration > source.durationMs) {
     return refuse('outside-source')
   }
-  if (filmDuration(draft) + args.duration > MAX_FILM_MS) return refuse('film-too-long')
-
-  let base = draft
-  let index: number
-  const { first, last } = videoSlots(draft)
-  if ('videoIndex' in args.at) {
-    index = clamp(first + args.at.videoIndex, first, last)
-  } else {
-    const { timeMs } = args.at
-    const under = draft.layer0.find((c) => timeMs >= c.start && timeMs < c.start + c.duration)
-    if (under?.type === 'video' && canSplitAt(under, timeMs)) {
-      const split = splitInDraft(draft, under, timeMs - under.start)
-      base = split.draft
-      index = split.tailIndex
-    } else if (under?.type === 'video') {
-      const atStart = timeMs - under.start < under.start + under.duration - timeMs
-      index = draft.layer0.indexOf(under) + (atStart ? 0 : 1)
-    } else {
-      index = under?.type === 'component' && under.role === 'intro' ? first : last
-    }
-  }
-  if (videoClips(base).length + 1 > MAX_VIDEO_CLIPS) return refuse('too-many-clips')
-
   const clip: VideoClip = {
-    id: nextId(base, 'v'),
+    id: nextId(draft, 'v'),
     type: 'video',
     start: 0,
     duration: args.duration,
@@ -115,47 +63,55 @@ export const insertMaterial = (
     sourceJobId: args.sourceJobId,
     volume: 1,
   }
-  return checkTransitions(
-    normalize({
-      ...base,
-      canvas: base.canvas ?? { width: source.width, height: source.height },
-      layer0: insertAt(base.layer0, index, clip),
-    }),
-    context,
-  )
-}
-
-/** 拖动一段视频调整顺序：按 Studio 的拖动换算出落点，越过哪段的中点就排到它的哪一侧 */
-export const moveClip = (
-  draft: WholeFilmDraft,
-  args: { clipId: string; deltaMs: number },
-  context: EditContext,
-): EditResult => {
-  const clip = draft.layer0.find((c) => c.id === args.clipId)
-  if (!clip) return refuse('unknown-clip')
-  if (clip.type !== 'video') return refuse('not-a-video')
-  const intro = endCard(draft, 'intro')
-  const outro = endCard(draft, 'outro')
-  const start = moveStartMs(clip, args.deltaMs, {
-    minStart: intro ? intro.duration : 0,
-    maxStart: (outro ? outro.start : filmDuration(draft)) - clip.duration,
-  })
-  const center = start + clip.duration / 2
-  const videos = videoClips(draft)
-  const videoIndex = videos.filter(
-    (other) => other.id !== clip.id && other.start + other.duration / 2 < center,
-  ).length
-  if (videoIndex === videos.indexOf(clip)) return done(draft)
-  const without = draft.layer0.filter((c) => c.id !== clip.id)
-  return checkTransitions(
-    normalize({ ...draft, layer0: insertAt(without, (intro ? 1 : 0) + videoIndex, clip) }),
-    context,
+  return insertClip(
+    { ...draft, canvas: draft.canvas ?? { width: source.width, height: source.height } },
+    clip,
+    args.at,
   )
 }
 
 /**
- * 修剪一段的一端，算法用 Studio 的修剪。修开头时切点不动、改素材入点；之后整轨收紧，后面的段跟着移。
- * 视频段不超出素材，任何一段都不短于最短时长，整片不超过总长上限；片头只能拖右端，片尾只能拖左端。
+ * 把组件作为一段放进成片轨，与视频段同等占时间。variables 是写进草稿的可填项，没写的项合成时取
+ * 组件自己的默认值。
+ */
+export const insertComponent = (
+  draft: WholeFilmDraft,
+  args: { component: string; duration: number; variables: ComponentVariables; at: InsertAt },
+): EditResult => {
+  const clip: ComponentClip = {
+    id: nextId(draft, 'c'),
+    type: 'component',
+    start: 0,
+    duration: args.duration,
+    playbackStart: 0,
+    component: args.component,
+    variables: args.variables,
+  }
+  return insertClip(draft, clip, args.at)
+}
+
+/** 拖动一段调整顺序：按 Studio 的拖动换算出落点，越过哪段的中点就排到它的哪一侧 */
+export const moveClip = (
+  draft: WholeFilmDraft,
+  args: { clipId: string; deltaMs: number },
+): EditResult => {
+  const clip = draft.layer0.find((c) => c.id === args.clipId)
+  if (!clip) return refuse('unknown-clip')
+  const start = moveStartMs(clip, args.deltaMs, {
+    minStart: 0,
+    maxStart: layer0End(draft) - clip.duration,
+  })
+  const center = start + clip.duration / 2
+  const others = draft.layer0.filter((c) => c.id !== clip.id)
+  const index = others.filter((other) => other.start + other.duration / 2 < center).length
+  if (index === draft.layer0.indexOf(clip)) return done(draft)
+  return done(normalize({ ...draft, layer0: insertAt(others, index, clip) }))
+}
+
+/**
+ * 修剪一段的一端，算法用 Studio 的修剪。修开头时切点不动、入点后移（组件段从组件自己时间里更晚处
+ * 起播）；之后整轨收紧，后面的段跟着移。视频段不超出素材，任何一段都不短于最短时长，整片拉长到
+ * 总长上限就停住。
  */
 export const trimClip = (
   draft: WholeFilmDraft,
@@ -164,84 +120,82 @@ export const trimClip = (
 ): EditResult => {
   const clip = draft.layer0.find((c) => c.id === args.clipId)
   if (!clip) return refuse('unknown-clip')
-  if (clip.type === 'component' && (clip.role === 'intro') !== (args.edge === 'end')) {
-    return refuse('edge-not-editable')
+  const room = Math.max(0, MAX_FILM_MS - layer0End(draft))
+  const timing = { start: clip.start, duration: clip.duration, playbackStart: clip.playbackStart }
+  const trimmed =
+    args.edge === 'end'
+      ? resizeMs(timing, 'end', args.deltaMs, {
+          minStart: clip.start,
+          maxEnd:
+            clip.start +
+            Math.min(
+              clip.type === 'video'
+                ? sourceOf(context, clip.sourceJobId).durationMs - clip.playbackStart
+                : Number.POSITIVE_INFINITY,
+              clip.duration + room,
+            ),
+        })
+      : resizeMs(timing, 'start', args.deltaMs, {
+          minStart: clip.start - room,
+          maxEnd: clip.start + clip.duration,
+        })
+  if (trimmed.duration === clip.duration && trimmed.playbackStart === clip.playbackStart) {
+    return done(draft)
   }
-  const room = Math.max(0, MAX_FILM_MS - filmDuration(draft))
-  const timing =
-    clip.type === 'video'
-      ? { start: clip.start, duration: clip.duration, playbackStart: clip.playbackStart }
-      : { start: clip.start, duration: clip.duration }
-  let trimmed: { duration: number; playbackStart?: number }
-  if (args.edge === 'end') {
-    const sourceRoom =
-      clip.type === 'video'
-        ? sourceOf(context, clip.sourceJobId).durationMs - clip.playbackStart
-        : Number.POSITIVE_INFINITY
-    const maxEnd = clip.start + Math.min(sourceRoom, clip.duration + room)
-    trimmed = resizeMs(timing, 'end', args.deltaMs, { minStart: clip.start, maxEnd })
-  } else {
-    trimmed = resizeMs(timing, 'start', args.deltaMs, {
-      minStart: clip.start - room,
-      maxEnd: clip.start + clip.duration,
-    })
-  }
-  if (clip.type === 'video') {
-    const playbackStart = trimmed.playbackStart ?? clip.playbackStart
-    if (trimmed.duration === clip.duration && playbackStart === clip.playbackStart) {
-      return done(draft)
-    }
-    return checkTransitions(
-      normalize(replaceClip(draft, { ...clip, duration: trimmed.duration, playbackStart })),
-      context,
-    )
-  }
-  if (trimmed.duration === clip.duration) return done(draft)
-  return checkTransitions(
-    normalize(replaceClip(draft, { ...clip, duration: trimmed.duration })),
-    context,
+  return done(
+    normalize(
+      replaceClip(draft, {
+        ...clip,
+        duration: trimmed.duration,
+        playbackStart: trimmed.playbackStart,
+      }),
+    ),
   )
 }
 
-/** 在 timeMs 处把视频段拆成两段；优先拆 clipId 指定的段，否则拆播放头下的段 */
+/** 拆开后两段都不短于最短时长 */
+const canSplitAt = (clip: Layer0Clip, timeMs: number) =>
+  timeMs >= clip.start + MIN_CLIP_MS && timeMs <= clip.start + clip.duration - MIN_CLIP_MS
+
+/** 在 timeMs 处把一段拆成两段，后半段接着前半段的入点往后播；优先拆 clipId 指定的段，否则拆播放头下的段 */
 export const splitClip = (
   draft: WholeFilmDraft,
   args: { timeMs: number; clipId?: string },
-  context: EditContext,
 ): EditResult => {
   const preferred = draft.layer0.find((c) => c.id === args.clipId)
   const target = [preferred, ...draft.layer0].find(
-    (clip): clip is VideoClip => clip?.type === 'video' && canSplitAt(clip, args.timeMs),
+    (clip): clip is Layer0Clip => clip !== undefined && canSplitAt(clip, args.timeMs),
   )
   if (!target) return refuse('nothing-to-split')
-  if (videoClips(draft).length + 1 > MAX_VIDEO_CLIPS) return refuse('too-many-clips')
-  return checkTransitions(
-    normalize(splitInDraft(draft, target, args.timeMs - target.start).draft),
-    context,
-  )
-}
-
-/**
- * 删掉第 0 层的一段（视频段、片头或片尾）；挂在它后面的转场一起删。它前面切点上的转场换到新的
- * 切点上，放不下时拒绝。
- */
-export const deleteClip = (
-  draft: WholeFilmDraft,
-  args: { clipId: string },
-  context: EditContext,
-): EditResult => {
-  if (!draft.layer0.some((c) => c.id === args.clipId)) return refuse('unknown-clip')
-  return checkTransitions(
+  const offset = args.timeMs - target.start
+  const tail: Layer0Clip = {
+    ...target,
+    id: nextId(draft, target.type === 'video' ? 'v' : 'c'),
+    start: target.start + offset,
+    duration: target.duration - offset,
+    playbackStart: target.playbackStart + offset,
+  }
+  const index = draft.layer0.indexOf(target)
+  return done(
     normalize({
       ...draft,
-      layer0: draft.layer0.filter((c) => c.id !== args.clipId),
-      transitions: draft.transitions.filter((t) => t.afterClipId !== args.clipId),
+      layer0: [
+        ...draft.layer0.slice(0, index),
+        { ...target, duration: offset },
+        tail,
+        ...draft.layer0.slice(index + 1),
+      ],
     }),
-    context,
   )
 }
 
-/** 一段视频的原声音量，收进 0–2 */
+/** 删掉第 0 层的一段，后面的段跟着前移 */
+export const deleteClip = (draft: WholeFilmDraft, args: { clipId: string }): EditResult => {
+  if (!draft.layer0.some((c) => c.id === args.clipId)) return refuse('unknown-clip')
+  return done(normalize({ ...draft, layer0: draft.layer0.filter((c) => c.id !== args.clipId) }))
+}
+
+/** 一段视频的原声音量，收进 0 到上限 */
 export const setClipVolume = (
   draft: WholeFilmDraft,
   args: { clipId: string; volume: number },

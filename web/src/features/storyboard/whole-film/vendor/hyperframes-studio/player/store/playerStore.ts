@@ -9,4 +9,5 @@ export interface TimelineElement {
   key?: string;
   start: number;
   duration: number;
+  track: number;
 }

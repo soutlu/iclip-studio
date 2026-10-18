@@ -9724,7 +9724,7 @@
       },
       "WholeFilmComponentClip": {
         "additionalProperties": false,
-        "description": "画面轨上的片头或片尾，是组件库里的一个组件。",
+        "description": "画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。",
         "properties": {
           "component": {
             "maxLength": 200,
@@ -9743,13 +9743,10 @@
             "title": "Id",
             "type": "string"
           },
-          "role": {
-            "enum": [
-              "intro",
-              "outro"
-            ],
-            "title": "Role",
-            "type": "string"
+          "playbackStart": {
+            "minimum": 0.0,
+            "title": "Playbackstart",
+            "type": "integer"
           },
           "start": {
             "minimum": 0.0,
@@ -9791,9 +9788,9 @@
         "required": [
           "id",
           "type",
-          "role",
           "start",
           "duration",
+          "playbackStart",
           "component",
           "variables"
         ],
@@ -9835,7 +9832,7 @@
                 }
               ]
             },
-            "maxItems": 102,
+            "maxItems": 1200,
             "title": "Layer0",
             "type": "array"
           },
@@ -9853,23 +9850,14 @@
             "items": {
               "$ref": "#/components/schemas/WholeFilmOverlay"
             },
-            "maxItems": 50,
+            "maxItems": 1200,
             "title": "Overlays",
-            "type": "array"
-          },
-          "transitions": {
-            "items": {
-              "$ref": "#/components/schemas/WholeFilmTransition"
-            },
-            "maxItems": 101,
-            "title": "Transitions",
             "type": "array"
           }
         },
         "required": [
           "canvas",
           "layer0",
-          "transitions",
           "captions",
           "music",
           "overlays"
@@ -10108,7 +10096,7 @@
             "type": "integer"
           },
           "volume": {
-            "maximum": 2.0,
+            "maximum": 3.981072,
             "minimum": 0.0,
             "title": "Volume",
             "type": "number"
@@ -10124,7 +10112,7 @@
       },
       "WholeFilmOverlay": {
         "additionalProperties": false,
-        "description": "包装层上的一个组件，按整片时间放在 ``[start, start + duration)``。",
+        "description": "特效轨上的一个组件，按整片时间放在 ``[start, start + duration)``，从组件自己时间里的\n``playbackStart`` 起播。\n\n同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块\n之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。",
         "properties": {
           "component": {
             "maxLength": 200,
@@ -10143,9 +10131,19 @@
             "title": "Id",
             "type": "string"
           },
+          "playbackStart": {
+            "minimum": 0.0,
+            "title": "Playbackstart",
+            "type": "integer"
+          },
           "start": {
             "minimum": 0.0,
             "title": "Start",
+            "type": "integer"
+          },
+          "track": {
+            "minimum": 0.0,
+            "title": "Track",
             "type": "integer"
           },
           "variables": {
@@ -10173,6 +10171,11 @@
             },
             "title": "Variables",
             "type": "object"
+          },
+          "zIndex": {
+            "minimum": 0.0,
+            "title": "Zindex",
+            "type": "integer"
           }
         },
         "required": [
@@ -10180,73 +10183,12 @@
           "component",
           "start",
           "duration",
+          "playbackStart",
+          "track",
+          "zIndex",
           "variables"
         ],
         "title": "WholeFilmOverlay",
-        "type": "object"
-      },
-      "WholeFilmTransition": {
-        "additionalProperties": false,
-        "description": "``afterClipId`` 那一段与下一段之间的转场。",
-        "properties": {
-          "afterClipId": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Afterclipid",
-            "type": "string"
-          },
-          "component": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Component",
-            "type": "string"
-          },
-          "duration": {
-            "minimum": 100.0,
-            "title": "Duration",
-            "type": "integer"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "variables": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "maxLength": 500,
-                  "type": "string"
-                }
-              ]
-            },
-            "maxProperties": 50,
-            "propertyNames": {
-              "maxLength": 64,
-              "minLength": 1
-            },
-            "title": "Variables",
-            "type": "object"
-          }
-        },
-        "required": [
-          "id",
-          "afterClipId",
-          "component",
-          "duration",
-          "variables"
-        ],
-        "title": "WholeFilmTransition",
         "type": "object"
       },
       "WholeFilmVideoClip": {
@@ -10285,7 +10227,7 @@
             "type": "string"
           },
           "volume": {
-            "maximum": 2.0,
+            "maximum": 3.981072,
             "minimum": 0.0,
             "title": "Volume",
             "type": "number"

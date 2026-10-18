@@ -6,33 +6,33 @@ import { DRAG_THRESHOLD, releasePointer, useClickAfterDrag } from '../editing/ti
 import {
   ALL_CATEGORIES,
   CATEGORY_ICON,
-  matchesFilter,
-  PLACEMENT_LABEL,
-  SHOW_ALL,
+  defaultLaneLabel,
+  matchesCategory,
   sortedItems,
   thumbnailOf,
   type CatalogItem,
   type ComponentCatalog,
-  type ComponentFilter,
 } from './component-catalog'
 import type { WholeFilmDraft } from './editing/draft'
-import { endCard } from './editing/timeline'
 
 type ComponentsPanelProps = {
   catalog: ComponentCatalog
   draft: WholeFilmDraft
-  filter: ComponentFilter
-  onFilter: (filter: ComponentFilter) => void
-  /** 点卡片：按组件自己的位置放进成片 */
+  /** 筛哪个分类；{@link ALL_CATEGORIES} 是全部 */
+  category: string
+  onCategory: (category: string) => void
+  /** 点卡片：按组件的默认去处放进成片 */
   onUse: (item: CatalogItem) => void
   /** 拖到成片区某处松手 */
   onDrop: (item: CatalogItem, clientX: number, clientY: number) => void
 }
 
-/** 这个组件在成片里正用作什么（片头、片尾、字幕样式）；包装与转场可以放多个，不标 */
+/** 这个组件在成片里正用在哪（成片轨、包装轨、字幕样式） */
 const usesOf = (item: CatalogItem, draft: WholeFilmDraft): string[] => [
-  ...(endCard(draft, 'intro')?.component === item.name ? ['片头'] : []),
-  ...(endCard(draft, 'outro')?.component === item.name ? ['片尾'] : []),
+  ...(draft.layer0.some((clip) => clip.type === 'component' && clip.component === item.name)
+    ? ['成片轨']
+    : []),
+  ...(draft.overlays.some((overlay) => overlay.component === item.name) ? ['包装轨'] : []),
   ...(draft.captions.component === item.name ? ['字幕'] : []),
 ]
 
@@ -40,8 +40,8 @@ const usesOf = (item: CatalogItem, draft: WholeFilmDraft): string[] => [
 export function ComponentsPanel({
   catalog,
   draft,
-  filter,
-  onFilter,
+  category,
+  onCategory,
   onUse,
   onDrop,
 }: ComponentsPanelProps) {
@@ -49,17 +49,17 @@ export function ComponentsPanel({
   const counts = new Map<string, number>()
   for (const item of items) counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
   const categories = catalog.categories.filter((item) => counts.has(item.id))
-  const shown = items.filter((item) => matchesFilter(item, filter))
+  const shown = items.filter((item) => matchesCategory(item, category))
   return (
     <div className="wf-components">
       <ChipGroup
         aria-label="组件分类"
         className="wf-chips"
         onValueChange={(value) => {
-          if (value !== '') onFilter({ kind: 'category', id: value })
+          if (value !== '') onCategory(value)
         }}
         type="single"
-        value={filter.kind === 'category' ? filter.id : ''}
+        value={category}
       >
         <FilterChip className="wf-chip" value={ALL_CATEGORIES}>
           全部<span>{items.length}</span>
@@ -71,16 +71,6 @@ export function ComponentsPanel({
           </FilterChip>
         ))}
       </ChipGroup>
-      {filter.kind === 'placement' ? (
-        <p className="wf-component-filter">
-          <span>
-            只看{PLACEMENT_LABEL[filter.placement]}组件 · {shown.length} 个
-          </span>
-          <button className="ui-state ui-focus" onClick={() => onFilter(SHOW_ALL)} type="button">
-            看全部
-          </button>
-        </p>
-      ) : null}
       <ul aria-label="组件" className="wf-component-list">
         {shown.map((item) => (
           <li key={item.name}>
@@ -144,7 +134,7 @@ function ComponentCard({ item, uses, onUse, onDrop }: CardProps) {
 
   return (
     <button
-      aria-label={`${item.title}，${PLACEMENT_LABEL[item.placement]}：${item.description}`}
+      aria-label={`${item.title}，${defaultLaneLabel(item)}：${item.description}`}
       aria-pressed={uses.length > 0}
       className={cn('wf-component ui-state ui-focus', lifting && 'is-lifting')}
       onClick={() => {
@@ -170,7 +160,7 @@ function ComponentCard({ item, uses, onUse, onDrop }: CardProps) {
         <span className="wf-component-name">
           <b>{item.title}</b>
           <span className="wf-component-place">
-            {uses.length > 0 ? `${uses.join('、')}在用` : PLACEMENT_LABEL[item.placement]}
+            {uses.length > 0 ? `${uses.join('、')}在用` : defaultLaneLabel(item)}
           </span>
         </span>
         <span className="wf-component-desc">{item.description}</span>

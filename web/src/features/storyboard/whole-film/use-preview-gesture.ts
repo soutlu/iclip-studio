@@ -6,7 +6,9 @@ import type { EditResult } from './editing/result'
 type Gesture = {
   pointerId: number
   originX: number
-  compute: (deltaPx: number) => EditResult
+  originY: number
+  /** 横向的累计位移，与指针现在的纵坐标（换行的拖动按它算落在哪一行） */
+  compute: (deltaPx: number, clientY: number) => EditResult
   moved: boolean
   last: EditResult | undefined
 }
@@ -25,6 +27,7 @@ export function usePreviewGesture(onCommit: (result: EditResult) => void) {
     gestureRef.current = {
       pointerId: event.pointerId,
       originX: event.clientX,
+      originY: event.clientY,
       compute,
       moved: false,
       last: undefined,
@@ -35,9 +38,10 @@ export function usePreviewGesture(onCommit: (result: EditResult) => void) {
     const gesture = gestureRef.current
     if (gesture === null || gesture.pointerId !== event.pointerId) return
     const deltaPx = event.clientX - gesture.originX
-    if (!gesture.moved && Math.abs(deltaPx) <= DRAG_THRESHOLD) return
+    const deltaY = event.clientY - gesture.originY
+    if (!gesture.moved && Math.max(Math.abs(deltaPx), Math.abs(deltaY)) <= DRAG_THRESHOLD) return
     gesture.moved = true
-    gesture.last = gesture.compute(deltaPx)
+    gesture.last = gesture.compute(deltaPx, event.clientY)
     setPreview(gesture.last.ok ? gesture.last.draft : null)
   }
 

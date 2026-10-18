@@ -2,60 +2,43 @@ import {
   resolveTimelineMove,
   resolveTimelineResize,
 } from '../vendor/hyperframes-studio/player/components/timelineEditing'
-import { transitionWindow } from '../composition/build'
 import { resolveAllTrackGaps } from '../vendor/hyperframes-studio/player/components/timelineGaps'
 import type { EditContext, MusicMedia, SourceMedia } from './context'
-import {
-  MIN_CLIP_MS,
-  type ComponentClip,
-  type EndCardRole,
-  type Layer0Clip,
-  type OverlayClip,
-  type TransitionClip,
-  type VideoClip,
-  type WholeFilmDraft,
-} from './draft'
-import { done, refuse, type EditResult } from './result'
+import { MIN_CLIP_MS, type Layer0Clip, type WholeFilmDraft } from './draft'
 
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max)
 
-/** 整片时长：第 0 层各段时长之和 */
-export const filmDuration = (draft: Pick<WholeFilmDraft, 'layer0'>): number =>
+/** 成片轨（第 0 层）的结尾：各段时长之和 */
+export const layer0End = (draft: Pick<WholeFilmDraft, 'layer0'>): number =>
   draft.layer0.reduce((sum, clip) => sum + clip.duration, 0)
 
-export const videoClips = (draft: Pick<WholeFilmDraft, 'layer0'>): VideoClip[] =>
-  draft.layer0.filter((clip): clip is VideoClip => clip.type === 'video')
+/**
+ * 整片时长：同 HyperFrames，所有轨上内容的最远结束，即成片轨的结尾与特效块最晚的结尾里大的那个；
+ * 特效块超出成片轨的部分叠在空画面上照样渲染，音乐也铺到这里。
+ */
+export const filmDuration = (draft: Pick<WholeFilmDraft, 'layer0' | 'overlays'>): number =>
+  Math.max(layer0End(draft), ...draft.overlays.map((overlay) => overlay.start + overlay.duration))
 
-export const endCard = (
-  draft: Pick<WholeFilmDraft, 'layer0'>,
-  role: EndCardRole,
-): ComponentClip | undefined =>
-  draft.layer0.find(
-    (clip): clip is ComponentClip => clip.type === 'component' && clip.role === role,
-  )
-
-export type Cut = {
-  afterClipId: string
-  beforeClipId: string
-  timeMs: number
-  transition: TransitionClip | null
-}
+export type Cut = { afterClipId: string; beforeClipId: string; timeMs: number }
 
 /** 第 0 层相邻两段之间的切点，按时间先后 */
-export const cutsOf = (draft: Pick<WholeFilmDraft, 'layer0' | 'transitions'>): Cut[] => {
+export const cutsOf = (draft: Pick<WholeFilmDraft, 'layer0'>): Cut[] => {
   const cuts: Cut[] = []
   draft.layer0.forEach((clip, index) => {
     const next = draft.layer0[index + 1]
-    if (!next) return
-    cuts.push({
-      afterClipId: clip.id,
-      beforeClipId: next.id,
-      timeMs: next.start,
-      transition: draft.transitions.find((t) => t.afterClipId === clip.id) ?? null,
-    })
+    if (next) cuts.push({ afterClipId: clip.id, beforeClipId: next.id, timeMs: next.start })
   })
   return cuts
+}
+
+/**
+ * 离 timeMs 最近的插入点（插在返回的那一段之前；等于段数时插到最后）：落在哪段的中点之前就插在
+ * 那段前面，所以只会插在切点或两端，不会把段拆开。
+ */
+export const insertIndexAt = (layer0: readonly Layer0Clip[], timeMs: number): number => {
+  const index = layer0.findIndex((clip) => clip.start + clip.duration / 2 > timeMs)
+  return index < 0 ? layer0.length : index
 }
 
 /** 上下文必须带齐草稿引用到的素材；缺了是调用方的错 */
@@ -72,9 +55,9 @@ export const musicOf = (context: EditContext, jobId: string): MusicMedia => {
 }
 
 /** 新片段的 id：同前缀里最大的序号加一，同一份草稿总得到同一个结果 */
-export const nextId = (draft: WholeFilmDraft, prefix: 'v' | 'c' | 't' | 'o'): string => {
+export const nextId = (draft: WholeFilmDraft, prefix: 'v' | 'c' | 'o'): string => {
   let max = 0
-  for (const { id } of [...draft.layer0, ...draft.transitions, ...draft.overlays]) {
+  for (const { id } of [...draft.layer0, ...draft.overlays]) {
     if (!id.startsWith(prefix)) continue
     const n = Number(id.slice(prefix.length))
     if (Number.isInteger(n) && n > max) max = n
@@ -87,8 +70,9 @@ export const nextId = (draft: WholeFilmDraft, prefix: 'v' | 'c' | 't' | 'o'): st
 // 毫秒值拉偏；结果再取整数毫秒。
 const MS_GESTURE = { originClientX: 0, pixelsPerSecond: 1 } as const
 
-type ResizeClip = { start: number; duration: number; playbackStart?: number }
+type ResizeClip = { start: number; duration: number; playbackStart: number }
 
+/** 修剪一端，算法用 Studio 的修剪：修开头时入点跟着前后移，入点不小于 0 */
 export const resizeMs = (
   clip: ResizeClip,
   edge: 'start' | 'end',
@@ -103,7 +87,7 @@ export const resizeMs = (
   return {
     start: Math.round(next.start),
     duration: Math.round(next.duration),
-    ...(next.playbackStart === undefined ? {} : { playbackStart: Math.round(next.playbackStart) }),
+    playbackStart: Math.round(next.playbackStart ?? clip.playbackStart),
   }
 }
 
@@ -145,58 +129,16 @@ const compactLayer0 = (layer0: Layer0Clip[]): Layer0Clip[] => {
       throw new Error('第 0 层片段的开始时间没有按顺序递增')
     }
   })
-  const shifts = new Map(resolveAllTrackGaps(layer0).map((s) => [s.key, Math.round(s.newStart)]))
+  const lane = layer0.map((clip) => ({ ...clip, track: 0 }))
+  const shifts = new Map(resolveAllTrackGaps(lane).map((s) => [s.key, Math.round(s.newStart)]))
   return layer0.map((clip) => {
     const start = shifts.get(clip.id)
     return start === undefined ? clip : { ...clip, start }
   })
 }
 
-/** 转场跟着 afterClipId 那一段；那一段没了或成了最后一段（切点没了）就去掉 */
-const keepCutTransitions = (
-  layer0: Layer0Clip[],
-  transitions: TransitionClip[],
-): TransitionClip[] => {
-  const kept: TransitionClip[] = []
-  for (const transition of transitions) {
-    const index = layer0.findIndex((clip) => clip.id === transition.afterClipId)
-    if (index < 0 || index === layer0.length - 1) continue
-    if (kept.some((t) => t.afterClipId === transition.afterClipId)) continue
-    kept.push(transition)
-  }
-  return kept
-}
-
 /**
- * 每个转场都落在切点前后两段之内（规则同合成构建的 `transitionWindow`）；目录里没有的转场不查。
- * 第 0 层的改动让哪个转场放不下，这次改动就被拒。
- */
-export const checkTransitions = (draft: WholeFilmDraft, context: EditContext): EditResult => {
-  for (const transition of draft.transitions) {
-    const spec = context.transitions[transition.component]
-    if (spec === undefined) continue
-    const window = transitionWindow(draft, transition, {
-      cutAt: spec.cutAt,
-      durationMs: transition.duration,
-    })
-    if (window?.fits !== true) return refuse('transition-does-not-fit')
-  }
-  return done(draft)
-}
-
-/** 包装不跟随第 0 层；整片变短时截到片尾，剩不到最短时长的去掉 */
-const fitOverlays = (overlays: OverlayClip[], total: number): OverlayClip[] =>
-  [...overlays]
-    .sort((a, b) => a.start - b.start)
-    .filter((overlay) => overlay.start + MIN_CLIP_MS <= total)
-    .map((overlay) =>
-      overlay.start + overlay.duration > total
-        ? { ...overlay, duration: total - overlay.start }
-        : overlay,
-    )
-
-/**
- * 每次改动后的收紧：第 0 层压实，转场、包装按新的第 0 层修正；没有视频段时画布清空。
+ * 第 0 层每次改动后的收紧：整轨压实；没有视频段时画布清空。特效块不跟随第 0 层。
  * 画布在第一段视频加入时定下，之后不随调序、删段改变。
  */
 export const normalize = (draft: WholeFilmDraft): WholeFilmDraft => {
@@ -205,7 +147,5 @@ export const normalize = (draft: WholeFilmDraft): WholeFilmDraft => {
     ...draft,
     canvas: layer0.some((clip) => clip.type === 'video') ? draft.canvas : null,
     layer0,
-    transitions: keepCutTransitions(layer0, draft.transitions),
-    overlays: fitOverlays(draft.overlays, filmDuration({ layer0 })),
   }
 }

@@ -22,17 +22,16 @@ import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import {
+  ALL_CATEGORIES,
   itemOf,
-  SHOW_ALL,
-  transitionSpecs,
   useComponentCatalog,
-  type ComponentFilter,
   type CatalogItem,
   type ComponentCatalog,
 } from './component-catalog'
 import { placeComponent } from './component-placement'
 import { ComponentPopover } from './component-popover'
 import { ComponentsPanel } from './components-panel'
+import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
 import { clearCaptionText, setCaptionText } from './editing/captions'
@@ -47,8 +46,7 @@ import {
 import { filmBeats, removeMusic, setMusicVolume } from './editing/music'
 import { removeOverlay } from './editing/overlays'
 import type { EditResult } from './editing/result'
-import { cutsOf, filmDuration } from './editing/timeline'
-import { removeTransition } from './editing/transitions'
+import { filmDuration } from './editing/timeline'
 import { setComponentVariables } from './editing/variables'
 import {
   buildEditContext,
@@ -235,7 +233,6 @@ function EditorBody({
   const songUrl = song?.outputUrl ?? undefined
   const songAnalysis = useMusicAnalysis(songUrl)
   const beats = useMusicBeats(songUrl)
-  const transitions = useMemo(() => transitionSpecs(catalog), [catalog])
 
   const context = useMemo(
     () =>
@@ -249,18 +246,8 @@ function EditorBody({
           beats.kind === 'ready' && draft.music !== null
             ? { jobId: draft.music.jobId, beats: beats.beats }
             : undefined,
-        transitions,
       }),
-    [
-      materials,
-      keyframes,
-      subtitles.data,
-      music.data,
-      musicDurations,
-      beats,
-      draft.music,
-      transitions,
-    ],
+    [materials, keyframes, subtitles.data, music.data, musicDurations, beats, draft.music],
   )
 
   const [playheadMs, setPlayheadMs] = useState(0)
@@ -269,7 +256,7 @@ function EditorBody({
   const [selection, setSelection] = useState<Selection>(null)
   const [popoverId, setPopoverId] = useState<string | null>(null)
   const [sideTab, setSideTab] = useState<SideTab>('materials')
-  const [filter, setFilter] = useState<ComponentFilter>(SHOW_ALL)
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES)
   const [snap, setSnap] = useState(true)
   const [zoom, setZoom] = useState<Zoom>(FIT_ZOOM)
   const [viewportWidth, setViewportWidth] = useState(0)
@@ -323,19 +310,16 @@ function EditorBody({
   const selectedVideo = draft.layer0.find(
     (clip): clip is VideoClip => clip.id === selectedId && clip.type === 'video',
   )
-  const split = splitClip(
-    draft,
-    { timeMs: playhead, ...(selectedId === undefined ? {} : { clipId: selectedId }) },
-    context,
-  )
+  const split = splitClip(draft, {
+    timeMs: playhead,
+    ...(selectedId === undefined ? {} : { clipId: selectedId }),
+  })
   const removeResult = (target: NonNullable<Selection>): EditResult =>
     target.kind === 'clip'
-      ? deleteClip(draft, { clipId: target.id }, context)
+      ? deleteClip(draft, { clipId: target.id })
       : target.kind === 'overlay'
         ? removeOverlay(draft, { overlayId: target.id })
-        : target.kind === 'transition'
-          ? removeTransition(draft, { transitionId: target.id })
-          : removeMusic(draft)
+        : removeMusic(draft)
   const remove = (target: Selection) => {
     if (target === null) return
     if (apply(removeResult(target))) {
@@ -362,40 +346,28 @@ function EditorBody({
 
   // ---- 组件 ----
   const componentTitle = (name: string) => itemOf(catalog, name)?.title ?? '组件库里没有的组件'
-  // 点转场卡片放到哪个切点：选中的那一段后面（最后一段后面没有切点，由放转场那一步拒绝），或选中的转场所在处
-  const cutAfterSelection = (): string | undefined =>
-    selection?.kind === 'transition'
-      ? draft.transitions.find((t) => t.id === selection.id)?.afterClipId
-      : selection?.kind === 'clip'
-        ? selection.id
-        : undefined
   const placeFromCard = (item: CatalogItem) =>
-    apply(
-      placeComponent(
-        draft,
-        item,
-        { via: 'click', playheadMs: playhead, cutAfterClipId: cutAfterSelection() },
-        { context },
-      ),
-    )
+    apply(placeComponent(draft, item, { via: 'click', playheadMs: playhead }))
   const dropComponent = (item: CatalogItem, clientX: number, clientY: number) => {
     const target = dropTargetRef.current?.(clientX, clientY)
     if (target === undefined) return
-    apply(placeComponent(draft, item, { via: 'drop', ...target }, { context }))
+    apply(placeComponent(draft, item, { via: 'drop', ...target }))
+  }
+  const hasFields = (name: string) => {
+    const item = itemOf(catalog, name)
+    return item === undefined || item.variables.length > 0
   }
 
   const renderPopover = (id: string): ReactNode => {
     const clip = draft.layer0.find((item) => item.id === id && item.type === 'component')
     const overlay = draft.overlays.find((item) => item.id === id)
-    const transition = draft.transitions.find((item) => item.id === id)
     const target =
       clip?.type === 'component'
         ? {
             component: clip.component,
             variables: clip.variables,
-            heading: `${clip.role === 'intro' ? '片头' : '片尾'} · ${componentTitle(clip.component)}`,
-            meta: `${seconds(clip.duration)} 秒 · ${clip.role === 'intro' ? '拖右边缘' : '拖左边缘'}改时长`,
-            removeLabel: clip.role === 'intro' ? '移除片头' : '移除片尾',
+            heading: componentTitle(clip.component),
+            meta: `${seconds(clip.duration)} 秒 · 拖两端改时长`,
             selection: { kind: 'clip', id } as const,
           }
         : overlay !== undefined
@@ -404,27 +376,17 @@ function EditorBody({
               variables: overlay.variables,
               heading: componentTitle(overlay.component),
               meta: `${seconds(overlay.start)}–${seconds(overlay.start + overlay.duration)} 秒 · 拖两端改起止`,
-              removeLabel: '移除',
               selection: { kind: 'overlay', id } as const,
             }
-          : transition !== undefined
-            ? {
-                component: transition.component,
-                variables: transition.variables,
-                heading: componentTitle(transition.component),
-                meta: `转场 · ${seconds(cutsOf(draft).find((cut) => cut.afterClipId === transition.afterClipId)?.timeMs ?? 0)} 秒处`,
-                removeLabel: '移除',
-                selection: { kind: 'transition', id } as const,
-              }
-            : undefined
+          : undefined
     if (target === undefined) return null
     const item = itemOf(catalog, target.component)
     if (item === undefined)
       return (
         <div className="wf-pop">
-          <p className="wf-pop-desc">{REFUSAL_TEXT['unknown-component']}</p>
+          <p className="wf-pop-desc">组件库里没有这个组件，无法使用</p>
           <Button onClick={() => remove(target.selection)} size="md" variant="outlined">
-            {target.removeLabel}
+            移除
           </Button>
         </div>
       )
@@ -437,7 +399,7 @@ function EditorBody({
           apply(setComponentVariables(draft, { id, variables }))
         }
         onRemove={() => remove(target.selection)}
-        removeLabel={target.removeLabel}
+        removeLabel="移除"
         values={target.variables}
       />
     )
@@ -484,9 +446,8 @@ function EditorBody({
 
   // ---- 导出 ----
   const exporting = useWholeFilmExport(conversationId, session.settle)
-  const exportBlocked = !draft.layer0.some((clip) => clip.type === 'video')
-    ? '成片里还没有画面，无法导出；请先加入视频'
-    : undefined
+  const exportBlocked =
+    draft.layer0.length === 0 ? '成片里还没有画面，无法导出；请先加入视频或组件' : undefined
 
   const clipLabel = (clip: VideoClip) => {
     const material = materials.byJob.get(clip.sourceJobId)
@@ -497,10 +458,7 @@ function EditorBody({
       : `${takeLetterOf(material)} · 镜头 ${shot}`
   }
 
-  const videoIndex =
-    selectedVideo === undefined
-      ? -1
-      : draft.layer0.filter((clip) => clip.type === 'video').indexOf(selectedVideo)
+  const videoIndex = selectedVideo === undefined ? -1 : draft.layer0.indexOf(selectedVideo)
 
   return (
     <>
@@ -537,9 +495,9 @@ function EditorBody({
           <TabsContent className="wf-side-body is-components" value="components">
             <ComponentsPanel
               catalog={catalog}
-              filter={filter}
+              category={category}
               draft={draft}
-              onFilter={setFilter}
+              onCategory={setCategory}
               onDrop={dropComponent}
               onUse={placeFromCard}
             />
@@ -547,12 +505,12 @@ function EditorBody({
         </TabsRoot>
         <PreviewPlayer
           controlRef={previewRef}
-          height={draft.canvas?.height ?? 1920}
+          height={(draft.canvas ?? DEFAULT_CANVAS).height}
           message={playBlocked}
           onPlaying={setPlaying}
           onTime={setPlayheadMs}
           srcdoc={preview.kind === 'ready' ? preview.html : undefined}
-          width={draft.canvas?.width ?? 1080}
+          width={(draft.canvas ?? DEFAULT_CANVAS).width}
         />
         <div className="wf-timeline">
           <EditorToolbar
@@ -609,13 +567,9 @@ function EditorBody({
                 ? undefined
                 : { url: songUrl, title: musicTitleOf(song), peaks: peaksStateOf(songAnalysis) }
             }
-            onAddEndCard={(placement) => {
-              setSideTab('components')
-              setFilter({ kind: 'placement', placement })
-            }}
             onCaptionStyle={() => {
               setSideTab('components')
-              setFilter({ kind: 'category', id: 'captions' })
+              setCategory('captions')
             }}
             onCaptionText={editCaption}
             onSeek={seek}
@@ -626,7 +580,12 @@ function EditorBody({
             onViewportWidth={setViewportWidth}
             peaks={peaks}
             playheadMs={playhead}
-            popovers={{ openId: popoverId, onOpen: setPopoverId, render: renderPopover }}
+            popovers={{
+              openId: popoverId,
+              onOpen: setPopoverId,
+              render: renderPopover,
+              hasFields,
+            }}
             scale={scale}
             selection={selection}
             sentenceText={sentenceText}
@@ -648,7 +607,7 @@ function EditorBody({
               group={group}
               groups={materials.groups}
               keyframes={keyframes}
-              onAdd={() => insert({ videoIndex: Number.MAX_SAFE_INTEGER })}
+              onAdd={() => insert({ index: draft.layer0.length })}
               onDrop={(clientX, clientY) => {
                 const target = dropTargetRef.current?.(clientX, clientY)
                 if (target === undefined) return false

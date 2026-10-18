@@ -265,23 +265,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.wf-component-filter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 14px 6px;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-}
-
-.wf-component-filter button {
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  color: var(--color-on-surface-variant);
-}
-
 .wf-component-list {
   min-height: 0;
   flex: 1;
@@ -734,6 +717,8 @@
   --timeline-playhead-bottom: 0;
   --wf-film-height: 52px;
   --wf-lane-height: 26px;
+  /* 特效轨每行 22px、上下各留 2px，与 film-tracks.tsx 的 OVERLAY_ROW_PX、OVERLAY_PAD_PX 一致 */
+  --wf-overlay-height: calc(var(--wf-overlay-rows, 1) * 22px + 4px);
   --wf-music-height: 32px;
 
   display: grid;
@@ -743,7 +728,7 @@
 .wf-track-heads {
   display: grid;
   grid-template-rows:
-    var(--timeline-ruler-height) var(--wf-film-height) var(--wf-lane-height)
+    var(--timeline-ruler-height) var(--wf-film-height) var(--wf-overlay-height)
     var(--wf-lane-height) var(--wf-music-height);
   row-gap: 6px;
   padding-top: 4px;
@@ -765,31 +750,11 @@
   scrollbar-width: thin;
 }
 
-/* 左边留 72px 放「+ 片头」，与 film-tracks.tsx 的 START_GUTTER_PX 一致 */
+/* 左边留 72px，与 film-tracks.tsx 的 START_GUTTER_PX 一致 */
 .wf-track-content {
   position: relative;
   margin-left: 72px;
   padding-top: 4px;
-}
-
-.wf-end-add {
-  position: absolute;
-  top: 0;
-  z-index: var(--z-local-1);
-  width: 62px;
-  height: 100%;
-  margin-left: 6px;
-  border: 1px dashed var(--color-outline-variant);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-low);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  white-space: nowrap;
-}
-
-.wf-end-add.is-start {
-  left: -68px;
-  margin-left: 0;
 }
 
 .wf-track-content > .timeline-ruler {
@@ -865,7 +830,7 @@
 .wf-lanes {
   display: grid;
   grid-template-rows:
-    var(--wf-film-height) var(--wf-lane-height) var(--wf-lane-height)
+    var(--wf-film-height) var(--wf-overlay-height) var(--wf-lane-height)
     var(--wf-music-height);
   row-gap: 6px;
   margin-top: 6px;
@@ -983,32 +948,6 @@
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   white-space: nowrap;
-}
-
-.wf-transition-slot {
-  position: absolute;
-  top: 50%;
-  z-index: var(--z-local-3);
-  width: 0;
-  height: 0;
-}
-
-.wf-transition {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  translate: -50% -50%;
-  border-radius: var(--radius-full);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-on-surface);
-}
-
-.wf-transition[aria-pressed='true'] {
-  box-shadow: 0 0 0 2px var(--color-surface-container-lowest);
 }
 
 .wf-overlay .wf-clip-label,

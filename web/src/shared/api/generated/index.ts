@@ -673,7 +673,6 @@ export type {
   WholeFilmExportStartedOut,
   WholeFilmMusic,
   WholeFilmOverlay,
-  WholeFilmTransition,
   WholeFilmVideoClip,
   WithdrawTaskTasksTaskIdWithdrawPostData,
   WithdrawTaskTasksTaskIdWithdrawPostError,

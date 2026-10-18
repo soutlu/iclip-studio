@@ -3,9 +3,6 @@
  * `web/scripts/hyperframes-registry.mjs` 按同样的相对路径同步。
  */
 
-/** 组件放到成片的哪里。 */
-export type Placement = 'caption' | 'transition' | 'intro' | 'outro' | 'overlay'
-
 export type VariableValue = string | number | boolean
 
 export interface CatalogVariable {
@@ -20,31 +17,17 @@ export interface CatalogVariable {
   unit?: string
 }
 
-/**
- * 转场接到切点上的方式。转场按组件原定时长 `duration` 播放；`cutAt` 是切点在转场里的位置（占时长的比例）。
- */
-export type TransitionAttachment =
-  /** 组件自己盖住画面，在 `cutAt` 处切到下一段。 */
-  | { kind: 'overlay'; cutAt: number }
-  /**
-   * 组件只画中间层，前后两段的画面也要动：切点前前一段做 `out` 动画，切点后后一段做 `in` 动画
-   * （组件头注释里的时间线写法，挂到这一个切点的两段上）。
-   */
-  | { kind: 'layers'; cutAt: number; out: LayerTween; in: LayerTween }
-
-export interface LayerTween {
-  from: Record<string, number>
-  to: Record<string, number>
-  ease: string
-}
-
 export interface CatalogItem {
   name: string
+  /** 点卡片时的默认去处：block 插进成片轨，component 放到特效轨；拖放时看落在哪条轨。 */
   kind: 'block' | 'component'
   title: string
   description: string
   category: string
-  placement: Placement
+  /** `caption` 是字幕样式，只能换掉整片的字幕样式；其余组件为 null，放在哪条轨都行。 */
+  placement: 'caption' | null
+  /** 品牌组件所属的品牌，只给组件栏分栏用；放置与合成不看它。 */
+  brand?: string
   /** 合成文件，相对组件目录根。 */
   src: string
   /** 组件按固定尺寸设计时的尺寸；null 表示铺满所在位置。 */
@@ -54,8 +37,6 @@ export interface CatalogItem {
   variables: CatalogVariable[]
   /** `../catalog/thumbnails/` 下的缩略图文件名。 */
   thumbnail: string | null
-  /** 只有转场有。 */
-  transition?: TransitionAttachment
   /** 组件用到的网页字体，合成页给它们补上中文字形（见 {@link ComponentCatalog.fonts}）。 */
   fonts: string[]
 }

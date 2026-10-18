@@ -14,14 +14,15 @@ from iclip.domains.conversations.whole_film_schemas import (
     MAX_CAPTION_TEXT_CHARS,
     MAX_COMPONENT_CHARS,
     MAX_FILM_MS,
+    MAX_LAYER0_CLIPS,
     MAX_OVERLAYS,
     MAX_VARIABLE_TEXT_CHARS,
     MAX_VARIABLES,
-    MAX_VIDEO_CLIPS,
+    MAX_VOLUME,
     MIN_CLIP_MS,
     WholeFilmDocument,
 )
-from tests.helpers.whole_film import butted, component_clip, draft_document, video_clip
+from tests.helpers.whole_film import butted, component_clip, draft_document, overlay, video_clip
 
 SOURCE = uuid.uuid4()
 SUBTITLE = uuid.uuid4()
@@ -44,54 +45,107 @@ def rejected(document: Document) -> str:
     return str(caught.value.errors()[0]["msg"])
 
 
-def overlay(overlay_id: str, start: int, duration: int) -> dict[str, Any]:
-    return {
-        "id": overlay_id,
-        "component": "sticker",
-        "start": start,
-        "duration": duration,
-        "variables": {},
-    }
-
-
 def edit(index: int, text: str = "改过的字") -> dict[str, Any]:
     return {"subtitleJobId": str(SUBTITLE), "sentenceIndex": index, "text": text}
 
 
 def test_a_full_draft_round_trips_its_wire_shape() -> None:
-    """片头、两段视频、片尾、转场、改字、音乐与包装都在：按 camelCase 原样读出来。"""
+    """组件段夹在两段视频之间、改字、音乐与不同行上相互重叠的特效块都在：按 camelCase 原样读出来。"""
 
     document = draft_document(
         layer0=[
-            component_clip("intro", "intro", start=0, duration=2000),
+            component_clip("c1", start=0, duration=2000),
             video_clip("a", start=2000, duration=3000, source_job_id=SOURCE, playback_start=500),
-            video_clip("b", start=5000, duration=2000, source_job_id=SOURCE, volume=0),
-            component_clip("outro", "outro", start=7000, duration=2000),
-        ],
-        transitions=[
-            {"id": "t1", "afterClipId": "a", "component": "fade", "duration": 300, "variables": {}}
+            component_clip("c2", start=5000, duration=1000, playback_start=400),
+            video_clip("b", start=6000, duration=2000, source_job_id=SOURCE, volume=0),
         ],
         edits=[edit(0), edit(1)],
         music={"jobId": str(uuid.uuid4()), "offset": 1200, "volume": 0.6},
-        overlays=[overlay("o2", 6000, 3000), overlay("o1", 0, 6000)],
+        overlays=[
+            overlay("o2", start=6000, duration=3000, track=1, z_index=2),
+            overlay("o1", start=0, duration=7000, track=0, z_index=1, playback_start=250),
+        ],
     )
 
     parsed = parse(document)
 
     assert parsed.model_dump(mode="json", by_alias=True) == document
+    # 画面轨 8 秒，o2 到 9 秒结束：整片到所有轨上内容的最远结束
     assert parsed.total_ms() == 9000
     assert parsed.video_sources() == (SOURCE,)
 
 
+def test_total_is_the_farthest_end_on_any_track() -> None:
+    layer = butted([("a", 3000)], source_job_id=SOURCE)
+
+    assert parse(draft_document(layer0=layer)).total_ms() == 3000
+    inside = [overlay("o", start=0, duration=1000)]
+    assert parse(draft_document(layer0=layer, overlays=inside)).total_ms() == 3000
+    beyond = [overlay("o", start=2000, duration=4500)]
+    assert parse(draft_document(layer0=layer, overlays=beyond)).total_ms() == 6500
+    assert parse(draft_document(layer0=[], overlays=beyond)).total_ms() == 6500
+
+
 def test_an_empty_timeline_is_a_valid_draft() -> None:
-    parsed = parse(draft_document(layer0=[], transitions=[]))
+    parsed = parse(draft_document(layer0=[]))
 
     assert parsed.total_ms() == 0
+
+
+def test_a_film_of_component_clips_only_is_valid() -> None:
+    parsed = parse(
+        draft_document(
+            layer0=[
+                component_clip("c1", start=0, duration=2000),
+                component_clip("c2", start=2000, duration=3000),
+            ]
+        )
+    )
+
+    assert (parsed.total_ms(), parsed.video_sources()) == (5000, ())
 
 
 def test_unknown_fields_are_rejected() -> None:
     document = draft_document()
     document["layer0"][0]["muted"] = True
+
+    rejected(document)
+
+
+@pytest.mark.parametrize(
+    ("where", "field", "value"),
+    [
+        pytest.param("component", "role", "intro", id="组件段带 role"),
+        pytest.param("document", "transitions", [], id="带 transitions"),
+        pytest.param("component", "playbackStart", None, id="组件段缺 playbackStart"),
+        pytest.param("overlay", "playbackStart", None, id="特效块缺 playbackStart"),
+        pytest.param("component", "playbackStart", -1, id="组件段入点为负"),
+        pytest.param("overlay", "playbackStart", -1, id="特效块入点为负"),
+        pytest.param("overlay", "track", None, id="特效块缺 track"),
+        pytest.param("overlay", "zIndex", None, id="特效块缺 zIndex"),
+        pytest.param("overlay", "track", -1, id="特效块行为负"),
+        pytest.param("overlay", "zIndex", -1, id="特效块 zIndex 为负"),
+    ],
+)
+def test_component_clips_have_no_role_and_carry_a_playback_start(
+    where: str, field: str, value: object
+) -> None:
+    """``value`` 为 None 时去掉这个字段。"""
+
+    document = draft_document(
+        layer0=[component_clip("c", start=0, duration=1000)],
+        overlays=[overlay("o", start=0, duration=1000)],
+    )
+    parse(document)
+    target = {
+        "document": document,
+        "component": document["layer0"][0],
+        "overlay": document["overlays"][0],
+    }[where]
+    if value is None:
+        del target[field]
+    else:
+        target[field] = value
 
     rejected(document)
 
@@ -111,8 +165,8 @@ def _first_clip(field: str, value: object) -> Change:
     [
         pytest.param(_first_clip("playbackStart", 0), True, id="入点 0"),
         pytest.param(_first_clip("playbackStart", -1), False, id="入点为负"),
-        pytest.param(_first_clip("volume", 2), True, id="音量 2"),
-        pytest.param(_first_clip("volume", 2.01), False, id="音量超过 2"),
+        pytest.param(_first_clip("volume", MAX_VOLUME), True, id="音量 +12 dB"),
+        pytest.param(_first_clip("volume", 3.99), False, id="音量超过 +12 dB"),
         pytest.param(_first_clip("volume", -0.1), False, id="音量为负"),
         pytest.param(_first_clip("volume", float("nan")), False, id="音量 NaN"),
         pytest.param(_first_clip("id", " "), False, id="空白 id"),
@@ -152,17 +206,19 @@ def test_clip_and_film_durations(durations: list[int], accepted: bool) -> None:
             assert "上限" in message
 
 
-@pytest.mark.parametrize(
-    ("count", "accepted"), [(MAX_VIDEO_CLIPS, True), (MAX_VIDEO_CLIPS + 1, False)]
-)
-def test_at_most_a_hundred_video_clips(count: int, accepted: bool) -> None:
-    layer = butted([(f"c{index}", MIN_CLIP_MS) for index in range(count)], source_job_id=SOURCE)
-    document = draft_document(layer0=layer, transitions=[])
+def test_layer0_holds_any_number_of_clips_up_to_two_minutes() -> None:
+    """视频段不设段数上限：两分钟按最短时长排满可以，再多一段就超出（防大包的上限也在这里）。"""
 
-    if accepted:
-        parse(document)
-    else:
-        assert f"{MAX_VIDEO_CLIPS} 段视频" in rejected(document)
+    full = butted(
+        [(f"c{index}", MIN_CLIP_MS) for index in range(MAX_LAYER0_CLIPS)], source_job_id=SOURCE
+    )
+    parse(draft_document(layer0=full))
+
+    over = butted(
+        [(f"c{index}", MIN_CLIP_MS) for index in range(MAX_LAYER0_CLIPS + 1)],
+        source_job_id=SOURCE,
+    )
+    rejected(draft_document(layer0=over))
 
 
 @pytest.mark.parametrize(
@@ -177,45 +233,33 @@ def test_layer0_starts_at_zero_and_is_butt_joined(starts: list[int]) -> None:
     document = draft_document(
         layer0=[
             video_clip("a", start=starts[0], duration=3000, source_job_id=SOURCE),
-            video_clip("b", start=starts[1], duration=2000, source_job_id=SOURCE),
+            component_clip("b", start=starts[1], duration=2000),
         ]
     )
 
     assert "首尾相接" in rejected(document)
 
 
-def _layer(*roles: str) -> list[dict[str, Any]]:
-    """按角色排一条首尾相接的画面轨，``video`` 是视频，其余是片头片尾，每段 1 秒。"""
-
-    layer: list[dict[str, Any]] = []
-    for index, role in enumerate(roles):
-        start = index * 1000
-        if role == "video":
-            layer.append(video_clip(f"c{index}", start=start, duration=1000, source_job_id=SOURCE))
-        else:
-            layer.append(component_clip(f"c{index}", role, start=start, duration=1000))
-    return layer
-
-
 @pytest.mark.parametrize(
-    ("roles", "problem"),
+    "kinds",
     [
-        pytest.param(("intro", "video", "outro"), None, id="片头在前片尾在后"),
-        pytest.param(("intro",), None, id="只有片头"),
-        pytest.param(("outro",), None, id="只有片尾"),
-        pytest.param(("video", "intro"), "片头", id="片头不在第一段"),
-        pytest.param(("outro", "video"), "片尾", id="片尾不在最后一段"),
-        pytest.param(("intro", "intro", "video"), "片头", id="两个片头"),
-        pytest.param(("video", "outro", "outro"), "片尾", id="两个片尾"),
+        pytest.param(("component", "video"), id="组件段在最前"),
+        pytest.param(("video", "component"), id="组件段在最后"),
+        pytest.param(("video", "component", "video"), id="组件段在中间"),
+        pytest.param(("component", "component", "video", "component"), id="几个组件段"),
     ],
 )
-def test_intro_only_first_and_outro_only_last(roles: tuple[str, ...], problem: str | None) -> None:
-    document = draft_document(layer0=_layer(*roles), transitions=[])
+def test_component_clips_sit_anywhere_on_layer0(kinds: tuple[str, ...]) -> None:
+    layer: list[dict[str, Any]] = []
+    for index, kind in enumerate(kinds):
+        start = index * 1000
+        layer.append(
+            video_clip(f"c{index}", start=start, duration=1000, source_job_id=SOURCE)
+            if kind == "video"
+            else component_clip(f"c{index}", start=start, duration=1000)
+        )
 
-    if problem is None:
-        parse(document)
-    else:
-        assert problem in rejected(document)
+    parse(draft_document(layer0=layer))
 
 
 @pytest.mark.parametrize(
@@ -229,9 +273,9 @@ def test_intro_only_first_and_outro_only_last(roles: tuple[str, ...], problem: s
     ids=["上限", "太长", "空", "空白"],
 )
 def test_component_names_are_non_blank_and_bounded(component: str, accepted: bool) -> None:
-    layer = _layer("intro", "video")
-    layer[0]["component"] = component
-    document = draft_document(layer0=layer, transitions=[])
+    clip = component_clip("c", start=0, duration=1000)
+    clip["component"] = component
+    document = draft_document(layer0=[clip])
 
     if accepted:
         parse(document)
@@ -254,9 +298,9 @@ def test_component_names_are_non_blank_and_bounded(component: str, accepted: boo
     ],
 )
 def test_variables_are_flat_and_bounded(variables: dict[str, Any], accepted: bool) -> None:
-    layer = _layer("intro", "video")
-    layer[0]["variables"] = variables
-    document = draft_document(layer0=layer, transitions=[])
+    clip = component_clip("c", start=0, duration=1000)
+    clip["variables"] = variables
+    document = draft_document(layer0=[clip])
 
     if accepted:
         parse(document)
@@ -265,64 +309,66 @@ def test_variables_are_flat_and_bounded(variables: dict[str, Any], accepted: boo
 
 
 def test_clip_ids_are_unique_across_the_document() -> None:
-    clash = overlay("a", 0, 1000)
+    clash = overlay("a", start=0, duration=1000)
 
     assert "重复" in rejected(draft_document(source_job_id=SOURCE, overlays=[clash]))
-
-
-def _transition(after: str, *, transition_id: str = "t1", duration: int = 300) -> dict[str, Any]:
-    return {
-        "id": transition_id,
-        "afterClipId": after,
-        "component": "fade",
-        "duration": duration,
-        "variables": {},
-    }
-
-
-@pytest.mark.parametrize(
-    ("transitions", "problem"),
-    [
-        pytest.param([_transition("a")], None, id="接在第一段后"),
-        pytest.param([_transition("a", duration=MIN_CLIP_MS)], None, id="恰好 100 毫秒"),
-        pytest.param([_transition("a", duration=MIN_CLIP_MS - 1)], FIELD_BOUND, id="不到 100 毫秒"),
-        pytest.param([_transition("b")], "转场", id="接在最后一段后"),
-        pytest.param([_transition("nope")], "转场", id="不在画面轨里"),
-        pytest.param(
-            [_transition("a"), _transition("a", transition_id="t2")], "一个转场", id="一段两个"
-        ),
-    ],
-)
-def test_transitions_join_a_clip_to_the_next(
-    transitions: list[dict[str, Any]], problem: str | None
-) -> None:
-    document = draft_document(source_job_id=SOURCE, transitions=transitions)
-
-    if problem is None:
-        parse(document)
-    else:
-        assert problem in rejected(document)
 
 
 @pytest.mark.parametrize(
     ("overlays", "problem"),
     [
-        pytest.param([overlay("o1", 0, 5000)], None, id="铺满整片"),
+        pytest.param([overlay("o1", start=0, duration=5000)], None, id="铺满整片"),
         pytest.param(
-            [overlay("o1", 3000, 2000), overlay("o2", 0, 3000)], None, id="首尾相接不论先后"
+            [
+                overlay("o1", start=0, duration=3000, track=0),
+                overlay("o2", start=1000, duration=3000, track=1),
+            ],
+            None,
+            id="不同行可以重叠",
         ),
-        pytest.param([overlay("o1", 4000, 1001)], "超出", id="超出整片"),
-        pytest.param([overlay("o1", 0, 3000), overlay("o2", 2999, 1000)], "重叠", id="重叠"),
-        pytest.param([overlay("o1", 0, MIN_CLIP_MS - 1)], FIELD_BOUND, id="不到 100 毫秒"),
-        pytest.param([overlay("o1", -1, 1000)], FIELD_BOUND, id="从负数开始"),
         pytest.param(
-            [overlay(f"o{index}", index * 100, 100) for index in range(MAX_OVERLAYS + 1)],
+            [
+                overlay("o1", start=0, duration=3000, track=1),
+                overlay("o2", start=2999, duration=1000, track=1),
+            ],
+            "重叠",
+            id="同一行重叠",
+        ),
+        pytest.param(
+            [
+                overlay("o1", start=3000, duration=1000, track=1),
+                overlay("o2", start=0, duration=3000, track=1),
+            ],
+            None,
+            id="同一行首尾相接，先后不按开始时间",
+        ),
+        pytest.param(
+            [
+                overlay("o1", start=0, duration=3000, track=0, z_index=1),
+                overlay("o2", start=0, duration=3000, track=1, z_index=9),
+            ],
+            None,
+            id="zIndex 与行的先后不必一致",
+        ),
+        pytest.param(
+            [overlay("o1", start=4000, duration=MAX_FILM_MS - 4000)], None, id="超出画面轨到两分钟"
+        ),
+        pytest.param(
+            [overlay("o1", start=4000, duration=MAX_FILM_MS - 3999)], "上限", id="两分钟之后结束"
+        ),
+        pytest.param([overlay("o1", start=0, duration=MIN_CLIP_MS - 1)], FIELD_BOUND, id="太短"),
+        pytest.param([overlay("o1", start=-1, duration=1000)], FIELD_BOUND, id="从负数开始"),
+        pytest.param(
+            [
+                overlay(f"o{index}", start=0, duration=100, track=index)
+                for index in range(MAX_OVERLAYS + 1)
+            ],
             FIELD_BOUND,
-            id="超过 50 个",
+            id="太多",
         ),
     ],
 )
-def test_overlays_stay_inside_the_film_without_overlapping(
+def test_overlays_do_not_overlap_on_a_row_and_end_by_two_minutes(
     overlays: list[dict[str, Any]], problem: str | None
 ) -> None:
     document = draft_document(source_job_id=SOURCE, overlays=overlays)
@@ -359,9 +405,9 @@ def test_caption_edits(edits: list[dict[str, Any]], problem: str | None) -> None
     ("music", "accepted"),
     [
         pytest.param({"offset": 0, "volume": 0}, True, id="从头、静音"),
-        pytest.param({"offset": 90_000, "volume": 2}, True, id="从中间、两倍"),
+        pytest.param({"offset": 90_000, "volume": MAX_VOLUME}, True, id="从中间、+12 dB"),
         pytest.param({"offset": -1, "volume": 1}, False, id="起点为负"),
-        pytest.param({"offset": 0, "volume": 2.5}, False, id="音量超过 2"),
+        pytest.param({"offset": 0, "volume": 3.99}, False, id="音量超过 +12 dB"),
     ],
 )
 def test_music_offset_and_volume(music: dict[str, Any], accepted: bool) -> None:

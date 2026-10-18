@@ -16,14 +16,12 @@ from iclip.domains.conversations.models import WholeFilmExport, WholeFilmExportS
 from iclip.domains.conversations.schemas import CamelModel
 
 MIN_CLIP_MS: Final = 100
-"""画面轨每段、每个转场、每层包装至少这么长。"""
+"""画面轨每段、每个特效块至少这么长。"""
 MAX_FILM_MS: Final = 120_000
-"""整片（画面轨首尾相接的总长）至多两分钟。"""
-MAX_VIDEO_CLIPS: Final = 100
-"""画面轨里视频片段的上限；片头片尾另算。"""
-MAX_LAYER0_CLIPS: Final = MAX_VIDEO_CLIPS + 2
-MAX_TRANSITIONS: Final = MAX_LAYER0_CLIPS - 1
-MAX_OVERLAYS: Final = 50
+"""整片（画面轨首尾相接的总长）至多两分钟，特效块也不能在这之后结束。"""
+MAX_LAYER0_CLIPS: Final = MAX_FILM_MS // MIN_CLIP_MS
+"""防大包的上限：两分钟按最短时长排满的段数，正常编辑用不到。"""
+MAX_OVERLAYS: Final = MAX_FILM_MS // MIN_CLIP_MS
 MAX_CAPTION_EDITS: Final = 1000
 MAX_CAPTION_TEXT_CHARS: Final = 500
 MAX_CLIP_ID_CHARS: Final = 64
@@ -31,8 +29,8 @@ MAX_COMPONENT_CHARS: Final = 200
 MAX_VARIABLES: Final = 50
 MAX_VARIABLE_NAME_CHARS: Final = 64
 MAX_VARIABLE_TEXT_CHARS: Final = 500
-MAX_VOLUME: Final = 2
-"""音量是倍数：1 是原声，0 是静音。"""
+MAX_VOLUME: Final = 3.981072
+"""音量是倍数：1 是原声，0 是静音；上限 +12 dB，同 HyperFrames 的 audioGain。"""
 MAX_CANVAS_EDGE: Final = 4096
 
 
@@ -83,28 +81,18 @@ class WholeFilmVideoClip(CamelModel):
 
 
 class WholeFilmComponentClip(CamelModel):
-    """画面轨上的片头或片尾，是组件库里的一个组件。"""
+    """画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。"""
 
     id: ClipId
     type: Literal["component"]
-    role: Literal["intro", "outro"]
     start: Ms
     duration: ClipMs
+    playback_start: Ms
     component: ComponentName
     variables: Variables
 
 
 WholeFilmClip = Annotated[WholeFilmVideoClip | WholeFilmComponentClip, Field(discriminator="type")]
-
-
-class WholeFilmTransition(CamelModel):
-    """``afterClipId`` 那一段与下一段之间的转场。"""
-
-    id: ClipId
-    after_clip_id: ClipId
-    component: ComponentName
-    duration: ClipMs
-    variables: Variables
 
 
 class WholeFilmCaptionEdit(CamelModel):
@@ -133,12 +121,19 @@ class WholeFilmMusic(CamelModel):
 
 
 class WholeFilmOverlay(CamelModel):
-    """包装层上的一个组件，按整片时间放在 ``[start, start + duration)``。"""
+    """特效轨上的一个组件，按整片时间放在 ``[start, start + duration)``，从组件自己时间里的
+    ``playbackStart`` 起播。
+
+    同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
+    之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。"""
 
     id: ClipId
     component: ComponentName
     start: Ms
     duration: ClipMs
+    playback_start: Ms
+    track: Index
+    z_index: Index
     variables: Variables
 
 
@@ -147,7 +142,6 @@ class WholeFilmDocument(CamelModel):
 
     canvas: WholeFilmCanvas | None
     layer0: Annotated[list[WholeFilmClip], Field(max_length=MAX_LAYER0_CLIPS)]
-    transitions: Annotated[list[WholeFilmTransition], Field(max_length=MAX_TRANSITIONS)]
     captions: WholeFilmCaptions
     music: WholeFilmMusic | None
     overlays: Annotated[list[WholeFilmOverlay], Field(max_length=MAX_OVERLAYS)]
@@ -155,16 +149,19 @@ class WholeFilmDocument(CamelModel):
     @model_validator(mode="after")
     def _check_timeline(self) -> WholeFilmDocument:
         _check_ids(self)
-        total = _check_layer0(self.layer0)
-        _check_transitions(self.transitions, self.layer0)
+        _check_layer0(self.layer0)
         _check_caption_edits(self.captions.edits)
-        _check_overlays(self.overlays, total)
+        _check_overlays(self.overlays)
         return self
 
     def total_ms(self) -> int:
-        """整片总长：画面轨首尾相接，就是各段时长之和。"""
+        """整片总长：同 HyperFrames，所有轨上内容的最远结束，即画面轨的结尾（各段时长之和）与
+        特效块最晚的结尾里大的那个。两者都不超过上限，总长也就不超过。"""
 
-        return sum(clip.duration for clip in self.layer0)
+        overlay_end = max(
+            (overlay.start + overlay.duration for overlay in self.overlays), default=0
+        )
+        return max(sum(clip.duration for clip in self.layer0), overlay_end)
 
     def video_sources(self) -> tuple[uuid.UUID, ...]:
         """画面轨里各段视频出自的成片，去重，按在画面轨里第一次出现的先后。"""
@@ -178,18 +175,15 @@ class WholeFilmDocument(CamelModel):
 
 def _check_ids(document: WholeFilmDocument) -> None:
     seen: set[str] = set()
-    for item in (*document.layer0, *document.transitions, *document.overlays):
+    for item in (*document.layer0, *document.overlays):
         if item.id in seen:
-            raise ValueError(f"片段 id「{item.id}」重复了，画面、转场与包装里的 id 不能相同")
+            raise ValueError(f"片段 id「{item.id}」重复了，画面轨与特效轨里的 id 不能相同")
         seen.add(item.id)
 
 
-def _check_layer0(layer0: list[WholeFilmClip]) -> int:
-    """画面轨从 0 起、首尾相接；片头只在第一段、片尾只在最后一段，各至多一个。返回总长。"""
+def _check_layer0(layer0: list[WholeFilmClip]) -> None:
+    """画面轨从 0 起、首尾相接，视频段与组件段先后不限，总长不超过上限。"""
 
-    videos = sum(1 for clip in layer0 if isinstance(clip, WholeFilmVideoClip))
-    if videos > MAX_VIDEO_CLIPS:
-        raise ValueError(f"画面轨至多 {MAX_VIDEO_CLIPS} 段视频，现在有 {videos} 段")
     end = 0
     for index, clip in enumerate(layer0):
         if clip.start != end:
@@ -198,31 +192,9 @@ def _check_layer0(layer0: list[WholeFilmClip]) -> int:
                 f"画面轨第 {index + 1} 段从 {clip.start} 毫秒开始，应当从 {expected} 毫秒开始："
                 "画面轨从 0 起、首尾相接"
             )
-        if isinstance(clip, WholeFilmComponentClip):
-            if clip.role == "intro" and index != 0:
-                raise ValueError(f"片头只能放在画面轨第一段，现在在第 {index + 1} 段")
-            if clip.role == "outro" and index != len(layer0) - 1:
-                raise ValueError(f"片尾只能放在画面轨最后一段，现在在第 {index + 1} 段")
         end += clip.duration
     if end > MAX_FILM_MS:
         raise ValueError(f"整片 {end} 毫秒，超过了 {MAX_FILM_MS} 毫秒的上限")
-    return end
-
-
-def _check_transitions(transitions: list[WholeFilmTransition], layer0: list[WholeFilmClip]) -> None:
-    """转场接在画面轨的某一段后面，那一段不能是最后一段；一段后面至多一个转场。"""
-
-    joinable = {clip.id for clip in layer0[:-1]}
-    taken: set[str] = set()
-    for transition in transitions:
-        if transition.after_clip_id not in joinable:
-            raise ValueError(
-                f"转场「{transition.id}」接在「{transition.after_clip_id}」后面，"
-                "那得是画面轨里一段、且不是最后一段"
-            )
-        if transition.after_clip_id in taken:
-            raise ValueError(f"画面轨「{transition.after_clip_id}」后面只能有一个转场")
-        taken.add(transition.after_clip_id)
 
 
 def _check_caption_edits(edits: list[WholeFilmCaptionEdit]) -> None:
@@ -236,19 +208,26 @@ def _check_caption_edits(edits: list[WholeFilmCaptionEdit]) -> None:
         seen.add(key)
 
 
-def _check_overlays(overlays: list[WholeFilmOverlay], total: int) -> None:
-    """包装都在整片之内，彼此不重叠；数组里的先后不限。"""
+def _check_overlays(overlays: list[WholeFilmOverlay]) -> None:
+    """特效块不在两分钟之后结束，同一行里彼此不重叠；不同行可以重叠，也可以超出画面轨的结尾
+    （整片随之变长）。"""
 
-    previous: WholeFilmOverlay | None = None
-    for overlay in sorted(overlays, key=lambda item: item.start):
-        if overlay.start + overlay.duration > total:
+    rows: dict[int, list[WholeFilmOverlay]] = {}
+    for overlay in overlays:
+        if overlay.start + overlay.duration > MAX_FILM_MS:
             raise ValueError(
-                f"包装「{overlay.id}」到 {overlay.start + overlay.duration} 毫秒结束，"
-                f"超出了整片的 {total} 毫秒"
+                f"特效块「{overlay.id}」到 {overlay.start + overlay.duration} 毫秒结束，"
+                f"超过了 {MAX_FILM_MS} 毫秒的上限"
             )
-        if previous is not None and overlay.start < previous.start + previous.duration:
-            raise ValueError(f"包装「{overlay.id}」与「{previous.id}」重叠了")
-        previous = overlay
+        rows.setdefault(overlay.track, []).append(overlay)
+    for row in rows.values():
+        previous: WholeFilmOverlay | None = None
+        for overlay in sorted(row, key=lambda item: item.start):
+            if previous is not None and overlay.start < previous.start + previous.duration:
+                raise ValueError(
+                    f"特效块「{overlay.id}」与「{previous.id}」在同一行（第 {overlay.track} 行）上重叠了"
+                )
+            previous = overlay
 
 
 class WholeFilmDraftIn(CamelModel):
@@ -325,11 +304,9 @@ __all__ = [
     "MAX_FILM_MS",
     "MAX_LAYER0_CLIPS",
     "MAX_OVERLAYS",
-    "MAX_TRANSITIONS",
     "MAX_VARIABLES",
     "MAX_VARIABLE_NAME_CHARS",
     "MAX_VARIABLE_TEXT_CHARS",
-    "MAX_VIDEO_CLIPS",
     "MAX_VOLUME",
     "MIN_CLIP_MS",
     "WholeFilmCanvas",
@@ -347,7 +324,6 @@ __all__ = [
     "WholeFilmExportStartedOut",
     "WholeFilmMusic",
     "WholeFilmOverlay",
-    "WholeFilmTransition",
     "WholeFilmVideoClip",
     "whole_film_export_out",
 ]

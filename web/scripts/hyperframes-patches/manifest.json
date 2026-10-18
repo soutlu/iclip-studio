@@ -1,9 +1,6 @@
 {
   "files": {
     "compositions/iclip/default-caption.html": { "replaces": null },
-    "compositions/components/fade-through.html": {
-      "replaces": "f3355c517ee2eb808036cc8978ca7489f9569eaceef83f87eeb639b23b66147f"
-    },
     "compositions/components/grid-pixelate-wipe.html": {
       "replaces": "60981a8c4a97c1686014543cefdeac439daa621d3da9074485834f16ed7ac03c"
     },

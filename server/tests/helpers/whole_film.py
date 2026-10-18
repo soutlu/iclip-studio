@@ -27,15 +27,38 @@ def video_clip(
     }
 
 
-def component_clip(clip_id: str, role: str, *, start: int, duration: int) -> dict[str, Any]:
+def component_clip(
+    clip_id: str, *, start: int, duration: int, playback_start: int = 0
+) -> dict[str, Any]:
     return {
         "id": clip_id,
         "type": "component",
-        "role": role,
         "start": start,
         "duration": duration,
-        "component": f"brand-{role}",
+        "playbackStart": playback_start,
+        "component": "brand-intro",
         "variables": {"brand": "鞋款", "showLogo": True, "scale": 1.5},
+    }
+
+
+def overlay(
+    clip_id: str,
+    *,
+    start: int,
+    duration: int,
+    track: int = 0,
+    z_index: int = 1,
+    playback_start: int = 0,
+) -> dict[str, Any]:
+    return {
+        "id": clip_id,
+        "component": "sticker",
+        "start": start,
+        "duration": duration,
+        "playbackStart": playback_start,
+        "track": track,
+        "zIndex": z_index,
+        "variables": {},
     }
 
 
@@ -56,30 +79,21 @@ def draft_document(
     *,
     source_job_id: uuid.UUID | None = None,
     layer0: list[dict[str, Any]] | None = None,
-    transitions: list[dict[str, Any]] | None = None,
     edits: list[dict[str, Any]] | None = None,
     music: dict[str, Any] | None = None,
     overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """合规矩的一份草稿：默认画面轨是两段视频（3 秒、2 秒），中间一个转场，没有音乐与包装。"""
+    """合规矩的一份草稿：默认画面轨是两段视频（3 秒、2 秒），没有音乐与特效块。"""
 
     source = source_job_id or uuid.uuid4()
     default_layer = butted([("a", 3000), ("b", 2000)], source_job_id=source)
-    default_transition = {
-        "id": "t1",
-        "afterClipId": "a",
-        "component": "fade",
-        "duration": 300,
-        "variables": {},
-    }
     return {
         "canvas": {"width": 1080, "height": 1920},
         "layer0": layer0 if layer0 is not None else default_layer,
-        "transitions": transitions if transitions is not None else [default_transition],
         "captions": {"component": "captions-basic", "edits": edits or []},
         "music": music,
         "overlays": overlays or [],
     }
 
 
-__all__ = ["butted", "component_clip", "draft_document", "video_clip"]
+__all__ = ["butted", "component_clip", "draft_document", "overlay", "video_clip"]

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { contextOf, draftOf, expectOk, source, video } from '@/testing/whole-film'
+import { contextOf, draftOf, expectOk, overlay, source, video } from '@/testing/whole-film'
+import { MAX_VOLUME } from './draft'
 import { insertMaterial } from './layer0'
 import {
   filmBeats,
@@ -32,11 +33,11 @@ describe('setMusic', () => {
     expect(negative.music?.offset).toBe(0)
   })
 
-  it('换歌时沿用原来的音量；音量收进 0–2', () => {
-    const first = expectOk(setMusic(film(), { jobId: 'long', volume: 3 }, context)).draft
-    expect(first.music?.volume).toBe(2)
+  it('换歌时沿用原来的音量；音量收进 0 到 +12 dB', () => {
+    const first = expectOk(setMusic(film(), { jobId: 'long', volume: 5 }, context)).draft
+    expect(first.music?.volume).toBe(MAX_VOLUME)
     const second = expectOk(setMusic(first, { jobId: 'short' }, context)).draft
-    expect(second.music).toEqual({ jobId: 'short', offset: 0, volume: 2 })
+    expect(second.music).toEqual({ jobId: 'short', offset: 0, volume: MAX_VOLUME })
   })
 
   it('音乐比整片短：照样用，起点为 0，差多少由 musicShortfallMs 报告，不循环', () => {
@@ -51,13 +52,23 @@ describe('setMusic', () => {
     const longer = expectOk(
       insertMaterial(
         withMusic,
-        { sourceJobId: 's1', playbackStart: 0, duration: 3_000, at: { videoIndex: 1 } },
+        { sourceJobId: 's1', playbackStart: 0, duration: 3_000, at: { index: 1 } },
         context,
       ),
     ).draft
     expect(longer.music?.offset).toBe(20_000)
     expect(musicShortfallMs(longer, context)).toBe(3_000)
     expect(musicShortfallMs(film(), context)).toBe(0)
+  })
+
+  it('音乐铺满整片，整片包括超出成片轨的特效块', () => {
+    const withOverlay = draftOf([video('v1', 's1', 0, 10_000)], {
+      overlays: [overlay('o1', 8_000, 4_000)],
+    })
+    const { draft } = expectOk(setMusic(withOverlay, { jobId: 'long', offsetMs: 25_000 }, context))
+    expect(draft.music?.offset).toBe(18_000)
+    const short = expectOk(setMusic(withOverlay, { jobId: 'short' }, context)).draft
+    expect(musicShortfallMs(short, context)).toBe(4_000)
   })
 
   it('音乐不在上下文里：拒绝', () => {
@@ -80,7 +91,7 @@ describe('setMusicOffset / setMusicVolume / removeMusic', () => {
     expect(expectOk(setMusicOffset(before, { offsetMs: 1_000 }, context)).draft).toBe(before)
   })
 
-  it('配乐音量收进 0–2', () => {
+  it('配乐音量收进 0 到 +12 dB', () => {
     expect(expectOk(setMusicVolume(withMusic(), { volume: -1 })).draft.music?.volume).toBe(0)
     expect(expectOk(setMusicVolume(withMusic(), { volume: 0.35 })).draft.music?.volume).toBe(0.35)
   })
