@@ -87,7 +87,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(intro.getByLabel('品牌名')).toHaveAttribute('placeholder', '品牌名')
   await intro.getByLabel('品牌名').fill('拾步')
   await intro.getByLabel('品牌名').press('Enter')
-  // 预览换上改过品牌名的那一版再截图（新页在底下加载好才换上来）
+  // 预览换上改过品牌名的那一版（新页在底下加载好才换上来）
   await expect(dialog.locator('hyperframes-player:not(.is-pending)')).toHaveAttribute(
     'srcdoc',
     /拾步/,

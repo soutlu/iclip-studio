@@ -170,7 +170,6 @@ for (const width of [1335, 390]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 934 })
-    await page.emulateMedia({ colorScheme: 'dark' })
     const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
     await openStoryboardShot(panel, 2)
     const group = panel.getByRole('region', { name: '镜头组 2' })
