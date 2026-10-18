@@ -385,6 +385,8 @@ for (const viewport of [
   { width: 1449, height: 982 },
 ]) {
   test(`侧栏与调整浮层验收截图 ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    // 一条用例里依次截 8 个状态、各两种主题，CI 分片下超过默认的 30 秒
+    test.setTimeout(90_000)
     await page.setViewportSize(viewport)
     await serveBrandFixtures(page)
     const dialog = await openWholeFilm(page)
