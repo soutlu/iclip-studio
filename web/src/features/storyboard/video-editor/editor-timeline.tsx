@@ -4,7 +4,14 @@ import { cn } from '@/shared/lib/utils'
 import type { PeaksState } from '../editing/media-analysis'
 import type { PlaySegment } from '../editing/play-layout'
 import { roundSeconds } from '../editing/time-label'
-import { Frames, TimelineRuler, TrimBubble, TrimHandle, Wave } from '../editing/timeline'
+import {
+  Frames,
+  TimelinePlayhead,
+  TimelineRuler,
+  TrimBubble,
+  TrimHandle,
+  Wave,
+} from '../editing/timeline'
 import {
   arrowStep,
   releasePointer,
@@ -78,6 +85,7 @@ export function EditorTimeline({
   onDelete,
 }: EditorTimelineProps) {
   const lanesRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [trim, setTrim] = useState<Trim | null>(null)
 
   const percent = (time: number) => `${(time / scale) * 100}%`
@@ -269,6 +277,7 @@ export function EditorTimeline({
       <div
         aria-label="时间线轨道，窄屏可横向滚动"
         className="video-editor-timeline-scroll"
+        ref={scrollRef}
         role="region"
       >
         <div
@@ -282,6 +291,7 @@ export function EditorTimeline({
             onSeek={onSeek}
             scale={scale}
             total={total}
+            viewportRef={scrollRef}
           />
 
           {entries.map((entry, index) => {
@@ -375,25 +385,15 @@ export function EditorTimeline({
           )}
 
           {selectionBox === undefined ? null : (
-            <>
-              <span
-                aria-hidden="true"
-                className="video-editor-timeline-box"
-                ref={selectionBoxRef}
-                style={{
-                  left: `calc(${percent(selectionBox.from)} - 3px)`,
-                  width: `calc(${percent(selectionBox.to - selectionBox.from)} + 4px)`,
-                }}
-              />
-              <span
-                aria-hidden="true"
-                className="video-editor-timeline-box is-linked"
-                style={{
-                  left: `calc(${percent(selectionBox.from)} - 1px)`,
-                  width: percent(selectionBox.to - selectionBox.from),
-                }}
-              />
-            </>
+            <span
+              aria-hidden="true"
+              className="video-editor-timeline-box"
+              ref={selectionBoxRef}
+              style={{
+                left: `calc(${percent(selectionBox.from)} - 3px)`,
+                width: `calc(${percent(selectionBox.to - selectionBox.from)} + 4px)`,
+              }}
+            />
           )}
 
           {handleEntry === undefined
@@ -452,11 +452,7 @@ export function EditorTimeline({
             />
           ) : null}
 
-          <span
-            aria-hidden="true"
-            className="timeline-playhead"
-            style={{ left: percent(boundedTime) }}
-          />
+          <TimelinePlayhead style={{ left: percent(boundedTime) }} />
         </div>
       </div>
     </section>

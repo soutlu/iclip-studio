@@ -1,5 +1,5 @@
 export const timeLabel = (seconds: number): string => {
-  const safe = Math.max(0, seconds)
+  const safe = Math.round(Math.max(0, seconds) * 100) / 100
   const minutes = Math.floor(safe / 60)
     .toString()
     .padStart(2, '0')

@@ -730,8 +730,8 @@
 
 .wf-tracks {
   --timeline-ruler-height: 20px;
-  --timeline-handle-top: 0;
-  --timeline-handle-height: 100%;
+  --timeline-playhead-top: 20px;
+  --timeline-playhead-bottom: 0;
   --wf-film-height: 52px;
   --wf-lane-height: 26px;
   --wf-music-height: 32px;
@@ -928,7 +928,7 @@
 .wf-overlay.is-selected,
 .wf-music.is-selected {
   z-index: var(--z-local-2);
-  box-shadow: inset 0 0 0 2px var(--color-on-surface);
+  box-shadow: none;
 }
 
 .wf-clip.is-card .wf-block-body {
@@ -1019,17 +1019,6 @@
 
 .wf-music {
   overflow: hidden;
-}
-
-.wf-playhead {
-  position: absolute;
-  top: 4px;
-  bottom: 0;
-  z-index: var(--z-local-3);
-  width: 2px;
-  translate: -1px 0;
-  background: var(--color-on-surface);
-  pointer-events: none;
 }
 
 /* ---- 视频素材区 ---- */
@@ -1160,17 +1149,12 @@
   white-space: nowrap;
 }
 
-.wf-shot[aria-pressed='true'] {
-  box-shadow: inset 0 0 0 2px var(--color-on-surface);
-}
-
 .wf-range {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: var(--z-local-2);
   border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 2px var(--color-on-surface);
   cursor: grab;
   touch-action: none;
 }

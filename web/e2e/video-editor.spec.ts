@@ -454,6 +454,24 @@ test('标尺下边缘可拖动播放头，不触发相邻裁剪手柄、片段�
   if (box === null) throw new Error('标尺尚未布局')
   expect(box.height).toBeGreaterThanOrEqual(32)
   await page.mouse.move(await xAt(dialog, 2), box.y + box.height - 1)
+  const timePreview = page.locator('.timeline-time-preview')
+  await expect(timePreview).toContainText('预览')
+  await expect(timePreview).toContainText('00:02.00')
+  // 编辑器背后的会话仍可能自动滚动，不应清掉时间线上的预览。
+  await page.getByTestId('chat-scroller').evaluate(
+    (element) =>
+      new Promise<void>((resolve) => {
+        element.addEventListener('scroll', () => requestAnimationFrame(() => resolve()), {
+          once: true,
+        })
+        element.scrollTop = element.scrollTop === 0 ? element.scrollHeight : 0
+      }),
+  )
+  await expect(timePreview).toBeVisible()
+  const previewBox = await timePreview.boundingBox()
+  if (previewBox === null) throw new Error('时间预览尚未布局')
+  expect(previewBox.y + previewBox.height).toBeLessThan(box.y)
+  await screenshotBothThemes(page, '../.artifacts/design-qa/timeline-controls/preview')
   await page.mouse.down()
   await page.mouse.move(await xAt(dialog, 4.5), box.y + box.height - 1, { steps: 8 })
   await page.mouse.up()
@@ -865,6 +883,11 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await segment(dialog, 2).click()
   await segment(dialog, 3).click({ modifiers: ['Shift'] })
   await requestBox(dialog).fill('换成黄昏的暖光')
+  const playheadFill = () =>
+    dialog
+      .locator('.timeline-playhead')
+      .evaluate((element) => getComputedStyle(element, '::before').backgroundColor)
+  const restingFill = await playheadFill()
 
   // 按住播放头拖：卡收成画面底部的小胶囊，标着未提交。
   const release = await holdDrag(
@@ -881,20 +904,28 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
       (element.parentElement?.getAnimations() ?? []).map((animation) => animation.finished),
     ),
   )
-  // 指针按住拖的焦点不画焦点环。
+  // 指针与键盘均通过定位头内部变色表示焦点，标尺不画外框。
   const seek = dialog.getByRole('slider', { name: '时间线播放位置' })
   const rulerOutline = () =>
     seek.evaluate((element) => getComputedStyle(element.parentElement as HTMLElement).outlineStyle)
   await expect(seek).toBeFocused()
   expect(await rulerOutline()).toBe('none')
+  await expect.poll(playheadFill).not.toBe(restingFill)
+  const activeFill = await playheadFill()
+  // 视口变化会清掉悬浮提示，但按住拖动的内部填色仍要保留。
+  await page.setViewportSize({ width: 1335, height: 881 })
+  await expect(page.locator('.timeline-time-preview')).toHaveCount(0)
+  await expect.poll(playheadFill).toBe(activeFill)
   await screenshotBothThemes(page, `${SHOT_DIR}/scrub`)
   await release()
   expect(await rulerOutline()).toBe('none')
-  // 键盘走开再走回来：刻度区画出焦点环。
+  await expect.poll(playheadFill).not.toBe(activeFill)
+  // 键盘走开再走回来：定位头恢复活动填色，刻度区仍无外框。
   await page.keyboard.press('Shift+Tab')
   await page.keyboard.press('Tab')
   await expect(seek).toBeFocused()
-  expect(await rulerOutline()).toBe('solid')
+  expect(await rulerOutline()).toBe('none')
+  await expect.poll(playheadFill).toBe(activeFill)
 
   // 停下后点胶囊展开：字还在，光标在输入框里。
   await capsule(dialog).click()
