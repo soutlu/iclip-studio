@@ -180,7 +180,7 @@ type Carrying = {
   payload: CarryPayload
   point: DropPoint | undefined
   attempt: Attempt | undefined
-  rowAnchorY: number | undefined
+  overlayTop: number | undefined
   returning: boolean
   destination?: InsertionBox | undefined
 }
@@ -414,7 +414,9 @@ export function FilmTracks({
   const overlayRowFrom = (clientY: number): OverlayRow | undefined => {
     const lane = overlayLaneRef.current?.getBoundingClientRect()
     if (lane === undefined) return undefined
-    const y = clientY - (lane.top + ROWS_TOP_PX)
+    // 新行预演会把时间线整体向上推；命中仍以提起时的轨道位置为准，避免目标随预告跳动。
+    const top = carry !== null && !carry.returning ? (carry.overlayTop ?? lane.top) : lane.top
+    const y = clientY - (top + ROWS_TOP_PX)
     const below = rows === 0 ? lane.height : rows * ROW_PX + NEW_ROW_BELOW_PX
     if (y < -NEW_ROW_ABOVE_PX || y >= below) return undefined
     return rows === 0 ? { insertAt: 0 } : overlayRowAt(y / ROW_PX, rows)
@@ -493,27 +495,16 @@ export function FilmTracks({
       )
     }
     const timeMs = timeAt(clientX)
-    // 新行预演会增高时间线，使其整体上移；在进入时的命中带内保持预告，避免布局挤走指针。
-    const heldRow =
-      carry !== null &&
-      !carry.returning &&
-      carry.rowAnchorY !== undefined &&
-      Math.abs(clientY - carry.rowAnchorY) <= ROW_PX / 2
-        ? carry.point?.overlayRow
-        : undefined
-    const overlayRow = heldRow ?? overlayRowFrom(clientY)
-    const lane: TrackLane | undefined =
-      heldRow !== undefined
+    const overlayRow = overlayRowFrom(clientY)
+    const lane: TrackLane | undefined = overFilm(clientX, clientY)
+      ? 'film'
+      : overlayRow !== undefined
         ? 'overlay'
-        : overFilm(clientX, clientY)
-          ? 'film'
-          : overlayRow !== undefined
-            ? 'overlay'
-            : near(captionLaneRef.current)
-              ? 'caption'
-              : near(musicLaneRef.current)
-                ? 'music'
-                : undefined
+        : near(captionLaneRef.current)
+          ? 'caption'
+          : near(musicLaneRef.current)
+            ? 'music'
+            : undefined
     if (lane === undefined) return undefined
     const row = overlayRow ?? { insertAt: 0 }
     if (lane === 'film' && durationMs !== undefined) {
@@ -544,16 +535,10 @@ export function FilmTracks({
       payload,
       point,
       attempt: point === undefined ? undefined : payload.attempt(point),
-      rowAnchorY:
-        point?.lane === 'overlay' && 'insertAt' in point.overlayRow
-          ? carry !== null &&
-            !carry.returning &&
-            carry.point?.lane === 'overlay' &&
-            'insertAt' in carry.point.overlayRow &&
-            carry.point.overlayRow.insertAt === point.overlayRow.insertAt
-            ? (carry.rowAnchorY ?? clientY)
-            : clientY
-          : undefined,
+      overlayTop:
+        carry !== null && !carry.returning
+          ? carry.overlayTop
+          : overlayLaneRef.current?.getBoundingClientRect().top,
       returning: false,
     }
   }
