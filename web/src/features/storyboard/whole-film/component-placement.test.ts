@@ -106,12 +106,12 @@ describe('placeComponent', () => {
   })
 
   it('包装从播放头开始，取组件自带时长，放不下截短到整片结尾', () => {
-    const { draft } = expectOk(placeComponent(film(), item('star-rating-fill'), click(500), env))
+    const { draft } = expectOk(placeComponent(film(), item('hw-arrow'), click(500), env))
     expect(draft.overlays).toEqual([
-      { id: 'o1', component: 'star-rating-fill', start: 500, duration: 4_000, variables: {} },
+      { id: 'o1', component: 'hw-arrow', start: 500, duration: 4_000, variables: {} },
     ])
     const short = draftOf([video('v1', 's1', 0, 1_500)])
-    const truncated = expectOk(placeComponent(short, item('star-rating-fill'), click(0), env))
+    const truncated = expectOk(placeComponent(short, item('hw-arrow'), click(0), env))
     expect(truncated.draft.overlays[0]).toMatchObject({ start: 0, duration: 1_500 })
   })
 
@@ -125,12 +125,7 @@ describe('placeComponent', () => {
       placeComponent(film(), item('logo-sting'), { via: 'drop', lane: 'overlay', timeMs: 0 }, env),
     ).toEqual({ ok: false, refusal: 'drop-elsewhere' })
     const { draft } = expectOk(
-      placeComponent(
-        film(),
-        item('star-rating-fill'),
-        { via: 'drop', lane: 'overlay', timeMs: 800 },
-        env,
-      ),
+      placeComponent(film(), item('hw-arrow'), { via: 'drop', lane: 'overlay', timeMs: 800 }, env),
     )
     expect(draft.overlays[0]?.start).toBe(800)
   })

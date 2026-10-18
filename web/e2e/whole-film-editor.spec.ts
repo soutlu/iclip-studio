@@ -97,8 +97,8 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(film.getByRole('button', { name: /^选中：转场 · 淡入淡出/ })).toBeVisible()
 
   await seek(page, dialog, 1)
-  await components.getByRole('button', { name: /^星级评分，包装轨/ }).click()
-  await expect(dialog.getByRole('group', { name: /^包装 · 星级评分/ })).toBeVisible()
+  await components.getByRole('button', { name: /^手绘箭头，包装轨/ }).click()
+  await expect(dialog.getByRole('group', { name: /^包装 · 手绘箭头/ })).toBeVisible()
 
   await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
   await components.getByRole('button', { name: /^高亮字幕，字幕样式/ }).click()

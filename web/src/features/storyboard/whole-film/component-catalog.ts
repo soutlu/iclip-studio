@@ -47,13 +47,11 @@ export const PLACEMENT_LABEL: Record<Placement, string> = {
 
 export const CATEGORY_ICON: Record<string, IconName> = {
   captions: 'captions',
-  'code-animation': 'code',
   vfx: 'sparkles',
   transitions: 'swap-panes',
   effects: 'blend',
   'text-effects': 'type',
   social: 'message',
-  data: 'chart',
   scenes: 'film',
 }
 

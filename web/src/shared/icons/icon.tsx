@@ -95,7 +95,6 @@ import {
   Magnet,
   MoveHorizontal,
   Sparkles,
-  Code,
   Blend,
   Type,
   Film,
@@ -264,8 +263,7 @@ const ICONS = {
   fit: MoveHorizontal,
   /** AI 生成（如生成音乐） */
   sparkles: Sparkles,
-  /** 组件分类：代码动画、效果、文字效果、场景 */
-  code: Code,
+  /** 组件分类：效果、文字效果、场景 */
   blend: Blend,
   type: Type,
   film: Film,
