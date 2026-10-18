@@ -730,7 +730,7 @@
 
 .wf-tracks {
   --timeline-ruler-height: 20px;
-  --timeline-playhead-top: 24px;
+  --timeline-playhead-top: 20px;
   --timeline-playhead-bottom: 0;
   --wf-film-height: 52px;
   --wf-lane-height: 26px;
@@ -928,7 +928,7 @@
 .wf-overlay.is-selected,
 .wf-music.is-selected {
   z-index: var(--z-local-2);
-  box-shadow: inset 0 0 0 2px var(--color-on-surface);
+  box-shadow: none;
 }
 
 .wf-clip.is-card .wf-block-body {
@@ -1149,17 +1149,12 @@
   white-space: nowrap;
 }
 
-.wf-shot[aria-pressed='true'] {
-  box-shadow: inset 0 0 0 2px var(--color-on-surface);
-}
-
 .wf-range {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: var(--z-local-2);
   border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 2px var(--color-on-surface);
   cursor: grab;
   touch-action: none;
 }

@@ -2,7 +2,7 @@
   --timeline-ruler-height: var(--control-height-md);
   --timeline-track-top: calc(var(--timeline-ruler-height) + 4px);
   --timeline-handle-top: calc(var(--timeline-track-top) + 23px);
-  --timeline-playhead-top: var(--timeline-track-top);
+  --timeline-playhead-top: calc(var(--timeline-track-top) - 4px);
   --timeline-playhead-bottom: 0;
 
   display: flex;
@@ -153,22 +153,13 @@
   pointer-events: none;
 }
 
+/* 只保留 AI 输入卡的选区定位锚点，不绘制选中外框。 */
 .video-editor-timeline-box {
   position: absolute;
   top: calc(var(--timeline-track-top) - 3px);
   z-index: var(--z-local-2);
   height: 52px;
-  border: 2px solid var(--color-on-surface);
-  border-radius: var(--radius-md);
   pointer-events: none;
-}
-
-.video-editor-timeline-box.is-linked {
-  top: calc(var(--timeline-track-top) + 53px);
-  height: 32px;
-  border-width: 1px;
-  border-color: var(--color-on-surface-faint);
-  border-radius: var(--radius-sm);
 }
 
 .video-editor-timeline-lifted {

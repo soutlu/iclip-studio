@@ -385,25 +385,15 @@ export function EditorTimeline({
           )}
 
           {selectionBox === undefined ? null : (
-            <>
-              <span
-                aria-hidden="true"
-                className="video-editor-timeline-box"
-                ref={selectionBoxRef}
-                style={{
-                  left: `calc(${percent(selectionBox.from)} - 3px)`,
-                  width: `calc(${percent(selectionBox.to - selectionBox.from)} + 4px)`,
-                }}
-              />
-              <span
-                aria-hidden="true"
-                className="video-editor-timeline-box is-linked"
-                style={{
-                  left: `calc(${percent(selectionBox.from)} - 1px)`,
-                  width: percent(selectionBox.to - selectionBox.from),
-                }}
-              />
-            </>
+            <span
+              aria-hidden="true"
+              className="video-editor-timeline-box"
+              ref={selectionBoxRef}
+              style={{
+                left: `calc(${percent(selectionBox.from)} - 3px)`,
+                width: `calc(${percent(selectionBox.to - selectionBox.from)} + 4px)`,
+              }}
+            />
           )}
 
           {handleEntry === undefined
