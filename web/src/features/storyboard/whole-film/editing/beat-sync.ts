@@ -7,8 +7,6 @@ import { cutsOf, filmDuration, musicOf, sourceOf } from './timeline'
 
 /** 离拍点这么近就算在拍上 */
 const BEAT_EPS_MS = 10
-/** 强拍优先：打分时强拍按近了这么多拍间距算 */
-const STRONG_BEAT_BONUS = 0.35
 
 export type BeatSyncResult =
   { ok: true; draft: WholeFilmDraft; moved: number; kept: number } | { ok: false; refusal: Refusal }
@@ -40,9 +38,9 @@ const cutsSpeech = (before: Layer0Clip, delta: number, context: EditContext): bo
 }
 
 /**
- * 自动卡点：音乐不动，把每个切点挪到一拍之内最近的拍点（强拍优先），挪的是切点前一段的出点，
- * 后面的段跟着移。会切进口播的不挪；最近的拍在后面但出点之后没有画面时，改挪到前面一拍；
- * 都不行就保持原样。moved 只数这次真的挪到拍上的切点，原本就在拍上的切点不算 moved 也不算 kept。
+ * 自动卡点：音乐不动，把每个切点挪到一拍之内最近的拍点，挪的是切点前一段的出点，后面的段跟着移。
+ * 会切断口播、或素材不够长的切点保持不动。
+ * moved 只数这次真的挪到拍上的切点，原本就在拍上的切点不算 moved 也不算 kept。
  */
 export const autoBeatSync = (draft: WholeFilmDraft, context: EditContext): BeatSyncResult => {
   if (!draft.music) return { ok: false, refusal: 'no-music' }
@@ -51,8 +49,7 @@ export const autoBeatSync = (draft: WholeFilmDraft, context: EditContext): BeatS
   // 拍间距取歌里前两拍，同设计稿
   const gap = second.timeMs - first.timeMs
   const beats = filmBeats(draft, context)
-  const score = (beat: MusicBeat, at: number) =>
-    Math.abs(beat.timeMs - at) - (beat.strong ? gap * STRONG_BEAT_BONUS : 0)
+  const distance = (beat: MusicBeat, at: number) => Math.abs(beat.timeMs - at)
 
   let current = draft
   let moved = 0
@@ -66,26 +63,19 @@ export const autoBeatSync = (draft: WholeFilmDraft, context: EditContext): BeatS
     if (beats.some((b) => Math.abs(b.timeMs - at) <= BEAT_EPS_MS)) continue
 
     const range = cutRange(current, before, context)
-    const fits = (target: number) => target - at >= range.min && target - at <= range.max
-    const speechSafe = (target: number) => !cutsSpeech(before, target - at, context)
     const nearest = beats
-      .filter((b) => Math.abs(b.timeMs - at) <= gap)
+      .filter((b) => distance(b, at) <= gap)
       .reduce<MusicBeat | null>(
-        (best, b) => (best && score(best, at) <= score(b, at) ? best : b),
+        (best, b) => (best && distance(best, at) <= distance(b, at) ? best : b),
         null,
       )
-
-    let target: number | null = null
-    if (nearest && speechSafe(nearest.timeMs)) {
-      if (fits(nearest.timeMs)) target = nearest.timeMs
-      else if (nearest.timeMs > at) {
-        const previous = beats.findLast((b) => b.timeMs < at - BEAT_EPS_MS)
-        if (previous && fits(previous.timeMs) && speechSafe(previous.timeMs)) {
-          target = previous.timeMs
-        }
-      }
-    }
-    if (target === null) {
+    const target = nearest?.timeMs
+    if (
+      target === undefined ||
+      target - at < range.min ||
+      target - at > range.max ||
+      cutsSpeech(before, target - at, context)
+    ) {
       kept++
       continue
     }

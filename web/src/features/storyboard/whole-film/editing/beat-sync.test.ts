@@ -5,7 +5,7 @@ import { autoBeatSync } from './beat-sync'
 import type { MusicBeat } from './context'
 import type { WholeFilmDraft } from './draft'
 import { commitEdit } from './history'
-import { cutsOf, filmDuration } from './timeline'
+import { cutsOf } from './timeline'
 
 const beatsEvery = (gapMs: number, count: number): MusicBeat[] =>
   Array.from({ length: count }, (_, k) => ({ timeMs: k * gapMs, strong: k % 4 === 0 }))
@@ -45,21 +45,21 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
   it('挪了的 + 保留的 + 原本在拍上的 = 切点数；原本在拍上的两边都不算', () => {
     const before = film()
     const { draft, moved, kept } = expectOk(autoBeatSync(before, context))
-    expect({ moved, kept }).toEqual({ moved: 2, kept: 1 })
+    expect({ moved, kept }).toEqual({ moved: 1, kept: 2 })
     expect(moved + kept + onBeat(before, beats)).toBe(cutTimes(draft).length)
     expect(onBeat(draft, beats)).toBe(moved + onBeat(before, beats))
   })
 
-  it('强拍优先：4300 离 4500 更近，仍挪到强拍 4000；后面的段跟着移', () => {
+  it('不分强弱挪到最近的拍：弱拍 4500 比强拍 4000 近，4300 挪到 4500；后面的段跟着移', () => {
     const { draft } = expectOk(autoBeatSync(film(), context))
-    expect(cutTimes(draft)).toEqual([2_000, 4_000, 6_100, 7_500])
-    expect(draft.layer0[1]).toMatchObject({ duration: 2_000, playbackStart: 1_000 })
+    expect(cutTimes(draft)).toEqual([2_000, 4_500, 6_600, 8_400])
+    expect(draft.layer0[1]).toMatchObject({ duration: 2_500, playbackStart: 1_000 })
   })
 
-  it('会截掉口播的切点不动；最近的拍在后面但出点后没有画面，改挪到前一拍', () => {
+  it('会截掉口播的切点不动；最近的拍在后面但出点后没有画面，也不动、不退到前一拍', () => {
     const { draft } = expectOk(autoBeatSync(film(), context))
     expect(draft.layer0[2]).toMatchObject({ duration: 2_100, playbackStart: 0 })
-    expect(draft.layer0[3]).toMatchObject({ duration: 1_400, playbackStart: 0 })
+    expect(draft.layer0[3]).toMatchObject({ duration: 1_800, playbackStart: 0 })
   })
 
   it('音乐不动，每段仍在素材范围内', () => {
@@ -109,7 +109,7 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
   })
 
   it('挪了会让前面的转场放不下的切点保持原样，其余照挪', () => {
-    // 片头后的转场从 1000 开始铺 3.2 秒，v1 缩到 3 秒就放不下
+    // 片头后的转场从 1000 开始铺 3.2 秒；4200 最近的拍是 4000，v1 缩到 3 秒就放不下
     const withTransition = contextOf(
       { A: source(20_000) },
       { m1: { durationMs: 30_000, beats } },
@@ -118,7 +118,7 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
     const before = draftOf(
       [
         video('v0', 'A', 0, 1_000),
-        video('v1', 'A', 0, 3_300),
+        video('v1', 'A', 0, 3_200),
         video('v2', 'A', 0, 1_000),
         video('v3', 'A', 0, 1_000),
       ],
@@ -131,7 +131,7 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
     )
     const { draft, moved, kept } = expectOk(autoBeatSync(before, withTransition))
     expect({ moved, kept }).toEqual({ moved: 1, kept: 1 })
-    expect(cutTimes(draft)).toEqual([1_000, 4_300, 5_500])
+    expect(cutTimes(draft)).toEqual([1_000, 4_200, 5_000])
     expect(draft.transitions).toEqual(before.transitions)
   })
 
@@ -152,7 +152,7 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
   })
 })
 
-describe('autoBeatSync：设计稿 QA 的两个数值用例', () => {
+describe('autoBeatSync：设计稿 QA 的数值用例', () => {
   // 设计稿示例音乐的拍点（秒 × 1000），每四拍一个强拍
   const beats = [186, 789, 1_393, 1_997, 2_601, 3_204, 3_808, 4_412, 5_016, 5_619].map(
     (timeMs, k) => ({ timeMs, strong: k % 4 === 0 }),
@@ -162,18 +162,8 @@ describe('autoBeatSync：设计稿 QA 的两个数值用例', () => {
     { m1: { durationMs: 29_950, beats } },
   )
 
-  it('最近的拍在后面但没有画面：改挪到上一拍 1.393 秒', () => {
+  it('最近的拍 1.997 秒在后面但出点后没有画面：保持原样，不退到上一拍 1.393 秒', () => {
     const draft = draftOf([video('v1', 'clip1', 11_167, 1_889), video('v2', 'clip3', 0, 1_375)], {
-      music,
-    })
-    const result = expectOk(autoBeatSync(draft, context))
-    expect({ moved: result.moved, kept: result.kept }).toEqual({ moved: 1, kept: 0 })
-    expect(cutTimes(result.draft)).toEqual([1_393])
-    expect(filmDuration(result.draft)).toBe(1_393 + 1_375)
-  })
-
-  it('第一段只剩 0.15 秒且已到素材末尾，前面又没有拍：保持原样', () => {
-    const draft = draftOf([video('v1', 'clip1', 12_906, 150), video('v2', 'clip3', 0, 1_375)], {
       music,
     })
     expect(expectOk(autoBeatSync(draft, context))).toMatchObject({ moved: 0, kept: 1, draft })
