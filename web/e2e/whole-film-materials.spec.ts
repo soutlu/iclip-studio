@@ -80,7 +80,9 @@ const openWith = async (page: Page, shots: readonly number[]) => {
   const panel = await openConversation(page, CONVERSATION)
   await addTakes(page, shots)
   await panel.getByRole('button', { name: '整片', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ has: page.getByRole('group', { name: '整片编辑器', exact: true }) })
   await expect(dialog).toBeVisible()
   const materials = dialog.getByRole('region', { name: '视频素材区' })
   // 镜头表读好了才有镜头按钮
@@ -379,7 +381,9 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   if (take === undefined) throw new Error('没有出片')
   await composeVersion(page, take)
   await panel.getByRole('button', { name: '整片', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ has: page.getByRole('group', { name: '整片编辑器', exact: true }) })
   const materials = dialog.getByRole('region', { name: '视频素材区' })
 
   const picker = materials.getByRole('button', { name: /^生成 A的版本：/ })

@@ -1,5 +1,14 @@
-import { useEffect, useEffectEvent, useRef, type RefObject } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react'
 import { Icon } from '@/shared/icons'
+import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import { StageBackdrop } from '../components/stage-backdrop'
 import type { Edge } from '../editing/timeline-drag'
 import type { MaterialRange } from './materials'
 
@@ -41,6 +50,7 @@ export function MaterialPreview({
   onNotice,
 }: MaterialPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [size, setSize] = useState<{ url: string; ratio: number }>()
   const report = useEffectEvent(onTime)
   const playing = useEffectEvent(onPlaying)
   const failed = useEffectEvent(() => onNotice('这段素材播放失败，请稍后重试'))
@@ -104,16 +114,28 @@ export function MaterialPreview({
 
   return (
     <div className="wf-material-preview">
-      {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成的视频没有字幕轨，不装样子 */}
-      <video
-        className="wf-material-video"
-        onPause={() => onPlaying(false)}
-        onPlay={() => onPlaying(true)}
-        playsInline
-        preload="auto"
-        ref={videoRef}
-        src={url}
-      />
+      <StageBackdrop url={videoSnapshotUrl(url, 320)} />
+      <div className="editor-hero-wrap">
+        {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成的视频没有字幕轨，不装样子 */}
+        <video
+          className="wf-material-video editor-preview stage-picture"
+          onLoadedMetadata={({ currentTarget: video }) =>
+            setSize({ url, ratio: video.videoWidth / video.videoHeight })
+          }
+          onPause={() => onPlaying(false)}
+          onPlay={() => onPlaying(true)}
+          playsInline
+          preload="auto"
+          ref={videoRef}
+          src={url}
+          style={
+            {
+              '--preview-ratio': size?.url === url ? size.ratio : 1,
+              visibility: size?.url === url ? undefined : 'hidden',
+            } as CSSProperties
+          }
+        />
+      </div>
       <p className="wf-stage-label">
         <Icon decorative name="video" size="xs" />
         {label}

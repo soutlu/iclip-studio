@@ -90,7 +90,7 @@ export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
 
-function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
+function FilmWorkspace({ conversationId, conversationTitle, readOnly }: ArtifactRendererProps) {
   const film = useFilmView(conversationId)
   useFilmFileChanges(conversationId)
   useLiveGenerations(conversationId)
@@ -537,6 +537,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
       {search.wholeFilm === true && !readOnly ? (
         <WholeFilmEditor
           conversationId={conversationId}
+          conversationTitle={conversationTitle}
           onClose={() => go({ wholeFilm: undefined })}
         />
       ) : null}

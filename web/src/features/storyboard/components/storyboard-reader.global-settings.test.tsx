@@ -136,7 +136,12 @@ const provide = (document = fixture) => {
 const renderReader = async () => {
   const rendered = await renderWithProviders(
     <>
-      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />
+      <StoryboardReader
+        conversationTitle="夜景延时素材生成"
+        artifact={artifact}
+        conversationId={CONVERSATION_ID}
+        readOnly={false}
+      />
       <Toaster />
     </>,
     { initialPath: '/?shot=1' },

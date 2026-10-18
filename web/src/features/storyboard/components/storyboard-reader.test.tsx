@@ -195,7 +195,12 @@ const delayedUpload = (status = 200) => {
 const renderReader = async (initialPath = '/?shot=1&content=scene:1', readOnly = false) => {
   const rendered = await renderWithProviders(
     <>
-      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
+      <StoryboardReader
+        conversationTitle="夜景延时素材生成"
+        artifact={artifact}
+        conversationId={CONVERSATION_ID}
+        readOnly={readOnly}
+      />
       <Toaster />
     </>,
     {
@@ -800,12 +805,13 @@ describe('StoryboardReader', () => {
   it('地址带着整片就打开整片编辑器，关掉回到分镜页；顶栏「整片」再打开', async () => {
     provide()
     await renderReader('/?shot=1&wholeFilm=true')
-    const editor = await screen.findByRole('dialog', { name: /编辑视频/ })
-    expect(within(editor).getByText('整片')).toBeInTheDocument()
+    const editor = await screen.findByRole('dialog', { name: '夜景延时素材生成' })
     await userEvent.click(within(editor).getByRole('button', { name: '关闭整片编辑' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: /编辑视频/ })).toBeNull())
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '夜景延时素材生成' })).toBeNull(),
+    )
     await userEvent.click(screen.getByRole('button', { name: '整片' }))
-    expect(await screen.findByRole('dialog', { name: /编辑视频/ })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: '夜景延时素材生成' })).toBeInTheDocument()
   })
 
   it('只读时没有「整片」入口，地址里带着也不打开', async () => {
@@ -813,7 +819,7 @@ describe('StoryboardReader', () => {
     await renderReader('/?shot=1&wholeFilm=true', true)
     await screen.findByRole('region', { name: '镜头组 1' })
     expect(screen.queryByRole('button', { name: '整片' })).toBeNull()
-    expect(screen.queryByRole('dialog', { name: /编辑视频/ })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: '夜景延时素材生成' })).toBeNull()
   })
 
   it('选中成片后点回填，把那次出片的镜头组写回当前组并保存', async () => {
@@ -1342,7 +1348,12 @@ describe('StoryboardReader', () => {
     provide('{ invalid JSON')
     // 读不出镜头组就没有正文编辑器，不用等上传权限。
     await renderWithProviders(
-      <StoryboardReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />,
+      <StoryboardReader
+        conversationTitle="夜景延时素材生成"
+        artifact={artifact}
+        conversationId={CONVERSATION_ID}
+        readOnly={false}
+      />,
       { initialPath: '/?shot=1&content=scene:1' },
     )
     expect(await screen.findByText('文件格式不正确，镜头组读取失败')).toBeVisible()
