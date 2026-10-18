@@ -49,7 +49,7 @@ export type MusicBeats =
   | { kind: 'unavailable'; reason: string }
 
 /**
- * 拍点强度（0–1，这一拍的响度比上最响的一拍）到这个值算强拍：刻度加重，自动卡点优先挪到它上面。
+ * 拍点强度（0–1，这一拍的响度比上最响的一拍）到这个值算强拍，刻度加重。
  * Studio 只给连续的强度，没有强拍的划分，这条线是我们定的。
  */
 export const STRONG_BEAT_STRENGTH = 0.75
