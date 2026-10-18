@@ -164,19 +164,21 @@ test('品牌栏、通用栏：小标题带个数、卡片网格，两栏各记�
   await dialog.getByRole('tab', { name: '通用' }).click()
   await expect(chips(dialog, '分类').getByRole('radio', { name: /^视觉特效/ })).toBeChecked()
 
-  // 字幕样式在「通用 › 字幕」：在用的那张描墨色框并打勾，点别的换样式
+  // 标题下拉直接切换字幕样式；组件栏同步当前样式。
   await dialog.getByRole('tab', { name: '品牌' }).click()
   await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
-  await expect(dialog.getByRole('tab', { name: '通用' })).toHaveAttribute('aria-selected', 'true')
-  await expect(chips(dialog, '分类').getByRole('radio', { name: /^字幕/ })).toBeChecked()
+  await expect(page.getByRole('menuitemradio', { name: '白字黑边', exact: true })).toBeChecked()
+  await page.getByRole('menuitemradio', { name: '高亮字幕', exact: true }).click()
+  await dialog.getByRole('tab', { name: '通用' }).click()
+  await chips(dialog, '分类').getByRole('radio', { name: /^字幕/ }).click()
   const inUse = dialog.getByRole('button', { name: /^白字黑边，/ })
-  await expect(inUse).toHaveAttribute('aria-pressed', 'true')
-  await expect(inUse.locator('.wf-component-check')).toBeVisible()
-  await dialog.getByRole('button', { name: /^高亮字幕，/ }).click()
   await expect(dialog.getByRole('button', { name: /^高亮字幕，/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
+  await expect(
+    dialog.getByRole('button', { name: /^高亮字幕，/ }).locator('.wf-component-check'),
+  ).toBeVisible()
   await expect(inUse).toHaveAttribute('aria-pressed', 'false')
 
   // 品牌卡和别的卡一样：点它按组件类型放（block 进成片轨），拖到哪条轨就放在哪。
@@ -375,7 +377,7 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   await expect
     .poll(async () => Math.abs((await boxOf(effectPreview)).width - 4 * pps))
     .toBeLessThan(3)
-  await expect(page.getByRole('status').filter({ hasText: /^特效 ·/ })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: /^新增特效轨 ·/ })).toBeVisible()
   await expect
     .poll(async () =>
       Math.max(...(await clipLefts(film)).map((left, at) => Math.abs(left - filmBeforeEffect[at]))),
@@ -399,9 +401,15 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   // 拖到已有行下方预演新行，松手才提交第二个特效。
   const laneNow = await boxOf(overlays)
   await liftCard(page, dialog.getByRole('button', { name: /^手写标题，/ }))
+  // 快速经过上边缘再到下边缘：不让上一段展开动画改变最终命中行。
+  await page.mouse.move(laneNow.x + 120, laneNow.y + 2 - 7)
   await page.mouse.move(laneNow.x + 120, laneNow.y + 2 + 24 + 8, { steps: 8 })
   await expect(effectPreview).toBeVisible()
   await expect(effectPreview).toContainText('手写标题')
+  await expect(page.getByRole('status').filter({ hasText: /^新增特效轨 ·/ })).toContainText(
+    '松开添加',
+  )
+  await expect.poll(async () => (await boxOf(overlays)).height).toBe(laneNow.height + 24)
   await expect(overlays.getByRole('group', { name: /^特效 · / })).toHaveCount(1)
   expect(await readDraft(page)).toEqual(withEffect)
   await page.mouse.up()
@@ -412,12 +420,24 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   const beforeCancel = await readDraft(page)
   expect(beforeCancel?.layer0).toEqual(withCard?.layer0)
 
-  // 拿起后在侧栏松手：没放下，缩影退回，草稿不变
-  await liftCard(page, dialog.getByRole('button', { name: /^手绘箭头，/ }))
+  // 已展开第三行后拖回侧栏：新行收回，缩影退回，草稿不变。
+  const cancelLane = await boxOf(overlays)
+  const cancelCard = dialog.getByRole('button', { name: /^手绘箭头，/ })
+  await liftCard(page, cancelCard)
+  const cancelSource = await boxOf(cancelCard)
+  await page.mouse.move(cancelLane.x + 120, cancelLane.y + cancelLane.height + 8, { steps: 8 })
+  await expect(page.getByRole('status').filter({ hasText: /^新增特效轨 ·/ })).toBeVisible()
+  await expect.poll(async () => (await boxOf(overlays)).height).toBe(cancelLane.height + 24)
+  await page.mouse.move(
+    cancelSource.x + cancelSource.width / 2,
+    cancelSource.y + cancelSource.height / 2,
+    { steps: 8 },
+  )
   await page.mouse.up()
   await expect(overlays.getByRole('group', { name: /^特效 · / })).toHaveCount(2)
   await expect(ghost).toBeHidden()
   await expect(effectPreview).toBeHidden()
+  await expect.poll(async () => (await boxOf(overlays)).height).toBe(cancelLane.height)
   expect(await readDraft(page)).toEqual(beforeCancel)
 })
 

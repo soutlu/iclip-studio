@@ -434,9 +434,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(film.getByRole('group')).toHaveCount(6)
   })
 
-  test('特效轨：缩略图、拖中部改时间并吸附、←/→ 微调；上下拖换行，所有行之外只画横线，松手才开新行', async ({
-    page,
-  }) => {
+  test('特效轨：拖动和微调；上下新增预演展开一行，松手才提交，取消恢复原排列', async ({ page }) => {
     const { dialog } = await openWith(page, {
       layer0: BASE,
       overlays: [
@@ -472,7 +470,9 @@ test.describe('整片编辑器 · 成片区', () => {
       lane.getByRole('group', { name: '特效 · 手绘箭头，第 1 行，1.1–4.1 秒' }),
     ).toBeVisible()
 
-    // 拖到所有行下方：只画插入横线，行数不变；松手才多出一行（新开的行至少 8 像素高的感应区）
+    // 拖到已有行只换行；越过最后一行后展开新增预演，尚未保存草稿。
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.start).toBe(1_100)
+    const beforeMove = await readDraft(page)
     const laneBox = await boxOf(lane)
     const rowsBottom = laneBox.y + 2 + 2 * 24
     const flash = await boxOf(lane.getByRole('button', { name: /^选中：特效 · 闪光叠加/ }))
@@ -480,22 +480,43 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.move(arrowNow.cx, arrowNow.cy)
     await page.mouse.down()
     await page.mouse.move(arrowNow.cx, flash.cy, { steps: 4 })
+    await expect(lane.getByRole('status').filter({ hasText: '新增特效轨' })).toHaveCount(0)
     await page.mouse.move(arrowNow.cx, rowsBottom + 8, { steps: 4 })
-    await expect(lane.locator('.wf-overlay-insert')).toBeVisible()
-    expect((await boxOf(lane)).height).toBe(laneBox.height)
+    await expect(lane.getByRole('status').filter({ hasText: '新增特效轨' })).toContainText(
+      '松开添加',
+    )
+    await expect.poll(async () => (await boxOf(lane)).height).toBe(laneBox.height + 24)
+    expect(await readDraft(page)).toEqual(beforeMove)
     await page.mouse.up()
     await expect(lane.getByRole('group', { name: /^特效 · 闪光叠加，第 1 行/ })).toBeVisible()
     await expect(lane.getByRole('group', { name: /^特效 · 手绘箭头，第 2 行/ })).toBeVisible()
 
-    // 所有行上方 7 像素处同样只画横线；松手开在最上面
+    // 所有行上方 7 像素处也会展开；Esc 收回，不修改草稿。
+    await expect.poll(async () => (await boxOf(lane)).height).toBe(laneBox.height)
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.track).toBe(1)
+    const beforeCancel = await readDraft(page)
     const top = (await boxOf(lane)).y + 2 - 7
     const arrowLow = await boxOf(arrow)
     await page.mouse.move(arrowLow.cx, arrowLow.cy)
     await page.mouse.down()
     await page.mouse.move(arrowLow.cx, top, { steps: 6 })
-    await expect(lane.locator('.wf-overlay-insert')).toBeVisible()
+    await expect(lane.getByRole('status').filter({ hasText: '新增特效轨' })).toBeVisible()
+    await expect.poll(async () => (await boxOf(lane)).height).toBe(laneBox.height + 24)
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await expect(dialog).toBeVisible()
+    await expect.poll(async () => (await boxOf(lane)).height).toBe(laneBox.height)
+    expect(await readDraft(page)).toEqual(beforeCancel)
+
+    // 再拖到最上面松手，预演结果提交成第一行。
+    const retry = await boxOf(arrow)
+    await page.mouse.move(retry.cx, retry.cy)
+    await page.mouse.down()
+    await page.mouse.move(retry.cx, (await boxOf(lane)).y + 2 - 7, { steps: 6 })
+    await expect(lane.getByRole('status').filter({ hasText: '新增特效轨' })).toBeVisible()
     await page.mouse.up()
     await expect(lane.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ })).toBeVisible()
+    await expect.poll(async () => (await boxOf(lane)).height).toBe(laneBox.height)
 
     // 拖组件卡到特效轨（松手放下）
     await dialog.getByRole('tab', { name: '通用' }).click()

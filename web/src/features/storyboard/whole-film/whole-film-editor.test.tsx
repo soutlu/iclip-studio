@@ -2,16 +2,18 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
-import type { WholeFilmDocument } from '@/shared/api/generated/types.gen'
+import type { SubtitleIn, WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { playerCalls } from '@/testing/hyperframes-player'
+import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
 import { renderWithProviders } from '@/testing/render'
 import { card, draftOf, overlay as overlayAt, video } from '@/testing/whole-film'
 import type { GenerationJob } from '../storyboard.api'
 import { WholeFilmEditor } from './whole-film-editor'
+import { wholeFilmQueryKeys } from './whole-film.api'
 
 // jsdom 读不了真文件：mediabunny 换成按地址给关键帧表、时长与画面尺寸的替身；没有原声轨。
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
@@ -96,7 +98,8 @@ const song = makeGenerationJob({
 })
 
 /** 这段对话的生成记录；按 kind 筛，与后端同一口径 */
-const serveGenerations = (records: GenerationJob[]) =>
+const serveGenerations = (records: GenerationJob[]) => {
+  const conversation = addMockConversation('整片编辑', undefined, undefined, CONVERSATION)
   server.use(
     http.get('*/api/generations', ({ request }) => {
       const kind = new URL(request.url).searchParams.get('kind')
@@ -104,10 +107,9 @@ const serveGenerations = (records: GenerationJob[]) =>
         items: records.filter((job) => kind === null || job.kind === kind),
       })
     }),
-    http.get('*/api/conversations/:conversationId', () =>
-      HttpResponse.json({ detail: '不需要读对话' }, { status: 404 }),
-    ),
+    http.get('*/api/conversations/:conversationId', () => HttpResponse.json({ conversation })),
   )
+}
 
 const openEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
@@ -121,7 +123,7 @@ const openEditor = async (records: GenerationJob[] = takes) => {
   await screen.findByRole('group', { name: '整片编辑器' })
   /** 关掉编辑器：页面上不再渲染它 */
   const close = () => rendered.rerender(<Toaster />)
-  return { onClose, close }
+  return { onClose, close, queryClient: rendered.queryClient }
 }
 
 const filmLane = () => screen.getByRole('group', { name: '成片画面轨' })
@@ -600,23 +602,17 @@ describe('整片编辑器 · 组件', () => {
     expect(screen.queryByRole('dialog', { name: /标志片尾/ })).not.toBeInTheDocument()
   })
 
-  it('字幕样式按钮：到「通用 › 字幕」，在用的样式卡片按下，点别的字幕卡片换样式', async () => {
+  it('字幕标题下拉选择样式，保存后组件栏同步显示当前样式', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
-    // 先停在别的分类上，字幕样式按钮要把它切回「字幕」
-    await generalTab(user, '转场')
-    await user.click(screen.getByRole('tab', { name: '素材' }))
     await user.click(screen.getByRole('button', { name: /^字幕样式：白字黑边/ }))
-    expect(screen.getByRole('tab', { name: '通用' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('menuitemradio', { name: '白字黑边' })).toBeChecked()
+    await user.click(screen.getByRole('menuitemradio', { name: '高亮字幕' }))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toHaveFocus()
+    await generalTab(user, '字幕')
     const list = await screen.findByRole('list', { name: '组件' })
-    const chips = screen.getByRole('radiogroup', { name: '分类' })
-    expect(within(chips).getByRole('radio', { name: /^字幕/ })).toBeChecked()
-    expect(within(list).getByRole('button', { name: /^白字黑边，/ })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await user.click(within(list).getByRole('button', { name: /^高亮字幕，字幕样式/ }))
     expect(screen.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toBeInTheDocument()
     expect(within(list).getByRole('button', { name: /^高亮字幕，/ })).toHaveAttribute(
       'aria-pressed',
@@ -728,6 +724,207 @@ describe('整片编辑器 · 组件', () => {
       createdAt: '2026-09-01T10:20:00Z',
       sourceJobId: TAKE_A,
       sentences: [{ startMs: 200, endMs: 1_200, speaker: null, text: '你好世界', words: [] }],
+    })
+
+    it('按来源提交一次，处理中不能重复提交；重新识别完成前保留已有字幕', async () => {
+      const user = userEvent.setup()
+      const records = [...takes]
+      const submitted: SubtitleIn[] = []
+      putMockWholeFilmDraft(
+        CONVERSATION,
+        draftOf([
+          video('v1', TAKE_A, 0, 2_000),
+          video('v2', TAKE_A, 2_000, 1_000),
+          video('v3', TAKE_B, 0, 1_500),
+        ]),
+      )
+      server.use(
+        http.post('*/api/generations/subtitles', async ({ request }) => {
+          const body = (await request.json()) as SubtitleIn
+          submitted.push(body)
+          const generation = makeGenerationJob({
+            kind: 'subtitle',
+            sourceJobId: body.sourceJobId,
+            status: 'pending',
+            createdAt: new Date(Date.now() + submitted.length).toISOString(),
+          })
+          records.push(generation)
+          return HttpResponse.json({ generation }, { status: 202 })
+        }),
+      )
+      const { queryClient } = await openEditor(records)
+      const action = screen.getByRole('button', { name: '识别字幕' })
+      await waitFor(() => expect(action).toBeEnabled())
+      await user.dblClick(action)
+      await waitFor(() => expect(submitted).toHaveLength(2))
+      expect(submitted).toEqual([
+        { conversationId: CONVERSATION, sourceJobId: TAKE_A, taskId: null },
+        { conversationId: CONVERSATION, sourceJobId: TAKE_B, taskId: null },
+      ])
+      expect(action).toBeDisabled()
+      expect(action).toHaveAttribute('aria-busy', 'true')
+
+      for (const job of records.filter((job) => job.kind === 'subtitle')) {
+        job.status = 'completed'
+        job.sentences = job.sourceJobId === TAKE_A ? latest.sentences : []
+      }
+      await queryClient.invalidateQueries({ queryKey: wholeFilmQueryKeys.subtitles(CONVERSATION) })
+      const lane = screen.getByRole('group', { name: '字幕轨' })
+      expect(
+        await within(lane).findByRole('button', { name: '字幕：你好世界，点此改字' }),
+      ).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '重新识别字幕' }))
+      await waitFor(() => expect(submitted).toHaveLength(4))
+      expect(
+        within(lane).getByRole('button', { name: '字幕：你好世界，点此改字' }),
+      ).toBeInTheDocument()
+      expect(action).toBeDisabled()
+    })
+
+    it('提交中断时显示具体原因，保留已成功的字幕，再次点击补齐未识别的视频', async () => {
+      const user = userEvent.setup()
+      const records = [...takes]
+      const sources: string[] = []
+      putMockWholeFilmDraft(CONVERSATION, twoClips())
+      server.use(
+        http.post('*/api/generations/subtitles', async ({ request }) => {
+          const body = (await request.json()) as SubtitleIn
+          sources.push(body.sourceJobId)
+          if (body.sourceJobId === TAKE_B && sources.filter((id) => id === TAKE_B).length === 1)
+            return HttpResponse.json({ detail: '识别服务暂不可用' }, { status: 503 })
+          const generation = makeGenerationJob({
+            kind: 'subtitle',
+            sourceJobId: body.sourceJobId,
+            sentences: body.sourceJobId === TAKE_A ? latest.sentences : [],
+          })
+          records.push(generation)
+          return HttpResponse.json({ generation }, { status: 202 })
+        }),
+      )
+      await openEditor(records)
+      const action = screen.getByRole('button', { name: '识别字幕' })
+      await waitFor(() => expect(action).toBeEnabled())
+      await user.click(action)
+      expect(await screen.findByText(/识别服务暂不可用.*提交已中断/)).toBeInTheDocument()
+      await waitFor(() => expect(action).toBeEnabled())
+      const lane = screen.getByRole('group', { name: '字幕轨' })
+      expect(
+        within(lane).getByRole('button', { name: '字幕：你好世界，点此改字' }),
+      ).toBeInTheDocument()
+      await user.click(action)
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '重新识别字幕' })).toBeEnabled(),
+      )
+      expect(sources).toEqual([TAKE_A, TAKE_B, TAKE_B])
+    })
+
+    it('提交报错后重读真实失败记录，用户点击重试才再次提交', async () => {
+      const user = userEvent.setup()
+      const records = [...takes, latest]
+      let submissions = 0
+      putMockWholeFilmDraft(CONVERSATION, draftOf([video('v1', TAKE_A, 0, 2_000)]))
+      server.use(
+        http.post('*/api/generations/subtitles', () => {
+          const failed = ++submissions === 1
+          const generation = makeGenerationJob({
+            ...latest,
+            id: crypto.randomUUID(),
+            createdAt: new Date(Date.now() + submissions).toISOString(),
+            status: failed ? 'failed' : 'completed',
+            errorMessage: failed ? '识别任务未能排队' : null,
+          })
+          records.push(generation)
+          return failed
+            ? HttpResponse.json({ detail: '识别任务未能排队' }, { status: 503 })
+            : HttpResponse.json({ generation }, { status: 202 })
+        }),
+      )
+      await openEditor(records)
+      await user.click(await screen.findByRole('button', { name: '重新识别字幕' }))
+      const retry = await screen.findByRole('button', { name: '重试字幕识别' })
+      expect(submissions).toBe(1)
+      expect(
+        within(screen.getByRole('group', { name: '字幕轨' })).getByRole('status'),
+      ).toHaveTextContent('识别任务未能排队')
+      await waitFor(() => expect(retry).toBeEnabled())
+      await user.click(retry)
+      await screen.findByRole('button', { name: '重新识别字幕' })
+      expect(submissions).toBe(2)
+    })
+
+    it.each(['pending', 'submitting', 'submitted'] as const)(
+      '只要当前视频还有 %s 记录就禁用识别，其他视频不影响',
+      async (status) => {
+        const records = [
+          ...takes,
+          latest,
+          makeGenerationJob({ kind: 'subtitle', sourceJobId: TAKE_B, status }),
+        ]
+        putMockWholeFilmDraft(CONVERSATION, draftOf([video('v1', TAKE_A, 0, 2_000)]))
+        const { queryClient } = await openEditor(records)
+        expect(await screen.findByRole('button', { name: '重新识别字幕' })).toBeEnabled()
+        records.push({ ...older, status })
+        await queryClient.invalidateQueries({
+          queryKey: wholeFilmQueryKeys.subtitles(CONVERSATION),
+        })
+        expect(await screen.findByRole('button', { name: '识别字幕' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: '字幕：你好世界，点此改字' })).toBeInTheDocument()
+      },
+    )
+
+    it.each(['字幕记录', '对话信息'] as const)(
+      '%s 读取失败时重试只重读，不提交识别',
+      async (resource) => {
+        const user = userEvent.setup()
+        putMockWholeFilmDraft(CONVERSATION, twoClips())
+        const { queryClient } = await openEditor([...takes, { ...latest, status: 'submitted' }])
+        let failed = true
+        const submissions: unknown[] = []
+        server.use(
+          http.get('*/api/generations', ({ request }) =>
+            resource === '字幕记录' &&
+            new URL(request.url).searchParams.get('kind') === 'subtitle' &&
+            failed
+              ? HttpResponse.json({ detail: '字幕记录读取失败' }, { status: 503 })
+              : undefined,
+          ),
+          http.get('*/api/conversations/:conversationId', () =>
+            resource === '对话信息' && failed
+              ? HttpResponse.json({ detail: '对话信息读取失败' }, { status: 503 })
+              : undefined,
+          ),
+          http.post('*/api/generations/subtitles', async ({ request }) => {
+            submissions.push(await request.json())
+            return HttpResponse.json({ detail: '不应提交识别' }, { status: 500 })
+          }),
+        )
+        await queryClient.invalidateQueries({
+          queryKey:
+            resource === '字幕记录'
+              ? wholeFilmQueryKeys.subtitles(CONVERSATION)
+              : wholeFilmQueryKeys.task(CONVERSATION),
+        })
+        const retry = await screen.findByRole('button', { name: `重新读取${resource}` })
+        expect(retry).toBeEnabled()
+        failed = false
+        await user.click(retry)
+        expect(await screen.findByRole('button', { name: '识别字幕' })).toBeDisabled()
+        expect(submissions).toEqual([])
+      },
+    )
+
+    it('没有视频时识别入口不可用', async () => {
+      await openEditor()
+      expect(screen.getByRole('button', { name: '识别字幕' })).toBeDisabled()
+    })
+
+    it('无口播属于已完成结果，保留重新识别入口', async () => {
+      putMockWholeFilmDraft(CONVERSATION, draftOf([video('v1', TAKE_A, 0, 2_000)]))
+      await openEditor([...takes, { ...older, status: 'failed' }, { ...latest, sentences: [] }])
+      expect(await screen.findByRole('button', { name: '重新识别字幕' })).toBeEnabled()
+      expect(
+        within(screen.getByRole('group', { name: '字幕轨' })).getByRole('status'),
+      ).toHaveTextContent('未识别到口播')
     })
 
     it('按最新的字幕记录放字幕；点一块改整句，回车后自动保存', async () => {

@@ -976,6 +976,7 @@
     var(--wf-music-height);
   row-gap: 6px;
   padding-top: calc(var(--timeline-ruler-height) + 4px);
+  transition: grid-template-rows var(--dur-m) var(--ease-decel);
 }
 
 .wf-track-head {
@@ -991,7 +992,41 @@
 
 /* 特效轨的轨名对齐第一行 */
 .wf-track-head.is-overlay {
-  height: var(--wf-lane-height);
+  position: relative;
+}
+
+.wf-overlay-label,
+.wf-overlay-row-label {
+  position: absolute;
+  left: 4px;
+  display: flex;
+  height: 22px;
+  align-items: center;
+  gap: 6px;
+  transition:
+    top var(--dur-m) var(--ease-decel),
+    opacity var(--dur-s) var(--ease-decel);
+}
+
+.wf-overlay-label {
+  top: calc(var(--wf-overlay-label-top) + 2px);
+}
+
+.wf-overlay-label.is-hidden {
+  opacity: 0;
+}
+
+.wf-overlay-row-label {
+  top: var(--wf-new-overlay-top);
+  gap: 4px;
+  color: var(--color-primary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  opacity: 0;
+}
+
+.is-adding-overlay-row .wf-overlay-row-label {
+  opacity: 1;
 }
 
 .wf-track-head:last-child,
@@ -1047,20 +1082,76 @@
   pointer-events: none;
 }
 
-.wf-head-pill {
+.wf-track-head.is-caption {
+  padding-right: 0;
+}
+
+.wf-caption-style {
+  display: flex;
   min-width: 0;
-  max-width: 72px;
-  height: 20px;
-  margin-left: auto;
-  overflow: hidden;
-  padding: 0 6px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-lowest);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-  color: var(--color-on-surface-variant);
+  height: 28px;
+  flex: 1;
+  align-items: center;
+  gap: 3px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
+}
+
+.wf-caption-style[data-state='open'] {
+  background: var(--color-state-active);
+}
+
+.wf-caption-recognize {
+  display: flex;
+  width: 52px;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: var(--radius-sm);
   font-size: var(--text-caption);
-  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+/* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸。 */
+.wf-caption-style:focus-visible,
+.wf-caption-recognize:focus-visible {
+  outline: none;
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+}
+
+.wf-caption-status.is-error {
+  color: var(--color-error);
+}
+
+.wf-caption-menu [role='menuitemradio'] {
+  height: 28px;
+  font-size: var(--text-label);
+}
+
+.wf-caption-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
   white-space: nowrap;
+}
+
+.wf-caption-status.is-overlaid {
+  inset-inline-start: auto;
+  max-width: 75%;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container);
+}
+
+.wf-lane > .wf-caption-status {
+  pointer-events: none;
 }
 
 .wf-caption {
@@ -1106,6 +1197,7 @@
     var(--wf-music-height);
   row-gap: 6px;
   margin-top: 4px;
+  transition: grid-template-rows var(--dur-m) var(--ease-decel);
 }
 
 .wf-lane {
@@ -1334,16 +1426,53 @@
   text-overflow: ellipsis;
 }
 
-/* 要新开一行的位置：一条横线，松手才多出这一行 */
-.wf-overlay-insert {
+/* 新行预演：展开完整一行，浅色底与操作提示同时出现；取消后随轨道收回。 */
+.wf-overlay-row-preview {
   position: absolute;
+  top: var(--wf-new-overlay-top);
   right: 0;
   left: 0;
-  z-index: var(--z-local-2);
-  height: 2px;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
+  display: flex;
+  height: 22px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-container-lowest));
+  color: var(--color-primary);
+  font-size: var(--text-caption);
+  opacity: 0;
   pointer-events: none;
+  transition:
+    top var(--dur-m) var(--ease-decel),
+    opacity var(--dur-s) var(--ease-decel);
+}
+
+.wf-overlay-row-preview::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  border-radius: inherit;
+  background: currentColor;
+}
+
+.is-adding-overlay-row .wf-overlay-row-preview {
+  opacity: 1;
+}
+
+.is-adding-overlay-row .wf-lane.is-overlay .wf-insertion-surface {
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface-container-lowest));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-track-heads,
+  .wf-lanes,
+  .wf-overlay-label,
+  .wf-overlay-row-label,
+  .wf-overlay-row-preview {
+    transition: none;
+  }
 }
 
 /* 拖动特效块时块上方的起止秒数；放不下时的原因 */
@@ -1819,6 +1948,24 @@
 
   .wf-tracks {
     grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .wf-caption-style > span,
+  .wf-caption-style > .wf-caption-disclosure {
+    display: none;
+  }
+
+  .wf-caption-style {
+    justify-content: center;
+  }
+
+  .wf-caption-recognize {
+    width: 38px;
+  }
+
+  .wf-caption-recognize:not([aria-busy='true']) > svg,
+  .wf-caption-recognize[aria-busy='true'] > span {
+    display: none;
   }
 
   .wf-take {

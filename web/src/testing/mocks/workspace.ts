@@ -10,6 +10,7 @@ import type {
   VideoGenerationIn,
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
+import { zSubtitleIn } from '@/shared/api/generated/zod.gen'
 // no-inline：这几条要作为地址进请求体、进 <video src>，不能被构建按小文件内联成 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
@@ -221,6 +222,7 @@ type MockJob = {
   prompt: string
   request?: Record<string, unknown>
   metadata?: Record<string, unknown>
+  taskId?: string | null
   /** 镜头组编号：出片照请求，编辑段与合成抄基底的；图片没有。 */
   shotIndex?: number | null
   status: 'completed' | 'failed' | 'pending' | 'submitted'
@@ -248,7 +250,7 @@ const job = (spec: MockJob) => ({
   request: spec.request ?? { prompt: spec.prompt },
   metadata: spec.metadata ?? null,
   status: spec.status,
-  taskId: null,
+  taskId: spec.taskId ?? null,
   shotIndex: spec.shotIndex ?? null,
   rootJobId: spec.rootJobId ?? null,
   sourceJobId: spec.sourceJobId ?? null,
@@ -766,6 +768,11 @@ export const seedMockMusic = (conversationId: string) => {
   return { generated, uploaded }
 }
 
+const SUBTITLE_SENTENCES: SubtitleSentence[] = [
+  { startMs: 300, endMs: 2_000, speaker: null, text: '夜色里，城市慢慢亮起来' },
+  { startMs: 2_400, endMs: 5_200, speaker: null, text: '车流划出一道道光' },
+]
+
 /** 演示对话第 2 组那条竖版成片的字幕记录（识别完成，两句；旧格式没有逐词时间） */
 export const seedMockSubtitles = (conversationId: string) =>
   addRecord(
@@ -775,10 +782,7 @@ export const seedMockSubtitles = (conversationId: string) =>
       id: crypto.randomUUID(),
       kind: 'subtitle',
       prompt: '',
-      sentences: [
-        { startMs: 300, endMs: 2_000, speaker: null, text: '夜色里，城市慢慢亮起来' },
-        { startMs: 2_400, endMs: 5_200, speaker: null, text: '车流划出一道道光' },
-      ],
+      sentences: SUBTITLE_SENTENCES,
       sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
       status: 'completed',
     }),
@@ -1056,6 +1060,34 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
+  http.post('*/api/generations/subtitles', async ({ request }) => {
+    const parsed = zSubtitleIn.safeParse(await request.json())
+    if (!parsed.success) {
+      return HttpResponse.json({ detail: '字幕识别参数无效' }, { status: 422 })
+    }
+    const body = parsed.data
+    const source = findJob(body.conversationId, body.sourceJobId)
+    if (source === undefined) {
+      return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 404 })
+    }
+    if (!isFinishedTake(source)) {
+      return HttpResponse.json({ detail: '只能识别已完成的成片' }, { status: 422 })
+    }
+    const created = acceptGeneration({
+      kind: 'subtitle',
+      prompt: '',
+      request: { videoUrl: source.outputUrl },
+      conversationId: body.conversationId ?? null,
+      taskId: body.taskId ?? null,
+      metadata: body.metadata ?? null,
+      sourceJobId: source.id,
+      outputUrl: null,
+      // 竖版样片沿用预置字幕；横版样片没有音轨，识别正常完成但结果为空。
+      sentences: source.outputUrl === VIDEO_URL ? SUBTITLE_SENTENCES : [],
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
   http.post('*/api/generations/music', async ({ request }) => {
     const body = (await request.json()) as MusicIn
     const created = acceptGeneration({
@@ -1079,21 +1111,23 @@ export const workspaceHandlers = [
 
 /** 受理一条生成记录并在固定延迟后把它标成完成，与真实后端的「先受理、后台出结果」同形。 */
 function acceptGeneration(spec: {
-  kind: 'image' | 'video' | 'audio'
+  kind: 'image' | 'video' | 'audio' | 'subtitle'
   operation?: 'generate' | 'compose'
   prompt: string
   request: Record<string, unknown>
   conversationId: string | null
   metadata: Record<string, unknown> | null
+  taskId?: string | null
   shotIndex?: number | null
   rootJobId?: string | null
   sourceJobId?: string
   sourceUrl?: string | null
   rangeStartMs?: number
   rangeEndMs?: number
-  outputUrl: string
+  outputUrl: string | null
   watermarkOutputUrl?: string
   durationMs?: number
+  sentences?: SubtitleSentence[]
 }) {
   const created = job({
     createdAt: new Date().toISOString(),
@@ -1103,6 +1137,7 @@ function acceptGeneration(spec: {
     prompt: spec.prompt,
     request: spec.request,
     ...(spec.metadata === null ? {} : { metadata: spec.metadata }),
+    taskId: spec.taskId ?? null,
     shotIndex: spec.shotIndex ?? null,
     rootJobId: spec.rootJobId ?? null,
     sourceJobId: spec.sourceJobId ?? null,
@@ -1119,6 +1154,7 @@ function acceptGeneration(spec: {
     created.watermarkOutputUrl = spec.watermarkOutputUrl ?? null
     // 时长、产物地址与完成时刻一起落，与真实后端同一次写入。
     created.durationMs = spec.durationMs ?? null
+    created.sentences = spec.sentences ?? null
     created.finishedAt = new Date().toISOString()
     created.status = 'completed'
     timers.delete(timer)
