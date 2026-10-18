@@ -103,7 +103,7 @@ const openWith = async (
     { conversation: CONVERSATION, layer0: placed, overlays, music },
   )
   await panel.getByRole('button', { name: '整片', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+  const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
   const film = dialog.getByRole('group', { name: '成片画面轨' })
   await expect(
     film.getByRole('group', { name: new RegExp(`^第 ${layer0.length} 段`) }),

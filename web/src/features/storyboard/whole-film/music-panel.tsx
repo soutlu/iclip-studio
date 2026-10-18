@@ -164,7 +164,7 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
         <p className="wf-panel-note">暂无音乐</p>
       ) : (
         <ul aria-label="这段对话的音乐" className="wf-song-list">
-          {songs.map((job) => (
+          {songs.map((job, index) => (
             <SongRow
               context={context}
               conversationId={conversationId}
@@ -172,6 +172,7 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
               inUse={draft.music?.jobId === job.id}
               job={job}
               key={job.id}
+              label={`音乐 ${index + 1}`}
               onToggle={() => toggle(job)}
               onUse={() => {
                 if (apply(setMusic(draft, { jobId: job.id }, context))) {
@@ -201,6 +202,7 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
 
 type SongRowProps = {
   job: GenerationJob
+  label: string
   context: EditContext
   conversationId: string
   inUse: boolean
@@ -212,6 +214,7 @@ type SongRowProps = {
 
 function SongRow({
   job,
+  label,
   context,
   conversationId,
   inUse,
@@ -255,7 +258,7 @@ function SongRow({
       )}
       <span className="wf-song-text">
         <span className="wf-song-title" title={title}>
-          {title}
+          {label} · {title}
         </span>
         {ready && durationMs !== undefined ? (
           <span className="wf-song-meta">{durationLabel(durationMs)}</span>

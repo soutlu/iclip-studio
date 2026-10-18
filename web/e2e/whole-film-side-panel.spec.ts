@@ -30,7 +30,7 @@ const serveBrandFixtures = (page: Page) =>
 const openWholeFilm = async (page: Page) => {
   const panel = await openConversation(page, '夜景延时素材生成')
   await panel.getByRole('button', { name: '整片', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+  const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
   await expect(dialog).toBeVisible()
   return dialog
 }
@@ -449,5 +449,5 @@ test('素材页：整个音乐面板接收文件，小入口仍可选择上传',
   expect(await boxOf(track)).toEqual(trackBefore)
   await panel.dispatchEvent('drop', { dataTransfer })
   await expect(songs.getByRole('listitem')).toHaveCount(3)
-  await expect(songs.getByText(/^上传的音乐 · /)).toHaveCount(2)
+  await expect(songs.getByText(/^音乐 \d+ · 上传的音乐 · /)).toHaveCount(2)
 })

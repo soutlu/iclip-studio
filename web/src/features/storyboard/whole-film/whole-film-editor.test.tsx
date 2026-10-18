@@ -114,7 +114,11 @@ const openEditor = async (records: GenerationJob[] = takes) => {
   const onClose = vi.fn()
   const rendered = await renderWithProviders(
     <>
-      <WholeFilmEditor conversationId={CONVERSATION} onClose={onClose} />
+      <WholeFilmEditor
+        conversationTitle="夜景延时素材生成"
+        conversationId={CONVERSATION}
+        onClose={onClose}
+      />
       <Toaster />
     </>,
   )
@@ -263,15 +267,22 @@ describe('整片编辑器', () => {
   it('素材栏列出这段对话的音乐，选用条目放到音乐轨上', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor([...takes, song])
+    const otherSong = makeGenerationJob({
+      kind: 'audio',
+      outputUrl: MUSIC_URL,
+      durationMs: 30_000,
+      request: { prompt: '安静钢琴' },
+    })
+    await openEditor([...takes, otherSong, song])
     const list = await screen.findByRole('list', { name: '这段对话的音乐' })
-    expect(within(list).getByText('轻快原声吉他')).toBeInTheDocument()
-    expect(within(list).getByText('00:30')).toBeInTheDocument()
+    expect(within(list).getByText('音乐 1 · 安静钢琴')).toBeInTheDocument()
+    expect(within(list).getByText('音乐 2 · 轻快原声吉他')).toBeInTheDocument()
+    expect(within(list).getAllByText('00:30')).toHaveLength(2)
 
     await user.click(within(list).getByRole('button', { name: '选用：轻快原声吉他' }))
     expect(within(list).getByRole('img', { name: '在用' })).toBeInTheDocument()
     expect(
-      screen.getByRole('group', { name: '音乐 · 轻快原声吉他，从歌里 0.0 秒起' }),
+      screen.getByRole('group', { name: '音乐 · 音乐 2，从歌里 0.0 秒起' }),
     ).toBeInTheDocument()
     await waitSaved((document) =>
       expect(document?.music).toEqual({ jobId: song.id, offset: 0, volume: 1 }),
@@ -305,7 +316,7 @@ describe('整片编辑器', () => {
       new File(['wav'], 'bgm.wav', { type: 'audio/wav' }),
     )
     const list = await screen.findByRole('list', { name: '这段对话的音乐' })
-    expect(within(list).getByText(/^上传的音乐 · /)).toBeInTheDocument()
+    expect(within(list).getByText(/^音乐 1 · 上传的音乐 · /)).toBeInTheDocument()
     expect(confirms).toEqual([{ conversationId: CONVERSATION }])
   })
 

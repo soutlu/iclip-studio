@@ -5,6 +5,7 @@ import { use, useEffect, useMemo, useRef } from 'react'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
 import { useTranscript } from '@/shared/transcript/use-transcript'
+import { useSessionTitles } from '@/shared/transcript/use-session-titles'
 import type { TranscriptItem } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -104,6 +105,8 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const files = useWorkspaceFiles(conversationId)
   // 与聊天页共用主会话池里的同一份流（按对话记持有数），这里再用不会踢掉它的订阅。
   const { view } = useTranscript(conversationId)
+  const { titleOf } = useSessionTitles()
+  const conversationTitle = titleOf(conversationId) ?? view.title
   const readOnly = useConversationReadOnly(view)
   const frames = useMemo(() => toolFrames(view.items), [view.items])
   const { openToken } = useWorkbenchOpenRequest()
@@ -237,6 +240,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
             <Renderer
               artifact={selected}
               conversationId={conversationId}
+              conversationTitle={conversationTitle}
               key={selected.id}
               readOnly={readOnly}
             />

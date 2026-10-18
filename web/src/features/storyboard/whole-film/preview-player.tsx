@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react'
+import { StageBackdrop } from '../components/stage-backdrop'
 
 /** 编辑后等这么久再重载预览 */
 const RELOAD_DELAY_MS = 250
@@ -28,6 +36,7 @@ type PreviewPlayerProps = {
   /** 合成页；undefined 时不放，显示 message */
   srcdoc: string | undefined
   message: string | undefined
+  backdrop: string | undefined
   width: number
   height: number
   onTime: (ms: number) => void
@@ -48,6 +57,7 @@ const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() 
 export function PreviewPlayer({
   srcdoc,
   message,
+  backdrop,
   width,
   height,
   onTime,
@@ -166,13 +176,15 @@ export function PreviewPlayer({
 
   return (
     <div aria-label="预览" className="wf-preview" role="region">
-      <div
-        className="wf-player-host"
-        hidden={srcdoc === undefined}
-        ref={hostRef}
-        // 按画布比例占位，四周露出预览区的底色
-        style={{ aspectRatio: `${width} / ${height}` }}
-      />
+      <StageBackdrop url={srcdoc === undefined ? undefined : backdrop} />
+      <div className="editor-hero-wrap">
+        <div
+          className="wf-player-host editor-preview stage-picture"
+          hidden={srcdoc === undefined}
+          ref={hostRef}
+          style={{ '--preview-ratio': width / height } as CSSProperties}
+        />
+      </div>
       {srcdoc === undefined && message !== undefined ? (
         <p className="wf-preview-note">{message}</p>
       ) : null}

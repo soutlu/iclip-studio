@@ -25,7 +25,12 @@ const openJson = async (content: string, path = PATH) => {
     ),
   )
   return renderWithProviders(
-    <WorkspaceFilesPanel artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />,
+    <WorkspaceFilesPanel
+      conversationTitle="夜景延时素材生成"
+      artifact={artifact}
+      conversationId={CONVERSATION_ID}
+      readOnly={false}
+    />,
     { initialPath: `/c/${CONVERSATION_ID}?file=${encodeURIComponent(path)}` },
   )
 }

@@ -4,7 +4,7 @@ import { openConversation } from './helpers'
 /** 演示对话里：第 2 组一条竖版 6 秒成片，第 3 组一条横版成片；这段对话有一首生成的音乐、一首上传的音乐。 */
 const openWholeFilm = async (page: Page, panel: Locator) => {
   await panel.getByRole('button', { name: '整片', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: /^编辑视频\s*整片/ })
+  const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
   await expect(dialog).toBeVisible()
   await expect(page).toHaveURL(/[?&]wholeFilm=true/)
   return dialog
@@ -80,7 +80,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(songs.getByRole('listitem')).toHaveCount(2)
   const saved = draftSaved(page)
   await songs.getByRole('button', { name: /^选用：轻快原声吉他/ }).click()
-  await expect(dialog.getByRole('group', { name: /^音乐 · 轻快原声吉他/ })).toBeVisible()
+  await expect(dialog.getByRole('group', { name: /^音乐 · 音乐 2，/ })).toBeVisible()
   await saved
   for (const shot of [3, 4]) {
     await materials.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shot}，`) }).click()
@@ -175,7 +175,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   const reopened = await openWholeFilm(page, panel)
   const reopenedFilm = reopened.getByRole('group', { name: '成片画面轨' })
   await expect(reopenedFilm.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
-  await expect(reopened.getByRole('group', { name: /^音乐 · 轻快原声吉他/ })).toBeVisible()
+  await expect(reopened.getByRole('group', { name: /^音乐 · 音乐 2，/ })).toBeVisible()
   await expect(reopened.getByRole('button', { name: '撤销' })).toHaveAttribute(
     'aria-disabled',
     'true',

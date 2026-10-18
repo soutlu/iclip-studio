@@ -1,6 +1,33 @@
 /* 整片编辑器：上面左边是素材 / 组件栏、右边是预览，下面是剪辑工具、成片区四条轨与视频素材区。
    外框沿用 editing/editor.css 的 .editor-dialog / .editor-header。 */
 
+.wf-dialog {
+  border-radius: var(--radius-lg);
+}
+
+/* 弹窗容器只承接打开时的焦点，操作控件仍保留各自的 ui-focus 焦点环。 */
+.wf-dialog:focus {
+  outline: none;
+}
+
+.wf-dialog .editor-header {
+  min-height: 48px;
+}
+
+.wf-dialog .editor-header h2 {
+  overflow: hidden;
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--text-body--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-dialog .editor-compose {
+  height: 32px;
+  font-size: var(--text-body-sm);
+}
+
 .wf-state {
   padding: 32px 24px;
   color: var(--color-on-surface-muted);
@@ -309,6 +336,7 @@
 /* ---- 预览 ---- */
 
 .wf-preview {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -319,20 +347,8 @@
   background: var(--color-surface-container-low);
 }
 
-.wf-player-host {
-  max-width: 100%;
-  height: 100%;
-  max-height: 100%;
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-}
-
 .wf-player-host[hidden] {
   display: none;
-}
-
-.wf-player-host {
-  position: relative;
 }
 
 .wf-player {
@@ -348,6 +364,7 @@
 }
 
 .wf-preview-note {
+  position: relative;
   max-width: 320px;
   padding: 0 24px;
   color: var(--color-on-surface-muted);
@@ -801,14 +818,14 @@
   white-space: nowrap;
 }
 
-/* 开关类按钮：关着时淡一些，打开时浅墨色底 */
+/* 开关类按钮用少量强调色区分开启状态。 */
 .wf-tool[aria-pressed='false'] {
   color: var(--color-on-surface-muted);
 }
 
 .wf-tool.is-pressed {
-  background: var(--color-state-active);
-  color: var(--color-on-surface);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-primary);
 }
 
 .wf-tool.wf-play {
@@ -1769,11 +1786,7 @@
 }
 
 .wf-material-video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-lg);
+  height: auto;
   object-fit: contain;
 }
 

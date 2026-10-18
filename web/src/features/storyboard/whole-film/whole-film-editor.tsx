@@ -11,6 +11,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
+import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
@@ -91,7 +92,7 @@ import {
 } from './materials'
 import { useMeasuredMusicDurations, useMusicAnalysis, useMusicBeats } from './music-analysis'
 import { MusicAction, MusicPanel } from './music-panel'
-import { musicTitleOf, peaksStateOf } from './music-view'
+import { peaksStateOf } from './music-view'
 import { compositionMedia, previewState } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
 import { FILM_LIMIT_TEXT, REFUSAL_TEXT } from './refusal-text'
@@ -107,6 +108,7 @@ import './whole-film.css'
 
 type Props = {
   conversationId: string
+  conversationTitle: string
   onClose: () => void
 }
 
@@ -115,24 +117,19 @@ type SideTab = 'materials' | 'brand' | 'general'
 /** 品牌栏、通用栏各自选中的小标题；没选过为 undefined，取第一个 */
 type SideChips = Readonly<Record<'brand' | 'general', string | undefined>>
 
-function EditorHeader({ actions }: { actions: ReactNode }) {
+function EditorHeader({ actions, title }: { actions: ReactNode; title: string }) {
   return (
     <DialogHeader
       actions={actions}
       className="editor-header"
       closeLabel="关闭整片编辑"
-      title={
-        <span className="editor-title">
-          <span>编辑视频</span>
-          <span className="text-body-sm font-normal text-on-surface-muted">整片</span>
-        </span>
-      }
+      title={title}
     />
   )
 }
 
 /** 整片编辑器：把这段对话的各条成片剪成一条整片，草稿自动存在服务端。 */
-export function WholeFilmEditor({ conversationId, onClose }: Props) {
+export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: Props) {
   const draftQuery = useWholeFilmDraftQuery(conversationId)
   const catalogQuery = useComponentCatalog()
   // 快捷键挂在弹窗上，草稿读到之后由编辑区接上
@@ -162,10 +159,11 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
             conversationId={conversationId}
             initial={draftQuery.data}
             keysRef={keysRef}
+            title={conversationTitle}
           />
         ) : (
           <>
-            <EditorHeader actions={null} />
+            <EditorHeader actions={null} title={conversationTitle} />
             {failed !== undefined ? (
               <div className="wf-state">
                 <InlineAlert
@@ -219,10 +217,12 @@ function EditorBody({
   initial,
   catalog,
   keysRef,
+  title,
 }: {
   conversationId: string
   initial: WholeFilmDraftOut
   catalog: ComponentCatalog
+  title: string
   keysRef: RefObject<((event: KeyboardEvent<HTMLDivElement>) => void) | null>
 }) {
   const notice = useCallback((message: string) => toast.info(message), [])
@@ -281,7 +281,8 @@ function EditorBody({
     ),
   )
   const musicDurations = useMeasuredMusicDurations(unmeasured)
-  const song = music.data?.find((job) => job.id === draft.music?.jobId)
+  const songIndex = music.data?.findIndex((job) => job.id === draft.music?.jobId) ?? -1
+  const song = music.data?.[songIndex]
   const songUrl = song?.outputUrl ?? undefined
   const songAnalysis = useMusicAnalysis(songUrl)
   const beats = useMusicBeats(songUrl)
@@ -320,6 +321,13 @@ function EditorBody({
   const total = filmDuration(draft)
   const scale = timelineScale(viewportWidth, total, zoom)
   const playhead = Math.min(playheadMs, total)
+  // 停在成片末尾时仍取最后一帧所在的镜头；组件或空白段不沿用上一镜的背景。
+  const frameMs = Math.min(playhead, Math.max(0, total - 1))
+  const previewClip = draft.layer0.find(
+    (clip) => clip.start <= frameMs && frameMs < clip.start + clip.duration,
+  )
+  const previewUrl =
+    previewClip?.type === 'video' ? materials.byJob.get(previewClip.sourceJobId)?.url : undefined
   const seek = (ms: number) => {
     stopAtRef.current = null
     leaveMaterial()
@@ -736,6 +744,7 @@ function EditorBody({
   return (
     <>
       <EditorHeader
+        title={title}
         actions={
           <ExportControl
             blocked={exportBlocked}
@@ -794,6 +803,7 @@ function EditorBody({
           </TabsContent>
         </TabsRoot>
         <PreviewPlayer
+          backdrop={previewUrl === undefined ? undefined : videoSnapshotUrl(previewUrl, 320)}
           controlRef={previewRef}
           height={(draft.canvas ?? DEFAULT_CANVAS).height}
           message={playBlocked}
@@ -869,7 +879,11 @@ function EditorBody({
             music={
               song === undefined || songUrl === undefined
                 ? undefined
-                : { url: songUrl, title: musicTitleOf(song), peaks: peaksStateOf(songAnalysis) }
+                : {
+                    url: songUrl,
+                    title: `音乐 ${songIndex + 1}`,
+                    peaks: peaksStateOf(songAnalysis),
+                  }
             }
             musicAction={
               <MusicAction

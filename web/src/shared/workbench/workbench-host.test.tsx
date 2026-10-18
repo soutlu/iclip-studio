@@ -1,13 +1,14 @@
 /** 受控宿主夹具通过恢复入口与隐藏容器模拟应用壳，验证产物交互与布局请求。 */
 
 import { MOCK_STREAM_EPOCH } from '@/testing/mocks/transcript'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useCallback, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { sessionEnvelope } from '@/testing/ws'
 import { ShellChromeContext } from '@/shared/shell'
 import type { ArtifactEntry, ArtifactRendererProps } from './artifact'
 import { useOpenArtifact } from './artifact-search'
@@ -20,7 +21,9 @@ import { WorkbenchRegistryProvider } from './workbench-registry-provider'
 
 const CONVERSATION_ID = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
 
-const Painted = ({ artifact }: ArtifactRendererProps) => <p>画着{artifact.title}</p>
+const Painted = ({ artifact, conversationTitle }: ArtifactRendererProps) => (
+  <p title={conversationTitle}>画着{artifact.title}</p>
+)
 
 const shotsEntry: ArtifactEntry = {
   autoOpen: true,
@@ -239,7 +242,7 @@ describe('WorkbenchHost 收起态', () => {
 
   it('只有普通文件时不自动展开；点开是选择页，选「文件」才画它，地址记下这件产物', async () => {
     serveFiles(['video/a.md'])
-    const { router } = await renderHost()
+    const { router, socket } = await renderHost()
 
     expect(await screen.findByRole('button', { name: '展开工作台' })).toBeVisible()
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
@@ -248,9 +251,17 @@ describe('WorkbenchHost 收起态', () => {
     const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
 
+    act(() => {
+      socket.deliver({
+        ...sessionEnvelope(CONVERSATION_ID),
+        payload: { session_id: CONVERSATION_ID, title: '修改后的项目名' },
+        type: 'session.meta.updated',
+      })
+    })
     await userEvent.click(within(chooser).getByRole('button', { name: '文件' }))
 
     expect(await screen.findByText('画着文件')).toBeVisible()
+    expect(screen.getByText('画着文件')).toHaveAttribute('title', '修改后的项目名')
     expect(screen.getByRole('tab', { name: '文件', selected: true })).toBeVisible()
     expect(router.state.location.search).toMatchObject({ artifact: 'workspace' })
   })

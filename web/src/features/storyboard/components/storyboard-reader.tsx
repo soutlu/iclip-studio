@@ -43,7 +43,12 @@ export function StoryboardReader(props: ArtifactRendererProps) {
   return <StoryboardWorkspace key={`${props.conversationId}:${path}`} {...props} />
 }
 
-function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRendererProps) {
+function StoryboardWorkspace({
+  artifact,
+  conversationId,
+  conversationTitle,
+  readOnly,
+}: ArtifactRendererProps) {
   const path = artifact.source.kind === 'file' ? artifact.source.path : SHOTS_PATH
   const gate = useGenerationGate()
   const file = useWorkspaceFile(conversationId, path)
@@ -266,6 +271,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
       {search.wholeFilm === true && !readOnly ? (
         <WholeFilmEditor
           conversationId={conversationId}
+          conversationTitle={conversationTitle}
           onClose={() => go({ wholeFilm: undefined })}
         />
       ) : null}
