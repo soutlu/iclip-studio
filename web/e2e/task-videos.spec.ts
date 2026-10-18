@@ -7,7 +7,6 @@ import { login } from './login'
 /** mock 出片用的测试卡源文件；下载回来的字节要和它一致。 */
 const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.mp4', import.meta.url)
 
-const SHOT_DIR = '../.artifacts/design-qa/task-videos'
 const TASK_TITLE = '通勤背包 · 城市宣传片'
 
 const openTask = async (page: Page, username: 'tester' | 'governor' = 'tester') => {
@@ -112,18 +111,6 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
   const watermarkDownload = page.waitForEvent('download')
   await page.getByRole('menuitem', { name: '下载水印版', exact: true }).click()
   expect((await watermarkDownload).suggestedFilename()).toMatch(/\.mp4$/)
-
-  await dialog.getByLabel('需求单名称', { exact: true }).fill(TASK_TITLE)
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme })
-    await page.screenshot({
-      path: `${SHOT_DIR}/desktop-${colorScheme}.png`,
-      animations: 'disabled',
-    })
-  }
-  await page.setViewportSize({ width: 1210, height: 1324 })
-  await page.emulateMedia({ colorScheme: 'light' })
-  await page.screenshot({ path: `${SHOT_DIR}/desktop-tall.png`, animations: 'disabled' })
 })
 
 test('手机单列可滚动查看视频、长标题和操作，面板重开不丢表单', async ({ page }) => {
@@ -149,10 +136,6 @@ test('手机单列可滚动查看视频、长标题和操作，面板重开不�
   expect(bounds).not.toBeNull()
   expect(bounds?.width).toBeLessThanOrEqual(390)
   expect(bounds?.height).toBeLessThanOrEqual(240)
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme })
-    await page.screenshot({ path: `${SHOT_DIR}/mobile-${colorScheme}.png`, animations: 'disabled' })
-  }
   await related.getByRole('button', { name: '收起关联任务与视频' }).click()
   await expect(related).toBeHidden()
   await dialog

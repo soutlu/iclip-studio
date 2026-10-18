@@ -240,7 +240,6 @@ test.describe('移动触屏分镜', () => {
 
     const replaceImage = group.getByRole('button', { name: '替换图片' })
     await expect(replaceImage).toBeInViewport({ ratio: 1 })
-    await page.screenshot({ path: '../.artifacts/design-qa/storyboard-replace-touch.png' })
     const fileChooserOpened = page.waitForEvent('filechooser')
     await replaceImage.tap()
     await fileChooserOpened
@@ -295,7 +294,6 @@ test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可�
   await preview.hover()
   const replaceImage = shot2.getByRole('button', { name: '替换图片' })
   await expect(replaceImage).toBeInViewport({ ratio: 1 })
-  await page.screenshot({ path: '../.artifacts/design-qa/storyboard-replace-hover.png' })
   await replaceImage.focus()
   await expect(replaceImage).toBeFocused()
   const fileChooserOpened = page.waitForEvent('filechooser')
@@ -316,13 +314,6 @@ test('替换按钮与拖到舞台上都换掉当前帧，保持当前帧并可�
   await imageArea.dispatchEvent('dragenter', { dataTransfer })
   await expect(shot2.getByText('松开可替换当前图片', { exact: true })).toBeVisible()
   await expect(page.getByTestId('composer-drop-overlay')).toBeHidden()
-  await page.screenshot({ path: '../.artifacts/design-qa/storyboard-replace-drop.png' })
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await page.screenshot({
-    animations: 'disabled',
-    path: '../.artifacts/design-qa/storyboard-replace-drop-dark.png',
-  })
-  await page.emulateMedia({ colorScheme: 'light' })
   await imageArea.dispatchEvent('drop', { dataTransfer })
   // 拖入是替换：还是第 2 帧，画面换成刚拖进来的图，不新增帧。
   await expect(preview).not.toHaveAttribute('src', uploadedUrl ?? '')
@@ -404,9 +395,8 @@ test('正文里敲 @ 弹出本组图片：弹层在光标行下方，方向键�
   await expect(panel.getByText('已保存')).toBeVisible({ timeout: 5_000 })
 })
 
-test('短桌面深色：文案列整组原文可读，看大图后回到原帧与焦点', async ({ page }) => {
+test('短桌面：文案列整组原文可读，看大图后回到原帧与焦点', async ({ page }) => {
   await page.setViewportSize({ height: 700, width: 1600 })
-  await page.emulateMedia({ colorScheme: 'dark' })
   const panel = await openConversation(page, '夜景延时素材生成')
   await openStoryboardShot(panel, 2)
   const group = panel.getByRole('region', { name: '镜头组 2' })
@@ -426,9 +416,6 @@ test('短桌面深色：文案列整组原文可读，看大图后回到原帧�
   )
   await expect(panel.getByRole('button', { name: '复制完整提示词' })).toBeInViewport({
     ratio: 1,
-  })
-  await page.screenshot({
-    path: '../.artifacts/design-qa/shot-group-prompt/desktop-dark-mock.png',
   })
   const open = group.getByRole('button', { name: '打开原图', exact: true })
   await open.click()

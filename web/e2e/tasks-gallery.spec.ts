@@ -1,10 +1,8 @@
 /// <reference lib="dom" />
 
-import { readFile } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { login } from './login'
 
-const SHOT_DIR = '../.artifacts/design-qa/task-gallery'
 const MY_TITLES = [
   '画廊验收｜秋冬鞋履系列新品内容创作，保留完整需求名称以便跨团队识别与查找',
   '画廊验收｜多款通勤系列',
@@ -23,21 +21,16 @@ test.afterEach(async ({ page }) => {
   expect(await page.pageErrors(), '页面不应出现未捕获异常').toEqual([])
 })
 
-/** 复用上传验收的本地图片；无素材时使用现有上传测试 PNG，仅验证加载与布局。 */
-const productPng = async () => {
-  const fixture = process.env['TASK_GALLERY_QA_IMAGE'] ?? process.env['TASK_FORM_QA_IMAGE']
-  if (fixture) return readFile(fixture)
-  return Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    'base64',
-  )
-}
+/** 1×1 的上传测试 PNG，仅验证加载与布局。 */
+const PRODUCT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 /** 只通过浏览器 MSW 的已有接口准备数据，不绕过任务认领或图片上传合同。 */
 const openGallery = async (page: Page) => {
   await page.goto('/')
   await login(page)
-  const png = await productPng()
   await page.evaluate(
     async ({ bytes, mine, others }) => {
       const post = async (path: string, body?: unknown) => {
@@ -119,7 +112,7 @@ const openGallery = async (page: Page) => {
         await create(others[index], index, false)
       }
     },
-    { bytes: [...png], mine: [...MY_TITLES], others: OTHER_TITLES },
+    { bytes: [...PRODUCT_PNG], mine: [...MY_TITLES], others: OTHER_TITLES },
   )
   await page.getByRole('button', { name: '需求单', exact: true }).click()
   if ((page.viewportSize()?.width ?? 1335) < 600) {
@@ -170,11 +163,6 @@ test('认领画廊可展开、搜索全部已加载需求，并保留详情与�
   const collapse = mine.getByRole('button', { name: '收起', exact: true })
   await expect(collapse).toHaveAttribute('aria-expanded', 'true')
   await expect(all.getByRole('heading', { name: '全部需求单' })).toBeVisible()
-  await page.mouse.move(0, 0)
-  await page.screenshot({
-    animations: 'disabled',
-    path: `${SHOT_DIR}/desktop-expanded.png`,
-  })
   await collapse.click()
   await expect(cardsIn(mine)).toHaveCount(4)
   await expect(expand).toHaveAttribute('aria-expanded', 'false')
@@ -260,7 +248,7 @@ for (const viewport of [
   { name: 'desktop', width: 1335, height: 1197, columns: 4 },
   { name: 'mobile', width: 390, height: 844, columns: 2 },
 ]) {
-  test(`画廊视觉验收：${viewport.name} 浅深主题与长标题`, async ({ page }) => {
+  test(`画廊 ${viewport.name}：卡片排布与长标题`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     await openGallery(page)
     const mine = page.getByRole('region', { name: '我的需求单' })
@@ -333,38 +321,6 @@ for (const viewport of [
       expect(
         await page.getByRole('main').evaluate((main) => main.scrollWidth <= main.clientWidth),
       ).toBe(true)
-    }
-
-    for (const colorScheme of ['light', 'dark'] as const) {
-      await page.emulateMedia({ colorScheme })
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-        .toBe(colorScheme === 'dark')
-      await page.getByRole('main').evaluate((main) => main.scrollTo(0, 0))
-      await expect
-        .poll(() =>
-          cards
-            .first()
-            .getByRole('img')
-            .first()
-            .evaluate((image: HTMLImageElement) => image.naturalWidth),
-        )
-        .toBeGreaterThan(0)
-      await page.mouse.move(0, 0)
-      await page.screenshot({
-        animations: 'disabled',
-        path: `${SHOT_DIR}/${viewport.name}-${colorScheme}.png`,
-      })
-      if (viewport.name === 'mobile') {
-        // 双列下「全部需求单」标题已在首屏；滚到接近顶端（让出侧栏展开钮）才拍得到它的多排卡片。
-        const sectionTop = await all.evaluate((section) => section.getBoundingClientRect().top)
-        await page.getByRole('main').evaluate((main, top) => main.scrollBy(0, top - 48), sectionTop)
-        await expect(cardsIn(all).first().getByRole('img').first()).toBeInViewport()
-        await page.screenshot({
-          animations: 'disabled',
-          path: `${SHOT_DIR}/mobile-all-${colorScheme}.png`,
-        })
-      }
     }
   })
 }

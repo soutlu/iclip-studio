@@ -6,7 +6,6 @@ import {
   openConversation,
   openStoryboardShot,
   readVideoShots,
-  screenshotBothThemes,
   type VideoShot,
 } from './helpers'
 
@@ -87,10 +86,8 @@ for (const width of [1335, 390]) {
     await group.getByRole('button', { name: '下一帧', exact: true }).click()
     const frame = group.getByRole('img', { name: '镜头组 2 第 3 帧' })
     await expect(frame).toBeInViewport({ ratio: 1 })
-    await screenshotBothThemes(page, `../.artifacts/design-qa/storyboard-reader/main-${width}`)
 
-    // 镜头组列表挂在 body 上，盖过舞台与文案列，整个列表都在视口里。这一段只用鼠标：
-    // 之前按过键时 Chrome 会让脚本移过去的焦点也显示焦点环，截图就不是鼠标用户看到的样子。
+    // 镜头组列表挂在 body 上，盖过舞台与文案列，整个列表都在视口里。
     const pill = panel.getByRole('button', { name: /展开镜头组列表/ })
     await pill.click()
     const list = page.getByRole('menu', { name: '镜头组列表', exact: true })
@@ -99,11 +96,7 @@ for (const width of [1335, 390]) {
     await expect(current).toHaveAttribute('aria-checked', 'true')
     await expect(current).toBeFocused()
     await expect(list).toBeInViewport({ ratio: 1 })
-    const qa = `../.artifacts/design-qa/shot-group-dropdown`
-    await screenshotBothThemes(page, `${qa}/open-${width}`)
     const third = list.getByRole('menuitemradio', { name: /^第 3 组/ })
-    await third.hover()
-    await page.screenshot({ animations: 'disabled', path: `${qa}/hover-${width}.png` })
     await page.keyboard.press('Escape')
     await expect(list).toBeHidden()
     await expect(pill).toBeFocused()
@@ -141,7 +134,6 @@ for (const width of [1335, 390]) {
     await expect(current).toBeFocused()
     await page.keyboard.press('ArrowDown')
     await expect(third).toBeFocused()
-    await page.screenshot({ animations: 'disabled', path: `${qa}/keyboard-${width}.png` })
     await page.keyboard.press('Enter')
     await expect(list).toBeHidden()
     await expect(pill).toBeFocused()
@@ -224,10 +216,6 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
   expect(initial.document.shots[0]?.image_urls).toEqual([])
   await group.getByRole('button', { name: '镜头 1', exact: true }).click()
   await expect(group.getByRole('textbox', { name: '镜头 1 的描述' })).toContainText('展示正面')
-  await page.screenshot({
-    animations: 'disabled',
-    path: '../.artifacts/design-qa/storyboard-reader/no-images-desktop.png',
-  })
   // 添加图片的入口在正文里：敲 @，点选图弹层末格的「+」。
   const openAddImage = async (scene: string) => {
     const editor = group.getByRole('textbox', { name: `${scene} 的描述`, exact: true })
@@ -306,10 +294,6 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
     'naturalWidth',
     600,
   )
-  await page.screenshot({
-    animations: 'disabled',
-    path: '../.artifacts/design-qa/storyboard-reader/first-image-shared-replaced-desktop.png',
-  })
   expect(generationPosts).toEqual([])
 })
 
@@ -355,10 +339,6 @@ test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', as
   await expect(editor.getByLabel('图片模型', { exact: true })).toBeVisible()
   // 这一帧还没编辑过，只有当前帧一张：没得切，版本条不显示。
   await expect(editor.getByRole('group', { name: '该帧的图片', exact: true })).toHaveCount(0)
-  await page.screenshot({
-    animations: 'disabled',
-    path: '../.artifacts/design-qa/storyboard-reader/image-edit-entry-desktop.png',
-  })
   await editor.getByRole('button', { name: '关闭图片编辑', exact: true }).click()
   await expect(editor).toBeHidden()
   await expect(entry).toBeFocused()
@@ -454,7 +434,6 @@ for (const width of [1335, 390] as const) {
     const gate = await installStorageGate(page)
     const panel = await openConversation(page, '无图分镜草稿', { mobile })
     const group = panel.getByRole('region', { name: '镜头组 1', exact: true })
-    const qa = `../.artifacts/design-qa/shot-script-composer/${width}`
     const png = await canvasPng(page, { fill: '#dfe8dd', label: 'Pasted' })
     const editor = group.getByRole('textbox', { name: '镜头 1 的描述', exact: true })
     await editor.click()
@@ -464,7 +443,6 @@ for (const width of [1335, 390] as const) {
     await gate.hold()
     await pasteImage(editor, png, '粘贴.png')
     await expect(editor.getByRole('progressbar', { name: '上传中' })).toBeVisible()
-    await screenshotBothThemes(page, `${qa}-uploading`)
     await gate.release()
     // 传好：chip 换成 @1，地址与引用一起写进本组。
     await expect(editor.getByRole('button', { name: '查看第 1 帧', exact: true })).toBeVisible()
@@ -476,7 +454,6 @@ for (const width of [1335, 390] as const) {
         prompt: '开场，中景，模特双手托起帆布包，展示正面。@Image1',
         image_indexes: [1],
       })
-    await screenshotBothThemes(page, `${qa}-landed`)
 
     // 失败：chip 标红，点开失败卡片重试，用原文件再传一次。
     await gate.failNext()
@@ -485,7 +462,6 @@ for (const width of [1335, 390] as const) {
     await editor.getByText('断网.png').click()
     const card = page.getByRole('dialog', { name: '断网.png上传失败' })
     await expect(card).toBeVisible()
-    await screenshotBothThemes(page, `${qa}-failed`)
     await card.getByRole('button', { name: '重试' }).click()
     await expect(editor.getByRole('button', { name: '查看第 2 帧', exact: true })).toBeVisible()
     await expect
@@ -500,7 +476,6 @@ for (const width of [1335, 390] as const) {
     await heading.dispatchEvent('dragenter', { dataTransfer: dropped })
     await expect(second.getByText('松开可添加到镜头 2')).toBeVisible()
     await expect(page.getByTestId('composer-drop-overlay')).toHaveCount(0)
-    await screenshotBothThemes(page, `${qa}-drop`)
     await heading.dispatchEvent('drop', { dataTransfer: dropped })
     await dropped.dispose()
     await expect(second.getByText('松开可添加到镜头 2')).toHaveCount(0)
@@ -518,7 +493,6 @@ for (const width of [1335, 390] as const) {
     await page.keyboard.type('@')
     const menu = page.getByRole('listbox', { name: '插入参考图', exact: true })
     await expect(menu.getByRole('option')).toHaveCount(4)
-    await screenshotBothThemes(page, `${qa}-mention`)
     await page.keyboard.press('Enter')
     await expect(menu).toBeHidden()
     await expect

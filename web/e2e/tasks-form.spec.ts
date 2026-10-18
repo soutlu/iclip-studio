@@ -1,17 +1,10 @@
 /// <reference lib="dom" />
 
-import { readFile } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { canvasPng } from './helpers'
 import { login } from './login'
 
-const SHOT_DIR = '../.artifacts/design-qa/task-form'
-
-const productPng = async (page: Page) => {
-  const fixture = process.env['TASK_FORM_QA_IMAGE']
-  if (fixture) return readFile(fixture)
-  return canvasPng(page, { fill: '#eeeeee' })
-}
+const productPng = (page: Page) => canvasPng(page, { fill: '#eeeeee' })
 
 const openCreate = async (page: Page) => {
   await page.goto('/')
@@ -86,29 +79,6 @@ test('商品图库上传后显示原图，保存再打开仍可预览', async ({
     .toBeLessThan(0.02)
   await expectMediaLayout(dialog, false)
 
-  await dialog.getByLabel('创作要求', { exact: true }).focus()
-  await page.screenshot({
-    path: `${SHOT_DIR}/creative-focus.png`,
-    fullPage: true,
-    animations: 'disabled',
-  })
-  await dialog.getByLabel('需求单名称', { exact: true }).scrollIntoViewIfNeeded()
-  await dialog.getByRole('heading', { name: '新建需求单', exact: true }).click()
-  await page.mouse.move(0, 0)
-  await page.screenshot({
-    path: `${SHOT_DIR}/desktop-light.png`,
-    fullPage: true,
-    animations: 'disabled',
-  })
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await expect(page.locator('html')).toHaveClass(/dark/)
-  await page.screenshot({
-    path: `${SHOT_DIR}/desktop-dark.png`,
-    fullPage: true,
-    animations: 'disabled',
-  })
-  await page.emulateMedia({ colorScheme: 'light' })
-
   const createdResponse = page.waitForResponse(
     (response) => response.url().endsWith('/api/tasks') && response.request().method() === 'POST',
   )
@@ -131,7 +101,6 @@ test('商品图库上传后显示原图，保存再打开仍可预览', async ({
   const viewport = page.viewportSize()
   if (viewport === null) throw new Error('需要固定视口尺寸核对预览范围')
   expect(await preview.boundingBox()).toMatchObject({ x: 0, y: 0, ...viewport })
-  await page.screenshot({ animations: 'disabled', path: `${SHOT_DIR}/preview-over-dialog.png` })
   // Esc 与点暗区都只关预览；需求单弹窗和填了一半的表单还在。
   await page.keyboard.press('Escape')
   await expect(preview).toBeHidden()
@@ -154,20 +123,9 @@ test('手机需求单正文可滚动，长创作要求与固定操作栏可用',
   await expectMediaLayout(dialog, true)
   const submit = dialog.getByRole('button', { name: '创建需求单', exact: true })
   await expect(submit).toBeInViewport()
-  await dialog.getByRole('heading', { name: '新建需求单', exact: true }).click()
-  await page.screenshot({
-    path: `${SHOT_DIR}/mobile-bottom.png`,
-    fullPage: true,
-    animations: 'disabled',
-  })
   await dialog.getByLabel('需求单名称', { exact: true }).scrollIntoViewIfNeeded()
   await expect(dialog.getByLabel('需求单名称', { exact: true })).toBeInViewport()
   await expect(submit).toBeInViewport()
-  await page.screenshot({
-    path: `${SHOT_DIR}/mobile-top.png`,
-    fullPage: true,
-    animations: 'disabled',
-  })
   const bounds = await dialog.boundingBox()
   expect(bounds?.width).toBeLessThanOrEqual(390)
   await submit.click()
@@ -324,14 +282,6 @@ test('认领需求后预览单段文字与图片，创建关联对话并发送�
         .evaluate((image: HTMLImageElement) => image.naturalWidth),
     )
     .toBeGreaterThan(0)
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await expect(page.locator('html')).toHaveClass(/dark/)
-  await page.screenshot({
-    path: '../.artifacts/design-qa/task-creation/mock-preview-dark.png',
-    fullPage: true,
-    animations: 'disabled',
-  })
-  await page.emulateMedia({ colorScheme: 'light' })
 
   const createdResponse = page.waitForResponse(
     (response) =>

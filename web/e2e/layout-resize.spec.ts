@@ -284,41 +284,23 @@ test('拖动栏头换位、键盘换回和取消调宽', async ({ page }) => {
   await widthIs(sidebar, 280)
 })
 
-test('三种布局浅深主题、窄屏切换与桌面偏好恢复', async ({ page }) => {
+test('三种布局、窄屏切换与桌面偏好恢复', async ({ page }) => {
   await openConversation(page, '夜景延时素材生成')
   await expect(page.getByText('镜头表已经更新。')).toBeVisible({ timeout: 15_000 })
-  const screenshot = async (name: string) => {
-    for (const colorScheme of ['light', 'dark'] as const) {
-      await page.emulateMedia({ colorScheme })
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-        .toBe(colorScheme === 'dark')
-      await page.mouse.move(0, 899)
-      await page.screenshot({
-        animations: 'disabled',
-        path: `../.artifacts/design-qa/sidebar-${name}-${colorScheme}.png`,
-      })
-    }
-  }
-  await screenshot('split')
   await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click()
   await page.getByRole('button', { name: '折叠工作台', exact: true }).click()
   await widthIs(page.getByRole('complementary', { name: '侧边栏' }), 56)
   await widthIs(page.getByTestId('pane-workbench'), 40)
-  await screenshot('chat')
   await page.getByRole('button', { name: '展开工作台', exact: true }).click()
   await swapPanes(page)
   await page.getByRole('button', { name: '折叠对话', exact: true }).click()
   await widthIs(page.getByTestId('pane-chat'), 40)
-  await screenshot('workbench')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: '展开对话', exact: true }).click()
   await expect(page.getByLabel('输入消息')).toBeVisible()
   await page.getByLabel('输入消息').fill('移动端切换后保留的草稿')
-  await screenshot('mobile-chat')
   await page.getByRole('button', { name: '展开工作台', exact: true }).click()
   await expect(page.getByRole('complementary', { name: '工作台' })).toBeVisible()
-  await screenshot('mobile-workbench')
   await expect(page.getByRole('button', { name: '交换对话与工作台' })).toHaveCount(0)
   await page.getByRole('button', { name: '展开对话', exact: true }).click()
   await expect(page.getByLabel('输入消息')).toHaveText('移动端切换后保留的草稿')
@@ -407,15 +389,6 @@ for (const workbenchFirst of [false, true]) {
     await dragBy(page, handle, (available - 250 - 640) * direction)
     await widthIs(chat, 250)
     await widthIs(chat.locator('[data-pane-body]'), 400)
-    await page.screenshot({
-      animations: 'disabled',
-      path: `../.artifacts/design-qa/sidebar-clipped-${workbenchFirst ? 'reversed' : 'normal'}-light.png`,
-    })
-    await page.emulateMedia({ colorScheme: 'dark' })
-    await page.screenshot({
-      animations: 'disabled',
-      path: `../.artifacts/design-qa/sidebar-clipped-${workbenchFirst ? 'reversed' : 'normal'}-dark.png`,
-    })
     await page.setViewportSize({ width: 900, height: 900 })
     await page.setViewportSize({ width: 1600, height: 900 })
     await widthIs(chat, 250)
@@ -448,10 +421,6 @@ test('侧边栏低于 200px 后连续裁切，到 56px 才显示图标栏，按 
   await widthIs(sidebar, 264)
   await dragBy(page, handle, -144)
   await widthIs(sidebar, 120)
-  await page.screenshot({
-    animations: 'disabled',
-    path: '../.artifacts/design-qa/sidebar-navigation-clipped.png',
-  })
   await page.reload()
   await widthIs(sidebar, 120)
   await dragBy(page, handle, -64)

@@ -1,9 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { screenshotBothThemes } from './helpers'
 import { login } from './login'
-
-const SCREENSHOTS = '../.artifacts/design-qa/brand-templates'
 
 test('治理者编辑、停用与恢复字体；筛选留在地址里', async ({ page }) => {
   await page.goto('/')
@@ -12,7 +9,6 @@ test('治理者编辑、停用与恢复字体；筛选留在地址里', async ({
   await page.getByRole('tab', { name: '品牌模板', exact: true }).click()
   const main = page.getByRole('main', { name: '品牌模板' })
   await expect(main.getByRole('article', { name: '示例字体' }).getByText('Aa')).toBeVisible()
-  await screenshotBothThemes(page, `${SCREENSHOTS}/brand-templates-desktop`)
 
   let card = main.getByRole('article', { name: '品牌标题字体' })
   await card.getByRole('button', { name: '编辑' }).click()
@@ -52,7 +48,6 @@ test('普通读者在手机上查看并预览字体', async ({ page }) => {
   const font = main.getByRole('article', { name: '示例字体' })
   await expect(font.getByText('Aa')).toBeVisible()
   await expect(font.getByRole('button', { name: '编辑' })).toHaveCount(0)
-  await screenshotBothThemes(page, `${SCREENSHOTS}/brand-templates-mobile`)
   await main.getByRole('button', { name: '预览字体：示例字体' }).click()
   await expect(page.getByRole('dialog', { name: '示例字体' })).toBeVisible()
   await page.keyboard.press('Escape')
