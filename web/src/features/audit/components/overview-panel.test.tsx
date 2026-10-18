@@ -135,7 +135,8 @@ describe('OverviewPanel 片长', () => {
     expect(within(cost).getByRole('img', { name: '总视频生成秒数趋势' })).toBeInTheDocument()
     expect(within(cost).queryByText('暂无片长数据')).not.toBeInTheDocument()
     // 最终成片 = 片长合计 − 废片：120 − 30 = 90 秒。
-    expect(within(cost).getByText('最终成片长度').parentElement).toHaveTextContent('1.5 分钟')
+    expect(within(cost).getByText('最终成片长度')).toBeVisible()
+    expect(within(cost).getByText('1.5 分钟')).toBeVisible()
   })
 })
 

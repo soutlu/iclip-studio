@@ -66,10 +66,9 @@ describe('TakesTray', () => {
     const { onSelect } = await renderTray([completed, failed, running])
     const names = [/生成中$/, /生成失败$/, /的成片$/]
     for (const [index, card] of cards().entries()) {
-      const buttons = within(card).getAllByRole('button')
-      expect(buttons).toHaveLength(1)
-      expect(buttons[0]).toHaveAccessibleName(names[index])
-      await userEvent.click(buttons[0] as HTMLElement)
+      const button = within(card).getByRole('button')
+      expect(button).toHaveAccessibleName(names[index])
+      await userEvent.click(button)
     }
     expect(onSelect.mock.calls).toEqual([['running'], ['failed'], ['completed']])
   })

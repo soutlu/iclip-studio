@@ -98,15 +98,12 @@ def test_json_encoded_prompt_is_parsed_into_the_same_structure() -> None:
     assert encoded.prompt == request(prompt=prompt_value()).prompt
 
 
-@pytest.mark.parametrize("timestamps", [[], [0], [0, 4, 8]], ids=["empty", "one", "three"])
-def test_timestamps_require_exactly_two_values(timestamps: list[int]) -> None:
-    with pytest.raises(ValidationError):
-        request(prompt=prompt_value(timeline=[item(timestamps)]))
-
-
 @pytest.mark.parametrize(
     "timestamps",
     [
+        pytest.param([], id="empty"),
+        pytest.param([0], id="one-value"),
+        pytest.param([0, 4, 8], id="three-values"),
         pytest.param(["0", 8], id="string-start"),
         pytest.param([0, "8"], id="string-end"),
         pytest.param([False, 8], id="boolean-start"),
@@ -119,7 +116,7 @@ def test_timestamps_require_exactly_two_values(timestamps: list[int]) -> None:
         pytest.param([float("-inf"), 8], id="negative-infinity"),
     ],
 )
-def test_timestamps_reject_non_numeric_non_finite_and_negative_values(
+def test_timestamps_require_two_finite_non_negative_numbers(
     timestamps: list[Any],
 ) -> None:
     with pytest.raises(ValidationError):

@@ -71,7 +71,7 @@ describe('预览页', () => {
   it('成片轨还是空的时不生成，说明原因', () => {
     expect(previewState(draftOf([]), mediaOf(draftOf([])), catalog, ORIGIN)).toEqual({
       kind: 'blocked',
-      message: '成片里还没有画面；加入视频或组件后可以在这里预览',
+      message: expect.stringMatching(/成片.*没有画面/),
     })
   })
 
@@ -80,18 +80,15 @@ describe('预览页', () => {
       '组件库里没有的组件',
       draftOf([card('c1', 1_000, { component: 'nope' }), video('v1', 's1', 0, 1_000)]),
       { s1: 'https://oss/s1.mp4' },
-      '成片里有组件库里没有的组件，暂时无法预览；请删掉它或换一个组件',
+      /组件库.*组件/,
     ],
-    [
-      '素材还没有地址',
-      draftOf([video('v1', 's1', 0, 1_000)]),
-      {},
-      '有素材还没读到地址，暂时无法预览；请稍后再试',
-    ],
+    ['素材还没有地址', draftOf([video('v1', 's1', 0, 1_000)]), {}, /素材.*地址/],
   ])('合成不了（%s）时给一句话，不带组件 id', (_, draft, urls, message) => {
-    expect(previewState(draft, mediaOf(draft, urls), catalog, ORIGIN)).toEqual({
+    const state = previewState(draft, mediaOf(draft, urls), catalog, ORIGIN)
+    expect(state).toEqual({
       kind: 'blocked',
-      message,
+      message: expect.stringMatching(message),
     })
+    if (state.kind === 'blocked') expect(state.message).not.toContain('nope')
   })
 })

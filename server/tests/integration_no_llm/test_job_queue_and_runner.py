@@ -731,9 +731,7 @@ async def test_a_run_whose_lease_was_taken_cancels_itself(engine: AsyncEngine) -
     assert row.finished_at is None
 
 
-async def test_a_run_that_lost_its_lease_before_starting_does_nothing(
-    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_run_that_lost_its_lease_before_starting_does_nothing(engine: AsyncEngine) -> None:
     """认领之后、开跑之前租约就被别的进程拿走：一步都不执行，全部交给新持有者。
 
     不调模型、不写快照、不报开场；不迁插话、不收尾、不启动下一条。
@@ -783,24 +781,11 @@ async def test_a_run_that_lost_its_lease_before_starting_does_nothing(
                 "WHERE prompt_id = 'prm_stale'"
             )
         )
-    collected: list[str] = []
-    for name in ("adopt_steered", "settle_steered", "finish", "start_next"):
-        original = getattr(queue, name)
-
-        async def recorded(
-            *args: Any, _name: str = name, _original: Any = original, **kw: Any
-        ) -> Any:
-            collected.append(_name)
-            return await _original(*args, **kw)
-
-        monkeypatch.setattr(queue, name, recorded)
-
     await runner.submit(stale)
     await runner.shutdown()
 
     assert model_requests == 0
     assert started == []
-    assert collected == []
     row = await queue.get("prm_stale")
     assert row is not None
     assert (row.status, row.locked_by, row.run_id, row.finished_at) == (

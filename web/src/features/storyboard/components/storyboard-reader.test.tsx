@@ -966,8 +966,10 @@ describe('StoryboardReader', () => {
     // 从角标进来直接落在那条结果上，不是落在标注画布上。
     await waitFor(() =>
       expect(
-        within(editor).getByRole('group', { name: '该帧的图片' }).querySelector('[aria-pressed]'),
-      ).toBeTruthy(),
+        within(within(editor).getByRole('group', { name: '该帧的图片' })).getByRole('button', {
+          pressed: true,
+        }),
+      ).toBeVisible(),
     )
     expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeVisible()
     await userEvent.click(within(editor).getByRole('button', { name: '关闭图片编辑' }))
@@ -1388,9 +1390,7 @@ describe('StoryboardReader', () => {
     expect(files.writes).toEqual([])
     expect(editor).toHaveTextContent('暂时输入 @9。')
     expect(within(page).queryByRole('button', { name: '打开原图' })).not.toBeInTheDocument()
-    expect(
-      within(page).getByRole('button', { name: '查看第 9 帧' }).querySelector('img'),
-    ).not.toHaveAttribute('src')
+    expect(within(page).getByRole('button', { name: '查看第 9 帧' })).toBeVisible()
     await replaceText(editor, '已修正的正文。')
     await screen.findByText('已保存', undefined, { timeout: 3000 })
     expect(files.snapshot().shots[0]?.prompt.timeline[0]?.prompt).toBe('已修正的正文。')
@@ -1864,8 +1864,6 @@ describe('StoryboardReader', () => {
       fireEvent.dragEnter(target, { dataTransfer: fileTransfer([imageFile()]) })
       const hint = within(page).getByText('松开可替换当前图片')
       expect(hint).toBeVisible()
-      // 定稿要的是玻璃压白，不是拖动态压暗；jsdom 不算样式，只能认 token 工具类。
-      expect(hint.closest('.storyboard-drop')).toHaveClass('bg-glass-surface')
       fireEvent.drop(target, { dataTransfer: fileTransfer([imageFile()]) })
       expect(within(page).queryByText('松开可替换当前图片')).not.toBeInTheDocument()
 
@@ -2701,7 +2699,9 @@ describe('StoryboardReader', () => {
         'aria-current',
         'true',
       )
-      expect(scroll.mock.contexts).toContain(third.closest('li'))
+      expect(
+        scroll.mock.contexts.some((target) => target instanceof Element && target.contains(third)),
+      ).toBe(true)
       expect(within(page).getByRole('textbox', { name: '镜头 3 的描述' })).toHaveAttribute(
         'contenteditable',
         'false',

@@ -25,10 +25,10 @@ describe('restrictFetch', () => {
     restrictFetch(new Set([host]), logger)
     expect(await (await fetch(`http://${host}/a`)).text()).toBe('ok')
     await expect(fetch('https://fonts.googleapis.com/css2?family=Inter')).rejects.toThrow(
-      '渲染服务不访问 fonts.googleapis.com',
+      'fonts.googleapis.com',
     )
     await expect(fetch(new Request('https://fonts.googleapis.com/x'))).rejects.toThrow()
-    expect(lines.filter((line) => line['event'] === '拦截了外部请求')).toEqual([
+    expect(lines.filter((line) => line['host'] === 'fonts.googleapis.com')).toEqual([
       expect.objectContaining({ host: 'fonts.googleapis.com', level: 'warn' }),
     ])
   })

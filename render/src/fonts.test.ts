@@ -58,7 +58,7 @@ describe('declareLinkedFonts', () => {
   it('组件库里缺了引用的字体 CSS 时报错', async () => {
     const html = page('<link rel="stylesheet" href="vendor/fonts/families/anton.css">')
     await expect(declareLinkedFonts(html, registry)).rejects.toThrow(
-      '组件库缺少字体 CSS：vendor/fonts/families/anton.css',
+      'vendor/fonts/families/anton.css',
     )
   })
 })

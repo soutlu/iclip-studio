@@ -115,7 +115,7 @@ it('切段先停在准确的整片切点，下一段实际开播后才恢复混�
   act(() => frames.at(-1)?.(100))
   expect(time).toHaveBeenLastCalledWith(2)
   expect(playback).toHaveBeenLastCalledWith({ playing: false, muted: true })
-  expect(screen.getByLabelText('视频播放器')).not.toBe(first)
+  expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', 'https://example.com/b.mp4')
   await act(async () => resume())
   expect(time).toHaveBeenLastCalledWith(2)
   expect(playback).toHaveBeenLastCalledWith({ playing: true, muted: true })

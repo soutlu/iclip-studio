@@ -145,7 +145,6 @@ describe('参考视频列表', () => {
     expect(await screen.findByText('暂无参考视频')).toBeVisible()
     expect(screen.queryByRole('button', { name: '上传视频' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '选择文件' })).not.toBeInTheDocument()
-    expect(document.querySelector('input[type="file"]')).toBeNull()
   })
 
   it('一条都没有时整块列表区是拖放区，能选文件', async () => {

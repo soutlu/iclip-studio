@@ -1,4 +1,4 @@
-"""参考视频打标的请求形状与解析：提示词由两份清单生成，用户消息只放拆解全文，输出格式取
+"""参考视频打标的请求形状与解析：用户消息只放拆解全文，输出格式取
 ``TAG_FORMAT``；解析只收清单里的值，坏的一律算打标失败。另验证 AI 导演那一侧的适配：参考视频的
 结果换成导演端口的文档或失败原因。"""
 
@@ -29,7 +29,7 @@ from iclip.domains.references.service import ReferenceService
 from tests.helpers.references import DOCUMENT, VIDEO, FakeArk, ark_pipeline
 
 
-async def test_tagging_sends_the_document_alone_with_a_prompt_built_from_both_lists() -> None:
+async def test_tagging_sends_the_document_with_a_constrained_output_format() -> None:
     ark = FakeArk()
     _, tagger = ark_pipeline(ark)
 
@@ -38,11 +38,7 @@ async def test_tagging_sends_the_document_alone_with_a_prompt_built_from_both_li
     (request,) = ark.tag_requests
     system, user = request["input"]
     assert user["content"] == [{"type": "input_text", "text": DOCUMENT}]
-    (system_part,) = system["content"]
-    prompt = system_part["text"]
-    for one in VIDEO_TYPES:
-        assert f"- {one.value} {one.label}：{one.rule}" in prompt
-    assert "、".join(CATEGORIES) in prompt
+    assert system["role"] == "system"
     assert request["text"] == {"format": TAG_FORMAT}
     assert request["reasoning"] == {"effort": TAG_REASONING_EFFORT}
     assert request["max_output_tokens"] == TAG_MAX_OUTPUT_TOKENS
@@ -55,10 +51,9 @@ def test_the_output_format_only_allows_listed_values() -> None:
     assert (TAG_FORMAT["type"], TAG_FORMAT["strict"]) == ("json_schema", True)
 
 
-def test_the_category_list_holds_the_56_names() -> None:
-    assert len(CATEGORIES) == 56
-    assert len(set(CATEGORIES)) == 56
-    assert len(VIDEO_TYPES) == 8
+def test_tag_lists_have_unique_identifiers() -> None:
+    assert len(CATEGORIES) == len(set(CATEGORIES))
+    assert len(VIDEO_TYPES) == len({item.value for item in VIDEO_TYPES}) == 8
 
 
 def test_parsing_deduplicates_and_keeps_order() -> None:

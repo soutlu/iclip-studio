@@ -231,8 +231,8 @@ test('往编辑器拖本地图片：输入卡就地上传，弹窗其余位置�
   await expect(dialog.getByRole('button', { name: '添加参考图', exact: true })).toBeEnabled()
   const png = await canvasPng(page)
   await serveMockOss(page, png)
-  // 聊天框的整页遮罩挂在 body 上；输入卡自己的提示只盖住卡片。
-  const pageOverlay = page.locator('body > [data-testid="composer-drop-overlay"]')
+  // 弹窗输入卡之外不应出现另一个上传遮罩。
+  const overlays = page.getByTestId('composer-drop-overlay')
   const cardOverlay = dialog.getByTestId('composer-drop-overlay')
 
   // 落在输入卡（正文以外的工具行）：卡片就地收下，提示只盖卡片，聊天遮罩从头到尾不亮。
@@ -241,7 +241,7 @@ test('往编辑器拖本地图片：输入卡就地上传，弹窗其余位置�
   await card.dispatchEvent('dragenter', { dataTransfer: accepted })
   await card.dispatchEvent('dragover', { dataTransfer: accepted })
   await expect(cardOverlay).toBeVisible()
-  await expect(pageOverlay).toHaveCount(0)
+  await expect(overlays).toHaveCount(1)
   await card.dispatchEvent('drop', { dataTransfer: accepted })
   await expect(cardOverlay).toBeHidden()
   await expect(editor.getByText('拖入参考.png', { exact: true })).toBeVisible()
@@ -252,7 +252,7 @@ test('往编辑器拖本地图片：输入卡就地上传，弹窗其余位置�
   await stage.dispatchEvent('dragenter', { dataTransfer: refused })
   await stage.dispatchEvent('dragover', { dataTransfer: refused })
   await expect(cardOverlay).toBeHidden()
-  await expect(pageOverlay).toHaveCount(0)
+  await expect(overlays).toHaveCount(0)
   await stage.dispatchEvent('drop', { dataTransfer: refused })
   await expect(page.getByText('误投.png')).toHaveCount(0)
 

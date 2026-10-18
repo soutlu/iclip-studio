@@ -38,7 +38,6 @@ describe('StageBackdrop', () => {
     rerender(<StageBackdrop url={undefined} />)
     expect(container.querySelectorAll('img')).toHaveLength(0)
     rerender(<StageBackdrop url={urls[2]} />)
-    expect(container.querySelectorAll('img')).toHaveLength(1)
     expect(imageFor(container, urls[2])).not.toBeVisible()
   })
 

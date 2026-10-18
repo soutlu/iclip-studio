@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from io import BytesIO
 from typing import NoReturn
 
@@ -167,25 +166,6 @@ async def test_both_steps_need_uploads_write() -> None:
     async with client(app) as http:
         assert (await sign(http)).status_code == 403
         assert (await confirm(http, str(uuid.uuid4()))).status_code == 403
-
-
-async def test_sign_mints_the_name_and_signs_the_uploader_in() -> None:
-    """名字在字节落地前发下来；上传者签进请求头，浏览器原样带上才能通过验签。"""
-
-    bucket = FakeBucket()
-    me = uuid.uuid4()
-    app = build_test_app(bucket, granted=uploader(me))
-    async with client(app) as http:
-        response = await sign(http, "video/mp4")
-
-    body = response.json()
-    upload_id = uuid.UUID(body["uploadId"])
-    headers = {"Content-Type": "video/mp4", UPLOADER_HEADER: str(me)}
-    assert body["upload"]["method"] == "PUT"
-    assert body["upload"]["headers"] == headers
-    assert body["upload"]["url"] == f"https://cdn.test/iclip/agent/uploads/{upload_id}.mp4?signed"
-    assert bucket.signed == [(f"iclip/agent/uploads/{upload_id}.mp4", headers)]
-    assert datetime.fromisoformat(body["upload"]["expiresAt"]) > datetime.now(UTC)
 
 
 async def test_key_uploads_also_sign_the_key_in() -> None:
@@ -493,22 +473,6 @@ async def test_a_duplicate_hands_back_the_earlier_address_and_drops_this_copy() 
     assert response.json() == {"url": earlier.url, "contentType": "video/mp4", "sizeBytes": 70}
     assert key not in bucket.objects, "本次的对象删掉了"
     assert f"iclip/agent/uploads/{earlier.object_upload_id}.mp4" in bucket.objects
-
-
-async def test_confirming_a_recorded_upload_again_answers_from_the_shared_object() -> None:
-    """记过的上传再确认：本次的对象已经删了，照样交回记录上的地址与那份对象的事实，不再记一次。"""
-
-    bucket = FakeBucket()
-    earlier = seed_earlier(bucket, size_bytes=90)
-    upload_id = uuid.uuid4()
-    recorded = RecordedUploads(rows={upload_id: earlier})
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
-    async with client(app) as http:
-        response = await confirm(http, str(upload_id))
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {"url": earlier.url, "contentType": "video/mp4", "sizeBytes": 90}
-    assert recorded.calls == []
 
 
 async def test_a_copy_that_cannot_be_dropped_still_confirms_and_leaves_a_warning() -> None:

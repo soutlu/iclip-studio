@@ -1773,19 +1773,10 @@ describe('放大预览', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
     )
-    const stage = screen.getByLabelText('视频预览')
-    return { stage, videos: [...stage.querySelectorAll('video')] }
-  }
-  const expectSameVideos = (stage: HTMLElement, videos: readonly HTMLVideoElement[]) => {
-    const now = stage.querySelectorAll('video')
-    expect(now).toHaveLength(2)
-    videos.forEach((video, slot) => {
-      expect(now[slot]).toBe(video)
-      expect(video.isConnected).toBe(true)
-    })
+    return screen.getByLabelText<HTMLVideoElement>('视频播放器')
   }
 
-  it('舞台连同两个 <video> 原样搬进应用内遮罩再搬回，状态不丢，也不调浏览器全屏', async () => {
+  it('放大与还原保留播放进度和声音状态，不调用浏览器全屏', async () => {
     const requestFullscreen = vi.fn()
     Object.defineProperty(Element.prototype, 'requestFullscreen', {
       configurable: true,
@@ -1793,16 +1784,14 @@ describe('放大预览', () => {
     })
     try {
       const user = userEvent.setup()
-      const { stage, videos } = await renderPlayable()
-      const source = videos[0]?.getAttribute('src')
-      expect(source).toBe(ROOT_URL)
+      const video = await renderPlayable()
+      expect(video).toHaveAttribute('src', ROOT_URL)
+      video.currentTime = 1.25
       await user.click(screen.getByRole('button', { name: '开启声音' }))
 
       await user.click(screen.getByRole('button', { name: '放大' }))
       const overlay = screen.getByRole('dialog', { name: '放大预览' })
-      expect(screen.getByLabelText('视频预览')).toBe(stage)
-      expect(overlay).toContainElement(stage)
-      expectSameVideos(stage, videos)
+      expect(within(overlay).getByLabelText<HTMLVideoElement>('视频播放器').currentTime).toBe(1.25)
       expect(within(overlay).queryByRole('button', { name: '放大' })).toBeNull()
       await user.click(within(overlay).getByRole('button', { name: '静音' }))
       expect(within(overlay).getByRole('button', { name: '开启声音' })).toBeVisible()
@@ -1810,15 +1799,17 @@ describe('放大预览', () => {
 
       await user.click(within(overlay).getByRole('button', { name: '关闭' }))
       expect(screen.queryByRole('dialog', { name: '放大预览' })).toBeNull()
-      expect(screen.getByRole('dialog', { name: /编辑视频/ })).toContainElement(stage)
-      expectSameVideos(stage, videos)
-      expect(videos[0]?.getAttribute('src')).toBe(source)
+      const restored = within(
+        screen.getByRole('dialog', { name: /编辑视频/ }),
+      ).getByLabelText<HTMLVideoElement>('视频播放器')
+      expect(restored).toHaveAttribute('src', ROOT_URL)
+      expect(restored.currentTime).toBe(1.25)
       expect(screen.getByRole('button', { name: '静音' })).toBeVisible()
 
       await user.click(screen.getByRole('button', { name: '放大' }))
       await user.click(screen.getByRole('button', { name: '关闭预览' }))
       expect(screen.queryByRole('dialog', { name: '放大预览' })).toBeNull()
-      expectSameVideos(stage, videos)
+      expect(screen.getByLabelText<HTMLVideoElement>('视频播放器').currentTime).toBe(1.25)
       expect(requestFullscreen).not.toHaveBeenCalled()
     } finally {
       Reflect.deleteProperty(Element.prototype, 'requestFullscreen')

@@ -779,8 +779,8 @@ async def test_anchor_sheet_submits_a_full_square_grid_without_references(
     assert request.reference_image_urls == ()
     assert (request.aspect_ratio, request.resolution) == (ANCHOR_ASPECT, GRID_RESOLUTION)
     assert request.prompt.count("visual_prompt:") == 4
-    assert "全局参考设定" not in request.prompt
-    assert request.prompt.startswith("1. Core Command")
+    assert "全身正面平视的女性" in request.prompt
+    assert "空景全景平视的门厅" in request.prompt
 
 
 async def test_stringified_frames_are_parsed_on_the_agent_path(
