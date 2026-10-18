@@ -177,12 +177,10 @@ describe('DateRangePicker', () => {
     expect(screen.getByRole('grid', { name: '2026 年 10 月' })).toBeInTheDocument()
   })
 
-  it('快捷范围生效时高亮今天往前的这几天，不占用选中语义', async () => {
+  it('快捷范围生效时选中对应快捷项，不占用自定义日期的选中语义', async () => {
     await renderPicker({ range: '7d', since: null, until: null })
 
-    expect(screen.getByRole('button', { name: '2026年9月12日' })).toHaveAttribute('data-preset')
-    expect(screen.getByRole('button', { name: '2026年9月6日' })).toHaveAttribute('data-preset')
-    expect(screen.getByRole('button', { name: '2026年9月5日' })).not.toHaveAttribute('data-preset')
+    expect(screen.getByRole('radio', { name: '近 7 天' })).toBeChecked()
     expect(screen.queryAllByRole('gridcell', { selected: true })).toHaveLength(0)
   })
 

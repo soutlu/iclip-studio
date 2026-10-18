@@ -88,7 +88,9 @@ test('需求详情可直接播放、切版、下载和放大，关闭预览保�
   await group.getByRole('button', { name: '放大', exact: true }).click()
   const preview = page.getByRole('dialog', { name: '镜头组 2', exact: true })
   await expect(preview).toBeVisible()
-  await expect(preview.locator('video')).toHaveAttribute('autoplay', '')
+  await expect
+    .poll(() => preview.locator('video').evaluate((video: HTMLVideoElement) => video.paused))
+    .toBe(false)
   await page.keyboard.press('Escape')
   await expect(preview).toBeHidden()
   // 双击画面同样放大
@@ -132,10 +134,7 @@ test('手机单列可滚动查看视频、长标题和操作，面板重开不�
         .evaluate((el: HTMLVideoElement) => el.readyState),
     )
     .toBeGreaterThanOrEqual(2)
-  const bounds = await player.boundingBox()
-  expect(bounds).not.toBeNull()
-  expect(bounds?.width).toBeLessThanOrEqual(390)
-  expect(bounds?.height).toBeLessThanOrEqual(240)
+  await expect(player).toBeInViewport({ ratio: 1 })
   await related.getByRole('button', { name: '收起关联任务与视频' }).click()
   await expect(related).toBeHidden()
   await dialog
@@ -174,7 +173,7 @@ test('不同关联对话的内联播放与放大播放互斥', async ({ page }) 
   await expect
     .poll(() =>
       page
-        .locator('video[aria-label="镜头组 2视频"]')
+        .getByLabel('镜头组 2视频', { exact: true })
         .evaluateAll((videos: HTMLVideoElement[]) => videos.every((video) => video.paused)),
     )
     .toBe(true)

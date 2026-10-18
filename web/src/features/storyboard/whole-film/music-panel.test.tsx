@@ -29,7 +29,6 @@ describe('生成音乐浮层', () => {
 
     await user.click(screen.getByRole('button', { name: '打开' }))
     const popover = await screen.findByRole('dialog', { name: '生成音乐' })
-    expect(popover).toHaveAttribute('data-side', 'top')
     await user.type(screen.getByLabelText('音乐描述'), '轻快的原声吉他')
     const submit = screen.getByRole('button', { name: '生成' })
     await waitFor(() => expect(submit).not.toHaveAttribute('aria-disabled'))

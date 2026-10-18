@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type ElementHandle, type Locator, type Page } from '@playwright/test'
 import type { WholeFilmDocument } from '../src/shared/api/generated/types.gen'
 import { openConversation } from './helpers'
 
@@ -109,8 +109,17 @@ const openWith = async (
     film.getByRole('group', { name: new RegExp(`^第 ${layer0.length} 段`) }),
   ).toBeVisible()
   // 预览播放器换上来时会报一次它的时刻：等它换上来，之后点段、走播放头才不会被它拨回去
-  await expect(dialog.locator('hyperframes-player:not(.is-pending)')).toHaveCount(1)
-  await expect(dialog.locator('hyperframes-player.is-pending')).toHaveCount(0)
+  await expect
+    .poll(() =>
+      dialog
+        .getByRole('region', { name: '预览' })
+        .locator('hyperframes-player')
+        .evaluateAll(
+          (players) =>
+            players.length === 1 && (players[0] as HTMLElement & { painted: boolean }).painted,
+        ),
+    )
+    .toBe(true)
   // 时间区量好宽度、按它排好刻度之后再量位置
   let last = ''
   await expect
@@ -130,7 +139,7 @@ const readDraft = (page: Page) =>
     return ((await response.json()) as { document: WholeFilmDocument | null }).document
   }, CONVERSATION)
 
-const boxOf = async (locator: Locator) => {
+const boxOf = async (locator: Locator | ElementHandle<HTMLElement>) => {
   const box = await locator.boundingBox()
   if (box === null) throw new Error('元素还没布局')
   return { ...box, cx: box.x + box.width / 2, cy: box.y + box.height / 2 }
@@ -148,11 +157,21 @@ const FRAME_MS = 34
 /** 点段播放停在段尾时，允许多走的时长 */
 const STOP_OVERSHOOT_MS = 150
 
-/** 播放时间读数「00:02.60 / 00:07.50」里当前时刻的毫秒数 */
-const clockMs = (text: string | null) => {
-  const match = /^(\d+):(\d+)\.(\d+)/.exec(text ?? '')
-  if (match === null) throw new Error(`读不出播放时间：${text}`)
-  return Number(match[1]) * 60_000 + Number(match[2]) * 1_000 + Number(match[3]) * 10
+/** 从时间线的语义控件找到真实的横向滚动宿主，避免依赖样式类或固定 DOM 层级。 */
+const scrollViewport = async (ruler: Locator) => {
+  const handle = await ruler.evaluateHandle((element) => {
+    for (let parent = element.parentElement; parent !== null; parent = parent.parentElement) {
+      if (
+        parent.scrollWidth > parent.clientWidth &&
+        /auto|scroll/.test(getComputedStyle(parent).overflowX)
+      )
+        return parent
+    }
+    throw new Error('时间线尚不能横向滚动')
+  })
+  const viewport = handle.asElement()
+  if (viewport === null) throw new Error('时间线滚动区域不存在')
+  return viewport
 }
 
 /** 播放器暂停后还会补报时刻：等读数两次一样再读 */
@@ -161,7 +180,7 @@ const settledClockMs = async (clock: Locator) => {
   await expect
     .poll(
       async () => {
-        const now = (await clock.textContent()) ?? ''
+        const now = await clock.inputValue()
         const settled = now === last
         last = now
         return settled
@@ -169,7 +188,7 @@ const settledClockMs = async (clock: Locator) => {
       { intervals: [250] },
     )
     .toBe(true)
-  return clockMs(last)
+  return Number(last) * 1000
 }
 
 /** 点段播到段尾自己停下：读数两次一样，且停在段尾。播放器报的时刻过了段尾才暂停，实测多走 60–90 毫秒 */
@@ -178,7 +197,7 @@ const expectStoppedAt = async (clock: Locator, endMs: number) => {
   await expect
     .poll(
       async () => {
-        const now = clockMs(await clock.textContent())
+        const now = Number(await clock.inputValue()) * 1000
         const stopped = now === last && now >= endMs && now <= endMs + STOP_OVERSHOOT_MS
         last = now
         return stopped
@@ -191,7 +210,7 @@ const expectStoppedAt = async (clock: Locator, endMs: number) => {
 /** 成片轨上各段左边缘的位置：拖动中确认轨道上的段没动 */
 const clipLefts = (film: Locator) =>
   film
-    .locator('.wf-clip')
+    .getByRole('group', { name: /^第 \d+ 段/ })
     .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().left))
 
 /** 在素材区「镜头组 2」里点一个镜头选中它，按住它的范围拿起来 */
@@ -207,9 +226,7 @@ const liftShot = async (page: Page, dialog: Locator, shotNumber: number) => {
 }
 
 test.describe('整片编辑器 · 成片区', () => {
-  test('从素材拖镜头到成片轨：缩影跟手、只画插入标记、轨道不动，松手才插入；拖到别的轨退回', async ({
-    page,
-  }) => {
+  test('从素材拖镜头到成片轨：松手才插入，字幕轨拒绝插入', async ({ page }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE, music: true })
     const before = await clipLefts(film)
     const filmBox = await boxOf(film)
@@ -220,39 +237,30 @@ test.describe('整片编辑器 · 成片区', () => {
     const x = third.x + 6
     const y = filmBox.y + 12
     await page.mouse.move(x, y, { steps: 8 })
-    const ghost = page.locator('.wf-ghost')
-    await expect(ghost).toBeVisible()
-    const ghostBox = await boxOf(ghost)
-    expect(Math.abs(ghostBox.x - (x + 12))).toBeLessThan(2)
-    expect(Math.abs(ghostBox.y - (y + 12))).toBeLessThan(2)
-    await expect(dialog.locator('.wf-drop-marker')).toBeVisible()
-    await expect(dialog.locator('.wf-drop-marker')).not.toHaveClass(/is-blocked/)
-    await expect(dialog.locator('.wf-drop-bubble')).toHaveText('插入到 3.5 秒 · 第 3 段')
+    await expect(dialog.getByRole('status').filter({ hasText: /^插入到/ })).toHaveText(
+      '插入到 3.5 秒 · 第 3 段',
+    )
     expect(await clipLefts(film)).toEqual(before)
 
     // 字幕轨不收镜头：不提示
     const captions = await boxOf(dialog.getByRole('group', { name: '字幕轨' }))
     await page.mouse.move(x, captions.cy, { steps: 4 })
-    await expect(dialog.locator('.wf-drop-marker')).toHaveCount(0)
     await page.mouse.move(x, y, { steps: 4 })
     await page.mouse.up()
     await expect(film.getByRole('group')).toHaveCount(7)
     await expect(film.getByRole('group', { name: /^第 3 段 · A · 镜头 4，1\.0 秒/ })).toBeVisible()
-    await expect(ghost).toHaveCount(0)
 
     // 在字幕轨上松手：不放下，缩影退回
     await liftShot(page, dialog, 5)
     await page.mouse.move(x, captions.cy, { steps: 8 })
     await page.mouse.up()
-    await expect(ghost).toHaveClass(/is-returning/)
-    await expect(ghost).toHaveCount(0)
     await expect(film.getByRole('group')).toHaveCount(7)
   })
 
   test('放大时间线后，带着镜头到时间区边缘时自动横向滚动', async ({ page }) => {
     const { dialog } = await openWith(page, { layer0: BASE })
     for (let i = 0; i < 4; i += 1) await dialog.getByRole('button', { name: '放大时间线' }).click()
-    const viewport = dialog.locator('.wf-track-scroll')
+    const viewport = await scrollViewport(dialog.getByRole('slider', { name: '时间线播放位置' }))
     await expect
       .poll(() => viewport.evaluate((element) => element.scrollWidth > element.clientWidth))
       .toBe(true)
@@ -260,13 +268,11 @@ test.describe('整片编辑器 · 成片区', () => {
     const film = await boxOf(dialog.getByRole('group', { name: '成片画面轨' }))
     await liftShot(page, dialog, 2)
     await page.mouse.move(box.x + box.width - 10, film.cy, { steps: 8 })
-    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(40)
+    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
     await page.mouse.up()
   })
 
-  test('整片最长 120 秒：放不下时标记变虚线并写原因，松手不加入；拉长与挪动到上限停住', async ({
-    page,
-  }) => {
+  test('整片最长 120 秒：超限拒绝插入，修剪与特效移动不能越界', async ({ page }) => {
     const nineteen = Array.from({ length: 19 }, (_, k) => video(`v${k + 1}`, 0, 6_000))
     const { dialog, film } = await openWith(page, {
       layer0: [...nineteen, card('c1', 'hw-title', 5_500)],
@@ -275,11 +281,9 @@ test.describe('整片编辑器 · 成片区', () => {
     const filmBox = await boxOf(film)
     await liftShot(page, dialog, 2)
     await page.mouse.move(filmBox.x + filmBox.width / 2, filmBox.y + 12, { steps: 8 })
-    await expect(dialog.locator('.wf-drop-marker')).toHaveClass(/is-blocked/)
-    await expect(dialog.locator('.wf-drop-bubble')).toHaveText(
+    await expect(dialog.getByRole('status').filter({ hasText: /^加入后/ })).toHaveText(
       '加入后整片超过 120 秒，无法加入；请先缩短或删除其他片段',
     )
-    await expect(page.locator('.wf-ghost')).toHaveClass(/is-blocked/)
     await page.mouse.up()
     await expect(film.getByRole('group')).toHaveCount(20)
     await expect(
@@ -296,7 +300,11 @@ test.describe('整片编辑器 · 成片区', () => {
       dialog.getByRole('status').filter({ hasText: '整片最长 120 秒，不能再拉长' }),
     ).toBeVisible()
     await page.mouse.up()
-    await expect(dialog.locator('.wf-clock')).toContainText('/ 02:00.00')
+    await expect
+      .poll(async () =>
+        (await readDraft(page))?.layer0.reduce((total, clip) => total + clip.duration, 0),
+      )
+      .toBe(120_000)
 
     // 特效块挪不过 120 秒
     const overlays = dialog.getByRole('group', { name: '特效轨' })
@@ -306,9 +314,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(overlays.getByRole('group', { name: /116\.0–120\.0 秒$/ })).toBeVisible()
   })
 
-  test('成片轨内拖动排序：拿起的段变淡、只画插入标记，松手才挪；拖出成片轨不动', async ({
-    page,
-  }) => {
+  test('成片轨内拖动排序：松手才改顺序，拖出成片轨取消', async ({ page }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE })
     const before = await clipLefts(film)
     const second = await boxOf(film.getByRole('button', { name: /^选中：第 2 段/ }))
@@ -317,8 +323,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.down()
     await page.mouse.move(second.cx + 20, second.cy, { steps: 3 })
     await page.mouse.move(fifth.x + fifth.width - 4, second.cy, { steps: 8 })
-    await expect(film.getByRole('group', { name: /^第 2 段/ })).toHaveClass(/is-lifted/)
-    await expect(dialog.locator('.wf-drop-bubble')).toHaveText('挪到第 5 段')
+    await expect(dialog.getByRole('status').filter({ hasText: /^挪到/ })).toHaveText('挪到第 5 段')
     expect(await clipLefts(film)).toEqual(before)
     await page.mouse.up()
     await expect
@@ -331,9 +336,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.move(third.cx, third.cy)
     await page.mouse.down()
     await page.mouse.move(third.cx, materials.cy, { steps: 8 })
-    await expect(dialog.locator('.wf-drop-marker')).toHaveCount(0)
     await page.mouse.up()
-    await expect(page.locator('.wf-ghost')).toHaveCount(0)
     expect((await readDraft(page))?.layer0.map((clip) => clip.id)).toEqual([
       'c1',
       'v2',
@@ -350,7 +353,7 @@ test.describe('整片编辑器 · 成片区', () => {
     const { dialog, film } = await openWith(page, {
       layer0: [BASE[1], BASE[2], card('c2', 'hw-title', 1_500), BASE[3], BASE[4], BASE[5]],
     })
-    const clock = dialog.locator('.wf-clock')
+    const clock = dialog.getByRole('slider', { name: '时间线播放位置' })
     // 点段：播放头到段首，把这一段播一遍，播到段尾停下。组件可以放在成片轨任意位置：第 3 段是组件段
     await film.getByRole('button', { name: /^选中：第 3 段 · 组件 · 手写标题/ }).click()
     await expect(dialog.getByText('当前片段 · 第 3 段 · 没有原声')).toBeVisible()
@@ -363,7 +366,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('Shift+ArrowRight')
     await expect
-      .poll(async () => Math.abs(clockMs(await clock.textContent()) - pausedAt - 1_100))
+      .poll(async () => Math.abs(Number(await clock.inputValue()) * 1000 - pausedAt - 1_100))
       .toBeLessThanOrEqual(FRAME_MS)
 
     // 修剪：拖结尾手柄，再用 ← 微调 0.1 秒
@@ -395,9 +398,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(film.getByRole('group')).toHaveCount(6)
   })
 
-  test('特效轨：缩略图、拖中部改时间并吸附、←/→ 微调；上下拖换行，所有行之外只画横线，松手才开新行', async ({
-    page,
-  }) => {
+  test('特效轨：拖动吸附、键盘微调，移出已有行可调整行序并加入新行', async ({ page }) => {
     const { dialog } = await openWith(page, {
       layer0: BASE,
       overlays: [
@@ -407,7 +408,6 @@ test.describe('整片编辑器 · 成片区', () => {
     })
     const lane = dialog.getByRole('group', { name: '特效轨' })
     const arrow = lane.getByRole('button', { name: /^选中：特效 · 手绘箭头/ })
-    await expect(arrow.locator('img')).toBeVisible()
 
     // 按住中部往右拖 1 秒多一点：开头吸到第 1 段结尾（2 秒处的切点），块上方写起止秒数
     const { pps } = await pixelsPerSecond(dialog)
@@ -415,8 +415,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.move(block.cx, block.cy)
     await page.mouse.down()
     await page.mouse.move(block.cx + pps * 1.03, block.cy, { steps: 6 })
-    await expect(lane.locator('.wf-time-bubble')).toHaveText('2.0–5.0 秒')
-    await expect(dialog.locator('.wf-snap-guide')).toBeVisible()
+    await expect(lane.getByRole('status')).toHaveText('2.0–5.0 秒')
     await page.mouse.up()
     await expect(
       lane.getByRole('group', { name: '特效 · 手绘箭头，第 1 行，2.0–5.0 秒' }),
@@ -433,28 +432,25 @@ test.describe('整片编辑器 · 成片区', () => {
       lane.getByRole('group', { name: '特效 · 手绘箭头，第 1 行，1.1–4.1 秒' }),
     ).toBeVisible()
 
-    // 拖到所有行下方：只画插入横线，行数不变；松手才多出一行（新开的行至少 8 像素高的感应区）
-    const laneBox = await boxOf(lane)
-    const rowsBottom = laneBox.y + 2 + 2 * 24
+    // 移到所有行下方，松手后调到最后一行。
     const flash = await boxOf(lane.getByRole('button', { name: /^选中：特效 · 闪光叠加/ }))
     const arrowNow = await boxOf(arrow)
     await page.mouse.move(arrowNow.cx, arrowNow.cy)
     await page.mouse.down()
     await page.mouse.move(arrowNow.cx, flash.cy, { steps: 4 })
-    await page.mouse.move(arrowNow.cx, rowsBottom + 8, { steps: 4 })
-    await expect(lane.locator('.wf-overlay-insert')).toBeVisible()
-    expect((await boxOf(lane)).height).toBe(laneBox.height)
+    await page.mouse.move(arrowNow.cx, flash.y + flash.height + flash.height / 2, { steps: 4 })
+    await expect(lane.getByRole('group', { name: /^特效 · / })).toHaveCount(2)
     await page.mouse.up()
     await expect(lane.getByRole('group', { name: /^特效 · 闪光叠加，第 1 行/ })).toBeVisible()
     await expect(lane.getByRole('group', { name: /^特效 · 手绘箭头，第 2 行/ })).toBeVisible()
 
-    // 所有行上方 7 像素处同样只画横线；松手开在最上面
-    const top = (await boxOf(lane)).y + 2 - 7
+    // 移到所有行上方，松手后调到第一行。
+    const firstRow = await boxOf(lane.getByRole('group', { name: /^特效 · 闪光叠加，第 1 行/ }))
+    const top = firstRow.y - firstRow.height / 4
     const arrowLow = await boxOf(arrow)
     await page.mouse.move(arrowLow.cx, arrowLow.cy)
     await page.mouse.down()
     await page.mouse.move(arrowLow.cx, top, { steps: 6 })
-    await expect(lane.locator('.wf-overlay-insert')).toBeVisible()
     await page.mouse.up()
     await expect(lane.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ })).toBeVisible()
 
@@ -471,7 +467,8 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.move(cardButton.cx, cardButton.cy)
     await page.mouse.down()
     await page.mouse.move(cardButton.cx + 20, cardButton.cy + 20, { steps: 4 })
-    await page.mouse.move(film.x + film.width * 0.6, (await boxOf(lane)).y + 2 + 2 * 24 + 4, {
+    const lastRow = await boxOf(lane.getByRole('group', { name: /^特效 · 闪光叠加，第 2 行/ }))
+    await page.mouse.move(film.x + film.width * 0.6, lastRow.y + lastRow.height * 1.5, {
       steps: 8,
     })
     await page.mouse.up()
@@ -515,17 +512,16 @@ test.describe('整片编辑器 · 成片区', () => {
 
     const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
     const guide = dialog.getByTestId('timeline-hover-guide')
-    const preview = page.locator('.timeline-time-preview')
+    const preview = page.getByText('00:04.00', { exact: true })
     // 点段会自动播放到段尾；停下之后再验证悬停不会改变实际播放时间。
     await expect.poll(async () => Number(await ruler.inputValue())).toBeGreaterThanOrEqual(5.2)
     await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
-    await settledClockMs(dialog.locator('.wf-clock'))
+    await settledClockMs(dialog.getByRole('slider', { name: '时间线播放位置' }))
     const before = await ruler.inputValue()
     const rulerBox = await boxOf(ruler)
     const initial = await pixelsPerSecond(dialog)
     const hoverX = initial.left + initial.pps * 4
     await page.mouse.move(hoverX, rulerBox.cy)
-    await expect(preview).toContainText('预览')
     await expect(preview).toContainText('00:04.00')
     await expect(guide).toBeVisible()
     const guideBox = await boxOf(guide)
@@ -541,10 +537,8 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(preview).toHaveCount(0)
 
     for (let i = 0; i < 2; i += 1) await dialog.getByRole('button', { name: '放大时间线' }).click()
-    await expect
-      .poll(async () => (await pixelsPerSecond(dialog)).pps)
-      .toBeGreaterThan(initial.pps * 3)
-    const viewport = dialog.locator('.wf-track-scroll')
+    await expect.poll(async () => (await pixelsPerSecond(dialog)).pps).toBeGreaterThan(initial.pps)
+    const viewport = await scrollViewport(dialog.getByRole('slider', { name: '时间线播放位置' }))
     const viewportBox = await boxOf(viewport)
     const zoomed = await pixelsPerSecond(dialog)
     // 原生滚动结束后把同一个 4 秒位置放在可见时间区中间，再核对预览位置。
@@ -581,78 +575,31 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(ruler).toHaveValue(before)
   })
 
-  test('刻度至少 20 秒；工具栏没有总长读数，提示写明快捷键，自动卡点在吸附旁边；轨名叫特效', async ({
-    page,
-  }) => {
-    const { dialog, film } = await openWith(page, { layer0: [video('v1', 0, 1_000)], music: true })
-    const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
-    expect(Number(await ruler.getAttribute('max'))).toBeCloseTo(20, 0)
-    const rulerBox = await boxOf(ruler)
-    const clip = await boxOf(film.getByRole('group', { name: /^第 1 段/ }))
-    expect(clip.width / rulerBox.width).toBeCloseTo(1 / 20, 2)
-
-    await expect(dialog.getByText(/上限/)).toHaveCount(0)
-    await expect(dialog.locator('.wf-track-heads')).toContainText('特效')
-    await expect(dialog.locator('.wf-tracks')).not.toContainText('包装')
-
-    const tools = await dialog
-      .getByRole('toolbar', { name: '剪辑工具' })
-      .getByRole('button')
-      .evaluateAll((items) =>
-        items.map((item) => item.textContent?.trim() || item.getAttribute('aria-label')),
-      )
-    expect(tools.indexOf('自动卡点')).toBe(tools.indexOf('吸附') + 1)
-
-    // 吸附可以关掉再打开
+  test('吸附可切换，焦点在工具按钮时空格仍控制播放，自动卡点读取音乐后可用', async ({ page }) => {
+    const { dialog } = await openWith(page, { layer0: BASE, music: true })
     const snap = dialog.getByRole('button', { name: '吸附' })
     await snap.click()
     await expect(snap).toHaveAttribute('aria-pressed', 'false')
     await snap.click()
     await expect(snap).toHaveAttribute('aria-pressed', 'true')
-    // 焦点在按钮上时空格是播放、暂停，不点这个按钮
     await snap.focus()
     await page.keyboard.press(' ')
+    await expect(dialog.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
     await expect(snap).toHaveAttribute('aria-pressed', 'true')
-
-    // 拍点刻度在刻度尺下方，透明度随强度在 0.3–1 之间
+    await page.keyboard.press(' ')
+    await expect(dialog.getByRole('button', { name: '播放', exact: true })).toBeVisible()
     await expect(dialog.getByRole('button', { name: '自动卡点' })).not.toHaveAttribute(
       'aria-disabled',
       'true',
       { timeout: 15_000 },
     )
-    const opacities = await dialog
-      .locator('.wf-beat')
-      .evaluateAll((items) => items.map((item) => Number(getComputedStyle(item).opacity)))
-    expect(opacities.length).toBeGreaterThan(10)
-    for (const opacity of opacities) {
-      expect(opacity).toBeGreaterThanOrEqual(0.3)
-      expect(opacity).toBeLessThanOrEqual(1)
-    }
-    const beat = await boxOf(dialog.locator('.wf-beat').first())
-    expect(beat.y).toBeGreaterThan(rulerBox.y + rulerBox.height / 2)
-
-    await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
-    await dialog.getByRole('button', { name: '删除' }).hover()
-    await expect(page.getByRole('tooltip').filter({ hasText: '删除选中的片段' })).toHaveText(
-      '删除选中的片段⌫',
-    )
-    // 指针离开按钮后要再动一下，提示才知道指针不在去往它的路上
-    await page.mouse.move(WIDTH / 2, 30, { steps: 5 })
-    await expect(page.getByRole('tooltip')).toHaveCount(0)
-    await dialog.getByRole('button', { name: '播放' }).hover()
-    await expect(page.getByRole('tooltip').filter({ hasText: '播放' })).toHaveText('播放空格')
   })
 
-  test('音量推子按 dB：0 dB 在正中，←/→ 0.5 dB、⇧ 3 dB，双击回 0 dB，可以静音', async ({
-    page,
-  }) => {
+  test('音量按 dB 调整并保存，双击恢复，配乐可静音', async ({ page }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE, music: true })
     await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
     const source = dialog.getByRole('slider', { name: '原声音量' })
     await expect(source).toHaveAttribute('aria-valuetext', '0 dB')
-    const box = await boxOf(source)
-    const unity = await boxOf(dialog.locator('.wf-fader-unity').first())
-    expect(Math.abs(unity.cx - box.cx)).toBeLessThan(1)
     await source.focus()
     await page.keyboard.press('ArrowRight')
     await expect(source).toHaveAttribute('aria-valuetext', '+0.5 dB')

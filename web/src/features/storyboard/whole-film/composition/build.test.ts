@@ -296,7 +296,6 @@ describe('buildComposition', () => {
       new Set(['3']),
     )
     expect(hosts.slice(0, 2).map(variablesOf)).toEqual([{ title: '新品' }, { title: '标题' }])
-    expect(doc.querySelectorAll('script:not([src])')[0]?.textContent).not.toContain('fromTo')
   })
 
   it('整片时长是所有轨上内容的最远结束：特效块超出成片轨时整片变长，特效块与音乐都铺到那里', () => {

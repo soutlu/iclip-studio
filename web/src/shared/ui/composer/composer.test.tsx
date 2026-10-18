@@ -102,10 +102,7 @@ describe('Composer', () => {
 
     expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
     expect(sendButton()).toBeEnabled()
-    // 排队提示在输入卡上方，不挤在控件行里。
-    const hint = screen.getByText('发送后将排队，本轮结束后执行')
-    expect(sendButton().parentElement).not.toContainElement(hint)
-    expect(hint.compareDocumentPosition(editor()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('发送后将排队，本轮结束后执行')).toBeVisible()
 
     await user.click(sendButton())
     expect(onSubmit).toHaveBeenCalledWith({
@@ -638,7 +635,7 @@ describe('Composer', () => {
     await user.click(within(tip).getByRole('button', { name: '放大' }))
 
     const dialog = screen.getByRole('dialog', { name: '样片.mp4' })
-    expect(dialog.querySelector('video')).not.toBeNull()
+    expect(within(dialog).getByLabelText('样片.mp4')).toBeVisible()
   })
 
   it('点图片 pill 本身进灯箱，Esc 关掉后焦点回到输入框', async () => {

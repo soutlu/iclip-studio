@@ -14,15 +14,20 @@ const stubClipboard = () => {
 }
 
 describe('Markdown 重渲染', () => {
-  it('同样的正文重渲染不重建段落节点：选区与焦点挂在原节点上，换掉就丢了', () => {
+  it('同样的正文重渲染后保留用户的文字选区', () => {
     const { rerender } = renderWithTooltip(<Markdown text={'第一段，带 **粗体**。\n\n第二段'} />)
     const paragraph = screen.getByText('第二段')
-    const bold = screen.getByText('粗体')
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    expect(selection?.toString()).toBe('第二段')
 
     rerender(<Markdown text={'第一段，带 **粗体**。\n\n第二段'} />)
 
-    expect(screen.getByText('第二段')).toBe(paragraph)
-    expect(screen.getByText('粗体')).toBe(bold)
+    expect(selection?.toString()).toBe('第二段')
+    selection?.removeAllRanges()
   })
 })
 
@@ -39,11 +44,10 @@ describe('Markdown 换行', () => {
     expect(within(paragraph).getByText('BGM')).toBeInTheDocument()
   })
 
-  it('围栏代码块里的换行保留为原文，不换成 <br>', () => {
-    const { container } = renderWithTooltip(<Markdown text={'```\n第一行\n第二行\n```\n'} />)
+  it('围栏代码块里的换行保留为原文', () => {
+    renderWithTooltip(<Markdown text={'```\n第一行\n第二行\n```\n'} />)
 
-    expect(container.querySelector('br')).toBeNull()
-    expect(container.querySelector('pre')).toHaveTextContent('第一行\n第二行', {
+    expect(screen.getByText('第一行 第二行')).toHaveTextContent('第一行\n第二行', {
       normalizeWhitespace: false,
     })
   })

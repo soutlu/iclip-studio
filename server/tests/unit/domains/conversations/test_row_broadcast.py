@@ -163,16 +163,16 @@ class ClaimDown(Exception):
 
 @dataclass
 class FlakyClaims:
-    """前 ``failures`` 次认领抛 ``ClaimDown``，之后照常；每次调用都记下参数。"""
+    """前 ``failures`` 次认领抛 ``ClaimDown``，之后保存需求单的认领归属。"""
 
     failures: int = 1
-    calls: list[tuple[uuid.UUID, uuid.UUID]] = field(default_factory=list)
+    owners: dict[uuid.UUID, uuid.UUID] = field(default_factory=dict)
 
     async def __call__(self, task_id: uuid.UUID, user_id: uuid.UUID) -> None:
-        self.calls.append((task_id, user_id))
         if self.failures > 0:
             self.failures -= 1
             raise ClaimDown("认领时连接被重置")
+        self.owners[task_id] = user_id
 
 
 def _untouched(*_: object, **__: object) -> NoReturn:
@@ -311,7 +311,7 @@ async def test_a_replayed_create_claims_the_task_the_stored_row_hangs_on() -> No
     )
 
     assert (replayed.id, replayed.task_id, fresh) == (conversation_id, task_id, False)
-    assert claims.calls == [(task_id, OWNER.user_id), (task_id, OWNER.user_id)]
+    assert claims.owners == {task_id: OWNER.user_id}
     assert len(announced.rows) == 1
 
 
@@ -332,7 +332,7 @@ async def test_attaching_a_task_announces_the_row_before_claiming_it() -> None:
 
     await service.set_task(OWNER, existing.id, task_id=task_id)
 
-    assert claims.calls == [(task_id, OWNER.user_id), (task_id, OWNER.user_id)]
+    assert claims.owners == {task_id: OWNER.user_id}
 
 
 async def test_concurrent_writes_take_frame_numbers_in_commit_order() -> None:

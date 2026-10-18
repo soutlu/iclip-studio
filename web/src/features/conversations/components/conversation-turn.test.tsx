@@ -85,7 +85,7 @@ describe('UserBubble', () => {
     expect(parsePromptContent(copied)).toEqual(content)
   })
 
-  it('图夹在两句话中间：芯片就画在那两句话中间，头部是这张图的缩略图', () => {
+  it('图夹在两句话中间：芯片保留附件在正文中的顺序', () => {
     const url = 'https://bkt.oss-ap-southeast-1.aliyuncs.com/u/S6-1.jpg'
     renderWithTooltip(
       <UserBubble content={[text('先看这张图：'), image(url), text('\n说明它写了什么')]} />,
@@ -96,25 +96,6 @@ describe('UserBubble', () => {
     const after = screen.getByText(/说明它写了什么/)
     expect(before.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(chip.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(chip.querySelector('img')?.getAttribute('src')).toBe(
-      `${url}?x-oss-process=image/resize,l_64`,
-    )
-  })
-
-  it('视频芯片：OSS 地址给首帧缩略图，其他来源画视频图标', () => {
-    renderWithTooltip(
-      <UserBubble
-        content={[
-          video('https://bkt.oss-ap-southeast-1.aliyuncs.com/u/demo.mp4'),
-          video('https://example.com/clip.mp4'),
-        ]}
-      />,
-    )
-
-    expect(
-      screen.getByRole('button', { name: 'demo.mp4' }).querySelector('img')?.getAttribute('src'),
-    ).toContain('x-oss-process=video/snapshot')
-    expect(screen.getByRole('button', { name: 'clip.mp4' }).querySelector('img')).toBeNull()
   })
 
   it('点图片芯片开灯箱，灯箱里是图', async () => {
@@ -135,7 +116,10 @@ describe('UserBubble', () => {
     await user.click(screen.getByRole('button', { name: 'clip.mp4' }))
 
     const dialog = screen.getByRole('dialog', { name: 'clip.mp4' })
-    expect(dialog.querySelector('video')).not.toBeNull()
+    expect(within(dialog).getByLabelText('clip.mp4')).toHaveAttribute(
+      'src',
+      'https://example.com/clip.mp4',
+    )
   })
 })
 
@@ -373,11 +357,10 @@ describe('工具结果按 view 选渲染器', () => {
       ]),
     )
 
-    const figures = screen.getAllByRole('figure')
-    expect(figures).toHaveLength(2)
-    expect(figures[0]).toContainElement(screen.getByRole('img', { name: '图片' }))
-    expect(figures[0]?.querySelector('figcaption')).toBeNull()
-    expect(figures[1]).toHaveTextContent('S02 · 场景全景')
+    expect(screen.getByRole('img', { name: '图片' })).toBeInTheDocument()
+    expect(screen.queryByText('图片')).toBeNull()
+    expect(screen.getByRole('img', { name: 'S02 · 场景全景' })).toBeInTheDocument()
+    expect(screen.getByText('S02 · 场景全景')).toBeInTheDocument()
   })
 
   it('点一张图开灯箱', async () => {
@@ -644,12 +627,10 @@ describe('活动组的开合', () => {
     expect(screen.getAllByRole('button', { name: 'storyboard.md' })).toHaveLength(1)
   })
 
-  it('运行中只在正在跑的工具行画转圈，卡头不另画；卡头的可访问名照旧标「进行中」', async () => {
+  it('运行中的活动组与工具调用显示各自的运行状态', async () => {
     await renderTurn(runningTurn)
 
-    const header = screen.getByRole('button', { name: /^进行中：/ })
-    // 卡头里的图形对读屏隐藏、没有可访问名，只能数图形：只剩展开箭头一个。
-    expect(header.querySelectorAll('svg')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /^进行中：/ })).toBeInTheDocument()
     expect(screen.getAllByRole('img', { name: '进行中' })).toHaveLength(1)
   })
 

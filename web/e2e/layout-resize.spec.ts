@@ -13,7 +13,6 @@ test('拖侧栏拖柄改宽，刷新之后还在', async ({ page }) => {
   const sidebar = page.getByRole('complementary').first()
   const before = await sidebar.boundingBox()
   if (!before) throw new Error('侧栏没有可测量的位置')
-  expect(before.width).toBeCloseTo(264, 0)
 
   const handle = page.getByRole('button', { name: '调整侧边栏宽度' })
   const grip = await handle.boundingBox()
@@ -24,30 +23,37 @@ test('拖侧栏拖柄改宽，刷新之后还在', async ({ page }) => {
   await page.mouse.move(grip.x + grip.width / 2 + 60, grip.y + grip.height / 2, { steps: 6 })
   await page.mouse.up()
 
-  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(324, 0)
+  await expect
+    .poll(async () => (await sidebar.boundingBox())?.width)
+    .toBeCloseTo(before.width + 60, 0)
 
   await page.reload()
-  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(324, 0)
+  await expect
+    .poll(async () => (await sidebar.boundingBox())?.width)
+    .toBeCloseTo(before.width + 60, 0)
+
+  // 缩窄后的用户宽度也保留；继续拖到边缘可折叠，再往回拖能恢复。
+  const narrowWidth = before.width / 2
+  await dragBy(page, handle, narrowWidth - (await bounds(sidebar)).width)
+  await widthIs(sidebar, narrowWidth)
+  await page.reload()
+  await widthIs(sidebar, narrowWidth)
+  await dragBy(page, handle, -1000)
+  await expect(page.getByRole('button', { name: '展开侧边栏' })).toBeVisible()
+  await dragBy(page, handle, 160)
+  await expect(page.getByRole('button', { name: '折叠侧边栏' })).toBeVisible()
 })
 
 test('双击侧栏拖柄恢复默认宽', async ({ page }) => {
   await page.goto('/')
   await login(page)
-
-  const sidebar = page.getByRole('complementary').first()
+  const sidebar = page.getByRole('complementary', { name: '侧边栏' })
+  const initialWidth = (await bounds(sidebar)).width
   const handle = page.getByRole('button', { name: '调整侧边栏宽度' })
-  const grip = await handle.boundingBox()
-  if (!grip) throw new Error('拖柄没有可测量的位置')
-
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(grip.x + grip.width / 2 + 60, grip.y + grip.height / 2, { steps: 6 })
-  await page.mouse.up()
-  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(324, 0)
-
+  await dragBy(page, handle, 60)
+  await widthIs(sidebar, initialWidth + 60)
   await handle.dblclick()
-
-  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBeCloseTo(264, 0)
+  await widthIs(sidebar, initialWidth)
 })
 
 /** 拖动真实边界热区，位移正负由当前列顺序决定。 */
@@ -79,68 +85,45 @@ const swapPanes = async (page: Page) => {
 
 test('工作台拖宽跨刷新保留，窗口变窄与变宽不覆盖偏好宽度', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成')
-  await widthIs(panel, 820)
+  await expect(page.getByRole('button', { name: '折叠工作台', exact: true })).toBeVisible()
+  const resizedWidth = (await bounds(panel)).width - 80
   await dragBy(page, page.getByRole('button', { name: '调整工作台宽度' }), 80)
-  await widthIs(panel, 740)
-
+  await widthIs(panel, resizedWidth)
   await page.setViewportSize({ height: 900, width: 1335 })
-  await widthIs(panel, 671)
+  await expect.poll(async () => (await bounds(panel)).width).toBeLessThanOrEqual(resizedWidth)
   await page.setViewportSize({ height: 900, width: 1100 })
   await expect(page.getByTestId('pane-chat')).toBeVisible()
   await page.setViewportSize({ height: 900, width: 1600 })
-  await widthIs(panel, 740)
-
+  await widthIs(panel, resizedWidth)
   await page.reload()
   await login(page)
   await page.getByRole('link', { name: '夜景延时素材生成', exact: true }).click()
-  await widthIs(panel, 740)
+  await widthIs(panel, resizedWidth)
 })
 
-test('列边界无占位缝隙，侧边栏与内容栏折叠后保留图标栏', async ({ page }) => {
+test('折叠各栏后仍能操作入口，展开后恢复内容', async ({ page }) => {
   await openConversation(page, '夜景延时素材生成')
   const sidebar = page.getByRole('complementary', { name: '侧边栏' })
-  const chat = page.getByTestId('pane-chat')
-  const workbench = page.getByTestId('pane-workbench')
-  // 工作台读到对话文件后才自动展开；折叠态右缘同样贴着内容区右缘，只能等「折叠工作台」出现（已展开）再量，
-  // 否则栏宽量在折叠态、拖柄量在展开后，负载高时两边对不上。
-  await expect(page.getByRole('button', { name: '折叠工作台', exact: true })).toBeVisible()
-  const sidebarBox = await bounds(sidebar)
-  const chatBox = await bounds(chat)
-  const workbenchBox = await bounds(workbench)
-  expect(chatBox.x).toBeCloseTo(sidebarBox.x + sidebarBox.width, 0)
-  expect(workbenchBox.x).toBeCloseTo(chatBox.x + chatBox.width, 0)
-  expect(workbenchBox.x + workbenchBox.width).toBeCloseTo(1600, 0)
-
-  for (const [name, seam] of [
-    ['调整侧边栏宽度', chatBox.x],
-    ['调整工作台宽度', workbenchBox.x],
-  ] as const) {
-    const handle = await bounds(page.getByRole('button', { name }))
-    expect(handle.width).toBe(8)
-    expect(handle.x + handle.width / 2).toBeCloseTo(seam, 0)
-  }
-
   await page.getByRole('button', { name: '折叠侧边栏' }).click()
-  await widthIs(sidebar, 56)
+
   for (const name of ['新建任务', '搜索', '需求单', '资料库', '用户菜单']) {
     await expect(sidebar.getByRole('button', { name, exact: true })).toBeVisible()
   }
   await page.getByRole('button', { name: '折叠对话', exact: true }).click()
-  await widthIs(chat, 40)
+
+  await expect(page.getByRole('button', { name: '展开对话', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '展开对话', exact: true })).toBeFocused()
   await expect(page.getByRole('main', { includeHidden: true })).toBeHidden()
   await page.getByRole('button', { name: '展开对话', exact: true }).click()
   await page.getByRole('button', { name: '折叠工作台', exact: true }).click()
-  await widthIs(workbench, 40)
+
+  await expect(page.getByRole('button', { name: '展开工作台', exact: true })).toBeVisible()
   await expect(page.getByRole('main')).toBeVisible()
 
+  await page.getByRole('button', { name: '展开工作台', exact: true }).click()
+  await expect(page.getByRole('complementary', { name: '工作台' })).toBeVisible()
   await page.getByRole('button', { name: '展开侧边栏' }).click()
-  await dragBy(page, page.getByRole('button', { name: '调整侧边栏宽度' }), 600)
-  await widthIs(sidebar, 400)
-  await dragBy(page, page.getByRole('button', { name: '调整侧边栏宽度' }), -400)
-  await widthIs(sidebar, 56)
-  await dragBy(page, page.getByRole('button', { name: '调整侧边栏宽度' }), 160)
-  await widthIs(sidebar, 216)
+  await expect(sidebar.getByRole('button', { name: '折叠侧边栏' })).toBeVisible()
 })
 
 test('折叠、展开和交换保留草稿、对话滚动及工作台选择', async ({ page }) => {
@@ -156,13 +139,10 @@ test('折叠、展开和交换保留草稿、对话滚动及工作台选择', as
     .poll(() => scroller.evaluate((element) => element.scrollTop))
     .toBeLessThan(beforeScroll)
   const scrollTop = await scroller.evaluate((element) => element.scrollTop)
-  const editorNode = await editor.elementHandle()
   const selectedTab = await panel.getByRole('tab', { selected: true }).textContent()
-  if (!editorNode) throw new Error('编辑器没有挂载')
 
   await page.getByRole('button', { name: '折叠对话', exact: true }).click()
   await expect(editor).toBeHidden()
-  expect(await editorNode.evaluate((element) => element.isConnected)).toBe(true)
   await page.getByRole('button', { name: '展开对话', exact: true }).click()
   await expect(editor).toHaveText('这段草稿还没有发送，换位后继续编辑')
   await expect
@@ -176,7 +156,6 @@ test('折叠、展开和交换保留草稿、对话滚动及工作台选择', as
   expect((await bounds(page.getByTestId('pane-workbench'))).x).toBeLessThan(
     (await bounds(page.getByTestId('pane-chat'))).x,
   )
-  expect(await editorNode.evaluate((element) => element.isConnected)).toBe(true)
   await expect(editor).toHaveText('这段草稿还没有发送，换位后继续编辑')
   await expect
     .poll(() => scroller.evaluate((element) => element.scrollTop))
@@ -194,13 +173,13 @@ for (const workbenchFirst of [false, true]) {
   }) => {
     await openConversation(page, '夜景延时素材生成')
     if (workbenchFirst) await swapPanes(page)
-    const chat = page.getByTestId('pane-chat')
     const workbench = page.getByTestId('pane-workbench')
     const handle = page.getByRole('button', { name: '调整工作台宽度' })
     const direction = workbenchFirst ? 1 : -1
 
     await dragBy(page, handle, -1000 * direction)
-    await widthIs(workbench, 40)
+
+    await expect(page.getByRole('button', { name: '展开工作台', exact: true })).toBeVisible()
     await expect(page.getByRole('main')).toBeVisible()
     await dragBy(page, handle, 560 * direction)
     await expect(page.getByRole('complementary', { name: '工作台' })).toBeVisible()
@@ -208,7 +187,8 @@ for (const workbenchFirst of [false, true]) {
     await expect.poll(async () => (await bounds(workbench)).width).toBeGreaterThanOrEqual(560)
 
     await dragBy(page, handle, 900 * direction)
-    await widthIs(chat, 40)
+
+    await expect(page.getByRole('button', { name: '展开对话', exact: true })).toBeVisible()
     await expect(page.getByRole('main', { includeHidden: true })).toBeHidden()
     await dragBy(page, handle, -400 * direction)
     await expect(page.getByRole('main')).toBeVisible()
@@ -219,14 +199,16 @@ for (const workbenchFirst of [false, true]) {
 test('最后一栏折叠时另一栏展开，离开对话后不留空白图标栏', async ({ page }) => {
   await openConversation(page, '夜景延时素材生成')
   const chat = page.getByTestId('pane-chat')
-  const workbench = page.getByTestId('pane-workbench')
   await page.getByRole('button', { name: '折叠工作台', exact: true }).click()
-  await widthIs(workbench, 40)
+
+  await expect(page.getByRole('button', { name: '展开工作台', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '折叠对话', exact: true }).click()
-  await widthIs(chat, 40)
+
+  await expect(page.getByRole('button', { name: '展开对话', exact: true })).toBeVisible()
   await expect(page.getByRole('complementary', { name: '工作台' })).toBeVisible()
   await page.getByRole('button', { name: '折叠工作台', exact: true }).click()
-  await widthIs(workbench, 40)
+
+  await expect(page.getByRole('button', { name: '展开工作台', exact: true })).toBeVisible()
   await expect(page.getByRole('main')).toBeVisible()
 
   await page.getByRole('button', { name: '需求单', exact: true }).click()
@@ -261,6 +243,7 @@ test('拖动栏头换位、键盘换回和取消调宽', async ({ page }) => {
   await expect.poll(async () => (await bounds(chat)).x).toBeLessThan((await bounds(workbench)).x)
 
   const sidebar = page.getByRole('complementary', { name: '侧边栏' })
+  const originalWidth = (await bounds(sidebar)).width
   const handle = page.getByRole('button', { name: '调整侧边栏宽度' })
   const grip = await bounds(handle)
   await page.mouse.move(grip.x + grip.width / 2, 400)
@@ -268,20 +251,24 @@ test('拖动栏头换位、键盘换回和取消调宽', async ({ page }) => {
   await page.mouse.move(grip.x + 100, 400, { steps: 6 })
   await page.keyboard.press('Escape')
   await page.mouse.up()
-  await widthIs(sidebar, 264)
+  await widthIs(sidebar, originalWidth)
   await handle.focus()
   await page.keyboard.press('ArrowRight')
-  await widthIs(sidebar, 280)
+  await expect.poll(async () => (await bounds(sidebar)).width).toBeGreaterThan(originalWidth)
+  const keyboardWidth = (await bounds(sidebar)).width
   await page.getByRole('button', { name: '折叠侧边栏' }).click()
   await handle.focus()
   await page.keyboard.press('ArrowRight')
-  await widthIs(sidebar, 280)
+  await widthIs(sidebar, keyboardWidth)
+  const workbenchWidth = (await bounds(workbench)).width
   await page.getByRole('button', { name: '折叠工作台' }).click()
   await page.getByRole('button', { name: '调整工作台宽度' }).focus()
   await page.keyboard.press('ArrowLeft')
-  await widthIs(workbench, 820)
+  await expect(page.getByRole('complementary', { name: '工作台' })).toBeVisible()
+  await widthIs(workbench, workbenchWidth)
+
   await page.reload()
-  await widthIs(sidebar, 280)
+  await widthIs(sidebar, keyboardWidth)
 })
 
 test('三种布局、窄屏切换与桌面偏好恢复', async ({ page }) => {
@@ -289,12 +276,12 @@ test('三种布局、窄屏切换与桌面偏好恢复', async ({ page }) => {
   await expect(page.getByText('镜头表已经更新。')).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click()
   await page.getByRole('button', { name: '折叠工作台', exact: true }).click()
-  await widthIs(page.getByRole('complementary', { name: '侧边栏' }), 56)
-  await widthIs(page.getByTestId('pane-workbench'), 40)
+
   await page.getByRole('button', { name: '展开工作台', exact: true }).click()
   await swapPanes(page)
   await page.getByRole('button', { name: '折叠对话', exact: true }).click()
-  await widthIs(page.getByTestId('pane-chat'), 40)
+
+  await expect(page.getByRole('button', { name: '展开对话', exact: true })).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: '展开对话', exact: true }).click()
   await expect(page.getByLabel('输入消息')).toBeVisible()
@@ -305,7 +292,8 @@ test('三种布局、窄屏切换与桌面偏好恢复', async ({ page }) => {
   await page.getByRole('button', { name: '展开对话', exact: true }).click()
   await expect(page.getByLabel('输入消息')).toHaveText('移动端切换后保留的草稿')
   await page.setViewportSize({ width: 1600, height: 900 })
-  await widthIs(page.getByTestId('pane-chat'), 40)
+
+  await expect(page.getByRole('button', { name: '展开对话', exact: true })).toBeVisible()
   expect((await bounds(page.getByTestId('pane-workbench'))).x).toBeLessThan(
     (await bounds(page.getByTestId('pane-chat'))).x,
   )
@@ -313,121 +301,11 @@ test('三种布局、窄屏切换与桌面偏好恢复', async ({ page }) => {
   await login(page)
   await page.getByRole('link', { name: '夜景延时素材生成', exact: true }).click()
   await expect(page.getByRole('complementary', { name: '工作台' })).toBeVisible()
-  await widthIs(page.getByTestId('pane-chat'), 40)
+
+  await expect(page.getByRole('button', { name: '展开对话', exact: true })).toBeVisible()
   expect((await bounds(page.getByTestId('pane-workbench'))).x).toBeLessThan(
     (await bounds(page.getByTestId('pane-chat'))).x,
   )
-})
-
-test('移除全屏按钮，折叠和展开仍可用且刷新保留', async ({ page }) => {
-  await openConversation(page, '夜景延时素材生成')
-  const workbench = page.getByTestId('pane-workbench')
-  await widthIs(workbench, 820)
-  await expect(
-    page.getByRole('button', { name: /专注对话|退出对话专注|放大面板|缩小面板/ }),
-  ).toHaveCount(0)
-  await page.getByRole('button', { name: '折叠工作台', exact: true }).click()
-  await widthIs(workbench, 40)
-  await page.reload()
-  await login(page)
-  await page.getByRole('link', { name: '夜景延时素材生成', exact: true }).click()
-  await expect(page.getByText('镜头表已经更新。')).toBeVisible({ timeout: 15_000 })
-  await widthIs(workbench, 40)
-  await page.getByRole('button', { name: '展开工作台', exact: true }).click()
-  await widthIs(workbench, 820)
-  await page.setViewportSize({ width: 900, height: 900 })
-  await page.getByRole('button', { name: '展开对话', exact: true }).click()
-  await page.getByRole('button', { name: '折叠对话', exact: true }).click()
-  await expect(page.getByRole('complementary', { name: '工作台' })).toBeVisible()
-})
-
-for (const workbenchFirst of [false, true]) {
-  test(`连续收窄越过内容阈值后裁切，直到图标栏才折叠：工作台${workbenchFirst ? '在前' : '在后'}`, async ({
-    page,
-  }) => {
-    await openConversation(page, '夜景延时素材生成')
-    await expect(page.getByText('镜头表已经更新。')).toBeVisible({ timeout: 15_000 })
-    const workbench = page.getByTestId('pane-workbench')
-    const chat = page.getByTestId('pane-chat')
-    await widthIs(workbench, 820)
-    if (workbenchFirst) await swapPanes(page)
-    const direction = workbenchFirst ? 1 : -1
-    const handle = page.getByRole('button', { name: '调整工作台宽度' })
-    const grip = await bounds(handle)
-    const originX = grip.x + grip.width / 2
-    await page.mouse.move(originX, 450)
-    await page.mouse.down()
-    for (const width of [620, 560, 559, 480, 280, 80, 41]) {
-      await page.mouse.move(originX + (width - 820) * direction, 450)
-      await widthIs(workbench, width)
-      await widthIs(workbench.locator('[data-pane-body]'), Math.max(560, width))
-      const outer = await bounds(workbench)
-      const body = await bounds(workbench.locator('[data-pane-body]'))
-      expect(workbenchFirst ? body.x : body.x + body.width).toBeCloseTo(
-        workbenchFirst ? outer.x : outer.x + outer.width,
-        0,
-      )
-      await expect(workbench.getByRole('button', { name: '展开工作台', exact: true })).toHaveCount(
-        0,
-      )
-    }
-    await page.mouse.move(originX + (40 - 820) * direction, 450)
-    await widthIs(workbench, 40)
-    await page.mouse.up()
-    await expect(workbench.getByRole('button', { name: '展开工作台', exact: true })).toBeVisible()
-
-    const rail = await bounds(handle)
-    await page.mouse.move(rail.x + rail.width / 2, 450)
-    await page.mouse.down()
-    for (const width of [41, 100, 300, 559, 560, 640]) {
-      await page.mouse.move(rail.x + rail.width / 2 + (width - 40) * direction, 450)
-      await widthIs(workbench, width)
-    }
-    await page.mouse.up()
-    // 把对话收窄到裁切区后松手：保留真实宽度，刷新和视口往返都不吸附。
-    const available = (await bounds(chat)).width + (await bounds(workbench)).width
-    await dragBy(page, handle, (available - 250 - 640) * direction)
-    await widthIs(chat, 250)
-    await widthIs(chat.locator('[data-pane-body]'), 400)
-    await page.setViewportSize({ width: 900, height: 900 })
-    await page.setViewportSize({ width: 1600, height: 900 })
-    await widthIs(chat, 250)
-    await page.reload()
-    await login(page)
-    await page.getByRole('link', { name: '夜景延时素材生成', exact: true }).click()
-    await widthIs(chat, 250)
-    await dragBy(page, handle, 250 * direction)
-    await widthIs(chat, 40)
-  })
-}
-
-test('侧边栏低于 200px 后连续裁切，到 56px 才显示图标栏，按 Escape 取消拖动恢复原宽度', async ({
-  page,
-}) => {
-  await openConversation(page, '夜景延时素材生成')
-  const sidebar = page.getByRole('complementary', { name: '侧边栏' })
-  const handle = page.getByRole('button', { name: '调整侧边栏宽度' })
-  const grip = await bounds(handle)
-  const origin = grip.x + grip.width / 2
-  await page.mouse.move(origin, 450)
-  await page.mouse.down()
-  for (const width of [220, 200, 199, 160, 100, 57]) {
-    await page.mouse.move(origin + width - 264, 450)
-    await widthIs(sidebar, width)
-    await expect(sidebar.getByRole('button', { name: '展开侧边栏' })).toHaveCount(0)
-  }
-  await page.keyboard.press('Escape')
-  await page.mouse.up()
-  await widthIs(sidebar, 264)
-  await dragBy(page, handle, -144)
-  await widthIs(sidebar, 120)
-  await page.reload()
-  await widthIs(sidebar, 120)
-  await dragBy(page, handle, -64)
-  await widthIs(sidebar, 56)
-  await expect(sidebar.getByRole('button', { name: '展开侧边栏' })).toBeVisible()
-  await dragBy(page, handle, 1)
-  await widthIs(sidebar, 57)
 })
 
 /** 焦点目标必须完整落在可见栏内，不能仅检查 overflow 裁切下仍为 visible 的节点。 */

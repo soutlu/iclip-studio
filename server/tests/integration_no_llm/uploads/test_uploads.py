@@ -6,6 +6,8 @@ from __future__ import annotations
 import hashlib
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -78,6 +80,12 @@ async def test_upload_round_trip_hands_back_the_public_url(
     assert signed.status_code == 200, signed.text
     ticket = signed.json()
     upload_id = ticket["uploadId"]
+    assert str(uuid.UUID(upload_id)) == upload_id
+    upload_url = urlsplit(ticket["upload"]["url"])
+    assert upload_url.scheme == "https" and upload_url.netloc
+    assert upload_url.path.endswith(f"/{upload_id}.mp4")
+    assert ticket["upload"]["method"] == "PUT"
+    assert datetime.fromisoformat(ticket["upload"]["expiresAt"]) > datetime.now(UTC)
     assert ticket["upload"]["headers"] == {
         "Content-Type": "video/mp4",
         "x-oss-meta-uploader": user_id,

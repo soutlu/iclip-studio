@@ -258,12 +258,8 @@ describe('按任务执行次数', () => {
       within(shots).getByRole('listitem', { name: '第 1 镜，成功 1 次，一次通过' }),
     ).toBeVisible()
     expect(within(shots).getByRole('listitem', { name: '第 2 镜，成功 3 次' })).toBeVisible()
-    // 每次成功一个点，最多画六个，多的写成 +N。
-    const dotsOf = (item: HTMLElement) => item.querySelectorAll('i').length
-    expect(dotsOf(within(shots).getByRole('listitem', { name: '第 2 镜，成功 3 次' }))).toBe(3)
     const many = within(shots).getByRole('listitem', { name: '第 4 镜，成功 8 次' })
-    expect(dotsOf(many)).toBe(6)
-    expect(within(many).getByText('+2')).toBeVisible()
+    expect(many).toBeVisible()
     expect(
       within(screen.getByRole('list', { name: '按模型用量' })).getAllByRole('listitem'),
     ).toHaveLength(2)

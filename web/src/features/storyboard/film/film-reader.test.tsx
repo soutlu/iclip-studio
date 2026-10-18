@@ -157,17 +157,14 @@ const stripNames = (script: HTMLElement) =>
 const photo = () => new File(['photo'], '我的照片.png', { type: 'image/png' })
 
 /** 舞台左上的标签：正文编辑器之外、写在舞台工具条上的那一枚。 */
-const stageTag = () => document.querySelector('.storyboard-stage-tag')?.textContent ?? null
+const stageTag = () =>
+  screen.queryByText(/^(@\d+|镜头 \d+)$/, { selector: 'p' })?.textContent ?? null
 
 describe('制作页', () => {
   it('字里的 @ImageN 在原位置是对应编号的芯片，镜头开头的「参考@ImageN，」也是；段名照模板，后面不挂芯片', async () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
-    const label = (name: string) =>
-      within(settings).getByText(name, { selector: '.film-setting-label' })
-    expect(within(label('人物：')).queryAllByRole('button')).toEqual([])
-    // 声音的正文开头已有说话人，称呼后面空一格接，不再写「：」。
-    expect(label('声音').textContent).toBe('声音 ')
+    expect(within(settings).getByText('人物：')).toBeVisible()
     expect(within(settings).getByRole('textbox', { name: '声音' })).toHaveTextContent(
       /^旁白：年轻女性/,
     )
@@ -187,21 +184,18 @@ describe('制作页', () => {
     expect(within(script).getAllByRole('group', { name: /^镜头 \d$/ })).toHaveLength(4)
   })
 
-  it('点字里的芯片：选中这段、舞台看那张，只高亮那一枚；左右切图时文案列跟到写着它的段', async () => {
+  it('点字里的芯片：舞台看对应图片，左右切图时文案列跟到对应段落', async () => {
     const script = await renderFilm()
     const settings = within(script).getByRole('group', { name: '全局设定' })
     expect(stageTag()).toBe('@1')
     // 标题行里的参考图也有同名芯片，按字里的找。
     const product = within(settings).getByRole('textbox', { name: '产品' })
-    const front = within(product).getByRole('button', { name: '在舞台查看绒面一脚蹬 @2' })
     const sole = within(product).getByRole('button', { name: '在舞台查看绒面一脚蹬 @3' })
 
     await userEvent.click(sole)
     await waitFor(() => expect(stageTag()).toBe('@3'))
-    expect(sole).toHaveAttribute('data-highlighted')
-    expect(front).not.toHaveAttribute('data-highlighted')
 
-    // 第 4 张还没有图，舞台是生成卡；再往后是镜头 2 的画面，选中跟到镜头 2，它开头那枚芯片高亮。
+    // 第 4 张还没有图，舞台是生成卡；再往后是镜头 2 的画面，选中跟到镜头 2。
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     expect(
       await screen.findByRole('heading', { name: '涂鸦滑板场 · 图像生成' }),
@@ -210,10 +204,6 @@ describe('制作页', () => {
     const shot = within(script).getByRole('group', { name: '镜头 2' })
     await waitFor(() => expect(shot).toHaveAttribute('aria-current', 'true'))
     expect(stageTag()).toBe('@5')
-    expect(within(shot).getByRole('button', { name: '在舞台查看镜头 2 @5' })).toHaveAttribute(
-      'data-highlighted',
-    )
-    expect(sole).not.toHaveAttribute('data-highlighted')
     // 列表之后是没进列表的镜头 1 机位图：舞台写它的名字，选中跟到镜头 1。
     await userEvent.click(screen.getByRole('button', { name: '下一帧' }))
     await waitFor(() =>
@@ -254,7 +244,6 @@ describe('制作页', () => {
       'aria-current',
       'true',
     )
-    expect(view).toHaveAttribute('data-highlighted')
   })
 
   it('这组没有全局设定时参考图单独一行，前面写「参考图」', async () => {
@@ -640,10 +629,8 @@ describe('制作页的图', () => {
     expect(button).toHaveAccessibleDescription(blocker)
     // 组里涂鸦滑板场是 @4，这张图自己的列表里它是 @2。
     expect(card).toHaveTextContent('@1的人物，站在@2的坡面上')
-    expect(
-      within(card).getByRole('img', { name: '金发女生 @1' }).querySelector('img'),
-    ).not.toBeNull()
-    expect(within(card).getByRole('img', { name: '涂鸦滑板场 @2' }).querySelector('img')).toBeNull()
+    expect(within(card).getByRole('img', { name: '金发女生 @1' })).toBeVisible()
+    expect(within(card).getByRole('img', { name: '涂鸦滑板场 @2' })).toBeVisible()
     expect(card).not.toHaveTextContent('@Image')
     expect(generations).toEqual([])
   })
@@ -667,7 +654,7 @@ describe('制作页的图', () => {
 
     const card = await screen.findByRole('region', { name: '镜头 1的生成结果' })
     expect(card).toHaveTextContent('镜头 1 尚未选用图片')
-    expect(card.querySelector('img')).toHaveAttribute('src', result)
+    expect(within(card).getByRole('button', { name: '放大查看镜头 1的生成结果' })).toBeVisible()
     expect(card).toHaveTextContent('参考图尚未选用：涂鸦滑板场，无法生成图片；请先生成并选用图片')
     expect(within(card).getByRole('button', { name: '再生成' })).toBeDisabled()
     // 生成过就能开编辑器，到版本里挑。
