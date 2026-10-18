@@ -18,9 +18,9 @@ import { DEFAULT_END_CARD_MS, type ComponentVariables } from './editing/draft'
 
 export type { CatalogItem, CatalogVariable, ComponentCatalog, Placement, VariableValue }
 
-const THUMBNAILS = import.meta.glob<string>('./catalog/thumbnails/*.webp', {
+const THUMBNAILS = import.meta.glob<string>('./catalog/thumbnails/*.svg', {
   eager: true,
-  query: '?url',
+  query: '?url&no-inline',
   import: 'default',
 })
 

@@ -79,7 +79,7 @@ describe('组件目录', () => {
     expect(sorted.map(rank)).toEqual(sorted.map(rank).toSorted((a, b) => a - b))
     const scenes = sorted.filter((entry) => entry.category === 'scenes').map((e) => e.placement)
     expect(scenes.indexOf('overlay')).toBeGreaterThan(scenes.lastIndexOf('outro'))
-    expect(thumbnailOf(item('caption-highlight'))).toMatch(/caption-highlight\.webp/)
+    expect(thumbnailOf(item('caption-highlight'))).toMatch(/caption-highlight\.svg/)
     expect(thumbnailOf({ ...item('default-caption'), thumbnail: null })).toBeUndefined()
   })
 })
