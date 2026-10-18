@@ -1716,7 +1716,12 @@
           "default": "品牌名"
         },
         { "id": "ecFooter", "type": "string", "label": "结尾网址", "default": "结尾网址" },
-        { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
+        {
+          "id": "brandLogo",
+          "type": "image",
+          "label": "品牌标志",
+          "default": "assets/hyperframes-logo-white.svg"
+        }
       ],
       "thumbnail": "ai-chat-reveal.svg",
       "fonts": []
@@ -2041,7 +2046,12 @@
         },
         { "id": "installMessage", "type": "string", "label": "意向回复", "default": "意向回复" },
         { "id": "thanksMessage", "type": "string", "label": "结尾回复", "default": "结尾回复" },
-        { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" },
+        {
+          "id": "brandLogo",
+          "type": "image",
+          "label": "品牌标志",
+          "default": "assets/hyperframes-logo-black.svg"
+        },
         { "id": "ecProof", "type": "string", "label": "结尾口碑", "default": "12,000+ 位用户" },
         { "id": "ecFeature1", "type": "string", "label": "结尾卖点1", "default": "轻松|上手" },
         { "id": "ecFeature2", "type": "string", "label": "结尾卖点2", "default": "画质|清晰" },
@@ -2146,7 +2156,12 @@
         { "id": "check2Value", "type": "string", "label": "清单2标注", "default": "清单2标注" },
         { "id": "check3Label", "type": "string", "label": "清单3名称", "default": "清单3名称" },
         { "id": "check3Value", "type": "string", "label": "清单3标注", "default": "清单3标注" },
-        { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" },
+        {
+          "id": "brandLogo",
+          "type": "image",
+          "label": "品牌标志",
+          "default": "assets/hyperframes-logo-black.svg"
+        },
         { "id": "brandDomain", "type": "string", "label": "落款网址", "default": "落款网址" }
       ],
       "thumbnail": "notes-reveal.svg",
@@ -2177,7 +2192,12 @@
         { "id": "headlineTop", "type": "string", "label": "结尾第1行", "default": "结尾第1行" },
         { "id": "headlineAccent", "type": "string", "label": "结尾第2行", "default": "结尾第2行" },
         { "id": "footerText", "type": "string", "label": "结尾网址", "default": "结尾网址" },
-        { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
+        {
+          "id": "brandLogo",
+          "type": "image",
+          "label": "品牌标志",
+          "default": "assets/hyperframes-logo-white.svg"
+        }
       ],
       "thumbnail": "notification-cascade.svg",
       "fonts": []
@@ -2243,7 +2263,12 @@
           "label": "轮播图片4",
           "default": "assets/slide-04.jpg"
         },
-        { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
+        {
+          "id": "brandLogo",
+          "type": "image",
+          "label": "品牌标志",
+          "default": "assets/hyperframes-logo-black.svg"
+        }
       ],
       "thumbnail": "share-sheet-carousel.svg",
       "fonts": []
