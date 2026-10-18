@@ -249,7 +249,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 - `GET /conversations/{id}/whole-film/draft` 答复 `{ revision, document, updatedAt }`，可见范围同读工作区文件，读不到这段对话是 `404`。还没存过是正常状态，答复 `{ revision: 0, document: null, updatedAt: null }`。
 - `PUT` 同一地址整份保存，体是 `{ revision, document }`，答复 `{ revision, updatedAt }`。`revision` 是读到的那一版，还没有草稿时给 `0`；对不上是 `409`，`detail` 是「整片草稿已经有更新的一版，重新读取后再改」，草稿不变。存成功版本号加一，第一次存是 `1`。只有属主能存，口径同 `PUT .../workspace/file`；存草稿不发实时帧。
 - 文档不合规矩是 `422`，`detail` 是 `document: <原因>`（字段自身的边界是 `document.<字段路径>: <原因>`）：画面轨不从 0 起或没有首尾相接，片头不在第一段、片尾不在最后一段，总长超过上限，片段 id 在画面、转场与包装里重复，转场接的不是画面轨里不在末尾的一段、或一段后面接了两个，包装超出整片或彼此重叠，同一句字幕改了两次。
-- 引用的记录不合格也是 `422`，不区分「没有这条」与「不是这段对话的」：画面轨每段的 `sourceJobId` 要是这段对话自己的或继承来的一条已完成的出片或合成；`music.jobId` 要是这段对话的一条已完成的音频记录（生成的，或确认时挂到这段对话的上传，§10）；`captions.edits[].subtitleJobId` 要是一条字幕记录，来源是画面轨某段的 `sourceJobId`。组件名与 `variables` 不对照组件库。
+- 引用的记录不合格也是 `422`，不区分「没有这条」与「不是这段对话的」：画面轨每段的 `sourceJobId` 要是这段对话自己的或继承来的一条已完成的出片或合成；`music.jobId` 要是这段对话的一条已完成的音频记录（生成的，或确认时挂到这段对话的上传，§10）；`captions.edits[].subtitleJobId` 要是一条字幕记录，来源是这段对话自己的或继承来的一条成片，不要求还在画面轨上。组件名与 `variables` 不对照组件库。
 
 ### 整片导出
 
