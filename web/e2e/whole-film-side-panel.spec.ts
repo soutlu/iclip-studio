@@ -265,17 +265,17 @@ test('调整浮层是检查器样式，成片轨的组件段和特效块共用�
   await pop.getByRole('button', { name: '移除' }).click()
   await expect(dialog.getByRole('group', { name: /^特效 · 逐词居中/ })).toHaveCount(0)
 
-  // 成片轨的组件段：收起后再点它，同一个浮层又打开
-  await openCategory(dialog, '视觉特效')
-  await dialog.getByRole('button', { name: /^宇宙星球，成片轨/ }).click()
-  const segmentPop = page.getByRole('dialog', { name: /宇宙星球/ })
+  // 成片轨的组件段：收起后再点它，同一个浮层又打开；用文字组件验证参数，不引入 WebGL 渲染负载。
+  await openCategory(dialog, '场景')
+  await dialog.getByRole('button', { name: /^AI 答案排名，成片轨/ }).click()
+  const segmentPop = page.getByRole('dialog', { name: /AI 答案排名/ })
   await expect(segmentPop).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(segmentPop).toBeHidden()
   const film = dialog.getByRole('group', { name: '成片画面轨' })
-  await film.getByRole('button', { name: /^选中：第 1 段 · 组件 · 宇宙星球/ }).click()
-  await expect(segmentPop.locator('.wf-pop-head')).toHaveText('宇宙星球')
-  await expect(segmentPop.getByRole('group', { name: '背景底色' })).toBeVisible()
+  await film.getByRole('button', { name: /^选中：第 1 段 · 组件 · AI 答案排名/ }).click()
+  await expect(segmentPop.locator('.wf-pop-head')).toHaveText('AI 答案排名')
+  await expect(segmentPop.getByRole('group', { name: '底色' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(segmentPop).toBeHidden()
 
