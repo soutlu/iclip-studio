@@ -1,6 +1,10 @@
 /** 整片编辑单测用的草稿与上下文：片段按给出的顺序首尾相接排好。 */
 
 import type {
+  CatalogItem,
+  ComponentCatalog,
+} from '@/features/storyboard/whole-film/composition/catalog'
+import type {
   EditContext,
   MusicBeat,
   SourceMedia,
@@ -112,6 +116,36 @@ export const contextOf = (
 /** 每段的 [开始, 结束)，便于断言首尾相接 */
 export const spans = (draft: WholeFilmDraft) =>
   draft.layer0.map((clip) => [clip.id, clip.start, clip.start + clip.duration] as const)
+
+/** 示例品牌组件：[品牌, 名字, 借用哪个真实组件的合成文件与缩略图] */
+const BRAND_FIXTURES = [
+  ['拾步', '拾步 片头', 'logo-sting'],
+  ['拾步', '拾步 片尾', 'logo-outro'],
+  ['暖屿', '暖屿 片头', 'logo-brand-close'],
+  ['暖屿', '暖屿 片尾', 'logo-outro'],
+] as const
+
+/**
+ * 真实目录里还没有品牌组件；在它后面补上两个品牌各两张示例卡（block、2 秒），
+ * 借用真实组件的合成文件与缩略图，预览与放置照常可用。
+ */
+export const withBrandFixtures = (catalog: ComponentCatalog): ComponentCatalog => {
+  const brandItem = ([brand, title, base]: (typeof BRAND_FIXTURES)[number], index: number) => {
+    const source = catalog.items.find((item) => item.name === base)
+    if (source === undefined) throw new Error(`目录里没有 ${base}`)
+    const item: CatalogItem = {
+      ...source,
+      name: `brand-fixture-${index + 1}`,
+      kind: 'block',
+      title,
+      description: `${brand}的品牌组件`,
+      brand,
+      duration: 2,
+    }
+    return item
+  }
+  return { ...catalog, items: [...catalog.items, ...BRAND_FIXTURES.map(brandItem)] }
+}
 
 export const expectOk = <T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> => {
   if (!result.ok) throw new Error(`编辑被拒：${JSON.stringify(result)}`)

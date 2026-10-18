@@ -425,7 +425,11 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(lane.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ })).toBeVisible()
 
     // 拖组件卡到特效轨（松手放下）
-    await dialog.getByRole('tab', { name: '组件' }).click()
+    await dialog.getByRole('tab', { name: '通用' }).click()
+    await dialog
+      .getByRole('radiogroup', { name: '分类', exact: true })
+      .getByRole('radio', { name: /^社交/ })
+      .click()
     const cardLocator = dialog.getByRole('button', { name: /^手绘圈注，/ })
     await cardLocator.scrollIntoViewIfNeeded()
     const cardButton = await boxOf(cardLocator)

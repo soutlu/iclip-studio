@@ -8,87 +8,84 @@ import {
   type ReactNode,
 } from 'react'
 import { Icon } from '@/shared/icons'
-import { Button } from '@/shared/ui/button'
+import { cn } from '@/shared/lib/utils'
+import { IconButton } from '@/shared/ui/button'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import {
+  isLightColor,
+  swatchColors,
   variableValue,
   type CatalogItem,
   type CatalogVariable,
   type VariableValue,
 } from './component-catalog'
+import { ComponentThumb } from './components-panel'
 import type { ComponentVariables } from './editing/draft'
 
-const UNIT_TEXT: Record<string, string> = { s: '秒', px: '像素', '%': '%', deg: '度' }
+const UNIT_TEXT: Record<string, string> = { s: '秒', px: '像素', '%': '%', deg: '°' }
+
+/** 选项不超过这么多时用分段按钮，更多时用下拉 */
+const SEGMENTED_MAX = 4
 
 type ComponentPopoverProps = {
   item: CatalogItem
   values: ComponentVariables
-  /** 浮层标题，如「片头 · 标志定格」 */
-  heading: string
-  /** 标题旁的时长、位置与可拖的边 */
-  meta: string
-  removeLabel: string
   onChange: (values: ComponentVariables) => void
   onRemove: () => void
 }
 
 /**
- * 成片轨上组件（片头片尾、包装、转场）的浮层：按组件目录列出全部可填项，没填过的显示组件自己的
- * 默认值。每次改动是一步编辑，只影响这条整片。
+ * 组件段与特效块共用的调整浮层：一行一项列出组件的全部可填项。文字项没填过时空着、组件的默认字作
+ * 灰色提示，清空即回到默认字。每次改动是一步编辑，只影响这条整片。
  */
-export function ComponentPopover({
-  item,
-  values,
-  heading,
-  meta,
-  removeLabel,
-  onChange,
-  onRemove,
-}: ComponentPopoverProps) {
-  const set = (id: string, value: VariableValue) => {
+export function ComponentPopover({ item, values, onChange, onRemove }: ComponentPopoverProps) {
+  const set = (id: string, value: VariableValue | undefined) => {
     if (values[id] === value) return
-    onChange({ ...values, [id]: value })
+    onChange(
+      value === undefined
+        ? Object.fromEntries(Object.entries(values).filter(([key]) => key !== id))
+        : { ...values, [id]: value },
+    )
   }
   return (
     <div className="wf-pop">
       <div className="wf-pop-head">
-        <b>{heading}</b>
-        <Button className="wf-pop-remove" onClick={onRemove} size="md" variant="ghost">
-          {removeLabel}
-        </Button>
+        <ComponentThumb className="wf-pop-thumb" iconSize="xs" item={item} />
+        <b>{item.title}</b>
+        <IconButton
+          className="wf-pop-remove"
+          label="移除"
+          name="delete"
+          onClick={onRemove}
+          size="sm"
+        />
       </div>
-      <p className="wf-pop-meta">{meta}</p>
-      <p className="wf-pop-desc">{item.description}</p>
-      {item.variables.length === 0 ? (
-        <p className="wf-pop-note">这个组件没有可调的项</p>
-      ) : (
-        item.variables.map((variable) => (
-          <VariableField
-            key={variable.id}
-            onChange={(value) => set(variable.id, value)}
-            value={variableValue(variable, values)}
-            variable={variable}
-          />
-        ))
-      )}
-      <p className="wf-pop-note">只影响这条整片</p>
+      {item.variables.map((variable) => (
+        <VariableField
+          key={variable.id}
+          onChange={(value) => set(variable.id, value)}
+          values={values}
+          variable={variable}
+        />
+      ))}
     </div>
   )
 }
 
 type FieldProps = {
   variable: CatalogVariable
-  value: VariableValue
-  onChange: (value: VariableValue) => void
+  values: ComponentVariables
+  /** undefined 表示不再填，回到组件的默认值 */
+  onChange: (value: VariableValue | undefined) => void
 }
 
-function VariableField({ variable, value, onChange }: FieldProps) {
+function VariableField({ variable, values, onChange }: FieldProps) {
   const id = useId()
-  const label = (
-    <label htmlFor={id} title={variable.label}>
-      {variable.label}
-    </label>
-  )
+  const labelId = `${id}-label`
+  const stored = values[variable.id]
+  const value = variableValue(variable, values)
+  // 输入框、开关用 label 关联；分段按钮、色块这类一组按钮用 aria-labelledby
+  let labelFor: string | undefined = id
   let input: ReactNode
   switch (variable.type) {
     case 'string':
@@ -96,10 +93,11 @@ function VariableField({ variable, value, onChange }: FieldProps) {
       input = (
         <CommitInput
           id={id}
-          key={String(value)}
-          onCommit={(text) => onChange(text)}
+          key={String(stored)}
+          onCommit={(text) => onChange(text.trim() === '' ? undefined : text)}
+          placeholder={String(variable.default)}
           type="text"
-          value={String(value)}
+          value={stored === undefined ? '' : String(stored)}
         />
       )
       break
@@ -125,6 +123,26 @@ function VariableField({ variable, value, onChange }: FieldProps) {
       break
     case 'enum': {
       const options = variable.options ?? []
+      if (options.length <= SEGMENTED_MAX) {
+        labelFor = undefined
+        input = (
+          <span aria-labelledby={labelId} className="wf-segments" role="group">
+            {options.map((option) => (
+              <button
+                aria-pressed={option.value === value}
+                className="ui-focus"
+                key={option.value}
+                onClick={() => onChange(option.value)}
+                title={option.label}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </span>
+        )
+        break
+      }
       const current = options.find((option) => option.value === value) ?? options[0]
       input = (
         <MenuRoot>
@@ -148,18 +166,27 @@ function VariableField({ variable, value, onChange }: FieldProps) {
       break
     }
     case 'color': {
-      const current = String(value).toLowerCase()
+      const current = String(value)
+      labelFor = undefined
       input = (
-        <span className="wf-swatches" role="group">
-          <button
-            aria-label={current}
-            aria-pressed
-            className="wf-swatch ui-focus"
-            onClick={() => onChange(current)}
-            style={{ '--wf-swatch': current } as CSSProperties}
-            type="button"
-          />
-          <ColorInput id={id} onCommit={onChange} value={current} />
+        <span aria-labelledby={labelId} className="wf-swatches" role="group">
+          {swatchColors(String(variable.default), current).map((color) => {
+            const pressed = color.toLowerCase() === current.toLowerCase()
+            return (
+              <button
+                aria-label={color}
+                aria-pressed={pressed}
+                className={cn('wf-swatch ui-focus', isLightColor(color) && 'is-light')}
+                key={color}
+                onClick={() => onChange(color)}
+                style={{ '--wf-swatch': color } as CSSProperties}
+                type="button"
+              >
+                {pressed ? <Icon decorative name="check" size="xs" /> : null}
+              </button>
+            )
+          })}
+          <ColorInput onCommit={onChange} value={current} />
         </span>
       )
       break
@@ -169,7 +196,6 @@ function VariableField({ variable, value, onChange }: FieldProps) {
         <span>
           <button
             aria-checked={value === true}
-            aria-label={variable.label}
             className="wf-switch ui-focus"
             id={id}
             onClick={() => onChange(value !== true)}
@@ -182,31 +208,28 @@ function VariableField({ variable, value, onChange }: FieldProps) {
       )
       break
     case 'image':
-      input = (
-        <span className="wf-field-static" id={id}>
-          用组件自带的图片
-        </span>
-      )
+      labelFor = undefined
+      input = <span className="wf-field-static">默认图片</span>
       break
   }
   return (
     <div className="wf-field">
-      {label}
+      {labelFor === undefined ? (
+        <span id={labelId} title={variable.label}>
+          {variable.label}
+        </span>
+      ) : (
+        <label htmlFor={labelFor} id={labelId} title={variable.label}>
+          {variable.label}
+        </label>
+      )}
       {input}
     </div>
   )
 }
 
-/** 自选颜色：系统取色器关上（原生 change）时记一步编辑，拖动取色的过程不记 */
-function ColorInput({
-  id,
-  value,
-  onCommit,
-}: {
-  id: string
-  value: string
-  onCommit: (color: string) => void
-}) {
+/** 其他颜色：系统取色器关上（原生 change）时记一步编辑，拖动取色的过程不记 */
+function ColorInput({ value, onCommit }: { value: string; onCommit: (color: string) => void }) {
   const ref = useRef<HTMLInputElement>(null)
   const commitRef = useRef(onCommit)
   useLayoutEffect(() => {
@@ -221,12 +244,12 @@ function ColorInput({
   }, [])
   return (
     <input
-      aria-label="自选颜色"
+      aria-label="其他颜色"
       className="wf-color ui-focus"
-      defaultValue={/^#[0-9a-f]{6}$/.test(value) ? value : undefined}
-      id={id}
+      defaultValue={/^#[0-9a-f]{6}$/i.test(value) ? value : undefined}
       key={value}
       ref={ref}
+      title="其他颜色"
       type="color"
     />
   )
@@ -236,6 +259,7 @@ type CommitInputProps = {
   id: string
   type: 'text' | 'number'
   value: string
+  placeholder?: string
   min?: number | undefined
   max?: number | undefined
   step?: number | undefined
@@ -243,7 +267,7 @@ type CommitInputProps = {
 }
 
 /** 输入时只改显示，回车或离开输入框才记一步编辑；Esc 放弃这次输入 */
-function CommitInput({ id, type, value, min, max, step, onCommit }: CommitInputProps) {
+function CommitInput({ id, type, value, placeholder, min, max, step, onCommit }: CommitInputProps) {
   const [text, setText] = useState(value)
   const commit = () => {
     if (text !== value) onCommit(text)
@@ -260,6 +284,7 @@ function CommitInput({ id, type, value, min, max, step, onCommit }: CommitInputP
         if (event.key === 'Enter') commit()
         if (event.key === 'Escape') setText(value)
       }}
+      placeholder={placeholder}
       step={step}
       type={type}
       value={text}

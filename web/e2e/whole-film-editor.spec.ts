@@ -75,14 +75,16 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
 
   // 组件栏：component 卡片放到特效轨、block 卡片插进成片轨、字幕样式
-  await dialog.getByRole('tab', { name: '组件' }).click()
+  await dialog.getByRole('tab', { name: '通用' }).click()
+  const categories = dialog.getByRole('radiogroup', { name: '分类' })
+  await categories.getByRole('radio', { name: /^场景/ }).click()
   const components = dialog.getByRole('list', { name: '组件' })
   const overlays = dialog.getByRole('group', { name: '特效轨' })
-  await components.getByRole('button', { name: /^字标定格，包装轨/ }).click()
+  await components.getByRole('button', { name: /^字标定格，特效轨/ }).click()
   await expect(overlays.getByRole('group', { name: /^特效 · 字标定格/ })).toBeVisible()
-  await overlays.getByRole('button', { name: /^选中：特效 · 字标定格/ }).click()
+  // 有可填项的组件放下就打开浮层
   const intro = page.getByRole('dialog', { name: '特效 · 字标定格' })
-  await expect(intro.getByLabel('品牌名')).toHaveValue('品牌名')
+  await expect(intro.getByLabel('品牌名')).toHaveAttribute('placeholder', '品牌名')
   await intro.getByLabel('品牌名').fill('拾步')
   await intro.getByLabel('品牌名').press('Enter')
   // 预览换上改过品牌名的那一版再截图（新页在底下加载好才换上来）
@@ -100,7 +102,8 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 标志片尾/ })).toBeVisible()
 
   await seek(page, dialog, 1)
-  await components.getByRole('button', { name: /^手绘箭头，包装轨/ }).click()
+  await categories.getByRole('radio', { name: /^社交/ }).click()
+  await components.getByRole('button', { name: /^手绘箭头，特效轨/ }).click()
   await expect(dialog.getByRole('group', { name: /^特效 · 手绘箭头/ })).toBeVisible()
 
   await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()

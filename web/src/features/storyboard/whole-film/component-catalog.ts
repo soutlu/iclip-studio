@@ -5,6 +5,7 @@
 
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import type { IconName } from '@/shared/icons'
+import COLOR_PRESETS from './color-presets.json'
 import type {
   CatalogItem,
   CatalogVariable,
@@ -34,9 +35,9 @@ const catalogQuery = queryOptions({
 
 export const useComponentCatalog = () => useQuery(catalogQuery)
 
-/** 点卡片时组件去哪：字幕样式换掉整片的字幕样式，block 插进成片轨，其余放到包装轨 */
+/** 点卡片时组件去哪：字幕样式换掉整片的字幕样式，block 插进成片轨，其余放到特效轨 */
 export const defaultLaneLabel = (item: CatalogItem): string =>
-  item.placement === 'caption' ? '字幕样式' : item.kind === 'block' ? '成片轨' : '包装轨'
+  item.placement === 'caption' ? '字幕样式' : item.kind === 'block' ? '成片轨' : '特效轨'
 
 export const CATEGORY_ICON: Record<string, IconName> = {
   captions: 'captions',
@@ -61,17 +62,50 @@ export const variableValue = (
   values: ComponentVariables,
 ): VariableValue => values[variable.id] ?? variable.default
 
-/** 组件栏的排序：分类按 Studio 的顺序，同一分类里保持目录的顺序 */
-export const sortedItems = (catalog: ComponentCatalog): CatalogItem[] => {
-  const rank = (id: string) => catalog.categories.findIndex((category) => category.id === id)
-  return catalog.items.toSorted((a, b) => rank(a.category) - rank(b.category))
+/** 侧栏的一个小标题（品牌或分类）和它下面的卡片 */
+export type ComponentGroup = { id: string; label: string; items: CatalogItem[] }
+
+/** 品牌栏：有品牌的组件按品牌分组，品牌按在目录里第一次出现的顺序，组内保持目录的顺序 */
+export const brandGroups = (catalog: ComponentCatalog): ComponentGroup[] => {
+  const groups = new Map<string, ComponentGroup>()
+  for (const item of catalog.items) {
+    if (item.brand === undefined) continue
+    const group = groups.get(item.brand) ?? { id: item.brand, label: item.brand, items: [] }
+    group.items.push(item)
+    groups.set(item.brand, group)
+  }
+  return [...groups.values()]
 }
 
-export const ALL_CATEGORIES = 'all'
+/** 通用栏：没有品牌的组件按分类分组，分类按 Studio 的顺序，没有组件的分类不列 */
+export const categoryGroups = (catalog: ComponentCatalog): ComponentGroup[] =>
+  catalog.categories.flatMap((category) => {
+    const items = catalog.items.filter(
+      (item) => item.brand === undefined && item.category === category.id,
+    )
+    return items.length === 0 ? [] : [{ id: category.id, label: category.label, items }]
+  })
 
-/** 组件栏按 Studio 的分类筛：分类 id，或 {@link ALL_CATEGORIES} */
-export const matchesCategory = (item: CatalogItem, category: string) =>
-  category === ALL_CATEGORIES || item.category === category
+const sameColor = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+/** 颜色项的一排色块：组件默认色在最前，其后是中性色与常用色；现在用的不在其中时排在默认色后面 */
+export const swatchColors = (defaultColor: string, current: string): string[] => {
+  const colors = [defaultColor, ...COLOR_PRESETS].filter(
+    (color, index, all) => all.findIndex((other) => sameColor(other, color)) === index,
+  )
+  return colors.some((color) => sameColor(color, current))
+    ? colors
+    : [colors[0] ?? current, current, ...colors.slice(1)]
+}
+
+/** 六位 hex 的浅色（色块上的勾改用深色）；认不出的颜色当深色 */
+export const isLightColor = (color: string): boolean => {
+  const match = /^#([0-9a-f]{6})$/i.exec(color)
+  if (match?.[1] === undefined) return false
+  const value = Number.parseInt(match[1], 16)
+  const luma = 0.299 * (value >> 16) + 0.587 * ((value >> 8) & 255) + 0.114 * (value & 255)
+  return luma / 255 > 0.6
+}
 
 export const itemOf = (catalog: ComponentCatalog, name: string): CatalogItem | undefined =>
   catalog.items.find((item) => item.name === name)

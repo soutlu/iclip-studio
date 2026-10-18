@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
+import { Icon } from '@/shared/icons'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
@@ -23,8 +24,9 @@ import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import {
-  ALL_CATEGORIES,
+  brandGroups,
   CATEGORY_ICON,
+  categoryGroups,
   durationMsOf,
   itemOf,
   thumbnailOf,
@@ -32,9 +34,9 @@ import {
   type CatalogItem,
   type ComponentCatalog,
 } from './component-catalog'
-import { placeComponent, type Placing } from './component-placement'
+import { placeComponent, placedPiece, type Placing } from './component-placement'
 import { ComponentPopover } from './component-popover'
-import { ComponentsPanel } from './components-panel'
+import { ComponentsPanel, ComponentThumb, type CardCarry } from './components-panel'
 import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
@@ -79,7 +81,7 @@ import {
 import { MaterialArea, type MaterialCarry, type MaterialRange } from './material-area'
 import { materialCatalog, type Material, type MaterialTake } from './materials'
 import { useMeasuredMusicDurations, useMusicAnalysis, useMusicBeats } from './music-analysis'
-import { MusicPanel } from './music-panel'
+import { GenerateMusic, MusicPanel } from './music-panel'
 import { musicTitleOf, peaksStateOf } from './music-view'
 import { compositionMedia, previewState } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
@@ -99,7 +101,10 @@ type Props = {
   onClose: () => void
 }
 
-type SideTab = 'materials' | 'components'
+type SideTab = 'materials' | 'brand' | 'general'
+
+/** 品牌栏、通用栏各自选中的小标题；没选过为 undefined，取第一个 */
+type SideChips = Readonly<Record<'brand' | 'general', string | undefined>>
 
 function EditorHeader({ actions }: { actions: ReactNode }) {
   return (
@@ -287,7 +292,7 @@ function EditorBody({
   const [selection, setSelection] = useState<Selection>(null)
   const [popoverId, setPopoverId] = useState<string | null>(null)
   const [sideTab, setSideTab] = useState<SideTab>('materials')
-  const [category, setCategory] = useState<string>(ALL_CATEGORIES)
+  const [sideChips, setSideChips] = useState<SideChips>({ brand: undefined, general: undefined })
   const [snap, setSnap] = useState(true)
   const [zoom, setZoom] = useState<Zoom>(FIT_ZOOM)
   const [viewportWidth, setViewportWidth] = useState(0)
@@ -502,26 +507,57 @@ function EditorBody({
     }
   }
   const componentTitle = (name: string) => componentFace(name).title
-  const placeFromCard = (item: CatalogItem) =>
-    apply(placeComponent(draft, item, { via: 'click', playheadMs: playhead }))
+  /** 放进成片后选中新的组件段或特效块；有可填项就打开它的浮层 */
+  const place = (item: CatalogItem, placing: Placing): boolean => {
+    const result = placeComponent(draft, item, placing)
+    if (!apply(result) || !result.ok) return false
+    const placed = placedPiece(draft, result.draft)
+    if (placed !== undefined) {
+      setSelection(placed)
+      setPopoverId(item.variables.length > 0 ? placed.id : null)
+    }
+    return true
+  }
+  const placeFromCard = (item: CatalogItem) => place(item, { via: 'click', playheadMs: playhead })
   const dropAt = (point: DropPoint): Placing => ({
     via: 'drop',
     lane: point.lane,
     timeMs: point.timeMs,
     overlayRow: point.overlayRow,
   })
-  /** 拖着组件卡：落在哪条轨就是哪种用法；字幕样式只落在字幕轨，音乐轨不收组件 */
-  const componentPayload = (item: CatalogItem): CarryPayload => ({
+  /**
+   * 拖着组件卡：落在哪条轨就是哪种用法；字幕样式只落在字幕轨，音乐轨不收组件。
+   * 手上的缩影是预览图加名字的小条，拿起时的卡片位置是它退回的地方。
+   */
+  const componentPayload = (item: CatalogItem, origin?: CardCarry['origin']): CarryPayload => ({
     durationMs: durationMsOf(item, total),
     face: componentFace(item.name),
+    ghost:
+      origin === undefined
+        ? undefined
+        : {
+            origin,
+            kind: 'card',
+            body: (
+              <>
+                <ComponentThumb className="wf-ghost-thumb" iconSize="xs" item={item} />
+                <b>{item.title}</b>
+              </>
+            ),
+          },
     attempt: (point) => {
       const result = placeComponent(draft, item, dropAt(point))
       return !result.ok && result.refusal === 'drop-elsewhere' ? undefined : attemptOf(result)
     },
-    drop: (point) => apply(placeComponent(draft, item, dropAt(point))),
+    drop: (point) => place(item, dropAt(point)),
   })
-  const dropComponent = (item: CatalogItem, clientX: number, clientY: number) =>
-    tracksRef.current?.release(clientX, clientY, componentPayload(item))
+  const carryComponent = (item: CatalogItem, carry: CardCarry | null) => {
+    if (carry === null) tracksRef.current?.cancel()
+    else
+      tracksRef.current?.carry(carry.clientX, carry.clientY, componentPayload(item, carry.origin))
+  }
+  const dropComponent = (item: CatalogItem, carry: CardCarry) =>
+    tracksRef.current?.release(carry.clientX, carry.clientY, componentPayload(item, carry.origin))
   const hasFields = (name: string) => {
     const item = itemOf(catalog, name)
     return item === undefined || item.variables.length > 0
@@ -535,16 +571,12 @@ function EditorBody({
         ? {
             component: clip.component,
             variables: clip.variables,
-            heading: componentTitle(clip.component),
-            meta: `${seconds(clip.duration)} 秒 · 拖两端改时长`,
             selection: { kind: 'clip', id } as const,
           }
         : overlay !== undefined
           ? {
               component: overlay.component,
               variables: overlay.variables,
-              heading: componentTitle(overlay.component),
-              meta: `${seconds(overlay.start)}–${seconds(overlay.start + overlay.duration)} 秒 · 拖两端改起止`,
               selection: { kind: 'overlay', id } as const,
             }
           : undefined
@@ -561,14 +593,11 @@ function EditorBody({
       )
     return (
       <ComponentPopover
-        heading={target.heading}
         item={item}
-        meta={target.meta}
         onChange={(variables: ComponentVariables) =>
           apply(setComponentVariables(draft, { id, variables }))
         }
         onRemove={() => remove(target.selection)}
-        removeLabel="移除"
         values={target.variables}
       />
     )
@@ -657,9 +686,10 @@ function EditorBody({
           onValueChange={(value) => setSideTab(value as SideTab)}
           value={sideTab}
         >
-          <TabsList aria-label="素材与组件" className="wf-side-tabs">
+          <TabsList aria-label="素材、品牌与通用" className="wf-side-tabs">
             <TabsTrigger value="materials">素材</TabsTrigger>
-            <TabsTrigger value="components">组件</TabsTrigger>
+            <TabsTrigger value="brand">品牌</TabsTrigger>
+            <TabsTrigger value="general">通用</TabsTrigger>
           </TabsList>
           <TabsContent className="wf-side-body" value="materials">
             <MusicPanel
@@ -670,14 +700,30 @@ function EditorBody({
               onNotice={notice}
             />
           </TabsContent>
-          <TabsContent className="wf-side-body is-components" value="components">
+          <TabsContent className="wf-side-body is-components" value="brand">
             <ComponentsPanel
-              catalog={catalog}
-              category={category}
-              draft={draft}
-              onCategory={setCategory}
+              captionComponent={draft.captions.component}
+              emptyText="暂无品牌组件"
+              groups={brandGroups(catalog)}
+              groupsLabel="品牌"
+              onCarry={carryComponent}
               onDrop={dropComponent}
+              onSelect={(id) => setSideChips((chips) => ({ ...chips, brand: id }))}
               onUse={placeFromCard}
+              selected={sideChips.brand}
+            />
+          </TabsContent>
+          <TabsContent className="wf-side-body is-components" value="general">
+            <ComponentsPanel
+              captionComponent={draft.captions.component}
+              emptyText="暂无组件"
+              groups={categoryGroups(catalog)}
+              groupsLabel="分类"
+              onCarry={carryComponent}
+              onDrop={dropComponent}
+              onSelect={(id) => setSideChips((chips) => ({ ...chips, general: id }))}
+              onUse={placeFromCard}
+              selected={sideChips.general}
             />
           </TabsContent>
         </TabsRoot>
@@ -747,9 +793,16 @@ function EditorBody({
                 ? undefined
                 : { url: songUrl, title: musicTitleOf(song), peaks: peaksStateOf(songAnalysis) }
             }
+            musicAction={
+              <GenerateMusic conversationId={conversationId} onNotice={notice}>
+                <button aria-label="生成音乐" className="wf-head-add ui-focus" type="button">
+                  <Icon decorative name="add" size="xs" />
+                </button>
+              </GenerateMusic>
+            }
             onCaptionStyle={() => {
-              setSideTab('components')
-              setCategory('captions')
+              setSideTab('general')
+              setSideChips((chips) => ({ ...chips, general: 'captions' }))
             }}
             onCaptionText={editCaption}
             onClipClick={playClip}
