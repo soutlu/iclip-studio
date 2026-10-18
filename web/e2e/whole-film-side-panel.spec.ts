@@ -354,31 +354,33 @@ test('拖卡片到成片区：缩影跟手，成片轨画插入标记、特效�
   await expect(page.locator('.wf-ghost')).toHaveCount(0)
 })
 
-test('素材页：列表下的空处是上传区，拖音频文件进来即上传', async ({ page }) => {
+test('素材页：整个音乐面板接收文件，小入口仍可选择上传', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-  const songs = dialog.getByRole('list', { name: '这段对话的音乐' })
+  const panel = dialog.getByRole('region', { name: '音乐素材' })
+  const songs = panel.getByRole('list', { name: '这段对话的音乐' })
   await expect(songs.getByRole('listitem')).toHaveCount(2)
-  // 标题行只有「上传」，生成音乐在音乐轨的「+」
-  await expect(dialog.getByRole('button', { name: '生成', exact: true })).toHaveCount(0)
-  const drop = dialog.getByRole('button', { name: '把音频文件拖到这里上传' })
-  await expect(drop).toContainText('生成音乐在下方音乐轨的「+」')
+  const upload = panel.getByRole('button', { name: '添加音频', exact: true })
+  await expect(upload).toBeVisible()
+  await expect(panel.getByRole('button', { name: '上传', exact: true })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: /^用这首/ })).toHaveCount(0)
   await dialog.getByRole('button', { name: '生成音乐', exact: true }).click()
   await expect(page.getByRole('dialog', { name: '生成音乐' })).toHaveAttribute('data-side', 'top')
   await page.keyboard.press('Escape')
-  const box = await drop.boundingBox()
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(64)
-
+  const panelBox = await boxOf(panel)
+  expect(panelBox.height).toBeGreaterThan(
+    (await boxOf(songs)).height + (await boxOf(upload)).height,
+  )
+  const track = dialog.getByRole('group', { name: '音乐轨', exact: true })
+  const trackBefore = await boxOf(track)
   const dataTransfer = await page.evaluateHandle(() => {
     const transfer = new DataTransfer()
     transfer.items.add(new File([new Uint8Array(64)], '拖进来的.wav', { type: 'audio/wav' }))
     return transfer
   })
-  // 拖到上方时按钮改写「松开即上传」，名字会变，按同一个元素派发
-  const zone = await drop.elementHandle()
-  await zone?.dispatchEvent('dragenter', { dataTransfer })
-  await expect(dialog.getByRole('button', { name: '松开即上传' })).toBeVisible()
-  await zone?.dispatchEvent('drop', { dataTransfer })
+  await panel.dispatchEvent('dragenter', { dataTransfer })
+  expect(await boxOf(track)).toEqual(trackBefore)
+  await panel.dispatchEvent('drop', { dataTransfer })
   await expect(songs.getByRole('listitem')).toHaveCount(3)
   await expect(songs.getByText(/^上传的音乐 · /)).toHaveCount(2)
 })

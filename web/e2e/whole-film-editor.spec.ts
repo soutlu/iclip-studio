@@ -59,7 +59,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   const songs = dialog.getByRole('list', { name: '这段对话的音乐' })
   await expect(songs.getByRole('listitem')).toHaveCount(2)
   const saved = draftSaved(page)
-  await songs.getByRole('button', { name: /^用这首：轻快原声吉他/ }).click()
+  await songs.getByRole('button', { name: /^选用：轻快原声吉他/ }).click()
   await expect(dialog.getByRole('group', { name: /^音乐 · 轻快原声吉他/ })).toBeVisible()
   await saved
   for (const shot of [3, 4]) {

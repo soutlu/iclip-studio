@@ -72,41 +72,15 @@
   font-size: var(--text-label);
 }
 
-/* 列表下面剩下的地方就是上传区：拖音频文件进来，或点它选文件 */
-.wf-music-drop {
-  display: flex;
-  min-height: 64px;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 12px;
-  border: 1px dashed var(--color-outline-variant);
-  border-radius: var(--radius-md);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
+.wf-music-panel.is-over {
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 }
 
-.wf-music-drop:hover,
-.wf-music-drop.is-over {
-  background: var(--color-state-hover);
-  color: var(--color-on-surface);
-}
-
-.wf-music-drop.is-over {
-  border-color: var(--color-on-surface-faint);
-}
-
-.wf-music-drop span {
-  color: var(--color-on-surface-faint);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-}
-
-.wf-music-drop[aria-disabled='true'] {
-  cursor: default;
+.wf-music-panel .wf-music-upload {
+  height: var(--control-height-sm);
+  align-self: flex-start;
+  flex: none;
+  margin-top: 4px;
 }
 
 .wf-panel-title {
@@ -136,23 +110,50 @@
 }
 
 .wf-song {
+  position: relative;
   display: grid;
+  grid-template-columns: var(--control-height-sm) minmax(0, 1fr) auto;
   align-items: center;
-  grid-template-columns: auto minmax(0, 1fr) 88px auto;
   gap: 10px;
   min-height: 52px;
-  padding: 4px 8px 4px 4px;
-  border-radius: var(--radius-lg);
+  padding: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .wf-song.is-used {
   background: var(--color-state-active);
 }
 
+.wf-song-select {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wf-song-select:hover,
+.wf-song-select:focus-visible {
+  outline: none;
+  background: var(--color-state-focus);
+}
+
+.wf-song-select[aria-disabled='true'] {
+  cursor: default;
+}
+
+.wf-song-play,
+.wf-song-text,
+.wf-song-actions {
+  position: relative;
+}
+
 .wf-song-text {
   display: flex;
   min-width: 0;
   flex-direction: column;
+  pointer-events: none;
 }
 
 .wf-song-title {
@@ -165,32 +166,109 @@
 }
 
 .wf-song-meta {
-  overflow: hidden;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.wf-song-wave {
+.wf-song-actions {
   display: flex;
-  height: 24px;
+  align-items: center;
+  gap: 2px;
 }
 
 .wf-song-used {
   display: inline-flex;
+  width: var(--control-height-xs);
   align-items: center;
-  gap: 4px;
-  padding: 0 10px;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-body-sm);
+  justify-content: center;
+  color: var(--color-primary);
 }
 
-.wf-song .wf-song-use {
-  height: 26px;
-  padding: 0 10px;
-  font-size: var(--text-label);
+.wf-song-details {
+  display: grid;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  gap: 8px;
+  padding: 12px;
+  font-size: var(--text-body-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.wf-song-details p {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-song-details .wf-music-error {
+  color: var(--color-error);
+}
+
+.wf-music-status {
+  display: inline-flex;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-surface-muted);
+  pointer-events: none;
+}
+
+.wf-song > .wf-music-status {
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+}
+
+.wf-music-status.is-running {
+  color: var(--color-primary);
+}
+
+.wf-music-status.is-failed {
+  color: var(--color-error);
+}
+
+.wf-music-action .wf-music-status {
+  width: 14px;
+  height: 14px;
+}
+
+.wf-music-pulse {
+  display: inline-flex;
+  height: 16px;
+  align-items: center;
+  gap: 2px;
+}
+
+.wf-music-pulse i {
+  width: 2px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  animation: wf-music-pulse calc(var(--dur-l) * 3) var(--ease) infinite alternate;
+}
+
+.wf-music-pulse i:nth-child(2) {
+  height: 14px;
+  animation-delay: calc(var(--dur-l) * -1);
+}
+
+.wf-music-pulse i:nth-child(3) {
+  height: 6px;
+  animation-delay: calc(var(--dur-l) * -2);
+}
+
+@keyframes wf-music-pulse {
+  to {
+    transform: scaleY(0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-music-pulse i {
+    animation: none;
+  }
 }
 
 .wf-generate {
@@ -221,7 +299,7 @@
 .wf-generate-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
