@@ -5,10 +5,13 @@
  *   pnpm hf:registry                      按锁文件同步；已是最新时什么也不做
  *   pnpm hf:registry --update-lock        重新下载并重写锁文件（升级版本，或改了组件目录、本地化规则、补丁之后）
  *   pnpm hf:registry --tarball <路径>     用本机已有的源码包（仍核对 sha256）
+ *   pnpm hf:registry --smoke <目录>       冒烟筛选用（render/scripts/smoke-catalog.mjs）：装上源码包里
+ *                                         所有文件齐全、外链能本地化的组件，写到指定目录；不核对锁文件
  *
  * 步骤：下载 tag 源码包并核对 sha256 → 把组件目录（catalog.json）收录的组件按 `hyperframes add`
  * 的安装位置放好 → 外链换成本地文件（npm 包与 fontsource 字体，tgz 核对锁文件里的摘要）→ 放入
- * HyperFrames 运行时 → 套用 hyperframes-patches/ 的改写 → 确认没有外链残留 → 每个文件与锁文件逐一核对。
+ * HyperFrames 运行时 → 套用 hyperframes-patches/ 的改写 → 写组件字体的整套字形 → 确认没有外链残留 →
+ * 每个文件与锁文件逐一核对。
  * 输出目录里的 .hyperframes-sync.json 记录锁文件摘要；再跑时文件全部一致即跳过，有改动即报错。
  */
 import { existsSync } from 'node:fs'
@@ -27,6 +30,8 @@ import {
   RUNTIME,
   TARBALL,
   WEB_ROOT,
+  cjkTwinFaces,
+  fontFaceDescriptors,
   fontFaces,
   fontPackage,
   installedFiles,
@@ -46,6 +51,7 @@ const RUNTIME_TEXT = /\.(html?|css|m?js|cjs)$/i
 const args = process.argv.slice(2)
 const updateLock = args.includes('--update-lock')
 const tarballArg = args.includes('--tarball') ? args[args.indexOf('--tarball') + 1] : undefined
+const smokeDir = args.includes('--smoke') ? args[args.indexOf('--smoke') + 1] : undefined
 
 class SyncError extends Error {}
 
@@ -103,9 +109,22 @@ async function assemble(temp, lock) {
   }
 
   // 1. 按安装位置放好收录的组件；不同组件装到同一位置时内容必须相同。
-  const names = await includedNames()
+  //    冒烟筛选装上所有文件齐全、外链能本地化的组件，由渲染结果决定收不收。
   const src = await sourceTree(tarballArg)
-  const items = (await registryItems(src)).filter((entry) => names.has(entry.name))
+  const names = smokeDir ? null : await includedNames()
+  const installable = async ({ dir, item }) => {
+    for (const file of installedFiles(item)) {
+      if (!existsSync(join(dir, file.path))) return false
+      if (!RUNTIME_TEXT.test(file.target)) continue
+      const text = await readFile(join(dir, file.path), 'utf8')
+      if (localize(text, file.target).unsupported.length > 0) return false
+    }
+    return true
+  }
+  const items = []
+  for (const entry of await registryItems(src)) {
+    if (names ? names.has(entry.name) : await installable(entry)) items.push(entry)
+  }
   const installed = new Map()
   for (const { name, dir, item } of items) {
     for (const file of installedFiles(item)) {
@@ -153,8 +172,9 @@ async function assemble(temp, lock) {
   const openPackage = async (name, version) => {
     const key = `${name}@${version}`
     if (!opened.has(key)) {
+      // 冒烟筛选可能用到锁文件之外的包：没有记录的按 npm 给的完整性核对。
       const expected = updateLock ? null : (lock.npm[key] ?? null)
-      if (!updateLock && expected === null)
+      if (!updateLock && !smokeDir && expected === null)
         throw new SyncError(`锁文件里没有 ${key}，运行 --update-lock`)
       const pkg = await npmPackage(name, version, expected)
       npmLock[key] = pkg.sha256
@@ -230,7 +250,52 @@ async function assemble(temp, lock) {
     await writeOut(target, await readFile(join(PATCHES_DIR, target)))
   }
 
-  // 7. 不能再有外链。
+  // 7. 组件字体的整套字形：组件目录里每个用到的网页字体一份 CSS，合成页按用到的组件引用，渲染服务把它
+  //    内联进合成页。有些组件只写字体名、不引用字体文件，所以西文字形收组件库各处向 Google Fonts 请求过的
+  //    全部字重；中文字形对这个字体在组件库里出现过的每种字重、字形各出一组（原因见 cjkTwinFaces）。
+  const googleFaces = new Map()
+  for (const { families } of fontCss.values()) {
+    for (const { family, faces } of families) {
+      if (!googleFaces.has(family)) googleFaces.set(family, new Map())
+      for (const face of faces) googleFaces.get(family).set(`${face.weight}/${face.style}`, face)
+    }
+  }
+  const registryFaces = []
+  for (const path of await listFiles(temp)) {
+    if (/\.(html?|css)$/i.test(path) && !path.startsWith('vendor/npm/')) {
+      registryFaces.push(...fontFaceDescriptors(await readFile(join(temp, path), 'utf8')))
+    }
+  }
+  const notoPackage = fontPackage(CJK_FONT.family)
+  const notoDir = await openPackage(notoPackage.name, notoPackage.version)
+  const catalog = JSON.parse(await readFile(join(CATALOG_DIR, 'catalog.json'), 'utf8'))
+  for (const [family, cssPath] of Object.entries(catalog.fonts)) {
+    const faces = googleFaces.get(family)
+    let latin = ''
+    if (faces) {
+      const pkg = fontPackage(family)
+      const dir = await openPackage(pkg.name, pkg.version)
+      const result = await fontFaces(
+        family,
+        [...faces.values()],
+        'block',
+        dir,
+        pkg,
+        isLatinSubset,
+        '../../npm',
+      )
+      for (const file of result.files) await copyFromPackage(pkg.name, pkg.version, dir, file)
+      latin = result.css
+    }
+    const descriptors = registryFaces.filter(
+      (face) => face.family.toLowerCase() === family.toLowerCase(),
+    )
+    if (descriptors.length === 0) throw new SyncError(`组件库里没有字体「${family}」的 @font-face`)
+    const cjk = await cjkTwinFaces(family, descriptors, notoDir)
+    await writeOut(cssPath, `${[latin, cjk].filter(Boolean).join('\n')}\n`)
+  }
+
+  // 8. 不能再有外链。
   const files = await listFiles(temp)
   const leftovers = []
   for (const path of files.filter(
@@ -240,7 +305,8 @@ async function assemble(temp, lock) {
   }
   if (leftovers.length > 0) throw new SyncError(`仍有外链：\n  ${leftovers.join('\n  ')}`)
 
-  // 8. 组件里写死的本地路径都要能取到（按运行时的解析方式）。
+  // 9. 组件里写死的本地路径都要能取到（按运行时的解析方式）。冒烟筛选要实际渲染这些组件来判断，跳过。
+  if (smokeDir) return { npmLock, files }
   const present = new Set(files)
   const missing = []
   for (const path of files.filter(
@@ -263,6 +329,13 @@ async function main() {
   if (!updateLock && lockText === null)
     throw new SyncError(`缺少锁文件 ${LOCK_PATH}，先运行 --update-lock`)
   const lock = lockText === null ? null : JSON.parse(lockText)
+  if (smokeDir) {
+    await rm(smokeDir, { recursive: true, force: true })
+    await mkdir(smokeDir, { recursive: true })
+    const { files } = await assemble(smokeDir, lock)
+    console.log(`冒烟筛选用的组件库：${smokeDir}（${files.length} 个文件）`)
+    return
+  }
   if (!updateLock && (await upToDate(lock, await inputsDigest(lockText)))) {
     console.log(`组件库已是最新：${OUTPUT_DIR}`)
     return

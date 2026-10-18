@@ -58,6 +58,8 @@ export interface CatalogItem {
   thumbnail: string | null
   /** 只有转场有。 */
   transition?: TransitionAttachment
+  /** 组件用到的网页字体，合成页给它们补上中文字形（见 {@link ComponentCatalog.fonts}）。 */
+  fonts: string[]
 }
 
 export interface ExcludedItem {
@@ -69,8 +71,17 @@ export interface ExcludedItem {
 export interface ComponentCatalog {
   /** HyperFrames 版本，也是组件目录在站点上的目录名。 */
   version: string
-  /** 合成页要加载的运行时脚本，相对组件目录根。 */
-  runtime: { hyperframes: string; gsap: string }
+  /**
+   * 合成页要加载的运行时脚本与中文字体 CSS，相对组件目录根。中文字体是合成页的默认字体，
+   * 组件没写字体或字体变量未定义时也用它，预览与导出一致。
+   */
+  runtime: { hyperframes: string; gsap: string; cjkFont: string }
+  /**
+   * 网页字体 → 它整套字形的 CSS（相对组件目录根）：组件库里请求过的全部西文字重，加上同名、只覆盖
+   * 中日韩码位、字形取 Noto Sans SC 的中文字形。只写字体名不引用字体文件的组件也能拿到这个字体，中文
+   * 不再落到各平台各不相同的系统字体；渲染服务把它内联进合成页，HyperFrames 就不再另补同名字体。
+   */
+  fonts: Record<string, string>
   categories: { id: string; label: string }[]
   items: CatalogItem[]
   excluded: ExcludedItem[]

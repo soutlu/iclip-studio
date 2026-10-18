@@ -14,7 +14,7 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import * as prettier from 'prettier'
@@ -23,13 +23,19 @@ import {
   CATALOG_DIR,
   HF_VERSION,
   PATCHES_DIR,
+  CJK_FONT,
   RUNTIME,
   WEB_ROOT,
+  category,
   compositionTarget,
+  familyFontCss,
+  fontFamilies,
   installedFiles,
   localReferences,
   localize,
+  placement,
   registryItems,
+  rootAttributes,
   sha256,
   sourceTree,
 } from './hyperframes-shared.mjs'
@@ -38,6 +44,19 @@ const run = promisify(execFile)
 const ZH_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-catalog-zh')
 const THUMBS_DIR = join(CATALOG_DIR, 'thumbnails')
 const THUMB = { width: 160, height: 90 }
+
+// 冒烟筛选的结果（render/scripts/smoke-catalog.mjs 生成）：不通过的排除，没有预览图的用它渲染出的缩略图。
+const SMOKE_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-smoke')
+const smoke = existsSync(join(SMOKE_DIR, 'results.json'))
+  ? JSON.parse(await readFile(join(SMOKE_DIR, 'results.json'), 'utf8')).results
+  : {}
+const smokeReason = (result) => `渲染检查不通过：${result.reason}`
+async function smokeThumbnail(name) {
+  if (!smoke[name]?.thumbnail) return null
+  const file = `${name}.webp`
+  await copyFile(join(SMOKE_DIR, 'thumbnails', file), join(THUMBS_DIR, file))
+  return file
+}
 
 const args = process.argv.slice(2)
 const tarballArg = args.includes('--tarball') ? args[args.indexOf('--tarball') + 1] : undefined
@@ -56,35 +75,6 @@ const CATEGORIES = [
   { id: 'scenes', label: '场景' },
 ]
 
-/** HyperFrames 的 resolveBlockCategory 原样照抄。 */
-function category(tags) {
-  if (!tags || tags.length === 0) return 'scenes'
-  const set = new Set(tags)
-  if (set.has('captions') || set.has('caption-style')) return 'captions'
-  if (set.has('code-animation')) return 'code-animation'
-  if (set.has('transition')) return 'transitions'
-  if (set.has('social') || set.has('overlay')) return 'social'
-  if (set.has('data') || set.has('chart') || set.has('map')) return 'data'
-  if (set.has('html-in-canvas') || set.has('webgl') || set.has('shader')) return 'vfx'
-  if (set.has('text-effect')) return 'text-effects'
-  if (set.has('effect') || set.has('grain') || set.has('vignette')) return 'effects'
-  return 'scenes'
-}
-
-// 带 overlay 标签的（如手写标题）叠在画面上，一律进包装轨，不当片头片尾。
-const OUTRO_TAGS = ['end-card', 'outro', 'close']
-const INTRO_TAGS = ['intro', 'title-card']
-function placement(categoryId, tags) {
-  if (categoryId === 'captions') return 'caption'
-  if (categoryId === 'transitions') return 'transition'
-  const set = new Set(tags)
-  if (set.has('overlay')) return 'overlay'
-  if (OUTRO_TAGS.some((tag) => set.has(tag))) return 'outro'
-  if (INTRO_TAGS.some((tag) => set.has(tag))) return 'intro'
-  if (set.has('logo') && (categoryId === 'scenes' || categoryId === 'vfx')) return 'intro'
-  return 'overlay'
-}
-
 // ---------------------------------------------------------------- 字幕与转场
 
 /** 产品自带的默认字幕样式：由 caption-weight-shift 改成读 words 变量，文件在 hyperframes-patches/。 */
@@ -100,10 +90,14 @@ const DEFAULT_CAPTION = {
   duration: null,
   variables: [],
   thumbnail: null,
+  fonts: [],
 }
 
 /** 改成读 words 变量、能正确排中文的字幕组件（改写在 hyperframes-patches/）。 */
 const SUPPORTED_CAPTIONS = new Set(['caption-texture', 'caption-highlight'])
+
+/** 字形写死在组件里、只画得出英文字母与数字的组件：填中文时画面是空的。 */
+const LATIN_ONLY = new Set(['stitched-text-draw'])
 
 /**
  * 能挂到一个切点上的转场，与它的接法（见 composition/catalog.ts 的 TransitionAttachment）。
@@ -189,6 +183,8 @@ const UNLABELED = {
 const HF_BRANDING = /hyper\s*frames|heygen/i
 /** 带分隔符或结构的文字默认值，逐项写在 defaults.json 里。 */
 const STRUCTURED = /[|,\n;]|^\s*[[{]/
+/** SVG 路径数据（M 10 20 C …）不是给人看的文字，保留原值。 */
+const SVG_PATH = /^\s*[Mm]\s*-?[\d.]/
 
 async function translations() {
   const items = {}
@@ -235,7 +231,8 @@ function variablesOf(name, raw, zh, problems) {
     } else if (
       variable.type === 'string' &&
       (variable.role === undefined || variable.role === 'content') &&
-      /[A-Za-z]/.test(String(out.default))
+      /[A-Za-z]/.test(String(out.default)) &&
+      !SVG_PATH.test(String(out.default))
     ) {
       if (STRUCTURED.test(String(out.default)))
         problems.push(`缺默认值译文：${key} = ${JSON.stringify(out.default)}`)
@@ -246,20 +243,6 @@ function variablesOf(name, raw, zh, problems) {
     }
     return out
   })
-}
-
-/** 合成根元素上写的固定尺寸与时长（HyperFrames 挂载时按它设宿主大小）。 */
-function rootAttributes(html) {
-  const tag = /<[a-z]+\b[^>]*\bdata-composition-id\b[^>]*>/i.exec(html)?.[0] ?? ''
-  const number = (attribute) => {
-    const value = new RegExp(`\\b${attribute}\\s*=\\s*["']?([\\d.]+)`).exec(tag)?.[1]
-    return value === undefined ? null : Number(value)
-  }
-  return {
-    width: number('data-width'),
-    height: number('data-height'),
-    duration: number('data-duration'),
-  }
 }
 
 /** 预览图缩成小 webp（铺满后居中裁切）；原图取不到时没有缩略图。 */
@@ -331,11 +314,15 @@ async function main() {
     if (files.some((file) => !existsSync(join(dir, file.path)))) return exclude(REASONS.missing)
     let unsupported = false
     const broken = []
+    const fonts = { used: new Set(), declared: new Set() }
     const targets = new Set(files.map((file) => file.target))
     for (const file of files) {
       const original = await readFile(join(dir, file.path), 'utf8')
       const localized = localize(original, file.target)
       if (localized.unsupported.length > 0) unsupported = true
+      for (const need of localized.needs) {
+        for (const { family } of need.fonts?.families ?? []) fonts.declared.add(family)
+      }
       if (!/\.(html?|css)$/i.test(file.target)) continue
       const text = patches[file.target]
         ? await readFile(join(PATCHES_DIR, file.target), 'utf8')
@@ -343,11 +330,18 @@ async function main() {
       for (const { resolved } of localReferences(text, file.target)) {
         if (!resolved.startsWith('vendor/') && !targets.has(resolved)) broken.push(resolved)
       }
+      const found = fontFamilies(text)
+      for (const family of found.used) fonts.used.add(family)
+      for (const family of found.declared) fonts.declared.add(family)
     }
     if (unsupported) return exclude(REASONS.module)
-    if (broken.length > 0) return exclude(REASONS.broken)
+    // 静态判断引用的素材取不到的，以冒烟渲染的结果为准（渲染通过就收录）。
+    if (broken.length > 0 && smoke[name]?.ok !== true) {
+      return exclude(smoke[name] ? smokeReason(smoke[name]) : REASONS.broken)
+    }
     const target = compositionTarget(item)
     if (place === 'caption' && !SUPPORTED_CAPTIONS.has(name)) return exclude(REASONS.english)
+    if (LATIN_ONLY.has(name)) return exclude(REASONS.english)
     if (place === 'transition' && !TRANSITIONS[name]) {
       const reason = TRANSITION_EXCLUSIONS[name] ?? (tags.has('shader') ? SHADER : null)
       if (!reason) problems.push(`转场没有接法也没有排除原因：${name}`)
@@ -363,6 +357,7 @@ async function main() {
       problems.push(`转场 ${name} 需要改写成子合成`)
     }
     if (!patched && !/data-composition-id/.test(html)) return exclude(REASONS.fragment)
+    if (smoke[name] && !smoke[name].ok) return exclude(smokeReason(smoke[name]))
 
     const root = rootAttributes(patched ?? html)
     const size =
@@ -382,11 +377,32 @@ async function main() {
       size,
       duration: TRANSITIONS[name]?.duration ?? item.duration ?? root.duration ?? null,
       variables: variablesOf(name, item, zh, problems),
-      thumbnail: await thumbnail(name, item.preview?.poster),
+      thumbnail: (await thumbnail(name, item.preview?.poster)) ?? (await smokeThumbnail(name)),
+      fonts: [],
     }
     if (TRANSITIONS[name]) entry.transition = TRANSITIONS[name].transition
-    return { entry }
+    return { entry, fonts }
   })
+
+  // 整套字形（西文加中文）只给网页字体（组件库里有 @font-face 或 Google Fonts 请求的字体）：
+  // 同名的 @font-face 会让系统里装的同名字体失效，Georgia 这类系统字体不给，中文按系统回退。
+  const webFonts = new Set()
+  for (const result of classified) {
+    for (const family of result.fonts?.declared ?? []) webFonts.add(family)
+  }
+  webFonts.delete(CJK_FONT.family)
+  // 组件用到的网页字体：自己加载的，加上 font-family 里写到的（可能由同一页的别的组件加载）。
+  for (const result of classified.filter((entry) => entry.entry)) {
+    const families = new Set([...result.fonts.declared, ...result.fonts.used])
+    result.entry.fonts = [...families].filter((family) => webFonts.has(family)).sort()
+  }
+  const defaultCaption = {
+    ...DEFAULT_CAPTION,
+    thumbnail: await smokeThumbnail(DEFAULT_CAPTION.name),
+  }
+  if (smoke[DEFAULT_CAPTION.name] && !smoke[DEFAULT_CAPTION.name].ok) {
+    problems.push(`默认字幕没通过冒烟渲染：${smokeReason(smoke[DEFAULT_CAPTION.name])}`)
+  }
 
   for (const name of SUPPORTED_CAPTIONS) {
     if (!classified.some((result) => result.entry?.name === name))
@@ -403,13 +419,15 @@ async function main() {
 
   const order = (id) => CATEGORIES.findIndex((entry) => entry.id === id)
   const items = [
-    DEFAULT_CAPTION,
+    defaultCaption,
     ...classified.flatMap((result) => (result.entry ? [result.entry] : [])),
   ]
   items.sort((a, b) => order(a.category) - order(b.category))
+  const usedFonts = [...new Set(items.flatMap((entry) => entry.fonts))].sort()
   const catalog = {
     version: HF_VERSION,
     runtime: RUNTIME,
+    fonts: Object.fromEntries(usedFonts.map((family) => [family, familyFontCss(family)])),
     categories: CATEGORIES,
     items,
     excluded: classified.flatMap((result) => (result.excluded ? [result.excluded] : [])),

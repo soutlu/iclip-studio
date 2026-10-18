@@ -10,7 +10,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.{ts,tsx}'],
+    // scripts/ 下是构建脚本的单测。
+    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
     passWithNoTests: true,
     restoreMocks: true,
     setupFiles: ['src/testing/setup.ts'],

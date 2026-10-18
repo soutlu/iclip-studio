@@ -23,6 +23,7 @@ jobs:
       server: ${{ steps.scope.outputs.server }}
       web: ${{ steps.scope.outputs.web }}
       web_format: ${{ steps.scope.outputs.web_format }}
+      render: ${{ steps.scope.outputs.render }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,16 +40,20 @@ jobs:
           server=true
           web=true
           web_format=false
+          render=true
           # 只有 develop PR 按路径缩小范围；main 和其他目标分支都完整检查。
           if [ "$BASE_REF" = develop ]; then
             if git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/ci-changed-files"; then
               server=false
               web=false
+              render=false
               while IFS= read -r -d '' path; do
                 # server/ 下的 Markdown 是运行时输入，目录规则优先于文档后缀；
                 # web/ 下的 Markdown 不是运行时输入，只查 prettier 格式。
                 case "$path" in
                   server/*) scope=server ;;
+                  render/*.md) scope=docs ;;
+                  render/*) scope=render ;;
                   web/*.md) scope=format ;;
                   web/*|design-system.html) scope=web ;;
                   docs/*|*.md|.claude/*|.gitignore|.pre-commit-config.yaml) scope=docs ;;
@@ -57,8 +62,14 @@ jobs:
                 case "$scope" in
                   server) server=true ;;
                   web) web=true ;;
+                  render) render=true ;;
                   format) web_format=true ;;
-                  all) server=true; web=true ;;
+                  all) server=true; web=true; render=true ;;
+                esac
+                # 渲染服务打包 web 的整片合成构建、组件目录与后端合同的 zod 生成物，它们变了也要查渲染服务。
+                case "$path" in
+                  web/src/features/storyboard/whole-film/composition/*|web/src/features/storyboard/whole-film/catalog/*|web/src/shared/api/generated/*)
+                    render=true ;;
                 esac
                 printf '%-6s %s\n' "$scope" "$path"
               done < "$RUNNER_TEMP/ci-changed-files"
@@ -70,11 +81,12 @@ jobs:
           if [ "$web" = true ]; then
             web_format=false
           fi
-          echo "base=$BASE_REF server=$server web=$web web_format=$web_format"
+          echo "base=$BASE_REF server=$server web=$web web_format=$web_format render=$render"
           {
             echo "server=$server"
             echo "web=$web"
             echo "web_format=$web_format"
+            echo "render=$render"
           } >> "$GITHUB_OUTPUT"
 
   server_static:
@@ -259,6 +271,42 @@ jobs:
       - name: Check frontend formatting
         run: pnpm format:check
 
+  render_static:
+    name: render-static
+    needs: scope
+    if: needs.scope.outputs.render == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: render
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-render
+      - name: Lint and check formatting
+        run: pnpm lint
+      - name: Check types
+        run: pnpm typecheck
+      - name: Bundle
+        run: pnpm build
+
+  render_unit:
+    name: render-unit
+    needs: scope
+    if: needs.scope.outputs.render == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: render
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-render
+      # 真实渲染的集成测试要 chrome-headless-shell 与同步好的组件库，runner 上没有，按用例名里的原因跳过；
+      # 它在本机与镜像构建后验证。
+      - name: Run unit tests
+        run: pnpm test
+
   ci:
     # GitHub 将 skipped check 视为通过；元信息编辑使用不同名称，不能替代真正的 ci。
     name: ${{ github.event.action == 'edited' && github.event.changes.base == null && 'ci not run (metadata only)' || 'ci' }}
@@ -273,6 +321,8 @@ jobs:
       - web_unit
       - web_e2e
       - web_format
+      - render_static
+      - render_unit
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -299,6 +349,9 @@ jobs:
           WEB_E2E_RESULT: ${{ needs.web_e2e.result }}
           WEB_FORMAT_REQUIRED: ${{ needs.scope.outputs.web_format }}
           WEB_FORMAT_RESULT: ${{ needs.web_format.result }}
+          RENDER_REQUIRED: ${{ needs.scope.outputs.render }}
+          RENDER_STATIC_RESULT: ${{ needs.render_static.result }}
+          RENDER_UNIT_RESULT: ${{ needs.render_unit.result }}
         run: |
           {
             printf 'PR 最新提交：%s\n\n' "$HEAD_SHA"
@@ -307,7 +360,7 @@ jobs:
             if [ "$BASE_REF" = develop ]; then
               printf '检查模式：按变更范围。「需执行」为 false 表示本次变更不需要该检查；具体路径判定见 scope 日志。\n\n'
             else
-              printf '检查模式：完整检查 server 和 web。\n\n'
+              printf '检查模式：完整检查 server、web 和 render。\n\n'
             fi
             printf '| Job | 需执行 | 结果 |\n| --- | --- | --- |\n'
             printf '| scope | true | %s |\n' "$SCOPE_RESULT"
@@ -319,6 +372,8 @@ jobs:
             printf '| web-unit（4 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_UNIT_RESULT"
             printf '| web-e2e（4 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_E2E_RESULT"
             printf '| web-format | %s | %s |\n' "$WEB_FORMAT_REQUIRED" "$WEB_FORMAT_RESULT"
+            printf '| render-static | %s | %s |\n' "$RENDER_REQUIRED" "$RENDER_STATIC_RESULT"
+            printf '| render-unit | %s | %s |\n' "$RENDER_REQUIRED" "$RENDER_UNIT_RESULT"
           } >> "$GITHUB_STEP_SUMMARY"
 
           require_result() {
@@ -342,6 +397,8 @@ jobs:
           require_result web-unit "$WEB_REQUIRED" "$WEB_UNIT_RESULT" || failed=1
           require_result web-e2e "$WEB_REQUIRED" "$WEB_E2E_RESULT" || failed=1
           require_result web-format "$WEB_FORMAT_REQUIRED" "$WEB_FORMAT_RESULT" || failed=1
+          require_result render-static "$RENDER_REQUIRED" "$RENDER_STATIC_RESULT" || failed=1
+          require_result render-unit "$RENDER_REQUIRED" "$RENDER_UNIT_RESULT" || failed=1
           if [ "$failed" -ne 0 ]; then
             echo 'CI 结果：**failed**' >> "$GITHUB_STEP_SUMMARY"
             exit 1

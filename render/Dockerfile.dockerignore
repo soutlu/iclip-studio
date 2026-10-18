@@ -1,0 +1,18 @@
+# 渲染服务以仓库根为构建上下文，只发送它用到的部分。
+**
+!render/
+!render/**
+!web/package.json
+!web/pnpm-lock.yaml
+!web/pnpm-workspace.yaml
+!web/.npmrc
+!web/scripts/
+!web/scripts/**
+!web/src/features/storyboard/whole-film/
+!web/src/features/storyboard/whole-film/**
+!web/src/shared/api/generated/
+!web/src/shared/api/generated/**
+render/node_modules/
+render/dist/
+render/.cache/
+**/.env*

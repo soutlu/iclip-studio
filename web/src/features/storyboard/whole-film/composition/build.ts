@@ -13,8 +13,8 @@ import { escapeAttribute, jsonAttribute, scriptJson, seconds } from './html'
 type ComponentVariables = WholeFilmTransition['variables']
 
 export interface CompositionMedia {
-  /** 按 `sourceJobId`：成片地址与画面尺寸。 */
-  videos: Readonly<Record<string, { url: string; width: number; height: number }>>
+  /** 按 `sourceJobId`：成片地址。 */
+  videos: Readonly<Record<string, { url: string }>>
   /** 草稿里配乐的地址；没有配乐时为 null。 */
   music: { url: string } | null
   /** 按 `sourceJobId`：这条成片的字幕记录；没有识别结果时缺省或为 null。 */
@@ -152,7 +152,7 @@ function transitionParts(
   draft: WholeFilmDocument,
   catalog: ComponentCatalog,
   canvas: { width: number; height: number },
-): { host: string; tweens: LayerTweenCall[] } {
+): { host: string; tweens: LayerTweenCall[]; item: CatalogItem } {
   const position = draft.layer0.findIndex((clip) => clip.id === transition.afterClipId)
   if (position < 0 || position === draft.layer0.length - 1) {
     throw new CompositionError('invalid-draft', `转场「${transition.id}」没有接在两段之间`)
@@ -191,7 +191,7 @@ function transitionParts(
     canvas,
     fit: 'cover',
   })
-  if (spec.kind === 'overlay') return { host, tweens: [] }
+  if (spec.kind === 'overlay') return { host, tweens: [], item }
   const tweens: LayerTweenCall[] = [
     {
       target: `clip-${position}`,
@@ -206,7 +206,14 @@ function transitionParts(
       duration: (transition.duration - leadMs) / 1000,
     },
   ]
-  return { host, tweens }
+  return { host, tweens, item }
+}
+
+/** 组件字体整套字形的 CSS；组件目录给组件列了字体却没有对应 CSS 是目录本身的错。 */
+function fontCss(catalog: ComponentCatalog, family: string): string {
+  const href = catalog.fonts[family]
+  if (!href) throw new Error(`组件目录缺少字体「${family}」的 CSS`)
+  return href
 }
 
 /**
@@ -219,11 +226,14 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
   }
   const { width, height } = canvas
   const totalMs = Math.max(...draft.layer0.map((clip) => clip.start + clip.duration))
+  // 页面上用到的组件，按它们的网页字体引用字体 CSS。
+  const used = new Set<CatalogItem>()
 
   const layer0 = draft.layer0.map((clip, index) => {
     const id = `clip-${index}`
     if (clip.type === 'component') {
       const item = lookup(catalog, clip.component, clip.role)
+      used.add(item)
       return componentHost({
         id,
         item,
@@ -249,9 +259,11 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
   const transitions = draft.transitions.map((transition, index) =>
     transitionParts(transition, index, draft, catalog, canvas),
   )
+  for (const part of transitions) used.add(part.item)
 
   const overlays = draft.overlays.map((overlay, index) => {
     const item = lookup(catalog, overlay.component, 'overlay')
+    used.add(item)
     return componentHost({
       id: `ov-${index}`,
       item,
@@ -267,6 +279,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
 
   const captionItem = lookup(catalog, draft.captions.component, 'caption')
   const words = captionWords(placeCaptions(draft, media.subtitles))
+  if (words.length > 0) used.add(captionItem)
   const captions =
     words.length === 0
       ? ''
@@ -292,6 +305,11 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       ` data-track-index="${TRACK.music}" data-volume="${String(draft.music.volume)}"></audio>`
   }
 
+  const families = [...new Set([...used].flatMap((item) => item.fonts))].sort()
+  const fontLinks = [catalog.runtime.cjkFont, ...families.map((family) => fontCss(catalog, family))]
+    .map((href) => `<link rel="stylesheet" href="${escapeAttribute(href)}">`)
+    .join('\n')
+
   const tweens = transitions.flatMap((part) => part.tweens)
   const total = seconds(totalMs)
   const html = `<!doctype html>
@@ -299,10 +317,11 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=${width}, height=${height}">
+${fontLinks}
 <script src="${escapeAttribute(catalog.runtime.gsap)}"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:${width}px;height:${height}px;overflow:hidden;background:black}
+html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;font-family:'Noto Sans SC',sans-serif}
 #stage{position:relative;width:${width}px;height:${height}px;overflow:hidden;background:black}
 #stage .layer0{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:${Z.layer0}}
 #stage .fill{position:absolute;inset:0}
