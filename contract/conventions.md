@@ -547,15 +547,13 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 品牌模板
 
-字体资源与品牌设置都在 `/brand-templates` 下。语义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)；字段、校验范围及端点权限以 `openapi.json` 为准。媒体生成没配置时不挂载这组端点。
+字体资源都在 `/brand-templates` 下。语义见 [CONTEXT.md「资料库」](../docs/CONTEXT.md#术语)；字段、校验范围及端点权限以 `openapi.json` 为准。媒体生成没配置时不挂载这组端点。
 
 - 列表的 `kind` 是开放文本，现有只有 `font`；`brand` 可空，不从名称推断。`url` 是资源地址。`GET /brand-templates` 按建立时间倒序列出全部，不翻页，可按 `kind`、`brand` 筛选；默认只列在用的，治理者可带 `includeDisabled=true`。
-- `GET /brand-templates/brands` 答复 `{ items: [{ brand, slogan, accentColor }] }`：设过标语或强调色的品牌，并上在用资源的 `brand`，按品牌名排；没设过的两项为 `null`。只在停用资源上出现、又没设过的品牌不列。
-- `PUT /brand-templates/brands/{brand}` 整份写入这个品牌的 `{ slogan, accentColor }`，没有就新建，答复同列表里的一项。两项都要给，`null` 清空那一项；两项都清空后，品牌仍按上一条的规则列出。品牌名与标语去掉首尾空白后各为 1 到 100 字，`accentColor` 是 `#RRGGBB`，大小写都收、存成小写；不合格是 `422`，什么都不写。
 - 字体使用独立的签名上传与确认：`POST /brand-templates/fonts/sign` 获取 PUT 凭据，文件上传后用 `POST /brand-templates/fonts/{uploadId}/confirm` 写入名称与可选品牌。只接受至多 32 MiB 的静态 TTF、OTF；集合、可变字体、WOFF、损坏文件或缺少有效字形会被拒绝。上传对象按主体隔离，确认可重试且不会重复建行，不建立视频或生成任务。字体元数据来自文件，不新增字体专用数据库字段。
 - `GET /brand-templates/{id}/font-info` 返回实际字族、字重、样式与 Unicode 覆盖范围，供浏览器加载同一文件与检查缺字。加载失败、缺字必须显示失败，不能切换成系统字体后假装成功。
 - `PATCH /brand-templates/{id}` 修改名称、品牌或启停，至少给一项；`brand=null` 清空品牌。资源不删除。
-- 品牌资源与品牌设置都不是生成记录，不进 `GET /generations` 与审计口径；资料库的成片卡不受影响。
+- 品牌资源不是生成记录，不进 `GET /generations` 与审计口径；资料库的成片卡不受影响。
 
 ## 14. 参考视频 (References)
 

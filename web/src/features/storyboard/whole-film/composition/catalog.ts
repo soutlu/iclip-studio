@@ -18,8 +18,6 @@ export interface CatalogVariable {
   max?: number
   step?: number
   unit?: string
-  /** 默认值取品牌模板：`name` 是品牌名，`slogan` 是标语。 */
-  brand?: 'name' | 'slogan'
 }
 
 /**

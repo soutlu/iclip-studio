@@ -7,14 +7,11 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
-import type { BrandProfile } from '@/shared/api/brand-templates'
 import { Icon } from '@/shared/icons'
 import { Button } from '@/shared/ui/button'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import {
-  brandOf,
   variableValue,
-  withBrand,
   type CatalogItem,
   type CatalogVariable,
   type VariableValue,
@@ -26,7 +23,6 @@ const UNIT_TEXT: Record<string, string> = { s: '秒', px: '像素', '%': '%', de
 type ComponentPopoverProps = {
   item: CatalogItem
   values: ComponentVariables
-  brands: readonly BrandProfile[]
   /** 浮层标题，如「片头 · 标志定格」 */
   heading: string
   /** 标题旁的时长、位置与可拖的边 */
@@ -37,29 +33,18 @@ type ComponentPopoverProps = {
 }
 
 /**
- * 成片轨上组件（片头片尾、包装、转场）的浮层：按组件目录列出全部可填项，对得上品牌模板的项注明
- * 默认取自品牌模板；有多个品牌时可以换一个品牌来填。每次改动是一步编辑，只影响这条整片。
+ * 成片轨上组件（片头片尾、包装、转场）的浮层：按组件目录列出全部可填项，没填过的显示组件自己的
+ * 默认值。每次改动是一步编辑，只影响这条整片。
  */
 export function ComponentPopover({
   item,
   values,
-  brands,
   heading,
   meta,
   removeLabel,
   onChange,
   onRemove,
 }: ComponentPopoverProps) {
-  const hasBrandFields = item.variables.some((variable) => variable.brand !== undefined)
-  const brand = brandOf(item, values, brands)
-  // 颜色项的候选：各品牌的强调色，当前品牌的排前面
-  const accents = [
-    ...new Set(
-      [brand, ...brands].flatMap((item) =>
-        item?.accentColor == null ? [] : [item.accentColor.toLowerCase()],
-      ),
-    ),
-  ]
   const set = (id: string, value: VariableValue) => {
     if (values[id] === value) return
     onChange({ ...values, [id]: value })
@@ -74,40 +59,11 @@ export function ComponentPopover({
       </div>
       <p className="wf-pop-meta">{meta}</p>
       <p className="wf-pop-desc">{item.description}</p>
-      {hasBrandFields && brands.length > 1 ? (
-        <div className="wf-field">
-          <span>品牌</span>
-          <MenuRoot>
-            <MenuTrigger asChild>
-              <button className="wf-select ui-state ui-focus" type="button">
-                {brand?.brand ?? '选择品牌'}
-                <Icon decorative name="expand" size="xs" />
-              </button>
-            </MenuTrigger>
-            <MenuSurface align="start" side="top">
-              <MenuRadioGroup
-                onValueChange={(name) => {
-                  const picked = brands.find((item) => item.brand === name)
-                  if (picked !== undefined) onChange(withBrand(item, values, picked))
-                }}
-                value={brand?.brand ?? ''}
-              >
-                {brands.map((item) => (
-                  <MenuRadioItem key={item.brand} value={item.brand}>
-                    {item.brand}
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
-            </MenuSurface>
-          </MenuRoot>
-        </div>
-      ) : null}
       {item.variables.length === 0 ? (
         <p className="wf-pop-note">这个组件没有可调的项</p>
       ) : (
         item.variables.map((variable) => (
           <VariableField
-            accents={accents}
             key={variable.id}
             onChange={(value) => set(variable.id, value)}
             value={variableValue(variable, values)}
@@ -123,20 +79,16 @@ export function ComponentPopover({
 type FieldProps = {
   variable: CatalogVariable
   value: VariableValue
-  /** 品牌强调色，颜色项的候选 */
-  accents: readonly string[]
   onChange: (value: VariableValue) => void
 }
 
-function VariableField({ variable, value, accents, onChange }: FieldProps) {
+function VariableField({ variable, value, onChange }: FieldProps) {
   const id = useId()
   const label = (
     <label htmlFor={id} title={variable.label}>
       {variable.label}
     </label>
   )
-  const hint =
-    variable.brand === undefined ? null : <span className="wf-field-hint">默认取自品牌模板</span>
   let input: ReactNode
   switch (variable.type) {
     case 'string':
@@ -197,20 +149,16 @@ function VariableField({ variable, value, accents, onChange }: FieldProps) {
     }
     case 'color': {
       const current = String(value).toLowerCase()
-      const colors = [...new Set([current, ...accents])].slice(0, 6)
       input = (
         <span className="wf-swatches" role="group">
-          {colors.map((color) => (
-            <button
-              aria-label={accents.includes(color) ? `${color}（品牌强调色）` : color}
-              aria-pressed={color === current}
-              className="wf-swatch ui-focus"
-              key={color}
-              onClick={() => onChange(color)}
-              style={{ '--wf-swatch': color } as CSSProperties}
-              type="button"
-            />
-          ))}
+          <button
+            aria-label={current}
+            aria-pressed
+            className="wf-swatch ui-focus"
+            onClick={() => onChange(current)}
+            style={{ '--wf-swatch': current } as CSSProperties}
+            type="button"
+          />
           <ColorInput id={id} onCommit={onChange} value={current} />
         </span>
       )
@@ -245,7 +193,6 @@ function VariableField({ variable, value, accents, onChange }: FieldProps) {
     <div className="wf-field">
       {label}
       {input}
-      {hint}
     </div>
   )
 }

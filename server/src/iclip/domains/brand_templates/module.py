@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from iclip.domains.brand_templates.api import create_brand_templates_router
-from iclip.domains.brand_templates.repository import BrandProfileStore, BrandTemplateStore
+from iclip.domains.brand_templates.repository import BrandTemplateStore
 from iclip.domains.brand_templates.service import BrandTemplateService
 from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.object_store.store import SignedUploadStore
@@ -19,11 +19,10 @@ class BrandTemplatesModule:
 def build_brand_templates_module(
     store: BrandTemplateStore,
     *,
-    profiles: BrandProfileStore,
     objects: SignedUploadStore,
     probe_font: ProbeFont,
 ) -> BrandTemplatesModule:
-    service = BrandTemplateService(store, profiles=profiles, objects=objects, probe_font=probe_font)
+    service = BrandTemplateService(store, objects=objects, probe_font=probe_font)
     return BrandTemplatesModule(routers=(create_brand_templates_router(service),), service=service)
 
 

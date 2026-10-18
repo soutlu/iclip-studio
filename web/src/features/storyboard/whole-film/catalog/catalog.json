@@ -1654,7 +1654,7 @@
         { "id": "rowA", "type": "string", "label": "推荐1", "default": "推荐1" },
         { "id": "rowB", "type": "string", "label": "推荐2", "default": "推荐2" },
         { "id": "rowC", "type": "string", "label": "推荐3", "default": "推荐3" },
-        { "id": "brand", "type": "string", "label": "品牌", "default": "品牌名", "brand": "name" },
+        { "id": "brand", "type": "string", "label": "品牌", "default": "品牌名" },
         {
           "id": "brandRank",
           "type": "enum",
@@ -1707,15 +1707,13 @@
           "id": "ecSub",
           "type": "string",
           "label": "结尾副标题",
-          "default": "品牌标语",
-          "brand": "slogan"
+          "default": "品牌标语"
         },
         {
           "id": "ecCta",
           "type": "string",
           "label": "结尾按钮文字",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         { "id": "ecFooter", "type": "string", "label": "结尾网址", "default": "结尾网址" },
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
@@ -2016,8 +2014,7 @@
           "id": "cardTitle",
           "type": "string",
           "label": "链接卡标题",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         { "id": "cardDomain", "type": "string", "label": "链接卡网址", "default": "链接卡网址" },
         { "id": "reactionMessage", "type": "string", "label": "链接反馈", "default": "链接反馈" },
@@ -2175,8 +2172,7 @@
           "id": "appName",
           "type": "string",
           "label": "应用名称",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         { "id": "headlineTop", "type": "string", "label": "结尾第1行", "default": "结尾第1行" },
         { "id": "headlineAccent", "type": "string", "label": "结尾第2行", "default": "结尾第2行" },
@@ -2202,16 +2198,14 @@
           "id": "senderName",
           "type": "string",
           "label": "发送方",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         { "id": "itemLabel", "type": "string", "label": "分享内容", "default": "分享内容" },
         {
           "id": "stripText",
           "type": "string",
           "label": "品牌标语",
-          "default": "品牌标语",
-          "brand": "slogan"
+          "default": "品牌标语"
         },
         {
           "id": "acceptLabel",
@@ -4407,15 +4401,13 @@
           "id": "wordmark",
           "type": "string",
           "label": "品牌名",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         {
           "id": "tagline",
           "type": "string",
           "label": "标语",
-          "default": "品牌标语",
-          "brand": "slogan"
+          "default": "品牌标语"
         },
         { "id": "url", "type": "string", "label": "网址", "default": "网址" },
         {
@@ -4459,8 +4451,7 @@
           "id": "wordmark",
           "type": "string",
           "label": "品牌名",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         {
           "id": "accent",
@@ -5512,8 +5503,7 @@
           "id": "wordmark",
           "type": "string",
           "label": "品牌名",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         {
           "id": "band_angle",
@@ -5837,7 +5827,7 @@
       "size": null,
       "duration": null,
       "variables": [
-        { "id": "brand", "type": "string", "label": "品牌", "default": "品牌名", "brand": "name" },
+        { "id": "brand", "type": "string", "label": "品牌", "default": "品牌名" },
         { "id": "proof", "type": "string", "label": "口碑语", "default": "12,000+ 位用户" },
         { "id": "cta", "type": "string", "label": "行动按钮", "default": "行动按钮" },
         { "id": "f1", "type": "string", "label": "卖点1", "default": "轻松|上手" },
@@ -6512,8 +6502,7 @@
           "id": "wordmark",
           "type": "string",
           "label": "品牌名",
-          "default": "品牌名",
-          "brand": "name"
+          "default": "品牌名"
         },
         { "id": "label", "type": "string", "label": "标签", "default": "标签" },
         { "id": "kicker", "type": "string", "label": "引导小字", "default": "引导小字" },

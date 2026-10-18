@@ -10,7 +10,7 @@
  * 归类与放置照 HyperFrames Studio：分类表与归类函数取自 @hyperframes/core 的 registry/types.ts；
  * 放置位置沿用整片设计稿：字幕类换字幕样式、转场类放切点、带片头 / 片尾标签的放两端、其余进包装轨。
  * 中文名、说明、可填项名称与选项见 hyperframes-catalog-zh/；文字类可填项的默认值改成中文占位，
- * 品牌名、标语改由品牌模板填，HyperFrames 自己的品牌字样一并去掉。
+ * 品牌名、标语用「品牌名」「品牌标语」占位，HyperFrames 自己的品牌字样一并去掉。
  */
 import { existsSync } from 'node:fs'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
@@ -150,7 +150,7 @@ const REASONS = {
 
 // ---------------------------------------------------------------- 可填项
 
-/** 品牌模板填的可填项：按 id，或按 HyperFrames 的 portrays 标注。 */
+/** 品牌名、标语类的可填项：按 id，或按 HyperFrames 的 portrays 标注，默认值换成中文占位。 */
 const BRAND_IDS = {
   wordmark: 'name',
   brand: 'name',
@@ -212,7 +212,6 @@ function variablesOf(name, raw, zh, problems) {
       (variable.portrays ?? []).map((tag) => BRAND_PORTRAYS[tag]).find(Boolean)
     if (brand && variable.type === 'string') {
       out.default = BRAND_PLACEHOLDER[brand]
-      out.brand = brand
     } else if (key in zh.defaults) {
       out.default = zh.defaults[key]
     } else if (variable.type === 'image' && HF_BRANDING.test(String(out.default))) {

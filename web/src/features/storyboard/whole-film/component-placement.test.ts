@@ -12,9 +12,8 @@ const item = (name: string) => {
   return found
 }
 
-const SHIBU = { brand: '拾步', slogan: '每一步，都暖一点', accentColor: null }
 const context = { ...contextOf({ s1: source(20_000) }), transitions: transitionSpecs(catalog) }
-const env = { context, brand: SHIBU }
+const env = { context }
 
 /** v1 0–3000、v2 3000–5000 */
 const film = (): WholeFilmDraft =>
@@ -27,28 +26,25 @@ const click = (playheadMs = 0, cutAfterClipId?: string): Placing => ({
 })
 
 describe('placeComponent', () => {
-  it('片头放最前，2 秒，品牌名填品牌模板的', () => {
+  it('片头放最前，2 秒，可填项不写进草稿（取组件默认值）', () => {
     const { draft } = expectOk(placeComponent(film(), item('logo-sting'), click(), env))
     expect(draft.layer0[0]).toMatchObject({
       type: 'component',
       role: 'intro',
       component: 'logo-sting',
       duration: 2_000,
-      variables: { wordmark: '拾步' },
     })
+    expect(draft.layer0[0]).toHaveProperty('variables', {})
   })
 
-  it('那一端已有片尾就换组件：时长不变，改过的品牌名带过去', () => {
+  it('那一端已有片尾就换组件：时长不变，原来填的可填项不带过去', () => {
     const withOutro = draftOf([
       video('v1', 's1', 0, 3_000),
       card('c1', 'outro', 3_500, { wordmark: '改过的名字' }),
     ])
     const { draft } = expectOk(placeComponent(withOutro, item('logo-brand-close'), click(), env))
-    expect(draft.layer0[1]).toMatchObject({
-      component: 'logo-brand-close',
-      duration: 3_500,
-      variables: { wordmark: '改过的名字', tagline: '每一步，都暖一点' },
-    })
+    expect(draft.layer0[1]).toMatchObject({ component: 'logo-brand-close', duration: 3_500 })
+    expect(draft.layer0[1]).toHaveProperty('variables', {})
   })
 
   it('点转场卡片放到选中那一段后面的切点，时长取组件原定的', () => {

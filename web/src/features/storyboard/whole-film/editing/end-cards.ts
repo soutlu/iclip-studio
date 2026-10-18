@@ -10,12 +10,9 @@ import {
 import { done, refuse, type EditResult } from './result'
 import { endCard, filmDuration, insertAt, nextId, normalize } from './timeline'
 
-/** 品牌模板里能填进组件可填项的内容 */
-export type BrandRole = 'name' | 'slogan'
-
 /**
  * 加片头或片尾（各至多一个）：片头放最前、片尾放最后，默认 2 秒；整片剩余时长不够时缩短到剩余时长。
- * variables 是组件的默认可填项，品牌名、标语已由调用方填成品牌模板的值。
+ * variables 是写进草稿的可填项，没写的项合成时取组件自己的默认值。
  */
 export const addEndCard = (
   draft: WholeFilmDraft,
@@ -45,8 +42,7 @@ export const addEndCard = (
 }
 
 /**
- * 换片头或片尾的组件：时长与转场不变；可填项取新组件的默认值，其中对得上品牌模板的项
- * （brandFields：可填项 id → 品牌内容）沿用这一端原来填的值，用户改过的品牌名、标语因此带过去。
+ * 换片头或片尾的组件：时长与转场不变；原来填的可填项不带过去，换成 variables（新组件的可填项）。
  */
 export const replaceEndCardComponent = (
   draft: WholeFilmDraft,
@@ -54,27 +50,15 @@ export const replaceEndCardComponent = (
     role: EndCardRole
     component: string
     variables: ComponentVariables
-    brandFields: Record<string, BrandRole>
   },
 ): EditResult => {
   const clip = endCard(draft, args.role)
   if (!clip) return refuse('unknown-clip')
   if (clip.component === args.component) return done(draft)
-  const carried: Partial<Record<BrandRole, string | number | boolean>> = {}
-  for (const [id, value] of Object.entries(clip.variables)) {
-    const role = args.brandFields[id]
-    if (role) carried[role] = value
-  }
-  const variables = { ...args.variables }
-  for (const id of Object.keys(variables)) {
-    const role = args.brandFields[id]
-    const value = role === undefined ? undefined : carried[role]
-    if (value !== undefined) variables[id] = value
-  }
   return done({
     ...draft,
     layer0: draft.layer0.map((c) =>
-      c.id === clip.id ? { ...clip, component: args.component, variables } : c,
+      c.id === clip.id ? { ...clip, component: args.component, variables: args.variables } : c,
     ),
   })
 }

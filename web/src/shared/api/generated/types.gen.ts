@@ -376,50 +376,6 @@ export type BrandFontUnicodeRange = {
 }
 
 /**
- * BrandProfileIn
- *
- * 整份写入一个品牌的标语与强调色；两项都要给，``null`` 清空。
- */
-export type BrandProfileIn = {
-  /**
-   * Accentcolor
-   */
-  accentColor: string | null
-  /**
-   * Slogan
-   */
-  slogan: string | null
-}
-
-/**
- * BrandProfileOut
- */
-export type BrandProfileOut = {
-  /**
-   * Accentcolor
-   */
-  accentColor: string | null
-  /**
-   * Brand
-   */
-  brand: string
-  /**
-   * Slogan
-   */
-  slogan: string | null
-}
-
-/**
- * BrandProfilesOut
- */
-export type BrandProfilesOut = {
-  /**
-   * Items
-   */
-  items: Array<BrandProfileOut>
-}
-
-/**
  * BrandTemplateOut
  */
 export type BrandTemplateOut = {
@@ -5960,55 +5916,6 @@ export type ListBrandTemplatesBrandTemplatesGetResponses = {
 
 export type ListBrandTemplatesBrandTemplatesGetResponse =
   ListBrandTemplatesBrandTemplatesGetResponses[keyof ListBrandTemplatesBrandTemplatesGetResponses]
-
-export type ListBrandsBrandTemplatesBrandsGetData = {
-  body?: never
-  path?: never
-  query?: never
-  url: '/brand-templates/brands'
-}
-
-export type ListBrandsBrandTemplatesBrandsGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: BrandProfilesOut
-}
-
-export type ListBrandsBrandTemplatesBrandsGetResponse =
-  ListBrandsBrandTemplatesBrandsGetResponses[keyof ListBrandsBrandTemplatesBrandsGetResponses]
-
-export type SaveBrandBrandTemplatesBrandsBrandPutData = {
-  body: BrandProfileIn
-  path: {
-    /**
-     * Brand
-     */
-    brand: string
-  }
-  query?: never
-  url: '/brand-templates/brands/{brand}'
-}
-
-export type SaveBrandBrandTemplatesBrandsBrandPutErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type SaveBrandBrandTemplatesBrandsBrandPutError =
-  SaveBrandBrandTemplatesBrandsBrandPutErrors[keyof SaveBrandBrandTemplatesBrandsBrandPutErrors]
-
-export type SaveBrandBrandTemplatesBrandsBrandPutResponses = {
-  /**
-   * Successful Response
-   */
-  200: BrandProfileOut
-}
-
-export type SaveBrandBrandTemplatesBrandsBrandPutResponse =
-  SaveBrandBrandTemplatesBrandsBrandPutResponses[keyof SaveBrandBrandTemplatesBrandsBrandPutResponses]
 
 export type SignFontBrandTemplatesFontsSignPostData = {
   body: BrandFontSignIn
