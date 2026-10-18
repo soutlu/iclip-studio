@@ -287,8 +287,8 @@ class WholeFilmDraftReferences(Protocol):
     """保存整片草稿前核对它引用的生成记录，由组合根接到生成记录上。
 
     画面轨的每段要出自这段对话自己的或继承来的一条成片，音乐要是这段对话的一条已完成的音频记录，
-    改字的字幕记录要是这段对话自己的或继承来的一条成片的字幕。不合格抛 ValidationFailed，消息是给人看的一句话，
-    不区分「没有这条」与「不是这段对话的」。"""
+    改字的字幕记录要是这段对话自己的或继承来的一条成片的字幕。不合格抛 ValidationFailed，消息是
+    给人看的一句话，不区分「没有这条」与「不是这段对话的」。"""
 
     async def __call__(
         self, principal: Principal, conversation_id: uuid.UUID, document: WholeFilmDocument
