@@ -5,12 +5,12 @@ import type {
   MusicBeat,
   SourceMedia,
   SubtitleSentence,
-  TransitionSpec,
 } from '@/features/storyboard/whole-film/editing/context'
 import {
   DEFAULT_CAPTION_COMPONENT,
   type ComponentClip,
   type Layer0Clip,
+  type OverlayClip,
   type VideoClip,
   type WholeFilmDraft,
 } from '@/features/storyboard/whole-film/editing/draft'
@@ -30,20 +30,34 @@ export const video = (
   volume: 1,
 })
 
+/** 成片轨上的一段组件 */
 export const card = (
   id: string,
-  role: ComponentClip['role'],
   duration: number,
-  variables: ComponentClip['variables'] = {},
+  { component = 'card', playbackStart = 0, variables = {} }: Partial<ComponentClip> = {},
 ): ComponentClip => ({
   id,
   type: 'component',
-  role,
   start: 0,
   duration,
-  component: `${role}-card`,
+  playbackStart,
+  component,
   variables,
 })
+
+/** 特效轨上的一块；默认在第 0 行、zIndex 为 1 */
+export const overlay = (
+  id: string,
+  start: number,
+  duration: number,
+  {
+    component = 'badge',
+    playbackStart = 0,
+    track = 0,
+    zIndex = 1,
+    variables = {},
+  }: Partial<OverlayClip> = {},
+): OverlayClip => ({ id, component, start, duration, playbackStart, track, zIndex, variables })
 
 export const draftOf = (
   layer0: Layer0Clip[],
@@ -52,7 +66,6 @@ export const draftOf = (
   let at = 0
   return {
     canvas: layer0.some((clip) => clip.type === 'video') ? { width: 1080, height: 1920 } : null,
-    transitions: [],
     captions: { component: DEFAULT_CAPTION_COMPONENT, edits: [] },
     music: null,
     overlays: [],
@@ -83,13 +96,9 @@ export const sentence = (startMs: number, endMs: number, text = '口播'): Subti
   text,
 })
 
-/** 测试用的转场：0.5 秒，切点在正中，切点前后各占 250 毫秒 */
-export const FADE = { cutAt: 0.5, durationMs: 500 }
-
 export const contextOf = (
   sources: Record<string, SourceMedia>,
   music: Record<string, { durationMs: number; beats?: MusicBeat[] }> = {},
-  transitions: Record<string, TransitionSpec> = { fade: FADE },
 ): EditContext => ({
   sources,
   music: Object.fromEntries(
@@ -98,7 +107,6 @@ export const contextOf = (
       { durationMs: m.durationMs, beats: m.beats ?? [] },
     ]),
   ),
-  transitions,
 })
 
 /** 每段的 [开始, 结束)，便于断言首尾相接 */

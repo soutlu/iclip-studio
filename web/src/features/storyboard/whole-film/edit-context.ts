@@ -4,7 +4,7 @@ import { byCreation } from '../editing/version-lineage'
 import { keyframeQuery } from '../editing/media-analysis'
 import type { KeyframeIndex } from '../editing/keyframe-segments'
 import type { GenerationJob } from '../storyboard.api'
-import type { EditContext, MusicBeat, SourceMedia, TransitionSpec } from './editing/context'
+import type { EditContext, MusicBeat, SourceMedia } from './editing/context'
 import type { Material } from './materials'
 
 const loadReader = () => import('../editing/media-file')
@@ -83,8 +83,6 @@ type ContextInput = {
   musicDurations: ReadonlyMap<string, number>
   /** 当前用的这首音乐的拍点（音乐文件时间） */
   beats: { jobId: string; beats: MusicBeat[] } | undefined
-  /** 组件目录里各转场的接法（按组件名） */
-  transitions: Record<string, TransitionSpec>
 }
 
 /**
@@ -97,7 +95,6 @@ export const buildEditContext = ({
   music,
   musicDurations,
   beats,
-  transitions,
 }: ContextInput): EditContext => {
   const subtitleOf = latestSubtitles(subtitles)
   const sources: Record<string, SourceMedia> = {}
@@ -122,7 +119,7 @@ export const buildEditContext = ({
     if (durationMs === undefined) continue
     songs[job.id] = { durationMs, beats: beats?.jobId === job.id ? beats.beats : [] }
   }
-  return { sources, music: songs, transitions }
+  return { sources, music: songs }
 }
 
 /** 加入成片时给这条素材补上画面尺寸（第一段视频定画布） */

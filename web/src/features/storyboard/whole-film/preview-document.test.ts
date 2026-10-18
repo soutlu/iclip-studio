@@ -41,17 +41,12 @@ describe('预览页', () => {
     expect(font).toBeGreaterThan(base)
   })
 
-  it('用合成构建生成：成片地址、片头组件、字幕都在页里', () => {
-    const draft = draftOf([card('c1', 'intro', 1_500), video('v1', 's1', 0, 1_000)], {
-      captions: { component: 'default-caption', edits: [] },
-    })
-    const withIntro: WholeFilmDraft = {
-      ...draft,
-      layer0: draft.layer0.map((clip) =>
-        clip.type === 'component' ? { ...clip, component: 'logo-sting' } : clip,
-      ),
-    }
-    const state = ready(withIntro)
+  it('用合成构建生成：成片地址、组件段、字幕都在页里', () => {
+    const draft = draftOf(
+      [card('c1', 1_500, { component: 'logo-sting' }), video('v1', 's1', 0, 1_000)],
+      { captions: { component: 'default-caption', edits: [] } },
+    )
+    const state = ready(draft)
     expect(state.durationMs).toBe(2_500)
     expect(state.html).toContain('data-composition-id="main"')
     expect(state.html).toContain('src="https://oss/s1.mp4"')
@@ -60,17 +55,30 @@ describe('预览页', () => {
     expect(state.html).toContain('&quot;text&quot;:&quot;世&quot;')
   })
 
-  it('成片里还没有画面时不生成，说明原因', () => {
+  it('成片轨上只有组件段（还没有画布）：也生成预览页，画面是竖屏 1080×1920', () => {
+    const draft = draftOf([
+      card('c1', 1_500, { component: 'logo-sting' }),
+      card('c2', 2_000, { component: 'logo-outro' }),
+    ])
+    expect(draft.canvas).toBeNull()
+    const state = ready(draft)
+    expect(state.durationMs).toBe(3_500)
+    expect(state.html).toContain('data-width="1080" data-height="1920"')
+    expect(state.html).toMatch(/data-composition-src="[^"]*logo-sting/)
+    expect(state.html).toMatch(/data-composition-src="[^"]*logo-outro/)
+  })
+
+  it('成片轨还是空的时不生成，说明原因', () => {
     expect(previewState(draftOf([]), mediaOf(draftOf([])), catalog, ORIGIN)).toEqual({
       kind: 'blocked',
-      message: '成片里还没有画面；加入视频后可以在这里预览',
+      message: '成片里还没有画面；加入视频或组件后可以在这里预览',
     })
   })
 
   it.each([
     [
       '组件库里没有的组件',
-      draftOf([card('c1', 'intro', 1_000), video('v1', 's1', 0, 1_000)]),
+      draftOf([card('c1', 1_000, { component: 'nope' }), video('v1', 's1', 0, 1_000)]),
       { s1: 'https://oss/s1.mp4' },
       '成片里有组件库里没有的组件，暂时无法预览；请删掉它或换一个组件',
     ],
@@ -79,16 +87,6 @@ describe('预览页', () => {
       draftOf([video('v1', 's1', 0, 1_000)]),
       {},
       '有素材还没读到地址，暂时无法预览；请稍后再试',
-    ],
-    [
-      '转场超出切点两边',
-      draftOf([video('v1', 's1', 0, 300), video('v2', 's1', 0, 300)], {
-        transitions: [
-          { id: 't1', afterClipId: 'v1', component: 'fade-through', duration: 900, variables: {} },
-        ],
-      }),
-      { s1: 'https://oss/s1.mp4' },
-      '有转场超出了切点两边的片段，暂时无法预览；请加长相邻片段或删掉这个转场',
     ],
   ])('合成不了（%s）时给一句话，不带组件 id', (_, draft, urls, message) => {
     expect(previewState(draft, mediaOf(draft, urls), catalog, ORIGIN)).toEqual({

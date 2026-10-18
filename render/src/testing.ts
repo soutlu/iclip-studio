@@ -31,11 +31,19 @@ export function exportRequest(
           volume: 1,
         },
       ],
-      transitions: [],
       captions: { component: 'default-caption', edits: [] },
       music: { jobId: MUSIC_JOB, offset: 0, volume: 0.5 },
       overlays: [
-        { id: 'o', component: 'store-badge-lockup', start: 0, duration: 1000, variables: {} },
+        {
+          id: 'o',
+          component: 'store-badge-lockup',
+          start: 0,
+          duration: 1000,
+          playbackStart: 0,
+          track: 0,
+          zIndex: 1,
+          variables: {},
+        },
       ],
     },
     media: {

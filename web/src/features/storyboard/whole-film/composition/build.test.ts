@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import type { WholeFilmDocument as WholeFilmDraft } from '@/shared/api/generated'
+import type {
+  WholeFilmComponentClip,
+  WholeFilmDocument as WholeFilmDraft,
+  WholeFilmOverlay,
+  WholeFilmVideoClip,
+} from '@/shared/api/generated'
 import { buildComposition, CompositionError, type CompositionMedia } from './build'
 import type { CatalogItem, ComponentCatalog } from './catalog'
 
-const item = (
-  spec: Partial<CatalogItem> & Pick<CatalogItem, 'name' | 'placement'>,
-): CatalogItem => ({
+const item = (spec: Partial<CatalogItem> & Pick<CatalogItem, 'name'>): CatalogItem => ({
   kind: 'component',
   title: spec.name,
   description: '',
   category: 'scenes',
+  placement: null,
   src: `compositions/${spec.name}.html`,
   size: null,
   duration: null,
@@ -42,7 +46,6 @@ const CATALOG: ComponentCatalog = {
     }),
     item({
       name: 'logo-intro',
-      placement: 'intro',
       kind: 'block',
       size: { width: 1920, height: 1080 },
       duration: 4,
@@ -51,33 +54,19 @@ const CATALOG: ComponentCatalog = {
         { id: 'tone', type: 'enum', label: '色调', default: 'warm' },
       ],
     }),
-    item({ name: 'end-card', placement: 'outro' }),
+    item({ name: 'end-card' }),
     item({
       name: 'lower-third',
-      placement: 'overlay',
       variables: [{ id: 'title', type: 'string', label: '标题', default: '标题' }],
       fonts: ['Inter'],
     }),
-    item({ name: 'stat-card', placement: 'overlay', fonts: ['DM Sans', 'Inter'] }),
+    item({ name: 'stat-card', fonts: ['DM Sans', 'Inter'] }),
     item({
       name: 'scribble',
-      placement: 'transition',
       kind: 'block',
+      category: 'transitions',
       size: { width: 1920, height: 1080 },
       duration: 2,
-      transition: { kind: 'overlay', cutAt: 0.5 },
-    }),
-    item({
-      name: 'fade-through',
-      placement: 'transition',
-      duration: 0.9,
-      variables: [{ id: 'wash', type: 'enum', label: '中间色', default: 'paper' }],
-      transition: {
-        kind: 'layers',
-        cutAt: 0.5,
-        out: { from: { opacity: 1 }, to: { opacity: 0 }, ease: 'power2.inOut' },
-        in: { from: { opacity: 0 }, to: { opacity: 1 }, ease: 'power2.out' },
-      },
     }),
   ],
 }
@@ -104,29 +93,64 @@ const MEDIA: CompositionMedia = {
   },
 }
 
+const vid = (
+  id: string,
+  start: number,
+  duration: number,
+  sourceJobId = 'job-a',
+  rest: Partial<WholeFilmVideoClip> = {},
+): WholeFilmVideoClip => ({
+  id,
+  type: 'video',
+  start,
+  duration,
+  playbackStart: 0,
+  sourceJobId,
+  volume: 1,
+  ...rest,
+})
+
+const comp = (
+  id: string,
+  start: number,
+  duration: number,
+  component: string,
+  rest: Partial<WholeFilmComponentClip> = {},
+): WholeFilmComponentClip => ({
+  id,
+  type: 'component',
+  start,
+  duration,
+  playbackStart: 0,
+  component,
+  variables: {},
+  ...rest,
+})
+
+const ov = (
+  id: string,
+  component: string,
+  start: number,
+  duration: number,
+  rest: Partial<WholeFilmOverlay> = {},
+): WholeFilmOverlay => ({
+  id,
+  component,
+  start,
+  duration,
+  playbackStart: 0,
+  track: 0,
+  zIndex: 1,
+  variables: {},
+  ...rest,
+})
+
 const draft = (spec: Partial<WholeFilmDraft> = {}): WholeFilmDraft => ({
   canvas: { width: 720, height: 1280 },
   layer0: [
-    {
-      id: 'a',
-      type: 'video',
-      start: 0,
-      duration: 3000,
-      playbackStart: 500,
-      sourceJobId: 'job-a',
-      volume: 1.5,
-    },
-    {
-      id: 'b',
-      type: 'video',
-      start: 3000,
-      duration: 2000,
-      playbackStart: 0,
-      sourceJobId: 'job-b',
-      volume: 0,
-    },
+    vid('a', 0, 3000, 'job-a', { playbackStart: 500, volume: 1.5 }),
+    vid('b', 3000, 2000, 'job-b', { volume: 0 }),
   ],
-  transitions: [],
   captions: { component: 'default-caption', edits: [] },
   music: null,
   overlays: [],
@@ -167,52 +191,65 @@ describe('buildComposition', () => {
     expect(doc.querySelectorAll('[data-composition-id="main"]')).toHaveLength(1)
   })
 
-  it('片头片尾是第 0 层的子合成：目录默认值打底、草稿取值覆盖，按固定尺寸设计的完整放进画面', () => {
+  it('组件段在两段视频中间：第 0 层的子合成，与视频段同轨，目录默认值打底、草稿取值覆盖', () => {
     const { html, durationMs } = build({
       layer0: [
-        {
-          id: 'intro',
-          type: 'component',
-          role: 'intro',
-          start: 0,
-          duration: 2000,
-          component: 'logo-intro',
-          variables: { wordmark: '拾步' },
-        },
-        {
-          id: 'a',
-          type: 'video',
-          start: 2000,
-          duration: 1000,
-          playbackStart: 0,
-          sourceJobId: 'job-a',
-          volume: 1,
-        },
-        {
-          id: 'outro',
-          type: 'component',
-          role: 'outro',
-          start: 3000,
-          duration: 1500,
-          component: 'end-card',
-          variables: {},
-        },
+        vid('a', 0, 2000),
+        comp('c', 2000, 1500, 'logo-intro', { variables: { wordmark: '拾步' } }),
+        vid('b', 3500, 1000, 'job-b'),
       ],
     })
     const doc = parse(html)
-    const intro = doc.querySelector('#clip-0')
     expect(durationMs).toBe(4500)
-    expect(intro?.getAttribute('data-composition-src')).toBe('compositions/logo-intro.html')
-    expect(intro?.getAttribute('data-start')).toBe('0')
-    expect(intro?.getAttribute('data-duration')).toBe('2')
-    expect(intro?.getAttribute('data-playback-start')).toBe('0')
-    expect(intro?.getAttribute('data-track-index')).toBe('0')
-    expect(variablesOf(intro)).toEqual({ wordmark: '拾步', tone: 'warm' })
+    const order = [...doc.querySelectorAll('#clip-0, #clip-1, #clip-2')].map((node) => node.tagName)
+    expect(order).toEqual(['VIDEO', 'DIV', 'VIDEO'])
+    const segment = doc.querySelector('#clip-1')
+    expect(segment?.getAttribute('data-composition-src')).toBe('compositions/logo-intro.html')
+    expect(segment?.getAttribute('data-start')).toBe('2')
+    expect(segment?.getAttribute('data-duration')).toBe('1.5')
+    expect(segment?.getAttribute('data-track-index')).toBe('0')
+    expect(variablesOf(segment)).toEqual({ wordmark: '拾步', tone: 'warm' })
     // 1920×1080 放进 720×1280：按宽缩到 0.375。
-    expect(intro?.parentElement?.getAttribute('style')).toContain('scale(0.375)')
-    const outro = doc.querySelector('#clip-2')
-    expect(outro?.getAttribute('data-start')).toBe('3')
-    expect(outro?.parentElement?.id).toBe('stage')
+    expect(segment?.parentElement?.getAttribute('style')).toContain('scale(0.375)')
+    expect(doc.querySelector('#clip-2')?.getAttribute('data-start')).toBe('3.5')
+  })
+
+  it('左修剪过的组件段与特效块从组件自己时间里的 playbackStart 起播', () => {
+    const doc = parse(
+      build({
+        layer0: [comp('c', 0, 2000, 'end-card', { playbackStart: 1250 }), vid('a', 2000, 1000)],
+        overlays: [ov('o', 'lower-third', 0, 1000, { playbackStart: 400 })],
+      }).html,
+    )
+    expect(doc.querySelector('#clip-0')?.getAttribute('data-playback-start')).toBe('1.25')
+    expect(doc.querySelector('#ov-0')?.getAttribute('data-playback-start')).toBe('0.4')
+    expect(doc.querySelector('#captions')?.getAttribute('data-playback-start')).toBe('0')
+  })
+
+  it('只有组件段、还没定画布：画面是竖屏 1080×1920，照样能合成', () => {
+    const { html, durationMs } = buildComposition({
+      draft: draft({
+        canvas: null,
+        layer0: [comp('c1', 0, 2000, 'logo-intro'), comp('c2', 2000, 1000, 'end-card')],
+      }),
+      media: { videos: {}, music: null, subtitles: {} },
+      catalog: CATALOG,
+    })
+    const doc = parse(html)
+    expect(durationMs).toBe(3000)
+    const stage = doc.querySelector('#stage')
+    expect([stage?.getAttribute('data-width'), stage?.getAttribute('data-height')]).toEqual([
+      '1080',
+      '1920',
+    ])
+    expect(doc.querySelector('meta[name="viewport"]')?.getAttribute('content')).toBe(
+      'width=1080, height=1920',
+    )
+    expect(doc.querySelectorAll('#stage > video')).toHaveLength(0)
+    // 1920×1080 放进 1080×1920：按宽缩到 0.5625。
+    expect(doc.querySelector('#clip-0')?.parentElement?.getAttribute('style')).toContain(
+      'scale(0.5625)',
+    )
   })
 
   it('配乐铺满整片：从 0 开始，素材里的起点与音量写进 audio', () => {
@@ -233,34 +270,61 @@ describe('buildComposition', () => {
     })
   })
 
-  it('包装是单独一轨的子合成，带各自的起止与可填项', () => {
+  it('特效块是单独一轨的子合成，带各自的起止与可填项；转场类组件也只是普通特效块', () => {
     const doc = parse(
       build({
         overlays: [
-          {
-            id: 'o1',
-            component: 'lower-third',
-            start: 500,
-            duration: 1500,
-            variables: { title: '新品' },
-          },
-          { id: 'o2', component: 'lower-third', start: 3000, duration: 1000, variables: {} },
+          ov('o1', 'lower-third', 500, 1500, { variables: { title: '新品' } }),
+          ov('o2', 'lower-third', 3000, 1000),
+          ov('o3', 'scribble', 2000, 2000),
         ],
       }).html,
     )
-    const hosts = [
-      ...doc.querySelectorAll('[data-composition-src="compositions/lower-third.html"]'),
-    ]
+    const hosts = [...doc.querySelectorAll('[id^="ov-"]')]
     expect(
-      hosts.map((host) => [host.getAttribute('data-start'), host.getAttribute('data-duration')]),
+      hosts.map((host) => [
+        host.getAttribute('data-composition-id'),
+        host.getAttribute('data-start'),
+        host.getAttribute('data-duration'),
+      ]),
     ).toEqual([
-      ['0.5', '1.5'],
-      ['3', '1'],
+      ['lower-third', '0.5', '1.5'],
+      ['lower-third', '3', '1'],
+      ['scribble', '2', '2'],
     ])
     expect(new Set(hosts.map((host) => host.getAttribute('data-track-index')))).toEqual(
       new Set(['3']),
     )
-    expect(hosts.map(variablesOf)).toEqual([{ title: '新品' }, { title: '标题' }])
+    expect(hosts.slice(0, 2).map(variablesOf)).toEqual([{ title: '新品' }, { title: '标题' }])
+    expect(doc.querySelectorAll('script:not([src])')[0]?.textContent).not.toContain('fromTo')
+  })
+
+  it('整片时长是所有轨上内容的最远结束：特效块超出成片轨时整片变长，特效块与音乐都铺到那里', () => {
+    const { html, durationMs } = build({
+      music: { jobId: 'music-1', offset: 0, volume: 1 },
+      overlays: [
+        ov('o1', 'lower-third', 4000, 3000, { track: 0 }),
+        ov('o2', 'lower-third', 6000, 2500, { track: 1 }),
+        ov('o3', 'lower-third', 0, 1000, { track: 0 }),
+      ],
+    })
+    const doc = parse(html)
+    expect(durationMs).toBe(8500)
+    expect(doc.querySelector('#stage')?.getAttribute('data-duration')).toBe('8.5')
+    expect(doc.querySelector('#stage > audio')?.getAttribute('data-duration')).toBe('8.5')
+    expect(
+      [...doc.querySelectorAll('[id^="ov-"]')].map((host) => [
+        host.id,
+        host.getAttribute('data-start'),
+        host.getAttribute('data-duration'),
+      ]),
+    ).toEqual([
+      ['ov-0', '4', '3'],
+      ['ov-1', '6', '2.5'],
+      ['ov-2', '0', '1'],
+    ])
+    // 没有超出成片轨的特效块时，整片就是成片轨的长度
+    expect(build({ overlays: [ov('o', 'lower-third', 0, 1000)] }).durationMs).toBe(5000)
   })
 
   it('字幕组件经 words 变量拿到整片秒数的逐词数据；没有字幕时不放字幕', () => {
@@ -283,170 +347,69 @@ describe('buildComposition', () => {
     expect(parse(silent.html).querySelector('#captions')).toBeNull()
   })
 
-  it('盖满画面的转场以切点为准放置，按固定尺寸设计的同样完整放进画面', () => {
-    const doc = parse(
-      build({
-        transitions: [
-          { id: 't1', afterClipId: 'a', component: 'scribble', duration: 2000, variables: {} },
-        ],
-      }).html,
-    )
-    const host = doc.querySelector('#tr-0')
-    // 原定 2 秒、一半处盖满：切点 3 秒前 1 秒开始。
-    expect(host?.getAttribute('data-start')).toBe('2')
-    expect(host?.getAttribute('data-duration')).toBe('2')
-    // 1920×1080 放进 720×1280：按宽缩到 0.375，与其他组件一样。
-    expect(host?.parentElement?.getAttribute('style')).toContain('scale(0.375)')
+  // 按固定尺寸设计的组件 z-index 写在外层盒子上，铺满的写在宿主上。
+  const zOf = (doc: Document, selector: string) => {
+    const host = doc.querySelector(selector)
+    const style = host?.getAttribute('style') ?? host?.parentElement?.getAttribute('style') ?? ''
+    return Number(/z-index:(\d+)/.exec(style)?.[1])
+  }
+
+  it('叠放：成片轨（组件段也算）< 整层特效 < 字幕，特效块的 zIndex 再大也不越出这一层', () => {
+    const { html } = build({
+      layer0: [vid('a', 0, 3000), comp('c', 3000, 2000, 'end-card')],
+      overlays: [ov('o1', 'lower-third', 1000, 3000, { zIndex: 999 })],
+    })
+    const doc = parse(html)
+    const css = (rule: string) =>
+      Number(new RegExp(`${rule}\\{[^}]*z-index:(\\d+)`).exec(html)?.[1])
+    const layer = doc.querySelector('#stage > .overlays')
+    expect(layer?.querySelector('#ov-0')).not.toBeNull()
+    expect(zOf(doc, '#clip-1')).toBe(css('\\.layer0'))
+    expect(css('\\.overlays')).toBeGreaterThan(css('\\.layer0'))
+    expect(zOf(doc, '#captions')).toBeGreaterThan(css('\\.overlays'))
+    expect(doc.querySelector('#captions')?.parentElement?.id).toBe('stage')
+    expect(zOf(doc, '#ov-0')).toBe(999)
   })
 
-  it('叠放：画面 < 特效（转场也算，按草稿里的先后，后加的在上）< 字幕', () => {
+  it('特效块之间按 zIndex 叠，相同时草稿里后面的在上；不看 track', () => {
     const { html } = build({
-      layer0: [
-        {
-          id: 'a',
-          type: 'video',
-          start: 0,
-          duration: 3000,
-          playbackStart: 0,
-          sourceJobId: 'job-a',
-          volume: 1,
-        },
-        {
-          id: 'outro',
-          type: 'component',
-          role: 'outro',
-          start: 3000,
-          duration: 2000,
-          component: 'end-card',
-          variables: {},
-        },
-      ],
-      transitions: [
-        { id: 't1', afterClipId: 'a', component: 'scribble', duration: 2000, variables: {} },
-      ],
-      // 后加的先开始：叠放跟草稿里的先后走，不跟开始时间走。
       overlays: [
-        { id: 'first', component: 'lower-third', start: 3000, duration: 1000, variables: {} },
-        { id: 'second', component: 'stat-card', start: 500, duration: 1000, variables: {} },
+        ov('top-row-low-z', 'lower-third', 0, 2000, { track: 0, zIndex: 1 }),
+        ov('low-row-high-z', 'stat-card', 0, 2000, { track: 3, zIndex: 5 }),
+        ov('tie-first', 'lower-third', 0, 2000, { track: 1, zIndex: 2 }),
+        ov('tie-second', 'stat-card', 0, 2000, { track: 2, zIndex: 2 }),
       ],
     })
     const doc = parse(html)
-    // 按固定尺寸设计的组件 z-index 写在外层盒子上，铺满的写在宿主上。
-    const z = (selector: string) => {
-      const host = doc.querySelector(selector)
-      const style = host?.getAttribute('style') ?? host?.parentElement?.getAttribute('style') ?? ''
-      return Number(/z-index:(\d+)/.exec(style)?.[1])
-    }
-    const videoZ = Number(/\.layer0\{[^}]*z-index:(\d+)/.exec(html)?.[1])
-    expect(new Set(['#tr-0', '#ov-0', '#ov-1'].map(z)).size).toBe(1)
-    expect(z('#clip-1')).toBe(videoZ)
-    expect(z('#ov-0')).toBeGreaterThan(videoZ)
-    expect(z('#captions')).toBeGreaterThan(z('#ov-0'))
-    // 同一层里页面上后写的在上：转场在前，特效按草稿里的先后。
-    const order = [...doc.querySelectorAll('#tr-0, #ov-0, #ov-1')].map((host) =>
-      host.getAttribute('data-composition-id'),
-    )
-    expect(order).toEqual(['scribble', 'lower-third', 'stat-card'])
-  })
-
-  it('要挂前后两段的转场：前一段在切点前做 out，后一段在切点后做 in，只作用于这一个切点', () => {
-    const { html } = build({
-      layer0: [
-        {
-          id: 'a',
-          type: 'video',
-          start: 0,
-          duration: 3000,
-          playbackStart: 0,
-          sourceJobId: 'job-a',
-          volume: 1,
-        },
-        {
-          id: 'b',
-          type: 'video',
-          start: 3000,
-          duration: 2000,
-          playbackStart: 0,
-          sourceJobId: 'job-b',
-          volume: 1,
-        },
-        {
-          id: 'c',
-          type: 'video',
-          start: 5000,
-          duration: 2000,
-          playbackStart: 0,
-          sourceJobId: 'job-b',
-          volume: 1,
-        },
-      ],
-      transitions: [
-        {
-          id: 't1',
-          afterClipId: 'b',
-          component: 'fade-through',
-          duration: 900,
-          variables: { wash: 'ink' },
-        },
+    expect(['#ov-0', '#ov-1', '#ov-2', '#ov-3'].map((id) => zOf(doc, id))).toEqual([1, 5, 2, 2])
+    // 同一 z 时页面上后写的在上：页面按草稿里的先后写，与 track 无关。
+    const order = [...doc.querySelectorAll('.overlays [id^="ov-"]')].map((host) => host.id)
+    expect(order).toEqual(['ov-0', 'ov-1', 'ov-2', 'ov-3'])
+    const swapped = build({
+      overlays: [
+        ov('a', 'lower-third', 0, 2000, { track: 2, zIndex: 1 }),
+        ov('b', 'stat-card', 0, 2000, { track: 0, zIndex: 1 }),
       ],
     })
-    const doc = parse(html)
-    const host = doc.querySelector('#tr-0')
-    expect(host?.getAttribute('data-start')).toBe('4.55')
-    expect(host?.getAttribute('data-duration')).toBe('0.9')
-    expect(variablesOf(host)).toEqual({ wash: 'ink' })
-    const script = [...doc.querySelectorAll('script:not([src])')]
-      .map((node) => node.textContent)
-      .join('\n')
-    const tweens = JSON.parse(/(\[.*\])\.forEach/.exec(script)?.[1] ?? '[]')
-    expect(tweens).toEqual([
-      {
-        target: 'clip-1',
-        from: { opacity: 1 },
-        to: { opacity: 0 },
-        ease: 'power2.inOut',
-        at: 4.55,
-        duration: 0.45,
-      },
-      {
-        target: 'clip-2',
-        from: { opacity: 0 },
-        to: { opacity: 1 },
-        ease: 'power2.out',
-        at: 5,
-        duration: 0.45,
-      },
-    ])
+    const sameTracks = build({
+      overlays: [
+        ov('a', 'lower-third', 0, 2000, { track: 0, zIndex: 1 }),
+        ov('b', 'stat-card', 0, 2000, { track: 0, zIndex: 1 }),
+      ],
+    })
+    expect(swapped.html).toBe(sameTracks.html)
   })
 
   it('用户文字里的引号、尖括号、& 原样进出属性，不会变成标签', () => {
     const hostile = `"><script>alert('x')</script>&amp; '`
     const { html } = buildComposition({
       draft: draft({
-        layer0: [
-          {
-            id: 'a',
-            type: 'video',
-            start: 0,
-            duration: 3000,
-            playbackStart: 0,
-            sourceJobId: 'job-a',
-            volume: 1,
-          },
-        ],
+        layer0: [vid('a', 0, 3000)],
         captions: {
           component: 'default-caption',
           edits: [{ subtitleJobId: 'sub-a', sentenceIndex: 0, text: hostile }],
         },
-        overlays: [
-          {
-            id: 'o1',
-            component: 'lower-third',
-            start: 0,
-            duration: 1000,
-            variables: { title: hostile },
-          },
-        ],
+        overlays: [ov('o1', 'lower-third', 0, 1000, { variables: { title: hostile } })],
       }),
       media: MEDIA,
       catalog: CATALOG,
@@ -462,10 +425,7 @@ describe('buildComposition', () => {
   it('除了调用方给的素材地址，页面里没有任何外部地址；运行时与 GSAP 从组件目录加载', () => {
     const { html } = build({
       music: { jobId: 'music-1', offset: 0, volume: 1 },
-      overlays: [{ id: 'o1', component: 'lower-third', start: 0, duration: 1000, variables: {} }],
-      transitions: [
-        { id: 't1', afterClipId: 'a', component: 'scribble', duration: 2000, variables: {} },
-      ],
+      overlays: [ov('o1', 'lower-third', 0, 1000), ov('o2', 'scribble', 2000, 2000)],
     })
     const doc = parse(html)
     const scripts = [...doc.querySelectorAll('script[src]')].map((node) => node.getAttribute('src'))
@@ -484,10 +444,7 @@ describe('buildComposition', () => {
   it('字体：页面默认用 Noto Sans SC，并引用用到的组件的网页字体 CSS，没用到的不引用', () => {
     const doc = parse(
       build({
-        overlays: [
-          { id: 'o1', component: 'lower-third', start: 0, duration: 1000, variables: {} },
-          { id: 'o2', component: 'stat-card', start: 1000, duration: 1000, variables: {} },
-        ],
+        overlays: [ov('o1', 'lower-third', 0, 1000), ov('o2', 'stat-card', 1000, 1000)],
       }).html,
     )
     const links = [...doc.querySelectorAll('head link[rel="stylesheet"]')].map((node) =>
@@ -519,9 +476,7 @@ describe('buildComposition', () => {
     const broken: ComponentCatalog = { ...CATALOG, fonts: {} }
     expect(() =>
       buildComposition({
-        draft: draft({
-          overlays: [{ id: 'o', component: 'lower-third', start: 0, duration: 500, variables: {} }],
-        }),
+        draft: draft({ overlays: [ov('o', 'lower-third', 0, 500)] }),
         media: { ...MEDIA, subtitles: {} },
         catalog: broken,
       }),
@@ -530,95 +485,25 @@ describe('buildComposition', () => {
 
   it('页面里的 id 各不相同，与草稿里的 id 无关', () => {
     const { html } = build({
-      layer0: [
-        {
-          id: 'same',
-          type: 'video',
-          start: 0,
-          duration: 3000,
-          playbackStart: 0,
-          sourceJobId: 'job-a',
-          volume: 1,
-        },
-        {
-          id: 'stage',
-          type: 'video',
-          start: 3000,
-          duration: 2000,
-          playbackStart: 0,
-          sourceJobId: 'job-b',
-          volume: 1,
-        },
-      ],
-      transitions: [
-        {
-          id: 'same',
-          afterClipId: 'same',
-          component: 'fade-through',
-          duration: 900,
-          variables: {},
-        },
-      ],
-      overlays: [
-        { id: 'same', component: 'lower-third', start: 0, duration: 1000, variables: {} },
-        { id: 'same', component: 'lower-third', start: 2000, duration: 1000, variables: {} },
-      ],
+      layer0: [vid('same', 0, 3000), comp('stage', 3000, 1000, 'end-card'), vid('x', 4000, 1000)],
+      overlays: [ov('same', 'lower-third', 0, 1000), ov('same', 'lower-third', 2000, 1000)],
     })
     const doc = parse(html)
     const ids = [...doc.querySelectorAll('[id]')].map((node) => node.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids).toEqual(['stage', 'clip-0', 'clip-1', 'tr-0', 'ov-0', 'ov-1', 'captions'])
+    expect(ids).toEqual(['stage', 'clip-0', 'clip-1', 'clip-2', 'ov-0', 'ov-1', 'captions'])
   })
 
   it('子合成宿主的 data-composition-id 是组件名，同一组件挂多处时各带各的可填项', () => {
     const { html } = build({
       layer0: [
-        {
-          id: 'intro',
-          type: 'component',
-          role: 'intro',
-          start: 0,
-          duration: 2000,
-          component: 'logo-intro',
-          variables: { wordmark: '拾步' },
-        },
-        {
-          id: 'a',
-          type: 'video',
-          start: 2000,
-          duration: 3000,
-          playbackStart: 0,
-          sourceJobId: 'job-a',
-          volume: 1,
-        },
-        {
-          id: 'b',
-          type: 'video',
-          start: 5000,
-          duration: 2000,
-          playbackStart: 0,
-          sourceJobId: 'job-b',
-          volume: 1,
-        },
-      ],
-      transitions: [
-        { id: 't', afterClipId: 'a', component: 'fade-through', duration: 900, variables: {} },
+        comp('c1', 0, 2000, 'logo-intro', { variables: { wordmark: '拾步' } }),
+        vid('a', 2000, 3000),
+        comp('c2', 5000, 2000, 'logo-intro'),
       ],
       overlays: [
-        {
-          id: 'o1',
-          component: 'lower-third',
-          start: 2000,
-          duration: 1000,
-          variables: { title: '第一条' },
-        },
-        {
-          id: 'o2',
-          component: 'lower-third',
-          start: 4000,
-          duration: 1000,
-          variables: { title: '第二条' },
-        },
+        ov('o1', 'lower-third', 2000, 1000, { variables: { title: '第一条' } }),
+        ov('o2', 'lower-third', 4000, 1000, { variables: { title: '第二条' } }),
       ],
     })
     const doc = parse(html)
@@ -629,7 +514,7 @@ describe('buildComposition', () => {
     }))
     expect(hosts).toEqual([
       { id: 'clip-0', compositionId: 'logo-intro', values: { wordmark: '拾步', tone: 'warm' } },
-      { id: 'tr-0', compositionId: 'fade-through', values: { wash: 'paper' } },
+      { id: 'clip-2', compositionId: 'logo-intro', values: { wordmark: '品牌名', tone: 'warm' } },
       { id: 'ov-0', compositionId: 'lower-third', values: { title: '第一条' } },
       { id: 'ov-1', compositionId: 'lower-third', values: { title: '第二条' } },
       { id: 'captions', compositionId: 'default-caption', values: expect.any(Object) },
@@ -638,113 +523,9 @@ describe('buildComposition', () => {
 
   it.each<[string, Partial<WholeFilmDraft>, CompositionMedia, string]>([
     ['成片为空', { canvas: null, layer0: [] }, MEDIA, 'invalid-draft'],
-    [
-      '组件不在目录里',
-      { overlays: [{ id: 'o', component: 'nope', start: 0, duration: 500, variables: {} }] },
-      MEDIA,
-      'unknown-component',
-    ],
-    [
-      '被排除的组件',
-      { overlays: [{ id: 'o', component: 'showreel', start: 0, duration: 500, variables: {} }] },
-      MEDIA,
-      'unknown-component',
-    ],
-    [
-      '片尾组件当包装',
-      { overlays: [{ id: 'o', component: 'end-card', start: 0, duration: 500, variables: {} }] },
-      MEDIA,
-      'misplaced-component',
-    ],
-    [
-      '转场接在最后一段后面',
-      {
-        transitions: [
-          { id: 't', afterClipId: 'b', component: 'scribble', duration: 2000, variables: {} },
-        ],
-      },
-      MEDIA,
-      'invalid-draft',
-    ],
-    [
-      '转场越过后一段的结尾',
-      {
-        layer0: [
-          {
-            id: 'a',
-            type: 'video',
-            start: 0,
-            duration: 3000,
-            playbackStart: 0,
-            sourceJobId: 'job-a',
-            volume: 1,
-          },
-          {
-            id: 'b',
-            type: 'video',
-            start: 3000,
-            duration: 500,
-            playbackStart: 0,
-            sourceJobId: 'job-b',
-            volume: 1,
-          },
-          {
-            id: 'c',
-            type: 'video',
-            start: 3500,
-            duration: 2000,
-            playbackStart: 0,
-            sourceJobId: 'job-b',
-            volume: 1,
-          },
-        ],
-        transitions: [
-          { id: 't', afterClipId: 'a', component: 'scribble', duration: 2000, variables: {} },
-        ],
-      },
-      MEDIA,
-      'invalid-draft',
-    ],
-    [
-      '转场时长不是组件原定时长',
-      {
-        transitions: [
-          { id: 't', afterClipId: 'a', component: 'scribble', duration: 1000, variables: {} },
-        ],
-      },
-      MEDIA,
-      'invalid-draft',
-    ],
-    [
-      '转场超出整片开头',
-      {
-        layer0: [
-          {
-            id: 'a',
-            type: 'video',
-            start: 0,
-            duration: 500,
-            playbackStart: 0,
-            sourceJobId: 'job-a',
-            volume: 1,
-          },
-          {
-            id: 'b',
-            type: 'video',
-            start: 500,
-            duration: 2000,
-            playbackStart: 0,
-            sourceJobId: 'job-b',
-            volume: 1,
-          },
-        ],
-        transitions: [
-          { id: 't', afterClipId: 'a', component: 'scribble', duration: 2000, variables: {} },
-        ],
-      },
-      MEDIA,
-      'invalid-draft',
-    ],
+    ['特效块的组件不在目录里', { overlays: [ov('o', 'nope', 0, 500)] }, MEDIA, 'unknown-component'],
+    ['组件段的组件不在目录里', { layer0: [comp('c', 0, 500, 'nope')] }, MEDIA, 'unknown-component'],
+    ['被排除的组件', { overlays: [ov('o', 'showreel', 0, 500)] }, MEDIA, 'unknown-component'],
     ['成片缺地址', {}, { ...MEDIA, videos: {} }, 'missing-media'],
     [
       '配乐缺地址',
@@ -760,5 +541,16 @@ describe('buildComposition', () => {
     } catch (error) {
       expect((error as CompositionError).code).toBe(code)
     }
+  })
+
+  it('组件目录的 placement 不限制组件放在哪：字幕样式以外的组件在成片轨、特效轨都能合成', () => {
+    const doc = parse(
+      build({
+        layer0: [comp('c', 0, 1000, 'lower-third'), vid('a', 1000, 1000)],
+        overlays: [ov('o', 'logo-intro', 0, 1000)],
+      }).html,
+    )
+    expect(doc.querySelector('#clip-0')?.getAttribute('data-composition-id')).toBe('lower-third')
+    expect(doc.querySelector('#ov-0')?.getAttribute('data-composition-id')).toBe('logo-intro')
   })
 })

@@ -71,13 +71,14 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await beatSync.click()
   await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
 
-  // 组件栏：片头、转场、包装、字幕样式
+  // 组件栏：component 卡片放到包装轨、block 卡片插进成片轨、字幕样式
   await dialog.getByRole('tab', { name: '组件' }).click()
   const components = dialog.getByRole('list', { name: '组件' })
-  await components.getByRole('button', { name: /^字标定格，片头/ }).click()
-  await expect(film.getByRole('group', { name: /^片头 · 字标定格/ })).toBeVisible()
-  await film.getByRole('button', { name: /^选中：片头 · 字标定格/ }).click()
-  const intro = page.getByRole('dialog', { name: '片头 · 字标定格' })
+  const overlays = dialog.getByRole('group', { name: '包装轨' })
+  await components.getByRole('button', { name: /^字标定格，包装轨/ }).click()
+  await expect(overlays.getByRole('group', { name: /^包装 · 字标定格/ })).toBeVisible()
+  await overlays.getByRole('button', { name: /^选中：包装 · 字标定格/ }).click()
+  const intro = page.getByRole('dialog', { name: '包装 · 字标定格' })
   await expect(intro.getByLabel('品牌名')).toHaveValue('品牌名')
   await intro.getByLabel('品牌名').fill('拾步')
   await intro.getByLabel('品牌名').press('Enter')
@@ -91,9 +92,9 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await page.keyboard.press('Escape')
   await expect(intro).toBeHidden()
 
-  await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
-  await components.getByRole('button', { name: /^淡入淡出，两段之间/ }).click()
-  await expect(film.getByRole('button', { name: /^选中：转场 · 淡入淡出/ })).toBeVisible()
+  await seek(page, dialog, 0)
+  await components.getByRole('button', { name: /^标志片尾，成片轨/ }).click()
+  await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 标志片尾/ })).toBeVisible()
 
   await seek(page, dialog, 1)
   await components.getByRole('button', { name: /^手绘箭头，包装轨/ }).click()

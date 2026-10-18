@@ -19,14 +19,9 @@ export type MusicBeat = { timeMs: number; strong: boolean }
 
 export type MusicMedia = { durationMs: number; beats: MusicBeat[] }
 
-/** 组件目录里一个转场的接法：按原定时长播放，切点在转场里 `cutAt`（占时长的比例）处 */
-export type TransitionSpec = { cutAt: number; durationMs: number }
-
 export type EditContext = {
   /** 按成片的 sourceJobId */
   sources: Record<string, SourceMedia>
   /** 按音频记录的 jobId */
   music: Record<string, MusicMedia>
-  /** 按转场组件名；目录里没有的转场不做位置检查（合成时照样会被拒） */
-  transitions: Record<string, TransitionSpec>
 }

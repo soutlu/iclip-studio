@@ -29,11 +29,11 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
     },
     { m1: { durationMs: 30_000, beats } },
   )
-  /** 切点：2000（片头结束，本来就在拍上）、4300、6400、8200 */
+  /** 切点：2000（开头的组件段结束，本来就在拍上）、4300、6400、8200 */
   const film = () =>
     draftOf(
       [
-        card('c1', 'intro', 2_000),
+        card('c1', 2_000),
         video('v1', 'A', 1_000, 2_300),
         video('v2', 'B', 0, 2_100),
         video('v3', 'C', 0, 1_800),
@@ -106,33 +106,6 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
         draft: later,
       })
     }
-  })
-
-  it('挪了会让前面的转场放不下的切点保持原样，其余照挪', () => {
-    // 片头后的转场从 1000 开始铺 3.2 秒；4200 最近的拍是 4000，v1 缩到 3 秒就放不下
-    const withTransition = contextOf(
-      { A: source(20_000) },
-      { m1: { durationMs: 30_000, beats } },
-      { long: { cutAt: 0, durationMs: 3_200 } },
-    )
-    const before = draftOf(
-      [
-        video('v0', 'A', 0, 1_000),
-        video('v1', 'A', 0, 3_200),
-        video('v2', 'A', 0, 1_000),
-        video('v3', 'A', 0, 1_000),
-      ],
-      {
-        music,
-        transitions: [
-          { id: 't1', afterClipId: 'v0', component: 'long', duration: 3_200, variables: {} },
-        ],
-      },
-    )
-    const { draft, moved, kept } = expectOk(autoBeatSync(before, withTransition))
-    expect({ moved, kept }).toEqual({ moved: 1, kept: 1 })
-    expect(cutTimes(draft)).toEqual([1_000, 4_200, 5_000])
-    expect(draft.transitions).toEqual(before.transitions)
   })
 
   it('音乐起点平移拍点', () => {

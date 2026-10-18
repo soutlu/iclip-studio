@@ -12,7 +12,7 @@
  *   1. 浏览器（Playwright + HyperFrames 播放器，与预览同一条路径）加载并跳到几个时间点：
  *      页面报错、控制台报错、请求本机以外的地址、本地文件取不到，任一项即不通过；
  *   2. 用真实的 @hyperframes/producer 渲染：渲染失败不通过；与不放这个组件的同一草稿逐帧比较，
- *      画面没有差别（片头片尾没有底片，看画面是否一片纯色）即「画面是空的」，不通过；
+ *      画面没有差别（成片轨上的组件段没有底片，看画面是否一片纯色）即「画面是空的」，不通过；
  *   3. 通过的从渲染结果取组件时长一半处的一帧，保存为缩略图，供人工核对画面。
  * 逐项结果写在 .cache/smoke/results/，缩略图在 .cache/smoke/thumbnails/；全部跑完汇总成
  * .cache/smoke/results.json，并打印通过与不通过的数量。不通过的组件要从 catalog.json 移到 excluded，
@@ -79,11 +79,11 @@ async function loadBuilder() {
   return import(`${outfile}?${Date.now()}`)
 }
 
-/** 纯色样片带一段正弦声：灰色垫底，蓝、红两段给转场。 */
+/** 纯色样片带一段正弦声，灰色垫底。 */
 async function ensureMedia() {
   const dir = join(CACHE, 'media')
   await mkdir(dir, { recursive: true })
-  const clips = { gray: '0x3a3a3a', blue: '0x1d3b6e', red: '0x6e1d2a' }
+  const clips = { gray: '0x3a3a3a' }
   for (const [name, color] of Object.entries(clips)) {
     const path = join(dir, `${name}.mp4`)
     if (existsSync(path)) continue
@@ -127,9 +127,8 @@ async function candidates() {
   for (const excluded of catalog.excluded.filter(smokeable)) {
     const entry = raw.get(excluded.name)
     const categoryId = shared.category(entry.item.tags)
-    const place = shared.placement(categoryId, entry.item.tags ?? [])
     // 静态排除的转场另有「自带演示画面」的原因，不在冒烟范围内。
-    if (place === 'transition') continue
+    if (categoryId === 'transitions') continue
     const target = shared.compositionTarget(entry.item)
     const html = await readFile(join(REGISTRY, target), 'utf8')
     const root = shared.rootAttributes(html)
@@ -147,7 +146,7 @@ async function candidates() {
         title: excluded.title,
         description: '',
         category: categoryId,
-        placement: place,
+        placement: shared.placement(categoryId),
         src: target,
         size,
         duration: entry.item.duration ?? root.duration ?? null,
@@ -176,41 +175,25 @@ const video = (id, start, duration, sourceJobId) => ({
   volume: 1,
 })
 
-/** 一个组件的最小草稿，以及不放这个组件的对照草稿（片头片尾没有对照）。返回组件所在的时段。 */
+/**
+ * 一个组件的最小草稿，以及不放这个组件的对照草稿，按点卡片时的默认去处放：字幕样式换字幕样式，
+ * block 是成片轨上唯一的一段（没有对照），其余是叠在一段视频上的特效块。返回组件所在的时段。
+ */
 function drafts(item) {
   const base = {
     canvas: CANVAS,
-    transitions: [],
     captions: { component: 'default-caption', edits: [] },
     music: null,
     overlays: [],
   }
-  if (item.placement === 'transition') {
-    const duration = seconds(item.duration)
-    const lead = item.transition.cutAt * duration
-    const first = Math.round(lead) + 500
-    const second = Math.round(duration - lead) + 500
-    const layer0 = [video('a', 0, first, 'blue'), video('b', first, second, 'red')]
-    return {
-      window: [first - lead, first - lead + duration],
-      // 闪白一类的转场只在切点附近一两帧有画面，切点前后各取一帧。
-      extraTimes: [first - Math.round(1000 / FPS), first, first + Math.round(1000 / FPS)],
-      draft: {
-        ...base,
-        layer0,
-        transitions: [{ id: 't', afterClipId: 'a', component: item.name, duration, variables: {} }],
-      },
-      baseline: { ...base, layer0 },
-    }
-  }
   const duration = seconds(Math.min(6, Math.max(1.5, item.duration ?? 4)))
-  if (item.placement === 'intro' || item.placement === 'outro') {
+  if (item.placement !== 'caption' && item.kind === 'block') {
     const clip = {
       id: 'c',
       type: 'component',
-      role: item.placement,
       start: 0,
       duration,
+      playbackStart: 0,
       component: item.name,
       variables: {},
     }
@@ -231,7 +214,18 @@ function drafts(item) {
     draft: {
       ...base,
       layer0,
-      overlays: [{ id: 'o', component: item.name, start: 0, duration, variables: {} }],
+      overlays: [
+        {
+          id: 'o',
+          component: item.name,
+          start: 0,
+          duration,
+          playbackStart: 0,
+          track: 0,
+          zIndex: 1,
+          variables: {},
+        },
+      ],
     },
     baseline: { ...base, layer0 },
   }
@@ -486,17 +480,12 @@ async function smokeOne(
   const started = Date.now()
   const plan = drafts(item)
   const [from, to] = plan.window
-  // 组件时段里均匀取 12 帧（短暂出现的画面也能看到），转场另加切点前后。
-  const times = [
-    ...Array.from({ length: 12 }, (_, index) =>
-      Math.round(from + ((to - from) * (index + 0.5)) / 12),
-    ),
-    ...(plan.extraTimes ?? []),
-  ]
-  const testCatalog = catalogged ? catalog : { ...catalog, items: [...catalog.items, item] }
-  const videos = Object.fromEntries(
-    ['gray', 'blue', 'red'].map((id) => [id, { url: `media/${id}.mp4` }]),
+  // 组件时段里均匀取 12 帧，短暂出现的画面也能看到。
+  const times = Array.from({ length: 12 }, (_, index) =>
+    Math.round(from + ((to - from) * (index + 0.5)) / 12),
   )
+  const testCatalog = catalogged ? catalog : { ...catalog, items: [...catalog.items, item] }
+  const videos = { gray: { url: 'media/gray.mp4' } }
   const media = { videos, music: null, subtitles: plan.withSubtitles ? subtitles(to - from) : {} }
   const baselineMedia = { videos, music: null, subtitles: {} }
   const result = { name: item.name, catalogged, placement: item.placement }

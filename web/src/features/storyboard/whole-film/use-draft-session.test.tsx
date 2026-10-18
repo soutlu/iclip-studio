@@ -127,10 +127,10 @@ describe('useDraftSession', () => {
   it('被拒的编辑不进历史，用一句话说明', () => {
     const { result, onNotice } = open()
     act(() => {
-      result.current.apply({ ok: false, refusal: 'too-many-clips' })
+      result.current.apply({ ok: false, refusal: 'film-too-long' })
     })
     expect(result.current.canUndo).toBe(false)
-    expect(onNotice).toHaveBeenCalledWith(REFUSAL_TEXT['too-many-clips'])
+    expect(onNotice).toHaveBeenCalledWith(REFUSAL_TEXT['film-too-long'])
   })
 
   it('关掉时还有没存的改动就立刻存', async () => {

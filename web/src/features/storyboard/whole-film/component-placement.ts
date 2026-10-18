@@ -1,89 +1,60 @@
 import { durationMsOf, type CatalogItem } from './component-catalog'
 import { setCaptionStyle } from './editing/captions'
-import type { EditContext } from './editing/context'
 import type { WholeFilmDraft } from './editing/draft'
-import { addEndCard, replaceEndCardComponent } from './editing/end-cards'
-import { addOverlay } from './editing/overlays'
+import { insertComponent } from './editing/layer0'
+import { addOverlay, dropOverlay, type OverlayRow } from './editing/overlays'
 import { refuse, type EditResult } from './editing/result'
-import { cutsOf, endCard } from './editing/timeline'
-import { setTransition } from './editing/transitions'
+import { filmDuration } from './editing/timeline'
 
 /** 成片区的四条轨 */
 export type TrackLane = 'film' | 'overlay' | 'caption' | 'music'
 
 /**
- * 组件怎么到成片里：点组件栏里的卡片，或拖到某条轨的某个时刻松手。
- * 点卡片放转场时用 `cutAfterClipId`：选中的那一段后面的切点（选中最后一段时被拒），或选中的那个转场所在的切点；
- * 什么都没选时为 undefined，放到离播放头最近的切点。
+ * 组件怎么到成片里：点组件栏里的卡片（放在播放头处），或拖到某条轨的某个时刻松手；
+ * `overlayRow` 是松手处在特效轨上对应的行，只在拖到特效轨时用。
  */
 export type Placing =
-  | { via: 'click'; playheadMs: number; cutAfterClipId: string | undefined }
-  | { via: 'drop'; lane: TrackLane; timeMs: number }
+  | { via: 'click'; playheadMs: number }
+  | { via: 'drop'; lane: TrackLane; timeMs: number; overlayRow: OverlayRow }
 
-/** 每种组件该拖到哪条轨 */
-const LANE_OF: Record<CatalogItem['placement'], TrackLane> = {
-  intro: 'film',
-  outro: 'film',
-  transition: 'film',
-  overlay: 'overlay',
-  caption: 'caption',
-}
-
-const nearestCut = (draft: WholeFilmDraft, timeMs: number) =>
-  cutsOf(draft).reduce<ReturnType<typeof cutsOf>[number] | undefined>(
-    (best, cut) =>
-      best === undefined || Math.abs(cut.timeMs - timeMs) < Math.abs(best.timeMs - timeMs)
-        ? cut
-        : best,
-    undefined,
-  )
+/** 点卡片时的去处：字幕样式换字幕样式，block 插进成片轨，其余放到包装轨 */
+const clickLane = (item: CatalogItem): TrackLane =>
+  item.placement === 'caption' ? 'caption' : item.kind === 'block' ? 'film' : 'overlay'
 
 /**
- * 把组件目录里的一个组件放进成片，一步编辑：
- * - 片头片尾放到它自己的那一端（片头组件只能当片头）；那一端已有就换组件，时长不变；
- * - 转场放到切点上：拖放时取离松手处最近的切点；点卡片时取 `cutAfterClipId`，没选时取离播放头最近的切点；
- * - 包装从播放头（或松手处）开始，取组件自带时长，放不下截短到所在空当；
- * - 字幕组件换掉字幕样式。
+ * 把组件目录里的一个组件放进成片，一步编辑；放到哪条轨只看拖到哪条轨（点卡片时看 {@link clickLane}）：
+ * - 成片轨：作为一段插到离那一刻最近的切点，后面的段跟着让开；
+ * - 包装轨：点卡片时在最上面开一行、从播放头起放；拖放时落到松手处的那一行，相撞就挪到这一行
+ *   最近的空位，松手在所有行之上或之下就开一行；新放的特效块叠在所有特效块之上；
+ * - 字幕轨：字幕样式换掉整片的字幕样式。字幕样式只能放在字幕轨，字幕轨与音乐轨上也放不了别的组件。
+ * 时长取组件自己的时长，没有时取 10 秒与整片时长里长的那个；放进去超过整片总长上限时拒绝，不缩短。
  * 可填项都不写进草稿，合成时取组件自己的默认值。
  */
 export const placeComponent = (
   draft: WholeFilmDraft,
   item: CatalogItem,
   placing: Placing,
-  { context }: { context: EditContext },
 ): EditResult => {
-  if (placing.via === 'drop' && placing.lane !== LANE_OF[item.placement])
+  const lane = placing.via === 'drop' ? placing.lane : clickLane(item)
+  const timeMs = placing.via === 'drop' ? placing.timeMs : placing.playheadMs
+  if ((item.placement === 'caption') !== (lane === 'caption') || lane === 'music')
     return refuse('drop-elsewhere')
-  switch (item.placement) {
-    case 'intro':
-    case 'outro': {
-      const role = item.placement
-      return endCard(draft, role)
-        ? replaceEndCardComponent(draft, { role, component: item.name, variables: {} })
-        : addEndCard(draft, {
-            role,
-            component: item.name,
-            variables: {},
-            durationMs: durationMsOf(item),
-          })
-    }
-    case 'transition': {
-      if (cutsOf(draft).length === 0) return refuse('no-cut')
-      const afterClipId =
-        placing.via === 'drop'
-          ? nearestCut(draft, placing.timeMs)?.afterClipId
-          : (placing.cutAfterClipId ?? nearestCut(draft, placing.playheadMs)?.afterClipId)
-      if (afterClipId === undefined) return refuse('no-cut')
-      return setTransition(draft, { afterClipId, component: item.name, variables: {} }, context)
-    }
-    case 'overlay':
-      return addOverlay(draft, {
-        component: item.name,
-        durationMs: durationMsOf(item),
-        variables: {},
-        atMs: placing.via === 'drop' ? placing.timeMs : placing.playheadMs,
-      })
+  const duration = durationMsOf(item, filmDuration(draft))
+  switch (lane) {
     case 'caption':
       return setCaptionStyle(draft, { component: item.name })
+    case 'film':
+      return insertComponent(draft, {
+        component: item.name,
+        duration,
+        variables: {},
+        at: { timeMs },
+      })
+    case 'overlay': {
+      const overlay = { component: item.name, durationMs: duration, variables: {}, atMs: timeMs }
+      return placing.via === 'drop'
+        ? dropOverlay(draft, { ...overlay, row: placing.overlayRow })
+        : addOverlay(draft, overlay)
+    }
   }
 }

@@ -262,10 +262,11 @@ async def test_a_failed_export_reports_the_render_reason(
     assert (failed["status"], failed["error"], failed["downloadUrl"]) == ("failed", error, None)
 
 
-async def test_only_the_saved_revision_with_a_video_clip_is_exported(
+async def test_only_the_saved_revision_with_something_on_layer0_is_exported(
     client: httpx.AsyncClient, pg_url: str, generations: SqlGenerationRepository, render: StubRender
 ) -> None:
-    """版本号不是存着的那一版 409；还没有草稿、画面轨只有片头都导不出 422。都不交给渲染服务。"""
+    """版本号不是存着的那一版 409；还没有草稿、画面轨是空的都导不出 422，都不交给渲染服务。
+    画面轨只有组件段也能导，用到的成片为空。"""
 
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
@@ -279,13 +280,18 @@ async def test_only_the_saved_revision_with_a_video_clip_is_exported(
     for stale in (0, revision + 1):
         assert (await client.post(exports_url(mine), json={"revision": stale})).status_code == 409
 
-    intro_only = draft_document(
-        layer0=[component_clip("intro", "intro", start=0, duration=2000)], transitions=[]
-    )
-    revision = await save_draft(client, mine, intro_only, revision)
-    no_video = await client.post(exports_url(mine), json={"revision": revision})
-    assert no_video.status_code == 422, no_video.text
+    revision = await save_draft(client, mine, draft_document(layer0=[]), revision)
+    empty = await client.post(exports_url(mine), json={"revision": revision})
+    assert empty.status_code == 422, empty.text
     assert render.submitted == []
+
+    components_only = draft_document(layer0=[component_clip("c", start=0, duration=2000)])
+    revision = await save_draft(client, mine, components_only, revision)
+    started = await client.post(exports_url(mine), json={"revision": revision})
+    assert started.status_code == 202, started.text
+    assert started.json()["sourceJobIds"] == []
+    (payload,) = render.submitted
+    assert (payload["document"], payload["media"]["videos"]) == (components_only, {})
 
 
 async def test_exports_belong_to_the_owner_and_to_their_conversation(

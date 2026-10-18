@@ -149,20 +149,8 @@ export function category(tags) {
   return 'scenes'
 }
 
-// 带 overlay 标签的（如手写标题）叠在画面上，一律进包装轨，不当片头片尾。
-const OUTRO_TAGS = ['end-card', 'outro', 'close']
-const INTRO_TAGS = ['intro', 'title-card']
-/** 组件放到成片的哪里（整片设计稿的规则）。 */
-export function placement(categoryId, tags) {
-  if (categoryId === 'captions') return 'caption'
-  if (categoryId === 'transitions') return 'transition'
-  const set = new Set(tags)
-  if (set.has('overlay')) return 'overlay'
-  if (OUTRO_TAGS.some((tag) => set.has(tag))) return 'outro'
-  if (INTRO_TAGS.some((tag) => set.has(tag))) return 'intro'
-  if (set.has('logo') && (categoryId === 'scenes' || categoryId === 'vfx')) return 'intro'
-  return 'overlay'
-}
+/** 组件目录的 placement：字幕样式是 `caption`，其余组件为 null，放在哪条轨都行。 */
+export const placement = (categoryId) => (categoryId === 'captions' ? 'caption' : null)
 
 /** 合成根元素上写的固定尺寸与时长（HyperFrames 挂载时按它设宿主大小）。 */
 export function rootAttributes(html) {

@@ -166,13 +166,13 @@ describe('placeCaptions', () => {
     ])
   })
 
-  it('片头片尾与没有字幕记录的段不出字幕', () => {
+  it('组件段与没有字幕记录的段不出字幕', () => {
     const intro: WholeFilmComponentClip = {
       id: 'intro',
       type: 'component',
-      role: 'intro',
       start: 0,
       duration: 2000,
+      playbackStart: 0,
       component: 'logo',
       variables: {},
     }

@@ -18,6 +18,8 @@
 | `player/components/timelineEditing.ts`                                            | 摘录               | 只取 `resolveTimelineMove`（去掉 z-index 叠放分支及其可选入参、出参）、`resolveTimelineResize` 与两个数值格式化函数 |
 | `player/components/timelineEditing.test.ts`                                       | 摘录               | 只留上述函数与分组移动、分组修剪的用例                                                 |
 | `player/components/timelineGroupEditing.ts`                                       | 摘录（第 1–175 行） | 去掉多选分组修剪的接线；`clampPlaybackRate` 由 `@hyperframes/parsers` 的源码（`packages/parsers/src/mediaDuration.ts` 第 25–34 行）内联替代；`DEFAULT_TIMELINE_MIN_DURATION` 改为导出 |
+| `player/components/timelineCollision.ts`                                          | 摘录               | 只取特效块落到行上最近的空位 `resolveNearestFreeStart`（及其三个小函数）、在行外开新行 `resolveInsertRow` 与 `timeRangesOverlap`，去掉分音画区与分组的落点代码；上游测试未收录 |
+| `player/components/timelineStackingSync.ts`                                       | 全文               | 换行后只给被挪的块重排叠放 `computeStackingPatches`；`spansOverlap` 取已安装的 `@hyperframes/core`；上游测试未收录 |
 | `player/store/playerStore.ts`、`player/lib/timelineClipIndex.ts`                  | 本仓替身           | 只声明被抄文件引用的类型：`ZoomMode`、`TimelineTimeRange` 照抄，`TimelineElement` 只留被读的字段 |
 
 ## 工具配置

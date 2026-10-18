@@ -1,5 +1,5 @@
 /**
- * 编辑器用到的组件目录：分类、放置位置、默认时长与转场的接法。
+ * 编辑器用到的组件目录：分类、点卡片时的默认去处与放进成片时的默认时长。
  * 目录本身（`catalog/catalog.json`，约 270 KB）打开编辑器时才加载，缩略图只取地址。
  */
 
@@ -9,13 +9,11 @@ import type {
   CatalogItem,
   CatalogVariable,
   ComponentCatalog,
-  Placement,
   VariableValue,
 } from './composition/catalog'
-import type { TransitionSpec } from './editing/context'
-import { DEFAULT_END_CARD_MS, type ComponentVariables } from './editing/draft'
+import type { ComponentVariables } from './editing/draft'
 
-export type { CatalogItem, CatalogVariable, ComponentCatalog, Placement, VariableValue }
+export type { CatalogItem, CatalogVariable, ComponentCatalog, VariableValue }
 
 const THUMBNAILS = import.meta.glob<string>('./catalog/thumbnails/*.svg', {
   eager: true,
@@ -36,13 +34,9 @@ const catalogQuery = queryOptions({
 
 export const useComponentCatalog = () => useQuery(catalogQuery)
 
-export const PLACEMENT_LABEL: Record<Placement, string> = {
-  intro: '片头',
-  outro: '片尾',
-  transition: '两段之间',
-  caption: '字幕样式',
-  overlay: '包装轨',
-}
+/** 点卡片时组件去哪：字幕样式换掉整片的字幕样式，block 插进成片轨，其余放到包装轨 */
+export const defaultLaneLabel = (item: CatalogItem): string =>
+  item.placement === 'caption' ? '字幕样式' : item.kind === 'block' ? '成片轨' : '包装轨'
 
 export const CATEGORY_ICON: Record<string, IconName> = {
   captions: 'captions',
@@ -54,29 +48,12 @@ export const CATEGORY_ICON: Record<string, IconName> = {
   scenes: 'film',
 }
 
-/** 没有固定时长的包装组件放进成片时的时长 */
-export const DEFAULT_OVERLAY_MS = 3_000
+/** 没有固定时长的组件至少放这么长，同 HyperFrames */
+const MIN_UNTIMED_MS = 10_000
 
-/**
- * 组件放进成片的时长：片头片尾一律先放 2 秒（之后拖边缘改）；转场与包装取组件原定的时长，
- * 没有固定时长的包装 3 秒。
- */
-export const durationMsOf = (item: CatalogItem): number =>
-  item.placement === 'intro' || item.placement === 'outro'
-    ? DEFAULT_END_CARD_MS
-    : item.duration === null
-      ? DEFAULT_OVERLAY_MS
-      : Math.round(item.duration * 1000)
-
-/** 目录里各转场的接法（按组件名），编辑时按它检查转场放不放得下 */
-export const transitionSpecs = (catalog: ComponentCatalog): Record<string, TransitionSpec> =>
-  Object.fromEntries(
-    catalog.items.flatMap((item) =>
-      item.placement === 'transition' && item.transition !== undefined && item.duration !== null
-        ? [[item.name, { cutAt: item.transition.cutAt, durationMs: durationMsOf(item) }]]
-        : [],
-    ),
-  )
+/** 组件放进成片的时长：组件自己的时长；没有时同 HyperFrames，取 10 秒与整片时长里长的那个 */
+export const durationMsOf = (item: CatalogItem, filmMs: number): number =>
+  item.duration === null ? Math.max(MIN_UNTIMED_MS, filmMs) : Math.round(item.duration * 1000)
 
 /** 可填项现在的值：草稿里填过的，没填过取组件的默认值 */
 export const variableValue = (
@@ -84,36 +61,17 @@ export const variableValue = (
   values: ComponentVariables,
 ): VariableValue => values[variable.id] ?? variable.default
 
-/** 组件栏的排序照设计稿：分类按 Studio 的顺序，同一分类里字幕、片头片尾、转场、包装依次排 */
-const PLACEMENT_RANK: Record<Placement, number> = {
-  caption: 0,
-  intro: 1,
-  outro: 1,
-  transition: 2,
-  overlay: 3,
-}
-
+/** 组件栏的排序：分类按 Studio 的顺序，同一分类里保持目录的顺序 */
 export const sortedItems = (catalog: ComponentCatalog): CatalogItem[] => {
   const rank = (id: string) => catalog.categories.findIndex((category) => category.id === id)
-  return catalog.items.toSorted(
-    (a, b) =>
-      rank(a.category) - rank(b.category) ||
-      PLACEMENT_RANK[a.placement] - PLACEMENT_RANK[b.placement],
-  )
+  return catalog.items.toSorted((a, b) => rank(a.category) - rank(b.category))
 }
 
 export const ALL_CATEGORIES = 'all'
 
-/** 组件栏筛哪些：按 Studio 的分类，或只看片头 / 片尾（画面轨两端的「+ 片头」「+ 片尾」） */
-export type ComponentFilter =
-  { kind: 'category'; id: string } | { kind: 'placement'; placement: 'intro' | 'outro' }
-
-export const SHOW_ALL: ComponentFilter = { kind: 'category', id: ALL_CATEGORIES }
-
-export const matchesFilter = (item: CatalogItem, filter: ComponentFilter) =>
-  filter.kind === 'placement'
-    ? item.placement === filter.placement
-    : filter.id === ALL_CATEGORIES || item.category === filter.id
+/** 组件栏按 Studio 的分类筛：分类 id，或 {@link ALL_CATEGORIES} */
+export const matchesCategory = (item: CatalogItem, category: string) =>
+  category === ALL_CATEGORIES || item.category === category
 
 export const itemOf = (catalog: ComponentCatalog, name: string): CatalogItem | undefined =>
   catalog.items.find((item) => item.name === name)

@@ -55,22 +55,22 @@ export const compositionMedia = (
 export type PreviewState =
   { kind: 'ready'; html: string; durationMs: number } | { kind: 'blocked'; message: string }
 
+const EMPTY_TEXT = '成片里还没有画面；加入视频或组件后可以在这里预览'
+
 const BLOCKED_TEXT: Record<CompositionErrorCode, string> = {
   'unknown-component': '成片里有组件库里没有的组件，暂时无法预览；请删掉它或换一个组件',
-  'misplaced-component': '成片里有放错位置的组件，暂时无法预览；请删掉它再重新放',
   'missing-media': '有素材还没读到地址，暂时无法预览；请稍后再试',
-  'invalid-draft': '有转场超出了切点两边的片段，暂时无法预览；请加长相邻片段或删掉这个转场',
+  'invalid-draft': EMPTY_TEXT,
 }
 
-/** 生成预览页；成片里还没有画面、或草稿合成不了时给出原因（一句话，不带组件 id） */
+/** 生成预览页；成片轨还是空的、或草稿合成不了时给出原因（一句话，不带组件 id） */
 export const previewState = (
   draft: WholeFilmDraft,
   media: CompositionMedia,
   catalog: ComponentCatalog,
   origin: string,
 ): PreviewState => {
-  if (draft.canvas === null || draft.layer0.length === 0)
-    return { kind: 'blocked', message: '成片里还没有画面；加入视频后可以在这里预览' }
+  if (draft.layer0.length === 0) return { kind: 'blocked', message: EMPTY_TEXT }
   try {
     const { html, durationMs } = buildComposition({ draft, media, catalog })
     return {

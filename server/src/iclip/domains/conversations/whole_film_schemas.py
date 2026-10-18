@@ -155,9 +155,13 @@ class WholeFilmDocument(CamelModel):
         return self
 
     def total_ms(self) -> int:
-        """整片总长：画面轨首尾相接，就是各段时长之和。"""
+        """整片总长：同 HyperFrames，所有轨上内容的最远结束，即画面轨的结尾（各段时长之和）与
+        特效块最晚的结尾里大的那个。两者都不超过上限，总长也就不超过。"""
 
-        return sum(clip.duration for clip in self.layer0)
+        overlay_end = max(
+            (overlay.start + overlay.duration for overlay in self.overlays), default=0
+        )
+        return max(sum(clip.duration for clip in self.layer0), overlay_end)
 
     def video_sources(self) -> tuple[uuid.UUID, ...]:
         """画面轨里各段视频出自的成片，去重，按在画面轨里第一次出现的先后。"""
@@ -206,7 +210,7 @@ def _check_caption_edits(edits: list[WholeFilmCaptionEdit]) -> None:
 
 def _check_overlays(overlays: list[WholeFilmOverlay]) -> None:
     """特效块不在两分钟之后结束，同一行里彼此不重叠；不同行可以重叠，也可以超出画面轨的结尾
-    （超出的部分不渲染）。"""
+    （整片随之变长）。"""
 
     rows: dict[int, list[WholeFilmOverlay]] = {}
     for overlay in overlays:

@@ -55,6 +55,34 @@ describe('渲染服务接口', () => {
     })
   })
 
+  it('成片轨上只有组件段、没有视频也没有画布：照样受理并开始渲染', async () => {
+    const body = exportRequest()
+    body['document'] = {
+      ...(body['document'] as Record<string, unknown>),
+      canvas: null,
+      layer0: [
+        {
+          id: 'c',
+          type: 'component',
+          start: 0,
+          duration: 2000,
+          playbackStart: 0,
+          component: 'logo-outro',
+          variables: {},
+        },
+      ],
+    }
+    body['media'] = {
+      videos: {},
+      music: { url: 'https://oss.example.com/music.mp3' },
+      subtitles: {},
+    }
+    const response = await post(body)
+    expect(response.status).toBe(202)
+    await flush()
+    expect(fake.renders).toHaveLength(1)
+  })
+
   it.each<[string, unknown, string]>([
     ['请求体不是 JSON', '{oops', 'invalid-request'],
     ['形状不对', { ...exportRequest(), id: 'nope' }, 'invalid-request'],
@@ -72,16 +100,6 @@ describe('渲染服务接口', () => {
         return body
       })(),
       'unknown-component',
-    ],
-    [
-      '片头组件当包装',
-      (() => {
-        const body = exportRequest()
-        const document = body['document'] as { overlays: { component: string }[] }
-        document.overlays[0]!.component = 'logo-sting'
-        return body
-      })(),
-      'misplaced-component',
     ],
     [
       '成片没有给地址',

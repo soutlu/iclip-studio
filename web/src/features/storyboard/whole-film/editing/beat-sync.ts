@@ -3,7 +3,7 @@ import { MAX_FILM_MS, MIN_CLIP_MS, type Layer0Clip, type WholeFilmDraft } from '
 import { trimClip } from './layer0'
 import { filmBeats } from './music'
 import type { Refusal } from './result'
-import { cutsOf, filmDuration, musicOf, sourceOf } from './timeline'
+import { cutsOf, layer0End, musicOf, sourceOf } from './timeline'
 
 /** 离拍点这么近就算在拍上 */
 const BEAT_EPS_MS = 10
@@ -13,7 +13,7 @@ export type BeatSyncResult =
 
 /** 切点能挪的范围：改切点前一段的时长，后面整体跟着移；视频段往后挪要出点之后还有画面 */
 const cutRange = (draft: WholeFilmDraft, before: Layer0Clip, context: EditContext) => {
-  const room = MAX_FILM_MS - filmDuration(draft)
+  const room = MAX_FILM_MS - layer0End(draft)
   const footage =
     before.type === 'video'
       ? sourceOf(context, before.sourceJobId).durationMs - before.playbackStart - before.duration

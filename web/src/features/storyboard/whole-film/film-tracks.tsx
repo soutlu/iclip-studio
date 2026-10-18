@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -19,34 +20,39 @@ import type { EditContext, MusicBeat } from './editing/context'
 import type { Layer0Clip, VideoClip, WholeFilmDraft } from './editing/draft'
 import { moveClip, trimClip } from './editing/layer0'
 import { musicShortfallMs, setMusicOffset } from './editing/music'
-import { moveOverlay, trimOverlay } from './editing/overlays'
+import {
+  moveOverlay,
+  overlayRowAt,
+  overlayRowCount,
+  trimOverlay,
+  type OverlayRow,
+} from './editing/overlays'
 import type { EditResult } from './editing/result'
 import { filmDuration } from './editing/timeline'
 import { msToPx, pxToMs, snapMs, snapTargets, type TimelineScale } from './timeline-scale'
 import { usePreviewGesture } from './use-preview-gesture'
 
 export type Selection =
-  | { kind: 'clip'; id: string }
-  | { kind: 'overlay'; id: string }
-  | { kind: 'transition'; id: string }
-  | { kind: 'music' }
-  | null
+  { kind: 'clip'; id: string } | { kind: 'overlay'; id: string } | { kind: 'music' } | null
 
 export type MusicView = { url: string; title: string; peaks: PeaksState }
 
 /**
- * 素材区、组件栏把东西拖上来时问成片区：指针落在哪条轨的哪个时刻（毫秒）；不在轨上是 undefined
+ * 素材区、组件栏把东西拖上来时问成片区：指针落在哪条轨的哪个时刻（毫秒），以及在特效轨上对应
+ * 哪一行；不在轨上是 undefined
  */
 export type DropTarget = (
   clientX: number,
   clientY: number,
-) => { timeMs: number; lane: TrackLane } | undefined
+) => { timeMs: number; lane: TrackLane; overlayRow: OverlayRow } | undefined
 
-/** 成片轨上组件（片头片尾、包装、转场）的浮层：开着的是哪一个、怎么画它的内容 */
+/** 组件段与特效块的浮层：开着的是哪一个、怎么画它的内容；组件没有可填项时点开不弹 */
 export type ComponentPopovers = {
   openId: string | null
   onOpen: (id: string | null) => void
   render: (id: string) => ReactNode
+  /** 这个组件有没有可填项（组件库里没有的组件也弹，好说明原因并移除） */
+  hasFields: (component: string) => boolean
 }
 
 type FilmTracksProps = {
@@ -78,17 +84,15 @@ type FilmTracksProps = {
   /** 字幕样式的中文名；点它到组件栏换样式 */
   captionStyle: string
   onCaptionStyle: () => void
-  /** 点画面轨两端的「+ 片头」「+ 片尾」：到组件栏挑那一端的组件 */
-  onAddEndCard: (placement: 'intro' | 'outro') => void
 }
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
-/** 时间区左边的留白：画面轨开头的「+ 片头」放在这里（与 whole-film.css 的 .wf-track-content 一致） */
+/** 时间区左边的留白（与 whole-film.css 的 .wf-track-content 一致） */
 const START_GUTTER_PX = 72
-
-const endCardName = (clip: Layer0Clip) =>
-  clip.type === 'component' ? (clip.role === 'intro' ? '片头' : '片尾') : ''
+/** 特效轨每一行的高度与上下留白（与 whole-film.css 的 --wf-overlay-rows 一致） */
+const OVERLAY_ROW_PX = 22
+const OVERLAY_PAD_PX = 2
 
 type Edge = 'start' | 'end'
 
@@ -96,7 +100,7 @@ type BlockProps = {
   className: string
   name: string
   selected: boolean
-  style: { left: string; width: string }
+  style: { left: string; width: string; top?: string; height?: string }
   onSelect: () => void
   /** 按住拖动；不给就只能点选 */
   onDrag: ((event: PointerEvent<HTMLElement>) => void) | undefined
@@ -173,7 +177,6 @@ export function FilmTracks({
   onCaptionText,
   captionStyle,
   onCaptionStyle,
-  onAddEndCard,
 }: FilmTracksProps) {
   const gesture = usePreviewGesture(apply)
   const shown = gesture.preview ?? draft
@@ -191,7 +194,7 @@ export function FilmTracks({
   useEffect(() => {
     const element = scrollRef.current
     if (element === null) return
-    // 时间区左边留出放「+ 片头」的空，时间区宽度要扣掉它
+    // 时间区宽度要扣掉左边的留白
     const report = () => onViewportWidth(Math.max(0, element.clientWidth - START_GUTTER_PX))
     report()
     const observer = new ResizeObserver(report)
@@ -203,6 +206,13 @@ export function FilmTracks({
     Math.max(0, pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps))
 
   const draftTotal = filmDuration(draft)
+  const draftRows = overlayRowCount(draft.overlays)
+  /** 指针纵坐标落在特效轨的哪一行；在所有行之上、之下的空处就开一行 */
+  const overlayRowOf = (clientY: number): OverlayRow => {
+    const top = overlayLaneRef.current?.getBoundingClientRect().top ?? 0
+    return overlayRowAt((clientY - top - OVERLAY_PAD_PX) / OVERLAY_ROW_PX, draftRows)
+  }
+
   useEffect(() => {
     dropTargetRef.current = (clientX, clientY) => {
       const lanes = lanesRef.current?.getBoundingClientRect()
@@ -215,23 +225,24 @@ export function FilmTracks({
         clientY <= lanes.bottom
       if (!inside) return undefined
       const timeMs = Math.min(Math.max(0, pxToMs(clientX - content.left, pps)), draftTotal)
-      // 从上往下第一条下沿在指针下方的轨；落在两条轨之间的空隙里时算下面那条
-      const tracks: [TrackLane, HTMLDivElement | null][] = [
-        ['film', filmLaneRef.current],
-        ['overlay', overlayLaneRef.current],
-        ['caption', captionLaneRef.current],
-        ['music', musicLaneRef.current],
+      // 从上往下第一条下沿在指针下方的轨；落在两条轨之间的空隙里时算离得近的那条
+      const tracks: [TrackLane, DOMRect | undefined][] = [
+        ['film', filmLaneRef.current?.getBoundingClientRect()],
+        ['overlay', overlayLaneRef.current?.getBoundingClientRect()],
+        ['caption', captionLaneRef.current?.getBoundingClientRect()],
+        ['music', musicLaneRef.current?.getBoundingClientRect()],
       ]
-      const hit = tracks.find(([, element]) => {
-        const rect = element?.getBoundingClientRect()
-        return rect !== undefined && clientY <= rect.bottom
+      const hit = tracks.find(([, rect], index) => {
+        const next = tracks[index + 1]?.[1]
+        if (rect === undefined) return false
+        return clientY <= (next === undefined ? rect.bottom : (rect.bottom + next.top) / 2)
       })
-      return { timeMs, lane: hit?.[0] ?? 'music' }
+      return { timeMs, lane: hit?.[0] ?? 'music', overlayRow: overlayRowOf(clientY) }
     }
     return () => {
       dropTargetRef.current = null
     }
-  }, [dropTargetRef, pps, draftTotal])
+  })
 
   const selectedId = selection !== null && 'id' in selection ? selection.id : undefined
   const place = (start: number, duration: number) => ({
@@ -239,7 +250,7 @@ export function FilmTracks({
     width: `${msToPx(duration, pps)}px`,
   })
 
-  /** 视频段要知道素材多长才能修剪；片头片尾随时可以 */
+  /** 视频段要知道素材多长才能修剪；组件段随时可以 */
   const editable = (clip: Layer0Clip) =>
     clip.type === 'component' || context.sources[clip.sourceJobId] !== undefined
 
@@ -295,21 +306,17 @@ export function FilmTracks({
       />
     ))
 
-  const clipEdges = (clip: Layer0Clip): Edge[] =>
-    !editable(clip)
-      ? []
-      : clip.type === 'video'
-        ? ['start', 'end']
-        : clip.role === 'intro'
-          ? ['end']
-          : ['start']
+  const clipEdges = (clip: Layer0Clip): Edge[] => (editable(clip) ? ['start', 'end'] : [])
+
+  /** 点选组件段或特效块：有可填项时弹出浮层 */
+  const openPopover = (id: string, component: string) => {
+    if (popovers.hasFields(component)) popovers.onOpen(id)
+  }
 
   const musicMedia = draft.music === null ? undefined : context.music[draft.music.jobId]
   const shortfall = musicMedia === undefined ? 0 : musicShortfallMs(shown, context)
-  const videoBefore = (index: number) =>
-    shown.layer0.slice(0, index + 1).filter((clip) => clip.type === 'video').length
 
-  /** 组件块的浮层：锚在块上，向上弹 */
+  /** 组件段、特效块的浮层：锚在块上，向上弹 */
   const popoverOf = (id: string, label: string) => (
     <PopupRoot
       onOpenChange={(open) => popovers.onOpen(open ? id : null)}
@@ -330,7 +337,10 @@ export function FilmTracks({
   )
 
   return (
-    <div className="wf-tracks">
+    <div
+      className="wf-tracks"
+      style={{ '--wf-overlay-rows': Math.max(1, overlayRowCount(shown.overlays)) } as CSSProperties}
+    >
       <div className="wf-track-heads">
         <span aria-hidden="true" className="wf-track-head is-ruler" />
         <span aria-hidden="true" className="wf-track-head">
@@ -400,13 +410,10 @@ export function FilmTracks({
                         end: (clip.playbackStart + clip.duration) / 1000,
                       }
                 const cardTitle =
-                  clip.type === 'component'
-                    ? `${endCardName(clip)} · ${componentTitle(clip.component)}`
-                    : ''
-                const name =
-                  clip.type === 'video'
-                    ? `第 ${videoBefore(index)} 段 · ${clipLabel(clip)}，${seconds(clip.duration)} 秒`
-                    : `${cardTitle}，${seconds(clip.duration)} 秒`
+                  clip.type === 'component' ? `组件 · ${componentTitle(clip.component)}` : ''
+                const name = `第 ${index + 1} 段 · ${
+                  clip.type === 'video' ? clipLabel(clip) : cardTitle
+                }，${seconds(clip.duration)} 秒`
                 return (
                   <Block
                     className={cn('wf-clip', clip.type === 'component' && 'is-card')}
@@ -422,27 +429,20 @@ export function FilmTracks({
                     )}
                     key={clip.id}
                     name={name}
-                    onDrag={
-                      clip.type === 'video'
-                        ? (event) =>
-                            gesture.start(event, (deltaPx) =>
-                              moveClip(
-                                draft,
-                                { clipId: clip.id, deltaMs: pxToMs(deltaPx, pps) },
-                                context,
-                              ),
-                            )
-                        : undefined
+                    onDrag={(event) =>
+                      gesture.start(event, (deltaPx) =>
+                        moveClip(draft, { clipId: clip.id, deltaMs: pxToMs(deltaPx, pps) }),
+                      )
                     }
                     onSelect={() => {
                       onSelect({ kind: 'clip', id: clip.id })
-                      if (clip.type === 'component') popovers.onOpen(clip.id)
+                      if (clip.type === 'component') openPopover(clip.id, clip.component)
                     }}
                     selected={selectedId === clip.id}
                     style={place(clip.start, clip.duration)}
                   >
                     <span className="wf-clip-label">
-                      {clip.type === 'video' ? clipLabel(clip) : endCardName(clip)}
+                      {clip.type === 'video' ? clipLabel(clip) : '组件'}
                     </span>
                     {part === undefined ? (
                       <span className="wf-clip-card">
@@ -469,55 +469,11 @@ export function FilmTracks({
                   </Block>
                 )
               })}
-              {shown.transitions.map((transition) => {
-                const after = shown.layer0.find((clip) => clip.id === transition.afterClipId)
-                if (after === undefined) return null
-                const title = `转场 · ${componentTitle(transition.component)}`
-                return (
-                  <span
-                    className="wf-transition-slot"
-                    key={transition.id}
-                    style={{ left: `${msToPx(after.start + after.duration, pps)}px` }}
-                  >
-                    {popoverOf(transition.id, title)}
-                    <button
-                      aria-haspopup="dialog"
-                      aria-label={`选中：${title}`}
-                      aria-pressed={selectedId === transition.id}
-                      className="wf-transition ui-focus"
-                      onClick={() => {
-                        onSelect({ kind: 'transition', id: transition.id })
-                        popovers.onOpen(transition.id)
-                      }}
-                      title={title}
-                      type="button"
-                    >
-                      <Icon decorative name="swap-panes" size="xs" />
-                    </button>
-                  </span>
-                )
-              })}
               {shown.layer0.length === 0 ? (
                 <span className="wf-lane-hint">
-                  在下方视频素材区选好范围，点「加入成片」或拖到这里
+                  在下方视频素材区选好范围，点「加入成片」或拖到这里；组件也可以拖到这里
                 </span>
-              ) : (
-                (['intro', 'outro'] as const).map((role) =>
-                  shown.layer0.some(
-                    (clip) => clip.type === 'component' && clip.role === role,
-                  ) ? null : (
-                    <button
-                      className={cn('wf-end-add ui-state ui-focus', role === 'intro' && 'is-start')}
-                      key={role}
-                      onClick={() => onAddEndCard(role)}
-                      style={role === 'outro' ? { left: `${msToPx(total, pps)}px` } : undefined}
-                      type="button"
-                    >
-                      {role === 'intro' ? '+ 片头' : '+ 片尾'}
-                    </button>
-                  ),
-                )
-              )}
+              ) : null}
             </div>
             <div aria-label="包装轨" className="wf-lane" ref={overlayLaneRef} role="group">
               {shown.overlays.length === 0 ? (
@@ -545,18 +501,26 @@ export function FilmTracks({
                     (edge, deltaMs) => trimOverlay(draft, { overlayId: overlay.id, edge, deltaMs }),
                   )}
                   key={overlay.id}
-                  name={`包装 · ${componentTitle(overlay.component)}，${seconds(overlay.start)}–${seconds(overlay.start + overlay.duration)} 秒`}
+                  name={`包装 · ${componentTitle(overlay.component)}，第 ${overlay.track + 1} 行，${seconds(overlay.start)}–${seconds(overlay.start + overlay.duration)} 秒`}
                   onDrag={(event) =>
-                    gesture.start(event, (deltaPx) =>
-                      moveOverlay(draft, { overlayId: overlay.id, deltaMs: pxToMs(deltaPx, pps) }),
+                    gesture.start(event, (deltaPx, clientY) =>
+                      moveOverlay(draft, {
+                        overlayId: overlay.id,
+                        deltaMs: pxToMs(deltaPx, pps),
+                        row: overlayRowOf(clientY),
+                      }),
                     )
                   }
                   onSelect={() => {
                     onSelect({ kind: 'overlay', id: overlay.id })
-                    popovers.onOpen(overlay.id)
+                    openPopover(overlay.id, overlay.component)
                   }}
                   selected={selectedId === overlay.id}
-                  style={place(overlay.start, overlay.duration)}
+                  style={{
+                    ...place(overlay.start, overlay.duration),
+                    top: `${OVERLAY_PAD_PX + overlay.track * OVERLAY_ROW_PX}px`,
+                    height: `${OVERLAY_ROW_PX}px`,
+                  }}
                 >
                   <span className="wf-clip-label">{componentTitle(overlay.component)}</span>
                 </Block>

@@ -9,17 +9,10 @@ export type Refusal =
   | 'outside-source'
   | 'too-short'
   | 'film-too-long'
-  | 'too-many-clips'
-  | 'edge-not-editable'
-  | 'end-card-exists'
-  | 'not-a-cut'
-  | 'unknown-component'
-  | 'transition-does-not-fit'
+  | 'overlay-too-long'
   | 'nothing-to-split'
-  | 'no-room'
   | 'no-music'
   | 'no-beats'
-  | 'no-cut'
   | 'drop-elsewhere'
 
 export type EditResult = { ok: true; draft: WholeFilmDraft } | { ok: false; refusal: Refusal }

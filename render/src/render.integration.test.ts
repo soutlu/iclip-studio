@@ -243,7 +243,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             volume: 1,
           },
         ],
-        transitions: [],
         captions: { component: 'default-caption', edits: [] },
         music: { jobId: MUSIC_JOB, offset: 0, volume: 0.5 },
         overlays: [],
@@ -336,7 +335,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
               volume: 1,
             },
           ],
-          transitions: [],
           captions: { component: 'default-caption', edits: [] },
           music: null,
           overlays: [
@@ -345,6 +343,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
               component: 'headline-slam',
               start: 0,
               duration: 2000,
+              playbackStart: 0,
+              track: 0,
+              zIndex: 1,
               variables: values ? { text: 'Ship it today', accent: 'blue' } : {},
             },
             {
@@ -352,6 +353,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
               component: 'lt-neon-border',
               start: 2000,
               duration: 2000,
+              playbackStart: 0,
+              track: 0,
+              zIndex: 2,
               variables: values ? { name: '拾步 · 秋冬新款', role: '品牌主理人' } : {},
             },
             {
@@ -359,6 +363,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
               component: 'lt-neon-border',
               start: 4000,
               duration: 2000,
+              playbackStart: 0,
+              track: 0,
+              zIndex: 3,
               variables: values ? { name: '第二条姓名', role: '第二个职位' } : {},
             },
           ],
@@ -400,4 +407,138 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(bluePixels(withValues.headline)).toBeGreaterThan(100)
     expect(bluePixels(withDefaults.headline)).toBeLessThan(10)
   }, 600_000)
+
+  it('两段视频中间夹一个组件段，加一个超出成片轨结尾的特效块与字幕：组件段、特效块都上画面，整片随特效块变长', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({
+      registryDir: REGISTRY,
+      workDir: join(dir, 'work'),
+      gpuEncode: false,
+      logger,
+    })
+    const clip = `${origin}/clip.mp4`
+    const gray = `${origin}/gray.mp4`
+    const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    // 成片轨：测试图 0–2 秒、组件段（标志片尾）2–4 秒、灰底 4–6 秒；特效块（姓名条）4.5–7 秒，
+    // 比成片轨多出 1 秒；测试图那段带一句字幕。
+    const rendered = await worker.render(
+      {
+        id: 'model-b',
+        mediaUrls: [clip, gray],
+        compose: (paths) =>
+          buildComposition({
+            draft: modelBDraft(GRAY_JOB),
+            media: {
+              videos: {
+                [SOURCE_JOB]: { url: paths[clip] ?? clip },
+                [GRAY_JOB]: { url: paths[gray] ?? gray },
+              },
+              music: null,
+              subtitles: {
+                [SOURCE_JOB]: {
+                  subtitleJobId: SUBTITLE_JOB,
+                  sentences: [
+                    {
+                      startMs: 200,
+                      endMs: 1800,
+                      text: '组件段在中间。',
+                      speaker: null,
+                      words: [
+                        { startMs: 200, endMs: 1000, text: '组件段', punctuation: '' },
+                        { startMs: 1000, endMs: 1800, text: '在中间', punctuation: '。' },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            catalog,
+          }).html,
+      },
+      { signal: new AbortController().signal, onProgress: () => {} },
+    )
+    try {
+      const { stdout } = await run('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'json',
+        rendered.file,
+      ])
+      const duration = Number(
+        (JSON.parse(stdout) as { format: { duration: string } }).format.duration,
+      )
+      expect(duration).toBeGreaterThan(6.9)
+      expect(duration).toBeLessThan(7.15)
+
+      const whole = { x: 0, y: 0, ...FRAME }
+      const [testCard, segment, grayBefore, overlayOnGray, overlayPastEnd] = await Promise.all(
+        [1, 3, 4.3, 5.8, 6.6].map((at) => frameAt(rendered.file, at)),
+      )
+      // 组件段有自己的画面：与前后两段视频都明显不同，也不是一片黑。
+      expect(meanDifference(segment!, testCard!, whole)).toBeGreaterThan(10)
+      expect(meanDifference(segment!, grayBefore!, whole)).toBeGreaterThan(3)
+      expect(meanDifference(segment!, Buffer.alloc(segment!.length), whole)).toBeGreaterThan(3)
+      // 姓名条叠在灰底上；过了成片轨的结尾仍在空画面（黑底）上。
+      const nameArea = { x: 70, y: 225, width: 260, height: 60 }
+      expect(meanDifference(overlayOnGray!, grayBefore!, nameArea)).toBeGreaterThan(6)
+      expect(
+        meanDifference(overlayPastEnd!, Buffer.alloc(overlayPastEnd!.length), nameArea),
+      ).toBeGreaterThan(6)
+    } finally {
+      await rendered.cleanup()
+    }
+  }, 600_000)
 })
+
+/** 「两段视频夹一个组件段 + 一个特效块 + 字幕」的草稿，第二段视频出自 `grayJob`。 */
+function modelBDraft(grayJob: string) {
+  return {
+    canvas: FRAME,
+    layer0: [
+      {
+        id: 'a',
+        type: 'video' as const,
+        start: 0,
+        duration: 2000,
+        playbackStart: 0,
+        sourceJobId: SOURCE_JOB,
+        volume: 1,
+      },
+      {
+        id: 'c',
+        type: 'component' as const,
+        start: 2000,
+        duration: 2000,
+        playbackStart: 0,
+        component: 'logo-outro',
+        variables: {},
+      },
+      {
+        id: 'b',
+        type: 'video' as const,
+        start: 4000,
+        duration: 2000,
+        playbackStart: 0,
+        sourceJobId: grayJob,
+        volume: 1,
+      },
+    ],
+    captions: { component: 'default-caption', edits: [] },
+    music: null,
+    overlays: [
+      {
+        id: 'o',
+        component: 'lt-neon-border',
+        start: 4500,
+        duration: 2500,
+        playbackStart: 0,
+        track: 0,
+        zIndex: 1,
+        variables: { name: '拾步 · 秋冬新款', role: '品牌主理人' },
+      },
+    ],
+  }
+}
