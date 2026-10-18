@@ -1,0 +1,1209 @@
+/* 整片编辑器：上面左边是素材 / 组件栏、右边是预览，下面是剪辑工具、成片区四条轨与视频素材区。
+   外框沿用 editing/editor.css 的 .editor-dialog / .editor-header。 */
+
+.wf-state {
+  padding: 32px 24px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+
+.wf-workspace {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-areas:
+    'side preview'
+    'timeline timeline';
+  grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+  grid-template-rows: minmax(220px, 300px) auto;
+  gap: 12px;
+  padding: 0 24px 16px;
+  overflow-y: auto;
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  scrollbar-width: thin;
+}
+
+/* ---- 左栏：素材 / 组件 ---- */
+
+.wf-side {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  grid-area: side;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.wf-side-tabs {
+  height: 40px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.wf-side-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  scrollbar-width: thin;
+}
+
+.wf-music-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wf-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-panel-title {
+  flex: 1;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+.wf-panel-count {
+  margin-left: 4px;
+  color: var(--color-on-surface-muted);
+  font-weight: 400;
+}
+
+.wf-panel-note {
+  padding: 8px 2px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+
+.wf-song-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wf-song {
+  display: grid;
+  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) 88px auto;
+  gap: 10px;
+  min-height: 52px;
+  padding: 4px 8px 4px 4px;
+  border-radius: var(--radius-lg);
+}
+
+.wf-song.is-used {
+  background: var(--color-state-active);
+}
+
+.wf-song-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.wf-song-title {
+  overflow: hidden;
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  line-height: var(--text-body-sm--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-song-meta {
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-song-wave {
+  display: flex;
+  height: 24px;
+}
+
+.wf-song-used {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+}
+
+.wf-generate {
+  display: flex;
+  width: 320px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.wf-generate-label {
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+}
+
+.wf-generate-text {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-md);
+  background: var(--color-input-bg);
+  color: var(--color-on-surface);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+
+.wf-generate-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+/* ---- 预览 ---- */
+
+.wf-preview {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-area: preview;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.wf-player-host {
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
+.wf-player-host[hidden] {
+  display: none;
+}
+
+.wf-player-host {
+  position: relative;
+}
+
+.wf-player {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* 换页时新播放器在底下加载，画好第一帧才显示 */
+.wf-player.is-pending {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wf-preview-note {
+  max-width: 320px;
+  padding: 0 24px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+  text-align: center;
+}
+
+/* ---- 组件栏 ---- */
+
+.wf-side-body.is-components {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.wf-components {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-chips {
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 8px 12px 6px;
+  scrollbar-width: none;
+}
+
+.wf-chips .wf-chip {
+  height: 26px;
+  flex: none;
+  gap: 4px;
+  padding: 0 10px;
+  font-size: var(--text-label);
+}
+
+.wf-chip span {
+  color: var(--color-on-surface-faint);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-component-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+.wf-component-filter button {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-variant);
+}
+
+.wf-component-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 6px 8px;
+  scrollbar-width: thin;
+}
+
+.wf-component {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px 5px 6px;
+  border-radius: var(--radius-md);
+  cursor: grab;
+  text-align: left;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-component[aria-pressed='true'] {
+  background: var(--color-state-active);
+}
+
+.wf-component.is-lifting {
+  background: var(--color-state-dragged);
+  cursor: grabbing;
+}
+
+.wf-component-thumb {
+  display: grid;
+  width: 72px;
+  height: 41px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface-faint);
+}
+
+.wf-component-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wf-component-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-component-name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.wf-component-name b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-label);
+  font-weight: 500;
+  line-height: var(--text-label--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-component-place {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.wf-component[aria-pressed='true'] .wf-component-place {
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.wf-component-desc {
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 组件浮层 ---- */
+
+.wf-pop-anchor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wf-pop-surface {
+  width: 332px;
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.wf-pop {
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.wf-pop-head b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-pop-meta {
+  color: var(--color-on-surface-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-pop-head .wf-pop-remove {
+  height: 28px;
+  margin-left: auto;
+  padding: 0 8px;
+  color: var(--color-on-surface-variant);
+}
+
+.wf-pop-desc {
+  margin: 4px 0;
+  color: var(--color-on-surface-variant);
+}
+
+.wf-pop-note {
+  margin-top: 12px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+.wf-field {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-field > label,
+.wf-field > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-input,
+.wf-select {
+  height: 32px;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+}
+
+.wf-input {
+  width: 100%;
+  padding: 0 10px;
+}
+
+.wf-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+}
+
+.wf-field-number {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-field-number .wf-input {
+  width: 96px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-field-static {
+  color: var(--color-on-surface-variant);
+}
+
+.wf-field-hint {
+  grid-column: 2;
+  margin-top: -4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+.wf-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wf-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  background: var(--wf-swatch);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-color {
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  cursor: pointer;
+}
+
+.wf-color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.wf-color::-webkit-color-swatch {
+  border: 0;
+  border-radius: var(--radius-full);
+}
+
+.wf-swatch[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 2px var(--color-popup-bg),
+    0 0 0 3.5px var(--color-on-surface);
+}
+
+.wf-switch {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--color-disabled-container);
+}
+
+.wf-switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-top-layer);
+  box-shadow: var(--shadow-1);
+  transition: left var(--dur-s) var(--ease-decel);
+}
+
+.wf-switch[aria-checked='true'] {
+  background: var(--color-on-surface);
+}
+
+.wf-switch[aria-checked='true'] i {
+  left: 14px;
+}
+
+/* ---- 导出 ---- */
+
+.wf-export {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-export-status {
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-export-status.is-error {
+  color: var(--color-error);
+}
+
+.wf-download {
+  display: inline-flex;
+  height: var(--control-height-md);
+  align-items: center;
+  gap: 8px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 500;
+  box-shadow: var(--shadow-1);
+}
+
+/* ---- 下半：工具条、轨道、素材区 ---- */
+
+.wf-timeline {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  grid-area: timeline;
+  padding: 8px 12px 12px;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.wf-toolbar {
+  display: flex;
+  min-height: 36px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+
+.wf-toolbar-group {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.wf-tool {
+  display: inline-flex;
+  height: 30px;
+  min-width: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  white-space: nowrap;
+}
+
+.wf-tool.has-label {
+  padding: 0 10px;
+}
+
+.wf-tool.is-pressed {
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+}
+
+.wf-tool[aria-disabled='true'] {
+  opacity: var(--state-disabled-content);
+  cursor: default;
+}
+
+.wf-clock {
+  padding: 0 6px 0 8px;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-clock span,
+.wf-readout {
+  color: var(--color-on-surface-muted);
+}
+
+.wf-readout {
+  margin-right: 6px;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-readout b {
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.wf-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--color-hairline);
+}
+
+.wf-sound {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 0 4px 4px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.wf-sound-clip {
+  min-width: 120px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+}
+
+.wf-volume {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-body-sm);
+  white-space: nowrap;
+}
+
+.wf-volume input[type='range'] {
+  width: 120px;
+  accent-color: var(--color-on-surface);
+  cursor: pointer;
+}
+
+.wf-volume output {
+  width: 40px;
+  color: var(--color-on-surface-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wf-volume.is-blocked {
+  color: var(--color-disabled-text);
+}
+
+.wf-volume.is-blocked input {
+  cursor: default;
+}
+
+/* ---- 成片区 ---- */
+
+.wf-tracks {
+  --timeline-ruler-height: 20px;
+  --timeline-handle-top: 0;
+  --timeline-handle-height: 100%;
+  --wf-film-height: 52px;
+  --wf-lane-height: 26px;
+  --wf-music-height: 32px;
+
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+
+.wf-track-heads {
+  display: grid;
+  grid-template-rows:
+    var(--timeline-ruler-height) var(--wf-film-height) var(--wf-lane-height)
+    var(--wf-lane-height) var(--wf-music-height);
+  row-gap: 6px;
+  padding-top: 4px;
+}
+
+.wf-track-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  white-space: nowrap;
+}
+
+.wf-track-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+/* 左边留 72px 放「+ 片头」，与 film-tracks.tsx 的 START_GUTTER_PX 一致 */
+.wf-track-content {
+  position: relative;
+  margin-left: 72px;
+  padding-top: 4px;
+}
+
+.wf-end-add {
+  position: absolute;
+  top: 0;
+  z-index: var(--z-local-1);
+  width: 62px;
+  height: 100%;
+  margin-left: 6px;
+  border: 1px dashed var(--color-outline-variant);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.wf-end-add.is-start {
+  left: -68px;
+  margin-left: 0;
+}
+
+.wf-track-content > .timeline-ruler {
+  position: relative;
+}
+
+.wf-beat {
+  position: absolute;
+  top: 16px;
+  width: 1px;
+  height: 6px;
+  background: var(--color-on-surface-faint);
+}
+
+.wf-beat.is-strong {
+  top: 13px;
+  height: 9px;
+  background: var(--color-on-surface-variant);
+}
+
+.wf-head-pill {
+  min-width: 0;
+  max-width: 64px;
+  height: 20px;
+  margin-left: auto;
+  overflow: hidden;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-caption {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  display: block;
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-lowest);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  line-height: calc(var(--wf-lane-height) - 4px);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.wf-caption.is-editing {
+  z-index: var(--z-local-3);
+  min-width: 160px;
+  overflow: visible;
+  padding: 0;
+}
+
+.wf-caption input {
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
+  border-radius: inherit;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+}
+
+.wf-lanes {
+  display: grid;
+  grid-template-rows:
+    var(--wf-film-height) var(--wf-lane-height) var(--wf-lane-height)
+    var(--wf-music-height);
+  row-gap: 6px;
+  margin-top: 6px;
+}
+
+.wf-lane {
+  position: relative;
+  min-width: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container);
+  pointer-events: none;
+}
+
+.wf-lane > * {
+  pointer-events: auto;
+}
+
+.wf-lane-hint {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  translate: 0 -50%;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wf-lane-hint.is-end {
+  left: auto;
+  margin-left: 10px;
+}
+
+.wf-clip,
+.wf-overlay,
+.wf-music {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-highest);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  user-select: none;
+}
+
+.wf-block-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-radius: inherit;
+  cursor: grab;
+  text-align: left;
+  touch-action: none;
+}
+
+.wf-clip.is-selected,
+.wf-overlay.is-selected,
+.wf-music.is-selected {
+  z-index: var(--z-local-2);
+  box-shadow: inset 0 0 0 2px var(--color-on-surface);
+}
+
+.wf-clip.is-card .wf-block-body {
+  cursor: pointer;
+}
+
+.wf-clip-label {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  z-index: var(--z-local-1);
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wf-clip-media {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.wf-clip-frames {
+  display: flex;
+  height: 62%;
+}
+
+.wf-clip-wave {
+  display: flex;
+  height: 38%;
+}
+
+.wf-clip-card {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: 4px 8px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+.wf-transition-slot {
+  position: absolute;
+  top: 50%;
+  z-index: var(--z-local-3);
+  width: 0;
+  height: 0;
+}
+
+.wf-transition {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  translate: -50% -50%;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+}
+
+.wf-transition[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--color-surface-container-lowest);
+}
+
+.wf-overlay .wf-clip-label,
+.wf-music .wf-clip-label {
+  top: 50%;
+  translate: 0 -50%;
+}
+
+.wf-music {
+  overflow: hidden;
+}
+
+.wf-playhead {
+  position: absolute;
+  top: 4px;
+  bottom: 0;
+  z-index: var(--z-local-3);
+  width: 2px;
+  translate: -1px 0;
+  background: var(--color-on-surface);
+  pointer-events: none;
+}
+
+/* ---- 视频素材区 ---- */
+
+.wf-materials {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.wf-materials-empty {
+  padding: 16px 4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+}
+
+.wf-materials-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wf-group-label,
+.wf-group-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.wf-group-switch {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.wf-materials-hint {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+.wf-takes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wf-take {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+
+.wf-take-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.wf-take-label {
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+}
+
+.wf-version-label,
+.wf-version-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-highest);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+}
+
+.wf-take-strip {
+  position: relative;
+  display: flex;
+  height: 64px;
+  min-width: 0;
+  gap: 2px;
+}
+
+.wf-take-note {
+  align-self: center;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+.wf-shot {
+  position: relative;
+  min-width: 0;
+  flex-basis: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-thumb-fallback);
+  cursor: pointer;
+}
+
+.wf-shot img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wf-shot-text {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: flex;
+  max-width: calc(100% - 8px);
+  flex-direction: column;
+  align-items: flex-start;
+  overflow: hidden;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-scrim) 56%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wf-shot[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px var(--color-on-surface);
+}
+
+.wf-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: var(--z-local-2);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 2px var(--color-on-surface);
+  cursor: grab;
+  touch-action: none;
+}
+
+.wf-range.is-lifting {
+  background: var(--color-state-dragged);
+  cursor: grabbing;
+}
+
+@media (max-width: 640px) {
+  .wf-workspace {
+    grid-template-areas:
+      'preview'
+      'side'
+      'timeline';
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 200px minmax(200px, auto) auto;
+    padding: 0 12px 12px;
+  }
+
+  .wf-tracks {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .wf-take {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+}

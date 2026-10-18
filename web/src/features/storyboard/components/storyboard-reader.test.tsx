@@ -797,6 +797,25 @@ describe('StoryboardReader', () => {
     expect(files.writes).toEqual([])
   })
 
+  it('地址带着整片就打开整片编辑器，关掉回到分镜页；顶栏「整片」再打开', async () => {
+    provide()
+    await renderReader('/?shot=1&wholeFilm=true')
+    const editor = await screen.findByRole('dialog', { name: /编辑视频/ })
+    expect(within(editor).getByText('整片')).toBeInTheDocument()
+    await userEvent.click(within(editor).getByRole('button', { name: '关闭整片编辑' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /编辑视频/ })).toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: '整片' }))
+    expect(await screen.findByRole('dialog', { name: /编辑视频/ })).toBeInTheDocument()
+  })
+
+  it('只读时没有「整片」入口，地址里带着也不打开', async () => {
+    provide()
+    await renderReader('/?shot=1&wholeFilm=true', true)
+    await screen.findByRole('region', { name: '镜头组 1' })
+    expect(screen.queryByRole('button', { name: '整片' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: /编辑视频/ })).toBeNull()
+  })
+
   it('选中成片后点回填，把那次出片的镜头组写回当前组并保存', async () => {
     const files = provide()
     server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [editableJob] })))

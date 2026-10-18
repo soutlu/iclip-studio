@@ -66,6 +66,7 @@ const acceptOf = ({ byExtension, byType }: UploadRule): string =>
 
 export const MEDIA_IMAGE_ACCEPT = acceptOf(UPLOAD_RULES.image)
 export const MEDIA_VIDEO_ACCEPT = acceptOf(UPLOAD_RULES.video)
+export const MEDIA_AUDIO_ACCEPT = acceptOf(UPLOAD_RULES.audio)
 export const FONT_ACCEPT = acceptOf(UPLOAD_RULES.font)
 
 export const uploadContentTypeOf = (
@@ -157,10 +158,14 @@ export const uploadFontFile = async (
 
 export type UploadedMedia = { url: string; uploadId: string }
 
+/** `conversationId` 只对音频有意义：确认时把这首音乐挂到这段对话上（合同 §10）。 */
 export const uploadMediaFile = async (
   file: File,
   kind: MediaKind,
-  { onProgress }: { onProgress?: (ratio: number) => void } = {},
+  {
+    onProgress,
+    conversationId,
+  }: { onProgress?: (ratio: number) => void; conversationId?: string } = {},
 ): Promise<UploadedMedia> => {
   const signed = await signedMediaOf(file, kind)
   const ticket = await apiFetch('/uploads/sign', zUploadTicketOut, {
@@ -170,6 +175,7 @@ export const uploadMediaFile = async (
   })
   await putToStorage(ticket.upload, file, onProgress)
   const confirmed = await apiFetch(`/uploads/${ticket.uploadId}/confirm`, zUploadConfirmedOut, {
+    ...(conversationId === undefined ? {} : { body: { conversationId } }),
     fallbackErrorMessage: UPLOAD_FAILED,
     method: 'POST',
   })

@@ -30,8 +30,14 @@
     }
   },
   "include": ["src"],
-  // vendor 目录另有一份 tsconfig（宽两格，见 tsconfig.vendor.json）。引用它而不是把它的源码
-  // 收进来：引用之后这里看到的是它出的 .d.ts，那两格宽松不会漏进本仓自己的代码。
-  "exclude": ["src/shared/transcript/vendor"],
-  "references": [{ "path": "./tsconfig.vendor.json" }]
+  // vendor 目录各有一份放宽的 tsconfig（见 tsconfig.vendor.json、tsconfig.vendor-hyperframes.json）。
+  // 引用它们而不是把源码收进来：引用之后这里看到的是它们出的 .d.ts，宽松项不会漏进本仓自己的代码。
+  "exclude": [
+    "src/shared/transcript/vendor",
+    "src/features/storyboard/whole-film/vendor/hyperframes-studio"
+  ],
+  "references": [
+    { "path": "./tsconfig.vendor.json" },
+    { "path": "./tsconfig.vendor-hyperframes.json" }
+  ]
 }

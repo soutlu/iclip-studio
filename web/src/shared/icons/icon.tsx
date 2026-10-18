@@ -91,6 +91,14 @@ import {
   VolumeOff,
   X,
   ZoomIn,
+  ZoomOut,
+  Magnet,
+  MoveHorizontal,
+  Sparkles,
+  Code,
+  Blend,
+  Type,
+  Film,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -249,6 +257,18 @@ const ICONS = {
   warning: TriangleAlert,
   waveform: AudioLines,
   zoom: ZoomIn,
+  'zoom-out': ZoomOut,
+  /** 时间线吸附 */
+  snap: Magnet,
+  /** 时间线缩放到适应宽度 */
+  fit: MoveHorizontal,
+  /** AI 生成（如生成音乐） */
+  sparkles: Sparkles,
+  /** 组件分类：代码动画、效果、文字效果、场景 */
+  code: Code,
+  blend: Blend,
+  type: Type,
+  film: Film,
 } as const
 
 export type IconName = keyof typeof ICONS

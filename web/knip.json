@@ -1,20 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": [
-    "src/testing/main.development.ts",
-    "scripts/*.mjs",
-    // 整片合成构建：前端接上之前只由渲染服务 render/ 打包使用。
-    "src/features/storyboard/whole-film/composition/build.ts"
-  ],
+  "entry": ["src/testing/main.development.ts", "scripts/*.mjs"],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs", "vite/**/*.ts"],
-  "ignore": ["src/shared/api/generated/**", "src/shared/transcript/vendor/**"],
-  "ignoreDependencies": [
-    "tw-animate-css",
-    "tailwindcss",
-    "lint-staged",
-    "misans",
-    // 整片编辑器的预览播放器，编辑器接上之前未被引用。
-    "@hyperframes/player"
+  "ignore": [
+    "src/shared/api/generated/**",
+    "src/shared/transcript/vendor/**",
+    "src/features/storyboard/whole-film/vendor/hyperframes-studio/**"
   ],
+  "ignoreDependencies": ["tw-animate-css", "tailwindcss", "lint-staged", "misans"],
   "ignoreExportsUsedInFile": true
 }

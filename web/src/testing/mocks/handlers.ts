@@ -8,6 +8,7 @@ import {
   type zTaskOut,
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
+import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { brandTemplateHandlers, resetMockBrandTemplates } from './brand-templates'
 import { filmHandlers } from './film'
@@ -27,6 +28,7 @@ import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { referenceHandlers } from './references'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
+import { wholeFilmHandlers } from './whole-film'
 import { workspaceHandlers } from './workspace'
 
 export {
@@ -458,6 +460,8 @@ export const handlers = [
 
   ...workspaceHandlers,
   ...filmHandlers,
+  ...wholeFilmHandlers,
+  ...audioHandlers,
 
   ...transcriptHandlers,
 

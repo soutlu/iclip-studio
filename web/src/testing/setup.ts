@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterAll, afterEach, beforeAll } from 'vitest'
+import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 import {
   resetMockConversations,
   resetMockSession,
@@ -12,7 +12,11 @@ import { resetMockClock } from './mocks/paging'
 import { resetMockReferences } from './mocks/references'
 import { server } from './mocks/server'
 import { resetMockTranscript } from './mocks/transcript'
+import { resetMockWholeFilm } from './mocks/whole-film'
 import { resetMockWorkspace } from './mocks/workspace'
+
+// jsdom 跑不了 HyperFrames 播放器（iframe 里的合成运行时），换成只保留接口与事件的替身。
+vi.mock('@hyperframes/player', () => import('./hyperframes-player'))
 
 // matchMedia 恒为 false，模拟紧凑屏。
 if (!window.matchMedia) {
@@ -55,6 +59,16 @@ for (const proto of [Range.prototype, Element.prototype]) {
   }
 }
 
+// jsdom 没有指针捕获；按下可拖的元素（时间线上的块、组件卡片）时会调用。
+if (!('setPointerCapture' in Element.prototype)) {
+  for (const [name, value] of [
+    ['setPointerCapture', () => undefined],
+    ['releasePointerCapture', () => undefined],
+    ['hasPointerCapture', () => false],
+  ] as const)
+    Object.defineProperty(Element.prototype, name, { configurable: true, value, writable: true })
+}
+
 // jsdom 不实现滚动；SearchList 与 TaskSpecPicker 移动活动项时调用。
 if (!('scrollIntoView' in Element.prototype)) {
   Object.defineProperty(Element.prototype, 'scrollIntoView', {
@@ -89,6 +103,7 @@ afterEach(() => {
   resetMockTasks()
   resetMockTranscript()
   resetMockUsers()
+  resetMockWholeFilm()
   resetMockWorkspace()
   cleanup()
 })
