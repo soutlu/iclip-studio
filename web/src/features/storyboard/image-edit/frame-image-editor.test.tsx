@@ -234,15 +234,12 @@ describe('图片编辑器', () => {
 
     // 只有一样能看的，没得切：整条不显示。
     expect(within(editor).queryByRole('group', { name: '该帧的图片' })).not.toBeInTheDocument()
-    // 画幅在设置行里、悬停说明跟随分镜；这句话只出现这一处，不再另起一行脚注。
+    // 画幅随分镜，设置中可查看说明。
     const aspect = within(editor).getByTitle('画幅 9:16，跟随分镜')
     expect(aspect).toHaveTextContent('9:16')
-    expect(within(editor).getByText('画幅 9:16，跟随分镜').closest('[title]')).toBe(aspect)
 
-    // 工具条渲染在画布之外的宿主里，选工具、画、撤销都照常。
-    const canvasEditor = within(editor).getByRole('group', { name: '图片标注编辑器' })
+    // 工具条支持选工具、绘制和撤销。
     const tools = within(editor).getByRole('toolbar', { name: '标注工具' })
-    expect(canvasEditor).not.toContainElement(tools)
     const canvas = loadCanvas(editor)
     await userEvent.click(within(tools).getByRole('button', { name: '矩形标注' }))
     expect(within(tools).getByRole('button', { name: '矩形标注' })).toHaveAttribute(

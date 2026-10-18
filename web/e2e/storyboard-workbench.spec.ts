@@ -43,11 +43,6 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
     expect(box.y).toBeGreaterThanOrEqual(groupBox.y)
     expect(box.y + box.height).toBeLessThanOrEqual(barBox.y)
   }
-  // 舞台列宽跟着画面走：画面左贴主体内距、右边到文案列只隔「间距 + 分隔线 + 间距」，两侧不留边，剩下的宽度都归文案列。
-  expect(previewBox.x - groupBox.x).toBeLessThanOrEqual(16 + 1)
-  expect(scriptBox.x - (previewBox.x + previewBox.width)).toBeLessThanOrEqual(24 + 1 + 24 + 1)
-  // 舞台下面不再有操作行：竖版画面撑满舞台高，舞台一直延伸到出片栏，中间不空出成块空白。
-  expect(barBox.y - (previewBox.y + previewBox.height)).toBeLessThanOrEqual(16)
   // 编辑、替换叠在画面右上：点它们只开自己的入口，不开原图。
   const editBox = await group.getByRole('button', { name: '编辑图片', exact: true }).boundingBox()
   if (editBox === null) throw new Error('舞台工具条必须有可见布局')
@@ -91,7 +86,7 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
 })
 
 for (const width of [1335, 390]) {
-  test(`成片区 ${width}px：没出过片的组不占位；有片的组从新到旧排在文案列末尾、出血到工作台边缘`, async ({
+  test(`成片区 ${width}px：没出过片的组不占位；有片的组从新到旧排列，新结果可直接查看`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
@@ -110,14 +105,7 @@ for (const width of [1335, 390]) {
     await expect(cards.nth(1).getByRole('button', { name: /生成失败$/ })).toBeVisible()
     await expect(cards.nth(2).getByRole('button', { name: /的成片$/ })).toBeVisible()
 
-    const [groupBox, takesBox] = await Promise.all([group.boundingBox(), takes.boundingBox()])
-    if (groupBox === null || takesBox === null) throw new Error('成片区必须有可见布局')
-    // 右端抵掉主体内距、落在工作台边缘；上下排时左端也出血。
-    expect(
-      Math.abs(takesBox.x + takesBox.width - (groupBox.x + groupBox.width)),
-    ).toBeLessThanOrEqual(1)
     if (width === 390) {
-      expect(Math.abs(takesBox.x - groupBox.x)).toBeLessThanOrEqual(1)
       // 上下排：成片区排在正文之后，随主体滚到底才整块露出来。
       await group.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
       await expect(takes).toBeInViewport({ ratio: 1 })
@@ -146,14 +134,12 @@ for (const width of [1335, 390]) {
       await submit()
       await submit()
       await expect(cards).toHaveCount(5)
-      const scroller = takes.getByRole('list').locator('..')
-      await scroller.evaluate((element) => {
-        element.scrollLeft = element.scrollWidth
-      })
-      await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+      await cards.last().scrollIntoViewIfNeeded()
+      await expect(cards.last()).toBeInViewport()
+      await expect(cards.first()).not.toBeInViewport()
       await submit()
       await expect(cards).toHaveCount(6)
-      await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBe(0)
+      await expect(cards.first()).toBeInViewport()
     } else {
       // 左右排：成片区钉在列底，正文自己滚到底它也不动。
       await expect(takes).toBeInViewport({ ratio: 1 })

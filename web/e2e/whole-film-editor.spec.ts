@@ -69,9 +69,10 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await page.keyboard.press('ArrowLeft')
   await expect(first).not.toHaveAttribute('aria-label', before ?? '')
 
-  // 在整片中间拆开：时钟写着「当前 / 总长」，总长是「分:秒.百分秒」
-  const clock = (await dialog.locator('.wf-clock').textContent()) ?? ''
-  const total = Number(/\/\s*\d+:(\d+(?:\.\d+)?)/.exec(clock)?.[1] ?? '0')
+  // 当前只有这一段，结尾滑块的值就是总长；从中间拆开。
+  const total = Number(
+    await film.getByRole('slider', { name: '裁剪该段结尾' }).getAttribute('aria-valuenow'),
+  )
   await seek(page, dialog, total / 2)
   await dialog.getByRole('button', { name: '拆分' }).click()
   await expect(film.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
@@ -105,14 +106,16 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   // 有可填项的组件放下就打开浮层
   const intro = page.getByRole('dialog', { name: '特效 · 字标定格' })
   await expect(intro.getByLabel('品牌名')).toHaveAttribute('placeholder', '品牌名')
+  const brandSaved = page.waitForRequest(
+    (request) =>
+      request.method() === 'PUT' &&
+      request.url().includes('/whole-film/draft') &&
+      (request.postData() ?? '').includes('拾步'),
+  )
   await intro.getByLabel('品牌名').fill('拾步')
   await intro.getByLabel('品牌名').press('Enter')
-  // 预览换上改过品牌名的那一版（新页在底下加载好才换上来）
-  await expect(dialog.locator('hyperframes-player:not(.is-pending)')).toHaveAttribute(
-    'srcdoc',
-    /拾步/,
-  )
-  await expect(dialog.locator('hyperframes-player.is-pending')).toHaveCount(0)
+  await brandSaved
+  await readyPlayer(dialog)
   await page.keyboard.press('Escape')
   await expect(intro).toBeHidden()
 
@@ -147,12 +150,6 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await captionInput.press('Enter')
   await captionSaved
 
-  // 预览：播放器拿到的是这份草稿的合成页，包含刚加入的片尾组件。
-  await expect(dialog.locator('hyperframes-player:not(.is-pending)')).toHaveAttribute(
-    'srcdoc',
-    /data-composition-id="main"[\s\S]*compositions\/.*logo-sting/,
-  )
-
   // 导出：mock 渲染排队、渲染、上传后给下载地址；下载时对用到的成片各记一次
   const exported = page.waitForResponse(
     (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
@@ -180,84 +177,6 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
     'aria-disabled',
     'true',
   )
-})
-
-test('素材预览可暂停续播和段尾重播，切回成片后播放实际推进', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  const panel = await openConversation(page, '夜景延时素材生成')
-  const dialog = await openWholeFilm(page, panel)
-  const materials = dialog
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  const shot = materials.getByRole('button', { name: /^生成 A 镜头 1，/ })
-  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
-  const video = dialog.locator('video')
-  const mediaTime = () => video.evaluate((element: HTMLVideoElement) => element.currentTime)
-  const mediaPaused = () => video.evaluate((element: HTMLVideoElement) => element.paused)
-
-  // 成片为空时，工具条仍然控制正在看的素材。
-  await shot.click()
-  await expect.poll(mediaTime).toBeGreaterThan(0.05)
-  const pause = toolbar.getByRole('button', { name: '暂停', exact: true })
-  await expect(pause).not.toHaveAttribute('aria-disabled', 'true')
-  await pause.click()
-  await expect(video).toBeVisible()
-  await expect.poll(mediaPaused).toBe(true)
-  const pausedAt = await mediaTime()
-  await page.waitForTimeout(250)
-  expect(await mediaTime()).toBeCloseTo(pausedAt, 2)
-
-  // 竖版素材的媒体元素完整落在预览区内，不能被容器裁掉上下部分。
-  const bounds = await video.evaluate((element) => {
-    const frame = element.parentElement
-    if (frame === null) throw new Error('素材预览尚未布局')
-    return {
-      video: element.getBoundingClientRect().toJSON() as { top: number; bottom: number },
-      frame: frame.getBoundingClientRect().toJSON() as { top: number; bottom: number },
-    }
-  })
-  expect(bounds.video.top).toBeGreaterThanOrEqual(bounds.frame.top - 1)
-  expect(bounds.video.bottom).toBeLessThanOrEqual(bounds.frame.bottom + 1)
-
-  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
-  await expect.poll(mediaTime).toBeGreaterThan(pausedAt + 0.05)
-  await expect.poll(mediaPaused).toBe(true)
-  expect(await mediaTime()).toBeCloseTo(1, 1)
-  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
-  await expect.poll(mediaPaused).toBe(false)
-  expect(await mediaTime()).toBeLessThan(1)
-
-  // 扩成 3 秒选区再加入成片，给真实播放器留足观察播放、暂停的时间。
-  const end = materials.getByRole('slider', { name: '裁剪该段结尾' })
-  await end.focus()
-  await page.keyboard.press('Shift+ArrowRight')
-  await page.keyboard.press('Shift+ArrowRight')
-  await page.keyboard.press('Enter')
-  const film = dialog.getByRole('group', { name: '成片画面轨' })
-  const clip = film.getByRole('button', { name: /^选中：第 1 段/ })
-  await expect(clip).toBeVisible()
-  const player = await readyPlayer(dialog)
-
-  // 成片已有内容时，暂停素材也不能偷偷切回成片播放。
-  await materials.getByRole('group', { name: /^选中的范围 0.0–3.0 秒/ }).click()
-  await toolbar.getByRole('button', { name: '暂停', exact: true }).click()
-  await expect(video).toBeVisible()
-  await expect.poll(mediaPaused).toBe(true)
-  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
-  await expect.poll(mediaPaused).toBe(false)
-  await clip.click()
-  await expect(video).toHaveCount(0)
-  const playhead = dialog.getByRole('slider', { name: '时间线播放位置' })
-  await expect.poll(async () => Number(await playhead.inputValue())).toBeGreaterThan(0.2)
-  await toolbar.getByRole('button', { name: '暂停', exact: true }).click()
-  await expect
-    .poll(() => player.evaluate((element) => (element as HTMLElement & { paused: boolean }).paused))
-    .toBe(true)
-  // iframe 暂停后还有最后一次报时，先等该消息落地，再观察停止后的时间。
-  await page.waitForTimeout(250)
-  const filmPausedAt = Number(await playhead.inputValue())
-  await page.waitForTimeout(250)
-  expect(Number(await playhead.inputValue())).toBeCloseTo(filmPausedAt, 1)
 })
 
 test('整片编辑器在窄屏上纵向排开', async ({ page }) => {

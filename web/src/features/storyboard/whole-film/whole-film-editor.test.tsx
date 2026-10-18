@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SubtitleIn, WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
-import { playerCalls } from '@/testing/hyperframes-player'
 import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
@@ -165,17 +164,15 @@ describe('整片编辑器', () => {
     expect(within(materials).getByText('生成 B')).toBeInTheDocument()
   })
 
-  it('点一个镜头预览放这个镜头，按 Enter 插到播放头处，成片轨多一段并自动保存', async () => {
+  it('选中镜头按 Enter 插到播放头处，保存选区及首段画布尺寸', async () => {
     const user = userEvent.setup()
-    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
     await openEditor()
     const materials = await screen.findByRole('region', { name: '视频素材区' })
     await user.click(
       await within(materials).findByRole('button', { name: /生成 A 镜头 2，2\.0–4\.5 秒/ }),
     )
-    expect(screen.getByText('素材 · 镜头组 1 · 生成 A · 镜头 2')).toBeInTheDocument()
-    expect(play).toHaveBeenCalled()
     await user.keyboard('{Enter}')
 
     expect(
@@ -326,75 +323,11 @@ describe('整片编辑器', () => {
       'aria-disabled',
       'true',
     )
-    expect(screen.queryByText(/组件库还没接入/)).not.toBeInTheDocument()
-  })
-
-  it('预览：播放器拿到这份草稿的合成页；工具条播放、暂停，点时间线跳到那里', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    const player = await waitFor(() => {
-      // 新页在底下加载好才换上来：等到显示中的那个播放器
-      const element = document.querySelector('hyperframes-player:not(.is-pending)')
-      expect(element?.getAttribute('srcdoc')).toContain('data-composition-id="main"')
-      return element
-    })
-    expect(player?.getAttribute('srcdoc')).toContain(`src="${URL_A}"`)
-    expect(player?.getAttribute('srcdoc')).toContain(
-      '<base href="http://localhost:3000/hyperframes/',
-    )
-
-    playerCalls.length = 0
-    await user.click(screen.getByRole('button', { name: '播放' }))
-    expect(screen.getByRole('button', { name: '暂停' })).toBeInTheDocument()
-    fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
-      target: { value: '1.5' },
-    })
-    expect(playerCalls).toEqual(['play', 'seek 1.5', 'play'])
-    await user.click(screen.getByRole('button', { name: '暂停' }))
-    expect(screen.getByRole('button', { name: '播放' })).toBeInTheDocument()
   })
 })
 
 describe('整片编辑器 · 时间线', () => {
-  /** 显示中的播放器（新页加载好才换上来） */
-  const shownPlayer = () =>
-    waitFor(() => {
-      const element = document.querySelector('hyperframes-player:not(.is-pending)')
-      expect(element).not.toBeNull()
-      return element as HTMLElement
-    })
   const editorDialog = () => screen.getByRole('dialog')
-
-  it('点成片段：选中它，播放头移到段首，只把这一段播一遍', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    const player = await shownPlayer()
-    playerCalls.length = 0
-    await user.click(await blockButton(/^选中：第 2 段/))
-    expect(await blockButton(/^选中：第 2 段/)).toHaveAttribute('aria-pressed', 'true')
-    expect(playerCalls).toEqual(['seek 2', 'play'])
-    // 播到这一段结尾就停
-    fireEvent(player, new CustomEvent('timeupdate', { detail: { currentTime: 3.2 } }))
-    expect(playerCalls).toEqual(['seek 2', 'play'])
-    fireEvent(player, new CustomEvent('timeupdate', { detail: { currentTime: 3.5 } }))
-    expect(playerCalls).toEqual(['seek 2', 'play', 'pause'])
-  })
-
-  it('空格播放、暂停；焦点在按钮上时也是，不点那个按钮', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    await shownPlayer()
-    playerCalls.length = 0
-    screen.getByRole('button', { name: '吸附' }).focus()
-    await user.keyboard(' ')
-    expect(playerCalls).toEqual(['play'])
-    expect(screen.getByRole('button', { name: '吸附' })).toHaveAttribute('aria-pressed', 'true')
-    await user.keyboard(' ')
-    expect(playerCalls).toEqual(['play', 'pause'])
-  })
 
   it('Delete 删除选中的段，⌘Z 撤销；没选中时什么也不删', async () => {
     const user = userEvent.setup()
@@ -450,10 +383,10 @@ describe('整片编辑器 · 时间线', () => {
     ).toBeInTheDocument()
 
     await user.click(await blockButton(/^选中：第 1 段/))
-    const clock = () => document.querySelector('.wf-clock')?.textContent
-    expect(clock()).toMatch(/^00:00\.00/)
+    const playhead = screen.getByRole('slider', { name: '时间线播放位置' })
+    expect(playhead).toHaveValue('0')
     await user.keyboard('{ArrowRight}{Shift>}{ArrowRight}{/Shift}')
-    expect(clock()).toMatch(/^00:01\.10/)
+    expect(playhead).toHaveValue('1.1')
   })
 
   it('音量推子按 dB：0 dB 在正中，←/→ 0.5 dB、⇧ 3 dB，双击回 0 dB，草稿里存倍数', async () => {

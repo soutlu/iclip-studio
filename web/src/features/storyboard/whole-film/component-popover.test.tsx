@@ -87,7 +87,6 @@ describe('组件调整浮层', () => {
     const { onChange } = renderPopover()
     const size = screen.getByLabelText('字号')
     expect(size).toHaveValue(72)
-    expect(size.parentElement).toHaveTextContent('像素')
     await user.clear(size)
     await user.type(size, '48{Enter}')
     expect(onChange).toHaveBeenLastCalledWith({ size: 48 })

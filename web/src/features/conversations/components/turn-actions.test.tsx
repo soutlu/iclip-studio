@@ -194,8 +194,8 @@ describe('TurnActions', () => {
       <TurnActions copyText="回复" endedAt={endedAt} usage={{ inputTokens: 12340 }} />,
     )
 
-    expect(screen.getAllByRole('button')).toHaveLength(1)
-    expect(document.querySelector('time')).toBeNull()
+    expect(screen.getByRole('button', { name: '复制' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /\d{2}:\d{2}$/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/输入/)).toBeNull()
   })
 

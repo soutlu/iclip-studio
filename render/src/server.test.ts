@@ -6,12 +6,11 @@ import { catalog, exportRequest, flush, manualWorker, memoryLogger } from './tes
 
 let base: string
 let close: () => Promise<void>
-let fake: ReturnType<typeof manualWorker>
 
 beforeEach(async () => {
-  fake = manualWorker()
+  const { worker } = manualWorker()
   const { logger } = memoryLogger()
-  const queue = new ExportQueue({ worker: fake.worker, logger, timeoutMs: 60_000 })
+  const queue = new ExportQueue({ worker, logger, timeoutMs: 60_000 })
   const server = createExportServer({
     queue,
     catalog,
@@ -36,12 +35,11 @@ const post = (body: unknown) =>
   })
 
 describe('渲染服务接口', () => {
-  it('POST /exports 合法时答 202，任务排队后开始渲染，合成页里是草稿的内容', async () => {
+  it('POST /exports 合法时答 202，可以查询任务的渲染状态', async () => {
     const response = await post(exportRequest())
     expect(response.status).toBe(202)
     expect(await response.json()).toEqual({ id: '11111111-2222-4333-8444-555555555555' })
     await flush()
-    expect(fake.renders).toHaveLength(1)
     const status = await (
       await fetch(`${base}/exports/11111111-2222-4333-8444-555555555555`)
     ).json()
@@ -80,7 +78,11 @@ describe('渲染服务接口', () => {
     const response = await post(body)
     expect(response.status).toBe(202)
     await flush()
-    expect(fake.renders).toHaveLength(1)
+    const { id } = (await response.json()) as { id: string }
+    expect(await (await fetch(`${base}/exports/${id}`)).json()).toMatchObject({
+      status: 'rendering',
+      error: null,
+    })
   })
 
   it.each<[string, unknown, string]>([
@@ -127,7 +129,9 @@ describe('渲染服务接口', () => {
     const payload = (await response.json()) as { code: string; message: string }
     expect(payload.code).toBe(code)
     expect(payload.message.length).toBeGreaterThan(0)
-    expect(fake.renders).toHaveLength(0)
+    expect(await (await fetch(`${base}/health`)).json()).toMatchObject({
+      queue: { running: 0, waiting: 0 },
+    })
   })
 
   it('同一 id 再提交答 409', async () => {

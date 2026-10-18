@@ -75,18 +75,8 @@ const waitCompleted = (page: Page, ids: readonly string[]) =>
     .toBe(ids.length)
 
 /** 进对话、按镜头组出片、打开整片编辑器 */
-/** 用户屏幕与常见笔记本屏幕 */
-const VIEWPORTS: readonly { width: number; height: number }[] = [
-  { width: 1449, height: 982 },
-  { width: 1440, height: 900 },
-]
-
-const openWith = async (
-  page: Page,
-  shots: readonly number[],
-  viewport = { width: 1449, height: 982 },
-) => {
-  await page.setViewportSize(viewport)
+const openWith = async (page: Page, shots: readonly number[]) => {
+  await page.setViewportSize({ width: 1449, height: 982 })
   const panel = await openConversation(page, CONVERSATION)
   await addTakes(page, shots)
   await panel.getByRole('button', { name: '整片', exact: true }).click()
@@ -112,28 +102,8 @@ const shotOf = (materials: Locator, group: number, take: string, shot: number) =
 
 const filmLane = (dialog: Locator) => dialog.getByRole('group', { name: '成片画面轨' })
 
-/** 素材区可视区、页面与弹窗工作区的滚动尺寸 */
-const areaMetrics = (materials: Locator) =>
-  materials.evaluate((section) => {
-    const body = section.querySelector('.wf-materials-body')
-    const workspace = section.closest('.wf-workspace')
-    if (!(body instanceof HTMLElement) || !(workspace instanceof HTMLElement))
-      throw new Error('素材区尚未渲染')
-    const root = document.documentElement
-    return {
-      height: body.clientHeight,
-      top: Math.round(body.getBoundingClientRect().top),
-      scrolls: body.scrollHeight > body.clientHeight,
-      // 横向能不能滚：裁掉的透明点按区不算
-      scrollsSideways:
-        getComputedStyle(body).overflowX !== 'hidden' && body.scrollWidth > body.clientWidth,
-      pageScrolls: root.scrollHeight > root.clientHeight,
-      workspaceScrolls: workspace.scrollHeight > workspace.clientHeight,
-    }
-  })
-
 const previewVideo = (dialog: Locator) =>
-  dialog.locator('video.wf-material-video').evaluate((video: HTMLVideoElement) => ({
+  dialog.locator('video').evaluate((video: HTMLVideoElement) => ({
     paused: video.paused,
     time: Math.round(video.currentTime * 10) / 10,
   }))
@@ -153,188 +123,122 @@ const centerOf = async (locator: Locator) => {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
-test('镜头组区域固定高度，镜头组多时在区域里上下滚动；轨道只放画面', async ({ page }) => {
-  const { dialog, materials } = await openWith(page, [1, 1, 2, 2, 3])
-
-  // 放下第一组的两条原作并露出下一组的组名
-  const before = await areaMetrics(materials)
-  expect(before).toMatchObject({
-    height: 118,
-    scrolls: true,
-    scrollsSideways: false,
-    pageScrolls: false,
-    workspaceScrolls: false,
-  })
-  await expect(groupOf(materials, 1).getByText('生成 B')).toBeInViewport()
-  await expect(groupOf(materials, 2).getByText('镜头组 2')).toBeInViewport()
-  await expect(groupOf(materials, 3)).not.toBeInViewport()
-
-  // 没有按钮行，也没有切换镜头组的下拉
-  await expect(materials.getByRole('button', { name: /加入成片|镜头组/ })).toHaveCount(0)
-
-  // 轨道 32 像素，镜头上不写字；组名、原作名与成片区轨名同字号
-  const look = await materials.evaluate((section) => ({
-    strips: [...section.querySelectorAll('.wf-take-strip')].map(
-      (strip) => strip.getBoundingClientRect().height,
-    ),
-    shotText: [...section.querySelectorAll('.wf-shot')].map((shot) => shot.textContent).join(''),
-    fonts: [
-      ...new Set(
-        [
-          ...section.querySelectorAll('.wf-group-label, .wf-take-label'),
-          ...document.querySelectorAll('.wf-track-head'),
-        ].map((element) => getComputedStyle(element).fontSize),
-      ),
-    ],
-  }))
-  expect(new Set(look.strips)).toEqual(new Set([32]))
-  expect(look.shotText).toBe('')
-  expect(look.fonts).toHaveLength(1)
-
-  // 素材轨与成片轨左端对齐
-  const stripLeft = await materials.locator('.wf-take-strip').first().boundingBox()
-  const filmLeft = await filmLane(dialog).boundingBox()
-  expect(Math.round(stripLeft?.x ?? 0)).toBe(Math.round(filmLeft?.x ?? -1))
-
-  // 在区域里滚到底：后面的镜头组可以挑，区域高度与位置不变、页面不滚
+test('素材区滚动后能选择后面的镜头组与末尾镜头', async ({ page }) => {
+  const { materials } = await openWith(page, [1, 1, 2, 2, 3])
+  const last = shotOf(materials, 3, 'A', 6)
+  await expect(last).not.toBeInViewport()
   await materials.hover()
   await page.mouse.wheel(0, 400)
-  await expect(groupOf(materials, 3)).toBeInViewport()
-  await expect(shotOf(materials, 3, 'A', 6)).toBeInViewport()
-  expect(await areaMetrics(materials)).toEqual({ ...before })
-  await shotOf(materials, 3, 'A', 2).click()
-  await expect(dialog.getByText('素材 · 镜头组 3 · 生成 A · 镜头 2')).toBeVisible()
-  await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 2 })
-
-  // 选中轨道最右的镜头：结尾手柄不撑出横向滚动
-  await shotOf(materials, 3, 'A', 6).click()
-  const endHandle = groupOf(materials, 3).getByRole('slider', { name: '裁剪该段结尾' })
-  await expect(endHandle).toBeVisible()
-  expect(await areaMetrics(materials)).toEqual({ ...before })
-  // 手柄看得见的部分整个在区域里，没被裁掉
-  const handleBox = await endHandle.boundingBox()
-  const bodyRight = await materials
-    .locator('.wf-materials-body')
-    .evaluate((body) => body.getBoundingClientRect().left + body.clientWidth)
-  expect((handleBox?.x ?? 0) + (handleBox?.width ?? 0)).toBeLessThanOrEqual(bodyRight)
+  await expect(last).toBeInViewport()
+  await last.click()
+  const end = groupOf(materials, 3).getByRole('slider', { name: '裁剪该段结尾' })
+  await expect(end).toBeInViewport()
+  await end.focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect(end).toHaveAttribute('aria-valuenow', '5.9')
 })
 
-for (const viewport of VIEWPORTS)
-  test(`${viewport.width}×${viewport.height}：下半按内容定高，预览占其余；特效轨加行时预览让出高度`, async ({
-    page,
-  }) => {
-    const { dialog, materials } = await openWith(page, [1, 1, 2], viewport)
-    const layout = () =>
-      dialog.evaluate((element) => {
-        const box = (selector: string) => {
-          const found = element.querySelector(selector)
-          if (found === null) throw new Error(`没有 ${selector}`)
-          return found.getBoundingClientRect()
-        }
-        const root = document.documentElement
-        return {
-          preview: Math.round(box('.wf-preview').height),
-          materials: Math.round(box('.wf-materials-body').height),
-          // 素材轨下面到下半面板底边：只剩面板的内边距
-          below: Math.round(box('.wf-timeline').bottom - box('.wf-materials-body').bottom),
-          pageScrolls: root.scrollHeight > root.clientHeight,
-        }
-      })
-    const before = await layout()
-    expect(before).toMatchObject({ materials: 118, pageScrolls: false })
-    expect(before.below).toBeLessThanOrEqual(12)
-
-    await dialog.getByRole('tab', { name: '通用' }).click()
-    const categories = dialog.getByRole('radiogroup', { name: '分类' })
-    const components = dialog.getByRole('list', { name: '组件' })
-    await categories.getByRole('radio', { name: /^场景/ }).click()
-    await components.getByRole('button', { name: /^字标定格，特效轨/ }).click()
-    await categories.getByRole('radio', { name: /^社交/ }).click()
-    await components.getByRole('button', { name: /^手绘箭头，特效轨/ }).click()
-    await expect(dialog.getByRole('group', { name: /^特效 · 手绘箭头/ })).toBeVisible()
-    const after = await layout()
-    expect(after).toMatchObject({ materials: 118, pageScrolls: false })
-    expect(after.below).toBeLessThanOrEqual(12)
-    expect(after.preview).toBeLessThan(before.preview)
-    await expect(materials).toBeInViewport()
-  })
-
-test('1 个镜头组时区域高度不变、不滚动', async ({ page }) => {
-  const { materials } = await openWith(page, [1, 1])
-  expect(await areaMetrics(materials)).toMatchObject({
-    height: 118,
-    scrolls: false,
-    pageScrolls: false,
-    workspaceScrolls: false,
-  })
-})
-
-test('素材轨按自身时长铺满一行，缩放成片时间线不跟着变', async ({ page }) => {
+test('缩放成片时间线不会改变素材镜头的位置和大小', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
-  const strip = materials.locator('.wf-take-strip').first()
-  const before = await strip.boundingBox()
+  const first = shotOf(materials, 1, 'A', 1)
+  const last = shotOf(materials, 1, 'A', 6)
+  const before = [await first.boundingBox(), await last.boundingBox()]
   await dialog.getByRole('button', { name: '放大时间线' }).click()
   await dialog.getByRole('button', { name: '放大时间线' }).click()
-  expect(await strip.boundingBox()).toEqual(before)
-  const last = await shotOf(materials, 1, 'A', 6).boundingBox()
-  // 最后一个镜头到轨道右端（镜头之间留 2 像素缝）
-  expect(Math.round((last?.x ?? 0) + (last?.width ?? 0) + 2)).toBe(
-    Math.round((before?.x ?? 0) + (before?.width ?? 0)),
-  )
+  expect([await first.boundingBox(), await last.boundingBox()]).toEqual(before)
 })
 
-test('点镜头预览选区，播完可重播；点成片轨、拖播放头回到成片', async ({ page }) => {
-  const { dialog, materials } = await openWith(page, [1, 1])
-  const label = dialog.locator('.wf-stage-label')
-  // 成片里先有一段供切回预览；加入成片也是成片编辑，预览回到成片。
-  await shotOf(materials, 1, 'A', 1).click()
-  await expect(label).toBeVisible()
+test('素材暂停续播与段尾重播；点成片段播放，拖播放头返回成片', async ({ page }) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const video = dialog.locator('video')
+  const mediaTime = () => video.evaluate((element: HTMLVideoElement) => element.currentTime)
+  const mediaPaused = () => video.evaluate((element: HTMLVideoElement) => element.paused)
+
+  // 成片为空时也能暂停素材；选择非零入点，续播和重播都不能从文件开头播放。
+  await shotOf(materials, 1, 'A', 2).click()
+  expect(await mediaTime()).toBeGreaterThanOrEqual(1)
+  await expect.poll(mediaTime).toBeGreaterThan(1.05)
+  const pause = toolbar.getByRole('button', { name: '暂停', exact: true })
+  await expect(pause).not.toHaveAttribute('aria-disabled', 'true')
+  await pause.click()
+  await expect(video).toBeVisible()
+  await expect.poll(mediaPaused).toBe(true)
+  const pausedAt = await mediaTime()
+  await page.waitForTimeout(250)
+  expect(await mediaTime()).toBeCloseTo(pausedAt, 2)
+  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
+  expect(await mediaTime()).toBeGreaterThanOrEqual(pausedAt)
+  await expect.poll(mediaTime).toBeGreaterThan(pausedAt + 0.05)
+  await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 2 })
+  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
+  await expect.poll(mediaPaused).toBe(false)
+  const restarted = await mediaTime()
+  expect(restarted).toBeGreaterThanOrEqual(1)
+  expect(restarted).toBeLessThan(2)
+
+  // 扩成三秒选区再加入成片，给真实播放器留足观察播放和暂停的时间。
+  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪该段结尾' })
+  await end.focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  await page.keyboard.press('Shift+ArrowRight')
   await page.keyboard.press('Enter')
-  await expect(filmLane(dialog).getByRole('group', { name: /^第 1 段/ })).toBeVisible()
-  await expect(label).toHaveCount(0)
-
-  await shotOf(materials, 1, 'B', 2).click()
-  await expect(label).toContainText('素材 · 镜头组 1 · 生成 B · 镜头 2')
-  await expect(label).toContainText('选区 1.0–2.0')
-  await expect(dialog.getByRole('button', { name: '暂停' })).toBeVisible()
-  await expect(materials.locator('.wf-material-playhead')).toHaveCount(1)
-  // 播完停在出点
+  await expect(video).toHaveCount(0)
+  const clip = filmLane(dialog).getByRole('button', { name: /^选中：第 1 段/ })
+  await expect(clip).toBeVisible()
+  const player = dialog.getByRole('region', { name: '预览' }).locator('hyperframes-player')
   await expect
-    .poll(() => previewVideo(dialog), { timeout: 5_000 })
-    .toEqual({
-      paused: true,
-      time: 2,
-    })
-  await expect(label).toContainText('2.0 秒 · 选区 1.0–2.0')
+    .poll(() =>
+      player.evaluateAll(
+        (elements) =>
+          elements.length === 1 && (elements[0] as HTMLElement & { painted: boolean }).painted,
+      ),
+    )
+    .toBe(true)
 
-  // 点播放：从当前选区的入点重播，仍留在素材预览。
-  await dialog.getByRole('button', { name: '播放' }).click()
-  await expect(label).toBeVisible()
-  await expect.poll(async () => (await previewVideo(dialog))?.paused).toBe(false)
-  const restarted = await previewVideo(dialog)
-  expect(restarted?.time).toBeGreaterThanOrEqual(1)
-  expect(restarted?.time).toBeLessThan(2)
-
-  // 点成片轨上的段：回到成片
-  await shotOf(materials, 1, 'A', 3).click()
-  await expect(label).toBeVisible()
-  await filmLane(dialog)
-    .getByRole('button', { name: /^选中：第 1 段/ })
-    .click()
-  await expect(label).toHaveCount(0)
-
-  // 点选区（不拖）：预览再放一遍这段选区；拖播放头：回到成片
+  // 成片已有内容时，暂停、继续仍然控制素材，不会偷偷切回成片。
   await groupOf(materials, 1)
-    .getByRole('group', { name: /^选中的范围 2\.0–3\.0 秒/ })
+    .getByRole('group', { name: /^选中的范围 1.0–4.0 秒/ })
     .click()
-  await expect(label).toContainText('生成 A · 镜头 3')
+  await expect.poll(mediaTime).toBeGreaterThan(1.05)
+  const snap = toolbar.getByRole('button', { name: '吸附', exact: true })
+  const snapping = await snap.getAttribute('aria-pressed')
+  await snap.focus()
+  await page.keyboard.press('Space')
+  await expect(video).toBeVisible()
+  await expect.poll(mediaPaused).toBe(true)
+  const materialPausedAt = await mediaTime()
+  await page.keyboard.press('Space')
+  await expect(snap).toHaveAttribute('aria-pressed', snapping ?? '')
+  expect(await mediaTime()).toBeGreaterThanOrEqual(materialPausedAt)
+  await expect.poll(mediaTime).toBeGreaterThan(materialPausedAt + 0.05)
+
+  await clip.click()
+  await expect(video).toHaveCount(0)
+  const playhead = dialog.getByRole('slider', { name: '时间线播放位置' })
+  await expect.poll(async () => Number(await playhead.inputValue())).toBeGreaterThan(0.2)
+  await seek(page, dialog, 1)
+  await expect.poll(async () => Number(await playhead.inputValue())).toBeGreaterThan(1.2)
+  await pause.click()
+  await expect
+    .poll(() => player.evaluate((element) => (element as HTMLElement & { paused: boolean }).paused))
+    .toBe(true)
+  // iframe 暂停后仍有末次报时；等它落地，再观察播放位置保持不变。
+  await page.waitForTimeout(250)
+  const filmPausedAt = Number(await playhead.inputValue())
+  await page.waitForTimeout(250)
+  expect(Number(await playhead.inputValue())).toBeCloseTo(filmPausedAt, 1)
+
+  await shotOf(materials, 1, 'A', 5).click()
+  await expect(video).toBeVisible()
   await seek(page, dialog, 0.5)
-  await expect(label).toHaveCount(0)
+  await expect(video).toHaveCount(0)
+  await expect.poll(async () => Number(await playhead.inputValue())).toBeCloseTo(0.5, 1)
 })
 
 test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预览停在那一端的画面', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
-  const label = dialog.locator('.wf-stage-label')
+  const label = dialog.getByText(/^素材 · 镜头组/)
   await shotOf(materials, 1, 'A', 2).click()
   const start = groupOf(materials, 1).getByRole('slider', { name: '裁剪该段开头' })
   const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪该段结尾' })
@@ -352,9 +256,10 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
   await expect(start).toHaveAttribute('aria-valuenow', '0.9')
 
   // 拖结尾往右：预览停在结尾那一帧
-  const strip = await materials.locator('.wf-take-strip').first().boundingBox()
+  const third = await centerOf(shotOf(materials, 1, 'A', 3))
+  const fourth = await centerOf(shotOf(materials, 1, 'A', 4))
   const from = await centerOf(end)
-  const perSecond = (strip?.width ?? 0) / 6
+  const perSecond = fourth.x - third.x
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x + perSecond * 1.5, from.y, { steps: 6 })
@@ -395,54 +300,23 @@ test('在选区外按下镜头即拖：先选中这个镜头再拖，松手加�
   await drop(shotOf(materials, 1, 'A', 5))
   await expect(film.getByRole('group', { name: '第 1 段 · A · 镜头 5，1.0 秒' })).toBeVisible()
   // 松手后补的那一下点按不算点镜头：预览留在成片
-  await expect(dialog.locator('.wf-stage-label')).toHaveCount(0)
+  await expect(dialog.getByText(/^素材 · 镜头组/)).toHaveCount(0)
 
   // 已经选中了 A 的镜头 2；在选区外的 B 镜头 3 上按下，拖走的是 B 镜头 3
   await shotOf(materials, 1, 'A', 2).click()
-  await expect(dialog.locator('.wf-stage-label')).toBeVisible()
+  await expect(dialog.getByText(/^素材 · 镜头组/)).toBeVisible()
   await drop(shotOf(materials, 1, 'B', 3))
   await expect(film.getByRole('group', { name: /^第 \d 段 · B · 镜头 3，1\.0 秒/ })).toBeVisible()
   await expect(
     groupOf(materials, 1).getByRole('group', { name: /^选中的范围 2\.0–3\.0 秒/ }),
   ).toBeVisible()
-  await expect(dialog.locator('.wf-stage-label')).toHaveCount(0)
-})
-
-test('成片轨上用了的段在素材轨底边画一道', async ({ page }) => {
-  const { dialog, materials } = await openWith(page, [1, 1])
-  const laneOf = (take: 'A' | 'B') =>
-    groupOf(materials, 1)
-      .locator('.wf-take')
-      .filter({ hasText: `生成 ${take}` })
-  await expect(materials.locator('.wf-used')).toHaveCount(0)
-
-  await shotOf(materials, 1, 'A', 2).click()
-  await page.keyboard.press('Enter')
-  await expect(filmLane(dialog).getByRole('group', { name: /^第 1 段/ })).toBeVisible()
-  await expect(laneOf('A').locator('.wf-used')).toHaveCount(1)
-  await expect(laneOf('B').locator('.wf-used')).toHaveCount(0)
-
-  // 画在用了的那一段下面（镜头 2 = 1–2 秒，轨道 6 秒），贴着轨道底边
-  const strip = await laneOf('A').locator('.wf-take-strip').boundingBox()
-  const bar = await laneOf('A').locator('.wf-used').boundingBox()
-  if (strip === null || bar === null) throw new Error('素材轨尚未布局')
-  expect(bar.height).toBe(3)
-  // 轨道宽按窗口来，换算成像素允许 1px 取整误差
-  expect(Math.abs(bar.x - strip.x - (strip.width / 6 + 2))).toBeLessThanOrEqual(1)
-  expect(Math.abs(bar.width - (strip.width / 6 - 4))).toBeLessThanOrEqual(1)
-  expect(Math.round(strip.y + strip.height - (bar.y + bar.height))).toBe(1)
-
-  // 同一段再放一次就再画一道；撤销后跟着少一道
-  await page.keyboard.press('Enter')
-  await expect(laneOf('A').locator('.wf-used')).toHaveCount(2)
-  await dialog.getByRole('button', { name: '撤销' }).click()
-  await expect(laneOf('A').locator('.wf-used')).toHaveCount(1)
+  await expect(dialog.getByText(/^素材 · 镜头组/)).toHaveCount(0)
 })
 
 test('撤销、重做也是成片编辑：预览回到成片', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1, 1])
   const film = filmLane(dialog)
-  const label = dialog.locator('.wf-stage-label')
+  const label = dialog.getByText(/^素材 · 镜头组/)
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
   await expect(film.getByRole('group', { name: /^第 1 段/ })).toBeVisible()

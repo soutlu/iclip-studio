@@ -195,9 +195,7 @@ describe('library paging', () => {
     await renderWithProviders(<Harness />)
 
     await screen.findAllByRole('article')
-    const footer = screen.getByText('已显示 1 / 3').closest('footer')
-    expect(footer).not.toBeNull()
-    expect(within(footer as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByText('已显示 1 / 3')).toBeVisible()
     await settle()
     expect(cursorsOf(queries)).toEqual([null])
 

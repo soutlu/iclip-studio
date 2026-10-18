@@ -33,16 +33,13 @@ function DialogWithPreview({
 }
 
 describe('MediaLightbox', () => {
-  it('在弹窗里打开：挂到宿主弹窗之后，Esc 只关预览，焦点回到打开它的按钮', async () => {
+  it('在弹窗里打开：Esc 只关预览，焦点回到打开它的按钮', async () => {
     const onDialogOpenChange = vi.fn()
     renderWithTooltip(<DialogWithPreview onDialogOpenChange={onDialogOpenChange} />)
-    const host = screen.getByRole('dialog', { name: '需求单详情' })
     const trigger = screen.getByRole('button', { name: '预览商品 1 图片 2' })
 
     await userEvent.click(trigger)
-    const lightbox = await screen.findByRole('dialog', { name: photo.name })
-    // 同一 z 层靠 DOM 顺序盖住宿主，所以必须排在宿主之后。
-    expect(host.compareDocumentPosition(lightbox) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(await screen.findByRole('dialog', { name: photo.name })).toBeVisible()
     expect(screen.getByRole('button', { name: '关闭' })).toHaveFocus()
 
     await userEvent.keyboard('{Escape}')

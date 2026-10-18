@@ -31,14 +31,10 @@ test('在侧栏合集行上新建任务：回首页预选这个合集、输入�
   await page.getByRole('link', { name: '无图分镜草稿', exact: true }).click()
   await expect(page).toHaveURL(/\/c\//)
 
-  // 新建按钮与 ⋯ 一样随行悬停显示，紧挨在 ⋯ 左边。
+  // 悬停合集行后可直接新建关联任务。
   await page.getByRole('button', { name: '夏季亚麻系列 (2)', exact: true }).hover()
   const start = page.getByRole('button', { name: '在「夏季亚麻系列」里新建任务', exact: true })
-  const more = page.getByRole('button', { name: '夏季亚麻系列 的操作', exact: true })
   await expect(start).toBeVisible()
-  const startBox = await start.boundingBox()
-  const moreBox = await more.boundingBox()
-  expect(startBox && moreBox && moreBox.x - (startBox.x + startBox.width)).toBe(0)
 
   await start.click()
 

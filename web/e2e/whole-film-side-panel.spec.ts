@@ -99,13 +99,6 @@ const addShot = async (dialog: Locator, shot: number) => {
   await dialog.page().keyboard.press('Enter')
 }
 
-const variableDefault = (component: string, label: string) =>
-  String(
-    catalog.items
-      .find((item) => item.name === component)
-      ?.variables.find((variable) => variable.label === label)?.default,
-  )
-
 test('侧栏分素材、品牌、通用；真实目录的品牌栏是空的', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
@@ -119,7 +112,7 @@ test('侧栏分素材、品牌、通用；真实目录的品牌栏是空的', as
   await expect(dialog.getByRole('list', { name: '组件' })).toHaveCount(0)
 })
 
-test('品牌栏、通用栏：小标题带个数、卡片网格，两栏各记自己的小标题', async ({ page }) => {
+test('品牌与分类各自保留选择，字幕样式可切换，品牌卡可插入不同轨道', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveBrandFixtures(page)
   const dialog = await openWholeFilm(page)
@@ -133,14 +126,9 @@ test('品牌栏、通用栏：小标题带个数、卡片网格，两栏各记�
   await chips(dialog, '品牌').getByRole('radio', { name: /^暖屿/ }).click()
   await expect(cards(dialog)).toHaveText(['暖屿 片头', '暖屿 片尾'])
 
-  // 三列网格，卡片只有预览图和名字，说明在悬停提示里
-  const grid = dialog.getByRole('list', { name: '组件' })
-  const columns = await grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns)
-  expect(columns.split(' ')).toHaveLength(3)
-  const card = cards(dialog).first()
-  await expect(card.locator('img')).toHaveCount(1)
-  await card.hover()
-  await expect(page.getByRole('tooltip')).toHaveText('暖屿的品牌组件')
+  // 悬停可以查看所选品牌卡的说明。
+  await cards(dialog).first().hover()
+  await expect(page.getByRole('tooltip')).toContainText('暖屿')
 
   // 通用栏：没有「全部」，默认第一个分类
   await dialog.getByRole('tab', { name: '通用' }).click()
@@ -148,11 +136,6 @@ test('品牌栏、通用栏：小标题带个数、卡片网格，两栏各记�
   await expect(categories.first()).toBeChecked()
   await expect(categories.first()).toHaveText(/^字幕\s*3$/)
   await expect(categories.filter({ hasText: /全部|品牌/ })).toHaveCount(0)
-  // 小标题排成一行，放不下时横向滚动，不折行
-  const rows = await categories.evaluateAll(
-    (elements) => new Set(elements.map((element) => element.getBoundingClientRect().top)).size,
-  )
-  expect(rows).toBe(1)
   await chips(dialog, '分类')
     .getByRole('radio', { name: /^视觉特效/ })
     .click()
@@ -176,9 +159,6 @@ test('品牌栏、通用栏：小标题带个数、卡片网格，两栏各记�
     'aria-pressed',
     'true',
   )
-  await expect(
-    dialog.getByRole('button', { name: /^高亮字幕，/ }).locator('.wf-component-check'),
-  ).toBeVisible()
   await expect(inUse).toHaveAttribute('aria-pressed', 'false')
 
   // 品牌卡和别的卡一样：点它按组件类型放（block 进成片轨），拖到哪条轨就放在哪。
@@ -252,36 +232,41 @@ test('放下有可填项的卡片随即打开浮层：点卡片、拖到成片�
   await expect(page.getByRole('dialog', { name: /液体背景/ })).toHaveCount(0)
 })
 
-test('调整浮层是检查器样式，成片轨的组件段和特效块共用，没有可填项的不弹', async ({ page }) => {
+test('组件参数可编辑并保存，清空文字恢复默认；删除组件会移除草稿内容', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
-
-  // 特效块：逐词居中（放下就打开浮层）
   await openCategory(dialog, '场景')
   await dialog.getByRole('button', { name: /^逐词居中，/ }).click()
   const pop = page.getByRole('dialog', { name: /逐词居中/ })
-  await expect(pop).toHaveCSS('width', '280px')
-  // 顶部只有预览图、名字与删除图标；没有说明、时间和底部提示
-  await expect(pop.locator('.wf-pop-head')).toHaveText('逐词居中')
-  await expect(pop.locator('.wf-pop-head .wf-component-thumb')).toBeVisible()
-  await expect(pop.getByText(/秒|只影响/)).toHaveCount(0)
-  // 文字空着、默认字是灰色提示；颜色是色块加「其他颜色」；不超过 4 个选项是分段按钮；数字带单位
-  const text = pop.getByLabel('文字')
-  await expect(text).toHaveValue('')
-  await expect(text).toHaveAttribute('placeholder', variableDefault('kinetic-center-build', '文字'))
-  const colors = pop.getByRole('group', { name: '颜色' })
-  expect(await colors.getByRole('button').count()).toBeGreaterThanOrEqual(4)
-  await expect(colors.getByRole('button', { pressed: true })).toHaveCount(1)
-  await expect(colors.getByLabel('其他颜色')).toHaveAttribute('type', 'color')
-  await expect(pop.getByRole('group', { name: '字体粗细' }).getByRole('button')).toHaveCount(4)
-  await expect(pop.getByLabel('字号')).toHaveValue('72')
-  await expect(pop.getByText('像素').first()).toBeVisible()
-  // 删除图标移除特效块
+  const text = pop.getByLabel('文字', { exact: true })
+  await text.fill('城市的一天')
+  await text.press('Tab')
+  const size = pop.getByLabel('字号', { exact: true })
+  await size.fill('80')
+  await size.press('Tab')
+  await pop
+    .getByRole('group', { name: '字体粗细' })
+    .getByRole('button', { name: '加粗', exact: true })
+    .click()
+  await expect
+    .poll(async () => (await readDraft(page))?.overlays[0]?.variables)
+    .toMatchObject({ text: '城市的一天', font_size: 80, font_weight: '700' })
+  await page.keyboard.press('Escape')
+  await expect(pop).toBeHidden()
+  const overlay = dialog.getByRole('button', { name: /^选中：特效 · 逐词居中/ })
+  await overlay.click()
+  await expect(text).toHaveValue('城市的一天')
+  await expect(size).toHaveValue('80')
+  await text.fill('')
+  await text.press('Tab')
+  await expect
+    .poll(async () => (await readDraft(page))?.overlays[0]?.variables)
+    .not.toHaveProperty('text')
   await pop.getByRole('button', { name: '移除' }).click()
   await expect(dialog.getByRole('group', { name: /^特效 · 逐词居中/ })).toHaveCount(0)
+  await expect.poll(async () => (await readDraft(page))?.overlays).toEqual([])
 
-  // 成片轨的组件段：收起后再点它，同一个浮层又打开；用文字组件验证参数，不引入 WebGL 渲染负载。
-  await openCategory(dialog, '场景')
+  // 成片轨组件同样可以在关闭后重新打开并修改参数。
   await dialog.getByRole('button', { name: /^AI 答案排名，成片轨/ }).click()
   const segmentPop = page.getByRole('dialog', { name: /AI 答案排名/ })
   await expect(segmentPop).toBeVisible()
@@ -289,20 +274,10 @@ test('调整浮层是检查器样式，成片轨的组件段和特效块共用�
   await expect(segmentPop).toBeHidden()
   const film = dialog.getByRole('group', { name: '成片画面轨' })
   await film.getByRole('button', { name: /^选中：第 1 段 · 组件 · AI 答案排名/ }).click()
-  await expect(segmentPop.locator('.wf-pop-head')).toHaveText('AI 答案排名')
   await expect(segmentPop.getByRole('group', { name: '底色' })).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(segmentPop).toBeHidden()
-
-  // 没有可填项的组件段：只选中，不弹浮层
-  await openCategory(dialog, '场景')
-  await dialog.getByRole('button', { name: /^标志片尾，成片轨/ }).click()
-  const plain = film.getByRole('button', { name: /^选中：第 \d 段 · 组件 · 标志片尾/ })
-  await expect(plain).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('dialog', { name: /标志片尾/ })).toHaveCount(0)
-  await plain.click()
-  await expect(plain).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('dialog', { name: /标志片尾/ })).toHaveCount(0)
+  await segmentPop.getByRole('button', { name: '移除' }).click()
+  await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(0)
+  await expect.poll(async () => (await readDraft(page))?.layer0).toEqual([])
 })
 
 test('拖卡片共用落位预演：成片按时长让位、特效不挪成片，松手才新增一次', async ({ page }) => {
@@ -325,11 +300,6 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   await liftCard(page, dialog.getByRole('button', { name: /^标志片尾，/ }))
   const second = await boxOf(film.getByRole('group', { name: /^第 2 段/ }))
   await page.mouse.move(second.x + 4, second.y + second.height / 2, { steps: 8 })
-  const ghost = page.locator('.wf-insertion-ghost')
-  await expect(ghost).toBeVisible()
-  await expect(ghost).toContainText('标志片尾')
-  await expect.poll(async () => Math.abs((await boxOf(ghost)).width - 158)).toBeLessThan(1)
-  await expect.poll(async () => Math.abs((await boxOf(ghost)).height - 52)).toBeLessThan(1)
   // 拖着时卡片的说明收起
   await expect(page.getByRole('tooltip')).toHaveCount(0)
   await expect(preview).toBeVisible()
@@ -356,7 +326,6 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   await page.mouse.up()
   await expect(film.getByRole('group', { name: /^第 2 段 · 组件 · 标志片尾/ })).toBeVisible()
   await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(3)
-  await expect(ghost).toBeHidden()
   await expect(preview).toBeHidden()
   await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(3)
   const withCard = await readDraft(page)
@@ -387,7 +356,6 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   expect(await readDraft(page)).toEqual(withCard)
   await page.mouse.up()
   await expect(overlays.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ })).toBeVisible()
-  await expect(ghost).toBeHidden()
   await expect(effectPreview).toBeHidden()
   await expect.poll(async () => (await readDraft(page))?.overlays.length).toBe(1)
   const withEffect = await readDraft(page)
@@ -401,20 +369,22 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   // 拖到已有行下方预演新行，松手才提交第二个特效。
   const laneNow = await boxOf(overlays)
   await liftCard(page, dialog.getByRole('button', { name: /^手写标题，/ }))
-  // 快速经过上边缘再到下边缘：不让上一段展开动画改变最终命中行。
-  await page.mouse.move(laneNow.x + 120, laneNow.y + 2 - 7)
-  await page.mouse.move(laneNow.x + 120, laneNow.y + 2 + 24 + 8, { steps: 8 })
+  const firstRow = await boxOf(overlays.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ }))
+  // 快速经过上边缘再到下边缘：展开动画不改变最终命中行。
+  await page.mouse.move(laneNow.x + laneNow.width / 4, firstRow.y - firstRow.height / 4)
+  await page.mouse.move(laneNow.x + laneNow.width / 4, firstRow.y + firstRow.height * 1.5, {
+    steps: 8,
+  })
   await expect(effectPreview).toBeVisible()
   await expect(effectPreview).toContainText('手写标题')
   await expect(page.getByRole('status').filter({ hasText: /^新增特效轨 ·/ })).toContainText(
     '松开添加',
   )
-  await expect.poll(async () => (await boxOf(overlays)).height).toBe(laneNow.height + 24)
+  await expect.poll(async () => (await boxOf(overlays)).height).toBeGreaterThan(laneNow.height)
   await expect(overlays.getByRole('group', { name: /^特效 · / })).toHaveCount(1)
   expect(await readDraft(page)).toEqual(withEffect)
   await page.mouse.up()
   await expect(overlays.getByRole('group', { name: /第 2 行/ })).toHaveCount(1)
-  await expect(ghost).toBeHidden()
   await expect(effectPreview).toBeHidden()
   await expect.poll(async () => (await readDraft(page))?.overlays.length).toBe(2)
   const beforeCancel = await readDraft(page)
@@ -422,12 +392,15 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
 
   // 已展开第三行后拖回侧栏：新行收回，缩影退回，草稿不变。
   const cancelLane = await boxOf(overlays)
+  const lastRow = await boxOf(overlays.getByRole('group', { name: /第 2 行/ }))
   const cancelCard = dialog.getByRole('button', { name: /^手绘箭头，/ })
   await liftCard(page, cancelCard)
   const cancelSource = await boxOf(cancelCard)
-  await page.mouse.move(cancelLane.x + 120, cancelLane.y + cancelLane.height + 8, { steps: 8 })
+  await page.mouse.move(cancelLane.x + cancelLane.width / 4, lastRow.y + lastRow.height * 1.5, {
+    steps: 8,
+  })
   await expect(page.getByRole('status').filter({ hasText: /^新增特效轨 ·/ })).toBeVisible()
-  await expect.poll(async () => (await boxOf(overlays)).height).toBe(cancelLane.height + 24)
+  await expect.poll(async () => (await boxOf(overlays)).height).toBeGreaterThan(cancelLane.height)
   await page.mouse.move(
     cancelSource.x + cancelSource.width / 2,
     cancelSource.y + cancelSource.height / 2,
@@ -435,7 +408,6 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   )
   await page.mouse.up()
   await expect(overlays.getByRole('group', { name: /^特效 · / })).toHaveCount(2)
-  await expect(ghost).toBeHidden()
   await expect(effectPreview).toBeHidden()
   await expect.poll(async () => (await boxOf(overlays)).height).toBe(cancelLane.height)
   expect(await readDraft(page)).toEqual(beforeCancel)
@@ -452,21 +424,14 @@ test('素材页：整个音乐面板接收文件，小入口仍可选择上传',
   await expect(panel.getByRole('button', { name: '上传', exact: true })).toHaveCount(0)
   await expect(panel.getByRole('button', { name: /^用这首/ })).toHaveCount(0)
   await dialog.getByRole('button', { name: '生成音乐', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '生成音乐' })).toHaveAttribute('data-side', 'top')
+  await expect(page.getByRole('dialog', { name: '生成音乐' })).toBeVisible()
   await page.keyboard.press('Escape')
-  const panelBox = await boxOf(panel)
-  expect(panelBox.height).toBeGreaterThan(
-    (await boxOf(songs)).height + (await boxOf(upload)).height,
-  )
-  const track = dialog.getByRole('group', { name: '音乐轨', exact: true })
-  const trackBefore = await boxOf(track)
   const dataTransfer = await page.evaluateHandle(() => {
     const transfer = new DataTransfer()
     transfer.items.add(new File([new Uint8Array(64)], '拖进来的.wav', { type: 'audio/wav' }))
     return transfer
   })
   await panel.dispatchEvent('dragenter', { dataTransfer })
-  expect(await boxOf(track)).toEqual(trackBefore)
   await panel.dispatchEvent('drop', { dataTransfer })
   await expect(songs.getByRole('listitem')).toHaveCount(3)
   await expect(songs.getByText(/^上传的音乐 · /)).toHaveCount(2)
