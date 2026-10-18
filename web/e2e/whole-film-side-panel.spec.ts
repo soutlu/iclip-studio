@@ -280,20 +280,18 @@ test('组件参数可编辑并保存，清空文字恢复默认；删除组件�
   await expect.poll(async () => (await readDraft(page))?.layer0).toEqual([])
 })
 
-test('拖卡片共用落位预演：成片按时长让位、特效不挪成片，松手才新增一次', async ({ page }) => {
+test('拖卡片到成片轨：按时长让位，离开恢复，松手才新增一次', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openWholeFilm(page)
   await addShot(dialog, 1)
   await addShot(dialog, 2)
   const film = dialog.getByRole('group', { name: '成片画面轨' })
-  const overlays = dialog.getByRole('group', { name: '特效轨' })
   await expect(film.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
   await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(2)
   const before = await clipLefts(film)
   const beforeDraft = await readDraft(page)
   const pps = await pixelsPerSecond(dialog)
   const preview = film.getByTestId('timeline-insertion-preview')
-  const effectPreview = overlays.getByTestId('timeline-insertion-preview')
 
   // 成片轨：预演占用组件的完整时长，邻段让位，但尚未保存新段。
   await openCategory(dialog, '场景')
@@ -334,6 +332,19 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
     component: 'logo-outro',
     duration: 6_000,
   })
+})
+
+test('拖卡片到特效轨：预演不挪成片，新行落位或取消后保存正确草稿', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openWholeFilm(page)
+  await addShot(dialog, 1)
+  await addShot(dialog, 2)
+  const film = dialog.getByRole('group', { name: '成片画面轨' })
+  const overlays = dialog.getByRole('group', { name: '特效轨' })
+  const effectPreview = overlays.getByTestId('timeline-insertion-preview')
+  await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(2)
+  const beforeDraft = await readDraft(page)
+  const pps = await pixelsPerSecond(dialog)
   const filmBeforeEffect = await clipLefts(film)
 
   // 特效轨：显示完整占用区间，成片位置和保存的草稿保持不变。
@@ -353,13 +364,13 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
     )
     .toBeLessThan(1)
   await expect(overlays.getByRole('group', { name: /^特效 · / })).toHaveCount(0)
-  expect(await readDraft(page)).toEqual(withCard)
+  expect(await readDraft(page)).toEqual(beforeDraft)
   await page.mouse.up()
   await expect(overlays.getByRole('group', { name: /^特效 · 手绘箭头，第 1 行/ })).toBeVisible()
   await expect(effectPreview).toBeHidden()
   await expect.poll(async () => (await readDraft(page))?.overlays.length).toBe(1)
   const withEffect = await readDraft(page)
-  expect(withEffect?.layer0).toEqual(withCard?.layer0)
+  expect(withEffect?.layer0).toEqual(beforeDraft?.layer0)
   expect(withEffect?.overlays[0]).toMatchObject({
     component: 'hw-arrow',
     duration: 4_000,
@@ -388,7 +399,7 @@ test('拖卡片共用落位预演：成片按时长让位、特效不挪成片�
   await expect(effectPreview).toBeHidden()
   await expect.poll(async () => (await readDraft(page))?.overlays.length).toBe(2)
   const beforeCancel = await readDraft(page)
-  expect(beforeCancel?.layer0).toEqual(withCard?.layer0)
+  expect(beforeCancel?.layer0).toEqual(beforeDraft?.layer0)
 
   // 已展开第三行后拖回侧栏：新行收回，缩影退回，草稿不变。
   const cancelLane = await boxOf(overlays)
