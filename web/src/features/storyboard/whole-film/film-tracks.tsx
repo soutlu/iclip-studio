@@ -144,9 +144,10 @@ type FilmTracksProps = {
   /** 改字时输入框里的整句：改过的字或识别结果 */
   sentenceText: (caption: PlacedCaption) => string
   onCaptionText: (caption: PlacedCaption, text: string) => void
-  /** 字幕样式的中文名；点它到组件栏换样式 */
-  captionStyle: string
-  onCaptionStyle: () => void
+  /** 字幕轨标题：样式选择与手动识别入口 */
+  captionControls: ReactNode
+  /** 识别进度、空结果或失败说明；不替换已经显示的字幕 */
+  captionStatus: ReactNode
   /** 音乐轨轨名旁的按钮（生成音乐的「+」） */
   musicAction: ReactNode
 }
@@ -224,9 +225,12 @@ type BlockProps = {
     | {
         driver: InsertionMotion
         x: number
+        y?: number
         width: number
         opacity: number
         animate: boolean
+        /** 横向拖动直接跟手，换行仍由动效驱动衔接。 */
+        followX?: boolean
         initial?: MotionSnapshot | undefined
       }
     | undefined
@@ -253,9 +257,11 @@ function Block({
   const initialRef = useRef<MotionSnapshot | undefined>(undefined)
   const driver = motion?.driver
   const x = motion?.x
+  const y = motion?.y
   const width = motion?.width
   const opacity = motion?.opacity
   const animate = motion?.animate ?? false
+  const followX = motion?.followX ?? false
   const snapshot = motion?.initial
   useLayoutEffect(() => {
     const node = elementRef.current
@@ -270,18 +276,27 @@ function Block({
     const landed = snapshot !== undefined && initialRef.current !== snapshot
     if (landed) {
       driver.seed(node, {
-        value: { ...snapshot.value, y: 0, opacity: 0.65 },
-        velocity: { ...snapshot.velocity, y: 0, opacity: 0 },
+        value: {
+          ...snapshot.value,
+          y: y === undefined ? 0 : (snapshot.value.y ?? y),
+          opacity: 0.65,
+        },
+        velocity: {
+          ...snapshot.velocity,
+          y: y === undefined ? 0 : (snapshot.velocity.y ?? 0),
+          opacity: 0,
+        },
       })
       initialRef.current = snapshot
     }
+    if (followX) driver.move(node, { x }, { immediate: true })
     driver.move(
       node,
-      { x, width, opacity },
+      { x, y: y ?? 0, width, opacity },
       { immediate: !animate && !previousRef.current && !landed },
     )
     previousRef.current = animate
-  }, [driver, x, width, opacity, animate, snapshot])
+  }, [driver, x, y, width, opacity, animate, followX, snapshot])
   return (
     <div
       aria-label={name}
@@ -353,8 +368,8 @@ export function FilmTracks({
   captions,
   sentenceText,
   onCaptionText,
-  captionStyle,
-  onCaptionStyle,
+  captionControls,
+  captionStatus,
   musicAction,
 }: FilmTracksProps) {
   const gesture = usePreviewGesture(apply)
@@ -399,25 +414,43 @@ export function FilmTracks({
   const timeAt = (clientX: number) =>
     Math.max(0, pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps))
 
-  // 行数按拿起、拖动之前的草稿算：拖动中轨道上的行不变
+  // 命中使用已提交的行号；新增行只参与预演，松手前不写入草稿。
   const rows = overlayRowCount(draft.overlays)
-  const overlayProjection =
-    carry !== null &&
-    !carry.returning &&
-    carry.point?.lane === 'overlay' &&
-    carry.attempt?.ok === true
-      ? carry.attempt.draft.overlays
-      : draft.overlays
-  const laneRows = Math.max(1, overlayRowCount(overlayProjection))
+  const carriedRow =
+    carry !== null && !carry.returning && carry.point?.lane === 'overlay' && carry.attempt?.ok
+      ? carry.point.overlayRow
+      : undefined
+  const previewRow = carriedRow ?? gesture.preview?.row
+  const newRow = previewRow !== undefined && 'insertAt' in previewRow ? previewRow : undefined
+  const laneRows = Math.max(1, rows + (newRow === undefined ? 0 : 1))
 
   /** 指针纵坐标落在特效轨的哪一行；在所有行之上、之下不远处就开一行；离得太远是 undefined */
-  const overlayRowFrom = (clientY: number): OverlayRow | undefined => {
+  const overlayRowFrom = (
+    clientY: number,
+    activeRow = carriedRow,
+    originTop = carry?.returning === false ? carry.overlayTop : undefined,
+  ): OverlayRow | undefined => {
     const lane = overlayLaneRef.current?.getBoundingClientRect()
     if (lane === undefined) return undefined
-    // 新行预演会把时间线整体向上推；命中仍以提起时的轨道位置为准，避免目标随预告跳动。
-    const top = carry !== null && !carry.returning ? (carry.overlayTop ?? lane.top) : lane.top
-    const y = clientY - (top + ROWS_TOP_PX)
-    const below = rows === 0 ? lane.height : rows * ROW_PX + NEW_ROW_BELOW_PX
+    const expanding = activeRow !== undefined && 'insertAt' in activeRow && rows > 0
+    // 时间线底部固定，新行向上让出空间；按展开后的几何命中，不取动画途中尚未让开的高度。
+    const top = expanding
+      ? lane.bottom - ((rows + 1) * ROW_PX + ROWS_TOP_PX)
+      : (originTop ?? lane.top)
+    let y = clientY - top - ROWS_TOP_PX
+    if (expanding) {
+      const previewTop = top + ROWS_TOP_PX + activeRow.insertAt * ROW_PX
+      const edge = (originTop ?? lane.top) + ROWS_TOP_PX + activeRow.insertAt * ROW_PX
+      // 展开时整条时间线可能上移。新行同时接住原来的边缘热区和已经展开的行，避免预览反复收开。
+      const from = Math.min(previewTop, edge - (activeRow.insertAt === 0 ? NEW_ROW_ABOVE_PX : 0))
+      const to = Math.max(
+        previewTop + ROW_PX,
+        edge + (activeRow.insertAt === 0 ? 0 : NEW_ROW_BELOW_PX),
+      )
+      if (clientY >= from && clientY < to) return activeRow
+      if (y >= activeRow.insertAt * ROW_PX) y -= ROW_PX
+    }
+    const below = Math.max(1, rows) * ROW_PX + NEW_ROW_BELOW_PX
     if (y < -NEW_ROW_ABOVE_PX || y >= below) return undefined
     return rows === 0 ? { insertAt: 0 } : overlayRowAt(y / ROW_PX, rows)
   }
@@ -588,6 +621,10 @@ export function FilmTracks({
     setLift((current) =>
       current === null ? null : { ...current, returning: true, destination: current.origin },
     )
+  })
+  useEscapeAheadOfDialog(gesture.preview?.overlayId !== undefined, () => {
+    clicks.swallow()
+    gesture.cancel()
   })
 
   useEffect(() => {
@@ -802,8 +839,9 @@ export function FilmTracks({
     })
     // 指针离开特效轨时，仍去上一次指着的那一行
     let row: OverlayRow = { track: overlay.track }
+    const originTop = overlayLaneRef.current?.getBoundingClientRect().top
     gesture.start(event, (deltaPx, clientY): GestureStep => {
-      row = overlayRowFrom(clientY) ?? row
+      row = overlayRowFrom(clientY, row, originTop) ?? row
       const snapped = snapSpanStartMs(
         overlay.start + pxToMs(deltaPx, pps),
         overlay.duration,
@@ -1095,25 +1133,17 @@ export function FilmTracks({
   })()
   const captionDrop = hover?.point?.lane === 'caption' && hover.attempt?.ok === true
 
-  /** 特效块画在第几行的高度：已有的行，或要新开一行时的横线上（轨道不动，松手才多出这一行） */
-  const lineTop = (row: { insertAt: number }) =>
-    row.insertAt === 0 ? ROWS_TOP_PX - 4 : ROWS_TOP_PX + rows * ROW_PX + 1
+  /** 新行占用完整行高；已有行在预演中让出空间，取消后由同一动效驱动收回。 */
   const rowTop = (row: OverlayRow) =>
-    'track' in row
-      ? ROWS_TOP_PX + row.track * ROW_PX
-      : rows === 0
-        ? ROWS_TOP_PX
-        : lineTop(row) - ROW_PX / 2 + 2
-  const newRow = (() => {
-    if (rows === 0) return undefined
-    const row = gesture.preview?.row
-    return row !== undefined && 'insertAt' in row ? row : undefined
-  })()
+    ROWS_TOP_PX + ('track' in row ? row.track : row.insertAt) * ROW_PX
 
   const moving = gesture.preview?.overlayId
   const overlaysShown = draft.overlays.map((overlay) => {
-    if (overlay.id !== moving)
-      return overlayProjection.find((item) => item.id === overlay.id) ?? overlay
+    if (overlay.id !== moving) {
+      return newRow !== undefined && overlay.track >= newRow.insertAt
+        ? { ...overlay, track: overlay.track + 1 }
+        : overlay
+    }
     const after = shown.overlays.find((o) => o.id === overlay.id)
     return after === undefined ? overlay : { ...overlay, start: after.start }
   })
@@ -1129,33 +1159,39 @@ export function FilmTracks({
   const showTail = marker === undefined && contentWidth - tailLeft > 300
   const cuts = cutsOf(shown)
   const insertionActive = hover !== null || (lift?.moved === true && !lift.returning)
+  const overlayAnimating = insertionActive || moving !== undefined
   const projectedById = new Map(projected.layer0.map((clip) => [clip.id, clip]))
   const previewWidth = Math.max(contentWidth, msToPx(layer0End(projected), pps))
 
   return (
-    <div className="wf-tracks" style={{ '--wf-overlay-rows': laneRows } as CSSProperties}>
+    <div
+      className={cn('wf-tracks', newRow !== undefined && 'is-adding-overlay-row')}
+      style={
+        {
+          '--wf-overlay-rows': laneRows,
+          '--wf-new-overlay-top': `${newRow === undefined ? 0 : rowTop(newRow)}px`,
+          '--wf-overlay-label-top': `${newRow?.insertAt === 0 && rows > 0 ? ROW_PX : 0}px`,
+        } as CSSProperties
+      }
+    >
       <div className="wf-track-heads">
         <span aria-hidden="true" className="wf-track-head is-film">
           <Icon decorative name="video" size="sm" />
           成片
         </span>
         <span aria-hidden="true" className="wf-track-head is-overlay">
-          <Icon decorative name="layers" size="sm" />
-          特效
-        </span>
-        <span className="wf-track-head">
-          <Icon decorative name="captions" size="sm" />
-          <span aria-hidden="true">字幕</span>
-          <button
-            aria-label={`字幕样式：${captionStyle}，点此到组件栏换样式`}
-            className="wf-head-pill ui-state ui-focus"
-            onClick={onCaptionStyle}
-            title={`字幕样式：${captionStyle}`}
-            type="button"
+          <span
+            className={cn('wf-overlay-label', newRow !== undefined && rows === 0 && 'is-hidden')}
           >
-            {captionStyle}
-          </button>
+            <Icon decorative name="layers" size="sm" />
+            特效
+          </span>
+          <span className="wf-overlay-row-label">
+            <Icon decorative name="add" size="xs" />
+            新增特效轨
+          </span>
         </span>
+        <span className="wf-track-head is-caption">{captionControls}</span>
         <span className="wf-track-head">
           <Icon decorative name="music" size="sm" />
           <span aria-hidden="true">音乐</span>
@@ -1277,9 +1313,16 @@ export function FilmTracks({
               {draft.overlays.length === 0 && overlayDrop === undefined ? (
                 <span className="wf-lane-hint">把左侧的特效拖到这里</span>
               ) : null}
-              {newRow === undefined ? null : (
-                <span className="wf-overlay-insert" style={{ top: `${lineTop(newRow)}px` }} />
-              )}
+              <span aria-hidden="true" className="wf-overlay-row-preview">
+                <span
+                  hidden={
+                    overlayDrop !== undefined &&
+                    msToPx(overlayDrop.start + overlayDrop.duration, pps) > contentWidth - 170
+                  }
+                >
+                  松开，新增一条特效轨
+                </span>
+              </span>
               {overlaysShown.map((overlay) => {
                 const face = componentFace(overlay.component)
                 const timed = trimmed(overlay)
@@ -1294,9 +1337,11 @@ export function FilmTracks({
                     motion={{
                       driver: motion,
                       x: msToPx(timed.start, pps),
+                      y: top,
                       width: Math.max(6, msToPx(timed.duration, pps) - 2),
                       opacity: 1,
-                      animate: insertionActive,
+                      animate: overlayAnimating,
+                      followX: isMoving,
                       initial: landing?.id === overlay.id ? landing.snapshot : undefined,
                     }}
                     handles={trimHandles(
@@ -1321,7 +1366,7 @@ export function FilmTracks({
                     popover={popoverOf(overlay.id, `特效 · ${face.title}`)}
                     selected={selectedId === overlay.id}
                     shortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Delete"
-                    style={{ ...place(timed.start, timed.duration), top: `${top}px` }}
+                    style={{ ...place(timed.start, timed.duration), top: 0 }}
                   >
                     <OverlayFace face={face} />
                   </Block>
@@ -1342,7 +1387,7 @@ export function FilmTracks({
                         blocked: overlayDrop.reason !== undefined,
                         text:
                           overlayDrop.reason ??
-                          `特效 · ${seconds(overlayDrop.start)}–${seconds(overlayDrop.start + overlayDrop.duration)} 秒`,
+                          `${newRow === undefined ? '特效' : '新增特效轨'} · ${seconds(overlayDrop.start)}–${seconds(overlayDrop.start + overlayDrop.duration)} 秒${newRow === undefined ? '' : ' · 松开添加'}`,
                         alignEnd: bubbleAlign(msToPx(overlayDrop.start, pps)) === 'is-end',
                       }
                 }
@@ -1367,7 +1412,7 @@ export function FilmTracks({
                         }}
                       >
                         {note === undefined ? (
-                          `${seconds(overlay.start)}–${seconds(overlay.start + overlay.duration)} 秒`
+                          `${newRow === undefined ? '' : '新增特效轨 · '}${seconds(overlay.start)}–${seconds(overlay.start + overlay.duration)} 秒${newRow === undefined ? '' : ' · 松开添加'}`
                         ) : (
                           <>
                             <Icon decorative name="blocked" size="xs" />
@@ -1390,6 +1435,7 @@ export function FilmTracks({
                 place={place}
                 sentenceText={sentenceText}
               />
+              {captionStatus}
             </div>
             <div aria-label="音乐轨" className="wf-lane is-music" ref={musicLaneRef} role="group">
               {shown.music !== null && music !== undefined ? (
@@ -1526,8 +1572,6 @@ type CaptionChipsProps = {
  */
 function CaptionChips({ captions, place, sentenceText, onCommit }: CaptionChipsProps) {
   const [editing, setEditing] = useState<string | null>(null)
-  if (captions.length === 0)
-    return <span className="wf-lane-hint">成片里的视频识别出字幕后显示在这里</span>
   return captions.map((caption) => {
     const key = captionKey(caption)
     const style = place(caption.start, caption.end - caption.start)

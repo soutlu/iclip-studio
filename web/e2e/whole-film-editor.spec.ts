@@ -129,7 +129,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(dialog.getByRole('group', { name: /^特效 · 手绘箭头/ })).toBeVisible()
 
   await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
-  await components.getByRole('button', { name: /^高亮字幕，字幕样式/ }).click()
+  await page.getByRole('menuitemradio', { name: '高亮字幕', exact: true }).click()
   await expect(dialog.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toBeVisible()
 
   // 字幕轨：改一句字。选的范围只有一秒，第一句被切成了几块，输入框里是整句

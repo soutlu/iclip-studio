@@ -1,8 +1,8 @@
-/** 整片编辑器读写的接口：草稿（合同 §6「整片草稿」）、这段对话的音乐与字幕记录、生成背景音乐。 */
+/** 整片编辑器读写的接口：草稿（合同 §6「整片草稿」）、音乐与字幕记录、生成背景音乐与识别字幕。 */
 
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
-import type { MusicIn, WholeFilmDraftIn } from '@/shared/api/generated/types.gen'
+import type { MusicIn, SubtitleIn, WholeFilmDraftIn } from '@/shared/api/generated/types.gen'
 import {
   zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse as zExportCancelled,
   zConversationEnvelope,
@@ -119,6 +119,15 @@ export const submitMusic = async (body: MusicIn): Promise<GenerationJob> =>
     await apiFetch('/generations/music', zGenerationEnvelope, {
       body,
       fallbackErrorMessage: '音乐生成提交失败',
+      method: 'POST',
+    })
+  ).generation
+
+export const submitSubtitle = async (body: SubtitleIn): Promise<GenerationJob> =>
+  (
+    await apiFetch('/generations/subtitles', zGenerationEnvelope, {
+      body,
+      fallbackErrorMessage: '字幕识别提交失败',
       method: 'POST',
     })
   ).generation

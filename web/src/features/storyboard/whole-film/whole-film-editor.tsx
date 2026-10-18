@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -36,12 +37,13 @@ import {
   type ComponentCatalog,
 } from './component-catalog'
 import { placeComponent, placedPiece, type Placing } from './component-placement'
+import { CaptionControls, CaptionStatus } from './caption-controls'
 import { ComponentPopover } from './component-popover'
 import { ComponentsPanel, ComponentThumb, type CardCarry } from './components-panel'
 import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
-import { clearCaptionText, setCaptionText } from './editing/captions'
+import { clearCaptionText, setCaptionStyle, setCaptionText } from './editing/captions'
 import {
   MAX_FILM_MS,
   type ComponentVariables,
@@ -98,12 +100,9 @@ import { PreviewPlayer, type PreviewControl } from './preview-player'
 import { FILM_LIMIT_TEXT, REFUSAL_TEXT } from './refusal-text'
 import { FIT_ZOOM, nextZoom, timelineScale, type Zoom } from './timeline-scale'
 import { useDraftSession } from './use-draft-session'
+import { useSubtitleRecognition } from './use-subtitle-recognition'
 import { useWholeFilmExport } from './use-whole-film-export'
-import {
-  useConversationMusic,
-  useConversationSubtitles,
-  useWholeFilmDraftQuery,
-} from './whole-film.api'
+import { useConversationMusic, useWholeFilmDraftQuery } from './whole-film.api'
 import './whole-film.css'
 
 type Props = {
@@ -272,7 +271,11 @@ function EditorBody({
   const peaks = useAudioPeaks(sourceUrls)
 
   const music = useConversationMusic(conversationId)
-  const subtitles = useConversationSubtitles(conversationId)
+  const captionStatusId = useId()
+  const recognition = useSubtitleRecognition({
+    conversationId,
+    sourceJobIds: draft.layer0.flatMap((clip) => (clip.type === 'video' ? [clip.sourceJobId] : [])),
+  })
   const unmeasured = useStableValue(
     (music.data ?? []).flatMap((job) =>
       job.status === 'completed' && job.outputUrl !== null && job.durationMs === null
@@ -292,7 +295,7 @@ function EditorBody({
       buildEditContext({
         materials: materials.byJob.values(),
         keyframes,
-        subtitles: subtitles.data ?? [],
+        subtitles: recognition.records ?? [],
         music: music.data ?? [],
         musicDurations,
         beats:
@@ -300,7 +303,7 @@ function EditorBody({
             ? { jobId: draft.music.jobId, beats: beats.beats }
             : undefined,
       }),
-    [materials, keyframes, subtitles.data, music.data, musicDurations, beats, draft.music],
+    [materials, keyframes, recognition.records, music.data, musicDurations, beats, draft.music],
   )
 
   const [playheadMs, setPlayheadMs] = useState(0)
@@ -570,7 +573,6 @@ function EditorBody({
       icon: (item === undefined ? undefined : CATEGORY_ICON[item.category]) ?? 'grid',
     }
   }
-  const componentTitle = (name: string) => componentFace(name).title
   /** 放进成片后选中新的组件段或特效块；有可填项就打开它的浮层 */
   const place = (item: CatalogItem, placing: Placing): boolean => {
     const result = placeComponent(draft, item, placing)
@@ -870,7 +872,22 @@ function EditorBody({
           <FilmTracks
             apply={apply}
             beats={musicKnown ? filmBeats(draft, context) : []}
-            captionStyle={componentTitle(draft.captions.component)}
+            captionControls={
+              <CaptionControls
+                component={draft.captions.component}
+                onStyle={(component) => apply(setCaptionStyle(draft, { component }))}
+                recognition={recognition}
+                statusId={captionStatusId}
+                styles={catalog.items.filter((item) => item.placement === 'caption')}
+              />
+            }
+            captionStatus={
+              <CaptionStatus
+                hasCaptions={captions.length > 0}
+                id={captionStatusId}
+                recognition={recognition}
+              />
+            }
             captions={captions}
             clipLabel={clipLabel}
             componentFace={componentFace}
@@ -893,10 +910,6 @@ function EditorBody({
                 onOpenMusic={() => setSideTab('materials')}
               />
             }
-            onCaptionStyle={() => {
-              setSideTab('general')
-              setSideChips((chips) => ({ ...chips, general: 'captions' }))
-            }}
             onCaptionText={editCaption}
             onClipClick={playClip}
             onSeek={seek}
