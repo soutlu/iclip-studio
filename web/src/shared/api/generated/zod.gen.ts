@@ -2765,13 +2765,13 @@ export const zWholeFilmCaptions = z.object({
 /**
  * WholeFilmComponentClip
  *
- * 画面轨上的片头或片尾，是组件库里的一个组件。
+ * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
  */
 export const zWholeFilmComponentClip = z.object({
   component: z.string().min(1).max(200),
   duration: z.int().gte(100),
   id: z.string().min(1).max(64),
-  role: z.enum(['intro', 'outro']),
+  playbackStart: z.int().gte(0),
   start: z.int().gte(0),
   type: z.literal('component'),
   variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
@@ -2837,33 +2837,27 @@ export const zWholeFilmExportStartedOut = z.object({
 export const zWholeFilmMusic = z.object({
   jobId: z.uuid(),
   offset: z.int().gte(0),
-  volume: z.number().gte(0).lte(2),
+  volume: z.number().gte(0).lte(3.981072),
 })
 
 /**
  * WholeFilmOverlay
  *
- * 包装层上的一个组件，按整片时间放在 ``[start, start + duration)``。
+ * 特效轨上的一个组件，按整片时间放在 ``[start, start + duration)``，从组件自己时间里的
+ * ``playbackStart`` 起播。
+ *
+ * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
+ * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
  */
 export const zWholeFilmOverlay = z.object({
   component: z.string().min(1).max(200),
   duration: z.int().gte(100),
   id: z.string().min(1).max(64),
+  playbackStart: z.int().gte(0),
   start: z.int().gte(0),
+  track: z.int().gte(0),
   variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
-})
-
-/**
- * WholeFilmTransition
- *
- * ``afterClipId`` 那一段与下一段之间的转场。
- */
-export const zWholeFilmTransition = z.object({
-  afterClipId: z.string().min(1).max(64),
-  component: z.string().min(1).max(200),
-  duration: z.int().gte(100),
-  id: z.string().min(1).max(64),
-  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
+  zIndex: z.int().gte(0),
 })
 
 /**
@@ -2878,7 +2872,7 @@ export const zWholeFilmVideoClip = z.object({
   sourceJobId: z.uuid(),
   start: z.int().gte(0),
   type: z.literal('video'),
-  volume: z.number().gte(0).lte(2),
+  volume: z.number().gte(0).lte(3.981072),
 })
 
 /**
@@ -2889,10 +2883,9 @@ export const zWholeFilmVideoClip = z.object({
 export const zWholeFilmDocument = z.object({
   canvas: zWholeFilmCanvas.nullable(),
   captions: zWholeFilmCaptions,
-  layer0: z.array(z.union([zWholeFilmVideoClip, zWholeFilmComponentClip])).max(102),
+  layer0: z.array(z.union([zWholeFilmVideoClip, zWholeFilmComponentClip])).max(1200),
   music: zWholeFilmMusic.nullable(),
-  overlays: z.array(zWholeFilmOverlay).max(50),
-  transitions: z.array(zWholeFilmTransition).max(101),
+  overlays: z.array(zWholeFilmOverlay).max(1200),
 })
 
 /**

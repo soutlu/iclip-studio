@@ -5235,7 +5235,7 @@ export type WholeFilmCaptions = {
 /**
  * WholeFilmComponentClip
  *
- * 画面轨上的片头或片尾，是组件库里的一个组件。
+ * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
  */
 export type WholeFilmComponentClip = {
   /**
@@ -5251,9 +5251,9 @@ export type WholeFilmComponentClip = {
    */
   id: string
   /**
-   * Role
+   * Playbackstart
    */
-  role: 'intro' | 'outro'
+  playbackStart: number
   /**
    * Start
    */
@@ -5287,10 +5287,6 @@ export type WholeFilmDocument = {
    * Overlays
    */
   overlays: Array<WholeFilmOverlay>
-  /**
-   * Transitions
-   */
-  transitions: Array<WholeFilmTransition>
 }
 
 /**
@@ -5434,7 +5430,11 @@ export type WholeFilmMusic = {
 /**
  * WholeFilmOverlay
  *
- * 包装层上的一个组件，按整片时间放在 ``[start, start + duration)``。
+ * 特效轨上的一个组件，按整片时间放在 ``[start, start + duration)``，从组件自己时间里的
+ * ``playbackStart`` 起播。
+ *
+ * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
+ * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
  */
 export type WholeFilmOverlay = {
   /**
@@ -5450,45 +5450,27 @@ export type WholeFilmOverlay = {
    */
   id: string
   /**
+   * Playbackstart
+   */
+  playbackStart: number
+  /**
    * Start
    */
   start: number
   /**
-   * Variables
+   * Track
    */
-  variables: {
-    [key: string]: boolean | number | number | string
-  }
-}
-
-/**
- * WholeFilmTransition
- *
- * ``afterClipId`` 那一段与下一段之间的转场。
- */
-export type WholeFilmTransition = {
-  /**
-   * Afterclipid
-   */
-  afterClipId: string
-  /**
-   * Component
-   */
-  component: string
-  /**
-   * Duration
-   */
-  duration: number
-  /**
-   * Id
-   */
-  id: string
+  track: number
   /**
    * Variables
    */
   variables: {
     [key: string]: boolean | number | number | string
   }
+  /**
+   * Zindex
+   */
+  zIndex: number
 }
 
 /**
