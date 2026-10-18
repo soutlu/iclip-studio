@@ -45,7 +45,7 @@
       "size": null,
       "duration": null,
       "variables": [],
-      "thumbnail": "default-caption.webp",
+      "thumbnail": "default-caption.svg",
       "fonts": []
     },
     {
@@ -59,7 +59,7 @@
       "size": null,
       "duration": null,
       "variables": [],
-      "thumbnail": "caption-highlight.webp",
+      "thumbnail": "caption-highlight.svg",
       "fonts": ["Montserrat"]
     },
     {
@@ -73,7 +73,7 @@
       "size": null,
       "duration": null,
       "variables": [{ "id": "texture", "type": "string", "label": "纹理", "default": "lava" }],
-      "thumbnail": "caption-texture.webp",
+      "thumbnail": "caption-texture.svg",
       "fonts": ["Anton"]
     },
     {
@@ -156,7 +156,7 @@
         { "id": "pulseEnvelope", "type": "string", "label": "节拍强度序列", "default": "" },
         { "id": "backdrop", "type": "color", "label": "背景底色", "default": "#04040a" }
       ],
-      "thumbnail": "cosmic-orb.webp",
+      "thumbnail": "cosmic-orb.svg",
       "fonts": []
     },
     {
@@ -236,7 +236,7 @@
         },
         { "id": "backdrop", "type": "color", "label": "背景与雾色", "default": "#000000" }
       ],
-      "thumbnail": "gallery-tunnel.webp",
+      "thumbnail": "gallery-tunnel.svg",
       "fonts": []
     },
     {
@@ -302,7 +302,7 @@
         { "id": "background", "type": "color", "label": "背景", "default": "#000000" },
         { "id": "quantize", "type": "boolean", "label": "顿挫播放", "default": false }
       ],
-      "thumbnail": "halftone-field.webp",
+      "thumbnail": "halftone-field.svg",
       "fonts": []
     },
     {
@@ -316,7 +316,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "ios26-liquid-glass.webp",
+      "thumbnail": "ios26-liquid-glass.svg",
       "fonts": ["Inter"]
     },
     {
@@ -330,7 +330,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "macos-tahoe-liquid-glass.webp",
+      "thumbnail": "macos-tahoe-liquid-glass.svg",
       "fonts": ["Inter"]
     },
     {
@@ -433,7 +433,7 @@
         },
         { "id": "backdrop", "type": "color", "label": "背景底色", "default": "#05060a" }
       ],
-      "thumbnail": "rack-focus.webp",
+      "thumbnail": "rack-focus.svg",
       "fonts": []
     },
     {
@@ -497,7 +497,7 @@
         { "id": "core", "type": "color", "label": "核心颜色", "default": "#ffa575" },
         { "id": "rim", "type": "color", "label": "边缘颜色", "default": "#311599" }
       ],
-      "thumbnail": "spiral-galaxy.webp",
+      "thumbnail": "spiral-galaxy.svg",
       "fonts": []
     },
     {
@@ -511,7 +511,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "vfx-liquid-background.webp",
+      "thumbnail": "vfx-liquid-background.svg",
       "fonts": ["Inter"]
     },
     {
@@ -525,7 +525,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "vfx-text-cursor.webp",
+      "thumbnail": "vfx-text-cursor.svg",
       "fonts": ["Big Shoulders Display", "Inter"]
     },
     {
@@ -539,7 +539,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "editorial-flash-overlay.webp",
+      "thumbnail": "editorial-flash-overlay.svg",
       "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.59 }
     },
@@ -554,7 +554,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 2.2,
       "variables": [],
-      "thumbnail": "hw-scribble-transition.webp",
+      "thumbnail": "hw-scribble-transition.svg",
       "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.5 }
     },
@@ -569,7 +569,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "organic-light-leak-overlay.webp",
+      "thumbnail": "organic-light-leak-overlay.svg",
       "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.32 }
     },
@@ -616,7 +616,7 @@
           ]
         }
       ],
-      "thumbnail": "fade-through.webp",
+      "thumbnail": "fade-through.svg",
       "fonts": [],
       "transition": {
         "kind": "layers",
@@ -636,7 +636,7 @@
       "size": null,
       "duration": 1.2,
       "variables": [],
-      "thumbnail": "grid-pixelate-wipe.webp",
+      "thumbnail": "grid-pixelate-wipe.svg",
       "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.5 }
     },
@@ -651,7 +651,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": "cinemagraph.webp",
+      "thumbnail": "cinemagraph.svg",
       "fonts": []
     },
     {
@@ -665,7 +665,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.7,
       "variables": [],
-      "thumbnail": "gooey-split.webp",
+      "thumbnail": "gooey-split.svg",
       "fonts": []
     },
     {
@@ -716,7 +716,7 @@
         },
         { "id": "shakeRotation", "type": "boolean", "label": "包含旋转", "default": true }
       ],
-      "thumbnail": "camera-shake.webp",
+      "thumbnail": "camera-shake.svg",
       "fonts": []
     },
     {
@@ -760,7 +760,7 @@
           "step": 0.05
         }
       ],
-      "thumbnail": "focus-swap.webp",
+      "thumbnail": "focus-swap.svg",
       "fonts": []
     },
     {
@@ -796,7 +796,7 @@
           ]
         }
       ],
-      "thumbnail": "grain-field.webp",
+      "thumbnail": "grain-field.svg",
       "fonts": []
     },
     {
@@ -810,7 +810,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "hw-boil.webp",
+      "thumbnail": "hw-boil.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -824,7 +824,7 @@
       "size": null,
       "duration": null,
       "variables": [],
-      "thumbnail": "shutter-slam.webp",
+      "thumbnail": "shutter-slam.svg",
       "fonts": ["Inter"]
     },
     {
@@ -901,7 +901,7 @@
           ]
         }
       ],
-      "thumbnail": "soft-blob-touch.webp",
+      "thumbnail": "soft-blob-touch.svg",
       "fonts": []
     },
     {
@@ -937,7 +937,7 @@
           "unit": "px"
         }
       ],
-      "thumbnail": "svg-mask-reveal.webp",
+      "thumbnail": "svg-mask-reveal.svg",
       "fonts": []
     },
     {
@@ -951,7 +951,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "yt-camera-move.webp",
+      "thumbnail": "yt-camera-move.svg",
       "fonts": []
     },
     {
@@ -965,7 +965,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "morph-text.webp",
+      "thumbnail": "morph-text.svg",
       "fonts": ["Figtree"]
     },
     {
@@ -979,7 +979,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "camcorder-hud.webp",
+      "thumbnail": "camcorder-hud.svg",
       "fonts": []
     },
     {
@@ -993,7 +993,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "freeze-frame-dressing.webp",
+      "thumbnail": "freeze-frame-dressing.svg",
       "fonts": []
     },
     {
@@ -1007,7 +1007,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "hw-path-text.webp",
+      "thumbnail": "hw-path-text.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1021,7 +1021,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "hw-pipeline.webp",
+      "thumbnail": "hw-pipeline.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1035,7 +1035,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "hw-text-cloud.webp",
+      "thumbnail": "hw-text-cloud.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1049,7 +1049,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "hw-title.webp",
+      "thumbnail": "hw-title.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1063,7 +1063,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "hw-write-title.webp",
+      "thumbnail": "hw-write-title.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1077,7 +1077,7 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 4.5,
       "variables": [],
-      "thumbnail": "instagram-follow.webp",
+      "thumbnail": "instagram-follow.svg",
       "fonts": ["DM Sans"]
     },
     {
@@ -1091,7 +1091,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-accent-underline.webp",
+      "thumbnail": "lt-accent-underline.svg",
       "fonts": []
     },
     {
@@ -1105,7 +1105,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-bold-block.webp",
+      "thumbnail": "lt-bold-block.svg",
       "fonts": []
     },
     {
@@ -1119,7 +1119,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-clean-bar.webp",
+      "thumbnail": "lt-clean-bar.svg",
       "fonts": []
     },
     {
@@ -1133,7 +1133,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-color-block.webp",
+      "thumbnail": "lt-color-block.svg",
       "fonts": []
     },
     {
@@ -1147,7 +1147,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-dark-card.webp",
+      "thumbnail": "lt-dark-card.svg",
       "fonts": []
     },
     {
@@ -1161,7 +1161,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-kicker-name.webp",
+      "thumbnail": "lt-kicker-name.svg",
       "fonts": []
     },
     {
@@ -1175,7 +1175,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-mask-reveal.webp",
+      "thumbnail": "lt-mask-reveal.svg",
       "fonts": []
     },
     {
@@ -1189,7 +1189,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-side-rule.webp",
+      "thumbnail": "lt-side-rule.svg",
       "fonts": []
     },
     {
@@ -1203,7 +1203,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-soft-pill.webp",
+      "thumbnail": "lt-soft-pill.svg",
       "fonts": []
     },
     {
@@ -1217,7 +1217,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": "lt-stack-bars.webp",
+      "thumbnail": "lt-stack-bars.svg",
       "fonts": []
     },
     {
@@ -1231,7 +1231,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "macos-notification.webp",
+      "thumbnail": "macos-notification.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1245,7 +1245,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "news-ticker.webp",
+      "thumbnail": "news-ticker.svg",
       "fonts": []
     },
     {
@@ -1259,7 +1259,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "reddit-post.webp",
+      "thumbnail": "reddit-post.svg",
       "fonts": ["DM Sans"]
     },
     {
@@ -1294,7 +1294,7 @@
           ]
         }
       ],
-      "thumbnail": "snow.webp",
+      "thumbnail": "snow.svg",
       "fonts": []
     },
     {
@@ -1308,7 +1308,7 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "spotify-card.webp",
+      "thumbnail": "spotify-card.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1354,7 +1354,7 @@
           ]
         }
       ],
-      "thumbnail": "starfield.webp",
+      "thumbnail": "starfield.svg",
       "fonts": []
     },
     {
@@ -1368,7 +1368,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "thread-message-stack.webp",
+      "thumbnail": "thread-message-stack.svg",
       "fonts": []
     },
     {
@@ -1382,7 +1382,7 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 4.5,
       "variables": [],
-      "thumbnail": "tiktok-follow.webp",
+      "thumbnail": "tiktok-follow.svg",
       "fonts": ["DM Sans"]
     },
     {
@@ -1396,7 +1396,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "x-post.webp",
+      "thumbnail": "x-post.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1410,7 +1410,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "yt-comment-card.webp",
+      "thumbnail": "yt-comment-card.svg",
       "fonts": []
     },
     {
@@ -1424,7 +1424,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.5,
       "variables": [],
-      "thumbnail": "yt-lower-third.webp",
+      "thumbnail": "yt-lower-third.svg",
       "fonts": ["DM Sans"]
     },
     {
@@ -1438,7 +1438,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "hw-arrow.webp",
+      "thumbnail": "hw-arrow.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1452,7 +1452,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "hw-box-label.webp",
+      "thumbnail": "hw-box-label.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1466,7 +1466,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "hw-callout-circle.webp",
+      "thumbnail": "hw-callout-circle.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1533,7 +1533,7 @@
           ]
         }
       ],
-      "thumbnail": "light-sweep-pass.webp",
+      "thumbnail": "light-sweep-pass.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1593,7 +1593,7 @@
           ]
         }
       ],
-      "thumbnail": "native-notification-pop.webp",
+      "thumbnail": "native-notification-pop.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1607,7 +1607,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "yt-circle-pointer.webp",
+      "thumbnail": "yt-circle-pointer.svg",
       "fonts": []
     },
     {
@@ -1621,7 +1621,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "yt-feather-highlight.webp",
+      "thumbnail": "yt-feather-highlight.svg",
       "fonts": []
     },
     {
@@ -1635,7 +1635,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "yt-screen-warp.webp",
+      "thumbnail": "yt-screen-warp.svg",
       "fonts": []
     },
     {
@@ -1670,7 +1670,7 @@
         { "id": "ink", "type": "color", "label": "前景色", "default": "#18181b" },
         { "id": "ground", "type": "color", "label": "底色", "default": "#fcfcfb" }
       ],
-      "thumbnail": "ai-answer-rank.webp",
+      "thumbnail": "ai-answer-rank.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1720,7 +1720,7 @@
         { "id": "ecFooter", "type": "string", "label": "结尾网址", "default": "结尾网址" },
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
       ],
-      "thumbnail": "ai-chat-reveal.webp",
+      "thumbnail": "ai-chat-reveal.svg",
       "fonts": []
     },
     {
@@ -1734,7 +1734,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5.5,
       "variables": [],
-      "thumbnail": "app-showcase.webp",
+      "thumbnail": "app-showcase.svg",
       "fonts": ["DM Sans"]
     },
     {
@@ -1748,7 +1748,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "apple-money-count.webp",
+      "thumbnail": "apple-money-count.svg",
       "fonts": []
     },
     {
@@ -1762,7 +1762,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "blue-sweater-intro-video.webp",
+      "thumbnail": "blue-sweater-intro-video.svg",
       "fonts": []
     },
     {
@@ -1819,7 +1819,7 @@
           ]
         }
       ],
-      "thumbnail": "camera-dolly-zoom.webp",
+      "thumbnail": "camera-dolly-zoom.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1833,7 +1833,7 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 14.9,
       "variables": [],
-      "thumbnail": "chatgpt-exchange.webp",
+      "thumbnail": "chatgpt-exchange.svg",
       "fonts": ["Apple Color Emoji", "ChatUI"]
     },
     {
@@ -1847,7 +1847,7 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 21.4,
       "variables": [],
-      "thumbnail": "claude-exchange.webp",
+      "thumbnail": "claude-exchange.svg",
       "fonts": ["ClaudeSans", "ClaudeSerif"]
     },
     {
@@ -1861,7 +1861,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "code-snippet-apple-terminal-pro.webp",
+      "thumbnail": "code-snippet-apple-terminal-pro.svg",
       "fonts": []
     },
     {
@@ -1875,7 +1875,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "hw-frame.webp",
+      "thumbnail": "hw-frame.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -1889,7 +1889,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "logo-outro.webp",
+      "thumbnail": "logo-outro.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1911,7 +1911,7 @@
           "default": "稳稳地走进来，再指明方向。"
         }
       ],
-      "thumbnail": "lottie-character-walk.webp",
+      "thumbnail": "lottie-character-walk.svg",
       "fonts": ["Inter"]
     },
     {
@@ -1989,7 +1989,7 @@
           "unit": "x"
         }
       ],
-      "thumbnail": "lt-neon-border.webp",
+      "thumbnail": "lt-neon-border.svg",
       "fonts": []
     },
     {
@@ -2051,7 +2051,7 @@
         { "id": "ecFeature3", "type": "string", "label": "结尾卖点3", "default": "随时|修改" },
         { "id": "ecCta", "type": "string", "label": "结尾按钮文字", "default": "结尾按钮文字" }
       ],
-      "thumbnail": "message-thread-reveal.webp",
+      "thumbnail": "message-thread-reveal.svg",
       "fonts": []
     },
     {
@@ -2065,7 +2065,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": "mk-background.webp",
+      "thumbnail": "mk-background.svg",
       "fonts": []
     },
     {
@@ -2079,7 +2079,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "mk-placeholder-grid.webp",
+      "thumbnail": "mk-placeholder-grid.svg",
       "fonts": []
     },
     {
@@ -2093,7 +2093,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "mk-progress-stat.webp",
+      "thumbnail": "mk-progress-stat.svg",
       "fonts": []
     },
     {
@@ -2107,7 +2107,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "mk-specs-list.webp",
+      "thumbnail": "mk-specs-list.svg",
       "fonts": []
     },
     {
@@ -2152,7 +2152,7 @@
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" },
         { "id": "brandDomain", "type": "string", "label": "落款网址", "default": "落款网址" }
       ],
-      "thumbnail": "notes-reveal.webp",
+      "thumbnail": "notes-reveal.svg",
       "fonts": ["Courier Prime", "Permanent Marker"]
     },
     {
@@ -2183,7 +2183,7 @@
         { "id": "footerText", "type": "string", "label": "结尾网址", "default": "结尾网址" },
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
       ],
-      "thumbnail": "notification-cascade.webp",
+      "thumbnail": "notification-cascade.svg",
       "fonts": []
     },
     {
@@ -2251,7 +2251,7 @@
         },
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
       ],
-      "thumbnail": "share-sheet-carousel.webp",
+      "thumbnail": "share-sheet-carousel.svg",
       "fonts": []
     },
     {
@@ -2265,7 +2265,7 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "slack-notification-ad.webp",
+      "thumbnail": "slack-notification-ad.svg",
       "fonts": ["NotificationUI"]
     },
     {
@@ -2316,7 +2316,7 @@
           "step": 1
         }
       ],
-      "thumbnail": "split-flap-board.webp",
+      "thumbnail": "split-flap-board.svg",
       "fonts": []
     },
     {
@@ -2330,7 +2330,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 13,
       "variables": [],
-      "thumbnail": "ui-3d-reveal.webp",
+      "thumbnail": "ui-3d-reveal.svg",
       "fonts": ["Inter"]
     },
     {
@@ -2402,7 +2402,7 @@
         },
         { "id": "backdrop", "type": "color", "label": "背景底色", "default": "#04040a" }
       ],
-      "thumbnail": "vfx-anamorphic-flare.webp",
+      "thumbnail": "vfx-anamorphic-flare.svg",
       "fonts": []
     },
     {
@@ -2416,7 +2416,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "vpn-youtube-spot.webp",
+      "thumbnail": "vpn-youtube-spot.svg",
       "fonts": []
     },
     {
@@ -2430,7 +2430,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": "yt-lcd-background.webp",
+      "thumbnail": "yt-lcd-background.svg",
       "fonts": []
     },
     {
@@ -2444,7 +2444,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "yt-logo-intro.webp",
+      "thumbnail": "yt-logo-intro.svg",
       "fonts": []
     },
     {
@@ -2458,7 +2458,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "yt-prism-title.webp",
+      "thumbnail": "yt-prism-title.svg",
       "fonts": []
     },
     {
@@ -2472,7 +2472,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "yt-vertical-fill.webp",
+      "thumbnail": "yt-vertical-fill.svg",
       "fonts": []
     },
     {
@@ -2496,7 +2496,7 @@
         { "id": "targets", "type": "string", "label": "点击位置", "default": "25,47;76,30" },
         { "id": "accent", "type": "color", "label": "强调色", "default": "#0a84ff" }
       ],
-      "thumbnail": "agent-cursor.webp",
+      "thumbnail": "agent-cursor.svg",
       "fonts": ["Inter"]
     },
     {
@@ -2555,7 +2555,7 @@
           ]
         }
       ],
-      "thumbnail": "ascii-render-pass.webp",
+      "thumbnail": "ascii-render-pass.svg",
       "fonts": []
     },
     {
@@ -2592,7 +2592,7 @@
           ]
         }
       ],
-      "thumbnail": "ascii-trail-reveal.webp",
+      "thumbnail": "ascii-trail-reveal.svg",
       "fonts": ["Inter"]
     },
     {
@@ -2628,7 +2628,7 @@
           ]
         }
       ],
-      "thumbnail": "aurora-drift.webp",
+      "thumbnail": "aurora-drift.svg",
       "fonts": []
     },
     {
@@ -2663,7 +2663,7 @@
         },
         { "id": "label", "type": "string", "label": "口碑文字", "default": "口碑文字" }
       ],
-      "thumbnail": "avatar-cloud.webp",
+      "thumbnail": "avatar-cloud.svg",
       "fonts": ["Inter"]
     },
     {
@@ -2699,7 +2699,7 @@
           "step": 0.1
         }
       ],
-      "thumbnail": "beat-accent.webp",
+      "thumbnail": "beat-accent.svg",
       "fonts": []
     },
     {
@@ -2741,7 +2741,7 @@
           ]
         }
       ],
-      "thumbnail": "beat-pulse-background.webp",
+      "thumbnail": "beat-pulse-background.svg",
       "fonts": []
     },
     {
@@ -2776,7 +2776,7 @@
         },
         { "id": "labels", "type": "string", "label": "标签列表", "default": "一,二,三,四" }
       ],
-      "thumbnail": "beat-timeline.webp",
+      "thumbnail": "beat-timeline.svg",
       "fonts": []
     },
     {
@@ -2835,7 +2835,7 @@
           ]
         }
       ],
-      "thumbnail": "before-after-wipe.webp",
+      "thumbnail": "before-after-wipe.svg",
       "fonts": ["Inter"]
     },
     {
@@ -2894,7 +2894,7 @@
           ]
         }
       ],
-      "thumbnail": "browser-device-stage.webp",
+      "thumbnail": "browser-device-stage.svg",
       "fonts": []
     },
     {
@@ -2921,7 +2921,7 @@
           "unit": "x"
         }
       ],
-      "thumbnail": "camera-scan-gate.webp",
+      "thumbnail": "camera-scan-gate.svg",
       "fonts": ["Inter"]
     },
     {
@@ -2958,7 +2958,7 @@
           ]
         }
       ],
-      "thumbnail": "char-slam-explode.webp",
+      "thumbnail": "char-slam-explode.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3009,7 +3009,7 @@
           ]
         }
       ],
-      "thumbnail": "chat-message.webp",
+      "thumbnail": "chat-message.svg",
       "fonts": []
     },
     {
@@ -3069,7 +3069,7 @@
           ]
         }
       ],
-      "thumbnail": "chat-thread.webp",
+      "thumbnail": "chat-thread.svg",
       "fonts": []
     },
     {
@@ -3118,7 +3118,7 @@
           ]
         }
       ],
-      "thumbnail": "code-terminal-run.webp",
+      "thumbnail": "code-terminal-run.svg",
       "fonts": []
     },
     {
@@ -3155,7 +3155,7 @@
         { "id": "labelA", "type": "string", "label": "之前标签", "default": "之前标签" },
         { "id": "labelB", "type": "string", "label": "之后标签", "default": "之后标签" }
       ],
-      "thumbnail": "comparison-split.webp",
+      "thumbnail": "comparison-split.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3195,7 +3195,7 @@
           ]
         }
       ],
-      "thumbnail": "constellation-hub.webp",
+      "thumbnail": "constellation-hub.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3237,7 +3237,7 @@
           ]
         }
       ],
-      "thumbnail": "count-up.webp",
+      "thumbnail": "count-up.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3276,7 +3276,7 @@
           ]
         }
       ],
-      "thumbnail": "cta-close.webp",
+      "thumbnail": "cta-close.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3305,7 +3305,7 @@
           ]
         }
       ],
-      "thumbnail": "cta-lockup.webp",
+      "thumbnail": "cta-lockup.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3372,7 +3372,7 @@
           "unit": "%"
         }
       ],
-      "thumbnail": "cursor-annotate.webp",
+      "thumbnail": "cursor-annotate.svg",
       "fonts": []
     },
     {
@@ -3412,7 +3412,7 @@
           ]
         }
       ],
-      "thumbnail": "cursor-context-menu.webp",
+      "thumbnail": "cursor-context-menu.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3439,7 +3439,7 @@
           ]
         }
       ],
-      "thumbnail": "cursor-drag-drop.webp",
+      "thumbnail": "cursor-drag-drop.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3500,7 +3500,7 @@
           ]
         }
       ],
-      "thumbnail": "cursor-glyph-trail.webp",
+      "thumbnail": "cursor-glyph-trail.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3557,7 +3557,7 @@
         },
         { "id": "pill_label", "type": "string", "label": "胶囊文字", "default": "胶囊文字" }
       ],
-      "thumbnail": "cursor-marquee-select.webp",
+      "thumbnail": "cursor-marquee-select.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3581,7 +3581,7 @@
         { "id": "phrase", "type": "string", "label": "选中文字", "default": "选中文字" },
         { "id": "accent", "type": "color", "label": "强调色", "default": "#0a84ff" }
       ],
-      "thumbnail": "cursor-text-select.webp",
+      "thumbnail": "cursor-text-select.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3667,7 +3667,7 @@
         },
         { "id": "accent", "type": "color", "label": "点击波纹", "default": "#0a84ff" }
       ],
-      "thumbnail": "cursor-zoom-follow.webp",
+      "thumbnail": "cursor-zoom-follow.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3765,7 +3765,7 @@
           "step": 0.1
         }
       ],
-      "thumbnail": "dart-cursor.webp",
+      "thumbnail": "dart-cursor.svg",
       "fonts": []
     },
     {
@@ -3811,7 +3811,7 @@
           ]
         }
       ],
-      "thumbnail": "device-frame-stage.webp",
+      "thumbnail": "device-frame-stage.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3837,7 +3837,7 @@
           ]
         }
       ],
-      "thumbnail": "drift-hold.webp",
+      "thumbnail": "drift-hold.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3887,7 +3887,7 @@
           ]
         }
       ],
-      "thumbnail": "echo-trail.webp",
+      "thumbnail": "echo-trail.svg",
       "fonts": []
     },
     {
@@ -3926,7 +3926,7 @@
           ]
         }
       ],
-      "thumbnail": "facet-morph.webp",
+      "thumbnail": "facet-morph.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3954,7 +3954,7 @@
           ]
         }
       ],
-      "thumbnail": "focus-rack.webp",
+      "thumbnail": "focus-rack.svg",
       "fonts": ["Inter"]
     },
     {
@@ -3987,7 +3987,7 @@
           ]
         }
       ],
-      "thumbnail": "gesture-tap.webp",
+      "thumbnail": "gesture-tap.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4024,7 +4024,7 @@
           "unit": "deg"
         }
       ],
-      "thumbnail": "gloss-sweep.webp",
+      "thumbnail": "gloss-sweep.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4082,7 +4082,7 @@
           ]
         }
       ],
-      "thumbnail": "grid-card-assemble.webp",
+      "thumbnail": "grid-card-assemble.svg",
       "fonts": []
     },
     {
@@ -4117,7 +4117,7 @@
         },
         { "id": "shadow", "type": "boolean", "label": "阴影", "default": true }
       ],
-      "thumbnail": "headline-slam.webp",
+      "thumbnail": "headline-slam.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4131,7 +4131,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "hw-underline.webp",
+      "thumbnail": "hw-underline.svg",
       "fonts": ["Caveat"]
     },
     {
@@ -4168,7 +4168,7 @@
           ]
         }
       ],
-      "thumbnail": "icon-morph-beat.webp",
+      "thumbnail": "icon-morph-beat.svg",
       "fonts": []
     },
     {
@@ -4214,7 +4214,7 @@
           ]
         }
       ],
-      "thumbnail": "ink-bleed-reveal.webp",
+      "thumbnail": "ink-bleed-reveal.svg",
       "fonts": []
     },
     {
@@ -4263,7 +4263,7 @@
           ]
         }
       ],
-      "thumbnail": "kinetic-center-build.webp",
+      "thumbnail": "kinetic-center-build.svg",
       "fonts": ["Geist"]
     },
     {
@@ -4304,7 +4304,7 @@
           ]
         }
       ],
-      "thumbnail": "kinetic-type-swap.webp",
+      "thumbnail": "kinetic-type-swap.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4353,7 +4353,7 @@
           ]
         }
       ],
-      "thumbnail": "line-swap.webp",
+      "thumbnail": "line-swap.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4389,7 +4389,7 @@
           "step": 1
         }
       ],
-      "thumbnail": "locked-nucleus-orbit.webp",
+      "thumbnail": "locked-nucleus-orbit.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4441,7 +4441,7 @@
           ]
         }
       ],
-      "thumbnail": "logo-brand-close.webp",
+      "thumbnail": "logo-brand-close.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4474,7 +4474,7 @@
           ]
         }
       ],
-      "thumbnail": "logo-sting.webp",
+      "thumbnail": "logo-sting.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4510,7 +4510,7 @@
           "step": 1
         }
       ],
-      "thumbnail": "magnetic-cursor.webp",
+      "thumbnail": "magnetic-cursor.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4535,7 +4535,7 @@
         { "id": "l3", "type": "string", "label": "第3行名称", "default": "第3行名称" },
         { "id": "v3", "type": "string", "label": "第3行标注", "default": "第3行标注" }
       ],
-      "thumbnail": "marker-checklist-card.webp",
+      "thumbnail": "marker-checklist-card.svg",
       "fonts": ["Courier Prime", "Permanent Marker"]
     },
     {
@@ -4595,7 +4595,7 @@
           ]
         }
       ],
-      "thumbnail": "marker-highlight.webp",
+      "thumbnail": "marker-highlight.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4609,7 +4609,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "mk-emphasis-type.webp",
+      "thumbnail": "mk-emphasis-type.svg",
       "fonts": []
     },
     {
@@ -4623,7 +4623,7 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "mk-usage-arc.webp",
+      "thumbnail": "mk-usage-arc.svg",
       "fonts": []
     },
     {
@@ -4672,7 +4672,7 @@
           ]
         }
       ],
-      "thumbnail": "modal-morph.webp",
+      "thumbnail": "modal-morph.svg",
       "fonts": []
     },
     {
@@ -4698,7 +4698,7 @@
           ]
         }
       ],
-      "thumbnail": "multi-device-splay.webp",
+      "thumbnail": "multi-device-splay.svg",
       "fonts": []
     },
     {
@@ -4723,7 +4723,7 @@
         },
         { "id": "labels", "type": "string", "label": "标签列表", "default": "小安,小可,小文,小米" }
       ],
-      "thumbnail": "multiplayer-cursors.webp",
+      "thumbnail": "multiplayer-cursors.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4759,7 +4759,7 @@
           "step": 0.1
         }
       ],
-      "thumbnail": "notes-typing.webp",
+      "thumbnail": "notes-typing.svg",
       "fonts": []
     },
     {
@@ -4802,7 +4802,7 @@
           ]
         }
       ],
-      "thumbnail": "notification-pileup.webp",
+      "thumbnail": "notification-pileup.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4861,7 +4861,7 @@
           ]
         }
       ],
-      "thumbnail": "notification-stack.webp",
+      "thumbnail": "notification-stack.svg",
       "fonts": []
     },
     {
@@ -4899,7 +4899,7 @@
           ]
         }
       ],
-      "thumbnail": "offset-path-traveler.webp",
+      "thumbnail": "offset-path-traveler.svg",
       "fonts": ["Inter"]
     },
     {
@@ -4944,7 +4944,7 @@
           "unit": "0.1cqmin"
         }
       ],
-      "thumbnail": "outline-draw.webp",
+      "thumbnail": "outline-draw.svg",
       "fonts": []
     },
     {
@@ -5006,7 +5006,7 @@
           ]
         }
       ],
-      "thumbnail": "oversized-cursor.webp",
+      "thumbnail": "oversized-cursor.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5040,7 +5040,7 @@
           "step": 0.1
         }
       ],
-      "thumbnail": "overwhelm-surround.webp",
+      "thumbnail": "overwhelm-surround.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5075,7 +5075,7 @@
           "unit": "s"
         }
       ],
-      "thumbnail": "pan-stations.webp",
+      "thumbnail": "pan-stations.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5133,7 +5133,7 @@
           ]
         }
       ],
-      "thumbnail": "particle-image-reveal.webp",
+      "thumbnail": "particle-image-reveal.svg",
       "fonts": []
     },
     {
@@ -5192,7 +5192,7 @@
           ]
         }
       ],
-      "thumbnail": "particle-text-dissolve.webp",
+      "thumbnail": "particle-text-dissolve.svg",
       "fonts": []
     },
     {
@@ -5241,7 +5241,7 @@
           ]
         }
       ],
-      "thumbnail": "per-word-rise.webp",
+      "thumbnail": "per-word-rise.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5279,7 +5279,7 @@
           ]
         }
       ],
-      "thumbnail": "physical-exit.webp",
+      "thumbnail": "physical-exit.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5358,7 +5358,7 @@
           ]
         }
       ],
-      "thumbnail": "press-ripple.webp",
+      "thumbnail": "press-ripple.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5386,7 +5386,7 @@
           ]
         }
       ],
-      "thumbnail": "pull-back-reveal.webp",
+      "thumbnail": "pull-back-reveal.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5421,7 +5421,7 @@
           ]
         }
       ],
-      "thumbnail": "pull-to-refresh.webp",
+      "thumbnail": "pull-to-refresh.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5448,7 +5448,7 @@
           ]
         }
       ],
-      "thumbnail": "push-in.webp",
+      "thumbnail": "push-in.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5494,7 +5494,7 @@
           ]
         }
       ],
-      "thumbnail": "radial-surround.webp",
+      "thumbnail": "radial-surround.svg",
       "fonts": []
     },
     {
@@ -5526,7 +5526,7 @@
           "unit": "deg"
         }
       ],
-      "thumbnail": "scan-band.webp",
+      "thumbnail": "scan-band.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5574,7 +5574,7 @@
           ]
         }
       ],
-      "thumbnail": "scramble-reveal.webp",
+      "thumbnail": "scramble-reveal.svg",
       "fonts": []
     },
     {
@@ -5622,7 +5622,7 @@
           ]
         }
       ],
-      "thumbnail": "screen-flow-carousel.webp",
+      "thumbnail": "screen-flow-carousel.svg",
       "fonts": []
     },
     {
@@ -5679,7 +5679,7 @@
           ]
         }
       ],
-      "thumbnail": "scroll-camera-story.webp",
+      "thumbnail": "scroll-camera-story.svg",
       "fonts": []
     },
     {
@@ -5725,7 +5725,7 @@
           ]
         }
       ],
-      "thumbnail": "scroll-feed.webp",
+      "thumbnail": "scroll-feed.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5774,7 +5774,7 @@
           ]
         }
       ],
-      "thumbnail": "segmentation-flood.webp",
+      "thumbnail": "segmentation-flood.svg",
       "fonts": []
     },
     {
@@ -5823,7 +5823,7 @@
           ]
         }
       ],
-      "thumbnail": "slit-scan-reveal.webp",
+      "thumbnail": "slit-scan-reveal.svg",
       "fonts": []
     },
     {
@@ -5844,7 +5844,7 @@
         { "id": "f2", "type": "string", "label": "卖点2", "default": "画质|清晰" },
         { "id": "f3", "type": "string", "label": "卖点3", "default": "随时|修改" }
       ],
-      "thumbnail": "social-proof-card.webp",
+      "thumbnail": "social-proof-card.svg",
       "fonts": []
     },
     {
@@ -5885,7 +5885,7 @@
           ]
         }
       ],
-      "thumbnail": "split-tilt-cards.webp",
+      "thumbnail": "split-tilt-cards.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5919,7 +5919,7 @@
         },
         { "id": "text", "type": "string", "label": "标签", "default": "标签" }
       ],
-      "thumbnail": "spring-pop.webp",
+      "thumbnail": "spring-pop.svg",
       "fonts": ["Inter"]
     },
     {
@@ -5966,7 +5966,7 @@
           ]
         }
       ],
-      "thumbnail": "spring-stack-shuffle.webp",
+      "thumbnail": "spring-stack-shuffle.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6012,7 +6012,7 @@
           ]
         }
       ],
-      "thumbnail": "stagger-cascade.webp",
+      "thumbnail": "stagger-cascade.svg",
       "fonts": []
     },
     {
@@ -6066,7 +6066,7 @@
           ]
         }
       ],
-      "thumbnail": "state-chip-rail.webp",
+      "thumbnail": "state-chip-rail.svg",
       "fonts": []
     },
     {
@@ -6098,7 +6098,7 @@
           ]
         }
       ],
-      "thumbnail": "sticky-mock-swap.webp",
+      "thumbnail": "sticky-mock-swap.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6156,7 +6156,7 @@
           ]
         }
       ],
-      "thumbnail": "stop-motion-cadence.webp",
+      "thumbnail": "stop-motion-cadence.svg",
       "fonts": []
     },
     {
@@ -6192,7 +6192,7 @@
           ]
         }
       ],
-      "thumbnail": "store-badge-lockup.webp",
+      "thumbnail": "store-badge-lockup.svg",
       "fonts": []
     },
     {
@@ -6244,7 +6244,7 @@
           ]
         }
       ],
-      "thumbnail": "svg-stroke-trace.webp",
+      "thumbnail": "svg-stroke-trace.svg",
       "fonts": []
     },
     {
@@ -6285,7 +6285,7 @@
           "default": "卡片编号前缀"
         }
       ],
-      "thumbnail": "swipe-rail.webp",
+      "thumbnail": "swipe-rail.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6338,7 +6338,7 @@
           ]
         }
       ],
-      "thumbnail": "telemetry-hud.webp",
+      "thumbnail": "telemetry-hud.svg",
       "fonts": []
     },
     {
@@ -6365,7 +6365,7 @@
           "step": 0.1
         }
       ],
-      "thumbnail": "testimonial-card.webp",
+      "thumbnail": "testimonial-card.svg",
       "fonts": []
     },
     {
@@ -6407,7 +6407,7 @@
           ]
         }
       ],
-      "thumbnail": "testimonial-proof-card.webp",
+      "thumbnail": "testimonial-proof-card.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6444,7 +6444,7 @@
           "unit": "s"
         }
       ],
-      "thumbnail": "text-shimmer.webp",
+      "thumbnail": "text-shimmer.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6477,7 +6477,7 @@
           ]
         }
       ],
-      "thumbnail": "ticker-takeover.webp",
+      "thumbnail": "ticker-takeover.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6494,7 +6494,7 @@
         { "id": "headline", "type": "string", "label": "标题", "default": "少即是多" },
         { "id": "kicker", "type": "string", "label": "引导小字", "default": "引导小字" }
       ],
-      "thumbnail": "titlecard-calm.webp",
+      "thumbnail": "titlecard-calm.svg",
       "fonts": []
     },
     {
@@ -6550,7 +6550,7 @@
           ]
         }
       ],
-      "thumbnail": "titlecard-lockup.webp",
+      "thumbnail": "titlecard-lockup.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6586,7 +6586,7 @@
           "unit": "%"
         }
       ],
-      "thumbnail": "toggle-flip.webp",
+      "thumbnail": "toggle-flip.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6639,7 +6639,7 @@
           "unit": "%"
         }
       ],
-      "thumbnail": "touch-indicator.webp",
+      "thumbnail": "touch-indicator.svg",
       "fonts": []
     },
     {
@@ -6666,7 +6666,7 @@
           ]
         }
       ],
-      "thumbnail": "tracing-beam.webp",
+      "thumbnail": "tracing-beam.svg",
       "fonts": ["Inter"]
     },
     {
@@ -6720,7 +6720,7 @@
           ]
         }
       ],
-      "thumbnail": "trust-strip.webp",
+      "thumbnail": "trust-strip.svg",
       "fonts": []
     },
     {
@@ -6781,7 +6781,7 @@
           ]
         }
       ],
-      "thumbnail": "typed-prompt.webp",
+      "thumbnail": "typed-prompt.svg",
       "fonts": []
     },
     {
@@ -6867,7 +6867,7 @@
           ]
         }
       ],
-      "thumbnail": "ui-focus-zoom.webp",
+      "thumbnail": "ui-focus-zoom.svg",
       "fonts": []
     },
     {
@@ -6911,7 +6911,7 @@
           "step": 1
         }
       ],
-      "thumbnail": "variable-axis-type.webp",
+      "thumbnail": "variable-axis-type.svg",
       "fonts": ["Roboto Flex"]
     },
     {
@@ -6961,7 +6961,7 @@
           ]
         }
       ],
-      "thumbnail": "variable-font-flex.webp",
+      "thumbnail": "variable-font-flex.svg",
       "fonts": ["Roboto Flex Variable"]
     },
     {
@@ -6988,7 +6988,7 @@
         },
         { "id": "pathLabel", "type": "string", "label": "路径名称", "default": "路径名称" }
       ],
-      "thumbnail": "vector-editor-rig.webp",
+      "thumbnail": "vector-editor-rig.svg",
       "fonts": ["Inter"]
     },
     {
@@ -7029,7 +7029,7 @@
           "default": "卡片编号前缀"
         }
       ],
-      "thumbnail": "velocity-throw-snap.webp",
+      "thumbnail": "velocity-throw-snap.svg",
       "fonts": ["Inter"]
     },
     {
@@ -7090,7 +7090,7 @@
           ]
         }
       ],
-      "thumbnail": "vox-annotate.webp",
+      "thumbnail": "vox-annotate.svg",
       "fonts": ["Inter"]
     },
     {
@@ -7149,7 +7149,7 @@
           ]
         }
       ],
-      "thumbnail": "whiteboard-ink.webp",
+      "thumbnail": "whiteboard-ink.svg",
       "fonts": ["Inter"]
     },
     {
@@ -7184,7 +7184,7 @@
           "unit": "ms"
         }
       ],
-      "thumbnail": "wordmark-tiles.webp",
+      "thumbnail": "wordmark-tiles.svg",
       "fonts": []
     },
     {
@@ -7223,7 +7223,7 @@
           ]
         }
       ],
-      "thumbnail": "zoom-through-transition.webp",
+      "thumbnail": "zoom-through-transition.svg",
       "fonts": ["Inter"]
     }
   ],

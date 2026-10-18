@@ -1,25 +1,22 @@
 #!/usr/bin/env node
 /**
- * 生成整片的组件目录：src/features/storyboard/whole-film/catalog/catalog.json 与 thumbnails/。
+ * 生成整片的组件目录：src/features/storyboard/whole-film/catalog/catalog.json。
  * 一次性运行、产物入库；升级 HyperFrames 版本或调整收录规则后重跑，再运行 `pnpm hf:registry --update-lock`。
  *
  *   node scripts/hyperframes-catalog.mjs [--tarball <源码包路径>]
  *
- * 需要网络（下载源码包与预览图）与 ffmpeg（预览图缩成 webp）。
+ * 需要网络下载源码包；封面引用 thumbnails/ 中独立维护的 SVG 效果示意图。
  *
  * 归类与放置照 HyperFrames Studio：分类表与归类函数取自 @hyperframes/core 的 registry/types.ts；
  * 放置位置沿用整片设计稿：字幕类换字幕样式、转场类放切点、带片头 / 片尾标签的放两端、其余进包装轨。
  * 中文名、说明、可填项名称与选项见 hyperframes-catalog-zh/；文字类可填项的默认值改成中文占位，
  * 品牌名、标语改由品牌模板填，HyperFrames 自己的品牌字样一并去掉。
  */
-import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import * as prettier from 'prettier'
 import {
-  CACHE_DIR,
   CATALOG_DIR,
   HF_VERSION,
   PATCHES_DIR,
@@ -40,23 +37,15 @@ import {
   sourceTree,
 } from './hyperframes-shared.mjs'
 
-const run = promisify(execFile)
 const ZH_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-catalog-zh')
 const THUMBS_DIR = join(CATALOG_DIR, 'thumbnails')
-const THUMB = { width: 160, height: 90 }
 
-// 冒烟筛选的结果（render/scripts/smoke-catalog.mjs 生成）：不通过的排除，没有预览图的用它渲染出的缩略图。
+// 冒烟筛选的结果（render/scripts/smoke-catalog.mjs 生成）：不通过的排除。
 const SMOKE_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-smoke')
 const smoke = existsSync(join(SMOKE_DIR, 'results.json'))
   ? JSON.parse(await readFile(join(SMOKE_DIR, 'results.json'), 'utf8')).results
   : {}
 const smokeReason = (result) => `渲染检查不通过：${result.reason}`
-async function smokeThumbnail(name) {
-  if (!smoke[name]?.thumbnail) return null
-  const file = `${name}.webp`
-  await copyFile(join(SMOKE_DIR, 'thumbnails', file), join(THUMBS_DIR, file))
-  return file
-}
 
 const args = process.argv.slice(2)
 const tarballArg = args.includes('--tarball') ? args[args.indexOf('--tarball') + 1] : undefined
@@ -245,38 +234,10 @@ function variablesOf(name, raw, zh, problems) {
   })
 }
 
-/** 预览图缩成小 webp（铺满后居中裁切）；原图取不到时没有缩略图。 */
-async function thumbnail(name, url) {
-  if (!url) return null
-  const poster = join(CACHE_DIR, 'posters', `${name}${url.match(/\.\w+$/)?.[0] ?? '.png'}`)
-  if (!existsSync(poster)) {
-    const response = await fetch(url)
-    if (!response.ok) {
-      console.warn(`预览图取不到（${response.status}）：${name}`)
-      return null
-    }
-    await mkdir(join(CACHE_DIR, 'posters'), { recursive: true })
-    await writeFile(poster, Buffer.from(await response.arrayBuffer()))
-  }
-  const file = `${name}.webp`
-  const filter = `scale=${THUMB.width}:${THUMB.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${THUMB.width}:${THUMB.height}`
-  await run('ffmpeg', [
-    '-v',
-    'error',
-    '-y',
-    '-i',
-    poster,
-    '-vf',
-    filter,
-    '-c:v',
-    'libwebp',
-    '-quality',
-    '55',
-    '-frames:v',
-    '1',
-    join(THUMBS_DIR, file),
-  ])
-  return file
+/** 封面为独立维护的 SVG 效果示意图；目录生成不覆盖这些资源。 */
+function thumbnail(name) {
+  const file = `${name}.svg`
+  return existsSync(join(THUMBS_DIR, file)) ? file : null
 }
 
 async function pool(list, size, task) {
@@ -298,8 +259,6 @@ async function main() {
   const zh = await translations()
   const patches = JSON.parse(await readFile(join(PATCHES_DIR, 'manifest.json'), 'utf8')).files
   const problems = []
-  await rm(THUMBS_DIR, { recursive: true, force: true })
-  await mkdir(THUMBS_DIR, { recursive: true })
 
   const classified = await pool(await registryItems(src), 8, async ({ name, kind, dir, item }) => {
     const categoryId = category(item.tags)
@@ -377,7 +336,7 @@ async function main() {
       size,
       duration: TRANSITIONS[name]?.duration ?? item.duration ?? root.duration ?? null,
       variables: variablesOf(name, item, zh, problems),
-      thumbnail: (await thumbnail(name, item.preview?.poster)) ?? (await smokeThumbnail(name)),
+      thumbnail: thumbnail(name),
       fonts: [],
     }
     if (TRANSITIONS[name]) entry.transition = TRANSITIONS[name].transition
@@ -398,7 +357,7 @@ async function main() {
   }
   const defaultCaption = {
     ...DEFAULT_CAPTION,
-    thumbnail: await smokeThumbnail(DEFAULT_CAPTION.name),
+    thumbnail: thumbnail(DEFAULT_CAPTION.name),
   }
   if (smoke[DEFAULT_CAPTION.name] && !smoke[DEFAULT_CAPTION.name].ok) {
     problems.push(`默认字幕没通过冒烟渲染：${smokeReason(smoke[DEFAULT_CAPTION.name])}`)

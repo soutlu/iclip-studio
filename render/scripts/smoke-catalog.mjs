@@ -12,9 +12,9 @@
  *      页面报错、控制台报错、请求本机以外的地址、本地文件取不到，任一项即不通过；
  *   2. 用真实的 @hyperframes/producer 渲染：渲染失败不通过；与不放这个组件的同一草稿逐帧比较，
  *      画面没有差别（片头片尾没有底片，看画面是否一片纯色）即「画面是空的」，不通过；
- *   3. 通过的从渲染结果取组件时长一半处的一帧做缩略图（组件目录没有上游预览图时用它）。
+ *   3. 通过的从渲染结果取组件时长一半处的一帧，保存为渲染检查的缩略图。
  * 逐项结果写在 .cache/smoke/results/，全部跑完汇总到 web/scripts/hyperframes-smoke/
- * （results.json 与 thumbnails/），由 web/scripts/hyperframes-catalog.mjs 读取。
+ * （results.json 与 thumbnails/）；目录生成读取 results.json，编辑器封面另用独立维护的 SVG。
  *
  * 需要：web 已 pnpm install（同步脚本取运行时）、ffmpeg、chrome-headless-shell（producer 用）、
  * Playwright Chromium（pnpm exec playwright install chromium）。
@@ -547,8 +547,7 @@ async function smokeOne(
     visible = Math.max(...frames.map(spread))
     if (visible < 10) return fail('画面是空的', { spread: visible })
   }
-  // 每个通过的都出缩略图：组件目录有上游预览图时用预览图，没有时用这张（见 hyperframes-catalog.mjs）。
-  // 不按目录里现有的缩略图决定，否则上次冒烟出的缩略图会一直沿用，反映不了这次的渲染。
+  // 每个通过的都出渲染检查缩略图；每次重新截帧，反映本次渲染结果。
   await thumbnail(item.name, output, Math.round((from + to) / 2))
   await rm(join(CACHE, 'projects', item.name), { recursive: true, force: true })
   return {

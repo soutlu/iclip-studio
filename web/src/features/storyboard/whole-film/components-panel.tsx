@@ -163,7 +163,7 @@ function ComponentCard({ item, uses, onUse, onDrop }: CardProps) {
         {thumbnail === undefined ? (
           <Icon decorative name={CATEGORY_ICON[item.category] ?? 'grid'} size="md" />
         ) : (
-          <img alt="" draggable={false} src={thumbnail} />
+          <img alt="" draggable={false} loading="lazy" src={thumbnail} />
         )}
       </span>
       <span className="wf-component-text">
