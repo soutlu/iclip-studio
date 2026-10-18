@@ -80,7 +80,7 @@ import {
   type TracksHandle,
 } from './film-tracks'
 import { MaterialArea, type MaterialCarry } from './material-area'
-import { MaterialPreview, type MaterialView } from './material-preview'
+import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
 import {
   materialCatalog,
   shotAt,
@@ -233,7 +233,8 @@ function EditorBody({
   const [materialView, setMaterialView] = useState<MaterialView | null>(null)
   const [materialMs, setMaterialMs] = useState(0)
   const [materialPlaying, setMaterialPlaying] = useState(false)
-  // 预览在放素材时，点播放、拖播放头、点成片轨或做任何成片编辑都回到成片
+  const materialPreviewRef = useRef<MaterialPreviewControl | null>(null)
+  // 拖播放头、点成片轨或做成片编辑时回到成片；播放暂停控制当前预览。
   const leaveMaterial = () => {
     setMaterialView(null)
     setMaterialPlaying(false)
@@ -336,10 +337,12 @@ function EditorBody({
     }
   }
   const togglePlay = () => {
+    if (materialView !== null) {
+      materialPreviewRef.current?.toggle()
+      return
+    }
     stopAtRef.current = null
-    // 播放只管成片：在放素材时先回到成片再放
-    if (materialView !== null) leaveMaterial()
-    if (playing && materialView === null) previewRef.current?.pause()
+    if (playing) previewRef.current?.pause()
     else previewRef.current?.play()
   }
   /** 点成片段：选中，播放头移到段首并把这一段播一遍 */
@@ -810,6 +813,7 @@ function EditorBody({
         />
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview
+            controlRef={materialPreviewRef}
             label={materialLabel(viewedMaterial, materialView.range)}
             onNotice={notice}
             onPlaying={setMaterialPlaying}
@@ -836,9 +840,9 @@ function EditorBody({
             }}
             onUndo={undo}
             onZoom={(direction) => setZoom(nextZoom(direction, zoom, scale.fitPps))}
-            playBlocked={playBlocked}
+            playBlocked={materialView === null ? playBlocked : undefined}
             playheadMs={playhead}
-            playing={playing || materialPlaying}
+            playing={materialView === null ? playing : materialPlaying}
             snap={snap}
             splitBlocked={split.ok ? undefined : REFUSAL_TEXT[split.refusal]}
             totalMs={total}
