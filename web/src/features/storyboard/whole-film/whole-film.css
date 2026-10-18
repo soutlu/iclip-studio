@@ -1210,6 +1210,11 @@
   pointer-events: none;
 }
 
+/* 靠近时间区右端时向左收，免得出了时间区 */
+.wf-time-bubble.is-end {
+  translate: -100% -100%;
+}
+
 .wf-music {
   overflow: hidden;
 }

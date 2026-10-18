@@ -658,7 +658,9 @@ export function FilmTracks({
       return {
         result,
         guideMs: after?.start === snapped.ms ? snapped.guideMs : null,
-        note: result.ok ? undefined : FILM_LIMIT_TEXT,
+        // 拖过整片总长上限：停在放得下的地方并写明原因
+        note:
+          result.ok && snapped.ms + overlay.duration <= MAX_FILM_MS ? undefined : FILM_LIMIT_TEXT,
         row,
         overlayId: overlay.id,
       }
@@ -1085,7 +1087,10 @@ export function FilmTracks({
               )}
               {overlayDrop?.reason === undefined ? null : (
                 <span
-                  className="wf-time-bubble"
+                  className={cn(
+                    'wf-time-bubble',
+                    bubbleAlign(msToPx(overlayDrop.start, pps)) === 'is-end' && 'is-end',
+                  )}
                   role="status"
                   style={{
                     left: `${msToPx(overlayDrop.start, pps)}px`,
@@ -1105,7 +1110,10 @@ export function FilmTracks({
                     const note = gesture.preview?.note
                     return (
                       <span
-                        className="wf-time-bubble"
+                        className={cn(
+                          'wf-time-bubble',
+                          bubbleAlign(msToPx(overlay.start, pps)) === 'is-end' && 'is-end',
+                        )}
                         role="status"
                         style={{
                           left: `${msToPx(overlay.start, pps)}px`,

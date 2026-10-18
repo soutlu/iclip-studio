@@ -17,7 +17,6 @@ import {
   getTimelinePixelsPerSecond,
 } from './vendor/hyperframes-studio/player/components/timelineZoom'
 import type { ZoomMode } from './vendor/hyperframes-studio/player/store/playerStore'
-import { MAX_FILM_MS } from './editing/draft'
 
 export type Zoom = { mode: ZoomMode; percent: number }
 
@@ -119,7 +118,7 @@ export const snapMs = (
 
 /**
  * 挪动一段时长不变的块：开头、结尾里离目标近的那一端吸上（同 Studio 的 snapMoveToTargets）；
- * 两端都没有目标时才吸刻度。返回的是块的开始时间。
+ * 两端都没有目标时才吸刻度。返回的是块的开始时间；不夹到整片总长上限之内，超出时由编辑操作拒绝。
  */
 export const snapSpanStartMs = (
   startMs: number,
@@ -135,7 +134,7 @@ export const snapSpanStartMs = (
     durationMs / 1000,
     targets,
     pps,
-    MAX_FILM_MS / 1000,
+    Number.POSITIVE_INFINITY,
     gridStepS,
   )
   return {

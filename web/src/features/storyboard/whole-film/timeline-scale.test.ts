@@ -57,6 +57,10 @@ describe('吸附', () => {
     })
   })
 
+  it('不夹到整片总长上限之内：放不放得下由编辑操作判断', () => {
+    expect(snapSpanStartMs(115_000, 10_000, targets, 100, true, 5).ms).toBe(115_000)
+  })
+
   it('两端附近都没有目标时才吸刻度', () => {
     expect(snapSpanStartMs(10_040, 1_000, targets, 100, true, 5)).toEqual({
       ms: 10_000,

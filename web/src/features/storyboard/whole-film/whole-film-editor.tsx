@@ -141,10 +141,6 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
         }}
         onInteractOutside={(event) => event.preventDefault()}
         onKeyDown={(event) => keysRef.current?.(event)}
-        onKeyUp={(event) => {
-          // 空格已在按下时播放、暂停；焦点在按钮上时不再松开即点按钮
-          if (event.key === ' ' && isShortcutTarget(event)) event.preventDefault()
-        }}
       >
         {draftQuery.data !== undefined && catalogQuery.data !== undefined ? (
           <EditorBody

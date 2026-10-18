@@ -494,6 +494,10 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(snap).toHaveAttribute('aria-pressed', 'false')
     await snap.click()
     await expect(snap).toHaveAttribute('aria-pressed', 'true')
+    // 焦点在按钮上时空格是播放、暂停，不点这个按钮
+    await snap.focus()
+    await page.keyboard.press(' ')
+    await expect(snap).toHaveAttribute('aria-pressed', 'true')
 
     // 拍点刻度在刻度尺下方，透明度随强度在 0.3–1 之间
     await expect(dialog.getByRole('button', { name: '自动卡点' })).not.toHaveAttribute(
