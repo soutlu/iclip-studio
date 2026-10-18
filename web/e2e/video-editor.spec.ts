@@ -888,20 +888,27 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
       (element.parentElement?.getAnimations() ?? []).map((animation) => animation.finished),
     ),
   )
-  // 指针按住拖的焦点不画焦点环。
+  // 指针与键盘均通过定位头内部变色表示焦点，标尺不画外框。
   const seek = dialog.getByRole('slider', { name: '时间线播放位置' })
   const rulerOutline = () =>
     seek.evaluate((element) => getComputedStyle(element.parentElement as HTMLElement).outlineStyle)
+  const playheadFill = () =>
+    dialog
+      .locator('.timeline-playhead')
+      .evaluate((element) => getComputedStyle(element, '::before').backgroundColor)
   await expect(seek).toBeFocused()
   expect(await rulerOutline()).toBe('none')
+  const activeFill = await playheadFill()
   await screenshotBothThemes(page, `${SHOT_DIR}/scrub`)
   await release()
   expect(await rulerOutline()).toBe('none')
-  // 键盘走开再走回来：刻度区画出焦点环。
+  expect(await playheadFill()).not.toBe(activeFill)
+  // 键盘走开再走回来：定位头恢复活动填色，刻度区仍无外框。
   await page.keyboard.press('Shift+Tab')
   await page.keyboard.press('Tab')
   await expect(seek).toBeFocused()
-  expect(await rulerOutline()).toBe('solid')
+  expect(await rulerOutline()).toBe('none')
+  expect(await playheadFill()).toBe(activeFill)
 
   // 停下后点胶囊展开：字还在，光标在输入框里。
   await capsule(dialog).click()
