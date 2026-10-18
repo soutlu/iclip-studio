@@ -429,6 +429,7 @@
 }
 
 .wf-component.is-lifting {
+  opacity: 0.4;
   cursor: grabbing;
 }
 
@@ -455,8 +456,7 @@
   object-fit: cover;
 }
 
-.wf-component:hover .wf-component-thumb,
-.wf-component.is-lifting .wf-component-thumb {
+.wf-component:hover:not(.is-lifting) .wf-component-thumb {
   box-shadow: 0 0 0 1.5px var(--color-on-surface-faint);
 }
 
@@ -489,34 +489,6 @@
 .wf-component[aria-pressed='true'] .wf-component-name {
   color: var(--color-on-surface);
   font-weight: 500;
-}
-
-/* 拖着卡片时手上的缩影：预览图加名字的小条 */
-.wf-ghost.is-card {
-  max-width: 220px;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px 4px 4px;
-  border-radius: var(--radius-md);
-  background: var(--color-top-layer);
-  box-shadow:
-    0 0 0 0.5px var(--color-hairline),
-    var(--shadow-3);
-  font-size: var(--text-label);
-  opacity: 1;
-}
-
-.wf-ghost.is-card .wf-ghost-thumb {
-  width: 48px;
-  height: 27px;
-  flex: none;
-}
-
-.wf-ghost.is-card b {
-  overflow: hidden;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---- 组件浮层 ---- */
@@ -1220,28 +1192,6 @@
   z-index: var(--z-local-2);
 }
 
-/* 拖动排序时拿起的段留在原处变淡 */
-.wf-clip.is-lifted {
-  opacity: 0.4;
-}
-
-/* 刚放下或排好的段：从放下处轻轻落位 */
-@keyframes wf-settle {
-  from {
-    opacity: 0.55;
-    transform: translateY(-6px) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.wf-clip.is-settling {
-  animation: wf-settle var(--dur-m) var(--ease-decel);
-}
-
 .wf-clip-label {
   position: absolute;
   top: 3px;
@@ -1336,8 +1286,7 @@
   font-size: var(--text-caption);
 }
 
-.wf-overlay .wf-block-body,
-.wf-overlay.is-ghost {
+.wf-overlay .wf-block-body {
   flex-direction: row;
   align-items: center;
   gap: 5px;
@@ -1358,22 +1307,6 @@
 
 .wf-overlay.is-moving .wf-block-body {
   cursor: grabbing;
-}
-
-/* 拖组件卡到特效轨时标出落点与长度的虚线块 */
-.wf-overlay.is-ghost {
-  display: flex;
-  overflow: hidden;
-  outline: 1px dashed var(--color-on-surface);
-  outline-offset: -1px;
-  background: color-mix(in srgb, var(--color-on-surface) 5%, transparent);
-  box-shadow: none;
-  pointer-events: none;
-}
-
-.wf-overlay.is-ghost.is-blocked {
-  outline-color: var(--color-on-surface-faint);
-  opacity: 0.55;
 }
 
 .wf-overlay-thumb {
@@ -1480,49 +1413,6 @@
   height: 9px;
 }
 
-/* ---- 拖放：拖动中轨道上的东西不动，只在能接收的轨上画会放到哪，松手才放下 ---- */
-
-.wf-drop-marker {
-  position: absolute;
-  top: var(--timeline-ruler-height);
-  z-index: var(--z-local-3);
-  width: 2px;
-  height: calc(var(--wf-film-height) + 8px);
-  translate: -1px 0;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-  pointer-events: none;
-}
-
-.wf-drop-marker::before,
-.wf-drop-marker::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  width: 8px;
-  height: 2px;
-  translate: -50% 0;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface);
-}
-
-.wf-drop-marker::before {
-  top: 0;
-}
-
-.wf-drop-marker::after {
-  bottom: 0;
-}
-
-/* 放不下：标记变虚线，旁边写原因 */
-.wf-drop-marker.is-blocked {
-  background: repeating-linear-gradient(
-    to bottom,
-    var(--color-on-surface) 0 4px,
-    transparent 4px 7px
-  );
-}
-
 .wf-drop-bubble {
   position: absolute;
   top: -2px;
@@ -1562,52 +1452,152 @@
   pointer-events: none;
 }
 
-/* 手上的缩影：跟在指针右下 */
-.wf-ghost {
+/* 三种插入共用的缩影、完整时长占位与落点提示；位置由同一动效驱动接管。 */
+.wf-insertion-ghost {
   position: fixed;
+  top: 0;
+  left: 0;
   z-index: var(--z-popup);
   display: flex;
+  width: 158px;
+  height: 52px;
+  align-items: center;
+  gap: 9px;
   overflow: hidden;
+  padding: 7px;
   border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  box-shadow:
-    0 0 0 1.5px var(--color-on-surface),
-    var(--shadow-3);
-  opacity: 0.92;
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-2);
   pointer-events: none;
+  will-change: transform;
 }
 
-.wf-ghost.is-blocked {
-  box-shadow:
-    0 0 0 1.5px var(--color-on-surface-faint),
-    var(--shadow-3);
-  opacity: 0.6;
+.wf-insertion-ghost.is-blocked {
   filter: grayscale(0.6);
 }
 
-/* 松手时没放下：缩影退回拿起的地方再消失 */
-.wf-ghost.is-returning {
-  opacity: 0;
-  transition:
-    left var(--dur-m) var(--ease-accel),
-    top var(--dur-m) var(--ease-accel),
-    opacity var(--dur-m) var(--ease-accel);
+.wf-insertion-thumb {
+  display: flex;
+  width: 54px;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
 }
 
-.wf-ghost-frames {
-  display: flex;
+.wf-insertion-thumb > *,
+.wf-insertion-thumb img {
   width: 100%;
   height: 100%;
+  min-width: 0;
+  object-fit: cover;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .wf-ghost.is-returning {
-    transition: none;
-  }
+.wf-insertion-thumb .wf-component-thumb {
+  border-radius: inherit;
+  box-shadow: none;
+}
 
-  .wf-clip.is-settling {
-    animation: none;
-  }
+.wf-insertion-details {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+}
+
+.wf-insertion-details > span,
+.wf-insertion-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-insertion-details small {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-insertion-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: var(--z-local-3);
+  color: var(--color-primary);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.wf-insertion-preview[hidden] {
+  display: none;
+}
+
+.wf-insertion-surface {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface-container-lowest));
+}
+
+.wf-insertion-surface::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: currentColor;
+}
+
+.wf-insertion-preview .wf-insertion-thumb {
+  width: 38px;
+  height: 70%;
+  opacity: 0.42;
+}
+
+.wf-insertion-name {
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+.wf-insertion-preview.is-blocked {
+  color: var(--color-on-surface-muted);
+}
+
+.wf-insertion-preview.is-blocked .wf-insertion-surface {
+  background: var(--color-surface-container-high);
+}
+
+.wf-insertion-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 8px;
+  display: block;
+  padding: 2px 9px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  box-shadow: var(--shadow-1);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-insertion-tip.is-end {
+  right: 0;
+  left: auto;
 }
 
 /* ---- 视频素材区 ---- */
@@ -1812,7 +1802,7 @@
 }
 
 .wf-range.is-lifting {
-  background: var(--color-state-dragged);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
   cursor: grabbing;
 }
 
