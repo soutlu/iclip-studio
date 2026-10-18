@@ -10,7 +10,7 @@
  *
  * 步骤：下载 tag 源码包并核对 sha256 → 把组件目录（catalog.json）收录的组件按 `hyperframes add`
  * 的安装位置放好 → 外链换成本地文件（npm 包与 fontsource 字体，tgz 核对锁文件里的摘要）→ 放入
- * HyperFrames 运行时 → 套用 hyperframes-patches/ 的改写 → 写组件字体的整套字形 → 确认没有外链残留 →
+ * HyperFrames 运行时 → 套用 hyperframes-patches/ 的改写 → 组件去掉底色 → 写组件字体的整套字形 → 确认没有外链残留 →
  * 每个文件与锁文件逐一核对。
  * 输出目录里的 .hyperframes-sync.json 记录锁文件摘要；再跑时文件全部一致即跳过，有改动即报错。
  */
@@ -31,6 +31,7 @@ import {
   TARBALL,
   WEB_ROOT,
   cjkTwinFaces,
+  compositionTarget,
   fontFaceDescriptors,
   fontFaces,
   fontPackage,
@@ -47,6 +48,7 @@ import {
 
 const STAMP = '.hyperframes-sync.json'
 const RUNTIME_TEXT = /\.(html?|css|m?js|cjs)$/i
+const COMPONENT_BACKGROUND = /background:\s*(?:#(?:0a0a0a|000000|000|0a0805)|rgba?\([^)]*\))\s*;/g
 
 const args = process.argv.slice(2)
 const updateLock = args.includes('--update-lock')
@@ -248,6 +250,17 @@ async function assemble(temp, lock) {
         throw new SyncError(`改写 ${target} 的原文已变（${actual}），需要按新原文重新改写`)
     }
     await writeOut(target, await readFile(join(PATCHES_DIR, target)))
+  }
+
+  // 6b. 组件（不含区块）的合成文件去掉底色，照 HyperFrames Studio 安装组件时的做法
+  //     （packages/studio/src/utils/blockInstaller.ts 的 makeComponentBackgroundTransparent，正则原样照抄）：
+  //     组件叠在画面上，不能把底下的画面盖黑。
+  for (const { kind, item } of items) {
+    if (kind !== 'component') continue
+    const path = join(temp, compositionTarget(item))
+    const text = await readFile(path, 'utf8')
+    const transparent = text.replace(COMPONENT_BACKGROUND, 'background: transparent;')
+    if (transparent !== text) await writeFile(path, transparent)
   }
 
   // 7. 组件字体的整套字形：组件目录里每个用到的网页字体一份 CSS，合成页按用到的组件引用，渲染服务把它
