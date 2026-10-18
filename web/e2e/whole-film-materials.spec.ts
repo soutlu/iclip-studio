@@ -1,7 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openConversation, screenshotBothThemes } from './helpers'
-
-const SHOT_DIR = '../.artifacts/design-qa/whole-film-pr19'
+import { openConversation } from './helpers'
 
 /** 有分镜、还没有出片的演示对话；各用例按需给镜头组出片（mock 的成片 6 秒，每秒一个镜头） */
 const CONVERSATION = '无图分镜草稿'
@@ -198,8 +196,6 @@ test('镜头组区域固定高度，镜头组多时在区域里上下滚动；�
   const filmLeft = await filmLane(dialog).boundingBox()
   expect(Math.round(stripLeft?.x ?? 0)).toBe(Math.round(filmLeft?.x ?? -1))
 
-  await screenshotBothThemes(page, `${SHOT_DIR}/${page.viewportSize()?.width}-many-groups-top`)
-
   // 在区域里滚到底：后面的镜头组可以挑，区域高度与位置不变、页面不滚
   await materials.hover()
   await page.mouse.wheel(0, 400)
@@ -209,7 +205,6 @@ test('镜头组区域固定高度，镜头组多时在区域里上下滚动；�
   await shotOf(materials, 3, 'A', 2).click()
   await expect(dialog.getByText('素材 · 镜头组 3 · 生成 A · 镜头 2')).toBeVisible()
   await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 2 })
-  await screenshotBothThemes(page, `${SHOT_DIR}/${page.viewportSize()?.width}-many-groups-scrolled`)
 
   // 选中轨道最右的镜头：结尾手柄不撑出横向滚动
   await shotOf(materials, 3, 'A', 6).click()
@@ -521,43 +516,3 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   await expect(picker).toHaveAccessibleName('生成 A的版本：原片')
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(0)
 })
-
-for (const viewport of VIEWPORTS) {
-  test(`验收截图 ${viewport.width}×${viewport.height}`, async ({ page }) => {
-    const prefix = `${SHOT_DIR}/${viewport.width}`
-    const { dialog, materials } = await openWith(page, [1, 1, 2, 2, 3], viewport)
-    for (const [take, shot] of [
-      ['A', 1],
-      ['B', 2],
-      ['A', 3],
-    ] as const) {
-      await shotOf(materials, 1, take, shot).click()
-      await page.keyboard.press('Enter')
-    }
-    await expect(filmLane(dialog).getByRole('group', { name: /^第 3 段/ })).toBeVisible()
-    await seek(page, dialog, 0)
-    await page.mouse.move(viewport.width / 2, 30)
-    await screenshotBothThemes(page, `${prefix}-1-initial`)
-
-    // 点镜头：预览放素材
-    await shotOf(materials, 1, 'B', 2).click()
-    await expect(dialog.locator('.wf-stage-label')).toContainText('生成 B · 镜头 2')
-    await page.mouse.move(viewport.width / 2, 30)
-    await screenshotBothThemes(page, `${prefix}-11-material-preview`)
-
-    // 拖选区开头：预览停在开头那一帧
-    const start = groupOf(materials, 1).getByRole('slider', { name: '裁剪该段开头' })
-    const from = await centerOf(start)
-    await page.mouse.move(from.x, from.y)
-    await page.mouse.down()
-    await page.mouse.move(from.x - 60, from.y, { steps: 4 })
-    await screenshotBothThemes(page, `${prefix}-11b-handle-drag`)
-    await page.mouse.up()
-  })
-
-  test(`验收截图 ${viewport.width}×${viewport.height}：1 个镜头组`, async ({ page }) => {
-    await openWith(page, [1, 1], viewport)
-    await page.mouse.move(viewport.width / 2, 30)
-    await screenshotBothThemes(page, `${SHOT_DIR}/${viewport.width}-2-one-take`)
-  })
-}

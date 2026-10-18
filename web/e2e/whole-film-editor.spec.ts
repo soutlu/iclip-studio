@@ -1,7 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openConversation, screenshotBothThemes } from './helpers'
-
-const SHOT_DIR = '../.artifacts/design-qa/whole-film-editor'
+import { openConversation } from './helpers'
 
 /** 演示对话里：第 2 组一条竖版 6 秒成片，第 3 组一条横版成片；这段对话有一首生成的音乐、一首上传的音乐。 */
 const openWholeFilm = async (page: Page, panel: Locator) => {
@@ -95,7 +93,6 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
     /拾步/,
   )
   await expect(dialog.locator('hyperframes-player.is-pending')).toHaveCount(0)
-  await screenshotBothThemes(page, `${SHOT_DIR}/editor-popover`)
   await page.keyboard.press('Escape')
   await expect(intro).toBeHidden()
 
@@ -135,7 +132,6 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
     'srcdoc',
     /data-composition-id="main"[\s\S]*compositions\/.*logo-sting/,
   )
-  await screenshotBothThemes(page, `${SHOT_DIR}/editor`)
 
   // 导出：mock 渲染排队、渲染、上传后给下载地址；下载时对用到的成片各记一次
   const exported = page.waitForResponse(
@@ -146,7 +142,6 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(dialog.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
   const download = dialog.getByRole('link', { name: '下载整片' })
   await expect(download).toBeVisible({ timeout: 15_000 })
-  await screenshotBothThemes(page, `${SHOT_DIR}/editor-exported`)
   const tracked = page.waitForRequest(
     (request) => request.url().includes('/tracking/events') && request.method() === 'POST',
   )
@@ -172,5 +167,4 @@ test('整片编辑器在窄屏上纵向排开', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
   const dialog = await openWholeFilm(page, panel)
   await expect(dialog.getByRole('region', { name: '视频素材区' })).toBeVisible()
-  await screenshotBothThemes(page, `${SHOT_DIR}/editor-mobile`)
 })
