@@ -30,6 +30,8 @@ const draftSaved = (page: Page) =>
   )
 
 test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关掉再开草稿还在', async ({ page }) => {
+  // 一条走完整片编辑全程的长用例，本地约 15 秒；CI 分片并行时会超过默认的 30 秒
+  test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openWholeFilm(page, panel)
