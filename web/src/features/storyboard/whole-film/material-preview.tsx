@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef, type RefObject } from 'react'
 import { Icon } from '@/shared/icons'
 import type { Edge } from '../editing/timeline-drag'
 import type { MaterialRange } from './materials'
@@ -12,7 +12,10 @@ export type MaterialView = {
   show: 'play' | Edge
 }
 
+export type MaterialPreviewControl = { toggle: () => void }
+
 type MaterialPreviewProps = {
+  controlRef: RefObject<MaterialPreviewControl | null>
   url: string
   view: MaterialView
   /** 「素材 · 镜头组 1 · 生成 B · 镜头 2」 */
@@ -28,6 +31,7 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
 /** 盖在成片预览上的素材画面；回到成片时由编辑器卸掉。 */
 export function MaterialPreview({
+  controlRef,
   url,
   view,
   label,
@@ -45,19 +49,17 @@ export function MaterialPreview({
     const video = videoRef.current
     if (video === null) return
     const { range, show } = view
-    if (show !== 'play') {
-      const at = show === 'start' ? range.startMs : range.endMs
-      video.pause()
-      video.currentTime = at / 1000
-      report(at)
-      return
-    }
     let cancelled = false
     let frame = 0
+    const pause = () => {
+      cancelAnimationFrame(frame)
+      video.pause()
+    }
     const tick = () => {
+      if (video.paused) return
       const now = Math.round(video.currentTime * 1000)
       if (now >= range.endMs) {
-        video.pause()
+        pause()
         video.currentTime = range.endMs / 1000
         report(range.endMs)
         return
@@ -65,24 +67,40 @@ export function MaterialPreview({
       report(Math.max(range.startMs, now))
       frame = requestAnimationFrame(tick)
     }
-    video.currentTime = range.startMs / 1000
-    report(range.startMs)
-    video.play().then(
-      () => {
-        if (!cancelled) frame = requestAnimationFrame(tick)
-      },
-      () => {
-        if (cancelled) return
-        playing(false)
-        failed()
-      },
-    )
+    const play = () => {
+      // 暂停后续播；已到出点（包括修剪停在末端）则重播选区。
+      if (
+        video.ended ||
+        video.currentTime * 1000 >= range.endMs ||
+        video.currentTime * 1000 < range.startMs
+      ) {
+        video.currentTime = range.startMs / 1000
+      }
+      video.play().then(
+        () => {
+          cancelAnimationFrame(frame)
+          if (!cancelled && !video.paused) frame = requestAnimationFrame(tick)
+        },
+        (error: unknown) => {
+          // 加载中暂停或切换素材会中止 play 请求，这是正常操作。
+          if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) return
+          playing(false)
+          failed()
+        },
+      )
+    }
+    controlRef.current = { toggle: () => (video.paused ? play() : pause()) }
+    const at = show === 'end' ? range.endMs : range.startMs
+    video.currentTime = at / 1000
+    report(at)
+    if (show === 'play') play()
+    else pause()
     return () => {
       cancelled = true
-      cancelAnimationFrame(frame)
-      video.pause()
+      pause()
+      controlRef.current = null
     }
-  }, [view, url])
+  }, [view, url, controlRef])
 
   return (
     <div className="wf-material-preview">

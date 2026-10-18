@@ -10,4 +10,6 @@ VITE_BIN="$ROOT_DIR/node_modules/.bin/vite"
 
 cd "$ROOT_DIR"
 
+node scripts/hyperframes-registry.mjs
+
 exec "$VITE_BIN" --host "$HOST" --port "$PORT" --mode "$VITE_MODE" "$@"
