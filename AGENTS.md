@@ -29,11 +29,13 @@
 - 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
 - 数据库测试只用一次性测试库或临时 schema；`TEST_DATABASE_URL` 不得指向业务库。迁移检查范围见 [测试规范](docs/test-design.md)。
 
+提交钩子使用 Gitleaks 检查暂存区，CI 的 `secrets` job 检查完整提交历史（含合并提交），失败会阻止 `ci` 通过。两处固定同一 Gitleaks 版本并共用 [.gitleaks.toml](.gitleaks.toml)；误报仅按已核实的具体文件和固定值同时匹配放行，不排除整个测试目录。扫描日志脱敏。新工作区执行 `make hooks` 安装钩子。
+
 ### CI
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档；目标为 `develop` 时按改动路径选择后端、前端、渲染服务检查，前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时全部都查；结果汇总为 `ci` |
+| [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档与 Git 历史中的密钥；目标为 `develop` 时按改动路径选择后端、前端、渲染服务检查，前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时全部都查；结果汇总为 `ci` |
 | [cache-warm](.github/workflows/cache-warm.yml) | 推送 `develop`、`main`（含 PR 合入）；手动运行 | 只安装依赖、不跑检查，把依赖缓存存到该分支，供指向它的 PR 恢复 |
 | [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` tag；手动选择分支 | 构建并上传镜像，见[镜像发布](docs/release.md) |
 
