@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { withBrandFixtures } from '@/testing/whole-film'
 import catalogJson from './catalog/catalog.json'
 import {
+  brandGroups,
+  categoryGroups,
   defaultLaneLabel,
   durationMsOf,
   itemOf,
-  sortedItems,
   thumbnailOf,
   type CatalogItem,
   type ComponentCatalog,
@@ -40,22 +42,50 @@ describe('组件目录', () => {
     expect(durationMsOf(item(name), filmMs)).toBe(ms)
   })
 
-  it('点卡片的默认去处：字幕样式、block 进成片轨、其余进包装轨', () => {
+  it('点卡片的默认去处：字幕样式、block 进成片轨、其余进特效轨', () => {
     expect(defaultLaneLabel(item('caption-highlight'))).toBe('字幕样式')
     expect(defaultLaneLabel(item('logo-outro'))).toBe('成片轨')
-    expect(defaultLaneLabel(item('hw-arrow'))).toBe('包装轨')
+    expect(defaultLaneLabel(item('hw-arrow'))).toBe('特效轨')
   })
 
-  it('组件栏按 Studio 的分类排，同一分类里保持目录的顺序；缩略图按文件名取地址', () => {
-    const sorted = sortedItems(catalog)
-    expect(sorted).toHaveLength(catalog.items.length)
-    const rank = (entry: CatalogItem) =>
-      catalog.categories.findIndex((category) => category.id === entry.category)
-    expect(sorted.map(rank)).toEqual(sorted.map(rank).toSorted((a, b) => a - b))
-    const scenes = (items: CatalogItem[]) =>
-      items.filter((entry) => entry.category === 'scenes').map((entry) => entry.name)
-    expect(scenes(sorted)).toEqual(scenes(catalog.items))
+  it('缩略图按文件名取地址，没有缩略图的为 undefined', () => {
     expect(thumbnailOf(item('caption-highlight'))).toMatch(/caption-highlight\.svg/)
     expect(thumbnailOf({ ...item('default-caption'), thumbnail: null })).toBeUndefined()
+  })
+})
+
+describe('侧栏分组', () => {
+  const names = (items: CatalogItem[]) => items.map((entry) => entry.name)
+
+  it('真实目录没有品牌组件：品牌栏没有小标题，通用栏收下全部组件', () => {
+    expect(brandGroups(catalog)).toEqual([])
+    const groups = categoryGroups(catalog)
+    expect(groups.flatMap((group) => group.items)).toHaveLength(catalog.items.length)
+  })
+
+  it('品牌栏按品牌分组，品牌按目录里第一次出现的顺序，组内保持目录的顺序', () => {
+    const groups = brandGroups(withBrandFixtures(catalog))
+    expect(groups.map((group) => [group.label, group.items.map((entry) => entry.title)])).toEqual([
+      ['拾步', ['拾步 片头', '拾步 片尾']],
+      ['暖屿', ['暖屿 片头', '暖屿 片尾']],
+    ])
+  })
+
+  it('通用栏只收没有品牌的组件，分类按 Studio 的顺序，没有组件的分类不列', () => {
+    const branded = withBrandFixtures(catalog)
+    const groups = categoryGroups({
+      ...branded,
+      items: branded.items.filter((entry) => entry.category !== 'transitions'),
+    })
+    expect(groups.map((group) => group.id)).toEqual(
+      catalog.categories.map((category) => category.id).filter((id) => id !== 'transitions'),
+    )
+    const all = groups.flatMap((group) => group.items)
+    expect(all.some((entry) => entry.brand !== undefined)).toBe(false)
+    const scenes = groups.find((group) => group.id === 'scenes')
+    expect(scenes?.label).toBe('场景')
+    expect(names(scenes?.items ?? [])).toEqual(
+      names(catalog.items.filter((entry) => entry.category === 'scenes')),
+    )
   })
 })

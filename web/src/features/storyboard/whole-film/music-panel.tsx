@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { MEDIA_AUDIO_ACCEPT, uploadMediaFile } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
+import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { BlockedReason } from '../components/blocked-reason'
 import { Wave } from '../editing/timeline'
@@ -52,17 +53,23 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
   )
   const songs = music.data ?? []
 
-  const upload = async (file: File) => {
+  const upload = async (files: File[]) => {
     setUploading(true)
-    try {
-      await uploadMediaFile(file, 'audio', { conversationId })
-      await refreshConversationMusic(queryClient, conversationId)
-    } catch (error) {
-      onNotice(errorMessageOf(error, '音乐上传失败'))
-    } finally {
-      setUploading(false)
+    for (const file of files) {
+      try {
+        await uploadMediaFile(file, 'audio', { conversationId })
+        await refreshConversationMusic(queryClient, conversationId)
+      } catch (error) {
+        onNotice(errorMessageOf(error, '音乐上传失败'))
+      }
     }
+    setUploading(false)
   }
+  const drop = useFileDropTarget({
+    blocked: uploading,
+    onFiles: (files) => void upload(files),
+    onDirectory: () => onNotice('不能上传文件夹，请拖入音频文件'),
+  })
 
   const toggle = (job: GenerationJob) => {
     if (job.outputUrl === null) return
@@ -90,8 +97,8 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
         <span className="wf-panel-title">
           音乐 <span className="wf-panel-count">{songs.length} 首</span>
         </span>
-        <GenerateMusic conversationId={conversationId} onNotice={onNotice} />
         <Button
+          className="wf-panel-action"
           disabled={uploading}
           leadingIcon="upload"
           loading={uploading}
@@ -106,9 +113,9 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
           aria-label="选择音乐文件"
           className="hidden"
           onChange={(event) => {
-            const file = event.target.files?.[0]
+            const files = [...(event.target.files ?? [])]
             event.target.value = ''
-            if (file !== undefined) void upload(file)
+            if (files.length > 0) void upload(files)
           }}
           ref={fileRef}
           tabIndex={-1}
@@ -124,7 +131,7 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
           正在读取音乐…
         </p>
       ) : songs.length === 0 ? (
-        <p className="wf-panel-note">这段对话还没有音乐，可以点「生成」或「上传」</p>
+        <p className="wf-panel-note">这段对话还没有音乐，可以上传，或在下方音乐轨点「+」生成</p>
       ) : (
         <ul aria-label="这段对话的音乐" className="wf-song-list">
           {songs.map((job) => (
@@ -140,6 +147,18 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
           ))}
         </ul>
       )}
+      <button
+        aria-disabled={uploading ? true : undefined}
+        className={cn('wf-music-drop ui-focus', drop.dragOver && 'is-over')}
+        onClick={() => {
+          if (!uploading) fileRef.current?.click()
+        }}
+        type="button"
+        {...drop.dragHandlers}
+      >
+        {uploading ? '正在上传…' : drop.dragOver ? '松开即上传' : '把音频文件拖到这里上传'}
+        <span>生成音乐在下方音乐轨的「+」</span>
+      </button>
     </div>
   )
 }
@@ -204,6 +223,7 @@ function SongRow({ job, context, inUse, playing, onToggle, onUse }: SongRowProps
           <Button
             aria-disabled={useBlocked === undefined ? undefined : true}
             aria-label={`用这首：${title}`}
+            className="wf-song-use"
             onClick={() => {
               if (useBlocked === undefined) onUse()
             }}
@@ -220,12 +240,18 @@ function SongRow({ job, context, inUse, playing, onToggle, onUse }: SongRowProps
 
 const isMissing = (error: unknown) => error instanceof ApiError && error.status === 404
 
-function GenerateMusic({
+/**
+ * 生成音乐的浮层，向上弹；`children` 是打开它的按钮（音乐轨轨名旁的「+」）。
+ * 生成好的音乐出现在素材页的音乐列表里。
+ */
+export function GenerateMusic({
   conversationId,
   onNotice,
+  children,
 }: {
   conversationId: string
   onNotice: (message: string) => void
+  children: ReactElement
 }) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -271,16 +297,13 @@ function GenerateMusic({
 
   return (
     <PopupRoot onOpenChange={setOpen} open={open}>
-      <PopupTrigger asChild>
-        <Button leadingIcon="sparkles" size="md">
-          生成
-        </Button>
-      </PopupTrigger>
+      <PopupTrigger asChild>{children}</PopupTrigger>
       <PopupSurface
-        align="end"
+        align="start"
         aria-label="生成音乐"
         className="wf-generate"
-        side="bottom"
+        collisionPadding={16}
+        side="top"
         sideOffset={6}
       >
         <label className="wf-generate-label" htmlFor="wf-music-prompt">
@@ -302,11 +325,12 @@ function GenerateMusic({
           <BlockedReason reason={reason}>
             <Button
               aria-disabled={reason === undefined ? undefined : true}
+              leadingIcon="music"
               loading={submitting}
               onClick={() => void generate()}
               size="md"
             >
-              生成音乐
+              生成
             </Button>
           </BlockedReason>
         </div>

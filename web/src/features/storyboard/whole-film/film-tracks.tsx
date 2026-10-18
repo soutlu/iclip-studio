@@ -78,8 +78,11 @@ export type Attempt = { ok: true; draft: WholeFilmDraft } | { ok: false; reason:
 /** 从素材区、组件栏拖到成片区的东西 */
 export type CarryPayload = {
   durationMs: number
-  /** 手上的缩影：拿起时的位置与大小（松手没放下时退回这里），以及里面画的东西 */
-  ghost?: { body: ReactNode; origin: GhostBox } | undefined
+  /**
+   * 手上的缩影：拿起时的位置与大小（松手没放下时退回这里），以及里面画的东西。素材的缩影和拿起的
+   * 那段一样大；组件卡的缩影是按内容排开的小条（预览图加名字）。
+   */
+  ghost?: { body: ReactNode; origin: GhostBox; kind?: 'material' | 'card' } | undefined
   /** 是组件时，特效轨上的虚线块画它 */
   face?: ComponentFace | undefined
   /** 落在这一处会怎样；这条轨不收它时为 undefined（不提示） */
@@ -140,6 +143,8 @@ type FilmTracksProps = {
   /** 字幕样式的中文名；点它到组件栏换样式 */
   captionStyle: string
   onCaptionStyle: () => void
+  /** 音乐轨轨名旁的按钮（生成音乐的「+」） */
+  musicAction: ReactNode
 }
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
@@ -287,6 +292,7 @@ function Ghost({
   returning,
   blocked,
   className,
+  fitContent = false,
   children,
 }: {
   clientX: number
@@ -295,6 +301,8 @@ function Ghost({
   returning: boolean
   blocked: boolean
   className: string
+  /** 大小按内容，不取拿起时的大小 */
+  fitContent?: boolean
   children: ReactNode
 }) {
   return createPortal(
@@ -304,8 +312,7 @@ function Ghost({
       style={{
         left: returning ? origin.left : clientX + GHOST_OFFSET_PX,
         top: returning ? origin.top : clientY + GHOST_OFFSET_PX,
-        width: origin.width,
-        height: origin.height,
+        ...(fitContent ? {} : { width: origin.width, height: origin.height }),
       }}
     >
       {children}
@@ -339,6 +346,7 @@ export function FilmTracks({
   onCaptionText,
   captionStyle,
   onCaptionStyle,
+  musicAction,
 }: FilmTracksProps) {
   const gesture = usePreviewGesture(apply)
   const shown = gesture.preview?.draft ?? draft
@@ -932,9 +940,10 @@ export function FilmTracks({
             {captionStyle}
           </button>
         </span>
-        <span aria-hidden="true" className="wf-track-head">
+        <span className="wf-track-head">
           <Icon decorative name="music" size="sm" />
-          音乐
+          <span aria-hidden="true">音乐</span>
+          {musicAction}
         </span>
       </div>
       <div className="wf-track-scroll" ref={scrollRef}>
@@ -1255,7 +1264,8 @@ export function FilmTracks({
       {carry?.payload.ghost === undefined ? null : (
         <Ghost
           blocked={carry.attempt?.ok === false}
-          className="is-material"
+          className={carry.payload.ghost.kind === 'card' ? 'is-card' : 'is-material'}
+          fitContent={carry.payload.ghost.kind === 'card'}
           clientX={carry.clientX}
           clientY={carry.clientY}
           origin={carry.payload.ghost.origin}
