@@ -2,6 +2,7 @@ import { useRef, useState, type PointerEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
+import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { DRAG_THRESHOLD, releasePointer, useClickAfterDrag } from '../editing/timeline-drag'
 import {
@@ -169,6 +170,15 @@ function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps
     clicks.swallow()
     onDrop({ clientX: event.clientX, clientY: event.clientY, origin: current.origin })
   }
+  const cancel = () => {
+    if (pressRef.current?.moved === true) {
+      clicks.swallow()
+      onCarry(null)
+    }
+    pressRef.current = null
+    setLifting(false)
+  }
+  useEscapeAheadOfDialog(lifting, cancel)
 
   return (
     // 拖着卡片时收起说明，免得它挡在侧栏上跟着不走
@@ -181,11 +191,7 @@ function ComponentCard({ item, captionInUse, onUse, onCarry, onDrop }: CardProps
           onClick={() => {
             if (!clicks.take()) onUse()
           }}
-          onPointerCancel={() => {
-            if (pressRef.current?.moved === true) onCarry(null)
-            pressRef.current = null
-            setLifting(false)
-          }}
+          onPointerCancel={cancel}
           onPointerDown={press}
           onPointerMove={move}
           onPointerUp={release}

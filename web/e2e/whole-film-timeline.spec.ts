@@ -188,7 +188,7 @@ const expectStoppedAt = async (clock: Locator, endMs: number) => {
     .toBe(true)
 }
 
-/** 成片轨上各段左边缘的位置：拖动中确认轨道上的段没动 */
+/** 成片轨上各段左边缘的位置，用于核对预演让位与取消恢复。 */
 const clipLefts = (film: Locator) =>
   film
     .locator('.wf-clip')
@@ -203,15 +203,17 @@ const liftShot = async (page: Page, dialog: Locator, shotNumber: number) => {
   const range = await boxOf(materials.getByRole('group', { name: /^选中的范围/ }))
   await page.mouse.move(range.cx, range.cy)
   await page.mouse.down()
-  await page.mouse.move(range.cx + 10, range.cy - 30, { steps: 4 })
+  await page.mouse.move(range.cx, range.cy - 30, { steps: 4 })
 }
 
 test.describe('整片编辑器 · 成片区', () => {
-  test('从素材拖镜头到成片轨：缩影跟手、只画插入标记、轨道不动，松手才插入；拖到别的轨退回', async ({
+  test('从素材竖直拖起镜头：按完整时长预演让位，松手才插入一次；拖到别的轨取消', async ({
     page,
   }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE, music: true })
     const before = await clipLefts(film)
+    const beforeDraft = await readDraft(page)
+    const { pps } = await pixelsPerSecond(dialog)
     const filmBox = await boxOf(film)
     const third = await boxOf(film.getByRole('group', { name: /^第 3 段/ }))
 
@@ -220,33 +222,50 @@ test.describe('整片编辑器 · 成片区', () => {
     const x = third.x + 6
     const y = filmBox.y + 12
     await page.mouse.move(x, y, { steps: 8 })
-    const ghost = page.locator('.wf-ghost')
+    const ghost = page.locator('.wf-insertion-ghost')
+    const preview = film.getByTestId('timeline-insertion-preview')
     await expect(ghost).toBeVisible()
-    const ghostBox = await boxOf(ghost)
-    expect(Math.abs(ghostBox.x - (x + 12))).toBeLessThan(2)
-    expect(Math.abs(ghostBox.y - (y + 12))).toBeLessThan(2)
-    await expect(dialog.locator('.wf-drop-marker')).toBeVisible()
-    await expect(dialog.locator('.wf-drop-marker')).not.toHaveClass(/is-blocked/)
-    await expect(dialog.locator('.wf-drop-bubble')).toHaveText('插入到 3.5 秒 · 第 3 段')
-    expect(await clipLefts(film)).toEqual(before)
+    await expect.poll(async () => Math.abs((await boxOf(ghost)).width - 158)).toBeLessThan(1)
+    await expect.poll(async () => Math.abs((await boxOf(ghost)).height - 52)).toBeLessThan(1)
+    await expect(preview).toBeVisible()
+    await expect.poll(async () => Math.abs((await boxOf(preview)).width - pps)).toBeLessThan(3)
+    await expect.poll(async () => Math.abs((await boxOf(preview)).x - third.x)).toBeLessThan(1)
+    await expect(
+      page.getByRole('status').filter({ hasText: /插入.*3\.5\s*秒.*1(?:\.0)?\s*秒/ }),
+    ).toBeVisible()
+    await expect.poll(async () => (await clipLefts(film))[2] - before[2]).toBeGreaterThan(pps * 0.9)
+    await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(6)
+    expect(await readDraft(page)).toEqual(beforeDraft)
 
-    // 字幕轨不收镜头：不提示
+    // 字幕轨不收镜头：撤回预演，原排列和草稿都不改变。
     const captions = await boxOf(dialog.getByRole('group', { name: '字幕轨' }))
     await page.mouse.move(x, captions.cy, { steps: 4 })
-    await expect(dialog.locator('.wf-drop-marker')).toHaveCount(0)
+    await expect(preview).toBeHidden()
+    await expect
+      .poll(async () =>
+        Math.max(...(await clipLefts(film)).map((left, at) => Math.abs(left - before[at]))),
+      )
+      .toBeLessThan(1)
+    expect(await readDraft(page)).toEqual(beforeDraft)
     await page.mouse.move(x, y, { steps: 4 })
+    await expect(preview).toBeVisible()
     await page.mouse.up()
-    await expect(film.getByRole('group')).toHaveCount(7)
+    await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(7)
     await expect(film.getByRole('group', { name: /^第 3 段 · A · 镜头 4，1\.0 秒/ })).toBeVisible()
-    await expect(ghost).toHaveCount(0)
+    await expect(ghost).toBeHidden()
+    await expect(preview).toBeHidden()
+    await expect.poll(async () => (await readDraft(page))?.layer0.length).toBe(7)
+    const inserted = await readDraft(page)
+    expect(inserted?.layer0[2]).toMatchObject({ duration: 1_000, playbackStart: 3_000 })
 
-    // 在字幕轨上松手：不放下，缩影退回
+    // 在字幕轨上松手：不再插入，已完成的编辑保留。
     await liftShot(page, dialog, 5)
     await page.mouse.move(x, captions.cy, { steps: 8 })
     await page.mouse.up()
-    await expect(ghost).toHaveClass(/is-returning/)
-    await expect(ghost).toHaveCount(0)
-    await expect(film.getByRole('group')).toHaveCount(7)
+    await expect(ghost).toBeHidden()
+    await expect(preview).toBeHidden()
+    await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(7)
+    expect(await readDraft(page)).toEqual(inserted)
   })
 
   test('放大时间线后，带着镜头到时间区边缘时自动横向滚动', async ({ page }) => {
@@ -264,9 +283,7 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.up()
   })
 
-  test('整片最长 120 秒：放不下时标记变虚线并写原因，松手不加入；拉长与挪动到上限停住', async ({
-    page,
-  }) => {
+  test('整片最长 120 秒：放不下时说明原因，松手不加入；拉长与挪动到上限停住', async ({ page }) => {
     const nineteen = Array.from({ length: 19 }, (_, k) => video(`v${k + 1}`, 0, 6_000))
     const { dialog, film } = await openWith(page, {
       layer0: [...nineteen, card('c1', 'hw-title', 5_500)],
@@ -275,11 +292,10 @@ test.describe('整片编辑器 · 成片区', () => {
     const filmBox = await boxOf(film)
     await liftShot(page, dialog, 2)
     await page.mouse.move(filmBox.x + filmBox.width / 2, filmBox.y + 12, { steps: 8 })
-    await expect(dialog.locator('.wf-drop-marker')).toHaveClass(/is-blocked/)
-    await expect(dialog.locator('.wf-drop-bubble')).toHaveText(
-      '加入后整片超过 120 秒，无法加入；请先缩短或删除其他片段',
-    )
-    await expect(page.locator('.wf-ghost')).toHaveClass(/is-blocked/)
+    await expect(
+      page.getByRole('status').filter({ hasText: '加入后整片超过 120 秒，无法加入' }),
+    ).toBeVisible()
+    await expect(page.locator('.wf-insertion-ghost')).toBeVisible()
     await page.mouse.up()
     await expect(film.getByRole('group')).toHaveCount(20)
     await expect(
@@ -306,24 +322,54 @@ test.describe('整片编辑器 · 成片区', () => {
     await expect(overlays.getByRole('group', { name: /116\.0–120\.0 秒$/ })).toBeVisible()
   })
 
-  test('成片轨内拖动排序：拿起的段变淡、只画插入标记，松手才挪；拖出成片轨不动', async ({
-    page,
-  }) => {
+  test('成片轨内拖动排序：完整占位与邻段预演，松手才保存；Esc 或拖出轨道取消', async ({ page }) => {
     const { dialog, film } = await openWith(page, { layer0: BASE })
     const before = await clipLefts(film)
+    const beforeDraft = await readDraft(page)
+    const { pps } = await pixelsPerSecond(dialog)
+    const preview = film.getByTestId('timeline-insertion-preview')
+    const ghost = page.locator('.wf-insertion-ghost')
     const second = await boxOf(film.getByRole('button', { name: /^选中：第 2 段/ }))
     const fifth = await boxOf(film.getByRole('group', { name: /^第 5 段/ }))
     await page.mouse.move(second.cx, second.cy)
     await page.mouse.down()
     await page.mouse.move(second.cx + 20, second.cy, { steps: 3 })
     await page.mouse.move(fifth.x + fifth.width - 4, second.cy, { steps: 8 })
-    await expect(film.getByRole('group', { name: /^第 2 段/ })).toHaveClass(/is-lifted/)
-    await expect(dialog.locator('.wf-drop-bubble')).toHaveText('挪到第 5 段')
-    expect(await clipLefts(film)).toEqual(before)
+    await expect(ghost).toBeVisible()
+    await expect(preview).toBeVisible()
+    await expect
+      .poll(async () => Math.abs((await boxOf(preview)).width - 1.5 * pps))
+      .toBeLessThan(3)
+    await expect(page.getByRole('status').filter({ hasText: /移到第\s*5\s*段/ })).toBeVisible()
+    await expect.poll(async () => before[2] - (await clipLefts(film))[2]).toBeGreaterThan(pps)
+    await expect(film.getByRole('group', { name: /^第 \d+ 段/ })).toHaveCount(6)
+    expect(await readDraft(page)).toEqual(beforeDraft)
     await page.mouse.up()
     await expect
       .poll(async () => (await readDraft(page))?.layer0.map((clip) => clip.id))
       .toEqual(['c1', 'v2', 'v3', 'v4', 'v1', 'v5'])
+    await expect(ghost).toBeHidden()
+    await expect(preview).toBeHidden()
+    const movedDraft = await readDraft(page)
+    const movedLefts = await clipLefts(film)
+
+    // 在有效落点按 Esc：撤回预演，随后 pointerup 不得提交。
+    const first = await boxOf(film.getByRole('group', { name: /^第 1 段/ }))
+    const moved = await boxOf(film.getByRole('button', { name: /^选中：第 5 段/ }))
+    await page.mouse.move(moved.cx, moved.cy)
+    await page.mouse.down()
+    await page.mouse.move(first.x + 2, moved.cy, { steps: 8 })
+    await expect(preview).toBeVisible()
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await expect(ghost).toBeHidden()
+    await expect(preview).toBeHidden()
+    await expect
+      .poll(async () =>
+        Math.max(...(await clipLefts(film)).map((left, at) => Math.abs(left - movedLefts[at]))),
+      )
+      .toBeLessThan(1)
+    expect(await readDraft(page)).toEqual(movedDraft)
 
     // 拖出成片轨（到素材区）松手：不挪，缩影退回
     const third = await boxOf(film.getByRole('button', { name: /^选中：第 3 段/ }))
@@ -331,17 +377,10 @@ test.describe('整片编辑器 · 成片区', () => {
     await page.mouse.move(third.cx, third.cy)
     await page.mouse.down()
     await page.mouse.move(third.cx, materials.cy, { steps: 8 })
-    await expect(dialog.locator('.wf-drop-marker')).toHaveCount(0)
+    await expect(preview).toBeHidden()
     await page.mouse.up()
-    await expect(page.locator('.wf-ghost')).toHaveCount(0)
-    expect((await readDraft(page))?.layer0.map((clip) => clip.id)).toEqual([
-      'c1',
-      'v2',
-      'v3',
-      'v4',
-      'v1',
-      'v5',
-    ])
+    await expect(ghost).toBeHidden()
+    expect(await readDraft(page)).toEqual(movedDraft)
   })
 
   test('点段移到段首、Delete 删除、⌘Z 撤销、⌥→ 挪一位、修剪与 ←/→ 微调、方向键走播放头', async ({

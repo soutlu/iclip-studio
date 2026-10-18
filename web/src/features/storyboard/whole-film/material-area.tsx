@@ -1,6 +1,7 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { Frames, TrimHandle } from '../editing/timeline'
@@ -152,6 +153,7 @@ type TakeRowProps = {
 type RangeDrag = {
   pointerId: number
   originX: number
+  originY: number
   edge: Edge | 'body'
   base: MaterialRange
   moved: boolean
@@ -202,6 +204,7 @@ function TakeRow({
     dragRef.current = {
       pointerId: event.pointerId,
       originX: event.clientX,
+      originY: event.clientY,
       edge,
       base,
       moved: false,
@@ -215,7 +218,11 @@ function TakeRow({
     if (current === null || current.pointerId !== event.pointerId || durationMs === undefined)
       return
     const deltaPx = event.clientX - current.originX
-    if (!current.moved && Math.abs(deltaPx) <= DRAG_THRESHOLD) return
+    const distance =
+      current.edge === 'body'
+        ? Math.hypot(deltaPx, event.clientY - current.originY)
+        : Math.abs(deltaPx)
+    if (!current.moved && distance <= DRAG_THRESHOLD) return
     if (!current.moved && current.fromShot) onSelect(current.base)
     current.moved = true
     if (current.edge === 'body') {
@@ -250,10 +257,15 @@ function TakeRow({
   }
 
   const cancel = () => {
-    if (dragRef.current?.edge === 'body') onCarry(null)
+    const current = dragRef.current
+    if (current?.edge === 'body') {
+      if (current.moved) clickAfterDrag.swallow()
+      onCarry(null)
+    }
     dragRef.current = null
     setLifting(false)
   }
+  useEscapeAheadOfDialog(lifting, cancel)
 
   return (
     <div className="wf-take">
