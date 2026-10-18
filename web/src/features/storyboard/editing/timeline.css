@@ -1,8 +1,7 @@
 /* 两个编辑器时间线的共用件。各编辑器通过下列自定义属性给出自己的尺寸，不改这里的类：
    --timeline-ruler-height、--timeline-first-tick-shift、--timeline-wave-inset、--timeline-wave-stroke、
-   --timeline-handle-top、--timeline-handle-height、--timeline-handle-end-shift、--timeline-handle-reach、
-   --timeline-handle-grip、--timeline-bubble-height、--timeline-playhead-top、--timeline-playhead-bottom、
-   --timeline-knob-top、--timeline-knob-width、--timeline-knob-height、--timeline-knob-radius。 */
+   --timeline-handle-top、--timeline-bubble-height、--timeline-playhead-top、--timeline-playhead-bottom、
+   --timeline-knob-top。 */
 
 .timeline-ruler {
   position: absolute;
@@ -10,12 +9,6 @@
   right: 0;
   left: 0;
   height: var(--timeline-ruler-height);
-}
-
-/* 滑块本身透明，键盘焦点环画在刻度区上。 */
-.timeline-ruler:has(> .timeline-seek:focus-visible:not([data-pointer])) {
-  outline: var(--state-focus-ring) solid var(--color-focus-ring);
-  outline-offset: var(--state-focus-offset);
 }
 
 .timeline-tick {
@@ -117,46 +110,81 @@
 
 .timeline-handle {
   position: absolute;
-  top: var(--timeline-handle-top);
+  top: var(--timeline-handle-top, 50%);
   z-index: var(--z-local-3);
   display: grid;
   width: 8px;
-  height: var(--timeline-handle-height);
+  height: 20px;
   place-items: center;
+  translate: -50% -50%;
   padding: 0;
-  border: 0;
-  background: var(--color-on-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
   cursor: ew-resize;
   touch-action: none;
 }
 
-.timeline-handle.is-start {
-  translate: -3px 0;
-  border-radius: var(--radius-md) var(--radius-xs) var(--radius-xs) var(--radius-md);
-}
-
-.timeline-handle.is-end {
-  translate: var(--timeline-handle-end-shift, -7px) 0;
-  border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
-}
-
-/* 手柄只有 8px 宽，热区横向放宽。 */
+/* 视觉保持细小，透明命中区为 28 × 24px，不跨过包装轨。 */
 .timeline-handle::before {
   content: '';
   position: absolute;
-  inset: var(--timeline-handle-reach, 0) -10px;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 24px;
+  translate: -50% -50%;
 }
 
 .timeline-handle::after {
   content: '';
   width: 2px;
-  height: var(--timeline-handle-grip, 14px);
+  height: 8px;
   border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+
+.timeline-handle:hover {
+  background: var(--color-surface-container-high);
+}
+
+.timeline-handle:is(:focus-visible, :active, .is-pressed) {
+  outline: none;
+  border-color: transparent;
+  background: var(--color-on-surface);
+}
+
+.timeline-handle:is(:focus-visible, :active, .is-pressed)::after {
   background: var(--color-surface-container-lowest);
 }
 
-.timeline-handle.is-pressed {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+.timeline-time-preview {
+  position: fixed;
+  z-index: var(--z-popup);
+  display: flex;
+  width: 112px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  box-shadow: var(--shadow-1);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-time-preview > span {
+  opacity: 0.65;
+}
+
+.timeline-time-preview > b {
+  font-size: var(--text-label);
+  font-weight: 500;
 }
 
 .timeline-bubble {
@@ -195,12 +223,37 @@
 .timeline-playhead::before {
   content: '';
   position: absolute;
-  top: var(--timeline-knob-top, -24px);
+  box-sizing: border-box;
+  top: var(--timeline-knob-top, -12px);
   left: 50%;
-  width: var(--timeline-knob-width, 14px);
-  height: var(--timeline-knob-height, 18px);
+  width: 10px;
+  height: 12px;
   translate: -50% 0;
-  border-radius: var(--timeline-knob-radius, var(--radius-sm));
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-1);
+}
+
+.timeline-playhead::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--timeline-knob-top, -12px) + 6px);
+  left: 50%;
+  width: 2px;
+  height: 5px;
+  translate: -50% -50%;
+  border-radius: var(--radius-full);
   background: var(--color-on-surface);
-  box-shadow: 0 0 0 2px var(--color-surface-container-low);
+}
+
+.timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
+  ~ .timeline-playhead::before {
+  border-color: transparent;
+  background: var(--color-on-surface);
+}
+
+.timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
+  ~ .timeline-playhead::after {
+  background: var(--color-surface-container-lowest);
 }

@@ -11,7 +11,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
 import type { PeaksState } from '../editing/media-analysis'
-import { Frames, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
+import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
 import { arrowStep } from '../editing/timeline-drag'
 import type { TrackLane } from './component-placement'
 import type { PlacedCaption } from './composition/captions'
@@ -368,6 +368,7 @@ export function FilmTracks({
             onSeek={(clock) => onSeek(Math.round(clock * 1000))}
             scale={contentWidth / pps}
             total={total / 1000}
+            viewportRef={scrollRef}
           />
           {beats.map((beat) => (
             <span
@@ -613,11 +614,7 @@ export function FilmTracks({
               ) : null}
             </div>
           </div>
-          <span
-            aria-hidden="true"
-            className="wf-playhead"
-            style={{ left: `${msToPx(Math.min(playheadMs, total), pps)}px` }}
-          />
+          <TimelinePlayhead style={{ left: `${msToPx(Math.min(playheadMs, total), pps)}px` }} />
         </div>
       </div>
     </div>

@@ -1,8 +1,7 @@
 .video-editor-timeline {
   --timeline-ruler-height: var(--control-height-md);
   --timeline-track-top: calc(var(--timeline-ruler-height) + 4px);
-  --timeline-handle-top: calc(var(--timeline-track-top) - 3px);
-  --timeline-handle-height: 52px;
+  --timeline-handle-top: calc(var(--timeline-track-top) + 23px);
   --timeline-playhead-top: var(--timeline-track-top);
   --timeline-playhead-bottom: 0;
 

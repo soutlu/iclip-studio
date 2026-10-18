@@ -1,11 +1,14 @@
 import {
+  useEffect,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  type RefObject,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
@@ -21,6 +24,7 @@ type TimelineRulerProps = {
   scale: number
   total: number
   currentTime: number
+  viewportRef: RefObject<HTMLDivElement | null>
   disabled?: boolean | undefined
   clockAt: (clientX: number) => number
   onSeek: (clock: number) => void
@@ -31,23 +35,55 @@ export function TimelineRuler({
   scale,
   total,
   currentTime,
+  viewportRef,
   disabled = false,
   clockAt,
   onSeek,
   onScrub,
 }: TimelineRulerProps) {
-  // Chrome 对指针按住 range 拿到的焦点也算 :focus-visible；焦点环只留给键盘。
+  // 指针与键盘都由定位头内部变色表示状态，刻度区域不加外框。
   const [seekByPointer, setSeekByPointer] = useState(false)
   const seekPointerRef = useRef<number | null>(null)
+  const [preview, setPreview] = useState<{
+    time: number
+    left: number
+    top: number
+    seeking: boolean
+  } | null>(null)
+  useEffect(() => {
+    const hide = () => setPreview(null)
+    window.addEventListener('scroll', hide, true)
+    window.addEventListener('resize', hide)
+    return () => {
+      window.removeEventListener('scroll', hide, true)
+      window.removeEventListener('resize', hide)
+    }
+  }, [])
+  const previewAt = (event: PointerEvent<HTMLInputElement>, seeking: boolean) => {
+    const time = Math.max(0, Math.min(total, clockAt(event.clientX)))
+    const ruler = event.currentTarget.getBoundingClientRect()
+    const viewport = viewportRef.current?.getBoundingClientRect() ?? ruler
+    const width = 112
+    const min = Math.max(8, viewport.left + 4)
+    const max = Math.min(window.innerWidth - width - 8, viewport.right - width - 4)
+    setPreview({
+      time,
+      left: Math.max(min, Math.min(max, ruler.left + (time / scale) * ruler.width - width / 2)),
+      top: Math.max(8, ruler.top - 30),
+      seeking,
+    })
+    return time
+  }
   const tickStep = TICK_STEPS.find((step) => step >= scale / 8) ?? Math.ceil(scale / 8 / 60) * 60
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
   const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
-    onSeek(Math.min(total, clockAt(event.clientX)))
+    onSeek(previewAt(event, true))
   }
   const finishSeek = (event: PointerEvent<HTMLInputElement>) => {
     if (seekPointerRef.current !== event.pointerId) return
     seekPointerRef.current = null
+    setPreview(null)
     releasePointer(event)
   }
   return (
@@ -71,15 +107,22 @@ export function TimelineRuler({
         aria-valuetext={timeLabel(boundedTime)}
         className="timeline-seek"
         data-pointer={seekByPointer ? '' : undefined}
+        data-seeking={preview?.seeking === true ? '' : undefined}
         disabled={disabled}
         max={scale}
         min={0}
-        onBlur={() => setSeekByPointer(false)}
+        onBlur={() => {
+          setSeekByPointer(false)
+          setPreview(null)
+        }}
         onChange={(event) => {
           onScrub()
           onSeek(Math.min(total, Number(event.target.value)))
         }}
-        onKeyDown={() => setSeekByPointer(false)}
+        onKeyDown={() => {
+          setSeekByPointer(false)
+          setPreview(null)
+        }}
         onPointerDown={(event) => {
           if (disabled || event.button !== 0) return
           event.preventDefault()
@@ -93,6 +136,10 @@ export function TimelineRuler({
         }}
         onPointerMove={(event) => {
           if (seekPointerRef.current === event.pointerId) seekPointer(event)
+          else if (!disabled && event.pointerType !== 'touch') previewAt(event, false)
+        }}
+        onPointerLeave={() => {
+          if (seekPointerRef.current === null) setPreview(null)
         }}
         onPointerUp={finishSeek}
         onPointerCancel={finishSeek}
@@ -100,8 +147,25 @@ export function TimelineRuler({
         type="range"
         value={boundedTime}
       />
+      {preview === null
+        ? null
+        : createPortal(
+            <span
+              aria-hidden="true"
+              className="timeline-time-preview"
+              style={{ left: preview.left, top: preview.top }}
+            >
+              <span>{preview.seeking ? '定位' : '预览'}</span>
+              <b>{timeLabel(preview.time)}</b>
+            </span>,
+            document.body,
+          )}
     </div>
   )
+}
+
+export function TimelinePlayhead({ style }: { style: CSSProperties }) {
+  return <span aria-hidden="true" className="timeline-playhead" style={style} />
 }
 
 export function Frames({ part }: { part: PlaySegment }) {
@@ -199,7 +263,7 @@ export function TrimHandle({
       aria-valuemin={roundSeconds(bounds.min)}
       aria-valuenow={roundSeconds(value)}
       aria-valuetext={valueText}
-      className={cn('timeline-handle ui-focus', `is-${edge}`, pressed && 'is-pressed')}
+      className={cn('timeline-handle', `is-${edge}`, pressed && 'is-pressed')}
       onKeyDown={onKeyDown}
       onPointerCancel={onPointerCancel}
       onPointerDown={onPointerDown}

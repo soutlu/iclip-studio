@@ -730,8 +730,8 @@
 
 .wf-tracks {
   --timeline-ruler-height: 20px;
-  --timeline-handle-top: 0;
-  --timeline-handle-height: 100%;
+  --timeline-playhead-top: 24px;
+  --timeline-playhead-bottom: 0;
   --wf-film-height: 52px;
   --wf-lane-height: 26px;
   --wf-music-height: 32px;
@@ -1019,17 +1019,6 @@
 
 .wf-music {
   overflow: hidden;
-}
-
-.wf-playhead {
-  position: absolute;
-  top: 4px;
-  bottom: 0;
-  z-index: var(--z-local-3);
-  width: 2px;
-  translate: -1px 0;
-  background: var(--color-on-surface);
-  pointer-events: none;
 }
 
 /* ---- 视频素材区 ---- */
