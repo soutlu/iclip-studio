@@ -43,23 +43,31 @@ export function TimelineRuler({
 }: TimelineRulerProps) {
   // 指针与键盘都由定位头内部变色表示状态，刻度区域不加外框。
   const [seekByPointer, setSeekByPointer] = useState(false)
+  const [seeking, setSeeking] = useState(false)
   const seekPointerRef = useRef<number | null>(null)
   const [preview, setPreview] = useState<{
     time: number
     left: number
     top: number
-    seeking: boolean
   } | null>(null)
   useEffect(() => {
     const hide = () => setPreview(null)
-    window.addEventListener('scroll', hide, true)
+    const hideOnScroll = (event: Event) => {
+      // 背景会话的自动滚动不会移动标尺，不应清掉编辑器里的提示。
+      if (
+        event.target === window ||
+        (event.target instanceof Node && event.target.contains(viewportRef.current))
+      )
+        hide()
+    }
+    window.addEventListener('scroll', hideOnScroll, true)
     window.addEventListener('resize', hide)
     return () => {
-      window.removeEventListener('scroll', hide, true)
+      window.removeEventListener('scroll', hideOnScroll, true)
       window.removeEventListener('resize', hide)
     }
-  }, [])
-  const previewAt = (event: PointerEvent<HTMLInputElement>, seeking: boolean) => {
+  }, [viewportRef])
+  const previewAt = (event: PointerEvent<HTMLInputElement>) => {
     const time = Math.max(0, Math.min(total, clockAt(event.clientX)))
     const ruler = event.currentTarget.getBoundingClientRect()
     const viewport = viewportRef.current?.getBoundingClientRect() ?? ruler
@@ -70,7 +78,6 @@ export function TimelineRuler({
       time,
       left: Math.max(min, Math.min(max, ruler.left + (time / scale) * ruler.width - width / 2)),
       top: Math.max(8, ruler.top - 30),
-      seeking,
     })
     return time
   }
@@ -78,11 +85,12 @@ export function TimelineRuler({
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
   const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
-    onSeek(previewAt(event, true))
+    onSeek(previewAt(event))
   }
   const finishSeek = (event: PointerEvent<HTMLInputElement>) => {
     if (seekPointerRef.current !== event.pointerId) return
     seekPointerRef.current = null
+    setSeeking(false)
     setPreview(null)
     releasePointer(event)
   }
@@ -107,7 +115,7 @@ export function TimelineRuler({
         aria-valuetext={timeLabel(boundedTime)}
         className="timeline-seek"
         data-pointer={seekByPointer ? '' : undefined}
-        data-seeking={preview?.seeking === true ? '' : undefined}
+        data-seeking={seeking ? '' : undefined}
         disabled={disabled}
         max={scale}
         min={0}
@@ -128,6 +136,7 @@ export function TimelineRuler({
           event.preventDefault()
           event.stopPropagation()
           setSeekByPointer(true)
+          setSeeking(true)
           event.currentTarget.focus()
           event.currentTarget.setPointerCapture(event.pointerId)
           seekPointerRef.current = event.pointerId
@@ -136,7 +145,7 @@ export function TimelineRuler({
         }}
         onPointerMove={(event) => {
           if (seekPointerRef.current === event.pointerId) seekPointer(event)
-          else if (!disabled && event.pointerType !== 'touch') previewAt(event, false)
+          else if (!disabled && event.pointerType !== 'touch') previewAt(event)
         }}
         onPointerLeave={() => {
           if (seekPointerRef.current === null) setPreview(null)
@@ -155,7 +164,7 @@ export function TimelineRuler({
               className="timeline-time-preview"
               style={{ left: preview.left, top: preview.top }}
             >
-              <span>{preview.seeking ? '定位' : '预览'}</span>
+              <span>{seeking ? '定位' : '预览'}</span>
               <b>{timeLabel(preview.time)}</b>
             </span>,
             document.body,
