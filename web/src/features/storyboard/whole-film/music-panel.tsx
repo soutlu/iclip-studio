@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { MEDIA_AUDIO_ACCEPT, uploadMediaFile } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
@@ -8,7 +8,6 @@ import { Button, IconButton } from '@/shared/ui/button'
 import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { BlockedReason } from '../components/blocked-reason'
-import { Wave } from '../editing/timeline'
 import { filmViewQuery } from '../film/film.api'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
@@ -16,8 +15,7 @@ import type { EditContext } from './editing/context'
 import type { WholeFilmDraft } from './editing/draft'
 import { setMusic } from './editing/music'
 import type { EditResult } from './editing/result'
-import { useMusicAnalysis } from './music-analysis'
-import { musicTitleOf, peaksStateOf } from './music-view'
+import { musicTitleOf } from './music-view'
 import {
   refreshConversationMusic,
   submitMusic,
@@ -27,7 +25,44 @@ import {
 
 const MAX_PROMPT_CHARS = 3000
 
-const seconds = (ms: number) => Math.round(ms / 1000)
+const durationLabel = (ms: number) => {
+  const seconds = Math.round(ms / 1000)
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+const musicStatusLabel = (status: GenerationJob['status']) =>
+  status === 'pending'
+    ? '排队中'
+    : isRunningStatus(status)
+      ? '生成中'
+      : status === 'completed'
+        ? '已就绪'
+        : '生成失败'
+
+function MusicStatus({ status }: { status: GenerationJob['status'] }) {
+  const running = status !== 'pending' && isRunningStatus(status)
+  return (
+    <span
+      aria-label={musicStatusLabel(status)}
+      className={cn('wf-music-status', running && 'is-running', status === 'failed' && 'is-failed')}
+      role="img"
+    >
+      {running ? (
+        <span aria-hidden="true" className="wf-music-pulse">
+          <i />
+          <i />
+          <i />
+        </span>
+      ) : (
+        <Icon
+          decorative
+          name={status === 'pending' ? 'duration' : status === 'completed' ? 'check' : 'alert'}
+          size="sm"
+        />
+      )}
+    </span>
+  )
+}
 
 type MusicPanelProps = {
   conversationId: string
@@ -92,26 +127,21 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
   }
 
   return (
-    <div className="wf-music-panel">
+    <div
+      aria-label="音乐素材"
+      className={cn('wf-music-panel', drop.dragOver && 'is-over')}
+      role="region"
+      {...drop.dragHandlers}
+    >
       <div className="wf-panel-head">
         <span className="wf-panel-title">
           音乐 <span className="wf-panel-count">{songs.length} 首</span>
         </span>
-        <Button
-          className="wf-panel-action"
-          disabled={uploading}
-          leadingIcon="upload"
-          loading={uploading}
-          onClick={() => fileRef.current?.click()}
-          size="md"
-          variant="outlined"
-        >
-          上传
-        </Button>
         <input
           accept={MEDIA_AUDIO_ACCEPT}
           aria-label="选择音乐文件"
           className="hidden"
+          multiple
           onChange={(event) => {
             const files = [...(event.target.files ?? [])]
             event.target.value = ''
@@ -131,34 +161,40 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
           正在读取音乐…
         </p>
       ) : songs.length === 0 ? (
-        <p className="wf-panel-note">这段对话还没有音乐，可以上传，或在下方音乐轨点「+」生成</p>
+        <p className="wf-panel-note">暂无音乐</p>
       ) : (
         <ul aria-label="这段对话的音乐" className="wf-song-list">
           {songs.map((job) => (
             <SongRow
               context={context}
+              conversationId={conversationId}
+              onNotice={onNotice}
               inUse={draft.music?.jobId === job.id}
               job={job}
               key={job.id}
               onToggle={() => toggle(job)}
-              onUse={() => apply(setMusic(draft, { jobId: job.id }, context))}
+              onUse={() => {
+                if (apply(setMusic(draft, { jobId: job.id }, context))) {
+                  audioRef.current?.pause()
+                  setPlaying(null)
+                }
+              }}
               playing={playing === job.id}
             />
           ))}
         </ul>
       )}
-      <button
-        aria-disabled={uploading ? true : undefined}
-        className={cn('wf-music-drop ui-focus', drop.dragOver && 'is-over')}
-        onClick={() => {
-          if (!uploading) fileRef.current?.click()
-        }}
-        type="button"
-        {...drop.dragHandlers}
+      <Button
+        className="wf-music-upload"
+        disabled={uploading}
+        leadingIcon="upload"
+        loading={uploading}
+        onClick={() => fileRef.current?.click()}
+        size="md"
+        variant="tonal"
       >
-        {uploading ? '正在上传…' : drop.dragOver ? '松开即上传' : '把音频文件拖到这里上传'}
-        <span>生成音乐在下方音乐轨的「+」</span>
-      </button>
+        添加音频
+      </Button>
     </div>
   )
 }
@@ -166,75 +202,135 @@ export function MusicPanel({ conversationId, draft, context, apply, onNotice }: 
 type SongRowProps = {
   job: GenerationJob
   context: EditContext
+  conversationId: string
   inUse: boolean
   playing: boolean
   onToggle: () => void
   onUse: () => void
+  onNotice: (message: string) => void
 }
 
-function SongRow({ job, context, inUse, playing, onToggle, onUse }: SongRowProps) {
+function SongRow({
+  job,
+  context,
+  conversationId,
+  inUse,
+  playing,
+  onToggle,
+  onUse,
+  onNotice,
+}: SongRowProps) {
   const ready = job.status === 'completed' && job.outputUrl !== null
-  const analysis = useMusicAnalysis(ready ? (job.outputUrl ?? undefined) : undefined)
   const title = musicTitleOf(job)
-  const durationMs = job.durationMs ?? analysis.data?.durationMs
-  const source = job.operation === 'upload' ? '上传' : '生成'
-  const meta = isRunningStatus(job.status)
-    ? '生成中，完成后可以使用'
-    : !ready
-      ? (job.errorMessage ?? '生成失败')
-      : durationMs === undefined
-        ? source
-        : `${source} · ${seconds(durationMs)} 秒`
+  const durationMs = job.durationMs ?? context.music[job.id]?.durationMs
   const useBlocked = !ready
-    ? '这首音乐还不能用'
+    ? musicStatusLabel(job.status)
     : context.music[job.id] === undefined
       ? '正在读取这首音乐的时长，稍后再试'
       : undefined
   return (
     <li className={cn('wf-song', inUse && 'is-used')}>
-      <IconButton
-        disabled={!ready}
-        label={playing ? `暂停试听：${title}` : `试听：${title}`}
-        name={playing ? 'pause' : 'play'}
-        onClick={onToggle}
-        size="sm"
-      />
+      <BlockedReason reason={useBlocked}>
+        <button
+          aria-disabled={useBlocked === undefined ? undefined : true}
+          aria-label={`选用：${title}`}
+          aria-pressed={inUse}
+          className="wf-song-select"
+          onClick={() => {
+            if (useBlocked === undefined) onUse()
+          }}
+          type="button"
+        />
+      </BlockedReason>
+      {ready ? (
+        <IconButton
+          className="wf-song-play"
+          label={playing ? `暂停试听：${title}` : `试听：${title}`}
+          name={playing ? 'pause' : 'play'}
+          onClick={onToggle}
+          size="sm"
+        />
+      ) : (
+        <MusicStatus status={job.status} />
+      )}
       <span className="wf-song-text">
         <span className="wf-song-title" title={title}>
           {title}
         </span>
-        <span className="wf-song-meta">{meta}</span>
-      </span>
-      <span aria-hidden="true" className="wf-song-wave">
         {ready && durationMs !== undefined ? (
-          <Wave
-            part={{ mediaUrl: job.outputUrl ?? '', start: 0, end: durationMs / 1000 }}
-            state={peaksStateOf(analysis)}
-          />
+          <span className="wf-song-meta">{durationLabel(durationMs)}</span>
         ) : null}
       </span>
-      {inUse ? (
-        <span className="wf-song-used">
-          <Icon decorative name="check" size="xs" />
-          在用
-        </span>
-      ) : (
-        <BlockedReason reason={useBlocked}>
-          <Button
-            aria-disabled={useBlocked === undefined ? undefined : true}
-            aria-label={`用这首：${title}`}
-            className="wf-song-use"
-            onClick={() => {
-              if (useBlocked === undefined) onUse()
-            }}
-            size="md"
-            variant="outlined"
+      <span className="wf-song-actions">
+        {inUse ? (
+          <span aria-label="在用" className="wf-song-used" role="img">
+            <Icon decorative name="check" size="xs" />
+          </span>
+        ) : null}
+        {job.status === 'failed' && job.operation === 'generate' ? (
+          <GenerateMusic conversationId={conversationId} initialPrompt={title} onNotice={onNotice}>
+            <IconButton label={`重新生成：${title}`} name="refresh" size="xs" />
+          </GenerateMusic>
+        ) : null}
+        <PopupRoot>
+          <PopupTrigger asChild>
+            <IconButton label={`查看音乐详情：${title}`} name="more" size="xs" />
+          </PopupTrigger>
+          <PopupSurface
+            align="end"
+            aria-label={`音乐详情：${title}`}
+            className="wf-song-details"
+            collisionPadding={16}
+            sideOffset={6}
           >
-            用这首
-          </Button>
-        </BlockedReason>
-      )}
+            <strong>{musicStatusLabel(job.status)}</strong>
+            {job.errorMessage !== null ? (
+              <p className="wf-music-error">{job.errorMessage}</p>
+            ) : null}
+            <p>{title}</p>
+          </PopupSurface>
+        </PopupRoot>
+      </span>
     </li>
+  )
+}
+
+/** 音乐轨固定按钮位内的生成状态；查看列表不改变轨道布局。 */
+export function MusicAction({
+  conversationId,
+  musicJobId,
+  onNotice,
+  onOpenMusic,
+}: {
+  conversationId: string
+  musicJobId: string | undefined
+  onNotice: (message: string) => void
+  onOpenMusic: () => void
+}) {
+  const music = useConversationMusic(conversationId)
+  const jobs = music.data ?? []
+  const generated = jobs.filter((job) => job.operation === 'generate')
+  const latest = generated.find((job) => isRunningStatus(job.status)) ?? generated[0]
+  const status =
+    latest !== undefined && (latest.status !== 'completed' || latest.id !== musicJobId)
+      ? latest.status
+      : undefined
+  return (
+    <GenerateMusic conversationId={conversationId} onNotice={onNotice}>
+      <button
+        aria-label="生成音乐"
+        className="wf-head-add wf-music-action ui-focus"
+        onClick={onOpenMusic}
+        title={status === undefined ? '生成音乐' : musicStatusLabel(status)}
+        type="button"
+      >
+        {status === undefined ? (
+          <Icon decorative name="add" size="xs" />
+        ) : (
+          <MusicStatus status={status} />
+        )}
+      </button>
+    </GenerateMusic>
   )
 }
 
@@ -248,12 +344,15 @@ export function GenerateMusic({
   conversationId,
   onNotice,
   children,
+  initialPrompt,
 }: {
   conversationId: string
   onNotice: (message: string) => void
   children: ReactElement
+  initialPrompt?: string
 }) {
   const queryClient = useQueryClient()
+  const inputId = useId()
   const [open, setOpen] = useState(false)
   const [prompt, setPrompt] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -264,7 +363,7 @@ export function GenerateMusic({
     enabled: open,
     retry: (count, error) => !isMissing(error) && count < 1,
   })
-  const suggested = film.data?.film.musicDescription ?? ''
+  const suggested = initialPrompt ?? film.data?.film.musicDescription ?? ''
   const text = prompt ?? suggested
   const reason = submitting
     ? '正在提交，请稍候'
@@ -306,12 +405,12 @@ export function GenerateMusic({
         side="top"
         sideOffset={6}
       >
-        <label className="wf-generate-label" htmlFor="wf-music-prompt">
+        <label className="wf-generate-label" htmlFor={inputId}>
           音乐描述
         </label>
         <textarea
           className="wf-generate-text ui-focus"
-          id="wf-music-prompt"
+          id={inputId}
           maxLength={MAX_PROMPT_CHARS}
           onChange={(event) => setPrompt(event.target.value)}
           placeholder={
@@ -321,7 +420,6 @@ export function GenerateMusic({
           value={text}
         />
         <div className="wf-generate-foot">
-          <span>生成好后出现在音乐列表里，点「用这首」放进整片</span>
           <BlockedReason reason={reason}>
             <Button
               aria-disabled={reason === undefined ? undefined : true}

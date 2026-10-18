@@ -260,16 +260,16 @@ describe('整片编辑器', () => {
     ).toBeInTheDocument()
   })
 
-  it('素材栏列出这段对话的音乐，「用这首」放到音乐轨上', async () => {
+  it('素材栏列出这段对话的音乐，选用条目放到音乐轨上', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor([...takes, song])
     const list = await screen.findByRole('list', { name: '这段对话的音乐' })
     expect(within(list).getByText('轻快原声吉他')).toBeInTheDocument()
-    expect(within(list).getByText('生成 · 30 秒')).toBeInTheDocument()
+    expect(within(list).getByText('00:30')).toBeInTheDocument()
 
-    await user.click(within(list).getByRole('button', { name: '用这首：轻快原声吉他' }))
-    expect(within(list).getByText('在用')).toBeInTheDocument()
+    await user.click(within(list).getByRole('button', { name: '选用：轻快原声吉他' }))
+    expect(within(list).getByRole('img', { name: '在用' })).toBeInTheDocument()
     expect(
       screen.getByRole('group', { name: '音乐 · 轻快原声吉他，从歌里 0.0 秒起' }),
     ).toBeInTheDocument()
@@ -298,7 +298,7 @@ describe('整片编辑器', () => {
       }),
     )
     await openEditor(records)
-    await screen.findByText('这段对话还没有音乐，可以上传，或在下方音乐轨点「+」生成')
+    await screen.findByText('暂无音乐')
 
     await user.upload(
       screen.getByLabelText('选择音乐文件'),

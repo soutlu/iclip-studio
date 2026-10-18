@@ -10,7 +10,6 @@ import {
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
-import { Icon } from '@/shared/icons'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
@@ -91,7 +90,7 @@ import {
   type MaterialTake,
 } from './materials'
 import { useMeasuredMusicDurations, useMusicAnalysis, useMusicBeats } from './music-analysis'
-import { GenerateMusic, MusicPanel } from './music-panel'
+import { MusicAction, MusicPanel } from './music-panel'
 import { musicTitleOf, peaksStateOf } from './music-view'
 import { compositionMedia, previewState } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
@@ -878,11 +877,12 @@ function EditorBody({
                 : { url: songUrl, title: musicTitleOf(song), peaks: peaksStateOf(songAnalysis) }
             }
             musicAction={
-              <GenerateMusic conversationId={conversationId} onNotice={notice}>
-                <button aria-label="生成音乐" className="wf-head-add ui-focus" type="button">
-                  <Icon decorative name="add" size="xs" />
-                </button>
-              </GenerateMusic>
+              <MusicAction
+                conversationId={conversationId}
+                musicJobId={draft.music?.jobId}
+                onNotice={notice}
+                onOpenMusic={() => setSideTab('materials')}
+              />
             }
             onCaptionStyle={() => {
               setSideTab('general')
