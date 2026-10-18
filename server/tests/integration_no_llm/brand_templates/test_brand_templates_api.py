@@ -1,5 +1,5 @@
 """品牌模板端点：权限（治理者才能管，读要 ``generation:read``）、字体上传与读取、改名与停用恢复、
-列表默认只列在用的；品牌的标语与强调色整份写入、列表并上资源里的品牌；媒体生成没开时不挂。
+列表默认只列在用的；媒体生成没开时不挂。
 
 媒体生成开着、对象存储与队列连接器是替身；读字体那一步换成替身，真解析另见
 test_brand_template_adapters.py。"""
@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -136,27 +136,13 @@ async def listed(client: httpx.AsyncClient, **params: str) -> list[dict[str, obj
     return response.json()["items"]
 
 
-async def brands(client: httpx.AsyncClient) -> list[dict[str, object]]:
-    response = await client.get("/brand-templates/brands")
-    assert response.status_code == 200, response.text
-    return response.json()["items"]
-
-
-def brand_path(brand: str) -> str:
-    return f"/brand-templates/brands/{quote(brand, safe='')}"
-
-
 async def test_anonymous_is_401(http: httpx.AsyncClient) -> None:
     template = uuid.uuid4()
     assert (await http.get("/brand-templates")).status_code == 401
     assert (await http.patch(f"/brand-templates/{template}", json={"name": "x"})).status_code == 401
-    assert (await http.get("/brand-templates/brands")).status_code == 401
-    assert (
-        await http.put(brand_path("N8"), json={"slogan": None, "accentColor": None})
-    ).status_code == 401
 
 
-async def test_only_a_governor_manages_templates_and_brands(
+async def test_only_a_governor_manages_templates(
     http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
 ) -> None:
     await login_as(http, pg_url, "root", "root")
@@ -170,11 +156,7 @@ async def test_only_a_governor_manages_templates_and_brands(
     assert (
         await http.get("/brand-templates", params={"includeDisabled": "true"})
     ).status_code == 403
-    assert (
-        await http.put(brand_path("N8"), json={"slogan": "一步一风景", "accentColor": None})
-    ).status_code == 403
     assert [item["id"] for item in await listed(http)] == [template], "读得到在用的"
-    assert await brands(http) == [{"brand": "N8", "slogan": None, "accentColor": None}]
 
 
 async def test_rename_disable_and_restore(
@@ -226,88 +208,6 @@ async def test_an_update_needs_something_to_change_and_an_existing_template(
 async def test_without_media_generation_the_endpoints_are_not_mounted(app: FastAPI) -> None:
     async with make_client(app) as client:
         assert (await client.get("/brand-templates")).status_code == 404
-        assert (await client.get("/brand-templates/brands")).status_code == 404
-        assert (
-            await client.put(brand_path("N8"), json={"slogan": None, "accentColor": None})
-        ).status_code == 404
-
-
-async def test_brands_join_profiles_with_the_brands_of_resources_in_use(
-    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
-) -> None:
-    """在用资源的品牌没设过就是两项为空；只在停用资源上的品牌不算；只设过标语的品牌也列出，按名排。"""
-
-    await login_as(http, pg_url, "root", "root")
-    await add_font(http, bucket, brand="N8")
-    await add_font(http, bucket, brand="N8", name="第二份")
-    await add_font(http, bucket, brand=None, name="无品牌")
-    retired = await add_font(http, bucket, brand="DP", name="旧字体")
-    await http.patch(f"/brand-templates/{retired['id']}", json={"disabled": True})
-    saved = await http.put(brand_path("Asics"), json={"slogan": "动起来", "accentColor": "#0055A4"})
-    assert saved.status_code == 200, saved.text
-
-    assert await brands(http) == [
-        {"brand": "Asics", "slogan": "动起来", "accentColor": "#0055a4"},
-        {"brand": "N8", "slogan": None, "accentColor": None},
-    ]
-
-
-async def test_a_brand_profile_is_written_whole_and_null_clears(
-    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
-) -> None:
-    await login_as(http, pg_url, "root", "root")
-    await add_font(http, bucket, brand="N8")
-
-    created = await http.put(
-        brand_path(" N8 "), json={"slogan": "  一步一风景 ", "accentColor": "#E4002B"}
-    )
-    cleared = await http.put(brand_path("N8"), json={"slogan": None, "accentColor": "#00ff00"})
-
-    assert created.status_code == 200, created.text
-    assert created.json() == {"brand": "N8", "slogan": "一步一风景", "accentColor": "#e4002b"}
-    assert cleared.json() == {"brand": "N8", "slogan": None, "accentColor": "#00ff00"}
-    assert await brands(http) == [cleared.json()]
-    nothing = await http.put(brand_path("N8"), json={"slogan": None, "accentColor": None})
-    assert nothing.json() == {"brand": "N8", "slogan": None, "accentColor": None}
-    assert await brands(http) == [nothing.json()]
-
-
-@pytest.mark.parametrize(
-    ("brand", "body"),
-    [
-        ("N8", {"slogan": "一步一风景"}),
-        ("N8", {"accentColor": "#e4002b"}),
-        ("N8", {"slogan": "   ", "accentColor": None}),
-        ("N8", {"slogan": "字" * 101, "accentColor": None}),
-        ("N8", {"slogan": None, "accentColor": "e4002b"}),
-        ("N8", {"slogan": None, "accentColor": "#e4002"}),
-        ("N8", {"slogan": None, "accentColor": "red"}),
-        ("N8", {"slogan": None, "accentColor": None, "extra": 1}),
-        ("   ", {"slogan": None, "accentColor": None}),
-        ("字" * 101, {"slogan": None, "accentColor": None}),
-    ],
-    ids=[
-        "缺强调色",
-        "缺标语",
-        "空白标语",
-        "标语超长",
-        "缺井号",
-        "少一位",
-        "颜色名",
-        "多余字段",
-        "空白品牌",
-        "品牌超长",
-    ],
-)
-async def test_a_bad_brand_profile_is_422_and_writes_nothing(
-    http: httpx.AsyncClient, pg_url: str, brand: str, body: dict[str, object]
-) -> None:
-    await login_as(http, pg_url, "root", "root")
-
-    response = await http.put(brand_path(brand), json=body)
-
-    assert response.status_code == 422, response.text
-    assert await brands(http) == []
 
 
 async def test_font_upload_is_idempotent_and_never_creates_a_generation(

@@ -8,14 +8,11 @@ import structlog
 from iclip.common.brand_vocab import BRAND_FONT
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from iclip.domains.brand_templates.models import FONT_EXTENSIONS
-from iclip.domains.brand_templates.repository import BrandProfileStore, BrandTemplateStore
+from iclip.domains.brand_templates.repository import BrandTemplateStore
 from iclip.domains.brand_templates.schemas import (
     BrandFontConfirmIn,
     BrandFontInfoOut,
     BrandFontSignIn,
-    BrandProfileIn,
-    BrandProfileOut,
-    BrandProfilesOut,
     BrandTemplateOut,
     BrandTemplatesOut,
     BrandTemplateUpdateIn,
@@ -37,30 +34,12 @@ class BrandTemplateService:
         self,
         store: BrandTemplateStore,
         *,
-        profiles: BrandProfileStore,
         objects: SignedUploadStore,
         probe_font: ProbeFont,
     ) -> None:
         self._store = store
-        self._profiles = profiles
         self._objects = objects
         self._probe_font = probe_font
-
-    async def brands(self) -> BrandProfilesOut:
-        return BrandProfilesOut(
-            items=[BrandProfileOut.of(profile) for profile in await self._profiles.brands()]
-        )
-
-    async def save_brand(
-        self, principal: Principal, brand: str, body: BrandProfileIn
-    ) -> BrandProfileOut:
-        saved = await self._profiles.save(
-            brand,
-            slogan=body.slogan,
-            accent_color=body.accent_color,
-            updated_by=principal.user_id,
-        )
-        return BrandProfileOut.of(saved)
 
     async def list(
         self, principal: Principal, *, kind: str | None, brand: str | None, include_disabled: bool

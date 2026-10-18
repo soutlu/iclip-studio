@@ -63,7 +63,7 @@ from iclip.domains.agents.public import AgentRunDeps
 from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
-from iclip.domains.brand_templates.infra_sql import SqlBrandProfileStore, SqlBrandTemplateStore
+from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
@@ -504,7 +504,6 @@ def build_app(
             raise RuntimeError("品牌资源已启用却没有对象存储")
         brand_templates = build_brand_templates_module(
             SqlBrandTemplateStore(active_engine),
-            profiles=SqlBrandProfileStore(active_engine),
             objects=public_objects,
             probe_font=brand_font_probe or template_font_prober(http_client, fetch_url),
         )

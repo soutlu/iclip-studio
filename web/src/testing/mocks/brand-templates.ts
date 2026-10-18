@@ -1,11 +1,10 @@
-/** 品牌资源与品牌设置的演示记录；字体直传独立于生成记录，启停、品牌列表与校验同合同。 */
+/** 品牌资源的演示记录；字体直传独立于生成记录，启停与校验同合同。 */
 import { http, HttpResponse } from 'msw'
-import type { BrandProfileOut, BrandTemplateOut } from '@/shared/api/generated/types.gen'
+import type { BrandTemplateOut } from '@/shared/api/generated/types.gen'
 import {
   zBrandFontConfirmIn,
   zBrandFontInfoOut,
   zBrandFontSignIn,
-  zBrandProfileIn,
   zBrandTemplateUpdateIn,
 } from '@/shared/api/generated/zod.gen'
 import sampleFontUrl from '../fixtures/sample-font.otf?no-inline'
@@ -42,31 +41,14 @@ const seedTemplates = (): BrandTemplateOut[] => [
   },
 ]
 
-const seedProfiles = (): Map<string, BrandProfileOut> =>
-  new Map([['示例品牌', { brand: '示例品牌', slogan: '一步一风景', accentColor: '#e4002b' }]])
-
 let templates = seedTemplates()
-let profiles = seedProfiles()
 const fontUploads = new Map<string, { contentType: string; body?: ArrayBuffer }>()
 const fontUrlOf = (id: string) => `http://localhost/mock-font-oss/${id}`
 export const resetMockBrandTemplates = () => {
   templates = seedTemplates()
-  profiles = seedProfiles()
   fontUploads.clear()
 }
 export const findMockBrandTemplate = (id: string) => templates.find((item) => item.id === id)
-
-const brandsInUse = (): BrandProfileOut[] =>
-  [
-    ...new Set([
-      ...profiles.keys(),
-      ...templates.flatMap((item) =>
-        item.disabledAt === null && item.brand !== null ? [item.brand] : [],
-      ),
-    ]),
-  ]
-    .sort((left, right) => left.localeCompare(right))
-    .map((brand) => profiles.get(brand) ?? { brand, slogan: null, accentColor: null })
 
 export const brandTemplateHandlers = (permissions: () => readonly string[]) => {
   const denied = () => HttpResponse.json({ detail: '没有维护品牌资源的权限' }, { status: 403 })
@@ -88,26 +70,6 @@ export const brandTemplateHandlers = (permissions: () => readonly string[]) => {
             (brand === null || item.brand === brand),
         ),
       })
-    }),
-    http.get('*/api/brand-templates/brands', () => {
-      if (!permissions().includes('generation:read')) return denied()
-      return HttpResponse.json({ items: brandsInUse() })
-    }),
-    http.put('*/api/brand-templates/brands/:brand', async ({ params, request }) => {
-      if (!permissions().includes('users:manage')) return denied()
-      const brand = String(params['brand']).trim()
-      const parsed = zBrandProfileIn.safeParse(await request.json())
-      if (brand === '' || brand.length > 100 || !parsed.success)
-        return HttpResponse.json({ detail: '品牌设置不正确' }, { status: 422 })
-      const slogan = parsed.data.slogan?.trim() ?? null
-      if (slogan === '') return HttpResponse.json({ detail: '标语不能为空白' }, { status: 422 })
-      const saved: BrandProfileOut = {
-        brand,
-        slogan,
-        accentColor: parsed.data.accentColor?.toLowerCase() ?? null,
-      }
-      profiles.set(brand, saved)
-      return HttpResponse.json(saved)
     }),
     http.get('*/api/brand-templates/:id/font-info', ({ params }) => {
       if (!permissions().includes('generation:read')) return denied()

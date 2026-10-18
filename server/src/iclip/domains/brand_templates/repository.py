@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Protocol
 
-from iclip.domains.brand_templates.models import BrandProfile, BrandTemplate
+from iclip.domains.brand_templates.models import BrandTemplate
 
 
 class BrandTemplateStore(Protocol):
@@ -37,21 +37,4 @@ class BrandTemplateStore(Protocol):
     ) -> BrandTemplate | None: ...
 
 
-class BrandProfileStore(Protocol):
-    async def brands(self) -> Sequence[BrandProfile]:
-        """设过标语或强调色的品牌，并上在用资源里出现过的品牌，按品牌名排。"""
-        ...
-
-    async def save(
-        self,
-        brand: str,
-        *,
-        slogan: str | None,
-        accent_color: str | None,
-        updated_by: uuid.UUID,
-    ) -> BrandProfile:
-        """整份写入这个品牌的标语与强调色，没有就新建。"""
-        ...
-
-
-__all__ = ["BrandProfileStore", "BrandTemplateStore"]
+__all__ = ["BrandTemplateStore"]

@@ -151,35 +151,6 @@ export const zBrandFontInfoOut = z.object({
 })
 
 /**
- * BrandProfileIn
- *
- * 整份写入一个品牌的标语与强调色；两项都要给，``null`` 清空。
- */
-export const zBrandProfileIn = z.object({
-  accentColor: z
-    .string()
-    .regex(/^#[0-9A-Fa-f]{6}$/)
-    .nullable(),
-  slogan: z.string().min(1).max(100).nullable(),
-})
-
-/**
- * BrandProfileOut
- */
-export const zBrandProfileOut = z.object({
-  accentColor: z.string().nullable(),
-  brand: z.string(),
-  slogan: z.string().nullable(),
-})
-
-/**
- * BrandProfilesOut
- */
-export const zBrandProfilesOut = z.object({
-  items: z.array(zBrandProfileOut),
-})
-
-/**
  * BrandTemplateOut
  */
 export const zBrandTemplateOut = z.object({
@@ -3035,22 +3006,6 @@ export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
  * Successful Response
  */
 export const zListBrandTemplatesBrandTemplatesGetResponse = zBrandTemplatesOut
-
-/**
- * Successful Response
- */
-export const zListBrandsBrandTemplatesBrandsGetResponse = zBrandProfilesOut
-
-export const zSaveBrandBrandTemplatesBrandsBrandPutBody = zBrandProfileIn
-
-export const zSaveBrandBrandTemplatesBrandsBrandPutPath = z.object({
-  brand: z.string().min(1).max(100),
-})
-
-/**
- * Successful Response
- */
-export const zSaveBrandBrandTemplatesBrandsBrandPutResponse = zBrandProfileOut
 
 export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
 

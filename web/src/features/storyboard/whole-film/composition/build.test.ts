@@ -47,7 +47,7 @@ const CATALOG: ComponentCatalog = {
       size: { width: 1920, height: 1080 },
       duration: 4,
       variables: [
-        { id: 'wordmark', type: 'string', label: '品牌名', default: '品牌名', brand: 'name' },
+        { id: 'wordmark', type: 'string', label: '品牌名', default: '品牌名' },
         { id: 'tone', type: 'enum', label: '色调', default: 'warm' },
       ],
     }),

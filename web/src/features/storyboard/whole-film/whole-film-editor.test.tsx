@@ -160,7 +160,7 @@ const introAndTwoClips = () =>
     video('v2', TAKE_B, 0, 1_500),
   ])
 
-/** 两段之后接片尾，品牌项已按「通用」填好 */
+/** 两段之后接片尾，品牌名填的是「通用」 */
 const twoClipsAndOutro = () =>
   draftOf([
     video('v1', TAKE_A, 0, 2_000),
@@ -380,7 +380,7 @@ describe('整片编辑器 · 组件', () => {
     expect(within(list).getAllByRole('button')).toHaveLength(all)
   })
 
-  it('点片头卡片：放在最前、2 秒，品牌名取品牌模板；卡片标出「片头在用」', async () => {
+  it('点片头卡片：放在最前、2 秒，可填项取组件默认值；卡片标出「片头在用」', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
@@ -392,15 +392,15 @@ describe('整片编辑器 · 组件', () => {
     expect(within(list).getByRole('button', { name: /^字标定格，片头/ })).toHaveTextContent(
       '片头在用',
     )
-    await waitSaved((document) =>
+    await waitSaved((document) => {
       expect(document?.layer0[0]).toMatchObject({
         type: 'component',
         role: 'intro',
         component: 'logo-sting',
         duration: 2_000,
-        variables: { wordmark: '示例品牌' },
-      }),
-    )
+      })
+      expect(document?.layer0[0]).toHaveProperty('variables', {})
+    })
   })
 
   it('点转场卡片、什么都没选：放到离播放头最近的切点', async () => {
@@ -505,27 +505,15 @@ describe('整片编辑器 · 组件', () => {
     return screen.findByRole('dialog', { name: '片尾 · 字标逐字' })
   }
 
-  it('点开片尾：列出全部可填项，品牌名、标语默认取品牌模板并注明', async () => {
+  it('点开片尾：列出全部可填项，没填过的显示组件默认值', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     const popover = await addOutroAndOpen(user)
-    expect(within(popover).getByLabelText('品牌名')).toHaveValue('示例品牌')
-    expect(within(popover).getByLabelText('标语')).toHaveValue('一步一风景')
-    expect(within(popover).getAllByText('默认取自品牌模板')).toHaveLength(2)
+    expect(within(popover).getByLabelText('品牌名')).toHaveValue('品牌名')
+    expect(within(popover).getByLabelText('标语')).toHaveValue('品牌标语')
     expect(within(popover).getByLabelText('网址')).toHaveValue('网址')
     expect(within(popover).getByText('只影响这条整片')).toBeInTheDocument()
-  })
-
-  it('换成没设标语的品牌：品牌名换掉，标语回到组件自己的默认值', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    const popover = await addOutroAndOpen(user)
-    await user.click(within(popover).getByRole('button', { name: '示例品牌' }))
-    await user.click(await screen.findByRole('menuitemradio', { name: '通用' }))
-    expect(within(popover).getByLabelText('品牌名')).toHaveValue('通用')
-    expect(within(popover).getByLabelText('标语')).toHaveValue('品牌标语')
   })
 
   it('改可填项回车即是一步编辑，自动保存', async () => {

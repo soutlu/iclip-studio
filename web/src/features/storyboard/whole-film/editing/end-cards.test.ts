@@ -5,8 +5,6 @@ import { filmDuration } from './timeline'
 
 const film = () => draftOf([video('v1', 's1', 0, 3_000), video('v2', 's1', 0, 2_000)])
 
-const brandFields = { wordmark: 'name', tagline: 'slogan' } as const
-
 describe('addEndCard', () => {
   it('片头放最前、片尾放最后，默认 2 秒，视频段跟着后移', () => {
     const intro = expectOk(
@@ -73,34 +71,21 @@ describe('replaceEndCardComponent', () => {
       ],
     })
 
-  it('换样式：时长与转场不变，品牌名沿用这一端已经填的值（用户改过的也带过去）', () => {
+  it('换样式：时长与转场不变，原来填的可填项换成新组件的', () => {
     const { draft } = expectOk(
       replaceEndCardComponent(withIntro({ wordmark: '拾步鞋履', accent: 'green' }), {
         role: 'intro',
         component: 'titlecard-lockup',
-        variables: { wordmark: '拾步', tagline: '走一整天也不累', size: 64 },
-        brandFields,
+        variables: { size: 64 },
       }),
     )
     expect(draft.layer0[0]).toMatchObject({
       id: 'c1',
       duration: 3_000,
       component: 'titlecard-lockup',
-      variables: { wordmark: '拾步鞋履', tagline: '走一整天也不累', size: 64 },
     })
+    expect(draft.layer0[0]).toHaveProperty('variables', { size: 64 })
     expect(draft.transitions).toHaveLength(1)
-  })
-
-  it('原组件没有的品牌项取新组件的默认值', () => {
-    const { draft } = expectOk(
-      replaceEndCardComponent(withIntro({ accent: 'green' }), {
-        role: 'intro',
-        component: 'titlecard-lockup',
-        variables: { wordmark: '拾步' },
-        brandFields,
-      }),
-    )
-    expect(draft.layer0[0]).toMatchObject({ variables: { wordmark: '拾步' } })
   })
 
   it('同一个组件原样返回；这一端没有片头片尾时拒绝', () => {
@@ -111,7 +96,6 @@ describe('replaceEndCardComponent', () => {
           role: 'intro',
           component: 'intro-card',
           variables: {},
-          brandFields,
         }),
       ).draft,
     ).toBe(before)
@@ -120,7 +104,6 @@ describe('replaceEndCardComponent', () => {
         role: 'outro',
         component: 'x',
         variables: {},
-        brandFields,
       }),
     ).toEqual({ ok: false, refusal: 'unknown-clip' })
   })

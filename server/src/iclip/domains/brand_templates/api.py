@@ -3,19 +3,15 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Query
 
 from iclip.domains.brand_templates.schemas import (
     BrandFontConfirmIn,
     BrandFontInfoOut,
     BrandFontSignIn,
-    BrandProfileIn,
-    BrandProfileOut,
-    BrandProfilesOut,
     BrandTemplateOut,
     BrandTemplatesOut,
     BrandTemplateUpdateIn,
-    TemplateName,
 )
 from iclip.domains.brand_templates.service import BrandTemplateService
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, require_permission
@@ -39,29 +35,6 @@ def create_brand_templates_router(service: BrandTemplateService) -> APIRouter:
         return await service.list(
             principal, kind=kind, brand=brand, include_disabled=include_disabled
         )
-
-    @router.get("/brands", response_model=BrandProfilesOut)
-    async def list_brands(
-        _: Annotated[Principal, require_permission("generation:read")],
-    ) -> BrandProfilesOut:
-        """全部品牌连同标语与强调色，按品牌名排。
-
-        品牌取设过标语或强调色的，并上在用资源里出现过的；没设过的两项为 ``null``。"""
-
-        return await service.brands()
-
-    @router.put("/brands/{brand}", response_model=BrandProfileOut)
-    async def save_brand(
-        principal: Annotated[Principal, require_permission(MANAGE_PERMISSION)],
-        brand: Annotated[TemplateName, Path()],
-        body: BrandProfileIn,
-    ) -> BrandProfileOut:
-        """整份写入这个品牌的标语与强调色，没有就新建；``null`` 清空那一项。
-
-        品牌名去掉首尾空白后为 1 到 100 字，答复里是去掉空白后的名字。标语至多 100 字，
-        强调色是 ``#RRGGBB``，存成小写。"""
-
-        return await service.save_brand(principal, brand, body)
 
     @router.post("/fonts/sign", response_model=UploadTicketOut)
     async def sign_font(

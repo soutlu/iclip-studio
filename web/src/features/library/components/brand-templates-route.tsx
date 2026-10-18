@@ -1,9 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   brandTemplateQueryKeys,
   updateBrandTemplate,
-  useBrandProfiles,
   useBrandTemplates,
   type BrandTemplate,
 } from '@/shared/api/brand-templates'
@@ -14,7 +13,6 @@ import { ListEmpty, ListError, ListPending } from '@/shared/ui/list-state'
 import { toast } from '@/shared/ui/toast'
 import type { BrandTemplateScope } from '../brand-templates'
 import { BrandFontPreviewDialog } from './brand-font-preview-dialog'
-import { BrandProfileCard, NewBrandProfileCard } from './brand-profile-card'
 import { BrandTemplateCard } from './brand-template-card'
 import { BrandTemplateEditor, type BrandTemplateEditing } from './brand-template-editor'
 import { LibraryPageHeader } from './library-page-header'
@@ -36,28 +34,14 @@ export function BrandTemplatesRoute({ tabs, canManage, canUpload, scope, onScope
   const [editing, setEditing] = useState<BrandTemplateEditing | null>(null)
   const [fontPreview, setFontPreview] = useState<BrandTemplate | null>(null)
   const [updating, setUpdating] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
-  const addRef = useRef<HTMLButtonElement>(null)
-  const wasAddingRef = useRef(false)
-  // 添加卡片收起后「添加品牌」按钮重新出现，焦点回到它上面。
-  useEffect(() => {
-    if (wasAddingRef.current && !adding) addRef.current?.focus()
-    wasAddingRef.current = adding
-  }, [adding])
   const [error, setError] = useState<string | null>(null)
   const query = useBrandTemplates({ includeDisabled: canManage && includeDisabled })
-  const profiles = useBrandProfiles()
   const fonts =
     query.data?.items.filter(
       (item) => (brand === undefined || item.brand === brand) && includes(item.name, search),
     ) ?? []
-  const shownProfiles =
-    profiles.data?.items.filter(
-      (item) => (brand === undefined || item.brand === brand) && includes(item.brand, search),
-    ) ?? []
   const brands = [
     ...new Set([
-      ...(profiles.data?.items.map((item) => item.brand) ?? []),
       ...(query.data?.items.flatMap((item) => (item.brand === null ? [] : [item.brand])) ?? []),
       ...(brand === undefined ? [] : [brand]),
     ]),
@@ -85,7 +69,7 @@ export function BrandTemplatesRoute({ tabs, canManage, canUpload, scope, onScope
         <LibraryPageHeader
           tabs={tabs}
           search={{
-            label: '搜索品牌与字体',
+            label: '搜索字体',
             placeholder: '搜索名称…',
             value: search,
             onSearch: (q) => onScopeChange({ ...scope, q }),
@@ -128,67 +112,6 @@ export function BrandTemplatesRoute({ tabs, canManage, canUpload, scope, onScope
             </label>
           ) : null}
         </div>
-        <section aria-labelledby="brand-profiles-heading" className="flex flex-col gap-4 pb-8">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
-              <h2 id="brand-profiles-heading" className="text-title font-semibold text-on-surface">
-                品牌
-              </h2>
-              <p className="text-body-sm text-on-surface-variant">
-                标语与强调色用作整片片头片尾组件的默认值
-              </p>
-            </div>
-            {canManage && !adding ? (
-              <Button
-                className="shrink-0"
-                leadingIcon="add"
-                ref={addRef}
-                onClick={() => setAdding(true)}
-                size="md"
-                variant="outlined"
-              >
-                添加品牌
-              </Button>
-            ) : null}
-          </div>
-          {profiles.isPending ? (
-            <ListPending label="正在读取品牌…" />
-          ) : profiles.isError ? (
-            <ListError
-              message={errorMessageOf(profiles.error, '读取品牌失败')}
-              onRetry={() => void profiles.refetch()}
-            />
-          ) : shownProfiles.length === 0 && !adding ? (
-            <ListEmpty>
-              {filtered
-                ? '暂无匹配品牌，请调整筛选条件'
-                : canManage
-                  ? '暂无品牌，点击「添加品牌」可设置标语与强调色'
-                  : '暂无品牌，请联系管理员添加'}
-            </ListEmpty>
-          ) : (
-            <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {adding ? (
-                <NewBrandProfileCard
-                  existingBrands={profiles.data.items.map((item) => item.brand)}
-                  onCancel={() => setAdding(false)}
-                  onSaved={async () => {
-                    await refresh()
-                    setAdding(false)
-                  }}
-                />
-              ) : null}
-              {shownProfiles.map((profile) => (
-                <BrandProfileCard
-                  key={profile.brand}
-                  profile={profile}
-                  canManage={canManage}
-                  onSaved={refresh}
-                />
-              ))}
-            </div>
-          )}
-        </section>
         <section aria-labelledby="brand-fonts-heading" className="flex flex-col gap-4">
           <div className="flex items-baseline justify-between gap-3">
             <h2 id="brand-fonts-heading" className="text-title font-semibold text-on-surface">

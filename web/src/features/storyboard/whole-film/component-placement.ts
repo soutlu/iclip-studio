@@ -1,5 +1,4 @@
-import type { BrandProfile } from '@/shared/api/brand-templates'
-import { brandFieldsOf, brandVariables, durationMsOf, type CatalogItem } from './component-catalog'
+import { durationMsOf, type CatalogItem } from './component-catalog'
 import { setCaptionStyle } from './editing/captions'
 import type { EditContext } from './editing/context'
 import type { WholeFilmDraft } from './editing/draft'
@@ -41,17 +40,17 @@ const nearestCut = (draft: WholeFilmDraft, timeMs: number) =>
 
 /**
  * 把组件目录里的一个组件放进成片，一步编辑：
- * - 片头片尾放到它自己的那一端（片头组件只能当片头）；那一端已有就换组件，时长不变、品牌项带过去；
+ * - 片头片尾放到它自己的那一端（片头组件只能当片头）；那一端已有就换组件，时长不变；
  * - 转场放到切点上：拖放时取离松手处最近的切点；点卡片时取 `cutAfterClipId`，没选时取离播放头最近的切点；
  * - 包装从播放头（或松手处）开始，取组件自带时长，放不下截短到所在空当；
  * - 字幕组件换掉字幕样式。
- * 片头片尾与包装对得上品牌模板的可填项取 `brand` 的值。
+ * 可填项都不写进草稿，合成时取组件自己的默认值。
  */
 export const placeComponent = (
   draft: WholeFilmDraft,
   item: CatalogItem,
   placing: Placing,
-  { context, brand }: { context: EditContext; brand: BrandProfile | undefined },
+  { context }: { context: EditContext },
 ): EditResult => {
   if (placing.via === 'drop' && placing.lane !== LANE_OF[item.placement])
     return refuse('drop-elsewhere')
@@ -59,18 +58,12 @@ export const placeComponent = (
     case 'intro':
     case 'outro': {
       const role = item.placement
-      const variables = brandVariables(item, brand)
       return endCard(draft, role)
-        ? replaceEndCardComponent(draft, {
-            role,
-            component: item.name,
-            variables,
-            brandFields: brandFieldsOf(item),
-          })
+        ? replaceEndCardComponent(draft, { role, component: item.name, variables: {} })
         : addEndCard(draft, {
             role,
             component: item.name,
-            variables,
+            variables: {},
             durationMs: durationMsOf(item),
           })
     }
@@ -87,7 +80,7 @@ export const placeComponent = (
       return addOverlay(draft, {
         component: item.name,
         durationMs: durationMsOf(item),
-        variables: brandVariables(item, brand),
+        variables: {},
         atMs: placing.via === 'drop' ? placing.timeMs : placing.playheadMs,
       })
     case 'caption':

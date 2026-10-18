@@ -23,18 +23,8 @@ class BrandTemplate:
     disabled_at: datetime | None
 
 
-@dataclass(frozen=True, slots=True)
-class BrandProfile:
-    """一个品牌的标语与强调色；没有设过的品牌两项都为空。"""
-
-    brand: str
-    slogan: str | None
-    accent_color: str | None
-
-
 __all__ = [
     "FONT_EXTENSIONS",
-    "BrandProfile",
     "BrandTemplate",
     "FontContentType",
 ]

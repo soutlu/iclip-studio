@@ -8,7 +8,6 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
-import { useBrandProfiles } from '@/shared/api/brand-templates'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { Button } from '@/shared/ui/button'
@@ -224,7 +223,6 @@ function EditorBody({
 
   const music = useConversationMusic(conversationId)
   const subtitles = useConversationSubtitles(conversationId)
-  const brands = useBrandProfiles().data?.items ?? []
   const unmeasured = useStableValue(
     (music.data ?? []).flatMap((job) =>
       job.status === 'completed' && job.outputUrl !== null && job.durationMs === null
@@ -363,7 +361,6 @@ function EditorBody({
   }
 
   // ---- 组件 ----
-  const defaultBrand = brands[0]
   const componentTitle = (name: string) => itemOf(catalog, name)?.title ?? '组件库里没有的组件'
   // 点转场卡片放到哪个切点：选中的那一段后面（最后一段后面没有切点，由放转场那一步拒绝），或选中的转场所在处
   const cutAfterSelection = (): string | undefined =>
@@ -378,13 +375,13 @@ function EditorBody({
         draft,
         item,
         { via: 'click', playheadMs: playhead, cutAfterClipId: cutAfterSelection() },
-        { context, brand: defaultBrand },
+        { context },
       ),
     )
   const dropComponent = (item: CatalogItem, clientX: number, clientY: number) => {
     const target = dropTargetRef.current?.(clientX, clientY)
     if (target === undefined) return
-    apply(placeComponent(draft, item, { via: 'drop', ...target }, { context, brand: defaultBrand }))
+    apply(placeComponent(draft, item, { via: 'drop', ...target }, { context }))
   }
 
   const renderPopover = (id: string): ReactNode => {
@@ -433,7 +430,6 @@ function EditorBody({
       )
     return (
       <ComponentPopover
-        brands={brands}
         heading={target.heading}
         item={item}
         meta={target.meta}

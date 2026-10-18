@@ -1,11 +1,10 @@
 /**
- * 编辑器用到的组件目录：分类、放置位置、默认时长、品牌默认值与转场的接法。
+ * 编辑器用到的组件目录：分类、放置位置、默认时长与转场的接法。
  * 目录本身（`catalog/catalog.json`，约 270 KB）打开编辑器时才加载，缩略图只取地址。
  */
 
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import type { IconName } from '@/shared/icons'
-import type { BrandProfile } from '@/shared/api/brand-templates'
 import type {
   CatalogItem,
   CatalogVariable,
@@ -76,70 +75,6 @@ export const transitionSpecs = (catalog: ComponentCatalog): Record<string, Trans
       item.placement === 'transition' && item.transition !== undefined && item.duration !== null
         ? [[item.name, { cutAt: item.transition.cutAt, durationMs: durationMsOf(item) }]]
         : [],
-    ),
-  )
-
-/** 品牌模板里这一项的值；品牌没设标语时为 undefined（组件用自己的默认值） */
-const brandValue = (variable: CatalogVariable, brand: BrandProfile): string | undefined =>
-  variable.brand === 'name'
-    ? brand.brand
-    : variable.brand === 'slogan'
-      ? (brand.slogan ?? undefined)
-      : undefined
-
-/**
- * 组件对得上品牌模板的可填项（品牌名、标语）取这个品牌的值。只写这几项，其余可填项不写进草稿，
- * 合成时取组件自己的默认值。
- */
-export const brandVariables = (
-  item: CatalogItem,
-  brand: BrandProfile | undefined,
-): ComponentVariables => {
-  if (brand === undefined) return {}
-  return Object.fromEntries(
-    item.variables.flatMap((variable) => {
-      const value = brandValue(variable, brand)
-      return value === undefined ? [] : [[variable.id, value]]
-    }),
-  )
-}
-
-/**
- * 换一个品牌填品牌项：对得上品牌模板的可填项换成这个品牌的值，品牌没设标语时去掉那一项
- * （回到组件自己的默认值）；其余已填的项不动。
- */
-export const withBrand = (
-  item: CatalogItem,
-  values: ComponentVariables,
-  brand: BrandProfile,
-): ComponentVariables => {
-  const next = { ...values }
-  for (const variable of item.variables) {
-    if (variable.brand === undefined) continue
-    const value = brandValue(variable, brand)
-    if (value === undefined) delete next[variable.id]
-    else next[variable.id] = value
-  }
-  return next
-}
-
-/** 这个组件现在填的是哪个品牌：品牌名那一项与哪个品牌对得上；对不上（改过或没有品牌名项）为 undefined */
-export const brandOf = (
-  item: CatalogItem,
-  values: ComponentVariables,
-  brands: readonly BrandProfile[],
-): BrandProfile | undefined => {
-  const nameField = item.variables.find((variable) => variable.brand === 'name')
-  if (nameField === undefined) return undefined
-  const name = variableValue(nameField, values)
-  return brands.find((brand) => brand.brand === name)
-}
-
-/** 片头片尾换组件时要带过去的品牌项：可填项 id → 品牌名或标语 */
-export const brandFieldsOf = (item: CatalogItem): Record<string, 'name' | 'slogan'> =>
-  Object.fromEntries(
-    item.variables.flatMap((variable) =>
-      variable.brand === undefined ? [] : [[variable.id, variable.brand]],
     ),
   )
 

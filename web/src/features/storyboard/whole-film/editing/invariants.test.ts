@@ -171,7 +171,6 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
         role: role(),
         component: pick(['card', 'other']),
         variables: { wordmark: '品牌' },
-        brandFields: { wordmark: 'name' },
       }),
     () =>
       setTransition(

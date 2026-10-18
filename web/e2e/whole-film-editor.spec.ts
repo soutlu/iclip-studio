@@ -78,8 +78,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(film.getByRole('group', { name: /^片头 · 字标定格/ })).toBeVisible()
   await film.getByRole('button', { name: /^选中：片头 · 字标定格/ }).click()
   const intro = page.getByRole('dialog', { name: '片头 · 字标定格' })
-  await expect(intro.getByLabel('品牌名')).toHaveValue('示例品牌')
-  await expect(intro.getByText('默认取自品牌模板')).toBeVisible()
+  await expect(intro.getByLabel('品牌名')).toHaveValue('品牌名')
   await intro.getByLabel('品牌名').fill('拾步')
   await intro.getByLabel('品牌名').press('Enter')
   // 预览换上改过品牌名的那一版再截图（新页在底下加载好才换上来）

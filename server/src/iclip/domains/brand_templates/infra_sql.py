@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.domains.brand_templates.models import BrandProfile, BrandTemplate
+from iclip.domains.brand_templates.models import BrandTemplate
 
 DB_SCHEMA: Final = "iclip"
 
@@ -46,7 +46,7 @@ brand_templates_table = Table(
     CheckConstraint("btrim(name) <> ''", name="ck_brand_templates_name"),
 )
 
-# 与迁移 0034 同名同式；品牌名与资源上的 brand 同一套规则，按字面对上。
+# 与迁移 0034 同名同式。表保留在库里，目前没有读写；声明在这里只为元数据与迁移一致。
 brand_profiles_table = Table(
     "brand_profiles",
     metadata_obj,
@@ -102,26 +102,6 @@ SET name = coalesce(CAST(:name AS text), name),
     END
 WHERE id = :id{_RETURNING}""")
 
-_BRANDS: Final = text("""
-SELECT names.brand, p.slogan, p.accent_color
-FROM (
-    SELECT brand FROM iclip.brand_profiles
-    UNION
-    SELECT brand FROM iclip.brand_templates WHERE brand IS NOT NULL AND disabled_at IS NULL
-) AS names
-LEFT JOIN iclip.brand_profiles p ON p.brand = names.brand
-ORDER BY names.brand""")
-
-_SAVE_PROFILE: Final = text("""
-INSERT INTO iclip.brand_profiles (brand, slogan, accent_color, updated_by, updated_at)
-VALUES (:brand, :slogan, :accent_color, :updated_by, now())
-ON CONFLICT (brand) DO UPDATE
-SET slogan = EXCLUDED.slogan,
-    accent_color = EXCLUDED.accent_color,
-    updated_by = EXCLUDED.updated_by,
-    updated_at = EXCLUDED.updated_at
-RETURNING brand, slogan, accent_color""")
-
 
 def _row_of(row: RowMapping) -> BrandTemplate:
     return BrandTemplate(
@@ -134,10 +114,6 @@ def _row_of(row: RowMapping) -> BrandTemplate:
         created_at=row["created_at"],
         disabled_at=row["disabled_at"],
     )
-
-
-def _profile_of(row: RowMapping) -> BrandProfile:
-    return BrandProfile(brand=row["brand"], slogan=row["slogan"], accent_color=row["accent_color"])
 
 
 class SqlBrandTemplateStore:
@@ -227,44 +203,7 @@ class SqlBrandTemplateStore:
         return None if row is None else _row_of(row)
 
 
-class SqlBrandProfileStore:
-    def __init__(self, engine: AsyncEngine) -> None:
-        self._engine = engine
-
-    async def brands(self) -> Sequence[BrandProfile]:
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(_BRANDS)).mappings().all()
-        return [_profile_of(row) for row in rows]
-
-    async def save(
-        self,
-        brand: str,
-        *,
-        slogan: str | None,
-        accent_color: str | None,
-        updated_by: uuid.UUID,
-    ) -> BrandProfile:
-        async with self._engine.begin() as conn:
-            row = (
-                (
-                    await conn.execute(
-                        _SAVE_PROFILE,
-                        {
-                            "brand": brand,
-                            "slogan": slogan,
-                            "accent_color": accent_color,
-                            "updated_by": updated_by,
-                        },
-                    )
-                )
-                .mappings()
-                .one()
-            )
-        return _profile_of(row)
-
-
 __all__ = [
-    "SqlBrandProfileStore",
     "SqlBrandTemplateStore",
     "brand_profiles_table",
     "brand_templates_table",
