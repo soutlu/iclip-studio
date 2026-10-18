@@ -84,7 +84,8 @@
 ### 升级
 
 1. 新版本有表结构变化时，先执行该版本的数据库迁移。
-2. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
+2. 新版本的 [compose.yaml](../deploy/compose.yaml) 有变化时，换上新版本的文件，按它的文件头与[配置模型](../server/src/iclip/config/models.py)在 `.env` 补上新增的变量；[服务器部署](#服务器部署)多了步骤（如对象存储的生命周期规则）时补做。
+3. 把 `.env` 的 `IMAGE_TAG` 改成新版本，再执行 `docker compose pull && docker compose up -d`。
 
 ### 改配置
 
