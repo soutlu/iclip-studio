@@ -9,7 +9,7 @@ import { playerCalls } from '@/testing/hyperframes-player'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
 import { renderWithProviders } from '@/testing/render'
-import { card, draftOf, video } from '@/testing/whole-film'
+import { card, draftOf, overlay as overlayAt, video } from '@/testing/whole-film'
 import type { GenerationJob } from '../storyboard.api'
 import { WholeFilmEditor } from './whole-film-editor'
 
@@ -347,6 +347,132 @@ describe('整片编辑器', () => {
   })
 })
 
+describe('整片编辑器 · 时间线', () => {
+  /** 显示中的播放器（新页加载好才换上来） */
+  const shownPlayer = () =>
+    waitFor(() => {
+      const element = document.querySelector('hyperframes-player:not(.is-pending)')
+      expect(element).not.toBeNull()
+      return element as HTMLElement
+    })
+  const editorDialog = () => screen.getByRole('dialog')
+
+  it('点成片段：选中它，播放头移到段首，只把这一段播一遍', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    const player = await shownPlayer()
+    playerCalls.length = 0
+    await user.click(await blockButton(/^选中：第 2 段/))
+    expect(await blockButton(/^选中：第 2 段/)).toHaveAttribute('aria-pressed', 'true')
+    expect(playerCalls).toEqual(['seek 2', 'play'])
+    // 播到这一段结尾就停
+    fireEvent(player, new CustomEvent('timeupdate', { detail: { currentTime: 3.2 } }))
+    expect(playerCalls).toEqual(['seek 2', 'play'])
+    fireEvent(player, new CustomEvent('timeupdate', { detail: { currentTime: 3.5 } }))
+    expect(playerCalls).toEqual(['seek 2', 'play', 'pause'])
+  })
+
+  it('空格播放、暂停；焦点在按钮上时也是，不点那个按钮', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    await shownPlayer()
+    playerCalls.length = 0
+    screen.getByRole('button', { name: '吸附' }).focus()
+    await user.keyboard(' ')
+    expect(playerCalls).toEqual(['play'])
+    expect(screen.getByRole('button', { name: '吸附' })).toHaveAttribute('aria-pressed', 'true')
+    await user.keyboard(' ')
+    expect(playerCalls).toEqual(['play', 'pause'])
+  })
+
+  it('Delete 删除选中的段，⌘Z 撤销；没选中时什么也不删', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    editorDialog().focus()
+    await user.keyboard('{Delete}')
+    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
+    await user.click(await blockButton(/^选中：第 1 段/))
+    await user.keyboard('{Backspace}')
+    expect(within(filmLane()).getAllByRole('group')).toHaveLength(1)
+    await user.keyboard('{Meta>}z{/Meta}')
+    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
+  })
+
+  it('⌥←/→ 把选中的段前后挪一位，焦点留在这一段上', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    // v1 出自原作 A、v2 出自原作 B
+    await user.click(await blockButton(/^选中：第 1 段 · A/))
+    await user.keyboard('{Alt>}{ArrowRight}{/Alt}')
+    await waitFor(() =>
+      expect(within(filmLane()).getByRole('button', { name: /^选中：第 2 段 · A/ })).toHaveFocus(),
+    )
+    await waitSaved((document) =>
+      expect(document?.layer0.map((clip) => clip.id)).toEqual(['v2', 'v1']),
+    )
+    await user.keyboard('{Alt>}{ArrowLeft}{/Alt}')
+    await waitSaved((document) =>
+      expect(document?.layer0.map((clip) => clip.id)).toEqual(['v1', 'v2']),
+    )
+  })
+
+  it('选中特效块时 ←/→ 把它挪 0.1 秒、⇧ 1 秒；没选中特效块时播放头走', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, {
+      ...twoClips(),
+      overlays: [{ ...overlayAt('o1', 1_000, 1_000), component: 'hw-arrow' }],
+    })
+    await openEditor()
+    const overlays = screen.getByRole('group', { name: '特效轨' })
+    await user.click(
+      capturable(within(overlays).getByRole('button', { name: /^选中：特效 · 手绘箭头/ })),
+    )
+    await user.keyboard('{ArrowRight}')
+    expect(
+      within(overlays).getByRole('group', { name: '特效 · 手绘箭头，第 1 行，1.1–2.1 秒' }),
+    ).toBeInTheDocument()
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    expect(
+      within(overlays).getByRole('group', { name: '特效 · 手绘箭头，第 1 行，0.1–1.1 秒' }),
+    ).toBeInTheDocument()
+
+    await user.click(await blockButton(/^选中：第 1 段/))
+    const clock = () => document.querySelector('.wf-clock')?.textContent
+    expect(clock()).toMatch(/^00:00\.00/)
+    await user.keyboard('{ArrowRight}{Shift>}{ArrowRight}{/Shift}')
+    expect(clock()).toMatch(/^00:01\.10/)
+  })
+
+  it('音量推子按 dB：0 dB 在正中，←/→ 0.5 dB、⇧ 3 dB，双击回 0 dB，草稿里存倍数', async () => {
+    const user = userEvent.setup()
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    const fader = screen.getByRole('slider', { name: '原声音量' })
+    expect(fader).toBeDisabled()
+    await user.click(await blockButton(/^选中：第 1 段/))
+    expect(fader).toHaveValue('0')
+    expect(fader).toHaveAttribute('aria-valuetext', '0 dB')
+    fader.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(fader).toHaveAttribute('aria-valuetext', '+0.5 dB')
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    expect(fader).toHaveAttribute('aria-valuetext', '−2.5 dB')
+    await waitSaved((document) =>
+      expect(document?.layer0[0]).toMatchObject({ volume: Number((10 ** (-2.5 / 20)).toFixed(6)) }),
+    )
+    await user.dblClick(fader)
+    expect(fader).toHaveAttribute('aria-valuetext', '0 dB')
+    await user.click(screen.getByRole('button', { name: '静音原声' }))
+    expect(fader).toHaveAttribute('aria-valuetext', '静音')
+    await user.click(screen.getByRole('button', { name: '取消静音原声' }))
+    expect(fader).toHaveAttribute('aria-valuetext', '0 dB')
+  })
+})
+
 const componentsTab = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole('tab', { name: '组件' }))
   return screen.findByRole('list', { name: '组件' })
@@ -401,7 +527,7 @@ describe('整片编辑器 · 组件', () => {
     })
   })
 
-  it('点 component 卡片：在包装轨最上面开一行，从播放头处开始，取组件自带的时长', async () => {
+  it('点 component 卡片：在特效轨最上面开一行，从播放头处开始，取组件自带的时长', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
@@ -411,7 +537,7 @@ describe('整片编辑器 · 组件', () => {
     })
     await user.click(within(list).getByRole('button', { name: /^手绘箭头，包装轨/ }))
     expect(
-      screen.getByRole('group', { name: '包装 · 手绘箭头，第 1 行，0.5–4.5 秒' }),
+      screen.getByRole('group', { name: '特效 · 手绘箭头，第 1 行，0.5–4.5 秒' }),
     ).toBeInTheDocument()
     expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
     await waitSaved((document) =>

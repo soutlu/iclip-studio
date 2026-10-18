@@ -331,7 +331,7 @@ def test_clip_ids_are_unique_across_the_document() -> None:
                 overlay("o1", start=0, duration=3000, track=1),
                 overlay("o2", start=2999, duration=1000, track=1),
             ],
-            "重叠",
+            "（第 2 行）上重叠",
             id="同一行重叠",
         ),
         pytest.param(

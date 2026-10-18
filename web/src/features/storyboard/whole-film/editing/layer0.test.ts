@@ -203,39 +203,53 @@ describe('moveClip', () => {
   const three = () =>
     draftOf([video('v1', 's1', 0, 1_000), video('v2', 's1', 0, 1_000), video('v3', 's1', 0, 1_000)])
 
-  it('拖过下一段的中点就换到它后面，整轨重新首尾相接', () => {
-    const { draft } = expectOk(moveClip(three(), { clipId: 'v1', deltaMs: 1_200 }))
+  it('挪到第 to 段之前（按挪动前的序号），整轨重新首尾相接', () => {
+    const { draft } = expectOk(moveClip(three(), { clipId: 'v1', to: 2 }))
     expect(spans(draft)).toEqual([
       ['v2', 0, 1_000],
       ['v1', 1_000, 2_000],
       ['v3', 2_000, 3_000],
     ])
+    expect(ids(expectOk(moveClip(three(), { clipId: 'v3', to: 1 })).draft)).toEqual([
+      'v1',
+      'v3',
+      'v2',
+    ])
   })
 
-  it('没越过中点：原样返回，不算改动', () => {
+  it('落点就在它自己两侧：原样返回，不算改动', () => {
     const before = three()
-    expect(expectOk(moveClip(before, { clipId: 'v1', deltaMs: 400 })).draft).toBe(before)
+    expect(expectOk(moveClip(before, { clipId: 'v2', to: 1 })).draft).toBe(before)
+    expect(expectOk(moveClip(before, { clipId: 'v2', to: 2 })).draft).toBe(before)
   })
 
-  it('拖过头按 Studio 的拖动夹在整片范围内', () => {
-    const { draft } = expectOk(moveClip(three(), { clipId: 'v3', deltaMs: -50_000 }))
-    expect(ids(draft)).toEqual(['v3', 'v1', 'v2'])
+  it('落点超出两端时挪到最前或最后', () => {
+    expect(ids(expectOk(moveClip(three(), { clipId: 'v3', to: -5 })).draft)).toEqual([
+      'v3',
+      'v1',
+      'v2',
+    ])
+    expect(ids(expectOk(moveClip(three(), { clipId: 'v1', to: 99 })).draft)).toEqual([
+      'v2',
+      'v3',
+      'v1',
+    ])
   })
 
   it('组件段与视频段一样能换到任意位置', () => {
-    expect(ids(expectOk(moveClip(withCards(), { clipId: 'c1', deltaMs: 3_000 })).draft)).toEqual([
+    expect(ids(expectOk(moveClip(withCards(), { clipId: 'c1', to: 2 })).draft)).toEqual([
       'v1',
       'c1',
       'v2',
       'c2',
     ])
-    expect(ids(expectOk(moveClip(withCards(), { clipId: 'v2', deltaMs: -50_000 })).draft)).toEqual([
+    expect(ids(expectOk(moveClip(withCards(), { clipId: 'v2', to: 0 })).draft)).toEqual([
       'v2',
       'c1',
       'v1',
       'c2',
     ])
-    expect(moveClip(withCards(), { clipId: 'x', deltaMs: 1 })).toEqual({
+    expect(moveClip(withCards(), { clipId: 'x', to: 0 })).toEqual({
       ok: false,
       refusal: 'unknown-clip',
     })

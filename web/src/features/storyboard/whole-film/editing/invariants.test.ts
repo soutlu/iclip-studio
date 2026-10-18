@@ -38,9 +38,12 @@ const context = contextOf(
   {
     m1: {
       durationMs: 40_000,
-      beats: Array.from({ length: 80 }, (_, k) => ({ timeMs: 120 + k * 480, strong: k % 4 === 0 })),
+      beats: Array.from({ length: 80 }, (_, k) => ({
+        timeMs: 120 + k * 480,
+        strength: k % 4 === 0 ? 1 : 0.4,
+      })),
     },
-    m2: { durationMs: 5_000, beats: [{ timeMs: 0, strong: true }] },
+    m2: { durationMs: 5_000, beats: [{ timeMs: 0, strength: 1 }] },
   },
 )
 
@@ -149,7 +152,7 @@ const randomEdit = (draft: WholeFilmDraft, random: () => number): EditResult => 
         variables: { wordmark: '拾步' },
         at: at(),
       }),
-    () => moveClip(draft, { clipId: clipId(), deltaMs: delta() }),
+    () => moveClip(draft, { clipId: clipId(), to: int(-1, draft.layer0.length + 1) }),
     () =>
       trimClip(
         draft,

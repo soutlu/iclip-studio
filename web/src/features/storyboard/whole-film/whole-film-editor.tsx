@@ -18,33 +18,43 @@ import { toast } from '@/shared/ui/toast'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { useAudioPeaks } from '../editing/media-analysis'
+import { Frames } from '../editing/timeline'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import {
   ALL_CATEGORIES,
+  CATEGORY_ICON,
+  durationMsOf,
   itemOf,
+  thumbnailOf,
   useComponentCatalog,
   type CatalogItem,
   type ComponentCatalog,
 } from './component-catalog'
-import { placeComponent } from './component-placement'
+import { placeComponent, type Placing } from './component-placement'
 import { ComponentPopover } from './component-popover'
 import { ComponentsPanel } from './components-panel'
 import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
 import { clearCaptionText, setCaptionText } from './editing/captions'
-import type { ComponentVariables, VideoClip } from './editing/draft'
+import {
+  MAX_FILM_MS,
+  type ComponentVariables,
+  type Layer0Clip,
+  type VideoClip,
+} from './editing/draft'
 import {
   deleteClip,
   insertMaterial,
+  moveClip,
   setClipVolume,
   splitClip,
   type InsertAt,
 } from './editing/layer0'
 import { filmBeats, removeMusic, setMusicVolume } from './editing/music'
-import { removeOverlay } from './editing/overlays'
+import { moveOverlay, removeOverlay } from './editing/overlays'
 import type { EditResult } from './editing/result'
 import { filmDuration } from './editing/timeline'
 import { setComponentVariables } from './editing/variables'
@@ -57,15 +67,23 @@ import {
 } from './edit-context'
 import { EditorToolbar, SoundRow } from './editor-toolbar'
 import { ExportControl } from './export-control'
-import { FilmTracks, type DropTarget, type Selection } from './film-tracks'
-import { MaterialArea, type MaterialRange } from './material-area'
+import {
+  FilmTracks,
+  type Attempt,
+  type CarryPayload,
+  type ComponentFace,
+  type DropPoint,
+  type Selection,
+  type TracksHandle,
+} from './film-tracks'
+import { MaterialArea, type MaterialCarry, type MaterialRange } from './material-area'
 import { materialCatalog, type Material, type MaterialTake } from './materials'
 import { useMeasuredMusicDurations, useMusicAnalysis, useMusicBeats } from './music-analysis'
 import { MusicPanel } from './music-panel'
 import { musicTitleOf, peaksStateOf } from './music-view'
 import { compositionMedia, previewState } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
-import { REFUSAL_TEXT } from './refusal-text'
+import { FILM_LIMIT_TEXT, REFUSAL_TEXT } from './refusal-text'
 import { FIT_ZOOM, nextZoom, timelineScale, type Zoom } from './timeline-scale'
 import { useDraftSession } from './use-draft-session'
 import { useWholeFilmExport } from './use-whole-film-export'
@@ -103,8 +121,8 @@ function EditorHeader({ actions }: { actions: ReactNode }) {
 export function WholeFilmEditor({ conversationId, onClose }: Props) {
   const draftQuery = useWholeFilmDraftQuery(conversationId)
   const catalogQuery = useComponentCatalog()
-  // 撤销快捷键挂在弹窗上，草稿读到之后由编辑区接上
-  const undoKeysRef = useRef<((event: KeyboardEvent<HTMLDivElement>) => void) | null>(null)
+  // 快捷键挂在弹窗上，草稿读到之后由编辑区接上
+  const keysRef = useRef<((event: KeyboardEvent<HTMLDivElement>) => void) | null>(null)
   const failed = draftQuery.isError ? draftQuery : catalogQuery.isError ? catalogQuery : undefined
   return (
     <DialogRoot open onOpenChange={(open) => !open && onClose()}>
@@ -122,14 +140,14 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
           if (event.target instanceof HTMLElement) event.target.focus()
         }}
         onInteractOutside={(event) => event.preventDefault()}
-        onKeyDown={(event) => undoKeysRef.current?.(event)}
+        onKeyDown={(event) => keysRef.current?.(event)}
       >
         {draftQuery.data !== undefined && catalogQuery.data !== undefined ? (
           <EditorBody
             catalog={catalogQuery.data}
             conversationId={conversationId}
             initial={draftQuery.data}
-            undoKeysRef={undoKeysRef}
+            keysRef={keysRef}
           />
         ) : (
           <>
@@ -158,10 +176,11 @@ export function WholeFilmEditor({ conversationId, onClose }: Props) {
 
 const takeLetterOf = (material: Material) => material.takeLabel.replace(/^生成\s*/, '')
 
-const shotNumberOf = (clip: VideoClip, url: string, keyframes: KeyframeStates) => {
+/** 素材里 atMs 处是第几个镜头；关键帧表还没读到时为 undefined */
+const shotNumberAt = (url: string, atMs: number, keyframes: KeyframeStates) => {
   const state = keyframes.get(url)
   if (state?.kind !== 'ready') return undefined
-  const at = clip.playbackStart / 1000
+  const at = atMs / 1000
   const index = keyframeRanges(state.index).findIndex(
     (shot) => at >= shot.start - 0.001 && at < shot.end,
   )
@@ -170,26 +189,38 @@ const shotNumberOf = (clip: VideoClip, url: string, keyframes: KeyframeStates) =
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
+const isTextEntry = (target: HTMLElement) =>
+  target.isContentEditable ||
+  target instanceof HTMLTextAreaElement ||
+  (target instanceof HTMLInputElement && target.type !== 'range')
+
+/**
+ * 编辑器的单键快捷键只在弹窗里、不在打字时生效；组件浮层与菜单挂在弹窗外，标签页的方向键与空格
+ * 留给标签页自己。
+ */
+const isShortcutTarget = (event: KeyboardEvent<HTMLDivElement>) =>
+  event.target instanceof HTMLElement &&
+  event.currentTarget.contains(event.target) &&
+  !isTextEntry(event.target) &&
+  event.target.closest('[role="tab"]') === null
+
+const attemptOf = (result: EditResult): Attempt =>
+  result.ok ? result : { ok: false, reason: REFUSAL_TEXT[result.refusal] }
+
 function EditorBody({
   conversationId,
   initial,
   catalog,
-  undoKeysRef,
+  keysRef,
 }: {
   conversationId: string
   initial: WholeFilmDraftOut
   catalog: ComponentCatalog
-  undoKeysRef: RefObject<((event: KeyboardEvent<HTMLDivElement>) => void) | null>
+  keysRef: RefObject<((event: KeyboardEvent<HTMLDivElement>) => void) | null>
 }) {
   const notice = useCallback((message: string) => toast.info(message), [])
   const session = useDraftSession(conversationId, initial, { onNotice: notice })
   const { draft, apply } = session
-  useEffect(() => {
-    undoKeysRef.current = (event) => handleUndoShortcut(event, session)
-    return () => {
-      undoKeysRef.current = null
-    }
-  })
 
   const videos = useShotGenerations(conversationId)
   const materials = useMemo(
@@ -261,14 +292,37 @@ function EditorBody({
   const [zoom, setZoom] = useState<Zoom>(FIT_ZOOM)
   const [viewportWidth, setViewportWidth] = useState(0)
   const [range, setRange] = useState<MaterialRange | null>(null)
-  const dropTargetRef = useRef<DropTarget | null>(null)
+  const tracksRef = useRef<TracksHandle | null>(null)
+  // 点成片段后只播这一段：播到这一刻停住；拖动播放头或再按播放时取消
+  const stopAtRef = useRef<number | null>(null)
 
   const total = filmDuration(draft)
   const scale = timelineScale(viewportWidth, total, zoom)
   const playhead = Math.min(playheadMs, total)
   const seek = (ms: number) => {
+    stopAtRef.current = null
     setPlayheadMs(ms)
     previewRef.current?.seek(ms)
+  }
+  const onTime = (ms: number) => {
+    setPlayheadMs(ms)
+    const stopAt = stopAtRef.current
+    if (stopAt !== null && ms >= stopAt) {
+      stopAtRef.current = null
+      previewRef.current?.pause()
+    }
+  }
+  const togglePlay = () => {
+    stopAtRef.current = null
+    if (playing) previewRef.current?.pause()
+    else previewRef.current?.play()
+  }
+  /** 点成片段：选中，播放头移到段首并把这一段播一遍 */
+  const playClip = (clip: Layer0Clip) => {
+    setSelection({ kind: 'clip', id: clip.id })
+    seek(clip.start)
+    stopAtRef.current = clip.start + clip.duration
+    previewRef.current?.play()
   }
 
   const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
@@ -286,24 +340,66 @@ function EditorBody({
               ? '正在读取画面尺寸，稍后再试'
               : undefined
 
-  const insert = (at: InsertAt) => {
-    if (range === null || addBlocked !== undefined) return
-    const withSize =
+  const insertResult = (picked: MaterialRange, at: InsertAt) =>
+    insertMaterial(
+      draft,
+      {
+        sourceJobId: picked.jobId,
+        playbackStart: picked.startMs,
+        duration: picked.endMs - picked.startMs,
+        at,
+      },
       draft.canvas === null && size.data !== undefined
-        ? withSourceSize(context, range.jobId, size.data)
-        : context
-    apply(
-      insertMaterial(
-        draft,
-        {
-          sourceJobId: range.jobId,
-          playbackStart: range.startMs,
-          duration: range.endMs - range.startMs,
-          at,
-        },
-        withSize,
-      ),
+        ? withSourceSize(context, picked.jobId, size.data)
+        : context,
     )
+  const insert = (at: InsertAt): boolean => {
+    if (range === null) return false
+    if (addBlocked !== undefined) {
+      notice(addBlocked)
+      return false
+    }
+    return apply(insertResult(range, at))
+  }
+
+  /** 拖着素材区选中的范围：落在成片轨上插到最近的切点 */
+  const materialPayload = (origin?: MaterialCarry['origin']): CarryPayload | undefined => {
+    if (range === null || rangeMaterial === undefined) return undefined
+    const picked = range
+    const duration = picked.endMs - picked.startMs
+    const shot = shotNumberAt(rangeMaterial.url, (picked.startMs + picked.endMs) / 2, keyframes)
+    return {
+      durationMs: duration,
+      ghost:
+        origin === undefined
+          ? undefined
+          : {
+              origin,
+              body: (
+                <>
+                  <span className="wf-ghost-frames">
+                    <Frames
+                      part={{
+                        mediaUrl: rangeMaterial.url,
+                        start: picked.startMs / 1000,
+                        end: picked.endMs / 1000,
+                      }}
+                    />
+                  </span>
+                  <span className="wf-clip-label">
+                    {takeLetterOf(rangeMaterial)}
+                    {shot === undefined ? '' : ` · 镜头 ${shot}`} · {seconds(duration)} 秒
+                  </span>
+                </>
+              ),
+            },
+      attempt: (point) => {
+        if (point.lane !== 'film') return undefined
+        if (addBlocked !== undefined) return { ok: false, reason: addBlocked }
+        return attemptOf(insertResult(picked, { timeMs: point.timeMs }))
+      },
+      drop: (point) => point.lane === 'film' && insert({ timeMs: point.timeMs }),
+    }
   }
 
   const selectedId = selection !== null && 'id' in selection ? selection.id : undefined
@@ -328,6 +424,58 @@ function EditorBody({
     }
   }
 
+  /**
+   * 单键快捷键：空格播放、暂停；Delete / ⌫ 删除选中的；⌥←/→ 把选中的段前后挪一位；选中特效块时
+   * ←/→ 把它挪 0.1 秒（⇧ 1 秒），否则播放头走 0.1 秒（⇧ 1 秒）。修剪手柄、音量推子自己处理方向键。
+   */
+  const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || !isShortcutTarget(event)) return
+    const { key } = event
+    if (key === ' ') {
+      event.preventDefault()
+      togglePlay()
+      return
+    }
+    if (key === 'Delete' || key === 'Backspace') {
+      event.preventDefault()
+      remove(selection)
+      return
+    }
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
+    // 刻度尺上的定位滑块自己走播放头
+    if (event.target instanceof HTMLInputElement) return
+    event.preventDefault()
+    const sign = key === 'ArrowLeft' ? -1 : 1
+    const stepMs = event.shiftKey ? 1_000 : 100
+    if (event.altKey) {
+      if (selection?.kind !== 'clip') return
+      const from = draft.layer0.findIndex((clip) => clip.id === selection.id)
+      if (apply(moveClip(draft, { clipId: selection.id, to: sign < 0 ? from - 1 : from + 2 })))
+        tracksRef.current?.focusClip(selection.id)
+      return
+    }
+    if (selection?.kind === 'overlay') {
+      const overlay = draft.overlays.find((item) => item.id === selection.id)
+      if (overlay === undefined) return
+      const result = moveOverlay(draft, { overlayId: overlay.id, deltaMs: sign * stepMs })
+      if (result.ok && result.draft !== draft) apply(result)
+      else if (sign > 0 && overlay.start + overlay.duration + stepMs > MAX_FILM_MS)
+        notice(FILM_LIMIT_TEXT)
+      else if (sign > 0 || overlay.start > 0) notice('这一行旁边没有空位，挪不动了')
+      return
+    }
+    seek(Math.min(total, Math.max(0, playhead + sign * stepMs)))
+  }
+  useEffect(() => {
+    keysRef.current = (event) => {
+      handleUndoShortcut(event, session)
+      shortcut(event)
+    }
+    return () => {
+      keysRef.current = null
+    }
+  })
+
   // 音乐列表与时长读到之前，编辑操作拿不到这首音乐的事实（时长、拍点）
   const musicKnown = draft.music !== null && context.music[draft.music.jobId] !== undefined
   const beatBlocked =
@@ -345,14 +493,35 @@ function EditorBody({
   }
 
   // ---- 组件 ----
-  const componentTitle = (name: string) => itemOf(catalog, name)?.title ?? '组件库里没有的组件'
+  const componentFace = (name: string): ComponentFace => {
+    const item = itemOf(catalog, name)
+    return {
+      title: item?.title ?? '组件库里没有的组件',
+      thumbnail: item === undefined ? undefined : thumbnailOf(item),
+      icon: (item === undefined ? undefined : CATEGORY_ICON[item.category]) ?? 'grid',
+    }
+  }
+  const componentTitle = (name: string) => componentFace(name).title
   const placeFromCard = (item: CatalogItem) =>
     apply(placeComponent(draft, item, { via: 'click', playheadMs: playhead }))
-  const dropComponent = (item: CatalogItem, clientX: number, clientY: number) => {
-    const target = dropTargetRef.current?.(clientX, clientY)
-    if (target === undefined) return
-    apply(placeComponent(draft, item, { via: 'drop', ...target }))
-  }
+  const dropAt = (point: DropPoint): Placing => ({
+    via: 'drop',
+    lane: point.lane,
+    timeMs: point.timeMs,
+    overlayRow: point.overlayRow,
+  })
+  /** 拖着组件卡：落在哪条轨就是哪种用法；字幕样式只落在字幕轨，音乐轨不收组件 */
+  const componentPayload = (item: CatalogItem): CarryPayload => ({
+    durationMs: durationMsOf(item, total),
+    face: componentFace(item.name),
+    attempt: (point) => {
+      const result = placeComponent(draft, item, dropAt(point))
+      return !result.ok && result.refusal === 'drop-elsewhere' ? undefined : attemptOf(result)
+    },
+    drop: (point) => apply(placeComponent(draft, item, dropAt(point))),
+  })
+  const dropComponent = (item: CatalogItem, clientX: number, clientY: number) =>
+    tracksRef.current?.release(clientX, clientY, componentPayload(item))
   const hasFields = (name: string) => {
     const item = itemOf(catalog, name)
     return item === undefined || item.variables.length > 0
@@ -452,13 +621,22 @@ function EditorBody({
   const clipLabel = (clip: VideoClip) => {
     const material = materials.byJob.get(clip.sourceJobId)
     if (material === undefined) return '素材不在了'
-    const shot = shotNumberOf(clip, material.url, keyframes)
+    const shot = shotNumberAt(material.url, clip.playbackStart, keyframes)
     return shot === undefined
       ? `${takeLetterOf(material)} · ${material.version}`
       : `${takeLetterOf(material)} · 镜头 ${shot}`
   }
 
-  const videoIndex = selectedVideo === undefined ? -1 : draft.layer0.indexOf(selectedVideo)
+  const selectedIndex = draft.layer0.findIndex((clip) => clip.id === selectedId)
+  const clipText =
+    selectedIndex < 0 ? (
+      '选择片段可调原声'
+    ) : (
+      <>
+        当前片段 · <b>第 {selectedIndex + 1} 段</b>
+        {selectedVideo === undefined ? ' · 没有原声' : ''}
+      </>
+    )
 
   return (
     <>
@@ -508,18 +686,20 @@ function EditorBody({
           height={(draft.canvas ?? DEFAULT_CANVAS).height}
           message={playBlocked}
           onPlaying={setPlaying}
-          onTime={setPlayheadMs}
+          onTime={onTime}
           srcdoc={preview.kind === 'ready' ? preview.html : undefined}
           width={(draft.canvas ?? DEFAULT_CANVAS).width}
         />
         <div className="wf-timeline">
           <EditorToolbar
+            beatBlocked={beatBlocked}
             canRedo={session.canRedo}
             canUndo={session.canUndo}
             deleteBlocked={selection === null ? '先选中要删除的片段' : undefined}
+            onBeatSync={beatSync}
             onDelete={() => remove(selection)}
             onFit={() => setZoom(FIT_ZOOM)}
-            onPlay={() => (playing ? previewRef.current?.pause() : previewRef.current?.play())}
+            onPlay={togglePlay}
             onRedo={session.redo}
             onSnap={() => setSnap((value) => !value)}
             onSplit={() => {
@@ -535,11 +715,12 @@ function EditorBody({
             totalMs={total}
           />
           <SoundRow
-            beatBlocked={beatBlocked}
-            clipText={videoIndex < 0 ? '选择片段可调原声' : `当前片段 · 第 ${videoIndex + 1} 段`}
+            clipBlocked={
+              selectedIndex < 0 ? '先在成片轨上选中一段视频' : REFUSAL_TEXT['not-a-video']
+            }
+            clipText={clipText}
             clipVolume={selectedVideo?.volume}
             musicVolume={draft.music?.volume}
-            onBeatSync={beatSync}
             onClipVolume={(volume) => {
               if (selectedVideo !== undefined)
                 apply(setClipVolume(draft, { clipId: selectedVideo.id, volume }))
@@ -558,10 +739,9 @@ function EditorBody({
             captionStyle={componentTitle(draft.captions.component)}
             captions={captions}
             clipLabel={clipLabel}
-            componentTitle={componentTitle}
+            componentFace={componentFace}
             context={context}
             draft={draft}
-            dropTargetRef={dropTargetRef}
             music={
               song === undefined || songUrl === undefined
                 ? undefined
@@ -572,6 +752,7 @@ function EditorBody({
               setCategory('captions')
             }}
             onCaptionText={editCaption}
+            onClipClick={playClip}
             onSeek={seek}
             onSelect={(next) => {
               setSelection(next)
@@ -590,6 +771,7 @@ function EditorBody({
             selection={selection}
             sentenceText={sentenceText}
             snap={snap}
+            tracksRef={tracksRef}
             urlOf={(sourceJobId) => materials.byJob.get(sourceJobId)?.url}
           />
           {videos.isError ? (
@@ -608,11 +790,17 @@ function EditorBody({
               groups={materials.groups}
               keyframes={keyframes}
               onAdd={() => insert({ index: draft.layer0.length })}
+              onCarry={(carry) => {
+                const payload = carry === null ? undefined : materialPayload(carry.origin)
+                if (carry === null || payload === undefined) tracksRef.current?.cancel()
+                else tracksRef.current?.carry(carry.clientX, carry.clientY, payload)
+              }}
               onDrop={(clientX, clientY) => {
-                const target = dropTargetRef.current?.(clientX, clientY)
-                if (target === undefined) return false
-                insert({ timeMs: target.timeMs })
-                return true
+                const payload = materialPayload()
+                return (
+                  payload !== undefined &&
+                  (tracksRef.current?.release(clientX, clientY, payload) ?? false)
+                )
               }}
               onGroup={(id) => {
                 setGroupId(id)
