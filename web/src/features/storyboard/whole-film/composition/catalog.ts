@@ -1,6 +1,6 @@
 /**
- * 组件目录（`../catalog/catalog.json`）的结构。目录由 `web/scripts/hyperframes-catalog.mjs`
- * 从 HyperFrames 组件库生成；组件文件由 `web/scripts/hyperframes-registry.mjs` 按同样的相对路径同步。
+ * 组件目录（`../catalog/catalog.json`）的结构。目录人工维护；组件文件由
+ * `web/scripts/hyperframes-registry.mjs` 按同样的相对路径同步。
  */
 
 /** 组件放到成片的哪里。 */

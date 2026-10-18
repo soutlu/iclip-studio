@@ -36,7 +36,7 @@
 | `src/testing/`、`e2e/`                | 测试基建、MSW 与浏览器用例                                                                |
 | `src/features/storyboard/whole-film/` | 整片编辑器；`composition/` 与 `catalog/` 同时编进渲染服务 `../render/`                    |
 | `vite/`、`scripts/`                   | 构建助手与开发、检查命令                                                                  |
-| `scripts/hyperframes-*`               | HyperFrames 组件库按 lock 同步到 `public/hyperframes/`（不入库）、组件目录与渲染检查结果  |
+| `scripts/hyperframes-*`               | HyperFrames 组件库按 lock 同步到 `public/hyperframes/`（不入库）                          |
 | `../design/cue-mascot/`               | 首页吉祥物素材源包与重建方式见[目录说明](../design/cue-mascot/README.md)                  |
 
 - `src/routes/` 负责路由装配、守卫、search params 与跨 feature 组合；业务逻辑留在 feature。共用侧边栏、登录弹窗、布局和工作台由 `_shell.tsx` 及同目录 `-` 前缀助手承载。

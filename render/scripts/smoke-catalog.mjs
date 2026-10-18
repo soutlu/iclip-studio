@@ -1,31 +1,32 @@
 #!/usr/bin/env node
 /**
- * 组件目录的冒烟筛选（一次性、本机运行，结果入库；升级 HyperFrames 版本后重跑）。
+ * 组件目录的冒烟筛选：确认 catalog.json 里的组件能在我们的画面上正常渲染（本机运行；
+ * 往目录里加组件或升级 HyperFrames 版本后跑，结果不入库）。
  *
  *   pnpm smoke                    跑完所有候选（已有结果的跳过，可中断后续跑）
  *   pnpm smoke --only a,b         只跑这几个
  *   pnpm smoke --fresh            清掉已有结果与冒烟用的组件库，重新同步后重跑
  *
- * 候选：组件目录收录的全部组件，加上因「引用的素材不在运行时查找的位置」被静态排除的组件
- * （静态判断要靠实际渲染确认或推翻）。每个候选用真实的合成构建放进一个最小草稿：
+ * 候选：catalog.json 收录的全部组件，加上 excluded 里原因是「引用的素材不在运行时查找的位置」
+ * 或「渲染检查不通过」的组件（要靠实际渲染确认或推翻）。每个候选用真实的合成构建放进一个最小草稿：
  *   1. 浏览器（Playwright + HyperFrames 播放器，与预览同一条路径）加载并跳到几个时间点：
  *      页面报错、控制台报错、请求本机以外的地址、本地文件取不到，任一项即不通过；
  *   2. 用真实的 @hyperframes/producer 渲染：渲染失败不通过；与不放这个组件的同一草稿逐帧比较，
  *      画面没有差别（片头片尾没有底片，看画面是否一片纯色）即「画面是空的」，不通过；
- *   3. 通过的从渲染结果取组件时长一半处的一帧，保存为渲染检查的缩略图。
- * 逐项结果写在 .cache/smoke/results/，全部跑完汇总到 web/scripts/hyperframes-smoke/
- * （results.json 与 thumbnails/）；目录生成读取 results.json，编辑器封面另用独立维护的 SVG。
+ *   3. 通过的从渲染结果取组件时长一半处的一帧，保存为缩略图，供人工核对画面。
+ * 逐项结果写在 .cache/smoke/results/，缩略图在 .cache/smoke/thumbnails/；全部跑完汇总成
+ * .cache/smoke/results.json，并打印通过与不通过的数量。不通过的组件要从 catalog.json 移到 excluded，
+ * 原因以「渲染检查不通过：」开头。编辑器封面是 catalog/thumbnails/ 里另外维护的 SVG，与这里的缩略图无关。
  *
  * 需要：web 已 pnpm install（同步脚本取运行时）、ffmpeg、chrome-headless-shell（producer 用）、
  * Playwright Chromium（pnpm exec playwright install chromium）。
  */
 import { execFile, spawnSync } from 'node:child_process'
 import { createReadStream, existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { createRequire } from 'node:module'
 import { dirname, extname, join, normalize, sep } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { chromium } from '@playwright/test'
 import { build } from 'esbuild'
@@ -35,7 +36,6 @@ const RENDER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const WEB_ROOT = join(RENDER_ROOT, '..', 'web')
 const CACHE = join(RENDER_ROOT, '.cache', 'smoke')
 const REGISTRY = join(RENDER_ROOT, '.cache', 'smoke-registry')
-const OUTPUT = join(WEB_ROOT, 'scripts', 'hyperframes-smoke')
 const CATALOG_PATH = join(WEB_ROOT, 'src/features/storyboard/whole-film/catalog/catalog.json')
 const PORT = Number(process.env.SMOKE_PORT ?? 8814)
 const ORIGIN = `http://127.0.0.1:${PORT}`
@@ -44,7 +44,7 @@ const FPS = 6
 const THUMB = { width: 160, height: 90 }
 /** 静态判断「引用的素材不在运行时查找的位置」的排除原因，要靠渲染确认或推翻。 */
 const BROKEN_REASON = '引用的素材不在 HyperFrames 运行时查找的位置，加载会失败'
-/** 组件目录给渲染检查不通过的组件写的排除原因前缀（web/scripts/hyperframes-catalog.mjs）。 */
+/** catalog.json 的 excluded 里，因渲染检查不通过而排除的组件，原因以此开头。 */
 const SMOKE_REASON_PREFIX = '渲染检查不通过：'
 
 const args = process.argv.slice(2)
@@ -594,7 +594,7 @@ async function main() {
   await summarize(list)
 }
 
-/** 全部候选都有结果时，汇总进 web/scripts/hyperframes-smoke/。 */
+/** 全部候选都有结果时，汇总成 .cache/smoke/results.json，并打印不通过的组件。 */
 async function summarize(list) {
   const results = []
   for (const { item } of list) {
@@ -607,7 +607,6 @@ async function summarize(list) {
   }
   results.sort((a, b) => a.name.localeCompare(b.name))
   const summary = {
-    note: '由 render/scripts/smoke-catalog.mjs 生成，web/scripts/hyperframes-catalog.mjs 读取',
     canvas: CANVAS,
     fps: FPS,
     results: Object.fromEntries(
@@ -617,31 +616,12 @@ async function summarize(list) {
       ]),
     ),
   }
-  // 结果入 web/ 的库，按 web 的 Prettier 与配置排版（web 的格式检查覆盖它）。
-  const resultsPath = join(OUTPUT, 'results.json')
-  // require.resolve 给的是 Prettier 的 CommonJS 入口，导入后 API 在 default 上。
-  const { default: prettier } = await import(
-    pathToFileURL(createRequire(join(WEB_ROOT, 'package.json')).resolve('prettier')).href
-  )
-  // web 配置里的 Tailwind 插件按当前目录解析，这里找不到；排 JSON 也用不到它。
-  const options = await prettier.resolveConfig(resultsPath)
-  const text = await prettier.format(JSON.stringify(summary), {
-    ...options,
-    plugins: [],
-    filepath: resultsPath,
-  })
-  await rm(OUTPUT, { recursive: true, force: true })
-  await mkdir(join(OUTPUT, 'thumbnails'), { recursive: true })
-  for (const result of results.filter((entry) => entry.ok && entry.thumbnail)) {
-    await copyFile(
-      join(CACHE, 'thumbnails', `${result.name}.webp`),
-      join(OUTPUT, 'thumbnails', `${result.name}.webp`),
-    )
-  }
-  await writeFile(resultsPath, text)
-  const passed = results.filter((entry) => entry.ok).length
+  const resultsPath = join(CACHE, 'results.json')
+  await writeFile(resultsPath, `${JSON.stringify(summary, null, 2)}\n`)
+  const failed = results.filter((entry) => !entry.ok)
+  for (const entry of failed) console.log(`不通过：${entry.name}（${entry.reason}）`)
   console.log(
-    `冒烟筛选：${results.length} 个候选，通过 ${passed}，不通过 ${results.length - passed}；结果在 ${OUTPUT}`,
+    `冒烟筛选：${results.length} 个候选，通过 ${results.length - failed.length}，不通过 ${failed.length}；结果在 ${resultsPath}`,
   )
 }
 
