@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -8,9 +9,9 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
-import { createPortal } from 'react-dom'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
 import type { PeaksState } from '../editing/media-analysis'
 import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
@@ -51,6 +52,16 @@ import {
   snapTargets,
   type TimelineScale,
 } from './timeline-scale'
+import {
+  InsertionGhost,
+  InsertionPreview,
+  type InsertionBox,
+  type InsertionFace,
+  type InsertionGhostHandle,
+  type InsertionPreviewHandle,
+  type InsertionMotion,
+} from './timeline-insertion'
+import { useInsertionMotion, type MotionSnapshot } from './use-insertion-motion'
 import { usePreviewGesture, type GestureStep } from './use-preview-gesture'
 
 export type Selection =
@@ -78,13 +89,8 @@ export type Attempt = { ok: true; draft: WholeFilmDraft } | { ok: false; reason:
 /** 从素材区、组件栏拖到成片区的东西 */
 export type CarryPayload = {
   durationMs: number
-  /**
-   * 手上的缩影：拿起时的位置与大小（松手没放下时退回这里），以及里面画的东西。素材的缩影和拿起的
-   * 那段一样大；组件卡的缩影是按内容排开的小条（预览图加名字）。
-   */
-  ghost?: { body: ReactNode; origin: GhostBox; kind?: 'material' | 'card' } | undefined
-  /** 是组件时，特效轨上的虚线块画它 */
-  face?: ComponentFace | undefined
+  /** 三种来源使用相同的缩略图、名称与时长卡片。 */
+  ghost?: { face: InsertionFace; origin: InsertionBox } | undefined
   /** 落在这一处会怎样；这条轨不收它时为 undefined（不提示） */
   attempt: (point: DropPoint) => Attempt | undefined
   /** 松手落在这一处：真的放进去，返回放进去了没有 */
@@ -93,7 +99,7 @@ export type CarryPayload = {
 
 /** 成片区给拖东西过来的一方用的接口 */
 export type TracksHandle = {
-  /** 带着东西移到这里：只在能接收的轨上画会放到哪，轨道上的东西不动 */
+  /** 带着东西移到这里：预览完整占位和相邻片段让位，松手前不写草稿 */
   carry: (clientX: number, clientY: number, payload: CarryPayload) => void
   /** 在这里松手：落在能接收的轨上就放进去；没放进去时缩影退回拿起的地方 */
   release: (clientX: number, clientY: number, payload: CarryPayload) => boolean
@@ -110,8 +116,6 @@ export type ComponentPopovers = {
   /** 这个组件有没有可填项（组件库里没有的组件也弹，好说明原因并移除） */
   hasFields: (component: string) => boolean
 }
-
-type GhostBox = { left: number; top: number; width: number; height: number }
 
 type FilmTracksProps = {
   draft: WholeFilmDraft
@@ -162,10 +166,6 @@ const NEW_ROW_BELOW_PX = 10
 const DROP_SLOP_PX = 16
 /** 相邻轨之间的空隙里，离哪条轨这么近就算那条轨 */
 const LANE_SLOP_PX = 4
-/** 手上的缩影在指针右下这么远，不盖住插入标记 */
-const GHOST_OFFSET_PX = 12
-/** 缩影退回拿起处的时长，与 whole-film.css 的 --dur-m 一致 */
-const RETURN_MS = 260
 /** 带着东西靠近时间区左右边缘这么近就自动横向滚动，每秒滚这么多像素 */
 const SCROLL_EDGE_PX = 40
 const SCROLL_SPEED = 420
@@ -180,7 +180,9 @@ type Carrying = {
   payload: CarryPayload
   point: DropPoint | undefined
   attempt: Attempt | undefined
+  overlayTop: number | undefined
   returning: boolean
+  destination?: InsertionBox | undefined
 }
 
 type Lift = {
@@ -192,10 +194,11 @@ type Lift = {
   clientX: number
   clientY: number
   moved: boolean
-  origin: GhostBox
+  origin: InsertionBox
   /** 松手会插到第几段之前（按原来的顺序）；不在成片轨上为 undefined */
   to: number | undefined
   returning: boolean
+  destination?: InsertionBox | undefined
 }
 
 type PointerHandlers = {
@@ -217,7 +220,16 @@ type BlockProps = {
   popover?: ReactNode
   clipId?: string
   shortcuts?: string
-  onAnimationEnd?: () => void
+  motion?:
+    | {
+        driver: InsertionMotion
+        x: number
+        width: number
+        opacity: number
+        animate: boolean
+        initial?: MotionSnapshot | undefined
+      }
+    | undefined
   children: ReactNode
 }
 
@@ -233,16 +245,50 @@ function Block({
   popover,
   clipId,
   shortcuts,
-  onAnimationEnd,
+  motion,
   children,
 }: BlockProps) {
+  const elementRef = useRef<HTMLDivElement>(null)
+  const previousRef = useRef(false)
+  const initialRef = useRef<MotionSnapshot | undefined>(undefined)
+  const driver = motion?.driver
+  const x = motion?.x
+  const width = motion?.width
+  const opacity = motion?.opacity
+  const animate = motion?.animate ?? false
+  const snapshot = motion?.initial
+  useLayoutEffect(() => {
+    const node = elementRef.current
+    if (
+      node === null ||
+      driver === undefined ||
+      x === undefined ||
+      width === undefined ||
+      opacity === undefined
+    )
+      return
+    const landed = snapshot !== undefined && initialRef.current !== snapshot
+    if (landed) {
+      driver.seed(node, {
+        value: { ...snapshot.value, y: 0, opacity: 0.65 },
+        velocity: { ...snapshot.velocity, y: 0, opacity: 0 },
+      })
+      initialRef.current = snapshot
+    }
+    driver.move(
+      node,
+      { x, width, opacity },
+      { immediate: !animate && !previousRef.current && !landed },
+    )
+    previousRef.current = animate
+  }, [driver, x, width, opacity, animate, snapshot])
   return (
     <div
       aria-label={name}
       className={cn(className, selected && 'is-selected')}
-      onAnimationEnd={onAnimationEnd}
+      ref={elementRef}
       role="group"
-      style={style}
+      style={motion === undefined ? style : { ...style, left: 0, width: undefined }}
     >
       {popover}
       <button
@@ -281,43 +327,6 @@ function OverlayFace({ face }: { face: ComponentFace }) {
       </span>
       <span className="wf-overlay-name">{face.title}</span>
     </>
-  )
-}
-
-/** 手上的缩影：跟在指针右下；松手没放下时退回拿起的地方再消失 */
-function Ghost({
-  clientX,
-  clientY,
-  origin,
-  returning,
-  blocked,
-  className,
-  fitContent = false,
-  children,
-}: {
-  clientX: number
-  clientY: number
-  origin: GhostBox
-  returning: boolean
-  blocked: boolean
-  className: string
-  /** 大小按内容，不取拿起时的大小 */
-  fitContent?: boolean
-  children: ReactNode
-}) {
-  return createPortal(
-    <div
-      aria-hidden="true"
-      className={cn('wf-ghost', className, blocked && 'is-blocked', returning && 'is-returning')}
-      style={{
-        left: returning ? origin.left : clientX + GHOST_OFFSET_PX,
-        top: returning ? origin.top : clientY + GHOST_OFFSET_PX,
-        ...(fitContent ? {} : { width: origin.width, height: origin.height }),
-      }}
-    >
-      {children}
-    </div>,
-    document.body,
   )
 }
 
@@ -363,8 +372,15 @@ export function FilmTracks({
   const clicks = useClickAfterDrag()
   const [carry, setCarry] = useState<Carrying | null>(null)
   const [lift, setLift] = useState<Lift | null>(null)
-  // 刚放下、排好的那一段播一次落位动画
-  const [settling, setSettling] = useState<string | null>(null)
+  const liftCancelledRef = useRef(false)
+  const motion = useInsertionMotion()
+  const ghostRef = useRef<InsertionGhostHandle>(null)
+  const filmPreviewRef = useRef<InsertionPreviewHandle>(null)
+  const overlayPreviewRef = useRef<InsertionPreviewHandle>(null)
+  const [landing, setLanding] = useState<{
+    id: string
+    snapshot: MotionSnapshot | undefined
+  } | null>(null)
   // 拖动中指针最后在哪；靠近边缘时自动滚动用
   const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null)
   const refreshRef = useRef<() => void>(() => {})
@@ -385,13 +401,22 @@ export function FilmTracks({
 
   // 行数按拿起、拖动之前的草稿算：拖动中轨道上的行不变
   const rows = overlayRowCount(draft.overlays)
-  const laneRows = Math.max(1, rows)
+  const overlayProjection =
+    carry !== null &&
+    !carry.returning &&
+    carry.point?.lane === 'overlay' &&
+    carry.attempt?.ok === true
+      ? carry.attempt.draft.overlays
+      : draft.overlays
+  const laneRows = Math.max(1, overlayRowCount(overlayProjection))
 
   /** 指针纵坐标落在特效轨的哪一行；在所有行之上、之下不远处就开一行；离得太远是 undefined */
   const overlayRowFrom = (clientY: number): OverlayRow | undefined => {
     const lane = overlayLaneRef.current?.getBoundingClientRect()
     if (lane === undefined) return undefined
-    const y = clientY - (lane.top + ROWS_TOP_PX)
+    // 新行预演会把时间线整体向上推；命中仍以提起时的轨道位置为准，避免目标随预告跳动。
+    const top = carry !== null && !carry.returning ? (carry.overlayTop ?? lane.top) : lane.top
+    const y = clientY - (top + ROWS_TOP_PX)
     const below = rows === 0 ? lane.height : rows * ROW_PX + NEW_ROW_BELOW_PX
     if (y < -NEW_ROW_ABOVE_PX || y >= below) return undefined
     return rows === 0 ? { insertAt: 0 } : overlayRowAt(y / ROW_PX, rows)
@@ -407,6 +432,49 @@ export function FilmTracks({
       clientY >= film.top - DROP_SLOP_PX &&
       clientY <= film.bottom
     )
+  }
+
+  /** 占位内保持当前插入点；跨过相邻片段中点才换位，避免让位动画反过来推动落点。 */
+  const filmIndex = (clientX: number, duration: number, lifted?: Lift) => {
+    const items =
+      lifted === undefined ? draft.layer0 : draft.layer0.filter((clip) => clip.id !== lifted.clipId)
+    const point = timeAt(clientX)
+    const existing =
+      lifted !== undefined
+        ? lifted.moved && lifted.to !== undefined
+          ? lifted.to > lifted.from
+            ? lifted.to - 1
+            : lifted.to
+          : undefined
+        : carry !== null &&
+            !carry.returning &&
+            carry.point?.lane === 'film' &&
+            carry.attempt?.ok === true
+          ? insertIndexAt(draft.layer0, carry.point.timeMs)
+          : undefined
+    const existingStart =
+      existing === undefined
+        ? 0
+        : items.slice(0, existing).reduce((sum, clip) => sum + clip.duration, 0)
+    let index = items.length
+    if (
+      existing !== undefined &&
+      point >= existingStart - 70 &&
+      point <= existingStart + duration + 70
+    )
+      index = existing
+    else {
+      let start = 0
+      for (const [i, item] of items.entries()) {
+        const shifted = start + (existing !== undefined && i >= existing ? duration : 0)
+        if (point < shifted + item.duration / 2) {
+          index = i
+          break
+        }
+        start += item.duration
+      }
+    }
+    return lifted !== undefined && index > lifted.from ? index + 1 : index
   }
 
   /** 指针下是哪条轨的哪一刻；带着长度拖到特效轨时，开头、结尾吸附到切点、播放头、拍点、其他块边缘和刻度 */
@@ -439,6 +507,15 @@ export function FilmTracks({
             : undefined
     if (lane === undefined) return undefined
     const row = overlayRow ?? { insertAt: 0 }
+    if (lane === 'film' && durationMs !== undefined) {
+      const index = filmIndex(clientX, durationMs)
+      return {
+        timeMs: draft.layer0[index]?.start ?? layer0End(draft),
+        lane,
+        overlayRow: row,
+        guideMs: null,
+      }
+    }
     if (lane !== 'overlay' || durationMs === undefined)
       return { timeMs, lane, overlayRow: row, guideMs: null }
     const targets = snapTargets({
@@ -458,6 +535,10 @@ export function FilmTracks({
       payload,
       point,
       attempt: point === undefined ? undefined : payload.attempt(point),
+      overlayTop:
+        carry !== null && !carry.returning
+          ? carry.overlayTop
+          : overlayLaneRef.current?.getBoundingClientRect().top,
       returning: false,
     }
   }
@@ -466,41 +547,107 @@ export function FilmTracks({
     ...current,
     clientX,
     clientY,
-    to: overFilm(clientX, clientY) ? insertIndexAt(draft.layer0, timeAt(clientX)) : undefined,
+    to: overFilm(clientX, clientY)
+      ? filmIndex(clientX, draft.layer0[current.from]?.duration ?? 0, current)
+      : undefined,
   })
 
-  /** 松手没放下：缩影退回拿起的地方再消失 */
-  const settleBack = <T,>(set: (update: (current: T | null) => T | null) => void, value: T) => {
-    set(() => value)
-    window.setTimeout(() => set(() => null), RETURN_MS)
+  const rememberLanding = (id: string, lane: 'film' | 'overlay') => {
+    const node = lane === 'film' ? filmPreviewRef.current : overlayPreviewRef.current
+    setLanding({ id, snapshot: node?.snapshot() })
   }
+  const destinationOf = (
+    start: number,
+    duration: number,
+    lane: 'film' | 'overlay',
+    row = 0,
+  ): InsertionBox | undefined => {
+    const rect = (
+      lane === 'film' ? filmLaneRef.current : overlayLaneRef.current
+    )?.getBoundingClientRect()
+    if (rect === undefined) return undefined
+    return {
+      left: rect.left + msToPx(start, pps),
+      top: rect.top + 2 + row * ROW_PX,
+      width: Math.max(6, msToPx(duration, pps) - 2),
+      height: lane === 'film' ? 48 : 22,
+    }
+  }
+  const cancelCarry = () => {
+    pointerRef.current = null
+    setCarry((current) =>
+      current === null || current.returning
+        ? current
+        : { ...current, returning: true, destination: current.payload.ghost?.origin },
+    )
+  }
+  useEscapeAheadOfDialog(lift?.moved === true && !lift.returning, () => {
+    liftCancelledRef.current = true
+    pointerRef.current = null
+    clicks.swallow()
+    setLift((current) =>
+      current === null ? null : { ...current, returning: true, destination: current.origin },
+    )
+  })
 
   useEffect(() => {
     tracksRef.current = {
       carry: (clientX, clientY, payload) => {
         pointerRef.current = { clientX, clientY }
-        setCarry(carryTo(clientX, clientY, payload))
+        setLift(null)
+        ghostRef.current?.follow(clientX, clientY)
+        const next = carryTo(clientX, clientY, payload)
+        setCarry((current) =>
+          current !== null &&
+          !current.returning &&
+          JSON.stringify(current.point) === JSON.stringify(next.point) &&
+          current.attempt?.ok === next.attempt?.ok &&
+          (current.attempt?.ok !== false ||
+            next.attempt?.ok !== false ||
+            current.attempt.reason === next.attempt.reason)
+            ? current
+            : next,
+        )
       },
       release: (clientX, clientY, payload) => {
         pointerRef.current = null
-        const point = pointAt(clientX, clientY, payload.durationMs)
+        // 松手确认已经显示的落点，不能让预告导致的布局变化重新选择另一条轨。
+        const point = carry !== null && !carry.returning ? carry.point : undefined
         const attempt = point === undefined ? undefined : payload.attempt(point)
         const dropped = point !== undefined && attempt !== undefined && payload.drop(point)
+        let destination: InsertionBox | undefined
         if (dropped && attempt.ok) {
-          const added = attempt.draft.layer0.find(
-            (clip) => !draft.layer0.some((before) => before.id === clip.id),
-          )
-          if (added !== undefined) setSettling(added.id)
+          const added =
+            point.lane === 'film'
+              ? attempt.draft.layer0.find(
+                  (clip) => !draft.layer0.some((before) => before.id === clip.id),
+                )
+              : attempt.draft.overlays.find(
+                  (clip) => !draft.overlays.some((before) => before.id === clip.id),
+                )
+          if (added !== undefined) {
+            const lane = point.lane === 'film' ? 'film' : 'overlay'
+            rememberLanding(added.id, lane)
+            destination = destinationOf(
+              added.start,
+              added.duration,
+              lane,
+              'track' in added ? added.track : 0,
+            )
+          }
         }
-        if (!dropped && carry !== null && carry.payload.ghost !== undefined)
-          settleBack(setCarry, { ...carry, returning: true })
+        if (carry?.payload.ghost !== undefined)
+          setCarry({
+            ...carry,
+            clientX,
+            clientY,
+            returning: true,
+            destination: destination ?? carry.payload.ghost.origin,
+          })
         else setCarry(null)
         return dropped
       },
-      cancel: () => {
-        pointerRef.current = null
-        setCarry(null)
-      },
+      cancel: cancelCarry,
       focusClip: (clipId) => {
         requestAnimationFrame(() =>
           contentRef.current
@@ -513,12 +660,20 @@ export function FilmTracks({
       setCarry((current) =>
         current === null || current.returning
           ? current
-          : carryTo(current.clientX, current.clientY, current.payload),
+          : carryTo(
+              pointerRef.current?.clientX ?? current.clientX,
+              pointerRef.current?.clientY ?? current.clientY,
+              current.payload,
+            ),
       )
       setLift((current) =>
         current === null || !current.moved || current.returning
           ? current
-          : liftTo(current, current.clientX, current.clientY),
+          : liftTo(
+              current,
+              pointerRef.current?.clientX ?? current.clientX,
+              pointerRef.current?.clientY ?? current.clientY,
+            ),
       )
     }
     return () => {
@@ -718,10 +873,13 @@ export function FilmTracks({
     if (popovers.hasFields(component)) popovers.onOpen(id)
   }
 
-  // ---- 成片段拖动排序：拿起的段留在原处变淡，手上跟着它的缩影；在成片轨上只画插入标记，松手才挪 ----
+  // ---- 成片段拖动排序：保留捕获指针的节点，预演位置，松手才提交 ----
   const liftPointer = (clip: Layer0Clip, index: number): PointerHandlers => ({
     onPointerDown: (event) => {
       if (event.button !== 0) return
+      liftCancelledRef.current = false
+      setCarry(null)
+      setLanding(null)
       clicks.reset()
       event.currentTarget.setPointerCapture(event.pointerId)
       const box = event.currentTarget.getBoundingClientRect()
@@ -735,7 +893,7 @@ export function FilmTracks({
         clientY: event.clientY,
         moved: false,
         origin: { left: box.left, top: box.top, width: box.width, height: box.height },
-        to: undefined,
+        to: index,
         returning: false,
       })
     },
@@ -746,31 +904,42 @@ export function FilmTracks({
       if (!lift.moved && !far) return
       if (!lift.moved) popovers.onOpen(null)
       pointerRef.current = { clientX: event.clientX, clientY: event.clientY }
-      setLift(liftTo({ ...lift, moved: true }, event.clientX, event.clientY))
+      ghostRef.current?.follow(event.clientX, event.clientY)
+      const next = liftTo({ ...lift, moved: true }, event.clientX, event.clientY)
+      setLift(lift.moved && lift.to === next.to ? lift : next)
     },
     onPointerUp: (event) => {
       if (lift === null || lift.pointerId !== event.pointerId) return
       releasePointer(event)
+      if (lift.returning || liftCancelledRef.current) return
       pointerRef.current = null
       if (!lift.moved) {
         setLift(null)
         return
       }
       clicks.swallow()
-      const done = liftTo(lift, event.clientX, event.clientY)
-      if (done.to === undefined) {
-        settleBack(setLift, { ...done, returning: true })
-        return
-      }
-      setLift(null)
-      if (apply(moveClip(draft, { clipId: clip.id, to: done.to }))) {
+      const done = lift
+      const result =
+        done.to === undefined ? undefined : moveClip(draft, { clipId: clip.id, to: done.to })
+      if (result?.ok === true && apply(result)) {
+        const placed = result.draft.layer0.find((item) => item.id === clip.id)
+        if (placed === undefined) throw new Error('重排结果缺少被移动的片段')
+        rememberLanding(clip.id, 'film')
         onSelect({ kind: 'clip', id: clip.id })
-        setSettling(clip.id)
-      }
+        setLift({
+          ...done,
+          returning: true,
+          destination: destinationOf(placed.start, placed.duration, 'film') ?? done.origin,
+        })
+      } else setLift({ ...done, returning: true, destination: done.origin })
     },
     onPointerCancel: () => {
+      liftCancelledRef.current = true
       pointerRef.current = null
-      setLift(null)
+      clicks.swallow()
+      setLift((current) =>
+        current === null ? null : { ...current, returning: true, destination: current.origin },
+      )
     },
   })
 
@@ -847,13 +1016,13 @@ export function FilmTracks({
     )
   }
 
-  // ---- 拖放提示：插入标记、虚线块、新开一行的横线；轨道上的东西一概不动 ----
+  // ---- 插入预演只影响块的位置；播放、字幕与草稿仍使用已提交的数据 ----
   const hover = carry !== null && !carry.returning ? carry : null
   const insertClock = (index: number) => draft.layer0[index]?.start ?? layer0End(draft)
   const marker: { index: number; text: string; blocked: boolean } | undefined = (() => {
     if (lift !== null && lift.moved && !lift.returning && lift.to !== undefined) {
       const final = lift.to > lift.from ? lift.to - 1 : lift.to
-      return { index: lift.to, text: `挪到第 ${final + 1} 段`, blocked: false }
+      return { index: lift.to, text: `移到第 ${final + 1} 段`, blocked: false }
     }
     if (hover?.point?.lane !== 'film' || hover.attempt === undefined) return undefined
     const index = insertIndexAt(draft.layer0, hover.point.timeMs)
@@ -865,20 +1034,62 @@ export function FilmTracks({
         }
       : { index, text: hover.attempt.reason, blocked: true }
   })()
+  const liftedClip =
+    lift === null ? undefined : draft.layer0.find((clip) => clip.id === lift.clipId)
+  const liftResult =
+    lift?.moved === true && !lift.returning && lift.to !== undefined
+      ? moveClip(draft, { clipId: lift.clipId, to: lift.to })
+      : undefined
+  const projected =
+    hover?.point?.lane === 'film' && hover.attempt?.ok === true
+      ? hover.attempt.draft
+      : liftResult?.ok === true
+        ? liftResult.draft
+        : shown
+  const filmDrop =
+    marker === undefined
+      ? undefined
+      : lift?.moved === true && !lift.returning
+        ? projected.layer0.find((clip) => clip.id === lift.clipId)
+        : hover?.attempt?.ok === true
+          ? projected.layer0.find((clip) => !draft.layer0.some((before) => before.id === clip.id))
+          : undefined
+  const clipFace = (clip: Layer0Clip): InsertionFace => {
+    if (clip.type === 'component') {
+      const face = componentFace(clip.component)
+      return { title: face.title, durationMs: clip.duration, media: <ComponentThumb face={face} /> }
+    }
+    const url = urlOf(clip.sourceJobId)
+    return {
+      title: clipLabel(clip),
+      durationMs: clip.duration,
+      media:
+        url === undefined ? (
+          <Icon decorative name="video" size="sm" />
+        ) : (
+          <Frames
+            part={{
+              mediaUrl: url,
+              start: clip.playbackStart / 1000,
+              end: (clip.playbackStart + Math.min(500, clip.duration)) / 1000,
+            }}
+          />
+        ),
+    }
+  }
+  const insertionFace =
+    carry?.payload.ghost?.face ?? (liftedClip === undefined ? undefined : clipFace(liftedClip))
   const overlayDrop = (() => {
     if (hover?.point?.lane !== 'overlay' || hover.attempt === undefined) return undefined
-    const face = hover.payload.face
-    if (face === undefined) return undefined
     const placed = hover.attempt.ok
       ? hover.attempt.draft.overlays.find(
           (overlay) => !draft.overlays.some((before) => before.id === overlay.id),
         )
       : undefined
     return {
-      face,
       start: placed?.start ?? hover.point.timeMs,
       duration: placed?.duration ?? hover.payload.durationMs,
-      row: hover.point.overlayRow,
+      row: placed === undefined ? hover.point.overlayRow : { track: placed.track },
       reason: hover.attempt.ok ? undefined : hover.attempt.reason,
     }
   })()
@@ -895,13 +1106,14 @@ export function FilmTracks({
         : lineTop(row) - ROW_PX / 2 + 2
   const newRow = (() => {
     if (rows === 0) return undefined
-    const row = overlayDrop?.row ?? gesture.preview?.row
+    const row = gesture.preview?.row
     return row !== undefined && 'insertAt' in row ? row : undefined
   })()
 
   const moving = gesture.preview?.overlayId
   const overlaysShown = draft.overlays.map((overlay) => {
-    if (overlay.id !== moving) return overlay
+    if (overlay.id !== moving)
+      return overlayProjection.find((item) => item.id === overlay.id) ?? overlay
     const after = shown.overlays.find((o) => o.id === overlay.id)
     return after === undefined ? overlay : { ...overlay, start: after.start }
   })
@@ -909,12 +1121,16 @@ export function FilmTracks({
     moving === undefined ? (shown.overlays.find((o) => o.id === overlay.id) ?? overlay) : overlay
 
   const guideMs = gesture.preview?.guideMs ?? hover?.point?.guideMs ?? null
-  const markerLeft = marker === undefined ? 0 : msToPx(insertClock(marker.index), pps)
+  const markerLeft =
+    marker === undefined ? 0 : msToPx(filmDrop?.start ?? insertClock(marker.index), pps)
   const bubbleAlign = (left: number) =>
     left < 120 ? 'is-start' : left > contentWidth - 120 ? 'is-end' : undefined
   const tailLeft = msToPx(layer0End(shown), pps) + 8
   const showTail = marker === undefined && contentWidth - tailLeft > 300
   const cuts = cutsOf(shown)
+  const insertionActive = hover !== null || (lift?.moved === true && !lift.returning)
+  const projectedById = new Map(projected.layer0.map((clip) => [clip.id, clip]))
+  const previewWidth = Math.max(contentWidth, msToPx(layer0End(projected), pps))
 
   return (
     <div className="wf-tracks" style={{ '--wf-overlay-rows': laneRows } as CSSProperties}>
@@ -947,13 +1163,13 @@ export function FilmTracks({
         </span>
       </div>
       <div className="wf-track-scroll" ref={scrollRef}>
-        <div className="wf-track-content" ref={contentRef} style={{ width: `${contentWidth}px` }}>
+        <div className="wf-track-content" ref={contentRef} style={{ width: `${previewWidth}px` }}>
           <TimelineRuler
             clockAt={(clientX) => timeAt(clientX) / 1000}
             currentTime={playheadMs / 1000}
             onScrub={() => {}}
             onSeek={(clock) => onSeek(Math.round(clock * 1000))}
-            scale={contentWidth / pps}
+            scale={previewWidth / pps}
             total={total / 1000}
             viewportRef={scrollRef}
           />
@@ -984,12 +1200,7 @@ export function FilmTracks({
                 }，${seconds(clip.duration)} 秒`
                 return (
                   <Block
-                    className={cn(
-                      'wf-clip',
-                      clip.type === 'component' && 'is-card',
-                      lift?.clipId === clip.id && lift.moved && 'is-lifted',
-                      settling === clip.id && 'is-settling',
-                    )}
+                    className={cn('wf-clip', clip.type === 'component' && 'is-card')}
                     clipId={clip.id}
                     handles={trimHandles(
                       clipEdges(clip),
@@ -1001,7 +1212,14 @@ export function FilmTracks({
                     )}
                     key={clip.id}
                     name={name}
-                    onAnimationEnd={() => setSettling(null)}
+                    motion={{
+                      driver: motion,
+                      x: msToPx((projectedById.get(clip.id) ?? clip).start, pps),
+                      width: Math.max(6, msToPx(clip.duration, pps) - 2),
+                      opacity: lift?.clipId === clip.id && lift.moved && !lift.returning ? 0 : 1,
+                      animate: insertionActive,
+                      initial: landing?.id === clip.id ? landing.snapshot : undefined,
+                    }}
                     onSelect={() => {
                       if (clicks.take()) return
                       onClipClick(clip)
@@ -1021,6 +1239,28 @@ export function FilmTracks({
                   </Block>
                 )
               })}
+              <InsertionPreview
+                elementRef={filmPreviewRef}
+                face={insertionFace}
+                motion={motion}
+                position={
+                  marker === undefined || insertionFace === undefined
+                    ? undefined
+                    : {
+                        x: markerLeft,
+                        y: 2,
+                        width: Math.max(6, msToPx(insertionFace.durationMs, pps) - 2),
+                        height: 48,
+                        blocked: marker.blocked,
+                        text: marker.blocked
+                          ? marker.text
+                          : lift?.moved === true && !lift.returning
+                            ? marker.text
+                            : `插入 ${seconds(filmDrop?.start ?? insertClock(marker.index))} 秒 · ${seconds(insertionFace.durationMs)} 秒`,
+                        alignEnd: bubbleAlign(markerLeft) === 'is-end',
+                      }
+                }
+              />
               {showTail ? (
                 <span className="wf-lane-hint is-tail" style={{ left: `${tailLeft}px` }}>
                   <Icon decorative name="insert" size="xs" />
@@ -1030,7 +1270,7 @@ export function FilmTracks({
             </div>
             <div
               aria-label="特效轨"
-              className={cn('wf-lane is-overlay', overlayDrop !== undefined && 'is-drop')}
+              className="wf-lane is-overlay"
               ref={overlayLaneRef}
               role="group"
             >
@@ -1051,6 +1291,14 @@ export function FilmTracks({
                 return (
                   <Block
                     className={cn('wf-overlay', isMoving && 'is-moving')}
+                    motion={{
+                      driver: motion,
+                      x: msToPx(timed.start, pps),
+                      width: Math.max(6, msToPx(timed.duration, pps) - 2),
+                      opacity: 1,
+                      animate: insertionActive,
+                      initial: landing?.id === overlay.id ? landing.snapshot : undefined,
+                    }}
                     handles={trimHandles(
                       ['start', 'end'],
                       timed.duration,
@@ -1079,37 +1327,26 @@ export function FilmTracks({
                   </Block>
                 )
               })}
-              {overlayDrop === undefined ? null : (
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'wf-overlay is-ghost',
-                    overlayDrop.reason !== undefined && 'is-blocked',
-                  )}
-                  style={{
-                    ...place(overlayDrop.start, overlayDrop.duration),
-                    top: `${rowTop(overlayDrop.row)}px`,
-                  }}
-                >
-                  <OverlayFace face={overlayDrop.face} />
-                </span>
-              )}
-              {overlayDrop?.reason === undefined ? null : (
-                <span
-                  className={cn(
-                    'wf-time-bubble',
-                    bubbleAlign(msToPx(overlayDrop.start, pps)) === 'is-end' && 'is-end',
-                  )}
-                  role="status"
-                  style={{
-                    left: `${msToPx(overlayDrop.start, pps)}px`,
-                    top: `${rowTop(overlayDrop.row) - 3}px`,
-                  }}
-                >
-                  <Icon decorative name="blocked" size="xs" />
-                  {overlayDrop.reason}
-                </span>
-              )}
+              <InsertionPreview
+                elementRef={overlayPreviewRef}
+                face={insertionFace}
+                motion={motion}
+                position={
+                  overlayDrop === undefined
+                    ? undefined
+                    : {
+                        x: msToPx(overlayDrop.start, pps),
+                        y: rowTop(overlayDrop.row),
+                        width: Math.max(6, msToPx(overlayDrop.duration, pps) - 2),
+                        height: 22,
+                        blocked: overlayDrop.reason !== undefined,
+                        text:
+                          overlayDrop.reason ??
+                          `特效 · ${seconds(overlayDrop.start)}–${seconds(overlayDrop.start + overlayDrop.duration)} 秒`,
+                        alignEnd: bubbleAlign(msToPx(overlayDrop.start, pps)) === 'is-end',
+                      }
+                }
+              />
               {moving === undefined
                 ? null
                 : (() => {
@@ -1224,23 +1461,6 @@ export function FilmTracks({
               ) : null}
             </div>
           </div>
-          {marker === undefined ? null : (
-            <>
-              <span
-                aria-hidden="true"
-                className={cn('wf-drop-marker', marker.blocked && 'is-blocked')}
-                style={{ left: `${markerLeft}px` }}
-              />
-              <span
-                className={cn('wf-drop-bubble', bubbleAlign(markerLeft))}
-                role="status"
-                style={{ left: `${markerLeft}px` }}
-              >
-                <Icon decorative name={marker.blocked ? 'blocked' : 'insert'} size="xs" />
-                {marker.text}
-              </span>
-            </>
-          )}
           {gesture.preview?.note !== undefined && gesture.preview.noteAtMs !== undefined ? (
             <span
               className={cn('wf-drop-bubble', bubbleAlign(msToPx(gesture.preview.noteAtMs, pps)))}
@@ -1261,36 +1481,31 @@ export function FilmTracks({
           <TimelinePlayhead style={{ left: `${msToPx(Math.min(playheadMs, total), pps)}px` }} />
         </div>
       </div>
-      {carry?.payload.ghost === undefined ? null : (
-        <Ghost
-          blocked={carry.attempt?.ok === false}
-          className={carry.payload.ghost.kind === 'card' ? 'is-card' : 'is-material'}
-          fitContent={carry.payload.ghost.kind === 'card'}
-          clientX={carry.clientX}
-          clientY={carry.clientY}
-          origin={carry.payload.ghost.origin}
-          returning={carry.returning}
-        >
-          {carry.payload.ghost.body}
-        </Ghost>
+      {insertionFace === undefined || (carry === null && lift?.moved !== true) ? null : (
+        <InsertionGhost
+          ref={ghostRef}
+          face={insertionFace}
+          motion={motion}
+          blocked={carry !== null ? carry.attempt?.ok !== true : lift?.to === undefined}
+          clientX={carry?.clientX ?? lift?.clientX ?? 0}
+          clientY={carry?.clientY ?? lift?.clientY ?? 0}
+          destination={
+            carry !== null
+              ? carry.returning
+                ? carry.destination
+                : undefined
+              : lift?.returning === true
+                ? lift.destination
+                : undefined
+          }
+          onRest={() => {
+            if (carry?.returning === true)
+              setCarry((current) => (current === carry ? null : current))
+            else if (lift?.returning === true)
+              setLift((current) => (current === lift ? null : current))
+          }}
+        />
       )}
-      {lift === null || !lift.moved
-        ? null
-        : (() => {
-            const clip = draft.layer0.find((c) => c.id === lift.clipId)
-            return clip === undefined ? null : (
-              <Ghost
-                blocked={false}
-                className={cn('is-lift', clip.type === 'component' && 'is-card')}
-                clientX={lift.clientX}
-                clientY={lift.clientY}
-                origin={lift.origin}
-                returning={lift.returning}
-              >
-                {clipBody(clip)}
-              </Ghost>
-            )
-          })()}
     </div>
   )
 }

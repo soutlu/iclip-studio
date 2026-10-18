@@ -196,8 +196,6 @@ const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-const seconds = (ms: number) => (ms / 1000).toFixed(1)
-
 const isTextEntry = (target: HTMLElement) =>
   target.isContentEditable ||
   target instanceof HTMLTextAreaElement ||
@@ -426,23 +424,19 @@ function EditorBody({
           ? undefined
           : {
               origin,
-              body: (
-                <>
-                  <span className="wf-ghost-frames">
-                    <Frames
-                      part={{
-                        mediaUrl: material.url,
-                        start: picked.startMs / 1000,
-                        end: picked.endMs / 1000,
-                      }}
-                    />
-                  </span>
-                  <span className="wf-clip-label">
-                    {takeLetterOf(material)}
-                    {shot === undefined ? '' : ` · 镜头 ${shot}`} · {seconds(duration)} 秒
-                  </span>
-                </>
-              ),
+              face: {
+                title: `${takeLetterOf(material)}${shot === undefined ? '' : ` · 镜头 ${shot}`}`,
+                durationMs: duration,
+                media: (
+                  <Frames
+                    part={{
+                      mediaUrl: material.url,
+                      start: picked.startMs / 1000,
+                      end: Math.min(picked.endMs, picked.startMs + 500) / 1000,
+                    }}
+                  />
+                ),
+              },
             },
       attempt: (point) => {
         if (point.lane !== 'film') return undefined
@@ -593,19 +587,16 @@ function EditorBody({
    */
   const componentPayload = (item: CatalogItem, origin?: CardCarry['origin']): CarryPayload => ({
     durationMs: durationMsOf(item, total),
-    face: componentFace(item.name),
     ghost:
       origin === undefined
         ? undefined
         : {
             origin,
-            kind: 'card',
-            body: (
-              <>
-                <ComponentThumb className="wf-ghost-thumb" iconSize="xs" item={item} />
-                <b>{item.title}</b>
-              </>
-            ),
+            face: {
+              title: item.title,
+              durationMs: durationMsOf(item, total),
+              media: <ComponentThumb iconSize="xs" item={item} />,
+            },
           },
     attempt: (point) => {
       const result = placeComponent(draft, item, dropAt(point))
