@@ -116,6 +116,9 @@ const openWith = async (
   await expect(
     film.getByRole('group', { name: new RegExp(`^第 ${layer0.length} 段`) }),
   ).toBeVisible()
+  // 预览播放器换上来时会报一次它的时刻：等它换上来，之后点段、走播放头才不会被它拨回去
+  await expect(dialog.locator('hyperframes-player:not(.is-pending)')).toHaveCount(1)
+  await expect(dialog.locator('hyperframes-player.is-pending')).toHaveCount(0)
   // 时间区量好宽度、按它排好刻度之后再量位置
   let last = ''
   await expect
