@@ -145,6 +145,8 @@ const pixelsPerSecond = async (dialog: Locator) => {
 
 /** 播放器按 30 帧报时刻，读数与播放头最多差一帧 */
 const FRAME_MS = 34
+/** 点段播放停在段尾时，允许多走的时长 */
+const STOP_OVERSHOOT_MS = 150
 
 /** 播放时间读数「00:02.60 / 00:07.50」里当前时刻的毫秒数 */
 const clockMs = (text: string | null) => {
@@ -168,6 +170,22 @@ const settledClockMs = async (clock: Locator) => {
     )
     .toBe(true)
   return clockMs(last)
+}
+
+/** 点段播到段尾自己停下：读数两次一样，且停在段尾。播放器报的时刻过了段尾才暂停，实测多走 60–90 毫秒 */
+const expectStoppedAt = async (clock: Locator, endMs: number) => {
+  let last = Number.NaN
+  await expect
+    .poll(
+      async () => {
+        const now = clockMs(await clock.textContent())
+        const stopped = now === last && now >= endMs && now <= endMs + STOP_OVERSHOOT_MS
+        last = now
+        return stopped
+      },
+      { intervals: [250], timeout: 10_000 },
+    )
+    .toBe(true)
 }
 
 /** 成片轨上各段左边缘的位置：拖动中确认轨道上的段没动 */
@@ -333,17 +351,14 @@ test.describe('整片编辑器 · 成片区', () => {
       layer0: [BASE[1], BASE[2], card('c2', 'hw-title', 1_500), BASE[3], BASE[4], BASE[5]],
     })
     const clock = dialog.locator('.wf-clock')
-    // 组件可以放在成片轨任意位置：中间这一段是组件段
+    // 点段：播放头到段首，把这一段播一遍，播到段尾停下。组件可以放在成片轨任意位置：第 3 段是组件段
     await film.getByRole('button', { name: /^选中：第 3 段 · 组件 · 手写标题/ }).click()
-    await expect(clock).toContainText('00:03.20 /')
     await expect(dialog.getByText('当前片段 · 第 3 段 · 没有原声')).toBeVisible()
+    await expectStoppedAt(clock, 4_700)
 
     await film.getByRole('button', { name: /^选中：第 2 段/ }).click()
-    await expect(clock).toContainText('00:01.50 /')
-    // 点段会把这一段播一遍：先暂停，再看方向键挪播放头（→ 0.1 秒、⇧→ 1 秒）。
-    // 读数是播放器按帧报的时刻，与播放头可差一帧（30 帧约 34 毫秒）
-    await dialog.getByRole('button', { name: '暂停' }).click()
-    await expect(dialog.getByRole('button', { name: '播放' })).toBeVisible()
+    await expectStoppedAt(clock, 3_200)
+    // 方向键挪播放头：→ 0.1 秒、⇧→ 1 秒。读数是播放器按帧报的时刻，与播放头可差一帧
     const pausedAt = await settledClockMs(clock)
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('Shift+ArrowRight')

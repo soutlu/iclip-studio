@@ -22,7 +22,7 @@ export const openStoryboardShot = async (panel: Locator, index: number) => {
 
 /**
  * 在页面里用 Canvas 画一张 PNG 当本地上传文件，默认 600×800（上传前会校验短边至少 300）。
- * fill 是底色；给 label 时在中间画一块深色标签，截图里认得出这是测试图。
+ * fill 是底色；给 label 时在中间画一块深色标签，一眼认得出这是测试图。
  */
 export const canvasPng = async (
   page: Page,
