@@ -1,0 +1,32 @@
+import type { SubtitleSentence } from '@/shared/api/generated/types.gen'
+
+// 编辑操作读取、但不写进草稿的素材事实。时间都是整数毫秒，素材时间从该文件的 0 起算。
+
+export type { SubtitleSentence }
+
+export type SourceSubtitle = { subtitleJobId: string; sentences: SubtitleSentence[] }
+
+export type SourceMedia = {
+  durationMs: number
+  width: number
+  height: number
+  /** 这条成片的字幕记录；还没有识别结果时为 null，此时不知道口播在哪 */
+  subtitle: SourceSubtitle | null
+}
+
+/** 音乐文件里的拍点；strong 由调用方按拍点强度判定 */
+export type MusicBeat = { timeMs: number; strong: boolean }
+
+export type MusicMedia = { durationMs: number; beats: MusicBeat[] }
+
+/** 组件目录里一个转场的接法：按原定时长播放，切点在转场里 `cutAt`（占时长的比例）处 */
+export type TransitionSpec = { cutAt: number; durationMs: number }
+
+export type EditContext = {
+  /** 按成片的 sourceJobId */
+  sources: Record<string, SourceMedia>
+  /** 按音频记录的 jobId */
+  music: Record<string, MusicMedia>
+  /** 按转场组件名；目录里没有的转场不做位置检查（合成时照样会被拒） */
+  transitions: Record<string, TransitionSpec>
+}

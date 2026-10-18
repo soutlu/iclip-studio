@@ -15,7 +15,12 @@ import { seedMockFilm } from './film'
 import { backgroundShowcase, multipleBackgroundShowcase } from './background-showcase'
 import { toolShowcase } from './tool-showcase'
 import { markMockAwaitingApproval, markMockJustFinished, markMockShowcase } from './transcript'
-import { seedMockReplicaWorkspace, seedMockWorkspace } from './workspace'
+import {
+  seedMockMusic,
+  seedMockReplicaWorkspace,
+  seedMockSubtitles,
+  seedMockWorkspace,
+} from './workspace'
 import { seedSidebarHistory } from './sidebar-history'
 
 const DEMO_CONVERSATIONS = [
@@ -60,6 +65,8 @@ if (unseen !== undefined) {
 const withShots = seeded[0]
 if (withShots !== undefined) {
   seedMockWorkspace(withShots.id, { httpFrames: true })
+  seedMockMusic(withShots.id)
+  seedMockSubtitles(withShots.id)
   withShots.activity = { ...withShots.activity, videoGeneration: 'running' }
 }
 

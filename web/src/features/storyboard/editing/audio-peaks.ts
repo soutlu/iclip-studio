@@ -21,3 +21,10 @@ export const peakCollector = () => {
     },
   }
 }
+
+export const audioBufferPeaks = (buffer: AudioBuffer): AudioPeaks => {
+  const collector = peakCollector()
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1)
+    collector.add(buffer.getChannelData(channel), 0, buffer.sampleRate)
+  return collector.result()
+}

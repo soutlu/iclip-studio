@@ -3,6 +3,7 @@
 import { http, HttpResponse } from 'msw'
 import type {
   ImageGenerationIn,
+  MusicIn,
   SubtitleSentence,
   VideoComposeIn,
   VideoEditIn,
@@ -14,7 +15,8 @@ import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { VIDEO_MODELS } from '../video-models'
-import { isMockVideoUpload } from './uploads'
+import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
+import { isMockVideoUpload, onMockUploadConfirmed } from './uploads'
 
 /** 本地 data URL 帧，避免网络依赖。 */
 const FRAME_A =
@@ -213,8 +215,8 @@ type MockJob = {
   kind?: 'video' | 'image' | 'subtitle' | 'audio'
   /** 字幕记录完成后的逐句结果；别的记录没有。 */
   sentences?: SubtitleSentence[]
-  /** 省略即 generate；合成是 compose。 */
-  operation?: 'generate' | 'compose'
+  /** 省略即 generate；合成是 compose，上传的音乐是 upload。 */
+  operation?: 'generate' | 'compose' | 'upload'
   outputUrl?: string
   prompt: string
   request?: Record<string, unknown>
@@ -711,6 +713,77 @@ export const resetMockWorkspace = () => {
   generations.clear()
 }
 
+const addRecord = (conversationId: string, record: MockRecord) => {
+  generations.set(conversationId, [...(generations.get(conversationId) ?? []), record])
+  return record
+}
+
+// 挂到对话上的音乐上传，确认时记一条上传的音频记录（id 就是 uploadId）；后端不量上传的时长。
+onMockUploadConfirmed(({ uploadId, url, contentType, conversationId }) => {
+  if (conversationId === null || !contentType.startsWith('audio/')) return
+  if (findJob(conversationId, uploadId) !== undefined) return
+  addRecord(
+    conversationId,
+    job({
+      createdAt: new Date().toISOString(),
+      id: uploadId,
+      kind: 'audio',
+      operation: 'upload',
+      outputUrl: url,
+      prompt: '',
+      status: 'completed',
+    }),
+  )
+})
+
+/** 这段对话的音乐：一首生成的（记了时长），一首上传的（没记时长，要前端量）。 */
+export const seedMockMusic = (conversationId: string) => {
+  const generated = addRecord(
+    conversationId,
+    job({
+      createdAt: '2026-09-01T12:00:00Z',
+      durationMs: MOCK_MUSIC_SECONDS * 1000,
+      id: crypto.randomUUID(),
+      kind: 'audio',
+      outputUrl: MOCK_MUSIC_URL,
+      prompt: '轻快原声吉他，适合秋季穿搭',
+      request: { model: 'qwen-audio-3.1-tts-next', prompt: '轻快原声吉他，适合秋季穿搭' },
+      status: 'completed',
+    }),
+  )
+  const uploaded = addRecord(
+    conversationId,
+    job({
+      createdAt: '2026-09-01T12:05:00Z',
+      id: crypto.randomUUID(),
+      kind: 'audio',
+      operation: 'upload',
+      outputUrl: MOCK_MUSIC_URL,
+      prompt: '',
+      status: 'completed',
+    }),
+  )
+  return { generated, uploaded }
+}
+
+/** 演示对话第 2 组那条竖版成片的字幕记录（识别完成，两句；旧格式没有逐词时间） */
+export const seedMockSubtitles = (conversationId: string) =>
+  addRecord(
+    conversationId,
+    job({
+      createdAt: '2026-09-01T12:10:00Z',
+      id: crypto.randomUUID(),
+      kind: 'subtitle',
+      prompt: '',
+      sentences: [
+        { startMs: 300, endMs: 2_000, speaker: null, text: '夜色里，城市慢慢亮起来' },
+        { startMs: 2_400, endMs: 5_200, speaker: null, text: '车流划出一道道光' },
+      ],
+      sourceJobId: '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d',
+      status: 'completed',
+    }),
+  )
+
 export const workspaceHandlers = [
   http.get('*/mock-frames/:name.png', ({ params }) => {
     const png = FRAME_PNGS[String(params['name'])]
@@ -979,6 +1052,26 @@ export const workspaceHandlers = [
         const length = source.durationMs ?? (source === base ? VIDEO_MS : EDITED_MS)
         return total + Math.max(0, (end === null ? length : end * 1000) - start * 1000)
       }, 0),
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
+  http.post('*/api/generations/music', async ({ request }) => {
+    const body = (await request.json()) as MusicIn
+    const created = acceptGeneration({
+      kind: 'audio',
+      prompt: body.prompt,
+      request: {
+        model: 'qwen-audio-3.1-tts-next',
+        prompt: body.prompt,
+        format: 'wav',
+        sampleRate: 48_000,
+        channels: 2,
+      },
+      conversationId: body.conversationId,
+      metadata: body.metadata ?? null,
+      outputUrl: MOCK_MUSIC_URL,
+      durationMs: MOCK_MUSIC_SECONDS * 1000,
     })
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
