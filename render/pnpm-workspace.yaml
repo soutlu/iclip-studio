@@ -1,0 +1,23 @@
+# pnpm 工作区设置；单包项目也须声明 packages。
+
+packages:
+  - .
+
+allowBuilds:
+  # 平台二进制由可选依赖提供，不需要安装脚本。
+  esbuild: false
+  # puppeteer 的安装脚本会下载 Chrome；渲染用的 chrome-headless-shell 由镜像固定版本安装。
+  puppeteer: false
+
+# 指定版本豁免 minimumReleaseAge 安装等待期。
+minimumReleaseAgeExclude:
+  - '@hyperframes/core@0.8.168'
+  - '@hyperframes/engine@0.8.168'
+  - '@hyperframes/lint@0.8.168'
+  - '@hyperframes/parsers@0.8.168'
+  - '@hyperframes/player@0.8.168'
+  - '@hyperframes/producer@0.8.168'
+  - '@hyperframes/studio-server@0.8.168'
+  - '@vitest/mocker@5.0.0'
+  - '@vitest/spy@5.0.0'
+  - vitest@5.0.0

@@ -67,6 +67,8 @@ HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只�
 
 整片导出（[conventions §6](../contract/conventions.md#整片导出)）的端点与权限在对话域，经对话域声明的端口由组合根的 [app/whole_film_exports.py](../server/src/iclip/app/whole_film_exports.py) 接到渲染服务：后端只用内网 HTTP 调渲染服务的 `/exports`（`WHOLE_FILM_RENDER_URL`，不鉴权），自己不渲染、不存导出状态，读进度、取消都转问渲染服务并核对导出属于这段对话。交给渲染服务的是草稿原样、各成片的原片地址与音乐地址（本桶对象换成内网地址，上游发布的出片地址原样）、每条成片最新一条已完成的字幕记录，以及签给内网的私有对象上传地址（`iclip/agent/whole-film-exports/`，6 小时有效）；渲染完由渲染服务直接上传进桶，下载地址由后端按公网 endpoint 现签。渲染服务连不上或答复不对时端点答 502，不重试。
 
+渲染服务是仓库里单独的 Node 服务 [render/](../render/package.json)，自带依赖锁与镜像 `iclip-render`，只在内网可达、不鉴权。端点 `POST /exports`、`GET`/`DELETE /exports/{id}` 与 `GET /health`，以及请求、答复与错误码都以 [server.ts](../render/src/server.ts) 为准，后端的端口按同一份形状编写。它按请求里的草稿、素材地址与字幕调前端的合成代码（`web/src/features/storyboard/whole-film/composition/`，打包时编进服务）生成合成页，与编辑器预览是同一份；组件不认识、放的位置不对、草稿不合规矩在受理时就答 400，素材主机不在 `RENDER_ALLOWED_MEDIA_HOSTS` 里也是 400。受理后在内存里排队，一次一个、先进先出：先把素材取到本地临时目录，再用 HyperFrames producer 以 30 fps 渲成 MP4，最后按请求给的地址和请求头 PUT 上传，终态保留 1 小时，重启即全部丢失。组件库是镜像构建时按 [web/scripts/hyperframes-registry.lock.json](../web/scripts/hyperframes-registry.lock.json) 同步的那一份，与前端一致；渲染期间只放行素材主机的出网请求，HyperFrames 自己去取的 Google Fonts 等外部资源一律拦下并记日志。日志是逐行 JSON，事件为中文短句。
+
 ## 4. 持久化与迁移
 
 | 数据 | 实现位置 |

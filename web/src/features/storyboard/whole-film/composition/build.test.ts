@@ -15,12 +15,22 @@ const item = (
   duration: null,
   variables: [],
   thumbnail: null,
+  fonts: [],
   ...spec,
 })
 
 const CATALOG: ComponentCatalog = {
   version: '0.8.168',
-  runtime: { hyperframes: 'vendor/hf/runtime.js', gsap: 'vendor/gsap/gsap.min.js' },
+  runtime: {
+    hyperframes: 'vendor/hf/runtime.js',
+    gsap: 'vendor/gsap/gsap.min.js',
+    cjkFont: 'vendor/fonts/noto-sans-sc.css',
+  },
+  fonts: {
+    Inter: 'vendor/fonts/families/inter.css',
+    Anton: 'vendor/fonts/families/anton.css',
+    'DM Sans': 'vendor/fonts/families/dm-sans.css',
+  },
   categories: [],
   excluded: [{ name: 'showreel', title: '转场合集', reason: '转场合集' }],
   items: [
@@ -28,6 +38,7 @@ const CATALOG: ComponentCatalog = {
       name: 'default-caption',
       placement: 'caption',
       src: 'compositions/iclip/default-caption.html',
+      fonts: ['Anton'],
     }),
     item({
       name: 'logo-intro',
@@ -45,7 +56,9 @@ const CATALOG: ComponentCatalog = {
       name: 'lower-third',
       placement: 'overlay',
       variables: [{ id: 'title', type: 'string', label: '标题', default: '标题' }],
+      fonts: ['Inter'],
     }),
+    item({ name: 'stat-card', placement: 'overlay', fonts: ['DM Sans', 'Inter'] }),
     item({
       name: 'scribble',
       placement: 'transition',
@@ -71,8 +84,8 @@ const CATALOG: ComponentCatalog = {
 
 const MEDIA: CompositionMedia = {
   videos: {
-    'job-a': { url: 'https://oss.example.com/a.mp4?sig=1&x=2', width: 720, height: 1280 },
-    'job-b': { url: 'https://oss.example.com/b.mp4', width: 1280, height: 720 },
+    'job-a': { url: 'https://oss.example.com/a.mp4?sig=1&x=2' },
+    'job-b': { url: 'https://oss.example.com/b.mp4' },
   },
   music: { url: 'https://oss.example.com/music.mp3' },
   subtitles: {
@@ -416,6 +429,53 @@ describe('buildComposition', () => {
       rest = rest.replaceAll(url, '')
     }
     expect(rest).not.toMatch(/https?:\/\//)
+  })
+
+  it('字体：页面默认用 Noto Sans SC，并引用用到的组件的网页字体 CSS，没用到的不引用', () => {
+    const doc = parse(
+      build({
+        overlays: [
+          { id: 'o1', component: 'lower-third', start: 0, duration: 1000, variables: {} },
+          { id: 'o2', component: 'stat-card', start: 1000, duration: 1000, variables: {} },
+        ],
+      }).html,
+    )
+    const links = [...doc.querySelectorAll('head link[rel="stylesheet"]')].map((node) =>
+      node.getAttribute('href'),
+    )
+    // 字幕组件 default-caption 也在页面上（有字幕），它的 Anton 一并引用；按字体名排序、去重。
+    expect(links).toEqual([
+      'vendor/fonts/noto-sans-sc.css',
+      'vendor/fonts/families/anton.css',
+      'vendor/fonts/families/dm-sans.css',
+      'vendor/fonts/families/inter.css',
+    ])
+    expect(doc.querySelector('style')?.textContent).toMatch(
+      /html,body\{[^}]*font-family:'Noto Sans SC',sans-serif/,
+    )
+
+    const silent = buildComposition({
+      draft: draft(),
+      media: { ...MEDIA, subtitles: {} },
+      catalog: CATALOG,
+    })
+    const silentLinks = [...parse(silent.html).querySelectorAll('link')].map((node) =>
+      node.getAttribute('href'),
+    )
+    expect(silentLinks).toEqual(['vendor/fonts/noto-sans-sc.css'])
+  })
+
+  it('组件目录给组件列了字体却没有对应的 CSS 时报错', () => {
+    const broken: ComponentCatalog = { ...CATALOG, fonts: {} }
+    expect(() =>
+      buildComposition({
+        draft: draft({
+          overlays: [{ id: 'o', component: 'lower-third', start: 0, duration: 500, variables: {} }],
+        }),
+        media: { ...MEDIA, subtitles: {} },
+        catalog: broken,
+      }),
+    ).toThrow('组件目录缺少字体「Inter」的 CSS')
   })
 
   it('页面里的 id 与子合成 id 各不相同，与草稿里的 id 无关', () => {

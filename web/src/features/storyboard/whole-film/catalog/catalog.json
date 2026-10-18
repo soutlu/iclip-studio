@@ -2,7 +2,29 @@
   "version": "0.8.168",
   "runtime": {
     "hyperframes": "vendor/hyperframes/hyperframe.runtime.iife.js",
-    "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js"
+    "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js",
+    "cjkFont": "vendor/fonts/noto-sans-sc.css"
+  },
+  "fonts": {
+    "Anton": "vendor/fonts/families/anton.css",
+    "Apple Color Emoji": "vendor/fonts/families/apple-color-emoji.css",
+    "Big Shoulders Display": "vendor/fonts/families/big-shoulders-display.css",
+    "Caveat": "vendor/fonts/families/caveat.css",
+    "ChatUI": "vendor/fonts/families/chatui.css",
+    "ClaudeSans": "vendor/fonts/families/claudesans.css",
+    "ClaudeSerif": "vendor/fonts/families/claudeserif.css",
+    "Courier Prime": "vendor/fonts/families/courier-prime.css",
+    "DM Sans": "vendor/fonts/families/dm-sans.css",
+    "Figtree": "vendor/fonts/families/figtree.css",
+    "Geist": "vendor/fonts/families/geist.css",
+    "Inter": "vendor/fonts/families/inter.css",
+    "Libre Baskerville": "vendor/fonts/families/libre-baskerville.css",
+    "Libre Franklin": "vendor/fonts/families/libre-franklin.css",
+    "Montserrat": "vendor/fonts/families/montserrat.css",
+    "NotificationUI": "vendor/fonts/families/notificationui.css",
+    "Permanent Marker": "vendor/fonts/families/permanent-marker.css",
+    "Roboto Flex": "vendor/fonts/families/roboto-flex.css",
+    "Roboto Flex Variable": "vendor/fonts/families/roboto-flex-variable.css"
   },
   "categories": [
     { "id": "captions", "label": "字幕" },
@@ -27,7 +49,8 @@
       "size": null,
       "duration": null,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "default-caption.webp",
+      "fonts": []
     },
     {
       "name": "caption-highlight",
@@ -40,7 +63,8 @@
       "size": null,
       "duration": null,
       "variables": [],
-      "thumbnail": "caption-highlight.webp"
+      "thumbnail": "caption-highlight.webp",
+      "fonts": ["Montserrat"]
     },
     {
       "name": "caption-texture",
@@ -53,7 +77,8 @@
       "size": null,
       "duration": null,
       "variables": [{ "id": "texture", "type": "string", "label": "纹理", "default": "lava" }],
-      "thumbnail": "caption-texture.webp"
+      "thumbnail": "caption-texture.webp",
+      "fonts": ["Anton"]
     },
     {
       "name": "code-3d-extrude",
@@ -66,7 +91,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "code-3d-extrude.webp"
+      "thumbnail": "code-3d-extrude.webp",
+      "fonts": []
     },
     {
       "name": "code-diff",
@@ -79,7 +105,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "code-diff.webp"
+      "thumbnail": "code-diff.webp",
+      "fonts": []
     },
     {
       "name": "code-highlight",
@@ -92,7 +119,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "code-highlight.webp"
+      "thumbnail": "code-highlight.webp",
+      "fonts": []
     },
     {
       "name": "code-morph",
@@ -105,7 +133,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "code-morph.webp"
+      "thumbnail": "code-morph.webp",
+      "fonts": []
     },
     {
       "name": "code-particle-assemble",
@@ -118,7 +147,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "code-particle-assemble.webp"
+      "thumbnail": "code-particle-assemble.webp",
+      "fonts": []
     },
     {
       "name": "code-scroll",
@@ -131,7 +161,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "code-scroll.webp"
+      "thumbnail": "code-scroll.webp",
+      "fonts": []
     },
     {
       "name": "code-shader-dissolve",
@@ -144,7 +175,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "code-shader-dissolve.webp"
+      "thumbnail": "code-shader-dissolve.webp",
+      "fonts": []
     },
     {
       "name": "code-typing",
@@ -157,7 +189,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "code-typing.webp"
+      "thumbnail": "code-typing.webp",
+      "fonts": []
     },
     {
       "name": "cosmic-orb",
@@ -239,7 +272,8 @@
         { "id": "pulseEnvelope", "type": "string", "label": "节拍强度序列", "default": "" },
         { "id": "backdrop", "type": "color", "label": "背景底色", "default": "#04040a" }
       ],
-      "thumbnail": null
+      "thumbnail": "cosmic-orb.webp",
+      "fonts": []
     },
     {
       "name": "gallery-tunnel",
@@ -318,7 +352,8 @@
         },
         { "id": "backdrop", "type": "color", "label": "背景与雾色", "default": "#000000" }
       ],
-      "thumbnail": null
+      "thumbnail": "gallery-tunnel.webp",
+      "fonts": []
     },
     {
       "name": "halftone-field",
@@ -383,7 +418,8 @@
         { "id": "background", "type": "color", "label": "背景", "default": "#000000" },
         { "id": "quantize", "type": "boolean", "label": "顿挫播放", "default": false }
       ],
-      "thumbnail": null
+      "thumbnail": "halftone-field.webp",
+      "fonts": []
     },
     {
       "name": "ios26-liquid-glass",
@@ -396,7 +432,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "ios26-liquid-glass.webp"
+      "thumbnail": "ios26-liquid-glass.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "macos-tahoe-liquid-glass",
@@ -409,7 +446,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "macos-tahoe-liquid-glass.webp"
+      "thumbnail": "macos-tahoe-liquid-glass.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "rack-focus",
@@ -511,7 +549,8 @@
         },
         { "id": "backdrop", "type": "color", "label": "背景底色", "default": "#05060a" }
       ],
-      "thumbnail": null
+      "thumbnail": "rack-focus.webp",
+      "fonts": []
     },
     {
       "name": "spiral-galaxy",
@@ -574,7 +613,8 @@
         { "id": "core", "type": "color", "label": "核心颜色", "default": "#ffa575" },
         { "id": "rim", "type": "color", "label": "边缘颜色", "default": "#311599" }
       ],
-      "thumbnail": null
+      "thumbnail": "spiral-galaxy.webp",
+      "fonts": []
     },
     {
       "name": "vfx-iphone-device",
@@ -587,7 +627,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "vfx-iphone-device.webp"
+      "thumbnail": "vfx-iphone-device.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "vfx-liquid-background",
@@ -600,7 +641,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "vfx-liquid-background.webp"
+      "thumbnail": "vfx-liquid-background.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "vfx-liquid-glass",
@@ -613,7 +655,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 20,
       "variables": [],
-      "thumbnail": "vfx-liquid-glass.webp"
+      "thumbnail": "vfx-liquid-glass.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "vfx-magnetic",
@@ -626,7 +669,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "vfx-magnetic.webp"
+      "thumbnail": "vfx-magnetic.webp",
+      "fonts": []
     },
     {
       "name": "vfx-portal",
@@ -639,20 +683,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": "vfx-portal.webp"
-    },
-    {
-      "name": "vfx-shatter",
-      "kind": "block",
-      "title": "玻璃碎裂",
-      "description": "画面像玻璃一样碎裂散开",
-      "category": "vfx",
-      "placement": "overlay",
-      "src": "compositions/vfx-shatter.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 12,
-      "variables": [],
-      "thumbnail": "vfx-shatter.webp"
+      "thumbnail": "vfx-portal.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "vfx-text-cursor",
@@ -665,20 +697,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": "vfx-text-cursor.webp"
-    },
-    {
-      "name": "filmed-screen",
-      "kind": "component",
-      "title": "翻拍屏幕",
-      "description": "画面像用相机拍屏幕，带景深和像素颗粒",
-      "category": "vfx",
-      "placement": "overlay",
-      "src": "compositions/components/filmed-screen.html",
-      "size": null,
-      "duration": null,
-      "variables": [],
-      "thumbnail": "filmed-screen.webp"
+      "thumbnail": "vfx-text-cursor.webp",
+      "fonts": ["Big Shoulders Display", "Inter"]
     },
     {
       "name": "editorial-flash-overlay",
@@ -692,6 +712,7 @@
       "duration": 4,
       "variables": [],
       "thumbnail": "editorial-flash-overlay.webp",
+      "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.59 }
     },
     {
@@ -705,7 +726,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 2.2,
       "variables": [],
-      "thumbnail": null,
+      "thumbnail": "hw-scribble-transition.webp",
+      "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.5 }
     },
     {
@@ -720,6 +742,7 @@
       "duration": 4,
       "variables": [],
       "thumbnail": "organic-light-leak-overlay.webp",
+      "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.32 }
     },
     {
@@ -765,7 +788,8 @@
           ]
         }
       ],
-      "thumbnail": null,
+      "thumbnail": "fade-through.webp",
+      "fonts": [],
       "transition": {
         "kind": "layers",
         "cutAt": 0.5,
@@ -785,6 +809,7 @@
       "duration": 1.2,
       "variables": [],
       "thumbnail": "grid-pixelate-wipe.webp",
+      "fonts": [],
       "transition": { "kind": "overlay", "cutAt": 0.5 }
     },
     {
@@ -798,7 +823,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "cinemagraph.webp",
+      "fonts": []
     },
     {
       "name": "gooey-split",
@@ -811,7 +837,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.7,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "gooey-split.webp",
+      "fonts": []
     },
     {
       "name": "camera-shake",
@@ -861,7 +888,8 @@
         },
         { "id": "shakeRotation", "type": "boolean", "label": "包含旋转", "default": true }
       ],
-      "thumbnail": null
+      "thumbnail": "camera-shake.webp",
+      "fonts": []
     },
     {
       "name": "focus-swap",
@@ -904,7 +932,8 @@
           "step": 0.05
         }
       ],
-      "thumbnail": null
+      "thumbnail": "focus-swap.webp",
+      "fonts": []
     },
     {
       "name": "grain-field",
@@ -939,7 +968,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "grain-field.webp",
+      "fonts": []
     },
     {
       "name": "hw-boil",
@@ -952,20 +982,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
-    },
-    {
-      "name": "motion-blur",
-      "kind": "component",
-      "title": "运动模糊",
-      "description": "为移动、缩放和旋转加上真实拖影",
-      "category": "effects",
-      "placement": "overlay",
-      "src": "compositions/components/motion-blur.html",
-      "size": null,
-      "duration": 6,
-      "variables": [],
-      "thumbnail": "motion-blur.webp"
+      "thumbnail": "hw-boil.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "shutter-slam",
@@ -978,7 +996,8 @@
       "size": null,
       "duration": null,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "shutter-slam.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "soft-blob-touch",
@@ -1054,7 +1073,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "soft-blob-touch.webp",
+      "fonts": []
     },
     {
       "name": "svg-mask-reveal",
@@ -1089,7 +1109,8 @@
           "unit": "px"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "svg-mask-reveal.webp",
+      "fonts": []
     },
     {
       "name": "yt-camera-move",
@@ -1102,20 +1123,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
-    },
-    {
-      "name": "caption-blend-difference",
-      "kind": "component",
-      "title": "反色字幕",
-      "description": "文字随背景明暗自动黑白反色",
-      "category": "text-effects",
-      "placement": "overlay",
-      "src": "compositions/components/caption-blend-difference.html",
-      "size": null,
-      "duration": null,
-      "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-camera-move.webp",
+      "fonts": []
     },
     {
       "name": "morph-text",
@@ -1128,7 +1137,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "morph-text.webp",
+      "fonts": ["Figtree"]
     },
     {
       "name": "camcorder-hud",
@@ -1141,7 +1151,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "camcorder-hud.webp"
+      "thumbnail": "camcorder-hud.webp",
+      "fonts": []
     },
     {
       "name": "freeze-frame-dressing",
@@ -1154,7 +1165,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": "freeze-frame-dressing.webp"
+      "thumbnail": "freeze-frame-dressing.webp",
+      "fonts": []
     },
     {
       "name": "hw-path-text",
@@ -1167,7 +1179,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-path-text.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "hw-pipeline",
@@ -1180,7 +1193,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-pipeline.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "hw-text-cloud",
@@ -1193,7 +1207,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-text-cloud.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "hw-title",
@@ -1206,7 +1221,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-title.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "hw-write-title",
@@ -1219,7 +1235,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-write-title.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "instagram-follow",
@@ -1232,7 +1249,8 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 4.5,
       "variables": [],
-      "thumbnail": "instagram-follow.webp"
+      "thumbnail": "instagram-follow.webp",
+      "fonts": ["DM Sans"]
     },
     {
       "name": "lt-accent-underline",
@@ -1245,7 +1263,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-accent-underline.webp",
+      "fonts": []
     },
     {
       "name": "lt-bold-block",
@@ -1258,7 +1277,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-bold-block.webp",
+      "fonts": []
     },
     {
       "name": "lt-clean-bar",
@@ -1271,7 +1291,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-clean-bar.webp",
+      "fonts": []
     },
     {
       "name": "lt-color-block",
@@ -1284,7 +1305,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-color-block.webp",
+      "fonts": []
     },
     {
       "name": "lt-dark-card",
@@ -1297,7 +1319,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-dark-card.webp",
+      "fonts": []
     },
     {
       "name": "lt-kicker-name",
@@ -1310,7 +1333,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-kicker-name.webp",
+      "fonts": []
     },
     {
       "name": "lt-mask-reveal",
@@ -1323,7 +1347,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-mask-reveal.webp",
+      "fonts": []
     },
     {
       "name": "lt-side-rule",
@@ -1336,7 +1361,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-side-rule.webp",
+      "fonts": []
     },
     {
       "name": "lt-soft-pill",
@@ -1349,7 +1375,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-soft-pill.webp",
+      "fonts": []
     },
     {
       "name": "lt-stack-bars",
@@ -1362,7 +1389,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "lt-stack-bars.webp",
+      "fonts": []
     },
     {
       "name": "macos-notification",
@@ -1375,7 +1403,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "macos-notification.webp"
+      "thumbnail": "macos-notification.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "news-ticker",
@@ -1388,7 +1417,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "news-ticker.webp",
+      "fonts": []
     },
     {
       "name": "reddit-post",
@@ -1401,7 +1431,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "reddit-post.webp"
+      "thumbnail": "reddit-post.webp",
+      "fonts": ["DM Sans"]
     },
     {
       "name": "snow",
@@ -1435,7 +1466,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "snow.webp",
+      "fonts": []
     },
     {
       "name": "spotify-card",
@@ -1448,7 +1480,8 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "spotify-card.webp"
+      "thumbnail": "spotify-card.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "starfield",
@@ -1493,7 +1526,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "starfield.webp",
+      "fonts": []
     },
     {
       "name": "thread-message-stack",
@@ -1506,7 +1540,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "thread-message-stack.webp",
+      "fonts": []
     },
     {
       "name": "tiktok-follow",
@@ -1519,7 +1554,8 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 4.5,
       "variables": [],
-      "thumbnail": "tiktok-follow.webp"
+      "thumbnail": "tiktok-follow.webp",
+      "fonts": ["DM Sans"]
     },
     {
       "name": "x-post",
@@ -1532,7 +1568,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "x-post.webp"
+      "thumbnail": "x-post.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "yt-comment-card",
@@ -1545,7 +1582,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-comment-card.webp",
+      "fonts": []
     },
     {
       "name": "yt-lower-third",
@@ -1558,7 +1596,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4.5,
       "variables": [],
-      "thumbnail": "yt-lower-third.webp"
+      "thumbnail": "yt-lower-third.webp",
+      "fonts": ["DM Sans"]
     },
     {
       "name": "hw-arrow",
@@ -1571,7 +1610,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-arrow.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "hw-box-label",
@@ -1584,7 +1624,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-box-label.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "hw-callout-circle",
@@ -1597,7 +1638,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-callout-circle.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "light-sweep-pass",
@@ -1663,7 +1705,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "light-sweep-pass.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "native-notification-pop",
@@ -1722,7 +1765,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "native-notification-pop.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "yt-circle-pointer",
@@ -1735,7 +1779,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-circle-pointer.webp",
+      "fonts": []
     },
     {
       "name": "yt-feather-highlight",
@@ -1748,7 +1793,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-feather-highlight.webp",
+      "fonts": []
     },
     {
       "name": "yt-screen-warp",
@@ -1761,7 +1807,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-screen-warp.webp",
+      "fonts": []
     },
     {
       "name": "bar-chart-race",
@@ -1819,7 +1866,8 @@
         },
         { "id": "accent", "type": "color", "label": "领先项强调色", "default": "#c8452d" }
       ],
-      "thumbnail": null
+      "thumbnail": "bar-chart-race.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "data-chart",
@@ -1832,7 +1880,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 15,
       "variables": [],
-      "thumbnail": "data-chart.webp"
+      "thumbnail": "data-chart.webp",
+      "fonts": ["Libre Baskerville", "Libre Franklin"]
     },
     {
       "name": "mk-line-graph",
@@ -1845,7 +1894,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "mk-line-graph.webp",
+      "fonts": []
     },
     {
       "name": "north-korea-locked-down",
@@ -1858,7 +1908,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "north-korea-locked-down.webp"
+      "thumbnail": "north-korea-locked-down.webp",
+      "fonts": []
     },
     {
       "name": "nyc-paris-flight",
@@ -1871,7 +1922,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "nyc-paris-flight.webp"
+      "thumbnail": "nyc-paris-flight.webp",
+      "fonts": []
     },
     {
       "name": "oscilloscope-trace",
@@ -1939,7 +1991,8 @@
         },
         { "id": "dataSeries", "type": "string", "label": "自定义数据", "default": "" }
       ],
-      "thumbnail": null
+      "thumbnail": "oscilloscope-trace.webp",
+      "fonts": []
     },
     {
       "name": "spain-map",
@@ -1952,7 +2005,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "spain-map.webp"
+      "thumbnail": "spain-map.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "us-map",
@@ -1965,7 +2019,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "us-map.webp"
+      "thumbnail": "us-map.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "us-map-bubble",
@@ -1978,7 +2033,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "us-map-bubble.webp"
+      "thumbnail": "us-map-bubble.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "us-map-flow",
@@ -1991,7 +2047,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "us-map-flow.webp"
+      "thumbnail": "us-map-flow.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "us-map-hex",
@@ -2004,7 +2061,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": "us-map-hex.webp"
+      "thumbnail": "us-map-hex.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "week-in-merges",
@@ -2040,7 +2098,8 @@
         },
         { "id": "overflow", "type": "string", "label": "超出说明", "default": "" }
       ],
-      "thumbnail": null
+      "thumbnail": "week-in-merges.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "world-map",
@@ -2053,7 +2112,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 14,
       "variables": [],
-      "thumbnail": "world-map.webp"
+      "thumbnail": "world-map.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "chart-story",
@@ -2110,7 +2170,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "chart-story.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "conic-progress-ring",
@@ -2145,7 +2206,8 @@
         },
         { "id": "label", "type": "string", "label": "中心文字", "default": "100" }
       ],
-      "thumbnail": null
+      "thumbnail": "conic-progress-ring.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "decline-chart",
@@ -2178,7 +2240,8 @@
           "step": 1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "decline-chart.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "logo-wall",
@@ -2220,7 +2283,8 @@
           "unit": "ms"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "logo-wall.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "star-rating-fill",
@@ -2262,7 +2326,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "star-rating-fill.webp",
+      "fonts": []
     },
     {
       "name": "ai-answer-rank",
@@ -2296,7 +2361,8 @@
         { "id": "ink", "type": "color", "label": "前景色", "default": "#18181b" },
         { "id": "ground", "type": "color", "label": "底色", "default": "#fcfcfb" }
       ],
-      "thumbnail": null
+      "thumbnail": "ai-answer-rank.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "ai-chat-reveal",
@@ -2345,7 +2411,8 @@
         { "id": "ecFooter", "type": "string", "label": "结尾网址", "default": "结尾网址" },
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
       ],
-      "thumbnail": "ai-chat-reveal.webp"
+      "thumbnail": "ai-chat-reveal.webp",
+      "fonts": []
     },
     {
       "name": "app-showcase",
@@ -2358,7 +2425,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5.5,
       "variables": [],
-      "thumbnail": "app-showcase.webp"
+      "thumbnail": "app-showcase.webp",
+      "fonts": ["DM Sans"]
     },
     {
       "name": "apple-money-count",
@@ -2371,7 +2439,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 5,
       "variables": [],
-      "thumbnail": "apple-money-count.webp"
+      "thumbnail": "apple-money-count.webp",
+      "fonts": []
     },
     {
       "name": "blue-sweater-intro-video",
@@ -2384,7 +2453,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "blue-sweater-intro-video.webp"
+      "thumbnail": "blue-sweater-intro-video.webp",
+      "fonts": []
     },
     {
       "name": "camera-dolly-zoom",
@@ -2440,7 +2510,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "camera-dolly-zoom.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "chatgpt-exchange",
@@ -2453,7 +2524,8 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 14.9,
       "variables": [],
-      "thumbnail": "chatgpt-exchange.webp"
+      "thumbnail": "chatgpt-exchange.webp",
+      "fonts": ["Apple Color Emoji", "ChatUI"]
     },
     {
       "name": "claude-exchange",
@@ -2466,7 +2538,8 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 21.4,
       "variables": [],
-      "thumbnail": "claude-exchange.webp"
+      "thumbnail": "claude-exchange.webp",
+      "fonts": ["ClaudeSans", "ClaudeSerif"]
     },
     {
       "name": "code-snippet-apple-terminal-pro",
@@ -2479,7 +2552,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 12,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "code-snippet-apple-terminal-pro.webp",
+      "fonts": []
     },
     {
       "name": "code-snippet-dark-2026",
@@ -2492,7 +2566,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 11,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "code-snippet-dark-2026.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "code-snippet-dark-modern",
@@ -2505,33 +2580,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 11,
       "variables": [],
-      "thumbnail": null
-    },
-    {
-      "name": "flowchart",
-      "kind": "block",
-      "title": "流程图",
-      "description": "决策树配便签节点，光标点选并修改文字",
-      "category": "scenes",
-      "placement": "overlay",
-      "src": "compositions/flowchart.html",
-      "size": { "width": 1920, "height": 1080 },
-      "duration": 12,
-      "variables": [],
-      "thumbnail": "flowchart.webp"
-    },
-    {
-      "name": "flowchart-vertical",
-      "kind": "block",
-      "title": "竖版流程图",
-      "description": "竖屏决策树，便签节点依次连线展开",
-      "category": "scenes",
-      "placement": "overlay",
-      "src": "compositions/flowchart-vertical.html",
-      "size": { "width": 1440, "height": 2560 },
-      "duration": 12,
-      "variables": [],
-      "thumbnail": "flowchart-vertical.webp"
+      "thumbnail": "code-snippet-dark-modern.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "hw-frame",
@@ -2544,7 +2594,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-frame.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "logo-outro",
@@ -2557,7 +2608,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": "logo-outro.webp"
+      "thumbnail": "logo-outro.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "lottie-character-walk",
@@ -2578,7 +2630,8 @@
           "default": "稳稳地走进来，再指明方向。"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "lottie-character-walk.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "lt-neon-border",
@@ -2655,7 +2708,8 @@
           "unit": "x"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "lt-neon-border.webp",
+      "fonts": []
     },
     {
       "name": "message-thread-reveal",
@@ -2716,7 +2770,8 @@
         { "id": "ecFeature3", "type": "string", "label": "结尾卖点3", "default": "随时|修改" },
         { "id": "ecCta", "type": "string", "label": "结尾按钮文字", "default": "结尾按钮文字" }
       ],
-      "thumbnail": "message-thread-reveal.webp"
+      "thumbnail": "message-thread-reveal.webp",
+      "fonts": []
     },
     {
       "name": "mk-background",
@@ -2729,7 +2784,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "mk-background.webp",
+      "fonts": []
     },
     {
       "name": "mk-placeholder-grid",
@@ -2742,7 +2798,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "mk-placeholder-grid.webp",
+      "fonts": []
     },
     {
       "name": "mk-progress-stat",
@@ -2755,7 +2812,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "mk-progress-stat.webp",
+      "fonts": []
     },
     {
       "name": "mk-specs-list",
@@ -2768,7 +2826,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "mk-specs-list.webp",
+      "fonts": []
     },
     {
       "name": "notes-reveal",
@@ -2812,7 +2871,8 @@
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" },
         { "id": "brandDomain", "type": "string", "label": "落款网址", "default": "落款网址" }
       ],
-      "thumbnail": "notes-reveal.webp"
+      "thumbnail": "notes-reveal.webp",
+      "fonts": ["Courier Prime", "Permanent Marker"]
     },
     {
       "name": "notification-cascade",
@@ -2842,7 +2902,8 @@
         { "id": "footerText", "type": "string", "label": "结尾网址", "default": "结尾网址" },
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
       ],
-      "thumbnail": "notification-cascade.webp"
+      "thumbnail": "notification-cascade.webp",
+      "fonts": []
     },
     {
       "name": "share-sheet-carousel",
@@ -2909,7 +2970,8 @@
         },
         { "id": "brandLogo", "type": "image", "label": "品牌标志", "default": "" }
       ],
-      "thumbnail": "share-sheet-carousel.webp"
+      "thumbnail": "share-sheet-carousel.webp",
+      "fonts": []
     },
     {
       "name": "slack-notification-ad",
@@ -2922,7 +2984,8 @@
       "size": { "width": 1080, "height": 1920 },
       "duration": 12,
       "variables": [],
-      "thumbnail": "slack-notification-ad.webp"
+      "thumbnail": "slack-notification-ad.webp",
+      "fonts": ["NotificationUI"]
     },
     {
       "name": "split-flap-board",
@@ -2972,7 +3035,8 @@
           "step": 1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "split-flap-board.webp",
+      "fonts": []
     },
     {
       "name": "ui-3d-reveal",
@@ -2985,7 +3049,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 13,
       "variables": [],
-      "thumbnail": "ui-3d-reveal.webp"
+      "thumbnail": "ui-3d-reveal.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "vfx-anamorphic-flare",
@@ -3056,7 +3121,8 @@
         },
         { "id": "backdrop", "type": "color", "label": "背景底色", "default": "#04040a" }
       ],
-      "thumbnail": null
+      "thumbnail": "vfx-anamorphic-flare.webp",
+      "fonts": []
     },
     {
       "name": "vpn-youtube-spot",
@@ -3069,7 +3135,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 7,
       "variables": [],
-      "thumbnail": "vpn-youtube-spot.webp"
+      "thumbnail": "vpn-youtube-spot.webp",
+      "fonts": []
     },
     {
       "name": "yt-lcd-background",
@@ -3082,7 +3149,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 10,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-lcd-background.webp",
+      "fonts": []
     },
     {
       "name": "yt-logo-intro",
@@ -3095,7 +3163,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-logo-intro.webp",
+      "fonts": []
     },
     {
       "name": "yt-prism-title",
@@ -3108,7 +3177,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 6,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-prism-title.webp",
+      "fonts": []
     },
     {
       "name": "yt-vertical-fill",
@@ -3121,7 +3191,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 8,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "yt-vertical-fill.webp",
+      "fonts": []
     },
     {
       "name": "agent-cursor",
@@ -3144,7 +3215,8 @@
         { "id": "targets", "type": "string", "label": "点击位置", "default": "25,47;76,30" },
         { "id": "accent", "type": "color", "label": "强调色", "default": "#0a84ff" }
       ],
-      "thumbnail": null
+      "thumbnail": "agent-cursor.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "ascii-render-pass",
@@ -3202,7 +3274,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "ascii-render-pass.webp",
+      "fonts": []
     },
     {
       "name": "ascii-trail-reveal",
@@ -3238,7 +3311,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "ascii-trail-reveal.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "aurora-drift",
@@ -3273,7 +3347,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "aurora-drift.webp",
+      "fonts": []
     },
     {
       "name": "avatar-cloud",
@@ -3307,7 +3382,8 @@
         },
         { "id": "label", "type": "string", "label": "口碑文字", "default": "口碑文字" }
       ],
-      "thumbnail": null
+      "thumbnail": "avatar-cloud.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "beat-accent",
@@ -3342,7 +3418,8 @@
           "step": 0.1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "beat-accent.webp",
+      "fonts": []
     },
     {
       "name": "beat-pulse-background",
@@ -3383,7 +3460,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "beat-pulse-background.webp",
+      "fonts": []
     },
     {
       "name": "beat-timeline",
@@ -3417,7 +3495,8 @@
         },
         { "id": "labels", "type": "string", "label": "标签列表", "default": "一,二,三,四" }
       ],
-      "thumbnail": null
+      "thumbnail": "beat-timeline.webp",
+      "fonts": []
     },
     {
       "name": "before-after-wipe",
@@ -3475,7 +3554,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "before-after-wipe.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "browser-device-stage",
@@ -3533,7 +3613,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "browser-device-stage.webp",
+      "fonts": []
     },
     {
       "name": "camera-scan-gate",
@@ -3559,7 +3640,8 @@
           "unit": "x"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "camera-scan-gate.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "char-slam-explode",
@@ -3595,7 +3677,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "char-slam-explode.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "chat-message",
@@ -3645,7 +3728,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "chat-message.webp",
+      "fonts": []
     },
     {
       "name": "chat-thread",
@@ -3704,7 +3788,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "chat-thread.webp",
+      "fonts": []
     },
     {
       "name": "code-terminal-run",
@@ -3752,20 +3837,8 @@
           ]
         }
       ],
-      "thumbnail": null
-    },
-    {
-      "name": "colorama-wipe",
-      "kind": "component",
-      "title": "炫彩擦除标题",
-      "description": "彩色模糊光带扫过，显出清晰标题",
-      "category": "scenes",
-      "placement": "overlay",
-      "src": "compositions/components/colorama-wipe.html",
-      "size": null,
-      "duration": null,
-      "variables": [],
-      "thumbnail": null
+      "thumbnail": "code-terminal-run.webp",
+      "fonts": []
     },
     {
       "name": "comparison-split",
@@ -3801,7 +3874,8 @@
         { "id": "labelA", "type": "string", "label": "之前标签", "default": "之前标签" },
         { "id": "labelB", "type": "string", "label": "之后标签", "default": "之后标签" }
       ],
-      "thumbnail": null
+      "thumbnail": "comparison-split.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "constellation-hub",
@@ -3840,7 +3914,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "constellation-hub.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "count-up",
@@ -3881,7 +3956,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "count-up.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cta-close",
@@ -3919,7 +3995,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "cta-close.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cta-lockup",
@@ -3947,7 +4024,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "cta-lockup.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cursor-annotate",
@@ -4013,7 +4091,8 @@
           "unit": "%"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "cursor-annotate.webp",
+      "fonts": []
     },
     {
       "name": "cursor-context-menu",
@@ -4052,7 +4131,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "cursor-context-menu.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cursor-drag-drop",
@@ -4078,7 +4158,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "cursor-drag-drop.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cursor-glyph-trail",
@@ -4138,7 +4219,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "cursor-glyph-trail.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cursor-marquee-select",
@@ -4194,7 +4276,8 @@
         },
         { "id": "pill_label", "type": "string", "label": "胶囊文字", "default": "胶囊文字" }
       ],
-      "thumbnail": null
+      "thumbnail": "cursor-marquee-select.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cursor-text-select",
@@ -4217,7 +4300,8 @@
         { "id": "phrase", "type": "string", "label": "选中文字", "default": "选中文字" },
         { "id": "accent", "type": "color", "label": "强调色", "default": "#0a84ff" }
       ],
-      "thumbnail": null
+      "thumbnail": "cursor-text-select.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "cursor-zoom-follow",
@@ -4302,7 +4386,8 @@
         },
         { "id": "accent", "type": "color", "label": "点击波纹", "default": "#0a84ff" }
       ],
-      "thumbnail": null
+      "thumbnail": "cursor-zoom-follow.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "dart-cursor",
@@ -4399,7 +4484,8 @@
           "step": 0.1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "dart-cursor.webp",
+      "fonts": []
     },
     {
       "name": "device-frame-stage",
@@ -4444,7 +4530,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "device-frame-stage.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "drift-hold",
@@ -4469,7 +4556,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "drift-hold.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "echo-trail",
@@ -4518,20 +4606,8 @@
           ]
         }
       ],
-      "thumbnail": null
-    },
-    {
-      "name": "extended-keyframe",
-      "kind": "component",
-      "title": "缓停入场",
-      "description": "文字快速冲入后慢慢停稳，带运动模糊",
-      "category": "scenes",
-      "placement": "overlay",
-      "src": "compositions/components/extended-keyframe.html",
-      "size": null,
-      "duration": null,
-      "variables": [],
-      "thumbnail": null
+      "thumbnail": "echo-trail.webp",
+      "fonts": []
     },
     {
       "name": "facet-morph",
@@ -4569,7 +4645,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "facet-morph.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "focus-rack",
@@ -4596,7 +4673,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "focus-rack.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "gesture-tap",
@@ -4628,7 +4706,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "gesture-tap.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "gloss-sweep",
@@ -4664,63 +4743,8 @@
           "unit": "deg"
         }
       ],
-      "thumbnail": null
-    },
-    {
-      "name": "grade-split-reveal",
-      "kind": "component",
-      "title": "调色对比",
-      "description": "分界线扫过，对比原片与调色后的效果",
-      "category": "scenes",
-      "placement": "overlay",
-      "src": "compositions/components/grade-split-reveal.html",
-      "size": null,
-      "duration": 6,
-      "variables": [
-        {
-          "id": "look",
-          "type": "enum",
-          "label": "调色风格",
-          "default": "warm-cinematic",
-          "options": [
-            { "value": "warm-cinematic", "label": "暖调电影感" },
-            { "value": "cool-teal", "label": "冷调青色" },
-            { "value": "bleach-bypass", "label": "留银效果" }
-          ]
-        },
-        {
-          "id": "split",
-          "type": "number",
-          "label": "分界停留点",
-          "default": 62,
-          "min": 25,
-          "max": 85,
-          "step": 1,
-          "unit": "%"
-        },
-        {
-          "id": "edge",
-          "type": "enum",
-          "label": "分界线",
-          "default": "hairline",
-          "options": [
-            { "value": "hairline", "label": "细线" },
-            { "value": "bold", "label": "加粗" },
-            { "value": "hidden", "label": "隐藏" }
-          ]
-        },
-        {
-          "id": "labels",
-          "type": "enum",
-          "label": "标签列表",
-          "default": "on",
-          "options": [
-            { "value": "on", "label": "显示" },
-            { "value": "off", "label": "隐藏" }
-          ]
-        }
-      ],
-      "thumbnail": null
+      "thumbnail": "gloss-sweep.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "grid-card-assemble",
@@ -4777,7 +4801,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "grid-card-assemble.webp",
+      "fonts": []
     },
     {
       "name": "headline-slam",
@@ -4811,7 +4836,8 @@
         },
         { "id": "shadow", "type": "boolean", "label": "阴影", "default": true }
       ],
-      "thumbnail": null
+      "thumbnail": "headline-slam.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "hw-underline",
@@ -4824,7 +4850,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "hw-underline.webp",
+      "fonts": ["Caveat"]
     },
     {
       "name": "icon-morph-beat",
@@ -4860,7 +4887,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "icon-morph-beat.webp",
+      "fonts": []
     },
     {
       "name": "ink-bleed-reveal",
@@ -4905,7 +4933,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "ink-bleed-reveal.webp",
+      "fonts": []
     },
     {
       "name": "kinetic-center-build",
@@ -4953,7 +4982,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "kinetic-center-build.webp",
+      "fonts": ["Geist"]
     },
     {
       "name": "kinetic-type-swap",
@@ -4993,7 +5023,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "kinetic-type-swap.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "line-swap",
@@ -5041,7 +5072,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "line-swap.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "locked-nucleus-orbit",
@@ -5076,7 +5108,8 @@
           "step": 1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "locked-nucleus-orbit.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "logo-brand-close",
@@ -5127,7 +5160,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "logo-brand-close.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "logo-sting",
@@ -5159,7 +5193,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "logo-sting.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "magnetic-cursor",
@@ -5194,7 +5229,8 @@
           "step": 1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "magnetic-cursor.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "marker-checklist-card",
@@ -5218,7 +5254,8 @@
         { "id": "l3", "type": "string", "label": "第3行名称", "default": "第3行名称" },
         { "id": "v3", "type": "string", "label": "第3行标注", "default": "第3行标注" }
       ],
-      "thumbnail": null
+      "thumbnail": "marker-checklist-card.webp",
+      "fonts": ["Courier Prime", "Permanent Marker"]
     },
     {
       "name": "marker-highlight",
@@ -5277,7 +5314,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "marker-highlight.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "mk-emphasis-type",
@@ -5290,7 +5328,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "mk-emphasis-type.webp",
+      "fonts": []
     },
     {
       "name": "mk-usage-arc",
@@ -5303,7 +5342,8 @@
       "size": { "width": 1920, "height": 1080 },
       "duration": 4,
       "variables": [],
-      "thumbnail": null
+      "thumbnail": "mk-usage-arc.webp",
+      "fonts": []
     },
     {
       "name": "modal-morph",
@@ -5351,7 +5391,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "modal-morph.webp",
+      "fonts": []
     },
     {
       "name": "multi-device-splay",
@@ -5376,7 +5417,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "multi-device-splay.webp",
+      "fonts": []
     },
     {
       "name": "multiplayer-cursors",
@@ -5400,7 +5442,8 @@
         },
         { "id": "labels", "type": "string", "label": "标签列表", "default": "小安,小可,小文,小米" }
       ],
-      "thumbnail": null
+      "thumbnail": "multiplayer-cursors.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "notes-typing",
@@ -5435,7 +5478,8 @@
           "step": 0.1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "notes-typing.webp",
+      "fonts": []
     },
     {
       "name": "notification-pileup",
@@ -5477,7 +5521,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "notification-pileup.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "notification-stack",
@@ -5535,7 +5580,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "notification-stack.webp",
+      "fonts": []
     },
     {
       "name": "offset-path-traveler",
@@ -5548,7 +5594,12 @@
       "size": null,
       "duration": null,
       "variables": [
-        { "id": "path", "type": "string", "label": "路径", "default": "路径" },
+        {
+          "id": "path",
+          "type": "string",
+          "label": "路径",
+          "default": "M -90 390 C 150 490 190 70 430 185 C 650 300 720 105 850 145 C 970 180 1030 85 1090 35"
+        },
         {
           "id": "traveler_label",
           "type": "string",
@@ -5567,7 +5618,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "offset-path-traveler.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "outline-draw",
@@ -5611,7 +5663,8 @@
           "unit": "0.1cqmin"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "outline-draw.webp",
+      "fonts": []
     },
     {
       "name": "oversized-cursor",
@@ -5672,7 +5725,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "oversized-cursor.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "overwhelm-surround",
@@ -5705,7 +5759,8 @@
           "step": 0.1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "overwhelm-surround.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "pan-stations",
@@ -5739,7 +5794,8 @@
           "unit": "s"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "pan-stations.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "particle-image-reveal",
@@ -5796,7 +5852,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "particle-image-reveal.webp",
+      "fonts": []
     },
     {
       "name": "particle-text-dissolve",
@@ -5854,7 +5911,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "particle-text-dissolve.webp",
+      "fonts": []
     },
     {
       "name": "per-word-rise",
@@ -5902,7 +5960,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "per-word-rise.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "physical-exit",
@@ -5939,7 +5998,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "physical-exit.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "press-ripple",
@@ -6017,7 +6077,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "press-ripple.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "pull-back-reveal",
@@ -6044,7 +6105,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "pull-back-reveal.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "pull-to-refresh",
@@ -6078,7 +6140,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "pull-to-refresh.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "push-in",
@@ -6104,7 +6167,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "push-in.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "radial-surround",
@@ -6149,7 +6213,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "radial-surround.webp",
+      "fonts": []
     },
     {
       "name": "scan-band",
@@ -6180,7 +6245,8 @@
           "unit": "deg"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "scan-band.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "scramble-reveal",
@@ -6227,7 +6293,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "scramble-reveal.webp",
+      "fonts": []
     },
     {
       "name": "screen-flow-carousel",
@@ -6274,7 +6341,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "screen-flow-carousel.webp",
+      "fonts": []
     },
     {
       "name": "scroll-camera-story",
@@ -6330,7 +6398,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "scroll-camera-story.webp",
+      "fonts": []
     },
     {
       "name": "scroll-feed",
@@ -6375,7 +6444,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "scroll-feed.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "segmentation-flood",
@@ -6423,7 +6493,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "segmentation-flood.webp",
+      "fonts": []
     },
     {
       "name": "slit-scan-reveal",
@@ -6471,7 +6542,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "slit-scan-reveal.webp",
+      "fonts": []
     },
     {
       "name": "social-proof-card",
@@ -6491,7 +6563,8 @@
         { "id": "f2", "type": "string", "label": "卖点2", "default": "画质|清晰" },
         { "id": "f3", "type": "string", "label": "卖点3", "default": "随时|修改" }
       ],
-      "thumbnail": null
+      "thumbnail": "social-proof-card.webp",
+      "fonts": []
     },
     {
       "name": "split-tilt-cards",
@@ -6531,7 +6604,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "split-tilt-cards.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "spring-pop",
@@ -6564,7 +6638,8 @@
         },
         { "id": "text", "type": "string", "label": "标签", "default": "标签" }
       ],
-      "thumbnail": null
+      "thumbnail": "spring-pop.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "spring-stack-shuffle",
@@ -6610,7 +6685,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "spring-stack-shuffle.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "stagger-cascade",
@@ -6655,7 +6731,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "stagger-cascade.webp",
+      "fonts": []
     },
     {
       "name": "state-chip-rail",
@@ -6708,7 +6785,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "state-chip-rail.webp",
+      "fonts": []
     },
     {
       "name": "sticky-mock-swap",
@@ -6739,54 +6817,8 @@
           ]
         }
       ],
-      "thumbnail": null
-    },
-    {
-      "name": "stitched-text-draw",
-      "kind": "component",
-      "title": "针线绣字",
-      "description": "文字像针线缝制一样逐笔绣出",
-      "category": "scenes",
-      "placement": "overlay",
-      "src": "compositions/components/stitched-text-draw.html",
-      "size": null,
-      "duration": null,
-      "variables": [
-        { "id": "text", "type": "string", "label": "文字", "default": "文字" },
-        {
-          "id": "stitch",
-          "type": "enum",
-          "label": "针脚粗细",
-          "default": "fine",
-          "options": [
-            { "value": "fine", "label": "精细" },
-            { "value": "coarse", "label": "粗糙" }
-          ]
-        },
-        {
-          "id": "accent",
-          "type": "enum",
-          "label": "强调色",
-          "default": "green",
-          "options": [
-            { "value": "green", "label": "绿色" },
-            { "value": "blue", "label": "蓝色" },
-            { "value": "violet", "label": "紫色" }
-          ]
-        },
-        {
-          "id": "exit",
-          "type": "enum",
-          "label": "退场方式",
-          "default": "none",
-          "options": [
-            { "value": "none", "label": "无" },
-            { "value": "fade", "label": "淡入淡出" },
-            { "value": "up", "label": "向上" }
-          ]
-        }
-      ],
-      "thumbnail": null
+      "thumbnail": "sticky-mock-swap.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "stop-motion-cadence",
@@ -6843,7 +6875,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "stop-motion-cadence.webp",
+      "fonts": []
     },
     {
       "name": "store-badge-lockup",
@@ -6878,7 +6911,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "store-badge-lockup.webp",
+      "fonts": []
     },
     {
       "name": "svg-stroke-trace",
@@ -6891,7 +6925,12 @@
       "size": null,
       "duration": null,
       "variables": [
-        { "id": "path", "type": "string", "label": "路径", "default": "路径" },
+        {
+          "id": "path",
+          "type": "string",
+          "label": "路径",
+          "default": "M 92 328 C 178 142 292 138 366 276 C 430 396 500 414 558 262 C 622 94 724 112 786 274 C 836 406 894 376 930 194"
+        },
         {
           "id": "stroke_width",
           "type": "number",
@@ -6924,7 +6963,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "svg-stroke-trace.webp",
+      "fonts": []
     },
     {
       "name": "swipe-rail",
@@ -6964,7 +7004,8 @@
           "default": "卡片编号前缀"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "swipe-rail.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "telemetry-hud",
@@ -7016,7 +7057,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "telemetry-hud.webp",
+      "fonts": []
     },
     {
       "name": "testimonial-card",
@@ -7042,7 +7084,8 @@
           "step": 0.1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "testimonial-card.webp",
+      "fonts": []
     },
     {
       "name": "testimonial-proof-card",
@@ -7083,7 +7126,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "testimonial-proof-card.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "text-shimmer",
@@ -7119,7 +7163,8 @@
           "unit": "s"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "text-shimmer.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "ticker-takeover",
@@ -7151,7 +7196,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "ticker-takeover.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "titlecard-calm",
@@ -7167,7 +7213,8 @@
         { "id": "headline", "type": "string", "label": "标题", "default": "少即是多" },
         { "id": "kicker", "type": "string", "label": "引导小字", "default": "引导小字" }
       ],
-      "thumbnail": null
+      "thumbnail": "titlecard-calm.webp",
+      "fonts": []
     },
     {
       "name": "titlecard-lockup",
@@ -7222,7 +7269,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "titlecard-lockup.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "toggle-flip",
@@ -7257,7 +7305,8 @@
           "unit": "%"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "toggle-flip.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "touch-indicator",
@@ -7309,7 +7358,8 @@
           "unit": "%"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "touch-indicator.webp",
+      "fonts": []
     },
     {
       "name": "tracing-beam",
@@ -7335,7 +7385,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "tracing-beam.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "trust-strip",
@@ -7388,7 +7439,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "trust-strip.webp",
+      "fonts": []
     },
     {
       "name": "typed-prompt",
@@ -7448,7 +7500,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "typed-prompt.webp",
+      "fonts": []
     },
     {
       "name": "ui-focus-zoom",
@@ -7533,7 +7586,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "ui-focus-zoom.webp",
+      "fonts": []
     },
     {
       "name": "variable-axis-type",
@@ -7576,7 +7630,8 @@
           "step": 1
         }
       ],
-      "thumbnail": null
+      "thumbnail": "variable-axis-type.webp",
+      "fonts": ["Roboto Flex"]
     },
     {
       "name": "variable-font-flex",
@@ -7625,7 +7680,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "variable-font-flex.webp",
+      "fonts": ["Roboto Flex Variable"]
     },
     {
       "name": "vector-editor-rig",
@@ -7651,7 +7707,8 @@
         },
         { "id": "pathLabel", "type": "string", "label": "路径名称", "default": "路径名称" }
       ],
-      "thumbnail": null
+      "thumbnail": "vector-editor-rig.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "velocity-throw-snap",
@@ -7691,7 +7748,8 @@
           "default": "卡片编号前缀"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "velocity-throw-snap.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "vox-annotate",
@@ -7751,7 +7809,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "vox-annotate.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "whiteboard-ink",
@@ -7809,7 +7868,8 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "whiteboard-ink.webp",
+      "fonts": ["Inter"]
     },
     {
       "name": "wordmark-tiles",
@@ -7843,7 +7903,8 @@
           "unit": "ms"
         }
       ],
-      "thumbnail": null
+      "thumbnail": "wordmark-tiles.webp",
+      "fonts": []
     },
     {
       "name": "zoom-through-transition",
@@ -7881,25 +7942,18 @@
           ]
         }
       ],
-      "thumbnail": null
+      "thumbnail": "zoom-through-transition.webp",
+      "fonts": ["Inter"]
     }
   ],
   "excluded": [
-    {
-      "name": "aurora",
-      "title": "夜空极光",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "aurora", "title": "夜空极光", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "beat-freeze-cut",
       "title": "节拍定格切换",
       "reason": "自带演示画面，接不到两段视频之间"
     },
-    {
-      "name": "blob",
-      "title": "流体光团",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "blob", "title": "流体光团", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "canopy-part-title",
       "title": "树叶拨开标题",
@@ -8035,11 +8089,7 @@
       "title": "色散放射转场",
       "reason": "着色器转场的演示：前后画面是它自带的演示场景，接不到两段视频之间"
     },
-    {
-      "name": "chrome-orb",
-      "title": "镜面金属球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "chrome-orb", "title": "镜面金属球", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "cinematic-zoom",
       "title": "电影感推镜",
@@ -8050,11 +8100,7 @@
       "title": "翻块标题",
       "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
     },
-    {
-      "name": "color-wheel",
-      "title": "彩虹渐变",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "color-wheel", "title": "彩虹渐变", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "cross-warp-morph",
       "title": "扭曲变形转场",
@@ -8063,7 +8109,7 @@
     {
       "name": "cuboid-carousel",
       "title": "立方体轮播",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
+      "reason": "渲染检查不通过：用到的文件取不到"
     },
     {
       "name": "domain-warp-dissolve",
@@ -8072,41 +8118,27 @@
     },
     { "name": "exploded-stack", "title": "分层拆解", "reason": "依赖的 ES 模块无法换成本地文件" },
     { "name": "extruded-logo", "title": "立体字标", "reason": "依赖的 ES 模块无法换成本地文件" },
-    {
-      "name": "falling-lines",
-      "title": "下落线条",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "falling-lines", "title": "下落线条", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "flash-through-white",
       "title": "白闪转场",
       "reason": "着色器转场的演示：前后画面是它自带的演示场景，接不到两段视频之间"
     },
+    { "name": "flowchart", "title": "流程图", "reason": "渲染检查不通过：渲染失败" },
+    { "name": "flowchart-vertical", "title": "竖版流程图", "reason": "渲染检查不通过：渲染失败" },
     {
       "name": "flowing-gradient",
       "title": "流动渐变",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
+      "reason": "渲染检查不通过：用到的文件取不到"
     },
-    {
-      "name": "fractal-noise",
-      "title": "流云纹理",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "frost",
-      "title": "冰霜球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "fractal-noise", "title": "流云纹理", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "frost", "title": "冰霜球", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "frost-sequence-camera-orbit",
       "title": "冰晶环绕",
       "reason": "组件库源码包里缺少它用到的素材文件"
     },
-    {
-      "name": "gabor-noise",
-      "title": "指纹纹理",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "gabor-noise", "title": "指纹纹理", "reason": "渲染检查不通过：用到的文件取不到" },
     { "name": "glass-hero", "title": "玻璃标题", "reason": "依赖的 ES 模块无法换成本地文件" },
     {
       "name": "glass-shard-title",
@@ -8118,51 +8150,23 @@
       "title": "故障转场",
       "reason": "着色器转场的演示：前后画面是它自带的演示场景，接不到两段视频之间"
     },
-    {
-      "name": "godrays",
-      "title": "丁达尔光束",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "goo",
-      "title": "黏液球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "godrays", "title": "丁达尔光束", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "goo", "title": "黏液球", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "gravitational-lens",
       "title": "引力透镜",
       "reason": "着色器转场的演示：前后画面是它自带的演示场景，接不到两段视频之间"
     },
-    {
-      "name": "heatmap",
-      "title": "热感光球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "heatmap", "title": "热感光球", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "heygen-avatar-promo-card",
       "title": "HeyGen 数字人促销",
       "reason": "组件库源码包里缺少它用到的素材文件"
     },
-    {
-      "name": "hologram",
-      "title": "全息光球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "holographic",
-      "title": "镭射光球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "lens-flare",
-      "title": "镜头光晕",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "light-edge",
-      "title": "霓虹边光",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "hologram", "title": "全息光球", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "holographic", "title": "镭射光球", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "lens-flare", "title": "镜头光晕", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "light-edge", "title": "霓虹边光", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "light-leak",
       "title": "漏光转场",
@@ -8171,69 +8175,33 @@
     {
       "name": "liquid-glass-notification",
       "title": "玻璃通知卡",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
+      "reason": "渲染检查不通过：用到的文件取不到"
     },
     {
       "name": "liquid-glass-widgets",
       "title": "玻璃数据卡",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
+      "reason": "渲染检查不通过：用到的文件取不到"
     },
-    {
-      "name": "liquid-metal",
-      "title": "液态金属",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "liquid-metal", "title": "液态金属", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "lower-third-bild",
       "title": "新闻标题条",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
+      "reason": "渲染检查不通过：用到的文件取不到"
     },
-    {
-      "name": "marble",
-      "title": "大理石纹",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "mesh-gradient",
-      "title": "流动渐变",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "marble", "title": "大理石纹", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "mesh-gradient", "title": "流动渐变", "reason": "渲染检查不通过：用到的文件取不到" },
     { "name": "mk-callout-highlight", "title": "逐词高亮", "reason": "只适配英文" },
     {
       "name": "mk-clone-wall-transition",
       "title": "文字墙转场",
       "reason": "墙面文字写死为 HyperFrames，且要前一段画面的静帧"
     },
-    {
-      "name": "nebula",
-      "title": "星云球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "obsidian",
-      "title": "黑曜石球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "orbit-card",
-      "title": "环绕卡片",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "plasma",
-      "title": "紫色流焰",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "plastic",
-      "title": "塑料光球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "prism",
-      "title": "棱镜彩虹",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "nebula", "title": "星云球", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "obsidian", "title": "黑曜石球", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "orbit-card", "title": "环绕卡片", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "plasma", "title": "紫色流焰", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "plastic", "title": "塑料光球", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "prism", "title": "棱镜彩虹", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "product-turntable",
       "title": "产品转台",
@@ -8249,46 +8217,18 @@
       "title": "水波转场",
       "reason": "着色器转场的演示：前后画面是它自带的演示场景，接不到两段视频之间"
     },
-    {
-      "name": "ripples",
-      "title": "同心波纹",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "ripples", "title": "同心波纹", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "sdf-iris",
       "title": "光圈转场",
       "reason": "着色器转场的演示：前后画面是它自带的演示场景，接不到两段视频之间"
     },
-    {
-      "name": "sine-wave",
-      "title": "正弦光波",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "spiral",
-      "title": "黑白螺旋",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "strands",
-      "title": "光带交织",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "stripes",
-      "title": "黑白斜纹",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "sun-burst",
-      "title": "放射光芒",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "swirl",
-      "title": "色彩漩涡",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "sine-wave", "title": "正弦光波", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "spiral", "title": "黑白螺旋", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "strands", "title": "光带交织", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "stripes", "title": "黑白斜纹", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "sun-burst", "title": "放射光芒", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "swirl", "title": "色彩漩涡", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "swirl-vortex",
       "title": "漩涡转场",
@@ -8299,11 +8239,7 @@
       "title": "热浪扭曲转场",
       "reason": "着色器转场的演示：前后画面是它自带的演示场景，接不到两段视频之间"
     },
-    {
-      "name": "thin-film",
-      "title": "彩虹泡泡球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "thin-film", "title": "彩虹泡泡球", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "transitions-3d",
       "title": "立体翻转转场",
@@ -8369,26 +8305,11 @@
       "title": "缩放转场",
       "reason": "转场合集：十几到二十几秒、多种转场串成的演示，放不到一个切点上"
     },
-    {
-      "name": "voronoi",
-      "title": "发光细胞",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "water",
-      "title": "水球",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "waveform",
-      "title": "音乐律动条",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
-    {
-      "name": "weight-wave",
-      "title": "字重波浪",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "vfx-shatter", "title": "玻璃碎裂", "reason": "渲染检查不通过：页面报错" },
+    { "name": "voronoi", "title": "发光细胞", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "water", "title": "水球", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "waveform", "title": "音乐律动条", "reason": "渲染检查不通过：用到的文件取不到" },
+    { "name": "weight-wave", "title": "字重波浪", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "whip-pan",
       "title": "甩镜转场",
@@ -8399,11 +8320,7 @@
       "title": "线框门标题",
       "reason": "依赖的 ES 模块无法换成本地文件"
     },
-    {
-      "name": "worley-noise",
-      "title": "细胞纹理",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "worley-noise", "title": "细胞纹理", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "animated-bar-chart",
       "title": "动态柱状图",
@@ -8444,6 +8361,11 @@
       "title": "景深卡片堆叠",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
+    {
+      "name": "caption-blend-difference",
+      "title": "反色字幕",
+      "reason": "渲染检查不通过：渲染失败"
+    },
     { "name": "caption-camera-follow", "title": "镜头拉远字幕", "reason": "只适配英文" },
     { "name": "caption-clip-wipe", "title": "擦除字幕", "reason": "只适配英文" },
     { "name": "caption-editorial-emphasis", "title": "杂志强调字幕", "reason": "只适配英文" },
@@ -8463,16 +8385,13 @@
       "title": "卡片展开",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
-    {
-      "name": "caret-swap",
-      "title": "光标换词",
-      "reason": "引用的素材不在 HyperFrames 运行时查找的位置，加载会失败"
-    },
+    { "name": "caret-swap", "title": "光标换词", "reason": "渲染检查不通过：用到的文件取不到" },
     {
       "name": "chromatic-aberration-wipe",
       "title": "色散滑切",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
+    { "name": "colorama-wipe", "title": "炫彩擦除标题", "reason": "渲染检查不通过：渲染失败" },
     {
       "name": "confetti",
       "title": "彩纸庆祝",
@@ -8494,11 +8413,14 @@
       "title": "动态网格",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
+    { "name": "extended-keyframe", "title": "缓停入场", "reason": "渲染检查不通过：渲染失败" },
+    { "name": "filmed-screen", "title": "翻拍屏幕", "reason": "渲染检查不通过：渲染失败" },
     {
       "name": "focus-blur-resolve",
       "title": "模糊变清晰",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
+    { "name": "grade-split-reveal", "title": "调色对比", "reason": "渲染检查不通过：页面报错" },
     {
       "name": "grain-overlay",
       "title": "胶片颗粒",
@@ -8565,6 +8487,7 @@
       "title": "形变切换",
       "reason": "靠全局插槽取前后两段画面，一部整片里只能用一次，且要另放一份视频"
     },
+    { "name": "motion-blur", "title": "运动模糊", "reason": "渲染检查不通过：渲染失败" },
     {
       "name": "number-pop-in",
       "title": "数字弹入",
@@ -8701,6 +8624,7 @@
       "title": "逐词上浮",
       "reason": "要配合自己写的时间线使用的代码片段，单独放进成片不会动"
     },
+    { "name": "stitched-text-draw", "title": "针线绣字", "reason": "只适配英文" },
     {
       "name": "streaming-text",
       "title": "AI 逐词回答",

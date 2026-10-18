@@ -33,16 +33,17 @@ export const PATCHES_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-patches')
 export const CATALOG_DIR = join(WEB_ROOT, 'src', 'features', 'storyboard', 'whole-film', 'catalog')
 
 /** 合成页加载的运行时脚本（相对组件目录根）；组件里的 GSAP 也换成这一份。 */
-export const RUNTIME = {
-  hyperframes: 'vendor/hyperframes/hyperframe.runtime.iife.js',
-  gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
-}
-
-/** 字幕用的中文字体；字幕组件经 `<link>` 引用这份 CSS。 */
+/** 中文字体：字幕组件与合成页的默认字体都用它，经 `<link>` 引用这份 CSS。 */
 export const CJK_FONT = {
   family: 'Noto Sans SC',
   css: 'vendor/fonts/noto-sans-sc.css',
   weights: [400, 700],
+}
+
+export const RUNTIME = {
+  hyperframes: 'vendor/hyperframes/hyperframe.runtime.iife.js',
+  gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
+  cjkFont: CJK_FONT.css,
 }
 
 export const sha256 = (data) => createHash('sha256').update(data).digest('hex')
@@ -132,6 +133,50 @@ export const compositionTarget = (item) =>
   item.files.find(
     (file) => file.type === 'hyperframes:composition' || file.type === 'hyperframes:snippet',
   )?.target
+
+/** HyperFrames Studio 的组件分类：@hyperframes/core registry/types.ts 的 resolveBlockCategory 原样照抄。 */
+export function category(tags) {
+  if (!tags || tags.length === 0) return 'scenes'
+  const set = new Set(tags)
+  if (set.has('captions') || set.has('caption-style')) return 'captions'
+  if (set.has('code-animation')) return 'code-animation'
+  if (set.has('transition')) return 'transitions'
+  if (set.has('social') || set.has('overlay')) return 'social'
+  if (set.has('data') || set.has('chart') || set.has('map')) return 'data'
+  if (set.has('html-in-canvas') || set.has('webgl') || set.has('shader')) return 'vfx'
+  if (set.has('text-effect')) return 'text-effects'
+  if (set.has('effect') || set.has('grain') || set.has('vignette')) return 'effects'
+  return 'scenes'
+}
+
+// 带 overlay 标签的（如手写标题）叠在画面上，一律进包装轨，不当片头片尾。
+const OUTRO_TAGS = ['end-card', 'outro', 'close']
+const INTRO_TAGS = ['intro', 'title-card']
+/** 组件放到成片的哪里（整片设计稿的规则）。 */
+export function placement(categoryId, tags) {
+  if (categoryId === 'captions') return 'caption'
+  if (categoryId === 'transitions') return 'transition'
+  const set = new Set(tags)
+  if (set.has('overlay')) return 'overlay'
+  if (OUTRO_TAGS.some((tag) => set.has(tag))) return 'outro'
+  if (INTRO_TAGS.some((tag) => set.has(tag))) return 'intro'
+  if (set.has('logo') && (categoryId === 'scenes' || categoryId === 'vfx')) return 'intro'
+  return 'overlay'
+}
+
+/** 合成根元素上写的固定尺寸与时长（HyperFrames 挂载时按它设宿主大小）。 */
+export function rootAttributes(html) {
+  const tag = /<[a-z]+\b[^>]*\bdata-composition-id\b[^>]*>/i.exec(html)?.[0] ?? ''
+  const number = (attribute) => {
+    const value = new RegExp(`\\b${attribute}\\s*=\\s*["']?([\\d.]+)`).exec(tag)?.[1]
+    return value === undefined ? null : Number(value)
+  }
+  return {
+    width: number('data-width'),
+    height: number('data-height'),
+    duration: number('data-duration'),
+  }
+}
 
 export const isTextFile = (path) => /\.(html?|css|m?js|cjs|json|svg)$/i.test(path)
 
@@ -385,9 +430,17 @@ export async function npmPackage(name, version, expected) {
 
 /**
  * 一个字体的 @font-face：只收拉丁与扩展拉丁（组件的英文字体）；中文字体收全部分片，
- * 浏览器按 unicode-range 只下载用到的。字体文件路径相对 CSS 所在的 vendor/fonts/。
+ * 浏览器按 unicode-range 只下载用到的。`npmBase` 是 CSS 所在目录到 vendor/npm/ 的相对路径。
  */
-export async function fontFaces(family, faces, display, packageDir, pkg, subsetFilter) {
+export async function fontFaces(
+  family,
+  faces,
+  display,
+  packageDir,
+  pkg,
+  subsetFilter,
+  npmBase = '../npm',
+) {
   const metadata = JSON.parse(await readFile(join(packageDir, 'metadata.json'), 'utf8'))
   const unicode = JSON.parse(await readFile(join(packageDir, 'unicode.json'), 'utf8'))
   const subsets = Object.keys(unicode).filter(subsetFilter)
@@ -411,7 +464,7 @@ export async function fontFaces(family, faces, display, packageDir, pkg, subsetF
           : face.weight
       css.push(
         `@font-face{font-family:'${family}';font-style:${face.style};font-display:${display};` +
-          `font-weight:${weightRange};src:url(../npm/${pkg.name}@${pkg.version}/${file}) format('woff2');` +
+          `font-weight:${weightRange};src:url(${npmBase}/${pkg.name}@${pkg.version}/${file}) format('woff2');` +
           `unicode-range:${unicode[subset]}}`,
       )
     }
@@ -420,6 +473,171 @@ export async function fontFaces(family, faces, display, packageDir, pkg, subsetF
 }
 
 export const isLatinSubset = (subset) => subset === 'latin' || subset === 'latin-ext'
+
+// ---------------------------------------------------------------- 组件字体的整套字形
+
+const GENERIC_FAMILIES = new Set([
+  'serif',
+  'sans-serif',
+  'monospace',
+  'cursive',
+  'fantasy',
+  'system-ui',
+  'emoji',
+  'math',
+  'fangsong',
+  'inherit',
+  'initial',
+  'unset',
+  'revert',
+  '-apple-system',
+  'blinkmacsystemfont',
+])
+const familyNames = (value) =>
+  value
+    // var(--x, A, B) 取回退里的字体名。
+    .replace(/var\(\s*--[\w-]+\s*,?/g, '')
+    .replaceAll(')', '')
+    .split(',')
+    .map((name) =>
+      name
+        .trim()
+        .replace(/^['"]|['"]$/g, '')
+        .trim(),
+    )
+    .filter(
+      (name) =>
+        name &&
+        !/^ui-/.test(name) &&
+        !GENERIC_FAMILIES.has(name.toLowerCase()) &&
+        /^[\w][\w .-]*$/.test(name),
+    )
+
+/**
+ * 组件文件里的字体：`declared` 是 @font-face 定义的（网页字体），`used` 是 font-family 里写的字体名
+ * （含 var() 的回退，去掉通用字体族）。
+ */
+export function fontFamilies(text) {
+  const declared = new Set()
+  for (const [, block] of text.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
+    const value = /font-family\s*:\s*([^;}]+)/.exec(block)?.[1]
+    if (value) for (const name of familyNames(value)) declared.add(name)
+  }
+  const used = new Set()
+  for (const [, value] of text.matchAll(/font-family\s*:\s*([^;}{"`]+)/g)) {
+    for (const name of familyNames(value)) used.add(name)
+  }
+  return { declared, used }
+}
+
+/** 字体名 → 这个字体整套字形（西文加中文）的 CSS 路径（相对组件目录根）。 */
+export const familyFontCss = (family) =>
+  `vendor/fonts/families/${family
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')}.css`
+
+// 中文补字覆盖的码位：中日韩部首、标点、假名、注音、带圈字符、汉字（含扩展 A 与兼容汉字）、
+// 竖排与全角形式、扩展 B 以后。拉丁字母与常用西文标点不在内，组件自己的字体照常显示它们。
+const CJK_BLOCKS = [
+  [0x2e80, 0x2fdf],
+  [0x3000, 0x30ff],
+  [0x3100, 0x31ff],
+  [0x3200, 0x33ff],
+  [0x3400, 0x4dbf],
+  [0x4e00, 0x9fff],
+  [0xf900, 0xfaff],
+  [0xfe10, 0xfe1f],
+  [0xfe30, 0xfe4f],
+  [0xff00, 0xffef],
+  [0x20000, 0x3134f],
+]
+
+function parseRanges(value) {
+  return value.split(',').map((part) => {
+    const [from, to] = part.trim().replace(/^U\+/i, '').split('-')
+    return [parseInt(from, 16), parseInt(to ?? from, 16)]
+  })
+}
+
+/** 把 unicode-range 收窄到中日韩码位；没有交集时返回 null。 */
+export function cjkUnicodeRange(value) {
+  const parts = []
+  for (const [from, to] of parseRanges(value)) {
+    for (const [blockFrom, blockTo] of CJK_BLOCKS) {
+      const start = Math.max(from, blockFrom)
+      const end = Math.min(to, blockTo)
+      if (start <= end) {
+        const hex = (code) => code.toString(16)
+        parts.push(start === end ? `U+${hex(start)}` : `U+${hex(start)}-${hex(end)}`)
+      }
+    }
+  }
+  return parts.length > 0 ? parts.join(',') : null
+}
+
+const KEYWORD_WEIGHTS = { normal: '400', bold: '700' }
+const cssValue = (block, property) =>
+  new RegExp(`${property}\\s*:\\s*([^;}]+)`)
+    .exec(block)?.[1]
+    ?.trim()
+    .replace(/^['"]|['"]$/g, '')
+    .trim()
+
+/**
+ * 一段 CSS 或 HTML 里每条 @font-face 的字体名、字重与字形描述。字重的 normal、bold 换成数字，
+ * 区间等其余写法原样保留；没写时按 CSS 默认取 400、normal。
+ */
+export function fontFaceDescriptors(text) {
+  const result = []
+  for (const [, block] of text.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
+    const family = cssValue(block, 'font-family')
+    if (!family) continue
+    const weight = cssValue(block, 'font-weight') ?? '400'
+    result.push({
+      family,
+      weight: KEYWORD_WEIGHTS[weight] ?? weight,
+      style: cssValue(block, 'font-style') ?? 'normal',
+    })
+  }
+  return result
+}
+
+/**
+ * 一个组件字体的中文字形：同名的 @font-face，只覆盖中日韩码位，字形取 Noto Sans SC。
+ *
+ * `descriptors` 是这个字体的西文字形用过的全部字重、字形描述，每一种各出一组描述完全相同的中文字形。
+ * 浏览器先按字重、字形在同名的 @font-face 里挑出最接近的一组，再在组里按 unicode-range 取字：
+ * 中文字形的描述与西文的不同（比如写成字重区间）时，它会被单独挑中，西文字母因此退到下一个字体。
+ * 字重（区间取下限）小于 550 用 Noto 的 400，否则用 700；Noto 只有正体，斜体也用正体字形。
+ * `notoDir` 是 Noto Sans SC 的 fontsource 包目录；字体文件路径相对 CSS 所在的 vendor/fonts/families/。
+ */
+export async function cjkTwinFaces(family, descriptors, notoDir) {
+  const pkg = fontPackage(CJK_FONT.family)
+  const metadata = JSON.parse(await readFile(join(notoDir, 'metadata.json'), 'utf8'))
+  const unicode = JSON.parse(await readFile(join(notoDir, 'unicode.json'), 'utf8'))
+  const slices = Object.entries(unicode).flatMap(([subset, value]) => {
+    const slice = /^\[(\d+)\]$/.exec(subset)?.[1]
+    const unicodeRange = slice === undefined ? null : cjkUnicodeRange(value)
+    return unicodeRange ? [{ slice, unicodeRange }] : []
+  })
+  const rules = []
+  const seen = new Set()
+  for (const { weight, style } of descriptors) {
+    const key = `${weight}/${style}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const notoWeight = Number.parseInt(weight, 10) < 550 ? 400 : 700
+    for (const { slice, unicodeRange } of slices) {
+      const file = `files/${metadata.id}-${slice}-${notoWeight}-normal.woff2`
+      rules.push(
+        `@font-face{font-family:'${family}';font-style:${style};font-display:block;font-weight:${weight};` +
+          `src:url(../../npm/${pkg.name}@${pkg.version}/${file}) format('woff2');unicode-range:${unicodeRange}}`,
+      )
+    }
+  }
+  return rules.join('\n')
+}
 
 /** 列出目录下全部文件（相对路径，正斜杠）。 */
 export async function listFiles(root, dir = '') {
