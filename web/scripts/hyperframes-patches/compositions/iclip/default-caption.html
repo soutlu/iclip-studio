@@ -11,7 +11,8 @@
   2. 词与词按中文排版拼接：两侧都是拉丁字母或数字时才加空格；去掉转小写。
   3. 白字黑描边（-webkit-text-stroke + paint-order），字重 700，字体 Noto Sans SC（本地字体文件）。
   4. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin），
-     安全区宽度为画面宽的 1400/1920；折行交给浏览器，去掉两行拆分、行间字重切换与缩字。
+     安全区宽度为画面宽的 1400/1920；折行交给浏览器，去掉两行拆分与行间字重切换。
+  5. 字号照原组件用画布量字，缩到整组不超过两行（不设最小字号）。
   入场动画（opacity + scale 0.85→1）与组间切换时机不变。
 -->
 <template id="default-caption-template">
@@ -93,6 +94,32 @@
       ;(function () {
         var VARS = window.__hyperframes.getVariables()
         var ENTRY_DURATION = 0.1
+        var CAPTION_FONT_SIZE = 72
+        var LETTER_SPACING = 0.02
+
+        // 量字（以字号为单位）：字体与 .caption-line 一致；画布不算字距，按每字 0.02em 补上。
+        var measureContext = document.createElement('canvas').getContext('2d')
+        measureContext.font = "700 100px 'Noto Sans SC', sans-serif"
+        function widthInEm(text) {
+          return (
+            measureContext.measureText(text).width / 100 + Array.from(text).length * LETTER_SPACING
+          )
+        }
+
+        // 不超过两行的字号：每行最多空出一个断不开的词，所以整组宽度加上最宽的词不超过两行宽即可。
+        // 行宽照原组件留出 40 个单位的余量。
+        function fitFontSize(group) {
+          var widest = Math.max.apply(
+            null,
+            group.words.map(function (word) {
+              return widthInEm(String(word.text || ''))
+            }),
+          )
+          var span = widthInEm(group.text) + widest
+          var base = 'calc(' + CAPTION_FONT_SIZE + ' * var(--u))'
+          var fit = 'calc((100cqw * 1400 / 1920 - 40 * var(--u)) * 2 / ' + span.toFixed(4) + ')'
+          return 'min(' + base + ', ' + fit + ')'
+        }
 
         function joinWords(words) {
           var text = ''
@@ -120,7 +147,12 @@
           })
           return groups
             .map(function (group) {
-              return { text: joinWords(group.words), start: group.start, end: group.end }
+              return {
+                text: joinWords(group.words),
+                words: group.words,
+                start: group.start,
+                end: group.end,
+              }
             })
             .filter(function (group) {
               return group.text.length > 0
@@ -129,6 +161,7 @@
 
         var GROUPS = groupWords(VARS.words)
         var stage = document.getElementById('caption-stage')
+        var lineEls = []
         var groupEls = GROUPS.map(function (group, index) {
           var groupEl = document.createElement('div')
           var lineEl = document.createElement('div')
@@ -138,8 +171,25 @@
           lineEl.textContent = group.text
           groupEl.appendChild(lineEl)
           stage.appendChild(groupEl)
+          lineEls.push(lineEl)
           return groupEl
         })
+
+        function fitAll() {
+          GROUPS.forEach(function (group, index) {
+            lineEls[index].style.fontSize = fitFontSize(group)
+          })
+        }
+        fitAll()
+        // 量字要用真正显示的字体：字体用到才下载，脚本运行时可能还没到，到了之后按真实字形再量一次。
+        document.fonts
+          .load(
+            measureContext.font,
+            GROUPS.map(function (group) {
+              return group.text
+            }).join(''),
+          )
+          .then(fitAll)
 
         window.__timelines = window.__timelines || {}
         var tl = gsap.timeline({ paused: true })

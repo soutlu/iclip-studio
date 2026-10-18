@@ -9,7 +9,7 @@
      （[{ text, start, end, sentence }]，整片秒数），去掉写死的台词与重点词。
   2. 去掉转大写；中文用 Noto Sans SC（本地字体文件），拉丁字母仍用 Anton。
   3. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin）；
-     字号按字数估算宽度（中文字按 1 个字宽、其余按半个字宽）收进画面宽的 90%，不再用画布量字。
+     字号照原组件用画布量字，收进画面宽的 90%。
   texture 变量、入场与纹理流动的动画不变。
 -->
 <template id="caption-texture-template">
@@ -94,13 +94,16 @@
             : {}
         var TEXTURE = vars.texture || 'lava'
         var TEXTURE_URL = 'compositions/components/' + TEXTURE + '.png'
-        var CJK = /[⺀-鿿豈-﫿＀-￯]/
+        var LETTER_SPACING = 0.04
 
-        // 估算一个词的宽度（以字号为单位）：中文与全角按 1，其余按 0.5。
+        // 量一个词的宽度（以字号为单位）：字体与 .lv-word 一致（Anton 只有 400 一种字重，不合成粗体）；
+        // 画布不算字距，按每字 0.04em 补上。
+        var measureContext = document.createElement('canvas').getContext('2d')
+        measureContext.font = "400 100px 'Anton', 'Noto Sans SC', sans-serif"
         function widthInEm(text) {
-          var width = 0
-          for (var i = 0; i < text.length; i++) width += CJK.test(text[i]) ? 1 : 0.5
-          return Math.max(1, width)
+          return (
+            measureContext.measureText(text).width / 100 + Array.from(text).length * LETTER_SPACING
+          )
         }
 
         var WORDS = (Array.isArray(vars.words) ? vars.words : [])
@@ -118,6 +121,7 @@
 
         var container = document.getElementById('lv-container')
         var tl = gsap.timeline({ paused: true })
+        var wordEls = []
 
         WORDS.forEach(function (w, wi) {
           var shadow = document.createElement('div')
@@ -129,8 +133,7 @@
           wordEl.className = 'hf-texture-text lv-texture-override lv-word'
           wordEl.id = 'lv-word-' + wi
           wordEl.textContent = w.text
-          wordEl.style.fontSize =
-            'min(calc(200 * var(--u)), calc(90cqw / ' + widthInEm(w.text).toFixed(2) + '))'
+          wordEls.push(wordEl)
           wordEl.style.webkitMaskImage = "url('" + TEXTURE_URL + "')"
           wordEl.style.maskImage = "url('" + TEXTURE_URL + "')"
 
@@ -156,6 +159,23 @@
           tl.to(shadow, { opacity: 0, scale: 1.08, duration: 0.1, ease: 'power2.in' }, w.end)
           tl.set(shadow, { opacity: 0, visibility: 'hidden' }, w.end + 0.1)
         })
+
+        function fitAll() {
+          WORDS.forEach(function (w, wi) {
+            wordEls[wi].style.fontSize =
+              'min(calc(200 * var(--u)), calc(90cqw / ' + widthInEm(w.text).toFixed(4) + '))'
+          })
+        }
+        fitAll()
+        // 量字要用真正显示的字体：字体用到才下载，脚本运行时可能还没到，到了之后按真实字形再量一次。
+        document.fonts
+          .load(
+            measureContext.font,
+            WORDS.map(function (w) {
+              return w.text
+            }).join(''),
+          )
+          .then(fitAll)
 
         tl.seek(0)
         window.__timelines['caption-texture'] = tl

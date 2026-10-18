@@ -10,7 +10,7 @@
   2. 按中文排版拼词：词与词之间不留间隔，两侧都是拉丁字母或数字时才隔开；去掉转大写。
      中文用 Noto Sans SC（本地字体文件），拉丁字母仍用 Montserrat。
   3. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin）；
-     一组放不下时折行，不再用画布量字缩小。
+     一组放不下时折行；字号照原组件用画布量字，缩到整组不超过两行（不设最小字号）。
   高亮底块、入场与组间切换的动画不变。
 -->
 <template id="caption-highlight-template">
@@ -97,6 +97,39 @@
             : {}
         var LATIN_END = /[A-Za-z0-9]$/
         var LATIN_START = /^[A-Za-z0-9]/
+        var CAPTION_FONT_SIZE = 80
+        var LETTER_SPACING = 0.02
+        // .hl-word 左右内边距共 12 个单位，.hl-space 再加 16 个单位的间隔；不随字号变。
+        var WORD_PADDING = 12
+        var WORD_GAP = 16
+
+        // 量字（以字号为单位）：字体与 .hl-word 一致；画布不算字距，按每字 0.02em 补上。
+        var measureContext = document.createElement('canvas').getContext('2d')
+        measureContext.font = "800 100px 'Montserrat', 'Noto Sans SC', sans-serif"
+        function widthInEm(text) {
+          return (
+            measureContext.measureText(text).width / 100 + Array.from(text).length * LETTER_SPACING
+          )
+        }
+
+        // 不超过两行的字号：词是整块折行的，每行最多空出一个词，所以整组宽度加上最宽的词
+        // 不超过两行宽即可（一行宽是画面宽去掉两侧各 6cqw）。词宽 = 字号 × 量出的宽 + 固定的边距。
+        function fitFontSize(items) {
+          var em = 0
+          var fixed = 0
+          var widestEm = 0
+          var widestFixed = 0
+          items.forEach(function (item) {
+            em += item.em
+            fixed += item.fixed
+            widestEm = Math.max(widestEm, item.em)
+            widestFixed = Math.max(widestFixed, item.fixed)
+          })
+          var base = 'calc(' + CAPTION_FONT_SIZE + ' * var(--u))'
+          var room = '2 * 88cqw - ' + (fixed + widestFixed) + ' * var(--u)'
+          var fit = 'calc((' + room + ') / ' + (em + widestEm).toFixed(4) + ')'
+          return 'min(' + base + ', ' + fit + ')'
+        }
 
         var WORDS = (Array.isArray(vars.words) ? vars.words : [])
           .map(function (word) {
@@ -135,6 +168,8 @@
 
         var container = document.getElementById('hl-container')
         var tl = gsap.timeline({ paused: true })
+        // 每组的词、词前是否隔开、词的元素，字号按组量出来再写到每个词上。
+        var FITTED = []
 
         GROUPS.forEach(function (g, gi) {
           var groupWords = WORDS.slice(g.wordStart, g.wordEnd + 1)
@@ -142,15 +177,19 @@
           grp.className = 'hl-group'
           grp.id = 'hl-grp-' + gi
 
+          var spaced = groupWords.map(function (w, i) {
+            var previous = groupWords[i - 1]
+            return Boolean(previous && LATIN_END.test(previous.text) && LATIN_START.test(w.text))
+          })
+          var wordEls = []
+          FITTED.push({ words: groupWords, spaced: spaced, els: wordEls })
+
           groupWords.forEach(function (w, i) {
             var wi = g.wordStart + i
             var wordEl = document.createElement('span')
-            var previous = groupWords[i - 1]
-            wordEl.className =
-              previous && LATIN_END.test(previous.text) && LATIN_START.test(w.text)
-                ? 'hl-word hl-space'
-                : 'hl-word'
+            wordEl.className = spaced[i] ? 'hl-word hl-space' : 'hl-word'
             wordEl.id = 'hl-w-' + wi
+            wordEls.push(wordEl)
 
             var bgEl = document.createElement('span')
             bgEl.className = 'hl-word-bg'
@@ -198,6 +237,32 @@
           tl.to(grp, { opacity: 0, duration: 0.1, ease: 'power2.in' }, g.end - 0.1)
           tl.set(grp, { opacity: 0, visibility: 'hidden' }, g.end)
         })
+
+        function fitAll() {
+          FITTED.forEach(function (group) {
+            var fontSize = fitFontSize(
+              group.words.map(function (w, i) {
+                return {
+                  em: widthInEm(w.text),
+                  fixed: WORD_PADDING + (group.spaced[i] ? WORD_GAP : 0),
+                }
+              }),
+            )
+            group.els.forEach(function (wordEl) {
+              wordEl.style.fontSize = fontSize
+            })
+          })
+        }
+        fitAll()
+        // 量字要用真正显示的字体：字体用到才下载，脚本运行时可能还没到，到了之后按真实字形再量一次。
+        document.fonts
+          .load(
+            measureContext.font,
+            WORDS.map(function (w) {
+              return w.text
+            }).join(''),
+          )
+          .then(fitAll)
 
         tl.seek(0)
         window.__timelines['caption-highlight'] = tl
