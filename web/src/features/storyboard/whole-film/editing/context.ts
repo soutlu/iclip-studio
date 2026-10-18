@@ -14,8 +14,8 @@ export type SourceMedia = {
   subtitle: SourceSubtitle | null
 }
 
-/** 音乐文件里的拍点；strong 由调用方按拍点强度判定 */
-export type MusicBeat = { timeMs: number; strong: boolean }
+/** 音乐文件里的拍点；strength 是拍点分析给出的强度（0–1），只用于显示 */
+export type MusicBeat = { timeMs: number; strength: number }
 
 export type MusicMedia = { durationMs: number; beats: MusicBeat[] }
 

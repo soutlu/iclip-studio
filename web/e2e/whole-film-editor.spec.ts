@@ -47,8 +47,9 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await page.keyboard.press('ArrowLeft')
   await expect(first).not.toHaveAttribute('aria-label', before ?? '')
 
-  // 在整片中间拆开：读数是「共 X 秒」
-  const total = Number((await dialog.locator('.wf-readout b').textContent()) ?? '0')
+  // 在整片中间拆开：时钟写着「当前 / 总长」，总长是「分:秒.百分秒」
+  const clock = (await dialog.locator('.wf-clock').textContent()) ?? ''
+  const total = Number(/\/\s*\d+:(\d+(?:\.\d+)?)/.exec(clock)?.[1] ?? '0')
   await seek(page, dialog, total / 2)
   await dialog.getByRole('button', { name: '拆分' }).click()
   await expect(film.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
@@ -71,14 +72,14 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await beatSync.click()
   await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
 
-  // 组件栏：component 卡片放到包装轨、block 卡片插进成片轨、字幕样式
+  // 组件栏：component 卡片放到特效轨、block 卡片插进成片轨、字幕样式
   await dialog.getByRole('tab', { name: '组件' }).click()
   const components = dialog.getByRole('list', { name: '组件' })
-  const overlays = dialog.getByRole('group', { name: '包装轨' })
+  const overlays = dialog.getByRole('group', { name: '特效轨' })
   await components.getByRole('button', { name: /^字标定格，包装轨/ }).click()
-  await expect(overlays.getByRole('group', { name: /^包装 · 字标定格/ })).toBeVisible()
-  await overlays.getByRole('button', { name: /^选中：包装 · 字标定格/ }).click()
-  const intro = page.getByRole('dialog', { name: '包装 · 字标定格' })
+  await expect(overlays.getByRole('group', { name: /^特效 · 字标定格/ })).toBeVisible()
+  await overlays.getByRole('button', { name: /^选中：特效 · 字标定格/ }).click()
+  const intro = page.getByRole('dialog', { name: '特效 · 字标定格' })
   await expect(intro.getByLabel('品牌名')).toHaveValue('品牌名')
   await intro.getByLabel('品牌名').fill('拾步')
   await intro.getByLabel('品牌名').press('Enter')
@@ -98,7 +99,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
 
   await seek(page, dialog, 1)
   await components.getByRole('button', { name: /^手绘箭头，包装轨/ }).click()
-  await expect(dialog.getByRole('group', { name: /^包装 · 手绘箭头/ })).toBeVisible()
+  await expect(dialog.getByRole('group', { name: /^特效 · 手绘箭头/ })).toBeVisible()
 
   await dialog.getByRole('button', { name: /^字幕样式：白字黑边/ }).click()
   await components.getByRole('button', { name: /^高亮字幕，字幕样式/ }).click()

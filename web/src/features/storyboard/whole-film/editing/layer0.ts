@@ -15,7 +15,6 @@ import {
   insertAt,
   insertIndexAt,
   layer0End,
-  moveStartMs,
   nextId,
   normalize,
   resizeMs,
@@ -90,22 +89,21 @@ export const insertComponent = (
   return insertClip(draft, clip, args.at)
 }
 
-/** 拖动一段调整顺序：按 Studio 的拖动换算出落点，越过哪段的中点就排到它的哪一侧 */
+/**
+ * 调整一段的顺序：挪到第 `to` 个插入点，即挪动前的第 `to` 段之前，等于段数时挪到最后（拖动时由
+ * {@link insertIndexAt} 按松手处算出）。落点就在它自己两侧时原样返回。
+ */
 export const moveClip = (
   draft: WholeFilmDraft,
-  args: { clipId: string; deltaMs: number },
+  args: { clipId: string; to: number },
 ): EditResult => {
-  const clip = draft.layer0.find((c) => c.id === args.clipId)
+  const from = draft.layer0.findIndex((c) => c.id === args.clipId)
+  const clip = draft.layer0[from]
   if (!clip) return refuse('unknown-clip')
-  const start = moveStartMs(clip, args.deltaMs, {
-    minStart: 0,
-    maxStart: layer0End(draft) - clip.duration,
-  })
-  const center = start + clip.duration / 2
+  const to = clamp(args.to, 0, draft.layer0.length)
+  if (to === from || to === from + 1) return done(draft)
   const others = draft.layer0.filter((c) => c.id !== clip.id)
-  const index = others.filter((other) => other.start + other.duration / 2 < center).length
-  if (index === draft.layer0.indexOf(clip)) return done(draft)
-  return done(normalize({ ...draft, layer0: insertAt(others, index, clip) }))
+  return done(normalize({ ...draft, layer0: insertAt(others, to > from ? to - 1 : to, clip) }))
 }
 
 /**

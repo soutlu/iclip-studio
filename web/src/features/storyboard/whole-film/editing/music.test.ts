@@ -16,7 +16,7 @@ const context = contextOf(
   {
     long: {
       durationMs: 30_000,
-      beats: [0, 500, 1_000, 1_500].map((timeMs, k) => ({ timeMs, strong: k % 4 === 0 })),
+      beats: [0, 500, 1_000, 1_500].map((timeMs, k) => ({ timeMs, strength: k / 4 })),
     },
     short: { durationMs: 8_000 },
   },
@@ -112,8 +112,8 @@ describe('filmBeats', () => {
   it('拍点换算到整片时间，起点之前的拍点不算；不截到片尾', () => {
     const { draft } = expectOk(setMusic(film(), { jobId: 'long', offsetMs: 600 }, context))
     expect(filmBeats(draft, context)).toEqual([
-      { timeMs: 400, strong: false },
-      { timeMs: 900, strong: false },
+      { timeMs: 400, strength: 0.5 },
+      { timeMs: 900, strength: 0.75 },
     ])
     const shortFilm = draftOf([video('v1', 's1', 0, 200)], {
       music: { jobId: 'long', offset: 0, volume: 1 },

@@ -1,7 +1,7 @@
 // Copied from HyperFrames Studio v0.8.168 (commit 6e1f9ee1): packages/studio/src/player/components/timelineLayout.test.ts
 // Copyright 2026 HeyGen, Inc. Licensed under the Apache License, Version 2.0 (LICENSE in the vendor root).
-// Modifications: removed the cases and the one assertion that exercise modules not copied here
-// (timelineRulerGeometry, timelineCollision, timelineViewportGeometry); see README.
+// Modifications: removed the cases that exercise modules not copied here
+// (timelineRulerGeometry, timelineViewportGeometry); see README.
 import { describe, it, expect } from "vitest";
 import {
   RULER_H,
@@ -22,6 +22,7 @@ import {
   resolveTimelineAssetDrop,
   getTimelineBeatEntries,
 } from "./timelineLayout";
+import { resolveInsertRow } from "./timelineCollision";
 
 describe("horizontal timeline window", () => {
   it("slices beat records with original strength indexes and unions a pinned beat", () => {
@@ -299,6 +300,7 @@ describe("default track pads", () => {
     };
     for (const y of [lastLaneBottom, getTimelineCanvasHeight(rows) - 1]) {
       expect(resolveTimelineAssetDrop(drop, GUTTER, y).track).toBe(3);
+      expect(resolveInsertRow(getTimelineRowFromY(y, rows), rows.length)).toBe(3);
     }
     expect(resolveTimelineAssetDrop(drop, GUTTER, lastLaneBottom - 1).track).toBe(2);
   });

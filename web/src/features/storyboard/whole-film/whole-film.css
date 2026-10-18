@@ -581,16 +581,16 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   grid-area: timeline;
-  padding: 8px 12px 12px;
+  padding: 8px 12px 10px;
   border-radius: var(--radius-xl);
   background: var(--color-surface-container-low);
 }
 
 .wf-toolbar {
   display: flex;
-  min-height: 36px;
+  min-height: 32px;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -607,19 +607,29 @@
 
 .wf-tool {
   display: inline-flex;
+  width: 30px;
   height: 30px;
-  min-width: 30px;
+  flex: none;
   align-items: center;
   justify-content: center;
-  gap: 4px;
   border-radius: var(--radius-full);
   color: var(--color-on-surface-variant);
-  font-size: var(--text-body-sm);
-  white-space: nowrap;
 }
 
 .wf-tool.has-label {
+  width: auto;
+  height: 32px;
+  gap: 6px;
   padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 开关类按钮：关着时淡一些，打开时浅墨色底 */
+.wf-tool[aria-pressed='false'] {
+  color: var(--color-on-surface-muted);
 }
 
 .wf-tool.is-pressed {
@@ -627,41 +637,52 @@
   color: var(--color-on-surface);
 }
 
+.wf-tool.wf-play {
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+}
+
 .wf-tool[aria-disabled='true'] {
   opacity: var(--state-disabled-content);
   cursor: default;
 }
 
+/* 工具栏提示里的快捷键 */
+.wf-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-kbd {
+  display: inline-grid;
+  min-width: 18px;
+  height: 16px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-inverse-on-surface) 18%, transparent);
+  font: inherit;
+  font-size: var(--text-caption);
+  line-height: 16px;
+}
+
 .wf-clock {
-  padding: 0 6px 0 8px;
+  padding: 0 6px 0 10px;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.wf-clock span,
-.wf-readout {
+.wf-clock span {
   color: var(--color-on-surface-muted);
-}
-
-.wf-readout {
-  margin-right: 6px;
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.wf-readout b {
-  color: var(--color-on-surface);
-  font-weight: 500;
 }
 
 .wf-divider {
   width: 1px;
   height: 16px;
-  margin: 0 6px;
+  margin: 0 8px;
   background: var(--color-hairline);
 }
 
@@ -670,38 +691,81 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 20px;
-  padding: 0 4px 4px;
-  border-bottom: 1px solid var(--color-hairline);
+  padding: 6px 4px;
+  border-top: 0.5px solid var(--color-hairline);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
 }
 
 .wf-sound-clip {
-  min-width: 120px;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-body-sm);
+  min-width: 112px;
+  color: var(--color-on-surface-muted);
 }
 
-.wf-volume {
-  display: inline-flex;
+.wf-sound-clip b {
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+.wf-volume,
+.wf-volume-label {
+  display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--text-body-sm);
   white-space: nowrap;
 }
 
-.wf-volume input[type='range'] {
-  width: 120px;
+.wf-mute {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+}
+
+/* 音量推子（同 HyperFrames）：按 dB 刻度，0 dB 在正中，有一个小刻度 */
+.wf-fader {
+  position: relative;
+  display: block;
+  width: 128px;
+  height: 28px;
+  flex: none;
+}
+
+.wf-fader input {
+  position: relative;
+  z-index: var(--z-local-1);
+  width: 100%;
+  height: 28px;
+  margin: 0;
   accent-color: var(--color-on-surface);
   cursor: pointer;
 }
 
-.wf-volume output {
-  width: 40px;
-  color: var(--color-on-surface-muted);
+.wf-fader-unity {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 1px;
+  height: 5px;
+  translate: -0.5px 0;
+  background: var(--color-on-surface-muted);
+  pointer-events: none;
+}
+
+.wf-volume-value {
+  width: 52px;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  white-space: nowrap;
 }
 
 .wf-volume.is-blocked {
+  color: var(--color-disabled-text);
+}
+
+.wf-volume.is-blocked .wf-mute {
   color: var(--color-disabled-text);
 }
 
@@ -709,29 +773,35 @@
   cursor: default;
 }
 
+.wf-volume.is-blocked .wf-fader-unity {
+  opacity: var(--state-disabled-content);
+}
+
 /* ---- 成片区 ---- */
 
 .wf-tracks {
-  --timeline-ruler-height: 20px;
-  --timeline-playhead-top: 20px;
+  --timeline-ruler-height: 18px;
+  --timeline-playhead-top: 18px;
   --timeline-playhead-bottom: 0;
   --wf-film-height: 52px;
   --wf-lane-height: 26px;
-  /* 特效轨每行 22px、上下各留 2px，与 film-tracks.tsx 的 OVERLAY_ROW_PX、OVERLAY_PAD_PX 一致 */
-  --wf-overlay-height: calc(var(--wf-overlay-rows, 1) * 22px + 4px);
-  --wf-music-height: 32px;
+  /* 特效轨每行 24px（块高 22、行距 2），上面留 2px；与 film-tracks.tsx 的 ROW_PX、ROWS_TOP_PX 一致 */
+  --wf-overlay-height: calc(var(--wf-overlay-rows, 1) * 24px + 2px);
+  --wf-music-height: 34px;
 
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 120px minmax(0, 1fr);
+  user-select: none;
 }
 
+/* 轨名与各轨同高：刻度尺 18px 加 4px 之后是成片轨，字幕轨与音乐轨之间只空 4px */
 .wf-track-heads {
   display: grid;
   grid-template-rows:
-    var(--timeline-ruler-height) var(--wf-film-height) var(--wf-overlay-height)
-    var(--wf-lane-height) var(--wf-music-height);
+    var(--wf-film-height) var(--wf-overlay-height) var(--wf-lane-height)
+    var(--wf-music-height);
   row-gap: 6px;
-  padding-top: 4px;
+  padding-top: calc(var(--timeline-ruler-height) + 4px);
 }
 
 .wf-track-head {
@@ -739,9 +809,20 @@
   min-width: 0;
   align-items: center;
   gap: 6px;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-body-sm);
+  padding: 0 10px 0 4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
   white-space: nowrap;
+}
+
+/* 特效轨的轨名对齐第一行 */
+.wf-track-head.is-overlay {
+  height: var(--wf-lane-height);
+}
+
+.wf-track-head:last-child,
+.wf-lane.is-music {
+  margin-top: -2px;
 }
 
 .wf-track-scroll {
@@ -750,34 +831,31 @@
   scrollbar-width: thin;
 }
 
-/* 左边留 72px，与 film-tracks.tsx 的 START_GUTTER_PX 一致 */
+/* 时间区左留 8px，播放头的头完整露出；右留 16px。与 film-tracks.tsx 的 INSET_START_PX、INSET_END_PX 一致 */
 .wf-track-content {
   position: relative;
-  margin-left: 72px;
-  padding-top: 4px;
+  margin: 0 16px 0 8px;
+  padding-bottom: 2px;
 }
 
 .wf-track-content > .timeline-ruler {
   position: relative;
 }
 
+/* 拍点刻度：刻度尺下方每拍一根，透明度随拍点强度连续变化 */
 .wf-beat {
   position: absolute;
-  top: 16px;
+  top: 14px;
   width: 1px;
-  height: 6px;
-  background: var(--color-on-surface-faint);
-}
-
-.wf-beat.is-strong {
-  top: 13px;
-  height: 9px;
-  background: var(--color-on-surface-variant);
+  height: 8px;
+  translate: -0.5px 0;
+  background: var(--color-on-surface);
+  pointer-events: none;
 }
 
 .wf-head-pill {
   min-width: 0;
-  max-width: 64px;
+  max-width: 72px;
   height: 20px;
   margin-left: auto;
   overflow: hidden;
@@ -802,7 +880,7 @@
   background: var(--color-surface-container-lowest);
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
   color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
+  font-size: var(--text-label);
   line-height: calc(var(--wf-lane-height) - 4px);
   text-align: left;
   text-overflow: ellipsis;
@@ -824,7 +902,7 @@
   border-radius: inherit;
   background: var(--color-surface-container-lowest);
   color: var(--color-on-surface);
-  font-size: var(--text-caption);
+  font-size: var(--text-label);
 }
 
 .wf-lanes {
@@ -833,15 +911,25 @@
     var(--wf-film-height) var(--wf-overlay-height) var(--wf-lane-height)
     var(--wf-music-height);
   row-gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .wf-lane {
   position: relative;
   min-width: 0;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container);
+  margin-right: -8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
   pointer-events: none;
+}
+
+.wf-lane.is-film {
+  background: color-mix(in srgb, var(--color-on-surface) 4.5%, transparent);
+}
+
+/* 拖着东西经过时，能接收它的轨描一圈 */
+.wf-lane.is-drop {
+  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
 }
 
 .wf-lane > * {
@@ -851,12 +939,18 @@
 .wf-lane-hint {
   position: absolute;
   top: 50%;
-  left: 10px;
+  left: 8px;
   translate: 0 -50%;
   color: var(--color-on-surface-faint);
   font-size: var(--text-caption);
   white-space: nowrap;
   pointer-events: none;
+}
+
+.wf-lane-hint.is-tail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .wf-lane-hint.is-end {
@@ -865,15 +959,20 @@
 }
 
 .wf-clip,
-.wf-overlay,
 .wf-music {
   position: absolute;
-  top: 0;
-  height: 100%;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-highest);
-  box-shadow: inset 0 0 0 1px var(--color-hairline);
-  user-select: none;
+  top: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+}
+
+.wf-clip {
+  height: 48px;
+}
+
+.wf-music {
+  height: 30px;
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
 .wf-block-body {
@@ -889,15 +988,36 @@
   touch-action: none;
 }
 
+.wf-clip .wf-block-body {
+  cursor: pointer;
+}
+
 .wf-clip.is-selected,
 .wf-overlay.is-selected,
 .wf-music.is-selected {
   z-index: var(--z-local-2);
-  box-shadow: none;
 }
 
-.wf-clip.is-card .wf-block-body {
-  cursor: pointer;
+/* 拖动排序时拿起的段留在原处变淡 */
+.wf-clip.is-lifted {
+  opacity: 0.4;
+}
+
+/* 刚放下或排好的段：从放下处轻轻落位 */
+@keyframes wf-settle {
+  from {
+    opacity: 0.55;
+    transform: translateY(-6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wf-clip.is-settling {
+  animation: wf-settle var(--dur-m) var(--ease-decel);
 }
 
 .wf-clip-label {
@@ -920,21 +1040,54 @@
 
 .wf-clip-media {
   display: flex;
+  width: 100%;
   min-width: 0;
   height: 100%;
   flex-direction: column;
   overflow: hidden;
-  border-radius: var(--radius-md);
+  border-radius: inherit;
 }
 
+/* 成片段：上面一行画面，下面原声波形（组件段写组件名） */
 .wf-clip-frames {
   display: flex;
-  height: 62%;
+  height: 30px;
+  flex: none;
+  overflow: hidden;
+}
+
+.wf-clip-frames.is-component {
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-clip-frames.is-component img {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 0;
+  object-fit: cover;
 }
 
 .wf-clip-wave {
   display: flex;
-  height: 38%;
+  flex: 1;
+  background: var(--color-surface-container);
+}
+
+.wf-clip-foot {
+  flex: 1;
+  overflow: hidden;
+  padding: 0 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-clip.is-selected .wf-clip-foot {
+  color: var(--color-on-surface);
 }
 
 .wf-clip-card {
@@ -950,14 +1103,284 @@
   white-space: nowrap;
 }
 
-.wf-overlay .wf-clip-label,
-.wf-music .wf-clip-label {
-  top: 50%;
-  translate: 0 -50%;
+/* 特效块：行高 22，左边是和组件卡片同一张缩略图，右边写名字；按住中部拖改时间、上下拖换行 */
+.wf-overlay {
+  position: absolute;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+}
+
+.wf-overlay .wf-block-body,
+.wf-overlay.is-ghost {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px 0 3px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.wf-overlay:hover,
+.wf-overlay.is-selected {
+  color: var(--color-on-surface);
+}
+
+.wf-overlay.is-moving {
+  z-index: var(--z-local-3);
+  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+}
+
+.wf-overlay.is-moving .wf-block-body {
+  cursor: grabbing;
+}
+
+/* 拖组件卡到特效轨时标出落点与长度的虚线块 */
+.wf-overlay.is-ghost {
+  display: flex;
+  overflow: hidden;
+  outline: 1px dashed var(--color-on-surface);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--color-on-surface) 5%, transparent);
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.wf-overlay.is-ghost.is-blocked {
+  outline-color: var(--color-on-surface-faint);
+  opacity: 0.55;
+}
+
+.wf-overlay-thumb {
+  display: grid;
+  width: 28px;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-lowest);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface-faint);
+}
+
+.wf-overlay-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wf-overlay-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 要新开一行的位置：一条横线，松手才多出这一行 */
+.wf-overlay-insert {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: var(--z-local-2);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  pointer-events: none;
+}
+
+/* 拖动特效块时块上方的起止秒数；放不下时的原因 */
+.wf-time-bubble {
+  position: absolute;
+  z-index: var(--z-local-3);
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  gap: 4px;
+  translate: 0 -100%;
+  padding: 0 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .wf-music {
   overflow: hidden;
+}
+
+.wf-music-name {
+  position: absolute;
+  top: 3px;
+  left: 6px;
+  z-index: var(--z-local-1);
+  display: inline-flex;
+  height: 16px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-top-layer) 88%, transparent);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wf-music-name b {
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+/* 音乐块底部的拍点：透明度随强度；卡上切点的拍点用加长的实线 */
+.wf-music-beat {
+  position: absolute;
+  bottom: 2px;
+  width: 1px;
+  height: 5px;
+  background: var(--color-on-surface);
+  pointer-events: none;
+}
+
+.wf-music-beat.is-hit {
+  bottom: 1px;
+  width: 2px;
+  height: 9px;
+}
+
+/* ---- 拖放：拖动中轨道上的东西不动，只在能接收的轨上画会放到哪，松手才放下 ---- */
+
+.wf-drop-marker {
+  position: absolute;
+  top: var(--timeline-ruler-height);
+  z-index: var(--z-local-3);
+  width: 2px;
+  height: calc(var(--wf-film-height) + 8px);
+  translate: -1px 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  pointer-events: none;
+}
+
+.wf-drop-marker::before,
+.wf-drop-marker::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  height: 2px;
+  translate: -50% 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+
+.wf-drop-marker::before {
+  top: 0;
+}
+
+.wf-drop-marker::after {
+  bottom: 0;
+}
+
+/* 放不下：标记变虚线，旁边写原因 */
+.wf-drop-marker.is-blocked {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--color-on-surface) 0 4px,
+    transparent 4px 7px
+  );
+}
+
+.wf-drop-bubble {
+  position: absolute;
+  top: -2px;
+  z-index: var(--z-local-3);
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 4px;
+  translate: -50% 0;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 碰到时间区两端时说明框收回来 */
+.wf-drop-bubble.is-start {
+  translate: 0 0;
+}
+
+.wf-drop-bubble.is-end {
+  translate: -100% 0;
+}
+
+/* 吸附时的对齐线 */
+.wf-snap-guide {
+  position: absolute;
+  top: var(--timeline-ruler-height);
+  bottom: 0;
+  z-index: var(--z-local-2);
+  width: 0;
+  translate: -0.5px 0;
+  border-left: 1px solid var(--color-on-surface);
+  pointer-events: none;
+}
+
+/* 手上的缩影：跟在指针右下 */
+.wf-ghost {
+  position: fixed;
+  z-index: var(--z-popup);
+  display: flex;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  box-shadow:
+    0 0 0 1.5px var(--color-on-surface),
+    var(--shadow-3);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.wf-ghost.is-blocked {
+  box-shadow:
+    0 0 0 1.5px var(--color-on-surface-faint),
+    var(--shadow-3);
+  opacity: 0.6;
+  filter: grayscale(0.6);
+}
+
+/* 松手时没放下：缩影退回拿起的地方再消失 */
+.wf-ghost.is-returning {
+  opacity: 0;
+  transition:
+    left var(--dur-m) var(--ease-accel),
+    top var(--dur-m) var(--ease-accel),
+    opacity var(--dur-m) var(--ease-accel);
+}
+
+.wf-ghost-frames {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-ghost.is-returning {
+    transition: none;
+  }
+
+  .wf-clip.is-settling {
+    animation: none;
+  }
 }
 
 /* ---- 视频素材区 ---- */

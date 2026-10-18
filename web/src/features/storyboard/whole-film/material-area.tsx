@@ -15,6 +15,13 @@ import type { Material, MaterialGroup, MaterialTake } from './materials'
 /** 素材区里选中的一段：哪一版成片的哪个范围（素材时间，毫秒） */
 export type MaterialRange = { jobId: string; takeId: string; startMs: number; endMs: number }
 
+/** 拖着选中的范围走：指针在哪，范围拿起时在页面上的位置与大小；松手或取消后为 null */
+export type MaterialCarry = {
+  clientX: number
+  clientY: number
+  origin: { left: number; top: number; width: number; height: number }
+}
+
 type MaterialAreaProps = {
   groups: readonly MaterialGroup[]
   group: MaterialGroup | undefined
@@ -28,6 +35,8 @@ type MaterialAreaProps = {
   addBlocked: string | undefined
   /** 拖到成片轨上松手；落在轨上返回 true */
   onDrop: (clientX: number, clientY: number) => boolean
+  /** 拖动中指针移到哪；取消时为 null */
+  onCarry: (carry: MaterialCarry | null) => void
 }
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
@@ -44,6 +53,7 @@ export function MaterialArea({
   onAdd,
   addBlocked,
   onDrop,
+  onCarry,
 }: MaterialAreaProps) {
   if (group === undefined)
     return (
@@ -99,6 +109,7 @@ export function MaterialArea({
           <TakeRow
             key={take.id}
             keyframes={keyframes}
+            onCarry={onCarry}
             onDrop={onDrop}
             onRange={onRange}
             onVersion={onVersion}
@@ -120,6 +131,7 @@ type TakeRowProps = {
   onRange: (range: MaterialRange) => void
   onVersion: (takeId: string, jobId: string) => void
   onDrop: (clientX: number, clientY: number) => boolean
+  onCarry: (carry: MaterialCarry | null) => void
 }
 
 type RangeDrag = {
@@ -128,9 +140,19 @@ type RangeDrag = {
   edge: 'start' | 'end' | 'body'
   base: MaterialRange
   moved: boolean
+  origin: MaterialCarry['origin']
 }
 
-function TakeRow({ take, version, keyframes, range, onRange, onVersion, onDrop }: TakeRowProps) {
+function TakeRow({
+  take,
+  version,
+  keyframes,
+  range,
+  onRange,
+  onVersion,
+  onDrop,
+  onCarry,
+}: TakeRowProps) {
   const stripRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<RangeDrag | null>(null)
   const [lifting, setLifting] = useState(false)
@@ -146,12 +168,14 @@ function TakeRow({ take, version, keyframes, range, onRange, onVersion, onDrop }
     if (range === null || event.button !== 0) return
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
+    const box = event.currentTarget.getBoundingClientRect()
     dragRef.current = {
       pointerId: event.pointerId,
       originX: event.clientX,
       edge,
       base: range,
       moved: false,
+      origin: { left: box.left, top: box.top, width: box.width, height: box.height },
     }
   }
 
@@ -164,6 +188,7 @@ function TakeRow({ take, version, keyframes, range, onRange, onVersion, onDrop }
     current.moved = true
     if (current.edge === 'body') {
       setLifting(true)
+      onCarry({ clientX: event.clientX, clientY: event.clientY, origin: current.origin })
       return
     }
     const delta = Math.round(deltaPx * msPerPx())
@@ -191,6 +216,7 @@ function TakeRow({ take, version, keyframes, range, onRange, onVersion, onDrop }
   }
 
   const cancel = () => {
+    if (dragRef.current?.edge === 'body') onCarry(null)
     dragRef.current = null
     setLifting(false)
   }

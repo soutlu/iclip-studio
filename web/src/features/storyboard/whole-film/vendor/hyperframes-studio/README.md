@@ -13,7 +13,7 @@
 | `player/components/timelineSnapping.ts`、`.test.ts`                               | 全文               | 吸附到播放头、片段边界、拍点、刻度                                                     |
 | `player/components/timelineZoom.ts`、`.test.ts`                                   | 全文               | 缩放档位与滑杆                                                                         |
 | `player/components/timelineLayout.ts`、`automationLaneHeight.ts`                  | 全文               | 时间与像素换算、行几何                                                                 |
-| `player/components/timelineLayout.test.ts`                                        | 删去部分用例       | 删去依赖未收录模块（`timelineRulerGeometry`、`timelineCollision`、`timelineViewportGeometry`）的 4 个用例与 1 条断言 |
+| `player/components/timelineLayout.test.ts`                                        | 删去部分用例       | 删去依赖未收录模块（`timelineRulerGeometry`、`timelineViewportGeometry`）的 4 个用例 |
 | `player/components/timelineGaps.ts`、`.test.ts`                                   | 全文               | 整轨压实 `resolveAllTrackGaps`                                                         |
 | `player/components/timelineEditing.ts`                                            | 摘录               | 只取 `resolveTimelineMove`（去掉 z-index 叠放分支及其可选入参、出参）、`resolveTimelineResize` 与两个数值格式化函数 |
 | `player/components/timelineEditing.test.ts`                                       | 摘录               | 只留上述函数与分组移动、分组修剪的用例                                                 |

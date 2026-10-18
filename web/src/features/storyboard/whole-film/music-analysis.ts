@@ -48,12 +48,6 @@ export type MusicBeats =
   | { kind: 'loading' }
   | { kind: 'unavailable'; reason: string }
 
-/**
- * 拍点强度（0–1，这一拍的响度比上最响的一拍）到这个值算强拍，刻度加重。
- * Studio 只给连续的强度，没有强拍的划分，这条线是我们定的。
- */
-export const STRONG_BEAT_STRENGTH = 0.75
-
 const NO_STEADY_BEAT = '这首音乐没有稳定的节拍，无法自动卡点'
 
 /** 下载、解码一首音乐，用 HyperFrames 的拍点分析（与 Studio 同一套）找出拍点 */
@@ -68,7 +62,7 @@ const analyzeBeats = async (url: string, signal: AbortSignal): Promise<MusicBeat
   if (analysis.bpm === null) return []
   return analysis.beatTimes.map((time, index) => ({
     timeMs: Math.round(time * 1000),
-    strong: (analysis.beatStrengths[index] ?? 0) >= STRONG_BEAT_STRENGTH,
+    strength: analysis.beatStrengths[index] ?? 0,
   }))
 }
 

@@ -225,7 +225,7 @@ def _check_overlays(overlays: list[WholeFilmOverlay]) -> None:
         for overlay in sorted(row, key=lambda item: item.start):
             if previous is not None and overlay.start < previous.start + previous.duration:
                 raise ValueError(
-                    f"特效块「{overlay.id}」与「{previous.id}」在同一行（第 {overlay.track} 行）上重叠了"
+                    f"特效块「{overlay.id}」与「{previous.id}」在同一行（第 {overlay.track + 1} 行）上重叠了"
                 )
             previous = overlay
 

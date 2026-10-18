@@ -98,6 +98,7 @@ import {
   Blend,
   Type,
   Film,
+  Layers,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -267,6 +268,8 @@ const ICONS = {
   blend: Blend,
   type: Type,
   film: Film,
+  /** 整片的特效轨 */
+  layers: Layers,
 } as const
 
 export type IconName = keyof typeof ICONS

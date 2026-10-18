@@ -64,6 +64,6 @@ export const filmBeats = (draft: WholeFilmDraft, context: EditContext): MusicBea
   if (!draft.music) return []
   const { offset } = draft.music
   return musicOf(context, draft.music.jobId)
-    .beats.map((beat) => ({ timeMs: beat.timeMs - offset, strong: beat.strong }))
+    .beats.map((beat) => ({ timeMs: beat.timeMs - offset, strength: beat.strength }))
     .filter((beat) => beat.timeMs >= 0)
 }

@@ -8,7 +8,7 @@ import { commitEdit } from './history'
 import { cutsOf } from './timeline'
 
 const beatsEvery = (gapMs: number, count: number): MusicBeat[] =>
-  Array.from({ length: count }, (_, k) => ({ timeMs: k * gapMs, strong: k % 4 === 0 }))
+  Array.from({ length: count }, (_, k) => ({ timeMs: k * gapMs, strength: k % 4 === 0 ? 1 : 0.4 }))
 
 const music = { jobId: 'm1', offset: 0, volume: 1 }
 
@@ -128,7 +128,7 @@ describe('autoBeatSync：每 500 毫秒一拍、每四拍一个强拍', () => {
 describe('autoBeatSync：设计稿 QA 的数值用例', () => {
   // 设计稿示例音乐的拍点（秒 × 1000），每四拍一个强拍
   const beats = [186, 789, 1_393, 1_997, 2_601, 3_204, 3_808, 4_412, 5_016, 5_619].map(
-    (timeMs, k) => ({ timeMs, strong: k % 4 === 0 }),
+    (timeMs, k) => ({ timeMs, strength: k % 4 === 0 ? 1 : 0.4 }),
   )
   const context = contextOf(
     { clip1: source(13_056), clip3: source(13_056) },
