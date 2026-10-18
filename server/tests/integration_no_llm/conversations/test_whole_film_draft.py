@@ -298,9 +298,17 @@ async def subtitle_of_inherited_take(scene: Scene) -> dict[str, Any]:
     return _edited(scene, subtitle.id, source=scene.inherited.id)
 
 
-async def subtitle_of_another_take(scene: Scene) -> dict[str, Any]:
+async def subtitle_of_a_take_off_the_track(scene: Scene) -> dict[str, Any]:
+    """改过字的那条成片的片段都从画面轨删掉了，改字还留在草稿里。"""
+
     another = await finished(scene.repo, scene.owner, scene.mine, "another")
     subtitle = await scene.repo.create(make_subtitle(another))
+    return _edited(scene, subtitle.id, source=scene.take.id)
+
+
+async def subtitle_of_other_conversations_take(scene: Scene) -> dict[str, Any]:
+    theirs = await finished(scene.repo, scene.owner, scene.other, "elsewhere")
+    subtitle = await scene.repo.create(make_subtitle(theirs))
     return _edited(scene, subtitle.id, source=scene.take.id)
 
 
@@ -327,7 +335,8 @@ async def video_as_subtitle(scene: Scene) -> dict[str, Any]:
         pytest.param(unfinished_music, False, id="还没生成完的音乐"),
         pytest.param(video_as_music, False, id="视频当音乐"),
         pytest.param(subtitle_of_inherited_take, True, id="继承来的出片的字幕"),
-        pytest.param(subtitle_of_another_take, False, id="不在画面轨里的出片的字幕"),
+        pytest.param(subtitle_of_a_take_off_the_track, True, id="不在画面轨里的出片的字幕"),
+        pytest.param(subtitle_of_other_conversations_take, False, id="别的对话的出片的字幕"),
         pytest.param(unknown_subtitle, False, id="没有这条字幕"),
         pytest.param(video_as_subtitle, False, id="视频当字幕"),
     ],
