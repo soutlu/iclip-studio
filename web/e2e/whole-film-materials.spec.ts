@@ -283,12 +283,10 @@ test('素材轨按自身时长铺满一行，缩放成片时间线不跟着变',
   )
 })
 
-test('点镜头：预览切到这条素材并播放这个镜头，播完停在出点；播放、点成片轨、拖播放头都回到成片', async ({
-  page,
-}) => {
+test('点镜头预览选区，播完可重播；点成片轨、拖播放头回到成片', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1, 1])
   const label = dialog.locator('.wf-stage-label')
-  // 成片里先有一段，工具条的播放才能用；加入成片也是成片编辑，预览回到成片
+  // 成片里先有一段供切回预览；加入成片也是成片编辑，预览回到成片。
   await shotOf(materials, 1, 'A', 1).click()
   await expect(label).toBeVisible()
   await page.keyboard.press('Enter')
@@ -309,10 +307,13 @@ test('点镜头：预览切到这条素材并播放这个镜头，播完停在�
     })
   await expect(label).toContainText('2.0 秒 · 选区 1.0–2.0')
 
-  // 点播放：回到成片
+  // 点播放：从当前选区的入点重播，仍留在素材预览。
   await dialog.getByRole('button', { name: '播放' }).click()
-  await expect(label).toHaveCount(0)
-  await expect(materials.locator('.wf-material-playhead')).toHaveCount(0)
+  await expect(label).toBeVisible()
+  await expect.poll(async () => (await previewVideo(dialog))?.paused).toBe(false)
+  const restarted = await previewVideo(dialog)
+  expect(restarted?.time).toBeGreaterThanOrEqual(1)
+  expect(restarted?.time).toBeLessThan(2)
 
   // 点成片轨上的段：回到成片
   await shotOf(materials, 1, 'A', 3).click()
