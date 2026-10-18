@@ -22,7 +22,7 @@ import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
 
 const run = promisify(execFile)
-// catalog.json 由 web/scripts/hyperframes-catalog.mjs 生成，形状即 ComponentCatalog（JSON 推不出字面量联合）。
+// catalog.json 人工维护，形状即 ComponentCatalog（JSON 推不出字面量联合）。
 const catalog = catalogJson as unknown as ComponentCatalog
 
 async function main(): Promise<void> {

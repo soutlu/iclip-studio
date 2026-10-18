@@ -92,7 +92,7 @@ async function upToDate(lock, inputs) {
   return true
 }
 
-/** 组件目录收录的组件名；目录由 hyperframes-catalog.mjs 生成。 */
+/** 组件目录（人工维护的 catalog.json）收录的组件名。 */
 async function includedNames() {
   const catalog = JSON.parse(await readFile(join(CATALOG_DIR, 'catalog.json'), 'utf8'))
   if (catalog.version !== HF_VERSION) {

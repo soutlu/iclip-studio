@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { cjkTwinFaces, familyFontCss, fontFaceDescriptors } from './hyperframes-shared.mjs'
+import { cjkTwinFaces, fontFaceDescriptors } from './hyperframes-shared.mjs'
 
 /** 生成的 @font-face 拆成 { family, weight, style, src, range }，便于逐条比对。 */
 const parseRules = (css) =>
@@ -35,18 +35,6 @@ beforeAll(async () => {
 afterAll(() => rm(notoDir, { recursive: true, force: true }))
 
 const NOTO = '../../npm/@fontsource/noto-sans-sc@5.3.1/files/noto-sans-sc'
-
-describe('familyFontCss', () => {
-  it('字体名换成小写连字符的文件名，放在 vendor/fonts/families/', () => {
-    expect(familyFontCss('Inter')).toBe('vendor/fonts/families/inter.css')
-    expect(familyFontCss('Big Shoulders Display')).toBe(
-      'vendor/fonts/families/big-shoulders-display.css',
-    )
-    expect(familyFontCss('Roboto Flex (Variable)')).toBe(
-      'vendor/fonts/families/roboto-flex-variable.css',
-    )
-  })
-})
 
 describe('fontFaceDescriptors', () => {
   it('取每条 @font-face 的字体名、字重与字形；normal/bold 换成数字，区间原样，缺省 400 normal', () => {

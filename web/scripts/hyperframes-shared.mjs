@@ -1,6 +1,6 @@
 /**
- * hyperframes-registry.mjs（构建时同步组件库）与 hyperframes-catalog.mjs（升级时生成组件目录）共用：
- * 版本与路径、下载与校验、组件库条目的读取、外链本地化规则。
+ * hyperframes-registry.mjs（构建时同步组件库）与 render/scripts/smoke-catalog.mjs（组件的冒烟筛选）共用：
+ * 版本与路径、下载与校验、组件库条目的读取与归类、外链本地化规则。
  *
  * 外链本地化：组件库里的组件从 jsDelivr 取 GSAP、three 等脚本，从 Google Fonts 取字体；国内取不到，
  * 一律换成本地 `vendor/` 下的文件。脚本取 npm 上的同一版本（jsDelivr 的 /npm/ 本来就是 npm 包里的原文件），
@@ -475,67 +475,6 @@ export async function fontFaces(
 export const isLatinSubset = (subset) => subset === 'latin' || subset === 'latin-ext'
 
 // ---------------------------------------------------------------- 组件字体的整套字形
-
-const GENERIC_FAMILIES = new Set([
-  'serif',
-  'sans-serif',
-  'monospace',
-  'cursive',
-  'fantasy',
-  'system-ui',
-  'emoji',
-  'math',
-  'fangsong',
-  'inherit',
-  'initial',
-  'unset',
-  'revert',
-  '-apple-system',
-  'blinkmacsystemfont',
-])
-const familyNames = (value) =>
-  value
-    // var(--x, A, B) 取回退里的字体名。
-    .replace(/var\(\s*--[\w-]+\s*,?/g, '')
-    .replaceAll(')', '')
-    .split(',')
-    .map((name) =>
-      name
-        .trim()
-        .replace(/^['"]|['"]$/g, '')
-        .trim(),
-    )
-    .filter(
-      (name) =>
-        name &&
-        !/^ui-/.test(name) &&
-        !GENERIC_FAMILIES.has(name.toLowerCase()) &&
-        /^[\w][\w .-]*$/.test(name),
-    )
-
-/**
- * 组件文件里的字体：`declared` 是 @font-face 定义的（网页字体），`used` 是 font-family 里写的字体名
- * （含 var() 的回退，去掉通用字体族）。
- */
-export function fontFamilies(text) {
-  const declared = new Set()
-  for (const [, block] of text.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
-    const value = /font-family\s*:\s*([^;}]+)/.exec(block)?.[1]
-    if (value) for (const name of familyNames(value)) declared.add(name)
-  }
-  const used = new Set()
-  for (const [, value] of text.matchAll(/font-family\s*:\s*([^;}{"`]+)/g)) {
-    for (const name of familyNames(value)) used.add(name)
-  }
-  return { declared, used }
-}
-
-/** 字体名 → 这个字体整套字形（西文加中文）的 CSS 路径（相对组件目录根）。 */
-export const familyFontCss = (family) =>
-  `vendor/fonts/families/${family
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')}.css`
 
 // 中文补字覆盖的码位：中日韩部首、标点、假名、注音、带圈字符、汉字（含扩展 A 与兼容汉字）、
 // 竖排与全角形式、扩展 B 以后。拉丁字母与常用西文标点不在内，组件自己的字体照常显示它们。
