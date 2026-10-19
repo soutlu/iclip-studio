@@ -184,8 +184,8 @@ def test_openapi_publishes_generation_kind_operation_and_status_as_enums() -> No
 
     app = build_test_app(InMemoryGenerationRepository(), granted=None)
     fields = app.openapi()["components"]["schemas"]["GenerationOut"]["properties"]
-    assert fields["kind"]["enum"] == ["video", "image", "subtitle", "audio"]
-    assert fields["operation"]["enum"] == ["generate", "compose", "cut", "upload"]
+    assert fields["kind"]["enum"] == ["video", "image", "subtitle", "audio", "whole_film"]
+    assert fields["operation"]["enum"] == ["generate", "compose", "cut", "upload", "render"]
     assert fields["status"]["enum"] == ["pending", "submitting", "submitted", "completed", "failed"]
 
 

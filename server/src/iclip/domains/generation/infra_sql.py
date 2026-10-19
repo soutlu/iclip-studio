@@ -7,7 +7,6 @@ from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Final
 
 from sqlalchemy import (
-    CheckConstraint,
     Column,
     ColumnElement,
     DateTime,
@@ -102,8 +101,7 @@ generation_jobs_table = Table(
     Column("kind", Text, nullable=False),
     Column("operation", Text, nullable=False),
     Column("provider", Text, nullable=False),
-    # 切图与上传没有请求。none_as_null：None 必须落成 SQL NULL，默认会落成 JSON null，
-    # 被 ck_generation_jobs_request 拒掉。
+    # 切图与上传没有请求。none_as_null：None 落成 SQL NULL，不是 JSON null，读回来才是「没有」。
     Column("request", JSONB(none_as_null=True), nullable=True),
     Column("status", Text, nullable=False),
     Column("provider_task_id", Text, nullable=True),
@@ -155,86 +153,7 @@ generation_jobs_table = Table(
         "created_at",
         postgresql_where=text("content_md5 IS NOT NULL"),
     ),
-    # 每种行的必填与留空由组合约束兜底，与迁移 0020 同名同式：出片与图片生成没有来源和区间，
-    # 编辑段必有来源、原作与区间，合成必有来源与原作、没有区间；帧图编辑两种来源至多一个，
-    # 切图必有库内来源，上传没有来源、只有音乐能挂对话（与迁移 0032 同式）；切图与上传没有请求、
-    # 创建即完成。
-    # 请求那条的 IS NOT NULL 不能省：jsonb_typeof(NULL) 让 CHECK 直接放行。
-    CheckConstraint(
-        "kind IN ('video', 'image', 'subtitle', 'audio')", name="ck_generation_jobs_kind"
-    ),
-    CheckConstraint(
-        "operation IN ('generate', 'compose', 'cut', 'upload')",
-        name="ck_generation_jobs_operation",
-    ),
-    CheckConstraint(
-        "(operation IN ('cut', 'upload') AND request IS NULL)"
-        " OR (operation IN ('generate', 'compose') AND request IS NOT NULL"
-        " AND jsonb_typeof(request) = 'object')",
-        name="ck_generation_jobs_request",
-    ),
-    CheckConstraint(
-        "kind <> 'video' OR (source_url IS NULL AND ("
-        "(operation = 'generate' AND source_job_id IS NULL AND root_job_id IS NULL"
-        " AND range_start_ms IS NULL AND range_end_ms IS NULL)"
-        " OR (operation = 'generate' AND source_job_id IS NOT NULL AND root_job_id IS NOT NULL"
-        " AND range_start_ms IS NOT NULL AND range_end_ms IS NOT NULL"
-        " AND range_start_ms >= 0 AND range_end_ms > range_start_ms)"
-        " OR (operation = 'compose' AND source_job_id IS NOT NULL AND root_job_id IS NOT NULL"
-        " AND range_start_ms IS NULL AND range_end_ms IS NULL)"
-        " OR operation = 'upload'))",
-        name="ck_generation_jobs_video_shape",
-    ),
-    CheckConstraint(
-        "kind <> 'image' OR (root_job_id IS NULL AND range_start_ms IS NULL"
-        " AND range_end_ms IS NULL AND ("
-        "(operation = 'generate' AND (source_job_id IS NULL OR source_url IS NULL))"
-        " OR operation IN ('cut', 'upload')))",
-        name="ck_generation_jobs_image_shape",
-    ),
-    CheckConstraint(
-        "operation <> 'cut'"
-        " OR (kind = 'image' AND source_job_id IS NOT NULL AND source_url IS NULL)",
-        name="ck_generation_jobs_cut_shape",
-    ),
-    CheckConstraint(
-        "operation <> 'upload' OR ((conversation_id IS NULL OR kind = 'audio')"
-        " AND source_job_id IS NULL"
-        " AND source_url IS NULL AND root_job_id IS NULL"
-        " AND range_start_ms IS NULL AND range_end_ms IS NULL)",
-        name="ck_generation_jobs_upload_shape",
-    ),
-    CheckConstraint(
-        "operation NOT IN ('cut', 'upload')"
-        " OR (status = 'completed' AND output_url IS NOT NULL AND finished_at IS NOT NULL)",
-        name="ck_generation_jobs_settled",
-    ),
-    # 只有视频上传记 MD5；与迁移 0023 同名同式。
-    CheckConstraint(
-        "content_md5 IS NULL OR (kind = 'video' AND operation = 'upload')",
-        name="ck_generation_jobs_content_md5",
-    ),
-    CheckConstraint(
-        "kind <> 'subtitle' OR (operation = 'generate' AND source_job_id IS NOT NULL"
-        " AND source_url IS NULL AND root_job_id IS NULL AND shot_index IS NULL"
-        " AND range_start_ms IS NULL AND range_end_ms IS NULL"
-        " AND output_url IS NULL AND watermark_output_url IS NULL"
-        " AND (status <> 'completed' OR sentences IS NOT NULL))",
-        name="ck_generation_jobs_subtitle_shape",
-    ),
-    CheckConstraint(
-        "sentences IS NULL OR (kind = 'subtitle' AND jsonb_typeof(sentences) = 'array')",
-        name="ck_generation_jobs_sentences",
-    ),
-    CheckConstraint(
-        "kind <> 'audio' OR (operation IN ('generate', 'upload')"
-        " AND source_job_id IS NULL AND source_url IS NULL AND root_job_id IS NULL"
-        " AND shot_index IS NULL AND range_start_ms IS NULL AND range_end_ms IS NULL"
-        " AND watermark_output_url IS NULL"
-        " AND (operation <> 'generate' OR (conversation_id IS NOT NULL"
-        " AND (status <> 'completed' OR (output_url IS NOT NULL AND duration_ms IS NOT NULL)))))",
-        name="ck_generation_jobs_audio_shape",
-    ),
+    # 种类、操作与每种行的形状不建 CHECK：规则只在 Python 里，新增一种记录不用改表（迁移 0035）。
 )
 
 _JOBS = generation_jobs_table.c
@@ -463,8 +382,8 @@ class SqlGenerationRepository:
             rows = (await conn.execute(stmt)).all()
         return {conversation_id: url for conversation_id, url in rows}
 
-    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
-        return await self._update(job_id, status=STATUS_SUBMITTING)
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        return await self._update_if(job_id, STATUS_PENDING, status=STATUS_SUBMITTING)
 
     async def mark_submitted(
         self,

@@ -98,8 +98,9 @@ class AnnouncingGenerationRepository:
             inherited=inherited,
         )
 
-    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
-        return self._announce(await self._inner.mark_submitting(job_id))
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        job = await self._inner.mark_submitting(job_id)
+        return None if job is None else self._announce(job)
 
     async def mark_submitted(
         self,

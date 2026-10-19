@@ -90,8 +90,10 @@ class GenerationRepository(Protocol):
         之外，再并上经它继承来的记录（不看属主）；其余筛选与 ``before`` 锚点对两者一视同仁。"""
         ...
 
-    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
-        """在调用 Provider 前持久化 submitting，使恢复流程能识别提交结果未知的任务。"""
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        """在调用 Provider 前持久化 submitting，使恢复流程能识别提交结果未知的任务。
+
+        只改还在排队（pending）的行；已经有了结论（如排队时被取消）的不动，返回 None。"""
         ...
 
     async def mark_submitted(

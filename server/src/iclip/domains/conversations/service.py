@@ -300,28 +300,37 @@ class WholeFilmRenderUnavailable(Exception):
 
 
 class WholeFilmExports(Protocol):
-    """整片导出，由组合根接到渲染服务、生成记录与对象存储上。导出状态只在渲染服务内存里。
-
-    渲染服务不认这份草稿抛 ValidationFailed（消息是它给的那句话），连不上或答复不对抛
-    ``WholeFilmRenderUnavailable``。"""
+    """整片导出，由组合根接到生成记录与渲染服务上：每次导出是一条整片生成记录，由生成队列交给
+    渲染服务。归属（属主、这段对话）由用例核对过才调进来。"""
 
     async def start(
-        self, *, export_id: uuid.UUID, conversation_id: uuid.UUID, document: WholeFilmDocument
+        self,
+        principal: Principal,
+        *,
+        conversation_id: uuid.UUID,
+        revision: int,
+        document: WholeFilmDocument,
+    ) -> uuid.UUID:
+        """记下这次导出要的成片、音乐与字幕，建一条整片生成记录排队，返回它的 id。
+
+        用到的记录没有产物地址抛 ValidationFailed。"""
+        ...
+
+    async def latest(
+        self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID
+    ) -> WholeFilmExport | None:
+        """这段对话、这个属主最新的一次导出；一次都没有给 None。"""
+        ...
+
+    async def cancel(
+        self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID, export_id: uuid.UUID
     ) -> None:
-        """把草稿用到的成片、音乐与字幕换成渲染服务取得到的地址，签好上传地址，交给渲染服务排队。"""
-        ...
-
-    async def get(self, export_id: uuid.UUID) -> WholeFilmExport | None:
-        """读这次导出；渲染服务里查不到（过期、重启过或从没有过）给 None。``done`` 时带下载地址。"""
-        ...
-
-    async def cancel(self, export_id: uuid.UUID) -> bool:
-        """取消排队中或渲染中的这次导出，已是终态也算成；查不到给 False。"""
+        """取消一次导出。不是这段对话、这个属主的整片导出抛 NotFound；正在交给渲染服务抛
+        Conflict；渲染服务连不上抛 ``WholeFilmRenderUnavailable``；已结束的不改。"""
         ...
 
 
 _EXPORTS_OFF = "整片导出没有开通"
-_EXPORT_GONE = "导出已中断，请重新导出"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -738,43 +747,37 @@ class ConversationService:
         document = None if found is None else WholeFilmDocument.model_validate(found.document)
         if document is None or not document.layer0:
             raise ValidationFailed("画面轨里还没有内容，导不出整片")
-        sources = document.video_sources()
-        export_id = uuid.uuid4()
-        await exports.start(export_id=export_id, conversation_id=conversation.id, document=document)
-        return export_id, sources
+        export_id = await exports.start(
+            principal, conversation_id=conversation.id, revision=revision, document=document
+        )
+        return export_id, document.video_sources()
 
-    async def whole_film_export(
-        self, principal: Principal, conversation_id: uuid.UUID, export_id: uuid.UUID
-    ) -> WholeFilmExport:
-        """读一次导出；导出归导出的人，只有属主能看。查不到或不是这段对话的都是 404。"""
+    async def latest_whole_film_export(
+        self, principal: Principal, conversation_id: uuid.UUID
+    ) -> WholeFilmExport | None:
+        """这段对话最新的一次导出；导出归导出的人，只有属主能看，继承来的不算。"""
 
         conversation = await self._workspace_writable(principal, conversation_id)
-        return await self._own_export(self._require_exports(), conversation.id, export_id)
+        return await self._require_exports().latest(
+            conversation_id=conversation.id, owner_user_id=conversation.owner_user_id
+        )
 
     async def cancel_whole_film_export(
         self, principal: Principal, conversation_id: uuid.UUID, export_id: uuid.UUID
     ) -> None:
-        """取消一次导出；先核对它是这段对话的，别的对话的导出 id 取消不了。"""
+        """取消一次导出；别的对话、别人的导出 id 取消不了（404）。"""
 
         conversation = await self._workspace_writable(principal, conversation_id)
-        exports = self._require_exports()
-        await self._own_export(exports, conversation.id, export_id)
-        if not await exports.cancel(export_id):
-            raise NotFound(_EXPORT_GONE)
+        await self._require_exports().cancel(
+            conversation_id=conversation.id,
+            owner_user_id=conversation.owner_user_id,
+            export_id=export_id,
+        )
 
     def _require_exports(self) -> WholeFilmExports:
         if self._exports is None:
             raise ValidationFailed(_EXPORTS_OFF)
         return self._exports
-
-    @staticmethod
-    async def _own_export(
-        exports: WholeFilmExports, conversation_id: uuid.UUID, export_id: uuid.UUID
-    ) -> WholeFilmExport:
-        found = await exports.get(export_id)
-        if found is None or found.conversation_id != conversation_id:
-            raise NotFound(_EXPORT_GONE)
-        return found
 
     async def workspace_writable(
         self, principal: Principal, conversation_id: uuid.UUID

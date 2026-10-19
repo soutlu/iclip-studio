@@ -7,9 +7,9 @@ import {
   zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse as zExportCancelled,
   zConversationEnvelope,
   zGenerationEnvelope,
+  zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse as zLatestExport,
   zWholeFilmDraftOut,
   zWholeFilmDraftSavedOut,
-  zWholeFilmExportOut,
   zWholeFilmExportStartedOut,
 } from '@/shared/api/generated/zod.gen'
 import {
@@ -24,6 +24,8 @@ const draftPath = (conversationId: string) =>
 
 export const wholeFilmQueryKeys = {
   draft: (conversationId: string) => ['whole-film', 'draft', conversationId] as const,
+  latestExport: (conversationId: string) =>
+    ['whole-film', 'export', 'latest', conversationId] as const,
   music: (conversationId: string) =>
     [...storyboardQueryKeys.conversation(conversationId), 'audio'] as const,
   subtitles: (conversationId: string) =>
@@ -59,8 +61,8 @@ const exportsPath = (conversationId: string) =>
   `/conversations/${encodeURIComponent(conversationId)}/whole-film/exports`
 
 /**
- * 按服务端存着的那一版草稿导出（合同 §6「整片导出」）；`revision` 不是存着的那一版是 409，
- * 没开通、草稿合成不了是 422，渲染服务不可用是 502（都带一句可以给人看的原因）。
+ * 按服务端存着的那一版草稿导出（合同 §6「整片导出」），受理即排队；`revision` 不是存着的那一版是 409，
+ * 没开通、画面轨是空的是 422（都带一句可以给人看的原因）。渲染服务不收、连不上都在导出状态里报失败。
  */
 export const startWholeFilmExport = (conversationId: string, revision: number) =>
   apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
@@ -69,12 +71,19 @@ export const startWholeFilmExport = (conversationId: string, revision: number) =
     method: 'POST',
   })
 
-/** 导出现在的样子；查不到（渲染服务重启过、结束满 1 小时）是 404 */
-export const readWholeFilmExport = (conversationId: string, exportId: string) =>
-  apiFetch(`${exportsPath(conversationId)}/${encodeURIComponent(exportId)}`, zWholeFilmExportOut, {
-    fallbackErrorMessage: '读取导出进度失败',
-  })
+/** 自己在这段对话里最新的一次导出；没导出过为 null。 */
+export const readLatestWholeFilmExport = async (conversationId: string, signal: AbortSignal) =>
+  (
+    await apiFetch(`${exportsPath(conversationId)}/latest`, zLatestExport, {
+      fallbackErrorMessage: '读取导出进度失败',
+      signal,
+    })
+  ).export
 
+/**
+ * 取消一次导出；已经结束的也答 204、状态不变。正在交给渲染服务的那一刻是 409，
+ * 渲染服务连不上是 502（都带一句可以给人看的原因），导出不变。
+ */
 export const cancelWholeFilmExport = (conversationId: string, exportId: string) =>
   apiFetch(`${exportsPath(conversationId)}/${encodeURIComponent(exportId)}`, zExportCancelled, {
     fallbackErrorMessage: '取消导出失败',

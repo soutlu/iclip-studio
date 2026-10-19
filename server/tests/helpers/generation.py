@@ -459,7 +459,9 @@ class InMemoryGenerationRepository:
         rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
         return tuple(rows[:limit])
 
-    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob:
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        if self.jobs[job_id].status != STATUS_PENDING:
+            return None
         return self._replace(job_id, status=STATUS_SUBMITTING)
 
     async def mark_submitted(

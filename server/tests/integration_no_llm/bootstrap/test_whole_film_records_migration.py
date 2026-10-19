@@ -14,7 +14,6 @@ import pytest
 from alembic import command
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
 from iclip.domains.generation.schemas import (
@@ -155,7 +154,7 @@ def test_upgrade_deletes_only_whole_films_and_what_points_at_them(scratch_db: st
         )
     )
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, RECORDS_DROPPED)
 
     jobs = asyncio.run(_rows(scratch_db, "SELECT id FROM iclip.generation_jobs"))
     downloads = asyncio.run(_rows(scratch_db, "SELECT job_id FROM iclip.tracking_events"))
@@ -179,32 +178,3 @@ def test_downgrade_brings_back_only_the_constraint_branch(scratch_db: str) -> No
     command.downgrade(cfg, BEFORE)
     owner = asyncio.run(_user(scratch_db))
     asyncio.run(_run(scratch_db, [(_INSERT_JOB, _whole_film(owner, uuid.uuid4()))]))
-
-
-@pytest.mark.parametrize(
-    ("shape", "accepted"),
-    [
-        ({"source": None, "root": None, "shot_index": None}, False),
-        ({"source": "take", "root": None}, False),
-        ({"source": None, "root": "take"}, False),
-        ({"source": "take", "root": "take"}, True),
-    ],
-    ids=["整片", "只有来源", "只有原作", "合成"],
-)
-async def test_compose_rows_need_a_source_and_an_original(
-    engine: AsyncEngine, shape: Mapping[str, Any], accepted: bool
-) -> None:
-    owner = await make_user(engine)
-    conversation = uuid.uuid4()
-    take = _job(owner, conversation)
-    async with engine.begin() as conn:
-        await conn.execute(_INSERT_JOB, take)
-    links = {key: take["id"] if value == "take" else value for key, value in shape.items()}
-    row = _job(owner, conversation, operation=OPERATION_COMPOSE, **links)
-    if accepted:
-        async with engine.begin() as conn:
-            await conn.execute(_INSERT_JOB, row)
-        return
-    with pytest.raises(IntegrityError):
-        async with engine.begin() as conn:
-            await conn.execute(_INSERT_JOB, row)

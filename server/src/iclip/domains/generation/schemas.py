@@ -44,11 +44,13 @@ KIND_VIDEO: Final = "video"
 KIND_IMAGE: Final = "image"
 KIND_SUBTITLE: Final = "subtitle"
 KIND_AUDIO: Final = "audio"
+KIND_WHOLE_FILM: Final = "whole_film"
 
 OPERATION_GENERATE: Final = "generate"
 OPERATION_COMPOSE: Final = "compose"
 OPERATION_CUT: Final = "cut"
 OPERATION_UPLOAD: Final = "upload"
+OPERATION_RENDER: Final = "render"
 
 ClipStage = Literal["fetching", "processing", "uploading"]
 
@@ -461,6 +463,43 @@ class MusicRequest(CamelModel):
     channels: Literal[2] = 2
 
 
+class WholeFilmVideoSource(CamelModel):
+    """导出用到的一条成片：记录 id 与它的公开地址。"""
+
+    job_id: uuid.UUID
+    url: DownloadUrl
+
+
+class WholeFilmMusicSource(CamelModel):
+    job_id: uuid.UUID
+    url: DownloadUrl
+
+
+class WholeFilmSubtitles(CamelModel):
+    """一条成片最新的那条已完成字幕记录的逐句结果。"""
+
+    source_job_id: uuid.UUID
+    subtitle_job_id: uuid.UUID
+    sentences: tuple[SubtitleSentence, ...]
+
+
+class WholeFilmRequest(CamelModel):
+    """一次整片导出交给渲染服务的全部输入，受理时定下，之后不变。生成域不解析草稿。
+
+    ``videos`` 是画面轨用到的成片，去重、按第一次出现的先后；用列表是因为 JSONB 不保留键序。"""
+
+    kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
+    operation: ClassVar[GenerationOperation] = OPERATION_RENDER
+
+    revision: int
+    """导出的那一版草稿。"""
+    document: dict[str, Any]
+    """草稿原样（camelCase 的 JSON）。"""
+    videos: list[WholeFilmVideoSource]
+    music: WholeFilmMusicSource | None
+    subtitles: list[WholeFilmSubtitles]
+
+
 @overload
 def request_to_payload(request: GenerationRequest) -> dict[str, Any]: ...
 @overload
@@ -655,6 +694,7 @@ __all__ = [
     "KIND_IMAGE",
     "KIND_SUBTITLE",
     "KIND_VIDEO",
+    "KIND_WHOLE_FILM",
     "MAX_COMPOSE_SEGMENTS",
     "MAX_METADATA_CHARS",
     "MAX_MODEL_CHARS",
@@ -667,6 +707,7 @@ __all__ = [
     "OPERATION_COMPOSE",
     "OPERATION_CUT",
     "OPERATION_GENERATE",
+    "OPERATION_RENDER",
     "OPERATION_UPLOAD",
     "ORIGIN_FIELDS",
     "READ_BACK_CONTEXT",
@@ -712,6 +753,10 @@ __all__ = [
     "VideoTaskOut",
     "VideoTaskResult",
     "VideoTaskStatus",
+    "WholeFilmMusicSource",
+    "WholeFilmRequest",
+    "WholeFilmSubtitles",
+    "WholeFilmVideoSource",
     "generation_out",
     "nonblank",
     "request_to_payload",

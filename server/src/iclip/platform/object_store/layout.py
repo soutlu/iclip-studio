@@ -35,10 +35,10 @@ class MediaPaths:
 
         return f"{OSS_ROOT}/video-masters/{job_id}.{ext}"
 
-    def whole_film_export(self, *, export_id: uuid.UUID) -> str:
-        """导出的整片：私有读的临时对象，桶的生命周期规则 1 天后删除，不建生成记录。"""
+    def whole_film(self, *, job_id: uuid.UUID) -> str:
+        """导出的整片，按它那条生成记录的 id 命名，长期保留，不进过期规则。"""
 
-        return f"{OSS_ROOT}/whole-film-exports/{export_id}.mp4"
+        return f"{OSS_ROOT}/whole-films/{job_id}.mp4"
 
     def shot_board(self, *, extraction_key: str, index: int) -> str:
         """按取帧键分目录，使同一视频与镜头表复用预览板。"""

@@ -1490,9 +1490,9 @@ export const zGenerationOut = z.object({
   errorMessage: z.string().nullable(),
   finishedAt: z.iso.datetime().nullish(),
   id: z.uuid(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio']),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload']),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render']),
   outputUrl: z.string().nullable(),
   rangeEndMs: z.int().nullish(),
   rangeStartMs: z.int().nullish(),
@@ -2813,22 +2813,32 @@ export const zWholeFilmExportIn = z.object({
 /**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``downloadUrl`` 与 ``expiresAt`` 只在 ``done`` 时有。
+ * 一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export const zWholeFilmExportOut = z.object({
   downloadUrl: z.string().nullable(),
   error: zWholeFilmExportErrorOut.nullable(),
-  expiresAt: z.iso.datetime().nullable(),
-  progress: z.number(),
+  id: z.uuid(),
+  progress: z.number().nullable(),
   queuePosition: z.int().nullable(),
+  sourceJobIds: z.array(z.uuid()),
   status: z.enum(['queued', 'rendering', 'uploading', 'done', 'failed', 'cancelled']),
+})
+
+/**
+ * WholeFilmExportLatestOut
+ *
+ * 这段对话最新的一次导出；还没导出过为 null。
+ */
+export const zWholeFilmExportLatestOut = z.object({
+  export: zWholeFilmExportOut.nullable(),
 })
 
 /**
  * WholeFilmExportStartedOut
  *
- * 已交给渲染服务排队。``sourceJobIds`` 是这次导出用到的成片，去重、按在画面轨里第一次出现的
- * 先后；下载时按它们各记一次下载。
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
+ * 用到的成片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
  */
 export const zWholeFilmExportStartedOut = z.object({
   exportId: z.uuid(),
@@ -3470,6 +3480,17 @@ export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostPath
 export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
   zWholeFilmExportStartedOut
 
+export const zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse =
+  zWholeFilmExportLatestOut
+
 export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeletePath =
   z.object({
     conversation_id: z.uuid(),
@@ -3481,18 +3502,6 @@ export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsEx
  */
 export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
   z.void()
-
-export const zReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetPath =
-  z.object({
-    conversation_id: z.uuid(),
-    export_id: z.uuid(),
-  })
-
-/**
- * Successful Response
- */
-export const zReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponse =
-  zWholeFilmExportOut
 
 export const zReadConversationFileConversationsConversationIdWorkspaceFileGetPath = z.object({
   conversation_id: z.uuid(),
@@ -3556,8 +3565,8 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio']).nullish(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload']).nullish(),
+  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']).nullish(),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
   metadata: z.string().nullish(),

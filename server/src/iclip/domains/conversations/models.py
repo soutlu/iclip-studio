@@ -90,8 +90,9 @@ WholeFilmExportStatus = Literal["queued", "rendering", "uploading", "done", "fai
 
 @dataclass(frozen=True, slots=True)
 class WholeFilmExportError:
-    """导出失败的原因：``code`` 照渲染服务（render-failed、upload-failed、media-unreachable、
-    timeout），``message`` 是它给的一句话。"""
+    """导出失败的原因：``code`` 是渲染服务自己的（render-failed、upload-failed、media-unreachable、
+    timeout），或本系统的（RENDER_LOST、RENDER_REJECTED、RENDER_UNAVAILABLE、PROVIDER_TIMEOUT 等），
+    ``message`` 是给人看的一句话。"""
 
     code: str
     message: str
@@ -99,18 +100,19 @@ class WholeFilmExportError:
 
 @dataclass(frozen=True, slots=True)
 class WholeFilmExport:
-    """渲染服务里的一次导出，本系统不落库：状态只在渲染服务内存里。"""
+    """一次整片导出，即那条整片生成记录给人看的样子。"""
 
-    conversation_id: uuid.UUID
+    id: uuid.UUID
     status: WholeFilmExportStatus
-    progress: float
-    """0–1，只在 rendering 时变化。"""
+    progress: float | None
+    """0–1，只在渲染服务答得上来时有。"""
     queue_position: int | None
-    """排队时前面还有几个；不在排队为 None。"""
+    """排队时前面还有几个；渲染服务答不上来或不在排队为 None。"""
     error: WholeFilmExportError | None
     download_url: str | None
-    """只在 done 时有：限时的下载地址。"""
-    expires_at: datetime | None
+    """只在 done 时有：整片的公开地址，长期有效。"""
+    source_job_ids: tuple[uuid.UUID, ...]
+    """这次用到的成片，去重、按在画面轨里第一次出现的先后。"""
 
 
 __all__ = [

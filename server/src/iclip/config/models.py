@@ -595,13 +595,20 @@ def _resolve_product_catalog() -> ResolvedProductCatalog | None:
     return ResolvedProductCatalog(database_url=env.database_url)
 
 
-def _resolve_whole_film_render(*, object_store_on: bool) -> ResolvedWholeFilmRender | None:
+def _resolve_whole_film_render(
+    *, object_store_on: bool, media_generation_on: bool
+) -> ResolvedWholeFilmRender | None:
     if not _switched_on(WHOLE_FILM_RENDER_URL_ENV):
         return None
+    missing: list[str] = []
     if not object_store_on:
+        missing.append(f"对象存储（{OSS_BUCKET_ENV} 那一组）")
+    if not media_generation_on:
+        missing.append(f"媒体生成（media_generation 段与 {VIDEO_SUBMIT_URL_ENV} 那一组）")
+    if missing:
         raise RuntimeError(
-            f"配了 {WHOLE_FILM_RENDER_URL_ENV} 但对象存储没开：导出的整片要上传到桶里的临时对象，"
-            f"再给浏览器签下载地址。补上 {OSS_BUCKET_ENV} 那一组"
+            f"配了 {WHOLE_FILM_RENDER_URL_ENV} 但没开{'与'.join(missing)}：每次导出是一条生成记录，"
+            f"由生成队列交给渲染服务，整片上传进桶。补上它们"
         )
     return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
 
@@ -642,7 +649,10 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         shot_video=_resolve_shot_video(config.shot_video),
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),
-        whole_film_render=_resolve_whole_film_render(object_store_on=object_store is not None),
+        whole_film_render=_resolve_whole_film_render(
+            object_store_on=object_store is not None,
+            media_generation_on=media_generation is not None,
+        ),
         models=tuple(
             ResolvedModel(
                 name=name,

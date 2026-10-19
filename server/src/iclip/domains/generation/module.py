@@ -27,6 +27,12 @@ from iclip.domains.generation.queue import (
     ProviderLane,
 )
 from iclip.domains.generation.qwen import QwenEndpoint
+from iclip.domains.generation.render import (
+    RENDER_SUBMIT_CONCURRENCY,
+    RENDER_TIMEOUT_SECONDS,
+    RenderProvider,
+    RenderSetup,
+)
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import ClipStage
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
@@ -87,6 +93,7 @@ def build_generation_module(
     queue_settings: GenerationQueueSettings | None = None,
     subtitles: QwenServiceConfig | None = None,
     music: QwenServiceConfig | None = None,
+    render: RenderSetup | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
     subtitle_transport: httpx.AsyncBaseTransport | None = None,
@@ -133,6 +140,15 @@ def build_generation_module(
         )
         music_lanes = (ProviderLane(music_provider, music.concurrency),)
         music_target = ProviderTarget(provider=music_provider.name, model=MUSIC_MODEL)
+    render_lanes: tuple[ProviderLane, ...] = ()
+    if render is not None:
+        render_lanes = (
+            ProviderLane(
+                RenderProvider(render, fetch_url=fetch_url),
+                RENDER_SUBMIT_CONCURRENCY,
+                timeout_seconds=RENDER_TIMEOUT_SECONDS,
+            ),
+        )
 
     async def transcribe_completed(job: GenerationJob) -> None:
         await service.transcribe_completed(job)
@@ -148,6 +164,7 @@ def build_generation_module(
             ),
             *subtitle_lanes,
             *music_lanes,
+            *render_lanes,
         ),
         connector=queue_connector,
         settings=queue_settings,
@@ -167,6 +184,7 @@ def build_generation_module(
         media_probe=_FetchingProbe(fetch_url),
         subtitles=subtitle_target,
         music=music_target,
+        render=None if render is None else render.client,
     )
     return GenerationModule(
         routers=(create_generations_router(service, act_as=act_as),),

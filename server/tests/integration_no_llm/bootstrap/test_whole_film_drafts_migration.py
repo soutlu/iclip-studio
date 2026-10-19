@@ -1,4 +1,4 @@
-"""整片草稿表与音乐上传挂对话的迁移：现行约束、升降级往返，以及有挂了对话的音乐上传时拒绝降级。
+"""整片草稿表与音乐上传挂对话的迁移：草稿表的约束、升降级往返，以及有挂了对话的音乐上传时拒绝降级。
 
 降级在一次性库上做，不动会话共用的测试库。"""
 
@@ -82,37 +82,6 @@ async def test_the_draft_table_constraints(
     with pytest.raises(IntegrityError):
         async with engine.begin() as conn:
             await conn.execute(_INSERT_DRAFT, row)
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("kind", "attached", "accepted"),
-    [
-        ("audio", True, True),
-        ("audio", False, True),
-        ("image", True, False),
-        ("video", True, False),
-        ("image", False, True),
-    ],
-    ids=["音乐挂对话", "音乐不挂", "图片挂对话", "视频挂对话", "图片不挂"],
-)
-async def test_only_music_uploads_may_belong_to_a_conversation(
-    engine: AsyncEngine, kind: str, attached: bool, accepted: bool
-) -> None:
-    owner, conversation = await _owner_and_conversation(engine)
-    row = {
-        "id": uuid.uuid4(),
-        "owner": owner,
-        "conversation_id": conversation if attached else None,
-        "kind": kind,
-    }
-    if accepted:
-        async with engine.begin() as conn:
-            await conn.execute(_INSERT_UPLOAD, row)
-        return
-    with pytest.raises(IntegrityError):
-        async with engine.begin() as conn:
-            await conn.execute(_INSERT_UPLOAD, row)
 
 
 async def _query(url: str, statement: str) -> Any:
