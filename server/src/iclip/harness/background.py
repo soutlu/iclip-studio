@@ -17,6 +17,7 @@ from pydantic_ai.messages import (
     INTERRUPTED_TOOL_RETURN_CONTENT,
     ModelMessage,
     ModelRequest,
+    TextContent,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -62,10 +63,13 @@ def was_receipt(part: ToolReturnPart) -> bool:
 def parse_outcome(part: UserPromptPart) -> BackgroundOutcome | None:
     """把后台工具结果拆成调用 id、成败与工具原文；不是结果时返回 None。
 
-    工具返回带文件时 content 是序列，文字在第一项；文件不进工具卡。
+    harness 把文字包成 content 序列的第一项 ``TextContent``，工具返回的文件跟在后面、不进工具卡；
+    harness 0.57 之前落库的历史里，文字是纯字符串或序列的第一项字符串。
     """
 
     first = part.content if isinstance(part.content, str) else next(iter(part.content), None)
+    if isinstance(first, TextContent):
+        first = first.content
     if not isinstance(first, str):
         return None
     matched = _OUTCOME.fullmatch(first)
