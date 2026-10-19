@@ -38,7 +38,7 @@
 | **Conflict** | `409`：请求与资源**当前状态**冲突——乐观锁并发冲突、不合法的状态机转换、当前状态下不许改的字段 |
 | **ValidationFailed** | `422` |
 
-上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`；整片导出的渲染服务不可用返回 `502`（§6「整片导出」）。
+上表之外：`PATCH /users/{id}` 改自己的授权、或停用自己返回 `400`；取消整片导出时渲染服务不可用返回 `502`（§6「整片导出」）。
 
 请求结构校验失败（`422`）用同一个字符串信封：`detail` 是一句 `<字段路径>: <原因>`，字段路径形如 `shot.timeline[0].image_indexes`，报在请求体自身的只有原因。一次请求只给第一条，后面几条通常是同一处问题的连带结果。生成任务的业务失败通过任务状态与 `errorCode` / `errorMessage` 表达，HTTP 受理成功不代表生成成功。
 
@@ -253,11 +253,11 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ### 整片导出
 
-语义见 [CONTEXT.md「导出」](../docs/CONTEXT.md#术语)。三个端点都只有属主能用，口径同 `PUT .../workspace/file`：读不到这段对话 `404`，读得到却不是属主或对话已删 `403`。服务器没配渲染服务时三个都是 `422`，`detail` 是「整片导出没有开通」。渲染服务连不上、出错或答复看不懂是 `502`，`detail` 是原因。
+语义见 [CONTEXT.md「导出」](../docs/CONTEXT.md#术语)。三个端点都只有属主能用，口径同 `PUT .../workspace/file`：读不到这段对话 `404`，读得到却不是属主或对话已删 `403`。服务器没配渲染服务时三个都是 `422`，`detail` 是「整片导出没有开通」。
 
-- `POST /conversations/{id}/whole-film/exports` 体是 `{ revision }`，按服务端存着的那份草稿导出，受理即 `202`，答复 `{ exportId, sourceJobIds }`。`revision` 不是存着的那一版（还没有草稿是 `0`）是 `409`，`detail` 是「整片草稿已经有更新的一版，重新读取后再导出」；画面轨是空的是 `422`，只有组件段也能导出（`sourceJobIds` 为空，画面按竖屏 1080×1920）。渲染服务不收这份草稿（组件不认识、素材缺了等）也是 `422`，`detail` 是它给的那句话。每条成片的字幕取它最新建立的那条已完成字幕记录，草稿里按别的字幕记录改过的字不生效；编辑器预览按同一条取。`sourceJobIds` 是这次用到的成片，去重、按在画面轨里第一次出现的先后；下载时对每条各发一次 `video.downloaded`（§5），同一条只发一次。
-- `GET /conversations/{id}/whole-film/exports/{exportId}` 答复 `{ status, progress, queuePosition, error, downloadUrl, expiresAt }`，客户端轮询它。`status` 取 `queued`（排队）、`rendering`（渲染中）、`uploading`（上传中）、`done`、`failed`、`cancelled`。`progress` 0–1，只在 `rendering` 时变化；`queuePosition` 只在 `queued` 时有值，是前面还有几个；`error` 只在 `failed` 时有值，`{ code, message }`，`code` 取 `render-failed`、`upload-failed`、`media-unreachable`、`timeout`。`downloadUrl` 与 `expiresAt` 只在 `done` 时有：每次读都新签一个 1 小时有效的地址，按附件下载，文件名是 `整片-<年月日-时分>.mp4`（北京时间，签地址那一刻）。导出查不到（渲染服务重启过，或结束满 1 小时被清掉），或这个 `exportId` 不是这段对话的，都是 `404`，`detail` 是「导出已中断，请重新导出」。
-- `DELETE` 同一地址取消排队中或渲染中的导出，答 `204`；已经结束的也答 `204`、状态不变。查不到或不是这段对话的是 `404`。
+- `POST /conversations/{id}/whole-film/exports` 体是 `{ revision }`，按服务端存着的那份草稿导出：记一条整片生成记录排队，受理即 `202`，答复 `{ exportId, sourceJobIds }`，`exportId` 就是那条记录的 id。`revision` 不是存着的那一版（还没有草稿是 `0`）是 `409`，`detail` 是「整片草稿已经有更新的一版，重新读取后再导出」；画面轨是空的是 `422`，只有组件段也能导出（`sourceJobIds` 为空，画面按竖屏 1080×1920）；用到的记录没有产物地址也是 `422`。受理时不调渲染服务：它不收这份草稿（组件不认识、素材主机不在允许范围等）时，这次导出失败，`error.code` 是 `RENDER_REJECTED`、`message` 是它给的那句话。每条成片的字幕取它最新建立的那条已完成字幕记录，草稿里按别的字幕记录改过的字不生效；编辑器预览按同一条取。`sourceJobIds` 是这次用到的成片，去重、按在画面轨里第一次出现的先后；下载时对每条各发一次 `video.downloaded`（§5），同一条只发一次。
+- `GET /conversations/{id}/whole-film/exports/latest` 答复 `{ export }`：这段对话里自己最新的一次导出，没导出过是 `null`；分叉出来的对话不继承源对话的导出。客户端轮询它。`export` 是 `{ id, status, progress, queuePosition, error, downloadUrl, sourceJobIds }`。`status` 取 `queued`（排队）、`rendering`（渲染中）、`uploading`（上传中）、`done`、`failed`、`cancelled`。`progress`（0–1）与 `queuePosition`（排队时前面还有几个）只在已交给渲染服务、它答得上来时有值，否则为 `null`。`error` 只在 `failed` 时有值，`{ code, message }`：`code` 是渲染服务自己的 `render-failed`、`upload-failed`、`media-unreachable`、`timeout`，或本系统的 `RENDER_REJECTED`（渲染服务不收）、`RENDER_UNAVAILABLE`（交给它时连不上）、`RENDER_LOST`（它重启过，这次导出丢了）、`PROVIDER_TIMEOUT`（交出去 6 小时还没结束）以及生成队列的其他错误码（如 `SUBMIT_INTERRUPTED`）。这几种都要重新导出。`downloadUrl` 只在 `done` 时有，是整片的公开地址，长期有效。
+- `DELETE /conversations/{id}/whole-film/exports/{exportId}` 取消，答 `204`：还在排队的直接取消，已交给渲染服务的先让它取消；之后 `status` 是 `cancelled`（记录记为失败，错误码 `CANCELLED`）。已经结束的也答 `204`、状态不变。这个 id 不是这段对话里自己的导出是 `404`。正在交给渲染服务的那一刻是 `409`，`detail` 是「正在交给渲染服务，稍后再取消」；渲染服务连不上、出错或答复看不懂是 `502`，`detail` 是原因，导出不变。
 
 ### 分叉
 
@@ -410,7 +410,7 @@ Transcript 沿用协议字段，不统一改名；HTTP 形状仍从 OpenAPI 生�
 
 ## 11. 媒体生成 (Generations)
 
-六条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）、`POST /generations/video-composites`（合成，本地拼接，不经外部服务）、`POST /generations/subtitles`（手动识别一条成片的字幕，见下文「字幕记录」）与 `POST /generations/music`（生成背景音乐，见下文「音频记录」）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image` / `subtitle` / `audio`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传）与有没有来源决定：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是有来源的 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image、video 或 audio / upload（§10）；字幕记录是 subtitle / generate，来源是被识别的成片；生成的背景音乐是 audio / generate。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
+六条提交地址：`POST /generations/video`（出片）、`POST /generations/image`（图片）、`POST /generations/video-edits`（编辑段）、`POST /generations/video-composites`（合成，本地拼接，不经外部服务）、`POST /generations/subtitles`（手动识别一条成片的字幕，见下文「字幕记录」）与 `POST /generations/music`（生成背景音乐，见下文「音频记录」）。受理即 `202`，此时还没开始干活；上游的拒绝与加工失败会变成记录里的 `failed`，由调用方查状态看到。一行是哪种记录由 `kind`（`video` / `image` / `subtitle` / `audio` / `whole_film`）、`operation`（`generate` 调模型、`compose` 本地拼接、`cut` 本地切图、`upload` 用户上传、`render` 交给渲染服务）与有没有来源决定：出片是没有来源的 video / generate，编辑段是有来源的 video / generate，合成是有来源的 video / compose；图片生成是没有底图的 image / generate，帧图编辑是带底图的 image / generate（见下文「参考帧图片编辑」），切图是 image / cut，上传是 image、video 或 audio / upload（§10）；字幕记录是 subtitle / generate，来源是被识别的成片；生成的背景音乐是 audio / generate；整片导出是 whole_film / render，经 §6「整片导出」受理，`GET /generations` 不带 `kind` 时也会列出来。切图与上传创建即完成、没有请求（`request` 为 `null`），不经这几条提交地址：切图是 agent 出宫格时每格各落一条，上传是确认时落的。
 
 业务状态每跳一格，属主连着的每条 WebSocket 都收到一帧 `event.generation.changed`（见 §5 全局帧）；帧易失且不带结果，`GET /generations` 与任务查询接口仍是事实源，浏览器在有运行中任务时保留轮询兜底。
 

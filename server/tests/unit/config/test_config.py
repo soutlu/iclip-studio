@@ -497,9 +497,8 @@ def _bucket_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_whole_film_render_is_off_until_its_url_is_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    _bucket_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
     assert resolve_settings(config).whole_film_render is None
 
     monkeypatch.setenv("WHOLE_FILM_RENDER_URL", " http://render:8080/ ")
@@ -507,25 +506,30 @@ def test_whole_film_render_is_off_until_its_url_is_set(
     assert render is not None and render.url == "http://render:8080"
 
 
-def test_whole_film_render_without_a_bucket_fails_loudly(
+def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """导出的整片要上传到桶里，没有桶就导不出来。"""
+    """每次导出是一条生成记录，整片上传进桶：没有桶、没开媒体生成都导不出来，报出缺的那一样。"""
 
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
     monkeypatch.setenv("WHOLE_FILM_RENDER_URL", "http://render:8080")
-    with pytest.raises(RuntimeError, match="OSS_BUCKET"):
+    with pytest.raises(RuntimeError, match="OSS_BUCKET") as neither:
         resolve_settings(config)
+    assert "media_generation" in str(neither.value)
+
+    _bucket_env(monkeypatch)
+    with pytest.raises(RuntimeError, match="media_generation") as no_media:
+        resolve_settings(config)
+    assert "OSS_BUCKET" not in str(no_media.value)
 
 
 @pytest.mark.parametrize("bad", ["render:8080", "ftp://render", "http://"])
 def test_whole_film_render_url_must_be_http(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    _bucket_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
     monkeypatch.setenv("WHOLE_FILM_RENDER_URL", bad)
     with pytest.raises(ValidationError, match="WHOLE_FILM_RENDER_URL"):
         resolve_settings(config)

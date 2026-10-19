@@ -8,12 +8,14 @@ from typing import Any
 
 import structlog
 
-from iclip.common.errors import NotFound, ValidationFailed
+from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.clip_models import clip_model
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_PENDING,
+    STATUS_SUBMITTED,
+    STATUS_SUBMITTING,
     GenerationJob,
     InFlightPhase,
     Inheritance,
@@ -23,6 +25,8 @@ from iclip.domains.generation.models import (
 from iclip.domains.generation.ports import ConversationLineage, RemoteMediaProbe
 from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
+from iclip.domains.generation.render import CANCELLED, CANCELLED_MESSAGE, RenderClient
+from iclip.domains.generation.render import PROVIDER_NAME as RENDER_PROVIDER_NAME
 from iclip.domains.generation.repository import GenerationRepository, conversation_record
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
@@ -33,6 +37,7 @@ from iclip.domains.generation.schemas import (
     ComposeSegment,
     GenerationKind,
     GenerationOperation,
+    GenerationStatus,
     ImageGenerationIn,
     MusicIn,
     MusicRequest,
@@ -43,6 +48,7 @@ from iclip.domains.generation.schemas import (
     VideoEditIn,
     VideoGenerationIn,
     VideoModelsOut,
+    WholeFilmRequest,
 )
 from iclip.domains.generation.segment_end import check_segment_end, exceeds_source
 from iclip.domains.generation.stored_requests import GenerationRequest
@@ -78,8 +84,10 @@ class GenerationService:
         media_probe: RemoteMediaProbe,
         subtitles: ProviderTarget | None = None,
         music: ProviderTarget | None = None,
+        render: RenderClient | None = None,
     ) -> None:
         self._repo = repo
+        self._render = render
         self._queue = queue
         self._video_provider_name = video_provider_name
         self._compose_provider_name = compose_provider_name
@@ -425,6 +433,62 @@ class GenerationService:
                 shot_index=None,
             )
         )
+
+    async def submit_whole_film(
+        self, principal: Principal, *, conversation_id: uuid.UUID, request: WholeFilmRequest
+    ) -> GenerationJob:
+        """把一次整片导出记成一条生成记录、排进渲染服务那条队列。
+
+        归属与对话由调用方核对过。导出不是动手创作，不抹对话的收尾标记。"""
+
+        self._require_render()
+        return await self._queue_new(
+            _pending_job(
+                request,
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=RENDER_PROVIDER_NAME,
+                conversation_id=conversation_id,
+                task_id=None,
+                metadata=None,
+                shot_index=None,
+            )
+        )
+
+    async def cancel_whole_film(self, job: GenerationJob) -> None:
+        """取消一次整片导出，记为失败、错误码 ``CANCELLED``；调用方已核对归属。
+
+        还在排队就直接记；正在交给渲染服务答 409；已交出去的先让渲染服务取消（它查不到也行）再记，
+        渲染服务连不上抛 ``RenderUnavailable``、记录不动；已有结论的不改。"""
+
+        render = self._require_render()
+        if job.status == STATUS_PENDING:
+            if await self._mark_cancelled(job.id, only_if_status=STATUS_PENDING) is not None:
+                return
+            # 读到排队之后队列已经接手，按它现在的状态再判一次；不会再回到排队。
+            job = await self._repo.get(job.id, owner=None)
+        if job.status == STATUS_SUBMITTING:
+            raise Conflict("正在交给渲染服务，稍后再取消")
+        if job.status != STATUS_SUBMITTED:
+            return
+        await render.cancel(job.id)
+        if await self._mark_cancelled(job.id, only_if_status=STATUS_SUBMITTED) is None:
+            _logger.info("整片导出在取消之前已有结论，不改它", job_id=job.id)
+
+    async def _mark_cancelled(
+        self, job_id: uuid.UUID, *, only_if_status: GenerationStatus
+    ) -> GenerationJob | None:
+        return await self._repo.mark_failed(
+            job_id,
+            error_code=CANCELLED,
+            error_message=CANCELLED_MESSAGE,
+            only_if_status=only_if_status,
+        )
+
+    def _require_render(self) -> RenderClient:
+        if self._render is None:
+            raise ValidationFailed("整片导出没有开通")
+        return self._render
 
     async def _note_conversation_active(self, job: GenerationJob) -> None:
         if job.conversation_id is None:

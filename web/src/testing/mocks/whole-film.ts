@@ -10,33 +10,53 @@ type StoredDraft = { revision: number; document: WholeFilmDocument; updatedAt: s
 const drafts = new Map<string, StoredDraft>()
 
 /**
- * 导出的 mock：按读的次数往前走，排队（前面 1 个、0 个）→ 渲染 40%、80% → 上传 → 完成。
- * 每次读都签一个新的下载地址，同后端。
+ * 导出的 mock：每段对话记最近一次导出，读最近一次时按读的次数往前走，
+ * 排队（前面 1 个、0 个）→ 渲染（还没有进度、40%、80%）→ 上传 → 完成，下载地址长期有效，同后端。
  */
 type MockExport = {
-  conversationId: string
+  id: string
   sourceJobIds: string[]
   reads: number
   cancelled: boolean
 }
 
-const exportJobs = new Map<string, MockExport>()
+const latestExports = new Map<string, MockExport>()
 
 const EXPORT_STEPS = [
-  { status: 'queued', progress: 0, queuePosition: 1 },
-  { status: 'queued', progress: 0, queuePosition: 0 },
+  { status: 'queued', progress: null, queuePosition: 1 },
+  { status: 'queued', progress: null, queuePosition: 0 },
+  { status: 'rendering', progress: null, queuePosition: null },
   { status: 'rendering', progress: 0.4, queuePosition: null },
   { status: 'rendering', progress: 0.8, queuePosition: null },
-  { status: 'uploading', progress: 1, queuePosition: null },
+  { status: 'uploading', progress: null, queuePosition: null },
 ] as const
 
 export const STALE_DRAFT_DETAIL = '整片草稿已经有更新的一版，重新读取后再改'
 export const STALE_EXPORT_DETAIL = '整片草稿已经有更新的一版，重新读取后再导出'
-export const EXPORT_GONE_DETAIL = '导出已中断，请重新导出'
 
 export const resetMockWholeFilm = () => {
   drafts.clear()
-  exportJobs.clear()
+  latestExports.clear()
+}
+
+const exportOut = (found: MockExport) => {
+  const base = {
+    id: found.id,
+    sourceJobIds: found.sourceJobIds,
+    error: null,
+    downloadUrl: null,
+  }
+  if (found.cancelled) return { ...base, status: 'cancelled', progress: null, queuePosition: null }
+  const step = EXPORT_STEPS[found.reads]
+  found.reads += 1
+  if (step !== undefined) return { ...base, ...step }
+  return {
+    ...base,
+    status: 'done',
+    progress: 1,
+    queuePosition: null,
+    downloadUrl: `/mock-exports/${found.id}.mp4`,
+  }
 }
 
 /** 这段对话现存的草稿；还没存过是 undefined。 */
@@ -88,36 +108,27 @@ export const wholeFilmHandlers = [
       if (sourceJobIds.length === 0)
         return HttpResponse.json({ detail: '画面轨里还没有视频，无法导出' }, { status: 422 })
       const exportId = crypto.randomUUID()
-      exportJobs.set(exportId, { conversationId, sourceJobIds, reads: 0, cancelled: false })
+      latestExports.set(conversationId, {
+        id: exportId,
+        sourceJobIds,
+        reads: 0,
+        cancelled: false,
+      })
       return HttpResponse.json({ exportId, sourceJobIds }, { status: 202 })
     },
   ),
 
-  http.get('*/api/conversations/:conversationId/whole-film/exports/:exportId', ({ params }) => {
-    const found = exportJobs.get(String(params['exportId']))
-    if (found === undefined || found.conversationId !== String(params['conversationId']))
-      return HttpResponse.json({ detail: EXPORT_GONE_DETAIL }, { status: 404 })
-    const base = { error: null, downloadUrl: null, expiresAt: null }
-    if (found.cancelled)
-      return HttpResponse.json({ ...base, status: 'cancelled', progress: 0, queuePosition: null })
-    const step = EXPORT_STEPS[found.reads]
-    found.reads += 1
-    if (step !== undefined) return HttpResponse.json({ ...base, ...step })
-    return HttpResponse.json({
-      ...base,
-      status: 'done',
-      progress: 1,
-      queuePosition: null,
-      downloadUrl: `/mock-exports/${String(params['exportId'])}.mp4?signed=${found.reads}`,
-      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
-    })
+  http.get('*/api/conversations/:conversationId/whole-film/exports/latest', ({ params }) => {
+    const found = latestExports.get(String(params['conversationId']))
+    return HttpResponse.json({ export: found === undefined ? null : exportOut(found) })
   }),
 
   http.delete('*/api/conversations/:conversationId/whole-film/exports/:exportId', ({ params }) => {
-    const found = exportJobs.get(String(params['exportId']))
-    if (found === undefined || found.conversationId !== String(params['conversationId']))
-      return HttpResponse.json({ detail: EXPORT_GONE_DETAIL }, { status: 404 })
-    found.cancelled = true
+    const found = latestExports.get(String(params['conversationId']))
+    if (found?.id !== String(params['exportId']))
+      return HttpResponse.json({ detail: '整片导出不存在' }, { status: 404 })
+    // 已经完成的也答 204、状态不变
+    if (found.reads <= EXPORT_STEPS.length) found.cancelled = true
     return new HttpResponse(null, { status: 204 })
   }),
 

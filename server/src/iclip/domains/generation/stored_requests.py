@@ -11,9 +11,11 @@ from iclip.domains.generation.schemas import (
     KIND_IMAGE,
     KIND_SUBTITLE,
     KIND_VIDEO,
+    KIND_WHOLE_FILM,
     OPERATION_COMPOSE,
     OPERATION_CUT,
     OPERATION_GENERATE,
+    OPERATION_RENDER,
     OPERATION_UPLOAD,
     READ_BACK_CONTEXT,
     ImageGenerationIn,
@@ -21,10 +23,16 @@ from iclip.domains.generation.schemas import (
     SubtitleRequest,
     VideoComposeRequest,
     VideoGenerationIn,
+    WholeFilmRequest,
 )
 
 GenerationRequest = (
-    VideoGenerationIn | ImageGenerationIn | VideoComposeRequest | SubtitleRequest | MusicRequest
+    VideoGenerationIn
+    | ImageGenerationIn
+    | VideoComposeRequest
+    | SubtitleRequest
+    | MusicRequest
+    | WholeFilmRequest
 )
 
 _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
@@ -33,6 +41,7 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
     (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
     (KIND_AUDIO, OPERATION_GENERATE): TypeAdapter(MusicRequest),
+    (KIND_WHOLE_FILM, OPERATION_RENDER): TypeAdapter(WholeFilmRequest),
 }
 
 _WITHOUT_REQUEST: Final = frozenset(

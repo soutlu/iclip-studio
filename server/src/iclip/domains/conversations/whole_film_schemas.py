@@ -270,8 +270,8 @@ class WholeFilmExportIn(CamelModel):
 
 
 class WholeFilmExportStartedOut(CamelModel):
-    """已交给渲染服务排队。``sourceJobIds`` 是这次导出用到的成片，去重、按在画面轨里第一次出现的
-    先后；下载时按它们各记一次下载。"""
+    """已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
+    用到的成片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。"""
 
     export_id: uuid.UUID
     source_job_ids: list[uuid.UUID]
@@ -283,18 +283,26 @@ class WholeFilmExportErrorOut(CamelModel):
 
 
 class WholeFilmExportOut(CamelModel):
-    """一次导出现在的样子。``downloadUrl`` 与 ``expiresAt`` 只在 ``done`` 时有。"""
+    """一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。"""
 
+    id: uuid.UUID
     status: WholeFilmExportStatus
-    progress: float
+    progress: float | None
     queue_position: int | None
     error: WholeFilmExportErrorOut | None
     download_url: str | None
-    expires_at: datetime | None
+    source_job_ids: list[uuid.UUID]
+
+
+class WholeFilmExportLatestOut(CamelModel):
+    """这段对话最新的一次导出；还没导出过为 null。"""
+
+    export: WholeFilmExportOut | None
 
 
 def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
     return WholeFilmExportOut(
+        id=export.id,
         status=export.status,
         progress=export.progress,
         queue_position=export.queue_position,
@@ -302,7 +310,7 @@ def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
         if export.error is None
         else WholeFilmExportErrorOut(code=export.error.code, message=export.error.message),
         download_url=export.download_url,
-        expires_at=export.expires_at,
+        source_job_ids=list(export.source_job_ids),
     )
 
 
@@ -331,6 +339,7 @@ __all__ = [
     "WholeFilmDraftSavedOut",
     "WholeFilmExportErrorOut",
     "WholeFilmExportIn",
+    "WholeFilmExportLatestOut",
     "WholeFilmExportOut",
     "WholeFilmExportStartedOut",
     "WholeFilmMusic",

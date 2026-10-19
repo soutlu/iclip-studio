@@ -799,17 +799,6 @@
   color: var(--color-error);
 }
 
-.wf-download {
-  display: inline-flex;
-  height: var(--control-height-md);
-  align-items: center;
-  gap: 8px;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 500;
-  box-shadow: var(--shadow-1);
-}
-
 /* ---- 下半：工具条、轨道、素材区 ---- */
 
 .wf-timeline {

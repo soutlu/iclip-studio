@@ -174,7 +174,7 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await dialog.getByRole('button', { name: '导出', exact: true }).click()
   await exported
   await expect(dialog.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
-  const download = dialog.getByRole('link', { name: '下载整片' })
+  const download = dialog.getByRole('button', { name: '下载整片' })
   await expect(download).toBeVisible({ timeout: 15_000 })
   const tracked = page.waitForRequest(
     (request) => request.url().includes('/tracking/events') && request.method() === 'POST',
@@ -182,11 +182,13 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   const fileSaved = page.waitForEvent('download')
   await download.click()
   expect((await tracked).postDataJSON()).toMatchObject({ name: 'video.downloaded' })
-  await fileSaved
+  expect((await fileSaved).suggestedFilename()).toMatch(/\.mp4$/)
 
+  // 关掉再打开：成片留着，接着显示最近一次导出
   await dialog.getByRole('button', { name: '关闭整片编辑' }).click()
   await expect(dialog).toBeHidden()
   const reopened = await openWholeFilm(page, panel)
+  await expect(reopened.getByRole('button', { name: '下载整片' })).toBeVisible()
   const reopenedFilm = reopened.getByRole('group', { name: '成片画面轨' })
   await expect(reopenedFilm.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
   await expect(reopened.getByRole('group', { name: /^音乐 · 音乐 2，/ })).toBeVisible()

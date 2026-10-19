@@ -44,7 +44,7 @@ from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.whole_film_drafts import GenerationDraftReferences
-from iclip.app.whole_film_exports import WholeFilmExportAdapter, WholeFilmRenderClient
+from iclip.app.whole_film_exports import WholeFilmExportAdapter
 from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip.capabilities.shot_document import SHOTS_PATH
 from iclip.capabilities.workspace.scope import parse_namespace
@@ -83,6 +83,7 @@ from iclip.domains.generation.module import (
 from iclip.domains.generation.ports import ConversationLineage
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.qwen import QwenEndpoint
+from iclip.domains.generation.render import RenderClient, RenderSetup
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
 from iclip.domains.generation.service import ClearCompletion, SettledRecords
@@ -140,9 +141,9 @@ from iclip.platform.object_store.oss import (
     validate_public_url_base,
 )
 from iclip.platform.object_store.store import (
-    PrivateObjectSigner,
     PublicBucket,
     PublicObjectStore,
+    ServerUploadSigner,
 )
 from iclip.platform.outbound.fetch import PublicFetcher
 
@@ -152,12 +153,12 @@ _logger = structlog.stdlib.get_logger(__name__)
 def _object_store(
     settings: ObjectStoreEnv | None,
     injected: PublicBucket | None,
-    injected_signer: PrivateObjectSigner | None,
-) -> tuple[PublicBucket | None, Callable[[str], str], PrivateObjectSigner | None]:
-    """桶、服务端下载用的地址换算与私有临时对象的签名。注入了桶（测试）时签名也用注入的。"""
+) -> tuple[PublicBucket | None, Callable[[str], str], ServerUploadSigner | None]:
+    """桶、服务端下载用的地址换算与给别的服务端签上传地址的端口。注入了桶（测试）时没有签名端口，
+    整片导出开不了。"""
 
     if injected is not None:
-        return injected, _as_is, injected_signer
+        return injected, _as_is, None
     if settings is None:
         return None, _as_is, None
     oss = OssSettings(
@@ -290,6 +291,7 @@ def _generation_module(
     media_codec: MediaCodec,
     compose_concurrency: int,
     fetch_url: Callable[[str], str],
+    render: RenderSetup | None,
 ) -> GenerationModule:
     return build_generation_module(
         repo,
@@ -328,6 +330,7 @@ def _generation_module(
         ),
         subtitles=_qwen_service(settings.subtitle),
         music=_qwen_service(settings.music),
+        render=render,
     )
 
 
@@ -340,7 +343,6 @@ def build_app(
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
     object_store: PublicBucket | None = None,
-    export_objects: PrivateObjectSigner | None = None,
     whole_film_render_transport: httpx.AsyncBaseTransport | None = None,
     image_fetcher: FetchBytes | None = None,
     queue_connector: procrastinate.BaseConnector | None = None,
@@ -381,16 +383,13 @@ def build_app(
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
-    public_objects, fetch_url, export_signer = _object_store(
-        settings.object_store, object_store, export_objects
-    )
+    public_objects, fetch_url, server_uploads = _object_store(settings.object_store, object_store)
     _require_ffmpeg(settings.ffmpeg_required)
+    # 一个客户端：生成队列经它提交、轮询，导出端点经它读进度、取消；lifespan 结束时关。
     render_client = (
         None
         if settings.whole_film_render is None
-        else WholeFilmRenderClient(
-            settings.whole_film_render.url, transport=whole_film_render_transport
-        )
+        else RenderClient(settings.whole_film_render.url, transport=whole_film_render_transport)
     )
     codec = _media_codec(settings.ffmpeg_required, media_codec)
     compose_concurrency = (
@@ -466,6 +465,8 @@ def build_app(
             else procrastinate.PsycopgConnector(conninfo=queue_dsn(settings.database_url))
         )
 
+    if render_client is not None and settings.media_generation is None:
+        raise RuntimeError("整片导出已启用却没开媒体生成；resolve_settings 应当已拒绝这种配置")
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
@@ -474,6 +475,13 @@ def build_app(
             raise RuntimeError("媒体生成已启用却没建队列连接器；上面的条件漏了媒体生成")
         if codec is None or compose_concurrency is None:
             raise RuntimeError("媒体生成已启用却没选编解码；ffmpeg_required 应当已包含媒体生成")
+        render: RenderSetup | None = None
+        if render_client is not None:
+            if server_uploads is None:
+                raise RuntimeError("整片导出已启用却没有上传签名；注入的测试桶不支持整片导出")
+            render = RenderSetup(
+                client=render_client, uploads=server_uploads, public_url=public_objects.public_url
+            )
         generation = _generation_module(
             settings.media_generation,
             generation_repo,
@@ -487,6 +495,7 @@ def build_app(
             media_codec=codec,
             compose_concurrency=compose_concurrency,
             fetch_url=fetch_url,
+            render=render,
         )
 
     async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
@@ -650,12 +659,9 @@ def build_app(
             generations=generation_repo, conversations=conversation_repo
         ),
         exports=None
-        if render_client is None or export_signer is None
+        if render_client is None or generation is None
         else WholeFilmExportAdapter(
-            render=render_client,
-            generations=generation_repo,
-            signer=export_signer,
-            fetch_url=fetch_url,
+            generation=generation.service, generations=generation_repo, render=render_client
         ),
         generate_title=live_title_generator(agent_layer),
         announce_title=live_connections.announce_title,
@@ -843,6 +849,8 @@ def build_app(
         )
 
     app.state.agent_layer = agent_layer
+    # 集成测试经它直接调生成队列的任务协程，不起 worker。
+    app.state.generation = generation
     return app
 
 

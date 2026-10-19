@@ -60,7 +60,7 @@ from iclip.domains.conversations.whole_film_schemas import (
     WholeFilmDraftOut,
     WholeFilmDraftSavedOut,
     WholeFilmExportIn,
-    WholeFilmExportOut,
+    WholeFilmExportLatestOut,
     WholeFilmExportStartedOut,
     whole_film_export_out,
 )
@@ -503,30 +503,29 @@ def create_conversations_router(
         body: WholeFilmExportIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> WholeFilmExportStartedOut:
-        """按当前草稿导出一条整片，交给渲染服务排队，答复导出 id 与用到的成片。只有属主能导；
-        ``revision`` 不是存着的那一版 409；画面轨没有视频、渲染服务不认这份草稿、没开通都是 422；
-        渲染服务不可用 502。"""
+        """按当前草稿导出一条整片：记成一条整片生成记录排队，答复导出 id 与用到的成片。只有属主能导；
+        ``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。
+        渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。"""
 
-        with _render_unavailable_as_502():
-            export_id, sources = await service.export_whole_film(
-                principal, conversation_id, revision=body.revision
-            )
+        export_id, sources = await service.export_whole_film(
+            principal, conversation_id, revision=body.revision
+        )
         return WholeFilmExportStartedOut(export_id=export_id, source_job_ids=list(sources))
 
     @router.get(
-        "/{conversation_id}/whole-film/exports/{export_id}", response_model=WholeFilmExportOut
+        "/{conversation_id}/whole-film/exports/latest", response_model=WholeFilmExportLatestOut
     )
-    async def read_whole_film_export(
+    async def latest_whole_film_export(
         conversation_id: uuid.UUID,
-        export_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("agent:read")],
-    ) -> WholeFilmExportOut:
-        """读一次导出走到哪一步，``done`` 时带 1 小时有效的下载地址。只有属主能看；查不到（过期、
-        渲染服务重启过）或不是这段对话的 404，要重新导出。"""
+    ) -> WholeFilmExportLatestOut:
+        """这段对话最新的一次导出走到哪一步，``done`` 时带整片的地址；还没导出过 ``export`` 为
+        null。只有属主能看。"""
 
-        with _render_unavailable_as_502():
-            found = await service.whole_film_export(principal, conversation_id, export_id)
-        return whole_film_export_out(found)
+        found = await service.latest_whole_film_export(principal, conversation_id)
+        return WholeFilmExportLatestOut(
+            export=None if found is None else whole_film_export_out(found)
+        )
 
     @router.delete("/{conversation_id}/whole-film/exports/{export_id}", status_code=204)
     async def cancel_whole_film_export(
@@ -534,7 +533,8 @@ def create_conversations_router(
         export_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> Response:
-        """取消排队中或渲染中的导出；已结束的也答 204、不改状态。只有属主能取消。"""
+        """取消排队中或渲染中的导出；已结束的也答 204、不改状态。只有属主能取消；不是这段对话的
+        导出 404；正在交给渲染服务 409，稍后再取消；渲染服务不可用 502。"""
 
         with _render_unavailable_as_502():
             await service.cancel_whole_film_export(principal, conversation_id, export_id)

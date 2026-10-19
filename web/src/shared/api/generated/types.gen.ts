@@ -1825,7 +1825,7 @@ export type GenerationOut = {
   /**
    * Kind
    */
-  kind: 'video' | 'image' | 'subtitle' | 'audio'
+  kind: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film'
   /**
    * Metadata
    */
@@ -1835,7 +1835,7 @@ export type GenerationOut = {
   /**
    * Operation
    */
-  operation: 'generate' | 'compose' | 'cut' | 'upload'
+  operation: 'generate' | 'compose' | 'cut' | 'upload' | 'render'
   /**
    * Outputurl
    */
@@ -5377,9 +5377,18 @@ export type WholeFilmExportIn = {
 }
 
 /**
+ * WholeFilmExportLatestOut
+ *
+ * 这段对话最新的一次导出；还没导出过为 null。
+ */
+export type WholeFilmExportLatestOut = {
+  export: WholeFilmExportOut | null
+}
+
+/**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``downloadUrl`` 与 ``expiresAt`` 只在 ``done`` 时有。
+ * 一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export type WholeFilmExportOut = {
   /**
@@ -5388,17 +5397,21 @@ export type WholeFilmExportOut = {
   downloadUrl: string | null
   error: WholeFilmExportErrorOut | null
   /**
-   * Expiresat
+   * Id
    */
-  expiresAt: string | null
+  id: string
   /**
    * Progress
    */
-  progress: number
+  progress: number | null
   /**
    * Queueposition
    */
   queuePosition: number | null
+  /**
+   * Sourcejobids
+   */
+  sourceJobIds: Array<string>
   /**
    * Status
    */
@@ -5408,8 +5421,8 @@ export type WholeFilmExportOut = {
 /**
  * WholeFilmExportStartedOut
  *
- * 已交给渲染服务排队。``sourceJobIds`` 是这次导出用到的成片，去重、按在画面轨里第一次出现的
- * 先后；下载时按它们各记一次下载。
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id；``sourceJobIds`` 是这次导出
+ * 用到的成片，去重、按在画面轨里第一次出现的先后；下载时按它们各记一次下载。
  */
 export type WholeFilmExportStartedOut = {
   /**
@@ -7307,6 +7320,38 @@ export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostRespon
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
   ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses]
 
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/exports/latest'
+}
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetError =
+  LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetErrors[keyof LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetErrors]
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmExportLatestOut
+}
+
+export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse =
+  LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponses[keyof LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponses]
+
 export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteData = {
   body?: never
   path: {
@@ -7343,42 +7388,6 @@ export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExpo
 
 export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
   CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses[keyof CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses]
-
-export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetData = {
-  body?: never
-  path: {
-    /**
-     * Conversation Id
-     */
-    conversation_id: string
-    /**
-     * Export Id
-     */
-    export_id: string
-  }
-  query?: never
-  url: '/conversations/{conversation_id}/whole-film/exports/{export_id}'
-}
-
-export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetError =
-  ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetErrors[keyof ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetErrors]
-
-export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: WholeFilmExportOut
-}
-
-export type ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponse =
-  ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponses[keyof ReadWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdGetResponses]
 
 export type ReadConversationFileConversationsConversationIdWorkspaceFileGetData = {
   body?: never
@@ -7570,11 +7579,11 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Kind
      */
-    kind?: 'video' | 'image' | 'subtitle' | 'audio' | null
+    kind?: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film' | null
     /**
      * Operation
      */
-    operation?: 'generate' | 'compose' | 'cut' | 'upload' | null
+    operation?: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | null
     /**
      * Rootjobid
      *

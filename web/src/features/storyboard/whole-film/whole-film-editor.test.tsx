@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SubtitleIn, WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
@@ -972,114 +972,173 @@ describe('整片编辑器 · 导出', () => {
     return events
   }
 
-  /** 导出进度：每次读给 states 里的下一个，读完停在最后一个 */
-  const serveProgress = (...states: object[]) => {
+  const EXPORT_ID = '22222222-3333-4444-8555-666666666666'
+  const EXPORTS_URL = '*/api/conversations/:conversationId/whole-film/exports'
+  const EXPORT_URL = '*/api/conversations/:conversationId/whole-film/exports/:exportId'
+  const LATEST_URL = '*/api/conversations/:conversationId/whole-film/exports/latest'
+  const DOWNLOAD_URL = 'https://oss.example.com/whole-film/export.mp4'
+
+  /** 一次导出现在的样子；没给的字段同还没交给渲染服务的排队 */
+  const exportOf = (state: object) => ({
+    id: EXPORT_ID,
+    status: 'queued',
+    progress: null,
+    queuePosition: null,
+    error: null,
+    downloadUrl: null,
+    sourceJobIds: [TAKE_A, TAKE_B],
+    ...state,
+  })
+
+  /** 最近一次导出：第一个是打开编辑器时读到的，之后每次读给下一个，读完停在最后一个；null 是没导出过 */
+  const serveLatest = (...states: (object | null)[]) => {
     let reads = 0
     server.use(
-      http.get('*/api/conversations/:conversationId/whole-film/exports/:exportId', () => {
-        const state = states[Math.min(reads, states.length - 1)]
+      http.get(LATEST_URL, () => {
+        const state = states[Math.min(reads, states.length - 1)] ?? null
         reads += 1
-        return HttpResponse.json({
-          status: 'queued',
-          progress: 0,
-          queuePosition: null,
-          error: null,
-          downloadUrl: null,
-          expiresAt: null,
-          ...state,
-        })
+        return HttpResponse.json({ export: state === null ? null : exportOf(state) })
       }),
     )
   }
 
-  const DONE = {
-    status: 'done',
-    progress: 1,
-    downloadUrl: 'https://oss.example.com/whole-film.mp4',
-    expiresAt: '2026-10-17T12:00:00Z',
+  /** 记下发出的取消 */
+  const trackCancels = (answer: () => Response = () => new HttpResponse(null, { status: 204 })) => {
+    const cancelled: string[] = []
+    server.use(
+      http.delete(EXPORT_URL, ({ params }) => {
+        cancelled.push(String(params['exportId']))
+        return answer()
+      }),
+    )
+    return cancelled
   }
+
+  /** 下载边界：成片地址照常回字节，Blob URL 与锚点点击换成桩，点击即视为交给浏览器保存 */
+  const stubSaving = () => {
+    server.use(
+      http.get(
+        DOWNLOAD_URL,
+        () =>
+          new HttpResponse(new Uint8Array([0, 0, 0, 24]), {
+            headers: { 'Content-Type': 'video/mp4' },
+          }),
+      ),
+    )
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static override createObjectURL = () => 'blob:http://localhost/whole-film'
+        static override revokeObjectURL() {}
+      },
+    )
+    return vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const DONE = { status: 'done', progress: 1, downloadUrl: DOWNLOAD_URL }
+  const RENDERING = { status: 'rendering', progress: 0.4 }
 
   it('导出：按存好的这一版提交，完成后下载；下载时对用到的每条成片各记一次', async () => {
     const user = userEvent.setup()
     const events = trackDownloads()
-    serveProgress(DONE)
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    // jsdom 不做页面跳转：下载链接只看地址与埋点
-    const stopNavigation = (event: Event) => event.preventDefault()
-    document.addEventListener('click', stopNavigation)
-    try {
-      await user.click(screen.getByRole('button', { name: '导出' }))
-      const link = await screen.findByRole('link', { name: '下载整片' })
-      expect(link).toHaveAttribute('href', DONE.downloadUrl)
-      await user.click(link)
-      await user.click(link)
-      await waitFor(() =>
-        expect(events).toEqual([
-          { jobId: TAKE_A, name: 'video.downloaded' },
-          { jobId: TAKE_B, name: 'video.downloaded' },
-        ]),
-      )
-    } finally {
-      document.removeEventListener('click', stopNavigation)
-    }
-  })
-
-  it('排队、渲染中显示进度，可以取消', async () => {
-    const user = userEvent.setup()
-    let cancelled = false
+    const saved = stubSaving()
+    const revisions: unknown[] = []
     server.use(
-      http.get('*/api/conversations/:conversationId/whole-film/exports/:exportId', () =>
-        HttpResponse.json({
-          status: cancelled ? 'cancelled' : 'rendering',
-          progress: 0.4,
-          queuePosition: null,
-          error: null,
-          downloadUrl: null,
-          expiresAt: null,
-        }),
-      ),
-      http.delete('*/api/conversations/:conversationId/whole-film/exports/:exportId', () => {
-        cancelled = true
-        return new HttpResponse(null, { status: 204 })
+      http.post(EXPORTS_URL, async ({ request }) => {
+        revisions.push(((await request.json()) as { revision: number }).revision)
+        return HttpResponse.json(
+          { exportId: EXPORT_ID, sourceJobIds: [TAKE_A, TAKE_B] },
+          { status: 202 },
+        )
       }),
     )
+    serveLatest(null, DONE)
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     await user.click(screen.getByRole('button', { name: '导出' }))
-    expect(await screen.findByText('正在渲染 40%')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '取消导出' }))
+    const download = await screen.findByRole('button', { name: '下载整片' })
+    // 打开时可能先把草稿规整存过一版：提交的是提交那一刻存着的那一版
+    expect(revisions).toEqual([mockWholeFilmDraft(CONVERSATION)?.revision])
+    await user.click(download)
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(download).toBeEnabled())
+    await user.click(download)
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
+    expect(events).toEqual([
+      { jobId: TAKE_A, name: 'video.downloaded' },
+      { jobId: TAKE_B, name: 'video.downloaded' },
+    ])
+  })
+
+  it('打开编辑器时最近一次导出还没结束：接着显示进度，关掉编辑器不取消它', async () => {
+    const cancelled = trackCancels()
+    serveLatest({ status: 'rendering', progress: null }, RENDERING)
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    const { close } = await openEditor()
+    expect(await screen.findByText('正在渲染…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '取消导出' })).toBeInTheDocument()
+    expect(
+      await screen.findByText('正在渲染 40%', undefined, { timeout: 3_000 }),
+    ).toBeInTheDocument()
+    close()
+    // 取消若在卸载时发出，这段时间足够它到达 mock
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(cancelled).toEqual([])
+  })
+
+  it('打开编辑器时最近一次导出已完成：直接可以下载', async () => {
+    serveLatest(DONE)
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    expect(await screen.findByRole('button', { name: '下载整片' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '重新导出' })).toBeInTheDocument()
+  })
+
+  it('渲染中可以取消', async () => {
+    const user = userEvent.setup()
+    let cancelledNow = false
+    const cancelled = trackCancels(() => {
+      cancelledNow = true
+      return new HttpResponse(null, { status: 204 })
+    })
+    server.use(
+      http.get(LATEST_URL, () =>
+        HttpResponse.json({
+          export: exportOf(cancelledNow ? { status: 'cancelled' } : RENDERING),
+        }),
+      ),
+    )
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    await user.click(await screen.findByRole('button', { name: '取消导出' }))
     expect(await screen.findByText('已取消导出')).toBeInTheDocument()
+    expect(cancelled).toEqual([EXPORT_ID])
     expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
   })
 
-  it('导出中关掉编辑器：取消这次导出', async () => {
+  it('取消时正赶上交给渲染服务（409）：提示原因，进度照旧', async () => {
     const user = userEvent.setup()
-    const cancelled: string[] = []
-    serveProgress({ status: 'rendering', progress: 0.4 })
-    server.use(
-      http.delete(
-        '*/api/conversations/:conversationId/whole-film/exports/:exportId',
-        ({ params }) => {
-          cancelled.push(String(params['exportId']))
-          return new HttpResponse(null, { status: 204 })
-        },
-      ),
+    trackCancels(() =>
+      HttpResponse.json({ detail: '正在交给渲染服务，稍后再取消' }, { status: 409 }),
     )
+    serveLatest(RENDERING)
     putMockWholeFilmDraft(CONVERSATION, twoClips())
-    const { close } = await openEditor()
-    await user.click(screen.getByRole('button', { name: '导出' }))
-    expect(await screen.findByText('正在渲染 40%')).toBeInTheDocument()
-    close()
-    expect(screen.queryByText('正在渲染 40%')).not.toBeInTheDocument()
-    await waitFor(() => expect(cancelled).toHaveLength(1))
+    await openEditor()
+    await user.click(await screen.findByRole('button', { name: '取消导出' }))
+    expect(await screen.findByText(/正在交给渲染服务，稍后再取消/)).toBeInTheDocument()
+    expect(screen.getByText('正在渲染 40%')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '取消导出' })).toBeInTheDocument()
   })
 
   it('提交时草稿已有更新的一版：存好手上的再提交一次', async () => {
     const user = userEvent.setup()
     const revisions: unknown[] = []
     server.use(
-      http.post('*/api/conversations/:conversationId/whole-film/exports', async ({ request }) => {
+      http.post(EXPORTS_URL, async ({ request }) => {
         const body = (await request.json()) as { revision: number }
         revisions.push(body.revision)
         return revisions.length === 1
@@ -1087,48 +1146,54 @@ describe('整片编辑器 · 导出', () => {
               { detail: '整片草稿已经有更新的一版，重新读取后再导出' },
               { status: 409 },
             )
-          : HttpResponse.json(
-              { exportId: '22222222-3333-4444-8555-666666666666', sourceJobIds: [TAKE_A] },
-              { status: 202 },
-            )
+          : HttpResponse.json({ exportId: EXPORT_ID, sourceJobIds: [TAKE_A] }, { status: 202 })
       }),
     )
-    serveProgress(DONE)
+    serveLatest(null, DONE)
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     await user.click(screen.getByRole('button', { name: '导出' }))
-    expect(await screen.findByRole('link', { name: '下载整片' })).toBeInTheDocument()
-    expect(revisions).toEqual([1, 1])
+    expect(await screen.findByRole('button', { name: '下载整片' })).toBeInTheDocument()
+    const stored = mockWholeFilmDraft(CONVERSATION)?.revision
+    expect(revisions).toEqual([stored, stored])
   })
 
-  it.each([
-    ['没开通（422）', 'post', 422, '整片导出没有开通'],
-    ['渲染服务不可用（502）', 'post', 502, '渲染服务暂时不可用'],
-    ['导出查不到了（404）', 'get', 404, '导出已中断，请重新导出'],
-  ] as const)('%s：显示原因，可以重新导出', async (_, method, status, detail) => {
+  it('没开通（422）：显示原因，可以重新导出', async () => {
     const user = userEvent.setup()
     server.use(
-      http[method](
-        method === 'post'
-          ? '*/api/conversations/:conversationId/whole-film/exports'
-          : '*/api/conversations/:conversationId/whole-film/exports/:exportId',
-        () => HttpResponse.json({ detail }, { status }),
+      http.post(EXPORTS_URL, () =>
+        HttpResponse.json({ detail: '整片导出没有开通' }, { status: 422 }),
       ),
     )
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
     await user.click(screen.getByRole('button', { name: '导出' }))
-    expect(await screen.findByText(new RegExp(`：${detail}$`))).toHaveAttribute('role', 'status')
+    expect(await screen.findByText(/：整片导出没有开通$/)).toHaveAttribute('role', 'status')
     expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
   })
 
-  it('渲染失败：按失败原因说一句话', async () => {
-    const user = userEvent.setup()
-    serveProgress({ status: 'failed', error: { code: 'media-unreachable', message: 'ECONNRESET' } })
+  it.each([
+    ['渲染服务报的原因', 'media-unreachable', 'ECONNRESET', '有素材读不到，请稍后重新导出'],
+    ['渲染服务重启过', 'RENDER_LOST', 'render service restarted', '渲染服务重启过，请重新导出'],
+    ['交出去太久没结束', 'PROVIDER_TIMEOUT', 'no end after 6 h', '排队太久，请重新导出'],
+    ['渲染服务连不上', 'RENDER_UNAVAILABLE', 'connect refused', '渲染服务连不上，请稍后重新导出'],
+    ['没见过的错误码', 'SUBMIT_INTERRUPTED', 'worker restarted', '整片导出失败，请重新导出'],
+  ])('导出失败（%s）：按原因说一句话，不露给开发看的原文', async (_, code, message, text) => {
+    serveLatest({ status: 'failed', error: { code, message } })
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
-    await user.click(screen.getByRole('button', { name: '导出' }))
-    expect(await screen.findByText('有素材读不到，请稍后重新导出')).toBeInTheDocument()
-    expect(screen.queryByText(/ECONNRESET/)).not.toBeInTheDocument()
+    expect(await screen.findByText(text)).toHaveAttribute('role', 'status')
+    expect(screen.queryByText(message, { exact: false })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('渲染服务不收这份草稿：显示它给的原因', async () => {
+    serveLatest({
+      status: 'failed',
+      error: { code: 'RENDER_REJECTED', message: '组件 logo-x 不在组件库里' },
+    })
+    putMockWholeFilmDraft(CONVERSATION, twoClips())
+    await openEditor()
+    expect(await screen.findByText(/组件 logo-x 不在组件库里$/)).toHaveAttribute('role', 'status')
   })
 })

@@ -66,6 +66,8 @@ class ProviderLane:
 
     provider: GenerationProvider
     concurrency: int
+    timeout_seconds: int | None = None
+    """这家提交后多久还没终态就按超时收尾；不写取 ``GenerationQueueSettings.job_timeout_seconds``。"""
 
 
 def _by_name(lanes: Sequence[ProviderLane]) -> Mapping[str, ProviderLane]:
@@ -86,7 +88,7 @@ class GenerationQueueSettings:
     """故障后的重试间隔，长于正常轮询间隔以降低故障期间的请求压力。"""
 
     job_timeout_seconds: int = 3600
-    """提交后达到此时限仍无终态则失败，限制持续轮询的总时长。"""
+    """提交后达到此时限仍无终态则失败，限制持续轮询的总时长；lane 自己写了时限的按 lane 的。"""
 
     video_submit_concurrency: int = 100
     """视频只有一家，它那条提交队列的并发不进配置。图片按家配，见 ProviderLane。"""
@@ -206,8 +208,11 @@ class GenerationQueue:
             await self._not_configured(job, only_if_status=STATUS_PENDING)
             return
 
-        # 提交前持久化状态，确保请求中断后不会被视为未提交而重投。
-        await self._repo.mark_submitting(job.id)
+        # 提交前持久化状态，确保请求中断后不会被视为未提交而重投。只改还在排队的：读到 pending
+        # 之后它可能已被取消，这时不提交。
+        if await self._repo.mark_submitting(job.id) is None:
+            _logger.info("生成任务在提交之前已有结论，不再提交", job_id=job.id)
+            return
         try:
             submission = await lane.provider.submit(job)
         except ProviderError as exc:
@@ -280,20 +285,19 @@ class GenerationQueue:
         if job.status != STATUS_SUBMITTED:
             _logger.info("生成任务已有结论，不再轮询", job_id=job.id, status=job.status)
             return
-        if self._timed_out(job):
+        lane = self._lanes.get(job.provider)
+        timeout_seconds = self._timeout_seconds(lane)
+        if self._timed_out(job, timeout_seconds):
             self._settled(
                 job,
                 await self._repo.mark_failed(
                     job.id,
                     error_code="PROVIDER_TIMEOUT",
-                    error_message=(
-                        f"提交后 {self._settings.job_timeout_seconds} 秒仍无终态，按超时收尾"
-                    ),
+                    error_message=f"提交后 {timeout_seconds} 秒仍无终态，按超时收尾",
                     only_if_status=STATUS_SUBMITTED,
                 ),
             )
             return
-        lane = self._lanes.get(job.provider)
         if lane is None:
             # 不接住就是 KeyError 逃进重试策略，而它不设次数上限，会一直重排到总时限。
             await self._not_configured(job, only_if_status=STATUS_SUBMITTED)
@@ -469,10 +473,16 @@ class GenerationQueue:
         if written is None:
             _logger.info("生成任务在收尾之前已有结论，不改它", job_id=job.id)
 
-    def _timed_out(self, job: GenerationJob) -> bool:
+    def _timeout_seconds(self, lane: ProviderLane | None) -> int:
+        if lane is None or lane.timeout_seconds is None:
+            return self._settings.job_timeout_seconds
+        return lane.timeout_seconds
+
+    @staticmethod
+    def _timed_out(job: GenerationJob, timeout_seconds: int) -> bool:
         started = job.submitted_at or job.created_at
         elapsed = (datetime.now(UTC) - started).total_seconds()
-        return elapsed > self._settings.job_timeout_seconds
+        return elapsed > timeout_seconds
 
 
 __all__ = [
