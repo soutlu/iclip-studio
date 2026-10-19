@@ -169,6 +169,7 @@ export function CanvasLayer({
     } else return
     onSelect(owner)
     const player = playerOf(iframe)
+    const returnTo = document.activeElement
     // 让指针进到合成页里放光标；改完收回（播放器自己的开关，同 HyperFrames 的可交互合成）
     player?.setAttribute('interactive', '')
     setEditing(true)
@@ -183,6 +184,14 @@ export function CanvasLayer({
         cancelEditRef.current = null
         player?.removeAttribute('interactive')
         setEditing(false)
+        // 回车、Esc 结束时焦点还留在合成页里，编辑器的快捷键收不到：还给改字之前的地方。
+        // 点别处失焦结束的，焦点已经到了点的地方，不动它
+        if (player === undefined || document.activeElement !== player) return
+        const back =
+          returnTo instanceof HTMLElement && returnTo !== player && returnTo.isConnected
+            ? returnTo
+            : layerRef.current?.closest<HTMLElement>('[role="dialog"]')
+        back?.focus()
       },
     })
   }

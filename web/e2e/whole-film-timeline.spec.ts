@@ -772,8 +772,14 @@ test.describe('整片编辑器 · 画面点选与原位改字', () => {
     await expect
       .poll(async () => (await readDraft(page))?.captions.edits.map((edit) => edit.text))
       .toEqual(['夜色里，灯火通明'])
-    // 编辑器还开着（Esc 之类没有把它关掉）
+    // 编辑器还开着；焦点回到编辑器，← → 照常走播放头
     await expect(dialog).toBeVisible()
+    const clock = dialog.getByRole('slider', { name: '时间线播放位置' })
+    const before = await settledClockMs(clock)
+    await page.keyboard.press('ArrowRight')
+    await expect
+      .poll(async () => Math.abs(Number(await clock.inputValue()) * 1000 - before - 100))
+      .toBeLessThanOrEqual(FRAME_MS)
   })
 
   test('点画面上的特效选中时间线上那一块，不弹浮层；双击带标记的名字原位改字', async ({ page }) => {
@@ -819,6 +825,26 @@ test.describe('整片编辑器 · 画面点选与原位改字', () => {
     await page.keyboard.press('Escape')
     expect(await nameText()).toBe(shownName)
     await expect(dialog).toBeVisible()
+    // 焦点回到编辑器：选中特效块时 → 把它挪 0.1 秒
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(async () => (await readDraft(page))?.overlays[0]?.start).toBe(100)
+    // 等预览换上挪过之后的页面再改字（换页会放弃进行中的改字）
+    await expect
+      .poll(() =>
+        dialog
+          .getByRole('region', { name: '预览' })
+          .locator('hyperframes-player')
+          .evaluateAll((players) =>
+            players.map((player) =>
+              (
+                player as HTMLElement & { iframeElement: HTMLIFrameElement }
+              ).iframeElement.contentDocument
+                ?.querySelector('[data-hf-id="o1"] [data-start]')
+                ?.getAttribute('data-start'),
+            ),
+          ),
+      )
+      .toEqual(['0.1'])
     await page.mouse.dblclick(name.x, name.y)
     await page.keyboard.type('陈默')
     await page.keyboard.press('Enter')
