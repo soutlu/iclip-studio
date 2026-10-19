@@ -37,18 +37,15 @@ import {
   type ComponentCatalog,
 } from './component-catalog'
 import { placeComponent, placedPiece, type Placing } from './component-placement'
+import { CanvasLayer } from './canvas-layer'
+import { captionTextEdit, componentTextEdit } from './canvas-text-edit'
 import { CaptionControls, CaptionStatus } from './caption-controls'
 import { ComponentPopover } from './component-popover'
 import { ComponentsPanel, ComponentThumb, type CardCarry } from './components-panel'
 import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
-import {
-  clearCaptionText,
-  setCaptionsHidden,
-  setCaptionStyle,
-  setCaptionText,
-} from './editing/captions'
+import { setCaptionsHidden, setCaptionStyle } from './editing/captions'
 import {
   MAX_FILM_MS,
   type ComponentVariables,
@@ -120,6 +117,9 @@ type SideTab = 'materials' | 'brand' | 'general'
 
 /** 品牌栏、通用栏各自选中的小标题；没选过为 undefined，取第一个 */
 type SideChips = Readonly<Record<'brand' | 'general', string | undefined>>
+
+/** 能删除的选中：字幕以外的 */
+type Removable = Exclude<NonNullable<Selection>, { kind: 'caption' }>
 
 function EditorHeader({ actions, title }: { actions: ReactNode; title: string }) {
   return (
@@ -316,6 +316,8 @@ function EditorBody({
   const previewRef = useRef<PreviewControl | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
   const [popoverId, setPopoverId] = useState<string | null>(null)
+  // 画面上正在显示的合成页，画面点选在它里面找点中了什么
+  const [previewFrame, setPreviewFrame] = useState<HTMLIFrameElement | null>(null)
   const [sideTab, setSideTab] = useState<SideTab>('materials')
   const [sideChips, setSideChips] = useState<SideChips>({ brand: undefined, general: undefined })
   const [snap, setSnap] = useState(true)
@@ -481,14 +483,15 @@ function EditorBody({
     timeMs: playhead,
     ...(selectedId === undefined ? {} : { clipId: selectedId }),
   })
-  const removeResult = (target: NonNullable<Selection>): EditResult =>
+  const removeResult = (target: Removable): EditResult =>
     target.kind === 'clip'
       ? deleteClip(draft, { clipId: target.id })
       : target.kind === 'overlay'
         ? removeOverlay(draft, { overlayId: target.id })
         : removeMusic(draft)
+  /** 删除选中的；字幕是识别出来的，不能删 */
   const remove = (target: Selection) => {
-    if (target === null) return
+    if (target === null || target.kind === 'caption') return
     if (apply(removeResult(target))) {
       setSelection(null)
       setPopoverId(null)
@@ -687,14 +690,15 @@ function EditorBody({
         edit.subtitleJobId === caption.subtitleJobId &&
         edit.sentenceIndex === caption.sentenceIndex,
     )?.text ?? recognized(caption)
-  const editCaption = (caption: PlacedCaption, text: string) => {
-    const sentence = { subtitleJobId: caption.subtitleJobId, sentenceIndex: caption.sentenceIndex }
-    const trimmed = text.trim()
-    apply(
-      trimmed === '' || trimmed === recognized(caption)
-        ? clearCaptionText(draft, sentence)
-        : setCaptionText(draft, { ...sentence, text: trimmed }),
-    )
+  /** 改一句字幕的字；返回写没写进草稿（没变不记编辑） */
+  const editCaption = (caption: PlacedCaption, text: string): boolean => {
+    const result = captionTextEdit(draft, {
+      caption,
+      text,
+      current: sentenceText(caption),
+      recognized: recognized(caption),
+    })
+    return result !== null && apply(result)
   }
 
   // ---- 预览 ----（React Compiler 按草稿与素材缓存，播放头走动时不重新生成）
@@ -709,6 +713,12 @@ function EditorBody({
     window.location.origin,
   )
   const playBlocked = preview.kind === 'blocked' ? preview.message : undefined
+  const canvas = draft.canvas ?? DEFAULT_CANVAS
+  /** 在画面上点中：等于在时间线上点中，但不打开组件浮层 */
+  const selectOnCanvas = (next: Selection) => {
+    setSelection(next)
+    setPopoverId(null)
+  }
 
   // ---- 导出 ----
   const exporting = useWholeFilmExport(conversationId, session.settle)
@@ -812,13 +822,34 @@ function EditorBody({
         <PreviewPlayer
           backdrop={previewUrl === undefined ? undefined : videoSnapshotUrl(previewUrl, 320)}
           controlRef={previewRef}
-          height={(draft.canvas ?? DEFAULT_CANVAS).height}
+          height={canvas.height}
           message={playBlocked}
+          onFrame={setPreviewFrame}
           onPlaying={setPlaying}
           onTime={onTime}
           srcdoc={preview.kind === 'ready' ? preview.html : undefined}
-          width={(draft.canvas ?? DEFAULT_CANVAS).width}
-        />
+          width={canvas.width}
+        >
+          <CanvasLayer
+            canvas={canvas}
+            captions={captions}
+            draft={draft}
+            iframe={previewFrame}
+            onCaptionText={editCaption}
+            onComponentText={(change) => {
+              const result = componentTextEdit(draft, change)
+              return result !== null && apply(result)
+            }}
+            onPause={() => {
+              stopAtRef.current = null
+              previewRef.current?.pause()
+            }}
+            onSelect={selectOnCanvas}
+            playheadMs={playhead}
+            selection={selection}
+            sentenceText={sentenceText}
+          />
+        </PreviewPlayer>
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview
             controlRef={materialPreviewRef}
@@ -836,7 +867,9 @@ function EditorBody({
             beatBlocked={beatBlocked}
             canRedo={session.canRedo}
             canUndo={session.canUndo}
-            deleteBlocked={selection === null ? '先选中要删除的片段' : undefined}
+            deleteBlocked={
+              selection === null || selection.kind === 'caption' ? '先选中要删除的片段' : undefined
+            }
             onBeatSync={beatSync}
             onDelete={() => remove(selection)}
             onFit={() => setZoom(FIT_ZOOM)}

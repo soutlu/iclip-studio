@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
   type RefObject,
 } from 'react'
 import { StageBackdrop } from '../components/stage-backdrop'
@@ -23,6 +24,8 @@ export type PreviewControl = {
 
 /** `@hyperframes/player` 注册的 `<hyperframes-player>` 元素上我们用到的那几样 */
 type PlayerElement = HTMLElement & {
+  /** 渲染合成页的同源 iframe（在播放器的 shadow DOM 里） */
+  readonly iframeElement: HTMLIFrameElement
   play: () => void
   pause: () => void
   seek: (seconds: number) => void
@@ -42,6 +45,10 @@ type PreviewPlayerProps = {
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   controlRef: RefObject<PreviewControl | null>
+  /** 正在显示的合成页 iframe：每次换上新播放器、画好之后给一次；拆掉、合成不了时给 null */
+  onFrame: (iframe: HTMLIFrameElement | null) => void
+  /** 盖在画面上的一层（画面点选） */
+  children?: ReactNode
 }
 
 const once = (target: EventTarget, type: string) =>
@@ -63,18 +70,28 @@ export function PreviewPlayer({
   onTime,
   onPlaying,
   controlRef,
+  onFrame,
+  children,
 }: PreviewPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
   // 正在显示的播放器；只有它的事件驱动编辑器
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
-  const callbacksRef = useRef({ onTime, onPlaying })
+  const callbacksRef = useRef({ onTime, onPlaying, onFrame })
   const sizeRef = useRef({ width, height })
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying }
+    callbacksRef.current = { onTime, onPlaying, onFrame }
     sizeRef.current = { width, height }
   })
+
+  // 画面上显示的合成页：换上来的播放器画好之后才交出去；合成不了时页面藏起来，不再交
+  const shown = srcdoc === undefined ? null : active
+  useEffect(() => {
+    if (shown === null) return
+    callbacksRef.current.onFrame(shown.iframeElement)
+    return () => callbacksRef.current.onFrame(null)
+  }, [shown])
 
   useEffect(() => {
     let cancelled = false
@@ -181,9 +198,12 @@ export function PreviewPlayer({
         <div
           className="wf-player-host editor-preview stage-picture"
           hidden={srcdoc === undefined}
-          ref={hostRef}
           style={{ '--preview-ratio': width / height } as CSSProperties}
-        />
+        >
+          {/* 播放器由下面的 effect 直接放进这一层，不归 React 管 */}
+          <div className="wf-player-slot" ref={hostRef} />
+          {children}
+        </div>
       </div>
       {srcdoc === undefined && message !== undefined ? (
         <p className="wf-preview-note">{message}</p>

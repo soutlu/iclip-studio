@@ -10,6 +10,7 @@
   2. 去掉转大写；中文用 Noto Sans SC（本地字体文件），拉丁字母仍用 Anton。
   3. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin）；
      字号照原组件用画布量字，收进画面宽的 90%。
+  4. 每个词写上所在句子的 data-hf-id="caption:<sentence>"，编辑器在画面上按它认出点中的是哪一句。
   texture 变量、入场与纹理流动的动画不变。
 -->
 <template id="caption-texture-template">
@@ -113,6 +114,7 @@
               text: String(word.text || '').trim(),
               start: start,
               end: Math.max(start, Number(word.end) || 0),
+              sentence: word.sentence,
             }
           })
           .filter(function (word) {
@@ -132,6 +134,7 @@
           var wordEl = document.createElement('div')
           wordEl.className = 'hf-texture-text lv-texture-override lv-word'
           wordEl.id = 'lv-word-' + wi
+          wordEl.setAttribute('data-hf-id', 'caption:' + w.sentence)
           wordEl.textContent = w.text
           wordEls.push(wordEl)
           wordEl.style.webkitMaskImage = "url('" + TEXTURE_URL + "')"

@@ -506,6 +506,36 @@ describe('buildComposition', () => {
     expect(ids).toEqual(['stage', 'clip-0', 'clip-1', 'clip-2', 'ov-0', 'ov-1', 'captions'])
   })
 
+  it('每一块的最外层写着草稿 id：视频、铺满的宿主、固定尺寸组件的缩放盒子；字幕宿主不写', () => {
+    const doc = parse(
+      build({
+        layer0: [
+          vid('v1', 0, 2000),
+          comp('c1', 2000, 1000, 'logo-intro'),
+          comp('c2', 3000, 1000, 'end-card'),
+        ],
+        overlays: [ov('o1', 'lower-third', 0, 1000), ov('o"2', 'scribble', 0, 1000)],
+      }).html,
+    )
+    const marked = [...doc.querySelectorAll('[data-hf-id]')].map((node) => ({
+      hfId: node.getAttribute('data-hf-id'),
+      element: node.matches('video') ? 'video' : node.className,
+      host: node.matches('[data-composition-src]')
+        ? node.id
+        : node.querySelector(':scope > [data-composition-src]')?.id,
+    }))
+    expect(marked).toEqual([
+      { hfId: 'v1', element: 'video', host: undefined },
+      { hfId: 'c1', element: 'fit', host: 'clip-1' },
+      { hfId: 'c2', element: 'fill', host: 'clip-2' },
+      { hfId: 'o1', element: 'fill', host: 'ov-0' },
+      { hfId: 'o"2', element: 'fit', host: 'ov-1' },
+    ])
+    // 缩放盒子里的宿主不另写，字幕宿主没有草稿 id
+    expect(doc.querySelector('#clip-1')?.hasAttribute('data-hf-id')).toBe(false)
+    expect(doc.querySelector('#captions')?.hasAttribute('data-hf-id')).toBe(false)
+  })
+
   it('子合成宿主的 data-composition-id 是组件名，同一组件挂多处时各带各的可填项', () => {
     const { html } = build({
       layer0: [

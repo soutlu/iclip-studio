@@ -17,6 +17,7 @@ minimumReleaseAgeExclude:
   - '@hyperframes/lint@0.8.168'
   - '@hyperframes/parsers@0.8.168'
   - '@hyperframes/player@0.8.168'
+  - '@hyperframes/sdk@0.8.168'
   - '@hyperframes/studio-server@0.8.168'
   - '@vitest/mocker@5.0.0'
   - '@vitest/spy@5.0.0'
