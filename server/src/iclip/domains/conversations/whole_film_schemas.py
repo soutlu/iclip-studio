@@ -108,8 +108,11 @@ class WholeFilmCaptionEdit(CamelModel):
 
 
 class WholeFilmCaptions(CamelModel):
+    """字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。"""
+
     component: ComponentName
     edits: Annotated[list[WholeFilmCaptionEdit], Field(max_length=MAX_CAPTION_EDITS)]
+    hidden: bool = False
 
 
 class WholeFilmMusic(CamelModel):

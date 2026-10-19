@@ -1425,7 +1425,11 @@ export function FilmTracks({
             </div>
             <div
               aria-label="字幕轨"
-              className={cn('wf-lane', captionDrop && 'is-drop')}
+              className={cn(
+                'wf-lane',
+                captionDrop && 'is-drop',
+                draft.captions.hidden && 'is-captions-off',
+              )}
               ref={captionLaneRef}
               role="group"
             >

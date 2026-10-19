@@ -1099,8 +1099,24 @@
   pointer-events: none;
 }
 
+/* 开关里的图标与其他轨名的图标左对齐 */
 .wf-track-head.is-caption {
+  gap: 2px;
   padding-right: 0;
+  padding-left: 0;
+}
+
+.wf-caption-toggle {
+  display: grid;
+  width: 22px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-xs);
+}
+
+.wf-caption-toggle:hover {
+  color: var(--color-on-surface);
 }
 
 .wf-caption-style {
@@ -1110,6 +1126,7 @@
   flex: 1;
   align-items: center;
   gap: 3px;
+  padding: 0 4px;
   border-radius: var(--radius-xs);
   font-size: var(--text-label);
 }
@@ -1132,6 +1149,7 @@
 }
 
 /* 字幕控件的键盘焦点通过内部底色呈现，保持紧凑标题区的尺寸。 */
+.wf-caption-toggle:focus-visible,
 .wf-caption-style:focus-visible,
 .wf-caption-recognize:focus-visible {
   outline: none;
@@ -1188,6 +1206,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: text;
+}
+
+/* 关掉字幕时字幕块变淡，照样能点开改字；正在改的那块不变淡 */
+.wf-lane.is-captions-off .wf-caption:not(.is-editing) {
+  opacity: 0.45;
 }
 
 .wf-caption.is-editing {
@@ -1963,13 +1986,18 @@
     grid-template-columns: 72px minmax(0, 1fr);
   }
 
-  .wf-caption-style > span,
-  .wf-caption-style > .wf-caption-disclosure {
+  /* 窄屏轨名只有 72px：开关、样式菜单的展开箭头与识别挨着放 */
+  .wf-track-head.is-caption {
+    gap: 0;
+  }
+
+  .wf-caption-style > span {
     display: none;
   }
 
   .wf-caption-style {
     justify-content: center;
+    padding: 0;
   }
 
   .wf-caption-recognize {

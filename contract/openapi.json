@@ -9699,6 +9699,7 @@
       },
       "WholeFilmCaptions": {
         "additionalProperties": false,
+        "description": "字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。",
         "properties": {
           "component": {
             "maxLength": 200,
@@ -9713,6 +9714,11 @@
             "maxItems": 1000,
             "title": "Edits",
             "type": "array"
+          },
+          "hidden": {
+            "default": false,
+            "title": "Hidden",
+            "type": "boolean"
           }
         },
         "required": [

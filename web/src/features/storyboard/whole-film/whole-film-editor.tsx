@@ -43,7 +43,12 @@ import { ComponentsPanel, ComponentThumb, type CardCarry } from './components-pa
 import { DEFAULT_CANVAS } from './composition/build'
 import { placeCaptions, type PlacedCaption, type SubtitleRecord } from './composition/captions'
 import { autoBeatSync } from './editing/beat-sync'
-import { clearCaptionText, setCaptionStyle, setCaptionText } from './editing/captions'
+import {
+  clearCaptionText,
+  setCaptionsHidden,
+  setCaptionStyle,
+  setCaptionText,
+} from './editing/captions'
 import {
   MAX_FILM_MS,
   type ComponentVariables,
@@ -875,7 +880,11 @@ function EditorBody({
             captionControls={
               <CaptionControls
                 component={draft.captions.component}
+                hidden={draft.captions.hidden === true}
                 onStyle={(component) => apply(setCaptionStyle(draft, { component }))}
+                onToggleHidden={() =>
+                  apply(setCaptionsHidden(draft, { hidden: !draft.captions.hidden }))
+                }
                 recognition={recognition}
                 statusId={captionStatusId}
                 styles={catalog.items.filter((item) => item.placement === 'caption')}

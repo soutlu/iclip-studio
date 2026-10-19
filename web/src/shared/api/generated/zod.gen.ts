@@ -2756,10 +2756,13 @@ export const zWholeFilmCaptionEdit = z.object({
 
 /**
  * WholeFilmCaptions
+ *
+ * 字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。
  */
 export const zWholeFilmCaptions = z.object({
   component: z.string().min(1).max(200),
   edits: z.array(zWholeFilmCaptionEdit).max(1000),
+  hidden: z.boolean().optional().default(false),
 })
 
 /**

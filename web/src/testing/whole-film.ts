@@ -70,7 +70,8 @@ export const draftOf = (
   let at = 0
   return {
     canvas: layer0.some((clip) => clip.type === 'video') ? { width: 1080, height: 1920 } : null,
-    captions: { component: DEFAULT_CAPTION_COMPONENT, edits: [] },
+    // 同服务端发出的草稿：hidden 总是写着
+    captions: { component: DEFAULT_CAPTION_COMPONENT, edits: [], hidden: false },
     music: null,
     overlays: [],
     ...rest,

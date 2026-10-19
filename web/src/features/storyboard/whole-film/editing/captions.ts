@@ -35,6 +35,15 @@ export const clearCaptionText = (
   )
 }
 
+/** 整片关掉或打开字幕；样式与改过的字不动 */
+export const setCaptionsHidden = (draft: WholeFilmDraft, args: { hidden: boolean }): EditResult =>
+  done(
+    // 有这个字段之前存的草稿没写它，按开着算
+    args.hidden === (draft.captions.hidden ?? false)
+      ? draft
+      : { ...draft, captions: { ...draft.captions, hidden: args.hidden } },
+  )
+
 /** 换字幕样式（组件库里的字幕组件） */
 export const setCaptionStyle = (draft: WholeFilmDraft, args: { component: string }): EditResult =>
   done(
