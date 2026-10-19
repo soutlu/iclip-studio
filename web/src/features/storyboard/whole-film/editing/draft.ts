@@ -23,6 +23,13 @@ export const MIN_CLIP_MS = Math.round(DEFAULT_TIMELINE_MIN_DURATION * 1000)
 export const MAX_FILM_MS = 120_000
 /** 音量上限 +12 dB，同 HyperFrames 的 audioGain */
 export const MAX_VOLUME = 3.981072
+/** 特效块、字幕在画面上挪开的位置上限（画面像素，正负都是），同服务端的画布边长上限 */
+export const MAX_OFFSET = 4096
+
+/** 画面上的位置记成整数像素，裁在 ±{@link MAX_OFFSET} 以内；`+ 0` 把 -0 记成 0 */
+export const toOffset = (value: number): number =>
+  Math.min(MAX_OFFSET, Math.max(-MAX_OFFSET, Math.round(value))) + 0
+
 /** 新草稿的字幕样式：组件目录里的产品默认字幕（白字黑边） */
 export const DEFAULT_CAPTION_COMPONENT = 'default-caption'
 

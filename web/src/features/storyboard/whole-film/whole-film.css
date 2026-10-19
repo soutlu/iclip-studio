@@ -389,6 +389,18 @@
   display: none;
 }
 
+.wf-canvas.is-dragging {
+  cursor: move;
+}
+
+/* 拖动吸住画面中线或边缘时的参考线：白色 1 像素横跨整个画面，外加一圈细深色 */
+.wf-canvas-guide {
+  position: absolute;
+  background: var(--color-on-scrim);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--color-scrim) 40%, transparent);
+  pointer-events: none;
+}
+
 /* 换页时新播放器在底下加载，画好第一帧才显示 */
 .wf-player.is-pending {
   opacity: 0;

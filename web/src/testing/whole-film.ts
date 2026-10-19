@@ -49,7 +49,7 @@ export const card = (
   variables,
 })
 
-/** 特效轨上的一块；默认在第 0 行、zIndex 为 1 */
+/** 特效轨上的一块；默认在第 0 行、zIndex 为 1，画面上没挪过（同服务端发出的：x、y 总是写着） */
 export const overlay = (
   id: string,
   start: number,
@@ -60,8 +60,21 @@ export const overlay = (
     track = 0,
     zIndex = 1,
     variables = {},
+    x = 0,
+    y = 0,
   }: Partial<OverlayClip> = {},
-): OverlayClip => ({ id, component, start, duration, playbackStart, track, zIndex, variables })
+): OverlayClip => ({
+  id,
+  component,
+  start,
+  duration,
+  playbackStart,
+  track,
+  zIndex,
+  variables,
+  x,
+  y,
+})
 
 export const draftOf = (
   layer0: Layer0Clip[],
@@ -70,8 +83,8 @@ export const draftOf = (
   let at = 0
   return {
     canvas: layer0.some((clip) => clip.type === 'video') ? { width: 1080, height: 1920 } : null,
-    // 同服务端发出的草稿：hidden 总是写着
-    captions: { component: DEFAULT_CAPTION_COMPONENT, edits: [], hidden: false },
+    // 同服务端发出的草稿：hidden、x、y 总是写着
+    captions: { component: DEFAULT_CAPTION_COMPONENT, edits: [], hidden: false, x: 0, y: 0 },
     music: null,
     overlays: [],
     ...rest,

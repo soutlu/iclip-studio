@@ -61,6 +61,8 @@ Ms = Annotated[int, Field(ge=0)]
 Index = Annotated[int, Field(ge=0)]
 ClipMs = Annotated[int, Field(ge=MIN_CLIP_MS)]
 Volume = Annotated[FiniteFloat, Field(ge=0, le=MAX_VOLUME)]
+Offset = Annotated[int, Field(ge=-MAX_CANVAS_EDGE, le=MAX_CANVAS_EDGE)]
+"""画面像素：在画面上挪开的距离，向右、向下为正。"""
 
 
 class WholeFilmCanvas(CamelModel):
@@ -108,11 +110,14 @@ class WholeFilmCaptionEdit(CamelModel):
 
 
 class WholeFilmCaptions(CamelModel):
-    """字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。"""
+    """字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。
+    ``x``、``y`` 是整片字幕在画面上挪开的位置，所有字幕共用一个。"""
 
     component: ComponentName
     edits: Annotated[list[WholeFilmCaptionEdit], Field(max_length=MAX_CAPTION_EDITS)]
     hidden: bool = False
+    x: Offset = 0
+    y: Offset = 0
 
 
 class WholeFilmMusic(CamelModel):
@@ -128,7 +133,8 @@ class WholeFilmOverlay(CamelModel):
     ``playbackStart`` 起播。
 
     同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
-    之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。"""
+    之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
+    ``x``、``y`` 是它在画面上挪开的位置。"""
 
     id: ClipId
     component: ComponentName
@@ -138,6 +144,8 @@ class WholeFilmOverlay(CamelModel):
     track: Index
     z_index: Index
     variables: Variables
+    x: Offset = 0
+    y: Offset = 0
 
 
 class WholeFilmDocument(CamelModel):

@@ -37,6 +37,7 @@ import {
   type ComponentCatalog,
 } from './component-catalog'
 import { placeComponent, placedPiece, type Placing } from './component-placement'
+import { moveEditOf } from './canvas-drag'
 import { CanvasLayer } from './canvas-layer'
 import { captionTextEdit, componentTextEdit } from './canvas-text-edit'
 import { CaptionControls, CaptionStatus } from './caption-controls'
@@ -840,6 +841,10 @@ function EditorBody({
               const result = componentTextEdit(draft, change)
               return result !== null && apply(result)
             }}
+            onMove={(op) => {
+              const result = moveEditOf(draft, op)
+              return result !== null && apply(result)
+            }}
             onPause={() => {
               stopAtRef.current = null
               previewRef.current?.pause()
@@ -848,6 +853,7 @@ function EditorBody({
             playheadMs={playhead}
             selection={selection}
             sentenceText={sentenceText}
+            snap={snap}
           />
         </PreviewPlayer>
         {viewedMaterial === undefined || materialView === null ? null : (

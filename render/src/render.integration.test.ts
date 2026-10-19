@@ -105,6 +105,18 @@ function bluePixels(frame: Buffer): number {
   return count
 }
 
+/** 区域内每个像素的平均颜色（RGB，0–255）。 */
+function meanColor(frame: Buffer, region: Region): [number, number, number] {
+  let [r, g, b] = [0, 0, 0]
+  eachPixel(region, (offset) => {
+    r += frame[offset] ?? 0
+    g += frame[offset + 1] ?? 0
+    b += frame[offset + 2] ?? 0
+  })
+  const count = region.width * region.height
+  return [r / count, g / count, b / count]
+}
+
 /** 本机素材与上传目标：GET 带 Range 读 dir 下的文件，PUT 存进 dir/received.mp4。 */
 async function startServer(dir: string): Promise<{ server: Server; origin: string }> {
   const server = createServer(async (req, res) => {
@@ -487,6 +499,81 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       expect(
         meanDifference(overlayPastEnd!, Buffer.alloc(overlayPastEnd!.length), nameArea),
       ).toBeGreaterThan(6)
+    } finally {
+      await rendered.cleanup()
+    }
+  }, 600_000)
+
+  it('在画面上挪过位置的特效块（固定尺寸组件）导出在挪到的地方，原处只剩底下的画面', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({
+      registryDir: REGISTRY,
+      workDir: join(dir, 'work'),
+      gpuEncode: false,
+      logger,
+    })
+    const gray = `${origin}/gray.mp4`
+    // 姓名条·色块：1920×1080 的设计稿缩到 640×360，左下角一块实心蓝底（#2756ff）。同一组件放两次：
+    // 0–2.5 秒在原处，2.5–5 秒挪开 (300, -150) 画面像素。
+    const shifted = { x: 300, y: -150 }
+    const block = (id: string, start: number, at: { x: number; y: number }) => ({
+      id,
+      component: 'lt-color-block',
+      start,
+      duration: 2500,
+      playbackStart: 0,
+      track: 0,
+      zIndex: 1,
+      variables: {},
+      ...at,
+    })
+    const rendered = await worker.render(
+      {
+        id: 'moved',
+        mediaUrls: [gray],
+        compose: (paths) =>
+          buildComposition({
+            draft: {
+              canvas: FRAME,
+              layer0: [
+                {
+                  id: 'g',
+                  type: 'video',
+                  start: 0,
+                  duration: 5000,
+                  playbackStart: 0,
+                  sourceJobId: SOURCE_JOB,
+                  volume: 1,
+                },
+              ],
+              captions: { component: 'default-caption', edits: [] },
+              music: null,
+              overlays: [block('still', 0, { x: 0, y: 0 }), block('moved', 2500, shifted)],
+            },
+            media: {
+              videos: { [SOURCE_JOB]: { url: paths[gray] ?? gray } },
+              music: null,
+              subtitles: {},
+            },
+            catalog,
+          }).html,
+      },
+      { signal: new AbortController().signal, onProgress: () => {} },
+    )
+    try {
+      // 两处都取进场动画（0.6 秒）结束后的同一进度
+      const [still, moved] = await Promise.all([1.5, 4].map((at) => frameAt(rendered.file, at)))
+      // 色块左边距里一条没有字的竖条
+      const home = { x: 42, y: 285, width: 7, height: 30 }
+      const away = { ...home, x: home.x + shifted.x, y: home.y + shifted.y }
+      const isBlue = ([r, , b]: [number, number, number]) => b > 180 && b - r > 100
+      const isGray = (color: [number, number, number]) =>
+        color.every((channel) => Math.abs(channel - 0x20) < 12)
+      // 没挪的那块在原处；挪过的那块原处只剩灰底，挪到的地方是色块
+      expect(meanColor(still!, home)).toSatisfy(isBlue)
+      expect(meanColor(still!, away)).toSatisfy(isGray)
+      expect(meanColor(moved!, home)).toSatisfy(isGray)
+      expect(meanColor(moved!, away)).toSatisfy(isBlue)
     } finally {
       await rendered.cleanup()
     }

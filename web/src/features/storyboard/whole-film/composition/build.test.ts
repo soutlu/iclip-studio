@@ -506,7 +506,7 @@ describe('buildComposition', () => {
     expect(ids).toEqual(['stage', 'clip-0', 'clip-1', 'clip-2', 'ov-0', 'ov-1', 'captions'])
   })
 
-  it('每一块的最外层写着草稿 id：视频、铺满的宿主、固定尺寸组件的缩放盒子；字幕宿主不写', () => {
+  it('每一块的最外层写着草稿 id：视频、铺满的宿主、固定尺寸组件的缩放盒子；字幕宿主写 captions', () => {
     const doc = parse(
       build({
         layer0: [
@@ -530,10 +530,78 @@ describe('buildComposition', () => {
       { hfId: 'c2', element: 'fill', host: 'clip-2' },
       { hfId: 'o1', element: 'fill', host: 'ov-0' },
       { hfId: 'o"2', element: 'fit', host: 'ov-1' },
+      { hfId: 'captions', element: 'fill', host: 'captions' },
     ])
-    // 缩放盒子里的宿主不另写，字幕宿主没有草稿 id
+    // 缩放盒子里的宿主不另写
     expect(doc.querySelector('#clip-1')?.hasAttribute('data-hf-id')).toBe(false)
-    expect(doc.querySelector('#captions')?.hasAttribute('data-hf-id')).toBe(false)
+  })
+
+  it('固定尺寸的字幕组件：captions 写在缩放盒子上', () => {
+    const catalog = {
+      ...CATALOG,
+      items: CATALOG.items.map((entry) =>
+        entry.name === 'default-caption'
+          ? { ...entry, size: { width: 1080, height: 1920 } }
+          : entry,
+      ),
+    }
+    const doc = parse(
+      buildComposition({
+        draft: draft({ captions: { component: 'default-caption', edits: [], x: 0, y: 60 } }),
+        media: MEDIA,
+        catalog,
+      }).html,
+    )
+    const box = doc.querySelector('[data-hf-id="captions"]')
+    expect(box?.className).toBe('fit')
+    expect(box?.querySelector(':scope > #captions')).not.toBeNull()
+    expect(box?.getAttribute('data-y')).toBe('60')
+  })
+
+  it('挪过位置的特效块与字幕：位置写在写草稿 id 的那个元素上，基准是 0', () => {
+    const doc = parse(
+      build({
+        layer0: [vid('v1', 0, 2000), comp('c1', 2000, 1000, 'end-card')],
+        captions: { component: 'default-caption', edits: [], x: 0, y: -240 },
+        overlays: [
+          ov('o1', 'lower-third', 0, 1000, { x: -36, y: 410 }),
+          ov('o2', 'scribble', 0, 1000, { x: 120, y: 0 }),
+          ov('o3', 'lower-third', 1000, 1000, { x: 0, y: 0 }),
+        ],
+      }).html,
+    )
+    const positioned = [...doc.querySelectorAll('[data-hf-edit-base-x]')].map((node) => ({
+      hfId: node.getAttribute('data-hf-id'),
+      element: node.className,
+      x: node.getAttribute('data-x'),
+      y: node.getAttribute('data-y'),
+      base: [node.getAttribute('data-hf-edit-base-x'), node.getAttribute('data-hf-edit-base-y')],
+    }))
+    // 铺满的写在宿主上，固定尺寸的写在缩放盒子上；没挪过的块与成片轨上的段不写
+    expect(positioned).toEqual([
+      { hfId: 'o1', element: 'fill', x: '-36', y: '410', base: ['0', '0'] },
+      { hfId: 'o2', element: 'fit', x: '120', y: '0', base: ['0', '0'] },
+      { hfId: 'captions', element: 'fill', x: '0', y: '-240', base: ['0', '0'] },
+    ])
+    expect(doc.querySelectorAll('[data-x], [data-y], [data-hf-edit-base-y]')).toHaveLength(3)
+  })
+
+  it('位置都是 0 时页面与没写位置的草稿一字不差', () => {
+    const layer0 = [vid('v1', 0, 2000), comp('c1', 2000, 1000, 'logo-intro')]
+    const unset = build({
+      layer0,
+      overlays: [ov('o1', 'lower-third', 0, 1000), ov('o2', 'scribble', 0, 1000)],
+    }).html
+    const zero = build({
+      layer0,
+      captions: { component: 'default-caption', edits: [], x: 0, y: 0 },
+      overlays: [
+        ov('o1', 'lower-third', 0, 1000, { x: 0, y: 0 }),
+        ov('o2', 'scribble', 0, 1000, { x: 0, y: 0 }),
+      ],
+    }).html
+    expect(zero).toBe(unset)
+    expect(unset).not.toMatch(/data-x|data-y|data-hf-edit-base/)
   })
 
   it('子合成宿主的 data-composition-id 是组件名，同一组件挂多处时各带各的可填项', () => {

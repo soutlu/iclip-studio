@@ -735,6 +735,41 @@ const shownInPreview = async (dialog: Locator, selector: string) => {
   return point
 }
 
+/**
+ * 正在显示的合成页里，写着这个 data-hf-id 的最外层元素：它的位置属性、行内 translate，与它画在
+ * 页面上的范围（已按画面缩放换到页面坐标）
+ */
+const placedInPreview = (dialog: Locator, hfId: string) =>
+  dialog
+    .getByRole('region', { name: '预览' })
+    // 换页那一刻新旧两个播放器可能同时显示，取后放上来的那个
+    .locator('hyperframes-player:not(.is-pending)')
+    .last()
+    .evaluate((player, hfId) => {
+      const iframe = (player as HTMLElement & { iframeElement: HTMLIFrameElement }).iframeElement
+      const element = iframe.contentDocument?.querySelector<HTMLElement>(`[data-hf-id="${hfId}"]`)
+      if (element == null) return null
+      const frame = iframe.getBoundingClientRect()
+      const scale = frame.width / iframe.offsetWidth
+      const box = element.getBoundingClientRect()
+      return {
+        dataX: element.getAttribute('data-x'),
+        dataY: element.getAttribute('data-y'),
+        translate: element.style.getPropertyValue('translate'),
+        left: frame.left + box.left * scale,
+        top: frame.top + box.top * scale,
+        /** 画布 1 像素在页面上多宽 */
+        scale,
+      }
+    }, hfId)
+
+/** 按住 from，分几步拖到 (dx, dy) 之外 */
+const dragBy = async (page: Page, from: { x: number; y: number }, dx: number, dy: number) => {
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + dx, from.y + dy, { steps: 8 })
+}
+
 /** 播放头跳到这一刻（秒），等播放器停稳 */
 const seekTo = async (dialog: Locator, secondsAt: number) => {
   const clock = dialog.getByRole('slider', { name: '时间线播放位置' })
@@ -742,7 +777,7 @@ const seekTo = async (dialog: Locator, secondsAt: number) => {
   await settledClockMs(clock)
 }
 
-test.describe('整片编辑器 · 画面点选与原位改字', () => {
+test.describe('整片编辑器 · 画面点选、原位改字与拖动', () => {
   test('点画面上的字幕选中时间线上那一句；双击在画面上改字，回车后时间线跟着变', async ({
     page,
   }) => {
@@ -854,5 +889,115 @@ test.describe('整片编辑器 · 画面点选与原位改字', () => {
         name: '陈默',
       })
     await expect(block).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('在画面上拖动名牌：松手记一步编辑，换页后停在拖到的地方；撤销回到原处', async ({ page }) => {
+    const { dialog } = await openWith(page, {
+      layer0: [video('v1', 0, 6_000)],
+      overlays: [overlay('o1', 'lt-neon-border', 0, 4_000, 0)],
+    })
+    await seekTo(dialog, 2)
+    const name = await shownInPreview(dialog, '[data-hf-id="o1"] [data-var-text="name"]')
+    const before = await placedInPreview(dialog, 'o1')
+    if (before === null) throw new Error('预览里没有名牌')
+
+    await dragBy(page, name, 40, -30)
+    await expect(dialog.locator('.wf-canvas')).toHaveClass(/is-dragging/)
+    await page.mouse.up()
+    // 松手后、换页之前（换页至少等 250 毫秒）元素停在松手的地方
+    const released = await placedInPreview(dialog, 'o1')
+    await expect(dialog.locator('.wf-canvas')).not.toHaveClass(/is-dragging/)
+    await expect
+      .poll(async () => {
+        const moved = (await readDraft(page))?.overlays[0]
+        return [Math.sign(moved?.x ?? 0), Math.sign(moved?.y ?? 0)]
+      })
+      .toEqual([1, -1])
+    const moved = (await readDraft(page))?.overlays[0]
+    // 换上的新页面带着位置属性，运行时按它挪开；画面上停在拖到的地方
+    await expect
+      .poll(() => placedInPreview(dialog, 'o1'))
+      .toMatchObject({
+        dataX: String(moved?.x),
+        dataY: String(moved?.y),
+        translate: `${moved?.x}px ${moved?.y}px`,
+      })
+    // 挪开的画布像素乘上缩放就是页面上挪开的距离；与指针的位移只差吸附（6 像素以内）
+    const after = await placedInPreview(dialog, 'o1')
+    if (after === null || moved?.x === undefined || moved.y === undefined)
+      throw new Error('名牌不见了')
+    expect(Math.abs(after.left - before.left - moved.x * after.scale)).toBeLessThanOrEqual(1)
+    expect(Math.abs(after.top - before.top - moved.y * after.scale)).toBeLessThanOrEqual(1)
+    expect(Math.abs(after.left - before.left - 40)).toBeLessThanOrEqual(7)
+    expect(Math.abs(after.top - before.top + 30)).toBeLessThanOrEqual(7)
+    // 换页前后是同一个位置：没有闪回，也没有多挪
+    expect(Math.abs((released?.left ?? 0) - after.left)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs((released?.top ?? 0) - after.top)).toBeLessThanOrEqual(0.5)
+    await expect(dialog.getByRole('button', { name: '撤销' })).not.toHaveAttribute('aria-disabled')
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect
+      .poll(async () => {
+        const undone = (await readDraft(page))?.overlays[0]
+        return [undone?.x, undone?.y]
+      })
+      .toEqual([0, 0])
+    await expect.poll(() => placedInPreview(dialog, 'o1')).toMatchObject({ dataX: null })
+  })
+
+  test('拖动画面上的字幕：整片字幕一起挪，位置记在草稿的字幕上', async ({ page }) => {
+    const { dialog } = await openWith(page, { layer0: [video('v1', 0, 6_000)] })
+    await seekTo(dialog, 1)
+    const line = await shownInPreview(dialog, '[data-hf-id="caption:0"] .caption-line')
+
+    await dragBy(page, line, 0, -50)
+    await page.mouse.up()
+    await expect
+      .poll(async () => {
+        const captions = (await readDraft(page))?.captions
+        return [captions?.x, Math.sign(captions?.y ?? 0)]
+      })
+      .toEqual([0, -1])
+    await expect
+      .poll(async () => (await placedInPreview(dialog, 'captions'))?.dataY)
+      .toBe(String((await readDraft(page))?.captions.y))
+  })
+
+  test('成片轨上的视频段只能选中，拖不动；拖动中按 Esc 放弃，元素回到原处，编辑器不关', async ({
+    page,
+  }) => {
+    const { dialog, film } = await openWith(page, {
+      layer0: [video('v1', 0, 6_000)],
+      overlays: [overlay('o1', 'lt-neon-border', 0, 4_000, 0)],
+    })
+    await seekTo(dialog, 2)
+    const saved = JSON.stringify(await readDraft(page))
+
+    // 画面上没有特效的地方是底下的视频段
+    const panel = await boxOf(dialog.locator('.wf-canvas'))
+    await dragBy(page, { x: panel.x + panel.width / 2, y: panel.y + 12 }, 30, 40)
+    await expect(dialog.locator('.wf-canvas')).not.toHaveClass(/is-dragging/)
+    await page.mouse.up()
+    await expect(film.getByRole('button', { name: /^选中：第 1 段/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(await placedInPreview(dialog, 'v1')).toMatchObject({ translate: '' })
+
+    const name = await shownInPreview(dialog, '[data-hf-id="o1"] [data-var-text="name"]')
+    const before = await placedInPreview(dialog, 'o1')
+    await dragBy(page, name, 60, -40)
+    await expect.poll(async () => (await placedInPreview(dialog, 'o1'))?.translate).not.toBe('')
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('.wf-canvas')).not.toHaveClass(/is-dragging/)
+    expect(await placedInPreview(dialog, 'o1')).toEqual(before)
+    // 两次都没记编辑，草稿没变
+    await expect(dialog.getByRole('button', { name: '撤销' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(JSON.stringify(await readDraft(page))).toBe(saved)
   })
 })

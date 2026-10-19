@@ -7,6 +7,7 @@ import {
   moveOverlay,
   overlayRowAt,
   removeOverlay,
+  setOverlayPosition,
   trimOverlay,
   type OverlayRow,
 } from './overlays'
@@ -267,5 +268,59 @@ describe('removeOverlay 与可填项', () => {
       setComponentVariables(film, { id: 'c', variables: { label: '限时' } }),
     ).draft
     expect(edited.overlays[2]?.variables).toEqual({ label: '限时' })
+  })
+})
+
+describe('setOverlayPosition：在画面上挪', () => {
+  const film = () =>
+    withOverlays([overlay('a', 0, 1_000, { track: 0 }), overlay('b', 0, 1_000, { track: 1 })])
+
+  it('只改这一块的位置：取整，裁在 ±4096 以内', () => {
+    const moved = expectOk(setOverlayPosition(film(), { overlayId: 'b', x: 120.4, y: -35.6 })).draft
+    expect(moved.overlays.map((o) => [o.id, o.x, o.y])).toEqual([
+      ['a', 0, 0],
+      ['b', 120, -36],
+    ])
+    const far = expectOk(setOverlayPosition(film(), { overlayId: 'a', x: 5_000, y: -9_999 })).draft
+    expect(far.overlays[0]).toMatchObject({ x: 4_096, y: -4_096 })
+    // -0.4 取整得 -0，记成 0
+    const near = expectOk(setOverlayPosition(moved, { overlayId: 'b', x: -0.4, y: 0 })).draft
+    expect(Object.is(near.overlays[1]?.x, 0)).toBe(true)
+  })
+
+  it('位置没变时原样返回；没写位置的块按没挪过算；不认识的 id 被拒', () => {
+    const draft = film()
+    expect(expectOk(setOverlayPosition(draft, { overlayId: 'a', x: 0.3, y: -0.2 })).draft).toBe(
+      draft,
+    )
+    // 有位置之前存的草稿没写 x、y
+    const { x: _x, y: _y, ...legacy } = overlay('a', 0, 1_000)
+    const unset = withOverlays([legacy])
+    expect(expectOk(setOverlayPosition(unset, { overlayId: 'a', x: 0, y: 0 })).draft).toBe(unset)
+    expect(setOverlayPosition(draft, { overlayId: 'x', x: 1, y: 1 })).toEqual({
+      ok: false,
+      refusal: 'unknown-clip',
+    })
+  })
+
+  it('时间线上挪动、换行、修剪、改可填项都保留位置', () => {
+    const placed = withOverlays([
+      overlay('a', 2_000, 1_000, { track: 0, x: 40, y: -60 }),
+      overlay('b', 0, 1_000, { track: 1, x: -8, y: 12 }),
+    ])
+    const positions = (draft: WholeFilmDraft) =>
+      Object.fromEntries(draft.overlays.map((o) => [o.id, [o.x, o.y]]))
+    const before = positions(placed)
+    const edits = [
+      moveOverlay(placed, { overlayId: 'a', deltaMs: 500 }),
+      moveOverlay(placed, { overlayId: 'a', deltaMs: 0, row: { insertAt: 2 } }),
+      trimOverlay(placed, { overlayId: 'a', edge: 'start', deltaMs: 300 }),
+      setComponentVariables(placed, { id: 'b', variables: { label: '限时' } }),
+      removeOverlay(placed, { overlayId: 'b' }),
+    ]
+    for (const result of edits) {
+      const after = positions(expectOk(result).draft)
+      for (const [id, at] of Object.entries(after)) expect(at).toEqual(before[id])
+    }
   })
 })

@@ -9,6 +9,7 @@ import {
 import {
   MAX_FILM_MS,
   MIN_CLIP_MS,
+  toOffset,
   type ComponentVariables,
   type OverlayClip,
   type WholeFilmDraft,
@@ -217,6 +218,23 @@ export const trimOverlay = (
   return done({
     ...draft,
     overlays: draft.overlays.map((o) => (o === overlay ? { ...o, ...next } : o)),
+  })
+}
+
+/** 在画面上挪一个特效块：x、y 是画面像素，取整并裁在 ±4096 以内；位置没变时原样返回 */
+export const setOverlayPosition = (
+  draft: WholeFilmDraft,
+  args: { overlayId: string; x: number; y: number },
+): EditResult => {
+  const overlay = draft.overlays.find((o) => o.id === args.overlayId)
+  if (!overlay) return refuse('unknown-clip')
+  const x = toOffset(args.x)
+  const y = toOffset(args.y)
+  // 有位置之前存的草稿没写 x、y，按没挪过算
+  if (x === (overlay.x ?? 0) && y === (overlay.y ?? 0)) return done(draft)
+  return done({
+    ...draft,
+    overlays: draft.overlays.map((o) => (o === overlay ? { ...o, x, y } : o)),
   })
 }
 
