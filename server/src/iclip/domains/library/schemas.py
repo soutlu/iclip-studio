@@ -119,6 +119,43 @@ class LibraryVideoDetailOut(CamelModel):
     且那段对话的工作区里有 ``film.icml`` 或 ``video_shot.json``。只在详情里给。"""
 
 
+class WholeFilmVersionOut(CamelModel):
+    """整片卡里的一版：这段对话的一次已完成导出。"""
+
+    job_id: uuid.UUID
+    """那条整片记录。"""
+    output_url: str
+    finished_at: datetime
+    user_name: str | None
+    """导出的人的用户名；账号没有用户名时为 ``None``。"""
+    source_job_ids: list[uuid.UUID]
+    """这次导出用到的成片，按导出请求里的先后；只有组件段的导出为空。下载时各记一次下载。"""
+
+
+class WholeFilmCardOut(CamelModel):
+    """资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。整片没有脚本，不能做同款。"""
+
+    conversation_id: uuid.UUID
+    """卡 id 就是来源对话 id。"""
+    can_open_conversation: bool
+    """这位读者能不能打开来源对话，口径同成片卡。"""
+    title: str | None
+    """来源对话的标题，对话删了照给。"""
+    user_name: str | None
+    """卡的作者：对话属主的用户名。"""
+    face: WholeFilmVersionOut
+    """卡面：最新完成的一版，即 ``versions`` 的最后一条。"""
+    versions: list[WholeFilmVersionOut]
+    """早完成的在前，第 N 条就是第 N 版。"""
+
+
+class WholeFilmCardsOut(CamelModel):
+    items: list[WholeFilmCardOut]
+    next_cursor: str | None
+    total: int | None
+    """当前筛选下一共几张卡；只有第一页（不带 ``cursor``）给，翻页时为 ``None``。"""
+
+
 class LibraryAuthorOut(CamelModel):
     user_name: str
     count: int
@@ -141,4 +178,7 @@ __all__ = [
     "ShotGroupOut",
     "TakeOut",
     "VersionOut",
+    "WholeFilmCardOut",
+    "WholeFilmCardsOut",
+    "WholeFilmVersionOut",
 ]

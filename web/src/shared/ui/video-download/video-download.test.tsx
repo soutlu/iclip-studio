@@ -48,7 +48,7 @@ describe('VideoDownload', () => {
     { entry: '选「下载原片」', item: '下载原片', url: CLEAN, watermarkUrl: MARKED },
     { entry: '选「下载水印版」', item: '下载水印版', url: MARKED, watermarkUrl: MARKED },
   ])(
-    '$entry：带 jobId 记一条下载事件，不等它回来就取字节保存',
+    '$entry：按 downloadedJobIds 记下载事件，不等它回来就取字节保存',
     async ({ item, url, watermarkUrl }) => {
       const { fetched, saved } = stubSaving()
       const events: unknown[] = []
@@ -65,7 +65,7 @@ describe('VideoDownload', () => {
       )
       const user = userEvent.setup()
       await renderWithProviders(
-        <VideoDownload jobId={JOB_ID} url={CLEAN} watermarkUrl={watermarkUrl} />,
+        <VideoDownload downloadedJobIds={[JOB_ID]} url={CLEAN} watermarkUrl={watermarkUrl} />,
       )
 
       await user.click(screen.getByRole('button', { name: '下载视频' }))
@@ -113,7 +113,7 @@ describe('VideoDownload', () => {
       await renderWithProviders(
         <>
           <Toaster />
-          <VideoDownload jobId={JOB_ID} url={url} watermarkUrl={null} />
+          <VideoDownload downloadedJobIds={[JOB_ID]} url={url} watermarkUrl={null} />
         </>,
       )
       await userEvent.click(screen.getByRole('button', { name: '下载视频' }))
@@ -136,6 +136,46 @@ describe('VideoDownload', () => {
     },
   )
 
+  it('带字按钮：名字就是那段字；每下载一次，给的每条记录各记一条，连点也照记；没给记录就不记', async () => {
+    const { fetched, saved } = stubSaving()
+    const events: unknown[] = []
+    server.use(
+      http.post('*/api/tracking/events', async ({ request }) => {
+        events.push(await request.json())
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const OTHER = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f'
+    const user = userEvent.setup()
+    const { rerender } = await renderWithProviders(
+      <VideoDownload downloadedJobIds={[JOB_ID, OTHER]} url={CLEAN} watermarkUrl={null}>
+        下载整片
+      </VideoDownload>,
+    )
+
+    const button = screen.getByRole('button', { name: '下载整片' })
+    await user.click(button)
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(button).toBeEnabled())
+    await user.click(button)
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(events).toHaveLength(4))
+    expect(events).toEqual(
+      [JOB_ID, OTHER, JOB_ID, OTHER].map((jobId) => ({ jobId, name: 'video.downloaded' })),
+    )
+
+    rerender(
+      <VideoDownload downloadedJobIds={[]} url={CLEAN} watermarkUrl={null}>
+        下载整片
+      </VideoDownload>,
+    )
+    await waitFor(() => expect(button).toBeEnabled())
+    await user.click(button)
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(3))
+    expect(fetched).toEqual([CLEAN, CLEAN, CLEAN])
+    expect(events).toHaveLength(4)
+  })
+
   it('事件接口失败时下载照常完成，不弹提示，只在控制台留一条警告', async () => {
     const { fetched, saved } = stubSaving()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -147,7 +187,7 @@ describe('VideoDownload', () => {
     await renderWithProviders(
       <>
         <Toaster />
-        <VideoDownload jobId={JOB_ID} url={CLEAN} watermarkUrl={null} />
+        <VideoDownload downloadedJobIds={[JOB_ID]} url={CLEAN} watermarkUrl={null} />
       </>,
     )
 

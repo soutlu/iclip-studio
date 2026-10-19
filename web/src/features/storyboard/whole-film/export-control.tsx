@@ -1,5 +1,5 @@
-import { useMediaDownload } from '@/shared/api/media-download'
 import { Button } from '@/shared/ui/button'
+import { VideoDownload } from '@/shared/ui/video-download'
 import { BlockedReason } from '../components/blocked-reason'
 import type { ExportView } from './use-whole-film-export'
 
@@ -9,7 +9,6 @@ type ExportControlProps = {
   blocked: string | undefined
   onStart: () => void
   onCancel: () => void
-  onDownload: () => void
 }
 
 const statusText = (view: ExportView): string | undefined => {
@@ -36,17 +35,9 @@ const statusText = (view: ExportView): string | undefined => {
 
 /**
  * 顶栏的导出：提交、进度与取消、完成后下载。每次导出都按当时存好的那一版重新渲染；
- * 成片长期留着，显示的是这段对话最近一次导出。
+ * 成片长期留着，显示的是这段对话最近一次导出；下载时它用到的成片各记一次下载。
  */
-export function ExportControl({
-  view,
-  blocked,
-  onStart,
-  onCancel,
-  onDownload,
-}: ExportControlProps) {
-  // 成片在对象存储的公开地址上，跨域：取回字节再交给浏览器保存
-  const { downloading, download } = useMediaDownload()
+export function ExportControl({ view, blocked, onStart, onCancel }: ExportControlProps) {
   const running = view.kind === 'queued' || view.kind === 'rendering' || view.kind === 'uploading'
   const text = statusText(view)
   return (
@@ -68,19 +59,14 @@ export function ExportControl({
           <Button onClick={onStart} size="md" variant="ghost">
             重新导出
           </Button>
-          <Button
-            aria-busy={downloading}
+          <VideoDownload
             className="editor-compose"
-            leadingIcon="download"
-            loading={downloading}
-            onClick={() => {
-              onDownload()
-              void download(view.downloadUrl, '整片.mp4')
-            }}
-            size="md"
+            downloadedJobIds={view.sourceJobIds}
+            url={view.downloadUrl}
+            watermarkUrl={null}
           >
             下载整片
-          </Button>
+          </VideoDownload>
         </>
       ) : (
         <BlockedReason reason={blocked} side="bottom">

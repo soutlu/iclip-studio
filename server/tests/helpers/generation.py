@@ -51,6 +51,8 @@ from iclip.domains.generation.schemas import (
     SubtitleSentence,
     VideoComposeRequest,
     VideoGenerationIn,
+    WholeFilmRequest,
+    WholeFilmVideoSource,
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.generation.stored_requests import GenerationRequest
@@ -291,6 +293,22 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
         SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=video.output_url),
         source_job_id=video.id,
         **fields,
+    )
+
+
+def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
+    """一次整片导出的请求：画面轨按先后用到 ``sources`` 这几条成片（地址随 id 起），草稿是空的，
+    没有音乐与字幕。"""
+
+    return WholeFilmRequest(
+        revision=1,
+        document={},
+        videos=[
+            WholeFilmVideoSource(job_id=source, url=f"https://cdn.test/videos/{source}.mp4")
+            for source in sources
+        ],
+        music=None,
+        subtitles=[],
     )
 
 
@@ -834,4 +852,5 @@ __all__ = [
     "make_upload",
     "stored_request",
     "video_request",
+    "whole_film_request",
 ]

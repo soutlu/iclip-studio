@@ -1042,7 +1042,7 @@ describe('整片编辑器 · 导出', () => {
   const DONE = { status: 'done', progress: 1, downloadUrl: DOWNLOAD_URL }
   const RENDERING = { status: 'rendering', progress: 0.4 }
 
-  it('导出：按存好的这一版提交，完成后下载；下载时对用到的每条成片各记一次', async () => {
+  it('导出：按存好的这一版提交，完成后下载；每下载一次，对用到的每条成片各记一次', async () => {
     const user = userEvent.setup()
     const events = trackDownloads()
     const saved = stubSaving()
@@ -1068,10 +1068,14 @@ describe('整片编辑器 · 导出', () => {
     await waitFor(() => expect(download).toBeEnabled())
     await user.click(download)
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
-    expect(events).toEqual([
-      { jobId: TAKE_A, name: 'video.downloaded' },
-      { jobId: TAKE_B, name: 'video.downloaded' },
-    ])
+    await waitFor(() =>
+      expect(events).toEqual([
+        { jobId: TAKE_A, name: 'video.downloaded' },
+        { jobId: TAKE_B, name: 'video.downloaded' },
+        { jobId: TAKE_A, name: 'video.downloaded' },
+        { jobId: TAKE_B, name: 'video.downloaded' },
+      ]),
+    )
   })
 
   it('打开编辑器时最近一次导出还没结束：接着显示进度，关掉编辑器不取消它', async () => {

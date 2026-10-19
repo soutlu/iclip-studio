@@ -3,11 +3,12 @@ import {
   DEFAULT_LIBRARY_SCOPE,
   DEFAULT_LIBRARY_TAB,
   DEFAULT_REFERENCE_SCOPE,
+  DEFAULT_WHOLE_FILM_SCOPE,
   LIBRARY_TAB_VALUES,
-  type BrandTemplateScope,
   type LibraryScope,
   type LibraryTab,
   type ReferenceScope,
+  type WholeFilmScope,
   zCategory,
   zVideoType,
 } from '@/features/library'
@@ -29,8 +30,7 @@ export const librarySearchSchema = z.object({
   categories: z.array(zCategory).min(1).optional().catch(undefined),
   video: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
-  brand: z.string().trim().min(1).max(100).optional().catch(undefined),
-  includeDisabled: z.literal(true).optional().catch(undefined),
+  film: z.uuid().optional().catch(undefined),
 })
 
 export type LibrarySearch = z.output<typeof librarySearchSchema>
@@ -84,19 +84,20 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
   }
 }
 
-export function brandTemplateScopeFromSearch(search: LibrarySearch): BrandTemplateScope {
+export function wholeFilmScopeFromSearch(search: LibrarySearch): WholeFilmScope {
   return {
+    ...dateRangeFromSearch(search, DEFAULT_WHOLE_FILM_SCOPE),
     q: search.q ?? '',
-    brand: search.brand,
-    includeDisabled: search.includeDisabled === true,
+    userName: search.userName ?? null,
   }
 }
 
-export function searchFromBrandTemplateScope(scope: BrandTemplateScope): LibrarySearch {
+export function searchFromWholeFilmScope(scope: WholeFilmScope): LibrarySearch {
+  const q = scope.q.trim()
   return {
-    tab: 'brand-templates',
-    q: scope.q.trim() || undefined,
-    brand: scope.brand,
-    includeDisabled: scope.includeDisabled ? true : undefined,
+    ...dateRangeToSearch(scope, DEFAULT_WHOLE_FILM_SCOPE),
+    tab: 'whole-films',
+    q: q === '' ? undefined : q,
+    userName: scope.userName ?? undefined,
   }
 }

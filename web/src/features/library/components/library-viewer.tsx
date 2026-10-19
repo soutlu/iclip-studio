@@ -317,7 +317,7 @@ function ViewerBody({
           </Button>
           <VideoDownload
             className="size-(--control-height-lg) rounded-full"
-            jobId={version.jobId}
+            downloadedJobIds={[version.jobId]}
             url={version.outputUrl}
             watermarkUrl={version.watermarkOutputUrl}
           />

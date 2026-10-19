@@ -1,7 +1,7 @@
 export const LIBRARY_TABS = [
-  { label: '成片', value: 'videos' },
-  { label: '参考视频', value: 'references' },
-  { label: '品牌模板', value: 'brand-templates' },
+  { label: '成片素材', value: 'videos' },
+  { label: '灵感库', value: 'references' },
+  { label: '成片', value: 'whole-films' },
 ] as const
 
 export type LibraryTab = (typeof LIBRARY_TABS)[number]['value']

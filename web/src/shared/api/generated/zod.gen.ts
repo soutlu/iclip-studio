@@ -2880,6 +2880,42 @@ export const zWholeFilmOverlay = z.object({
 })
 
 /**
+ * WholeFilmVersionOut
+ *
+ * 整片卡里的一版：这段对话的一次已完成导出。
+ */
+export const zWholeFilmVersionOut = z.object({
+  finishedAt: z.iso.datetime(),
+  jobId: z.uuid(),
+  outputUrl: z.string(),
+  sourceJobIds: z.array(z.uuid()),
+  userName: z.string().nullable(),
+})
+
+/**
+ * WholeFilmCardOut
+ *
+ * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。整片没有脚本，不能做同款。
+ */
+export const zWholeFilmCardOut = z.object({
+  canOpenConversation: z.boolean(),
+  conversationId: z.uuid(),
+  face: zWholeFilmVersionOut,
+  title: z.string().nullable(),
+  userName: z.string().nullable(),
+  versions: z.array(zWholeFilmVersionOut),
+})
+
+/**
+ * WholeFilmCardsOut
+ */
+export const zWholeFilmCardsOut = z.object({
+  items: z.array(zWholeFilmCardOut),
+  nextCursor: z.string().nullable(),
+  total: z.int().nullable(),
+})
+
+/**
  * WholeFilmVideoClip
  *
  * 画面轨上的一段成片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
@@ -3690,6 +3726,25 @@ export const zVideoLibraryVideosVideoIdGetPath = z.object({
  * Successful Response
  */
 export const zVideoLibraryVideosVideoIdGetResponse = zLibraryVideoDetailOut
+
+export const zWholeFilmsLibraryWholeFilmsGetQuery = z.object({
+  userName: z.string().max(150).nullish(),
+  since: z.iso.datetime().nullish(),
+  until: z.iso.datetime().nullish(),
+  q: z.string().max(100).nullish(),
+  limit: z.int().gte(1).lte(100).optional().default(20),
+  cursor: z.string().nullish(),
+})
+
+/**
+ * Successful Response
+ */
+export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
+
+/**
+ * Successful Response
+ */
+export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
 
 export const zListReferencesReferencesGetQuery = z.object({
   videoTypes: z
