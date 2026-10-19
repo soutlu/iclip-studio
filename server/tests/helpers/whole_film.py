@@ -80,17 +80,22 @@ def draft_document(
     source_job_id: uuid.UUID | None = None,
     layer0: list[dict[str, Any]] | None = None,
     edits: list[dict[str, Any]] | None = None,
+    captions_hidden: bool = False,
     music: dict[str, Any] | None = None,
     overlays: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """合规矩的一份草稿：默认画面轨是两段视频（3 秒、2 秒），没有音乐与特效块。"""
+    """合规矩的一份草稿：默认画面轨是两段视频（3 秒、2 秒），字幕开着，没有音乐与特效块。"""
 
     source = source_job_id or uuid.uuid4()
     default_layer = butted([("a", 3000), ("b", 2000)], source_job_id=source)
     return {
         "canvas": {"width": 1080, "height": 1920},
         "layer0": layer0 if layer0 is not None else default_layer,
-        "captions": {"component": "captions-basic", "edits": edits or []},
+        "captions": {
+            "component": "captions-basic",
+            "edits": edits or [],
+            "hidden": captions_hidden,
+        },
         "music": music,
         "overlays": overlays or [],
     }

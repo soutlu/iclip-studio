@@ -50,7 +50,8 @@ def edit(index: int, text: str = "改过的字") -> dict[str, Any]:
 
 
 def test_a_full_draft_round_trips_its_wire_shape() -> None:
-    """组件段夹在两段视频之间、改字、音乐与不同行上相互重叠的特效块都在：按 camelCase 原样读出来。"""
+    """组件段夹在两段视频之间、改字、关掉字幕、音乐与不同行上相互重叠的特效块都在：按 camelCase
+    原样读出来。"""
 
     document = draft_document(
         layer0=[
@@ -60,6 +61,7 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
             video_clip("b", start=6000, duration=2000, source_job_id=SOURCE, volume=0),
         ],
         edits=[edit(0), edit(1)],
+        captions_hidden=True,
         music={"jobId": str(uuid.uuid4()), "offset": 1200, "volume": 0.6},
         overlays=[
             overlay("o2", start=6000, duration=3000, track=1, z_index=2),
@@ -103,6 +105,18 @@ def test_a_film_of_component_clips_only_is_valid() -> None:
     )
 
     assert (parsed.total_ms(), parsed.video_sources()) == (5000, ())
+
+
+def test_captions_are_shown_when_the_draft_does_not_say() -> None:
+    """没写 ``hidden`` 的草稿（有这个字段之前存的）按字幕开着读，读出来补上 false。"""
+
+    document = draft_document()
+    del document["captions"]["hidden"]
+
+    parsed = parse(document)
+
+    assert parsed.captions.hidden is False
+    assert parsed.model_dump(mode="json", by_alias=True)["captions"]["hidden"] is False
 
 
 def test_unknown_fields_are_rejected() -> None:

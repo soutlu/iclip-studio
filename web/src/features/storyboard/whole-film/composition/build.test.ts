@@ -346,6 +346,19 @@ describe('buildComposition', () => {
     expect(parse(silent.html).querySelector('#captions')).toBeNull()
   })
 
+  it('关掉字幕：有字幕也不放字幕宿主，不引字幕组件的字体；打开时与没写开关一样', () => {
+    const captions = { component: 'default-caption', edits: [] }
+    const hidden = parse(build({ captions: { ...captions, hidden: true } }).html)
+    expect(hidden.querySelector('#captions')).toBeNull()
+    expect(hidden.querySelector('[data-composition-id="default-caption"]')).toBeNull()
+    const links = [...hidden.querySelectorAll('link')].map((node) => node.getAttribute('href'))
+    expect(links).toEqual(['vendor/fonts/noto-sans-sc.css'])
+
+    const shown = build({ captions: { ...captions, hidden: false } }).html
+    expect(parse(shown).querySelector('#captions')).not.toBeNull()
+    expect(shown).toBe(build().html)
+  })
+
   // 按固定尺寸设计的组件 z-index 写在外层盒子上，铺满的写在宿主上。
   const zOf = (doc: Document, selector: string) => {
     const host = doc.querySelector(selector)

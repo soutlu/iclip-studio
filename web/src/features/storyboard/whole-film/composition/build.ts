@@ -189,7 +189,8 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
     overlays.length === 0 ? '' : `<div class="overlays">\n${overlays.join('\n')}\n</div>`
 
   const captionItem = lookup(catalog, draft.captions.component)
-  const words = captionWords(placeCaptions(draft, media.subtitles))
+  // 关掉字幕同 HyperFrames 隐藏轨道：不放字幕宿主，也不引字幕组件的字体
+  const words = draft.captions.hidden ? [] : captionWords(placeCaptions(draft, media.subtitles))
   if (words.length > 0) used.add(captionItem)
   const captions =
     words.length === 0

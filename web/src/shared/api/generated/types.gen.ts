@@ -5220,6 +5220,8 @@ export type WholeFilmCaptionEdit = {
 
 /**
  * WholeFilmCaptions
+ *
+ * 字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。
  */
 export type WholeFilmCaptions = {
   /**
@@ -5230,6 +5232,10 @@ export type WholeFilmCaptions = {
    * Edits
    */
   edits: Array<WholeFilmCaptionEdit>
+  /**
+   * Hidden
+   */
+  hidden?: boolean
 }
 
 /**

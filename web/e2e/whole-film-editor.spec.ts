@@ -132,7 +132,24 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await page.getByRole('menuitemradio', { name: '高亮字幕', exact: true }).click()
   await expect(dialog.getByRole('button', { name: /^字幕样式：高亮字幕/ })).toBeVisible()
 
-  // 字幕轨：改一句字。选的范围只有一秒，第一句被切成了几块，输入框里是整句
+  // 字幕开关：关掉存进草稿（预览与导出都按它不放字幕），撤销回到开着；再关上，下面关着改字
+  const turnOff = dialog.getByRole('button', { name: '关闭字幕', exact: true })
+  const turnOn = dialog.getByRole('button', { name: '打开字幕', exact: true })
+  const hiddenSaved = page.waitForRequest(
+    (request) =>
+      request.method() === 'PUT' &&
+      request.url().includes('/whole-film/draft') &&
+      (request.postData() ?? '').includes('"hidden":true'),
+  )
+  await turnOff.click()
+  await expect(turnOn).toBeVisible()
+  await hiddenSaved
+  await dialog.getByRole('button', { name: '撤销' }).click()
+  await expect(turnOff).toBeVisible()
+  await turnOff.click()
+  await expect(turnOn).toBeVisible()
+
+  // 字幕轨（字幕关着）：改一句字。选的范围只有一秒，第一句被切成了几块，输入框里是整句
   const captions = dialog.getByRole('group', { name: '字幕轨' })
   await captions
     .getByRole('button', { name: /^字幕：/ })

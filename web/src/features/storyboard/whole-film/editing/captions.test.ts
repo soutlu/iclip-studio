@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { draftOf, expectOk, video } from '@/testing/whole-film'
-import { clearCaptionText, setCaptionStyle, setCaptionText } from './captions'
+import { clearCaptionText, setCaptionStyle, setCaptionText, setCaptionsHidden } from './captions'
 
 const film = () => draftOf([video('v1', 's1', 0, 3_000)])
 
-describe('改字与字幕样式', () => {
+describe('改字、字幕样式与字幕开关', () => {
   const edit = (sentenceIndex: number, text: string) => ({
     subtitleJobId: 'sub1',
     sentenceIndex,
@@ -30,5 +30,26 @@ describe('改字与字幕样式', () => {
     const styled = expectOk(setCaptionStyle(film(), { component: 'caption-texture' })).draft
     expect(styled.captions.component).toBe('caption-texture')
     expect(expectOk(setCaptionStyle(styled, { component: 'caption-texture' })).draft).toBe(styled)
+  })
+
+  it('关掉字幕只改开关，样式与改过的字留着；再打开回到开着', () => {
+    const edited = expectOk(
+      setCaptionText(
+        expectOk(setCaptionStyle(film(), { component: 'caption-texture' })).draft,
+        edit(0, '甲'),
+      ),
+    ).draft
+    const off = expectOk(setCaptionsHidden(edited, { hidden: true })).draft
+    expect(off.captions).toEqual({ ...edited.captions, hidden: true })
+    const on = expectOk(setCaptionsHidden(off, { hidden: false })).draft
+    expect(on.captions).toEqual({ ...edited.captions, hidden: false })
+  })
+
+  it('开关没变时原样返回；没写开关的草稿按开着算', () => {
+    const unset = film()
+    expect(unset.captions.hidden).toBeUndefined()
+    expect(expectOk(setCaptionsHidden(unset, { hidden: false })).draft).toBe(unset)
+    const off = expectOk(setCaptionsHidden(unset, { hidden: true })).draft
+    expect(expectOk(setCaptionsHidden(off, { hidden: true })).draft).toBe(off)
   })
 })
