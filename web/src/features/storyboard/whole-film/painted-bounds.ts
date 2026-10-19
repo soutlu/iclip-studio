@@ -6,7 +6,7 @@
  * `elementAtPoint`：它不看元素画没画东西，铺满画面的透明特效宿主会接住所有点击。这里照 SDK 留给
  * 「命中规则不同的宿主」的做法，按画面上的叠放次序找第一个看得见、画了东西的元素。
  */
-import { elementPaintsInk } from '@hyperframes/sdk/adapters/iframe'
+import { elementPaintsInk, INTRINSIC_PAINT_TAGS } from '@hyperframes/sdk/adapters/iframe'
 
 type ContentWindow = Window & typeof globalThis
 
@@ -88,9 +88,86 @@ export function stackAt(doc: Document, win: ContentWindow, x: number, y: number)
   }
 }
 
+// svg 里真正画出图形的元素；定义、裁切、蒙版、图案、符号、标记里的只是素材，不直接画在画面上。
+// SVG 元素名区分大小写（clipPath、foreignObject）。
+const SVG_SHAPES =
+  'path, rect, circle, ellipse, line, polyline, polygon, text, image, use, foreignObject'
+const SVG_RESOURCES = 'defs, clipPath, mask, pattern, symbol, marker'
+// 这几种画的是引用来的内容，不看 fill、stroke
+const SVG_REFERENCES = new Set(['image', 'use', 'foreignobject'])
+
+const hasArea = (rect: DOMRect) => rect.width > 0 && rect.height > 0
+
+/** fill、stroke 画得出东西：不是 none，也不是全透明的颜色 */
+const paints = (paint: string) => paint !== 'none' && !isTransparent(paint)
+
+/** svg 里看得见、填了色或描了边的图形各自的范围；一个都没有时是整个 svg 盒子 */
+function svgShapeRects(svg: Element, win: ContentWindow): DOMRect[] {
+  const rects = [...svg.querySelectorAll(SVG_SHAPES)]
+    .filter((shape) => {
+      if (shape.parentElement?.closest(SVG_RESOURCES)) return false
+      if (!SVG_REFERENCES.has(shape.tagName.toLowerCase())) {
+        const style = win.getComputedStyle(shape)
+        if (!paints(style.fill) && !paints(style.stroke)) return false
+      }
+      return isShown(shape, win)
+    })
+    .map((shape) => shape.getBoundingClientRect())
+    .filter(hasArea)
+  return rects.length > 0 ? rects : [svg.getBoundingClientRect()]
+}
+
+const BORDER_SIDES = ['top', 'right', 'bottom', 'left'] as const
+
+/** 颜色的透明度是 0（含 transparent）；口径同 SDK 墨迹判断里的 isTransparentColor（它没有导出） */
+const isTransparent = (color: string) => {
+  if (color === '' || color === 'transparent') return true
+  const alpha = /^(?:rgba?|hsla?)\(([^)]*)\)$/
+    .exec(color)?.[1]
+    ?.split(/[\s,/]+/)
+    .filter(Boolean)[3]
+  return alpha !== undefined && Number.parseFloat(alpha) === 0
+}
+
+/** 只靠自己的字画东西：没有可见底色、边框，也不是图片、视频这类自己就画东西的元素 */
+function paintsOnlyText(element: Element, win: ContentWindow): boolean {
+  if (INTRINSIC_PAINT_TAGS.has(element.tagName.toLowerCase())) return false
+  const style = win.getComputedStyle(element)
+  if (!isTransparent(style.backgroundColor)) return false
+  if (style.backgroundImage !== '' && style.backgroundImage !== 'none') return false
+  return BORDER_SIDES.every((side) => {
+    const line = style.getPropertyValue(`border-${side}-style`)
+    const width = Number.parseFloat(style.getPropertyValue(`border-${side}-width`) || '0')
+    return line === '' || line === 'none' || line === 'hidden' || !(width > 0)
+  })
+}
+
+/** 元素直接带的那几段字在画面上的范围（块级元素比字宽，量字不量盒子） */
+function ownTextRects(element: Element): DOMRect[] {
+  const range = element.ownerDocument.createRange()
+  return [...element.childNodes]
+    .filter((node) => node.nodeType === node.TEXT_NODE && (node.textContent ?? '').trim() !== '')
+    .flatMap((node) => {
+      range.selectNodeContents(node)
+      return [...range.getClientRects()]
+    })
+    .filter(hasArea)
+}
+
+/**
+ * 一个画了东西的元素在画面上占的范围：svg 量它里面的图形，只有字的量字，其余（有底色或边框的盒子、
+ * 图片、视频）量元素盒子。
+ */
+function inkRects(element: Element, win: ContentWindow): DOMRect[] {
+  if (element.tagName.toLowerCase() === 'svg') return svgShapeRects(element, win)
+  if (paintsOnlyText(element, win)) return ownTextRects(element)
+  const rect = element.getBoundingClientRect()
+  return hasArea(rect) ? [rect] : []
+}
+
 /**
  * 这几个元素（含其中的元素）里所有看得见、画了东西的部分合起来的范围，裁在画面以内；
- * 一处也没有时为 null。铺满画面却没画东西的外层盒子不算。
+ * 一处也没有时为 null。铺满画面却没画东西的外层盒子不算；svg 里的元素随 svg 一起量。
  */
 export function paintedBounds(
   roots: readonly Element[],
@@ -103,13 +180,15 @@ export function paintedBounds(
   let bottom = -Infinity
   for (const root of roots) {
     for (const element of [root, ...root.querySelectorAll('*')]) {
-      const rect = element.getBoundingClientRect()
-      if (rect.width <= 0 || rect.height <= 0) continue
+      if (element.parentElement?.closest('svg')) continue
+      if (!hasArea(element.getBoundingClientRect())) continue
       if (!elementPaintsInk(element, win) || !isShown(element, win)) continue
-      left = Math.min(left, rect.left)
-      top = Math.min(top, rect.top)
-      right = Math.max(right, rect.right)
-      bottom = Math.max(bottom, rect.bottom)
+      for (const rect of inkRects(element, win)) {
+        left = Math.min(left, rect.left)
+        top = Math.min(top, rect.top)
+        right = Math.max(right, rect.right)
+        bottom = Math.max(bottom, rect.bottom)
+      }
     }
   }
   left = Math.max(left, 0)
