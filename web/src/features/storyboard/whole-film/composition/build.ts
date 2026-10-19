@@ -58,6 +58,9 @@ export class CompositionError extends Error {
 // 特效块都放在一层盒子里（自成一个叠放上下文），整层压在成片轨之上、字幕之下；层里按各自的
 // zIndex 叠，相同时按草稿里的先后（页面上后写的在上），不看 track。
 const Z = { layer0: 1, overlay: 2, captions: 3 } as const
+
+/** 字幕宿主的 data-hf-id：整片字幕在画面上整体拖动时按它找到宿主；每一句另有 `caption:N` */
+export const CAPTIONS_HF_ID = 'captions'
 const TRACK = { layer0: 0, captions: 2, overlay: 3, music: 4 } as const
 
 function lookup(catalog: ComponentCatalog, name: string): CatalogItem {
@@ -80,8 +83,13 @@ function variableValues(
 interface HostOptions {
   /** 页面里的 DOM id。 */
   id: string
-  /** 草稿里这一段、这一块的 id，写成 data-hf-id，编辑器在画面上点选时按它认出是哪一块；字幕宿主没有。 */
-  hfId?: string
+  /**
+   * 草稿里这一段、这一块的 id，写成 data-hf-id，编辑器在画面上点选、拖动时按它认出是哪一块；
+   * 字幕宿主写 `captions`。
+   */
+  hfId: string
+  /** 在画面上挪开的位置（画面像素）；成片轨上的组件段没有 */
+  position?: { x?: number | undefined; y?: number | undefined }
   item: CatalogItem
   startMs: number
   durationMs: number
@@ -96,17 +104,30 @@ interface HostOptions {
 const round4 = (value: number) => String(Math.round(value * 10000) / 10000)
 
 /**
+ * 在画面上挪开的位置，写成 HyperFrames 位置编辑的属性：`data-x`/`data-y` 减去基准
+ * `data-hf-edit-base-x/y`（我们的基准总是 0）就是挪开的画面像素，预览的运行时与导出时 producer
+ * 注入的脚本都按它在这个元素上加一层 CSS `translate`。没挪过（都是 0）时不写，页面与有位置之前一样。
+ */
+function positionAttributes(position: HostOptions['position']): string {
+  const x = position?.x ?? 0
+  const y = position?.y ?? 0
+  if (x === 0 && y === 0) return ''
+  return ` data-x="${x}" data-y="${y}" data-hf-edit-base-x="0" data-hf-edit-base-y="0"`
+}
+
+/**
  * 子合成宿主；按固定尺寸设计的组件外面套一层等比缩放、居中的盒子，整个组件完整放进画面（contain）。
  *
  * 宿主的 data-composition-id 用组件名（组件库文档里的挂载写法）：HyperFrames 只在它与组件根节点的
  * id 一致时把根节点展平进宿主，声明式绑定（data-var-*、--变量）才按宿主取到这一处的取值；
  * 同一组件挂多处时由 HyperFrames 改成各自的 `名称__hfN`。
  *
- * data-hf-id 写在最外层：铺满的写在宿主上，固定尺寸的写在缩放盒子上，画面上挪动它时偏移才是画面像素。
+ * data-hf-id 与位置写在最外层：铺满的写在宿主上，固定尺寸的写在缩放盒子上。`translate` 先于盒子
+ * 自己的 `transform`（居中、缩放）作用，挪开的距离因此是画面像素，不随组件缩放。
  */
 function componentHost(options: HostOptions): string {
   const { id, item, canvas, size } = { ...options, size: options.item.size }
-  const hfId = options.hfId === undefined ? '' : ` data-hf-id="${escapeAttribute(options.hfId)}"`
+  const hfId = ` data-hf-id="${escapeAttribute(options.hfId)}"${positionAttributes(options.position)}`
   const host = (extra: string) =>
     `<div id="${id}" data-composition-id="${escapeAttribute(item.name)}"${extra}` +
     ` data-composition-src="${escapeAttribute(item.src)}"` +
@@ -183,6 +204,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
     return componentHost({
       id: `ov-${index}`,
       hfId: overlay.id,
+      position: overlay,
       item,
       startMs: overlay.start,
       durationMs: overlay.duration,
@@ -206,6 +228,8 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       ? ''
       : componentHost({
           id: 'captions',
+          hfId: CAPTIONS_HF_ID,
+          position: draft.captions,
           item: captionItem,
           startMs: 0,
           durationMs: totalMs,

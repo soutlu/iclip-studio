@@ -2758,11 +2758,14 @@ export const zWholeFilmCaptionEdit = z.object({
  * WholeFilmCaptions
  *
  * 字幕轨。``hidden`` 是整片关掉字幕：预览与导出都不放字幕，样式与改过的字照样保留。
+ * ``x``、``y`` 是整片字幕在画面上挪开的位置，所有字幕共用一个。
  */
 export const zWholeFilmCaptions = z.object({
   component: z.string().min(1).max(200),
   edits: z.array(zWholeFilmCaptionEdit).max(1000),
   hidden: z.boolean().optional().default(false),
+  x: z.int().gte(-4096).lte(4096).optional().default(0),
+  y: z.int().gte(-4096).lte(4096).optional().default(0),
 })
 
 /**
@@ -2851,6 +2854,7 @@ export const zWholeFilmMusic = z.object({
  *
  * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
  * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
+ * ``x``、``y`` 是它在画面上挪开的位置。
  */
 export const zWholeFilmOverlay = z.object({
   component: z.string().min(1).max(200),
@@ -2860,6 +2864,8 @@ export const zWholeFilmOverlay = z.object({
   start: z.int().gte(0),
   track: z.int().gte(0),
   variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
+  x: z.int().gte(-4096).lte(4096).optional().default(0),
+  y: z.int().gte(-4096).lte(4096).optional().default(0),
   zIndex: z.int().gte(0),
 })
 

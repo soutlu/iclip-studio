@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { draftOf, expectOk, video } from '@/testing/whole-film'
-import { clearCaptionText, setCaptionStyle, setCaptionText, setCaptionsHidden } from './captions'
+import {
+  clearCaptionText,
+  setCaptionStyle,
+  setCaptionText,
+  setCaptionsHidden,
+  setCaptionsPosition,
+} from './captions'
 
 const film = () => draftOf([video('v1', 's1', 0, 3_000)])
 
@@ -52,5 +58,32 @@ describe('改字、字幕样式与字幕开关', () => {
     expect(expectOk(setCaptionsHidden(unset, { hidden: false })).draft).toBe(unset)
     const off = expectOk(setCaptionsHidden(unset, { hidden: true })).draft
     expect(expectOk(setCaptionsHidden(off, { hidden: true })).draft).toBe(off)
+  })
+
+  it('挪字幕：整片共用一个位置，取整并裁在 ±4096 以内', () => {
+    const moved = expectOk(setCaptionsPosition(film(), { x: -12.5, y: 300.2 })).draft
+    expect(moved.captions).toEqual({ ...film().captions, x: -12, y: 300 })
+    const far = expectOk(setCaptionsPosition(film(), { x: -5_000, y: 4_097 })).draft
+    expect([far.captions.x, far.captions.y]).toEqual([-4_096, 4_096])
+  })
+
+  it('位置没变时原样返回，没写位置的草稿按没挪过算；改字、换样式、开关都保留位置', () => {
+    const draft = film()
+    expect(expectOk(setCaptionsPosition(draft, { x: 0.2, y: -0.4 })).draft).toBe(draft)
+    // 有位置之前存的草稿没写 x、y
+    const unset = film()
+    unset.captions = { component: unset.captions.component, edits: unset.captions.edits }
+    expect(expectOk(setCaptionsPosition(unset, { x: 0, y: 0 })).draft).toBe(unset)
+
+    const moved = expectOk(setCaptionsPosition(draft, { x: 8, y: -40 })).draft
+    for (const result of [
+      setCaptionText(moved, edit(0, '甲')),
+      clearCaptionText(moved, { subtitleJobId: 'sub1', sentenceIndex: 0 }),
+      setCaptionStyle(moved, { component: 'caption-texture' }),
+      setCaptionsHidden(moved, { hidden: true }),
+    ]) {
+      const { captions } = expectOk(result).draft
+      expect([captions.x, captions.y]).toEqual([8, -40])
+    }
   })
 })

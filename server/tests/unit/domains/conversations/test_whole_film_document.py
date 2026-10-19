@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from iclip.domains.conversations.whole_film_schemas import (
+    MAX_CANVAS_EDGE,
     MAX_CAPTION_EDITS,
     MAX_CAPTION_TEXT_CHARS,
     MAX_COMPONENT_CHARS,
@@ -50,8 +51,8 @@ def edit(index: int, text: str = "改过的字") -> dict[str, Any]:
 
 
 def test_a_full_draft_round_trips_its_wire_shape() -> None:
-    """组件段夹在两段视频之间、改字、关掉字幕、音乐与不同行上相互重叠的特效块都在：按 camelCase
-    原样读出来。"""
+    """组件段夹在两段视频之间、改字、关掉并挪过的字幕、音乐与不同行上相互重叠、挪过位置的特效块
+    都在：按 camelCase 原样读出来。"""
 
     document = draft_document(
         layer0=[
@@ -62,9 +63,10 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
         ],
         edits=[edit(0), edit(1)],
         captions_hidden=True,
+        captions_at=(0, -240),
         music={"jobId": str(uuid.uuid4()), "offset": 1200, "volume": 0.6},
         overlays=[
-            overlay("o2", start=6000, duration=3000, track=1, z_index=2),
+            overlay("o2", start=6000, duration=3000, track=1, z_index=2, x=-36, y=410),
             overlay("o1", start=0, duration=7000, track=0, z_index=1, playback_start=250),
         ],
     )
@@ -117,6 +119,44 @@ def test_captions_are_shown_when_the_draft_does_not_say() -> None:
 
     assert parsed.captions.hidden is False
     assert parsed.model_dump(mode="json", by_alias=True)["captions"]["hidden"] is False
+
+
+def test_positions_default_to_where_the_component_puts_it() -> None:
+    """没写 ``x``、``y`` 的字幕与特效块（有这两个字段之前存的）按没挪过读，读出来补上 0。"""
+
+    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
+    for moved in (document["captions"], document["overlays"][0]):
+        del moved["x"], moved["y"]
+
+    dumped = parse(document).model_dump(mode="json", by_alias=True)
+
+    assert {key: dumped["captions"][key] for key in ("x", "y")} == {"x": 0, "y": 0}
+    assert {key: dumped["overlays"][0][key] for key in ("x", "y")} == {"x": 0, "y": 0}
+
+
+@pytest.mark.parametrize("where", ["captions", "overlay"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        pytest.param(MAX_CANVAS_EDGE, True, id="+4096"),
+        pytest.param(-MAX_CANVAS_EDGE, True, id="-4096"),
+        pytest.param(MAX_CANVAS_EDGE + 1, False, id="超过 +4096"),
+        pytest.param(-MAX_CANVAS_EDGE - 1, False, id="超过 -4096"),
+        pytest.param(1.5, False, id="不是整数"),
+    ],
+)
+def test_positions_stay_within_the_largest_canvas(
+    where: str, axis: str, value: object, accepted: bool
+) -> None:
+    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
+    moved = document["captions"] if where == "captions" else document["overlays"][0]
+    moved[axis] = value
+
+    if accepted:
+        assert parse(document).model_dump(mode="json", by_alias=True) == document
+    else:
+        rejected(document)
 
 
 def test_unknown_fields_are_rejected() -> None:

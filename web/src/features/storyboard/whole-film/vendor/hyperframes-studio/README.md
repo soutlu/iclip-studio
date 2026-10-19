@@ -1,4 +1,4 @@
-# vendor：HyperFrames Studio 时间线纯逻辑
+# vendor：HyperFrames Studio 时间线与画面吸附纯逻辑
 
 本目录照抄 [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) 的 `packages/studio/src`，对齐到 tag `v0.8.168`（提交 `6e1f9ee1`）。许可证见 [LICENSE](LICENSE)（Apache-2.0，上游未附 NOTICE）。不安装 `@hyperframes/studio` 包，见 [ADR-0003](../../../../../../../docs/adr/0003-whole-film-hyperframes.md)。
 
@@ -20,6 +20,7 @@
 | `player/components/timelineGroupEditing.ts`                                       | 摘录（第 1–175 行） | 去掉多选分组修剪的接线；`clampPlaybackRate` 由 `@hyperframes/parsers` 的源码（`packages/parsers/src/mediaDuration.ts` 第 25–34 行）内联替代；`DEFAULT_TIMELINE_MIN_DURATION` 改为导出 |
 | `player/components/timelineCollision.ts`                                          | 摘录               | 只取特效块落到行上最近的空位 `resolveNearestFreeStart`（及其三个小函数）、在行外开新行 `resolveInsertRow` 与 `timeRangesOverlap`，去掉分音画区与分组的落点代码；上游测试未收录 |
 | `player/components/timelineStackingSync.ts`                                       | 全文               | 换行后只给被挪的块重排叠放 `computeStackingPatches`；`spansOverlap` 取已安装的 `@hyperframes/core`；上游测试未收录 |
+| `components/editor/snapEngine.ts`、`.test.ts`                                     | 全文               | 画面上拖动的吸附与参考线；本仓只吸画面本身的中线与四边，不吸别的块                     |
 | `player/store/playerStore.ts`、`player/lib/timelineClipIndex.ts`                  | 本仓替身           | 只声明被抄文件引用的类型：`ZoomMode`、`TimelineTimeRange` 照抄，`TimelineElement` 只留被读的字段 |
 
 ## 工具配置

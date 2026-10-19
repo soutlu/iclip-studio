@@ -1,4 +1,4 @@
-import type { CaptionEdit, WholeFilmDraft } from './draft'
+import { toOffset, type CaptionEdit, type WholeFilmDraft } from './draft'
 import { done, type EditResult } from './result'
 
 // 字幕放进整片的位置由合成构建算（composition/captions.ts 的 placeCaptions），这里只改草稿。
@@ -43,6 +43,24 @@ export const setCaptionsHidden = (draft: WholeFilmDraft, args: { hidden: boolean
       ? draft
       : { ...draft, captions: { ...draft.captions, hidden: args.hidden } },
   )
+
+/**
+ * 在画面上挪字幕：整片字幕共用一个位置。x、y 是画面像素，取整并裁在 ±4096 以内；
+ * 位置没变时原样返回
+ */
+export const setCaptionsPosition = (
+  draft: WholeFilmDraft,
+  args: { x: number; y: number },
+): EditResult => {
+  const x = toOffset(args.x)
+  const y = toOffset(args.y)
+  // 有位置之前存的草稿没写 x、y，按没挪过算
+  return done(
+    x === (draft.captions.x ?? 0) && y === (draft.captions.y ?? 0)
+      ? draft
+      : { ...draft, captions: { ...draft.captions, x, y } },
+  )
+}
 
 /** 换字幕样式（组件库里的字幕组件） */
 export const setCaptionStyle = (draft: WholeFilmDraft, args: { component: string }): EditResult =>
