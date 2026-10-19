@@ -46,8 +46,9 @@ describe('改字、字幕样式与字幕开关', () => {
   })
 
   it('开关没变时原样返回；没写开关的草稿按开着算', () => {
+    // 有这个字段之前存的草稿没写 hidden
     const unset = film()
-    expect(unset.captions.hidden).toBeUndefined()
+    unset.captions = { component: unset.captions.component, edits: unset.captions.edits }
     expect(expectOk(setCaptionsHidden(unset, { hidden: false })).draft).toBe(unset)
     const off = expectOk(setCaptionsHidden(unset, { hidden: true })).draft
     expect(expectOk(setCaptionsHidden(off, { hidden: true })).draft).toBe(off)
