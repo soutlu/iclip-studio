@@ -351,10 +351,42 @@
   display: none;
 }
 
+.wf-player-slot {
+  position: absolute;
+  inset: 0;
+}
+
 .wf-player {
   position: absolute;
   inset: 0;
   display: block;
+}
+
+/* 画面点选层盖在播放器上；原位改字时让指针进到合成页里 */
+.wf-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.wf-canvas.is-editing {
+  pointer-events: none;
+}
+
+/* 选中框：白色细框加一圈深色，压在任何画面上都看得清 */
+.wf-canvas-frame {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  outline: 1.5px solid var(--color-on-scrim);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--color-scrim) 28%, transparent);
+  pointer-events: none;
+}
+
+.wf-canvas-frame.is-full {
+  border-radius: var(--radius-lg);
+}
+
+.wf-canvas-frame[hidden] {
+  display: none;
 }
 
 /* 换页时新播放器在底下加载，画好第一帧才显示 */
@@ -1211,6 +1243,13 @@
 /* 关掉字幕时字幕块变淡，照样能点开改字；正在改的那块不变淡 */
 .wf-lane.is-captions-off .wf-caption:not(.is-editing) {
   opacity: 0.45;
+}
+
+/* 在画面上点中的那一句 */
+.wf-caption.is-selected {
+  box-shadow: inset 0 0 0 1px var(--color-on-surface);
+  color: var(--color-on-surface);
+  font-weight: 500;
 }
 
 .wf-caption.is-editing {

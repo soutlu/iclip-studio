@@ -11,6 +11,7 @@
      中文用 Noto Sans SC（本地字体文件），拉丁字母仍用 Montserrat。
   3. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin）；
      一组放不下时折行；字号照原组件用画布量字，缩到整组不超过两行（不设最小字号）。
+  4. 每组写上 data-hf-id="caption:<sentence>"，编辑器在画面上按它认出点中的是哪一句。
   高亮底块、入场与组间切换的动画不变。
 -->
 <template id="caption-highlight-template">
@@ -176,6 +177,7 @@
           var grp = document.createElement('div')
           grp.className = 'hl-group'
           grp.id = 'hl-grp-' + gi
+          grp.setAttribute('data-hf-id', 'caption:' + WORDS[g.wordStart].sentence)
 
           var spaced = groupWords.map(function (w, i) {
             var previous = groupWords[i - 1]

@@ -78,7 +78,10 @@ function variableValues(
 }
 
 interface HostOptions {
+  /** 页面里的 DOM id。 */
   id: string
+  /** 草稿里这一段、这一块的 id，写成 data-hf-id，编辑器在画面上点选时按它认出是哪一块；字幕宿主没有。 */
+  hfId?: string
   item: CatalogItem
   startMs: number
   durationMs: number
@@ -98,9 +101,12 @@ const round4 = (value: number) => String(Math.round(value * 10000) / 10000)
  * 宿主的 data-composition-id 用组件名（组件库文档里的挂载写法）：HyperFrames 只在它与组件根节点的
  * id 一致时把根节点展平进宿主，声明式绑定（data-var-*、--变量）才按宿主取到这一处的取值；
  * 同一组件挂多处时由 HyperFrames 改成各自的 `名称__hfN`。
+ *
+ * data-hf-id 写在最外层：铺满的写在宿主上，固定尺寸的写在缩放盒子上，画面上挪动它时偏移才是画面像素。
  */
 function componentHost(options: HostOptions): string {
   const { id, item, canvas, size } = { ...options, size: options.item.size }
+  const hfId = options.hfId === undefined ? '' : ` data-hf-id="${escapeAttribute(options.hfId)}"`
   const host = (extra: string) =>
     `<div id="${id}" data-composition-id="${escapeAttribute(item.name)}"${extra}` +
     ` data-composition-src="${escapeAttribute(item.src)}"` +
@@ -109,10 +115,10 @@ function componentHost(options: HostOptions): string {
     ` data-variable-values="${jsonAttribute(options.variables)}"></div>`
   // 铺满的宿主由页面样式（.fill）定成画面大小：根节点写了 data-width/height 时，HyperFrames 展平时
   // 会把它写到宿主的行内样式上。
-  if (!size) return host(` class="fill" style="z-index:${options.z}"`)
+  if (!size) return host(` class="fill"${hfId} style="z-index:${options.z}"`)
   const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
   return (
-    `<div class="fit" style="width:${size.width}px;height:${size.height}px;` +
+    `<div class="fit"${hfId} style="width:${size.width}px;height:${size.height}px;` +
     `transform:translate(-50%,-50%) scale(${round4(scale)});z-index:${options.z}">${host('')}</div>`
   )
 }
@@ -149,6 +155,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       used.add(item)
       return componentHost({
         id,
+        hfId: clip.id,
         item,
         startMs: clip.start,
         durationMs: clip.duration,
@@ -162,7 +169,8 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
     const source = media.videos[clip.sourceJobId]
     if (!source) throw new CompositionError('missing-media', `成片「${clip.sourceJobId}」没有地址`)
     return (
-      `<video id="${id}" class="layer0" src="${escapeAttribute(source.url)}"` +
+      `<video id="${id}" class="layer0" data-hf-id="${escapeAttribute(clip.id)}"` +
+      ` src="${escapeAttribute(source.url)}"` +
       ` data-start="${seconds(clip.start)}" data-duration="${seconds(clip.duration)}"` +
       ` data-media-start="${seconds(clip.playbackStart)}" data-track-index="${TRACK.layer0}"` +
       ` data-volume="${String(clip.volume)}" data-has-audio="true" playsinline preload="auto"></video>`
@@ -174,6 +182,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
     used.add(item)
     return componentHost({
       id: `ov-${index}`,
+      hfId: overlay.id,
       item,
       startMs: overlay.start,
       durationMs: overlay.duration,

@@ -694,3 +694,139 @@ test.describe('整片编辑器 · 成片区', () => {
     await dialog.getByRole('button', { name: '取消静音配乐' }).click()
   })
 })
+
+/**
+ * 合成页里第一个看得见的匹配元素，中心在页面上的位置；还没有时为 null。
+ * 合成页在播放器的 iframe 里按缩放画出来，位置要乘上缩放再加上 iframe 的位置。
+ */
+const pointInPreview = (dialog: Locator, selector: string) =>
+  dialog
+    .getByRole('region', { name: '预览' })
+    .locator('hyperframes-player')
+    .evaluate((player, selector) => {
+      const iframe = (player as HTMLElement & { iframeElement: HTMLIFrameElement }).iframeElement
+      const doc = iframe.contentDocument
+      const win = iframe.contentWindow
+      if (doc === null || win === null) return null
+      const shown = (element: Element) => {
+        for (let node: Element | null = element; node !== null; node = node.parentElement) {
+          const style = win.getComputedStyle(node)
+          if (style.visibility === 'hidden' || style.display === 'none') return false
+          if (Number(style.opacity) === 0) return false
+        }
+        return element.getBoundingClientRect().width > 0
+      }
+      const element = [...doc.querySelectorAll(selector)].find(shown)
+      if (element === undefined) return null
+      const frame = iframe.getBoundingClientRect()
+      const scale = frame.width / iframe.offsetWidth
+      const box = element.getBoundingClientRect()
+      return {
+        x: frame.left + (box.left + box.width / 2) * scale,
+        y: frame.top + (box.top + box.height / 2) * scale,
+      }
+    }, selector)
+
+/** 等合成页里这个元素画出来（动画入场后），返回它在页面上的中心 */
+const shownInPreview = async (dialog: Locator, selector: string) => {
+  await expect.poll(() => pointInPreview(dialog, selector)).not.toBeNull()
+  const point = await pointInPreview(dialog, selector)
+  if (point === null) throw new Error(`预览里没有 ${selector}`)
+  return point
+}
+
+/** 播放头跳到这一刻（秒），等播放器停稳 */
+const seekTo = async (dialog: Locator, secondsAt: number) => {
+  const clock = dialog.getByRole('slider', { name: '时间线播放位置' })
+  await clock.fill(String(secondsAt))
+  await settledClockMs(clock)
+}
+
+test.describe('整片编辑器 · 画面点选与原位改字', () => {
+  test('点画面上的字幕选中时间线上那一句；双击在画面上改字，回车后时间线跟着变', async ({
+    page,
+  }) => {
+    const { dialog } = await openWith(page, { layer0: [video('v1', 0, 6_000)] })
+    const captions = dialog.getByRole('group', { name: '字幕轨' })
+    const first = captions.getByRole('button', { name: /^字幕：夜色里，城市慢慢亮起来/ })
+    const second = captions.getByRole('button', { name: /^字幕：车流划出一道道光/ })
+    await expect(first).toBeVisible()
+    await seekTo(dialog, 1)
+
+    const line = await shownInPreview(dialog, '[data-hf-id="caption:0"] .caption-line')
+    await page.mouse.click(line.x, line.y)
+    await expect(first).toHaveClass(/is-selected/)
+    await expect(second).not.toHaveClass(/is-selected/)
+    await expect(dialog.locator('.wf-canvas-frame')).toBeVisible()
+    // 字幕不能删：Delete 什么也不删
+    await page.keyboard.press('Delete')
+    await expect(captions.getByRole('button', { name: /^字幕：/ })).toHaveCount(2)
+    expect((await readDraft(page))?.layer0).toHaveLength(1)
+
+    // 双击原位改字：整句全选，打字替换，回车提交
+    await page.mouse.dblclick(line.x, line.y)
+    await expect(dialog.locator('.wf-canvas-frame')).toBeHidden()
+    await page.keyboard.type('夜色里，灯火通明')
+    await page.keyboard.press('Enter')
+    await expect(captions.getByRole('button', { name: /^字幕：夜色里，灯火通明/ })).toBeVisible()
+    await expect
+      .poll(async () => (await readDraft(page))?.captions.edits.map((edit) => edit.text))
+      .toEqual(['夜色里，灯火通明'])
+    // 编辑器还开着（Esc 之类没有把它关掉）
+    await expect(dialog).toBeVisible()
+  })
+
+  test('点画面上的特效选中时间线上那一块，不弹浮层；双击带标记的名字原位改字', async ({ page }) => {
+    const { dialog, film } = await openWith(page, {
+      layer0: [video('v1', 0, 6_000)],
+      overlays: [overlay('o1', 'lt-neon-border', 0, 4_000, 0)],
+    })
+    const block = dialog
+      .getByRole('group', { name: '特效轨' })
+      .getByRole('button', { name: /^选中：特效 · 霓虹边框姓名条/ })
+    await seekTo(dialog, 2)
+
+    const name = await shownInPreview(dialog, '[data-hf-id="o1"] [data-var-text="name"]')
+    await page.mouse.click(name.x, name.y)
+    await expect(block).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('dialog', { name: /霓虹边框姓名条/ })).toBeHidden()
+
+    // 点画面上没有特效的地方：选中底下的视频段
+    const panel = await boxOf(dialog.locator('.wf-canvas'))
+    await page.mouse.click(panel.x + panel.width / 2, panel.y + 12)
+    await expect(film.getByRole('button', { name: /^选中：第 1 段/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(block).toHaveAttribute('aria-pressed', 'false')
+
+    // 双击名字：改这一项，其余可填项不动；Esc 放弃不关编辑器
+    const nameText = () =>
+      dialog
+        .getByRole('region', { name: '预览' })
+        .locator('hyperframes-player')
+        .evaluate(
+          (player) =>
+            (
+              player as HTMLElement & { iframeElement: HTMLIFrameElement }
+            ).iframeElement.contentDocument?.querySelector(
+              '[data-hf-id="o1"] [data-var-text="name"]',
+            )?.textContent,
+        )
+    const shownName = await nameText()
+    await page.mouse.dblclick(name.x, name.y)
+    await page.keyboard.type('陈默')
+    await page.keyboard.press('Escape')
+    expect(await nameText()).toBe(shownName)
+    await expect(dialog).toBeVisible()
+    await page.mouse.dblclick(name.x, name.y)
+    await page.keyboard.type('陈默')
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(async () => (await readDraft(page))?.overlays[0]?.variables)
+      .toEqual({
+        name: '陈默',
+      })
+    await expect(block).toHaveAttribute('aria-pressed', 'true')
+  })
+})

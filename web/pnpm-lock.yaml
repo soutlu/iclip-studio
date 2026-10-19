@@ -20,6 +20,9 @@ importers:
       '@hyperframes/player':
         specifier: 0.8.168
         version: 0.8.168(@types/node@22.20.1)
+      '@hyperframes/sdk':
+        specifier: 0.8.168
+        version: 0.8.168(@types/node@22.20.1)
       '@tanstack/react-query':
         specifier: ^5.102.8
         version: 5.102.8(react@19.2.8)
@@ -709,6 +712,9 @@ packages:
 
   '@hyperframes/player@0.8.168':
     resolution: {integrity: sha512-gEt0WphluF2nxjFMkpkLk9QA/3MMd2P0p2o0q/HRFOYWvhMl0wnG1kfT0nzw86B99X0o/42Kb1s0nkwoHnInHQ==}
+
+  '@hyperframes/sdk@0.8.168':
+    resolution: {integrity: sha512-4Fy/MErI7uS0gwOA9UY8kssxRn8XKWgDi7GL+eYfhvy2Uaywti7Vv5LNmaaYcFp8ZWwhSgozrcM2JR8ZO4XfVA==}
 
   '@hyperframes/studio-server@0.8.168':
     resolution: {integrity: sha512-ilYIzDPVLzyI/qNAer9x3azghIvPMe4+ttSO6OxAAQh8Y//WY4RNleUPzHASb9O0qfob/7rQX/2BUzFHt+163Q==}
@@ -5345,6 +5351,15 @@ snapshots:
   '@hyperframes/player@0.8.168(@types/node@22.20.1)':
     dependencies:
       '@hyperframes/core': 0.8.168(@types/node@22.20.1)
+    transitivePeerDependencies:
+      - '@types/node'
+      - canvas
+
+  '@hyperframes/sdk@0.8.168(@types/node@22.20.1)':
+    dependencies:
+      '@hyperframes/core': 0.8.168(@types/node@22.20.1)
+      '@hyperframes/parsers': 0.8.168
+      linkedom: 0.18.13
     transitivePeerDependencies:
       - '@types/node'
       - canvas

@@ -13,6 +13,7 @@
   4. 尺寸按所在画面等比缩放：原组件按 1920×1080 设计，这里用容器单位换算（短边 1080 对应 100cqmin），
      安全区宽度为画面宽的 1400/1920；折行交给浏览器，去掉两行拆分与行间字重切换。
   5. 字号照原组件用画布量字，缩到整组不超过两行（不设最小字号）。
+  6. 每组写上 data-hf-id="caption:<sentence>"，编辑器在画面上按它认出点中的是哪一句。
   入场动画（opacity + scale 0.85→1）与组间切换时机不变。
 -->
 <template id="default-caption-template">
@@ -148,6 +149,7 @@
           return groups
             .map(function (group) {
               return {
+                sentence: group.sentence,
                 text: joinWords(group.words),
                 words: group.words,
                 start: group.start,
@@ -167,6 +169,7 @@
           var lineEl = document.createElement('div')
           groupEl.id = 'caption-group-' + index
           groupEl.className = 'caption-group'
+          groupEl.setAttribute('data-hf-id', 'caption:' + group.sentence)
           lineEl.className = 'caption-line'
           lineEl.textContent = group.text
           groupEl.appendChild(lineEl)

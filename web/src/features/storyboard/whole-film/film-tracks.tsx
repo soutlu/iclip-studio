@@ -21,6 +21,7 @@ import {
   releasePointer,
   useClickAfterDrag,
 } from '../editing/timeline-drag'
+import { captionKey } from './canvas-targets'
 import type { TrackLane } from './component-placement'
 import type { PlacedCaption } from './composition/captions'
 import type { EditContext, MusicBeat } from './editing/context'
@@ -64,8 +65,13 @@ import {
 import { useInsertionMotion, type MotionSnapshot } from './use-insertion-motion'
 import { usePreviewGesture, type GestureStep } from './use-preview-gesture'
 
+/** 选中的一块；字幕只能在画面上点选，记它的 {@link captionKey} */
 export type Selection =
-  { kind: 'clip'; id: string } | { kind: 'overlay'; id: string } | { kind: 'music' } | null
+  | { kind: 'clip'; id: string }
+  | { kind: 'overlay'; id: string }
+  | { kind: 'music' }
+  | { kind: 'caption'; key: string }
+  | null
 
 export type MusicView = { url: string; title: string; peaks: PeaksState }
 
@@ -1437,6 +1443,7 @@ export function FilmTracks({
                 captions={captions}
                 onCommit={onCaptionText}
                 place={place}
+                selectedKey={selection?.kind === 'caption' ? selection.key : undefined}
                 sentenceText={sentenceText}
               />
               {captionStatus}
@@ -1560,21 +1567,20 @@ export function FilmTracks({
   )
 }
 
-const captionKey = (caption: PlacedCaption) =>
-  `${caption.clipId}:${caption.subtitleJobId}:${caption.sentenceIndex}`
-
 type CaptionChipsProps = {
   captions: readonly PlacedCaption[]
   place: (start: number, duration: number) => { left: string; width: string }
+  /** 在画面上选中的那一块字幕 */
+  selectedKey: string | undefined
   sentenceText: (caption: PlacedCaption) => string
   onCommit: (caption: PlacedCaption, text: string) => void
 }
 
 /**
  * 字幕轨：每段画面里的一份句子一块。点一块改这一整句的字（跨段的句子两块改的是同一句），
- * 回车或离开输入框记一步编辑，Esc 放弃；清空后回到识别结果。
+ * 回车或离开输入框记一步编辑，Esc 放弃；清空后回到识别结果。在画面上点中的那一块显示为选中。
  */
-function CaptionChips({ captions, place, sentenceText, onCommit }: CaptionChipsProps) {
+function CaptionChips({ captions, place, selectedKey, sentenceText, onCommit }: CaptionChipsProps) {
   const [editing, setEditing] = useState<string | null>(null)
   return captions.map((caption) => {
     const key = captionKey(caption)
@@ -1594,7 +1600,7 @@ function CaptionChips({ captions, place, sentenceText, onCommit }: CaptionChipsP
     return (
       <button
         aria-label={`字幕：${caption.text}，点此改字`}
-        className="wf-caption ui-state ui-focus"
+        className={cn('wf-caption ui-state ui-focus', key === selectedKey && 'is-selected')}
         key={key}
         onClick={() => setEditing(key)}
         style={style}
