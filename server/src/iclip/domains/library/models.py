@@ -23,9 +23,21 @@ class Scope:
 
 
 @dataclass(frozen=True, slots=True)
+class WholeFilmScope:
+    """整片卡的筛选范围。时间窗 ``[since, until)`` 作用在卡面整片的完成时刻上。"""
+
+    user_name: str | None = None
+    """卡的作者，即对话属主。"""
+    since: datetime | None = None
+    until: datetime | None = None
+    q: str | None = None
+    """关键词，按字面包含匹配对话标题，不区分大小写。"""
+
+
+@dataclass(frozen=True, slots=True)
 class VideoCursor:
     at: datetime
     video_id: uuid.UUID
 
 
-__all__ = ["Orientation", "Scope", "VideoCursor"]
+__all__ = ["Orientation", "Scope", "VideoCursor", "WholeFilmScope"]

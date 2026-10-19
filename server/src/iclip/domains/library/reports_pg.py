@@ -4,14 +4,14 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, Final
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import TextClause, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.shot_prompt import parse_shot_prompt
-from iclip.domains.library.models import Scope, VideoCursor
-from iclip.domains.library.repository import CardRow
+from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.repository import CardRow, WholeFilmCardRow
 from iclip.domains.library.schemas import (
     FaceOut,
     LibraryAuthorOut,
@@ -21,6 +21,8 @@ from iclip.domains.library.schemas import (
     ShotGroupOut,
     TakeOut,
     VersionOut,
+    WholeFilmCardOut,
+    WholeFilmVersionOut,
 )
 
 _COMPOSE: Final = "compose"
@@ -179,6 +181,61 @@ GROUP BY c.user_name
 ORDER BY n DESC, c.user_name""",
 )
 
+_WHOLE_FILM: Final = """g.kind = 'whole_film' AND g.status = 'completed'
+      AND g.output_url IS NOT NULL"""
+
+_FILM_CARDS: Final = f"""
+WITH film_cards AS (
+    SELECT c.id, c.title, c.owner_user_id AS conversation_owner,
+           c.deleted_at IS NOT NULL AS conversation_deleted,
+           u.username AS user_name, max(g.finished_at) AS face_finished_at
+    FROM iclip.generation_jobs g
+    JOIN iclip.conversations c ON c.id = g.conversation_id
+    JOIN iclip.users u ON u.id = c.owner_user_id
+    WHERE {_WHOLE_FILM}
+    GROUP BY c.id, u.id
+)"""
+
+_FILM_FILTER: Final = r"""
+WHERE (CAST(:user_name AS text) IS NULL OR f.user_name = CAST(:user_name AS text))
+  AND (CAST(:since AS timestamptz) IS NULL OR f.face_finished_at >= CAST(:since AS timestamptz))
+  AND (CAST(:until AS timestamptz) IS NULL OR f.face_finished_at < CAST(:until AS timestamptz))
+  AND (CAST(:pattern AS text) IS NULL OR f.title ILIKE CAST(:pattern AS text) ESCAPE '\')"""
+
+_WHOLE_FILMS: Final = text(
+    _FILM_CARDS
+    + f""",
+page AS (
+    SELECT f.* FROM film_cards f{_FILM_FILTER}
+      AND (CAST(:after_at AS timestamptz) IS NULL
+           OR (f.face_finished_at, f.id)
+              < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
+    ORDER BY f.face_finished_at DESC, f.id DESC
+    LIMIT :limit
+)
+SELECT p.id AS conversation_id, p.title, p.conversation_owner, p.conversation_deleted,
+       p.user_name, g.id AS job_id, g.output_url, g.finished_at,
+       vu.username AS version_user_name, g.request->'videos' AS sources
+FROM page p
+JOIN iclip.generation_jobs g ON g.conversation_id = p.id
+JOIN iclip.users vu ON vu.id = g.owner_user_id
+WHERE {_WHOLE_FILM}
+ORDER BY p.face_finished_at DESC, p.id DESC, g.finished_at, g.id"""
+)
+
+_COUNT_WHOLE_FILMS: Final = text(
+    _FILM_CARDS + "\nSELECT count(*) AS n FROM film_cards f" + _FILM_FILTER
+)
+
+_WHOLE_FILM_AUTHORS: Final = text(
+    _FILM_CARDS
+    + """
+SELECT f.user_name, count(*) AS n FROM film_cards f
+WHERE f.user_name IS NOT NULL
+GROUP BY f.user_name
+ORDER BY n DESC, f.user_name"""
+)
+
 
 class _StoredCut(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
@@ -206,6 +263,17 @@ class _StoredVideoRequest(BaseModel):
     resolution: str | None = None
     generate_audio: bool | None = None
     reference_image_urls: list[str] = []
+
+
+class _StoredWholeFilmSource(BaseModel):
+    """整片导出请求里 ``videos`` 的一项（按别名落库），只取成片 id。"""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    job_id: uuid.UUID = Field(alias="jobId")
+
+
+_WHOLE_FILM_SOURCES: Final = TypeAdapter(list[_StoredWholeFilmSource])
 
 
 def _script_of(request: _StoredVideoRequest) -> ScriptOut | None:
@@ -318,6 +386,45 @@ def _scope_params(scope: Scope) -> dict[str, Any]:
     }
 
 
+def _film_scope_params(scope: WholeFilmScope) -> dict[str, Any]:
+    return {
+        "user_name": scope.user_name,
+        "since": scope.since,
+        "until": scope.until,
+        "pattern": None if scope.q is None else _like_pattern(scope.q),
+    }
+
+
+def _film_cards_of(rows: Sequence[RowMapping]) -> list[WholeFilmCardRow]:
+    cards: dict[uuid.UUID, tuple[RowMapping, list[WholeFilmVersionOut]]] = {}
+    for row in rows:
+        version = WholeFilmVersionOut(
+            job_id=row["job_id"],
+            output_url=row["output_url"],
+            finished_at=row["finished_at"],
+            user_name=row["version_user_name"],
+            source_job_ids=[
+                source.job_id for source in _WHOLE_FILM_SOURCES.validate_python(row["sources"])
+            ],
+        )
+        cards.setdefault(row["conversation_id"], (row, []))[1].append(version)
+    return [
+        WholeFilmCardRow(
+            card=WholeFilmCardOut(
+                conversation_id=head["conversation_id"],
+                can_open_conversation=False,
+                title=head["title"],
+                user_name=head["user_name"],
+                face=versions[-1],
+                versions=versions,
+            ),
+            conversation_owner=head["conversation_owner"],
+            conversation_deleted=bool(head["conversation_deleted"]),
+        )
+        for head, versions in cards.values()
+    ]
+
+
 class PgLibraryReports:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -350,9 +457,33 @@ class PgLibraryReports:
         return _groups_of(rows)
 
     async def authors(self) -> Sequence[LibraryAuthorOut]:
+        return await self._authors(_AUTHORS)
+
+    async def whole_film_authors(self) -> Sequence[LibraryAuthorOut]:
+        return await self._authors(_WHOLE_FILM_AUTHORS)
+
+    async def _authors(self, statement: TextClause) -> Sequence[LibraryAuthorOut]:
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(_AUTHORS)).mappings().all()
+            rows = (await conn.execute(statement)).mappings().all()
         return [LibraryAuthorOut(user_name=row["user_name"], count=int(row["n"])) for row in rows]
+
+    async def whole_films(
+        self, scope: WholeFilmScope, *, limit: int, after: VideoCursor | None
+    ) -> Sequence[WholeFilmCardRow]:
+        params = {
+            **_film_scope_params(scope),
+            "after_at": after.at if after else None,
+            "after_id": after.video_id if after else None,
+            "limit": limit,
+        }
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(_WHOLE_FILMS, params)).mappings().all()
+        return _film_cards_of(rows)
+
+    async def count_whole_films(self, scope: WholeFilmScope) -> int:
+        async with self._engine.connect() as conn:
+            result = await conn.execute(_COUNT_WHOLE_FILMS, _film_scope_params(scope))
+            return int(result.scalar_one())
 
 
 __all__ = ["PgLibraryReports"]

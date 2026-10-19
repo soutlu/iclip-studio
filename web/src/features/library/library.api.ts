@@ -67,8 +67,10 @@ export const libraryQueryKeys = {
   all: ['library'] as const,
   videos: (scope: LibraryScope) => ['library', 'videos', scope] as const,
   video: (id: string) => ['library', 'video', id] as const,
-  authors: ['library', 'authors'] as const,
+  authors: (path: AuthorsPath) => ['library', 'authors', path] as const,
 }
+
+type AuthorsPath = '/library/authors' | '/library/whole-films/authors'
 
 export const useLibraryVideos = (scope: LibraryScope) =>
   useInfiniteQuery({
@@ -97,14 +99,15 @@ export const useLibraryVideo = (id: string | null) =>
     queryKey: libraryQueryKeys.video(id ?? ''),
   })
 
-export const useLibraryAuthorSource = (): PickerSource => {
+/** 按人筛选的候选：取自 `path` 给的作者名单，不随翻到的卡片变化。 */
+export const useAuthorSource = (path: AuthorsPath): PickerSource => {
   const query = useQuery({
     queryFn: ({ signal }) =>
-      apiFetch('/library/authors', zLibraryAuthorsOut, {
+      apiFetch(path, zLibraryAuthorsOut, {
         fallbackErrorMessage: '读取作者名单失败',
         signal,
       }),
-    queryKey: libraryQueryKeys.authors,
+    queryKey: libraryQueryKeys.authors(path),
     staleTime: 5 * 60_000,
   })
   return {
@@ -117,3 +120,5 @@ export const useLibraryAuthorSource = (): PickerSource => {
     })),
   }
 }
+
+export const useLibraryAuthorSource = (): PickerSource => useAuthorSource('/library/authors')

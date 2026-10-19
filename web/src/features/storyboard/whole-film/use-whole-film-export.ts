@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmExportOut } from '@/shared/api/generated/types.gen'
-import { recordVideoDownloaded } from '@/shared/api/tracking'
 import { toast } from '@/shared/ui/toast'
 import {
   cancelWholeFilmExport,
@@ -31,7 +30,8 @@ export type ExportView =
   /** `progress` 为 null：只知道在渲染，渲染服务还答不上进度 */
   | { kind: 'rendering'; progress: number | null }
   | { kind: 'uploading' }
-  | { kind: 'done'; downloadUrl: string }
+  /** `sourceJobIds`：这次导出用到的成片，下载时各记一次下载 */
+  | { kind: 'done'; downloadUrl: string; sourceJobIds: readonly string[] }
   | { kind: 'failed'; message: string }
   | { kind: 'cancelled' }
 
@@ -55,7 +55,7 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
     case 'done':
       return state.downloadUrl === null
         ? { kind: 'failed', message: '导出完成了却没拿到下载地址，请重新导出' }
-        : { kind: 'done', downloadUrl: state.downloadUrl }
+        : { kind: 'done', downloadUrl: state.downloadUrl, sourceJobIds: state.sourceJobIds }
     case 'failed':
       return { kind: 'failed', message: failureText(state.error) }
     case 'cancelled':
@@ -66,7 +66,6 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
 /**
  * 导出整片：显示这段对话最近一次导出，没结束就轮询到结束，所以重开编辑器接着看进度或下载；
  * 关掉编辑器不影响导出。提交时先把手上的改动存好，按存好的那一版提交。
- * 下载时对那次导出用到的每条成片各记一次 `video.downloaded`（同一次导出里每条只记一次）。
  *
  * `settle` 存好草稿并给出服务端那一版的 revision，存不好时为 undefined（原因由草稿那边显示）。
  */
@@ -76,7 +75,6 @@ export function useWholeFilmExport(
 ) {
   // 提交中与提交失败只在本地显示；其余时候显示最近一次导出
   const [local, setLocal] = useState<ExportView | null>(null)
-  const recordedRef = useRef(new Map<string, Set<string>>())
 
   const latest = useQuery({
     queryKey: wholeFilmQueryKeys.latestExport(conversationId),
@@ -140,17 +138,5 @@ export function useWholeFilmExport(
     }
   }
 
-  /** 点了下载：这次导出用到的成片各记一次下载 */
-  const recordDownload = () => {
-    if (current === null) return
-    const recorded = recordedRef.current.get(current.id) ?? new Set<string>()
-    recordedRef.current.set(current.id, recorded)
-    for (const jobId of current.sourceJobIds) {
-      if (recorded.has(jobId)) continue
-      recorded.add(jobId)
-      recordVideoDownloaded(jobId)
-    }
-  }
-
-  return { view, start, cancel, recordDownload }
+  return { view, start, cancel }
 }

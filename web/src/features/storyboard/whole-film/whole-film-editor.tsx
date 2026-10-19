@@ -767,7 +767,6 @@ function EditorBody({
           <ExportControl
             blocked={exportBlocked}
             onCancel={() => void exporting.cancel()}
-            onDownload={exporting.recordDownload}
             onStart={() => void exporting.start()}
             view={exporting.view}
           />

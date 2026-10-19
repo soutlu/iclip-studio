@@ -6,6 +6,7 @@ import type {
   zLibraryVideoDetailOut,
   zLibraryVideoOut,
   zScriptOut,
+  zWholeFilmCardOut,
 } from '@/shared/api/generated/zod.gen'
 // no-inline：地址要进 <video src>，不能被构建内联成 data URI。
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
@@ -285,6 +286,33 @@ const matches = (video: LibraryVideo, query: URLSearchParams): boolean => {
 }
 
 export const libraryHandlers = [
+  http.get('*/api/library/whole-films', ({ request }) => {
+    const query = new URL(request.url).searchParams
+    const cursor = query.get('cursor')
+    const rows = mockLibraryWholeFilms().filter((film) => {
+      const at = Date.parse(film.face.finishedAt)
+      const user = query.get('userName')
+      const since = query.get('since')
+      const until = query.get('until')
+      const q = query.get('q')?.toLowerCase()
+      return (
+        (user === null || film.userName === user) &&
+        (since === null || at >= Date.parse(since)) &&
+        (until === null || at < Date.parse(until)) &&
+        (q === undefined || (film.title ?? '').toLowerCase().includes(q))
+      )
+    })
+    const page = pageBy(
+      rows,
+      (film) => [film.face.finishedAt, film.conversationId],
+      cursor,
+      Number(query.get('limit') ?? 24),
+    )
+    return HttpResponse.json({ ...page, total: cursor === null ? rows.length : null })
+  }),
+  http.get('*/api/library/whole-films/authors', () =>
+    HttpResponse.json({ items: authorsOf(mockLibraryWholeFilms()) }),
+  ),
   http.get('*/api/library/videos', ({ request }) => {
     const query = new URL(request.url).searchParams
     const cursor = query.get('cursor')
@@ -318,4 +346,30 @@ function authorsOf(cards: readonly { userName: string | null }[]) {
   return [...counts]
     .map(([userName, count]) => ({ count, userName }))
     .sort((a, b) => b.count - a.count || a.userName.localeCompare(b.userName))
+}
+
+type WholeFilmCard = z.output<typeof zWholeFilmCardOut>
+
+/** 两段任务的导出：第一段导出过两次，第二段一次；每次用到的成片取自成片素材的卡面。 */
+export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] => {
+  const sources = mockLibraryVideos(now).map((video) => video.face.jobId)
+  return ['春夏品牌整片', '城市漫步整片'].map((title, index) => {
+    const versions = Array.from({ length: index === 0 ? 2 : 1 }, (_, version) => ({
+      jobId: `fa000001-0000-4000-8000-${String(index * 10 + version + 1).padStart(12, '0')}`,
+      outputUrl: version === 0 ? sampleVideoUrl : sampleWideUrl,
+      finishedAt: new Date(now - (index * 12 + 3 - version) * HOUR_MS).toISOString(),
+      userName: index === 0 ? 'tester' : 'Nora.Ho',
+      sourceJobIds: sources.slice(index + version, index + version + 2),
+    }))
+    const face = versions.at(-1)
+    if (face === undefined) throw new Error('整片夹具必须有版本')
+    return {
+      conversationId: `fa000002-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      title,
+      canOpenConversation: index === 0,
+      userName: face.userName,
+      face,
+      versions,
+    }
+  })
 }

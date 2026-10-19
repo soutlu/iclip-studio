@@ -260,8 +260,6 @@ describe('上传校验表', () => {
   const fileOf = (name: string, type: string, size: number) => ({ name, type, size })
 
   it.each([
-    ['font', fileOf('品牌.ttf', '', 1), 'font/ttf'],
-    ['font', fileOf('品牌.OTF', 'application/octet-stream', 32 * MIB), 'font/otf'],
     ['video', fileOf('片头.mp4', 'video/mp4', 1), 'video/mp4'],
     ['video', fileOf('片头', 'video/quicktime', 512 * MIB), 'video/quicktime'],
   ] as const)('%s 收下 %o，按 %s 签名', (kind, file, contentType) => {
@@ -269,9 +267,6 @@ describe('上传校验表', () => {
   })
 
   it.each([
-    ['font', fileOf('品牌.woff2', 'font/woff2', 1), 'TTF 或 OTF'],
-    ['font', fileOf('品牌', 'font/ttf', 1), 'TTF 或 OTF'],
-    ['font', fileOf('品牌.ttf', 'font/ttf', 32 * MIB + 1), '32 MiB'],
     ['video', fileOf('片头.mp4', 'video/webm', 1), 'MP4 或 MOV'],
     ['video', fileOf('片头.mp4', 'video/mp4', 512 * MIB + 1), '512 MiB'],
   ] as const)('%s 拒收 %o，原因含「%s」', (kind, file, reason) => {

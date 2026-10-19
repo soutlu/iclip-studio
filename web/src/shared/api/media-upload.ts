@@ -6,7 +6,7 @@ import { zUploadConfirmedOut, zUploadTicketOut } from './generated/zod.gen'
 
 const MIB = 1024 * 1024
 
-export type UploadKind = 'image' | 'video' | 'audio' | 'font'
+export type UploadKind = 'image' | 'video' | 'audio'
 
 type UploadRule = {
   byExtension: Readonly<Record<string, string>>
@@ -50,13 +50,6 @@ const UPLOAD_RULES: Readonly<Record<UploadKind, UploadRule>> = {
     formatError: '文件格式不受支持，无法上传；请选择 MP3、WAV 或 M4A 音乐',
     sizeError: '音乐超过 50 MiB，无法上传；请选择更小的文件',
   },
-  font: {
-    byExtension: { ttf: 'font/ttf', otf: 'font/otf' },
-    byType: {},
-    maxBytes: 32 * MIB,
-    formatError: '文件格式不受支持，无法上传；请选择 TTF 或 OTF 字体',
-    sizeError: '字体超过 32 MiB，无法上传；请选择更小的文件',
-  },
 }
 
 const acceptOf = ({ byExtension, byType }: UploadRule): string =>
@@ -67,7 +60,6 @@ const acceptOf = ({ byExtension, byType }: UploadRule): string =>
 export const MEDIA_IMAGE_ACCEPT = acceptOf(UPLOAD_RULES.image)
 export const MEDIA_VIDEO_ACCEPT = acceptOf(UPLOAD_RULES.video)
 export const MEDIA_AUDIO_ACCEPT = acceptOf(UPLOAD_RULES.audio)
-export const FONT_ACCEPT = acceptOf(UPLOAD_RULES.font)
 
 export const uploadContentTypeOf = (
   file: Pick<File, 'name' | 'type'>,
@@ -91,10 +83,9 @@ export const checkUploadFile = (file: Pick<File, 'name' | 'type' | 'size'>, kind
 
 const UPLOAD_FAILED = '上传失败'
 
-type MediaKind = Exclude<UploadKind, 'font'>
 type SignedMedia = { contentType: string; width: number | null; height: number | null }
 
-const signedMediaOf = async (file: File, kind: MediaKind): Promise<SignedMedia> => {
+const signedMediaOf = async (file: File, kind: UploadKind): Promise<SignedMedia> => {
   const contentType = checkUploadFile(file, kind)
   if (kind !== 'image') return { contentType, height: null, width: null }
   let bitmap: ImageBitmap
@@ -146,22 +137,12 @@ const putToStorage = (
     request.send(file)
   })
 
-export const uploadFontFile = async (
-  file: File,
-  sign: (contentType: string) => Promise<UploadTicket>,
-  onProgress?: (ratio: number) => void,
-): Promise<string> => {
-  const ticket = await sign(checkUploadFile(file, 'font'))
-  await putToStorage(ticket.upload, file, onProgress)
-  return ticket.uploadId
-}
-
 export type UploadedMedia = { url: string; uploadId: string }
 
 /** `conversationId` 只对音频有意义：确认时把这首音乐挂到这段对话上（合同 §10）。 */
 export const uploadMediaFile = async (
   file: File,
-  kind: MediaKind,
+  kind: UploadKind,
   {
     onProgress,
     conversationId,

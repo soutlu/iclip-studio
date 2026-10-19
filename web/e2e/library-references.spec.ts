@@ -3,18 +3,18 @@ import { login } from './login'
 
 const SAMPLE_VIDEO = new URL('../src/testing/fixtures/sample-video.mp4', import.meta.url).pathname
 
-test('资料库切到参考视频，页签与两组标签筛选都在地址里，退回还原；键盘能切页签', async ({
-  page,
-}) => {
+test('资料库切到灵感库，页签与两组标签筛选都在地址里，退回还原；键盘能切页签', async ({ page }) => {
   await page.goto('/')
   await login(page, 'tester')
   await page.getByRole('button', { name: '资料库' }).click()
 
-  const videosTab = page.getByRole('tab', { name: '成片' })
+  const tabs = page.getByRole('tablist', { name: '资料库内容' }).getByRole('tab')
+  await expect(tabs).toHaveText(['成片素材', '灵感库', '成片'])
+  const videosTab = page.getByRole('tab', { name: '成片素材' })
   await expect(videosTab).toHaveAttribute('aria-selected', 'true')
   await videosTab.focus()
   await page.keyboard.press('ArrowRight')
-  await expect(page.getByRole('tab', { name: '参考视频' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: '灵感库' })).toHaveAttribute('aria-selected', 'true')
   await expect(page).toHaveURL(/tab=references/)
 
   const main = page.getByRole('main', { name: '资料库' })
@@ -32,7 +32,7 @@ test('资料库切到参考视频，页签与两组标签筛选都在地址里�
   await page.getByRole('button', { name: '需求单' }).click()
   await expect(page).toHaveURL('/tasks')
   await page.goBack()
-  await expect(page.getByRole('tab', { name: '参考视频' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: '灵感库' })).toHaveAttribute('aria-selected', 'true')
   // 条件按清单先后排：图文混剪在场景种草前面。
   await expect(main.getByRole('button', { name: '片子类型：图文混剪 +1' })).toBeVisible()
   await expect(main.getByText('找到 3 条')).toBeVisible()
@@ -42,7 +42,7 @@ test('属主试生成：提交后显示生成中，完成后原片与试生成�
   await page.goto('/')
   await login(page, 'tester')
   await page.getByRole('button', { name: '资料库' }).click()
-  await page.getByRole('tab', { name: '参考视频' }).click()
+  await page.getByRole('tab', { name: '灵感库' }).click()
   const main = page.getByRole('main', { name: '资料库' })
 
   const name = '上身展示 · 短靴 · 卫衣 · 裤子'
@@ -79,7 +79,7 @@ test('上传一条视频：先排队、拆完自动出标签；改拆解保存�
   await page.goto('/')
   await login(page, 'tester')
   await page.getByRole('button', { name: '资料库' }).click()
-  await page.getByRole('tab', { name: '参考视频' }).click()
+  await page.getByRole('tab', { name: '灵感库' }).click()
   const main = page.getByRole('main', { name: '资料库' })
   await expect(main.getByText('共 13 条')).toBeVisible()
 
