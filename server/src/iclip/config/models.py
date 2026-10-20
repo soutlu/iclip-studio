@@ -21,6 +21,8 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 
+from iclip.common.generation_vocab import VideoEnhanceResolution
+
 _MIN_SECRET_LENGTH = 32
 
 RequiredEnv = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -34,6 +36,8 @@ DEFAULT_SSO_OAUTH_NAME: Final = "sso"
 OSS_BUCKET_ENV: Final = "OSS_BUCKET"
 
 VIDEO_SUBMIT_URL_ENV: Final = "VIDEO_SUBMIT_URL"
+
+VIDEO_ENHANCE_SUBMIT_URL_ENV: Final = "VIDEO_ENHANCE_SUBMIT_URL"
 
 QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 
@@ -94,6 +98,8 @@ class MediaGenerationEnv(EnvSettings):
     video_status_base_url: RequiredEnv = Field(validation_alias="VIDEO_STATUS_BASE_URL")
     video_api_key: RequiredEnv = Field(validation_alias="VIDEO_API_KEY")
     image_api_base: RequiredEnv = Field(validation_alias="IMAGE_API_BASE")
+    # 高清版（超分）的完整提交地址；查询地址与 key 同出片。留空就是没开通。
+    video_enhance_submit_url: OptionalEnv = Field("", validation_alias=VIDEO_ENHANCE_SUBMIT_URL_ENV)
 
 
 class QwenEnv(EnvSettings):
@@ -172,11 +178,30 @@ ThinkingEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "m
 ArkReasoningEffort = Literal["minimal", "low", "medium", "high"]
 
 
+class VideoEnhanceSection(ConfigSection):
+    """高清版（超分）：用哪个模型、提到哪几档（从高到低，界面按这个顺序列）、帧率。"""
+
+    model: str = Field(min_length=1)
+    resolutions: tuple[VideoEnhanceResolution, ...] = Field(min_length=1)
+    fps: int | None = Field(default=None, ge=15, le=60)
+    """目标帧率；不写就不插帧，保持原片帧率。"""
+
+    @field_validator("resolutions")
+    @classmethod
+    def _distinct(
+        cls, value: tuple[VideoEnhanceResolution, ...]
+    ) -> tuple[VideoEnhanceResolution, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("enhance.resolutions 不能重复")
+        return value
+
+
 class VideoGenerationSection(ConfigSection):
     model: str
     allowed_models: tuple[
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)], ...
     ] = Field(min_length=1)
+    enhance: VideoEnhanceSection | None = None
 
     @model_validator(mode="after")
     def _default_model_is_allowed(self) -> VideoGenerationSection:
@@ -355,12 +380,22 @@ class ResolvedQwenService:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedVideoEnhance:
+    submit_url: str
+    model: str
+    resolutions: tuple[VideoEnhanceResolution, ...]
+    fps: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedMediaGeneration:
     video_submit_url: str
     video_status_base_url: str
     video_api_key: str
     video_model: str
     video_allowed_models: tuple[str, ...]
+    video_enhance: ResolvedVideoEnhance | None
+    """高清版；为 None 时提交端点答「没有开通」。"""
     image_models: tuple[ResolvedImageModel, ...]
     image_default_model: str
     image_env: str
@@ -516,6 +551,7 @@ def _resolve_media_generation(
         video_api_key=env.video_api_key,
         video_model=section.video.model,
         video_allowed_models=section.video.allowed_models,
+        video_enhance=_resolve_video_enhance(section.video.enhance, env.video_enhance_submit_url),
         image_models=tuple(
             ResolvedImageModel(
                 name=name,
@@ -535,6 +571,26 @@ def _resolve_media_generation(
         compose_concurrency=section.compose_concurrency,
         subtitle=_resolve_qwen_service(section.subtitle),
         music=_resolve_qwen_service(section.music),
+    )
+
+
+def _resolve_video_enhance(
+    section: VideoEnhanceSection | None, submit_url: str
+) -> ResolvedVideoEnhance | None:
+    """提交地址留空就是没开通；配了地址却没写 ``media_generation.video.enhance`` 段报错。"""
+
+    if not submit_url:
+        return None
+    if section is None:
+        raise RuntimeError(
+            f"配了 {VIDEO_ENHANCE_SUBMIT_URL_ENV} 却没写 media_generation.video.enhance 段："
+            "高清版用哪个模型、提到哪几档都写在那里。补上它，或者清空这个地址"
+        )
+    return ResolvedVideoEnhance(
+        submit_url=submit_url,
+        model=section.model,
+        resolutions=section.resolutions,
+        fps=section.fps,
     )
 
 

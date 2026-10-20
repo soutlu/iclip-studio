@@ -194,6 +194,9 @@ class AnnouncingGenerationRepository:
     ) -> Mapping[uuid.UUID, str]:
         return await self._inner.latest_master_by_conversation(conversation_ids)
 
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        return await self._inner.enhancements_of(source_job_id)
+
     def _announce(self, job: GenerationJob) -> GenerationJob:
         self._live.announce_generation_changed(
             job.owner_user_id,

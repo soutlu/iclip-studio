@@ -23,6 +23,11 @@ media_generation:
       - vendor-b-seedance-2-0
       - vendor-b-seedance-2-5
       - wan3.0-video-prime
+    # 写出这一段并设 VIDEO_ENHANCE_SUBMIT_URL 即开通高清版（超分）；查询地址与 key 同出片。
+    enhance:
+      model: video-enhance
+      resolutions: [1080p, 720p] # 能提到的档，从高到低；上游只收 720p 与 1080p
+      fps: 30 # 目标帧率 15–60；不写就不插帧
   image:
     env: prod # 网关按调用方标识与这一项一起判这次调用合不合法
     # 两条任务路由拼在每家的地址后面：无参考图打文生图，有参考图打图像编辑。

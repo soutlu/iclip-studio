@@ -26,9 +26,11 @@ from iclip.domains.generation.schemas import (
     KIND_VIDEO,
     KIND_WHOLE_FILM,
     OPERATION_COMPOSE,
+    OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
     OPERATION_UPLOAD,
+    VideoEnhanceRequest,
     request_to_payload,
 )
 from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
@@ -998,6 +1000,63 @@ async def test_a_whole_film_card_holds_its_conversations_own_exports(
     assert (c1.conversation_owner, c1.conversation_deleted) == (seed.nora, False)
     assert (rows[1].card.title, rows[1].card.user_name) == ("凉鞋合集（分叉）", LENA)
     assert rows[2].card.face.source_job_ids == []
+
+
+async def test_high_definition_versions_are_neither_takes_nor_exports(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    """高清版（超分记录）完成得比所有卡面都晚，成片素材的卡、组、版与整片卡、整片版本都不变：
+    成片的高清版种类是视频，整片的高清版种类是整片，都不挂对话。"""
+
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    before_films = [
+        (row.card.conversation_id, [version.job_id for version in row.card.versions])
+        for row in await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+    ]
+    async with engine.begin() as conn:
+        for kind, source in (
+            (KIND_VIDEO, seed.a),
+            (KIND_VIDEO, seed.m),
+            (KIND_WHOLE_FILM, films.w2),
+        ):
+            request = VideoEnhanceRequest(
+                model="video-enhance",
+                resolution="1080p",
+                fps=30,
+                video_url=url(f"source-{source}"),
+                user_name=NORA,
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                    " operation, provider, request, status, output_url, watermark_output_url,"
+                    " source_job_id, created_at, finished_at)"
+                    " VALUES (:id, :owner, NULL, :kind, :operation, 'video_api',"
+                    " CAST(:request AS jsonb), :status, :output_url, :watermark, :source,"
+                    " :created_at, :at)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "owner": seed.lena,
+                    "kind": kind,
+                    "operation": OPERATION_ENHANCE,
+                    "request": json.dumps(request_to_payload(request)),
+                    "status": STATUS_COMPLETED,
+                    "output_url": url(f"hd-{source}"),
+                    "watermark": url(f"hd-wm-{source}"),
+                    "source": source,
+                    "created_at": at(899),
+                    "at": at(900),
+                },
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+    assert [
+        (row.card.conversation_id, [version.job_id for version in row.card.versions])
+        for row in await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+    ] == before_films
 
 
 async def test_whole_film_filters_and_pages_follow_the_face(

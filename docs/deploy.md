@@ -53,6 +53,7 @@
    - `.env`：镜像与端口变量见 compose.yaml 文件头，应用变量见[配置模型](../server/src/iclip/config/models.py)，`DATABASE_URL` 指向上一步建的库
    - `configs/`、`agents/`、`skills/`：后端只读挂载，镜像里没有
    - 服务器是与 OSS 桶同地域的阿里云 ECS 或在其 VPC 内时：在 `.env` 把 `OSS_INTERNAL_ENDPOINT` 设为该地域的内网 endpoint（如 `https://oss-cn-shenzhen-internal.aliyuncs.com`），服务端读写和下载对象走内网，浏览器直传仍用 `OSS_ENDPOINT`；不设则全部走 `OSS_ENDPOINT`。
+   - 高清版（超分）：在 `.env` 把 `VIDEO_ENHANCE_SUBMIT_URL` 设为上游超分接口的完整提交地址（与 `VIDEO_SUBMIT_URL` 同一台服务，查询地址与 key 共用），并在 `configs/config.yaml` 的 `media_generation.video` 下写 `enhance` 段（`model`、从高到低的 `resolutions`、`fps`，取值见[配置模型](../server/src/iclip/config/models.py)）；不设地址则高清版没有开通，设了地址却没写这一段启动报错。
    - 整片导出：在 `.env` 把 `WHOLE_FILM_RENDER_URL` 设为渲染服务在 compose 网络里的地址（如 `http://render:8080`），要求同时配了 OSS 与媒体生成；不设则导出端点答「整片导出没有开通」。渲染服务的 `RENDER_ALLOWED_MEDIA_HOSTS` 要列出它会取素材的主机：本桶的内网 host `<OSS_BUCKET>.<OSS_INTERNAL_ENDPOINT 的 host>`（没配内网 endpoint 时是 `<OSS_BUCKET>.<OSS_ENDPOINT 的 host>`），以及上游视频服务发布出片的主机。
 4. 用有 DDL 权限的账号执行目标版本的数据库迁移。部署和服务启动都不会自动迁移。
 5. 登录镜像仓库，拉取并启动：

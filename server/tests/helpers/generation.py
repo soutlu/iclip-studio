@@ -50,6 +50,8 @@ from iclip.domains.generation.schemas import (
     SubtitleRequest,
     SubtitleSentence,
     VideoComposeRequest,
+    VideoEnhanceRequest,
+    VideoEnhanceResolution,
     VideoGenerationIn,
     WholeFilmRequest,
     WholeFilmVideoSource,
@@ -188,11 +190,15 @@ def make_job(
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> GenerationJob:
-    """kind 与 operation 随请求定，默认是一条出片；只有没有请求的行（切图、上传）才显式给这两个。"""
+    """kind 与 operation 随请求定，默认是一条出片；只有没有请求的行（切图、上传）才显式给这两个。
+    超分请求没有固定的种类，跟来源走，要另给 ``kind``。"""
 
     now = datetime.now(UTC)
     payload: GenerationRequest | None
-    if kind is None and operation is None:
+    if isinstance(request, VideoEnhanceRequest):
+        assert kind is not None and operation is None, "超分记录要另给 kind，operation 随请求"
+        payload, row_kind, row_operation = request, kind, request.operation
+    elif kind is None and operation is None:
         payload = request or video_request()
         row_kind, row_operation = payload.kind, payload.operation
     elif request is None and kind is not None and operation is not None:
@@ -203,7 +209,7 @@ def make_job(
         row_operation
         if payload is None
         else FAKE_VIDEO_PROVIDER
-        if row_kind == KIND_VIDEO
+        if row_kind == KIND_VIDEO or isinstance(payload, VideoEnhanceRequest)
         else FAKE_SUBTITLE_PROVIDER
         if row_kind == KIND_SUBTITLE
         else FAKE_MUSIC_PROVIDER
@@ -309,6 +315,27 @@ def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
         ],
         music=None,
         subtitles=[],
+    )
+
+
+def make_enhancement(
+    source: GenerationJob, resolution: VideoEnhanceResolution = "1080p", **fields: Any
+) -> GenerationJob:
+    """给来源 ``source``（成片或整片）做的一条超分记录：种类与镜号随来源，不挂对话，默认排队中。"""
+
+    assert source.output_url is not None, "只给有地址的来源做高清版"
+    fields.setdefault("shot_index", source.shot_index)
+    return make_job(
+        VideoEnhanceRequest(
+            model="video-enhance",
+            resolution=resolution,
+            fps=30,
+            video_url=source.output_url,
+            user_name="logan",
+        ),
+        kind=source.kind,
+        source_job_id=source.id,
+        **fields,
     )
 
 
@@ -593,6 +620,15 @@ class InMemoryGenerationRepository:
 
         raise AssertionError("unit 层不走最新成片")
 
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        rows = [
+            job
+            for job in self.jobs.values()
+            if job.source_job_id == source_job_id and job.operation == "enhance"
+        ]
+        rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
+        return tuple(rows)
+
     def _replace(self, job_id: uuid.UUID, **values: Any) -> GenerationJob:
         from dataclasses import replace
 
@@ -846,6 +882,7 @@ __all__ = [
     "make_composite",
     "make_cut",
     "make_edit",
+    "make_enhancement",
     "make_job",
     "make_music",
     "make_subtitle",

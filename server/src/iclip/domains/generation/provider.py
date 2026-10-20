@@ -12,6 +12,7 @@ from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
     ImageGenerationIn,
     SubtitleSentence,
+    VideoEnhanceRequest,
     VideoGenerationIn,
 )
 
@@ -27,8 +28,11 @@ class ProviderError(Exception):
         self.retryable = retryable
 
 
-def request_of[R](job: GenerationJob, expected: type[R], *, provider: str) -> R:
-    """取出这家能处理的那类请求。对不上说明任务排错了队，抛 ``PROVIDER_KIND_MISMATCH``。"""
+def request_of[R](
+    job: GenerationJob, expected: type[R] | tuple[type[R], ...], *, provider: str
+) -> R:
+    """取出这家能处理的那类请求（一家处理几类时给一组）。对不上说明任务排错了队，抛
+    ``PROVIDER_KIND_MISMATCH``。"""
 
     request = job.request
     if not isinstance(request, expected):
@@ -40,7 +44,7 @@ def request_of[R](job: GenerationJob, expected: type[R], *, provider: str) -> R:
     return request
 
 
-def user_name_of(request: VideoGenerationIn | ImageGenerationIn) -> str:
+def user_name_of(request: VideoGenerationIn | ImageGenerationIn | VideoEnhanceRequest) -> str:
     """上游按它落表对账。受理层保证填好了；为空说明装配串了，抛 ``PROVIDER_USER_NAME_MISSING``，
     不给付费接口送一个没名字的请求。"""
 
