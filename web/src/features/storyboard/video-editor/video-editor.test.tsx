@@ -1022,7 +1022,7 @@ describe('整片版本与片段选用', () => {
 
     chain = [running, { ...failed, status: 'failed', errorMessage: '上游失败' }]
     await act(() => view.queryClient.invalidateQueries())
-    expect(await within(versionStrip()).findByRole('button', { name: /失败/ })).toBeDisabled()
+    expect(await within(versionStrip()).findByRole('button', { name: /失败/ })).toBeEnabled()
     expect(within(versionStrip()).queryByRole('img', { name: '新结果' })).toBeNull()
 
     chain = [
@@ -1035,6 +1035,63 @@ describe('整片版本与片段选用', () => {
     expect(within(versionStrip()).getAllByRole('img', { name: '新结果' })).toHaveLength(1)
     await user.click(completed)
     expect(within(versionStrip()).queryByRole('img', { name: '新结果' })).toBeNull()
+  })
+
+  it('点失败的片段版本在舞台上看原因，不改选用；点别的格、点段或播放后收起', async () => {
+    serveChain([editSegment({ status: 'failed', outputUrl: null, errorMessage: '上游失败' })])
+    const user = userEvent.setup()
+    await renderEditor()
+    const track = await timeline()
+    const stage = screen.getByLabelText('视频预览')
+    await user.click(segmentOf(track, 3))
+    expect(openCard()).toBeVisible()
+
+    const failed = versionButton('V1')
+    expect(failed).toBeEnabled()
+    await user.click(failed)
+    expect(within(stage).getByRole('alert')).toHaveTextContent('生成失败')
+    expect(card()).toBeNull()
+    expect(versionButton('V1')).toHaveAttribute('aria-pressed', 'true')
+    expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'false')
+    expect(within(segmentOf(track, 3)).queryByText('V1')).toBeNull()
+    expect(screen.getByLabelText('视频播放器')).toHaveAttribute('src', ROOT_URL)
+    const reason = within(stage).getByText('上游失败')
+    expect(reason).not.toBeVisible()
+    await user.click(within(stage).getByRole('button', { name: '查看原因' }))
+    expect(reason).toBeVisible()
+
+    await user.click(versionButton('原片'))
+    expect(within(stage).queryByText('生成失败')).toBeNull()
+    expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(versionButton('V1'))
+    expect(within(stage).getByRole('alert')).toHaveTextContent('生成失败')
+    await user.click(segmentOf(track, 3))
+    expect(within(stage).queryByText('生成失败')).toBeNull()
+    expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'true')
+
+    // 点段会从头播放选区；正在播放时点失败格，播放停下。
+    expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
+    await user.click(versionButton('V1'))
+    expect(within(stage).getByRole('alert')).toHaveTextContent('生成失败')
+    expect(screen.queryByRole('button', { name: '暂停' })).toBeNull()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
+    )
+    await user.click(screen.getByRole('button', { name: '播放' }))
+    expect(within(stage).queryByText('生成失败')).toBeNull()
+  })
+
+  it('失败的片段版本没有原因时只标「生成失败」，不给「查看原因」', async () => {
+    serveChain([editSegment({ status: 'failed', outputUrl: null, errorMessage: null })])
+    const user = userEvent.setup()
+    await renderEditor()
+    await user.click(segmentOf(await timeline(), 3))
+    await user.click(versionButton('V1'))
+
+    const stage = screen.getByLabelText('视频预览')
+    expect(within(stage).getByRole('alert')).toHaveTextContent('生成失败')
+    expect(within(stage).queryByRole('button', { name: '查看原因' })).toBeNull()
   })
 
   it('整片与片段共用现有版本栏，原片单独命名且时间线不挂编号', async () => {
@@ -1630,6 +1687,39 @@ describe('刷新与切换页面后的编辑历史', () => {
     expect(screen.getByRole('button', { name: '合成成片' })).toBeDisabled()
     await user.click(scopeButton('整片'))
     expect(screen.getByRole('button', { name: '合成成片' })).toBeEnabled()
+  })
+
+  it('整片版本条点「合成失败」的格在舞台上看原因，点别的格后收起', async () => {
+    records = [
+      composite(),
+      composite({
+        id: '3b4c5d6e-7f80-4a1b-8c2d-3e4f5a6b7c8d',
+        status: 'failed',
+        errorMessage: '素材下载失败',
+        finishedAt: null,
+        outputUrl: null,
+        durationMs: null,
+        createdAt: '2026-09-16T10:20:00Z',
+      }),
+    ]
+    serveRecords()
+    const user = userEvent.setup()
+    await renderEditor()
+    await timeline()
+    await waitFor(() => expect(stripLabels()).toEqual(['V2 · 合成失败', 'V1', '原片']))
+    const stage = screen.getByLabelText('视频预览')
+
+    const failed = within(strip()).getByRole('button', { name: 'V2 · 合成失败' })
+    expect(failed).toBeEnabled()
+    await user.click(failed)
+    expect(within(stage).getByRole('alert')).toHaveTextContent('合成失败')
+    expect(pickedLabel()).toBe('V2 · 合成失败')
+    await user.click(within(stage).getByRole('button', { name: '查看原因' }))
+    expect(within(stage).getByText('素材下载失败')).toBeVisible()
+
+    await user.click(within(strip()).getByRole('button', { name: 'V1' }))
+    expect(within(stage).queryByText('合成失败')).toBeNull()
+    expect(pickedLabel()).toBe('V1')
   })
 
   it('查看历史时播放器和时间线同步，刷新保留历史选择，返回整片仍是保存的剪辑', async () => {

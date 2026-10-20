@@ -10,6 +10,7 @@ import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { toast } from '@/shared/ui/toast'
 import { GenerationPicker } from '../components/generation-picker'
+import { StageFailure } from '../components/stage-failure'
 import { useUnseenResults } from '../components/use-unseen-results'
 import { compileReferencePrompt, draftPartsOf } from '../edit-prompt'
 import { useStorageFailureNotice } from '../editing/browser-storage'
@@ -21,7 +22,7 @@ import { layoutPlay, type PlaySegment } from '../editing/play-layout'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useMediaDurations } from '../editing/use-media-durations'
 import { useStableValue } from '../editing/use-stable-value'
-import { isEditSegment, ORIGINAL_LABEL } from '../editing/version-lineage'
+import { isComposite, isEditSegment, ORIGINAL_LABEL } from '../editing/version-lineage'
 import { isRunningStatus } from '../shots'
 import { useVideoModels, type GenerationJob } from '../storyboard.api'
 import { AiEditCard, type AiEditCardHandle } from './ai-edit-card'
@@ -153,6 +154,8 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const [request, setRequest] = useState(NO_REQUEST)
   const [droppedUploads, setDroppedUploads] = useState(0)
   const [cardOpen, setCardOpen] = useState(true)
+  // 正在舞台上查看失败原因的那条任务；不改草稿与选用版本。
+  const [failedJobId, setFailedJobId] = useState<string>()
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [composeError, setComposeError] = useState<string | null>(null)
@@ -195,6 +198,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   )
   const composingJob = composingOf(jobs, version.jobId)
   const chooseScope = (scope: 'whole' | 'clips') => {
+    setFailedJobId(undefined)
     setPicked({ jobId: wholeVersion.jobId, baseJobId: version.jobId, view: scope })
     if (scope === 'whole') setCardOpen(false)
   }
@@ -232,6 +236,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     onNotice: setNotice,
     onStorageFailure: noticeStorageFailure,
     onComposed: (jobId) => {
+      setFailedJobId(undefined)
       setPicked({ jobId, baseJobId: version.jobId, view: 'version' })
     },
   })
@@ -350,6 +355,13 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
   const pick = (key: string) => {
     if (busy) return
     setNotice(null)
+    if (jobs.find((job) => job.id === key)?.status === 'failed') {
+      setFailedJobId(key)
+      setCardOpen(false)
+      previewRef.current?.previewAt(currentTime)
+      return
+    }
+    setFailedJobId(undefined)
     if (!viewingClips) {
       if (!versions.some((item) => item.jobId === key)) return
       setPicked({ jobId: key, baseJobId: version.jobId, view: 'version' })
@@ -413,6 +425,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
       since: new Date().toISOString(),
       label: nextEditLabel(candidateGroup),
     })
+    setFailedJobId(undefined)
     setGenerateError(null)
     setNotice(null)
     try {
@@ -443,6 +456,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     !viewingVersion && changed && segmentsToCompose !== undefined && !waitingComposite && !busy
   const compose = async () => {
     if (!canCompose || editor === undefined || segmentsToCompose === undefined) return
+    setFailedJobId(undefined)
     setPicked({ jobId: wholeVersion.jobId, baseJobId: version.jobId, view: 'whole' })
     setSubmission({
       kind: 'compose',
@@ -484,6 +498,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     isUnseen: unseen.isUnseen,
     submission,
   })
+  const viewedFailure =
+    failedJobId === undefined || !strip.entries.some((entry) => entry.key === failedJobId)
+      ? undefined
+      : jobs.find((job) => job.id === failedJobId)
 
   const footnote = editorFootnote({
     notice,
@@ -508,14 +526,20 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
         disabled={!editable || editor?.canUndo !== true}
         label="撤销"
         name="undo"
-        onClick={() => editor?.undo()}
+        onClick={() => {
+          setFailedJobId(undefined)
+          editor?.undo()
+        }}
         size="sm"
       />
       <IconButton
         disabled={!editable || editor?.canRedo !== true}
         label="重做"
         name="redo"
-        onClick={() => editor?.redo()}
+        onClick={() => {
+          setFailedJobId(undefined)
+          editor?.redo()
+        }}
         size="sm"
       />
       <span aria-hidden="true" className="editor-bar-divider" />
@@ -734,7 +758,9 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
           collapseCard()
         }}
         onInteractOutside={(event) => event.preventDefault()}
-        onKeyDown={(event) => handleUndoShortcut(event, editable ? editor : undefined)}
+        onKeyDown={(event) =>
+          handleUndoShortcut(event, editable ? editor : undefined, () => setFailedJobId(undefined))
+        }
       >
         <DialogHeader
           actions={composeButton}
@@ -783,7 +809,10 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                 </p>
               </>
             }
-            onPlay={collapseCard}
+            onPlay={() => {
+              collapseCard()
+              setFailedJobId(undefined)
+            }}
             onTime={setCurrentTime}
             playbackRequest={viewingClips ? playbackRequest : undefined}
             viewControl={
@@ -817,6 +846,15 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
                 />
               </>
             }
+            picture={
+              viewedFailure === undefined ? undefined : (
+                <StageFailure
+                  key={viewedFailure.id}
+                  message={viewedFailure.errorMessage?.trim()}
+                  title={isComposite(viewedFailure) ? '合成失败' : '生成失败'}
+                />
+              )
+            }
             poster={posterOf(current?.[0]?.mediaUrl ?? version.mediaUrl)}
             readout={readout}
             ref={previewRef}
@@ -826,7 +864,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
               <EditorVersionStrip
                 entries={strip.entries}
                 onSelect={pick}
-                selectedKey={strip.selectedKey}
+                selectedKey={viewedFailure?.id ?? strip.selectedKey}
                 title={viewingClips && positions !== undefined ? positions : '整片'}
               />
             }
