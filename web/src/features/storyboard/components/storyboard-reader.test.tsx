@@ -1044,7 +1044,7 @@ describe('StoryboardReader', () => {
     expect(audio).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('切到 1080p 后出片带上 1080p，换模型不改分辨率', async () => {
+  it.each(['480p', '1080p'])('切到 %s 后出片带上该档，换模型不改分辨率', async (picked) => {
     provide()
     const user = userEvent.setup()
     const posted: { model?: string; resolution?: string }[] = []
@@ -1058,19 +1058,21 @@ describe('StoryboardReader', () => {
     await screen.findByRole('region', { name: '镜头组 1' })
     const bar = screen.getByRole('group', { name: '出片工具栏' })
     const resolution = within(bar).getByRole('radiogroup', { name: '分辨率' })
-    const hd = within(resolution).getByRole('radio', { name: '1080p' })
+    const radios = within(resolution).getAllByRole('radio')
+    expect(radios.map((radio) => radio.textContent)).toEqual(['480p', '720p', '1080p'])
     expect(within(resolution).getByRole('radio', { name: '720p' })).toBeChecked()
 
-    await user.click(hd)
-    expect(hd).toBeChecked()
+    const option = within(resolution).getByRole('radio', { name: picked })
+    await user.click(option)
+    expect(option).toBeChecked()
     const model = within(bar).getByRole('button', { name: '视频模型' })
     await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
     await pickFromMenu(user, model, 'wan3.0-video')
-    expect(hd).toBeChecked()
+    expect(option).toBeChecked()
 
     await user.click(within(bar).getByRole('button', { name: '生成第 1 组' }))
     await waitFor(() => expect(posted).toHaveLength(1))
-    expect(posted[0]).toMatchObject({ model: 'wan3.0-video', resolution: '1080p' })
+    expect(posted[0]).toMatchObject({ model: 'wan3.0-video', resolution: picked })
   })
 
   it('改画幅写回分镜、出片带上新画幅；画幅按选中的模型标不支持，但不替用户改也不拦', async () => {

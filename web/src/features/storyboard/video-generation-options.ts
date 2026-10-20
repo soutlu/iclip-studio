@@ -1,7 +1,7 @@
 import type { VideoGenerationIn } from '@/shared/api/generated/types.gen'
 
-/** 出片分辨率的档位。服务端原样转给上游、不校验，模型清单也不给各家支持的档位，前端就只开这两档。 */
-export const VIDEO_RESOLUTIONS = ['720p', '1080p'] as const
+/** 出片分辨率的档位。服务端原样转给上游、不校验，模型清单也不给各家支持的档位，前端就只开这三档。 */
+export const VIDEO_RESOLUTIONS = ['480p', '720p', '1080p'] as const
 
 export type VideoResolution = (typeof VIDEO_RESOLUTIONS)[number]
 
