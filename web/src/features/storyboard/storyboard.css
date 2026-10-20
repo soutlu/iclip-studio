@@ -800,7 +800,7 @@
   background-color: var(--color-surface-container-lowest);
 }
 .storyboard-bar-segment {
-  padding: 0 12px;
+  padding: 0 8px;
   border-radius: var(--radius-xs);
   font-size: var(--text-body);
   font-variant-numeric: tabular-nums;
