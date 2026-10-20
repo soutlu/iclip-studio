@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -12,9 +11,9 @@ import {
 import { Icon } from '@/shared/icons'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
 import { Button } from '@/shared/ui/button'
-import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
+import { StageFailure } from '../components/stage-failure'
 import { useElapsed } from '@/shared/ui/media-preview'
 import { phaseOfStatus } from '../shots'
 import { CompareSlider } from './compare-slider'
@@ -110,45 +109,11 @@ function BaseImage({ url }: { url: string }) {
 function RunningPill({ since }: { since: string }) {
   const elapsed = useElapsed(since)
   return (
-    <span aria-label={`生成中，已用 ${elapsed}`} className="image-edit-pill" role="status">
-      <span aria-hidden="true" className="image-edit-pill-dot" />
+    <span aria-label={`生成中，已用 ${elapsed}`} className="stage-pill" role="status">
+      <span aria-hidden="true" className="stage-pill-dot" />
       生成中
       <span className="text-on-surface-muted tabular-nums">{elapsed}</span>
     </span>
-  )
-}
-
-/** 失败原因就地展开在胶囊下面；原文常是服务端的长响应，只在用户要看时铺开。 */
-function FailedPills({ message }: { message: string | undefined }) {
-  const [open, setOpen] = useState(false)
-  const reasonId = useId()
-  useEscapeAheadOfDialog(open, () => setOpen(false))
-  return (
-    <>
-      <div className="image-edit-status-row">
-        <span className="image-edit-pill" role="alert">
-          <Icon className="text-error" decorative name="alert" size="sm" />
-          生成失败
-        </span>
-        {!message ? null : (
-          <button
-            aria-controls={reasonId}
-            aria-expanded={open}
-            className="image-edit-pill image-edit-pill-button ui-focus"
-            onClick={() => setOpen((value) => !value)}
-            type="button"
-          >
-            查看原因
-            <Icon decorative name="expand" size="sm" />
-          </button>
-        )}
-      </div>
-      {!message ? null : (
-        <p className="image-edit-reason" hidden={!open} id={reasonId}>
-          {message}
-        </p>
-      )}
-    </>
   )
 }
 
@@ -277,10 +242,10 @@ export function EditStage({
       <Stage backdrop={baseUrl}>
         <Hero aspectRatio={aspectRatio}>
           <BaseImage key={baseUrl} url={baseUrl} />
-          <span aria-hidden="true" className="image-edit-hero-dim" />
-          <div className="image-edit-status">
+          <span aria-hidden="true" className="stage-dim" />
+          <div className="stage-status">
             {queued ? (
-              <span className="image-edit-pill" role="status">
+              <span className="stage-pill" role="status">
                 <Icon className="text-on-surface-muted" decorative name="duration" size="sm" />
                 排队中
               </span>
@@ -298,10 +263,7 @@ export function EditStage({
       <Stage backdrop={baseUrl}>
         <Hero aspectRatio={aspectRatio}>
           <BaseImage key={baseUrl} url={baseUrl} />
-          <span aria-hidden="true" className="image-edit-hero-dim" data-failed="" />
-          <div className="image-edit-status">
-            <FailedPills key={entry.key} message={entry.job.errorMessage?.trim()} />
-          </div>
+          <StageFailure key={entry.key} message={entry.job.errorMessage?.trim()} title="生成失败" />
         </Hero>
       </Stage>
     )

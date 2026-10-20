@@ -1301,7 +1301,8 @@
   opacity: 1;
 }
 /* ===== 编辑器舞台共用 =====
-   图片编辑与视频编辑的舞台模糊底、画面图框与版本条小图格（components/stage-backdrop、version-thumb）。 */
+   图片编辑与视频编辑的舞台模糊底、画面图框、画面上的状态胶囊与版本条小图格
+   （components/stage-backdrop、stage-failure、version-thumb）。 */
 /* 舞台模糊底：舞台上那张图放大、模糊后压一层底色，画面两侧不留空。 */
 .stage-backdrop {
   position: absolute;
@@ -1331,6 +1332,87 @@
   box-shadow:
     0 0 0 0.5px color-mix(in srgb, var(--color-scrim) 10%, transparent),
     0 18px 40px -16px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+}
+/* 生成中与失败：画面保持清晰，压暗一层把正中的胶囊托出来；失败压得更暗。 */
+.stage-dim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-scrim) 30%, transparent);
+}
+.stage-dim[data-failed] {
+  background: color-mix(in srgb, var(--color-scrim) 46%, transparent);
+}
+/* 画面正中的状态：胶囊一行，失败原因展开时铺在胶囊下面。 */
+.stage-status {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+}
+.stage-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.stage-pill {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-glass-base) 88%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-1);
+  backdrop-filter: blur(14px);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+.stage-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+.stage-pill-button {
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+}
+.stage-pill-button:hover {
+  background: var(--color-glass-base);
+  color: var(--color-on-surface);
+}
+.stage-pill-button[aria-expanded='true'] svg {
+  rotate: 180deg;
+}
+/* 原因多是服务端的原话，用正文字体读起来不像报错日志。 */
+.stage-reason {
+  width: 260px;
+  max-width: 100%;
+  max-height: min(180px, 50cqh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-popup-bg);
+  box-shadow:
+    0 0 0 0.5px var(--color-hairline),
+    var(--shadow-3);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
 }
 /* 版本小图格：竖版小画面，没选的淡一些、小一点，选中的完整亮度加一圈细白边。
    默认 40×71，按画幅的尺寸由组件写在元素上。放在实底横条（窄屏）里时，所在编辑器在自己的断点里

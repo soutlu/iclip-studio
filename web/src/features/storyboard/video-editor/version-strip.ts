@@ -46,7 +46,7 @@ const wholeEntries = ({
     poster: posterOf(baseMediaUrl),
     running: isRunningStatus(job.status) ? { since: job.createdAt, label: '合成中' } : undefined,
     failed: job.status === 'failed',
-    disabled: true,
+    disabled: job.status !== 'failed',
     unseen: false,
   })),
 ]
@@ -90,7 +90,7 @@ const clipEntries = ({
       poster: posterOf(edit.outputUrl ?? edit.sourceUrl ?? baseMediaUrl),
       running: status.kind === 'running' ? { since: edit.createdAt, label: '生成中' } : undefined,
       failed: status.kind === 'failed' || status.kind === 'unreadable',
-      disabled: status.kind !== 'ready' && status.kind !== 'unreadable',
+      disabled: status.kind !== 'ready' && status.kind !== 'unreadable' && status.kind !== 'failed',
       unseen: isNewResult,
     }
   }),
