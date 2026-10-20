@@ -491,6 +491,7 @@ describe('TranscriptConnection', () => {
         kind: 'generation',
         mark: MARK,
         metadata: { frame: 3, shot: 2 },
+        operation: 'generate',
         status: 'submitted',
       },
       {
@@ -500,6 +501,7 @@ describe('TranscriptConnection', () => {
         kind: 'generation',
         mark: { ...MARK, seq: null },
         metadata: null,
+        operation: 'compose',
         status: 'failed',
       },
       {
@@ -509,6 +511,7 @@ describe('TranscriptConnection', () => {
         kind: 'generation',
         mark: MARK,
         metadata: null,
+        operation: 'generate',
         status: 'pending',
       },
     ])

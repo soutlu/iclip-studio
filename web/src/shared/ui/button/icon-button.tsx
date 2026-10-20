@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority'
-import { useState, type ComponentPropsWithRef } from 'react'
+import { useState, type ComponentPropsWithRef, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -36,6 +36,8 @@ type IconButtonProps = Omit<ComponentPropsWithRef<'button'>, 'children' | 'title
     name: IconName
     /** 悬停或按 Tab 移到按钮上时的提示文字，缺省同 label；与可访问名称不同时才传，如「已复制」或置灰的原因。 */
     tooltip?: string | undefined
+    /** 叠在按钮上的装饰角标（按钮是定位容器）；它表达的状态由调用方另用 aria-describedby 告诉读屏。 */
+    badge?: ReactNode
   }
 
 /**
@@ -49,6 +51,7 @@ type IconButtonProps = Omit<ComponentPropsWithRef<'button'>, 'children' | 'title
  * 包在 Radix 的菜单触发器里时，把 disabled 交给触发器：它据此拦自己的按下与按键，再把 disabled 转交给本按钮。
  */
 export function IconButton({
+  badge,
   className,
   disabled = false,
   label,
@@ -91,6 +94,7 @@ export function IconButton({
           }}
         >
           <Icon decorative name={name} size={ICON_SIZE[size ?? 'lg']} />
+          {badge}
         </button>
       </TooltipTrigger>
       <TooltipContent>{tooltip ?? label}</TooltipContent>

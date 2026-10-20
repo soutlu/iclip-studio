@@ -20,7 +20,12 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from iclip.common.errors import ValidationFailed
-from iclip.common.generation_vocab import GenerationKind, GenerationOperation, GenerationStatus
+from iclip.common.generation_vocab import (
+    GenerationKind,
+    GenerationOperation,
+    GenerationStatus,
+    VideoEnhanceResolution,
+)
 from iclip.common.shot_prompt import format_seconds, format_shot_prompt
 from iclip.common.shot_rules import (
     MAX_REFERENCE_IMAGES,
@@ -51,6 +56,7 @@ OPERATION_COMPOSE: Final = "compose"
 OPERATION_CUT: Final = "cut"
 OPERATION_UPLOAD: Final = "upload"
 OPERATION_RENDER: Final = "render"
+OPERATION_ENHANCE: Final = "enhance"
 
 ClipStage = Literal["fetching", "processing", "uploading"]
 
@@ -500,6 +506,32 @@ class WholeFilmRequest(CamelModel):
     subtitles: list[WholeFilmSubtitles]
 
 
+class VideoEnhanceIn(CamelModel):
+    """给一条成片或一条导出的整片做高清版的受理输入。
+
+    ``userName`` 的规则同出片：发给上游对账，持 ``users:act_as`` 的钥匙按它替人办事。"""
+
+    source_job_id: uuid.UUID
+    resolution: VideoEnhanceResolution
+    user_name: UserName | None = None
+
+
+class VideoEnhanceRequest(SnakeModel):
+    """一次超分交给上游的全部输入，字段照上游超分接口，原样转发。
+
+    没有 ``kind``：超分记录的种类跟来源走（成片是 video，整片是 whole_film），受理时显式定。"""
+
+    operation: ClassVar[GenerationOperation] = OPERATION_ENHANCE
+
+    model: ModelName
+    resolution: VideoEnhanceResolution
+    fps: Annotated[int, Field(ge=15, le=60)] | None = None
+    """目标帧率；为空就不插帧，不发给上游。"""
+    video_url: DownloadUrl
+    """来源的原片地址，不是水印版。"""
+    user_name: UserName
+
+
 @overload
 def request_to_payload(request: GenerationRequest) -> dict[str, Any]: ...
 @overload
@@ -681,6 +713,22 @@ class GenerationEnvelope(CamelModel):
     generation: GenerationOut
 
 
+class VideoEnhanceTierOut(CamelModel):
+    """高清版的一档：清晰度与这一档最近的一条超分记录（谁提的都算），还没有为空。"""
+
+    resolution: VideoEnhanceResolution
+    job: GenerationOut | None
+
+
+class VideoEnhancementsOut(CamelModel):
+    """一条视频能做的高清版各档，以及下载高清版时记下载事件的成片。"""
+
+    downloaded_job_ids: list[uuid.UUID]
+    """视频是它自己；整片是它导出时用到的各条成片。来源做不了高清版时为空。"""
+    tiers: list[VideoEnhanceTierOut]
+    """比来源清晰的那几档，按运行配置的先后；没开通或来源做不了高清版时为空。"""
+
+
 class GenerationsPageOut(CamelModel):
     items: list[GenerationOut]
 
@@ -706,6 +754,7 @@ __all__ = [
     "NOT_FORWARDED_FIELDS",
     "OPERATION_COMPOSE",
     "OPERATION_CUT",
+    "OPERATION_ENHANCE",
     "OPERATION_GENERATE",
     "OPERATION_RENDER",
     "OPERATION_UPLOAD",
@@ -744,6 +793,11 @@ __all__ = [
     "VideoComposeIn",
     "VideoComposeRequest",
     "VideoEditIn",
+    "VideoEnhanceIn",
+    "VideoEnhanceRequest",
+    "VideoEnhanceResolution",
+    "VideoEnhanceTierOut",
+    "VideoEnhancementsOut",
     "VideoGenerationIn",
     "VideoModelsOut",
     "VideoShotIn",

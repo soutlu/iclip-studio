@@ -171,6 +171,11 @@ class GenerationRepository(Protocol):
         对话上的，不含分叉继承来的；没有成片的对话不在结果里。不按属主过滤，理由同上。"""
         ...
 
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        """以这一条为来源的全部超分记录（谁提的都算），新建的在前（建立时刻、id 倒序）。不按属主
+        过滤：资料库里的片对所有能读生成记录的人可见，高清版也是。"""
+        ...
+
 
 async def conversation_record(
     repo: GenerationRepository,

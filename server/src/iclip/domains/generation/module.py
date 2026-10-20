@@ -40,6 +40,7 @@ from iclip.domains.generation.service import (
     ClearCompletion,
     GenerationService,
     ProviderTarget,
+    VideoEnhanceSpec,
 )
 from iclip.domains.generation.subtitles import SUBTITLE_MODEL, QwenSubtitleProvider
 from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
@@ -94,6 +95,7 @@ def build_generation_module(
     subtitles: QwenServiceConfig | None = None,
     music: QwenServiceConfig | None = None,
     render: RenderSetup | None = None,
+    video_enhance: VideoEnhanceSpec | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
     subtitle_transport: httpx.AsyncBaseTransport | None = None,
@@ -106,6 +108,8 @@ def build_generation_module(
         raise RuntimeError(
             f"默认图片模型 {image_default_model} 不在声明的那几家里（{'、'.join(declared)}）"
         )
+    if (video.enhance_submit_url is None) != (video_enhance is None):
+        raise RuntimeError("高清版的提交地址与模型、档位要一起给：缺一样超分就提交不出去")
     settings = queue_settings or GenerationQueueSettings()
     report_stage = _clip_stage_reporter(repo)
     video_provider = HttpVideoProvider(video, transport=video_transport)
@@ -185,6 +189,7 @@ def build_generation_module(
         subtitles=subtitle_target,
         music=music_target,
         render=None if render is None else render.client,
+        enhance=video_enhance,
     )
     return GenerationModule(
         routers=(create_generations_router(service, act_as=act_as),),

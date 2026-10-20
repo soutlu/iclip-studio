@@ -14,6 +14,7 @@ from iclip.domains.generation.schemas import (
     KIND_WHOLE_FILM,
     OPERATION_COMPOSE,
     OPERATION_CUT,
+    OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
     OPERATION_UPLOAD,
@@ -22,6 +23,7 @@ from iclip.domains.generation.schemas import (
     MusicRequest,
     SubtitleRequest,
     VideoComposeRequest,
+    VideoEnhanceRequest,
     VideoGenerationIn,
     WholeFilmRequest,
 )
@@ -33,7 +35,10 @@ GenerationRequest = (
     | SubtitleRequest
     | MusicRequest
     | WholeFilmRequest
+    | VideoEnhanceRequest
 )
+
+_ENHANCE: Final = TypeAdapter(VideoEnhanceRequest)
 
 _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_GENERATE): TypeAdapter(VideoGenerationIn),
@@ -42,6 +47,9 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
     (KIND_AUDIO, OPERATION_GENERATE): TypeAdapter(MusicRequest),
     (KIND_WHOLE_FILM, OPERATION_RENDER): TypeAdapter(WholeFilmRequest),
+    # 超分记录的种类跟来源走，两种来源是同一个请求。
+    (KIND_VIDEO, OPERATION_ENHANCE): _ENHANCE,
+    (KIND_WHOLE_FILM, OPERATION_ENHANCE): _ENHANCE,
 }
 
 _WITHOUT_REQUEST: Final = frozenset(

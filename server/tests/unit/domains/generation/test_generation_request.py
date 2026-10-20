@@ -11,14 +11,17 @@ from iclip.domains.generation.schemas import (
     IMAGE_MAX_REFERENCES,
     KIND_IMAGE,
     KIND_VIDEO,
+    KIND_WHOLE_FILM,
     MAX_METADATA_CHARS,
     OPERATION_COMPOSE,
     OPERATION_CUT,
+    OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
     ComposeSegment,
     VideoComposeRequest,
     VideoEditIn,
+    VideoEnhanceRequest,
     VideoGenerationIn,
     request_to_payload,
 )
@@ -159,6 +162,31 @@ def test_the_stored_shape_is_chosen_by_kind_and_operation() -> None:
         request_from_payload(KIND_IMAGE, OPERATION_COMPOSE, request_to_payload(image_request()))
     with pytest.raises(ValidationFailed, match="未知的生成类型"):
         request_from_payload("clip", OPERATION_COMPOSE, request_to_payload(compose_request()))
+
+
+@pytest.mark.parametrize("kind", [KIND_VIDEO, KIND_WHOLE_FILM])
+def test_an_enhancement_is_stored_as_sent_under_either_source_kind(kind: str) -> None:
+    """超分的种类跟来源走，两种都读回同一个请求；落库的就是发上游的那几个键。"""
+
+    original = VideoEnhanceRequest(
+        model="video-enhance",
+        resolution="1080p",
+        fps=30,
+        video_url="https://cdn.test/take.mp4",
+        user_name="logan",
+    )
+    payload = request_to_payload(original)
+
+    assert payload == {
+        "model": "video-enhance",
+        "resolution": "1080p",
+        "fps": 30,
+        "video_url": "https://cdn.test/take.mp4",
+        "user_name": "logan",
+    }
+    assert request_from_payload(kind, OPERATION_ENHANCE, payload) == original
+    with pytest.raises(ValidationFailed, match="未知的生成类型"):
+        request_from_payload(KIND_IMAGE, OPERATION_ENHANCE, payload)
 
 
 _SOURCE = str(uuid.uuid4())

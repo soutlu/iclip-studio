@@ -172,15 +172,22 @@ test('整片编辑器：选段加入成片、修剪、拆分、用音乐，关�
     (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
   )
   await dialog.getByRole('button', { name: '导出', exact: true }).click()
-  await exported
+  const { exportId } = (await (await exported).json()) as { exportId: string }
+  // 导出完成后读这次导出能做的高清版；mock 里能做，「下载整片」先开菜单。
+  const tiers = page.waitForResponse(
+    (response) => response.url().includes(`/generations/${exportId}/enhancements`),
+    { timeout: 20_000 },
+  )
   await expect(dialog.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
   const download = dialog.getByRole('button', { name: '下载整片' })
   await expect(download).toBeVisible({ timeout: 15_000 })
+  await tiers
   const tracked = page.waitForRequest(
     (request) => request.url().includes('/tracking/events') && request.method() === 'POST',
   )
   const fileSaved = page.waitForEvent('download')
   await download.click()
+  await page.getByRole('menuitem', { name: '下载整片', exact: true }).click()
   expect((await tracked).postDataJSON()).toMatchObject({ name: 'video.downloaded' })
   expect((await fileSaved).suggestedFilename()).toMatch(/\.mp4$/)
 

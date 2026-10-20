@@ -22,6 +22,9 @@ from iclip.domains.generation.schemas import (
     SubtitleIn,
     VideoComposeIn,
     VideoEditIn,
+    VideoEnhanceIn,
+    VideoEnhancementsOut,
+    VideoEnhanceTierOut,
     VideoGenerationIn,
     VideoModelsOut,
     VideoSubmitOut,
@@ -126,6 +129,27 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         job = await service.submit_subtitle(principal, body)
+        return await envelope(job)
+
+    @router.post("/video-enhancements", response_model=GenerationEnvelope, status_code=202)
+    async def submit_video_enhancement(
+        body: VideoEnhanceIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """给一条成片或一条导出完成的整片做一档高清版（超分），记一条超分记录（操作 ``enhance``，
+        种类跟来源走）；完成后 ``outputUrl`` / ``watermarkOutputUrl`` 同出片。
+
+        ``sourceJobId`` 不按属主取：资料库里看得到的片谁都能提。来源不存在 404；不是成片或整片、
+        ``resolution`` 不比来源清晰（可做的档见 ``GET /generations/{id}/enhancements``）、高清版没开通
+        都是 422。同一来源同一档已有没失败的超分记录（谁提的都算）时直接给那一条，不新建。
+        ``userName`` 的规则同出片。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_video_enhance(
+            principal, body.model_copy(update={"user_name": user_name})
+        )
         return await envelope(job)
 
     @router.post("/music", response_model=GenerationEnvelope, status_code=202)
@@ -261,6 +285,34 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         ``GET /generations/{id}`` 相同。"""
 
         return video_task_out(await service.get_video(principal, task_id))
+
+    @router.get("/{job_id}/enhancements", response_model=VideoEnhancementsOut)
+    async def list_video_enhancements(
+        job_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("generation:read")],
+    ) -> VideoEnhancementsOut:
+        """一条视频能做的高清版各档（比它清晰的，按运行配置的先后）与各档最近的一条超分记录（谁提的
+        都算），以及下载高清版时要记下载事件的成片。
+
+        来源不按属主取，id 不存在 404。来源不是成片或导出完成的整片时两项都空；高清版没开通时
+        ``tiers`` 为空。
+        """
+
+        found = await service.enhancements(job_id)
+        jobs = [tier.job for tier in found.tiers if tier.job is not None]
+        addresses = await service.source_addresses(jobs)
+        return VideoEnhancementsOut(
+            downloaded_job_ids=list(found.downloaded_job_ids),
+            tiers=[
+                VideoEnhanceTierOut(
+                    resolution=tier.resolution,
+                    job=None
+                    if tier.job is None
+                    else generation_out(tier.job, source_address=addresses.get(tier.job.id)),
+                )
+                for tier in found.tiers
+            ],
+        )
 
     @router.get("/{job_id}", response_model=GenerationEnvelope)
     async def get_generation(

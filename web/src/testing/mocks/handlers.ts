@@ -10,6 +10,7 @@ import {
 import { PERMISSION } from '@/shared/auth/permissions'
 import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
+import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
 import { libraryHandlers } from './library'
 import { mockAuthUser, mockGovernor } from './auth-user'
@@ -459,6 +460,7 @@ export const handlers = [
   ...workspaceHandlers,
   ...filmHandlers,
   ...wholeFilmHandlers,
+  ...enhancementHandlers,
   ...audioHandlers,
 
   ...transcriptHandlers,

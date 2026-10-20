@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.clip_models import clip_model
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
+    STATUS_FAILED,
     STATUS_PENDING,
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
@@ -31,8 +33,11 @@ from iclip.domains.generation.repository import GenerationRepository, conversati
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
     KIND_VIDEO,
+    KIND_WHOLE_FILM,
+    OPERATION_COMPOSE,
     OPERATION_CUT,
     OPERATION_GENERATE,
+    OPERATION_RENDER,
     OPERATION_UPLOAD,
     ComposeSegment,
     GenerationKind,
@@ -46,6 +51,9 @@ from iclip.domains.generation.schemas import (
     VideoComposeIn,
     VideoComposeRequest,
     VideoEditIn,
+    VideoEnhanceIn,
+    VideoEnhanceRequest,
+    VideoEnhanceResolution,
     VideoGenerationIn,
     VideoModelsOut,
     WholeFilmRequest,
@@ -67,6 +75,30 @@ class ProviderTarget:
     model: str
 
 
+@dataclass(frozen=True, slots=True)
+class VideoEnhanceSpec:
+    """高清版的运行配置：用哪个模型、配了哪几档（从高到低）、目标帧率（为空不插帧）。"""
+
+    model: str
+    resolutions: tuple[VideoEnhanceResolution, ...]
+    fps: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class EnhanceTier:
+    """一条视频能做的一档高清版，与这一档最近的一条超分记录（谁提的都算），还没有为空。"""
+
+    resolution: VideoEnhanceResolution
+    job: GenerationJob | None
+
+
+@dataclass(frozen=True, slots=True)
+class VideoEnhancements:
+    downloaded_job_ids: tuple[uuid.UUID, ...]
+    """下载高清版时记下载事件的成片：视频是它自己，整片是它导出时用到的各条。"""
+    tiers: tuple[EnhanceTier, ...]
+
+
 class GenerationService:
     def __init__(
         self,
@@ -85,8 +117,10 @@ class GenerationService:
         subtitles: ProviderTarget | None = None,
         music: ProviderTarget | None = None,
         render: RenderClient | None = None,
+        enhance: VideoEnhanceSpec | None = None,
     ) -> None:
         self._repo = repo
+        self._enhance = enhance
         self._render = render
         self._queue = queue
         self._video_provider_name = video_provider_name
@@ -490,6 +524,123 @@ class GenerationService:
             raise ValidationFailed("整片导出没有开通")
         return self._render
 
+    async def submit_video_enhance(
+        self, principal: Principal, request: VideoEnhanceIn
+    ) -> GenerationJob:
+        """给一条成片或一条导出完成的整片提一档高清版，记一条超分记录、排进视频那条队列。
+
+        来源不按属主取：资料库里全站的片谁都看得到、下载得到，高清版也一样。同一来源同一档已有
+        没失败的超分记录（谁提的都算），直接给那一条，不新建、不排队；失败的可以重做。超分记录
+        不挂对话、没有原作，镜号抄来源，种类跟来源走。"""
+
+        enhance = self._require_enhance()
+        source = await self._repo.get(request.source_job_id, owner=None)
+        if not _enhanceable(source) or source.output_url is None:
+            raise ValidationFailed("只有成片（已完成的出片或合成）与导出完成的整片能做高清版")
+        tiers = await self._enhance_tiers(enhance, source)
+        if request.resolution not in tiers:
+            if not tiers:
+                raise ValidationFailed("这条视频已经足够清晰，没有更高的高清版可做")
+            raise ValidationFailed(
+                f"这条视频做不了 {request.resolution} 高清版，可选 {'、'.join(tiers)}"
+            )
+        for existing in await self._repo.enhancements_of(source.id):
+            if existing.status != STATUS_FAILED and _enhanced_to(existing) == request.resolution:
+                return existing
+        if request.user_name is None:
+            raise ValidationFailed("user_name 必填")
+        return await self._queue_new(
+            _pending_job(
+                VideoEnhanceRequest(
+                    model=enhance.model,
+                    resolution=request.resolution,
+                    fps=enhance.fps,
+                    video_url=source.output_url,
+                    user_name=request.user_name,
+                ),
+                kind=source.kind,
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=self._video_provider_name,
+                conversation_id=None,
+                task_id=None,
+                metadata=None,
+                shot_index=source.shot_index,
+                source_job_id=source.id,
+            )
+        )
+
+    async def enhancements(self, job_id: uuid.UUID) -> VideoEnhancements:
+        """一条视频能做的高清版各档与各档最近的一条超分记录。来源不按属主取，不存在抛 ``NotFound``；
+        来源做不了高清版时两项都空，高清版没开通时没有档。"""
+
+        source = await self._repo.get(job_id, owner=None)
+        if not _enhanceable(source):
+            return VideoEnhancements(downloaded_job_ids=(), tiers=())
+        downloaded = _downloaded_with(source)
+        if self._enhance is None:
+            return VideoEnhancements(downloaded_job_ids=downloaded, tiers=())
+        latest: dict[VideoEnhanceResolution, GenerationJob] = {}
+        # 新建的在前，每档取第一条就是最近的那条。
+        for job in await self._repo.enhancements_of(source.id):
+            resolution = _enhanced_to(job)
+            if resolution is not None:
+                latest.setdefault(resolution, job)
+        return VideoEnhancements(
+            downloaded_job_ids=downloaded,
+            tiers=tuple(
+                EnhanceTier(resolution=resolution, job=latest.get(resolution))
+                for resolution in await self._enhance_tiers(self._enhance, source)
+            ),
+        )
+
+    def _require_enhance(self) -> VideoEnhanceSpec:
+        if self._enhance is None:
+            raise ValidationFailed("高清版没有开通，暂时不能生成")
+        return self._enhance
+
+    async def _enhance_tiers(
+        self, enhance: VideoEnhanceSpec, source: GenerationJob
+    ) -> tuple[VideoEnhanceResolution, ...]:
+        """配置的档里比来源清晰的那几档（按短边比），保持配置的先后；来源清晰度推不出来就全给，
+        由上游去拒。"""
+
+        edge = await self._short_edge(source)
+        return tuple(
+            resolution
+            for resolution in enhance.resolutions
+            if edge is None or (_short_edge_of(resolution) or 0) > edge
+        )
+
+    async def _short_edge(self, source: GenerationJob) -> int | None:
+        """来源的短边像素，按出片请求里的分辨率推，不探测文件：合成取原作的，整片取画面轨第一条
+        成片的。推不出来是 ``None``。"""
+
+        video = source
+        if video.kind == KIND_WHOLE_FILM:
+            if not isinstance(video.request, WholeFilmRequest) or not video.request.videos:
+                return None
+            first = await self._find(video.request.videos[0].job_id)
+            if first is None or not is_base_master(first):
+                return None
+            video = first
+        if video.operation == OPERATION_COMPOSE:
+            if video.root_job_id is None:
+                return None
+            root = await self._find(video.root_job_id)
+            if root is None:
+                return None
+            video = root
+        if not isinstance(video.request, VideoGenerationIn):
+            return None
+        return _short_edge_of(video.request.resolution)
+
+    async def _find(self, job_id: uuid.UUID) -> GenerationJob | None:
+        try:
+            return await self._repo.get(job_id, owner=None)
+        except NotFound:
+            return None
+
     async def _note_conversation_active(self, job: GenerationJob) -> None:
         if job.conversation_id is None:
             return
@@ -605,6 +756,43 @@ def _require_base(job: GenerationJob) -> None:
         raise ValidationFailed("基底必须是一条已完成的成片（出片或合成）")
 
 
+def _enhanceable(job: GenerationJob) -> bool:
+    """能做高清版的来源：一条成片，或一条导出完成、有地址的整片。"""
+
+    if is_base_master(job):
+        return True
+    return (
+        job.kind == KIND_WHOLE_FILM
+        and job.operation == OPERATION_RENDER
+        and job.status == STATUS_COMPLETED
+        and job.output_url is not None
+    )
+
+
+def _downloaded_with(source: GenerationJob) -> tuple[uuid.UUID, ...]:
+    """下载这条来源的高清版时记下载事件的成片，口径同下载来源本身。"""
+
+    if isinstance(source.request, WholeFilmRequest):
+        return tuple(video.job_id for video in source.request.videos)
+    return (source.id,)
+
+
+def _enhanced_to(job: GenerationJob) -> VideoEnhanceResolution | None:
+    return job.request.resolution if isinstance(job.request, VideoEnhanceRequest) else None
+
+
+_RESOLUTION = re.compile(r"(\d+)p")
+
+
+def _short_edge_of(resolution: str | None) -> int | None:
+    """``720p`` 这样的档位写法的短边像素；别的写法认不出，是 ``None``。"""
+
+    if resolution is None:
+        return None
+    matched = _RESOLUTION.fullmatch(resolution.strip().lower())
+    return None if matched is None else int(matched.group(1))
+
+
 def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
     if start_ms >= base_ms:
         raise ValidationFailed(
@@ -628,12 +816,24 @@ def _pending_job(
     task_id: uuid.UUID | None,
     metadata: dict[str, Any] | None,
     shot_index: int | None,
+    kind: GenerationKind | None = None,
     root_job_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
     source_url: str | None = None,
     range_start_ms: int | None = None,
     range_end_ms: int | None = None,
 ) -> GenerationJob:
+    """一条刚受理、还在排队的记录。种类一般随请求类型定；超分的种类跟来源走，由 ``kind`` 显式给，
+    别的请求不收 ``kind``。"""
+
+    if isinstance(request, VideoEnhanceRequest):
+        if kind is None:
+            raise RuntimeError("超分记录的种类跟来源走，受理时要显式给")
+        row_kind = kind
+    else:
+        if kind is not None:
+            raise RuntimeError(f"{request.kind} / {request.operation} 的种类随请求定，不另给")
+        row_kind = request.kind
     now = datetime.now(UTC)
     return GenerationJob(
         id=uuid.uuid4(),
@@ -648,7 +848,7 @@ def _pending_job(
         source_url=source_url,
         range_start_ms=range_start_ms,
         range_end_ms=range_end_ms,
-        kind=request.kind,
+        kind=row_kind,
         operation=request.operation,
         provider=provider,
         request=request,
@@ -803,8 +1003,11 @@ def _settled_url(job: GenerationJob) -> str:
 
 __all__ = [
     "ClearCompletion",
+    "EnhanceTier",
     "GenerationService",
     "ProviderTarget",
     "SettledRecords",
     "UploadRecord",
+    "VideoEnhanceSpec",
+    "VideoEnhancements",
 ]

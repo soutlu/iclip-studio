@@ -22,6 +22,7 @@ MANIFEST = (
     "PMS_BASE_URL",
     "ROOT_EMAIL",
     "VIDEO_SUBMIT_URL",
+    "VIDEO_ENHANCE_SUBMIT_URL",
     "VIDEO_STATUS_BASE_URL",
     "VIDEO_API_KEY",
     "IMAGE_API_BASE",
@@ -335,6 +336,75 @@ def test_media_generation_half_configured_fails_loudly(
     monkeypatch.delenv(missing)
     with pytest.raises(ValidationError, match=missing):
         resolve_settings(config)
+
+
+ENHANCE = """
+    enhance:
+      model: video-enhance
+      resolutions: [1080p, 720p]
+      fps: 30"""
+
+
+def _with_enhance(enhance: str = ENHANCE) -> str:
+    return VALID + MEDIA.replace(
+        "allowed_models: [seedance, seedance-other]",
+        "allowed_models: [seedance, seedance-other]" + enhance,
+    )
+
+
+def test_enhance_resolves_from_its_section_and_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, _with_enhance()))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("VIDEO_ENHANCE_SUBMIT_URL", " https://video.test/videos/enhance/async ")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.video_enhance is not None
+    enhance = media.video_enhance
+    assert enhance.submit_url == "https://video.test/videos/enhance/async"
+    assert (enhance.model, enhance.resolutions, enhance.fps) == (
+        "video-enhance",
+        ("1080p", "720p"),
+        30,
+    ), "档位保持配置里从高到低的先后"
+
+
+def test_enhance_is_off_without_its_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, _with_enhance()))
+    _media_env(monkeypatch)
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.video_enhance is None
+
+
+def test_enhance_address_without_its_section_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("VIDEO_ENHANCE_SUBMIT_URL", "https://video.test/videos/enhance/async")
+
+    with pytest.raises(RuntimeError, match="VIDEO_ENHANCE_SUBMIT_URL"):
+        resolve_settings(config)
+
+
+@pytest.mark.parametrize(
+    "enhance",
+    [
+        ENHANCE.replace("[1080p, 720p]", "[]"),
+        ENHANCE.replace("[1080p, 720p]", "[1080p, 1080p]"),
+        ENHANCE.replace("[1080p, 720p]", "[4k]"),
+        ENHANCE.replace("fps: 30", "fps: 90"),
+        ENHANCE.replace("model: video-enhance", "model: ''"),
+    ],
+    ids=["no_tiers", "repeated_tier", "unknown_tier", "fps_out_of_range", "no_model"],
+)
+def test_enhance_section_rejects_what_upstream_would(tmp_path: Path, enhance: str) -> None:
+    with pytest.raises(ValidationError):
+        load_runtime_config(write(tmp_path, _with_enhance(enhance)))
 
 
 SUBTITLE = """  subtitle:

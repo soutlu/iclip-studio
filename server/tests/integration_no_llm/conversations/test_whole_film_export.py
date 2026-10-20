@@ -46,6 +46,7 @@ from tests.helpers.fork_lineage import complete, finished, make_user, open_conve
 from tests.helpers.generation import (
     MEDIA_ENVS,
     config_with_media,
+    make_enhancement,
     make_job,
     make_music,
     make_subtitle,
@@ -536,6 +537,27 @@ async def test_latest_is_the_owners_newest_export_of_this_very_conversation(
     assert await latest(client, fork.id) is None
     other = await latest(client, another)
     assert other is not None and other["id"] != str(own.id)
+
+
+async def test_a_high_definition_version_of_an_export_is_not_the_latest_export(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+) -> None:
+    """给导出做的高清版是种类同为整片的超分记录，它不挂对话：最新一次导出照旧是那次导出，也取消不了它。"""
+
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine = await new_conversation(client)
+    own = await complete(
+        generations, await generations.create(_whole_film(owner, mine)), f"{PUBLIC}/own.mp4"
+    )
+    enhancement = await generations.create(make_enhancement(own, owner_user_id=owner))
+    assert enhancement.kind == KIND_WHOLE_FILM
+
+    found = await latest(client, mine)
+    assert found is not None and found["id"] == str(own.id)
+    assert (await client.delete(exports_url(mine, str(enhancement.id)))).status_code == 404
+    assert (await record(generations, str(enhancement.id))).error_code is None
 
 
 async def test_exports_belong_to_the_owner_and_to_their_conversation(

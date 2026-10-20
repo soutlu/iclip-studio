@@ -39,6 +39,8 @@ type Spec = {
   aspectRatio: string
   model: string
   groups: readonly GroupSpec[]
+  /** 出片请求里的分辨率，缺省 720p；高清版按它列可做的档。 */
+  resolution?: '480p' | '720p'
 }
 
 const script = (globalSettings: string, ...cuts: [number, number, string][]): Script => ({
@@ -69,6 +71,7 @@ const SPECS: readonly Spec[] = [
       },
     ],
     model: 'vendor-b-seedance-2-5',
+    resolution: '480p',
     title: '跑鞋手持展示',
   },
   {
@@ -201,7 +204,7 @@ const versionsOf = (spec: Spec, group: GroupSpec, key: number, now: number): Ver
         referenceImageUrls: group.script?.timeline.some((cut) => cut.imageIndexes.length > 0)
           ? [REFERENCE_IMAGE]
           : [],
-        resolution: '720p',
+        resolution: spec.resolution ?? '720p',
         script: group.script,
         seconds: group.script?.timeline.at(-1)?.end ?? 10,
       },
@@ -261,6 +264,18 @@ const mockLibraryCards = (now: number): LibraryCard[] =>
 
 export const mockLibraryVideos = (now: number = Date.now()): LibraryVideo[] =>
   mockLibraryCards(now).map((card) => card.video)
+
+/** 成片素材里的一版（出片或合成）与它的镜号，高清版的 mock 按它定来源；没有为 undefined。 */
+export const findMockLibraryVersion = (
+  jobId: string,
+): { version: Version; shotIndex: number | null } | undefined =>
+  mockLibraryCards(Date.now())
+    .flatMap((card) =>
+      card.groups.flatMap((group) =>
+        group.versions.map((version) => ({ shotIndex: group.shotIndex ?? null, version })),
+      ),
+    )
+    .find(({ version }) => version.jobId === jobId)
 
 const orientationOf = (video: LibraryVideo): 'portrait' | 'landscape' | null => {
   const [w = 0, h = 0] = (video.take.aspectRatio ?? '').split(':').map(Number)

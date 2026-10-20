@@ -48,6 +48,7 @@ from tests.helpers.generation import (
     image_request,
     make_composite,
     make_edit,
+    make_enhancement,
     make_job,
     make_subtitle,
     video_request,
@@ -259,6 +260,23 @@ async def test_a_completed_edit_segment_is_not_transcribed() -> None:
     await world.queue.run_poll(str(edit.id))
 
     assert world.repo.jobs[edit.id].status == STATUS_COMPLETED
+    assert world.subtitles() == []
+
+
+async def test_a_completed_enhancement_is_not_transcribed() -> None:
+    """高清版不是成片：上游报成功落了两个地址，也不为它排字幕。"""
+
+    enhancement = replace(
+        make_enhancement(completed_take()),
+        status=STATUS_SUBMITTED,
+        provider_task_id="up-3",
+        submitted_at=datetime.now(UTC),
+    )
+    world = build_world([enhancement], video_progress=TAKE_SUCCEEDED)
+
+    await world.queue.run_poll(str(enhancement.id))
+
+    assert world.repo.jobs[enhancement.id].status == STATUS_COMPLETED
     assert world.subtitles() == []
 
 

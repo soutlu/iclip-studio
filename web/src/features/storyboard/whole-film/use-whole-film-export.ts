@@ -30,8 +30,8 @@ export type ExportView =
   /** `progress` 为 null：只知道在渲染，渲染服务还答不上进度 */
   | { kind: 'rendering'; progress: number | null }
   | { kind: 'uploading' }
-  /** `sourceJobIds`：这次导出用到的成片，下载时各记一次下载 */
-  | { kind: 'done'; downloadUrl: string; sourceJobIds: readonly string[] }
+  /** `exportId`：这次导出的整片记录，高清版按它做；`sourceJobIds`：这次导出用到的成片，下载时各记一次下载 */
+  | { kind: 'done'; exportId: string; downloadUrl: string; sourceJobIds: readonly string[] }
   | { kind: 'failed'; message: string }
   | { kind: 'cancelled' }
 
@@ -55,7 +55,12 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
     case 'done':
       return state.downloadUrl === null
         ? { kind: 'failed', message: '导出完成了却没拿到下载地址，请重新导出' }
-        : { kind: 'done', downloadUrl: state.downloadUrl, sourceJobIds: state.sourceJobIds }
+        : {
+            kind: 'done',
+            exportId: state.id,
+            downloadUrl: state.downloadUrl,
+            sourceJobIds: state.sourceJobIds,
+          }
     case 'failed':
       return { kind: 'failed', message: failureText(state.error) }
     case 'cancelled':

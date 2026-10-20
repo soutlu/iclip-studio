@@ -59,6 +59,16 @@ const exportOut = (found: MockExport) => {
   }
 }
 
+/** 一次没取消的导出（按导出 id 找），高清版的 mock 把它当整片记录；没有为 undefined。 */
+export const findMockWholeFilmExport = (
+  exportId: string,
+): { sourceJobIds: readonly string[]; downloadUrl: string } | undefined => {
+  const found = [...latestExports.values()].find((item) => item.id === exportId && !item.cancelled)
+  return found === undefined
+    ? undefined
+    : { downloadUrl: `/mock-exports/${found.id}.mp4`, sourceJobIds: found.sourceJobIds }
+}
+
 /** 这段对话现存的草稿；还没存过是 undefined。 */
 export const mockWholeFilmDraft = (conversationId: string): StoredDraft | undefined =>
   drafts.get(conversationId)

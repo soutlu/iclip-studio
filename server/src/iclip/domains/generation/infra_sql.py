@@ -47,6 +47,7 @@ from iclip.domains.generation.models import (
 from iclip.domains.generation.schemas import (
     KIND_VIDEO,
     OPERATION_COMPOSE,
+    OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
     SubtitleSentence,
@@ -381,6 +382,17 @@ class SqlGenerationRepository:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return {conversation_id: url for conversation_id, url in rows}
+
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        # 走 source_job_id 的部分索引；一条来源下的超分只有几档、几次重做，不分页。
+        stmt = (
+            select(generation_jobs_table)
+            .where(_JOBS.source_job_id == source_job_id, _JOBS.operation == OPERATION_ENHANCE)
+            .order_by(_JOBS.created_at.desc(), _JOBS.id.desc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).mappings().all()
+        return tuple(_job_from_row(row) for row in rows)
 
     async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
         return await self._update_if(job_id, STATUS_PENDING, status=STATUS_SUBMITTING)

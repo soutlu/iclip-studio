@@ -1835,7 +1835,7 @@ export type GenerationOut = {
   /**
    * Operation
    */
-  operation: 'generate' | 'compose' | 'cut' | 'upload' | 'render'
+  operation: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance'
   /**
    * Outputurl
    */
@@ -4916,6 +4916,57 @@ export type VideoEditIn = {
 }
 
 /**
+ * VideoEnhanceIn
+ *
+ * 给一条成片或一条导出的整片做高清版的受理输入。
+ *
+ * ``userName`` 的规则同出片：发给上游对账，持 ``users:act_as`` 的钥匙按它替人办事。
+ */
+export type VideoEnhanceIn = {
+  /**
+   * Resolution
+   */
+  resolution: '720p' | '1080p'
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * VideoEnhanceTierOut
+ *
+ * 高清版的一档：清晰度与这一档最近的一条超分记录（谁提的都算），还没有为空。
+ */
+export type VideoEnhanceTierOut = {
+  job: GenerationOut | null
+  /**
+   * Resolution
+   */
+  resolution: '720p' | '1080p'
+}
+
+/**
+ * VideoEnhancementsOut
+ *
+ * 一条视频能做的高清版各档，以及下载高清版时记下载事件的成片。
+ */
+export type VideoEnhancementsOut = {
+  /**
+   * Downloadedjobids
+   */
+  downloadedJobIds: Array<string>
+  /**
+   * Tiers
+   */
+  tiers: Array<VideoEnhanceTierOut>
+}
+
+/**
  * VideoGenerationIn
  *
  * 一次视频生成的输入。字段照上游异步接口，外加归属字段、坐标 ``metadata`` 与结构化的 ``shot``。
@@ -7658,7 +7709,7 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Operation
      */
-    operation?: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | null
+    operation?: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance' | null
     /**
      * Rootjobid
      *
@@ -7884,6 +7935,33 @@ export type SubmitVideoEditGenerationsVideoEditsPostResponses = {
 export type SubmitVideoEditGenerationsVideoEditsPostResponse =
   SubmitVideoEditGenerationsVideoEditsPostResponses[keyof SubmitVideoEditGenerationsVideoEditsPostResponses]
 
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostData = {
+  body: VideoEnhanceIn
+  path?: never
+  query?: never
+  url: '/generations/video-enhancements'
+}
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostError =
+  SubmitVideoEnhancementGenerationsVideoEnhancementsPostErrors[keyof SubmitVideoEnhancementGenerationsVideoEnhancementsPostErrors]
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponse =
+  SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponses[keyof SubmitVideoEnhancementGenerationsVideoEnhancementsPostResponses]
+
 export type ListVideoModelsGenerationsVideoModelsGetData = {
   body?: never
   path?: never
@@ -7964,6 +8042,38 @@ export type GetGenerationGenerationsJobIdGetResponses = {
 
 export type GetGenerationGenerationsJobIdGetResponse =
   GetGenerationGenerationsJobIdGetResponses[keyof GetGenerationGenerationsJobIdGetResponses]
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetData = {
+  body?: never
+  path: {
+    /**
+     * Job Id
+     */
+    job_id: string
+  }
+  query?: never
+  url: '/generations/{job_id}/enhancements'
+}
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetError =
+  ListVideoEnhancementsGenerationsJobIdEnhancementsGetErrors[keyof ListVideoEnhancementsGenerationsJobIdEnhancementsGetErrors]
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: VideoEnhancementsOut
+}
+
+export type ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponse =
+  ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponses[keyof ListVideoEnhancementsGenerationsJobIdEnhancementsGetResponses]
 
 export type HealthzHealthzGetData = {
   body?: never

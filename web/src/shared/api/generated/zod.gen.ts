@@ -1492,7 +1492,7 @@ export const zGenerationOut = z.object({
   id: z.uuid(),
   kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render']),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']),
   outputUrl: z.string().nullable(),
   rangeEndMs: z.int().nullish(),
   rangeStartMs: z.int().nullish(),
@@ -2581,6 +2581,39 @@ export const zVideoEditIn = z.object({
 })
 
 /**
+ * VideoEnhanceIn
+ *
+ * 给一条成片或一条导出的整片做高清版的受理输入。
+ *
+ * ``userName`` 的规则同出片：发给上游对账，持 ``users:act_as`` 的钥匙按它替人办事。
+ */
+export const zVideoEnhanceIn = z.object({
+  resolution: z.enum(['720p', '1080p']),
+  sourceJobId: z.uuid(),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
+ * VideoEnhanceTierOut
+ *
+ * 高清版的一档：清晰度与这一档最近的一条超分记录（谁提的都算），还没有为空。
+ */
+export const zVideoEnhanceTierOut = z.object({
+  job: zGenerationOut.nullable(),
+  resolution: z.enum(['720p', '1080p']),
+})
+
+/**
+ * VideoEnhancementsOut
+ *
+ * 一条视频能做的高清版各档，以及下载高清版时记下载事件的成片。
+ */
+export const zVideoEnhancementsOut = z.object({
+  downloadedJobIds: z.array(z.uuid()),
+  tiers: z.array(zVideoEnhanceTierOut),
+})
+
+/**
  * VideoModelsOut
  *
  * 配置允许的视频模型，以及片段入口已接入的模型能力。
@@ -3602,7 +3635,7 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
   kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']).nullish(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render']).nullish(),
+  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
   metadata: z.string().nullish(),
@@ -3661,6 +3694,13 @@ export const zSubmitVideoEditGenerationsVideoEditsPostBody = zVideoEditIn
  */
 export const zSubmitVideoEditGenerationsVideoEditsPostResponse = zGenerationEnvelope
 
+export const zSubmitVideoEnhancementGenerationsVideoEnhancementsPostBody = zVideoEnhanceIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitVideoEnhancementGenerationsVideoEnhancementsPostResponse = zGenerationEnvelope
+
 /**
  * Successful Response
  */
@@ -3683,6 +3723,15 @@ export const zGetGenerationGenerationsJobIdGetPath = z.object({
  * Successful Response
  */
 export const zGetGenerationGenerationsJobIdGetResponse = zGenerationEnvelope
+
+export const zListVideoEnhancementsGenerationsJobIdEnhancementsGetPath = z.object({
+  job_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zListVideoEnhancementsGenerationsJobIdEnhancementsGetResponse = zVideoEnhancementsOut
 
 /**
  * Response Healthz Healthz Get

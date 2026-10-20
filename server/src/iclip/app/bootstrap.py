@@ -86,7 +86,7 @@ from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.render import RenderClient, RenderSetup
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
-from iclip.domains.generation.service import ClearCompletion, SettledRecords
+from iclip.domains.generation.service import ClearCompletion, SettledRecords, VideoEnhanceSpec
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.accounts import CookieAuthSettings
 from iclip.domains.identity.infra_sql import DB_SCHEMA
@@ -293,6 +293,7 @@ def _generation_module(
     fetch_url: Callable[[str], str],
     render: RenderSetup | None,
 ) -> GenerationModule:
+    enhance = settings.video_enhance
     return build_generation_module(
         repo,
         act_as=act_as,
@@ -302,6 +303,12 @@ def _generation_module(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
             api_key=settings.video_api_key,
+            enhance_submit_url=None if enhance is None else enhance.submit_url,
+        ),
+        video_enhance=None
+        if enhance is None
+        else VideoEnhanceSpec(
+            model=enhance.model, resolutions=enhance.resolutions, fps=enhance.fps
         ),
         video_default_model=settings.video_model,
         video_allowed_models=settings.video_allowed_models,

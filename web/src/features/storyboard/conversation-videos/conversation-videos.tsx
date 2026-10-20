@@ -88,6 +88,8 @@ function VideoGroup({ group, onBeforeExpand }: VideoGroupProps) {
         <h4 className="min-w-0 flex-1 text-label font-medium text-on-surface">{group.label}</h4>
         <VideoDownload
           downloadedJobIds={[selected.id]}
+          durationMs={selected.durationMs}
+          enhanceSourceId={selected.id}
           url={selected.outputUrl}
           watermarkUrl={selected.watermarkOutputUrl}
         />
