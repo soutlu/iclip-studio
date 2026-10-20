@@ -21,17 +21,23 @@ test('资料库成片：最新卡面、详情、下载记成片、返回与标�
   const main = page.getByRole('main', { name: '资料库' })
   const card = main.getByRole('article', { name: '春夏品牌整片' })
   await expect(card.getByText('V2')).toBeVisible()
+  // mock 的整片能做高清版：等各档读回来，下载按钮先开菜单。
+  const tiers = page.waitForResponse((response) => response.url().includes('/enhancements'))
   await card.getByRole('button', { name: '查看整片：春夏品牌整片' }).click()
   const dialog = page.getByRole('dialog', { name: '春夏品牌整片' })
   await showDecodedFrame(dialog)
+  await tiers
 
   const tracked = page.waitForRequest(
     (request) => request.url().includes('/tracking/events') && request.method() === 'POST',
   )
   const fileSaved = page.waitForEvent('download')
   await dialog.getByRole('button', { name: '下载视频' }).click()
+  await page.getByRole('menuitem', { name: '下载整片', exact: true }).click()
   expect((await tracked).postDataJSON()).toMatchObject({ name: 'video.downloaded' })
   expect((await fileSaved).suggestedFilename()).toMatch(/\.mp4$/)
+  // 菜单收起后 Esc 才落到详情弹窗上。
+  await expect(page.getByRole('menu')).toBeHidden()
 
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()

@@ -795,6 +795,13 @@
   white-space: nowrap;
 }
 
+/* 高清版在做时文字前的转圈，跟着文字排在同一行。 */
+.wf-export-status > svg {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
 .wf-export-status.is-error {
   color: var(--color-error);
 }

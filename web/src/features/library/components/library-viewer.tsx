@@ -318,6 +318,8 @@ function ViewerBody({
           <VideoDownload
             className="size-(--control-height-lg) rounded-full"
             downloadedJobIds={[version.jobId]}
+            durationMs={seconds === null ? null : seconds * 1000}
+            enhanceSourceId={version.jobId}
             url={version.outputUrl}
             watermarkUrl={version.watermarkOutputUrl}
           />

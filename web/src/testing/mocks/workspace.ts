@@ -289,7 +289,8 @@ const VIDEO_DONE_MS = 3000
 const timers = new Set<ReturnType<typeof setTimeout>>()
 
 type MockGenerationChange = {
-  conversationId: string
+  /** 没挂对话的记录（如超分记录）为 null，帧上就没有对话。 */
+  conversationId: string | null
   id: string
   kind: string
   operation: string
@@ -307,13 +308,32 @@ export const watchMockGenerations = (watcher: (change: MockGenerationChange) => 
   return () => void generationWatchers.delete(watcher)
 }
 
-const announceGeneration = (conversationId: string | null, record: MockRecord) => {
-  if (conversationId === null) return
+/** 发一条生成记录的状态跳转帧。 */
+export const announceMockGeneration = (
+  conversationId: string | null,
+  record: {
+    id: string
+    kind: string
+    operation: string
+    metadata: Record<string, unknown> | null
+    shotIndex?: number | null | undefined
+    status: string
+  },
+) => {
   const { id, kind, operation, metadata, shotIndex, status } = record
-  const shot = shotIndex === null ? {} : { shot_index: shotIndex }
+  const shot = shotIndex === null || shotIndex === undefined ? {} : { shot_index: shotIndex }
   for (const watcher of generationWatchers)
     watcher({ conversationId, id, kind, operation, ...shot, metadata, status })
 }
+
+const announceGeneration = (conversationId: string | null, record: MockRecord) => {
+  if (conversationId === null) return
+  announceMockGeneration(conversationId, record)
+}
+
+/** 任一对话里的一条成片（完成的出片或合成）；高清版的 mock 按它定来源。 */
+export const findMockTake = (id: string): MockRecord | undefined =>
+  [...generations.values()].flat().find((record) => record.id === id && isFinishedTake(record))
 
 export const seedMockWorkspace = (
   conversationId: string,
@@ -396,11 +416,12 @@ export const seedMockWorkspace = (
       outputUrl: VIDEO_URL,
       // 带结构化 shot 的记录可以回填镜头组；纯描述的那两条只能看不能回填。
       prompt: assembleShotPrompt(HISTORY_SHOT),
+      // 480p 出的：高清版的菜单里有 1080p、720p 两档。
       request: {
         aspect_ratio: '9:16',
         model: 'vendor-a-seedance-2-5',
         prompt: assembleShotPrompt(HISTORY_SHOT),
-        resolution: '720p',
+        resolution: '480p',
         shot: HISTORY_SHOT,
       },
       shotIndex: 2,

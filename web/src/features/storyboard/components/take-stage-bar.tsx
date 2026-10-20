@@ -31,6 +31,8 @@ export function TakeStageBar({ actions, onEditVideo, onRefill, take }: TakeStage
             <VideoDownload
               className={stageActionClass}
               downloadedJobIds={[take.job.id]}
+              durationMs={take.job.durationMs}
+              enhanceSourceId={take.job.id}
               url={take.outputUrl}
               watermarkUrl={take.job.watermarkOutputUrl}
             />
