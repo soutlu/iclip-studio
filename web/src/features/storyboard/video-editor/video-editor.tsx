@@ -358,6 +358,7 @@ function Editor({ conversationId, root, mediaUrl, shotIndex, onClose }: EditorPr
     if (jobs.find((job) => job.id === key)?.status === 'failed') {
       setFailedJobId(key)
       setCardOpen(false)
+      previewRef.current?.previewAt(currentTime)
       return
     }
     setFailedJobId(undefined)

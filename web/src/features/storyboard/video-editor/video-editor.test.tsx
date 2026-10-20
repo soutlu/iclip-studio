@@ -1070,10 +1070,11 @@ describe('整片版本与片段选用', () => {
     expect(within(stage).queryByText('生成失败')).toBeNull()
     expect(versionButton('原片')).toHaveAttribute('aria-pressed', 'true')
 
-    // 点段会从头播放选区；先暂停，再按播放。
-    await user.click(screen.getByRole('button', { name: '暂停' }))
+    // 点段会从头播放选区；正在播放时点失败格，播放停下。
+    expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
     await user.click(versionButton('V1'))
     expect(within(stage).getByRole('alert')).toHaveTextContent('生成失败')
+    expect(screen.queryByRole('button', { name: '暂停' })).toBeNull()
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '播放' })).not.toHaveAttribute('aria-disabled'),
     )
