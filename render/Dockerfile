@@ -49,6 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     xz-utils \
     libgbm1 \
+    libegl1 \
     libnss3 \
     libatk-bridge2.0-0 \
     libdrm2 \
@@ -92,7 +93,7 @@ ENV PRODUCER_HEADLESS_SHELL_PATH=/opt/chrome/chrome-headless-shell \
     NODE_ENV=production \
     PORT=8080 \
     RENDER_REGISTRY_ROOT=/app/registry \
-    RENDER_WORK_DIR=/tmp/iclip-render
+    RENDER_WORK_DIR=/tmp/iclip-render/work
 
 WORKDIR /app
 COPY --from=bundle /app/render/package.json ./
@@ -100,6 +101,7 @@ COPY --from=bundle /app/render/node_modules ./node_modules
 COPY --from=bundle /app/render/dist ./dist
 COPY --from=registry /app/web/public/hyperframes/ /app/registry/
 
+# 卷挂载在父目录，启动与退出时清理 work 子目录，不删除挂载点。
 RUN mkdir -p /tmp/iclip-render && chown node:node /tmp/iclip-render
 USER node
 EXPOSE 8080
