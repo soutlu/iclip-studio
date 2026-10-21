@@ -44,12 +44,34 @@ describe('爆款素材库的页签、标签筛选与按版本打开', () => {
   })
 
   it('选中的标签写成 tags[] 并留在爆款素材库页签，读回来是同一份；没选时不带', () => {
-    const search = searchFromHitCaseScope({ tags: [TAG_A, TAG_B] })
+    const search = searchFromHitCaseScope({ ...DEFAULT_HIT_CASE_SCOPE, tags: [TAG_A, TAG_B] })
     expect(search).toEqual({ tab: 'hit-cases', tags: [TAG_A, TAG_B] })
     expect(hitCaseScopeFromSearch(librarySearchSchema.parse(search))).toEqual({
+      ...DEFAULT_HIT_CASE_SCOPE,
       tags: [TAG_A, TAG_B],
     })
     expect(searchFromHitCaseScope(DEFAULT_HIT_CASE_SCOPE)).toEqual({ tab: 'hit-cases' })
+  })
+
+  it('人员、自定义时间和标签一起保存在地址中，重新打开可完整还原', () => {
+    const scope = {
+      ...DEFAULT_HIT_CASE_SCOPE,
+      range: 'custom' as const,
+      since: '2026-09-01',
+      tags: [TAG_A],
+      until: '2026-09-23',
+      userName: 'Nora.Ho',
+    }
+    const search = searchFromHitCaseScope(scope)
+    expect(search).toMatchObject({
+      range: 'custom',
+      since: '2026-09-01',
+      tab: 'hit-cases',
+      tags: [TAG_A],
+      until: '2026-09-23',
+      userName: 'Nora.Ho',
+    })
+    expect(hitCaseScopeFromSearch(librarySearchSchema.parse(search))).toEqual(scope)
   })
 
   it('version 与 video 一起读出来；不是 id 的 version 丢掉', () => {

@@ -78,6 +78,7 @@ type TagRowProps = {
 
 function TagRow({ dimension, values, editable, busy, onChange, aiHint }: TagRowProps) {
   const [adding, setAdding] = useState(false)
+  const [pickerHost, setPickerHost] = useState<HTMLLIElement | null>(null)
   const label = dimension.name
   const ids = values.map((value) => value.id)
   const addable = tagOptionsOf(dimension).filter((option) => !ids.includes(option.id))
@@ -112,7 +113,7 @@ function TagRow({ dimension, values, editable, busy, onChange, aiHint }: TagRowP
           ))
         )}
         {editable ? (
-          <li>
+          <li ref={setPickerHost}>
             <PopupRoot onOpenChange={setAdding} open={adding}>
               <PopupTrigger asChild>
                 <IconButton
@@ -127,6 +128,8 @@ function TagRow({ dimension, values, editable, busy, onChange, aiHint }: TagRowP
                 align="start"
                 aria-label={`添加${label}`}
                 className="w-60"
+                // 浮层留在详情弹窗内，沿用弹窗的焦点与滚动边界。
+                container={pickerHost}
                 sideOffset={6}
               >
                 {adding ? (

@@ -54,6 +54,8 @@ export const useReferenceUpload = ({ enabled, onOpenExisting }: ReferenceUploadO
         onProgress: (ratio) => setProgress(key, ratio),
       })
       const { reference, created } = await createReference(uploadId)
+      // 保留后台任务的详情，当前筛选未命中新资料时也能继续跟踪拆解与打标。
+      queryClient.setQueryData(referenceQueryKeys.detail(reference.id), reference)
       // 新行读回来再撤掉上传卡，前面那张卡不会先空一下。
       await queryClient.invalidateQueries({ queryKey: referenceQueryKeys.all })
       if (!created) {

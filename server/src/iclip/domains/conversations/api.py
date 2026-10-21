@@ -262,7 +262,7 @@ def create_conversations_router(
     ) -> ConversationsAuditOut:
         """治理者查全平台的对话：按人、按单、按时间段、按状态、按删没删筛，最近建的排前面。
 
-        ``since`` / ``until`` 作用在建立时刻上，与排序同一列——
+        时间窗 ``[since, until)`` 左闭右开，作用在建立时刻上，与排序同一列——
         同页报表按各指标自己的事件时刻分期，两边不是同一批对话；
         ``state`` 的四值与侧栏同一口径；``deleted`` 缺省只看活着的，``deleted`` 只看属主删掉的，
         ``all`` 都看。``total`` 与 ``runningTotal`` 是真总数，不随翻页变。

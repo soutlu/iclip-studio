@@ -47,7 +47,7 @@ DeletedFilter = Literal["live", "deleted", "all"]
 
 @dataclass(frozen=True, slots=True)
 class AuditFilter:
-    """审计的筛选范围，列表与计数共用；前四项都可以不给。``since`` / ``until`` 作用在 ``created_at`` 上。
+    """审计的筛选范围，列表与计数共用；前四项都可以不给。时间窗 ``[since, until)`` 作用在 ``created_at`` 上。
 
     ``deleted`` 决定墓碑进不进结果：这是唯一能读到已删对话的列表口。"""
 

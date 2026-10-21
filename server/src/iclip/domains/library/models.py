@@ -35,6 +35,18 @@ class WholeFilmScope:
 
 
 @dataclass(frozen=True, slots=True)
+class HitCaseScope:
+    """爆款素材的筛选范围。时间窗 ``[since, until)`` 作用在入选时刻上。"""
+
+    tag_groups: tuple[tuple[uuid.UUID, ...], ...] = ()
+    """按维度分好、已展开下级的标签组：组间都要命中，组内命中任一即算。"""
+    user_name: str | None = None
+    """这一版素材片属主的用户名，与卡面作者一致。"""
+    since: datetime | None = None
+    until: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class VideoCursor:
     at: datetime
     video_id: uuid.UUID
@@ -59,6 +71,7 @@ class MaterialSource:
 
 __all__ = [
     "HitCaseIneligible",
+    "HitCaseScope",
     "MaterialSource",
     "Orientation",
     "Scope",

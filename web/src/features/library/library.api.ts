@@ -70,7 +70,8 @@ export const libraryQueryKeys = {
   authors: (path: AuthorsPath) => ['library', 'authors', path] as const,
 }
 
-type AuthorsPath = '/library/authors' | '/library/whole-films/authors'
+type AuthorsPath =
+  '/library/authors' | '/library/whole-films/authors' | '/library/hit-cases/authors'
 
 export const useLibraryVideos = (scope: LibraryScope) =>
   useInfiniteQuery({

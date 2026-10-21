@@ -372,7 +372,7 @@ export const libraryHandlers = [
   ),
 ]
 
-function authorsOf(cards: readonly { userName: string | null }[]) {
+export function authorsOf(cards: readonly { userName: string | null }[]) {
   const counts = new Map<string, number>()
   for (const { userName } of cards) {
     if (userName !== null) counts.set(userName, (counts.get(userName) ?? 0) + 1)

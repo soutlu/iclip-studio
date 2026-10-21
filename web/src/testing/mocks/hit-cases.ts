@@ -16,7 +16,7 @@ import type {
   zHitCaseTagsIn,
 } from '@/shared/api/generated/zod.gen'
 import { mockAuthUser } from './auth-user'
-import { findMockLibraryCardOf, mockLibraryVideos } from './library'
+import { authorsOf, findMockLibraryCardOf, mockLibraryVideos } from './library'
 import {
   findMockTagId,
   isMockAiTag,
@@ -204,11 +204,20 @@ export const hitCaseHandlers = (viewer: () => string) => [
   http.get('*/api/library/hit-cases', ({ request }) => {
     const query = new URL(request.url).searchParams
     const cursor = query.get('cursor')
+    const userName = query.get('userName')
+    const since = query.get('since')
+    const until = query.get('until')
     const tagMatch = mockTagMatcher(query.getAll('tags'))
     if (tagMatch === null) return BAD_TAG()
     const all = live()
       .filter((row) => tagMatch(row.tagIds))
       .flatMap((row) => itemOf(row) ?? [])
+      .filter(
+        (item) =>
+          (userName === null || item.face.userName === userName) &&
+          (since === null || Date.parse(item.addedAt) >= Date.parse(since)) &&
+          (until === null || Date.parse(item.addedAt) < Date.parse(until)),
+      )
     const page = pageBy(
       all,
       (item) => [item.addedAt, item.jobId],
@@ -217,6 +226,12 @@ export const hitCaseHandlers = (viewer: () => string) => [
     )
     return HttpResponse.json({ ...page, total: cursor === null ? all.length : null })
   }),
+
+  http.get('*/api/library/hit-cases/authors', () =>
+    HttpResponse.json({
+      items: authorsOf(live().flatMap((row) => itemOf(row)?.face ?? [])),
+    }),
+  ),
 
   http.get('*/api/library/hit-cases/:jobId', ({ params }) => {
     const jobId = String(params['jobId'])

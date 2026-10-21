@@ -30,10 +30,19 @@ describe('时间范围换算', () => {
     expect(bounds.since?.getTime()).toBe(now.getTime() - days * 24 * 60 * 60_000)
   })
 
-  it('自定义区间按本地日期取起点零点与结束日最后一毫秒', () => {
+  it('自定义区间按本地日期取起点零点与结束日的次日零点', () => {
     const bounds = dateRangeBounds({ range: 'custom', since: '2026-09-08', until: '2026-09-12' })
     expect(bounds.since).toEqual(new Date(2026, 8, 8, 0, 0, 0, 0))
-    expect(bounds.until).toEqual(new Date(2026, 8, 12, 23, 59, 59, 999))
+    expect(bounds.until).toEqual(new Date(2026, 8, 13))
+  })
+
+  it.each([
+    ['2026-03-08', '2026-03-09'],
+    ['2026-11-01', '2026-11-02'],
+    ['2026-12-31', '2027-01-01'],
+  ])('结束日 %s 在夏令时和跨年边界仍包含完整一天', (until, nextDay) => {
+    const bounds = dateRangeBounds({ range: 'custom', since: until, until }, now)
+    expect(bounds.until).toEqual(parseLocalDate(nextDay))
   })
 
   it('不限时间与只选了一端的自定义都不设那一端', () => {

@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { toast, Toaster } from '@/shared/ui/toast'
@@ -56,16 +57,24 @@ const openAdmin = async (user: ReturnType<typeof userEvent.setup>) => {
   return screen.findByRole('region', { name: '管理标签' })
 }
 
-const pickDimension = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-  await user.click(screen.getByRole('button', { name: /^切换维度/ }))
-  await user.click(await screen.findByRole('menuitemradio', { name }))
-  await screen.findByRole('heading', { name })
+const selectAction = async (
+  user: ReturnType<typeof userEvent.setup>,
+  tag: string,
+  action: string,
+) => {
+  await user.click(screen.getByRole('button', { name: `管理${tag}` }))
+  await user.click(await screen.findByRole('menuitem', { name: action }))
 }
 
+const dimensionNames = () =>
+  within(screen.getByRole('region', { name: '管理标签' }))
+    .getAllByRole('heading', { level: 3 })
+    .map((heading) => heading.textContent)
+
 const valueNames = (dimension: string) =>
-  within(screen.getByRole('list', { name: `${dimension}的取值` }))
-    .getAllByRole('listitem')
-    .map((item) => item.firstElementChild?.firstElementChild?.textContent)
+  within(screen.getByRole('list', { name: `${dimension}的标签` }))
+    .getAllByRole('button', { name: /^管理/ })
+    .map((button) => button.getAttribute('aria-label')?.replace(/^管理/, ''))
 
 beforeEach(() => {
   stubScrollViewport({ role: 'main', name: '资料库' }, { width: 1200, height: 900 })
@@ -81,47 +90,39 @@ describe('管理标签', () => {
   it('非治理者看不到入口', async () => {
     loginAs(mockAuthUser)
     await renderWithProviders(<Harness />)
-
     await screen.findByRole('button', { name: '内容结构：内容结构' })
     expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull()
   })
 
-  it('治理者打开后面板替换卡片列表，「完成」回到列表', async () => {
+  it('治理者打开后替换卡片列表，「完成」回到列表', async () => {
     loginAs(mockGovernor)
     resetMockReferences([{ tagIds: [mockTagId('AMZ')] }])
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await screen.findByRole('article')
-
     const panel = await openAdmin(user)
-
-    expect(screen.getByRole('button', { name: '管理标签' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('article')).toBeNull()
-    expect(within(panel).getByRole('heading', { name: '品牌' })).toBeVisible()
+    expect(dimensionNames()).toEqual(['品牌', '平台&渠道', '品类', '场景', '内容结构'])
     await user.click(within(panel).getByRole('button', { name: '完成' }))
     expect(await screen.findByRole('article')).toBeVisible()
     expect(screen.queryByRole('region', { name: '管理标签' })).toBeNull()
   })
 
-  it('添加取值与小类：发出带上级的请求，树重读后新的一行出现', async () => {
+  it('添加标签与小类：发出带上级的请求，树重读后新的一行出现', async () => {
     loginAs(mockGovernor)
     const writes = recordTagWrites()
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await openAdmin(user)
-    await pickDimension(user, '场景')
-
-    await user.type(screen.getByRole('textbox', { name: '取值名称' }), '海边度假')
-    await user.click(screen.getByRole('button', { name: '添加取值' }))
-
+    await user.click(screen.getByRole('button', { name: '给场景添加标签' }))
+    await user.type(screen.getByRole('textbox', { name: '场景的标签名称' }), '海边度假{Enter}')
     await waitFor(() => expect(valueNames('场景')).toContain('海边度假'))
-    expect(screen.getByRole('textbox', { name: '取值名称' })).toHaveValue('')
-    await user.click(screen.getByRole('button', { name: '给海边度假添加小类' }))
+    expect(screen.queryByRole('textbox', { name: '场景的标签名称' })).toBeNull()
+    await selectAction(user, '海边度假', '添加小类')
     await user.type(screen.getByRole('textbox', { name: '海边度假的小类名称' }), '沙滩{Enter}')
     expect(
-      await within(screen.getByRole('list', { name: '海边度假的小类' })).findByText('沙滩'),
+      await within(await screen.findByRole('list', { name: '海边度假的小类' })).findByText('沙滩'),
     ).toBeVisible()
-
     const added = writes.filter((write) => write.method === 'POST')
     expect(added[0]).toEqual({
       body: { name: '海边度假', parentId: mockTagId('场景') },
@@ -131,38 +132,128 @@ describe('管理标签', () => {
     expect(added[1]?.body).toEqual({ name: '沙滩', parentId: mockTagId('海边度假') })
   })
 
-  it('就地改名与上移：发出 PATCH，列表跟着树重读', async () => {
+  it('就地改名与同级排序：树重读后保持更新的顺序', async () => {
     loginAs(mockGovernor)
     const writes = recordTagWrites()
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await openAdmin(user)
-    await pickDimension(user, '平台&渠道')
-
-    await user.click(screen.getByRole('button', { name: '重命名AMZ' }))
+    await selectAction(user, 'AMZ', '重命名')
     const input = screen.getByRole('textbox', { name: 'AMZ的新名称' })
     await user.clear(input)
     await user.type(input, 'Amazon{Enter}')
     await waitFor(() => expect(valueNames('平台&渠道')[0]).toBe('Amazon'))
-
-    await user.click(screen.getByRole('button', { name: '上移DTC' }))
+    await selectAction(user, 'DTC', '上移')
     await waitFor(() => expect(valueNames('平台&渠道').slice(0, 2)).toEqual(['DTC', 'Amazon']))
-    expect(screen.getByRole('button', { name: '上移DTC' })).toHaveAttribute('aria-disabled', 'true')
-
-    const amz = mockTagId('Amazon')
-    const dtc = mockTagId('DTC')
+    await user.click(screen.getByRole('button', { name: '管理DTC' }))
+    expect(await screen.findByRole('menuitem', { name: '上移' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     expect(writes).toEqual([
-      { body: { name: 'Amazon' }, method: 'PATCH', path: `/library-tags/${amz}` },
-      { body: { position: 0 }, method: 'PATCH', path: `/library-tags/${dtc}` },
+      { body: { name: 'Amazon' }, method: 'PATCH', path: `/library-tags/${mockTagId('Amazon')}` },
+      { body: { position: 0 }, method: 'PATCH', path: `/library-tags/${mockTagId('DTC')}` },
     ])
   })
 
-  it('删除前确认写出两库各有几条，确认后发出 DELETE、那一行消失', async () => {
+  it('维度可跨原列边界移动，返回后的筛选框顺序一致', async () => {
+    loginAs(mockGovernor)
+    const writes = recordTagWrites()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    const panel = await openAdmin(user)
+    await selectAction(user, '品类', '上移')
+    await waitFor(() =>
+      expect(dimensionNames()).toEqual(['品牌', '品类', '平台&渠道', '场景', '内容结构']),
+    )
+    await selectAction(user, '内容结构', '上移')
+    await waitFor(() =>
+      expect(dimensionNames()).toEqual(['品牌', '品类', '平台&渠道', '内容结构', '场景']),
+    )
+    expect(writes).toEqual([
+      { body: { position: 1 }, method: 'PATCH', path: `/library-tags/${mockTagId('品类')}` },
+      { body: { position: 3 }, method: 'PATCH', path: `/library-tags/${mockTagId('内容结构')}` },
+    ])
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    const filterNames = screen
+      .getAllByRole('button', { name: /^(品类|平台&渠道|内容结构|场景)：/ })
+      .map((button) => button.getAttribute('aria-label'))
+    expect(filterNames).toEqual([
+      '品类：品类',
+      '平台&渠道：平台&渠道',
+      '内容结构：内容结构',
+      '场景：场景',
+    ])
+  })
+
+  it('维度改名只改名称，不按业务名称重新分配位置', async () => {
+    loginAs(mockGovernor)
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await openAdmin(user)
+    await selectAction(user, '内容结构', '重命名')
+    const input = screen.getByRole('textbox', { name: '内容结构的新名称' })
+    await user.clear(input)
+    await user.type(input, '视频结构{Enter}')
+    await waitFor(() =>
+      expect(dimensionNames()).toEqual(['品牌', '平台&渠道', '品类', '场景', '视频结构']),
+    )
+  })
+
+  it('新维度在顶部就地创建，保存后仍为全局第一项，默认人工填写', async () => {
+    loginAs(mockGovernor)
+    const writes = recordTagWrites()
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await openAdmin(user)
+    await user.click(screen.getByRole('button', { name: '添加维度' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(dimensionNames()[0]).toBe('新维度')
+    const name = screen.getByRole('textbox', { name: '维度名称' })
+    expect(name).toHaveFocus()
+    await user.type(name, '服装系列{Enter}')
+    await waitFor(() =>
+      expect(dimensionNames()).toEqual([
+        '服装系列',
+        '品牌',
+        '平台&渠道',
+        '品类',
+        '场景',
+        '内容结构',
+      ]),
+    )
+    expect(within(screen.getByRole('region', { name: '服装系列' })).getByText('人工')).toBeVisible()
+    expect(writes).toEqual([
+      {
+        body: { name: '服装系列', parentId: null, position: 0 },
+        method: 'POST',
+        path: '/library-tags',
+      },
+    ])
+  })
+
+  it('新维度创建失败保留输入，Escape 取消并归还焦点', async () => {
+    loginAs(mockGovernor)
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await openAdmin(user)
+    const trigger = screen.getByRole('button', { name: '添加维度' })
+    await user.click(trigger)
+    const name = screen.getByRole('textbox', { name: '维度名称' })
+    await user.type(name, '品牌{Enter}')
+    expect(await screen.findByText('添加失败：已有名为「品牌」的维度')).toBeVisible()
+    expect(name).toHaveValue('品牌')
+    await user.click(name)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox', { name: '维度名称' })).toBeNull()
+    expect(trigger).toHaveFocus()
+  })
+
+  it('删除确认展示两库影响数量，取消不写入，确认后标签消失', async () => {
     loginAs(mockGovernor)
     resetMockReferences([
       { tagIds: [mockTagId('AMZ')] },
       { tagIds: [mockTagId('AMZ'), mockTagId('短靴')] },
-      { tagIds: [mockTagId('DTC')] },
     ])
     const [video] = mockLibraryVideos()
     if (video === undefined) throw new Error('成片素材 mock 为空')
@@ -172,56 +263,79 @@ describe('管理标签', () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await openAdmin(user)
-    await pickDimension(user, '平台&渠道')
-
-    await user.click(screen.getByRole('button', { name: '删除AMZ' }))
-    expect(screen.getByRole('status')).toHaveTextContent(
-      '删除后，灵感库 2 条、爆款 1 条会去掉该标签',
-    )
-    await user.click(screen.getByRole('button', { name: '取消' }))
+    await selectAction(user, 'AMZ', '删除')
+    const dialog = screen.getByRole('dialog', { name: '删除「AMZ」' })
+    expect(dialog).toHaveTextContent('灵感库 2 条、爆款素材库 1 条')
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
     expect(writes).toEqual([])
-
-    await user.click(screen.getByRole('button', { name: '删除AMZ' }))
+    await selectAction(user, 'AMZ', '删除')
     await user.click(screen.getByRole('button', { name: '删除' }))
-
     await waitFor(() => expect(valueNames('平台&渠道')).not.toContain('AMZ'))
     expect(writes).toEqual([{ body: undefined, method: 'DELETE', path: `/library-tags/${amz}` }])
   })
 
-  it('「AI 打标」开关改维度的 autoFill', async () => {
+  it('维度设置在保存时一起提交判断说明与 AI 开关', async () => {
     loginAs(mockGovernor)
     const writes = recordTagWrites()
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await openAdmin(user)
-    await pickDimension(user, '平台&渠道')
-
-    const toggle = screen.getByRole('switch', { name: 'AI 打标' })
-    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    await selectAction(user, '场景', '维度设置')
+    const dialog = screen.getByRole('dialog', { name: '维度设置' })
+    const toggle = within(dialog).getByRole('switch', { name: 'AI 自动打标' })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
     await user.click(toggle)
-
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'))
+    await user.type(within(dialog).getByRole('textbox', { name: '判断说明' }), '按主要使用场景判断')
+    expect(writes).toEqual([])
+    await user.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(writes).toEqual([
       {
-        body: { autoFill: 'ai' },
+        body: { autoFill: null, guide: '按主要使用场景判断', name: '场景' },
         method: 'PATCH',
-        path: `/library-tags/${mockTagId('平台&渠道')}`,
+        path: `/library-tags/${mockTagId('场景')}`,
       },
     ])
   })
 
-  it('服务端不收（422）时提示它给的原因，输入框保留', async () => {
+  it.each(['添加', '重命名'] as const)('%s 失败时保留输入和原有标签', async (action) => {
     loginAs(mockGovernor)
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await openAdmin(user)
-    await pickDimension(user, '平台&渠道')
-
-    const input = screen.getByRole('textbox', { name: '取值名称' })
-    await user.type(input, 'AMZ')
-    await user.click(screen.getByRole('button', { name: '添加取值' }))
-
-    expect(await screen.findByText('添加失败：「平台&渠道」中已有「AMZ」')).toBeVisible()
+    if (action === '添加')
+      await user.click(screen.getByRole('button', { name: '给平台&渠道添加标签' }))
+    else await selectAction(user, 'DTC', '重命名')
+    const input = screen.getByRole('textbox', {
+      name: action === '添加' ? '平台&渠道的标签名称' : 'DTC的新名称',
+    })
+    await user.clear(input)
+    await user.type(input, 'AMZ{Enter}')
+    expect(
+      await screen.findByText(
+        `${action === '添加' ? '添加' : '保存'}失败：「平台&渠道」中已有「AMZ」`,
+      ),
+    ).toBeVisible()
     expect(input).toHaveValue('AMZ')
+    expect(screen.getByRole('list', { name: '平台&渠道的标签' })).toHaveTextContent('AMZ')
+  })
+
+  it('删除失败时保留确认框和标签，可重试', async () => {
+    loginAs(mockGovernor)
+    server.use(
+      http.delete('/api/library-tags/:tagId', () =>
+        HttpResponse.json({ detail: '标签暂时无法删除' }, { status: 409 }),
+      ),
+    )
+    const user = userEvent.setup()
+    await renderWithProviders(<Harness />)
+    await openAdmin(user)
+    await selectAction(user, 'AMZ', '删除')
+    await user.click(screen.getByRole('button', { name: '删除' }))
+    expect(await screen.findByText('删除失败：标签暂时无法删除')).toBeVisible()
+    expect(screen.getByRole('dialog', { name: '删除「AMZ」' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '删除' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(valueNames('平台&渠道')).toContain('AMZ')
   })
 })

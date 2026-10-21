@@ -2,6 +2,7 @@
  * 合同见 contract/conventions.md §14、§15。 */
 
 import {
+  queryOptions,
   skipToken,
   useInfiniteQuery,
   useMutation,
@@ -9,7 +10,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import type { z } from 'zod'
-import { apiFetch, apiFetchWithResponse } from '@/shared/api/client'
+import { apiFetch, apiFetchWithResponse, ApiError } from '@/shared/api/client'
 import {
   zReferenceFiltersOut,
   zRemoveReferenceReferencesReferenceIdDeleteResponse,
@@ -21,7 +22,12 @@ import {
   type zReferenceVideoItemOut,
 } from '@/shared/api/generated/zod.gen'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
-import { dateRangeBounds, UNBOUNDED_RANGE, type DateRange } from '@/shared/lib/date-range'
+import { dateRangeBounds } from '@/shared/lib/date-range'
+import {
+  DEFAULT_LIBRARY_TAG_SCOPE,
+  isDefaultLibraryTagScope,
+  type LibraryTagScope,
+} from './library-tag-scope'
 import { libraryTagQueryKeys } from './library-tags.api'
 
 export type ReferencesPage = z.output<typeof zReferenceVideosOut>
@@ -37,24 +43,17 @@ export type TestVideo = NonNullable<ReferenceDetail['testVideo']>
 export type TestAspectRatio = z.input<typeof zTestVideoIn>['aspectRatio']
 
 /** 列表的筛选：属主、时间范围、拆解全文关键词，以及选中的标签（同一维度命中任一，不同维度都要命中）。 */
-export interface ReferenceScope extends DateRange {
-  userName: string | null
+export interface ReferenceScope extends LibraryTagScope {
   q: string
-  tags: readonly string[]
 }
 
 export const DEFAULT_REFERENCE_SCOPE: ReferenceScope = {
-  ...UNBOUNDED_RANGE,
+  ...DEFAULT_LIBRARY_TAG_SCOPE,
   q: '',
-  tags: [],
-  userName: null,
 }
 
 export const isDefaultReferenceScope = (scope: ReferenceScope): boolean =>
-  scope.userName === null &&
-  scope.q.trim() === '' &&
-  scope.range === 'all' &&
-  scope.tags.length === 0
+  isDefaultLibraryTagScope(scope) && scope.q.trim() === ''
 
 /** 一页的卡数，与成片素材同一个量级。 */
 const REFERENCES_PAGE_SIZE = 24
@@ -152,23 +151,38 @@ export const useReferenceFilters = () =>
 const referencePath = (id: string) => `/references/${encodeURIComponent(id)}`
 
 /** 一条连同拆解正文与最新的试生成；还没拆完、还没打完标或试生成还没结束时轮询，结果自动出现。`id` 为 null 时不读。 */
-export const useReference = (id: string | null) =>
-  useQuery({
+export const referenceDetailOptions = (id: string | null) =>
+  queryOptions({
     queryFn:
       id === null
         ? skipToken
-        : ({ signal }) =>
-            apiFetch(referencePath(id), zReferenceVideoOut, {
+        : async ({ client, signal }) => {
+            const previous = client.getQueryData<ReferenceDetail>(referenceQueryKeys.detail(id))
+            const reference = await apiFetch(referencePath(id), zReferenceVideoOut, {
               fallbackErrorMessage: '读取该参考视频失败',
               signal,
-            }),
+            })
+            if (
+              previous !== undefined &&
+              isReferenceBusy(previous) &&
+              !isReferenceBusy(reference)
+            ) {
+              void client.invalidateQueries({ queryKey: ['references', 'list'] })
+              void client.invalidateQueries({ queryKey: referenceQueryKeys.filters })
+              void client.invalidateQueries({ queryKey: libraryTagQueryKeys.tree })
+            }
+            return reference
+          },
     queryKey: referenceQueryKeys.detail(id ?? ''),
     refetchInterval: ({ state }) =>
+      !(state.error instanceof ApiError && state.error.status === 404) &&
       state.data !== undefined &&
       (isReferenceBusy(state.data) || state.data.testVideo?.status === 'running')
         ? POLL_MS
         : false,
   })
+
+export const useReference = (id: string | null) => useQuery(referenceDetailOptions(id))
 
 /** 用一次确认过的视频上传建行。`created` 为假表示这条视频已经在资料库里（200），交回的是原来那一行。 */
 export const createReference = async (
